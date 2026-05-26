@@ -62,6 +62,11 @@ export const get_daemon_token_path = (
  *
  * Uses `write_file_atomic` (temp file + rename) and optionally sets mode 0600.
  *
+ * On-disk format is JSON `{"token": "..."}` — the wrapper leaves room for
+ * future fields (rotated_at, version) without changing every reader. Both
+ * the TS cross-backend harness reader (`spawn_backend.read_daemon_token`)
+ * and the Rust daemon-token writer match this shape.
+ *
  * @param runtime - runtime with file write capabilities
  * @param token_path - path to write the token
  * @param token - the raw token string
@@ -72,7 +77,7 @@ export const write_daemon_token = async (
 	token_path: string,
 	token: string,
 ): Promise<void> => {
-	await write_file_atomic(runtime, token_path, token + '\n');
+	await write_file_atomic(runtime, token_path, JSON.stringify({token}) + '\n');
 	if (runtime.chmod) {
 		await runtime.chmod(token_path, 0o600);
 	}
@@ -99,8 +104,14 @@ export const resolve_keeper_account_id = async (deps: QueryDeps): Promise<string
 
 /** Options for daemon token rotation. */
 export interface DaemonTokenRotationOptions {
-	/** Application name (for `~/.{name}/run/daemon_token`). */
-	app_name: string;
+	/**
+	 * Absolute path the token file is written to. Caller computes from
+	 * its own conventions — e.g. `get_daemon_token_path(runtime, app_name)`
+	 * for the standard `~/.{name}/run/daemon_token` layout, or a path
+	 * derived from `PUBLIC_<APP>_DIR` for cross-process test setups that
+	 * isolate the app dir to a tmpdir.
+	 */
+	token_path: string;
 	/** Rotation interval in ms. Default: `30000` (30s). */
 	rotation_interval_ms?: number;
 }
@@ -119,13 +130,12 @@ export interface DaemonTokenRotation {
  * Generates an initial token, writes it to disk, resolves the keeper account,
  * and sets up periodic rotation. Returns the mutable state object and a stop function.
  *
- * @param runtime - runtime with file, env, and remove capabilities
+ * @param runtime - runtime with file and remove capabilities
  * @param deps - query dependencies for resolving keeper account
  * @param options - rotation configuration
  * @param log - the logger instance
  * @returns rotation state and stop function
  * @mutates filesystem - writes the token file on each rotation; `stop` removes it
- * @throws Error if `$HOME` is not set so the daemon token path cannot be resolved
  */
 export const start_daemon_token_rotation = async (
 	runtime: DaemonTokenWriteDeps & FsRemoveDeps,
@@ -133,20 +143,17 @@ export const start_daemon_token_rotation = async (
 	options: DaemonTokenRotationOptions,
 	log: Logger,
 ): Promise<DaemonTokenRotation> => {
-	const {app_name, rotation_interval_ms = DEFAULT_ROTATION_INTERVAL_MS} = options;
+	const {token_path, rotation_interval_ms = DEFAULT_ROTATION_INTERVAL_MS} = options;
 
-	const token_path = get_daemon_token_path(runtime, app_name);
-	if (!token_path) {
-		throw new Error('$HOME not set — cannot determine daemon token path');
+	// ensure parent directory exists
+	const last_slash = token_path.lastIndexOf('/');
+	if (last_slash > 0) {
+		await runtime.mkdir(token_path.slice(0, last_slash), {recursive: true});
 	}
 
-	// ensure run directory exists
-	const app_dir = get_app_dir(runtime, app_name);
-	if (app_dir) {
-		await runtime.mkdir(`${app_dir}/run`, {recursive: true});
-	}
-
-	// resolve keeper account (may be null pre-bootstrap)
+	// resolve keeper account (may be null pre-bootstrap; the middleware
+	// lazily refreshes on the first null hit to cover the
+	// rotation-starts-before-bootstrap case)
 	const keeper_account_id = await resolve_keeper_account_id(deps);
 
 	// generate initial token and write to disk
@@ -212,7 +219,7 @@ export const start_daemon_token_rotation = async (
  */
 export const create_daemon_token_middleware = (
 	state: DaemonTokenState,
-	_deps: QueryDeps,
+	deps: QueryDeps,
 ): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
 		const token_header = c.req.header(DAEMON_TOKEN_HEADER);
@@ -233,7 +240,14 @@ export const create_daemon_token_middleware = (
 			return c.json({error: ERROR_INVALID_DAEMON_TOKEN}, 401);
 		}
 
-		// daemon token valid — resolve keeper account
+		// daemon token valid — resolve keeper account. `start_daemon_token_rotation`
+		// resolves the keeper once at startup, but rotation often starts before the
+		// keeper account exists (e.g. cross-process test harnesses spawn the binary
+		// then POST /bootstrap). Lazily refresh from the DB on the first null hit
+		// so the post-bootstrap state lands without a separate hook.
+		if (!state.keeper_account_id) {
+			state.keeper_account_id = await resolve_keeper_account_id(deps);
+		}
 		if (!state.keeper_account_id) {
 			return c.json({error: ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED}, 503);
 		}

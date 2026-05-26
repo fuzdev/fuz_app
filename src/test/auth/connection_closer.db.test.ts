@@ -56,7 +56,7 @@ import {
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import type {ConnectionCloser} from '$lib/actions/connection_closer.js';
 import {auth_migration_ns} from '$lib/auth/migrations.js';
-import {create_test_app} from '$lib/testing/app_server.js';
+import {create_test_app, DEFAULT_TEST_PASSWORD} from '$lib/testing/app_server.js';
 import {create_test_account_with_actor} from '$lib/testing/db_entities.js';
 import {
 	auth_integration_truncate_tables,
@@ -805,7 +805,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					'Content-Type': 'application/json',
 				},
 				body: JSON.stringify({
-					current_password: 'test-password-123',
+					current_password: DEFAULT_TEST_PASSWORD,
 					new_password: 'new-test-password-xyz',
 				}),
 			});
@@ -1160,7 +1160,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					'Content-Type': 'application/json',
 				},
 				body: JSON.stringify({
-					current_password: 'test-password-123',
+					current_password: DEFAULT_TEST_PASSWORD,
 					new_password: 'new-test-password-xyz',
 				}),
 			});

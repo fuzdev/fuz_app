@@ -219,6 +219,23 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 		stderr_chunks.push(chunk);
 	});
 
+	// Drain stdout — discard, but the read is mandatory. `stdio: 'pipe'`
+	// leaves the stream paused until something consumes it; an unread
+	// pipe fills its OS buffer (~64KB pipe / ~208KB AF_UNIX socketpair on
+	// Linux) and the child's next blocking write to stdout parks in the
+	// kernel. A backend that logs synchronously to stdout (the default
+	// `tracing_subscriber::fmt()` writer) then wedges its whole async
+	// runtime: the writing worker holds stdout's lock while parked, every
+	// other worker that logs blocks behind it, and even lock-free routes
+	// like `/health` (which the request-tracing layer logs) hang. The
+	// failure is volume- and time-dependent — it only surfaces after a
+	// long run pumps more than a buffer's worth of `info` logs through one
+	// long-lived binary — so it hides in short/isolated runs. We discard
+	// rather than buffer (unlike stderr): stdout carries high-volume
+	// operational logging whose unbounded retention would leak across a
+	// long suite.
+	child.stdout?.on('data', () => {});
+
 	let exit_info: {code: number | null; signal: NodeJS.Signals | null} | null = null;
 	child.on('exit', (code, signal) => {
 		exit_info = {code, signal};

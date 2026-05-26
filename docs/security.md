@@ -174,6 +174,9 @@ legitimate operator.
 Rotating filesystem credential for keeper-level operations:
 
 - Server writes a random token to `~/.{app}/run/daemon_token` (mode 0600)
+  as JSON `{"token": "<base64url>"}` — wrapper leaves room for future
+  fields (rotated_at, version) without changing every reader; matched by
+  the Rust spine writer (`fuz_auth::write_token_file`) for wire parity
 - Token rotated every 30 seconds (configurable); the previous token is also
   accepted to cover the rotation race window
 - Both the REST guard composition (`require_credential_types(['daemon_token'])`

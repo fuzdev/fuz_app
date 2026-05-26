@@ -25,11 +25,9 @@ the pair invariant.
 
 Canonical source of truth. Three concrete kinds discriminate on `kind`:
 
-| Kind                  | `auth`                 | `side_effects` | `output`    | `async` |
-| --------------------- | ---------------------- | -------------- | ----------- | ------- |
-| `request_response`    | `RouteAuth` (non-null) | arbitrary      | arbitrary   | `true`  |
-| `remote_notification` | `null`                 | `true`         | `z.ZodVoid` | `true`  |
-| `local_call`          | `null`                 | arbitrary      | arbitrary   | boolean |
+- `request_response` — `auth: RouteAuth` (non-null), `side_effects` arbitrary, `output` arbitrary, `async: true`.
+- `remote_notification` — `auth: null`, `side_effects: true`, `output: z.ZodVoid`, `async: true`.
+- `local_call` — `auth: null`, `side_effects` arbitrary, `output` arbitrary, `async` boolean.
 
 `RouteAuth` is the flat record `{account, actor, roles?, credential_types?}`
 from `http/auth_shape.ts` — same shape governs `RouteSpec.auth` so the four
@@ -64,11 +62,9 @@ dropping per-spec `*_METHOD` constants (readers dereference `.method`). See
 
 ## Kind → binding matrix
 
-| Kind                  | REST `RouteSpec` | RPC `RouteSpec` (via dispatcher) | WS dispatch | SSE `EventSpec` |
-| --------------------- | ---------------- | -------------------------------- | ----------- | --------------- |
-| `request_response`    | yes (bridge)     | yes (`create_rpc_endpoint`)      | yes         | no              |
-| `remote_notification` | no               | no                               | server push | yes (bridge)    |
-| `local_call`          | no               | no                               | no          | no              |
+- `request_response` — REST `RouteSpec` via bridge; RPC `RouteSpec` via `create_rpc_endpoint`; WS dispatch yes; no SSE.
+- `remote_notification` — no REST/RPC routes; WS server push; SSE `EventSpec` via bridge.
+- `local_call` — none (no REST, no RPC, no WS, no SSE).
 
 `create_action_route_spec` throws if `spec.auth` is null (notifications and
 local calls cannot become routes). `create_action_event_spec` throws on any
@@ -93,17 +89,16 @@ registry-only.
 ## Registry + codegen (`actions/action_registry.ts`, `actions/action_codegen.ts`)
 
 **Symmetric design — universal calling abstraction.** SAES is one spec
-shape that drives dispatch across (a) network boundaries (frontend ⇄
-backend over HTTP / WS) and (b) within the same runtime (`local_call`
-actions). `ActionPeer` is symmetric on both sides (`send` + `receive`).
-Typed surfaces are paired: `FrontendActionsApi` is "what the frontend can
-call" (typed Proxy from `create_rpc_client`); `BackendActionsApi` is "what
-the backend can call" (typed object from `create_broadcast_api` today;
-broader runtime constructors will join). Remaining asymmetry today:
+shape driving dispatch across (a) network boundaries (frontend ⇄ backend
+over HTTP / WS) and (b) within the same runtime (`local_call` actions).
+`ActionPeer` is symmetric on both sides (`send` + `receive`). Typed
+surfaces are paired: `FrontendActionsApi` is "what the frontend can call"
+(typed Proxy from `create_rpc_client`); `BackendActionsApi` is "what the
+backend can call" (typed object from `create_broadcast_api` today;
+broader runtime constructors will join). Remaining asymmetry:
 `create_broadcast_api` returns `Promise<void>` while `FrontendActionsApi`
 methods return `Promise<Result<...>>`. Closing those gaps is on the
-deferred follow-up set in
-[SAES RPC closeout](https://github.com/ryanatkn/grimoire/blob/main/quests/HISTORY.md#saes-rpc-direction-2026-04)
+deferred follow-up set from the SAES RPC closeout work
 — wait for a second backend runtime case.
 
 ### `ActionRegistry`
@@ -111,13 +106,11 @@ deferred follow-up set in
 Query/filter wrapper over `ActionSpecUnion[]`. Codegen-relevant getter
 groups (each pairs `_specs` with matching `_methods`):
 
-| Getter family         | Filter                                                              | Drives                        |
-| --------------------- | ------------------------------------------------------------------- | ----------------------------- |
-| Kind-narrow           | by `kind`                                                           | `*ActionMethod` enums         |
-| `*_handled`           | `request_response` + handler-side initiator                         | `BackendActionHandlers` map   |
-| `specs_relevant_to_*` | everything the side might encounter                                 | typed-Proxy method enums      |
-| `broadcast`           | `remote_notification`, `initiator !== 'frontend'`, excludes streams | `BackendActionsApi` interface |
-| `backend_initiated`   | forward-looking kind-agnostic broadcast                             | same content today            |
+- Kind-narrow — filter by `kind`; drives `*ActionMethod` enums.
+- `*_handled` — `request_response` + handler-side initiator; drives `BackendActionHandlers` map.
+- `specs_relevant_to_*` — everything the side might encounter; drives typed-Proxy method enums.
+- `broadcast` — `remote_notification`, `initiator !== 'frontend'`, excludes streams; drives `BackendActionsApi` interface.
+- `backend_initiated` — forward-looking kind-agnostic broadcast; same content today.
 
 Other getters (auth filters, initiator-direction filters) are pre-built API
 surface unused by codegen today.
@@ -125,28 +118,25 @@ surface unused by codegen today.
 ### Codegen helpers (`actions/action_codegen.ts`)
 
 Used by consumer `*.gen.ts` producers, not the runtime. Detailed signatures
+and options on each function's TSDoc.
 
-- options on each function's TSDoc.
-
-| Helper                                         | Output                                                                   |
-| ---------------------------------------------- | ------------------------------------------------------------------------ |
-| `ImportBuilder`                                | Class managing value/type/namespace imports; auto-tree-shakes type-only  |
-| `get_executor_phases(spec, executor)`          | Phases an executor participates in for the spec                          |
-| `get_handler_return_type`                      | TS type a phase handler must return; side-effect imports `ActionOutputs` |
-| `generate_phase_handlers`                      | Per-action typed handler-map fragment                                    |
-| `generate_actions_api_method_signature`        | Single source of truth for the typed `FrontendActionsApi` method shape   |
-| `generate_action_method_enums`                 | Up to nine `z.enum` + `z.infer` pairs                                    |
-| `generate_action_method_enum_block`            | Lower-level escape hatch for cross-product enums                         |
-| `generate_typed_action_event_alias`            | Fixed-shape `TypedActionEvent<TMethod, TPhase, TStep>` alias             |
-| `generate_action_specs_record`                 | `ActionSpecs` runtime const + interface + `action_specs` array           |
-| `generate_action_inputs_outputs`               | `ActionInputs` + `ActionOutputs` runtime consts + interfaces             |
-| `generate_action_event_datas`                  | `ActionEventDatas` interface; per-spec variants                          |
-| `generate_frontend_actions_api`                | Typed `FrontendActionsApi` interface                                     |
-| `generate_frontend_action_handlers`            | `FrontendActionHandlers` interface (Tier 2 only)                         |
-| `generate_backend_actions_api`                 | `BackendActionsApi` interface + `broadcast_action_specs` array           |
-| `generate_backend_action_handlers_map`         | `BackendActionHandlers` mapped type                                      |
-| `compose_gen_file`                             | Wrapper: banner + `imports.build()` + blocks join                        |
-| `create_namespace_qualifier(sources, imports)` | Multi-source consumer helper; registers `import * as ns` per source      |
+- `ImportBuilder` — class managing value/type/namespace imports; auto-tree-shakes type-only.
+- `get_executor_phases(spec, executor)` — phases an executor participates in for the spec.
+- `get_handler_return_type` — TS type a phase handler must return; side-effect imports `ActionOutputs`.
+- `generate_phase_handlers` — per-action typed handler-map fragment.
+- `generate_actions_api_method_signature` — single source of truth for the typed `FrontendActionsApi` method shape.
+- `generate_action_method_enums` — up to nine `z.enum` + `z.infer` pairs.
+- `generate_action_method_enum_block` — lower-level escape hatch for cross-product enums.
+- `generate_typed_action_event_alias` — fixed-shape `TypedActionEvent<TMethod, TPhase, TStep>` alias.
+- `generate_action_specs_record` — `ActionSpecs` runtime const + interface + `action_specs` array.
+- `generate_action_inputs_outputs` — `ActionInputs` + `ActionOutputs` runtime consts + interfaces.
+- `generate_action_event_datas` — `ActionEventDatas` interface; per-spec variants.
+- `generate_frontend_actions_api` — typed `FrontendActionsApi` interface.
+- `generate_frontend_action_handlers` — `FrontendActionHandlers` interface (Tier 2 only).
+- `generate_backend_actions_api` — `BackendActionsApi` interface + `broadcast_action_specs` array.
+- `generate_backend_action_handlers_map` — `BackendActionHandlers` mapped type.
+- `compose_gen_file` — wrapper: banner + `imports.build()` + blocks join.
+- `create_namespace_qualifier(sources, imports)` — multi-source consumer helper; registers `import * as ns` per source.
 
 Shared defaults: `DEFAULT_COLLECTIONS_PATH = './action_collections.js'`,
 `DEFAULT_SPECS_MODULE = './action_specs.js'`,
@@ -158,14 +148,14 @@ multi-source-aware helper uses).
 
 **Protocol actions filtered by default.** Every spec-iterating helper
 accepts `{include_protocol_actions?: boolean}` (default `false`) and drops
-`heartbeat` / `cancel`. Protocol actions ship from fuz_app and are spread
-into each consumer's `actions` array at registration time (via
+`heartbeat` / `cancel`. Protocol actions ship from fuz_app and spread into
+each consumer's `actions` array at registration time (via
 `protocol_actions` from `actions/protocol.ts`); they should not appear in
 consumer-owned typed surfaces. Pass `include_protocol_actions: true` only
 if a consumer genuinely owns protocol actions in their typed API.
 
-**Consumer tiers.** Single-source consumers (zzz) drop into the
-helpers and accept the default `* as specs` namespace import. Multi-source
+**Consumer tiers.** Single-source consumers (zzz) drop into the helpers
+and accept the default `* as specs` namespace import. Multi-source
 consumers (zap, visiones — stitching local specs with
 `all_admin_action_specs` / `all_role_grant_offer_action_specs` /
 `all_account_action_specs` / `all_self_service_role_action_specs` from
@@ -201,8 +191,8 @@ parsing, GET vs POST split, `c.json` binding); the
 auth/validation/dispatch pipeline is shared with the WebSocket dispatcher.
 
 **Phase order: 401 → 400 → 403 → handler.** Validate first, authorize
-after. The trade-off is that an unauthorized caller sees the validation
-step; the alternative ordering (403-before-400) was rejected because
+after. Trade-off: an unauthorized caller sees the validation step. The
+alternative ordering (403-before-400) was rejected because
 defense-in-depth via attack-surface obscurity is illusory when the surface
 is published in `library.json` codegen anyway.
 
@@ -253,18 +243,15 @@ the handler's input / output types to `z.infer<TSpec['input']>` /
 `z.infer<TSpec['output']>` and tightens `ctx.auth` per the conditional
 `HandlerForSpec<TSpec>`:
 
-| Spec auth axes                                         | `ctx.auth`               |
-| ------------------------------------------------------ | ------------------------ |
-| `auth.actor === 'required'`                            | `RequestActorContext`    |
-| `auth.account === 'required' && auth.actor === 'none'` | `RequestContext`         |
-| else (public, optional axes)                           | `RequestContext \| null` |
+- `auth.actor === 'required'` → `ctx.auth: RequestActorContext`.
+- `auth.account === 'required' && auth.actor === 'none'` → `ctx.auth: RequestContext`.
+- else (public, optional axes) → `ctx.auth: RequestContext | null`.
 
-Use at every spec → handler binding site so handler-type errors surface at
-the factory call instead of at runtime. The bracketed form
+Use at every spec → handler binding site so handler-type errors surface
+at the factory call instead of at runtime. The bracketed form
 `[T] extends ['required']` defeats distributive conditionals so a degraded
 `AuthAxisState` union (when the spec was typed without preserving its
-literal) falls through to the loosest tier instead of collapsing to the
-narrowest.
+literal) falls through to the loosest tier instead of the narrowest.
 
 zzz uses a codegen-driven `Record<Method, Handler>` map for the same
 narrowing — ideal when handlers are stateless free functions. fuz_app's
@@ -308,10 +295,8 @@ Critical invariant: every action-handler surface applies DEV-only output
 validation and produces the **same failure mode** — log an error, return
 the response unchanged, do not throw, do not mutate status.
 
-| Surface                       | Code location                                                                                                              | Hot path under production |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| REST bridge                   | `http/route_spec.ts` — `wrap_output_validation` (applied via `apply_route_specs`; inherited by `create_action_route_spec`) | short-circuit (no parse)  |
-| HTTP RPC + WebSocket dispatch | `actions/perform_action.ts` — `if (DEV) spec.output.safeParse(output)` inside the shared dispatch core                     | short-circuit (no parse)  |
+- REST bridge — `http/route_spec.ts` `wrap_output_validation` (applied via `apply_route_specs`; inherited by `create_action_route_spec`). Production hot path short-circuits (no parse).
+- HTTP RPC + WebSocket dispatch — `actions/perform_action.ts` `if (DEV) spec.output.safeParse(output)` inside the shared dispatch core. Production hot path short-circuits (no parse).
 
 Caller-facing `input` schemas are validated **always** (DEV + production)
 — they're the contract with external callers. Server-authored `output`
@@ -345,11 +330,9 @@ and `allow_fallback: boolean` (default `true`). Explicit
 
 ### Transport modules
 
-| Module                             | Name                     | Role                                                                                 |
-| ---------------------------------- | ------------------------ | ------------------------------------------------------------------------------------ |
-| `actions/transports_http.ts`       | `frontend_http_rpc`      | Thin `fetch` adapter; POST default, GET on `has_side_effects(method) === false`      |
-| `actions/transports_ws.ts`         | `frontend_websocket_rpc` | Thin adapter over `WebsocketRpcConnection` (default impl: `FrontendWebsocketClient`) |
-| `actions/transports_ws_backend.ts` | `backend_websocket_rpc`  | Server-side WS with session tracking; satisfies `FilterableBroadcastTransport`       |
+- `actions/transports_http.ts` — `frontend_http_rpc`; thin `fetch` adapter, POST default, GET on `has_side_effects(method) === false`.
+- `actions/transports_ws.ts` — `frontend_websocket_rpc`; thin adapter over `WebsocketRpcConnection` (default impl: `FrontendWebsocketClient`).
+- `actions/transports_ws_backend.ts` — `backend_websocket_rpc`; server-side WS with session tracking; satisfies `FilterableBroadcastTransport`.
 
 `FrontendHttpTransport` synthesizes a JSON-RPC error envelope via
 `http_status_to_jsonrpc_error_code` on non-OK HTTP; DEV warns on drift
@@ -547,13 +530,12 @@ Two abort signals composed via `AbortSignal.any`:
 ## Protocol actions (`actions/protocol.ts`)
 
 Two shared `{spec, handler}` tuples that every consumer spreads into both
-sides' `actions` arrays — disconnect detection and per-request cancel work
-identically across every repo without per-consumer ping plumbing.
+sides' `actions` arrays — disconnect detection and per-request cancel
+work identically across every repo without per-consumer ping plumbing.
 
 The category is wire-protocol concerns shipped by fuz_app, not consumer
-domain logic. Contrast that matters: protocol vs domain. A future
-clock-skew probe or reconnect-resume token belongs here; a `payment_charge`
-action does not.
+domain logic. Protocol vs domain: a future clock-skew probe or
+reconnect-resume token belongs here; a `payment_charge` action does not.
 
 Two const arrays:
 
@@ -566,8 +548,8 @@ stub), frontend registry only stores specs. Both bundles plus the codegen
 
 **Not auto-spread by `create_frontend_rpc_client` or `register_ws_endpoint`** —
 bundled helpers stay pure factories so the dispatch surface stays
-grep-traceable at every consumer registration site and consumers can
-override individual protocol actions without an opt-out flag.
+grep-traceable at every registration site and consumers can override
+individual protocol actions without an opt-out flag.
 
 ### Individual actions
 
@@ -645,10 +627,8 @@ the live `ActionEvent` (zzz wires reactive history here).
 
 ### Throwing variants
 
-| Helper                     | Shape                                 | Use at                                                                     |
-| -------------------------- | ------------------------------------- | -------------------------------------------------------------------------- |
-| `create_throwing_rpc_call` | `(method, input?) => Promise<T>`      | Adapter wiring (e.g. `ui/admin_rpc_adapters.ts`) — method comes from a map |
-| `create_throwing_api`      | Typed Proxy over `FrontendActionsApi` | Direct call sites — `await api.foo(input)` keeps full inference            |
+- `create_throwing_rpc_call` — shape `(method, input?) => Promise<T>`. Use at adapter wiring (e.g. `ui/admin_rpc_adapters.ts`) — method comes from a map.
+- `create_throwing_api` — typed Proxy over `FrontendActionsApi`. Use at direct call sites — `await api.foo(input)` keeps full inference.
 
 **Layered design.** `Result` is the protocol primitive —
 `create_rpc_client` returns `Result<{value}, {error}>` with no Error
@@ -657,8 +637,7 @@ both shapes share the same underlying transport and call sites pick
 per-site. `Result` is preferable when the call site inspects
 `error.data.reason` (no allocation, no try/catch) or when overhead matters
 (reconnect storms, hot paths). Throwing is preferable when the call site
-doesn't inspect — `await api.foo()` reads cleaner than the `if (!r.ok) throw …`
-ritual.
+doesn't inspect — `await api.foo()` reads cleaner than `if (!r.ok) throw …`.
 
 Hardening on both: only `{code, data}` cross onto the Error, leaving
 `name` / `stack` as the native Error's own so attacker-shaped
@@ -716,7 +695,7 @@ failure), wraps in `JsonrpcNotification`, sends via the peer's resolved
 transport. `transport_name` on `peer.default_send_options` pins the target
 deterministically — no fallback, because broadcast is 1→N over a specific
 primary transport and "any ready transport" could reach an unexpected
-audience. Silently skips when no ready transport.
+audience. Silently skips when none ready.
 
 `should_deliver: (identity, method, input) => boolean` — optional
 per-connection ACL predicate. When set, fans out via

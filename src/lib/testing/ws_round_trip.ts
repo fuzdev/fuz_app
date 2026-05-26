@@ -392,6 +392,11 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 			predicate: (msg: unknown) => boolean;
 			resolve: (msg: unknown) => void;
 		}> = [];
+		// Resolvers awaiting a server-initiated close — fired by the
+		// `WSContext.close` callback below so `wait_for_close` resolves
+		// whether the dispatcher (e.g. an auth-guard revocation) or the
+		// test closed the socket.
+		const close_waiters: Array<() => void> = [];
 		let is_closed = false;
 
 		// Captured in `ws.close` below; `client.close(...)` returns it so
@@ -417,6 +422,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 			close: (code, reason) => {
 				if (is_closed) return;
 				is_closed = true;
+				for (const resolve of close_waiters.splice(0)) resolve();
 				const close_event = new Event('close') as CloseEvent;
 				Object.defineProperties(close_event, {
 					code: {value: code ?? 1000, writable: false},
@@ -508,6 +514,21 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 				if (close_pending) await close_pending;
 			},
 			wait_for: wait_for_impl,
+			wait_for_close: (timeout_ms = WS_CLIENT_DEFAULT_TIMEOUT_MS): Promise<boolean> => {
+				if (is_closed) return Promise.resolve(true);
+				return new Promise<boolean>((resolve) => {
+					const on_close = (): void => {
+						clearTimeout(timer);
+						resolve(true);
+					};
+					const timer = setTimeout(() => {
+						const i = close_waiters.indexOf(on_close);
+						if (i >= 0) close_waiters.splice(i, 1);
+						resolve(false);
+					}, timeout_ms);
+					close_waiters.push(on_close);
+				});
+			},
 		};
 	};
 

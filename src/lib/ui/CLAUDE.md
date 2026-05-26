@@ -89,9 +89,11 @@ pattern rather than reintroducing prop-drilling.
   `SidebarState` if `sidebar_state` prop is not supplied).
 - `ColumnLayout.svelte` — fixed `aside` column + fluid `children`
   column; `column_width = '280px'`.
-- `MenuLink.svelte` — SvelteKit `<a>` with `selected`/`highlighted`
-  derived from `page.url.pathname`. Takes `path` (resolved via
-  `resolve` from `$app/paths`).
+- `MenuLink.svelte` — SvelteKit `<a>` with `selected` derived from
+  `page.url.pathname` (fires for exact match + descendant pages).
+  Exact matches additionally get `aria-current="page"`. Takes `path`
+  (resolved via `resolve` from `$app/paths`). The `.highlighted` name is
+  intentionally free for orthogonal emphasis (badges, recent activity).
 - `sidebar_state.svelte.ts` — `SidebarState` (with `activate()` cleanup
   pattern, optional reactive `enabled` getter), `sidebar_state_context`.
 

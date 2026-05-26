@@ -8,8 +8,8 @@ import './assert_dev_env.js';
  * observable state — account exists, `bootstrap_lock.bootstrapped` is
  * true, audit row emitted, response body shape — rather than
  * `on_bootstrap` callback invocation, so the suite stays cross-impl
- * friendly when Phase 3 cross-process testing wires it against a
- * spawned Rust backend.
+ * friendly when cross-process testing wires it against a spawned
+ * Rust backend.
  *
  * Folded into `describe_standard_tests` with a `bootstrap.mode === 'live'`
  * silent-skip gate; consumers wiring live bootstrap pick up success-path

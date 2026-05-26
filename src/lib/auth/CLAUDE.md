@@ -16,13 +16,11 @@ documents the cross-cutting invariants that don't fit on any single symbol.
 
 ## AppDeps split
 
-| Bucket            | Type               | Lifetime                                                                                                            |
-| ----------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| **Capabilities**  | `AppDeps`          | Stateless, injectable per env: `stat`, `read_text_file`, `delete_file`, `keyring`, `password`, `db`, `log`, `audit` |
-| **Route caps**    | `RouteFactoryDeps` | `Omit<AppDeps, 'db'>` — handlers get `db` via `RouteContext`                                                        |
-| **Action caps**   | inline             | Action factories take `Pick<RouteFactoryDeps, 'log' \| 'audit'>` (role-grant-offer adds `notification_sender?`)     |
-| **Parameters**    | `*Options`         | Static startup values, per-factory                                                                                  |
-| **Runtime state** | inline ref         | Mutable values: `bootstrap_status`, `app_settings` ref, `DaemonTokenState` — NOT in deps or options                 |
+- **Capabilities** — `AppDeps` — stateless, injectable per env: `stat`, `read_text_file`, `delete_file`, `keyring`, `password`, `db`, `log`, `audit`.
+- **Route caps** — `RouteFactoryDeps` — `Omit<AppDeps, 'db'>`; handlers get `db` via `RouteContext`.
+- **Action caps** — inline — action factories take `Pick<RouteFactoryDeps, 'log' | 'audit'>` (role-grant-offer adds `notification_sender?`).
+- **Parameters** — `*Options` — static startup values, per-factory.
+- **Runtime state** — inline ref — mutable values: `bootstrap_status`, `app_settings` ref, `DaemonTokenState`. NOT in deps or options.
 
 `audit: AuditEmitter` is the bound emitter built once at backend assembly by
 the consumer's `audit_factory` callback over `create_audit_emitter`; closes
@@ -33,15 +31,13 @@ over the pool so rows persist when request transactions roll back. See root
 
 ### Crypto primitives (pure, I/O-free)
 
-| Module                      | Exports                                                                                                                                                         |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auth/keyring.ts`           | `Keyring`, `create_keyring`, `validate_keyring`, `create_validated_keyring`                                                                                     |
-| `auth/session_cookie.ts`    | `SessionOptions<T>`, `parse_session`, `process_session_cookie`, `create_session_config`, `fuz_session_config`, `SESSION_AGE_MAX`, `SESSION_REFRESH_THRESHOLD_S` |
-| `auth/password.ts`          | `Password`, `PasswordProvided`, `PasswordHashDeps`, `PASSWORD_LENGTH_MIN` (12, OWASP), `PASSWORD_LENGTH_MAX` (300)                                              |
-| `auth/password_argon2.ts`   | `hash_password`, `verify_password`, `verify_dummy`, `argon2_password_deps`                                                                                      |
-| `auth/api_token.ts`         | `API_TOKEN_PREFIX` (`secret_fuz_token_`), `hash_api_token`, `generate_api_token`                                                                                |
-| `auth/daemon_token.ts`      | `DaemonToken`, `DAEMON_TOKEN_HEADER` (`X-Daemon-Token`), `generate_daemon_token`, `validate_daemon_token`, `DaemonTokenState`                                   |
-| `auth/bootstrap_account.ts` | `bootstrap_account` (one-shot, `bootstrap_lock`-protected)                                                                                                      |
+- `auth/keyring.ts` — `Keyring`, `create_keyring`, `validate_keyring`, `create_validated_keyring`.
+- `auth/session_cookie.ts` — `SessionOptions<T>`, `parse_session`, `process_session_cookie`, `create_session_config`, `fuz_session_config`, `SESSION_AGE_MAX`, `SESSION_REFRESH_THRESHOLD_S`.
+- `auth/password.ts` — `Password`, `PasswordProvided`, `PasswordHashDeps`, `PASSWORD_LENGTH_MIN` (12, OWASP), `PASSWORD_LENGTH_MAX` (300).
+- `auth/password_argon2.ts` — `hash_password`, `verify_password`, `verify_dummy`, `argon2_password_deps`.
+- `auth/api_token.ts` — `API_TOKEN_PREFIX` (`secret_fuz_token_`), `hash_api_token`, `generate_api_token`.
+- `auth/daemon_token.ts` — `DaemonToken`, `DAEMON_TOKEN_HEADER` (`X-Daemon-Token`), `generate_daemon_token`, `validate_daemon_token`, `DaemonTokenState`.
+- `auth/bootstrap_account.ts` — `bootstrap_account` (one-shot, `bootstrap_lock`-protected).
 
 Cross-cutting notes that don't live on any single symbol:
 
@@ -60,38 +56,34 @@ Cross-cutting notes that don't live on any single symbol:
 
 Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
 
-| Module                                   | What's inside                                                                                                                                                                                      |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auth/account_schema.ts`                 | `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes                                                                                                               |
-| `auth/role_schema.ts`                    | `RoleName`, `RoleSpec`, `ROLE_KEEPER`, `ROLE_ADMIN`, `create_role_schema`, `builtin_role_specs_by_name`, `role_has_grant_path`, `list_roles_with_grant_path`                                       |
-| `auth/scope_kind_schema.ts`              | `ScopeKindName`, `create_scope_kind_schema` (open registry, no builtins)                                                                                                                           |
-| `auth/credential_type_schema.ts`         | `CredentialTypeName`, `CREDENTIAL_TYPE_SESSION` / `_API_TOKEN` / `_DAEMON_TOKEN`, `create_credential_type_schema`                                                                                  |
-| `auth/grant_path_schema.ts`              | `GrantPathName`, `GRANT_PATH_ADMIN` / `_SELF_SERVICE` / `_SYSTEM` / `_BOOTSTRAP`, `create_grant_path_schema`                                                                                       |
-| `auth/auth_ddl.ts`                       | `CREATE TABLE` / index / seed strings for the core identity tables                                                                                                                                 |
-| `auth/audit_log_schema.ts`               | `AUDIT_EVENT_TYPES` (21 builtins), `AuditEventType` / `AuditEventTypeName`, `audit_metadata_schemas`, `AuditLogEvent`, `AuditLogInput`, `AuditLogConfig`, `create_audit_log_config`                |
-| `auth/audit_log_ddl.ts`                  | `audit_log` table DDL with `seq BIGSERIAL` for cursor-based gap fill (BIGSERIAL converges with the Rust spine; `create_db` registers a `pg.types` int8 parser so `seq` still reads as a JS number) |
-| `auth/invite_schema.ts`                  | `Invite`, `CreateInviteInput`                                                                                                                                                                      |
-| `auth/app_settings_schema.ts`            | `AppSettings`, `UpdateAppSettingsInput` (single-row via `CHECK (id = 1)`)                                                                                                                          |
-| `auth/role_grant_offer_schema.ts`        | `RoleGrantOffer`, `RoleGrantOfferJson`, `to_role_grant_offer_json`, scope-sentinel constants                                                                                                       |
-| `auth/role_grant_offer_ddl.ts`           | `role_grant_offer` table + indexes + `ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID` / `_GLOBAL_TOKEN`                                                                                                      |
-| `auth/role_grant_offer_notifications.ts` | Six WS notification specs for the consentful-grant lifecycle                                                                                                                                       |
+- `auth/account_schema.ts` — `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes.
+- `auth/role_schema.ts` — `RoleName`, `RoleSpec`, `ROLE_KEEPER`, `ROLE_ADMIN`, `create_role_schema`, `builtin_role_specs_by_name`, `role_has_grant_path`, `list_roles_with_grant_path`.
+- `auth/scope_kind_schema.ts` — `ScopeKindName`, `create_scope_kind_schema` (open registry, no builtins).
+- `auth/credential_type_schema.ts` — `CredentialTypeName`, `CREDENTIAL_TYPE_SESSION` / `_API_TOKEN` / `_DAEMON_TOKEN`, `create_credential_type_schema`.
+- `auth/grant_path_schema.ts` — `GrantPathName`, `GRANT_PATH_ADMIN` / `_SELF_SERVICE` / `_SYSTEM` / `_BOOTSTRAP`, `create_grant_path_schema`.
+- `auth/auth_ddl.ts` — `CREATE TABLE` / index / seed strings for the core identity tables.
+- `auth/audit_log_schema.ts` — `AUDIT_EVENT_TYPES` (21 builtins), `AuditEventType` / `AuditEventTypeName`, `audit_metadata_schemas`, `AuditLogEvent`, `AuditLogInput`, `AuditLogConfig`, `create_audit_log_config`.
+- `auth/audit_log_ddl.ts` — `audit_log` table DDL with `seq BIGSERIAL` for cursor-based gap fill (BIGSERIAL converges with the Rust spine; `create_db` registers a `pg.types` int8 parser so `seq` still reads as a JS number).
+- `auth/invite_schema.ts` — `Invite`, `CreateInviteInput`.
+- `auth/app_settings_schema.ts` — `AppSettings`, `UpdateAppSettingsInput` (single-row via `CHECK (id = 1)`).
+- `auth/role_grant_offer_schema.ts` — `RoleGrantOffer`, `RoleGrantOfferJson`, `to_role_grant_offer_json`, scope-sentinel constants.
+- `auth/role_grant_offer_ddl.ts` — `role_grant_offer` table + indexes + `ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID` / `_GLOBAL_TOKEN`.
+- `auth/role_grant_offer_notifications.ts` — six WS notification specs for the consentful-grant lifecycle.
 
 ### Queries
 
 All take `deps: QueryDeps = {db}` first; `query_validate_api_token` adds `log`.
 
-| Module                             | Coverage                                                                                                                                                                                                                                                                 |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `auth/account_queries.ts`          | Account CRUD, actor resolution, password update with verify-write race guard, paged `query_admin_account_list`                                                                                                                                                           |
-| `auth/actor_lookup_queries.ts`     | Batched `actor` ⨝ `account` for the labels arc                                                                                                                                                                                                                           |
-| `auth/actor_search_queries.ts`     | Case-insensitive prefix search on `actor.name`, scope-filtered when not admin                                                                                                                                                                                            |
-| `auth/role_grant_queries.ts`       | Idempotent create, IDOR-guarded revoke (with in-tx supersede), scope-aware lookup, role/account predicates, `query_role_grant_revoke_for_scope` parent-scope cascade                                                                                                     |
-| `auth/role_grant_offer_queries.ts` | Offer create/decline/retract/list/history/sweep, atomic `query_accept_offer` with sibling supersede; error classes `RoleGrantOfferSelfTargetError` / `_AlreadyTerminalError` / `_ExpiredError` / `_NotFoundError` / `_ActorAccountMismatchError` / `_ActorMismatchError` |
-| `auth/session_queries.ts`          | Server-side sessions (blake3-hashed), `query_session_revoke_by_hash_unscoped` (logout only), `query_session_enforce_limit` (transaction-required)                                                                                                                        |
-| `auth/api_token_queries.ts`        | Token validation with fire-and-forget usage tracking, IDOR-guarded revoke, `query_api_token_enforce_limit` (transaction-required)                                                                                                                                        |
-| `auth/invite_queries.ts`           | Invite create/find/claim/list/delete; `query_invite_claim_unscoped` (scoping enforced upstream by `_find_unclaimed_match_for_update`, which runs inside the signup tx with `FOR UPDATE` so find + claim are atomic)                                                      |
-| `auth/app_settings_queries.ts`     | Load/update for the single-row settings table                                                                                                                                                                                                                            |
-| `auth/audit_log_queries.ts`        | `query_audit_log` (in-tx insert), `_list` / `_list_with_usernames` / `_list_role_grant_history` / `_cleanup_before`, drift counters (`get_audit_metadata_validation_failures` / `get_audit_unknown_event_type_failures`)                                                 |
+- `auth/account_queries.ts` — account CRUD, actor resolution, password update with verify-write race guard, paged `query_admin_account_list`.
+- `auth/actor_lookup_queries.ts` — batched `actor` ⨝ `account` for the labels arc.
+- `auth/actor_search_queries.ts` — case-insensitive prefix search on `actor.name`, scope-filtered when not admin.
+- `auth/role_grant_queries.ts` — idempotent create, IDOR-guarded revoke (with in-tx supersede), scope-aware lookup, role/account predicates, `query_role_grant_revoke_for_scope` parent-scope cascade.
+- `auth/role_grant_offer_queries.ts` — offer create/decline/retract/list/history/sweep, atomic `query_accept_offer` with sibling supersede; error classes `RoleGrantOfferSelfTargetError` / `_AlreadyTerminalError` / `_ExpiredError` / `_NotFoundError` / `_ActorAccountMismatchError` / `_ActorMismatchError`.
+- `auth/session_queries.ts` — server-side sessions (blake3-hashed), `query_session_revoke_by_hash_unscoped` (logout only), `query_session_enforce_limit` (transaction-required).
+- `auth/api_token_queries.ts` — token validation with fire-and-forget usage tracking, IDOR-guarded revoke, `query_api_token_enforce_limit` (transaction-required).
+- `auth/invite_queries.ts` — invite create/find/claim/list/delete; `query_invite_claim_unscoped` (scoping enforced upstream by `_find_unclaimed_match_for_update`, which runs inside the signup tx with `FOR UPDATE` so find + claim are atomic).
+- `auth/app_settings_queries.ts` — load/update for the single-row settings table.
+- `auth/audit_log_queries.ts` — `query_audit_log` (in-tx insert), `_list` / `_list_with_usernames` / `_list_role_grant_history` / `_cleanup_before`, drift counters (`get_audit_metadata_validation_failures` / `get_audit_unknown_event_type_failures`).
 
 `_unscoped` suffix on `query_session_revoke_by_hash_unscoped` and
 `query_invite_claim_unscoped` is the safety signal: SQL only checks row state,
@@ -123,13 +115,11 @@ they track the same config. Sample via `get_*`; `reset_*` are test-only.
 
 ### Routes
 
-| Module                        | Surface                                                                                                                                                                                                                                                   |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auth/account_routes.ts`      | `POST /login` / `/logout` / `/password`, `GET /verify` (nginx `auth_request` shim), `GET /api/account/status`. Constants: `DEFAULT_MAX_SESSIONS = 5`, `DEFAULT_MAX_TOKENS = 10`, `DEFAULT_LOGIN_FAIL_FLOOR_MS = 250`, `DEFAULT_LOGIN_FAIL_JITTER_MS = 25` |
-| `auth/bootstrap_routes.ts`    | `POST /bootstrap` + `check_bootstrap_status`; `BootstrapStatus` runtime ref                                                                                                                                                                               |
-| `auth/signup_routes.ts`       | `POST /signup` (open or invite-gated)                                                                                                                                                                                                                     |
-| `auth/audit_log_routes.ts`    | Optional `GET /audit/stream` (SSE) — list/history are on the RPC surface                                                                                                                                                                                  |
-| `auth/auth_guard_resolver.ts` | `fuz_auth_guard_resolver` injected into `apply_route_specs` so the framework stays auth-agnostic                                                                                                                                                          |
+- `auth/account_routes.ts` — `POST /login` / `/logout` / `/password`, `GET /verify` (nginx `auth_request` shim), `GET /api/account/status`. Constants: `DEFAULT_MAX_SESSIONS = 5`, `DEFAULT_MAX_TOKENS = 10`, `DEFAULT_LOGIN_FAIL_FLOOR_MS = 250`, `DEFAULT_LOGIN_FAIL_JITTER_MS = 25`.
+- `auth/bootstrap_routes.ts` — `POST /bootstrap` + `check_bootstrap_status`; `BootstrapStatus` runtime ref.
+- `auth/signup_routes.ts` — `POST /signup` (open or invite-gated).
+- `auth/audit_log_routes.ts` — optional `GET /audit/stream` (SSE); list/history are on the RPC surface.
+- `auth/auth_guard_resolver.ts` — `fuz_auth_guard_resolver` injected into `apply_route_specs` so the framework stays auth-agnostic.
 
 **`POST /login` timing floor.** Login 401s are floored to
 `DEFAULT_LOGIN_FAIL_FLOOR_MS` (250ms) + uniform jitter (±25ms) via
@@ -148,13 +138,11 @@ Everything else listed under §RPC action surfaces.
 
 ### Middleware
 
-| Module                            | Role                                                                                                                                                                                                                             |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auth/middleware.ts`              | `create_auth_middleware_specs(deps, options)` — assembles `[origin, session, request_context, bearer_auth]` + optional `daemon_token`                                                                                            |
-| `auth/request_context.ts`         | `RequestContext`, `resolve_acting_actor`, `build_request_context`, predicates (`has_role`, `has_scoped_role`, `has_any_scoped_role`), guards (`require_auth`, `require_role`, `require_credential_types`), `refresh_role_grants` |
-| `auth/session_middleware.ts`      | `process_session_cookie` integration, `create_session_and_set_cookie` (shared by login / signup / bootstrap)                                                                                                                     |
-| `auth/bearer_auth.ts`             | Soft-fail bearer middleware; rejects when `Origin` or `Referer` present (browser context)                                                                                                                                        |
-| `auth/daemon_token_middleware.ts` | `start_daemon_token_rotation` + `create_daemon_token_middleware` (atomic file write, fail-closed validation, keeper account resolution)                                                                                          |
+- `auth/middleware.ts` — `create_auth_middleware_specs(deps, options)` assembles `[origin, session, request_context, bearer_auth]` + optional `daemon_token`.
+- `auth/request_context.ts` — `RequestContext`, `resolve_acting_actor`, `build_request_context`, predicates (`has_role`, `has_scoped_role`, `has_any_scoped_role`), guards (`require_auth`, `require_role`, `require_credential_types`), `refresh_role_grants`.
+- `auth/session_middleware.ts` — `process_session_cookie` integration, `create_session_and_set_cookie` (shared by login / signup / bootstrap).
+- `auth/bearer_auth.ts` — soft-fail bearer middleware; rejects when `Origin` or `Referer` present (browser context).
+- `auth/daemon_token_middleware.ts` — `start_daemon_token_rotation` + `create_daemon_token_middleware` (atomic file write, fail-closed validation, keeper account resolution).
 
 See root ../../../CLAUDE.md §Middleware Ordering for canonical assembly
 order. The auth-specific invariants are described below in §Cross-cutting
@@ -305,14 +293,12 @@ codegen-importable) and `*_actions.ts` (`create_*_actions(deps, options)`
 factory with handlers). Client codegen imports the specs and skips the
 handler module's transitive query-layer deps.
 
-| Factory                            | Registry                             | Bundle in `create_standard_rpc_actions` |
-| ---------------------------------- | ------------------------------------ | --------------------------------------- |
-| `create_admin_actions`             | `all_admin_action_specs`             | yes                                     |
-| `create_role_grant_offer_actions`  | `all_role_grant_offer_action_specs`  | yes                                     |
-| `create_account_actions`           | `all_account_action_specs`           | yes                                     |
-| `create_self_service_role_actions` | `all_self_service_role_action_specs` | no — `eligible_roles` is app-specific   |
-| `create_actor_lookup_actions`      | `all_actor_lookup_action_specs`      | no — opt-in batched id → label resolver |
-| `create_actor_search_actions`      | `all_actor_search_action_specs`      | no — opt-in prefix-search picker        |
+- `create_admin_actions` — registry `all_admin_action_specs` — bundled in `create_standard_rpc_actions`.
+- `create_role_grant_offer_actions` — registry `all_role_grant_offer_action_specs` — bundled.
+- `create_account_actions` — registry `all_account_action_specs` — bundled.
+- `create_self_service_role_actions` — registry `all_self_service_role_action_specs` — not bundled (`eligible_roles` is app-specific).
+- `create_actor_lookup_actions` — registry `all_actor_lookup_action_specs` — not bundled (opt-in batched id → label resolver).
+- `create_actor_search_actions` — registry `all_actor_search_action_specs` — not bundled (opt-in prefix-search picker).
 
 `auth/all_action_spec_registries.ts` exposes `all_fuz_auth_action_spec_registries`
 for registry-wide invariant tests. Not a mounting surface; protocol specs
@@ -354,19 +340,17 @@ are excluded.
 
 `create_admin_actions(deps, options?)` in `auth/admin_actions.ts`.
 
-| Spec                                       | Side effects | Input                                                     | Output                        |
-| ------------------------------------------ | ------------ | --------------------------------------------------------- | ----------------------------- |
-| `admin_account_list_action_spec`           | false        | `{limit?, offset?}`                                       | `{accounts, grantable_roles}` |
-| `admin_session_list_action_spec`           | false        | `z.void()`                                                | `{sessions}`                  |
-| `admin_session_revoke_all_action_spec`     | true         | `{account_id}`                                            | `{ok, count}`                 |
-| `admin_token_revoke_all_action_spec`       | true         | `{account_id}`                                            | `{ok, count}`                 |
-| `audit_log_list_action_spec`               | false        | `{event_type?, account_id?, limit?, offset?, since_seq?}` | `{events}`                    |
-| `audit_log_role_grant_history_action_spec` | false        | `{limit?, offset?}`                                       | `{events}`                    |
-| `invite_create_action_spec`                | true         | `{email?, username?}`                                     | `{ok, invite}`                |
-| `invite_list_action_spec`                  | false        | `z.void()`                                                | `{invites}`                   |
-| `invite_delete_action_spec`                | true         | `{invite_id}`                                             | `{ok}`                        |
-| `app_settings_get_action_spec`             | false        | `z.void()`                                                | `{settings}`                  |
-| `app_settings_update_action_spec`          | true         | `{open_signup}`                                           | `{ok, settings}`              |
+- `admin_account_list_action_spec` — read; input `{limit?, offset?}`; output `{accounts, grantable_roles}`.
+- `admin_session_list_action_spec` — read; input `z.void()`; output `{sessions}`.
+- `admin_session_revoke_all_action_spec` — mutation; input `{account_id}`; output `{ok, count}`.
+- `admin_token_revoke_all_action_spec` — mutation; input `{account_id}`; output `{ok, count}`.
+- `audit_log_list_action_spec` — read; input `{event_type?, account_id?, limit?, offset?, since_seq?}`; output `{events}`.
+- `audit_log_role_grant_history_action_spec` — read; input `{limit?, offset?}`; output `{events}`.
+- `invite_create_action_spec` — mutation; input `{email?, username?}`; output `{ok, invite}`.
+- `invite_list_action_spec` — read; input `z.void()`; output `{invites}`.
+- `invite_delete_action_spec` — mutation; input `{invite_id}`; output `{ok}`.
+- `app_settings_get_action_spec` — read; input `z.void()`; output `{settings}`.
+- `app_settings_update_action_spec` — mutation; input `{open_signup}`; output `{ok, settings}`.
 
 Constants: `AUDIT_LOG_LIST_LIMIT_MAX = 200`, `ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT = 50`,
 `ADMIN_ACCOUNT_LIST_LIMIT_MAX = 200`.
@@ -414,15 +398,13 @@ event additionally records `credential_type` in metadata (defense in depth).
 > suite assume auto-accept and have to redesign their tests when they
 > discover otherwise.
 
-| Spec                                   | Input                                                      | Output                                         |
-| -------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------- |
-| `role_grant_offer_create_action_spec`  | `{to_account_id, to_actor_id?, role, scope_id?, message?}` | `{offer}`                                      |
-| `role_grant_offer_accept_action_spec`  | `{offer_id}`                                               | `{role_grant_id, offer, superseded_offer_ids}` |
-| `role_grant_offer_decline_action_spec` | `{offer_id, reason?}`                                      | `{ok}`                                         |
-| `role_grant_offer_retract_action_spec` | `{offer_id}`                                               | `{ok}`                                         |
-| `role_grant_offer_list_action_spec`    | `{account_id?}`                                            | `{offers}`                                     |
-| `role_grant_offer_history_action_spec` | `{account_id?, limit?, offset?}`                           | `{offers}`                                     |
-| `role_grant_revoke_action_spec`        | `{actor_id, role_grant_id, reason?}`                       | `{ok, revoked}`                                |
+- `role_grant_offer_create_action_spec` — input `{to_account_id, to_actor_id?, role, scope_id?, message?}`; output `{offer}`.
+- `role_grant_offer_accept_action_spec` — input `{offer_id}`; output `{role_grant_id, offer, superseded_offer_ids}`.
+- `role_grant_offer_decline_action_spec` — input `{offer_id, reason?}`; output `{ok}`.
+- `role_grant_offer_retract_action_spec` — input `{offer_id}`; output `{ok}`.
+- `role_grant_offer_list_action_spec` — input `{account_id?}`; output `{offers}`.
+- `role_grant_offer_history_action_spec` — input `{account_id?, limit?, offset?}`; output `{offers}`.
+- `role_grant_revoke_action_spec` — input `{actor_id, role_grant_id, reason?}`; output `{ok, revoked}`.
 
 Every input carries `acting?: ActingActor` (registry-time invariant 2).
 `role_grant_revoke` keys on **`actor_id`**, not `account_id` — role_grants
@@ -463,13 +445,11 @@ matching the middleware auth-guard precedent.
 
 Post-commit via `emit_after_commit` (see `http/CLAUDE.md` §Pending Effects):
 
-| Event   | Fan-out                                                             |
-| ------- | ------------------------------------------------------------------- |
-| Create  | `role_grant_offer_received` → recipient                             |
-| Retract | `role_grant_offer_retracted` → recipient                            |
-| Accept  | `role_grant_offer_accepted` → grantor + `_supersede` per sibling    |
-| Decline | `role_grant_offer_declined` → grantor                               |
-| Revoke  | `role_grant_revoke` → revokee + `_supersede` per superseded sibling |
+- Create — `role_grant_offer_received` → recipient.
+- Retract — `role_grant_offer_retracted` → recipient.
+- Accept — `role_grant_offer_accepted` → grantor + `_supersede` per sibling.
+- Decline — `role_grant_offer_declined` → grantor.
+- Revoke — `role_grant_revoke` → revokee + `_supersede` per superseded sibling.
 
 Spec module is `auth/role_grant_offer_notifications.ts` — six
 `RemoteNotificationActionSpec`s with Zod params schemas and notification
@@ -493,15 +473,13 @@ Options: `roles?: RoleSchemaResult` (drives admin-grant-path lookup),
 
 `create_account_actions(deps, options?)` in `auth/account_actions.ts`.
 
-| Spec                                     | Side effects | Input          | Output                  |
-| ---------------------------------------- | ------------ | -------------- | ----------------------- |
-| `account_verify_action_spec`             | false        | `z.void()`     | `SessionAccountJson`    |
-| `account_session_list_action_spec`       | false        | `z.void()`     | `{sessions}`            |
-| `account_session_revoke_action_spec`     | true         | `{session_id}` | `{ok, revoked}`         |
-| `account_session_revoke_all_action_spec` | true         | `z.void()`     | `{ok, count}`           |
-| `account_token_create_action_spec`       | true         | `{name?}`      | `{ok, token, id, name}` |
-| `account_token_list_action_spec`         | false        | `z.void()`     | `{tokens}`              |
-| `account_token_revoke_action_spec`       | true         | `{token_id}`   | `{ok, revoked}`         |
+- `account_verify_action_spec` — read; input `z.void()`; output `SessionAccountJson`.
+- `account_session_list_action_spec` — read; input `z.void()`; output `{sessions}`.
+- `account_session_revoke_action_spec` — mutation; input `{session_id}`; output `{ok, revoked}`.
+- `account_session_revoke_all_action_spec` — mutation; input `z.void()`; output `{ok, count}`.
+- `account_token_create_action_spec` — mutation; input `{name?}`; output `{ok, token, id, name}`.
+- `account_token_list_action_spec` — read; input `z.void()`; output `{tokens}`.
+- `account_token_revoke_action_spec` — mutation; input `{token_id}`; output `{ok, revoked}`.
 
 `account_verify` is intentionally on both surfaces: the REST `GET /verify`
 shim is a status-only nginx probe; the RPC action returns

@@ -38,11 +38,17 @@ export interface FetchTransportOptions {
 	 */
 	readonly initial_cookies?: ReadonlyArray<string>;
 	/**
-	 * Origin header threaded onto every request. Defaults to `base_url`.
-	 * Backends running with `ALLOWED_ORIGINS=http://localhost:*` accept
-	 * `http://localhost:<port>` matching the spawned binary.
+	 * Origin header threaded onto every request when the caller hasn't set
+	 * one. Defaults to `base_url`; backends running with
+	 * `ALLOWED_ORIGINS=http://localhost:*` accept `http://localhost:<port>`
+	 * matching the spawned binary.
+	 *
+	 * Pass `null` to disable the default — useful for bearer-only probes
+	 * that must not look like browser-context requests (the auth middleware
+	 * silently discards bearer credentials when `Origin`/`Referer` is
+	 * present). Callers can still set `Origin` per-call via `init.headers`.
 	 */
-	readonly origin?: string;
+	readonly origin?: string | null;
 }
 
 /**
@@ -101,14 +107,16 @@ export const create_fetch_transport = (options: FetchTransportOptions): FetchTra
 			if (parsed) jar.set(parsed.name, parsed.cookie);
 		}
 	}
-	const default_origin = origin ?? base_url;
+	const default_origin = origin === null ? null : (origin ?? base_url);
 
 	const cookies = (): ReadonlyArray<string> => Array.from(jar.values());
 
 	const transport = (async (url: string, init: RequestInit): Promise<Response> => {
 		const target = /^https?:\/\//i.test(url) ? url : `${base_url}${url}`;
 		const headers = new Headers(init.headers);
-		if (!headers.has('Origin')) headers.set('Origin', default_origin);
+		if (default_origin !== null && !headers.has('Origin')) {
+			headers.set('Origin', default_origin);
+		}
 		if (!headers.has('Cookie') && jar.size > 0) {
 			headers.set('Cookie', Array.from(jar.values()).join('; '));
 		}

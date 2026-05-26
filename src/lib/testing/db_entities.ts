@@ -48,13 +48,24 @@ export const create_test_account_with_actor = async (
 	);
 
 /**
- * Materialize a role_grant directly via `query_create_role_grant`, bypassing
- * the production offer/accept consent flow. Use only when the test focuses on
- * revoke or isolation semantics rather than the consent path itself — the
- * schema permits null `source_offer_id` for exactly this case
- * (`account_schema.ts`). For tests that exercise the production grant flow,
- * drive `role_grant_offer_create_action_spec` + `role_grant_offer_accept_action_spec`
- * over RPC instead.
+ * Materialize a `role_grant` directly via `query_create_role_grant`,
+ * bypassing the production offer/accept consent flow.
+ *
+ * **In-process only.** This helper takes a raw `Db` handle and seeds
+ * rows without firing audit fan-out, WebSocket broadcasts, or the
+ * `_supersede` notification chain a real grant emits. Cross-process
+ * suites must instead drive `role_grant_offer_create_action_spec` +
+ * `role_grant_offer_accept_action_spec` via
+ * `role_grant_helpers.ts`'s `role_grant_offer_and_accept` so the
+ * fixture observes the full post-commit fan-out the way production
+ * does — otherwise tests would mask real divergence between the TS
+ * and Rust spines.
+ *
+ * Use this helper for query-level (`*.db.test.ts`) tests that
+ * exercise revoke or isolation semantics — not the consent path
+ * itself. The schema's `source_offer_id = null` shape is an
+ * intentional admin-direct escape; this helper exposes it so
+ * suites don't reimplement the same direct-seed wrapper.
  */
 export const create_test_role_grant_direct = async (
 	db: Db,

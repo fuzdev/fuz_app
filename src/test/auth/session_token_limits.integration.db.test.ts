@@ -20,7 +20,7 @@ import {
 } from '$lib/auth/account_action_specs.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {auth_migration_ns} from '$lib/auth/migrations.js';
-import {create_test_app} from '$lib/testing/app_server.js';
+import {create_test_app, DEFAULT_TEST_PASSWORD} from '$lib/testing/app_server.js';
 import {
 	create_pglite_factory,
 	create_describe_db,
@@ -91,7 +91,7 @@ describe_db('session_token_limits', (get_db) => {
 					},
 					body: JSON.stringify({
 						username: test_app.backend.account.username,
-						password: 'test-password-123',
+						password: DEFAULT_TEST_PASSWORD,
 					}),
 				});
 				assert.strictEqual(res.status, 200);
@@ -158,7 +158,7 @@ describe_db('session_token_limits', (get_db) => {
 				},
 				body: JSON.stringify({
 					username: test_app.backend.account.username,
-					password: 'test-password-123',
+					password: DEFAULT_TEST_PASSWORD,
 				}),
 			});
 			assert.strictEqual(res.status, 200);
@@ -210,7 +210,7 @@ describe_db('session_token_limits', (get_db) => {
 				},
 				body: JSON.stringify({
 					username: test_app.backend.account.username,
-					password: 'test-password-123',
+					password: DEFAULT_TEST_PASSWORD,
 				}),
 			});
 			assert.strictEqual(res.status, 200, 'Login still succeeds (insert + enforce are atomic)');
@@ -263,7 +263,7 @@ describe_db('session_token_limits', (get_db) => {
 					},
 					body: JSON.stringify({
 						username: test_app.backend.account.username,
-						password: 'test-password-123',
+						password: DEFAULT_TEST_PASSWORD,
 					}),
 				});
 				assert.strictEqual(res.status, 200);

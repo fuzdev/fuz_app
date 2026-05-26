@@ -69,6 +69,22 @@ export const stub_password_deps: PasswordHashDeps = {
 /** 64-hex-char test cookie secret — deterministic, never used in production. */
 export const TEST_COOKIE_SECRET = 'a'.repeat(64);
 
+/**
+ * Default password for bootstrapped test accounts. Shared between the
+ * in-process keeper bootstrap (`bootstrap_test_keeper`,
+ * `create_test_account_with_credentials`, `create_test_app_server`,
+ * `TestApp.create_account`) and the cross-process bootstrap
+ * (`cross_backend/setup.ts`). The two paths MUST agree — when they
+ * diverged during the 3d cross-process lift, ~20 login tests 401'd
+ * silently against the cross-process backend because the per-test
+ * fixture minted accounts under a different default than the
+ * integration suite's hardcoded login bodies expected. Consumers
+ * hardcoding the literal string in test bodies should import this
+ * constant instead so a future divergence becomes a typecheck miss
+ * rather than a runtime password mismatch.
+ */
+export const DEFAULT_TEST_PASSWORD = 'test-password-123';
+
 // Module-level PGlite factory for create_test_app_server when no db is provided.
 // Shares the WASM instance cache from test_db.ts, avoiding redundant cold starts
 // within the same vitest worker thread. Schema is reset on each create() call.
@@ -122,7 +138,7 @@ export const create_test_account_with_credentials = async (
 		session_options,
 		password,
 		username = 'keeper',
-		password_value = 'test-password-123',
+		password_value = DEFAULT_TEST_PASSWORD,
 		roles = [],
 	} = options;
 
@@ -222,7 +238,7 @@ export interface TestAppServerOptions {
 	password?: PasswordHashDeps;
 	/** Username for the bootstrapped account. Default: `'keeper'`. */
 	username?: string;
-	/** Password for the bootstrapped account. Default: `'test-password-123'`. */
+	/** Password for the bootstrapped account. Default: `DEFAULT_TEST_PASSWORD`. */
 	password_value?: string;
 	/** Roles to grant. Default: `[ROLE_KEEPER]`. */
 	roles?: Array<string>;
@@ -373,7 +389,7 @@ export const create_test_app_server = async (
 		session_options,
 		password = stub_password_deps,
 		username = 'keeper',
-		password_value = 'test-password-123',
+		password_value = DEFAULT_TEST_PASSWORD,
 		roles = [ROLE_KEEPER],
 	} = options;
 
@@ -571,7 +587,7 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 			session_options: options.session_options,
 			password,
 			username: account_options?.username ?? `test_user_${account_counter}`,
-			password_value: account_options?.password_value ?? 'test-password-123',
+			password_value: account_options?.password_value ?? DEFAULT_TEST_PASSWORD,
 			roles: account_options?.roles ?? [],
 		});
 

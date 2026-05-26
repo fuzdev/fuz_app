@@ -10,7 +10,7 @@
 
 import {describe, test, assert, beforeAll, afterAll} from 'vitest';
 
-import {create_test_app, type TestApp} from '$lib/testing/app_server.js';
+import {create_test_app, DEFAULT_TEST_PASSWORD, type TestApp} from '$lib/testing/app_server.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {create_account_actions} from '$lib/auth/account_actions.js';
@@ -68,7 +68,7 @@ describe('password change multi-session invalidation', () => {
 			const res = await test_app.app.request('/api/account/login', {
 				method: 'POST',
 				headers: login_headers,
-				body: JSON.stringify({username: 'keeper', password: 'test-password-123'}),
+				body: JSON.stringify({username: 'keeper', password: DEFAULT_TEST_PASSWORD}),
 			});
 			assert.strictEqual(res.status, 200, `login ${i + 1} should succeed`);
 			const set_cookie = res.headers.get('set-cookie');
@@ -84,7 +84,7 @@ describe('password change multi-session invalidation', () => {
 				cookie: session_cookies[0]!,
 			},
 			body: JSON.stringify({
-				current_password: 'test-password-123',
+				current_password: DEFAULT_TEST_PASSWORD,
 				new_password: 'new-password-456789',
 			}),
 		});
@@ -131,7 +131,7 @@ describe('password change multi-session invalidation', () => {
 		const old_login_res = await test_app.app.request('/api/account/login', {
 			method: 'POST',
 			headers: login_headers,
-			body: JSON.stringify({username: 'keeper', password: 'test-password-123'}),
+			body: JSON.stringify({username: 'keeper', password: DEFAULT_TEST_PASSWORD}),
 		});
 		assert.strictEqual(old_login_res.status, 401, 'login with old password should fail');
 	});

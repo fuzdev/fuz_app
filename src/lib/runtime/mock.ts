@@ -3,7 +3,7 @@
  *
  * Provides a fully controllable runtime implementation for unit tests.
  * Consumer projects can extend `MockRuntime` with project-specific helpers
- * (e.g. `setup_mock_tx_config`) that stay local.
+ * (e.g. `setup_mock_zap_config`) that stay local.
  *
  * @module
  */

@@ -33,7 +33,7 @@ import {
 	type AuditEventType,
 	type AuditLogEventWithUsernamesJson,
 } from '../auth/audit_log_schema.js';
-import {type TestAccount} from './app_server.js';
+import {DEFAULT_TEST_PASSWORD, type TestAccount} from './app_server.js';
 import {find_auth_route} from './integration_helpers.js';
 import {
 	rpc_call_for_spec,
@@ -230,7 +230,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					headers: UNAUTHENTICATED_JSON_HEADERS,
 					body: JSON.stringify({
 						username: fixture.account.username,
-						password: 'test-password-123',
+						password: DEFAULT_TEST_PASSWORD,
 					}),
 				});
 				assert.strictEqual(res.status, 200);
@@ -340,7 +340,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					headers: UNAUTHENTICATED_JSON_HEADERS,
 					body: JSON.stringify({
 						username: fixture.account.username,
-						password: 'test-password-123',
+						password: DEFAULT_TEST_PASSWORD,
 					}),
 				});
 
@@ -417,7 +417,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					method: 'POST',
 					headers: json_session_headers(fixture),
 					body: JSON.stringify({
-						current_password: 'test-password-123',
+						current_password: DEFAULT_TEST_PASSWORD,
 						new_password: 'new-password-456',
 					}),
 				});

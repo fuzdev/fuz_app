@@ -277,7 +277,7 @@ export interface CreateTestAppSurfaceSpecOptions {
 	ws_endpoints?:
 		| ReadonlyArray<WsEndpointSpec>
 		| ((ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>);
-	/** Transform middleware array (e.g., tx's `extend_middleware_for_tx_binary`). */
+	/** Transform middleware array (e.g., zap's `extend_middleware_for_zap_binary`). */
 	transform_middleware?: (specs: Array<MiddlewareSpec>) => Array<MiddlewareSpec>;
 	/**
 	 * Bootstrap config — symmetric with `AppServerOptions.bootstrap`. Discriminated

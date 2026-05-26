@@ -43,6 +43,7 @@ import {run_migrations} from '../db/migrate.js';
 import {auth_migration_ns} from '../auth/migrations.js';
 import type {Db} from '../db/db.js';
 import {account_session_revoke_all_action_spec} from '../auth/account_action_specs.js';
+import {create_sse_frame_reader} from './transports/sse_frame_reader.js';
 
 /** Config for a single SSE route under test. */
 export interface SseRouteTestSpec {
@@ -101,80 +102,6 @@ export interface SseRouteTestOptions {
 	/** SSE routes to exercise. */
 	routes: Array<SseRouteTestSpec>;
 }
-
-/**
- * Read one complete SSE frame (up to `\n\n`) from a stream reader.
- *
- * Returns the frame without the trailing `\n\n`. Throws on premature close.
- * Preserves any bytes past the terminator in the shared buffer for the next call.
- */
-const create_sse_frame_reader = (
-	reader: ReadableStreamDefaultReader<Uint8Array>,
-): {
-	read_frame: (timeout_ms?: number) => Promise<string>;
-	wait_for_close: (timeout_ms: number) => Promise<boolean>;
-	cancel: () => Promise<void>;
-} => {
-	const decoder = new TextDecoder();
-	let buffer = '';
-	let closed = false;
-
-	const pump_once = async (timeout_ms: number): Promise<boolean> => {
-		// Race the read against a timeout — vitest will otherwise hang on a misbehaving stream.
-		const timeout = new Promise<{done: true; value: undefined; timed_out: true}>((resolve) => {
-			setTimeout(() => resolve({done: true, value: undefined, timed_out: true}), timeout_ms);
-		});
-		const result = (await Promise.race([reader.read(), timeout])) as
-			| ReadableStreamReadResult<Uint8Array>
-			| {done: true; value: undefined; timed_out: true};
-		if ('timed_out' in result) {
-			throw new Error(`SSE read timed out after ${timeout_ms}ms`);
-		}
-		if (result.done) {
-			closed = true;
-			return false;
-		}
-		buffer += decoder.decode(result.value, {stream: true});
-		return true;
-	};
-
-	return {
-		read_frame: async (timeout_ms = 2000): Promise<string> => {
-			// SSE frames end with a blank line — the canonical terminator is `\n\n`.
-			while (true) {
-				const idx = buffer.indexOf('\n\n');
-				if (idx >= 0) {
-					const frame = buffer.slice(0, idx);
-					buffer = buffer.slice(idx + 2);
-					return frame;
-				}
-				const cont = await pump_once(timeout_ms);
-				if (!cont) throw new Error('SSE stream ended before a frame was received');
-			}
-		},
-		wait_for_close: async (timeout_ms: number): Promise<boolean> => {
-			// Drain until the server closes the stream (pump_once returns false) or timeout expires.
-			const deadline = Date.now() + timeout_ms;
-			for (;;) {
-				if (closed) return true;
-				const remaining = deadline - Date.now();
-				if (remaining <= 0) return false;
-				try {
-					await pump_once(Math.min(remaining, timeout_ms));
-				} catch {
-					return false;
-				}
-			}
-		},
-		cancel: async (): Promise<void> => {
-			try {
-				await reader.cancel();
-			} catch {
-				// already closed
-			}
-		},
-	};
-};
 
 /**
  * Validate a decoded SSE `data:` frame as a JSON-RPC-style `{method, params}` payload.

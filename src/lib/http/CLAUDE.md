@@ -14,29 +14,27 @@ effects, see ../../docs/architecture.md.
 
 ## Module Map
 
-| File                      | Role                                                                                                   |
-| ------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `http/route_spec.ts`      | `RouteSpec` + `apply_route_specs`, validation pipeline, transactions                                   |
-| `http/auth_shape.ts`      | Canonical `RouteAuth` Zod schema + cross-axis invariants + predicates                                  |
-| `http/error_schemas.ts`   | `ERROR_*` constants, standard error shapes, `derive_error_schemas`                                     |
-| `http/schema_helpers.ts`  | Shared Zod introspection (null/strict/surface/merge/middleware-applies)                                |
-| `http/middleware_spec.ts` | `MiddlewareSpec` interface                                                                             |
-| `http/surface.ts`         | `AppSurface`, `AppSurfaceSpec`, `generate_app_surface`, diagnostics                                    |
-| `http/surface_query.ts`   | Pure filters/groupings over `AppSurface`                                                               |
-| `http/proxy.ts`           | Trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution                                 |
-| `http/ip_canonical.ts`    | RFC 5952 IPv6 canonicalization + IPv4-mapped collapse; `IP_LITERAL_CHARS` regex                        |
-| `http/origin.ts`          | Origin allowlist middleware with wildcard patterns (Origin-only)                                       |
-| `http/jsonrpc.ts`         | JSON-RPC 2.0 envelope schemas (MCP superset), `JsonrpcErrorCode`, `_meta`                              |
-| `http/jsonrpc_errors.ts`  | `ThrownJsonrpcError`, `jsonrpc_errors` throwers, HTTP-status mappings                                  |
-| `http/jsonrpc_helpers.ts` | Message builders, type guards, input/result normalizers                                                |
-| `http/common_routes.ts`   | Health check + authenticated server-status + surface route specs                                       |
-| `http/db_routes.ts`       | Generic keeper-only table browser route specs (public schema)                                          |
-| `http/pending_effects.ts` | `emit_after_commit` + `flush_pending_effects` + `flush_post_commit_effects` + `EmitAfterCommitContext` |
+- `http/route_spec.ts` — `RouteSpec` + `apply_route_specs`, validation pipeline, transactions.
+- `http/auth_shape.ts` — canonical `RouteAuth` Zod schema + cross-axis invariants + predicates.
+- `http/error_schemas.ts` — `ERROR_*` constants, standard error shapes, `derive_error_schemas`.
+- `http/schema_helpers.ts` — shared Zod introspection (null/strict/surface/merge/middleware-applies).
+- `http/middleware_spec.ts` — `MiddlewareSpec` interface.
+- `http/surface.ts` — `AppSurface`, `AppSurfaceSpec`, `generate_app_surface`, diagnostics.
+- `http/surface_query.ts` — pure filters/groupings over `AppSurface`.
+- `http/proxy.ts` — trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution.
+- `http/ip_canonical.ts` — RFC 5952 IPv6 canonicalization + IPv4-mapped collapse; `IP_LITERAL_CHARS` regex.
+- `http/origin.ts` — origin allowlist middleware with wildcard patterns (Origin-only).
+- `http/jsonrpc.ts` — JSON-RPC 2.0 envelope schemas (MCP superset), `JsonrpcErrorCode`, `_meta`.
+- `http/jsonrpc_errors.ts` — `ThrownJsonrpcError`, `jsonrpc_errors` throwers, HTTP-status mappings.
+- `http/jsonrpc_helpers.ts` — message builders, type guards, input/result normalizers.
+- `http/common_routes.ts` — health check + authenticated server-status + surface route specs.
+- `http/db_routes.ts` — generic keeper-only table browser route specs (public schema).
+- `http/pending_effects.ts` — `emit_after_commit` + `flush_pending_effects` + `flush_post_commit_effects` + `EmitAfterCommitContext`.
 
 ## Route Spec System
 
 `RouteSpec` (in `http/route_spec.ts`) is the unit of the attack surface —
-routes are **data**, registered with Hono by `apply_route_specs`, and
+routes are **data**, registered with Hono by `apply_route_specs` and
 introspected by `generate_app_surface`. Same-shaped data, different
 consumers.
 
@@ -155,8 +153,7 @@ WS); see ../../docs/architecture.md §DEV-only Output Validation.
 All standard shapes use `z.looseObject` — intentional because multiple
 producers (middleware + handler) can emit different extra fields at the
 same status code. The `error` string literal is the contract; extra keys
-(`required_roles`, `required_credential_types`, `retry_after`, `detail`)
-are diagnostic.
+(`required_roles`, `required_credential_types`, `retry_after`, `detail`) are diagnostic.
 
 Pair every schema with the `z.infer` type export.
 
@@ -216,8 +213,7 @@ confirmation.
 
 `http/schema_helpers.ts` is the canonical home for shared Zod introspection
 — extracted to break a circular dependency between `http/route_spec.ts`
-(uses them for input validation) and `http/surface.ts` (uses them for
-surface generation).
+(input validation) and `http/surface.ts` (surface generation).
 
 **Import `is_null_schema`, `is_strict_object_schema`, `schema_to_surface`,
 `middleware_applies`, and `merge_error_schemas` from `http/schema_helpers.ts`,
@@ -318,8 +314,7 @@ operator configuration in practice.
 ### Origin allowlist — `http/origin.ts`
 
 Origin allowlisting for locally-running services — **not** the CSRF layer.
-CSRF is handled by `SameSite: strict` on session cookies (see
-`auth/session_middleware.ts`).
+CSRF is handled by `SameSite: strict` on session cookies (`auth/session_middleware.ts`).
 
 - `parse_allowed_origins(env_value)` — comma-separated patterns → `Array<RegExp>`
 - `should_allow_origin(origin, patterns)` — case-insensitive match
@@ -344,14 +339,17 @@ protocol.
 
 ## JSON-RPC (`http/jsonrpc.ts`, `http/jsonrpc_errors.ts`, `http/jsonrpc_helpers.ts`)
 
-Three files split by concern — `http/jsonrpc.ts` is declarative (envelope
-schemas), `http/jsonrpc_errors.ts` is runtime (throwable + map),
-`http/jsonrpc_helpers.ts` is plumbing (builders, guards, converters).
+Three files split by concern: `http/jsonrpc.ts` declarative (envelope
+schemas), `http/jsonrpc_errors.ts` runtime (throwable + map),
+`http/jsonrpc_helpers.ts` plumbing (builders, guards, converters).
 
-Follows JSON-RPC 2.0 spec and is an **MCP superset** — params and result
-are always object-only (no positional arrays), `_meta` and `progressToken`
-are first-class. Schemas sourced from the MCP TypeScript SDK for
-compatibility.
+Follows JSON-RPC 2.0 spec with a partial **MCP superset** posture — params
+are object-only (no positional arrays) and `_meta` / `progressToken` are
+first-class; result is the full JSON-RPC §5 value space (object, array,
+string, number, boolean, null) since the per-action `spec.output` is the
+actual contract and the MCP object-only result constraint would reject any
+spec declaring `output: z.null()` / primitives on the wire. Schemas sourced
+from the MCP TypeScript SDK for compatibility on the params / `_meta` axis.
 
 `_meta` is intentionally **not** envelope-validated — that lives in
 per-action schemas so mismatches surface as `invalid_params` rather than
@@ -362,29 +360,27 @@ per-action schemas so mismatches surface as `invalid_params` rather than
 Five standard codes + ten general application codes (consumers add their
 own by casting `as JsonrpcErrorCode`):
 
-| Name                  | Code   | HTTP | Use                                                    |
-| --------------------- | ------ | ---- | ------------------------------------------------------ |
-| `parse_error`         | -32700 | 400  | JSON parse failure                                     |
-| `invalid_request`     | -32600 | 400  | Envelope malformed                                     |
-| `method_not_found`    | -32601 | 404  | Unknown RPC method                                     |
-| `invalid_params`      | -32602 | 400  | Params schema failure                                  |
-| `internal_error`      | -32603 | 500  | Unhandled exception                                    |
-| `unauthenticated`     | -32001 | 401  | HTTP 401 renamed ("unauthorized" is wrong for 401)     |
-| `forbidden`           | -32002 | 403  | Authorized but denied                                  |
-| `not_found`           | -32003 | 404  | Resource not found                                     |
-| `conflict`            | -32004 | 409  | Uniqueness/state conflict                              |
-| `validation_error`    | -32005 | 422  | **Application-level** validation (business logic)      |
-| `rate_limited`        | -32006 | 429  | Server-side policy                                     |
-| `service_unavailable` | -32007 | 503  | Upstream down / maintenance                            |
-| `timeout`             | -32008 | 504  | Handler exceeded time budget                           |
-| `queue_overflow`      | -32009 | 429  | **Client-side** backpressure (WS reconnect queue full) |
-| `request_cancelled`   | -32010 | 499  | Caller-initiated cancellation (nginx "client closed")  |
+- `parse_error` (-32700, HTTP 400) — JSON parse failure.
+- `invalid_request` (-32600, HTTP 400) — envelope malformed.
+- `method_not_found` (-32601, HTTP 404) — unknown RPC method.
+- `invalid_params` (-32602, HTTP 400) — params schema failure.
+- `internal_error` (-32603, HTTP 500) — unhandled exception.
+- `unauthenticated` (-32001, HTTP 401) — HTTP 401 renamed ("unauthorized" is wrong for 401).
+- `forbidden` (-32002, HTTP 403) — authorized but denied.
+- `not_found` (-32003, HTTP 404) — resource not found.
+- `conflict` (-32004, HTTP 409) — uniqueness/state conflict.
+- `validation_error` (-32005, HTTP 422) — **application-level** validation (business logic).
+- `rate_limited` (-32006, HTTP 429) — server-side policy.
+- `service_unavailable` (-32007, HTTP 503) — upstream down / maintenance.
+- `timeout` (-32008, HTTP 504) — handler exceeded time budget.
+- `queue_overflow` (-32009, HTTP 429) — **client-side** backpressure (WS reconnect queue full).
+- `request_cancelled` (-32010, HTTP 499) — caller-initiated cancellation (nginx "client closed").
 
 **`invalid_params` vs `validation_error`** — use `invalid_params` (standard
 code) for Zod parse failures; reserve `validation_error` (app code) for
 business rules.
 
-**`rate_limited` vs `queue_overflow`** — both 429, but the reverse map
+**`rate_limited` vs `queue_overflow`** — both 429; reverse map
 `HTTP_STATUS_TO_JSONRPC_ERROR_CODE[429] = rate_limited` because rate
 limiting is the default interpretation when translating generic HTTP back
 to a JSON-RPC code.
@@ -429,8 +425,7 @@ Both shapes used to coexist on a single `Array<PendingEffect>` discriminated
 union. The shapes encode different contracts — eager pushers say "wait for
 this work that's already started"; thunk pushers say "run this after the
 handler returns" — and burying both behind one field made
-`c.var.pending_effects.push(x)` ambiguous at the call site. Splitting
-turns the field name into the contract.
+`c.var.pending_effects.push(x)` ambiguous at the call site. Splitting turns the field name into the contract.
 
 ### Why `emit_after_commit` defers
 

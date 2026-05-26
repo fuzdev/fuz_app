@@ -38,6 +38,46 @@ describe('resolve_env_vars', () => {
 		const runtime = {env_get: (name: string) => (name === 'ENV' ? 'prod' : undefined)};
 		assert.strictEqual(resolve_env_vars(runtime, 'path/$$ENV$$/file'), 'path/prod/file');
 	});
+
+	test('escape: \\$$VAR$$ emits literal $$VAR$$ without env lookup', () => {
+		let lookups = 0;
+		const runtime = {
+			env_get: (_name: string) => {
+				lookups++;
+				return 'should not appear';
+			},
+		};
+		assert.strictEqual(resolve_env_vars(runtime, '\\$$HOST$$'), '$$HOST$$');
+		assert.strictEqual(lookups, 0);
+	});
+
+	test('escape: mixed escaped and resolved refs in one string', () => {
+		const runtime = {env_get: (name: string) => (name === 'ENV' ? 'prod' : undefined)};
+		assert.strictEqual(
+			resolve_env_vars(runtime, 'docs say \\$$ENV$$, runtime is $$ENV$$'),
+			'docs say $$ENV$$, runtime is prod',
+		);
+	});
+
+	test('optional: $$?VAR$$ resolves to empty when unset', () => {
+		const runtime = {env_get: (_name: string) => undefined};
+		assert.strictEqual(resolve_env_vars(runtime, '$$?SMTP_PASSWORD$$'), '');
+	});
+
+	test('optional: $$?VAR$$ resolves to empty when empty string', () => {
+		const runtime = {env_get: (_name: string) => ''};
+		assert.strictEqual(resolve_env_vars(runtime, '$$?SMTP_PASSWORD$$'), '');
+	});
+
+	test('optional: $$?VAR$$ resolves to value when set', () => {
+		const runtime = {env_get: (_name: string) => 'hunter2'};
+		assert.strictEqual(resolve_env_vars(runtime, '$$?SMTP_PASSWORD$$'), 'hunter2');
+	});
+
+	test('escape + optional: \\$$?VAR$$ emits literal $$?VAR$$', () => {
+		const runtime = {env_get: () => 'never used'};
+		assert.strictEqual(resolve_env_vars(runtime, '\\$$?FOO$$'), '$$?FOO$$');
+	});
 });
 
 describe('has_env_vars', () => {
@@ -53,6 +93,18 @@ describe('has_env_vars', () => {
 		assert.strictEqual(has_env_vars('$$'), false);
 		assert.strictEqual(has_env_vars('$FOO$'), false);
 	});
+
+	test('returns true for $$?VAR$$ (optional)', () => {
+		assert.strictEqual(has_env_vars('$$?FOO$$'), true);
+	});
+
+	test('returns false for fully-escaped string', () => {
+		assert.strictEqual(has_env_vars('\\$$FOO$$'), false);
+	});
+
+	test('returns true when escaped and unescaped refs coexist', () => {
+		assert.strictEqual(has_env_vars('docs \\$$FOO$$ but $$BAR$$ runs'), true);
+	});
 });
 
 describe('get_env_var_names', () => {
@@ -66,6 +118,14 @@ describe('get_env_var_names', () => {
 
 	test('returns empty for no vars', () => {
 		assert.deepStrictEqual(get_env_var_names('no vars'), []);
+	});
+
+	test('skips escaped refs', () => {
+		assert.deepStrictEqual(get_env_var_names('\\$$FOO$$ and $$BAR$$'), ['BAR']);
+	});
+
+	test('extracts names from optional refs without the ? modifier', () => {
+		assert.deepStrictEqual(get_env_var_names('$$?FOO$$ and $$BAR$$'), ['FOO', 'BAR']);
 	});
 });
 
@@ -117,8 +177,10 @@ describe('scan_env_vars', () => {
 		assert.strictEqual(refs.length, 2);
 		assert.strictEqual(refs[0]!.name, 'HOST');
 		assert.strictEqual(refs[0]!.path, 'host');
+		assert.strictEqual(refs[0]!.optional, false);
 		assert.strictEqual(refs[1]!.name, 'PORT');
 		assert.strictEqual(refs[1]!.path, 'nested.port');
+		assert.strictEqual(refs[1]!.optional, false);
 	});
 
 	test('finds vars in arrays', () => {
@@ -132,18 +194,40 @@ describe('scan_env_vars', () => {
 		const refs = scan_env_vars({num: 42, bool: true, nil: null});
 		assert.strictEqual(refs.length, 0);
 	});
+
+	test('skips escaped refs (\\$$VAR$$)', () => {
+		// Mention of $$VAR$$ inside a documentation comment shouldn't trip
+		// the scanner — escape avoids the false positive.
+		const refs = scan_env_vars({
+			template: '# docs reference \\$$SMTP_PASSWORD$$ for setup\nVALUE=$$REAL$$',
+		});
+		assert.strictEqual(refs.length, 1);
+		assert.strictEqual(refs[0]!.name, 'REAL');
+	});
+
+	test('marks $$?VAR$$ as optional', () => {
+		const refs = scan_env_vars({
+			required: '$$FOO$$',
+			optional: '$$?BAR$$',
+		});
+		assert.strictEqual(refs.length, 2);
+		const foo = refs.find((r) => r.name === 'FOO')!;
+		const bar = refs.find((r) => r.name === 'BAR')!;
+		assert.strictEqual(foo.optional, false);
+		assert.strictEqual(bar.optional, true);
+	});
 });
 
 describe('validate_env_vars', () => {
 	test('returns ok when all vars exist', () => {
 		const runtime = {env_get: (name: string) => (name === 'FOO' ? 'bar' : undefined)};
-		const result = validate_env_vars(runtime, [{name: 'FOO', path: 'test'}]);
+		const result = validate_env_vars(runtime, [{name: 'FOO', path: 'test', optional: false}]);
 		assert.strictEqual(result.ok, true);
 	});
 
 	test('returns missing refs', () => {
 		const runtime = {env_get: (_name: string) => undefined};
-		const result = validate_env_vars(runtime, [{name: 'MISSING', path: 'test'}]);
+		const result = validate_env_vars(runtime, [{name: 'MISSING', path: 'test', optional: false}]);
 		assert.strictEqual(result.ok, false);
 		if (!result.ok) {
 			assert.strictEqual(result.missing.length, 1);
@@ -153,11 +237,40 @@ describe('validate_env_vars', () => {
 
 	test('treats empty string as missing', () => {
 		const runtime = {env_get: (_name: string) => ''};
-		const result = validate_env_vars(runtime, [{name: 'EMPTY', path: 'test'}]);
+		const result = validate_env_vars(runtime, [{name: 'EMPTY', path: 'test', optional: false}]);
 		assert.strictEqual(result.ok, false);
 		if (!result.ok) {
 			assert.strictEqual(result.missing.length, 1);
 			assert.strictEqual(result.missing[0]!.name, 'EMPTY');
+		}
+	});
+
+	test('skips optional refs even when unset', () => {
+		const runtime = {env_get: (_name: string) => undefined};
+		const result = validate_env_vars(runtime, [
+			{name: 'SMTP_PASSWORD', path: 'env', optional: true},
+		]);
+		assert.strictEqual(result.ok, true);
+	});
+
+	test('skips optional refs even when empty', () => {
+		const runtime = {env_get: (_name: string) => ''};
+		const result = validate_env_vars(runtime, [
+			{name: 'SMTP_PASSWORD', path: 'env', optional: true},
+		]);
+		assert.strictEqual(result.ok, true);
+	});
+
+	test('still flags required missing alongside optional missing', () => {
+		const runtime = {env_get: (_name: string) => undefined};
+		const result = validate_env_vars(runtime, [
+			{name: 'REQUIRED', path: 'a', optional: false},
+			{name: 'OPTIONAL', path: 'b', optional: true},
+		]);
+		assert.strictEqual(result.ok, false);
+		if (!result.ok) {
+			assert.strictEqual(result.missing.length, 1);
+			assert.strictEqual(result.missing[0]!.name, 'REQUIRED');
 		}
 	});
 });
@@ -165,23 +278,23 @@ describe('validate_env_vars', () => {
 describe('format_missing_env_vars', () => {
 	test('formats grouped missing vars', () => {
 		const result = format_missing_env_vars([
-			{name: 'FOO', path: 'a'},
-			{name: 'FOO', path: 'b'},
-			{name: 'BAR', path: 'c'},
+			{name: 'FOO', path: 'a', optional: false},
+			{name: 'FOO', path: 'b', optional: false},
+			{name: 'BAR', path: 'c', optional: false},
 		]);
 		assert.include(result, 'FOO - used in a, b');
 		assert.include(result, 'BAR - used in c');
 	});
 
 	test('includes env_file info when provided', () => {
-		const result = format_missing_env_vars([{name: 'X', path: 'p'}], {
+		const result = format_missing_env_vars([{name: 'X', path: 'p', optional: false}], {
 			env_file: '.env.production',
 		});
 		assert.include(result, 'Loaded from: .env.production');
 	});
 
 	test('includes setup_hint when provided', () => {
-		const result = format_missing_env_vars([{name: 'X', path: 'p'}], {
+		const result = format_missing_env_vars([{name: 'X', path: 'p', optional: false}], {
 			env_file: '.env.production',
 			setup_hint: 'Run `deno task prod:setup` to initialize.',
 		});
@@ -189,12 +302,12 @@ describe('format_missing_env_vars', () => {
 	});
 
 	test('shows --env_file hint when no env_file given', () => {
-		const result = format_missing_env_vars([{name: 'X', path: 'p'}]);
+		const result = format_missing_env_vars([{name: 'X', path: 'p', optional: false}]);
 		assert.include(result, '--env_file');
 	});
 
 	test('setup_hint without env_file falls back to --env_file hint', () => {
-		const result = format_missing_env_vars([{name: 'X', path: 'p'}], {
+		const result = format_missing_env_vars([{name: 'X', path: 'p', optional: false}], {
 			setup_hint: 'Run setup',
 		});
 		// setup_hint is only shown when env_file is provided

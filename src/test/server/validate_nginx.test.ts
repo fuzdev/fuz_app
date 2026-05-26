@@ -124,7 +124,7 @@ const CHILD_ADD_HEADER_CONFIG = `server {
 
 // --- Real consumer configs (inlined from zap.ts files) ---
 
-/** Visiones del Caribe nginx config (from ~/dev/visionesdelcaribe.org/zap.ts). */
+/** Visiones del Caribe nginx config (from its zap.ts). */
 const VISIONES_NGINX_CONFIG = `server {
     listen 443 ssl;
     listen [::]:443 ssl;
@@ -207,7 +207,7 @@ server {
 }
 `;
 
-/** zap (zap.fuz.dev) nginx config (from ~/dev/private_zap/zap.ts). */
+/** zap (zap.fuz.dev) nginx config fixture. */
 const ZAP_NGINX_CONFIG = `server {
     listen 443 ssl;
     listen [::]:443 ssl;

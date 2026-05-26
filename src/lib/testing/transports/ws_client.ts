@@ -140,6 +140,18 @@ export interface WsClient {
 	 * state should await.
 	 */
 	close: (code?: number, reason?: string) => Promise<void>;
+	/**
+	 * Wait for the server to close the connection. Resolves `true` if the
+	 * socket closed within `timeout_ms`, `false` on timeout. The signal for
+	 * server-initiated close — used by close-on-revoke tests that fire a
+	 * revocation over a side channel and assert the live socket drops.
+	 *
+	 * Resolves `true` immediately when the socket is already closed.
+	 * Distinct from `close()` (client-initiated): this awaits a close the
+	 * test did not request. Mirrors `wait_for_close` on the SSE frame reader
+	 * in `../sse_round_trip.ts`.
+	 */
+	wait_for_close: (timeout_ms?: number) => Promise<boolean>;
 	/** Every message the server has sent, in arrival order. */
 	readonly messages: ReadonlyArray<unknown>;
 	/**

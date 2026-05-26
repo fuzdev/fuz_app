@@ -1221,7 +1221,7 @@ export interface SpecSource {
  * @example
  * ```ts
  * const sources = [
- *   {ns: 'tx_specs', module: './action_specs.js', specs: all_tx_action_specs},
+ *   {ns: 'tx_specs', module: './action_specs.js', specs: all_zap_action_specs},
  *   {ns: 'admin_specs', module: '@fuzdev/fuz_app/auth/admin_action_specs.js', specs: all_admin_action_specs},
  * ];
  *

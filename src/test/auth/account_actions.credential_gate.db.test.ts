@@ -34,7 +34,7 @@ import {
 } from '$lib/auth/account_action_specs.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {auth_migration_ns} from '$lib/auth/migrations.js';
-import {create_test_app} from '$lib/testing/app_server.js';
+import {create_test_app, DEFAULT_TEST_PASSWORD} from '$lib/testing/app_server.js';
 import {
 	auth_integration_truncate_tables,
 	create_describe_db,
@@ -157,7 +157,7 @@ describe_db('credential_channel_gate', (get_db) => {
 					host: 'localhost',
 				},
 				body: JSON.stringify({
-					current_password: 'test-password-123',
+					current_password: DEFAULT_TEST_PASSWORD,
 					new_password: 'never-applied-456',
 				}),
 			});
@@ -241,7 +241,7 @@ describe_db('credential_channel_gate', (get_db) => {
 					origin: 'http://localhost:5173',
 				},
 				body: JSON.stringify({
-					current_password: 'test-password-123',
+					current_password: DEFAULT_TEST_PASSWORD,
 					new_password: 'never-applied-456',
 				}),
 			});
@@ -300,7 +300,7 @@ describe_db('credential_channel_gate', (get_db) => {
 						host: 'localhost',
 					},
 					body: JSON.stringify({
-						current_password: 'test-password-123',
+						current_password: DEFAULT_TEST_PASSWORD,
 						new_password: 'never-applied-456',
 					}),
 				}),

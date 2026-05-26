@@ -1,7 +1,15 @@
 /**
  * JSON-RPC 2.0 envelope schemas for RPC dispatch and SAES transport.
  *
- * Following MCP, params and result are object-only (no positional arrays).
+ * Params are object-only following MCP (no positional arrays); per-action
+ * spec.input narrows further. Result is the full JSON-RPC valid value
+ * space per spec §5 ("determined by the method invoked"): object, array,
+ * string, number, boolean, or null — the per-action spec.output is the
+ * actual contract. The envelope-level loose-object-only constraint
+ * inherited from MCP would reject any action with `output: z.null()` /
+ * `z.string()` / etc. on the wire, so we relax it here while keeping
+ * MCP-superset shape on params + _meta.
+ *
  * MCP `_meta` types (`JsonrpcMcpMeta`, `JsonrpcRequestParamsMeta`) are
  * exported as building blocks for per-action schemas but are NOT validated
  * at the envelope level — `_meta` content validation belongs in per-action
@@ -52,8 +60,16 @@ export type JsonrpcRequestParams = z.infer<typeof JsonrpcRequestParams>;
 export const JsonrpcNotificationParams = z.looseObject({});
 export type JsonrpcNotificationParams = z.infer<typeof JsonrpcNotificationParams>;
 
-/** Result — loose object. Per-action schemas validate `_meta` content. */
-export const JsonrpcResult = z.looseObject({});
+/**
+ * Result — any JSON value per JSON-RPC 2.0 §5. Per-action `spec.output`
+ * is the actual contract; the envelope only asserts presence + JSON-ness.
+ *
+ * `z.json()` is required (not implicitly optional like `z.unknown()` /
+ * `z.any()`, which would let an error envelope `{jsonrpc, id, error}`
+ * parse successfully against the success envelope and break union
+ * discrimination).
+ */
+export const JsonrpcResult = z.json();
 export type JsonrpcResult = z.infer<typeof JsonrpcResult>;
 
 /** A request that expects a response. */

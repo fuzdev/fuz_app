@@ -107,3 +107,55 @@ the test helpers' route list.
   `query_audit_log`'s schema validation is fail-open in production, so
   regressions that emit undeclared metadata fields or unknown event
   types are silent without this guard.
+
+## Cross-backend self-tests (`src/test/cross_backend/`)
+
+`fuz_app` verifies its own spine over real HTTP (not just in-process) against
+spawned backends. `*.cross.test.ts` bodies are runtime-agnostic — they
+`inject('backend_handle')` and drive `default_spine_surface` over the wire —
+so the same files run under every `cross_backend_*` project; each project's
+`globalSetup` spawns a different backend. Three cross files today:
+`auth.cross.test.ts` (the `describe_standard_cross_process_tests` bundle —
+HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
+`describe_cross_process_ws_tests` suite — live WebSocket, including
+close-on-revoke), and `sse.cross.test.ts` (the real-streaming-`fetch`
+`describe_cross_process_sse_tests` suite — live audit-log SSE: connect,
+data frame, close-on-revoke). Only the TS spines advertise `capabilities.sse`
+(they wire `audit_log_sse`), so the SSE cases `.skip` on the Rust
+`spine_stub`. The backends:
+
+- `cross_backend_ts_node` / `cross_backend_ts_deno` / `cross_backend_ts_bun` —
+  `fuz_app`'s **own** TS spine binary (`testing_spine_server_{node,deno,bun}.ts`)
+  over real HTTP, in-memory PGlite, no external infra (the `ts_deno` / `ts_bun`
+  ones need `deno` / `bun` on PATH). This is the in-repo cross-process coverage
+  of the TS impl's real HTTP path across all three JS runtimes — the in-process
+  suites (default `gro test`) never cross a process boundary.
+- `cross_backend_spine_stub` — the Rust `testing_spine_stub` (needs
+  `FUZ_TESTING_SPINE_STUB_BIN` + a created Postgres DB).
+
+**Opt-in.** The `cross_backend_*` projects are gated in `vite.config.ts`
+behind `FUZ_TEST_CROSS_BACKEND=1` and excluded from a bare `gro test` (they
+spawn external backends). Run one with:
+
+```bash
+FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_node
+FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_deno
+FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_bun
+# the Rust stub additionally needs a prebuilt binary + a created Postgres DB:
+FUZ_TESTING_SPINE_STUB_BIN=/path/to/binary FUZ_TEST_CROSS_BACKEND=1 \
+  npx vitest run --project cross_backend_spine_stub
+```
+
+The TS binary + the reusable test-server core/adapters it's built on live in
+`src/lib/testing/cross_backend/` — see `src/lib/testing/CLAUDE.md`
+§"Building a TS test-server binary".
+
+## Cross-impl benchmark
+
+`npm run benchmark:cross-impl` (`src/benchmarks/cross_impl.bench.ts`) spawns
+the TS spine binary on Node + Deno + Bun (+ the Rust `spine_stub` when
+`FUZ_TESTING_SPINE_STUB_BIN` is set), runs the shared `default_bench_scenarios`
+over real HTTP, and prints per-scenario tables + a Welch verdict. The three TS
+runtimes are apples-to-apples with each other (same PGlite driver); TS-vs-Rust
+carries the PGlite-vs-Postgres DB-layer caveat. The `*.latest.json` artifact is
+gitignored.

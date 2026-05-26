@@ -142,6 +142,22 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 	const is_closed = (): boolean =>
 		socket.readyState === WebSocket.CLOSING || socket.readyState === WebSocket.CLOSED;
 
+	const wait_for_close = (timeout_ms = default_timeout): Promise<boolean> => {
+		if (socket.readyState === WebSocket.CLOSED) return Promise.resolve(true);
+		return new Promise<boolean>((resolve) => {
+			const on_close = (): void => {
+				clearTimeout(timer);
+				resolve(true);
+			};
+			const timer = setTimeout(() => {
+				const i = close_resolvers.indexOf(on_close);
+				if (i >= 0) close_resolvers.splice(i, 1);
+				resolve(false);
+			}, timeout_ms);
+			close_resolvers.push(on_close);
+		});
+	};
+
 	const wait_for_impl = <T>(
 		predicate: (msg: unknown) => boolean,
 		timeout_ms = default_timeout,
@@ -202,5 +218,6 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 			if (close_error) throw close_error;
 		},
 		wait_for: wait_for_impl,
+		wait_for_close,
 	};
 };

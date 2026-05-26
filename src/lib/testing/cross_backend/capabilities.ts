@@ -48,8 +48,9 @@ export interface BackendCapabilities {
 	readonly ws: boolean;
 	/**
 	 * SSE transport is reachable end-to-end. Gates the cross-process SSE
-	 * close-detection cases; in-process SSE uses the
-	 * `on_audit_event` hook and ignores this flag.
+	 * suite (`describe_cross_process_sse_tests` — connect, audit data frame,
+	 * close-on-revoke); in-process SSE uses the `on_audit_event` hook and
+	 * ignores this flag.
 	 */
 	readonly sse: boolean;
 	/**

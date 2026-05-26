@@ -31,10 +31,9 @@ import {describe, test, assert, afterAll} from 'vitest';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {SessionOptions} from '../auth/session_cookie.js';
-import {ROLE_KEEPER, ROLE_ADMIN, type RoleSchemaResult} from '../auth/role_schema.js';
+import {ROLE_ADMIN, type RoleSchemaResult} from '../auth/role_schema.js';
 import {GRANT_PATH_ADMIN} from '../auth/grant_path_schema.js';
-import {type TestAccount, type TestApp} from './app_server.js';
-import {create_test_role_grant_direct} from './db_entities.js';
+import {DEFAULT_TEST_PASSWORD, type TestAccount, type TestApp} from './app_server.js';
 import {role_grant_offer_and_accept} from './role_grant_helpers.js';
 import {find_auth_route} from './integration_helpers.js';
 import {
@@ -55,6 +54,7 @@ import {
 } from '../auth/role_grant_offer_action_specs.js';
 import {
 	admin_account_list_action_spec,
+	ADMIN_ACCOUNT_LIST_LIMIT_MAX,
 	admin_session_list_action_spec,
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
@@ -211,11 +211,19 @@ export const describe_standard_admin_integration_tests = (
 				const fixture = await options.setup_test();
 				const user_two = await fixture.create_account({username: 'user_two'});
 
+				// Request the max page size — cross-process the backend persists
+				// accounts across tests (`globalSetup` bootstraps once), so a
+				// long-running suite accumulates well past the default 50 and
+				// `user_two` (newest, `ORDER BY created_at ASC`) falls off the
+				// first page. The MAX (200) carries this suite as written; once
+				// the suite consistently grows past it, swap to an
+				// account-scoped admin RPC (search-by-id, ORDER BY DESC, etc.)
+				// rather than chase the limit upward.
 				const res = await rpc_call_for_spec({
 					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: admin_account_list_action_spec,
-					params: {},
+					params: {limit: ADMIN_ACCOUNT_LIST_LIMIT_MAX},
 					headers: fixture.create_session_headers(),
 				});
 
@@ -231,22 +239,52 @@ export const describe_standard_admin_integration_tests = (
 
 			test('non-admin cannot list accounts', async () => {
 				const fixture = await options.setup_test();
-				// Default keeper has both ROLE_KEEPER + ROLE_ADMIN; mint a fresh
-				// account with only ROLE_KEEPER (no admin) to probe the 403 path.
-				const keeper_only = await fixture.create_account({
-					username: 'keeper_only',
-					roles: [ROLE_KEEPER],
-				});
+				// Mint a fresh no-roles account — fresh signups default to no
+				// roles, so the per-test account is non-admin by construction.
+				const non_admin = await fixture.create_account({username: 'non_admin_user'});
 
 				const res = await rpc_call_for_spec({
 					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: admin_account_list_action_spec,
 					params: {},
-					headers: keeper_only.create_session_headers(),
+					headers: non_admin.create_session_headers(),
 				});
 
 				assert.ok(!res.ok, 'Expected admin_account_list to fail for non-admin');
+				assert.strictEqual(res.status, 403);
+			});
+
+			// Probe the keeper-vs-admin separation specifically: a keeper-only
+			// account (no admin role) must still 403 on admin RPCs. ROLE_KEEPER
+			// is bootstrap-only-grantable, so the only way to seed this account
+			// is via `extra_accounts` at the test-binary bootstrap-equivalent
+			// step. Consumers that want this probe wire
+			// `extra_accounts: [{username: 'non_admin_keeper', roles: [ROLE_KEEPER]}]`
+			// into their `default_*_suite_options(...)` call; otherwise the
+			// test runtime-skips and the looser no-roles probe above carries
+			// the suite's "non-admin gets 403" assertion alone.
+			test('keeper-only account cannot list accounts (keeper ≠ admin)', async (ctx) => {
+				const fixture = await options.setup_test();
+				const non_admin_keeper = fixture.extra_accounts.non_admin_keeper;
+				if (!non_admin_keeper) {
+					ctx.skip(
+						`no \`extra_accounts['non_admin_keeper']\` declared on the fixture — wire ` +
+							`\`extra_accounts: [{username: 'non_admin_keeper', roles: [ROLE_KEEPER]}]\` ` +
+							`in the consumer's suite options to enable the keeper-vs-admin probe.`,
+					);
+					return;
+				}
+
+				const res = await rpc_call_for_spec({
+					app: {request: fixture.transport},
+					path: rpc_path,
+					spec: admin_account_list_action_spec,
+					params: {},
+					headers: non_admin_keeper.create_session_headers(),
+				});
+
+				assert.ok(!res.ok, 'Expected admin_account_list to fail for keeper-only account');
 				assert.strictEqual(res.status, 403);
 			});
 		});
@@ -357,9 +395,14 @@ export const describe_standard_admin_integration_tests = (
 				const fixture = await options.setup_test();
 				const user_two = await fixture.create_account({username: 'user_two'});
 
-				// Verify user_two's bearer token works via `account_verify` RPC
+				// Verify user_two's bearer token works via `account_verify` RPC.
+				// Fresh transport — admin's session cookie in `fixture.transport`'s
+				// jar would otherwise give a false 200 here, masking whether the
+				// bearer credential is the one being validated. `origin: null` so
+				// the transport doesn't auto-add a default Origin (which would
+				// discard the bearer as browser-context cross-process).
 				const before = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: {request: fixture.fresh_transport({origin: null})},
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -383,9 +426,10 @@ export const describe_standard_admin_integration_tests = (
 				assert.strictEqual(res.result.ok, true);
 				assert.ok(res.result.count >= 1, 'Expected at least 1 revoked token');
 
-				// Verify user_two's bearer token no longer works
+				// Verify user_two's bearer token no longer works — fresh transport
+				// same reason as the `before` call above.
 				const after = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: {request: fixture.fresh_transport({origin: null})},
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -478,13 +522,20 @@ export const describe_standard_admin_integration_tests = (
 		describe('admin audit trail', () => {
 			test('role_grant revoke creates audit event', async () => {
 				const fixture = await options.setup_test();
-				assert(fixture.in_process, 'direct role_grant seed requires in-process db');
 
 				const user_two = await fixture.create_account({username: 'user_two'});
-				const role_grant = await create_test_role_grant_direct(fixture.backend_internals.deps.db, {
-					actor_id: user_two.actor.id,
+				// Drive the production consent flow so the role_grant exists
+				// via the same code path real users go through. The
+				// audit_log_list filter below pulls only `role_grant_revoke`
+				// events so the extra `role_grant_offer_create` /
+				// `role_grant_offer_accepted` audits emitted upstream don't
+				// affect the assertion.
+				const {role_grant_id} = await role_grant_offer_and_accept({
+					app: {request: fixture.transport},
+					rpc_path,
+					grantor: fixture,
+					recipient: user_two,
 					role: grantable_role,
-					granted_by: fixture.actor.id,
 				});
 
 				// Revoke via RPC
@@ -492,7 +543,7 @@ export const describe_standard_admin_integration_tests = (
 					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: role_grant_revoke_action_spec,
-					params: {actor_id: user_two.actor.id, role_grant_id: role_grant.id},
+					params: {actor_id: user_two.actor.id, role_grant_id},
 					headers: fixture.create_session_headers(),
 				});
 				assert.ok(
@@ -667,15 +718,25 @@ export const describe_standard_admin_integration_tests = (
 
 				const user_two = await fixture.create_account({username: 'audit_user'});
 
-				// 1. login (user_two logs in)
-				const login_res = await fixture.transport(login_route.path, {
+				// 1. login (user_two logs in) — fresh transport because the per-test
+				// session cookie in `fixture.transport`'s jar would otherwise be sent
+				// alongside this unauthenticated login attempt, and the route can
+				// reject the "already-authed" cookie-collision case with 401.
+				// Read the actual username off the returned account — the fresh-DB
+				// contract makes the supplied literal `'audit_user'` survive
+				// unchanged, but reading from `.account.username` is structurally
+				// robust against any future username-mangling at the mint layer.
+				const login_res = await fixture.fresh_transport()(login_route.path, {
 					method: 'POST',
 					headers: {
 						host: 'localhost',
 						origin: 'http://localhost:5173',
 						'content-type': 'application/json',
 					},
-					body: JSON.stringify({username: 'audit_user', password: 'test-password-123'}),
+					body: JSON.stringify({
+						username: user_two.account.username,
+						password: DEFAULT_TEST_PASSWORD,
+					}),
 				});
 				assert.strictEqual(login_res.status, 200);
 
@@ -684,9 +745,11 @@ export const describe_standard_admin_integration_tests = (
 				const cookie_match = new RegExp(`${cookie_name}=([^;]+)`).exec(set_cookie ?? '');
 				const user_two_cookie = cookie_match?.[1];
 
-				// 2. logout (user_two logs out)
+				// 2. logout (user_two logs out) — fresh transport with the explicit
+				// user_two cookie, so the per-test session cookie can't interfere with
+				// the logout target.
 				if (user_two_cookie) {
-					await fixture.transport(logout_route.path, {
+					await fixture.fresh_transport()(logout_route.path, {
 						method: 'POST',
 						headers: {
 							host: 'localhost',
@@ -739,7 +802,7 @@ export const describe_standard_admin_integration_tests = (
 						'content-type': 'application/json',
 					}),
 					body: JSON.stringify({
-						current_password: 'test-password-123',
+						current_password: DEFAULT_TEST_PASSWORD,
 						new_password: 'new-audit-password-789',
 					}),
 				});
@@ -819,13 +882,16 @@ export const describe_standard_admin_integration_tests = (
 					roles: ['admin'],
 				});
 
-				// Seed an active role_grant directly — the revoke IDOR check is the
-				// subject of this test, not the grant→accept cycle.
-				assert(fixture.in_process, 'direct role_grant seed requires in-process db');
-				const role_grant = await create_test_role_grant_direct(fixture.backend_internals.deps.db, {
-					actor_id: admin_b.actor.id,
+				// Seed an active role_grant for admin B via the production
+				// consent flow. The revoke IDOR check is the subject of this
+				// test; the grant path is precondition setup, exercised
+				// via the same RPCs production drives.
+				const {role_grant_id} = await role_grant_offer_and_accept({
+					app: {request: fixture.transport},
+					rpc_path,
+					grantor: fixture,
+					recipient: admin_b,
 					role: grantable_role,
-					granted_by: fixture.actor.id,
 				});
 
 				// Admin B revokes their own role_grant via RPC — should succeed
@@ -833,7 +899,7 @@ export const describe_standard_admin_integration_tests = (
 					app: {request: fixture.transport},
 					path: rpc_path,
 					spec: role_grant_revoke_action_spec,
-					params: {actor_id: admin_b.actor.id, role_grant_id: role_grant.id},
+					params: {actor_id: admin_b.actor.id, role_grant_id},
 					headers: create_headers(admin_b.session_cookie),
 				});
 				assert.ok(

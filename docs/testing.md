@@ -11,38 +11,57 @@ see ../src/test/CLAUDE.md. For error schema details, see ./architecture.md.
 
 fuz_app provides composable test suites that cover auth security:
 
-| Suite                                       | What it tests                                                                                                          |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `describe_standard_attack_surface_tests`    | Snapshot, structure (invariants + security policy), adversarial auth, adversarial input, adversarial 404               |
+| Suite                                       | What it tests                                                                                                                                                                                                                 |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `describe_standard_attack_surface_tests`    | Snapshot, structure (invariants + security policy), adversarial auth, adversarial input, adversarial 404                                                                                                                      |
 | `describe_standard_integration_tests`       | Login/logout, cookies, sessions, revocation, password change + token revocation, origin, bearer (incl. browser context on mutations), tokens, cross-account, expired credentials, signup invite edge cases, schema validation |
-| `describe_standard_admin_integration_tests` | Account listing, role_grant grants, session/token management, audit log, admin trail, admin-to-admin isolation, schema validation |
-| `describe_rate_limiting_tests`              | IP rate limiting on login, per-account rate limiting, bearer auth IP rate limiting                                     |
-| `describe_round_trip_validation`            | Schema-driven positive-path validation — valid requests, output schema conformance                                     |
-| `describe_standard_adversarial_headers`     | Header injection attacks — Host spoofing, XFF manipulation, Origin bypass, Bearer validation                           |
-| `describe_data_exposure_tests`              | Schema-level + runtime field blocklist checks — sensitive fields never leak through responses                          |
-| `describe_rpc_attack_surface_tests`        | Per-method auth enforcement, adversarial envelopes, adversarial params for RPC endpoints                              |
-| `describe_rpc_round_trip_tests`            | Schema-driven round-trip validation for RPC methods (POST + GET), output schema validation                             |
+| `describe_standard_admin_integration_tests` | Account listing, role_grant grants, session/token management, audit log, admin trail, admin-to-admin isolation, schema validation                                                                                             |
+| `describe_rate_limiting_tests`              | IP rate limiting on login, per-account rate limiting, bearer auth IP rate limiting                                                                                                                                            |
+| `describe_round_trip_validation`            | Schema-driven positive-path validation — valid requests, output schema conformance                                                                                                                                            |
+| `describe_standard_adversarial_headers`     | Header injection attacks — Host spoofing, XFF manipulation, Origin bypass, Bearer validation                                                                                                                                  |
+| `describe_data_exposure_tests`              | Schema-level + runtime field blocklist checks — sensitive fields never leak through responses                                                                                                                                 |
+| `describe_rpc_attack_surface_tests`         | Per-method auth enforcement, adversarial envelopes, adversarial params for RPC endpoints                                                                                                                                      |
+| `describe_rpc_round_trip_tests`             | Schema-driven round-trip validation for RPC methods (POST + GET), output schema validation                                                                                                                                    |
 
 Attack surface tests are fast (stub-based, no DB). Integration tests spin up
 a full Hono app with PGlite and make real HTTP requests. Consumers (zap,
 visiones, mageguild) wire the full set; the RPC suites skip silently when no
 RPC endpoints are declared.
 
-**Cross-process integration** extends this layer to spawn a non-TS
-backend (Rust zzz_server, fuz_webui) and run the same standard suites
-against it over real HTTP. The in-process Hono harness is one transport;
-consumers supply a `BackendConfig` to test against any compatible
-binary. In-process stays — it's the fast feedback path and the only
-viable path for a few in-process-only assertions (WS test harness,
-keyring-signed expired-cookie tests, etc.). Cross-process plumbing
-ships in `testing/transports/{fetch_transport,bootstrap,ws_client,ws_transport}.js`
-and `testing/cross_backend/{backend_config,spawn_backend,testing_reset_actions,setup}.js`;
-`default_cross_process_setup` drives per-test signup + login +
-`account_token_create` over the production RPC surface against a
-spawned backend; pass `{reset: true}` for the opt-in `_testing_reset`
-escape hatch on tests that need fresh DB state between cases.
-Consumers wiring cross-process WS install the optional `ws` peerDep
-(`npm install --save-dev ws`).
+**Cross-process integration** extends this layer to spawn a backend and
+run the same standard suites against it over real HTTP — a Rust spine
+(`zzz_server`, `fuz_forge_server`, or the non-domain `testing_spine_stub`)
+or a **TS** spine binary built on the test-server core (`start_testing_server`
+
+- `create_{node,deno,bun}_testing_adapter` in `testing/cross_backend/`, which
+  own the serve / daemon-info / WS-attach / drain boilerplate so a consumer's
+  binary is just a `build_app` seam — see `src/lib/testing/CLAUDE.md`
+  §"Building a TS test-server binary"). The in-process Hono harness is one
+  transport; consumers supply a `BackendConfig` to test against any compatible
+  binary. In-process stays — it's the fast feedback path and the only
+  viable path for a few in-process-only assertions (WS test harness,
+  keyring-signed expired-cookie tests, etc.). Cross-process plumbing
+  ships in `testing/transports/{fetch_transport,bootstrap,ws_client,ws_transport,sse_transport}.js`
+  and `testing/cross_backend/{backend_config,spawn_backend,testing_reset_actions,setup}.js`;
+  `default_cross_process_setup` fires `_testing_reset` over the keeper's
+  daemon-token channel on every per-test invocation — full auth-table
+  wipe + inline re-seed of a fresh keeper (and any declared
+  `extra_accounts`) — so cross-process tests run against a freshly
+  bootstrapped keeper per test, matching in-process semantics. Pass
+  `{extra_keeper_roles: [ROLE_ADMIN, ...]}` to bootstrap the fresh
+  keeper with extra roles in addition to `[ROLE_KEEPER, ROLE_ADMIN]`
+  (seeded in the same transaction; no per-role RPC cost). Pass
+  `{extra_accounts: [{username, roles}]}` to seed bootstrap-time
+  secondaries — the only path for roles whose `RoleSpec.grant_paths`
+  is bootstrap-only (e.g. `ROLE_KEEPER`, used for the keeper-vs-admin
+  probe). The fixture's `create_account({roles: [...]})` mints
+  _post-bootstrap_ secondaries via the production
+  `role_grant_offer_create` (keeper) + `role_grant_offer_accept`
+  (per-test) consent flow, so admin-grantable roles ride the full
+  audit + WS fan-out path; roles whose `RoleSpec.grant_paths` don't
+  include `'admin'` reject loudly at offer-create time (use
+  `extra_accounts` instead). Consumers wiring cross-process WS install
+  the optional `ws` peerDep (`npm install --save-dev ws`).
 
 Both in-process and cross-process tests construct the `AppSurfaceSpec`
 in TS via the same builder (`create_test_app_surface_spec` or a
@@ -53,9 +72,8 @@ test runtime.
 
 The cross-impl schema-parity helpers (`query_schema_snapshot`,
 `assert_schema_snapshots_equal`) are documented under §Test Helpers
-below. Consumers running two backends (zzz today, fuz_webui when
-adopted) drop+recreate their test DB between impls and assert
-structural parity between snapshots.
+below. Consumers running two backends drop+recreate their test DB
+between impls and assert structural parity between snapshots.
 
 ## Prerequisites
 
@@ -70,9 +88,7 @@ route assembly to prevent drift.
 export const create_my_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	create_health_route_spec(),
 	...prefix_route_specs('/api/account', create_account_route_specs(ctx.deps, account_options)),
-	...prefix_route_specs('/api/admin', [
-		...create_audit_log_route_specs(),
-	]),
+	...prefix_route_specs('/api/admin', [...create_audit_log_route_specs()]),
 	...prefix_route_specs('/api', my_app_routes(ctx)),
 ];
 ```
@@ -140,7 +156,14 @@ const init_schema = async (db: Db): Promise<void> => {
 };
 
 // Tables to truncate between tests (order matters for FK constraints)
-const TRUNCATE_TABLES = ['api_token', 'auth_session', 'role_grant', 'actor', 'account', ...app_tables];
+const TRUNCATE_TABLES = [
+	'api_token',
+	'auth_session',
+	'role_grant',
+	'actor',
+	'account',
+	...app_tables,
+];
 
 export const pglite_factory = create_pglite_factory(init_schema);
 const pg_factory = create_pg_factory(init_schema, process.env.TEST_DATABASE_URL);
@@ -222,15 +245,15 @@ describe_standard_admin_integration_tests({
 
 `default_in_process_suite_options` accepts:
 
-| Option              | Required | Purpose                                                                                                                                                                                                                                       |
-| ------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session_options`   | yes      | Cookie config — same `SessionOptions<string>` fuz_app's production server takes.                                                                                                                                                              |
-| `create_route_specs`| yes      | Production route-spec factory.                                                                                                                                                                                                                |
-| `rpc_endpoints`     | no       | RPC endpoint specs — eager array or `(ctx) => specs` factory (the same `RpcEndpointsSuiteOption` union `create_app_server` takes).                                                                                                            |
-| `bootstrap`         | no       | Top-level `BootstrapServerOptions` (discriminated by `mode`). Pass `{mode: 'live', token_path, on_bootstrap?}` to mirror production live wiring (the helper flows this to BOTH the surface spec and the live app, and the bootstrap-success suite in the standard bundle uses it). Pass `{mode: 'surface_only'}` for tests asserting on the disabled-but-present 403 wire shape. Omit (or `{mode: 'disabled'}`) to skip the routes — symmetric with `create_app_server`'s production default. The default `create_test_app` keeper-pre-creation flips `bootstrap_lock.bootstrapped = true` to match production semantics, so denial-path tests fire 403 ALREADY_BOOTSTRAPPED in any mode. The success path runs via `describe_bootstrap_success_tests` against `create_test_app_for_bootstrap`. |
-| `app_options`       | no       | `SuiteAppOptions` overrides for `AppServerOptions`. Same shape you'd pass to `create_app_server` (minus the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `extra_keeper_roles`| no       | Additional roles to grant the bootstrapped keeper alongside `ROLE_KEEPER` (which is always implied — daemon-token auth requires it). **Admin-suite + audit-completeness consumers pass `[ROLE_ADMIN]`** so the keeper hits admin-gated RPC methods.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `surface_source`    | no       | Pre-built `AppSurfaceSpec`. Pass when surface assembly needs `env_schema` / `event_specs` / `ws_endpoints` / `transform_middleware` outside the shared subset; otherwise the helper builds one via `create_test_app_surface_spec` against the same factory inputs (including the top-level `bootstrap` slot).                                                                                                                                                                                                                                                                                                                                                                                                |
+| Option               | Required | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_options`    | yes      | Cookie config — same `SessionOptions<string>` fuz_app's production server takes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `create_route_specs` | yes      | Production route-spec factory.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `rpc_endpoints`      | no       | RPC endpoint specs — eager array or `(ctx) => specs` factory (the same `RpcEndpointsSuiteOption` union `create_app_server` takes).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `bootstrap`          | no       | Top-level `BootstrapServerOptions` (discriminated by `mode`). Pass `{mode: 'live', token_path, on_bootstrap?}` to mirror production live wiring (the helper flows this to BOTH the surface spec and the live app, and the bootstrap-success suite in the standard bundle uses it). Pass `{mode: 'surface_only'}` for tests asserting on the disabled-but-present 403 wire shape. Omit (or `{mode: 'disabled'}`) to skip the routes — symmetric with `create_app_server`'s production default. The default `create_test_app` keeper-pre-creation flips `bootstrap_lock.bootstrapped = true` to match production semantics, so denial-path tests fire 403 ALREADY_BOOTSTRAPPED in any mode. The success path runs via `describe_bootstrap_success_tests` against `create_test_app_for_bootstrap`. |
+| `app_options`        | no       | `SuiteAppOptions` overrides for `AppServerOptions`. Same shape you'd pass to `create_app_server` (minus the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `extra_keeper_roles` | no       | Additional roles to grant the bootstrapped keeper alongside `ROLE_KEEPER` (which is always implied — daemon-token auth requires it). **Admin-suite + audit-completeness consumers pass `[ROLE_ADMIN]`** so the keeper hits admin-gated RPC methods.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `surface_source`     | no       | Pre-built `AppSurfaceSpec`. Pass when surface assembly needs `env_schema` / `event_specs` / `ws_endpoints` / `transform_middleware` outside the shared subset; otherwise the helper builds one via `create_test_app_surface_spec` against the same factory inputs (including the top-level `bootstrap` slot).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 The helper output covers every required suite field; consumer call sites
 only add suite-specific extras (`roles`, `skip_routes`, `input_overrides`,
@@ -822,7 +845,7 @@ assert_error_coverage(collector, route_specs, {
 | `describe_adversarial_auth`                 | `testing/attack_surface.ts`      | Adversarial auth enforcement tests                              |
 | `describe_adversarial_input`                | `testing/adversarial_input.ts`   | Adversarial input validation tests                              |
 | `describe_adversarial_404`                  | `testing/adversarial_404.ts`     | Adversarial 404 tests for param routes                          |
-| `describe_data_exposure_tests`              | `testing/data_exposure.ts`       | Schema-level + runtime sensitive field blocklist audit           |
+| `describe_data_exposure_tests`              | `testing/data_exposure.ts`       | Schema-level + runtime sensitive field blocklist audit          |
 | `describe_rpc_attack_surface_tests`         | `testing/rpc_attack_surface.ts`  | 3-group RPC attack surface (auth, envelopes, params)            |
 | `describe_rpc_round_trip_tests`             | `testing/rpc_round_trip.ts`      | DB-backed round-trip for RPC methods (POST + GET)               |
 | `create_describe_db`                        | `testing/db.ts`                  | Create a `describe_db` bound to factories + truncate tables     |
@@ -836,12 +859,12 @@ and only surfaces in production. `query_schema_snapshot` +
 `assert_schema_snapshots_equal` give you a structural gate composable
 into any runner that orchestrates both impls.
 
-| Helper                                  | Module                            | Purpose                                                                                       |
-| --------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------- |
-| `query_schema_snapshot(db, options?)`   | `testing/schema_introspect.ts`    | `pg_catalog` / `information_schema` introspection → deterministic `SchemaSnapshot`            |
-| `diff_schema_snapshots(a, b)`           | `testing/schema_parity.ts`        | Tagged-union `Array<SchemaDiff>` per drift kind; empty array means parity holds               |
-| `format_schema_diffs(diffs, labels?)`   | `testing/schema_parity.ts`        | Human-readable multi-line rendering; labels identify the impls (`{a: 'deno', b: 'rust'}`)     |
-| `assert_schema_snapshots_equal(a, b, labels?)` | `testing/schema_parity.ts` | Throw on drift with the canonical formatted message                                           |
+| Helper                                         | Module                         | Purpose                                                                                   |
+| ---------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------- |
+| `query_schema_snapshot(db, options?)`          | `testing/schema_introspect.ts` | `pg_catalog` / `information_schema` introspection → deterministic `SchemaSnapshot`        |
+| `diff_schema_snapshots(a, b)`                  | `testing/schema_parity.ts`     | Tagged-union `Array<SchemaDiff>` per drift kind; empty array means parity holds           |
+| `format_schema_diffs(diffs, labels?)`          | `testing/schema_parity.ts`     | Human-readable multi-line rendering; labels identify the impls (`{a: 'deno', b: 'rust'}`) |
+| `assert_schema_snapshots_equal(a, b, labels?)` | `testing/schema_parity.ts`     | Throw on drift with the canonical formatted message                                       |
 
 Consumer wiring (zzz pattern). Each backend bootstraps against a
 freshly-recreated DB; the runner captures a snapshot post-bootstrap
@@ -863,11 +886,7 @@ await close();
 snapshots[backend.name] = snapshot;
 
 // At end of runner:
-assert_schema_snapshots_equal(
-  snapshots.deno,
-  snapshots.rust,
-  {a: 'deno', b: 'rust'},
-);
+assert_schema_snapshots_equal(snapshots.deno, snapshots.rust, {a: 'deno', b: 'rust'});
 ```
 
 The snapshot covers `schema_version` rows (minus `applied_at`),
@@ -886,45 +905,45 @@ impls actually boot.
 
 ### Standalone Helpers
 
-| Helper                                 | Module                           | Purpose                                           |
-| -------------------------------------- | -------------------------------- | ------------------------------------------------- |
-| `create_test_app`                      | `testing/app_server.ts`          | Full Hono app with test defaults                  |
-| `create_test_app_server`               | `testing/app_server.ts`          | DB + deps only (no Hono app)                      |
-| `create_test_app_surface_spec`         | `testing/stubs.ts`               | Attack surface spec mirroring `create_app_server` |
-| `stub_app_deps`                        | `testing/stubs.ts`               | Stub `AppDeps` (throws on access)                 |
-| `create_stub_app_deps`                 | `testing/stubs.ts`               | No-op `AppDeps` (safe to call through)            |
-| `create_stub_app_server_context`       | `testing/stubs.ts`               | Stub `AppServerContext` from session config       |
-| `create_stub_api_middleware`           | `testing/stubs.ts`               | Stub middleware array matching production stack   |
-| `create_test_request_context`          | `testing/auth_apps.ts`           | Mock `RequestContext` with optional role          |
-| `create_auth_test_apps`                | `testing/auth_apps.ts`           | One Hono app per auth level                       |
-| `resolve_fixture_path`                 | `testing/assertions.ts`          | Resolve absolute path relative to caller's module |
-| `assert_surface_matches_snapshot`      | `testing/assertions.ts`          | Compare live surface to committed JSON            |
-| `assert_surface_invariants`            | `testing/surface_invariants.ts`  | Assert all structural invariants on `AppSurface`  |
-| `assert_error_schema_tightness`        | `testing/surface_invariants.ts`  | Enforce minimum error schema specificity          |
-| `audit_error_schema_tightness`         | `testing/surface_invariants.ts`  | Classify error schema specificity across routes   |
-| `assert_response_matches_spec`         | `testing/integration_helpers.ts` | Validate response body against route spec schemas |
-| `assert_rate_limit_retry_after_header` | `testing/integration_helpers.ts` | Assert 429 `Retry-After` header matches body      |
-| `find_route_spec`                      | `testing/integration_helpers.ts` | Look up route spec by method + path               |
-| `create_expired_test_cookie`           | `testing/integration_helpers.ts` | Generate expired session cookie for testing       |
-| `assert_no_sensitive_fields_in_json`   | `testing/integration_helpers.ts` | Assert no blocklisted fields in parsed JSON       |
-| `collect_json_keys_recursive`          | `testing/integration_helpers.ts` | Recursively collect all key names from JSON       |
-| `sensitive_field_blocklist`            | `testing/integration_helpers.ts` | Fields that must never appear in any response     |
-| `admin_only_field_blocklist`           | `testing/integration_helpers.ts` | Fields restricted to admin/keeper responses       |
-| `assert_output_schemas_no_sensitive_fields` | `testing/data_exposure.ts`  | Walk output schemas for sensitive property names  |
-| `assert_non_admin_schemas_no_admin_fields`  | `testing/data_exposure.ts`  | Walk non-admin schemas for admin-only fields      |
-| `collect_json_schema_property_names`   | `testing/data_exposure.ts`       | Recursively collect property names from JSON Schema |
-| `ErrorCoverageCollector`               | `testing/error_coverage.ts`      | Track which declared error statuses/codes are exercised |
-| `assert_error_coverage`                | `testing/error_coverage.ts`      | Assert minimum error coverage threshold           |
-| `extract_declared_error_codes`         | `testing/error_coverage.ts`      | Extract literal/enum codes from an error response schema |
-| `resolve_valid_path`                   | `testing/schema_generators.ts`   | Resolve route path with valid param values        |
-| `generate_valid_body`                  | `testing/schema_generators.ts`   | Generate valid request body from Zod schema       |
-| `detect_format`                        | `testing/schema_generators.ts`   | Detect format constraints (uuid, email, pattern)  |
-| `generate_valid_value`                 | `testing/schema_generators.ts`   | Generate valid value for a Zod field              |
-| `create_rpc_post_init`                 | `testing/rpc_helpers.ts`         | Build `RequestInit` for JSON-RPC POST request     |
-| `create_rpc_get_url`                   | `testing/rpc_helpers.ts`         | Build GET URL with JSON-RPC query parameters      |
-| `assert_jsonrpc_error_response`        | `testing/rpc_helpers.ts`         | Assert valid JSON-RPC error response structure    |
-| `assert_jsonrpc_success_response`      | `testing/rpc_helpers.ts`         | Assert valid JSON-RPC success response (optional output schema) |
-| `create_mock_runtime`                  | `runtime/mock.ts`                | Mock runtime for command tests                    |
-| `create_pglite_factory`                | `testing/db.ts`                  | PGlite DB factory (shared WASM cache)             |
-| `create_pg_factory`                    | `testing/db.ts`                  | PostgreSQL DB factory (auto-skips when no URL)    |
-| `drop_auth_schema`                     | `testing/db.ts`                  | Drop all auth tables for clean-slate pg tests     |
+| Helper                                      | Module                           | Purpose                                                         |
+| ------------------------------------------- | -------------------------------- | --------------------------------------------------------------- |
+| `create_test_app`                           | `testing/app_server.ts`          | Full Hono app with test defaults                                |
+| `create_test_app_server`                    | `testing/app_server.ts`          | DB + deps only (no Hono app)                                    |
+| `create_test_app_surface_spec`              | `testing/stubs.ts`               | Attack surface spec mirroring `create_app_server`               |
+| `stub_app_deps`                             | `testing/stubs.ts`               | Stub `AppDeps` (throws on access)                               |
+| `create_stub_app_deps`                      | `testing/stubs.ts`               | No-op `AppDeps` (safe to call through)                          |
+| `create_stub_app_server_context`            | `testing/stubs.ts`               | Stub `AppServerContext` from session config                     |
+| `create_stub_api_middleware`                | `testing/stubs.ts`               | Stub middleware array matching production stack                 |
+| `create_test_request_context`               | `testing/auth_apps.ts`           | Mock `RequestContext` with optional role                        |
+| `create_auth_test_apps`                     | `testing/auth_apps.ts`           | One Hono app per auth level                                     |
+| `resolve_fixture_path`                      | `testing/assertions.ts`          | Resolve absolute path relative to caller's module               |
+| `assert_surface_matches_snapshot`           | `testing/assertions.ts`          | Compare live surface to committed JSON                          |
+| `assert_surface_invariants`                 | `testing/surface_invariants.ts`  | Assert all structural invariants on `AppSurface`                |
+| `assert_error_schema_tightness`             | `testing/surface_invariants.ts`  | Enforce minimum error schema specificity                        |
+| `audit_error_schema_tightness`              | `testing/surface_invariants.ts`  | Classify error schema specificity across routes                 |
+| `assert_response_matches_spec`              | `testing/integration_helpers.ts` | Validate response body against route spec schemas               |
+| `assert_rate_limit_retry_after_header`      | `testing/integration_helpers.ts` | Assert 429 `Retry-After` header matches body                    |
+| `find_route_spec`                           | `testing/integration_helpers.ts` | Look up route spec by method + path                             |
+| `create_expired_test_cookie`                | `testing/integration_helpers.ts` | Generate expired session cookie for testing                     |
+| `assert_no_sensitive_fields_in_json`        | `testing/integration_helpers.ts` | Assert no blocklisted fields in parsed JSON                     |
+| `collect_json_keys_recursive`               | `testing/integration_helpers.ts` | Recursively collect all key names from JSON                     |
+| `sensitive_field_blocklist`                 | `testing/integration_helpers.ts` | Fields that must never appear in any response                   |
+| `admin_only_field_blocklist`                | `testing/integration_helpers.ts` | Fields restricted to admin/keeper responses                     |
+| `assert_output_schemas_no_sensitive_fields` | `testing/data_exposure.ts`       | Walk output schemas for sensitive property names                |
+| `assert_non_admin_schemas_no_admin_fields`  | `testing/data_exposure.ts`       | Walk non-admin schemas for admin-only fields                    |
+| `collect_json_schema_property_names`        | `testing/data_exposure.ts`       | Recursively collect property names from JSON Schema             |
+| `ErrorCoverageCollector`                    | `testing/error_coverage.ts`      | Track which declared error statuses/codes are exercised         |
+| `assert_error_coverage`                     | `testing/error_coverage.ts`      | Assert minimum error coverage threshold                         |
+| `extract_declared_error_codes`              | `testing/error_coverage.ts`      | Extract literal/enum codes from an error response schema        |
+| `resolve_valid_path`                        | `testing/schema_generators.ts`   | Resolve route path with valid param values                      |
+| `generate_valid_body`                       | `testing/schema_generators.ts`   | Generate valid request body from Zod schema                     |
+| `detect_format`                             | `testing/schema_generators.ts`   | Detect format constraints (uuid, email, pattern)                |
+| `generate_valid_value`                      | `testing/schema_generators.ts`   | Generate valid value for a Zod field                            |
+| `create_rpc_post_init`                      | `testing/rpc_helpers.ts`         | Build `RequestInit` for JSON-RPC POST request                   |
+| `create_rpc_get_url`                        | `testing/rpc_helpers.ts`         | Build GET URL with JSON-RPC query parameters                    |
+| `assert_jsonrpc_error_response`             | `testing/rpc_helpers.ts`         | Assert valid JSON-RPC error response structure                  |
+| `assert_jsonrpc_success_response`           | `testing/rpc_helpers.ts`         | Assert valid JSON-RPC success response (optional output schema) |
+| `create_mock_runtime`                       | `runtime/mock.ts`                | Mock runtime for command tests                                  |
+| `create_pglite_factory`                     | `testing/db.ts`                  | PGlite DB factory (shared WASM cache)                           |
+| `create_pg_factory`                         | `testing/db.ts`                  | PostgreSQL DB factory (auto-skips when no URL)                  |
+| `drop_auth_schema`                          | `testing/db.ts`                  | Drop all auth tables for clean-slate pg tests                   |

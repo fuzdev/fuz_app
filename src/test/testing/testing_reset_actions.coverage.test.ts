@@ -3,13 +3,15 @@
  *
  * `_testing_reset` must DELETE from every table in
  * `auth_integration_truncate_tables` — that constant is the canonical
- * "auth tables a between-test reset must clear" list, and the handler's
- * SQL is inline (per-table scoping isn't uniform, so iterating the
- * constant wouldn't fit). This test enforces set-equality between the
- * handler's `DELETE FROM <table>` targets and the constant, so a future
- * auth migration that adds a table to `auth_integration_truncate_tables`
- * without updating `testing_reset_actions.ts` fails CI rather than
- * silently leaking rows across cross-process tests.
+ * "auth tables a between-test reset must clear" list. After the
+ * fresh-keeper-per-test redesign the wipe is wholesale (no
+ * keeper-preserve filter), then the handler re-seeds via
+ * `create_test_account_with_credentials`. This test enforces
+ * set-equality between the handler's `DELETE FROM <table>` targets and
+ * the constant so a future auth migration that adds a table to
+ * `auth_integration_truncate_tables` without updating
+ * `testing_reset_actions.ts` fails CI rather than silently leaking
+ * rows across cross-process tests.
  *
  * @module
  */

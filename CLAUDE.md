@@ -98,6 +98,19 @@ consumer. Tests are the load-bearing signal when the typecheck step
 shows this noise; once the symlink layout converges, both typecheck and
 test pass.
 
+**Deno + `nodeModulesDir: "manual"` rejects version-skewed symlinks.**
+Deno's manual mode reconciles `node_modules` against the consumer's
+declared range. If the local fuz_app's `version` doesn't satisfy the
+consumer's `^x.y.z` constraint, Deno errors with "Could not find
+@fuzdev/fuz_app in a node_modules folder" — *not* because the symlink
+itself is rejected, but because the version doesn't match. The fix is
+to bump the consumer's `package.json` + `deno.json` constraints to
+admit the locally-published version, then re-run `npm install`. The
+symlink itself works fine once versions align; the `gro` transitive
+`oxc-parser` also forces `--allow-ffi` on the Deno binary, and
+test-binary scenarios that spawn shell commands need `--allow-run`
+(verified in zzz's cross-backend test config).
+
 ## Library Modules
 
 fuz_app uses **deep path imports** — no barrel/index exports. The wildcard
@@ -277,6 +290,15 @@ See ./docs/testing.md for the consumer wiring guide. Skill(fuz-stack)
 covers shared conventions (`src/test/` layout, `.db.test.ts`, `assert`
 from vitest, `*Deps` over god-type mocks). Backend tests use `$lib/`
 imports.
+
+**Cross-process self-tests** — fuz_app runs the standard suites against its
+own spine over real HTTP (not just in-process) via spawnable TS spine
+binaries built on the `testing/cross_backend/testing_server_core.ts` +
+Node/Deno/Bun adapters, plus the Rust `testing_spine_stub`. These live in the
+opt-in `cross_backend_*` vitest projects (gated behind
+`FUZ_TEST_CROSS_BACKEND=1`, excluded from a bare `gro test`) and the
+`npm run benchmark:cross-impl` run. See ./src/test/CLAUDE.md §Cross-backend
+self-tests and `src/lib/testing/CLAUDE.md` §"Building a TS test-server binary".
 
 **Cross-impl schema parity** — consumers running two backend impls
 against a shared schema (e.g., zzz's `--backend=both`) use

@@ -14,6 +14,7 @@
     "build": "gro build",
     "check": "gro check",
     "test": "gro test",
+    "benchmark:cross-impl": "gro run src/benchmarks/cross_impl.bench.ts",
     "preview": "vite preview",
     "deploy": "gro deploy"
   },
@@ -25,6 +26,8 @@
     "@electric-sql/pglite": ">=0.4",
     "@fuzdev/blake3_wasm": ">=0.1.0",
     "@fuzdev/fuz_util": ">=0.53.4",
+    "@hono/node-server": ">=1",
+    "@hono/node-ws": ">=1",
     "@node-rs/argon2": ">=2",
     "@sveltejs/kit": "^2",
     "hono": ">=4",
@@ -35,6 +38,12 @@
   },
   "peerDependenciesMeta": {
     "@electric-sql/pglite": {
+      "optional": true
+    },
+    "@hono/node-server": {
+      "optional": true
+    },
+    "@hono/node-ws": {
       "optional": true
     },
     "pg": {
@@ -50,8 +59,10 @@
     "@fuzdev/fuz_code": "^0.45.1",
     "@fuzdev/fuz_css": "^0.59.0",
     "@fuzdev/fuz_ui": "^0.192.0",
-    "@fuzdev/fuz_util": "^0.60.1",
-    "@fuzdev/gro": "^0.199.0",
+    "@fuzdev/fuz_util": "^0.61.0",
+    "@fuzdev/gro": "^0.199.1",
+    "@hono/node-server": "^1.19.14",
+    "@hono/node-ws": "^1.3.1",
     "@jridgewell/trace-mapping": "^0.3.31",
     "@node-rs/argon2": "^2.0.2",
     "@ryanatkn/eslint-config": "^0.12.1",

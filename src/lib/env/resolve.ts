@@ -10,59 +10,104 @@
  * - Easy to grep: `grep '\$\$'`
  * - Fails loud if accidentally shell-processed (`$$`=PID in shell)
  *
+ * # Syntax
+ *
+ * - `$$VAR$$` — required reference. Missing or empty fails validation
+ *   (see `validate_env_vars`).
+ * - `$$?VAR$$` — optional reference. Missing or empty resolves to the
+ *   empty string and passes validation. Use for vars that exist in the
+ *   contract but may be intentionally blank (e.g. `SMTP_PASSWORD=` on
+ *   a deployment that hasn't configured SMTP yet).
+ * - `\$$VAR$$` — escape. The leading backslash is dropped at resolution
+ *   time and the rest is emitted literally. Use this when documenting
+ *   the syntax inside a string literal (comments in env-file templates,
+ *   for example) where a regex scan would otherwise treat the mention
+ *   as a real reference. Combines with `?` as `\$$?VAR$$`.
+ *
  * @module
  */
 
 import type {EnvDeps} from '../runtime/deps.js';
 
 /**
- * Pattern for environment variable references: `$$VAR$$`.
+ * Pattern matching `$$VAR$$`, `$$?VAR$$`, and their escaped forms
+ * `\$$VAR$$` / `\$$?VAR$$`. Capture groups:
+ *
+ * - 1: the `$$...$$` body (without any leading escape char) — what to
+ *   emit when the match is escaped.
+ * - 2: `?` if the reference is optional, empty otherwise.
+ * - 3: the variable name (without `$$` delimiters).
+ *
+ * The leading `\\?` (optional backslash) is the escape signal — its
+ * presence in `match[0]` (vs. `match[1]`) drives the literal-emission
+ * branch in the resolver.
  */
-const ENV_VAR_PATTERN = /\$\$([A-Za-z_][A-Za-z0-9_]*)\$\$/g;
+const ENV_VAR_PATTERN = /\\?(\$\$(\??)([A-Za-z_][A-Za-z0-9_]*)\$\$)/g;
 
 /**
  * Resolve environment variable references in a string.
  *
- * Uses `$$VAR$$` syntax (bookended double-dollar signs).
- * Only resolves variables that are actually set in the environment.
- * Unset variables are left as-is for clear error messages.
+ * - `$$VAR$$` resolves from the runtime env; missing values are left as-is
+ *   for the validation phase to report.
+ * - `$$?VAR$$` is the optional form — missing or empty resolves to the empty
+ *   string. Required validation skips refs marked optional.
+ * - `\$$VAR$$` / `\$$?VAR$$` are escapes — the leading backslash is dropped
+ *   and the body is emitted literally (no resolution attempted).
  *
  * @param runtime - runtime with `env_get` capability
  * @param value - string that may contain `$$VAR$$` references
  * @returns string with env vars resolved
  */
 export const resolve_env_vars = (runtime: Pick<EnvDeps, 'env_get'>, value: string): string => {
-	return value.replace(ENV_VAR_PATTERN, (match, name: string) => {
+	return value.replace(ENV_VAR_PATTERN, (match, body: string, modifier: string, name: string) => {
+		if (match.startsWith('\\')) {
+			// Escaped: drop the leading backslash, emit the body literally.
+			return body;
+		}
 		const resolved = runtime.env_get(name);
-		// leave unresolved for the validation phase to report
-		return resolved !== undefined ? resolved : match;
+		if (resolved !== undefined && resolved !== '') return resolved;
+		// Optional: empty-on-miss. Required: leave unresolved for validation.
+		if (modifier === '?') return '';
+		return match;
 	});
 };
 
 /**
  * Check if a string contains unresolved env var references.
  *
+ * Escaped references (`\$$VAR$$`) do not count — they're literal text once
+ * resolved.
+ *
  * @param value - string to check
- * @returns `true` if string contains `$$VAR$$` patterns
+ * @returns `true` if string contains unescaped `$$VAR$$` patterns
  */
 export const has_env_vars = (value: string): boolean => {
-	// use a fresh regex to avoid global regex lastIndex state issues
-	return /\$\$[A-Za-z_][A-Za-z0-9_]*\$\$/.test(value);
+	// Iterate the shared pattern (fresh regex; lastIndex is fine on construct).
+	const pattern = new RegExp(ENV_VAR_PATTERN.source, 'g');
+	let match;
+	while ((match = pattern.exec(value)) !== null) {
+		if (!match[0].startsWith('\\')) return true;
+	}
+	return false;
 };
 
 /**
  * Get list of env var names referenced in a string.
+ *
+ * Escaped references are skipped; optional and required references are both
+ * included (callers that care about the distinction should use `scan_env_vars`
+ * which preserves the `optional` flag per ref).
  *
  * @param value - string to scan
  * @returns array of variable names (without `$$` delimiters)
  */
 export const get_env_var_names = (value: string): Array<string> => {
 	const names: Array<string> = [];
-	let match;
-	// reset regex lastIndex since it's global
 	const pattern = new RegExp(ENV_VAR_PATTERN.source, 'g');
+	let match;
 	while ((match = pattern.exec(value)) !== null) {
-		names.push(match[1]!);
+		if (match[0].startsWith('\\')) continue;
+		names.push(match[3]!);
 	}
 	return names;
 };
@@ -90,7 +135,9 @@ export const resolve_env_vars_in_object = <T extends Record<string, unknown>>(
 /**
  * Resolve env vars and throw if any are missing/empty.
  *
- * Use this for values that must be present.
+ * Use this for values that must be present. `$$?VAR$$` (optional) refs
+ * resolve to the empty string on miss without contributing to the error.
+ * Escaped references (`\$$VAR$$`) emit literally and never check the env.
  *
  * @param runtime - runtime with `env_get` capability
  * @param value - string with `$$VAR$$` references
@@ -105,14 +152,20 @@ export const resolve_env_vars_required = (
 ): string => {
 	const missing: Array<string> = [];
 
-	const result = value.replace(ENV_VAR_PATTERN, (match, name: string) => {
-		const resolved = runtime.env_get(name);
-		if (resolved === undefined || resolved === '') {
+	const result = value.replace(
+		ENV_VAR_PATTERN,
+		(match, body: string, modifier: string, name: string) => {
+			if (match.startsWith('\\')) {
+				// Escaped — emit body, no env lookup.
+				return body;
+			}
+			const resolved = runtime.env_get(name);
+			if (resolved !== undefined && resolved !== '') return resolved;
+			if (modifier === '?') return '';
 			missing.push(name);
 			return match; // keep original for error message
-		}
-		return resolved;
-	});
+		},
+	);
 
 	if (missing.length > 0) {
 		throw new Error(
@@ -131,16 +184,25 @@ export interface EnvVarRef {
 	name: string;
 	/** Path where the reference was found (e.g., `"target.host"`, `"resources[3].path"`). */
 	path: string;
+	/**
+	 * Whether the reference is optional (`$$?VAR$$`). Optional refs resolve
+	 * to the empty string when unset and are skipped by `validate_env_vars` —
+	 * a var that's intentionally blank doesn't count as missing.
+	 */
+	optional: boolean;
 }
 
 /**
  * Recursively scan an object for `$$VAR$$` env var references.
  *
  * Walks all string values in the object tree and extracts env var names
- * with their path context for error reporting.
+ * with their path context for error reporting. Escaped references
+ * (`\$$VAR$$`) are skipped — they're literal text, not references.
+ * The `optional` flag on each ref distinguishes `$$VAR$$` (required) from
+ * `$$?VAR$$` (optional) for downstream validation.
  *
  * @param obj - object to scan (typically a config)
- * @returns array of env var references with paths
+ * @returns array of env var references with paths and optional flags
  */
 export const scan_env_vars = (obj: unknown): Array<EnvVarRef> => {
 	const refs: Array<EnvVarRef> = [];
@@ -149,13 +211,16 @@ export const scan_env_vars = (obj: unknown): Array<EnvVarRef> => {
 };
 
 /**
- * Recursive helper for `scan_env_vars`.
+ * Recursive helper for `scan_env_vars`. Uses the full pattern (not
+ * `get_env_var_names`) to preserve the `optional` modifier on each ref.
  */
 const scan_recursive = (value: unknown, path: string, refs: Array<EnvVarRef>): void => {
 	if (typeof value === 'string') {
-		const names = get_env_var_names(value);
-		for (const name of names) {
-			refs.push({name, path});
+		const pattern = new RegExp(ENV_VAR_PATTERN.source, 'g');
+		let match;
+		while ((match = pattern.exec(value)) !== null) {
+			if (match[0].startsWith('\\')) continue; // escaped — literal text
+			refs.push({name: match[3]!, path, optional: match[2] === '?'});
 		}
 	} else if (Array.isArray(value)) {
 		for (let i = 0; i < value.length; i++) {
@@ -186,6 +251,8 @@ export type EnvValidationResult =
  *
  * Returns all missing refs (including duplicates by name). Grouping
  * and deduplication is handled by `format_missing_env_vars` at display time.
+ * Refs marked `optional: true` (from `$$?VAR$$` syntax) are skipped — a
+ * deliberately-blank var is contract, not a missing dependency.
  *
  * @param runtime - runtime with `env_get` capability
  * @param refs - env var references from `scan_env_vars`
@@ -198,6 +265,7 @@ export const validate_env_vars = (
 	let missing: Array<EnvVarRef> | null = null;
 
 	for (const ref of refs) {
+		if (ref.optional) continue;
 		const value = runtime.env_get(ref.name);
 		if (value === undefined || value === '') {
 			(missing ??= []).push(ref);

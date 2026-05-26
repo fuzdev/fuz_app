@@ -52,8 +52,9 @@ import {
 } from '../auth/account_action_specs.js';
 import {invite_create_action_spec} from '../auth/admin_action_specs.js';
 import type {AppSurfaceSpec} from '../http/surface.js';
-import type {BackendCapabilities} from './cross_backend/capabilities.js';
+import {test_if, type BackendCapabilities} from './cross_backend/capabilities.js';
 import type {SetupTest} from './cross_backend/setup.js';
+import {DEFAULT_TEST_PASSWORD} from './app_server.js';
 
 /**
  * Configuration for `describe_standard_integration_tests`.
@@ -123,13 +124,20 @@ export interface StandardIntegrationTestOptions {
  * message if the consumer's route specs are misconfigured.
  *
  * The two signup-invite-edge-case tests call `invite_create_action_spec`
- * (admin-gated) over the keeper's session, so consumers wiring signup +
- * admin actions must pass `extra_keeper_roles: [ROLE_ADMIN]` to
- * `default_in_process_suite_options` (or otherwise grant the bootstrap
- * keeper `ROLE_ADMIN`) — the cross-process harness can't mint a fresh
- * admin observer via direct DB INSERT, so the suite drives both flows
- * over the long-lived bootstrap keeper instead. Consumers that don't
- * wire signup or `invite_create` silently skip these two tests.
+ * (admin-gated) over the fixture's session, so consumers wiring signup +
+ * admin actions must thread `extra_keeper_roles: [ROLE_ADMIN]` through
+ * either `default_in_process_suite_options` or
+ * `default_cross_process_setup(handle, {extra_keeper_roles:
+ * [ROLE_ADMIN]})`. In both modes the fixture's `fixture.account` is the
+ * fresh keeper, and the extra-keeper-roles list grants the bootstrapped
+ * keeper additional roles inline (cross-process via `_testing_reset`'s
+ * bootstrap-time seeding; in-process via `bootstrap_test_keeper`) — no
+ * per-role RPC cost, no offer/accept round-trip. The tests run against
+ * the production `open_signup: false` default — the cross-process
+ * per-test secondary mint via `fixture.create_account()` is
+ * invite-gated (keeper drives `invite_create` before signup) so the
+ * harness doesn't need to flip the setting. Consumers that don't wire
+ * signup or `invite_create` silently skip these two tests.
  *
  * @throws Error at setup time when `options.rpc_endpoints` is empty — the
  *   suite hard-fails via `require_rpc_endpoint_path` rather than running
@@ -149,7 +157,6 @@ export const describe_standard_integration_tests = (
 		options.session_options,
 	);
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
-	void options.capabilities;
 
 	describe('standard_integration', () => {
 		const {cookie_name} = options.session_options;
@@ -199,7 +206,7 @@ export const describe_standard_integration_tests = (
 					},
 					body: JSON.stringify({
 						username: fixture.account.username,
-						password: 'test-password-123',
+						password: DEFAULT_TEST_PASSWORD,
 					}),
 				});
 
@@ -256,7 +263,7 @@ export const describe_standard_integration_tests = (
 					},
 					body: JSON.stringify({
 						username: 'nonexistent_user',
-						password: 'test-password-123',
+						password: DEFAULT_TEST_PASSWORD,
 					}),
 				});
 
@@ -283,7 +290,7 @@ export const describe_standard_integration_tests = (
 					},
 					body: JSON.stringify({
 						username: `  ${fixture.account.username}  `,
-						password: 'test-password-123',
+						password: DEFAULT_TEST_PASSWORD,
 					}),
 				});
 
@@ -315,7 +322,7 @@ export const describe_standard_integration_tests = (
 					},
 					body: JSON.stringify({
 						username: fixture.account.username,
-						password: 'test-password-123',
+						password: DEFAULT_TEST_PASSWORD,
 					}),
 				});
 				assert.strictEqual(login_res.status, 200);
@@ -437,7 +444,7 @@ export const describe_standard_integration_tests = (
 					},
 					body: JSON.stringify({
 						username: fixture.account.username,
-						password: 'test-password-123',
+						password: DEFAULT_TEST_PASSWORD,
 					}),
 				});
 
@@ -459,7 +466,7 @@ export const describe_standard_integration_tests = (
 			test('no cookie on protected route returns 401', async () => {
 				const fixture = await options.setup_test();
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: {request: fixture.fresh_transport()},
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -480,9 +487,9 @@ export const describe_standard_integration_tests = (
 				assert.strictEqual(res.status, 401);
 			});
 
-			test('expired cookie returns 401', async () => {
+			test_if(options.capabilities.in_process_only, 'expired cookie returns 401', async () => {
 				const fixture = await options.setup_test();
-				assert(fixture.in_process, 'expired-cookie generation requires in-process keyring');
+				assert(fixture.in_process);
 				const expired_cookie = await create_expired_test_cookie(
 					fixture.keyring,
 					options.session_options,
@@ -601,7 +608,7 @@ export const describe_standard_integration_tests = (
 					method: 'POST',
 					headers,
 					body: JSON.stringify({
-						current_password: 'test-password-123',
+						current_password: DEFAULT_TEST_PASSWORD,
 						new_password: 'new-password-456',
 					}),
 				});
@@ -678,29 +685,33 @@ export const describe_standard_integration_tests = (
 		// --- 5. Origin verification ---
 
 		describe('origin verification', () => {
-			test('evil origin is rejected with 403', async () => {
-				const fixture = await options.setup_test();
-				assert(fixture.in_process, 'manual cookie composition requires backend_internals');
-				// `verify_request_source` runs before the RPC dispatcher and returns a
-				// plain REST `{error}` body — not a JSON-RPC envelope. Skip `rpc_call`.
-				const res = await fixture.transport(rpc_path, {
-					method: 'POST',
-					headers: {
-						host: 'localhost',
-						origin: 'http://evil.com',
-						'content-type': 'application/json',
-						cookie: `${cookie_name}=${fixture.backend_internals.session_cookie}`,
-					},
-					body: JSON.stringify({
-						jsonrpc: '2.0',
-						method: account_verify_action_spec.method,
-						id: 'evil-origin',
-					}),
-				});
-				assert.strictEqual(res.status, 403);
-				const body = ApiError.parse(await res.json());
-				assert.strictEqual(body.error, ERROR_FORBIDDEN_ORIGIN);
-			});
+			test_if(
+				options.capabilities.in_process_only,
+				'evil origin is rejected with 403',
+				async () => {
+					const fixture = await options.setup_test();
+					assert(fixture.in_process);
+					// `verify_request_source` runs before the RPC dispatcher and returns a
+					// plain REST `{error}` body — not a JSON-RPC envelope. Skip `rpc_call`.
+					const res = await fixture.transport(rpc_path, {
+						method: 'POST',
+						headers: {
+							host: 'localhost',
+							origin: 'http://evil.com',
+							'content-type': 'application/json',
+							cookie: `${cookie_name}=${fixture.backend_internals.session_cookie}`,
+						},
+						body: JSON.stringify({
+							jsonrpc: '2.0',
+							method: account_verify_action_spec.method,
+							id: 'evil-origin',
+						}),
+					});
+					assert.strictEqual(res.status, 403);
+					const body = ApiError.parse(await res.json());
+					assert.strictEqual(body.error, ERROR_FORBIDDEN_ORIGIN);
+				},
+			);
 
 			test('valid origin is accepted', async () => {
 				const fixture = await options.setup_test();
@@ -714,21 +725,25 @@ export const describe_standard_integration_tests = (
 				assert.strictEqual(res.status, 200);
 			});
 
-			test('no origin header is allowed (direct access)', async () => {
-				const fixture = await options.setup_test();
-				assert(fixture.in_process, 'manual cookie composition requires backend_internals');
-				// Probe the "no Origin / no Referer" path; `suppress_default_origin`
-				// skips the default `origin` header.
-				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
-					path: rpc_path,
-					spec: account_verify_action_spec,
-					params: undefined,
-					headers: {cookie: `${cookie_name}=${fixture.backend_internals.session_cookie}`},
-					suppress_default_origin: true,
-				});
-				assert.notStrictEqual(res.status, 403);
-			});
+			test_if(
+				options.capabilities.in_process_only,
+				'no origin header is allowed (direct access)',
+				async () => {
+					const fixture = await options.setup_test();
+					assert(fixture.in_process);
+					// Probe the "no Origin / no Referer" path; `suppress_default_origin`
+					// skips the default `origin` header.
+					const res = await rpc_call_for_spec({
+						app: {request: fixture.transport},
+						path: rpc_path,
+						spec: account_verify_action_spec,
+						params: undefined,
+						headers: {cookie: `${cookie_name}=${fixture.backend_internals.session_cookie}`},
+						suppress_default_origin: true,
+					});
+					assert.notStrictEqual(res.status, 403);
+				},
+			);
 		});
 
 		// --- 6. Bearer auth ---
@@ -749,8 +764,11 @@ export const describe_standard_integration_tests = (
 
 			test('invalid bearer token returns 401', async () => {
 				const fixture = await options.setup_test();
+				// `origin: null` — bearer auth requires no browser-context
+				// indicator; the default `Origin: <base_url>` would silently
+				// discard the bearer cross-process.
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: {request: fixture.fresh_transport({origin: null})},
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -764,9 +782,11 @@ export const describe_standard_integration_tests = (
 				const fixture = await options.setup_test();
 				const bearer_headers = fixture.create_bearer_headers();
 
-				// Without Origin — works.
+				// Without Origin — works. `origin: null` so the transport
+				// doesn't auto-add the default Origin (which would discard
+				// the bearer as browser-context cross-process).
 				const ok_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: {request: fixture.fresh_transport({origin: null})},
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -777,7 +797,7 @@ export const describe_standard_integration_tests = (
 
 				// With Origin — bearer silently discarded (browser context), falls through to no auth.
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: {request: fixture.fresh_transport()},
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -804,9 +824,13 @@ export const describe_standard_integration_tests = (
 				assert.ok(create_res.ok, 'account_token_create should succeed');
 				const {token, id} = create_res.result;
 
-				// Verify token works
+				// Verify token works — fresh transport so the per-test session
+				// cookie in `fixture.transport`'s jar can't give a false pass
+				// when the bearer is the credential under test. `origin: null`
+				// so the transport doesn't auto-add a default Origin (which
+				// would discard the bearer as browser-context cross-process).
 				const use_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: {request: fixture.fresh_transport({origin: null})},
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -825,9 +849,10 @@ export const describe_standard_integration_tests = (
 				});
 				assert.ok(revoke_res.ok, 'account_token_revoke should succeed');
 
-				// Token should no longer work
+				// Token should no longer work — fresh transport same reason as
+				// the `use_res` call above.
 				const after_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: {request: fixture.fresh_transport({origin: null})},
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -1082,7 +1107,7 @@ export const describe_standard_integration_tests = (
 					'Expected POST /logout route — ensure create_route_specs includes account routes',
 				);
 
-				const res = await fixture.transport(logout_route.path, {
+				const res = await fixture.fresh_transport()(logout_route.path, {
 					method: 'POST',
 					headers: {
 						host: 'localhost',
@@ -1112,8 +1137,13 @@ export const describe_standard_integration_tests = (
 				// against the shared endpoint path. The dispatcher runs auth before
 				// params validation, so any well-formed param body works — we just
 				// need each call to be type-correct wrt its spec.
+				//
+				// Fresh transport so the per-test session cookie in
+				// `fixture.transport`'s jar doesn't leak into these unauthed
+				// probes and convert their expected 401s into 200s.
+				const unauthed = fixture.fresh_transport();
 				const session_list = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: {request: unauthed},
 					path: rpc_path,
 					spec: account_session_list_action_spec,
 					params: undefined,
@@ -1123,7 +1153,7 @@ export const describe_standard_integration_tests = (
 				error_collector.record(route_specs, 'POST', rpc_path, 401);
 
 				const session_revoke_all = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: {request: unauthed},
 					path: rpc_path,
 					spec: account_session_revoke_all_action_spec,
 					params: undefined,
@@ -1133,7 +1163,7 @@ export const describe_standard_integration_tests = (
 				error_collector.record(route_specs, 'POST', rpc_path, 401);
 
 				const token_list = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: {request: unauthed},
 					path: rpc_path,
 					spec: account_token_list_action_spec,
 					params: undefined,
@@ -1143,7 +1173,7 @@ export const describe_standard_integration_tests = (
 				error_collector.record(route_specs, 'POST', rpc_path, 401);
 
 				const token_create = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: {request: unauthed},
 					path: rpc_path,
 					spec: account_token_create_action_spec,
 					params: {name: 'unauth-probe'},
@@ -1153,7 +1183,7 @@ export const describe_standard_integration_tests = (
 				error_collector.record(route_specs, 'POST', rpc_path, 401);
 
 				const verify = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: {request: unauthed},
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -1164,7 +1194,7 @@ export const describe_standard_integration_tests = (
 				// Also exercise POST /logout without auth (still REST)
 				const logout_route = find_auth_route(route_specs, '/logout', 'POST');
 				if (logout_route) {
-					const res = await fixture.transport(logout_route.path, {
+					const res = await unauthed(logout_route.path, {
 						method: 'POST',
 						headers: {host: 'localhost', 'content-type': 'application/json'},
 						body: JSON.stringify({}),
@@ -1181,7 +1211,7 @@ export const describe_standard_integration_tests = (
 			test('401 responses contain no leaky fields', async () => {
 				const fixture = await options.setup_test();
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: {request: fixture.fresh_transport()},
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
@@ -1202,46 +1232,54 @@ export const describe_standard_integration_tests = (
 		// --- 11. Expired credential rejection ---
 
 		describe('expired credential rejection', () => {
-			test('expired session cookie returns 401', async () => {
-				const fixture = await options.setup_test();
-				assert(fixture.in_process, 'expired-cookie generation requires in-process keyring');
-				const expired_cookie = await create_expired_test_cookie(
-					fixture.keyring,
-					options.session_options,
-				);
-				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
-					path: rpc_path,
-					spec: account_verify_action_spec,
-					params: undefined,
-					headers: {cookie: `${cookie_name}=${expired_cookie}`},
-				});
-				assert.strictEqual(res.status, 401, 'Expired session cookie should be rejected');
-			});
+			test_if(
+				options.capabilities.in_process_only,
+				'expired session cookie returns 401',
+				async () => {
+					const fixture = await options.setup_test();
+					assert(fixture.in_process);
+					const expired_cookie = await create_expired_test_cookie(
+						fixture.keyring,
+						options.session_options,
+					);
+					const res = await rpc_call_for_spec({
+						app: {request: fixture.transport},
+						path: rpc_path,
+						spec: account_verify_action_spec,
+						params: undefined,
+						headers: {cookie: `${cookie_name}=${expired_cookie}`},
+					});
+					assert.strictEqual(res.status, 401, 'Expired session cookie should be rejected');
+				},
+			);
 
-			test('expired session cookie returns 401 on mutation route', async () => {
-				const fixture = await options.setup_test();
-				assert(fixture.in_process, 'expired-cookie generation requires in-process keyring');
-				const logout_route = find_auth_route(route_specs, '/logout', 'POST');
-				assert.ok(
-					logout_route,
-					'Expected POST /logout route — ensure create_route_specs includes account routes',
-				);
+			test_if(
+				options.capabilities.in_process_only,
+				'expired session cookie returns 401 on mutation route',
+				async () => {
+					const fixture = await options.setup_test();
+					assert(fixture.in_process);
+					const logout_route = find_auth_route(route_specs, '/logout', 'POST');
+					assert.ok(
+						logout_route,
+						'Expected POST /logout route — ensure create_route_specs includes account routes',
+					);
 
-				const expired_cookie = await create_expired_test_cookie(
-					fixture.keyring,
-					options.session_options,
-				);
-				const res = await fixture.transport(logout_route.path, {
-					method: 'POST',
-					headers: {
-						host: 'localhost',
-						cookie: `${cookie_name}=${expired_cookie}`,
-					},
-				});
-				assert.strictEqual(res.status, 401, 'Expired session cookie should be rejected on POST');
-				error_collector.record(route_specs, 'POST', logout_route.path, 401);
-			});
+					const expired_cookie = await create_expired_test_cookie(
+						fixture.keyring,
+						options.session_options,
+					);
+					const res = await fixture.transport(logout_route.path, {
+						method: 'POST',
+						headers: {
+							host: 'localhost',
+							cookie: `${cookie_name}=${expired_cookie}`,
+						},
+					});
+					assert.strictEqual(res.status, 401, 'Expired session cookie should be rejected on POST');
+					error_collector.record(route_specs, 'POST', logout_route.path, 401);
+				},
+			);
 		});
 
 		// --- 12. Bearer token browser context on mutation routes ---
@@ -1258,7 +1296,7 @@ export const describe_standard_integration_tests = (
 				const bearer_headers = fixture.create_bearer_headers({
 					'content-type': 'application/json',
 				});
-				const res = await fixture.transport(logout_route.path, {
+				const res = await fixture.fresh_transport()(logout_route.path, {
 					method: 'POST',
 					headers: {...bearer_headers, origin: 'http://localhost:5173'},
 				});
@@ -1281,7 +1319,7 @@ export const describe_standard_integration_tests = (
 				const bearer_headers = fixture.create_bearer_headers({
 					'content-type': 'application/json',
 				});
-				const res = await fixture.transport(password_route.path, {
+				const res = await fixture.fresh_transport()(password_route.path, {
 					method: 'POST',
 					headers: {...bearer_headers, referer: 'http://localhost:5173/admin'},
 				});
@@ -1334,7 +1372,7 @@ export const describe_standard_integration_tests = (
 					method: 'POST',
 					headers: fixture.create_session_headers({'content-type': 'application/json'}),
 					body: JSON.stringify({
-						current_password: 'test-password-123',
+						current_password: DEFAULT_TEST_PASSWORD,
 						new_password: 'new-password-456',
 					}),
 				});
@@ -1376,12 +1414,18 @@ export const describe_standard_integration_tests = (
 				// rather than fail.
 				if (!find_rpc_action(rpc_endpoints_for_setup, invite_create_action_spec.method)) return;
 
-				// Use the keeper as the admin observer — its session carries
-				// `ROLE_ADMIN` via the suite's `extra_keeper_roles` wiring, and
-				// the cross-process harness can't mint admin role_grants via
-				// direct DB INSERT (it has no DB access from the test process).
-				// This test's intent is invite-shape validation, not
-				// cross-account isolation, so reusing the keeper is equivalent.
+				// Drive the admin-gated `invite_create` over the fixture's
+				// session. In both modes the fixture is the fresh keeper,
+				// holding `[ROLE_KEEPER, ROLE_ADMIN, ...extra_keeper_roles]`
+				// from the bootstrap-equivalent seed step — `extra_keeper_roles:
+				// [ROLE_ADMIN]` is technically redundant for the admin suite
+				// but harmless. `fixture.create_session_headers()` resolves to
+				// a session with admin role.
+
+				// `open_signup` stays at production default (`false`) across both
+				// in-process (per-test bootstrap default) and cross-process (the
+				// invite-gated `mint_account` flow doesn't need it flipped), so
+				// the assertion fires without any mid-test setting toggle.
 
 				// Create invite for alice@example.com via RPC
 				const invite_res = await rpc_call_for_spec({
@@ -1436,14 +1480,18 @@ export const describe_standard_integration_tests = (
 				// wire admin RPC actions can't exercise invites.
 				if (!find_rpc_action(rpc_endpoints_for_setup, invite_create_action_spec.method)) return;
 
-				// Use the keeper as the admin observer — its session carries
-				// `ROLE_ADMIN` via the suite's `extra_keeper_roles` wiring, and
-				// the cross-process harness can't mint admin role_grants via
-				// direct DB INSERT. This test creates a separate `existing_user`
-				// for the username-conflict assertion, so reusing the keeper as
-				// the invite-creating admin has no cross-account isolation
-				// impact on the test's intent.
+				// Drive admin-gated calls over the fixture's session — see the
+				// previous test's comment for the in-process / cross-process
+				// admin-resolution paths. This test creates a separate
+				// `existing_user` for the username-conflict assertion, so
+				// reusing the fixture's admin session for the invite-creating
+				// path has no cross-account-isolation impact on the test's intent.
 				const admin_headers = fixture.create_session_headers();
+
+				// Mint the conflict-test sibling account for the username-conflict
+				// assertion below. Both transports preserve hardcoded usernames
+				// now that fresh-keeper-per-test wipes the DB between tests.
+				const existing_user = await fixture.create_account({username: 'existing_user'});
 
 				// Create an invite for a specific test email via RPC
 				const test_email = 'signup-test@example.com';
@@ -1475,11 +1523,6 @@ export const describe_standard_integration_tests = (
 				});
 				assert.strictEqual(no_match_res.status, 403, 'Expected 403 for non-matching invite');
 				const no_match_body = await no_match_res.json();
-
-				// For conflict test: create a second account with a known username,
-				// then create an invite for a different email, then try signup with
-				// the invited email but the colliding username
-				const existing_user = await fixture.create_account({username: 'existing_user'});
 
 				// Create invite for a different email via RPC
 				const conflict_email = 'conflict-test@example.com';

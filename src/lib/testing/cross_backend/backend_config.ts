@@ -7,13 +7,15 @@ import '../assert_dev_env.js';
  * env vars, bootstrap credentials, daemon-token discovery path, declared
  * capabilities. Consumer projects ship per-backend factories
  * (`deno_backend_config()`, `rust_backend_config()`,
- * `fuz_webui_backend_config()`) that produce this shape; `spawn_backend`
+ * `spine_stub_backend_config()`) that produce this shape; `spawn_backend`
  * consumes it.
  *
- * fuz_app ships only the interface — no preset factories live here.
- * Backend-specific knowledge (binary paths, port choices, env vars) is a
- * consumer concern; fuz_app's testing library knows nothing about Deno,
- * Rust, Cargo, or any specific runtime.
+ * fuz_app ships `spine_stub_backend_config()` as a convenience preset
+ * (operational dep on `testing_spine_stub` — path-based discovery, no
+ * `package.json` coupling to the stub's source package). Otherwise backend-specific
+ * knowledge (binary paths, port choices, env vars) is a consumer
+ * concern; fuz_app's testing library knows nothing about Deno, Cargo, or
+ * any specific runtime beyond that preset.
  *
  * @module
  */
@@ -55,13 +57,14 @@ export interface BackendBootstrapConfig {
  * (`deno_backend_config()`, `rust_backend_config()`) produce these and
  * the runner consumes them through `spawn_backend`.
  *
- * Path defaults match the standard fuz_app surface — Deno + Rust + future
- * fuz_webui all converge on `/api/account/{bootstrap,login,logout,password}`,
+ * Path defaults match the standard fuz_app surface — Deno + Rust spine
+ * (`zzz_server`, `fuz_forge_server`, `testing_spine_stub`) all converge on
+ * `/api/account/{bootstrap,login,logout,password}`,
  * `/api/rpc`, `/api/ws`, `/health`. Override only when a backend
  * deliberately diverges (which it shouldn't, per the contract).
  */
 export interface BackendConfig {
-	/** Diagnostic label (`"deno"`, `"rust"`, `"fuz_webui"`). Surfaces in test output. */
+	/** Diagnostic label (`"deno"`, `"rust"`, `"spine_stub"`). Surfaces in test output. */
 	readonly name: string;
 	/** argv passed to the spawn. The first entry is the binary path. */
 	readonly start_command: ReadonlyArray<string>;
@@ -71,6 +74,14 @@ export interface BackendConfig {
 	readonly rpc_path: string;
 	/** WebSocket endpoint mount point. Default `/api/ws`. */
 	readonly ws_path: string;
+	/**
+	 * SSE stream mount point — drives the cross-process SSE suite's stream
+	 * path. Optional: only backends advertising `capabilities.sse` serve a
+	 * stream, and the suite defaults to `/api/admin/audit/stream` (the
+	 * standard fuz_app audit-log stream) when omitted. Set it only when a
+	 * backend mounts its stream elsewhere.
+	 */
+	readonly sse_path?: string;
 	/** Readiness probe path. Default `/health`. */
 	readonly health_path: string;
 	/** Bootstrap POST path. Default `/api/account/bootstrap`. */
