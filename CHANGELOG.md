@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.67.1
+
+### Patch Changes
+
+- fix: bun cross-backend server hanging ([fa6185d](https://github.com/fuzdev/fuz_app/commit/fa6185d))
+
 ## 0.67.0
 
 ### Minor Changes
