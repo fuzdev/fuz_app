@@ -947,3 +947,163 @@ impls actually boot.
 | `create_pglite_factory`                     | `testing/db.ts`                  | PGlite DB factory (shared WASM cache)                           |
 | `create_pg_factory`                         | `testing/db.ts`                  | PostgreSQL DB factory (auto-skips when no URL)                  |
 | `drop_auth_schema`                          | `testing/db.ts`                  | Drop all auth tables for clean-slate pg tests                   |
+
+## Cross-Backend Integration
+
+The in-process suites above drive a Hono app via `http_transport(app)`.
+The **same suite bodies** also run against a real backend binary over real
+HTTP — that's the cross-backend layer in `testing/cross_backend/`. It lets
+any backend implementation (a TS spine on Deno / Node / Bun, a Rust spine,
+or a future one) be verified against the same wire-shape contract the TS
+specs own. Drift between implementations becomes a test failure instead of
+a production discovery.
+
+One suite, many transports: a test declares the capabilities it needs and
+reads its fixtures from a per-test `setup_test()`; the transport (in-process
+vs. cross-process) and the runtime (which binary spawned) are wiring, not a
+suite fork.
+
+### Transports
+
+`RpcTestTransport = (url, init) => Promise<Response>` is the seam. Both
+modes implement it:
+
+| Transport                            | Module                          | Purpose                                                                  |
+| ------------------------------------ | ------------------------------- | ------------------------------------------------------------------------ |
+| `http_transport(app)`                | `testing/rpc_helpers.ts`        | In-process — curries `app.request`. Fast feedback, no socket.            |
+| `create_fetch_transport(options)`    | `testing/transports/fetch_transport.ts` | Cross-process — curries global `fetch` against a base URL + cookie jar. |
+| `create_ws_transport(options)`       | `testing/transports/ws_transport.ts` | WebSocket upgrade over the `ws` package (threads `Cookie` on upgrade).   |
+| `create_sse_transport(options)`      | `testing/transports/sse_transport.ts` | SSE stream client for cross-process stream assertions.                   |
+| `bootstrap(options)`                 | `testing/transports/bootstrap.ts` | Fire the bootstrap envelope, capture `Set-Cookie`, return the keeper.    |
+
+Node's native `WebSocket` (from undici) rejects custom headers on
+construction, so the `ws` package is structurally required for cross-process
+WS and ships as an optional peer dep.
+
+### Capability vocabulary
+
+Suites gate optional behaviors declaratively — no `if (config.name ===
+'rust')` branches. A suite calls `test_if(capabilities.X, name, fn)` (a thin
+wrapper over `test.skipIf(!cond)`); each `BackendConfig` declares which
+capabilities its backend supports, and the runner filters silently. Adding a
+capability is a one-line change in `capabilities.ts` plus a flag in each
+consumer config.
+
+| Capability         | Meaning                                                                             |
+| ------------------ | ----------------------------------------------------------------------------------- |
+| `bearer_auth`      | Backend honors bearer (API-token) credentials.                                      |
+| `trusted_proxy`    | Backend resolves `X-Forwarded-For` behind a trusted proxy.                          |
+| `login_rate_limit` | Backend enforces login/IP rate limits (production semantics, not test-fast).        |
+| `ws`               | Backend serves the WebSocket endpoint.                                              |
+| `sse`              | Backend serves an SSE stream.                                                       |
+| `in_process_only`  | Assertions requiring in-process internals (keyring-signed cookies, raw FK queries). Cross-process configs set this `false`. |
+
+`in_process_capabilities` (all in-process flags on, cross-process flags off)
+and the `ts_default_capabilities` / `rust_default_capabilities` presets in
+`default_backend_configs.ts` are the starting points consumers extend.
+
+### Lifecycle — `BackendConfig` + `spawn_backend`
+
+A `BackendConfig` (`cross_backend/backend_config.ts`) is a plain interface —
+fuz_app ships **shape**, not **targets**. It carries the spawn argv,
+base URL, the `rpc_path` / `ws_path` / `health_path` / `bootstrap_path`
+mounts, the issued `cookie_name`, child-process `env`, bootstrap details,
+and the declared `capabilities`. Consumers supply factories (`deno_backend_config()`,
+`rust_backend_config()`, …) near their own backend; fuz_app knows nothing
+about Cargo, Deno, or any specific binary.
+
+`spawn_backend(config)` (`cross_backend/spawn_backend.ts`) launches the
+binary in its own process group, polls `health_path` until ready, and
+returns a `BackendHandle` with the transports + a `cleanup()` that
+SIGINT/SIGKILLs the child. A `SIGINT` handler tracks live children so
+Ctrl+C doesn't leak processes.
+
+### Consumer wire-up recipe
+
+The typical layout: spawn the backend once per project in a vitest
+`globalSetup`, reconstruct the handle in each test file, and mint a fresh
+per-test account via `default_cross_process_setup`.
+
+```ts
+// global_setup.ts — one backend per vitest project
+import {spawn_backend} from '@fuzdev/fuz_app/testing/cross_backend/spawn_backend.js';
+import {my_backend_config} from './my_backend_config.js';
+
+export default async function () {
+  const handle = await spawn_backend(my_backend_config());
+  // serialize the handle for the test workers via vitest `provide`
+  return async () => handle.cleanup();
+}
+```
+
+```ts
+// some_feature.cross.test.ts
+import {describe, test, inject, assert} from 'vitest';
+import {
+  default_cross_process_setup,
+  reconstruct_bootstrapped_handle,
+} from '@fuzdev/fuz_app/testing/cross_backend/setup.js';
+import {rpc_call} from '@fuzdev/fuz_app/testing/rpc_helpers.js';
+
+const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
+const setup_test = default_cross_process_setup(handle);
+
+describe('some feature cross-backend', () => {
+  test('round-trips', async () => {
+    const fixture = await setup_test(); // fresh account, signed-up + logged-in
+    const res = await rpc_call({
+      app: fixture.transport,
+      path: handle.config.rpc_path,
+      method: 'account_verify',
+      headers: fixture.create_session_headers(),
+    });
+    assert.ok(res.ok);
+  });
+});
+```
+
+`default_cross_process_setup` fires the `_testing_reset` action (wiping the
+keeper row + actor + role_grants + tokens + sessions and re-seeding a fresh
+keeper) then signs up + logs in a per-test account through the production
+RPC surface, so each test starts from clean state without dropping the DB.
+The reset action factory is `create_testing_actions(deps, {session_options,
+daemon_token_state, reset_state})` — the consumer's test binary registers it
+with a `reset_state` closure that clears its own domain state (workspaces,
+terminals, etc.).
+
+### TS spine binaries — three JS runtimes
+
+A consumer's TS backend can be spawned on three JS runtimes against the
+**identical** canonical surface, isolating the runtime axis (V8 vs. JSC) on
+the same code:
+
+| Adapter                        | Module                                       | Runtime  |
+| ------------------------------ | -------------------------------------------- | -------- |
+| `create_node_testing_adapter` | `testing/cross_backend/testing_server_node.ts` | Node V8  |
+| `create_deno_testing_adapter` | `testing/cross_backend/testing_server_deno.ts` | Deno V8  |
+| `create_bun_testing_adapter`  | `testing/cross_backend/testing_server_bun.ts`  | Bun JSC  |
+
+Each adapter pairs with the runtime-neutral `start_testing_server`
+(`testing_server_core.ts`), which owns serve + daemon-info + WS attach +
+graceful drain. The consumer writes a ~40-line spawn entry per runtime that
+wires its own app build onto the adapter + core. The Bun teardown handles
+Bun's never-resolving `server.stop()` by fire-and-forgetting it; the shared
+`spawn_backend` cleanup SIGKILLs after a grace window so a Bun run exits
+cleanly.
+
+For consumers that wire runtime-specific capabilities (e.g. spawning child
+processes for a terminal surface), inject the implementation at the spawn
+entry — the entry already knows its runtime — rather than branching on
+`typeof Deno` inside shared code.
+
+### Spine-stub preset
+
+fuz_app ships `spine_stub_backend_config()`
+(`cross_backend/spine_stub_backend_config.ts`) as a convenience preset for a
+domain-free Rust spine consumer — the `testing_spine_stub` binary that mounts
+the spine's standard surface (auth, account, admin, audit, role-grant offers)
+with no domain layer on top. This keeps the spine API exercised from outside
+any specific product. The "dependency" is **operational** (a binary path, a
+default port, declared capabilities), not a code dependency — there is no
+package coupling. The binary path is overridable via env for CI. All other
+backend configs live in their own consumers' repos.
