@@ -1,5 +1,12 @@
 # @fuzdev/fuz_app
 
+## 0.68.0
+
+### Minor Changes
+
+- feat: account and actor delete, purge, and undelete ([96c8313](https://github.com/fuzdev/fuz_app/commit/96c8313))
+- feat: cells and facts ([96c8313](https://github.com/fuzdev/fuz_app/commit/96c8313))
+
 ## 0.67.1
 
 ### Patch Changes
