@@ -885,6 +885,46 @@ consumer needs partial opt-out, add the knob then.
 `bootstrap`, `rate_limiting_app_options`, `bootstrap_token`) — those drive
 the omitted suites.
 
+### `cross_backend/conformance_table.ts` + `conformance_case.ts` + `xfail.ts` — declarative behavioral/security cases
+
+The opinionated behavioral/security layer on top of the spec-derived
+auto-enumeration (`describe_rpc_round_trip_tests` /
+`describe_rpc_attack_surface_tests`). Where those assert wire-shape,
+conformance cases assert _expected behavior_ — the security negatives
+(must be refused / must not leak / found-vs-not-found same shape) a
+wire-shape check passes green on even when behavior is wrong.
+
+- `conformance_case.ts` — `ConformanceCase` Zod schema:
+  `{name, request: {method, params?, as, verb?}, expect: {status,
+error_reason?, fields?}, note?, xfail?}`. A case is **data** — `method`
+  resolves its `input`/`output` from the live registry (RPC) or `RouteSpec`
+  (the 6 REST auth routes), so the case never carries a schema. `as` is the
+  closed `ConformancePrincipal` enum (`keeper` / `daemon` / `token` /
+  `anonymous` / `fresh_non_admin` / `role_holder` / `wrong_role`) — fixture
+  accessors, never inline credential minting. `error_reason` is the imported
+  `ERROR_*` constant (asserted against the RPC `error.data.reason` or the
+  REST flat-body `error`; the bare `unauthenticated()` 401 carries no
+  reason, so `status` pins that denial class).
+- `conformance_table.ts` — `describe_conformance_table_tests({cases,
+setup_test, surface_source, capabilities, rpc_endpoints, session_options,
+principals?, suite_name?})`. Same `{setup_test, surface_source,
+capabilities}` protocol every Tier 1 suite uses, so **one case array runs
+  both transports** — in-process (`gro test`) and cross-process (the gate,
+  each backend's real auth resolution). `resolve_principal` maps the five
+  always-available principals to fixture accessors; `role_holder` /
+  `wrong_role` read a seeded `extra_accounts` username named via
+  `options.principals`.
+- `xfail.ts` — `xfail_until(tracking_id, reason, name, fn)`, a thin
+  `test.fails` wrapper for deferred-by-design rows (visible + self-cleaning:
+  turns red when the gap closes, forcing marker removal). In-scope gaps fail
+  loud as a normal `test`, not via this marker. Sibling to `test_if` in
+  `capabilities.ts`.
+
+Wire from a `.db.test.ts` (in-process) and a `.cross.test.ts`
+(cross-process) with the same case array — fuz_app's own runner-proof is
+`../../test/cross_backend/conformance.{db,cross}.test.ts` sharing
+`conformance_proof_cases.ts`.
+
 ### `cross_backend/ws_round_trip.ts` — `describe_cross_process_ws_tests`
 
 Real-upgrade WebSocket coverage of a spawned backend — the cross-process

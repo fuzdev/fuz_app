@@ -343,6 +343,17 @@ a handler cannot revoke a role_grant belonging to a different actor. The same
 `RoleGrantOfferNotFoundError` on both a missing offer id and a wrong-recipient
 lookup to avoid disclosing whether an offer id exists.
 
+**404-over-403 is the general mask, not a per-handler quirk.** Any
+resource-scoped lookup where existence itself is privileged returns the
+**same `not_found` shape** for "no such row" and "exists but the caller
+can't view it" — never a `forbidden` that would confirm the id. Beyond
+role_grants/offers above, the cell surface applies it uniformly:
+`cell_get` / `cell_update` / `cell_delete` / `cell_clone` all return 404
+(`ERROR_CELL_NOT_FOUND`) when the caller fails `can_view_cell`, identical
+to a genuine miss (`auth/cell_actions.ts`). A caller therefore cannot
+enumerate private cells (or offers, or another actor's grants) by id —
+found-and-unauthorized and not-found are wire-indistinguishable.
+
 **Duplicate prevention**: A partial unique index on
 `(actor_id, role, COALESCE(scope_id, sentinel))` prevents duplicate active
 role_grants per resource scope (global role_grants collapse via the sentinel uuid).

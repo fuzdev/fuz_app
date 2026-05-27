@@ -848,6 +848,7 @@ assert_error_coverage(collector, route_specs, {
 | `describe_data_exposure_tests`              | `testing/data_exposure.ts`       | Schema-level + runtime sensitive field blocklist audit          |
 | `describe_rpc_attack_surface_tests`         | `testing/rpc_attack_surface.ts`  | 3-group RPC attack surface (auth, envelopes, params)            |
 | `describe_rpc_round_trip_tests`             | `testing/rpc_round_trip.ts`      | DB-backed round-trip for RPC methods (POST + GET)               |
+| `describe_conformance_table_tests`          | `testing/cross_backend/conformance_table.ts` | Declarative behavioral/security cases — one row array, both transports (see §Cross-Backend Integration) |
 | `create_describe_db`                        | `testing/db.ts`                  | Create a `describe_db` bound to factories + truncate tables     |
 
 ### Cross-Impl Schema Parity
@@ -1107,3 +1108,79 @@ any specific product. The "dependency" is **operational** (a binary path, a
 default port, declared capabilities), not a code dependency — there is no
 package coupling. The binary path is overridable via env for CI. All other
 backend configs live in their own consumers' repos.
+
+### Rebuild-by-default workflow
+
+A stale prebuilt spine-stub binary fails every cell/RPC case with
+`method not found` while auth cases pass — so a lagging build reads as a
+regression rather than "rebuild me". The fix is workflow, not a detector:
+the spine-stub project's `globalSetup`
+(`make_rust_spine_global_setup` in `global_setup_helpers.ts`) rebuilds the
+binary before spawning, so the common path is one command:
+
+```bash
+npm run test:cross:spine-stub
+```
+
+That `globalSetup`:
+
+1. Runs `cargo build -p testing_spine_stub --release` (incremental — cheap
+   when nothing changed). Skip it with `FUZ_TESTING_NO_REBUILD=1` when you
+   know the binary is current.
+2. Folds in an idempotent `createdb` for the spine-stub's Postgres database
+   (the harness itself never issues `CREATE DATABASE`, to avoid forcing a
+   `CREATEDB` grant on the test role).
+3. Defaults `FUZ_TESTING_SPINE_STUB_BIN` to the conventional
+   `target/release` location when it's unset.
+
+Point the build at the Cargo workspace with `FUZ_SPINE_STUB_WORKSPACE_DIR`
+(CI / non-default checkouts), or pin a prebuilt binary directly with
+`FUZ_TESTING_SPINE_STUB_BIN`. The rebuild lives in the consumer/runner
+wiring — the exported `testing/` harness stays runtime-agnostic and knows
+nothing about Cargo.
+
+### Declarative conformance table
+
+`describe_conformance_table_tests` (`cross_backend/conformance_table.ts`)
+is the opinionated behavioral/security layer on top of the spec-derived
+auto-enumeration (`describe_rpc_round_trip_tests` /
+`describe_rpc_attack_surface_tests`). Where those assert wire-shape,
+conformance cases assert *expected behavior* — especially the security
+negatives (must be refused / must not leak / found-vs-not-found return the
+same shape) that a wire-shape check can pass green on even when behavior is
+wrong.
+
+A case is **data** (`ConformanceCase` in `cross_backend/conformance_case.ts`):
+
+```ts
+{
+  name: 'non-admin → admin_account_list → 403',
+  request: {method: 'admin_account_list', as: 'fresh_non_admin'},
+  expect: {status: 403, error_reason: ERROR_INSUFFICIENT_PERMISSIONS},
+  note: 'admin-gated RPC method rejects an authenticated non-admin',
+}
+```
+
+- The case never carries a schema — `method` resolves its `input`/`output`
+  from the live action-spec registry (RPC) or `RouteSpec` (the REST auth
+  routes), so the spec stays the single source of truth.
+- `as` is the closed `ConformancePrincipal` enum (`keeper`, `daemon`,
+  `token`, `anonymous`, `fresh_non_admin`, `role_holder`, `wrong_role`) —
+  each maps to a fixture accessor, never inline credential minting.
+- `error_reason` is the imported `ERROR_*` constant, asserted against the
+  RPC `error.data.reason` (or the REST flat-body `error`); when an RPC
+  denial carries no reason (the bare 401), `status` pins the denial class.
+- `expect.fields` adds specific field-value assertions on the result/error.
+
+The runner takes the same `{setup_test, surface_source, capabilities}`
+protocol every standard suite uses, so **one case definition runs both
+transports** — in-process (fast, every `gro test`) and cross-process (the
+gate, against each backend's real auth resolution). Wire it from a
+`.db.test.ts` (in-process) and a `.cross.test.ts` (cross-process) with the
+same case array.
+
+Deferred-by-design rows mark themselves with `xfail`
+(`xfail_until(tracking_id, reason, ...)` from `cross_backend/xfail.ts`) — a
+`test.fails` wrapper that stays visible in the report and turns red the
+moment the gap closes, forcing the marker's removal. In-scope gaps don't
+get a marker — they fail loud as a normal red `test`.

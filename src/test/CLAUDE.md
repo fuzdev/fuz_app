@@ -114,7 +114,7 @@ the test helpers' route list.
 spawned backends. `*.cross.test.ts` bodies are runtime-agnostic — they
 `inject('backend_handle')` and drive `default_spine_surface` over the wire —
 so the same files run under every `cross_backend_*` project; each project's
-`globalSetup` spawns a different backend. Five cross files today:
+`globalSetup` spawns a different backend. Six cross files today:
 `auth.cross.test.ts` (the `describe_standard_cross_process_tests` bundle —
 HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
 `describe_cross_process_ws_tests` suite — live WebSocket, including
@@ -129,7 +129,10 @@ against its Zod output schema), and `account_lifecycle.cross.test.ts`
 keeper-confirmed purge, the `cannot_delete_keeper` guard, and the
 `admin_account_list` `include_deleted` listing shape (tombstoned rows surface
 with `deleted_at` set), gated on `capabilities.account_lifecycle`; off the
-declared surface like cells).
+declared surface like cells), and `conformance.cross.test.ts` (the
+declarative `describe_conformance_table_tests` runner over shared
+`conformance_proof_cases.ts` — the in-process leg is
+`conformance.db.test.ts`, same cases both transports).
 Only the TS spines advertise
 `capabilities.sse` (they wire `audit_log_sse`), so the SSE cases `.skip` on the
 Rust `spine_stub`. Cells live-mount the full surface on every backend and stay
@@ -148,8 +151,10 @@ backends:
   ones need `deno` / `bun` on PATH). This is the in-repo cross-process coverage
   of the TS impl's real HTTP path across all three JS runtimes — the in-process
   suites (default `gro test`) never cross a process boundary.
-- `cross_backend_spine_stub` — the Rust `testing_spine_stub` (needs
-  `FUZ_TESTING_SPINE_STUB_BIN` + a created Postgres DB).
+- `cross_backend_spine_stub` — the Rust `testing_spine_stub`. Its
+  `globalSetup` rebuilds the crate and creates its Postgres DB by default
+  (see ../../docs/testing.md §Rebuild-by-default workflow), so the common
+  path is `npm run test:cross:spine-stub` with no manual setup.
 
 **Opt-in.** The `cross_backend_*` projects are gated in `vite.config.ts`
 behind `FUZ_TEST_CROSS_BACKEND=1` and excluded from a bare `gro test` (they
@@ -159,9 +164,10 @@ spawn external backends). Run one with:
 FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_node
 FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_deno
 FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_bun
-# the Rust stub additionally needs a prebuilt binary + a created Postgres DB:
-FUZ_TESTING_SPINE_STUB_BIN=/path/to/binary FUZ_TEST_CROSS_BACKEND=1 \
-  npx vitest run --project cross_backend_spine_stub
+# the Rust stub rebuilds + creates its DB by default:
+npm run test:cross:spine-stub
+# skip the rebuild when the binary is known current:
+FUZ_TESTING_NO_REBUILD=1 npm run test:cross:spine-stub
 ```
 
 The TS binary + the reusable test-server core/adapters it's built on live in
