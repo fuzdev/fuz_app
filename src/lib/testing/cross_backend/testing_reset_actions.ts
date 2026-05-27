@@ -124,6 +124,45 @@ export const testing_reset_action_spec = {
 		'Test-binary only — wipe auth tables, re-bootstrap a fresh keeper (+ optional extras), fire the domain-state reset.',
 } as const satisfies RequestResponseActionSpec;
 
+/**
+ * `_testing_drain_effects` — await in-flight fire-and-forget audit writes so
+ * a following `audit_log_list` is authoritative. The deterministic barrier
+ * the cross-backend conformance suite uses in place of a poll/sleep before
+ * asserting on audit rows.
+ *
+ * On the TS spine the barrier is **satisfied by construction**: the test
+ * binary runs `await_pending_effects: true`, so every mutation's fire-and-
+ * forget audit emits are awaited before its response returns — by the time
+ * a later drain call runs, prior emits are already durable. The action still
+ * exists so the cross-backend test body calls the same method on every
+ * backend; the Rust spine (whose audit writes are detached tokio tasks)
+ * does the real await in `AuditEmitter::drain_inflight`.
+ *
+ * `auth` gates on the daemon-token credential, matching `_testing_reset`.
+ */
+export const testing_drain_effects_action_spec = {
+	method: '_testing_drain_effects',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: {account: 'required', actor: 'none', credential_types: ['daemon_token']},
+	side_effects: false,
+	input: z.void(),
+	output: z.strictObject({ok: z.boolean()}),
+	async: true,
+	description:
+		'Test-binary only — await in-flight fire-and-forget audit writes so a following audit_log_list read is authoritative.',
+} as const satisfies RequestResponseActionSpec;
+
+/**
+ * Build the standalone `_testing_drain_effects` action. No deps — on TS the
+ * barrier is satisfied by `await_pending_effects` (see the spec doc), so the
+ * handler just returns `{ok: true}`. Mount it on any test endpoint whose
+ * suite asserts on audit rows (the spine binary bundles it via
+ * `create_testing_actions`; in-process suites mount it directly).
+ */
+export const create_testing_drain_effects_action = (): RpcAction =>
+	rpc_action(testing_drain_effects_action_spec, async () => ({ok: true}));
+
 /** Options for `create_testing_actions`. */
 export interface CreateTestingActionsOptions {
 	/**
@@ -260,6 +299,7 @@ export const create_testing_actions = (
 
 			return {...keeper, extra_accounts: extras};
 		}),
+		create_testing_drain_effects_action(),
 	];
 };
 

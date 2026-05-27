@@ -26,8 +26,8 @@ export const conformance_proof_cases: ReadonlyArray<ConformanceCase> = [
 	{
 		name: 'anonymous → admin_account_list → 401',
 		request: {method: 'admin_account_list', as: 'anonymous'},
-		// The bare `unauthenticated()` 401 carries no `data.reason`, so the
-		// runner pins the denial class on `status`; the reason is documentary.
+		// The pre-validation 401 carries `data.reason = authentication_required`
+		// on both spines, so the runner asserts the reason, not just the status.
 		expect: {status: 401, error_reason: ERROR_AUTHENTICATION_REQUIRED},
 		note: 'protected RPC method rejects an unauthenticated caller',
 	},

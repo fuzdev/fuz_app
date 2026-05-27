@@ -26,8 +26,10 @@ import {
 	AccountUndeleteOutput,
 	AccountPurgeOutput,
 	AdminAccountListOutput,
+	AuditLogListOutput,
 	ERROR_CANNOT_DELETE_KEEPER,
 } from '../../auth/admin_action_specs.js';
+import {ERROR_ACCOUNT_NOT_FOUND, ERROR_AUTHENTICATION_REQUIRED} from '../../http/error_schemas.js';
 import {test_if} from './capabilities.js';
 import {
 	cross_rpc_call,
@@ -134,6 +136,185 @@ export const describe_account_lifecycle_cross_tests = (
 				assert.strictEqual(error_reason(purge), ERROR_CANNOT_DELETE_KEEPER);
 			},
 		);
+
+		test_if(
+			capabilities.account_lifecycle,
+			'fail-closed: a soft-deleted account’s session + bearer credentials no longer authenticate',
+			async () => {
+				const fixture = await setup_test();
+				const victim = await fixture.create_account({username: 'lifecycle_failclosed'});
+				const admin_headers = fixture.create_session_headers();
+
+				// Sanity: the victim's session authenticates while active, so the
+				// post-deletion 401 is a real fail-closed transition, not a
+				// never-valid credential passing vacuously.
+				const before = await cross_rpc_call(
+					fixture.fresh_transport(),
+					rpc_path,
+					'account_verify',
+					undefined,
+					victim.create_session_headers(),
+				);
+				assert.ok(before.ok, 'victim session authenticates before deletion');
+
+				const deleted = expect_output(
+					await cross_rpc_call(
+						fixture.fresh_transport(),
+						rpc_path,
+						'account_delete',
+						{account_id: victim.account.id},
+						admin_headers,
+					),
+					AccountDeleteOutput,
+				);
+				assert.strictEqual(deleted.deleted, true);
+
+				// The tombstone blocks auth resolution (and the soft-delete
+				// revoked sessions/tokens) — the stale session credential must
+				// fail closed with a generic 401, not partially authenticate.
+				const session_probe = await cross_rpc_call(
+					fixture.fresh_transport(),
+					rpc_path,
+					'account_verify',
+					undefined,
+					victim.create_session_headers(),
+				);
+				assert.strictEqual(
+					session_probe.ok,
+					false,
+					'soft-deleted account session must not authenticate',
+				);
+				assert.strictEqual(error_reason(session_probe), ERROR_AUTHENTICATION_REQUIRED);
+
+				// The victim's bearer token must fail closed too.
+				const bearer_probe = await cross_rpc_call(
+					fixture.fresh_transport({origin: null}),
+					rpc_path,
+					'account_verify',
+					undefined,
+					victim.create_bearer_headers(),
+				);
+				assert.strictEqual(
+					bearer_probe.ok,
+					false,
+					'soft-deleted account bearer token must not authenticate',
+				);
+				assert.strictEqual(error_reason(bearer_probe), ERROR_AUTHENTICATION_REQUIRED);
+			},
+		);
+
+		test_if(
+			capabilities.account_lifecycle,
+			'keeper guard emits a fail-loud failure-audit row (drained, cross-impl)',
+			async () => {
+				const fixture = await setup_test();
+				const t = fixture.fresh_transport();
+
+				// Refused keeper self-delete — the guard fires before any mutation
+				// and emits a forensic `outcome: failure` audit row.
+				const del = await cross_rpc_call(
+					t,
+					rpc_path,
+					'account_delete',
+					{account_id: fixture.account.id},
+					fixture.create_session_headers(),
+				);
+				assert.strictEqual(error_reason(del), ERROR_CANNOT_DELETE_KEEPER);
+
+				// Deterministic barrier before reading: await in-flight
+				// fire-and-forget audit writes (the real await on the Rust spine;
+				// satisfied-by-construction on the TS spine via await_pending_effects).
+				const td = fixture.fresh_transport({origin: null});
+				const drained = await cross_rpc_call(
+					td,
+					rpc_path,
+					'_testing_drain_effects',
+					undefined,
+					fixture.create_daemon_token_headers(),
+				);
+				assert.ok(drained.ok, `_testing_drain_effects failed: ${JSON.stringify(drained.error)}`);
+
+				// The failure row is now authoritative on both spines. `_testing_reset`
+				// wiped audit_log at setup, so the refused delete is the only
+				// account_delete event.
+				const listed = expect_output(
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'audit_log_list',
+						{event_type: 'account_delete'},
+						fixture.create_session_headers(),
+					),
+					AuditLogListOutput,
+				);
+				const failure = listed.events.find(
+					(e) =>
+						e.outcome === 'failure' &&
+						(e.metadata as {reason?: unknown} | null)?.reason === ERROR_CANNOT_DELETE_KEEPER,
+				);
+				assert.ok(
+					failure,
+					'keeper-removal guard must emit an account_delete outcome=failure audit row with reason cannot_delete_keeper',
+				);
+			},
+		);
+
+		test_if(
+			capabilities.account_lifecycle,
+			'deterministic: double-undelete → second call is not_found',
+			async () => {
+				const fixture = await setup_test();
+				const victim = await fixture.create_account({username: 'lifecycle_double'});
+				const t = fixture.fresh_transport();
+				const admin_headers = fixture.create_session_headers();
+
+				const deleted = expect_output(
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'account_delete',
+						{account_id: victim.account.id},
+						admin_headers,
+					),
+					AccountDeleteOutput,
+				);
+				assert.strictEqual(deleted.deleted, true);
+
+				// First undelete clears the tombstone.
+				const undeleted = expect_output(
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'account_undelete',
+						{account_id: victim.account.id},
+						admin_headers,
+					),
+					AccountUndeleteOutput,
+				);
+				assert.strictEqual(undeleted.undeleted, true);
+
+				// Second undelete on the now-active account is a deterministic
+				// not_found — the query only matches soft-deleted rows, so the
+				// outcome is the same on both spines (no silent idempotent ok).
+				const again = await cross_rpc_call(
+					t,
+					rpc_path,
+					'account_undelete',
+					{account_id: victim.account.id},
+					admin_headers,
+				);
+				assert.strictEqual(again.ok, false, 'double-undelete must not silently succeed');
+				assert.strictEqual(error_reason(again), ERROR_ACCOUNT_NOT_FOUND);
+			},
+		);
+
+		// The last-admin guard (`ERROR_CANNOT_DELETE_LAST_ADMIN`) is **not**
+		// cross-process-testable against this fixture: the per-test keeper
+		// permanently holds `ROLE_ADMIN` (bootstrap seeds `[ROLE_KEEPER,
+		// ROLE_ADMIN]` and there is no remove-admin-from-keeper path), so a
+		// non-keeper admin is never the *sole* active admin and the guard
+		// never fires here. Its logic is covered in-process by
+		// `src/test/auth/account_keeper_guard.db.test.ts`.
 
 		test_if(
 			capabilities.account_lifecycle,

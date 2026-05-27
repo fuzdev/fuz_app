@@ -2757,7 +2757,7 @@
 						"name": "PerformActionInput",
 						"kind": "type",
 						"doc_comment": "Per-call inputs to `perform_action`. Each transport assembles this from\nits wire envelope + connection identity.",
-						"source_line": 77,
+						"source_line": 78,
 						"type_signature": "PerformActionInput",
 						"properties": [
 							{
@@ -2826,7 +2826,7 @@
 						"name": "PerformActionDeps",
 						"kind": "type",
 						"doc_comment": "Per-deps inputs to `perform_action`. Each transport supplies its own\npool-level `Db` and rate limiters; the dispatcher wraps in a transaction\niff `spec.side_effects` is true.\n\nPool-resilient fire-and-forget effects (audit writes) run through\n`AppDeps.audit.emit` from the action factory's closure — the dispatcher\nnever sees the audit emitter. The bound emitter owns the pool.",
-						"source_line": 113,
+						"source_line": 114,
 						"type_signature": "PerformActionDeps",
 						"properties": [
 							{
@@ -2871,14 +2871,14 @@
 						"name": "PerformActionResult",
 						"kind": "type",
 						"doc_comment": "Discriminated result of `perform_action`. Each transport binds this to\nits wire shape: HTTP RPC folds the error into a JSON-RPC envelope and\nreturns via `c.json`; WS sends the response over the socket.",
-						"source_line": 139,
+						"source_line": 140,
 						"type_signature": "PerformActionResult"
 					},
 					{
 						"name": "perform_action",
 						"kind": "function",
 						"doc_comment": "The shared dispatch core. Pure data — no Hono context, no socket. Each\ntransport calls into this with pre-parsed inputs and binds the result\nto its wire shape.\n\nPhase order: 401 → 400 → 403 → handler. On the test-preset path the\ndispatcher skips the live authorization phase and uses the supplied\npre-baked context for post-authorization checks; pre-validation 401\nstill fires when the harness omits `account_id`.",
-						"source_line": 153,
+						"source_line": 154,
 						"type_signature": "(input: PerformActionInput, deps: PerformActionDeps): Promise<PerformActionResult>",
 						"return_type": "Promise<PerformActionResult>",
 						"parameters": [
@@ -2896,7 +2896,7 @@
 						"name": "perform_action_result_to_envelope",
 						"kind": "function",
 						"doc_comment": "Build a JSON-RPC response envelope from a `PerformActionResult` for\ntransports that wire over the JSON-RPC 2.0 message shape (HTTP RPC + WS).",
-						"source_line": 388,
+						"source_line": 397,
 						"type_signature": "(id: string | number, result: PerformActionResult): { jsonrpc: string; id: string | number; } & ({ result: unknown; } | { error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<...>); message: string; data?: unknown; }; })",
 						"return_type": "{ jsonrpc: string; id: string | number; } & ({ result: unknown; } | { error: { [x: string]: unknown; code: -32700 | -32600 | -32601 | -32602 | -32603 | (number & $brand<\"JsonrpcServerErrorCode\">); message: string; data?: unknown; }; })",
 						"parameters": [
@@ -19683,6 +19683,7 @@
 					"testing/adversarial_input.ts",
 					"testing/attack_surface.ts",
 					"testing/bootstrap_success.ts",
+					"testing/cross_backend/account_lifecycle.ts",
 					"testing/integration.ts",
 					"testing/middleware.ts",
 					"testing/rate_limiting.ts",
@@ -25327,6 +25328,8 @@
 					"testing/cross_backend/cell_cross_helpers.ts",
 					"testing/cross_backend/cell_crud.ts",
 					"testing/cross_backend/cell_relations.ts",
+					"testing/cross_backend/conformance_case.ts",
+					"testing/cross_backend/conformance_table.ts",
 					"testing/cross_backend/default_backend_configs.ts",
 					"testing/cross_backend/default_secrets.ts",
 					"testing/cross_backend/default_spine_surface.ts",
@@ -25342,6 +25345,7 @@
 					"testing/cross_backend/testing_server_node.ts",
 					"testing/cross_backend/ts_spine_backend_config.ts",
 					"testing/cross_backend/ws_round_trip.ts",
+					"testing/cross_backend/xfail.ts",
 					"testing/data_exposure.ts",
 					"testing/db.ts",
 					"testing/db_entities.ts",
@@ -26180,13 +26184,13 @@
 						"name": "AccountLifecycleCrossTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for the account-lifecycle parity suite. Shares the shape of the\ncell suites (`setup_test` / `capabilities` / `rpc_path`); reuses\n`CellCrossTestOptions` rather than minting a structural duplicate.",
-						"source_line": 45,
+						"source_line": 47,
 						"type_signature": "CellCrossTestOptions"
 					},
 					{
 						"name": "describe_account_lifecycle_cross_tests",
 						"kind": "function",
-						"source_line": 47,
+						"source_line": 49,
 						"type_signature": "(options: CellCrossTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -26200,6 +26204,7 @@
 				"module_comment": "Cross-backend parity suite for the account-lifecycle admin verbs:\n`account_delete` (soft), `account_undelete` (reactivation), and\n`account_purge` (keeper hard-delete), plus the keeper guard.\n\nLike the cell suites, these verbs can't ride the generic\n`describe_rpc_round_trip_tests`: they're stateful and destructive (a\ngeneric round-trip would tombstone the bootstrapped keeper). They\nlive-mount on every spine's RPC path but stay off the declared surface,\nso this dedicated suite is their cross-impl validator. Every success\n`result` is parsed against the verb's declared Zod **output** schema, so\na TS↔Rust envelope drift fails the assertion.\n\n`$lib`-free by contract (relative specifiers only) so it can be imported\nfrom the spawnable cross-process test files.",
 				"dependencies": [
 					"auth/admin_action_specs.ts",
+					"http/error_schemas.ts",
 					"testing/assert_dev_env.ts",
 					"testing/cross_backend/capabilities.ts",
 					"testing/cross_backend/cell_cross_helpers.ts",
@@ -27034,6 +27039,162 @@
 					"testing/cross_backend/capabilities.ts",
 					"testing/cross_backend/cell_cross_helpers.ts",
 					"testing/cross_backend/default_spine_surface.ts"
+				]
+			},
+			{
+				"path": "testing/cross_backend/conformance_case.ts",
+				"declarations": [
+					{
+						"name": "ConformancePrincipal",
+						"kind": "type",
+						"doc_comment": "Closed enum of fixture-provisioned principals a case runs `as`. Each\nvalue maps to a `TestFixture` accessor (or a seeded `extra_accounts`\nentry) in the runner's `resolve_principal` — there is **no** inline\ncredential minting in a case (that would be the setup-DSL trap).\n\n- `keeper` — the per-test bootstrapped keeper (holds `ROLE_KEEPER` +\n  `ROLE_ADMIN`), session credential.\n- `daemon` — the keeper authenticated via the daemon-token header.\n- `token` — the keeper authenticated via a bearer api-token (non-browser\n  context; the runner suppresses `Origin` so the token isn't discarded).\n- `anonymous` — no credential, fresh cookie jar.\n- `fresh_non_admin` — a freshly minted account with no roles, session\n  credential (via the production invite → signup → login flow).\n- `role_holder` — a seeded `extra_accounts` principal holding a specific\n  role; the runner reads it by the username named in\n  `ConformanceTableOptions.principals.role_holder`.\n- `wrong_role` — a seeded `extra_accounts` principal holding a role\n  other than the one a route requires; named via\n  `ConformanceTableOptions.principals.wrong_role`.",
+						"source_line": 51,
+						"type_signature": "ZodEnum<{ token: \"token\"; keeper: \"keeper\"; daemon: \"daemon\"; anonymous: \"anonymous\"; fresh_non_admin: \"fresh_non_admin\"; role_holder: \"role_holder\"; wrong_role: \"wrong_role\"; }>"
+					},
+					{
+						"name": "ConformanceCaseRequest",
+						"kind": "type",
+						"doc_comment": "The request a conformance case issues.",
+						"source_line": 63,
+						"type_signature": "ZodObject<{ method: ZodString; params: ZodOptional<ZodUnknown>; as: ZodEnum<{ token: \"token\"; keeper: \"keeper\"; daemon: \"daemon\"; anonymous: \"anonymous\"; fresh_non_admin: \"fresh_non_admin\"; role_holder: \"role_holder\"; wrong_role: \"wrong_role\"; }>; verb: ZodOptional<...>; }, $strict>"
+					},
+					{
+						"name": "ConformanceCaseExpectation",
+						"kind": "type",
+						"doc_comment": "The expected response shape a conformance case asserts.",
+						"source_line": 83,
+						"type_signature": "ZodObject<{ status: ZodNumber; error_reason: ZodOptional<ZodString>; fields: ZodOptional<ZodRecord<ZodString, ZodUnknown>>; }, $strict>"
+					},
+					{
+						"name": "ConformanceCaseXfail",
+						"kind": "type",
+						"doc_comment": "Marks a case as a deferred-by-design gap. The runner routes it through\n`xfail_until` instead of a normal `test` — visible (distinct from pass)\nand self-cleaning (flips red when the impl starts passing, forcing the\nmarker's removal). Use for declared gaps (e.g. facts), never for\nin-scope gaps (those fail loud as a red `test`).",
+						"source_line": 114,
+						"type_signature": "ZodObject<{ tracking_id: ZodString; reason: ZodString; }, $strict>"
+					},
+					{
+						"name": "ConformanceCase",
+						"kind": "type",
+						"doc_comment": "A single conformance case. `name` is the assertion; the optional\nfree-text `note` is printed in the test label / failure output. A\nsecurity case's `note` should reference a **public** fuz_app doc\nproperty (`security.md` / `architecture.md` / module TSDoc), since the\ntable ships in a public package — not an internal planning doc. The note\nis documentation, not a gate: it stays free-text by design because a\nnon-empty-string check never catches a *wrong* citation — the citation\nis verified in review.",
+						"source_line": 132,
+						"type_signature": "ZodObject<{ name: ZodString; request: ZodObject<{ method: ZodString; params: ZodOptional<ZodUnknown>; as: ZodEnum<{ token: \"token\"; keeper: \"keeper\"; daemon: \"daemon\"; anonymous: \"anonymous\"; fresh_non_admin: \"fresh_non_admin\"; role_holder: \"role_holder\"; wrong_role: \"wrong_role\"; }>; verb: ZodOptional<...>; }, $str..."
+					}
+				],
+				"module_comment": "Declarative conformance-case schema for the cross-backend behavioral +\nsecurity suite.\n\nA conformance case is a single request → expected-response assertion,\ncarried as **data**. The case references a `method` (an RPC method name\nor a REST auth-route suffix); the runner\n(`describe_conformance_table_tests`) resolves the `input` / `output`\nZod schemas from the live action-spec registry / `RouteSpec` — the case\nnever carries a schema. This is the opinionated behavioral/security\nlayer on top of the spec-derived auto-enumeration\n(`describe_rpc_round_trip_tests` / `describe_rpc_attack_surface_tests`):\nthe same case definition runs in-process (fast, every `gro test`) and\ncross-process (the conformance gate) against each impl's real auth\nresolution.\n\nThe table is for single-request matrices (credential-type ceiling,\nprivilege gates, IDOR masks, enumeration-equivalence, validation).\nMulti-step flows stay imperative in their own `describe_*` suites,\nsharing assertion primitives — there is deliberately no declarative\nsetup DSL.",
+				"dependencies": ["testing/assert_dev_env.ts"]
+			},
+			{
+				"path": "testing/cross_backend/conformance_table.ts",
+				"declarations": [
+					{
+						"name": "ConformancePrincipalConfig",
+						"kind": "type",
+						"doc_comment": "Names a seeded `extra_accounts` username for the `role_holder` /\n`wrong_role` principals — the only two that aren't backed by an\nalways-available fixture accessor. Suites exercising those principals\ndeclare the matching `extra_accounts` at setup and name them here.",
+						"source_line": 51,
+						"type_signature": "ConformancePrincipalConfig",
+						"properties": [
+							{
+								"name": "role_holder",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "`extra_accounts` username for the `role_holder` principal."
+							},
+							{
+								"name": "wrong_role",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "`extra_accounts` username for the `wrong_role` principal."
+							}
+						]
+					},
+					{
+						"name": "ConformanceTableOptions",
+						"kind": "type",
+						"doc_comment": "Options for `describe_conformance_table_tests`.",
+						"source_line": 59,
+						"type_signature": "ConformanceTableOptions",
+						"properties": [
+							{
+								"name": "cases",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "ReadonlyArray<ConformanceCase>",
+								"doc_comment": "The conformance cases to run, in order."
+							},
+							{
+								"name": "setup_test",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "SetupTest",
+								"doc_comment": "Per-test fixture producer (in-process or cross-process)."
+							},
+							{
+								"name": "surface_source",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "AppSurfaceSpec",
+								"doc_comment": "Surface spec — supplies the `RouteSpec`s for the REST branch."
+							},
+							{
+								"name": "capabilities",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "BackendCapabilities",
+								"doc_comment": "Declared backend capabilities (reserved for capability-gated rows)."
+							},
+							{
+								"name": "rpc_endpoints",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "RpcEndpointsSuiteOption",
+								"doc_comment": "RPC endpoints — resolved to find each method's action spec."
+							},
+							{
+								"name": "session_options",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "SessionOptions<string>",
+								"doc_comment": "Session options — needed to resolve the `rpc_endpoints` factory form."
+							},
+							{
+								"name": "principals",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "ConformancePrincipalConfig",
+								"doc_comment": "Maps the `role_holder` / `wrong_role` principals to seeded usernames."
+							},
+							{
+								"name": "suite_name",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "`describe` block label. Defaults to `'conformance table'`."
+							}
+						]
+					},
+					{
+						"name": "describe_conformance_table_tests",
+						"kind": "function",
+						"doc_comment": "Register a `describe` block running every `ConformanceCase` as a\nvitest `test` (or `xfail_until` for deferred-by-design rows). Drives\neither transport via the shared `{setup_test, surface_source,\ncapabilities}` protocol.",
+						"source_line": 298,
+						"type_signature": "(options: ConformanceTableOptions): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "ConformanceTableOptions"
+							}
+						]
+					}
+				],
+				"module_comment": "Table runner for the declarative cross-backend conformance suite.\n\n`describe_conformance_table_tests` takes a list of `ConformanceCase`\nrows plus the standard `{setup_test, surface_source, capabilities}`\nfixture protocol every Tier 1 suite uses — so **one runner drives both\ntransports**: in-process via `default_in_process_setup` (fast, every\n`gro test`) and cross-process via `default_cross_process_setup` (the\nconformance gate, exercising each impl's real auth resolution over real\nHTTP). Same case definition, transport-parameterized.\n\nEach row references a `method`; the runner resolves its `input` /\n`output` schema from the live spec registry (RPC) or `RouteSpec` (the 6\nREST auth routes) — the row never carries a schema. The principal the\nrow runs `as` resolves to a `TestFixture` accessor via\n`resolve_principal` — no inline credential minting.",
+				"dependencies": [
+					"testing/assert_dev_env.ts",
+					"testing/cross_backend/xfail.ts",
+					"testing/integration_helpers.ts",
+					"testing/rpc_helpers.ts"
 				]
 			},
 			{
@@ -28144,10 +28305,26 @@
 						"type_signature": "{ readonly method: \"_testing_reset\"; readonly kind: \"request_response\"; readonly initiator: \"frontend\"; readonly auth: { readonly account: \"required\"; readonly actor: \"none\"; readonly credential_types: readonly [...]; }; ... 4 more ...; readonly description: \"Test-binary only — wipe auth tables, re-bootstrap a fresh..."
 					},
 					{
+						"name": "testing_drain_effects_action_spec",
+						"kind": "variable",
+						"doc_comment": "`_testing_drain_effects` — await in-flight fire-and-forget audit writes so\na following `audit_log_list` is authoritative. The deterministic barrier\nthe cross-backend conformance suite uses in place of a poll/sleep before\nasserting on audit rows.\n\nOn the TS spine the barrier is **satisfied by construction**: the test\nbinary runs `await_pending_effects: true`, so every mutation's fire-and-\nforget audit emits are awaited before its response returns — by the time\na later drain call runs, prior emits are already durable. The action still\nexists so the cross-backend test body calls the same method on every\nbackend; the Rust spine (whose audit writes are detached tokio tasks)\ndoes the real await in `AuditEmitter::drain_inflight`.\n\n`auth` gates on the daemon-token credential, matching `_testing_reset`.",
+						"source_line": 143,
+						"type_signature": "{ readonly method: \"_testing_drain_effects\"; readonly kind: \"request_response\"; readonly initiator: \"frontend\"; readonly auth: { readonly account: \"required\"; readonly actor: \"none\"; readonly credential_types: readonly [...]; }; ... 4 more ...; readonly description: \"Test-binary only — await in-flight fire-and-forge..."
+					},
+					{
+						"name": "create_testing_drain_effects_action",
+						"kind": "function",
+						"doc_comment": "Build the standalone `_testing_drain_effects` action. No deps — on TS the\nbarrier is satisfied by `await_pending_effects` (see the spec doc), so the\nhandler just returns `{ok: true}`. Mount it on any test endpoint whose\nsuite asserts on audit rows (the spine binary bundles it via\n`create_testing_actions`; in-process suites mount it directly).",
+						"source_line": 163,
+						"type_signature": "(): RpcAction",
+						"return_type": "RpcAction",
+						"parameters": []
+					},
+					{
 						"name": "CreateTestingActionsOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_testing_actions`.",
-						"source_line": 128,
+						"source_line": 167,
 						"type_signature": "CreateTestingActionsOptions",
 						"properties": [
 							{
@@ -28177,7 +28354,7 @@
 						"name": "create_testing_actions",
 						"kind": "function",
 						"doc_comment": "Build the testing RPC actions for a test binary's registry.\n\nReturns `_testing_reset` — the single privileged action test binaries\nregister. The test binary calls this at server-assembly time and\nregisters the result on its dispatcher.\n\nThe reset action's table-wipe list mirrors\n`auth_integration_truncate_tables` from `testing/db.ts` — the\ncanonical \"auth tables a between-test reset must clear\" set.\n`testing_reset_actions.coverage.test.ts` enforces the set-equality\ninvariant so a future auth migration that adds a table to that list\nwithout updating this handler fails CI.",
-						"source_line": 169,
+						"source_line": 208,
 						"type_signature": "(deps: AppDeps, options: CreateTestingActionsOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"parameters": [
@@ -28195,7 +28372,7 @@
 						"name": "testing_reset_wiped_tables",
 						"kind": "variable",
 						"doc_comment": "Set of auth-namespace tables `_testing_reset` wipes. Mirrored by the coverage test.",
-						"source_line": 267,
+						"source_line": 307,
 						"type_signature": "string[]"
 					}
 				],
@@ -28663,6 +28840,44 @@
 					"testing/rpc_helpers.ts",
 					"testing/transports/ws_transport.ts"
 				]
+			},
+			{
+				"path": "testing/cross_backend/xfail.ts",
+				"declarations": [
+					{
+						"name": "xfail_until",
+						"kind": "function",
+						"doc_comment": "Register `fn` as an expected-failure test. Passes while `fn` throws /\nrejects; **fails** once `fn` succeeds (signalling the gap closed and the\nmarker should be removed).",
+						"source_line": 36,
+						"type_signature": "(tracking_id: string, reason: string, name: string, fn: () => void | Promise<void>): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "tracking_id",
+								"type": "string",
+								"description": "id of the tracked gap (e.g. `'G11'`)."
+							},
+							{
+								"name": "reason",
+								"type": "string",
+								"description": "why the case is deferred-by-design."
+							},
+							{
+								"name": "name",
+								"type": "string",
+								"description": "the assertion / test label."
+							},
+							{
+								"name": "fn",
+								"type": "() => void | Promise<void>",
+								"description": "the test body (expected to throw/reject until the gap closes)."
+							}
+						]
+					}
+				],
+				"module_comment": "`xfail_until` — mark a deferred-by-design gap as an expected failure.\n\nA thin wrapper over vitest's `test.fails` that bakes a tracking id +\nreason into the test label. Two properties make it the right tool for\ndeclared gaps (distinct from in-scope gaps, which fail loud as a normal\nred `test`):\n\n- **Visible** — the case shows in the report as a distinct expected\n  failure, not a silent `.skip`, so a deferred gap never disappears from\n  view.\n- **Self-cleaning** — `test.fails` turns **red** the moment the body\n  stops throwing (i.e. the impl starts passing), forcing whoever closed\n  the gap to delete the marker. A `.skip` would rot silently; this can't.\n\nSibling to `test_if` in `capabilities.ts`. No taxonomy — a one-line\nmarker with a tracking id and a reason, nothing more.",
+				"dependencies": ["testing/assert_dev_env.ts"],
+				"dependents": ["testing/cross_backend/conformance_table.ts"]
 			},
 			{
 				"path": "testing/data_exposure.ts",
@@ -29659,6 +29874,7 @@
 				"dependents": [
 					"testing/admin_integration.ts",
 					"testing/audit_completeness.ts",
+					"testing/cross_backend/conformance_table.ts",
 					"testing/data_exposure.ts",
 					"testing/error_coverage.ts",
 					"testing/integration.ts",
@@ -30775,6 +30991,7 @@
 					"testing/audit_completeness.ts",
 					"testing/cross_backend/bench/scenario.ts",
 					"testing/cross_backend/cell_cross_helpers.ts",
+					"testing/cross_backend/conformance_table.ts",
 					"testing/cross_backend/setup.ts",
 					"testing/cross_backend/sse_round_trip.ts",
 					"testing/cross_backend/ws_round_trip.ts",

@@ -25,6 +25,7 @@ import {
 import {create_test_request_context} from '$lib/testing/auth_apps.js';
 import {create_test_actor} from '$lib/testing/entities.js';
 import {jsonrpc_errors, JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
+import {ERROR_AUTHENTICATION_REQUIRED} from '$lib/http/error_schemas.js';
 import {RateLimiter} from '$lib/rate_limiter.js';
 import {ActingActor} from '$lib/http/auth_shape.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
@@ -267,6 +268,9 @@ describe('POST dispatcher', () => {
 		assert.strictEqual(res.status, 401);
 		const body = await res.json();
 		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.unauthenticated as number);
+		// The pre-validation 401 carries `data.reason` (symmetric with the 403
+		// gates) so callers can assert reason, not just status.
+		assert.strictEqual(body.error.data.reason, ERROR_AUTHENTICATION_REQUIRED);
 	});
 
 	test('returns forbidden for role-gated action without role', async () => {

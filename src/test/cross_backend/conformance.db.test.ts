@@ -20,6 +20,7 @@ import {
 } from '$lib/testing/cross_backend/default_spine_surface.js';
 
 import {conformance_proof_cases} from './conformance_proof_cases.js';
+import {conformance_security_cases} from './conformance_security_cases.js';
 
 describe_conformance_table_tests({
 	...default_in_process_suite_options({
@@ -30,6 +31,6 @@ describe_conformance_table_tests({
 		// `ROLE_KEEPER` alone does not grant admin reach.
 		extra_keeper_roles: [ROLE_ADMIN],
 	}),
-	cases: conformance_proof_cases,
-	suite_name: 'conformance table (in-process proof)',
+	cases: [...conformance_proof_cases, ...conformance_security_cases],
+	suite_name: 'conformance table (in-process)',
 });

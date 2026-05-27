@@ -90,8 +90,8 @@ export const ConformanceCaseExpectation = z.strictObject({
 				'Expected error reason — pass the IMPORTED `ERROR_*` constant from ' +
 				'`http/error_schemas.ts`, never a string literal. Asserted against the RPC ' +
 				'`error.data.reason` (when the denial carries one) or the REST flat-body ' +
-				'`error` field. When an RPC denial carries no `data.reason` (e.g. the bare ' +
-				'`unauthenticated()` 401), the `status` assertion pins the denial class.',
+				'`error` field. The pre-validation 401 carries `data.reason` too; a denial ' +
+				'that genuinely omits it falls back to the `status` assertion to pin the class.',
 		}),
 	fields: z
 		.record(z.string(), z.unknown())

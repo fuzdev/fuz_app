@@ -212,6 +212,13 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 			})),
 		env_schema: BaseServerEnv,
 		env_values: env,
+		// Await fire-and-forget effects before each response returns, so a
+		// mutation's audit emits are durable by response time. Makes the
+		// `_testing_drain_effects` barrier satisfied by construction on the TS
+		// spine (the Rust stub, whose audit writes are detached tasks, does the
+		// real await in `AuditEmitter::drain_inflight`). Matches the in-process
+		// `create_test_app` default.
+		await_pending_effects: true,
 		on_effect_error: (error, ctx) => {
 			log.error(`Pending effect failed (${ctx.method} ${ctx.path}):`, error);
 		},

@@ -25,6 +25,7 @@ import {
 } from '$lib/testing/cross_backend/default_spine_surface.js';
 
 import {conformance_proof_cases} from './conformance_proof_cases.js';
+import {conformance_security_cases} from './conformance_security_cases.js';
 import './cross_test_types.js';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
@@ -34,11 +35,11 @@ const setup_test = default_cross_process_setup(handle, {extra_keeper_roles: [ROL
 const {capabilities} = handle.config;
 
 describe_conformance_table_tests({
-	cases: conformance_proof_cases,
+	cases: [...conformance_proof_cases, ...conformance_security_cases],
 	setup_test,
 	surface_source: create_spine_surface_spec(),
 	capabilities,
 	rpc_endpoints: spine_rpc_endpoints,
 	session_options: spine_session_options,
-	suite_name: 'conformance table (cross-process proof)',
+	suite_name: 'conformance table (cross-process)',
 });

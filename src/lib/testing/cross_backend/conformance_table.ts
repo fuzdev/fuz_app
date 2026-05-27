@@ -234,8 +234,9 @@ const run_rpc_case = async (
 	assert.strictEqual(res.status, c.expect.status, `${c.name}: error status`);
 	if (c.expect.error_reason !== undefined) {
 		const reason = (res.error.data as {reason?: unknown} | undefined)?.reason;
-		// Some denials carry no `data.reason` (e.g. the bare `unauthenticated()`
-		// 401) — the status assertion above pins the denial class in that case.
+		// Most RPC denials carry `error.data.reason` (incl. the pre-validation
+		// 401 now); a denial that genuinely omits it falls back to the status
+		// assertion above to pin the denial class.
 		if (reason !== undefined) {
 			assert.strictEqual(reason, c.expect.error_reason, `${c.name}: error.data.reason`);
 		}
