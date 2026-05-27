@@ -31,6 +31,8 @@ const empty_listing = {accounts: [], grantable_roles: []};
 
 const make_rpc = (overrides: Partial<AdminAccountsRpc> = {}): AdminAccountsRpc => ({
 	list_accounts: vi.fn().mockResolvedValue(empty_listing),
+	delete_account: vi.fn().mockResolvedValue({ok: true, deleted: true}),
+	undelete_account: vi.fn().mockResolvedValue({ok: true, undeleted: true}),
 	list_sessions: vi.fn().mockResolvedValue({sessions: []}),
 	create_role_grant: vi.fn().mockResolvedValue({offer: make_offer()}),
 	revoke_role_grant: vi.fn().mockResolvedValue({ok: true, revoked: true}),
@@ -337,5 +339,54 @@ describe('AdminAccountsState.submit_retract', () => {
 		const state = new AdminAccountsState();
 		await state.submit_retract(offer_1);
 		assert.strictEqual(state.retract.error(offer_1), 'rpc adapter not wired');
+	});
+});
+
+describe('AdminAccountsState account lifecycle', () => {
+	test('submit_delete calls account_delete and refetches', async () => {
+		const list = vi.fn().mockResolvedValue(empty_listing);
+		const delete_account = vi.fn().mockResolvedValue({ok: true, deleted: true});
+		const rpc = make_rpc({list_accounts: list, delete_account});
+		const state = new AdminAccountsState({get_rpc: () => rpc});
+
+		await state.submit_delete(acct_1);
+
+		assert.deepStrictEqual(delete_account.mock.calls[0], [acct_1]);
+		assert.ok(state.soft_delete.succeeded(acct_1));
+		// Refetched after success.
+		assert.strictEqual(list.mock.calls.length, 1);
+	});
+
+	test('submit_undelete calls account_undelete and refetches', async () => {
+		const list = vi.fn().mockResolvedValue(empty_listing);
+		const undelete_account = vi.fn().mockResolvedValue({ok: true, undeleted: true});
+		const rpc = make_rpc({list_accounts: list, undelete_account});
+		const state = new AdminAccountsState({get_rpc: () => rpc});
+
+		await state.submit_undelete(acct_1);
+
+		assert.deepStrictEqual(undelete_account.mock.calls[0], [acct_1]);
+		assert.ok(state.undelete.succeeded(acct_1));
+		assert.strictEqual(list.mock.calls.length, 1);
+	});
+
+	test('set_show_deleted threads include_deleted into the listing and refetches', async () => {
+		const list = vi.fn().mockResolvedValue(empty_listing);
+		const rpc = make_rpc({list_accounts: list});
+		const state = new AdminAccountsState({get_rpc: () => rpc});
+
+		await state.set_show_deleted(true);
+
+		assert.ok(state.show_deleted);
+		assert.deepStrictEqual(list.mock.calls[0], [true]);
+		// Idempotent: same value doesn't refetch.
+		await state.set_show_deleted(true);
+		assert.strictEqual(list.mock.calls.length, 1);
+	});
+
+	test('submit_delete no-op without rpc; sets descriptive error', async () => {
+		const state = new AdminAccountsState();
+		await state.submit_delete(acct_1);
+		assert.strictEqual(state.soft_delete.error(acct_1), 'rpc adapter not wired');
 	});
 });

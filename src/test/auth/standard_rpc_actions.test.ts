@@ -123,16 +123,17 @@ describe('create_standard_rpc_actions', () => {
 	});
 
 	test('admin + role-grant-offer + account action counts add up', () => {
-		// admin factory emits N actions (11 with app_settings, 9 without).
+		// admin factory emits N actions (14 with app_settings, 12 without —
+		// includes account_delete + account_purge + account_undelete).
 		// role-grant-offer factory emits 7. account factory emits 7.
 		// Combined helper should equal the sum.
 		const actions_with = create_standard_rpc_actions(deps, {
 			app_settings: make_app_settings(),
 		});
-		assert.strictEqual(actions_with.length, 11 + 7 + 7);
+		assert.strictEqual(actions_with.length, 14 + 7 + 7);
 
 		const actions_without = create_standard_rpc_actions(deps);
-		assert.strictEqual(actions_without.length, 9 + 7 + 7);
+		assert.strictEqual(actions_without.length, 12 + 7 + 7);
 	});
 
 	test('authorize option reaches the role_grant_offer_create handler', async () => {

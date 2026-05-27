@@ -58,6 +58,8 @@ const create_test_ctx_with_role_grants = (roles: ReadonlyArray<string>): Request
 		updated_at: new Date().toISOString(),
 		created_by: null,
 		updated_by: null,
+		deleted_at: null,
+		deleted_by: null,
 		email: null,
 		email_verified: false,
 	},
@@ -68,6 +70,8 @@ const create_test_ctx_with_role_grants = (roles: ReadonlyArray<string>): Request
 		created_at: new Date().toISOString(),
 		updated_at: null,
 		updated_by: null,
+		deleted_at: null,
+		deleted_by: null,
 	},
 	role_grants: roles.map((role, i) => ({
 		id: `perm_${i + 1}` as Uuid,

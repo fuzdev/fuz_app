@@ -124,7 +124,7 @@ describe('BaseServerEnv', () => {
 		assert.isTrue(result.success);
 	});
 
-	test('all 13 fields have .meta() with description', () => {
+	test('all 15 fields have .meta() with description', () => {
 		for (const [name, field_schema] of Object.entries(BaseServerEnv.shape)) {
 			const meta = (field_schema as z.ZodType).meta() as {description?: string} | undefined;
 			assert.ok(meta, `${name} should have .meta()`);
@@ -160,9 +160,9 @@ describe('BaseServerEnv', () => {
 });
 
 describe('env_schema_to_surface', () => {
-	test('returns 13 entries for BaseServerEnv', () => {
+	test('returns 15 entries for BaseServerEnv', () => {
 		const entries = env_schema_to_surface(BaseServerEnv);
-		assert.strictEqual(entries.length, 13);
+		assert.strictEqual(entries.length, 15);
 	});
 
 	test('optional fields detected correctly', () => {

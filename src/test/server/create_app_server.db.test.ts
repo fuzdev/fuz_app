@@ -578,10 +578,13 @@ describe('create_app_server', () => {
 			(e) => e.path === '/api/rpc',
 		);
 		assert.isDefined(rpc_endpoint);
-		assert.strictEqual(rpc_endpoint.methods.length, 11 + 7 + 7);
+		assert.strictEqual(rpc_endpoint.methods.length, 14 + 7 + 7);
 		const method_names = new Set(rpc_endpoint.methods.map((m) => m.name));
 		// sample a few from each surface
 		assert.isTrue(method_names.has('admin_account_list'));
+		assert.isTrue(method_names.has('account_delete'));
+		assert.isTrue(method_names.has('account_purge'));
+		assert.isTrue(method_names.has('account_undelete'));
 		assert.isTrue(method_names.has('app_settings_update'));
 		assert.isTrue(method_names.has('role_grant_offer_create'));
 		assert.isTrue(method_names.has('role_grant_revoke'));

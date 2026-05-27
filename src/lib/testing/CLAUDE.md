@@ -149,7 +149,7 @@ Key module-scope values:
 
 - `stub_password_deps` — `PasswordHashDeps` hashing via `stub_hash_${password}` and verifying by equality. Deterministic, no Argon2 cost — use for every test not specifically exercising password hashing.
 - `TEST_COOKIE_SECRET` — 64-hex-char deterministic cookie secret. Produces a valid `Keyring` via `create_validated_keyring`. Never used in production — the stub guard plus fixed value is the contract.
-- `fallback_pglite_factory` — module-level PGlite factory `create_test_app_server` uses when no `db` is passed. Reuses the WASM cache via `create_pglite_factory`.
+- `fallback_pglite_factory` — module-level auth-only PGlite factory `create_test_app_server` uses when no `db` is passed. Reuses the WASM cache via `create_pglite_factory`. When `migration_namespaces` is supplied, a memoized sibling factory (keyed by namespace set) migrating `[auth_migration_ns, ...migration_namespaces]` is used instead — same shared WASM, extra tables.
 
 Two helpers share the "insert account + actor + roles + API token + session +
 cookie" flow, split by intent:
@@ -167,7 +167,7 @@ pre-keeper, lock unflipped), use `create_test_app_for_bootstrap` — pair with
 Types:
 
 - `TestAppServer extends AppBackend` — adds `account`, `actor`, `api_token`, `session_cookie`, `keyring`, `cleanup()`.
-- `TestAppServerOptions` — `session_options` (required), optional `db`, `db_type`, `password`, `username`, `password_value`, `roles`, `audit_factory`. The optional `audit_factory` defaults to `default_audit_factory` (no-listener `create_audit_emitter` over the test backend's `{db, log}`); pass a custom factory to compose `on_audit_event` / `audit_log_config`, wrap with `emit_decorator` (via `create_emit_ordering_audit_factory`), or otherwise replace the emitter. Mirrors `CreateAppBackendOptions` end-to-end — the previous `on_audit_event` / `audit_log_config` sugar was removed alongside the production rename.
+- `TestAppServerOptions` — `session_options` (required), optional `db`, `db_type`, `migration_namespaces`, `password`, `username`, `password_value`, `roles`, `audit_factory`. `migration_namespaces` runs extra namespaces after auth in the auto-created PGlite (mirrors `create_app_backend`); mutually exclusive with `db` (caller-migrated) — passing both throws. The optional `audit_factory` defaults to `default_audit_factory` (no-listener `create_audit_emitter` over the test backend's `{db, log}`); pass a custom factory to compose `on_audit_event` / `audit_log_config`, wrap with `emit_decorator` (via `create_emit_ordering_audit_factory`), or otherwise replace the emitter. Mirrors `CreateAppBackendOptions` end-to-end — the previous `on_audit_event` / `audit_log_config` sugar was removed alongside the production rename.
 - `CreateTestAppOptions extends TestAppServerOptions` — adds `create_route_specs` (required), `rpc_endpoints?: RpcEndpointsSuiteOption` (top-level only — single source of truth, symmetric with the suite-level option), `bootstrap?: BootstrapServerOptions` (top-level only — same precedent as `rpc_endpoints`), and `app_options?: SuiteAppOptions` (`Partial<AppServerOptions>` excluding the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`).
 - `TestAccount` — `{account, actor, session_cookie, api_token, create_session_headers, create_bearer_headers}`.
 - `TestApp` — `{app, backend, surface_spec, surface, route_specs, create_session_headers, create_bearer_headers, create_daemon_token_headers, create_account, cleanup}`.
@@ -799,7 +799,11 @@ source of truth for wire-shape conformance.
 
 - `testing/cross_backend/setup.ts` — `SetupTest` / `TestFixture` /
   `TestAccountFixture` / `CreateTestAccountOptions` types,
-  `default_in_process_setup(options)` (wraps `create_test_app`), and
+  `default_in_process_setup(options)` (wraps `create_test_app`; pass
+  `migration_namespaces` for suites needing tables beyond the auth-only
+  default — the cell parity suite passes `[CELL_MIGRATION_NS]`, and
+  `create_test_app` provisions a per-test fresh db migrating
+  `[auth_migration_ns, ...migration_namespaces]`), and
   `default_in_process_suite_options(options)` (emits the full Tier 1 suite
   options bag: the `{setup_test, surface_source, capabilities}` triple plus
   `session_options` / `create_route_specs` / `rpc_endpoints` pass-through;
@@ -842,8 +846,16 @@ source of truth for wire-shape conformance.
 
 - `testing/cross_backend/capabilities.ts` — `BackendCapabilities` vocabulary
   (`bearer_auth` / `trusted_proxy` / `login_rate_limit` / `ws` / `sse` /
-  `in_process_only`), `test_if(cond, name, fn)` for capability-gated cases,
-  and `in_process_capabilities` preset.
+  `cell_crud` / `cell_relations` / `account_lifecycle` / `in_process_only`),
+  `test_if(cond, name, fn)`
+  for capability-gated cases, and `in_process_capabilities` preset. `cell_crud`
+  gates the CRUD parity suite, `cell_relations` the relation / ACL / audit
+  parity suite — both `true` on every backend that live-mounts the full cell
+  surface (TS spine binary, in-process app, Rust stub). A backend mounting only
+  plain CRUD would declare `cell_crud: true, cell_relations: false`.
+  `account_lifecycle` gates `describe_account_lifecycle_cross_tests` (the
+  `account_delete` / `account_undelete` / `account_purge` parity suite) — also
+  off the declared surface like cells, `true` on every spine.
 
 ### `cross_backend/standard.ts` — `describe_standard_cross_process_tests`
 
@@ -924,6 +936,47 @@ account/admin actions); all cases gate on `capabilities.sse`. Cross-process
 only — wire from a `*.cross.test.ts`. fuz_app's own wiring is
 `src/test/cross_backend/sse.cross.test.ts`; only the TS spines advertise
 `sse` (they wire `audit_log_sse`), so the Rust `spine_stub` cases `.skip`.
+
+### `cross_backend/cell_crud.ts` + `cell_relations.ts` — cell parity suites
+
+The cell-layer parity coverage is split across two sibling suites. Cells
+can't ride the generic `describe_rpc_round_trip_tests` (stateful verbs need a
+real id threaded across calls; `cell_get` has a top-level `.refine()`), so —
+like ws/sse — the full cell surface **live-mounts** on the spine RPC path but
+stays **off** `create_spine_surface_spec`, and these dedicated suites are the
+cell validators (`describe_standard_cross_process_tests`' generic round-trip
+never sees them). Both parse every success response against the verb's Zod
+**output** schema, so a TS↔Rust envelope drift fails the suite — not just a
+payload-field drift. Call-site primitives (`rpc_call` / `error_reason` /
+`expect_output` + the shared `CellCrossTestOptions`) live in
+`cross_backend/cell_cross_helpers.ts`.
+
+- **`describe_cell_crud_cross_tests`** (gates on `capabilities.cell_crud`) —
+  the create → get → update → delete → list lifecycle threading the id, plus
+  the CRUD authz matrix (owner CRUD; anon-public-only / private-404; non-owner
+  edit/read/delete → 404 IDOR mask; admin reaches any; dup active `path` → 409;
+  `path` write by non-admin → 403 on create + update; `cell_get` with no
+  id/path → `invalid_params`; null-auth `cell_list` `created_by` →
+  `invalid_params`).
+- **`describe_cell_relations_cross_tests`** (gates on
+  `capabilities.cell_relations`) — the verbs beyond CRUD: grant lifecycle
+  (actor-shaped editor grant enables edit, manage-tier `cell_grant_list`,
+  revoke), the now-reachable `cell_visibility_manage_only` 403 (editor-grant
+  holder can't flip visibility), field set / forward+reverse list / idempotent
+  delete, item insert / ordered forward+reverse list / move / idempotent
+  delete, clone shallow (shares edges) vs deep (clones children), and
+  manage-tier `cell_audit_list` (owner reads the timeline; a viewer-grant
+  holder who can `cell_get` still gets the IDOR 404). Only **actor-shaped**
+  grants are exercised — role-shaped principals need a closed role registry the
+  Rust spine deliberately lacks.
+
+Both gate `true` on TS + Rust (cells run on both, no `.skip`). Cross-process
+wiring is `src/test/cross_backend/cell.cross.test.ts` (both suites); the
+in-process legs (plain `gro test`) are `src/test/auth/cell_crud_parity.db.test.ts`
+
+- `cell_relations_parity.db.test.ts`, sharing the full-surface
+  `create_cell_parity_setup` (`cell_parity_helpers.ts`) which mounts every cell
+  verb and registers `cell_audit_events` through the audit factory.
 
 ### Cross-process plumbing (consumed by `*.cross.test.ts` suites)
 

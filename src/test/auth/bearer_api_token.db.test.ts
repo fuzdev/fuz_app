@@ -8,7 +8,7 @@ import {describe, assert, test, vi, afterEach} from 'vitest';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 import {wait} from '@fuzdev/fuz_util/async.js';
 
-import {query_create_account_with_actor, query_delete_account} from '$lib/auth/account_queries.js';
+import {query_create_account_with_actor, query_purge_account} from '$lib/auth/account_queries.js';
 import {
 	query_create_api_token,
 	query_validate_api_token,
@@ -218,7 +218,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		const {id, token_hash} = generate_api_token();
 		await query_create_api_token(deps, id, account_id, 'Cascade', token_hash);
 
-		await query_delete_account(deps, account_id);
+		await query_purge_account(deps, account_id);
 
 		const list = await query_api_token_list_for_account(deps, account_id);
 		assert.strictEqual(list.length, 0);

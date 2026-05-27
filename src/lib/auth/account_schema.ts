@@ -35,6 +35,19 @@ export interface Account {
 	created_by: Uuid | null;
 	updated_at: string;
 	updated_by: Uuid | null;
+	/**
+	 * Soft-delete tombstone. Non-null means the account is deleted
+	 * (`delete` = soft); auth resolution treats it as absent. A hard
+	 * `purge` removes the row entirely. See `auth/account_queries.ts`.
+	 */
+	deleted_at: string | null;
+	/**
+	 * Actor that performed the soft-delete (initiator: self / admin /
+	 * keeper). Paired with `deleted_at`, mirroring `role_grant`'s
+	 * `revoked_at` / `revoked_by`. Plain UUID (no FK, like
+	 * `created_by` / `updated_by` on this table).
+	 */
+	deleted_by: Uuid | null;
 }
 
 /** Account without sensitive fields, scoped to the authenticated user's own session. */
@@ -54,6 +67,10 @@ export interface Actor {
 	created_at: string;
 	updated_at: string | null;
 	updated_by: Uuid | null;
+	/** Soft-delete tombstone — set alongside the owning account's soft-delete. */
+	deleted_at: string | null;
+	/** Actor that performed the soft-delete. Paired with `deleted_at`. */
+	deleted_by: Uuid | null;
 }
 
 /**
@@ -173,6 +190,13 @@ export type ActorSummaryJson = z.infer<typeof ActorSummaryJson>;
 export const AdminAccountJson = SessionAccountJson.extend({
 	updated_at: z.string(),
 	updated_by: Uuid.nullable(),
+	/**
+	 * Soft-delete tombstone, non-null when the account is deleted. Surfaced
+	 * so the admin UI can mark tombstoned rows (shown only when the listing
+	 * is requested with `include_deleted`) and offer reactivation via
+	 * `account_undelete`. Active listings always carry `null` here.
+	 */
+	deleted_at: z.string().nullable(),
 });
 export type AdminAccountJson = z.infer<typeof AdminAccountJson>;
 
@@ -259,4 +283,5 @@ export const to_admin_account = (account: Account): AdminAccountJson => ({
 	...to_session_account(account),
 	updated_at: account.updated_at,
 	updated_by: account.updated_by,
+	deleted_at: account.deleted_at,
 });

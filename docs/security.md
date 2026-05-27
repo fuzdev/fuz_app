@@ -322,6 +322,20 @@ granting `keeper`, but does not prevent admin-to-admin grants. For deployments
 where admin self-replication is undesirable, implement app-specific role
 hierarchy checks in a custom grant guard.
 
+**Account-removal target guards**: `account_delete` (soft) and `account_purge`
+(hard) refuse two target classes regardless of caller privilege, each emitting a
+fail-loud failure-audit row before any mutation. `ERROR_CANNOT_DELETE_KEEPER`
+(403) blocks any account holding an active keeper role grant — auth resolution
+and daemon-token resolution both pivot on the keeper account, so removing it
+would brick keeper/daemon auth with no recovery (keeper is non-web-revocable and
+purge itself requires keeper auth); keeper removal stays out-of-band.
+`ERROR_CANNOT_DELETE_LAST_ADMIN` (403) blocks the sole remaining *active* admin —
+the admin count and the target's own admin check both filter `deleted_at IS NULL`,
+so a soft-deleted admin can't authenticate, doesn't count toward the tally, and
+can itself be removed once another active admin exists. The keeper guard is a
+hard lockout stop; the last-admin guard is keeper-recoverable (a keeper can
+re-grant admin) and intended only to stop a one-call foot-gun.
+
 **IDOR guard**: `query_revoke_role_grant()` requires an `actor_id` constraint. The
 revoke handler resolves the target actor from the URL and returns 404 on mismatch —
 a handler cannot revoke a role_grant belonging to a different actor. The same
@@ -723,7 +737,14 @@ is required and each intermediate proxy must be in `trusted_proxies`.
 ## Audit Logging
 
 All auth mutations are logged fire-and-forget (never blocks or breaks auth flows).
-Audit entries survive account deletion (`ON DELETE SET NULL` on account foreign keys).
+The audit log's identity columns (`actor_id`, `account_id`, `target_account_id`,
+`target_actor_id`) carry **no foreign key** — they are plain `UUID`. An audit log
+is an append-only historical record, not a live relational entity: a soft-delete
+keeps the account row (so the ids still resolve), and a hard purge leaves the raw
+id intact on historical rows for forensic correlation rather than nulling it.
+Deleting or purging an account additionally snapshots its identifying values
+(`username` / `email`, and per-actor `name`) into the deletion event's metadata,
+so the identity behind a now-orphaned id survives even after the row is gone.
 Each event records an `outcome` (`success` or `failure`), so login/bootstrap/password
 change failures are tracked without needing separate event types.
 
@@ -731,7 +752,10 @@ Instrumented event types:
 
 `login`, `logout`, `bootstrap`, `signup`, `password_change`, `session_revoke`,
 `session_revoke_all`, `token_create`, `token_revoke`, `token_revoke_all`,
-`role_grant_create`, `role_grant_revoke`, `invite_create`, `invite_delete`, `app_settings_update`
+`role_grant_create`, `role_grant_revoke`, `account_delete`, `account_purge`,
+`account_undelete`, `actor_delete`, `actor_purge`, `actor_undelete`,
+`invite_create`, `invite_delete`, `app_settings_update`
+(plus the `role_grant_offer_*` consent-flow events)
 
 Admin read surface: `audit_log_list` RPC action (filterable by event type,
 outcome, account, or gap-fill cursor), `audit_log_role_grant_history` RPC
@@ -786,6 +810,19 @@ brute-forcing immediately after a restart without waiting for the previous
 window to expire. Use nginx-level `limit_req` as a complementary defense —
 nginx rate limit state persists across app restarts and provides IP-based
 protection independent of the application.
+
+### Last-Admin Guard Is a Foot-Gun Stop, Not a Race-Safe Invariant
+
+The last-admin guard (`ERROR_CANNOT_DELETE_LAST_ADMIN`) reads the active-admin
+count and then deletes in separate statements (no `SELECT … FOR UPDATE` /
+serializable wrap), so two concurrent `account_delete` / `account_purge` calls
+targeting the last two distinct active admins can each observe `count = 2` and
+both commit, leaving zero active admins. This is accepted: the guard stops the
+one-call foot-gun, not concurrent races; the outcome is keeper-recoverable
+(re-grant admin), and the keeper account holds admin at bootstrap and is itself
+protected by the stricter keeper guard. The keeper guard has no equivalent race
+(single, non-web-revocable target). Revisit if a threat model makes concurrent
+admin-removal a real concern.
 
 ### PostgreSQL Error Code Detection
 

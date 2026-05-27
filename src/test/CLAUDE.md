@@ -114,15 +114,33 @@ the test helpers' route list.
 spawned backends. `*.cross.test.ts` bodies are runtime-agnostic — they
 `inject('backend_handle')` and drive `default_spine_surface` over the wire —
 so the same files run under every `cross_backend_*` project; each project's
-`globalSetup` spawns a different backend. Three cross files today:
+`globalSetup` spawns a different backend. Five cross files today:
 `auth.cross.test.ts` (the `describe_standard_cross_process_tests` bundle —
 HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
 `describe_cross_process_ws_tests` suite — live WebSocket, including
-close-on-revoke), and `sse.cross.test.ts` (the real-streaming-`fetch`
+close-on-revoke), `sse.cross.test.ts` (the real-streaming-`fetch`
 `describe_cross_process_sse_tests` suite — live audit-log SSE: connect,
-data frame, close-on-revoke). Only the TS spines advertise `capabilities.sse`
-(they wire `audit_log_sse`), so the SSE cases `.skip` on the Rust
-`spine_stub`. The backends:
+data frame, close-on-revoke), `cell.cross.test.ts` (both
+`describe_cell_crud_cross_tests` — the CRUD lifecycle + authz matrix — and
+`describe_cell_relations_cross_tests` — grant / field / item / clone / audit,
+incl. the editor-grant `cell_visibility_manage_only` 403 — each response parsed
+against its Zod output schema), and `account_lifecycle.cross.test.ts`
+(`describe_account_lifecycle_cross_tests` — soft-delete → undelete round-trip,
+keeper-confirmed purge, the `cannot_delete_keeper` guard, and the
+`admin_account_list` `include_deleted` listing shape (tombstoned rows surface
+with `deleted_at` set), gated on `capabilities.account_lifecycle`; off the
+declared surface like cells).
+Only the TS spines advertise
+`capabilities.sse` (they wire `audit_log_sse`), so the SSE cases `.skip` on the
+Rust `spine_stub`. Cells live-mount the full surface on every backend and stay
+**off** the declared surface (`create_spine_surface_spec`) — like ws/sse — so
+`cell_crud` + `cell_relations` are `true` everywhere and the cell cases run on
+both TS and Rust (no `.skip`); the standard bundle's generic round-trip never
+sees them. The in-process counterparts are `auth/cell_crud_parity.db.test.ts` +
+`auth/cell_relations_parity.db.test.ts` (same suites, plain `gro test`, sharing
+the full-surface `create_cell_parity_setup` from `auth/cell_parity_helpers.ts`,
+which migrates the `fuz_cell` namespace and registers `cell_audit_events`). The
+backends:
 
 - `cross_backend_ts_node` / `cross_backend_ts_deno` / `cross_backend_ts_bun` —
   `fuz_app`'s **own** TS spine binary (`testing_spine_server_{node,deno,bun}.ts`)

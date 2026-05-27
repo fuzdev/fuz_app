@@ -80,14 +80,28 @@ const assert_called_with = (
 };
 
 describe('create_admin_rpc_adapters — admin_accounts mappings', () => {
-	test('list_accounts maps to admin_account_list with no params', async () => {
+	test('list_accounts maps to admin_account_list, threading include_deleted', async () => {
 		const {api, calls} = make_admin_api({
 			admin_account_list: {accounts: [], grantable_roles: []},
 		});
 		const {admin_accounts} = create_admin_rpc_adapters(api);
-		const result = await admin_accounts.list_accounts();
-		assert_called_with(calls, {method: 'admin_account_list'});
+		const result = await admin_accounts.list_accounts(true);
+		assert_called_with(calls, {method: 'admin_account_list', input: {include_deleted: true}});
 		assert.deepEqual(result, {accounts: [], grantable_roles: []});
+	});
+
+	test('delete_account maps to account_delete with the account id', async () => {
+		const {api, calls} = make_admin_api({account_delete: {ok: true, deleted: true}});
+		const {admin_accounts} = create_admin_rpc_adapters(api);
+		await admin_accounts.delete_account(acct_id);
+		assert_called_with(calls, {method: 'account_delete', input: {account_id: acct_id}});
+	});
+
+	test('undelete_account maps to account_undelete with the account id', async () => {
+		const {api, calls} = make_admin_api({account_undelete: {ok: true, undeleted: true}});
+		const {admin_accounts} = create_admin_rpc_adapters(api);
+		await admin_accounts.undelete_account(acct_id);
+		assert_called_with(calls, {method: 'account_undelete', input: {account_id: acct_id}});
 	});
 
 	test('list_sessions maps to admin_session_list with no params', async () => {

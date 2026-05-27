@@ -34,7 +34,7 @@ import {
 } from '../auth/session_queries.js';
 import {query_create_api_token} from '../auth/api_token_queries.js';
 import {create_session_cookie_value, type SessionOptions} from '../auth/session_cookie.js';
-import {run_migrations} from '../db/migrate.js';
+import {run_migrations, type MigrationNamespace} from '../db/migrate.js';
 import {auth_migration_ns} from '../auth/migrations.js';
 import {default_audit_factory, type AppBackend, type AuditFactory} from '../server/app_backend.js';
 import {
@@ -51,7 +51,7 @@ import {
 	DAEMON_TOKEN_HEADER,
 	type DaemonTokenState,
 } from '../auth/daemon_token.js';
-import {create_pglite_factory} from './db.js';
+import {create_pglite_factory, type DbFactory} from './db.js';
 import type {RpcEndpointsSuiteOption} from './rpc_helpers.js';
 
 /**
@@ -91,6 +91,39 @@ export const DEFAULT_TEST_PASSWORD = 'test-password-123';
 const fallback_pglite_factory = create_pglite_factory(async (db) => {
 	await run_migrations(db, [auth_migration_ns]);
 });
+
+// Auto-created PGlite factories keyed by extra-namespace identity. Suites
+// whose backend needs tables beyond auth (e.g. the cell layer) share one
+// factory per distinct namespace set — and the worker-cached WASM instance —
+// rather than each hand-building its own. The cell parity suite is the first
+// user.
+const fallback_factories_by_namespaces = new Map<string, DbFactory>();
+
+/**
+ * Resolve the no-`db` PGlite factory for the requested extra migration
+ * namespaces. Empty / omitted → the shared auth-only `fallback_pglite_factory`;
+ * otherwise a memoized factory whose `init` runs
+ * `[auth_migration_ns, ...migration_namespaces]` on each reset. The
+ * reset-on-`create` gives the same fresh-db-per-test isolation as the
+ * auth-only default. Mirrors `create_app_backend`'s `migration_namespaces`
+ * seam at the test layer.
+ */
+const resolve_fallback_factory = (
+	migration_namespaces?: ReadonlyArray<MigrationNamespace>,
+): DbFactory => {
+	if (!migration_namespaces || migration_namespaces.length === 0) {
+		return fallback_pglite_factory;
+	}
+	const key = migration_namespaces.map((ns) => ns.namespace).join(',');
+	let factory = fallback_factories_by_namespaces.get(key);
+	if (!factory) {
+		factory = create_pglite_factory(async (db) => {
+			await run_migrations(db, [auth_migration_ns, ...migration_namespaces]);
+		});
+		fallback_factories_by_namespaces.set(key, factory);
+	}
+	return factory;
+};
 
 /**
  * Options for `bootstrap_test_keeper` and `create_test_account_with_credentials`.
@@ -234,6 +267,17 @@ export interface TestAppServerOptions {
 	db?: Db;
 	/** Database driver type — only used when `db` is provided. Default: `'pglite-memory'`. */
 	db_type?: DbType;
+	/**
+	 * Extra migration namespaces run after the builtin auth namespace in the
+	 * auto-created in-memory PGlite, mirroring `create_app_backend`'s
+	 * `migration_namespaces`. For suites whose backend needs tables beyond
+	 * auth — the cell parity suite passes `[CELL_MIGRATION_NS]`. The harness
+	 * builds + caches a fresh-per-test factory migrating
+	 * `[auth_migration_ns, ...migration_namespaces]`; the reset-on-`create`
+	 * gives the same fresh-db isolation as the auth-only default. Mutually
+	 * exclusive with `db` (which assumes the caller already migrated).
+	 */
+	migration_namespaces?: ReadonlyArray<MigrationNamespace>;
 	/** Password implementation. Default: `stub_password_deps`. Pass `argon2_password_deps` for tests that exercise login. */
 	password?: PasswordHashDeps;
 	/** Username for the bootstrapped account. Default: `'keeper'`. */
@@ -305,6 +349,8 @@ interface BuildTestBackendOptions {
 	db_type?: DbType;
 	password?: PasswordHashDeps;
 	audit_factory?: AuditFactory;
+	/** Extra migration namespaces for the auto-created PGlite; rejected when `db` is supplied. */
+	migration_namespaces?: ReadonlyArray<MigrationNamespace>;
 	/** Override the default no-op fs stubs (token-aware fs for bootstrap success tests). */
 	fs_stubs?: TestFsStubs;
 }
@@ -330,7 +376,15 @@ const _build_test_backend = async (
 		password = stub_password_deps,
 		audit_factory = default_audit_factory,
 		fs_stubs = default_test_fs_stubs,
+		migration_namespaces,
 	} = options;
+
+	if (existing_db && migration_namespaces && migration_namespaces.length > 0) {
+		throw new Error(
+			'test app setup: pass either `db` (caller owns migrations) or `migration_namespaces` ' +
+				'(harness migrates), not both',
+		);
+	}
 
 	const keyring_result = create_validated_keyring(TEST_COOKIE_SECRET);
 	if (!keyring_result.ok) {
@@ -362,7 +416,8 @@ const _build_test_backend = async (
 		// In-memory PGlite via cached factory — reuses the WASM instance from test_db.ts
 		// instead of creating a new PGlite each time. Schema is reset and migrations re-run
 		// on each call, but the expensive WASM cold start only happens once per worker thread.
-		const db = await fallback_pglite_factory.create();
+		// `migration_namespaces` selects an auth+extras factory; auth-only is the default.
+		const db = await resolve_fallback_factory(migration_namespaces).create();
 		const audit = audit_factory({db, log: test_log});
 		backend = {
 			db_type: 'pglite-memory',

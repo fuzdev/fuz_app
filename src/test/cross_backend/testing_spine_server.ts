@@ -39,12 +39,22 @@ import {
 import {start_daemon_token_rotation} from '../../lib/auth/daemon_token_middleware.js';
 import {load_env} from '../../lib/env/load.js';
 import type {RuntimeDeps} from '../../lib/runtime/deps.js';
-import {create_app_backend, default_audit_factory} from '../../lib/server/app_backend.js';
+import {create_cell_actions} from '../../lib/auth/cell_actions.js';
+import {create_cell_grant_actions} from '../../lib/auth/cell_grant_actions.js';
+import {create_cell_field_actions} from '../../lib/auth/cell_field_actions.js';
+import {create_cell_item_actions} from '../../lib/auth/cell_item_actions.js';
+import {create_cell_audit_actions} from '../../lib/auth/cell_audit_actions.js';
+import {cell_audit_events} from '../../lib/auth/cell_audit_events.js';
+import {create_audit_emitter} from '../../lib/auth/audit_emitter.js';
+import {create_audit_log_config} from '../../lib/auth/audit_log_schema.js';
+import {CELL_MIGRATION_NS} from '../../lib/db/cell_ddl.js';
+import {create_app_backend, type AuditFactory} from '../../lib/server/app_backend.js';
 import {create_app_server} from '../../lib/server/app_server.js';
 import {BaseServerEnv, validate_server_env} from '../../lib/server/env.js';
 import {stub_password_deps} from '../../lib/testing/app_server.js';
 import {
 	create_spine_route_specs,
+	spine_roles,
 	spine_rpc_endpoints,
 	spine_session_options,
 } from '../../lib/testing/cross_backend/default_spine_surface.js';
@@ -75,6 +85,20 @@ export interface BuildSpineAppOptions {
 
 const WS_PATH_DEFAULT = '/api/ws';
 const HEALTH_PATH = '/health';
+
+/**
+ * Audit factory registering the cell event types so the live-mounted cell
+ * handlers' `deps.audit.emit(...)` calls validate against the extended config
+ * (and `cell_audit_list` reads them back) instead of tripping the
+ * unknown-event drift counter. Models a real consumer that spreads
+ * `cell_audit_events` into its `create_audit_log_config`.
+ */
+const cell_audit_factory: AuditFactory = ({db, log}) =>
+	create_audit_emitter({
+		db,
+		log,
+		audit_log_config: create_audit_log_config({extra_events: cell_audit_events}),
+	});
 
 /** Resolve `{host, port}` from the runtime's env via `BaseServerEnv`. */
 export const resolve_spine_server_config = (runtime: RuntimeDeps): SpineServerConfig => {
@@ -112,7 +136,12 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		stat: runtime.stat,
 		read_text_file: runtime.read_text_file,
 		delete_file: runtime.remove,
-		audit_factory: default_audit_factory,
+		audit_factory: cell_audit_factory,
+		// Splice the `fuz_cell` schema after the builtin auth namespace so the
+		// cell verbs below have their tables. Cells stay off the standard
+		// declared surface (`create_spine_surface_spec`) — they're driven only
+		// by the dedicated cell cross suites, ws/sse-style.
+		migration_namespaces: [CELL_MIGRATION_NS],
 	});
 
 	// Ensure the daemon-token dir exists — `spawn_backend` creates the backend
@@ -157,7 +186,14 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		// surface automatically). Drives the cross-process SSE self-test.
 		audit_log_sse: true,
 		create_route_specs: create_spine_route_specs,
-		// Append `_testing_reset` to the standard RPC endpoint.
+		// Append `_testing_reset` + the full cell surface (CRUD + grant +
+		// field + item + audit) to the standard RPC endpoint. Both are
+		// live-mounted but stay off the declared surface
+		// (`create_spine_surface_spec`) so the standard cross suite's generic
+		// round-trip never tries to drive them — cells are stateful and are
+		// covered by the dedicated cell cross suites instead. Only actor-shaped
+		// grants are exercised, so `spine_roles` (built-in only) suffices for
+		// the grant role-validity gate.
 		rpc_endpoints: (ctx) =>
 			spine_rpc_endpoints(ctx).map((endpoint) => ({
 				...endpoint,
@@ -167,6 +203,11 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 						session_options: spine_session_options,
 						daemon_token_state: daemon_token_rotation.state,
 					}),
+					...create_cell_actions(ctx.deps),
+					...create_cell_grant_actions({...ctx.deps, roles: spine_roles}),
+					...create_cell_field_actions(ctx.deps),
+					...create_cell_item_actions(ctx.deps),
+					...create_cell_audit_actions(),
 				],
 			})),
 		env_schema: BaseServerEnv,

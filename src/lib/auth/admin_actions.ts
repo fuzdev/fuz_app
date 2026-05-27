@@ -34,14 +34,29 @@ import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
 import {
 	builtin_role_specs_by_name,
 	list_roles_with_grant_path,
+	ROLE_ADMIN,
+	ROLE_KEEPER,
 	type RoleSchemaResult,
 } from './role_schema.js';
+import {has_role} from './request_context.js';
+import {
+	query_account_has_global_role,
+	query_account_has_active_global_role,
+	query_count_active_accounts_with_global_role,
+} from './role_grant_queries.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import {GRANT_PATH_ADMIN} from './grant_path_schema.js';
 import {
 	query_account_by_email,
 	query_account_by_id,
 	query_account_by_username,
+	query_account_soft_delete,
+	query_account_undelete,
+	query_actor_soft_delete,
+	query_actor_undelete,
+	query_actors_by_account,
 	query_admin_account_list,
+	query_purge_account,
 } from './account_queries.js';
 import {
 	query_session_list_all_active,
@@ -67,6 +82,7 @@ import type {RouteFactoryDeps} from './deps.js';
 import {is_pg_unique_violation} from '../db/pg_error.js';
 import {
 	ERROR_ACCOUNT_NOT_FOUND,
+	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_INVITE_ACCOUNT_EXISTS_EMAIL,
 	ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
 	ERROR_INVITE_DUPLICATE,
@@ -82,8 +98,20 @@ import {
 	invite_create_action_spec,
 	invite_list_action_spec,
 	invite_delete_action_spec,
+	account_delete_action_spec,
+	account_purge_action_spec,
+	account_undelete_action_spec,
 	app_settings_get_action_spec,
 	app_settings_update_action_spec,
+	ERROR_PURGE_NOT_CONFIRMED,
+	ERROR_CANNOT_DELETE_KEEPER,
+	ERROR_CANNOT_DELETE_LAST_ADMIN,
+	type AccountDeleteInput,
+	type AccountDeleteOutput,
+	type AccountPurgeInput,
+	type AccountPurgeOutput,
+	type AccountUndeleteInput,
+	type AccountUndeleteOutput,
 	type AdminAccountListInput,
 	type AdminAccountListOutput,
 	type AdminSessionListInput,
@@ -164,6 +192,7 @@ export const create_admin_actions = (
 		const accounts = await query_admin_account_list(ctx, {
 			limit: input.limit,
 			offset: input.offset,
+			include_deleted: input.include_deleted,
 		});
 		return {accounts, grantable_roles};
 	};
@@ -370,8 +399,241 @@ export const create_admin_actions = (
 		return {ok: true};
 	};
 
+	// Shared removability guard for `account_delete` / `account_purge`,
+	// checked after auth + (for purge) confirm, before any mutation. Two
+	// protections, each emitting a forensic `outcome: 'failure'` audit row
+	// (fail-loud) before throwing 403:
+	//   1. **Keeper** — the keeper account is never API-removable: auth +
+	//      daemon-token resolution both pivot on it, so removing it bricks
+	//      keeper/daemon auth with no recovery (keeper role is non-web-
+	//      revocable and purge itself needs keeper auth). Out-of-band only.
+	//   2. **Last admin** — the sole remaining *active* admin is protected
+	//      (soft-deleted admins can't log in, so they don't count). Unlike
+	//      the keeper guard this is keeper-recoverable, but it stops an admin
+	//      tombstoning the last admin in one call.
+	// A missing account holds neither role here and falls through to the
+	// handler's own not-found path. `event_type` selects the audit event so
+	// the failure row matches the operation in flight.
+	const assert_account_removable = async (
+		ctx: ActionActorContext,
+		target_account_id: Uuid,
+		event_type: 'account_delete' | 'account_purge',
+	): Promise<void> => {
+		const auth = ctx.auth;
+		const deny = (
+			reason: typeof ERROR_CANNOT_DELETE_KEEPER | typeof ERROR_CANNOT_DELETE_LAST_ADMIN,
+			message: string,
+		): never => {
+			deps.audit.emit(ctx, {
+				event_type,
+				outcome: 'failure',
+				actor_id: auth.actor.id,
+				account_id: auth.account.id,
+				target_account_id,
+				ip: ctx.client_ip,
+				metadata: {reason},
+			});
+			throw jsonrpc_errors.forbidden(message, {reason});
+		};
+		const verb = event_type === 'account_purge' ? 'purge' : 'delete';
+		if (await query_account_has_global_role(ctx, target_account_id, ROLE_KEEPER)) {
+			deny(ERROR_CANNOT_DELETE_KEEPER, `cannot ${verb} the keeper account`);
+		}
+		// `_active_` variant: a tombstoned admin is already excluded from the
+		// active count, so removing it can't drop the tally — guarding it would
+		// falsely block (cannot_delete_last_admin) the removal of a soft-deleted
+		// admin while another active admin exists. Keeper branch above stays
+		// unconditional; the last-admin branch fires only for an *active* target.
+		if (
+			(await query_account_has_active_global_role(ctx, target_account_id, ROLE_ADMIN)) &&
+			(await query_count_active_accounts_with_global_role(ctx, ROLE_ADMIN)) <= 1
+		) {
+			deny(ERROR_CANNOT_DELETE_LAST_ADMIN, `cannot ${verb} the last admin account`);
+		}
+	};
+
+	// Soft-delete an account (reversible tombstone). Self-or-admin:
+	// deleting another account requires the admin role. Tombstones the
+	// account + its actor(s), revokes sessions/tokens, closes sockets, and
+	// emits `account_delete` + one `actor_delete` per soft-deleted actor —
+	// each carrying its identity snapshot. `delete` = soft.
+	const account_delete_handler = async (
+		input: AccountDeleteInput,
+		ctx: ActionActorContext,
+	): Promise<AccountDeleteOutput> => {
+		const auth = ctx.auth;
+		const target_account_id = input.account_id ?? auth.account.id;
+		// Self-or-admin elevation: deleting someone else needs admin.
+		if (target_account_id !== auth.account.id && !has_role(auth, ROLE_ADMIN)) {
+			throw jsonrpc_errors.forbidden('cannot delete another account', {
+				reason: ERROR_INSUFFICIENT_PERMISSIONS,
+			});
+		}
+		// Keeper + last-admin guards (fail-loud, before the tombstone).
+		await assert_account_removable(ctx, target_account_id, 'account_delete');
+		// Snapshot actor names before the tombstone.
+		const actors = await query_actors_by_account(ctx, target_account_id);
+		const snapshot = await query_account_soft_delete(ctx, target_account_id, auth.actor.id);
+		if (!snapshot) {
+			// Missing or already soft-deleted — UUID probe key, failure audit is safe.
+			deps.audit.emit(ctx, {
+				event_type: 'account_delete',
+				outcome: 'failure',
+				actor_id: auth.actor.id,
+				account_id: auth.account.id,
+				ip: ctx.client_ip,
+				metadata: {reason: ERROR_ACCOUNT_NOT_FOUND, attempted_account_id: target_account_id},
+			});
+			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
+		}
+		const soft_deleted_actors = [];
+		for (const actor of actors) {
+			if (await query_actor_soft_delete(ctx, actor.id, auth.actor.id)) {
+				soft_deleted_actors.push(actor);
+			}
+		}
+		await query_session_revoke_all_for_account(ctx, target_account_id);
+		await query_revoke_all_api_tokens_for_account(ctx, target_account_id);
+		if (connection_closer) connection_closer.close_sockets_for_account(target_account_id);
+		deps.audit.emit(ctx, {
+			event_type: 'account_delete',
+			actor_id: auth.actor.id,
+			account_id: auth.account.id,
+			target_account_id,
+			ip: ctx.client_ip,
+			metadata: {username: snapshot.username, email: snapshot.email},
+		});
+		for (const actor of soft_deleted_actors) {
+			deps.audit.emit(ctx, {
+				event_type: 'actor_delete',
+				actor_id: auth.actor.id,
+				account_id: auth.account.id,
+				target_account_id,
+				target_actor_id: actor.id,
+				ip: ctx.client_ip,
+				metadata: {name: actor.name},
+			});
+		}
+		return {ok: true, deleted: true};
+	};
+
+	// Hard-purge an account (keeper-only, irreversible). Fail-loud:
+	// requires `confirm: true` + emits a WARN. Snapshots identity into
+	// `account_purge` + per-actor `actor_purge` before the cascading delete
+	// removes the rows — the `audit_log` id columns carry no FK, so the
+	// purged ids survive on historical rows and the snapshots name them.
+	const account_purge_handler = async (
+		input: AccountPurgeInput,
+		ctx: ActionActorContext,
+	): Promise<AccountPurgeOutput> => {
+		const auth = ctx.auth;
+		// Fail-loud: refuse the irreversible purge without explicit confirm.
+		if (input.confirm !== true) {
+			throw jsonrpc_errors.invalid_params('purge requires confirm: true', {
+				reason: ERROR_PURGE_NOT_CONFIRMED,
+			});
+		}
+		// Keeper + last-admin guards (fail-loud, before the cascade).
+		await assert_account_removable(ctx, input.account_id, 'account_purge');
+		// Snapshot actors before the cascade removes them.
+		const actors = await query_actors_by_account(ctx, input.account_id);
+		const snapshot = await query_purge_account(ctx, input.account_id);
+		if (!snapshot) {
+			deps.audit.emit(ctx, {
+				event_type: 'account_purge',
+				outcome: 'failure',
+				actor_id: auth.actor.id,
+				account_id: auth.account.id,
+				ip: ctx.client_ip,
+				metadata: {reason: ERROR_ACCOUNT_NOT_FOUND, attempted_account_id: input.account_id},
+			});
+			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
+		}
+		if (connection_closer) connection_closer.close_sockets_for_account(input.account_id);
+		deps.log.warn(
+			`account hard-purged (irreversible cascading delete): ${input.account_id} by actor ${auth.actor.id}`,
+		);
+		deps.audit.emit(ctx, {
+			event_type: 'account_purge',
+			actor_id: auth.actor.id,
+			account_id: auth.account.id,
+			target_account_id: input.account_id,
+			ip: ctx.client_ip,
+			metadata: {username: snapshot.username, email: snapshot.email},
+		});
+		for (const actor of actors) {
+			deps.audit.emit(ctx, {
+				event_type: 'actor_purge',
+				actor_id: auth.actor.id,
+				account_id: auth.account.id,
+				target_account_id: input.account_id,
+				target_actor_id: actor.id,
+				ip: ctx.client_ip,
+				metadata: {name: actor.name},
+			});
+		}
+		return {ok: true, purged: true};
+	};
+
+	// Reactivate a soft-deleted account (clears the tombstone). Admin-only —
+	// the self path is unreachable (a tombstoned account can't authenticate).
+	// Clears `deleted_at` on the account + its soft-deleted actor(s) and
+	// emits `account_undelete` + one `actor_undelete` per reactivated actor.
+	// Does NOT restore revoked sessions/tokens. The inverse of `delete`.
+	const account_undelete_handler = async (
+		input: AccountUndeleteInput,
+		ctx: ActionActorContext,
+	): Promise<AccountUndeleteOutput> => {
+		const auth = ctx.auth;
+		// Snapshot actors (the listing includes soft-deleted rows) before
+		// clearing the tombstones so names land in the per-actor events.
+		const actors = await query_actors_by_account(ctx, input.account_id);
+		const snapshot = await query_account_undelete(ctx, input.account_id);
+		if (!snapshot) {
+			// Missing or not soft-deleted — UUID probe key, failure audit is safe.
+			deps.audit.emit(ctx, {
+				event_type: 'account_undelete',
+				outcome: 'failure',
+				actor_id: auth.actor.id,
+				account_id: auth.account.id,
+				ip: ctx.client_ip,
+				metadata: {reason: ERROR_ACCOUNT_NOT_FOUND, attempted_account_id: input.account_id},
+			});
+			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
+		}
+		const undeleted_actors = [];
+		for (const actor of actors) {
+			if (await query_actor_undelete(ctx, actor.id)) {
+				undeleted_actors.push(actor);
+			}
+		}
+		deps.audit.emit(ctx, {
+			event_type: 'account_undelete',
+			actor_id: auth.actor.id,
+			account_id: auth.account.id,
+			target_account_id: input.account_id,
+			ip: ctx.client_ip,
+			metadata: {username: snapshot.username, email: snapshot.email},
+		});
+		for (const actor of undeleted_actors) {
+			deps.audit.emit(ctx, {
+				event_type: 'actor_undelete',
+				actor_id: auth.actor.id,
+				account_id: auth.account.id,
+				target_account_id: input.account_id,
+				target_actor_id: actor.id,
+				ip: ctx.client_ip,
+				metadata: {name: actor.name},
+			});
+		}
+		return {ok: true, undeleted: true};
+	};
+
 	const actions: Array<RpcAction> = [
 		rpc_action(admin_account_list_action_spec, account_list_handler),
+		rpc_action(account_delete_action_spec, account_delete_handler),
+		rpc_action(account_purge_action_spec, account_purge_handler),
+		rpc_action(account_undelete_action_spec, account_undelete_handler),
 		rpc_action(admin_session_list_action_spec, session_list_handler),
 		rpc_action(admin_session_revoke_all_action_spec, session_revoke_all_handler),
 		rpc_action(admin_token_revoke_all_action_spec, token_revoke_all_handler),

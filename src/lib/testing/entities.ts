@@ -37,6 +37,8 @@ export const create_test_account = (overrides?: TestAccountOverrides): Account =
 	created_by: null,
 	updated_at: '2024-01-01T00:00:00Z',
 	updated_by: null,
+	deleted_at: null,
+	deleted_by: null,
 	...(overrides as Partial<Account>),
 });
 
@@ -55,6 +57,8 @@ export const create_test_actor = (overrides?: TestActorOverrides): Actor => ({
 	created_at: '2024-01-01T00:00:00Z',
 	updated_at: null,
 	updated_by: null,
+	deleted_at: null,
+	deleted_by: null,
 	...(overrides as Partial<Actor>),
 });
 

@@ -310,6 +310,11 @@ export interface InProcessSetupOptions extends CreateTestAppOptions {
 export const default_in_process_setup =
 	(options: InProcessSetupOptions): SetupTest =>
 	async () => {
+		// Per-test fresh db. When `options.migration_namespaces` is set,
+		// `create_test_app` provisions an auth+extras PGlite (e.g. the cell
+		// layer); otherwise the auth-only default. Either way the factory
+		// resets + re-migrates on each `create`, so the per-test keeper
+		// bootstrap below lands on a clean DB.
 		const test_app = await create_test_app(options);
 
 		// Seed bootstrap-time secondaries against the same DB the keeper

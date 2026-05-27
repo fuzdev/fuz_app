@@ -7,7 +7,7 @@
 import {assert, test} from 'vitest';
 
 import {ROLE_KEEPER, ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import {query_delete_account} from '$lib/auth/account_queries.js';
+import {query_purge_account} from '$lib/auth/account_queries.js';
 import {
 	query_create_role_grant,
 	query_revoke_role_grant,
@@ -248,7 +248,7 @@ describe_db('RoleGrantQueries', (get_db) => {
 		const {actor_id, account_id} = await create_test_actor(db, 'leo');
 		await query_create_role_grant(deps, {actor_id, role: ROLE_ADMIN, granted_by: null});
 
-		await query_delete_account(deps, account_id);
+		await query_purge_account(deps, account_id);
 
 		const role_grants = await query_role_grant_list_for_actor(deps, actor_id);
 		assert.strictEqual(role_grants.length, 0);

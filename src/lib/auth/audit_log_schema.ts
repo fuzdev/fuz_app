@@ -57,6 +57,12 @@ export const AUDIT_EVENT_TYPES = Object.freeze([
 	'role_grant_offer_supersede',
 	'invite_create',
 	'invite_delete',
+	'account_delete',
+	'account_purge',
+	'account_undelete',
+	'actor_delete',
+	'actor_purge',
+	'actor_undelete',
 	'app_settings_update',
 ] as const);
 
@@ -292,6 +298,73 @@ export const audit_metadata_schemas = Object.freeze({
 	}),
 	invite_delete: z.looseObject({
 		invite_id: Uuid.meta({description: 'Id of the deleted invite.'}),
+	}),
+	// Account/actor deletion snapshots identity into metadata so the
+	// identity behind a now-orphaned audit id survives a purge (the
+	// `audit_log` id columns carry no FK). `delete` = soft (reversible
+	// tombstone), `purge` = hard (irreversible cascading removal). Known
+	// fields are optional so the same schema validates the success
+	// snapshot and the not-found failure shape (`reason` /
+	// `attempted_account_id`). See `auth/CLAUDE.md` §Account/actor deletion
+	// (delete = soft, purge = hard).
+	account_delete: z.looseObject({
+		username: z.string().optional().meta({description: 'Username at soft-delete time.'}),
+		email: z
+			.string()
+			.nullable()
+			.optional()
+			.meta({description: 'Email at soft-delete time; null when unset.'}),
+		reason: z
+			.string()
+			.optional()
+			.meta({description: 'Failure category. Set only on `outcome=failure`.'}),
+		attempted_account_id: Uuid.optional().meta({
+			description: 'Probed account id when the target was missing (`outcome=failure`).',
+		}),
+	}),
+	account_purge: z.looseObject({
+		username: z.string().optional().meta({description: 'Username at purge time.'}),
+		email: z
+			.string()
+			.nullable()
+			.optional()
+			.meta({description: 'Email at purge time; null when unset.'}),
+		reason: z
+			.string()
+			.optional()
+			.meta({description: 'Failure category. Set only on `outcome=failure`.'}),
+		attempted_account_id: Uuid.optional().meta({
+			description: 'Probed account id when the target was missing (`outcome=failure`).',
+		}),
+	}),
+	// `account_undelete` / `actor_undelete` are the reactivation events
+	// (clearing the soft-delete tombstone). Same identity-snapshot shape as
+	// the delete events so reviewers see who was reactivated; `reason` /
+	// `attempted_account_id` carry the not-found failure shape. Admin-only —
+	// the self path is unreachable (a tombstoned account can't authenticate).
+	account_undelete: z.looseObject({
+		username: z.string().optional().meta({description: 'Username at reactivation time.'}),
+		email: z
+			.string()
+			.nullable()
+			.optional()
+			.meta({description: 'Email at reactivation time; null when unset.'}),
+		reason: z
+			.string()
+			.optional()
+			.meta({description: 'Failure category. Set only on `outcome=failure`.'}),
+		attempted_account_id: Uuid.optional().meta({
+			description: 'Probed account id when the target was missing/not-deleted (`outcome=failure`).',
+		}),
+	}),
+	actor_delete: z.looseObject({
+		name: z.string().optional().meta({description: 'Actor display name at soft-delete time.'}),
+	}),
+	actor_purge: z.looseObject({
+		name: z.string().optional().meta({description: 'Actor display name at purge time.'}),
+	}),
+	actor_undelete: z.looseObject({
+		name: z.string().optional().meta({description: 'Actor display name at reactivation time.'}),
 	}),
 	app_settings_update: z.looseObject({
 		setting: z.string().meta({description: 'Name of the setting that changed.'}),

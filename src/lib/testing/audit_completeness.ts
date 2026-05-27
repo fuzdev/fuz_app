@@ -49,6 +49,9 @@ import {
 	role_grant_revoke_action_spec,
 } from '../auth/role_grant_offer_action_specs.js';
 import {
+	account_delete_action_spec,
+	account_purge_action_spec,
+	account_undelete_action_spec,
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
 	app_settings_update_action_spec,
@@ -631,6 +634,77 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 			});
 		});
 
+		// --- Account deletion RPC actions ---
+
+		describe('account deletion audit events', () => {
+			test('account_delete (admin) produces account_delete + actor_delete events', async () => {
+				const fixture = await options.setup_test();
+				const observer = await create_admin_observer(fixture);
+				const target = await fixture.create_account({username: 'audit_delete_target'});
+
+				const res = await rpc_call_for_spec({
+					app: {request: fixture.transport},
+					path: rpc_path,
+					spec: account_delete_action_spec,
+					params: {account_id: target.account.id},
+					headers: fixture.create_session_headers(),
+				});
+				assert.ok(res.ok, `account_delete failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
+
+				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				assert_has_event(events, 'account_delete', 'account_delete RPC');
+				assert_has_event(events, 'actor_delete', 'account_delete RPC (per-actor cascade)');
+			});
+
+			test('account_purge (keeper) produces account_purge + actor_purge events', async () => {
+				const fixture = await options.setup_test();
+				const observer = await create_admin_observer(fixture);
+				const target = await fixture.create_account({username: 'audit_purge_target'});
+
+				const res = await rpc_call_for_spec({
+					app: {request: fixture.transport},
+					path: rpc_path,
+					spec: account_purge_action_spec,
+					params: {account_id: target.account.id, confirm: true},
+					// Keeper-gated: daemon-token credential, not a session.
+					headers: fixture.create_daemon_token_headers(),
+				});
+				assert.ok(res.ok, `account_purge failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
+
+				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				assert_has_event(events, 'account_purge', 'account_purge RPC');
+				assert_has_event(events, 'actor_purge', 'account_purge RPC (per-actor cascade)');
+			});
+
+			test('account_undelete (admin) produces account_undelete + actor_undelete events', async () => {
+				const fixture = await options.setup_test();
+				const observer = await create_admin_observer(fixture);
+				const target = await fixture.create_account({username: 'audit_undelete_target'});
+
+				const del = await rpc_call_for_spec({
+					app: {request: fixture.transport},
+					path: rpc_path,
+					spec: account_delete_action_spec,
+					params: {account_id: target.account.id},
+					headers: fixture.create_session_headers(),
+				});
+				assert.ok(del.ok, `account_delete failed: ${del.ok ? '' : JSON.stringify(del.error)}`);
+
+				const res = await rpc_call_for_spec({
+					app: {request: fixture.transport},
+					path: rpc_path,
+					spec: account_undelete_action_spec,
+					params: {account_id: target.account.id},
+					headers: fixture.create_session_headers(),
+				});
+				assert.ok(res.ok, `account_undelete failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
+
+				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				assert_has_event(events, 'account_undelete', 'account_undelete RPC');
+				assert_has_event(events, 'actor_undelete', 'account_undelete RPC (per-actor cascade)');
+			});
+		});
+
 		// --- Signup route ---
 
 		describe('signup audit events', () => {
@@ -697,6 +771,12 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				'role_grant_revoke',
 				'invite_create',
 				'invite_delete',
+				'account_delete',
+				'account_purge',
+				'account_undelete',
+				'actor_delete',
+				'actor_purge',
+				'actor_undelete',
 				'app_settings_update',
 			]);
 

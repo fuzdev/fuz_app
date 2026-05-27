@@ -42,13 +42,21 @@ export const query_create_account = async (
 };
 
 /**
- * Find an account by id.
+ * Find an **active** account by id (`deleted_at IS NULL`).
+ *
+ * This is the auth-resolution workhorse (`build_request_context` /
+ * `build_account_context`) and the admin-target lookup, so it
+ * deliberately excludes soft-deleted accounts: a tombstoned account must
+ * not authenticate (`delete` = soft, `purge` = hard). Purge, which must operate on
+ * soft-deleted rows too, uses `query_purge_account` directly.
  */
 export const query_account_by_id = async (
 	deps: QueryDeps,
 	id: string,
 ): Promise<Account | undefined> => {
-	return deps.db.query_one<Account>(`SELECT * FROM account WHERE id = $1`, [id]);
+	return deps.db.query_one<Account>(`SELECT * FROM account WHERE id = $1 AND deleted_at IS NULL`, [
+		id,
+	]);
 };
 
 /**
@@ -82,22 +90,28 @@ export const query_account_by_email = async (
  * Otherwise tries username first then email. This supports a single
  * login field that accepts either format.
  *
+ * Excludes soft-deleted accounts (`deleted_at IS NULL`) — this is the
+ * login lookup, and a tombstoned account must not authenticate. The
+ * underlying `query_account_by_username` / `query_account_by_email` stay
+ * unfiltered because the invite-collision checks need to see soft-deleted
+ * accounts (usernames/emails stay reserved after a soft-delete).
+ *
  * @param deps - query dependencies
  * @param input - username or email address
- * @returns the matching account, or `undefined`
+ * @returns the matching active account, or `undefined`
  */
 export const query_account_by_username_or_email = async (
 	deps: QueryDeps,
 	input: string,
 ): Promise<Account | undefined> => {
-	if (input.includes('@')) {
-		return (
-			(await query_account_by_email(deps, input)) ?? (await query_account_by_username(deps, input))
-		);
-	}
-	return (
-		(await query_account_by_username(deps, input)) ?? (await query_account_by_email(deps, input))
-	);
+	const account = input.includes('@')
+		? ((await query_account_by_email(deps, input)) ??
+			(await query_account_by_username(deps, input)))
+		: ((await query_account_by_username(deps, input)) ??
+			(await query_account_by_email(deps, input)));
+	// Login must not resolve a soft-deleted account, but the bare
+	// username/email lookups stay unfiltered for invite-collision checks.
+	return account && account.deleted_at === null ? account : undefined;
 };
 
 /**
@@ -137,15 +151,128 @@ export const query_update_account_password = async (
 };
 
 /**
- * Delete an account. Cascades to actors, role_grants, sessions, and tokens.
+ * Identifying values snapshotted into a deletion/purge audit event so the
+ * identity behind a now-orphaned `audit_log` id isn't lost. Mirrors the
+ * Rust `AccountIdentitySnapshot`.
+ */
+export interface AccountIdentitySnapshot {
+	username: string;
+	email: string | null;
+}
+
+/**
+ * Soft-delete an account — the reversible tombstone (`delete` = soft).
+ *
+ * Stamps `deleted_at` + `deleted_by` (the initiator's actor) on the active
+ * row — paired like `role_grant`'s `revoked_at` / `revoked_by`, and
+ * deliberately leaving `updated_at` / `updated_by` untouched (deletion
+ * isn't a content edit). Returns the identity snapshot for the
+ * `account_delete` audit event, or `undefined` when no active row matched
+ * (missing or already soft-deleted). Auth resolution
+ * (`query_account_by_id`) already excludes soft-deleted accounts; the
+ * caller revokes sessions/tokens.
+ *
+ * @mutates `account` row - sets `deleted_at` + `deleted_by` on one active row
+ */
+export const query_account_soft_delete = async (
+	deps: QueryDeps,
+	id: string,
+	deleted_by: string | null,
+): Promise<AccountIdentitySnapshot | undefined> => {
+	return deps.db.query_one<AccountIdentitySnapshot>(
+		`UPDATE account SET deleted_at = NOW(), deleted_by = $2
+		 WHERE id = $1 AND deleted_at IS NULL
+		 RETURNING username, email`,
+		[id, deleted_by],
+	);
+};
+
+/**
+ * Hard-purge an account — irreversible cascading removal (`purge` = hard).
+ *
+ * Physically deletes the row, cascading to actors, role_grants, sessions,
+ * and tokens. Operates on active OR already-soft-deleted rows. Returns the
+ * identity snapshot for the `account_purge` audit event, or `undefined`
+ * when no row matched. The `audit_log` identity columns carry no FK, so
+ * the purged id survives on historical rows for forensic correlation back
+ * to the purge event.
+ *
+ * **Keeper-gated, loud, irreversible** — restrict to the keeper credential
+ * and confirm explicitly at the call site. The `purge` name flags the danger.
  *
  * @mutates `account` table and downstream FK rows - DELETE cascades through actors/role_grants/sessions/tokens
  */
-export const query_delete_account = async (deps: QueryDeps, id: string): Promise<boolean> => {
-	const rows = await deps.db.query<{id: string}>(`DELETE FROM account WHERE id = $1 RETURNING id`, [
-		id,
-	]);
-	return rows.length > 0;
+export const query_purge_account = async (
+	deps: QueryDeps,
+	id: string,
+): Promise<AccountIdentitySnapshot | undefined> => {
+	return deps.db.query_one<AccountIdentitySnapshot>(
+		`DELETE FROM account WHERE id = $1 RETURNING username, email`,
+		[id],
+	);
+};
+
+/**
+ * Soft-delete one actor (sets `deleted_at` + `deleted_by`). Returns `true`
+ * when an active row flipped, `false` when none matched. Emitted per actor
+ * alongside the account-level soft-delete.
+ *
+ * @mutates `actor` row - sets `deleted_at` + `deleted_by` on one active row
+ */
+export const query_actor_soft_delete = async (
+	deps: QueryDeps,
+	id: string,
+	deleted_by: string | null,
+): Promise<boolean> => {
+	const row = await deps.db.query_one<{id: string}>(
+		`UPDATE actor SET deleted_at = NOW(), deleted_by = $2
+		 WHERE id = $1 AND deleted_at IS NULL
+		 RETURNING id`,
+		[id, deleted_by],
+	);
+	return row !== undefined;
+};
+
+/**
+ * Reactivate a soft-deleted account — clears the `deleted_at` /
+ * `deleted_by` tombstone (the inverse of `query_account_soft_delete`).
+ *
+ * Operates only on a currently soft-deleted row (`deleted_at IS NOT NULL`)
+ * and returns the identity snapshot for the `account_undelete` audit
+ * event, or `undefined` when no soft-deleted row matched (missing or
+ * already active). Reactivation does **not** restore the revoked
+ * sessions/tokens — the account is live again but its principals re-auth
+ * fresh. `updated_at` / `updated_by` stay untouched.
+ *
+ * @mutates `account` row - clears `deleted_at` + `deleted_by` on one soft-deleted row
+ */
+export const query_account_undelete = async (
+	deps: QueryDeps,
+	id: string,
+): Promise<AccountIdentitySnapshot | undefined> => {
+	return deps.db.query_one<AccountIdentitySnapshot>(
+		`UPDATE account SET deleted_at = NULL, deleted_by = NULL
+		 WHERE id = $1 AND deleted_at IS NOT NULL
+		 RETURNING username, email`,
+		[id],
+	);
+};
+
+/**
+ * Reactivate one soft-deleted actor (clears `deleted_at` / `deleted_by`).
+ * Returns `true` when a soft-deleted row flipped back, `false` when none
+ * matched. Emitted per actor alongside the account-level reactivation.
+ *
+ * @mutates `actor` row - clears `deleted_at` + `deleted_by` on one soft-deleted row
+ */
+export const query_actor_undelete = async (deps: QueryDeps, id: string): Promise<boolean> => {
+	const row = await deps.db.query_one<{id: string}>(
+		`UPDATE actor SET deleted_at = NULL, deleted_by = NULL
+		 WHERE id = $1 AND deleted_at IS NOT NULL
+		 RETURNING id`,
+		[id],
+	);
+	return row !== undefined;
 };
 
 /**
@@ -262,6 +389,13 @@ export interface AdminAccountListOptions {
 	limit?: number | null;
 	/** Pagination offset. Defaults to 0. */
 	offset?: number | null;
+	/**
+	 * Include soft-deleted (tombstoned) accounts. Defaults to `false` —
+	 * the listing shows active accounts only, matching auth resolution.
+	 * Set `true` for the admin UI's "show deleted" view, which offers
+	 * reactivation via `account_undelete`.
+	 */
+	include_deleted?: boolean | null;
 }
 
 /**
@@ -289,13 +423,18 @@ export const query_admin_account_list = async (
 	const limit =
 		options?.limit === null ? null : (options?.limit ?? ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT);
 	const offset = options?.offset ?? 0;
+	// Active-only by default; the admin UI's "show deleted" view passes
+	// `include_deleted` to surface tombstoned rows for reactivation.
+	const where = options?.include_deleted ? '' : 'WHERE deleted_at IS NULL';
 	const account_query =
 		limit == null
-			? deps.db.query<Account>(`SELECT * FROM account ORDER BY created_at OFFSET $1`, [offset])
-			: deps.db.query<Account>(`SELECT * FROM account ORDER BY created_at LIMIT $1 OFFSET $2`, [
-					limit,
+			? deps.db.query<Account>(`SELECT * FROM account ${where} ORDER BY created_at OFFSET $1`, [
 					offset,
-				]);
+				])
+			: deps.db.query<Account>(
+					`SELECT * FROM account ${where} ORDER BY created_at LIMIT $1 OFFSET $2`,
+					[limit, offset],
+				);
 	const accounts = await account_query;
 	if (accounts.length === 0) return [];
 

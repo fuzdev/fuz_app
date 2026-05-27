@@ -13,7 +13,7 @@ import {describe, test, assert} from 'vitest';
 import {create_uuid} from '@fuzdev/fuz_util/id.js';
 
 import {query_actors_by_ids} from '$lib/auth/actor_lookup_queries.js';
-import {query_delete_account} from '$lib/auth/account_queries.js';
+import {query_purge_account} from '$lib/auth/account_queries.js';
 import {create_test_account_with_actor} from '$lib/testing/db_entities.js';
 
 import {describe_db} from '../db_fixture.js';
@@ -62,7 +62,7 @@ describe_db('actor_lookup_queries', (get_db) => {
 		test('cascade-orphaned actor drops out silently — no never-existed/deleted distinguisher', async () => {
 			const db = get_db();
 			const {account, actor} = await create_test_account_with_actor(db, {username: 'alice'});
-			await query_delete_account({db}, account.id);
+			await query_purge_account({db}, account.id);
 			const rows = await query_actors_by_ids({db}, [actor.id]);
 			assert.deepStrictEqual(rows, []);
 		});

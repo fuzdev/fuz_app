@@ -10,6 +10,10 @@
  * @module
  */
 
+// `deleted_at` is the soft-delete tombstone (delete = soft, purge = hard).
+// Auth resolution treats a non-null `deleted_at` as absent; the username /
+// email unique indexes stay unconditional so a soft-deleted identity stays
+// reserved (no reuse): delete is soft, purge is hard.
 export const ACCOUNT_SCHEMA = `
 CREATE TABLE IF NOT EXISTS account (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -20,7 +24,9 @@ CREATE TABLE IF NOT EXISTS account (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_by UUID,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_by UUID
+  updated_by UUID,
+  deleted_at TIMESTAMPTZ,
+  deleted_by UUID
 )`;
 
 export const ACTOR_SCHEMA = `
@@ -30,7 +36,9 @@ CREATE TABLE IF NOT EXISTS actor (
   name TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ,
-  updated_by UUID REFERENCES actor(id) ON DELETE SET NULL
+  updated_by UUID REFERENCES actor(id) ON DELETE SET NULL,
+  deleted_at TIMESTAMPTZ,
+  deleted_by UUID REFERENCES actor(id) ON DELETE SET NULL
 )`;
 
 export const ACTOR_INDEX = `

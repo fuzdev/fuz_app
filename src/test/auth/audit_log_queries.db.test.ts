@@ -258,15 +258,19 @@ describe_db('AuditLogQueries', (get_db) => {
 		assert.strictEqual(events.length, 1);
 	});
 
-	test('FK SET NULL preserves entries when account is deleted', async () => {
+	test('audit ids survive a hard account delete (no FK on identity columns)', async () => {
+		// New contract (delete = soft, purge = hard): the audit_log identity
+		// columns carry no FK, so a hard purge leaves the raw ids INTACT
+		// instead of nulling them (the old `ON DELETE SET NULL` erased the
+		// attribution the log exists to preserve).
 		const {account_id, actor_id} = await create_test_account(get_db(), 'doomed');
 		await query_audit_log(deps, {event_type: 'login', actor_id, account_id});
-		// delete the account (cascades actor)
+		// Hard-purge the account (cascades actor); the audit row's ids persist.
 		await get_db().query(`DELETE FROM account WHERE id = $1`, [account_id]);
 		const events = await query_audit_log_list(deps);
 		assert.strictEqual(events.length, 1);
-		assert.strictEqual(events[0]!.actor_id, null);
-		assert.strictEqual(events[0]!.account_id, null);
+		assert.strictEqual(events[0]!.actor_id, actor_id);
+		assert.strictEqual(events[0]!.account_id, account_id);
 	});
 
 	test('list_with_usernames resolves username via direct account JOIN', async () => {

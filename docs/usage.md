@@ -1080,6 +1080,178 @@ question. Do not paper over the friction by renaming contexts to a
 single `rpc_context` — the per-domain split is load-bearing for narrow
 test stubs and the `has_rpc` gate per state class.
 
+## Cell data layer
+
+The **cell** is a universal data primitive — a `jsonb` content row with
+identity, ownership, soft-delete, an optional global `path`, and
+auto-extracted `blake3:` fact references. Cell-to-cell relationships live in
+two sibling tables: `cell_field` (named, one target per name — the
+JSON-object shape) and `cell_item` (ordered, fractional-indexed, multiset —
+the JSON-array shape). Resource-side access control lives in `cell_grant`.
+Content carries no enforced schema; views interpret a cell by the shape of
+its `data`.
+
+Cells are **opt-in** — they are not part of `create_standard_rpc_actions`.
+A consumer that wants them registers the migration namespace and mounts the
+action factories explicitly.
+
+### Migration
+
+Splice the cell namespace into the backend alongside any consumer
+namespaces:
+
+```typescript
+import {CELL_MIGRATION_NS} from '@fuzdev/fuz_app/db/cell_ddl.js';
+
+const backend = await create_app_backend({
+	// …deps
+	migration_namespaces: [CELL_MIGRATION_NS /*, …app namespaces */],
+});
+```
+
+`CELL_MIGRATION_NS` (namespace `fuz_cell`) creates `cell`, `cell_grant`,
+`cell_field`, `cell_item`, and the dormant `cell_history` table. It FKs into
+the `actor` table, so it must follow the builtin auth namespace.
+
+### Action surface
+
+Seventeen generic verbs, aggregated under one cell namespace so codegen and
+UI see a single surface. Mount the five factories into an RPC endpoint's
+`actions`:
+
+```typescript
+import {create_cell_actions} from '@fuzdev/fuz_app/auth/cell_actions.js';
+import {create_cell_grant_actions} from '@fuzdev/fuz_app/auth/cell_grant_actions.js';
+import {create_cell_field_actions} from '@fuzdev/fuz_app/auth/cell_field_actions.js';
+import {create_cell_item_actions} from '@fuzdev/fuz_app/auth/cell_item_actions.js';
+import {create_cell_audit_actions} from '@fuzdev/fuz_app/auth/cell_audit_actions.js';
+
+const cell_rpc_actions = [
+	...create_cell_actions({log, audit, validate_data}), // 6 core verbs
+	...create_cell_grant_actions({log, audit, roles}),   // 3 grant verbs
+	...create_cell_field_actions({log, audit}),          // 3 field verbs
+	...create_cell_item_actions({log, audit}),           // 4 item verbs
+	...create_cell_audit_actions(),                      // cell_audit_list
+];
+```
+
+| Group | Verbs |
+| ----- | ----- |
+| Core | `cell_create`, `cell_get`, `cell_update`, `cell_delete`, `cell_list`, `cell_clone` |
+| Grants | `cell_grant_create`, `cell_grant_revoke`, `cell_grant_list` |
+| Fields | `cell_field_set`, `cell_field_delete`, `cell_field_list` |
+| Items | `cell_item_insert`, `cell_item_move`, `cell_item_delete`, `cell_item_list` |
+| Audit | `cell_audit_list` |
+
+For typed-client codegen, the matching specs are aggregated as
+`all_cell_action_specs` in `@fuzdev/fuz_app/auth/cell_action_specs.js`.
+
+`validate_data` is an optional per-kind shape hook on `create_cell_actions`
+— it runs on every incoming `data` payload (create, update, clone-merge) and
+may throw a `ZodError`, which surfaces to the client as `invalid_params`
+(`-32602`). Omit it to pass payloads through unchecked. `create_cell_grant_actions`
+takes `roles` (a `create_role_schema()` result) so role-shaped grants
+validate against the app's role vocabulary.
+
+### Authorization model
+
+Access control is pure predicates over `(auth, cell, grants)` — no DB I/O.
+Owner is the `cell.created_by` actor. Three tiers:
+
+- **`can_view_cell`** — admin, or `visibility === 'public'` (admits an
+  unauthenticated reader), or owner, or any `viewer`+ grant.
+- **`can_edit_cell`** — owner, admin, or an `editor` grant. A
+  system-origin cell (`created_by === null`) is never editable by a
+  non-admin, even with an editor grant.
+- **`can_manage_cell`** — `admin || owner`, not delegable. Gates
+  `visibility` writes, all grant management, and the per-cell audit
+  timeline.
+
+Reads are strict and IDOR-masking: a miss and an unauthorized read both
+return `cell_not_found` so private cells don't leak existence. Relation
+reads (the `cell_get` bundle and the forward/reverse field/item lists)
+filter targets by visibility, so a caller who can view a parent can't
+enumerate hidden children through relation edges. `path` writes are
+admin-only; visibility writes require the manage tier — both deliberately
+return `403` rather than the masking `404`.
+
+## Fact store
+
+The **fact store** is the immutable, content-addressed sibling of the cell
+layer: arbitrary bytes keyed by their `blake3:` hash. Small payloads are
+stored embedded in Postgres; large ones are written to a sharded filesystem
+tree and referenced. Cells point into facts — any `blake3:` string in a
+cell's `data` is auto-extracted to `cell.refs`, which is how binary content
+(images, documents, snapshots) attaches to cells.
+
+The store interface lives in `@fuzdev/fuz_util/fact_store.js` (`FactStore`:
+`put` / `put_ref` / `get` / `has` / `get_meta` / `get_refs`). fuz_app ships
+the Postgres implementation and the HTTP serving plumbing; facts are
+**opt-in** — a consumer wires them at backend assembly.
+
+### Migration
+
+```typescript
+import {FACT_MIGRATION_NS} from '@fuzdev/fuz_app/db/fact_ddl.js';
+```
+
+`FACT_MIGRATION_NS` (namespace `fuz_facts`) creates `facts`, `fact_refs`,
+and `memos`. Splice it into `migration_namespaces` like any other namespace.
+
+### Wiring the store
+
+`create_app_backend` stays facts-agnostic — the consumer constructs a
+`PgFactStore` and assigns `deps.fact_store`:
+
+```typescript
+import {PgFactStore} from '@fuzdev/fuz_app/db/fact_store.js';
+import {create_file_fact_fetcher} from '@fuzdev/fuz_app/server/file_fact_fetcher.js';
+
+const fact_store = new PgFactStore({
+	deps: query_deps,                 // QueryDeps (db + log)
+	embedded_threshold: 16 * 1024,    // bytes at/under this go inline; larger → put_ref
+	fetcher: create_file_fact_fetcher({facts_dir}), // resolves `file:<shard>/<rest>` URLs
+});
+deps.fact_store = fact_store;
+```
+
+`put(bytes)` is idempotent (same bytes → same hash → one row) and rejects
+content over `embedded_threshold` so the caller routes large payloads
+through `put_ref` explicitly. `write_fact(fact_store, embedded_threshold,
+facts_dir, bytes, options)` (`server/fact_write.js`) handles that routing —
+embed when small, else atomic temp-write + rename into the shard tree, then
+`put_ref`. Reads of external facts verify the hash and return `null` on
+mismatch.
+
+### Serving facts
+
+```typescript
+import {create_serve_fact_route_spec} from '@fuzdev/fuz_app/server/serve_fact_route.js';
+
+create_serve_fact_route_spec({
+	facts_dir,
+	x_accel_redirect_prefix, // set in production → nginx serves bytes via X-Accel-Redirect
+	log,
+});
+```
+
+`GET /api/facts/:hash` is **per-fact authorized through the cell graph**: it
+admits the caller only if at least one active cell that references the hash
+passes `can_view_cell` for them. A miss, an orphan fact, or a fact reachable
+only through cells the caller can't view all return the same `404` — fact
+existence never leaks. Embedded facts stream from Postgres; external facts
+return an `X-Accel-Redirect` header in production (nginx serves the bytes) or
+stream from disk in dev/test. Env: `FUZ_FACTS_DIR`,
+`FUZ_FACTS_X_ACCEL_REDIRECT_PREFIX`.
+
+### Status
+
+The PG `FactStore`, `fact_refs`, serving, and cell integration are shipped.
+The `memos` table ships but **MemoStore** (computation caching) has no
+implementation yet, and orphan-fact GC has query helpers but no wired
+action. There is no Rust twin of the fact layer today (cells have one;
+facts are TS-only).
+
 ## Testing with Database Factories
 
 ```typescript

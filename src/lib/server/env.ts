@@ -56,6 +56,12 @@ export const BaseServerEnv = z.strictObject({
 		.string()
 		.optional()
 		.meta({description: 'SMTP authentication password', sensitivity: 'secret'}),
+	FUZ_FACTS_DIR: z.string().min(1).default('./.facts').meta({
+		description: 'Directory for referenced (large) fact bytes, sharded <shard>/<rest>',
+	}),
+	FUZ_FACTS_X_ACCEL_REDIRECT_PREFIX: z.string().optional().meta({
+		description: 'Internal nginx prefix for X-Accel-Redirect fact delivery (production only)',
+	}),
 });
 export type BaseServerEnv = z.infer<typeof BaseServerEnv>;
 

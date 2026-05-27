@@ -61,6 +61,8 @@ describe_db('auth schema', (get_db) => {
 			{column_name: 'created_by', data_type: 'uuid', is_nullable: 'YES'},
 			{column_name: 'updated_at', data_type: 'timestamp with time zone', is_nullable: 'NO'},
 			{column_name: 'updated_by', data_type: 'uuid', is_nullable: 'YES'},
+			{column_name: 'deleted_at', data_type: 'timestamp with time zone', is_nullable: 'YES'},
+			{column_name: 'deleted_by', data_type: 'uuid', is_nullable: 'YES'},
 		]);
 	});
 
@@ -79,6 +81,8 @@ describe_db('auth schema', (get_db) => {
 			{column_name: 'created_at', data_type: 'timestamp with time zone', is_nullable: 'NO'},
 			{column_name: 'updated_at', data_type: 'timestamp with time zone', is_nullable: 'YES'},
 			{column_name: 'updated_by', data_type: 'uuid', is_nullable: 'YES'},
+			{column_name: 'deleted_at', data_type: 'timestamp with time zone', is_nullable: 'YES'},
+			{column_name: 'deleted_by', data_type: 'uuid', is_nullable: 'YES'},
 		]);
 	});
 
@@ -257,9 +261,12 @@ describe_db('auth schema', (get_db) => {
 		assert.deepStrictEqual(missing, [], `missing indexes: ${missing.join(', ')}`);
 	});
 
-	// FK delete-rule inventory. CASCADE vs SET NULL is load-bearing — flipping
-	// e.g. `audit_log.actor_id` from SET NULL to CASCADE would delete history
-	// when an actor row is removed. Drift here is a forensic-trail regression.
+	// FK delete-rule inventory. CASCADE vs SET NULL is load-bearing.
+	// `audit_log`'s four identity columns deliberately carry NO FK (plain
+	// UUID) — an append-only log isn't a live relational entity, and a hard
+	// purge must leave the raw id intact rather than nulling the attribution
+	// (delete = soft, purge = hard).
+	// Drift here is a forensic-trail regression.
 	test('foreign keys have expected delete rules', async () => {
 		const db = get_db();
 		const rows = await db.query<{
@@ -293,22 +300,11 @@ describe_db('auth schema', (get_db) => {
 		}));
 		assert.deepStrictEqual(fks, [
 			{table: 'actor', column: 'account_id', references: 'account.id', on_delete: 'CASCADE'},
+			{table: 'actor', column: 'deleted_by', references: 'actor.id', on_delete: 'SET NULL'},
 			{table: 'actor', column: 'updated_by', references: 'actor.id', on_delete: 'SET NULL'},
 			{table: 'api_token', column: 'account_id', references: 'account.id', on_delete: 'CASCADE'},
-			{table: 'audit_log', column: 'account_id', references: 'account.id', on_delete: 'SET NULL'},
-			{table: 'audit_log', column: 'actor_id', references: 'actor.id', on_delete: 'SET NULL'},
-			{
-				table: 'audit_log',
-				column: 'target_account_id',
-				references: 'account.id',
-				on_delete: 'SET NULL',
-			},
-			{
-				table: 'audit_log',
-				column: 'target_actor_id',
-				references: 'actor.id',
-				on_delete: 'SET NULL',
-			},
+			// audit_log identity columns (account_id / actor_id / target_*) carry
+			// NO FK by design — see the comment above this test.
 			{
 				table: 'auth_session',
 				column: 'account_id',
@@ -430,6 +426,8 @@ describe('to_session_account', () => {
 			created_by: null,
 			updated_at: '2024-01-02',
 			updated_by: null,
+			deleted_at: null,
+			deleted_by: null,
 		};
 		const client = to_session_account(account);
 		assert.deepStrictEqual(client, {

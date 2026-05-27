@@ -54,6 +54,37 @@ export interface BackendCapabilities {
 	 */
 	readonly sse: boolean;
 	/**
+	 * Cell CRUD verbs (`cell_create` / `cell_get` / `cell_update` /
+	 * `cell_delete` / `cell_list`) are live-mounted on the backend's RPC
+	 * path and its DB carries the `fuz_cell` migration namespace. Gates the
+	 * dedicated `describe_cell_crud_cross_tests` suite. Like `ws` / `sse`,
+	 * cells stay off the standard declared surface — only this flag opts a
+	 * backend into the cell parity coverage.
+	 */
+	readonly cell_crud: boolean;
+	/**
+	 * The relation / ACL / audit cell verbs beyond plain CRUD
+	 * (`cell_grant_*` / `cell_field_*` / `cell_item_*` / `cell_clone` /
+	 * `cell_audit_list`) are live-mounted on the backend's RPC path. Gates
+	 * the dedicated `describe_cell_relations_cross_tests` suite — grant
+	 * lifecycle, field / item bidirectional relations, clone shallow + deep,
+	 * manage-tier audit gating, and the now-reachable
+	 * `cell_visibility_manage_only` 403 (editor-grant principal). Like
+	 * `cell_crud`, these stay off the standard declared surface; a backend
+	 * mounting only plain CRUD declares `cell_crud: true, cell_relations: false`.
+	 */
+	readonly cell_relations: boolean;
+	/**
+	 * The account-lifecycle admin verbs (`account_delete` soft-delete,
+	 * `account_undelete` reactivation, `account_purge` keeper hard-delete)
+	 * are live-mounted on the backend's RPC path. Gates the dedicated
+	 * `describe_account_lifecycle_cross_tests` suite. Like cells, these
+	 * destructive/stateful verbs stay off the standard declared surface (the
+	 * generic round-trip can't drive them — they delete the subject), so
+	 * this flag opts a backend into the lifecycle parity coverage.
+	 */
+	readonly account_lifecycle: boolean;
+	/**
 	 * Test has direct access to backend-internal state (keyring for
 	 * signing cookies, DB pool for FK-structural raw queries). Always
 	 * `true` for in-process Hono via `default_in_process_setup`; always
@@ -76,6 +107,9 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	login_rate_limit: true,
 	ws: true,
 	sse: true,
+	cell_crud: true,
+	cell_relations: true,
+	account_lifecycle: true,
 	in_process_only: true,
 });
 

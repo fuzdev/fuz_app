@@ -34,7 +34,12 @@
  */
 
 import type {
+	AdminAccountListInput,
 	AdminAccountListOutput,
+	AccountDeleteInput,
+	AccountDeleteOutput,
+	AccountUndeleteInput,
+	AccountUndeleteOutput,
 	AdminSessionListOutput,
 	AdminSessionRevokeAllInput,
 	AdminSessionRevokeAllOutput,
@@ -79,7 +84,9 @@ import {format_scope_context, type FormatScope} from './format_scope.js';
  * assignable as long as these methods are present at these signatures.
  */
 export interface AdminRpcApi {
-	admin_account_list: () => Promise<AdminAccountListOutput>;
+	admin_account_list: (input?: AdminAccountListInput) => Promise<AdminAccountListOutput>;
+	account_delete: (input: AccountDeleteInput) => Promise<AccountDeleteOutput>;
+	account_undelete: (input: AccountUndeleteInput) => Promise<AccountUndeleteOutput>;
 	admin_session_list: () => Promise<AdminSessionListOutput>;
 	admin_session_revoke_all: (
 		input: AdminSessionRevokeAllInput,
@@ -117,6 +124,8 @@ export interface AdminRpcAdapters {
  * | Narrow RPC method                   | Action spec method           |
  * | ----------------------------------- | ---------------------------- |
  * | `admin_accounts.list_accounts`      | `admin_account_list`         |
+ * | `admin_accounts.delete_account`     | `account_delete` (soft)      |
+ * | `admin_accounts.undelete_account`   | `account_undelete`           |
  * | `admin_accounts.list_sessions`      | `admin_session_list`         |
  * | `admin_accounts.create_role_grant`       | `role_grant_offer_create`        |
  * | `admin_accounts.revoke_role_grant`      | `role_grant_revoke`              |
@@ -137,7 +146,9 @@ export interface AdminRpcAdapters {
  */
 export const create_admin_rpc_adapters = (api: AdminRpcApi): AdminRpcAdapters => ({
 	admin_accounts: {
-		list_accounts: () => api.admin_account_list(),
+		list_accounts: (include_deleted) => api.admin_account_list({include_deleted}),
+		delete_account: (account_id) => api.account_delete({account_id}),
+		undelete_account: (account_id) => api.account_undelete({account_id}),
 		list_sessions: () => api.admin_session_list(),
 		create_role_grant: (params) => api.role_grant_offer_create(params),
 		revoke_role_grant: (params) => api.role_grant_revoke(params),

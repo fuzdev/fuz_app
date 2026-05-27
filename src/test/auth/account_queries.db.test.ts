@@ -14,7 +14,11 @@ import {
 	query_account_by_email,
 	query_account_by_username_or_email,
 	query_update_account_password,
-	query_delete_account,
+	query_account_soft_delete,
+	query_account_undelete,
+	query_actor_soft_delete,
+	query_actor_undelete,
+	query_purge_account,
 	query_account_has_any,
 	query_create_actor,
 	query_actor_by_id,
@@ -141,21 +145,84 @@ describe_db('account queries', (get_db) => {
 			);
 		});
 
-		test('delete removes the account', async () => {
+		test('soft-delete tombstones the account; auth lookup excludes it, purge removes it', async () => {
 			const db = get_db();
 			const deps = {db};
-			const account = await query_create_account(deps, {username: 'frank', password_hash: 'hash'});
-			const deleted = await query_delete_account(deps, account.id);
-			assert.strictEqual(deleted, true);
-			const found = await query_account_by_id(deps, account.id);
-			assert.strictEqual(found, undefined);
+			const {account, actor} = await query_create_account_with_actor(deps, {
+				username: 'frank',
+				password_hash: 'hash',
+				email: 'frank@example.com',
+			});
+
+			// Soft-delete records the deleter + returns the identity snapshot.
+			const snapshot = await query_account_soft_delete(deps, account.id, actor.id);
+			assert.deepStrictEqual(snapshot, {username: 'frank', email: 'frank@example.com'});
+			const tombstone = await db.query_one<{deleted_by: string | null}>(
+				`SELECT deleted_by FROM account WHERE id = $1`,
+				[account.id],
+			);
+			assert.strictEqual(tombstone?.deleted_by, actor.id);
+			// Auth-resolution lookup excludes the tombstoned account...
+			assert.strictEqual(await query_account_by_id(deps, account.id), undefined);
+			// ...but the row survives (username stays reserved via the
+			// unconditional unique index — by_username still finds it).
+			assert.ok(await query_account_by_username(deps, 'frank'));
+			// Soft-delete is idempotent: a second call flips nothing.
+			assert.strictEqual(await query_account_soft_delete(deps, account.id, actor.id), undefined);
+			// Actor soft-delete flips once, then no-ops.
+			assert.strictEqual(await query_actor_soft_delete(deps, actor.id, actor.id), true);
+			assert.strictEqual(await query_actor_soft_delete(deps, actor.id, actor.id), false);
+
+			// Purge hard-removes the (soft-deleted) row and returns the snapshot.
+			const purged = await query_purge_account(deps, account.id);
+			assert.deepStrictEqual(purged, {username: 'frank', email: 'frank@example.com'});
+			assert.strictEqual(await query_account_by_username(deps, 'frank'), undefined);
 		});
 
-		test('delete returns false for missing account', async () => {
+		test('purge returns undefined for missing account', async () => {
 			const db = get_db();
 			const deps = {db};
-			const deleted = await query_delete_account(deps, '00000000-0000-0000-0000-000000000099');
-			assert.strictEqual(deleted, false);
+			const purged = await query_purge_account(deps, '00000000-0000-0000-0000-000000000099');
+			assert.strictEqual(purged, undefined);
+		});
+
+		test('undelete clears the tombstone on account + actor; auth lookup finds it again', async () => {
+			const db = get_db();
+			const deps = {db};
+			const {account, actor} = await query_create_account_with_actor(deps, {
+				username: 'grace',
+				password_hash: 'hash',
+				email: 'grace@example.com',
+			});
+
+			// Tombstone the account + actor, then reactivate.
+			await query_account_soft_delete(deps, account.id, actor.id);
+			assert.strictEqual(await query_actor_soft_delete(deps, actor.id, actor.id), true);
+			assert.strictEqual(await query_account_by_id(deps, account.id), undefined);
+
+			// Undelete returns the identity snapshot and clears deleted_at/deleted_by.
+			const snapshot = await query_account_undelete(deps, account.id);
+			assert.deepStrictEqual(snapshot, {username: 'grace', email: 'grace@example.com'});
+			const row = await db.query_one<{deleted_at: string | null; deleted_by: string | null}>(
+				`SELECT deleted_at, deleted_by FROM account WHERE id = $1`,
+				[account.id],
+			);
+			assert.strictEqual(row?.deleted_at, null);
+			assert.strictEqual(row?.deleted_by, null);
+			// Auth-resolution lookup finds the reactivated account again.
+			assert.ok(await query_account_by_id(deps, account.id));
+
+			// Actor undelete flips the tombstoned actor back, then no-ops.
+			assert.strictEqual(await query_actor_undelete(deps, actor.id), true);
+			assert.strictEqual(await query_actor_undelete(deps, actor.id), false);
+			const actor_row = await db.query_one<{deleted_at: string | null}>(
+				`SELECT deleted_at FROM actor WHERE id = $1`,
+				[actor.id],
+			);
+			assert.strictEqual(actor_row?.deleted_at, null);
+
+			// Undelete is a no-op on an already-active account.
+			assert.strictEqual(await query_account_undelete(deps, account.id), undefined);
 		});
 
 		test('has_any returns false when empty', async () => {
@@ -334,7 +401,7 @@ describe_db('account queries', (get_db) => {
 			const deps = {db};
 			const account = await query_create_account(deps, {username: 'dave', password_hash: 'hash'});
 			const actor = await query_create_actor(deps, account.id, 'dave');
-			await query_delete_account(deps, account.id);
+			await query_purge_account(deps, account.id);
 			const found = await query_actor_by_id(deps, actor.id);
 			assert.strictEqual(found, undefined);
 		});

@@ -36,6 +36,7 @@
 		{key: 'account', label: 'username', width: 180},
 		{key: 'role_grants', label: 'role_grants', width: 240},
 		{key: 'actor', label: 'grant', width: 200},
+		{key: 'pending_offers', label: 'manage', width: 140},
 	];
 </script>
 
@@ -46,6 +47,22 @@
 			<span class="chip color_a"
 				>{admin_accounts.account_count} account{admin_accounts.account_count === 1 ? '' : 's'}</span
 			>
+		</p>
+	{/if}
+
+	{#if admin_accounts.has_rpc}
+		<label class="row gap_xs font_size_sm">
+			<input
+				type="checkbox"
+				checked={admin_accounts.show_deleted}
+				onchange={(e) => admin_accounts.set_show_deleted(e.currentTarget.checked)}
+			/>
+			show deleted
+		</label>
+		<p class="text_50 font_size_sm">
+			“delete” is a reversible soft-delete (tombstone) — enable “show deleted” to reactivate an
+			account. Permanent hard-delete (purge) is keeper/CLI-only and intentionally not available
+			here.
 		</p>
 	{/if}
 
@@ -166,6 +183,47 @@
 								{/if}
 							{/if}
 						{/each}
+					{/if}
+				{:else if column.key === 'pending_offers'}
+					{#if admin_accounts.has_rpc}
+						{#if row.account.deleted_at}
+							{@const undelete_error = admin_accounts.undelete.error(row.account.id)}
+							<span
+								class="chip font_size_sm color_c"
+								title={format_datetime_local(row.account.deleted_at)}
+							>
+								deleted {format_relative_time(row.account.deleted_at)}
+							</span>
+							<button
+								type="button"
+								class="sm"
+								disabled={admin_accounts.undelete.loading(row.account.id)}
+								onclick={() => admin_accounts.submit_undelete(row.account.id)}
+							>
+								reactivate
+							</button>
+							{#if undelete_error}
+								<span class="color_c_50 font_size_sm">{undelete_error}</span>
+							{/if}
+						{:else}
+							{@const delete_error = admin_accounts.soft_delete.error(row.account.id)}
+							<ConfirmButton
+								onconfirm={() => admin_accounts.submit_delete(row.account.id)}
+								title="soft-delete @{row.account.username}"
+								class="sm"
+								label="delete"
+								pending={admin_accounts.soft_delete.loading(row.account.id)}
+							>
+								{#snippet popover_content(_popover, do_confirm)}
+									<button type="button" class="color_c bg_100" onclick={() => do_confirm()}>
+										<span class="py_sm">soft-delete @{row.account.username} (reversible)</span>
+									</button>
+								{/snippet}
+							</ConfirmButton>
+							{#if delete_error}
+								<span class="color_c_50 font_size_sm">{delete_error}</span>
+							{/if}
+						{/if}
 					{/if}
 				{/if}
 			{/snippet}

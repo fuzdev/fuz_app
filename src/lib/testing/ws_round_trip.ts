@@ -285,6 +285,8 @@ const build_multi_role_request_context = (
 			created_by: null,
 			updated_at: now,
 			updated_by: null,
+			deleted_at: null,
+			deleted_by: null,
 		},
 		actor: {
 			id: actor_id,
@@ -293,6 +295,8 @@ const build_multi_role_request_context = (
 			created_at: now,
 			updated_at: null,
 			updated_by: null,
+			deleted_at: null,
+			deleted_by: null,
 		},
 		role_grants: roles.map((role) => ({
 			id: create_uuid(),

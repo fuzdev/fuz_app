@@ -54,6 +54,9 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	login_rate_limit: false,
 	ws: true,
 	sse: false,
+	cell_crud: true,
+	cell_relations: true,
+	account_lifecycle: true,
 	in_process_only: false,
 });
 
@@ -69,6 +72,9 @@ export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 	login_rate_limit: true,
 	ws: true,
 	sse: false,
+	cell_crud: true,
+	cell_relations: true,
+	account_lifecycle: true,
 	in_process_only: false,
 });
 

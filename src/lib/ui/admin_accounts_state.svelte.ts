@@ -23,6 +23,8 @@ import type {RoleName} from '../auth/role_schema.js';
 import type {RoleGrantOfferJson} from '../auth/role_grant_offer_schema.js';
 import type {
 	AdminAccountListOutput,
+	AccountDeleteOutput,
+	AccountUndeleteOutput,
 	AdminSessionListOutput,
 	AdminSessionRevokeAllInput,
 	AdminSessionRevokeAllOutput,
@@ -57,7 +59,9 @@ import type {
  * to bridge to the typed throwing Proxy.
  */
 export interface AdminAccountsRpc {
-	list_accounts: () => Promise<AdminAccountListOutput>;
+	list_accounts: (include_deleted?: boolean) => Promise<AdminAccountListOutput>;
+	delete_account: (account_id: Uuid) => Promise<AccountDeleteOutput>;
+	undelete_account: (account_id: Uuid) => Promise<AccountUndeleteOutput>;
 	list_sessions: () => Promise<AdminSessionListOutput>;
 	create_role_grant: (params: RoleGrantOfferCreateInput) => Promise<RoleGrantOfferCreateOutput>;
 	revoke_role_grant: (params: RoleGrantRevokeInput) => Promise<RoleGrantRevokeOutput>;
@@ -106,9 +110,17 @@ export class AdminAccountsState {
 	readonly grant = new KeyedAsyncSlot<string, RoleGrantOfferJson>();
 	readonly revoke = new KeyedAsyncSlot<Uuid, void>();
 	readonly retract = new KeyedAsyncSlot<Uuid, void>();
+	// Per-row account lifecycle slots, keyed by `account_id`.
+	readonly soft_delete = new KeyedAsyncSlot<Uuid, void>();
+	readonly undelete = new KeyedAsyncSlot<Uuid, void>();
 
 	accounts: Array<AdminAccountEntryJson> = $state.raw([]);
 	grantable_roles: Array<RoleName> = $state.raw([]);
+	/**
+	 * When `true`, `fetch()` includes soft-deleted (tombstoned) accounts so
+	 * the admin can reactivate them. Toggled via `set_show_deleted`.
+	 */
+	show_deleted: boolean = $state(false);
 
 	readonly account_count: number = $derived(this.accounts.length);
 
@@ -132,10 +144,48 @@ export class AdminAccountsState {
 
 	async fetch(): Promise<void> {
 		await this.list.run(async () => {
-			const {accounts, grantable_roles} = await this.#require_rpc().list_accounts();
+			const {accounts, grantable_roles} = await this.#require_rpc().list_accounts(
+				this.show_deleted,
+			);
 			this.accounts = accounts;
 			this.grantable_roles = grantable_roles;
 		});
+	}
+
+	/**
+	 * Toggle whether soft-deleted accounts appear in the listing, then
+	 * re-fetch. Tombstoned rows are surfaced so an admin can reactivate them
+	 * via `submit_undelete`.
+	 */
+	async set_show_deleted(value: boolean): Promise<void> {
+		if (this.show_deleted === value) return;
+		this.show_deleted = value;
+		await this.fetch();
+	}
+
+	/**
+	 * Soft-delete an account (reversible tombstone) via `account_delete`.
+	 * Keyed by `account_id` so per-row spinners/errors stay independent.
+	 * Refreshes the listing on success so the row drops out (active view) or
+	 * flips to its tombstoned state (`show_deleted` view).
+	 */
+	async submit_delete(account_id: Uuid): Promise<void> {
+		await this.soft_delete.run(account_id, async () => {
+			await this.#require_rpc().delete_account(account_id);
+		});
+		if (this.soft_delete.succeeded(account_id)) await this.fetch();
+	}
+
+	/**
+	 * Reactivate a soft-deleted account via `account_undelete` (admin-only).
+	 * Keyed by `account_id`; refreshes the listing on success so the row
+	 * returns to active state.
+	 */
+	async submit_undelete(account_id: Uuid): Promise<void> {
+		await this.undelete.run(account_id, async () => {
+			await this.#require_rpc().undelete_account(account_id);
+		});
+		if (this.undelete.succeeded(account_id)) await this.fetch();
 	}
 
 	/**

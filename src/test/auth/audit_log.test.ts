@@ -151,6 +151,8 @@ const fake_account = {
 	updated_at: '2025-01-01T00:00:00.000Z',
 	created_by: null,
 	updated_by: null,
+	deleted_at: null,
+	deleted_by: null,
 };
 
 const fake_actor = {
@@ -160,6 +162,8 @@ const fake_actor = {
 	created_at: '2025-01-01T00:00:00.000Z',
 	updated_at: null,
 	updated_by: null,
+	deleted_at: null,
+	deleted_by: null,
 };
 
 const fake_ctx: RequestContext = {

@@ -17,6 +17,15 @@
  * - `target_actor_id` is populated iff the event subject is actor-bound
  *   (see `AuditLogEvent.target_actor_id` doc-comment for the rule).
  *
+ * **No FK on the four identity columns.** They are plain `UUID`, not
+ * `REFERENCES … ON DELETE SET NULL`. An audit log is an append-only
+ * historical record, not a live relational entity; `SET NULL` erased the
+ * very attribution the log exists to preserve. With soft-delete as the
+ * default (`account.deleted_at`) the rows stay and the ids JOIN-resolve;
+ * on a hard purge the raw id survives instead of nulling, and the purge
+ * audit event snapshots the identity into metadata (delete = soft,
+ * purge = hard).
+ *
  * @module
  */
 
@@ -26,10 +35,10 @@ CREATE TABLE IF NOT EXISTS audit_log (
   seq BIGSERIAL NOT NULL,
   event_type TEXT NOT NULL,
   outcome TEXT NOT NULL DEFAULT 'success',
-  actor_id UUID REFERENCES actor(id) ON DELETE SET NULL,
-  account_id UUID REFERENCES account(id) ON DELETE SET NULL,
-  target_account_id UUID REFERENCES account(id) ON DELETE SET NULL,
-  target_actor_id UUID REFERENCES actor(id) ON DELETE SET NULL,
+  actor_id UUID,
+  account_id UUID,
+  target_account_id UUID,
+  target_actor_id UUID,
   ip TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   metadata JSONB

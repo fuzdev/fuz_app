@@ -172,6 +172,37 @@ No `--force`, no `skip_verification`. If you need to deviate, reach for
 explicitly states intent). Recipes for rename, mark-applied, and
 namespace-reset live in ./migrations.md.
 
+## Data Substrate: Cells and Facts
+
+Two optional, opt-in subsystems form a content/storage substrate beneath the
+auth core. They share the migration-namespace and `QueryDeps` machinery but
+are not part of the standard server — a consumer registers their namespaces
+and mounts their surfaces explicitly.
+
+**Cells** (`db/cell_*`, `auth/cell_*`, namespace `fuz_cell`) — the universal
+mutable data primitive. A `cell` row carries identity, a `jsonb data` body,
+ownership (`created_by`/`updated_by`), `visibility`, an optional global
+`path`, and auto-extracted `blake3:` fact refs. Cell-to-cell relationships
+live in two sibling tables — `cell_field` (named) and `cell_item` (ordered) —
+and resource-side ACL in `cell_grant`. Authorization is pure predicates
+(`can_view_cell` / `can_edit_cell` / `can_manage_cell`) with strict
+relation-read visibility filtering and `404`-masking. The RPC surface is 17
+generic verbs. The dormant `cell_history` table is reserved for a future
+snapshot lifecycle. See usage.md §"Cell data layer".
+
+**Facts** (`db/fact_*`, `server/*fact*`, namespace `fuz_facts`) — the
+immutable, content-addressed byte store. `facts` holds bytes embedded in
+Postgres (small) or referenced on a sharded filesystem tree (large);
+`fact_refs` is the dependency graph; `memos` is reserved for computation
+caching (MemoStore, not yet implemented). The `FactStore` interface lives in
+`@fuzdev/fuz_util`; fuz_app ships `PgFactStore` plus the
+`GET /api/facts/:hash` route, which authorizes per-fact through the
+referencing-cell graph. See usage.md §"Fact store".
+
+Cells are TS + Rust twin-impl (the Rust `fuz_cell` crate, gated by
+cross-backend tests); facts are TS-only today. Snapshot lifecycle, GC
+policy, MemoStore, and the fact Rust twin are tracked deferrals.
+
 ## Bootstrap
 
 `bootstrap_account` (from `auth/bootstrap_account.ts`) provides one-shot admin account

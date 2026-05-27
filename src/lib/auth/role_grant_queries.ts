@@ -298,6 +298,75 @@ export const query_account_has_global_role = async (
 };
 
 /**
+ * Like `query_account_has_global_role`, but only counts the grant when the
+ * **account itself is active** (`deleted_at IS NULL`). Used by the last-admin
+ * branch of the removability guard: a soft-deleted admin can't log in and is
+ * excluded from `query_count_active_accounts_with_global_role`, so the guard
+ * must use the same active-account predicate when testing whether the *target*
+ * is an admin — otherwise removing an already-tombstoned admin is falsely
+ * blocked as `cannot_delete_last_admin` even though it can't lower the active
+ * count. The keeper branch deliberately uses the unconditional
+ * `query_account_has_global_role` (a keeper is never removable regardless of
+ * tombstone state).
+ *
+ * @param deps - query dependencies
+ * @param account_id - the account to check
+ * @param role - the role to check for (e.g. `ROLE_ADMIN`)
+ * @returns `true` if the account is active and any of its actors holds an active global `role` grant
+ */
+export const query_account_has_active_global_role = async (
+	deps: QueryDeps,
+	account_id: string,
+	role: string,
+): Promise<boolean> => {
+	const row = await deps.db.query_one<{exists: boolean}>(
+		`SELECT EXISTS(
+			SELECT 1 FROM role_grant rg
+			JOIN actor act ON act.id = rg.actor_id
+			JOIN account a ON a.id = act.account_id
+			WHERE a.id = $1
+			  AND a.deleted_at IS NULL
+			  AND rg.role = $2
+			  AND rg.scope_id IS NULL
+			  AND rg.revoked_at IS NULL
+			  AND (rg.expires_at IS NULL OR rg.expires_at > NOW())
+		 ) AS exists`,
+		[account_id, role],
+	);
+	return row?.exists ?? false;
+};
+
+/**
+ * Count **active** accounts (`deleted_at IS NULL`) holding an active global
+ * role_grant for `role`. Used by the last-admin guard on `account_delete` /
+ * `account_purge`: a soft-deleted account's admin grant isn't revoked, so a
+ * plain grant count would include tombstoned (unusable) admins — this joins
+ * `account` and excludes them, counting only admins that can actually log in.
+ *
+ * @param deps - query dependencies
+ * @param role - the role to count (e.g. `ROLE_ADMIN`)
+ * @returns the number of distinct active accounts with an active global `role` grant
+ */
+export const query_count_active_accounts_with_global_role = async (
+	deps: QueryDeps,
+	role: string,
+): Promise<number> => {
+	const row = await deps.db.query_one<{count: string | number}>(
+		`SELECT COUNT(DISTINCT a.id) AS count
+		 FROM account a
+		 JOIN actor act ON act.account_id = a.id
+		 JOIN role_grant rg ON rg.actor_id = act.id
+		 WHERE a.deleted_at IS NULL
+		   AND rg.role = $1
+		   AND rg.scope_id IS NULL
+		   AND rg.revoked_at IS NULL
+		   AND (rg.expires_at IS NULL OR rg.expires_at > NOW())`,
+		[role],
+	);
+	return Number(row?.count ?? 0);
+};
+
+/**
  * List all role_grants for an actor (including revoked/expired).
  */
 export const query_role_grant_list_for_actor = async (

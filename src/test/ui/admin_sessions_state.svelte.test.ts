@@ -28,6 +28,8 @@ afterEach(() => {
 
 const make_rpc = (overrides: Partial<AdminAccountsRpc> = {}): AdminAccountsRpc => ({
 	list_accounts: vi.fn().mockResolvedValue({accounts: [], grantable_roles: []}),
+	delete_account: vi.fn().mockResolvedValue({ok: true, deleted: true}),
+	undelete_account: vi.fn().mockResolvedValue({ok: true, undeleted: true}),
 	list_sessions: vi.fn().mockResolvedValue({sessions: []}),
 	create_role_grant: vi.fn().mockResolvedValue({offer: make_offer()}),
 	revoke_role_grant: vi.fn().mockResolvedValue({ok: true, revoked: true}),

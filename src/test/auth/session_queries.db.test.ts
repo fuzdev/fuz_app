@@ -6,7 +6,7 @@
 
 import {describe, assert, test} from 'vitest';
 
-import {query_delete_account} from '$lib/auth/account_queries.js';
+import {query_purge_account} from '$lib/auth/account_queries.js';
 import {
 	query_create_session,
 	query_session_get_valid,
@@ -320,7 +320,7 @@ describe_db('AuthSessionQueries', (get_db) => {
 			new Date(Date.now() + AUTH_SESSION_LIFETIME_MS),
 		);
 
-		await query_delete_account(deps, account_id);
+		await query_purge_account(deps, account_id);
 
 		const list = await query_session_list_for_account(deps, account_id);
 		assert.strictEqual(list.length, 0);

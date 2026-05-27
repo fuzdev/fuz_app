@@ -9,6 +9,7 @@
  */
 
 import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {FactStore} from '@fuzdev/fuz_util/fact_store.js';
 
 import type {Keyring} from './keyring.js';
 import type {PasswordHashDeps} from './password.js';
@@ -45,6 +46,14 @@ export interface AppDeps {
 	 * is no pool slot on the handler context.
 	 */
 	audit: AuditEmitter;
+	/**
+	 * Optional content-addressed byte store. Present only on backends that
+	 * serve binary content (facts) — minimal consumers leave it unset. The
+	 * consumer constructs a `PgFactStore` (`db/fact_store.ts`) wired to a
+	 * `file_fact_fetcher` (`server/file_fact_fetcher.ts`) at its own backend
+	 * assembly and assigns it here; `create_app_backend` stays facts-agnostic.
+	 */
+	fact_store?: FactStore;
 }
 
 /**

@@ -62,7 +62,7 @@ Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
 - `auth/credential_type_schema.ts` — `CredentialTypeName`, `CREDENTIAL_TYPE_SESSION` / `_API_TOKEN` / `_DAEMON_TOKEN`, `create_credential_type_schema`.
 - `auth/grant_path_schema.ts` — `GrantPathName`, `GRANT_PATH_ADMIN` / `_SELF_SERVICE` / `_SYSTEM` / `_BOOTSTRAP`, `create_grant_path_schema`.
 - `auth/auth_ddl.ts` — `CREATE TABLE` / index / seed strings for the core identity tables.
-- `auth/audit_log_schema.ts` — `AUDIT_EVENT_TYPES` (21 builtins), `AuditEventType` / `AuditEventTypeName`, `audit_metadata_schemas`, `AuditLogEvent`, `AuditLogInput`, `AuditLogConfig`, `create_audit_log_config`.
+- `auth/audit_log_schema.ts` — `AUDIT_EVENT_TYPES` (27 builtins), `AuditEventType` / `AuditEventTypeName`, `audit_metadata_schemas`, `AuditLogEvent`, `AuditLogInput`, `AuditLogConfig`, `create_audit_log_config`.
 - `auth/audit_log_ddl.ts` — `audit_log` table DDL with `seq BIGSERIAL` for cursor-based gap fill (BIGSERIAL converges with the Rust spine; `create_db` registers a `pg.types` int8 parser so `seq` still reads as a JS number).
 - `auth/invite_schema.ts` — `Invite`, `CreateInviteInput`.
 - `auth/app_settings_schema.ts` — `AppSettings`, `UpdateAppSettingsInput` (single-row via `CHECK (id = 1)`).
@@ -147,6 +147,68 @@ Everything else listed under §RPC action surfaces.
 See root ../../../CLAUDE.md §Middleware Ordering for canonical assembly
 order. The auth-specific invariants are described below in §Cross-cutting
 invariants.
+
+### Cell layer
+
+The cell content primitive's wire schemas, RPC handlers, and authz live
+here; the schema + queries live in `db/` (see `db/CLAUDE.md` §Cell layer).
+Generic-only — no app vocabulary on the wire; per-kind shape is the
+consumer's `validate_data` pass-through callback on `CellActionDeps`.
+
+- `auth/cell_data_schema.ts` — `CellData` base (`z.looseObject` with
+  optional `kind` / `label` / `summary`); per-kind sub-API extends it.
+- `auth/cell_action_specs.ts` — `CellVisibility` enum, `CellPath` brand,
+  `CellJson`, the six generic verb specs (`cell_create / get / update /
+delete / list / clone`), error reasons, and `all_cell_action_specs`
+  (spreads in the grant / field / item / audit registries so codegen + UI
+  see one cell namespace). `CellJson` has no hub axis; `path` is global.
+- `auth/cell_grant_action_specs.ts` / `cell_field_action_specs.ts` /
+  `cell_item_action_specs.ts` / `cell_audit_action_specs.ts` — the
+  `cell_grant_*` (3) / `cell_field_*` (3) / `cell_item_*` (4) /
+  `cell_audit_list` (1) specs + their wire JSON shapes.
+- `auth/cell_authorize.ts` — pure predicates over
+  `(RequestContext | null, CellRow, grants)`: `can_view_cell`,
+  `can_edit_cell`, and `can_manage_cell` (= admin ‖ owner, where owner is
+  the `cell.created_by` actor field). The manage tier gates visibility
+  writes, all grant management (`cell_grant_create` / `_list` /
+  `_revoke`), and the per-cell audit timeline (`cell_audit_list`, D14 —
+  it surfaces who-touched-the-cell); it is not a grant level and not
+  delegable. Editor-grant holders edit content + relations but cannot
+  manage grants or read the audit timeline. NULL
+  `created_by` (system origin) is admin-only for edit/manage (explicit
+  defense-in-depth).
+- `auth/cell_relation_visibility.ts` — `filter_visible_target_ids(deps,
+auth, ids)`: batched strict relation-read filter. Every relation read —
+  the `cell_get` bundle, **forward and reverse** `cell_field_list` /
+  `cell_item_list`, and the deep-clone walk (children bulk-loaded via
+  `query_cell_load_many`) — drops edges whose far endpoint the caller can't
+  view, so a viewer of a parent can't enumerate private linked cells by id.
+  Two queries for the whole id-set (avoids the N+1 of a per-row check). The
+  reverse list verbs additionally cap the fetch by the wire `limit` so a
+  heavily inbound-linked target can't force an unbounded scan.
+- `auth/cell_actions.ts` — `create_cell_actions(deps)`, the six generic
+  handlers. `cell_create` stamps `created_by`; `path` writes are
+  admin-only. `cell_update` gates `visibility` writes on `can_manage_cell`
+  (`ERROR_CELL_VISIBILITY_MANAGE_ONLY`). `cell_get` bundles
+  visibility-filtered `fields` + `items` (one over the cap for truncation
+  detection). `cell_clone` deep-walks viewable children only.
+- `auth/cell_grant_actions.ts` / `cell_field_actions.ts` /
+  `cell_item_actions.ts` / `cell_audit_actions.ts` — the relation + ACL +
+  audit handlers, exporting `to_grant_json` / `to_field_json` /
+  `to_item_json` reused by the `cell_get` bundle.
+- `auth/cell_audit_metadata.ts` + `cell_grant_audit_metadata.ts` +
+  `cell_field_audit_metadata.ts` + `cell_item_audit_metadata.ts` — audit
+  metadata envelopes (IDs only), registered via `extra_events:` on the
+  consumer's `create_audit_log_config`.
+- `auth/cell_audit_events.ts` — `cell_audit_events`, the canonical
+  `event_type → metadata` map bundling every cell-domain audit event.
+  Consumers spread it into `extra_events` to register the whole layer in
+  one call (aggregator by design, not a compat shim).
+
+The cell event types (`cell_create` / `_update` / `_delete` / `_clone`,
+`cell_grant_create` / `_revoke`, `cell_field_set` / `_delete`,
+`cell_item_insert` / `_move` / `_delete`) are consumer-registered extras,
+not built-ins — see §Audit event extensibility.
 
 ## Cross-cutting invariants
 
@@ -259,8 +321,20 @@ session_revoke_all          role_grant_offer_expire
 token_create                role_grant_offer_supersede
 token_revoke                invite_create
 token_revoke_all            invite_delete
-                            app_settings_update
+account_delete              app_settings_update
+account_purge
+account_undelete
+actor_delete
+actor_purge
+actor_undelete
 ```
+
+`account_delete` / `account_purge` / `account_undelete` snapshot
+`{username, email}` into metadata; `actor_delete` / `actor_purge` /
+`actor_undelete` snapshot `{name}`. The account-level handlers emit the
+account event plus one per-actor event (`delete` = soft, `purge` = hard,
+`undelete` = reactivation — see ../../../docs/security.md §Authorization,
+"Account-removal target guards").
 
 `role_grant_offer_supersede` carries
 `reason: 'sibling_accepted' | 'role_grant_revoked' | 'scope_destroyed'`
@@ -336,11 +410,23 @@ are excluded.
   records, regardless of outcome. Default
   `default_action_account_rate_limit` is 1200/15min per actor.
 
-### Admin actions — eleven specs
+### Admin actions — fourteen specs
 
 `create_admin_actions(deps, options?)` in `auth/admin_actions.ts`.
 
-- `admin_account_list_action_spec` — read; input `{limit?, offset?}`; output `{accounts, grantable_roles}`.
+Three of these — `account_delete` / `account_purge` / `account_undelete` —
+carry `account_*` method names (not `admin_`): privilege lives in the auth
+spec, not the name, so soft-delete stays self-service-capable. They sit in
+the admin factory because their `actor: 'required'` shape + account-management
+queries match the rest of this registry (mixed-auth in one factory is
+fine — same as `role_grant_revoke`). `account_undelete` is admin-only —
+reactivation has no self path because a soft-deleted account can't
+authenticate.
+
+- `admin_account_list_action_spec` — read; input `{limit?, offset?, include_deleted?}`; output `{accounts, grantable_roles}`. `include_deleted` (default false) surfaces soft-deleted rows (with `account.deleted_at` set) for the admin UI's reactivation view.
+- `account_delete_action_spec` — mutation (soft delete); self-or-admin (`{account, actor}`, handler elevates to admin when `account_id` ≠ self); input `{account_id?}`; output `{ok, deleted}`. Tombstones account + actor(s), revokes sessions/tokens, emits `account_delete` + per-actor `actor_delete`. Refuses a keeper-role target (`ERROR_CANNOT_DELETE_KEEPER`) or the sole active admin (`ERROR_CANNOT_DELETE_LAST_ADMIN`) — both fail-loud with a failure-audit row.
+- `account_purge_action_spec` — mutation (hard purge); keeper-only (`credential_types: ['daemon_token']` + `roles: ['keeper']`) + `confirm: true` + WARN; input `{account_id, confirm?}`; output `{ok, purged}`. Cascading delete; emits `account_purge` + per-actor `actor_purge` (identity snapshot survives in metadata since `audit_log` ids carry no FK). Refuses a keeper-role target (`ERROR_CANNOT_DELETE_KEEPER`) or the sole active admin (`ERROR_CANNOT_DELETE_LAST_ADMIN`).
+- `account_undelete_action_spec` — mutation (reactivation, inverse of soft delete); admin-only (`roles: ['admin']` — no self path, a tombstoned account can't authenticate); input `{account_id}`; output `{ok, undeleted}`. Clears the `deleted_at` tombstone on the account + its actor(s), emits `account_undelete` + per-actor `actor_undelete`. Does not restore revoked sessions/tokens.
 - `admin_session_list_action_spec` — read; input `z.void()`; output `{sessions}`.
 - `admin_session_revoke_all_action_spec` — mutation; input `{account_id}`; output `{ok, count}`.
 - `admin_token_revoke_all_action_spec` — mutation; input `{account_id}`; output `{ok, count}`.
@@ -356,7 +442,15 @@ Constants: `AUDIT_LOG_LIST_LIMIT_MAX = 200`, `ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT =
 `ADMIN_ACCOUNT_LIST_LIMIT_MAX = 200`.
 
 Error reasons via `error.data.reason`: `ERROR_ACCOUNT_NOT_FOUND` (404 via
-`jsonrpc_errors.not_found`) on admin revoke-all, `ERROR_INVITE_ACCOUNT_EXISTS_USERNAME` /
+`jsonrpc_errors.not_found`) on admin revoke-all + account delete/purge,
+`ERROR_INSUFFICIENT_PERMISSIONS` (403) when `account_delete` targets another
+account without admin, `ERROR_PURGE_NOT_CONFIRMED` (400) when `account_purge`
+omits `confirm: true`, `ERROR_CANNOT_DELETE_KEEPER` (403) when `account_delete` /
+`account_purge` targets a keeper-role account (the keeper account is never
+API-removable — auth + daemon-token both pivot on it),
+`ERROR_CANNOT_DELETE_LAST_ADMIN` (403) when `account_delete` / `account_purge`
+targets the sole remaining active admin (keeper-recoverable, but not in one
+click; soft-deleted admins don't count), `ERROR_INVITE_ACCOUNT_EXISTS_USERNAME` /
 `_EMAIL` / `ERROR_INVITE_DUPLICATE` on invite create, `ERROR_INVITE_NOT_FOUND`
 on invite delete. `invite_create` empty input is rejected at the schema via
 `.refine()` and surfaces as `invalid_params` with `error.data.issues`.
