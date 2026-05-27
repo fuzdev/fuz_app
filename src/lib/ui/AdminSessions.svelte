@@ -62,29 +62,27 @@
 						{format_relative_time(row.expires_at)}
 					</span>
 				{:else if column.key === 'account_id'}
-					{#if admin_sessions.has_rpc}
-						{@const revoke_sessions_error = admin_sessions.revoke_sessions.error(row.account_id)}
-						{@const revoke_tokens_error = admin_sessions.revoke_tokens.error(row.account_id)}
-						<ConfirmButton
-							onconfirm={() => admin_sessions.submit_revoke_sessions(row.account_id)}
-							title="revoke all sessions for {row.username}"
-							class="sm"
-							label="revoke sessions"
-							pending={admin_sessions.revoke_sessions.loading(row.account_id)}
-						/>
-						{#if revoke_sessions_error}
-							<span class="color_c_50 font_size_sm">{revoke_sessions_error}</span>
-						{/if}
-						<ConfirmButton
-							onconfirm={() => admin_sessions.submit_revoke_tokens(row.account_id)}
-							title="revoke all tokens for {row.username}"
-							class="sm"
-							label="revoke tokens"
-							pending={admin_sessions.revoke_tokens.loading(row.account_id)}
-						/>
-						{#if revoke_tokens_error}
-							<span class="color_c_50 font_size_sm">{revoke_tokens_error}</span>
-						{/if}
+					{@const revoke_sessions_error = admin_sessions.revoke_sessions.error(row.account_id)}
+					{@const revoke_tokens_error = admin_sessions.revoke_tokens.error(row.account_id)}
+					<ConfirmButton
+						onconfirm={() => admin_sessions.submit_revoke_sessions(row.account_id)}
+						title="revoke all sessions for {row.username}"
+						class="sm"
+						label="revoke sessions"
+						pending={admin_sessions.revoke_sessions.loading(row.account_id)}
+					/>
+					{#if revoke_sessions_error}
+						<span class="color_c_50 font_size_sm">{revoke_sessions_error}</span>
+					{/if}
+					<ConfirmButton
+						onconfirm={() => admin_sessions.submit_revoke_tokens(row.account_id)}
+						title="revoke all tokens for {row.username}"
+						class="sm"
+						label="revoke tokens"
+						pending={admin_sessions.revoke_tokens.loading(row.account_id)}
+					/>
+					{#if revoke_tokens_error}
+						<span class="color_c_50 font_size_sm">{revoke_tokens_error}</span>
 					{/if}
 				{:else if column.format}
 					{column.format(row[column.key], row)}

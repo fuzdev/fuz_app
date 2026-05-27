@@ -43,22 +43,18 @@ export interface AdminInvitesRpc {
 
 /**
  * Svelte context carrying the reactive `AdminInvitesRpc` accessor. Mirrors
- * `admin_accounts_rpc_context`. Unset context falls back to `() => null`.
+ * `admin_accounts_rpc_context`. `get()` throws when no provisioner ran above
+ * the component — the adapter is required.
  */
-export const admin_invites_rpc_context = create_context<() => AdminInvitesRpc | null>(
-	() => () => null,
-);
+export const admin_invites_rpc_context = create_context<() => AdminInvitesRpc>();
 
 export interface AdminInvitesStateOptions {
-	/**
-	 * Reactive accessor for the RPC adapter. `null` disables all operations
-	 * (the state reports a descriptive error when mutations/fetches fire).
-	 */
-	get_rpc?: () => AdminInvitesRpc | null;
+	/** Reactive accessor for the RPC adapter. */
+	get_rpc: () => AdminInvitesRpc;
 }
 
 export class AdminInvitesState {
-	readonly #get_rpc: () => AdminInvitesRpc | null;
+	readonly #get_rpc: () => AdminInvitesRpc;
 
 	readonly list = new AsyncSlot<void>();
 	readonly create = new AsyncSlot<void>();
@@ -69,31 +65,20 @@ export class AdminInvitesState {
 	readonly invite_count: number = $derived(this.invites.length);
 	readonly unclaimed_count: number = $derived(this.invites.filter((i) => !i.claimed_at).length);
 
-	constructor(options?: AdminInvitesStateOptions) {
-		this.#get_rpc = options?.get_rpc ?? (() => null);
-	}
-
-	/** True when an RPC adapter is wired. All ops require it. */
-	get has_rpc(): boolean {
-		return this.#get_rpc() !== null;
-	}
-
-	#require_rpc(): AdminInvitesRpc {
-		const rpc = this.#get_rpc();
-		if (!rpc) throw new Error('rpc adapter not wired');
-		return rpc;
+	constructor(options: AdminInvitesStateOptions) {
+		this.#get_rpc = options.get_rpc;
 	}
 
 	async fetch(): Promise<void> {
 		await this.list.run(async () => {
-			const {invites} = await this.#require_rpc().list();
+			const {invites} = await this.#get_rpc().list();
 			this.invites = invites;
 		});
 	}
 
 	async submit_create(email?: string, username?: string): Promise<boolean> {
 		await this.create.run(async () => {
-			await this.#require_rpc().create({email: email ?? null, username: username ?? null});
+			await this.#get_rpc().create({email: email ?? null, username: username ?? null});
 		});
 		if (!this.create.succeeded) return false;
 		await this.fetch();
@@ -102,7 +87,7 @@ export class AdminInvitesState {
 
 	async submit_delete(id: Uuid): Promise<void> {
 		await this.remove.run(id, async () => {
-			await this.#require_rpc().delete({invite_id: id});
+			await this.#get_rpc().delete({invite_id: id});
 		});
 		if (this.remove.succeeded(id)) await this.fetch();
 	}

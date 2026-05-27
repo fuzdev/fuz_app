@@ -4,8 +4,7 @@
  * Tests for `AdminAccountsState` — admin account management UI state.
  *
  * Every operation (list, grant, revoke, retract) flows through the
- * `AdminAccountsRpc` adapter via a dedicated `AsyncSlot`. Without the
- * adapter the slot's `error` carries `'rpc adapter not wired'`.
+ * `AdminAccountsRpc` adapter via a dedicated `AsyncSlot`.
  *
  * @module
  */
@@ -119,25 +118,6 @@ describe('AdminAccountsState.fetch', () => {
 		await state.fetch();
 		assert.strictEqual((rpc.list_accounts as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 	});
-
-	test('no-op without rpc; sets descriptive error on list slot', async () => {
-		const state = new AdminAccountsState();
-		await state.fetch();
-		assert.strictEqual(state.list.error, 'rpc adapter not wired');
-	});
-});
-
-describe('AdminAccountsState.has_rpc', () => {
-	test('false when no rpc adapter is wired', () => {
-		const state = new AdminAccountsState();
-		assert.strictEqual(state.has_rpc, false);
-	});
-
-	test('true when rpc adapter is wired', () => {
-		const rpc = make_rpc();
-		const state = new AdminAccountsState({get_rpc: () => rpc});
-		assert.strictEqual(state.has_rpc, true);
-	});
 });
 
 describe('AdminAccountsState.submit_grant', () => {
@@ -184,13 +164,6 @@ describe('AdminAccountsState.submit_grant', () => {
 		resolve_fn!({offer: make_offer()});
 		await grant_promise;
 		assert.ok(!state.grant.loading('acct-1:admin'));
-	});
-
-	test('no-op without rpc; sets descriptive error on grant slot', async () => {
-		const state = new AdminAccountsState();
-		const offer = await state.submit_grant(acct_1, 'admin');
-		assert.strictEqual(offer, undefined);
-		assert.strictEqual(state.grant.error('acct-1:admin'), 'rpc adapter not wired');
 	});
 
 	test('forwards to_actor_id to rpc.create_role_grant when supplied', async () => {
@@ -284,12 +257,6 @@ describe('AdminAccountsState.submit_revoke', () => {
 		await revoke_promise;
 		assert.ok(!state.revoke.loading(role_grant_1));
 	});
-
-	test('no-op without rpc; sets descriptive error on revoke slot', async () => {
-		const state = new AdminAccountsState();
-		await state.submit_revoke(actor_42, role_grant_1);
-		assert.strictEqual(state.revoke.error(role_grant_1), 'rpc adapter not wired');
-	});
 });
 
 describe('AdminAccountsState.submit_retract', () => {
@@ -334,12 +301,6 @@ describe('AdminAccountsState.submit_retract', () => {
 		await retract_promise;
 		assert.ok(!state.retract.loading(offer_1));
 	});
-
-	test('no-op without rpc; sets descriptive error on retract slot', async () => {
-		const state = new AdminAccountsState();
-		await state.submit_retract(offer_1);
-		assert.strictEqual(state.retract.error(offer_1), 'rpc adapter not wired');
-	});
 });
 
 describe('AdminAccountsState account lifecycle', () => {
@@ -382,11 +343,5 @@ describe('AdminAccountsState account lifecycle', () => {
 		// Idempotent: same value doesn't refetch.
 		await state.set_show_deleted(true);
 		assert.strictEqual(list.mock.calls.length, 1);
-	});
-
-	test('submit_delete no-op without rpc; sets descriptive error', async () => {
-		const state = new AdminAccountsState();
-		await state.submit_delete(acct_1);
-		assert.strictEqual(state.soft_delete.error(acct_1), 'rpc adapter not wired');
 	});
 });

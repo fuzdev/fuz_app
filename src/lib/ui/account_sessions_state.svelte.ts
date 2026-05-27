@@ -38,23 +38,21 @@ export interface AccountSessionsRpc {
 
 /**
  * Svelte context carrying the reactive `AccountSessionsRpc` accessor. Mirrors
- * the admin-side RPC contexts. Unset context falls back to `() => null` so
- * components render the usual "rpc adapter not wired" state.
+ * the admin-side RPC contexts. `get()` throws when no provisioner ran above
+ * the component — the adapter is required.
  */
-export const account_sessions_rpc_context = create_context<() => AccountSessionsRpc | null>(
-	() => () => null,
-);
+export const account_sessions_rpc_context = create_context<() => AccountSessionsRpc>();
 
 export interface AccountSessionsStateOptions {
 	/**
-	 * Reactive accessor for the RPC adapter; returns `null` when unwired.
-	 * Matches the `get_rpc` pattern on the admin state classes.
+	 * Reactive accessor for the RPC adapter. Matches the `get_rpc` pattern on
+	 * the admin state classes.
 	 */
-	get_rpc?: () => AccountSessionsRpc | null;
+	get_rpc: () => AccountSessionsRpc;
 }
 
 export class AccountSessionsState {
-	readonly #get_rpc: () => AccountSessionsRpc | null;
+	readonly #get_rpc: () => AccountSessionsRpc;
 
 	readonly list = new AsyncSlot<void>();
 	readonly revoke = new KeyedAsyncSlot<string, void>();
@@ -64,38 +62,27 @@ export class AccountSessionsState {
 
 	readonly active_count: number = $derived(this.sessions.length);
 
-	constructor(options?: AccountSessionsStateOptions) {
-		this.#get_rpc = options?.get_rpc ?? (() => null);
-	}
-
-	/** True when an RPC adapter is wired. `fetch` / `submit_revoke` / `submit_revoke_all` no-op without it. */
-	get has_rpc(): boolean {
-		return this.#get_rpc() !== null;
-	}
-
-	#require_rpc(): AccountSessionsRpc {
-		const rpc = this.#get_rpc();
-		if (!rpc) throw new Error('rpc adapter not wired');
-		return rpc;
+	constructor(options: AccountSessionsStateOptions) {
+		this.#get_rpc = options.get_rpc;
 	}
 
 	async fetch(): Promise<void> {
 		await this.list.run(async () => {
-			const {sessions} = await this.#require_rpc().list();
+			const {sessions} = await this.#get_rpc().list();
 			this.sessions = sessions;
 		});
 	}
 
 	async submit_revoke(id: string): Promise<void> {
 		await this.revoke.run(id, async () => {
-			await this.#require_rpc().revoke({session_id: id});
+			await this.#get_rpc().revoke({session_id: id});
 		});
 		if (this.revoke.succeeded(id)) await this.fetch();
 	}
 
 	async submit_revoke_all(): Promise<void> {
 		await this.revoke_all.run(async () => {
-			await this.#require_rpc().revoke_all();
+			await this.#get_rpc().revoke_all();
 		});
 		if (this.revoke_all.succeeded) {
 			// Current session is now revoked — next API call will 401.

@@ -45,22 +45,24 @@ export interface AuditLogRpc {
 
 /**
  * Svelte context carrying the reactive `AuditLogRpc` accessor. Mirrors
- * `admin_accounts_rpc_context`. Unset context falls back to `() => null`.
+ * `admin_accounts_rpc_context`. `get()` throws when no provisioner ran above
+ * the component — the adapter is required.
  */
-export const audit_log_rpc_context = create_context<() => AuditLogRpc | null>(() => () => null);
+export const audit_log_rpc_context = create_context<() => AuditLogRpc>();
 
 export interface AuditLogStateOptions {
 	/**
 	 * Reactive accessor for the RPC adapter. Matches the `get_rpc` pattern on
-	 * `AdminAccountsState` — `null` disables fetch operations (SSE still works).
+	 * `AdminAccountsState`. The SSE stream uses `EventSource` directly and is
+	 * independent of this adapter.
 	 */
-	get_rpc?: () => AuditLogRpc | null;
+	get_rpc: () => AuditLogRpc;
 	/** SSE stream URL. Defaults to the shipped admin audit-log stream route. */
 	stream_url?: string;
 }
 
 export class AuditLogState {
-	readonly #get_rpc: () => AuditLogRpc | null;
+	readonly #get_rpc: () => AuditLogRpc;
 
 	readonly list = new AsyncSlot<void>();
 	readonly role_grant_history = new AsyncSlot<void>();
@@ -82,25 +84,14 @@ export class AuditLogState {
 	/** Path to the SSE stream endpoint. */
 	readonly #stream_url: string;
 
-	constructor(options?: AuditLogStateOptions) {
-		this.#get_rpc = options?.get_rpc ?? (() => null);
-		this.#stream_url = options?.stream_url ?? '/api/admin/audit/stream';
-	}
-
-	/** True when an RPC adapter is wired. `fetch`/`fetch_role_grant_history` no-op without it. */
-	get has_rpc(): boolean {
-		return this.#get_rpc() !== null;
-	}
-
-	#require_rpc(): AuditLogRpc {
-		const rpc = this.#get_rpc();
-		if (!rpc) throw new Error('rpc adapter not wired');
-		return rpc;
+	constructor(options: AuditLogStateOptions) {
+		this.#get_rpc = options.get_rpc;
+		this.#stream_url = options.stream_url ?? '/api/admin/audit/stream';
 	}
 
 	async fetch(options?: AuditLogListInput): Promise<void> {
 		await this.list.run(async () => {
-			const {events} = await this.#require_rpc().list(options);
+			const {events} = await this.#get_rpc().list(options);
 			this.events = events;
 			this.#update_last_seq(events);
 		});
@@ -108,7 +99,7 @@ export class AuditLogState {
 
 	async fetch_role_grant_history(limit?: number, offset?: number): Promise<void> {
 		await this.role_grant_history.run(async () => {
-			const {events} = await this.#require_rpc().role_grant_history({limit, offset});
+			const {events} = await this.#get_rpc().role_grant_history({limit, offset});
 			this.role_grant_history_events = events;
 		});
 	}
@@ -179,10 +170,8 @@ export class AuditLogState {
 
 	/** Fetch events missed during disconnection, keyed by `since_seq`. */
 	async #fill_gap(since_seq: number): Promise<void> {
-		const rpc = this.#get_rpc();
-		if (!rpc) return;
 		try {
-			const {events: gap_events} = await rpc.list({since_seq, limit: 200});
+			const {events: gap_events} = await this.#get_rpc().list({since_seq, limit: 200});
 			if (gap_events.length === 0) return;
 			// merge — deduplicate by id, keep newest-first order
 			const existing_ids = new Set(this.events.map((e) => e.id));

@@ -26,21 +26,19 @@ import type {AdminSessionJson} from '../auth/audit_log_schema.js';
  * Options for `AdminSessionsState`.
  *
  * The RPC adapter drives every operation (listing + the two revoke-all
- * mutations). Without it, the slots' `run()` calls fail with
- * `'rpc adapter not wired'` on `error`.
+ * mutations).
  */
 export interface AdminSessionsStateOptions {
 	/**
-	 * Reactive accessor for the RPC adapter; returns `null` when unwired.
-	 * Mirrors `AdminAccountsStateOptions.get_rpc` so a single adapter
-	 * instance backs both states without tripping Svelte's
-	 * `state_referenced_locally` warning.
+	 * Reactive accessor for the RPC adapter. Mirrors
+	 * `AdminAccountsStateOptions.get_rpc` so a single adapter instance backs
+	 * both states without tripping Svelte's `state_referenced_locally` warning.
 	 */
-	get_rpc?: () => AdminAccountsRpc | null;
+	get_rpc: () => AdminAccountsRpc;
 }
 
 export class AdminSessionsState {
-	readonly #get_rpc: () => AdminAccountsRpc | null;
+	readonly #get_rpc: () => AdminAccountsRpc;
 
 	readonly list = new AsyncSlot<void>();
 	readonly revoke_sessions = new KeyedAsyncSlot<Uuid, void>();
@@ -50,38 +48,27 @@ export class AdminSessionsState {
 
 	readonly active_count: number = $derived(this.sessions.length);
 
-	constructor(options?: AdminSessionsStateOptions) {
-		this.#get_rpc = options?.get_rpc ?? (() => null);
-	}
-
-	/** True when an RPC adapter is wired. `fetch` and the revoke controls no-op without it. */
-	get has_rpc(): boolean {
-		return this.#get_rpc() !== null;
-	}
-
-	#require_rpc(): AdminAccountsRpc {
-		const rpc = this.#get_rpc();
-		if (!rpc) throw new Error('rpc adapter not wired');
-		return rpc;
+	constructor(options: AdminSessionsStateOptions) {
+		this.#get_rpc = options.get_rpc;
 	}
 
 	async fetch(): Promise<void> {
 		await this.list.run(async () => {
-			const {sessions} = await this.#require_rpc().list_sessions();
+			const {sessions} = await this.#get_rpc().list_sessions();
 			this.sessions = sessions;
 		});
 	}
 
 	async submit_revoke_sessions(account_id: Uuid): Promise<void> {
 		await this.revoke_sessions.run(account_id, async () => {
-			await this.#require_rpc().session_revoke_all({account_id});
+			await this.#get_rpc().session_revoke_all({account_id});
 		});
 		if (this.revoke_sessions.succeeded(account_id)) await this.fetch();
 	}
 
 	async submit_revoke_tokens(account_id: Uuid): Promise<void> {
 		await this.revoke_tokens.run(account_id, async () => {
-			await this.#require_rpc().token_revoke_all({account_id});
+			await this.#get_rpc().token_revoke_all({account_id});
 		});
 		if (this.revoke_tokens.succeeded(account_id)) await this.fetch();
 	}

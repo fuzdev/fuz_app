@@ -18,16 +18,17 @@ file is a reference, not a tutorial.
 
 ## Key patterns
 
-### RPC adapter contexts with `() => null` fallback
+### RPC adapter contexts (required, no fallback)
 
 Five narrow RPC adapter contexts — `admin_accounts_rpc_context`,
 `admin_invites_rpc_context`, `audit_log_rpc_context`,
 `app_settings_rpc_context`, `account_sessions_rpc_context` — carry a
-reactive `() => Rpc | null` accessor. All five declare a `() => () => null`
-default so components mounted without a provisioner render the "rpc adapter
-not wired" state instead of crashing. (`role_grant_offers_state_context` carries
-a `RoleGrantOffersState` directly, not an RPC accessor, and isn't counted
-here.) The standard consumer shape:
+reactive `() => Rpc` accessor. None declares a fallback, so `get()` throws
+when a component mounts without a provisioner above it — the adapter is
+required, and a missing wire fails loudly at mount rather than degrading
+silently. (`role_grant_offers_state_context` carries a `RoleGrantOffersState`
+directly, not an RPC accessor, and isn't counted here.) The standard consumer
+shape:
 
 ```ts
 const get_rpc = admin_accounts_rpc_context.get();
@@ -44,14 +45,6 @@ const rpc = $derived(get_rpc());
 The provisioner calls `context.set(() => rpc)` once at the admin route
 shell. Every admin component plus `OpenSignupToggle.svelte` consumes the
 context — RPC adapters are never threaded through props.
-
-### `has_rpc` gates fetch and mutations
-
-Every state class backed by a narrow RPC interface exposes a `has_rpc`
-getter. When `false`, `fetch()`, mutations, and `subscribe` no-op and
-set `error` to `'rpc adapter not wired'`. `AdminSessionsState`'s listing
-plus mutations all run through the shared `AdminAccountsRpc`, so
-`has_rpc` gates the whole surface.
 
 ### `$state.raw` Map keyed by id + `$derived` views
 
@@ -159,7 +152,7 @@ destructive actions.
   `/api/surface` (REST) and delegates to `SurfaceExplorer`.
 - `OpenSignupToggle.svelte` — single checkbox bound to
   `AppSettingsState.settings.open_signup`. Consumes
-  `app_settings_rpc_context`; hides gracefully when `has_rpc` is `false`.
+  `app_settings_rpc_context`.
 - `SurfaceExplorer.svelte` — reads-only `AppSurface` renderer. Props:
   `surface: AppSurface`. Filter routes by auth type; expand a row to
   dump `params`/`query`/`input`/`output`/`errors` schemas as JSON.
@@ -317,8 +310,7 @@ the `submit_*` prefix where the verb collides with a slot name.
   (`list_sessions` wraps `admin_session_list`) and the two revoke-all
   mutations. Slots: `list` (AsyncSlot), `revoke_sessions` /
   `revoke_tokens` (`KeyedAsyncSlot<Uuid, void>` keyed by
-  `account_id`). `has_rpc` gates the listing + both revoke controls.
-  Methods: `fetch`, `submit_revoke_sessions`, `submit_revoke_tokens`.
+  `account_id`). Methods: `fetch`, `submit_revoke_sessions`, `submit_revoke_tokens`.
 - `app_settings_state.svelte.ts` — `AppSettingsState` +
   `app_settings_rpc_context` + narrow `AppSettingsRpc` (`get`,
   `update`). Slots: `list`, `update`. Field: `settings`. Single
@@ -337,23 +329,22 @@ the `submit_*` prefix where the verb collides with a slot name.
 
 ## RPC adapter contexts
 
-All five RPC-carrying contexts have a `() => () => null` default and
-share the same `has_rpc`-gated state-class shape; consumers wire a typed
-RPC client to each narrow interface. See "Key patterns" above for the
-provisioner pattern.
+All five RPC-carrying contexts are required (no fallback) — `get()` throws
+when unprovisioned; consumers wire a typed RPC client to each narrow
+interface. See "Key patterns" above for the provisioner pattern.
 
 - `auth_state_context` — carries `AuthState` directly (not an RPC
   accessor). Used by every auth form, `AdminOverview`,
   `AdminSettings`, `AccountSessions`, `LogoutButton`.
-- `admin_accounts_rpc_context` — `() => AdminAccountsRpc | null`.
+- `admin_accounts_rpc_context` — `() => AdminAccountsRpc`.
   Consumed by `AdminAccounts`, `AdminSessions`, `AdminOverview`.
-- `admin_invites_rpc_context` — `() => AdminInvitesRpc | null`.
+- `admin_invites_rpc_context` — `() => AdminInvitesRpc`.
   Consumed by `AdminInvites`, `AdminOverview`.
-- `audit_log_rpc_context` — `() => AuditLogRpc | null`. Consumed by
+- `audit_log_rpc_context` — `() => AuditLogRpc`. Consumed by
   `AdminAuditLog`, `AdminRoleGrantHistory`, `AdminOverview`.
-- `app_settings_rpc_context` — `() => AppSettingsRpc | null`.
+- `app_settings_rpc_context` — `() => AppSettingsRpc`.
   Consumed by `OpenSignupToggle`, `AdminOverview`.
-- `account_sessions_rpc_context` — `() => AccountSessionsRpc | null`.
+- `account_sessions_rpc_context` — `() => AccountSessionsRpc`.
   Consumed by `AccountSessions`.
 - `role_grant_offers_state_context` — carries `RoleGrantOffersState`
   directly. Consumed by `RoleGrantOfferInbox`, `RoleGrantOfferForm`,

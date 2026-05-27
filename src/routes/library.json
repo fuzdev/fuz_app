@@ -33268,28 +33268,28 @@
 					{
 						"name": "account_sessions_rpc_context",
 						"kind": "variable",
-						"doc_comment": "Svelte context carrying the reactive `AccountSessionsRpc` accessor. Mirrors\nthe admin-side RPC contexts. Unset context falls back to `() => null` so\ncomponents render the usual \"rpc adapter not wired\" state.",
+						"doc_comment": "Svelte context carrying the reactive `AccountSessionsRpc` accessor. Mirrors\nthe admin-side RPC contexts. `get()` throws when no provisioner ran above\nthe component — the adapter is required.",
 						"source_line": 44,
-						"type_signature": "{ get: () => () => AccountSessionsRpc | null; set: (value?: (() => AccountSessionsRpc | null) | undefined) => () => AccountSessionsRpc | null; }"
+						"type_signature": "{ get: (error_message?: string | undefined) => () => AccountSessionsRpc; get_maybe: () => (() => AccountSessionsRpc) | undefined; set: (value: () => AccountSessionsRpc) => () => AccountSessionsRpc; }"
 					},
 					{
 						"name": "AccountSessionsStateOptions",
 						"kind": "type",
-						"source_line": 48,
+						"source_line": 46,
 						"type_signature": "AccountSessionsStateOptions",
 						"properties": [
 							{
 								"name": "get_rpc",
 								"kind": "variable",
-								"type_signature": "() => AccountSessionsRpc | null",
-								"doc_comment": "Reactive accessor for the RPC adapter; returns `null` when unwired.\nMatches the `get_rpc` pattern on the admin state classes."
+								"type_signature": "() => AccountSessionsRpc",
+								"doc_comment": "Reactive accessor for the RPC adapter. Matches the `get_rpc` pattern on\nthe admin state classes."
 							}
 						]
 					},
 					{
 						"name": "AccountSessionsState",
 						"kind": "class",
-						"source_line": 56,
+						"source_line": 54,
 						"members": [
 							{
 								"name": "list",
@@ -33320,12 +33320,11 @@
 							{
 								"name": "constructor",
 								"kind": "constructor",
-								"type_signature": "(options?: AccountSessionsStateOptions | undefined): AccountSessionsState",
+								"type_signature": "(options: AccountSessionsStateOptions): AccountSessionsState",
 								"parameters": [
 									{
 										"name": "options",
-										"type": "AccountSessionsStateOptions | undefined",
-										"optional": true
+										"type": "AccountSessionsStateOptions"
 									}
 								]
 							},
@@ -33385,8 +33384,8 @@
 					{
 						"name": "AdminAccountsRpc",
 						"kind": "type",
-						"doc_comment": "Narrow RPC surface consumed by `AdminAccountsState`. Consumers adapt their\ntyped RPC client (e.g. a `create_rpc_client` Proxy) to this shape — the\nstate class stays decoupled from the client's `Result` return type so\ntests can inject plain-function stubs. Mirrors the `RoleGrantOffersRpc`\npattern.\n\nEvery operation flows through RPC: the listing reuses `admin_account_list`,\ngrant reuses `role_grant_offer_create`, revoke and retract have dedicated\nactions, and the session / token revoke-all mutations reuse\n`admin_session_revoke_all` and `admin_token_revoke_all`. Without the\nadapter the state class cannot fetch, grant, revoke, retract, or\nrevoke-all sessions/tokens.\n\nMethod signatures track the underlying action specs — `Uuid`-branded ids\npropagate from the wire through the state class to the components. The\nadapter built by `create_admin_rpc_adapters` therefore needs zero casts\nto bridge to the typed throwing Proxy.",
-						"source_line": 61,
+						"doc_comment": "Narrow RPC surface consumed by `AdminAccountsState`. Consumers adapt their\ntyped RPC client (e.g. a `create_rpc_client` Proxy) to this shape — the\nstate class stays decoupled from the client's `Result` return type so\ntests can inject plain-function stubs. Mirrors the `RoleGrantOffersRpc`\npattern.\n\nEvery operation flows through RPC: the listing reuses `admin_account_list`,\ngrant reuses `role_grant_offer_create`, revoke and retract have dedicated\nactions, and the session / token revoke-all mutations reuse\n`admin_session_revoke_all` and `admin_token_revoke_all`.\n\nMethod signatures track the underlying action specs — `Uuid`-branded ids\npropagate from the wire through the state class to the components. The\nadapter built by `create_admin_rpc_adapters` therefore needs zero casts\nto bridge to the typed throwing Proxy.",
+						"source_line": 59,
 						"type_signature": "AdminAccountsRpc",
 						"properties": [
 							{
@@ -33439,21 +33438,21 @@
 					{
 						"name": "admin_accounts_rpc_context",
 						"kind": "variable",
-						"doc_comment": "Svelte context carrying the reactive `AdminAccountsRpc` accessor. The\nprovisioner (typically the admin route shell) calls `set(() => rpc)`;\nconsumers read with `const get_rpc = admin_accounts_rpc_context.get();`\nand either pass the accessor straight to `AdminAccountsState`/\n`AdminSessionsState` or wrap it with `const rpc = $derived(get_rpc());`\nfor direct RPC calls. Unset context falls back to `() => null` so\ncomponents mounted without a provisioner surface the usual \"rpc adapter\nnot wired\" path.",
-						"source_line": 83,
-						"type_signature": "{ get: () => () => AdminAccountsRpc | null; set: (value?: (() => AdminAccountsRpc | null) | undefined) => () => AdminAccountsRpc | null; }"
+						"doc_comment": "Svelte context carrying the reactive `AdminAccountsRpc` accessor. The\nprovisioner (typically the admin route shell) calls `set(() => rpc)`;\nconsumers read with `const get_rpc = admin_accounts_rpc_context.get();`\nand either pass the accessor straight to `AdminAccountsState`/\n`AdminSessionsState` or wrap it with `const rpc = $derived(get_rpc());`\nfor direct RPC calls. `get()` throws when no provisioner ran above the\ncomponent — the adapter is required, not optional.",
+						"source_line": 80,
+						"type_signature": "{ get: (error_message?: string | undefined) => () => AdminAccountsRpc; get_maybe: () => (() => AdminAccountsRpc) | undefined; set: (value: () => AdminAccountsRpc) => () => AdminAccountsRpc; }"
 					},
 					{
 						"name": "AdminAccountsStateOptions",
 						"kind": "type",
-						"source_line": 87,
+						"source_line": 82,
 						"type_signature": "AdminAccountsStateOptions",
 						"properties": [
 							{
 								"name": "get_rpc",
 								"kind": "variable",
-								"type_signature": "() => AdminAccountsRpc | null",
-								"doc_comment": "Reactive accessor for the RPC adapter; returns `null` when unwired.\nMatches `RoleGrantOffersStateOptions.account_id` / `actor_id` pattern —\nlets the component pass a `$props()`-sourced rpc without tripping\nSvelte's `state_referenced_locally` warning."
+								"type_signature": "() => AdminAccountsRpc",
+								"doc_comment": "Reactive accessor for the RPC adapter. Matches\n`RoleGrantOffersStateOptions.account_id` / `actor_id` pattern — lets the\ncomponent pass a `$props()`-sourced rpc without tripping Svelte's\n`state_referenced_locally` warning."
 							}
 						]
 					},
@@ -33461,7 +33460,7 @@
 						"name": "grant_key",
 						"kind": "function",
 						"doc_comment": "Compose the `grant` keyed-slot key for an offer. Account-grain offers\nkey on `${account_id}:${role}`; actor-targeted offers add the actor\nsuffix so the two variants can be in flight simultaneously without\ncolliding on per-row spinners.",
-						"source_line": 103,
+						"source_line": 98,
 						"type_signature": "(account_id: string & $brand<\"Uuid\">, role: string, to_actor_id?: (string & $brand<\"Uuid\">) | null | undefined): string",
 						"return_type": "string",
 						"parameters": [
@@ -33483,7 +33482,7 @@
 					{
 						"name": "AdminAccountsState",
 						"kind": "class",
-						"source_line": 106,
+						"source_line": 101,
 						"members": [
 							{
 								"name": "list",
@@ -33540,12 +33539,11 @@
 							{
 								"name": "constructor",
 								"kind": "constructor",
-								"type_signature": "(options?: AdminAccountsStateOptions | undefined): AdminAccountsState",
+								"type_signature": "(options: AdminAccountsStateOptions): AdminAccountsState",
 								"parameters": [
 									{
 										"name": "options",
-										"type": "AdminAccountsStateOptions | undefined",
-										"optional": true
+										"type": "AdminAccountsStateOptions"
 									}
 								]
 							},
@@ -33694,28 +33692,28 @@
 					{
 						"name": "admin_invites_rpc_context",
 						"kind": "variable",
-						"doc_comment": "Svelte context carrying the reactive `AdminInvitesRpc` accessor. Mirrors\n`admin_accounts_rpc_context`. Unset context falls back to `() => null`.",
-						"source_line": 48,
-						"type_signature": "{ get: () => () => AdminInvitesRpc | null; set: (value?: (() => AdminInvitesRpc | null) | undefined) => () => AdminInvitesRpc | null; }"
+						"doc_comment": "Svelte context carrying the reactive `AdminInvitesRpc` accessor. Mirrors\n`admin_accounts_rpc_context`. `get()` throws when no provisioner ran above\nthe component — the adapter is required.",
+						"source_line": 49,
+						"type_signature": "{ get: (error_message?: string | undefined) => () => AdminInvitesRpc; get_maybe: () => (() => AdminInvitesRpc) | undefined; set: (value: () => AdminInvitesRpc) => () => AdminInvitesRpc; }"
 					},
 					{
 						"name": "AdminInvitesStateOptions",
 						"kind": "type",
-						"source_line": 52,
+						"source_line": 51,
 						"type_signature": "AdminInvitesStateOptions",
 						"properties": [
 							{
 								"name": "get_rpc",
 								"kind": "variable",
-								"type_signature": "() => AdminInvitesRpc | null",
-								"doc_comment": "Reactive accessor for the RPC adapter. `null` disables all operations\n(the state reports a descriptive error when mutations/fetches fire)."
+								"type_signature": "() => AdminInvitesRpc",
+								"doc_comment": "Reactive accessor for the RPC adapter."
 							}
 						]
 					},
 					{
 						"name": "AdminInvitesState",
 						"kind": "class",
-						"source_line": 60,
+						"source_line": 56,
 						"members": [
 							{
 								"name": "list",
@@ -33752,12 +33750,11 @@
 							{
 								"name": "constructor",
 								"kind": "constructor",
-								"type_signature": "(options?: AdminInvitesStateOptions | undefined): AdminInvitesState",
+								"type_signature": "(options: AdminInvitesStateOptions): AdminInvitesState",
 								"parameters": [
 									{
 										"name": "options",
-										"type": "AdminInvitesStateOptions | undefined",
-										"optional": true
+										"type": "AdminInvitesStateOptions"
 									}
 								]
 							},
@@ -33994,22 +33991,22 @@
 					{
 						"name": "AdminSessionsStateOptions",
 						"kind": "type",
-						"doc_comment": "Options for `AdminSessionsState`.\n\nThe RPC adapter drives every operation (listing + the two revoke-all\nmutations). Without it, the slots' `run()` calls fail with\n`'rpc adapter not wired'` on `error`.",
-						"source_line": 32,
+						"doc_comment": "Options for `AdminSessionsState`.\n\nThe RPC adapter drives every operation (listing + the two revoke-all\nmutations).",
+						"source_line": 31,
 						"type_signature": "AdminSessionsStateOptions",
 						"properties": [
 							{
 								"name": "get_rpc",
 								"kind": "variable",
-								"type_signature": "() => AdminAccountsRpc | null",
-								"doc_comment": "Reactive accessor for the RPC adapter; returns `null` when unwired.\nMirrors `AdminAccountsStateOptions.get_rpc` so a single adapter\ninstance backs both states without tripping Svelte's\n`state_referenced_locally` warning."
+								"type_signature": "() => AdminAccountsRpc",
+								"doc_comment": "Reactive accessor for the RPC adapter. Mirrors\n`AdminAccountsStateOptions.get_rpc` so a single adapter instance backs\nboth states without tripping Svelte's `state_referenced_locally` warning."
 							}
 						]
 					},
 					{
 						"name": "AdminSessionsState",
 						"kind": "class",
-						"source_line": 42,
+						"source_line": 40,
 						"members": [
 							{
 								"name": "list",
@@ -34040,12 +34037,11 @@
 							{
 								"name": "constructor",
 								"kind": "constructor",
-								"type_signature": "(options?: AdminSessionsStateOptions | undefined): AdminSessionsState",
+								"type_signature": "(options: AdminSessionsStateOptions): AdminSessionsState",
 								"parameters": [
 									{
 										"name": "options",
-										"type": "AdminSessionsStateOptions | undefined",
-										"optional": true
+										"type": "AdminSessionsStateOptions"
 									}
 								]
 							},
@@ -34249,28 +34245,28 @@
 					{
 						"name": "app_settings_rpc_context",
 						"kind": "variable",
-						"doc_comment": "Svelte context carrying the reactive `AppSettingsRpc` accessor. Mirrors\n`admin_accounts_rpc_context`. Unset context falls back to `() => null` so\n`OpenSignupToggle` mounted outside a provisioner hides gracefully.",
+						"doc_comment": "Svelte context carrying the reactive `AppSettingsRpc` accessor. Mirrors\n`admin_accounts_rpc_context`. `get()` throws when no provisioner ran above\nthe component — the adapter is required.",
 						"source_line": 40,
-						"type_signature": "{ get: () => () => AppSettingsRpc | null; set: (value?: (() => AppSettingsRpc | null) | undefined) => () => AppSettingsRpc | null; }"
+						"type_signature": "{ get: (error_message?: string | undefined) => () => AppSettingsRpc; get_maybe: () => (() => AppSettingsRpc) | undefined; set: (value: () => AppSettingsRpc) => () => AppSettingsRpc; }"
 					},
 					{
 						"name": "AppSettingsStateOptions",
 						"kind": "type",
-						"source_line": 44,
+						"source_line": 42,
 						"type_signature": "AppSettingsStateOptions",
 						"properties": [
 							{
 								"name": "get_rpc",
 								"kind": "variable",
-								"type_signature": "() => AppSettingsRpc | null",
-								"doc_comment": "Reactive accessor for the RPC adapter. `null` disables all operations\n(the state reports a descriptive error when fetch/update fires)."
+								"type_signature": "() => AppSettingsRpc",
+								"doc_comment": "Reactive accessor for the RPC adapter."
 							}
 						]
 					},
 					{
 						"name": "AppSettingsState",
 						"kind": "class",
-						"source_line": 52,
+						"source_line": 47,
 						"members": [
 							{
 								"name": "list",
@@ -34290,12 +34286,11 @@
 							{
 								"name": "constructor",
 								"kind": "constructor",
-								"type_signature": "(options?: AppSettingsStateOptions | undefined): AppSettingsState",
+								"type_signature": "(options: AppSettingsStateOptions): AppSettingsState",
 								"parameters": [
 									{
 										"name": "options",
-										"type": "AppSettingsStateOptions | undefined",
-										"optional": true
+										"type": "AppSettingsStateOptions"
 									}
 								]
 							},
@@ -34605,21 +34600,21 @@
 					{
 						"name": "audit_log_rpc_context",
 						"kind": "variable",
-						"doc_comment": "Svelte context carrying the reactive `AuditLogRpc` accessor. Mirrors\n`admin_accounts_rpc_context`. Unset context falls back to `() => null`.",
-						"source_line": 50,
-						"type_signature": "{ get: () => () => AuditLogRpc | null; set: (value?: (() => AuditLogRpc | null) | undefined) => () => AuditLogRpc | null; }"
+						"doc_comment": "Svelte context carrying the reactive `AuditLogRpc` accessor. Mirrors\n`admin_accounts_rpc_context`. `get()` throws when no provisioner ran above\nthe component — the adapter is required.",
+						"source_line": 51,
+						"type_signature": "{ get: (error_message?: string | undefined) => () => AuditLogRpc; get_maybe: () => (() => AuditLogRpc) | undefined; set: (value: () => AuditLogRpc) => () => AuditLogRpc; }"
 					},
 					{
 						"name": "AuditLogStateOptions",
 						"kind": "type",
-						"source_line": 52,
+						"source_line": 53,
 						"type_signature": "AuditLogStateOptions",
 						"properties": [
 							{
 								"name": "get_rpc",
 								"kind": "variable",
-								"type_signature": "() => AuditLogRpc | null",
-								"doc_comment": "Reactive accessor for the RPC adapter. Matches the `get_rpc` pattern on\n`AdminAccountsState` — `null` disables fetch operations (SSE still works)."
+								"type_signature": "() => AuditLogRpc",
+								"doc_comment": "Reactive accessor for the RPC adapter. Matches the `get_rpc` pattern on\n`AdminAccountsState`. The SSE stream uses `EventSource` directly and is\nindependent of this adapter."
 							},
 							{
 								"name": "stream_url",
@@ -34632,7 +34627,7 @@
 					{
 						"name": "AuditLogState",
 						"kind": "class",
-						"source_line": 62,
+						"source_line": 64,
 						"members": [
 							{
 								"name": "list",
@@ -34668,12 +34663,11 @@
 							{
 								"name": "constructor",
 								"kind": "constructor",
-								"type_signature": "(options?: AuditLogStateOptions | undefined): AuditLogState",
+								"type_signature": "(options: AuditLogStateOptions): AuditLogState",
 								"parameters": [
 									{
 										"name": "options",
-										"type": "AuditLogStateOptions | undefined",
-										"optional": true
+										"type": "AuditLogStateOptions"
 									}
 								]
 							},
@@ -35585,7 +35579,7 @@
 						"source_line": 1
 					}
 				],
-				"module_comment": "Single checkbox bound to `AppSettings.open_signup`. Consumes\n`app_settings_rpc_context`; the toggle calls `app_settings_update` RPC\nvia `AppSettingsState.update_open_signup`. Hides gracefully when\n`has_rpc` is `false` (renders an \"rpc adapter not wired\" notice).",
+				"module_comment": "Single checkbox bound to `AppSettings.open_signup`. Consumes\n`app_settings_rpc_context`; the toggle calls `app_settings_update` RPC\nvia `AppSettingsState.update_open_signup`.",
 				"dependencies": ["ui/app_settings_state.svelte.ts"],
 				"dependents": ["ui/AdminInvites.svelte", "ui/AdminSettings.svelte"]
 			},

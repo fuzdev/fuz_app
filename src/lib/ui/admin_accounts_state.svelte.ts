@@ -49,9 +49,7 @@ import type {
  * Every operation flows through RPC: the listing reuses `admin_account_list`,
  * grant reuses `role_grant_offer_create`, revoke and retract have dedicated
  * actions, and the session / token revoke-all mutations reuse
- * `admin_session_revoke_all` and `admin_token_revoke_all`. Without the
- * adapter the state class cannot fetch, grant, revoke, retract, or
- * revoke-all sessions/tokens.
+ * `admin_session_revoke_all` and `admin_token_revoke_all`.
  *
  * Method signatures track the underlying action specs — `Uuid`-branded ids
  * propagate from the wire through the state class to the components. The
@@ -76,22 +74,19 @@ export interface AdminAccountsRpc {
  * consumers read with `const get_rpc = admin_accounts_rpc_context.get();`
  * and either pass the accessor straight to `AdminAccountsState`/
  * `AdminSessionsState` or wrap it with `const rpc = $derived(get_rpc());`
- * for direct RPC calls. Unset context falls back to `() => null` so
- * components mounted without a provisioner surface the usual "rpc adapter
- * not wired" path.
+ * for direct RPC calls. `get()` throws when no provisioner ran above the
+ * component — the adapter is required, not optional.
  */
-export const admin_accounts_rpc_context = create_context<() => AdminAccountsRpc | null>(
-	() => () => null,
-);
+export const admin_accounts_rpc_context = create_context<() => AdminAccountsRpc>();
 
 export interface AdminAccountsStateOptions {
 	/**
-	 * Reactive accessor for the RPC adapter; returns `null` when unwired.
-	 * Matches `RoleGrantOffersStateOptions.account_id` / `actor_id` pattern —
-	 * lets the component pass a `$props()`-sourced rpc without tripping
-	 * Svelte's `state_referenced_locally` warning.
+	 * Reactive accessor for the RPC adapter. Matches
+	 * `RoleGrantOffersStateOptions.account_id` / `actor_id` pattern — lets the
+	 * component pass a `$props()`-sourced rpc without tripping Svelte's
+	 * `state_referenced_locally` warning.
 	 */
-	get_rpc?: () => AdminAccountsRpc | null;
+	get_rpc: () => AdminAccountsRpc;
 }
 
 /**
@@ -104,7 +99,7 @@ export const grant_key = (account_id: Uuid, role: RoleName, to_actor_id?: Uuid |
 	to_actor_id ? `${account_id}:${role}:${to_actor_id}` : `${account_id}:${role}`;
 
 export class AdminAccountsState {
-	readonly #get_rpc: () => AdminAccountsRpc | null;
+	readonly #get_rpc: () => AdminAccountsRpc;
 
 	readonly list = new AsyncSlot<void>();
 	readonly grant = new KeyedAsyncSlot<string, RoleGrantOfferJson>();
@@ -124,29 +119,13 @@ export class AdminAccountsState {
 
 	readonly account_count: number = $derived(this.accounts.length);
 
-	constructor(options?: AdminAccountsStateOptions) {
-		this.#get_rpc = options?.get_rpc ?? (() => null);
-	}
-
-	/**
-	 * True when an RPC adapter is wired. UI uses this to gate all controls
-	 * — fetch, grant, revoke, retract all flow through the same adapter.
-	 */
-	get has_rpc(): boolean {
-		return this.#get_rpc() !== null;
-	}
-
-	#require_rpc(): AdminAccountsRpc {
-		const rpc = this.#get_rpc();
-		if (!rpc) throw new Error('rpc adapter not wired');
-		return rpc;
+	constructor(options: AdminAccountsStateOptions) {
+		this.#get_rpc = options.get_rpc;
 	}
 
 	async fetch(): Promise<void> {
 		await this.list.run(async () => {
-			const {accounts, grantable_roles} = await this.#require_rpc().list_accounts(
-				this.show_deleted,
-			);
+			const {accounts, grantable_roles} = await this.#get_rpc().list_accounts(this.show_deleted);
 			this.accounts = accounts;
 			this.grantable_roles = grantable_roles;
 		});
@@ -171,7 +150,7 @@ export class AdminAccountsState {
 	 */
 	async submit_delete(account_id: Uuid): Promise<void> {
 		await this.soft_delete.run(account_id, async () => {
-			await this.#require_rpc().delete_account(account_id);
+			await this.#get_rpc().delete_account(account_id);
 		});
 		if (this.soft_delete.succeeded(account_id)) await this.fetch();
 	}
@@ -183,7 +162,7 @@ export class AdminAccountsState {
 	 */
 	async submit_undelete(account_id: Uuid): Promise<void> {
 		await this.undelete.run(account_id, async () => {
-			await this.#require_rpc().undelete_account(account_id);
+			await this.#get_rpc().undelete_account(account_id);
 		});
 		if (this.undelete.succeeded(account_id)) await this.fetch();
 	}
@@ -212,7 +191,7 @@ export class AdminAccountsState {
 	): Promise<RoleGrantOfferJson | undefined> {
 		const key = grant_key(account_id, role, to_actor_id);
 		const offer = await this.grant.run(key, async () => {
-			const result = await this.#require_rpc().create_role_grant({
+			const result = await this.#get_rpc().create_role_grant({
 				to_account_id: account_id,
 				role,
 				...(to_actor_id ? {to_actor_id} : {}),
@@ -234,7 +213,7 @@ export class AdminAccountsState {
 	 */
 	async submit_revoke(actor_id: Uuid, role_grant_id: Uuid, reason?: string | null): Promise<void> {
 		await this.revoke.run(role_grant_id, async () => {
-			await this.#require_rpc().revoke_role_grant({
+			await this.#get_rpc().revoke_role_grant({
 				actor_id,
 				role_grant_id,
 				reason: reason ?? null,
@@ -253,7 +232,7 @@ export class AdminAccountsState {
 	 */
 	async submit_retract(offer_id: Uuid): Promise<void> {
 		await this.retract.run(offer_id, async () => {
-			await this.#require_rpc().retract_offer(offer_id);
+			await this.#get_rpc().retract_offer(offer_id);
 		});
 		if (this.retract.succeeded(offer_id)) await this.fetch();
 	}

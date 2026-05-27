@@ -5,8 +5,7 @@
  *
  * Listing and the two revoke-all mutations both flow through the shared
  * `AdminAccountsRpc` adapter (`list_sessions` / `session_revoke_all` /
- * `token_revoke_all`). Without the adapter every operation no-ops with a
- * descriptive `error`.
+ * `token_revoke_all`).
  *
  * @module
  */
@@ -94,25 +93,6 @@ describe('AdminSessionsState.fetch', () => {
 		await state.fetch();
 		assert.strictEqual((rpc.list_sessions as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 	});
-
-	test('no-op without rpc; sets descriptive error on list slot', async () => {
-		const state = new AdminSessionsState();
-		await state.fetch();
-		assert.strictEqual(state.list.error, 'rpc adapter not wired');
-	});
-});
-
-describe('AdminSessionsState.has_rpc', () => {
-	test('false when no rpc adapter is wired', () => {
-		const state = new AdminSessionsState();
-		assert.strictEqual(state.has_rpc, false);
-	});
-
-	test('true when rpc adapter is wired', () => {
-		const rpc = make_rpc();
-		const state = new AdminSessionsState({get_rpc: () => rpc});
-		assert.strictEqual(state.has_rpc, true);
-	});
 });
 
 describe('AdminSessionsState.submit_revoke_sessions', () => {
@@ -159,12 +139,6 @@ describe('AdminSessionsState.submit_revoke_sessions', () => {
 		await revoke_promise;
 		assert.ok(!state.revoke_sessions.loading(acct_1));
 	});
-
-	test('no-op without rpc; sets descriptive error on revoke_sessions slot', async () => {
-		const state = new AdminSessionsState();
-		await state.submit_revoke_sessions(acct_1);
-		assert.strictEqual(state.revoke_sessions.error(acct_1), 'rpc adapter not wired');
-	});
 });
 
 describe('AdminSessionsState.submit_revoke_tokens', () => {
@@ -209,11 +183,5 @@ describe('AdminSessionsState.submit_revoke_tokens', () => {
 		resolve_fn!({ok: true, count: 1});
 		await revoke_promise;
 		assert.ok(!state.revoke_tokens.loading(acct_1));
-	});
-
-	test('no-op without rpc; sets descriptive error on revoke_tokens slot', async () => {
-		const state = new AdminSessionsState();
-		await state.submit_revoke_tokens(acct_1);
-		assert.strictEqual(state.revoke_tokens.error(acct_1), 'rpc adapter not wired');
 	});
 });

@@ -4,9 +4,7 @@
  * Tests for `AccountSessionsState` — session management UI state.
  *
  * Every operation flows through the injected `AccountSessionsRpc` adapter
- * (`list` / `revoke` / `revoke_all`). Without the adapter the state class is
- * inert and surfaces `'rpc adapter not wired'` on the corresponding slot's
- * `error`.
+ * (`list` / `revoke` / `revoke_all`).
  *
  * @module
  */
@@ -84,12 +82,6 @@ describe('AccountSessionsState.fetch', () => {
 		await state.fetch();
 		assert.strictEqual((rpc.list as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 	});
-
-	test('no-op without rpc; sets descriptive error on list slot', async () => {
-		const state = new AccountSessionsState();
-		await state.fetch();
-		assert.strictEqual(state.list.error, 'rpc adapter not wired');
-	});
 });
 
 describe('AccountSessionsState.submit_revoke', () => {
@@ -118,12 +110,6 @@ describe('AccountSessionsState.submit_revoke', () => {
 
 		assert.strictEqual(state.revoke.error('sess-1'), 'not_found');
 		assert.strictEqual((rpc.list as ReturnType<typeof vi.fn>).mock.calls.length, 0);
-	});
-
-	test('no-op without rpc; sets descriptive error on revoke slot', async () => {
-		const state = new AccountSessionsState();
-		await state.submit_revoke('sess-1');
-		assert.strictEqual(state.revoke.error('sess-1'), 'rpc adapter not wired');
 	});
 });
 
@@ -155,11 +141,5 @@ describe('AccountSessionsState.submit_revoke_all', () => {
 		const state = new AccountSessionsState({get_rpc: () => rpc});
 		await state.submit_revoke_all();
 		assert.strictEqual((rpc.revoke_all as ReturnType<typeof vi.fn>).mock.calls.length, 1);
-	});
-
-	test('no-op without rpc; sets descriptive error on revoke_all slot', async () => {
-		const state = new AccountSessionsState();
-		await state.submit_revoke_all();
-		assert.strictEqual(state.revoke_all.error, 'rpc adapter not wired');
 	});
 });

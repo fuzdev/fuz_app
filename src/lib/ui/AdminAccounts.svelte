@@ -50,21 +50,18 @@
 		</p>
 	{/if}
 
-	{#if admin_accounts.has_rpc}
-		<label class="row gap_xs font_size_sm">
-			<input
-				type="checkbox"
-				checked={admin_accounts.show_deleted}
-				onchange={(e) => admin_accounts.set_show_deleted(e.currentTarget.checked)}
-			/>
-			show deleted
-		</label>
-		<p class="text_50 font_size_sm">
-			“delete” is a reversible soft-delete (tombstone) — enable “show deleted” to reactivate an
-			account. Permanent hard-delete (purge) is keeper/CLI-only and intentionally not available
-			here.
-		</p>
-	{/if}
+	<label class="row gap_xs font_size_sm">
+		<input
+			type="checkbox"
+			checked={admin_accounts.show_deleted}
+			onchange={(e) => admin_accounts.set_show_deleted(e.currentTarget.checked)}
+		/>
+		show deleted
+	</label>
+	<p class="text_50 font_size_sm">
+		“delete” is a reversible soft-delete (tombstone) — enable “show deleted” to reactivate an
+		account. Permanent hard-delete (purge) is keeper/CLI-only and intentionally not available here.
+	</p>
 
 	{#if admin_accounts.list.loading}
 		<p class="text_50">loading accounts...</p>
@@ -111,7 +108,7 @@
 									expires {format_relative_time(role_grant.expires_at)}
 								</span>
 							{/if}
-							{#if admin_accounts.has_rpc && row.actor}
+							{#if row.actor}
 								{@const actor_id = row.actor.id}
 								{@const revoke_error = admin_accounts.revoke.error(role_grant.id)}
 								<ConfirmButton
@@ -129,6 +126,7 @@
 					{/each}
 					{#each row.pending_offers as offer (offer.id)}
 						{@const offer_scope = scope_label(offer.scope_id, offer.role)}
+						{@const retract_error = admin_accounts.retract.error(offer.id)}
 						<div class="row">
 							<span
 								class="chip"
@@ -141,18 +139,15 @@
 									{offer_scope}
 								</span>
 							{/if}
-							{#if admin_accounts.has_rpc}
-								{@const retract_error = admin_accounts.retract.error(offer.id)}
-								<ConfirmButton
-									onconfirm={() => admin_accounts.submit_retract(offer.id)}
-									title="retract offer"
-									class="sm"
-									label="retract"
-									pending={admin_accounts.retract.loading(offer.id)}
-								/>
-								{#if retract_error}
-									<span class="color_c_50 font_size_sm">{retract_error}</span>
-								{/if}
+							<ConfirmButton
+								onconfirm={() => admin_accounts.submit_retract(offer.id)}
+								title="retract offer"
+								class="sm"
+								label="retract"
+								pending={admin_accounts.retract.loading(offer.id)}
+							/>
+							{#if retract_error}
+								<span class="color_c_50 font_size_sm">{retract_error}</span>
 							{/if}
 						</div>
 					{/each}
@@ -160,69 +155,65 @@
 						<span class="text_50">none</span>
 					{/if}
 				{:else if column.key === 'actor'}
-					{#if admin_accounts.has_rpc}
-						{#each admin_accounts.grantable_roles as role (role)}
-							{@const key = grant_key(row.account.id, role)}
-							{@const grant_error = admin_accounts.grant.error(key)}
-							{#if !row.role_grants.some((p) => p.role === role) && !row.pending_offers.some((o) => o.role === role)}
-								<ConfirmButton
-									onconfirm={() => admin_accounts.submit_grant(row.account.id, role)}
-									title="offer {role}"
-									class="sm"
-									label={`+ ${role}`}
-									pending={admin_accounts.grant.loading(key)}
-								>
-									{#snippet popover_content(_popover, do_confirm)}
-										<button type="button" class="color_b bg_100" onclick={() => do_confirm()}>
-											<span class="py_sm">offer '{role}' to @{row.account.username}</span>
-										</button>
-									{/snippet}
-								</ConfirmButton>
-								{#if grant_error}
-									<span class="color_c_50 font_size_sm">{grant_error}</span>
-								{/if}
-							{/if}
-						{/each}
-					{/if}
-				{:else if column.key === 'pending_offers'}
-					{#if admin_accounts.has_rpc}
-						{#if row.account.deleted_at}
-							{@const undelete_error = admin_accounts.undelete.error(row.account.id)}
-							<span
-								class="chip font_size_sm color_c"
-								title={format_datetime_local(row.account.deleted_at)}
-							>
-								deleted {format_relative_time(row.account.deleted_at)}
-							</span>
-							<button
-								type="button"
-								class="sm"
-								disabled={admin_accounts.undelete.loading(row.account.id)}
-								onclick={() => admin_accounts.submit_undelete(row.account.id)}
-							>
-								reactivate
-							</button>
-							{#if undelete_error}
-								<span class="color_c_50 font_size_sm">{undelete_error}</span>
-							{/if}
-						{:else}
-							{@const delete_error = admin_accounts.soft_delete.error(row.account.id)}
+					{#each admin_accounts.grantable_roles as role (role)}
+						{@const key = grant_key(row.account.id, role)}
+						{@const grant_error = admin_accounts.grant.error(key)}
+						{#if !row.role_grants.some((p) => p.role === role) && !row.pending_offers.some((o) => o.role === role)}
 							<ConfirmButton
-								onconfirm={() => admin_accounts.submit_delete(row.account.id)}
-								title="soft-delete @{row.account.username}"
+								onconfirm={() => admin_accounts.submit_grant(row.account.id, role)}
+								title="offer {role}"
 								class="sm"
-								label="delete"
-								pending={admin_accounts.soft_delete.loading(row.account.id)}
+								label={`+ ${role}`}
+								pending={admin_accounts.grant.loading(key)}
 							>
 								{#snippet popover_content(_popover, do_confirm)}
-									<button type="button" class="color_c bg_100" onclick={() => do_confirm()}>
-										<span class="py_sm">soft-delete @{row.account.username} (reversible)</span>
+									<button type="button" class="color_b bg_100" onclick={() => do_confirm()}>
+										<span class="py_sm">offer '{role}' to @{row.account.username}</span>
 									</button>
 								{/snippet}
 							</ConfirmButton>
-							{#if delete_error}
-								<span class="color_c_50 font_size_sm">{delete_error}</span>
+							{#if grant_error}
+								<span class="color_c_50 font_size_sm">{grant_error}</span>
 							{/if}
+						{/if}
+					{/each}
+				{:else if column.key === 'pending_offers'}
+					{#if row.account.deleted_at}
+						{@const undelete_error = admin_accounts.undelete.error(row.account.id)}
+						<span
+							class="chip font_size_sm color_c"
+							title={format_datetime_local(row.account.deleted_at)}
+						>
+							deleted {format_relative_time(row.account.deleted_at)}
+						</span>
+						<button
+							type="button"
+							class="sm"
+							disabled={admin_accounts.undelete.loading(row.account.id)}
+							onclick={() => admin_accounts.submit_undelete(row.account.id)}
+						>
+							reactivate
+						</button>
+						{#if undelete_error}
+							<span class="color_c_50 font_size_sm">{undelete_error}</span>
+						{/if}
+					{:else}
+						{@const delete_error = admin_accounts.soft_delete.error(row.account.id)}
+						<ConfirmButton
+							onconfirm={() => admin_accounts.submit_delete(row.account.id)}
+							title="soft-delete @{row.account.username}"
+							class="sm"
+							label="delete"
+							pending={admin_accounts.soft_delete.loading(row.account.id)}
+						>
+							{#snippet popover_content(_popover, do_confirm)}
+								<button type="button" class="color_c bg_100" onclick={() => do_confirm()}>
+									<span class="py_sm">soft-delete @{row.account.username} (reversible)</span>
+								</button>
+							{/snippet}
+						</ConfirmButton>
+						{#if delete_error}
+							<span class="color_c_50 font_size_sm">{delete_error}</span>
 						{/if}
 					{/if}
 				{/if}

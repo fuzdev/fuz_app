@@ -34,54 +34,38 @@ export interface AppSettingsRpc {
 
 /**
  * Svelte context carrying the reactive `AppSettingsRpc` accessor. Mirrors
- * `admin_accounts_rpc_context`. Unset context falls back to `() => null` so
- * `OpenSignupToggle` mounted outside a provisioner hides gracefully.
+ * `admin_accounts_rpc_context`. `get()` throws when no provisioner ran above
+ * the component — the adapter is required.
  */
-export const app_settings_rpc_context = create_context<() => AppSettingsRpc | null>(
-	() => () => null,
-);
+export const app_settings_rpc_context = create_context<() => AppSettingsRpc>();
 
 export interface AppSettingsStateOptions {
-	/**
-	 * Reactive accessor for the RPC adapter. `null` disables all operations
-	 * (the state reports a descriptive error when fetch/update fires).
-	 */
-	get_rpc?: () => AppSettingsRpc | null;
+	/** Reactive accessor for the RPC adapter. */
+	get_rpc: () => AppSettingsRpc;
 }
 
 export class AppSettingsState {
-	readonly #get_rpc: () => AppSettingsRpc | null;
+	readonly #get_rpc: () => AppSettingsRpc;
 
 	readonly list = new AsyncSlot<void>();
 	readonly update = new AsyncSlot<void>();
 
 	settings: AppSettingsWithUsernameJson | null = $state.raw(null);
 
-	constructor(options?: AppSettingsStateOptions) {
-		this.#get_rpc = options?.get_rpc ?? (() => null);
-	}
-
-	/** True when an RPC adapter is wired. All ops require it. */
-	get has_rpc(): boolean {
-		return this.#get_rpc() !== null;
-	}
-
-	#require_rpc(): AppSettingsRpc {
-		const rpc = this.#get_rpc();
-		if (!rpc) throw new Error('rpc adapter not wired');
-		return rpc;
+	constructor(options: AppSettingsStateOptions) {
+		this.#get_rpc = options.get_rpc;
 	}
 
 	async fetch(): Promise<void> {
 		await this.list.run(async () => {
-			const {settings} = await this.#require_rpc().get();
+			const {settings} = await this.#get_rpc().get();
 			this.settings = settings;
 		});
 	}
 
 	async update_open_signup(value: boolean): Promise<void> {
 		await this.update.run(async () => {
-			const {settings} = await this.#require_rpc().update({open_signup: value});
+			const {settings} = await this.#get_rpc().update({open_signup: value});
 			this.settings = settings;
 		});
 	}

@@ -109,14 +109,6 @@ describe('AuditLogState.fetch', () => {
 		assert.strictEqual(state.list.error, 'Network error');
 		assert.strictEqual(state.list.loading, false);
 	});
-
-	test('sets descriptive error when rpc adapter is absent', async () => {
-		const state = new AuditLogState();
-		await state.fetch();
-
-		assert.strictEqual(state.list.error, 'rpc adapter not wired');
-		assert.strictEqual(state.has_rpc, false);
-	});
 });
 
 describe('AuditLogState.fetch_role_grant_history', () => {
@@ -151,12 +143,5 @@ describe('AuditLogState.fetch_role_grant_history', () => {
 		await state.fetch_role_grant_history();
 
 		assert.strictEqual(state.role_grant_history.error, 'forbidden');
-	});
-
-	test('sets descriptive error when rpc adapter is absent', async () => {
-		const state = new AuditLogState();
-		await state.fetch_role_grant_history();
-
-		assert.strictEqual(state.role_grant_history.error, 'rpc adapter not wired');
 	});
 });

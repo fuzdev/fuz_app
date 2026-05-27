@@ -2,8 +2,7 @@
 	/**
 	 * Single checkbox bound to `AppSettings.open_signup`. Consumes
 	 * `app_settings_rpc_context`; the toggle calls `app_settings_update` RPC
-	 * via `AppSettingsState.update_open_signup`. Hides gracefully when
-	 * `has_rpc` is `false` (renders an "rpc adapter not wired" notice).
+	 * via `AppSettingsState.update_open_signup`.
 	 *
 	 * @module
 	 */
@@ -17,9 +16,7 @@
 </script>
 
 <div class="open-signup-toggle">
-	{#if !app_settings.has_rpc}
-		<p class="text_50">rpc adapter not wired</p>
-	{:else if app_settings.list.loading}
+	{#if app_settings.list.loading}
 		<p class="text_50">loading settings...</p>
 	{:else if app_settings.settings}
 		<label class="row">
