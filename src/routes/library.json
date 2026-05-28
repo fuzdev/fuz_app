@@ -25371,6 +25371,7 @@
 					"testing/cross_backend/conformance_case.ts",
 					"testing/cross_backend/conformance_table.ts",
 					"testing/cross_backend/create_cross_backend_global_setup.ts",
+					"testing/cross_backend/create_schema_parity_global_setup.ts",
 					"testing/cross_backend/default_backend_configs.ts",
 					"testing/cross_backend/default_secrets.ts",
 					"testing/cross_backend/default_spine_surface.ts",
@@ -26819,7 +26820,10 @@
 					"testing/transports/bootstrap.ts",
 					"testing/transports/fetch_transport.ts"
 				],
-				"dependents": ["testing/cross_backend/create_cross_backend_global_setup.ts"]
+				"dependents": [
+					"testing/cross_backend/create_cross_backend_global_setup.ts",
+					"testing/cross_backend/create_schema_parity_global_setup.ts"
+				]
 			},
 			{
 				"path": "testing/cross_backend/build_test_backend_paths.ts",
@@ -27424,6 +27428,53 @@
 				]
 			},
 			{
+				"path": "testing/cross_backend/create_schema_parity_global_setup.ts",
+				"declarations": [
+					{
+						"name": "SchemaParityGlobalSetupOptions",
+						"kind": "type",
+						"source_line": 41,
+						"type_signature": "SchemaParityGlobalSetupOptions",
+						"properties": [
+							{
+								"name": "configs",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "{readonly a: () => BackendConfig; readonly b: () => BackendConfig}",
+								"doc_comment": "The two backend config factories to spawn. `a` is spawned first; on\nits success `b` is spawned (with `a` torn down if `b` throws). Label\nthem in the parity test via `assert_schema_snapshots_equal`'s labels."
+							},
+							{
+								"name": "provide_keys",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "{readonly a: string; readonly b: string}",
+								"doc_comment": "`project.provide` keys for the two serialized handles (read by\n`inject` in the parity test). Default `parity_handle_a` /\n`parity_handle_b`. Augment vitest's `ProvidedContext` for them."
+							}
+						]
+					},
+					{
+						"name": "create_schema_parity_global_setup",
+						"kind": "function",
+						"doc_comment": "Build a vitest `globalSetup` default export that spawns both backends.",
+						"source_line": 59,
+						"type_signature": "({ configs, provide_keys, }: SchemaParityGlobalSetupOptions): (project: TestProject) => Promise<() => Promise<void>>",
+						"return_type": "(project: TestProject) => Promise<() => Promise<void>>",
+						"parameters": [
+							{
+								"name": "__0",
+								"type": "SchemaParityGlobalSetupOptions"
+							}
+						]
+					}
+				],
+				"module_comment": "Vitest `globalSetup` factory for cross-impl **schema-parity** projects.\n\nThe per-backend `create_cross_backend_global_setup` spawns one backend\n(derived from the project name). A schema-parity gate instead needs\n*two* backends alive at once so the test process can capture each one's\nschema (via `capture_schema_snapshot`) and diff them with\n`assert_schema_snapshots_equal`. This factory spawns + bootstraps both\nconfigs and `provide`s both serialized handles.\n\nA consumer's parity `global_setup.ts` collapses to:\n\n```ts\nimport {create_schema_parity_global_setup} from\n  '@fuzdev/fuz_app/testing/cross_backend/create_schema_parity_global_setup.js';\nimport {deno_backend_config, rust_backend_config} from './my_backend_config.js';\nimport './cross_test_types.js'; // augments the two provide keys\n\nexport default create_schema_parity_global_setup({\n  configs: {a: deno_backend_config, b: rust_backend_config},\n});\n```\n\nThe parity `.cross.test.ts` `inject`s both keys, rebuilds each with\n`reconstruct_bootstrapped_handle`, and asserts. Run this project in a\nlater `groupOrder` than the single-backend projects (or with distinct\nports) — it reuses both configs' ports, so it must not run concurrently\nwith the per-backend projects.",
+				"dependencies": [
+					"testing/assert_dev_env.ts",
+					"testing/cross_backend/bootstrap_backend.ts",
+					"testing/cross_backend/setup.ts"
+				]
+			},
+			{
 				"path": "testing/cross_backend/default_backend_configs.ts",
 				"declarations": [
 					{
@@ -27880,7 +27931,7 @@
 						"name": "CreateTestAccountOptions",
 						"kind": "type",
 						"doc_comment": "Options for `TestFixture.create_account` — mints an additional\nbootstrapped account alongside the keeper. Matches the existing\n`TestApp.create_account` signature so the migration to fixture-style\nreads is a one-site call rewrite per use.",
-						"source_line": 58,
+						"source_line": 59,
 						"type_signature": "CreateTestAccountOptions",
 						"properties": [
 							{
@@ -27907,14 +27958,14 @@
 						"name": "TestAccountFixture",
 						"kind": "type",
 						"doc_comment": "Shape returned by `TestFixture.create_account`. Aliased to the\nexisting `TestAccount` interface from `app_server.ts` — same shape,\nstable name on the cross-backend testing surface so call sites read\n`fixture.create_account(...)` returning `TestAccountFixture` without\ncrossing module boundaries.",
-						"source_line": 71,
+						"source_line": 72,
 						"type_signature": "TestAccount"
 					},
 					{
 						"name": "ExtraAccountSpec",
 						"kind": "type",
 						"doc_comment": "Spec for a bootstrap-time secondary account seeded alongside the\nkeeper by `_testing_reset` (cross-process) or `create_test_app`\n(in-process). Used for accounts whose required roles aren't\nadmin-grantable via offer/accept — primarily `ROLE_KEEPER` (whose\n`RoleSpec.grant_paths` is bootstrap-only), where the only way to\nland the grant is at the bootstrap-equivalent setup step.\n\nFor admin-grantable roles, prefer `fixture.create_account({roles})`\n— that goes through the production offer/accept handlers and\nobserves audit + WS fan-out. `extra_accounts` is the cradle-only\nbypass; the runtime has no equivalent action.",
-						"source_line": 86,
+						"source_line": 87,
 						"type_signature": "ExtraAccountSpec",
 						"properties": [
 							{
@@ -27941,7 +27992,7 @@
 						"name": "ExtraAccountFixture",
 						"kind": "type",
 						"doc_comment": "Bootstrap-time-seeded secondary account exposed on the fixture.",
-						"source_line": 93,
+						"source_line": 94,
 						"type_signature": "ExtraAccountFixture",
 						"properties": [
 							{
@@ -27986,7 +28037,7 @@
 						"name": "TestFixtureBase",
 						"kind": "type",
 						"doc_comment": "Fields shared by every `TestFixture` regardless of transport. The\ndiscriminated union below adds in-process-only fields conditionally.\n\n**Keeper ≠ admin.** `fixture.account` / `fixture.actor` refer to the\n**fresh keeper** seeded per test. The keeper account holds\n`ROLE_KEEPER` + `ROLE_ADMIN` by default — matching the production\n`bootstrap_account` flow. The `ROLE_KEEPER` role itself does *not*\ngrant admin reach; the bootstrap account just happens to hold both as\nseparate grants. Tests probing the keeper-vs-admin separation (e.g.\n\"non-admin cannot list accounts\") declare a secondary at setup-time\nvia `extra_accounts: [{username, roles: [ROLE_KEEPER]}]` and read it\nfrom `fixture.extra_accounts[username]`.",
-						"source_line": 150,
+						"source_line": 151,
 						"type_signature": "TestFixtureBase",
 						"properties": [
 							{
@@ -28065,21 +28116,21 @@
 						"name": "TestFixture",
 						"kind": "type",
 						"doc_comment": "The per-test bundle returned by `SetupTest`. Every Tier 1 suite body\nreads exclusively from this shape — no `test_app.backend.*` reads remain\nin the suite bodies.\n\nTransport-agnostic: in-process and cross-process producers return the\nsame shape. Behaviors that once needed raw backend access (keyring for\nforging cookies) are reached through wire-shaped seams instead —\n`mint_expired_session()` mints over the `_testing_mint_session` channel\ncross-process and directly in-process, so suite bodies never branch on\nthe transport.",
-						"source_line": 234,
+						"source_line": 235,
 						"type_signature": "TestFixtureBase"
 					},
 					{
 						"name": "SetupTest",
 						"kind": "type",
 						"doc_comment": "Per-test fixture-producing function. Invoked once inside every\n`test()` body. The implementation captures factory inputs (in-process)\nor a long-running backend handle (cross-process) and creates\na fresh per-test bundle on each call.",
-						"source_line": 242,
+						"source_line": 243,
 						"type_signature": "SetupTest"
 					},
 					{
 						"name": "InProcessSetupOptions",
 						"kind": "type",
 						"doc_comment": "Options for `default_in_process_setup`. Extends `CreateTestAppOptions`\nwith the same `extra_accounts` slot the cross-process variant accepts\n— both transports observe the same bootstrap-time secondary set so\nsuite bodies can read `fixture.extra_accounts[username]` uniformly.",
-						"source_line": 263,
+						"source_line": 264,
 						"type_signature": "InProcessSetupOptions",
 						"extends": ["CreateTestAppOptions"],
 						"properties": [
@@ -28096,7 +28147,7 @@
 						"name": "default_in_process_setup",
 						"kind": "function",
 						"doc_comment": "Build a `SetupTest` that creates a fresh `TestApp` per call via\n`create_test_app` and projects it into the `TestFixture` shape.\n\nSame factory inputs `create_test_app` already takes — this helper\nis a projection layer, not a new lifecycle. fuz_app's own `src/test/`\nand consumer suites pass `default_in_process_setup({...factory_inputs})`\nin place of the old per-suite factory-input bundle. The `extra_accounts`\nslot (see `InProcessSetupOptions`) seeds bootstrap-time secondaries\ndirectly via `create_test_account_with_credentials` against the same\nDB the keeper just landed on — mirrors the cross-process\n`_testing_reset` cradle so suite bodies read\n`fixture.extra_accounts[username]` uniformly regardless of transport.\n\nThe describe-level `auth_integration_truncate_tables` / pglite WASM\ncache lifecycle stays in `create_pglite_factory` / `create_describe_db`\n(`testing/db.js`) — `default_in_process_setup` doesn't manage db state\nbeyond what `create_test_app` already does.",
-						"source_line": 292,
+						"source_line": 293,
 						"type_signature": "(options: InProcessSetupOptions): SetupTest",
 						"return_type": "SetupTest",
 						"parameters": [
@@ -28110,7 +28161,7 @@
 						"name": "BootstrappedBackendHandle",
 						"kind": "type",
 						"doc_comment": "Cross-process backend handle enriched with the bootstrapped keeper's\ncaptured credentials. Consumers compose this in vitest's\n`globalSetup`:\n\n```ts\nconst handle = await spawn_backend(config);\nconst keeper_transport = create_fetch_transport({base_url: config.base_url});\nconst keeper = await bootstrap({transport: keeper_transport, config});\nconst bootstrapped: BootstrappedBackendHandle = {\n  ...handle,\n  keeper_transport,\n  keeper_account: keeper.account,\n  keeper_actor: keeper.actor,\n  keeper_cookies: keeper.cookies,\n};\n```\n\n`default_cross_process_setup(bootstrapped, options)` reads from this\nshape — the per-test fixture closes over the keeper credentials so\ncross-process tests can drive admin-RPC / audit-observer flows\nagainst the long-lived bootstrapped admin alongside the per-test\nsignup+login account.",
-						"source_line": 373,
+						"source_line": 374,
 						"type_signature": "BootstrappedBackendHandle",
 						"extends": ["BackendHandle"],
 						"properties": [
@@ -28148,14 +28199,14 @@
 						"name": "ReconstructedBootstrappedBackendHandle",
 						"kind": "type",
 						"doc_comment": "`BootstrappedBackendHandle` minus the live `child` / `teardown` references\nthat only make sense in the `globalSetup` process. The cross-process\n`provide`/`inject` path strips them on serialization, and the per-test\nhelpers (`mint_account`, `fire_testing_reset`, `default_cross_process_setup`)\nnever read either field — so the test-worker view of the handle has this\nshape. Also the return type of `reconstruct_bootstrapped_handle`.",
-						"source_line": 392,
+						"source_line": 393,
 						"type_signature": "ReconstructedBootstrappedBackendHandle"
 					},
 					{
 						"name": "SerializableBootstrappedBackendHandle",
 						"kind": "type",
 						"doc_comment": "Serializable subset of {@link BootstrappedBackendHandle} suitable for\nvitest's `project.provide()` — vitest 4 hard-rejects non-serializable\nvalues, so the live `child: ChildProcess` + `teardown: () => Promise<void>`\n+ `keeper_transport: FetchTransport` (closure) must stay in the\n`globalSetup` process. The handful of fields tests actually read\n(`config`, `daemon_token`, `keeper_account`, `keeper_actor`,\n`keeper_cookies`) round-trip through structured clone fine.\n\n`globalSetup` calls {@link serialize_bootstrapped_handle} before\n`project.provide`; test files call {@link reconstruct_bootstrapped_handle}\non the injected value to rebuild a usable handle (without `child` /\n`teardown` — lifecycle stays with `globalSetup`).",
-						"source_line": 411,
+						"source_line": 412,
 						"type_signature": "SerializableBootstrappedBackendHandle",
 						"properties": [
 							{
@@ -28194,7 +28245,7 @@
 						"name": "serialize_bootstrapped_handle",
 						"kind": "function",
 						"doc_comment": "Strip the non-serializable members so the result can be passed to\nvitest's `project.provide`. Call in `globalSetup` before provide.",
-						"source_line": 423,
+						"source_line": 424,
 						"type_signature": "(handle: BootstrappedBackendHandle): SerializableBootstrappedBackendHandle",
 						"return_type": "SerializableBootstrappedBackendHandle",
 						"parameters": [
@@ -28208,7 +28259,7 @@
 						"name": "reconstruct_bootstrapped_handle",
 						"kind": "function",
 						"doc_comment": "Rebuild a usable handle from the serialized subset. Synthesizes a\nfresh {@link FetchTransport} primed with the keeper's `Set-Cookie`\nvalues so `_testing_reset` and other keeper-authenticated calls work.\nThe returned shape omits `child` and `teardown` — lifecycle stays\nwith `globalSetup`; tests that try to teardown themselves wouldn't\nhave a serializable reference anyway.",
-						"source_line": 441,
+						"source_line": 442,
 						"type_signature": "(serialized: SerializableBootstrappedBackendHandle): ReconstructedBootstrappedBackendHandle",
 						"return_type": "ReconstructedBootstrappedBackendHandle",
 						"parameters": [
@@ -28222,7 +28273,7 @@
 						"name": "CrossProcessSetupOptions",
 						"kind": "type",
 						"doc_comment": "Options for `default_cross_process_setup`.",
-						"source_line": 456,
+						"source_line": 457,
 						"type_signature": "CrossProcessSetupOptions",
 						"properties": [
 							{
@@ -28242,10 +28293,29 @@
 						]
 					},
 					{
+						"name": "capture_schema_snapshot",
+						"kind": "function",
+						"doc_comment": "Capture a backend's schema snapshot over the `_testing_schema_snapshot`\nRPC action (keeper daemon-token channel). The canonical way for a\ncross-impl parity gate to read each backend's live schema — pair two\ncalls with `assert_schema_snapshots_equal` (`testing/schema_parity.js`).\n\n`exclude_tables` drops documented divergences from both sides before\ncomparison (e.g. a cell-primary Rust backend lacks tables the TS schema\nhas). Each impl answers from its own introspection — TS via\n`query_schema_snapshot`, Rust via `fuz_db::query_schema_snapshot` — and\nthe snapshot shapes match by design.",
+						"source_line": 583,
+						"type_signature": "(handle: ReconstructedBootstrappedBackendHandle, options?: { exclude_tables?: readonly string[] | undefined; }): Promise<SchemaSnapshot>",
+						"return_type": "Promise<SchemaSnapshot>",
+						"parameters": [
+							{
+								"name": "handle",
+								"type": "ReconstructedBootstrappedBackendHandle"
+							},
+							{
+								"name": "options",
+								"type": "{ exclude_tables?: readonly string[] | undefined; }",
+								"default_value": "{}"
+							}
+						]
+					},
+					{
 						"name": "default_cross_process_setup",
 						"kind": "function",
 						"doc_comment": "Build a `SetupTest` against a spawned + bootstrapped backend.\n\nPer-test body (unconditional reset — fresh keeper every test):\n\n1. Fire `_testing_reset` via the keeper's daemon-token channel. The\n   action wipes auth tables, seeds a fresh keeper (with\n   `extra_keeper_roles` applied), seeds any `extra_accounts`, and\n   returns the new credentials.\n2. Build the `TestFixture` closing over the new keeper as the\n   fixture's primary `account` / `actor` (matching in-process\n   semantics). `fixture.extra_accounts[username]` exposes any\n   bootstrap-time secondaries.\n3. `fixture.create_account()` mints additional *post-bootstrap*\n   accounts via the production signup + login flow (invite → signup\n   → login → token). Roles go through offer/accept (production\n   consent path).\n\nNo `reset: boolean` opt-in — every test runs against a freshly\nbootstrapped keeper. This converges in-process and cross-process\nkeeper lifetimes; mutation-cascade tests (password change,\nrevoke-all) and hardcoded-username signup tests work uniformly.",
-						"source_line": 884,
+						"source_line": 912,
 						"type_signature": "(handle: ReconstructedBootstrappedBackendHandle, options?: CrossProcessSetupOptions | undefined): SetupTest",
 						"return_type": "SetupTest",
 						"parameters": [
@@ -28264,7 +28334,7 @@
 						"name": "DefaultInProcessSuiteOptions",
 						"kind": "type",
 						"doc_comment": "Consumer-facing options for `default_in_process_suite_options` — the\nminimal factory inputs both `default_in_process_setup` and\n`create_test_app_surface_spec` consume to produce the\n`{setup_test, surface_source, capabilities}` bundle.",
-						"source_line": 1022,
+						"source_line": 1050,
 						"type_signature": "DefaultInProcessSuiteOptions",
 						"properties": [
 							{
@@ -28317,7 +28387,7 @@
 						"name": "default_in_process_suite_options",
 						"kind": "function",
 						"doc_comment": "Build the full in-process suite bundle in a single helper invocation.\nOutput covers `{setup_test, surface_source, capabilities}` plus every\nfactory input the Tier 1 suites read at their top level\n(`session_options`, `create_route_specs`, `rpc_endpoints`) — so the\ncall site spreads once and adds only suite-specific extras\n(`roles`, `skip_routes`, `input_overrides`, `db_factories`, ...).\n\n```ts\n// Suite-extras-free call: helper output is the entire options bag.\ndescribe_round_trip_validation(default_in_process_suite_options({\n  session_options,\n  create_route_specs,\n  rpc_endpoints: [rpc_endpoint_spec],\n}));\n\n// With suite-specific extras: spread and add.\ndescribe_standard_admin_integration_tests({\n  ...default_in_process_suite_options({\n    session_options, create_route_specs, rpc_endpoints,\n    extra_keeper_roles: [ROLE_ADMIN],\n  }),\n  roles,\n});\n```\n\nSuites that don't read `session_options` / `rpc_endpoints` at their\ntop level (`round_trip`, `data_exposure`) accept the spread anyway —\nexcess properties on spread sources aren't checked by TS, and the\nuniform shape keeps consumer call sites mechanical.",
-						"source_line": 1103,
+						"source_line": 1131,
 						"type_signature": "<const O extends DefaultInProcessSuiteOptions>(options: O): { setup_test: SetupTest; surface_source: AppSurfaceSpec; capabilities: BackendCapabilities; session_options: O[\"session_options\"]; create_route_specs: O[\"create_route_specs\"]; rpc_endpoints: O[\"rpc_endpoints\"]; }",
 						"return_type": "{ setup_test: SetupTest; surface_source: AppSurfaceSpec; capabilities: BackendCapabilities; session_options: O[\"session_options\"]; create_route_specs: O[\"create_route_specs\"]; rpc_endpoints: O[\"rpc_endpoints\"]; }",
 						"parameters": [
@@ -28340,7 +28410,10 @@
 					"testing/stubs.ts",
 					"testing/transports/fetch_transport.ts"
 				],
-				"dependents": ["testing/cross_backend/create_cross_backend_global_setup.ts"]
+				"dependents": [
+					"testing/cross_backend/create_cross_backend_global_setup.ts",
+					"testing/cross_backend/create_schema_parity_global_setup.ts"
+				]
 			},
 			{
 				"path": "testing/cross_backend/spawn_backend.ts",

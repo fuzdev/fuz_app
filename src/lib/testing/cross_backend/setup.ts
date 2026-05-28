@@ -47,6 +47,7 @@ import {
 import {in_process_capabilities, type BackendCapabilities} from './capabilities.js';
 import type {AppSurfaceSpec} from '../../http/surface.js';
 import {create_fetch_transport, type FetchTransport} from '../transports/fetch_transport.js';
+import type {SchemaSnapshot} from '../schema_introspect.js';
 import type {BackendHandle} from './spawn_backend.js';
 
 /**
@@ -565,6 +566,33 @@ const rpc_via_transport = async (
 		throw new Error(`${method}(${backend_name}) RPC error: ${JSON.stringify(raw.error)}`);
 	}
 	return raw.result;
+};
+
+/**
+ * Capture a backend's schema snapshot over the `_testing_schema_snapshot`
+ * RPC action (keeper daemon-token channel). The canonical way for a
+ * cross-impl parity gate to read each backend's live schema — pair two
+ * calls with `assert_schema_snapshots_equal` (`testing/schema_parity.js`).
+ *
+ * `exclude_tables` drops documented divergences from both sides before
+ * comparison (e.g. a cell-primary Rust backend lacks tables the TS schema
+ * has). Each impl answers from its own introspection — TS via
+ * `query_schema_snapshot`, Rust via `fuz_db::query_schema_snapshot` — and
+ * the snapshot shapes match by design.
+ */
+export const capture_schema_snapshot = async (
+	handle: ReconstructedBootstrappedBackendHandle,
+	options: {exclude_tables?: ReadonlyArray<string>} = {},
+): Promise<SchemaSnapshot> => {
+	const raw = await rpc_via_transport(
+		handle.keeper_transport,
+		handle.config.rpc_path,
+		'_testing_schema_snapshot',
+		{exclude_tables: [...(options.exclude_tables ?? [])]},
+		handle.config.name,
+		{[DAEMON_TOKEN_HEADER]: handle.daemon_token},
+	);
+	return raw as SchemaSnapshot;
 };
 
 /**

@@ -216,6 +216,11 @@ export const query_schema_snapshot = async (
 	);
 
 	// Constraints — pg_get_constraintdef produces a canonical text rendering.
+	// Skip NOT NULL constraints (`contype = 'n'`): PG17+ catalogs them as
+	// named `pg_constraint` rows while PGlite / older PG don't, and
+	// nullability is already captured per-column by `is_nullable` — including
+	// them would report a pure engine-cataloging artifact as cross-backend
+	// drift between a PGlite and a real-Postgres backend.
 	const constraint_rows = await db.query<ConstraintRow>(
 		`SELECT c.conrelid::regclass::text AS table_name,
 		        c.conname,
@@ -225,6 +230,7 @@ export const query_schema_snapshot = async (
 		 JOIN pg_namespace n ON n.oid = c.connamespace
 		 WHERE n.nspname = $1
 		   AND c.conrelid != 0
+		   AND c.contype != 'n'
 		 ORDER BY table_name ASC, conname ASC`,
 		[schema],
 	);
