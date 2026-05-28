@@ -1,5 +1,5 @@
 /**
- * Raw queries against the `facts` and `fact_refs` tables.
+ * Raw queries against the `fact` and `fact_ref` tables.
  *
  * Convention: `deps: QueryDeps` first, no audit side effects, mutations are
  * idempotent (`ON CONFLICT DO NOTHING`) so the same hash can be written by
@@ -16,7 +16,7 @@ import type {QueryDeps} from './query_deps.js';
 
 import type {FactHash} from '@fuzdev/fuz_util/fact_hash.js';
 
-/** Row shape for `SELECT … FROM facts`. */
+/** Row shape for `SELECT … FROM fact`. */
 export interface FactRow {
 	hash: FactHash;
 	bytes: Uint8Array | null;
@@ -38,11 +38,11 @@ export interface FactMetaRow {
 /**
  * Idempotently insert a fact row.
  *
- * `bytes` xor `external_url` per the `facts_storage_present` CHECK
+ * `bytes` xor `external_url` per the `fact_storage_present` CHECK
  * constraint; the caller is responsible for satisfying it (the queries
  * layer does not second-guess). Returns `true` when a new row was
  * inserted, `false` when a row already existed (caller can use this to
- * decide whether to also write `fact_refs`).
+ * decide whether to also write `fact_ref`).
  */
 export const query_put_fact = async (
 	deps: QueryDeps,
@@ -55,7 +55,7 @@ export const query_put_fact = async (
 	},
 ): Promise<boolean> => {
 	const row = await deps.db.query_one<{hash: FactHash}>(
-		`INSERT INTO facts (hash, bytes, external_url, content_type, size)
+		`INSERT INTO fact (hash, bytes, external_url, content_type, size)
 		 VALUES ($1, $2, $3, $4, $5)
 		 ON CONFLICT (hash) DO NOTHING
 		 RETURNING hash`,
@@ -76,7 +76,7 @@ export const query_put_fact_refs = async (
 ): Promise<void> => {
 	if (target_hashes.length === 0) return;
 	await deps.db.query(
-		`INSERT INTO fact_refs (source_hash, target_hash)
+		`INSERT INTO fact_ref (source_hash, target_hash)
 		 SELECT $1::text, unnest($2::text[])
 		 ON CONFLICT (source_hash, target_hash) DO NOTHING`,
 		[source_hash, target_hashes],
@@ -90,7 +90,7 @@ export const query_put_fact_refs = async (
 export const query_get_fact = async (deps: QueryDeps, hash: FactHash): Promise<FactRow | null> => {
 	const row = await deps.db.query_one<FactRow>(
 		`SELECT hash, bytes, external_url, content_type, size, created_at
-		 FROM facts WHERE hash = $1`,
+		 FROM fact WHERE hash = $1`,
 		[hash],
 	);
 	return row ?? null;
@@ -105,18 +105,18 @@ export const query_get_fact_meta = async (
 ): Promise<FactMetaRow | null> => {
 	const row = await deps.db.query_one<FactMetaRow>(
 		`SELECT hash, external_url, content_type, size, created_at
-		 FROM facts WHERE hash = $1`,
+		 FROM fact WHERE hash = $1`,
 		[hash],
 	);
 	return row ?? null;
 };
 
 /**
- * Cheap existence check. Backed by the `facts` PK index.
+ * Cheap existence check. Backed by the `fact` PK index.
  */
 export const query_has_fact = async (deps: QueryDeps, hash: FactHash): Promise<boolean> => {
 	const row = await deps.db.query_one<{exists: boolean}>(
-		`SELECT EXISTS(SELECT 1 FROM facts WHERE hash = $1) AS exists`,
+		`SELECT EXISTS(SELECT 1 FROM fact WHERE hash = $1) AS exists`,
 		[hash],
 	);
 	return row?.exists ?? false;
@@ -131,14 +131,14 @@ export const query_get_fact_refs = async (
 	source_hash: FactHash,
 ): Promise<Array<FactHash>> => {
 	const rows = await deps.db.query<{target_hash: FactHash}>(
-		`SELECT target_hash FROM fact_refs WHERE source_hash = $1`,
+		`SELECT target_hash FROM fact_ref WHERE source_hash = $1`,
 		[source_hash],
 	);
 	return rows.map((r) => r.target_hash);
 };
 
 /**
- * Drop a fact row. Cascades `fact_refs` rows via the `ON DELETE CASCADE`
+ * Drop a fact row. Cascades `fact_ref` rows via the `ON DELETE CASCADE`
  * FK on `source_hash`. Returns the deleted row's `(size, external_url)`
  * so the caller can unlink the disk file (if any) and tally freed bytes,
  * or `null` when no row matched (idempotent: deleting an absent fact is
@@ -154,7 +154,7 @@ export const query_delete_fact = async (
 	hash: FactHash,
 ): Promise<{size: number; external_url: string | null} | null> => {
 	const row = await deps.db.query_one<{size: number | string; external_url: string | null}>(
-		`DELETE FROM facts WHERE hash = $1
+		`DELETE FROM fact WHERE hash = $1
 		 RETURNING size, external_url`,
 		[hash],
 	);
@@ -181,17 +181,17 @@ export interface OrphanFactsListResult {
 }
 
 /**
- * Compute the "orphan facts" set: rows in `facts` where no active
+ * Compute the "orphan facts" set: rows in `fact` where no active
  * (non-tombstone) `cell.refs` array contains the hash.
  *
- * The `cell` join is deliberately app-coupled — `facts` lives in the
+ * The `cell` join is deliberately app-coupled — `fact` lives in the
  * `fuz_facts` namespace and `cell.refs` lives in `fuz_cell`, but the
  * orphan predicate only makes sense in apps that route content through
  * cells. When a non-cell fact consumer ever appears (signed memo
  * outputs? external fact mirrors?) the predicate moves to a generic
  * `fact_consumers` registry; today the cell layer is the only consumer.
  *
- * The `older_than` filter applies to `facts.created_at`. Pass `null`
+ * The `older_than` filter applies to `fact.created_at`. Pass `null`
  * to skip the filter (used by the list-summary preview); the delete
  * handler always passes a non-null cutoff (default 0, meaning "any
  * orphan").
@@ -208,7 +208,7 @@ export const query_orphan_facts_list = async (
 ): Promise<OrphanFactsListResult> => {
 	const summary = await deps.db.query_one<{count: number | string; total: number | string | null}>(
 		`SELECT COUNT(*)::bigint AS count, COALESCE(SUM(size), 0)::bigint AS total
-		 FROM facts f
+		 FROM fact f
 		 WHERE NOT EXISTS (
 		   SELECT 1 FROM cell c
 		   WHERE c.refs @> ARRAY[f.hash]::text[]
@@ -224,7 +224,7 @@ export const query_orphan_facts_list = async (
 		external_url: string | null;
 	}>(
 		`SELECT hash, size, created_at, external_url
-		 FROM facts f
+		 FROM fact f
 		 WHERE NOT EXISTS (
 		   SELECT 1 FROM cell c
 		   WHERE c.refs @> ARRAY[f.hash]::text[]
@@ -264,7 +264,7 @@ export const query_orphan_facts_select_for_delete = async (
 		external_url: string | null;
 	}>(
 		`SELECT hash, size, external_url
-		 FROM facts f
+		 FROM fact f
 		 WHERE NOT EXISTS (
 		   SELECT 1 FROM cell c
 		   WHERE c.refs @> ARRAY[f.hash]::text[]

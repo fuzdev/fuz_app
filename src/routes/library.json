@@ -15787,7 +15787,7 @@
 						"type_signature": "MigrationNamespace"
 					}
 				],
-				"module_comment": "Cell history PG schema (schema only).\n\nLightweight references to cell state snapshots. Heavy data (serialized\ncell bytes) lives in the fact store; `fact_hash` points there. The\nsnapshot lifecycle (when to serialize, hash, store, and record) is\ndeferred to a future iteration — this only stages the table so\ndownstream code can target a stable schema. The table ships\npresent-but-unwritten.\n\n`fact_hash` is intentionally **not** a foreign key to `facts(hash)` —\nsnapshots may be evicted by GC policy while history rows remain as audit\ntraces, and federation may target facts on another instance.\n\nDepends on `CELL_MIGRATION_NS` (FK on `cell.id`)."
+				"module_comment": "Cell history PG schema (schema only).\n\nLightweight references to cell state snapshots. Heavy data (serialized\ncell bytes) lives in the fact store; `fact_hash` points there. The\nsnapshot lifecycle (when to serialize, hash, store, and record) is\ndeferred to a future iteration — this only stages the table so\ndownstream code can target a stable schema. The table ships\npresent-but-unwritten.\n\n`fact_hash` is intentionally **not** a foreign key to `fact(hash)` —\nsnapshots may be evicted by GC policy while history rows remain as audit\ntraces, and federation may target facts on another instance.\n\nDepends on `CELL_MIGRATION_NS` (FK on `cell.id`)."
 			},
 			{
 				"path": "db/cell_item_queries.ts",
@@ -16797,37 +16797,37 @@
 					{
 						"name": "FACTS_SCHEMA",
 						"kind": "variable",
-						"doc_comment": "`facts` table — content-addressed byte store.",
+						"doc_comment": "`fact` table — content-addressed byte store.",
 						"source_line": 22,
-						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS facts (\\n\\thash TEXT PRIMARY KEY,\\n\\tbytes BYTEA,\\n\\texternal_url TEXT,\\n\\tcontent_type TEXT,\\n\\tsize BIGINT NOT NULL,\\n\\tcreated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\\n\\tCONSTRAINT facts_storage_present CHECK (bytes IS NOT NULL OR external_url IS NOT NULL)\\n)\""
+						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS fact (\\n\\thash TEXT PRIMARY KEY,\\n\\tbytes BYTEA,\\n\\texternal_url TEXT,\\n\\tcontent_type TEXT,\\n\\tsize BIGINT NOT NULL,\\n\\tcreated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\\n\\tCONSTRAINT fact_storage_present CHECK (bytes IS NOT NULL OR external_url IS NOT NULL)\\n)\""
 					},
 					{
 						"name": "FACT_REFS_SCHEMA",
 						"kind": "variable",
-						"doc_comment": "`fact_refs` table — declared dependency edges between facts.\n\n`target_hash` is not a foreign key (federation: target may live remotely).",
+						"doc_comment": "`fact_ref` table — declared dependency edges between facts.\n\n`target_hash` is not a foreign key (federation: target may live remotely).",
 						"source_line": 38,
-						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS fact_refs (\\n\\tsource_hash TEXT NOT NULL REFERENCES facts(hash) ON DELETE CASCADE,\\n\\ttarget_hash TEXT NOT NULL,\\n\\tPRIMARY KEY (source_hash, target_hash)\\n)\""
+						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS fact_ref (\\n\\tsource_hash TEXT NOT NULL REFERENCES fact(hash) ON DELETE CASCADE,\\n\\ttarget_hash TEXT NOT NULL,\\n\\tPRIMARY KEY (source_hash, target_hash)\\n)\""
 					},
 					{
 						"name": "FACT_REFS_TARGET_INDEX",
 						"kind": "variable",
 						"doc_comment": "Reverse lookup: which facts reference a given target?",
 						"source_line": 46,
-						"type_signature": "\"\\nCREATE INDEX IF NOT EXISTS idx_fact_refs_target ON fact_refs(target_hash)\""
+						"type_signature": "\"\\nCREATE INDEX IF NOT EXISTS idx_fact_ref_target ON fact_ref(target_hash)\""
 					},
 					{
 						"name": "MEMOS_SCHEMA",
 						"kind": "variable",
-						"doc_comment": "`memos` table — `(fn_id, input_hash) → output_hash` for memoized computations.",
+						"doc_comment": "`memo` table — `(fn_id, input_hash) → output_hash` for memoized computations.",
 						"source_line": 50,
-						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS memos (\\n\\tfn_id TEXT NOT NULL,\\n\\tinput_hash TEXT NOT NULL,\\n\\toutput_hash TEXT NOT NULL,\\n\\tcreated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\\n\\tPRIMARY KEY (fn_id, input_hash)\\n)\""
+						"type_signature": "\"\\nCREATE TABLE IF NOT EXISTS memo (\\n\\tfn_id TEXT NOT NULL,\\n\\tinput_hash TEXT NOT NULL,\\n\\toutput_hash TEXT NOT NULL,\\n\\tcreated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\\n\\tPRIMARY KEY (fn_id, input_hash)\\n)\""
 					},
 					{
 						"name": "FACT_DROP_TABLES",
 						"kind": "variable",
 						"doc_comment": "Tables created by `FACT_MIGRATION_NS`, in drop order (children first).",
 						"source_line": 60,
-						"type_signature": "readonly [\"memos\", \"fact_refs\", \"facts\"]"
+						"type_signature": "readonly [\"memo\", \"fact_ref\", \"fact\"]"
 					},
 					{
 						"name": "FACT_MIGRATIONS",
@@ -16851,7 +16851,7 @@
 						"type_signature": "MigrationNamespace"
 					}
 				],
-				"module_comment": "Fact + memo PG schema.\n\nThree tables:\n\n- `facts` — content-addressed bytes. `hash = 'blake3:<hex64>'`. Either\n  embedded (`bytes`) or referenced (`external_url`); the CHECK constraint\n  enforces exactly one populated. Idempotent: same bytes always produce\n  the same hash, so `INSERT … ON CONFLICT DO NOTHING` is the put primitive.\n- `fact_refs` — declared dependency edges (source fact → target fact).\n  `target_hash` is intentionally **not** a foreign key: in federation a\n  reference may target a fact stored on another instance.\n- `memos` — `(fn_id, input_hash) → output_hash` for memoized computations."
+				"module_comment": "Fact + memo PG schema.\n\nThree tables:\n\n- `fact` — content-addressed bytes. `hash = 'blake3:<hex64>'`. Either\n  embedded (`bytes`) or referenced (`external_url`); the CHECK constraint\n  enforces exactly one populated. Idempotent: same bytes always produce\n  the same hash, so `INSERT … ON CONFLICT DO NOTHING` is the put primitive.\n- `fact_ref` — declared dependency edges (source fact → target fact).\n  `target_hash` is intentionally **not** a foreign key: in federation a\n  reference may target a fact stored on another instance.\n- `memo` — `(fn_id, input_hash) → output_hash` for memoized computations."
 			},
 			{
 				"path": "db/fact_queries.ts",
@@ -16859,7 +16859,7 @@
 					{
 						"name": "FactRow",
 						"kind": "type",
-						"doc_comment": "Row shape for `SELECT … FROM facts`.",
+						"doc_comment": "Row shape for `SELECT … FROM fact`.",
 						"source_line": 20,
 						"type_signature": "FactRow",
 						"properties": [
@@ -16932,7 +16932,7 @@
 					{
 						"name": "query_put_fact",
 						"kind": "function",
-						"doc_comment": "Idempotently insert a fact row.\n\n`bytes` xor `external_url` per the `facts_storage_present` CHECK\nconstraint; the caller is responsible for satisfying it (the queries\nlayer does not second-guess). Returns `true` when a new row was\ninserted, `false` when a row already existed (caller can use this to\ndecide whether to also write `fact_refs`).",
+						"doc_comment": "Idempotently insert a fact row.\n\n`bytes` xor `external_url` per the `fact_storage_present` CHECK\nconstraint; the caller is responsible for satisfying it (the queries\nlayer does not second-guess). Returns `true` when a new row was\ninserted, `false` when a row already existed (caller can use this to\ndecide whether to also write `fact_ref`).",
 						"source_line": 47,
 						"type_signature": "(deps: QueryDeps, input: { hash: string & $brand<\"FactHash\">; bytes: Uint8Array<ArrayBufferLike> | null; external_url: string | null; content_type: string | null; size: number; }): Promise<...>",
 						"return_type": "Promise<boolean>",
@@ -17008,7 +17008,7 @@
 					{
 						"name": "query_has_fact",
 						"kind": "function",
-						"doc_comment": "Cheap existence check. Backed by the `facts` PK index.",
+						"doc_comment": "Cheap existence check. Backed by the `fact` PK index.",
 						"source_line": 117,
 						"type_signature": "(deps: QueryDeps, hash: string & $brand<\"FactHash\">): Promise<boolean>",
 						"return_type": "Promise<boolean>",
@@ -17044,7 +17044,7 @@
 					{
 						"name": "query_delete_fact",
 						"kind": "function",
-						"doc_comment": "Drop a fact row. Cascades `fact_refs` rows via the `ON DELETE CASCADE`\nFK on `source_hash`. Returns the deleted row's `(size, external_url)`\nso the caller can unlink the disk file (if any) and tally freed bytes,\nor `null` when no row matched (idempotent: deleting an absent fact is\nnot an error).\n\nNOTE: this is a low-level primitive — callers MUST verify the fact is\ntruly orphan (no referencing cell) before calling. The orphan check\nlives in `query_orphan_facts_*` below; the lifecycle wrapper in\n`PgFactStore.delete` handles the disk-file unlink.",
+						"doc_comment": "Drop a fact row. Cascades `fact_ref` rows via the `ON DELETE CASCADE`\nFK on `source_hash`. Returns the deleted row's `(size, external_url)`\nso the caller can unlink the disk file (if any) and tally freed bytes,\nor `null` when no row matched (idempotent: deleting an absent fact is\nnot an error).\n\nNOTE: this is a low-level primitive — callers MUST verify the fact is\ntruly orphan (no referencing cell) before calling. The orphan check\nlives in `query_orphan_facts_*` below; the lifecycle wrapper in\n`PgFactStore.delete` handles the disk-file unlink.",
 						"source_line": 152,
 						"type_signature": "(deps: QueryDeps, hash: string & $brand<\"FactHash\">): Promise<{ size: number; external_url: string | null; } | null>",
 						"return_type": "Promise<{ size: number; external_url: string | null; } | null>",
@@ -17086,7 +17086,7 @@
 					{
 						"name": "query_orphan_facts_list",
 						"kind": "function",
-						"doc_comment": "Compute the \"orphan facts\" set: rows in `facts` where no active\n(non-tombstone) `cell.refs` array contains the hash.\n\nThe `cell` join is deliberately app-coupled — `facts` lives in the\n`fuz_facts` namespace and `cell.refs` lives in `fuz_cell`, but the\norphan predicate only makes sense in apps that route content through\ncells. When a non-cell fact consumer ever appears (signed memo\noutputs? external fact mirrors?) the predicate moves to a generic\n`fact_consumers` registry; today the cell layer is the only consumer.\n\nThe `older_than` filter applies to `facts.created_at`. Pass `null`\nto skip the filter (used by the list-summary preview); the delete\nhandler always passes a non-null cutoff (default 0, meaning \"any\norphan\").",
+						"doc_comment": "Compute the \"orphan facts\" set: rows in `fact` where no active\n(non-tombstone) `cell.refs` array contains the hash.\n\nThe `cell` join is deliberately app-coupled — `fact` lives in the\n`fuz_facts` namespace and `cell.refs` lives in `fuz_cell`, but the\norphan predicate only makes sense in apps that route content through\ncells. When a non-cell fact consumer ever appears (signed memo\noutputs? external fact mirrors?) the predicate moves to a generic\n`fact_consumers` registry; today the cell layer is the only consumer.\n\nThe `older_than` filter applies to `fact.created_at`. Pass `null`\nto skip the filter (used by the list-summary preview); the delete\nhandler always passes a non-null cutoff (default 0, meaning \"any\norphan\").",
 						"source_line": 204,
 						"type_signature": "(deps: QueryDeps, older_than: Date | null, sample_limit: number): Promise<OrphanFactsListResult>",
 						"return_type": "Promise<OrphanFactsListResult>",
@@ -17127,7 +17127,7 @@
 						]
 					}
 				],
-				"module_comment": "Raw queries against the `facts` and `fact_refs` tables.\n\nConvention: `deps: QueryDeps` first, no audit side effects, mutations are\nidempotent (`ON CONFLICT DO NOTHING`) so the same hash can be written by\ntwo callers without the second observing an error.\n\nHigher-level lifecycle (verify-on-read, JSON ref auto-extraction,\nembedded-vs-referenced selection) lives in `db/fact_store.ts`. Queries\nhere are deliberately mechanical.",
+				"module_comment": "Raw queries against the `fact` and `fact_ref` tables.\n\nConvention: `deps: QueryDeps` first, no audit side effects, mutations are\nidempotent (`ON CONFLICT DO NOTHING`) so the same hash can be written by\ntwo callers without the second observing an error.\n\nHigher-level lifecycle (verify-on-read, JSON ref auto-extraction,\nembedded-vs-referenced selection) lives in `db/fact_store.ts`. Queries\nhere are deliberately mechanical.",
 				"dependents": ["db/fact_store.ts", "server/serve_fact_route.ts"]
 			},
 			{
@@ -17171,7 +17171,7 @@
 					{
 						"name": "PgFactStoreDeps",
 						"kind": "type",
-						"doc_comment": "Construction-time deps for `PgFactStore`.\n\n`embedded_threshold` (bytes) is the inline-vs-external cutoff: payloads\nat or under it store embedded in the `facts` row, larger ones route to\nthe external fetcher. Defaults to `FACT_EMBEDDED_THRESHOLD_DEFAULT`\n(1 MiB). Consumers tune it per workload — e.g. a much lower bound\n(~16 KiB) keeps only small JSON inline and routes image originals +\nthumbnails external. `fetcher` defaults to a `globalThis.fetch`-backed\nimplementation; tests inject a stub. `log` is optional — the only call\nsite is the verify-mismatch warning path.",
+						"doc_comment": "Construction-time deps for `PgFactStore`.\n\n`embedded_threshold` (bytes) is the inline-vs-external cutoff: payloads\nat or under it store embedded in the `fact` row, larger ones route to\nthe external fetcher. Defaults to `FACT_EMBEDDED_THRESHOLD_DEFAULT`\n(1 MiB). Consumers tune it per workload — e.g. a much lower bound\n(~16 KiB) keeps only small JSON inline and routes image originals +\nthumbnails external. `fetcher` defaults to a `globalThis.fetch`-backed\nimplementation; tests inject a stub. `log` is optional — the only call\nsite is the verify-mismatch warning path.",
 						"source_line": 93,
 						"type_signature": "PgFactStoreDeps",
 						"properties": [
@@ -17308,7 +17308,7 @@
 							{
 								"name": "delete",
 								"kind": "function",
-								"doc_comment": "Drop a fact row. `fact_refs` rows referencing this hash as a source\ncascade via the FK; `fact_refs` targeting this hash do **not** —\nthey remain as dangling pointers, consistent with the federation\nmodel where `target_hash` is intentionally not a FK.\n\nIdempotent: deleting an absent fact returns `null`. The store does\nNOT verify the fact is unreferenced — that policy lives one layer\nup (the orphan-fact admin surface in the consumer; a future GC walker).\n\nExternal-URL unlink is the caller's responsibility — the store\ndoesn't know how to resolve `file:` / `s3:` / etc. URLs to a\ndeletable handle. Caller iterates the returned `external_url`\n(when non-null) and dispatches to the appropriate cleanup\nroutine. Mirrors the read-side `FactExternalFetcher` split.",
+								"doc_comment": "Drop a fact row. `fact_ref` rows referencing this hash as a source\ncascade via the FK; `fact_ref` targeting this hash do **not** —\nthey remain as dangling pointers, consistent with the federation\nmodel where `target_hash` is intentionally not a FK.\n\nIdempotent: deleting an absent fact returns `null`. The store does\nNOT verify the fact is unreferenced — that policy lives one layer\nup (the orphan-fact admin surface in the consumer; a future GC walker).\n\nExternal-URL unlink is the caller's responsibility — the store\ndoesn't know how to resolve `file:` / `s3:` / etc. URLs to a\ndeletable handle. Caller iterates the returned `external_url`\n(when non-null) and dispatches to the appropriate cleanup\nroutine. Mirrors the read-side `FactExternalFetcher` split.",
 								"type_signature": "(hash: string & $brand<\"FactHash\">): Promise<{ size: number; external_url: string | null; } | null>",
 								"return_type": "Promise<{ size: number; external_url: string | null; } | null>",
 								"return_description": "`{size, external_url}` for the deleted row, or `null` if\nno row matched the hash.",

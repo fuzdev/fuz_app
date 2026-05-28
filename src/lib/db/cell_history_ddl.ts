@@ -8,7 +8,7 @@
  * downstream code can target a stable schema. The table ships
  * present-but-unwritten.
  *
- * `fact_hash` is intentionally **not** a foreign key to `facts(hash)` —
+ * `fact_hash` is intentionally **not** a foreign key to `fact(hash)` —
  * snapshots may be evicted by GC policy while history rows remain as audit
  * traces, and federation may target facts on another instance.
  *

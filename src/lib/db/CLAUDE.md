@@ -80,10 +80,10 @@ Content-addressed byte store. Cells reference facts by blake3 hash
 (`cell.refs`, auto-extracted from `data`); the fact layer stores the bytes.
 Optional — minimal consumers never migrate it.
 
-- **`fact_ddl.ts`** — `facts` (content-addressed bytes: embedded `bytes` xor
-  `external_url`, CHECK enforces exactly one) + `fact_refs` (declared
+- **`fact_ddl.ts`** — `fact` (content-addressed bytes: embedded `bytes` xor
+  `external_url`, CHECK enforces exactly one) + `fact_ref` (declared
   dependency edges; `target_hash` deliberately not an FK, for federation) +
-  `memos` (`(fn_id, input_hash) → output_hash`). `FACT_MIGRATION_NS`, namespace
+  `memo` (`(fn_id, input_hash) → output_hash`). `FACT_MIGRATION_NS`, namespace
   `fuz_facts`.
 - **`fact_queries.ts`** — mechanical `query_put_fact` (idempotent `ON CONFLICT
 DO NOTHING`), `_put_fact_refs`, `_get_fact` / `_get_fact_meta` / `_has_fact`

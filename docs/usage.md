@@ -1195,8 +1195,8 @@ the Postgres implementation and the HTTP serving plumbing; facts are
 import {FACT_MIGRATION_NS} from '@fuzdev/fuz_app/db/fact_ddl.js';
 ```
 
-`FACT_MIGRATION_NS` (namespace `fuz_facts`) creates `facts`, `fact_refs`,
-and `memos`. Splice it into `migration_namespaces` like any other namespace.
+`FACT_MIGRATION_NS` (namespace `fuz_facts`) creates `fact`, `fact_ref`,
+and `memo`. Splice it into `migration_namespaces` like any other namespace.
 
 ### Wiring the store
 
@@ -1246,8 +1246,8 @@ stream from disk in dev/test. Env: `FUZ_FACTS_DIR`,
 
 ### Status
 
-The PG `FactStore`, `fact_refs`, serving, and cell integration are shipped.
-The `memos` table ships but **MemoStore** (computation caching) has no
+The PG `FactStore`, `fact_ref`, serving, and cell integration are shipped.
+The `memo` table ships but **MemoStore** (computation caching) has no
 implementation yet, and orphan-fact GC has query helpers but no wired
 action. There is no Rust twin of the fact layer today (cells have one;
 facts are TS-only).

@@ -191,9 +191,9 @@ generic verbs. The dormant `cell_history` table is reserved for a future
 snapshot lifecycle. See usage.md §"Cell data layer".
 
 **Facts** (`db/fact_*`, `server/*fact*`, namespace `fuz_facts`) — the
-immutable, content-addressed byte store. `facts` holds bytes embedded in
+immutable, content-addressed byte store. `fact` holds bytes embedded in
 Postgres (small) or referenced on a sharded filesystem tree (large);
-`fact_refs` is the dependency graph; `memos` is reserved for computation
+`fact_ref` is the dependency graph; `memo` is reserved for computation
 caching (MemoStore, not yet implemented). The `FactStore` interface lives in
 `@fuzdev/fuz_util`; fuz_app ships `PgFactStore` plus the
 `GET /api/facts/:hash` route, which authorizes per-fact through the

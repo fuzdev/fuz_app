@@ -91,7 +91,7 @@ describe_db('pg_fact_store', (get_db) => {
 		assert.equal(hash_a, fact_hash_bytes(bytes));
 
 		const rows = await get_db().query<{count: string | number}>(
-			`SELECT COUNT(*)::int AS count FROM facts WHERE hash = $1`,
+			`SELECT COUNT(*)::int AS count FROM fact WHERE hash = $1`,
 			[hash_a],
 		);
 		assert.equal(Number(rows[0]!.count), 1);

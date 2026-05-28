@@ -82,7 +82,7 @@ export const create_default_fetcher = (): FactExternalFetcher => ({
  * Construction-time deps for `PgFactStore`.
  *
  * `embedded_threshold` (bytes) is the inline-vs-external cutoff: payloads
- * at or under it store embedded in the `facts` row, larger ones route to
+ * at or under it store embedded in the `fact` row, larger ones route to
  * the external fetcher. Defaults to `FACT_EMBEDDED_THRESHOLD_DEFAULT`
  * (1 MiB). Consumers tune it per workload — e.g. a much lower bound
  * (~16 KiB) keeps only small JSON inline and routes image originals +
@@ -219,8 +219,8 @@ export class PgFactStore implements FactStore {
 	}
 
 	/**
-	 * Drop a fact row. `fact_refs` rows referencing this hash as a source
-	 * cascade via the FK; `fact_refs` targeting this hash do **not** —
+	 * Drop a fact row. `fact_ref` rows referencing this hash as a source
+	 * cascade via the FK; `fact_ref` targeting this hash do **not** —
 	 * they remain as dangling pointers, consistent with the federation
 	 * model where `target_hash` is intentionally not a FK.
 	 *
