@@ -24,7 +24,6 @@ import type {SessionOptions} from '../auth/session_cookie.js';
 import {
 	find_auth_route,
 	assert_response_matches_spec,
-	create_expired_test_cookie,
 	assert_no_error_info_leakage,
 } from './integration_helpers.js';
 import {
@@ -39,7 +38,6 @@ import {
 	assert_error_coverage,
 	DEFAULT_INTEGRATION_ERROR_COVERAGE,
 } from './error_coverage.js';
-import {ApiError, ERROR_FORBIDDEN_ORIGIN} from '../http/error_schemas.js';
 import {is_public_auth} from '../http/auth_shape.js';
 import {
 	account_verify_action_spec,
@@ -52,7 +50,7 @@ import {
 } from '../auth/account_action_specs.js';
 import {invite_create_action_spec} from '../auth/admin_action_specs.js';
 import type {AppSurfaceSpec} from '../http/surface.js';
-import {test_if, type BackendCapabilities} from './cross_backend/capabilities.js';
+import {type BackendCapabilities} from './cross_backend/capabilities.js';
 import type {SetupTest} from './cross_backend/setup.js';
 import {DEFAULT_TEST_PASSWORD} from './app_server.js';
 
@@ -77,13 +75,12 @@ export interface StandardIntegrationTestOptions {
 	 * not the source the test runtime reads from.
 	 */
 	surface_source: AppSurfaceSpec;
-	/** Backend capability declarations — companion to `fixture.in_process` narrowing. */
+	/** Backend capability declarations for capability-gated cases. */
 	capabilities: BackendCapabilities;
 	/**
 	 * Session config — needed to resolve factory-form `rpc_endpoints`
 	 * against a stub `AppServerContext` at setup time and to read
-	 * `cookie_name` for manual cookie composition in the origin-verify
-	 * cases.
+	 * `cookie_name` for manual cookie composition in the session cases.
 	 */
 	session_options: SessionOptions<string>;
 	/**
@@ -487,22 +484,12 @@ export const describe_standard_integration_tests = (
 				assert.strictEqual(res.status, 401);
 			});
 
-			test_if(options.capabilities.in_process_only, 'expired cookie returns 401', async () => {
-				const fixture = await options.setup_test();
-				assert(fixture.in_process);
-				const expired_cookie = await create_expired_test_cookie(
-					fixture.keyring,
-					options.session_options,
-				);
-				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
-					path: rpc_path,
-					spec: account_verify_action_spec,
-					params: undefined,
-					headers: {cookie: `${cookie_name}=${expired_cookie}`},
-				});
-				assert.strictEqual(res.status, 401);
-			});
+			// Expired-session rejection promoted to the cross-backend conformance
+			// table (the `expired_session` principal, `conformance_expiry_cases.ts`) —
+			// it exercises the authoritative server-side DB-row expiry gate over
+			// real auth resolution on every spine, not the cookie-payload gate a
+			// backdated-payload forge hit here. The payload gate stays covered by
+			// `parse_session`'s own unit tests.
 		});
 
 		// --- 4. Session revocation ---
@@ -685,34 +672,11 @@ export const describe_standard_integration_tests = (
 		// --- 5. Origin verification ---
 
 		describe('origin verification', () => {
-			test_if(
-				options.capabilities.in_process_only,
-				'evil origin is rejected with 403',
-				async () => {
-					const fixture = await options.setup_test();
-					assert(fixture.in_process);
-					// `verify_request_source` runs before the RPC dispatcher and returns a
-					// plain REST `{error}` body — not a JSON-RPC envelope. Skip `rpc_call`.
-					const res = await fixture.transport(rpc_path, {
-						method: 'POST',
-						headers: {
-							host: 'localhost',
-							origin: 'http://evil.com',
-							'content-type': 'application/json',
-							cookie: `${cookie_name}=${fixture.backend_internals.session_cookie}`,
-						},
-						body: JSON.stringify({
-							jsonrpc: '2.0',
-							method: account_verify_action_spec.method,
-							id: 'evil-origin',
-						}),
-					});
-					assert.strictEqual(res.status, 403);
-					const body = ApiError.parse(await res.json());
-					assert.strictEqual(body.error, ERROR_FORBIDDEN_ORIGIN);
-				},
-			);
-
+			// Disallowed-Origin → 403 and absent-Origin → pass promoted to the
+			// dedicated cross-backend origin parity suite (`cross_backend/origin.ts`,
+			// both legs) — it drives raw transport calls against each spine's real
+			// origin middleware. This positive control stays here as a basic
+			// happy-path check in the consumer integration bundle.
 			test('valid origin is accepted', async () => {
 				const fixture = await options.setup_test();
 				const res = await rpc_call_for_spec({
@@ -724,26 +688,6 @@ export const describe_standard_integration_tests = (
 				});
 				assert.strictEqual(res.status, 200);
 			});
-
-			test_if(
-				options.capabilities.in_process_only,
-				'no origin header is allowed (direct access)',
-				async () => {
-					const fixture = await options.setup_test();
-					assert(fixture.in_process);
-					// Probe the "no Origin / no Referer" path; `suppress_default_origin`
-					// skips the default `origin` header.
-					const res = await rpc_call_for_spec({
-						app: {request: fixture.transport},
-						path: rpc_path,
-						spec: account_verify_action_spec,
-						params: undefined,
-						headers: {cookie: `${cookie_name}=${fixture.backend_internals.session_cookie}`},
-						suppress_default_origin: true,
-					});
-					assert.notStrictEqual(res.status, 403);
-				},
-			);
 		});
 
 		// --- 6. Bearer auth ---
@@ -1231,56 +1175,13 @@ export const describe_standard_integration_tests = (
 
 		// --- 11. Expired credential rejection ---
 
-		describe('expired credential rejection', () => {
-			test_if(
-				options.capabilities.in_process_only,
-				'expired session cookie returns 401',
-				async () => {
-					const fixture = await options.setup_test();
-					assert(fixture.in_process);
-					const expired_cookie = await create_expired_test_cookie(
-						fixture.keyring,
-						options.session_options,
-					);
-					const res = await rpc_call_for_spec({
-						app: {request: fixture.transport},
-						path: rpc_path,
-						spec: account_verify_action_spec,
-						params: undefined,
-						headers: {cookie: `${cookie_name}=${expired_cookie}`},
-					});
-					assert.strictEqual(res.status, 401, 'Expired session cookie should be rejected');
-				},
-			);
-
-			test_if(
-				options.capabilities.in_process_only,
-				'expired session cookie returns 401 on mutation route',
-				async () => {
-					const fixture = await options.setup_test();
-					assert(fixture.in_process);
-					const logout_route = find_auth_route(route_specs, '/logout', 'POST');
-					assert.ok(
-						logout_route,
-						'Expected POST /logout route — ensure create_route_specs includes account routes',
-					);
-
-					const expired_cookie = await create_expired_test_cookie(
-						fixture.keyring,
-						options.session_options,
-					);
-					const res = await fixture.transport(logout_route.path, {
-						method: 'POST',
-						headers: {
-							host: 'localhost',
-							cookie: `${cookie_name}=${expired_cookie}`,
-						},
-					});
-					assert.strictEqual(res.status, 401, 'Expired session cookie should be rejected on POST');
-					error_collector.record(route_specs, 'POST', logout_route.path, 401);
-				},
-			);
-		});
+		// Expired-credential rejection (read + mutation paths) promoted to the
+		// cross-backend conformance table (`conformance_expiry_cases.ts`, the
+		// `expired_session` principal) — it asserts the authoritative
+		// server-side DB-row expiry gate over real auth resolution on every
+		// spine. The two near-identical in-process skips this replaced (both an
+		// `account_verify` read) collapse into the single read row there; the
+		// `/logout` mutation path is the second row.
 
 		// --- 12. Bearer token browser context on mutation routes ---
 

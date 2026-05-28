@@ -47,6 +47,10 @@ import {z} from 'zod';
  * - `wrong_role` — a seeded `extra_accounts` principal holding a role
  *   other than the one a route requires; named via
  *   `ConformanceTableOptions.principals.wrong_role`.
+ * - `expired_session` — the keeper account presented via an *expired
+ *   server-side session* cookie (minted by `fixture.mint_expired_session()`:
+ *   a backdated `auth_session` row behind a still-valid signed cookie
+ *   payload, so the authoritative DB-row expiry gate is what refuses it).
  */
 export const ConformancePrincipal = z.enum([
 	'keeper',
@@ -56,6 +60,7 @@ export const ConformancePrincipal = z.enum([
 	'fresh_non_admin',
 	'role_holder',
 	'wrong_role',
+	'expired_session',
 ]);
 export type ConformancePrincipal = z.infer<typeof ConformancePrincipal>;
 

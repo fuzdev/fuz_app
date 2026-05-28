@@ -39,8 +39,8 @@ or a **TS** spine binary built on the test-server core (`start_testing_server`
   §"Building a TS test-server binary"). The in-process Hono harness is one
   transport; consumers supply a `BackendConfig` to test against any compatible
   binary. In-process stays — it's the fast feedback path and the only
-  viable path for a few in-process-only assertions (WS test harness,
-  keyring-signed expired-cookie tests, etc.). Cross-process plumbing
+  viable path for a few in-process-only assertions (the WS test harness
+  drives the dispatcher against a fake upgrade, etc.). Cross-process plumbing
   ships in `testing/transports/{fetch_transport,bootstrap,ws_client,ws_transport,sse_transport}.js`
   and `testing/cross_backend/{backend_config,spawn_backend,testing_reset_actions,setup}.js`;
   `default_cross_process_setup` fires `_testing_reset` over the keeper's
@@ -997,11 +997,13 @@ consumer config.
 | `login_rate_limit` | Backend enforces login/IP rate limits (production semantics, not test-fast).        |
 | `ws`               | Backend serves the WebSocket endpoint.                                              |
 | `sse`              | Backend serves an SSE stream.                                                       |
-| `in_process_only`  | Assertions requiring in-process internals (keyring-signed cookies, raw FK queries). Cross-process configs set this `false`. |
+| `cell_crud`        | Backend live-mounts the cell CRUD verbs (gates `describe_cell_crud_cross_tests`).   |
+| `cell_relations`   | Backend live-mounts the cell relation / ACL / audit verbs (gates `describe_cell_relations_cross_tests`). |
+| `account_lifecycle`| Backend live-mounts `account_delete` / `_undelete` / `_purge` (gates `describe_account_lifecycle_cross_tests`). |
 
-`in_process_capabilities` (all in-process flags on, cross-process flags off)
-and the `ts_default_capabilities` / `rust_default_capabilities` presets in
-`default_backend_configs.ts` are the starting points consumers extend.
+`in_process_capabilities` (every flag on) and the `ts_default_capabilities` /
+`rust_default_capabilities` presets in `default_backend_configs.ts` are the
+starting points consumers extend.
 
 ### Lifecycle — `BackendConfig` + `spawn_backend`
 

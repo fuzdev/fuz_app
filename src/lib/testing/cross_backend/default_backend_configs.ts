@@ -57,7 +57,6 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	cell_crud: true,
 	cell_relations: true,
 	account_lifecycle: true,
-	in_process_only: false,
 });
 
 /**
@@ -75,7 +74,6 @@ export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 	cell_crud: true,
 	cell_relations: true,
 	account_lifecycle: true,
-	in_process_only: false,
 });
 
 /** Bootstrap block built from the default secrets + supplied paths. */

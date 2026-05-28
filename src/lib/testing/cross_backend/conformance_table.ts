@@ -127,6 +127,14 @@ const resolve_principal = async (
 			const account = await fixture.create_account();
 			return {transport: fixture.fresh_transport(), headers: account.create_session_headers()};
 		}
+		case 'expired_session': {
+			// The keeper presented via an expired server-side session — fresh
+			// jar so only the (expired) cookie this seam returns is sent. The
+			// minted cookie payload is valid; the backdated `auth_session` row
+			// is what the DB-row expiry gate refuses.
+			const cookie = await fixture.mint_expired_session();
+			return {transport: fixture.fresh_transport(), headers: {cookie}};
+		}
 		case 'role_holder':
 		case 'wrong_role': {
 			const username = principals?.[as];

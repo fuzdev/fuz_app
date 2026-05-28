@@ -846,7 +846,7 @@ source of truth for wire-shape conformance.
 
 - `testing/cross_backend/capabilities.ts` — `BackendCapabilities` vocabulary
   (`bearer_auth` / `trusted_proxy` / `login_rate_limit` / `ws` / `sse` /
-  `cell_crud` / `cell_relations` / `account_lifecycle` / `in_process_only`),
+  `cell_crud` / `cell_relations` / `account_lifecycle`),
   `test_if(cond, name, fn)`
   for capability-gated cases, and `in_process_capabilities` preset. `cell_crud`
   gates the CRUD parity suite, `cell_relations` the relation / ACL / audit
@@ -900,8 +900,12 @@ error_reason?, fields?}, note?, xfail?}`. A case is **data** — `method`
   resolves its `input`/`output` from the live registry (RPC) or `RouteSpec`
   (the 6 REST auth routes), so the case never carries a schema. `as` is the
   closed `ConformancePrincipal` enum (`keeper` / `daemon` / `token` /
-  `anonymous` / `fresh_non_admin` / `role_holder` / `wrong_role`) — fixture
-  accessors, never inline credential minting. `error_reason` is the imported
+  `anonymous` / `fresh_non_admin` / `role_holder` / `wrong_role` /
+  `expired_session`) — fixture accessors, never inline credential minting.
+  `expired_session` is the keeper behind an expired server-side session
+  (`fixture.mint_expired_session()`: a backdated `auth_session` row behind a
+  still-valid signed cookie, so the DB-row expiry gate is what refuses it).
+  `error_reason` is the imported
   `ERROR_*` constant (asserted against the RPC `error.data.reason` or the
   REST flat-body `error`; the bare `unauthenticated()` 401 carries no
   reason, so `status` pins that denial class).
@@ -1105,6 +1109,28 @@ in-process legs (plain `gro test`) are `src/test/auth/cell_crud_parity.db.test.t
   alongside `_testing_reset`; suites that mount their own endpoint (e.g. the
   in-process `account_lifecycle_parity.db.test.ts`) add it directly so the
   shared suite body can call the barrier on every backend uniformly.
+
+  Also bundled: `_testing_mint_session` — mints a backdated-expiry
+  `auth_session` row for an account (via `mint_test_session` in `app_server.ts`)
+  and returns its signed cookie value (future-dated payload). Backs the
+  `expired_session` conformance principal: the backdated DB row + valid cookie
+  payload isolate the authoritative server-side DB-row expiry gate
+  (`query_session_get_valid` — `expires_at > NOW()`), the gate the in-process
+  payload-expiry tests never reached. Daemon-token-gated like its siblings; the
+  Rust mirror is `fuz_testing::create_testing_mint_session_action_spec`.
+
+### Origin verification parity — `cross_backend/origin.ts`
+
+`describe_origin_cross_tests({setup_test, capabilities, rpc_path?})` — the
+imperative G2 suite: disallowed `Origin` → 403 `forbidden_origin` (refused
+before dispatch), absent `Origin` → request passes (non-browser direct access).
+Imperative (not a conformance-table row) because origin rejection is
+middleware-level flat-REST, not the JSON-RPC envelope the table runner expects,
+and absent-Origin needs `fresh_transport({origin: null})`. Runs both legs (the
+in-process `auth/origin_parity.db.test.ts` + the cross-process
+`origin.cross.test.ts`). The promotion surfaced a twin-impl divergence — the
+Rust spine returned a plain-text body — now converged to the canonical TS
+`{error: "forbidden_origin"}` via `fuz_http::forbidden_origin_response()`.
 
 ### Building a TS test-server binary — `testing_server_core.ts` + adapters
 

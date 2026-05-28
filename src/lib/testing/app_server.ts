@@ -191,13 +191,16 @@ export const create_test_account_with_credentials = async (
 	const {token: api_token, id: token_id, token_hash} = generate_api_token();
 	await query_create_api_token(deps, token_id, account.id, 'test-cli', token_hash);
 
-	// Create session (account-scoped — acting actor is per-request)
-	const session_token = generate_session_token();
-	const session_hash = hash_session_token(session_token);
-	const expires_at = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-	await query_create_session(deps, session_hash, account.id, expires_at);
-
-	const session_cookie = await create_session_cookie_value(keyring, session_token, session_options);
+	// Create session (account-scoped — acting actor is per-request).
+	// Shares the mint primitive with `mint_test_session` / the
+	// `_testing_mint_session` action; here with the standard 30-day lifetime.
+	const {session_cookie} = await mint_test_session({
+		db,
+		keyring,
+		session_options,
+		account_id: account.id,
+		expires_in_seconds: AUTH_SESSION_LIFETIME_MS / 1000,
+	});
 
 	return {
 		account: {id: account.id, username: account.username},
@@ -205,6 +208,50 @@ export const create_test_account_with_credentials = async (
 		api_token,
 		session_cookie,
 	};
+};
+
+/** Options for `mint_test_session`. */
+export interface MintTestSessionOptions {
+	db: Db;
+	keyring: Keyring;
+	session_options: SessionOptions<string>;
+	/** Account the minted session belongs to. */
+	account_id: string;
+	/**
+	 * Session lifetime offset in seconds applied to `NOW()` for the
+	 * `auth_session.expires_at` row. A negative value backdates the row so
+	 * the authoritative DB-row expiry gate (`query_session_get_valid` —
+	 * `WHERE expires_at > NOW()`) rejects it, while the returned cookie's
+	 * own signed payload stays valid (future). Resolution therefore passes
+	 * the cookie-payload check in `parse_session` and is refused at the
+	 * DB-row gate — the gate the in-process payload-expiry tests never
+	 * reach and the one that structurally needs a server-side mint.
+	 */
+	expires_in_seconds: number;
+}
+
+/**
+ * Mint a real `auth_session` row for an existing account and return a
+ * validly-signed session cookie value referencing it. Test-only — the
+ * forge behind the cross-backend expiry conformance cases (the
+ * `expired_session` principal): pass a negative `expires_in_seconds` to
+ * produce an *expired server-side session* whose signed cookie envelope is
+ * still well-formed. Both the TS `_testing_mint_session` action and the
+ * in-process `fixture.mint_expired_session()` seam call this so the write
+ * semantics match across transports.
+ *
+ * @mutates `options.db` — inserts one `auth_session` row.
+ */
+export const mint_test_session = async (
+	options: MintTestSessionOptions,
+): Promise<{session_cookie: string}> => {
+	const {db, keyring, session_options, account_id, expires_in_seconds} = options;
+	const session_token = generate_session_token();
+	const session_hash = hash_session_token(session_token);
+	const expires_at = new Date(Date.now() + expires_in_seconds * 1000);
+	await query_create_session({db}, session_hash, account_id, expires_at);
+	const session_cookie = await create_session_cookie_value(keyring, session_token, session_options);
+	return {session_cookie};
 };
 
 /**

@@ -114,7 +114,7 @@ the test helpers' route list.
 spawned backends. `*.cross.test.ts` bodies are runtime-agnostic — they
 `inject('backend_handle')` and drive `default_spine_surface` over the wire —
 so the same files run under every `cross_backend_*` project; each project's
-`globalSetup` spawns a different backend. Six cross files today:
+`globalSetup` spawns a different backend. Seven cross files today:
 `auth.cross.test.ts` (the `describe_standard_cross_process_tests` bundle —
 HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
 `describe_cross_process_ws_tests` suite — live WebSocket, including
@@ -137,8 +137,13 @@ like cells), and `conformance.cross.test.ts` (the declarative
 `describe_conformance_table_tests` runner over shared
 `conformance_proof_cases.ts` + the Phase 1 security slate
 `conformance_security_cases.ts` — credential ceiling, privilege gates, IDOR
-masks, login/signup enumeration; the in-process leg is
-`conformance.db.test.ts`, same cases both transports).
+masks, login/signup enumeration — plus the Phase 2 expiry slate
+`conformance_expiry_cases.ts` (the `expired_session` principal → expired
+server-side session → 401 on a read + a mutation route); the in-process leg is
+`conformance.db.test.ts`, same cases both transports), and
+`origin.cross.test.ts` (the imperative `describe_origin_cross_tests` — Origin
+allowlist: disallowed → 403 `forbidden_origin`, absent → pass; in-process leg
+`auth/origin_parity.db.test.ts`).
 Only the TS spines advertise
 `capabilities.sse` (they wire `audit_log_sse`), so the SSE cases `.skip` on the
 Rust `spine_stub`. Cells live-mount the full surface on every backend and stay

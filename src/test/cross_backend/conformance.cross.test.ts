@@ -26,6 +26,7 @@ import {
 
 import {conformance_proof_cases} from './conformance_proof_cases.js';
 import {conformance_security_cases} from './conformance_security_cases.js';
+import {conformance_expiry_cases} from './conformance_expiry_cases.js';
 import './cross_test_types.js';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
@@ -35,7 +36,7 @@ const setup_test = default_cross_process_setup(handle, {extra_keeper_roles: [ROL
 const {capabilities} = handle.config;
 
 describe_conformance_table_tests({
-	cases: [...conformance_proof_cases, ...conformance_security_cases],
+	cases: [...conformance_proof_cases, ...conformance_security_cases, ...conformance_expiry_cases],
 	setup_test,
 	surface_source: create_spine_surface_spec(),
 	capabilities,
