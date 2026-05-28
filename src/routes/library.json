@@ -28481,27 +28481,27 @@
 						"name": "SPINE_STUB_BIN_ENV",
 						"kind": "variable",
 						"doc_comment": "Env var naming the prebuilt `testing_spine_stub` binary. Required when `binary_path` is omitted.",
-						"source_line": 43,
+						"source_line": 46,
 						"type_signature": "\"FUZ_TESTING_SPINE_STUB_BIN\""
 					},
 					{
 						"name": "SPINE_STUB_DEFAULT_PORT",
 						"kind": "variable",
 						"doc_comment": "Default listening port — slots beside zzz's 1175/1176; matches the binary's `DEFAULT_PORT`.",
-						"source_line": 46,
+						"source_line": 49,
 						"type_signature": "1177"
 					},
 					{
 						"name": "SPINE_STUB_DEFAULT_DATABASE_URL",
 						"kind": "variable",
 						"doc_comment": "Default Postgres database — real PG (PGlite isn't reachable from `tokio-postgres`).",
-						"source_line": 49,
+						"source_line": 52,
 						"type_signature": "\"postgres://localhost/fuz_app_test_spine_stub\""
 					},
 					{
 						"name": "SpineStubBackendConfigOptions",
 						"kind": "type",
-						"source_line": 51,
+						"source_line": 54,
 						"type_signature": "SpineStubBackendConfigOptions",
 						"properties": [
 							{
@@ -28537,7 +28537,7 @@
 								"description": "when no binary path is available."
 							}
 						],
-						"source_line": 74,
+						"source_line": 77,
 						"type_signature": "(options?: SpineStubBackendConfigOptions): BackendConfig",
 						"return_type": "BackendConfig",
 						"parameters": [

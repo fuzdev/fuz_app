@@ -37,7 +37,10 @@ import '../assert_dev_env.js';
 
 import type {BackendConfig} from './backend_config.js';
 import {build_test_backend_paths} from './build_test_backend_paths.js';
-import {make_default_rust_backend_config} from './default_backend_configs.js';
+import {
+	make_default_rust_backend_config,
+	rust_default_capabilities,
+} from './default_backend_configs.js';
 
 /** Env var naming the prebuilt `testing_spine_stub` binary. Required when `binary_path` is omitted. */
 export const SPINE_STUB_BIN_ENV = 'FUZ_TESTING_SPINE_STUB_BIN';
@@ -96,6 +99,10 @@ export const spine_stub_backend_config = (
 		// is the lower-precedence fallback — both carry the same value.
 		start_command: [binary_path, '--port', String(port)],
 		database_url,
+		// The stub now serves `GET /api/admin/audit/stream` (the spine
+		// `fuz_realtime::SseRegistry` + audit listener), so it advertises `sse`
+		// like the TS spines — the cross-process SSE suite's three cases run.
+		capabilities: {...rust_default_capabilities, sse: true},
 		port_env_var: 'FUZ_SPINE_STUB_PORT',
 		rust_log: 'info,testing_spine_stub=info',
 		paths,

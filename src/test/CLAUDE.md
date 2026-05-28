@@ -128,7 +128,7 @@ against its Zod output schema), and `account_lifecycle.cross.test.ts`
 (`describe_account_lifecycle_cross_tests` — soft-delete → undelete round-trip,
 keeper-confirmed purge, the `cannot_delete_keeper` guard, fail-closed
 (a soft-deleted account's session + bearer no longer authenticate),
-deterministic double-undelete → not_found, the keeper-guard
+deterministic double-undelete → not*found, the keeper-guard
 `account_delete outcome=failure` audit row read back via
 `_testing_drain_effects` + `audit_log_list`, and the `admin_account_list`
 `include_deleted` listing shape (tombstoned rows surface with `deleted_at`
@@ -144,19 +144,17 @@ server-side session → 401 on a read + a mutation route); the in-process leg is
 `origin.cross.test.ts` (the imperative `describe_origin_cross_tests` — Origin
 allowlist: disallowed → 403 `forbidden_origin`, absent → pass; in-process leg
 `auth/origin_parity.db.test.ts`).
-Only the TS spines advertise
-`capabilities.sse` (they wire `audit_log_sse`), so the SSE cases `.skip` on the
-Rust `spine_stub` — plus one `xfail_until` (registered only when `sse: false`)
-that asserts the stream can't open there, a self-cleaning tripwire that flips
-red when the spine grows SSE (forcing the marker and the capability flag to be
-removed together). Cells live-mount the full surface on every backend and stay
+Every backend now advertises `capabilities.sse` and serves
+`/api/admin/audit/stream`: the TS spines wire `audit_log_sse`, and the Rust
+`spine_stub` serves it from the spine `fuz_realtime::SseRegistry` +
+`register_audit_sse_listener`. So the SSE cases run on every
+`cross_backend*\*`project (no`.skip`, no tripwire). Cells live-mount the full surface on every backend and stay
 **off** the declared surface (`create_spine_surface_spec`) — like ws/sse — so
-`cell_crud` + `cell_relations` are `true` everywhere and the cell cases run on
-both TS and Rust (no `.skip`); the standard bundle's generic round-trip never
-sees them. The in-process counterparts are `auth/cell_crud_parity.db.test.ts` +
-`auth/cell_relations_parity.db.test.ts` (same suites, plain `gro test`, sharing
-the full-surface `create_cell_parity_setup` from `auth/cell_parity_helpers.ts`,
-which migrates the `fuz_cell` namespace and registers `cell_audit_events`). The
+`cell_crud`+`cell_relations`are`true`everywhere and the cell cases run on
+both TS and Rust (no`.skip`); the standard bundle's generic round-trip never
+sees them. The in-process counterparts are `auth/cell_crud_parity.db.test.ts`+`auth/cell_relations_parity.db.test.ts`(same suites, plain`gro test`, sharing
+the full-surface `create_cell_parity_setup`from`auth/cell_parity_helpers.ts`,
+which migrates the `fuz_cell`namespace and registers`cell_audit_events`). The
 backends:
 
 - `cross_backend_ts_node` / `cross_backend_ts_deno` / `cross_backend_ts_bun` —
