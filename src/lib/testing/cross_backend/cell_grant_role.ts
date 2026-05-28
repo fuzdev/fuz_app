@@ -43,8 +43,12 @@ import {
 	ERROR_CELL_GRANT_UNKNOWN_ROLE,
 } from '../../auth/cell_grant_action_specs.js';
 import {test_if} from './capabilities.js';
-import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.js';
-import type {CellCrossTestOptions} from './cell_cross_helpers.js';
+import {
+	type CellCrossTestOptions,
+	cross_rpc_call,
+	error_reason,
+	expect_output,
+} from './cell_cross_helpers.js';
 import {SPINE_CELL_EDITOR_ROLE, SPINE_RPC_PATH} from './default_spine_surface.js';
 
 /** App role the holder is seeded with; matches the spine's registered role. */
