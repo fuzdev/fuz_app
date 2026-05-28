@@ -28,7 +28,9 @@ import {test} from 'vitest';
  * rejects; **fails** once `fn` succeeds (signalling the gap closed and the
  * marker should be removed).
  *
- * @param tracking_id - id of the tracked gap (e.g. `'G11'`).
+ * @param tracking_id - descriptive id of the tracked gap (e.g.
+ *   `'audit-log-sse-rust-spine'`) — a feature/behavior name, not a
+ *   process/milestone label.
  * @param reason - why the case is deferred-by-design.
  * @param name - the assertion / test label.
  * @param fn - the test body (expected to throw/reject until the gap closes).

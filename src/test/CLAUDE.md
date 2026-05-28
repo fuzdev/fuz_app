@@ -146,7 +146,10 @@ allowlist: disallowed → 403 `forbidden_origin`, absent → pass; in-process le
 `auth/origin_parity.db.test.ts`).
 Only the TS spines advertise
 `capabilities.sse` (they wire `audit_log_sse`), so the SSE cases `.skip` on the
-Rust `spine_stub`. Cells live-mount the full surface on every backend and stay
+Rust `spine_stub` — plus one `xfail_until` (registered only when `sse: false`)
+that asserts the stream can't open there, a self-cleaning tripwire that flips
+red when the spine grows SSE (forcing the marker and the capability flag to be
+removed together). Cells live-mount the full surface on every backend and stay
 **off** the declared surface (`create_spine_surface_spec`) — like ws/sse — so
 `cell_crud` + `cell_relations` are `true` everywhere and the cell cases run on
 both TS and Rust (no `.skip`); the standard bundle's generic round-trip never

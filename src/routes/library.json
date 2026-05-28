@@ -27147,20 +27147,20 @@
 						"name": "CELL_EDITOR_ROLE",
 						"kind": "variable",
 						"doc_comment": "App role the holder is seeded with; matches the spine's registered role.",
-						"source_line": 51,
+						"source_line": 55,
 						"type_signature": "\"cell_editor\""
 					},
 					{
 						"name": "CELL_ROLE_HOLDER_USERNAME",
 						"kind": "variable",
 						"doc_comment": "Username the fixture seeds (via `extra_accounts`) holding `CELL_EDITOR_ROLE`.",
-						"source_line": 54,
+						"source_line": 58,
 						"type_signature": "\"cell_role_holder\""
 					},
 					{
 						"name": "describe_cell_grant_role_cross_tests",
 						"kind": "function",
-						"source_line": 59,
+						"source_line": 63,
 						"type_signature": "(options: CellCrossTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -29076,14 +29076,14 @@
 						"name": "xfail_until",
 						"kind": "function",
 						"doc_comment": "Register `fn` as an expected-failure test. Passes while `fn` throws /\nrejects; **fails** once `fn` succeeds (signalling the gap closed and the\nmarker should be removed).",
-						"source_line": 36,
+						"source_line": 38,
 						"type_signature": "(tracking_id: string, reason: string, name: string, fn: () => void | Promise<void>): void",
 						"return_type": "void",
 						"parameters": [
 							{
 								"name": "tracking_id",
 								"type": "string",
-								"description": "id of the tracked gap (e.g. `'G11'`)."
+								"description": "descriptive id of the tracked gap (e.g.\n`'audit-log-sse-rust-spine'`) — a feature/behavior name, not a\nprocess/milestone label."
 							},
 							{
 								"name": "reason",

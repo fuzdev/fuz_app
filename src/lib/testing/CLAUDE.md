@@ -980,6 +980,10 @@ account/admin actions); all cases gate on `capabilities.sse`. Cross-process
 only — wire from a `*.cross.test.ts`. fuz_app's own wiring is
 `src/test/cross_backend/sse.cross.test.ts`; only the TS spines advertise
 `sse` (they wire `audit_log_sse`), so the Rust `spine_stub` cases `.skip`.
+That file also registers one `xfail_until` (only when `sse: false`) asserting
+the stream _can't_ open on a spine without SSE — a self-cleaning tripwire for
+the spine that should grow it, distinct from the consumer-legit capability
+skip the shared suite emits.
 
 ### `cross_backend/cell_crud.ts` + `cell_relations.ts` — cell parity suites
 
