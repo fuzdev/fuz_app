@@ -1093,6 +1093,19 @@ in-process legs (plain `gro test`) are `src/test/auth/cell_crud_parity.db.test.t
   `testing_reset_actions.ts` TSDoc for the audit + WS fan-out rationale
   that rejected a `_testing_seed_role_grant` shape.
 
+  Same module also exports `create_testing_drain_effects_action()` — the
+  `_testing_drain_effects` RPC action (daemon-token-gated, like
+  `_testing_reset`). It awaits in-flight fire-and-forget audit writes so a
+  following `audit_log_list` is authoritative — the deterministic barrier a
+  cross-process audit assertion fires before reading (no poll/sleep). On the
+  TS spine it is **satisfied by construction** (the binary runs
+  `await_pending_effects: true`, so each mutation's emits land before its
+  response); the Rust spine does the real await in
+  `AuditEmitter::drain_inflight`. `create_testing_actions` bundles it
+  alongside `_testing_reset`; suites that mount their own endpoint (e.g. the
+  in-process `account_lifecycle_parity.db.test.ts`) add it directly so the
+  shared suite body can call the barrier on every backend uniformly.
+
 ### Building a TS test-server binary — `testing_server_core.ts` + adapters
 
 The reusable shape for standing up a **spawnable TS** cross-process test

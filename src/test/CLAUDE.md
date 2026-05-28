@@ -126,12 +126,18 @@ data frame, close-on-revoke), `cell.cross.test.ts` (both
 incl. the editor-grant `cell_visibility_manage_only` 403 — each response parsed
 against its Zod output schema), and `account_lifecycle.cross.test.ts`
 (`describe_account_lifecycle_cross_tests` — soft-delete → undelete round-trip,
-keeper-confirmed purge, the `cannot_delete_keeper` guard, and the
-`admin_account_list` `include_deleted` listing shape (tombstoned rows surface
-with `deleted_at` set), gated on `capabilities.account_lifecycle`; off the
-declared surface like cells), and `conformance.cross.test.ts` (the
-declarative `describe_conformance_table_tests` runner over shared
-`conformance_proof_cases.ts` — the in-process leg is
+keeper-confirmed purge, the `cannot_delete_keeper` guard, fail-closed
+(a soft-deleted account's session + bearer no longer authenticate),
+deterministic double-undelete → not_found, the keeper-guard
+`account_delete outcome=failure` audit row read back via
+`_testing_drain_effects` + `audit_log_list`, and the `admin_account_list`
+`include_deleted` listing shape (tombstoned rows surface with `deleted_at`
+set), gated on `capabilities.account_lifecycle`; off the declared surface
+like cells), and `conformance.cross.test.ts` (the declarative
+`describe_conformance_table_tests` runner over shared
+`conformance_proof_cases.ts` + the Phase 1 security slate
+`conformance_security_cases.ts` — credential ceiling, privilege gates, IDOR
+masks, login/signup enumeration; the in-process leg is
 `conformance.db.test.ts`, same cases both transports).
 Only the TS spines advertise
 `capabilities.sse` (they wire `audit_log_sse`), so the SSE cases `.skip` on the
