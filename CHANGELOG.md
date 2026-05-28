@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.72.0
+
+### Minor Changes
+
+- feat: account-wide close-on-revoke, session-scoped close-on-revoke ([2db8813](https://github.com/fuzdev/fuz_app/commit/2db8813))
+
 ## 0.71.1
 
 ### Patch Changes
