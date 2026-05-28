@@ -1,5 +1,12 @@
 # @fuzdev/fuz_app
 
+## 0.69.0
+
+### Minor Changes
+
+- refactor: simplify rpc usage on the frontend ([3dbfbd9](https://github.com/fuzdev/fuz_app/commit/3dbfbd9))
+- feat: improve cross-backend tests ([edf69da](https://github.com/fuzdev/fuz_app/commit/edf69da))
+
 ## 0.68.0
 
 ### Minor Changes
