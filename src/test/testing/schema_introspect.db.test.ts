@@ -1,8 +1,9 @@
 /**
  * DB-backed tests for `query_schema_snapshot`.
  *
- * Verifies the snapshot's structural contract (schema_version excluded
- * from `tables`, deterministic across calls, JSON-serializable) and pins
+ * Verifies the snapshot's structural contract (schema_version migration
+ * tracker excluded from `tables`, deterministic across calls,
+ * JSON-serializable) and pins
  * the SERIAL→BIGSERIAL widening on `audit_log.seq` — a regression on
  * that fix would surface immediately here instead of waiting for zzz's
  * cross-impl gate to catch it.
@@ -48,23 +49,6 @@ describe('query_schema_snapshot', () => {
 	test('schema_version table is never present in `tables`', async () => {
 		const snap = await query_schema_snapshot(db);
 		assert.strictEqual(snap.tables.schema_version, undefined);
-	});
-
-	test('schema_version rows are captured (excluding applied_at)', async () => {
-		const snap = await query_schema_snapshot(db);
-		assert.ok(snap.schema_version.length > 0, 'schema_version rows missing');
-		for (const row of snap.schema_version) {
-			assert.strictEqual(typeof row.namespace, 'string');
-			assert.strictEqual(typeof row.name, 'string');
-			assert.strictEqual(typeof row.sequence, 'number');
-			// applied_at must not leak into the snapshot (timestamp would
-			// drift the snapshot across bootstraps).
-			assert.strictEqual(
-				(row as unknown as Record<string, unknown>).applied_at,
-				undefined,
-				'applied_at must be excluded from the snapshot',
-			);
-		}
 	});
 
 	test('snapshot is deterministic across consecutive calls', async () => {

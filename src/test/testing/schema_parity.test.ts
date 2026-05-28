@@ -39,7 +39,6 @@ const create_table = (overrides: Partial<TableSnapshot> = {}): TableSnapshot => 
 });
 
 const create_snapshot = (overrides: Partial<SchemaSnapshot> = {}): SchemaSnapshot => ({
-	schema_version: [],
 	tables: {},
 	sequences: {},
 	...overrides,
@@ -53,40 +52,11 @@ describe('diff_schema_snapshots', () => {
 
 	test('matching snapshots produce no diff', () => {
 		const snap = create_snapshot({
-			schema_version: [{namespace: 'fuz_auth', name: 'm0', sequence: 0}],
 			tables: {foo: create_table({columns: {id: create_column()}})},
 			sequences: {foo_id_seq: {data_type: 'bigint'}},
 		});
 		const diffs = diff_schema_snapshots(snap, snap);
 		assert.deepStrictEqual(diffs, []);
-	});
-
-	test('schema_version_only_in: row missing on b', () => {
-		const row = {namespace: 'fuz_auth', name: 'm0', sequence: 0};
-		const diffs = diff_schema_snapshots(
-			create_snapshot({schema_version: [row]}),
-			create_snapshot(),
-		);
-		assert.deepStrictEqual(diffs, [{kind: 'schema_version_only_in', where: 'a', row}]);
-	});
-
-	test('schema_version_only_in: row missing on a', () => {
-		const row = {namespace: 'fuz_auth', name: 'm0', sequence: 0};
-		const diffs = diff_schema_snapshots(
-			create_snapshot(),
-			create_snapshot({schema_version: [row]}),
-		);
-		assert.deepStrictEqual(diffs, [{kind: 'schema_version_only_in', where: 'b', row}]);
-	});
-
-	test('schema_version_sequence_differs', () => {
-		const diffs = diff_schema_snapshots(
-			create_snapshot({schema_version: [{namespace: 'fuz_auth', name: 'm0', sequence: 0}]}),
-			create_snapshot({schema_version: [{namespace: 'fuz_auth', name: 'm0', sequence: 1}]}),
-		);
-		assert.deepStrictEqual(diffs, [
-			{kind: 'schema_version_sequence_differs', namespace: 'fuz_auth', name: 'm0', a: 0, b: 1},
-		]);
 	});
 
 	test('table_only_in (both sides)', () => {
@@ -145,7 +115,7 @@ describe('diff_schema_snapshots', () => {
 		);
 		assert.strictEqual(diffs.length, 1);
 		assert.strictEqual(diffs[0]?.kind, 'column_field_differs');
-		assert.strictEqual(diffs[0]!.kind === 'column_field_differs' && diffs[0].field, 'udt_name');
+		assert.strictEqual(diffs[0]!.kind === 'column_field_differs' && diffs[0]!.field, 'udt_name');
 	});
 
 	test('column_field_differs: is_nullable', () => {
@@ -159,7 +129,7 @@ describe('diff_schema_snapshots', () => {
 		);
 		assert.strictEqual(diffs.length, 1);
 		assert.strictEqual(diffs[0]?.kind, 'column_field_differs');
-		assert.strictEqual(diffs[0]!.kind === 'column_field_differs' && diffs[0].field, 'is_nullable');
+		assert.strictEqual(diffs[0]!.kind === 'column_field_differs' && diffs[0]!.field, 'is_nullable');
 	});
 
 	test('column_field_differs: column_default', () => {
@@ -174,7 +144,7 @@ describe('diff_schema_snapshots', () => {
 		assert.strictEqual(diffs.length, 1);
 		assert.strictEqual(diffs[0]?.kind, 'column_field_differs');
 		assert.strictEqual(
-			diffs[0]!.kind === 'column_field_differs' && diffs[0].field,
+			diffs[0]!.kind === 'column_field_differs' && diffs[0]!.field,
 			'column_default',
 		);
 	});
@@ -190,7 +160,7 @@ describe('diff_schema_snapshots', () => {
 		);
 		assert.strictEqual(diffs.length, 1);
 		assert.strictEqual(diffs[0]?.kind, 'column_field_differs');
-		assert.strictEqual(diffs[0]!.kind === 'column_field_differs' && diffs[0].field, 'is_identity');
+		assert.strictEqual(diffs[0]!.kind === 'column_field_differs' && diffs[0]!.field, 'is_identity');
 	});
 
 	test('index_only_in (both sides)', () => {
@@ -340,11 +310,10 @@ describe('diff_schema_snapshots', () => {
 		assert.deepStrictEqual(fields.sort(), ['data_type', 'is_nullable', 'udt_name']);
 	});
 
-	test('diffs emit in documented order: schema_version → tables → sequences', () => {
-		// Mixed drift across all three sections + multiple tables to verify the
+	test('diffs emit in documented order: tables → sequences', () => {
+		// Mixed drift across tables + sequences + multiple tables to verify the
 		// sub-orderings (tables sorted, sub-diffs grouped per table).
 		const a = create_snapshot({
-			schema_version: [{namespace: 'fuz_auth', name: 'older', sequence: 0}],
 			tables: {
 				zebra: create_table({columns: {id: create_column()}}),
 				alpha: create_table({columns: {x: create_column({data_type: 'text'})}}),
@@ -352,7 +321,6 @@ describe('diff_schema_snapshots', () => {
 			sequences: {seq_z: {data_type: 'bigint'}},
 		});
 		const b = create_snapshot({
-			schema_version: [{namespace: 'fuz_auth', name: 'newer', sequence: 0}],
 			tables: {
 				alpha: create_table({columns: {x: create_column({data_type: 'integer'})}}),
 				bravo: create_table({columns: {y: create_column()}}),
@@ -360,15 +328,11 @@ describe('diff_schema_snapshots', () => {
 			sequences: {seq_a: {data_type: 'bigint'}},
 		});
 		const diff_kinds = diff_schema_snapshots(a, b).map((d) => d.kind);
-		// schema_version diffs first
-		assert.strictEqual(diff_kinds[0], 'schema_version_only_in');
-		assert.strictEqual(diff_kinds[1], 'schema_version_only_in');
 		// Tables in sorted order: alpha (column_field_differs), bravo (table_only_in),
 		// then zebra (table_only_in). Sequences last.
-		const sv_count = 2;
-		assert.strictEqual(diff_kinds[sv_count], 'column_field_differs'); // alpha
-		assert.strictEqual(diff_kinds[sv_count + 1], 'table_only_in'); // bravo
-		assert.strictEqual(diff_kinds[sv_count + 2], 'table_only_in'); // zebra
+		assert.strictEqual(diff_kinds[0], 'column_field_differs'); // alpha
+		assert.strictEqual(diff_kinds[1], 'table_only_in'); // bravo
+		assert.strictEqual(diff_kinds[2], 'table_only_in'); // zebra
 		// Sequences appear after the tables block.
 		assert.ok(diff_kinds.lastIndexOf('sequence_only_in') > diff_kinds.indexOf('table_only_in'));
 	});

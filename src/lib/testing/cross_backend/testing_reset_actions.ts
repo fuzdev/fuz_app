@@ -71,7 +71,7 @@ import type {DaemonTokenState} from '../../auth/daemon_token.js';
 import type {Db} from '../../db/db.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '../../auth/role_schema.js';
 import {auth_integration_truncate_tables} from '../db.js';
-import {query_schema_snapshot, type SchemaSnapshot} from '../schema_introspect.js';
+import {query_schema_snapshot, SchemaSnapshot} from '../schema_introspect.js';
 import {
 	create_test_account_with_credentials,
 	mint_test_session,
@@ -215,36 +215,6 @@ export const create_testing_drain_effects_action = (): RpcAction =>
 	rpc_action(testing_drain_effects_action_spec, async () => ({ok: true}));
 
 /**
- * Output shape, co-declared with `SchemaSnapshot` from `schema_introspect.ts`
- * via the `z.ZodType<SchemaSnapshot>` annotation — if that type drifts, this
- * declaration fails to typecheck, keeping the wire schema and the
- * introspection type in lockstep.
- */
-const SchemaSnapshotShape: z.ZodType<SchemaSnapshot> = z.object({
-	schema_version: z.array(
-		z.object({namespace: z.string(), name: z.string(), sequence: z.number()}),
-	),
-	tables: z.record(
-		z.string(),
-		z.object({
-			columns: z.record(
-				z.string(),
-				z.object({
-					data_type: z.string(),
-					udt_name: z.string(),
-					is_nullable: z.boolean(),
-					column_default: z.string().nullable(),
-					is_identity: z.boolean(),
-				}),
-			),
-			indexes: z.array(z.object({name: z.string(), definition: z.string()})),
-			constraints: z.array(z.object({name: z.string(), type: z.string(), definition: z.string()})),
-		}),
-	),
-	sequences: z.record(z.string(), z.object({data_type: z.string()})),
-});
-
-/**
  * `_testing_schema_snapshot` — introspect the live database into a normalized
  * `SchemaSnapshot` for cross-impl parity diffing. The cross-backend harness
  * calls this on each backend, then `assert_schema_snapshots_equal`s the
@@ -261,7 +231,7 @@ export const testing_schema_snapshot_action_spec = {
 	auth: {account: 'required', actor: 'none', credential_types: ['daemon_token']},
 	side_effects: false,
 	input: z.strictObject({exclude_tables: z.array(z.string()).optional()}),
-	output: SchemaSnapshotShape,
+	output: SchemaSnapshot,
 	async: true,
 	description:
 		'Test-binary only — introspect the live schema into a normalized snapshot for cross-impl parity diffing.',

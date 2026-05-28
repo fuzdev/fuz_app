@@ -28297,8 +28297,8 @@
 						"kind": "function",
 						"doc_comment": "Capture a backend's schema snapshot over the `_testing_schema_snapshot`\nRPC action (keeper daemon-token channel). The canonical way for a\ncross-impl parity gate to read each backend's live schema — pair two\ncalls with `assert_schema_snapshots_equal` (`testing/schema_parity.js`).\n\n`exclude_tables` drops documented divergences from both sides before\ncomparison (e.g. a cell-primary Rust backend lacks tables the TS schema\nhas). Each impl answers from its own introspection — TS via\n`query_schema_snapshot`, Rust via `fuz_db::query_schema_snapshot` — and\nthe snapshot shapes match by design.",
 						"source_line": 583,
-						"type_signature": "(handle: ReconstructedBootstrappedBackendHandle, options?: { exclude_tables?: readonly string[] | undefined; }): Promise<SchemaSnapshot>",
-						"return_type": "Promise<SchemaSnapshot>",
+						"type_signature": "(handle: ReconstructedBootstrappedBackendHandle, options?: { exclude_tables?: readonly string[] | undefined; }): Promise<{ tables: Record<string, { columns: Record<...>; indexes: { ...; }[]; constraints: { ...; }[]; }>; sequences: Record<...>; }>",
+						"return_type": "Promise<{ tables: Record<string, { columns: Record<string, { data_type: string; udt_name: string; is_nullable: boolean; column_default: string | null; is_identity: boolean; }>; indexes: { name: string; definition: string; }[]; constraints: { ...; }[]; }>; sequences: Record<...>; }>",
 						"parameters": [
 							{
 								"name": "handle",
@@ -28765,14 +28765,14 @@
 						"name": "testing_schema_snapshot_action_spec",
 						"kind": "variable",
 						"doc_comment": "`_testing_schema_snapshot` — introspect the live database into a normalized\n`SchemaSnapshot` for cross-impl parity diffing. The cross-backend harness\ncalls this on each backend, then `assert_schema_snapshots_equal`s the\nresults (a Rust backend answers from `fuz_db::query_schema_snapshot`; the\nshapes match by design). Optional `exclude_tables` drops documented\ndivergences from both sides before comparison.\n\n`auth` gates on the daemon-token credential, matching `_testing_reset`.",
-						"source_line": 257,
+						"source_line": 227,
 						"type_signature": "{ readonly method: \"_testing_schema_snapshot\"; readonly kind: \"request_response\"; readonly initiator: \"frontend\"; readonly auth: { readonly account: \"required\"; readonly actor: \"none\"; readonly credential_types: readonly [...]; }; ... 4 more ...; readonly description: \"Test-binary only — introspect the live schema i..."
 					},
 					{
 						"name": "create_testing_schema_snapshot_action",
 						"kind": "function",
 						"doc_comment": "Build the standalone `_testing_schema_snapshot` action. No deps —\nintrospects `ctx.db` via `query_schema_snapshot`. Bundled by\n`create_testing_actions`; mount directly for in-process use.",
-						"source_line": 275,
+						"source_line": 245,
 						"type_signature": "(): RpcAction",
 						"return_type": "RpcAction",
 						"parameters": []
@@ -28781,7 +28781,7 @@
 						"name": "CreateTestingActionsOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_testing_actions`.",
-						"source_line": 281,
+						"source_line": 251,
 						"type_signature": "CreateTestingActionsOptions",
 						"properties": [
 							{
@@ -28811,7 +28811,7 @@
 						"name": "create_testing_actions",
 						"kind": "function",
 						"doc_comment": "Build the testing RPC actions for a test binary's registry.\n\nReturns `_testing_reset` — the single privileged action test binaries\nregister. The test binary calls this at server-assembly time and\nregisters the result on its dispatcher.\n\nThe reset action's table-wipe list mirrors\n`auth_integration_truncate_tables` from `testing/db.ts` — the\ncanonical \"auth tables a between-test reset must clear\" set.\n`testing_reset_actions.coverage.test.ts` enforces the set-equality\ninvariant so a future auth migration that adds a table to that list\nwithout updating this handler fails CI.",
-						"source_line": 325,
+						"source_line": 295,
 						"type_signature": "(deps: AppDeps, options: CreateTestingActionsOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"parameters": [
@@ -28829,7 +28829,7 @@
 						"name": "testing_reset_wiped_tables",
 						"kind": "variable",
 						"doc_comment": "Set of auth-namespace tables `_testing_reset` wipes. Mirrored by the coverage test.",
-						"source_line": 438,
+						"source_line": 408,
 						"type_signature": "string[]"
 					}
 				],
@@ -31631,154 +31631,36 @@
 					{
 						"name": "ColumnSnapshot",
 						"kind": "type",
-						"doc_comment": "Per-column structural metadata.",
-						"source_line": 29,
-						"type_signature": "ColumnSnapshot",
-						"properties": [
-							{
-								"name": "data_type",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "string",
-								"doc_comment": "SQL standard type name from `information_schema.columns.data_type`."
-							},
-							{
-								"name": "udt_name",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "string",
-								"doc_comment": "Postgres-native type name from `information_schema.columns.udt_name`."
-							},
-							{
-								"name": "is_nullable",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "boolean",
-								"doc_comment": "`true` when the column accepts NULL."
-							},
-							{
-								"name": "column_default",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "string | null",
-								"doc_comment": "Default-value expression as Postgres reports it, or `null` if none."
-							},
-							{
-								"name": "is_identity",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "boolean",
-								"doc_comment": "`true` when the column was declared GENERATED ... AS IDENTITY."
-							}
-						]
+						"doc_comment": "Per-column structural metadata. The Zod schema is the canonical source\nfor the column shape — `SchemaSnapshot` reuses it as the cross-impl\n`_testing_schema_snapshot` RPC action's wire validator, so the\nintrospection type and the wire contract can't drift apart.",
+						"source_line": 34,
+						"type_signature": "ZodObject<{ data_type: ZodString; udt_name: ZodString; is_nullable: ZodBoolean; column_default: ZodNullable<ZodString>; is_identity: ZodBoolean; }, $strip>"
 					},
 					{
 						"name": "TableSnapshot",
 						"kind": "type",
 						"doc_comment": "Per-table structural metadata.",
-						"source_line": 43,
-						"type_signature": "TableSnapshot",
-						"properties": [
-							{
-								"name": "columns",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "Record<string, ColumnSnapshot>",
-								"doc_comment": "Column metadata keyed by column name (sorted on serialization)."
-							},
-							{
-								"name": "indexes",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "ReadonlyArray<{readonly name: string; readonly definition: string}>",
-								"doc_comment": "Index definitions as Postgres renders them via `pg_indexes.indexdef`."
-							},
-							{
-								"name": "constraints",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "ReadonlyArray<{\n\t\treadonly name: string;\n\t\treadonly type: string;\n\t\treadonly definition: string;\n\t}>",
-								"doc_comment": "Constraint definitions as Postgres renders them via `pg_get_constraintdef`."
-							}
-						]
+						"source_line": 49,
+						"type_signature": "ZodObject<{ columns: ZodRecord<ZodString, ZodObject<{ data_type: ZodString; udt_name: ZodString; is_nullable: ZodBoolean; column_default: ZodNullable<ZodString>; is_identity: ZodBoolean; }, $strip>>; indexes: ZodArray<...>; constraints: ZodArray<...>; }, $strip>"
 					},
 					{
 						"name": "SequenceSnapshot",
 						"kind": "type",
 						"doc_comment": "Sequence metadata — `data_type` is `bigint` (BIGSERIAL) or `integer` (SERIAL).",
-						"source_line": 57,
-						"type_signature": "SequenceSnapshot",
-						"properties": [
-							{
-								"name": "data_type",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "string"
-							}
-						]
-					},
-					{
-						"name": "SchemaVersionRow",
-						"kind": "type",
-						"doc_comment": "One row in the `schema_version` migration tracker.",
-						"source_line": 62,
-						"type_signature": "SchemaVersionRow",
-						"properties": [
-							{
-								"name": "namespace",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "string"
-							},
-							{
-								"name": "name",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "string"
-							},
-							{
-								"name": "sequence",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "number"
-							}
-						]
+						"source_line": 60,
+						"type_signature": "ZodObject<{ data_type: ZodString; }, $strip>"
 					},
 					{
 						"name": "SchemaSnapshot",
 						"kind": "type",
-						"doc_comment": "Normalized database schema snapshot for parity comparison.\n\nAll fields are deterministically ordered on capture so structural equality\nvia `JSON.stringify` or per-key comparison yields stable results.",
+						"doc_comment": "Normalized database schema snapshot for parity comparison — the single\nsource of truth for the snapshot shape across the introspection query\n(`query_schema_snapshot`), the diff comparator (`schema_parity.ts`), and\nthe cross-impl RPC action's wire validator (`testing_reset_actions.ts`).\n\nAll fields are deterministically ordered on capture so structural equality\nvia `JSON.stringify` or per-key comparison yields stable results.",
 						"source_line": 74,
-						"type_signature": "SchemaSnapshot",
-						"properties": [
-							{
-								"name": "schema_version",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "ReadonlyArray<SchemaVersionRow>",
-								"doc_comment": "Migration tracker rows, sorted by `(namespace, sequence)`."
-							},
-							{
-								"name": "tables",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "Record<string, TableSnapshot>",
-								"doc_comment": "Tables keyed by name."
-							},
-							{
-								"name": "sequences",
-								"kind": "variable",
-								"modifiers": ["readonly"],
-								"type_signature": "Record<string, SequenceSnapshot>",
-								"doc_comment": "Sequences keyed by name."
-							}
-						]
+						"type_signature": "ZodObject<{ tables: ZodRecord<ZodString, ZodObject<{ columns: ZodRecord<ZodString, ZodObject<{ data_type: ZodString; udt_name: ZodString; is_nullable: ZodBoolean; column_default: ZodNullable<...>; is_identity: ZodBoolean; }, $strip>>; indexes: ZodArray<...>; constraints: ZodArray<...>; }, $strip>>; sequences: ZodRec..."
 					},
 					{
 						"name": "QuerySchemaSnapshotOptions",
 						"kind": "type",
 						"doc_comment": "Filter options for `query_schema_snapshot`.",
-						"source_line": 84,
+						"source_line": 83,
 						"type_signature": "QuerySchemaSnapshotOptions",
 						"properties": [
 							{
@@ -31793,23 +31675,17 @@
 								"kind": "variable",
 								"modifiers": ["readonly"],
 								"type_signature": "ReadonlyArray<string>",
-								"doc_comment": "Tables to exclude from the snapshot. The `schema_version` table itself\nis always excluded (its content is captured separately)."
+								"doc_comment": "Tables to exclude from the snapshot. The `schema_version` migration\ntracker is always excluded — it's framework bookkeeping created by the\nmigration runner, identical across impls, and not part of any\nconsumer's domain schema."
 							}
 						]
 					},
 					{
 						"name": "query_schema_snapshot",
 						"kind": "function",
-						"doc_comment": "Introspect a live database into a deterministic `SchemaSnapshot`.\n\nReads `information_schema` and `pg_catalog` to capture tables, columns,\nindexes, constraints, sequences, and `schema_version` migration tracker\nrows. The `applied_at` timestamp is deliberately excluded — only the set\nof applied migrations matters for parity.\n\nThe `schema_version` table itself never appears in the `tables` field;\nits structure is identical across consumers and would only add noise.",
-						"throws": [
-							{
-								"type": "Error",
-								"description": "when the `schema_version` table is missing — callers must"
-							}
-						],
-						"source_line": 166,
-						"type_signature": "(db: Db, options?: QuerySchemaSnapshotOptions): Promise<SchemaSnapshot>",
-						"return_type": "Promise<SchemaSnapshot>",
+						"doc_comment": "Introspect a live database into a deterministic `SchemaSnapshot`.\n\nReads `information_schema` and `pg_catalog` to capture tables, columns,\nindexes, constraints, and sequences.\n\nThe `schema_version` migration tracker never appears in the `tables`\nfield — it's framework bookkeeping created by the migration runner,\nidentical across consumers, and would only add noise.",
+						"source_line": 163,
+						"type_signature": "(db: Db, options?: QuerySchemaSnapshotOptions): Promise<{ tables: Record<string, { columns: Record<string, { data_type: string; udt_name: string; is_nullable: boolean; column_default: string | null; is_identity: boolean; }>; indexes: { ...; }[]; constraints: { ...; }[]; }>; sequences: Record<...>; }>",
+						"return_type": "Promise<{ tables: Record<string, { columns: Record<string, { data_type: string; udt_name: string; is_nullable: boolean; column_default: string | null; is_identity: boolean; }>; indexes: { name: string; definition: string; }[]; constraints: { ...; }[]; }>; sequences: Record<...>; }>",
 						"parameters": [
 							{
 								"name": "db",
@@ -31823,7 +31699,7 @@
 						]
 					}
 				],
-				"module_comment": "PostgreSQL schema introspection — produces a normalized, JSON-serializable\nsnapshot of a database's structure for cross-impl parity checks.\n\nThe snapshot covers:\n\n- `schema_version` rows (`namespace`, `name`, `sequence`) — captures\n  migration set state across impls\n- Tables with columns (data type, nullability, default, identity)\n- Indexes with canonical Postgres-rendered definitions\n- Constraints (CHECK, FOREIGN KEY, PRIMARY KEY, UNIQUE, EXCLUSION)\n- Sequences with data type — distinguishes `int4` (SERIAL) from `int8`\n  (BIGSERIAL)\n\nDesigned for `pg_catalog` introspection — works against both PostgreSQL\nand PGlite. The snapshot is fully deterministic: every collection sorts by\na stable key and excludes time-varying fields like `applied_at`.\n\nPaired with `schema_parity.ts` for comparison + assertion helpers.",
+				"module_comment": "PostgreSQL schema introspection — produces a normalized, JSON-serializable\nsnapshot of a database's structure for cross-impl parity checks.\n\nThe snapshot covers:\n\n- Tables with columns (data type, nullability, default, identity)\n- Indexes with canonical Postgres-rendered definitions\n- Constraints (CHECK, FOREIGN KEY, PRIMARY KEY, UNIQUE, EXCLUSION)\n- Sequences with data type — distinguishes `int4` (SERIAL) from `int8`\n  (BIGSERIAL)\n\nDesigned for `pg_catalog` introspection — works against both PostgreSQL\nand PGlite. The snapshot is fully deterministic: every collection sorts by\na stable key and excludes time-varying fields like `applied_at`.\n\nPaired with `schema_parity.ts` for comparison + assertion helpers.",
 				"dependencies": ["testing/assert_dev_env.ts"],
 				"dependents": ["testing/cross_backend/testing_reset_actions.ts"]
 			},
@@ -31834,24 +31710,24 @@
 						"name": "SchemaDiff",
 						"kind": "type",
 						"doc_comment": "Structured drift entry. `where` is the named source impl ('a' or 'b').",
-						"source_line": 54,
+						"source_line": 53,
 						"type_signature": "SchemaDiff"
 					},
 					{
 						"name": "diff_schema_snapshots",
 						"kind": "function",
-						"doc_comment": "Structural diff between two snapshots — empty array means parity holds.\n\nOrder of diffs is deterministic: schema_version first, then tables in\nsorted order (with column/index/constraint sub-diffs grouped per table),\nthen sequences. Consumers can rely on this for stable diff output.",
-						"source_line": 123,
-						"type_signature": "(a: SchemaSnapshot, b: SchemaSnapshot): SchemaDiff[]",
+						"doc_comment": "Structural diff between two snapshots — empty array means parity holds.\n\nOrder of diffs is deterministic: tables in sorted order (with\ncolumn/index/constraint sub-diffs grouped per table), then sequences.\nConsumers can rely on this for stable diff output.",
+						"source_line": 110,
+						"type_signature": "(a: { tables: Record<string, { columns: Record<string, { data_type: string; udt_name: string; is_nullable: boolean; column_default: string | null; is_identity: boolean; }>; indexes: { name: string; definition: string; }[]; constraints: { ...; }[]; }>; sequences: Record<...>; }, b: { ...; }): SchemaDiff[]",
 						"return_type": "SchemaDiff[]",
 						"parameters": [
 							{
 								"name": "a",
-								"type": "SchemaSnapshot"
+								"type": "{ tables: Record<string, { columns: Record<string, { data_type: string; udt_name: string; is_nullable: boolean; column_default: string | null; is_identity: boolean; }>; indexes: { name: string; definition: string; }[]; constraints: { ...; }[]; }>; sequences: Record<...>; }"
 							},
 							{
 								"name": "b",
-								"type": "SchemaSnapshot"
+								"type": "{ tables: Record<string, { columns: Record<string, { data_type: string; udt_name: string; is_nullable: boolean; column_default: string | null; is_identity: boolean; }>; indexes: { name: string; definition: string; }[]; constraints: { ...; }[]; }>; sequences: Record<...>; }"
 							}
 						]
 					},
@@ -31859,7 +31735,7 @@
 						"name": "SchemaDiffLabels",
 						"kind": "type",
 						"doc_comment": "Labels used in formatted output — defaults to `'a'` and `'b'`.",
-						"source_line": 295,
+						"source_line": 248,
 						"type_signature": "SchemaDiffLabels",
 						"properties": [
 							{
@@ -31880,7 +31756,7 @@
 						"name": "format_schema_diffs",
 						"kind": "function",
 						"doc_comment": "Render a diff list as a human-readable multi-line string. Empty diffs\nproduce an empty string.",
-						"source_line": 304,
+						"source_line": 257,
 						"type_signature": "(diffs: readonly SchemaDiff[], labels?: SchemaDiffLabels): string",
 						"return_type": "string",
 						"parameters": [
@@ -31899,17 +31775,17 @@
 						"name": "assert_schema_snapshots_equal",
 						"kind": "function",
 						"doc_comment": "Throw if the two snapshots disagree. The error message names the impls\n(via `labels`) and lists every diff, so the failure is self-diagnosing.\n\nConsumers wire this after bootstrapping each impl against an isolated DB:\n\n```ts\nawait drop_recreate_db('zzz_test');\nawait spawn_backend(deno_config);\nconst snapshot_deno = await query_schema_snapshot(db, {});\nawait drop_recreate_db('zzz_test');\nawait spawn_backend(rust_config);\nconst snapshot_rust = await query_schema_snapshot(db, {});\nassert_schema_snapshots_equal(snapshot_deno, snapshot_rust, {a: 'deno', b: 'rust'});\n```",
-						"source_line": 387,
-						"type_signature": "(a: SchemaSnapshot, b: SchemaSnapshot, labels?: SchemaDiffLabels): void",
+						"source_line": 330,
+						"type_signature": "(a: { tables: Record<string, { columns: Record<string, { data_type: string; udt_name: string; is_nullable: boolean; column_default: string | null; is_identity: boolean; }>; indexes: { name: string; definition: string; }[]; constraints: { ...; }[]; }>; sequences: Record<...>; }, b: { ...; }, labels?: SchemaDiffLabels): void",
 						"return_type": "void",
 						"parameters": [
 							{
 								"name": "a",
-								"type": "SchemaSnapshot"
+								"type": "{ tables: Record<string, { columns: Record<string, { data_type: string; udt_name: string; is_nullable: boolean; column_default: string | null; is_identity: boolean; }>; indexes: { name: string; definition: string; }[]; constraints: { ...; }[]; }>; sequences: Record<...>; }"
 							},
 							{
 								"name": "b",
-								"type": "SchemaSnapshot"
+								"type": "{ tables: Record<string, { columns: Record<string, { data_type: string; udt_name: string; is_nullable: boolean; column_default: string | null; is_identity: boolean; }>; indexes: { name: string; definition: string; }[]; constraints: { ...; }[]; }>; sequences: Record<...>; }"
 							},
 							{
 								"name": "labels",
@@ -31919,7 +31795,7 @@
 						]
 					}
 				],
-				"module_comment": "Cross-impl schema parity — structural diff + assertion over two\n`SchemaSnapshot`s captured via `query_schema_snapshot`.\n\nTwo live impls (TS fuz_app vs Rust spine) are each other's parity\nreference. After both bootstrap, snapshot each, diff, fail loudly on\ndrift. The diff entries name the specific divergence (column type,\nmissing index, schema_version row absent on one side) so the error\nmessage points at the source.\n\nConsumer pattern (in zzz's integration runner or fuz_app's own\ncross-backend tests):\n\n```ts\nconst snapshot_a = await query_schema_snapshot(db_after_deno_bootstrap);\nconst snapshot_b = await query_schema_snapshot(db_after_rust_bootstrap);\nassert_schema_snapshots_equal(snapshot_a, snapshot_b, {a: 'deno', b: 'rust'});\n```\n\nNon-coverage — drift the gate does **not** detect:\n\n- enum types (`CREATE TYPE ... AS ENUM`)\n- regular triggers (`pg_trigger`); `CONSTRAINT TRIGGER` is captured via\n  pg_constraint, but standalone `CREATE TRIGGER` is not\n- views, materialized views, functions, procedures\n- table storage parameters (fillfactor, tablespace, autovacuum settings)\n- column physical order — the snapshot keys columns by name, so two\n  impls with the same columns in different declaration order compare\n  equal (functional parity is preserved; `SELECT *` ordering is not)\n- `COMMENT ON ...`\n- the `schema_version` table's own structure (only its rows are\n  captured)\n- permissions / `GRANT`s\n\nNone of these are used by the current fuz_app auth schema. Extend\n`query_schema_snapshot` + `SchemaDiff` if a consumer's schema reaches\nfor them; omitting them today keeps the diff surface focused on what\nfuz_app actually emits.",
+				"module_comment": "Cross-impl schema parity — structural diff + assertion over two\n`SchemaSnapshot`s captured via `query_schema_snapshot`.\n\nTwo live impls (TS fuz_app vs Rust spine) are each other's parity\nreference. After both bootstrap, snapshot each, diff, fail loudly on\ndrift. The diff entries name the specific divergence (column type,\nmissing index, constraint absent on one side) so the error\nmessage points at the source.\n\nConsumer pattern (in zzz's integration runner or fuz_app's own\ncross-backend tests):\n\n```ts\nconst snapshot_a = await query_schema_snapshot(db_after_deno_bootstrap);\nconst snapshot_b = await query_schema_snapshot(db_after_rust_bootstrap);\nassert_schema_snapshots_equal(snapshot_a, snapshot_b, {a: 'deno', b: 'rust'});\n```\n\nNon-coverage — drift the gate does **not** detect:\n\n- enum types (`CREATE TYPE ... AS ENUM`)\n- regular triggers (`pg_trigger`); `CONSTRAINT TRIGGER` is captured via\n  pg_constraint, but standalone `CREATE TRIGGER` is not\n- views, materialized views, functions, procedures\n- table storage parameters (fillfactor, tablespace, autovacuum settings)\n- column physical order — the snapshot keys columns by name, so two\n  impls with the same columns in different declaration order compare\n  equal (functional parity is preserved; `SELECT *` ordering is not)\n- `COMMENT ON ...`\n- the `schema_version` migration tracker (always excluded — framework\n  bookkeeping, not domain schema)\n- permissions / `GRANT`s\n\nNone of these are used by the current fuz_app auth schema. Extend\n`query_schema_snapshot` + `SchemaDiff` if a consumer's schema reaches\nfor them; omitting them today keeps the diff surface focused on what\nfuz_app actually emits.",
 				"dependencies": ["testing/assert_dev_env.ts"]
 			},
 			{

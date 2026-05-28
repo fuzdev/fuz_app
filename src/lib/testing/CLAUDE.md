@@ -209,15 +209,15 @@ test-only by construction.
 
 ### `schema_introspect.ts` — `query_schema_snapshot`
 
-- `query_schema_snapshot(db, options?)` — introspects a live DB into a deterministic `SchemaSnapshot` via `pg_catalog` + `information_schema`. Captures tables, columns (with `udt_name` to distinguish int4/int8), indexes (`indexdef`), constraints (`pg_get_constraintdef`), sequences, and `schema_version` rows.
-- `SchemaSnapshot` — fully JSON-serializable; every collection deterministically sorted on capture so structural equality is stable across runs. `applied_at` is excluded from `schema_version` rows so timestamps don't drift the snapshot.
+- `query_schema_snapshot(db, options?)` — introspects a live DB into a deterministic `SchemaSnapshot` via `pg_catalog` + `information_schema`. Captures tables, columns (with `udt_name` to distinguish int4/int8), indexes (`indexdef`), constraints (`pg_get_constraintdef`), and sequences. The `schema_version` migration tracker is always excluded — it's framework bookkeeping, not domain schema, and impls organize migration namespaces differently.
+- `SchemaSnapshot` — the Zod schema is canonical (co-located in `schema_introspect.ts`; the cross-impl `_testing_schema_snapshot` RPC action reuses it as its wire validator, and the type is `z.infer`'d from it). Fully JSON-serializable; every collection deterministically sorted on capture so structural equality is stable across runs.
 
 ### `schema_parity.ts` — `assert_schema_snapshots_equal`
 
 - `diff_schema_snapshots(a, b)` — structured `Array<SchemaDiff>` between two snapshots; empty array means parity holds.
 - `format_schema_diffs(diffs, labels?)` — human-readable multi-line rendering; labels name the impl on each side (e.g., `{a: 'deno', b: 'rust'}`).
 - `assert_schema_snapshots_equal(a, b, labels?)` — throws on drift with a fully-formatted diff message.
-- `SchemaDiff` — tagged-union per drift kind: `schema_version_only_in`, `schema_version_sequence_differs`, `table_only_in`, `column_only_in`, `column_field_differs`, `index_only_in`, `index_definition_differs`, `constraint_only_in`, `constraint_differs`, `sequence_only_in`, `sequence_data_type_differs`.
+- `SchemaDiff` — tagged-union per drift kind: `table_only_in`, `column_only_in`, `column_field_differs`, `index_only_in`, `index_definition_differs`, `constraint_only_in`, `constraint_differs`, `sequence_only_in`, `sequence_data_type_differs`.
 
 **Cross-impl gate pattern** — a dual-impl consumer running two backends
 (a TS Hono server and a Rust spine server) against a shared schema, plus

@@ -7,7 +7,7 @@ import './assert_dev_env.js';
  * Two live impls (TS fuz_app vs Rust spine) are each other's parity
  * reference. After both bootstrap, snapshot each, diff, fail loudly on
  * drift. The diff entries name the specific divergence (column type,
- * missing index, schema_version row absent on one side) so the error
+ * missing index, constraint absent on one side) so the error
  * message points at the source.
  *
  * Consumer pattern (in zzz's integration runner or fuz_app's own
@@ -30,8 +30,8 @@ import './assert_dev_env.js';
  *   impls with the same columns in different declaration order compare
  *   equal (functional parity is preserved; `SELECT *` ordering is not)
  * - `COMMENT ON ...`
- * - the `schema_version` table's own structure (only its rows are
- *   captured)
+ * - the `schema_version` migration tracker (always excluded — framework
+ *   bookkeeping, not domain schema)
  * - permissions / `GRANT`s
  *
  * None of these are used by the current fuz_app auth schema. Extend
@@ -45,25 +45,12 @@ import './assert_dev_env.js';
 import type {
 	ColumnSnapshot,
 	SchemaSnapshot,
-	SchemaVersionRow,
 	SequenceSnapshot,
 	TableSnapshot,
 } from './schema_introspect.js';
 
 /** Structured drift entry. `where` is the named source impl ('a' or 'b'). */
 export type SchemaDiff =
-	| {
-			readonly kind: 'schema_version_only_in';
-			readonly where: 'a' | 'b';
-			readonly row: SchemaVersionRow;
-	  }
-	| {
-			readonly kind: 'schema_version_sequence_differs';
-			readonly namespace: string;
-			readonly name: string;
-			readonly a: number;
-			readonly b: number;
-	  }
 	| {readonly kind: 'table_only_in'; readonly where: 'a' | 'b'; readonly table: string}
 	| {
 			readonly kind: 'column_only_in';
@@ -116,14 +103,12 @@ export type SchemaDiff =
 /**
  * Structural diff between two snapshots — empty array means parity holds.
  *
- * Order of diffs is deterministic: schema_version first, then tables in
- * sorted order (with column/index/constraint sub-diffs grouped per table),
- * then sequences. Consumers can rely on this for stable diff output.
+ * Order of diffs is deterministic: tables in sorted order (with
+ * column/index/constraint sub-diffs grouped per table), then sequences.
+ * Consumers can rely on this for stable diff output.
  */
 export const diff_schema_snapshots = (a: SchemaSnapshot, b: SchemaSnapshot): Array<SchemaDiff> => {
 	const diffs: Array<SchemaDiff> = [];
-
-	diff_schema_version(a.schema_version, b.schema_version, diffs);
 
 	const all_tables = new Set([...Object.keys(a.tables), ...Object.keys(b.tables)]);
 	for (const table of [...all_tables].sort()) {
@@ -156,38 +141,6 @@ export const diff_schema_snapshots = (a: SchemaSnapshot, b: SchemaSnapshot): Arr
 	}
 
 	return diffs;
-};
-
-const diff_schema_version = (
-	a: ReadonlyArray<SchemaVersionRow>,
-	b: ReadonlyArray<SchemaVersionRow>,
-	out: Array<SchemaDiff>,
-): void => {
-	const key = (r: SchemaVersionRow): string => `${r.namespace}\x00${r.name}`;
-	const a_by_key = new Map(a.map((r) => [key(r), r]));
-	const b_by_key = new Map(b.map((r) => [key(r), r]));
-	const keys = new Set([...a_by_key.keys(), ...b_by_key.keys()]);
-	for (const k of [...keys].sort()) {
-		const row_a = a_by_key.get(k);
-		const row_b = b_by_key.get(k);
-		if (!row_a) {
-			out.push({kind: 'schema_version_only_in', where: 'b', row: row_b!});
-			continue;
-		}
-		if (!row_b) {
-			out.push({kind: 'schema_version_only_in', where: 'a', row: row_a});
-			continue;
-		}
-		if (row_a.sequence !== row_b.sequence) {
-			out.push({
-				kind: 'schema_version_sequence_differs',
-				namespace: row_a.namespace,
-				name: row_a.name,
-				a: row_a.sequence,
-				b: row_b.sequence,
-			});
-		}
-	}
 };
 
 const COLUMN_FIELDS = [
@@ -313,16 +266,6 @@ export const format_schema_diffs = (
 	const lines: Array<string> = [];
 	for (const d of diffs) {
 		switch (d.kind) {
-			case 'schema_version_only_in':
-				lines.push(
-					`  schema_version row only in ${where_label(d.where)}: ${d.row.namespace}/${d.row.name} (sequence ${d.row.sequence})`,
-				);
-				break;
-			case 'schema_version_sequence_differs':
-				lines.push(
-					`  schema_version sequence differs for ${d.namespace}/${d.name}: ${label_a}=${d.a}, ${label_b}=${d.b}`,
-				);
-				break;
 			case 'table_only_in':
 				lines.push(`  table ${d.table} only in ${where_label(d.where)}`);
 				break;

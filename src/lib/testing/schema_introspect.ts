@@ -6,8 +6,6 @@ import './assert_dev_env.js';
  *
  * The snapshot covers:
  *
- * - `schema_version` rows (`namespace`, `name`, `sequence`) — captures
- *   migration set state across impls
  * - Tables with columns (data type, nullability, default, identity)
  * - Indexes with canonical Postgres-rendered definitions
  * - Constraints (CHECK, FOREIGN KEY, PRIMARY KEY, UNIQUE, EXCLUSION)
@@ -23,62 +21,63 @@ import './assert_dev_env.js';
  * @module
  */
 
+import {z} from 'zod';
+
 import type {Db} from '../db/db.js';
 
-/** Per-column structural metadata. */
-export interface ColumnSnapshot {
+/**
+ * Per-column structural metadata. The Zod schema is the canonical source
+ * for the column shape — `SchemaSnapshot` reuses it as the cross-impl
+ * `_testing_schema_snapshot` RPC action's wire validator, so the
+ * introspection type and the wire contract can't drift apart.
+ */
+export const ColumnSnapshot = z.object({
 	/** SQL standard type name from `information_schema.columns.data_type`. */
-	readonly data_type: string;
+	data_type: z.string(),
 	/** Postgres-native type name from `information_schema.columns.udt_name`. */
-	readonly udt_name: string;
+	udt_name: z.string(),
 	/** `true` when the column accepts NULL. */
-	readonly is_nullable: boolean;
+	is_nullable: z.boolean(),
 	/** Default-value expression as Postgres reports it, or `null` if none. */
-	readonly column_default: string | null;
+	column_default: z.string().nullable(),
 	/** `true` when the column was declared GENERATED ... AS IDENTITY. */
-	readonly is_identity: boolean;
-}
+	is_identity: z.boolean(),
+});
+export type ColumnSnapshot = z.infer<typeof ColumnSnapshot>;
 
 /** Per-table structural metadata. */
-export interface TableSnapshot {
+export const TableSnapshot = z.object({
 	/** Column metadata keyed by column name (sorted on serialization). */
-	readonly columns: Record<string, ColumnSnapshot>;
+	columns: z.record(z.string(), ColumnSnapshot),
 	/** Index definitions as Postgres renders them via `pg_indexes.indexdef`. */
-	readonly indexes: ReadonlyArray<{readonly name: string; readonly definition: string}>;
+	indexes: z.array(z.object({name: z.string(), definition: z.string()})),
 	/** Constraint definitions as Postgres renders them via `pg_get_constraintdef`. */
-	readonly constraints: ReadonlyArray<{
-		readonly name: string;
-		readonly type: string;
-		readonly definition: string;
-	}>;
-}
+	constraints: z.array(z.object({name: z.string(), type: z.string(), definition: z.string()})),
+});
+export type TableSnapshot = z.infer<typeof TableSnapshot>;
 
 /** Sequence metadata — `data_type` is `bigint` (BIGSERIAL) or `integer` (SERIAL). */
-export interface SequenceSnapshot {
-	readonly data_type: string;
-}
-
-/** One row in the `schema_version` migration tracker. */
-export interface SchemaVersionRow {
-	readonly namespace: string;
-	readonly name: string;
-	readonly sequence: number;
-}
+export const SequenceSnapshot = z.object({
+	data_type: z.string(),
+});
+export type SequenceSnapshot = z.infer<typeof SequenceSnapshot>;
 
 /**
- * Normalized database schema snapshot for parity comparison.
+ * Normalized database schema snapshot for parity comparison — the single
+ * source of truth for the snapshot shape across the introspection query
+ * (`query_schema_snapshot`), the diff comparator (`schema_parity.ts`), and
+ * the cross-impl RPC action's wire validator (`testing_reset_actions.ts`).
  *
  * All fields are deterministically ordered on capture so structural equality
  * via `JSON.stringify` or per-key comparison yields stable results.
  */
-export interface SchemaSnapshot {
-	/** Migration tracker rows, sorted by `(namespace, sequence)`. */
-	readonly schema_version: ReadonlyArray<SchemaVersionRow>;
+export const SchemaSnapshot = z.object({
 	/** Tables keyed by name. */
-	readonly tables: Record<string, TableSnapshot>;
+	tables: z.record(z.string(), TableSnapshot),
 	/** Sequences keyed by name. */
-	readonly sequences: Record<string, SequenceSnapshot>;
-}
+	sequences: z.record(z.string(), SequenceSnapshot),
+});
+export type SchemaSnapshot = z.infer<typeof SchemaSnapshot>;
 
 /** Filter options for `query_schema_snapshot`. */
 export interface QuerySchemaSnapshotOptions {
@@ -88,8 +87,10 @@ export interface QuerySchemaSnapshotOptions {
 	 */
 	readonly schema?: string;
 	/**
-	 * Tables to exclude from the snapshot. The `schema_version` table itself
-	 * is always excluded (its content is captured separately).
+	 * Tables to exclude from the snapshot. The `schema_version` migration
+	 * tracker is always excluded — it's framework bookkeeping created by the
+	 * migration runner, identical across impls, and not part of any
+	 * consumer's domain schema.
 	 */
 	readonly exclude_tables?: ReadonlyArray<string>;
 }
@@ -153,15 +154,11 @@ const contype_to_kind = (contype: string): string => {
  * Introspect a live database into a deterministic `SchemaSnapshot`.
  *
  * Reads `information_schema` and `pg_catalog` to capture tables, columns,
- * indexes, constraints, sequences, and `schema_version` migration tracker
- * rows. The `applied_at` timestamp is deliberately excluded — only the set
- * of applied migrations matters for parity.
+ * indexes, constraints, and sequences.
  *
- * The `schema_version` table itself never appears in the `tables` field;
- * its structure is identical across consumers and would only add noise.
- *
- * @throws Error when the `schema_version` table is missing — callers must
- *   ensure migrations have run before introspecting.
+ * The `schema_version` migration tracker never appears in the `tables`
+ * field — it's framework bookkeeping created by the migration runner,
+ * identical across consumers, and would only add noise.
  */
 export const query_schema_snapshot = async (
 	db: Db,
@@ -170,19 +167,6 @@ export const query_schema_snapshot = async (
 	const schema = options.schema ?? 'public';
 	const exclude_tables = new Set(options.exclude_tables ?? []);
 	exclude_tables.add('schema_version');
-
-	// schema_version rows — the migration tracker. Exclude `applied_at`
-	// because timestamps differ across bootstraps even when the migration
-	// set is identical.
-	const schema_version_rows = await db.query<{
-		namespace: string;
-		name: string;
-		sequence: number;
-	}>(
-		`SELECT namespace, name, sequence
-		 FROM schema_version
-		 ORDER BY namespace ASC, sequence ASC`,
-	);
 
 	// All tables in the target schema, minus the excludes.
 	const table_rows = await db.query<{table_name: string}>(
@@ -279,7 +263,6 @@ export const query_schema_snapshot = async (
 	}
 
 	return {
-		schema_version: schema_version_rows,
 		tables: sort_keys(tables),
 		sequences: sort_keys(sequences),
 	};
