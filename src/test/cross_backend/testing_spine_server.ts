@@ -44,6 +44,8 @@ import {create_cell_grant_actions} from '../../lib/auth/cell_grant_actions.js';
 import {create_cell_field_actions} from '../../lib/auth/cell_field_actions.js';
 import {create_cell_item_actions} from '../../lib/auth/cell_item_actions.js';
 import {create_cell_audit_actions} from '../../lib/auth/cell_audit_actions.js';
+import {create_actor_lookup_actions} from '../../lib/auth/actor_lookup_actions.js';
+import {create_actor_search_actions} from '../../lib/auth/actor_search_actions.js';
 import {cell_audit_events} from '../../lib/auth/cell_audit_events.js';
 import {create_audit_emitter} from '../../lib/auth/audit_emitter.js';
 import {create_audit_log_config} from '../../lib/auth/audit_log_schema.js';
@@ -208,6 +210,11 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 					...create_cell_field_actions(ctx.deps),
 					...create_cell_item_actions(ctx.deps),
 					...create_cell_audit_actions(),
+					// `actor_lookup` / `actor_search` — opt-in (not in the standard
+					// bundle), so live-mounted here but off the declared surface,
+					// exercised by the dedicated actor-lookup / actor-search cross suites.
+					...create_actor_lookup_actions(ctx.deps),
+					...create_actor_search_actions(ctx.deps),
 				],
 			})),
 		env_schema: BaseServerEnv,

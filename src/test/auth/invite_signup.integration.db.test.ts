@@ -72,7 +72,6 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 			session_options,
 			ip_rate_limiter: null,
 			signup_account_rate_limiter: null,
-			app_settings: ctx.app_settings,
 			// disable the denial-time floor so the failure-shape tests don't
 			// each wait ~250ms; the floor is exercised separately in its own
 			// describe block
@@ -81,10 +80,7 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	]),
 	...create_rpc_endpoint({
 		path: RPC_PATH,
-		actions: [
-			...create_admin_actions(ctx.deps, {app_settings: ctx.app_settings}),
-			...create_account_actions(ctx.deps),
-		],
+		actions: [...create_admin_actions(ctx.deps), ...create_account_actions(ctx.deps)],
 		log: ctx.deps.log,
 	}),
 ];
@@ -1249,17 +1245,13 @@ describe_db('invite + signup integration', (get_db) => {
 					session_options,
 					ip_rate_limiter: null,
 					signup_account_rate_limiter: null,
-					app_settings: ctx.app_settings,
 					signup_fail_floor_ms: FLOOR_MS,
 					signup_fail_jitter_ms: 0, // determinism for the assertion
 				}),
 			]),
 			...create_rpc_endpoint({
 				path: RPC_PATH,
-				actions: [
-					...create_admin_actions(ctx.deps, {app_settings: ctx.app_settings}),
-					...create_account_actions(ctx.deps),
-				],
+				actions: [...create_admin_actions(ctx.deps), ...create_account_actions(ctx.deps)],
 				log: ctx.deps.log,
 			}),
 		];

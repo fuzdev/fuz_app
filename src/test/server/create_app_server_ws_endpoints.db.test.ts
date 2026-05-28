@@ -173,7 +173,6 @@ describe('create_app_server.ws_endpoints', () => {
 				assert.isDefined(ctx.deps.db);
 				assert.isDefined(ctx.action_ip_rate_limiter);
 				assert.isDefined(ctx.action_account_rate_limiter);
-				assert.isDefined(ctx.app_settings);
 				return [build_minimal_spec()];
 			},
 		});
@@ -416,9 +415,7 @@ describe('create_app_server.ws_endpoints', () => {
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
 			ws_endpoints: (ctx) => {
-				const standard: ReadonlyArray<Action> = create_standard_rpc_actions(ctx.deps, {
-					app_settings: ctx.app_settings,
-				});
+				const standard: ReadonlyArray<Action> = create_standard_rpc_actions(ctx.deps);
 				return [
 					{
 						path: '/api/ws',

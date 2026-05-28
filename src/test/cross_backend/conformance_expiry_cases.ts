@@ -1,5 +1,5 @@
 /**
- * Phase 2 expired-credential conformance cases (🔐 G3).
+ * Expired-credential conformance cases.
  *
  * Promotes the expired-session rejection from in-process-only coverage
  * (which forged a cookie with a backdated *payload* and so only ever

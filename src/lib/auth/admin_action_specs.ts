@@ -592,9 +592,8 @@ export const app_settings_update_action_spec = {
 /**
  * All admin action specs — a codegen-ready registry. Consumers spread this
  * into their own action-spec array to include admin methods in a typed
- * client surface. Always includes the two app-settings specs; the runtime
- * factory only wires their handlers when `AdminActionOptions.app_settings`
- * is provided.
+ * client surface. Includes the two app-settings specs, whose handlers the
+ * runtime factory always wires.
  */
 export const all_admin_action_specs: Array<RequestResponseActionSpec> = [
 	admin_account_list_action_spec,

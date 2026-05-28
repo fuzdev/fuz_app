@@ -135,9 +135,9 @@ deterministic double-undelete → not_found, the keeper-guard
 set), gated on `capabilities.account_lifecycle`; off the declared surface
 like cells), and `conformance.cross.test.ts` (the declarative
 `describe_conformance_table_tests` runner over shared
-`conformance_proof_cases.ts` + the Phase 1 security slate
+`conformance_proof_cases.ts` + the security slate
 `conformance_security_cases.ts` — credential ceiling, privilege gates, IDOR
-masks, login/signup enumeration — plus the Phase 2 expiry slate
+masks, login/signup enumeration — plus the expiry slate
 `conformance_expiry_cases.ts` (the `expired_session` principal → expired
 server-side session → 401 on a read + a mutation route); the in-process leg is
 `conformance.db.test.ts`, same cases both transports), and

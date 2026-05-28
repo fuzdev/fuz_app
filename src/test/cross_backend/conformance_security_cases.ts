@@ -1,11 +1,11 @@
 /**
- * Phase 1 security-negative conformance cases (🔐 sign-off slate).
+ * Security-negative conformance cases.
  *
  * The opinionated security matrix on top of the spec-derived
  * auto-enumeration — the refusals / masks / equivalences a wire-shape
  * check passes green on even when behavior is wrong. Each row runs both
  * legs (in-process `gro test` + cross-process gate) against each impl's
- * **real** auth resolution, so the credential ceiling (G1) is no longer
+ * **real** auth resolution, so the credential ceiling is no longer
  * validated only against the `TEST_CONTEXT_PRESET_KEY` stub.
  *
  * Every `note` cites a **public** `security.md` property (the table ships
@@ -37,7 +37,7 @@ const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 /** A password that is never the seeded one, so login always fails on credentials. */
 const WRONG_PASSWORD = 'wrong-password-not-the-real-one';
 
-// --- Batch 1: G1 credential-type ceiling ------------------------------
+// --- Batch 1: credential-type ceiling ------------------------------
 // The one load-bearing invariant validated ONLY against the stub today.
 // The keeper credential ceiling: a session / api_token credential, even
 // with the keeper role, must NOT reach a keeper-gated route — the
@@ -198,8 +198,9 @@ const idor_and_enumeration_cases: ReadonlyArray<ConformanceCase> = [
 ];
 
 /**
- * The full Phase 1 declarative security slate, ordered by blast radius
- * (G1 ceiling → privilege gates → IDOR masks + enumeration equivalence).
+ * The full declarative security slate, ordered by blast radius
+ * (credential ceiling → privilege gates → IDOR masks + enumeration
+ * equivalence).
  */
 export const conformance_security_cases: ReadonlyArray<ConformanceCase> = [
 	...credential_ceiling_cases,

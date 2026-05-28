@@ -1122,7 +1122,7 @@ in-process legs (plain `gro test`) are `src/test/auth/cell_crud_parity.db.test.t
 ### Origin verification parity — `cross_backend/origin.ts`
 
 `describe_origin_cross_tests({setup_test, capabilities, rpc_path?})` — the
-imperative G2 suite: disallowed `Origin` → 403 `forbidden_origin` (refused
+imperative Origin-verification suite: disallowed `Origin` → 403 `forbidden_origin` (refused
 before dispatch), absent `Origin` → request passes (non-browser direct access).
 Imperative (not a conformance-table row) because origin rejection is
 middleware-level flat-REST, not the JSON-RPC envelope the table runner expects,

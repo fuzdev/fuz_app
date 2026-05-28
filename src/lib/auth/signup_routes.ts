@@ -14,6 +14,7 @@ import type {Account, Actor} from './account_schema.js';
 
 import {create_session_and_set_cookie} from './session_middleware.js';
 import {query_create_account_with_actor} from './account_queries.js';
+import {query_app_settings_load} from './app_settings_queries.js';
 import {
 	query_invite_find_unclaimed_match_for_update,
 	query_invite_claim_unscoped,
@@ -31,7 +32,6 @@ import {
 	ERROR_INVALID_JSON_BODY,
 	ERROR_INVALID_REQUEST_BODY,
 } from '../http/error_schemas.js';
-import type {AppSettings} from './app_settings_schema.js';
 import {is_pg_unique_violation} from '../db/pg_error.js';
 import type {AuthSessionRouteOptions} from './account_routes.js';
 
@@ -70,8 +70,6 @@ const signup_fail_delay = (floor_ms: number, jitter_ms: number): Promise<void> =
 export interface SignupRouteOptions extends AuthSessionRouteOptions {
 	/** Rate limiter for signup attempts, keyed by submitted username. Pass `null` to disable. */
 	signup_account_rate_limiter: RateLimiter | null;
-	/** Mutable ref to app settings — when `open_signup` is true, invite check is skipped. */
-	app_settings: AppSettings;
 	/**
 	 * Minimum wall-clock time (ms) for signup denial responses (403 / 409).
 	 * Set to `0` or a negative number to disable (e.g., in tests). Default
@@ -126,7 +124,6 @@ export const create_signup_route_specs = (
 		session_options,
 		ip_rate_limiter,
 		signup_account_rate_limiter,
-		app_settings,
 		signup_fail_floor_ms = DEFAULT_SIGNUP_FAIL_FLOOR_MS,
 		signup_fail_jitter_ms = DEFAULT_SIGNUP_FAIL_JITTER_MS,
 	} = options;
@@ -170,6 +167,12 @@ export const create_signup_route_specs = (
 					}
 				}
 
+				// Load the open-signup toggle fresh from the DB on every
+				// request — the authoritative source, so multiple server
+				// processes never serve a stale in-memory value. Bounded by
+				// the per-IP + per-account rate limiters above.
+				const {open_signup} = await query_app_settings_load(route);
+
 				// Start the denial-time floor concurrently with failure work.
 				// Observed response time for 403 / 409 is `max(work, delay)`
 				// so the cheap `no_match` path (no Argon2, find returns
@@ -202,7 +205,7 @@ export const create_signup_route_specs = (
 							reason,
 							...(invite && {invite_id: invite.id}),
 							...(email != null && {email}),
-							...(app_settings.open_signup && {open_signup: true}),
+							...(open_signup && {open_signup: true}),
 						},
 					});
 				};
@@ -219,7 +222,7 @@ export const create_signup_route_specs = (
 						// loser's `find_for_update` returns no row (winner
 						// flipped `claimed_at`) and falls through to
 						// `ERROR_NO_MATCHING_INVITE`. No race window.
-						if (!app_settings.open_signup) {
+						if (!open_signup) {
 							invite = await query_invite_find_unclaimed_match_for_update(
 								tx_deps,
 								email ?? null,

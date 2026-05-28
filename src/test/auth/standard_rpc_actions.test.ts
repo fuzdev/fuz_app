@@ -7,8 +7,7 @@
  * `role_grant_offer_actions.*`, and `account_actions.*` suites). This file
  * verifies the combiner emits every method each side exposes without
  * collisions, threads the shared `roles` option to both admin and
- * role-grant-offer, and gates the two app-settings methods on the
- * `app_settings` option.
+ * role-grant-offer, and always includes the two app-settings methods.
  *
  * @module
  */
@@ -25,7 +24,6 @@ import {
 	role_grant_offer_create_action_spec,
 } from '$lib/auth/role_grant_offer_action_specs.js';
 import {all_account_action_specs} from '$lib/auth/account_action_specs.js';
-import type {AppSettings} from '$lib/auth/app_settings_schema.js';
 import {create_stub_db, create_test_audit_emitter} from '$lib/testing/stubs.js';
 import {create_test_context} from '$lib/testing/entities.js';
 import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
@@ -34,12 +32,6 @@ import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 const log = new Logger('test', {level: 'off'});
 const deps = {log, audit: create_test_audit_emitter()};
-
-const make_app_settings = (): AppSettings => ({
-	open_signup: false,
-	updated_at: null,
-	updated_by: null,
-});
 
 /** Minimal ActionContext for invoking handlers directly. */
 const make_action_ctx = (auth_ctx: ReturnType<typeof create_test_context>): ActionContext => {
@@ -60,9 +52,7 @@ const make_action_ctx = (auth_ctx: ReturnType<typeof create_test_context>): Acti
 
 describe('create_standard_rpc_actions', () => {
 	test('emits every admin + role-grant-offer + account method without duplicates', () => {
-		const actions = create_standard_rpc_actions(deps, {
-			app_settings: make_app_settings(),
-		});
+		const actions = create_standard_rpc_actions(deps);
 		const methods = actions.map((a) => a.spec.method);
 		// every admin method present
 		for (const spec of all_admin_action_specs) {
@@ -81,26 +71,15 @@ describe('create_standard_rpc_actions', () => {
 		assert.strictEqual(methods.length, new Set(methods).size, 'duplicate methods emitted');
 	});
 
-	test('omitting app_settings drops app-settings rpc_actions from the handler list', () => {
-		// Distinguish two lists: `all_admin_action_specs` (the codegen
-		// registry) ALWAYS contains `app_settings_get` / `_update`. The
-		// runtime `create_admin_actions` rpc_action list only emits
-		// handlers for them when `options.app_settings` is supplied, so
-		// RPC dispatch returns method_not_found otherwise. This helper
-		// preserves that behavior — the two methods are absent from the
-		// combined handler list when `app_settings` is omitted.
-		const with_settings = create_standard_rpc_actions(deps, {
-			app_settings: make_app_settings(),
-		});
-		const without_settings = create_standard_rpc_actions(deps);
-
-		const methods_with = new Set(with_settings.map((a) => a.spec.method));
-		const methods_without = new Set(without_settings.map((a) => a.spec.method));
-
-		assert.isTrue(methods_with.has('app_settings_get'));
-		assert.isTrue(methods_with.has('app_settings_update'));
-		assert.isFalse(methods_without.has('app_settings_get'));
-		assert.isFalse(methods_without.has('app_settings_update'));
+	test('app-settings rpc_actions are always present in the handler list', () => {
+		// The two app-settings methods are unconditionally wired: the
+		// `app_settings` row is part of the built-in auth schema, so the
+		// update handler writes it and signup reads the toggle fresh from
+		// the DB. No option gates them — RPC dispatch never returns
+		// method_not_found for these.
+		const methods = new Set(create_standard_rpc_actions(deps).map((a) => a.spec.method));
+		assert.isTrue(methods.has('app_settings_get'));
+		assert.isTrue(methods.has('app_settings_update'));
 	});
 
 	test('methods land in admin → role-grant-offer → account order', () => {
@@ -108,9 +87,7 @@ describe('create_standard_rpc_actions', () => {
 		// in a fixed order. Consumers don't depend on ordering for dispatch,
 		// but surface snapshots and codegen output can drift silently if a
 		// future refactor reorders the spreads.
-		const actions = create_standard_rpc_actions(deps, {
-			app_settings: make_app_settings(),
-		});
+		const actions = create_standard_rpc_actions(deps);
 		const methods = actions.map((a) => a.spec.method);
 		const first_admin = methods.indexOf(all_admin_action_specs[0]!.method);
 		const first_offer = methods.indexOf(all_role_grant_offer_action_specs[0]!.method);
@@ -123,17 +100,12 @@ describe('create_standard_rpc_actions', () => {
 	});
 
 	test('admin + role-grant-offer + account action counts add up', () => {
-		// admin factory emits N actions (14 with app_settings, 12 without —
-		// includes account_delete + account_purge + account_undelete).
-		// role-grant-offer factory emits 7. account factory emits 7.
+		// admin factory emits 14 actions (includes account_delete +
+		// account_purge + account_undelete + the two always-on app-settings
+		// methods). role-grant-offer factory emits 7. account factory emits 7.
 		// Combined helper should equal the sum.
-		const actions_with = create_standard_rpc_actions(deps, {
-			app_settings: make_app_settings(),
-		});
-		assert.strictEqual(actions_with.length, 14 + 7 + 7);
-
-		const actions_without = create_standard_rpc_actions(deps);
-		assert.strictEqual(actions_without.length, 12 + 7 + 7);
+		const actions = create_standard_rpc_actions(deps);
+		assert.strictEqual(actions.length, 14 + 7 + 7);
 	});
 
 	test('authorize option reaches the role_grant_offer_create handler', async () => {
@@ -143,7 +115,6 @@ describe('create_standard_rpc_actions', () => {
 		// path, so a stub db is sufficient.
 		const calls: Array<{actor_id: string; role: string; scope_id: string | null}> = [];
 		const actions = create_standard_rpc_actions(deps, {
-			app_settings: make_app_settings(),
 			authorize: async (auth, input) => {
 				calls.push({actor_id: auth.actor!.id, role: input.role, scope_id: input.scope_id});
 				return false;

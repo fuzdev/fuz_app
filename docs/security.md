@@ -354,6 +354,24 @@ to a genuine miss (`auth/cell_actions.ts`). A caller therefore cannot
 enumerate private cells (or offers, or another actor's grants) by id —
 found-and-unauthorized and not-found are wire-indistinguishable.
 
+**Actor-search scope gate**: `actor_search` (the prefix-search picker over
+`actor.name`) is account-grain authenticated, but an **unbounded global
+search is admin-only**. A non-admin caller must pass at least one `scope_id`;
+results are then filtered to actors holding an *active* role_grant on one of
+those scopes (active = `revoked_at IS NULL AND (expires_at IS NULL OR
+expires_at > NOW())`, so a revoked or expired membership no longer confers
+search visibility). Omitting `scope_ids` as a non-admin is rejected with
+`invalid_params` / `actor_search_scope_required` — not an empty result, so the
+gate is a hard boundary rather than a silent filter. The admin check is
+account-grain (any actor on the caller's account holding a global `admin`
+role_grant). The gate keys on `scope_ids` *presence*, not authority over the
+scope: a caller who already knows a `scope_id` can scope a search to it, but
+the cap (`ACTOR_SEARCH_LIMIT_MAX`) plus the per-account rate limit bound the
+batched-enumeration surface either way. The sibling `actor_lookup` (batched
+id → label) needs no scope gate — it resolves only ids the caller already
+holds, and its wire rows omit `account_id` / `email` / timestamps / role
+state (control-plane and timing-oracle avoidance).
+
 **Duplicate prevention**: A partial unique index on
 `(actor_id, role, COALESCE(scope_id, sentinel))` prevents duplicate active
 role_grants per resource scope (global role_grants collapse via the sentinel uuid).
@@ -467,10 +485,14 @@ cannot balloon a payload.
 ## Signup
 
 Account creation is invite-gated by default. When `open_signup` is enabled
-(via `app_settings`), anyone can create an account without an invite. The
-toggle is admin-only (`app_settings_update` RPC action) and audit-logged as
-`app_settings_update`. Existing per-IP and per-account rate limiters apply
-to open signup — no additional rate limiting configuration is needed.
+(via `app_settings`), anyone can create an account without an invite. App
+settings are admin-only: both reading (`app_settings_get`) and changing the
+toggle (`app_settings_update`) require the admin role, and a change is
+audit-logged as `app_settings_update`. The signup handler reads the toggle
+fresh from the database on every request, so the value stays consistent
+across multiple server processes. Existing per-IP and per-account rate
+limiters apply to open signup — no additional rate limiting configuration is
+needed.
 
 When invite-gated, admins create invites; signups are matched
 against unclaimed invites before account creation proceeds. Signup conflicts

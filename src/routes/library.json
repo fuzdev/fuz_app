@@ -6183,7 +6183,8 @@
 				"dependents": [
 					"auth/actor_lookup_actions.ts",
 					"auth/actor_search_action_specs.ts",
-					"auth/all_action_spec_registries.ts"
+					"auth/all_action_spec_registries.ts",
+					"testing/cross_backend/actor_lookup.ts"
 				]
 			},
 			{
@@ -6325,7 +6326,11 @@
 				],
 				"module_comment": "`actor_search` RPC spec — authenticated case-insensitive prefix search\nover `actor.name`, returning the same `{id, username, display_name?}`\nwire shape as `actor_lookup`.\n\nPowers person-target pickers — visiones' `CellGrantsEditor.svelte`\nteacher-picks-student flow replaces the deferred `actor_by_name` arm of\n`cell_grant_create` with a debounced search against this method. Sibling\nto `actor_lookup`: that resolves a known batch of ids → labels; this\nresolves a partial name → candidate actors.\n\n## Auth + rate-limit posture\n\n`{account: 'required', actor: 'none'}` + `rate_limit: 'account'`. Same\nshape as `actor_lookup`: only that the caller is signed in matters, not\nwhich actor is calling. The auth gate, the per-account rate limit\n(default 1200/15min), and the `ACTOR_SEARCH_LIMIT_MAX` per-call cap\nbound the enumeration surface this method would otherwise present.\n\nThe handler additionally requires the caller to be admin when\n`scope_ids` is empty (the unbounded global-search arm). Non-admin\ncallers must always pass at least one scope_id — the SQL filters\nactors to those holding a role_grant on one of the supplied scopes, so\na non-admin caller is restricted to actors they share a scope with.\nThe admin check is account-grain (any actor on the caller's account\nholds a global `admin` role_grant), matching the `actor: 'none'` posture.\n\n## Caller-passes-scope_ids design\n\n`scope_ids` is trusted as a filter, not as an authority claim — the\nSQL filters to actors with role_grants on those scopes regardless of\nwhether the caller has authority over them. Consumers are responsible\nfor pre-filtering `scope_ids` against their own authority before\ncalling. Visiones passes the set of classrooms the teacher teaches,\nsourced client-side from the teacher's role_grant list; the teacher\npredicate stays in the visiones layer rather than baked into fuz_app.\n\nCrucially, this does **not** widen the scope-existence oracle: an\nattacker passing a random scope_id cannot learn \"this scope has\nmembers matching X\" because the join filters to actors holding a\nrole_grant on the scope, and the SQL surfaces neither \"did the scope\nexist\" nor \"did the scope have non-matching members\" — only the\nmatching subset is returned.\n\n## Wire shape — info-leak audit\n\nOutput `{actors: [{id, username, display_name?}]}` is identical to\n`actor_lookup`'s — see `auth/actor_lookup_action_specs.ts` for the full\nfield-by-field audit. Same omissions (`account_id`, email,\ntimestamps, role / role_grants / session state), same `display_name`\nomitted-not-null contract, same response-order-unspecified rule.\n\nAdditional `actor_search`-specific posture:\n\n- Prefix match (`LOWER(name) LIKE LOWER(query) || '%'`), not full\n  `%query%`. Full-LIKE would let a single call enumerate one\n  alphabetical bucket spread across many starting letters, which\n  defeats the per-call cap as an enumeration bound.\n- Hard-deleted actors silently drop (cascade through `actor.account_id`\n  FK) — no tombstone oracle, same posture as `actor_lookup`.\n- Empty result set on no-match — fail-soft like `cell_list`. No\n  \"no actor matches\" error message that would leak an existence\n  boundary on the search-term axis.\n\n## Why not extend `actor_lookup`?\n\nSplitting the methods keeps the wire contracts independent: `actor_lookup`'s\ninput is `{ids}`, `actor_search`'s is `{query}` + optional filters.\nBoth surface the same `ActorLookupEntryJson` row shape (re-used here),\nso the labels arc on the consumer side stays uniform.",
 				"dependencies": ["auth/actor_lookup_action_specs.ts"],
-				"dependents": ["auth/actor_search_actions.ts", "auth/all_action_spec_registries.ts"]
+				"dependents": [
+					"auth/actor_search_actions.ts",
+					"auth/all_action_spec_registries.ts",
+					"testing/cross_backend/actor_search.ts"
+				]
 			},
 			{
 				"path": "auth/actor_search_actions.ts",
@@ -6749,8 +6754,8 @@
 					{
 						"name": "all_admin_action_specs",
 						"kind": "variable",
-						"doc_comment": "All admin action specs — a codegen-ready registry. Consumers spread this\ninto their own action-spec array to include admin methods in a typed\nclient surface. Always includes the two app-settings specs; the runtime\nfactory only wires their handlers when `AdminActionOptions.app_settings`\nis provided.",
-						"source_line": 599,
+						"doc_comment": "All admin action specs — a codegen-ready registry. Consumers spread this\ninto their own action-spec array to include admin methods in a typed\nclient surface. Includes the two app-settings specs, whose handlers the\nruntime factory always wires.",
+						"source_line": 598,
 						"type_signature": "{ method: string; initiator: \"frontend\" | \"backend\" | \"both\"; side_effects: boolean; input: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; output: ZodType<unknown, unknown, $ZodTypeInternals<unknown, unknown>>; ... 6 more ...; rate_limit?: \"both\" | ... 2 more ... | undefined; }[]"
 					}
 				],
@@ -6773,6 +6778,7 @@
 					"testing/admin_integration.ts",
 					"testing/audit_completeness.ts",
 					"testing/cross_backend/account_lifecycle.ts",
+					"testing/cross_backend/app_settings.ts",
 					"testing/cross_backend/sse_round_trip.ts",
 					"testing/integration.ts"
 				]
@@ -6784,7 +6790,7 @@
 						"name": "AdminActionOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_admin_actions`.",
-						"source_line": 140,
+						"source_line": 141,
 						"type_signature": "AdminActionOptions",
 						"properties": [
 							{
@@ -6792,12 +6798,6 @@
 								"kind": "variable",
 								"type_signature": "RoleSchemaResult",
 								"doc_comment": "Role schema result from `create_role_schema()`. Defaults to builtin\nroles only. Used to derive `grantable_roles` (the subset whose\n`RoleSpec.grant_paths` includes `'admin'`) returned by\n`admin_account_list`."
-							},
-							{
-								"name": "app_settings",
-								"kind": "variable",
-								"type_signature": "AppSettings",
-								"doc_comment": "Mutable in-memory app settings ref — typically `ctx.app_settings` from\n`AppServerContext`. When provided, the factory wires the\n`app_settings_get` and `app_settings_update` handlers; the update\nhandler mutates this ref so signup middleware reads the new value\nwithout a DB round trip. When omitted, those two methods have no\nhandler and RPC dispatch returns `method_not_found`."
 							},
 							{
 								"name": "connection_closer",
@@ -6811,7 +6811,7 @@
 						"name": "create_admin_actions",
 						"kind": "function",
 						"doc_comment": "Create the admin-only RPC actions.",
-						"source_line": 180,
+						"source_line": 171,
 						"type_signature": "(deps: Pick<RouteFactoryDeps, \"log\" | \"audit\">, options?: AdminActionOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"return_description": "the `RpcAction` array to spread into a `create_rpc_endpoint` call",
@@ -6830,7 +6830,7 @@
 						]
 					}
 				],
-				"module_comment": "Admin RPC action handlers — admin-only operations exposed on the JSON-RPC surface.\n\nFour action categories:\n\n- Account management: `admin_account_list`, `admin_session_list`,\n  `admin_session_revoke_all`, `admin_token_revoke_all`.\n- Audit log reads: `audit_log_list`, `audit_log_role_grant_history`.\n- Invite CRUD: `invite_create`, `invite_list`, `invite_delete`.\n- App settings: `app_settings_get`, `app_settings_update` (registered only\n  when `AdminActionOptions.app_settings` is provided — the mutable ref is\n  owned by the server context and shared with signup middleware).\n\nThe action specs themselves live in `auth/admin_action_specs.ts`. Mutations\nemit matching audit events via `deps.audit.emit`.\n\nAuthorization is declared at the spec level (`auth: {role: 'admin'}`) so\nthe RPC dispatcher enforces it before the handler runs and the generated\nsurface accurately reports the requirement. `role_grant_revoke` in\n`auth/role_grant_offer_actions.ts` uses the same spec-level pattern even though its\nsibling methods are authenticated-but-not-admin — the dispatcher checks\nauth per-spec, so mixed-auth endpoints compose cleanly. Handler-level\ngates are reserved for input-dependent elevation (e.g.\n`role_grant_offer_list`/`_history` elevate to admin only when the caller\npasses an `account_id` other than their own — an input-dependent check\nthe spec can't express).",
+				"module_comment": "Admin RPC action handlers — admin-only operations exposed on the JSON-RPC surface.\n\nFour action categories:\n\n- Account management: `admin_account_list`, `admin_session_list`,\n  `admin_session_revoke_all`, `admin_token_revoke_all`.\n- Audit log reads: `audit_log_list`, `audit_log_role_grant_history`.\n- Invite CRUD: `invite_create`, `invite_list`, `invite_delete`.\n- App settings: `app_settings_get`, `app_settings_update`. The update\n  handler writes the `app_settings` row in the database; signup reads the\n  `open_signup` toggle fresh from that row on every request, so no\n  in-memory state is shared between this surface and signup.\n\nThe action specs themselves live in `auth/admin_action_specs.ts`. Mutations\nemit matching audit events via `deps.audit.emit`.\n\nAuthorization is declared at the spec level (`auth: {role: 'admin'}`) so\nthe RPC dispatcher enforces it before the handler runs and the generated\nsurface accurately reports the requirement. `role_grant_revoke` in\n`auth/role_grant_offer_actions.ts` uses the same spec-level pattern even though its\nsibling methods are authenticated-but-not-admin — the dispatcher checks\nauth per-spec, so mixed-auth endpoints compose cleanly. Handler-level\ngates are reserved for input-dependent elevation (e.g.\n`role_grant_offer_list`/`_history` elevate to admin only when the caller\npasses an `account_id` other than their own — an input-dependent check\nthe spec can't express).",
 				"dependencies": [
 					"actions/action_rpc.ts",
 					"auth/account_queries.ts",
@@ -7229,7 +7229,7 @@
 					}
 				],
 				"module_comment": "App settings database queries.\n\nSingle-row table queries for global app configuration.",
-				"dependents": ["auth/admin_actions.ts", "server/app_server.ts"]
+				"dependents": ["auth/admin_actions.ts", "auth/signup_routes.ts"]
 			},
 			{
 				"path": "auth/app_settings_schema.ts",
@@ -14231,12 +14231,6 @@
 								"doc_comment": "Rate limiter for signup attempts, keyed by submitted username. Pass `null` to disable."
 							},
 							{
-								"name": "app_settings",
-								"kind": "variable",
-								"type_signature": "AppSettings",
-								"doc_comment": "Mutable ref to app settings — when `open_signup` is true, invite check is skipped."
-							},
-							{
 								"name": "signup_fail_floor_ms",
 								"kind": "variable",
 								"type_signature": "number",
@@ -14254,21 +14248,21 @@
 						"name": "SignupInput",
 						"kind": "type",
 						"doc_comment": "Input for `POST /signup`. `email` is optional and must match any referenced invite.",
-						"source_line": 92,
+						"source_line": 90,
 						"type_signature": "ZodObject<{ username: ZodPipe<ZodString, ZodTransform<string, string>>; password: ZodString; email: ZodOptional<ZodEmail>; }, $strict>"
 					},
 					{
 						"name": "SignupOutput",
 						"kind": "type",
 						"doc_comment": "Output for `POST /signup`.\n\nSession cookie is the operative side effect. The returned `account` and\n`actor` mirror `BootstrapOutput` so cross-process per-test setup can read\nthe per-test identity straight off the signup response.",
-						"source_line": 106,
+						"source_line": 104,
 						"type_signature": "ZodObject<{ ok: ZodLiteral<true>; account: ZodObject<{ id: $ZodBranded<ZodUUID, \"Uuid\", \"out\">; username: ZodPipe<ZodString, ZodTransform<string, string>>; }, $strict>; actor: ZodObject<...>; }, $strict>"
 					},
 					{
 						"name": "create_signup_route_specs",
 						"kind": "function",
 						"doc_comment": "Create signup route specs for account creation.",
-						"source_line": 120,
+						"source_line": 118,
 						"type_signature": "(deps: RouteFactoryDeps, options: SignupRouteOptions): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"return_description": "route specs (not yet applied to Hono)",
@@ -14289,6 +14283,7 @@
 				"module_comment": "Signup route spec for account creation.\n\nPublic endpoint that creates an account. When `open_signup` is disabled\n(default), a matching unclaimed invite is required. When enabled, anyone\ncan sign up without an invite. Follows the `auth/bootstrap_routes.ts` pattern.",
 				"dependencies": [
 					"auth/account_queries.ts",
+					"auth/app_settings_queries.ts",
 					"auth/invite_queries.ts",
 					"auth/password.ts",
 					"auth/session_middleware.ts",
@@ -14325,7 +14320,7 @@
 					{
 						"name": "StandardRpcActionsOptions",
 						"kind": "type",
-						"doc_comment": "Options for `create_standard_rpc_actions`.\n\nComposes `AdminActionOptions` (`roles`, `app_settings`),\n`RoleGrantOfferActionOptions` (`roles`, `default_ttl_ms`, `authorize`), and\n`AccountActionOptions` (`max_tokens`). `roles` is shared between admin\nand role-grant-offer — the caller supplies it once and the helper threads\nthe same reference to both.",
+						"doc_comment": "Options for `create_standard_rpc_actions`.\n\nComposes `AdminActionOptions` (`roles`),\n`RoleGrantOfferActionOptions` (`roles`, `default_ttl_ms`, `authorize`), and\n`AccountActionOptions` (`max_tokens`). `roles` is shared between admin\nand role-grant-offer — the caller supplies it once and the helper threads\nthe same reference to both.",
 						"source_line": 41,
 						"type_signature": "StandardRpcActionsOptions",
 						"extends": [
@@ -14353,7 +14348,7 @@
 					{
 						"name": "create_standard_rpc_actions",
 						"kind": "function",
-						"doc_comment": "Build the combined admin + role-grant-offer + account RPC action set.\n\nSpreads `create_admin_actions(deps, {roles, app_settings})`,\n`create_role_grant_offer_actions(deps, {roles, default_ttl_ms, authorize})`,\nand `create_account_actions(deps, {max_tokens})`. The shared `roles`\noption flows to admin + role-grant-offer.",
+						"doc_comment": "Build the combined admin + role-grant-offer + account RPC action set.\n\nSpreads `create_admin_actions(deps, {roles})`,\n`create_role_grant_offer_actions(deps, {roles, default_ttl_ms, authorize})`,\nand `create_account_actions(deps, {max_tokens})`. The shared `roles`\noption flows to admin + role-grant-offer.",
 						"source_line": 68,
 						"type_signature": "(deps: StandardRpcActionsDeps, options?: StandardRpcActionsOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
@@ -14367,13 +14362,13 @@
 							{
 								"name": "options",
 								"type": "StandardRpcActionsOptions",
-								"description": "role schema, optional app-settings ref, role-grant-offer config, account config",
+								"description": "role schema, role-grant-offer config, account config",
 								"default_value": "{}"
 							}
 						]
 					}
 				],
-				"module_comment": "Combined admin + role-grant-offer + account RPC actions for fuz_app consumers.\n\nThe canonical \"standard\" RPC surface: every stock fuz_app RPC action a\ntypical web consumer wants on one endpoint. Consumers that want a\nnarrower surface drop down to the per-domain factories directly\n(`create_admin_actions` / `create_role_grant_offer_actions` /\n`create_account_actions`).\n\nOption routing: shared `roles` flows to both admin and role-grant-offer;\n`app_settings` goes to admin only; `default_ttl_ms` and `authorize` go\nto role-grant-offer only; `max_tokens` goes to account only;\nshared `connection_closer` flows to admin + account (role-grant-offer ignores);\n`notification_sender` reaches role-grant-offer transparently (admin + account\nignore it).\n\nPaired with `create_admin_rpc_adapters` on the UI side.",
+				"module_comment": "Combined admin + role-grant-offer + account RPC actions for fuz_app consumers.\n\nThe canonical \"standard\" RPC surface: every stock fuz_app RPC action a\ntypical web consumer wants on one endpoint. Consumers that want a\nnarrower surface drop down to the per-domain factories directly\n(`create_admin_actions` / `create_role_grant_offer_actions` /\n`create_account_actions`).\n\nOption routing: shared `roles` flows to both admin and role-grant-offer;\n`default_ttl_ms` and `authorize` go to role-grant-offer only; `max_tokens`\ngoes to account only;\nshared `connection_closer` flows to admin + account (role-grant-offer ignores);\n`notification_sender` reaches role-grant-offer transparently (admin + account\nignore it).\n\nPaired with `create_admin_rpc_adapters` on the UI side.",
 				"dependencies": [
 					"auth/account_actions.ts",
 					"auth/admin_actions.ts",
@@ -19685,6 +19680,7 @@
 					"testing/attack_surface.ts",
 					"testing/bootstrap_success.ts",
 					"testing/cross_backend/account_lifecycle.ts",
+					"testing/cross_backend/app_settings.ts",
 					"testing/cross_backend/origin.ts",
 					"testing/middleware.ts",
 					"testing/rate_limiting.ts",
@@ -23566,7 +23562,7 @@
 						"name": "EffectErrorContext",
 						"kind": "type",
 						"doc_comment": "Context passed to `on_effect_error` when a pending effect rejects.",
-						"source_line": 85,
+						"source_line": 83,
 						"type_signature": "EffectErrorContext",
 						"properties": [
 							{
@@ -23587,13 +23583,13 @@
 						"name": "BootstrapServerOptions",
 						"kind": "type",
 						"doc_comment": "Bootstrap configuration for `AppServerOptions.bootstrap`.\n\nDiscriminated union over three deployment intents. Distinct from\n`BootstrapRouteOptions` in `auth/bootstrap_routes.ts` — that one is\nper-factory runtime state (mutable `bootstrap_status` ref, rate\nlimiter); this one is the consumer-facing server option that\n`create_app_server` reads at startup to decide whether to mount the\nroutes and where.\n\nThree modes:\n- `disabled` — no route mounted, nothing in `/api/surface`.\n  Equivalent to omitting `bootstrap` entirely; the explicit mode is\n  for documentation and reviewable intent at the wiring layer.\n- `surface_only` — route present, permanent 403 via\n  `check_bootstrap_status`. For tests asserting on the\n  disabled-but-present wire shape.\n- `live` — route mounted, real token verification. Success path\n  reachable. `token_path` is required (non-nullable).",
-						"source_line": 112,
+						"source_line": 110,
 						"type_signature": "BootstrapServerOptions"
 					},
 					{
 						"name": "BootstrapDisabledOptions",
 						"kind": "type",
-						"source_line": 117,
+						"source_line": 115,
 						"type_signature": "BootstrapDisabledOptions",
 						"properties": [
 							{
@@ -23606,7 +23602,7 @@
 					{
 						"name": "BootstrapSurfaceOnlyOptions",
 						"kind": "type",
-						"source_line": 121,
+						"source_line": 119,
 						"type_signature": "BootstrapSurfaceOnlyOptions",
 						"properties": [
 							{
@@ -23625,7 +23621,7 @@
 					{
 						"name": "BootstrapLiveOptions",
 						"kind": "type",
-						"source_line": 127,
+						"source_line": 125,
 						"type_signature": "BootstrapLiveOptions",
 						"properties": [
 							{
@@ -23656,7 +23652,7 @@
 						"name": "AppServerOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for `create_app_server()`.\n\nRequires a pre-initialized `AppBackend` from `create_app_backend()`.\nTwo explicit steps: init backend then assemble server.",
-						"source_line": 145,
+						"source_line": 143,
 						"type_signature": "AppServerOptions",
 						"properties": [
 							{
@@ -23771,7 +23767,7 @@
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "Array<RpcEndpointSpec> | ((context: AppServerContext) => Array<RpcEndpointSpec>)",
-								"doc_comment": "RPC endpoint specs — single source of truth for both surface generation\n*and* live dispatch. Each entry is mounted via `create_rpc_endpoint`\nagainst the assembled Hono app, so consumers no longer call\n`create_rpc_endpoint` themselves inside `create_route_specs`.\n\nAccepts either an array (evaluated eagerly) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` (evaluated after the\nserver context is assembled). Use the factory form when action lists\ndepend on `ctx.deps` / `ctx.app_settings` — e.g.\n`create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`."
+								"doc_comment": "RPC endpoint specs — single source of truth for both surface generation\n*and* live dispatch. Each entry is mounted via `create_rpc_endpoint`\nagainst the assembled Hono app, so consumers no longer call\n`create_rpc_endpoint` themselves inside `create_route_specs`.\n\nAccepts either an array (evaluated eagerly) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` (evaluated after the\nserver context is assembled). Use the factory form when action lists\ndepend on `ctx.deps` — e.g. `create_standard_rpc_actions(ctx.deps)`."
 							},
 							{
 								"name": "upgradeWebSocket",
@@ -23827,7 +23823,7 @@
 						"name": "AppServerContext",
 						"kind": "type",
 						"doc_comment": "Context passed to `create_route_specs`.",
-						"source_line": 359,
+						"source_line": 356,
 						"type_signature": "AppServerContext",
 						"properties": [
 							{
@@ -23881,12 +23877,6 @@
 								"doc_comment": "Per-actor action-dispatcher rate limiter — shared across HTTP RPC + WS. `null` when not configured."
 							},
 							{
-								"name": "app_settings",
-								"kind": "variable",
-								"type_signature": "AppSettings",
-								"doc_comment": "Global app settings (mutable ref — mutated by settings admin route)."
-							},
-							{
 								"name": "audit_sse",
 								"kind": "variable",
 								"type_signature": "AuditLogSse | null",
@@ -23898,7 +23888,7 @@
 						"name": "AppServer",
 						"kind": "type",
 						"doc_comment": "Result of `create_app_server()`.",
-						"source_line": 385,
+						"source_line": 380,
 						"type_signature": "AppServer",
 						"properties": [
 							{
@@ -23916,12 +23906,6 @@
 								"name": "bootstrap_status",
 								"kind": "variable",
 								"type_signature": "BootstrapStatus"
-							},
-							{
-								"name": "app_settings",
-								"kind": "variable",
-								"type_signature": "AppSettings",
-								"doc_comment": "Global app settings (mutable ref — mutated by settings admin route)."
 							},
 							{
 								"name": "migration_results",
@@ -23953,7 +23937,7 @@
 						"name": "require_audit_sse",
 						"kind": "function",
 						"doc_comment": "Assert that `audit_sse` was wired by `create_app_server` and return it\nas a non-null `AuditLogSse`. Throws a labelled error when the\n`audit_log_sse` option was not passed to `create_app_server`.\n\nUse in route factories that depend on factory-managed audit SSE:\n\n```ts\ncreate_route_specs: (ctx) => create_audit_log_route_specs({\n  stream: require_audit_sse(ctx),\n}),\n```\n\nPreferred over `ctx.audit_sse!` — `!` lies to the type system and\nproduces a downstream cannot-read-property crash if a consumer wires\nthe route without enabling the option.",
-						"source_line": 434,
+						"source_line": 427,
 						"type_signature": "(source: { audit_sse: AuditLogSse | null; }): AuditLogSse",
 						"return_type": "AuditLogSse",
 						"parameters": [
@@ -23967,14 +23951,14 @@
 						"name": "DEFAULT_MAX_BODY_SIZE",
 						"kind": "variable",
 						"doc_comment": "Default maximum request body size: 1 MiB.",
-						"source_line": 444,
+						"source_line": 437,
 						"type_signature": "number"
 					},
 					{
 						"name": "create_app_server",
 						"kind": "function",
 						"doc_comment": "Create a fully assembled Hono app with auth, middleware, and routes.\n\nHandles the assembly lifecycle: proxy middleware → auth middleware →\nbootstrap status → route specs → surface generation → Hono app assembly →\nstatic serving. Database migrations belong to the backend lifecycle —\npass `migration_namespaces` to `create_app_backend`.\n\nWhen `audit_log_sse` is set, the SSE registry's listener is appended to\n`backend.deps.audit.on_event_chain` — no shallow-copy of `AppDeps`. The\n`audit_sse` field on the returned `AppServer` (and the\n`AppServerContext` passed to `create_route_specs`) is non-null in that\ncase; consumers can call `require_audit_sse(ctx)` / `require_audit_sse(server)`\nto assert the invariant.",
-						"source_line": 463,
+						"source_line": 456,
 						"type_signature": "(options: AppServerOptions): Promise<AppServer>",
 						"return_type": "Promise<AppServer>",
 						"return_description": "assembled Hono app, backend, surface build, and bootstrap status",
@@ -23992,7 +23976,6 @@
 					"actions/register_ws_endpoint.ts",
 					"actions/transports_ws_auth_guard.ts",
 					"actions/transports_ws_backend.ts",
-					"auth/app_settings_queries.ts",
 					"auth/auth_guard_resolver.ts",
 					"auth/bootstrap_routes.ts",
 					"auth/middleware.ts",
@@ -25369,6 +25352,9 @@
 					"testing/bootstrap_success.ts",
 					"testing/connection_closer_helpers.ts",
 					"testing/cross_backend/account_lifecycle.ts",
+					"testing/cross_backend/actor_lookup.ts",
+					"testing/cross_backend/actor_search.ts",
+					"testing/cross_backend/app_settings.ts",
 					"testing/cross_backend/backend_config.ts",
 					"testing/cross_backend/bench/bench_report.ts",
 					"testing/cross_backend/bench/run_cross_impl_bench.ts",
@@ -26260,6 +26246,100 @@
 					"testing/assert_dev_env.ts",
 					"testing/cross_backend/capabilities.ts",
 					"testing/cross_backend/cell_cross_helpers.ts",
+					"testing/cross_backend/default_spine_surface.ts"
+				]
+			},
+			{
+				"path": "testing/cross_backend/actor_lookup.ts",
+				"declarations": [
+					{
+						"name": "ActorLookupCrossTestOptions",
+						"kind": "type",
+						"doc_comment": "Options for the actor-lookup parity suite. Shares the shape of the cell /\norigin suites (`setup_test` / `capabilities` / `rpc_path`); reuses\n`CellCrossTestOptions` rather than minting a structural duplicate.",
+						"source_line": 46,
+						"type_signature": "CellCrossTestOptions"
+					},
+					{
+						"name": "describe_actor_lookup_cross_tests",
+						"kind": "function",
+						"source_line": 55,
+						"type_signature": "(options: CellCrossTestOptions): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "CellCrossTestOptions"
+							}
+						]
+					}
+				],
+				"module_comment": "Cross-backend parity suite for `actor_lookup`.\n\n`actor_lookup` is an opt-in batched id → label resolver\n(`{ids} → {actors: [{id, username, display_name?}]}`), not folded into the\nstandard bundle. It's live-mounted on the spine RPC path but kept off the\ndeclared surface (`create_spine_surface_spec`) — like cells / ws / sse — so\nthe standard cross suite's generic round-trip never drives it; this\ndedicated suite is its validator. Three cases over raw transport calls:\n\n- **anonymous → 401** — the account-grain auth gate refuses an\n  unauthenticated caller before the handler runs.\n- **keeper resolves own actor → 200** — the populated round trip: the\n  returned row carries the keeper's `id` + `username`, and **no**\n  `account_id` / `email` / timestamp / role field (the wire shape's\n  deliberate info-leak posture). This is the assertion that exercises the\n  Rust row→JSON mapping against the TS canonical shape.\n- **empty `ids` → 400** — the `min(1)` input bound is enforced on both\n  spines (TS Zod, Rust `parse_ids`).\n\nRuns both legs via the shared `{setup_test}` protocol: the in-process leg\n(`auth/actor_lookup_parity.db.test.ts`, plain `gro test`) and the\ncross-process leg (`cross_backend/actor_lookup.cross.test.ts`, the TS spine\nbinaries + Rust `testing_spine_stub` over real HTTP). `actor_lookup` is\nmounted on every spine, so the suite is ungated.\n\n`$lib`-free by contract (relative specifiers only), like the sibling\ncross-backend suites.",
+				"dependencies": [
+					"auth/actor_lookup_action_specs.ts",
+					"testing/assert_dev_env.ts",
+					"testing/cross_backend/default_spine_surface.ts"
+				]
+			},
+			{
+				"path": "testing/cross_backend/actor_search.ts",
+				"declarations": [
+					{
+						"name": "ActorSearchCrossTestOptions",
+						"kind": "type",
+						"doc_comment": "Options for the actor-search parity suite (shares the cell/origin shape).",
+						"source_line": 48,
+						"type_signature": "CellCrossTestOptions"
+					},
+					{
+						"name": "describe_actor_search_cross_tests",
+						"kind": "function",
+						"source_line": 57,
+						"type_signature": "(options: CellCrossTestOptions): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "CellCrossTestOptions"
+							}
+						]
+					}
+				],
+				"module_comment": "Cross-backend parity suite for `actor_search`.\n\n`actor_search` is an opt-in case-insensitive prefix search over\n`actor.name` (`{query, scope_ids?, limit?} → {actors: [{id, username,\ndisplay_name?}]}`), not folded into the standard bundle. Like\n`actor_lookup` / cells, it's live-mounted on the spine RPC path but kept\noff the declared surface, so this dedicated suite is its validator. The\nsecurity property under test is the **empty-`scope_ids` admin gate**:\n\n- **anonymous → 401** — the account-grain auth gate refuses an\n  unauthenticated caller before the handler runs.\n- **non-admin + no `scope_ids` → 400** `actor_search_scope_required` — an\n  unbounded global search is admin-only; a non-admin must scope the query.\n  This is the core security assertion, exercised against each impl's real\n  auth resolution.\n- **non-admin + `scope_ids` → 200** — passing a scope bypasses the admin\n  requirement (results are filtered to actors holding active role_grants on\n  those scopes); an unheld scope simply yields an empty result, not a\n  rejection — proving the gate keys on `scope_ids` presence, not identity.\n- **admin + no `scope_ids` → 200** — the admin path reaches the unbounded\n  search.\n\nCites `security.md` §Authorization (the `actor_search` scope gate).\n\nRuns both legs via the shared `{setup_test}` protocol: in-process\n(`auth/actor_search_parity.db.test.ts`) + cross-process\n(`cross_backend/actor_search.cross.test.ts`, TS spine binaries + Rust\n`testing_spine_stub`). Mounted on every spine, so the suite is ungated.\n\n`$lib`-free by contract (relative specifiers only).",
+				"dependencies": [
+					"auth/actor_search_action_specs.ts",
+					"testing/assert_dev_env.ts",
+					"testing/cross_backend/default_spine_surface.ts"
+				]
+			},
+			{
+				"path": "testing/cross_backend/app_settings.ts",
+				"declarations": [
+					{
+						"name": "AppSettingsCrossTestOptions",
+						"kind": "type",
+						"doc_comment": "Options for the app-settings effect suite (shares the cell/origin shape).",
+						"source_line": 43,
+						"type_signature": "CellCrossTestOptions"
+					},
+					{
+						"name": "describe_app_settings_cross_tests",
+						"kind": "function",
+						"source_line": 60,
+						"type_signature": "(options: CellCrossTestOptions): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "CellCrossTestOptions"
+							}
+						]
+					}
+				],
+				"module_comment": "Cross-backend effect suite for the `open_signup` app setting.\n\nThe declarative conformance table pins the admin gate on\n`app_settings_get` / `app_settings_update` (401 / 403 / 200). This suite\npins the **behavioral effect** of the toggle end to end: an admin flips\n`open_signup` via `app_settings_update`, and a subsequent anonymous\n`POST /signup` observes the new value.\n\n- **toggle on → anonymous signup without an invite succeeds (200)** — with\n  `open_signup: true`, the invite gate is skipped.\n- **toggle off → anonymous signup is refused (403 `no_matching_invite`)** —\n  flipping it back restores the invite requirement, proving the gate keys\n  on the live value rather than a one-time read.\n\nThe signup handler reads the toggle fresh from the database on every\nrequest, so the admin's write is visible to the next signup. This suite\nruns in a single process, so it validates the read-through *mechanism* —\nnot multi-process consistency (which the fresh-read shape provides by\nconstruction but no single-binary test can observe).\n\nCites `security.md` §Signup. Runs both legs via the shared `{setup_test}`\nprotocol: in-process (`auth/app_settings_parity.db.test.ts`) +\ncross-process (`cross_backend/app_settings.cross.test.ts`, TS spine\nbinaries + Rust `testing_spine_stub`). Mounted on every spine, so the\nsuite is ungated.\n\n`$lib`-free by contract (relative specifiers only).",
+				"dependencies": [
+					"auth/admin_action_specs.ts",
+					"http/error_schemas.ts",
+					"testing/assert_dev_env.ts",
 					"testing/cross_backend/default_spine_surface.ts"
 				]
 			},
@@ -27517,8 +27597,8 @@
 					{
 						"name": "spine_rpc_endpoints",
 						"kind": "function",
-						"doc_comment": "Factory-form RPC endpoints so the `app_settings_update` handler closes\nover the per-test `ctx.app_settings`. `create_app_server` (in the binary)\nowns live dispatch; the surface builder invokes the factory once with a\nstub ctx for setup-time path/method lookup, so the handler closures are\nnever called across the process boundary.\n\nTest binaries append their own `_testing_reset` action to this endpoint's\n`actions` (see `testing_reset_actions.ts`); it is intentionally excluded\nhere so it stays off the declared surface (the harness calls it directly\nover the daemon-token channel).",
-						"source_line": 77,
+						"doc_comment": "Factory-form RPC endpoints over the per-test `ctx.deps`. `create_app_server`\n(in the binary) owns live dispatch; the surface builder invokes the factory\nonce with a stub ctx for setup-time path/method lookup, so the handler\nclosures are never called across the process boundary.\n\nTest binaries append their own `_testing_reset` action to this endpoint's\n`actions` (see `testing_reset_actions.ts`); it is intentionally excluded\nhere so it stays off the declared surface (the harness calls it directly\nover the daemon-token channel).",
+						"source_line": 76,
 						"type_signature": "(ctx: AppServerContext): RpcEndpointSpec[]",
 						"return_type": "RpcEndpointSpec[]",
 						"parameters": [
@@ -27532,7 +27612,7 @@
 						"name": "create_spine_route_specs",
 						"kind": "function",
 						"doc_comment": "Account REST + signup route specs under `/api/account` (bootstrap\nauto-mounted by the surface builder / `create_app_server`), plus the\naudit-log SSE stream under `/api/admin` **only when `ctx.audit_sse` is\nset** (the TS spine binary passes `audit_log_sse: true`).\n\nThe shared `create_spine_surface_spec()` builds its ctx with\n`audit_sse: null`, so the declared surface snapshot stays SSE-free and the\nRust `spine_stub` cross test is unaffected — only the live TS binary mounts\nthe stream at `SPINE_SSE_PATH`.",
-						"source_line": 98,
+						"source_line": 96,
 						"type_signature": "(ctx: AppServerContext): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"parameters": [
@@ -27546,7 +27626,7 @@
 						"name": "create_spine_surface_spec",
 						"kind": "function",
 						"doc_comment": "The `AppSurfaceSpec` for the standard spine surface — the wire-shape\nsource the cross-process round-trip + RPC-round-trip suites validate\nagainst. `bootstrap: {mode: 'surface_only'}` mounts\n`POST /api/account/bootstrap`'s shape to match the binary (which wires\nbootstrap for real); the harness's `globalSetup` already consumed the\nlive bootstrap, so the cross-process round-trip validates the binary's\n409 against the route's declared error schema.",
-						"source_line": 127,
+						"source_line": 124,
 						"type_signature": "(): AppSurfaceSpec",
 						"return_type": "AppSurfaceSpec",
 						"parameters": []
@@ -27566,6 +27646,9 @@
 				],
 				"dependents": [
 					"testing/cross_backend/account_lifecycle.ts",
+					"testing/cross_backend/actor_lookup.ts",
+					"testing/cross_backend/actor_search.ts",
+					"testing/cross_backend/app_settings.ts",
 					"testing/cross_backend/cell_crud.ts",
 					"testing/cross_backend/cell_relations.ts",
 					"testing/cross_backend/origin.ts"
@@ -27595,7 +27678,7 @@
 						]
 					}
 				],
-				"module_comment": "Cross-backend parity suite for Origin verification (🔐 G2).\n\nOrigin checking is middleware that runs *before* the RPC dispatcher and\nreturns a flat REST `{error}` body — not a JSON-RPC envelope — so it\ndoesn't fit the envelope-shaped conformance-table runner. This dedicated\nimperative suite drives raw transport calls instead, mirroring how the\nin-process origin tests were already hand-rolled. Two cases:\n\n- **disallowed `Origin` → 403** `forbidden_origin`, refused before any\n  handler runs (the allowlist rejects the cross-origin request even with\n  a valid session cookie attached).\n- **absent `Origin` → request passes** — non-browser / direct-access\n  clients (curl, CLI, server-to-server) carry no `Origin` and must not be\n  blocked; token auth is the control for those callers.\n\nRuns both legs via the shared `{setup_test, capabilities}` protocol: the\nin-process leg (`auth/origin_parity.db.test.ts`, plain `gro test`) and the\ncross-process leg (`cross_backend/origin.cross.test.ts`, the TS spine\nbinaries + Rust `testing_spine_stub` over real HTTP). Origin middleware is\non every spine, so the suite is ungated.\n\n`$lib`-free by contract (relative specifiers only), like the sibling\ncross-backend suites.",
+				"module_comment": "Cross-backend parity suite for Origin verification.\n\nOrigin checking is middleware that runs *before* the RPC dispatcher and\nreturns a flat REST `{error}` body — not a JSON-RPC envelope — so it\ndoesn't fit the envelope-shaped conformance-table runner. This dedicated\nimperative suite drives raw transport calls instead, mirroring how the\nin-process origin tests were already hand-rolled. Two cases:\n\n- **disallowed `Origin` → 403** `forbidden_origin`, refused before any\n  handler runs (the allowlist rejects the cross-origin request even with\n  a valid session cookie attached).\n- **absent `Origin` → request passes** — non-browser / direct-access\n  clients (curl, CLI, server-to-server) carry no `Origin` and must not be\n  blocked; token auth is the control for those callers.\n\nRuns both legs via the shared `{setup_test, capabilities}` protocol: the\nin-process leg (`auth/origin_parity.db.test.ts`, plain `gro test`) and the\ncross-process leg (`cross_backend/origin.cross.test.ts`, the TS spine\nbinaries + Rust `testing_spine_stub` over real HTTP). Origin middleware is\non every spine, so the suite is ungated.\n\n`$lib`-free by contract (relative specifiers only), like the sibling\ncross-backend suites.",
 				"dependencies": [
 					"auth/account_action_specs.ts",
 					"http/error_schemas.ts",
@@ -30472,7 +30555,7 @@
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "RpcEndpointsSuiteOption",
-								"doc_comment": "RPC endpoint specs — required so the bearer-auth rate limiting test\ncan probe an authenticated method via the `account_verify` RPC\naction. Hard-fails via `require_rpc_endpoint_path` on setup.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps`. The factory must return the same\nendpoint `path` regardless of ctx — it is invoked once at setup with\na stub ctx for path lookup and again per-test by `create_app_server`\nfor live dispatch."
+								"doc_comment": "RPC endpoint specs — required so the bearer-auth rate limiting test\ncan probe an authenticated method via the `account_verify` RPC\naction. Hard-fails via `require_rpc_endpoint_path` on setup.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.deps`. The factory must return the same\nendpoint `path` regardless of ctx — it is invoked once at setup with\na stub ctx for path lookup and again per-test by `create_app_server`\nfor live dispatch."
 							}
 						]
 					},
@@ -30695,7 +30778,7 @@
 					{
 						"name": "RpcEndpointsSuiteOption",
 						"kind": "type",
-						"doc_comment": "Union accepted by the suite-level `rpc_endpoints` option — eager array or\na factory that takes an `AppServerContext` and returns endpoint specs. The\nfactory form is required when action handlers must close over the\nper-test `ctx.app_settings` / `ctx.deps` (e.g. the canonical\n`create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`\npattern). `create_app_server` resolves either shape natively; test helpers\nforward the raw value to the top-level `rpc_endpoints` slot on\n`CreateTestAppOptions` for live dispatch.",
+						"doc_comment": "Union accepted by the suite-level `rpc_endpoints` option — eager array or\na factory that takes an `AppServerContext` and returns endpoint specs. The\nfactory form is required when action handlers must close over the\nper-test `ctx.deps` (e.g. the canonical\n`create_standard_rpc_actions(ctx.deps)` pattern). `create_app_server`\nresolves either shape natively; test helpers\nforward the raw value to the top-level `rpc_endpoints` slot on\n`CreateTestAppOptions` for live dispatch.",
 						"source_line": 39,
 						"type_signature": "RpcEndpointsSuiteOption"
 					},
@@ -31631,7 +31714,7 @@
 								"name": "rpc_endpoints",
 								"kind": "variable",
 								"type_signature": "RpcEndpointsSuiteOption",
-								"doc_comment": "RPC endpoint specs — required so the close-on-revoke assertion can\ndispatch `account_session_revoke_all` via RPC (there is no REST\nequivalent). Hard-fails via `require_rpc_endpoint_path` on setup.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.app_settings` / `ctx.deps`. The factory must return the same\nendpoint `path` regardless of ctx — it is invoked once at setup with\na stub ctx for path lookup and again per-test by `create_app_server`\nfor live dispatch."
+								"doc_comment": "RPC endpoint specs — required so the close-on-revoke assertion can\ndispatch `account_session_revoke_all` via RPC (there is no REST\nequivalent). Hard-fails via `require_rpc_endpoint_path` on setup.\n\nAccepts either an array (eager) or a factory\n`(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form\nis required when action handlers must close over the per-test\n`ctx.deps`. The factory must return the same\nendpoint `path` regardless of ctx — it is invoked once at setup with\na stub ctx for path lookup and again per-test by `create_app_server`\nfor live dispatch."
 							},
 							{
 								"name": "routes",
@@ -31945,7 +32028,7 @@
 						"name": "CreateTestAppSurfaceSpecOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_test_app_surface_spec`.",
-						"source_line": 249,
+						"source_line": 248,
 						"type_signature": "CreateTestAppSurfaceSpecOptions",
 						"properties": [
 							{
@@ -32002,7 +32085,7 @@
 						"name": "create_test_app_surface_spec",
 						"kind": "function",
 						"doc_comment": "Create an `AppSurfaceSpec` for the standard testing suites.\n\nUsed by both in-process and cross-process tests as the schema source —\nthe cross-process-ness lives in the transport + per-test fixture, not\nhere. The on-disk `*_attack_surface.json` snapshot is observability\n(gen-time drift detection via `assert_surface_matches_snapshot`); the\nsuites consume the spec object this function returns, not the JSON\nfile.\n\nMirrors `create_app_server`'s route assembly: consumer routes +\nfactory-managed bootstrap routes + surface generation. If\n`create_app_server` changes how it wires routes, update this helper\nto stay in sync (single source of truth for all consumers).",
-						"source_line": 312,
+						"source_line": 311,
 						"type_signature": "(options: CreateTestAppSurfaceSpecOptions): AppSurfaceSpec",
 						"return_type": "AppSurfaceSpec",
 						"return_description": "the surface spec for the standard suites",

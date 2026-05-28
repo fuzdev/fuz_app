@@ -1,7 +1,7 @@
 import '../assert_dev_env.js';
 
 /**
- * Cross-backend parity suite for Origin verification (🔐 G2).
+ * Cross-backend parity suite for Origin verification.
  *
  * Origin checking is middleware that runs *before* the RPC dispatcher and
  * returns a flat REST `{error}` body — not a JSON-RPC envelope — so it
