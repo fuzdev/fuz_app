@@ -30,8 +30,8 @@ RPC endpoints are declared.
 
 **Cross-process integration** extends this layer to spawn a backend and
 run the same standard suites against it over real HTTP — a Rust spine
-(`zzz_server`, `fuz_forge_server`, or the non-domain `testing_spine_stub`)
-or a **TS** spine binary built on the test-server core (`start_testing_server`
+(`zzz_server`, another consumer's spine server, or the non-domain
+`testing_spine_stub`) or a **TS** spine binary built on the test-server core (`start_testing_server`
 
 - `create_{node,deno,bun}_testing_adapter` in `testing/cross_backend/`, which
   own the serve / daemon-info / WS-attach / drain boilerplate so a consumer's
@@ -853,8 +853,8 @@ assert_error_coverage(collector, route_specs, {
 
 ### Cross-Impl Schema Parity
 
-For consumers running two backend implementations against a shared
-schema (e.g., zzz's Deno reference vs. Rust spine), drift between
+For a dual-impl consumer running two backend implementations against a
+shared schema (a TS Hono server vs. a Rust spine server), drift between
 their bootstrapped DDL is the kind of bug that survives unit tests
 and only surfaces in production. `query_schema_snapshot` +
 `assert_schema_snapshots_equal` give you a structural gate composable

@@ -219,15 +219,16 @@ test-only by construction.
 - `assert_schema_snapshots_equal(a, b, labels?)` — throws on drift with a fully-formatted diff message.
 - `SchemaDiff` — tagged-union per drift kind: `schema_version_only_in`, `schema_version_sequence_differs`, `table_only_in`, `column_only_in`, `column_field_differs`, `index_only_in`, `index_definition_differs`, `constraint_only_in`, `constraint_differs`, `sequence_only_in`, `sequence_data_type_differs`.
 
-**Cross-impl gate pattern** — consumers running two backends against a
-shared schema (zzz's `--backend=both`, fuz_app's cross-backend suite)
-bootstrap each impl against an isolated DB, snapshot, then compare:
+**Cross-impl gate pattern** — a dual-impl consumer running two backends
+(a TS Hono server and a Rust spine server) against a shared schema, plus
+fuz_app's own cross-backend suite, bootstrap each impl against an isolated
+DB, snapshot, then compare:
 
 ```ts
-await drop_recreate_db('zzz_test');
+await drop_recreate_db('app_test');
 await spawn_backend(deno_config);
 const snapshot_deno = await query_schema_snapshot(db);
-await drop_recreate_db('zzz_test');
+await drop_recreate_db('app_test');
 await spawn_backend(rust_config);
 const snapshot_rust = await query_schema_snapshot(db);
 assert_schema_snapshots_equal(snapshot_deno, snapshot_rust, {a: 'deno', b: 'rust'});
@@ -789,8 +790,8 @@ points:
 The standard test suites take a unified
 `{setup_test, surface_source, capabilities}` shape so the same suite bodies
 run against an in-process Hono harness today and against a spawned backend
-over real HTTP — either the Rust spine (`zzz_server`, `fuz_forge_server`, or
-the non-domain `testing_spine_stub`) or a **TS** spine binary built on the
+over real HTTP — either the Rust spine (`zzz_server`, another consumer's
+spine server, or the non-domain `testing_spine_stub`) or a **TS** spine binary built on the
 test-server core below (fuz_app's own domain-free `testing_spine_server`, run
 on Node + Deno + Bun). In-process is the fast feedback path; cross-process is the
 source of truth for wire-shape conformance.
@@ -1094,7 +1095,11 @@ in-process legs (plain `gro test`) are `src/test/auth/cell_crud_parity.db.test.t
   same bootstrap-equivalent step (the only path for roles like
   `ROLE_KEEPER` whose `grant_paths` is bootstrap-only), refreshes
   `DaemonTokenState.keeper_account_id` to the new row, then fires the
-  consumer-supplied `reset_state` callback for domain-state reset. Auth
+  consumer-supplied `reset_state(db)` callback for domain-state reset —
+  passed the **transactional** `Db` the auth wipe ran on, so DB-domain
+  consumers (e.g. fuz_forge truncating its cell / fact / file tables) reset
+  on the same connection rather than a separately-pooled one that would
+  deadlock against this open transaction under PGlite. Auth
   gates on `credential_types: ['daemon_token']` — effectively keeper-only
   without forcing the `actor: 'required'` ⟺ `acting?: ActingActor`
   biconditional. No free-form runtime grant action exists — see the

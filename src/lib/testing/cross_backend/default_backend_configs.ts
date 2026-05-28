@@ -112,6 +112,14 @@ export interface MakeDefaultTsBackendConfigOptions {
 	 * override.
 	 */
 	readonly port_env_var?: string;
+	/**
+	 * Session cookie name the binary's `create_session_config` uses.
+	 * Defaults to `'fuz_session'`. Must match the consumer's session config
+	 * — the harness threads the `_testing_reset`-returned keeper cookie into
+	 * its jar under this name, so a mismatch surfaces as 401s on the
+	 * `create_account` path (e.g. fuz_forge uses `'fuz_forge_session'`).
+	 */
+	readonly cookie_name?: string;
 }
 
 /**
@@ -133,6 +141,7 @@ export const make_default_ts_backend_config = (
 		paths = build_test_backend_paths(name),
 		bootstrap_overrides,
 		port_env_var = 'PORT',
+		cookie_name = 'fuz_session',
 	} = opts;
 	return {
 		name,
@@ -142,7 +151,7 @@ export const make_default_ts_backend_config = (
 		ws_path: '/api/ws',
 		health_path: '/health',
 		bootstrap_path: '/api/account/bootstrap',
-		cookie_name: 'fuz_session',
+		cookie_name,
 		startup_timeout_ms: 30_000,
 		env: {
 			NODE_ENV: 'development',
@@ -192,6 +201,11 @@ export interface MakeDefaultRustBackendConfigOptions {
 	 * (e.g. `'info,zzz_server=info,testing_zzz_server=info'`).
 	 */
 	readonly rust_log?: string;
+	/**
+	 * Session cookie name the binary uses. Defaults to `'fuz_session'`.
+	 * Must match the consumer's session config (see the TS builder's note).
+	 */
+	readonly cookie_name?: string;
 }
 
 /**
@@ -214,6 +228,7 @@ export const make_default_rust_backend_config = (
 		bootstrap_overrides,
 		port_env_var = 'PORT',
 		rust_log = 'info',
+		cookie_name = 'fuz_session',
 	} = opts;
 	return {
 		name,
@@ -223,7 +238,7 @@ export const make_default_rust_backend_config = (
 		ws_path: '/api/ws',
 		health_path: '/health',
 		bootstrap_path: '/api/account/bootstrap',
-		cookie_name: 'fuz_session',
+		cookie_name,
 		startup_timeout_ms: 120_000,
 		env: {
 			RUST_LOG: rust_log,

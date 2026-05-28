@@ -67,6 +67,7 @@ import type {RequestResponseActionSpec} from '../../actions/action_spec.js';
 import type {AppDeps} from '../../auth/deps.js';
 import type {SessionOptions} from '../../auth/session_cookie.js';
 import type {DaemonTokenState} from '../../auth/daemon_token.js';
+import type {Db} from '../../db/db.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '../../auth/role_schema.js';
 import {auth_integration_truncate_tables} from '../db.js';
 import {
@@ -228,15 +229,18 @@ export interface CreateTestingActionsOptions {
 	 */
 	readonly daemon_token_state: DaemonTokenState;
 	/**
-	 * Consumer-supplied callback invoked after the auth-table reset.
-	 * `testing_zzz_server` clears workspace registry + terminals + the
-	 * scoped FS scratch dir here; `testing_spine_stub` has no domain
-	 * layer and passes a no-op (or omits the option). Runs inside the
-	 * same RPC dispatch as the auth-table writes, so a throw surfaces
-	 * to the caller as a JSON-RPC error and the per-test fixture
-	 * short-circuits.
+	 * Consumer-supplied callback invoked after the auth-table reset, passed
+	 * the same transactional `Db` the auth wipes ran on. DB-domain consumers
+	 * (e.g. fuz_forge truncating its cell / fact / file tables) MUST use this
+	 * `db` rather than a separately-pooled connection — under PGlite's single
+	 * connection a second connection deadlocks against this still-open
+	 * transaction. `testing_zzz_server` clears in-memory workspace registry +
+	 * terminals + scoped-FS scratch (ignores `db`); `testing_spine_stub` has
+	 * no domain layer and omits the option. Runs inside the same RPC dispatch
+	 * as the auth-table writes, so a throw surfaces to the caller as a
+	 * JSON-RPC error and the per-test fixture short-circuits.
 	 */
-	readonly reset_state?: () => Promise<void> | void;
+	readonly reset_state?: (db: Db) => Promise<void> | void;
 }
 
 /**
@@ -342,8 +346,11 @@ export const create_testing_actions = (
 			daemon_token_state.keeper_account_id = keeper.account.id;
 
 			// 7. Fire domain-state reset (zzz workspaces/terminals/scratch,
-			//    or no-op for spine_stub).
-			if (reset_state) await reset_state();
+			//    fuz_forge cell/fact/file truncation, or no-op for spine_stub).
+			//    Pass the transactional `ctx.db` so DB-domain truncation runs
+			//    on the same connection — a separate pool connection deadlocks
+			//    against this open transaction under PGlite.
+			if (reset_state) await reset_state(ctx.db);
 
 			return {...keeper, extra_accounts: extras};
 		}),

@@ -814,13 +814,33 @@ export const describe_standard_integration_tests = (
 				const fixture = await options.setup_test();
 
 				// admin routes are optional in the base suite — admin-specific coverage
-				// lives in describe_standard_admin_integration_tests
-				const admin_route = route_specs.find((s) => s.auth.roles?.includes('admin') ?? false);
+				// lives in describe_standard_admin_integration_tests.
+				//
+				// Pick an admin REST route where a clean role-denial 403 is
+				// reachable: account-grain (`actor: 'none'`, so the authorization
+				// phase doesn't first demand an acting actor → `actor_required`)
+				// and input/param/query-free (so input validation doesn't 400
+				// first, per the 401 → 400 → 403 phase order). Admin surfaces are
+				// RPC-first now; a consumer may expose no such REST route (fuz_app
+				// itself, zzz) — then this REST-era check is a no-op and RPC denial
+				// is covered by `describe_rpc_attack_surface_tests`.
+				const admin_route = route_specs.find(
+					(s) =>
+						(s.auth.roles?.includes('admin') ?? false) &&
+						s.auth.actor === 'none' &&
+						!s.input &&
+						!s.params &&
+						!s.query,
+				);
 				if (!admin_route) return;
 
+				// Probe with a freshly-created account — it holds no admin role
+				// (the keeper fixture behind `create_session_headers` does, so it
+				// would pass the gate).
+				const non_admin = await fixture.create_account({username: 'non_admin_admin_probe'});
 				const res = await fixture.transport(admin_route.path, {
 					method: admin_route.method,
-					headers: fixture.create_session_headers(),
+					headers: {cookie: `${cookie_name}=${non_admin.session_cookie}`},
 				});
 				assert.strictEqual(res.status, 403);
 				const body = await res.json();

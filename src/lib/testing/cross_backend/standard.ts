@@ -94,6 +94,14 @@ export interface StandardCrossProcessTestOptions {
 	 * `0` to skip the assertion entirely.
 	 */
 	error_coverage_min?: number;
+	/**
+	 * Forwarded to `describe_round_trip_validation` as `skip_routes`
+	 * (`'METHOD /path'` keys). For consumer REST routes whose responses
+	 * aren't JSON-with-an-output-schema and so can't be round-tripped — e.g.
+	 * fuz_forge's git smart-HTTP routes (`git-upload-pack` / `git-receive-pack`
+	 * / `info/refs`) which stream git protocol bytes.
+	 */
+	round_trip_skip_routes?: Array<string>;
 }
 
 /**
@@ -116,6 +124,7 @@ export const describe_standard_cross_process_tests = (
 		setup_test: options.setup_test,
 		surface_source: options.surface_source,
 		capabilities: options.capabilities,
+		skip_routes: options.round_trip_skip_routes,
 	});
 	describe_rpc_round_trip_tests({
 		setup_test: options.setup_test,

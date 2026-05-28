@@ -25370,6 +25370,7 @@
 					"testing/cross_backend/cell_relations.ts",
 					"testing/cross_backend/conformance_case.ts",
 					"testing/cross_backend/conformance_table.ts",
+					"testing/cross_backend/create_cross_backend_global_setup.ts",
 					"testing/cross_backend/default_backend_configs.ts",
 					"testing/cross_backend/default_secrets.ts",
 					"testing/cross_backend/default_spine_surface.ts",
@@ -26817,7 +26818,8 @@
 					"testing/cross_backend/spawn_backend.ts",
 					"testing/transports/bootstrap.ts",
 					"testing/transports/fetch_transport.ts"
-				]
+				],
+				"dependents": ["testing/cross_backend/create_cross_backend_global_setup.ts"]
 			},
 			{
 				"path": "testing/cross_backend/build_test_backend_paths.ts",
@@ -27368,6 +27370,60 @@
 				]
 			},
 			{
+				"path": "testing/cross_backend/create_cross_backend_global_setup.ts",
+				"declarations": [
+					{
+						"name": "CrossBackendGlobalSetupOptions",
+						"kind": "type",
+						"source_line": 48,
+						"type_signature": "CrossBackendGlobalSetupOptions",
+						"properties": [
+							{
+								"name": "configs",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "Readonly<Record<string, () => BackendConfig>>",
+								"doc_comment": "Map of derived backend name → `BackendConfig` factory. The derived\nname (see `derive_name`) selects the factory; unknown names throw with\nthe full supported list so a misnamed project surfaces clearly."
+							},
+							{
+								"name": "derive_name",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "(project_name: string) => string",
+								"doc_comment": "Derive the backend name from the vitest project name. Default strips\n`cross_backend_(ts_)?`."
+							},
+							{
+								"name": "provide_key",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Key passed to `project.provide` (and read by `inject` in test files).\nDefault `'backend_handle'`. Augment vitest's `ProvidedContext` for it."
+							}
+						]
+					},
+					{
+						"name": "create_cross_backend_global_setup",
+						"kind": "function",
+						"doc_comment": "Build a vitest `globalSetup` default export. Returns the\n`(project) => teardown` function vitest 4 expects.",
+						"source_line": 71,
+						"type_signature": "({ configs, derive_name, provide_key, }: CrossBackendGlobalSetupOptions): (project: TestProject) => Promise<() => Promise<void>>",
+						"return_type": "(project: TestProject) => Promise<() => Promise<void>>",
+						"parameters": [
+							{
+								"name": "__0",
+								"type": "CrossBackendGlobalSetupOptions"
+							}
+						]
+					}
+				],
+				"module_comment": "Generic vitest `globalSetup` factory for cross-backend integration suites.\n\nPairs with `make_cross_backend_project`: each cross-backend vitest project\nsets its own `test.name`, and this factory derives the backend name from\nthat project name (vitest 4 passes the `TestProject` to globalSetup), picks\nthe matching `BackendConfig`, spawns + bootstraps it via `bootstrap_backend`,\nand `provide`s a serializable handle that `*.cross.test.ts` files\n`inject` and rebuild with `reconstruct_bootstrapped_handle`.\n\nA consumer's `global_setup.ts` collapses to:\n\n```ts\nimport {create_cross_backend_global_setup} from\n  '@fuzdev/fuz_app/testing/cross_backend/create_cross_backend_global_setup.js';\nimport {deno_backend_config, rust_backend_config} from './my_backend_config.js';\nimport './cross_test_types.js'; // augments inject('backend_handle')\n\nexport default create_cross_backend_global_setup({\n  configs: {deno: deno_backend_config, rust: rust_backend_config},\n});\n```\n\nvitest 4's `provide` hard-rejects non-serializable values, so the live\n`child` / `teardown` / `keeper_transport` are stripped via\n`serialize_bootstrapped_handle`; the teardown closure stays in the\nglobalSetup process and is returned for vitest to fire after the suite.",
+				"dependencies": [
+					"testing/assert_dev_env.ts",
+					"testing/cross_backend/bootstrap_backend.ts",
+					"testing/cross_backend/setup.ts"
+				]
+			},
+			{
 				"path": "testing/cross_backend/default_backend_configs.ts",
 				"declarations": [
 					{
@@ -27452,6 +27508,13 @@
 								"modifiers": ["readonly"],
 								"type_signature": "string",
 								"doc_comment": "Env-var name the binary reads for its port. Defaults to `'PORT'`.\nConsumers whose binary reads a different name (e.g. `'ZZZ_PORT'`)\noverride."
+							},
+							{
+								"name": "cookie_name",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Session cookie name the binary's `create_session_config` uses.\nDefaults to `'fuz_session'`. Must match the consumer's session config\n— the harness threads the `_testing_reset`-returned keeper cookie into\nits jar under this name, so a mismatch surfaces as 401s on the\n`create_account` path (e.g. fuz_forge uses `'fuz_forge_session'`)."
 							}
 						]
 					},
@@ -27459,7 +27522,7 @@
 						"name": "make_default_ts_backend_config",
 						"kind": "function",
 						"doc_comment": "Shared builder for TS-family backends (Deno + Node). Owns the common\nenv baseline (NODE_ENV, HOST, PORT, in-memory PGlite, cookie keys,\nbootstrap token path) so per-backend factories only declare what\ngenuinely differs.",
-						"source_line": 123,
+						"source_line": 131,
 						"type_signature": "(opts: MakeDefaultTsBackendConfigOptions): BackendConfig",
 						"return_type": "BackendConfig",
 						"parameters": [
@@ -27472,7 +27535,7 @@
 					{
 						"name": "MakeDefaultRustBackendConfigOptions",
 						"kind": "type",
-						"source_line": 162,
+						"source_line": 171,
 						"type_signature": "MakeDefaultRustBackendConfigOptions",
 						"properties": [
 							{
@@ -27544,6 +27607,13 @@
 								"modifiers": ["readonly"],
 								"type_signature": "string",
 								"doc_comment": "Initial value for `RUST_LOG`. Defaults to `'info'`. Consumers pass\ntheir binary-specific module filter\n(e.g. `'info,zzz_server=info,testing_zzz_server=info'`)."
+							},
+							{
+								"name": "cookie_name",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Session cookie name the binary uses. Defaults to `'fuz_session'`.\nMust match the consumer's session config (see the TS builder's note)."
 							}
 						]
 					},
@@ -27551,7 +27621,7 @@
 						"name": "make_default_rust_backend_config",
 						"kind": "function",
 						"doc_comment": "Shared builder for Rust-family backends. Owns the common env baseline\n(RUST_LOG, HOST, port, real Postgres, cookie keys, bootstrap token\npath, the `FUZ_TESTING_RESET_DB_ON_STARTUP=true` self-wipe gate) plus\nthe 120s startup window for cargo's first-run build cost.",
-						"source_line": 203,
+						"source_line": 217,
 						"type_signature": "(opts: MakeDefaultRustBackendConfigOptions): BackendConfig",
 						"return_type": "BackendConfig",
 						"parameters": [
@@ -27707,6 +27777,69 @@
 					"testing/cross_backend/cell_relations.ts",
 					"testing/cross_backend/origin.ts"
 				]
+			},
+			{
+				"path": "testing/cross_backend/make_cross_backend_project.ts",
+				"declarations": [
+					{
+						"name": "CrossBackendProjectOptions",
+						"kind": "type",
+						"source_line": 37,
+						"type_signature": "CrossBackendProjectOptions",
+						"properties": [
+							{
+								"name": "name",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "vitest project name. `create_cross_backend_global_setup` derives the\nbackend name from it (by default stripping a `cross_backend_(ts_)?`\nprefix), so name projects `cross_backend_<backend>` (e.g.\n`cross_backend_rust`, `cross_backend_ts_deno`)."
+							},
+							{
+								"name": "global_setup",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "string",
+								"doc_comment": "Path to the consumer's vitest `globalSetup` module, relative to the\nconsumer repo root (e.g. `'./src/test/cross_backend/global_setup.ts'`).\nThat module is expected to export a `create_cross_backend_global_setup`\nresult as its default."
+							},
+							{
+								"name": "include",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "ReadonlyArray<string>",
+								"doc_comment": "Test-file globs. Default: `['src/test/cross_backend/*.cross.test.ts']`."
+							},
+							{
+								"name": "exclude",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "ReadonlyArray<string>",
+								"doc_comment": "Globs to exclude from `include` (e.g. a backend-specific variant file). Default: `[]`."
+							},
+							{
+								"name": "group_order",
+								"kind": "variable",
+								"modifiers": ["readonly"],
+								"type_signature": "number",
+								"doc_comment": "vitest `sequence.groupOrder`. Default: `3` (runs after unit + db)."
+							}
+						]
+					},
+					{
+						"name": "make_cross_backend_project",
+						"kind": "function",
+						"doc_comment": "Build a single cross-backend vitest project config. Spread the results\ninto `test.projects` in the consumer's `vite.config.ts`. `isolate: false`\n+ `fileParallelism: false` because a project shares one spawned backend\nacross its files.",
+						"source_line": 66,
+						"type_signature": "({ name, global_setup, include, exclude, group_order, }: CrossBackendProjectOptions): { extends: true; test: { name: string; include: string[]; exclude: string[]; globalSetup: string[]; isolate: false; fileParallelism: false; sequence: { ...; }; }; }",
+						"return_type": "{ extends: true; test: { name: string; include: string[]; exclude: string[]; globalSetup: string[]; isolate: false; fileParallelism: false; sequence: { groupOrder: number; }; }; }",
+						"parameters": [
+							{
+								"name": "__0",
+								"type": "CrossBackendProjectOptions"
+							}
+						]
+					}
+				],
+				"module_comment": "Generic vitest project factory for cross-backend integration suites.\n\nOne vitest project per spawned backend; each runs the consumer's shared\n`*.cross.test.ts` files against its own bootstrapped binary. The paired\n`create_cross_backend_global_setup` (in `global_setup.ts`) reads the\nproject's `name` to pick which `BackendConfig` to spawn, so the project\nname is the single source of truth for backend selection.\n\nConsumers compose these into their `vite.config.ts`:\n\n```ts\nconst cross_backend_projects = process.env.FUZ_TEST_CROSS_BACKEND\n  ? [\n      make_cross_backend_project({name: 'cross_backend_ts_deno', global_setup: GLOBAL_SETUP}),\n      make_cross_backend_project({name: 'cross_backend_rust', global_setup: GLOBAL_SETUP}),\n    ]\n  : [];\n```\n\nwhere `GLOBAL_SETUP = './src/test/cross_backend/global_setup.ts'`.\n\nThis module is intentionally dependency-free and `assert_dev_env`-free:\nit runs at vite **config** time (including production builds, where the\nconsumer gates the projects behind an env flag), so it must not pull in\nthe DEV-only test runtime."
 			},
 			{
 				"path": "testing/cross_backend/origin.ts",
@@ -28206,7 +28339,8 @@
 					"testing/rpc_helpers.ts",
 					"testing/stubs.ts",
 					"testing/transports/fetch_transport.ts"
-				]
+				],
+				"dependents": ["testing/cross_backend/create_cross_backend_global_setup.ts"]
 			},
 			{
 				"path": "testing/cross_backend/spawn_backend.ts",
@@ -28487,6 +28621,12 @@
 								"kind": "variable",
 								"type_signature": "number",
 								"doc_comment": "Forwarded to `describe_standard_integration_tests` — overrides the\ndefault error-coverage threshold on the scoped REST surface. Set to\n`0` to skip the assertion entirely."
+							},
+							{
+								"name": "round_trip_skip_routes",
+								"kind": "variable",
+								"type_signature": "Array<string>",
+								"doc_comment": "Forwarded to `describe_round_trip_validation` as `skip_routes`\n(`'METHOD /path'` keys). For consumer REST routes whose responses\naren't JSON-with-an-output-schema and so can't be round-tripped — e.g.\nfuz_forge's git smart-HTTP routes (`git-upload-pack` / `git-receive-pack`\n/ `info/refs`) which stream git protocol bytes."
 							}
 						]
 					},
@@ -28494,7 +28634,7 @@
 						"name": "describe_standard_cross_process_tests",
 						"kind": "function",
 						"doc_comment": "Run the cross-process standard test bundle — integration, admin (when\n`roles` provided), round trip, RPC round trip, data exposure. See the\nmodule doc for the suites omitted from this bundle and why.",
-						"source_line": 104,
+						"source_line": 112,
 						"type_signature": "(options: StandardCrossProcessTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -28522,28 +28662,28 @@
 						"name": "testing_reset_action_spec",
 						"kind": "variable",
 						"doc_comment": "The `_testing_reset` action spec.\n\nInput:\n- `extra_keeper_roles` — roles to grant the fresh keeper *in addition\n  to* `[ROLE_KEEPER, ROLE_ADMIN]` (matching production bootstrap).\n- `extra_accounts` — additional accounts to seed at this same\n  bootstrap-equivalent step. Each entry's `roles` are direct-granted\n  (bypassing offer/accept) because the seed is *part of bootstrap*,\n  not a post-bootstrap action. Use this for accounts whose required\n  roles aren't admin-grantable via offer/accept (e.g. `ROLE_KEEPER`,\n  whose `RoleSpec.grant_paths` is bootstrap-only). For\n  admin-grantable roles, prefer `fixture.create_account({roles})`\n  (offer/accept production path).\n\nOutput: keeper credentials plus a parallel array of seeded\n`extra_accounts` (same order as input). The per-test fixture closes\nover the returned values; subsequent calls in the same test see the\nfresh keeper and any requested secondaries.\n\n`auth` gates on the daemon-token credential — the keeper holds it\nexclusively. The action is internally privileged (it runs direct\nDB writes the production wire never exposes); daemon-token auth is\nthe structural fence.",
-						"source_line": 111,
+						"source_line": 112,
 						"type_signature": "{ readonly method: \"_testing_reset\"; readonly kind: \"request_response\"; readonly initiator: \"frontend\"; readonly auth: { readonly account: \"required\"; readonly actor: \"none\"; readonly credential_types: readonly [...]; }; ... 4 more ...; readonly description: \"Test-binary only — wipe auth tables, re-bootstrap a fresh..."
 					},
 					{
 						"name": "testing_drain_effects_action_spec",
 						"kind": "variable",
 						"doc_comment": "`_testing_drain_effects` — await in-flight fire-and-forget audit writes so\na following `audit_log_list` is authoritative. The deterministic barrier\nthe cross-backend conformance suite uses in place of a poll/sleep before\nasserting on audit rows.\n\nOn the TS spine the barrier is **satisfied by construction**: the test\nbinary runs `await_pending_effects: true`, so every mutation's fire-and-\nforget audit emits are awaited before its response returns — by the time\na later drain call runs, prior emits are already durable. The action still\nexists so the cross-backend test body calls the same method on every\nbackend; the Rust spine (whose audit writes are detached tokio tasks)\ndoes the real await in `AuditEmitter::drain_inflight`.\n\n`auth` gates on the daemon-token credential, matching `_testing_reset`.",
-						"source_line": 153,
+						"source_line": 154,
 						"type_signature": "{ readonly method: \"_testing_drain_effects\"; readonly kind: \"request_response\"; readonly initiator: \"frontend\"; readonly auth: { readonly account: \"required\"; readonly actor: \"none\"; readonly credential_types: readonly [...]; }; ... 4 more ...; readonly description: \"Test-binary only — await in-flight fire-and-forge..."
 					},
 					{
 						"name": "testing_mint_session_action_spec",
 						"kind": "variable",
 						"doc_comment": "`_testing_mint_session` — mint an expired-by-construction server-side\nsession for an existing account and return its signed cookie value.\n\nThe minted `auth_session` row's `expires_at` is backdated (negative\n`expires_in_seconds`) while the returned cookie's own signed payload\nstays valid (future). Cross-process auth resolution therefore passes the\ncookie-payload gate (`parse_session`) and is refused by the authoritative\nDB-row gate (`query_session_get_valid` — `WHERE expires_at > NOW()`) —\nthe gate the in-process payload-expiry tests never reach and the one that\nstructurally needs a server-side mint (the cross-process driver has no\nkeyring / DB access). The `expired_session` conformance principal drives\nthis.\n\n`auth` gates on the daemon-token credential, matching `_testing_reset` —\neffectively keeper-only. Like its siblings the action is internally\nprivileged (a direct `auth_session` insert the production wire never\nexposes); daemon-token auth is the structural fence and the module's\n`assert_dev_env` import (TS) plus the Rust `cargo xtask check-release`\ndep-graph audit keep the `_testing_` surface out of every shipped build.",
-						"source_line": 187,
+						"source_line": 188,
 						"type_signature": "{ readonly method: \"_testing_mint_session\"; readonly kind: \"request_response\"; readonly initiator: \"frontend\"; readonly auth: { readonly account: \"required\"; readonly actor: \"none\"; readonly credential_types: readonly [...]; }; ... 4 more ...; readonly description: string; }"
 					},
 					{
 						"name": "create_testing_drain_effects_action",
 						"kind": "function",
 						"doc_comment": "Build the standalone `_testing_drain_effects` action. No deps — on TS the\nbarrier is satisfied by `await_pending_effects` (see the spec doc), so the\nhandler just returns `{ok: true}`. Mount it on any test endpoint whose\nsuite asserts on audit rows (the spine binary bundles it via\n`create_testing_actions`; in-process suites mount it directly).",
-						"source_line": 211,
+						"source_line": 212,
 						"type_signature": "(): RpcAction",
 						"return_type": "RpcAction",
 						"parameters": []
@@ -28552,7 +28692,7 @@
 						"name": "CreateTestingActionsOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_testing_actions`.",
-						"source_line": 215,
+						"source_line": 216,
 						"type_signature": "CreateTestingActionsOptions",
 						"properties": [
 							{
@@ -28573,8 +28713,8 @@
 								"name": "reset_state",
 								"kind": "variable",
 								"modifiers": ["readonly"],
-								"type_signature": "() => Promise<void> | void",
-								"doc_comment": "Consumer-supplied callback invoked after the auth-table reset.\n`testing_zzz_server` clears workspace registry + terminals + the\nscoped FS scratch dir here; `testing_spine_stub` has no domain\nlayer and passes a no-op (or omits the option). Runs inside the\nsame RPC dispatch as the auth-table writes, so a throw surfaces\nto the caller as a JSON-RPC error and the per-test fixture\nshort-circuits."
+								"type_signature": "(db: Db) => Promise<void> | void",
+								"doc_comment": "Consumer-supplied callback invoked after the auth-table reset, passed\nthe same transactional `Db` the auth wipes ran on. DB-domain consumers\n(e.g. fuz_forge truncating its cell / fact / file tables) MUST use this\n`db` rather than a separately-pooled connection — under PGlite's single\nconnection a second connection deadlocks against this still-open\ntransaction. `testing_zzz_server` clears in-memory workspace registry +\nterminals + scoped-FS scratch (ignores `db`); `testing_spine_stub` has\nno domain layer and omits the option. Runs inside the same RPC dispatch\nas the auth-table writes, so a throw surfaces to the caller as a\nJSON-RPC error and the per-test fixture short-circuits."
 							}
 						]
 					},
@@ -28582,7 +28722,7 @@
 						"name": "create_testing_actions",
 						"kind": "function",
 						"doc_comment": "Build the testing RPC actions for a test binary's registry.\n\nReturns `_testing_reset` — the single privileged action test binaries\nregister. The test binary calls this at server-assembly time and\nregisters the result on its dispatcher.\n\nThe reset action's table-wipe list mirrors\n`auth_integration_truncate_tables` from `testing/db.ts` — the\ncanonical \"auth tables a between-test reset must clear\" set.\n`testing_reset_actions.coverage.test.ts` enforces the set-equality\ninvariant so a future auth migration that adds a table to that list\nwithout updating this handler fails CI.",
-						"source_line": 256,
+						"source_line": 260,
 						"type_signature": "(deps: AppDeps, options: CreateTestingActionsOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"parameters": [
@@ -28600,7 +28740,7 @@
 						"name": "testing_reset_wiped_tables",
 						"kind": "variable",
 						"doc_comment": "Set of auth-namespace tables `_testing_reset` wipes. Mirrored by the coverage test.",
-						"source_line": 365,
+						"source_line": 372,
 						"type_signature": "string[]"
 					}
 				],
