@@ -28662,28 +28662,44 @@
 						"name": "testing_reset_action_spec",
 						"kind": "variable",
 						"doc_comment": "The `_testing_reset` action spec.\n\nInput:\n- `extra_keeper_roles` — roles to grant the fresh keeper *in addition\n  to* `[ROLE_KEEPER, ROLE_ADMIN]` (matching production bootstrap).\n- `extra_accounts` — additional accounts to seed at this same\n  bootstrap-equivalent step. Each entry's `roles` are direct-granted\n  (bypassing offer/accept) because the seed is *part of bootstrap*,\n  not a post-bootstrap action. Use this for accounts whose required\n  roles aren't admin-grantable via offer/accept (e.g. `ROLE_KEEPER`,\n  whose `RoleSpec.grant_paths` is bootstrap-only). For\n  admin-grantable roles, prefer `fixture.create_account({roles})`\n  (offer/accept production path).\n\nOutput: keeper credentials plus a parallel array of seeded\n`extra_accounts` (same order as input). The per-test fixture closes\nover the returned values; subsequent calls in the same test see the\nfresh keeper and any requested secondaries.\n\n`auth` gates on the daemon-token credential — the keeper holds it\nexclusively. The action is internally privileged (it runs direct\nDB writes the production wire never exposes); daemon-token auth is\nthe structural fence.",
-						"source_line": 112,
+						"source_line": 114,
 						"type_signature": "{ readonly method: \"_testing_reset\"; readonly kind: \"request_response\"; readonly initiator: \"frontend\"; readonly auth: { readonly account: \"required\"; readonly actor: \"none\"; readonly credential_types: readonly [...]; }; ... 4 more ...; readonly description: \"Test-binary only — wipe auth tables, re-bootstrap a fresh..."
 					},
 					{
 						"name": "testing_drain_effects_action_spec",
 						"kind": "variable",
 						"doc_comment": "`_testing_drain_effects` — await in-flight fire-and-forget audit writes so\na following `audit_log_list` is authoritative. The deterministic barrier\nthe cross-backend conformance suite uses in place of a poll/sleep before\nasserting on audit rows.\n\nOn the TS spine the barrier is **satisfied by construction**: the test\nbinary runs `await_pending_effects: true`, so every mutation's fire-and-\nforget audit emits are awaited before its response returns — by the time\na later drain call runs, prior emits are already durable. The action still\nexists so the cross-backend test body calls the same method on every\nbackend; the Rust spine (whose audit writes are detached tokio tasks)\ndoes the real await in `AuditEmitter::drain_inflight`.\n\n`auth` gates on the daemon-token credential, matching `_testing_reset`.",
-						"source_line": 154,
+						"source_line": 156,
 						"type_signature": "{ readonly method: \"_testing_drain_effects\"; readonly kind: \"request_response\"; readonly initiator: \"frontend\"; readonly auth: { readonly account: \"required\"; readonly actor: \"none\"; readonly credential_types: readonly [...]; }; ... 4 more ...; readonly description: \"Test-binary only — await in-flight fire-and-forge..."
 					},
 					{
 						"name": "testing_mint_session_action_spec",
 						"kind": "variable",
 						"doc_comment": "`_testing_mint_session` — mint an expired-by-construction server-side\nsession for an existing account and return its signed cookie value.\n\nThe minted `auth_session` row's `expires_at` is backdated (negative\n`expires_in_seconds`) while the returned cookie's own signed payload\nstays valid (future). Cross-process auth resolution therefore passes the\ncookie-payload gate (`parse_session`) and is refused by the authoritative\nDB-row gate (`query_session_get_valid` — `WHERE expires_at > NOW()`) —\nthe gate the in-process payload-expiry tests never reach and the one that\nstructurally needs a server-side mint (the cross-process driver has no\nkeyring / DB access). The `expired_session` conformance principal drives\nthis.\n\n`auth` gates on the daemon-token credential, matching `_testing_reset` —\neffectively keeper-only. Like its siblings the action is internally\nprivileged (a direct `auth_session` insert the production wire never\nexposes); daemon-token auth is the structural fence and the module's\n`assert_dev_env` import (TS) plus the Rust `cargo xtask check-release`\ndep-graph audit keep the `_testing_` surface out of every shipped build.",
-						"source_line": 188,
+						"source_line": 190,
 						"type_signature": "{ readonly method: \"_testing_mint_session\"; readonly kind: \"request_response\"; readonly initiator: \"frontend\"; readonly auth: { readonly account: \"required\"; readonly actor: \"none\"; readonly credential_types: readonly [...]; }; ... 4 more ...; readonly description: string; }"
 					},
 					{
 						"name": "create_testing_drain_effects_action",
 						"kind": "function",
 						"doc_comment": "Build the standalone `_testing_drain_effects` action. No deps — on TS the\nbarrier is satisfied by `await_pending_effects` (see the spec doc), so the\nhandler just returns `{ok: true}`. Mount it on any test endpoint whose\nsuite asserts on audit rows (the spine binary bundles it via\n`create_testing_actions`; in-process suites mount it directly).",
-						"source_line": 212,
+						"source_line": 214,
+						"type_signature": "(): RpcAction",
+						"return_type": "RpcAction",
+						"parameters": []
+					},
+					{
+						"name": "testing_schema_snapshot_action_spec",
+						"kind": "variable",
+						"doc_comment": "`_testing_schema_snapshot` — introspect the live database into a normalized\n`SchemaSnapshot` for cross-impl parity diffing. The cross-backend harness\ncalls this on each backend, then `assert_schema_snapshots_equal`s the\nresults (a Rust backend answers from `fuz_db::query_schema_snapshot`; the\nshapes match by design). Optional `exclude_tables` drops documented\ndivergences from both sides before comparison.\n\n`auth` gates on the daemon-token credential, matching `_testing_reset`.",
+						"source_line": 257,
+						"type_signature": "{ readonly method: \"_testing_schema_snapshot\"; readonly kind: \"request_response\"; readonly initiator: \"frontend\"; readonly auth: { readonly account: \"required\"; readonly actor: \"none\"; readonly credential_types: readonly [...]; }; ... 4 more ...; readonly description: \"Test-binary only — introspect the live schema i..."
+					},
+					{
+						"name": "create_testing_schema_snapshot_action",
+						"kind": "function",
+						"doc_comment": "Build the standalone `_testing_schema_snapshot` action. No deps —\nintrospects `ctx.db` via `query_schema_snapshot`. Bundled by\n`create_testing_actions`; mount directly for in-process use.",
+						"source_line": 275,
 						"type_signature": "(): RpcAction",
 						"return_type": "RpcAction",
 						"parameters": []
@@ -28692,7 +28708,7 @@
 						"name": "CreateTestingActionsOptions",
 						"kind": "type",
 						"doc_comment": "Options for `create_testing_actions`.",
-						"source_line": 216,
+						"source_line": 281,
 						"type_signature": "CreateTestingActionsOptions",
 						"properties": [
 							{
@@ -28722,7 +28738,7 @@
 						"name": "create_testing_actions",
 						"kind": "function",
 						"doc_comment": "Build the testing RPC actions for a test binary's registry.\n\nReturns `_testing_reset` — the single privileged action test binaries\nregister. The test binary calls this at server-assembly time and\nregisters the result on its dispatcher.\n\nThe reset action's table-wipe list mirrors\n`auth_integration_truncate_tables` from `testing/db.ts` — the\ncanonical \"auth tables a between-test reset must clear\" set.\n`testing_reset_actions.coverage.test.ts` enforces the set-equality\ninvariant so a future auth migration that adds a table to that list\nwithout updating this handler fails CI.",
-						"source_line": 260,
+						"source_line": 325,
 						"type_signature": "(deps: AppDeps, options: CreateTestingActionsOptions): RpcAction[]",
 						"return_type": "RpcAction[]",
 						"parameters": [
@@ -28740,17 +28756,18 @@
 						"name": "testing_reset_wiped_tables",
 						"kind": "variable",
 						"doc_comment": "Set of auth-namespace tables `_testing_reset` wipes. Mirrored by the coverage test.",
-						"source_line": 372,
+						"source_line": 438,
 						"type_signature": "string[]"
 					}
 				],
-				"module_comment": "Test-binary RPC actions for cross-process integration tests.\n\nThree daemon-token-authed actions, bundled by `create_testing_actions`:\n**`_testing_reset`** (DB wipe + keeper re-seed), **`_testing_drain_effects`**\n(audit barrier), and **`_testing_mint_session`** (forge an\nexpired-by-construction server-side session for the expiry conformance\ncases).\n\n`_testing_reset` — full DB wipe + keeper re-seed + optional\nsecondary-account seeding. The\nhandler wipes every auth-namespace row (no keeper-preserve filter),\nflips `bootstrap_lock` back to its post-bootstrap shape, seeds a\nfresh keeper account inline (reusing `create_test_account_with_credentials`\nso cross-process matches in-process write semantics), seeds any\ncaller-requested `extra_accounts` (also direct-inserted at this\nsetup step), refreshes the daemon-token cache to point at the new\nkeeper, and fires the consumer-supplied domain-state callback. The\nnew keeper + secondary credentials return as the action output so\nthe per-test fixture closes over them.\n\nThe redesign converges in-process and cross-process keeper\nlifetimes: both modes now run against a freshly bootstrapped keeper\nper test. Mutation-cascade tests (password change, revoke-all,\nhardcoded-username signup uniqueness) and direct keeper-vs-admin\nprobes work uniformly cross-process.\n\n**Keeper ≠ admin.** The `keeper` and `admin` roles are independent.\nKeeper authorizes daemon-token / bootstrap paths; admin authorizes\nthe user-facing admin RPC surface. `_testing_reset` seeds the keeper\naccount with `[ROLE_KEEPER, ROLE_ADMIN]` by default — matching the\nproduction `bootstrap_account` flow — plus any roles passed via\n`extra_keeper_roles`. Tests probing the keeper-vs-admin separation\n(a keeper-only account must 403 on admin RPCs) declare a secondary\nvia `extra_accounts: [{username, roles: [ROLE_KEEPER]}]` so the\naccount is seeded at this same bootstrap-equivalent step.\n\n**No free-form runtime bypass.** Earlier drafts considered a separate\n`_testing_seed_role_grant` action for arbitrary direct grants; that\nwas rejected because a runtime bypass would let tests skip the\nproduction consent flow's side-effects (audit emit, WS fan-out) and\nsilently mask bugs in those paths. The bypass that does exist —\n`extra_accounts` — is framed as bootstrap-time seeding, the same\nshape `bootstrap_account` itself uses to grant the initial\n`KEEPER` + `ADMIN` pair. Tests that want a role on a *post-bootstrap*\naccount must route through `role_grant_offer_create` +\n`role_grant_offer_accept` (the production path); they observe the\nfull event chain.\n\nProduction safety: this module lives under `cross_backend/` and starts\nwith `import '../assert_dev_env.js';` — production bundles either\ntree-shake the module out or throw at startup. The Rust mirror\n(`fuz_testing` crate) ships a parallel action; `cargo xtask\ncheck-release` blocks `fuz_testing` from entering production dep\ngraphs.",
+				"module_comment": "Test-binary RPC actions for cross-process integration tests.\n\nFour daemon-token-authed actions, bundled by `create_testing_actions`:\n**`_testing_reset`** (DB wipe + keeper re-seed), **`_testing_drain_effects`**\n(audit barrier), **`_testing_mint_session`** (forge an\nexpired-by-construction server-side session for the expiry conformance\ncases), and **`_testing_schema_snapshot`** (introspect the live schema for\ncross-impl parity diffing against a Rust backend's `fuz_db` snapshot).\n\n`_testing_reset` — full DB wipe + keeper re-seed + optional\nsecondary-account seeding. The\nhandler wipes every auth-namespace row (no keeper-preserve filter),\nflips `bootstrap_lock` back to its post-bootstrap shape, seeds a\nfresh keeper account inline (reusing `create_test_account_with_credentials`\nso cross-process matches in-process write semantics), seeds any\ncaller-requested `extra_accounts` (also direct-inserted at this\nsetup step), refreshes the daemon-token cache to point at the new\nkeeper, and fires the consumer-supplied domain-state callback. The\nnew keeper + secondary credentials return as the action output so\nthe per-test fixture closes over them.\n\nThe redesign converges in-process and cross-process keeper\nlifetimes: both modes now run against a freshly bootstrapped keeper\nper test. Mutation-cascade tests (password change, revoke-all,\nhardcoded-username signup uniqueness) and direct keeper-vs-admin\nprobes work uniformly cross-process.\n\n**Keeper ≠ admin.** The `keeper` and `admin` roles are independent.\nKeeper authorizes daemon-token / bootstrap paths; admin authorizes\nthe user-facing admin RPC surface. `_testing_reset` seeds the keeper\naccount with `[ROLE_KEEPER, ROLE_ADMIN]` by default — matching the\nproduction `bootstrap_account` flow — plus any roles passed via\n`extra_keeper_roles`. Tests probing the keeper-vs-admin separation\n(a keeper-only account must 403 on admin RPCs) declare a secondary\nvia `extra_accounts: [{username, roles: [ROLE_KEEPER]}]` so the\naccount is seeded at this same bootstrap-equivalent step.\n\n**No free-form runtime bypass.** Earlier drafts considered a separate\n`_testing_seed_role_grant` action for arbitrary direct grants; that\nwas rejected because a runtime bypass would let tests skip the\nproduction consent flow's side-effects (audit emit, WS fan-out) and\nsilently mask bugs in those paths. The bypass that does exist —\n`extra_accounts` — is framed as bootstrap-time seeding, the same\nshape `bootstrap_account` itself uses to grant the initial\n`KEEPER` + `ADMIN` pair. Tests that want a role on a *post-bootstrap*\naccount must route through `role_grant_offer_create` +\n`role_grant_offer_accept` (the production path); they observe the\nfull event chain.\n\nProduction safety: this module lives under `cross_backend/` and starts\nwith `import '../assert_dev_env.js';` — production bundles either\ntree-shake the module out or throw at startup. The Rust mirror\n(`fuz_testing` crate) ships a parallel action; `cargo xtask\ncheck-release` blocks `fuz_testing` from entering production dep\ngraphs.",
 				"dependencies": [
 					"actions/action_rpc.ts",
 					"auth/role_schema.ts",
 					"testing/app_server.ts",
 					"testing/assert_dev_env.ts",
-					"testing/db.ts"
+					"testing/db.ts",
+					"testing/schema_introspect.ts"
 				]
 			},
 			{
@@ -31734,7 +31751,8 @@
 					}
 				],
 				"module_comment": "PostgreSQL schema introspection — produces a normalized, JSON-serializable\nsnapshot of a database's structure for cross-impl parity checks.\n\nThe snapshot covers:\n\n- `schema_version` rows (`namespace`, `name`, `sequence`) — captures\n  migration set state across impls\n- Tables with columns (data type, nullability, default, identity)\n- Indexes with canonical Postgres-rendered definitions\n- Constraints (CHECK, FOREIGN KEY, PRIMARY KEY, UNIQUE, EXCLUSION)\n- Sequences with data type — distinguishes `int4` (SERIAL) from `int8`\n  (BIGSERIAL)\n\nDesigned for `pg_catalog` introspection — works against both PostgreSQL\nand PGlite. The snapshot is fully deterministic: every collection sorts by\na stable key and excludes time-varying fields like `applied_at`.\n\nPaired with `schema_parity.ts` for comparison + assertion helpers.",
-				"dependencies": ["testing/assert_dev_env.ts"]
+				"dependencies": ["testing/assert_dev_env.ts"],
+				"dependents": ["testing/cross_backend/testing_reset_actions.ts"]
 			},
 			{
 				"path": "testing/schema_parity.ts",
