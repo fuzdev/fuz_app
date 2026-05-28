@@ -22333,15 +22333,15 @@
 					{
 						"name": "disconnect_event_types",
 						"kind": "variable",
-						"doc_comment": "Audit event types that trigger SSE stream disconnection.\n\n`role_grant_revoke` requires the revoked role to match the guard's `required_role`\n(or is skipped entirely when `required_role` is `null` — useful for streams\nnot gated by any specific role_grant).\n`session_revoke_all` and `password_change` close every stream for the target account.\n`session_revoke` closes only the stream tied to the specific revoked session\n(matched by the blake3 session hash in `event.metadata.session_id`) — closing\nall of a user's streams for a single-session revoke would be over-aggressive.",
-						"source_line": 38,
+						"doc_comment": "Audit event types that trigger SSE stream disconnection — the union of\naccess-invalidation events. Over-closing a one-way admin feed is cheap (the\nclient reconnects if still authorized), so the SSE set is the full union.\n\n`role_grant_revoke` requires the revoked role to match the guard's `required_role`\n(or is skipped entirely when `required_role` is `null` — useful for streams\nnot gated by any specific role_grant). The WS half deliberately omits this\nevent (per-message re-authorization picks role changes up there); a one-way\nSSE stream has no per-message recheck, so it must close here.\n`session_revoke_all` / `token_revoke_all` / `password_change` / `logout` close\nevery stream for the target account.\n`session_revoke` closes only the stream tied to the specific revoked session\n(matched by the blake3 session hash in `event.metadata.session_id`) — closing\nall of a user's streams for a single-session revoke would be over-aggressive.\nThe single `token_revoke` the WS half handles is omitted: an SSE stream is\nopened under a cookie session, never an API token, so no stream is keyed by a\nsingle token id.",
+						"source_line": 46,
 						"type_signature": "ReadonlySet<string>"
 					},
 					{
 						"name": "create_sse_auth_guard",
 						"kind": "function",
-						"doc_comment": "Create an audit event handler that closes SSE streams on auth changes.\n\nCloses streams when:\n- `role_grant_revoke` fires for the `required_role` targeting a connected subscriber\n- `session_revoke_all` targets a connected subscriber (consistent invalidation)\n- `password_change` targets a connected subscriber (sessions revoked implicitly)\n\nThe registry must use `account_id` as the identity key when subscribing\n(passed as the third argument to `registry.subscribe()`).",
-						"source_line": 63,
+						"doc_comment": "Create an audit event handler that closes SSE streams on auth changes.\n\nCloses streams when:\n- `role_grant_revoke` fires for the `required_role` targeting a connected subscriber\n- `session_revoke` targets the specific revoked session (session-hash-scoped)\n- `session_revoke_all` / `token_revoke_all` / `password_change` / `logout`\n  target a connected subscriber (account-wide)\n\nThe registry must use `account_id` as the identity key when subscribing\n(passed as the third argument to `registry.subscribe()`).",
+						"source_line": 74,
 						"type_signature": "<T>(registry: SubscriberRegistry<T>, required_role: string | null, log: Logger): (event: AuditLogEvent) => void",
 						"return_type": "(event: AuditLogEvent) => void",
 						"return_description": "an `on_audit_event` callback",
@@ -22367,7 +22367,7 @@
 						"name": "AuditLogSse",
 						"kind": "type",
 						"doc_comment": "Convenience factory result for audit log SSE.\n\nSatisfies `AuditLogRouteOptions['stream']` and provides the combined\n`on_audit_event` callback (broadcast + guard).",
-						"source_line": 120,
+						"source_line": 131,
 						"type_signature": "AuditLogSse",
 						"properties": [
 							{
@@ -22400,14 +22400,14 @@
 						"name": "audit_log_event_specs",
 						"kind": "variable",
 						"doc_comment": "SSE event specs for audit log events.\n\nOne spec per `AUDIT_EVENT_TYPES` entry, all sharing the `AuditLogEventJson` params schema.\nPass to `create_app_server`'s `event_specs` for surface generation and DEV validation.",
-						"source_line": 137,
+						"source_line": 148,
 						"type_signature": "EventSpec[]"
 					},
 					{
 						"name": "AUDIT_LOG_SSE_MAX_PER_SCOPE",
 						"kind": "variable",
 						"doc_comment": "Default max concurrent SSE subscribers per session scope for the audit log.\n\nThe audit log SSE subscribes with `scope = session_hash` and\n`groups = [account_id]`. Only `scope` is capped — so this limits tabs\nper session. An account's total streams across all sessions is bounded\ntransitively by `max_sessions × AUDIT_LOG_SSE_MAX_PER_SCOPE`. 10 tabs\nper session is a comfortable ceiling for normal use; consumers raising\nit above ~50 should consider server-side connection limits.",
-						"source_line": 156,
+						"source_line": 167,
 						"type_signature": "10"
 					},
 					{
@@ -22417,7 +22417,7 @@
 						"examples": [
 							"```ts\nconst audit_sse = create_audit_log_sse({log});\n\n// Inside the audit_factory body on CreateAppBackendOptions:\naudit_factory: ({db, log}) => create_audit_emitter({\n  db,\n  log,\n  on_audit_event: audit_sse.on_audit_event,\n}),\n\n// In create_route_specs:\ncreate_audit_log_route_specs({stream: audit_sse});\n\n// In create_app_server options:\nevent_specs: audit_log_event_specs,\n```"
 						],
-						"source_line": 194,
+						"source_line": 205,
 						"type_signature": "(options: { role?: string | undefined; log: Logger; max_per_scope?: number | null | undefined; }): AuditLogSse",
 						"return_type": "AuditLogSse",
 						"return_description": "audit log SSE setup (stream options + `on_audit_event` + registry)",
@@ -28563,7 +28563,7 @@
 						"name": "CrossProcessSseTestOptions",
 						"kind": "type",
 						"doc_comment": "Configuration for {@link describe_cross_process_sse_tests}.",
-						"source_line": 54,
+						"source_line": 71,
 						"type_signature": "CrossProcessSseTestOptions",
 						"properties": [
 							{
@@ -28613,8 +28613,8 @@
 					{
 						"name": "describe_cross_process_sse_tests",
 						"kind": "function",
-						"doc_comment": "Register the cross-process SSE round-trip suite. Up to three cases over a\nreal streaming `fetch`: connected-comment, audit data frame, and\nclose-on-revoke.",
-						"source_line": 110,
+						"doc_comment": "Register the cross-process SSE round-trip suite. Up to four cases over a\nreal streaming `fetch`: connected-comment, audit data frame, account-wide\nclose-on-revoke, and session-scoped close-on-revoke.",
+						"source_line": 127,
 						"type_signature": "(options: CrossProcessSseTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -28625,7 +28625,7 @@
 						]
 					}
 				],
-				"module_comment": "Cross-process SSE round-trip suite — the cross-process counterpart to the\nin-process `testing/sse_round_trip.ts` harness.\n\nWhere the in-process harness reads a Hono `Response.body` directly, this\nsuite opens a **real** streaming `fetch` against a spawned backend's\naudit-log SSE endpoint via `create_sse_transport`, threading the\nfresh-per-test keeper's session cookie. It is the only coverage of the\nspawned binary's live SSE path — the standard cross-process bundle\n(`describe_standard_cross_process_tests`) omits SSE by design, so consumers\ncall this alongside it (paralleling `describe_cross_process_ws_tests`).\n\nThree cases, mirroring the in-process SSE self-test against fuz_app's\nstandard audit-log stream:\n\n1. **connects** — the stream opens and emits the `: connected` comment.\n2. **data frame** (gated on `rpc_path`) — a minted secondary's sessions are\n   revoked over the keeper's admin channel (`admin_session_revoke_all`),\n   broadcasting a `session_revoke_all` audit event as one `data:` frame to\n   the subscribed keeper **without** closing its stream (the event targets\n   the secondary, not the subscriber). The secondary is minted *before* the\n   stream opens so `create_account`'s own audit events (invite / signup /\n   login / token) don't land on it.\n3. **close-on-revoke** (gated on `rpc_path`) — the subscriber's *own*\n   sessions are revoked (`account_session_revoke_all`), so the\n   `session_revoke_all` event targets the keeper and the audit guard drops\n   the live stream. Asserted via `SseTransport.wait_for_close`.\n\nGated on `capabilities.sse` — backends without an end-to-end SSE stream\nskip (the cases still surface as `.skip` in the report). Cross-process\nonly: `create_sse_transport` needs a real bound socket, so wire it from a\n`*.cross.test.ts` file, never an in-process setup.",
+				"module_comment": "Cross-process SSE round-trip suite — the cross-process counterpart to the\nin-process `testing/sse_round_trip.ts` harness.\n\nWhere the in-process harness reads a Hono `Response.body` directly, this\nsuite opens a **real** streaming `fetch` against a spawned backend's\naudit-log SSE endpoint via `create_sse_transport`, threading the\nfresh-per-test keeper's session cookie. It is the only coverage of the\nspawned binary's live SSE path — the standard cross-process bundle\n(`describe_standard_cross_process_tests`) omits SSE by design, so consumers\ncall this alongside it (paralleling `describe_cross_process_ws_tests`).\n\nFour cases, mirroring the in-process SSE self-test against fuz_app's\nstandard audit-log stream:\n\n1. **connects** — the stream opens and emits the `: connected` comment.\n2. **data frame** (gated on `rpc_path`) — a minted secondary's sessions are\n   revoked over the keeper's admin channel (`admin_session_revoke_all`),\n   broadcasting a `session_revoke_all` audit event as one `data:` frame to\n   the subscribed keeper **without** closing its stream (the event targets\n   the secondary, not the subscriber). The secondary is minted *before* the\n   stream opens so `create_account`'s own audit events (invite / signup /\n   login / token) don't land on it.\n3. **close-on-revoke, account-wide** (gated on `rpc_path`) — the subscriber's\n   *own* sessions are revoked (`account_session_revoke_all`), so the\n   `session_revoke_all` event targets the keeper and the audit guard drops\n   the live stream via the account-wide `close_for_account` path. Asserted\n   via `SseTransport.wait_for_close`.\n4. **close-on-revoke, session-scoped** (gated on `rpc_path`) — the\n   subscriber's *own* single session is revoked (`account_session_revoke`),\n   so the `session_revoke` event drops the stream via the session-hash-scoped\n   `close_for_session` path (the distinct primitive cases 2–3 don't reach).\n\nThe close-on-revoke matrix is layered: cases 3–4 exercise the account-wide\nand session-scoped paths cross-process; the remaining union events\n(`token_revoke_all` / `logout` / `password_change`, all account-wide; and\n`role_grant_revoke`, role-matched) are covered by the spine's `fuz_realtime`\nSSE-registry unit tests and the in-process guard self-test, so a cross-process\n`token_revoke_all`-with-zero-tokens case (which may emit no audit row) stays\nout to keep the spawned-backend suite non-flaky.\n\nGated on `capabilities.sse` — backends without an end-to-end SSE stream\nskip (the cases still surface as `.skip` in the report). Cross-process\nonly: `create_sse_transport` needs a real bound socket, so wire it from a\n`*.cross.test.ts` file, never an in-process setup.",
 				"dependencies": [
 					"auth/account_action_specs.ts",
 					"auth/admin_action_specs.ts",

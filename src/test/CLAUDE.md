@@ -120,7 +120,8 @@ HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
 `describe_cross_process_ws_tests` suite — live WebSocket, including
 close-on-revoke), `sse.cross.test.ts` (the real-streaming-`fetch`
 `describe_cross_process_sse_tests` suite — live audit-log SSE: connect,
-data frame, close-on-revoke), `cell.cross.test.ts` (both
+data frame, account-wide close-on-revoke, session-scoped close-on-revoke),
+`cell.cross.test.ts` (both
 `describe_cell_crud_cross_tests` — the CRUD lifecycle + authz matrix — and
 `describe_cell_relations_cross_tests` — grant / field / item / clone / audit,
 incl. the editor-grant `cell_visibility_manage_only` 403 — each response parsed

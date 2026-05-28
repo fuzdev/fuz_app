@@ -25,21 +25,31 @@ import type {SseStream, SseNotification, EventSpec} from './sse.js';
 export const AUDIT_LOG_CHANNEL = 'audit_log';
 
 /**
- * Audit event types that trigger SSE stream disconnection.
+ * Audit event types that trigger SSE stream disconnection — the union of
+ * access-invalidation events. Over-closing a one-way admin feed is cheap (the
+ * client reconnects if still authorized), so the SSE set is the full union.
  *
  * `role_grant_revoke` requires the revoked role to match the guard's `required_role`
  * (or is skipped entirely when `required_role` is `null` — useful for streams
- * not gated by any specific role_grant).
- * `session_revoke_all` and `password_change` close every stream for the target account.
+ * not gated by any specific role_grant). The WS half deliberately omits this
+ * event (per-message re-authorization picks role changes up there); a one-way
+ * SSE stream has no per-message recheck, so it must close here.
+ * `session_revoke_all` / `token_revoke_all` / `password_change` / `logout` close
+ * every stream for the target account.
  * `session_revoke` closes only the stream tied to the specific revoked session
  * (matched by the blake3 session hash in `event.metadata.session_id`) — closing
  * all of a user's streams for a single-session revoke would be over-aggressive.
+ * The single `token_revoke` the WS half handles is omitted: an SSE stream is
+ * opened under a cookie session, never an API token, so no stream is keyed by a
+ * single token id.
  */
 export const disconnect_event_types: ReadonlySet<string> = new Set([
 	'role_grant_revoke', // role revoked — user lost access
 	'session_revoke', // single session revoked — close only that stream
 	'session_revoke_all', // all sessions invalidated — user should be kicked
+	'token_revoke_all', // all API tokens invalidated — close the account's streams
 	'password_change', // password changed — all sessions revoked implicitly
+	'logout', // explicit logout — close the account's streams
 ]);
 
 /**
@@ -47,8 +57,9 @@ export const disconnect_event_types: ReadonlySet<string> = new Set([
  *
  * Closes streams when:
  * - `role_grant_revoke` fires for the `required_role` targeting a connected subscriber
- * - `session_revoke_all` targets a connected subscriber (consistent invalidation)
- * - `password_change` targets a connected subscriber (sessions revoked implicitly)
+ * - `session_revoke` targets the specific revoked session (session-hash-scoped)
+ * - `session_revoke_all` / `token_revoke_all` / `password_change` / `logout`
+ *   target a connected subscriber (account-wide)
  *
  * The registry must use `account_id` as the identity key when subscribing
  * (passed as the third argument to `registry.subscribe()`).
