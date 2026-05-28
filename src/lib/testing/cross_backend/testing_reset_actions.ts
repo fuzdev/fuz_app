@@ -3,8 +3,14 @@ import '../assert_dev_env.js';
 /**
  * Test-binary RPC actions for cross-process integration tests.
  *
- * Single daemon-token-authed action: **`_testing_reset`** — full DB
- * wipe + keeper re-seed + optional secondary-account seeding. The
+ * Three daemon-token-authed actions, bundled by `create_testing_actions`:
+ * **`_testing_reset`** (DB wipe + keeper re-seed), **`_testing_drain_effects`**
+ * (audit barrier), and **`_testing_mint_session`** (forge an
+ * expired-by-construction server-side session for the expiry conformance
+ * cases).
+ *
+ * `_testing_reset` — full DB wipe + keeper re-seed + optional
+ * secondary-account seeding. The
  * handler wipes every auth-namespace row (no keeper-preserve filter),
  * flips `bootstrap_lock` back to its post-bootstrap shape, seeds a
  * fresh keeper account inline (reusing `create_test_account_with_credentials`
@@ -63,7 +69,11 @@ import type {SessionOptions} from '../../auth/session_cookie.js';
 import type {DaemonTokenState} from '../../auth/daemon_token.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '../../auth/role_schema.js';
 import {auth_integration_truncate_tables} from '../db.js';
-import {create_test_account_with_credentials, DEFAULT_TEST_PASSWORD} from '../app_server.js';
+import {
+	create_test_account_with_credentials,
+	mint_test_session,
+	DEFAULT_TEST_PASSWORD,
+} from '../app_server.js';
 
 /** Output shape for an individual seeded account (keeper or extra). */
 const SeededAccountShape = z.strictObject({
@@ -123,6 +133,83 @@ export const testing_reset_action_spec = {
 	description:
 		'Test-binary only — wipe auth tables, re-bootstrap a fresh keeper (+ optional extras), fire the domain-state reset.',
 } as const satisfies RequestResponseActionSpec;
+
+/**
+ * `_testing_drain_effects` — await in-flight fire-and-forget audit writes so
+ * a following `audit_log_list` is authoritative. The deterministic barrier
+ * the cross-backend conformance suite uses in place of a poll/sleep before
+ * asserting on audit rows.
+ *
+ * On the TS spine the barrier is **satisfied by construction**: the test
+ * binary runs `await_pending_effects: true`, so every mutation's fire-and-
+ * forget audit emits are awaited before its response returns — by the time
+ * a later drain call runs, prior emits are already durable. The action still
+ * exists so the cross-backend test body calls the same method on every
+ * backend; the Rust spine (whose audit writes are detached tokio tasks)
+ * does the real await in `AuditEmitter::drain_inflight`.
+ *
+ * `auth` gates on the daemon-token credential, matching `_testing_reset`.
+ */
+export const testing_drain_effects_action_spec = {
+	method: '_testing_drain_effects',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: {account: 'required', actor: 'none', credential_types: ['daemon_token']},
+	side_effects: false,
+	input: z.void(),
+	output: z.strictObject({ok: z.boolean()}),
+	async: true,
+	description:
+		'Test-binary only — await in-flight fire-and-forget audit writes so a following audit_log_list read is authoritative.',
+} as const satisfies RequestResponseActionSpec;
+
+/**
+ * `_testing_mint_session` — mint an expired-by-construction server-side
+ * session for an existing account and return its signed cookie value.
+ *
+ * The minted `auth_session` row's `expires_at` is backdated (negative
+ * `expires_in_seconds`) while the returned cookie's own signed payload
+ * stays valid (future). Cross-process auth resolution therefore passes the
+ * cookie-payload gate (`parse_session`) and is refused by the authoritative
+ * DB-row gate (`query_session_get_valid` — `WHERE expires_at > NOW()`) —
+ * the gate the in-process payload-expiry tests never reach and the one that
+ * structurally needs a server-side mint (the cross-process driver has no
+ * keyring / DB access). The `expired_session` conformance principal drives
+ * this.
+ *
+ * `auth` gates on the daemon-token credential, matching `_testing_reset` —
+ * effectively keeper-only. Like its siblings the action is internally
+ * privileged (a direct `auth_session` insert the production wire never
+ * exposes); daemon-token auth is the structural fence and the module's
+ * `assert_dev_env` import (TS) plus the Rust `cargo xtask check-release`
+ * dep-graph audit keep the `_testing_` surface out of every shipped build.
+ */
+export const testing_mint_session_action_spec = {
+	method: '_testing_mint_session',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: {account: 'required', actor: 'none', credential_types: ['daemon_token']},
+	side_effects: true,
+	input: z.strictObject({
+		account_id: Uuid,
+		expires_in_seconds: z.number().int(),
+	}),
+	output: z.strictObject({session_cookie: z.string()}),
+	async: true,
+	description:
+		'Test-binary only — mint a backdated-expiry auth_session row for an account and return its ' +
+		'signed cookie value (exercises the authoritative server-side DB-row expiry gate).',
+} as const satisfies RequestResponseActionSpec;
+
+/**
+ * Build the standalone `_testing_drain_effects` action. No deps — on TS the
+ * barrier is satisfied by `await_pending_effects` (see the spec doc), so the
+ * handler just returns `{ok: true}`. Mount it on any test endpoint whose
+ * suite asserts on audit rows (the spine binary bundles it via
+ * `create_testing_actions`; in-process suites mount it directly).
+ */
+export const create_testing_drain_effects_action = (): RpcAction =>
+	rpc_action(testing_drain_effects_action_spec, async () => ({ok: true}));
 
 /** Options for `create_testing_actions`. */
 export interface CreateTestingActionsOptions {
@@ -260,6 +347,17 @@ export const create_testing_actions = (
 
 			return {...keeper, extra_accounts: extras};
 		}),
+		rpc_action(testing_mint_session_action_spec, async (input, ctx) => {
+			const {session_cookie} = await mint_test_session({
+				db: ctx.db,
+				keyring: deps.keyring,
+				session_options,
+				account_id: input.account_id,
+				expires_in_seconds: input.expires_in_seconds,
+			});
+			return {session_cookie};
+		}),
+		create_testing_drain_effects_action(),
 	];
 };
 

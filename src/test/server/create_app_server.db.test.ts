@@ -536,7 +536,6 @@ describe('create_app_server', () => {
 		// Context shape matches what create_route_specs receives
 		assert.isDefined(ctx.deps);
 		assert.isDefined(ctx.deps.db);
-		assert.isDefined(ctx.app_settings);
 		assert.isDefined(ctx.bootstrap_status);
 		// Surface reflects the factory-produced endpoint
 		const rpc_endpoint = result.surface_spec.surface.rpc_endpoints.find(
@@ -558,8 +557,8 @@ describe('create_app_server', () => {
 
 	test('rpc_endpoints factory + create_standard_rpc_actions compose', async () => {
 		// End-to-end check: the factory form of rpc_endpoints paired with
-		// the combined admin+role-grant-offer+account helper should put all 25
-		// methods (11 admin + 7 role-grant-offer + 7 account) on the surface
+		// the combined admin+role-grant-offer+account helper should put all 28
+		// methods (14 admin + 7 role-grant-offer + 7 account) on the surface
 		// and auto-mount them.
 		const {create_standard_rpc_actions} = await import('$lib/auth/standard_rpc_actions.js');
 		const result = await create_app_server(
@@ -567,9 +566,7 @@ describe('create_app_server', () => {
 				rpc_endpoints: (ctx) => [
 					{
 						path: '/api/rpc',
-						actions: create_standard_rpc_actions(ctx.deps, {
-							app_settings: ctx.app_settings,
-						}),
+						actions: create_standard_rpc_actions(ctx.deps),
 					},
 				],
 			}),

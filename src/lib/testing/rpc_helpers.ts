@@ -30,9 +30,9 @@ import {create_stub_app_server_context} from './stubs.js';
  * Union accepted by the suite-level `rpc_endpoints` option — eager array or
  * a factory that takes an `AppServerContext` and returns endpoint specs. The
  * factory form is required when action handlers must close over the
- * per-test `ctx.app_settings` / `ctx.deps` (e.g. the canonical
- * `create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`
- * pattern). `create_app_server` resolves either shape natively; test helpers
+ * per-test `ctx.deps` (e.g. the canonical
+ * `create_standard_rpc_actions(ctx.deps)` pattern). `create_app_server`
+ * resolves either shape natively; test helpers
  * forward the raw value to the top-level `rpc_endpoints` slot on
  * `CreateTestAppOptions` for live dispatch.
  */

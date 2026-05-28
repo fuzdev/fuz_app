@@ -3,9 +3,8 @@
  * mirrors `create_standard_rpc_actions` on the frontend.
  *
  * Symmetry checks: count adds up, no duplicates, and every method the
- * runtime factory mounts (with `app_settings` wired) is present in the
- * spec list. The reverse — every spec is mounted — also holds when
- * `app_settings` is supplied.
+ * runtime factory mounts is present in the spec list. The reverse —
+ * every spec is mounted — also holds.
  *
  * @module
  */
@@ -18,17 +17,10 @@ import {all_admin_action_specs} from '$lib/auth/admin_action_specs.js';
 import {all_role_grant_offer_action_specs} from '$lib/auth/role_grant_offer_action_specs.js';
 import {all_account_action_specs} from '$lib/auth/account_action_specs.js';
 import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
-import type {AppSettings} from '$lib/auth/app_settings_schema.js';
 import {create_test_audit_emitter} from '$lib/testing/stubs.js';
 
 const log = new Logger('test', {level: 'off'});
 const deps = {log, audit: create_test_audit_emitter()};
-
-const make_app_settings = (): AppSettings => ({
-	open_signup: false,
-	updated_at: null,
-	updated_by: null,
-});
 
 describe('all_standard_action_specs', () => {
 	test('count equals the sum of the three sub-registries', () => {
@@ -71,19 +63,16 @@ describe('all_standard_action_specs', () => {
 	});
 
 	test('is a superset of create_standard_rpc_actions handler-list methods', () => {
-		// With `app_settings` wired, every method the runtime mounts must
-		// have a matching spec in the registry so the typed Proxy can
-		// dispatch every method.
-		const handler_methods = create_standard_rpc_actions(deps, {
-			app_settings: make_app_settings(),
-		}).map((a) => a.spec.method);
+		// Every method the runtime mounts must have a matching spec in the
+		// registry so the typed Proxy can dispatch every method.
+		const handler_methods = create_standard_rpc_actions(deps).map((a) => a.spec.method);
 		const spec_methods = new Set(all_standard_action_specs.map((s) => s.method));
 		for (const method of handler_methods) {
 			assert.isTrue(spec_methods.has(method), `runtime mounts ${method} but registry omits it`);
 		}
-		// And the reverse — every registry spec is mounted when
-		// `app_settings` is supplied. This pins the inverse to fail fast
-		// if someone adds a spec to a sub-registry but forgets the handler.
+		// And the reverse — every registry spec is mounted. This pins the
+		// inverse to fail fast if someone adds a spec to a sub-registry but
+		// forgets the handler.
 		const handler_set = new Set(handler_methods);
 		for (const spec of all_standard_action_specs) {
 			assert.isTrue(

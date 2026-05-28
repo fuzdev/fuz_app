@@ -75,6 +75,13 @@ vi.mock('$lib/auth/invite_queries.js', () => ({
 	query_invite_claim_unscoped: (...a: Array<any>) => mock_invite_claim(...a),
 }));
 
+// The signup handler reads `open_signup` fresh on every request; these tests
+// run against mocked queries (no DB), so stub the load to the closed default.
+vi.mock('$lib/auth/app_settings_queries.js', () => ({
+	query_app_settings_load: (..._a: Array<any>) =>
+		Promise.resolve({open_signup: false, updated_at: null, updated_by: null}),
+}));
+
 vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/auth/session_queries.js')>();
 	return {
@@ -1048,7 +1055,6 @@ const create_signup_app = (
 			session_options,
 			ip_rate_limiter,
 			signup_account_rate_limiter,
-			app_settings: {open_signup: false, updated_at: null, updated_by: null},
 			// disable the denial-time floor so failure tests don't wait
 			// ~250ms × N attempts
 			signup_fail_floor_ms: 0,

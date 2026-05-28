@@ -23,7 +23,6 @@ import '../assert_dev_env.js';
 import {z} from 'zod';
 import {Uuid} from '@fuzdev/fuz_util/id.js';
 
-import type {Keyring} from '../../auth/keyring.js';
 import type {RouteSpec} from '../../http/route_spec.js';
 import type {AppServerContext, BootstrapServerOptions} from '../../server/app_server.js';
 import type {SessionOptions} from '../../auth/session_cookie.js';
@@ -33,11 +32,11 @@ import {USERNAME_LENGTH_MAX} from '../../primitive_schemas.js';
 import {
 	create_test_app,
 	create_test_account_with_credentials,
+	mint_test_session,
 	DEFAULT_TEST_PASSWORD,
 	type CreateTestAppOptions,
 	type SuiteAppOptions,
 	type TestAccount,
-	type TestAppServer,
 } from '../app_server.js';
 import {create_test_app_surface_spec} from '../stubs.js';
 import {
@@ -206,50 +205,33 @@ export interface TestFixtureBase {
 	 * for suites that don't declare any.
 	 */
 	readonly extra_accounts: Readonly<Record<string, ExtraAccountFixture>>;
+	/**
+	 * Forge an *expired server-side session* for the keeper account and
+	 * return the ready-to-send `Cookie` header value (`name=value`). The
+	 * minted `auth_session` row is backdated while the signed cookie payload
+	 * stays valid — so resolution clears the cookie-payload gate
+	 * (`parse_session`) and is refused at the authoritative DB-row gate
+	 * (`query_session_get_valid` — `WHERE expires_at > NOW()`). Backs the
+	 * `expired_session` conformance principal. In-process mints directly via
+	 * `mint_test_session`; cross-process drives the `_testing_mint_session`
+	 * RPC over the keeper's daemon-token channel (the driver has no keyring).
+	 */
+	readonly mint_expired_session: () => Promise<string>;
 }
 
 /**
  * The per-test bundle returned by `SetupTest`. Every Tier 1 suite body
- * reads exclusively from this shape — no `test_app.backend.*` reads
- * remain in the suite bodies.
+ * reads exclusively from this shape — no `test_app.backend.*` reads remain
+ * in the suite bodies.
  *
- * Discriminated by `in_process`: when `true`, `keyring` and
- * `backend_internals` are present (compile-time narrowed); when `false`,
- * they're absent and the suite body must either run via the public wire
- * (cross-process) or gate the test with
- * `test_if(capabilities.in_process_only, ...)`. The discriminant value
- * mirrors `BackendCapabilities.in_process_only` — both source from the
- * same producer (`default_in_process_setup` vs. cross-process variant).
- *
- * Suite bodies narrow with `assert(fixture.in_process)` after
- * `setup_test()`; sites that reach for `keyring` or `backend_internals`
- * are in-process-only by structure and the assertion surfaces a clear
- * failure if a future cross-process consumer reaches them without a
- * `test_if` gate.
+ * Transport-agnostic: in-process and cross-process producers return the
+ * same shape. Behaviors that once needed raw backend access (keyring for
+ * forging cookies) are reached through wire-shaped seams instead —
+ * `mint_expired_session()` mints over the `_testing_mint_session` channel
+ * cross-process and directly in-process, so suite bodies never branch on
+ * the transport.
  */
-export type TestFixture =
-	| (TestFixtureBase & {
-			readonly in_process: true;
-			/**
-			 * Test-only keyring access — in-process only. Used for
-			 * expired-cookie generation in `describe_standard_integration_tests`.
-			 */
-			readonly keyring: Keyring;
-			/**
-			 * Raw backend access (`deps.db`, etc.) — in-process only. Used
-			 * by the origin-verification cookie-composition sites in
-			 * `describe_standard_integration_tests`. Tests that need a
-			 * direct DB role_grant seed at the in-process layer reach for
-			 * `create_test_role_grant_direct` from `db_entities.ts`; that
-			 * helper bypasses the consent flow on purpose for query-level
-			 * (`*.db.test.ts`) tests and has no cross-process analog.
-			 * Cross-process tests grant additional roles via
-			 * `fixture.create_account({roles})` (offer/accept) or
-			 * `extra_accounts` (bootstrap-time bypass).
-			 */
-			readonly backend_internals: TestAppServer;
-	  })
-	| (TestFixtureBase & {readonly in_process: false});
+export type TestFixture = TestFixtureBase;
 
 /**
  * Per-test fixture-producing function. Invoked once inside every
@@ -337,7 +319,6 @@ export const default_in_process_setup =
 		}
 
 		return {
-			in_process: true,
 			transport: in_process_fetch_transport(test_app.app),
 			// In-process the wrapper is stateless and never auto-adds Origin —
 			// `options` is accepted for API symmetry with cross-process but
@@ -350,8 +331,18 @@ export const default_in_process_setup =
 			create_daemon_token_headers: test_app.create_daemon_token_headers,
 			create_account: test_app.create_account,
 			extra_accounts,
-			keyring: test_app.backend.keyring,
-			backend_internals: test_app.backend,
+			// Forge directly against the live backend's DB + keyring — no wire
+			// hop needed in-process.
+			mint_expired_session: async () => {
+				const {session_cookie} = await mint_test_session({
+					db: test_app.backend.deps.db,
+					keyring: test_app.backend.keyring,
+					session_options: options.session_options,
+					account_id: test_app.backend.account.id,
+					expires_in_seconds: EXPIRED_SESSION_OFFSET_SECONDS,
+				});
+				return `${cookie_name}=${session_cookie}`;
+			},
 		};
 	};
 
@@ -575,6 +566,17 @@ const rpc_via_transport = async (
 	}
 	return raw.result;
 };
+
+/**
+ * Backdating offset (seconds) the `mint_expired_session` seam passes to
+ * `mint_test_session` / `_testing_mint_session`. A minute in the past is
+ * comfortably past `NOW()` for the DB-row expiry gate without depending on
+ * clock precision.
+ */
+const EXPIRED_SESSION_OFFSET_SECONDS = -60;
+
+/** Structural subset of `_testing_mint_session`'s output. */
+const MintSessionResponseShape = z.object({session_cookie: z.string()});
 
 /** Output shape of a `_testing_reset` seeded account (keeper or extra). */
 interface SeededAccountResponse {
@@ -973,7 +975,6 @@ export const default_cross_process_setup = (
 		});
 
 		return {
-			in_process: false,
 			transport,
 			fresh_transport: (fresh_options) =>
 				create_fetch_transport({
@@ -987,6 +988,27 @@ export const default_cross_process_setup = (
 			create_daemon_token_headers,
 			create_account,
 			extra_accounts,
+			// Forge over the wire — the cross-process driver has no keyring,
+			// so `_testing_mint_session` mints the backdated row + signs the
+			// cookie server-side over the keeper's daemon-token channel.
+			mint_expired_session: async () => {
+				const raw = await rpc_via_transport(
+					refreshed_handle.keeper_transport,
+					handle.config.rpc_path,
+					'_testing_mint_session',
+					{account_id: keeper.account.id, expires_in_seconds: EXPIRED_SESSION_OFFSET_SECONDS},
+					handle.config.name,
+					{[DAEMON_TOKEN_HEADER]: handle.daemon_token},
+				);
+				const parsed = MintSessionResponseShape.safeParse(raw);
+				if (!parsed.success) {
+					throw new Error(
+						`_testing_mint_session(${handle.config.name}) returned unexpected result: ` +
+							`${JSON.stringify(raw)} (${parsed.error.message})`,
+					);
+				}
+				return `${cookie_name}=${parsed.data.session_cookie}`;
+			},
 		};
 	};
 };

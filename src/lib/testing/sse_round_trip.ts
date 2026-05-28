@@ -93,7 +93,7 @@ export interface SseRouteTestOptions {
 	 * Accepts either an array (eager) or a factory
 	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` — the factory form
 	 * is required when action handlers must close over the per-test
-	 * `ctx.app_settings` / `ctx.deps`. The factory must return the same
+	 * `ctx.deps`. The factory must return the same
 	 * endpoint `path` regardless of ctx — it is invoked once at setup with
 	 * a stub ctx for path lookup and again per-test by `create_app_server`
 	 * for live dispatch.

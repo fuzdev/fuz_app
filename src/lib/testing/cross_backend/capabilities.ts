@@ -84,15 +84,6 @@ export interface BackendCapabilities {
 	 * this flag opts a backend into the lifecycle parity coverage.
 	 */
 	readonly account_lifecycle: boolean;
-	/**
-	 * Test has direct access to backend-internal state (keyring for
-	 * signing cookies, DB pool for FK-structural raw queries). Always
-	 * `true` for in-process Hono via `default_in_process_setup`; always
-	 * `false` cross-process. Gates the 3 keyring reads in
-	 * `describe_standard_integration_tests` (expired-cookie generation)
-	 * and the FK-structural raw query in `describe_audit_completeness_tests`.
-	 */
-	readonly in_process_only: boolean;
 }
 
 /**
@@ -110,7 +101,6 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	cell_crud: true,
 	cell_relations: true,
 	account_lifecycle: true,
-	in_process_only: true,
 });
 
 /**

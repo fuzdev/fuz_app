@@ -55,14 +55,12 @@ export const describe_db = create_describe_db(factory, auth_integration_truncate
 
 /**
  * Default `create_route_specs` — mounts the admin RPC endpoint with the
- * server context's deps unchanged and threads `ctx.app_settings` into
- * `create_admin_actions` so handlers share the mutable settings ref that
- * signup middleware reads.
+ * server context's deps unchanged.
  */
 export const create_admin_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...create_rpc_endpoint({
 		path: RPC_PATH,
-		actions: create_admin_actions(ctx.deps, {app_settings: ctx.app_settings}),
+		actions: create_admin_actions(ctx.deps),
 		log: ctx.deps.log,
 	}),
 ];

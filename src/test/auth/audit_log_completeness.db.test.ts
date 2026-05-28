@@ -21,13 +21,12 @@ import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
 
-// Factory form lets the `app_settings_update` handler close over the
-// per-test `ctx.app_settings` — create_app_server evaluates this at
-// mount time and auto-mounts via create_rpc_endpoint.
+// Factory form — create_app_server evaluates this at mount time and
+// auto-mounts via create_rpc_endpoint.
 const rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpec> => [
 	{
 		path: RPC_PATH,
-		actions: create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings}),
+		actions: create_standard_rpc_actions(ctx.deps),
 	},
 ];
 
@@ -45,7 +44,6 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => {
 				session_options,
 				ip_rate_limiter: null,
 				signup_account_rate_limiter: null,
-				app_settings: ctx.app_settings,
 			}),
 		]),
 		...prefix_route_specs('/api/admin', [...create_audit_log_route_specs()]),

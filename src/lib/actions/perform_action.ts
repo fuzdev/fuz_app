@@ -63,6 +63,7 @@ import {
 	JSONRPC_ERROR_CODES,
 } from '../http/jsonrpc_errors.js';
 import {
+	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_CREDENTIAL_TYPE_REQUIRED,
 } from '../http/error_schemas.js';
@@ -337,7 +338,15 @@ const check_action_auth_pre_validation = (
 	account_id: string | null,
 ): JsonrpcErrorObject | null => {
 	if (auth.account === 'required' || auth.actor === 'required') {
-		if (account_id == null) return jsonrpc_error_messages.unauthenticated();
+		if (account_id == null) {
+			// Carry the reason on `error.data.reason` (symmetric with the 403
+			// credential / role gates) so a 401 can be asserted on reason, not
+			// just status. The reason is generic — it leaks nothing about
+			// whether a credential was present or what the route demanded.
+			return jsonrpc_error_messages.unauthenticated('unauthenticated', {
+				reason: ERROR_AUTHENTICATION_REQUIRED,
+			});
+		}
 	}
 	return null;
 };

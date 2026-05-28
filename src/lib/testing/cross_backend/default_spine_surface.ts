@@ -43,12 +43,24 @@ import {create_test_app_surface_spec} from '../stubs.js';
 export const spine_session_options: SessionOptions<string> = create_session_config('fuz_session');
 
 /**
- * Built-in roles only — the standard spine registers no app-defined role
- * specs. When the spine grows additional grantable roles, thread their
- * registry through `create_role_schema` here so the admin suite picks up
- * grant-path coverage.
+ * App role the role-shaped-`cell_grant` cross suite exercises. Registered
+ * with no grant path (`grant_paths: []`) so it stays a valid registry member
+ * without entering the admin / self-service grant flows — holders are seeded
+ * directly via `extra_accounts`. Must match the `cell_editor` entry in the
+ * Rust `testing_spine_stub`'s `known_roles` (cross-language test contract).
  */
-export const spine_roles: RoleSchemaResult = create_role_schema([]);
+export const SPINE_CELL_EDITOR_ROLE = 'cell_editor';
+
+/**
+ * The spine's closed role registry: built-ins plus `SPINE_CELL_EDITOR_ROLE`.
+ * Threaded into the cell spec set's role-validity gate; the Rust stub mirrors
+ * the same membership. When the spine grows additional grantable roles,
+ * thread their registry through `create_role_schema` here so the admin suite
+ * picks up grant-path coverage.
+ */
+export const spine_roles: RoleSchemaResult = create_role_schema([
+	{name: SPINE_CELL_EDITOR_ROLE, grant_paths: []},
+]);
 
 /** RPC endpoint mount path — matches the binary's `/api/rpc`. */
 export const SPINE_RPC_PATH = '/api/rpc';
@@ -63,11 +75,10 @@ export const SPINE_RPC_PATH = '/api/rpc';
 export const SPINE_SSE_PATH = '/api/admin/audit/stream';
 
 /**
- * Factory-form RPC endpoints so the `app_settings_update` handler closes
- * over the per-test `ctx.app_settings`. `create_app_server` (in the binary)
- * owns live dispatch; the surface builder invokes the factory once with a
- * stub ctx for setup-time path/method lookup, so the handler closures are
- * never called across the process boundary.
+ * Factory-form RPC endpoints over the per-test `ctx.deps`. `create_app_server`
+ * (in the binary) owns live dispatch; the surface builder invokes the factory
+ * once with a stub ctx for setup-time path/method lookup, so the handler
+ * closures are never called across the process boundary.
  *
  * Test binaries append their own `_testing_reset` action to this endpoint's
  * `actions` (see `testing_reset_actions.ts`); it is intentionally excluded
@@ -78,7 +89,6 @@ export const spine_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpe
 	{
 		path: SPINE_RPC_PATH,
 		actions: create_standard_rpc_actions(ctx.deps, {
-			app_settings: ctx.app_settings,
 			roles: spine_roles,
 		}),
 	},
@@ -107,7 +117,6 @@ export const create_spine_route_specs = (ctx: AppServerContext): Array<RouteSpec
 			session_options: spine_session_options,
 			ip_rate_limiter: null,
 			signup_account_rate_limiter: null,
-			app_settings: ctx.app_settings,
 		}),
 	]),
 	...(ctx.audit_sse

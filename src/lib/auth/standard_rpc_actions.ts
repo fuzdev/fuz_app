@@ -8,8 +8,8 @@
  * `create_account_actions`).
  *
  * Option routing: shared `roles` flows to both admin and role-grant-offer;
- * `app_settings` goes to admin only; `default_ttl_ms` and `authorize` go
- * to role-grant-offer only; `max_tokens` goes to account only;
+ * `default_ttl_ms` and `authorize` go to role-grant-offer only; `max_tokens`
+ * goes to account only;
  * shared `connection_closer` flows to admin + account (role-grant-offer ignores);
  * `notification_sender` reaches role-grant-offer transparently (admin + account
  * ignore it).
@@ -32,7 +32,7 @@ import type {RpcAction} from '../actions/action_rpc.js';
 /**
  * Options for `create_standard_rpc_actions`.
  *
- * Composes `AdminActionOptions` (`roles`, `app_settings`),
+ * Composes `AdminActionOptions` (`roles`),
  * `RoleGrantOfferActionOptions` (`roles`, `default_ttl_ms`, `authorize`), and
  * `AccountActionOptions` (`max_tokens`). `roles` is shared between admin
  * and role-grant-offer — the caller supplies it once and the helper threads
@@ -56,13 +56,13 @@ export interface StandardRpcActionsDeps extends Pick<RouteFactoryDeps, 'log' | '
 /**
  * Build the combined admin + role-grant-offer + account RPC action set.
  *
- * Spreads `create_admin_actions(deps, {roles, app_settings})`,
+ * Spreads `create_admin_actions(deps, {roles})`,
  * `create_role_grant_offer_actions(deps, {roles, default_ttl_ms, authorize})`,
  * and `create_account_actions(deps, {max_tokens})`. The shared `roles`
  * option flows to admin + role-grant-offer.
  *
  * @param deps - `StandardRpcActionsDeps` (`log`, `audit` from `RouteFactoryDeps`; optional `notification_sender` for WS fan-out)
- * @param options - role schema, optional app-settings ref, role-grant-offer config, account config
+ * @param options - role schema, role-grant-offer config, account config
  * @returns RPC actions to pass as `rpc_endpoints` or spread into `create_rpc_endpoint`
  */
 export const create_standard_rpc_actions = (

@@ -36,7 +36,7 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...prefix_route_specs('/api/admin', [...create_audit_log_route_specs()]),
 	...create_rpc_endpoint({
 		path: RPC_PATH,
-		actions: create_admin_actions(ctx.deps, {app_settings: ctx.app_settings}),
+		actions: create_admin_actions(ctx.deps),
 		log: ctx.deps.log,
 	}),
 ];

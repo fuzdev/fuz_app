@@ -5,7 +5,7 @@
  * `describe_rpc_round_trip_tests` (PGlite) against the full admin action
  * set produced by `create_admin_actions` — account/session listings,
  * session + token revoke-all, audit-log list + role_grant-history, invite
- * CRUD, and (when `app_settings` is supplied) app-settings get/update.
+ * CRUD, and app-settings get/update.
  * Auto-covers per-method auth enforcement, adversarial envelopes,
  * adversarial params, and output-schema validation.
  *
@@ -21,7 +21,6 @@ import {describe_rpc_round_trip_tests} from '$lib/testing/rpc_round_trip.js';
 import {default_in_process_suite_options} from '$lib/testing/cross_backend/setup.js';
 import {create_admin_actions} from '$lib/auth/admin_actions.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
-import type {AppSettings} from '$lib/auth/app_settings_schema.js';
 import type {AppServerContext} from '$lib/server/app_server.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 
@@ -33,22 +32,9 @@ const RPC_PATH = '/api/rpc';
 // from the `rpc_endpoints` option — no duplication via create_route_specs.
 const create_route_specs = (_ctx: AppServerContext): Array<RouteSpec> => [];
 
-/**
- * Shared stub `app_settings` ref. Round-trip tests validate envelopes, not
- * state — so the stub suffices for both the surface and the mounted handler.
- */
-const stub_app_settings: AppSettings = {
-	open_signup: false,
-	updated_at: null,
-	updated_by: null,
-};
-
 const rpc_endpoint_spec = {
 	path: RPC_PATH,
-	actions: create_admin_actions(
-		{log, audit: create_test_audit_emitter()},
-		{app_settings: stub_app_settings},
-	),
+	actions: create_admin_actions({log, audit: create_test_audit_emitter()}),
 };
 
 const build = () =>

@@ -7,9 +7,10 @@
  *   `admin_session_revoke_all`, `admin_token_revoke_all`.
  * - Audit log reads: `audit_log_list`, `audit_log_role_grant_history`.
  * - Invite CRUD: `invite_create`, `invite_list`, `invite_delete`.
- * - App settings: `app_settings_get`, `app_settings_update` (registered only
- *   when `AdminActionOptions.app_settings` is provided — the mutable ref is
- *   owned by the server context and shared with signup middleware).
+ * - App settings: `app_settings_get`, `app_settings_update`. The update
+ *   handler writes the `app_settings` row in the database; signup reads the
+ *   `open_signup` toggle fresh from that row on every request, so no
+ *   in-memory state is shared between this surface and signup.
  *
  * The action specs themselves live in `auth/admin_action_specs.ts`. Mutations
  * emit matching audit events via `deps.audit.emit`.
@@ -73,8 +74,8 @@ import {
 	query_invite_delete_unclaimed,
 	query_invite_list_all_with_usernames,
 } from './invite_queries.js';
-import {type AppSettings} from './app_settings_schema.js';
 import {
+	query_app_settings_load,
 	query_app_settings_load_with_username,
 	query_app_settings_update,
 } from './app_settings_queries.js';
@@ -146,15 +147,6 @@ export interface AdminActionOptions {
 	 */
 	roles?: RoleSchemaResult;
 	/**
-	 * Mutable in-memory app settings ref — typically `ctx.app_settings` from
-	 * `AppServerContext`. When provided, the factory wires the
-	 * `app_settings_get` and `app_settings_update` handlers; the update
-	 * handler mutates this ref so signup middleware reads the new value
-	 * without a DB round trip. When omitted, those two methods have no
-	 * handler and RPC dispatch returns `method_not_found`.
-	 */
-	app_settings?: AppSettings;
-	/**
 	 * Live-connection closer — when set, `admin_session_revoke_all` and
 	 * `admin_token_revoke_all` handlers eagerly close affected WebSocket
 	 * sockets for the target account BEFORE emitting the corresponding
@@ -175,7 +167,6 @@ export interface AdminActionOptions {
  *   optional `AuditLogConfig`.
  * @param options - role schema for `grantable_roles` derivation
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
- * @mutates `options.app_settings` ref - `app_settings_update` writes `open_signup`, `updated_at`, and `updated_by` so signup middleware reads without a DB round trip
  */
 export const create_admin_actions = (
 	deps: Pick<RouteFactoryDeps, 'log' | 'audit'>,
@@ -644,49 +635,41 @@ export const create_admin_actions = (
 		rpc_action(invite_delete_action_spec, invite_delete_handler),
 	];
 
-	const {app_settings} = options;
-	if (app_settings) {
-		const app_settings_get_handler = async (
-			_input: AppSettingsGetInput,
-			ctx: ActionActorContext,
-		): Promise<AppSettingsGetOutput> => {
-			const settings = await query_app_settings_load_with_username(ctx);
-			return {settings};
-		};
+	const app_settings_get_handler = async (
+		_input: AppSettingsGetInput,
+		ctx: ActionActorContext,
+	): Promise<AppSettingsGetOutput> => {
+		const settings = await query_app_settings_load_with_username(ctx);
+		return {settings};
+	};
 
-		const app_settings_update_handler = async (
-			input: AppSettingsUpdateInput,
-			ctx: ActionActorContext,
-		): Promise<AppSettingsUpdateOutput> => {
-			const auth = ctx.auth;
-			const old_value = app_settings.open_signup;
-			const updated = await query_app_settings_update(ctx, input.open_signup, auth.actor.id);
+	const app_settings_update_handler = async (
+		input: AppSettingsUpdateInput,
+		ctx: ActionActorContext,
+	): Promise<AppSettingsUpdateOutput> => {
+		const auth = ctx.auth;
+		// Read the prior value for the audit row before writing the new one.
+		const {open_signup: old_value} = await query_app_settings_load(ctx);
+		await query_app_settings_update(ctx, input.open_signup, auth.actor.id);
 
-			// Mutate the in-memory ref so signup middleware reads the new value
-			// without a DB round trip.
-			app_settings.open_signup = updated.open_signup;
-			app_settings.updated_at = updated.updated_at;
-			app_settings.updated_by = updated.updated_by;
+		deps.audit.emit(ctx, {
+			event_type: 'app_settings_update',
+			account_id: auth.account.id,
+			ip: ctx.client_ip,
+			metadata: {
+				setting: 'open_signup',
+				old_value,
+				new_value: input.open_signup,
+			},
+		});
+		const settings = await query_app_settings_load_with_username(ctx);
+		return {ok: true, settings};
+	};
 
-			deps.audit.emit(ctx, {
-				event_type: 'app_settings_update',
-				account_id: auth.account.id,
-				ip: ctx.client_ip,
-				metadata: {
-					setting: 'open_signup',
-					old_value,
-					new_value: input.open_signup,
-				},
-			});
-			const settings = await query_app_settings_load_with_username(ctx);
-			return {ok: true, settings};
-		};
-
-		actions.push(
-			rpc_action(app_settings_get_action_spec, app_settings_get_handler),
-			rpc_action(app_settings_update_action_spec, app_settings_update_handler),
-		);
-	}
+	actions.push(
+		rpc_action(app_settings_get_action_spec, app_settings_get_handler),
+		rpc_action(app_settings_update_action_spec, app_settings_update_handler),
+	);
 
 	return actions;
 };

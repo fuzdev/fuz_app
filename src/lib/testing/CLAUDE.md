@@ -846,7 +846,7 @@ source of truth for wire-shape conformance.
 
 - `testing/cross_backend/capabilities.ts` — `BackendCapabilities` vocabulary
   (`bearer_auth` / `trusted_proxy` / `login_rate_limit` / `ws` / `sse` /
-  `cell_crud` / `cell_relations` / `account_lifecycle` / `in_process_only`),
+  `cell_crud` / `cell_relations` / `account_lifecycle`),
   `test_if(cond, name, fn)`
   for capability-gated cases, and `in_process_capabilities` preset. `cell_crud`
   gates the CRUD parity suite, `cell_relations` the relation / ACL / audit
@@ -884,6 +884,50 @@ consumer needs partial opt-out, add the knob then.
 `StandardTestOptions` minus the in-process-only knobs (`create_route_specs`,
 `bootstrap`, `rate_limiting_app_options`, `bootstrap_token`) — those drive
 the omitted suites.
+
+### `cross_backend/conformance_table.ts` + `conformance_case.ts` + `xfail.ts` — declarative behavioral/security cases
+
+The opinionated behavioral/security layer on top of the spec-derived
+auto-enumeration (`describe_rpc_round_trip_tests` /
+`describe_rpc_attack_surface_tests`). Where those assert wire-shape,
+conformance cases assert _expected behavior_ — the security negatives
+(must be refused / must not leak / found-vs-not-found same shape) a
+wire-shape check passes green on even when behavior is wrong.
+
+- `conformance_case.ts` — `ConformanceCase` Zod schema:
+  `{name, request: {method, params?, as, verb?}, expect: {status,
+error_reason?, fields?}, note?, xfail?}`. A case is **data** — `method`
+  resolves its `input`/`output` from the live registry (RPC) or `RouteSpec`
+  (the 6 REST auth routes), so the case never carries a schema. `as` is the
+  closed `ConformancePrincipal` enum (`keeper` / `daemon` / `token` /
+  `anonymous` / `fresh_non_admin` / `role_holder` / `wrong_role` /
+  `expired_session`) — fixture accessors, never inline credential minting.
+  `expired_session` is the keeper behind an expired server-side session
+  (`fixture.mint_expired_session()`: a backdated `auth_session` row behind a
+  still-valid signed cookie, so the DB-row expiry gate is what refuses it).
+  `error_reason` is the imported
+  `ERROR_*` constant (asserted against the RPC `error.data.reason` or the
+  REST flat-body `error`; the bare `unauthenticated()` 401 carries no
+  reason, so `status` pins that denial class).
+- `conformance_table.ts` — `describe_conformance_table_tests({cases,
+setup_test, surface_source, capabilities, rpc_endpoints, session_options,
+principals?, suite_name?})`. Same `{setup_test, surface_source,
+capabilities}` protocol every Tier 1 suite uses, so **one case array runs
+  both transports** — in-process (`gro test`) and cross-process (the gate,
+  each backend's real auth resolution). `resolve_principal` maps the five
+  always-available principals to fixture accessors; `role_holder` /
+  `wrong_role` read a seeded `extra_accounts` username named via
+  `options.principals`.
+- `xfail.ts` — `xfail_until(tracking_id, reason, name, fn)`, a thin
+  `test.fails` wrapper for deferred-by-design rows (visible + self-cleaning:
+  turns red when the gap closes, forcing marker removal). In-scope gaps fail
+  loud as a normal `test`, not via this marker. Sibling to `test_if` in
+  `capabilities.ts`.
+
+Wire from a `.db.test.ts` (in-process) and a `.cross.test.ts`
+(cross-process) with the same case array — fuz_app's own runner-proof is
+`../../test/cross_backend/conformance.{db,cross}.test.ts` sharing
+`conformance_proof_cases.ts`.
 
 ### `cross_backend/ws_round_trip.ts` — `describe_cross_process_ws_tests`
 
@@ -933,9 +977,13 @@ _own_ sessions are revoked (`account_session_revoke_all`) so the audit guard
 drops the live stream (asserted via `SseTransport.wait_for_close`). The
 data-frame + close cases gate on `rpc_path` (they drive the standard
 account/admin actions); all cases gate on `capabilities.sse`. Cross-process
-only — wire from a `*.cross.test.ts`. fuz_app's own wiring is
+only — wire from a `*.cross.test.ts`. fuz*app's own wiring is
 `src/test/cross_backend/sse.cross.test.ts`; only the TS spines advertise
 `sse` (they wire `audit_log_sse`), so the Rust `spine_stub` cases `.skip`.
+That file also registers one `xfail_until` (only when `sse: false`) asserting
+the stream \_can't* open on a spine without SSE — a self-cleaning tripwire for
+the spine that should grow it, distinct from the consumer-legit capability
+skip the shared suite emits.
 
 ### `cross_backend/cell_crud.ts` + `cell_relations.ts` — cell parity suites
 
@@ -1052,6 +1100,41 @@ in-process legs (plain `gro test`) are `src/test/auth/cell_crud_parity.db.test.t
   biconditional. No free-form runtime grant action exists — see the
   `testing_reset_actions.ts` TSDoc for the audit + WS fan-out rationale
   that rejected a `_testing_seed_role_grant` shape.
+
+  Same module also exports `create_testing_drain_effects_action()` — the
+  `_testing_drain_effects` RPC action (daemon-token-gated, like
+  `_testing_reset`). It awaits in-flight fire-and-forget audit writes so a
+  following `audit_log_list` is authoritative — the deterministic barrier a
+  cross-process audit assertion fires before reading (no poll/sleep). On the
+  TS spine it is **satisfied by construction** (the binary runs
+  `await_pending_effects: true`, so each mutation's emits land before its
+  response); the Rust spine does the real await in
+  `AuditEmitter::drain_inflight`. `create_testing_actions` bundles it
+  alongside `_testing_reset`; suites that mount their own endpoint (e.g. the
+  in-process `account_lifecycle_parity.db.test.ts`) add it directly so the
+  shared suite body can call the barrier on every backend uniformly.
+
+  Also bundled: `_testing_mint_session` — mints a backdated-expiry
+  `auth_session` row for an account (via `mint_test_session` in `app_server.ts`)
+  and returns its signed cookie value (future-dated payload). Backs the
+  `expired_session` conformance principal: the backdated DB row + valid cookie
+  payload isolate the authoritative server-side DB-row expiry gate
+  (`query_session_get_valid` — `expires_at > NOW()`), the gate the in-process
+  payload-expiry tests never reached. Daemon-token-gated like its siblings; the
+  Rust mirror is `fuz_testing::create_testing_mint_session_action_spec`.
+
+### Origin verification parity — `cross_backend/origin.ts`
+
+`describe_origin_cross_tests({setup_test, capabilities, rpc_path?})` — the
+imperative Origin-verification suite: disallowed `Origin` → 403 `forbidden_origin` (refused
+before dispatch), absent `Origin` → request passes (non-browser direct access).
+Imperative (not a conformance-table row) because origin rejection is
+middleware-level flat-REST, not the JSON-RPC envelope the table runner expects,
+and absent-Origin needs `fresh_transport({origin: null})`. Runs both legs (the
+in-process `auth/origin_parity.db.test.ts` + the cross-process
+`origin.cross.test.ts`). The promotion surfaced a twin-impl divergence — the
+Rust spine returned a plain-text body — now converged to the canonical TS
+`{error: "forbidden_origin"}` via `fuz_http::forbidden_origin_response()`.
 
 ### Building a TS test-server binary — `testing_server_core.ts` + adapters
 

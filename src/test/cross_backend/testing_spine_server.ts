@@ -44,6 +44,8 @@ import {create_cell_grant_actions} from '../../lib/auth/cell_grant_actions.js';
 import {create_cell_field_actions} from '../../lib/auth/cell_field_actions.js';
 import {create_cell_item_actions} from '../../lib/auth/cell_item_actions.js';
 import {create_cell_audit_actions} from '../../lib/auth/cell_audit_actions.js';
+import {create_actor_lookup_actions} from '../../lib/auth/actor_lookup_actions.js';
+import {create_actor_search_actions} from '../../lib/auth/actor_search_actions.js';
 import {cell_audit_events} from '../../lib/auth/cell_audit_events.js';
 import {create_audit_emitter} from '../../lib/auth/audit_emitter.js';
 import {create_audit_log_config} from '../../lib/auth/audit_log_schema.js';
@@ -191,9 +193,9 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		// live-mounted but stay off the declared surface
 		// (`create_spine_surface_spec`) so the standard cross suite's generic
 		// round-trip never tries to drive them — cells are stateful and are
-		// covered by the dedicated cell cross suites instead. Only actor-shaped
-		// grants are exercised, so `spine_roles` (built-in only) suffices for
-		// the grant role-validity gate.
+		// covered by the dedicated cell cross suites instead. `spine_roles`
+		// carries the `cell_editor` app role so the role-shaped-grant cross
+		// suite's role-validity gate admits it and rejects unregistered roles.
 		rpc_endpoints: (ctx) =>
 			spine_rpc_endpoints(ctx).map((endpoint) => ({
 				...endpoint,
@@ -208,10 +210,22 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 					...create_cell_field_actions(ctx.deps),
 					...create_cell_item_actions(ctx.deps),
 					...create_cell_audit_actions(),
+					// `actor_lookup` / `actor_search` — opt-in (not in the standard
+					// bundle), so live-mounted here but off the declared surface,
+					// exercised by the dedicated actor-lookup / actor-search cross suites.
+					...create_actor_lookup_actions(ctx.deps),
+					...create_actor_search_actions(ctx.deps),
 				],
 			})),
 		env_schema: BaseServerEnv,
 		env_values: env,
+		// Await fire-and-forget effects before each response returns, so a
+		// mutation's audit emits are durable by response time. Makes the
+		// `_testing_drain_effects` barrier satisfied by construction on the TS
+		// spine (the Rust stub, whose audit writes are detached tasks, does the
+		// real await in `AuditEmitter::drain_inflight`). Matches the in-process
+		// `create_test_app` default.
+		await_pending_effects: true,
 		on_effect_error: (error, ctx) => {
 			log.error(`Pending effect failed (${ctx.method} ${ctx.path}):`, error);
 		},

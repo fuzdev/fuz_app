@@ -27,8 +27,6 @@ import {
 	type AuditLogSse,
 } from '../realtime/sse_auth_guard.js';
 import {BaseServerEnv} from './env.js';
-import type {AppSettings} from '../auth/app_settings_schema.js';
-import {query_app_settings_load} from '../auth/app_settings_queries.js';
 import {
 	create_rate_limiter,
 	default_login_account_rate_limit,
@@ -259,8 +257,7 @@ export interface AppServerOptions {
 	 * Accepts either an array (evaluated eagerly) or a factory
 	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` (evaluated after the
 	 * server context is assembled). Use the factory form when action lists
-	 * depend on `ctx.deps` / `ctx.app_settings` — e.g.
-	 * `create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`.
+	 * depend on `ctx.deps` — e.g. `create_standard_rpc_actions(ctx.deps)`.
 	 */
 	rpc_endpoints?: Array<RpcEndpointSpec> | ((context: AppServerContext) => Array<RpcEndpointSpec>);
 
@@ -371,8 +368,6 @@ export interface AppServerContext {
 	action_ip_rate_limiter: RateLimiter | null;
 	/** Per-actor action-dispatcher rate limiter — shared across HTTP RPC + WS. `null` when not configured. */
 	action_account_rate_limiter: RateLimiter | null;
-	/** Global app settings (mutable ref — mutated by settings admin route). */
-	app_settings: AppSettings;
 	/**
 	 * Factory-managed audit log SSE. Non-null when the `audit_log_sse`
 	 * option was passed to `create_app_server`, `null` when omitted.
@@ -387,8 +382,6 @@ export interface AppServer {
 	/** Surface spec — serializable surface + raw specs that produced it. */
 	surface_spec: AppSurfaceSpec;
 	bootstrap_status: BootstrapStatus;
-	/** Global app settings (mutable ref — mutated by settings admin route). */
-	app_settings: AppSettings;
 	/** Migration results from `create_app_backend` (auth + any `migration_namespaces` passed there). */
 	migration_results: ReadonlyArray<MigrationResult>;
 	/**
@@ -517,7 +510,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		middleware_specs = options.transform_middleware(middleware_specs);
 	}
 
-	// Bootstrap status + app settings
+	// Bootstrap status
 	// - undefined / 'disabled': no route mounted; placeholder status.
 	// - 'surface_only': route mounted but permanently unavailable; status placeholder.
 	// - 'live': real disk + lock check via `check_bootstrap_status`.
@@ -525,8 +518,6 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		options.bootstrap?.mode === 'live'
 			? await check_bootstrap_status(deps, {token_path: options.bootstrap.token_path})
 			: {available: false, token_path: null};
-
-	const app_settings: AppSettings = await query_app_settings_load({db: deps.db});
 
 	// Surface route ref — factory manages the circular ref
 	const surface_ref: SurfaceRouteOptions = {
@@ -552,7 +543,6 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		signup_account_rate_limiter,
 		action_ip_rate_limiter,
 		action_account_rate_limiter,
-		app_settings,
 		audit_sse,
 	};
 	const consumer_routes = options.create_route_specs(context);
@@ -834,7 +824,6 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		app,
 		surface_spec,
 		bootstrap_status,
-		app_settings,
 		migration_results: backend.migration_results,
 		audit_sse,
 		ws_endpoints: mounted_ws_endpoints,

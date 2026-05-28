@@ -110,7 +110,7 @@ export interface BackendConfig {
 	/**
 	 * Capabilities this backend supports — drives `test_if(capabilities.X, ...)`
 	 * gating in suite bodies. See `capabilities.ts` for the vocabulary and
-	 * existing flags. Cross-process backends set `in_process_only: false`.
+	 * existing flags.
 	 */
 	readonly capabilities: BackendCapabilities;
 }
