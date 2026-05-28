@@ -43,12 +43,24 @@ import {create_test_app_surface_spec} from '../stubs.js';
 export const spine_session_options: SessionOptions<string> = create_session_config('fuz_session');
 
 /**
- * Built-in roles only — the standard spine registers no app-defined role
- * specs. When the spine grows additional grantable roles, thread their
- * registry through `create_role_schema` here so the admin suite picks up
- * grant-path coverage.
+ * App role the role-shaped-`cell_grant` cross suite exercises. Registered
+ * with no grant path (`grant_paths: []`) so it stays a valid registry member
+ * without entering the admin / self-service grant flows — holders are seeded
+ * directly via `extra_accounts`. Must match the `cell_editor` entry in the
+ * Rust `testing_spine_stub`'s `known_roles` (cross-language test contract).
  */
-export const spine_roles: RoleSchemaResult = create_role_schema([]);
+export const SPINE_CELL_EDITOR_ROLE = 'cell_editor';
+
+/**
+ * The spine's closed role registry: built-ins plus `SPINE_CELL_EDITOR_ROLE`.
+ * Threaded into the cell spec set's role-validity gate; the Rust stub mirrors
+ * the same membership. When the spine grows additional grantable roles,
+ * thread their registry through `create_role_schema` here so the admin suite
+ * picks up grant-path coverage.
+ */
+export const spine_roles: RoleSchemaResult = create_role_schema([
+	{name: SPINE_CELL_EDITOR_ROLE, grant_paths: []},
+]);
 
 /** RPC endpoint mount path — matches the binary's `/api/rpc`. */
 export const SPINE_RPC_PATH = '/api/rpc';

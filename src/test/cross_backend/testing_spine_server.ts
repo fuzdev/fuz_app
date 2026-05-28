@@ -193,9 +193,9 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		// live-mounted but stay off the declared surface
 		// (`create_spine_surface_spec`) so the standard cross suite's generic
 		// round-trip never tries to drive them — cells are stateful and are
-		// covered by the dedicated cell cross suites instead. Only actor-shaped
-		// grants are exercised, so `spine_roles` (built-in only) suffices for
-		// the grant role-validity gate.
+		// covered by the dedicated cell cross suites instead. `spine_roles`
+		// carries the `cell_editor` app role so the role-shaped-grant cross
+		// suite's role-validity gate admits it and rejects unregistered roles.
 		rpc_endpoints: (ctx) =>
 			spine_rpc_endpoints(ctx).map((endpoint) => ({
 				...endpoint,

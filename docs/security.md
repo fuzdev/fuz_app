@@ -354,6 +354,18 @@ to a genuine miss (`auth/cell_actions.ts`). A caller therefore cannot
 enumerate private cells (or offers, or another actor's grants) by id —
 found-and-unauthorized and not-found are wire-indistinguishable.
 
+**Role-shaped cell grants validate against the registered role set.** A
+`cell_grant` can name either an actor (`{actor_id}`) or a role
+(`{role, scope_id?}`); a role-shaped grant admits every actor holding that
+role (scope-matched). Because a grant for a role no actor can ever hold would
+be silently inert — looking like access was conferred while admitting no
+one — `cell_grant_create` rejects an unregistered role at create time with
+`invalid_params` / `cell_grant_unknown_role` rather than writing a dead row.
+The check runs after the manage-tier authorization (a non-manager still gets
+the 404 mask, not a role-registry probe). Actor-shaped grants whose principal
+is the cell's own owner are likewise rejected (`cell_grant_principal_is_owner`)
+since owner access is implicit.
+
 **Actor-search scope gate**: `actor_search` (the prefix-search picker over
 `actor.name`) is account-grain authenticated, but an **unbounded global
 search is admin-only**. A non-admin caller must pass at least one `scope_id`;

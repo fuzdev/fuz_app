@@ -8726,6 +8726,7 @@
 					"auth/cell_grant_actions.ts",
 					"auth/cell_item_actions.ts",
 					"testing/cross_backend/cell_crud.ts",
+					"testing/cross_backend/cell_grant_role.ts",
 					"testing/cross_backend/cell_relations.ts"
 				]
 			},
@@ -9303,6 +9304,7 @@
 				"dependents": [
 					"auth/cell_action_specs.ts",
 					"auth/cell_grant_actions.ts",
+					"testing/cross_backend/cell_grant_role.ts",
 					"testing/cross_backend/cell_relations.ts"
 				]
 			},
@@ -25364,6 +25366,7 @@
 					"testing/cross_backend/capabilities.ts",
 					"testing/cross_backend/cell_cross_helpers.ts",
 					"testing/cross_backend/cell_crud.ts",
+					"testing/cross_backend/cell_grant_role.ts",
 					"testing/cross_backend/cell_relations.ts",
 					"testing/cross_backend/conformance_case.ts",
 					"testing/cross_backend/conformance_table.ts",
@@ -26972,6 +26975,7 @@
 				"dependents": [
 					"testing/cross_backend/account_lifecycle.ts",
 					"testing/cross_backend/cell_crud.ts",
+					"testing/cross_backend/cell_grant_role.ts",
 					"testing/cross_backend/cell_relations.ts",
 					"testing/cross_backend/setup.ts",
 					"testing/cross_backend/sse_round_trip.ts",
@@ -27106,6 +27110,7 @@
 				"dependents": [
 					"testing/cross_backend/account_lifecycle.ts",
 					"testing/cross_backend/cell_crud.ts",
+					"testing/cross_backend/cell_grant_role.ts",
 					"testing/cross_backend/cell_relations.ts"
 				]
 			},
@@ -27129,6 +27134,47 @@
 				"module_comment": "Dedicated stateful cell-CRUD parity suite for the cross-backend harness.\n\nThe generic `describe_rpc_round_trip_tests` can't cover cells: the verbs\nare stateful (update / delete / get-by-id need a real cell id threaded\nfrom a prior create) and `cell_get`'s input has a top-level `.refine()`.\nSo cells stay off the standard declared surface (`create_spine_surface_spec`)\n— exactly like ws / sse — and this suite plus its sibling\n`describe_cell_relations_cross_tests` (grant / field / item / clone / audit)\nare the cell validators. This one gates on `capabilities.cell_crud`; it runs\nagainst any backend that live-mounts the cell surface (the TS spine binary,\nthe in-process Hono app, and the Rust `testing_spine_stub`).\n\nDrives the full lifecycle (create → get → update → delete → list, threading\nthe created id) plus the authz matrix the wire contract guarantees. Every\nsuccess response is parsed against the verb's declared Zod **output** schema\n(`CellCreateOutput` / `CellGetOutput` / …), so a TS↔Rust envelope drift —\nnot just a `CellJson` field drift — fails the suite:\n\n- owner does full CRUD; responses match the output schemas exactly;\n- anon sees `public` cells only — `private` is 404 (existence not leaked);\n- a non-owner non-admin editing / reading / deleting another's private cell\n  gets 404 (IDOR mask), never 403;\n- admin reaches any cell;\n- duplicate active `path` → 409 (`cell_path_taken`);\n- `path` write by a non-admin → 403 (`cell_path_admin_only`), on both create\n  and update (even by the owner);\n- `cell_get` with neither `id` nor `path` → `invalid_params`;\n- null-auth `cell_list` with `created_by` → `invalid_params`.\n\nThe visibility-manage-tier 403 (`cell_visibility_manage_only`) needs a\nnon-owner editor, which only a `cell_grant` can produce, so it lives in\n`describe_cell_relations_cross_tests` alongside the grant verbs rather than\nhere.\n\n`$lib`-free by contract (relative specifiers only) so the suite can be\nimported from the spawnable cross-process test files.",
 				"dependencies": [
 					"auth/cell_action_specs.ts",
+					"testing/assert_dev_env.ts",
+					"testing/cross_backend/capabilities.ts",
+					"testing/cross_backend/cell_cross_helpers.ts",
+					"testing/cross_backend/default_spine_surface.ts"
+				]
+			},
+			{
+				"path": "testing/cross_backend/cell_grant_role.ts",
+				"declarations": [
+					{
+						"name": "CELL_EDITOR_ROLE",
+						"kind": "variable",
+						"doc_comment": "App role the holder is seeded with; matches the spine's registered role.",
+						"source_line": 51,
+						"type_signature": "\"cell_editor\""
+					},
+					{
+						"name": "CELL_ROLE_HOLDER_USERNAME",
+						"kind": "variable",
+						"doc_comment": "Username the fixture seeds (via `extra_accounts`) holding `CELL_EDITOR_ROLE`.",
+						"source_line": 54,
+						"type_signature": "\"cell_role_holder\""
+					},
+					{
+						"name": "describe_cell_grant_role_cross_tests",
+						"kind": "function",
+						"source_line": 59,
+						"type_signature": "(options: CellCrossTestOptions): void",
+						"return_type": "void",
+						"parameters": [
+							{
+								"name": "options",
+								"type": "CellCrossTestOptions"
+							}
+						]
+					}
+				],
+				"module_comment": "Cross-backend parity suite for **role-shaped** `cell_grant`s.\n\nThe cell CRUD / relations suites exercise only actor-shaped grant\nprincipals. This suite covers the role-shaped path and its closed-registry\ngate — the security-correctness property that the Rust spine previously\nlacked (it created inert grant rows for any role string). Both spines now\nvalidate the role against a closed registry at create.\n\n- **role grant admits a holder; excludes a non-holder** — an owner grants\n  `{role}` on a private cell; an account holding that role can `cell_get`\n  it (200), an account without it gets the IDOR-mask 404.\n- **unknown role rejected at create (security-correctness)** — granting a\n  role outside the registry is `invalid_params` / `cell_grant_unknown_role`,\n  not a silent inert row.\n- **editor-level role grant admits edit** — a holder of an `editor`-level\n  role grant can `cell_update` the cell's content.\n\nThe holder is seeded via `extra_accounts` under `CELL_ROLE_HOLDER_USERNAME`\nholding `CELL_EDITOR_ROLE` (the role has no grant path, so it can't be\noffered — the bootstrap-cradle seed is the only path). Both legs configure\nthat seed and register `CELL_EDITOR_ROLE` in their role registry; the Rust\n`testing_spine_stub` mirrors the same membership in its `known_roles`.\n\nCites `security.md` §Authorization (role-shaped cell-grant validation).\nRuns both legs via the shared `{setup_test}` protocol: in-process\n(`auth/cell_grant_role_parity.db.test.ts`) + cross-process\n(`cross_backend/cell_grant_role.cross.test.ts`). Gated on\n`capabilities.cell_relations` (true on every spine, so it never skips).\n\n`$lib`-free by contract (relative specifiers only).",
+				"dependencies": [
+					"auth/cell_action_specs.ts",
+					"auth/cell_grant_action_specs.ts",
 					"testing/assert_dev_env.ts",
 					"testing/cross_backend/capabilities.ts",
 					"testing/cross_backend/cell_cross_helpers.ts",
@@ -27574,31 +27620,38 @@
 						"type_signature": "SessionOptions<string>"
 					},
 					{
+						"name": "SPINE_CELL_EDITOR_ROLE",
+						"kind": "variable",
+						"doc_comment": "App role the role-shaped-`cell_grant` cross suite exercises. Registered\nwith no grant path (`grant_paths: []`) so it stays a valid registry member\nwithout entering the admin / self-service grant flows — holders are seeded\ndirectly via `extra_accounts`. Must match the `cell_editor` entry in the\nRust `testing_spine_stub`'s `known_roles` (cross-language test contract).",
+						"source_line": 52,
+						"type_signature": "\"cell_editor\""
+					},
+					{
 						"name": "spine_roles",
 						"kind": "variable",
-						"doc_comment": "Built-in roles only — the standard spine registers no app-defined role\nspecs. When the spine grows additional grantable roles, thread their\nregistry through `create_role_schema` here so the admin suite picks up\ngrant-path coverage.",
-						"source_line": 51,
+						"doc_comment": "The spine's closed role registry: built-ins plus `SPINE_CELL_EDITOR_ROLE`.\nThreaded into the cell spec set's role-validity gate; the Rust stub mirrors\nthe same membership. When the spine grows additional grantable roles,\nthread their registry through `create_role_schema` here so the admin suite\npicks up grant-path coverage.",
+						"source_line": 61,
 						"type_signature": "RoleSchemaResult"
 					},
 					{
 						"name": "SPINE_RPC_PATH",
 						"kind": "variable",
 						"doc_comment": "RPC endpoint mount path — matches the binary's `/api/rpc`.",
-						"source_line": 54,
+						"source_line": 66,
 						"type_signature": "\"/api/rpc\""
 					},
 					{
 						"name": "SPINE_SSE_PATH",
 						"kind": "variable",
 						"doc_comment": "Audit-log SSE stream path — `/api/admin` prefix + the\n`create_audit_log_route_specs` `/audit/stream` route. Matches the default\n`BackendConfig.sse_path` and the cross-process SSE suite's default. Only\nmounted by the TS spine binary (which wires `audit_log_sse`); the shared\nsurface stub leaves `ctx.audit_sse` null so the snapshot stays SSE-free.",
-						"source_line": 63,
+						"source_line": 75,
 						"type_signature": "\"/api/admin/audit/stream\""
 					},
 					{
 						"name": "spine_rpc_endpoints",
 						"kind": "function",
 						"doc_comment": "Factory-form RPC endpoints over the per-test `ctx.deps`. `create_app_server`\n(in the binary) owns live dispatch; the surface builder invokes the factory\nonce with a stub ctx for setup-time path/method lookup, so the handler\nclosures are never called across the process boundary.\n\nTest binaries append their own `_testing_reset` action to this endpoint's\n`actions` (see `testing_reset_actions.ts`); it is intentionally excluded\nhere so it stays off the declared surface (the harness calls it directly\nover the daemon-token channel).",
-						"source_line": 76,
+						"source_line": 88,
 						"type_signature": "(ctx: AppServerContext): RpcEndpointSpec[]",
 						"return_type": "RpcEndpointSpec[]",
 						"parameters": [
@@ -27612,7 +27665,7 @@
 						"name": "create_spine_route_specs",
 						"kind": "function",
 						"doc_comment": "Account REST + signup route specs under `/api/account` (bootstrap\nauto-mounted by the surface builder / `create_app_server`), plus the\naudit-log SSE stream under `/api/admin` **only when `ctx.audit_sse` is\nset** (the TS spine binary passes `audit_log_sse: true`).\n\nThe shared `create_spine_surface_spec()` builds its ctx with\n`audit_sse: null`, so the declared surface snapshot stays SSE-free and the\nRust `spine_stub` cross test is unaffected — only the live TS binary mounts\nthe stream at `SPINE_SSE_PATH`.",
-						"source_line": 96,
+						"source_line": 108,
 						"type_signature": "(ctx: AppServerContext): RouteSpec[]",
 						"return_type": "RouteSpec[]",
 						"parameters": [
@@ -27626,7 +27679,7 @@
 						"name": "create_spine_surface_spec",
 						"kind": "function",
 						"doc_comment": "The `AppSurfaceSpec` for the standard spine surface — the wire-shape\nsource the cross-process round-trip + RPC-round-trip suites validate\nagainst. `bootstrap: {mode: 'surface_only'}` mounts\n`POST /api/account/bootstrap`'s shape to match the binary (which wires\nbootstrap for real); the harness's `globalSetup` already consumed the\nlive bootstrap, so the cross-process round-trip validates the binary's\n409 against the route's declared error schema.",
-						"source_line": 124,
+						"source_line": 136,
 						"type_signature": "(): AppSurfaceSpec",
 						"return_type": "AppSurfaceSpec",
 						"parameters": []
@@ -27650,6 +27703,7 @@
 					"testing/cross_backend/actor_search.ts",
 					"testing/cross_backend/app_settings.ts",
 					"testing/cross_backend/cell_crud.ts",
+					"testing/cross_backend/cell_grant_role.ts",
 					"testing/cross_backend/cell_relations.ts",
 					"testing/cross_backend/origin.ts"
 				]
