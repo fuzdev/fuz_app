@@ -1,5 +1,13 @@
 # @fuzdev/fuz_app
 
+## 0.71.0
+
+### Minor Changes
+
+- feat: add cross-impl schema-parity diffing ([9948b3d](https://github.com/fuzdev/fuz_app/commit/9948b3d))
+- refactor: singularize table names ([4286ff5](https://github.com/fuzdev/fuz_app/commit/4286ff5))
+- feat: schema parity testing ([ad0b5c4](https://github.com/fuzdev/fuz_app/commit/ad0b5c4))
+
 ## 0.70.0
 
 ### Minor Changes
