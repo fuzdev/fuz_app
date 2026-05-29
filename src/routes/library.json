@@ -11,7 +11,7 @@
 	"published": true,
 	"package_json": {
 		"name": "@fuzdev/fuz_app",
-		"version": "0.72.1",
+		"version": "0.73.0",
 		"description": "fullstack app library",
 		"glyph": "🗝",
 		"logo": "logo.svg",
@@ -151,7 +151,7 @@
 	},
 	"source_json": {
 		"name": "@fuzdev/fuz_app",
-		"version": "0.72.1",
+		"version": "0.73.0",
 		"modules": [
 			{
 				"path": "actions/action_bridge.ts",

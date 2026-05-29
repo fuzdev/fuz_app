@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.73.0
+
+### Minor Changes
+
+- test: improve `testing/rpc_round_trip.ts` ([980f861](https://github.com/fuzdev/fuz_app/commit/980f861))
+
 ## 0.72.1
 
 ### Patch Changes
