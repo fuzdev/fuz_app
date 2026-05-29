@@ -59,6 +59,12 @@
 			"@hono/node-ws": {
 				"optional": true
 			},
+			"@node-rs/argon2": {
+				"optional": true
+			},
+			"hono": {
+				"optional": true
+			},
 			"pg": {
 				"optional": true
 			},
