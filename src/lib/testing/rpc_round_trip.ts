@@ -17,9 +17,10 @@ import './assert_dev_env.js';
  * @module
  */
 
-import {describe, test, beforeAll} from 'vitest';
+import {describe, test, beforeAll, assert} from 'vitest';
 
 import {ROLE_ADMIN} from '../auth/role_schema.js';
+import {JSONRPC_METHOD_NOT_FOUND, JsonrpcErrorResponse} from '../http/jsonrpc.js';
 import type {TestAccount} from './app_server.js';
 import {generate_valid_body} from './schema_generators.js';
 import type {AppSurfaceSpec, AppSurfaceRpcMethod} from '../http/surface.js';
@@ -97,6 +98,29 @@ const pick_rpc_auth_headers = (
 };
 
 /**
+ * Guard against silent parity gaps: a method enumerated from the local action
+ * surface that the remote backend answers with `method not found` (-32601)
+ * means the backend is missing an implementation the local surface advertises.
+ * That is a well-formed JSON-RPC error, so the round-trip's
+ * `assert_jsonrpc_error_response` branch would otherwise accept it as a pass —
+ * masking missing methods across coequal backends. Fail loud instead, before
+ * the generic error-envelope acceptance runs.
+ *
+ * Only `JSONRPC_METHOD_NOT_FOUND` trips this — every other well-formed error
+ * (validation, `not_found` from missing DB state, auth denials) stays a valid
+ * round-trip outcome.
+ */
+const assert_method_implemented = (method: string, body: unknown): void => {
+	const parsed = JsonrpcErrorResponse.safeParse(body);
+	if (parsed.success && parsed.data.error.code === JSONRPC_METHOD_NOT_FOUND) {
+		assert.fail(
+			`method '${method}' is registered on the local surface but the backend` +
+				` returned method-not-found — backend is missing this method (parity gap)`,
+		);
+	}
+};
+
+/**
  * Run schema-driven round-trip validation for RPC endpoints.
  *
  * For each method:
@@ -108,7 +132,10 @@ const pick_rpc_auth_headers = (
  *
  * Error responses (from missing DB state, etc.) are expected and validated
  * as well-formed JSON-RPC errors. Successful responses are validated against
- * `action.spec.output`.
+ * `action.spec.output`. A `method not found` (-32601) error is the one
+ * exception — it means the backend is missing a method the local surface
+ * advertises, so the round-trip fails loud (`assert_method_implemented`)
+ * rather than accepting it as a valid error envelope.
  */
 export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions): void => {
 	const skip_set = new Set(options.skip_methods);
@@ -172,6 +199,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 						if (res.ok) {
 							assert_jsonrpc_success_response(body, action.spec.output);
 						} else {
+							assert_method_implemented(action.spec.method, body);
 							assert_jsonrpc_error_response(body);
 						}
 					} catch (e) {
@@ -213,6 +241,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 						if (res.ok) {
 							assert_jsonrpc_success_response(body, action.spec.output);
 						} else {
+							assert_method_implemented(action.spec.method, body);
 							assert_jsonrpc_error_response(body);
 						}
 					} catch (e) {

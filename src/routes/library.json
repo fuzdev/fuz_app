@@ -20376,6 +20376,7 @@
 					"http/jsonrpc_errors.ts",
 					"http/jsonrpc_helpers.ts",
 					"testing/rpc_helpers.ts",
+					"testing/rpc_round_trip.ts",
 					"testing/transports/ws_client.ts"
 				]
 			},
@@ -31472,7 +31473,7 @@
 						"name": "RpcRoundTripTestOptions",
 						"kind": "type",
 						"doc_comment": "Options for `describe_rpc_round_trip_tests`.",
-						"source_line": 41,
+						"source_line": 42,
 						"type_signature": "RpcRoundTripTestOptions",
 						"properties": [
 							{
@@ -31522,8 +31523,8 @@
 					{
 						"name": "describe_rpc_round_trip_tests",
 						"kind": "function",
-						"doc_comment": "Run schema-driven round-trip validation for RPC endpoints.\n\nFor each method:\n1. Generate valid params from the action's input schema\n2. Fire a POST request with JSON-RPC envelope\n3. For `side_effects: false` methods, also fire a GET request\n4. Validate response is well-formed JSON-RPC; successful responses are\n   also validated against the method's declared output schema\n\nError responses (from missing DB state, etc.) are expected and validated\nas well-formed JSON-RPC errors. Successful responses are validated against\n`action.spec.output`.",
-						"source_line": 113,
+						"doc_comment": "Run schema-driven round-trip validation for RPC endpoints.\n\nFor each method:\n1. Generate valid params from the action's input schema\n2. Fire a POST request with JSON-RPC envelope\n3. For `side_effects: false` methods, also fire a GET request\n4. Validate response is well-formed JSON-RPC; successful responses are\n   also validated against the method's declared output schema\n\nError responses (from missing DB state, etc.) are expected and validated\nas well-formed JSON-RPC errors. Successful responses are validated against\n`action.spec.output`. A `method not found` (-32601) error is the one\nexception — it means the backend is missing a method the local surface\nadvertises, so the round-trip fails loud (`assert_method_implemented`)\nrather than accepting it as a valid error envelope.",
+						"source_line": 140,
 						"type_signature": "(options: RpcRoundTripTestOptions): void",
 						"return_type": "void",
 						"parameters": [
@@ -31538,6 +31539,7 @@
 				"dependencies": [
 					"auth/role_schema.ts",
 					"http/auth_shape.ts",
+					"http/jsonrpc.ts",
 					"testing/assert_dev_env.ts",
 					"testing/rpc_helpers.ts",
 					"testing/schema_generators.ts"
