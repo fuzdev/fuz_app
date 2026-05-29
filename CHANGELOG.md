@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.72.1
+
+### Patch Changes
+
+- fix: make peer deps optional for `@node-rs/argon2` and `hono` ([214889e](https://github.com/fuzdev/fuz_app/commit/214889e))
+
 ## 0.72.0
 
 ### Minor Changes
