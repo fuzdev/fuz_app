@@ -17,7 +17,7 @@ import {create_session_config} from '$lib/auth/session_cookie.js';
 import {ActingActor} from '$lib/http/auth_shape.js';
 import {describe_rpc_attack_surface_tests} from '$lib/testing/rpc_attack_surface.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {RpcEndpointSpec} from '$lib/http/surface.js';
 import {
 	create_rpc_post_init,

@@ -29,7 +29,7 @@ import {auth_migration_ns} from '$lib/auth/migrations.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {create_role_grant_offer_actions} from '$lib/auth/role_grant_offer_actions.js';
 import type {Db} from '$lib/db/db.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 
 /** Shared cookie name for the role-grant-offer integration suites. */

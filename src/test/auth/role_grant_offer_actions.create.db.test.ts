@@ -27,7 +27,7 @@ import {
 } from '$lib/auth/role_grant_offer_action_specs.js';
 import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
 import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 import {
 	RPC_PATH,

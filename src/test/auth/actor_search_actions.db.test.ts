@@ -35,7 +35,7 @@ import {
 import {run_migrations} from '$lib/db/migrate.js';
 import {auth_migration_ns} from '$lib/auth/migrations.js';
 import type {Db} from '$lib/db/db.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 
 const session_options = create_session_config('test_actor_search');

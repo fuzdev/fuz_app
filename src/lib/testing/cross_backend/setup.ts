@@ -24,7 +24,8 @@ import {z} from 'zod';
 import {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {RouteSpec} from '../../http/route_spec.js';
-import type {AppServerContext, BootstrapServerOptions} from '../../server/app_server.js';
+import type {BootstrapServerOptions} from '../../server/app_server.js';
+import type {AppServerContext} from '../../server/app_server_context.js';
 import type {SessionOptions} from '../../auth/session_cookie.js';
 import {ROLE_KEEPER} from '../../auth/role_schema.js';
 import {query_create_actor} from '../../auth/account_queries.js';

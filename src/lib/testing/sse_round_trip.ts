@@ -18,7 +18,7 @@ import './assert_dev_env.js';
 import {describe, test, beforeAll, afterAll, assert} from 'vitest';
 
 import type {RouteSpec} from '../http/route_spec.js';
-import type {AppServerContext} from '../server/app_server.js';
+import type {AppServerContext} from '../server/app_server_context.js';
 import type {SessionOptions} from '../auth/session_cookie.js';
 import {SSE_CONNECTED_COMMENT, type EventSpec, type SseNotification} from '../realtime/sse.js';
 import {ROLE_ADMIN} from '../auth/role_schema.js';

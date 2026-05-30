@@ -20,7 +20,8 @@ import './assert_dev_env.js';
 
 import type {SessionOptions} from '../auth/session_cookie.js';
 import type {RoleSchemaResult} from '../auth/role_schema.js';
-import type {AppServerContext, BootstrapServerOptions} from '../server/app_server.js';
+import type {BootstrapServerOptions} from '../server/app_server.js';
+import type {AppServerContext} from '../server/app_server_context.js';
 import type {RouteSpec} from '../http/route_spec.js';
 import {describe_standard_integration_tests} from './integration.js';
 import {describe_standard_admin_integration_tests} from './admin_integration.js';

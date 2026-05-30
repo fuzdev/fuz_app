@@ -17,7 +17,7 @@ import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {create_account_actions} from '$lib/auth/account_actions.js';
 import {account_verify_action_spec} from '$lib/auth/account_action_specs.js';
 import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {RpcEndpointSpec} from '$lib/http/surface.js';
 import {create_test_app} from '$lib/testing/app_server.js';
 import {

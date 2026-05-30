@@ -61,7 +61,7 @@ import {fractional_indices_between} from '@fuzdev/fuz_util/fractional_index.js';
 import {create_test_app, type TestApp} from '$lib/testing/app_server.js';
 import {rpc_call_for_spec, type RpcCallResultForSpec} from '$lib/testing/rpc_helpers.js';
 import type {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {AuditFactory} from '$lib/server/app_backend.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 import type {Db} from '$lib/db/db.js';

@@ -32,7 +32,7 @@ import {
 import {run_migrations} from '$lib/db/migrate.js';
 import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
 import {install_audit_drift_guard} from '$lib/testing/audit_drift_guard.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 
 const session_options = create_session_config('test_session');

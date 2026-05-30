@@ -11,7 +11,7 @@ import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {create_audit_log_route_specs} from '$lib/auth/audit_log_routes.js';
 import {create_signup_route_specs} from '$lib/auth/signup_routes.js';
 import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {RpcEndpointSpec} from '$lib/http/surface.js';
 import {describe_audit_completeness_tests} from '$lib/testing/audit_completeness.js';
 import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';

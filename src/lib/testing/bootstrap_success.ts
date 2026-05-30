@@ -21,7 +21,8 @@ import './assert_dev_env.js';
 import {describe, test, assert} from 'vitest';
 
 import type {SessionOptions} from '../auth/session_cookie.js';
-import type {AppServerContext, BootstrapLiveOptions} from '../server/app_server.js';
+import type {BootstrapLiveOptions} from '../server/app_server.js';
+import type {AppServerContext} from '../server/app_server_context.js';
 import type {RouteSpec} from '../http/route_spec.js';
 import {ERROR_ALREADY_BOOTSTRAPPED, ERROR_INVALID_TOKEN} from '../http/error_schemas.js';
 import {create_test_app_for_bootstrap} from './app_server.js';

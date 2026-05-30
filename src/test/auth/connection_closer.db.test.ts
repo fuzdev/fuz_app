@@ -77,7 +77,7 @@ import {
 } from '$lib/testing/connection_closer_helpers.js';
 import {run_migrations} from '$lib/db/migrate.js';
 import type {Db} from '$lib/db/db.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';

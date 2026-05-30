@@ -22,7 +22,7 @@ import {
 import type {RequestResponseActionSpec} from '../actions/action_spec.js';
 import type {RpcAction} from '../actions/action_rpc.js';
 import type {AppSurfaceRpcEndpoint, AppSurfaceRpcMethod, RpcEndpointSpec} from '../http/surface.js';
-import type {AppServerContext} from '../server/app_server.js';
+import type {AppServerContext} from '../server/app_server_context.js';
 import type {SessionOptions} from '../auth/session_cookie.js';
 import {create_stub_app_server_context} from './stubs.js';
 

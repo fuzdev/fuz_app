@@ -34,7 +34,7 @@ import {
 	type ExtraAccountSpec,
 	type SetupTest,
 } from '$lib/testing/cross_backend/setup.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {AuditFactory} from '$lib/server/app_backend.js';
 import type {RpcEndpointSpec} from '$lib/http/surface.js';
 

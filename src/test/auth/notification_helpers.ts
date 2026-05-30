@@ -12,7 +12,7 @@
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {create_role_grant_offer_actions} from '$lib/auth/role_grant_offer_actions.js';
 import {type NotificationSender} from '$lib/auth/role_grant_offer_notifications.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import type {JsonrpcNotification} from '$lib/http/jsonrpc.js';

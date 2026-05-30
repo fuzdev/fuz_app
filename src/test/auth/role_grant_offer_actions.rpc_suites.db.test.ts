@@ -19,7 +19,7 @@ import {describe_rpc_round_trip_tests} from '$lib/testing/rpc_round_trip.js';
 import {default_in_process_suite_options} from '$lib/testing/cross_backend/setup.js';
 import {create_role_grant_offer_actions} from '$lib/auth/role_grant_offer_actions.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 
 const log = new Logger('test', {level: 'off'});

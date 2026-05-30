@@ -45,7 +45,7 @@ import {find_auth_route} from '$lib/testing/integration_helpers.js';
 import {ERROR_CREDENTIAL_TYPE_REQUIRED} from '$lib/http/error_schemas.js';
 import {run_migrations} from '$lib/db/migrate.js';
 import type {Db} from '$lib/db/db.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
 
 const session_options = create_session_config('test_session');

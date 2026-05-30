@@ -46,7 +46,7 @@ import {
 } from '$lib/http/error_schemas.js';
 import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
 import type {Db} from '$lib/db/db.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 const session_options = create_session_config('test_session');

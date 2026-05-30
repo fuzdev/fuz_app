@@ -40,10 +40,10 @@ import {default_audit_factory, type AppBackend, type AuditFactory} from '../serv
 import {
 	create_app_server,
 	type AppServerOptions,
-	type AppServerContext,
 	type BootstrapServerOptions,
 	type BootstrapLiveOptions,
 } from '../server/app_server.js';
+import type {AppServerContext} from '../server/app_server_context.js';
 import type {AppSurface, AppSurfaceSpec} from '../http/surface.js';
 import type {RouteSpec} from '../http/route_spec.js';
 import {

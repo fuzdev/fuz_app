@@ -34,7 +34,7 @@ import {create_signup_route_specs} from '../../auth/signup_routes.js';
 import {create_standard_rpc_actions} from '../../auth/standard_rpc_actions.js';
 import {prefix_route_specs, type RouteSpec} from '../../http/route_spec.js';
 import type {AppSurfaceSpec, RpcEndpointSpec} from '../../http/surface.js';
-import type {AppServerContext} from '../../server/app_server.js';
+import type {AppServerContext} from '../../server/app_server_context.js';
 import {create_test_app_surface_spec} from '../stubs.js';
 
 /**

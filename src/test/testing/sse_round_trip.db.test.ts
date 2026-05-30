@@ -18,7 +18,7 @@ import {create_session_config} from '$lib/auth/session_cookie.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {create_audit_log_route_specs} from '$lib/auth/audit_log_routes.js';
 import {prefix_route_specs} from '$lib/http/route_spec.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {RpcEndpointSpec} from '$lib/http/surface.js';
 import {describe_sse_route_tests} from '$lib/testing/sse_round_trip.js';
 import {audit_log_event_specs} from '$lib/realtime/sse_auth_guard.js';

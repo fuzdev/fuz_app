@@ -25,7 +25,7 @@ import './assert_dev_env.js';
 import {describe, test, assert} from 'vitest';
 
 import type {SessionOptions} from '../auth/session_cookie.js';
-import type {AppServerContext} from '../server/app_server.js';
+import type {AppServerContext} from '../server/app_server_context.js';
 import type {RouteSpec} from '../http/route_spec.js';
 import {RateLimiter} from '../rate_limiter.js';
 import {RateLimitError} from '../http/error_schemas.js';

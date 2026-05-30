@@ -23,7 +23,7 @@ import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
 import {create_testing_drain_effects_action} from '$lib/testing/cross_backend/testing_reset_actions.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {RouteSpec} from '$lib/http/route_spec.js';
 
 const RPC_PATH = '/api/rpc';

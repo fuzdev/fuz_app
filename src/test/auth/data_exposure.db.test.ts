@@ -16,7 +16,7 @@ import {create_admin_actions} from '$lib/auth/admin_actions.js';
 import {create_audit_log_route_specs} from '$lib/auth/audit_log_routes.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
-import type {AppServerContext} from '$lib/server/app_server.js';
+import type {AppServerContext} from '$lib/server/app_server_context.js';
 import {describe_data_exposure_tests} from '$lib/testing/data_exposure.js';
 import {default_in_process_suite_options} from '$lib/testing/cross_backend/setup.js';
 

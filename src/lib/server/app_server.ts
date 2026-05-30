@@ -36,8 +36,8 @@ import {
 } from '../rate_limiter.js';
 import type {DaemonTokenState} from '../auth/daemon_token.js';
 import type {MigrationResult} from '../db/migrate.js';
-import type {AppDeps} from '../auth/deps.js';
 import type {AppBackend} from './app_backend.js';
+import type {AppServerContext} from './app_server_context.js';
 // Side-effect import: augments Hono's ContextVariableMap so consumers
 // that import app_server get type-safe c.get('auth_session_id') etc.
 import '../hono_context.js';
@@ -350,30 +350,6 @@ export interface AppServerOptions {
 
 	/** Env values for startup summary logging. */
 	env_values?: Record<string, unknown>;
-}
-
-/** Context passed to `create_route_specs`. */
-export interface AppServerContext {
-	deps: AppDeps;
-	backend: AppBackend;
-	bootstrap_status: BootstrapStatus;
-	session_options: SessionOptions<string>;
-	/** Shared IP rate limiter (from options). `null` when not configured. */
-	ip_rate_limiter: RateLimiter | null;
-	/** Per-account login rate limiter (from options). `null` when not configured. */
-	login_account_rate_limiter: RateLimiter | null;
-	/** Per-account signup rate limiter (from options). `null` when not configured. */
-	signup_account_rate_limiter: RateLimiter | null;
-	/** Per-IP action-dispatcher rate limiter — shared across HTTP RPC + WS. `null` when not configured. */
-	action_ip_rate_limiter: RateLimiter | null;
-	/** Per-actor action-dispatcher rate limiter — shared across HTTP RPC + WS. `null` when not configured. */
-	action_account_rate_limiter: RateLimiter | null;
-	/**
-	 * Factory-managed audit log SSE. Non-null when the `audit_log_sse`
-	 * option was passed to `create_app_server`, `null` when omitted.
-	 * Use `require_audit_sse(ctx)` to assert the invariant.
-	 */
-	audit_sse: AuditLogSse | null;
 }
 
 /** Result of `create_app_server()`. */
