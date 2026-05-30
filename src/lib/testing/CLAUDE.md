@@ -964,6 +964,35 @@ a `*.cross.test.ts`, never an in-process setup). Authed cookies come from the
 fresh-per-test keeper via `fixture.transport.cookies()`, not the stale
 globalSetup handle. fuz_app's own wiring is `src/test/cross_backend/ws.cross.test.ts`.
 
+### `cross_backend/role_grant_offer_notification_ws.ts` — `describe_role_grant_offer_notification_ws_tests`
+
+Real-upgrade coverage of the consentful-role-grants WS notification fan-out —
+the seven server-initiated notifications (`received` → recipient,
+`accepted`/`declined` → grantor, `retracted` → recipient, flat
+`role_grant_revoke` → revokee, and `role_grant_offer_supersede` → each
+superseded sibling's grantor on **both** the accept- and revoke-cascade paths).
+`describe_role_grant_offer_notification_ws_tests({setup_test, capabilities,
+base_url, ws_path})` opens the affected counterparty's socket
+(`create_ws_transport`), drives the lifecycle RPC over `fixture.transport`, then
+strict-parses the delivered frame against its canonical params schema from
+`auth/role_grant_offer_notifications.ts` (the guard against serialization drift —
+field / null / datetime / the flat revoke shape / the supersede `reason` +
+`cause_id`). Unlike `describe_cross_process_ws_tests` (consumer-agnostic,
+`heartbeat`-only), this drives a real **domain** notification family — but one
+built from spine primitives only (accounts / role-grants / offers / WS), zero
+consumer domain, so it lives here and runs against any backend that wires the
+standard RPC actions' `notification_sender` and registers a WS socket: fuz_app's
+own spine self-tests (`testing_spine_server`, whose `ws_transport` is threaded
+as the sender via `spine_rpc_endpoints({notification_sender})`; the Rust
+`testing_spine_stub`, which wires it natively) and downstream twin-impl
+consumers (fuz_forge's Deno + Rust backends call it as a thin invocation).
+Sends queue on the post-commit drain, so `WsClient.wait_for` polls + waits
+(method + predicate filter ignores unrelated frames). Accounts are seeded with
+`ROLE_ADMIN` (the only admin-grantable role) so they can open an admin-gated WS
+where one exists (forge) and be offered the role; harmless on the auth-only
+spine. Gated on `capabilities.ws`; cross-process only. fuz_app's own wiring is
+`src/test/cross_backend/role_grant_offer_notification_ws.cross.test.ts`.
+
 ### `cross_backend/sse_round_trip.ts` — `describe_cross_process_sse_tests`
 
 Cross-process counterpart to the in-process `sse_round_trip.ts` harness —

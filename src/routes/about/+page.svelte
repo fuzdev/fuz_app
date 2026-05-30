@@ -8,7 +8,6 @@
 	import {logo_fuz_app} from '@fuzdev/fuz_ui/logos.js';
 	import {resolve} from '$app/paths';
 
-
 	const site = site_context.get();
 </script>
 

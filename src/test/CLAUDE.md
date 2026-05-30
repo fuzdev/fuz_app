@@ -114,11 +114,17 @@ the test helpers' route list.
 spawned backends. `*.cross.test.ts` bodies are runtime-agnostic — they
 `inject('backend_handle')` and drive `default_spine_surface` over the wire —
 so the same files run under every `cross_backend_*` project; each project's
-`globalSetup` spawns a different backend. Seven cross files today:
+`globalSetup` spawns a different backend. Eight cross files today:
 `auth.cross.test.ts` (the `describe_standard_cross_process_tests` bundle —
 HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
 `describe_cross_process_ws_tests` suite — live WebSocket, including
-close-on-revoke), `sse.cross.test.ts` (the real-streaming-`fetch`
+close-on-revoke), `role_grant_offer_notification_ws.cross.test.ts` (the
+real-upgrade `describe_role_grant_offer_notification_ws_tests` suite — the seven
+consentful-role-grants WS notifications: received / accepted / declined /
+retracted / flat revoke + supersede on both the accept and revoke cascades, each
+strict-parsed against its canonical params schema; the TS spine threads its
+`ws_transport` as the `notification_sender` via
+`spine_rpc_endpoints({notification_sender})`), `sse.cross.test.ts` (the real-streaming-`fetch`
 `describe_cross_process_sse_tests` suite — live audit-log SSE: connect,
 data frame, account-wide close-on-revoke, session-scoped close-on-revoke),
 `cell.cross.test.ts` (both

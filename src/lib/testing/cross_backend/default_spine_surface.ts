@@ -27,6 +27,7 @@ import '../assert_dev_env.js';
 
 import {create_account_route_specs} from '../../auth/account_routes.js';
 import {create_audit_log_route_specs} from '../../auth/audit_log_routes.js';
+import type {NotificationSender} from '../../auth/role_grant_offer_notifications.js';
 import {create_role_schema, type RoleSchemaResult} from '../../auth/role_schema.js';
 import {create_session_config, type SessionOptions} from '../../auth/session_cookie.js';
 import {create_signup_route_specs} from '../../auth/signup_routes.js';
@@ -74,6 +75,27 @@ export const SPINE_RPC_PATH = '/api/rpc';
  */
 export const SPINE_SSE_PATH = '/api/admin/audit/stream';
 
+/** Options for {@link spine_rpc_endpoints}. */
+export interface SpineRpcEndpointsOptions {
+	/**
+	 * WS notification sender threaded into the role-grant-offer sub-factory for
+	 * server-initiated fan-out (`role_grant_offer_received` / `_accepted` /
+	 * `_declined` / `_retracted` / `_supersede`, flat `role_grant_revoke`).
+	 *
+	 * **Shared-instance trap.** Pass the SAME `BackendWebsocketTransport`
+	 * instance the WS endpoint registers connections against — the transport
+	 * *is* the connection registry, so a separate instance would fan out to an
+	 * empty registry and reach nobody (silently). The TS spine binary
+	 * constructs one `ws_transport` and threads it both here and into
+	 * `register_ws_endpoint`.
+	 *
+	 * Omitted (the default) for the shared `create_spine_surface_spec` path —
+	 * surface generation doesn't depend on it, and it must stay absent there so
+	 * the declared snapshot is unaffected.
+	 */
+	readonly notification_sender?: NotificationSender | null;
+}
+
 /**
  * Factory-form RPC endpoints over the per-test `ctx.deps`. `create_app_server`
  * (in the binary) owns live dispatch; the surface builder invokes the factory
@@ -84,13 +106,21 @@ export const SPINE_SSE_PATH = '/api/admin/audit/stream';
  * `actions` (see `testing_reset_actions.ts`); it is intentionally excluded
  * here so it stays off the declared surface (the harness calls it directly
  * over the daemon-token channel).
+ *
+ * `options.notification_sender`, when supplied, reaches the role-grant-offer
+ * sub-factory so the spine emits the WS notification family — see
+ * `SpineRpcEndpointsOptions`.
  */
-export const spine_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpec> => [
+export const spine_rpc_endpoints = (
+	ctx: AppServerContext,
+	options?: SpineRpcEndpointsOptions,
+): Array<RpcEndpointSpec> => [
 	{
 		path: SPINE_RPC_PATH,
-		actions: create_standard_rpc_actions(ctx.deps, {
-			roles: spine_roles,
-		}),
+		actions: create_standard_rpc_actions(
+			{...ctx.deps, notification_sender: options?.notification_sender ?? null},
+			{roles: spine_roles},
+		),
 	},
 ];
 

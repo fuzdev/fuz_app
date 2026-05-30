@@ -161,8 +161,12 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		log,
 	);
 
-	// Created up front so the audit-revocation guards bind to the same
-	// transport the WS endpoint registers connections against.
+	// Created up front so the audit-revocation guards AND the role-grant-offer
+	// `notification_sender` bind to the SAME transport the WS endpoint registers
+	// connections against (the transport is the connection registry — a separate
+	// instance would fan out to an empty registry and reach nobody). Threaded
+	// into `spine_rpc_endpoints({notification_sender})` below and into
+	// `register_ws_endpoint` in `mount_websocket`.
 	const ws_transport = new BackendWebsocketTransport();
 
 	const app_server = await create_app_server({
@@ -197,7 +201,11 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		// carries the `cell_editor` app role so the role-shaped-grant cross
 		// suite's role-validity gate admits it and rejects unregistered roles.
 		rpc_endpoints: (ctx) =>
-			spine_rpc_endpoints(ctx).map((endpoint) => ({
+			// Thread the shared `ws_transport` as the role-grant-offer
+			// `notification_sender` so the spine emits the WS notification family
+			// (received / accepted / declined / retracted / supersede + flat revoke)
+			// — driving `describe_role_grant_offer_notification_ws_tests`.
+			spine_rpc_endpoints(ctx, {notification_sender: ws_transport}).map((endpoint) => ({
 				...endpoint,
 				actions: [
 					...endpoint.actions,
