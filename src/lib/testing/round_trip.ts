@@ -18,15 +18,17 @@ import './assert_dev_env.js';
  * @module
  */
 
-import {describe, test, beforeAll} from 'vitest';
+import {describe, test, beforeAll, assert} from 'vitest';
 
 import {ROLE_ADMIN} from '../auth/role_schema.js';
+import {is_public_auth, needs_actor, input_schema_declares_acting} from '../http/auth_shape.js';
 import type {TestAccount} from './app_server.js';
 import {assert_response_matches_spec, pick_auth_headers} from './integration_helpers.js';
 import {resolve_valid_path, generate_valid_body} from './schema_generators.js';
 import type {BackendCapabilities} from './cross_backend/capabilities.js';
 import type {SetupTest, TestFixture} from './cross_backend/setup.js';
 import type {AppSurfaceSpec} from '../http/surface.js';
+import type {RouteSpec} from '../http/route_spec.js';
 
 /** Options for `describe_round_trip_validation`. */
 export interface RoundTripTestOptions {
@@ -48,6 +50,24 @@ export interface RoundTripTestOptions {
 	skip_routes?: Array<string>;
 	/** Override generated bodies for specific routes (`'METHOD /path'` → body). */
 	input_overrides?: Map<string, Record<string, unknown>>;
+	/**
+	 * Success-case fixtures for routes whose **populated success body** the
+	 * generic nil-id input can't reach — referential REST routes whose path
+	 * params / body must point at existing rows. Maps `'METHOD /path'` to an
+	 * async factory that receives the per-test `fixture` (so it can seed the
+	 * referenced state) and returns `{url?, body?}`: an explicit resolved `url`
+	 * (when the factory built it from the ids it just seeded) and/or a request
+	 * `body`. Omit `url` to fall back to the generated valid path.
+	 *
+	 * Distinct from `input_overrides` (body-only, accepts a valid error
+	 * envelope): a `success_fixtures` entry **asserts a 2xx response** and
+	 * validates it against the route's `output` schema — the success-shape
+	 * parity check the nil-id round-trip can't perform.
+	 */
+	success_fixtures?: Map<
+		string,
+		(fixture: TestFixture) => Promise<{url?: string; body?: Record<string, unknown>}>
+	>;
 }
 
 /**
@@ -87,16 +107,51 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 			});
 		});
 
+		// Mirror `pick_auth_headers`' account selection to recover the actor id
+		// of whichever account it authed as — so an `actor: 'required'` route
+		// that declares `acting?: ActingActor` gets the matching actor supplied
+		// explicitly (its sole actor, here), rather than relying on implicit
+		// single-actor resolution. Keeps such routes drivable without a
+		// consumer skip-list entry. Returns `null` for public routes.
+		const pick_acting_actor_id = (spec: RouteSpec): string | null => {
+			const {auth} = spec;
+			if (is_public_auth(auth)) return null;
+			if (auth.credential_types?.includes('daemon_token')) return fixture.actor.id;
+			if (auth.roles?.length) {
+				return auth.roles.includes(ROLE_ADMIN) ? admin_account.actor.id : fixture.actor.id;
+			}
+			return authed_account.actor.id;
+		};
+
 		test.each(describe_time_specs)('$method $path produces schema-valid response', async (spec) => {
 			const route_key = `${spec.method} ${spec.path}`;
 			if (skip_set.has(route_key)) return;
+			// Raw-byte / streaming routes (git smart-HTTP, binary upload/download)
+			// can't be round-tripped — no meaningful body to synthesize, no JSON
+			// shape to assert. Auto-skip by the spec marker rather than making
+			// every consumer hand-list them in `skip_routes`.
+			if (spec.raw_body) return;
 
 			const url = resolve_valid_path(spec.path, spec.params);
 
 			const override = options.input_overrides?.get(route_key);
-			const body = override ?? generate_valid_body(spec.input);
+			let body = override ?? generate_valid_body(spec.input);
 
 			const headers = pick_auth_headers(spec, fixture, authed_account, admin_account);
+
+			// Auto-supply `acting` for actor-required routes that declare it. The
+			// `actor !== 'none' ⟺ acting declared` registry invariant means a
+			// route either declares `acting` in `query` (REST GET/body-less) or
+			// `input` — supply the picked account's actor in the matching channel.
+			let request_url = url;
+			const acting_id = needs_actor(spec.auth) ? pick_acting_actor_id(spec) : null;
+			if (acting_id !== null) {
+				if (spec.query && input_schema_declares_acting(spec.query)) {
+					request_url = `${url}${url.includes('?') ? '&' : '?'}acting=${acting_id}`;
+				} else if (input_schema_declares_acting(spec.input) && body) {
+					body = {...body, acting: acting_id};
+				}
+			}
 
 			const request_init: RequestInit = {
 				method: spec.method,
@@ -107,7 +162,7 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 				...(body ? {body: JSON.stringify(body)} : {}),
 			};
 
-			const res = await fixture.transport(url, request_init);
+			const res = await fixture.transport(request_url, request_init);
 
 			if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
 				await res.body?.cancel();
@@ -120,6 +175,47 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 				throw new Error(
 					`Round-trip validation failed for ${route_key} (status ${res.status}): ${(e as Error).message}`,
 				);
+			}
+		});
+
+		test('declared success fixtures produce schema-valid success bodies', async () => {
+			const success_fixtures = options.success_fixtures;
+			if (!success_fixtures || success_fixtures.size === 0) return;
+			for (const [route_key, build] of success_fixtures) {
+				const space = route_key.indexOf(' ');
+				const method = route_key.slice(0, space);
+				const path = route_key.slice(space + 1);
+				const spec = describe_time_specs.find((s) => s.method === method && s.path === path);
+				assert.ok(spec, `success_fixtures references unknown route '${route_key}'`);
+
+				const seeded = await build(fixture);
+				const url = seeded.url ?? resolve_valid_path(spec.path, spec.params);
+				const body = seeded.body;
+				const headers = pick_auth_headers(spec, fixture, authed_account, admin_account);
+
+				const res = await fixture.transport(url, {
+					method: spec.method,
+					headers: {
+						...headers,
+						...(body ? {'content-type': 'application/json'} : {}),
+					},
+					...(body ? {body: JSON.stringify(body)} : {}),
+				});
+
+				try {
+					assert.ok(
+						res.ok,
+						`success fixture expected a 2xx response, got status ${res.status}: ${await res
+							.clone()
+							.text()
+							.catch(() => '<unreadable>')}`,
+					);
+					await assert_response_matches_spec(describe_time_specs, spec.method, url, res);
+				} catch (e) {
+					throw new Error(
+						`Round-trip success-fixture failed for ${route_key} (status ${res.status}): ${(e as Error).message}`,
+					);
+				}
 			}
 		});
 	});

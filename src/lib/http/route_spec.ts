@@ -148,6 +148,21 @@ export interface RouteSpec {
 	/** Success response body schema. */
 	output: z.ZodType;
 	/**
+	 * Marks a route whose request and/or response carries **raw bytes or a
+	 * streaming protocol** rather than JSON — git smart-HTTP, file-store
+	 * binary uploads/downloads, raw internal callbacks. Disambiguates the
+	 * overloaded `input: z.null()`, which otherwise can't distinguish "no
+	 * body" (`GET /health`) from "raw bytes" (a binary upload).
+	 *
+	 * Purely descriptive metadata — the dispatcher doesn't read it. Its one
+	 * consumer is the schema-driven round-trip test suite, which auto-skips
+	 * `raw_body` routes (it can neither synthesize a meaningful body nor
+	 * assert a JSON output shape), so consumers no longer hand-maintain a
+	 * `skip_routes` entry per binary route. Also surfaces in `AppSurfaceRoute`
+	 * so generated docs render "raw" instead of a misleading `null` body.
+	 */
+	raw_body?: boolean;
+	/**
 	 * Rate limit key type — declares what this route's rate limiter is keyed on.
 	 *
 	 * When set, 429 (`RateLimitError`) is auto-derived in `derive_error_schemas`.

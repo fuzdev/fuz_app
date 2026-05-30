@@ -40,6 +40,12 @@ export interface AppSurfaceRoute {
 	is_mutation: boolean;
 	/** Whether this route's handler runs inside a database transaction. */
 	transaction: boolean;
+	/**
+	 * Whether this route carries raw bytes / a streaming protocol rather than
+	 * JSON (see `RouteSpec.raw_body`). When `true`, `input_schema` /
+	 * `output_schema` being `null` means "raw bytes", not "no body".
+	 */
+	raw_body: boolean;
 	/** Rate limit key type declared on the route spec. `null` when not rate-limited. */
 	rate_limit_key: RateLimitKey | null;
 	/** JSON Schema representation of the URL path params schema. `null` when no params. */
@@ -326,6 +332,7 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 				description: r.description,
 				is_mutation: r.method !== 'GET',
 				transaction: r.transaction ?? r.method !== 'GET',
+				raw_body: r.raw_body ?? false,
 				rate_limit_key: r.rate_limit ?? null,
 				params_schema: r.params ? schema_to_surface(r.params) : null,
 				query_schema: r.query ? schema_to_surface(r.query) : null,

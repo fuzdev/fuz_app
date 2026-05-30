@@ -27,6 +27,7 @@ import type {RouteSpec} from '../../http/route_spec.js';
 import type {AppServerContext, BootstrapServerOptions} from '../../server/app_server.js';
 import type {SessionOptions} from '../../auth/session_cookie.js';
 import {ROLE_KEEPER} from '../../auth/role_schema.js';
+import {query_create_actor} from '../../auth/account_queries.js';
 import {DAEMON_TOKEN_HEADER} from '../../auth/daemon_token.js';
 import {USERNAME_LENGTH_MAX} from '../../primitive_schemas.js';
 import {
@@ -207,6 +208,16 @@ export interface TestFixtureBase {
 	 */
 	readonly extra_accounts: Readonly<Record<string, ExtraAccountFixture>>;
 	/**
+	 * Additional actors seeded on the **keeper** account (beyond its single
+	 * bootstrap `actor`), in declaration order. Populated from the
+	 * `extra_actors` option. Empty unless a suite declares any. Use to drive
+	 * the multi-actor `acting`-selector branches: with `extra_actors` non-empty
+	 * the keeper has >1 actor, so a keeper request omitting `acting` resolves
+	 * to `actor_required` with these ids in its `available[]` list. Each id is
+	 * a valid `acting` value the keeper can supply explicitly.
+	 */
+	readonly extra_actors: ReadonlyArray<{readonly id: Uuid; readonly name: string}>;
+	/**
 	 * Forge an *expired server-side session* for the keeper account and
 	 * return the ready-to-send `Cookie` header value (`name=value`). The
 	 * minted `auth_session` row is backdated while the signed cookie payload
@@ -269,6 +280,13 @@ export interface InProcessSetupOptions extends CreateTestAppOptions {
 	 * `describe_standard_admin_integration_tests`) is the primary user.
 	 */
 	readonly extra_accounts?: ReadonlyArray<ExtraAccountSpec>;
+	/**
+	 * Additional actor names to seed on the bootstrapped keeper — exposed on
+	 * `fixture.extra_actors`. See `CrossProcessSetupOptions.extra_actors` /
+	 * `TestFixtureBase.extra_actors`. Seeded directly against the live backend
+	 * DB (in-process has no wire hop).
+	 */
+	readonly extra_actors?: ReadonlyArray<string>;
 }
 
 /**
@@ -319,6 +337,20 @@ export const default_in_process_setup =
 			extra_accounts[spec.username] = build_extra_account_fixture(seeded, cookie_name);
 		}
 
+		// Seed additional keeper actors directly against the same DB. Mirrors
+		// the cross-process `_testing_reset` `extra_actors` path; no production
+		// wire mints a second actor, so this bootstrap-cradle insert is the
+		// only way into a multi-actor keeper state.
+		const extra_actors: Array<{id: Uuid; name: string}> = [];
+		for (const name of options.extra_actors ?? []) {
+			const seeded_actor = await query_create_actor(
+				{db: test_app.backend.deps.db},
+				test_app.backend.account.id,
+				name,
+			);
+			extra_actors.push({id: seeded_actor.id, name: seeded_actor.name});
+		}
+
 		return {
 			transport: in_process_fetch_transport(test_app.app),
 			// In-process the wrapper is stateless and never auto-adds Origin —
@@ -332,6 +364,7 @@ export const default_in_process_setup =
 			create_daemon_token_headers: test_app.create_daemon_token_headers,
 			create_account: test_app.create_account,
 			extra_accounts,
+			extra_actors,
 			// Forge directly against the live backend's DB + keyring — no wire
 			// hop needed in-process.
 			mint_expired_session: async () => {
@@ -483,6 +516,14 @@ export interface CrossProcessSetupOptions {
 	 * transaction as the keeper.
 	 */
 	readonly extra_accounts?: ReadonlyArray<ExtraAccountSpec>;
+	/**
+	 * Additional actor names to seed on the keeper account, beyond its
+	 * single bootstrap actor — exposed on `fixture.extra_actors`. Declare
+	 * to put the keeper into a multi-actor state so the `actor_required` /
+	 * explicit-`acting` branches are reachable cross-process. See
+	 * `TestFixtureBase.extra_actors`.
+	 */
+	readonly extra_actors?: ReadonlyArray<string>;
 }
 
 /**
@@ -628,6 +669,7 @@ const TestingResetResponseShape = z.object({
 			session_cookie: z.string(),
 		}),
 	),
+	extra_actors: z.array(z.object({id: Uuid, name: z.string()})),
 });
 
 /**
@@ -642,10 +684,12 @@ const fire_testing_reset = async (
 	options: {
 		extra_keeper_roles?: ReadonlyArray<string>;
 		extra_accounts?: ReadonlyArray<ExtraAccountSpec>;
+		extra_actors?: ReadonlyArray<string>;
 	},
 ): Promise<{
 	keeper: SeededAccountResponse;
 	extra_accounts: ReadonlyArray<SeededAccountResponse>;
+	extra_actors: ReadonlyArray<{id: Uuid; name: string}>;
 }> => {
 	const raw = await rpc_via_transport(
 		handle.keeper_transport,
@@ -658,6 +702,7 @@ const fire_testing_reset = async (
 				...(spec.password_value !== undefined && {password_value: spec.password_value}),
 				roles: [...spec.roles],
 			})),
+			extra_actors: [...(options.extra_actors ?? [])],
 		},
 		handle.config.name,
 		{[DAEMON_TOKEN_HEADER]: handle.daemon_token},
@@ -676,6 +721,7 @@ const fire_testing_reset = async (
 			session_cookie: parsed.data.session_cookie,
 		},
 		extra_accounts: parsed.data.extra_accounts,
+		extra_actors: parsed.data.extra_actors,
 	};
 };
 
@@ -915,11 +961,17 @@ export const default_cross_process_setup = (
 ): SetupTest => {
 	const extra_keeper_roles = options?.extra_keeper_roles ?? [];
 	const extra_account_specs = options?.extra_accounts ?? [];
+	const extra_actor_names = options?.extra_actors ?? [];
 	const {cookie_name} = handle.config;
 	return async () => {
-		const {keeper, extra_accounts: seeded_extras} = await fire_testing_reset(handle, {
+		const {
+			keeper,
+			extra_accounts: seeded_extras,
+			extra_actors,
+		} = await fire_testing_reset(handle, {
 			extra_keeper_roles,
 			extra_accounts: extra_account_specs,
+			extra_actors: extra_actor_names,
 		});
 
 		// Rebuild the keeper transport with the new session cookie — the
@@ -1016,6 +1068,7 @@ export const default_cross_process_setup = (
 			create_daemon_token_headers,
 			create_account,
 			extra_accounts,
+			extra_actors,
 			// Forge over the wire — the cross-process driver has no keyring,
 			// so `_testing_mint_session` mints the backdated row + signs the
 			// cookie server-side over the keeper's daemon-token channel.
@@ -1079,6 +1132,11 @@ export interface DefaultInProcessSuiteOptions {
 	 * transport.
 	 */
 	extra_accounts?: ReadonlyArray<ExtraAccountSpec>;
+	/**
+	 * Additional actor names to seed on the bootstrapped keeper — exposed on
+	 * `fixture.extra_actors`. See `TestFixtureBase.extra_actors`.
+	 */
+	extra_actors?: ReadonlyArray<string>;
 	/**
 	 * Pre-built `AppSurfaceSpec` — overrides the default which calls
 	 * `create_test_app_surface_spec` against the same factory inputs.
@@ -1146,6 +1204,7 @@ export const default_in_process_suite_options = <const O extends DefaultInProces
 		app_options: options.app_options,
 		roles: [ROLE_KEEPER, ...(options.extra_keeper_roles ?? [])],
 		extra_accounts: options.extra_accounts,
+		extra_actors: options.extra_actors,
 	}),
 	surface_source:
 		options.surface_source ??

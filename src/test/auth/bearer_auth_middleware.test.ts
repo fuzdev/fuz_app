@@ -176,6 +176,33 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 
 describe_bearer_auth_cases('create_bearer_auth_middleware', bearer_auth_cases);
 
+// --- DEV-only browser-context discard diagnostic header ---
+
+describe('bearer browser-context discard diagnostic (DEV)', () => {
+	test('emits X-Fuz-Auth-Debug on browser-context discard, absent otherwise', async () => {
+		const {app} = create_bearer_auth_test_app({
+			name: 'browser-context discard diagnostic header',
+			headers: {Authorization: 'Bearer secret_fuz_token_test'},
+			expected_status: 'next',
+		});
+
+		// Origin present → discarded for browser context → DEV header set.
+		const discarded = await app.request('/api/test', {
+			headers: {Authorization: 'Bearer secret_fuz_token_test', Origin: 'https://x.example'},
+		});
+		assert.strictEqual(
+			discarded.headers.get('X-Fuz-Auth-Debug'),
+			'bearer_discarded_browser_context',
+		);
+
+		// No Origin/Referer → not a browser-context discard → no diagnostic header.
+		const non_browser = await app.request('/api/test', {
+			headers: {Authorization: 'Bearer secret_fuz_token_test'},
+		});
+		assert.strictEqual(non_browser.headers.get('X-Fuz-Auth-Debug'), null);
+	});
+});
+
 // --- Rate limiter integration at unit level ---
 
 // --- Rate limiter side-effect assertions (mock limiter) ---

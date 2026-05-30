@@ -50,7 +50,7 @@ import {describe_rpc_round_trip_tests} from '../rpc_round_trip.js';
 import {describe_data_exposure_tests} from '../data_exposure.js';
 import type {RpcEndpointsSuiteOption} from '../rpc_helpers.js';
 import type {BackendCapabilities} from './capabilities.js';
-import type {SetupTest} from './setup.js';
+import type {SetupTest, TestFixture} from './setup.js';
 
 /**
  * Configuration for `describe_standard_cross_process_tests`.
@@ -102,6 +102,24 @@ export interface StandardCrossProcessTestOptions {
 	 * / `info/refs`) which stream git protocol bytes.
 	 */
 	round_trip_skip_routes?: Array<string>;
+	/**
+	 * Forwarded to `describe_rpc_round_trip_tests` as `success_fixtures`
+	 * (method name → async params factory). Drives a populated **success**
+	 * body for referential RPC reads (`*_get`, `*_log`) the nil-id round-trip
+	 * can only ever error on, and validates it against the method's `output`
+	 * schema on each backend — the success-shape parity check. See
+	 * `RpcRoundTripTestOptions.success_fixtures`.
+	 */
+	rpc_success_fixtures?: Map<string, (fixture: TestFixture) => Promise<Record<string, unknown>>>;
+	/**
+	 * Forwarded to `describe_round_trip_validation` as `success_fixtures`
+	 * (`'METHOD /path'` → async `{url?, body?}` factory) for referential REST
+	 * routes. See `RoundTripTestOptions.success_fixtures`.
+	 */
+	rest_success_fixtures?: Map<
+		string,
+		(fixture: TestFixture) => Promise<{url?: string; body?: Record<string, unknown>}>
+	>;
 }
 
 /**
@@ -125,6 +143,7 @@ export const describe_standard_cross_process_tests = (
 		surface_source: options.surface_source,
 		capabilities: options.capabilities,
 		skip_routes: options.round_trip_skip_routes,
+		success_fixtures: options.rest_success_fixtures,
 	});
 	describe_rpc_round_trip_tests({
 		setup_test: options.setup_test,
@@ -132,6 +151,7 @@ export const describe_standard_cross_process_tests = (
 		capabilities: options.capabilities,
 		session_options: options.session_options,
 		rpc_endpoints: options.rpc_endpoints,
+		success_fixtures: options.rpc_success_fixtures,
 	});
 	describe_data_exposure_tests({
 		setup_test: options.setup_test,

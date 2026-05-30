@@ -74,6 +74,15 @@ describe('generate_app_surface', () => {
 		assert.strictEqual(surface.routes[2]!.is_mutation, true);
 	});
 
+	test('surfaces raw_body — defaults false, true when the spec marks it', () => {
+		const routes = [create_route({path: '/json'}), create_route({path: '/binary', raw_body: true})];
+
+		const surface = generate_app_surface({route_specs: routes, middleware_specs: []});
+
+		assert.strictEqual(surface.routes[0]!.raw_body, false);
+		assert.strictEqual(surface.routes[1]!.raw_body, true);
+	});
+
 	test('computes applicable_middleware for routes', () => {
 		const route = create_route({path: '/api/things'});
 		const global_mw = create_middleware({name: 'global', path: '/*'});

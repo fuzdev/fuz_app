@@ -31,6 +31,8 @@ import {
 	assert_jsonrpc_error_response,
 	assert_jsonrpc_success_response,
 	resolve_rpc_endpoints_for_setup,
+	find_rpc_action,
+	find_rpc_method,
 	type RpcEndpointsSuiteOption,
 } from './rpc_helpers.js';
 import type {KeeperHeaderProvider} from './integration_helpers.js';
@@ -68,6 +70,28 @@ export interface RpcRoundTripTestOptions {
 	skip_methods?: Array<string>;
 	/** Override generated params for specific methods (method name → params). */
 	input_overrides?: Map<string, Record<string, unknown>>;
+	/**
+	 * Success-case fixtures for methods whose **populated success body** the
+	 * generic nil-id input can't reach — referential reads (`*_get`, `*_log`)
+	 * whose required ids must point at existing rows. Maps method name to an
+	 * async factory that receives the per-test `fixture` (so it can seed the
+	 * referenced state — e.g. create a repo via `fixture.transport` +
+	 * `fixture.create_session_headers()`) and returns the params that drive a
+	 * **success** response.
+	 *
+	 * Distinct from `input_overrides`, which only swaps the request params; the
+	 * response may still be a valid *error* envelope (missing-row `not_found`),
+	 * which the generic loop accepts. A `success_fixtures` entry **asserts the
+	 * response is `ok`** and validates `result` against the method's `output`
+	 * schema — so a backend that drops a field, or errors where the other
+	 * backend succeeds, fails loud. This is the success-shape parity check the
+	 * nil-id round-trip structurally cannot perform (it only ever sees error
+	 * envelopes for referential methods).
+	 *
+	 * Fired as POST. The factory runs against the shared per-describe fixture,
+	 * so it must not assume a clean slate between entries (seed unique state).
+	 */
+	success_fixtures?: Map<string, (fixture: TestFixture) => Promise<Record<string, unknown>>>;
 }
 
 /**
@@ -249,6 +273,42 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 							`RPC round-trip GET failed for ${action.spec.method} (status ${res.status}): ${(e as Error).message}`,
 						);
 					}
+				}
+			}
+		});
+
+		test('declared success fixtures produce schema-valid success bodies', async () => {
+			const success_fixtures = options.success_fixtures;
+			if (!success_fixtures || success_fixtures.size === 0) return;
+			for (const [method, build] of success_fixtures) {
+				const located = find_rpc_action(rpc_endpoints_for_setup, method);
+				assert.ok(located, `success_fixtures references unknown RPC method '${method}'`);
+				const surface = find_rpc_method(surface_rpc_endpoints, method);
+				assert.ok(surface, `success_fixtures method '${method}' missing from generated surface`);
+
+				const params = await build(fixture);
+				const headers = pick_rpc_auth_headers(
+					surface.method_spec,
+					fixture,
+					authed_account,
+					admin_account,
+				);
+				const init = create_rpc_post_init(method, params);
+				Object.assign(init.headers as Record<string, string>, headers);
+
+				const res = await fixture.transport(located.path, init);
+				const body = await res.json();
+				try {
+					assert_method_implemented(method, body);
+					assert.ok(
+						res.ok,
+						`success fixture expected a success response, got status ${res.status}: ${JSON.stringify(body)}`,
+					);
+					assert_jsonrpc_success_response(body, located.action.spec.output);
+				} catch (e) {
+					throw new Error(
+						`RPC success-fixture failed for ${method} (status ${res.status}): ${(e as Error).message}`,
+					);
 				}
 			}
 		});

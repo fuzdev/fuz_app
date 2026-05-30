@@ -72,6 +72,7 @@ import type {Db} from '../../db/db.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '../../auth/role_schema.js';
 import {auth_integration_truncate_tables} from '../db.js';
 import {query_schema_snapshot, SchemaSnapshot} from '../schema_introspect.js';
+import {query_create_actor} from '../../auth/account_queries.js';
 import {
 	create_test_account_with_credentials,
 	mint_test_session,
@@ -128,9 +129,21 @@ export const testing_reset_action_spec = {
 				}),
 			)
 			.optional(),
+		/**
+		 * Additional actor names to seed on the **keeper** account, beyond
+		 * its single bootstrap actor. Drives the multi-actor `acting`
+		 * selector branches (omitted `acting` + >1 actor ⇒ `actor_required`
+		 * with the `available[]` list) that are otherwise unreachable
+		 * cross-process — account creation only ever mints one actor, and no
+		 * production wire path adds a second. Bootstrap-cradle seeding, same
+		 * rationale as `extra_accounts`.
+		 */
+		extra_actors: z.array(z.string()).optional(),
 	}),
 	output: SeededAccountShape.extend({
 		extra_accounts: z.array(SeededAccountShape),
+		/** The keeper's additional actors (from input `extra_actors`), in order. */
+		extra_actors: z.array(z.strictObject({id: Uuid, name: z.string()})),
 	}),
 	async: true,
 	description:
@@ -373,6 +386,17 @@ export const create_testing_actions = (
 				extras.push(seeded);
 			}
 
+			// 5b. Seed any additional keeper actors. Same bootstrap-cradle
+			//    bypass as extra_accounts — no production wire path mints a
+			//    second actor, so the multi-actor `acting` branches need this
+			//    direct insert. Order-preserving so the fixture can address
+			//    them positionally.
+			const extra_actors: Array<{id: Uuid; name: string}> = [];
+			for (const name of input.extra_actors ?? []) {
+				const seeded_actor = await query_create_actor({db: ctx.db}, keeper.account.id, name);
+				extra_actors.push({id: seeded_actor.id, name: seeded_actor.name});
+			}
+
 			// 6. Refresh the daemon-token cache so subsequent daemon-token
 			//    requests resolve to the freshly seeded keeper. The
 			//    middleware's lazy-refresh path only fires when the cached
@@ -387,7 +411,7 @@ export const create_testing_actions = (
 			//    against this open transaction under PGlite.
 			if (reset_state) await reset_state(ctx.db);
 
-			return {...keeper, extra_accounts: extras};
+			return {...keeper, extra_accounts: extras, extra_actors};
 		}),
 		rpc_action(testing_mint_session_action_spec, async (input, ctx) => {
 			const {session_cookie} = await mint_test_session({
