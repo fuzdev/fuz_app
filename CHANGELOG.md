@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.77.0
+
+### Minor Changes
+
+- feat: support `NotificationSender` in spine ([42cd49b](https://github.com/fuzdev/fuz_app/commit/42cd49b))
+
 ## 0.76.0
 
 ### Minor Changes
