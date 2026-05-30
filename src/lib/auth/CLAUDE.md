@@ -400,6 +400,10 @@ are excluded.
   declare `credential_types: ['session']`. `account_session_revoke` is
   gated alongside `_revoke_all` because a leaked bearer can otherwise
   compose `account_session_list` + N×revoke to reach the same lockout.
+  REST `POST /logout` also declares `credential_types: ['session']`, but
+  for forensic fidelity rather than a threat — a bearer / daemon token
+  holds no session to end, so the gate refuses it instead of returning a
+  misleading 200 + a phantom `logout` audit row.
   Admin token/session revoke specs deliberately stay unrestricted (admin
   scripting from CLI/bearer is legitimate operator workflow). See
   ../../../docs/security.md §Credential-channel gating.

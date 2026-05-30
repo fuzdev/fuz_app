@@ -456,7 +456,11 @@ export const create_account_route_specs = (
 		{
 			method: 'POST',
 			path: '/logout',
-			auth: {account: 'required', actor: 'none'},
+			// `credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.
+			// Logout is a session-bound operation; a bearer / daemon token holds no session
+			// to end, so the dispatcher rejects it (403 `credential_type_required`) rather than
+			// returning a misleading 200 + a phantom `logout` audit row for a no-op.
+			auth: {account: 'required', actor: 'none', credential_types: ['session']},
 			description: 'Revoke current session and clear cookie',
 			input: LogoutInput,
 			output: LogoutOutput,
@@ -466,20 +470,21 @@ export const create_account_route_specs = (
 				if (session_token) {
 					const token_hash = hash_session_token(session_token);
 					await query_session_revoke_by_hash_unscoped(route, token_hash);
-					// Handler-side belt+suspenders: close the live WS bound to
-					// this session BEFORE the audit emit so revocation lands
-					// even if the audit INSERT fails. Same transaction-commit
-					// trade as `password` / RPC `session_revoke` below — a
-					// throw between this close and the response rolls back the
-					// DB revoke while leaving the socket severed; benign
-					// (client reconnects, session still valid) but don't
-					// introduce a throw here without acknowledging the trade.
-					// The audit listener (`create_ws_logout_closer`) runs an
-					// account-wide close on the logout event afterward —
-					// broader than this targeted close, but both layers are
-					// idempotent. Mirrors `zzz_server::account::logout_inner`.
+					// Handler-side belt+suspenders: eagerly close this account's
+					// live WS connections BEFORE the audit emit so revocation
+					// lands even if the audit INSERT fails. Account-wide (not
+					// session-targeted) to match the Rust `account_logout` handler
+					// and the sibling `/password` handler — logout is a
+					// self-initiated account-grain operation, and the audit
+					// listener (`create_ws_logout_closer`) runs the same
+					// account-wide close on the logout event afterward, so both
+					// layers converge (idempotent). Same transaction-commit trade
+					// as `password` / RPC `session_revoke`: a throw between this
+					// close and the response rolls back the DB revoke while
+					// leaving sockets severed; benign (client reconnects), but
+					// don't introduce a throw here without acknowledging the trade.
 					if (connection_closer) {
-						connection_closer.close_sockets_for_session(token_hash);
+						connection_closer.close_sockets_for_account(ctx.account.id);
 					}
 				}
 				clear_session_cookie(c, session_options);

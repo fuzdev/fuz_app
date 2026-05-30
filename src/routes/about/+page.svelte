@@ -1,15 +1,15 @@
 <script lang="ts">
-	import {Library, library_context} from '@fuzdev/fuz_ui/library.svelte.js';
 	import DocsFooter from '@fuzdev/fuz_ui/DocsFooter.svelte';
+	import {site_context} from '@fuzdev/fuz_ui/site.svelte.js';
+	import {FUZ_DEV_URL} from '@fuzdev/fuz_ui/constants.js';
 	import EcosystemLinksPanel from '@fuzdev/fuz_ui/EcosystemLinksPanel.svelte';
 	import Breadcrumb from '@fuzdev/fuz_ui/Breadcrumb.svelte';
 	import Svg from '@fuzdev/fuz_ui/Svg.svelte';
 	import {logo_fuz_app} from '@fuzdev/fuz_ui/logos.js';
 	import {resolve} from '$app/paths';
 
-	import {library_json} from '$routes/library.ts';
 
-	const library = library_context.set(new Library(library_json));
+	const site = site_context.get();
 </script>
 
 <main class="column align-items:center mx_auto width_atmost_md pb_xl9">
@@ -32,10 +32,10 @@
 	<EcosystemLinksPanel />
 	<section>
 		<div style:--font_size="var(--font_size_xl)">
-			<Breadcrumb>{library_json.package_json.glyph}</Breadcrumb>
+			<Breadcrumb />
 		</div>
 	</section>
 	<section class="box">
-		<DocsFooter {library} root_url="https://www.fuz.dev/" />
+		<DocsFooter repo_url={site.repo_url} root_url={FUZ_DEV_URL} />
 	</section>
 </main>

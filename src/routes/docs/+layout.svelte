@@ -12,9 +12,9 @@
 		children: Snippet;
 	} = $props();
 
-	const library = library_context.set(new Library(library_json));
+	library_context.set(new Library(library_json));
 </script>
 
-<Docs {tomes} {library}>
+<Docs {tomes}>
 	{@render children()}
 </Docs>

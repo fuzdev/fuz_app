@@ -97,6 +97,16 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 		},
 		note: 'security.md §Credential-channel gating on credential-minting actions — a leaked bearer cannot mint sibling tokens to outlive revocation',
 	},
+	{
+		name: 'api_token (bearer) → /logout → 403 credential_type_required',
+		request: {method: '/logout', as: 'token'},
+		expect: {
+			status: 403,
+			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
+			fields: {required_credential_types: ['session']},
+		},
+		note: 'security.md §Credential-channel gating on credential-minting actions — logout is a session-bound operation; a bearer holds no session to end, so it is refused rather than returning a misleading 200 + a phantom logout audit row (gated for forensic fidelity, not lockout)',
+	},
 ];
 
 // --- Batch 2: privilege gates (declarative) ---------------------------

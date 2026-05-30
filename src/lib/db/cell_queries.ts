@@ -613,44 +613,6 @@ export interface CellListParams {
 }
 
 /**
- * List active cells whose `refs` array contains the given fact hash,
- * newest first. Backed by the `idx_cell_refs` GIN index.
- *
- * Used by the fact-serving route's authz walk: a fact is viewable iff
- * **at least one** referencing active cell admits the caller via
- * `can_view_cell`. Unreferenced facts (no row returned here) are
- * unreachable through the public surface — orphan-fact GC handles them.
- *
- * `include_grant_count` defaults to true so the row hydrates uniformly
- * with the rest of the cell query surface. The fact-serving route is
- * the one hot path where the count is wasted work — pass `false`
- * there to skip the per-row correlated subquery; the field falls back
- * to a constant 0 so `CellRow` stays type-stable.
- *
- * @param deps - query deps
- * @param hash - fact hash to search for
- * @param options - pagination + grant-count toggle
- * @returns matching active rows
- */
-export const query_cell_list_by_ref = async (
-	deps: QueryDeps,
-	hash: FactHash,
-	options?: Pick<CellListOptions, 'limit' | 'offset'> & {include_grant_count?: boolean},
-): Promise<Array<CellRow>> => {
-	const include_grant_count = options?.include_grant_count !== false;
-	const projection = include_grant_count ? grant_count_projection('cell') : '0::int AS grant_count';
-	return deps.db.query<CellRow>(
-		`SELECT *, ${projection}
-		 FROM cell
-		 WHERE refs @> ARRAY[$1]::text[]
-		   AND deleted_at IS NULL
-		 ORDER BY created_at DESC
-		 LIMIT $2 OFFSET $3`,
-		[hash, options?.limit ?? null, options?.offset ?? 0],
-	);
-};
-
-/**
  * Derive the `refs` array column value from a cell's `data`.
  *
  * Returns `null` (rather than `[]`) when no refs are present — the column

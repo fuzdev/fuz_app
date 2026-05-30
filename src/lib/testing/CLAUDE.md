@@ -574,7 +574,11 @@ auth-related routes (login/logout/verify/sessions/tokens/password/signup)
 and asserts `DEFAULT_INTEGRATION_ERROR_COVERAGE` (20%). Bootstrap is
 excluded because no describe block in this suite drives it — its declared
 codes would always be uncovered. Consumer-specific routes aren't exercised
-here either — they don't count against the baseline. Override with
+here either — they don't count against the baseline. 403 authorization
+denials (the credential-channel gate on `/logout` + `/password`, the invite
+gate on `/signup`) are likewise excluded via `ignore_statuses: [403]` — they're
+exercised by the conformance + attack-surface suites, not this lifecycle suite.
+Override with
 `error_coverage_min?: number` (set to `0` to skip the assertion — useful for
 minimal route sets whose declared error codes outpace the suite's
 denial-path drivers).

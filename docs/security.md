@@ -43,10 +43,12 @@ Session cookies and API tokens can grant admin-level access. Only a daemon token
 
 ### Credential-channel gating on credential-minting actions
 
-Five endpoints declare `credential_types: ['session']` on their `auth`
+Six endpoints declare `credential_types: ['session']` on their `auth`
 axis. The dispatcher rejects non-session credentials with 403
 `ERROR_CREDENTIAL_TYPE_REQUIRED` + `required_credential_types: ['session']`
-before the handler runs.
+before the handler runs. Five close a credential-minting or lockout threat
+(table below); the sixth — `POST /logout` — is gated for forensic fidelity,
+not a threat (see the note after the table).
 
 | Endpoint                       | Threat closed                                                                                                 |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
@@ -61,6 +63,14 @@ Cookies are tied to a browser context (HttpOnly + SameSite=Strict + Secure)
 / revoke everything." Admin token/session revoke specs in
 `admin_action_specs.ts` deliberately stay unrestricted because admin
 scripting from CLI/bearer is legitimate operator workflow.
+
+**`POST /logout` — gated for forensic fidelity, not a threat.** Logout
+*tears down* access, so a leaked bearer "logging out" harms no one — it
+holds no session to end. Without the gate the handler would return a
+misleading `200 {ok: true}` and emit a phantom `logout` audit row for an
+event that never happened; the session-credential gate refuses such a
+caller instead (403 `ERROR_CREDENTIAL_TYPE_REQUIRED`). Both spine impls
+converge on this shape.
 
 **Defense in depth — audit metadata.** Every gated event records the
 minting `credential_type` in audit metadata (`token_create`,
@@ -493,6 +503,77 @@ bounded at the schema layer — `offer.decline_reason` at
 `ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX` (500), `role_grant_revoke.reason` at
 `ROLE_GRANT_REVOKED_REASON_LENGTH_MAX` (500) — so an untrusted input path
 cannot balloon a payload.
+
+## Fact Access Control
+
+Facts are immutable, content-addressed bytes (blake3 hash → bytes), stored in
+the optional fact layer and referenced by cells through `cell.refs`
+(auto-extracted `blake3:` hashes from `cell.data`). Because facts are
+content-addressed, identical bytes from different owners **deduplicate to one
+`fact` row** — there is no per-fact owner. Authorization therefore lives on the
+**cell→fact edge** (this owner references these bytes from this cell), never on
+the anonymous, owner-less hash.
+
+**Cell-scoped, per-reference reads.** Fact bytes are served through a named
+referencing cell:
+
+```
+GET /api/cells/:cell_id/facts/:hash
+```
+
+The check is `can_view_cell(caller, cell) AND cell.refs includes hash` — scoped
+to *that one reference*, **never unioned across the fact's other referrers**.
+A caller who can view a cell that references the bytes reads them through that
+cell; a caller who cannot view a given cell cannot read the fact through it,
+regardless of who else references the same bytes.
+
+**Dedup has zero authorization consequence.** Whether two owners' identical
+bytes share a `fact` row is invisible to the read check. If owner A references
+bytes from a **private** cell and owner B references identical bytes from a
+**public** cell, the two are one `fact` row, but:
+
+- A viewer of B's public cell reads the bytes *through B's cell* — correct,
+  B published them.
+- The same viewer **cannot** reach A's private reference: naming A's cell fails
+  `can_view_cell` and returns 404. A's stated privacy intent holds despite the
+  shared storage row.
+
+Content-dedup is a pure storage optimization; it can never widen a fact's
+effective visibility. This closes the cross-owner leak that a bare-hash,
+union-of-referrers read model would otherwise create (A's private bytes
+becoming world-readable the instant B publishes identical bytes).
+
+**404-mask.** An unviewable cell, a missing cell, and a cell that doesn't
+reference the requested hash all return the **same 404** — never 403, never a
+response that distinguishes "this fact exists elsewhere" from "no such edge."
+Neither the existence of a fact nor the existence of a cell→fact edge leaks
+through the public surface. This is the same 404-over-403 mask the cell surface
+uses (see Authorization, "404-over-403 is the general mask").
+
+**The bare-hash endpoint is admin-only.**
+
+```
+GET /api/facts/:hash    # admin only
+```
+
+An admin's reach already spans every cell, so serving by bare hash grants an
+admin no escalation — the union concern that makes bare-hash reads a cross-owner
+leak for non-admins is vacuous for an admin. Non-admin callers are rejected at
+the auth phase (401 unauthenticated / 403 wrong role) and never reach the
+handler; the handler additionally re-checks the admin role as fail-closed
+defense-in-depth. Confidential non-admin reads always go through the
+cell-scoped route. (An "explicitly-public fact" concept — a producer opting
+specific bytes into world-readable status — is a possible future refinement;
+there is no such concept today, so the bare-hash route stays strictly
+admin-gated.)
+
+**External-fact path validation.** External (filesystem-backed) facts are
+served via an `X-Accel-Redirect` into nginx's internal facts location
+(production) or a disk stream (dev/tests). The stored `external_url` is
+re-validated against the canonical `file:<shard>/<rest>` shape before it is
+trusted to address the filesystem, even though the write path only ever emits
+that shape — defense-in-depth against a future row-injection bug handing nginx
+an attacker-controlled path.
 
 ## Signup
 

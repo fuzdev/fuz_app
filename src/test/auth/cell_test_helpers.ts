@@ -21,7 +21,10 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
 import {create_session_config} from '$lib/auth/session_cookie.js';
-import {create_serve_fact_route_spec} from '$lib/server/serve_fact_route.js';
+import {
+	create_serve_fact_route_spec,
+	create_serve_cell_fact_route_spec,
+} from '$lib/server/serve_fact_route.js';
 import {
 	create_pglite_factory,
 	create_pg_factory,
@@ -118,10 +121,12 @@ export const describe_db = create_describe_db(cell_factories, [
 export const cell_test_facts_dir = mkdtempSync(join(tmpdir(), 'fuz-cell-facts-'));
 
 /**
- * Mounts the full cell RPC surface on `/api/rpc` plus the
- * `GET /api/facts/:hash` REST route. `validate_data` is left unset
- * (pass-through) — per-kind shape validation is sub-API and out of scope
- * for the generic-layer suites.
+ * Mounts the full cell RPC surface on `/api/rpc` plus both fact-serving
+ * REST routes: the cell-scoped per-reference read
+ * (`GET /api/cells/:cell_id/facts/:hash`) and the admin-only bare-hash read
+ * (`GET /api/facts/:hash`). `validate_data` is left unset (pass-through) —
+ * per-kind shape validation is sub-API and out of scope for the
+ * generic-layer suites.
  */
 export const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...create_rpc_endpoint({
@@ -133,6 +138,11 @@ export const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 			...create_cell_item_actions(ctx.deps),
 			...create_cell_audit_actions(),
 		],
+		log: ctx.deps.log,
+	}),
+	create_serve_cell_fact_route_spec({
+		deps: ctx.deps,
+		facts_dir: cell_test_facts_dir,
 		log: ctx.deps.log,
 	}),
 	create_serve_fact_route_spec({deps: ctx.deps, facts_dir: cell_test_facts_dir, log: ctx.deps.log}),

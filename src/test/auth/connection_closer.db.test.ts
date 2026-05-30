@@ -53,6 +53,7 @@ import {
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
 } from '$lib/auth/admin_action_specs.js';
+import {ERROR_CREDENTIAL_TYPE_REQUIRED, ERROR_ACCOUNT_NOT_FOUND} from '$lib/http/error_schemas.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import type {ConnectionCloser} from '$lib/actions/connection_closer.js';
 import {auth_migration_ns} from '$lib/auth/migrations.js';
@@ -80,7 +81,6 @@ import type {AppServerContext} from '$lib/server/app_server.js';
 import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
-import {ERROR_ACCOUNT_NOT_FOUND} from '$lib/http/error_schemas.js';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
@@ -727,7 +727,7 @@ describe_db('connection_closer wiring', (get_db) => {
 	});
 
 	describe('REST routes (logout / password)', () => {
-		test('logout closes the current session socket', async () => {
+		test('logout closes the account sockets (account-wide, matching Rust)', async () => {
 			const {closer, calls} = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
@@ -737,25 +737,6 @@ describe_db('connection_closer wiring', (get_db) => {
 				audit_factory: (params) =>
 					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
 			});
-			// Resolve the bootstrap session's id (= blake3 hash) via the
-			// list RPC — the test fixture's `session_cookie` is the signed
-			// cookie value, not the raw token, so we can't compute the hash
-			// directly. The list returns exactly one session for a fresh
-			// test app.
-			const list_res = await rpc_call({
-				app: test_app.app,
-				path: RPC_PATH,
-				method: 'account_session_list',
-				headers: test_app.create_session_headers(),
-			});
-			assert.strictEqual(list_res.ok, true);
-			const listed = list_res.ok
-				? (list_res.result as {sessions: Array<{id: string}>})
-				: {sessions: []};
-			assert.strictEqual(listed.sessions.length, 1);
-			const session_id = listed.sessions[0]!.id;
-			calls.length = 0; // reset — list doesn't close, but be defensive
-
 			const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
 			assert.ok(logout_route, 'logout route registered');
 			const res = await test_app.app.request(logout_route.path, {
@@ -764,17 +745,21 @@ describe_db('connection_closer wiring', (get_db) => {
 				body: null,
 			});
 			assert.strictEqual(res.status, 200);
-			assert.strictEqual(calls.length, 1, 'closer fired once for the logged-out session');
-			assert_close_call(calls[0], 'session', session_id);
+			assert.strictEqual(calls.length, 1, 'closer fired once');
+			// Eager close is ACCOUNT-WIDE — matches the Rust `account_logout`
+			// handler and the sibling `/password` handler. Only the current
+			// session ROW is deleted (token-hash-scoped), but the socket close is
+			// account-grain — the same scope the `create_ws_logout_closer` audit
+			// listener applies, so the eager + listener seams converge.
+			assert_close_call(calls[0], 'account', test_app.backend.account.id);
 			// Pin `event_type: 'logout'` (NOT `session_revoke`) on the audit row.
 			// This is the central invariant of the dual-seam WS close architecture:
 			// `ws_disconnect_event_types` in `transports_ws_auth_guard.ts` excludes
 			// `logout` deliberately so `create_ws_auth_guard` does not fire here.
 			// The listener-based seam for logout is the SEPARATE `create_ws_logout_closer`,
-			// which closes account-wide. A refactor that emitted `session_revoke`
-			// here would silently swap which listener fires AND change the close
-			// scope from per-account to per-session at audit-replay time —
-			// catastrophic for SSE-stream-revocation logic and admin forensics.
+			// which also closes account-wide. A refactor that emitted `session_revoke`
+			// here would silently swap which listener fires — catastrophic for
+			// SSE-stream-revocation logic and admin forensics.
 			const logout_audits = audit_events.filter((e) => e.event_type === 'logout');
 			assert.strictEqual(logout_audits.length, 1, 'logout emits exactly one logout audit row');
 			const stray_session_revoke = audit_events.filter((e) => e.event_type === 'session_revoke');
@@ -848,17 +833,13 @@ describe_db('connection_closer wiring', (get_db) => {
 			await test_app.cleanup();
 		});
 
-		test('logout without a session cookie does NOT close (bearer-only caller)', async () => {
-			// A bearer-authenticated caller hits /logout. Session middleware
-			// sets the session_token slot to null (no cookie present), so the
-			// handler's `if (session_token)` guard is false and the close path
-			// is skipped entirely. The handler still 200s — logout is
-			// best-effort and the audit row goes out regardless. Pins the
-			// contract that the closer never fires on a null session_token —
-			// without this, a refactor that calls `close_sockets_for_session`
-			// unconditionally would pass `''` (or whatever the null coalesces
-			// to) and could close arbitrary sockets if the close primitive
-			// ever changed its empty-string semantics.
+		test('logout rejects a bearer-only caller (no session) → 403 credential_type_required', async () => {
+			// Logout is session-gated (`credential_types: ['session']`, see
+			// docs/security.md §Credential-channel gating): a bearer / daemon
+			// token holds no session to end, so the dispatcher refuses it before
+			// the handler runs — no socket close, no phantom `logout` audit row,
+			// no misleading 200. Pins that the closer never fires on a credential
+			// the gate rejects (it can't reach the close path at all).
 			const {closer, calls} = create_recording_closer();
 			const test_app = await create_test_app({
 				session_options,
@@ -872,8 +853,18 @@ describe_db('connection_closer wiring', (get_db) => {
 				headers: test_app.create_bearer_headers(),
 				body: null,
 			});
-			assert.strictEqual(res.status, 200);
-			assert.strictEqual(calls.length, 0, 'closer must not fire when no session cookie is present');
+			assert.strictEqual(res.status, 403);
+			const body = (await res.json()) as {
+				error?: string;
+				required_credential_types?: Array<string>;
+			};
+			assert.strictEqual(body.error, ERROR_CREDENTIAL_TYPE_REQUIRED);
+			assert.deepStrictEqual(body.required_credential_types, ['session']);
+			assert.strictEqual(
+				calls.length,
+				0,
+				'closer must not fire when the credential gate refuses the caller',
+			);
 			await test_app.cleanup();
 		});
 
