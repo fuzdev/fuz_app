@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.74.0
+
+### Minor Changes
+
+- feat: streaming uploads ([71aff10](https://github.com/fuzdev/fuz_app/commit/71aff10))
+
 ## 0.73.0
 
 ### Minor Changes
