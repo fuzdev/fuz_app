@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.78.0
+
+### Minor Changes
+
+- feat: add `server/app_server_context.ts` ([1e14769](https://github.com/fuzdev/fuz_app/commit/1e14769))
+
 ## 0.77.0
 
 ### Minor Changes
