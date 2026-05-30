@@ -9,8 +9,12 @@
 
 import {Buffer} from 'node:buffer';
 import {spawn} from 'node:child_process';
+import {createReadStream, createWriteStream} from 'node:fs';
 import {stat, mkdir, readFile, readdir, writeFile, rename, rm, open} from 'node:fs/promises';
 import process from 'node:process';
+import {Readable} from 'node:stream';
+import {pipeline} from 'node:stream/promises';
+import type {ReadableStream as NodeWebReadableStream} from 'node:stream/web';
 
 import type {RuntimeDeps, StatResult, CommandResult} from './deps.js';
 
@@ -39,7 +43,7 @@ export const create_node_runtime = (
 	stat: async (path): Promise<StatResult | null> => {
 		try {
 			const s = await stat(path);
-			return {is_file: s.isFile(), is_directory: s.isDirectory()};
+			return {is_file: s.isFile(), is_directory: s.isDirectory(), size: s.size};
 		} catch {
 			return null;
 		}
@@ -49,6 +53,22 @@ export const create_node_runtime = (
 	},
 	read_text_file: (path) => readFile(path, 'utf-8'),
 	read_file: (path) => readFile(path).then((buf) => new Uint8Array(buf)),
+	// `Readable.toWeb` / `fromWeb` bridge Node streams to the web stream shape
+	// the interface speaks. The casts cross Node's `stream/web` ReadableStream
+	// and the global DOM `ReadableStream` (structurally identical here).
+	read_file_stream: async (path) => {
+		// `createReadStream` is lazy — a missing file surfaces as a stream `error`
+		// event at consume time, not at the call. `stat` first so we honor the
+		// interface's eager-throw contract (matching Deno/mock).
+		await stat(path);
+		return Readable.toWeb(createReadStream(path)) as unknown as ReadableStream<Uint8Array>;
+	},
+	write_file_stream: async (path, data) => {
+		await pipeline(
+			Readable.fromWeb(data as unknown as NodeWebReadableStream<Uint8Array>),
+			createWriteStream(path),
+		);
+	},
 	read_text_from_offset: async (path, offset) => {
 		const s = await stat(path);
 		const file_size = s.size;

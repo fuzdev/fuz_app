@@ -27,11 +27,13 @@ declare const Deno: {
 	readDir: (path: string) => AsyncIterable<{name: string}>;
 	open: (
 		path: string,
-		options?: {read?: boolean; write?: boolean},
+		options?: {read?: boolean; write?: boolean; create?: boolean; truncate?: boolean},
 	) => Promise<{
 		read: (buf: Uint8Array) => Promise<number | null>;
 		seek: (offset: number, whence: number) => Promise<number>;
 		close: () => void;
+		readable: ReadableStream<Uint8Array>;
+		writable: WritableStream<Uint8Array>;
 	}>;
 	SeekMode: {Start: number};
 	writeTextFile: (path: string, content: string) => Promise<void>;
@@ -88,7 +90,7 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 	stat: async (path): Promise<StatResult | null> => {
 		try {
 			const s = await Deno.stat(path);
-			return {is_file: s.isFile, is_directory: s.isDirectory};
+			return {is_file: s.isFile, is_directory: s.isDirectory, size: s.size};
 		} catch {
 			return null;
 		}
@@ -96,6 +98,13 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 	mkdir: (path, options) => Deno.mkdir(path, options),
 	read_text_file: (path) => Deno.readTextFile(path),
 	read_file: (path) => Deno.readFile(path),
+	read_file_stream: async (path) => (await Deno.open(path, {read: true})).readable,
+	write_file_stream: async (path, data) => {
+		const file = await Deno.open(path, {write: true, create: true, truncate: true});
+		// `pipeTo` closes the writable (and so the underlying file) on completion
+		// and aborts it on error — no manual `close()` needed.
+		await data.pipeTo(file.writable);
+	},
 	read_text_from_offset: async (path, offset) => {
 		const s = await Deno.stat(path);
 		const file_size = s.size;

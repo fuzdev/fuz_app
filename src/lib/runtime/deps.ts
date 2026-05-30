@@ -14,6 +14,17 @@
 export interface StatResult {
 	is_file: boolean;
 	is_directory: boolean;
+	/**
+	 * Byte length of a regular file. Meaningful only when `is_file` is true; for
+	 * directories it is runtime-defined (real OS `stat` reports the directory
+	 * entry's on-disk size, not 0 — only `create_mock_runtime` reports 0).
+	 * Populated by every runtime factory (`create_node_runtime` /
+	 * `create_deno_runtime` / `create_mock_runtime`); optional so loose test
+	 * stubs that only assert `is_file` / `is_directory` don't have to supply it.
+	 * Callers that need an exact size (e.g. a streaming upload's
+	 * `Content-Length`) read it from a real runtime, where it is always present.
+	 */
+	size?: number;
 }
 
 /**
@@ -102,6 +113,33 @@ export interface FsWriteDeps {
 }
 
 /**
+ * Streaming file I/O — read a file as a byte stream, or write a byte stream to
+ * a file, both bounded in memory (peak ≈ one chunk, not the whole file).
+ *
+ * Kept separate from `FsReadDeps` / `FsWriteDeps` so the whole-buffer
+ * `read_file` / `write_file` consumers and their partial test stubs are
+ * unaffected; only the full runtime factories implement these. Used for
+ * GB-scale artifact transfer (the `fuzf file get` / `put` path) where buffering
+ * the whole file would OOM the client.
+ */
+export interface FsStreamDeps {
+	/**
+	 * Open a file as a `ReadableStream` of its bytes — read incrementally, so
+	 * peak memory is one chunk rather than the whole file. Throws if the file
+	 * does not exist. Use as a streaming upload body or for an incremental hash
+	 * pass over a large file.
+	 */
+	read_file_stream: (path: string) => Promise<ReadableStream<Uint8Array>>;
+	/**
+	 * Write a `ReadableStream` of bytes to a file, consuming it with
+	 * backpressure (peak memory is one chunk). Creates or truncates `path`.
+	 * Throws on any I/O error; a partially-written file may remain, so callers
+	 * needing atomicity write to a temp path then `rename`.
+	 */
+	write_file_stream: (path: string, data: ReadableStream<Uint8Array>) => Promise<void>;
+}
+
+/**
  * File system remove operations.
  */
 export interface FsRemoveDeps {
@@ -174,6 +212,7 @@ export interface RuntimeDeps
 		EnvDeps,
 		FsReadDeps,
 		FsWriteDeps,
+		FsStreamDeps,
 		FsRemoveDeps,
 		CommandDeps,
 		FetchDeps,

@@ -16,6 +16,8 @@ import {
 	MockExitError,
 } from '$lib/runtime/mock.js';
 
+import {collect_stream, stream_of} from './byte_stream.js';
+
 describe('create_mock_runtime', () => {
 	test('creates a runtime with default empty state', () => {
 		const rt = create_mock_runtime();
@@ -88,6 +90,16 @@ describe('file system', () => {
 		assert.strictEqual(result.is_directory, false);
 	});
 
+	test('stat reports byte size for text and binary files', async () => {
+		const rt = create_mock_runtime();
+		// 'héllo' is 6 bytes UTF-8 (the 'é' is two bytes), not 5 chars.
+		rt.mock_fs.set('/text.txt', 'héllo');
+		rt.mock_fs_bytes.set('/bin.dat', new Uint8Array([1, 2, 3, 4]));
+
+		assert.strictEqual((await rt.stat('/text.txt'))?.size, 6);
+		assert.strictEqual((await rt.stat('/bin.dat'))?.size, 4);
+	});
+
 	test('stat returns dir info for directories', async () => {
 		const rt = create_mock_runtime();
 		rt.mock_dirs.add('/mydir');
@@ -97,6 +109,7 @@ describe('file system', () => {
 		assert.ok(result);
 		assert.strictEqual(result.is_file, false);
 		assert.strictEqual(result.is_directory, true);
+		assert.strictEqual(result.size, 0);
 	});
 
 	test('stat returns null for nonexistent paths', async () => {
@@ -137,6 +150,67 @@ describe('file system', () => {
 
 		assert.strictEqual(rt.mock_fs.has('/file'), false);
 		assert.strictEqual(rt.mock_dirs.has('/dir'), false);
+	});
+});
+
+describe('streaming file system', () => {
+	test('read_file_stream yields the stored bytes', async () => {
+		const rt = create_mock_runtime();
+		const bytes = new Uint8Array([10, 20, 30]);
+		rt.mock_fs_bytes.set('/data.bin', bytes);
+
+		const result = await collect_stream(await rt.read_file_stream('/data.bin'));
+
+		assert.deepStrictEqual(result, bytes);
+	});
+
+	test('read_file_stream reads text-stored files as UTF-8 bytes', async () => {
+		const rt = create_mock_runtime();
+		rt.mock_fs.set('/note.txt', 'hi');
+
+		const result = await collect_stream(await rt.read_file_stream('/note.txt'));
+
+		assert.deepStrictEqual(result, new TextEncoder().encode('hi'));
+	});
+
+	test('read_file_stream throws ENOENT for missing files', async () => {
+		const rt = create_mock_runtime();
+
+		const err = await assert_rejects(() => rt.read_file_stream('/missing'));
+		assert.strictEqual((err as NodeJS.ErrnoException).code, 'ENOENT');
+	});
+
+	test('write_file_stream drains a multi-chunk stream into one file', async () => {
+		const rt = create_mock_runtime();
+
+		await rt.write_file_stream(
+			'/out.bin',
+			stream_of([new Uint8Array([1, 2]), new Uint8Array([3]), new Uint8Array([4, 5])]),
+		);
+
+		assert.deepStrictEqual(rt.mock_fs_bytes.get('/out.bin'), new Uint8Array([1, 2, 3, 4, 5]));
+	});
+
+	test('write then read round-trips byte-for-byte', async () => {
+		const rt = create_mock_runtime();
+		const bytes = new Uint8Array([255, 0, 128, 64]);
+
+		await rt.write_file_stream('/rt.bin', stream_of([bytes]));
+		const result = await collect_stream(await rt.read_file_stream('/rt.bin'));
+
+		assert.deepStrictEqual(result, bytes);
+	});
+
+	test('atomic recipe: write to temp then rename is readable at the final path', async () => {
+		const rt = create_mock_runtime();
+		const bytes = new Uint8Array([7, 7, 7]);
+
+		await rt.write_file_stream('/final.bin.tmp', stream_of([bytes]));
+		await rt.rename('/final.bin.tmp', '/final.bin');
+
+		assert.strictEqual(rt.mock_fs_bytes.has('/final.bin.tmp'), false);
+		const result = await collect_stream(await rt.read_file_stream('/final.bin'));
+		assert.deepStrictEqual(result, bytes);
 	});
 });
 

@@ -113,11 +113,16 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 
 		// === Local File System ===
 		stat: async (path): Promise<StatResult | null> => {
-			if (mock_fs.has(path) || mock_fs_bytes.has(path)) {
-				return {is_file: true, is_directory: false};
+			const bytes = mock_fs_bytes.get(path);
+			if (bytes !== undefined) {
+				return {is_file: true, is_directory: false, size: bytes.length};
+			}
+			const text = mock_fs.get(path);
+			if (text !== undefined) {
+				return {is_file: true, is_directory: false, size: new TextEncoder().encode(text).length};
 			}
 			if (mock_dirs.has(path)) {
-				return {is_file: false, is_directory: true};
+				return {is_file: false, is_directory: true, size: 0};
 			}
 			return null;
 		},
@@ -150,6 +155,29 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 			const error: NodeJS.ErrnoException = new Error(`ENOENT: no such file or directory: ${path}`);
 			error.code = 'ENOENT';
 			throw error;
+		},
+		read_file_stream: async (path) => {
+			let bytes = mock_fs_bytes.get(path);
+			if (bytes === undefined) {
+				const content = mock_fs.get(path);
+				if (content !== undefined) bytes = new TextEncoder().encode(content);
+			}
+			if (bytes === undefined) {
+				const error: NodeJS.ErrnoException = new Error(
+					`ENOENT: no such file or directory: ${path}`,
+				);
+				error.code = 'ENOENT';
+				throw error;
+			}
+			// Single-chunk stream — the mock buffers in memory (fine for tests);
+			// real runtimes stream incrementally.
+			const data = bytes;
+			return new ReadableStream<Uint8Array>({
+				start(controller) {
+					controller.enqueue(data);
+					controller.close();
+				},
+			});
 		},
 		read_text_from_offset: async (path, offset) => {
 			let bytes: Uint8Array;
@@ -203,6 +231,28 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 		},
 		write_file: async (path, data) => {
 			mock_fs_bytes.set(path, data);
+		},
+		write_file_stream: async (path, data) => {
+			// Drain the stream into one buffer (the mock has no real disk;
+			// real runtimes write incrementally with backpressure).
+			const chunks: Array<Uint8Array> = [];
+			let total = 0;
+			const reader = data.getReader();
+			for (;;) {
+				const {done, value} = await reader.read();
+				if (done) break;
+				if (value) {
+					chunks.push(value);
+					total += value.length;
+				}
+			}
+			const merged = new Uint8Array(total);
+			let offset = 0;
+			for (const chunk of chunks) {
+				merged.set(chunk, offset);
+				offset += chunk.length;
+			}
+			mock_fs_bytes.set(path, merged);
 		},
 		rename: async (old_path, new_path) => {
 			const content = mock_fs.get(old_path);

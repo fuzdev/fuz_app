@@ -5,7 +5,7 @@ import LibraryPage from '$routes/docs/library/+page.svelte';
 
 export const tomes: Array<Tome> = [
 	{
-		name: 'introduction',
+		slug: 'introduction',
 		category: 'guide',
 		Component: introduction,
 		related_tomes: [],
@@ -13,7 +13,7 @@ export const tomes: Array<Tome> = [
 		related_declarations: [],
 	},
 	{
-		name: 'api',
+		slug: 'api',
 		category: 'reference',
 		Component: ApiPage,
 		related_tomes: [],
@@ -21,7 +21,7 @@ export const tomes: Array<Tome> = [
 		related_declarations: [],
 	},
 	{
-		name: 'library',
+		slug: 'library',
 		category: 'reference',
 		Component: LibraryPage,
 		related_tomes: [],
