@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.75.0
+
+### Minor Changes
+
+- feat: improve cross-backend tests ([fc03999](https://github.com/fuzdev/fuz_app/commit/fc03999))
+
 ## 0.74.0
 
 ### Minor Changes
