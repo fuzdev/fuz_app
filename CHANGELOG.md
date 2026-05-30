@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.76.0
+
+### Minor Changes
+
+- feat: more rust parity ([0039b48](https://github.com/fuzdev/fuz_app/commit/0039b48))
+
 ## 0.75.0
 
 ### Minor Changes
