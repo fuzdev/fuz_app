@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.78.1
+
+### Patch Changes
+
+- feat: improve conformance tests ([5b2e59e](https://github.com/fuzdev/fuz_app/commit/5b2e59e))
+
 ## 0.78.0
 
 ### Minor Changes
