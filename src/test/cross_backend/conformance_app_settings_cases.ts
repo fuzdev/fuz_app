@@ -9,7 +9,7 @@
  * `spine_stub` alike — no live-mount.
  *
  * Every `note` cites a **public** `security.md` property (the table ships
- * in a public package — no grimoire refs).
+ * in a public package — no internal-planning refs).
  *
  * @module
  */

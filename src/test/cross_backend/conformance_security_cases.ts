@@ -9,7 +9,7 @@
  * validated only against the `TEST_CONTEXT_PRESET_KEY` stub.
  *
  * Every `note` cites a **public** `security.md` property (the table ships
- * in a public package — no grimoire refs). Stateful invariants
+ * in a public package — no internal-planning refs). Stateful invariants
  * (fail-closed tombstone, last-admin guard, deterministic lifecycle) are
  * imperative and live in `account_lifecycle.cross.test.ts`, not here.
  *
