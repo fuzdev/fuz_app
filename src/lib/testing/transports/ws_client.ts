@@ -7,10 +7,10 @@ import '../assert_dev_env.js';
  * driver implements — `send` / `request` / `close` / `messages` /
  * `wait_for`. Two impls today:
  *
- * - **In-process** — `create_ws_test_harness` in `../ws_round_trip.ts`.
+ * - **In-process** — `create_ws_test_harness` in `testing/ws_round_trip.ts`.
  *   Drives `register_action_ws` against a fake Hono upgrade so the
  *   dispatcher's full path runs without the wire upgrade.
- * - **Cross-process** — `create_ws_transport` in `./ws_transport.ts`.
+ * - **Cross-process** — `create_ws_transport` in `testing/transports/ws_transport.ts`.
  *   Wraps the native `WebSocket` upgrade against a real running binary,
  *   threading the session cookie captured by `FetchTransport`.
  *
@@ -149,7 +149,7 @@ export interface WsClient {
 	 * Resolves `true` immediately when the socket is already closed.
 	 * Distinct from `close()` (client-initiated): this awaits a close the
 	 * test did not request. Mirrors `wait_for_close` on the SSE frame reader
-	 * in `../sse_round_trip.ts`.
+	 * in `testing/sse_round_trip.ts`.
 	 */
 	wait_for_close: (timeout_ms?: number) => Promise<boolean>;
 	/** Every message the server has sent, in arrival order. */

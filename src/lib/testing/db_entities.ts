@@ -4,7 +4,7 @@ import './assert_dev_env.js';
  * DB-backed entity factories for tests that need real `account` + `actor`
  * rows in the database.
  *
- * Companion to `entities.ts` — that file ships in-memory factories
+ * Companion to `testing/entities.ts` — that file ships in-memory factories
  * (`create_test_account`, `create_test_actor`) for tests that mock the
  * DB; this file ships factories that hit a real `Db` so query-level
  * tests don't reimplement the same `query_create_account_with_actor`
@@ -13,7 +13,7 @@ import './assert_dev_env.js';
  * For full-fledged test accounts that also need an API token + signed
  * session cookie + role_grants, use `bootstrap_test_keeper` (keeper) or
  * `create_test_account_with_credentials` (additional accounts) from
- * `app_server.ts` instead.
+ * `testing/app_server.ts` instead.
  *
  * @module
  */
@@ -56,7 +56,7 @@ export const create_test_account_with_actor = async (
  * `_supersede` notification chain a real grant emits. Cross-process
  * suites must instead drive `role_grant_offer_create_action_spec` +
  * `role_grant_offer_accept_action_spec` via
- * `role_grant_helpers.ts`'s `role_grant_offer_and_accept` so the
+ * `testing/role_grant_helpers.ts`'s `role_grant_offer_and_accept` so the
  * fixture observes the full post-commit fan-out the way production
  * does — otherwise tests would mask real divergence between the TS
  * and Rust spines.

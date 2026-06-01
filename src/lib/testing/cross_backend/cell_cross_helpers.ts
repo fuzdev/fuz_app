@@ -2,7 +2,7 @@ import '../assert_dev_env.js';
 
 /**
  * Shared call-site primitives for the cell cross-backend parity suites
- * (`cell_crud.ts` + `cell_relations.ts`).
+ * (`testing/cross_backend/cell_crud.ts` + `testing/cross_backend/cell_relations.ts`).
  *
  * The cell verbs are stateful and authz-shaped, so both suites POST raw
  * JSON-RPC envelopes (threading ids + auth headers across calls) and parse
@@ -43,7 +43,7 @@ export interface RpcResult {
 
 /**
  * POST a JSON-RPC call over a cross-process `FetchTransport` with the given
- * auth headers. Distinct from `rpc_helpers.ts`'s `app`-based `rpc_call`: this
+ * auth headers. Distinct from `testing/rpc_helpers.ts`'s `app`-based `rpc_call`: this
  * variant drives the cookie-jar `FetchTransport` the cross-backend harness
  * spawns against, and returns the slim `RpcResult` the cell suites read.
  */

@@ -10,7 +10,7 @@ other domains should do the same — extend, don't special-case.
 
 For the design rationale behind declarative routes, DEV-only output
 validation, the three-layer error-schema merge, and fire-and-forget
-effects, see ../../docs/architecture.md.
+effects, see ../../../docs/architecture.md.
 
 ## Module Map
 
@@ -134,7 +134,7 @@ are the contract with external callers.
 
 Production short-circuits to the unwrapped handler — no parse work on the
 hot path. Uniform across all three action-handler surfaces (REST, RPC,
-WS); see ../../docs/architecture.md §DEV-only Output Validation.
+WS); see ../../../docs/architecture.md §DEV-only Output Validation.
 
 ### Helpers
 
@@ -297,7 +297,7 @@ pull in route types.
 Resolves the real client IP from `X-Forwarded-For` only when the TCP
 connection is from a configured trusted proxy. Without this middleware,
 `get_client_ip(c)` returns `'unknown'`. Must run **before** auth and
-rate-limiting middleware (see root ../../CLAUDE.md §Middleware Ordering).
+rate-limiting middleware (see root ../../../CLAUDE.md §Middleware Ordering).
 
 Per-symbol semantics on TSDoc; the cross-cutting properties:
 
@@ -492,7 +492,7 @@ Interfaces exported for consumer use: `TableInfo`, `TableWithCount`,
 
 ## Cross-Module Notes
 
-- **Middleware ordering** is assembled by `create_app_server` — see the root ../../CLAUDE.md §Middleware Ordering. The invariants `http/` needs consumers to uphold: trusted-proxy runs before auth/rate-limit; origin verification runs before session parsing; `client_ip` must be set before any handler or rate limiter reads it
+- **Middleware ordering** is assembled by `create_app_server` — see the root ../../../CLAUDE.md §Middleware Ordering. The invariants `http/` needs consumers to uphold: trusted-proxy runs before auth/rate-limit; origin verification runs before session parsing; `client_ip` must be set before any handler or rate limiter reads it
 - **No re-exports.** Import every symbol from its canonical source module. `http/surface.ts` no longer re-exports schema helpers — go through `http/schema_helpers.ts`
 - **Input/output schemas align with SAES.** When wiring RPC via `actions/action_rpc.ts` or bridging to `RouteSpec` via `actions/action_bridge.ts`, the same Zod types flow through unchanged (see `actions/CLAUDE.md` §Single JSON-RPC 2.0 endpoint and §HTTP bridge)
 - **Error modules are complementary, not redundant.** `http/error_schemas.ts` is Zod-first (for routes and surface); `http/jsonrpc_errors.ts` is throw-first (for handlers and the catch layer). A single `ERROR_*` code can be raised either way depending on whether the handler needs to also attach diagnostic fields

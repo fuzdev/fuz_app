@@ -15,8 +15,8 @@
  * The same shape governs both `ActionSpec.auth` (in `actions/action_spec.ts`)
  * and `RouteSpec.auth` (in `http/route_spec.ts`). The canonical schema
  * lives here in `http/` because that preserves the existing
- * `actions → http` dependency direction (and `error_schemas.ts` /
- * `surface.ts` consume the type).
+ * `actions → http` dependency direction (and `http/error_schemas.ts` /
+ * `http/surface.ts` consume the type).
  *
  * Registry-time invariants 1, 3, and 4 live on the schema's
  * `.superRefine` so any spec that fails them throws at the Zod parse

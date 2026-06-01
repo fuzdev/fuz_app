@@ -14,7 +14,7 @@ import './assert_dev_env.js';
  * a secondary failure. `describe_rpc_round_trip_tests` covers that RPC
  * directly, so primary breakages localize there first. For *unit-level*
  * "did the handler emit?" assertions without the persistence path, use
- * `create_recording_audit_emitter` from `audit_drift_guard.ts` — that
+ * `create_recording_audit_emitter` from `testing/audit_drift_guard.ts` — that
  * captures emits before they hit DB or transport.
  *
  * Bootstrap is excluded because it requires filesystem token state that

@@ -2,7 +2,7 @@
  * Generic cell RPC action handlers.
  *
  * Six `request_response` actions bound to the specs in
- * `./cell_action_specs.ts`:
+ * `auth/cell_action_specs.ts`:
  *
  * - Mutations: `cell_create`, `cell_update`, `cell_delete`, `cell_clone`.
  * - Reads: `cell_get`, `cell_list`.
@@ -30,7 +30,7 @@
  * Mutations emit `cell_create` / `cell_update` / `cell_delete` audit
  * events via `deps.audit.emit(...)`. The `AuditLogConfig` threaded through
  * the consumer's `audit_factory` (see `create_app_backend`) must declare
- * the cell event types (see `./cell_audit_metadata.ts`).
+ * the cell event types (see `auth/cell_audit_metadata.ts`).
  *
  * App vocabulary (e.g., collection / entry kinds) lives in client-side
  * helpers and per-app `validate_data` deps — this layer is generic-only

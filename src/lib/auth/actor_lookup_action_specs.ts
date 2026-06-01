@@ -41,7 +41,7 @@
  * 2. {@link ACTOR_LOOKUP_IDS_MAX} cap per call,
  * 3. actor-uuid intractability (122-bit random),
  * 4. hard-deleted actors are indistinguishable from never-existed (no
- *    tombstone oracle — see `actor_lookup_queries.ts`).
+ *    tombstone oracle — see `auth/actor_lookup_queries.ts`).
  *
  * Response order is unspecified — callers index by `id` when needed.
  *

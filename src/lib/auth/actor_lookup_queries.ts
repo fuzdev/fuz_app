@@ -10,7 +10,7 @@
  * The inner join still resolves one row per actor — `actor.account_id`
  * is `NOT NULL` so every actor has exactly one account.
  *
- * Info-leak posture (see `actor_lookup_action_specs.ts` §audit):
+ * Info-leak posture (see `auth/actor_lookup_action_specs.ts` §audit):
  *
  * - Row shape **omits** `account_id` — the join is control-plane,
  *   not wire-visible.

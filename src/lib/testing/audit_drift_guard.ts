@@ -57,7 +57,7 @@ export const install_audit_drift_guard = (): void => {
 /**
  * Marker pushed into a shared sequence array by an emit-recording
  * `audit_factory`. Pair with `RecordedClose` from
- * `connection_closer_helpers.ts` to test close-vs-emit ordering at
+ * `testing/connection_closer_helpers.ts` to test close-vs-emit ordering at
  * handler call sites — see `create_emit_ordering_audit_factory` below.
  */
 export interface AuditEmitMarker {

@@ -20,7 +20,7 @@
  *    kind / handler presence.
  *
  * Pre-consolidation each dispatcher inlined these checks; the comment
- * in `register_action_ws.ts` literally said "mirrors the HTTP RPC
+ * in `actions/register_action_ws.ts` literally said "mirrors the HTTP RPC
  * registration check" but nothing kept them mirrored. Centralizing the
  * loop closes the most likely future drift surface.
  *

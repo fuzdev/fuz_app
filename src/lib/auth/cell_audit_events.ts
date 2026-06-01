@@ -9,9 +9,9 @@
  * alongside.
  *
  * Aggregator module by design — not a compat shim. The per-event metadata
- * schemas live in their own files (`cell_audit_metadata.ts`,
- * `cell_grant_audit_metadata.ts`, `cell_field_audit_metadata.ts`,
- * `cell_item_audit_metadata.ts`); this module is the single registration
+ * schemas live in their own files (`auth/cell_audit_metadata.ts`,
+ * `auth/cell_grant_audit_metadata.ts`, `auth/cell_field_audit_metadata.ts`,
+ * `auth/cell_item_audit_metadata.ts`); this module is the single registration
  * surface that keeps the keys in lockstep with the handlers.
  *
  * @module

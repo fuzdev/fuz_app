@@ -109,7 +109,7 @@ export interface BackendConfig {
 	readonly bootstrap: BackendBootstrapConfig;
 	/**
 	 * Capabilities this backend supports — drives `test_if(capabilities.X, ...)`
-	 * gating in suite bodies. See `capabilities.ts` for the vocabulary and
+	 * gating in suite bodies. See `testing/cross_backend/capabilities.ts` for the vocabulary and
 	 * existing flags.
 	 */
 	readonly capabilities: BackendCapabilities;

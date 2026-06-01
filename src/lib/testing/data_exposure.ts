@@ -9,7 +9,7 @@ import './assert_dev_env.js';
  * - Cross-privilege: verifies admin routes return 403 for non-admin users,
  *   and non-admin responses exclude admin-only fields
  *
- * Cadence: per-describe `setup_test()` call (see `round_trip.ts` module
+ * Cadence: per-describe `setup_test()` call (see `testing/round_trip.ts` module
  * docstring). The runtime body manages its own request ordering (auth-free
  * → cross-privilege → 2xx) to avoid session-invalidation contamination
  * between assertions, so per-test fixture re-creation isn't needed.

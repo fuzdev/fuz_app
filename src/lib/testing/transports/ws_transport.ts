@@ -3,7 +3,7 @@ import '../assert_dev_env.js';
 /**
  * Cross-process WebSocket transport.
  *
- * Implements the shared `WsClient` interface (see `ws_client.ts`) over a
+ * Implements the shared `WsClient` interface (see `testing/transports/ws_client.ts`) over a
  * real `WebSocket` upgrade against a spawned test binary. The cookie
  * captured by the sibling `FetchTransport` on bootstrap is threaded onto
  * the upgrade request so the WS session authenticates as the same

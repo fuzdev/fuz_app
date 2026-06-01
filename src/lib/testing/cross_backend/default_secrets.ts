@@ -11,7 +11,7 @@ import '../assert_dev_env.js';
  * production load.
  *
  * Each constant is exported individually so consumers can override one
- * without re-deriving the rest. Builders in `default_backend_configs.ts`
+ * without re-deriving the rest. Builders in `testing/cross_backend/default_backend_configs.ts`
  * thread these defaults into the `BackendConfig.bootstrap` block and the
  * `SECRET_FUZ_COOKIE_KEYS` env entry; callers compose the
  * `bootstrap_overrides` knob when they need a non-default keeper.

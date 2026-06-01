@@ -103,7 +103,7 @@ export interface SpineRpcEndpointsOptions {
  * closures are never called across the process boundary.
  *
  * Test binaries append their own `_testing_reset` action to this endpoint's
- * `actions` (see `testing_reset_actions.ts`); it is intentionally excluded
+ * `actions` (see `testing/cross_backend/testing_reset_actions.ts`); it is intentionally excluded
  * here so it stays off the declared surface (the harness calls it directly
  * over the daemon-token channel).
  *

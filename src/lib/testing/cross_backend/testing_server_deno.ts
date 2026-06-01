@@ -4,8 +4,8 @@ import '../assert_dev_env.js';
  * Deno runtime adapter for spawnable cross-process test server binaries.
  *
  * Binds `Deno.serve` and `hono/deno`'s module-level `upgradeWebSocket`. The
- * shared `testing_server_core.ts` owns the rest. Counterpart to
- * `testing_server_node.ts` — together they isolate the JS-runtime axis (Deno
+ * shared `testing/cross_backend/testing_server_core.ts` owns the rest. Counterpart to
+ * `testing/cross_backend/testing_server_node.ts` — together they isolate the JS-runtime axis (Deno
  * vs Node V8) on identical TS surfaces, and the Rust spine binary covers the
  * cross-language axis.
  *

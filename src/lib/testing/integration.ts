@@ -92,7 +92,7 @@ export interface StandardIntegrationTestOptions {
 	 * `require_rpc_endpoint_path` on setup so consumer projects see a
 	 * clear setup error instead of confusing test failures.
 	 *
-	 * Accepts either an array (eager) or a factory — see `rpc_helpers.ts`
+	 * Accepts either an array (eager) or a factory — see `testing/rpc_helpers.ts`
 	 * for the union semantics. The factory must return the same endpoint
 	 * `path` regardless of ctx — invoked once at setup with a stub ctx
 	 * for path lookup; the running backend handles live dispatch.

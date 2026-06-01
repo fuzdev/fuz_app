@@ -15,7 +15,7 @@ import type {BenchScenario, BenchScenarioContext} from './scenario.js';
  * fuz_util's benchmark library is the engine — `Benchmark` runs each scenario
  * as a task and `BenchmarkResult.stats` carries the percentiles; this module
  * is the thin scenario→task→tagged-result adapter. Reporting (markdown,
- * TS-vs-Rust verdict, JSON artifact) lives in `bench_report.ts`.
+ * TS-vs-Rust verdict, JSON artifact) lives in `testing/cross_backend/bench/bench_report.ts`.
  *
  * @module
  */

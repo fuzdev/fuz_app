@@ -12,7 +12,7 @@
  * everything into a single mount would silently widen the dispatch surface
  * the moment a new opt-in landed — the exact failure mode this module is
  * built to detect, not propagate. See `./CLAUDE.md` §RPC actions
- * (`standard_rpc_actions.ts`).
+ * (`auth/standard_rpc_actions.ts`).
  *
  * Use cases for this registry:
  *

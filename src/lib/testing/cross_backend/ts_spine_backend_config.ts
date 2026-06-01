@@ -30,7 +30,7 @@ export const TS_SPINE_DIR_ENV = 'FUZ_TESTING_TS_SPINE_DIR';
 
 /**
  * Audit-log SSE stream path the TS spine binary serves (it wires
- * `audit_log_sse`). Matches `SPINE_SSE_PATH` in `default_spine_surface.ts`
+ * `audit_log_sse`). Matches `SPINE_SSE_PATH` in `testing/cross_backend/default_spine_surface.ts`
  * and the cross-process SSE suite's default. Scoped to the TS configs
  * (which advertise `capabilities.sse: true`) — the Rust spine doesn't serve
  * the stream, so the shared `ts_default_capabilities` stays `sse: false`.

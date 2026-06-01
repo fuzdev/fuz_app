@@ -9,9 +9,9 @@ import '../assert_dev_env.js';
  * delegates frame parsing to the shared `create_sse_frame_reader`. Uses only
  * built-in streaming `fetch` + `TextDecoder` — no extra dep.
  *
- * Mirrors how `ws_transport.ts` is the cross-process counterpart to the
+ * Mirrors how `testing/transports/ws_transport.ts` is the cross-process counterpart to the
  * in-process WS harness; the in-process SSE route suite
- * (`../sse_round_trip.ts`) shares the same `create_sse_frame_reader` over a
+ * (`testing/sse_round_trip.ts`) shares the same `create_sse_frame_reader` over a
  * Hono `Response.body`.
  *
  * @module

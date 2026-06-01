@@ -15,7 +15,7 @@ import '../assert_dev_env.js';
  *   stops throwing (i.e. the impl starts passing), forcing whoever closed
  *   the gap to delete the marker. A `.skip` would rot silently; this can't.
  *
- * Sibling to `test_if` in `capabilities.ts`. No taxonomy — a one-line
+ * Sibling to `test_if` in `testing/cross_backend/capabilities.ts`. No taxonomy — a one-line
  * marker with a tracking id and a reason, nothing more.
  *
  * @module

@@ -3,7 +3,7 @@ import './assert_dev_env.js';
 /**
  * RPC-flow helpers for role_grant lifecycle in tests.
  *
- * Sibling to `db_entities.ts`'s `create_test_role_grant_direct` — that one
+ * Sibling to `testing/db_entities.ts`'s `create_test_role_grant_direct` — that one
  * seeds a role_grant directly via `query_create_role_grant` (bypassing the
  * consent flow) for tests that focus on revoke or isolation semantics. This
  * file ships the RPC-driven complement: `role_grant_offer_and_accept`

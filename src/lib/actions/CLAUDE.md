@@ -5,11 +5,11 @@
 > symmetric send/receive.
 
 For consumer wiring (client-authoritative vs server-authoritative dispatch,
-role-grant-offer UI integration), see ../../docs/usage.md §Deriving
+role-grant-offer UI integration), see ../../../docs/usage.md §Deriving
 Route/Event Specs, §Single JSON-RPC 2.0 Endpoint, §WebSocket Endpoint. For
-DEV-only output validation semantics see ../../docs/architecture.md
+DEV-only output validation semantics see ../../../docs/architecture.md
 §DEV-only Output Validation. For the SAES binding matrix and middleware
-ordering see the root ../../CLAUDE.md §Action Spec System (SAES) and
+ordering see the root ../../../CLAUDE.md §Action Spec System (SAES) and
 §Middleware Ordering.
 
 **CLAUDE.md is a map; TSDoc is the detail.** Per-symbol semantics
@@ -58,7 +58,7 @@ Optional fields:
 Canonical spec shape: module-scope `satisfies` declaration with
 `{method}_action_spec` naming, preserving the literal `method` type and
 dropping per-spec `*_METHOD` constants (readers dereference `.method`). See
-../../docs/usage.md §Canonical action-spec shape.
+../../../docs/usage.md §Canonical action-spec shape.
 
 ## Kind → binding matrix
 
@@ -300,7 +300,7 @@ the response unchanged, do not throw, do not mutate status.
 
 Caller-facing `input` schemas are validated **always** (DEV + production)
 — they're the contract with external callers. Server-authored `output`
-schemas are internal data. See ../../docs/architecture.md §DEV-only Output
+schemas are internal data. See ../../../docs/architecture.md §DEV-only Output
 Validation for full rationale.
 
 ## Transports

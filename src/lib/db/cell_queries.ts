@@ -36,8 +36,8 @@ import type {CellVisibility} from '../auth/cell_action_specs.js';
  * written, and the wire validates `CellData` on every write.
  *
  * Parent↔child membership and named relations live in the `cell_item` /
- * `cell_field` sibling tables (see `cell_item_queries.ts` /
- * `cell_field_queries.ts`). The cell row carries identity + content only.
+ * `cell_field` sibling tables (see `db/cell_item_queries.ts` /
+ * `db/cell_field_queries.ts`). The cell row carries identity + content only.
  *
  * `grant_count` is a derived projection (correlated subquery against
  * `cell_grant` keyed by `cell_id`, served by `idx_cell_grant_cell`) —
@@ -442,7 +442,7 @@ export const query_cell_list = async (
  * either an actor-shaped principal (`g.actor_id = $11`) or a
  * role-shaped principal whose `(role, scope_id)` matches a row in the
  * `caller_role_grants` CTE. NULL `g.scope_id` matches any scope, mirroring
- * `grant_admits` in `cell_authorize.ts`.
+ * `grant_admits` in `auth/cell_authorize.ts`.
  */
 const grant_admits_caller_predicate = (g_alias: string): string => `(
 	     ($11::uuid IS NOT NULL AND ${g_alias}.actor_id = $11)

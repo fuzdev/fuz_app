@@ -66,7 +66,7 @@ export interface CreateTestAccountOptions {
 
 /**
  * Shape returned by `TestFixture.create_account`. Aliased to the
- * existing `TestAccount` interface from `app_server.ts` — same shape,
+ * existing `TestAccount` interface from `testing/app_server.ts` — same shape,
  * stable name on the cross-backend testing surface so call sites read
  * `fixture.create_account(...)` returning `TestAccountFixture` without
  * crossing module boundaries.
@@ -306,7 +306,7 @@ export interface InProcessSetupOptions extends CreateTestAppOptions {
  *
  * The describe-level `auth_integration_truncate_tables` / pglite WASM
  * cache lifecycle stays in `create_pglite_factory` / `create_describe_db`
- * (`testing/db.js`) — `default_in_process_setup` doesn't manage db state
+ * (`testing/db.ts`) — `default_in_process_setup` doesn't manage db state
  * beyond what `create_test_app` already does.
  */
 export const default_in_process_setup =
@@ -614,7 +614,7 @@ const rpc_via_transport = async (
  * Capture a backend's schema snapshot over the `_testing_schema_snapshot`
  * RPC action (keeper daemon-token channel). The canonical way for a
  * cross-impl parity gate to read each backend's live schema — pair two
- * calls with `assert_schema_snapshots_equal` (`testing/schema_parity.js`).
+ * calls with `assert_schema_snapshots_equal` (`testing/schema_parity.ts`).
  *
  * `exclude_tables` drops documented divergences from both sides before
  * comparison (e.g. a cell-primary Rust backend lacks tables the TS schema

@@ -4,8 +4,8 @@ import '../assert_dev_env.js';
  * Bun runtime adapter for spawnable cross-process test server binaries.
  *
  * Binds `Bun.serve` and `hono/bun`'s module-level `upgradeWebSocket` +
- * `websocket` handler. The shared `testing_server_core.ts` owns the rest.
- * Third sibling to `testing_server_node.ts` / `testing_server_deno.ts` —
+ * `websocket` handler. The shared `testing/cross_backend/testing_server_core.ts` owns the rest.
+ * Third sibling to `testing/cross_backend/testing_server_node.ts` / `testing/cross_backend/testing_server_deno.ts` —
  * together the three isolate the JS-runtime axis (Node V8 / Deno V8 / Bun
  * JSC) on identical TS surfaces, and the Rust spine binary covers the
  * cross-language axis.
@@ -16,7 +16,7 @@ import '../assert_dev_env.js';
  * implements the `node:fs` / `node:process` surface `RuntimeDeps` +
  * `cli/daemon` touch.
  *
- * `Bun.serve` is declared locally (mirroring `testing_server_deno.ts`'s
+ * `Bun.serve` is declared locally (mirroring `testing/cross_backend/testing_server_deno.ts`'s
  * `Deno` declaration) so this module typechecks under fuz_app's Node-based
  * config without `@types/bun`. It is only ever *run* under Bun.
  *

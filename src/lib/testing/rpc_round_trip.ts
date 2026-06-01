@@ -9,7 +9,7 @@ import './assert_dev_env.js';
  * method's declared output schema. DB-backed via the suite's `setup_test`
  * fixture-producing callback.
  *
- * Cadence: per-describe `setup_test()` call (see `round_trip.ts` module
+ * Cadence: per-describe `setup_test()` call (see `testing/round_trip.ts` module
  * docstring). RPC round-trip tests fire one JSON-RPC envelope per
  * method-direction and don't mutate state in a way that contaminates the
  * next case.

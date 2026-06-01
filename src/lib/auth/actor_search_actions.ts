@@ -19,7 +19,7 @@
  *
  * `display_name` is omitted (not `null`) when `actor.name` is blank,
  * matching the wire shape `ActorLookupEntryJson.display_name?` — same
- * convention as `actor_lookup_actions.ts`.
+ * convention as `auth/actor_lookup_actions.ts`.
  *
  * @module
  */

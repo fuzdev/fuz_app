@@ -5,7 +5,7 @@ import '../assert_dev_env.js';
  *
  * Binds `@hono/node-server`'s `serve()` and `@hono/node-ws`'s two-phase
  * `createNodeWebSocket(app)` / `injectWebSocket(server)`. The shared
- * `testing_server_core.ts` owns the rest. A test binary builds this adapter
+ * `testing/cross_backend/testing_server_core.ts` owns the rest. A test binary builds this adapter
  * and hands it to `start_testing_server` alongside its `build_app` seam.
  *
  * `@hono/node-server` + `@hono/node-ws` are **optional** peer deps (same

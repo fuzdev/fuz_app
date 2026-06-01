@@ -7,7 +7,7 @@
  * message but does NOT re-query session / token validity — that
  * trade-off keeps chatty connections fast. The cost: revocation
  * doesn't actually disconnect open sockets unless something closes
- * them. `transports_ws_auth_guard.ts` is the listener-based seam
+ * them. `actions/transports_ws_auth_guard.ts` is the listener-based seam
  * (audit-event → close), but it only fires after the audit INSERT
  * succeeds — if the INSERT fails (DB error, pool exhausted, handler
  * dies mid-flight) the listener never runs and the live socket keeps

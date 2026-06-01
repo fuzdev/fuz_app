@@ -16,7 +16,7 @@ import './assert_dev_env.js';
  * and PGlite. The snapshot is fully deterministic: every collection sorts by
  * a stable key and excludes time-varying fields like `applied_at`.
  *
- * Paired with `schema_parity.ts` for comparison + assertion helpers.
+ * Paired with `testing/schema_parity.ts` for comparison + assertion helpers.
  *
  * @module
  */
@@ -65,8 +65,8 @@ export type SequenceSnapshot = z.infer<typeof SequenceSnapshot>;
 /**
  * Normalized database schema snapshot for parity comparison — the single
  * source of truth for the snapshot shape across the introspection query
- * (`query_schema_snapshot`), the diff comparator (`schema_parity.ts`), and
- * the cross-impl RPC action's wire validator (`testing_reset_actions.ts`).
+ * (`query_schema_snapshot`), the diff comparator (`testing/schema_parity.ts`), and
+ * the cross-impl RPC action's wire validator (`testing/cross_backend/testing_reset_actions.ts`).
  *
  * All fields are deterministically ordered on capture so structural equality
  * via `JSON.stringify` or per-key comparison yields stable results.

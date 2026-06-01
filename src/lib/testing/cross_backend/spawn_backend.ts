@@ -20,7 +20,7 @@ import '../assert_dev_env.js';
  *    `_testing_reset` and other keeper-credential calls can authenticate.
  *
  * Bootstrapping (`POST /api/account/bootstrap`) is a separate concern —
- * the caller composes `bootstrap()` from `../transports/bootstrap.ts`
+ * the caller composes `bootstrap()` from `testing/transports/bootstrap.ts`
  * against a `FetchTransport` built around `handle.config.base_url`.
  * Splitting the two keeps `spawn_backend` consumer-agnostic — fuz_app
  * knows nothing about specific binary contents.

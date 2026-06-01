@@ -12,7 +12,7 @@ RPC adapters are provisioned once at the admin shell and read by every
 `Admin*.svelte`.
 
 For Svelte 5 patterns (runes, inline `$props`, contexts, snippets,
-attachments), see Skill(fuz-stack) svelte-patterns. See ../../docs/usage.md
+attachments), see Skill(fuz-stack) svelte-patterns. See ../../../docs/usage.md
 for end-to-end wiring examples ("Role grant offer UI", "Admin UI"). This
 file is a reference, not a tutorial.
 

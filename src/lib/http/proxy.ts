@@ -18,7 +18,7 @@ import {canonicalize_ip, IP_LITERAL_CHARS} from './ip_canonical.js';
 /**
  * Normalize an IP address for consistent matching and storage.
  *
- * Delegates to `canonicalize_ip` from `ip_canonical.ts` — collapses
+ * Delegates to `canonicalize_ip` from `http/ip_canonical.ts` — collapses
  * RFC 5952-equivalent IPv6 forms (`::1`, `::0001`, `0:0:0:0:0:0:0:1`)
  * into a single key, emits IPv4-mapped IPv6 in dotted form, and
  * strips the `::ffff:` prefix from dotted IPv4-mapped values so the

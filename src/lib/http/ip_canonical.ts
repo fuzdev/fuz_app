@@ -44,7 +44,7 @@ import {convertIPv6ToBinary, distinctRemoteAddr} from 'hono/utils/ipaddr';
  * set — brackets, whitespace, control bytes, letters g–z — disqualifies
  * the input from parsing.
  *
- * Same regex `proxy.ts`'s `validate_ip_strict` uses; exported here so
+ * Same regex `http/proxy.ts`'s `validate_ip_strict` uses; exported here so
  * both modules can share one source of truth.
  */
 export const IP_LITERAL_CHARS = /^[0-9a-fA-F.:]+$/;

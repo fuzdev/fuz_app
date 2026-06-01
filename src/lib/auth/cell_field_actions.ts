@@ -2,7 +2,7 @@
  * Cell-field RPC handlers.
  *
  * Three `request_response` actions bound to the specs in
- * `./cell_field_action_specs.ts`:
+ * `auth/cell_field_action_specs.ts`:
  *
  * - `cell_field_set` — admin / owner / editor-grant on `source` may set;
  *   `target` must be view-admitted (so a caller can't link to a cell they
@@ -16,10 +16,10 @@
  *   first, then filter rows by `can_view_cell(source)`.
  *
  * IDOR-mask 404s on cell-miss / cell-unviewable, mirroring the existence-
- * leak guards in `cell_actions.ts` / `cell_grant_actions.ts`.
+ * leak guards in `auth/cell_actions.ts` / `auth/cell_grant_actions.ts`.
  *
  * Audit events `cell_field_set` / `cell_field_delete` carry IDs only —
- * see `./cell_field_audit_metadata.ts`.
+ * see `auth/cell_field_audit_metadata.ts`.
  *
  * @module
  */

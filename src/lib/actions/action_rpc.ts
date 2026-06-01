@@ -86,7 +86,7 @@ export interface ActionContext {
 	pending_effects: Array<Promise<void>>;
 	/**
 	 * Deferred post-commit thunks — do not push directly; reach for
-	 * `emit_after_commit(ctx, fn)` from `pending_effects.ts`. The flush
+	 * `emit_after_commit(ctx, fn)` from `http/pending_effects.ts`. The flush
 	 * site invokes each thunk after the handler (and any wrapping
 	 * `db.transaction`) returns.
 	 */

@@ -2,7 +2,7 @@
  * Cell-item RPC handlers.
  *
  * Four `request_response` actions bound to the specs in
- * `./cell_item_action_specs.ts`:
+ * `auth/cell_item_action_specs.ts`:
  *
  * - `cell_item_insert` — admin / owner / editor-grant on `parent` may
  *   insert; `child` must be view-admitted. Returns
@@ -19,10 +19,10 @@
  *   filter rows by `can_view_cell(parent)`.
  *
  * IDOR-mask 404s on cell-miss / cell-unviewable, mirroring the existence-
- * leak guards in `cell_actions.ts`.
+ * leak guards in `auth/cell_actions.ts`.
  *
  * Audit events `cell_item_insert` / `cell_item_move` / `cell_item_delete`
- * carry IDs only — see `./cell_item_audit_metadata.ts`.
+ * carry IDs only — see `auth/cell_item_audit_metadata.ts`.
  *
  * @module
  */

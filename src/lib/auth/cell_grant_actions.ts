@@ -2,7 +2,7 @@
  * Cell-grant ACL RPC handlers.
  *
  * Three `request_response` actions bound to specs in
- * `./cell_grant_action_specs.ts`:
+ * `auth/cell_grant_action_specs.ts`:
  *
  * Grant management is **manage-tier only** (`can_manage_cell` = admin /
  * owner). Editor-grant holders may edit a cell's content + relations but
@@ -22,10 +22,10 @@
  *
  * All three 404 with `cell_not_found` on cell-miss / cell-unviewable, and
  * with `cell_grant_not_found` on grant-miss, mirroring the existence-leak
- * guards in `cell_actions.ts`.
+ * guards in `auth/cell_actions.ts`.
  *
  * Audit events `cell_grant_create` / `cell_grant_revoke` carry IDs only
- * (no display-name snapshots); see `./cell_grant_audit_metadata.ts`.
+ * (no display-name snapshots); see `auth/cell_grant_audit_metadata.ts`.
  *
  * @module
  */

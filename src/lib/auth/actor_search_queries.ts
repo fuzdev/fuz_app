@@ -1,7 +1,7 @@
 /**
  * Prefix-based actor search.
  *
- * Sibling to `actor_lookup_queries.ts` — that resolves a batch of ids to
+ * Sibling to `auth/actor_lookup_queries.ts` — that resolves a batch of ids to
  * labels; this resolves a partial name to candidate actors. Same row
  * shape (`ActorLookupRow`) so the labels arc on the consumer side stays
  * uniform.
@@ -29,10 +29,10 @@
  * gates), no role_grant join — every actor with a matching prefix is
  * returned.
  *
- * ## Info-leak posture (see `actor_search_action_specs.ts` §audit)
+ * ## Info-leak posture (see `auth/actor_search_action_specs.ts` §audit)
  *
  * - Row shape **omits** `account_id` — the join is control-plane, not
- *   wire-visible. Identical to `actor_lookup_queries.ts`.
+ *   wire-visible. Identical to `auth/actor_lookup_queries.ts`.
  * - Hard-deleted actors (cascade-orphaned via `actor.account_id` FK)
  *   drop out silently.
  * - No `created_at` / `updated_at` projected (timing-oracle avoidance).

@@ -11,8 +11,8 @@ import '../assert_dev_env.js';
  * WS attach, graceful drain shutdown — and delegates the runtime-boundary
  * primitives (HTTP serve, WS upgrade construction, signals, pid, exit) to a
  * {@link TestingServerAdapter}. The two shipped adapters are
- * `testing_server_node.ts` (`@hono/node-server` + `@hono/node-ws`) and
- * `testing_server_deno.ts` (`Deno.serve` + `hono/deno`).
+ * `testing/cross_backend/testing_server_node.ts` (`@hono/node-server` + `@hono/node-ws`) and
+ * `testing/cross_backend/testing_server_deno.ts` (`Deno.serve` + `hono/deno`).
  *
  * The app itself — routes, RPC, DB, `_testing_reset`, optional WS mount —
  * is the caller's {@link StartTestingServerOptions.build_app} seam, so this
@@ -64,7 +64,7 @@ export interface PreparedWebsocket {
 
 /**
  * Runtime adapter contract for the test-binary entry. Each adapter
- * (`testing_server_node.ts`, `testing_server_deno.ts`) implements this and
+ * (`testing/cross_backend/testing_server_node.ts`, `testing/cross_backend/testing_server_deno.ts`) implements this and
  * hands the shape to {@link start_testing_server}.
  */
 export interface TestingServerAdapter {

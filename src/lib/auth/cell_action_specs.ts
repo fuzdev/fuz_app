@@ -171,7 +171,7 @@ export const CELL_RELATIONS_BUNDLE_LIMIT = 500;
  * Wire form for a cell row. `data` is the typed-but-permissive `CellData`
  * shape (kind / label / summary typed-and-optional, additional fields
  * pass through). Per-kind shape validation is sub-API and handled by
- * the app's `validate_data` deps callback (see `cell_actions.ts`).
+ * the app's `validate_data` deps callback (see `auth/cell_actions.ts`).
  *
  * `visibility` is the access-control axis — a top-level column on the
  * row, not a field inside `data`. `cell_grant` and `visibility` are the

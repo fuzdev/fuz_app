@@ -1,5 +1,5 @@
 /**
- * Reactive sidebar visibility state. Provisioned by `AppShell.svelte` via
+ * Reactive sidebar visibility state. Provisioned by `ui/AppShell.svelte` via
  * `sidebar_state_context`; consumers read `show_sidebar` and call
  * `toggle_sidebar` / `activate`.
  *
@@ -10,7 +10,7 @@ import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
 /**
  * Svelte context carrying a reactive `SidebarState` accessor. Set by
- * `AppShell.svelte` (creates a fresh `SidebarState` if not supplied);
+ * `ui/AppShell.svelte` (creates a fresh `SidebarState` if not supplied);
  * consumers call `sidebar_state_context.get()` to read or toggle visibility.
  */
 export const sidebar_state_context = create_context<() => SidebarState>();

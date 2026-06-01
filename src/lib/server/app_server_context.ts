@@ -3,7 +3,7 @@
  *
  * Lives in its own module — separate from `server/app_server.ts` — so it can
  * be consumed as a **pure type** without dragging in the server-assembly
- * machinery. `app_server.ts` value-imports `hono` (it builds the `Hono` app),
+ * machinery. `server/app_server.ts` value-imports `hono` (it builds the `Hono` app),
  * so importing anything from it forces `hono` to be installed. Contract-only
  * consumers — cross-process test surfaces, Rust-backed servers that reuse the
  * route/RPC spec factories without running the TS server — need

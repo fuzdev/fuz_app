@@ -8,7 +8,7 @@
  * Loose object: arbitrary additional fields pass through unvalidated,
  * preserving the "unknown kinds ship without RPC churn" property. Per-kind
  * shape enforcement is opt-in via the `validate_data` deps slot — see
- * `cell_actions.ts`.
+ * `auth/cell_actions.ts`.
  *
  * **Discipline**: a field joins `CellData` only when at least two
  * consumers in different domains read it generically. `kind` (editor
@@ -20,7 +20,7 @@
  * **Visibility is not in here.** Access control is a peer of `cell_grant`,
  * not content metadata — `cell.visibility` lives as a top-level column on
  * `CellJson` and `CellRow` (the `CellVisibility` enum is defined in
- * `cell_action_specs.ts` next to the wire fields that use it), and is
+ * `auth/cell_action_specs.ts` next to the wire fields that use it), and is
  * enforced by `can_view_cell` reading the column directly (no JSON dive).
  *
  * @module
