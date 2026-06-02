@@ -25,8 +25,10 @@ import './cross_test_types.js';
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle);
 // Second setup whose keeper carries an extra actor — drives the multi-actor
-// fallthrough tripwire (a single-actor keeper can't reach the `actor_required`
-// branch). The rest of the suite runs against the single-actor `setup_test`.
+// fallthrough case (a single-actor keeper can't reach the multi-actor branch).
+// Every spine resolves the acting actor at the authorization phase from
+// account-grain credentials, so this runs on TS and Rust alike. The rest of the
+// suite runs against the single-actor `setup_test`.
 const setup_test_multi_actor = default_cross_process_setup(handle, {
 	extra_actors: ['second_persona'],
 });

@@ -19,11 +19,11 @@ import '../assert_dev_env.js';
  * - **bare-hash admin-only** — `GET /api/facts/:hash` is admin (keeper) only:
  *   non-admin → 403, anonymous → 401;
  * - **multi-actor fallthrough** — a multi-actor caller resolves to a null
- *   (anonymous) context, so it can't read its own *private* fact via the
- *   cell-scoped route (admitted only by public cells). Opt-in (needs the
- *   multi-actor setup); a deliberate **tripwire** that fails on backends whose
- *   credential resolution is single-actor-per-account and greens once a backend
- *   gains multi-actor support.
+ *   (anonymous) context on the (`acting`-less) cell-scoped route, so it can't
+ *   read its own *private* fact there (admitted only by public cells). Opt-in
+ *   (needs the multi-actor setup); every spine resolves the acting actor at the
+ *   dispatcher's authorization phase from account-grain credentials, so the
+ *   multi-actor account is drivable on TS and Rust alike.
  *
  * Facts are seeded **embedded** via `_testing_put_fact` (the cross-process
  * driver has no DB handle); the referencing cell via the `cell_create` RPC
@@ -283,28 +283,14 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 				const keeper = fixture.create_session_headers();
 				const acting = fixture.actor.id; // the keeper's bootstrap actor
 
-				// Seeding a multi-actor account over the wire (daemon-token put + the
-				// actor-required cell creates) is the part that can't run on a backend
-				// whose credential resolution is single-actor-per-account. Surface that
-				// as a labeled tripwire so the red reads as "multi-actor unsupported on
-				// this backend", not a daemon-auth regression — it greens here once the
-				// backend gains multi-actor support. The behavior assertions below stay
-				// OUTSIDE the catch so a real fallthrough regression surfaces as itself.
-				let hash: string;
-				let private_cell: string;
-				let public_cell: string;
-				try {
-					hash = await put_fact(fixture, 'multi-actor-bytes');
-					private_cell = await create_cell_with_ref(t, keeper, hash, 'private', acting);
-					public_cell = await create_cell_with_ref(t, keeper, hash, 'public', acting);
-				} catch (cause) {
-					throw new Error(
-						'this backend cannot drive a multi-actor account — its credential ' +
-							'resolution is single-actor-per-account, so the cell-scoped multi-actor ' +
-							'fallthrough is unverified here until the backend gains multi-actor support',
-						{cause},
-					);
-				}
+				// Seed a multi-actor account over the wire: the daemon-token put +
+				// the actor-required cell creates (disambiguated via `acting`) drive
+				// the keeper's two actors. Every spine resolves the acting actor at
+				// the dispatcher's authorization phase from account-grain credentials,
+				// so this runs on TS and Rust alike.
+				const hash = await put_fact(fixture, 'multi-actor-bytes');
+				const private_cell = await create_cell_with_ref(t, keeper, hash, 'private', acting);
+				const public_cell = await create_cell_with_ref(t, keeper, hash, 'public', acting);
 
 				// Owns a PRIVATE cell, yet reading its own fact back resolves to a null
 				// (anonymous) context → 404. The owner path never runs.
