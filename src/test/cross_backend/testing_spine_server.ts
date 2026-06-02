@@ -24,7 +24,7 @@
  * @module
  */
 
-import {dirname} from 'node:path';
+import {dirname, join} from 'node:path';
 import type {Context} from 'hono';
 import type {UpgradeWebSocket} from 'hono/ws';
 import {Logger} from '@fuzdev/fuz_util/log.js';
@@ -50,6 +50,11 @@ import {cell_audit_events} from '../../lib/auth/cell_audit_events.js';
 import {create_audit_emitter} from '../../lib/auth/audit_emitter.js';
 import {create_audit_log_config} from '../../lib/auth/audit_log_schema.js';
 import {CELL_MIGRATION_NS} from '../../lib/db/cell_ddl.js';
+import {FACT_MIGRATION_NS} from '../../lib/db/fact_ddl.js';
+import {
+	create_serve_cell_fact_route_spec,
+	create_serve_fact_route_spec,
+} from '../../lib/server/serve_fact_route.js';
 import {create_app_backend, type AuditFactory} from '../../lib/server/app_backend.js';
 import {create_app_server} from '../../lib/server/app_server.js';
 import {BaseServerEnv, validate_server_env} from '../../lib/server/env.js';
@@ -139,12 +144,18 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		read_text_file: runtime.read_text_file,
 		delete_file: runtime.remove,
 		audit_factory: cell_audit_factory,
-		// Splice the `fuz_cell` schema after the builtin auth namespace so the
-		// cell verbs below have their tables. Cells stay off the standard
-		// declared surface (`create_spine_surface_spec`) — they're driven only
-		// by the dedicated cell cross suites, ws/sse-style.
-		migration_namespaces: [CELL_MIGRATION_NS],
+		// Splice the `fuz_cell` + `fuz_facts` schemas after the builtin auth
+		// namespace so the cell verbs + the fact-serving routes below have their
+		// tables. Both stay off the standard declared surface
+		// (`create_spine_surface_spec`) — driven only by the dedicated cell /
+		// fact-serving cross suites, ws/sse-style.
+		migration_namespaces: [CELL_MIGRATION_NS, FACT_MIGRATION_NS],
 	});
+
+	// Facts dir for the disk-stream / X-Accel serving paths. The cross suite
+	// seeds embedded facts via `_testing_put_fact`, so this is unused there;
+	// it's a required option on the serve route factories.
+	const facts_dir = join(dirname(dirname(daemon_token_path)), 'facts');
 
 	// Ensure the daemon-token dir exists — `spawn_backend` creates the backend
 	// root (for the bootstrap token) but not the `run/` subdir the rotation
@@ -191,7 +202,17 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		// `GET /api/admin/audit/stream` (`audit_log_event_specs` join the
 		// surface automatically). Drives the cross-process SSE self-test.
 		audit_log_sse: true,
-		create_route_specs: create_spine_route_specs,
+		// Standard spine REST routes + the cell-gated fact-serving routes
+		// (cell-scoped per-reference + admin-only bare-hash), twinning the Rust
+		// `testing_spine_stub`'s `fact_routers`. The serve routes carry full
+		// `/api/...` paths and stay off `create_spine_surface_spec` (the shared
+		// surface), so the standard round-trip never tries to drive them — the
+		// dedicated `describe_fact_serving_cross_tests` suite does.
+		create_route_specs: (ctx) => [
+			...create_spine_route_specs(ctx),
+			create_serve_cell_fact_route_spec({deps: ctx.deps, facts_dir, log}),
+			create_serve_fact_route_spec({deps: ctx.deps, facts_dir, log}),
+		],
 		// Append `_testing_reset` + the full cell surface (CRUD + grant +
 		// field + item + audit) to the standard RPC endpoint. Both are
 		// live-mounted but stay off the declared surface

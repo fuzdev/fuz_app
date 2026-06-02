@@ -84,6 +84,16 @@ export interface BackendCapabilities {
 	 * this flag opts a backend into the lifecycle parity coverage.
 	 */
 	readonly account_lifecycle: boolean;
+	/**
+	 * The cell-gated fact-serving routes (`GET /api/cells/:cell_id/facts/:hash`
+	 * + the admin-only `GET /api/facts/:hash`) are live-mounted on the backend,
+	 * its DB carries the `fuz_facts` migration namespace, and it registers the
+	 * `_testing_put_fact` seeder. Gates `describe_fact_serving_cross_tests` —
+	 * the per-reference read model (cell-scoped admit via a viewable cell,
+	 * cross-owner-dedup-no-leak, 404-mask, bare-hash admin-only). Like cells,
+	 * the serve routes stay off the standard declared surface.
+	 */
+	readonly fact_serving: boolean;
 }
 
 /**
@@ -101,6 +111,7 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	cell_crud: true,
 	cell_relations: true,
 	account_lifecycle: true,
+	fact_serving: true,
 });
 
 /**

@@ -851,7 +851,7 @@ source of truth for wire-shape conformance.
 
 - `testing/cross_backend/capabilities.ts` — `BackendCapabilities` vocabulary
   (`bearer_auth` / `trusted_proxy` / `login_rate_limit` / `ws` / `sse` /
-  `cell_crud` / `cell_relations` / `account_lifecycle`),
+  `cell_crud` / `cell_relations` / `account_lifecycle` / `fact_serving`),
   `test_if(cond, name, fn)`
   for capability-gated cases, and `in_process_capabilities` preset. `cell_crud`
   gates the CRUD parity suite, `cell_relations` the relation / ACL / audit
@@ -860,7 +860,11 @@ source of truth for wire-shape conformance.
   plain CRUD would declare `cell_crud: true, cell_relations: false`.
   `account_lifecycle` gates `describe_account_lifecycle_cross_tests` (the
   `account_delete` / `account_undelete` / `account_purge` parity suite) — also
-  off the declared surface like cells, `true` on every spine.
+  off the declared surface like cells, `true` on every spine. `fact_serving`
+  gates `describe_fact_serving_cross_tests` (the cell-scoped per-reference +
+  admin-only bare-hash fact-serving parity suite); like cells it stays off the
+  declared surface and is `true` on every spine that mounts the serve routes +
+  the `_testing_put_fact` seeder.
 
 ### `cross_backend/standard.ts` — `describe_standard_cross_process_tests`
 

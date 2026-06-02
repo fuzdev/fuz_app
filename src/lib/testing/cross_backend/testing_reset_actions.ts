@@ -62,8 +62,10 @@ import '../assert_dev_env.js';
 
 import {z} from 'zod';
 import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {fact_hash_bytes, FactHashSchema} from '@fuzdev/fuz_util/fact_hash.js';
 
 import {rpc_action, type RpcAction} from '../../actions/action_rpc.js';
+import {query_put_fact} from '../../db/fact_queries.js';
 import type {RequestResponseActionSpec} from '../../actions/action_spec.js';
 import type {AppDeps} from '../../auth/deps.js';
 import type {SessionOptions} from '../../auth/session_cookie.js';
@@ -226,6 +228,37 @@ export const testing_mint_session_action_spec = {
  */
 export const create_testing_drain_effects_action = (): RpcAction =>
 	rpc_action(testing_drain_effects_action_spec, async () => ({ok: true}));
+
+/**
+ * `_testing_put_fact` — seed an **embedded** fact (`fact.bytes`) for the
+ * cross-process fact-serving suite, which drives over real HTTP and has no
+ * `PgFactStore` to call. Hashes the UTF-8 `content` (blake3, via
+ * `fact_hash_bytes` — the same hash the Rust `_testing_put_fact` computes),
+ * inserts the row idempotently, and returns `{hash}`. The referencing cell is
+ * seeded separately via the `cell_create` RPC. Embedded-only is enough for the
+ * authz assertions (cell-scoped admit, cross-owner-no-leak, 404-mask, bare-hash
+ * admin-only); external / X-Accel parity stays covered by the forge's own gate.
+ *
+ * `auth` gates on the daemon-token credential, matching `_testing_reset` — the
+ * action does a direct `fact` insert the production wire never exposes. The
+ * Rust mirror is `fuz_testing::create_testing_put_fact_action_spec`.
+ */
+export const testing_put_fact_action_spec = {
+	method: '_testing_put_fact',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: {account: 'required', actor: 'none', credential_types: ['daemon_token']},
+	side_effects: true,
+	input: z.strictObject({
+		content: z.string(),
+		content_type: z.string().optional(),
+	}),
+	output: z.strictObject({hash: FactHashSchema}),
+	async: true,
+	description:
+		'Test-binary only — seed an embedded fact (blake3 of the UTF-8 content) and return its hash, ' +
+		'so the cross-process fact-serving suite can store bytes without a DB handle.',
+} as const satisfies RequestResponseActionSpec;
 
 /**
  * `_testing_schema_snapshot` — introspect the live database into a normalized
@@ -422,6 +455,21 @@ export const create_testing_actions = (
 				expires_in_seconds: input.expires_in_seconds,
 			});
 			return {session_cookie};
+		}),
+		rpc_action(testing_put_fact_action_spec, async (input, ctx) => {
+			const bytes = new TextEncoder().encode(input.content);
+			const hash = fact_hash_bytes(bytes);
+			await query_put_fact(
+				{db: ctx.db},
+				{
+					hash,
+					bytes,
+					external_url: null,
+					content_type: input.content_type ?? null,
+					size: bytes.length,
+				},
+			);
+			return {hash};
 		}),
 		create_testing_drain_effects_action(),
 		create_testing_schema_snapshot_action(),
