@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.79.0
+
+### Minor Changes
+
+- feat: testing for facts ([14ba9c6](https://github.com/fuzdev/fuz_app/commit/14ba9c6))
+
 ## 0.78.1
 
 ### Patch Changes
