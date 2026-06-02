@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.80.0
+
+### Minor Changes
+
+- feat: drive multi-actor accounts cross-process on any spine ([531bc7b](https://github.com/fuzdev/fuz_app/commit/531bc7b))
+
 ## 0.79.0
 
 ### Minor Changes
