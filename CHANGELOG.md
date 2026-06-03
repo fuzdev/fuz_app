@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.82.0
+
+### Minor Changes
+
+- feat: fact storage ([fa6b65d](https://github.com/fuzdev/fuz_app/commit/fa6b65d))
+
 ## 0.81.0
 
 ### Minor Changes
