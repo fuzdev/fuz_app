@@ -30,7 +30,7 @@ import {Readable} from 'node:stream';
 import {join} from 'node:path';
 
 import type {FactExternalFetcher} from '../db/fact_store.js';
-import {parse_file_fact_url} from './file_fact_url.js';
+import {parse_file_fact_url} from '../db/file_fact_url.js';
 
 /** Construction options. */
 export interface FileFactFetcherOptions {

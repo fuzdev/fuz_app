@@ -43,7 +43,12 @@ export const create_node_runtime = (
 	stat: async (path): Promise<StatResult | null> => {
 		try {
 			const s = await stat(path);
-			return {is_file: s.isFile(), is_directory: s.isDirectory(), size: s.size};
+			return {
+				is_file: s.isFile(),
+				is_directory: s.isDirectory(),
+				size: s.size,
+				mtime_ms: s.mtimeMs,
+			};
 		} catch {
 			return null;
 		}
@@ -91,6 +96,16 @@ export const create_node_runtime = (
 	write_text_file: (path, content) => writeFile(path, content, 'utf-8'),
 	write_file: (path, data) => writeFile(path, data),
 	rename: (old_path, new_path) => rename(old_path, new_path),
+	fsync: async (path) => {
+		// fsync flushes the inode's dirty pages regardless of the fd's open mode,
+		// so a read handle is enough (and needs no write permission).
+		const handle = await open(path, 'r');
+		try {
+			await handle.sync();
+		} finally {
+			await handle.close();
+		}
+	},
 	remove: (path, options) => rm(path, options),
 
 	// === HTTP ===

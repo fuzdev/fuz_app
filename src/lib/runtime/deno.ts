@@ -20,7 +20,9 @@ declare const Deno: {
 	};
 	cwd: () => string;
 	exit: (code: number) => never;
-	stat: (path: string) => Promise<{isFile: boolean; isDirectory: boolean; size: number}>;
+	stat: (
+		path: string,
+	) => Promise<{isFile: boolean; isDirectory: boolean; size: number; mtime: Date | null}>;
 	mkdir: (path: string, options?: {recursive?: boolean}) => Promise<void>;
 	readTextFile: (path: string) => Promise<string>;
 	readFile: (path: string) => Promise<Uint8Array>;
@@ -31,6 +33,7 @@ declare const Deno: {
 	) => Promise<{
 		read: (buf: Uint8Array) => Promise<number | null>;
 		seek: (offset: number, whence: number) => Promise<number>;
+		sync: () => Promise<void>;
 		close: () => void;
 		readable: ReadableStream<Uint8Array>;
 		writable: WritableStream<Uint8Array>;
@@ -90,7 +93,12 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 	stat: async (path): Promise<StatResult | null> => {
 		try {
 			const s = await Deno.stat(path);
-			return {is_file: s.isFile, is_directory: s.isDirectory, size: s.size};
+			return {
+				is_file: s.isFile,
+				is_directory: s.isDirectory,
+				size: s.size,
+				mtime_ms: s.mtime?.getTime(),
+			};
 		} catch {
 			return null;
 		}
@@ -132,6 +140,14 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 	write_text_file: (path, content) => Deno.writeTextFile(path, content),
 	write_file: (path, data) => Deno.writeFile(path, data),
 	rename: (old_path, new_path) => Deno.rename(old_path, new_path),
+	fsync: async (path) => {
+		const file = await Deno.open(path, {read: true});
+		try {
+			await file.sync();
+		} finally {
+			file.close();
+		}
+	},
 	remove: (path, options) => Deno.remove(path, options),
 
 	// === HTTP ===

@@ -254,6 +254,9 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 			}
 			mock_fs_bytes.set(path, merged);
 		},
+		// The mock models no real disk, so durability is a no-op (mirrors how it
+		// omits `mtime_ms`). The fact disk CAS sweep + fsync stay deps-based.
+		fsync: async () => {},
 		rename: async (old_path, new_path) => {
 			const content = mock_fs.get(old_path);
 			if (content !== undefined) {

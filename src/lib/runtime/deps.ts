@@ -25,6 +25,15 @@ export interface StatResult {
 	 * `Content-Length`) read it from a real runtime, where it is always present.
 	 */
 	size?: number;
+	/**
+	 * Last-modification time in epoch milliseconds, when the runtime reports it.
+	 * Populated by `create_node_runtime` / `create_deno_runtime`;
+	 * `create_mock_runtime` omits it (so a mock-backed sweep treats every temp as
+	 * unknown-age and never reaps). Optional so loose test stubs that only assert
+	 * `is_file` / `is_directory` don't have to supply it. The orphan-temp sweep
+	 * (`db/fact_disk_storage.ts`) reads it to age out stale `.tmp` spill files.
+	 */
+	mtime_ms?: number;
 }
 
 /**
@@ -110,6 +119,18 @@ export interface FsWriteDeps {
 	write_file: (path: string, data: Uint8Array) => Promise<void>;
 	/** Rename (move) a file. */
 	rename: (old_path: string, new_path: string) => Promise<void>;
+	/**
+	 * Flush a file's data to stable storage (fsync). Call on a temp file after
+	 * writing it and *before* `rename`-ing it into place when the renamed path is
+	 * later served without re-verification — otherwise a host crash after the
+	 * rename can surface a torn/zero file as authentic content. The fact disk CAS
+	 * (`db/fact_disk_storage.ts`) is the one such path; it twins the Rust
+	 * `fuz_fact` §fsync posture (data-sync before rename; the parent-dir fsync
+	 * stays deliberately waived — a lost dirent is regenerable under content
+	 * addressing). Real runtimes open the path, fsync, and close;
+	 * `create_mock_runtime` no-ops (it models no durability).
+	 */
+	fsync: (path: string) => Promise<void>;
 }
 
 /**

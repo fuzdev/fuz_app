@@ -99,7 +99,7 @@ import {query_get_fact, query_get_fact_meta} from '../db/fact_queries.js';
 import {query_cell_get} from '../db/cell_queries.js';
 import {query_cell_grant_list_for_cell} from '../db/cell_grant_queries.js';
 import {can_view_cell} from '../auth/cell_authorize.js';
-import {parse_file_fact_url} from './file_fact_url.js';
+import {parse_file_fact_url} from '../db/file_fact_url.js';
 
 /** `Cache-Control` for fact responses — 5 min revocation window. */
 const CACHE_CONTROL = 'private, max-age=300';
