@@ -306,10 +306,14 @@ against a shared schema (e.g., zzz's `--backend=both`) use
 `assert_schema_snapshots_equal` / `diff_schema_snapshots` /
 `format_schema_diffs` (`testing/schema_parity.ts`) to gate structural
 drift between bootstrapped DBs. Captures tables / columns (with
-`udt_name` for int4 vs int8) / indexes / constraints / sequences; the
+`udt_name` for int4 vs int8) / indexes / constraints / sequences / enum
+types (`pg_enum` labels in declared order); the
 `schema_version` migration tracker is always excluded (framework
 bookkeeping, not domain schema). Diffs are tagged-union by kind so failure
-messages name the specific divergence.
+messages name the specific divergence. fuz_app gates its own TS spine ↔
+`testing_spine_stub` schema (auth + cell + cell_history + fact + the
+`cell_visibility` enum) via the `cross_backend_schema_parity` project
+(`npm run test:cross:schema-parity`).
 
 When working on tests, touch both directories together:
 

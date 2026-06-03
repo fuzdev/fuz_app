@@ -41,6 +41,7 @@ const create_table = (overrides: Partial<TableSnapshot> = {}): TableSnapshot => 
 const create_snapshot = (overrides: Partial<SchemaSnapshot> = {}): SchemaSnapshot => ({
 	tables: {},
 	sequences: {},
+	enums: {},
 	...overrides,
 });
 
@@ -115,7 +116,7 @@ describe('diff_schema_snapshots', () => {
 		);
 		assert.strictEqual(diffs.length, 1);
 		assert.strictEqual(diffs[0]?.kind, 'column_field_differs');
-		assert.strictEqual(diffs[0]!.kind === 'column_field_differs' && diffs[0]!.field, 'udt_name');
+		assert.strictEqual(diffs[0]!.kind === 'column_field_differs' && diffs[0].field, 'udt_name');
 	});
 
 	test('column_field_differs: is_nullable', () => {
@@ -129,7 +130,7 @@ describe('diff_schema_snapshots', () => {
 		);
 		assert.strictEqual(diffs.length, 1);
 		assert.strictEqual(diffs[0]?.kind, 'column_field_differs');
-		assert.strictEqual(diffs[0]!.kind === 'column_field_differs' && diffs[0]!.field, 'is_nullable');
+		assert.strictEqual(diffs[0]!.kind === 'column_field_differs' && diffs[0].field, 'is_nullable');
 	});
 
 	test('column_field_differs: column_default', () => {
@@ -144,7 +145,7 @@ describe('diff_schema_snapshots', () => {
 		assert.strictEqual(diffs.length, 1);
 		assert.strictEqual(diffs[0]?.kind, 'column_field_differs');
 		assert.strictEqual(
-			diffs[0]!.kind === 'column_field_differs' && diffs[0]!.field,
+			diffs[0]!.kind === 'column_field_differs' && diffs[0].field,
 			'column_default',
 		);
 	});
@@ -160,7 +161,7 @@ describe('diff_schema_snapshots', () => {
 		);
 		assert.strictEqual(diffs.length, 1);
 		assert.strictEqual(diffs[0]?.kind, 'column_field_differs');
-		assert.strictEqual(diffs[0]!.kind === 'column_field_differs' && diffs[0]!.field, 'is_identity');
+		assert.strictEqual(diffs[0]!.kind === 'column_field_differs' && diffs[0].field, 'is_identity');
 	});
 
 	test('index_only_in (both sides)', () => {
@@ -270,6 +271,46 @@ describe('diff_schema_snapshots', () => {
 		assert.deepStrictEqual(diffs, [
 			{kind: 'sequence_data_type_differs', sequence: 'seq', a: 'integer', b: 'bigint'},
 		]);
+	});
+
+	test('enum_only_in (both sides)', () => {
+		const diffs = diff_schema_snapshots(
+			create_snapshot({enums: {enum_a: {labels: ['x']}}}),
+			create_snapshot({enums: {enum_b: {labels: ['y']}}}),
+		);
+		assert.deepStrictEqual(diffs, [
+			{kind: 'enum_only_in', where: 'a', enum_name: 'enum_a'},
+			{kind: 'enum_only_in', where: 'b', enum_name: 'enum_b'},
+		]);
+	});
+
+	test('enum_labels_differ (added/removed label — catches cell_visibility drift)', () => {
+		const diffs = diff_schema_snapshots(
+			create_snapshot({enums: {cell_visibility: {labels: ['private', 'public']}}}),
+			create_snapshot({enums: {cell_visibility: {labels: ['private', 'public', 'restricted']}}}),
+		);
+		assert.deepStrictEqual(diffs, [
+			{
+				kind: 'enum_labels_differ',
+				enum_name: 'cell_visibility',
+				a: ['private', 'public'],
+				b: ['private', 'public', 'restricted'],
+			},
+		]);
+	});
+
+	test('enum_labels_differ (reorder — label order is significant)', () => {
+		const diffs = diff_schema_snapshots(
+			create_snapshot({enums: {e: {labels: ['a', 'b']}}}),
+			create_snapshot({enums: {e: {labels: ['b', 'a']}}}),
+		);
+		assert.strictEqual(diffs.length, 1);
+		assert.strictEqual(diffs[0]?.kind, 'enum_labels_differ');
+	});
+
+	test('matching enum labels produce no diff', () => {
+		const snap = create_snapshot({enums: {cell_visibility: {labels: ['private', 'public']}}});
+		assert.deepStrictEqual(diff_schema_snapshots(snap, snap), []);
 	});
 
 	test('multi-field column drift emits one diff per field', () => {
@@ -386,6 +427,24 @@ describe('format_schema_diffs', () => {
 		assert.match(rendered, /table foo only in deno/);
 		assert.match(rendered, /t\.seq udt_name differs: deno="int4", rust="int8"/);
 		assert.match(rendered, /index idx on t differs/);
+	});
+
+	test('renders enum drift with both label sets', () => {
+		const rendered = format_schema_diffs(
+			[
+				{kind: 'enum_only_in', where: 'b', enum_name: 'mood'},
+				{
+					kind: 'enum_labels_differ',
+					enum_name: 'cell_visibility',
+					a: ['private', 'public'],
+					b: ['private', 'public', 'restricted'],
+				},
+			],
+			{a: 'deno', b: 'rust'},
+		);
+		assert.match(rendered, /enum mood only in rust/);
+		assert.match(rendered, /enum cell_visibility labels differ/);
+		assert.match(rendered, /restricted/);
 	});
 });
 

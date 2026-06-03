@@ -15,11 +15,13 @@
  */
 
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
+import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
 import {create_cell_actions} from '$lib/auth/cell_actions.js';
 import {create_cell_grant_actions} from '$lib/auth/cell_grant_actions.js';
 import {create_cell_field_actions} from '$lib/auth/cell_field_actions.js';
 import {create_cell_item_actions} from '$lib/auth/cell_item_actions.js';
 import {create_cell_audit_actions} from '$lib/auth/cell_audit_actions.js';
+import {create_testing_drain_effects_action} from '$lib/testing/cross_backend/testing_reset_actions.js';
 import {cell_audit_events} from '$lib/auth/cell_audit_events.js';
 import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
 import {create_audit_log_config} from '$lib/auth/audit_log_schema.js';
@@ -38,19 +40,30 @@ import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {AuditFactory} from '$lib/server/app_backend.js';
 import type {RpcEndpointSpec} from '$lib/http/surface.js';
 
-/** The full cell RPC surface mounted on the spine RPC path. */
+/**
+ * The full cell RPC surface mounted on the spine RPC path, alongside the
+ * standard spine surface + the `_testing_drain_effects` barrier — matching
+ * what the TS spine binary and the Rust `testing_spine_stub` mount, so the
+ * shared suite body can reach `audit_log_list` (the clone-D8 no-count-leak
+ * check) and the drain barrier in-process exactly as it does cross-process.
+ */
 export const cell_parity_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpec> => [
 	{
 		path: SPINE_RPC_PATH,
 		actions: [
-			...create_cell_actions(ctx.deps),
 			// `spine_roles` carries the `cell_editor` app role so the
 			// role-shaped-grant parity suite's role-validity gate admits it and
 			// rejects unregistered roles — matching the spine binary + Rust stub.
+			...create_standard_rpc_actions(ctx.deps, {roles: spine_roles}),
+			...create_cell_actions(ctx.deps),
 			...create_cell_grant_actions({...ctx.deps, roles: spine_roles}),
 			...create_cell_field_actions(ctx.deps),
 			...create_cell_item_actions(ctx.deps),
 			...create_cell_audit_actions(),
+			// `_testing_drain_effects` so the shared suite can call the audit
+			// barrier in-process too (satisfied-by-construction here:
+			// `create_test_app` runs `await_pending_effects: true`).
+			create_testing_drain_effects_action(),
 		],
 	},
 ];

@@ -16,6 +16,7 @@ import {describe, test, assert, beforeAll} from 'vitest';
 import type {Db} from '$lib/db/db.js';
 import {run_migrations} from '$lib/db/migrate.js';
 import {auth_migration_ns} from '$lib/auth/migrations.js';
+import {CELL_MIGRATION_NS} from '$lib/db/cell_ddl.js';
 import {create_pglite_factory} from '$lib/testing/db.js';
 import {query_schema_snapshot} from '$lib/testing/schema_introspect.js';
 import {diff_schema_snapshots} from '$lib/testing/schema_parity.js';
@@ -28,6 +29,12 @@ let db: Db;
 
 beforeAll(async () => {
 	db = await factory.create();
+});
+
+// Separate factory migrating the cell namespace too — the auth schema has no
+// enum types, so capturing `cell_visibility` is the live end-to-end check.
+const cell_factory = create_pglite_factory(async (cell_db: Db): Promise<void> => {
+	await run_migrations(cell_db, [auth_migration_ns, CELL_MIGRATION_NS]);
 });
 
 describe('query_schema_snapshot', () => {
@@ -99,5 +106,32 @@ describe('query_schema_snapshot', () => {
 	test('a real snapshot self-diffs to zero (introspect ↔ parity smoke)', async () => {
 		const snap = await query_schema_snapshot(db);
 		assert.deepStrictEqual(diff_schema_snapshots(snap, snap), []);
+	});
+
+	test('auth-only schema captures no enum types', async () => {
+		const snap = await query_schema_snapshot(db);
+		assert.deepStrictEqual(snap.enums, {});
+	});
+});
+
+describe('query_schema_snapshot enum capture', () => {
+	let cell_db: Db;
+	beforeAll(async () => {
+		cell_db = await cell_factory.create();
+	});
+
+	test('captures the cell_visibility enum with labels in declared order', async () => {
+		const snap = await query_schema_snapshot(cell_db);
+		const cv = snap.enums.cell_visibility;
+		assert.ok(cv, 'cell_visibility enum missing from snapshot');
+		// Declaration order matters — `enumsortorder`, not alphabetical.
+		assert.deepStrictEqual(cv.labels, ['private', 'public']);
+	});
+
+	test('enum keys are sorted and the snapshot round-trips deep-equal', async () => {
+		const snap = await query_schema_snapshot(cell_db);
+		const enum_keys = Object.keys(snap.enums);
+		assert.deepStrictEqual([...enum_keys].sort(), enum_keys);
+		assert.deepStrictEqual(JSON.parse(JSON.stringify(snap)).enums, snap.enums);
 	});
 });

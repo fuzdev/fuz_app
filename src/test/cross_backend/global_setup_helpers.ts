@@ -60,7 +60,7 @@ const resolve_workspace_dir = (override: string | undefined): string =>
  * Lives in the runner wiring (test-only, Rust-aware), not the shipped
  * `$lib` harness, which stays Rust-agnostic.
  */
-const prepare_rust_spine_backend = (options: RustSpineGlobalSetupOptions): void => {
+export const prepare_rust_spine_backend = (options: RustSpineGlobalSetupOptions): void => {
 	const workspace_dir = resolve_workspace_dir(options.workspace_dir);
 
 	if (process.env[NO_REBUILD_ENV] == null) {

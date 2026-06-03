@@ -11,6 +11,9 @@ import './assert_dev_env.js';
  * - Constraints (CHECK, FOREIGN KEY, PRIMARY KEY, UNIQUE, EXCLUSION)
  * - Sequences with data type — distinguishes `int4` (SERIAL) from `int8`
  *   (BIGSERIAL)
+ * - Enum types (`CREATE TYPE ... AS ENUM`) with labels in declared order —
+ *   so a label set / ordering drift (e.g. `cell_visibility`) is a gated fact,
+ *   not invisible
  *
  * Designed for `pg_catalog` introspection — works against both PostgreSQL
  * and PGlite. The snapshot is fully deterministic: every collection sorts by
@@ -63,6 +66,18 @@ export const SequenceSnapshot = z.object({
 export type SequenceSnapshot = z.infer<typeof SequenceSnapshot>;
 
 /**
+ * Enum-type metadata — the labels of a `CREATE TYPE ... AS ENUM`, captured in
+ * `pg_enum.enumsortorder` (declaration) order. Order is significant: a Postgres
+ * enum's labels are an ordered set, and reordering them is a schema change, so
+ * the parity diff compares the arrays positionally.
+ */
+export const EnumTypeSnapshot = z.object({
+	/** Enum labels in declared order. */
+	labels: z.array(z.string()),
+});
+export type EnumTypeSnapshot = z.infer<typeof EnumTypeSnapshot>;
+
+/**
  * Normalized database schema snapshot for parity comparison — the single
  * source of truth for the snapshot shape across the introspection query
  * (`query_schema_snapshot`), the diff comparator (`testing/schema_parity.ts`), and
@@ -76,6 +91,8 @@ export const SchemaSnapshot = z.object({
 	tables: z.record(z.string(), TableSnapshot),
 	/** Sequences keyed by name. */
 	sequences: z.record(z.string(), SequenceSnapshot),
+	/** Enum types (`CREATE TYPE ... AS ENUM`) keyed by name; labels in declared order. */
+	enums: z.record(z.string(), EnumTypeSnapshot),
 });
 export type SchemaSnapshot = z.infer<typeof SchemaSnapshot>;
 
@@ -121,6 +138,11 @@ interface ConstraintRow {
 interface SequenceRow {
 	sequence_name: string;
 	data_type: string;
+}
+
+interface EnumRow {
+	enum_name: string;
+	label: string;
 }
 
 const sort_keys = <T>(record: Record<string, T>): Record<string, T> => {
@@ -228,6 +250,18 @@ export const query_schema_snapshot = async (
 		[schema],
 	);
 
+	// Enum types — one row per label, ordered by enumsortorder so labels
+	// accumulate in declared order. Grouped client-side, mirroring columns.
+	const enum_rows = await db.query<EnumRow>(
+		`SELECT t.typname AS enum_name, e.enumlabel AS label
+		 FROM pg_type t
+		 JOIN pg_enum e ON e.enumtypid = t.oid
+		 JOIN pg_namespace n ON n.oid = t.typnamespace
+		 WHERE n.nspname = $1
+		 ORDER BY t.typname ASC, e.enumsortorder ASC`,
+		[schema],
+	);
+
 	const tables: Record<string, TableSnapshot> = {};
 	for (const name of table_names) {
 		const columns: Record<string, ColumnSnapshot> = {};
@@ -262,8 +296,14 @@ export const query_schema_snapshot = async (
 		sequences[row.sequence_name] = {data_type: row.data_type};
 	}
 
+	const enums: Record<string, EnumTypeSnapshot> = {};
+	for (const row of enum_rows) {
+		(enums[row.enum_name] ??= {labels: []}).labels.push(row.label);
+	}
+
 	return {
 		tables: sort_keys(tables),
 		sequences: sort_keys(sequences),
+		enums: sort_keys(enums),
 	};
 };

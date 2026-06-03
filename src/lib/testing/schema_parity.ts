@@ -21,7 +21,6 @@ import './assert_dev_env.js';
  *
  * Non-coverage — drift the gate does **not** detect:
  *
- * - enum types (`CREATE TYPE ... AS ENUM`)
  * - regular triggers (`pg_trigger`); `CONSTRAINT TRIGGER` is captured via
  *   pg_constraint, but standalone `CREATE TRIGGER` is not
  * - views, materialized views, functions, procedures
@@ -44,6 +43,7 @@ import './assert_dev_env.js';
 
 import type {
 	ColumnSnapshot,
+	EnumTypeSnapshot,
 	SchemaSnapshot,
 	SequenceSnapshot,
 	TableSnapshot,
@@ -98,6 +98,13 @@ export type SchemaDiff =
 			readonly sequence: string;
 			readonly a: string;
 			readonly b: string;
+	  }
+	| {readonly kind: 'enum_only_in'; readonly where: 'a' | 'b'; readonly enum_name: string}
+	| {
+			readonly kind: 'enum_labels_differ';
+			readonly enum_name: string;
+			readonly a: ReadonlyArray<string>;
+			readonly b: ReadonlyArray<string>;
 	  };
 
 /**
@@ -138,6 +145,21 @@ export const diff_schema_snapshots = (a: SchemaSnapshot, b: SchemaSnapshot): Arr
 			continue;
 		}
 		diff_sequence(sequence, sa, sb, diffs);
+	}
+
+	const all_enums = new Set([...Object.keys(a.enums), ...Object.keys(b.enums)]);
+	for (const enum_name of [...all_enums].sort()) {
+		const ea = a.enums[enum_name];
+		const eb = b.enums[enum_name];
+		if (!ea) {
+			diffs.push({kind: 'enum_only_in', where: 'b', enum_name});
+			continue;
+		}
+		if (!eb) {
+			diffs.push({kind: 'enum_only_in', where: 'a', enum_name});
+			continue;
+		}
+		diff_enum(enum_name, ea, eb, diffs);
 	}
 
 	return diffs;
@@ -244,6 +266,20 @@ const diff_sequence = (
 	}
 };
 
+const diff_enum = (
+	enum_name: string,
+	a: EnumTypeSnapshot,
+	b: EnumTypeSnapshot,
+	out: Array<SchemaDiff>,
+): void => {
+	// Labels are an ordered set — compare positionally, so both a missing/extra
+	// label and a reorder (a real schema change) surface as drift.
+	const differ = a.labels.length !== b.labels.length || a.labels.some((l, i) => l !== b.labels[i]);
+	if (differ) {
+		out.push({kind: 'enum_labels_differ', enum_name, a: a.labels, b: b.labels});
+	}
+};
+
 /** Labels used in formatted output — defaults to `'a'` and `'b'`. */
 export interface SchemaDiffLabels {
 	readonly a?: string;
@@ -299,6 +335,14 @@ export const format_schema_diffs = (
 			case 'sequence_data_type_differs':
 				lines.push(
 					`  sequence ${d.sequence} data_type differs: ${label_a}=${d.a}, ${label_b}=${d.b}`,
+				);
+				break;
+			case 'enum_only_in':
+				lines.push(`  enum ${d.enum_name} only in ${where_label(d.where)}`);
+				break;
+			case 'enum_labels_differ':
+				lines.push(
+					`  enum ${d.enum_name} labels differ: ${label_a}=${JSON.stringify(d.a)}, ${label_b}=${JSON.stringify(d.b)}`,
 				);
 				break;
 			default:

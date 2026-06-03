@@ -31,6 +31,17 @@ import '../assert_dev_env.js';
  * - **audit** — `cell_audit_list` is manage-tier: the owner reads the cell's
  *   timeline; a viewer-grant holder who can `cell_get` the cell still gets the
  *   IDOR 404 on the timeline (D14).
+ * - **relation-read visibility (D8)** — listing edges toward a cell the caller
+ *   can't view filters them out (no-existence-leak-via-edge): an anonymous
+ *   viewer of a public parent — and a viewer-grant holder of a private parent —
+ *   sees only independently-viewable children in the `cell_get` bundle and the
+ *   forward `cell_item_list` / `cell_field_list`. The cross twin of the
+ *   in-process `auth/cell_relation_visibility.db.test.ts`.
+ * - **clone D8** — a cloner who can view a public parent but not a private child
+ *   silently drops that child: an admin (who *can* view it) reading the clone
+ *   still sees only the viewable edge/child, and the `cell_clone` audit row
+ *   records no skipped-child count — so the source's hidden-child count can't
+ *   leak to the cloner. The cross twin of `auth/cell_actions.clone.db.test.ts`.
  *
  * Only **actor-shaped** grants are exercised — role-shaped principals need a
  * closed role registry the Rust spine deliberately lacks, so role-grant
@@ -45,7 +56,13 @@ import '../assert_dev_env.js';
 import {describe, assert} from 'vitest';
 import {fractional_index_between} from '@fuzdev/fuz_util/fractional_index.js';
 
-import {CellCreateOutput, CellUpdateOutput, CellCloneOutput} from '../../auth/cell_action_specs.js';
+import {
+	CellCreateOutput,
+	CellUpdateOutput,
+	CellCloneOutput,
+	CellGetOutput,
+} from '../../auth/cell_action_specs.js';
+import {AuditLogListOutput} from '../../auth/admin_action_specs.js';
 import {
 	CellGrantCreateOutput,
 	CellGrantListOutput,
@@ -63,6 +80,7 @@ import {
 	CellItemMoveOutput,
 } from '../../auth/cell_item_action_specs.js';
 import {CellAuditListOutput} from '../../auth/cell_audit_action_specs.js';
+import type {FetchTransport} from '../transports/fetch_transport.js';
 import {test_if} from './capabilities.js';
 import {
 	cross_rpc_call,
@@ -71,6 +89,89 @@ import {
 	type CellCrossTestOptions,
 } from './cell_cross_helpers.js';
 import {SPINE_RPC_PATH} from './default_spine_surface.js';
+
+/** Create a cell over the wire and return its id (the parity gate parses the output). */
+const create_cell = async (
+	t: FetchTransport,
+	rpc_path: string,
+	h: Record<string, string>,
+	params: Record<string, unknown>,
+): Promise<string> =>
+	expect_output(await cross_rpc_call(t, rpc_path, 'cell_create', params, h), CellCreateOutput).cell
+		.id;
+
+/**
+ * Wire `pub_child` + `priv_child` under `parent` as both ordered items and
+ * named fields, using the owner's headers (owner can edit parent + view both
+ * children). The cross-process twin of the in-process `wire_children` in
+ * `auth/cell_relation_visibility.db.test.ts`.
+ */
+const wire_children = async (
+	t: FetchTransport,
+	rpc_path: string,
+	owner_h: Record<string, string>,
+	parent: string,
+	pub_child: string,
+	priv_child: string,
+): Promise<void> => {
+	const pos_a = fractional_index_between(null, null);
+	const pos_b = fractional_index_between(pos_a, null);
+	expect_output(
+		await cross_rpc_call(
+			t,
+			rpc_path,
+			'cell_item_insert',
+			{parent_id: parent, child_id: pub_child, position: pos_a},
+			owner_h,
+		),
+		CellItemInsertOutput,
+	);
+	expect_output(
+		await cross_rpc_call(
+			t,
+			rpc_path,
+			'cell_item_insert',
+			{parent_id: parent, child_id: priv_child, position: pos_b},
+			owner_h,
+		),
+		CellItemInsertOutput,
+	);
+	expect_output(
+		await cross_rpc_call(
+			t,
+			rpc_path,
+			'cell_field_set',
+			{source_id: parent, name: 'pub_link', target_id: pub_child},
+			owner_h,
+		),
+		CellFieldSetOutput,
+	);
+	expect_output(
+		await cross_rpc_call(
+			t,
+			rpc_path,
+			'cell_field_set',
+			{source_id: parent, name: 'priv_link', target_id: priv_child},
+			owner_h,
+		),
+		CellFieldSetOutput,
+	);
+};
+
+/**
+ * Await in-flight fire-and-forget audit writes so a following `audit_log_list`
+ * is authoritative on both spines (the real await on Rust; satisfied by
+ * construction on the TS spine's `await_pending_effects`). Mirrors the
+ * `account_lifecycle` cross suite's barrier.
+ */
+const drain_effects = async (
+	td: FetchTransport,
+	rpc_path: string,
+	daemon_h: Record<string, string>,
+): Promise<void> => {
+	const drained = await cross_rpc_call(td, rpc_path, '_testing_drain_effects', undefined, daemon_h);
+	assert.ok(drained.ok, `_testing_drain_effects failed: ${JSON.stringify(drained.error)}`);
+};
 
 export const describe_cell_relations_cross_tests = (options: CellCrossTestOptions): void => {
 	const {setup_test, capabilities} = options;
@@ -571,6 +672,265 @@ export const describe_cell_relations_cross_tests = (options: CellCrossTestOption
 				);
 				assert.ok(!denied.ok, 'viewer read the audit timeline');
 				assert.strictEqual(error_reason(denied), 'cell_not_found');
+			},
+		);
+
+		test_if(
+			capabilities.cell_relations,
+			'relation reads filter non-viewable targets (D8): anon sees only public children',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({username: 'cell_relvis_owner'});
+				const t = fixture.fresh_transport();
+				const owner_h = owner.create_session_headers();
+
+				// A public parent linking one public + one private child, as both
+				// items and fields. The private child is owned by `owner`, so only
+				// `owner` (and admin) can view it.
+				const parent = await create_cell(t, rpc_path, owner_h, {
+					data: {kind: 'collection'},
+					visibility: 'public',
+				});
+				const pub_child = await create_cell(t, rpc_path, owner_h, {
+					data: {kind: 'note'},
+					visibility: 'public',
+				});
+				const priv_child = await create_cell(t, rpc_path, owner_h, {data: {kind: 'note'}});
+				await wire_children(t, rpc_path, owner_h, parent, pub_child, priv_child);
+
+				// Anonymous: only the public child surfaces in the bundle …
+				const anon = fixture.fresh_transport({origin: null});
+				const bundle = expect_output(
+					await cross_rpc_call(anon, rpc_path, 'cell_get', {id: parent}, {}),
+					CellGetOutput,
+				);
+				assert.deepStrictEqual(
+					bundle.items.map((i) => i.child_id),
+					[pub_child],
+					'anon bundle leaked the private child item',
+				);
+				assert.deepStrictEqual(
+					bundle.fields.map((f) => f.target_id),
+					[pub_child],
+					'anon bundle leaked the private child field',
+				);
+
+				// … and in the forward paginating list verbs.
+				const items = expect_output(
+					await cross_rpc_call(anon, rpc_path, 'cell_item_list', {parent_id: parent}, {}),
+					CellItemListOutput,
+				);
+				assert.deepStrictEqual(
+					items.items.map((i) => i.child_id),
+					[pub_child],
+					'anon item_list leaked the private child',
+				);
+				const fields = expect_output(
+					await cross_rpc_call(anon, rpc_path, 'cell_field_list', {source_id: parent}, {}),
+					CellFieldListOutput,
+				);
+				assert.deepStrictEqual(
+					fields.fields.map((f) => f.target_id),
+					[pub_child],
+					'anon field_list leaked the private child',
+				);
+			},
+		);
+
+		test_if(
+			capabilities.cell_relations,
+			'relation reads filter non-viewable targets (D8): viewer-grant sees only independently-viewable children',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({username: 'cell_relvis_grant_owner'});
+				const viewer = await fixture.create_account({username: 'cell_relvis_viewer'});
+				const t = fixture.fresh_transport();
+				const owner_h = owner.create_session_headers();
+				const viewer_h = viewer.create_session_headers();
+
+				// Private parent; one child the viewer will be granted, one they won't.
+				const parent = await create_cell(t, rpc_path, owner_h, {data: {kind: 'collection'}});
+				const shared_child = await create_cell(t, rpc_path, owner_h, {data: {kind: 'note'}});
+				const priv_child = await create_cell(t, rpc_path, owner_h, {data: {kind: 'note'}});
+				await wire_children(t, rpc_path, owner_h, parent, shared_child, priv_child);
+
+				// Grant the viewer on parent AND shared_child — but not priv_child.
+				for (const cell_id of [parent, shared_child]) {
+					expect_output(
+						await cross_rpc_call(
+							t,
+							rpc_path,
+							'cell_grant_create',
+							{cell_id, level: 'viewer', principal: {kind: 'actor', actor_id: viewer.actor.id}},
+							owner_h,
+						),
+						CellGrantCreateOutput,
+					);
+				}
+
+				// The viewer can reach the parent, but its bundle exposes only the
+				// child they can independently view.
+				const bundle = expect_output(
+					await cross_rpc_call(t, rpc_path, 'cell_get', {id: parent}, viewer_h),
+					CellGetOutput,
+				);
+				assert.deepStrictEqual(
+					bundle.items.map((i) => i.child_id),
+					[shared_child],
+					'viewer bundle leaked the un-granted child item',
+				);
+				assert.deepStrictEqual(
+					bundle.fields.map((f) => f.target_id),
+					[shared_child],
+					'viewer bundle leaked the un-granted child field',
+				);
+			},
+		);
+
+		test_if(
+			capabilities.cell_relations,
+			'clone D8: shallow drops edges to non-viewable children (no count leak)',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({username: 'cell_clone_d8_owner'});
+				const cloner = await fixture.create_account({username: 'cell_clone_d8_cloner'});
+				const t = fixture.fresh_transport();
+				const owner_h = owner.create_session_headers();
+				const cloner_h = cloner.create_session_headers();
+				// The keeper holds [keeper, admin], so its headers are the admin probe.
+				const admin_h = fixture.create_session_headers();
+
+				const parent = await create_cell(t, rpc_path, owner_h, {
+					data: {kind: 'collection'},
+					visibility: 'public',
+				});
+				const pub_child = await create_cell(t, rpc_path, owner_h, {
+					data: {kind: 'note'},
+					visibility: 'public',
+				});
+				const priv_child = await create_cell(t, rpc_path, owner_h, {data: {kind: 'note'}});
+				await wire_children(t, rpc_path, owner_h, parent, pub_child, priv_child);
+
+				// The cloner can read the public parent but not the private child.
+				const clone = expect_output(
+					await cross_rpc_call(t, rpc_path, 'cell_clone', {source_id: parent}, cloner_h),
+					CellCloneOutput,
+				).cell;
+				assert.strictEqual(clone.created_by, cloner.actor.id);
+
+				// The ADMIN can view the private child, so an admin read of the clone
+				// would surface the private edge if it had been copied — it must not.
+				const admin_items = expect_output(
+					await cross_rpc_call(t, rpc_path, 'cell_item_list', {parent_id: clone.id}, admin_h),
+					CellItemListOutput,
+				);
+				assert.deepStrictEqual(
+					admin_items.items.map((i) => i.child_id),
+					[pub_child],
+					'shallow clone copied the non-viewable item edge',
+				);
+				const admin_fields = expect_output(
+					await cross_rpc_call(t, rpc_path, 'cell_field_list', {source_id: clone.id}, admin_h),
+					CellFieldListOutput,
+				);
+				assert.deepStrictEqual(
+					admin_fields.fields.map((f) => f.target_id),
+					[pub_child],
+					'shallow clone copied the non-viewable field edge',
+				);
+
+				// No skipped-child count surfaced in the clone's audit row — the
+				// hidden child's existence must not leak to the cloner. (`_testing_reset`
+				// wiped audit_log at setup, so this is the only cell_clone event.)
+				const td = fixture.fresh_transport({origin: null});
+				await drain_effects(td, rpc_path, fixture.create_daemon_token_headers());
+				const events = expect_output(
+					await cross_rpc_call(t, rpc_path, 'audit_log_list', {event_type: 'cell_clone'}, admin_h),
+					AuditLogListOutput,
+				).events;
+				const ev = events.find(
+					(e) => (e.metadata as {new_id?: unknown} | null)?.new_id === clone.id,
+				);
+				assert.ok(ev, 'no cell_clone audit row for the shallow clone');
+				assert.strictEqual(
+					(ev.metadata as {skipped_item_count?: number}).skipped_item_count,
+					undefined,
+					'shallow clone leaked the hidden-child count via skipped_item_count',
+				);
+			},
+		);
+
+		test_if(
+			capabilities.cell_relations,
+			'clone D8: deep silently skips non-viewable children (no count leak)',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({username: 'cell_clone_d8_deep_owner'});
+				const cloner = await fixture.create_account({username: 'cell_clone_d8_deep_cloner'});
+				const t = fixture.fresh_transport();
+				const owner_h = owner.create_session_headers();
+				const cloner_h = cloner.create_session_headers();
+				const admin_h = fixture.create_session_headers();
+
+				const parent = await create_cell(t, rpc_path, owner_h, {
+					data: {kind: 'collection'},
+					visibility: 'public',
+				});
+				const pub_child = await create_cell(t, rpc_path, owner_h, {
+					data: {kind: 'note'},
+					visibility: 'public',
+				});
+				const priv_child = await create_cell(t, rpc_path, owner_h, {data: {kind: 'note'}});
+				await wire_children(t, rpc_path, owner_h, parent, pub_child, priv_child);
+
+				const clone = expect_output(
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_clone',
+						{source_id: parent, deep: true},
+						cloner_h,
+					),
+					CellCloneOutput,
+				).cell;
+
+				// Deep clone copies viewable children into fresh cells; the
+				// non-viewable child is dropped. The admin (who can view everything)
+				// reading the clone still sees exactly one item — proving the private
+				// child was never cloned, not merely filtered from the cloner's view.
+				const admin_items = expect_output(
+					await cross_rpc_call(t, rpc_path, 'cell_item_list', {parent_id: clone.id}, admin_h),
+					CellItemListOutput,
+				);
+				assert.strictEqual(admin_items.items.length, 1, 'deep clone cloned the non-viewable child');
+				assert.notStrictEqual(
+					admin_items.items[0]!.child_id,
+					pub_child,
+					'deep clone reused the original child instead of cloning it',
+				);
+
+				const td = fixture.fresh_transport({origin: null});
+				await drain_effects(td, rpc_path, fixture.create_daemon_token_headers());
+				const events = expect_output(
+					await cross_rpc_call(t, rpc_path, 'audit_log_list', {event_type: 'cell_clone'}, admin_h),
+					AuditLogListOutput,
+				).events;
+				const ev = events.find(
+					(e) => (e.metadata as {new_id?: unknown} | null)?.new_id === clone.id,
+				);
+				assert.ok(ev, 'no cell_clone audit row for the deep clone');
+				const meta = ev.metadata as {
+					deep?: boolean;
+					item_count?: number;
+					skipped_item_count?: number;
+				};
+				assert.strictEqual(meta.deep, true);
+				assert.strictEqual(meta.item_count, 1, 'deep clone counted a non-viewable child');
+				assert.strictEqual(
+					meta.skipped_item_count,
+					undefined,
+					'deep clone leaked the hidden-child count via skipped_item_count',
+				);
 			},
 		);
 	});

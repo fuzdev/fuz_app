@@ -24,5 +24,11 @@ declare module 'vitest' {
 		// the globalSetup process. Test files call `reconstruct_bootstrapped_handle`
 		// on the injected value to rebuild a usable handle.
 		backend_handle: SerializableBootstrappedBackendHandle;
+		// The dual-spawn schema-parity project (`global_setup_schema_parity.ts`)
+		// provides both backends' handles at once — `a` = TS spine (node),
+		// `b` = Rust `testing_spine_stub` — so `schema_parity.cross.test.ts`
+		// can capture each one's schema and diff them.
+		parity_handle_a: SerializableBootstrappedBackendHandle;
+		parity_handle_b: SerializableBootstrappedBackendHandle;
 	}
 }

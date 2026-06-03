@@ -29,15 +29,35 @@ const max_threads = Math.max(1, Math.ceil(availableParallelism() / 2));
  */
 const cross_backend_enabled = process.env.FUZ_TEST_CROSS_BACKEND === '1';
 
+// The schema-parity gate spawns BOTH backends in one run (its own
+// `globalSetup` provides `parity_handle_a` + `_b`), so its test file is
+// excluded from the single-backend projects — they provide only
+// `backend_handle` — and runs in a later groupOrder to avoid contending for
+// the stub's port with `cross_backend_spine_stub`.
+const SCHEMA_PARITY_TEST = 'src/test/cross_backend/schema_parity.cross.test.ts';
+
 const cross_backend_project = (name: string, global_setup: string) => ({
 	extends: true as const,
 	test: {
 		name,
 		include: ['src/test/cross_backend/*.cross.test.ts'],
+		exclude: [SCHEMA_PARITY_TEST],
 		globalSetup: [global_setup],
 		isolate: false,
 		fileParallelism: false,
 		sequence: {groupOrder: 3},
+	},
+});
+
+const cross_backend_schema_parity_project = () => ({
+	extends: true as const,
+	test: {
+		name: 'cross_backend_schema_parity',
+		include: [SCHEMA_PARITY_TEST],
+		globalSetup: ['./src/test/cross_backend/global_setup_schema_parity.ts'],
+		isolate: false,
+		fileParallelism: false,
+		sequence: {groupOrder: 4},
 	},
 });
 
@@ -87,6 +107,7 @@ export default defineConfig({
 							'cross_backend_ts_bun',
 							'./src/test/cross_backend/global_setup_ts_bun.ts',
 						),
+						cross_backend_schema_parity_project(),
 					]
 				: []),
 		],

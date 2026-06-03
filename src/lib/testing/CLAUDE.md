@@ -209,7 +209,7 @@ test-only by construction.
 
 ### `schema_introspect.ts` — `query_schema_snapshot`
 
-- `query_schema_snapshot(db, options?)` — introspects a live DB into a deterministic `SchemaSnapshot` via `pg_catalog` + `information_schema`. Captures tables, columns (with `udt_name` to distinguish int4/int8), indexes (`indexdef`), constraints (`pg_get_constraintdef`), and sequences. The `schema_version` migration tracker is always excluded — it's framework bookkeeping, not domain schema, and impls organize migration namespaces differently.
+- `query_schema_snapshot(db, options?)` — introspects a live DB into a deterministic `SchemaSnapshot` via `pg_catalog` + `information_schema`. Captures tables, columns (with `udt_name` to distinguish int4/int8), indexes (`indexdef`), constraints (`pg_get_constraintdef`), sequences, and enum types (`pg_enum` labels in declared `enumsortorder`, so a `cell_visibility` label-set/order drift is gated). The `schema_version` migration tracker is always excluded — it's framework bookkeeping, not domain schema, and impls organize migration namespaces differently. Twinned by `fuz_db::query_schema_snapshot` (Rust); the `_testing_schema_snapshot` RPC's wire validator is the shared `SchemaSnapshot`, so the enum field must serialize on both sides.
 - `SchemaSnapshot` — the Zod schema is canonical (co-located in `schema_introspect.ts`; the cross-impl `_testing_schema_snapshot` RPC action reuses it as its wire validator, and the type is `z.infer`'d from it). Fully JSON-serializable; every collection deterministically sorted on capture so structural equality is stable across runs.
 
 ### `schema_parity.ts` — `assert_schema_snapshots_equal`
@@ -217,7 +217,9 @@ test-only by construction.
 - `diff_schema_snapshots(a, b)` — structured `Array<SchemaDiff>` between two snapshots; empty array means parity holds.
 - `format_schema_diffs(diffs, labels?)` — human-readable multi-line rendering; labels name the impl on each side (e.g., `{a: 'deno', b: 'rust'}`).
 - `assert_schema_snapshots_equal(a, b, labels?)` — throws on drift with a fully-formatted diff message.
-- `SchemaDiff` — tagged-union per drift kind: `table_only_in`, `column_only_in`, `column_field_differs`, `index_only_in`, `index_definition_differs`, `constraint_only_in`, `constraint_differs`, `sequence_only_in`, `sequence_data_type_differs`.
+- `SchemaDiff` — tagged-union per drift kind: `table_only_in`, `column_only_in`, `column_field_differs`, `index_only_in`, `index_definition_differs`, `constraint_only_in`, `constraint_differs`, `sequence_only_in`, `sequence_data_type_differs`, `enum_only_in`, `enum_labels_differ` (enum labels compared positionally — declared order is significant).
+
+fuz_app's own spine gates this cross-process via the `cross_backend_schema_parity` project (`schema_parity.cross.test.ts` + the dual-spawn `global_setup_schema_parity.ts`), diffing the TS spine ↔ `testing_spine_stub` full schema — `npm run test:cross:schema-parity`. The forge has its own deno↔rust parity gate.
 
 **Cross-impl gate pattern** — a dual-impl consumer running two backends
 (a TS Hono server and a Rust spine server) against a shared schema, plus

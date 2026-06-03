@@ -130,12 +130,17 @@ data frame, account-wide close-on-revoke, session-scoped close-on-revoke),
 `cell.cross.test.ts` (both
 `describe_cell_crud_cross_tests` — the CRUD lifecycle + authz matrix — and
 `describe_cell_relations_cross_tests` — grant / field / item / clone / audit,
-incl. the editor-grant `cell_visibility_manage_only` 403 — each response parsed
-against its Zod output schema), and `account_lifecycle.cross.test.ts`
+incl. the editor-grant `cell_visibility_manage_only` 403, the **D8 relation-read
+visibility filter** (anon + viewer-grant see only independently-viewable
+children in the `cell_get` bundle + forward lists — no-existence-leak-via-edge),
+and **clone D8** (a cloner who can't view a child silently drops it; an admin
+read of the clone confirms, and the `cell_clone` audit row records no skipped
+count) — each response parsed against its Zod output schema), and
+`account_lifecycle.cross.test.ts`
 (`describe_account_lifecycle_cross_tests` — soft-delete → undelete round-trip,
 keeper-confirmed purge, the `cannot_delete_keeper` guard, fail-closed
 (a soft-deleted account's session + bearer no longer authenticate),
-deterministic double-undelete → not*found, the keeper-guard
+deterministic double-undelete → not\*found, the keeper-guard
 `account_delete outcome=failure` audit row read back via
 `_testing_drain_effects` + `audit_log_list`, and the `admin_account_list`
 `include_deleted` listing shape (tombstoned rows surface with `deleted_at`
@@ -151,26 +156,37 @@ server-side session → 401 on a read + a mutation route); the in-process leg is
 `origin.cross.test.ts` (the imperative `describe_origin_cross_tests` — Origin
 allowlist: disallowed → 403 `forbidden_origin`, absent → pass; in-process leg
 `auth/origin_parity.db.test.ts`).
-Every backend now advertises `capabilities.sse` and serves
-`/api/admin/audit/stream`: the TS spines wire `audit_log_sse`, and the Rust
-`spine_stub` serves it from the spine `fuz_realtime::SseRegistry` +
-`register_audit_sse_listener`. So the SSE cases run on every
-`cross_backend*\*`project (no`.skip`, no tripwire). Cells live-mount the full surface on every backend and stay
-**off** the declared surface (`create_spine_surface_spec`) — like ws/sse — so
-`cell_crud`+`cell_relations`are`true`everywhere and the cell cases run on
-both TS and Rust (no`.skip`); the standard bundle's generic round-trip never
-sees them. The in-process counterparts are `auth/cell_crud_parity.db.test.ts`+`auth/cell_relations_parity.db.test.ts`(same suites, plain`gro test`, sharing
-the full-surface `create_cell_parity_setup`from`auth/cell_parity_helpers.ts`,
-which migrates the `fuz_cell`namespace and registers`cell_audit_events`). The
-backends:
 
-- `cross_backend_ts_node` / `cross_backend_ts_deno` / `cross_backend_ts_bun` —
+A ninth file, `schema_parity.cross.test.ts`, is **not** one of the eight above —
+it runs under its own dual-spawn `cross_backend_schema_parity` project
+(`global_setup_schema_parity.ts` brings up the TS spine + `testing_spine_stub`
+together and provides `parity_handle_a`/`_b`), so it's excluded from the
+single-backend projects' glob. It diffs the two backends' full DDL (auth + cell
+
+- cell_history + fact + the `cell_visibility` enum) via `query_schema_snapshot`
+- `assert_schema_snapshots_equal` — `npm run test:cross:schema-parity`.
+  Every backend now advertises `capabilities.sse` and serves
+  `/api/admin/audit/stream`: the TS spines wire `audit_log_sse`, and the Rust
+  `spine_stub` serves it from the spine `fuz_realtime::SseRegistry` +
+  `register_audit_sse_listener`. So the SSE cases run on every
+  `cross_backend*\*`project (no`.skip`, no tripwire). Cells live-mount the full surface on every backend and stay
+  **off** the declared surface (`create_spine_surface_spec`) — like ws/sse — so
+  `cell_crud`+`cell_relations`are`true`everywhere and the cell cases run on
+  both TS and Rust (no`.skip`); the standard bundle's generic round-trip never
+  sees them. The in-process counterparts are `auth/cell_crud_parity.db.test.ts`+`auth/cell_relations_parity.db.test.ts`(same suites, plain`gro test`, sharing
+  the full-surface `create_cell_parity_setup`from`auth/cell_parity_helpers.ts`,
+  which migrates the `fuz_cell`namespace and registers`cell_audit_events`, and
+  also mounts the standard surface + `_testing_drain_effects` so the clone-D8
+  no-count-leak check reaches `audit_log_list` in-process). The
+  backends:
+
+* `cross_backend_ts_node` / `cross_backend_ts_deno` / `cross_backend_ts_bun` —
   `fuz_app`'s **own** TS spine binary (`testing_spine_server_{node,deno,bun}.ts`)
   over real HTTP, in-memory PGlite, no external infra (the `ts_deno` / `ts_bun`
   ones need `deno` / `bun` on PATH). This is the in-repo cross-process coverage
   of the TS impl's real HTTP path across all three JS runtimes — the in-process
   suites (default `gro test`) never cross a process boundary.
-- `cross_backend_spine_stub` — the Rust `testing_spine_stub`. Its
+* `cross_backend_spine_stub` — the Rust `testing_spine_stub`. Its
   `globalSetup` rebuilds the crate and creates its Postgres DB by default
   (see ../../docs/testing.md §Rebuild-by-default workflow), so the common
   path is `npm run test:cross:spine-stub` with no manual setup.
