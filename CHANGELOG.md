@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.81.0
+
+### Minor Changes
+
+- feat: enum types ([df6b5fe](https://github.com/fuzdev/fuz_app/commit/df6b5fe))
+
 ## 0.80.0
 
 ### Minor Changes
