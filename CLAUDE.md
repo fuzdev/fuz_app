@@ -156,11 +156,12 @@ Shared helpers accept small `*Deps` from `runtime/deps.ts` (not `Pick<GodType, .
 
 ### Peer Dependencies
 
-- `hono` (>=4), `zod` (>=4), `svelte` (^5), `@sveltejs/kit` (^2)
+- `hono` (>=4), `zod` (^4), `svelte` (^5), `@sveltejs/kit` (^2)
 - `@fuzdev/fuz_util` (>=0.53.4)
 - `@node-rs/argon2` (>=2) — for `auth/password_argon2`
 - `@fuzdev/blake3_wasm` (>=0.1.0) — for `auth/session_queries`, `auth/bearer_auth`
 - `pg` (>=8) or `@electric-sql/pglite` (>=0.4) — optional, for `db/create_db`
+- `esm-env` (^1) — optional, for the DEV-only output-validation gate
 
 ## Architecture
 
