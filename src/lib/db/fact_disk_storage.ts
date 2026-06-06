@@ -177,7 +177,7 @@ export const stream_fact_to_disk = async (
 		const combined = new ReadableStream<Uint8Array>({
 			async pull(controller) {
 				if (buffer_index < buffered.length) {
-					controller.enqueue(buffered[buffer_index++]!);
+					controller.enqueue(buffered[buffer_index++]);
 					return;
 				}
 				for (;;) {

@@ -3,6 +3,7 @@ import {defineConfig} from 'vitest/config';
 import {sveltekit} from '@sveltejs/kit/vite';
 import {vite_plugin_fuz_css} from '@fuzdev/fuz_css/vite_plugin_fuz_css.js';
 import svelte_docinfo from 'svelte-docinfo/vite.js';
+import {vite_plugin_pkg_json} from '@fuzdev/fuz_ui/vite_plugin_pkg_json.js';
 
 const max_threads = Math.max(1, Math.ceil(availableParallelism() / 2));
 
@@ -62,7 +63,7 @@ const cross_backend_schema_parity_project = () => ({
 });
 
 export default defineConfig({
-	plugins: [vite_plugin_fuz_css(), sveltekit(), svelte_docinfo()],
+	plugins: [sveltekit(), svelte_docinfo(), vite_plugin_fuz_css(), vite_plugin_pkg_json()],
 	optimizeDeps: {exclude: ['@fuzdev/blake3_wasm']},
 	test: {
 		projects: [
