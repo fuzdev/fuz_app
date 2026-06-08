@@ -114,7 +114,7 @@ the test helpers' route list.
 spawned backends. `*.cross.test.ts` bodies are runtime-agnostic — they
 `inject('backend_handle')` and drive `default_spine_surface` over the wire —
 so the same files run under every `cross_backend_*` project; each project's
-`globalSetup` spawns a different backend. Eight cross files today:
+`globalSetup` spawns a different backend. Nine cross files today:
 `auth.cross.test.ts` (the `describe_standard_cross_process_tests` bundle —
 HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
 `describe_cross_process_ws_tests` suite — live WebSocket, including
@@ -155,9 +155,14 @@ server-side session → 401 on a read + a mutation route); the in-process leg is
 `conformance.db.test.ts`, same cases both transports), and
 `origin.cross.test.ts` (the imperative `describe_origin_cross_tests` — Origin
 allowlist: disallowed → 403 `forbidden_origin`, absent → pass; in-process leg
-`auth/origin_parity.db.test.ts`).
+`auth/origin_parity.db.test.ts`), and `ready.cross.test.ts` (the imperative
+`describe_ready_cross_tests` — the `/ready` schema-drift deploy gate: anonymous
+`GET /ready` → `200 {ready: true}` on a clean spine bootstrap, gated on
+`capabilities.ready`, both backends reading the same committed
+`expected_schema.json`; in-process leg `cross_backend/ready_parity.db.test.ts`,
+fixture guard `cross_backend/spine_expected_schema.db.test.ts`).
 
-A ninth file, `schema_parity.cross.test.ts`, is **not** one of the eight above —
+A tenth file, `schema_parity.cross.test.ts`, is **not** one of the nine above —
 it runs under its own dual-spawn `cross_backend_schema_parity` project
 (`global_setup_schema_parity.ts` brings up the TS spine + `testing_spine_stub`
 together and provides `parity_handle_a`/`_b`), so it's excluded from the
@@ -186,10 +191,10 @@ single-backend projects' glob. It diffs the two backends' full DDL (auth + cell
   ones need `deno` / `bun` on PATH). This is the in-repo cross-process coverage
   of the TS impl's real HTTP path across all three JS runtimes — the in-process
   suites (default `gro test`) never cross a process boundary.
-* `cross_backend_spine_stub` — the Rust `testing_spine_stub`. Its
+* `cross_backend_rust_spine_stub` — the Rust `testing_spine_stub`. Its
   `globalSetup` rebuilds the crate and creates its Postgres DB by default
   (see ../../docs/testing.md §Rebuild-by-default workflow), so the common
-  path is `npm run test:cross:spine-stub` with no manual setup.
+  path is `npm run test:cross:rust-spine-stub` with no manual setup.
 
 **Opt-in.** The `cross_backend_*` projects are gated in `vite.config.ts`
 behind `FUZ_TEST_CROSS_BACKEND=1` and excluded from a bare `gro test` (they
@@ -199,10 +204,12 @@ spawn external backends). Run one with:
 FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_node
 FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_deno
 FUZ_TEST_CROSS_BACKEND=1 npx vitest run --project cross_backend_ts_bun
+# or all three TS runtimes at once:
+npm run test:cross:ts
 # the Rust stub rebuilds + creates its DB by default:
-npm run test:cross:spine-stub
+npm run test:cross:rust-spine-stub
 # skip the rebuild when the binary is known current:
-FUZ_TESTING_NO_REBUILD=1 npm run test:cross:spine-stub
+FUZ_TESTING_NO_REBUILD=1 npm run test:cross:rust-spine-stub
 ```
 
 The TS binary + the reusable test-server core/adapters it's built on live in
@@ -213,7 +220,7 @@ The TS binary + the reusable test-server core/adapters it's built on live in
 
 `npm run benchmark:cross-impl` (`src/benchmarks/cross_impl.bench.ts`) spawns
 the TS spine binary on Node + Deno + Bun (+ the Rust `spine_stub` when
-`FUZ_TESTING_SPINE_STUB_BIN` is set), runs the shared `default_bench_scenarios`
+`FUZ_TESTING_RUST_SPINE_STUB_BIN` is set), runs the shared `default_bench_scenarios`
 over real HTTP, and prints per-scenario tables + a Welch verdict. The three TS
 runtimes are apples-to-apples with each other (same PGlite driver); TS-vs-Rust
 carries the PGlite-vs-Postgres DB-layer caveat. The `*.latest.json` artifact is

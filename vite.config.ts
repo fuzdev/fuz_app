@@ -24,9 +24,9 @@ const max_threads = Math.max(1, Math.ceil(availableParallelism() / 2));
  * - `cross_backend_ts_node` / `cross_backend_ts_deno` / `cross_backend_ts_bun`
  *   — fuz_app's own TS impl over real HTTP, in-memory PGlite, no external
  *   infra (the `ts_deno` / `ts_bun` ones need `deno` / `bun` on PATH).
- * - `cross_backend_spine_stub` — Rust spine over real Postgres; additionally
- *   needs `FUZ_TESTING_SPINE_STUB_BIN` pointing at a prebuilt binary and a
- *   created DB (see `spine_stub_backend_config`).
+ * - `cross_backend_rust_spine_stub` — Rust spine over real Postgres;
+ *   additionally needs `FUZ_TESTING_RUST_SPINE_STUB_BIN` pointing at a prebuilt
+ *   binary and a created DB (see `rust_spine_stub_backend_config`).
  */
 const cross_backend_enabled = process.env.FUZ_TEST_CROSS_BACKEND === '1';
 
@@ -34,7 +34,7 @@ const cross_backend_enabled = process.env.FUZ_TEST_CROSS_BACKEND === '1';
 // `globalSetup` provides `parity_handle_a` + `_b`), so its test file is
 // excluded from the single-backend projects — they provide only
 // `backend_handle` — and runs in a later groupOrder to avoid contending for
-// the stub's port with `cross_backend_spine_stub`.
+// the stub's port with `cross_backend_rust_spine_stub`.
 const SCHEMA_PARITY_TEST = 'src/test/cross_backend/schema_parity.cross.test.ts';
 
 const cross_backend_project = (name: string, global_setup: string) => ({
@@ -93,7 +93,7 @@ export default defineConfig({
 			...(cross_backend_enabled
 				? [
 						cross_backend_project(
-							'cross_backend_spine_stub',
+							'cross_backend_rust_spine_stub',
 							'./src/test/cross_backend/global_setup.ts',
 						),
 						cross_backend_project(

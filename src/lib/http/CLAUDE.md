@@ -27,7 +27,7 @@ effects, see ../../../docs/architecture.md.
 - `http/jsonrpc.ts` — JSON-RPC 2.0 envelope schemas (MCP superset), `JsonrpcErrorCode`, `_meta`.
 - `http/jsonrpc_errors.ts` — `ThrownJsonrpcError`, `jsonrpc_errors` throwers, HTTP-status mappings.
 - `http/jsonrpc_helpers.ts` — message builders, type guards, input/result normalizers.
-- `http/common_routes.ts` — health check + authenticated server-status + surface route specs.
+- `http/common_routes.ts` — health check + readiness probe (`/ready` schema-drift deploy gate) + authenticated server-status + surface route specs.
 - `http/db_routes.ts` — generic keeper-only table browser route specs (public schema).
 - `http/pending_effects.ts` — `emit_after_commit` + `flush_pending_effects` + `flush_post_commit_effects` + `EmitAfterCommitContext`.
 
@@ -459,10 +459,11 @@ at send time.
 
 ## Common Routes
 
-`http/common_routes.ts` exposes three generic route-spec factories with no
+`http/common_routes.ts` exposes four generic route-spec factories with no
 auth-domain dependencies:
 
 - `create_health_route_spec()` — `GET /health`, public, returns `{status: 'ok'}`. Infrastructure endpoint for uptime monitors
+- `create_ready_route_spec({expected, log})` — `GET /ready`, public, the deploy gate. Introspects the live DB's columns (`db/schema_ready.ts`) and compares against the committed `expected` column map: `200 {ready: true}` on match, else `503 {error: 'schema_drift' | 'db_unreachable'}`. Detailed drift logs server-side only (minimal body — no schema leak, mirrors why `/api/surface` is authenticated). Throws at assembly on an empty `expected` (fail-loud). Opt-in like `/health`; pair with `load_expected_schema(url)` — loads + URL-caches a consumer's committed `expected_schema.json` and throws on an empty map
 - `create_server_status_route_spec({version, get_uptime_ms})` — `GET /api/server/status`, authenticated, returns `{version, uptime_ms}`
 - `create_surface_route_spec({surface})` — `GET /api/surface`, authenticated, serves the `AppSurface` JSON. Authenticated because surface data reveals API structure (schemas, auth, routes)
 

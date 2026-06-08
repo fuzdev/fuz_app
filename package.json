@@ -14,8 +14,8 @@
     "build": "gro build",
     "check": "gro check",
     "test": "gro test",
-    "test:cross": "FUZ_TEST_CROSS_BACKEND=1 vitest run --project cross_backend_ts_node --project cross_backend_ts_deno --project cross_backend_ts_bun",
-    "test:cross:spine-stub": "FUZ_TEST_CROSS_BACKEND=1 vitest run --project cross_backend_spine_stub",
+    "test:cross:ts": "FUZ_TEST_CROSS_BACKEND=1 vitest run --project cross_backend_ts_node --project cross_backend_ts_deno --project cross_backend_ts_bun",
+    "test:cross:rust-spine-stub": "FUZ_TEST_CROSS_BACKEND=1 vitest run --project cross_backend_rust_spine_stub",
     "test:cross:schema-parity": "FUZ_TEST_CROSS_BACKEND=1 vitest run --project cross_backend_schema_parity",
     "benchmark:cross-impl": "gro run src/benchmarks/cross_impl.bench.ts",
     "preview": "vite preview",
@@ -146,6 +146,10 @@
       "types": "./dist/*.svelte.d.ts",
       "svelte": "./dist/*.svelte",
       "default": "./dist/*.svelte"
+    },
+    "./*.json": {
+      "types": "./dist/*.json.d.ts",
+      "default": "./dist/*.json"
     }
   }
 }

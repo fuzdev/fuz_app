@@ -18,7 +18,7 @@ import type {TestProject} from 'vitest/node';
 import type {BackendConfig} from '$lib/testing/cross_backend/backend_config.js';
 import {bootstrap_backend} from '$lib/testing/cross_backend/bootstrap_backend.js';
 import {serialize_bootstrapped_handle} from '$lib/testing/cross_backend/setup.js';
-import {SPINE_STUB_BIN_ENV} from '$lib/testing/cross_backend/spine_stub_backend_config.js';
+import {RUST_SPINE_STUB_BIN_ENV} from '$lib/testing/cross_backend/rust_spine_stub_backend_config.js';
 
 import './cross_test_types.js';
 
@@ -26,7 +26,7 @@ import './cross_test_types.js';
 export const NO_REBUILD_ENV = 'FUZ_TESTING_NO_REBUILD';
 
 /** Env var pointing at the Cargo workspace where the spine-stub crate lives. */
-export const RUST_WORKSPACE_DIR_ENV = 'FUZ_SPINE_STUB_WORKSPACE_DIR';
+export const RUST_WORKSPACE_DIR_ENV = 'FUZ_RUST_SPINE_STUB_WORKSPACE_DIR';
 
 /** Options for `make_rust_spine_global_setup`. */
 export interface RustSpineGlobalSetupOptions {
@@ -35,7 +35,7 @@ export interface RustSpineGlobalSetupOptions {
 	/** Postgres database to ensure exists (idempotent `createdb`). Omit to skip DB setup. */
 	readonly database?: string;
 	/**
-	 * Cargo workspace directory. Defaults to `$FUZ_SPINE_STUB_WORKSPACE_DIR`,
+	 * Cargo workspace directory. Defaults to `$FUZ_RUST_SPINE_STUB_WORKSPACE_DIR`,
 	 * then `~/dev/private_fuz`. This file is test-only (never shipped in the
 	 * package), so the dev-machine default is a convenience, not published
 	 * content — CI/operators set the env var.
@@ -49,7 +49,7 @@ const resolve_workspace_dir = (override: string | undefined): string =>
 /**
  * Make the Rust spine binary current before it spawns — rebuild by
  * default, fold in `createdb`, and default the binary-path env so the
- * common path is one command (`npm run test:cross:spine-stub`).
+ * common path is one command (`npm run test:cross:rust-spine-stub`).
  *
  * Rationale: a stale prebuilt binary fails every cell/RPC case with
  * `method not found` while auth cases pass, so a lagging build reads as a
@@ -73,8 +73,8 @@ export const prepare_rust_spine_backend = (options: RustSpineGlobalSetupOptions)
 	}
 
 	// Default the binary path the config reads, when the operator didn't pin one.
-	if (process.env[SPINE_STUB_BIN_ENV] == null) {
-		process.env[SPINE_STUB_BIN_ENV] = join(workspace_dir, 'target', 'release', options.crate);
+	if (process.env[RUST_SPINE_STUB_BIN_ENV] == null) {
+		process.env[RUST_SPINE_STUB_BIN_ENV] = join(workspace_dir, 'target', 'release', options.crate);
 	}
 
 	if (options.database != null) {
@@ -93,7 +93,7 @@ export const prepare_rust_spine_backend = (options: RustSpineGlobalSetupOptions)
 /**
  * Like `make_spine_global_setup`, but first makes the Rust spine
  * binary current (rebuild + `createdb` + binary-path default) via
- * `prepare_rust_spine_backend`. Use for the `cross_backend_spine_stub`
+ * `prepare_rust_spine_backend`. Use for the `cross_backend_rust_spine_stub`
  * project; the TS-spine projects need no rebuild.
  */
 export const make_rust_spine_global_setup =
@@ -110,8 +110,8 @@ export const make_rust_spine_global_setup =
  * backend produced by `config_factory` and provides the serialized handle.
  *
  * `config_factory` is invoked lazily (inside setup) so a config that throws
- * when its prerequisites are missing (e.g. `spine_stub_backend_config`
- * without `FUZ_TESTING_SPINE_STUB_BIN`) only fails the project that uses it.
+ * when its prerequisites are missing (e.g. `rust_spine_stub_backend_config`
+ * without `FUZ_TESTING_RUST_SPINE_STUB_BIN`) only fails the project that uses it.
  */
 export const make_spine_global_setup =
 	(config_factory: () => BackendConfig) =>

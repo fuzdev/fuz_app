@@ -25,6 +25,8 @@ import '../assert_dev_env.js';
  * @module
  */
 
+import type {Logger} from '@fuzdev/fuz_util/log.js';
+
 import {create_account_route_specs} from '../../auth/account_routes.js';
 import {create_audit_log_route_specs} from '../../auth/audit_log_routes.js';
 import type {NotificationSender} from '../../auth/role_grant_offer_notifications.js';
@@ -32,6 +34,7 @@ import {create_role_schema, type RoleSchemaResult} from '../../auth/role_schema.
 import {create_session_config, type SessionOptions} from '../../auth/session_cookie.js';
 import {create_signup_route_specs} from '../../auth/signup_routes.js';
 import {create_standard_rpc_actions} from '../../auth/standard_rpc_actions.js';
+import {create_ready_route_spec, load_expected_schema} from '../../http/common_routes.js';
 import {prefix_route_specs, type RouteSpec} from '../../http/route_spec.js';
 import type {AppSurfaceSpec, RpcEndpointSpec} from '../../http/surface.js';
 import type {AppServerContext} from '../../server/app_server_context.js';
@@ -153,6 +156,32 @@ export const create_spine_route_specs = (ctx: AppServerContext): Array<RouteSpec
 		? prefix_route_specs('/api/admin', create_audit_log_route_specs({stream: ctx.audit_sse}))
 		: []),
 ];
+
+/**
+ * Committed expected-schema fixture for the spine `/ready` deploy gate — the
+ * column map a fresh full spine bootstrap (auth + cell + cell_history + fact)
+ * produces. Resolved relative to this module so the spawned TS binary (which
+ * imports this source under its loader) reads it off disk via `node:fs`.
+ * Regenerated + guarded by `src/test/cross_backend/spine_expected_schema.db.test.ts`.
+ *
+ * The Rust `testing_spine_stub` reads the **same** committed file (its absolute
+ * path passed via env by `rust_spine_stub_backend_config`) — column-presence is
+ * engine-portable, so one fixture is the cross-impl contract.
+ */
+export const SPINE_EXPECTED_SCHEMA_URL: URL = new URL('./expected_schema.json', import.meta.url);
+
+/**
+ * The spine's `/ready` route spec — the column-presence schema-drift deploy
+ * gate, reading {@link SPINE_EXPECTED_SCHEMA_URL}. Mounted **live** by the TS
+ * spine binary (in `build_spine_app`) and the in-process readiness parity leg,
+ * but kept **off** the declared surface (`create_spine_surface_spec`) like the
+ * fact-serving / ws / sse behaviors — `describe_ready_cross_tests` (gated on
+ * `capabilities.ready`) is its explicit coverage, not the generic round-trip.
+ *
+ * @param log - optional logger for server-side drift diagnostics
+ */
+export const create_spine_ready_route_spec = (log?: Logger): RouteSpec =>
+	create_ready_route_spec({expected: load_expected_schema(SPINE_EXPECTED_SCHEMA_URL), log});
 
 /**
  * The `AppSurfaceSpec` for the standard spine surface — the wire-shape

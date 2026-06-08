@@ -61,6 +61,7 @@ import {create_app_server} from '../../lib/server/app_server.js';
 import {BaseServerEnv, validate_server_env} from '../../lib/server/env.js';
 import {stub_password_deps} from '../../lib/testing/app_server.js';
 import {
+	create_spine_ready_route_spec,
 	create_spine_route_specs,
 	spine_roles,
 	spine_rpc_endpoints,
@@ -214,6 +215,12 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		// dedicated `describe_fact_serving_cross_tests` suite does.
 		create_route_specs: (ctx) => [
 			...create_spine_route_specs(ctx),
+			// `/ready` deploy gate — column-presence schema-drift probe over the
+			// committed `expected_schema.json`. Live-mounted but off the declared
+			// surface (`create_spine_surface_spec`), like the fact-serving routes —
+			// driven by the dedicated `describe_ready_cross_tests` suite, not the
+			// generic round-trip.
+			create_spine_ready_route_spec(log),
 			create_serve_cell_fact_route_spec({deps: ctx.deps, facts_dir, log}),
 			create_serve_fact_route_spec({deps: ctx.deps, facts_dir, log}),
 		],

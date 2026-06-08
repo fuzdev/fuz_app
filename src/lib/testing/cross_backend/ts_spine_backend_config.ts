@@ -4,7 +4,7 @@ import '../assert_dev_env.js';
  * Cross-process `BackendConfig` presets for fuz_app's domain-free **TS**
  * spine test binary (`src/test/cross_backend/testing_spine_server_{node,deno,bun}.ts`).
  *
- * The TS analog of `spine_stub_backend_config` (which spawns the Rust spine):
+ * The TS analog of `rust_spine_stub_backend_config` (which spawns the Rust spine):
  * these spawn fuz_app's own TS impl over real HTTP with no domain layer, so
  * the `cross_backend_ts_node` / `cross_backend_ts_deno` / `cross_backend_ts_bun`
  * self-test projects verify fuz_app's wire path in its own repo across all
@@ -37,8 +37,12 @@ export const TS_SPINE_DIR_ENV = 'FUZ_TESTING_TS_SPINE_DIR';
  */
 export const TS_SPINE_SSE_PATH = '/api/admin/audit/stream';
 
-/** Capabilities for the TS spine binary — `ts_default_capabilities` plus `sse` (the binary wires `audit_log_sse`). */
-const ts_spine_capabilities = Object.freeze({...ts_default_capabilities, sse: true});
+/**
+ * Capabilities for the TS spine binary — `ts_default_capabilities` plus `sse`
+ * (the binary wires `audit_log_sse`) and `ready` (the binary live-mounts the
+ * `/ready` deploy gate in `build_spine_app`).
+ */
+const ts_spine_capabilities = Object.freeze({...ts_default_capabilities, sse: true, ready: true});
 
 /** Default port for the Node TS spine binary — slots beside the Rust `spine_stub` (1177). */
 export const TS_SPINE_NODE_DEFAULT_PORT = 1178;

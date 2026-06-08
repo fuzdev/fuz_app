@@ -7,10 +7,10 @@ import '../assert_dev_env.js';
  * env vars, bootstrap credentials, daemon-token discovery path, declared
  * capabilities. Consumer projects ship per-backend factories
  * (`deno_backend_config()`, `rust_backend_config()`,
- * `spine_stub_backend_config()`) that produce this shape; `spawn_backend`
+ * `rust_spine_stub_backend_config()`) that produce this shape; `spawn_backend`
  * consumes it.
  *
- * fuz_app ships `spine_stub_backend_config()` as a convenience preset
+ * fuz_app ships `rust_spine_stub_backend_config()` as a convenience preset
  * (operational dep on `testing_spine_stub` — path-based discovery, no
  * `package.json` coupling to the stub's source package). Otherwise backend-specific
  * knowledge (binary paths, port choices, env vars) is a consumer

@@ -58,6 +58,9 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	cell_relations: true,
 	account_lifecycle: true,
 	fact_serving: true,
+	// Off by default like `sse` — a generic TS consumer backend may not mount
+	// `/ready`. fuz_app's own spine configs (`ts_spine_*`) opt in.
+	ready: false,
 });
 
 /**
@@ -76,6 +79,9 @@ export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 	cell_relations: true,
 	account_lifecycle: true,
 	fact_serving: true,
+	// Off by default like `sse`; the spine-stub preset opts in (it mounts
+	// `/ready` over the env-supplied fixture path).
+	ready: false,
 });
 
 /** Bootstrap block built from the default secrets + supplied paths. */

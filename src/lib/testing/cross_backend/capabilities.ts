@@ -94,6 +94,16 @@ export interface BackendCapabilities {
 	 * the serve routes stay off the standard declared surface.
 	 */
 	readonly fact_serving: boolean;
+	/**
+	 * The `/ready` readiness deploy gate (`GET /ready`) is live-mounted on the
+	 * backend — the public column-presence schema-drift probe over the committed
+	 * `expected_schema.json`. Gates `describe_ready_cross_tests` (anonymous
+	 * `GET /ready` → `200 {ready: true}` on a clean spine bootstrap). Like
+	 * ws/sse/cells, the route stays off the standard declared surface
+	 * (`create_spine_surface_spec`); this flag opts a backend into the dedicated
+	 * readiness parity coverage. The drift → `503` path stays per-impl unit tests.
+	 */
+	readonly ready: boolean;
 }
 
 /**
@@ -112,6 +122,7 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	cell_relations: true,
 	account_lifecycle: true,
 	fact_serving: true,
+	ready: true,
 });
 
 /**

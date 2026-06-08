@@ -15,8 +15,8 @@
  * TS-vs-Rust columns are NOT apples-to-apples at the DB layer; the
  * TS-node-vs-TS-deno-vs-TS-bun comparison is (same driver). zzz's
  * `benchmark:cross-impl` carries the same caveat. The Rust column only appears when
- * `FUZ_TESTING_SPINE_STUB_BIN` is set (+ its Postgres DB exists — see
- * `spine_stub_backend_config`); TS-only is the zero-infra default.
+ * `FUZ_TESTING_RUST_SPINE_STUB_BIN` is set (+ its Postgres DB exists — see
+ * `rust_spine_stub_backend_config`); TS-only is the zero-infra default.
  *
  * @module
  */
@@ -35,9 +35,9 @@ import type {BackendConfig} from '../lib/testing/cross_backend/backend_config.js
 import {bootstrap_backend} from '../lib/testing/cross_backend/bootstrap_backend.js';
 import type {BootstrappedBackendHandle} from '../lib/testing/cross_backend/setup.js';
 import {
-	SPINE_STUB_BIN_ENV,
-	spine_stub_backend_config,
-} from '../lib/testing/cross_backend/spine_stub_backend_config.js';
+	RUST_SPINE_STUB_BIN_ENV,
+	rust_spine_stub_backend_config,
+} from '../lib/testing/cross_backend/rust_spine_stub_backend_config.js';
 import {
 	ts_spine_bun_backend_config,
 	ts_spine_deno_backend_config,
@@ -55,11 +55,11 @@ const configs: Array<BackendConfig> = [
 
 // Include the Rust spine only when its prebuilt binary is available — keeps
 // the TS-only run zero-infra. (Real Postgres for the stub DB still required.)
-if (process.env[SPINE_STUB_BIN_ENV]) {
-	configs.push(spine_stub_backend_config());
-	console.log(`including Rust spine_stub (${SPINE_STUB_BIN_ENV} set)`);
+if (process.env[RUST_SPINE_STUB_BIN_ENV]) {
+	configs.push(rust_spine_stub_backend_config());
+	console.log(`including Rust spine_stub (${RUST_SPINE_STUB_BIN_ENV} set)`);
 } else {
-	console.log(`skipping Rust spine_stub (${SPINE_STUB_BIN_ENV} unset) — TS-only run`);
+	console.log(`skipping Rust spine_stub (${RUST_SPINE_STUB_BIN_ENV} unset) — TS-only run`);
 }
 
 const handles: Array<BootstrappedBackendHandle> = [];

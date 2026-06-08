@@ -25,6 +25,12 @@ the code.
 - `pg_error.ts` — `is_pg_unique_violation` (Postgres `23505`).
 - `sql_identifier.ts` — `assert_valid_sql_identifier`.
 - `status.ts` — CLI DB status utility.
+- `schema_ready.ts` — `/ready` deploy-gate core: `query_public_columns`
+  (keeps `schema_version`, unlike `query_schema_snapshot`), pure
+  `check_schema_drift` / `format_schema_drift`, `READY_ERROR`. Column-presence
+  drift detection only (engine-portable); the HTTP route + fixture loader live
+  in `http/common_routes.ts`, the gen-time regen helper in
+  `testing/schema_ready_fixture.ts`.
 
 ## Cell layer
 

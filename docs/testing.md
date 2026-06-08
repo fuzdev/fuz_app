@@ -832,24 +832,24 @@ assert_error_coverage(collector, route_specs, {
 
 ### Composable Test Suites
 
-| Suite                                       | Module                           | Purpose                                                         |
-| ------------------------------------------- | -------------------------------- | --------------------------------------------------------------- |
-| `describe_standard_attack_surface_tests`    | `testing/attack_surface.ts`      | 5-group attack surface suite (snapshot, structure, adversarial) |
-| `describe_standard_integration_tests`       | `testing/integration.ts`         | 10-group auth integration suite                                 |
-| `describe_standard_admin_integration_tests` | `testing/admin_integration.ts`   | 7-group admin integration suite                                 |
-| `describe_standard_tests`                   | `testing/standard.ts`            | Combined integration + admin suite (convenience wrapper)        |
-| `describe_rate_limiting_tests`              | `testing/rate_limiting.ts`       | 3-group rate limiting suite (IP, per-account, bearer)           |
-| `describe_round_trip_validation`            | `testing/round_trip.ts`          | Schema-driven positive-path validation for all routes           |
-| `describe_sse_route_tests`                  | `testing/sse_round_trip.ts`      | SSE validation — connect, payload schema, close-on-revoke       |
-| `describe_standard_adversarial_headers`     | `testing/adversarial_headers.ts` | Header injection attack suite (7 cases)                         |
-| `describe_adversarial_auth`                 | `testing/attack_surface.ts`      | Adversarial auth enforcement tests                              |
-| `describe_adversarial_input`                | `testing/adversarial_input.ts`   | Adversarial input validation tests                              |
-| `describe_adversarial_404`                  | `testing/adversarial_404.ts`     | Adversarial 404 tests for param routes                          |
-| `describe_data_exposure_tests`              | `testing/data_exposure.ts`       | Schema-level + runtime sensitive field blocklist audit          |
-| `describe_rpc_attack_surface_tests`         | `testing/rpc_attack_surface.ts`  | 3-group RPC attack surface (auth, envelopes, params)            |
-| `describe_rpc_round_trip_tests`             | `testing/rpc_round_trip.ts`      | DB-backed round-trip for RPC methods (POST + GET)               |
+| Suite                                       | Module                                       | Purpose                                                                                                 |
+| ------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `describe_standard_attack_surface_tests`    | `testing/attack_surface.ts`                  | 5-group attack surface suite (snapshot, structure, adversarial)                                         |
+| `describe_standard_integration_tests`       | `testing/integration.ts`                     | 10-group auth integration suite                                                                         |
+| `describe_standard_admin_integration_tests` | `testing/admin_integration.ts`               | 7-group admin integration suite                                                                         |
+| `describe_standard_tests`                   | `testing/standard.ts`                        | Combined integration + admin suite (convenience wrapper)                                                |
+| `describe_rate_limiting_tests`              | `testing/rate_limiting.ts`                   | 3-group rate limiting suite (IP, per-account, bearer)                                                   |
+| `describe_round_trip_validation`            | `testing/round_trip.ts`                      | Schema-driven positive-path validation for all routes                                                   |
+| `describe_sse_route_tests`                  | `testing/sse_round_trip.ts`                  | SSE validation — connect, payload schema, close-on-revoke                                               |
+| `describe_standard_adversarial_headers`     | `testing/adversarial_headers.ts`             | Header injection attack suite (7 cases)                                                                 |
+| `describe_adversarial_auth`                 | `testing/attack_surface.ts`                  | Adversarial auth enforcement tests                                                                      |
+| `describe_adversarial_input`                | `testing/adversarial_input.ts`               | Adversarial input validation tests                                                                      |
+| `describe_adversarial_404`                  | `testing/adversarial_404.ts`                 | Adversarial 404 tests for param routes                                                                  |
+| `describe_data_exposure_tests`              | `testing/data_exposure.ts`                   | Schema-level + runtime sensitive field blocklist audit                                                  |
+| `describe_rpc_attack_surface_tests`         | `testing/rpc_attack_surface.ts`              | 3-group RPC attack surface (auth, envelopes, params)                                                    |
+| `describe_rpc_round_trip_tests`             | `testing/rpc_round_trip.ts`                  | DB-backed round-trip for RPC methods (POST + GET)                                                       |
 | `describe_conformance_table_tests`          | `testing/cross_backend/conformance_table.ts` | Declarative behavioral/security cases — one row array, both transports (see §Cross-Backend Integration) |
-| `create_describe_db`                        | `testing/db.ts`                  | Create a `describe_db` bound to factories + truncate tables     |
+| `create_describe_db`                        | `testing/db.ts`                              | Create a `describe_db` bound to factories + truncate tables                                             |
 
 ### Cross-Impl Schema Parity
 
@@ -970,13 +970,13 @@ suite fork.
 `RpcTestTransport = (url, init) => Promise<Response>` is the seam. Both
 modes implement it:
 
-| Transport                            | Module                          | Purpose                                                                  |
-| ------------------------------------ | ------------------------------- | ------------------------------------------------------------------------ |
-| `http_transport(app)`                | `testing/rpc_helpers.ts`        | In-process — curries `app.request`. Fast feedback, no socket.            |
-| `create_fetch_transport(options)`    | `testing/transports/fetch_transport.ts` | Cross-process — curries global `fetch` against a base URL + cookie jar. |
-| `create_ws_transport(options)`       | `testing/transports/ws_transport.ts` | WebSocket upgrade over the `ws` package (threads `Cookie` on upgrade).   |
-| `create_sse_transport(options)`      | `testing/transports/sse_transport.ts` | SSE stream client for cross-process stream assertions.                   |
-| `bootstrap(options)`                 | `testing/transports/bootstrap.ts` | Fire the bootstrap envelope, capture `Set-Cookie`, return the keeper.    |
+| Transport                         | Module                                  | Purpose                                                                 |
+| --------------------------------- | --------------------------------------- | ----------------------------------------------------------------------- |
+| `http_transport(app)`             | `testing/rpc_helpers.ts`                | In-process — curries `app.request`. Fast feedback, no socket.           |
+| `create_fetch_transport(options)` | `testing/transports/fetch_transport.ts` | Cross-process — curries global `fetch` against a base URL + cookie jar. |
+| `create_ws_transport(options)`    | `testing/transports/ws_transport.ts`    | WebSocket upgrade over the `ws` package (threads `Cookie` on upgrade).  |
+| `create_sse_transport(options)`   | `testing/transports/sse_transport.ts`   | SSE stream client for cross-process stream assertions.                  |
+| `bootstrap(options)`              | `testing/transports/bootstrap.ts`       | Fire the bootstrap envelope, capture `Set-Cookie`, return the keeper.   |
 
 Node's native `WebSocket` (from undici) rejects custom headers on
 construction, so the `ws` package is structurally required for cross-process
@@ -991,16 +991,18 @@ capabilities its backend supports, and the runner filters silently. Adding a
 capability is a one-line change in `capabilities.ts` plus a flag in each
 consumer config.
 
-| Capability         | Meaning                                                                             |
-| ------------------ | ----------------------------------------------------------------------------------- |
-| `bearer_auth`      | Backend honors bearer (API-token) credentials.                                      |
-| `trusted_proxy`    | Backend resolves `X-Forwarded-For` behind a trusted proxy.                          |
-| `login_rate_limit` | Backend enforces login/IP rate limits (production semantics, not test-fast).        |
-| `ws`               | Backend serves the WebSocket endpoint.                                              |
-| `sse`              | Backend serves an SSE stream.                                                       |
-| `cell_crud`        | Backend live-mounts the cell CRUD verbs (gates `describe_cell_crud_cross_tests`).   |
-| `cell_relations`   | Backend live-mounts the cell relation / ACL / audit verbs (gates `describe_cell_relations_cross_tests`). |
-| `account_lifecycle`| Backend live-mounts `account_delete` / `_undelete` / `_purge` (gates `describe_account_lifecycle_cross_tests`). |
+| Capability          | Meaning                                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `bearer_auth`       | Backend honors bearer (API-token) credentials.                                                                            |
+| `trusted_proxy`     | Backend resolves `X-Forwarded-For` behind a trusted proxy.                                                                |
+| `login_rate_limit`  | Backend enforces login/IP rate limits (production semantics, not test-fast).                                              |
+| `ws`                | Backend serves the WebSocket endpoint.                                                                                    |
+| `sse`               | Backend serves an SSE stream.                                                                                             |
+| `cell_crud`         | Backend live-mounts the cell CRUD verbs (gates `describe_cell_crud_cross_tests`).                                         |
+| `cell_relations`    | Backend live-mounts the cell relation / ACL / audit verbs (gates `describe_cell_relations_cross_tests`).                  |
+| `account_lifecycle` | Backend live-mounts `account_delete` / `_undelete` / `_purge` (gates `describe_account_lifecycle_cross_tests`).           |
+| `fact_serving`      | Backend live-mounts the cell-gated fact-serving routes + `_testing_put_fact` (gates `describe_fact_serving_cross_tests`). |
+| `ready`             | Backend live-mounts the public `/ready` schema-drift deploy gate (gates `describe_ready_cross_tests`).                    |
 
 `in_process_capabilities` (every flag on) and the `ts_default_capabilities` /
 `rust_default_capabilities` presets in `default_backend_configs.ts` are the
@@ -1034,9 +1036,9 @@ import {spawn_backend} from '@fuzdev/fuz_app/testing/cross_backend/spawn_backend
 import {my_backend_config} from './my_backend_config.js';
 
 export default async function () {
-  const handle = await spawn_backend(my_backend_config());
-  // serialize the handle for the test workers via vitest `provide`
-  return async () => handle.cleanup();
+	const handle = await spawn_backend(my_backend_config());
+	// serialize the handle for the test workers via vitest `provide`
+	return async () => handle.cleanup();
 }
 ```
 
@@ -1044,8 +1046,8 @@ export default async function () {
 // some_feature.cross.test.ts
 import {describe, test, inject, assert} from 'vitest';
 import {
-  default_cross_process_setup,
-  reconstruct_bootstrapped_handle,
+	default_cross_process_setup,
+	reconstruct_bootstrapped_handle,
 } from '@fuzdev/fuz_app/testing/cross_backend/setup.js';
 import {rpc_call} from '@fuzdev/fuz_app/testing/rpc_helpers.js';
 
@@ -1053,16 +1055,16 @@ const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle);
 
 describe('some feature cross-backend', () => {
-  test('round-trips', async () => {
-    const fixture = await setup_test(); // fresh account, signed-up + logged-in
-    const res = await rpc_call({
-      app: fixture.transport,
-      path: handle.config.rpc_path,
-      method: 'account_verify',
-      headers: fixture.create_session_headers(),
-    });
-    assert.ok(res.ok);
-  });
+	test('round-trips', async () => {
+		const fixture = await setup_test(); // fresh account, signed-up + logged-in
+		const res = await rpc_call({
+			app: fixture.transport,
+			path: handle.config.rpc_path,
+			method: 'account_verify',
+			headers: fixture.create_session_headers(),
+		});
+		assert.ok(res.ok);
+	});
 });
 ```
 
@@ -1081,11 +1083,11 @@ A consumer's TS backend can be spawned on three JS runtimes against the
 **identical** canonical surface, isolating the runtime axis (V8 vs. JSC) on
 the same code:
 
-| Adapter                        | Module                                       | Runtime  |
-| ------------------------------ | -------------------------------------------- | -------- |
-| `create_node_testing_adapter` | `testing/cross_backend/testing_server_node.ts` | Node V8  |
-| `create_deno_testing_adapter` | `testing/cross_backend/testing_server_deno.ts` | Deno V8  |
-| `create_bun_testing_adapter`  | `testing/cross_backend/testing_server_bun.ts`  | Bun JSC  |
+| Adapter                       | Module                                         | Runtime |
+| ----------------------------- | ---------------------------------------------- | ------- |
+| `create_node_testing_adapter` | `testing/cross_backend/testing_server_node.ts` | Node V8 |
+| `create_deno_testing_adapter` | `testing/cross_backend/testing_server_deno.ts` | Deno V8 |
+| `create_bun_testing_adapter`  | `testing/cross_backend/testing_server_bun.ts`  | Bun JSC |
 
 Each adapter pairs with the runtime-neutral `start_testing_server`
 (`testing_server_core.ts`), which owns serve + daemon-info + WS attach +
@@ -1102,8 +1104,8 @@ entry — the entry already knows its runtime — rather than branching on
 
 ### Spine-stub preset
 
-fuz_app ships `spine_stub_backend_config()`
-(`cross_backend/spine_stub_backend_config.ts`) as a convenience preset for a
+fuz_app ships `rust_spine_stub_backend_config()`
+(`cross_backend/rust_spine_stub_backend_config.ts`) as a convenience preset for a
 domain-free Rust spine consumer — the `testing_spine_stub` binary that mounts
 the spine's standard surface (auth, account, admin, audit, role-grant offers)
 with no domain layer on top. This keeps the spine API exercised from outside
@@ -1117,12 +1119,12 @@ backend configs live in their own consumers' repos.
 A stale prebuilt spine-stub binary fails every cell/RPC case with
 `method not found` while auth cases pass — so a lagging build reads as a
 regression rather than "rebuild me". The fix is workflow, not a detector:
-the spine-stub project's `globalSetup`
+the `cross_backend_rust_spine_stub` project's `globalSetup`
 (`make_rust_spine_global_setup` in `global_setup_helpers.ts`) rebuilds the
 binary before spawning, so the common path is one command:
 
 ```bash
-npm run test:cross:spine-stub
+npm run test:cross:rust-spine-stub
 ```
 
 That `globalSetup`:
@@ -1133,12 +1135,12 @@ That `globalSetup`:
 2. Folds in an idempotent `createdb` for the spine-stub's Postgres database
    (the harness itself never issues `CREATE DATABASE`, to avoid forcing a
    `CREATEDB` grant on the test role).
-3. Defaults `FUZ_TESTING_SPINE_STUB_BIN` to the conventional
+3. Defaults `FUZ_TESTING_RUST_SPINE_STUB_BIN` to the conventional
    `target/release` location when it's unset.
 
-Point the build at the Cargo workspace with `FUZ_SPINE_STUB_WORKSPACE_DIR`
+Point the build at the Cargo workspace with `FUZ_RUST_SPINE_STUB_WORKSPACE_DIR`
 (CI / non-default checkouts), or pin a prebuilt binary directly with
-`FUZ_TESTING_SPINE_STUB_BIN`. The rebuild lives in the consumer/runner
+`FUZ_TESTING_RUST_SPINE_STUB_BIN`. The rebuild lives in the consumer/runner
 wiring — the exported `testing/` harness stays runtime-agnostic and knows
 nothing about Cargo.
 
@@ -1148,7 +1150,7 @@ nothing about Cargo.
 is the opinionated behavioral/security layer on top of the spec-derived
 auto-enumeration (`describe_rpc_round_trip_tests` /
 `describe_rpc_attack_surface_tests`). Where those assert wire-shape,
-conformance cases assert *expected behavior* — especially the security
+conformance cases assert _expected behavior_ — especially the security
 negatives (must be refused / must not leak / found-vs-not-found return the
 same shape) that a wire-shape check can pass green on even when behavior is
 wrong.

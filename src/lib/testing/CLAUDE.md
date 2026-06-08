@@ -853,7 +853,8 @@ source of truth for wire-shape conformance.
 
 - `testing/cross_backend/capabilities.ts` — `BackendCapabilities` vocabulary
   (`bearer_auth` / `trusted_proxy` / `login_rate_limit` / `ws` / `sse` /
-  `cell_crud` / `cell_relations` / `account_lifecycle` / `fact_serving`),
+  `cell_crud` / `cell_relations` / `account_lifecycle` / `fact_serving` /
+  `ready`),
   `test_if(cond, name, fn)`
   for capability-gated cases, and `in_process_capabilities` preset. `cell_crud`
   gates the CRUD parity suite, `cell_relations` the relation / ACL / audit
@@ -866,7 +867,10 @@ source of truth for wire-shape conformance.
   gates `describe_fact_serving_cross_tests` (the cell-scoped per-reference +
   admin-only bare-hash fact-serving parity suite); like cells it stays off the
   declared surface and is `true` on every spine that mounts the serve routes +
-  the `_testing_put_fact` seeder.
+  the `_testing_put_fact` seeder. `ready` gates `describe_ready_cross_tests`
+  (anonymous `GET /ready` → `200 {ready: true}` on a clean spine bootstrap);
+  like cells/sse the `/ready` deploy gate stays off the declared surface, `true`
+  on every spine that live-mounts it over the shared `expected_schema.json`.
 
 ### `cross_backend/standard.ts` — `describe_standard_cross_process_tests`
 
@@ -1071,8 +1075,8 @@ in-process legs (plain `gro test`) are `src/test/auth/cell_crud_parity.db.test.t
 - `testing/cross_backend/backend_config.ts` — `BackendConfig` +
   `BackendBootstrapConfig` interfaces. Consumer factories
   (`deno_backend_config()`, `rust_backend_config()`,
-  `spine_stub_backend_config()`) produce these; fuz_app ships
-  `spine_stub_backend_config()` as a convenience preset for the non-domain
+  `rust_spine_stub_backend_config()`) produce these; fuz_app ships
+  `rust_spine_stub_backend_config()` as a convenience preset for the non-domain
   third spine consumer, but otherwise backend-specific paths and env are a
   consumer concern.
 - `testing/cross_backend/spawn_backend.ts` — `spawn_backend(config) => BackendHandle`.
@@ -1180,6 +1184,31 @@ in-process `auth/origin_parity.db.test.ts` + the cross-process
 Rust spine returned a plain-text body — now converged to the canonical TS
 `{error: "forbidden_origin"}` via `fuz_http::forbidden_origin_response()`.
 
+### Readiness probe parity — `cross_backend/ready.ts`
+
+`describe_ready_cross_tests({setup_test, capabilities, ready_path?})` — the
+imperative `/ready` deploy-gate suite: an anonymous, cookie-jar-free,
+no-Origin `GET /ready` → `200 {ready: true}` on a clean spine bootstrap (the
+deploy-poll shape a gate like zap uses). The `/ready` mechanism + its
+drift → `503` path are per-impl unit tests already (TS `db/schema_ready.ts`,
+Rust `fuz_db::schema_ready` / `fuz_http::ready`); this is the cross-impl
+success-path gate. Gated on `capabilities.ready`. Imperative (not a
+`conformance_table` row) because `/ready` is a public flat-REST route, not a
+JSON-RPC envelope, and the probe needs `fresh_transport({origin: null})` —
+the same reasons the sibling `cross_backend/origin.ts` suite is imperative.
+`$lib`-free; runs both legs (`cross_backend/ready_parity.db.test.ts` +
+`cross_backend/ready.cross.test.ts`).
+
+Both backends read the **same** committed
+`testing/cross_backend/expected_schema.json` (column-presence is engine-portable,
+so one fixture is the cross-impl contract): the TS spine via
+`create_spine_ready_route_spec` (an `import.meta.url` URL off `default_spine_surface.ts`),
+the Rust `testing_spine_stub` via the absolute path `rust_spine_stub_backend_config`
+passes through `FUZ_RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH`. The fixture covers the full
+spine bootstrap (auth + cell + cell_history + fact) and is regenerated +
+drift-guarded by `src/test/cross_backend/spine_expected_schema.db.test.ts`
+(`UPDATE_SCHEMA_READY=1`, then `gro format`).
+
 ### Building a TS test-server binary — `testing_server_core.ts` + adapters
 
 The reusable shape for standing up a **spawnable TS** cross-process test
@@ -1191,7 +1220,7 @@ re-roll the serve / daemon-info / WS-attach / drain boilerplate:
 - `testing/cross_backend/testing_server_deno.ts` — `create_deno_testing_adapter()` (`Deno.serve` + `hono/deno`; `Deno` declared locally so it typechecks under the Node toolchain). Spawn the entry with `--sloppy-imports` (Deno doesn't do `.js`→`.ts`; Gro's loader does, so the Node path needs no flag).
 - `testing/cross_backend/testing_server_bun.ts` — `create_bun_testing_adapter()` (`Bun.serve` + `hono/bun`'s module-level `upgradeWebSocket` + `websocket`; `Bun.serve` declared locally so it typechecks under the Node toolchain). **No extra deps** (`hono/bun` ships with `hono`; `Bun.serve` is built in, unlike Node's `@hono/node-server` + `@hono/node-ws`), and Bun resolves `.js`→`.ts` natively (no flag, unlike Deno). Reuses `create_node_runtime` (Bun implements the `node:fs`/`node:process` surface). WS is module-level + stateless (like Deno) — the `websocket` handler is threaded into `serve`, where `Bun.serve` wants it, so no post-serve attach.
 - `testing/cross_backend/default_spine_surface.ts` — the canonical no-domain spine surface (account/admin/audit/signup + bootstrap): `spine_session_options`, `spine_roles`, `create_spine_route_specs`, `spine_rpc_endpoints`, `create_spine_surface_spec`. `$lib`-free (it's reached by the spawned binary under Gro's loader, which doesn't resolve `$lib`), so keep it on relative imports. Shared by the spine_stub cross test, the TS cross tests, and the binary.
-- `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_deno_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory PGlite, no external infra), the TS analog of `spine_stub_backend_config()`.
+- `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_deno_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory PGlite, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
 
 fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` + `_testing_reset` + a WS mount, reusing `default_spine_surface`. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic.
 
@@ -1234,7 +1263,7 @@ no stats engine reinvented. fuz_app ships the primitive; consumers wire
 scenarios + the run (zzz's `npm run benchmark:cross-impl` was the first).
 fuz_app also ships its **own** `npm run benchmark:cross-impl`
 (`src/benchmarks/cross_impl.bench.ts`) on the back of its TS spine binary —
-ts-node + ts-deno + ts-bun (+ the Rust `spine_stub` when `FUZ_TESTING_SPINE_STUB_BIN`
+ts-node + ts-deno + ts-bun (+ the Rust `spine_stub` when `FUZ_TESTING_RUST_SPINE_STUB_BIN`
 is set). The three TS runtimes are apples-to-apples with each other (same
 PGlite driver); TS-vs-Rust carries the PGlite-vs-Postgres DB-layer caveat
 (documented in the run). The artifact (`*.latest.json`) is gitignored.
