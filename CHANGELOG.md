@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.84.0
+
+### Minor Changes
+
+- feat: add schema `/ready` endpoint ([83118aa](https://github.com/fuzdev/fuz_app/commit/83118aa))
+
 ## 0.83.0
 
 ### Minor Changes
