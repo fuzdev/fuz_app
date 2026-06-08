@@ -21,6 +21,24 @@ import {
 import {ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT} from './admin_action_specs.js';
 
 /**
+ * The full `account` column set, named explicitly so a row read fails loud
+ * on schema drift.
+ *
+ * `SELECT *` silently omits a dropped column, which the login lookups then
+ * misread: `query_account_by_username_or_email` filters its result with
+ * `account.deleted_at === null`, so a missing `deleted_at` column reads back
+ * as `undefined`, `undefined === null` is `false`, and *every* login resolves
+ * to "not found" (401) — a silent, total auth outage instead of an error.
+ * Selecting named columns turns that drift into a hard Postgres
+ * `column "..." does not exist`. Mirrors the Rust side
+ * (`fuz_auth/src/account_queries.rs`), which selects named columns and
+ * decodes them positionally. Keep in sync with `Account` and the `account`
+ * DDL in `auth/auth_ddl.ts`.
+ */
+const ACCOUNT_COLUMNS =
+	'id, username, email, email_verified, password_hash, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by';
+
+/**
  * Create a new account.
  *
  * @param deps - query dependencies
@@ -54,9 +72,10 @@ export const query_account_by_id = async (
 	deps: QueryDeps,
 	id: string,
 ): Promise<Account | undefined> => {
-	return deps.db.query_one<Account>(`SELECT * FROM account WHERE id = $1 AND deleted_at IS NULL`, [
-		id,
-	]);
+	return deps.db.query_one<Account>(
+		`SELECT ${ACCOUNT_COLUMNS} FROM account WHERE id = $1 AND deleted_at IS NULL`,
+		[id],
+	);
 };
 
 /**
@@ -66,9 +85,10 @@ export const query_account_by_username = async (
 	deps: QueryDeps,
 	username: string,
 ): Promise<Account | undefined> => {
-	return deps.db.query_one<Account>(`SELECT * FROM account WHERE LOWER(username) = LOWER($1)`, [
-		username,
-	]);
+	return deps.db.query_one<Account>(
+		`SELECT ${ACCOUNT_COLUMNS} FROM account WHERE LOWER(username) = LOWER($1)`,
+		[username],
+	);
 };
 
 /**
@@ -78,9 +98,10 @@ export const query_account_by_email = async (
 	deps: QueryDeps,
 	email: string,
 ): Promise<Account | undefined> => {
-	return deps.db.query_one<Account>(`SELECT * FROM account WHERE LOWER(email) = LOWER($1)`, [
-		email,
-	]);
+	return deps.db.query_one<Account>(
+		`SELECT ${ACCOUNT_COLUMNS} FROM account WHERE LOWER(email) = LOWER($1)`,
+		[email],
+	);
 };
 
 /**
