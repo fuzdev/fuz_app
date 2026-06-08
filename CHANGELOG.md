@@ -1,5 +1,16 @@
 # @fuzdev/fuz_app
 
+## 0.83.0
+
+### Minor Changes
+
+- chore: fix peer deps ([46bc933](https://github.com/fuzdev/fuz_app/commit/46bc933))
+- chore: upgrade peer deps ([cca66e6](https://github.com/fuzdev/fuz_app/commit/cca66e6))
+
+### Patch Changes
+
+- fix: fail loud on account-table schema drift instead of silently failing auth ([b7d27a2](https://github.com/fuzdev/fuz_app/commit/b7d27a2))
+
 ## 0.82.0
 
 ### Minor Changes
