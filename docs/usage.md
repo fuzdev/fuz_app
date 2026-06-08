@@ -51,7 +51,8 @@ don't have the schema in scope. Same overloads on `get_route_params` and
 
 Route spec factories for common patterns: `create_account_route_specs()`,
 `create_audit_log_route_specs()`, `create_signup_route_specs()`,
-`create_health_route_spec()`, `create_server_status_route_spec()`,
+`create_health_route_spec()`, `create_ready_route_spec()` (with
+`load_expected_schema()`), `create_server_status_route_spec()`,
 `create_account_status_route_spec()`, `create_db_route_specs()`.
 Admin account listing, session listing, session/token revoke-all,
 audit-log reads, invite CRUD, and app-settings get/update are RPC-only —
@@ -65,6 +66,63 @@ surface (admin + role-grant-offer + account in one call — 25 methods with
 `RpcEndpointSpec` you pass — you do not call `create_rpc_endpoint`
 yourself. Bootstrap routes and surface route are factory-managed by
 `create_app_server`.
+
+## `/ready` schema-drift deploy gate
+
+`/health` is dumb liveness (no DB). `/ready` is the deploy gate: it introspects
+the live DB's columns and compares them against a committed expected column map
+(what a fresh full migration-chain bootstrap produces). A deployed DB missing a
+column the running code expects — the silent-auth-outage class — returns `503`
+so a deploy poll rolls the release back instead of promoting code that can't
+query. The spine ships the *mechanism*; each consumer commits its own
+*expectation* (it adds its own tables), so adoption is three small pieces:
+
+1. **Mount the route** next to `create_health_route_spec()`:
+
+   ```ts
+   import {create_ready_route_spec, load_expected_schema} from '@fuzdev/fuz_app/http/common_routes.js';
+
+   create_ready_route_spec({
+   	expected: load_expected_schema(new URL('./expected_schema.json', import.meta.url)),
+   	log: ctx.deps.log,
+   });
+   ```
+
+   `200 {ready: true}` on match, `503 {error: 'schema_drift' | 'db_unreachable'}`
+   otherwise (the detailed drift logs server-side only — the body stays a minimal
+   code, no schema leak). Both `create_ready_route_spec` and `load_expected_schema`
+   throw at assembly on an empty map (a readiness gate that passes for any DB is
+   worse than none).
+
+2. **Commit `expected_schema.json`** next to the route — the column map covering
+   your full namespace set (auth + cell + fact + your own tables).
+
+3. **Add a ~10-line regen test** so the fixture can't silently fall behind the
+   DDLs, using `sync_expected_schema_fixture` from
+   `@fuzdev/fuz_app/testing/schema_ready_fixture.js`: bootstrap a fresh DB with
+   your full migration chain, then
+
+   ```ts
+   const {live, committed} = await sync_expected_schema_fixture({
+   	db,
+   	fixture_url: new URL('../../lib/server/expected_schema.json', import.meta.url),
+   	update: process.env.UPDATE_SCHEMA_READY === '1',
+   });
+   assert.deepEqual(live, committed);
+   ```
+
+   Regenerate after an intentional schema change with `UPDATE_SCHEMA_READY=1`,
+   then `gro format` (the helper writes raw `JSON.stringify`).
+
+Column-presence is **engine-portable** (DDL-deterministic), so a fixture
+generated against PGlite at gen-time compares exactly against a live Postgres at
+runtime — and a Rust twin backend (`fuz_http::ready_router` over
+`fuz_db::query_ready_columns`) reads the *same* committed file. The route is
+opt-in like `/health`; the gate is made the default at the deploy layer — zap
+polls `/ready` post-deploy, rolls back on `503`, and warns loudly when it's
+absent (`404`) rather than silently skipping. See `db/schema_ready.ts` for the
+column-presence rationale and `auth/migrations.ts` for the frozen-append
+discipline that prevents the drift in the first place.
 
 ## Server Assembly
 
@@ -144,6 +202,10 @@ const {app, surface_spec, bootstrap_status, close} = await create_app_server({
 	migration_namespaces: [{namespace: 'my_app', migrations: MY_APP_MIGRATIONS}],
 	create_route_specs: (ctx) => [
 		create_health_route_spec(),
+		create_ready_route_spec({
+			expected: load_expected_schema(new URL('./expected_schema.json', import.meta.url)),
+			log: ctx.deps.log,
+		}),
 		...prefix_route_specs('/api', app_specific_routes(ctx)),
 	],
 	// surface_route: false,  // disable auto-created GET /api/surface
