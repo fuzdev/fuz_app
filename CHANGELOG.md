@@ -1,10 +1,19 @@
 # @fuzdev/fuz_app
 
+## 0.86.0
+
+### Minor Changes
+
+- fix: discard post-commit effects on handler rollback ([e94b806](https://github.com/fuzdev/fuz_app/commit/e94b806))
+  - `emit_after_commit` thunks now fire **iff** the handler's transaction commits — a rolled-back handler discards them instead of leaking notifications for state that never committed
+  - enforced at both dispatch sites (RPC/WS + REST) via the new `dispatch_with_post_commit_rollback` export from `http/pending_effects.js`
+  - the eager `pending_effects` queue (audit attempt-writes) is unchanged — still survives rollback by design
+
 ## 0.85.1
 
 ### Patch Changes
 
-- security: harden the `_testing_*` test backdoor and cover it as a security surface ([ad38bd3](https://github.com/fuzdev/fuz_app/commit/ad38bd3))
+- harden the `_testing_*` test backdoor and cover it as a security surface ([ad38bd3](https://github.com/fuzdev/fuz_app/commit/ad38bd3)) ([security](https://github.com/fuzdev/fuz_app/commit/security))
   - `_testing_mint_session` now requires a negative `expires_in_seconds` — the backdoor can only mint an already-expired session row, never a valid session for an arbitrary account
   - add `assert_no_testing_methods` surface invariant (run by `assert_rpc_ws_surface_invariants`): a `_testing_*` action can no longer leak onto a declared `AppSurface`
   - add `describe_testing_backdoor_cross_tests` — cross-process negative-credential parity (session/bearer/anonymous → 401/403) pinning the daemon-token gate on the backdoor actions, including the `_testing_schema_snapshot` schema-dump read
