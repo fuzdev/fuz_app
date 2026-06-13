@@ -67,6 +67,7 @@ import {fact_hash_bytes, FactHashSchema} from '@fuzdev/fuz_util/fact_hash.js';
 import {rpc_action, type RpcAction} from '../../actions/action_rpc.js';
 import {query_put_fact} from '../../db/fact_queries.js';
 import type {RequestResponseActionSpec} from '../../actions/action_spec.js';
+import type {RouteAuth} from '../../http/auth_shape.js';
 import type {AppDeps} from '../../auth/deps.js';
 import type {SessionOptions} from '../../auth/session_cookie.js';
 import type {DaemonTokenState} from '../../auth/daemon_token.js';
@@ -80,6 +81,21 @@ import {
 	mint_test_session,
 	DEFAULT_TEST_PASSWORD,
 } from '../app_server.js';
+
+/**
+ * Shared `auth` axis for every `_testing_*` action: keeper-only via the
+ * daemon-token credential, no acting actor. This is the entire structural
+ * fence on the backdoor surface (these actions run direct DB writes the
+ * production wire never exposes), so all five specs reference this one const
+ * rather than re-declaring it — a single source of truth the gate test
+ * (`testing_actions_auth.test.ts`) pins. Mirrors the Rust `DAEMON_TOKEN_ONLY`
+ * / shared `AuthSpec` in `fuz_testing`.
+ */
+const TESTING_ACTION_AUTH = {
+	account: 'required',
+	actor: 'none',
+	credential_types: ['daemon_token'],
+} as const satisfies RouteAuth;
 
 /** Output shape for an individual seeded account (keeper or extra). */
 const SeededAccountShape = z.strictObject({
@@ -118,7 +134,7 @@ export const testing_reset_action_spec = {
 	method: '_testing_reset',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none', credential_types: ['daemon_token']},
+	auth: TESTING_ACTION_AUTH,
 	side_effects: true,
 	input: z.strictObject({
 		extra_keeper_roles: z.array(z.string()).optional(),
@@ -172,7 +188,7 @@ export const testing_drain_effects_action_spec = {
 	method: '_testing_drain_effects',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none', credential_types: ['daemon_token']},
+	auth: TESTING_ACTION_AUTH,
 	side_effects: false,
 	input: z.void(),
 	output: z.strictObject({ok: z.boolean()}),
@@ -185,9 +201,18 @@ export const testing_drain_effects_action_spec = {
  * `_testing_mint_session` — mint an expired-by-construction server-side
  * session for an existing account and return its signed cookie value.
  *
- * The minted `auth_session` row's `expires_at` is backdated (negative
- * `expires_in_seconds`) while the returned cookie's own signed payload
- * stays valid (future). Cross-process auth resolution therefore passes the
+ * `expires_in_seconds` is **constrained negative** (`z.number().int().negative()`)
+ * so the action is structurally incapable of minting a *usable* session: it
+ * can only produce an already-backdated, already-dead `auth_session` row. The
+ * daemon-token gate + loopback binding already fence the backdoor, but the
+ * negative constraint is the make-impossible-states floor — even a misuse
+ * can't forge a valid session for an arbitrary `account_id`. The Rust mirror
+ * (`fuz_testing::create_testing_mint_session_action_spec`) enforces the same
+ * floor.
+ *
+ * The minted `auth_session` row's `expires_at` is backdated while the
+ * returned cookie's own signed payload stays valid (future). Cross-process
+ * auth resolution therefore passes the
  * cookie-payload gate (`parse_session`) and is refused by the authoritative
  * DB-row gate (`query_session_get_valid` — `WHERE expires_at > NOW()`) —
  * the gate the in-process payload-expiry tests never reach and the one that
@@ -206,11 +231,20 @@ export const testing_mint_session_action_spec = {
 	method: '_testing_mint_session',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none', credential_types: ['daemon_token']},
+	auth: TESTING_ACTION_AUTH,
 	side_effects: true,
 	input: z.strictObject({
 		account_id: Uuid,
-		expires_in_seconds: z.number().int(),
+		expires_in_seconds: z
+			.number()
+			.int()
+			.negative()
+			.meta({
+				description:
+					'Seconds to offset the session row from NOW(). Constrained negative so this ' +
+					'backdoor can ONLY mint an already-expired (backdated) row — never a usable ' +
+					'session for an arbitrary account. Its sole use is the expired-session gate.',
+			}),
 	}),
 	output: z.strictObject({session_cookie: z.string()}),
 	async: true,
@@ -247,7 +281,7 @@ export const testing_put_fact_action_spec = {
 	method: '_testing_put_fact',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none', credential_types: ['daemon_token']},
+	auth: TESTING_ACTION_AUTH,
 	side_effects: true,
 	input: z.strictObject({
 		content: z.string(),
@@ -274,7 +308,7 @@ export const testing_schema_snapshot_action_spec = {
 	method: '_testing_schema_snapshot',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none', credential_types: ['daemon_token']},
+	auth: TESTING_ACTION_AUTH,
 	side_effects: false,
 	input: z.strictObject({exclude_tables: z.array(z.string()).optional()}),
 	output: SchemaSnapshot,

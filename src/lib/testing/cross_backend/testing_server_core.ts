@@ -133,8 +133,19 @@ export interface StartTestingServerOptions {
 	log?: LoggerType;
 }
 
-/** Hosts that expose the test binary beyond loopback — refused at startup. */
-const OPEN_HOSTS = new Set(['0.0.0.0', '::', '[::]']);
+/**
+ * Loopback bind hosts — the only ones the test binary may serve on. It ships
+ * deterministic dev secrets (fixed cookie keys + bootstrap token in
+ * `default_secrets.ts`), so binding any network-reachable interface would let
+ * anyone who knows those fixed keys forge cookies against it. An allowlist
+ * (not an `0.0.0.0`/`::` blocklist) closes the gap a concrete LAN/public
+ * interface IP — e.g. `--host 192.168.1.50` — would otherwise slip through.
+ * Covers `localhost`, the IPv4 loopback `127.0.0.0/8`, and IPv6 `::1`.
+ */
+export const is_loopback_host = (host: string): boolean => {
+	const h = host.replace(/^\[(.*)\]$/, '$1'); // unwrap an `[::1]`-style IPv6 literal
+	return h === 'localhost' || h === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
+};
 
 /**
  * Boot a test-mode server using the supplied runtime adapter.
@@ -142,18 +153,19 @@ const OPEN_HOSTS = new Set(['0.0.0.0', '::', '[::]']);
  * Mirrors a production `start_server` at the surface level — stale-daemon
  * check, daemon-info write, bind, graceful drain — but the app is the
  * caller's no-domain (or domain) {@link StartTestingServerOptions.build_app}
- * and the runtime boundary is the {@link TestingServerAdapter}. Refuses to
- * bind an open host (the test binary must stay on loopback).
+ * and the runtime boundary is the {@link TestingServerAdapter}. Refuses any
+ * non-loopback bind host (the test binary must stay on loopback — see
+ * `is_loopback_host`).
  */
 export const start_testing_server = async (options: StartTestingServerOptions): Promise<void> => {
 	const {adapter, daemon_name, host, port, app_version, build_app} = options;
 	const log = options.log ?? new Logger(`[${daemon_name}]`);
 	const {runtime} = adapter;
 
-	if (OPEN_HOSTS.has(host)) {
+	if (!is_loopback_host(host)) {
 		log.error(
-			`FATAL: binding to '${host}' exposes the test binary to your entire network. ` +
-				`Use --host localhost (default) or 127.0.0.1 instead.`,
+			`FATAL: binding to '${host}' exposes the test binary (which ships deterministic ` +
+				`dev secrets) beyond loopback. Use --host localhost (default), 127.0.0.1, or ::1 instead.`,
 		);
 		adapter.exit(1);
 	}

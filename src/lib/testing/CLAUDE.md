@@ -13,9 +13,13 @@ testing-patterns. This file is a reference index for the helpers themselves.
 
 ## Production guard — always the first import
 
-Every module here starts with `import './assert_dev_env.js';` — reads `DEV`
-from `esm-env` and throws if false, preventing production-bundle inclusion.
-Enforced by grep, not a linter; make this the first line in new modules.
+Every runtime-reachable module here starts with `import './assert_dev_env.js';`
+— reads `DEV` from `esm-env` and throws if false, preventing production-bundle
+inclusion. Make this the first line in new modules. Enforced by
+`src/test/testing/assert_dev_env_coverage.test.ts`, which fails if any module
+omits the guard. The sole exemption is `cross_backend/make_cross_backend_project.ts`
+— a vitest-project factory consumed by consumers' `vite.config.ts` at config
+time (never runtime), where a throwing guard would break `vite build`.
 
 ## Stubs, factories, mocks
 
@@ -274,6 +278,7 @@ RPC / WS structural invariants (options-free, apply over `surface.rpc_endpoints`
 * `assert_ws_method_descriptions_present` — every WS method on every endpoint has a non-empty `description`.
 * `assert_ws_endpoints_include_protocol_actions` — every WS endpoint includes `heartbeat` + `cancel` (the `protocol_actions` spread from `actions/protocol.js`).
 * `assert_ws_notifications_have_null_auth` — WS method `kind === 'remote_notification' ⟺ auth === null`; guards against drift between spec union and surface emitter.
+* `assert_no_testing_methods` — no `_testing_*` backdoor action (`TESTING_METHOD_PREFIX`) appears as an RPC or WS method on the declared surface. The test-binary actions are live-mounted only; this guards against a future wiring change folding `create_testing_actions(...)` into the surface-generating registry.
 
 Per-endpoint duplicate method names and the auth-shape biconditional are
 already enforced at startup by `compile_action_registry` (see
@@ -1207,6 +1212,29 @@ passes through `FUZ_RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH`. The fixture covers th
 spine bootstrap (auth + cell + cell_history + fact) and is regenerated +
 drift-guarded by `src/test/cross_backend/spine_expected_schema.db.test.ts`
 (`UPDATE_SCHEMA_READY=1`, then `gro format`).
+
+### Testing-backdoor credential gate — `cross_backend/testing_backdoor.ts`
+
+`describe_testing_backdoor_cross_tests({setup_test, capabilities, rpc_path?})` —
+the negative-credential parity suite for the `_testing_*` backdoor actions.
+For each of `_testing_reset` / `_testing_mint_session` / `_testing_put_fact` /
+`_testing_schema_snapshot` (the three privileged writes plus the schema-dump
+read) it fires three principals over real HTTP: **anonymous** → 401, **session** →
+403 `credential_type_required`, **bearer** → 403 `credential_type_required` —
+proving the daemon-token gate that fences each backdoor action holds end-to-end
+on the real dispatcher (the spec-derived `describe_rpc_attack_surface_tests`
+never enumerates them because they're off the declared surface). Each method is
+sent with **valid** params so the session/bearer cases clear the 400
+input-validation phase and reach the 403 credential gate (order is
+401 → 400 → 403); the handler never runs. Cited property: `docs/security.md`
+§Test Backdoor Actions. Cross-process only (the `_testing_*` actions are
+mounted on the spawned binary, not the in-process app — like the ws/sse
+suites); ungated, since every cross backend that uses
+`default_cross_process_setup` mounts them. fuz_app's own wiring is
+`src/test/cross_backend/testing_backdoor.cross.test.ts`. The complement is the
+in-process spec-level gate test (`src/test/testing/testing_actions_auth.test.ts`,
+asserting each spec declares `credential_types: ['daemon_token']`) + the
+`assert_no_testing_methods` surface invariant.
 
 ### Building a TS test-server binary — `testing_server_core.ts` + adapters
 

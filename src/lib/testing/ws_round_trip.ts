@@ -1,3 +1,5 @@
+import './assert_dev_env.js';
+
 /**
  * In-process test helpers for WebSocket JSON-RPC round-trips.
  *

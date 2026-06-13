@@ -532,6 +532,60 @@ export const assert_ws_notifications_have_null_auth = (surface: AppSurface): voi
 	}
 };
 
+/**
+ * Reserved method-name prefix for the daemon-token-gated test-backdoor
+ * actions (`_testing_reset`, `_testing_mint_session`, `_testing_put_fact`,
+ * `_testing_drain_effects`, `_testing_schema_snapshot`). Test binaries
+ * live-mount these on their RPC endpoint but they must never appear on a
+ * **declared** surface.
+ */
+export const TESTING_METHOD_PREFIX = '_testing_';
+
+/**
+ * No `_testing_*` backdoor action ever appears as a method on the declared
+ * surface (RPC or WS).
+ *
+ * The test-backdoor actions (`_testing_reset` et al.) are daemon-token-gated
+ * privileged actions a consumer's test binary appends to its live RPC
+ * endpoint at assembly time — but they are deliberately excluded from
+ * surface generation (`spine_rpc_endpoints` and every consumer's
+ * `create_*_app_surface_spec` omit them) so the published attack surface,
+ * the committed `*_attack_surface.json` snapshot, and codegen never carry
+ * a backdoor. This invariant is the structural guard against a future
+ * wiring change that folds `create_testing_actions(...)` into the *declared*
+ * registry instead of the live-only append — the surface stays the
+ * authoritative "what the server exposes" map only if a backdoor can never
+ * hide in it.
+ *
+ * Pairs with the wire-level negative-credential check
+ * (`describe_testing_backdoor_cross_tests`, cross-process) and the
+ * spec-level gate check: this one pins absence-from-surface, those pin
+ * the daemon-token gate and the 401/403 behavior.
+ *
+ * @throws AssertionError naming the offending endpoint + method.
+ */
+export const assert_no_testing_methods = (surface: AppSurface): void => {
+	for (const ep of surface.rpc_endpoints) {
+		for (const method of ep.methods) {
+			assert.ok(
+				!method.name.startsWith(TESTING_METHOD_PREFIX),
+				`RPC endpoint '${ep.path}' exposes test-backdoor method '${method.name}' on the ` +
+					`declared surface — '${TESTING_METHOD_PREFIX}*' actions must be live-mounted only, ` +
+					`never folded into the surface-generating registry`,
+			);
+		}
+	}
+	for (const ep of surface.ws_endpoints) {
+		for (const method of ep.methods) {
+			assert.ok(
+				!method.name.startsWith(TESTING_METHOD_PREFIX),
+				`WS endpoint '${ep.path}' exposes test-backdoor method '${method.name}' on the ` +
+					`declared surface — '${TESTING_METHOD_PREFIX}*' actions must be live-mounted only`,
+			);
+		}
+	}
+};
+
 // --- Policy invariants ---
 
 /**
@@ -797,7 +851,8 @@ export const assert_surface_invariants = (surface: AppSurface): void => {
  * `actions/CLAUDE.md` §Registry compile) — these assertions cover only
  * the contract-surface concerns that a runtime registration check
  * cannot: empty descriptions, missing protocol-action spread on WS
- * endpoints, and kind ⇔ auth drift on WS methods.
+ * endpoints, kind ⇔ auth drift on WS methods, and a `_testing_*`
+ * backdoor action leaking onto the declared surface.
  *
  * @throws AssertionError on the first invariant violation; the message
  *   names the offending endpoint, method, and field.
@@ -807,6 +862,7 @@ export const assert_rpc_ws_surface_invariants = (surface: AppSurface): void => {
 	assert_ws_method_descriptions_present(surface);
 	assert_ws_endpoints_include_protocol_actions(surface);
 	assert_ws_notifications_have_null_auth(surface);
+	assert_no_testing_methods(surface);
 };
 
 /**

@@ -16,8 +16,10 @@ import {
 	assert_ws_method_descriptions_present,
 	assert_ws_endpoints_include_protocol_actions,
 	assert_ws_notifications_have_null_auth,
+	assert_no_testing_methods,
 	assert_rpc_ws_surface_invariants,
 } from '$lib/testing/surface_invariants.js';
+import {create_spine_surface_spec} from '$lib/testing/cross_backend/default_spine_surface.js';
 import {generate_app_surface, type AppSurface} from '$lib/http/surface.js';
 import type {
 	RequestResponseActionSpec,
@@ -72,6 +74,19 @@ const ws_role_grant_offer_received_spec: RemoteNotificationActionSpec = {
 	output: z.void(),
 	async: true,
 	description: 'Notify recipient of a new role-grant offer.',
+};
+
+/** A `_testing_*` backdoor spec — must never reach a declared surface. */
+const rpc_testing_reset_spec: RequestResponseActionSpec = {
+	method: '_testing_reset',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: {account: 'required', actor: 'none', credential_types: ['daemon_token']},
+	side_effects: true,
+	input: z.strictObject({}),
+	output: z.strictObject({}),
+	async: true,
+	description: 'Test-binary only — wipe + re-seed.',
 };
 
 const rpc_action = (spec: RequestResponseActionSpec): RpcAction => ({
@@ -207,6 +222,53 @@ describe('assert_ws_notifications_have_null_auth', () => {
 	});
 });
 
+describe('assert_no_testing_methods', () => {
+	test('passes for a surface with no testing methods', () => {
+		assert_no_testing_methods(build_valid_surface());
+	});
+
+	test('passes for an empty surface', () => {
+		const surface = generate_app_surface({route_specs: [], middleware_specs: []});
+		assert_no_testing_methods(surface);
+	});
+
+	test('passes for the real declared spine surface', () => {
+		// The canonical artifact: fuz_app's own no-domain spine surface must
+		// never carry a `_testing_*` backdoor (they're live-mounted on the
+		// binary's RPC endpoint, off `spine_rpc_endpoints`).
+		assert_no_testing_methods(create_spine_surface_spec().surface);
+	});
+
+	test('fails when an rpc endpoint exposes a `_testing_*` method', () => {
+		const surface = generate_app_surface({
+			route_specs: [],
+			middleware_specs: [],
+			rpc_endpoints: [
+				{
+					path: '/api/rpc',
+					actions: [rpc_action(rpc_account_verify_spec), rpc_action(rpc_testing_reset_spec)],
+				},
+			],
+		});
+		assert.throws(
+			() => assert_no_testing_methods(surface),
+			/exposes test-backdoor method '_testing_reset'/,
+		);
+	});
+
+	test('fails when a ws endpoint exposes a `_testing_*` method', () => {
+		const surface = build_valid_surface();
+		// No real `_testing_*` WS spec exists (they're RPC-only), so inject one
+		// to prove the WS arm of the invariant fires too.
+		const cloned = surface.ws_endpoints[0]!.methods[0]!;
+		surface.ws_endpoints[0]!.methods.push({...cloned, name: '_testing_ws_backdoor'});
+		assert.throws(
+			() => assert_no_testing_methods(surface),
+			/exposes test-backdoor method '_testing_ws_backdoor'/,
+		);
+	});
+});
+
 describe('assert_rpc_ws_surface_invariants', () => {
 	test('passes for well-formed surface', () => {
 		assert_rpc_ws_surface_invariants(build_valid_surface());
@@ -230,5 +292,14 @@ describe('assert_rpc_ws_surface_invariants', () => {
 		)!;
 		notification.auth = {account: 'required', actor: 'none'};
 		assert.throws(() => assert_rpc_ws_surface_invariants(surface), /violates kind ⇔ auth/);
+	});
+
+	test('runs the no-testing-methods invariant', () => {
+		const surface = generate_app_surface({
+			route_specs: [],
+			middleware_specs: [],
+			rpc_endpoints: [{path: '/api/rpc', actions: [rpc_action(rpc_testing_reset_spec)]}],
+		});
+		assert.throws(() => assert_rpc_ws_surface_invariants(surface), /test-backdoor method/);
 	});
 });

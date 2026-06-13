@@ -114,7 +114,7 @@ the test helpers' route list.
 spawned backends. `*.cross.test.ts` bodies are runtime-agnostic — they
 `inject('backend_handle')` and drive `default_spine_surface` over the wire —
 so the same files run under every `cross_backend_*` project; each project's
-`globalSetup` spawns a different backend. Nine cross files today:
+`globalSetup` spawns a different backend. Ten cross files today:
 `auth.cross.test.ts` (the `describe_standard_cross_process_tests` bundle —
 HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
 `describe_cross_process_ws_tests` suite — live WebSocket, including
@@ -160,9 +160,16 @@ allowlist: disallowed → 403 `forbidden_origin`, absent → pass; in-process le
 `GET /ready` → `200 {ready: true}` on a clean spine bootstrap, gated on
 `capabilities.ready`, both backends reading the same committed
 `expected_schema.json`; in-process leg `cross_backend/ready_parity.db.test.ts`,
-fixture guard `cross_backend/spine_expected_schema.db.test.ts`).
+fixture guard `cross_backend/spine_expected_schema.db.test.ts`), and
+`testing_backdoor.cross.test.ts` (the imperative
+`describe_testing_backdoor_cross_tests` — the `_testing_*` backdoor credential
+gate: `_testing_reset` / `_testing_mint_session` / `_testing_put_fact` /
+`_testing_schema_snapshot` fired as
+anonymous → 401, session → 403, bearer → 403, proving the daemon-token gate
+holds on the off-surface actions every spine live-mounts; cross-process-only,
+no in-process leg since the actions aren't mounted in-process).
 
-A tenth file, `schema_parity.cross.test.ts`, is **not** one of the nine above —
+An eleventh file, `schema_parity.cross.test.ts`, is **not** one of the ten above —
 it runs under its own dual-spawn `cross_backend_schema_parity` project
 (`global_setup_schema_parity.ts` brings up the TS spine + `testing_spine_stub`
 together and provides `parity_handle_a`/`_b`), so it's excluded from the

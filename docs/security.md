@@ -195,6 +195,42 @@ Rotating filesystem credential for keeper-level operations:
   check **both**: daemon token credential type AND an active keeper role_grant
 - Compromising the web layer cannot escalate to keeper — filesystem access required
 
+## Test Backdoor Actions
+
+Cross-process integration tests need a few privileged operations the production
+wire never exposes — wiping auth tables between tests, forging an expired
+session to exercise the DB-row expiry gate, seeding a content-addressed fact
+without a store handle. These live as five `_testing_*` RPC actions
+(`_testing_reset`, `_testing_mint_session`, `_testing_put_fact`,
+`_testing_drain_effects`, `_testing_schema_snapshot`) that a consumer's **test
+binary** appends to its RPC endpoint at assembly time. They are a deliberate
+backdoor, fenced on three independent axes:
+
+- **Daemon-token-gated.** Every `_testing_*` spec declares
+  `auth: {account: 'required', actor: 'none', credential_types: ['daemon_token']}`.
+  A session cookie, an API token, or an anonymous caller is refused before the
+  handler runs (401 for no credential, 403 `credential_type_required` for a
+  non-daemon one) — the same credential-type ceiling that gates keeper
+  operations. Only the operator with filesystem access to the rotating daemon
+  token can fire them.
+- **Off the declared surface.** They are never registered on a
+  surface-generating registry, so they appear in no `AppSurface`, no committed
+  `*_attack_surface.json` snapshot, and no generated docs — a published binary's
+  attack surface stays the authoritative "what the server exposes" map.
+- **Excluded from production builds.** Every runtime-reachable module in the
+  testing tree begins with a load-time `assert_dev_env` guard (`DEV` from
+  `esm-env`) that throws if imported under `DEV=false` (the lone exemption is a
+  build-config helper that never reaches a runtime bundle); a coverage test
+  enforces the guard is present on each module. The Rust twin keeps the
+  `fuz_testing` crate out of production dependency graphs
+  (`cargo xtask check-release`).
+
+`_testing_mint_session` is further constrained: its `expires_in_seconds` is
+required negative, so it can only mint an *already-expired* session row, never
+a usable session for an arbitrary account. The constraint is a
+make-impossible-states floor under the gates above — even a misuse cannot forge
+a live credential.
+
 ## SSE Connection Security
 
 SSE (Server-Sent Events) streams are long-lived HTTP connections. Auth is

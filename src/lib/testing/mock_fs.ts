@@ -1,3 +1,5 @@
+import './assert_dev_env.js';
+
 /**
  * In-memory file system mock for tests that use dependency-injected
  * `read_file` and `write_file` callbacks. Avoids module-level mocking.
