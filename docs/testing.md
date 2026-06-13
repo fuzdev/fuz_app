@@ -183,12 +183,15 @@ and different migration namespaces.
 `create_pg_factory` drops only `schema_version` before running `init_schema`,
 so migrations re-evaluate. But if upstream fuz_app schema changes structurally
 (new tables, renamed columns), stale tables from a previous version can cause
-failures. `drop_auth_schema(db)` drops all auth tables + `schema_version` for
-a true clean slate.
+failures. `drop_auth_schema(db)` resets the whole `public` schema
+(`DROP SCHEMA public CASCADE; CREATE SCHEMA public`) for a true clean slate —
+it clears every table (auth and your own) regardless of namespace, so there's
+no per-table drop list to keep in sync as the schema grows.
 
-This is a no-op for PGlite (fresh in-memory DB each time), but recommended
+This is harmless for PGlite (fresh in-memory DB each time), but recommended
 for pg factories that use a persistent `TEST_DATABASE_URL`. Call it at the
-start of your `init_schema` callback before running migrations.
+start of your `init_schema` callback before running migrations — your own
+tables get reset along with auth's, so no separate drop step is needed.
 
 ### `db_factories` in standard test suites
 
@@ -948,7 +951,7 @@ impls actually boot.
 | `create_mock_runtime`                       | `runtime/mock.ts`                | Mock runtime for command tests                                  |
 | `create_pglite_factory`                     | `testing/db.ts`                  | PGlite DB factory (shared WASM cache)                           |
 | `create_pg_factory`                         | `testing/db.ts`                  | PostgreSQL DB factory (auto-skips when no URL)                  |
-| `drop_auth_schema`                          | `testing/db.ts`                  | Drop all auth tables for clean-slate pg tests                   |
+| `drop_auth_schema`                          | `testing/db.ts`                  | Reset the `public` schema for clean-slate pg tests             |
 
 ## Cross-Backend Integration
 

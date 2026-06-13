@@ -50,13 +50,12 @@
 	import type {SvelteHTMLElements} from 'svelte/elements';
 	import type {ComponentProps, Snippet} from 'svelte';
 	import type {OmitStrict} from '@fuzdev/fuz_util/types.js';
-	import Glyph from '@fuzdev/fuz_ui/Glyph.svelte';
+	import {icon_remove} from '@fuzdev/fuz_ui/icons.js';
 	import PendingAnimation from '@fuzdev/fuz_ui/PendingAnimation.svelte';
+	import Svg from '@fuzdev/fuz_ui/Svg.svelte';
 
 	import PopoverButton from './PopoverButton.svelte';
 	import type {Popover} from './popover.svelte.js';
-
-	const GLYPH_REMOVE = '🗙';
 
 	const {
 		onconfirm,
@@ -140,7 +139,7 @@
 				{#if popover_button_content}
 					{@render popover_button_content(popover, () => confirm(popover))}
 				{:else}
-					<Glyph glyph={GLYPH_REMOVE} />
+					<Svg data={icon_remove} />
 				{/if}
 			</button>
 		{/if}
@@ -155,7 +154,7 @@
 			{:else if label !== undefined}
 				{label}
 			{:else}
-				<Glyph glyph={GLYPH_REMOVE} />
+				<Svg data={icon_remove} />
 			{/if}
 		</span>
 		{#if pending}

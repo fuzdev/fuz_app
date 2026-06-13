@@ -121,8 +121,7 @@ factories accept any migration namespace set.
 - `create_pg_factory(init_schema, test_url?)` — PostgreSQL; `skip: true` when `test_url` missing. Drops `schema_version` before `init_schema` so migrations re-evaluate against actual tables (prevents stale tracker rows from skipping migrations when DDL changes between sessions). Pool reused + cleaned up across `create()` calls.
 - `auth_truncate_tables` — `['invite', 'api_token', 'auth_session', 'role_grant', 'role_grant_offer', 'actor', 'account']` in FK-safe order. Excludes `audit_log` — unit DB tests don't need to truncate it.
 - `auth_integration_truncate_tables` — `auth_truncate_tables + ['audit_log']` for integration suites that exercise the audit path.
-- `auth_drop_tables` — full set from `auth_migrations` in drop order; call `drop_auth_schema(db)` at the top of `init_schema` on persistent pg databases that may hold stale DDL from previous fuz_app versions.
-- `drop_auth_schema(db)` — `DROP TABLE IF EXISTS <table> CASCADE` for every entry in `auth_drop_tables` plus `schema_version`. Safe on fresh DBs.
+- `drop_auth_schema(db)` — `DROP SCHEMA public CASCADE; CREATE SCHEMA public`; call at the top of `init_schema` on persistent pg databases that may hold stale DDL from previous fuz_app versions. Drift-proof full-schema reset (despite the name, not auth-scoped) — same mechanism as `reset_pglite`.
 - `create_describe_db(factories, truncate_tables)` — returns `describe_db(name, fn)` running `fn(get_db)` once per factory inside a `describe` with shared `beforeAll(create)` + `beforeEach(TRUNCATE)` + `afterAll(close)`. Skipped factories use `describe.skip`.
 - `log_db_factory_status(factories)` — console summary of enabled / skipped factories.
 

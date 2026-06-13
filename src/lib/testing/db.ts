@@ -205,43 +205,22 @@ export const auth_truncate_tables = [
 export const auth_integration_truncate_tables = [...auth_truncate_tables, 'audit_log'];
 
 /**
- * All auth tables in drop order (children first for FK safety).
- *
- * The full set created by `auth_migrations` — use for clean-slate
- * test DB initialization. `auth_truncate_tables` is the subset for
- * between-test data cleanup (excludes `audit_log`).
- *
- * When adding tables to `auth_migrations`, add them here too.
- */
-export const auth_drop_tables = [
-	'app_settings',
-	'invite',
-	'audit_log',
-	'api_token',
-	'auth_session',
-	'role_grant',
-	'role_grant_offer',
-	'actor',
-	'account',
-	'bootstrap_lock',
-] as const;
-
-/**
- * Drop all auth tables and schema version tracking for a clean slate.
+ * Reset the entire `public` schema for a clean slate before re-migration.
  *
  * Recommended at the start of `init_schema` callbacks for `create_pg_factory`.
- * Persistent test databases can accumulate stale schema from previous fuz_app
- * versions — this ensures migrations run against a truly empty database.
- * Safe on fresh databases (`IF EXISTS` on all statements). No-op effect for
- * PGlite (already fresh), but harmless to call unconditionally.
+ * Persistent test databases accumulate stale DDL across fuz_app versions;
+ * `DROP SCHEMA public CASCADE; CREATE SCHEMA public` wipes every table, type,
+ * and sequence regardless of namespace, so migrations always run against a
+ * truly empty database. Drift-proof — unlike a hand-maintained drop list it
+ * needs no upkeep when the schema gains a table. Despite the historical name,
+ * this resets the whole schema, not just auth tables (the only documented use
+ * is clean-slate re-migration, which always wanted a full reset).
  *
- * @mutates db - drops every table in `auth_drop_tables` plus `schema_version`.
+ * @mutates db - drops and recreates the `public` schema; all tables gone.
  */
 export const drop_auth_schema = async (db: Db): Promise<void> => {
-	for (const table of auth_drop_tables) {
-		await db.query(`DROP TABLE IF EXISTS ${assert_valid_sql_identifier(table)} CASCADE`);
-	}
-	await db.query('DROP TABLE IF EXISTS schema_version CASCADE');
+	await db.query('DROP SCHEMA public CASCADE');
+	await db.query('CREATE SCHEMA public');
 };
 
 /**
