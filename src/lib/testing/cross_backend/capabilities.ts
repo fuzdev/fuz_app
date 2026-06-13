@@ -25,19 +25,32 @@ import {test} from 'vitest';
 export interface BackendCapabilities {
 	/**
 	 * Bearer token auth (`Authorization: Bearer <token>`) is wired through
-	 * the backend's middleware stack. Gates the bearer-token cases in
-	 * `describe_standard_integration_tests` and `describe_rate_limiting_tests`.
+	 * the backend's middleware stack.
+	 *
+	 * **Declared for backend-shape documentation, not gating.** No suite reads
+	 * this flag — the bearer-token cases in `describe_standard_integration_tests`
+	 * / `describe_rate_limiting_tests` run unconditionally (every spine wires
+	 * bearer auth). Fold into a typed capability taxonomy if these gain real
+	 * gating readers.
 	 */
 	readonly bearer_auth: boolean;
 	/**
-	 * Trusted-proxy XFF parsing is wired (`X-Forwarded-For` etc.). Gates
-	 * the proxy-resolution cases in `describe_standard_integration_tests`
-	 * and the future cross-process proxy integration suite.
+	 * Trusted-proxy XFF parsing is wired (`X-Forwarded-For` etc.).
+	 *
+	 * **Declared for backend-shape documentation, not gating.** No suite reads
+	 * this flag (there is no cross-process proxy-resolution suite); it records
+	 * the proxy-default difference between the TS family (`false`) and the Rust
+	 * family (`true`). Fold into a typed capability taxonomy if it gains real
+	 * gating readers.
 	 */
 	readonly trusted_proxy: boolean;
 	/**
-	 * Per-account login rate limiting is wired. Gates the per-account
-	 * rate-limit cases in `describe_rate_limiting_tests`.
+	 * Per-account login rate limiting is wired.
+	 *
+	 * **Declared for backend-shape documentation, not gating.** No suite reads
+	 * this flag; the `describe_rate_limiting_tests` per-account cases are
+	 * in-process-only and don't cross a process boundary. Fold into a typed
+	 * capability taxonomy if it gains real gating readers.
 	 */
 	readonly login_rate_limit: boolean;
 	/**

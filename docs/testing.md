@@ -1173,8 +1173,11 @@ A case is **data** (`ConformanceCase` in `cross_backend/conformance_case.ts`):
   from the live action-spec registry (RPC) or `RouteSpec` (the REST auth
   routes), so the spec stays the single source of truth.
 - `as` is the closed `ConformancePrincipal` enum (`keeper`, `daemon`,
-  `token`, `anonymous`, `fresh_non_admin`, `role_holder`, `wrong_role`) —
-  each maps to a fixture accessor, never inline credential minting.
+  `token`, `anonymous`, `fresh_non_admin`, `role_holder`, `wrong_role`,
+  `expired_session`) — each maps to a fixture accessor, never inline
+  credential minting. `expired_session` is the keeper behind a backdated
+  server-side `auth_session` row (a still-valid signed cookie over an expired
+  DB row), isolating the DB-row expiry gate.
 - `error_reason` is the imported `ERROR_*` constant, asserted against the
   RPC `error.data.reason` (or the REST flat-body `error`); when an RPC
   denial carries no reason (the bare 401), `status` pins the denial class.

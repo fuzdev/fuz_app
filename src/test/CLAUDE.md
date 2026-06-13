@@ -114,7 +114,7 @@ the test helpers' route list.
 spawned backends. `*.cross.test.ts` bodies are runtime-agnostic — they
 `inject('backend_handle')` and drive `default_spine_surface` over the wire —
 so the same files run under every `cross_backend_*` project; each project's
-`globalSetup` spawns a different backend. Ten cross files today:
+`globalSetup` spawns a different backend. Fifteen cross files today:
 `auth.cross.test.ts` (the `describe_standard_cross_process_tests` bundle —
 HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
 `describe_cross_process_ws_tests` suite — live WebSocket, including
@@ -167,9 +167,23 @@ gate: `_testing_reset` / `_testing_mint_session` / `_testing_put_fact` /
 `_testing_schema_snapshot` fired as
 anonymous → 401, session → 403, bearer → 403, proving the daemon-token gate
 holds on the off-surface actions every spine live-mounts; cross-process-only,
-no in-process leg since the actions aren't mounted in-process).
+no in-process leg since the actions aren't mounted in-process), and
+`actor_lookup.cross.test.ts` (the opt-in `actor_lookup` resolver — anonymous →
+401, keeper resolves its own actor → 200 with the info-leak-safe wire shape,
+empty ids → 400), and `actor_search.cross.test.ts` (the opt-in `actor_search`
+resolver + its empty-`scope_ids` admin gate — anonymous → 401, non-admin
+no-scope → 400 `actor_search_scope_required`, non-admin scoped → 200, admin
+no-scope → 200), and `app_settings.cross.test.ts` (the `open_signup` effect —
+the admin `app_settings_update` toggle then an anonymous `POST /signup`,
+proving the signup handler reads the toggle fresh from the database), and
+`cell_grant_role.cross.test.ts` (role-shaped `cell_grant` parity — the
+role-validity gate: admit holder, exclude non-holder, reject unregistered role,
+editor-level edit; the actor-shaped grants live in `cell.cross.test.ts`), and
+`fact_serving.cross.test.ts` (the cell-gated fact-serving routes
+`GET /api/cells/:cell_id/facts/:hash` + the admin-only `GET /api/facts/:hash`
+via `describe_fact_serving_cross_tests`, gated on `capabilities.fact_serving`).
 
-An eleventh file, `schema_parity.cross.test.ts`, is **not** one of the ten above —
+A sixteenth file, `schema_parity.cross.test.ts`, is **not** one of the fifteen above —
 it runs under its own dual-spawn `cross_backend_schema_parity` project
 (`global_setup_schema_parity.ts` brings up the TS spine + `testing_spine_stub`
 together and provides `parity_handle_a`/`_b`), so it's excluded from the
