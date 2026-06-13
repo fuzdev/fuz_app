@@ -50,6 +50,7 @@ import {
 import {type CredentialType} from '../hono_context.js';
 import type {Db} from '../db/db.js';
 import {is_void_schema} from '../http/schema_helpers.js';
+import {dispatch_with_post_commit_rollback} from '../http/pending_effects.js';
 import {
 	JSONRPC_VERSION,
 	type JsonrpcRequestId,
@@ -285,11 +286,16 @@ export const perform_action = async (
 		return {kind: 'ok', result: output};
 	};
 
+	// Dispatch — transaction for mutations, pool for reads. Wrapped so a thrown
+	// handler discards the post-commit effects it queued (`emit_after_commit`):
+	// its transaction rolled back, so those effects must not announce state that
+	// never committed. The eager `pending_effects` queue survives rollback
+	// (attempt audits). See `dispatch_with_post_commit_rollback` (canonical
+	// contract) and docs/security.md §"Post-commit WS fan-out".
 	try {
-		if (use_transaction) {
-			return await db.transaction((tx) => execute(tx));
-		}
-		return await execute(db);
+		return await dispatch_with_post_commit_rollback(post_commit_effects, () =>
+			use_transaction ? db.transaction((tx) => execute(tx)) : execute(db),
+		);
 	} catch (err) {
 		// Duck-type check: Error with numeric `code` signals a JSON-RPC error.
 		// Avoids cross-realm `instanceof` misses when consumers throw their own

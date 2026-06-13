@@ -506,8 +506,10 @@ Per-message side-effect queues: `pending_effects` (eager) drains via
 handlers via `emit_after_commit`) drains via `flush_post_commit_effects`.
 Both flush in the same `try/finally` that releases the request controller,
 so fire-and-forget audit / notification effects pushed by the handler
-complete (or reject visibly) before the next message dispatches. See
-`http/CLAUDE.md` §Pending Effects.
+complete (or reject visibly) before the next message dispatches. The
+deferred queue is **discarded on rollback** before it reaches that flush (a
+rolled-back message fires no post-commit effect). See `http/CLAUDE.md`
+§Pending Effects.
 
 **Lifecycle hooks.** `on_socket_open({ws, connection_id, identity, notify, signal})`
 fires after `transport.add_connection` but before the first message;

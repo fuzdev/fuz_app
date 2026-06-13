@@ -29,7 +29,7 @@ effects, see ../../../docs/architecture.md.
 - `http/jsonrpc_helpers.ts` — message builders, type guards, input/result normalizers.
 - `http/common_routes.ts` — health check + readiness probe (`/ready` schema-drift deploy gate) + authenticated server-status + surface route specs.
 - `http/db_routes.ts` — generic keeper-only table browser route specs (public schema).
-- `http/pending_effects.ts` — `emit_after_commit` + `flush_pending_effects` + `flush_post_commit_effects` + `EmitAfterCommitContext`.
+- `http/pending_effects.ts` — `emit_after_commit` + `dispatch_with_post_commit_rollback` (the shared rollback-discard wrapper both dispatch sites use) + `flush_pending_effects` + `flush_post_commit_effects` + `EmitAfterCommitContext`.
 
 ## Route Spec System
 
@@ -427,7 +427,7 @@ this work that's already started"; thunk pushers say "run this after the
 handler returns" — and burying both behind one field made
 `c.var.pending_effects.push(x)` ambiguous at the call site. Splitting turns the field name into the contract.
 
-### Why `emit_after_commit` defers
+### Why `emit_after_commit` defers — and discards on rollback
 
 The thunk shape is **load-bearing for correctness**. Pushing
 `Promise.resolve().then(fn)` onto an eager queue — what `emit_after_commit`
@@ -436,6 +436,17 @@ wrapping `await db.query('COMMIT')` resumes, so a rolled-back transaction
 would leak a notification for state that never landed. The thunk defers
 the work to flush time; the `try/finally` in the flush middleware runs
 after the handler (and any wrapping transaction) returns.
+
+Deferral alone isn't enough: the flush runs whether the handler returned or
+threw, so a thrown handler (rolling back its transaction) would still fire the
+thunk it queued. So the contract is **two-sided**: both dispatch sites
+(`http/route_spec.ts`, `actions/perform_action.ts`) wrap their handler in the
+shared `dispatch_with_post_commit_rollback` helper, which discards
+`post_commit_effects` on a handler throw — `emit_after_commit` thus reads as
+**"run iff the wrapping transaction commits."** The eager `pending_effects`
+queue is the deliberate opposite (survives rollback — attempt audits). The full
+two-sided contract + Rust-twin parity note live on the helper's TSDoc in
+`http/pending_effects.ts`.
 
 ```typescript
 emit_after_commit(ctx, () => notification_sender.send_to_account(account_id, msg));
@@ -449,7 +460,7 @@ and any side effect that must run only after the transaction commits.
 
 - **The flush owns the safety net.** `flush_post_commit_effects` wraps every thunk in `try/catch` and routes errors through `ctx.log.error`, so one failing send cannot starve sibling effects in the same batch nor corrupt the already-committed response. Per-thunk `try/catch` inside `emit_after_commit` would skip directly-pushed thunks (e.g. tests); centralizing the wrap in the flush closes that gap.
 - **Test mode (`await_pending_effects: true`) flushes both queues.** Eager: `await flush_pending_effects(pending_effects, log)`. Deferred: `await flush_post_commit_effects(post_commit_effects, log)`. Both complete before the response returns. Production mode wraps the same helpers in `void ...` and threads `on_effect_error` into `flush_pending_effects`'s `on_rejection` callback for fan-out.
-- **Same drain location for both.** The outer flush middleware (`server/app_server.ts`) and the per-message WS flush handle the two queues adjacent to each other. The deferred queue does not drain inside the route-spec wrapper / `perform_action` — that would tighten the "post-commit" timing further but would force three drain sites (REST wrapper, RPC dispatcher, WS dispatcher) to gain timing no current consumer needs.
+- **Drain at the outer flush; discard at the dispatch site.** The successful-path _drain_ of both queues stays at the outer flush middleware (`server/app_server.ts`) + the per-message WS flush — adjacent, one location, no per-wrapper drain timing. What the dispatch sites (route-spec wrapper / `perform_action`) own is the _rollback discard_, via the shared `dispatch_with_post_commit_rollback` helper: on a handler throw they truncate `post_commit_effects` before the outer flush ever sees it, so the flush only drains effects from a committed handler. The eager `pending_effects` queue is never truncated — it drains regardless (attempt audits survive rollback).
 - Structurally satisfied by both `RouteContext` (HTTP) and `ActionContext` (RPC + WS) — they share the `{log, post_commit_effects}` shape, which is why this helper lives in `http/` rather than `actions/` or `auth/`.
 
 WS sends are **not** wrapped by `create_validated_broadcaster` (that only

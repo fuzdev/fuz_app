@@ -17,6 +17,15 @@
  *   returns. Used for WS sends and any work that must observe a committed
  *   transaction.
  *
+ * **Discard on rollback.** A `post_commit_effects` thunk is discarded if the
+ * handler's transaction rolls back (a thrown handler) — it must not announce
+ * state that never committed. Both dispatch sites enforce this by wrapping
+ * their handler in `dispatch_with_post_commit_rollback` (see its TSDoc below
+ * for the full two-sided contract and the Rust-twin parity note). The eager
+ * `pending_effects` queue is the deliberate opposite: its pool writes run
+ * outside the transaction and intentionally **survive** rollback (attempt
+ * audits).
+ *
  * The split exists because the two shapes encode different contracts:
  * eager pushers are saying "wait for this work that's already started";
  * thunk pushers are saying "run this after the handler returns." Burying
@@ -58,6 +67,13 @@ export interface EmitAfterCommitContext {
  * The flush owns the per-thunk `try/catch` + `log.error` so any
  * directly-pushed thunk (tests included) cannot escape the safety net.
  *
+ * Deferral is only half the contract: a queued thunk is also **discarded if
+ * the handler's transaction rolls back** — via `dispatch_with_post_commit_rollback`
+ * (see its TSDoc). So `fn` runs iff the wrapping transaction commits, never for
+ * state that rolled back. Rollback-resilient writes (attempt audits that must
+ * land even when the handler fails) belong on the eager `pending_effects` queue
+ * instead.
+ *
  * @param ctx - context carrying `log` and the `post_commit_effects` queue
  * @param fn - side effect to run after commit; may return `void` or `Promise<void>`
  * @mutates `ctx.post_commit_effects` - appends `fn` verbatim
@@ -67,6 +83,45 @@ export const emit_after_commit = (
 	fn: () => void | Promise<void>,
 ): void => {
 	ctx.post_commit_effects.push(fn);
+};
+
+/**
+ * Run a handler dispatch (the handler plus its wrapping `db.transaction`),
+ * discarding any `post_commit_effects` it queued via `emit_after_commit` if it
+ * throws. A thrown handler rolls back its transaction, so firing those deferred
+ * effects would announce state that never committed. On any throw the queue is
+ * truncated back to its pre-dispatch depth — **not** cleared, so entries a
+ * surrounding scope pre-seeded survive — and the error re-thrown unchanged.
+ *
+ * The eager `pending_effects` queue is deliberately never touched here: its
+ * pool writes run outside the transaction and intentionally survive rollback
+ * (attempt audits). `emit_after_commit` thus reads as "run iff the wrapping
+ * transaction commits."
+ *
+ * Both dispatch sites — the REST route wrapper (`http/route_spec.ts`) and the
+ * action dispatcher (`actions/perform_action.ts`, the RPC + WS path) — wrap
+ * their handler call in this so the discard contract lives in one place. The
+ * Rust `fuz_actions` spine pins the same contract.
+ *
+ * `post_commit_effects` is `undefined` when a handler runs without the
+ * app-server pending-effects middleware (bare route / dispatch harnesses):
+ * absent ⇒ nothing queued ⇒ nothing to discard.
+ *
+ * @param post_commit_effects - the deferred queue to truncate on throw, or `undefined`
+ * @param dispatch - invokes the handler (and any wrapping transaction)
+ * @mutates `post_commit_effects` - truncated to its pre-dispatch depth on throw
+ */
+export const dispatch_with_post_commit_rollback = async <T>(
+	post_commit_effects: Array<() => void | Promise<void>> | undefined,
+	dispatch: () => T | Promise<T>,
+): Promise<Awaited<T>> => {
+	const depth = post_commit_effects?.length ?? 0;
+	try {
+		return await dispatch();
+	} catch (err) {
+		if (post_commit_effects) post_commit_effects.length = depth;
+		throw err;
+	}
 };
 
 /**

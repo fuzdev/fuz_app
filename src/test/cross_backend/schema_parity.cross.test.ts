@@ -1,7 +1,7 @@
 /**
  * Cross-backend schema-parity gate for fuz_app's own spine.
  *
- * fuz_app ships the canonical TS spine and `private_fuz` ships the Rust twin;
+ * fuz_app ships the canonical TS spine and the Rust spine is its twin;
  * the cross-backend suites already prove their wire behavior converges. This
  * gate proves their **database schema** converges too: it spawns both the TS
  * spine (Node + PGlite) and the Rust `testing_spine_stub` (real Postgres) via

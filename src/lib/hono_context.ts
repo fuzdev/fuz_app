@@ -113,13 +113,15 @@ declare module 'hono' {
 		 */
 		pending_effects: Array<Promise<void>>;
 		/**
-		 * Post-commit thunks pushed via `emit_after_commit(ctx, fn)`. The
-		 * flush middleware invokes each thunk after the handler returns —
-		 * never inline — so notifications (WS sends, etc.) cannot fire
-		 * mid-transaction. Producers do not push raw thunks directly. The
-		 * flush owns per-thunk `try/catch` + `log.error` so a directly-pushed
-		 * thunk (tests included) cannot escape the safety net.
-		 * Initialized by `create_app_server`. In test mode
+		 * Post-commit thunks pushed via `emit_after_commit(ctx, fn)`. The flush
+		 * middleware invokes each thunk after the handler returns — never inline
+		 * — so notifications (WS sends, etc.) cannot fire mid-transaction; the
+		 * queue is also discarded when the handler's transaction rolls back, so a
+		 * thunk never fires for state that never committed. Full contract (the
+		 * eager-`pending_effects` contrast, the discard mechanism, the flush
+		 * safety net) lives on `dispatch_with_post_commit_rollback` /
+		 * `emit_after_commit` in `http/pending_effects.ts`. Producers do not push
+		 * raw thunks directly. Initialized by `create_app_server`; in test mode
 		 * (`await_pending_effects: true`), every thunk completes before the
 		 * response returns.
 		 */

@@ -33,6 +33,7 @@ import {
 	jsonrpc_error_code_to_name,
 } from './jsonrpc_errors.js';
 import {is_null_schema, merge_error_schemas} from './schema_helpers.js';
+import {dispatch_with_post_commit_rollback} from './pending_effects.js';
 import type {MiddlewareSpec} from './middleware_spec.js';
 import {assert_route_auth_acting_biconditional, type RouteAuth} from './auth_shape.js';
 
@@ -557,21 +558,23 @@ export const apply_route_specs = (
 		// Step 1: adapt RouteHandler → Handler (construct RouteContext, call spec.handler)
 		const use_transaction = spec.transaction ?? spec.method !== 'GET';
 		const inner = spec.handler;
-		let handler: Handler = use_transaction
-			? (c) =>
-					db.transaction(async (tx) =>
-						inner(c, {
-							db: tx,
-							pending_effects: c.var.pending_effects,
-							post_commit_effects: c.var.post_commit_effects,
-						}),
-					)
-			: (c) =>
-					inner(c, {
-						db,
-						pending_effects: c.var.pending_effects,
-						post_commit_effects: c.var.post_commit_effects,
-					});
+		// Discard post-commit effects a handler queued (`emit_after_commit`) if it
+		// throws — a thrown handler rolls back its wrapping transaction, so firing
+		// those effects would announce state that never committed. The eager
+		// `pending_effects` queue (attempt audits, run outside the transaction) is
+		// untouched. Shared with the action dispatcher (actions/perform_action.ts)
+		// via `dispatch_with_post_commit_rollback`.
+		let handler: Handler = (c) => {
+			const route_context = {
+				pending_effects: c.var.pending_effects,
+				post_commit_effects: c.var.post_commit_effects,
+			};
+			return dispatch_with_post_commit_rollback(c.var.post_commit_effects, () =>
+				use_transaction
+					? db.transaction(async (tx) => inner(c, {db: tx, ...route_context}))
+					: inner(c, {db, ...route_context}),
+			);
+		};
 		// Step 2: output validation
 		handler = wrap_output_validation(handler, spec.output, merged_errors, log);
 		// Step 3: error catch layer

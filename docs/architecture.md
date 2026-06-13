@@ -411,23 +411,32 @@ patterns:
 When `audit_log_sse` is set on `create_app_server`, the factory appends
 `audit_sse.on_audit_event` to `backend.deps.audit.on_event_chain` so SSE
 fan-out runs alongside the consumer's callback (no shallow copy of `AppDeps`).
-The flush middleware uses `try/finally` + `Promise.allSettled` to ensure
-effects flush even when handlers throw.
+The flush middleware uses `try/finally` + `Promise.allSettled` to ensure the
+eager `pending_effects` queue flushes even when handlers throw.
 
 In test mode (`await_pending_effects: true`), effects are awaited before the response
 returns — eliminates polling workarounds in tests. In production, the optional
 `on_effect_error` callback on `AppServerOptions` reports rejected effects with
 request context (`method`, `path`) — use for monitoring, metrics, or alerting.
 
-For post-commit WS fan-out specifically (role_grant offer notifications, role_grant
-revoke notifications), use the shared `emit_after_commit({log, pending_effects}, fn)`
-helper from `http/pending_effects.js`. It wraps `pending_effects.push` with a
-caught-and-logged `try`/`catch` so one failing send can't starve sibling sends
-in the same batch — the enqueued promise never rejects, so it's also safe in
-test mode under `Promise.all(pending_effects)`. The helper accepts any
-`{log: Logger, pending_effects: Array<Promise<void>>}` shape, which is the
-shared vocabulary between `ActionContext` (RPC) and `RouteContext` (HTTP)
-handlers. Note that WS sends via `NotificationSender.send_to_account` are NOT
+For work that must run **only after the transaction commits** (WS fan-out:
+role_grant offer / revoke notifications), use `emit_after_commit(ctx, fn)` from
+`http/pending_effects.js`. It pushes a deferred *thunk* onto a separate
+`post_commit_effects` queue (distinct from the eager `pending_effects` promise
+queue above). The contract is two-sided: the thunk runs at flush time (after
+the wrapping `db.transaction` resolves, never mid-transaction), **and it is
+discarded if the handler's transaction rolls back** — both dispatch sites
+(`http/route_spec.ts`, `actions/perform_action.ts`) wrap their handler in the
+shared `dispatch_with_post_commit_rollback` helper (`http/pending_effects.js`),
+which truncates the queue on a handler throw, so a rolled-back transaction never
+fires a notification for state that never committed. Reach for the eager
+`pending_effects` queue instead when a write must survive rollback (attempt
+audits). The flush wraps each thunk in a caught-and-logged `try`/`catch`, so one
+failing send can't starve siblings or corrupt the committed response. `ctx` is
+any `{log, post_commit_effects}` shape — shared by `ActionContext` (RPC + WS)
+and `RouteContext` (HTTP) handlers. The Rust `fuz_actions` spine pins the same
+discard-on-rollback contract. Note that
+WS sends via `NotificationSender.send_to_account` are NOT
 wrapped by `create_validated_broadcaster` (which only guards SSE
 `broadcast(channel, data)`) — the Zod `input` schemas on
 `RemoteNotificationActionSpec`s are contracts for consumers, not enforced at

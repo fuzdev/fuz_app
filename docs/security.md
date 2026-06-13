@@ -528,10 +528,14 @@ audited.
 **Post-commit WS fan-out**: six JSON-RPC notifications (`role_grant_offer_received`
 / `_retracted` / `_accepted` / `_declined` / `_supersede` + `role_grant_revoke`)
 ship alongside the above via `NotificationSender.send_to_account`, scheduled
-through `emit_after_commit` so sends are strictly post-commit (a rolled-back
-transaction cannot leak state that never existed). Exceptions inside a send
-are caught and logged — one failed send cannot corrupt the already-committed
-response or starve sibling sends in the same batch. Sends are fire-and-forget
+through `emit_after_commit` so sends are strictly post-commit **and discarded if
+the handler's transaction rolls back** — a rolled-back transaction cannot leak a
+notification for state that never committed (distinct from the eager
+`pending_effects` audit-attempt queue, which intentionally **survives**
+rollback). The two-sided contract and its dispatcher-level enforcement are
+documented at ./architecture.md §Fire-and-Forget Pending Effects. Exceptions
+inside a send are caught and logged — one failed send cannot corrupt the
+already-committed response or starve sibling sends in the same batch. Sends are fire-and-forget
 with no delivery receipt: `send_to_account` returns the socket count but a
 non-zero count only means `ws.send` didn't throw; flows that need durable
 delivery must persist the event and hydrate on reconnect. Payload sizes are

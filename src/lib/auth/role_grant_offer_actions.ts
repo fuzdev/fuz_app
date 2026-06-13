@@ -401,9 +401,10 @@ export const create_role_grant_offer_actions = (
 
 		// Audit events are written in-transaction by query_accept_offer; wire
 		// them through `audit.notify` post-commit so SSE/WS broadcasts fire.
-		// WS notifications piggyback on the same post-commit microtask so the
-		// grantor sees "accepted" and each superseded grantor sees
-		// "supersede" only once the accept has durably committed.
+		// WS notifications ride the same deferred post-commit thunk so the
+		// grantor sees "accepted" and each superseded grantor sees "supersede"
+		// only once the accept has durably committed — and never if it rolls
+		// back (the dispatch site discards `post_commit_effects` on rollback).
 		emit_after_commit(ctx, () => {
 			fan_out_audit_events(result.audit_events, audit);
 			if (notification_sender && grantor_account_id) {
