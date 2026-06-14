@@ -41,11 +41,11 @@ import {
 	actor_search_action_spec,
 	ERROR_ACTOR_SEARCH_SCOPE_REQUIRED,
 } from '../../auth/actor_search_action_specs.js';
-import type {CellCrossTestOptions} from './cell_cross_helpers.js';
+import type {RpcPathCrossSuiteOptions} from './setup.js';
 import {SPINE_RPC_PATH} from './default_spine_surface.js';
 
-/** Options for the actor-search parity suite (shares the cell/origin shape). */
-export type ActorSearchCrossTestOptions = CellCrossTestOptions;
+/** Options for the actor-search parity suite (the standard RPC-dispatched shape). */
+export type ActorSearchCrossTestOptions = RpcPathCrossSuiteOptions;
 
 /** Nil UUID — an unheld scope id (no actor holds a role_grant on it). */
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';

@@ -55,8 +55,7 @@ import {describe, test, assert} from 'vitest';
 import {ERROR_CREDENTIAL_TYPE_REQUIRED} from '../../http/error_schemas.js';
 import {rpc_call} from '../rpc_helpers.js';
 import type {FetchTransport} from '../transports/fetch_transport.js';
-import type {CellCrossTestOptions} from './cell_cross_helpers.js';
-import type {TestFixture} from './setup.js';
+import type {RpcPathCrossSuiteOptions, TestFixture} from './setup.js';
 import {SPINE_RPC_PATH} from './default_spine_surface.js';
 
 /** A well-formed UUID that never names a real row. */
@@ -120,7 +119,7 @@ const principals: ReadonlyArray<BackdoorPrincipal> = [
 ];
 
 /** Options for the testing-backdoor negative-credential suite. */
-export type TestingBackdoorCrossTestOptions = CellCrossTestOptions;
+export type TestingBackdoorCrossTestOptions = RpcPathCrossSuiteOptions;
 
 export const describe_testing_backdoor_cross_tests = (
 	options: TestingBackdoorCrossTestOptions,

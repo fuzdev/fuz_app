@@ -45,9 +45,9 @@ import {FactHashSchema} from '@fuzdev/fuz_util/fact_hash.js';
 import {CellCreateOutput} from '../../auth/cell_action_specs.js';
 import type {FetchTransport} from '../transports/fetch_transport.js';
 import {test_if} from './capabilities.js';
-import {cross_rpc_call, expect_output, type CellCrossTestOptions} from './cell_cross_helpers.js';
+import {cross_rpc_call, expect_output} from './cell_cross_helpers.js';
 import {SPINE_RPC_PATH} from './default_spine_surface.js';
-import type {SetupTest} from './setup.js';
+import type {RpcPathCrossSuiteOptions, SetupTest} from './setup.js';
 
 /**
  * The fact suite adds one optional knob to the shared cell options: a setup
@@ -55,7 +55,7 @@ import type {SetupTest} from './setup.js';
  * needs it; the rest of the suite runs single-actor, so wiring it is opt-in.
  * Omit it and the multi-actor case silently skips.
  */
-export interface FactServingCrossTestOptions extends CellCrossTestOptions {
+export interface FactServingCrossTestOptions extends RpcPathCrossSuiteOptions {
 	readonly setup_test_multi_actor?: SetupTest;
 }
 

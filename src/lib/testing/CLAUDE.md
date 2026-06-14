@@ -1043,9 +1043,12 @@ stays **off** `create_spine_surface_spec`, and these dedicated suites are the
 cell validators (`describe_standard_cross_process_tests`' generic round-trip
 never sees them). Both parse every success response against the verb's Zod
 **output** schema, so a TS↔Rust envelope drift fails the suite — not just a
-payload-field drift. Call-site primitives (`rpc_call` / `error_reason` /
-`expect_output` + the shared `CellCrossTestOptions`) live in
-`cross_backend/cell_cross_helpers.ts`.
+payload-field drift. Call-site primitives (`cross_rpc_call` / `error_reason` /
+`expect_output`) live in `cross_backend/cell_cross_helpers.ts`; the shared
+options shape is `RpcPathCrossSuiteOptions` from `cross_backend/setup.ts` (the
+neutral base every RPC-dispatched imperative cross suite aliases — origin,
+body-size, actor lookup/search, account lifecycle, app settings, testing
+backdoor, cell).
 
 - **`describe_cell_crud_cross_tests`** (gates on `capabilities.cell_crud`) —
   the create → get → update → delete → list lifecycle threading the id, plus

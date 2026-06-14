@@ -36,11 +36,11 @@ import {describe, test, assert} from 'vitest';
 
 import {app_settings_update_action_spec} from '../../auth/admin_action_specs.js';
 import {ERROR_NO_MATCHING_INVITE} from '../../http/error_schemas.js';
-import type {CellCrossTestOptions} from './cell_cross_helpers.js';
+import type {RpcPathCrossSuiteOptions} from './setup.js';
 import {SPINE_RPC_PATH} from './default_spine_surface.js';
 
-/** Options for the app-settings effect suite (shares the cell/origin shape). */
-export type AppSettingsCrossTestOptions = CellCrossTestOptions;
+/** Options for the app-settings effect suite (the standard RPC-dispatched shape). */
+export type AppSettingsCrossTestOptions = RpcPathCrossSuiteOptions;
 
 /** REST signup path on the spine surface (`/api/account` prefix + `/signup`). */
 const SIGNUP_PATH = '/api/account/signup';

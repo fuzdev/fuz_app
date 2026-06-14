@@ -35,15 +35,15 @@ import '../assert_dev_env.js';
 import {describe, test, assert} from 'vitest';
 
 import {actor_lookup_action_spec} from '../../auth/actor_lookup_action_specs.js';
-import type {CellCrossTestOptions} from './cell_cross_helpers.js';
+import type {RpcPathCrossSuiteOptions} from './setup.js';
 import {SPINE_RPC_PATH} from './default_spine_surface.js';
 
 /**
- * Options for the actor-lookup parity suite. Shares the shape of the cell /
- * origin suites (`setup_test` / `capabilities` / `rpc_path`); reuses
- * `CellCrossTestOptions` rather than minting a structural duplicate.
+ * Options for the actor-lookup parity suite. The standard RPC-dispatched
+ * cross-suite shape (`setup_test` / `capabilities` / `rpc_path`); aliases
+ * the shared `RpcPathCrossSuiteOptions` rather than minting a duplicate.
  */
-export type ActorLookupCrossTestOptions = CellCrossTestOptions;
+export type ActorLookupCrossTestOptions = RpcPathCrossSuiteOptions;
 
 /** Keys that must never appear on an `actor_lookup` result row. */
 const forbidden_row_keys = ['account_id', 'email', 'created_at', 'updated_at', 'role'] as const;

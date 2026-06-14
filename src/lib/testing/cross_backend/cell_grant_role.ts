@@ -43,12 +43,8 @@ import {
 	ERROR_CELL_GRANT_UNKNOWN_ROLE,
 } from '../../auth/cell_grant_action_specs.js';
 import {test_if} from './capabilities.js';
-import {
-	type CellCrossTestOptions,
-	cross_rpc_call,
-	error_reason,
-	expect_output,
-} from './cell_cross_helpers.js';
+import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.js';
+import type {RpcPathCrossSuiteOptions} from './setup.js';
 import {SPINE_CELL_EDITOR_ROLE, SPINE_RPC_PATH} from './default_spine_surface.js';
 
 /** App role the holder is seeded with; matches the spine's registered role. */
@@ -60,7 +56,7 @@ export const CELL_ROLE_HOLDER_USERNAME = 'cell_role_holder';
 /** A role string deliberately absent from the registry. */
 const UNREGISTERED_ROLE = 'not_a_registered_role';
 
-export const describe_cell_grant_role_cross_tests = (options: CellCrossTestOptions): void => {
+export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteOptions): void => {
 	const {setup_test, capabilities} = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 

@@ -255,6 +255,36 @@ export type TestFixture = TestFixtureBase;
 export type SetupTest = () => Promise<TestFixture>;
 
 /**
+ * Base options shared by every imperative cross-backend parity suite
+ * (`origin` / `ready` / `body_size` / `cell_*` / `actor_*` /
+ * `account_lifecycle` / `app_settings` / `testing_backdoor` / …). The
+ * `{setup_test, capabilities}` core is identical across them; each suite
+ * extends this with its own path field (`rpc_path` for RPC-dispatched
+ * suites via `RpcPathCrossSuiteOptions`, `ready_path` for the readiness
+ * probe, etc.). Lives here in the neutral fixture-types home rather than in
+ * any one domain helper, so a non-cell suite no longer reaches into the
+ * cell helpers for its option shape.
+ */
+export interface CrossSuiteOptions {
+	/** Per-test fixture-producing function (fresh keeper + db per call). */
+	readonly setup_test: SetupTest;
+	/** Backend capability declarations — each suite gates on its own flag. */
+	readonly capabilities: BackendCapabilities;
+}
+
+/**
+ * `CrossSuiteOptions` plus the RPC endpoint path the suite dispatches
+ * against — the shape every JSON-RPC-driven imperative suite takes (cell
+ * verbs, origin, body-size, actor lookup/search, account lifecycle, app
+ * settings, testing backdoor). Suites alias this under a self-documenting
+ * per-suite name (e.g. `OriginCrossTestOptions = RpcPathCrossSuiteOptions`).
+ */
+export interface RpcPathCrossSuiteOptions extends CrossSuiteOptions {
+	/** RPC endpoint path the methods are mounted on. Default `/api/rpc`. */
+	readonly rpc_path?: string;
+}
+
+/**
  * Wrap a Hono-style app into a `FetchTransport`-shaped object so the
  * shared `TestFixtureBase.transport` type holds for both in-process and
  * cross-process setups. In-process has no real cookie jar — the no-op

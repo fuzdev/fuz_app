@@ -340,6 +340,31 @@ rejected with 413 and `{error: 'payload_too_large'}` (`PayloadTooLargeError`
 schema). Configure via `max_body_size` on `AppServerOptions`; pass `null` to
 disable.
 
+**Rejection closes the connection.** A request whose `Content-Length` exceeds
+the cap is rejected on the header — before the body is read — and the server
+closes the connection rather than reusing it. This is deliberate: an unread
+request body cannot share a keep-alive connection, because the leftover bytes
+would be parsed as the start of the next request (request smuggling). Clients
+see the connection drop after the 413.
+
+**The cap is global, not per-route.** `bodyLimit` is mounted once for the whole
+app, so `max_body_size` (and `null`) apply to every route — there is no
+per-route override. A route that legitimately needs large bodies (e.g. content
+uploads) should **not** be served by raising or disabling the global cap: that
+strips the protection from every other route, including the RPC surface,
+re-opening an unbounded-body memory-exhaustion surface. Instead, give such a
+route a bounded **streaming** handler that consumes the body incrementally and
+enforces its own ceiling (the fact store's `put_stream` is the in-stack
+example), and keep the global cap in place for everything else.
+
+**Why streaming, not a larger cap.** For a request carrying `Content-Length`
+the middleware rejects on the header and never buffers. For a chunked request
+(no `Content-Length`) it reads and buffers the body up to the cap before
+forwarding it — harmless at 1 MiB, but a cap raised to upload sizes would let a
+chunked upload buffer that much per request. A streaming handler avoids the
+buffer entirely, which is the other reason large uploads belong on their own
+streaming route rather than under a wider global cap.
+
 ## Authorization
 
 Roles are Zod-validated at I/O boundaries via `create_role_schema()` — not stored

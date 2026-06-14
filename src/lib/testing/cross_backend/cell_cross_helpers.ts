@@ -21,18 +21,6 @@ import type {z} from 'zod';
 
 import {create_rpc_post_init} from '../rpc_helpers.js';
 import type {FetchTransport} from '../transports/fetch_transport.js';
-import type {BackendCapabilities} from './capabilities.js';
-import type {SetupTest} from './setup.js';
-
-/** Shared options for the cell cross-backend parity suites. */
-export interface CellCrossTestOptions {
-	/** Per-test fixture-producing function (fresh keeper + db per call). */
-	readonly setup_test: SetupTest;
-	/** Backend capability declarations — each suite gates on its own flag. */
-	readonly capabilities: BackendCapabilities;
-	/** RPC endpoint path the cell verbs are mounted on. Default `/api/rpc`. */
-	readonly rpc_path?: string;
-}
 
 /** Minimal JSON-RPC envelope shape the suites read off responses. */
 export interface RpcResult {

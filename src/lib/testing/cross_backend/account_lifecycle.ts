@@ -31,20 +31,16 @@ import {
 } from '../../auth/admin_action_specs.js';
 import {ERROR_ACCOUNT_NOT_FOUND, ERROR_AUTHENTICATION_REQUIRED} from '../../http/error_schemas.js';
 import {test_if} from './capabilities.js';
-import {
-	cross_rpc_call,
-	error_reason,
-	expect_output,
-	type CellCrossTestOptions,
-} from './cell_cross_helpers.js';
+import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.js';
+import type {RpcPathCrossSuiteOptions} from './setup.js';
 import {SPINE_RPC_PATH} from './default_spine_surface.js';
 
 /**
- * Options for the account-lifecycle parity suite. Shares the shape of the
- * cell suites (`setup_test` / `capabilities` / `rpc_path`); reuses
- * `CellCrossTestOptions` rather than minting a structural duplicate.
+ * Options for the account-lifecycle parity suite. The standard
+ * RPC-dispatched cross-suite shape (`setup_test` / `capabilities` /
+ * `rpc_path`); aliases `RpcPathCrossSuiteOptions` rather than duplicating.
  */
-export type AccountLifecycleCrossTestOptions = CellCrossTestOptions;
+export type AccountLifecycleCrossTestOptions = RpcPathCrossSuiteOptions;
 
 export const describe_account_lifecycle_cross_tests = (
 	options: AccountLifecycleCrossTestOptions,

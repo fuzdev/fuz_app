@@ -339,6 +339,48 @@ describe('create_app_server', () => {
 		PayloadTooLargeError.parse(body);
 	});
 
+	test('body size limit rejects a streaming (no Content-Length) oversized body', async () => {
+		const result = await create_app_server(
+			await create_config({
+				max_body_size: 100, // 100 bytes
+				create_route_specs: () => [
+					{
+						method: 'POST',
+						path: '/echo',
+						auth: {account: 'none', actor: 'none'},
+						description: 'Echo input',
+						input: z.looseObject({data: z.string()}),
+						output: z.looseObject({ok: z.boolean()}),
+						handler: async (c) => c.json({ok: true}),
+					},
+				],
+			}),
+		);
+
+		// A ReadableStream body carries no Content-Length, so the request is
+		// chunked and takes Hono's *streaming* bodyLimit branch — it reads and
+		// counts chunks, rejecting once the cumulative size crosses the cap. The
+		// test above exercises the Content-Length-header reject; this one pins the
+		// streaming path (the branch that buffers up to the cap before forwarding).
+		const stream = new ReadableStream({
+			start(controller) {
+				controller.enqueue(new TextEncoder().encode('x'.repeat(120)));
+				controller.enqueue(new TextEncoder().encode('x'.repeat(120)));
+				controller.close();
+			},
+		});
+		const res = await result.app.request('/echo', {
+			method: 'POST',
+			headers: {'content-type': 'application/json'},
+			body: stream,
+			duplex: 'half',
+		} as RequestInit);
+		assert.strictEqual(res.status, 413);
+		const body = await res.json();
+		assert.strictEqual(body.error, ERROR_PAYLOAD_TOO_LARGE);
+		PayloadTooLargeError.parse(body);
+	});
+
 	test('body size limit defaults to DEFAULT_MAX_BODY_SIZE', () => {
 		assert.strictEqual(DEFAULT_MAX_BODY_SIZE, 1024 * 1024);
 	});

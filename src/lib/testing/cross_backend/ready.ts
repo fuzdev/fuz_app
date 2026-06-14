@@ -31,15 +31,11 @@ import '../assert_dev_env.js';
 
 import {describe, assert} from 'vitest';
 
-import {test_if, type BackendCapabilities} from './capabilities.js';
-import type {SetupTest} from './setup.js';
+import {test_if} from './capabilities.js';
+import type {CrossSuiteOptions} from './setup.js';
 
 /** Options for the readiness-probe parity suite. */
-export interface ReadyCrossTestOptions {
-	/** Per-test fixture-producing function (fresh keeper + db per call). */
-	readonly setup_test: SetupTest;
-	/** Backend capability declarations — the suite gates on `capabilities.ready`. */
-	readonly capabilities: BackendCapabilities;
+export interface ReadyCrossTestOptions extends CrossSuiteOptions {
 	/** Readiness probe path. Default `/ready`. */
 	readonly ready_path?: string;
 }

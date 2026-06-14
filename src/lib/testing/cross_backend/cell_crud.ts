@@ -51,15 +51,11 @@ import {
 	CellUpdateOutput,
 } from '../../auth/cell_action_specs.js';
 import {test_if} from './capabilities.js';
-import {
-	cross_rpc_call,
-	error_reason,
-	expect_output,
-	type CellCrossTestOptions,
-} from './cell_cross_helpers.js';
+import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.js';
+import type {RpcPathCrossSuiteOptions} from './setup.js';
 import {SPINE_RPC_PATH} from './default_spine_surface.js';
 
-export const describe_cell_crud_cross_tests = (options: CellCrossTestOptions): void => {
+export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions): void => {
 	const {setup_test, capabilities} = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 

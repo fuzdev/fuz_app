@@ -181,7 +181,20 @@ role-validity gate: admit holder, exclude non-holder, reject unregistered role,
 editor-level edit; the actor-shaped grants live in `cell.cross.test.ts`), and
 `fact_serving.cross.test.ts` (the cell-gated fact-serving routes
 `GET /api/cells/:cell_id/facts/:hash` + the admin-only `GET /api/facts/:hash`
-via `describe_fact_serving_cross_tests`, gated on `capabilities.fact_serving`).
+via `describe_fact_serving_cross_tests`, gated on `capabilities.fact_serving`),
+and `body_size.cross.test.ts` (the 1 MiB request-body cap:
+`describe_body_size_cross_tests` — over-limit cap+1 → 413 `payload_too_large`,
+at-limit exactly-the-cap → not size-rejected, under-limit → 200, all retry-once
+around the server-closed socket the 413 leaves — plus
+`describe_body_size_smuggling_cross_tests`, a raw-`node:net` probe that pipelines
+an oversized `POST` + a `GET` and asserts **at most one** response comes back
+(`<= 1`, robust to graceful-close vs RST — the 413-ness is pinned by the fetch
+parity cases), so the 413 closes the connection rather than smuggling the
+trailing request; a positive control (two pipelined requests → `>= 2` responses)
+keeps that signal non-vacuous. The parity cases have an in-process leg
+`auth/body_size_parity.db.test.ts` (and the Content-Length vs streaming-branch
+rejects are covered in-process by `server/create_app_server.db.test.ts`); the
+smuggling probe is cross-only).
 
 A sixteenth file, `schema_parity.cross.test.ts`, is **not** one of the fifteen above —
 it runs under its own dual-spawn `cross_backend_schema_parity` project

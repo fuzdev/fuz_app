@@ -241,13 +241,15 @@ const run_rpc_case = async (
 	assert.ok(!res.ok, `${c.name}: expected error status ${c.expect.status} but got success`);
 	assert.strictEqual(res.status, c.expect.status, `${c.name}: error status`);
 	if (c.expect.error_reason !== undefined) {
+		// A row that *declares* a reason must carry it — present AND equal —
+		// mirroring the REST branch's unconditional `body.error` assertion. The
+		// earlier skip-if-absent form let a backend that dropped the reason pass
+		// a row declaring one, blessing a reason/forensic-parity divergence (the
+		// IDOR-mask / privilege reason is exactly the distinguishing bit). Rows
+		// whose denial genuinely has no reason (the bare `unauthenticated()` 401)
+		// simply omit `error_reason` and are pinned by `status` above.
 		const reason = (res.error.data as {reason?: unknown} | undefined)?.reason;
-		// Most RPC denials carry `error.data.reason` (incl. the pre-validation
-		// 401 now); a denial that genuinely omits it falls back to the status
-		// assertion above to pin the denial class.
-		if (reason !== undefined) {
-			assert.strictEqual(reason, c.expect.error_reason, `${c.name}: error.data.reason`);
-		}
+		assert.strictEqual(reason, c.expect.error_reason, `${c.name}: error.data.reason`);
 	}
 	if (c.expect.fields) assert_fields(res.error.data, c.expect.fields, c.name);
 };

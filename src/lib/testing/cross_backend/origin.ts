@@ -32,15 +32,15 @@ import {describe, test, assert} from 'vitest';
 
 import {account_verify_action_spec} from '../../auth/account_action_specs.js';
 import {ERROR_FORBIDDEN_ORIGIN} from '../../http/error_schemas.js';
-import type {CellCrossTestOptions} from './cell_cross_helpers.js';
+import type {RpcPathCrossSuiteOptions} from './setup.js';
 import {SPINE_RPC_PATH} from './default_spine_surface.js';
 
 /**
- * Options for the origin parity suite. Shares the shape of the cell /
- * account-lifecycle suites (`setup_test` / `capabilities` / `rpc_path`);
- * reuses `CellCrossTestOptions` rather than minting a structural duplicate.
+ * Options for the origin parity suite. The standard RPC-dispatched
+ * cross-suite shape (`setup_test` / `capabilities` / `rpc_path`); aliases
+ * the shared `RpcPathCrossSuiteOptions` rather than minting a duplicate.
  */
-export type OriginCrossTestOptions = CellCrossTestOptions;
+export type OriginCrossTestOptions = RpcPathCrossSuiteOptions;
 
 /** Build the JSON-RPC envelope body for a nullary `account_verify` call. */
 const verify_envelope = (id: string): string =>
