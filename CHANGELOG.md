@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.88.0
+
+### Minor Changes
+
+- testing: rework to avoid hono dep for Rust cross-backend consumers ([86a1fb5](https://github.com/fuzdev/fuz_app/commit/86a1fb5))
+
 ## 0.87.0
 
 ### Minor Changes
