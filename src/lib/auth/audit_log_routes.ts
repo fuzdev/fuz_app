@@ -12,18 +12,14 @@
  * @module
  */
 
-import {z} from 'zod';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
 import type {RouteSpec} from '../http/route_spec.js';
+import {create_audit_log_route_shape} from './audit_log_route_schema.js';
 import {create_sse_response, type SseStream, type SseNotification} from '../realtime/sse.js';
 import type {SubscribeOptions} from '../realtime/subscriber_registry.js';
 import {AUTH_SESSION_TOKEN_HASH_KEY, require_request_context} from './request_context.js';
 import {AUDIT_LOG_CHANNEL} from '../realtime/sse_auth_guard.js';
-import {ActingActor} from '../http/auth_shape.js';
-
-/** Query schema for the audit-log SSE route — multi-actor admins pass `?acting=<uuid>`. */
-const AuditStreamQuery = z.strictObject({acting: ActingActor});
 
 /** Options for audit log route specs. */
 export interface AuditLogRouteOptions {
@@ -50,20 +46,12 @@ export interface AuditLogRouteOptions {
  * @returns the SSE route spec (when `options.stream` is provided) or an empty array
  */
 export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Array<RouteSpec> => {
-	const role = options?.required_role ?? 'admin';
-
 	if (!options?.stream) return [];
 
 	const {subscribe, log} = options.stream;
 	return [
 		{
-			method: 'GET',
-			path: '/audit/stream',
-			auth: {account: 'required', actor: 'required', roles: [role]},
-			description: 'Subscribe to realtime audit log events',
-			query: AuditStreamQuery,
-			input: z.null(),
-			output: z.null(), // SSE — no JSON response
+			...create_audit_log_route_shape(options.required_role),
 			handler: (c) => {
 				const ctx = require_request_context(c);
 				// scope = session hash (capped → tabs-per-session limit and

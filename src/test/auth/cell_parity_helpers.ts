@@ -31,11 +31,8 @@ import {
 	spine_roles,
 	spine_session_options,
 } from '$lib/testing/cross_backend/default_spine_surface.js';
-import {
-	default_in_process_setup,
-	type ExtraAccountSpec,
-	type SetupTest,
-} from '$lib/testing/cross_backend/setup.js';
+import {default_in_process_setup} from '$lib/testing/cross_backend/in_process_setup.js';
+import type {ExtraAccountSpec, SetupTest} from '$lib/testing/cross_backend/setup.js';
 import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {AuditFactory} from '$lib/server/app_backend.js';
 import type {RpcEndpointSpec} from '$lib/http/surface.js';

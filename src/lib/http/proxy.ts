@@ -327,11 +327,3 @@ export const create_proxy_middleware_spec = (options: ProxyOptions): MiddlewareS
 	path: '*',
 	handler: create_proxy_middleware(options),
 });
-
-/**
- * Read the resolved client IP from the Hono context.
- *
- * Returns `'unknown'` if the proxy middleware has not run or no IP is available.
- * Set by `create_proxy_middleware`.
- */
-export const get_client_ip = (c: Context): string => c.get('client_ip') || 'unknown';

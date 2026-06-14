@@ -12,7 +12,7 @@
 
 import {test, describe, assert} from 'vitest';
 
-import {default_in_process_setup} from '$lib/testing/cross_backend/setup.js';
+import {default_in_process_setup} from '$lib/testing/cross_backend/in_process_setup.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';

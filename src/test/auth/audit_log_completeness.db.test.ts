@@ -15,7 +15,7 @@ import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {RpcEndpointSpec} from '$lib/http/surface.js';
 import {describe_audit_completeness_tests} from '$lib/testing/audit_completeness.js';
 import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
-import {default_in_process_suite_options} from '$lib/testing/cross_backend/setup.js';
+import {default_in_process_suite_options} from '$lib/testing/cross_backend/in_process_setup.js';
 import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
 
 const session_options = create_session_config('test_session');

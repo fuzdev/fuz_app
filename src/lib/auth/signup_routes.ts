@@ -8,8 +8,6 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
 import type {Account, Actor} from './account_schema.js';
 
 import {create_session_and_set_cookie} from './session_middleware.js';
@@ -20,18 +18,12 @@ import {
 	query_invite_claim_unscoped,
 } from './invite_queries.js';
 import type {Invite} from './invite_schema.js';
-import {Username, Email} from '../primitive_schemas.js';
-import {Password} from './password.js';
+import {create_signup_route_shape, type SignupInput} from './signup_route_schema.js';
 import {get_route_input, type RouteSpec} from '../http/route_spec.js';
-import {get_client_ip} from '../http/proxy.js';
+import {get_client_ip} from '../http/client_ip.js';
 import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
 import type {RouteFactoryDeps} from './deps.js';
-import {
-	ERROR_NO_MATCHING_INVITE,
-	ERROR_SIGNUP_CONFLICT,
-	ERROR_INVALID_JSON_BODY,
-	ERROR_INVALID_REQUEST_BODY,
-} from '../http/error_schemas.js';
+import {ERROR_NO_MATCHING_INVITE, ERROR_SIGNUP_CONFLICT} from '../http/error_schemas.js';
 import {is_pg_unique_violation} from '../db/pg_error.js';
 import type {AuthSessionRouteOptions} from './account_routes.js';
 
@@ -83,30 +75,8 @@ export interface SignupRouteOptions extends AuthSessionRouteOptions {
 	 */
 	signup_fail_jitter_ms?: number;
 }
-
-// -- Input/output schemas ---------------------------------------------------
-
-/** Input for `POST /signup`. `email` is optional and must match any referenced invite. */
-export const SignupInput = z.strictObject({
-	username: Username,
-	password: Password,
-	email: Email.optional(),
-});
-export type SignupInput = z.infer<typeof SignupInput>;
-
-/**
- * Output for `POST /signup`.
- *
- * Session cookie is the operative side effect. The returned `account` and
- * `actor` mirror `BootstrapOutput` so cross-process per-test setup can read
- * the per-test identity straight off the signup response.
- */
-export const SignupOutput = z.strictObject({
-	ok: z.literal(true),
-	account: z.strictObject({id: Uuid, username: Username}),
-	actor: z.strictObject({id: Uuid}),
-});
-export type SignupOutput = z.infer<typeof SignupOutput>;
+// `create_signup_route_specs` spreads the shape and attaches the live handler
+// below.
 
 /**
  * Create signup route specs for account creation.
@@ -130,21 +100,9 @@ export const create_signup_route_specs = (
 
 	return [
 		{
-			method: 'POST',
-			path: '/signup',
-			auth: {account: 'none', actor: 'none'},
-			description: 'Create account (invite-gated or open signup)',
-			transaction: false, // manages its own transaction for TOCTOU safety
-			input: SignupInput,
-			output: SignupOutput,
-			rate_limit: signup_account_rate_limiter ? 'both' : 'ip',
-			errors: {
-				400: z.looseObject({
-					error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]),
-				}),
-				403: z.looseObject({error: z.literal(ERROR_NO_MATCHING_INVITE)}),
-				409: z.looseObject({error: z.literal(ERROR_SIGNUP_CONFLICT)}),
-			},
+			...create_signup_route_shape({
+				signup_account_rate_limited: signup_account_rate_limiter !== null,
+			}),
 			handler: async (c, route) => {
 				// Per-IP rate limit check (before any work). 429 stays fast.
 				const ip = ip_rate_limiter ? get_client_ip(c) : null;

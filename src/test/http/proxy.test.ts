@@ -20,8 +20,8 @@ import {
 	create_proxy_middleware,
 	create_proxy_middleware_spec,
 	type ParsedProxy,
-	get_client_ip,
 } from '$lib/http/proxy.js';
+import {get_client_ip} from '$lib/http/client_ip.js';
 
 // --- normalize_ip ---
 

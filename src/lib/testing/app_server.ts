@@ -19,6 +19,7 @@ import {z} from 'zod';
 import {Logger} from '@fuzdev/fuz_util/log.js';
 import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
+import {DEFAULT_TEST_PASSWORD} from './test_credentials.js';
 import {ROLE_KEEPER} from '../auth/role_schema.js';
 import {create_validated_keyring, type Keyring} from '../auth/keyring.js';
 import {generate_api_token} from '../auth/api_token.js';
@@ -68,22 +69,6 @@ export const stub_password_deps: PasswordHashDeps = {
 
 /** 64-hex-char test cookie secret — deterministic, never used in production. */
 export const TEST_COOKIE_SECRET = 'a'.repeat(64);
-
-/**
- * Default password for bootstrapped test accounts. Shared between the
- * in-process keeper bootstrap (`bootstrap_test_keeper`,
- * `create_test_account_with_credentials`, `create_test_app_server`,
- * `TestApp.create_account`) and the cross-process bootstrap
- * (`cross_backend/setup.ts`). The two paths MUST agree — when they
- * diverged during the 3d cross-process lift, ~20 login tests 401'd
- * silently against the cross-process backend because the per-test
- * fixture minted accounts under a different default than the
- * integration suite's hardcoded login bodies expected. Consumers
- * hardcoding the literal string in test bodies should import this
- * constant instead so a future divergence becomes a typecheck miss
- * rather than a runtime password mismatch.
- */
-export const DEFAULT_TEST_PASSWORD = 'test-password-123';
 
 // Module-level PGlite factory for create_test_app_server when no db is provided.
 // Shares the WASM instance cache from test_db.ts, avoiding redundant cold starts

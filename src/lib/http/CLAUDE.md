@@ -21,7 +21,8 @@ effects, see ../../../docs/architecture.md.
 - `http/middleware_spec.ts` — `MiddlewareSpec` interface.
 - `http/surface.ts` — `AppSurface`, `AppSurfaceSpec`, `generate_app_surface`, diagnostics.
 - `http/surface_query.ts` — pure filters/groupings over `AppSurface`.
-- `http/proxy.ts` — trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution.
+- `http/proxy.ts` — trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution. Pulls `hono/utils/ipaddr` for CIDR matching.
+- `http/client_ip.ts` — `get_client_ip(c)` — reads the resolved IP off the context (set by `proxy.ts`'s middleware). Split out of `proxy.ts` so it's hono-free: dispatch + route modules that only _read_ the IP don't pull `hono/utils/ipaddr`, keeping cross-process test surfaces free of the optional `hono` peer.
 - `http/ip_canonical.ts` — RFC 5952 IPv6 canonicalization + IPv4-mapped collapse; `IP_LITERAL_CHARS` regex.
 - `http/origin.ts` — origin allowlist middleware with wildcard patterns (Origin-only).
 - `http/jsonrpc.ts` — JSON-RPC 2.0 envelope schemas (MCP superset), `JsonrpcErrorCode`, `_meta`.

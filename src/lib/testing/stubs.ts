@@ -23,7 +23,7 @@ import type {BootstrapServerOptions} from '../server/app_server.js';
 import type {AppServerContext} from '../server/app_server_context.js';
 import {Db} from '../db/db.js';
 import {prefix_route_specs, type RouteSpec} from '../http/route_spec.js';
-import {create_bootstrap_route_specs} from '../auth/bootstrap_routes.js';
+import {bootstrap_route_shape} from '../auth/bootstrap_route_schema.js';
 import {create_rpc_endpoint} from '../actions/action_rpc.js';
 import {
 	create_app_surface_spec,
@@ -340,17 +340,12 @@ export const create_test_app_surface_spec = (
 	// assert on. Live token_path is passed through for shape symmetry only.
 	const bootstrap_route_specs: Array<RouteSpec> =
 		options.bootstrap && options.bootstrap.mode !== 'disabled'
-			? prefix_route_specs(
-					options.bootstrap.route_prefix ?? '/api/account',
-					create_bootstrap_route_specs(ctx.deps, {
-						session_options: options.session_options,
-						bootstrap_status: {
-							available: false,
-							token_path: options.bootstrap.mode === 'live' ? options.bootstrap.token_path : null,
-						},
-						ip_rate_limiter: null,
-					}),
-				)
+			? prefix_route_specs(options.bootstrap.route_prefix ?? '/api/account', [
+					// Surface generation reads the route shape only — the live hono
+					// handler never runs here, so a stub satisfies the RouteSpec type
+					// without pulling the in-process Hono app onto cross-process consumers.
+					{...bootstrap_route_shape, handler: stub_handler},
+				])
 			: [];
 	const route_specs = [...consumer_routes, ...rpc_route_specs, ...bootstrap_route_specs];
 

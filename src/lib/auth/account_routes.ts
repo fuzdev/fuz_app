@@ -22,17 +22,16 @@
  * @module
  */
 
-import {z} from 'zod';
-
 import type {SessionOptions} from './session_cookie.js';
 import {clear_session_cookie, create_session_and_set_cookie} from './session_middleware.js';
+import {RoleGrantSummaryJson, to_session_account} from './account_schema.js';
 import {
-	ActorSummaryJson,
-	RoleGrantSummaryJson,
-	SessionAccountJson,
-	to_session_account,
-} from './account_schema.js';
-import {UsernameProvided} from '../primitive_schemas.js';
+	account_status_route_shape,
+	create_account_route_shapes,
+	DEFAULT_MAX_SESSIONS,
+	type LoginInput,
+	type PasswordChangeInput,
+} from './account_route_schema.js';
 import {
 	hash_session_token,
 	query_session_revoke_all_for_account,
@@ -52,44 +51,11 @@ import {
 } from './request_context.js';
 import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
 import {get_route_input, type RouteSpec} from '../http/route_spec.js';
-import {get_client_ip} from '../http/proxy.js';
+import {get_client_ip} from '../http/client_ip.js';
 import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
-import {Password, PasswordProvided} from './password.js';
 import type {RouteFactoryDeps} from './deps.js';
 import type {ConnectionCloser} from '../actions/connection_closer.js';
-import {
-	ERROR_AUTHENTICATION_REQUIRED,
-	ERROR_INVALID_CREDENTIALS,
-	ERROR_INVALID_JSON_BODY,
-	ERROR_INVALID_REQUEST_BODY,
-} from '../http/error_schemas.js';
-
-/** Input for `GET /api/account/status`. No parameters — caller is the subject. */
-export const AccountStatusInput = z.null();
-export type AccountStatusInput = z.infer<typeof AccountStatusInput>;
-
-/**
- * Output for `GET /api/account/status` on the authenticated path.
- *
- * `account` is always populated for authenticated callers. `actor` and
- * `role_grants` are populated when the caller's account has a unique actor or
- * the request supplies `?acting=<actor_id>`; on multi-actor accounts
- * without an `acting` query, `actor` is `null` and `role_grants` is empty so
- * the frontend can show a persona picker without a separate roundtrip.
- */
-export const AccountStatusOutput = z.strictObject({
-	account: SessionAccountJson,
-	actor: ActorSummaryJson.nullable(),
-	role_grants: z.array(RoleGrantSummaryJson),
-});
-export type AccountStatusOutput = z.infer<typeof AccountStatusOutput>;
-
-/** Error body for `GET /api/account/status` on the unauthenticated path. */
-export const AccountStatusUnauthenticatedError = z.looseObject({
-	error: z.literal(ERROR_AUTHENTICATION_REQUIRED),
-	bootstrap_available: z.boolean().optional(),
-});
-export type AccountStatusUnauthenticatedError = z.infer<typeof AccountStatusUnauthenticatedError>;
+import {ERROR_AUTHENTICATION_REQUIRED, ERROR_INVALID_CREDENTIALS} from '../http/error_schemas.js';
 
 /**
  * Create the account status route spec.
@@ -105,15 +71,8 @@ export type AccountStatusUnauthenticatedError = z.infer<typeof AccountStatusUnau
  * @returns a single account status route spec
  */
 export const create_account_status_route_spec = (options?: AccountStatusOptions): RouteSpec => ({
-	method: 'GET',
-	path: options?.path ?? '/api/account/status',
-	auth: {account: 'none', actor: 'none'},
-	description: 'Current account info (unauthenticated: 401 with bootstrap status)',
-	input: AccountStatusInput,
-	output: AccountStatusOutput,
-	errors: {
-		401: AccountStatusUnauthenticatedError,
-	},
+	...account_status_route_shape,
+	path: options?.path ?? account_status_route_shape.path,
 	handler: async (c, route) => {
 		const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
 		if (!account_id) {
@@ -197,12 +156,6 @@ export interface AccountStatusOptions {
 	bootstrap_status?: {available: boolean};
 }
 
-/** Default maximum sessions per account. */
-export const DEFAULT_MAX_SESSIONS = 5;
-
-/** Default maximum API tokens per account. */
-export const DEFAULT_MAX_TOKENS = 10;
-
 /**
  * Default minimum wall-clock time (ms) for a login failure (401) response.
  *
@@ -271,47 +224,8 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
 	 */
 	connection_closer?: ConnectionCloser | null;
 }
-
-// -- Input/output schemas ---------------------------------------------------
-
-/** Input for `POST /login`. Accepts a username or email in the `username` field. */
-export const LoginInput = z.strictObject({
-	username: UsernameProvided,
-	password: PasswordProvided,
-});
-export type LoginInput = z.infer<typeof LoginInput>;
-
-/** Output for `POST /login`. The signed session cookie is the operative side effect. */
-export const LoginOutput = z.strictObject({
-	ok: z.literal(true),
-});
-export type LoginOutput = z.infer<typeof LoginOutput>;
-
-/** Input for `POST /logout`. Session identity flows through the cookie. */
-export const LogoutInput = z.null();
-export type LogoutInput = z.infer<typeof LogoutInput>;
-
-/** Output for `POST /logout`. Includes the revoked account's username for UI redraw. */
-export const LogoutOutput = z.strictObject({
-	ok: z.literal(true),
-	username: z.string(),
-});
-export type LogoutOutput = z.infer<typeof LogoutOutput>;
-
-/** Input for `POST /password`. `current_password` is minimally validated; `new_password` enforces the full policy. */
-export const PasswordChangeInput = z.strictObject({
-	current_password: PasswordProvided,
-	new_password: Password,
-});
-export type PasswordChangeInput = z.infer<typeof PasswordChangeInput>;
-
-/** Output for `POST /password`. Counts are returned so the UI can summarize the revoke-all cascade. */
-export const PasswordChangeOutput = z.strictObject({
-	ok: z.literal(true),
-	sessions_revoked: z.number(),
-	tokens_revoked: z.number(),
-});
-export type PasswordChangeOutput = z.infer<typeof PasswordChangeOutput>;
+// `create_account_route_specs` spreads each shape and attaches the live
+// handler below.
 
 /**
  * Create account route specs for session-based auth.
@@ -339,33 +253,20 @@ export const create_account_route_specs = (
 		connection_closer = null,
 	} = options;
 
+	const [verify_shape, login_shape, logout_shape, password_shape] = create_account_route_shapes({
+		login_account_rate_limited: login_account_rate_limiter !== null,
+	});
+
 	return [
 		{
-			method: 'GET',
-			path: '/verify',
-			auth: {account: 'required', actor: 'none'},
-			description: 'Session-validity probe for nginx auth_request (empty body, 200 or 401)',
-			input: z.null(),
-			output: z.null(),
+			...verify_shape,
 			handler: (c) => {
 				require_request_context(c);
 				return c.body(null, 200);
 			},
 		},
 		{
-			method: 'POST',
-			path: '/login',
-			auth: {account: 'none', actor: 'none'},
-			description: 'Exchange credentials for session',
-			input: LoginInput,
-			output: LoginOutput,
-			rate_limit: 'both',
-			errors: {
-				400: z.looseObject({
-					error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]),
-				}),
-				401: z.looseObject({error: z.literal(ERROR_INVALID_CREDENTIALS)}),
-			},
+			...login_shape,
 			handler: async (c, route) => {
 				// Per-IP rate limit check (before any DB/password work)
 				const ip = ip_rate_limiter ? get_client_ip(c) : null;
@@ -454,16 +355,7 @@ export const create_account_route_specs = (
 			},
 		},
 		{
-			method: 'POST',
-			path: '/logout',
-			// `credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.
-			// Logout is a session-bound operation; a bearer / daemon token holds no session
-			// to end, so the dispatcher rejects it (403 `credential_type_required`) rather than
-			// returning a misleading 200 + a phantom `logout` audit row for a no-op.
-			auth: {account: 'required', actor: 'none', credential_types: ['session']},
-			description: 'Revoke current session and clear cookie',
-			input: LogoutInput,
-			output: LogoutOutput,
+			...logout_shape,
 			handler: async (c, route) => {
 				const ctx = require_request_context(c);
 				const session_token: string | null = c.get(session_options.context_key) ?? null;
@@ -500,19 +392,7 @@ export const create_account_route_specs = (
 			},
 		},
 		{
-			method: 'POST',
-			path: '/password',
-			// `credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.
-			auth: {account: 'required', actor: 'none', credential_types: ['session']},
-			description: 'Change password (revokes all sessions and API tokens)',
-			input: PasswordChangeInput,
-			output: PasswordChangeOutput,
-			rate_limit: login_account_rate_limiter ? 'both' : 'ip',
-			errors: {
-				400: z.looseObject({
-					error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]),
-				}),
-			},
+			...password_shape,
 			handler: async (c, route) => {
 				// per-IP rate limit check (before argon2 work)
 				const ip = ip_rate_limiter ? get_client_ip(c) : null;

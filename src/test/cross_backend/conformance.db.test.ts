@@ -12,7 +12,7 @@
 
 import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
 import {describe_conformance_table_tests} from '$lib/testing/cross_backend/conformance_table.js';
-import {default_in_process_suite_options} from '$lib/testing/cross_backend/setup.js';
+import {default_in_process_suite_options} from '$lib/testing/cross_backend/in_process_setup.js';
 import {
 	create_spine_route_specs,
 	spine_rpc_endpoints,

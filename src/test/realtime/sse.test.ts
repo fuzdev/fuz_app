@@ -12,11 +12,11 @@ import {Logger} from '@fuzdev/fuz_util/log.js';
 import {
 	create_sse_response,
 	create_validated_broadcaster,
-	SSE_CONNECTED_COMMENT,
 	type SseNotification,
 	type EventSpec,
 	type SseStream,
 } from '$lib/realtime/sse.js';
+import {SSE_CONNECTED_COMMENT} from '$lib/realtime/sse_constants.js';
 import {SubscriberRegistry} from '$lib/realtime/subscriber_registry.js';
 
 const log = new Logger('test', {level: 'off'});

@@ -18,7 +18,7 @@ import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
 import type {AppServerContext} from '$lib/server/app_server_context.js';
 import {describe_data_exposure_tests} from '$lib/testing/data_exposure.js';
-import {default_in_process_suite_options} from '$lib/testing/cross_backend/setup.js';
+import {default_in_process_suite_options} from '$lib/testing/cross_backend/in_process_setup.js';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';

@@ -49,11 +49,11 @@ import {
 	account_token_revoke_action_spec,
 } from '../auth/account_action_specs.js';
 import {invite_create_action_spec} from '../auth/admin_action_specs.js';
-import {LoginOutput, AccountStatusOutput} from '../auth/account_routes.js';
+import {LoginOutput, AccountStatusOutput} from '../auth/account_route_schema.js';
 import type {AppSurfaceSpec} from '../http/surface.js';
 import {type BackendCapabilities} from './cross_backend/capabilities.js';
 import type {SetupTest} from './cross_backend/setup.js';
-import {DEFAULT_TEST_PASSWORD} from './app_server.js';
+import {DEFAULT_TEST_PASSWORD} from './test_credentials.js';
 
 /**
  * Configuration for `describe_standard_integration_tests`.

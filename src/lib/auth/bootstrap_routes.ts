@@ -7,47 +7,20 @@
  * @module
  */
 
-import {z} from 'zod';
 import type {Context} from 'hono';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {SessionOptions} from './session_cookie.js';
 import {create_session_and_set_cookie} from './session_middleware.js';
 import {bootstrap_account, type BootstrapAccountSuccess} from './bootstrap_account.js';
-import {Username} from '../primitive_schemas.js';
-import {Password} from './password.js';
+import {bootstrap_route_shape, type BootstrapInput} from './bootstrap_route_schema.js';
 import type {Db} from '../db/db.js';
 import {get_route_input, type RouteSpec} from '../http/route_spec.js';
-import {get_client_ip} from '../http/proxy.js';
+import {get_client_ip} from '../http/client_ip.js';
 import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
 import type {RouteFactoryDeps} from './deps.js';
 import type {StatResult} from '../runtime/deps.js';
-import {
-	ERROR_INVALID_TOKEN,
-	ERROR_ALREADY_BOOTSTRAPPED,
-	ERROR_TOKEN_FILE_MISSING,
-	ERROR_INVALID_JSON_BODY,
-	ERROR_INVALID_REQUEST_BODY,
-} from '../http/error_schemas.js';
-
-// -- Input/output schemas ---------------------------------------------------
-
-/** Input for `POST /bootstrap`. `token` is the one-shot token file contents. */
-export const BootstrapInput = z.strictObject({
-	token: z.string().min(1).meta({sensitivity: 'secret'}),
-	username: Username,
-	password: Password,
-});
-export type BootstrapInput = z.infer<typeof BootstrapInput>;
-
-/** Output for `POST /bootstrap`. Session cookie is the operative side effect. */
-export const BootstrapOutput = z.strictObject({
-	ok: z.literal(true),
-	account: z.strictObject({id: Uuid, username: Username}),
-	actor: z.strictObject({id: Uuid}),
-});
-export type BootstrapOutput = z.infer<typeof BootstrapOutput>;
+import {ERROR_ALREADY_BOOTSTRAPPED} from '../http/error_schemas.js';
 
 /**
  * Bootstrap status — runtime state computed once at startup.
@@ -143,22 +116,7 @@ export const create_bootstrap_route_specs = (
 
 	return [
 		{
-			method: 'POST',
-			path: '/bootstrap',
-			auth: {account: 'none', actor: 'none'},
-			description: 'Create initial keeper account (one-shot)',
-			transaction: false, // bootstrap_account manages its own transaction
-			input: BootstrapInput,
-			output: BootstrapOutput,
-			rate_limit: 'ip',
-			errors: {
-				400: z.looseObject({
-					error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]),
-				}),
-				401: z.looseObject({error: z.literal(ERROR_INVALID_TOKEN)}),
-				403: z.looseObject({error: z.literal(ERROR_ALREADY_BOOTSTRAPPED)}),
-				404: z.looseObject({error: z.literal(ERROR_TOKEN_FILE_MISSING)}),
-			},
+			...bootstrap_route_shape,
 			handler: async (c, route) => {
 				// Short-circuit if bootstrap already completed or surface-only mounted.
 				// In 'surface_only' mode `bootstrap_status.token_path === null` and

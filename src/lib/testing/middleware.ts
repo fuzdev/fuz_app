@@ -24,7 +24,8 @@ import {
 } from '../auth/account_queries.js';
 import {query_role_grant_find_active_for_actor} from '../auth/role_grant_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
-import {create_proxy_middleware, get_client_ip} from '../http/proxy.js';
+import {create_proxy_middleware} from '../http/proxy.js';
+import {get_client_ip} from '../http/client_ip.js';
 import {verify_request_source, parse_allowed_origins} from '../http/origin.js';
 import type {RateLimiter} from '../rate_limiter.js';
 import {REQUEST_CONTEXT_KEY, type RequestContext} from '../auth/request_context.js';

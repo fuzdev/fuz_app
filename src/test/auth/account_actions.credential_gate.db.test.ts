@@ -34,7 +34,8 @@ import {
 } from '$lib/auth/account_action_specs.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {auth_migration_ns} from '$lib/auth/migrations.js';
-import {create_test_app, DEFAULT_TEST_PASSWORD} from '$lib/testing/app_server.js';
+import {create_test_app} from '$lib/testing/app_server.js';
+import {DEFAULT_TEST_PASSWORD} from '$lib/testing/test_credentials.js';
 import {
 	auth_integration_truncate_tables,
 	create_describe_db,

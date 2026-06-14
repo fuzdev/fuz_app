@@ -20,7 +20,7 @@ import type {Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {RequestResponseActionSpec} from './action_spec.js';
 import {type RouteContext, type RouteSpec} from '../http/route_spec.js';
-import {get_client_ip} from '../http/proxy.js';
+import {get_client_ip} from '../http/client_ip.js';
 import {
 	get_request_context,
 	type RequestActorContext,

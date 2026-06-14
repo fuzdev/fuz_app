@@ -33,7 +33,7 @@ interface TestApp {
 }
 import {describe_standard_integration_tests} from '$lib/testing/integration.js';
 import {auth_integration_truncate_tables} from '$lib/testing/db.js';
-import {default_in_process_suite_options} from '$lib/testing/cross_backend/setup.js';
+import {default_in_process_suite_options} from '$lib/testing/cross_backend/in_process_setup.js';
 
 import {pglite_factory} from '../db_fixture.js';
 

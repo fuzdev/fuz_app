@@ -58,7 +58,7 @@ import {
 } from '../../auth/account_action_specs.js';
 import {admin_session_revoke_all_action_spec} from '../../auth/admin_action_specs.js';
 import {audit_log_event_specs} from '../../realtime/sse_auth_guard.js';
-import {SSE_CONNECTED_COMMENT} from '../../realtime/sse.js';
+import {SSE_CONNECTED_COMMENT} from '../../realtime/sse_constants.js';
 import {create_sse_transport} from '../transports/sse_transport.js';
 import {create_rpc_post_init} from '../rpc_helpers.js';
 import {type BackendCapabilities, test_if} from './capabilities.js';

@@ -33,7 +33,8 @@ import {
 	type AuditEventType,
 	type AuditLogEventWithUsernamesJson,
 } from '../auth/audit_log_schema.js';
-import {DEFAULT_TEST_PASSWORD, type TestAccount} from './app_server.js';
+import type {TestAccount} from './app_server.js';
+import {DEFAULT_TEST_PASSWORD} from './test_credentials.js';
 import {find_auth_route} from './integration_helpers.js';
 import {
 	rpc_call_for_spec,

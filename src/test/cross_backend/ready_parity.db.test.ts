@@ -16,7 +16,7 @@
  * @module
  */
 
-import {default_in_process_setup} from '$lib/testing/cross_backend/setup.js';
+import {default_in_process_setup} from '$lib/testing/cross_backend/in_process_setup.js';
 import {in_process_capabilities} from '$lib/testing/cross_backend/capabilities.js';
 import {describe_ready_cross_tests} from '$lib/testing/cross_backend/ready.js';
 import {

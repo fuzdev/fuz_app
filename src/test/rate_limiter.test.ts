@@ -16,7 +16,7 @@ import {
 	DEFAULT_RATE_LIMITER_MAX_KEYS,
 } from '$lib/rate_limiter.js';
 import {ERROR_RATE_LIMIT_EXCEEDED} from '$lib/http/error_schemas.js';
-import {get_client_ip} from '$lib/http/proxy.js';
+import {get_client_ip} from '$lib/http/client_ip.js';
 
 const WINDOW_MS = 60_000; // 1 minute
 const MAX_ATTEMPTS = 3;

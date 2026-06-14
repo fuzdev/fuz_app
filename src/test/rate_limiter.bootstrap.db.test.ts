@@ -13,7 +13,8 @@ import {Hono} from 'hono';
 
 import {RateLimiter} from '$lib/rate_limiter.js';
 import {create_proxy_middleware} from '$lib/http/proxy.js';
-import {BootstrapOutput, create_bootstrap_route_specs} from '$lib/auth/bootstrap_routes.js';
+import {create_bootstrap_route_specs} from '$lib/auth/bootstrap_routes.js';
+import {BootstrapOutput} from '$lib/auth/bootstrap_route_schema.js';
 import {apply_route_specs} from '$lib/http/route_spec.js';
 import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
 import {create_keyring} from '$lib/auth/keyring.js';

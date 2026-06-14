@@ -39,7 +39,7 @@ import {
 	type RequestContext,
 } from '../auth/request_context.js';
 import {hash_session_token} from '../auth/session_queries.js';
-import {get_client_ip} from '../http/proxy.js';
+import {get_client_ip} from '../http/client_ip.js';
 import {flush_pending_effects, flush_post_commit_effects} from '../http/pending_effects.js';
 import type {RateLimiter} from '../rate_limiter.js';
 import type {JsonrpcRequestId} from '../http/jsonrpc.js';

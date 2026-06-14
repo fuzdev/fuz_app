@@ -28,7 +28,7 @@ import {
 	ERROR_PURGE_NOT_CONFIRMED,
 } from '$lib/auth/admin_action_specs.js';
 import {ERROR_ROLE_GRANT_OFFER_NOT_FOUND} from '$lib/auth/role_grant_offer_action_specs.js';
-import {DEFAULT_TEST_PASSWORD} from '$lib/testing/app_server.js';
+import {DEFAULT_TEST_PASSWORD} from '$lib/testing/test_credentials.js';
 import type {ConformanceCase} from '$lib/testing/cross_backend/conformance_case.js';
 
 /** A well-formed UUID that never names a real row — exercises the not-found / mask paths. */

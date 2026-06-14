@@ -38,7 +38,7 @@ import {
 	query_revoke_api_token_for_account,
 } from './api_token_queries.js';
 import {generate_api_token} from './api_token.js';
-import {DEFAULT_MAX_TOKENS} from './account_routes.js';
+import {DEFAULT_MAX_TOKENS} from './account_route_schema.js';
 import type {RouteFactoryDeps} from './deps.js';
 import {
 	account_verify_action_spec,

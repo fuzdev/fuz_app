@@ -17,7 +17,7 @@ import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
 import type {AppServerContext} from '$lib/server/app_server_context.js';
 import type {RpcEndpointSpec} from '$lib/http/surface.js';
 import {describe_rate_limiting_tests} from '$lib/testing/rate_limiting.js';
-import {default_in_process_suite_options} from '$lib/testing/cross_backend/setup.js';
+import {default_in_process_suite_options} from '$lib/testing/cross_backend/in_process_setup.js';
 
 const RPC_PATH = '/api/rpc';
 const rpc_log = new Logger('rate-limiting-rpc', {level: 'off'});

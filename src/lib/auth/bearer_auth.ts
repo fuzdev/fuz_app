@@ -22,7 +22,7 @@ import type {Logger} from '@fuzdev/fuz_util/log.js';
 import {AUTH_API_TOKEN_ID_KEY, ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
 import {query_validate_api_token} from './api_token_queries.js';
 import type {QueryDeps} from '../db/query_deps.js';
-import {get_client_ip} from '../http/proxy.js';
+import {get_client_ip} from '../http/client_ip.js';
 import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
 
 /**

@@ -13,6 +13,8 @@ import {z} from 'zod';
 import {DEV} from 'esm-env';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
+import {SSE_CONNECTED_COMMENT} from './sse_constants.js';
+
 /**
  * Generic SSE stream controller interface.
  *
@@ -108,9 +110,6 @@ export const create_sse_response = <T = unknown>(
 
 	return {response, stream: sse_stream};
 };
-
-/** SSE comment sent on connect to flush headers through proxies. Exported for test assertions. */
-export const SSE_CONNECTED_COMMENT = `: connected\n\n`;
 
 /** Spec for a push event — declares params schema, description, and channel. */
 export interface EventSpec {

@@ -121,6 +121,21 @@ they track the same config. Sample via `get_*`; `reset_*` are test-only.
 - `auth/audit_log_routes.ts` — optional `GET /audit/stream` (SSE); list/history are on the RPC surface.
 - `auth/auth_guard_resolver.ts` — `fuz_auth_guard_resolver` injected into `apply_route_specs` so the framework stays auth-agnostic.
 
+**Hono-free route shapes.** Each cookie/SSE-coupled route module has a sibling
+`*_route_schema.ts` (`account_route_schema.ts`, `signup_route_schema.ts`,
+`audit_log_route_schema.ts`, `bootstrap_route_schema.ts`) holding the I/O
+schemas **and** the route _shapes_ (`Omit<RouteSpec, 'handler'>` —
+method/path/auth/io/errors, via `create_*_route_shapes(options)` or a static
+`*_route_shape` const). The `create_*_route_specs` factories spread a shape and
+attach the live (hono-coupled) handler; a cross-process surface builder spreads
+the same shape with a stub handler (surface generation never runs handlers).
+Single source of truth — the shape can't drift between the live route and the
+attack surface — and a backend-spawning consumer assembling its surface imports
+the shapes without dragging `hono/cookie` / `hono/streaming` (and the optional
+`hono` peer) onto a Rust-only cross-process suite. Shared route-limit constants
+(`DEFAULT_MAX_SESSIONS` / `_TOKENS`) live in `account_route_schema.ts` for the
+same reason (the RPC `account_actions` reads `DEFAULT_MAX_TOKENS`).
+
 **`POST /login` timing floor.** Login 401s are floored to
 `DEFAULT_LOGIN_FAIL_FLOOR_MS` (250ms) + uniform jitter (±25ms) via
 `Promise.all(work, setTimeout)` so observed time is `max(work, delay)` and

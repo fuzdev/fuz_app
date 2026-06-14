@@ -10,7 +10,8 @@
 
 import {describe, test, assert, beforeAll, afterAll} from 'vitest';
 
-import {create_test_app, DEFAULT_TEST_PASSWORD, type TestApp} from '$lib/testing/app_server.js';
+import {create_test_app, type TestApp} from '$lib/testing/app_server.js';
+import {DEFAULT_TEST_PASSWORD} from '$lib/testing/test_credentials.js';
 import {create_session_config} from '$lib/auth/session_cookie.js';
 import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {create_account_actions} from '$lib/auth/account_actions.js';

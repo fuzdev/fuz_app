@@ -76,11 +76,8 @@ import {ROLE_ADMIN, ROLE_KEEPER} from '../../auth/role_schema.js';
 import {auth_integration_truncate_tables} from '../db.js';
 import {query_schema_snapshot, SchemaSnapshot} from '../schema_introspect.js';
 import {query_create_actor} from '../../auth/account_queries.js';
-import {
-	create_test_account_with_credentials,
-	mint_test_session,
-	DEFAULT_TEST_PASSWORD,
-} from '../app_server.js';
+import {create_test_account_with_credentials, mint_test_session} from '../app_server.js';
+import {DEFAULT_TEST_PASSWORD} from '../test_credentials.js';
 
 /**
  * Shared `auth` axis for every `_testing_*` action: keeper-only via the

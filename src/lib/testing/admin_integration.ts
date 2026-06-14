@@ -33,7 +33,8 @@ import type {Uuid} from '@fuzdev/fuz_util/id.js';
 import type {SessionOptions} from '../auth/session_cookie.js';
 import {ROLE_ADMIN, type RoleSchemaResult} from '../auth/role_schema.js';
 import {GRANT_PATH_ADMIN} from '../auth/grant_path_schema.js';
-import {DEFAULT_TEST_PASSWORD, type TestAccount, type TestApp} from './app_server.js';
+import type {TestAccount, TestApp} from './app_server.js';
+import {DEFAULT_TEST_PASSWORD} from './test_credentials.js';
 import {role_grant_offer_and_accept} from './role_grant_helpers.js';
 import {find_auth_route} from './integration_helpers.js';
 import {
