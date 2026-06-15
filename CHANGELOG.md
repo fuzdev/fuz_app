@@ -1,5 +1,17 @@
 # @fuzdev/fuz_app
 
+## 0.92.0
+
+### Minor Changes
+
+- fix: redact internal detail from production error responses ([776234d](https://github.com/fuzdev/fuz_app/commit/776234d))
+  - omit Zod validation `issues` (RPC `error.data`, REST `issues`)
+  - mask raw `internal_error` exception messages
+
+### Patch Changes
+
+- refactor: use `to_error_message` from `@fuzdev/fuz_util` instead of inline `instanceof Error` checks ([a20add7](https://github.com/fuzdev/fuz_app/commit/a20add7))
+
 ## 0.91.0
 
 ### Minor Changes
