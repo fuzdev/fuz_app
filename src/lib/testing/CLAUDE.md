@@ -840,7 +840,12 @@ source of truth for wire-shape conformance.
   whose `RoleSpec.grant_paths` don't include `'admin'` reject loudly at
   offer-create time (`ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE`); those
   roles must be seeded via `extra_accounts` at bootstrap-equivalent time
-  instead. Caller-supplied `username`s pass through _as-is_ now that the DB
+  instead. `create_account({email})` threads an email onto the signup body
+  (the username-scoped invite matches regardless of email), so the account
+  lands with an email set — the hook the username-or-email login parity suite
+  uses; the in-process path sets it directly on the inserted row. Must be a
+  valid, per-test-unique `Email` (the `LOWER(email)` partial-unique index
+  rejects collisions). Caller-supplied `username`s pass through _as-is_ now that the DB
   wipes between tests — hardcoded names like `'user_two'` work and the
   earlier uniquification prefix is gone. Every `TestFixture` also exposes
   `fresh_transport({origin?: string | null})` — cookie-jar-free probe;
@@ -1246,6 +1251,53 @@ suites); ungated, since every cross backend that uses
 in-process spec-level gate test (`src/test/testing/testing_actions_auth.test.ts`,
 asserting each spec declares `credential_types: ['daemon_token']`) + the
 `assert_no_testing_methods` surface invariant.
+
+### Identity-primitive parity — `cross_backend/identity_parity.ts`
+
+`describe_identity_parity_cross_tests({setup_test, login_path?, signup_path?})` —
+the imperative suite pinning the `primitive_schemas` twins (`Username`,
+`UsernameProvided`, `Email`) + login/signup input handling end-to-end over real
+HTTP (flat REST `/login` + `/signup`, so imperative, not a `conformance_table`
+row). Six facets, each a TS↔Rust reimplementation pair that the spec-derived
+round-trip / conformance suites never vary:
+
+- **Login canonicalization** — case-insensitive + whitespace-trim lookup
+  (`UsernameProvided` `.trim().toLowerCase()` + `LOWER(username)`), plus a
+  Turkish-`İ` homograph **no-Unicode-fold-collision** negative.
+- **Username-or-email login** — an account created with an email logs in via
+  that email, case-insensitively both directions; username login still works;
+  non-existent email → 401. This is the corner that surfaced and closed the Rust
+  spine's username-only divergence (it now mirrors TS's
+  `query_account_by_username_or_email`).
+- **Login input validation** — malformed login input → 400 `invalid_request_body`
+  on every spine: whitespace-only username (empty after trim), over-long username
+  (> 255), empty password, unknown body key (strict object). TS runs the full
+  `LoginInput` Zod schema; the Rust spine enforces the same shape in
+  `account_login` (closed a cluster where three of these fell through to a
+  lookup-miss 401 on Rust and a whitespace-only identifier 401'd on TS). Asserted
+  by error reason, not just status.
+- **ASCII-only creation invariant** — non-ASCII username → 400 at signup.
+- **Length + format regex parity** — both `[USERNAME_LENGTH_MIN,
+USERNAME_LENGTH_MAX]` = `[3, 39]` boundary edges (just-outside → 400,
+  just-inside → 403 no-matching-invite) and the creation regex shape (leading
+  non-letter / trailing punctuation / embedded disallowed char → 400; mid-string
+  `_`/`-` accepted), catching an off-by-one or position bug in the TS Zod
+  `.min/.max/.regex` vs the Rust byte-scan `is_valid_username_for_creation`.
+- **Email format (creation)** — the optional signup `email` validated to the
+  loose `local@domain.tld` shape (TS `Email` `^[^\s@]+@[^\s@]+\.[^\s@]+$` + 254-byte
+  bound, Rust `is_valid_email`): malformed (no `@` / no domain dot / empty
+  side / dot at a domain edge / whitespace / over-length) → 400, well-formed →
+  403 no-invite. Accepted siblings include the single-char-TLD `a@b.c` that
+  Zod's `z.email()` rejects — the deliberately-looser shared rule. **Closed a
+  real divergence**: the Rust spine previously length-checked the email only,
+  accepting any non-empty string TS rejected.
+
+Ungated (login + signup are on every spine). Runs both legs via the shared
+`{setup_test}` protocol: in-process (`identity_parity.db.test.ts`, plain
+`gro test`) and cross-process (`identity_parity.cross.test.ts`). `$lib`-free.
+The accepted-case 403s rely on `create_spine_route_specs` zeroing
+`signup_fail_floor_ms` (mirroring `login_fail_floor_ms: 0`) so they don't each
+pay the 250ms denial floor.
 
 ### Building a TS test-server binary — `testing_server_core.ts` + adapters
 

@@ -24,7 +24,13 @@ import {parse_allowed_origins} from '../http/origin.js';
  */
 export const BaseServerEnv = z.strictObject({
 	NODE_ENV: z.enum(['development', 'production']).meta({description: 'Runtime environment mode'}),
-	PORT: z.coerce.number().default(4040).meta({description: 'HTTP server port'}),
+	PORT: z.coerce
+		.number()
+		.int()
+		.min(1)
+		.max(65535)
+		.default(4040)
+		.meta({description: 'HTTP server port'}),
 	HOST: z.string().default('localhost').meta({description: 'HTTP server bind address'}),
 	DATABASE_URL: z.string().min(1).meta({
 		description: 'Database URL (postgres://, file://, or memory://)',
@@ -48,10 +54,16 @@ export const BaseServerEnv = z.strictObject({
 		.optional()
 		.meta({description: 'Path to one-shot admin bootstrap token', sensitivity: 'secret'}),
 	SMTP_HOST: z.string().optional().meta({description: 'SMTP server hostname'}),
+	// SMTP usernames are frequently not emails (SendGrid uses "apikey",
+	// AWS SES / Postmark use token-style credentials), so validate as a plain
+	// string — `z.email()` here would reject valid provider configs. Marked
+	// `secret`: those token-style usernames are credentials (Postmark reuses
+	// the server token as both user and password), so the value is masked in
+	// the startup summary / logs like `SMTP_PASSWORD`.
 	SMTP_USER: z
-		.union([z.email(), z.literal('')])
+		.string()
 		.optional()
-		.meta({description: 'SMTP authentication username'}),
+		.meta({description: 'SMTP authentication username', sensitivity: 'secret'}),
 	SMTP_PASSWORD: z
 		.string()
 		.optional()

@@ -114,7 +114,7 @@ the test helpers' route list.
 spawned backends. `*.cross.test.ts` bodies are runtime-agnostic — they
 `inject('backend_handle')` and drive `default_spine_surface` over the wire —
 so the same files run under every `cross_backend_*` project; each project's
-`globalSetup` spawns a different backend. Fifteen cross files today:
+`globalSetup` spawns a different backend. Seventeen cross files today:
 `auth.cross.test.ts` (the `describe_standard_cross_process_tests` bundle —
 HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
 `describe_cross_process_ws_tests` suite — live WebSocket, including
@@ -198,9 +198,30 @@ positive control (two pipelined requests → `>= 2` responses) keeps both arms
 non-vacuous. The parity cases have an in-process leg
 `auth/body_size_parity.db.test.ts` (and the Content-Length vs streaming-branch
 rejects are covered in-process by `server/create_app_server.db.test.ts`); the
-smuggling probe is cross-only).
+smuggling probe is cross-only), and `identity_parity.cross.test.ts` (the
+imperative `describe_identity_parity_cross_tests` suite —
+`testing/cross_backend/identity_parity.ts` — pinning the `primitive_schemas`
+twins (`Username`, `UsernameProvided`, `Email`) + login/signup input handling
+end-to-end: case-insensitive + whitespace-trim **login canonicalization**,
+a Turkish-`İ` homograph **no-Unicode-fold-collision** negative,
+**username-or-email login** (an account with an email logs in by that email,
+case-insensitively both directions — the corner that surfaced and closed the
+Rust spine's username-only divergence), **login input validation** (malformed
+login input → 400 `invalid_request_body` on every spine: whitespace-only / over-long
+username, empty password, unknown body key — closed a status+body divergence
+cluster between TS's Zod schema and the Rust hand-rolled checks), the
+**ASCII-only creation invariant** (non-ASCII username → 400), **length +
+format regex parity** (both `[3, 39]` boundary edges + the creation-regex shape,
+rejected → 400 / accepted → 403 no-matching-invite), and **email format**
+(the optional signup `email` validated to the loose `local@domain.tld` shape —
+TS `Email` regex + 254-byte bound, Rust `is_valid_email`: malformed → 400,
+well-formed → 403, the single-char-TLD `a@b.c` accepted looser than `z.email()`;
+**closed the Rust length-only-email divergence**). Assertions check the error
+reason, not just the status. The `create_account({email})` fixture plumbing rides the
+production signup body against the username-scoped invite. In-process leg
+`identity_parity.db.test.ts`).
 
-A sixteenth file, `schema_parity.cross.test.ts`, is **not** one of the fifteen above —
+An eighteenth file, `schema_parity.cross.test.ts`, is **not** one of the seventeen above —
 it runs under its own dual-spawn `cross_backend_schema_parity` project
 (`global_setup_schema_parity.ts` brings up the TS spine + `testing_spine_stub`
 together and provides `parity_handle_a`/`_b`), so it's excluded from the

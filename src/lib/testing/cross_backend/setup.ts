@@ -45,6 +45,15 @@ export interface CreateTestAccountOptions {
 	readonly username?: string;
 	readonly password_value?: string;
 	readonly roles?: Array<string>;
+	/**
+	 * Optional email to store on the account, exercising the username-or-email
+	 * login lookup. Cross-process this rides the production signup body
+	 * (claimed against the username-scoped invite, which matches regardless of
+	 * the email); in-process it lands directly on the inserted row. Must be a
+	 * valid `Email` (the cross-process signup validates it) and unique per test
+	 * (the `LOWER(email)` partial-unique index rejects collisions).
+	 */
+	readonly email?: string;
 }
 
 /**
@@ -656,7 +665,7 @@ const extract_cookie_value = (
  */
 const mint_account = async (
 	handle: ReconstructedBootstrappedBackendHandle,
-	options: {username?: string; password_value?: string},
+	options: {username?: string; password_value?: string; email?: string},
 ): Promise<{
 	transport: FetchTransport;
 	account: {id: Uuid; username: string};
@@ -696,10 +705,22 @@ const mint_account = async (
 		);
 	}
 
+	// Thread the optional email onto the production signup body — the
+	// username-scoped invite above matches on username regardless of the
+	// email, so the account lands with the email set (exercising the
+	// username-or-email login lookup). Guard on `!== undefined` (not truthy)
+	// to match the other three email guards (`create_account` here +
+	// `app_server.ts`): "requested" is `undefined` vs present, so a
+	// caller-supplied value is forwarded verbatim and signup validates it,
+	// rather than the truthy form silently dropping an empty string.
 	const signup_response = await transport('/api/account/signup', {
 		method: 'POST',
 		headers: {'Content-Type': 'application/json'},
-		body: JSON.stringify({username, password}),
+		body: JSON.stringify({
+			username,
+			password,
+			...(options.email !== undefined && {email: options.email}),
+		}),
 	});
 	if (!signup_response.ok) {
 		const body = await signup_response.text().catch(() => '<unreadable>');
@@ -893,16 +914,15 @@ export const default_cross_process_setup = (
 			...extra,
 		});
 
-		const create_account = async (account_options?: {
-			username?: string;
-			password_value?: string;
-			roles?: Array<string>;
-		}): Promise<TestAccount> => {
+		const create_account = async (
+			account_options?: CreateTestAccountOptions,
+		): Promise<TestAccount> => {
 			const other = await mint_account(refreshed_handle, {
 				...(account_options?.username !== undefined && {username: account_options.username}),
 				...(account_options?.password_value !== undefined && {
 					password_value: account_options.password_value,
 				}),
+				...(account_options?.email !== undefined && {email: account_options.email}),
 			});
 			if (account_options?.roles && account_options.roles.length > 0) {
 				await grant_roles_via_offer_accept(refreshed_handle, other, account_options.roles);

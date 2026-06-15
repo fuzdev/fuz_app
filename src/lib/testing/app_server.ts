@@ -124,6 +124,8 @@ export interface CreateTestAccountWithCredentialsOptions {
 	username?: string;
 	password_value?: string;
 	roles?: Array<string>;
+	/** Optional email stored on the account row — exercises the username-or-email login lookup. */
+	email?: string;
 }
 
 /** Alias for the keeper-flavored call site. Same shape. */
@@ -158,6 +160,7 @@ export const create_test_account_with_credentials = async (
 		username = 'keeper',
 		password_value = DEFAULT_TEST_PASSWORD,
 		roles = [],
+		email,
 	} = options;
 
 	const deps = {db};
@@ -165,6 +168,7 @@ export const create_test_account_with_credentials = async (
 	const {account, actor} = await query_create_account_with_actor(deps, {
 		username,
 		password_hash,
+		...(email !== undefined && {email}),
 	});
 
 	// Grant roles
@@ -569,6 +573,20 @@ export interface TestAccount {
 }
 
 /**
+ * Args for `TestApp.create_account` — mint an additional account alongside the
+ * keeper. Mirrors the cross-process `CreateTestAccountOptions` (the two
+ * `create_account` paths share a shape so fixture call sites read identically),
+ * kept local to avoid a cross-module cycle with `cross_backend/setup.ts`.
+ */
+export interface CreateTestAppAccountArgs {
+	username?: string;
+	password_value?: string;
+	roles?: Array<string>;
+	/** Optional email stored on the account row — exercises the username-or-email login lookup. */
+	email?: string;
+}
+
+/**
  * A fully assembled test app — Hono app + backend + helpers.
  */
 export interface TestApp {
@@ -584,11 +602,7 @@ export interface TestApp {
 	/** Build request headers with the daemon token (keeper auth). */
 	create_daemon_token_headers: (extra?: Record<string, string>) => Record<string, string>;
 	/** Create an additional account with credentials. */
-	create_account: (options?: {
-		username?: string;
-		password_value?: string;
-		roles?: Array<string>;
-	}) => Promise<TestAccount>;
+	create_account: (options?: CreateTestAppAccountArgs) => Promise<TestAccount>;
 	/** Cleanup resources (delegates to TestAppServer.cleanup). */
 	cleanup: () => Promise<void>;
 }
@@ -662,11 +676,9 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 
 	let account_counter = 0;
 
-	const create_account = async (account_options?: {
-		username?: string;
-		password_value?: string;
-		roles?: Array<string>;
-	}): Promise<TestAccount> => {
+	const create_account = async (
+		account_options?: CreateTestAppAccountArgs,
+	): Promise<TestAccount> => {
 		account_counter++;
 		const bootstrapped = await create_test_account_with_credentials({
 			db: test_server.deps.db,
@@ -676,6 +688,7 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 			username: account_options?.username ?? `test_user_${account_counter}`,
 			password_value: account_options?.password_value ?? DEFAULT_TEST_PASSWORD,
 			roles: account_options?.roles ?? [],
+			...(account_options?.email !== undefined && {email: account_options.email}),
 		});
 
 		return {

@@ -132,7 +132,7 @@ describe('BaseServerEnv', () => {
 		}
 	});
 
-	test('4 fields have sensitivity: secret', () => {
+	test('5 fields have sensitivity: secret', () => {
 		const secret_fields: Array<string> = [];
 		for (const [name, field_schema] of Object.entries(BaseServerEnv.shape)) {
 			const meta = (field_schema as z.ZodType).meta() as SchemaFieldMeta | undefined;
@@ -145,6 +145,7 @@ describe('BaseServerEnv', () => {
 			'FUZ_BOOTSTRAP_TOKEN_PATH',
 			'SECRET_FUZ_COOKIE_KEYS',
 			'SMTP_PASSWORD',
+			'SMTP_USER',
 		]);
 	});
 

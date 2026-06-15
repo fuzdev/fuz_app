@@ -25,11 +25,11 @@ import {
 	ERROR_INVALID_REQUEST_BODY,
 } from '../http/error_schemas.js';
 
-/** Input for `POST /signup`. `email` is optional and must match any referenced invite. */
+/** Input for `POST /signup`. `email` is optional (absent or `null` = no email) and must match any referenced invite. */
 export const SignupInput = z.strictObject({
 	username: Username,
 	password: Password,
-	email: Email.optional(),
+	email: Email.nullish(),
 });
 export type SignupInput = z.infer<typeof SignupInput>;
 

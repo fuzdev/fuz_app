@@ -127,6 +127,13 @@ const generate_valid_string = (field_schema: z.ZodType): string => {
 		if (slug !== null && field_schema.safeParse(slug).success) return slug;
 	}
 
+	// Email-shaped refinement (the `Email` primitive: loose `local@domain.tld`).
+	// The base `x`-fill has no `@`, so an email-pattern field needs a shaped
+	// candidate — the `z.string().regex()` form exposes a `pattern`, not the
+	// `format: 'email'` the `case 'email'` switch arm keys on.
+	const as_email = 'test@example.com';
+	if (field_schema.safeParse(as_email).success) return as_email;
+
 	// Absolute path refinement (e.g. DiskfilePath)
 	const with_slash = '/' + base;
 	if (field_schema.safeParse(with_slash).success) return with_slash;

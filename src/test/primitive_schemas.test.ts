@@ -18,6 +18,7 @@ import {
 	Username,
 	UsernameProvided,
 	Email,
+	EMAIL_LENGTH_MAX,
 	USERNAME_LENGTH_MIN,
 	USERNAME_LENGTH_MAX,
 	USERNAME_PROVIDED_LENGTH_MAX,
@@ -119,11 +120,9 @@ describe('UsernameProvided', () => {
 	});
 
 	test('rejects too-short / too-long input', () => {
-		// `min(1)` admits any non-empty string, but trim runs in the transform
-		// after the length check, so a single space passes min(1) and reduces
-		// to an empty post-trim value. This is consistent with login's prior
-		// `raw_username.trim().toLowerCase()` behavior — the rate limiter and
-		// DB lookup see `''`, which finds no account (404-equivalent).
+		// `min(1)` rejects the empty string outright; the trailing `.refine`
+		// additionally rejects whitespace-only input that trims to empty (see the
+		// dedicated case below).
 		assert.ok(!UsernameProvided.safeParse('').success);
 		assert.ok(!UsernameProvided.safeParse('a'.repeat(USERNAME_PROVIDED_LENGTH_MAX + 1)).success);
 		assert.ok(UsernameProvided.safeParse('a').success);
@@ -133,20 +132,17 @@ describe('UsernameProvided', () => {
 		assert.ok(UsernameProvided.safeParse('a'.repeat(USERNAME_PROVIDED_LENGTH_MAX)).success);
 	});
 
-	test('whitespace-only input reduces to empty string post-trim', () => {
-		// Pins the documented edge-case: `min(1)` runs before the `.trim()`
-		// transform, so a single space passes the length gate then trims to
-		// `''`. The login handler routes this into
-		// `query_account_by_username_or_email('')` which finds no account —
-		// the per-account rate limiter never engages (it keys on the resolved
-		// `account.id`, not the submitted value), so per-IP rate-limiting plus
-		// the floor + jitter delay are the only controls. This is intentional;
-		// the test exists to make sure refactors don't silently switch to
-		// `.trim().min(1)` (which would 400 instead of returning 401 from the
-		// handler) without a deliberate decision.
-		assert.strictEqual(UsernameProvided.parse(' '), '');
-		assert.strictEqual(UsernameProvided.parse('   '), '');
-		assert.strictEqual(UsernameProvided.parse('\t\n'), '');
+	test('rejects whitespace-only input (empty after trim)', () => {
+		// `min(1)` runs on the raw string (so a space passes the length gate), but
+		// the trailing `.refine` rejects the empty post-trim value — a
+		// whitespace-only identifier is malformed input, not a wrong credential.
+		// The login handler therefore 400s it (`invalid_request_body`) rather than
+		// routing `''` into a lookup-miss 401; the Rust spine's `account_login`
+		// rejects empty-after-trim the same way. Pinned cross-impl by the
+		// `identity_parity` login-validation suite.
+		assert.ok(!UsernameProvided.safeParse(' ').success);
+		assert.ok(!UsernameProvided.safeParse('   ').success);
+		assert.ok(!UsernameProvided.safeParse('\t\n').success);
 	});
 
 	test('admits email-shaped input (login allows username-or-email)', () => {
@@ -280,11 +276,50 @@ describe('Email', () => {
 		assert.ok(Email.safeParse('user+tag@example.co.uk').success);
 	});
 
+	test('accepts shapes z.email() rejects — the deliberately-looser rule', () => {
+		// `Email` is the loose `local@domain.tld` structural shape, not RFC
+		// conformance. These all pass here but FAIL Zod's `z.email()` (1-char
+		// TLDs, consecutive dots); pinning them keeps the chosen looser rule
+		// honest — a refactor back to `z.email()` (or a stricter regex) turns
+		// these red. The Rust spine's `is_valid_email` accepts them identically.
+		assert.ok(Email.safeParse('a@b.c').success); // single-char TLD
+		assert.ok(Email.safeParse('a..b@c.d').success); // consecutive dots in local
+		assert.ok(Email.safeParse('a@b..c').success); // consecutive dots in domain
+	});
+
 	test('rejects malformed input', () => {
 		assert.ok(!Email.safeParse('not-an-email').success);
 		assert.ok(!Email.safeParse('').success);
-		assert.ok(!Email.safeParse('@example.com').success);
-		assert.ok(!Email.safeParse('user@').success);
+		assert.ok(!Email.safeParse('@example.com').success); // empty local
+		assert.ok(!Email.safeParse('user@').success); // empty domain
+		assert.ok(!Email.safeParse('user@host').success); // no dot in domain
+		assert.ok(!Email.safeParse('user@.com').success); // domain starts with dot
+		assert.ok(!Email.safeParse('user@com.').success); // domain ends with dot
+		assert.ok(!Email.safeParse('a@@b.c').success); // two `@`
+	});
+
+	test('enforces the length bound', () => {
+		// 254 ASCII chars total: a 242-char local + "@example.com" (12).
+		const at_max = `${'a'.repeat(EMAIL_LENGTH_MAX - 12)}@example.com`;
+		assert.strictEqual(at_max.length, EMAIL_LENGTH_MAX);
+		assert.ok(Email.safeParse(at_max).success);
+		const over_max = `${'a'.repeat(EMAIL_LENGTH_MAX - 11)}@example.com`;
+		assert.strictEqual(over_max.length, EMAIL_LENGTH_MAX + 1);
+		assert.ok(!Email.safeParse(over_max).success);
+
+		// The bound is UTF-8 BYTES (RFC 5321 octets), matching the Rust spine's
+		// `s.len()`, not JS's UTF-16 `.length`. `\u00fc` (ü) is 2 bytes / 1 code
+		// unit, so 122×ü is 256 bytes but only 134 code units: under 254
+		// `.length` (a code-unit `.max(254)` would wrongly accept it) yet over the
+		// 254-byte bound, so both spines must reject it.
+		const mb_at_max = `${'\u00fc'.repeat(121)}@example.com`;
+		assert.strictEqual(new TextEncoder().encode(mb_at_max).length, EMAIL_LENGTH_MAX);
+		assert.ok(mb_at_max.length < EMAIL_LENGTH_MAX);
+		assert.ok(Email.safeParse(mb_at_max).success);
+		const mb_over = `${'\u00fc'.repeat(122)}@example.com`;
+		assert.strictEqual(new TextEncoder().encode(mb_over).length, EMAIL_LENGTH_MAX + 2);
+		assert.ok(mb_over.length < EMAIL_LENGTH_MAX);
+		assert.ok(!Email.safeParse(mb_over).success);
 	});
 
 	test('passes through case unchanged (no canonicalization transform)', () => {
@@ -306,11 +341,18 @@ describe('Email', () => {
 		assert.strictEqual(Email.parse('Mixed.Case+Tag@Foo.Bar'), 'Mixed.Case+Tag@Foo.Bar');
 	});
 
-	test('does not trim surrounding whitespace (no transform)', () => {
-		// Same intent as the case-preservation test above — emails are
-		// preserved verbatim. Whitespace-bearing addresses fail format
-		// validation rather than being silently trimmed.
-		assert.ok(!Email.safeParse(' user@example.com').success);
-		assert.ok(!Email.safeParse('user@example.com ').success);
+	test('rejects whitespace anywhere (surrounding and internal, no trim)', () => {
+		// Whitespace-bearing addresses fail the `[^\s\u0085@]` character class rather
+		// than being silently trimmed — surrounding (the no-transform contract,
+		// same intent as the case-preservation test) AND internal. Mirrors the
+		// Rust `is_valid_email`, which rejects `White_Space ∪ {U+FEFF}`, so
+		// storage is verbatim on both spines.
+		assert.ok(!Email.safeParse(' user@example.com').success); // leading
+		assert.ok(!Email.safeParse('user@example.com ').success); // trailing
+		assert.ok(!Email.safeParse('us er@example.com').success); // internal (local)
+		assert.ok(!Email.safeParse('user@exa mple.com').success); // internal (domain)
+		assert.ok(!Email.safeParse('user@e\tx.com').success); // tab
+		assert.ok(!Email.safeParse('a\u0085b@c.d').success); // NEL (U+0085)
+		assert.ok(!Email.safeParse('a\ufeffb@c.d').success); // BOM/ZWNBSP (U+FEFF)
 	});
 });

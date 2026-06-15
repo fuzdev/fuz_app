@@ -151,6 +151,12 @@ export const create_spine_route_specs = (ctx: AppServerContext): Array<RouteSpec
 			session_options: spine_session_options,
 			ip_rate_limiter: null,
 			signup_account_rate_limiter: null,
+			// Disable the denial floor so the identity-parity suite's accepted
+			// cases (valid username/email, no invite → 403 no-matching-invite)
+			// don't each pay the 250ms timing floor. Mirrors `login_fail_floor_ms: 0`
+			// above — the floor is a production timing-oracle defense, not
+			// behavior any cross test asserts.
+			signup_fail_floor_ms: 0,
 		}),
 	]),
 	...(ctx.audit_sse
