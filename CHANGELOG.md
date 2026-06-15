@@ -1,5 +1,14 @@
 # @fuzdev/fuz_app
 
+## 0.90.0
+
+### Minor Changes
+
+- test: improve cross-backend tests and tighten some inputs ([6b3cd54](https://github.com/fuzdev/fuz_app/commit/6b3cd54))
+  - `Email`: structural `local@domain.tld` regex (replaces `z.email()`), 254-**byte** bound (RFC 5321 octets), rejects `White_Space ∪ {U+FEFF}`, accepts `a@b.c` + consecutive dots
+  - signup `email` now `nullish` (`null` = absent)
+  - `SMTP_USER` → `sensitivity: 'secret'` (masked in startup summary); `PORT` → integer `1..=65535`
+
 ## 0.89.0
 
 ### Minor Changes
