@@ -33,6 +33,7 @@ import type {TestAccount} from '../app_server.js';
 import type {BackendCapabilities} from './capabilities.js';
 import {create_fetch_transport, type FetchTransport} from '../transports/fetch_transport.js';
 import type {SchemaSnapshot} from '../schema_introspect.js';
+import {ActionManifest} from './action_manifest.js';
 import type {BackendHandle} from './spawn_backend.js';
 
 /**
@@ -529,7 +530,35 @@ export const capture_schema_snapshot = async (
 		handle.config.name,
 		{[DAEMON_TOKEN_HEADER]: handle.daemon_token},
 	);
+	// TODO: cast, not parse — `SchemaSnapshot.parse(raw)` would validate the wire
+	// against the schema (the `capture_action_manifest` twin parses + uses a
+	// strict object); parsing here may surface a latent schema-model gap to
+	// reconcile first, so it's left as a follow-up.
 	return raw as SchemaSnapshot;
+};
+
+/**
+ * Capture a backend's live RPC action manifest over the
+ * `_testing_action_manifest` RPC action (keeper daemon-token channel). The
+ * action-surface twin of `capture_schema_snapshot` — pair two calls with
+ * `assert_action_manifests_equal` (`testing/cross_backend/action_manifest_parity.ts`)
+ * to gate that the TS spine and the Rust `testing_spine_stub` mount the same
+ * method set with the same per-method auth shape. Each impl answers from its
+ * own live registry (TS via `build_action_manifest`, Rust via the
+ * `fuz_testing` mirror); the normalized shapes match by design.
+ */
+export const capture_action_manifest = async (
+	handle: ReconstructedBootstrappedBackendHandle,
+): Promise<ActionManifest> => {
+	const raw = await rpc_via_transport(
+		handle.keeper_transport,
+		handle.config.rpc_path,
+		'_testing_action_manifest',
+		{},
+		handle.config.name,
+		{[DAEMON_TOKEN_HEADER]: handle.daemon_token},
+	);
+	return ActionManifest.parse(raw);
 };
 
 /**

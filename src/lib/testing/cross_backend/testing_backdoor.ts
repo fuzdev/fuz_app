@@ -5,11 +5,12 @@ import '../assert_dev_env.js';
  * actions.
  *
  * `_testing_reset` / `_testing_mint_session` / `_testing_put_fact` /
- * `_testing_schema_snapshot` are privileged test-binary actions the
- * production wire never exposes — three direct DB writes (full auth wipe,
- * forged session row, raw fact insert) plus a full-schema introspection read
- * (the highest info-leak of the set were the gate to break). Their only
- * structural fence is the **daemon-token** credential gate on
+ * `_testing_schema_snapshot` / `_testing_action_manifest` are privileged
+ * test-binary actions the production wire never exposes — three direct DB
+ * writes (full auth wipe, forged session row, raw fact insert) plus two
+ * introspection reads (the live schema + the live RPC registry, the highest
+ * info-leak of the set were the gate to break). Their only structural fence
+ * is the **daemon-token** credential gate on
  * each spec's `auth` axis. A test binary live-mounts them on its RPC
  * endpoint but keeps them off the declared surface — so the spec-derived
  * `describe_rpc_attack_surface_tests` never enumerates them, and nothing
@@ -73,6 +74,9 @@ const backdoor_methods: ReadonlyArray<{method: string; params: unknown}> = [
 	// The schema-dump read — `exclude_tables` is optional, so `{}` is valid
 	// and clears the 400 phase like the writes above.
 	{method: '_testing_schema_snapshot', params: {}},
+	// The RPC-registry-dump read — input is an empty strict object, so `{}` is
+	// valid and clears the 400 phase, reaching the credential gate like the rest.
+	{method: '_testing_action_manifest', params: {}},
 ];
 
 /** A non-daemon principal + the denial it must hit on every backdoor method. */

@@ -30,19 +30,23 @@ const max_threads = Math.max(1, Math.ceil(availableParallelism() / 2));
  */
 const cross_backend_enabled = process.env.FUZ_TEST_CROSS_BACKEND === '1';
 
-// The schema-parity gate spawns BOTH backends in one run (its own
-// `globalSetup` provides `parity_handle_a` + `_b`), so its test file is
-// excluded from the single-backend projects — they provide only
-// `backend_handle` — and runs in a later groupOrder to avoid contending for
-// the stub's port with `cross_backend_rust_spine_stub`.
-const SCHEMA_PARITY_TEST = 'src/test/cross_backend/schema_parity.cross.test.ts';
+// The parity gates spawn BOTH backends in one run (their shared `globalSetup`
+// provides `parity_handle_a` + `_b`), so their test files are excluded from
+// the single-backend projects — those provide only `backend_handle` — and run
+// in a later groupOrder to avoid contending for the stub's port with
+// `cross_backend_rust_spine_stub`. One dual-spawn serves both gates: schema
+// parity (live DDL) and action-manifest parity (live RPC method set + auth).
+const PARITY_TESTS = [
+	'src/test/cross_backend/schema_parity.cross.test.ts',
+	'src/test/cross_backend/action_manifest_parity.cross.test.ts',
+];
 
 const cross_backend_project = (name: string, global_setup: string) => ({
 	extends: true as const,
 	test: {
 		name,
 		include: ['src/test/cross_backend/*.cross.test.ts'],
-		exclude: [SCHEMA_PARITY_TEST],
+		exclude: PARITY_TESTS,
 		globalSetup: [global_setup],
 		isolate: false,
 		fileParallelism: false,
@@ -50,11 +54,11 @@ const cross_backend_project = (name: string, global_setup: string) => ({
 	},
 });
 
-const cross_backend_schema_parity_project = () => ({
+const cross_backend_parity_project = () => ({
 	extends: true as const,
 	test: {
-		name: 'cross_backend_schema_parity',
-		include: [SCHEMA_PARITY_TEST],
+		name: 'cross_backend_parity',
+		include: PARITY_TESTS,
 		globalSetup: ['./src/test/cross_backend/global_setup_schema_parity.ts'],
 		isolate: false,
 		fileParallelism: false,
@@ -108,7 +112,7 @@ export default defineConfig({
 							'cross_backend_ts_bun',
 							'./src/test/cross_backend/global_setup_ts_bun.ts',
 						),
-						cross_backend_schema_parity_project(),
+						cross_backend_parity_project(),
 					]
 				: []),
 		],

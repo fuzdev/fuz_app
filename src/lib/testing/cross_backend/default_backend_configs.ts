@@ -12,13 +12,15 @@ import '../assert_dev_env.js';
  *
  * Defaults baked in by family:
  *
- * - **TS** — `'memory://'` PGlite, 30s startup window, capabilities
- *   without trusted_proxy/login_rate_limit. The TS canonical path
- *   leaves these limiters null in test mode.
+ * - **TS** — `'memory://'` PGlite, 30s startup window. Its shape notes
+ *   (`ts_default_shape_notes`) record `trusted_proxy: false` /
+ *   `login_rate_limit: false` — the TS canonical path leaves those limiters
+ *   null in test mode.
  * - **Rust** — caller-supplied real Postgres URL (PGlite isn't reachable
- *   from `tokio-postgres`), 120s startup window (cargo first-build cost),
- *   capabilities including trusted_proxy + login_rate_limit + the
- *   `FUZ_TESTING_RESET_DB_ON_STARTUP=true` self-wipe gate.
+ *   from `tokio-postgres`), 120s startup window (cargo first-build cost), the
+ *   `FUZ_TESTING_RESET_DB_ON_STARTUP=true` self-wipe gate, and shape notes
+ *   (`rust_default_shape_notes`) recording `trusted_proxy: true` +
+ *   `login_rate_limit: true`.
  *
  * Both builders default `port_env_var` to `'PORT'`. Consumers whose
  * binary reads a different name (e.g. zzz's `ZZZ_PORT`) override.
@@ -33,7 +35,7 @@ import '../assert_dev_env.js';
  */
 
 import type {BackendBootstrapConfig, BackendConfig} from './backend_config.js';
-import type {BackendCapabilities} from './capabilities.js';
+import type {BackendCapabilities, BackendShapeNotes} from './capabilities.js';
 import {build_test_backend_paths, type TestBackendPaths} from './build_test_backend_paths.js';
 import {
 	default_test_bootstrap_token,
@@ -43,15 +45,11 @@ import {
 } from './default_secrets.js';
 
 /**
- * Capabilities shared by TS-family backends — same canonical
- * implementation, same feature set. No trusted-proxy phase (the test
- * binary doesn't enable proxy parsing) and no per-account login rate
- * limit (the TS canonical path leaves the limiter null in test mode).
+ * Capabilities shared by TS-family backends — same canonical implementation,
+ * same feature set. The non-gating wiring facts (`bearer_auth` /
+ * `trusted_proxy` / `login_rate_limit`) live in `ts_default_shape_notes`.
  */
 export const ts_default_capabilities: BackendCapabilities = Object.freeze({
-	bearer_auth: true,
-	trusted_proxy: false,
-	login_rate_limit: false,
 	ws: true,
 	sse: false,
 	cell_crud: true,
@@ -71,15 +69,11 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 });
 
 /**
- * Capabilities for the Rust family. Adds `trusted_proxy: true` (the
- * Rust spine's client-IP middleware is always wired; the env-gate just
- * controls whether XFF is consulted vs the TCP peer IP) and
- * `login_rate_limit: true` (env-gated bucket on `/login` + `/password`).
+ * Capabilities for the Rust family. The non-gating wiring facts live in
+ * `rust_default_shape_notes` (which records the family's `trusted_proxy` +
+ * `login_rate_limit` differences from the TS family).
  */
 export const rust_default_capabilities: BackendCapabilities = Object.freeze({
-	bearer_auth: true,
-	trusted_proxy: true,
-	login_rate_limit: true,
 	ws: true,
 	sse: false,
 	cell_crud: true,
@@ -95,6 +89,32 @@ export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 	// hyper sends an RST on the oversized-body reject — the connection closes
 	// and the pipelined request is never reached.
 	oversized_reject_closes_connection: true,
+});
+
+/**
+ * Shape notes for TS-family backends — wiring facts, not gating flags.
+ * `trusted_proxy: false` (the test binary doesn't enable proxy parsing) and
+ * `login_rate_limit: false` (the TS canonical path leaves the limiter null in
+ * test mode); bearer auth is always wired. Documentation only — see
+ * `BackendShapeNotes`.
+ */
+export const ts_default_shape_notes: BackendShapeNotes = Object.freeze({
+	bearer_auth: true,
+	trusted_proxy: false,
+	login_rate_limit: false,
+});
+
+/**
+ * Shape notes for Rust-family backends — wiring facts, not gating flags. Adds
+ * `trusted_proxy: true` (the Rust spine's client-IP middleware is always wired;
+ * the env-gate only chooses XFF vs the TCP peer IP) and `login_rate_limit: true`
+ * (env-gated bucket on `/login` + `/password`). Documentation only — see
+ * `BackendShapeNotes`.
+ */
+export const rust_default_shape_notes: BackendShapeNotes = Object.freeze({
+	bearer_auth: true,
+	trusted_proxy: true,
+	login_rate_limit: true,
 });
 
 /** Bootstrap block built from the default secrets + supplied paths. */

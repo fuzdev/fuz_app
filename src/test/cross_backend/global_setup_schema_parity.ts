@@ -1,12 +1,14 @@
 /**
- * Vitest `globalSetup` for the `cross_backend_schema_parity` project —
- * spawns + bootstraps BOTH backends in one run (the TS spine on Node +
- * PGlite as `a`, the Rust `testing_spine_stub` over real Postgres as `b`)
- * and provides both serialized handles, so `schema_parity.cross.test.ts`
- * can capture each one's schema and diff them.
+ * Vitest `globalSetup` for the `cross_backend_parity` project — spawns +
+ * bootstraps BOTH backends in one run (the TS spine on Node + PGlite as `a`,
+ * the Rust `testing_spine_stub` over real Postgres as `b`) and provides both
+ * serialized handles, so both parity gates that run under this project —
+ * `schema_parity.cross.test.ts` (live DDL) and
+ * `action_manifest_parity.cross.test.ts` (live RPC method set + auth) — can
+ * capture each backend and diff. One dual-spawn serves both.
  *
  * The single-backend `global_setup_*.ts` makers derive one backend per
- * project; this gate needs both alive at once. The Rust side is made
+ * project; these gates need both alive at once. The Rust side is made
  * current first (rebuild + `createdb`) via `prepare_rust_spine_backend`, the
  * same prerequisite the single-backend `cross_backend_rust_spine_stub` project
  * runs; the TS-spine side needs no prep.

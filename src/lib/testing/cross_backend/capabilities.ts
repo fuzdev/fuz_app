@@ -25,47 +25,61 @@ import '../assert_dev_env.js';
  * - `rust_spine_stub_capabilities` — fuz_app's Rust spine-stub preset, in
  *   `rust_spine_stub_backend_config.ts` (delta off the rust family default).
  *
+ * **Gating flags vs shape notes.** `BackendCapabilities` holds only flags a
+ * suite actually gates on (each has a `test_if(capabilities.X, ...)` reader).
+ * Wiring facts that gate nothing — `bearer_auth` / `trusted_proxy` /
+ * `login_rate_limit` — live in the parallel `BackendShapeNotes` record
+ * (`in_process_shape_notes` here, `ts_default_shape_notes` /
+ * `rust_default_shape_notes` in `default_backend_configs.ts`) so the
+ * capability type never claims gating power it doesn't have.
+ *
  * @module
  */
 
 import {test} from 'vitest';
 
 /**
- * Optional behaviors a backend may support. Each flag's TSDoc names the
- * tests that gate on it; add a new flag here before referencing it from
- * a suite body, and document the gating tests inline.
+ * Backend wiring facts recorded for documentation — **not** gating flags.
+ *
+ * The companion to `BackendCapabilities`: where each capability flag has a
+ * `test_if(capabilities.X, ...)` reader that skips a suite the backend doesn't
+ * implement, nothing reads these. They record middleware / limiter wiring that
+ * differs between the TS and Rust families (a backend-shape record) but gates
+ * no cross test today. They live in their own type precisely so
+ * `BackendCapabilities` stops claiming gating power it doesn't have — fold a
+ * flag in here the moment it has no `test_if` reader, and promote it back the
+ * day a suite genuinely gates on it.
  */
-export interface BackendCapabilities {
+export interface BackendShapeNotes {
 	/**
-	 * Bearer token auth (`Authorization: Bearer <token>`) is wired through
-	 * the backend's middleware stack.
-	 *
-	 * **Declared for backend-shape documentation, not gating.** No suite reads
-	 * this flag — the bearer-token cases in `describe_standard_integration_tests`
-	 * / `describe_rate_limiting_tests` run unconditionally (every spine wires
-	 * bearer auth). Fold into a typed capability taxonomy if these gain real
-	 * gating readers.
+	 * Bearer-token auth (`Authorization: Bearer <token>`) is wired through the
+	 * backend's middleware stack. `true` on every spine — the bearer-token cases
+	 * in `describe_standard_integration_tests` / `describe_rate_limiting_tests`
+	 * run unconditionally.
 	 */
 	readonly bearer_auth: boolean;
 	/**
-	 * Trusted-proxy XFF parsing is wired (`X-Forwarded-For` etc.).
-	 *
-	 * **Declared for backend-shape documentation, not gating.** No suite reads
-	 * this flag (there is no cross-process proxy-resolution suite); it records
-	 * the proxy-default difference between the TS family (`false`) and the Rust
-	 * family (`true`). Fold into a typed capability taxonomy if it gains real
-	 * gating readers.
+	 * Trusted-proxy XFF parsing (`X-Forwarded-For` etc.) is wired. Records the
+	 * proxy-default difference between the TS family (`false` — the test binary
+	 * leaves proxy parsing off) and the Rust family (`true` — the client-IP
+	 * middleware is always wired; the env-gate only chooses XFF vs the TCP peer).
 	 */
 	readonly trusted_proxy: boolean;
 	/**
-	 * Per-account login rate limiting is wired.
-	 *
-	 * **Declared for backend-shape documentation, not gating.** No suite reads
-	 * this flag; the `describe_rate_limiting_tests` per-account cases are
-	 * in-process-only and don't cross a process boundary. Fold into a typed
-	 * capability taxonomy if it gains real gating readers.
+	 * Per-account login rate limiting is wired. `false` for the TS family (the
+	 * canonical path leaves the limiter null in test mode), `true` for the Rust
+	 * family (env-gated bucket on `/login` + `/password`).
 	 */
 	readonly login_rate_limit: boolean;
+}
+
+/**
+ * Optional behaviors a backend may support. Each flag's TSDoc names the
+ * tests that gate on it; add a new flag here before referencing it from
+ * a suite body, and document the gating tests inline. Wiring facts that gate
+ * nothing belong in `BackendShapeNotes`, not here.
+ */
+export interface BackendCapabilities {
 	/**
 	 * WebSocket transport is reachable end-to-end. Gates the cross-process
 	 * WS round-trip suite; the in-process `describe_ws_round_trip_tests`
@@ -104,10 +118,16 @@ export interface BackendCapabilities {
 	 * The account-lifecycle admin verbs (`account_delete` soft-delete,
 	 * `account_undelete` reactivation, `account_purge` keeper hard-delete)
 	 * are live-mounted on the backend's RPC path. Gates the dedicated
-	 * `describe_account_lifecycle_cross_tests` suite. Like cells, these
-	 * destructive/stateful verbs stay off the standard declared surface (the
-	 * generic round-trip can't drive them — they delete the subject), so
-	 * this flag opts a backend into the lifecycle parity coverage.
+	 * `describe_account_lifecycle_cross_tests` suite.
+	 *
+	 * Unlike cells / fact-serving / ws / sse, these verbs **are** on the
+	 * standard declared surface — they live in `create_admin_actions`, so
+	 * `create_spine_surface_spec` carries them and the spec-derived round-trip
+	 * + attack-surface suites already auto-enumerate their wire shape + auth.
+	 * This flag gates the *behavioral* parity the generic round-trip can't
+	 * provide: it can't drive verbs that delete their own subject (soft-delete →
+	 * undelete round-trip, keeper-confirmed purge, the keeper-guard refusal), so
+	 * the dedicated cross suite adds them.
 	 */
 	readonly account_lifecycle: boolean;
 	/**
@@ -168,9 +188,6 @@ export interface BackendCapabilities {
  * declare each flag explicitly per backend.
  */
 export const in_process_capabilities: BackendCapabilities = Object.freeze({
-	bearer_auth: true,
-	trusted_proxy: true,
-	login_rate_limit: true,
 	ws: true,
 	sse: true,
 	cell_crud: true,
@@ -183,12 +200,23 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 });
 
 /**
+ * Shape notes for the in-process Hono transport — every wiring fact present
+ * (the in-process app exercises the full middleware stack). Documentation
+ * only, like every `BackendShapeNotes` (nothing reads it).
+ */
+export const in_process_shape_notes: BackendShapeNotes = Object.freeze({
+	bearer_auth: true,
+	trusted_proxy: true,
+	login_rate_limit: true,
+});
+
+/**
  * Conditional `test()` wrapper — registers a vitest case only when
  * `cond` is true; otherwise registers it as `.skip` so the run still
  * surfaces the gated coverage in the report.
  *
  * Thin wrapper around vitest's `test.skipIf(!cond)` with the argument
- * order flipped to match the more readable `test_if(capabilities.bearer_auth, ...)`
+ * order flipped to match the more readable `test_if(capabilities.ws, ...)`
  * call pattern.
  */
 export const test_if = (cond: boolean, name: string, fn: () => void | Promise<void>): void => {

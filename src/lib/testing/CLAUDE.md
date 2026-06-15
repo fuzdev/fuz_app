@@ -222,7 +222,37 @@ test-only by construction.
 - `assert_schema_snapshots_equal(a, b, labels?)` — throws on drift with a fully-formatted diff message.
 - `SchemaDiff` — tagged-union per drift kind: `table_only_in`, `column_only_in`, `column_field_differs`, `index_only_in`, `index_definition_differs`, `constraint_only_in`, `constraint_differs`, `sequence_only_in`, `sequence_data_type_differs`, `enum_only_in`, `enum_labels_differ` (enum labels compared positionally — declared order is significant).
 
-fuz_app's own spine gates this cross-process via the `cross_backend_schema_parity` project (`schema_parity.cross.test.ts` + the dual-spawn `global_setup_schema_parity.ts`), diffing the TS spine ↔ `testing_spine_stub` full schema — `npm run test:cross:schema-parity`. The forge has its own deno↔rust parity gate.
+fuz_app's own spine gates this cross-process via the `cross_backend_parity` project (`schema_parity.cross.test.ts` + the dual-spawn `global_setup_schema_parity.ts`), diffing the TS spine ↔ `testing_spine_stub` full schema — `npm run test:cross:parity`. The forge has its own deno↔rust parity gate.
+
+## Cross-impl RPC-manifest parity
+
+The action-surface sibling of schema parity. Where schema parity diffs the live
+_database_ shape, this diffs the live _RPC registry_ shape — proving the TS
+spine and the Rust `testing_spine_stub` mount the same method set with the same
+per-method auth shape.
+
+- `cross_backend/action_manifest.ts` — `ActionManifest` / `ActionManifestEntry`
+  Zod schema (the `_testing_action_manifest` wire validator) + `build_action_manifest(specs)`,
+  which normalizes each spec to `{method, side_effects, account, actor, roles,
+credential_types}` (auth axes pass through; `roles` / `credential_types` flatten
+  to sorted arrays). Twin of `schema_introspect.ts`. Excludes the protocol actions
+  (`heartbeat` / `cancel`) by construction — the two impls organize them
+  differently (TS WS-only; Rust on one shared registry), so the caller passes a
+  protocol-free list.
+- `cross_backend/action_manifest_parity.ts` — `diff_action_manifests` /
+  `format_action_manifest_diffs` / `assert_action_manifests_equal` (twin of
+  `schema_parity.ts`) — asserts exact method-set + per-method auth-shape parity.
+- `cross_backend/setup.ts` `capture_action_manifest(handle)` — dumps a backend's
+  manifest over the daemon-token `_testing_action_manifest` channel (twin of
+  `capture_schema_snapshot`).
+
+It runs under the same dual-spawn `cross_backend_parity` project (one TS-spine +
+Rust-stub spawn serves both gates). It complements the in-repo
+`spine_method_coverage` reconciliation gate (which proves _mounted ⟹ covered_);
+this proves _TS-mount-set ≡ Rust-mount-set_. The gate asserts **exact** parity —
+every mounted method and its full auth shape (side-effects + the four auth axes)
+must match across the two impls, with no allowlisted divergences (see
+`action_manifest_parity.cross.test.ts`).
 
 **Cross-impl gate pattern** — a dual-impl consumer running two backends
 (a TS Hono server and a Rust spine server) against a shared schema, plus
@@ -861,18 +891,26 @@ source of truth for wire-shape conformance.
   deliver it.
 
 - `testing/cross_backend/capabilities.ts` — `BackendCapabilities` vocabulary
-  (`bearer_auth` / `trusted_proxy` / `login_rate_limit` / `ws` / `sse` /
-  `cell_crud` / `cell_relations` / `account_lifecycle` / `fact_serving` /
-  `ready` / `account_status` / `oversized_reject_closes_connection`),
+  (the **gating** flags `ws` / `sse` / `cell_crud` / `cell_relations` /
+  `account_lifecycle` / `fact_serving` / `ready` / `account_status` /
+  `oversized_reject_closes_connection` — each has a `test_if` reader),
   `test_if(cond, name, fn)`
-  for capability-gated cases, and `in_process_capabilities` preset. `cell_crud`
+  for capability-gated cases, and `in_process_capabilities` preset. The
+  non-gating wiring facts (`bearer_auth` / `trusted_proxy` / `login_rate_limit`,
+  no `test_if` readers) live in the parallel `BackendShapeNotes` record
+  (`in_process_shape_notes`; `ts_default_shape_notes` / `rust_default_shape_notes`
+  in `default_backend_configs.ts`) — split out so the capability type stops
+  claiming gating it doesn't do. `cell_crud`
   gates the CRUD parity suite, `cell_relations` the relation / ACL / audit
   parity suite — both `true` on every backend that live-mounts the full cell
   surface (TS spine binary, in-process app, Rust stub). A backend mounting only
   plain CRUD would declare `cell_crud: true, cell_relations: false`.
   `account_lifecycle` gates `describe_account_lifecycle_cross_tests` (the
-  `account_delete` / `account_undelete` / `account_purge` parity suite) — also
-  off the declared surface like cells, `true` on every spine. `fact_serving`
+  `account_delete` / `account_undelete` / `account_purge` parity suite); unlike
+  cells those verbs **are** on the declared surface (in `create_admin_actions`,
+  auto-enumerated for shape/auth) — the flag gates the behavioral parity the
+  generic round-trip can't drive (it can't delete the subject). `true` on every
+  spine. `fact_serving`
   gates `describe_fact_serving_cross_tests` (the cell-scoped per-reference +
   admin-only bare-hash fact-serving parity suite); like cells it stays off the
   declared surface and is `true` on every spine that mounts the serve routes +
@@ -1190,6 +1228,16 @@ in-process legs (plain `gro test`) are `src/test/auth/cell_crud_parity.db.test.t
   (`query_session_get_valid` — `expires_at > NOW()`), the gate the in-process
   payload-expiry tests never reached. Daemon-token-gated like its siblings; the
   Rust mirror is `fuz_testing::create_testing_mint_session_action_spec`.
+
+  Also in the module — but **not** bundled by `create_testing_actions` —
+  `_testing_action_manifest` (+ `create_testing_action_manifest_action(mounted)`):
+  dumps the live RPC registry as a normalized `ActionManifest` for the
+  cross-impl manifest-parity gate (see §Cross-impl RPC-manifest parity). It must
+  enumerate _every_ mounted method, which `create_testing_actions` (one
+  sub-factory) can't see, so it's appended at the full-mount layer
+  (`full_spine_mount.ts` `build_full_spine_rpc_actions`), closing over the
+  complete action list plus its own spec. Daemon-token-gated like its siblings;
+  the Rust mirror is `fuz_testing::create_testing_action_manifest_action_spec`.
 
 ### Origin verification parity — `cross_backend/origin.ts`
 

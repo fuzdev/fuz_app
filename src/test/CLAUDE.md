@@ -160,8 +160,10 @@ deterministic double-undelete → not\*found, the keeper-guard
 `account_delete outcome=failure` audit row read back via
 `_testing_drain_effects` + `audit_log_list`, and the `admin_account_list`
 `include_deleted` listing shape (tombstoned rows surface with `deleted_at`
-set), gated on `capabilities.account_lifecycle`; off the declared surface
-like cells), and `conformance.cross.test.ts` (the declarative
+set), gated on `capabilities.account_lifecycle`; unlike cells these verbs are
+**on** the declared surface (in `create_admin_actions`, auto-enumerated for
+shape/auth) — the flag gates the behavioral parity the generic round-trip can't
+drive, since it can't delete the subject), and `conformance.cross.test.ts` (the declarative
 `describe_conformance_table_tests` runner over shared
 `conformance_proof_cases.ts` + the security slate
 `conformance_security_cases.ts` — credential ceiling, privilege gates, IDOR
@@ -237,14 +239,20 @@ reason, not just the status. The `create_account({email})` fixture plumbing ride
 production signup body against the username-scoped invite. In-process leg
 `identity_parity.db.test.ts`).
 
-An eighteenth file, `schema_parity.cross.test.ts`, is **not** one of the seventeen above —
-it runs under its own dual-spawn `cross_backend_schema_parity` project
+Two more files — `schema_parity.cross.test.ts` and
+`action_manifest_parity.cross.test.ts` — are **not** among the seventeen above:
+they run under the shared dual-spawn `cross_backend_parity` project
 (`global_setup_schema_parity.ts` brings up the TS spine + `testing_spine_stub`
-together and provides `parity_handle_a`/`_b`), so it's excluded from the
-single-backend projects' glob. It diffs the two backends' full DDL (auth + cell
+together and provides `parity_handle_a`/`_b`), so both are excluded from the
+single-backend projects' glob. `schema_parity.cross.test.ts` diffs the two
+backends' full DDL (auth + cell
 
 - cell_history + fact + the `cell_visibility` enum) via `query_schema_snapshot`
-- `assert_schema_snapshots_equal` — `npm run test:cross:schema-parity`.
+- `assert_schema_snapshots_equal`; `action_manifest_parity.cross.test.ts` diffs
+  the two backends' live RPC method set + per-method auth shape via
+  `_testing_action_manifest` + `assert_action_manifests_equal` (exact parity —
+  method set + every auth axis) — both under
+  `npm run test:cross:parity`.
   Every backend now advertises `capabilities.sse` and serves
   `/api/admin/audit/stream`: the TS spines wire `audit_log_sse`, and the Rust
   `spine_stub` serves it from the spine `fuz_realtime::SseRegistry` +

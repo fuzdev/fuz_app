@@ -15,9 +15,12 @@
  * AS ENUM` types, so a `cell_visibility` label-set / ordering drift is a gated
  * fact here, not invisible.
  *
- * Opt-in (behind `FUZ_TEST_CROSS_BACKEND=1`); the Rust side needs a Postgres
- * the stub can reach — `npm run test:cross:schema-parity` rebuilds the stub +
- * creates its DB by default.
+ * Runs under the dual-spawn `cross_backend_parity` project, which it shares
+ * with the action-manifest parity gate (`action_manifest_parity.cross.test.ts`)
+ * — one TS-spine + Rust-stub spawn serves both. Opt-in (behind
+ * `FUZ_TEST_CROSS_BACKEND=1`); the Rust side needs a Postgres the stub can
+ * reach — `npm run test:cross:parity` rebuilds the stub + creates its DB by
+ * default.
  *
  * @module
  */

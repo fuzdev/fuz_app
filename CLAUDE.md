@@ -313,8 +313,9 @@ types (`pg_enum` labels in declared order); the
 bookkeeping, not domain schema). Diffs are tagged-union by kind so failure
 messages name the specific divergence. fuz_app gates its own TS spine ↔
 `testing_spine_stub` schema (auth + cell + cell_history + fact + the
-`cell_visibility` enum) via the `cross_backend_schema_parity` project
-(`npm run test:cross:schema-parity`).
+`cell_visibility` enum) via the `cross_backend_parity` project
+(`npm run test:cross:parity`), which also runs the action-manifest parity
+gate (the RPC method-set + per-method auth-shape twin of schema parity).
 
 When working on tests, touch both directories together:
 

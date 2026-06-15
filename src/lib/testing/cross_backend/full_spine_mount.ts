@@ -14,7 +14,10 @@ import '../assert_dev_env.js';
  *
  * - the `_testing_*` daemon-token backdoors (`create_testing_actions`),
  * - the full cell verb set (CRUD + grant + field + item + audit),
- * - the opt-in `actor_lookup` / `actor_search` resolvers.
+ * - the opt-in `actor_lookup` / `actor_search` resolvers,
+ * - the `_testing_action_manifest` backdoor, appended last (it dumps the live
+ *   method set for the cross-impl manifest-parity gate, so it must enumerate
+ *   every method above it).
  *
  * Single-sourcing the mount here lets the binary, the in-process parity
  * setup, and the `spine_method_coverage` reconciliation test all build the
@@ -41,7 +44,10 @@ import {create_actor_lookup_actions} from '../../auth/actor_lookup_actions.js';
 import {create_actor_search_actions} from '../../auth/actor_search_actions.js';
 import type {RpcEndpointSpec} from '../../http/surface.js';
 import type {AppServerContext} from '../../server/app_server_context.js';
-import {create_testing_actions} from './testing_reset_actions.js';
+import {
+	create_testing_action_manifest_action,
+	create_testing_actions,
+} from './testing_reset_actions.js';
 import {SPINE_RPC_PATH, spine_roles, spine_session_options} from './default_spine_surface.js';
 
 /** Options for {@link build_full_spine_rpc_actions} / {@link full_spine_rpc_endpoints}. */
@@ -79,19 +85,27 @@ export interface FullSpineMountOptions {
 export const build_full_spine_rpc_actions = (
 	deps: AppDeps,
 	options: FullSpineMountOptions,
-): Array<RpcAction> => [
-	...create_standard_rpc_actions(
-		{...deps, notification_sender: options.notification_sender ?? null},
-		{roles: spine_roles},
-	),
-	...create_testing_actions(deps, {
-		session_options: spine_session_options,
-		daemon_token_state: options.daemon_token_state,
-	}),
-	...create_all_cell_actions(deps, {roles: spine_roles}),
-	...create_actor_lookup_actions(deps),
-	...create_actor_search_actions(deps),
-];
+): Array<RpcAction> => {
+	const actions: Array<RpcAction> = [
+		...create_standard_rpc_actions(
+			{...deps, notification_sender: options.notification_sender ?? null},
+			{roles: spine_roles},
+		),
+		...create_testing_actions(deps, {
+			session_options: spine_session_options,
+			daemon_token_state: options.daemon_token_state,
+		}),
+		...create_all_cell_actions(deps, {roles: spine_roles}),
+		...create_actor_lookup_actions(deps),
+		...create_actor_search_actions(deps),
+	];
+	// Append the `_testing_action_manifest` backdoor last — it closes over the
+	// complete `actions` list (plus its own spec) to dump the live method set
+	// for the cross-impl manifest-parity gate, so it must come after every
+	// method it enumerates.
+	actions.push(create_testing_action_manifest_action(actions));
+	return actions;
+};
 
 /**
  * Factory-form full mount at {@link SPINE_RPC_PATH}, the shape

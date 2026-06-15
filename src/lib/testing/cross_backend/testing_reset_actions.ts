@@ -3,12 +3,19 @@ import '../assert_dev_env.js';
 /**
  * Test-binary RPC actions for cross-process integration tests.
  *
- * Four daemon-token-authed actions, bundled by `create_testing_actions`:
+ * Five daemon-token-authed actions, bundled by `create_testing_actions`:
  * **`_testing_reset`** (DB wipe + keeper re-seed), **`_testing_drain_effects`**
  * (audit barrier), **`_testing_mint_session`** (forge an
  * expired-by-construction server-side session for the expiry conformance
- * cases), and **`_testing_schema_snapshot`** (introspect the live schema for
+ * cases), **`_testing_put_fact`** (seed an embedded fact for the fact-serving
+ * suite), and **`_testing_schema_snapshot`** (introspect the live schema for
  * cross-impl parity diffing against a Rust backend's `fuz_db` snapshot).
+ *
+ * A sixth daemon-token action, **`_testing_action_manifest`** (dump the live
+ * RPC registry for cross-impl method-set + auth-shape parity), lives here too
+ * but is **not** bundled by `create_testing_actions` — it must enumerate
+ * *every* mounted method, so it's appended at the full-mount layer
+ * (`build_full_spine_rpc_actions`) where the complete list exists.
  *
  * `_testing_reset` — full DB wipe + keeper re-seed + optional
  * secondary-account seeding. The
@@ -75,6 +82,7 @@ import type {Db} from '../../db/db.js';
 import {ROLE_ADMIN, ROLE_KEEPER} from '../../auth/role_schema.js';
 import {auth_integration_truncate_tables} from '../db.js';
 import {query_schema_snapshot, SchemaSnapshot} from '../schema_introspect.js';
+import {ActionManifest, build_action_manifest} from './action_manifest.js';
 import {query_create_actor} from '../../auth/account_queries.js';
 import {create_test_account_with_credentials, mint_test_session} from '../app_server.js';
 import {DEFAULT_TEST_PASSWORD} from '../test_credentials.js';
@@ -323,6 +331,64 @@ export const create_testing_schema_snapshot_action = (): RpcAction =>
 	rpc_action(testing_schema_snapshot_action_spec, async (input, ctx) =>
 		query_schema_snapshot(ctx.db, {exclude_tables: input.exclude_tables}),
 	);
+
+/**
+ * `_testing_action_manifest` — dump the backend's live RPC method set as a
+ * normalized `ActionManifest` (one entry per method: `{method, side_effects,
+ * account, actor, roles, credential_types}`) for cross-impl parity diffing.
+ * The action-surface twin of `_testing_schema_snapshot`: where that
+ * introspects the live *database*, this introspects the live *RPC registry*.
+ * The cross-backend harness calls it on each backend, then
+ * `assert_action_manifests_equal`s the results (the Rust mirror is
+ * `fuz_testing::create_testing_action_manifest_action_spec`, whose
+ * normalization matches by design). Complements the in-repo
+ * `spine_method_coverage` gate (mounted ⟹ covered) by proving the TS
+ * mount-set ≡ the Rust mount-set, method-for-method and auth-shape-for-shape.
+ *
+ * Unlike its `_testing_*` siblings this action is **not** bundled by
+ * `create_testing_actions` — the manifest must enumerate *every* mounted
+ * method, which `create_testing_actions` (one sub-factory among many) can't
+ * see. It's appended at the full-mount layer (`build_full_spine_rpc_actions`)
+ * via `create_testing_action_manifest_action`, where the complete list exists.
+ *
+ * `auth` gates on the daemon-token credential, matching `_testing_reset`.
+ */
+export const testing_action_manifest_action_spec = {
+	method: '_testing_action_manifest',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: TESTING_ACTION_AUTH,
+	side_effects: false,
+	input: z.strictObject({}),
+	output: ActionManifest,
+	async: true,
+	description:
+		'Test-binary only — dump the live RPC registry as a normalized {method, auth, side_effects} ' +
+		'manifest for cross-impl method-set + auth-shape parity diffing.',
+} as const satisfies RequestResponseActionSpec;
+
+/**
+ * Build the `_testing_action_manifest` action over a backend's full live RPC
+ * mount. The handler closes over a manifest computed once at assembly time
+ * from every `mounted` spec **plus this action's own spec** — the manifest
+ * action is itself a live method, so it must appear in the dump it serves.
+ * `mounted` excludes it (it's appended to the mount *after* the rest is
+ * assembled, in `build_full_spine_rpc_actions`), so its static spec is folded
+ * in here; the Rust mirror folds in its own descriptor the same way.
+ *
+ * Pass the protocol-action-free full mount: the protocol actions
+ * (`heartbeat` / `cancel`) are excluded by construction so the cross-impl
+ * diff stays apples-to-apples (see `action_manifest.ts` §Scope).
+ */
+export const create_testing_action_manifest_action = (
+	mounted: ReadonlyArray<RpcAction>,
+): RpcAction => {
+	const manifest = build_action_manifest([
+		...mounted.map((action) => action.spec),
+		testing_action_manifest_action_spec,
+	]);
+	return rpc_action(testing_action_manifest_action_spec, async () => manifest);
+};
 
 /** Options for `create_testing_actions`. */
 export interface CreateTestingActionsOptions {
