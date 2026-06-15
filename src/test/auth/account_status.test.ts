@@ -69,10 +69,10 @@ const create_test_app = (
 };
 
 describe('account status route spec metadata', () => {
-	test('defaults to GET /api/account/status with auth none', () => {
+	test('defaults to GET /status with auth none', () => {
 		const spec = create_account_status_route_spec();
 		assert.strictEqual(spec.method, 'GET');
-		assert.strictEqual(spec.path, '/api/account/status');
+		assert.strictEqual(spec.path, '/status');
 		assert.deepStrictEqual(spec.auth, {account: 'none', actor: 'none'});
 	});
 
@@ -86,7 +86,7 @@ describe('account status unauthenticated', () => {
 	test('returns 401 with error', async () => {
 		const spec = create_account_status_route_spec();
 		const app = create_test_app([spec]);
-		const res = await app.request('/api/account/status');
+		const res = await app.request('/status');
 		assert.strictEqual(res.status, 401);
 		const body = await res.json();
 		assert.strictEqual(body.error, 'authentication_required');
@@ -96,7 +96,7 @@ describe('account status unauthenticated', () => {
 	test('includes bootstrap_available when bootstrap_status is available', async () => {
 		const spec = create_account_status_route_spec({bootstrap_status: {available: true}});
 		const app = create_test_app([spec]);
-		const res = await app.request('/api/account/status');
+		const res = await app.request('/status');
 		assert.strictEqual(res.status, 401);
 		const body = await res.json();
 		assert.strictEqual(body.bootstrap_available, true);
@@ -105,7 +105,7 @@ describe('account status unauthenticated', () => {
 	test('omits bootstrap_available when not available', async () => {
 		const spec = create_account_status_route_spec({bootstrap_status: {available: false}});
 		const app = create_test_app([spec]);
-		const res = await app.request('/api/account/status');
+		const res = await app.request('/status');
 		assert.strictEqual(res.status, 401);
 		const body = await res.json();
 		assert.ok(!('bootstrap_available' in body));
@@ -114,7 +114,7 @@ describe('account status unauthenticated', () => {
 	test('omits bootstrap_available when bootstrap_status not provided', async () => {
 		const spec = create_account_status_route_spec();
 		const app = create_test_app([spec]);
-		const res = await app.request('/api/account/status');
+		const res = await app.request('/status');
 		assert.strictEqual(res.status, 401);
 		const body = await res.json();
 		assert.ok(!('bootstrap_available' in body));
@@ -125,13 +125,13 @@ describe('account status unauthenticated', () => {
 		const spec = create_account_status_route_spec({bootstrap_status});
 		const app = create_test_app([spec]);
 
-		const res1 = await app.request('/api/account/status');
+		const res1 = await app.request('/status');
 		const body1 = await res1.json();
 		assert.strictEqual(body1.bootstrap_available, true);
 
 		bootstrap_status.available = false;
 
-		const res2 = await app.request('/api/account/status');
+		const res2 = await app.request('/status');
 		const body2 = await res2.json();
 		assert.ok(!('bootstrap_available' in body2));
 	});
@@ -142,7 +142,7 @@ describe('account status authenticated', () => {
 		const spec = create_account_status_route_spec();
 		const ctx = create_test_ctx();
 		const app = create_test_app([spec], ctx);
-		const res = await app.request('/api/account/status');
+		const res = await app.request('/status');
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
 		assert.strictEqual(body.account.id, 'acc_1');
@@ -155,7 +155,7 @@ describe('account status authenticated', () => {
 		const spec = create_account_status_route_spec();
 		const ctx = create_test_ctx();
 		const app = create_test_app([spec], ctx);
-		const res = await app.request('/api/account/status');
+		const res = await app.request('/status');
 		const body = await res.json();
 		assert.strictEqual(body.account.password_hash, undefined);
 		assert.strictEqual(body.account.updated_at, undefined);
@@ -167,7 +167,7 @@ describe('account status authenticated', () => {
 		const spec = create_account_status_route_spec({bootstrap_status: {available: true}});
 		const ctx = create_test_ctx();
 		const app = create_test_app([spec], ctx);
-		const res = await app.request('/api/account/status');
+		const res = await app.request('/status');
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
 		assert.ok(!('bootstrap_available' in body));

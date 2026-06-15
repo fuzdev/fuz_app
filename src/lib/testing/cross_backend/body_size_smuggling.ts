@@ -5,37 +5,45 @@ import '../assert_dev_env.js';
  * handling — the security sibling of `body_size.ts`.
  *
  * When the server caps the request body it answers `413` on the
- * `Content-Length` header and closes the connection *without reading the
- * oversized body*. That close is load-bearing: HTTP/1.1 forbids reusing a
- * keep-alive connection whose request body wasn't consumed, because the unread
- * body bytes would otherwise be parsed as the start of the next request — a
- * classic request-smuggling vector. This suite proves the mitigation holds end
- * to end by **pipelining**: it opens a raw TCP socket and sends, in one write,
- * an oversized `POST` immediately followed by a second `GET` request. A correct
- * server rejects the POST with `413` and never processes the trailing GET (the
- * connection closes with the GET bytes unconsumed); a vulnerable one would
- * drain past the body and answer the smuggled GET too. The assertion is
- * therefore "**at most one** HTTP response comes back" — a *second* response is
- * the smuggle. It's `<= 1` rather than "exactly the 413" because the impls close
- * differently at the TCP level (node-server graceful close delivers the 413
- * first; hyper's RST can drop the in-flight 413 before the client reads it), so
- * demanding a cleanly-read 413 would be flaky; the 413-ness itself is pinned
- * reliably over `fetch` by `describe_body_size_cross_tests`. A **positive
- * control** (two pipelined requests → >= 2 responses) proves a second response
- * *would* be seen if the trailing request were processed — without it the
- * `<= 1` assertion would be vacuous on a server that never reuses connections,
- * and it also proves the response counter isn't undercounting.
+ * `Content-Length` header. The strong (defense-in-depth) posture is to close
+ * the connection *without reading the oversized body*: HTTP/1.1 forbids reusing
+ * a keep-alive connection whose request body wasn't consumed, because unread
+ * body bytes would be parsed as the start of the next request — a classic
+ * request-smuggling vector. This suite probes the boundary by **pipelining**:
+ * it opens a raw TCP socket and sends, in one write, an oversized `POST`
+ * immediately followed by a second `GET`. The assertion forks on the backend's
+ * declared `oversized_reject_closes_connection` capability:
+ *
+ * - **Closes (Node / Deno / hyper)** — the reject closes the socket with the
+ *   GET bytes unconsumed, so **at most one** response comes back. `<= 1` rather
+ *   than "exactly the 413" because the impls close differently at the TCP level
+ *   (node-server graceful close delivers the 413 first; hyper's RST can drop the
+ *   in-flight 413 before the client reads it), so demanding a cleanly-read 413
+ *   would be flaky.
+ * - **Drains + keepalives (Bun)** — `Bun.serve` reads the full declared
+ *   `Content-Length` body and answers the *correctly-framed* pipelined GET, so
+ *   **two** responses come back. This is **not** a smuggle: the GET is delimited
+ *   by the body's `Content-Length`, not the unread body reinterpreted as a
+ *   request — Bun answers it with a clean `400` (`missing method`), not the `x`
+ *   body bytes reparsed. The security property asserted here is **no desync**
+ *   (`<= 2`): a real desync would reframe the 1 MiB of `x` into bogus request
+ *   lines and push the count past two.
+ *
+ * Either way the oversized body is rejected *with* a 413 — pinned reliably over
+ * `fetch` by `describe_body_size_cross_tests`; this test owns only the
+ * connection-handling half. A **positive control** (two pipelined requests →
+ * `>= 2` responses) proves a second response *would* be seen if a trailing
+ * request were processed — without it the close-posture `<= 1` would be vacuous
+ * on a server that never reuses connections — and that the counter isn't
+ * undercounting.
  *
  * Raw-socket by necessity (the `FetchTransport` can't pipeline two requests on
  * one connection), so — unlike `body_size.ts` — this is **cross-process only**
- * (no in-process leg; there is no socket in-process) and ungated (the limit is
- * on every spine). Robust by construction: it counts responses until the
- * socket closes or a short read timeout, so a server that closes (the expected
- * path) and one that merely holds the connection open without smuggling both
- * read as one response; only an actual second response fails.
+ * (no in-process leg; there is no socket in-process). The connection-close half
+ * is capability-gated; the no-desync half holds on every spine.
  *
- * Cited property: `docs/security.md` §"Body Size Limiting" (connection close on
- * oversized reject).
+ * Cited property: `docs/security.md` §"Body Size Limiting" (connection handling
+ * on oversized reject).
  *
  * `$lib`-free by contract (relative + `node:` specifiers only).
  *
@@ -54,6 +62,18 @@ export interface BodySizeSmugglingCrossTestOptions {
 	readonly base_url: string;
 	/** RPC endpoint path to target. Default `/api/rpc`. */
 	readonly rpc_path?: string;
+	/**
+	 * Whether the backend closes the connection on an oversized-body reject
+	 * without reading the body (`capabilities.oversized_reject_closes_connection`).
+	 * `true` (default) demands the strong posture — the pipelined GET is never
+	 * reached, so **at most one** response comes back. `false` (Bun) relaxes to
+	 * the no-desync property: the body is drained on `Content-Length` and the
+	 * pipelined GET is framed correctly, so **at most two** responses come back
+	 * and the body bytes are never reparsed as a request. Default `true` so a
+	 * consumer that forgets to declare the flag fails loud rather than silently
+	 * accepting a drain.
+	 */
+	readonly closes_connection?: boolean;
 }
 
 /** The shared 1 MiB cap (see `body_size.ts` for why it's a local constant). */
@@ -112,6 +132,7 @@ export const describe_body_size_smuggling_cross_tests = (
 ): void => {
 	const {base_url} = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
+	const closes_connection = options.closes_connection ?? true;
 	const host = new URL(base_url).host;
 
 	describe('body-size limit — request-smuggling resistance', () => {
@@ -148,25 +169,45 @@ export const describe_body_size_smuggling_cross_tests = (
 				`GET ${rpc_path} HTTP/1.1\r\nHost: ${host}\r\n\r\n`;
 
 			const response = await send_raw(base_url, payload, 2000);
-
-			// The security property is "the pipelined GET is not processed", i.e.
-			// **at most one** response comes back (the 413, or none if the close
-			// raced the read). A *second* response is the smuggle. We assert `<= 1`
-			// rather than "exactly the 413" because the two impls close the
-			// connection differently at the TCP level — node-server closes
-			// gracefully (the 413 is delivered first), hyper sends an RST that can
-			// drop the in-flight 413 before the client reads it — and demanding a
-			// cleanly-read 413 here would be flaky. That the oversized body is
-			// rejected *with* a 413 is pinned reliably (over `fetch`) by
-			// `describe_body_size_cross_tests`; this test owns only the no-smuggle
-			// half. The control above proves a second response *would* be seen if
-			// the GET were processed, so `<= 1` is a real signal, not a vacuous one.
 			const n = count_responses(response);
-			assert.ok(
-				n <= 1,
-				`expected at most one response (the GET must not be smuggled in off the ` +
-					`unread body); a second response means it was. Saw ${n}. Raw head: ${response.slice(0, 120)}`,
-			);
+
+			if (closes_connection) {
+				// Strong posture (Node / Deno / hyper): the reject closes the
+				// connection *without reading the body*, so the pipelined GET is
+				// never reached — **at most one** response comes back (the 413, or
+				// none if the close raced the read). A *second* response would mean
+				// the body was drained and the GET processed. We assert `<= 1` rather
+				// than "exactly the 413" because the impls close differently at the
+				// TCP level — node-server closes gracefully (413 delivered first),
+				// hyper sends an RST that can drop the in-flight 413 before the client
+				// reads it — and demanding a cleanly-read 413 would be flaky. The
+				// 413-ness itself is pinned reliably (over `fetch`) by
+				// `describe_body_size_cross_tests`. The control above proves a second
+				// response *would* be seen if the GET were processed, so `<= 1` is a
+				// real signal, not vacuous.
+				assert.ok(
+					n <= 1,
+					`expected at most one response (oversized reject closes the connection; the ` +
+						`pipelined GET must not be reached). Saw ${n}. Raw head: ${response.slice(0, 120)}`,
+				);
+			} else {
+				// Drain-and-keepalive posture (Bun): `Bun.serve` reads the full
+				// declared `Content-Length` body and keeps the socket alive, so it
+				// answers the *correctly-framed* pipelined GET — **two** responses
+				// (the 413 + a well-formed reply to the GET). This is not a smuggle:
+				// the GET is delimited by the body's `Content-Length`, not the unread
+				// body reinterpreted as request bytes. The security property here is
+				// **no desync** — the body bytes are never reparsed as request(s). A
+				// real desync would reframe the 1 MiB of `x` into bogus request
+				// lines, pushing the count past two; `<= 2` is the no-desync bound,
+				// and the control above proves the counter isn't undercounting.
+				assert.ok(
+					n <= 2,
+					`expected at most two responses (the 413 + one framed reply to the ` +
+						`pipelined GET); more means the oversized body was reparsed as requests ` +
+						`(a desync). Saw ${n}. Raw head: ${response.slice(0, 120)}`,
+				);
+			}
 		});
 	});
 };

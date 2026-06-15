@@ -8,10 +8,7 @@
  */
 
 import {create_session_config} from '$lib/auth/session_cookie.js';
-import {
-	create_account_status_route_spec,
-	create_account_route_specs,
-} from '$lib/auth/account_routes.js';
+import {create_account_route_specs} from '$lib/auth/account_routes.js';
 import {create_admin_actions} from '$lib/auth/admin_actions.js';
 import {create_audit_log_route_specs} from '$lib/auth/audit_log_routes.js';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
@@ -24,13 +21,13 @@ const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
-	create_account_status_route_spec({bootstrap_status: ctx.bootstrap_status}),
 	...prefix_route_specs('/api/account', [
 		...create_account_route_specs(ctx.deps, {
 			session_options,
 			ip_rate_limiter: null,
 			login_account_rate_limiter: null,
 			login_fail_floor_ms: 0,
+			bootstrap_status: ctx.bootstrap_status,
 		}),
 	]),
 	...prefix_route_specs('/api/admin', [...create_audit_log_route_specs()]),

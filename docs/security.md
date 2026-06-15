@@ -340,12 +340,25 @@ rejected with 413 and `{error: 'payload_too_large'}` (`PayloadTooLargeError`
 schema). Configure via `max_body_size` on `AppServerOptions`; pass `null` to
 disable.
 
-**Rejection closes the connection.** A request whose `Content-Length` exceeds
-the cap is rejected on the header — before the body is read — and the server
-closes the connection rather than reusing it. This is deliberate: an unread
-request body cannot share a keep-alive connection, because the leftover bytes
-would be parsed as the start of the next request (request smuggling). Clients
-see the connection drop after the 413.
+**Rejection and the connection — runtime-dependent posture.** A request whose
+`Content-Length` exceeds the cap is rejected on the header, before the body is
+read. The defense-in-depth posture is then to **close the connection without
+reading the body**: an unread request body cannot safely share a keep-alive
+connection, because the leftover bytes could be parsed as the start of the next
+request (request smuggling). Node (`@hono/node-server`), Deno, and the Rust
+spine (hyper) take this posture — the client sees the connection drop after the
+413, and a pipelined trailing request is never reached.
+
+Bun (`Bun.serve`) instead **drains the declared `Content-Length` and keeps the
+socket alive**, then answers a correctly-framed pipelined request. This is not a
+desync: Bun frames the next request on `Content-Length`, not on the unread body,
+so there is no smuggling window — only the defense-in-depth close is absent
+(and Bun reads the full oversized body off the socket before discarding it, so
+the cap bounds what the *application* processes, not what the transport reads).
+The cross-backend suite gates the strong "connection closes" assertion behind
+the `oversized_reject_closes_connection` capability and holds every backend to
+the universal **no-desync** property
+(`testing/cross_backend/body_size_smuggling.ts`).
 
 **The cap is global, not per-route.** `bodyLimit` is mounted once for the whole
 app, so `max_body_size` (and `null`) apply to every route — there is no

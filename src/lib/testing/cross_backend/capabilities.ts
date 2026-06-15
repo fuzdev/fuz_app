@@ -12,6 +12,19 @@ import '../assert_dev_env.js';
  * capability `true` (see `in_process_capabilities`). Cross-process
  * backends opt in per-flag on their `BackendConfig`.
  *
+ * **Where the per-backend declarations live** (this file owns only the
+ * vocabulary + the in-process preset):
+ *
+ * - `in_process_capabilities` — here; every flag `true`.
+ * - `ts_default_capabilities` / `rust_default_capabilities` — consumer-facing
+ *   family defaults, in `default_backend_configs.ts` (full literals, so adding
+ *   a capability is a compile error until each family declares it).
+ * - `ts_spine_capabilities` / `ts_spine_bun_capabilities` — fuz_app's own TS
+ *   spine presets, in `ts_spine_backend_config.ts` (deltas off the family
+ *   default; Bun flips `oversized_reject_closes_connection`).
+ * - `rust_spine_stub_capabilities` — fuz_app's Rust spine-stub preset, in
+ *   `rust_spine_stub_backend_config.ts` (delta off the rust family default).
+ *
  * @module
  */
 
@@ -117,6 +130,35 @@ export interface BackendCapabilities {
 	 * readiness parity coverage. The drift → `503` path stays per-impl unit tests.
 	 */
 	readonly ready: boolean;
+	/**
+	 * The account surface serves `GET /api/account/status` (account info +
+	 * `bootstrap_available` flag). Bundled into `create_account_route_specs`, so
+	 * any backend mounting the account routes serves it — `true` for every
+	 * spine. Gates the `account status response body` case in
+	 * `describe_standard_integration_tests`: when `true` the case asserts the
+	 * route is present (fail-loud on 404, no silent skip); when `false` it skips
+	 * explicitly (a backend that deliberately omits the route).
+	 */
+	readonly account_status: boolean;
+	/**
+	 * On an oversized-body `413` reject the backend **closes the connection
+	 * without reading the body** (the defense-in-depth posture), rather than
+	 * draining the declared `Content-Length` and keeping the socket alive.
+	 * Gates the strong half of `describe_body_size_smuggling_cross_tests`: when
+	 * `true`, the pipelined GET is never reached (at most one response); when
+	 * `false`, the suite instead asserts the weaker but still-load-bearing
+	 * no-desync property (the body is framed on `Content-Length`, not reparsed
+	 * as request bytes).
+	 *
+	 * `true` for the Node / Deno (`@hono/node-server` graceful close) and Rust
+	 * (hyper RST) backends; `false` for Bun — `Bun.serve` reads the full body
+	 * and processes the correctly-framed pipelined request even when the `413`
+	 * carries `Connection: close`. Bun is not insecure (no desync — it answers
+	 * the cleanly-delimited GET with a proper `400`); the flag records the
+	 * connection-handling divergence so the suite stays green without losing the
+	 * smuggle detector. See `docs/security.md` §"Body Size Limiting".
+	 */
+	readonly oversized_reject_closes_connection: boolean;
 }
 
 /**
@@ -136,6 +178,8 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	account_lifecycle: true,
 	fact_serving: true,
 	ready: true,
+	account_status: true,
+	oversized_reject_closes_connection: true,
 });
 
 /**

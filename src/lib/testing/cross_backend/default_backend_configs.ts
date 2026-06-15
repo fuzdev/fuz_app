@@ -61,6 +61,13 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	// Off by default like `sse` — a generic TS consumer backend may not mount
 	// `/ready`. fuz_app's own spine configs (`ts_spine_*`) opt in.
 	ready: false,
+	// `GET /api/account/status` is bundled into `create_account_route_specs`, so
+	// every TS backend mounting account routes serves it.
+	account_status: true,
+	// Node/Deno close the socket on an oversized-body reject (the default
+	// posture). A Bun-served consumer overrides to `false` (see the bun spine
+	// config) — fail-loud rather than silently skipping the smuggle detector.
+	oversized_reject_closes_connection: true,
 });
 
 /**
@@ -82,6 +89,12 @@ export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 	// Off by default like `sse`; the spine-stub preset opts in (it mounts
 	// `/ready` over the env-supplied fixture path).
 	ready: false,
+	// The Rust `account_router` bundles `/status` into the account routes, so
+	// every Rust spine serving the account surface serves it.
+	account_status: true,
+	// hyper sends an RST on the oversized-body reject — the connection closes
+	// and the pipelined request is never reached.
+	oversized_reject_closes_connection: true,
 });
 
 /** Bootstrap block built from the default secrets + supplied paths. */

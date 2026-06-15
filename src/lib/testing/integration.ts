@@ -51,7 +51,7 @@ import {
 import {invite_create_action_spec} from '../auth/admin_action_specs.js';
 import {LoginOutput, AccountStatusOutput} from '../auth/account_route_schema.js';
 import type {AppSurfaceSpec} from '../http/surface.js';
-import {type BackendCapabilities} from './cross_backend/capabilities.js';
+import {test_if, type BackendCapabilities} from './cross_backend/capabilities.js';
 import type {SetupTest} from './cross_backend/setup.js';
 import {DEFAULT_TEST_PASSWORD} from './test_credentials.js';
 
@@ -473,44 +473,49 @@ export const describe_standard_integration_tests = (
 			// fixture keeper is single-actor, so `actor` must be non-null and
 			// `role_grants` populated (keeper holds keeper + admin globally).
 			//
-			// `/status` is mounted at `create_app_server` time (it needs the
-			// `bootstrap_available` runtime state), not by `create_account_route_specs`
-			// and not listed in the declared surface, so we can't gate on `route_specs`.
-			// A backend that mounts only the account-route factory (e.g. a minimal
-			// in-process route set) doesn't serve it — probe at runtime and skip on
-			// 404. The full spine surfaces (in-process + cross-process) serve it, so
-			// the gate runs there. `find_auth_route` can't be used: `/status` isn't a
-			// `RestAuthRouteSuffix`.
-			test('authenticated status body strict-parses against AccountStatusOutput', async (ctx) => {
-				const fixture = await options.setup_test();
-				const login_route = find_auth_route(route_specs, '/login', 'POST');
-				assert.ok(
-					login_route,
-					'Expected POST /login route — ensure create_route_specs includes account routes',
-				);
-				// `/status` is the sibling of `/login` under the same account prefix.
-				const status_path = login_route.path.replace(/\/login$/, '/status');
+			// `/status` is bundled into `create_account_route_specs` (relative
+			// `/status`, prefixed to `/api/account/status`), so every account
+			// surface serves it — matching the Rust `account_router`. Gated on the
+			// declared `account_status` capability rather than a runtime 404-sniff:
+			// a backend that mounts account routes declares `account_status: true`
+			// and the gate **fails loud** if `/status` is missing (no more silent
+			// skip swallowing the coverage); a backend without it skips explicitly.
+			// `find_auth_route` can't be used: `/status` isn't a `RestAuthRouteSuffix`.
+			test_if(
+				options.capabilities.account_status,
+				'authenticated status body strict-parses against AccountStatusOutput',
+				async () => {
+					const fixture = await options.setup_test();
+					const login_route = find_auth_route(route_specs, '/login', 'POST');
+					assert.ok(
+						login_route,
+						'Expected POST /login route — ensure create_route_specs includes account routes',
+					);
+					// `/status` is the sibling of `/login` under the same account prefix.
+					const status_path = login_route.path.replace(/\/login$/, '/status');
 
-				const res = await fixture.transport(status_path, {
-					method: 'GET',
-					headers: fixture.create_session_headers({host: 'localhost'}),
-				});
-				if (res.status === 404) {
-					// Backend doesn't mount /status (minimal route set) — nothing to gate.
-					ctx.skip();
-					return;
-				}
-				assert.strictEqual(res.status, 200);
-				const body = await res.json();
-				// Throws on any extra/missing field across account/actor/role_grants.
-				const parsed = AccountStatusOutput.parse(body);
-				// Single-actor keeper: actor resolved, role_grants populated.
-				assert.ok(parsed.actor, 'single-actor keeper must resolve a non-null actor');
-				assert.ok(
-					parsed.role_grants.length > 0,
-					'single-actor keeper must have populated role_grants',
-				);
-			});
+					const res = await fixture.transport(status_path, {
+						method: 'GET',
+						headers: fixture.create_session_headers({host: 'localhost'}),
+					});
+					assert.strictEqual(
+						res.status,
+						200,
+						`expected 200 from ${status_path} — capabilities.account_status is true, so the ` +
+							`account surface must bundle GET /status. A 404 means the backend declares the ` +
+							`capability but doesn't mount the route.`,
+					);
+					const body = await res.json();
+					// Throws on any extra/missing field across account/actor/role_grants.
+					const parsed = AccountStatusOutput.parse(body);
+					// Single-actor keeper: actor resolved, role_grants populated.
+					assert.ok(parsed.actor, 'single-actor keeper must resolve a non-null actor');
+					assert.ok(
+						parsed.role_grants.length > 0,
+						'single-actor keeper must have populated role_grants',
+					);
+				},
+			);
 		});
 
 		// --- 2. Cookie attributes ---

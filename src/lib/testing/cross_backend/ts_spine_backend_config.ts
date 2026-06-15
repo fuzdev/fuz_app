@@ -47,6 +47,22 @@ export const TS_SPINE_SSE_PATH = '/api/admin/audit/stream';
  */
 const ts_spine_capabilities = Object.freeze({...ts_default_capabilities, sse: true, ready: true});
 
+/**
+ * Capabilities for the **Bun** spine binary — `ts_spine_capabilities` with
+ * `oversized_reject_closes_connection: false`. `Bun.serve` drains the declared
+ * `Content-Length` of an oversized-body `413` reject and keeps the socket
+ * alive (processing the correctly-framed pipelined request) even when the
+ * response carries `Connection: close`, unlike `@hono/node-server` / Deno /
+ * hyper, which close. Bun is not insecure — it frames on `Content-Length`, so
+ * there is no desync — but the smuggling suite's strong "connection closes"
+ * assertion doesn't hold; this flag routes Bun onto the suite's no-desync arm.
+ * See `docs/security.md` §"Body Size Limiting".
+ */
+const ts_spine_bun_capabilities = Object.freeze({
+	...ts_spine_capabilities,
+	oversized_reject_closes_connection: false,
+});
+
 /** Default port for the Node TS spine binary — slots beside the Rust `spine_stub` (1177). */
 export const TS_SPINE_NODE_DEFAULT_PORT = 1178;
 
@@ -116,7 +132,7 @@ export const ts_spine_bun_backend_config = (
 			database_url,
 			paths,
 			extra_env: {[TS_SPINE_DIR_ENV]: paths.root},
-			capabilities: ts_spine_capabilities,
+			capabilities: ts_spine_bun_capabilities,
 		}),
 		sse_path: TS_SPINE_SSE_PATH,
 	};

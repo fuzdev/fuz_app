@@ -858,7 +858,7 @@ source of truth for wire-shape conformance.
 - `testing/cross_backend/capabilities.ts` — `BackendCapabilities` vocabulary
   (`bearer_auth` / `trusted_proxy` / `login_rate_limit` / `ws` / `sse` /
   `cell_crud` / `cell_relations` / `account_lifecycle` / `fact_serving` /
-  `ready`),
+  `ready` / `account_status` / `oversized_reject_closes_connection`),
   `test_if(cond, name, fn)`
   for capability-gated cases, and `in_process_capabilities` preset. `cell_crud`
   gates the CRUD parity suite, `cell_relations` the relation / ACL / audit
@@ -875,6 +875,14 @@ source of truth for wire-shape conformance.
   (anonymous `GET /ready` → `200 {ready: true}` on a clean spine bootstrap);
   like cells/sse the `/ready` deploy gate stays off the declared surface, `true`
   on every spine that live-mounts it over the shared `expected_schema.json`.
+  `account_status` gates the integration suite's `account status response body`
+  case — `GET /api/account/status` is bundled into `create_account_route_specs`,
+  so every spine serves it (`true`); the gate fails loud if a declaring backend
+  doesn't mount it (replacing the old runtime 404-sniff-skip).
+  `oversized_reject_closes_connection` gates the strong half of the body-size
+  smuggling probe (`true` Node/Deno/Rust — they close on an oversized reject;
+  `false` Bun — `Bun.serve` drains + keepalives but frames correctly, so the
+  suite's no-desync half still runs).
 
 ### `cross_backend/standard.ts` — `describe_standard_cross_process_tests`
 

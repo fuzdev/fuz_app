@@ -56,6 +56,19 @@ export const RUST_SPINE_STUB_BIN_ENV = 'FUZ_TESTING_RUST_SPINE_STUB_BIN';
  */
 export const RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH_ENV = 'FUZ_RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH';
 
+/**
+ * Capabilities for the Rust `testing_spine_stub` — `rust_default_capabilities`
+ * plus `sse` (the stub serves `GET /api/admin/audit/stream` over the spine
+ * `fuz_realtime::SseRegistry` + audit listener) and `ready` (it live-mounts
+ * `/ready` over the env-supplied fixture path). Named (not inline) so every
+ * spine preset is greppable, mirroring `ts_spine_capabilities`.
+ */
+const rust_spine_stub_capabilities = Object.freeze({
+	...rust_default_capabilities,
+	sse: true,
+	ready: true,
+});
+
 /** Default listening port — slots beside zzz's 1175/1176; matches the binary's `DEFAULT_PORT`. */
 export const RUST_SPINE_STUB_DEFAULT_PORT = 1177;
 
@@ -111,12 +124,7 @@ export const rust_spine_stub_backend_config = (
 		// is the lower-precedence fallback — both carry the same value.
 		start_command: [binary_path, '--port', String(port)],
 		database_url,
-		// The stub serves `GET /api/admin/audit/stream` (the spine
-		// `fuz_realtime::SseRegistry` + audit listener), so it advertises `sse`
-		// like the TS spines — the cross-process SSE suite's three cases run. It
-		// also live-mounts `/ready` over the env-supplied fixture path, so it
-		// advertises `ready` for `describe_ready_cross_tests`.
-		capabilities: {...rust_default_capabilities, sse: true, ready: true},
+		capabilities: rust_spine_stub_capabilities,
 		port_env_var: 'FUZ_RUST_SPINE_STUB_PORT',
 		rust_log: 'info,testing_spine_stub=info',
 		paths,

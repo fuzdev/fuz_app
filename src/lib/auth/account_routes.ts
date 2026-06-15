@@ -223,6 +223,15 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
 	 * `audit.on_event_chain`) runs.
 	 */
 	connection_closer?: ConnectionCloser | null;
+	/**
+	 * Runtime bootstrap status for the bundled `GET /status` route — when
+	 * `available`, its unauthenticated 401 carries `bootstrap_available: true`
+	 * so a fresh frontend can route to the bootstrap flow. Pass
+	 * `ctx.bootstrap_status` (the live `BootstrapStatus` ref) so the flag tracks
+	 * the one-shot bootstrap completing. Omit when no bootstrap flow is wired —
+	 * `/status` is still served, just without the flag.
+	 */
+	bootstrap_status?: {available: boolean};
 }
 // `create_account_route_specs` spreads each shape and attaches the live
 // handler below.
@@ -230,12 +239,15 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
 /**
  * Create account route specs for session-based auth.
  *
- * The returned specs cover the three flows that stay REST after the RPC
- * migration (login, logout, password change). Self-service session/token
- * management and verify are on `auth/account_actions.ts`.
+ * The returned specs cover the REST flows that stay after the RPC migration:
+ * `/status` (account info + bootstrap availability), `/verify` (nginx
+ * `auth_request` shim), `/login`, `/logout`, `/password`. `/status` is bundled
+ * here (relative path, prefixed to `/api/account/status` by the caller) so
+ * every account surface serves it, matching the Rust `account_router`.
+ * Self-service session/token management is on `auth/account_actions.ts`.
  *
  * @param deps - stateless capabilities (keyring, password, log)
- * @param options - per-factory configuration (session_options, ip_rate_limiter, login_account_rate_limiter)
+ * @param options - per-factory configuration (session_options, ip_rate_limiter, login_account_rate_limiter, bootstrap_status)
  * @returns route specs (not yet applied to Hono)
  */
 export const create_account_route_specs = (
@@ -251,6 +263,7 @@ export const create_account_route_specs = (
 		login_fail_floor_ms = DEFAULT_LOGIN_FAIL_FLOOR_MS,
 		login_fail_jitter_ms = DEFAULT_LOGIN_FAIL_JITTER_MS,
 		connection_closer = null,
+		bootstrap_status,
 	} = options;
 
 	const [verify_shape, login_shape, logout_shape, password_shape] = create_account_route_shapes({
@@ -258,6 +271,11 @@ export const create_account_route_specs = (
 	});
 
 	return [
+		// `/status` is bundled into the account family (relative path, prefixed
+		// to `/api/account/status` by the caller) so every account surface serves
+		// it — matching the Rust `account_router`. The standalone
+		// `create_account_status_route_spec` stays the building block.
+		create_account_status_route_spec({bootstrap_status}),
 		{
 			...verify_shape,
 			handler: (c) => {

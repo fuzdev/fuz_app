@@ -1006,6 +1006,8 @@ consumer config.
 | `account_lifecycle` | Backend live-mounts `account_delete` / `_undelete` / `_purge` (gates `describe_account_lifecycle_cross_tests`).           |
 | `fact_serving`      | Backend live-mounts the cell-gated fact-serving routes + `_testing_put_fact` (gates `describe_fact_serving_cross_tests`). |
 | `ready`             | Backend live-mounts the public `/ready` schema-drift deploy gate (gates `describe_ready_cross_tests`).                    |
+| `account_status`    | Backend serves `GET /api/account/status` (bundled into `create_account_route_specs`; `true` for every spine). Gates the integration suite's status wire-shape case — fail-loud on a missing route rather than a silent skip. |
+| `oversized_reject_closes_connection` | Backend closes the connection on an oversized-body 413 without reading the body (`true` for Node/Deno/Rust; `false` for Bun, which drains + keepalives). Gates the strong half of the body-size smuggling probe; the no-desync half runs on every backend. |
 
 `in_process_capabilities` (every flag on) and the `ts_default_capabilities` /
 `rust_default_capabilities` presets in `default_backend_configs.ts` are the

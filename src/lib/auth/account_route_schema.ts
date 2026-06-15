@@ -90,14 +90,20 @@ export const DEFAULT_MAX_SESSIONS = 5;
 export const DEFAULT_MAX_TOKENS = 10;
 
 /**
- * The `GET /api/account/status` route shape minus its handler — pure
- * hono-free data. `create_account_status_route_spec` spreads this and
- * attaches the live handler (which reads the account id off the request
- * context); surface generation spreads it with a stub handler.
+ * The `GET /status` route shape minus its handler — pure hono-free data.
+ * `create_account_status_route_spec` spreads this and attaches the live handler
+ * (which reads the account id off the request context); surface generation
+ * spreads it with a stub handler.
+ *
+ * The path is **relative** like the sibling account shapes (`/login`,
+ * `/verify`), so it composes under `prefix_route_specs('/api/account', …)` into
+ * `/api/account/status`. `create_account_route_specs` bundles it (so every
+ * account surface serves `/status`, matching the Rust `account_router`);
+ * mirror Rust by mounting it as part of the account family, not separately.
  */
 export const account_status_route_shape = {
 	method: 'GET',
-	path: '/api/account/status',
+	path: '/status',
 	auth: {account: 'none', actor: 'none'},
 	description: 'Current account info (unauthenticated: 401 with bootstrap status)',
 	input: AccountStatusInput,

@@ -145,6 +145,7 @@ export const create_spine_route_specs = (ctx: AppServerContext): Array<RouteSpec
 			ip_rate_limiter: null,
 			login_account_rate_limiter: null,
 			login_fail_floor_ms: 0,
+			bootstrap_status: ctx.bootstrap_status,
 		}),
 		...create_signup_route_specs(ctx.deps, {
 			session_options: spine_session_options,
