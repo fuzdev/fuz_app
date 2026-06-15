@@ -28,6 +28,7 @@
  */
 
 import type {QueryDeps} from './query_deps.js';
+import {to_error_message} from '@fuzdev/fuz_util/error.js';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
 import {
@@ -276,7 +277,7 @@ export class PgFactStore implements FactStore {
 		} catch (err) {
 			this.#log?.warn(
 				`PgFactStore.get fetch failed for ${hash} at ${row.external_url}:`,
-				err instanceof Error ? err.message : String(err),
+				to_error_message(err),
 			);
 			return null;
 		}

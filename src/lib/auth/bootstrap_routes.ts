@@ -8,6 +8,7 @@
  */
 
 import type {Context} from 'hono';
+import {to_error_message} from '@fuzdev/fuz_util/error.js';
 import type {Logger} from '@fuzdev/fuz_util/log.js';
 
 import type {SessionOptions} from './session_cookie.js';
@@ -178,9 +179,7 @@ export const create_bootstrap_route_specs = (
 					try {
 						await on_bootstrap(result, c);
 					} catch (err) {
-						deps.log.error(
-							`on_bootstrap callback failed: ${err instanceof Error ? err.message : String(err)}`,
-						);
+						deps.log.error(`on_bootstrap callback failed: ${to_error_message(err)}`);
 					}
 				}
 

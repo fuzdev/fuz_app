@@ -10,6 +10,7 @@
  */
 
 import {z} from 'zod';
+import {to_error_message} from '@fuzdev/fuz_util/error.js';
 
 import {create_validated_keyring, type Keyring} from '../auth/keyring.js';
 import {parse_allowed_origins} from '../http/origin.js';
@@ -119,7 +120,7 @@ export const validate_server_env = (env: BaseServerEnv): ServerEnvOptionsResult 
 		return {
 			ok: false,
 			field: 'FUZ_ALLOWED_ORIGINS',
-			errors: [err instanceof Error ? err.message : 'Invalid FUZ_ALLOWED_ORIGINS'],
+			errors: [to_error_message(err, 'Invalid FUZ_ALLOWED_ORIGINS')],
 		};
 	}
 	if (allowed_origins.length === 0) {

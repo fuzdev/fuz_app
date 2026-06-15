@@ -12,6 +12,8 @@
  * @module
  */
 
+import {to_error_message} from '@fuzdev/fuz_util/error.js';
+
 import {ThrownJsonrpcError, jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
 import {
 	is_jsonrpc_notification,
@@ -152,9 +154,7 @@ export class FrontendWebsocketTransport implements Transport {
 				}
 				return create_jsonrpc_error_response(
 					message.id,
-					jsonrpc_error_messages.internal_error(
-						error instanceof Error ? error.message : String(error),
-					),
+					jsonrpc_error_messages.internal_error(to_error_message(error)),
 				);
 			}
 		}

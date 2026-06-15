@@ -6,6 +6,7 @@
  */
 
 import type {WSContext} from 'hono/ws';
+import {to_error_message} from '@fuzdev/fuz_util/error.js';
 import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
 
 import type {
@@ -217,7 +218,7 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 			return create_jsonrpc_error_response(
 				to_jsonrpc_message_id(message),
 				jsonrpc_error_messages.internal_error(
-					error instanceof Error ? error.message : 'failed to broadcast notification',
+					to_error_message(error, 'failed to broadcast notification'),
 				),
 			);
 		}

@@ -32,6 +32,7 @@ import {createHash, type Hash} from 'node:crypto';
 import {join} from 'node:path';
 
 import {Blake3Hasher} from '@fuzdev/blake3_wasm';
+import {to_error_message} from '@fuzdev/fuz_util/error.js';
 import {blake3_ready} from '@fuzdev/fuz_util/hash_blake3.js';
 import {to_hex} from '@fuzdev/fuz_util/hex.js';
 import {FACT_HASH_PREFIX, type FactHash} from '@fuzdev/fuz_util/fact_hash.js';
@@ -327,10 +328,7 @@ export const sweep_orphan_temps = async (
 			await deps.remove(path);
 			removed++;
 		} catch (err) {
-			options?.log?.warn(
-				`sweep_orphan_temps: failed to reap ${path}:`,
-				err instanceof Error ? err.message : String(err),
-			);
+			options?.log?.warn(`sweep_orphan_temps: failed to reap ${path}:`, to_error_message(err));
 		}
 	}
 	return removed;

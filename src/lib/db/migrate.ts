@@ -44,6 +44,8 @@
  * @module
  */
 
+import {to_error_message} from '@fuzdev/fuz_util/error.js';
+
 import type {Db} from './db.js';
 
 /**
@@ -303,7 +305,7 @@ export const run_migrations = async (
 						throw new MigrationError(
 							'migration-failed',
 							`Migration ${namespace}["${m.name}"] failed: ` +
-								`${err instanceof Error ? err.message : String(err)}. ` +
+								`${to_error_message(err)}. ` +
 								`Hint: fix the migration body and retry; the chain is left at the prior committed version.`,
 							{namespace, at_index: i, cause: err},
 						);

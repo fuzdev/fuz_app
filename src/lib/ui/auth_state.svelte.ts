@@ -32,6 +32,7 @@
  * @module
  */
 
+import {to_error_message} from '@fuzdev/fuz_util/error.js';
 import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
 
 import {ui_fetch} from './ui_fetch.js';
@@ -142,7 +143,7 @@ export class AuthState {
 			}
 			return false;
 		} catch (e) {
-			this.verify_error = e instanceof Error ? e.message : 'Connection failed';
+			this.verify_error = to_error_message(e, 'Connection failed');
 			return false;
 		} finally {
 			this.verifying = false;
@@ -181,7 +182,7 @@ export class AuthState {
 			}
 			return false;
 		} catch (e) {
-			this.verify_error = e instanceof Error ? e.message : 'Connection failed';
+			this.verify_error = to_error_message(e, 'Connection failed');
 			return false;
 		} finally {
 			this.verifying = false;
@@ -233,7 +234,7 @@ export class AuthState {
 			}
 			return false;
 		} catch (e) {
-			this.verify_error = e instanceof Error ? e.message : 'Connection failed';
+			this.verify_error = to_error_message(e, 'Connection failed');
 			return false;
 		} finally {
 			this.verifying = false;

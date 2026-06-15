@@ -8,6 +8,8 @@
 	 * @module
 	 */
 
+	import {to_error_message} from '@fuzdev/fuz_util/error.js';
+
 	import type {AppSurface} from '../http/surface.js';
 	import SurfaceExplorer from './SurfaceExplorer.svelte';
 	import {ui_fetch} from './ui_fetch.js';
@@ -27,7 +29,7 @@
 			}
 			surface = await res.json();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Unknown error';
+			error = to_error_message(e, 'Unknown error');
 		} finally {
 			loading = false;
 		}

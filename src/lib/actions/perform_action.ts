@@ -315,7 +315,9 @@ export const perform_action = async (
 		// message) — surface them only in development; production falls back to
 		// the generic `internal_error` default. Same gate as the Zod-issue redaction.
 		return error_result(
-			jsonrpc_error_messages.internal_error(dev_only(err instanceof Error ? err.message : undefined)),
+			jsonrpc_error_messages.internal_error(
+				dev_only(err instanceof Error ? err.message : undefined),
+			),
 		);
 	}
 };

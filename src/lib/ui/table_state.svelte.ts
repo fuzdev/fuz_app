@@ -40,6 +40,8 @@
  * @module
  */
 
+import {to_error_message} from '@fuzdev/fuz_util/error.js';
+
 import {AsyncSlot} from './async_slot.svelte.js';
 import {parse_response_error, ui_fetch} from './ui_fetch.js';
 import {format_value} from './ui_format.js';
@@ -138,7 +140,7 @@ export class TableState {
 			this.total -= 1;
 			return true;
 		} catch (e) {
-			this.delete_error = e instanceof Error ? e.message : 'Delete failed';
+			this.delete_error = to_error_message(e, 'Delete failed');
 			return false;
 		} finally {
 			this.deleting = null;

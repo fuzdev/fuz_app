@@ -8,6 +8,8 @@
  * @module
  */
 
+import {to_error_message} from '@fuzdev/fuz_util/error.js';
+
 import type {RuntimeDeps, StatResult, CommandResult} from './deps.js';
 
 // Deno API declarations — this module is only imported by Deno consumers.
@@ -197,7 +199,7 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 				if (timer !== null) clearTimeout(timer);
 			}
 		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
+			const message = to_error_message(error);
 			return {
 				success: false,
 				code: 1,

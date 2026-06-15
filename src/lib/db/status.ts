@@ -7,6 +7,8 @@
  * @module
  */
 
+import {to_error_message} from '@fuzdev/fuz_util/error.js';
+
 import type {Db} from './db.js';
 import type {MigrationNamespace} from './migrate.js';
 
@@ -103,7 +105,7 @@ export const query_db_status = async (
 	} catch (err) {
 		return {
 			connected: false,
-			error: err instanceof Error ? err.message : String(err),
+			error: to_error_message(err),
 			table_count: 0,
 			tables: [],
 			migrations: [],

@@ -26,6 +26,7 @@ import './assert_dev_env.js';
 
 import {describe, beforeAll, beforeEach, afterAll} from 'vitest';
 import type {Pool} from 'pg';
+import {to_error_message} from '@fuzdev/fuz_util/error.js';
 
 import type {Db} from '../db/db.js';
 import {create_pglite_db} from '../db/db_pglite.js';
@@ -156,7 +157,7 @@ export const create_pg_factory = (
 				await init_schema(db);
 			} catch (error) {
 				await pool.end();
-				const msg = error instanceof Error ? error.message : String(error);
+				const msg = to_error_message(error);
 				if (msg.includes('does not exist')) {
 					const db_name = test_url.split('/').pop()?.split('?')[0] ?? 'test_db';
 					throw new Error(

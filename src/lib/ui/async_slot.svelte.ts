@@ -60,6 +60,7 @@
  */
 
 import type {AsyncStatus} from '@fuzdev/fuz_util/async.js';
+import {to_error_message} from '@fuzdev/fuz_util/error.js';
 
 export interface AsyncSlotOptions<T, E = string> {
 	/**
@@ -281,5 +282,4 @@ export class AsyncSlot<T = void, E = string> {
 	}
 }
 
-const default_map_error = (e: unknown): string =>
-	e instanceof Error ? e.message : 'Request failed';
+const default_map_error = (e: unknown): string => to_error_message(e, 'Request failed');
