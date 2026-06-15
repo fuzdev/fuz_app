@@ -62,6 +62,7 @@ import {
 	jsonrpc_error_code_to_http_status,
 	http_status_to_jsonrpc_error_code,
 	JSONRPC_ERROR_CODES,
+	dev_only,
 } from '../http/jsonrpc_errors.js';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
@@ -190,9 +191,10 @@ export const perform_action = async (
 	const parse_result = spec.input.safeParse(params);
 	if (!parse_result.success) {
 		return error_result(
-			jsonrpc_error_messages.invalid_params('invalid params', {
-				issues: parse_result.error.issues,
-			}),
+			jsonrpc_error_messages.invalid_params(
+				'invalid params',
+				dev_only({issues: parse_result.error.issues}),
+			),
 		);
 	}
 	const validated_input = parse_result.data;
@@ -309,8 +311,12 @@ export const perform_action = async (
 			return {kind: 'error', status, error};
 		}
 		log.error(`unhandled action handler error: ${spec.method}`, err);
-		const message = DEV && err instanceof Error ? err.message : 'internal server error';
-		return error_result(jsonrpc_error_messages.internal_error(message));
+		// Raw exception messages can leak internals (paths, SQL, secrets in a
+		// message) — surface them only in development; production falls back to
+		// the generic `internal_error` default. Same gate as the Zod-issue redaction.
+		return error_result(
+			jsonrpc_error_messages.internal_error(dev_only(err instanceof Error ? err.message : undefined)),
+		);
 	}
 };
 

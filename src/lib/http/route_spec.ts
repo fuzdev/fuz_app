@@ -31,6 +31,7 @@ import {
 	ThrownJsonrpcError,
 	jsonrpc_error_code_to_http_status,
 	jsonrpc_error_code_to_name,
+	dev_only,
 } from './jsonrpc_errors.js';
 import {is_null_schema, merge_error_schemas} from './schema_helpers.js';
 import {dispatch_with_post_commit_rollback} from './pending_effects.js';
@@ -275,7 +276,10 @@ const create_input_validation = (
 		}
 		const result = input_schema.safeParse(body);
 		if (!result.success) {
-			return c.json({error: ERROR_INVALID_REQUEST_BODY, issues: result.error.issues}, 400);
+			return c.json(
+				{error: ERROR_INVALID_REQUEST_BODY, issues: dev_only(result.error.issues)},
+				400,
+			);
 		}
 		c.set('validated_input', result.data);
 		await next();
@@ -299,7 +303,10 @@ const create_params_validation = (params_schema?: z.ZodObject): Array<Middleware
 		const raw_params = c.req.param();
 		const result = params_schema.safeParse(raw_params);
 		if (!result.success) {
-			return c.json({error: ERROR_INVALID_ROUTE_PARAMS, issues: result.error.issues}, 400);
+			return c.json(
+				{error: ERROR_INVALID_ROUTE_PARAMS, issues: dev_only(result.error.issues)},
+				400,
+			);
 		}
 		c.set('validated_params', result.data);
 		await next();
@@ -323,7 +330,10 @@ const create_query_validation = (query_schema?: z.ZodObject): Array<MiddlewareHa
 		const raw_query = c.req.query();
 		const result = query_schema.safeParse(raw_query);
 		if (!result.success) {
-			return c.json({error: ERROR_INVALID_QUERY_PARAMS, issues: result.error.issues}, 400);
+			return c.json(
+				{error: ERROR_INVALID_QUERY_PARAMS, issues: dev_only(result.error.issues)},
+				400,
+			);
 		}
 		c.set('validated_query', result.data);
 		await next();
@@ -432,10 +442,14 @@ const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
 				const status = jsonrpc_error_code_to_http_status(err.code);
 				return c.json(build_rest_error_body(err), status);
 			}
-			// generic error — internal_error
+			// generic error — internal_error. Raw exception messages can leak
+			// internals; surface them only in development (same gate as the
+			// Zod-issue redaction), production gets the bare error code.
 			log.error('Unhandled handler error', err);
-			const body: Record<string, unknown> = {error: 'internal_error'};
-			if (DEV && err instanceof Error) body.message = err.message;
+			const body: Record<string, unknown> = {
+				error: 'internal_error',
+				message: dev_only(err instanceof Error ? err.message : undefined),
+			};
 			return c.json(body, 500);
 		}
 	};

@@ -17,6 +17,7 @@
  * @module
  */
 
+import {DEV} from 'esm-env';
 import type {ContentfulStatusCode} from 'hono/utils/http-status';
 
 import {
@@ -104,6 +105,28 @@ export const JSONRPC_ERROR_CODES = Object.freeze({
 	 */
 	request_cancelled: -32010 as JsonrpcErrorCode,
 }) as Readonly<Record<JsonrpcErrorName, JsonrpcErrorCode>>;
+
+/**
+ * Pass `value` through in development, return `undefined` in production — so
+ * `JSON.stringify` drops the field from the response.
+ *
+ * The single gate for keeping internal diagnostic detail out of production
+ * error responses. Two classes flow through it:
+ *
+ * - **Zod `issues`** — the issues array exposes field names, types, and
+ *   constraints, enough to reverse-engineer an input schema (including on
+ *   public/unauthenticated actions). Gate the whole `data` object on JSON-RPC
+ *   errors (so `error.data` is absent, matching the Rust spine) and the
+ *   `issues` field on flat REST error bodies.
+ * - **Raw exception messages** — an unhandled handler error's `message` can
+ *   carry paths, SQL, or secrets. Gate it so production returns the generic
+ *   `internal_error` and development keeps the real message for DX.
+ *
+ * A legitimate caller only ever needs the error code and a stable message.
+ *
+ * @nodocs
+ */
+export const dev_only = <T>(value: T): T | undefined => (DEV ? value : undefined);
 
 /**
  * Named constructors for `JsonrpcErrorObject` values.

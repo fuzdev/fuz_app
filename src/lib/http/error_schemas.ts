@@ -190,9 +190,11 @@ export type ApiError = z.infer<typeof ApiError>;
  * `error` is one of the four validation codes the framework emits.
  * `issues` carries Zod's validation issues for diagnostic display on the
  * three schema-failure cases (`invalid_request_body`,
- * `invalid_route_params`, `invalid_query_params`). The `invalid_json_body`
- * case (request body parse failure or non-object root) emits no `issues`,
- * so the field is optional.
+ * `invalid_route_params`, `invalid_query_params`). The field is optional:
+ * the `invalid_json_body` case (request body parse failure or non-object
+ * root) emits no `issues`, and the schema-failure cases emit them only in
+ * development — production omits them (via `dev_only`) so error responses
+ * don't leak input-schema structure to callers.
  */
 export const ValidationError = z.looseObject({
 	error: z.enum([

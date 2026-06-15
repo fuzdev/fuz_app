@@ -44,6 +44,7 @@ import {
 	jsonrpc_error_messages,
 	jsonrpc_error_code_to_http_status,
 	JSONRPC_ERROR_CODES,
+	dev_only,
 } from '../http/jsonrpc_errors.js';
 import type {RateLimiter} from '../rate_limiter.js';
 import {perform_action, perform_action_result_to_envelope} from './perform_action.js';
@@ -475,7 +476,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			const id = typeof raw_id === 'string' || typeof raw_id === 'number' ? raw_id : null;
 			const error = jsonrpc_error_envelope(
 				id,
-				jsonrpc_error_messages.invalid_request({issues: envelope.error.issues}),
+				jsonrpc_error_messages.invalid_request(dev_only({issues: envelope.error.issues})),
 			);
 			return c.json(error, 400);
 		}

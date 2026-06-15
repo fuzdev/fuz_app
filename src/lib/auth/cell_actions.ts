@@ -47,7 +47,7 @@ import {
 	type ActionContext,
 	type RpcAction,
 } from '../actions/action_rpc.js';
-import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
+import {jsonrpc_errors, dev_only} from '../http/jsonrpc_errors.js';
 import {is_pg_unique_violation} from '../db/pg_error.js';
 import {has_role, type RequestActorContext} from './request_context.js';
 import {ROLE_ADMIN} from './role_schema.js';
@@ -200,9 +200,10 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			return validate_data(data);
 		} catch (err) {
 			if (err instanceof z.ZodError) {
-				throw jsonrpc_errors.invalid_params('cell.data shape validation failed', {
-					issues: err.issues,
-				});
+				throw jsonrpc_errors.invalid_params(
+					'cell.data shape validation failed',
+					dev_only({issues: err.issues}),
+				);
 			}
 			throw err;
 		}
