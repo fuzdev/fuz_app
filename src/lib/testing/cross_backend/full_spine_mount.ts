@@ -1,0 +1,108 @@
+import '../assert_dev_env.js';
+
+/**
+ * The **full** live RPC mount for fuz_app's own spine test binary — the
+ * complete action set `testing_spine_server.ts` exposes on a single RPC
+ * endpoint, in one place.
+ *
+ * Where `default_spine_surface.ts` defines the **declared** surface
+ * (`create_spine_surface_spec` / `spine_rpc_endpoints` — the
+ * `create_standard_rpc_actions` bundle the spec-derived suites
+ * auto-enumerate), this module defines its superset: the standard bundle
+ * **plus** the families the binary live-mounts but keeps off the declared
+ * surface —
+ *
+ * - the `_testing_*` daemon-token backdoors (`create_testing_actions`),
+ * - the full cell verb set (CRUD + grant + field + item + audit),
+ * - the opt-in `actor_lookup` / `actor_search` resolvers.
+ *
+ * Single-sourcing the mount here lets the binary, the in-process parity
+ * setup, and the `spine_method_coverage` reconciliation test all build the
+ * same list — so a method can never be mounted in one place and forgotten
+ * in another. The reconciliation test enumerates `build_full_spine_rpc_actions`
+ * with stub deps and asserts the live method set equals the tagged coverage
+ * manifest; see `src/test/cross_backend/spine_method_coverage.ts`.
+ *
+ * **`$lib`-free by contract** — like `default_spine_surface.ts`, this module
+ * is reached by the spawned TS binary under Gro's loader (which resolves
+ * `.js`→`.ts` but not the `$lib` alias), so every import is relative. Keep
+ * it that way.
+ *
+ * @module
+ */
+
+import type {RpcAction} from '../../actions/action_rpc.js';
+import type {AppDeps} from '../../auth/deps.js';
+import type {DaemonTokenState} from '../../auth/daemon_token.js';
+import type {NotificationSender} from '../../auth/role_grant_offer_notifications.js';
+import {create_standard_rpc_actions} from '../../auth/standard_rpc_actions.js';
+import {create_all_cell_actions} from '../../auth/all_cell_actions.js';
+import {create_actor_lookup_actions} from '../../auth/actor_lookup_actions.js';
+import {create_actor_search_actions} from '../../auth/actor_search_actions.js';
+import type {RpcEndpointSpec} from '../../http/surface.js';
+import type {AppServerContext} from '../../server/app_server_context.js';
+import {create_testing_actions} from './testing_reset_actions.js';
+import {SPINE_RPC_PATH, spine_roles, spine_session_options} from './default_spine_surface.js';
+
+/** Options for {@link build_full_spine_rpc_actions} / {@link full_spine_rpc_endpoints}. */
+export interface FullSpineMountOptions {
+	/**
+	 * Daemon-token runtime state threaded into `create_testing_actions` — the
+	 * `_testing_reset` handler mutates `keeper_account_id` after re-seeding.
+	 * Pass the same instance the daemon-token middleware reads. For the
+	 * coverage test (method enumeration only, handlers never run) any stub
+	 * state satisfies it.
+	 */
+	readonly daemon_token_state: DaemonTokenState;
+	/**
+	 * WS notification sender for the role-grant-offer fan-out. Pass the SAME
+	 * `BackendWebsocketTransport` the WS endpoint registers connections against
+	 * (the transport is the connection registry). Omitted for enumeration.
+	 */
+	readonly notification_sender?: NotificationSender | null;
+}
+
+/**
+ * Build the complete live RPC action list the spine test binary mounts on
+ * its single endpoint: the declared `create_standard_rpc_actions` bundle plus
+ * the off-surface families (`_testing_*` backdoors, cells, actor resolvers).
+ *
+ * Mirrors the previous inline assembly in `testing_spine_server.ts` exactly —
+ * `session_options` is pinned to `spine_session_options` (the binary's cookie
+ * config) and `roles` to `spine_roles` (carrying `cell_editor`), so the only
+ * runtime-varying inputs are the daemon-token state + notification sender.
+ *
+ * @param deps - the backend `AppDeps` (stub deps suffice for method enumeration)
+ * @param options - daemon-token state + optional WS notification sender
+ * @returns every `RpcAction` the binary exposes, in mount order
+ */
+export const build_full_spine_rpc_actions = (
+	deps: AppDeps,
+	options: FullSpineMountOptions,
+): Array<RpcAction> => [
+	...create_standard_rpc_actions(
+		{...deps, notification_sender: options.notification_sender ?? null},
+		{roles: spine_roles},
+	),
+	...create_testing_actions(deps, {
+		session_options: spine_session_options,
+		daemon_token_state: options.daemon_token_state,
+	}),
+	...create_all_cell_actions(deps, {roles: spine_roles}),
+	...create_actor_lookup_actions(deps),
+	...create_actor_search_actions(deps),
+];
+
+/**
+ * Factory-form full mount at {@link SPINE_RPC_PATH}, the shape
+ * `create_app_server`'s `rpc_endpoints` slot accepts. The spine binary wires
+ * this directly; the surface builder (`create_spine_surface_spec`) keeps using
+ * the narrower `spine_rpc_endpoints` so the declared surface stays the
+ * standard bundle only.
+ */
+export const full_spine_rpc_endpoints = (
+	ctx: AppServerContext,
+	options: FullSpineMountOptions,
+): Array<RpcEndpointSpec> => [
+	{path: SPINE_RPC_PATH, actions: build_full_spine_rpc_actions(ctx.deps, options)},
+];

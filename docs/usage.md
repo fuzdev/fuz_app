@@ -1178,24 +1178,20 @@ the `actor` table, so it must follow the builtin auth namespace.
 ### Action surface
 
 Seventeen generic verbs, aggregated under one cell namespace so codegen and
-UI see a single surface. Mount the five factories into an RPC endpoint's
-`actions`:
+UI see a single surface. Mount the full layer with `create_all_cell_actions`
+into an RPC endpoint's `actions`:
 
 ```typescript
-import {create_cell_actions} from '@fuzdev/fuz_app/auth/cell_actions.js';
-import {create_cell_grant_actions} from '@fuzdev/fuz_app/auth/cell_grant_actions.js';
-import {create_cell_field_actions} from '@fuzdev/fuz_app/auth/cell_field_actions.js';
-import {create_cell_item_actions} from '@fuzdev/fuz_app/auth/cell_item_actions.js';
-import {create_cell_audit_actions} from '@fuzdev/fuz_app/auth/cell_audit_actions.js';
+import {create_all_cell_actions} from '@fuzdev/fuz_app/auth/all_cell_actions.js';
 
-const cell_rpc_actions = [
-	...create_cell_actions({log, audit, validate_data}), // 6 core verbs
-	...create_cell_grant_actions({log, audit, roles}),   // 3 grant verbs
-	...create_cell_field_actions({log, audit}),          // 3 field verbs
-	...create_cell_item_actions({log, audit}),           // 4 item verbs
-	...create_cell_audit_actions(),                      // cell_audit_list
-];
+const cell_rpc_actions = create_all_cell_actions({log, audit, validate_data}, {roles});
 ```
+
+`create_all_cell_actions` bundles the five underlying factories
+(`create_cell_actions` + `cell_grant` / `cell_field` / `cell_item` /
+`cell_audit`) so an HTTP-RPC mount and a WS mount can't diverge on which verbs
+they expose. Compose those factories individually only for a deliberately
+partial surface.
 
 | Group | Verbs |
 | ----- | ----- |

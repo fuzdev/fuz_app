@@ -211,6 +211,13 @@ auth, ids)`: batched strict relation-read filter. Every relation read —
   `cell_item_actions.ts` / `cell_audit_actions.ts` — the relation + ACL +
   audit handlers, exporting `to_grant_json` / `to_field_json` /
   `to_item_json` reused by the `cell_get` bundle.
+- `auth/all_cell_actions.ts` — `create_all_cell_actions(deps, {roles})`, the
+  handler-side twin of `all_cell_action_specs` and sibling of
+  `create_standard_rpc_actions`: bundles all five cell factories (CRUD + grant
+  - field + item + audit) into one list. Reach for this whenever a backend
+    mounts the full cell layer — a single source so an HTTP-RPC mount and a WS
+    mount (or two backends) can't diverge on which cell verbs they expose.
+    Distinct from `create_cell_actions` (the CRUD-only factory it bundles).
 - `auth/cell_audit_metadata.ts` + `cell_grant_audit_metadata.ts` +
   `cell_field_audit_metadata.ts` + `cell_item_audit_metadata.ts` — audit
   metadata envelopes (IDs only), registered via `extra_events:` on the

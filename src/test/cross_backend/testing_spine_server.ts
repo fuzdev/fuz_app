@@ -39,13 +39,6 @@ import {
 import {start_daemon_token_rotation} from '../../lib/auth/daemon_token_middleware.js';
 import {load_env} from '../../lib/env/load.js';
 import type {RuntimeDeps} from '../../lib/runtime/deps.js';
-import {create_cell_actions} from '../../lib/auth/cell_actions.js';
-import {create_cell_grant_actions} from '../../lib/auth/cell_grant_actions.js';
-import {create_cell_field_actions} from '../../lib/auth/cell_field_actions.js';
-import {create_cell_item_actions} from '../../lib/auth/cell_item_actions.js';
-import {create_cell_audit_actions} from '../../lib/auth/cell_audit_actions.js';
-import {create_actor_lookup_actions} from '../../lib/auth/actor_lookup_actions.js';
-import {create_actor_search_actions} from '../../lib/auth/actor_search_actions.js';
 import {cell_audit_events} from '../../lib/auth/cell_audit_events.js';
 import {create_audit_emitter} from '../../lib/auth/audit_emitter.js';
 import {create_audit_log_config} from '../../lib/auth/audit_log_schema.js';
@@ -63,11 +56,9 @@ import {stub_password_deps} from '../../lib/testing/app_server.js';
 import {
 	create_spine_ready_route_spec,
 	create_spine_route_specs,
-	spine_roles,
-	spine_rpc_endpoints,
 	spine_session_options,
 } from '../../lib/testing/cross_backend/default_spine_surface.js';
-import {create_testing_actions} from '../../lib/testing/cross_backend/testing_reset_actions.js';
+import {full_spine_rpc_endpoints} from '../../lib/testing/cross_backend/full_spine_mount.js';
 import type {BuiltTestingApp} from '../../lib/testing/cross_backend/testing_server_core.js';
 
 /** Resolved bind config the entry passes to `start_testing_server`. */
@@ -224,39 +215,22 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 			create_serve_cell_fact_route_spec({deps: ctx.deps, facts_dir, log}),
 			create_serve_fact_route_spec({deps: ctx.deps, facts_dir, log}),
 		],
-		// Append `_testing_reset` + the full cell surface (CRUD + grant +
-		// field + item + audit) to the standard RPC endpoint. Both are
-		// live-mounted but stay off the declared surface
-		// (`create_spine_surface_spec`) so the standard cross suite's generic
-		// round-trip never tries to drive them — cells are stateful and are
-		// covered by the dedicated cell cross suites instead. `spine_roles`
-		// carries the `cell_editor` app role so the role-shaped-grant cross
-		// suite's role-validity gate admits it and rejects unregistered roles.
+		// The full live RPC mount: the standard bundle plus the off-declared-surface
+		// families (`_testing_*` backdoors, the full cell verb set, the opt-in
+		// `actor_lookup` / `actor_search` resolvers). Single-sourced in
+		// `full_spine_mount.ts` so the binary, the in-process parity setup, and the
+		// `spine_method_coverage` reconciliation test all build the same list — a
+		// method can't be mounted here and forgotten elsewhere. Cells / actors stay
+		// off `create_spine_surface_spec`, so the standard cross suite's generic
+		// round-trip never drives them (they're covered by the dedicated cell /
+		// actor cross suites). The shared `ws_transport` is threaded as the
+		// role-grant-offer `notification_sender` so the spine emits the WS
+		// notification family — driving `describe_role_grant_offer_notification_ws_tests`.
 		rpc_endpoints: (ctx) =>
-			// Thread the shared `ws_transport` as the role-grant-offer
-			// `notification_sender` so the spine emits the WS notification family
-			// (received / accepted / declined / retracted / supersede + flat revoke)
-			// — driving `describe_role_grant_offer_notification_ws_tests`.
-			spine_rpc_endpoints(ctx, {notification_sender: ws_transport}).map((endpoint) => ({
-				...endpoint,
-				actions: [
-					...endpoint.actions,
-					...create_testing_actions(ctx.deps, {
-						session_options: spine_session_options,
-						daemon_token_state: daemon_token_rotation.state,
-					}),
-					...create_cell_actions(ctx.deps),
-					...create_cell_grant_actions({...ctx.deps, roles: spine_roles}),
-					...create_cell_field_actions(ctx.deps),
-					...create_cell_item_actions(ctx.deps),
-					...create_cell_audit_actions(),
-					// `actor_lookup` / `actor_search` — opt-in (not in the standard
-					// bundle), so live-mounted here but off the declared surface,
-					// exercised by the dedicated actor-lookup / actor-search cross suites.
-					...create_actor_lookup_actions(ctx.deps),
-					...create_actor_search_actions(ctx.deps),
-				],
-			})),
+			full_spine_rpc_endpoints(ctx, {
+				notification_sender: ws_transport,
+				daemon_token_state: daemon_token_rotation.state,
+			}),
 		env_schema: BaseServerEnv,
 		env_values: env,
 		// Await fire-and-forget effects before each response returns, so a

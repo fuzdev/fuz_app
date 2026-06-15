@@ -81,6 +81,22 @@ factory on the RPC endpoint and calling `describe_rpc_attack_surface_tests`
 plus `describe_rpc_round_trip_tests`. See the existing
 ./auth/\*.rpc_suites.db.test.ts files as templates.
 
+### Spine live-method coverage gate (`cross_backend/spine_method_coverage`)
+
+`spine_method_coverage.test.ts` (no DB) is the structural backstop for the
+obligation above: it enumerates the spine binary's full live RPC mount
+(`build_full_spine_rpc_actions`, the single-sourced superset
+`testing_spine_server.ts` mounts) and reconciles it against the tagged
+`spine_method_coverage.ts` manifest via `assert_rpc_method_coverage`
+(`$lib/testing/cross_backend/method_coverage.js`). Every method is tagged
+`declared` (auto-enumerated by the spec-derived suites), `off_surface` (names
+the covering `describe_*_cross_tests` suite), or `backdoor` (`_testing_*`).
+Mount a new method without a manifest row — or leave a stale row — and the test
+fails loud. So an off-surface verb (a new cell action, an opt-in resolver) can't
+ship with zero cross-backend coverage silently; the manifest forces a tier +
+suite decision. Pairs with the `assert_no_testing_methods` surface invariant
+(the reverse guard).
+
 ## Shared Route Spec Factory
 
 Extract `create_route_specs` from the production server as a named export

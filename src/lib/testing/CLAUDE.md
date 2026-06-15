@@ -1309,10 +1309,35 @@ re-roll the serve / daemon-info / WS-attach / drain boilerplate:
 - `testing/cross_backend/testing_server_node.ts` — `create_node_testing_adapter()` (`@hono/node-server` + `@hono/node-ws`). Optional peer deps (like `ws`); only test binaries import them.
 - `testing/cross_backend/testing_server_deno.ts` — `create_deno_testing_adapter()` (`Deno.serve` + `hono/deno`; `Deno` declared locally so it typechecks under the Node toolchain). Spawn the entry with `--sloppy-imports` (Deno doesn't do `.js`→`.ts`; Gro's loader does, so the Node path needs no flag).
 - `testing/cross_backend/testing_server_bun.ts` — `create_bun_testing_adapter()` (`Bun.serve` + `hono/bun`'s module-level `upgradeWebSocket` + `websocket`; `Bun.serve` declared locally so it typechecks under the Node toolchain). **No extra deps** (`hono/bun` ships with `hono`; `Bun.serve` is built in, unlike Node's `@hono/node-server` + `@hono/node-ws`), and Bun resolves `.js`→`.ts` natively (no flag, unlike Deno). Reuses `create_node_runtime` (Bun implements the `node:fs`/`node:process` surface). WS is module-level + stateless (like Deno) — the `websocket` handler is threaded into `serve`, where `Bun.serve` wants it, so no post-serve attach.
-- `testing/cross_backend/default_spine_surface.ts` — the canonical no-domain spine surface (account/admin/audit/signup + bootstrap): `spine_session_options`, `spine_roles`, `create_spine_route_specs`, `spine_rpc_endpoints`, `create_spine_surface_spec`. `$lib`-free (it's reached by the spawned binary under Gro's loader, which doesn't resolve `$lib`), so keep it on relative imports. Shared by the spine_stub cross test, the TS cross tests, and the binary.
+- `testing/cross_backend/default_spine_surface.ts` — the canonical no-domain spine surface (account/admin/audit/signup + bootstrap): `spine_session_options`, `spine_roles`, `create_spine_route_specs`, `spine_rpc_endpoints`, `create_spine_surface_spec`. This is the **declared** surface — the `create_standard_rpc_actions` bundle the spec-derived suites auto-enumerate. `$lib`-free (it's reached by the spawned binary under Gro's loader, which doesn't resolve `$lib`), so keep it on relative imports. Shared by the spine_stub cross test, the TS cross tests, and the binary.
+- `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` / `full_spine_rpc_endpoints(ctx, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). Single-sources what was an inline assembly in `testing_spine_server.ts`, so the binary and the `spine_method_coverage` reconciliation test build the same list. Also `$lib`-free.
 - `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_deno_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory PGlite, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
 
-fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` + `_testing_reset` + a WS mount, reusing `default_spine_surface`. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic.
+fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` + `full_spine_rpc_endpoints` + a WS mount, reusing `default_spine_surface`. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic.
+
+### Live-method coverage reconciliation — `method_coverage.ts`
+
+`assert_rpc_method_coverage({live_methods, declared_methods, manifest})` keeps
+the **off-declared-surface** methods as drift-proof as the declared ones. The
+spec-derived suites auto-enumerate the declared surface, but a backend's live
+RPC endpoint also mounts methods kept off it (stateful cell verbs, opt-in
+resolvers, `_testing_*` backdoors) that rely on hand-wired imperative suites —
+nothing structurally guaranteed every live method was actually claimed by one.
+
+The assertion diffs the live method set against a `MethodCoverageEntry`
+manifest both directions (a mounted-but-unclaimed method **and** a stale
+manifest row both fail loud) and checks each entry's `tier`
+(`declared` / `off_surface` / `backdoor`) is consistent with the declared
+surface + the `_testing_` prefix. `off_surface` rows must name the covering
+`suite`; `capability` is typed `keyof BackendCapabilities` so a stale flag is a
+compile error. The manifest is the forcing function — a method can't reach the
+live mount without a row naming its coverage.
+
+Pairs with `surface_invariants.ts` `assert_no_testing_methods` (the _reverse_
+guard — a backdoor must never leak _onto_ the declared surface). fuz_app's own
+wiring is the manifest `src/test/cross_backend/spine_method_coverage.ts` + the
+no-DB reconciliation test `spine_method_coverage.test.ts`, which enumerates
+`build_full_spine_rpc_actions` with stub deps against `create_spine_surface_spec`.
 
 The in-process `ws_round_trip` harness stays (it drives the dispatcher
 against a fake upgrade, no wire), but the real-upgrade coverage now lives in

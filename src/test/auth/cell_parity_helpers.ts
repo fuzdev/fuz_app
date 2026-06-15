@@ -16,11 +16,7 @@
 
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
-import {create_cell_actions} from '$lib/auth/cell_actions.js';
-import {create_cell_grant_actions} from '$lib/auth/cell_grant_actions.js';
-import {create_cell_field_actions} from '$lib/auth/cell_field_actions.js';
-import {create_cell_item_actions} from '$lib/auth/cell_item_actions.js';
-import {create_cell_audit_actions} from '$lib/auth/cell_audit_actions.js';
+import {create_all_cell_actions} from '$lib/auth/all_cell_actions.js';
 import {create_testing_drain_effects_action} from '$lib/testing/cross_backend/testing_reset_actions.js';
 import {cell_audit_events} from '$lib/auth/cell_audit_events.js';
 import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
@@ -52,11 +48,7 @@ export const cell_parity_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpo
 			// role-shaped-grant parity suite's role-validity gate admits it and
 			// rejects unregistered roles — matching the spine binary + Rust stub.
 			...create_standard_rpc_actions(ctx.deps, {roles: spine_roles}),
-			...create_cell_actions(ctx.deps),
-			...create_cell_grant_actions({...ctx.deps, roles: spine_roles}),
-			...create_cell_field_actions(ctx.deps),
-			...create_cell_item_actions(ctx.deps),
-			...create_cell_audit_actions(),
+			...create_all_cell_actions(ctx.deps, {roles: spine_roles}),
 			// `_testing_drain_effects` so the shared suite can call the audit
 			// barrier in-process too (satisfied-by-construction here:
 			// `create_test_app` runs `await_pending_effects: true`).

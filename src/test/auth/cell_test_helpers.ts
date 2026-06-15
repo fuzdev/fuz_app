@@ -41,11 +41,7 @@ import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
 import {create_role_schema, ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
 import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
 import {create_audit_log_config} from '$lib/auth/audit_log_schema.js';
-import {create_cell_actions} from '$lib/auth/cell_actions.js';
-import {create_cell_grant_actions} from '$lib/auth/cell_grant_actions.js';
-import {create_cell_field_actions} from '$lib/auth/cell_field_actions.js';
-import {create_cell_item_actions} from '$lib/auth/cell_item_actions.js';
-import {create_cell_audit_actions} from '$lib/auth/cell_audit_actions.js';
+import {create_all_cell_actions} from '$lib/auth/all_cell_actions.js';
 import {cell_audit_events} from '$lib/auth/cell_audit_events.js';
 import {
 	cell_create_action_spec,
@@ -131,13 +127,7 @@ export const cell_test_facts_dir = mkdtempSync(join(tmpdir(), 'fuz-cell-facts-')
 export const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...create_rpc_endpoint({
 		path: RPC_PATH,
-		actions: [
-			...create_cell_actions(ctx.deps),
-			...create_cell_grant_actions({...ctx.deps, roles: cell_test_roles}),
-			...create_cell_field_actions(ctx.deps),
-			...create_cell_item_actions(ctx.deps),
-			...create_cell_audit_actions(),
-		],
+		actions: [...create_all_cell_actions(ctx.deps, {roles: cell_test_roles})],
 		log: ctx.deps.log,
 	}),
 	create_serve_cell_fact_route_spec({
