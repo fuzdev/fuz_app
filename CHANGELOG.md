@@ -1,10 +1,19 @@
 # @fuzdev/fuz_app
 
+## 0.89.0
+
+### Minor Changes
+
+- feat: bundle `GET /status` into account routes; gate cross-backend body-size + account-status divergences ([0f03149](https://github.com/fuzdev/fuz_app/commit/0f03149))
+  - `create_account_route_specs` now serves `/status` (relative path, prefixed to `/api/account/status`); pass `bootstrap_status` and drop any separate `create_account_status_route_spec` mount
+  - new `BackendCapabilities`: `account_status` (fail-loud status-route gate, replaces a silent 404-skip) and `oversized_reject_closes_connection` (Bun drains + keepalives vs Node/Deno/Rust close)
+  - body-size smuggling probe forks on close-vs-drain, asserting no-desync on every backend
+
 ## 0.88.0
 
 ### Minor Changes
 
-- testing: rework to avoid hono dep for Rust cross-backend consumers ([86a1fb5](https://github.com/fuzdev/fuz_app/commit/86a1fb5))
+- rework to avoid hono dep for Rust cross-backend consumers ([86a1fb5](https://github.com/fuzdev/fuz_app/commit/86a1fb5)) ([testing](https://github.com/fuzdev/fuz_app/commit/testing))
 
 ## 0.87.0
 
