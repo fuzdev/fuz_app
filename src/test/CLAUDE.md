@@ -253,28 +253,42 @@ backends' full DDL (auth + cell
   `_testing_action_manifest` + `assert_action_manifests_equal` (exact parity —
   method set + every auth axis) — both under
   `npm run test:cross:parity`.
-  Every backend now advertises `capabilities.sse` and serves
-  `/api/admin/audit/stream`: the TS spines wire `audit_log_sse`, and the Rust
-  `spine_stub` serves it from the spine `fuz_realtime::SseRegistry` +
-  `register_audit_sse_listener`. So the SSE cases run on every
-  `cross_backend*\*`project (no`.skip`, no tripwire). Cells live-mount the full surface on every backend and stay
-  **off** the declared surface (`create_spine_surface_spec`) — like ws/sse — so
-  `cell_crud`+`cell_relations`are`true`everywhere and the cell cases run on
-  both TS and Rust (no`.skip`); the standard bundle's generic round-trip never
-  sees them. The in-process counterparts are `auth/cell_crud_parity.db.test.ts`+`auth/cell_relations_parity.db.test.ts`(same suites, plain`gro test`, sharing
-  the full-surface `create_cell_parity_setup`from`auth/cell_parity_helpers.ts`,
-  which migrates the `fuz_cell`namespace and registers`cell_audit_events`, and
-  also mounts the standard surface + `_testing_drain_effects` so the clone-D8
-  no-count-leak check reaches `audit_log_list` in-process). The
-  backends:
 
-* `cross_backend_ts_node` / `cross_backend_ts_deno` / `cross_backend_ts_bun` —
+A third out-of-the-seventeen file, `login_security.cross.test.ts`, runs under
+its own dual-spawn `cross_backend_security` project
+(`global_setup_login_security.ts` brings up the TS spine + `testing_spine_stub`
+with the login limiters enabled + the loopback proxy trusted, providing
+`security_handle_a`/`_b`) and drives `describe_login_security_cross_tests`
+against each impl: the per-IP login `429` + `Retry-After` shape and the
+`X-Forwarded-For` bucket keying. It needs a dedicated project because the
+limiters can only be enabled on a backend nothing else shares — the standard
+suites fire many loopback logins a live limiter would `429` — so the standard
+backends keep every limiter null. `npm run test:cross:security`; cross-process
+only (the in-process limiter + proxy paths already have `describe_rate_limiting_tests`
+and the `http/proxy` middleware tests).
+
+Every backend now advertises `capabilities.sse` and serves
+`/api/admin/audit/stream`: the TS spines wire `audit_log_sse`, and the Rust
+`spine_stub` serves it from the spine `fuz_realtime::SseRegistry` +
+`register_audit_sse_listener`. So the SSE cases run on every
+`cross_backend*\*`project (no`.skip`, no tripwire). Cells live-mount the full surface on every backend and stay
+**off** the declared surface (`create_spine_surface_spec`) — like ws/sse — so
+`cell_crud`+`cell_relations`are`true`everywhere and the cell cases run on
+both TS and Rust (no`.skip`); the standard bundle's generic round-trip never
+sees them. The in-process counterparts are `auth/cell_crud_parity.db.test.ts`+`auth/cell_relations_parity.db.test.ts`(same suites, plain`gro test`, sharing
+the full-surface `create_cell_parity_setup`from`auth/cell_parity_helpers.ts`,
+which migrates the `fuz_cell`namespace and registers`cell_audit_events`, and
+also mounts the standard surface + `_testing_drain_effects` so the clone-D8
+no-count-leak check reaches `audit_log_list` in-process). The
+backends:
+
+- `cross_backend_ts_node` / `cross_backend_ts_deno` / `cross_backend_ts_bun` —
   `fuz_app`'s **own** TS spine binary (`testing_spine_server_{node,deno,bun}.ts`)
   over real HTTP, in-memory PGlite, no external infra (the `ts_deno` / `ts_bun`
   ones need `deno` / `bun` on PATH). This is the in-repo cross-process coverage
   of the TS impl's real HTTP path across all three JS runtimes — the in-process
   suites (default `gro test`) never cross a process boundary.
-* `cross_backend_rust_spine_stub` — the Rust `testing_spine_stub`. Its
+- `cross_backend_rust_spine_stub` — the Rust `testing_spine_stub`. Its
   `globalSetup` rebuilds the crate and creates its Postgres DB by default
   (see ../../docs/testing.md §Rebuild-by-default workflow), so the common
   path is `npm run test:cross:rust-spine-stub` with no manual setup.
@@ -293,6 +307,10 @@ npm run test:cross:ts
 npm run test:cross:rust-spine-stub
 # skip the rebuild when the binary is known current:
 FUZ_TESTING_NO_REBUILD=1 npm run test:cross:rust-spine-stub
+# the dual-spawn parity gates (schema + action-manifest):
+npm run test:cross:parity
+# the dual-spawn login rate-limit + XFF gate (limiters enabled on both spines):
+npm run test:cross:security
 ```
 
 The TS binary + the reusable test-server core/adapters it's built on live in

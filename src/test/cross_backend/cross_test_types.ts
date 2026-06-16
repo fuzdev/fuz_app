@@ -30,5 +30,12 @@ declare module 'vitest' {
 		// can capture each one's schema and diff them.
 		parity_handle_a: SerializableBootstrappedBackendHandle;
 		parity_handle_b: SerializableBootstrappedBackendHandle;
+		// The dual-spawn login-security project (`global_setup_login_security.ts`)
+		// provides both backends' handles — `a` = TS spine (node), `b` = Rust
+		// `testing_spine_stub`, both with the login limiters enabled + the loopback
+		// proxy trusted — so `login_security.cross.test.ts` runs the login
+		// rate-limit + XFF parity suite against each impl.
+		security_handle_a: SerializableBootstrappedBackendHandle;
+		security_handle_b: SerializableBootstrappedBackendHandle;
 	}
 }

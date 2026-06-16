@@ -45,6 +45,19 @@ import {
 } from './default_secrets.js';
 
 /**
+ * Env var both spine binaries read to enable their login rate limiters
+ * (`'true'` on / unset off). The cross-language contract for the login-security
+ * cross project: the TS binary reads it via `runtime.env_get` (a test-only flag,
+ * not in `BaseServerEnv`); the Rust `testing_spine_stub` reads it via
+ * `std::env::var` — so one backend-config option drives both impls. Shared home
+ * here because both `ts_spine_backend_config` and `rust_spine_stub_backend_config`
+ * already import this module. (The spawned TS binary re-declares the literal
+ * locally — it can't import this module, which transitively pulls `vitest` —
+ * mirroring how `testing_spine_server_node.ts` re-declares `TS_SPINE_DIR_ENV`.)
+ */
+export const LOGIN_RATE_LIMIT_ENABLED_ENV = 'FUZ_LOGIN_RATE_LIMIT_ENABLED';
+
+/**
  * Capabilities shared by TS-family backends — same canonical implementation,
  * same feature set. The non-gating wiring facts (`bearer_auth` /
  * `trusted_proxy` / `login_rate_limit`) live in `ts_default_shape_notes`.

@@ -41,12 +41,18 @@ const PARITY_TESTS = [
 	'src/test/cross_backend/action_manifest_parity.cross.test.ts',
 ];
 
+// The login-security gate spawns BOTH backends with the login limiters enabled
+// — a config nothing else can share (the standard suites fire many loopback
+// logins a live limiter would 429), so it runs under its own dual-spawn project
+// (`cross_backend_security`) and is excluded from the single-backend glob.
+const SECURITY_TESTS = ['src/test/cross_backend/login_security.cross.test.ts'];
+
 const cross_backend_project = (name: string, global_setup: string) => ({
 	extends: true as const,
 	test: {
 		name,
 		include: ['src/test/cross_backend/*.cross.test.ts'],
-		exclude: PARITY_TESTS,
+		exclude: [...PARITY_TESTS, ...SECURITY_TESTS],
 		globalSetup: [global_setup],
 		isolate: false,
 		fileParallelism: false,
@@ -63,6 +69,24 @@ const cross_backend_parity_project = () => ({
 		isolate: false,
 		fileParallelism: false,
 		sequence: {groupOrder: 4},
+	},
+});
+
+// Dual-spawn login-security gate (TS spine + Rust stub, login limiters on).
+// Reuses the parity / single-backend ports + the stub DB, so — like every cross
+// project — it's invoked as its own script (`npm run test:cross:security`), never
+// alongside the other Rust projects in one `vitest` run (vitest initializes all
+// projects' globalSetups upfront, so two port-sharing dual-spawns can't share an
+// invocation). `groupOrder: 5` only orders it last if it ever is in a shared run.
+const cross_backend_security_project = () => ({
+	extends: true as const,
+	test: {
+		name: 'cross_backend_security',
+		include: SECURITY_TESTS,
+		globalSetup: ['./src/test/cross_backend/global_setup_login_security.ts'],
+		isolate: false,
+		fileParallelism: false,
+		sequence: {groupOrder: 5},
 	},
 });
 
@@ -113,6 +137,7 @@ export default defineConfig({
 							'./src/test/cross_backend/global_setup_ts_bun.ts',
 						),
 						cross_backend_parity_project(),
+						cross_backend_security_project(),
 					]
 				: []),
 		],

@@ -302,6 +302,13 @@ the username/email alternation bypass.
 
 Client IP is resolved by trusted proxy middleware (see [Trusted Proxy](#trusted-proxy--client-ip)) before rate limiting.
 
+**Cross-impl parity**: the per-IP login `429` + `Retry-After` shape is pinned
+over the wire on both the TS spine and the Rust spine by the `login_security`
+cross-backend suite — the first request past the per-IP cap on one forwarded IP
+returns `429 {error: "rate_limit_exceeded", retry_after}` with a
+`Retry-After: ceil(retry_after)` header on both impls (`rate_limit_exceeded_response`
+↔ `route_response::rate_limit_exceeded`).
+
 ### Rate Limiter Limitations
 
 - **Check-then-record race (login only)**: Bearer auth uses record-before-validate
@@ -924,6 +931,12 @@ Client IP is resolved from `X-Forwarded-For` before auth and rate limiting:
 - `normalize_ip` strips IPv4-mapped IPv6 (`::ffff:`) and lowercases for consistent
   key comparisons
 - CIDR prefixes validated at parse time (NaN, negative, over-range rejected)
+
+**Cross-impl parity**: the `login_security` cross-backend suite pins XFF
+resolution end-to-end on both spines — distinct `X-Forwarded-For` IPs get
+independent rate-limit buckets (a fresh forwarded IP is unaffected by another's
+exhausted bucket), proving the limiter keys on the resolved client IP rather than
+the loopback TCP peer the request actually arrives on.
 
 ### Deployment: nginx XFF Header
 

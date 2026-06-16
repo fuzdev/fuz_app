@@ -1347,6 +1347,33 @@ The accepted-case 403s rely on `create_spine_route_specs` zeroing
 `signup_fail_floor_ms` (mirroring `login_fail_floor_ms: 0`) so they don't each
 pay the 250ms denial floor.
 
+### Login rate-limit + trusted-proxy parity — `cross_backend/login_security.ts`
+
+`describe_login_security_cross_tests({setup_test, login_path?})` — the imperative
+suite pinning **login rate limiting + `X-Forwarded-For` client-IP resolution**
+over real HTTP on both spines. Two cases:
+
+- **per-IP limit fires** — `default_login_ip_rate_limit.max_attempts` (5, the
+  shared cap on both impls) failed logins from one forwarded IP → 401, the next →
+  `429` with the canonical `{error: "rate_limit_exceeded", retry_after}` body +
+  `Retry-After: ceil(retry_after)` header (TS `rate_limit_exceeded_response` ↔
+  Rust `route_response::rate_limit_exceeded`).
+- **XFF keying** — exhaust one forwarded IP to 429, then a _distinct_ forwarded IP
+  → 401 (not 429), proving the limiter keys on the resolved `X-Forwarded-For` IP,
+  not the loopback TCP peer (a backend ignoring XFF would 429 the fresh IP too).
+
+**Cross-process only**, on a **dedicated dual-spawn project** (`cross_backend_security`
+via `global_setup_login_security.ts`) — the limiters can't be enabled on a backend
+the standard suites share (they fire many loopback logins a live limiter would
+429), so the standard backends keep every limiter null. Determinism without a
+limiter reset: each case uses its own forwarded IP (a fresh bucket) plus its own
+non-existent username. Zero Rust code change — the stub's `FUZ_LOGIN_RATE_LIMIT_ENABLED`
+and `FUZ_TRUSTED_PROXIES` env-gates were already wired; the TS side env-gates the
+limiters in the binary, and `create_spine_route_specs` honors `ctx.ip_rate_limiter`.
+The in-process counterparts already exist (`describe_rate_limiting_tests` plus the
+proxy middleware tests), so there's no in-process leg. `npm run test:cross:security`.
+Cited property: `docs/security.md` §"Rate Limiting" + §"Trusted Proxy / Client IP".
+
 ### Building a TS test-server binary — `testing_server_core.ts` + adapters
 
 The reusable shape for standing up a **spawnable TS** cross-process test

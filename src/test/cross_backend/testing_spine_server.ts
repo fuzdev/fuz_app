@@ -51,6 +51,11 @@ import {
 } from '../../lib/server/serve_fact_route.js';
 import {create_app_backend, type AuditFactory} from '../../lib/server/app_backend.js';
 import {create_app_server} from '../../lib/server/app_server.js';
+import {
+	RateLimiter,
+	default_login_account_rate_limit,
+	default_login_ip_rate_limit,
+} from '../../lib/rate_limiter.js';
 import {BaseServerEnv, validate_server_env} from '../../lib/server/env.js';
 import {stub_password_deps} from '../../lib/testing/app_server.js';
 import {
@@ -176,15 +181,39 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	// `register_ws_endpoint` in `mount_websocket`.
 	const ws_transport = new BackendWebsocketTransport();
 
+	// Login rate limiting is OFF by default — the standard cross suites fire
+	// many login/signup round-trips per backend lifetime from one host (loopback),
+	// which a live limiter would 429. The dedicated login-security cross project
+	// spawns a backend with `FUZ_LOGIN_RATE_LIMIT_ENABLED=true` to exercise the
+	// 429 + `Retry-After` path and XFF-keyed bucketing over the wire (see
+	// `testing/cross_backend/login_security.ts`). `trusted_proxies` is always
+	// wired below, so the resolved client IP keys the limiter; the security suite
+	// spoofs per-case `X-Forwarded-For` IPs so each case is its own fresh bucket.
+	// Read the raw flag directly — it's a test-binary-only toggle, not part of the
+	// production `BaseServerEnv` schema. The literal is the canonical
+	// `LOGIN_RATE_LIMIT_ENABLED_ENV` (in `default_backend_configs.ts`, where the
+	// backend configs set it for both impls), re-declared here because that module
+	// transitively pulls `vitest` and can't be imported into the spawned binary —
+	// the same local-redeclare `testing_spine_server_node.ts` does for `TS_SPINE_DIR_ENV`.
+	const login_rate_limit_enabled = runtime.env_get('FUZ_LOGIN_RATE_LIMIT_ENABLED') === 'true';
+	const ip_rate_limiter = login_rate_limit_enabled
+		? new RateLimiter(default_login_ip_rate_limit)
+		: null;
+	const login_account_rate_limiter = login_rate_limit_enabled
+		? new RateLimiter(default_login_account_rate_limit)
+		: null;
+
 	const app_server = await create_app_server({
 		backend: app_backend,
 		session_options: spine_session_options,
 		allowed_origins,
 		proxy: {trusted_proxies: ['127.0.0.1', '::1'], get_connection_ip},
-		// Disable every limiter — the cross-process harness fires many
-		// signup/login round-trips per backend lifetime from one host.
-		ip_rate_limiter: null,
-		login_account_rate_limiter: null,
+		// Login limiters: null unless `FUZ_LOGIN_RATE_LIMIT_ENABLED` is set (above).
+		// `create_spine_route_specs` reads these off `AppServerContext` and wires
+		// them onto `POST /api/account/login`. Every other limiter stays disabled
+		// for the same many-round-trips-from-one-host reason.
+		ip_rate_limiter,
+		login_account_rate_limiter,
 		signup_account_rate_limiter: null,
 		bearer_ip_rate_limiter: null,
 		action_ip_rate_limiter: null,
@@ -251,6 +280,8 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 
 	const close = async (): Promise<void> => {
 		await daemon_token_rotation.stop();
+		ip_rate_limiter?.dispose();
+		login_account_rate_limiter?.dispose();
 		await app_server.close();
 	};
 

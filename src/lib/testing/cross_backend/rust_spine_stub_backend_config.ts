@@ -41,6 +41,7 @@ import type {BackendConfig} from './backend_config.js';
 import {build_test_backend_paths} from './build_test_backend_paths.js';
 import {SPINE_EXPECTED_SCHEMA_URL} from './default_spine_surface.js';
 import {
+	LOGIN_RATE_LIMIT_ENABLED_ENV,
 	make_default_rust_backend_config,
 	rust_default_capabilities,
 } from './default_backend_configs.js';
@@ -86,6 +87,23 @@ export interface SpineStubBackendConfigOptions {
 	 * var. When neither is set the preset throws.
 	 */
 	readonly binary_path?: string;
+	/**
+	 * Enable the per-IP + per-account login rate limiters on the stub
+	 * (`FUZ_LOGIN_RATE_LIMIT_ENABLED=true`). Off by default — the standard cross
+	 * suites fire many loopback logins a live limiter would 429. Set `true` only
+	 * for the dedicated login-security cross project (`global_setup_login_security.ts`).
+	 * Pair with `trusted_proxies` so the limiter keys on the resolved
+	 * `X-Forwarded-For` client IP. Mirrors `TsSpineBackendConfigOptions.enable_login_rate_limit`.
+	 */
+	readonly enable_login_rate_limit?: boolean;
+	/**
+	 * Comma-separated trusted-proxy allowlist passed as `FUZ_TRUSTED_PROXIES`
+	 * (e.g. `'127.0.0.1,::1'`). Unset by default (the stub leaves XFF parsing
+	 * off, keying on the raw TCP peer). The login-security project sets the
+	 * loopback set so the limiter keys on the `X-Forwarded-For` client IP — the
+	 * TS spine binary wires the equivalent set unconditionally.
+	 */
+	readonly trusted_proxies?: string;
 }
 
 /**
@@ -106,6 +124,8 @@ export const rust_spine_stub_backend_config = (
 		port = RUST_SPINE_STUB_DEFAULT_PORT,
 		database_url = RUST_SPINE_STUB_DEFAULT_DATABASE_URL,
 		binary_path = process.env[RUST_SPINE_STUB_BIN_ENV],
+		enable_login_rate_limit,
+		trusted_proxies,
 	} = options;
 	if (!binary_path) {
 		throw new Error(
@@ -139,6 +159,11 @@ export const rust_spine_stub_backend_config = (
 			// file the TS spine reads, so the two backends share one cross-impl
 			// contract.
 			[RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH_ENV]: fileURLToPath(SPINE_EXPECTED_SCHEMA_URL),
+			// Login-security project opt-ins (off by default): enable the login
+			// limiters + trust the loopback proxy so the limiter keys on the
+			// resolved `X-Forwarded-For` IP. The stub reads both directly.
+			...(enable_login_rate_limit ? {[LOGIN_RATE_LIMIT_ENABLED_ENV]: 'true'} : {}),
+			...(trusted_proxies !== undefined ? {FUZ_TRUSTED_PROXIES: trusted_proxies} : {}),
 		},
 	});
 };
