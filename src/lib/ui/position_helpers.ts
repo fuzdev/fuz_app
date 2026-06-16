@@ -4,7 +4,7 @@
  * @module
  */
 
-import {UnreachableError} from '@fuzdev/fuz_util/error.js';
+import {UnreachableError} from '@fuzdev/fuz_util/error.ts';
 
 /**
  * Basic position options for UI elements (cardinal directions).

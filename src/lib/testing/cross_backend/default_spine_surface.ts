@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Canonical no-domain spine surface — the standard fuz_app
@@ -25,20 +25,20 @@ import '../assert_dev_env.js';
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {create_account_route_specs} from '../../auth/account_routes.js';
-import {create_audit_log_route_specs} from '../../auth/audit_log_routes.js';
-import type {NotificationSender} from '../../auth/role_grant_offer_notifications.js';
-import {create_role_schema, type RoleSchemaResult} from '../../auth/role_schema.js';
-import {create_session_config, type SessionOptions} from '../../auth/session_cookie.js';
-import {create_signup_route_specs} from '../../auth/signup_routes.js';
-import {create_standard_rpc_actions} from '../../auth/standard_rpc_actions.js';
-import {create_ready_route_spec, load_expected_schema} from '../../http/common_routes.js';
-import {prefix_route_specs, type RouteSpec} from '../../http/route_spec.js';
-import type {AppSurfaceSpec, RpcEndpointSpec} from '../../http/surface.js';
-import type {AppServerContext} from '../../server/app_server_context.js';
-import {create_test_app_surface_spec} from '../stubs.js';
+import {create_account_route_specs} from '../../auth/account_routes.ts';
+import {create_audit_log_route_specs} from '../../auth/audit_log_routes.ts';
+import type {NotificationSender} from '../../auth/role_grant_offer_notifications.ts';
+import {create_role_schema, type RoleSchemaResult} from '../../auth/role_schema.ts';
+import {create_session_config, type SessionOptions} from '../../auth/session_cookie.ts';
+import {create_signup_route_specs} from '../../auth/signup_routes.ts';
+import {create_standard_rpc_actions} from '../../auth/standard_rpc_actions.ts';
+import {create_ready_route_spec, load_expected_schema} from '../../http/common_routes.ts';
+import {prefix_route_specs, type RouteSpec} from '../../http/route_spec.ts';
+import type {AppSurfaceSpec, RpcEndpointSpec} from '../../http/surface.ts';
+import type {AppServerContext} from '../../server/app_server_context.ts';
+import {create_test_app_surface_spec} from '../stubs.ts';
 
 /**
  * Session config — cookie name matches the binary's issued session cookie

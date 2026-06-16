@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Composable audit log completeness test suite.
@@ -26,29 +26,29 @@ import './assert_dev_env.js';
 
 import {describe, test, assert} from 'vitest';
 
-import type {SessionOptions} from '../auth/session_cookie.js';
-import {ROLE_ADMIN} from '../auth/role_schema.js';
+import type {SessionOptions} from '../auth/session_cookie.ts';
+import {ROLE_ADMIN} from '../auth/role_schema.ts';
 import {
 	AUDIT_EVENT_TYPES,
 	type AuditEventType,
 	type AuditLogEventWithUsernamesJson,
-} from '../auth/audit_log_schema.js';
-import type {TestAccount} from './app_server.js';
-import {DEFAULT_TEST_PASSWORD} from './test_credentials.js';
-import {find_auth_route} from './integration_helpers.js';
+} from '../auth/audit_log_schema.ts';
+import type {TestAccount} from './app_server.ts';
+import {DEFAULT_TEST_PASSWORD} from './test_credentials.ts';
+import {find_auth_route} from './integration_helpers.ts';
 import {
 	rpc_call_for_spec,
 	require_rpc_endpoint_path,
 	resolve_rpc_endpoints_for_setup,
 	type RpcCallArgs,
 	type RpcEndpointsSuiteOption,
-} from './rpc_helpers.js';
-import {role_grant_offer_and_accept} from './role_grant_helpers.js';
+} from './rpc_helpers.ts';
+import {role_grant_offer_and_accept} from './role_grant_helpers.ts';
 import {
 	role_grant_offer_accept_action_spec,
 	role_grant_offer_create_action_spec,
 	role_grant_revoke_action_spec,
-} from '../auth/role_grant_offer_action_specs.js';
+} from '../auth/role_grant_offer_action_specs.ts';
 import {
 	account_delete_action_spec,
 	account_purge_action_spec,
@@ -60,7 +60,7 @@ import {
 	AUDIT_LOG_LIST_LIMIT_MAX,
 	invite_create_action_spec,
 	invite_delete_action_spec,
-} from '../auth/admin_action_specs.js';
+} from '../auth/admin_action_specs.ts';
 import {
 	account_session_list_action_spec,
 	account_session_revoke_action_spec,
@@ -68,10 +68,10 @@ import {
 	account_token_create_action_spec,
 	account_token_list_action_spec,
 	account_token_revoke_action_spec,
-} from '../auth/account_action_specs.js';
-import type {AppSurfaceSpec} from '../http/surface.js';
-import type {BackendCapabilities} from './cross_backend/capabilities.js';
-import type {SetupTest, TestFixture} from './cross_backend/setup.js';
+} from '../auth/account_action_specs.ts';
+import type {AppSurfaceSpec} from '../http/surface.ts';
+import type {BackendCapabilities} from './cross_backend/capabilities.ts';
+import type {SetupTest, TestFixture} from './cross_backend/setup.ts';
 
 /**
  * Configuration for `describe_audit_completeness_tests`.

@@ -1,8 +1,8 @@
-import '../../assert_dev_env.js';
+import '../../assert_dev_env.ts';
 
-import {rpc_call} from '../../rpc_helpers.js';
-import type {FetchTransport} from '../../transports/fetch_transport.js';
-import type {BackendCapabilities} from '../capabilities.js';
+import {rpc_call} from '../../rpc_helpers.ts';
+import type {FetchTransport} from '../../transports/fetch_transport.ts';
+import type {BackendCapabilities} from '../capabilities.ts';
 
 /**
  * Context handed to a `BenchScenario.run`. Carries a ready, pre-authed

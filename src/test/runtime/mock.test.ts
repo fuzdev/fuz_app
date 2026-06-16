@@ -7,16 +7,16 @@
  */
 
 import {describe, assert, test} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	create_mock_runtime,
 	reset_mock_runtime,
 	set_mock_stdin,
 	MockExitError,
-} from '$lib/runtime/mock.js';
+} from '$lib/runtime/mock.ts';
 
-import {collect_stream, stream_of} from './byte_stream.js';
+import {collect_stream, stream_of} from './byte_stream.ts';
 
 describe('create_mock_runtime', () => {
 	test('creates a runtime with default empty state', () => {

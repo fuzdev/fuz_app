@@ -14,7 +14,7 @@ import {
 	schema_to_surface,
 	middleware_applies,
 	merge_error_schemas,
-} from '$lib/http/schema_helpers.js';
+} from '$lib/http/schema_helpers.ts';
 
 describe('is_null_schema', () => {
 	test('returns true for z.null()', () => {

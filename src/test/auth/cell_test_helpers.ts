@@ -20,48 +20,48 @@ import {mkdtempSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
-import {create_session_config} from '$lib/auth/session_cookie.js';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
 import {
 	create_serve_fact_route_spec,
 	create_serve_cell_fact_route_spec,
-} from '$lib/server/serve_fact_route.js';
+} from '$lib/server/serve_fact_route.ts';
 import {
 	create_pglite_factory,
 	create_pg_factory,
 	create_describe_db,
 	auth_integration_truncate_tables,
 	log_db_factory_status,
-} from '$lib/testing/db.js';
-import {run_migrations} from '$lib/db/migrate.js';
-import {auth_migration_ns} from '$lib/auth/migrations.js';
-import {CELL_MIGRATION_NS, CELL_DROP_TABLES} from '$lib/db/cell_ddl.js';
-import {FACT_MIGRATION_NS, FACT_DROP_TABLES} from '$lib/db/fact_ddl.js';
-import {CELL_HISTORY_MIGRATION_NS} from '$lib/db/cell_history_ddl.js';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
-import {create_role_schema, ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
-import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
-import {create_audit_log_config} from '$lib/auth/audit_log_schema.js';
-import {create_all_cell_actions} from '$lib/auth/all_cell_actions.js';
-import {cell_audit_events} from '$lib/auth/cell_audit_events.js';
+} from '$lib/testing/db.ts';
+import {run_migrations} from '$lib/db/migrate.ts';
+import {auth_migration_ns} from '$lib/auth/migrations.ts';
+import {CELL_MIGRATION_NS, CELL_DROP_TABLES} from '$lib/db/cell_ddl.ts';
+import {FACT_MIGRATION_NS, FACT_DROP_TABLES} from '$lib/db/fact_ddl.ts';
+import {CELL_HISTORY_MIGRATION_NS} from '$lib/db/cell_history_ddl.ts';
+import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
+import {create_role_schema, ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
+import {create_audit_log_config} from '$lib/auth/audit_log_schema.ts';
+import {create_all_cell_actions} from '$lib/auth/all_cell_actions.ts';
+import {cell_audit_events} from '$lib/auth/cell_audit_events.ts';
 import {
 	cell_create_action_spec,
 	type CellCreateInput,
 	type CellPath,
 	type CellVisibility,
-} from '$lib/auth/cell_action_specs.js';
+} from '$lib/auth/cell_action_specs.ts';
 import {
 	cell_item_insert_action_spec,
 	type CellItemPosition,
-} from '$lib/auth/cell_item_action_specs.js';
-import {fractional_indices_between} from '@fuzdev/fuz_util/fractional_index.js';
-import {create_test_app, type TestApp} from '$lib/testing/app_server.js';
-import {rpc_call_for_spec, type RpcCallResultForSpec} from '$lib/testing/rpc_helpers.js';
-import type {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
-import type {AppServerContext} from '$lib/server/app_server_context.js';
-import type {AuditFactory} from '$lib/server/app_backend.js';
-import type {RouteSpec} from '$lib/http/route_spec.js';
-import type {Db} from '$lib/db/db.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+} from '$lib/auth/cell_item_action_specs.ts';
+import {fractional_indices_between} from '@fuzdev/fuz_util/fractional_index.ts';
+import {create_test_app, type TestApp} from '$lib/testing/app_server.ts';
+import {rpc_call_for_spec, type RpcCallResultForSpec} from '$lib/testing/rpc_helpers.ts';
+import type {RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
+import type {AppServerContext} from '$lib/server/app_server_context.ts';
+import type {AuditFactory} from '$lib/server/app_backend.ts';
+import type {RouteSpec} from '$lib/http/route_spec.ts';
+import type {Db} from '$lib/db/db.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
 /** Shared cookie config for the cell integration suites. */
 export const session_options = create_session_config('test_session');

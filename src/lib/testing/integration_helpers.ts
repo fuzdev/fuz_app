@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Integration test helpers — route lookup, response validation, and cookie utilities.
@@ -8,13 +8,13 @@ import './assert_dev_env.js';
 
 import {assert} from 'vitest';
 
-import type {RouteSpec, RouteMethod} from '../http/route_spec.js';
-import {is_null_schema, merge_error_schemas} from '../http/schema_helpers.js';
-import {is_public_auth} from '../http/auth_shape.js';
-import type {Keyring} from '../auth/keyring.js';
-import {create_session_cookie_value, type SessionOptions} from '../auth/session_cookie.js';
-import {ROLE_ADMIN} from '../auth/role_schema.js';
-import type {TestAccount} from './app_server.js';
+import type {RouteSpec, RouteMethod} from '../http/route_spec.ts';
+import {is_null_schema, merge_error_schemas} from '../http/schema_helpers.ts';
+import {is_public_auth} from '../http/auth_shape.ts';
+import type {Keyring} from '../auth/keyring.ts';
+import {create_session_cookie_value, type SessionOptions} from '../auth/session_cookie.ts';
+import {ROLE_ADMIN} from '../auth/role_schema.ts';
+import type {TestAccount} from './app_server.ts';
 
 /**
  * Find a route spec matching the given method and path.

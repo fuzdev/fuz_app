@@ -14,7 +14,7 @@ import {describe, test, assert, vi, beforeEach, afterEach} from 'vitest';
 
 vi.mock('esm-env', () => ({BROWSER: true, DEV: true, NODE: true}));
 
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	FrontendWebsocketClient,
@@ -26,14 +26,14 @@ import {
 	DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT,
 	DEFAULT_QUEUE_MAX_SIZE,
 	socket_status_to_async_status,
-} from '$lib/actions/socket.svelte.js';
+} from '$lib/actions/socket.svelte.ts';
 import {
 	WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT,
 	WS_CLOSE_SESSION_REVOKED,
-} from '$lib/actions/transports.js';
-import {cancel_action_spec} from '$lib/actions/cancel.js';
-import {heartbeat_action_spec} from '$lib/actions/heartbeat.js';
-import {JSONRPC_ERROR_CODES, ThrownJsonrpcError} from '$lib/http/jsonrpc_errors.js';
+} from '$lib/actions/transports.ts';
+import {cancel_action_spec} from '$lib/actions/cancel.ts';
+import {heartbeat_action_spec} from '$lib/actions/heartbeat.ts';
+import {JSONRPC_ERROR_CODES, ThrownJsonrpcError} from '$lib/http/jsonrpc_errors.ts';
 
 // --- mock WebSocket ---
 

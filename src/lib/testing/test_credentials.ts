@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Shared test credential constants — deliberately hono-free.

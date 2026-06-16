@@ -23,7 +23,7 @@ afterEach(() => {
 test('dev_only drops the value in production (DEV=false)', async () => {
 	vi.resetModules();
 	vi.doMock('esm-env', () => ({DEV: false}));
-	const {dev_only} = await import('$lib/http/jsonrpc_errors.js');
+	const {dev_only} = await import('$lib/http/jsonrpc_errors.ts');
 	// The leak shapes both call patterns produce: a wrapped `data` object (RPC)
 	// and a bare issues array (REST) — both must vanish in production.
 	assert.strictEqual(dev_only({issues: [{code: 'custom', message: 'x', path: []}]}), undefined);
@@ -38,7 +38,7 @@ test('dev_only drops the value in production (DEV=false)', async () => {
 test('dev_only passes the value through in development (DEV=true)', async () => {
 	vi.resetModules();
 	vi.doMock('esm-env', () => ({DEV: true}));
-	const {dev_only} = await import('$lib/http/jsonrpc_errors.js');
+	const {dev_only} = await import('$lib/http/jsonrpc_errors.ts');
 	const issues = [{code: 'custom', message: 'x', path: []}];
 	assert.strictEqual(dev_only(issues), issues);
 });

@@ -11,9 +11,9 @@ import type {Context} from 'hono';
 import {streamSSE} from 'hono/streaming';
 import {z} from 'zod';
 import {DEV} from 'esm-env';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {SSE_CONNECTED_COMMENT} from './sse_constants.js';
+import {SSE_CONNECTED_COMMENT} from './sse_constants.ts';
 
 /**
  * Generic SSE stream controller interface.

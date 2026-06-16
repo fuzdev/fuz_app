@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Node runtime adapter for spawnable cross-process test server binaries.
@@ -20,8 +20,8 @@ import {serve, type ServerType} from '@hono/node-server';
 import {getConnInfo} from '@hono/node-server/conninfo';
 import {createNodeWebSocket} from '@hono/node-ws';
 
-import {create_node_runtime} from '../../runtime/node.js';
-import type {ServeHandle, TestingServerAdapter} from './testing_server_core.js';
+import {create_node_runtime} from '../../runtime/node.ts';
+import type {ServeHandle, TestingServerAdapter} from './testing_server_core.ts';
 
 const node_serve_handle = (server: ServerType): ServeHandle => ({
 	shutdown: () =>

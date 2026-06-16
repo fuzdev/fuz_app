@@ -26,13 +26,13 @@ import {z} from 'zod';
 import {
 	CREDENTIAL_TYPE_DAEMON_TOKEN,
 	type CredentialTypeSchemaResult,
-} from './credential_type_schema.js';
+} from './credential_type_schema.ts';
 import {
 	GRANT_PATH_ADMIN,
 	GRANT_PATH_BOOTSTRAP,
 	type GrantPathSchemaResult,
-} from './grant_path_schema.js';
-import type {ScopeKindSchemaResult} from './scope_kind_schema.js';
+} from './grant_path_schema.ts';
+import type {ScopeKindSchemaResult} from './scope_kind_schema.ts';
 
 /** Valid role name: lowercase letters and underscores, no leading/trailing underscore. */
 export const RoleName = z

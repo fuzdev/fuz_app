@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Test-binary RPC actions for cross-process integration tests.
@@ -58,7 +58,7 @@ import '../assert_dev_env.js';
  * full event chain.
  *
  * Production safety: this module lives under `cross_backend/` and starts
- * with `import '../assert_dev_env.js';` — production bundles either
+ * with `import '../assert_dev_env.ts';` — production bundles either
  * tree-shake the module out or throw at startup. The Rust mirror
  * (`fuz_testing` crate) ships a parallel action; `cargo xtask
  * check-release` blocks `fuz_testing` from entering production dep
@@ -68,24 +68,24 @@ import '../assert_dev_env.js';
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
-import {fact_hash_bytes, FactHashSchema} from '@fuzdev/fuz_util/fact_hash.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import {fact_hash_bytes, FactHashSchema} from '@fuzdev/fuz_util/fact_hash.ts';
 
-import {rpc_action, type RpcAction} from '../../actions/action_rpc.js';
-import {query_put_fact} from '../../db/fact_queries.js';
-import type {RequestResponseActionSpec} from '../../actions/action_spec.js';
-import type {RouteAuth} from '../../http/auth_shape.js';
-import type {AppDeps} from '../../auth/deps.js';
-import type {SessionOptions} from '../../auth/session_cookie.js';
-import type {DaemonTokenState} from '../../auth/daemon_token.js';
-import type {Db} from '../../db/db.js';
-import {ROLE_ADMIN, ROLE_KEEPER} from '../../auth/role_schema.js';
-import {auth_integration_truncate_tables} from '../db.js';
-import {query_schema_snapshot, SchemaSnapshot} from '../schema_introspect.js';
-import {ActionManifest, build_action_manifest} from './action_manifest.js';
-import {query_create_actor} from '../../auth/account_queries.js';
-import {create_test_account_with_credentials, mint_test_session} from '../app_server.js';
-import {DEFAULT_TEST_PASSWORD} from '../test_credentials.js';
+import {rpc_action, type RpcAction} from '../../actions/action_rpc.ts';
+import {query_put_fact} from '../../db/fact_queries.ts';
+import type {RequestResponseActionSpec} from '../../actions/action_spec.ts';
+import type {RouteAuth} from '../../http/auth_shape.ts';
+import type {AppDeps} from '../../auth/deps.ts';
+import type {SessionOptions} from '../../auth/session_cookie.ts';
+import type {DaemonTokenState} from '../../auth/daemon_token.ts';
+import type {Db} from '../../db/db.ts';
+import {ROLE_ADMIN, ROLE_KEEPER} from '../../auth/role_schema.ts';
+import {auth_integration_truncate_tables} from '../db.ts';
+import {query_schema_snapshot, SchemaSnapshot} from '../schema_introspect.ts';
+import {ActionManifest, build_action_manifest} from './action_manifest.ts';
+import {query_create_actor} from '../../auth/account_queries.ts';
+import {create_test_account_with_credentials, mint_test_session} from '../app_server.ts';
+import {DEFAULT_TEST_PASSWORD} from '../test_credentials.ts';
 
 /**
  * Shared `auth` axis for every `_testing_*` action: keeper-only via the

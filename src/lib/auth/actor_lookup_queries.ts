@@ -28,9 +28,9 @@
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {QueryDeps} from '../db/query_deps.js';
+import type {QueryDeps} from '../db/query_deps.ts';
 
 /** Row shape returned to handlers — wire mapping happens at the action layer. */
 export interface ActorLookupRow {

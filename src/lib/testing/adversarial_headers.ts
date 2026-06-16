@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Adversarial header attack test suite.
@@ -12,12 +12,12 @@ import './assert_dev_env.js';
 import {test, assert, describe} from 'vitest';
 import type {z} from 'zod';
 
-import {ApiError, ERROR_FORBIDDEN_ORIGIN} from '../http/error_schemas.js';
+import {ApiError, ERROR_FORBIDDEN_ORIGIN} from '../http/error_schemas.ts';
 import {
 	create_test_middleware_stack_app,
 	TEST_MIDDLEWARE_PATH,
 	type TestMiddlewareStackOptions,
-} from './middleware.js';
+} from './middleware.ts';
 
 // --- Adversarial header attack types and runner ---
 

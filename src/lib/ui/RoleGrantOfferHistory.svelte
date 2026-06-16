@@ -11,12 +11,12 @@
 	 * for display names.
 	 */
 
-	import {role_grant_offers_state_context} from './role_grant_offers_state.svelte.js';
+	import {role_grant_offers_state_context} from './role_grant_offers_state.svelte.ts';
 	import Datatable from './Datatable.svelte';
-	import type {DatatableColumn} from './datatable.js';
-	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.js';
-	import type {RoleGrantOfferJson} from '../auth/role_grant_offer_schema.js';
-	import {format_scope_context, resolve_scope_label, type FormatScope} from './format_scope.js';
+	import type {DatatableColumn} from './datatable.ts';
+	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.ts';
+	import type {RoleGrantOfferJson} from '../auth/role_grant_offer_schema.ts';
+	import {format_scope_context, resolve_scope_label, type FormatScope} from './format_scope.ts';
 
 	const {
 		current_actor_id,

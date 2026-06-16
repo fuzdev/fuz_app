@@ -18,17 +18,17 @@ import {
 	query_role_grant_offer_list,
 	query_role_grant_offer_find_pending,
 	query_role_grant_offer_sweep_expired,
-} from '$lib/auth/role_grant_offer_queries.js';
-import {create_uuid} from '@fuzdev/fuz_util/id.js';
+} from '$lib/auth/role_grant_offer_queries.ts';
+import {create_uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {describe_db} from '../db_fixture.js';
+import {describe_db} from '../db_fixture.ts';
 import {
 	make_account,
 	create_pending_offer,
 	insert_superseded_offer,
 	future,
 	hour,
-} from './role_grant_offer_queries.fixtures.js';
+} from './role_grant_offer_queries.fixtures.ts';
 
 describe_db('role_grant_offer_queries.list', (get_db) => {
 	test('list filters out every terminal state plus expired-pending', async () => {

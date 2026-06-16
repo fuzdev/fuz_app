@@ -10,7 +10,7 @@
 
 import {describe, assert, test} from 'vitest';
 
-import {API_TOKEN_PREFIX, generate_api_token, hash_api_token} from '$lib/auth/api_token.js';
+import {API_TOKEN_PREFIX, generate_api_token, hash_api_token} from '$lib/auth/api_token.ts';
 
 describe('API_TOKEN_PREFIX', () => {
 	test('is the expected value', () => {

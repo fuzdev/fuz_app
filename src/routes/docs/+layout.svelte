@@ -1,9 +1,9 @@
 <script lang="ts">
 	import type {Snippet} from 'svelte';
 	import Docs from '@fuzdev/fuz_ui/Docs.svelte';
-	import {Library, library_context} from '@fuzdev/fuz_ui/library.svelte.js';
+	import {Library, library_context} from '@fuzdev/fuz_ui/library.svelte.ts';
 
-	import {tomes} from '$routes/docs/tomes.js';
+	import {tomes} from './tomes.ts';
 	import {library_json} from '$routes/library.ts';
 
 	const {

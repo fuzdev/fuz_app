@@ -1,10 +1,10 @@
-import type {RpcAction} from '../actions/action_rpc.js';
-import {create_cell_actions, type CellActionDeps} from './cell_actions.js';
-import {create_cell_grant_actions} from './cell_grant_actions.js';
-import {create_cell_field_actions} from './cell_field_actions.js';
-import {create_cell_item_actions} from './cell_item_actions.js';
-import {create_cell_audit_actions} from './cell_audit_actions.js';
-import type {RoleSchemaResult} from './role_schema.js';
+import type {RpcAction} from '../actions/action_rpc.ts';
+import {create_cell_actions, type CellActionDeps} from './cell_actions.ts';
+import {create_cell_grant_actions} from './cell_grant_actions.ts';
+import {create_cell_field_actions} from './cell_field_actions.ts';
+import {create_cell_item_actions} from './cell_item_actions.ts';
+import {create_cell_audit_actions} from './cell_audit_actions.ts';
+import type {RoleSchemaResult} from './role_schema.ts';
 
 /**
  * Options for `create_all_cell_actions`.

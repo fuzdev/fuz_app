@@ -8,20 +8,20 @@
  */
 
 import type {Context} from 'hono';
-import {to_error_message} from '@fuzdev/fuz_util/error.js';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import {to_error_message} from '@fuzdev/fuz_util/error.ts';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import type {SessionOptions} from './session_cookie.js';
-import {create_session_and_set_cookie} from './session_middleware.js';
-import {bootstrap_account, type BootstrapAccountSuccess} from './bootstrap_account.js';
-import {bootstrap_route_shape, type BootstrapInput} from './bootstrap_route_schema.js';
-import type {Db} from '../db/db.js';
-import {get_route_input, type RouteSpec} from '../http/route_spec.js';
-import {get_client_ip} from '../http/client_ip.js';
-import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
-import type {RouteFactoryDeps} from './deps.js';
-import type {StatResult} from '../runtime/deps.js';
-import {ERROR_ALREADY_BOOTSTRAPPED} from '../http/error_schemas.js';
+import type {SessionOptions} from './session_cookie.ts';
+import {create_session_and_set_cookie} from './session_middleware.ts';
+import {bootstrap_account, type BootstrapAccountSuccess} from './bootstrap_account.ts';
+import {bootstrap_route_shape, type BootstrapInput} from './bootstrap_route_schema.ts';
+import type {Db} from '../db/db.ts';
+import {get_route_input, type RouteSpec} from '../http/route_spec.ts';
+import {get_client_ip} from '../http/client_ip.ts';
+import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.ts';
+import type {RouteFactoryDeps} from './deps.ts';
+import type {StatResult} from '../runtime/deps.ts';
+import {ERROR_ALREADY_BOOTSTRAPPED} from '../http/error_schemas.ts';
 
 /**
  * Bootstrap status — runtime state computed once at startup.

@@ -8,7 +8,7 @@ import {test, assert} from 'vitest';
 import {render} from 'svelte/server';
 
 import SurfaceExplorer from '$lib/ui/SurfaceExplorer.svelte';
-import type {AppSurface} from '$lib/http/surface.js';
+import type {AppSurface} from '$lib/http/surface.ts';
 
 const test_surface: AppSurface = {
 	middleware: [

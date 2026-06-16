@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Standard integration test suite for fuz_app auth routes.
@@ -20,25 +20,25 @@ import './assert_dev_env.js';
 
 import {describe, test, assert, afterAll} from 'vitest';
 
-import type {SessionOptions} from '../auth/session_cookie.js';
+import type {SessionOptions} from '../auth/session_cookie.ts';
 import {
 	find_auth_route,
 	assert_response_matches_spec,
 	assert_no_error_info_leakage,
-} from './integration_helpers.js';
+} from './integration_helpers.ts';
 import {
 	find_rpc_action,
 	rpc_call_for_spec,
 	require_rpc_endpoint_path,
 	resolve_rpc_endpoints_for_setup,
 	type RpcEndpointsSuiteOption,
-} from './rpc_helpers.js';
+} from './rpc_helpers.ts';
 import {
 	ErrorCoverageCollector,
 	assert_error_coverage,
 	DEFAULT_INTEGRATION_ERROR_COVERAGE,
-} from './error_coverage.js';
-import {is_public_auth} from '../http/auth_shape.js';
+} from './error_coverage.ts';
+import {is_public_auth} from '../http/auth_shape.ts';
 import {
 	account_verify_action_spec,
 	account_session_list_action_spec,
@@ -47,13 +47,13 @@ import {
 	account_token_create_action_spec,
 	account_token_list_action_spec,
 	account_token_revoke_action_spec,
-} from '../auth/account_action_specs.js';
-import {invite_create_action_spec} from '../auth/admin_action_specs.js';
-import {LoginOutput, AccountStatusOutput} from '../auth/account_route_schema.js';
-import type {AppSurfaceSpec} from '../http/surface.js';
-import {test_if, type BackendCapabilities} from './cross_backend/capabilities.js';
-import type {SetupTest} from './cross_backend/setup.js';
-import {DEFAULT_TEST_PASSWORD} from './test_credentials.js';
+} from '../auth/account_action_specs.ts';
+import {invite_create_action_spec} from '../auth/admin_action_specs.ts';
+import {LoginOutput, AccountStatusOutput} from '../auth/account_route_schema.ts';
+import type {AppSurfaceSpec} from '../http/surface.ts';
+import {test_if, type BackendCapabilities} from './cross_backend/capabilities.ts';
+import type {SetupTest} from './cross_backend/setup.ts';
+import {DEFAULT_TEST_PASSWORD} from './test_credentials.ts';
 
 /**
  * Configuration for `describe_standard_integration_tests`.

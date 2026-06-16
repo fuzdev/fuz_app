@@ -29,12 +29,12 @@
 
 import {test, assert} from 'vitest';
 
-import {PgFactStore} from '$lib/db/fact_store.js';
-import type {FactHash} from '@fuzdev/fuz_util/fact_hash.js';
-import {ERROR_INVALID_ROUTE_PARAMS} from '$lib/http/error_schemas.js';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import type {TestApp} from '$lib/testing/app_server.js';
-import {describe_db, create_cell_test_app, create_cell} from '../auth/cell_test_helpers.js';
+import {PgFactStore} from '$lib/db/fact_store.ts';
+import type {FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
+import {ERROR_INVALID_ROUTE_PARAMS} from '$lib/http/error_schemas.ts';
+import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import type {TestApp} from '$lib/testing/app_server.ts';
+import {describe_db, create_cell_test_app, create_cell} from '../auth/cell_test_helpers.ts';
 
 const PUBLIC_HEADERS = {host: 'localhost:5173', origin: 'http://localhost:5173'};
 

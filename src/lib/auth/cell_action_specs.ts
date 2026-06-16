@@ -7,25 +7,25 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
-import {FactHashSchema} from '@fuzdev/fuz_util/fact_hash.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import {FactHashSchema} from '@fuzdev/fuz_util/fact_hash.ts';
 
-import type {RequestResponseActionSpec} from '../actions/action_spec.js';
-import {ActingActor} from '../http/auth_shape.js';
+import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
+import {ActingActor} from '../http/auth_shape.ts';
 import {
 	all_cell_grant_action_specs,
 	cell_grant_create_action_spec,
 	cell_grant_revoke_action_spec,
 	cell_grant_list_action_spec,
 	GrantJson,
-} from './cell_grant_action_specs.js';
+} from './cell_grant_action_specs.ts';
 import {
 	all_cell_field_action_specs,
 	cell_field_set_action_spec,
 	cell_field_delete_action_spec,
 	cell_field_list_action_spec,
 	FieldJson,
-} from './cell_field_action_specs.js';
+} from './cell_field_action_specs.ts';
 import {
 	all_cell_item_action_specs,
 	cell_item_insert_action_spec,
@@ -33,12 +33,12 @@ import {
 	cell_item_delete_action_spec,
 	cell_item_list_action_spec,
 	ItemJson,
-} from './cell_item_action_specs.js';
+} from './cell_item_action_specs.ts';
 import {
 	all_cell_audit_action_specs,
 	cell_audit_list_action_spec,
-} from './cell_audit_action_specs.js';
-import {CellData} from './cell_data_schema.js';
+} from './cell_audit_action_specs.ts';
+import {CellData} from './cell_data_schema.ts';
 
 /**
  * Cell visibility — the coarse-grained access-control axis for a cell.

@@ -12,14 +12,14 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import type {RouteSpec} from '../http/route_spec.js';
-import {create_audit_log_route_shape} from './audit_log_route_schema.js';
-import {create_sse_response, type SseStream, type SseNotification} from '../realtime/sse.js';
-import type {SubscribeOptions} from '../realtime/subscriber_registry.js';
-import {AUTH_SESSION_TOKEN_HASH_KEY, require_request_context} from './request_context.js';
-import {AUDIT_LOG_CHANNEL} from '../realtime/sse_auth_guard.js';
+import type {RouteSpec} from '../http/route_spec.ts';
+import {create_audit_log_route_shape} from './audit_log_route_schema.ts';
+import {create_sse_response, type SseStream, type SseNotification} from '../realtime/sse.ts';
+import type {SubscribeOptions} from '../realtime/subscriber_registry.ts';
+import {AUTH_SESSION_TOKEN_HASH_KEY, require_request_context} from './request_context.ts';
+import {AUDIT_LOG_CHANNEL} from '../realtime/sse_auth_guard.ts';
 
 /** Options for audit log route specs. */
 export interface AuditLogRouteOptions {

@@ -8,8 +8,8 @@
 
 import {describe, test, assert, vi, beforeEach, afterEach} from 'vitest';
 
-import {Popover} from '$lib/ui/popover.svelte.js';
-import type {Position, Alignment} from '$lib/ui/position_helpers.js';
+import {Popover} from '$lib/ui/popover.svelte.ts';
+import type {Position, Alignment} from '$lib/ui/position_helpers.ts';
 
 // --- test helpers ---
 

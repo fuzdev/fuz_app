@@ -8,18 +8,18 @@
 
 import {describe, assert, test, beforeAll, afterAll, beforeEach} from 'vitest';
 import {Hono} from 'hono';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {create_db_route_specs, type ColumnInfo} from '$lib/http/db_routes.js';
-import {apply_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
-import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
-import {create_test_context} from '$lib/testing/entities.js';
-import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
-import type {Db} from '$lib/db/db.js';
-import {run_migrations} from '$lib/db/migrate.js';
-import {auth_migration_ns} from '$lib/auth/migrations.js';
-import {create_pglite_factory} from '$lib/testing/db.js';
+import {create_db_route_specs, type ColumnInfo} from '$lib/http/db_routes.ts';
+import {apply_route_specs, type RouteSpec} from '$lib/http/route_spec.ts';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.ts';
+import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.ts';
+import {create_test_context} from '$lib/testing/entities.ts';
+import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.ts';
+import type {Db} from '$lib/db/db.ts';
+import {run_migrations} from '$lib/db/migrate.ts';
+import {auth_migration_ns} from '$lib/auth/migrations.ts';
+import {create_pglite_factory} from '$lib/testing/db.ts';
 
 const log = new Logger('test', {level: 'off'});
 

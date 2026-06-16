@@ -14,10 +14,10 @@ import {
 	role_has_grant_path,
 	ROLE_ADMIN,
 	ROLE_KEEPER,
-} from '$lib/auth/role_schema.js';
-import {create_credential_type_schema} from '$lib/auth/credential_type_schema.js';
-import {create_grant_path_schema} from '$lib/auth/grant_path_schema.js';
-import {create_scope_kind_schema} from '$lib/auth/scope_kind_schema.js';
+} from '$lib/auth/role_schema.ts';
+import {create_credential_type_schema} from '$lib/auth/credential_type_schema.ts';
+import {create_grant_path_schema} from '$lib/auth/grant_path_schema.ts';
+import {create_scope_kind_schema} from '$lib/auth/scope_kind_schema.ts';
 
 describe('create_role_schema', () => {
 	test('merges app role specs with builtins', () => {

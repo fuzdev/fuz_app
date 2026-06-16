@@ -11,7 +11,7 @@
  * Core surface:
  *
  * - **Explicit four-value `status`** — `AsyncStatus` from
- *   `@fuzdev/fuz_util/async.js`: `'initial' | 'pending' | 'success' |
+ *   `@fuzdev/fuz_util/async.ts`: `'initial' | 'pending' | 'success' |
  *   'failure'`. `loading: false, error: null` would be ambiguous
  *   between "never tried" and "succeeded once and now resting"; the
  *   four-value status removes the need for a per-class `submitted` /
@@ -59,8 +59,8 @@
  * @module
  */
 
-import type {AsyncStatus} from '@fuzdev/fuz_util/async.js';
-import {to_error_message} from '@fuzdev/fuz_util/error.js';
+import type {AsyncStatus} from '@fuzdev/fuz_util/async.ts';
+import {to_error_message} from '@fuzdev/fuz_util/error.ts';
 
 export interface AsyncSlotOptions<T, E = string> {
 	/**

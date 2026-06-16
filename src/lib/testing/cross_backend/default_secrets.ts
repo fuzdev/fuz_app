@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Default test secrets for cross-process backend bootstrap.

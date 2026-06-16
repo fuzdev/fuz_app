@@ -1,9 +1,9 @@
 import {availableParallelism} from 'node:os';
 import {defineConfig} from 'vitest/config';
 import {sveltekit} from '@sveltejs/kit/vite';
-import {vite_plugin_fuz_css} from '@fuzdev/fuz_css/vite_plugin_fuz_css.js';
+import {vite_plugin_fuz_css} from '@fuzdev/fuz_css/vite_plugin_fuz_css.ts';
 import svelte_docinfo from 'svelte-docinfo/vite.js';
-import {vite_plugin_pkg_json} from '@fuzdev/fuz_ui/vite_plugin_pkg_json.js';
+import {vite_plugin_pkg_json} from '@fuzdev/fuz_ui/vite_plugin_pkg_json.ts';
 
 const max_threads = Math.max(1, Math.ceil(availableParallelism() / 2));
 

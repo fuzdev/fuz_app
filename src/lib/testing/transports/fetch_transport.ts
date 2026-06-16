@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cookie-threading HTTP transport for cross-process tests.
@@ -24,7 +24,7 @@ import '../assert_dev_env.js';
  * @module
  */
 
-import type {RpcTestTransport} from '../rpc_helpers.js';
+import type {RpcTestTransport} from '../rpc_helpers.ts';
 
 /** Construction options for `create_fetch_transport`. */
 export interface FetchTransportOptions {

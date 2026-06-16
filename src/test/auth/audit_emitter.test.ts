@@ -6,25 +6,25 @@
  */
 
 import {describe, test, assert, vi, afterEach} from 'vitest';
-import {wait} from '@fuzdev/fuz_util/async.js';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {wait} from '@fuzdev/fuz_util/async.ts';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
 import {z} from 'zod';
 
-import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
 import {
 	get_audit_metadata_validation_failures,
 	get_audit_unknown_event_type_failures,
 	reset_audit_metadata_validation_failures,
 	reset_audit_unknown_event_type_failures,
-} from '$lib/auth/audit_log_queries.js';
+} from '$lib/auth/audit_log_queries.ts';
 import {
 	create_audit_log_config,
 	type AuditLogEvent,
 	type AuditLogInput,
-} from '$lib/auth/audit_log_schema.js';
-import type {Db} from '$lib/db/db.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+} from '$lib/auth/audit_log_schema.ts';
+import type {Db} from '$lib/db/db.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
 const log = new Logger('test', {level: 'error'});
 const noop = (): void => {};

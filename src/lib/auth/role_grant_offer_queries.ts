@@ -12,22 +12,22 @@
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {QueryDeps} from '../db/query_deps.js';
-import {assert_row} from '../db/assert_row.js';
-import type {RoleGrant} from './account_schema.js';
+import type {QueryDeps} from '../db/query_deps.ts';
+import {assert_row} from '../db/assert_row.ts';
+import type {RoleGrant} from './account_schema.ts';
 import {
 	ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
 	ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID,
-} from './role_grant_offer_ddl.js';
+} from './role_grant_offer_ddl.ts';
 import type {
 	CreateRoleGrantOfferInput,
 	RoleGrantOffer,
 	SupersededOffer,
-} from './role_grant_offer_schema.js';
-import {query_audit_log} from './audit_log_queries.js';
-import type {AuditLogEvent} from './audit_log_schema.js';
+} from './role_grant_offer_schema.ts';
+import {query_audit_log} from './audit_log_queries.ts';
+import type {AuditLogEvent} from './audit_log_schema.ts';
 
 /**
  * Error thrown by offer-lifecycle queries when the offer is in a non-pending

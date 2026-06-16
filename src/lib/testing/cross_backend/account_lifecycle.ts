@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-backend parity suite for the account-lifecycle admin verbs:
@@ -28,12 +28,12 @@ import {
 	AdminAccountListOutput,
 	AuditLogListOutput,
 	ERROR_CANNOT_DELETE_KEEPER,
-} from '../../auth/admin_action_specs.js';
-import {ERROR_ACCOUNT_NOT_FOUND, ERROR_AUTHENTICATION_REQUIRED} from '../../http/error_schemas.js';
-import {test_if} from './capabilities.js';
-import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.js';
-import type {RpcPathCrossSuiteOptions} from './setup.js';
-import {SPINE_RPC_PATH} from './default_spine_surface.js';
+} from '../../auth/admin_action_specs.ts';
+import {ERROR_ACCOUNT_NOT_FOUND, ERROR_AUTHENTICATION_REQUIRED} from '../../http/error_schemas.ts';
+import {test_if} from './capabilities.ts';
+import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.ts';
+import type {RpcPathCrossSuiteOptions} from './setup.ts';
+import {SPINE_RPC_PATH} from './default_spine_surface.ts';
 
 /**
  * Options for the account-lifecycle parity suite. The standard

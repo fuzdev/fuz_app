@@ -6,8 +6,8 @@
 
 import {assert, test} from 'vitest';
 
-import {ROLE_KEEPER, ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import {query_purge_account} from '$lib/auth/account_queries.js';
+import {ROLE_KEEPER, ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import {query_purge_account} from '$lib/auth/account_queries.ts';
 import {
 	query_create_role_grant,
 	query_revoke_role_grant,
@@ -17,13 +17,13 @@ import {
 	query_role_grant_find_account_id_for_role,
 	query_role_grant_revoke_role,
 	query_role_grant_revoke_for_scope,
-} from '$lib/auth/role_grant_queries.js';
-import {query_role_grant_offer_create} from '$lib/auth/role_grant_offer_queries.js';
-import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
-import type {Db} from '$lib/db/db.js';
-import {create_test_account_with_actor} from '$lib/testing/db_entities.js';
+} from '$lib/auth/role_grant_queries.ts';
+import {query_role_grant_offer_create} from '$lib/auth/role_grant_offer_queries.ts';
+import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.ts';
+import type {Db} from '$lib/db/db.ts';
+import {create_test_account_with_actor} from '$lib/testing/db_entities.ts';
 
-import {describe_db} from '../db_fixture.js';
+import {describe_db} from '../db_fixture.ts';
 
 /** Per-test convenience: returns just the ids the assertions care about. */
 const create_test_actor = async (

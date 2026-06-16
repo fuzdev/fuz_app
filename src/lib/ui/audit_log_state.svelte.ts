@@ -14,21 +14,21 @@
  */
 
 import {DEV} from 'esm-env';
-import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
+import {create_context} from '@fuzdev/fuz_ui/context_helpers.ts';
 
-import {AsyncSlot} from './async_slot.svelte.js';
+import {AsyncSlot} from './async_slot.svelte.ts';
 import type {
 	AuditLogEventJson,
 	AuditLogEventWithUsernamesJson,
 	RoleGrantHistoryEventJson,
-} from '../auth/audit_log_schema.js';
+} from '../auth/audit_log_schema.ts';
 import type {
 	AuditLogListInput,
 	AuditLogListOutput,
 	AuditLogRoleGrantHistoryInput,
 	AuditLogRoleGrantHistoryOutput,
-} from '../auth/admin_action_specs.js';
-import type {SseNotification} from '../realtime/sse.js';
+} from '../auth/admin_action_specs.ts';
+import type {SseNotification} from '../realtime/sse.ts';
 
 /**
  * Narrow RPC surface consumed by `AuditLogState`. Consumers adapt their typed

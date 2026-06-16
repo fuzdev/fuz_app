@@ -10,10 +10,10 @@
  */
 
 import {z} from 'zod';
-import {to_error_message} from '@fuzdev/fuz_util/error.js';
+import {to_error_message} from '@fuzdev/fuz_util/error.ts';
 
-import {create_validated_keyring, type Keyring} from '../auth/keyring.js';
-import {parse_allowed_origins} from '../http/origin.js';
+import {create_validated_keyring, type Keyring} from '../auth/keyring.ts';
+import {parse_allowed_origins} from '../http/origin.ts';
 
 /**
  * Base Zod schema for server environment variables.

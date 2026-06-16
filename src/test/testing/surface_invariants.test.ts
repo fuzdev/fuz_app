@@ -23,11 +23,11 @@ import {
 	assert_keeper_routes_under_prefix,
 	assert_surface_security_policy,
 	audit_error_schema_tightness,
-} from '$lib/testing/surface_invariants.js';
-import type {RouteSpec} from '$lib/http/route_spec.js';
-import type {MiddlewareSpec} from '$lib/http/middleware_spec.js';
-import {generate_app_surface, type AppSurface} from '$lib/http/surface.js';
-import {stub_handler, stub_mw} from '$lib/testing/stubs.js';
+} from '$lib/testing/surface_invariants.ts';
+import type {RouteSpec} from '$lib/http/route_spec.ts';
+import type {MiddlewareSpec} from '$lib/http/middleware_spec.ts';
+import {generate_app_surface, type AppSurface} from '$lib/http/surface.ts';
+import {stub_handler, stub_mw} from '$lib/testing/stubs.ts';
 
 const test_middleware: Array<MiddlewareSpec> = [{name: 'origin', path: '/api/*', handler: stub_mw}];
 

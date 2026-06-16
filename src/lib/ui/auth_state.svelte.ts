@@ -10,7 +10,7 @@
  * @example
  * ```svelte
  * <script lang="ts">
- * 	import {AuthState, auth_state_context} from '@fuzdev/fuz_app/ui/auth_state.svelte.js';
+ * 	import {AuthState, auth_state_context} from '@fuzdev/fuz_app/ui/auth_state.svelte.ts';
  *
  * 	const auth = new AuthState();
  * 	auth_state_context.set(auth);
@@ -32,16 +32,16 @@
  * @module
  */
 
-import {to_error_message} from '@fuzdev/fuz_util/error.js';
-import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
+import {to_error_message} from '@fuzdev/fuz_util/error.ts';
+import {create_context} from '@fuzdev/fuz_ui/context_helpers.ts';
 
-import {ui_fetch} from './ui_fetch.js';
+import {ui_fetch} from './ui_fetch.ts';
 import {
 	type ActorSummaryJson,
 	is_role_grant_active,
 	type RoleGrantSummaryJson,
 	type SessionAccount,
-} from '../auth/account_schema.js';
+} from '../auth/account_schema.ts';
 
 /**
  * Svelte context for `AuthState`.

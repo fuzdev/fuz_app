@@ -29,8 +29,8 @@ import {createReadStream} from 'node:fs';
 import {Readable} from 'node:stream';
 import {join} from 'node:path';
 
-import type {FactExternalFetcher} from '../db/fact_store.js';
-import {parse_file_fact_url} from '../db/file_fact_url.js';
+import type {FactExternalFetcher} from '../db/fact_store.ts';
+import {parse_file_fact_url} from '../db/file_fact_url.ts';
 
 /** Construction options. */
 export interface FileFactFetcherOptions {

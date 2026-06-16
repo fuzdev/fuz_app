@@ -4,7 +4,7 @@
  * @module
  */
 
-import type {Result} from '@fuzdev/fuz_util/result.js';
+import type {Result} from '@fuzdev/fuz_util/result.ts';
 
 import {
 	type ActionEventStep,
@@ -12,16 +12,16 @@ import {
 	action_event_step_transitions,
 	action_event_phase_by_kind,
 	action_event_phase_transitions,
-} from './action_event_types.js';
+} from './action_event_types.ts';
 import type {
 	ActionEventData,
 	ActionEventRequestResponseData,
 	ActionEventRemoteNotificationData,
 	ActionEventLocalCallData,
-} from './action_event_data.js';
-import type {ActionEventPhase, ActionInitiator, ActionKind} from './action_spec.js';
-import type {JsonrpcErrorObject} from '../http/jsonrpc.js';
-import type {ActionEvent} from './action_event.js';
+} from './action_event_data.ts';
+import type {ActionEventPhase, ActionInitiator, ActionKind} from './action_spec.ts';
+import type {JsonrpcErrorObject} from '../http/jsonrpc.ts';
+import type {ActionEvent} from './action_event.ts';
 
 // Type guards for action kinds
 export const is_request_response = (

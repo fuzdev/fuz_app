@@ -15,10 +15,10 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {ActingActor} from '../http/auth_shape.js';
-import type {RequestResponseActionSpec} from '../actions/action_spec.js';
+import {ActingActor} from '../http/auth_shape.ts';
+import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
 
 // -- Error reasons ----------------------------------------------------------
 

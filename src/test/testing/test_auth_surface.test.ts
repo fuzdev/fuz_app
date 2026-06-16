@@ -16,34 +16,34 @@ import {
 	stub_mw,
 	create_throwing_stub,
 	create_noop_stub,
-} from '$lib/testing/stubs.js';
+} from '$lib/testing/stubs.ts';
 import {
 	create_test_request_context,
 	create_test_app_from_specs,
 	resolve_test_path,
-} from '$lib/testing/auth_apps.js';
+} from '$lib/testing/auth_apps.ts';
 import {
 	resolve_fixture_path,
 	assert_surface_matches_snapshot,
 	assert_surface_deterministic,
 	assert_only_expected_public_routes,
 	assert_full_middleware_stack,
-} from '$lib/testing/assertions.js';
+} from '$lib/testing/assertions.ts';
 import {
 	describe_adversarial_auth,
 	resolve_standard_error_schema_tightness,
-} from '$lib/testing/attack_surface.js';
-import {describe_adversarial_404} from '$lib/testing/adversarial_404.js';
-import {resolve_valid_path, generate_valid_body} from '$lib/testing/schema_generators.js';
-import type {RouteSpec} from '$lib/http/route_spec.js';
-import type {MiddlewareSpec} from '$lib/http/middleware_spec.js';
-import {generate_app_surface, create_app_surface_spec, type AppSurface} from '$lib/http/surface.js';
+} from '$lib/testing/attack_surface.ts';
+import {describe_adversarial_404} from '$lib/testing/adversarial_404.ts';
+import {resolve_valid_path, generate_valid_body} from '$lib/testing/schema_generators.ts';
+import type {RouteSpec} from '$lib/http/route_spec.ts';
+import type {MiddlewareSpec} from '$lib/http/middleware_spec.ts';
+import {generate_app_surface, create_app_surface_spec, type AppSurface} from '$lib/http/surface.ts';
 import {
 	audit_error_schema_tightness,
 	assert_error_schema_tightness,
 	fuz_app_stock_route_tightness_allowlist,
-} from '$lib/testing/surface_invariants.js';
-import {ActingActor} from '$lib/http/auth_shape.js';
+} from '$lib/testing/surface_invariants.ts';
+import {ActingActor} from '$lib/http/auth_shape.ts';
 
 describe('stubs', () => {
 	test('stub throws on property access', () => {
@@ -590,7 +590,7 @@ describe('generate_valid_body', () => {
 		// (`^[0-9a-f]{64}$`). The generator must produce a value that round-trips
 		// through the input schema without error — previously it returned the
 		// default `'xxxxxxxxxx'` which fails the regex.
-		const {account_session_revoke_action_spec} = await import('$lib/auth/account_action_specs.js');
+		const {account_session_revoke_action_spec} = await import('$lib/auth/account_action_specs.ts');
 		const body = generate_valid_body(account_session_revoke_action_spec.input);
 		assert.ok(body);
 		const parsed = account_session_revoke_action_spec.input.safeParse(body);

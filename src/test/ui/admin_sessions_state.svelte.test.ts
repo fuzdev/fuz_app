@@ -12,12 +12,12 @@
 
 import {describe, test, assert, vi, afterEach} from 'vitest';
 
-import {AdminSessionsState} from '$lib/ui/admin_sessions_state.svelte.js';
-import type {AdminAccountsRpc} from '$lib/ui/admin_accounts_state.svelte.js';
-import type {AdminSessionJson} from '$lib/auth/audit_log_schema.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import {AdminSessionsState} from '$lib/ui/admin_sessions_state.svelte.ts';
+import type {AdminAccountsRpc} from '$lib/ui/admin_accounts_state.svelte.ts';
+import type {AdminSessionJson} from '$lib/auth/audit_log_schema.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {make_offer} from './role_grant_offer_fixtures.js';
+import {make_offer} from './role_grant_offer_fixtures.ts';
 
 const acct_1 = 'acct-1' as Uuid;
 

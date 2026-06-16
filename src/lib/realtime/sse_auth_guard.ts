@@ -11,15 +11,15 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
 import {
 	AUDIT_EVENT_TYPES,
 	AuditLogEventJson,
 	type AuditLogEvent,
-} from '../auth/audit_log_schema.js';
-import {SubscriberRegistry, type SubscribeOptions} from './subscriber_registry.js';
-import type {SseStream, SseNotification, EventSpec} from './sse.js';
+} from '../auth/audit_log_schema.ts';
+import {SubscriberRegistry, type SubscribeOptions} from './subscriber_registry.ts';
+import type {SseStream, SseNotification, EventSpec} from './sse.ts';
 
 /** SSE channel the audit-log stream route publishes on. */
 export const AUDIT_LOG_CHANNEL = 'audit_log';

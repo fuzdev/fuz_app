@@ -11,10 +11,10 @@
  */
 
 import {describe, test, assert} from 'vitest';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {create_recording_audit_emitter} from '$lib/testing/audit_drift_guard.js';
-import type {AuditLogInput} from '$lib/auth/audit_log_schema.js';
+import {create_recording_audit_emitter} from '$lib/testing/audit_drift_guard.ts';
+import type {AuditLogInput} from '$lib/auth/audit_log_schema.ts';
 
 const create_ctx = (
 	client_ip = '203.0.113.5',

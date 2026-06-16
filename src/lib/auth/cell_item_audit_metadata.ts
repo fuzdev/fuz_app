@@ -8,7 +8,7 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 
 /** Metadata envelope for `cell_item_insert`. */
 export const CellItemInsertAuditMetadata = z.looseObject({

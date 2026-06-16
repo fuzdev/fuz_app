@@ -15,9 +15,9 @@
 
 import {join} from 'node:path';
 
-import {start_testing_server} from '../../lib/testing/cross_backend/testing_server_core.js';
-import {create_deno_testing_adapter} from '../../lib/testing/cross_backend/testing_server_deno.js';
-import {build_spine_app, resolve_spine_server_config} from './testing_spine_server.js';
+import {start_testing_server} from '$lib/testing/cross_backend/testing_server_core.ts';
+import {create_deno_testing_adapter} from '$lib/testing/cross_backend/testing_server_deno.ts';
+import {build_spine_app, resolve_spine_server_config} from './testing_spine_server.ts';
 
 declare const Deno: {exit: (code: number) => never};
 

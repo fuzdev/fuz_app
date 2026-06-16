@@ -44,9 +44,9 @@
  * @module
  */
 
-import {to_error_message} from '@fuzdev/fuz_util/error.js';
+import {to_error_message} from '@fuzdev/fuz_util/error.ts';
 
-import type {Db} from './db.js';
+import type {Db} from './db.ts';
 
 /**
  * A single migration: a name + an `up` function applied inside a transaction.

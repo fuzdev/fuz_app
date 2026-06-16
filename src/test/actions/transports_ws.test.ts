@@ -13,9 +13,9 @@ import {describe, test, assert} from 'vitest';
 import {
 	FrontendWebsocketTransport,
 	type WebsocketRpcConnection,
-} from '$lib/actions/transports_ws.js';
-import {JSONRPC_ERROR_CODES, ThrownJsonrpcError} from '$lib/http/jsonrpc_errors.js';
-import type {JsonrpcRequest, JsonrpcNotification, JsonrpcRequestId} from '$lib/http/jsonrpc.js';
+} from '$lib/actions/transports_ws.ts';
+import {JSONRPC_ERROR_CODES, ThrownJsonrpcError} from '$lib/http/jsonrpc_errors.ts';
+import type {JsonrpcRequest, JsonrpcNotification, JsonrpcRequestId} from '$lib/http/jsonrpc.ts';
 
 interface RequestCall {
 	method: string;

@@ -13,7 +13,7 @@
 
 import {test, assert, describe} from 'vitest';
 
-import {is_loopback_host} from '$lib/testing/cross_backend/testing_server_core.js';
+import {is_loopback_host} from '$lib/testing/cross_backend/testing_server_core.ts';
 
 describe('is_loopback_host', () => {
 	test('accepts loopback hosts', () => {

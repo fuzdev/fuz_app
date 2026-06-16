@@ -9,15 +9,15 @@
 
 import {describe, assert, test} from 'vitest';
 import {Hono} from 'hono';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {create_account_status_route_spec} from '$lib/auth/account_routes.js';
-import {apply_route_specs} from '$lib/http/route_spec.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
-import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
-import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import {create_stub_db} from '$lib/testing/stubs.js';
+import {create_account_status_route_spec} from '$lib/auth/account_routes.ts';
+import {apply_route_specs} from '$lib/http/route_spec.ts';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.ts';
+import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.ts';
+import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import {create_stub_db} from '$lib/testing/stubs.ts';
 
 const log = new Logger('test', {level: 'off'});
 const db = create_stub_db();

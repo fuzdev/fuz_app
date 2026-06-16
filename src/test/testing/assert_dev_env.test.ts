@@ -18,7 +18,7 @@
  */
 
 import {test, assert, afterEach, vi} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
 afterEach(() => {
 	vi.doUnmock('esm-env');
@@ -31,7 +31,7 @@ test('assert_dev_env throws at import time when DEV is false', async () => {
 	// The throw happens during module evaluation, so the dynamic import
 	// promise itself rejects.
 	const err = await assert_rejects(
-		() => import('$lib/testing/assert_dev_env.js'),
+		() => import('$lib/testing/assert_dev_env.ts'),
 		/must not be imported in production/,
 	);
 	assert.ok(err instanceof Error);
@@ -41,5 +41,5 @@ test('assert_dev_env does not throw when DEV is true', async () => {
 	vi.resetModules();
 	vi.doMock('esm-env', () => ({DEV: true}));
 	// Must resolve (no throw) — the development/test path.
-	await import('$lib/testing/assert_dev_env.js');
+	await import('$lib/testing/assert_dev_env.ts');
 });

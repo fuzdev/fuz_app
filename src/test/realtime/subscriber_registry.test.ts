@@ -6,8 +6,8 @@
 
 import {describe, assert, test} from 'vitest';
 
-import {SubscriberRegistry} from '$lib/realtime/subscriber_registry.js';
-import type {SseStream} from '$lib/realtime/sse.js';
+import {SubscriberRegistry} from '$lib/realtime/subscriber_registry.ts';
+import type {SseStream} from '$lib/realtime/sse.ts';
 
 /** Create a mock SseStream that records sent data. */
 const create_mock_stream = <T>(): SseStream<T> & {

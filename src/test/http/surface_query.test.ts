@@ -23,12 +23,12 @@ import {
 	filter_rate_limited_routes,
 	format_route_key,
 	surface_auth_summary,
-} from '$lib/http/surface_query.js';
-import {generate_app_surface, type AppSurface} from '$lib/http/surface.js';
-import type {RouteSpec} from '$lib/http/route_spec.js';
-import type {MiddlewareSpec} from '$lib/http/middleware_spec.js';
-import {stub_handler, stub_mw} from '$lib/testing/stubs.js';
-import {is_public_auth} from '$lib/http/auth_shape.js';
+} from '$lib/http/surface_query.ts';
+import {generate_app_surface, type AppSurface} from '$lib/http/surface.ts';
+import type {RouteSpec} from '$lib/http/route_spec.ts';
+import type {MiddlewareSpec} from '$lib/http/middleware_spec.ts';
+import {stub_handler, stub_mw} from '$lib/testing/stubs.ts';
+import {is_public_auth} from '$lib/http/auth_shape.ts';
 
 const test_middleware: Array<MiddlewareSpec> = [{name: 'origin', path: '/api/*', handler: stub_mw}];
 

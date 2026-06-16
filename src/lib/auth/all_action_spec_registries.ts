@@ -35,13 +35,13 @@
  * @module
  */
 
-import type {RequestResponseActionSpec} from '../actions/action_spec.js';
-import {all_admin_action_specs} from './admin_action_specs.js';
-import {all_role_grant_offer_action_specs} from './role_grant_offer_action_specs.js';
-import {all_account_action_specs} from './account_action_specs.js';
-import {all_self_service_role_action_specs} from './self_service_role_action_specs.js';
-import {all_actor_lookup_action_specs} from './actor_lookup_action_specs.js';
-import {all_actor_search_action_specs} from './actor_search_action_specs.js';
+import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
+import {all_admin_action_specs} from './admin_action_specs.ts';
+import {all_role_grant_offer_action_specs} from './role_grant_offer_action_specs.ts';
+import {all_account_action_specs} from './account_action_specs.ts';
+import {all_self_service_role_action_specs} from './self_service_role_action_specs.ts';
+import {all_actor_lookup_action_specs} from './actor_lookup_action_specs.ts';
+import {all_actor_search_action_specs} from './actor_search_action_specs.ts';
 
 /** One named entry in the registry-of-registries. */
 export interface FuzAuthActionSpecRegistry {

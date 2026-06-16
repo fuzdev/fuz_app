@@ -16,7 +16,7 @@ import {Readable} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import type {ReadableStream as NodeWebReadableStream} from 'node:stream/web';
 
-import type {RuntimeDeps, StatResult, CommandResult} from './deps.js';
+import type {RuntimeDeps, StatResult, CommandResult} from './deps.ts';
 
 /**
  * Create a `RuntimeDeps` backed by Node.js APIs.

@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-process WebSocket round-trip suite — the cross-process counterpart
@@ -43,14 +43,14 @@ import '../assert_dev_env.js';
  */
 
 import {assert, describe} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
-import {heartbeat_action_spec} from '../../actions/heartbeat.js';
-import {account_session_revoke_all_action_spec} from '../../auth/account_action_specs.js';
-import {create_ws_transport} from '../transports/ws_transport.js';
-import {create_rpc_post_init} from '../rpc_helpers.js';
-import {type BackendCapabilities, test_if} from './capabilities.js';
-import type {SetupTest} from './setup.js';
+import {heartbeat_action_spec} from '../../actions/heartbeat.ts';
+import {account_session_revoke_all_action_spec} from '../../auth/account_action_specs.ts';
+import {create_ws_transport} from '../transports/ws_transport.ts';
+import {create_rpc_post_init} from '../rpc_helpers.ts';
+import {type BackendCapabilities, test_if} from './capabilities.ts';
+import type {SetupTest} from './setup.ts';
 
 /** Origin guaranteed to fail the `http://localhost:*` allowlist the test backends run with. */
 const DISALLOWED_ORIGIN = 'http://disallowed.example';

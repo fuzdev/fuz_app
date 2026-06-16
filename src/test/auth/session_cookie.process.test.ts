@@ -10,21 +10,21 @@
 
 import {assert, describe, test} from 'vitest';
 
-import {create_keyring} from '$lib/auth/keyring.js';
+import {create_keyring} from '$lib/auth/keyring.ts';
 import {
 	create_session_cookie_value,
 	parse_session,
 	process_session_cookie,
 	SESSION_AGE_MAX,
 	type SessionOptions,
-} from '$lib/auth/session_cookie.js';
+} from '$lib/auth/session_cookie.ts';
 import {
 	create_test_keyring,
 	OLD_KEY,
 	TEST_IDENTITY,
 	TEST_KEY,
 	test_session_options,
-} from './session_test_helpers.js';
+} from './session_test_helpers.ts';
 
 describe('process_session_cookie', () => {
 	test('no cookie returns valid=false, action=none', async () => {

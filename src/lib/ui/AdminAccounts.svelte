@@ -13,13 +13,13 @@
 		AdminAccountsState,
 		admin_accounts_rpc_context,
 		grant_key,
-	} from './admin_accounts_state.svelte.js';
+	} from './admin_accounts_state.svelte.ts';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import Datatable from './Datatable.svelte';
-	import type {DatatableColumn} from './datatable.js';
-	import type {AdminAccountEntryJson} from '../auth/account_schema.js';
-	import {format_relative_time, format_datetime_local} from './ui_format.js';
-	import {format_scope_context, resolve_scope_label} from './format_scope.js';
+	import type {DatatableColumn} from './datatable.ts';
+	import type {AdminAccountEntryJson} from '../auth/account_schema.ts';
+	import {format_relative_time, format_datetime_local} from './ui_format.ts';
+	import {format_scope_context, resolve_scope_label} from './format_scope.ts';
 
 	const get_rpc = admin_accounts_rpc_context.get();
 	const admin_accounts = new AdminAccountsState({get_rpc});

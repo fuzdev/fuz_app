@@ -12,11 +12,11 @@
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
 	import {SvelteMap} from 'svelte/reactivity';
 
-	import {role_grant_offers_state_context} from './role_grant_offers_state.svelte.js';
+	import {role_grant_offers_state_context} from './role_grant_offers_state.svelte.ts';
 	import ConfirmButton from './ConfirmButton.svelte';
-	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.js';
-	import {ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX} from '../auth/role_grant_offer_schema.js';
-	import {format_scope_context, resolve_scope_label, type FormatScope} from './format_scope.js';
+	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.ts';
+	import {ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX} from '../auth/role_grant_offer_schema.ts';
+	import {format_scope_context, resolve_scope_label, type FormatScope} from './format_scope.ts';
 
 	const {
 		format_actor = truncate_uuid,

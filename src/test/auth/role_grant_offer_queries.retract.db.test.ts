@@ -8,15 +8,15 @@
  */
 
 import {assert, test} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	query_role_grant_offer_retract,
 	RoleGrantOfferAlreadyTerminalError,
-} from '$lib/auth/role_grant_offer_queries.js';
+} from '$lib/auth/role_grant_offer_queries.ts';
 
-import {describe_db} from '../db_fixture.js';
-import {make_account, create_pending_offer} from './role_grant_offer_queries.fixtures.js';
+import {describe_db} from '../db_fixture.ts';
+import {make_account, create_pending_offer} from './role_grant_offer_queries.fixtures.ts';
 
 describe_db('role_grant_offer_queries.retract', (get_db) => {
 	test('retract marks offer terminal; retract on terminal throws', async () => {

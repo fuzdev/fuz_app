@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-process Server-Sent Events transport.
@@ -17,7 +17,7 @@ import '../assert_dev_env.js';
  * @module
  */
 
-import {create_sse_frame_reader} from './sse_frame_reader.js';
+import {create_sse_frame_reader} from './sse_frame_reader.ts';
 
 /** Construction options for `create_sse_transport`. */
 export interface SseTransportOptions {

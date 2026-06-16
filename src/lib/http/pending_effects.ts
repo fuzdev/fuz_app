@@ -40,7 +40,7 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
 /**
  * Minimal structural context required by `emit_after_commit`. Both

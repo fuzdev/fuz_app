@@ -14,24 +14,24 @@
  * @module
  */
 
-import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
-import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
-import {create_all_cell_actions} from '$lib/auth/all_cell_actions.js';
-import {create_testing_drain_effects_action} from '$lib/testing/cross_backend/testing_reset_actions.js';
-import {cell_audit_events} from '$lib/auth/cell_audit_events.js';
-import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
-import {create_audit_log_config} from '$lib/auth/audit_log_schema.js';
-import {CELL_MIGRATION_NS} from '$lib/db/cell_ddl.js';
+import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
+import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.ts';
+import {create_all_cell_actions} from '$lib/auth/all_cell_actions.ts';
+import {create_testing_drain_effects_action} from '$lib/testing/cross_backend/testing_reset_actions.ts';
+import {cell_audit_events} from '$lib/auth/cell_audit_events.ts';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
+import {create_audit_log_config} from '$lib/auth/audit_log_schema.ts';
+import {CELL_MIGRATION_NS} from '$lib/db/cell_ddl.ts';
 import {
 	SPINE_RPC_PATH,
 	spine_roles,
 	spine_session_options,
-} from '$lib/testing/cross_backend/default_spine_surface.js';
-import {default_in_process_setup} from '$lib/testing/cross_backend/in_process_setup.js';
-import type {ExtraAccountSpec, SetupTest} from '$lib/testing/cross_backend/setup.js';
-import type {AppServerContext} from '$lib/server/app_server_context.js';
-import type {AuditFactory} from '$lib/server/app_backend.js';
-import type {RpcEndpointSpec} from '$lib/http/surface.js';
+} from '$lib/testing/cross_backend/default_spine_surface.ts';
+import {default_in_process_setup} from '$lib/testing/cross_backend/in_process_setup.ts';
+import type {ExtraAccountSpec, SetupTest} from '$lib/testing/cross_backend/setup.ts';
+import type {AppServerContext} from '$lib/server/app_server_context.ts';
+import type {AuditFactory} from '$lib/server/app_backend.ts';
+import type {RpcEndpointSpec} from '$lib/http/surface.ts';
 
 /**
  * The full cell RPC surface mounted on the spine RPC path, alongside the

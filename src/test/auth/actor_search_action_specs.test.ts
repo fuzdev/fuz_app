@@ -10,10 +10,10 @@
  */
 
 import {describe, test, assert} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {all_actor_search_action_specs} from '$lib/auth/actor_search_action_specs.js';
-import {create_actor_search_actions} from '$lib/auth/actor_search_actions.js';
+import {all_actor_search_action_specs} from '$lib/auth/actor_search_action_specs.ts';
+import {create_actor_search_actions} from '$lib/auth/actor_search_actions.ts';
 
 const log = new Logger('test', {level: 'off'});
 

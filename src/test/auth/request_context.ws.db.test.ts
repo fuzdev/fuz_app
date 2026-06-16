@@ -8,21 +8,21 @@
 
 import {assert, test} from 'vitest';
 
-import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
+import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
 import {
 	query_create_account,
 	query_create_account_with_actor,
 	query_account_by_id,
-} from '$lib/auth/account_queries.js';
-import {to_session_account} from '$lib/auth/account_schema.js';
+} from '$lib/auth/account_queries.ts';
+import {to_session_account} from '$lib/auth/account_schema.ts';
 import {
 	query_create_role_grant,
 	query_role_grant_find_active_for_actor,
 	query_role_grant_revoke_role,
-} from '$lib/auth/role_grant_queries.js';
-import {refresh_role_grants, build_request_context} from '$lib/auth/request_context.js';
+} from '$lib/auth/role_grant_queries.ts';
+import {refresh_role_grants, build_request_context} from '$lib/auth/request_context.ts';
 
-import {describe_db} from '../db_fixture.js';
+import {describe_db} from '../db_fixture.ts';
 
 const STUB_HASH = 'stub_hash_password';
 

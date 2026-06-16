@@ -11,10 +11,10 @@
 	import {goto} from '$app/navigation';
 	import {resolve} from '$app/paths';
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
-	import {autofocus} from '@fuzdev/fuz_ui/autofocus.svelte.js';
+	import {autofocus} from '@fuzdev/fuz_ui/autofocus.svelte.ts';
 
-	import {auth_state_context} from './auth_state.svelte.js';
-	import {FormState} from './form_state.svelte.js';
+	import {auth_state_context} from './auth_state.svelte.ts';
+	import {FormState} from './form_state.svelte.ts';
 
 	const {
 		username_label = 'username or email',

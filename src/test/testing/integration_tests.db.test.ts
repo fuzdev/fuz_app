@@ -8,34 +8,34 @@
  */
 
 import {test, assert, describe, beforeAll, beforeEach, afterAll} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {fuz_session_config} from '$lib/auth/session_cookie.js';
-import {create_health_route_spec} from '$lib/http/common_routes.js';
-import {create_account_route_specs} from '$lib/auth/account_routes.js';
-import {create_account_actions} from '$lib/auth/account_actions.js';
-import {account_verify_action_spec} from '$lib/auth/account_action_specs.js';
-import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
-import type {AppServerContext} from '$lib/server/app_server_context.js';
-import type {RpcEndpointSpec} from '$lib/http/surface.js';
-import {create_test_app} from '$lib/testing/app_server.js';
+import {fuz_session_config} from '$lib/auth/session_cookie.ts';
+import {create_health_route_spec} from '$lib/http/common_routes.ts';
+import {create_account_route_specs} from '$lib/auth/account_routes.ts';
+import {create_account_actions} from '$lib/auth/account_actions.ts';
+import {account_verify_action_spec} from '$lib/auth/account_action_specs.ts';
+import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.ts';
+import type {AppServerContext} from '$lib/server/app_server_context.ts';
+import type {RpcEndpointSpec} from '$lib/http/surface.ts';
+import {create_test_app} from '$lib/testing/app_server.ts';
 import {
 	find_route_spec,
 	find_auth_route,
 	assert_response_matches_spec,
-} from '$lib/testing/integration_helpers.js';
-import {rpc_call, rpc_call_non_browser} from '$lib/testing/rpc_helpers.js';
+} from '$lib/testing/integration_helpers.ts';
+import {rpc_call, rpc_call_non_browser} from '$lib/testing/rpc_helpers.ts';
 
 /** Duck-type of `Hono.request`; matches `RpcCallArgs.app`. */
 interface TestApp {
 	request: (input: string, init: RequestInit) => Promise<Response> | Response;
 }
-import {describe_standard_integration_tests} from '$lib/testing/integration.js';
-import {auth_integration_truncate_tables} from '$lib/testing/db.js';
-import {default_in_process_suite_options} from '$lib/testing/cross_backend/in_process_setup.js';
+import {describe_standard_integration_tests} from '$lib/testing/integration.ts';
+import {auth_integration_truncate_tables} from '$lib/testing/db.ts';
+import {default_in_process_suite_options} from '$lib/testing/cross_backend/in_process_setup.ts';
 
-import {pglite_factory} from '../db_fixture.js';
+import {pglite_factory} from '../db_fixture.ts';
 
 const RPC_PATH = '/api/rpc';
 const rpc_log = new Logger('integration-tests-rpc', {level: 'off'});

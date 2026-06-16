@@ -16,10 +16,10 @@ import {inject} from 'vitest';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle,
-} from '$lib/testing/cross_backend/setup.js';
-import {describe_actor_search_cross_tests} from '$lib/testing/cross_backend/actor_search.js';
+} from '$lib/testing/cross_backend/setup.ts';
+import {describe_actor_search_cross_tests} from '$lib/testing/cross_backend/actor_search.ts';
 
-import './cross_test_types.js';
+import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle);

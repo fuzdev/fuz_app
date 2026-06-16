@@ -36,30 +36,30 @@
  */
 
 import type {Context, MiddlewareHandler} from 'hono';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {type Account, type Actor, is_role_grant_active, type RoleGrant} from './account_schema.js';
+import {type Account, type Actor, is_role_grant_active, type RoleGrant} from './account_schema.ts';
 import {
 	hash_session_token,
 	session_touch_fire_and_forget,
 	query_session_get_valid,
-} from './session_queries.js';
+} from './session_queries.ts';
 import {
 	query_account_by_id,
 	query_actor_by_id,
 	query_actors_by_account,
-} from './account_queries.js';
-import {query_role_grant_find_active_for_actor} from './role_grant_queries.js';
-import type {QueryDeps} from '../db/query_deps.js';
+} from './account_queries.ts';
+import {query_role_grant_find_active_for_actor} from './role_grant_queries.ts';
+import type {QueryDeps} from '../db/query_deps.ts';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
 	type CredentialType,
-} from '../hono_context.js';
-import type {RouteSpec} from '../http/route_spec.js';
-import {is_public_auth, needs_actor, type RouteAuth} from '../http/auth_shape.js';
+} from '../hono_context.ts';
+import type {RouteSpec} from '../http/route_spec.ts';
+import {is_public_auth, needs_actor, type RouteAuth} from '../http/auth_shape.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
@@ -68,7 +68,7 @@ import {
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
 	ERROR_NO_ACTORS_ON_ACCOUNT,
 	ERROR_ACCOUNT_VANISHED,
-} from '../http/error_schemas.js';
+} from '../http/error_schemas.ts';
 
 /**
  * The resolved identity context for an authenticated request.

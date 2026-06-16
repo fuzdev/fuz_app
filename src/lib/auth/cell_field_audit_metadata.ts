@@ -9,7 +9,7 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 
 /**
  * Metadata envelope for `cell_field_set`. Emitted on every successful

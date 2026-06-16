@@ -21,14 +21,14 @@
  * @module
  */
 
-import type {QueryDeps} from './query_deps.js';
-import type {Json} from '@fuzdev/fuz_util/json.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import {fact_hash_extract_refs, type FactHash} from '@fuzdev/fuz_util/fact_hash.js';
-import {assert_row} from './assert_row.js';
+import type {QueryDeps} from './query_deps.ts';
+import type {Json} from '@fuzdev/fuz_util/json.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import {fact_hash_extract_refs, type FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
+import {assert_row} from './assert_row.ts';
 
-import type {CellData} from '../auth/cell_data_schema.js';
-import type {CellVisibility} from '../auth/cell_action_specs.js';
+import type {CellData} from '../auth/cell_data_schema.ts';
+import type {CellVisibility} from '../auth/cell_action_specs.ts';
 
 /**
  * Row shape returned by `cell` SELECTs. `data` is typed as `CellData` —

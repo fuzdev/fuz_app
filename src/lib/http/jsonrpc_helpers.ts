@@ -23,8 +23,8 @@ import {
 	type JsonrpcMessage,
 	type JsonrpcErrorCode,
 	JSONRPC_VERSION,
-} from './jsonrpc.js';
-import {ThrownJsonrpcError, JSONRPC_ERROR_CODES} from './jsonrpc_errors.js';
+} from './jsonrpc.ts';
+import {ThrownJsonrpcError, JSONRPC_ERROR_CODES} from './jsonrpc_errors.ts';
 
 // --- Message builders ---
 

@@ -16,8 +16,8 @@ import {
 	SESSION_AGE_MAX,
 	session_cookie_options,
 	type SessionOptions,
-} from '$lib/auth/session_cookie.js';
-import {create_test_keyring, TEST_IDENTITY, test_session_options} from './session_test_helpers.js';
+} from '$lib/auth/session_cookie.ts';
+import {create_test_keyring, TEST_IDENTITY, test_session_options} from './session_test_helpers.ts';
 
 describe('session constants', () => {
 	test('SESSION_AGE_MAX is 30 days in seconds', () => {
@@ -31,7 +31,7 @@ describe('session constants', () => {
 		// extension model. If they drift, either DB sessions outlive cookies
 		// (active user logged out while session is alive) or cookies outlive
 		// DB sessions (cookie validates against a missing session row).
-		const {AUTH_SESSION_LIFETIME_MS} = await import('$lib/auth/session_queries.js');
+		const {AUTH_SESSION_LIFETIME_MS} = await import('$lib/auth/session_queries.ts');
 		const db_lifetime_seconds = AUTH_SESSION_LIFETIME_MS / 1000;
 		assert.strictEqual(
 			SESSION_AGE_MAX,

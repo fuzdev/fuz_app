@@ -23,23 +23,23 @@
  * @module
  */
 
-import {rpc_action, type ActionAuthContext, type RpcAction} from '../actions/action_rpc.js';
-import type {ConnectionCloser} from '../actions/connection_closer.js';
-import {to_session_account, type SessionAccountJson} from './account_schema.js';
+import {rpc_action, type ActionAuthContext, type RpcAction} from '../actions/action_rpc.ts';
+import type {ConnectionCloser} from '../actions/connection_closer.ts';
+import {to_session_account, type SessionAccountJson} from './account_schema.ts';
 import {
 	query_session_list_for_account,
 	query_session_revoke_for_account,
 	query_session_revoke_all_for_account,
-} from './session_queries.js';
+} from './session_queries.ts';
 import {
 	query_api_token_enforce_limit,
 	query_api_token_list_for_account,
 	query_create_api_token,
 	query_revoke_api_token_for_account,
-} from './api_token_queries.js';
-import {generate_api_token} from './api_token.js';
-import {DEFAULT_MAX_TOKENS} from './account_route_schema.js';
-import type {RouteFactoryDeps} from './deps.js';
+} from './api_token_queries.ts';
+import {generate_api_token} from './api_token.ts';
+import {DEFAULT_MAX_TOKENS} from './account_route_schema.ts';
+import type {RouteFactoryDeps} from './deps.ts';
 import {
 	account_verify_action_spec,
 	account_session_list_action_spec,
@@ -61,7 +61,7 @@ import {
 	type TokenListOutput,
 	type TokenRevokeInput,
 	type TokenRevokeOutput,
-} from './account_action_specs.js';
+} from './account_action_specs.ts';
 
 /** Options for `create_account_actions`. */
 export interface AccountActionOptions {

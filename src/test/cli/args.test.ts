@@ -1,8 +1,8 @@
 import {test, assert, describe} from 'vitest';
 import {z} from 'zod';
-import type {ParsedArgs} from '@fuzdev/fuz_util/args.js';
+import type {ParsedArgs} from '@fuzdev/fuz_util/args.ts';
 
-import {parse_command_args, create_extract_global_flags, type ParseResult} from '$lib/cli/args.js';
+import {parse_command_args, create_extract_global_flags, type ParseResult} from '$lib/cli/args.ts';
 
 describe('parse_command_args', () => {
 	// consumer schemas always include `_` for positional args

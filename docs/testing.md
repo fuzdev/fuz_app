@@ -139,16 +139,16 @@ Create a `src/test/db_fixture.ts` that configures database factories and
 a `describe_db` function:
 
 ```typescript
-import type {Db} from '@fuzdev/fuz_app/db/db.js';
-import {run_migrations} from '@fuzdev/fuz_app/db/migrate.js';
-import {auth_migration_ns} from '@fuzdev/fuz_app/auth/migrations.js';
+import type {Db} from '@fuzdev/fuz_app/db/db.ts';
+import {run_migrations} from '@fuzdev/fuz_app/db/migrate.ts';
+import {auth_migration_ns} from '@fuzdev/fuz_app/auth/migrations.ts';
 import {
 	create_pglite_factory,
 	create_pg_factory,
 	create_describe_db,
 	drop_auth_schema,
 	type DbFactory,
-} from '@fuzdev/fuz_app/testing/db.js';
+} from '@fuzdev/fuz_app/testing/db.ts';
 
 const init_schema = async (db: Db): Promise<void> => {
 	await drop_auth_schema(db); // recommended for pg — ensures clean slate after upstream schema changes
@@ -217,13 +217,13 @@ Pass `db_factories` to `describe_rate_limiting_tests` (or to consumer-side
 The standard suites take a unified `{setup_test, surface_source, capabilities}`
 shape plus the factory inputs (`session_options`, `create_route_specs`,
 `rpc_endpoints`). `default_in_process_suite_options` from
-`@fuzdev/fuz_app/testing/cross_backend/setup.js` emits the entire bag in
+`@fuzdev/fuz_app/testing/cross_backend/setup.ts` emits the entire bag in
 one call — pass it directly when the suite has no extras, spread when
 the suite adds its own (`roles`, `skip_routes`, `input_overrides`,
 `db_factories`, ...).
 
 ```typescript
-import {default_in_process_suite_options} from '@fuzdev/fuz_app/testing/cross_backend/setup.js';
+import {default_in_process_suite_options} from '@fuzdev/fuz_app/testing/cross_backend/setup.ts';
 
 // Suite-extras-free: helper output is the entire options bag.
 describe_standard_integration_tests(
@@ -279,8 +279,8 @@ Create a helper module and a test file:
 
 ```typescript
 // src/test/server/auth_attack_surface_helpers.ts
-import {create_test_app_surface_spec} from '@fuzdev/fuz_app/testing/stubs.js';
-import {resolve_fixture_path} from '@fuzdev/fuz_app/testing/assertions.js';
+import {create_test_app_surface_spec} from '@fuzdev/fuz_app/testing/stubs.ts';
+import {resolve_fixture_path} from '@fuzdev/fuz_app/testing/assertions.ts';
 import {create_my_route_specs} from '$lib/server/my_route_specs.js';
 
 export const create_my_app_surface_spec = (): AppSurfaceSpec =>
@@ -303,7 +303,7 @@ export const resolve_my_fixture_path = (filename: string): string =>
 
 ```typescript
 // src/test/server/auth_attack_surface.test.ts
-import {describe_standard_attack_surface_tests} from '@fuzdev/fuz_app/testing/attack_surface.js';
+import {describe_standard_attack_surface_tests} from '@fuzdev/fuz_app/testing/attack_surface.ts';
 import {
 	create_my_app_surface_spec,
 	resolve_my_fixture_path,
@@ -342,10 +342,10 @@ describe('app-specific attack surface', () => {
 
 ```typescript
 // src/test/server/server.integration.db.test.ts
-import {describe_standard_integration_tests} from '@fuzdev/fuz_app/testing/integration.js';
-import {describe_standard_admin_integration_tests} from '@fuzdev/fuz_app/testing/admin_integration.js';
-import {default_in_process_suite_options} from '@fuzdev/fuz_app/testing/cross_backend/setup.js';
-import {ROLE_KEEPER, ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.js';
+import {describe_standard_integration_tests} from '@fuzdev/fuz_app/testing/integration.ts';
+import {describe_standard_admin_integration_tests} from '@fuzdev/fuz_app/testing/admin_integration.ts';
+import {default_in_process_suite_options} from '@fuzdev/fuz_app/testing/cross_backend/setup.ts';
+import {ROLE_KEEPER, ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.ts';
 import {create_my_route_specs} from '$lib/server/my_route_specs.js';
 import {build_rpc_endpoint_specs} from '$lib/server/my_rpc_endpoints.js';
 
@@ -422,8 +422,8 @@ same as the other Tier 1 suites.
 
 ```typescript
 // src/test/server/rate_limiting.db.test.ts
-import {describe_rate_limiting_tests} from '@fuzdev/fuz_app/testing/rate_limiting.js';
-import {default_in_process_suite_options} from '@fuzdev/fuz_app/testing/cross_backend/setup.js';
+import {describe_rate_limiting_tests} from '@fuzdev/fuz_app/testing/rate_limiting.ts';
+import {default_in_process_suite_options} from '@fuzdev/fuz_app/testing/cross_backend/setup.ts';
 import {create_my_route_specs} from '$lib/server/my_route_specs.js';
 import {build_rpc_endpoint_specs} from '$lib/server/my_rpc_endpoints.js';
 import {db_factories} from '../db_fixture.js';
@@ -467,7 +467,7 @@ Wire bootstrap via the top-level `bootstrap` slot on
 
 For tests that exercise the bootstrap flow directly (without going
 through the suite bundle), reach for `create_test_app_for_bootstrap`
-from `@fuzdev/fuz_app/testing/app_server.js` — it builds the same
+from `@fuzdev/fuz_app/testing/app_server.ts` — it builds the same
 pre-bootstrap test app the success suite uses.
 
 Coverage of `bootstrap_account` at the function level (with mocked FS
@@ -529,7 +529,7 @@ that mirrors the production stack.
 
 ```typescript
 // src/test/server/auth_adversarial_headers.test.ts
-import {describe_standard_adversarial_headers} from '@fuzdev/fuz_app/testing/adversarial_headers.js';
+import {describe_standard_adversarial_headers} from '@fuzdev/fuz_app/testing/adversarial_headers.ts';
 
 const TRUSTED_PROXY = '127.0.0.1';
 const ALLOWED_ORIGIN = 'https://my-domain.com';
@@ -556,7 +556,7 @@ Systematic field-level audit that sensitive database fields (`password_hash`,
 (`updated_by`, `created_by`) don't appear in non-admin responses.
 
 ```typescript
-import {describe_data_exposure_tests} from '@fuzdev/fuz_app/testing/data_exposure.js';
+import {describe_data_exposure_tests} from '@fuzdev/fuz_app/testing/data_exposure.ts';
 
 describe_data_exposure_tests({
 	build: create_my_app_surface_spec,
@@ -609,7 +609,7 @@ schemas by specificity:
 The audit logs a summary during test runs:
 
 ```typescript
-import {audit_error_schema_tightness} from '@fuzdev/fuz_app/testing/surface_invariants.js';
+import {audit_error_schema_tightness} from '@fuzdev/fuz_app/testing/surface_invariants.ts';
 
 const entries = audit_error_schema_tightness(surface);
 const generic = entries.filter((e) => e.specificity === 'generic');
@@ -655,7 +655,7 @@ describe_standard_attack_surface_tests({
 Or call `assert_error_schema_tightness` directly:
 
 ```typescript
-import {assert_error_schema_tightness} from '@fuzdev/fuz_app/testing/surface_invariants.js';
+import {assert_error_schema_tightness} from '@fuzdev/fuz_app/testing/surface_invariants.ts';
 
 assert_error_schema_tightness(surface, {min_specificity: 'enum'});
 ```
@@ -664,7 +664,7 @@ assert_error_schema_tightness(surface, {min_specificity: 'enum'});
 only happens inside `describe_standard_attack_surface_tests`. To apply the
 same merge outside the suite, use
 `resolve_standard_error_schema_tightness` from
-`@fuzdev/fuz_app/testing/attack_surface.js`.
+`@fuzdev/fuz_app/testing/attack_surface.ts`.
 
 The stock allowlist assumes `create_account_route_specs` and
 `create_db_route_specs` are mounted under `/api/account` + `/api/db`
@@ -690,7 +690,7 @@ request (auth, params, body) and validates the response against declared
 output or error schemas. DB-backed via `create_test_app`.
 
 ```typescript
-import {describe_round_trip_validation} from '@fuzdev/fuz_app/testing/round_trip.js';
+import {describe_round_trip_validation} from '@fuzdev/fuz_app/testing/round_trip.ts';
 
 describe_round_trip_validation({
 	session_options: my_session_config,
@@ -715,9 +715,9 @@ comment, fires a trigger that produces one event frame, and validates the
 `account_session_revoke_all` RPC method and asserts the stream closes.
 
 ```typescript
-import {describe_sse_route_tests} from '@fuzdev/fuz_app/testing/sse_round_trip.js';
-import {SubscriberRegistry} from '@fuzdev/fuz_app/realtime/subscriber_registry.js';
-import {create_sse_auth_guard} from '@fuzdev/fuz_app/realtime/sse_auth_guard.js';
+import {describe_sse_route_tests} from '@fuzdev/fuz_app/testing/sse_round_trip.ts';
+import {SubscriberRegistry} from '@fuzdev/fuz_app/realtime/subscriber_registry.ts';
+import {create_sse_auth_guard} from '@fuzdev/fuz_app/realtime/sse_auth_guard.ts';
 
 const registry = new SubscriberRegistry<SseNotification>();
 const guard = create_sse_auth_guard(registry, 'admin', log);
@@ -754,7 +754,7 @@ during tests:
 import {
 	ErrorCoverageCollector,
 	assert_error_coverage,
-} from '@fuzdev/fuz_app/testing/error_coverage.js';
+} from '@fuzdev/fuz_app/testing/error_coverage.ts';
 
 const collector = new ErrorCoverageCollector();
 
@@ -815,7 +815,7 @@ custom `min_coverage` to `assert_error_coverage` in their app-specific
 test extensions.
 
 ```typescript
-import {DEFAULT_INTEGRATION_ERROR_COVERAGE} from '@fuzdev/fuz_app/testing/error_coverage.js';
+import {DEFAULT_INTEGRATION_ERROR_COVERAGE} from '@fuzdev/fuz_app/testing/error_coverage.ts';
 
 // The standard suites enforce this automatically.
 // To raise the bar in app-specific tests:
@@ -875,9 +875,9 @@ freshly-recreated DB; the runner captures a snapshot post-bootstrap
 and asserts equality at the end:
 
 ```ts
-import {create_db} from '@fuzdev/fuz_app/db/create_db.js';
-import {query_schema_snapshot} from '@fuzdev/fuz_app/testing/schema_introspect.js';
-import {assert_schema_snapshots_equal} from '@fuzdev/fuz_app/testing/schema_parity.js';
+import {create_db} from '@fuzdev/fuz_app/db/create_db.ts';
+import {query_schema_snapshot} from '@fuzdev/fuz_app/testing/schema_introspect.ts';
+import {assert_schema_snapshots_equal} from '@fuzdev/fuz_app/testing/schema_parity.ts';
 
 // Between backends, drop + recreate the test DB so each impl truly
 // bootstraps fresh:
@@ -1037,7 +1037,7 @@ per-test account via `default_cross_process_setup`.
 
 ```ts
 // global_setup.ts — one backend per vitest project
-import {spawn_backend} from '@fuzdev/fuz_app/testing/cross_backend/spawn_backend.js';
+import {spawn_backend} from '@fuzdev/fuz_app/testing/cross_backend/spawn_backend.ts';
 import {my_backend_config} from './my_backend_config.js';
 
 export default async function () {
@@ -1053,8 +1053,8 @@ import {describe, test, inject, assert} from 'vitest';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle,
-} from '@fuzdev/fuz_app/testing/cross_backend/setup.js';
-import {rpc_call} from '@fuzdev/fuz_app/testing/rpc_helpers.js';
+} from '@fuzdev/fuz_app/testing/cross_backend/setup.ts';
+import {rpc_call} from '@fuzdev/fuz_app/testing/rpc_helpers.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle);

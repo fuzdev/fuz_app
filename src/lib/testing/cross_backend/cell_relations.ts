@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Dedicated cell relation / ACL / audit parity suite for the cross-backend
@@ -54,37 +54,37 @@ import '../assert_dev_env.js';
  */
 
 import {describe, assert} from 'vitest';
-import {fractional_index_between} from '@fuzdev/fuz_util/fractional_index.js';
+import {fractional_index_between} from '@fuzdev/fuz_util/fractional_index.ts';
 
 import {
 	CellCreateOutput,
 	CellUpdateOutput,
 	CellCloneOutput,
 	CellGetOutput,
-} from '../../auth/cell_action_specs.js';
-import {AuditLogListOutput} from '../../auth/admin_action_specs.js';
+} from '../../auth/cell_action_specs.ts';
+import {AuditLogListOutput} from '../../auth/admin_action_specs.ts';
 import {
 	CellGrantCreateOutput,
 	CellGrantListOutput,
 	CellGrantRevokeOutput,
-} from '../../auth/cell_grant_action_specs.js';
+} from '../../auth/cell_grant_action_specs.ts';
 import {
 	CellFieldDeleteOutput,
 	CellFieldListOutput,
 	CellFieldSetOutput,
-} from '../../auth/cell_field_action_specs.js';
+} from '../../auth/cell_field_action_specs.ts';
 import {
 	CellItemDeleteOutput,
 	CellItemInsertOutput,
 	CellItemListOutput,
 	CellItemMoveOutput,
-} from '../../auth/cell_item_action_specs.js';
-import {CellAuditListOutput} from '../../auth/cell_audit_action_specs.js';
-import type {FetchTransport} from '../transports/fetch_transport.js';
-import {test_if} from './capabilities.js';
-import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.js';
-import type {RpcPathCrossSuiteOptions} from './setup.js';
-import {SPINE_RPC_PATH} from './default_spine_surface.js';
+} from '../../auth/cell_item_action_specs.ts';
+import {CellAuditListOutput} from '../../auth/cell_audit_action_specs.ts';
+import type {FetchTransport} from '../transports/fetch_transport.ts';
+import {test_if} from './capabilities.ts';
+import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.ts';
+import type {RpcPathCrossSuiteOptions} from './setup.ts';
+import {SPINE_RPC_PATH} from './default_spine_surface.ts';
 
 /** Create a cell over the wire and return its id (the parity gate parses the output). */
 const create_cell = async (

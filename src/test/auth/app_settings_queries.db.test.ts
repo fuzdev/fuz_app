@@ -9,12 +9,12 @@ import {test, assert} from 'vitest';
 import {
 	query_app_settings_load,
 	query_app_settings_update,
-} from '$lib/auth/app_settings_queries.js';
-import {query_create_account_with_actor} from '$lib/auth/account_queries.js';
-import {create_pglite_factory, create_describe_db, auth_truncate_tables} from '$lib/testing/db.js';
-import {run_migrations} from '$lib/db/migrate.js';
-import {auth_migration_ns} from '$lib/auth/migrations.js';
-import type {Db} from '$lib/db/db.js';
+} from '$lib/auth/app_settings_queries.ts';
+import {query_create_account_with_actor} from '$lib/auth/account_queries.ts';
+import {create_pglite_factory, create_describe_db, auth_truncate_tables} from '$lib/testing/db.ts';
+import {run_migrations} from '$lib/db/migrate.ts';
+import {auth_migration_ns} from '$lib/auth/migrations.ts';
+import type {Db} from '$lib/db/db.ts';
 
 const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [auth_migration_ns]);

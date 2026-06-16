@@ -49,9 +49,9 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {RequestResponseActionSpec} from '../actions/action_spec.js';
+import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
 
 /**
  * Hard cap on the number of ids resolvable in one call. Bounds the

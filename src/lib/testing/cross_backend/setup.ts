@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Per-test fixture protocol shared by in-process and cross-process
@@ -24,17 +24,17 @@ import '../assert_dev_env.js';
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {DAEMON_TOKEN_HEADER} from '../../auth/daemon_token.js';
-import {USERNAME_LENGTH_MAX} from '../../primitive_schemas.js';
-import {DEFAULT_TEST_PASSWORD} from '../test_credentials.js';
-import type {TestAccount} from '../app_server.js';
-import type {BackendCapabilities} from './capabilities.js';
-import {create_fetch_transport, type FetchTransport} from '../transports/fetch_transport.js';
-import type {SchemaSnapshot} from '../schema_introspect.js';
-import {ActionManifest} from './action_manifest.js';
-import type {BackendHandle} from './spawn_backend.js';
+import {DAEMON_TOKEN_HEADER} from '../../auth/daemon_token.ts';
+import {USERNAME_LENGTH_MAX} from '../../primitive_schemas.ts';
+import {DEFAULT_TEST_PASSWORD} from '../test_credentials.ts';
+import type {TestAccount} from '../app_server.ts';
+import type {BackendCapabilities} from './capabilities.ts';
+import {create_fetch_transport, type FetchTransport} from '../transports/fetch_transport.ts';
+import type {SchemaSnapshot} from '../schema_introspect.ts';
+import {ActionManifest} from './action_manifest.ts';
+import type {BackendHandle} from './spawn_backend.ts';
 
 /**
  * Options for `TestFixture.create_account` — mints an additional

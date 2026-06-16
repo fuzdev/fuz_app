@@ -9,26 +9,26 @@
  */
 
 import {describe, test, assert, beforeAll} from 'vitest';
-import {wait} from '@fuzdev/fuz_util/async.js';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {wait} from '@fuzdev/fuz_util/async.ts';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 import {z} from 'zod';
 
-import {create_keyring} from '$lib/auth/keyring.js';
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {create_health_route_spec} from '$lib/http/common_routes.js';
+import {create_keyring} from '$lib/auth/keyring.ts';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {create_health_route_spec} from '$lib/http/common_routes.ts';
 import {
 	create_app_server,
 	DEFAULT_MAX_BODY_SIZE,
 	type AppServerOptions,
 	type AppServer,
-} from '$lib/server/app_server.js';
-import {ERROR_PAYLOAD_TOO_LARGE, PayloadTooLargeError} from '$lib/http/error_schemas.js';
-import type {AppBackend} from '$lib/server/app_backend.js';
-import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
-import {stub_password_deps} from '$lib/testing/app_server.js';
-import {create_pglite_factory} from '$lib/testing/db.js';
-import {run_migrations} from '$lib/db/migrate.js';
-import {auth_migration_ns} from '$lib/auth/migrations.js';
+} from '$lib/server/app_server.ts';
+import {ERROR_PAYLOAD_TOO_LARGE, PayloadTooLargeError} from '$lib/http/error_schemas.ts';
+import type {AppBackend} from '$lib/server/app_backend.ts';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
+import {stub_password_deps} from '$lib/testing/app_server.ts';
+import {create_pglite_factory} from '$lib/testing/db.ts';
+import {run_migrations} from '$lib/db/migrate.ts';
+import {auth_migration_ns} from '$lib/auth/migrations.ts';
 
 // 32+ char key for keyring
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
@@ -602,7 +602,7 @@ describe('create_app_server', () => {
 		// the combined admin+role-grant-offer+account helper should put all 28
 		// methods (14 admin + 7 role-grant-offer + 7 account) on the surface
 		// and auto-mount them.
-		const {create_standard_rpc_actions} = await import('$lib/auth/standard_rpc_actions.js');
+		const {create_standard_rpc_actions} = await import('$lib/auth/standard_rpc_actions.ts');
 		const result = await create_app_server(
 			await create_config({
 				rpc_endpoints: (ctx) => [

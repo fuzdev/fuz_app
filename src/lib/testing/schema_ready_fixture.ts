@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Gen-time helper for the `/ready` schema-drift probe's committed fixture.
@@ -17,8 +17,8 @@ import './assert_dev_env.js';
 
 import {readFileSync, writeFileSync} from 'node:fs';
 
-import type {Db} from '../db/db.js';
-import {query_public_columns, type ExpectedSchema} from '../db/schema_ready.js';
+import type {Db} from '../db/db.ts';
+import {query_public_columns, type ExpectedSchema} from '../db/schema_ready.ts';
 
 /** Options for `sync_expected_schema_fixture`. */
 export interface SyncExpectedSchemaFixtureOptions {

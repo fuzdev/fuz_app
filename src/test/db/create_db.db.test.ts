@@ -8,11 +8,11 @@
  */
 
 import {describe, assert, test, beforeAll, afterAll} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
-import type {Db} from '$lib/db/db.js';
-import {create_pglite_db} from '$lib/db/db_pglite.js';
-import {create_db} from '$lib/db/create_db.js';
+import type {Db} from '$lib/db/db.ts';
+import {create_pglite_db} from '$lib/db/db_pglite.ts';
+import {create_db} from '$lib/db/create_db.ts';
 
 describe('create_pglite_db', () => {
 	let db: Db;

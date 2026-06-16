@@ -1,7 +1,7 @@
 import {test, assert, describe} from 'vitest';
 import {z} from 'zod';
 
-import {get_app_dir, get_config_path, load_config, save_config} from '$lib/cli/config.js';
+import {get_app_dir, get_config_path, load_config, save_config} from '$lib/cli/config.ts';
 
 describe('get_app_dir', () => {
 	test('returns ~/.name when HOME is set', () => {

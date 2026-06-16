@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Bootstrap success-path suite for consumer projects.
@@ -20,13 +20,13 @@ import './assert_dev_env.js';
 
 import {describe, test, assert} from 'vitest';
 
-import type {SessionOptions} from '../auth/session_cookie.js';
-import type {BootstrapLiveOptions} from '../server/app_server.js';
-import type {AppServerContext} from '../server/app_server_context.js';
-import type {RouteSpec} from '../http/route_spec.js';
-import {ERROR_ALREADY_BOOTSTRAPPED, ERROR_INVALID_TOKEN} from '../http/error_schemas.js';
-import {create_test_app_for_bootstrap} from './app_server.js';
-import type {RpcEndpointsSuiteOption} from './rpc_helpers.js';
+import type {SessionOptions} from '../auth/session_cookie.ts';
+import type {BootstrapLiveOptions} from '../server/app_server.ts';
+import type {AppServerContext} from '../server/app_server_context.ts';
+import type {RouteSpec} from '../http/route_spec.ts';
+import {ERROR_ALREADY_BOOTSTRAPPED, ERROR_INVALID_TOKEN} from '../http/error_schemas.ts';
+import {create_test_app_for_bootstrap} from './app_server.ts';
+import type {RpcEndpointsSuiteOption} from './rpc_helpers.ts';
 
 const DEFAULT_TEST_TOKEN = 'test-bootstrap-token-value-deterministic';
 const TEST_USERNAME = 'keeper';

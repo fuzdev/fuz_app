@@ -18,15 +18,15 @@ import {
 	assert_ws_notifications_have_null_auth,
 	assert_no_testing_methods,
 	assert_rpc_ws_surface_invariants,
-} from '$lib/testing/surface_invariants.js';
-import {create_spine_surface_spec} from '$lib/testing/cross_backend/default_spine_surface.js';
-import {generate_app_surface, type AppSurface} from '$lib/http/surface.js';
+} from '$lib/testing/surface_invariants.ts';
+import {create_spine_surface_spec} from '$lib/testing/cross_backend/default_spine_surface.ts';
+import {generate_app_surface, type AppSurface} from '$lib/http/surface.ts';
 import type {
 	RequestResponseActionSpec,
 	RemoteNotificationActionSpec,
-} from '$lib/actions/action_spec.js';
-import type {RpcAction} from '$lib/actions/action_rpc.js';
-import {protocol_actions} from '$lib/actions/protocol.js';
+} from '$lib/actions/action_spec.ts';
+import type {RpcAction} from '$lib/actions/action_rpc.ts';
+import {protocol_actions} from '$lib/actions/protocol.ts';
 
 const rpc_account_verify_spec: RequestResponseActionSpec = {
 	method: 'account_verify',

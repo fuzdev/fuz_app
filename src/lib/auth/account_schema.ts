@@ -18,9 +18,9 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {Username, Email} from '../primitive_schemas.js';
+import {Username, Email} from '../primitive_schemas.ts';
 
 // Types
 

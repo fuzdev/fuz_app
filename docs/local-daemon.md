@@ -28,13 +28,13 @@ Use `create_app_backend` + `create_app_server` — the same two-step pattern
 as full server apps. PGlite is auto-detected from the `database_url`:
 
 ```ts
-import {create_app_backend} from '@fuzdev/fuz_app/server/app_backend.js';
-import {create_app_server} from '@fuzdev/fuz_app/server/app_server.js';
-import {create_session_config} from '@fuzdev/fuz_app/auth/session_cookie.js';
-import {argon2_password_deps} from '@fuzdev/fuz_app/auth/password_argon2.js';
-import {create_validated_keyring} from '@fuzdev/fuz_app/auth/keyring.js';
-import {create_audit_emitter} from '@fuzdev/fuz_app/auth/audit_emitter.js';
-import {BaseServerEnv} from '@fuzdev/fuz_app/server/env.js';
+import {create_app_backend} from '@fuzdev/fuz_app/server/app_backend.ts';
+import {create_app_server} from '@fuzdev/fuz_app/server/app_server.ts';
+import {create_session_config} from '@fuzdev/fuz_app/auth/session_cookie.ts';
+import {argon2_password_deps} from '@fuzdev/fuz_app/auth/password_argon2.ts';
+import {create_validated_keyring} from '@fuzdev/fuz_app/auth/keyring.ts';
+import {create_audit_emitter} from '@fuzdev/fuz_app/auth/audit_emitter.ts';
+import {BaseServerEnv} from '@fuzdev/fuz_app/server/env.ts';
 
 // 1. Init backend — PGlite file-based DB, auth migrations run automatically
 const keyring_result = create_validated_keyring(cookie_secret);
@@ -98,7 +98,7 @@ session creation. Use it for app-specific setup like generating CLI API tokens.
 Use in-memory PGlite for tests (`database_url: 'memory://'`):
 
 ```ts
-import {create_test_app} from '@fuzdev/fuz_app/testing/app_server.js';
+import {create_test_app} from '@fuzdev/fuz_app/testing/app_server.ts';
 
 const {app, create_session_headers, create_account, cleanup} = await create_test_app({
 	session_options: create_session_config('test_session'),

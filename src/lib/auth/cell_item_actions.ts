@@ -32,10 +32,10 @@ import {
 	type ActionActorContext,
 	type ActionContext,
 	type RpcAction,
-} from '../actions/action_rpc.js';
-import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
-import {is_pg_unique_violation} from '../db/pg_error.js';
-import type {RouteFactoryDeps} from './deps.js';
+} from '../actions/action_rpc.ts';
+import {jsonrpc_errors} from '../http/jsonrpc_errors.ts';
+import {is_pg_unique_violation} from '../db/pg_error.ts';
+import type {RouteFactoryDeps} from './deps.ts';
 
 import {
 	cell_item_insert_action_spec,
@@ -53,12 +53,12 @@ import {
 	type CellItemListOutput,
 	type CellItemPosition,
 	type ItemJson,
-} from './cell_item_action_specs.js';
-import {ERROR_CELL_NOT_FOUND} from './cell_action_specs.js';
-import {can_view_cell, can_edit_cell} from './cell_authorize.js';
-import {filter_visible_target_ids} from './cell_relation_visibility.js';
-import {query_cell_get} from '../db/cell_queries.js';
-import {query_cell_grant_list_for_cell} from '../db/cell_grant_queries.js';
+} from './cell_item_action_specs.ts';
+import {ERROR_CELL_NOT_FOUND} from './cell_action_specs.ts';
+import {can_view_cell, can_edit_cell} from './cell_authorize.ts';
+import {filter_visible_target_ids} from './cell_relation_visibility.ts';
+import {query_cell_get} from '../db/cell_queries.ts';
+import {query_cell_grant_list_for_cell} from '../db/cell_grant_queries.ts';
 import {
 	query_cell_item_insert,
 	query_cell_item_move,
@@ -66,12 +66,12 @@ import {
 	query_cell_item_list_for_parent,
 	query_cell_item_list_for_child,
 	type CellItemRow,
-} from '../db/cell_item_queries.js';
+} from '../db/cell_item_queries.ts';
 import type {
 	CellItemInsertAuditMetadata,
 	CellItemMoveAuditMetadata,
 	CellItemDeleteAuditMetadata,
-} from './cell_item_audit_metadata.js';
+} from './cell_item_audit_metadata.ts';
 
 export type CellItemActionDeps = Pick<RouteFactoryDeps, 'log' | 'audit'>;
 

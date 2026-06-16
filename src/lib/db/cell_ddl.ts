@@ -34,8 +34,8 @@
  * @module
  */
 
-import type {Db} from './db.js';
-import type {Migration, MigrationNamespace} from './migrate.js';
+import type {Db} from './db.ts';
+import type {Migration, MigrationNamespace} from './migrate.ts';
 
 /**
  * `cell_visibility` enum — access-control axis for a cell. Lives as a

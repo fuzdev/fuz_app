@@ -11,7 +11,7 @@ import type {
 	LogDeps,
 	TerminalDeps,
 	ProcessDeps,
-} from '$lib/runtime/deps.js';
+} from '$lib/runtime/deps.ts';
 
 // Type-level assertions — compile error if RuntimeDeps doesn't satisfy *Deps.
 // These tests exist for structural verification; create_deno_runtime itself

@@ -8,15 +8,15 @@
 	 * @module
 	 */
 
-	import {auth_state_context} from './auth_state.svelte.js';
+	import {auth_state_context} from './auth_state.svelte.ts';
 	import {
 		AccountSessionsState,
 		account_sessions_rpc_context,
-	} from './account_sessions_state.svelte.js';
-	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.js';
+	} from './account_sessions_state.svelte.ts';
+	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.ts';
 	import Datatable from './Datatable.svelte';
-	import type {DatatableColumn} from './datatable.js';
-	import type {AuthSessionJson} from '../auth/account_schema.js';
+	import type {DatatableColumn} from './datatable.ts';
+	import type {AuthSessionJson} from '../auth/account_schema.ts';
 
 	const auth_state = auth_state_context.get();
 	const get_rpc = account_sessions_rpc_context.get();

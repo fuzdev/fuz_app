@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Adversarial 404 testing for routes with params and declared 404 error schemas.
@@ -15,11 +15,11 @@ import './assert_dev_env.js';
 import {test, assert, describe} from 'vitest';
 import {z} from 'zod';
 
-import type {RouteSpec} from '../http/route_spec.js';
-import {is_null_schema} from '../http/schema_helpers.js';
-import {create_auth_test_apps, select_auth_app} from './auth_apps.js';
-import type {AdversarialTestOptions} from './attack_surface.js';
-import {resolve_valid_path, generate_valid_body} from './schema_generators.js';
+import type {RouteSpec} from '../http/route_spec.ts';
+import {is_null_schema} from '../http/schema_helpers.ts';
+import {create_auth_test_apps, select_auth_app} from './auth_apps.ts';
+import type {AdversarialTestOptions} from './attack_surface.ts';
+import {resolve_valid_path, generate_valid_body} from './schema_generators.ts';
 
 /**
  * Extract the error code from a 404 Zod schema for use in the stub handler.

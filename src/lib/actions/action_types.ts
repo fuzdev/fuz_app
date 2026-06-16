@@ -17,8 +17,8 @@
  * @module
  */
 
-import type {ActionSpecUnion} from './action_spec.js';
-import type {ActionHandler} from './action_rpc.js';
+import type {ActionSpecUnion} from './action_spec.ts';
+import type {ActionHandler} from './action_rpc.ts';
 
 /**
  * A spec paired with its optional handler — the composable unit passed to

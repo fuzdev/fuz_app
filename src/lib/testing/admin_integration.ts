@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Standard admin integration test suite for fuz_app admin routes.
@@ -28,31 +28,31 @@ import './assert_dev_env.js';
  */
 
 import {describe, test, assert, afterAll} from 'vitest';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {SessionOptions} from '../auth/session_cookie.js';
-import {ROLE_ADMIN, type RoleSchemaResult} from '../auth/role_schema.js';
-import {GRANT_PATH_ADMIN} from '../auth/grant_path_schema.js';
-import type {TestAccount, TestApp} from './app_server.js';
-import {DEFAULT_TEST_PASSWORD} from './test_credentials.js';
-import {role_grant_offer_and_accept} from './role_grant_helpers.js';
-import {find_auth_route} from './integration_helpers.js';
+import type {SessionOptions} from '../auth/session_cookie.ts';
+import {ROLE_ADMIN, type RoleSchemaResult} from '../auth/role_schema.ts';
+import {GRANT_PATH_ADMIN} from '../auth/grant_path_schema.ts';
+import type {TestAccount, TestApp} from './app_server.ts';
+import {DEFAULT_TEST_PASSWORD} from './test_credentials.ts';
+import {role_grant_offer_and_accept} from './role_grant_helpers.ts';
+import {find_auth_route} from './integration_helpers.ts';
 import {
 	ErrorCoverageCollector,
 	assert_error_coverage,
 	DEFAULT_INTEGRATION_ERROR_COVERAGE,
-} from './error_coverage.js';
+} from './error_coverage.ts';
 import {
 	rpc_call_for_spec,
 	require_rpc_endpoint_path,
 	resolve_rpc_endpoints_for_setup,
 	type RpcCallArgs,
 	type RpcEndpointsSuiteOption,
-} from './rpc_helpers.js';
+} from './rpc_helpers.ts';
 import {
 	role_grant_offer_create_action_spec,
 	role_grant_revoke_action_spec,
-} from '../auth/role_grant_offer_action_specs.js';
+} from '../auth/role_grant_offer_action_specs.ts';
 import {
 	admin_account_list_action_spec,
 	ADMIN_ACCOUNT_LIST_LIMIT_MAX,
@@ -61,14 +61,14 @@ import {
 	admin_token_revoke_all_action_spec,
 	audit_log_list_action_spec,
 	audit_log_role_grant_history_action_spec,
-} from '../auth/admin_action_specs.js';
+} from '../auth/admin_action_specs.ts';
 import {
 	account_token_create_action_spec,
 	account_verify_action_spec,
-} from '../auth/account_action_specs.js';
-import type {AppSurfaceSpec} from '../http/surface.js';
-import type {BackendCapabilities} from './cross_backend/capabilities.js';
-import type {SetupTest, TestFixture} from './cross_backend/setup.js';
+} from '../auth/account_action_specs.ts';
+import type {AppSurfaceSpec} from '../http/surface.ts';
+import type {BackendCapabilities} from './cross_backend/capabilities.ts';
+import type {SetupTest, TestFixture} from './cross_backend/setup.ts';
 
 /**
  * Configuration for `describe_standard_admin_integration_tests`.

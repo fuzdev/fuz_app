@@ -12,11 +12,11 @@
  * @module
  */
 
-import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
+import {create_context} from '@fuzdev/fuz_ui/context_helpers.ts';
 
-import {AsyncSlot} from './async_slot.svelte.js';
-import {KeyedAsyncSlot} from './keyed_async_slot.svelte.js';
-import type {AuthSessionJson} from '../auth/account_schema.js';
+import {AsyncSlot} from './async_slot.svelte.ts';
+import {KeyedAsyncSlot} from './keyed_async_slot.svelte.ts';
+import type {AuthSessionJson} from '../auth/account_schema.ts';
 
 /**
  * Narrow RPC surface consumed by `AccountSessionsState`. Consumers adapt their

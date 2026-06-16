@@ -16,7 +16,7 @@ import type {
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
 	JsonrpcErrorResponse,
-} from '../http/jsonrpc.js';
+} from '../http/jsonrpc.ts';
 
 /** WebSocket close code for session revocation. */
 export const WS_CLOSE_SESSION_REVOKED = 4001;

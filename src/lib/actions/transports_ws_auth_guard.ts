@@ -25,10 +25,10 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import type {AuditLogEvent} from '../auth/audit_log_schema.js';
-import type {BackendWebsocketTransport} from './transports_ws_backend.js';
+import type {AuditLogEvent} from '../auth/audit_log_schema.ts';
+import type {BackendWebsocketTransport} from './transports_ws_backend.ts';
 
 /**
  * Audit-event callback shape — the function `CreateAuditEmitterOptions.on_audit_event`

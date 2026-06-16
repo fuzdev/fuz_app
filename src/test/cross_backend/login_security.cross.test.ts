@@ -26,10 +26,10 @@ import {inject, describe} from 'vitest';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle,
-} from '$lib/testing/cross_backend/setup.js';
-import {describe_login_security_cross_tests} from '$lib/testing/cross_backend/login_security.js';
+} from '$lib/testing/cross_backend/setup.ts';
+import {describe_login_security_cross_tests} from '$lib/testing/cross_backend/login_security.ts';
 
-import './cross_test_types.js';
+import './cross_test_types.ts';
 
 const ts = reconstruct_bootstrapped_handle(inject('security_handle_a'));
 const rust = reconstruct_bootstrapped_handle(inject('security_handle_b'));

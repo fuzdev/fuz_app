@@ -15,15 +15,15 @@
  * @module
  */
 
-import {create_test_app} from '$lib/testing/app_server.js';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import {query_create_actor} from '$lib/auth/account_queries.js';
-import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
-import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
-import type {Db} from '$lib/db/db.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import {create_test_app} from '$lib/testing/app_server.ts';
+import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import {query_create_actor} from '$lib/auth/account_queries.ts';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
+import type {AuditLogEvent} from '$lib/auth/audit_log_schema.ts';
+import type {Db} from '$lib/db/db.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {create_route_specs, session_options} from './role_grant_offer_test_helpers.js';
+import {create_route_specs, session_options} from './role_grant_offer_test_helpers.ts';
 
 /**
  * Build the multi-actor scaffolding bound to a `describe_db` callback's

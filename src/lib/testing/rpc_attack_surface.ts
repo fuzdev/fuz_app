@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Composable RPC attack surface test suite.
@@ -16,24 +16,24 @@ import './assert_dev_env.js';
 
 import {test, assert, describe} from 'vitest';
 
-import type {AppSurfaceRpcEndpoint, AppSurfaceRpcMethod, AppSurfaceSpec} from '../http/surface.js';
-import {is_keeper_auth, is_public_auth, is_role_auth, type RouteAuth} from '../http/auth_shape.js';
-import {JSONRPC_ERROR_CODES} from '../http/jsonrpc_errors.js';
+import type {AppSurfaceRpcEndpoint, AppSurfaceRpcMethod, AppSurfaceSpec} from '../http/surface.ts';
+import {is_keeper_auth, is_public_auth, is_role_auth, type RouteAuth} from '../http/auth_shape.ts';
+import {JSONRPC_ERROR_CODES} from '../http/jsonrpc_errors.ts';
 import {
 	create_auth_test_apps,
 	create_test_app_from_specs,
 	create_test_request_context,
 	select_auth_app,
-} from './auth_apps.js';
-import {generate_input_test_cases} from './adversarial_input.js';
-import {generate_valid_body} from './schema_generators.js';
-import {ERROR_INVALID_JSON_BODY} from '../http/error_schemas.js';
-import type {RpcAction} from '../actions/action_rpc.js';
+} from './auth_apps.ts';
+import {generate_input_test_cases} from './adversarial_input.ts';
+import {generate_valid_body} from './schema_generators.ts';
+import {ERROR_INVALID_JSON_BODY} from '../http/error_schemas.ts';
+import type {RpcAction} from '../actions/action_rpc.ts';
 import {
 	create_rpc_post_init,
 	create_rpc_get_url,
 	assert_jsonrpc_error_response,
-} from './rpc_helpers.js';
+} from './rpc_helpers.ts';
 
 // --- Types ---
 

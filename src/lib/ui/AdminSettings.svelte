@@ -8,7 +8,7 @@
 	 * @module
 	 */
 
-	import {auth_state_context} from './auth_state.svelte.js';
+	import {auth_state_context} from './auth_state.svelte.ts';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import OpenSignupToggle from './OpenSignupToggle.svelte';
 

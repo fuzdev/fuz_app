@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-process `BackendConfig` preset for the non-domain spine consumer,
@@ -37,14 +37,14 @@ import '../assert_dev_env.js';
 
 import {fileURLToPath} from 'node:url';
 
-import type {BackendConfig} from './backend_config.js';
-import {build_test_backend_paths} from './build_test_backend_paths.js';
-import {SPINE_EXPECTED_SCHEMA_URL} from './default_spine_surface.js';
+import type {BackendConfig} from './backend_config.ts';
+import {build_test_backend_paths} from './build_test_backend_paths.ts';
+import {SPINE_EXPECTED_SCHEMA_URL} from './default_spine_surface.ts';
 import {
 	LOGIN_RATE_LIMIT_ENABLED_ENV,
 	make_default_rust_backend_config,
 	rust_default_capabilities,
-} from './default_backend_configs.js';
+} from './default_backend_configs.ts';
 
 /** Env var naming the prebuilt `testing_spine_stub` binary. Required when `binary_path` is omitted. */
 export const RUST_SPINE_STUB_BIN_ENV = 'FUZ_TESTING_RUST_SPINE_STUB_BIN';

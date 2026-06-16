@@ -13,18 +13,18 @@
 import {describe, test, assert, beforeAll, afterAll} from 'vitest';
 import {z} from 'zod';
 
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {create_health_route_spec} from '$lib/http/common_routes.js';
-import {require_request_context} from '$lib/auth/request_context.js';
-import {create_app_server, type AppServerOptions, type AppServer} from '$lib/server/app_server.js';
-import {create_test_app_server, type TestAppServer} from '$lib/testing/app_server.js';
-import type {RouteSpec} from '$lib/http/route_spec.js';
-import {ROLE_KEEPER, ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import {ActingActor} from '$lib/http/auth_shape.js';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {create_health_route_spec} from '$lib/http/common_routes.ts';
+import {require_request_context} from '$lib/auth/request_context.ts';
+import {create_app_server, type AppServerOptions, type AppServer} from '$lib/server/app_server.ts';
+import {create_test_app_server, type TestAppServer} from '$lib/testing/app_server.ts';
+import type {RouteSpec} from '$lib/http/route_spec.ts';
+import {ROLE_KEEPER, ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import {ActingActor} from '$lib/http/auth_shape.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
-} from '$lib/http/error_schemas.js';
+} from '$lib/http/error_schemas.ts';
 
 const session_options = create_session_config('test_session');
 

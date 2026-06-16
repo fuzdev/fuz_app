@@ -12,22 +12,22 @@
  * @module
  */
 
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {create_account_route_specs} from '$lib/auth/account_routes.js';
-import {create_audit_log_route_specs} from '$lib/auth/audit_log_routes.js';
-import {prefix_route_specs} from '$lib/http/route_spec.js';
-import type {AppServerContext} from '$lib/server/app_server_context.js';
-import type {RpcEndpointSpec} from '$lib/http/surface.js';
-import {describe_sse_route_tests} from '$lib/testing/sse_round_trip.js';
-import {audit_log_event_specs} from '$lib/realtime/sse_auth_guard.js';
-import {create_admin_actions} from '$lib/auth/admin_actions.js';
-import {create_account_actions} from '$lib/auth/account_actions.js';
-import {admin_session_revoke_all_action_spec} from '$lib/auth/admin_action_specs.js';
-import {rpc_call} from '$lib/testing/rpc_helpers.js';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {create_account_route_specs} from '$lib/auth/account_routes.ts';
+import {create_audit_log_route_specs} from '$lib/auth/audit_log_routes.ts';
+import {prefix_route_specs} from '$lib/http/route_spec.ts';
+import type {AppServerContext} from '$lib/server/app_server_context.ts';
+import type {RpcEndpointSpec} from '$lib/http/surface.ts';
+import {describe_sse_route_tests} from '$lib/testing/sse_round_trip.ts';
+import {audit_log_event_specs} from '$lib/realtime/sse_auth_guard.ts';
+import {create_admin_actions} from '$lib/auth/admin_actions.ts';
+import {create_account_actions} from '$lib/auth/account_actions.ts';
+import {admin_session_revoke_all_action_spec} from '$lib/auth/admin_action_specs.ts';
+import {rpc_call} from '$lib/testing/rpc_helpers.ts';
 
-import {db_factories} from '../db_fixture.js';
+import {db_factories} from '../db_fixture.ts';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';

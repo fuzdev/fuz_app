@@ -7,17 +7,17 @@
 import {test, assert, beforeAll, beforeEach, afterAll} from 'vitest';
 import {z} from 'zod';
 
-import type {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
-import type {RpcAction} from '$lib/actions/action_rpc.js';
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {ROLE_KEEPER} from '$lib/auth/role_schema.js';
-import {create_health_route_spec} from '$lib/http/common_routes.js';
-import {create_app_server} from '$lib/server/app_server.js';
-import {create_test_app, create_test_app_server} from '$lib/testing/app_server.js';
-import {auth_truncate_tables} from '$lib/testing/db.js';
-import {query_role_grant_find_active_for_actor} from '$lib/auth/role_grant_queries.js';
+import type {RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
+import type {RpcAction} from '$lib/actions/action_rpc.ts';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {ROLE_KEEPER} from '$lib/auth/role_schema.ts';
+import {create_health_route_spec} from '$lib/http/common_routes.ts';
+import {create_app_server} from '$lib/server/app_server.ts';
+import {create_test_app, create_test_app_server} from '$lib/testing/app_server.ts';
+import {auth_truncate_tables} from '$lib/testing/db.ts';
+import {query_role_grant_find_active_for_actor} from '$lib/auth/role_grant_queries.ts';
 
-import {pglite_factory} from '../db_fixture.js';
+import {pglite_factory} from '../db_fixture.ts';
 
 const session_options = create_session_config('test_session');
 

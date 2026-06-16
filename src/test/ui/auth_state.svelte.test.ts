@@ -11,7 +11,7 @@
 
 import {describe, test, assert, vi, beforeEach, afterEach} from 'vitest';
 
-import {AuthState} from '$lib/ui/auth_state.svelte.js';
+import {AuthState} from '$lib/ui/auth_state.svelte.ts';
 
 /** Create a mock Response with JSON body. */
 const json_response = (body: unknown, status = 200): Response =>

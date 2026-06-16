@@ -17,32 +17,32 @@
 
 import {test, assert} from 'vitest';
 
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {create_test_app} from '$lib/testing/app_server.js';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {create_test_app} from '$lib/testing/app_server.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
 	auth_integration_truncate_tables,
-} from '$lib/testing/db.js';
-import {run_migrations} from '$lib/db/migrate.js';
-import {auth_migration_ns} from '$lib/auth/migrations.js';
-import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
-import {role_grant_revoke_action_spec} from '$lib/auth/role_grant_offer_action_specs.js';
-import {query_create_role_grant} from '$lib/auth/role_grant_queries.js';
-import {query_role_grant_offer_create} from '$lib/auth/role_grant_offer_queries.js';
+} from '$lib/testing/db.ts';
+import {run_migrations} from '$lib/db/migrate.ts';
+import {auth_migration_ns} from '$lib/auth/migrations.ts';
+import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
+import {role_grant_revoke_action_spec} from '$lib/auth/role_grant_offer_action_specs.ts';
+import {query_create_role_grant} from '$lib/auth/role_grant_queries.ts';
+import {query_role_grant_offer_create} from '$lib/auth/role_grant_offer_queries.ts';
 import {
 	ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
 	ROLE_GRANT_REVOKE_NOTIFICATION_METHOD,
-} from '$lib/auth/role_grant_offer_notifications.js';
-import {create_rpc_post_init} from '$lib/testing/rpc_helpers.js';
-import type {Db} from '$lib/db/db.js';
+} from '$lib/auth/role_grant_offer_notifications.ts';
+import {create_rpc_post_init} from '$lib/testing/rpc_helpers.ts';
+import type {Db} from '$lib/db/db.ts';
 import type {Hono} from 'hono';
 import {
 	NOTIFICATION_TEST_RPC_PATH,
 	create_capture_sender,
 	create_notification_route_specs_factory,
 	type CapturedNotificationCall,
-} from './notification_helpers.js';
+} from './notification_helpers.ts';
 
 const session_options = create_session_config('test_session');
 

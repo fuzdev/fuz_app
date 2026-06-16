@@ -19,20 +19,20 @@
 
 import type {z} from 'zod';
 
-import {CellAuditMetadata, CellCloneAuditMetadata} from './cell_audit_metadata.js';
+import {CellAuditMetadata, CellCloneAuditMetadata} from './cell_audit_metadata.ts';
 import {
 	CellGrantCreateAuditMetadata,
 	CellGrantRevokeAuditMetadata,
-} from './cell_grant_audit_metadata.js';
+} from './cell_grant_audit_metadata.ts';
 import {
 	CellFieldSetAuditMetadata,
 	CellFieldDeleteAuditMetadata,
-} from './cell_field_audit_metadata.js';
+} from './cell_field_audit_metadata.ts';
 import {
 	CellItemInsertAuditMetadata,
 	CellItemMoveAuditMetadata,
 	CellItemDeleteAuditMetadata,
-} from './cell_item_audit_metadata.js';
+} from './cell_item_audit_metadata.ts';
 
 /**
  * Cell-layer `event_type → metadata schema` map for `extra_events`.

@@ -77,9 +77,9 @@ import {createReadStream} from 'node:fs';
 import {Readable} from 'node:stream';
 import {join} from 'node:path';
 import type {Context} from 'hono';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
-import {FactHashSchema, type FactHash} from '@fuzdev/fuz_util/fact_hash.js';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import {FactHashSchema, type FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 import {z} from 'zod';
 
 import {
@@ -87,19 +87,19 @@ import {
 	get_request_context,
 	has_role,
 	type RequestContext,
-} from '../auth/request_context.js';
-import {ROLE_ADMIN} from '../auth/role_schema.js';
-import {ActingActor} from '../http/auth_shape.js';
-import {ACCOUNT_ID_KEY} from '../hono_context.js';
-import {query_actors_by_account} from '../auth/account_queries.js';
-import {get_route_params, type RouteContext, type RouteSpec} from '../http/route_spec.js';
-import {ERROR_INVALID_ROUTE_PARAMS} from '../http/error_schemas.js';
-import type {AppDeps} from '../auth/deps.js';
-import {query_get_fact, query_get_fact_meta} from '../db/fact_queries.js';
-import {query_cell_get} from '../db/cell_queries.js';
-import {query_cell_grant_list_for_cell} from '../db/cell_grant_queries.js';
-import {can_view_cell} from '../auth/cell_authorize.js';
-import {parse_file_fact_url} from '../db/file_fact_url.js';
+} from '../auth/request_context.ts';
+import {ROLE_ADMIN} from '../auth/role_schema.ts';
+import {ActingActor} from '../http/auth_shape.ts';
+import {ACCOUNT_ID_KEY} from '../hono_context.ts';
+import {query_actors_by_account} from '../auth/account_queries.ts';
+import {get_route_params, type RouteContext, type RouteSpec} from '../http/route_spec.ts';
+import {ERROR_INVALID_ROUTE_PARAMS} from '../http/error_schemas.ts';
+import type {AppDeps} from '../auth/deps.ts';
+import {query_get_fact, query_get_fact_meta} from '../db/fact_queries.ts';
+import {query_cell_get} from '../db/cell_queries.ts';
+import {query_cell_grant_list_for_cell} from '../db/cell_grant_queries.ts';
+import {can_view_cell} from '../auth/cell_authorize.ts';
+import {parse_file_fact_url} from '../db/file_fact_url.ts';
 
 /** `Cache-Control` for fact responses — 5 min revocation window. */
 const CACHE_CONTROL = 'private, max-age=300';

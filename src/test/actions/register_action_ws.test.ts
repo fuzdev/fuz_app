@@ -13,29 +13,29 @@
 import {afterEach, describe, assert, test, vi} from 'vitest';
 import {Hono} from 'hono';
 import {z} from 'zod';
-import {Logger} from '@fuzdev/fuz_util/log.js';
-import {ActingActor} from '$lib/http/auth_shape.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
+import {ActingActor} from '$lib/http/auth_shape.ts';
 
 import {
 	register_action_ws,
 	type SocketCloseContext,
 	type SocketOpenContext,
-} from '$lib/actions/register_action_ws.js';
-import type {ActionContext} from '$lib/actions/action_rpc.js';
-import type {ActionSpecUnion, RequestResponseActionSpec} from '$lib/actions/action_spec.js';
-import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.js';
-import {WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT} from '$lib/actions/transports.js';
-import {type CredentialType} from '$lib/hono_context.js';
-import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
-import {RateLimiter} from '$lib/rate_limiter.js';
-import {create_stub_db} from '$lib/testing/stubs.js';
+} from '$lib/actions/register_action_ws.ts';
+import type {ActionContext} from '$lib/actions/action_rpc.ts';
+import type {ActionSpecUnion, RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
+import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.ts';
+import {WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT} from '$lib/actions/transports.ts';
+import {type CredentialType} from '$lib/hono_context.ts';
+import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.ts';
+import {RateLimiter} from '$lib/rate_limiter.ts';
+import {create_stub_db} from '$lib/testing/stubs.ts';
 import {
 	create_fake_hono_context,
 	create_fake_ws,
 	create_stub_upgrade,
 	dispatch_ws_message,
 	type FakeWs,
-} from '$lib/testing/ws_round_trip.js';
+} from '$lib/testing/ws_round_trip.ts';
 
 const log = new Logger('test', {level: 'off'});
 

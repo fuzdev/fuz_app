@@ -16,14 +16,14 @@ import type {
 	FsReadDeps,
 	FsRemoveDeps,
 	FsWriteDeps,
-} from '../runtime/deps.js';
-import type {QueryDeps} from '../db/query_deps.js';
+} from '../runtime/deps.ts';
+import type {QueryDeps} from '../db/query_deps.ts';
 import {
 	query_account_by_username,
 	query_actors_by_account,
 	query_create_account_with_actor,
-} from '../auth/account_queries.js';
-import {query_create_role_grant} from '../auth/role_grant_queries.js';
+} from '../auth/account_queries.ts';
+import {query_create_role_grant} from '../auth/role_grant_queries.ts';
 
 /**
  * Optional logger for setup helpers.

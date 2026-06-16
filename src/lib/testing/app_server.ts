@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Bootstrapped app server factory for integration tests.
@@ -16,44 +16,44 @@ import './assert_dev_env.js';
 
 import type {Hono} from 'hono';
 import {z} from 'zod';
-import {Logger} from '@fuzdev/fuz_util/log.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {DEFAULT_TEST_PASSWORD} from './test_credentials.js';
-import {ROLE_KEEPER} from '../auth/role_schema.js';
-import {create_validated_keyring, type Keyring} from '../auth/keyring.js';
-import {generate_api_token} from '../auth/api_token.js';
-import type {Db, DbType} from '../db/db.js';
-import type {PasswordHashDeps} from '../auth/password.js';
-import {query_create_account_with_actor} from '../auth/account_queries.js';
-import {query_create_role_grant} from '../auth/role_grant_queries.js';
+import {DEFAULT_TEST_PASSWORD} from './test_credentials.ts';
+import {ROLE_KEEPER} from '../auth/role_schema.ts';
+import {create_validated_keyring, type Keyring} from '../auth/keyring.ts';
+import {generate_api_token} from '../auth/api_token.ts';
+import type {Db, DbType} from '../db/db.ts';
+import type {PasswordHashDeps} from '../auth/password.ts';
+import {query_create_account_with_actor} from '../auth/account_queries.ts';
+import {query_create_role_grant} from '../auth/role_grant_queries.ts';
 import {
 	generate_session_token,
 	hash_session_token,
 	AUTH_SESSION_LIFETIME_MS,
 	query_create_session,
-} from '../auth/session_queries.js';
-import {query_create_api_token} from '../auth/api_token_queries.js';
-import {create_session_cookie_value, type SessionOptions} from '../auth/session_cookie.js';
-import {run_migrations, type MigrationNamespace} from '../db/migrate.js';
-import {auth_migration_ns} from '../auth/migrations.js';
-import {default_audit_factory, type AppBackend, type AuditFactory} from '../server/app_backend.js';
+} from '../auth/session_queries.ts';
+import {query_create_api_token} from '../auth/api_token_queries.ts';
+import {create_session_cookie_value, type SessionOptions} from '../auth/session_cookie.ts';
+import {run_migrations, type MigrationNamespace} from '../db/migrate.ts';
+import {auth_migration_ns} from '../auth/migrations.ts';
+import {default_audit_factory, type AppBackend, type AuditFactory} from '../server/app_backend.ts';
 import {
 	create_app_server,
 	type AppServerOptions,
 	type BootstrapServerOptions,
 	type BootstrapLiveOptions,
-} from '../server/app_server.js';
-import type {AppServerContext} from '../server/app_server_context.js';
-import type {AppSurface, AppSurfaceSpec} from '../http/surface.js';
-import type {RouteSpec} from '../http/route_spec.js';
+} from '../server/app_server.ts';
+import type {AppServerContext} from '../server/app_server_context.ts';
+import type {AppSurface, AppSurfaceSpec} from '../http/surface.ts';
+import type {RouteSpec} from '../http/route_spec.ts';
 import {
 	generate_daemon_token,
 	DAEMON_TOKEN_HEADER,
 	type DaemonTokenState,
-} from '../auth/daemon_token.js';
-import {create_pglite_factory, type DbFactory} from './db.js';
-import type {RpcEndpointsSuiteOption} from './rpc_helpers.js';
+} from '../auth/daemon_token.ts';
+import {create_pglite_factory, type DbFactory} from './db.ts';
+import type {RpcEndpointsSuiteOption} from './rpc_helpers.ts';
 
 /**
  * Fast password stub for tests that don't exercise login/password flows.

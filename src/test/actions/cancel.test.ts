@@ -14,14 +14,14 @@
 import {assert, describe, test} from 'vitest';
 import {z} from 'zod';
 
-import {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
+import {RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
 import {
 	CancelNotificationParams,
 	cancel_action,
 	cancel_action_spec,
 	cancel_handler,
-} from '$lib/actions/cancel.js';
-import {create_ws_test_harness} from '$lib/testing/ws_round_trip.js';
+} from '$lib/actions/cancel.ts';
+import {create_ws_test_harness} from '$lib/testing/ws_round_trip.ts';
 
 describe('cancel_action', () => {
 	test('spec has the expected method + shape', () => {

@@ -27,10 +27,10 @@
  * @module
  */
 
-import type {Action} from './action_types.js';
-import type {RpcAction} from './action_rpc.js';
-import {assert_route_auth_acting_biconditional} from '../http/auth_shape.js';
-import {is_null_schema} from '../http/schema_helpers.js';
+import type {Action} from './action_types.ts';
+import type {RpcAction} from './action_rpc.ts';
+import {assert_route_auth_acting_biconditional} from '../http/auth_shape.ts';
+import {is_null_schema} from '../http/schema_helpers.ts';
 
 /** Result returned by `compile_action_registry`. */
 export interface ActionRegistryCompileResult {

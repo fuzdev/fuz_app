@@ -28,7 +28,7 @@ import {
 	JSONRPC_INTERNAL_ERROR,
 	type JsonrpcErrorCode,
 	type JsonrpcErrorObject,
-} from './jsonrpc.js';
+} from './jsonrpc.ts';
 
 /** Default message for unknown errors. */
 export const UNKNOWN_ERROR_MESSAGE = 'unknown error';

@@ -7,12 +7,12 @@
  * @module
  */
 
-import type {SessionOptions} from './session_cookie.js';
-import type {AppDeps} from './deps.js';
-import type {DaemonTokenState} from './daemon_token.js';
-import type {RateLimiter} from '../rate_limiter.js';
-import type {MiddlewareSpec} from '../http/middleware_spec.js';
-import {ApiError, RateLimitError} from '../http/error_schemas.js';
+import type {SessionOptions} from './session_cookie.ts';
+import type {AppDeps} from './deps.ts';
+import type {DaemonTokenState} from './daemon_token.ts';
+import type {RateLimiter} from '../rate_limiter.ts';
+import type {MiddlewareSpec} from '../http/middleware_spec.ts';
+import {ApiError, RateLimitError} from '../http/error_schemas.ts';
 
 /**
  * Per-factory configuration for the standard auth middleware stack.
@@ -66,10 +66,10 @@ export const create_auth_middleware_specs = async (
 		{create_request_context_middleware},
 		{create_bearer_auth_middleware},
 	] = await Promise.all([
-		import('../http/origin.js'),
-		import('./session_middleware.js'),
-		import('./request_context.js'),
-		import('./bearer_auth.js'),
+		import('../http/origin.ts'),
+		import('./session_middleware.ts'),
+		import('./request_context.ts'),
+		import('./bearer_auth.ts'),
 	]);
 
 	const session_middleware = create_session_middleware(keyring, session_options);
@@ -104,7 +104,7 @@ export const create_auth_middleware_specs = async (
 	];
 
 	if (daemon_token_state) {
-		const {create_daemon_token_middleware} = await import('./daemon_token_middleware.js');
+		const {create_daemon_token_middleware} = await import('./daemon_token_middleware.ts');
 		const daemon_token_middleware = create_daemon_token_middleware(daemon_token_state, query_deps);
 		specs.push({
 			name: 'daemon_token',

@@ -29,24 +29,24 @@
  * @module
  */
 
-import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
-import type {ConnectionCloser} from '../actions/connection_closer.js';
-import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
+import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.ts';
+import type {ConnectionCloser} from '../actions/connection_closer.ts';
+import {jsonrpc_errors} from '../http/jsonrpc_errors.ts';
 import {
 	builtin_role_specs_by_name,
 	list_roles_with_grant_path,
 	ROLE_ADMIN,
 	ROLE_KEEPER,
 	type RoleSchemaResult,
-} from './role_schema.js';
-import {has_role} from './request_context.js';
+} from './role_schema.ts';
+import {has_role} from './request_context.ts';
 import {
 	query_account_has_global_role,
 	query_account_has_active_global_role,
 	query_count_active_accounts_with_global_role,
-} from './role_grant_queries.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import {GRANT_PATH_ADMIN} from './grant_path_schema.js';
+} from './role_grant_queries.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import {GRANT_PATH_ADMIN} from './grant_path_schema.ts';
 import {
 	query_account_by_email,
 	query_account_by_id,
@@ -58,29 +58,29 @@ import {
 	query_actors_by_account,
 	query_admin_account_list,
 	query_purge_account,
-} from './account_queries.js';
+} from './account_queries.ts';
 import {
 	query_session_list_all_active,
 	query_session_revoke_all_for_account,
-} from './session_queries.js';
-import {query_revoke_all_api_tokens_for_account} from './api_token_queries.js';
+} from './session_queries.ts';
+import {query_revoke_all_api_tokens_for_account} from './api_token_queries.ts';
 import {
 	query_audit_log_list_role_grant_history,
 	query_audit_log_list_with_usernames,
-} from './audit_log_queries.js';
-import {AUDIT_LOG_DEFAULT_LIMIT} from './audit_log_schema.js';
+} from './audit_log_queries.ts';
+import {AUDIT_LOG_DEFAULT_LIMIT} from './audit_log_schema.ts';
 import {
 	query_create_invite,
 	query_invite_delete_unclaimed,
 	query_invite_list_all_with_usernames,
-} from './invite_queries.js';
+} from './invite_queries.ts';
 import {
 	query_app_settings_load,
 	query_app_settings_load_with_username,
 	query_app_settings_update,
-} from './app_settings_queries.js';
-import type {RouteFactoryDeps} from './deps.js';
-import {is_pg_unique_violation} from '../db/pg_error.js';
+} from './app_settings_queries.ts';
+import type {RouteFactoryDeps} from './deps.ts';
+import {is_pg_unique_violation} from '../db/pg_error.ts';
 import {
 	ERROR_ACCOUNT_NOT_FOUND,
 	ERROR_INSUFFICIENT_PERMISSIONS,
@@ -88,7 +88,7 @@ import {
 	ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
 	ERROR_INVITE_DUPLICATE,
 	ERROR_INVITE_NOT_FOUND,
-} from '../http/error_schemas.js';
+} from '../http/error_schemas.ts';
 import {
 	admin_account_list_action_spec,
 	admin_session_list_action_spec,
@@ -135,7 +135,7 @@ import {
 	type AppSettingsGetOutput,
 	type AppSettingsUpdateInput,
 	type AppSettingsUpdateOutput,
-} from './admin_action_specs.js';
+} from './admin_action_specs.ts';
 
 /** Options for `create_admin_actions`. */
 export interface AdminActionOptions {

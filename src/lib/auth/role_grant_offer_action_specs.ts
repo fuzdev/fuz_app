@@ -20,17 +20,17 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {RequestResponseActionSpec} from '../actions/action_spec.js';
-import {ERROR_ROLE_GRANT_NOT_FOUND, ERROR_ROLE_NOT_WEB_GRANTABLE} from '../http/error_schemas.js';
-import {RoleName} from './role_schema.js';
+import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
+import {ERROR_ROLE_GRANT_NOT_FOUND, ERROR_ROLE_NOT_WEB_GRANTABLE} from '../http/error_schemas.ts';
+import {RoleName} from './role_schema.ts';
 import {
 	ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX,
 	RoleGrantOfferJson,
-} from './role_grant_offer_schema.js';
-import {ROLE_GRANT_REVOKED_REASON_LENGTH_MAX} from './account_schema.js';
-import {ActingActor} from '../http/auth_shape.js';
+} from './role_grant_offer_schema.ts';
+import {ROLE_GRANT_REVOKED_REASON_LENGTH_MAX} from './account_schema.ts';
+import {ActingActor} from '../http/auth_shape.ts';
 
 /** Error reason — caller tried to offer themselves a role_grant. */
 export const ERROR_ROLE_GRANT_OFFER_SELF_TARGET = 'role_grant_offer_self_target' as const;

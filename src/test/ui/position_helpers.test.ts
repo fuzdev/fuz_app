@@ -6,7 +6,7 @@
 
 import {describe, test, assert} from 'vitest';
 
-import {generate_position_styles, type Position, type Alignment} from '$lib/ui/position_helpers.js';
+import {generate_position_styles, type Position, type Alignment} from '$lib/ui/position_helpers.ts';
 
 const COMMON_STYLES = {position: 'absolute', 'z-index': '10'};
 

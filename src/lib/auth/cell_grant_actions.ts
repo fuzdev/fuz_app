@@ -30,10 +30,10 @@
  * @module
  */
 
-import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
-import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
-import type {RoleSchemaResult} from './role_schema.js';
-import type {RouteFactoryDeps} from './deps.js';
+import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.ts';
+import {jsonrpc_errors} from '../http/jsonrpc_errors.ts';
+import type {RoleSchemaResult} from './role_schema.ts';
+import type {RouteFactoryDeps} from './deps.ts';
 
 import {
 	cell_grant_create_action_spec,
@@ -49,10 +49,10 @@ import {
 	type CellGrantListInput,
 	type CellGrantListOutput,
 	type GrantJson,
-} from './cell_grant_action_specs.js';
-import {ERROR_CELL_NOT_FOUND} from './cell_action_specs.js';
-import {can_view_cell, can_manage_cell} from './cell_authorize.js';
-import {query_cell_get, type CellRow} from '../db/cell_queries.js';
+} from './cell_grant_action_specs.ts';
+import {ERROR_CELL_NOT_FOUND} from './cell_action_specs.ts';
+import {can_view_cell, can_manage_cell} from './cell_authorize.ts';
+import {query_cell_get, type CellRow} from '../db/cell_queries.ts';
 import {
 	query_cell_grant_create,
 	query_cell_grant_get,
@@ -60,12 +60,12 @@ import {
 	query_cell_grant_list_for_cell,
 	type CellGrantRow,
 	type CellGrantPrincipalQueryInput,
-} from '../db/cell_grant_queries.js';
+} from '../db/cell_grant_queries.ts';
 import type {
 	CellGrantCreateAuditMetadata,
 	CellGrantRevokeAuditMetadata,
 	CellGrantPrincipalAuditMetadata,
-} from './cell_grant_audit_metadata.js';
+} from './cell_grant_audit_metadata.ts';
 
 /**
  * Dependencies for `create_cell_grant_actions`.

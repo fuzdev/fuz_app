@@ -22,7 +22,7 @@
  * @example
  * ```svelte
  * <script lang="ts">
- * 	import {TableState} from '@fuzdev/fuz_app/ui/table_state.svelte.js';
+ * 	import {TableState} from '@fuzdev/fuz_app/ui/table_state.svelte.ts';
  *
  * 	const table = new TableState();
  * 	table.fetch('accounts');
@@ -40,12 +40,12 @@
  * @module
  */
 
-import {to_error_message} from '@fuzdev/fuz_util/error.js';
+import {to_error_message} from '@fuzdev/fuz_util/error.ts';
 
-import {AsyncSlot} from './async_slot.svelte.js';
-import {parse_response_error, ui_fetch} from './ui_fetch.js';
-import {format_value} from './ui_format.js';
-import type {ColumnInfo} from '../http/db_routes.js';
+import {AsyncSlot} from './async_slot.svelte.ts';
+import {parse_response_error, ui_fetch} from './ui_fetch.ts';
+import {format_value} from './ui_format.ts';
+import type {ColumnInfo} from '../http/db_routes.ts';
 
 /** Maximum number of rows that can be fetched in a single page. */
 export const TABLE_LIMIT_MAX = 1000;

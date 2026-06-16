@@ -12,16 +12,16 @@
  * @module
  */
 
-import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_rpc.js';
+import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_rpc.ts';
 
-import type {RouteFactoryDeps} from './deps.js';
-import {query_actors_by_ids} from './actor_lookup_queries.js';
+import type {RouteFactoryDeps} from './deps.ts';
+import {query_actors_by_ids} from './actor_lookup_queries.ts';
 import {
 	actor_lookup_action_spec,
 	type ActorLookupInput,
 	type ActorLookupOutput,
 	type ActorLookupEntryJson,
-} from './actor_lookup_action_specs.js';
+} from './actor_lookup_action_specs.ts';
 
 /** Dependencies for `create_actor_lookup_actions`. */
 export type ActorLookupActionDeps = Pick<RouteFactoryDeps, 'log'>;

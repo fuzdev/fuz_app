@@ -8,16 +8,16 @@
  * @module
  */
 
-import type {Db} from '$lib/db/db.js';
-import {run_migrations} from '$lib/db/migrate.js';
-import {auth_migration_ns} from '$lib/auth/migrations.js';
+import type {Db} from '$lib/db/db.ts';
+import {run_migrations} from '$lib/db/migrate.ts';
+import {auth_migration_ns} from '$lib/auth/migrations.ts';
 import {
 	create_pglite_factory,
 	create_pg_factory,
 	create_describe_db,
 	auth_integration_truncate_tables,
 	log_db_factory_status,
-} from '$lib/testing/db.js';
+} from '$lib/testing/db.ts';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 

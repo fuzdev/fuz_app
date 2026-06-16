@@ -14,9 +14,9 @@
  * @module
  */
 
-import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
-import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
-import type {AuditLogEvent} from './audit_log_schema.js';
+import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.ts';
+import {jsonrpc_errors} from '../http/jsonrpc_errors.ts';
+import type {AuditLogEvent} from './audit_log_schema.ts';
 
 import {
 	cell_audit_list_action_spec,
@@ -24,11 +24,11 @@ import {
 	type CellAuditEventJson,
 	type CellAuditListInput,
 	type CellAuditListOutput,
-} from './cell_audit_action_specs.js';
-import {ERROR_CELL_NOT_FOUND} from './cell_action_specs.js';
-import {query_cell_get} from '../db/cell_queries.js';
-import {query_audit_log_list_by_cell} from '../db/cell_audit_queries.js';
-import {can_manage_cell} from './cell_authorize.js';
+} from './cell_audit_action_specs.ts';
+import {ERROR_CELL_NOT_FOUND} from './cell_action_specs.ts';
+import {query_cell_get} from '../db/cell_queries.ts';
+import {query_audit_log_list_by_cell} from '../db/cell_audit_queries.ts';
+import {can_manage_cell} from './cell_authorize.ts';
 
 /**
  * Project a DB row onto the narrowed wire shape. `account_id` /

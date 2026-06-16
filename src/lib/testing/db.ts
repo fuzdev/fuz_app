@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Test database fixtures for parameterized testing.
@@ -9,9 +9,9 @@ import './assert_dev_env.js';
  *
  * @example
  * ```ts
- * import {create_pglite_factory, create_pg_factory} from '@fuzdev/fuz_app/testing/db.js';
- * import {run_migrations} from '@fuzdev/fuz_app/db/migrate.js';
- * import {auth_migration_ns} from '@fuzdev/fuz_app/auth/migrations.js';
+ * import {create_pglite_factory, create_pg_factory} from '@fuzdev/fuz_app/testing/db.ts';
+ * import {run_migrations} from '@fuzdev/fuz_app/db/migrate.ts';
+ * import {auth_migration_ns} from '@fuzdev/fuz_app/auth/migrations.ts';
  *
  * const init_schema = async (db) => {
  *   await run_migrations(db, [auth_migration_ns]);
@@ -26,12 +26,12 @@ import './assert_dev_env.js';
 
 import {describe, beforeAll, beforeEach, afterAll} from 'vitest';
 import type {Pool} from 'pg';
-import {to_error_message} from '@fuzdev/fuz_util/error.js';
+import {to_error_message} from '@fuzdev/fuz_util/error.ts';
 
-import type {Db} from '../db/db.js';
-import {create_pglite_db} from '../db/db_pglite.js';
-import {assert_valid_sql_identifier} from '../db/sql_identifier.js';
-import {create_pg_db} from '../db/db_pg.js';
+import type {Db} from '../db/db.ts';
+import {create_pglite_db} from '../db/db_pglite.ts';
+import {assert_valid_sql_identifier} from '../db/sql_identifier.ts';
+import {create_pg_db} from '../db/db_pg.ts';
 
 /**
  * CI detection — `CI=true` is set automatically by GitHub Actions, GitLab CI, etc.

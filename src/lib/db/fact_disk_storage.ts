@@ -32,22 +32,22 @@ import {createHash, type Hash} from 'node:crypto';
 import {join} from 'node:path';
 
 import {Blake3Hasher} from '@fuzdev/blake3_wasm';
-import {to_error_message} from '@fuzdev/fuz_util/error.js';
-import {blake3_ready} from '@fuzdev/fuz_util/hash_blake3.js';
-import {to_hex} from '@fuzdev/fuz_util/hex.js';
-import {FACT_HASH_PREFIX, type FactHash} from '@fuzdev/fuz_util/fact_hash.js';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import {to_error_message} from '@fuzdev/fuz_util/error.ts';
+import {blake3_ready} from '@fuzdev/fuz_util/hash_blake3.ts';
+import {to_hex} from '@fuzdev/fuz_util/hex.ts';
+import {FACT_HASH_PREFIX, type FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import type {FsReadDeps, FsWriteDeps, FsStreamDeps, FsRemoveDeps} from '../runtime/deps.js';
-import {generate_random_base64url} from '../crypto.js';
+import type {FsReadDeps, FsWriteDeps, FsStreamDeps, FsRemoveDeps} from '../runtime/deps.ts';
+import {generate_random_base64url} from '../crypto.ts';
 import {
 	fact_disk_path,
 	mint_file_fact_url,
 	parse_file_fact_url,
 	type FileFactUrl,
-} from './file_fact_url.js';
-import type {FactExternalFetcher} from './fact_store.js';
-import {is_enospc_error, PayloadTooLargeError, StorageFullError} from './fact_store_errors.js';
+} from './file_fact_url.ts';
+import type {FactExternalFetcher} from './fact_store.ts';
+import {is_enospc_error, PayloadTooLargeError, StorageFullError} from './fact_store_errors.ts';
 
 /** Subdirectory under `facts_dir` for in-flight atomic temp files. */
 export const FACT_TMP_DIRNAME = '.tmp';

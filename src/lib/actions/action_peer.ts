@@ -14,18 +14,18 @@ import {
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
 	JsonrpcErrorResponse,
-} from '../http/jsonrpc.js';
+} from '../http/jsonrpc.ts';
 import {
 	create_jsonrpc_error_response,
 	create_jsonrpc_error_response_from_thrown,
 	to_jsonrpc_message_id,
 	is_jsonrpc_request,
 	is_jsonrpc_notification,
-} from '../http/jsonrpc_helpers.js';
-import {jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
-import {create_action_event} from './action_event.js';
-import {Transports, type TransportName, type TransportSendOptions} from './transports.js';
-import type {ActionEventEnvironment} from './action_event_types.js';
+} from '../http/jsonrpc_helpers.ts';
+import {jsonrpc_error_messages} from '../http/jsonrpc_errors.ts';
+import {create_action_event} from './action_event.ts';
+import {Transports, type TransportName, type TransportSendOptions} from './transports.ts';
+import type {ActionEventEnvironment} from './action_event_types.ts';
 
 // TODO @api @many refactor frontend_actions_api.ts with action_peer.ts
 

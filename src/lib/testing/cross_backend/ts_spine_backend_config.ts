@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-process `BackendConfig` presets for fuz_app's domain-free **TS**
@@ -18,13 +18,13 @@ import '../assert_dev_env.js';
  * @module
  */
 
-import type {BackendConfig} from './backend_config.js';
-import {build_test_backend_paths} from './build_test_backend_paths.js';
+import type {BackendConfig} from './backend_config.ts';
+import {build_test_backend_paths} from './build_test_backend_paths.ts';
 import {
 	LOGIN_RATE_LIMIT_ENABLED_ENV,
 	make_default_ts_backend_config,
 	ts_default_capabilities,
-} from './default_backend_configs.js';
+} from './default_backend_configs.ts';
 
 /** Env var naming the backend root dir; `{dir}/run/daemon_token` must match `bootstrap.daemon_token_path`. */
 export const TS_SPINE_DIR_ENV = 'FUZ_TESTING_TS_SPINE_DIR';

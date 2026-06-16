@@ -8,7 +8,7 @@
  */
 
 import {assert, test} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
 import {
 	query_create_session,
@@ -18,28 +18,28 @@ import {
 	query_session_get_valid,
 	hash_session_token,
 	AUTH_SESSION_LIFETIME_MS,
-} from '$lib/auth/session_queries.js';
+} from '$lib/auth/session_queries.ts';
 import {
 	query_create_api_token,
 	query_api_token_list_for_account,
 	query_revoke_api_token_for_account,
 	query_revoke_all_api_tokens_for_account,
 	query_validate_api_token,
-} from '$lib/auth/api_token_queries.js';
-import {generate_api_token} from '$lib/auth/api_token.js';
+} from '$lib/auth/api_token_queries.ts';
+import {generate_api_token} from '$lib/auth/api_token.ts';
 import {
 	query_create_role_grant,
 	query_revoke_role_grant,
 	query_role_grant_list_for_actor,
 	query_role_grant_find_active_for_actor,
-} from '$lib/auth/role_grant_queries.js';
-import {query_audit_log, query_audit_log_list} from '$lib/auth/audit_log_queries.js';
-import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import type {Db} from '$lib/db/db.js';
-import {create_test_account_with_actor} from '$lib/testing/db_entities.js';
+} from '$lib/auth/role_grant_queries.ts';
+import {query_audit_log, query_audit_log_list} from '$lib/auth/audit_log_queries.ts';
+import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type {Db} from '$lib/db/db.ts';
+import {create_test_account_with_actor} from '$lib/testing/db_entities.ts';
 
-import {describe_db} from '../db_fixture.js';
+import {describe_db} from '../db_fixture.ts';
 
 const log = new Logger('test', {level: 'off'});
 

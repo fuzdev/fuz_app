@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Schema-driven round-trip validation test suite.
@@ -20,15 +20,15 @@ import './assert_dev_env.js';
 
 import {describe, test, beforeAll, assert} from 'vitest';
 
-import {ROLE_ADMIN} from '../auth/role_schema.js';
-import {is_public_auth, needs_actor, input_schema_declares_acting} from '../http/auth_shape.js';
-import type {TestAccount} from './app_server.js';
-import {assert_response_matches_spec, pick_auth_headers} from './integration_helpers.js';
-import {resolve_valid_path, generate_valid_body} from './schema_generators.js';
-import type {BackendCapabilities} from './cross_backend/capabilities.js';
-import type {SetupTest, TestFixture} from './cross_backend/setup.js';
-import type {AppSurfaceSpec} from '../http/surface.js';
-import type {RouteSpec} from '../http/route_spec.js';
+import {ROLE_ADMIN} from '../auth/role_schema.ts';
+import {is_public_auth, needs_actor, input_schema_declares_acting} from '../http/auth_shape.ts';
+import type {TestAccount} from './app_server.ts';
+import {assert_response_matches_spec, pick_auth_headers} from './integration_helpers.ts';
+import {resolve_valid_path, generate_valid_body} from './schema_generators.ts';
+import type {BackendCapabilities} from './cross_backend/capabilities.ts';
+import type {SetupTest, TestFixture} from './cross_backend/setup.ts';
+import type {AppSurfaceSpec} from '../http/surface.ts';
+import type {RouteSpec} from '../http/route_spec.ts';
 
 /** Options for `describe_round_trip_validation`. */
 export interface RoundTripTestOptions {

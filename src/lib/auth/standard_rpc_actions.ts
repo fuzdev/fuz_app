@@ -19,15 +19,15 @@
  * @module
  */
 
-import {create_admin_actions, type AdminActionOptions} from './admin_actions.js';
+import {create_admin_actions, type AdminActionOptions} from './admin_actions.ts';
 import {
 	create_role_grant_offer_actions,
 	type RoleGrantOfferActionOptions,
-} from './role_grant_offer_actions.js';
-import {create_account_actions, type AccountActionOptions} from './account_actions.js';
-import type {RouteFactoryDeps} from './deps.js';
-import type {NotificationSender} from './role_grant_offer_notifications.js';
-import type {RpcAction} from '../actions/action_rpc.js';
+} from './role_grant_offer_actions.ts';
+import {create_account_actions, type AccountActionOptions} from './account_actions.ts';
+import type {RouteFactoryDeps} from './deps.ts';
+import type {NotificationSender} from './role_grant_offer_notifications.ts';
+import type {RpcAction} from '../actions/action_rpc.ts';
 
 /**
  * Options for `create_standard_rpc_actions`.

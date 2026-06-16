@@ -8,19 +8,19 @@
  */
 
 import {timingSafeEqual} from 'node:crypto';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import type {PasswordHashDeps} from './password.js';
+import type {PasswordHashDeps} from './password.ts';
 import {
 	ERROR_INVALID_TOKEN,
 	ERROR_ALREADY_BOOTSTRAPPED,
 	ERROR_TOKEN_FILE_MISSING,
-} from '../http/error_schemas.js';
-import {ROLE_ADMIN, ROLE_KEEPER} from './role_schema.js';
-import type {Account, Actor, RoleGrant} from './account_schema.js';
-import {query_create_account_with_actor} from './account_queries.js';
-import {query_create_role_grant} from './role_grant_queries.js';
-import type {Db} from '../db/db.js';
+} from '../http/error_schemas.ts';
+import {ROLE_ADMIN, ROLE_KEEPER} from './role_schema.ts';
+import type {Account, Actor, RoleGrant} from './account_schema.ts';
+import {query_create_account_with_actor} from './account_queries.ts';
+import {query_create_role_grant} from './role_grant_queries.ts';
+import type {Db} from '../db/db.ts';
 
 /** Input for the bootstrap account creation. */
 export interface BootstrapAccountInput {

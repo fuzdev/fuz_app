@@ -11,32 +11,32 @@
  */
 
 import {test, assert} from 'vitest';
-import {Uuid, create_uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid, create_uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {create_test_app} from '$lib/testing/app_server.js';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
-import {create_actor_search_actions} from '$lib/auth/actor_search_actions.js';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {create_test_app} from '$lib/testing/app_server.ts';
+import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
+import {create_actor_search_actions} from '$lib/auth/actor_search_actions.ts';
 import {
 	ACTOR_SEARCH_LIMIT_DEFAULT,
 	ACTOR_SEARCH_LIMIT_MAX,
 	ERROR_ACTOR_SEARCH_SCOPE_REQUIRED,
 	actor_search_action_spec,
-} from '$lib/auth/actor_search_action_specs.js';
-import {query_create_role_grant} from '$lib/auth/role_grant_queries.js';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
-import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
+} from '$lib/auth/actor_search_action_specs.ts';
+import {query_create_role_grant} from '$lib/auth/role_grant_queries.ts';
+import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
+import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
 	auth_integration_truncate_tables,
-} from '$lib/testing/db.js';
-import {run_migrations} from '$lib/db/migrate.js';
-import {auth_migration_ns} from '$lib/auth/migrations.js';
-import type {Db} from '$lib/db/db.js';
-import type {AppServerContext} from '$lib/server/app_server_context.js';
-import type {RouteSpec} from '$lib/http/route_spec.js';
+} from '$lib/testing/db.ts';
+import {run_migrations} from '$lib/db/migrate.ts';
+import {auth_migration_ns} from '$lib/auth/migrations.ts';
+import type {Db} from '$lib/db/db.ts';
+import type {AppServerContext} from '$lib/server/app_server_context.ts';
+import type {RouteSpec} from '$lib/http/route_spec.ts';
 
 const session_options = create_session_config('test_actor_search');
 const RPC_PATH = '/api/rpc';

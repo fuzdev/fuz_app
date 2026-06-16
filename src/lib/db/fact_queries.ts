@@ -12,9 +12,9 @@
  * @module
  */
 
-import type {QueryDeps} from './query_deps.js';
+import type {QueryDeps} from './query_deps.ts';
 
-import type {FactHash} from '@fuzdev/fuz_util/fact_hash.js';
+import type {FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
 
 /** Row shape for `SELECT … FROM fact`. */
 export interface FactRow {

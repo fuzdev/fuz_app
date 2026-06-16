@@ -7,7 +7,7 @@
 import {describe, assert, test, vi} from 'vitest';
 import {Hono} from 'hono';
 import {z} from 'zod';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
 import {
 	create_sse_response,
@@ -15,9 +15,9 @@ import {
 	type SseNotification,
 	type EventSpec,
 	type SseStream,
-} from '$lib/realtime/sse.js';
-import {SSE_CONNECTED_COMMENT} from '$lib/realtime/sse_constants.js';
-import {SubscriberRegistry} from '$lib/realtime/subscriber_registry.js';
+} from '$lib/realtime/sse.ts';
+import {SSE_CONNECTED_COMMENT} from '$lib/realtime/sse_constants.ts';
+import {SubscriberRegistry} from '$lib/realtime/subscriber_registry.ts';
 
 const log = new Logger('test', {level: 'off'});
 

@@ -33,7 +33,7 @@
  * @module
  */
 
-import type {Db} from './db.js';
+import type {Db} from './db.ts';
 
 /** Expected schema: table name → sorted column names, from a fresh bootstrap. */
 export type ExpectedSchema = Record<string, ReadonlyArray<string>>;

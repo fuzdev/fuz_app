@@ -29,8 +29,8 @@
 
 import {describe, test, assert} from 'vitest';
 
-import {all_fuz_auth_action_spec_registries} from '$lib/auth/all_action_spec_registries.js';
-import {protocol_action_specs} from '$lib/actions/protocol.js';
+import {all_fuz_auth_action_spec_registries} from '$lib/auth/all_action_spec_registries.ts';
+import {protocol_action_specs} from '$lib/actions/protocol.ts';
 
 describe('action spec input invariants', () => {
 	test('every spec input that accepts {} also accepts undefined', () => {

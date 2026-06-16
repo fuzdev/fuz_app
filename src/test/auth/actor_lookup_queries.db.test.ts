@@ -10,13 +10,13 @@
  */
 
 import {describe, test, assert} from 'vitest';
-import {create_uuid} from '@fuzdev/fuz_util/id.js';
+import {create_uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {query_actors_by_ids} from '$lib/auth/actor_lookup_queries.js';
-import {query_purge_account} from '$lib/auth/account_queries.js';
-import {create_test_account_with_actor} from '$lib/testing/db_entities.js';
+import {query_actors_by_ids} from '$lib/auth/actor_lookup_queries.ts';
+import {query_purge_account} from '$lib/auth/account_queries.ts';
+import {create_test_account_with_actor} from '$lib/testing/db_entities.ts';
 
-import {describe_db} from '../db_fixture.js';
+import {describe_db} from '../db_fixture.ts';
 
 describe_db('actor_lookup_queries', (get_db) => {
 	describe('query_actors_by_ids', () => {

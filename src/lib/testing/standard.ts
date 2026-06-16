@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Combined standard test suite helper.
@@ -18,24 +18,24 @@ import './assert_dev_env.js';
  * @module
  */
 
-import type {SessionOptions} from '../auth/session_cookie.js';
-import type {RoleSchemaResult} from '../auth/role_schema.js';
-import type {BootstrapServerOptions} from '../server/app_server.js';
-import type {AppServerContext} from '../server/app_server_context.js';
-import type {RouteSpec} from '../http/route_spec.js';
-import {describe_standard_integration_tests} from './integration.js';
-import {describe_standard_admin_integration_tests} from './admin_integration.js';
-import {describe_round_trip_validation} from './round_trip.js';
-import {describe_data_exposure_tests} from './data_exposure.js';
-import {describe_rpc_round_trip_tests} from './rpc_round_trip.js';
-import {describe_audit_completeness_tests} from './audit_completeness.js';
-import {describe_rate_limiting_tests} from './rate_limiting.js';
-import {describe_bootstrap_success_tests} from './bootstrap_success.js';
-import type {RpcEndpointsSuiteOption} from './rpc_helpers.js';
-import type {BackendCapabilities} from './cross_backend/capabilities.js';
-import type {SetupTest} from './cross_backend/setup.js';
-import type {AppSurfaceSpec} from '../http/surface.js';
-import type {SuiteAppOptions} from './app_server.js';
+import type {SessionOptions} from '../auth/session_cookie.ts';
+import type {RoleSchemaResult} from '../auth/role_schema.ts';
+import type {BootstrapServerOptions} from '../server/app_server.ts';
+import type {AppServerContext} from '../server/app_server_context.ts';
+import type {RouteSpec} from '../http/route_spec.ts';
+import {describe_standard_integration_tests} from './integration.ts';
+import {describe_standard_admin_integration_tests} from './admin_integration.ts';
+import {describe_round_trip_validation} from './round_trip.ts';
+import {describe_data_exposure_tests} from './data_exposure.ts';
+import {describe_rpc_round_trip_tests} from './rpc_round_trip.ts';
+import {describe_audit_completeness_tests} from './audit_completeness.ts';
+import {describe_rate_limiting_tests} from './rate_limiting.ts';
+import {describe_bootstrap_success_tests} from './bootstrap_success.ts';
+import type {RpcEndpointsSuiteOption} from './rpc_helpers.ts';
+import type {BackendCapabilities} from './cross_backend/capabilities.ts';
+import type {SetupTest} from './cross_backend/setup.ts';
+import type {AppSurfaceSpec} from '../http/surface.ts';
+import type {SuiteAppOptions} from './app_server.ts';
 
 /**
  * Configuration for `describe_standard_tests`.

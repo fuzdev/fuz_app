@@ -8,7 +8,7 @@
  * @module
  */
 
-import type {RuntimeDeps, StatResult, CommandResult, RunCommandOptions} from './deps.js';
+import type {RuntimeDeps, StatResult, CommandResult, RunCommandOptions} from './deps.ts';
 
 /* eslint-disable @typescript-eslint/require-await */
 

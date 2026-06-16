@@ -1,7 +1,7 @@
 import {test, assert, describe} from 'vitest';
 import {z} from 'zod';
 
-import {create_help, format_arg_name, to_max_length} from '$lib/cli/help.js';
+import {create_help, format_arg_name, to_max_length} from '$lib/cli/help.ts';
 
 const GlobalArgs = z.strictObject({
 	help: z

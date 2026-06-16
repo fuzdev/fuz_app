@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-impl RPC **action-manifest** introspection — a normalized,
@@ -37,8 +37,8 @@ import '../assert_dev_env.js';
 
 import {z} from 'zod';
 
-import {AuthAxisState, type RouteAuth} from '../../http/auth_shape.js';
-import type {RequestResponseActionSpec} from '../../actions/action_spec.js';
+import {AuthAxisState, type RouteAuth} from '../../http/auth_shape.ts';
+import type {RequestResponseActionSpec} from '../../actions/action_spec.ts';
 
 /**
  * One method's normalized RPC metadata — the cross-impl-comparable unit.

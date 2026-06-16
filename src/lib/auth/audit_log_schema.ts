@@ -10,13 +10,13 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
-import {Blake3Hash} from '@fuzdev/fuz_util/hash_blake3.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import {Blake3Hash} from '@fuzdev/fuz_util/hash_blake3.ts';
 
-import {AuthSessionJson} from './account_schema.js';
-import {Email} from '../primitive_schemas.js';
-import {ApiTokenId} from './api_token.js';
-import {BuiltinCredentialType} from './credential_type_schema.js';
+import {AuthSessionJson} from './account_schema.ts';
+import {Email} from '../primitive_schemas.ts';
+import {ApiTokenId} from './api_token.ts';
+import {BuiltinCredentialType} from './credential_type_schema.ts';
 
 /**
  * Defense-in-depth audit field — records the credential channel

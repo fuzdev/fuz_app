@@ -1,6 +1,6 @@
 import {test, assert, describe} from 'vitest';
 
-import {colors, run_local, confirm} from '$lib/cli/util.js';
+import {colors, run_local, confirm} from '$lib/cli/util.ts';
 
 describe('colors', () => {
 	test('has all expected color keys', () => {

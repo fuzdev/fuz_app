@@ -12,7 +12,7 @@ import {
 	action_event_step_transitions,
 	action_event_phase_by_kind,
 	action_event_phase_transitions,
-} from '$lib/actions/action_event_types.js';
+} from '$lib/actions/action_event_types.ts';
 
 describe('ActionExecutor', () => {
 	test('accepts frontend', () => {

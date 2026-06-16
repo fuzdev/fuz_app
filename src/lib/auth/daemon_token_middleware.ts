@@ -11,26 +11,26 @@
  */
 
 import type {MiddlewareHandler} from 'hono';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {type FsWriteDeps, type FsRemoveDeps, type EnvDeps} from '../runtime/deps.js';
-import {write_file_atomic} from '../runtime/fs.js';
-import {get_app_dir} from '../cli/config.js';
-import {ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
+import {type FsWriteDeps, type FsRemoveDeps, type EnvDeps} from '../runtime/deps.ts';
+import {write_file_atomic} from '../runtime/fs.ts';
+import {get_app_dir} from '../cli/config.ts';
+import {ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.ts';
 import {
 	ERROR_INVALID_DAEMON_TOKEN,
 	ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED,
-} from '../http/error_schemas.js';
-import {query_role_grant_find_account_id_for_role} from './role_grant_queries.js';
-import type {QueryDeps} from '../db/query_deps.js';
-import {ROLE_KEEPER} from './role_schema.js';
+} from '../http/error_schemas.ts';
+import {query_role_grant_find_account_id_for_role} from './role_grant_queries.ts';
+import type {QueryDeps} from '../db/query_deps.ts';
+import {ROLE_KEEPER} from './role_schema.ts';
 import {
 	DaemonToken,
 	DAEMON_TOKEN_HEADER,
 	generate_daemon_token,
 	validate_daemon_token,
 	type DaemonTokenState,
-} from './daemon_token.js';
+} from './daemon_token.ts';
 
 /** Default rotation interval in milliseconds (30 seconds). */
 export const DEFAULT_ROTATION_INTERVAL_MS = 30_000;

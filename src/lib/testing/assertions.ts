@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Assertion helpers for auth attack surface testing.
@@ -15,9 +15,9 @@ import {fileURLToPath} from 'node:url';
 import {assert} from 'vitest';
 import type {z} from 'zod';
 
-import type {AppSurface, AppSurfaceRoute} from '../http/surface.js';
-import type {RouteErrorSchemas} from '../http/error_schemas.js';
-import {is_public_auth} from '../http/auth_shape.js';
+import type {AppSurface, AppSurfaceRoute} from '../http/surface.ts';
+import type {RouteErrorSchemas} from '../http/error_schemas.ts';
+import {is_public_auth} from '../http/auth_shape.ts';
 
 /**
  * Resolve an absolute path relative to the caller's module.

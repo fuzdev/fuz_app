@@ -20,17 +20,17 @@
 
 import {describe, test, assert} from 'vitest';
 
-import {cell_get_action_spec, ERROR_CELL_NOT_FOUND} from '$lib/auth/cell_action_specs.js';
+import {cell_get_action_spec, ERROR_CELL_NOT_FOUND} from '$lib/auth/cell_action_specs.ts';
 import {
 	cell_grant_create_action_spec,
 	cell_grant_revoke_action_spec,
 	cell_grant_list_action_spec,
 	ERROR_CELL_GRANT_PRINCIPAL_IS_OWNER,
 	ERROR_CELL_GRANT_UNKNOWN_ROLE,
-} from '$lib/auth/cell_grant_action_specs.js';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import type {TestApp, TestAccount} from '$lib/testing/app_server.js';
+} from '$lib/auth/cell_grant_action_specs.ts';
+import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type {TestApp, TestAccount} from '$lib/testing/app_server.ts';
 import {
 	describe_db,
 	create_cell_test_app,
@@ -38,7 +38,7 @@ import {
 	call,
 	error_reason,
 	ROLE_MEMBER,
-} from './cell_test_helpers.js';
+} from './cell_test_helpers.ts';
 
 const grant_actor = (
 	app: TestApp,

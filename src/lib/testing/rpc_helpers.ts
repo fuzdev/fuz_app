@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * JSON-RPC test helpers — request construction, response assertion, and
@@ -18,13 +18,13 @@ import {
 	JsonrpcErrorResponse,
 	JsonrpcResponse,
 	type JsonrpcErrorCode,
-} from '../http/jsonrpc.js';
-import type {RequestResponseActionSpec} from '../actions/action_spec.js';
-import type {RpcAction} from '../actions/action_rpc.js';
-import type {AppSurfaceRpcEndpoint, AppSurfaceRpcMethod, RpcEndpointSpec} from '../http/surface.js';
-import type {AppServerContext} from '../server/app_server_context.js';
-import type {SessionOptions} from '../auth/session_cookie.js';
-import {create_stub_app_server_context} from './stubs.js';
+} from '../http/jsonrpc.ts';
+import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
+import type {RpcAction} from '../actions/action_rpc.ts';
+import type {AppSurfaceRpcEndpoint, AppSurfaceRpcMethod, RpcEndpointSpec} from '../http/surface.ts';
+import type {AppServerContext} from '../server/app_server_context.ts';
+import type {SessionOptions} from '../auth/session_cookie.ts';
+import {create_stub_app_server_context} from './stubs.ts';
 
 /**
  * Union accepted by the suite-level `rpc_endpoints` option — eager array or

@@ -19,19 +19,19 @@
  */
 
 import {test, assert} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
-import {fact_hash_bytes, fact_hash_verify, type FactHash} from '@fuzdev/fuz_util/fact_hash.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import {fact_hash_bytes, fact_hash_verify, type FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
 
 import {
 	create_pglite_factory,
 	create_pg_factory,
 	create_describe_db,
 	log_db_factory_status,
-} from '$lib/testing/db.js';
-import {run_migrations} from '$lib/db/migrate.js';
-import {FACT_MIGRATION_NS, FACT_DROP_TABLES} from '$lib/db/fact_ddl.js';
-import {PgFactStore, type FactExternalFetcher} from '$lib/db/fact_store.js';
-import type {Db} from '$lib/db/db.js';
+} from '$lib/testing/db.ts';
+import {run_migrations} from '$lib/db/migrate.ts';
+import {FACT_MIGRATION_NS, FACT_DROP_TABLES} from '$lib/db/fact_ddl.ts';
+import {PgFactStore, type FactExternalFetcher} from '$lib/db/fact_store.ts';
+import type {Db} from '$lib/db/db.ts';
 
 const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [FACT_MIGRATION_NS]);

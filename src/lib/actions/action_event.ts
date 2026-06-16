@@ -8,9 +8,9 @@
  */
 
 import {z} from 'zod';
-import {create_uuid} from '@fuzdev/fuz_util/id.js';
+import {create_uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {ActionEventPhase, ActionKind, ActionSpecUnion} from './action_spec.js';
+import type {ActionEventPhase, ActionKind, ActionSpecUnion} from './action_spec.ts';
 import {
 	create_jsonrpc_request,
 	create_jsonrpc_response,
@@ -19,16 +19,16 @@ import {
 	to_jsonrpc_params,
 	to_jsonrpc_result,
 	is_jsonrpc_error_response,
-} from '../http/jsonrpc_helpers.js';
-import {jsonrpc_error_messages, ThrownJsonrpcError} from '../http/jsonrpc_errors.js';
+} from '../http/jsonrpc_helpers.ts';
+import {jsonrpc_error_messages, ThrownJsonrpcError} from '../http/jsonrpc_errors.ts';
 import type {
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
 	JsonrpcNotification,
 	JsonrpcErrorObject,
-} from '../http/jsonrpc.js';
-import type {ActionEventEnvironment, ActionEventStep} from './action_event_types.js';
-import {ActionEventData, type ActionEventDataUnion} from './action_event_data.js';
+} from '../http/jsonrpc.ts';
+import type {ActionEventEnvironment, ActionEventStep} from './action_event_types.ts';
+import {ActionEventData, type ActionEventDataUnion} from './action_event_data.ts';
 import {
 	validate_step_transition,
 	validate_phase_transition,
@@ -39,7 +39,7 @@ import {
 	is_request_response,
 	is_send_request_with_parsed_input,
 	is_notification_send_with_parsed_input,
-} from './action_event_helpers.js';
+} from './action_event_helpers.ts';
 
 // TODO maybe just use runes in this module and remove `observe`
 export type ActionEventChangeObserver<TMethod extends string = string> = (

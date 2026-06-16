@@ -6,7 +6,7 @@
  * @module
  */
 
-import type {CommandDeps, CommandResult, TerminalDeps} from '../runtime/deps.js';
+import type {CommandDeps, CommandResult, TerminalDeps} from '../runtime/deps.ts';
 
 // TODO: `colors` duplicates the NO_COLOR detection Logger does internally.
 // Long-term, converge with Logger's color system or expose a shared color helper.

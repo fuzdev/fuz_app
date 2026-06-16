@@ -40,18 +40,18 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {Db} from '../db/db.js';
-import type {RequestActorContext} from './request_context.js';
-import {query_audit_log} from './audit_log_queries.js';
+import type {Db} from '../db/db.ts';
+import type {RequestActorContext} from './request_context.ts';
+import {query_audit_log} from './audit_log_queries.ts';
 import {
 	builtin_audit_log_config,
 	type AuditLogConfig,
 	type AuditLogEvent,
 	type AuditLogInput,
-} from './audit_log_schema.js';
+} from './audit_log_schema.ts';
 
 /**
  * Per-request context required by `AuditEmitter.emit` — just the eager

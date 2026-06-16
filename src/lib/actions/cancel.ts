@@ -31,9 +31,9 @@
 
 import {z} from 'zod';
 
-import {JsonrpcRequestId} from '../http/jsonrpc.js';
-import type {RemoteNotificationActionSpec} from './action_spec.js';
-import type {Action} from './action_types.js';
+import {JsonrpcRequestId} from '../http/jsonrpc.ts';
+import type {RemoteNotificationActionSpec} from './action_spec.ts';
+import type {Action} from './action_types.ts';
 
 /**
  * Params for the `cancel` notification. `request_id` is the id of the

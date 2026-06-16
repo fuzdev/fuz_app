@@ -22,7 +22,7 @@
 	import type {SvelteHTMLElements} from 'svelte/elements';
 	import {page} from '$app/state';
 	import {resolve} from '$app/paths';
-	import type {OmitStrict} from '@fuzdev/fuz_util/types.js';
+	import type {OmitStrict} from '@fuzdev/fuz_util/types.ts';
 
 	const {
 		path,

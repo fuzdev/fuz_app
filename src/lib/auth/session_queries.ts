@@ -7,12 +7,12 @@
  * @module
  */
 
-import {hash_blake3} from '@fuzdev/fuz_util/hash_blake3.js';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import {hash_blake3} from '@fuzdev/fuz_util/hash_blake3.ts';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {generate_random_base64url} from '../crypto.js';
-import type {QueryDeps} from '../db/query_deps.js';
-import type {AuthSession} from './account_schema.js';
+import {generate_random_base64url} from '../crypto.ts';
+import type {QueryDeps} from '../db/query_deps.ts';
+import type {AuthSession} from './account_schema.ts';
 
 /** Session lifetime in milliseconds (30 days). */
 export const AUTH_SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;

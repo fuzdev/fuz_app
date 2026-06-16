@@ -10,19 +10,19 @@
  * @module
  */
 
-import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import {describe_conformance_table_tests} from '$lib/testing/cross_backend/conformance_table.js';
-import {default_in_process_suite_options} from '$lib/testing/cross_backend/in_process_setup.js';
+import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import {describe_conformance_table_tests} from '$lib/testing/cross_backend/conformance_table.ts';
+import {default_in_process_suite_options} from '$lib/testing/cross_backend/in_process_setup.ts';
 import {
 	create_spine_route_specs,
 	spine_rpc_endpoints,
 	spine_session_options,
-} from '$lib/testing/cross_backend/default_spine_surface.js';
+} from '$lib/testing/cross_backend/default_spine_surface.ts';
 
-import {conformance_proof_cases} from './conformance_proof_cases.js';
-import {conformance_security_cases} from './conformance_security_cases.js';
-import {conformance_expiry_cases} from './conformance_expiry_cases.js';
-import {conformance_app_settings_cases} from './conformance_app_settings_cases.js';
+import {conformance_proof_cases} from './conformance_proof_cases.ts';
+import {conformance_security_cases} from './conformance_security_cases.ts';
+import {conformance_expiry_cases} from './conformance_expiry_cases.ts';
+import {conformance_app_settings_cases} from './conformance_app_settings_cases.ts';
 
 describe_conformance_table_tests({
 	...default_in_process_suite_options({

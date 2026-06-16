@@ -15,8 +15,8 @@
  * @module
  */
 
-import type {Db} from './db.js';
-import type {Migration, MigrationNamespace} from './migrate.js';
+import type {Db} from './db.ts';
+import type {Migration, MigrationNamespace} from './migrate.ts';
 
 /** `fact` table — content-addressed byte store. */
 export const FACTS_SCHEMA = `

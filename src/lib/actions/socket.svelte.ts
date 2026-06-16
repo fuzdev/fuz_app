@@ -25,15 +25,15 @@
  */
 
 import {BROWSER} from 'esm-env';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
-import type {AsyncStatus} from '@fuzdev/fuz_util/async.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type {AsyncStatus} from '@fuzdev/fuz_util/async.ts';
 
-import {JSONRPC_VERSION, type JsonrpcErrorCode, type JsonrpcRequestId} from '../http/jsonrpc.js';
-import {JSONRPC_ERROR_CODES, ThrownJsonrpcError, jsonrpc_errors} from '../http/jsonrpc_errors.js';
-import {WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT, WS_CLOSE_SESSION_REVOKED} from './transports.js';
-import {cancel_action_spec} from './cancel.js';
-import {heartbeat_action_spec} from './heartbeat.js';
-import type {WebsocketConnection} from './transports_ws.js';
+import {JSONRPC_VERSION, type JsonrpcErrorCode, type JsonrpcRequestId} from '../http/jsonrpc.ts';
+import {JSONRPC_ERROR_CODES, ThrownJsonrpcError, jsonrpc_errors} from '../http/jsonrpc_errors.ts';
+import {WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT, WS_CLOSE_SESSION_REVOKED} from './transports.ts';
+import {cancel_action_spec} from './cancel.ts';
+import {heartbeat_action_spec} from './heartbeat.ts';
+import type {WebsocketConnection} from './transports_ws.ts';
 
 /** Default WebSocket close code (normal closure). */
 export const DEFAULT_CLOSE_CODE = 1000;

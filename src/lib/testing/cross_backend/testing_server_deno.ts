@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Deno runtime adapter for spawnable cross-process test server binaries.
@@ -18,8 +18,8 @@ import '../assert_dev_env.js';
 
 import {upgradeWebSocket} from 'hono/deno';
 
-import {create_deno_runtime} from '../../runtime/deno.js';
-import type {ServeHandle, TestingServerAdapter} from './testing_server_core.js';
+import {create_deno_runtime} from '../../runtime/deno.ts';
+import type {ServeHandle, TestingServerAdapter} from './testing_server_core.ts';
 
 // Minimal Deno API surface this adapter touches. This module is only ever
 // imported by a Deno-run test binary; the declaration keeps it typecheckable

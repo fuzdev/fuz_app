@@ -12,14 +12,14 @@
  */
 
 import {describe, test, assert} from 'vitest';
-import {Uuid, create_uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid, create_uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {query_actor_search} from '$lib/auth/actor_search_queries.js';
-import {query_create_role_grant} from '$lib/auth/role_grant_queries.js';
-import {create_test_account_with_actor} from '$lib/testing/db_entities.js';
-import type {Db} from '$lib/db/db.js';
+import {query_actor_search} from '$lib/auth/actor_search_queries.ts';
+import {query_create_role_grant} from '$lib/auth/role_grant_queries.ts';
+import {create_test_account_with_actor} from '$lib/testing/db_entities.ts';
+import type {Db} from '$lib/db/db.ts';
 
-import {describe_db} from '../db_fixture.js';
+import {describe_db} from '../db_fixture.ts';
 
 const set_actor_name = async (db: Db, actor_id: Uuid, name: string): Promise<void> => {
 	await db.query(`UPDATE actor SET name = $1 WHERE id = $2`, [name, actor_id]);

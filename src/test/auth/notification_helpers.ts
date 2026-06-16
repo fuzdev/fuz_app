@@ -9,13 +9,13 @@
  * @module
  */
 
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
-import {create_role_grant_offer_actions} from '$lib/auth/role_grant_offer_actions.js';
-import {type NotificationSender} from '$lib/auth/role_grant_offer_notifications.js';
-import type {AppServerContext} from '$lib/server/app_server_context.js';
-import type {RouteSpec} from '$lib/http/route_spec.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import type {JsonrpcNotification} from '$lib/http/jsonrpc.js';
+import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
+import {create_role_grant_offer_actions} from '$lib/auth/role_grant_offer_actions.ts';
+import {type NotificationSender} from '$lib/auth/role_grant_offer_notifications.ts';
+import type {AppServerContext} from '$lib/server/app_server_context.ts';
+import type {RouteSpec} from '$lib/http/route_spec.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type {JsonrpcNotification} from '$lib/http/jsonrpc.ts';
 
 /** The conventional RPC mount path in these tests. */
 export const NOTIFICATION_TEST_RPC_PATH = '/api/rpc';

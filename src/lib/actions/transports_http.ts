@@ -11,12 +11,12 @@ import {
 	jsonrpc_error_messages,
 	http_status_to_jsonrpc_error_code,
 	UNKNOWN_ERROR_MESSAGE,
-} from '../http/jsonrpc_errors.js';
+} from '../http/jsonrpc_errors.ts';
 import {
 	create_jsonrpc_error_response,
 	to_jsonrpc_message_id,
 	is_jsonrpc_error_response,
-} from '../http/jsonrpc_helpers.js';
+} from '../http/jsonrpc_helpers.ts';
 import type {
 	JsonrpcMessageFromClientToServer,
 	JsonrpcMessageFromServerToClient,
@@ -24,8 +24,8 @@ import type {
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
 	JsonrpcErrorResponse,
-} from '../http/jsonrpc.js';
-import type {Transport, TransportSendOptions} from './transports.js';
+} from '../http/jsonrpc.ts';
+import type {Transport, TransportSendOptions} from './transports.ts';
 
 /**
  * Thin `fetch` adapter for the JSON-RPC endpoint. POST by default; GET when

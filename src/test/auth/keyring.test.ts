@@ -6,7 +6,7 @@
 
 import {describe, assert, test} from 'vitest';
 
-import {create_keyring, validate_keyring, create_validated_keyring} from '$lib/auth/keyring.js';
+import {create_keyring, validate_keyring, create_validated_keyring} from '$lib/auth/keyring.ts';
 
 const TEST_KEY = 'test-secret-key-that-is-at-least-32-chars';
 const OTHER_KEY = 'other-secret-key-that-is-different-32ch';

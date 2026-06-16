@@ -24,21 +24,21 @@
  * @module
  */
 
-import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
-import {rpc_action, type ActionAuthContext, type RpcAction} from '../actions/action_rpc.js';
+import {jsonrpc_errors} from '../http/jsonrpc_errors.ts';
+import {rpc_action, type ActionAuthContext, type RpcAction} from '../actions/action_rpc.ts';
 
-import type {RouteFactoryDeps} from './deps.js';
-import {query_actor_search} from './actor_search_queries.js';
-import {query_account_has_global_role} from './role_grant_queries.js';
-import {ROLE_ADMIN} from './role_schema.js';
-import type {ActorLookupEntryJson} from './actor_lookup_action_specs.js';
+import type {RouteFactoryDeps} from './deps.ts';
+import {query_actor_search} from './actor_search_queries.ts';
+import {query_account_has_global_role} from './role_grant_queries.ts';
+import {ROLE_ADMIN} from './role_schema.ts';
+import type {ActorLookupEntryJson} from './actor_lookup_action_specs.ts';
 import {
 	ACTOR_SEARCH_LIMIT_DEFAULT,
 	ERROR_ACTOR_SEARCH_SCOPE_REQUIRED,
 	actor_search_action_spec,
 	type ActorSearchInput,
 	type ActorSearchOutput,
-} from './actor_search_action_specs.js';
+} from './actor_search_action_specs.ts';
 
 /** Dependencies for `create_actor_search_actions`. */
 export type ActorSearchActionDeps = Pick<RouteFactoryDeps, 'log'>;

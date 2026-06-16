@@ -25,17 +25,17 @@ import {
 	ERROR_CELL_LIST_SHARED_WITH_REQUIRES_AUTH,
 	ERROR_CELL_PATH_TAKEN,
 	type CellPath,
-} from '$lib/auth/cell_action_specs.js';
-import {cell_grant_create_action_spec} from '$lib/auth/cell_grant_action_specs.js';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import type {FactHash} from '@fuzdev/fuz_util/fact_hash.js';
+} from '$lib/auth/cell_action_specs.ts';
+import {cell_grant_create_action_spec} from '$lib/auth/cell_grant_action_specs.ts';
+import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import type {FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
 import {
 	describe_db,
 	create_cell_test_app,
 	create_cell,
 	call,
 	error_reason,
-} from './cell_test_helpers.js';
+} from './cell_test_helpers.ts';
 
 const FACT_HASH = `blake3:${'a'.repeat(64)}` as FactHash;
 

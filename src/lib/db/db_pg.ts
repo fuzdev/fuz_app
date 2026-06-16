@@ -10,7 +10,7 @@
 
 import type {Pool} from 'pg';
 
-import {Db, no_nested_transaction, type DbDriverResult} from './db.js';
+import {Db, no_nested_transaction, type DbDriverResult} from './db.ts';
 
 /**
  * Create a transaction implementation for a `pg.Pool`.

@@ -13,11 +13,11 @@ import {describe, assert, test} from 'vitest';
 import {
 	BackendWebsocketTransport,
 	type ConnectionIdentity,
-} from '$lib/actions/transports_ws_backend.js';
-import {WS_CLOSE_SESSION_REVOKED} from '$lib/actions/transports.js';
-import type {JsonrpcNotification} from '$lib/http/jsonrpc.js';
-import {create_fake_ws} from '$lib/testing/ws_round_trip.js';
-import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
+} from '$lib/actions/transports_ws_backend.ts';
+import {WS_CLOSE_SESSION_REVOKED} from '$lib/actions/transports.ts';
+import type {JsonrpcNotification} from '$lib/http/jsonrpc.ts';
+import {create_fake_ws} from '$lib/testing/ws_round_trip.ts';
+import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.ts';
 
 const ACCOUNT_A = create_uuid();
 const ACCOUNT_B = create_uuid();

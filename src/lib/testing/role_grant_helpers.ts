@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * RPC-flow helpers for role_grant lifecycle in tests.
@@ -15,15 +15,15 @@ import './assert_dev_env.js';
  */
 
 import {assert} from 'vitest';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
 import {
 	role_grant_offer_accept_action_spec,
 	role_grant_offer_create_action_spec,
-} from '../auth/role_grant_offer_action_specs.js';
-import type {TestAccount, TestApp} from './app_server.js';
-import type {TestFixture} from './cross_backend/setup.js';
-import {rpc_call_for_spec, type RpcCallArgs} from './rpc_helpers.js';
+} from '../auth/role_grant_offer_action_specs.ts';
+import type {TestAccount, TestApp} from './app_server.ts';
+import type {TestFixture} from './cross_backend/setup.ts';
+import {rpc_call_for_spec, type RpcCallArgs} from './rpc_helpers.ts';
 
 export interface RoleGrantOfferAndAcceptArgs {
 	app: RpcCallArgs['app'];

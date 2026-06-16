@@ -57,7 +57,7 @@ import type {
 	AppSettingsGetOutput,
 	AppSettingsUpdateInput,
 	AppSettingsUpdateOutput,
-} from '../auth/admin_action_specs.js';
+} from '../auth/admin_action_specs.ts';
 import type {
 	RoleGrantOfferCreateInput,
 	RoleGrantOfferCreateOutput,
@@ -65,12 +65,12 @@ import type {
 	RoleGrantOfferOkOutput,
 	RoleGrantRevokeInput,
 	RoleGrantRevokeOutput,
-} from '../auth/role_grant_offer_action_specs.js';
-import {admin_accounts_rpc_context, type AdminAccountsRpc} from './admin_accounts_state.svelte.js';
-import {admin_invites_rpc_context, type AdminInvitesRpc} from './admin_invites_state.svelte.js';
-import {audit_log_rpc_context, type AuditLogRpc} from './audit_log_state.svelte.js';
-import {app_settings_rpc_context, type AppSettingsRpc} from './app_settings_state.svelte.js';
-import {format_scope_context, type FormatScope} from './format_scope.js';
+} from '../auth/role_grant_offer_action_specs.ts';
+import {admin_accounts_rpc_context, type AdminAccountsRpc} from './admin_accounts_state.svelte.ts';
+import {admin_invites_rpc_context, type AdminInvitesRpc} from './admin_invites_state.svelte.ts';
+import {audit_log_rpc_context, type AuditLogRpc} from './audit_log_state.svelte.ts';
+import {app_settings_rpc_context, type AppSettingsRpc} from './app_settings_state.svelte.ts';
+import {format_scope_context, type FormatScope} from './format_scope.ts';
 
 /**
  * The wire-method surface this module needs from the typed throwing RPC

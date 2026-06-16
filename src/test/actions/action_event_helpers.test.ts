@@ -7,8 +7,8 @@
 import {describe, assert, test} from 'vitest';
 import {z} from 'zod';
 
-import {JSONRPC_INTERNAL_ERROR} from '$lib/http/jsonrpc.js';
-import type {ActionEventData, ActionEventDataUnion} from '$lib/actions/action_event_data.js';
+import {JSONRPC_INTERNAL_ERROR} from '$lib/http/jsonrpc.ts';
+import type {ActionEventData, ActionEventDataUnion} from '$lib/actions/action_event_data.ts';
 import {
 	is_request_response,
 	is_remote_notification,
@@ -27,10 +27,10 @@ import {
 	is_action_complete,
 	create_initial_data,
 	extract_action_result,
-} from '$lib/actions/action_event_helpers.js';
-import {ActionEvent} from '$lib/actions/action_event.js';
-import type {ActionEventEnvironment} from '$lib/actions/action_event_types.js';
-import type {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
+} from '$lib/actions/action_event_helpers.ts';
+import {ActionEvent} from '$lib/actions/action_event.ts';
+import type {ActionEventEnvironment} from '$lib/actions/action_event_types.ts';
+import type {RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
 
 describe('kind type guards', () => {
 	test('is_request_response', () => {

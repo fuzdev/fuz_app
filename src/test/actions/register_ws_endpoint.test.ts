@@ -13,17 +13,17 @@
 
 import {describe, test, assert} from 'vitest';
 import {Hono} from 'hono';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {register_ws_endpoint} from '$lib/actions/register_ws_endpoint.js';
-import {heartbeat_action} from '$lib/actions/heartbeat.js';
-import {parse_allowed_origins} from '$lib/http/origin.js';
-import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.js';
-import {ROLE_ADMIN, type RoleName} from '$lib/auth/role_schema.js';
-import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
-import {create_stub_upgrade} from '$lib/testing/ws_round_trip.js';
-import {create_stub_db} from '$lib/testing/stubs.js';
-import {create_test_request_context} from '$lib/testing/auth_apps.js';
+import {register_ws_endpoint} from '$lib/actions/register_ws_endpoint.ts';
+import {heartbeat_action} from '$lib/actions/heartbeat.ts';
+import {parse_allowed_origins} from '$lib/http/origin.ts';
+import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.ts';
+import {ROLE_ADMIN, type RoleName} from '$lib/auth/role_schema.ts';
+import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.ts';
+import {create_stub_upgrade} from '$lib/testing/ws_round_trip.ts';
+import {create_stub_db} from '$lib/testing/stubs.ts';
+import {create_test_request_context} from '$lib/testing/auth_apps.ts';
 
 const log = new Logger('test', {level: 'off'});
 

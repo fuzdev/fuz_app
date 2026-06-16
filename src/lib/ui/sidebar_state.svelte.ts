@@ -6,7 +6,7 @@
  * @module
  */
 
-import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
+import {create_context} from '@fuzdev/fuz_ui/context_helpers.ts';
 
 /**
  * Svelte context carrying a reactive `SidebarState` accessor. Set by

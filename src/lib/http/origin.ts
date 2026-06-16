@@ -10,10 +10,10 @@
  * @module
  */
 
-import {escape_regexp} from '@fuzdev/fuz_util/regexp.js';
+import {escape_regexp} from '@fuzdev/fuz_util/regexp.ts';
 import type {Handler} from 'hono';
 
-import {ERROR_FORBIDDEN_ORIGIN} from './error_schemas.js';
+import {ERROR_FORBIDDEN_ORIGIN} from './error_schemas.ts';
 
 /**
  * Parses FUZ_ALLOWED_ORIGINS env var into regex matchers for request source verification.

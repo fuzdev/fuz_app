@@ -50,7 +50,7 @@ token; the server hashes it (blake3) to look up the `auth_session` row. This ena
 per-session revocation, admin session management, and audit trails.
 
 ```typescript
-import {create_session_config} from '@fuzdev/fuz_app/auth/session_cookie.js';
+import {create_session_config} from '@fuzdev/fuz_app/auth/session_cookie.ts';
 const my_session_config = create_session_config('my_session');
 ```
 
@@ -249,7 +249,7 @@ for consumer use.
 Apps extend `BaseServerEnv` with app-specific env vars using Zod's `.extend()`:
 
 ```typescript
-import {BaseServerEnv} from '@fuzdev/fuz_app/server/env.js';
+import {BaseServerEnv} from '@fuzdev/fuz_app/server/env.ts';
 import {z} from 'zod';
 
 const MyAppEnv = BaseServerEnv.extend({

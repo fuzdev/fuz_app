@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Per-backend filesystem layout under `os.tmpdir()` for cross-process

@@ -11,19 +11,19 @@
 
 	import {onDestroy} from 'svelte';
 
-	import {AuditLogState, audit_log_rpc_context} from './audit_log_state.svelte.js';
+	import {AuditLogState, audit_log_rpc_context} from './audit_log_state.svelte.ts';
 	import {
 		AUDIT_EVENT_TYPES,
 		type AuditLogEventWithUsernamesJson,
-	} from '../auth/audit_log_schema.js';
+	} from '../auth/audit_log_schema.ts';
 	import {
 		format_relative_time,
 		format_datetime_local,
 		format_audit_metadata,
 		truncate_uuid,
-	} from './ui_format.js';
+	} from './ui_format.ts';
 	import Datatable from './Datatable.svelte';
-	import type {DatatableColumn} from './datatable.js';
+	import type {DatatableColumn} from './datatable.ts';
 
 	const get_rpc = audit_log_rpc_context.get();
 	const audit_log = new AuditLogState({get_rpc});

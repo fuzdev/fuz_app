@@ -29,8 +29,8 @@ import {
 	resolve_spec_qualifier,
 	PROTOCOL_ACTION_METHODS,
 	is_protocol_action_method,
-} from '$lib/actions/action_codegen.js';
-import type {ActionSpecUnion} from '$lib/actions/action_spec.js';
+} from '$lib/actions/action_codegen.ts';
+import type {ActionSpecUnion} from '$lib/actions/action_spec.ts';
 
 // --- helpers ---
 
@@ -84,34 +84,34 @@ describe('ImportBuilder', () => {
 
 	test('type import uses import type syntax', () => {
 		const b = new ImportBuilder();
-		b.add_type('./foo.js', 'Foo');
-		assert.strictEqual(b.build(), "import type {Foo} from './foo.js';");
+		b.add_type('./foo.ts', 'Foo');
+		assert.strictEqual(b.build(), "import type {Foo} from './foo.ts';");
 	});
 
 	test('mixed value + type in same module', () => {
 		const b = new ImportBuilder();
-		b.add('./foo.js', 'bar');
-		b.add_type('./foo.js', 'Baz');
-		assert.strictEqual(b.build(), "import {bar, type Baz} from './foo.js';");
+		b.add('./foo.ts', 'bar');
+		b.add_type('./foo.ts', 'Baz');
+		assert.strictEqual(b.build(), "import {bar, type Baz} from './foo.ts';");
 	});
 
 	test('multiple types sorted alphabetically', () => {
 		const b = new ImportBuilder();
-		b.add_types('./types.js', 'Zebra', 'Apple', 'Mango');
-		assert.strictEqual(b.build(), "import type {Apple, Mango, Zebra} from './types.js';");
+		b.add_types('./types.ts', 'Zebra', 'Apple', 'Mango');
+		assert.strictEqual(b.build(), "import type {Apple, Mango, Zebra} from './types.ts';");
 	});
 
 	test('namespace import', () => {
 		const b = new ImportBuilder();
-		b.add('./specs.js', '* as specs');
-		assert.strictEqual(b.build(), "import * as specs from './specs.js';");
+		b.add('./specs.ts', '* as specs');
+		assert.strictEqual(b.build(), "import * as specs from './specs.ts';");
 	});
 
 	test('value import does not downgrade to type', () => {
 		const b = new ImportBuilder();
-		b.add('./foo.js', 'Foo');
-		b.add_type('./foo.js', 'Foo');
-		assert.strictEqual(b.build(), "import {Foo} from './foo.js';");
+		b.add('./foo.ts', 'Foo');
+		b.add_type('./foo.ts', 'Foo');
+		assert.strictEqual(b.build(), "import {Foo} from './foo.ts';");
 	});
 
 	test('build returns empty string with no imports', () => {
@@ -128,8 +128,8 @@ describe('ImportBuilder', () => {
 
 	test('import_count', () => {
 		const b = new ImportBuilder();
-		b.add('./a.js', 'a');
-		b.add('./b.js', 'b');
+		b.add('./a.ts', 'a');
+		b.add('./b.ts', 'b');
 		assert.strictEqual(b.import_count, 2);
 	});
 
@@ -143,7 +143,7 @@ describe('ImportBuilder', () => {
 	test('preview returns same as build split by line', () => {
 		const b = new ImportBuilder();
 		b.add('zod', 'z');
-		b.add_type('./foo.js', 'Foo');
+		b.add_type('./foo.ts', 'Foo');
 		assert.deepStrictEqual(b.preview(), b.build().split('\n'));
 	});
 });
@@ -231,16 +231,16 @@ describe('generate_actions_api_method_signature', () => {
 		);
 		const built = imports.build();
 		assert.ok(
-			built.includes("import type {ActionInputs, ActionOutputs} from './action_collections.js'"),
+			built.includes("import type {ActionInputs, ActionOutputs} from './action_collections.ts'"),
 		);
 		assert.ok(
 			built.includes(
-				"import type {RpcClientCallOptions} from '@fuzdev/fuz_app/actions/rpc_client.js'",
+				"import type {RpcClientCallOptions} from '@fuzdev/fuz_app/actions/rpc_client.ts'",
 			),
 		);
-		assert.ok(built.includes("import type {Result} from '@fuzdev/fuz_util/result.js'"));
+		assert.ok(built.includes("import type {Result} from '@fuzdev/fuz_util/result.ts'"));
 		assert.ok(
-			built.includes("import type {JsonrpcErrorObject} from '@fuzdev/fuz_app/http/jsonrpc.js'"),
+			built.includes("import type {JsonrpcErrorObject} from '@fuzdev/fuz_app/http/jsonrpc.ts'"),
 		);
 	});
 
@@ -441,10 +441,10 @@ describe('generate_actions_api_method_signature', () => {
 	test('custom collections_path threads through', () => {
 		const imports = new ImportBuilder();
 		generate_actions_api_method_signature(create_rr('frontend'), imports, {
-			collections_path: './my_collections.js',
+			collections_path: './my_collections.ts',
 		});
 		const built = imports.build();
-		assert.ok(built.includes("from './my_collections.js'"));
+		assert.ok(built.includes("from './my_collections.ts'"));
 	});
 });
 
@@ -488,7 +488,7 @@ describe('generate_phase_handlers', () => {
 		const built = imports.build();
 		assert.ok(built.includes('ActionEvent'));
 		assert.ok(!built.includes('Frontend'));
-		assert.ok(built.includes('@fuzdev/fuz_app/actions/action_event.js'));
+		assert.ok(built.includes('@fuzdev/fuz_app/actions/action_event.ts'));
 	});
 
 	test('generates handler definitions for backend executor', () => {
@@ -500,7 +500,7 @@ describe('generate_phase_handlers', () => {
 		assert.ok(!result.includes('Backend'));
 		// Verify imports were added
 		const built = imports.build();
-		assert.ok(built.includes('@fuzdev/fuz_app/actions/action_event.js'));
+		assert.ok(built.includes('@fuzdev/fuz_app/actions/action_event.ts'));
 		assert.ok(!built.includes('Backend'));
 	});
 
@@ -521,7 +521,7 @@ describe('get_handler_return_type', () => {
 			create_rr('frontend'),
 			'receive_request',
 			imports,
-			'./action_collections.js',
+			'./action_collections.ts',
 		);
 		assert.ok(result.includes("ActionOutputs['thing_create']"));
 		assert.ok(result.includes('Promise'));
@@ -533,7 +533,7 @@ describe('get_handler_return_type', () => {
 			create_rr('frontend'),
 			'receive_request',
 			imports,
-			'./action_collections.js',
+			'./action_collections.ts',
 		);
 		assert.ok(imports.has_imports());
 	});
@@ -544,7 +544,7 @@ describe('get_handler_return_type', () => {
 			create_lc('frontend', true),
 			'execute',
 			imports,
-			'./action_collections.js',
+			'./action_collections.ts',
 		);
 		assert.ok(result.includes("ActionOutputs['toggle_menu']"));
 		assert.ok(result.includes('Promise'));
@@ -556,7 +556,7 @@ describe('get_handler_return_type', () => {
 			create_lc('frontend', false),
 			'execute',
 			imports,
-			'./action_collections.js',
+			'./action_collections.ts',
 		);
 		assert.ok(result.includes("ActionOutputs['toggle_menu']"));
 		assert.ok(!result.includes('Promise'));
@@ -568,7 +568,7 @@ describe('get_handler_return_type', () => {
 			create_rr('frontend'),
 			'send_request',
 			imports,
-			'./action_collections.js',
+			'./action_collections.ts',
 		);
 		assert.strictEqual(result, 'void | Promise<void>');
 	});
@@ -939,25 +939,25 @@ describe('generate_typed_action_event_alias', () => {
 		assert.ok(result.includes('& {readonly data: ActionEventDatas[TMethod]};'));
 
 		const built = imports.build();
-		assert.ok(built.includes('@fuzdev/fuz_app/actions/action_event.js'));
-		assert.ok(built.includes('@fuzdev/fuz_app/actions/action_spec.js'));
-		assert.ok(built.includes('@fuzdev/fuz_app/actions/action_event_types.js'));
-		assert.ok(built.includes('./action_collections.js'));
-		assert.ok(built.includes('./action_metatypes.js'));
+		assert.ok(built.includes('@fuzdev/fuz_app/actions/action_event.ts'));
+		assert.ok(built.includes('@fuzdev/fuz_app/actions/action_spec.ts'));
+		assert.ok(built.includes('@fuzdev/fuz_app/actions/action_event_types.ts'));
+		assert.ok(built.includes('./action_collections.ts'));
+		assert.ok(built.includes('./action_metatypes.ts'));
 		assert.ok(built.includes('ActionMethod'));
 	});
 
 	test('honors collections_path and metatypes_path overrides', () => {
 		const imports = new ImportBuilder();
 		generate_typed_action_event_alias(imports, {
-			collections_path: '../gen/collections.js',
-			metatypes_path: '../gen/metatypes.js',
+			collections_path: '../gen/collections.ts',
+			metatypes_path: '../gen/metatypes.ts',
 		});
 		const built = imports.build();
-		assert.ok(built.includes("from '../gen/collections.js'"));
-		assert.ok(built.includes("from '../gen/metatypes.js'"));
-		assert.ok(!built.includes("from './action_collections.js'"));
-		assert.ok(!built.includes("from './action_metatypes.js'"));
+		assert.ok(built.includes("from '../gen/collections.ts'"));
+		assert.ok(built.includes("from '../gen/metatypes.ts'"));
+		assert.ok(!built.includes("from './action_collections.ts'"));
+		assert.ok(!built.includes("from './action_metatypes.ts'"));
 	});
 });
 
@@ -983,7 +983,7 @@ describe('generate_action_specs_record', () => {
 		assert.ok(result.includes('thing_create: typeof specs.thing_create_action_spec;'));
 		// Imports the `* as specs` namespace + ActionSpecUnion type.
 		const built = imports.build();
-		assert.ok(built.includes("import * as specs from './action_specs.js';"));
+		assert.ok(built.includes("import * as specs from './action_specs.ts';"));
 		assert.ok(built.includes('ActionSpecUnion'));
 	});
 
@@ -1002,9 +1002,9 @@ describe('generate_action_specs_record', () => {
 		// would short-circuit the helper before the `* as specs` import is added.
 		const consumer_specs = fixture_specs.filter((s) => !is_protocol_action_method(s.method));
 		generate_action_specs_record(consumer_specs.slice(0, 1), imports, {
-			specs_module: '../shared/action_specs.js',
+			specs_module: '../shared/action_specs.ts',
 		});
-		assert.ok(imports.build().includes("import * as specs from '../shared/action_specs.js';"));
+		assert.ok(imports.build().includes("import * as specs from '../shared/action_specs.ts';"));
 	});
 });
 
@@ -1033,7 +1033,7 @@ describe('generate_action_inputs_outputs', () => {
 		// Registers zod + namespace imports.
 		const built = imports.build();
 		assert.ok(built.includes("import {z} from 'zod';"));
-		assert.ok(built.includes("import * as specs from './action_specs.js';"));
+		assert.ok(built.includes("import * as specs from './action_specs.ts';"));
 	});
 
 	test('include_protocol_actions: true retains heartbeat + cancel', () => {
@@ -1099,19 +1099,19 @@ describe('generate_action_event_datas', () => {
 		const imports = new ImportBuilder();
 		generate_action_event_datas(fixture_specs, imports, {
 			same_file: false,
-			collections_path: '../gen/collections.js',
+			collections_path: '../gen/collections.ts',
 		});
 		const built = imports.build();
-		assert.ok(built.includes("from '../gen/collections.js'"));
+		assert.ok(built.includes("from '../gen/collections.ts'"));
 		assert.ok(built.includes('ActionInputs'));
 		assert.ok(built.includes('ActionOutputs'));
 	});
 
-	test('same_file: false defaults collections_path to ./action_collections.js', () => {
+	test('same_file: false defaults collections_path to ./action_collections.ts', () => {
 		const imports = new ImportBuilder();
 		generate_action_event_datas(fixture_specs, imports, {same_file: false});
 		const built = imports.build();
-		assert.ok(built.includes("from './action_collections.js'"));
+		assert.ok(built.includes("from './action_collections.ts'"));
 		assert.ok(built.includes('ActionInputs'));
 		assert.ok(built.includes('ActionOutputs'));
 	});
@@ -1125,7 +1125,7 @@ describe('generate_action_event_datas', () => {
 		// suppressed.
 		const imports = new ImportBuilder();
 		generate_action_event_datas(fixture_specs, imports, {
-			collections_path: '../gen/collections.js',
+			collections_path: '../gen/collections.ts',
 		});
 		const built = imports.build();
 		assert.ok(!built.includes('ActionInputs'));
@@ -1216,9 +1216,9 @@ describe('generate_frontend_action_handlers', () => {
 	test('honors collections_path option for the ActionOutputs side-effect import', () => {
 		const imports = new ImportBuilder();
 		generate_frontend_action_handlers(fixture_specs, imports, {
-			collections_path: '../gen/action_collections.js',
+			collections_path: '../gen/action_collections.ts',
 		});
-		assert.ok(imports.build().includes("from '../gen/action_collections.js'"));
+		assert.ok(imports.build().includes("from '../gen/action_collections.ts'"));
 	});
 });
 
@@ -1248,8 +1248,8 @@ describe('generate_backend_actions_api', () => {
 
 		// Adds the namespace + collections + ActionSpecUnion imports automatically.
 		const built = imports.build();
-		assert.ok(built.includes("import * as specs from './action_specs.js';"));
-		assert.ok(built.includes("from './action_collections.js'"));
+		assert.ok(built.includes("import * as specs from './action_specs.ts';"));
+		assert.ok(built.includes("from './action_collections.ts'"));
 		assert.ok(built.includes('ActionInputs'));
 		assert.ok(built.includes('ActionSpecUnion'));
 	});
@@ -1274,12 +1274,12 @@ describe('generate_backend_actions_api', () => {
 	test('honors specs_module and collections_path overrides', () => {
 		const imports = new ImportBuilder();
 		generate_backend_actions_api(fixture_specs, imports, {
-			specs_module: '../shared/action_specs.js',
-			collections_path: '../gen/collections.js',
+			specs_module: '../shared/action_specs.ts',
+			collections_path: '../gen/collections.ts',
 		});
 		const built = imports.build();
-		assert.ok(built.includes("import * as specs from '../shared/action_specs.js';"));
-		assert.ok(built.includes("from '../gen/collections.js'"));
+		assert.ok(built.includes("import * as specs from '../shared/action_specs.ts';"));
+		assert.ok(built.includes("from '../gen/collections.ts'"));
 	});
 });
 
@@ -1325,10 +1325,10 @@ describe('qualify_spec', () => {
 		const imports = new ImportBuilder();
 		generate_action_specs_record(fixture_specs, imports, {
 			qualify_spec,
-			specs_module: '../shared/action_specs.js',
+			specs_module: '../shared/action_specs.ts',
 		});
 		const built = imports.build();
-		assert.ok(!built.includes('../shared/action_specs.js'));
+		assert.ok(!built.includes('../shared/action_specs.ts'));
 		assert.ok(!built.includes('* as specs'));
 	});
 
@@ -1397,16 +1397,16 @@ describe('resolve_spec_qualifier', () => {
 		const imports = new ImportBuilder();
 		const qualify = resolve_spec_qualifier(imports);
 		assert.strictEqual(qualify(spec), 'specs.thing_create_action_spec');
-		assert.ok(imports.build().includes("import * as specs from './action_specs.js';"));
+		assert.ok(imports.build().includes("import * as specs from './action_specs.ts';"));
 	});
 
 	test('specs_module override — registers from the overridden path', () => {
 		const imports = new ImportBuilder();
 		const qualify = resolve_spec_qualifier(imports, {
-			specs_module: '../shared/action_specs.js',
+			specs_module: '../shared/action_specs.ts',
 		});
 		assert.strictEqual(qualify(spec), 'specs.thing_create_action_spec');
-		assert.ok(imports.build().includes("import * as specs from '../shared/action_specs.js';"));
+		assert.ok(imports.build().includes("import * as specs from '../shared/action_specs.ts';"));
 	});
 
 	test('qualify_spec callback — returned verbatim, no specs import added', () => {
@@ -1423,12 +1423,12 @@ describe('resolve_spec_qualifier', () => {
 		const callback = (s: ActionSpecUnion): string => `wire.${s.method}_action_spec`;
 		const qualify = resolve_spec_qualifier(imports, {
 			qualify_spec: callback,
-			specs_module: '../shared/action_specs.js',
+			specs_module: '../shared/action_specs.ts',
 		});
 		assert.strictEqual(qualify(spec), 'wire.thing_create_action_spec');
 		const built = imports.build();
 		assert.ok(!built.includes('* as specs'));
-		assert.ok(!built.includes('action_specs.js'));
+		assert.ok(!built.includes('action_specs.ts'));
 	});
 });
 
@@ -1466,7 +1466,7 @@ describe('empty-input behavior', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_event_datas([], imports, {
 			same_file: false,
-			collections_path: './action_collections.js',
+			collections_path: './action_collections.ts',
 		});
 		assert.ok(result.includes('export interface ActionEventDatas {}'));
 		// `same_file: false` would normally add the import, but the body is
@@ -1587,10 +1587,10 @@ describe('generate_backend_action_handlers_map', () => {
 
 		const built = imports.build();
 		assert.ok(
-			built.includes("import type {ActionInputs, ActionOutputs} from './action_collections.js';"),
+			built.includes("import type {ActionInputs, ActionOutputs} from './action_collections.ts';"),
 		);
 		assert.ok(
-			built.includes("import type {BackendRequestResponseMethod} from './action_metatypes.js';"),
+			built.includes("import type {BackendRequestResponseMethod} from './action_metatypes.ts';"),
 		);
 	});
 
@@ -1600,8 +1600,8 @@ describe('generate_backend_action_handlers_map', () => {
 			type_name: 'ZzzActionHandlers',
 			method_enum_name: 'ZzzHandledMethod',
 			context_type: 'ZzzHandlerContext',
-			collections_path: '../gen/action_collections.js',
-			metatypes_path: '../gen/action_metatypes.js',
+			collections_path: '../gen/action_collections.ts',
+			metatypes_path: '../gen/action_metatypes.ts',
 		});
 
 		assert.ok(result.includes('export type ZzzActionHandlers = {'));
@@ -1609,8 +1609,8 @@ describe('generate_backend_action_handlers_map', () => {
 		assert.ok(result.includes('ctx: ZzzHandlerContext'));
 
 		const built = imports.build();
-		assert.ok(built.includes("from '../gen/action_collections.js'"));
-		assert.ok(built.includes("from '../gen/action_metatypes.js'"));
+		assert.ok(built.includes("from '../gen/action_collections.ts'"));
+		assert.ok(built.includes("from '../gen/action_metatypes.ts'"));
 		assert.ok(built.includes('ZzzHandledMethod'));
 	});
 });
@@ -1676,10 +1676,10 @@ describe('create_namespace_qualifier', () => {
 		const imports = new ImportBuilder();
 		const {qualify_spec, all_specs} = create_namespace_qualifier(
 			[
-				{ns: 'tx_specs', module: './action_specs.js', specs: local_specs},
+				{ns: 'tx_specs', module: './action_specs.ts', specs: local_specs},
 				{
 					ns: 'admin_specs',
-					module: '@fuzdev/fuz_app/auth/admin_action_specs.js',
+					module: '@fuzdev/fuz_app/auth/admin_action_specs.ts',
 					specs: upstream_specs,
 				},
 			],
@@ -1688,9 +1688,9 @@ describe('create_namespace_qualifier', () => {
 
 		// Imports registered with the right aliases.
 		const built = imports.build();
-		assert.ok(built.includes("import * as tx_specs from './action_specs.js';"));
+		assert.ok(built.includes("import * as tx_specs from './action_specs.ts';"));
 		assert.ok(
-			built.includes("import * as admin_specs from '@fuzdev/fuz_app/auth/admin_action_specs.js';"),
+			built.includes("import * as admin_specs from '@fuzdev/fuz_app/auth/admin_action_specs.ts';"),
 		);
 
 		// Qualifier returns the right namespaced identifier per spec.
@@ -1715,8 +1715,8 @@ describe('create_namespace_qualifier', () => {
 			() =>
 				create_namespace_qualifier(
 					[
-						{ns: 'a_specs', module: './a.js', specs: a},
-						{ns: 'b_specs', module: './b.js', specs: b},
+						{ns: 'a_specs', module: './a.ts', specs: a},
+						{ns: 'b_specs', module: './b.ts', specs: b},
 					],
 					imports,
 				),
@@ -1730,7 +1730,7 @@ describe('create_namespace_qualifier', () => {
 			[
 				{
 					ns: 'ns_specs',
-					module: './specs.js',
+					module: './specs.ts',
 					specs: [create_rr('frontend')] as ReadonlyArray<ActionSpecUnion>,
 				},
 			],

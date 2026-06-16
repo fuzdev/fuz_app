@@ -43,20 +43,20 @@ import {
 	type ActionActorContext,
 	type ActionContext,
 	type RpcAction,
-} from '../actions/action_rpc.js';
-import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
-import {emit_after_commit} from '../http/pending_effects.js';
+} from '../actions/action_rpc.ts';
+import {jsonrpc_errors} from '../http/jsonrpc_errors.ts';
+import {emit_after_commit} from '../http/pending_effects.ts';
 import {
 	builtin_role_specs_by_name,
 	ROLE_ADMIN,
 	role_has_grant_path,
 	type RoleSchemaResult,
-} from './role_schema.js';
-import {GRANT_PATH_ADMIN} from './grant_path_schema.js';
+} from './role_schema.ts';
+import {GRANT_PATH_ADMIN} from './grant_path_schema.ts';
 import {
 	ROLE_GRANT_OFFER_DEFAULT_TTL_MS,
 	to_role_grant_offer_json,
-} from './role_grant_offer_schema.js';
+} from './role_grant_offer_schema.ts';
 import {
 	query_role_grant_offer_create,
 	query_role_grant_offer_decline,
@@ -70,16 +70,16 @@ import {
 	RoleGrantOfferExpiredError,
 	RoleGrantOfferNotFoundError,
 	RoleGrantOfferSelfTargetError,
-} from './role_grant_offer_queries.js';
+} from './role_grant_offer_queries.ts';
 import {
 	query_role_grant_find_active_role_for_actor,
 	query_revoke_role_grant,
-} from './role_grant_queries.js';
-import {query_actor_by_id} from './account_queries.js';
-import type {AuditLogEvent} from './audit_log_schema.js';
-import {has_scoped_role, type RequestActorContext, type RequestContext} from './request_context.js';
-import type {RouteFactoryDeps} from './deps.js';
-import type {AuditEmitter} from './audit_emitter.js';
+} from './role_grant_queries.ts';
+import {query_actor_by_id} from './account_queries.ts';
+import type {AuditLogEvent} from './audit_log_schema.ts';
+import {has_scoped_role, type RequestActorContext, type RequestContext} from './request_context.ts';
+import type {RouteFactoryDeps} from './deps.ts';
+import type {AuditEmitter} from './audit_emitter.ts';
 import {
 	build_role_grant_offer_accepted_notification,
 	build_role_grant_offer_declined_notification,
@@ -88,8 +88,8 @@ import {
 	build_role_grant_offer_supersede_notification,
 	build_role_grant_revoke_notification,
 	type NotificationSender,
-} from './role_grant_offer_notifications.js';
-import {ERROR_ROLE_GRANT_NOT_FOUND, ERROR_ROLE_NOT_WEB_GRANTABLE} from '../http/error_schemas.js';
+} from './role_grant_offer_notifications.ts';
+import {ERROR_ROLE_GRANT_NOT_FOUND, ERROR_ROLE_NOT_WEB_GRANTABLE} from '../http/error_schemas.ts';
 import {
 	ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
 	ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH,
@@ -119,7 +119,7 @@ import {
 	type RoleGrantOfferHistoryOutput,
 	type RoleGrantRevokeInput,
 	type RoleGrantRevokeOutput,
-} from './role_grant_offer_action_specs.js';
+} from './role_grant_offer_action_specs.ts';
 
 /**
  * Authorization callback for `role_grant_offer_create`. Returns `true` to allow,

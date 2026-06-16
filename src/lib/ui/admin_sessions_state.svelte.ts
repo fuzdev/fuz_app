@@ -15,12 +15,12 @@
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {AsyncSlot} from './async_slot.svelte.js';
-import {KeyedAsyncSlot} from './keyed_async_slot.svelte.js';
-import type {AdminAccountsRpc} from './admin_accounts_state.svelte.js';
-import type {AdminSessionJson} from '../auth/audit_log_schema.js';
+import {AsyncSlot} from './async_slot.svelte.ts';
+import {KeyedAsyncSlot} from './keyed_async_slot.svelte.ts';
+import type {AdminAccountsRpc} from './admin_accounts_state.svelte.ts';
+import type {AdminSessionJson} from '../auth/audit_log_schema.ts';
 
 /**
  * Options for `AdminSessionsState`.

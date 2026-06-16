@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-backend parity suite for `actor_search`.
@@ -40,9 +40,9 @@ import {describe, test, assert} from 'vitest';
 import {
 	actor_search_action_spec,
 	ERROR_ACTOR_SEARCH_SCOPE_REQUIRED,
-} from '../../auth/actor_search_action_specs.js';
-import type {RpcPathCrossSuiteOptions} from './setup.js';
-import {SPINE_RPC_PATH} from './default_spine_surface.js';
+} from '../../auth/actor_search_action_specs.ts';
+import type {RpcPathCrossSuiteOptions} from './setup.ts';
+import {SPINE_RPC_PATH} from './default_spine_surface.ts';
 
 /** Options for the actor-search parity suite (the standard RPC-dispatched shape). */
 export type ActorSearchCrossTestOptions = RpcPathCrossSuiteOptions;

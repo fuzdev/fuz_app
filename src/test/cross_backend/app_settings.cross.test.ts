@@ -12,14 +12,14 @@
 
 import {inject} from 'vitest';
 
-import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
+import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle,
-} from '$lib/testing/cross_backend/setup.js';
-import {describe_app_settings_cross_tests} from '$lib/testing/cross_backend/app_settings.js';
+} from '$lib/testing/cross_backend/setup.ts';
+import {describe_app_settings_cross_tests} from '$lib/testing/cross_backend/app_settings.ts';
 
-import './cross_test_types.js';
+import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 // The keeper needs `ROLE_ADMIN` to call the admin-gated `app_settings_update`.

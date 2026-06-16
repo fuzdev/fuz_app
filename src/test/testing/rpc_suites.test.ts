@@ -10,24 +10,24 @@
 import {describe, test, assert} from 'vitest';
 import {z} from 'zod';
 
-import type {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
-import type {RpcAction} from '$lib/actions/action_rpc.js';
-import {create_test_app_surface_spec} from '$lib/testing/stubs.js';
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {ActingActor} from '$lib/http/auth_shape.js';
-import {describe_rpc_attack_surface_tests} from '$lib/testing/rpc_attack_surface.js';
-import type {RouteSpec} from '$lib/http/route_spec.js';
-import type {AppServerContext} from '$lib/server/app_server_context.js';
-import type {RpcEndpointSpec} from '$lib/http/surface.js';
+import type {RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
+import type {RpcAction} from '$lib/actions/action_rpc.ts';
+import {create_test_app_surface_spec} from '$lib/testing/stubs.ts';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {ActingActor} from '$lib/http/auth_shape.ts';
+import {describe_rpc_attack_surface_tests} from '$lib/testing/rpc_attack_surface.ts';
+import type {RouteSpec} from '$lib/http/route_spec.ts';
+import type {AppServerContext} from '$lib/server/app_server_context.ts';
+import type {RpcEndpointSpec} from '$lib/http/surface.ts';
 import {
 	create_rpc_post_init,
 	create_rpc_get_url,
 	assert_jsonrpc_error_response,
 	assert_jsonrpc_success_response,
 	resolve_rpc_endpoints_for_setup,
-} from '$lib/testing/rpc_helpers.js';
-import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
-import {JSONRPC_VERSION} from '$lib/http/jsonrpc.js';
+} from '$lib/testing/rpc_helpers.ts';
+import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.ts';
+import {JSONRPC_VERSION} from '$lib/http/jsonrpc.ts';
 
 const session_options = create_session_config('test_rpc_session');
 

@@ -7,8 +7,8 @@
 import {describe, test, assert, vi} from 'vitest';
 import {z} from 'zod';
 
-import {load_env, EnvValidationError, log_env_validation_error} from '$lib/env/load.js';
-import {BaseServerEnv} from '$lib/server/env.js';
+import {load_env, EnvValidationError, log_env_validation_error} from '$lib/env/load.ts';
+import {BaseServerEnv} from '$lib/server/env.ts';
 
 /** Minimal valid env for BaseServerEnv (only required fields, no defaults). */
 const VALID_ENV: Record<string, string> = {

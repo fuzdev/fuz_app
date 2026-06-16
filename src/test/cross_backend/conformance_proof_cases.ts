@@ -19,8 +19,8 @@
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
-} from '$lib/http/error_schemas.js';
-import type {ConformanceCase} from '$lib/testing/cross_backend/conformance_case.js';
+} from '$lib/http/error_schemas.ts';
+import type {ConformanceCase} from '$lib/testing/cross_backend/conformance_case.ts';
 
 export const conformance_proof_cases: ReadonlyArray<ConformanceCase> = [
 	{

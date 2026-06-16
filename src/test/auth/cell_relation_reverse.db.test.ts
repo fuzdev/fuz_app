@@ -14,23 +14,23 @@
 
 import {describe, test, assert} from 'vitest';
 
-import {cell_item_list_action_spec} from '$lib/auth/cell_item_action_specs.js';
+import {cell_item_list_action_spec} from '$lib/auth/cell_item_action_specs.ts';
 import {
 	cell_field_set_action_spec,
 	cell_field_list_action_spec,
 	type CellFieldName,
-} from '$lib/auth/cell_field_action_specs.js';
-import {cell_grant_create_action_spec} from '$lib/auth/cell_grant_action_specs.js';
-import {ERROR_CELL_NOT_FOUND} from '$lib/auth/cell_action_specs.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import type {TestApp, TestAccount} from '$lib/testing/app_server.js';
+} from '$lib/auth/cell_field_action_specs.ts';
+import {cell_grant_create_action_spec} from '$lib/auth/cell_grant_action_specs.ts';
+import {ERROR_CELL_NOT_FOUND} from '$lib/auth/cell_action_specs.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type {TestApp, TestAccount} from '$lib/testing/app_server.ts';
 import {
 	describe_db,
 	create_cell_test_app,
 	create_cell,
 	call,
 	error_reason,
-} from './cell_test_helpers.js';
+} from './cell_test_helpers.ts';
 
 const grant_viewer = (app: TestApp, granter: TestAccount, cell_id: Uuid, actor_id: Uuid) =>
 	call(

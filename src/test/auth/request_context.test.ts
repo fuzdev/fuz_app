@@ -5,9 +5,9 @@
  */
 
 import {describe, assert, test, vi, afterEach} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 import {Hono} from 'hono';
-import {wait} from '@fuzdev/fuz_util/async.js';
+import {wait} from '@fuzdev/fuz_util/async.ts';
 
 import {
 	has_role,
@@ -17,39 +17,39 @@ import {
 	require_role,
 	create_request_context_middleware,
 	REQUEST_CONTEXT_KEY,
-} from '$lib/auth/request_context.js';
+} from '$lib/auth/request_context.ts';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
-} from '$lib/hono_context.js';
-import type {Account, Actor, RoleGrant} from '$lib/auth/account_schema.js';
+} from '$lib/hono_context.ts';
+import type {Account, Actor, RoleGrant} from '$lib/auth/account_schema.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
-} from '$lib/http/error_schemas.js';
+} from '$lib/http/error_schemas.ts';
 import {
 	create_test_account,
 	create_test_actor,
 	create_test_role_grant,
 	create_test_context,
-} from '$lib/testing/entities.js';
-import type {QueryDeps} from '$lib/db/query_deps.js';
-import {query_session_get_valid, session_touch_fire_and_forget} from '$lib/auth/session_queries.js';
+} from '$lib/testing/entities.ts';
+import type {QueryDeps} from '$lib/db/query_deps.ts';
+import {query_session_get_valid, session_touch_fire_and_forget} from '$lib/auth/session_queries.ts';
 import {
 	query_account_by_id,
 	query_actor_by_id,
 	query_actors_by_account,
-} from '$lib/auth/account_queries.js';
-import {query_role_grant_find_active_for_actor} from '$lib/auth/role_grant_queries.js';
+} from '$lib/auth/account_queries.ts';
+import {query_role_grant_find_active_for_actor} from '$lib/auth/role_grant_queries.ts';
 
 const log = new Logger('test', {level: 'off'});
 
 const mock_deps: QueryDeps = {db: {} as any};
 
 vi.mock('$lib/auth/session_queries.js', async (import_original) => {
-	const original = await import_original<typeof import('$lib/auth/session_queries.js')>();
+	const original = await import_original<typeof import('$lib/auth/session_queries.ts')>();
 	return {
 		...original,
 		// Keep hash_session_token real (pure function)

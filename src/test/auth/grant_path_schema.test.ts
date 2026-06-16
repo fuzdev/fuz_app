@@ -15,7 +15,7 @@ import {
 	GRANT_PATH_BOOTSTRAP,
 	GRANT_PATH_SELF_SERVICE,
 	GRANT_PATH_SYSTEM,
-} from '$lib/auth/grant_path_schema.js';
+} from '$lib/auth/grant_path_schema.ts';
 
 describe('create_grant_path_schema', () => {
 	test('builtins-only round-trip', () => {

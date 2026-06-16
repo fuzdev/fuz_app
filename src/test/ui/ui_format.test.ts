@@ -14,7 +14,7 @@ import {
 	format_audit_metadata,
 	truncate_middle,
 	truncate_uuid,
-} from '$lib/ui/ui_format.js';
+} from '$lib/ui/ui_format.ts';
 
 const t = (iso: string): number => new Date(iso).getTime();
 

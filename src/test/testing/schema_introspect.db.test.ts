@@ -13,13 +13,13 @@
 
 import {describe, test, assert, beforeAll} from 'vitest';
 
-import type {Db} from '$lib/db/db.js';
-import {run_migrations} from '$lib/db/migrate.js';
-import {auth_migration_ns} from '$lib/auth/migrations.js';
-import {CELL_MIGRATION_NS} from '$lib/db/cell_ddl.js';
-import {create_pglite_factory} from '$lib/testing/db.js';
-import {query_schema_snapshot} from '$lib/testing/schema_introspect.js';
-import {diff_schema_snapshots} from '$lib/testing/schema_parity.js';
+import type {Db} from '$lib/db/db.ts';
+import {run_migrations} from '$lib/db/migrate.ts';
+import {auth_migration_ns} from '$lib/auth/migrations.ts';
+import {CELL_MIGRATION_NS} from '$lib/db/cell_ddl.ts';
+import {create_pglite_factory} from '$lib/testing/db.ts';
+import {query_schema_snapshot} from '$lib/testing/schema_introspect.ts';
+import {diff_schema_snapshots} from '$lib/testing/schema_parity.ts';
 
 const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [auth_migration_ns]);

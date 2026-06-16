@@ -32,8 +32,8 @@ import type {
 	RequestResponseActionSpec,
 	RemoteNotificationActionSpec,
 	LocalCallActionSpec,
-} from './action_spec.js';
-import {is_public_auth} from '../http/auth_shape.js';
+} from './action_spec.ts';
+import {is_public_auth} from '../http/auth_shape.ts';
 
 // The auth (`public_*`, `authenticated_*`) and initiator-direction
 // (`backend_to_frontend_*`, `frontend_to_backend_*`) getters are pre-built

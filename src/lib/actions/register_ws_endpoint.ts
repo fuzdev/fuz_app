@@ -22,23 +22,23 @@
  */
 
 import type {Context, MiddlewareHandler} from 'hono';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
 import {
 	apply_authorization_phase,
 	REQUEST_CONTEXT_KEY,
 	require_auth,
 	require_role,
-} from '../auth/request_context.js';
-import {verify_request_source} from '../http/origin.js';
-import type {RoleName} from '../auth/role_schema.js';
-import type {Db} from '../db/db.js';
-import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '../hono_context.js';
+} from '../auth/request_context.ts';
+import {verify_request_source} from '../http/origin.ts';
+import type {RoleName} from '../auth/role_schema.ts';
+import type {Db} from '../db/db.ts';
+import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '../hono_context.ts';
 import {
 	register_action_ws,
 	type RegisterActionWsOptions,
 	type RegisterActionWsResult,
-} from './register_action_ws.js';
+} from './register_action_ws.ts';
 
 /** Options for `register_ws_endpoint`. */
 export interface RegisterWsEndpointOptions extends RegisterActionWsOptions {

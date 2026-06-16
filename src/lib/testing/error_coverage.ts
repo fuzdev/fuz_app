@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Error reachability coverage tracking.
@@ -16,9 +16,9 @@ import './assert_dev_env.js';
 import {z} from 'zod';
 import {assert} from 'vitest';
 
-import type {RouteSpec} from '../http/route_spec.js';
-import {merge_error_schemas} from '../http/schema_helpers.js';
-import {find_route_spec, assert_response_matches_spec} from './integration_helpers.js';
+import type {RouteSpec} from '../http/route_spec.ts';
+import {merge_error_schemas} from '../http/schema_helpers.ts';
+import {find_route_spec, assert_response_matches_spec} from './integration_helpers.ts';
 
 /**
  * Extract declared error code values from an error response schema.

@@ -10,7 +10,7 @@
 
 import type {z} from 'zod';
 
-import type {EnvDeps, FsReadDeps, FsWriteDeps, LogDeps} from '../runtime/deps.js';
+import type {EnvDeps, FsReadDeps, FsWriteDeps, LogDeps} from '../runtime/deps.ts';
 
 /**
  * Get the CLI config directory path (`~/.{name}`).

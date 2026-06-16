@@ -13,7 +13,7 @@ testing-patterns. This file is a reference index for the helpers themselves.
 
 ## Production guard — always the first import
 
-Every runtime-reachable module here starts with `import './assert_dev_env.js';`
+Every runtime-reachable module here starts with `import './assert_dev_env.ts';`
 — reads `DEV` from `esm-env` and throws if false, preventing production-bundle
 inclusion. Make this the first line in new modules. Enforced by
 `src/test/testing/assert_dev_env_coverage.test.ts`, which fails if any module
@@ -822,7 +822,7 @@ points:
 
 - **`await_pending_effects: true`** is set by `create_test_app`. Fire-and-forget effects (audit logs, session touches, WS fan-out via `emit_after_commit`) resolve before the response returns, so tests can assert on side effects inline without manual flushing.
 - **Deep-path imports only.** Import from the canonical module (`testing/db.js`, `testing/rpc_helpers.js`, etc.); fuz_app's `dist/` ships no barrel.
-- **DI via small `*Deps` interfaces.** Stub factories accept the same narrow `*Deps` contracts production code uses — never `Pick<GodType, ...>`. New helpers needing env/fs/logger take `EnvDeps` / `FsReadDeps` / `Logger` from `runtime/deps.ts` or `@fuzdev/fuz_util/log.js`.
+- **DI via small `*Deps` interfaces.** Stub factories accept the same narrow `*Deps` contracts production code uses — never `Pick<GodType, ...>`. New helpers needing env/fs/logger take `EnvDeps` / `FsReadDeps` / `Logger` from `runtime/deps.ts` or `@fuzdev/fuz_util/log.ts`.
 - **Keep the shared echo routes in sync with public surface.** When middleware or public API gains a new context variable, header, or field, update the echo in `middleware.ts` (`create_bearer_auth_test_app`, `create_test_middleware_stack_app`) alongside the assertions in `src/test/auth/*.test.ts`. Drift surfaces as a missed assertion, not a test failure.
 
 ## Cross-backend integration layer

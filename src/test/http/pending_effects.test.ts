@@ -25,15 +25,15 @@
  */
 
 import {describe, test, assert} from 'vitest';
-import {Logger, type LogConsole} from '@fuzdev/fuz_util/log.js';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {Logger, type LogConsole} from '@fuzdev/fuz_util/log.ts';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	emit_after_commit,
 	dispatch_with_post_commit_rollback,
 	flush_pending_effects,
 	flush_post_commit_effects,
-} from '$lib/http/pending_effects.js';
+} from '$lib/http/pending_effects.ts';
 
 const create_recording_logger = (): {log: Logger; errors: Array<Array<unknown>>} => {
 	const errors: Array<Array<unknown>> = [];

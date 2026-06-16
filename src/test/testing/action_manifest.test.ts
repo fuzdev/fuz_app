@@ -16,8 +16,8 @@ import {describe, test, assert} from 'vitest';
 import {
 	action_manifest_entry,
 	build_action_manifest,
-} from '$lib/testing/cross_backend/action_manifest.js';
-import type {RouteAuth} from '$lib/http/auth_shape.js';
+} from '$lib/testing/cross_backend/action_manifest.ts';
+import type {RouteAuth} from '$lib/http/auth_shape.ts';
 
 const spec = (
 	method: string,

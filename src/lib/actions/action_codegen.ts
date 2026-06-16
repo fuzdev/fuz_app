@@ -1,8 +1,8 @@
-import {UnreachableError} from '@fuzdev/fuz_util/error.js';
-import {zod_get_base_type} from '@fuzdev/fuz_util/zod.js';
+import {UnreachableError} from '@fuzdev/fuz_util/error.ts';
+import {zod_get_base_type} from '@fuzdev/fuz_util/zod.ts';
 
-import type {ActionSpecUnion, ActionEventPhase} from './action_spec.js';
-import {ActionRegistry} from './action_registry.js';
+import type {ActionSpecUnion, ActionEventPhase} from './action_spec.ts';
+import {ActionRegistry} from './action_registry.ts';
 
 /**
  * Method names of fuz_app's protocol actions — `heartbeat` (auth-aware client
@@ -50,15 +50,15 @@ interface ImportItem {
  * @example
  * ```typescript
  * const imports = new ImportBuilder();
- * imports.add_types('./types.js', 'Foo', 'Bar');
- * imports.add('./utils.js', 'helper');
- * imports.add_type('./utils.js', 'HelperOptions');
- * imports.add('./action_specs.js', '* as specs');
+ * imports.add_types('./types.ts', 'Foo', 'Bar');
+ * imports.add('./utils.ts', 'helper');
+ * imports.add_type('./utils.ts', 'HelperOptions');
+ * imports.add('./action_specs.ts', '* as specs');
  *
  * // Generates:
- * // import type {Foo, Bar} from './types.js';
- * // import {helper, type HelperOptions} from './utils.js';
- * // import * as specs from './action_specs.js';
+ * // import type {Foo, Bar} from './types.ts';
+ * // import {helper, type HelperOptions} from './utils.ts';
+ * // import * as specs from './action_specs.ts';
  * ```
  */
 export class ImportBuilder {
@@ -269,14 +269,14 @@ export const get_executor_phases = (
 	return phases;
 };
 
-/** Default `collections_path` — every consumer's gen producers point at the sibling `action_collections.js`. */
-export const DEFAULT_COLLECTIONS_PATH = './action_collections.js';
+/** Default `collections_path` — every consumer's gen producers point at the sibling `action_collections.ts`. */
+export const DEFAULT_COLLECTIONS_PATH = './action_collections.ts';
 
-/** Default `specs_module` — sibling `action_specs.js` namespace bundled by the consumer. */
-export const DEFAULT_SPECS_MODULE = './action_specs.js';
+/** Default `specs_module` — sibling `action_specs.ts` namespace bundled by the consumer. */
+export const DEFAULT_SPECS_MODULE = './action_specs.ts';
 
-/** Default `metatypes_path` — sibling `action_metatypes.js` carrying the generated `ActionMethod`. */
-export const DEFAULT_METATYPES_PATH = './action_metatypes.js';
+/** Default `metatypes_path` — sibling `action_metatypes.ts` carrying the generated `ActionMethod`. */
+export const DEFAULT_METATYPES_PATH = './action_metatypes.ts';
 
 /**
  * Gets the handler return type for a specific phase and spec. Adds an
@@ -324,7 +324,7 @@ export const get_handler_return_type = (
  * @param options.action_event_type - custom type name to use instead of `ActionEvent`
  *   (consumers can define a narrowed type that carries typed input/output via their codegen maps)
  * @param options.collections_path - Import path the side-effect `ActionOutputs` import
- *   resolves to. Defaults to `'./action_collections.js'`.
+ *   resolves to. Defaults to `'./action_collections.ts'`.
  */
 export const generate_phase_handlers = (
 	spec: ActionSpecUnion,
@@ -344,7 +344,7 @@ export const generate_phase_handlers = (
 
 	// Only add the default ActionEvent import if using the default type name
 	if (action_event_type === 'ActionEvent') {
-		imports.add_type('@fuzdev/fuz_app/actions/action_event.js', 'ActionEvent');
+		imports.add_type('@fuzdev/fuz_app/actions/action_event.ts', 'ActionEvent');
 	}
 
 	const phase_handlers = phases
@@ -415,7 +415,7 @@ ActingActor})` and other all-optional-fields strict objects. The second
  *   `Result<{value, error}>` like async methods. Set to `false` if your
  *   `FrontendActionsApi` treats every method uniformly.
  * @param options.collections_path - Import path that `ActionInputs` /
- *   `ActionOutputs` resolve to. Defaults to `'./action_collections.js'`.
+ *   `ActionOutputs` resolve to. Defaults to `'./action_collections.ts'`.
  * @returns one line like `foo: (input: ActionInputs['foo'], options?: RpcClientCallOptions) => Promise<Result<...>>;`
  */
 export const generate_actions_api_method_signature = (
@@ -439,7 +439,7 @@ export const generate_actions_api_method_signature = (
 		spec.kind === 'request_response' || spec.kind === 'remote_notification' || spec.async;
 	const options_param = is_async ? ', options?: RpcClientCallOptions' : '';
 	if (is_async) {
-		imports.add_type('@fuzdev/fuz_app/actions/rpc_client.js', 'RpcClientCallOptions');
+		imports.add_type('@fuzdev/fuz_app/actions/rpc_client.ts', 'RpcClientCallOptions');
 	}
 
 	const result_return = `Result<{value: ActionOutputs['${spec.method}']}, {error: JsonrpcErrorObject}>`;
@@ -450,8 +450,8 @@ export const generate_actions_api_method_signature = (
 			: result_return;
 	const wraps_in_result = is_async || !sync_returns_value;
 	if (wraps_in_result) {
-		imports.add_type('@fuzdev/fuz_util/result.js', 'Result');
-		imports.add_type('@fuzdev/fuz_app/http/jsonrpc.js', 'JsonrpcErrorObject');
+		imports.add_type('@fuzdev/fuz_util/result.ts', 'Result');
+		imports.add_type('@fuzdev/fuz_app/http/jsonrpc.ts', 'JsonrpcErrorObject');
 	}
 
 	return `${spec.method}: (${input_param}${options_param}) => ${return_type};`;
@@ -542,7 +542,7 @@ const filter_protocol_actions = (
  * and registers no imports — the caller owns its namespace setup (the
  * multi-source case where specs come from several modules). Otherwise,
  * registers `* as specs from specs_module` (defaulting to
- * `'./action_specs.js'`) on `imports` and returns
+ * `'./action_specs.ts'`) on `imports` and returns
  * `(spec) => 'specs.' + to_action_spec_identifier(spec.method)`.
  *
  * Used internally by every multi-source-aware helper in this module
@@ -725,9 +725,9 @@ export const generate_typed_action_event_alias = (
 ): string => {
 	const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
 	const metatypes_path = options?.metatypes_path ?? DEFAULT_METATYPES_PATH;
-	imports.add_type('@fuzdev/fuz_app/actions/action_event.js', 'ActionEvent');
-	imports.add_type('@fuzdev/fuz_app/actions/action_spec.js', 'ActionEventPhase');
-	imports.add_type('@fuzdev/fuz_app/actions/action_event_types.js', 'ActionEventStep');
+	imports.add_type('@fuzdev/fuz_app/actions/action_event.ts', 'ActionEvent');
+	imports.add_type('@fuzdev/fuz_app/actions/action_spec.ts', 'ActionEventPhase');
+	imports.add_type('@fuzdev/fuz_app/actions/action_event_types.ts', 'ActionEventStep');
 	imports.add_type(collections_path, 'ActionEventDatas');
 	imports.add_type(metatypes_path, 'ActionMethod');
 	return `/** ActionEvent narrowed with the generated ActionEventDatas for typed input/output. */
@@ -760,7 +760,7 @@ export const generate_action_specs_record = (
 	},
 ): string => {
 	const filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
-	imports.add_type('@fuzdev/fuz_app/actions/action_spec.js', 'ActionSpecUnion');
+	imports.add_type('@fuzdev/fuz_app/actions/action_spec.ts', 'ActionSpecUnion');
 
 	if (filtered.length === 0) {
 		// Empty spec list — emit minimal valid output and skip the `* as specs`
@@ -891,7 +891,7 @@ ${outputs_type}
  *   `false`, adds `ActionInputs` / `ActionOutputs` type imports from
  *   `collections_path`.
  * @param options.collections_path - import path used when `same_file: false`.
- *   Defaults to `'./action_collections.js'`. Ignored when `same_file: true`
+ *   Defaults to `'./action_collections.ts'`. Ignored when `same_file: true`
  *   — `same_file` is the file-layout switch; `collections_path` is just the
  *   path the import resolves to.
  */
@@ -925,7 +925,7 @@ export interface ActionEventDatas {}`;
 				: spec.kind === 'remote_notification'
 					? 'ActionEventRemoteNotificationData'
 					: 'ActionEventLocalCallData';
-		imports.add_type('@fuzdev/fuz_app/actions/action_event_data.js', data_type);
+		imports.add_type('@fuzdev/fuz_app/actions/action_event_data.ts', data_type);
 		const type_args =
 			spec.kind === 'remote_notification'
 				? `<'${spec.method}', ActionInputs['${spec.method}']>`
@@ -1094,7 +1094,7 @@ export const generate_backend_actions_api = (
 	const protocol_filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
 	const registry = new ActionRegistry([...protocol_filtered]);
 	const broadcast = registry.broadcast_specs;
-	imports.add_type('@fuzdev/fuz_app/actions/action_spec.js', 'ActionSpecUnion');
+	imports.add_type('@fuzdev/fuz_app/actions/action_spec.ts', 'ActionSpecUnion');
 
 	const interface_doc = `/**
  * Typed dispatch surface for backend-initiated calls. Symmetric counterpart
@@ -1150,8 +1150,8 @@ export const broadcast_action_specs: ReadonlyArray<ActionSpecUnion> = [${array_b
  *   Pair with `generate_action_method_enums` emitting the `'backend_handled'` kind.
  * @param options.context_type - default `'BackendHandlerContext'`. Caller's
  *   handler context type — must be in scope at the emit site.
- * @param options.collections_path - default `'./action_collections.js'`.
- * @param options.metatypes_path - default `'./action_metatypes.js'`.
+ * @param options.collections_path - default `'./action_collections.ts'`.
+ * @param options.metatypes_path - default `'./action_metatypes.ts'`.
  */
 export const generate_backend_action_handlers_map = (
 	imports: ImportBuilder,
@@ -1221,8 +1221,8 @@ export interface SpecSource {
  * @example
  * ```ts
  * const sources = [
- *   {ns: 'tx_specs', module: './action_specs.js', specs: all_zap_action_specs},
- *   {ns: 'admin_specs', module: '@fuzdev/fuz_app/auth/admin_action_specs.js', specs: all_admin_action_specs},
+ *   {ns: 'tx_specs', module: './action_specs.ts', specs: all_zap_action_specs},
+ *   {ns: 'admin_specs', module: '@fuzdev/fuz_app/auth/admin_action_specs.ts', specs: all_admin_action_specs},
  * ];
  *
  * export const gen: Gen = ({origin_path}) => {

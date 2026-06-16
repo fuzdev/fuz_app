@@ -13,24 +13,24 @@ import {
 	DaemonToken,
 	DAEMON_TOKEN_HEADER,
 	type DaemonTokenState,
-} from '$lib/auth/daemon_token.js';
+} from '$lib/auth/daemon_token.ts';
 import {
 	create_daemon_token_middleware,
 	resolve_keeper_account_id,
-} from '$lib/auth/daemon_token_middleware.js';
-import {ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '$lib/hono_context.js';
+} from '$lib/auth/daemon_token_middleware.ts';
+import {ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '$lib/hono_context.ts';
 import {
 	ERROR_INVALID_DAEMON_TOKEN,
 	ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED,
-} from '$lib/http/error_schemas.js';
-import {ROLE_KEEPER} from '$lib/auth/role_schema.js';
-import type {QueryDeps} from '$lib/db/query_deps.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+} from '$lib/http/error_schemas.ts';
+import {ROLE_KEEPER} from '$lib/auth/role_schema.ts';
+import type {QueryDeps} from '$lib/db/query_deps.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 import {
 	create_test_account,
 	create_test_actor,
 	create_test_role_grant,
-} from '$lib/testing/entities.js';
+} from '$lib/testing/entities.ts';
 
 // Mock module-level query functions used by daemon_token_middleware
 const {

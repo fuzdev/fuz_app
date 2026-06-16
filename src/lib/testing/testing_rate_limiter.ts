@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Test-only `RateLimiter` subclass with bucket tracking + reset_all.
@@ -18,7 +18,7 @@ import './assert_dev_env.js';
  * Usage in a test binary:
  *
  * ```ts
- * import {TestingRateLimiter} from '@fuzdev/fuz_app/testing/testing_rate_limiter.js';
+ * import {TestingRateLimiter} from '@fuzdev/fuz_app/testing/testing_rate_limiter.ts';
  *
  * const limiter = new TestingRateLimiter(default_login_ip_rate_limit);
  * await create_app_server({backend, ip_rate_limiter: limiter, ...});
@@ -30,7 +30,7 @@ import './assert_dev_env.js';
  * @module
  */
 
-import {RateLimiter, type RateLimitResult} from '../rate_limiter.js';
+import {RateLimiter, type RateLimitResult} from '../rate_limiter.ts';
 
 /**
  * `RateLimiter` plus bucket tracking. Every `check`/`record` call adds

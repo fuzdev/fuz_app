@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * `xfail_until` — mark a deferred-by-design gap as an expected failure.

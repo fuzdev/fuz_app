@@ -18,9 +18,9 @@ import {
 	type FsRemoveDeps,
 	type FsWriteDeps,
 	type LogDeps,
-} from '../runtime/deps.js';
-import {write_file_atomic} from '../runtime/fs.js';
-import {get_app_dir} from './config.js';
+} from '../runtime/deps.ts';
+import {write_file_atomic} from '../runtime/fs.ts';
+import {get_app_dir} from './config.ts';
 
 /**
  * Daemon info schema for `~/.{name}/run/daemon.json`.

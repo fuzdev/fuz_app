@@ -14,13 +14,13 @@
  * @module
  */
 
-import type {AppSurface, AppSurfaceRoute} from './surface.js';
+import type {AppSurface, AppSurfaceRoute} from './surface.ts';
 import {
 	is_keeper_auth,
 	is_plain_authenticated_auth,
 	is_public_auth,
 	is_role_auth,
-} from './auth_shape.js';
+} from './auth_shape.ts';
 
 /** Filter routes that require any form of authentication. */
 export const filter_protected_routes = (surface: AppSurface): Array<AppSurfaceRoute> =>

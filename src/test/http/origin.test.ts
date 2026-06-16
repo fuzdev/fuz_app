@@ -5,8 +5,8 @@ import {
 	parse_allowed_origins,
 	should_allow_origin,
 	verify_request_source,
-} from '$lib/http/origin.js';
-import {ERROR_FORBIDDEN_ORIGIN} from '$lib/http/error_schemas.js';
+} from '$lib/http/origin.ts';
+import {ERROR_FORBIDDEN_ORIGIN} from '$lib/http/error_schemas.ts';
 
 // Test helpers
 const create_mock_context = (headers: Record<string, string> = {}) => {

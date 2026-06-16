@@ -819,7 +819,7 @@ enables nginx-level caching for immutable SvelteKit assets (`/_app`).
 required security properties. Add to deploy scripts:
 
 ```typescript
-import {validate_nginx_config} from '@fuzdev/fuz_app/server/validate_nginx.js';
+import {validate_nginx_config} from '@fuzdev/fuz_app/server/validate_nginx.ts';
 
 const result = validate_nginx_config(NGINX_CONFIG);
 if (!result.ok) throw new Error(result.errors.join('\n'));

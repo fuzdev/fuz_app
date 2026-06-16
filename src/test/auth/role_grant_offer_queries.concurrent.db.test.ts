@@ -12,13 +12,13 @@
 
 import {assert, test} from 'vitest';
 
-import {query_accept_offer} from '$lib/auth/role_grant_offer_queries.js';
-import {query_create_role_grant, query_revoke_role_grant} from '$lib/auth/role_grant_queries.js';
-import type {Db} from '$lib/db/db.js';
-import {create_describe_db, auth_integration_truncate_tables} from '$lib/testing/db.js';
+import {query_accept_offer} from '$lib/auth/role_grant_offer_queries.ts';
+import {query_create_role_grant, query_revoke_role_grant} from '$lib/auth/role_grant_queries.ts';
+import type {Db} from '$lib/db/db.ts';
+import {create_describe_db, auth_integration_truncate_tables} from '$lib/testing/db.ts';
 
-import {pg_factory} from '../db_fixture.js';
-import {make_account, create_pending_offer} from './role_grant_offer_queries.fixtures.js';
+import {pg_factory} from '../db_fixture.ts';
+import {make_account, create_pending_offer} from './role_grant_offer_queries.fixtures.ts';
 
 /**
  * Run a transactional op, retrying once on Postgres deadlock_detected

@@ -10,7 +10,7 @@
  * @example
  * ```svelte
  * <script lang="ts">
- * 	import {Popover} from '@fuzdev/fuz_app/ui/popover.svelte.js';
+ * 	import {Popover} from '@fuzdev/fuz_app/ui/popover.svelte.ts';
  *
  * 	const popover = new Popover();
  * </script>
@@ -50,10 +50,10 @@
 import type {Attachment} from 'svelte/attachments';
 import type {Snippet} from 'svelte';
 import {on} from 'svelte/events';
-import {swallow} from '@fuzdev/fuz_util/dom.js';
+import {swallow} from '@fuzdev/fuz_util/dom.ts';
 import type {TransitionConfig} from 'svelte/transition';
 
-import {type Position, type Alignment, generate_position_styles} from './position_helpers.js';
+import {type Position, type Alignment, generate_position_styles} from './position_helpers.ts';
 
 const create_client_id = (): string => Math.random().toString(36).substring(2);
 

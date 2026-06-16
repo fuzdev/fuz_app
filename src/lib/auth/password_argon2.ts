@@ -11,7 +11,7 @@
 
 import {hash, verify} from '@node-rs/argon2';
 
-import type {PasswordHashDeps} from './password.js';
+import type {PasswordHashDeps} from './password.ts';
 
 /**
  * Argon2id options following OWASP recommendations.

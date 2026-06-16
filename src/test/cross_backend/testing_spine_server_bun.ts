@@ -14,9 +14,9 @@
 import process from 'node:process';
 import {join} from 'node:path';
 
-import {start_testing_server} from '../../lib/testing/cross_backend/testing_server_core.js';
-import {create_bun_testing_adapter} from '../../lib/testing/cross_backend/testing_server_bun.js';
-import {build_spine_app, resolve_spine_server_config} from './testing_spine_server.js';
+import {start_testing_server} from '$lib/testing/cross_backend/testing_server_core.ts';
+import {create_bun_testing_adapter} from '$lib/testing/cross_backend/testing_server_bun.ts';
+import {build_spine_app, resolve_spine_server_config} from './testing_spine_server.ts';
 
 /** Dir env var whose `{dir}/run/daemon_token` matches `BackendConfig.bootstrap.daemon_token_path`. */
 const TS_SPINE_DIR_ENV = 'FUZ_TESTING_TS_SPINE_DIR';

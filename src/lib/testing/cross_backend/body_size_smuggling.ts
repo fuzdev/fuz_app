@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-backend request-smuggling probe for the body-size limit's connection
@@ -54,7 +54,7 @@ import {connect} from 'node:net';
 
 import {describe, test, assert} from 'vitest';
 
-import {SPINE_RPC_PATH} from './default_spine_surface.js';
+import {SPINE_RPC_PATH} from './default_spine_surface.ts';
 
 /** Options for the smuggling probe — needs the raw URL, not a transport. */
 export interface BodySizeSmugglingCrossTestOptions {

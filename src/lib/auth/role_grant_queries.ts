@@ -7,16 +7,16 @@
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {QueryDeps} from '../db/query_deps.js';
-import type {RoleGrant, CreateRoleGrantInput} from './account_schema.js';
-import {assert_row} from '../db/assert_row.js';
+import type {QueryDeps} from '../db/query_deps.ts';
+import type {RoleGrant, CreateRoleGrantInput} from './account_schema.ts';
+import {assert_row} from '../db/assert_row.ts';
 import {
 	ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
 	ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID,
-} from './role_grant_offer_ddl.js';
-import type {SupersededOffer} from './role_grant_offer_schema.js';
+} from './role_grant_offer_ddl.ts';
+import type {SupersededOffer} from './role_grant_offer_schema.ts';
 
 /**
  * Grant a role_grant to an actor.

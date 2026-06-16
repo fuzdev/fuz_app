@@ -1,8 +1,8 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 import {assert} from 'vitest';
 
-import type {ConnectionCloser} from '../actions/connection_closer.js';
+import type {ConnectionCloser} from '../actions/connection_closer.ts';
 
 /**
  * Record of a single `ConnectionCloser` method invocation. `at` is the

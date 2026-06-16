@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-backend fact-serving parity suite — the per-reference (cell-scoped)
@@ -40,14 +40,14 @@ import '../assert_dev_env.js';
 
 import {describe, assert} from 'vitest';
 import {z} from 'zod';
-import {FactHashSchema} from '@fuzdev/fuz_util/fact_hash.js';
+import {FactHashSchema} from '@fuzdev/fuz_util/fact_hash.ts';
 
-import {CellCreateOutput} from '../../auth/cell_action_specs.js';
-import type {FetchTransport} from '../transports/fetch_transport.js';
-import {test_if} from './capabilities.js';
-import {cross_rpc_call, expect_output} from './cell_cross_helpers.js';
-import {SPINE_RPC_PATH} from './default_spine_surface.js';
-import type {RpcPathCrossSuiteOptions, SetupTest} from './setup.js';
+import {CellCreateOutput} from '../../auth/cell_action_specs.ts';
+import type {FetchTransport} from '../transports/fetch_transport.ts';
+import {test_if} from './capabilities.ts';
+import {cross_rpc_call, expect_output} from './cell_cross_helpers.ts';
+import {SPINE_RPC_PATH} from './default_spine_surface.ts';
+import type {RpcPathCrossSuiteOptions, SetupTest} from './setup.ts';
 
 /**
  * The fact suite adds one optional knob to the shared cell options: a setup

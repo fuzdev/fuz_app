@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Stub factories for auth surface testing.
@@ -9,32 +9,32 @@ import './assert_dev_env.js';
  * @module
  */
 
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
 import type {z} from 'zod';
 
-import type {SessionOptions} from '../auth/session_cookie.js';
-import type {MiddlewareSpec} from '../http/middleware_spec.js';
-import {ApiError, RateLimitError} from '../http/error_schemas.js';
-import type {AppDeps} from '../auth/deps.js';
-import type {AuditEmitter} from '../auth/audit_emitter.js';
-import type {AuditLogEvent} from '../auth/audit_log_schema.js';
-import type {BootstrapServerOptions} from '../server/app_server.js';
-import type {AppServerContext} from '../server/app_server_context.js';
-import {Db} from '../db/db.js';
-import {prefix_route_specs, type RouteSpec} from '../http/route_spec.js';
-import {bootstrap_route_shape} from '../auth/bootstrap_route_schema.js';
-import {create_rpc_endpoint} from '../actions/action_rpc.js';
+import type {SessionOptions} from '../auth/session_cookie.ts';
+import type {MiddlewareSpec} from '../http/middleware_spec.ts';
+import {ApiError, RateLimitError} from '../http/error_schemas.ts';
+import type {AppDeps} from '../auth/deps.ts';
+import type {AuditEmitter} from '../auth/audit_emitter.ts';
+import type {AuditLogEvent} from '../auth/audit_log_schema.ts';
+import type {BootstrapServerOptions} from '../server/app_server.ts';
+import type {AppServerContext} from '../server/app_server_context.ts';
+import {Db} from '../db/db.ts';
+import {prefix_route_specs, type RouteSpec} from '../http/route_spec.ts';
+import {bootstrap_route_shape} from '../auth/bootstrap_route_schema.ts';
+import {create_rpc_endpoint} from '../actions/action_rpc.ts';
 import {
 	create_app_surface_spec,
 	type AppSurfaceSpec,
 	type RpcEndpointSpec,
-} from '../http/surface.js';
-import type {WsEndpointSpec} from '../actions/ws_endpoint_spec.js';
-import type {EventSpec, SseNotification} from '../realtime/sse.js';
-import {AUDIT_LOG_SSE_MAX_PER_SCOPE, type AuditLogSse} from '../realtime/sse_auth_guard.js';
-import {SubscriberRegistry} from '../realtime/subscriber_registry.js';
-import {BaseServerEnv} from '../server/env.js';
+} from '../http/surface.ts';
+import type {WsEndpointSpec} from '../actions/ws_endpoint_spec.ts';
+import type {EventSpec, SseNotification} from '../realtime/sse.ts';
+import {AUDIT_LOG_SSE_MAX_PER_SCOPE, type AuditLogSse} from '../realtime/sse_auth_guard.ts';
+import {SubscriberRegistry} from '../realtime/subscriber_registry.ts';
+import {BaseServerEnv} from '../server/env.ts';
 
 /**
  * Create a Proxy that throws descriptive errors on any property access or method call.

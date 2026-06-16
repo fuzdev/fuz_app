@@ -6,8 +6,8 @@
  */
 
 import type {WSContext} from 'hono/ws';
-import {to_error_message} from '@fuzdev/fuz_util/error.js';
-import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
+import {to_error_message} from '@fuzdev/fuz_util/error.ts';
+import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.ts';
 
 import type {
 	JsonrpcMessageFromClientToServer,
@@ -16,14 +16,14 @@ import type {
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
 	JsonrpcErrorResponse,
-} from '../http/jsonrpc.js';
-import {jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
+} from '../http/jsonrpc.ts';
+import {jsonrpc_error_messages} from '../http/jsonrpc_errors.ts';
 import {
 	create_jsonrpc_error_response,
 	to_jsonrpc_message_id,
 	is_jsonrpc_request,
-} from '../http/jsonrpc_helpers.js';
-import {WS_CLOSE_SESSION_REVOKED, type Transport, type TransportSendOptions} from './transports.js';
+} from '../http/jsonrpc_helpers.ts';
+import {WS_CLOSE_SESSION_REVOKED, type Transport, type TransportSendOptions} from './transports.ts';
 
 // TODO support a SSE backend transport
 

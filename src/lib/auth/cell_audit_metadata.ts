@@ -8,7 +8,7 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 
 /**
  * Shared metadata envelope for cell mutations. `kind` and `path` are

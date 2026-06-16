@@ -8,24 +8,24 @@
  * @module
  */
 
-import type {Account, Actor} from './account_schema.js';
+import type {Account, Actor} from './account_schema.ts';
 
-import {create_session_and_set_cookie} from './session_middleware.js';
-import {query_create_account_with_actor} from './account_queries.js';
-import {query_app_settings_load} from './app_settings_queries.js';
+import {create_session_and_set_cookie} from './session_middleware.ts';
+import {query_create_account_with_actor} from './account_queries.ts';
+import {query_app_settings_load} from './app_settings_queries.ts';
 import {
 	query_invite_find_unclaimed_match_for_update,
 	query_invite_claim_unscoped,
-} from './invite_queries.js';
-import type {Invite} from './invite_schema.js';
-import {create_signup_route_shape, type SignupInput} from './signup_route_schema.js';
-import {get_route_input, type RouteSpec} from '../http/route_spec.js';
-import {get_client_ip} from '../http/client_ip.js';
-import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
-import type {RouteFactoryDeps} from './deps.js';
-import {ERROR_NO_MATCHING_INVITE, ERROR_SIGNUP_CONFLICT} from '../http/error_schemas.js';
-import {is_pg_unique_violation} from '../db/pg_error.js';
-import type {AuthSessionRouteOptions} from './account_routes.js';
+} from './invite_queries.ts';
+import type {Invite} from './invite_schema.ts';
+import {create_signup_route_shape, type SignupInput} from './signup_route_schema.ts';
+import {get_route_input, type RouteSpec} from '../http/route_spec.ts';
+import {get_client_ip} from '../http/client_ip.ts';
+import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.ts';
+import type {RouteFactoryDeps} from './deps.ts';
+import {ERROR_NO_MATCHING_INVITE, ERROR_SIGNUP_CONFLICT} from '../http/error_schemas.ts';
+import {is_pg_unique_violation} from '../db/pg_error.ts';
+import type {AuthSessionRouteOptions} from './account_routes.ts';
 
 /**
  * Default minimum wall-clock time (ms) for a signup denial (403 / 409) response.

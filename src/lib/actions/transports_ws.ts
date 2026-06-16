@@ -12,9 +12,9 @@
  * @module
  */
 
-import {to_error_message} from '@fuzdev/fuz_util/error.js';
+import {to_error_message} from '@fuzdev/fuz_util/error.ts';
 
-import {ThrownJsonrpcError, jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
+import {ThrownJsonrpcError, jsonrpc_error_messages} from '../http/jsonrpc_errors.ts';
 import {
 	is_jsonrpc_notification,
 	is_jsonrpc_request,
@@ -22,7 +22,7 @@ import {
 	to_jsonrpc_result,
 	create_jsonrpc_response,
 	create_jsonrpc_error_response,
-} from '../http/jsonrpc_helpers.js';
+} from '../http/jsonrpc_helpers.ts';
 import type {
 	JsonrpcMessageFromClientToServer,
 	JsonrpcMessageFromServerToClient,
@@ -31,8 +31,8 @@ import type {
 	JsonrpcRequestId,
 	JsonrpcResponseOrError,
 	JsonrpcErrorResponse,
-} from '../http/jsonrpc.js';
-import type {Transport, TransportSendOptions} from './transports.js';
+} from '../http/jsonrpc.ts';
+import type {Transport, TransportSendOptions} from './transports.ts';
 
 // TODO logging - maybe add a getter to Cell that falls back to the app logger?
 

@@ -6,7 +6,7 @@
 
 import {describe, assert, test, vi} from 'vitest';
 
-import {ui_fetch, parse_response_error} from '$lib/ui/ui_fetch.js';
+import {ui_fetch, parse_response_error} from '$lib/ui/ui_fetch.ts';
 
 describe('ui_fetch', () => {
 	test('sets credentials to include', async () => {

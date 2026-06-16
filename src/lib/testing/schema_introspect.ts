@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * PostgreSQL schema introspection — produces a normalized, JSON-serializable
@@ -26,7 +26,7 @@ import './assert_dev_env.js';
 
 import {z} from 'zod';
 
-import type {Db} from '../db/db.js';
+import type {Db} from '../db/db.ts';
 
 /**
  * Per-column structural metadata. The Zod schema is the canonical source

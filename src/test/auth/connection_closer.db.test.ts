@@ -39,49 +39,49 @@
 
 import {describe, test, assert} from 'vitest';
 
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {create_account_route_specs} from '$lib/auth/account_routes.js';
-import {create_account_actions} from '$lib/auth/account_actions.js';
-import {create_admin_actions} from '$lib/auth/admin_actions.js';
-import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {create_account_route_specs} from '$lib/auth/account_routes.ts';
+import {create_account_actions} from '$lib/auth/account_actions.ts';
+import {create_admin_actions} from '$lib/auth/admin_actions.ts';
+import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.ts';
 import {
 	account_session_revoke_action_spec,
 	account_session_revoke_all_action_spec,
 	account_token_revoke_action_spec,
-} from '$lib/auth/account_action_specs.js';
+} from '$lib/auth/account_action_specs.ts';
 import {
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
-} from '$lib/auth/admin_action_specs.js';
-import {ERROR_CREDENTIAL_TYPE_REQUIRED, ERROR_ACCOUNT_NOT_FOUND} from '$lib/http/error_schemas.js';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
-import type {ConnectionCloser} from '$lib/actions/connection_closer.js';
-import {auth_migration_ns} from '$lib/auth/migrations.js';
-import {create_test_app} from '$lib/testing/app_server.js';
-import {DEFAULT_TEST_PASSWORD} from '$lib/testing/test_credentials.js';
-import {create_test_account_with_actor} from '$lib/testing/db_entities.js';
+} from '$lib/auth/admin_action_specs.ts';
+import {ERROR_CREDENTIAL_TYPE_REQUIRED, ERROR_ACCOUNT_NOT_FOUND} from '$lib/http/error_schemas.ts';
+import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
+import type {ConnectionCloser} from '$lib/actions/connection_closer.ts';
+import {auth_migration_ns} from '$lib/auth/migrations.ts';
+import {create_test_app} from '$lib/testing/app_server.ts';
+import {DEFAULT_TEST_PASSWORD} from '$lib/testing/test_credentials.ts';
+import {create_test_account_with_actor} from '$lib/testing/db_entities.ts';
 import {
 	auth_integration_truncate_tables,
 	create_describe_db,
 	create_pglite_factory,
-} from '$lib/testing/db.js';
-import {rpc_call_for_spec, rpc_call} from '$lib/testing/rpc_helpers.js';
-import {find_auth_route} from '$lib/testing/integration_helpers.js';
+} from '$lib/testing/db.ts';
+import {rpc_call_for_spec, rpc_call} from '$lib/testing/rpc_helpers.ts';
+import {find_auth_route} from '$lib/testing/integration_helpers.ts';
 import {
 	install_audit_drift_guard,
 	create_emit_ordering_audit_factory,
-} from '$lib/testing/audit_drift_guard.js';
-import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
+} from '$lib/testing/audit_drift_guard.ts';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
 import {
 	assert_close_call,
 	create_recording_closer,
-} from '$lib/testing/connection_closer_helpers.js';
-import {run_migrations} from '$lib/db/migrate.js';
-import type {Db} from '$lib/db/db.js';
-import type {AppServerContext} from '$lib/server/app_server_context.js';
-import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
-import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
-import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
+} from '$lib/testing/connection_closer_helpers.ts';
+import {run_migrations} from '$lib/db/migrate.ts';
+import type {Db} from '$lib/db/db.ts';
+import type {AppServerContext} from '$lib/server/app_server_context.ts';
+import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.ts';
+import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
+import type {AuditLogEvent} from '$lib/auth/audit_log_schema.ts';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';

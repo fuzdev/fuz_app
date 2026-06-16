@@ -14,7 +14,7 @@
 
 import {z} from 'zod';
 
-import {needs_actor, type RouteAuth} from './auth_shape.js';
+import {needs_actor, type RouteAuth} from './auth_shape.ts';
 
 // --- Core: Validation (auto-derived by route spec middleware) ---
 

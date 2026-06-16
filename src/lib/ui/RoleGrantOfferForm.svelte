@@ -13,19 +13,19 @@
 
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
 
-	import {role_grant_offers_state_context} from './role_grant_offers_state.svelte.js';
-	import {FormState} from './form_state.svelte.js';
+	import {role_grant_offers_state_context} from './role_grant_offers_state.svelte.ts';
+	import {FormState} from './form_state.svelte.ts';
 	import {
 		ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX,
 		type RoleGrantOfferJson,
-	} from '../auth/role_grant_offer_schema.js';
+	} from '../auth/role_grant_offer_schema.ts';
 	import {
 		ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
 		ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH,
 		ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
 		ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE,
 		ERROR_ROLE_GRANT_OFFER_SELF_TARGET,
-	} from '../auth/role_grant_offer_action_specs.js';
+	} from '../auth/role_grant_offer_action_specs.ts';
 
 	const {
 		to_account_id,

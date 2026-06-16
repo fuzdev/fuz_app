@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Table runner for the declarative cross-backend conformance suite.
@@ -22,25 +22,25 @@ import '../assert_dev_env.js';
 
 import {assert, describe, test} from 'vitest';
 
-import type {AppSurfaceSpec} from '../../http/surface.js';
-import type {RouteMethod} from '../../http/route_spec.js';
-import type {SessionOptions} from '../../auth/session_cookie.js';
+import type {AppSurfaceSpec} from '../../http/surface.ts';
+import type {RouteMethod} from '../../http/route_spec.ts';
+import type {SessionOptions} from '../../auth/session_cookie.ts';
 import {
 	find_auth_route,
 	rest_auth_route_suffixes,
 	type RestAuthRouteSuffix,
-} from '../integration_helpers.js';
+} from '../integration_helpers.ts';
 import {
 	find_rpc_action,
 	rpc_call,
 	resolve_rpc_endpoints_for_setup,
 	type RpcEndpointsSuiteOption,
-} from '../rpc_helpers.js';
-import type {FetchTransport} from '../transports/fetch_transport.js';
-import {type ConformanceCase, type ConformancePrincipal} from './conformance_case.js';
-import type {BackendCapabilities} from './capabilities.js';
-import type {SetupTest, TestFixture} from './setup.js';
-import {xfail_until} from './xfail.js';
+} from '../rpc_helpers.ts';
+import type {FetchTransport} from '../transports/fetch_transport.ts';
+import {type ConformanceCase, type ConformancePrincipal} from './conformance_case.ts';
+import type {BackendCapabilities} from './capabilities.ts';
+import type {SetupTest, TestFixture} from './setup.ts';
+import {xfail_until} from './xfail.ts';
 
 /**
  * Names a seeded `extra_accounts` username for the `role_holder` /

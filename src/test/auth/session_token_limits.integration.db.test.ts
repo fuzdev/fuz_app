@@ -11,28 +11,28 @@
 
 import {describe, test, assert} from 'vitest';
 
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {create_account_route_specs} from '$lib/auth/account_routes.js';
-import {create_account_actions} from '$lib/auth/account_actions.js';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {create_account_route_specs} from '$lib/auth/account_routes.ts';
+import {create_account_actions} from '$lib/auth/account_actions.ts';
 import {
 	account_verify_action_spec,
 	account_token_create_action_spec,
-} from '$lib/auth/account_action_specs.js';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
-import {auth_migration_ns} from '$lib/auth/migrations.js';
-import {create_test_app} from '$lib/testing/app_server.js';
-import {DEFAULT_TEST_PASSWORD} from '$lib/testing/test_credentials.js';
+} from '$lib/auth/account_action_specs.ts';
+import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
+import {auth_migration_ns} from '$lib/auth/migrations.ts';
+import {create_test_app} from '$lib/testing/app_server.ts';
+import {DEFAULT_TEST_PASSWORD} from '$lib/testing/test_credentials.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
 	auth_integration_truncate_tables,
-} from '$lib/testing/db.js';
-import {find_auth_route} from '$lib/testing/integration_helpers.js';
-import {rpc_call_for_spec, rpc_call_non_browser} from '$lib/testing/rpc_helpers.js';
-import {run_migrations} from '$lib/db/migrate.js';
-import type {Db} from '$lib/db/db.js';
-import type {AppServerContext} from '$lib/server/app_server_context.js';
-import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
+} from '$lib/testing/db.ts';
+import {find_auth_route} from '$lib/testing/integration_helpers.ts';
+import {rpc_call_for_spec, rpc_call_non_browser} from '$lib/testing/rpc_helpers.ts';
+import {run_migrations} from '$lib/db/migrate.ts';
+import type {Db} from '$lib/db/db.ts';
+import type {AppServerContext} from '$lib/server/app_server_context.ts';
+import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.ts';
 
 const session_options = create_session_config('test_session');
 const {cookie_name} = session_options;

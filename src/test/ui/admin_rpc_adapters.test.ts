@@ -14,19 +14,19 @@
  */
 
 import {describe, test, assert, vi, afterEach, beforeEach, type MockInstance} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
 import {
 	create_admin_rpc_adapters,
 	provide_admin_rpc_contexts,
 	type AdminRpcApi,
-} from '$lib/ui/admin_rpc_adapters.js';
-import {admin_accounts_rpc_context} from '$lib/ui/admin_accounts_state.svelte.js';
-import {admin_invites_rpc_context} from '$lib/ui/admin_invites_state.svelte.js';
-import {audit_log_rpc_context} from '$lib/ui/audit_log_state.svelte.js';
-import {app_settings_rpc_context} from '$lib/ui/app_settings_state.svelte.js';
-import {format_scope_context, type FormatScope} from '$lib/ui/format_scope.js';
+} from '$lib/ui/admin_rpc_adapters.ts';
+import {admin_accounts_rpc_context} from '$lib/ui/admin_accounts_state.svelte.ts';
+import {admin_invites_rpc_context} from '$lib/ui/admin_invites_state.svelte.ts';
+import {audit_log_rpc_context} from '$lib/ui/audit_log_state.svelte.ts';
+import {app_settings_rpc_context} from '$lib/ui/app_settings_state.svelte.ts';
+import {format_scope_context, type FormatScope} from '$lib/ui/format_scope.ts';
 
 // Test fixtures — narrow `Admin*Rpc` interfaces require `Uuid`-branded ids
 // (matching the wire spec types). Real values would arrive pre-branded from

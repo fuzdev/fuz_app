@@ -46,19 +46,19 @@
  * @module
  */
 
-import {ActionRegistry} from './action_registry.js';
-import {ActionPeer} from './action_peer.js';
-import {Transports, type Transport} from './transports.js';
-import {FrontendHttpTransport} from './transports_http.js';
+import {ActionRegistry} from './action_registry.ts';
+import {ActionPeer} from './action_peer.ts';
+import {Transports, type Transport} from './transports.ts';
+import {FrontendHttpTransport} from './transports_http.ts';
 import {
 	create_rpc_client,
 	create_throwing_api,
 	type ThrowingApi,
 	type TransportForMethod,
-} from './rpc_client.js';
-import type {ActionEvent} from './action_event.js';
-import type {ActionEventEnvironment} from './action_event_types.js';
-import type {ActionSpecUnion} from './action_spec.js';
+} from './rpc_client.ts';
+import type {ActionEvent} from './action_event.ts';
+import type {ActionEventEnvironment} from './action_event_types.ts';
+import type {ActionSpecUnion} from './action_spec.ts';
 
 /** Options for `create_frontend_rpc_client`. */
 export interface CreateFrontendRpcClientOptions<TApi extends object = object> {

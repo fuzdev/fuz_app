@@ -6,10 +6,10 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {format_env_display_value} from '../env/mask.js';
-import type {AppSurface} from '../http/surface.js';
+import {format_env_display_value} from '../env/mask.ts';
+import type {AppSurface} from '../http/surface.ts';
 
 /**
  * Log a startup summary from an `AppSurface`.

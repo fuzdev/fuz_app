@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-backend identity-primitive parity for fuz_app's own spine over real
@@ -97,9 +97,9 @@ import {
 	ERROR_INVALID_CREDENTIALS,
 	ERROR_INVALID_REQUEST_BODY,
 	ERROR_NO_MATCHING_INVITE,
-} from '../../http/error_schemas.js';
-import {DEFAULT_TEST_PASSWORD} from '../test_credentials.js';
-import type {SetupTest} from './setup.js';
+} from '../../http/error_schemas.ts';
+import {DEFAULT_TEST_PASSWORD} from '../test_credentials.ts';
+import type {SetupTest} from './setup.ts';
 
 /**
  * The flat-REST `{error}` reason each terminal login/signup status carries on

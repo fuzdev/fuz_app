@@ -10,9 +10,9 @@
 
 import {z} from 'zod';
 
-import type {RequestResponseActionSpec} from '../actions/action_spec.js';
-import {RoleName} from './role_schema.js';
-import {ActingActor} from '../http/auth_shape.js';
+import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
+import {RoleName} from './role_schema.ts';
+import {ActingActor} from '../http/auth_shape.ts';
 
 /** Error reason — caller asked to self-toggle a role outside the configured allowlist. */
 export const ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE = 'role_not_self_service_eligible' as const;

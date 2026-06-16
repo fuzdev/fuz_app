@@ -22,10 +22,10 @@
  * @module
  */
 
-import type {QueryDeps} from './query_deps.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import type {CellGrantLevel} from '../auth/cell_grant_action_specs.js';
-import {assert_row} from './assert_row.js';
+import type {QueryDeps} from './query_deps.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type {CellGrantLevel} from '../auth/cell_grant_action_specs.ts';
+import {assert_row} from './assert_row.ts';
 
 /** Row shape returned by `cell_grant` SELECTs. */
 export interface CellGrantRow {

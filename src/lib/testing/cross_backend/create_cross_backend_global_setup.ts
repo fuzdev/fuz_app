@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Generic vitest `globalSetup` factory for cross-backend integration suites.
@@ -14,7 +14,7 @@ import '../assert_dev_env.js';
  *
  * ```ts
  * import {create_cross_backend_global_setup} from
- *   '@fuzdev/fuz_app/testing/cross_backend/create_cross_backend_global_setup.js';
+ *   '@fuzdev/fuz_app/testing/cross_backend/create_cross_backend_global_setup.ts';
  * import {deno_backend_config, rust_backend_config} from './my_backend_config.js';
  * import './cross_test_types.js'; // augments inject('backend_handle')
  *
@@ -33,9 +33,9 @@ import '../assert_dev_env.js';
 
 import type {TestProject} from 'vitest/node';
 
-import type {BackendConfig} from './backend_config.js';
-import {bootstrap_backend} from './bootstrap_backend.js';
-import {serialize_bootstrapped_handle} from './setup.js';
+import type {BackendConfig} from './backend_config.ts';
+import {bootstrap_backend} from './bootstrap_backend.ts';
+import {serialize_bootstrapped_handle} from './setup.ts';
 
 /**
  * Default project-name → backend-name reduction: strips the

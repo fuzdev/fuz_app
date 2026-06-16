@@ -9,9 +9,9 @@
  * @module
  */
 
-import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
+import {create_context} from '@fuzdev/fuz_ui/context_helpers.ts';
 
-import {truncate_uuid} from './ui_format.js';
+import {truncate_uuid} from './ui_format.ts';
 
 /**
  * Render a `{scope_id, role}` pair as a human label. Return `null` to fall

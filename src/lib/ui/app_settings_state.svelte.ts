@@ -12,15 +12,15 @@
  * @module
  */
 
-import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
+import {create_context} from '@fuzdev/fuz_ui/context_helpers.ts';
 
-import {AsyncSlot} from './async_slot.svelte.js';
-import type {AppSettingsWithUsernameJson} from '../auth/app_settings_schema.js';
+import {AsyncSlot} from './async_slot.svelte.ts';
+import type {AppSettingsWithUsernameJson} from '../auth/app_settings_schema.ts';
 import type {
 	AppSettingsGetOutput,
 	AppSettingsUpdateInput,
 	AppSettingsUpdateOutput,
-} from '../auth/admin_action_specs.js';
+} from '../auth/admin_action_specs.ts';
 
 /**
  * Narrow RPC surface consumed by `AppSettingsState`. Consumers adapt their

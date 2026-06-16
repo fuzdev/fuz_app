@@ -9,10 +9,10 @@
 import {describe, assert, test} from 'vitest';
 import {z} from 'zod';
 
-import {create_action_event, create_action_event_from_json} from '$lib/actions/action_event.js';
-import type {ActionEventEnvironment} from '$lib/actions/action_event_types.js';
-import type {ActionSpecUnion} from '$lib/actions/action_spec.js';
-import type {ActionEventDataUnion} from '$lib/actions/action_event_data.js';
+import {create_action_event, create_action_event_from_json} from '$lib/actions/action_event.ts';
+import type {ActionEventEnvironment} from '$lib/actions/action_event_types.ts';
+import type {ActionSpecUnion} from '$lib/actions/action_spec.ts';
+import type {ActionEventDataUnion} from '$lib/actions/action_event_data.ts';
 
 // Inline test specs
 const ping_spec = {

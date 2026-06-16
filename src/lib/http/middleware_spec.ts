@@ -9,7 +9,7 @@
 
 import type {MiddlewareHandler} from 'hono';
 
-import type {RouteErrorSchemas} from './error_schemas.js';
+import type {RouteErrorSchemas} from './error_schemas.ts';
 
 /** A named middleware layer. */
 export interface MiddlewareSpec {

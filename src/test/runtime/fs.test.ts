@@ -5,9 +5,9 @@
  */
 
 import {describe, assert, test} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
-import {write_file_atomic} from '$lib/runtime/fs.js';
+import {write_file_atomic} from '$lib/runtime/fs.ts';
 
 describe('write_file_atomic', () => {
 	test('writes content via temp file then renames', async () => {

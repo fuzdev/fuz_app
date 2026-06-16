@@ -12,9 +12,9 @@
 import {describe, test, assert, beforeAll, afterAll} from 'vitest';
 import {z} from 'zod';
 
-import {create_test_app, type TestApp} from '$lib/testing/app_server.js';
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {query_audit_log_list} from '$lib/auth/audit_log_queries.js';
+import {create_test_app, type TestApp} from '$lib/testing/app_server.ts';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {query_audit_log_list} from '$lib/auth/audit_log_queries.ts';
 
 const session_options = create_session_config('test_session');
 

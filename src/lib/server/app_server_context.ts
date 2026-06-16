@@ -14,12 +14,12 @@
  * @module
  */
 
-import type {AppDeps} from '../auth/deps.js';
-import type {AppBackend} from './app_backend.js';
-import type {BootstrapStatus} from '../auth/bootstrap_routes.js';
-import type {SessionOptions} from '../auth/session_cookie.js';
-import type {RateLimiter} from '../rate_limiter.js';
-import type {AuditLogSse} from '../realtime/sse_auth_guard.js';
+import type {AppDeps} from '../auth/deps.ts';
+import type {AppBackend} from './app_backend.ts';
+import type {BootstrapStatus} from '../auth/bootstrap_routes.ts';
+import type {SessionOptions} from '../auth/session_cookie.ts';
+import type {RateLimiter} from '../rate_limiter.ts';
+import type {AuditLogSse} from '../realtime/sse_auth_guard.ts';
 
 /** Context passed to `create_route_specs`. */
 export interface AppServerContext {

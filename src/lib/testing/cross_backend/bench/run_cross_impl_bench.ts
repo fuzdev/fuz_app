@@ -1,10 +1,10 @@
-import '../../assert_dev_env.js';
+import '../../assert_dev_env.ts';
 
-import {Benchmark} from '@fuzdev/fuz_util/benchmark.js';
-import type {BenchmarkConfig, BenchmarkResult} from '@fuzdev/fuz_util/benchmark_types.js';
+import {Benchmark} from '@fuzdev/fuz_util/benchmark.ts';
+import type {BenchmarkConfig, BenchmarkResult} from '@fuzdev/fuz_util/benchmark_types.ts';
 
-import type {BootstrappedBackendHandle} from '../setup.js';
-import type {BenchScenario, BenchScenarioContext} from './scenario.js';
+import type {BootstrappedBackendHandle} from '../setup.ts';
+import type {BenchScenario, BenchScenarioContext} from './scenario.ts';
 
 /**
  * Drive identical wire scenarios across several spawned backends and time each

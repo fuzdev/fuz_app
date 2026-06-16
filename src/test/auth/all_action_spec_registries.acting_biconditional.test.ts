@@ -28,8 +28,8 @@
 
 import {describe, test, assert} from 'vitest';
 
-import {all_fuz_auth_action_spec_registries} from '$lib/auth/all_action_spec_registries.js';
-import {input_schema_declares_acting, needs_actor} from '$lib/http/auth_shape.js';
+import {all_fuz_auth_action_spec_registries} from '$lib/auth/all_action_spec_registries.ts';
+import {input_schema_declares_acting, needs_actor} from '$lib/http/auth_shape.ts';
 
 describe('fuz_auth registries — acting biconditional', () => {
 	for (const registry of all_fuz_auth_action_spec_registries) {

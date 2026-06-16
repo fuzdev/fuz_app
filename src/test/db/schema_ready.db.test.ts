@@ -17,13 +17,13 @@
 import {describe, test, assert, beforeAll, afterAll} from 'vitest';
 import {PGlite} from '@electric-sql/pglite';
 
-import type {Db} from '$lib/db/db.js';
-import {create_pglite_db} from '$lib/db/db_pglite.js';
-import {run_migrations} from '$lib/db/migrate.js';
-import {auth_migration_ns} from '$lib/auth/migrations.js';
-import {check_schema_drift, query_public_columns} from '$lib/db/schema_ready.js';
-import {create_ready_route_spec} from '$lib/http/common_routes.js';
-import {sync_expected_schema_fixture} from '$lib/testing/schema_ready_fixture.js';
+import type {Db} from '$lib/db/db.ts';
+import {create_pglite_db} from '$lib/db/db_pglite.ts';
+import {run_migrations} from '$lib/db/migrate.ts';
+import {auth_migration_ns} from '$lib/auth/migrations.ts';
+import {check_schema_drift, query_public_columns} from '$lib/db/schema_ready.ts';
+import {create_ready_route_spec} from '$lib/http/common_routes.ts';
+import {sync_expected_schema_fixture} from '$lib/testing/schema_ready_fixture.ts';
 
 const FIXTURE_URL = new URL('./expected_auth_schema.json', import.meta.url);
 

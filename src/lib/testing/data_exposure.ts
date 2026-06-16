@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Composable data exposure test suite.
@@ -19,20 +19,20 @@ import './assert_dev_env.js';
 
 import {describe, test, beforeAll, assert} from 'vitest';
 
-import type {AppSurface, AppSurfaceSpec} from '../http/surface.js';
-import {ROLE_ADMIN} from '../auth/role_schema.js';
-import type {TestAccount} from './app_server.js';
-import {resolve_valid_path, generate_valid_body} from './schema_generators.js';
-import {is_null_schema, is_strict_object_schema} from '../http/schema_helpers.js';
-import {is_keeper_auth, is_public_auth} from '../http/auth_shape.js';
+import type {AppSurface, AppSurfaceSpec} from '../http/surface.ts';
+import {ROLE_ADMIN} from '../auth/role_schema.ts';
+import type {TestAccount} from './app_server.ts';
+import {resolve_valid_path, generate_valid_body} from './schema_generators.ts';
+import {is_null_schema, is_strict_object_schema} from '../http/schema_helpers.ts';
+import {is_keeper_auth, is_public_auth} from '../http/auth_shape.ts';
 import {
 	sensitive_field_blocklist,
 	admin_only_field_blocklist,
 	assert_no_sensitive_fields_in_json,
 	pick_auth_headers,
-} from './integration_helpers.js';
-import type {BackendCapabilities} from './cross_backend/capabilities.js';
-import type {SetupTest, TestFixture} from './cross_backend/setup.js';
+} from './integration_helpers.ts';
+import type {BackendCapabilities} from './cross_backend/capabilities.ts';
+import type {SetupTest, TestFixture} from './cross_backend/setup.ts';
 
 // --- Schema introspection ---
 

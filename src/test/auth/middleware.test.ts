@@ -6,9 +6,9 @@
 
 import {describe, assert, test} from 'vitest';
 
-import {create_auth_middleware_specs, type AuthMiddlewareOptions} from '$lib/auth/middleware.js';
-import {RateLimiter} from '$lib/rate_limiter.js';
-import {create_stub_app_deps} from '$lib/testing/stubs.js';
+import {create_auth_middleware_specs, type AuthMiddlewareOptions} from '$lib/auth/middleware.ts';
+import {RateLimiter} from '$lib/rate_limiter.ts';
+import {create_stub_app_deps} from '$lib/testing/stubs.ts';
 
 const create_options = (overrides?: Partial<AuthMiddlewareOptions>): AuthMiddlewareOptions => ({
 	allowed_origins: [],

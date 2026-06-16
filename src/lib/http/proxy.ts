@@ -10,10 +10,10 @@
 
 import type {Context, MiddlewareHandler} from 'hono';
 import {convertIPv4ToBinary, convertIPv6ToBinary, distinctRemoteAddr} from 'hono/utils/ipaddr';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import type {MiddlewareSpec} from './middleware_spec.js';
-import {canonicalize_ip, IP_LITERAL_CHARS} from './ip_canonical.js';
+import type {MiddlewareSpec} from './middleware_spec.ts';
+import {canonicalize_ip, IP_LITERAL_CHARS} from './ip_canonical.ts';
 
 /**
  * Normalize an IP address for consistent matching and storage.

@@ -12,7 +12,7 @@
  * @module
  */
 
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
 // TODO: inline ANSI codes duplicate what Logger does internally with `styleText`.
 // Long-term, expose a color helper from Logger or converge with `st` from fuz_util/print.ts.

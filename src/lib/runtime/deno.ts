@@ -8,9 +8,9 @@
  * @module
  */
 
-import {to_error_message} from '@fuzdev/fuz_util/error.js';
+import {to_error_message} from '@fuzdev/fuz_util/error.ts';
 
-import type {RuntimeDeps, StatResult, CommandResult} from './deps.js';
+import type {RuntimeDeps, StatResult, CommandResult} from './deps.ts';
 
 // Deno API declarations — this module is only imported by Deno consumers.
 // Module-scoped declarations don't pollute the global type namespace.

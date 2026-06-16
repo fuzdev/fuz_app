@@ -12,8 +12,8 @@
 
 import {describe, test, assert} from 'vitest';
 
-import {create_test_app} from '$lib/testing/app_server.js';
-import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
+import {create_test_app} from '$lib/testing/app_server.ts';
+import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
 import {
 	role_grant_offer_create_action_spec,
 	role_grant_offer_accept_action_spec,
@@ -22,16 +22,16 @@ import {
 	ERROR_ROLE_GRANT_OFFER_SELF_TARGET,
 	ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
 	ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE,
-} from '$lib/auth/role_grant_offer_action_specs.js';
-import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
-import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
+} from '$lib/auth/role_grant_offer_action_specs.ts';
+import type {AuditLogEvent} from '$lib/auth/audit_log_schema.ts';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
+import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
 import {
 	RPC_PATH,
 	create_route_specs,
 	describe_db,
 	session_options,
-} from './role_grant_offer_test_helpers.js';
+} from './role_grant_offer_test_helpers.ts';
 
 describe_db('role_grant_offer_actions.audit', (get_db) => {
 	describe('audit event fan-out', () => {

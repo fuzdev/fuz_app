@@ -18,15 +18,15 @@
  * @module
  */
 
-import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.js';
+import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.ts';
 
-import {create_jsonrpc_notification, to_jsonrpc_params} from '../http/jsonrpc_helpers.js';
-import type {ActionPeer} from './action_peer.js';
-import type {ActionSpecUnion} from './action_spec.js';
+import {create_jsonrpc_notification, to_jsonrpc_params} from '../http/jsonrpc_helpers.ts';
+import type {ActionPeer} from './action_peer.ts';
+import type {ActionSpecUnion} from './action_spec.ts';
 import {
 	is_filterable_broadcast_transport,
 	type ConnectionIdentity,
-} from './transports_ws_backend.js';
+} from './transports_ws_backend.ts';
 
 /**
  * Per-connection delivery predicate for subscription ACLs.

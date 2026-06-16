@@ -14,7 +14,7 @@ Tests live in `src/test/`, mirroring `src/lib/` structure
 
 ### Database Tests
 
-`create_describe_db(factories, truncate_tables)` from `$lib/testing/db.js`
+`create_describe_db(factories, truncate_tables)` from `$lib/testing/db.ts`
 returns a `describe_db(name, fn)` function bound to the given factories.
 Runs suites against PGlite (in-memory) and optionally PostgreSQL (when
 `TEST_DATABASE_URL` is set). Consumer projects create a `db_fixture.ts`
@@ -23,7 +23,7 @@ that calls `create_describe_db` with their factories and truncate tables.
 ### Integration Tests
 
 Named `.integration.test.ts`. Use `create_test_app()` from
-`$lib/testing/app_server.js` to spin up a full Hono app:
+`$lib/testing/app_server.ts` to spin up a full Hono app:
 
 ```ts
 const {app, create_session_headers, create_bearer_headers, create_account, cleanup} =
@@ -88,7 +88,7 @@ obligation above: it enumerates the spine binary's full live RPC mount
 (`build_full_spine_rpc_actions`, the single-sourced superset
 `testing_spine_server.ts` mounts) and reconciles it against the tagged
 `spine_method_coverage.ts` manifest via `assert_rpc_method_coverage`
-(`$lib/testing/cross_backend/method_coverage.js`). Every method is tagged
+(`$lib/testing/cross_backend/method_coverage.ts`). Every method is tagged
 `declared` (auto-enumerated by the spec-derived suites), `off_surface` (names
 the covering `describe_*_cross_tests` suite), or `backdoor` (`_testing_*`).
 Mount a new method without a manifest row — or leave a stale row — and the test
@@ -107,7 +107,7 @@ the test helpers' route list.
 ## Mocking
 
 - DI via small `*Deps` interfaces — `stub_app_deps()` for auth deps with safe defaults
-- `create_mock_runtime()` from `$lib/runtime/mock.js` for CLI/runtime tests
+- `create_mock_runtime()` from `$lib/runtime/mock.ts` for CLI/runtime tests
 - `vi.spyOn()` for fetch mocking in UI tests
 
 ## fuz_app-specific conventions
@@ -116,7 +116,7 @@ the test helpers' route list.
 - `await_pending_effects: true` is set by `create_test_app` — fire-and-forget
   effects complete before response returns, so tests can assert side effects directly
 - `.db.test.ts` files that exercise audit emits should call
-  `install_audit_drift_guard()` (from `$lib/testing/audit_drift_guard.js`)
+  `install_audit_drift_guard()` (from `$lib/testing/audit_drift_guard.ts`)
   at the top of the `describe_db` block. Resets +
   asserts the `audit_metadata_validation_failures` and
   `audit_unknown_event_type_failures` counters per-test —

@@ -18,64 +18,64 @@ import {
 	session_cookie_options,
 	type SessionOptions,
 	type SessionCookieOptions,
-} from '../auth/session_cookie.js';
-import type {BootstrapAccountSuccess} from '../auth/bootstrap_account.js';
-import type {EventSpec} from '../realtime/sse.js';
+} from '../auth/session_cookie.ts';
+import type {BootstrapAccountSuccess} from '../auth/bootstrap_account.ts';
+import type {EventSpec} from '../realtime/sse.ts';
 import {
 	create_audit_log_sse,
 	audit_log_event_specs,
 	type AuditLogSse,
-} from '../realtime/sse_auth_guard.js';
-import {BaseServerEnv} from './env.js';
+} from '../realtime/sse_auth_guard.ts';
+import {BaseServerEnv} from './env.ts';
 import {
 	create_rate_limiter,
 	default_login_account_rate_limit,
 	default_action_account_rate_limit,
 	default_action_ip_rate_limit,
 	type RateLimiter,
-} from '../rate_limiter.js';
-import type {DaemonTokenState} from '../auth/daemon_token.js';
-import type {MigrationResult} from '../db/migrate.js';
-import type {AppBackend} from './app_backend.js';
-import type {AppServerContext} from './app_server_context.js';
+} from '../rate_limiter.ts';
+import type {DaemonTokenState} from '../auth/daemon_token.ts';
+import type {MigrationResult} from '../db/migrate.ts';
+import type {AppBackend} from './app_backend.ts';
+import type {AppServerContext} from './app_server_context.ts';
 // Side-effect import: augments Hono's ContextVariableMap so consumers
 // that import app_server get type-safe c.get('auth_session_id') etc.
-import '../hono_context.js';
-import {create_proxy_middleware_spec} from '../http/proxy.js';
-import {create_static_middleware, type ServeStaticFactory} from './static.js';
-import {log_startup_summary} from './startup.js';
+import '../hono_context.ts';
+import {create_proxy_middleware_spec} from '../http/proxy.ts';
+import {create_static_middleware, type ServeStaticFactory} from './static.ts';
+import {log_startup_summary} from './startup.ts';
 import {
 	create_app_surface_spec,
 	type AppSurfaceSpec,
 	type AppSurfaceDiagnostic,
 	type RpcEndpointSpec,
-} from '../http/surface.js';
+} from '../http/surface.ts';
 import {
 	apply_middleware_specs,
 	apply_route_specs,
 	prefix_route_specs,
 	type RouteSpec,
-} from '../http/route_spec.js';
-import type {MiddlewareSpec} from '../http/middleware_spec.js';
+} from '../http/route_spec.ts';
+import type {MiddlewareSpec} from '../http/middleware_spec.ts';
 import {
 	check_bootstrap_status,
 	create_bootstrap_route_specs,
 	type BootstrapStatus,
-} from '../auth/bootstrap_routes.js';
-import {create_surface_route_spec, type SurfaceRouteOptions} from '../http/common_routes.js';
-import {flush_pending_effects, flush_post_commit_effects} from '../http/pending_effects.js';
-import {create_auth_middleware_specs} from '../auth/middleware.js';
-import {fuz_auth_guard_resolver} from '../auth/auth_guard_resolver.js';
-import {create_fuz_authorization_handler} from '../auth/request_context.js';
-import {ERROR_PAYLOAD_TOO_LARGE} from '../http/error_schemas.js';
-import {create_rpc_endpoint} from '../actions/action_rpc.js';
-import {register_ws_endpoint} from '../actions/register_ws_endpoint.js';
-import type {WsEndpointSpec} from '../actions/ws_endpoint_spec.js';
+} from '../auth/bootstrap_routes.ts';
+import {create_surface_route_spec, type SurfaceRouteOptions} from '../http/common_routes.ts';
+import {flush_pending_effects, flush_post_commit_effects} from '../http/pending_effects.ts';
+import {create_auth_middleware_specs} from '../auth/middleware.ts';
+import {fuz_auth_guard_resolver} from '../auth/auth_guard_resolver.ts';
+import {create_fuz_authorization_handler} from '../auth/request_context.ts';
+import {ERROR_PAYLOAD_TOO_LARGE} from '../http/error_schemas.ts';
+import {create_rpc_endpoint} from '../actions/action_rpc.ts';
+import {register_ws_endpoint} from '../actions/register_ws_endpoint.ts';
+import type {WsEndpointSpec} from '../actions/ws_endpoint_spec.ts';
 import {
 	create_ws_auth_guard,
 	create_ws_logout_closer,
-} from '../actions/transports_ws_auth_guard.js';
-import {BackendWebsocketTransport} from '../actions/transports_ws_backend.js';
+} from '../actions/transports_ws_auth_guard.ts';
+import {BackendWebsocketTransport} from '../actions/transports_ws_backend.ts';
 
 /**
  * Context passed to `on_effect_error` when a pending effect rejects.

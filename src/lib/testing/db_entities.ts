@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * DB-backed entity factories for tests that need real `account` + `actor`
@@ -18,10 +18,10 @@ import './assert_dev_env.js';
  * @module
  */
 
-import {query_create_account_with_actor} from '../auth/account_queries.js';
-import {query_create_role_grant} from '../auth/role_grant_queries.js';
-import type {Account, Actor, CreateRoleGrantInput, RoleGrant} from '../auth/account_schema.js';
-import type {Db} from '../db/db.js';
+import {query_create_account_with_actor} from '../auth/account_queries.ts';
+import {query_create_role_grant} from '../auth/role_grant_queries.ts';
+import type {Account, Actor, CreateRoleGrantInput, RoleGrant} from '../auth/account_schema.ts';
+import type {Db} from '../db/db.ts';
 
 /** The `{account, actor}` row pair returned by `create_test_account_with_actor`. */
 export interface TestAccountWithActor {

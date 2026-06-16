@@ -1,7 +1,7 @@
 import {test, assert, describe} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {create_cli_logger} from '$lib/cli/logger.js';
+import {create_cli_logger} from '$lib/cli/logger.ts';
 
 const create_mock_console = (): {
 	console: Pick<typeof console, 'error' | 'warn' | 'log'>;

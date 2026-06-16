@@ -1,5 +1,5 @@
 import {test, assert, describe} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	DaemonInfo,
@@ -9,7 +9,7 @@ import {
 	is_daemon_running,
 	check_daemon_health,
 	stop_daemon,
-} from '$lib/cli/daemon.js';
+} from '$lib/cli/daemon.ts';
 
 const MOCK_INFO: DaemonInfo = {
 	version: 1,

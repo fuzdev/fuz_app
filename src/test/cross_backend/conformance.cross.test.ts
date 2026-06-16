@@ -12,23 +12,23 @@
 
 import {inject} from 'vitest';
 
-import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
+import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle,
-} from '$lib/testing/cross_backend/setup.js';
-import {describe_conformance_table_tests} from '$lib/testing/cross_backend/conformance_table.js';
+} from '$lib/testing/cross_backend/setup.ts';
+import {describe_conformance_table_tests} from '$lib/testing/cross_backend/conformance_table.ts';
 import {
 	create_spine_surface_spec,
 	spine_rpc_endpoints,
 	spine_session_options,
-} from '$lib/testing/cross_backend/default_spine_surface.js';
+} from '$lib/testing/cross_backend/default_spine_surface.ts';
 
-import {conformance_proof_cases} from './conformance_proof_cases.js';
-import {conformance_security_cases} from './conformance_security_cases.js';
-import {conformance_expiry_cases} from './conformance_expiry_cases.js';
-import {conformance_app_settings_cases} from './conformance_app_settings_cases.js';
-import './cross_test_types.js';
+import {conformance_proof_cases} from './conformance_proof_cases.ts';
+import {conformance_security_cases} from './conformance_security_cases.ts';
+import {conformance_expiry_cases} from './conformance_expiry_cases.ts';
+import {conformance_app_settings_cases} from './conformance_app_settings_cases.ts';
+import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 // `ROLE_ADMIN` on the fresh-per-test keeper so the success case can list

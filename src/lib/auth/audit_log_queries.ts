@@ -12,8 +12,8 @@
  * @module
  */
 
-import type {QueryDeps} from '../db/query_deps.js';
-import {assert_row} from '../db/assert_row.js';
+import type {QueryDeps} from '../db/query_deps.ts';
+import {assert_row} from '../db/assert_row.ts';
 import {
 	AUDIT_LOG_DEFAULT_LIMIT,
 	builtin_audit_log_config,
@@ -23,7 +23,7 @@ import {
 	type AuditLogListOptions,
 	type AuditLogEventWithUsernamesJson,
 	type RoleGrantHistoryEventJson,
-} from './audit_log_schema.js';
+} from './audit_log_schema.ts';
 
 /**
  * Process-wide counter for audit metadata validation failures. `query_audit_log`

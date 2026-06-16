@@ -26,8 +26,8 @@
  * @module
  */
 
-import {require_auth, require_credential_types, require_role} from './request_context.js';
-import type {AuthGuardResolver} from '../http/route_spec.js';
+import {require_auth, require_credential_types, require_role} from './request_context.ts';
+import type {AuthGuardResolver} from '../http/route_spec.ts';
 
 /**
  * Standard auth guard resolver for fuz_app.

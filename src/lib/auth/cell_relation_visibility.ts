@@ -13,13 +13,13 @@
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {QueryDeps} from '../db/query_deps.js';
-import type {RequestContext} from './request_context.js';
-import {can_view_cell} from './cell_authorize.js';
-import {query_cell_load_many} from '../db/cell_queries.js';
-import {query_cell_grant_list_for_cells, type CellGrantRow} from '../db/cell_grant_queries.js';
+import type {QueryDeps} from '../db/query_deps.ts';
+import type {RequestContext} from './request_context.ts';
+import {can_view_cell} from './cell_authorize.ts';
+import {query_cell_load_many} from '../db/cell_queries.ts';
+import {query_cell_grant_list_for_cells, type CellGrantRow} from '../db/cell_grant_queries.ts';
 
 /**
  * Return the subset of `target_ids` the caller may view.

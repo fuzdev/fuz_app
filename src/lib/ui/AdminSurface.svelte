@@ -8,11 +8,11 @@
 	 * @module
 	 */
 
-	import {to_error_message} from '@fuzdev/fuz_util/error.js';
+	import {to_error_message} from '@fuzdev/fuz_util/error.ts';
 
-	import type {AppSurface} from '../http/surface.js';
+	import type {AppSurface} from '../http/surface.ts';
 	import SurfaceExplorer from './SurfaceExplorer.svelte';
-	import {ui_fetch} from './ui_fetch.js';
+	import {ui_fetch} from './ui_fetch.ts';
 
 	let surface: AppSurface | null = $state.raw(null);
 	let loading = $state.raw(true);

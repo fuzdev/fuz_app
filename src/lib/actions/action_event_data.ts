@@ -10,14 +10,14 @@
 
 import {z} from 'zod';
 
-import {ActionEventPhase, ActionKind} from './action_spec.js';
+import {ActionEventPhase, ActionKind} from './action_spec.ts';
 import {
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
 	JsonrpcNotification,
 	JsonrpcErrorObject,
-} from '../http/jsonrpc.js';
-import {ActionExecutor, ActionEventStep} from './action_event_types.js';
+} from '../http/jsonrpc.ts';
+import {ActionExecutor, ActionEventStep} from './action_event_types.ts';
 
 // Base schema for all action event data
 export const ActionEventData = z.strictObject({

@@ -10,9 +10,9 @@
  */
 
 import {z} from 'zod';
-import {hash_blake3} from '@fuzdev/fuz_util/hash_blake3.js';
+import {hash_blake3} from '@fuzdev/fuz_util/hash_blake3.ts';
 
-import {generate_random_base64url} from '../crypto.js';
+import {generate_random_base64url} from '../crypto.ts';
 
 /** Prefix for all fuz API tokens (enables secret scanning). */
 export const API_TOKEN_PREFIX = 'secret_fuz_token_';

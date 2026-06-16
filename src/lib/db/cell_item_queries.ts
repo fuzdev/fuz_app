@@ -20,9 +20,9 @@
  * @module
  */
 
-import type {QueryDeps} from './query_deps.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import {assert_row} from './assert_row.js';
+import type {QueryDeps} from './query_deps.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import {assert_row} from './assert_row.ts';
 
 /** Row shape returned by `cell_item` SELECTs. */
 export interface CellItemRow {

@@ -8,12 +8,12 @@
 	 * @module
 	 */
 
-	import {AuditLogState, audit_log_rpc_context} from './audit_log_state.svelte.js';
-	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.js';
+	import {AuditLogState, audit_log_rpc_context} from './audit_log_state.svelte.ts';
+	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.ts';
 	import Datatable from './Datatable.svelte';
-	import type {DatatableColumn} from './datatable.js';
-	import type {RoleGrantHistoryEventJson} from '../auth/audit_log_schema.js';
-	import {format_scope_context, resolve_scope_label} from './format_scope.js';
+	import type {DatatableColumn} from './datatable.ts';
+	import type {RoleGrantHistoryEventJson} from '../auth/audit_log_schema.ts';
+	import {format_scope_context, resolve_scope_label} from './format_scope.ts';
 
 	const get_rpc = audit_log_rpc_context.get();
 	const audit_log = new AuditLogState({get_rpc});

@@ -22,40 +22,40 @@
  * @module
  */
 
-import type {SessionOptions} from './session_cookie.js';
-import {clear_session_cookie, create_session_and_set_cookie} from './session_middleware.js';
-import {RoleGrantSummaryJson, to_session_account} from './account_schema.js';
+import type {SessionOptions} from './session_cookie.ts';
+import {clear_session_cookie, create_session_and_set_cookie} from './session_middleware.ts';
+import {RoleGrantSummaryJson, to_session_account} from './account_schema.ts';
 import {
 	account_status_route_shape,
 	create_account_route_shapes,
 	DEFAULT_MAX_SESSIONS,
 	type LoginInput,
 	type PasswordChangeInput,
-} from './account_route_schema.js';
+} from './account_route_schema.ts';
 import {
 	hash_session_token,
 	query_session_revoke_all_for_account,
 	query_session_revoke_by_hash_unscoped,
-} from './session_queries.js';
+} from './session_queries.ts';
 import {
 	query_account_by_username_or_email,
 	query_update_account_password,
-} from './account_queries.js';
-import {query_revoke_all_api_tokens_for_account} from './api_token_queries.js';
+} from './account_queries.ts';
+import {query_revoke_all_api_tokens_for_account} from './api_token_queries.ts';
 import {
 	build_account_context,
 	build_request_context,
 	get_request_context,
 	require_request_context,
 	resolve_acting_actor,
-} from './request_context.js';
-import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
-import {get_route_input, type RouteSpec} from '../http/route_spec.js';
-import {get_client_ip} from '../http/client_ip.js';
-import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
-import type {RouteFactoryDeps} from './deps.js';
-import type {ConnectionCloser} from '../actions/connection_closer.js';
-import {ERROR_AUTHENTICATION_REQUIRED, ERROR_INVALID_CREDENTIALS} from '../http/error_schemas.js';
+} from './request_context.ts';
+import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.ts';
+import {get_route_input, type RouteSpec} from '../http/route_spec.ts';
+import {get_client_ip} from '../http/client_ip.ts';
+import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.ts';
+import type {RouteFactoryDeps} from './deps.ts';
+import type {ConnectionCloser} from '../actions/connection_closer.ts';
+import {ERROR_AUTHENTICATION_REQUIRED, ERROR_INVALID_CREDENTIALS} from '../http/error_schemas.ts';
 
 /**
  * Create the account status route spec.

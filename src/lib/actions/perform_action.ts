@@ -39,39 +39,39 @@
  */
 
 import {DEV} from 'esm-env';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
 import {
 	apply_authorization_phase,
 	has_any_scoped_role,
 	type RequestContext,
-} from '../auth/request_context.js';
-import {type CredentialType} from '../hono_context.js';
-import type {Db} from '../db/db.js';
-import {is_void_schema} from '../http/schema_helpers.js';
-import {dispatch_with_post_commit_rollback} from '../http/pending_effects.js';
+} from '../auth/request_context.ts';
+import {type CredentialType} from '../hono_context.ts';
+import type {Db} from '../db/db.ts';
+import {is_void_schema} from '../http/schema_helpers.ts';
+import {dispatch_with_post_commit_rollback} from '../http/pending_effects.ts';
 import {
 	JSONRPC_VERSION,
 	type JsonrpcRequestId,
 	type JsonrpcErrorCode,
 	type JsonrpcErrorObject,
-} from '../http/jsonrpc.js';
+} from '../http/jsonrpc.ts';
 import {
 	jsonrpc_error_messages,
 	jsonrpc_error_code_to_http_status,
 	http_status_to_jsonrpc_error_code,
 	JSONRPC_ERROR_CODES,
 	dev_only,
-} from '../http/jsonrpc_errors.js';
+} from '../http/jsonrpc_errors.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_CREDENTIAL_TYPE_REQUIRED,
-} from '../http/error_schemas.js';
-import type {RateLimiter} from '../rate_limiter.js';
-import {is_public_auth, type RouteAuth} from '../http/auth_shape.js';
-import type {ActionContext, ActionHandler, RpcAction} from './action_rpc.js';
+} from '../http/error_schemas.ts';
+import type {RateLimiter} from '../rate_limiter.ts';
+import {is_public_auth, type RouteAuth} from '../http/auth_shape.ts';
+import type {ActionContext, ActionHandler, RpcAction} from './action_rpc.ts';
 
 /**
  * Per-call inputs to `perform_action`. Each transport assembles this from

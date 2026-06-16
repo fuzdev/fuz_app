@@ -8,9 +8,9 @@
  * @module
  */
 
-import {args_parse, type Args, type ParsedArgs, type ArgValue} from '@fuzdev/fuz_util/args.js';
+import {args_parse, type Args, type ParsedArgs, type ArgValue} from '@fuzdev/fuz_util/args.ts';
 import {z} from 'zod';
-import {zod_to_schema_properties, zod_to_schema_names_with_aliases} from '@fuzdev/fuz_util/zod.js';
+import {zod_to_schema_properties, zod_to_schema_names_with_aliases} from '@fuzdev/fuz_util/zod.ts';
 
 /**
  * Discriminated union result for CLI argument parsing.

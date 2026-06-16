@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Adversarial input validation testing for route specs.
@@ -16,25 +16,25 @@ import './assert_dev_env.js';
 
 import {test, assert, describe} from 'vitest';
 import {z} from 'zod';
-import {zod_unwrap_to_object, zod_extract_fields} from '@fuzdev/fuz_util/zod.js';
+import {zod_unwrap_to_object, zod_extract_fields} from '@fuzdev/fuz_util/zod.ts';
 
-import type {RouteSpec} from '../http/route_spec.js';
-import {is_null_schema} from '../http/schema_helpers.js';
+import type {RouteSpec} from '../http/route_spec.ts';
+import {is_null_schema} from '../http/schema_helpers.ts';
 import {
 	filter_routes_with_input,
 	filter_routes_with_params,
 	filter_routes_with_query,
-} from '../http/surface_query.js';
+} from '../http/surface_query.ts';
 import {
 	ValidationError,
 	ERROR_INVALID_REQUEST_BODY,
 	ERROR_INVALID_JSON_BODY,
 	ERROR_INVALID_ROUTE_PARAMS,
 	ERROR_INVALID_QUERY_PARAMS,
-} from '../http/error_schemas.js';
-import {create_auth_test_apps, select_auth_app} from './auth_apps.js';
-import type {AdversarialTestOptions} from './attack_surface.js';
-import {detect_format, generate_valid_value, resolve_valid_path} from './schema_generators.js';
+} from '../http/error_schemas.ts';
+import {create_auth_test_apps, select_auth_app} from './auth_apps.ts';
+import type {AdversarialTestOptions} from './attack_surface.ts';
+import {detect_format, generate_valid_value, resolve_valid_path} from './schema_generators.ts';
 
 // --- Payload generation ---
 

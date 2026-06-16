@@ -6,7 +6,7 @@
 
 import {test, assert, describe} from 'vitest';
 
-import {format_env_display_value, MASKED_VALUE} from '$lib/env/mask.js';
+import {format_env_display_value, MASKED_VALUE} from '$lib/env/mask.ts';
 
 describe('format_env_display_value', () => {
 	const cases: Array<[input: unknown, secret: boolean, expected: string]> = [

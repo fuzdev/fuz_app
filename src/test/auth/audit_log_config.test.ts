@@ -16,7 +16,7 @@ import {
 	AuditEventTypeName,
 	builtin_audit_log_config,
 	create_audit_log_config,
-} from '$lib/auth/audit_log_schema.js';
+} from '$lib/auth/audit_log_schema.ts';
 
 describe('builtin_audit_log_config', () => {
 	test('event_types is AUDIT_EVENT_TYPES', () => {

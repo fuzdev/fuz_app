@@ -23,7 +23,7 @@
  * @module
  */
 
-import {FACT_HASH_PREFIX, type FactHash} from '@fuzdev/fuz_util/fact_hash.js';
+import {FACT_HASH_PREFIX, type FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
 import {z} from 'zod';
 
 /** Anchored, capture-group form: `^file:(<shard>)/(<rest>)$`. */

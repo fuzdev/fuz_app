@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Schema-driven value generation helpers for testing.
@@ -17,9 +17,9 @@ import {
 	zod_unwrap_to_object,
 	zod_extract_fields,
 	type ZodFieldInfo,
-} from '@fuzdev/fuz_util/zod.js';
+} from '@fuzdev/fuz_util/zod.ts';
 
-import {is_null_schema} from '../http/schema_helpers.js';
+import {is_null_schema} from '../http/schema_helpers.ts';
 
 /**
  * Detect format constraints on a field by converting to JSON Schema.

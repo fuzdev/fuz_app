@@ -5,17 +5,17 @@
  */
 
 import {describe, assert, test} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
 import {
 	create_sse_auth_guard,
 	create_audit_log_sse,
 	AUDIT_LOG_SSE_MAX_PER_SCOPE,
-} from '$lib/realtime/sse_auth_guard.js';
-import {SubscriberRegistry} from '$lib/realtime/subscriber_registry.js';
-import type {SseStream, SseNotification} from '$lib/realtime/sse.js';
-import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
-import {create_test_audit_event} from '$lib/testing/entities.js';
+} from '$lib/realtime/sse_auth_guard.ts';
+import {SubscriberRegistry} from '$lib/realtime/subscriber_registry.ts';
+import type {SseStream, SseNotification} from '$lib/realtime/sse.ts';
+import type {AuditLogEvent} from '$lib/auth/audit_log_schema.ts';
+import {create_test_audit_event} from '$lib/testing/entities.ts';
 
 const log = new Logger('test', {level: 'off'});
 

@@ -12,18 +12,18 @@
 
 import {assert, test} from 'vitest';
 
-import {ROLE_KEEPER, ROLE_ADMIN} from '$lib/auth/role_schema.js';
+import {ROLE_KEEPER, ROLE_ADMIN} from '$lib/auth/role_schema.ts';
 import {
 	query_create_role_grant,
 	query_revoke_role_grant,
 	query_role_grant_has_role,
 	query_role_grant_find_active_for_actor,
-} from '$lib/auth/role_grant_queries.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import type {Db} from '$lib/db/db.js';
-import {create_test_account_with_actor} from '$lib/testing/db_entities.js';
+} from '$lib/auth/role_grant_queries.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type {Db} from '$lib/db/db.ts';
+import {create_test_account_with_actor} from '$lib/testing/db_entities.ts';
 
-import {describe_db} from '../db_fixture.js';
+import {describe_db} from '../db_fixture.ts';
 
 /** Per-test convenience: returns just the ids the assertions care about. */
 const create_test_actor = async (

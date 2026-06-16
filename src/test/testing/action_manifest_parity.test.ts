@@ -15,11 +15,11 @@ import {
 	assert_action_manifests_equal,
 	diff_action_manifests,
 	format_action_manifest_diffs,
-} from '$lib/testing/cross_backend/action_manifest_parity.js';
+} from '$lib/testing/cross_backend/action_manifest_parity.ts';
 import type {
 	ActionManifest,
 	ActionManifestEntry,
-} from '$lib/testing/cross_backend/action_manifest.js';
+} from '$lib/testing/cross_backend/action_manifest.ts';
 
 const entry = (overrides: Partial<ActionManifestEntry> = {}): ActionManifestEntry => ({
 	method: 'm',

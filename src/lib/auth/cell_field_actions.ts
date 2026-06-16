@@ -29,9 +29,9 @@ import {
 	type ActionActorContext,
 	type ActionContext,
 	type RpcAction,
-} from '../actions/action_rpc.js';
-import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
-import type {RouteFactoryDeps} from './deps.js';
+} from '../actions/action_rpc.ts';
+import {jsonrpc_errors} from '../http/jsonrpc_errors.ts';
+import type {RouteFactoryDeps} from './deps.ts';
 
 import {
 	cell_field_set_action_spec,
@@ -44,23 +44,23 @@ import {
 	type CellFieldListInput,
 	type CellFieldListOutput,
 	type FieldJson,
-} from './cell_field_action_specs.js';
-import {ERROR_CELL_NOT_FOUND} from './cell_action_specs.js';
-import {can_view_cell, can_edit_cell} from './cell_authorize.js';
-import {filter_visible_target_ids} from './cell_relation_visibility.js';
-import {query_cell_get} from '../db/cell_queries.js';
-import {query_cell_grant_list_for_cell} from '../db/cell_grant_queries.js';
+} from './cell_field_action_specs.ts';
+import {ERROR_CELL_NOT_FOUND} from './cell_action_specs.ts';
+import {can_view_cell, can_edit_cell} from './cell_authorize.ts';
+import {filter_visible_target_ids} from './cell_relation_visibility.ts';
+import {query_cell_get} from '../db/cell_queries.ts';
+import {query_cell_grant_list_for_cell} from '../db/cell_grant_queries.ts';
 import {
 	query_cell_field_set,
 	query_cell_field_delete,
 	query_cell_field_list_for_source,
 	query_cell_field_list_for_target,
 	type CellFieldRow,
-} from '../db/cell_field_queries.js';
+} from '../db/cell_field_queries.ts';
 import type {
 	CellFieldSetAuditMetadata,
 	CellFieldDeleteAuditMetadata,
-} from './cell_field_audit_metadata.js';
+} from './cell_field_audit_metadata.ts';
 
 export type CellFieldActionDeps = Pick<RouteFactoryDeps, 'log' | 'audit'>;
 

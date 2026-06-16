@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Rate limiting integration test suite.
@@ -24,29 +24,29 @@ import './assert_dev_env.js';
 
 import {describe, test, assert} from 'vitest';
 
-import type {SessionOptions} from '../auth/session_cookie.js';
-import type {AppServerContext} from '../server/app_server_context.js';
-import type {RouteSpec} from '../http/route_spec.js';
-import {RateLimiter} from '../rate_limiter.js';
-import {RateLimitError} from '../http/error_schemas.js';
-import {auth_migration_ns} from '../auth/migrations.js';
-import {create_test_app, type SuiteAppOptions} from './app_server.js';
+import type {SessionOptions} from '../auth/session_cookie.ts';
+import type {AppServerContext} from '../server/app_server_context.ts';
+import type {RouteSpec} from '../http/route_spec.ts';
+import {RateLimiter} from '../rate_limiter.ts';
+import {RateLimitError} from '../http/error_schemas.ts';
+import {auth_migration_ns} from '../auth/migrations.ts';
+import {create_test_app, type SuiteAppOptions} from './app_server.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
 	auth_integration_truncate_tables,
 	type DbFactory,
-} from './db.js';
-import {find_auth_route, assert_rate_limit_retry_after_header} from './integration_helpers.js';
+} from './db.ts';
+import {find_auth_route, assert_rate_limit_retry_after_header} from './integration_helpers.ts';
 import {
 	rpc_call_non_browser,
 	require_rpc_endpoint_path,
 	resolve_rpc_endpoints_for_setup,
 	type RpcEndpointsSuiteOption,
-} from './rpc_helpers.js';
-import {run_migrations} from '../db/migrate.js';
-import type {Db} from '../db/db.js';
-import {account_verify_action_spec} from '../auth/account_action_specs.js';
+} from './rpc_helpers.ts';
+import {run_migrations} from '../db/migrate.ts';
+import type {Db} from '../db/db.ts';
+import {account_verify_action_spec} from '../auth/account_action_specs.ts';
 
 /**
  * Configuration for `describe_rate_limiting_tests`.

@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Runtime-agnostic core for spawnable cross-process **test** server
@@ -20,7 +20,7 @@ import '../assert_dev_env.js';
  * no-domain build; consumers (zzz, fuz_forge) pass their domain build.
  *
  * **NEVER ships in a release.** This module lives under `cross_backend/` and
- * opens with `import '../assert_dev_env.js';`, which throws on
+ * opens with `import '../assert_dev_env.ts';`, which throws on
  * production-bundle load. The runtime adapters reach for the optional
  * `@hono/node-server` / `@hono/node-ws` peer deps; only test binaries import
  * them.
@@ -30,10 +30,10 @@ import '../assert_dev_env.js';
 
 import type {Context, Hono} from 'hono';
 import type {UpgradeWebSocket} from 'hono/ws';
-import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.js';
+import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.ts';
 
-import {write_daemon_info, read_daemon_info, is_daemon_running} from '../../cli/daemon.js';
-import type {RuntimeDeps} from '../../runtime/deps.js';
+import {write_daemon_info, read_daemon_info, is_daemon_running} from '../../cli/daemon.ts';
+import type {RuntimeDeps} from '../../runtime/deps.ts';
 
 /**
  * Adapter-built handle to a bound HTTP server.

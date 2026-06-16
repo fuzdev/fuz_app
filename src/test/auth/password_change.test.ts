@@ -11,23 +11,23 @@
 import {describe, test, assert, vi, afterEach} from 'vitest';
 import {Hono} from 'hono';
 
-import {RateLimiter} from '$lib/rate_limiter.js';
-import {create_proxy_middleware} from '$lib/http/proxy.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
-import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
-import {create_account_route_specs} from '$lib/auth/account_routes.js';
-import {apply_route_specs} from '$lib/http/route_spec.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
-import {create_keyring} from '$lib/auth/keyring.js';
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {PASSWORD_LENGTH_MIN, PASSWORD_LENGTH_MAX} from '$lib/auth/password.js';
-import {ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS} from '$lib/http/error_schemas.js';
-import {create_stub_db, create_noop_stub, create_test_audit_emitter} from '$lib/testing/stubs.js';
-import {create_recording_audit_emitter} from '$lib/testing/audit_drift_guard.js';
-import type {ConnectionCloser} from '$lib/actions/connection_closer.js';
-import type {AuditLogInput} from '$lib/auth/audit_log_schema.js';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {RateLimiter} from '$lib/rate_limiter.ts';
+import {create_proxy_middleware} from '$lib/http/proxy.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.ts';
+import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.ts';
+import {create_account_route_specs} from '$lib/auth/account_routes.ts';
+import {apply_route_specs} from '$lib/http/route_spec.ts';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.ts';
+import {create_keyring} from '$lib/auth/keyring.ts';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {PASSWORD_LENGTH_MIN, PASSWORD_LENGTH_MAX} from '$lib/auth/password.ts';
+import {ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS} from '$lib/http/error_schemas.ts';
+import {create_stub_db, create_noop_stub, create_test_audit_emitter} from '$lib/testing/stubs.ts';
+import {create_recording_audit_emitter} from '$lib/testing/audit_drift_guard.ts';
+import type {ConnectionCloser} from '$lib/actions/connection_closer.ts';
+import type {AuditLogInput} from '$lib/auth/audit_log_schema.ts';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
 const log = new Logger('test', {level: 'off'});
 
@@ -47,7 +47,7 @@ vi.mock('$lib/auth/account_queries.js', () => ({
 }));
 
 vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/auth/session_queries.js')>();
+	const actual = await importOriginal<typeof import('$lib/auth/session_queries.ts')>();
 	return {
 		...actual,
 		query_create_session: vi.fn(() => Promise.resolve()),

@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Reconcile a backend's **live-mounted** RPC method set against a tagged
@@ -31,7 +31,7 @@ import '../assert_dev_env.js';
 
 import {assert} from 'vitest';
 
-import type {BackendCapabilities} from './capabilities.js';
+import type {BackendCapabilities} from './capabilities.ts';
 
 /** How a live-mounted RPC method earns its cross-backend coverage. */
 export type MethodCoverageTier =

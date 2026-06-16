@@ -13,12 +13,12 @@
 
 import {z} from 'zod';
 
-import type {RequestContext} from './auth/request_context.js';
+import type {RequestContext} from './auth/request_context.ts';
 import {
 	CREDENTIAL_TYPE_API_TOKEN,
 	CREDENTIAL_TYPE_DAEMON_TOKEN,
 	CREDENTIAL_TYPE_SESSION,
-} from './auth/credential_type_schema.js';
+} from './auth/credential_type_schema.ts';
 
 /**
  * The credential types that can authenticate a request — the closed set

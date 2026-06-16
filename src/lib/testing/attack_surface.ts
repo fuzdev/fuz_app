@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Adversarial auth enforcement test runners and the standard attack surface suite.
@@ -28,38 +28,38 @@ import {
 	fuz_app_stock_route_tightness_allowlist,
 	type SurfaceSecurityPolicyOptions,
 	type ErrorSchemaTightnessOptions,
-} from './surface_invariants.js';
-import {describe_adversarial_input} from './adversarial_input.js';
-import {describe_adversarial_404} from './adversarial_404.js';
+} from './surface_invariants.ts';
+import {describe_adversarial_input} from './adversarial_input.ts';
+import {describe_adversarial_404} from './adversarial_404.ts';
 import {
 	create_test_app_from_specs,
 	create_test_request_context,
 	create_auth_test_apps,
 	select_auth_app,
 	resolve_test_path,
-} from './auth_apps.js';
+} from './auth_apps.ts';
 import {
 	assert_surface_matches_snapshot,
 	assert_surface_deterministic,
 	assert_only_expected_public_routes,
 	assert_full_middleware_stack,
 	assert_error_schema_valid,
-} from './assertions.js';
-import type {MiddlewareSpec} from '../http/middleware_spec.js';
-import type {RouteSpec} from '../http/route_spec.js';
-import {merge_error_schemas} from '../http/schema_helpers.js';
-import {collect_middleware_errors, type AppSurfaceSpec} from '../http/surface.js';
+} from './assertions.ts';
+import type {MiddlewareSpec} from '../http/middleware_spec.ts';
+import type {RouteSpec} from '../http/route_spec.ts';
+import {merge_error_schemas} from '../http/schema_helpers.ts';
+import {collect_middleware_errors, type AppSurfaceSpec} from '../http/surface.ts';
 import {
 	filter_protected_routes,
 	filter_role_routes,
 	filter_keeper_routes,
-} from '../http/surface_query.js';
+} from '../http/surface_query.ts';
 import {
 	type RouteErrorSchemas,
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_CREDENTIAL_TYPE_REQUIRED,
-} from '../http/error_schemas.js';
+} from '../http/error_schemas.ts';
 // --- Adversarial test runner ---
 
 /**

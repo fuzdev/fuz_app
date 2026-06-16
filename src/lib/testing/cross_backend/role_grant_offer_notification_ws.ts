@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-process **role-grant-offer lifecycle WS notification** suite — the
@@ -49,10 +49,10 @@ import '../assert_dev_env.js';
 
 import {assert, describe} from 'vitest';
 
-import {rpc_call} from '../rpc_helpers.js';
-import {create_ws_transport} from '../transports/ws_transport.js';
-import {is_notification_with} from '../transports/ws_client.js';
-import {ROLE_ADMIN} from '../../auth/role_schema.js';
+import {rpc_call} from '../rpc_helpers.ts';
+import {create_ws_transport} from '../transports/ws_transport.ts';
+import {is_notification_with} from '../transports/ws_client.ts';
+import {ROLE_ADMIN} from '../../auth/role_schema.ts';
 import {
 	ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
@@ -66,9 +66,9 @@ import {
 	RoleGrantOfferRetractedParams,
 	RoleGrantOfferSupersedeParams,
 	RoleGrantRevokeParams,
-} from '../../auth/role_grant_offer_notifications.js';
-import {type BackendCapabilities, test_if} from './capabilities.js';
-import type {SetupTest, TestAccountFixture, TestFixture} from './setup.js';
+} from '../../auth/role_grant_offer_notifications.ts';
+import {type BackendCapabilities, test_if} from './capabilities.ts';
+import type {SetupTest, TestAccountFixture, TestFixture} from './setup.ts';
 
 /** JSON-RPC endpoint path — matches the spine's `/api/rpc` (and the forge's). */
 const RPC_PATH = '/api/rpc';

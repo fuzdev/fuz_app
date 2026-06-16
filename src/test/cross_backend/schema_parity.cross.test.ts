@@ -30,10 +30,10 @@ import {inject, describe, test} from 'vitest';
 import {
 	capture_schema_snapshot,
 	reconstruct_bootstrapped_handle,
-} from '$lib/testing/cross_backend/setup.js';
-import {assert_schema_snapshots_equal} from '$lib/testing/schema_parity.js';
+} from '$lib/testing/cross_backend/setup.ts';
+import {assert_schema_snapshots_equal} from '$lib/testing/schema_parity.ts';
 
-import './cross_test_types.js';
+import './cross_test_types.ts';
 
 describe('cross-backend schema parity', () => {
 	test('TS spine (node) and Rust spine_stub schemas match', async () => {

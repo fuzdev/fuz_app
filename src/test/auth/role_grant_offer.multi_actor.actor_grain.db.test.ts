@@ -11,32 +11,32 @@
  */
 
 import {assert, describe, test} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
-import {create_test_app} from '$lib/testing/app_server.js';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
+import {create_test_app} from '$lib/testing/app_server.ts';
+import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
 import {
 	role_grant_offer_create_action_spec,
 	role_grant_offer_accept_action_spec,
 	ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
 	ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH,
-} from '$lib/auth/role_grant_offer_action_specs.js';
+} from '$lib/auth/role_grant_offer_action_specs.ts';
 import {
 	query_accept_offer,
 	query_role_grant_offer_create,
 	RoleGrantOfferActorAccountMismatchError,
 	RoleGrantOfferActorMismatchError,
-} from '$lib/auth/role_grant_offer_queries.js';
-import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
+} from '$lib/auth/role_grant_offer_queries.ts';
+import type {AuditLogEvent} from '$lib/auth/audit_log_schema.ts';
+import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
 
 import {
 	RPC_PATH,
 	create_route_specs,
 	describe_db,
 	session_options,
-} from './role_grant_offer_test_helpers.js';
-import {create_multi_actor_helpers} from './role_grant_offer.multi_actor.fixtures.js';
+} from './role_grant_offer_test_helpers.ts';
+import {create_multi_actor_helpers} from './role_grant_offer.multi_actor.fixtures.ts';
 
 describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 	const {build_app_with_audit, add_second_actor} = create_multi_actor_helpers(get_db);

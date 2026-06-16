@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-backend parity suite for the `/ready` schema-drift deploy gate.
@@ -31,8 +31,8 @@ import '../assert_dev_env.js';
 
 import {describe, assert} from 'vitest';
 
-import {test_if} from './capabilities.js';
-import type {CrossSuiteOptions} from './setup.js';
+import {test_if} from './capabilities.ts';
+import type {CrossSuiteOptions} from './setup.ts';
 
 /** Options for the readiness-probe parity suite. */
 export interface ReadyCrossTestOptions extends CrossSuiteOptions {

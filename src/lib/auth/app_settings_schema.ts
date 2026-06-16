@@ -7,7 +7,7 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 
 /** App settings row from the database. */
 export interface AppSettings {

@@ -27,8 +27,8 @@ import {
 	testing_drain_effects_action_spec,
 	testing_schema_snapshot_action_spec,
 	testing_action_manifest_action_spec,
-} from '$lib/testing/cross_backend/testing_reset_actions.js';
-import type {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
+} from '$lib/testing/cross_backend/testing_reset_actions.ts';
+import type {RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
 
 const testing_action_specs: ReadonlyArray<{name: string; spec: RequestResponseActionSpec}> = [
 	{name: '_testing_reset', spec: testing_reset_action_spec},

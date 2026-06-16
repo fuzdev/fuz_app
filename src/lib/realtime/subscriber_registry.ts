@@ -20,7 +20,7 @@
  * @module
  */
 
-import type {SseStream} from './sse.js';
+import type {SseStream} from './sse.ts';
 
 export interface Subscriber<T> {
 	stream: SseStream<T>;

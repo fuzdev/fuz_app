@@ -7,8 +7,8 @@
 import {describe, assert, test} from 'vitest';
 import {z} from 'zod';
 
-import {ActionRegistry} from '$lib/actions/action_registry.js';
-import {is_public_auth} from '$lib/http/auth_shape.js';
+import {ActionRegistry} from '$lib/actions/action_registry.ts';
+import {is_public_auth} from '$lib/http/auth_shape.ts';
 
 // Minimal spec factories — plain objects that satisfy ActionSpecUnion discriminants
 

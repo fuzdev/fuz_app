@@ -7,7 +7,7 @@
 import {describe, assert, test, vi} from 'vitest';
 import type {MiddlewareHandler} from 'hono';
 
-import {create_static_middleware, type ServeStaticFactory} from '$lib/server/static.js';
+import {create_static_middleware, type ServeStaticFactory} from '$lib/server/static.ts';
 
 /** Create a mock serve_static factory that records calls. */
 const create_mock_serve_static = (): {

@@ -14,8 +14,8 @@ import {describe, test, assert, vi, afterEach} from 'vitest';
 import {
 	AccountSessionsState,
 	type AccountSessionsRpc,
-} from '$lib/ui/account_sessions_state.svelte.js';
-import type {AuthSessionJson} from '$lib/auth/account_schema.js';
+} from '$lib/ui/account_sessions_state.svelte.ts';
+import type {AuthSessionJson} from '$lib/auth/account_schema.ts';
 
 afterEach(() => {
 	vi.restoreAllMocks();

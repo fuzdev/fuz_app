@@ -16,9 +16,9 @@
  */
 
 import {test, assert, afterEach, vi} from 'vitest';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import type {QueryDeps} from '$lib/db/query_deps.js';
+import type {QueryDeps} from '$lib/db/query_deps.ts';
 
 afterEach(() => {
 	vi.doUnmock('esm-env');
@@ -29,7 +29,7 @@ test('bearer browser-context discard omits the debug header in production (DEV=f
 	vi.resetModules();
 	vi.doMock('esm-env', () => ({DEV: false}));
 	const {Hono} = await import('hono');
-	const {create_bearer_auth_middleware} = await import('$lib/auth/bearer_auth.js');
+	const {create_bearer_auth_middleware} = await import('$lib/auth/bearer_auth.ts');
 
 	// The discard path runs before any DB or rate-limiter work, so stub deps suffice.
 	const log = {debug() {}} as unknown as Logger;

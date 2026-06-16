@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-process WebSocket transport.
@@ -27,8 +27,8 @@ import {
 	type JsonrpcErrorResponseFrame,
 	type JsonrpcSuccessResponseFrame,
 	type WsClient,
-} from './ws_client.js';
-import {create_jsonrpc_request} from '../../http/jsonrpc_helpers.js';
+} from './ws_client.ts';
+import {create_jsonrpc_request} from '../../http/jsonrpc_helpers.ts';
 
 /** Construction options for `create_ws_transport`. */
 export interface WsTransportOptions {

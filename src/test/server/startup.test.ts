@@ -5,10 +5,10 @@
  */
 
 import {describe, test, assert} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {log_startup_summary} from '$lib/server/startup.js';
-import type {AppSurface} from '$lib/http/surface.js';
+import {log_startup_summary} from '$lib/server/startup.ts';
+import type {AppSurface} from '$lib/http/surface.ts';
 
 const create_surface = (overrides?: Partial<AppSurface>): AppSurface => ({
 	middleware: [{name: 'origin', path: '/api/*', error_schemas: null}],

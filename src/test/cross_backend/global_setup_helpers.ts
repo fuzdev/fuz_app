@@ -15,12 +15,12 @@ import {homedir} from 'node:os';
 import {join} from 'node:path';
 import type {TestProject} from 'vitest/node';
 
-import type {BackendConfig} from '$lib/testing/cross_backend/backend_config.js';
-import {bootstrap_backend} from '$lib/testing/cross_backend/bootstrap_backend.js';
-import {serialize_bootstrapped_handle} from '$lib/testing/cross_backend/setup.js';
-import {RUST_SPINE_STUB_BIN_ENV} from '$lib/testing/cross_backend/rust_spine_stub_backend_config.js';
+import type {BackendConfig} from '$lib/testing/cross_backend/backend_config.ts';
+import {bootstrap_backend} from '$lib/testing/cross_backend/bootstrap_backend.ts';
+import {serialize_bootstrapped_handle} from '$lib/testing/cross_backend/setup.ts';
+import {RUST_SPINE_STUB_BIN_ENV} from '$lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 
-import './cross_test_types.js';
+import './cross_test_types.ts';
 
 /** Env var skipping the Rust rebuild (set to any value for fast iteration on a known-current binary). */
 export const NO_REBUILD_ENV = 'FUZ_TESTING_NO_REBUILD';

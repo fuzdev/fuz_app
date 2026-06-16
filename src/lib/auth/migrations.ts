@@ -59,17 +59,17 @@ import {
 	INVITE_INDEXES,
 	APP_SETTINGS_SCHEMA,
 	APP_SETTINGS_SEED,
-} from './auth_ddl.js';
-import {AUDIT_LOG_SCHEMA, AUDIT_LOG_INDEXES} from './audit_log_ddl.js';
+} from './auth_ddl.ts';
+import {AUDIT_LOG_SCHEMA, AUDIT_LOG_INDEXES} from './audit_log_ddl.ts';
 import {
 	ROLE_GRANT_OFFER_SCHEMA,
 	ROLE_GRANT_OFFER_PENDING_UNIQUE_INDEX,
 	ROLE_GRANT_OFFER_INBOX_INDEX,
 	ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID,
 	ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
-} from './role_grant_offer_ddl.js';
-import type {Db} from '../db/db.js';
-import type {Migration, MigrationNamespace} from '../db/migrate.js';
+} from './role_grant_offer_ddl.ts';
+import type {Db} from '../db/db.ts';
+import type {Migration, MigrationNamespace} from '../db/migrate.ts';
 
 /** Namespace identifier for fuz_app auth migrations. */
 export const AUTH_MIGRATION_NAMESPACE = 'fuz_auth';

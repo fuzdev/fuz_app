@@ -37,10 +37,10 @@ import {inject, describe, test} from 'vitest';
 import {
 	capture_action_manifest,
 	reconstruct_bootstrapped_handle,
-} from '$lib/testing/cross_backend/setup.js';
-import {assert_action_manifests_equal} from '$lib/testing/cross_backend/action_manifest_parity.js';
+} from '$lib/testing/cross_backend/setup.ts';
+import {assert_action_manifests_equal} from '$lib/testing/cross_backend/action_manifest_parity.ts';
 
-import './cross_test_types.js';
+import './cross_test_types.ts';
 
 describe('cross-backend action-manifest parity', () => {
 	test('TS spine (node) and Rust spine_stub RPC method sets match exactly', async () => {

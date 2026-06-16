@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Spawn a test backend binary, wait for it to come up, and return a
@@ -32,7 +32,7 @@ import {spawn, type ChildProcess} from 'node:child_process';
 import {readFile, writeFile, mkdir} from 'node:fs/promises';
 import {dirname} from 'node:path';
 
-import type {BackendConfig} from './backend_config.js';
+import type {BackendConfig} from './backend_config.ts';
 
 /* eslint-disable @typescript-eslint/no-base-to-string */
 

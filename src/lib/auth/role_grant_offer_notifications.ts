@@ -31,16 +31,16 @@
  */
 
 import {z} from 'zod';
-import {Uuid as UuidSchema, type Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid as UuidSchema, type Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {RemoteNotificationActionSpec} from '../actions/action_spec.js';
-import {create_action_event_spec} from '../actions/action_bridge.js';
-import type {EventSpec} from '../realtime/sse.js';
-import type {JsonrpcNotification} from '../http/jsonrpc.js';
-import {create_jsonrpc_notification} from '../http/jsonrpc_helpers.js';
-import {RoleName} from './role_schema.js';
-import {RoleGrantOfferJson} from './role_grant_offer_schema.js';
-import {ROLE_GRANT_REVOKED_REASON_LENGTH_MAX} from './account_schema.js';
+import type {RemoteNotificationActionSpec} from '../actions/action_spec.ts';
+import {create_action_event_spec} from '../actions/action_bridge.ts';
+import type {EventSpec} from '../realtime/sse.ts';
+import type {JsonrpcNotification} from '../http/jsonrpc.ts';
+import {create_jsonrpc_notification} from '../http/jsonrpc_helpers.ts';
+import {RoleName} from './role_schema.ts';
+import {RoleGrantOfferJson} from './role_grant_offer_schema.ts';
+import {ROLE_GRANT_REVOKED_REASON_LENGTH_MAX} from './account_schema.ts';
 
 /**
  * Narrow structural capability for sending a JSON-RPC notification to every

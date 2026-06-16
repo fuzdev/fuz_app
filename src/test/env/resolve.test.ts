@@ -15,7 +15,7 @@ import {
 	scan_env_vars,
 	validate_env_vars,
 	format_missing_env_vars,
-} from '$lib/env/resolve.js';
+} from '$lib/env/resolve.ts';
 
 describe('resolve_env_vars', () => {
 	test('resolves $$VAR$$ patterns', () => {

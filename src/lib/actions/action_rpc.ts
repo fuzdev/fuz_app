@@ -15,39 +15,39 @@
 import type {Context} from 'hono';
 import {z} from 'zod';
 import {DEV} from 'esm-env';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {RequestResponseActionSpec} from './action_spec.js';
-import {type RouteContext, type RouteSpec} from '../http/route_spec.js';
-import {get_client_ip} from '../http/client_ip.js';
+import type {RequestResponseActionSpec} from './action_spec.ts';
+import {type RouteContext, type RouteSpec} from '../http/route_spec.ts';
+import {get_client_ip} from '../http/client_ip.ts';
 import {
 	get_request_context,
 	type RequestActorContext,
 	type RequestContext,
-} from '../auth/request_context.js';
+} from '../auth/request_context.ts';
 import {
 	ACCOUNT_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
 	type CredentialType,
-} from '../hono_context.js';
-import type {Db} from '../db/db.js';
-import {compile_action_registry} from './compile_action_registry.js';
+} from '../hono_context.ts';
+import type {Db} from '../db/db.ts';
+import {compile_action_registry} from './compile_action_registry.ts';
 import {
 	JSONRPC_VERSION,
 	JsonrpcRequest,
 	type JsonrpcRequestId,
 	type JsonrpcErrorObject,
-} from '../http/jsonrpc.js';
+} from '../http/jsonrpc.ts';
 import {
 	jsonrpc_error_messages,
 	jsonrpc_error_code_to_http_status,
 	JSONRPC_ERROR_CODES,
 	dev_only,
-} from '../http/jsonrpc_errors.js';
-import type {RateLimiter} from '../rate_limiter.js';
-import {perform_action, perform_action_result_to_envelope} from './perform_action.js';
+} from '../http/jsonrpc_errors.ts';
+import type {RateLimiter} from '../rate_limiter.ts';
+import {perform_action, perform_action_result_to_envelope} from './perform_action.ts';
 
 /**
  * Per-request context provided to action handlers across every transport

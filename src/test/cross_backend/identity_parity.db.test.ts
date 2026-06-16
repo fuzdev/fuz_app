@@ -13,14 +13,14 @@
  * @module
  */
 
-import {default_in_process_setup} from '$lib/testing/cross_backend/in_process_setup.js';
-import {describe_identity_parity_cross_tests} from '$lib/testing/cross_backend/identity_parity.js';
+import {default_in_process_setup} from '$lib/testing/cross_backend/in_process_setup.ts';
+import {describe_identity_parity_cross_tests} from '$lib/testing/cross_backend/identity_parity.ts';
 import {
 	create_spine_route_specs,
 	spine_rpc_endpoints,
 	spine_session_options,
-} from '$lib/testing/cross_backend/default_spine_surface.js';
-import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
+} from '$lib/testing/cross_backend/default_spine_surface.ts';
+import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
 
 // The keeper needs `ROLE_ADMIN` so the fixture's `create_account` invite step
 // (`invite_create`, admin-gated) succeeds; `ROLE_KEEPER` alone isn't admin.

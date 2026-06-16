@@ -13,23 +13,23 @@
  */
 
 import {assert, test} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {query_create_account_with_actor} from '$lib/auth/account_queries.js';
-import {query_role_grant_offer_create} from '$lib/auth/role_grant_offer_queries.js';
-import {query_audit_log_list} from '$lib/auth/audit_log_queries.js';
+import {query_create_account_with_actor} from '$lib/auth/account_queries.ts';
+import {query_role_grant_offer_create} from '$lib/auth/role_grant_offer_queries.ts';
+import {query_audit_log_list} from '$lib/auth/audit_log_queries.ts';
 import {
 	cleanup_expired_role_grant_offers,
 	run_auth_cleanup,
 	type AuthCleanupDeps,
-} from '$lib/auth/cleanup.js';
-import {hash_session_token, query_create_session} from '$lib/auth/session_queries.js';
-import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
-import {create_audit_emitter, type AuditEmitter} from '$lib/auth/audit_emitter.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import type {Db} from '$lib/db/db.js';
+} from '$lib/auth/cleanup.ts';
+import {hash_session_token, query_create_session} from '$lib/auth/session_queries.ts';
+import type {AuditLogEvent} from '$lib/auth/audit_log_schema.ts';
+import {create_audit_emitter, type AuditEmitter} from '$lib/auth/audit_emitter.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type {Db} from '$lib/db/db.ts';
 
-import {describe_db} from '../db_fixture.js';
+import {describe_db} from '../db_fixture.ts';
 
 const log = new Logger('cleanup-test', {level: 'off'});
 

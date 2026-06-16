@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Shared WebSocket client surface for cross-backend tests.
@@ -24,8 +24,8 @@ import {
 	is_jsonrpc_error_response,
 	is_jsonrpc_notification,
 	is_jsonrpc_response,
-} from '../../http/jsonrpc_helpers.js';
-import {JSONRPC_VERSION} from '../../http/jsonrpc.js';
+} from '../../http/jsonrpc_helpers.ts';
+import {JSONRPC_VERSION} from '../../http/jsonrpc.ts';
 
 // ---------------------------------------------------------------------
 // Wire-frame types — describe a parsed wire message as observed on the

@@ -9,17 +9,17 @@
  */
 
 import {describe, test, assert, vi} from 'vitest';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {AuditLogState, type AuditLogRpc} from '$lib/ui/audit_log_state.svelte.js';
+import {AuditLogState, type AuditLogRpc} from '$lib/ui/audit_log_state.svelte.ts';
 import type {
 	AuditLogEventWithUsernamesJson,
 	RoleGrantHistoryEventJson,
-} from '$lib/auth/audit_log_schema.js';
+} from '$lib/auth/audit_log_schema.ts';
 import type {
 	AuditLogListInput,
 	AuditLogRoleGrantHistoryInput,
-} from '$lib/auth/admin_action_specs.js';
+} from '$lib/auth/admin_action_specs.ts';
 
 const acct_1 = 'acct-1' as Uuid;
 

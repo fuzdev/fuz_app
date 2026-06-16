@@ -11,12 +11,12 @@
 
 import {describe, test, assert, vi, afterEach} from 'vitest';
 
-import {AdminAccountsState, type AdminAccountsRpc} from '$lib/ui/admin_accounts_state.svelte.js';
-import type {AdminAccountEntryJson} from '$lib/auth/account_schema.js';
-import type {RoleGrantOfferJson} from '$lib/auth/role_grant_offer_schema.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import {AdminAccountsState, type AdminAccountsRpc} from '$lib/ui/admin_accounts_state.svelte.ts';
+import type {AdminAccountEntryJson} from '$lib/auth/account_schema.ts';
+import type {RoleGrantOfferJson} from '$lib/auth/role_grant_offer_schema.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {make_offer} from './role_grant_offer_fixtures.js';
+import {make_offer} from './role_grant_offer_fixtures.ts';
 
 // Test fixtures — narrow `AdminAccountsRpc` requires `Uuid`-branded ids.
 const acct_1 = 'acct-1' as Uuid;

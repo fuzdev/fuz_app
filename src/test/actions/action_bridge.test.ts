@@ -11,8 +11,8 @@ import {
 	derive_http_method,
 	create_action_route_spec,
 	create_action_event_spec,
-} from '$lib/actions/action_bridge.js';
-import type {ActionSpec} from '$lib/actions/action_spec.js';
+} from '$lib/actions/action_bridge.ts';
+import type {ActionSpec} from '$lib/actions/action_spec.ts';
 
 const create_request_response_spec = (): ActionSpec => ({
 	method: 'thing_create',

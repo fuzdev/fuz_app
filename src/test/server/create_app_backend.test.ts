@@ -7,17 +7,17 @@
 
 import {describe, test, assert} from 'vitest';
 import {z} from 'zod';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
-import {create_keyring} from '$lib/auth/keyring.js';
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {create_health_route_spec} from '$lib/http/common_routes.js';
-import {create_app_server, type AppServerOptions} from '$lib/server/app_server.js';
-import {create_app_backend, type AppBackend, type AuditFactory} from '$lib/server/app_backend.js';
-import {stub_password_deps} from '$lib/testing/app_server.js';
-import {AUTH_MIGRATION_NAMESPACE} from '$lib/auth/migrations.js';
-import type {MigrationNamespace} from '$lib/db/migrate.js';
-import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
+import {create_keyring} from '$lib/auth/keyring.ts';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {create_health_route_spec} from '$lib/http/common_routes.ts';
+import {create_app_server, type AppServerOptions} from '$lib/server/app_server.ts';
+import {create_app_backend, type AppBackend, type AuditFactory} from '$lib/server/app_backend.ts';
+import {stub_password_deps} from '$lib/testing/app_server.ts';
+import {AUTH_MIGRATION_NAMESPACE} from '$lib/auth/migrations.ts';
+import type {MigrationNamespace} from '$lib/db/migrate.ts';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
 
 // 32+ char key for keyring
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';

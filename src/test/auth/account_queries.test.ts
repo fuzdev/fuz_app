@@ -14,12 +14,12 @@
 
 import {describe, assert, test} from 'vitest';
 
-import {Db, no_nested_transaction, type DbClient} from '$lib/db/db.js';
+import {Db, no_nested_transaction, type DbClient} from '$lib/db/db.ts';
 import {
 	query_account_by_id,
 	query_account_by_username,
 	query_account_by_email,
-} from '$lib/auth/account_queries.js';
+} from '$lib/auth/account_queries.ts';
 
 /** Create a mock `DbClient` that records every issued query and returns no rows. */
 const create_mock_client = (): DbClient & {

@@ -15,7 +15,7 @@ import {
 	canonicalize_ip,
 	ipv6_bigint_to_canonical,
 	IP_LITERAL_CHARS,
-} from '$lib/http/ip_canonical.js';
+} from '$lib/http/ip_canonical.ts';
 
 // --- ipv6_bigint_to_canonical — pure helper ---
 

@@ -10,7 +10,7 @@
  * @module
  */
 
-import type {Keyring} from './keyring.js';
+import type {Keyring} from './keyring.ts';
 
 /** Cookie max age in seconds (30 days — aligned with AUTH_SESSION_LIFETIME_MS). */
 export const SESSION_AGE_MAX = 60 * 60 * 24 * 30;

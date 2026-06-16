@@ -10,16 +10,16 @@
 import {readFileSync} from 'node:fs';
 
 import {z} from 'zod';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import type {RouteSpec} from './route_spec.js';
-import type {AppSurface} from './surface.js';
+import type {RouteSpec} from './route_spec.ts';
+import type {AppSurface} from './surface.ts';
 import {
 	check_schema_drift,
 	format_schema_drift,
 	READY_ERROR,
 	type ExpectedSchema,
-} from '../db/schema_ready.js';
+} from '../db/schema_ready.ts';
 
 /**
  * Create a public health check route spec.

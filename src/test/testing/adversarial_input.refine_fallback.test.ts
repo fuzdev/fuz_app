@@ -16,8 +16,8 @@
 import {describe, test, assert} from 'vitest';
 import {z} from 'zod';
 
-import {generate_input_test_cases} from '$lib/testing/adversarial_input.js';
-import {generate_valid_body} from '$lib/testing/schema_generators.js';
+import {generate_input_test_cases} from '$lib/testing/adversarial_input.ts';
+import {generate_valid_body} from '$lib/testing/schema_generators.ts';
 
 describe('generate_input_test_cases — refine fallback', () => {
 	test('synthesizes a base body for a top-level .refine() over optional fields', () => {

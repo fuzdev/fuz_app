@@ -13,14 +13,14 @@
  * @module
  */
 
-import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import {create_context} from '@fuzdev/fuz_ui/context_helpers.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {AsyncSlot} from './async_slot.svelte.js';
-import {KeyedAsyncSlot} from './keyed_async_slot.svelte.js';
-import type {AdminAccountEntryJson} from '../auth/account_schema.js';
-import type {RoleName} from '../auth/role_schema.js';
-import type {RoleGrantOfferJson} from '../auth/role_grant_offer_schema.js';
+import {AsyncSlot} from './async_slot.svelte.ts';
+import {KeyedAsyncSlot} from './keyed_async_slot.svelte.ts';
+import type {AdminAccountEntryJson} from '../auth/account_schema.ts';
+import type {RoleName} from '../auth/role_schema.ts';
+import type {RoleGrantOfferJson} from '../auth/role_grant_offer_schema.ts';
 import type {
 	AdminAccountListOutput,
 	AccountDeleteOutput,
@@ -30,14 +30,14 @@ import type {
 	AdminSessionRevokeAllOutput,
 	AdminTokenRevokeAllInput,
 	AdminTokenRevokeAllOutput,
-} from '../auth/admin_action_specs.js';
+} from '../auth/admin_action_specs.ts';
 import type {
 	RoleGrantOfferCreateInput,
 	RoleGrantOfferCreateOutput,
 	RoleGrantOfferOkOutput,
 	RoleGrantRevokeInput,
 	RoleGrantRevokeOutput,
-} from '../auth/role_grant_offer_action_specs.js';
+} from '../auth/role_grant_offer_action_specs.ts';
 
 /**
  * Narrow RPC surface consumed by `AdminAccountsState`. Consumers adapt their

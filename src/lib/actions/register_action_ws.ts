@@ -29,41 +29,41 @@
 
 import type {Hono} from 'hono';
 import type {UpgradeWebSocket, WSContext} from 'hono/ws';
-import {wait} from '@fuzdev/fuz_util/async.js';
-import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import {wait} from '@fuzdev/fuz_util/async.ts';
+import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
 import {
 	get_request_context,
 	require_request_context,
 	type RequestContext,
-} from '../auth/request_context.js';
-import {hash_session_token} from '../auth/session_queries.js';
-import {get_client_ip} from '../http/client_ip.js';
-import {flush_pending_effects, flush_post_commit_effects} from '../http/pending_effects.js';
-import type {RateLimiter} from '../rate_limiter.js';
-import type {JsonrpcRequestId} from '../http/jsonrpc.js';
-import {jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
+} from '../auth/request_context.ts';
+import {hash_session_token} from '../auth/session_queries.ts';
+import {get_client_ip} from '../http/client_ip.ts';
+import {flush_pending_effects, flush_post_commit_effects} from '../http/pending_effects.ts';
+import type {RateLimiter} from '../rate_limiter.ts';
+import type {JsonrpcRequestId} from '../http/jsonrpc.ts';
+import {jsonrpc_error_messages} from '../http/jsonrpc_errors.ts';
 import {
 	create_jsonrpc_error_response,
 	create_jsonrpc_notification,
 	to_jsonrpc_message_id,
 	to_jsonrpc_params,
 	is_jsonrpc_request,
-} from '../http/jsonrpc_helpers.js';
+} from '../http/jsonrpc_helpers.ts';
 import {
 	CREDENTIAL_TYPE_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	TEST_CONTEXT_PRESET_KEY,
 	type CredentialType,
-} from '../hono_context.js';
-import type {Db} from '../db/db.js';
-import {type Action} from './action_types.js';
-import {compile_action_registry} from './compile_action_registry.js';
-import {cancel_action_spec, CancelNotificationParams} from './cancel.js';
-import {WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT} from './transports.js';
-import {BackendWebsocketTransport, type ConnectionIdentity} from './transports_ws_backend.js';
-import {perform_action, perform_action_result_to_envelope} from './perform_action.js';
+} from '../hono_context.ts';
+import type {Db} from '../db/db.ts';
+import {type Action} from './action_types.ts';
+import {compile_action_registry} from './compile_action_registry.ts';
+import {cancel_action_spec, CancelNotificationParams} from './cancel.ts';
+import {WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT} from './transports.ts';
+import {BackendWebsocketTransport, type ConnectionIdentity} from './transports_ws_backend.ts';
+import {perform_action, perform_action_result_to_envelope} from './perform_action.ts';
 
 export type {Action};
 

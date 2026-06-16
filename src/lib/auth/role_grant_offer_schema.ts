@@ -13,9 +13,9 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {RoleName} from './role_schema.js';
+import {RoleName} from './role_schema.ts';
 
 /** Maximum length of the optional message attached to an offer. */
 export const ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX = 500;

@@ -19,11 +19,11 @@ import {inject} from 'vitest';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle,
-} from '$lib/testing/cross_backend/setup.js';
-import {describe_cell_crud_cross_tests} from '$lib/testing/cross_backend/cell_crud.js';
-import {describe_cell_relations_cross_tests} from '$lib/testing/cross_backend/cell_relations.js';
+} from '$lib/testing/cross_backend/setup.ts';
+import {describe_cell_crud_cross_tests} from '$lib/testing/cross_backend/cell_crud.ts';
+import {describe_cell_relations_cross_tests} from '$lib/testing/cross_backend/cell_relations.ts';
 
-import './cross_test_types.js';
+import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle);

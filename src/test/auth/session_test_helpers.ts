@@ -5,8 +5,8 @@
  * @module
  */
 
-import {create_keyring, type Keyring} from '$lib/auth/keyring.js';
-import type {SessionOptions} from '$lib/auth/session_cookie.js';
+import {create_keyring, type Keyring} from '$lib/auth/keyring.ts';
+import type {SessionOptions} from '$lib/auth/session_cookie.ts';
 
 export const TEST_KEY = 'a'.repeat(32);
 export const OLD_KEY = 'b'.repeat(32);

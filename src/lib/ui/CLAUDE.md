@@ -68,7 +68,7 @@ their payload shapes are defined in `auth/role_grant_offer_notifications.ts`
 ### Context over props for shared deps
 
 Auth, RPC adapters, sidebar, and role_grant offers all flow through
-`create_context` from `@fuzdev/fuz_ui/context_helpers.js`. Components
+`create_context` from `@fuzdev/fuz_ui/context_helpers.ts`. Components
 consume with `const x = x_context.get()` (or a `get_rpc`/`$derived`
 pair when the value may change reactively). New shared state joins the
 pattern rather than reintroducing prop-drilling.

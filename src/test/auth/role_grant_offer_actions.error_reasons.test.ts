@@ -21,9 +21,9 @@ import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {assert, test} from 'vitest';
 
-import type {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
-import * as role_grant_offer_specs from '$lib/auth/role_grant_offer_action_specs.js';
-import * as error_schemas from '$lib/http/error_schemas.js';
+import type {RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
+import * as role_grant_offer_specs from '$lib/auth/role_grant_offer_action_specs.ts';
+import * as error_schemas from '$lib/http/error_schemas.ts';
 
 const handler_source = readFileSync(
 	resolve(dirname(fileURLToPath(import.meta.url)), '../../lib/auth/role_grant_offer_actions.ts'),

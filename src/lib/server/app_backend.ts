@@ -11,17 +11,17 @@
  * @module
  */
 
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import type {AppDeps} from '../auth/deps.js';
-import {create_audit_emitter, type AuditEmitter} from '../auth/audit_emitter.js';
-import type {DbType, Db} from '../db/db.js';
-import type {Keyring} from '../auth/keyring.js';
-import type {PasswordHashDeps} from '../auth/password.js';
-import type {StatResult} from '../runtime/deps.js';
-import {run_migrations, type MigrationNamespace, type MigrationResult} from '../db/migrate.js';
-import {auth_migration_ns, reserved_migration_namespaces} from '../auth/migrations.js';
-import {create_db} from '../db/create_db.js';
+import type {AppDeps} from '../auth/deps.ts';
+import {create_audit_emitter, type AuditEmitter} from '../auth/audit_emitter.ts';
+import type {DbType, Db} from '../db/db.ts';
+import type {Keyring} from '../auth/keyring.ts';
+import type {PasswordHashDeps} from '../auth/password.ts';
+import type {StatResult} from '../runtime/deps.ts';
+import {run_migrations, type MigrationNamespace, type MigrationResult} from '../db/migrate.ts';
+import {auth_migration_ns, reserved_migration_namespaces} from '../auth/migrations.ts';
+import {create_db} from '../db/create_db.ts';
 
 /**
  * Result of `create_app_backend()` — database metadata + deps bundle.

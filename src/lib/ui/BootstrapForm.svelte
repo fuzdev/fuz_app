@@ -15,12 +15,12 @@
 	import {goto} from '$app/navigation';
 	import {resolve} from '$app/paths';
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
-	import {autofocus} from '@fuzdev/fuz_ui/autofocus.svelte.js';
+	import {autofocus} from '@fuzdev/fuz_ui/autofocus.svelte.ts';
 
-	import {Username} from '../primitive_schemas.js';
-	import {PASSWORD_LENGTH_MIN} from '../auth/password.js';
-	import {auth_state_context} from './auth_state.svelte.js';
-	import {FormState} from './form_state.svelte.js';
+	import {Username} from '../primitive_schemas.ts';
+	import {PASSWORD_LENGTH_MIN} from '../auth/password.ts';
+	import {auth_state_context} from './auth_state.svelte.ts';
+	import {FormState} from './form_state.svelte.ts';
 
 	const {
 		redirect_on_bootstrap = resolve('/'),

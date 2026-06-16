@@ -16,9 +16,9 @@ import {
 	TEST_CLIENT_IP,
 	type BearerAuthTestCase,
 	type BearerAuthTestOptions,
-} from '$lib/testing/middleware.js';
-import {create_test_request_context} from '$lib/testing/auth_apps.js';
-import {RateLimitError, ERROR_RATE_LIMIT_EXCEEDED} from '$lib/http/error_schemas.js';
+} from '$lib/testing/middleware.ts';
+import {create_test_request_context} from '$lib/testing/auth_apps.ts';
+import {RateLimitError, ERROR_RATE_LIMIT_EXCEEDED} from '$lib/http/error_schemas.ts';
 
 // --- Test data ---
 

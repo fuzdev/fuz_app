@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-process counterpart to `describe_standard_tests`.
@@ -40,17 +40,17 @@ import '../assert_dev_env.js';
  * @module
  */
 
-import type {SessionOptions} from '../../auth/session_cookie.js';
-import type {RoleSchemaResult} from '../../auth/role_schema.js';
-import type {AppSurfaceSpec} from '../../http/surface.js';
-import {describe_standard_integration_tests} from '../integration.js';
-import {describe_standard_admin_integration_tests} from '../admin_integration.js';
-import {describe_round_trip_validation} from '../round_trip.js';
-import {describe_rpc_round_trip_tests} from '../rpc_round_trip.js';
-import {describe_data_exposure_tests} from '../data_exposure.js';
-import type {RpcEndpointsSuiteOption} from '../rpc_helpers.js';
-import type {BackendCapabilities} from './capabilities.js';
-import type {SetupTest, TestFixture} from './setup.js';
+import type {SessionOptions} from '../../auth/session_cookie.ts';
+import type {RoleSchemaResult} from '../../auth/role_schema.ts';
+import type {AppSurfaceSpec} from '../../http/surface.ts';
+import {describe_standard_integration_tests} from '../integration.ts';
+import {describe_standard_admin_integration_tests} from '../admin_integration.ts';
+import {describe_round_trip_validation} from '../round_trip.ts';
+import {describe_rpc_round_trip_tests} from '../rpc_round_trip.ts';
+import {describe_data_exposure_tests} from '../data_exposure.ts';
+import type {RpcEndpointsSuiteOption} from '../rpc_helpers.ts';
+import type {BackendCapabilities} from './capabilities.ts';
+import type {SetupTest, TestFixture} from './setup.ts';
 
 /**
  * Configuration for `describe_standard_cross_process_tests`.

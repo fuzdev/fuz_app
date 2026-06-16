@@ -22,8 +22,8 @@
 
 import {describe, test, assert} from 'vitest';
 
-import {KeyedAsyncSlot} from '$lib/ui/keyed_async_slot.svelte.js';
-import {make_deferred, signal_rejection} from './async_test_helpers.js';
+import {KeyedAsyncSlot} from '$lib/ui/keyed_async_slot.svelte.ts';
+import {make_deferred, signal_rejection} from './async_test_helpers.ts';
 
 describe('KeyedAsyncSlot — empty state', () => {
 	test('size is 0; absent keys return safe defaults', () => {

@@ -8,11 +8,11 @@
  */
 
 import {z} from 'zod';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import type {Db, DbType} from '../db/db.js';
-import {get_route_params, get_route_query, type RouteSpec} from './route_spec.js';
-import {ActingActor} from './auth_shape.js';
+import type {Db, DbType} from '../db/db.ts';
+import {get_route_params, get_route_query, type RouteSpec} from './route_spec.ts';
+import {ActingActor} from './auth_shape.ts';
 import {
 	ForeignKeyError,
 	ERROR_TABLE_NOT_FOUND,
@@ -21,8 +21,8 @@ import {
 	ERROR_FOREIGN_KEY_VIOLATION,
 	ERROR_INVALID_ROUTE_PARAMS,
 	ERROR_DATABASE_CONNECTION_FAILED,
-} from './error_schemas.js';
-import {assert_valid_sql_identifier, VALID_SQL_IDENTIFIER} from '../db/sql_identifier.js';
+} from './error_schemas.ts';
+import {assert_valid_sql_identifier, VALID_SQL_IDENTIFIER} from '../db/sql_identifier.ts';
 
 /**
  * Table metadata from `information_schema`.

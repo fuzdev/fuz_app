@@ -1,6 +1,6 @@
 import {describe, test, assert} from 'vitest';
 
-import {validate_nginx_config} from '$lib/server/validate_nginx.js';
+import {validate_nginx_config} from '$lib/server/validate_nginx.ts';
 
 // --- Fixture configs ---
 

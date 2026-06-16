@@ -28,22 +28,22 @@ import {mkdtemp, rm, writeFile, mkdir, utimes, stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
-import {fact_hash_bytes, FACT_HASH_PREFIX} from '@fuzdev/fuz_util/fact_hash.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import {fact_hash_bytes, FACT_HASH_PREFIX} from '@fuzdev/fuz_util/fact_hash.ts';
 
 import {
 	create_pglite_factory,
 	create_pg_factory,
 	create_describe_db,
 	log_db_factory_status,
-} from '$lib/testing/db.js';
-import {run_migrations} from '$lib/db/migrate.js';
-import {FACT_MIGRATION_NS, FACT_DROP_TABLES} from '$lib/db/fact_ddl.js';
-import {PgFactStore} from '$lib/db/fact_store.js';
-import {sweep_orphan_temps, FACT_TMP_DIRNAME} from '$lib/db/fact_disk_storage.js';
-import {PayloadTooLargeError} from '$lib/db/fact_store_errors.js';
-import {create_node_runtime} from '$lib/runtime/node.js';
-import type {Db} from '$lib/db/db.js';
+} from '$lib/testing/db.ts';
+import {run_migrations} from '$lib/db/migrate.ts';
+import {FACT_MIGRATION_NS, FACT_DROP_TABLES} from '$lib/db/fact_ddl.ts';
+import {PgFactStore} from '$lib/db/fact_store.ts';
+import {sweep_orphan_temps, FACT_TMP_DIRNAME} from '$lib/db/fact_disk_storage.ts';
+import {PayloadTooLargeError} from '$lib/db/fact_store_errors.ts';
+import {create_node_runtime} from '$lib/runtime/node.ts';
+import type {Db} from '$lib/db/db.ts';
 
 const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [FACT_MIGRATION_NS]);

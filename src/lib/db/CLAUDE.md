@@ -98,7 +98,7 @@ DO NOTHING`), `_put_fact_refs`, `_get_fact` / `_get_fact_meta` / `_has_fact`
   external unlink), and the cell-coupled orphan queries `query_orphan_facts_list`
   / `_select_for_delete` (a fact is orphan when no active `cell.refs` names it).
 - **`fact_store.ts`** — `PgFactStore implements FactStore` (the interface lives
-  in `@fuzdev/fuz_util/fact_store.js`): size-routed writes (embedded ≤
+  in `@fuzdev/fuz_util/fact_store.ts`): size-routed writes (embedded ≤
   `embedded_threshold` / disk CAS above it / `put_ref` for an externally-managed
   URL), JSON ref auto-extract, idempotent put, verify-on-read for external
   content via an injected `FactExternalFetcher`. With `disk_root` + `fs` (the

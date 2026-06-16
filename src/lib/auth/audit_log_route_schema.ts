@@ -13,8 +13,8 @@
 
 import {z} from 'zod';
 
-import type {RouteSpec} from '../http/route_spec.js';
-import {ActingActor} from '../http/auth_shape.js';
+import type {RouteSpec} from '../http/route_spec.ts';
+import {ActingActor} from '../http/auth_shape.ts';
 
 /** Query schema for the audit-log SSE route — multi-actor admins pass `?acting=<uuid>`. */
 export const AuditStreamQuery = z.strictObject({acting: ActingActor});

@@ -27,44 +27,44 @@
 import {dirname, join} from 'node:path';
 import type {Context} from 'hono';
 import type {UpgradeWebSocket} from 'hono/ws';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {protocol_actions} from '../../lib/actions/protocol.js';
-import {register_ws_endpoint} from '../../lib/actions/register_ws_endpoint.js';
-import {BackendWebsocketTransport} from '../../lib/actions/transports_ws_backend.js';
+import {protocol_actions} from '$lib/actions/protocol.ts';
+import {register_ws_endpoint} from '$lib/actions/register_ws_endpoint.ts';
+import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.ts';
 import {
 	create_ws_auth_guard,
 	create_ws_logout_closer,
-} from '../../lib/actions/transports_ws_auth_guard.js';
-import {start_daemon_token_rotation} from '../../lib/auth/daemon_token_middleware.js';
-import {load_env} from '../../lib/env/load.js';
-import type {RuntimeDeps} from '../../lib/runtime/deps.js';
-import {cell_audit_events} from '../../lib/auth/cell_audit_events.js';
-import {create_audit_emitter} from '../../lib/auth/audit_emitter.js';
-import {create_audit_log_config} from '../../lib/auth/audit_log_schema.js';
-import {CELL_MIGRATION_NS} from '../../lib/db/cell_ddl.js';
-import {CELL_HISTORY_MIGRATION_NS} from '../../lib/db/cell_history_ddl.js';
-import {FACT_MIGRATION_NS} from '../../lib/db/fact_ddl.js';
+} from '$lib/actions/transports_ws_auth_guard.ts';
+import {start_daemon_token_rotation} from '$lib/auth/daemon_token_middleware.ts';
+import {load_env} from '$lib/env/load.ts';
+import type {RuntimeDeps} from '$lib/runtime/deps.ts';
+import {cell_audit_events} from '$lib/auth/cell_audit_events.ts';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
+import {create_audit_log_config} from '$lib/auth/audit_log_schema.ts';
+import {CELL_MIGRATION_NS} from '$lib/db/cell_ddl.ts';
+import {CELL_HISTORY_MIGRATION_NS} from '$lib/db/cell_history_ddl.ts';
+import {FACT_MIGRATION_NS} from '$lib/db/fact_ddl.ts';
 import {
 	create_serve_cell_fact_route_spec,
 	create_serve_fact_route_spec,
-} from '../../lib/server/serve_fact_route.js';
-import {create_app_backend, type AuditFactory} from '../../lib/server/app_backend.js';
-import {create_app_server} from '../../lib/server/app_server.js';
+} from '$lib/server/serve_fact_route.ts';
+import {create_app_backend, type AuditFactory} from '$lib/server/app_backend.ts';
+import {create_app_server} from '$lib/server/app_server.ts';
 import {
 	RateLimiter,
 	default_login_account_rate_limit,
 	default_login_ip_rate_limit,
-} from '../../lib/rate_limiter.js';
-import {BaseServerEnv, validate_server_env} from '../../lib/server/env.js';
-import {stub_password_deps} from '../../lib/testing/app_server.js';
+} from '$lib/rate_limiter.ts';
+import {BaseServerEnv, validate_server_env} from '$lib/server/env.ts';
+import {stub_password_deps} from '$lib/testing/app_server.ts';
 import {
 	create_spine_ready_route_spec,
 	create_spine_route_specs,
 	spine_session_options,
-} from '../../lib/testing/cross_backend/default_spine_surface.js';
-import {full_spine_rpc_endpoints} from '../../lib/testing/cross_backend/full_spine_mount.js';
-import type {BuiltTestingApp} from '../../lib/testing/cross_backend/testing_server_core.js';
+} from '$lib/testing/cross_backend/default_spine_surface.ts';
+import {full_spine_rpc_endpoints} from '$lib/testing/cross_backend/full_spine_mount.ts';
+import type {BuiltTestingApp} from '$lib/testing/cross_backend/testing_server_core.ts';
 
 /** Resolved bind config the entry passes to `start_testing_server`. */
 export interface SpineServerConfig {

@@ -21,19 +21,19 @@
  * @module
  */
 
-import {create_session_config} from '$lib/auth/session_cookie.js';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
 	auth_integration_truncate_tables,
-} from '$lib/testing/db.js';
-import {run_migrations} from '$lib/db/migrate.js';
-import {auth_migration_ns} from '$lib/auth/migrations.js';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
-import {create_admin_actions} from '$lib/auth/admin_actions.js';
-import type {Db} from '$lib/db/db.js';
-import type {AppServerContext} from '$lib/server/app_server_context.js';
-import type {RouteSpec} from '$lib/http/route_spec.js';
+} from '$lib/testing/db.ts';
+import {run_migrations} from '$lib/db/migrate.ts';
+import {auth_migration_ns} from '$lib/auth/migrations.ts';
+import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
+import {create_admin_actions} from '$lib/auth/admin_actions.ts';
+import type {Db} from '$lib/db/db.ts';
+import type {AppServerContext} from '$lib/server/app_server_context.ts';
+import type {RouteSpec} from '$lib/http/route_spec.ts';
 
 /** Shared cookie name for the admin-RPC integration suites. */
 export const session_options = create_session_config('test_session');

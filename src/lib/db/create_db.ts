@@ -13,9 +13,9 @@
  * @module
  */
 
-import type {Db, DbType} from './db.js';
-import {create_pg_db} from './db_pg.js';
-import {create_pglite_db} from './db_pglite.js';
+import type {Db, DbType} from './db.ts';
+import {create_pg_db} from './db_pg.ts';
+import {create_pglite_db} from './db_pglite.ts';
 
 /** Result of database initialization. */
 export interface CreateDbResult {

@@ -7,7 +7,7 @@
 	 * @module
 	 */
 
-	import {AppSettingsState, app_settings_rpc_context} from './app_settings_state.svelte.js';
+	import {AppSettingsState, app_settings_rpc_context} from './app_settings_state.svelte.ts';
 
 	const get_rpc = app_settings_rpc_context.get();
 	const app_settings = new AppSettingsState({get_rpc});

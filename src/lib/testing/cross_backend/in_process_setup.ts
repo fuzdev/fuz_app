@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * In-process fixture producers for the cross-backend suite protocol.
@@ -17,37 +17,37 @@ import '../assert_dev_env.js';
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {RouteSpec} from '../../http/route_spec.js';
-import type {AppSurfaceSpec} from '../../http/surface.js';
-import type {BootstrapServerOptions} from '../../server/app_server.js';
-import type {AppServerContext} from '../../server/app_server_context.js';
-import type {SessionOptions} from '../../auth/session_cookie.js';
-import {ROLE_KEEPER} from '../../auth/role_schema.js';
-import {query_create_actor} from '../../auth/account_queries.js';
+import type {RouteSpec} from '../../http/route_spec.ts';
+import type {AppSurfaceSpec} from '../../http/surface.ts';
+import type {BootstrapServerOptions} from '../../server/app_server.ts';
+import type {AppServerContext} from '../../server/app_server_context.ts';
+import type {SessionOptions} from '../../auth/session_cookie.ts';
+import {ROLE_KEEPER} from '../../auth/role_schema.ts';
+import {query_create_actor} from '../../auth/account_queries.ts';
 import {
 	create_test_app,
 	create_test_account_with_credentials,
 	mint_test_session,
 	type CreateTestAppOptions,
 	type SuiteAppOptions,
-} from '../app_server.js';
-import {create_test_app_surface_spec} from '../stubs.js';
+} from '../app_server.ts';
+import {create_test_app_surface_spec} from '../stubs.ts';
 import {
 	http_transport,
 	type RpcTestTransport,
 	type RpcEndpointsSuiteOption,
-} from '../rpc_helpers.js';
-import {in_process_capabilities, type BackendCapabilities} from './capabilities.js';
-import type {FetchTransport} from '../transports/fetch_transport.js';
+} from '../rpc_helpers.ts';
+import {in_process_capabilities, type BackendCapabilities} from './capabilities.ts';
+import type {FetchTransport} from '../transports/fetch_transport.ts';
 import {
 	build_extra_account_fixture,
 	EXPIRED_SESSION_OFFSET_SECONDS,
 	type SetupTest,
 	type ExtraAccountFixture,
 	type ExtraAccountSpec,
-} from './setup.js';
+} from './setup.ts';
 
 /**
  * Wrap a Hono-style app into a `FetchTransport`-shaped object so the

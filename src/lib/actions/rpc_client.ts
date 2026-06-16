@@ -11,25 +11,25 @@
  * @module
  */
 
-import type {Result} from '@fuzdev/fuz_util/result.js';
+import type {Result} from '@fuzdev/fuz_util/result.ts';
 
 import type {
 	ActionSpecUnion,
 	LocalCallActionSpec,
 	RemoteNotificationActionSpec,
 	RequestResponseActionSpec,
-} from './action_spec.js';
-import type {ActionEventEnvironment} from './action_event_types.js';
-import {create_action_event, type ActionEvent} from './action_event.js';
+} from './action_spec.ts';
+import type {ActionEventEnvironment} from './action_event_types.ts';
+import {create_action_event, type ActionEvent} from './action_event.ts';
 import {
 	is_send_request,
 	is_notification_send,
 	extract_action_result,
-} from './action_event_helpers.js';
-import type {ActionPeer, ActionPeerSendOptions} from './action_peer.js';
-import type {TransportName} from './transports.js';
-import {jsonrpc_error_messages} from '../http/jsonrpc_errors.js';
-import type {JsonrpcErrorObject} from '../http/jsonrpc.js';
+} from './action_event_helpers.ts';
+import type {ActionPeer, ActionPeerSendOptions} from './action_peer.ts';
+import type {TransportName} from './transports.ts';
+import {jsonrpc_error_messages} from '../http/jsonrpc_errors.ts';
+import type {JsonrpcErrorObject} from '../http/jsonrpc.ts';
 
 /**
  * Optional per-method transport selector. Return the transport to use for a

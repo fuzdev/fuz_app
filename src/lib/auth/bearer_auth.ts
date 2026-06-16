@@ -17,13 +17,13 @@
 
 import {DEV} from 'esm-env';
 import type {MiddlewareHandler} from 'hono';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {AUTH_API_TOKEN_ID_KEY, ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.js';
-import {query_validate_api_token} from './api_token_queries.js';
-import type {QueryDeps} from '../db/query_deps.js';
-import {get_client_ip} from '../http/client_ip.js';
-import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.js';
+import {AUTH_API_TOKEN_ID_KEY, ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.ts';
+import {query_validate_api_token} from './api_token_queries.ts';
+import type {QueryDeps} from '../db/query_deps.ts';
+import {get_client_ip} from '../http/client_ip.ts';
+import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.ts';
 
 /**
  * Create middleware that authenticates via bearer token.

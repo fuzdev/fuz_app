@@ -6,7 +6,7 @@
 
 import {describe, test, assert} from 'vitest';
 
-import {assert_valid_sql_identifier, VALID_SQL_IDENTIFIER} from '$lib/db/sql_identifier.js';
+import {assert_valid_sql_identifier, VALID_SQL_IDENTIFIER} from '$lib/db/sql_identifier.ts';
 
 describe('VALID_SQL_IDENTIFIER', () => {
 	test('matches simple identifiers', () => {

@@ -20,7 +20,7 @@
  * @module
  */
 
-import type {MethodCoverageEntry} from '$lib/testing/cross_backend/method_coverage.js';
+import type {MethodCoverageEntry} from '$lib/testing/cross_backend/method_coverage.ts';
 
 export const SPINE_METHOD_COVERAGE: ReadonlyArray<MethodCoverageEntry> = [
 	// --- Declared surface — the `create_standard_rpc_actions` bundle ---

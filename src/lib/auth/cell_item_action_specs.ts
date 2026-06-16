@@ -11,14 +11,14 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 import {
 	FRACTIONAL_INDEX_LENGTH_MAX,
 	FRACTIONAL_INDEX_REGEX,
-} from '@fuzdev/fuz_util/fractional_index.js';
+} from '@fuzdev/fuz_util/fractional_index.ts';
 
-import {ActingActor} from '../http/auth_shape.js';
-import type {RequestResponseActionSpec} from '../actions/action_spec.js';
+import {ActingActor} from '../http/auth_shape.ts';
+import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
 
 // -- Error reasons ----------------------------------------------------------
 
@@ -74,7 +74,7 @@ export type ItemJson = z.infer<typeof ItemJson>;
 
 /**
  * Input for `cell_item_insert`. Caller computes `position` via
- * `fractional_index_between(prev, next)` (`@fuzdev/fuz_util/fractional_index.js`)
+ * `fractional_index_between(prev, next)` (`@fuzdev/fuz_util/fractional_index.ts`)
  * client-side. Returns `cell_item_position_taken` on `(parent_id,
  * position)` unique violation; client refreshes bracket and retries.
  */

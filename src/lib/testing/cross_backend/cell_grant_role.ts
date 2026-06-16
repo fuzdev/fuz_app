@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-backend parity suite for **role-shaped** `cell_grant`s.
@@ -37,15 +37,15 @@ import '../assert_dev_env.js';
 
 import {describe, assert} from 'vitest';
 
-import {CellCreateOutput, CellGetOutput, CellUpdateOutput} from '../../auth/cell_action_specs.js';
+import {CellCreateOutput, CellGetOutput, CellUpdateOutput} from '../../auth/cell_action_specs.ts';
 import {
 	CellGrantCreateOutput,
 	ERROR_CELL_GRANT_UNKNOWN_ROLE,
-} from '../../auth/cell_grant_action_specs.js';
-import {test_if} from './capabilities.js';
-import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.js';
-import type {RpcPathCrossSuiteOptions} from './setup.js';
-import {SPINE_CELL_EDITOR_ROLE, SPINE_RPC_PATH} from './default_spine_surface.js';
+} from '../../auth/cell_grant_action_specs.ts';
+import {test_if} from './capabilities.ts';
+import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.ts';
+import type {RpcPathCrossSuiteOptions} from './setup.ts';
+import {SPINE_CELL_EDITOR_ROLE, SPINE_RPC_PATH} from './default_spine_surface.ts';
 
 /** App role the holder is seeded with; matches the spine's registered role. */
 export const CELL_EDITOR_ROLE = SPINE_CELL_EDITOR_ROLE;

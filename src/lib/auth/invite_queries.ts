@@ -7,9 +7,9 @@
  * @module
  */
 
-import type {QueryDeps} from '../db/query_deps.js';
-import {assert_row} from '../db/assert_row.js';
-import type {Invite, CreateInviteInput, InviteWithUsernamesJson} from './invite_schema.js';
+import type {QueryDeps} from '../db/query_deps.ts';
+import {assert_row} from '../db/assert_row.ts';
+import type {Invite, CreateInviteInput, InviteWithUsernamesJson} from './invite_schema.ts';
 
 /**
  * Create a new invite.

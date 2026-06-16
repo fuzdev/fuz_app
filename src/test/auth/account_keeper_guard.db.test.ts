@@ -12,28 +12,28 @@
 
 import {test, assert} from 'vitest';
 
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.ts';
 import {
 	account_delete_action_spec,
 	account_purge_action_spec,
 	ERROR_CANNOT_DELETE_KEEPER,
 	ERROR_CANNOT_DELETE_LAST_ADMIN,
-} from '$lib/auth/admin_action_specs.js';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
-import {auth_migration_ns} from '$lib/auth/migrations.js';
-import {create_test_app} from '$lib/testing/app_server.js';
+} from '$lib/auth/admin_action_specs.ts';
+import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
+import {auth_migration_ns} from '$lib/auth/migrations.ts';
+import {create_test_app} from '$lib/testing/app_server.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
 	auth_integration_truncate_tables,
-} from '$lib/testing/db.js';
-import {run_migrations} from '$lib/db/migrate.js';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
-import {install_audit_drift_guard} from '$lib/testing/audit_drift_guard.js';
-import type {AppServerContext} from '$lib/server/app_server_context.js';
-import type {RouteSpec} from '$lib/http/route_spec.js';
+} from '$lib/testing/db.ts';
+import {run_migrations} from '$lib/db/migrate.ts';
+import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
+import {install_audit_drift_guard} from '$lib/testing/audit_drift_guard.ts';
+import type {AppServerContext} from '$lib/server/app_server_context.ts';
+import type {RouteSpec} from '$lib/http/route_spec.ts';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';

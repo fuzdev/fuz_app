@@ -5,15 +5,15 @@
  */
 
 import {describe, assert, test, beforeAll, afterAll, vi} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	create_pglite_factory,
 	create_pg_factory,
 	log_db_factory_status,
 	type DbFactory,
-} from '$lib/testing/db.js';
-import {Db, no_nested_transaction} from '$lib/db/db.js';
+} from '$lib/testing/db.ts';
+import {Db, no_nested_transaction} from '$lib/db/db.ts';
 
 const noop_init = async (_db: Db): Promise<void> => {};
 

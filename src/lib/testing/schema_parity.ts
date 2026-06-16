@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Cross-impl schema parity — structural diff + assertion over two
@@ -47,7 +47,7 @@ import type {
 	SchemaSnapshot,
 	SequenceSnapshot,
 	TableSnapshot,
-} from './schema_introspect.js';
+} from './schema_introspect.ts';
 
 /** Structured drift entry. `where` is the named source impl ('a' or 'b'). */
 export type SchemaDiff =

@@ -1,12 +1,12 @@
-import '../../assert_dev_env.js';
+import '../../assert_dev_env.ts';
 
-import {benchmark_format_markdown} from '@fuzdev/fuz_util/benchmark_format.js';
+import {benchmark_format_markdown} from '@fuzdev/fuz_util/benchmark_format.ts';
 import {
 	benchmark_stats_compare,
 	type BenchmarkComparison,
-} from '@fuzdev/fuz_util/benchmark_stats.js';
+} from '@fuzdev/fuz_util/benchmark_stats.ts';
 
-import type {CrossImplBenchResult} from './run_cross_impl_bench.js';
+import type {CrossImplBenchResult} from './run_cross_impl_bench.ts';
 
 /**
  * Reporting adapters over a `CrossImplBenchResult` — all built on fuz_util's

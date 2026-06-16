@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Stateless cross-process bootstrap.
@@ -21,10 +21,10 @@ import '../assert_dev_env.js';
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {BackendConfig} from '../cross_backend/backend_config.js';
-import type {FetchTransport} from './fetch_transport.js';
+import type {BackendConfig} from '../cross_backend/backend_config.ts';
+import type {FetchTransport} from './fetch_transport.ts';
 
 /**
  * The `BootstrapOutput` envelope shape the cross-process bootstrap call

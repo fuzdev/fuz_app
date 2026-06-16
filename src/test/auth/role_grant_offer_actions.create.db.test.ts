@@ -12,29 +12,29 @@
 
 import {describe, test, assert} from 'vitest';
 
-import {create_test_app} from '$lib/testing/app_server.js';
-import {ROLE_ADMIN, create_role_schema} from '$lib/auth/role_schema.js';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
+import {create_test_app} from '$lib/testing/app_server.ts';
+import {ROLE_ADMIN, create_role_schema} from '$lib/auth/role_schema.ts';
+import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
 import {
 	authorize_admin_or_holder,
 	create_role_grant_offer_actions,
-} from '$lib/auth/role_grant_offer_actions.js';
-import {query_create_role_grant} from '$lib/auth/role_grant_queries.js';
+} from '$lib/auth/role_grant_offer_actions.ts';
+import {query_create_role_grant} from '$lib/auth/role_grant_queries.ts';
 import {
 	role_grant_offer_create_action_spec,
 	ERROR_ROLE_GRANT_OFFER_SELF_TARGET,
 	ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
-} from '$lib/auth/role_grant_offer_action_specs.js';
-import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
-import type {AppServerContext} from '$lib/server/app_server_context.js';
-import type {RouteSpec} from '$lib/http/route_spec.js';
+} from '$lib/auth/role_grant_offer_action_specs.ts';
+import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.ts';
+import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
+import type {AppServerContext} from '$lib/server/app_server_context.ts';
+import type {RouteSpec} from '$lib/http/route_spec.ts';
 import {
 	RPC_PATH,
 	create_route_specs,
 	describe_db,
 	session_options,
-} from './role_grant_offer_test_helpers.js';
+} from './role_grant_offer_test_helpers.ts';
 
 describe_db('role_grant_offer_actions.create', (get_db) => {
 	describe('role_grant_offer_create', () => {

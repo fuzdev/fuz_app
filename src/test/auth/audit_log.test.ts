@@ -10,23 +10,23 @@
 import {describe, test, assert, vi, afterEach, beforeEach} from 'vitest';
 import {Hono} from 'hono';
 
-import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.js';
-import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
-import {create_account_route_specs} from '$lib/auth/account_routes.js';
-import {apply_route_specs} from '$lib/http/route_spec.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
-import {create_keyring} from '$lib/auth/keyring.js';
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {RateLimiter} from '$lib/rate_limiter.js';
-import {create_proxy_middleware} from '$lib/http/proxy.js';
-import type {AuditLogInput} from '$lib/auth/audit_log_schema.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import {create_stub_db, create_noop_stub} from '$lib/testing/stubs.js';
+import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.ts';
+import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.ts';
+import {create_account_route_specs} from '$lib/auth/account_routes.ts';
+import {apply_route_specs} from '$lib/http/route_spec.ts';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.ts';
+import {create_keyring} from '$lib/auth/keyring.ts';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {RateLimiter} from '$lib/rate_limiter.ts';
+import {create_proxy_middleware} from '$lib/http/proxy.ts';
+import type {AuditLogInput} from '$lib/auth/audit_log_schema.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import {create_stub_db, create_noop_stub} from '$lib/testing/stubs.ts';
 import {
 	create_recording_audit_emitter,
 	type RecordingAuditEmitter,
-} from '$lib/testing/audit_drift_guard.js';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+} from '$lib/testing/audit_drift_guard.ts';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
 const log = new Logger('test', {level: 'off'});
 
@@ -94,7 +94,7 @@ vi.mock('$lib/auth/account_queries.js', () => ({
 }));
 
 vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/auth/session_queries.js')>();
+	const actual = await importOriginal<typeof import('$lib/auth/session_queries.ts')>();
 	return {
 		...actual,
 		query_create_session: mock_session_create,
@@ -117,7 +117,7 @@ vi.mock('$lib/auth/api_token_queries.js', () => ({
 }));
 
 vi.mock('$lib/auth/audit_log_queries.js', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/auth/audit_log_queries.js')>();
+	const actual = await importOriginal<typeof import('$lib/auth/audit_log_queries.ts')>();
 	return {
 		...actual,
 		query_audit_log: mock_audit_log,

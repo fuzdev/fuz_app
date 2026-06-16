@@ -13,22 +13,22 @@
  */
 
 import {describe, test, assert} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.js';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
-import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
-import {all_admin_action_specs} from '$lib/auth/admin_action_specs.js';
+import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.ts';
+import {all_admin_action_specs} from '$lib/auth/admin_action_specs.ts';
 import {
 	all_role_grant_offer_action_specs,
 	ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
 	role_grant_offer_create_action_spec,
-} from '$lib/auth/role_grant_offer_action_specs.js';
-import {all_account_action_specs} from '$lib/auth/account_action_specs.js';
-import {create_stub_db, create_test_audit_emitter} from '$lib/testing/stubs.js';
-import {create_test_context} from '$lib/testing/entities.js';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import type {ActionContext} from '$lib/actions/action_rpc.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+} from '$lib/auth/role_grant_offer_action_specs.ts';
+import {all_account_action_specs} from '$lib/auth/account_action_specs.ts';
+import {create_stub_db, create_test_audit_emitter} from '$lib/testing/stubs.ts';
+import {create_test_context} from '$lib/testing/entities.ts';
+import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import type {ActionContext} from '$lib/actions/action_rpc.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
 const log = new Logger('test', {level: 'off'});
 const deps = {log, audit: create_test_audit_emitter()};

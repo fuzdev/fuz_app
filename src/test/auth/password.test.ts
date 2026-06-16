@@ -6,13 +6,13 @@
 
 import {describe, assert, test} from 'vitest';
 
-import {hash_password, verify_password, verify_dummy} from '$lib/auth/password_argon2.js';
+import {hash_password, verify_password, verify_dummy} from '$lib/auth/password_argon2.ts';
 import {
 	PASSWORD_LENGTH_MIN,
 	PASSWORD_LENGTH_MAX,
 	Password,
 	PasswordProvided,
-} from '$lib/auth/password.js';
+} from '$lib/auth/password.ts';
 
 describe('hash_password', () => {
 	test('returns an Argon2id hash string', async () => {

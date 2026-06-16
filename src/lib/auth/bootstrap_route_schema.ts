@@ -15,18 +15,18 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {Username} from '../primitive_schemas.js';
-import {Password} from './password.js';
-import type {RouteSpec} from '../http/route_spec.js';
+import {Username} from '../primitive_schemas.ts';
+import {Password} from './password.ts';
+import type {RouteSpec} from '../http/route_spec.ts';
 import {
 	ERROR_INVALID_TOKEN,
 	ERROR_ALREADY_BOOTSTRAPPED,
 	ERROR_TOKEN_FILE_MISSING,
 	ERROR_INVALID_JSON_BODY,
 	ERROR_INVALID_REQUEST_BODY,
-} from '../http/error_schemas.js';
+} from '../http/error_schemas.ts';
 
 /** Input for `POST /bootstrap`. `token` is the one-shot token file contents. */
 export const BootstrapInput = z.strictObject({

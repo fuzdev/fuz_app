@@ -12,10 +12,10 @@
 import {describe, assert, test} from 'vitest';
 import {z} from 'zod';
 
-import {ActionPeer} from '$lib/actions/action_peer.js';
-import {create_broadcast_api, type ShouldDeliverFn} from '$lib/actions/broadcast_api.js';
-import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.js';
-import {Transports, type Transport} from '$lib/actions/transports.js';
+import {ActionPeer} from '$lib/actions/action_peer.ts';
+import {create_broadcast_api, type ShouldDeliverFn} from '$lib/actions/broadcast_api.ts';
+import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.ts';
+import {Transports, type Transport} from '$lib/actions/transports.ts';
 import type {
 	JsonrpcErrorResponse,
 	JsonrpcMessageFromClientToServer,
@@ -23,10 +23,10 @@ import type {
 	JsonrpcNotification,
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
-} from '$lib/http/jsonrpc.js';
-import type {ActionSpecUnion} from '$lib/actions/action_spec.js';
-import {MinimalActionEnvironment, create_fake_ws} from '$lib/testing/ws_round_trip.js';
-import {create_uuid} from '@fuzdev/fuz_util/id.js';
+} from '$lib/http/jsonrpc.ts';
+import type {ActionSpecUnion} from '$lib/actions/action_spec.ts';
+import {MinimalActionEnvironment, create_fake_ws} from '$lib/testing/ws_round_trip.ts';
+import {create_uuid} from '@fuzdev/fuz_util/id.ts';
 
 const thing_changed_spec = {
 	method: 'thing_changed',

@@ -73,10 +73,10 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {RequestResponseActionSpec} from '../actions/action_spec.js';
-import {ActorLookupEntryJson} from './actor_lookup_action_specs.js';
+import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
+import {ActorLookupEntryJson} from './actor_lookup_action_specs.ts';
 
 /**
  * Hard cap on the number of rows returned per call. Bounds the search-result

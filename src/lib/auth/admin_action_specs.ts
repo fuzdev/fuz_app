@@ -17,14 +17,14 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {RequestResponseActionSpec} from '../actions/action_spec.js';
-import {ROLE_ADMIN, ROLE_KEEPER, RoleName} from './role_schema.js';
-import {CREDENTIAL_TYPE_DAEMON_TOKEN} from './credential_type_schema.js';
-import {AdminAccountEntryJson} from './account_schema.js';
-import {Email, Username} from '../primitive_schemas.js';
-import {ActingActor} from '../http/auth_shape.js';
+import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
+import {ROLE_ADMIN, ROLE_KEEPER, RoleName} from './role_schema.ts';
+import {CREDENTIAL_TYPE_DAEMON_TOKEN} from './credential_type_schema.ts';
+import {AdminAccountEntryJson} from './account_schema.ts';
+import {Email, Username} from '../primitive_schemas.ts';
+import {ActingActor} from '../http/auth_shape.ts';
 import {
 	AdminSessionJson,
 	AUDIT_LOG_DEFAULT_LIMIT,
@@ -32,9 +32,9 @@ import {
 	AuditLogEventWithUsernamesJson,
 	AuditOutcome,
 	RoleGrantHistoryEventJson,
-} from './audit_log_schema.js';
-import {InviteJson, InviteWithUsernamesJson} from './invite_schema.js';
-import {AppSettingsWithUsernameJson} from './app_settings_schema.js';
+} from './audit_log_schema.ts';
+import {InviteJson, InviteWithUsernamesJson} from './invite_schema.ts';
+import {AppSettingsWithUsernameJson} from './app_settings_schema.ts';
 
 /** Max audit-log page size. */
 export const AUDIT_LOG_LIST_LIMIT_MAX = 200;

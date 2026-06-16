@@ -10,8 +10,8 @@
 
 import {z} from 'zod';
 
-import type {RouteAuth} from './auth_shape.js';
-import {derive_error_schemas, type RateLimitKey, type RouteErrorSchemas} from './error_schemas.js';
+import type {RouteAuth} from './auth_shape.ts';
+import {derive_error_schemas, type RateLimitKey, type RouteErrorSchemas} from './error_schemas.ts';
 
 /**
  * Check if a schema is exactly `z.null()`.

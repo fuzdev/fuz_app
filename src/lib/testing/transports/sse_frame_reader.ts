@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * SSE frame reader over a `ReadableStreamDefaultReader<Uint8Array>`.

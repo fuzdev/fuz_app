@@ -16,14 +16,14 @@ import {inject} from 'vitest';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle,
-} from '$lib/testing/cross_backend/setup.js';
+} from '$lib/testing/cross_backend/setup.ts';
 import {
 	describe_cell_grant_role_cross_tests,
 	CELL_EDITOR_ROLE,
 	CELL_ROLE_HOLDER_USERNAME,
-} from '$lib/testing/cross_backend/cell_grant_role.js';
+} from '$lib/testing/cross_backend/cell_grant_role.ts';
 
-import './cross_test_types.js';
+import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle, {

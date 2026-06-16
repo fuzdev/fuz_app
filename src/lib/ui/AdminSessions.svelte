@@ -9,13 +9,13 @@
 	 * @module
 	 */
 
-	import {AdminSessionsState} from './admin_sessions_state.svelte.js';
-	import {admin_accounts_rpc_context} from './admin_accounts_state.svelte.js';
-	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.js';
+	import {AdminSessionsState} from './admin_sessions_state.svelte.ts';
+	import {admin_accounts_rpc_context} from './admin_accounts_state.svelte.ts';
+	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.ts';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import Datatable from './Datatable.svelte';
-	import type {DatatableColumn} from './datatable.js';
-	import type {AdminSessionJson} from '../auth/audit_log_schema.js';
+	import type {DatatableColumn} from './datatable.ts';
+	import type {AdminSessionJson} from '../auth/audit_log_schema.ts';
 
 	const get_rpc = admin_accounts_rpc_context.get();
 	const admin_sessions = new AdminSessionsState({get_rpc});

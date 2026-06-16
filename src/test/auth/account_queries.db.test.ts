@@ -5,7 +5,7 @@
  */
 
 import {describe, assert, test} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	query_create_account,
@@ -23,9 +23,9 @@ import {
 	query_create_actor,
 	query_actor_by_id,
 	query_create_account_with_actor,
-} from '$lib/auth/account_queries.js';
+} from '$lib/auth/account_queries.ts';
 
-import {describe_db} from '../db_fixture.js';
+import {describe_db} from '../db_fixture.ts';
 
 describe_db('account queries', (get_db) => {
 	describe('AccountQueries', () => {

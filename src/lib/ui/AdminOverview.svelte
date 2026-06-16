@@ -12,13 +12,13 @@
 	import {onMount} from 'svelte';
 	import {resolve} from '$app/paths';
 
-	import {auth_state_context} from './auth_state.svelte.js';
-	import {AdminAccountsState, admin_accounts_rpc_context} from './admin_accounts_state.svelte.js';
-	import {AdminSessionsState} from './admin_sessions_state.svelte.js';
-	import {AdminInvitesState, admin_invites_rpc_context} from './admin_invites_state.svelte.js';
-	import {AuditLogState, audit_log_rpc_context} from './audit_log_state.svelte.js';
-	import {AppSettingsState, app_settings_rpc_context} from './app_settings_state.svelte.js';
-	import {format_relative_time, format_datetime_local} from './ui_format.js';
+	import {auth_state_context} from './auth_state.svelte.ts';
+	import {AdminAccountsState, admin_accounts_rpc_context} from './admin_accounts_state.svelte.ts';
+	import {AdminSessionsState} from './admin_sessions_state.svelte.ts';
+	import {AdminInvitesState, admin_invites_rpc_context} from './admin_invites_state.svelte.ts';
+	import {AuditLogState, audit_log_rpc_context} from './audit_log_state.svelte.ts';
+	import {AppSettingsState, app_settings_rpc_context} from './app_settings_state.svelte.ts';
+	import {format_relative_time, format_datetime_local} from './ui_format.ts';
 	import ConfirmButton from './ConfirmButton.svelte';
 
 	const auth_state = auth_state_context.get();

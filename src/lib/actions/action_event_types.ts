@@ -5,9 +5,9 @@
  */
 
 import {z} from 'zod';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import type {ActionEventPhase, ActionKind, ActionSpecUnion} from './action_spec.js';
+import type {ActionEventPhase, ActionKind, ActionSpecUnion} from './action_spec.ts';
 
 export const ActionExecutor = z.enum(['frontend', 'backend']);
 export type ActionExecutor = z.infer<typeof ActionExecutor>;

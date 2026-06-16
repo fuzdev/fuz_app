@@ -46,13 +46,13 @@ import {
 	type ActionActorContext,
 	type ActionContext,
 	type RpcAction,
-} from '../actions/action_rpc.js';
-import {jsonrpc_errors, dev_only} from '../http/jsonrpc_errors.js';
-import {is_pg_unique_violation} from '../db/pg_error.js';
-import {has_role, type RequestActorContext} from './request_context.js';
-import {ROLE_ADMIN} from './role_schema.js';
-import type {RouteFactoryDeps} from './deps.js';
-import type {Json} from '@fuzdev/fuz_util/json.js';
+} from '../actions/action_rpc.ts';
+import {jsonrpc_errors, dev_only} from '../http/jsonrpc_errors.ts';
+import {is_pg_unique_violation} from '../db/pg_error.ts';
+import {has_role, type RequestActorContext} from './request_context.ts';
+import {ROLE_ADMIN} from './role_schema.ts';
+import type {RouteFactoryDeps} from './deps.ts';
+import type {Json} from '@fuzdev/fuz_util/json.ts';
 
 import {
 	cell_create_action_spec,
@@ -85,7 +85,7 @@ import {
 	type CellCloneOutput,
 	type CellJson,
 	type CellPath,
-} from './cell_action_specs.js';
+} from './cell_action_specs.ts';
 import {
 	query_cell_create,
 	query_cell_get,
@@ -95,25 +95,25 @@ import {
 	query_cell_list,
 	query_cell_load_many,
 	type CellRow,
-} from '../db/cell_queries.js';
+} from '../db/cell_queries.ts';
 import {
 	query_cell_grant_list_for_cell,
 	query_cell_grants_for_caller_in_cells,
-} from '../db/cell_grant_queries.js';
-import {query_cell_field_list_for_source, query_cell_field_set} from '../db/cell_field_queries.js';
+} from '../db/cell_grant_queries.ts';
+import {query_cell_field_list_for_source, query_cell_field_set} from '../db/cell_field_queries.ts';
 import {
 	query_cell_item_insert,
 	query_cell_item_list_for_parent,
 	type CellItemRow,
-} from '../db/cell_item_queries.js';
-import {can_view_cell, can_edit_cell, can_manage_cell} from './cell_authorize.js';
-import {filter_visible_target_ids} from './cell_relation_visibility.js';
-import {to_grant_json} from './cell_grant_actions.js';
-import {to_field_json} from './cell_field_actions.js';
-import {to_item_json} from './cell_item_actions.js';
-import type {GrantJson} from './cell_grant_action_specs.js';
-import type {CellAuditMetadata, CellCloneAuditMetadata} from './cell_audit_metadata.js';
-import type {CellData} from './cell_data_schema.js';
+} from '../db/cell_item_queries.ts';
+import {can_view_cell, can_edit_cell, can_manage_cell} from './cell_authorize.ts';
+import {filter_visible_target_ids} from './cell_relation_visibility.ts';
+import {to_grant_json} from './cell_grant_actions.ts';
+import {to_field_json} from './cell_field_actions.ts';
+import {to_item_json} from './cell_item_actions.ts';
+import type {GrantJson} from './cell_grant_action_specs.ts';
+import type {CellAuditMetadata, CellCloneAuditMetadata} from './cell_audit_metadata.ts';
+import type {CellData} from './cell_data_schema.ts';
 
 /**
  * Dependencies for `create_cell_actions`.

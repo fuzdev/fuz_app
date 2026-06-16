@@ -46,10 +46,10 @@
 	import type {SvelteHTMLElements} from 'svelte/elements';
 	import type {Snippet} from 'svelte';
 	import {scale} from 'svelte/transition';
-	import type {OmitStrict} from '@fuzdev/fuz_util/types.js';
+	import type {OmitStrict} from '@fuzdev/fuz_util/types.ts';
 
-	import {Popover} from './popover.svelte.js';
-	import type {Position, Alignment} from './position_helpers.js';
+	import {Popover} from './popover.svelte.ts';
+	import type {Position, Alignment} from './position_helpers.ts';
 
 	const {
 		position = 'bottom',

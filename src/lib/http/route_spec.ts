@@ -16,9 +16,9 @@
 import type {Context, Handler, Hono, MiddlewareHandler} from 'hono';
 import type {z} from 'zod';
 import {DEV} from 'esm-env';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import type {Db} from '../db/db.js';
+import type {Db} from '../db/db.ts';
 import {
 	type RouteErrorSchemas,
 	type RateLimitKey,
@@ -26,17 +26,17 @@ import {
 	ERROR_INVALID_REQUEST_BODY,
 	ERROR_INVALID_ROUTE_PARAMS,
 	ERROR_INVALID_QUERY_PARAMS,
-} from './error_schemas.js';
+} from './error_schemas.ts';
 import {
 	ThrownJsonrpcError,
 	jsonrpc_error_code_to_http_status,
 	jsonrpc_error_code_to_name,
 	dev_only,
-} from './jsonrpc_errors.js';
-import {is_null_schema, merge_error_schemas} from './schema_helpers.js';
-import {dispatch_with_post_commit_rollback} from './pending_effects.js';
-import type {MiddlewareSpec} from './middleware_spec.js';
-import {assert_route_auth_acting_biconditional, type RouteAuth} from './auth_shape.js';
+} from './jsonrpc_errors.ts';
+import {is_null_schema, merge_error_schemas} from './schema_helpers.ts';
+import {dispatch_with_post_commit_rollback} from './pending_effects.ts';
+import type {MiddlewareSpec} from './middleware_spec.ts';
+import {assert_route_auth_acting_biconditional, type RouteAuth} from './auth_shape.ts';
 
 /**
  * Two-phase auth guard set returned by `AuthGuardResolver`.

@@ -9,17 +9,17 @@
  */
 
 import {describe, assert, test} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 import {WSContext, type WSContextInit} from 'hono/ws';
 
-import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.js';
+import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.ts';
 import {
 	create_ws_auth_guard,
 	create_ws_logout_closer,
 	ws_disconnect_event_types,
-} from '$lib/actions/transports_ws_auth_guard.js';
-import type {AuditLogEvent} from '$lib/auth/audit_log_schema.js';
-import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
+} from '$lib/actions/transports_ws_auth_guard.ts';
+import type {AuditLogEvent} from '$lib/auth/audit_log_schema.ts';
+import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.ts';
 
 interface FakeWs {
 	ws: WSContext;

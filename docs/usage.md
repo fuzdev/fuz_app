@@ -12,7 +12,7 @@ by middleware; handlers access validated data via `get_route_input(c, schema)`,
 which infers the typed shape from the schema directly.
 
 ```typescript
-import {get_route_input, type RouteSpec} from '@fuzdev/fuz_app/http/route_spec.js';
+import {get_route_input, type RouteSpec} from '@fuzdev/fuz_app/http/route_spec.ts';
 import {z} from 'zod';
 
 const My_Input = z.strictObject({name: z.string().min(1)});
@@ -80,7 +80,7 @@ query. The spine ships the *mechanism*; each consumer commits its own
 1. **Mount the route** next to `create_health_route_spec()`:
 
    ```ts
-   import {create_ready_route_spec, load_expected_schema} from '@fuzdev/fuz_app/http/common_routes.js';
+   import {create_ready_route_spec, load_expected_schema} from '@fuzdev/fuz_app/http/common_routes.ts';
 
    create_ready_route_spec({
    	expected: load_expected_schema(new URL('./expected_schema.json', import.meta.url)),
@@ -99,7 +99,7 @@ query. The spine ships the *mechanism*; each consumer commits its own
 
 3. **Add a ~10-line regen test** so the fixture can't silently fall behind the
    DDLs, using `sync_expected_schema_fixture` from
-   `@fuzdev/fuz_app/testing/schema_ready_fixture.js`: bootstrap a fresh DB with
+   `@fuzdev/fuz_app/testing/schema_ready_fixture.ts`: bootstrap a fresh DB with
    your full migration chain, then
 
    ```ts
@@ -131,11 +131,11 @@ then `create_app_server()` assembles the Hono app. `validate_server_env()`
 bridges the loaded env to the validated artifacts needed:
 
 ```typescript
-import {load_env} from '@fuzdev/fuz_app/env/load.js';
-import {create_app_backend} from '@fuzdev/fuz_app/server/app_backend.js';
-import {create_app_server} from '@fuzdev/fuz_app/server/app_server.js';
-import {validate_server_env} from '@fuzdev/fuz_app/server/env.js';
-import {create_audit_emitter} from '@fuzdev/fuz_app/auth/audit_emitter.js';
+import {load_env} from '@fuzdev/fuz_app/env/load.ts';
+import {create_app_backend} from '@fuzdev/fuz_app/server/app_backend.ts';
+import {create_app_server} from '@fuzdev/fuz_app/server/app_server.ts';
+import {validate_server_env} from '@fuzdev/fuz_app/server/env.ts';
+import {create_audit_emitter} from '@fuzdev/fuz_app/auth/audit_emitter.ts';
 
 // 1. Load env, validate (caller handles errors)
 const env = load_env(app_env_schema, (key) => Deno.env.get(key));
@@ -234,7 +234,7 @@ const {app, surface_spec, bootstrap_status, close} = await create_app_server({
 ```
 
 `create_standard_rpc_actions` is from
-`@fuzdev/fuz_app/auth/standard_rpc_actions.js` and emits the combined
+`@fuzdev/fuz_app/auth/standard_rpc_actions.ts` and emits the combined
 11 admin + 7 role-grant-offer + 7 account methods (25 total with
 `app_settings`; 23 without). Auto-mounting keeps the surface report
 in sync with dispatch — the same spec array drives both, by
@@ -248,7 +248,7 @@ plus `create_standard_rpc_actions(ctx.deps, …)` into `create_app_server`'s
 
 ```typescript
 import {upgradeWebSocket} from '@hono/node-ws'; // or 'hono/deno'
-import {protocol_actions} from '@fuzdev/fuz_app/actions/protocol.js';
+import {protocol_actions} from '@fuzdev/fuz_app/actions/protocol.ts';
 
 const {app, ws_endpoints} = await create_app_server({
 	// …other options…
@@ -299,8 +299,8 @@ pass `max_body_size` to override or `null` to disable.
 ## SSE Endpoints
 
 ```typescript
-import {create_sse_response, type SseNotification} from '@fuzdev/fuz_app/realtime/sse.js';
-import {SubscriberRegistry} from '@fuzdev/fuz_app/realtime/subscriber_registry.js';
+import {create_sse_response, type SseNotification} from '@fuzdev/fuz_app/realtime/sse.ts';
+import {SubscriberRegistry} from '@fuzdev/fuz_app/realtime/subscriber_registry.ts';
 
 const registry = new SubscriberRegistry<SseNotification>();
 
@@ -359,7 +359,7 @@ field on both `AppServerContext` and `AppServer` is `AuditLogSse | null`.
 For manual control, use `create_audit_log_sse()` directly:
 
 ```typescript
-import {create_audit_log_sse} from '@fuzdev/fuz_app/realtime/sse_auth_guard.js';
+import {create_audit_log_sse} from '@fuzdev/fuz_app/realtime/sse_auth_guard.ts';
 
 const audit_sse = create_audit_log_sse({log});
 
@@ -397,7 +397,7 @@ compose `on_audit_event` inside the `audit_factory` body and pass
 and DEV-only validation via `create_validated_broadcaster()`:
 
 ```typescript
-import {type EventSpec, create_validated_broadcaster} from '@fuzdev/fuz_app/realtime/sse.js';
+import {type EventSpec, create_validated_broadcaster} from '@fuzdev/fuz_app/realtime/sse.ts';
 
 const event_specs: Array<EventSpec> = [
 	{
@@ -422,9 +422,9 @@ need for separate `*_METHOD` constants, and lines up with the
 `to_action_spec_identifier()` convention used by codegen.
 
 ```typescript
-import type {RequestResponseActionSpec} from '@fuzdev/fuz_app/actions/action_spec.js';
-import {ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.js';
-import {ActingActor} from '@fuzdev/fuz_app/http/auth_shape.js';
+import type {RequestResponseActionSpec} from '@fuzdev/fuz_app/actions/action_spec.ts';
+import {ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.ts';
+import {ActingActor} from '@fuzdev/fuz_app/http/auth_shape.ts';
 
 // Input/output schemas: strict objects, paired with same-named z.infer exports.
 // `acting?: ActingActor` is required on every input whose spec sets
@@ -513,11 +513,11 @@ driving an integration test through `rpc_call`) — no need to keep a parallel
 Action specs define the contract; bridge functions produce transport-specific specs:
 
 ```typescript
-import type {ActionSpec} from '@fuzdev/fuz_app/actions/action_spec.js';
+import type {ActionSpec} from '@fuzdev/fuz_app/actions/action_spec.ts';
 import {
 	create_action_route_spec,
 	create_action_event_spec,
-} from '@fuzdev/fuz_app/actions/action_bridge.js';
+} from '@fuzdev/fuz_app/actions/action_bridge.ts';
 
 const thing_create_action: ActionSpec = {
 	method: 'thing_create',
@@ -573,7 +573,7 @@ Auth mapping: `route.auth` is `spec.auth` verbatim — both surfaces share the f
 `create_rpc_endpoint` produces a single endpoint (GET + POST on the same path) with an internal dispatcher. Method name is in the JSON-RPC envelope (POST body or GET query string), not the URL.
 
 ```typescript
-import {create_rpc_endpoint, type RpcAction} from '@fuzdev/fuz_app/actions/action_rpc.js';
+import {create_rpc_endpoint, type RpcAction} from '@fuzdev/fuz_app/actions/action_rpc.ts';
 
 const actions: Array<RpcAction> = [
 	{
@@ -627,8 +627,8 @@ Per-action auth and schemas are visible in `surface.rpc_endpoints`, not `surface
 **Composable RPC test suites**: Two composable suites test RPC endpoints alongside REST route suites:
 
 ```typescript
-import {describe_rpc_attack_surface_tests} from '@fuzdev/fuz_app/testing/rpc_attack_surface.js';
-import {describe_rpc_round_trip_tests} from '@fuzdev/fuz_app/testing/rpc_round_trip.js';
+import {describe_rpc_attack_surface_tests} from '@fuzdev/fuz_app/testing/rpc_attack_surface.ts';
+import {describe_rpc_round_trip_tests} from '@fuzdev/fuz_app/testing/rpc_round_trip.ts';
 
 // Attack surface tests (no DB) — same {build, roles} config as REST suite
 describe_rpc_attack_surface_tests({
@@ -651,9 +651,9 @@ The attack surface suite runs 3 test groups: per-method auth enforcement (JSON-R
 `register_ws_endpoint` mounts a JSON-RPC 2.0 WebSocket endpoint with the standard upgrade stack (origin check + auth + optional role) and per-message dispatch. The canonical consumer shape:
 
 ```typescript
-import {register_ws_endpoint} from '@fuzdev/fuz_app/actions/register_ws_endpoint.js';
-import {protocol_actions} from '@fuzdev/fuz_app/actions/protocol.js';
-import {ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.js';
+import {register_ws_endpoint} from '@fuzdev/fuz_app/actions/register_ws_endpoint.ts';
+import {protocol_actions} from '@fuzdev/fuz_app/actions/protocol.ts';
+import {ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.ts';
 
 const {transport} = register_ws_endpoint({
 	path: '/api/ws',
@@ -683,7 +683,7 @@ import {
 	create_ws_auth_guard,
 	create_ws_logout_closer,
 	type AuditEventHandler,
-} from '@fuzdev/fuz_app/actions/transports_ws_auth_guard.js';
+} from '@fuzdev/fuz_app/actions/transports_ws_auth_guard.ts';
 
 const ws_guard = create_ws_auth_guard(transport, log);
 const ws_logout_closer = create_ws_logout_closer(transport, log);
@@ -713,7 +713,7 @@ rationale.
 
 `BackendWebsocketTransport` exposes two primitives for pushing notifications from handlers or audit-event callbacks. `broadcast_filtered(message, predicate)` fans out to every connection whose `ConnectionIdentity` satisfies an arbitrary predicate — reach for it when the ACL is anything other than a single account (e.g. a subscription ACL hook like zap's `zap_run_created`). `send_to_account(account_id, message)` is the targeted single-account wrapper: it delivers to every socket bound to one account (session, bearer, and daemon-token alike, mirroring `close_sockets_for_account`) and is the right primitive when the delivery target is a single known account. Both return the number of sockets the message was written to, but that's bookkeeping, not a delivery receipt — `0` means the recipient has no live sockets, and a non-zero count only says `ws.send` didn't throw. Flows that need durable delivery must persist the event and hydrate from storage on reconnection.
 
-Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/auth/role_grant_offer_notifications.js`). `create_role_grant_offer_actions` accepts an optional `notification_sender` on its `deps` — pass the `BackendWebsocketTransport` instance directly (it satisfies the interface structurally). Because admin role_grant grant/revoke now run through the `role_grant_offer_create` and `role_grant_revoke` RPC actions, wiring the sender on the action factory covers the full offer lifecycle *and* admin revoke in one place. When wired, offer lifecycle transitions (create/retract/accept/decline) and role_grant revoke fan out `role_grant_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `role_grant_revoke` via the shared `emit_after_commit(ctx, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.js` — sends fire strictly post-commit **and are discarded if the handler's transaction rolls back** (see ./architecture.md §Fire-and-Forget Pending Effects); exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. `role_grant_offer_notification_specs` is the matching `EventSpec[]` for surface generation; append it to `event_specs` on `create_app_server` so the attack surface reflects the six methods and DEV-mode broadcast validation catches payload drift on SSE broadcasts (WS fan-out via `send_to_account` is not runtime-validated — the Zod `input` schemas on the action specs are contracts, not enforced at send time).
+Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/auth/role_grant_offer_notifications.ts`). `create_role_grant_offer_actions` accepts an optional `notification_sender` on its `deps` — pass the `BackendWebsocketTransport` instance directly (it satisfies the interface structurally). Because admin role_grant grant/revoke now run through the `role_grant_offer_create` and `role_grant_revoke` RPC actions, wiring the sender on the action factory covers the full offer lifecycle *and* admin revoke in one place. When wired, offer lifecycle transitions (create/retract/accept/decline) and role_grant revoke fan out `role_grant_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `role_grant_revoke` via the shared `emit_after_commit(ctx, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.ts` — sends fire strictly post-commit **and are discarded if the handler's transaction rolls back** (see ./architecture.md §Fire-and-Forget Pending Effects); exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. `role_grant_offer_notification_specs` is the matching `EventSpec[]` for surface generation; append it to `event_specs` on `create_app_server` so the attack surface reflects the six methods and DEV-mode broadcast validation catches payload drift on SSE broadcasts (WS fan-out via `send_to_account` is not runtime-validated — the Zod `input` schemas on the action specs are contracts, not enforced at send time).
 
 Payload shapes are flat and size-bounded: offer-lifecycle notifications carry `{offer: RoleGrantOfferJson}` (decline reason rides on `offer.decline_reason`, capped at `ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX` = 500 chars; supersede adds `reason: 'sibling_accepted'|'role_grant_revoked'|'scope_destroyed'` + `cause_id`). `role_grant_revoke` carries `{role_grant_id, role, scope_id, reason?}` with `reason` capped at `ROLE_GRANT_REVOKED_REASON_LENGTH_MAX` = 500 chars. The revokee/grantor/recipient account id travels via the send target, never in the payload.
 
@@ -753,7 +753,7 @@ for await (const chunk of stream) {
 }
 ```
 
-See `protocol_actions` (`@fuzdev/fuz_app/actions/protocol.js`) for the
+See `protocol_actions` (`@fuzdev/fuz_app/actions/protocol.ts`) for the
 canonical bundle and `heartbeat.ts` / `cancel.ts` for the per-action wire
 format. The convention is symmetric: the same `ctx.signal` pattern
 applies to both HTTP RPC and WebSocket handlers.
@@ -771,24 +771,24 @@ committed artifact consumers import from. Canonical output:
 
 ```typescript
 // frontend_action_types.gen.ts
-import type {Gen} from '@fuzdev/gro/gen.js';
-import {ActionRegistry} from '@fuzdev/fuz_app/actions/action_registry.js';
+import type {Gen} from '@fuzdev/gro/gen.ts';
+import {ActionRegistry} from '@fuzdev/fuz_app/actions/action_registry.ts';
 import {
 	ImportBuilder,
 	create_banner,
 	generate_actions_api_method_signature,
 	to_action_spec_input_identifier,
 	to_action_spec_output_identifier,
-} from '@fuzdev/fuz_app/actions/action_codegen.js';
+} from '@fuzdev/fuz_app/actions/action_codegen.ts';
 import {all_my_action_specs} from './action_specs.js';
 
 export const gen: Gen = ({origin_path}) => {
 	const registry = new ActionRegistry(all_my_action_specs);
 	const imports = new ImportBuilder();
 	imports.add('zod', 'z');
-	imports.add_type('@fuzdev/fuz_util/result.js', 'Result');
-	imports.add_type('@fuzdev/fuz_app/http/jsonrpc.js', 'JsonrpcErrorObject');
-	imports.add_type('@fuzdev/fuz_app/actions/rpc_client.js', 'RpcClientCallOptions');
+	imports.add_type('@fuzdev/fuz_util/result.ts', 'Result');
+	imports.add_type('@fuzdev/fuz_app/http/jsonrpc.ts', 'JsonrpcErrorObject');
+	imports.add_type('@fuzdev/fuz_app/actions/rpc_client.ts', 'RpcClientCallOptions');
 	imports.add('./action_specs.js', '* as specs');
 
 	const inputs = registry.specs
@@ -821,8 +821,8 @@ close the gap.
 Wire the generated surface into `create_rpc_client`:
 
 ```typescript
-import {create_rpc_client} from '@fuzdev/fuz_app/actions/rpc_client.js';
-import {ActionPeer} from '@fuzdev/fuz_app/actions/action_peer.js';
+import {create_rpc_client} from '@fuzdev/fuz_app/actions/rpc_client.ts';
+import {ActionPeer} from '@fuzdev/fuz_app/actions/action_peer.ts';
 import type {FrontendActionsApi} from './frontend_action_types.js';
 
 const peer = new ActionPeer({environment, transports});
@@ -845,8 +845,8 @@ create_throwing_api` into one call. Both Proxy shapes are returned —
 transport so call sites pick per-site at zero construction cost:
 
 ```typescript
-import {create_frontend_rpc_client} from '@fuzdev/fuz_app/actions/frontend_rpc_client.js';
-import {all_standard_action_specs} from '@fuzdev/fuz_app/auth/standard_action_specs.js';
+import {create_frontend_rpc_client} from '@fuzdev/fuz_app/actions/frontend_rpc_client.ts';
+import {all_standard_action_specs} from '@fuzdev/fuz_app/auth/standard_action_specs.ts';
 import type {FrontendActionsApi} from './frontend_action_types.js';
 
 const {api, api_result} = create_frontend_rpc_client<FrontendActionsApi>({
@@ -918,7 +918,7 @@ Flip the default per peer via `ActionPeer.default_send_options`, then
 override per-call for exceptions:
 
 ```typescript
-import {ActionPeer} from '@fuzdev/fuz_app/actions/action_peer.js';
+import {ActionPeer} from '@fuzdev/fuz_app/actions/action_peer.ts';
 
 // Client-authoritative peer — every `request_response` call is durably queued
 // by default.
@@ -966,8 +966,8 @@ typed client — from `create_rpc_client` or their generated
 
 ```typescript
 import {RoleGrantOffersState, role_grant_offers_state_context}
-	from '@fuzdev/fuz_app/ui/role_grant_offers_state.svelte.js';
-import {auth_state_context} from '@fuzdev/fuz_app/ui/auth_state.svelte.js';
+	from '@fuzdev/fuz_app/ui/role_grant_offers_state.svelte.ts';
+import {auth_state_context} from '@fuzdev/fuz_app/ui/auth_state.svelte.ts';
 
 const auth = auth_state_context.get();
 const api = /* typed client via create_rpc_client */;
@@ -1062,7 +1062,7 @@ match on `ERROR_*` constants):
 	import {
 		create_admin_rpc_adapters,
 		provide_admin_rpc_contexts,
-	} from '@fuzdev/fuz_app/ui/admin_rpc_adapters.js';
+	} from '@fuzdev/fuz_app/ui/admin_rpc_adapters.ts';
 
 	// `api` is the typed throwing Proxy from `create_frontend_rpc_client`.
 	// One line wires all four admin RPC contexts.
@@ -1163,7 +1163,7 @@ Splice the cell namespace into the backend alongside any consumer
 namespaces:
 
 ```typescript
-import {CELL_MIGRATION_NS} from '@fuzdev/fuz_app/db/cell_ddl.js';
+import {CELL_MIGRATION_NS} from '@fuzdev/fuz_app/db/cell_ddl.ts';
 
 const backend = await create_app_backend({
 	// …deps
@@ -1182,7 +1182,7 @@ UI see a single surface. Mount the full layer with `create_all_cell_actions`
 into an RPC endpoint's `actions`:
 
 ```typescript
-import {create_all_cell_actions} from '@fuzdev/fuz_app/auth/all_cell_actions.js';
+import {create_all_cell_actions} from '@fuzdev/fuz_app/auth/all_cell_actions.ts';
 
 const cell_rpc_actions = create_all_cell_actions({log, audit, validate_data}, {roles});
 ```
@@ -1202,7 +1202,7 @@ partial surface.
 | Audit | `cell_audit_list` |
 
 For typed-client codegen, the matching specs are aggregated as
-`all_cell_action_specs` in `@fuzdev/fuz_app/auth/cell_action_specs.js`.
+`all_cell_action_specs` in `@fuzdev/fuz_app/auth/cell_action_specs.ts`.
 
 `validate_data` is an optional per-kind shape hook on `create_cell_actions`
 — it runs on every incoming `data` payload (create, update, clone-merge) and
@@ -1242,7 +1242,7 @@ tree and referenced. Cells point into facts — any `blake3:` string in a
 cell's `data` is auto-extracted to `cell.refs`, which is how binary content
 (images, documents, snapshots) attaches to cells.
 
-The store interface lives in `@fuzdev/fuz_util/fact_store.js` (`FactStore`:
+The store interface lives in `@fuzdev/fuz_util/fact_store.ts` (`FactStore`:
 `put` / `put_ref` / `get` / `has` / `get_meta` / `get_refs`). fuz_app ships
 the Postgres implementation and the HTTP serving plumbing; facts are
 **opt-in** — a consumer wires them at backend assembly.
@@ -1250,7 +1250,7 @@ the Postgres implementation and the HTTP serving plumbing; facts are
 ### Migration
 
 ```typescript
-import {FACT_MIGRATION_NS} from '@fuzdev/fuz_app/db/fact_ddl.js';
+import {FACT_MIGRATION_NS} from '@fuzdev/fuz_app/db/fact_ddl.ts';
 ```
 
 `FACT_MIGRATION_NS` (namespace `fuz_facts`) creates `fact`, `fact_ref`,
@@ -1262,8 +1262,8 @@ and `memo`. Splice it into `migration_namespaces` like any other namespace.
 `PgFactStore` and assigns `deps.fact_store`:
 
 ```typescript
-import {PgFactStore} from '@fuzdev/fuz_app/db/fact_store.js';
-import {create_file_fact_fetcher} from '@fuzdev/fuz_app/server/file_fact_fetcher.js';
+import {PgFactStore} from '@fuzdev/fuz_app/db/fact_store.ts';
+import {create_file_fact_fetcher} from '@fuzdev/fuz_app/server/file_fact_fetcher.ts';
 
 const fact_store = new PgFactStore({
 	deps: query_deps,                 // QueryDeps (db + log)
@@ -1284,7 +1284,7 @@ mismatch.
 ### Serving facts
 
 ```typescript
-import {create_serve_fact_route_spec} from '@fuzdev/fuz_app/server/serve_fact_route.js';
+import {create_serve_fact_route_spec} from '@fuzdev/fuz_app/server/serve_fact_route.ts';
 
 create_serve_fact_route_spec({
 	facts_dir,
@@ -1317,9 +1317,9 @@ import {
 	create_pglite_factory,
 	create_pg_factory,
 	type DbFactory,
-} from '@fuzdev/fuz_app/testing/db.js';
-import {run_migrations} from '@fuzdev/fuz_app/db/migrate.js';
-import {auth_migration_ns} from '@fuzdev/fuz_app/auth/migrations.js';
+} from '@fuzdev/fuz_app/testing/db.ts';
+import {run_migrations} from '@fuzdev/fuz_app/db/migrate.ts';
+import {auth_migration_ns} from '@fuzdev/fuz_app/auth/migrations.ts';
 
 const init_schema = async (db: Db) => {
 	await run_migrations(db, [auth_migration_ns]);

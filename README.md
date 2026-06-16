@@ -33,8 +33,8 @@ Some projects using fuz_app are in progress and will be open source soon.
 Usage currently looks something like this:
 
 ```ts
-import {create_app_backend} from '@fuzdev/fuz_app/server/app_backend.js';
-import {create_app_server} from '@fuzdev/fuz_app/server/app_server.js';
+import {create_app_backend} from '@fuzdev/fuz_app/server/app_backend.ts';
+import {create_app_server} from '@fuzdev/fuz_app/server/app_server.ts';
 
 const backend = await create_app_backend({...});
 

@@ -19,10 +19,10 @@
  * @module
  */
 
-import type {ActionSpecUnion} from './action_spec.js';
-import type {Action} from './action_types.js';
-import {cancel_action} from './cancel.js';
-import {heartbeat_action} from './heartbeat.js';
+import type {ActionSpecUnion} from './action_spec.ts';
+import type {Action} from './action_types.ts';
+import {cancel_action} from './cancel.ts';
+import {heartbeat_action} from './heartbeat.ts';
 
 /**
  * Canonical protocol `{spec, handler}` tuples for the server's

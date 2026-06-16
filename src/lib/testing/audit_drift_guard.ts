@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 import {assert, beforeEach, afterEach} from 'vitest';
 
@@ -7,14 +7,14 @@ import {
 	get_audit_unknown_event_type_failures,
 	reset_audit_metadata_validation_failures,
 	reset_audit_unknown_event_type_failures,
-} from '../auth/audit_log_queries.js';
+} from '../auth/audit_log_queries.ts';
 import {
 	create_audit_emitter,
 	type AuditEmitter,
 	type CreateAuditEmitterOptions,
-} from '../auth/audit_emitter.js';
-import type {AuditLogInput} from '../auth/audit_log_schema.js';
-import type {AuditFactory} from '../server/app_backend.js';
+} from '../auth/audit_emitter.ts';
+import type {AuditLogInput} from '../auth/audit_log_schema.ts';
+import type {AuditFactory} from '../server/app_backend.ts';
 
 /**
  * Register per-test `beforeEach` + `afterEach` hooks that catch any audit

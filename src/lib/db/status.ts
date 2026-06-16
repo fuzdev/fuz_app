@@ -7,10 +7,10 @@
  * @module
  */
 
-import {to_error_message} from '@fuzdev/fuz_util/error.js';
+import {to_error_message} from '@fuzdev/fuz_util/error.ts';
 
-import type {Db} from './db.js';
-import type {MigrationNamespace} from './migrate.js';
+import type {Db} from './db.ts';
+import type {MigrationNamespace} from './migrate.ts';
 
 /**
  * Migration status for a single namespace.

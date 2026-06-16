@@ -7,7 +7,7 @@
  * @module
  */
 
-import type {FsReadDeps} from '../runtime/deps.js';
+import type {FsReadDeps} from '../runtime/deps.ts';
 
 /**
  * Parse a dotenv-format string into a record.

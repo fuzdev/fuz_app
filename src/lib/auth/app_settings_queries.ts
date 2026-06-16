@@ -6,8 +6,8 @@
  * @module
  */
 
-import type {QueryDeps} from '../db/query_deps.js';
-import type {AppSettings, AppSettingsWithUsernameJson} from './app_settings_schema.js';
+import type {QueryDeps} from '../db/query_deps.ts';
+import type {AppSettings, AppSettingsWithUsernameJson} from './app_settings_schema.ts';
 
 /**
  * Load the current app settings.

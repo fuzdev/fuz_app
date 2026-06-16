@@ -1,6 +1,6 @@
 import {assert, test, beforeEach, vi} from 'vitest';
 import {z} from 'zod';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
 import {
 	query_audit_log,
@@ -12,15 +12,15 @@ import {
 	reset_audit_metadata_validation_failures,
 	get_audit_unknown_event_type_failures,
 	reset_audit_unknown_event_type_failures,
-} from '$lib/auth/audit_log_queries.js';
-import {create_audit_emitter} from '$lib/auth/audit_emitter.js';
-import {AuditLogEventJson, create_audit_log_config} from '$lib/auth/audit_log_schema.js';
-import {query_create_account, query_create_actor} from '$lib/auth/account_queries.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import type {Db} from '$lib/db/db.js';
-import type {QueryDeps} from '$lib/db/query_deps.js';
+} from '$lib/auth/audit_log_queries.ts';
+import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
+import {AuditLogEventJson, create_audit_log_config} from '$lib/auth/audit_log_schema.ts';
+import {query_create_account, query_create_actor} from '$lib/auth/account_queries.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type {Db} from '$lib/db/db.ts';
+import type {QueryDeps} from '$lib/db/query_deps.ts';
 
-import {describe_db} from '../db_fixture.js';
+import {describe_db} from '../db_fixture.ts';
 
 const create_test_account = async (
 	db: Db,

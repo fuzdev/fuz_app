@@ -10,17 +10,17 @@
  * @module
  */
 
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {create_test_app_surface_spec, create_test_audit_emitter} from '$lib/testing/stubs.js';
-import {describe_rpc_attack_surface_tests} from '$lib/testing/rpc_attack_surface.js';
-import {describe_rpc_round_trip_tests} from '$lib/testing/rpc_round_trip.js';
-import {default_in_process_suite_options} from '$lib/testing/cross_backend/in_process_setup.js';
-import {create_role_grant_offer_actions} from '$lib/auth/role_grant_offer_actions.js';
-import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.js';
-import type {AppServerContext} from '$lib/server/app_server_context.js';
-import type {RouteSpec} from '$lib/http/route_spec.js';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {create_test_app_surface_spec, create_test_audit_emitter} from '$lib/testing/stubs.ts';
+import {describe_rpc_attack_surface_tests} from '$lib/testing/rpc_attack_surface.ts';
+import {describe_rpc_round_trip_tests} from '$lib/testing/rpc_round_trip.ts';
+import {default_in_process_suite_options} from '$lib/testing/cross_backend/in_process_setup.ts';
+import {create_role_grant_offer_actions} from '$lib/auth/role_grant_offer_actions.ts';
+import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
+import type {AppServerContext} from '$lib/server/app_server_context.ts';
+import type {RouteSpec} from '$lib/http/route_spec.ts';
 
 const log = new Logger('test', {level: 'off'});
 const session_options = create_session_config('test_role_grant_offer_rpc');

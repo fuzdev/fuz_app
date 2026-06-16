@@ -29,12 +29,12 @@
  * @module
  */
 
-import {has_role, type RequestContext} from './request_context.js';
-import {is_role_grant_active} from './account_schema.js';
-import {ROLE_ADMIN} from './role_schema.js';
+import {has_role, type RequestContext} from './request_context.ts';
+import {is_role_grant_active} from './account_schema.ts';
+import {ROLE_ADMIN} from './role_schema.ts';
 
-import type {CellRow} from '../db/cell_queries.js';
-import type {CellGrantRow} from '../db/cell_grant_queries.js';
+import type {CellRow} from '../db/cell_queries.ts';
+import type {CellGrantRow} from '../db/cell_grant_queries.ts';
 
 const cell_is_public = (cell: CellRow): boolean => cell.visibility === 'public';
 

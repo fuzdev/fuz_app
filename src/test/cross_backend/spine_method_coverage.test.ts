@@ -1,12 +1,12 @@
 import {describe, test} from 'vitest';
 
-import {create_stub_app_deps} from '$lib/testing/stubs.js';
-import {build_full_spine_rpc_actions} from '$lib/testing/cross_backend/full_spine_mount.js';
-import {create_spine_surface_spec} from '$lib/testing/cross_backend/default_spine_surface.js';
-import {assert_rpc_method_coverage} from '$lib/testing/cross_backend/method_coverage.js';
-import type {DaemonTokenState} from '$lib/auth/daemon_token.js';
+import {create_stub_app_deps} from '$lib/testing/stubs.ts';
+import {build_full_spine_rpc_actions} from '$lib/testing/cross_backend/full_spine_mount.ts';
+import {create_spine_surface_spec} from '$lib/testing/cross_backend/default_spine_surface.ts';
+import {assert_rpc_method_coverage} from '$lib/testing/cross_backend/method_coverage.ts';
+import type {DaemonTokenState} from '$lib/auth/daemon_token.ts';
 
-import {SPINE_METHOD_COVERAGE} from './spine_method_coverage.js';
+import {SPINE_METHOD_COVERAGE} from './spine_method_coverage.ts';
 
 /**
  * Construction-only deps — `build_full_spine_rpc_actions` builds action specs

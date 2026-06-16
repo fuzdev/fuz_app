@@ -8,14 +8,14 @@
  */
 
 import {describe, assert, test, beforeEach, afterEach} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
-import {create_node_runtime} from '$lib/runtime/node.js';
+import {create_node_runtime} from '$lib/runtime/node.ts';
 
-import {collect_stream, stream_of} from './byte_stream.js';
+import {collect_stream, stream_of} from './byte_stream.ts';
 
 const rt = create_node_runtime([]);
 

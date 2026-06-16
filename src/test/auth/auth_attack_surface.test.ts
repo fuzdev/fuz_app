@@ -10,40 +10,40 @@
 import {describe, assert, test} from 'vitest';
 import {Hono} from 'hono';
 import {z} from 'zod';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {apply_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
+import {apply_route_specs, type RouteSpec} from '$lib/http/route_spec.ts';
 import {
 	ActingActor,
 	is_keeper_auth,
 	is_plain_authenticated_auth,
 	is_public_auth,
 	is_role_auth,
-} from '$lib/http/auth_shape.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
-import type {MiddlewareSpec} from '$lib/http/middleware_spec.js';
-import {generate_app_surface} from '$lib/http/surface.js';
+} from '$lib/http/auth_shape.ts';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.ts';
+import type {MiddlewareSpec} from '$lib/http/middleware_spec.ts';
+import {generate_app_surface} from '$lib/http/surface.ts';
 import {
 	REQUEST_CONTEXT_KEY,
 	require_auth,
 	require_role,
 	type RequestContext,
-} from '$lib/auth/request_context.js';
+} from '$lib/auth/request_context.ts';
 import {
 	ACCOUNT_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
 	type CredentialType,
-} from '$lib/hono_context.js';
-import {session_cookie_options} from '$lib/auth/session_cookie.js';
-import {API_TOKEN_PREFIX} from '$lib/auth/api_token.js';
-import {PASSWORD_LENGTH_MIN} from '$lib/auth/password.js';
+} from '$lib/hono_context.ts';
+import {session_cookie_options} from '$lib/auth/session_cookie.ts';
+import {API_TOKEN_PREFIX} from '$lib/auth/api_token.ts';
+import {PASSWORD_LENGTH_MIN} from '$lib/auth/password.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
-} from '$lib/http/error_schemas.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import {create_stub_db} from '$lib/testing/stubs.js';
+} from '$lib/http/error_schemas.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import {create_stub_db} from '$lib/testing/stubs.ts';
 
 const log = new Logger('test', {level: 'off'});
 const stub_db = create_stub_db();

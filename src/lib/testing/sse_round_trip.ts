@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Schema-driven SSE route validation test suite.
@@ -17,34 +17,34 @@ import './assert_dev_env.js';
 
 import {describe, test, beforeAll, afterAll, assert} from 'vitest';
 
-import type {RouteSpec} from '../http/route_spec.js';
-import type {AppServerContext} from '../server/app_server_context.js';
-import type {SessionOptions} from '../auth/session_cookie.js';
-import type {EventSpec, SseNotification} from '../realtime/sse.js';
-import {SSE_CONNECTED_COMMENT} from '../realtime/sse_constants.js';
-import {ROLE_ADMIN} from '../auth/role_schema.js';
-import type {AuditLogEvent} from '../auth/audit_log_schema.js';
-import {create_audit_emitter} from '../auth/audit_emitter.js';
-import type {AuditFactory} from '../server/app_backend.js';
+import type {RouteSpec} from '../http/route_spec.ts';
+import type {AppServerContext} from '../server/app_server_context.ts';
+import type {SessionOptions} from '../auth/session_cookie.ts';
+import type {EventSpec, SseNotification} from '../realtime/sse.ts';
+import {SSE_CONNECTED_COMMENT} from '../realtime/sse_constants.ts';
+import {ROLE_ADMIN} from '../auth/role_schema.ts';
+import type {AuditLogEvent} from '../auth/audit_log_schema.ts';
+import {create_audit_emitter} from '../auth/audit_emitter.ts';
+import type {AuditFactory} from '../server/app_backend.ts';
 import {
 	create_test_app,
 	type SuiteAppOptions,
 	type TestApp,
 	type TestAccount,
-} from './app_server.js';
-import {create_pglite_factory, type DbFactory} from './db.js';
-import {find_route_spec, pick_auth_headers} from './integration_helpers.js';
+} from './app_server.ts';
+import {create_pglite_factory, type DbFactory} from './db.ts';
+import {find_route_spec, pick_auth_headers} from './integration_helpers.ts';
 import {
 	rpc_call,
 	require_rpc_endpoint_path,
 	resolve_rpc_endpoints_for_setup,
 	type RpcEndpointsSuiteOption,
-} from './rpc_helpers.js';
-import {run_migrations} from '../db/migrate.js';
-import {auth_migration_ns} from '../auth/migrations.js';
-import type {Db} from '../db/db.js';
-import {account_session_revoke_all_action_spec} from '../auth/account_action_specs.js';
-import {create_sse_frame_reader} from './transports/sse_frame_reader.js';
+} from './rpc_helpers.ts';
+import {run_migrations} from '../db/migrate.ts';
+import {auth_migration_ns} from '../auth/migrations.ts';
+import type {Db} from '../db/db.ts';
+import {account_session_revoke_all_action_spec} from '../auth/account_action_specs.ts';
+import {create_sse_frame_reader} from './transports/sse_frame_reader.ts';
 
 /** Config for a single SSE route under test. */
 export interface SseRouteTestSpec {

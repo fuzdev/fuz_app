@@ -11,9 +11,9 @@
 
 	import type {Snippet} from 'svelte';
 	import type {SvelteHTMLElements} from 'svelte/elements';
-	import {is_editable, swallow} from '@fuzdev/fuz_util/dom.js';
+	import {is_editable, swallow} from '@fuzdev/fuz_util/dom.ts';
 
-	import {SidebarState, sidebar_state_context} from './sidebar_state.svelte.js';
+	import {SidebarState, sidebar_state_context} from './sidebar_state.svelte.ts';
 
 	const {
 		children,

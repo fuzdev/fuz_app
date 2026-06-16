@@ -7,7 +7,7 @@
 import {describe, assert, test} from 'vitest';
 import {Hono} from 'hono';
 import {z} from 'zod';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
 import {
 	apply_middleware_specs,
@@ -15,19 +15,19 @@ import {
 	prefix_route_specs,
 	get_route_query,
 	type RouteSpec,
-} from '$lib/http/route_spec.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
-import {ActingActor} from '$lib/http/auth_shape.js';
-import type {MiddlewareSpec} from '$lib/http/middleware_spec.js';
-import {generate_app_surface, events_to_surface} from '$lib/http/surface.js';
-import {middleware_applies, schema_to_surface} from '$lib/http/schema_helpers.js';
-import type {EventSpec} from '$lib/realtime/sse.js';
-import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.js';
-import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
-import {create_test_request_context} from '$lib/testing/auth_apps.js';
-import {ApiError, RateLimitError} from '$lib/http/error_schemas.js';
-import {create_stub_db} from '$lib/testing/stubs.js';
-import {ThrownJsonrpcError, JSONRPC_ERROR_CODES, jsonrpc_errors} from '$lib/http/jsonrpc_errors.js';
+} from '$lib/http/route_spec.ts';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.ts';
+import {ActingActor} from '$lib/http/auth_shape.ts';
+import type {MiddlewareSpec} from '$lib/http/middleware_spec.ts';
+import {generate_app_surface, events_to_surface} from '$lib/http/surface.ts';
+import {middleware_applies, schema_to_surface} from '$lib/http/schema_helpers.ts';
+import type {EventSpec} from '$lib/realtime/sse.ts';
+import {REQUEST_CONTEXT_KEY} from '$lib/auth/request_context.ts';
+import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.ts';
+import {create_test_request_context} from '$lib/testing/auth_apps.ts';
+import {ApiError, RateLimitError} from '$lib/http/error_schemas.ts';
+import {create_stub_db} from '$lib/testing/stubs.ts';
+import {ThrownJsonrpcError, JSONRPC_ERROR_CODES, jsonrpc_errors} from '$lib/http/jsonrpc_errors.ts';
 
 const log = new Logger('test', {level: 'off'});
 const db = create_stub_db();

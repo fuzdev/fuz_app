@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-backend parity suite for **login rate limiting + trusted-proxy
@@ -48,9 +48,9 @@ import '../assert_dev_env.js';
 
 import {describe, test, assert} from 'vitest';
 
-import {ERROR_RATE_LIMIT_EXCEEDED} from '../../http/error_schemas.js';
-import {default_login_account_rate_limit, default_login_ip_rate_limit} from '../../rate_limiter.js';
-import type {SetupTest} from './setup.js';
+import {ERROR_RATE_LIMIT_EXCEEDED} from '../../http/error_schemas.ts';
+import {default_login_account_rate_limit, default_login_ip_rate_limit} from '../../rate_limiter.ts';
+import type {SetupTest} from './setup.ts';
 
 /** Options for the login-security parity suite. */
 export interface LoginSecurityCrossTestOptions {

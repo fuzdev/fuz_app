@@ -7,11 +7,11 @@
 import {describe, assert, test} from 'vitest';
 import {z} from 'zod';
 
-import {create_rpc_client} from '$lib/actions/rpc_client.js';
-import {ActionPeer} from '$lib/actions/action_peer.js';
-import {Transports, type Transport} from '$lib/actions/transports.js';
-import type {ActionEventEnvironment} from '$lib/actions/action_event_types.js';
-import type {ActionSpecUnion} from '$lib/actions/action_spec.js';
+import {create_rpc_client} from '$lib/actions/rpc_client.ts';
+import {ActionPeer} from '$lib/actions/action_peer.ts';
+import {Transports, type Transport} from '$lib/actions/transports.ts';
+import type {ActionEventEnvironment} from '$lib/actions/action_event_types.ts';
+import type {ActionSpecUnion} from '$lib/actions/action_spec.ts';
 
 // Loose record shape for tests that exercise the runtime Proxy behavior
 // without naming each method's signature in a typed surface. Production

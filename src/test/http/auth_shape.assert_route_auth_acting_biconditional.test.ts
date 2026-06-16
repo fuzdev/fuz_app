@@ -22,7 +22,7 @@ import {
 	ActingActor,
 	assert_route_auth_acting_biconditional,
 	type RouteAuth,
-} from '$lib/http/auth_shape.js';
+} from '$lib/http/auth_shape.ts';
 
 /* eslint-disable @typescript-eslint/no-confusing-void-expression */
 

@@ -14,7 +14,7 @@
  */
 
 import {assert, test} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	query_role_grant_offer_decline,
@@ -26,19 +26,19 @@ import {
 	query_accept_offer,
 	RoleGrantOfferAlreadyTerminalError,
 	RoleGrantOfferExpiredError,
-} from '$lib/auth/role_grant_offer_queries.js';
-import {query_revoke_role_grant} from '$lib/auth/role_grant_queries.js';
-import {query_audit_log, query_audit_log_list} from '$lib/auth/audit_log_queries.js';
-import {create_uuid} from '@fuzdev/fuz_util/id.js';
+} from '$lib/auth/role_grant_offer_queries.ts';
+import {query_revoke_role_grant} from '$lib/auth/role_grant_queries.ts';
+import {query_audit_log, query_audit_log_list} from '$lib/auth/audit_log_queries.ts';
+import {create_uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {describe_db} from '../db_fixture.js';
+import {describe_db} from '../db_fixture.ts';
 import {
 	make_account,
 	future,
 	hour,
 	create_pending_offer,
 	insert_superseded_offer,
-} from './role_grant_offer_queries.fixtures.js';
+} from './role_grant_offer_queries.fixtures.ts';
 
 describe_db('role_grant_offer_queries.supersede', (get_db) => {
 	test('two grantors produce distinct pending offers for same (to_account, role, scope)', async () => {

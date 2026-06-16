@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Table-driven middleware test helpers.
@@ -13,29 +13,29 @@ import './assert_dev_env.js';
 import {vi, test, assert, describe} from 'vitest';
 import {Hono} from 'hono';
 import type {z} from 'zod';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {create_bearer_auth_middleware} from '../auth/bearer_auth.js';
-import {query_validate_api_token} from '../auth/api_token_queries.js';
+import {create_bearer_auth_middleware} from '../auth/bearer_auth.ts';
+import {query_validate_api_token} from '../auth/api_token_queries.ts';
 import {
 	query_account_by_id,
 	query_actor_by_id,
 	query_actors_by_account,
-} from '../auth/account_queries.js';
-import {query_role_grant_find_active_for_actor} from '../auth/role_grant_queries.js';
-import type {QueryDeps} from '../db/query_deps.js';
-import {create_proxy_middleware} from '../http/proxy.js';
-import {get_client_ip} from '../http/client_ip.js';
-import {verify_request_source, parse_allowed_origins} from '../http/origin.js';
-import type {RateLimiter} from '../rate_limiter.js';
-import {REQUEST_CONTEXT_KEY, type RequestContext} from '../auth/request_context.js';
+} from '../auth/account_queries.ts';
+import {query_role_grant_find_active_for_actor} from '../auth/role_grant_queries.ts';
+import type {QueryDeps} from '../db/query_deps.ts';
+import {create_proxy_middleware} from '../http/proxy.ts';
+import {get_client_ip} from '../http/client_ip.ts';
+import {verify_request_source, parse_allowed_origins} from '../http/origin.ts';
+import type {RateLimiter} from '../rate_limiter.ts';
+import {REQUEST_CONTEXT_KEY, type RequestContext} from '../auth/request_context.ts';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
-} from '../hono_context.js';
-import {ApiError} from '../http/error_schemas.js';
+} from '../hono_context.ts';
+import {ApiError} from '../http/error_schemas.ts';
 
 // Mock the query modules so test cases can control return values.
 // vi.mock() is hoisted by vitest, so these run before any imports resolve.

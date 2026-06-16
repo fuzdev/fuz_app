@@ -19,12 +19,12 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import type {QueryDeps} from '../db/query_deps.js';
-import {query_session_cleanup_expired} from './session_queries.js';
-import {query_role_grant_offer_sweep_expired} from './role_grant_offer_queries.js';
-import type {AuditEmitter} from './audit_emitter.js';
+import type {QueryDeps} from '../db/query_deps.ts';
+import {query_session_cleanup_expired} from './session_queries.ts';
+import {query_role_grant_offer_sweep_expired} from './role_grant_offer_queries.ts';
+import type {AuditEmitter} from './audit_emitter.ts';
 
 /** Dependencies for the cleanup helpers. */
 export interface AuthCleanupDeps extends QueryDeps {

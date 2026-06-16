@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Schema-driven round-trip validation for RPC endpoints.
@@ -19,12 +19,12 @@ import './assert_dev_env.js';
 
 import {describe, test, beforeAll, assert} from 'vitest';
 
-import {ROLE_ADMIN} from '../auth/role_schema.js';
-import {JSONRPC_METHOD_NOT_FOUND, JsonrpcErrorResponse} from '../http/jsonrpc.js';
-import type {TestAccount} from './app_server.js';
-import {generate_valid_body} from './schema_generators.js';
-import type {AppSurfaceSpec, AppSurfaceRpcMethod} from '../http/surface.js';
-import {is_public_auth} from '../http/auth_shape.js';
+import {ROLE_ADMIN} from '../auth/role_schema.ts';
+import {JSONRPC_METHOD_NOT_FOUND, JsonrpcErrorResponse} from '../http/jsonrpc.ts';
+import type {TestAccount} from './app_server.ts';
+import {generate_valid_body} from './schema_generators.ts';
+import type {AppSurfaceSpec, AppSurfaceRpcMethod} from '../http/surface.ts';
+import {is_public_auth} from '../http/auth_shape.ts';
 import {
 	create_rpc_post_init,
 	create_rpc_get_url,
@@ -34,11 +34,11 @@ import {
 	find_rpc_action,
 	find_rpc_method,
 	type RpcEndpointsSuiteOption,
-} from './rpc_helpers.js';
-import type {KeeperHeaderProvider} from './integration_helpers.js';
-import type {BackendCapabilities} from './cross_backend/capabilities.js';
-import type {SetupTest, TestFixture} from './cross_backend/setup.js';
-import type {SessionOptions} from '../auth/session_cookie.js';
+} from './rpc_helpers.ts';
+import type {KeeperHeaderProvider} from './integration_helpers.ts';
+import type {BackendCapabilities} from './cross_backend/capabilities.ts';
+import type {SetupTest, TestFixture} from './cross_backend/setup.ts';
+import type {SessionOptions} from '../auth/session_cookie.ts';
 
 /** Options for `describe_rpc_round_trip_tests`. */
 export interface RpcRoundTripTestOptions {

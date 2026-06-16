@@ -44,7 +44,7 @@
 
 import {SvelteMap} from 'svelte/reactivity';
 
-import {AsyncSlot, type AsyncSlotOptions, type RunOptions} from './async_slot.svelte.js';
+import {AsyncSlot, type AsyncSlotOptions, type RunOptions} from './async_slot.svelte.ts';
 
 /**
  * Constructor options for `KeyedAsyncSlot`. Propagated to every child

@@ -10,14 +10,14 @@
  */
 
 import {describe, test, assert} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {all_standard_action_specs} from '$lib/auth/standard_action_specs.js';
-import {all_admin_action_specs} from '$lib/auth/admin_action_specs.js';
-import {all_role_grant_offer_action_specs} from '$lib/auth/role_grant_offer_action_specs.js';
-import {all_account_action_specs} from '$lib/auth/account_action_specs.js';
-import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.js';
-import {create_test_audit_emitter} from '$lib/testing/stubs.js';
+import {all_standard_action_specs} from '$lib/auth/standard_action_specs.ts';
+import {all_admin_action_specs} from '$lib/auth/admin_action_specs.ts';
+import {all_role_grant_offer_action_specs} from '$lib/auth/role_grant_offer_action_specs.ts';
+import {all_account_action_specs} from '$lib/auth/account_action_specs.ts';
+import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.ts';
+import {create_test_audit_emitter} from '$lib/testing/stubs.ts';
 
 const log = new Logger('test', {level: 'off'});
 const deps = {log, audit: create_test_audit_emitter()};

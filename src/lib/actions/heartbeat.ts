@@ -20,8 +20,8 @@
 
 import {z} from 'zod';
 
-import type {RequestResponseActionSpec} from './action_spec.js';
-import type {Action} from './action_types.js';
+import type {RequestResponseActionSpec} from './action_spec.ts';
+import type {Action} from './action_types.ts';
 
 /**
  * `ActionSpec` for the shared heartbeat. Account-required, actor-none —

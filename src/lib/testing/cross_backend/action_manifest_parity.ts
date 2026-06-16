@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-impl action-manifest parity — structural diff + assertion over two
@@ -26,7 +26,7 @@ import '../assert_dev_env.js';
  * @module
  */
 
-import type {ActionManifest, ActionManifestEntry} from './action_manifest.js';
+import type {ActionManifest, ActionManifestEntry} from './action_manifest.ts';
 
 /** The auth axes compared as scalars (`'none' | 'optional' | 'required'`). */
 const AUTH_SCALAR_FIELDS = ['account', 'actor'] as const satisfies ReadonlyArray<

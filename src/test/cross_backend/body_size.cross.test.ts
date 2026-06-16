@@ -16,11 +16,11 @@ import {inject} from 'vitest';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle,
-} from '$lib/testing/cross_backend/setup.js';
-import {describe_body_size_cross_tests} from '$lib/testing/cross_backend/body_size.js';
-import {describe_body_size_smuggling_cross_tests} from '$lib/testing/cross_backend/body_size_smuggling.js';
+} from '$lib/testing/cross_backend/setup.ts';
+import {describe_body_size_cross_tests} from '$lib/testing/cross_backend/body_size.ts';
+import {describe_body_size_smuggling_cross_tests} from '$lib/testing/cross_backend/body_size_smuggling.ts';
 
-import './cross_test_types.js';
+import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle);

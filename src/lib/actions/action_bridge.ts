@@ -10,11 +10,11 @@
 
 import type {z} from 'zod';
 
-import type {ActionSpec, ActionSideEffects} from './action_spec.js';
-import type {RouteSpec, RouteMethod, RouteHandler} from '../http/route_spec.js';
-import type {RouteAuth} from '../http/auth_shape.js';
-import type {EventSpec} from '../realtime/sse.js';
-import type {RouteErrorSchemas} from '../http/error_schemas.js';
+import type {ActionSpec, ActionSideEffects} from './action_spec.ts';
+import type {RouteSpec, RouteMethod, RouteHandler} from '../http/route_spec.ts';
+import type {RouteAuth} from '../http/auth_shape.ts';
+import type {EventSpec} from '../realtime/sse.ts';
+import type {RouteErrorSchemas} from '../http/error_schemas.ts';
 
 /** Options for deriving a `RouteSpec` from an `ActionSpec`. */
 export interface ActionRouteOptions {

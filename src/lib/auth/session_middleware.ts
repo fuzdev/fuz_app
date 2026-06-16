@@ -8,22 +8,22 @@
 import type {Context, MiddlewareHandler} from 'hono';
 import {getCookie, setCookie, deleteCookie} from 'hono/cookie';
 
-import type {Keyring} from './keyring.js';
+import type {Keyring} from './keyring.ts';
 import {
 	type SessionOptions,
 	type SessionCookieOptions,
 	session_cookie_options,
 	process_session_cookie,
 	create_session_cookie_value,
-} from './session_cookie.js';
+} from './session_cookie.ts';
 import {
 	generate_session_token,
 	hash_session_token,
 	AUTH_SESSION_LIFETIME_MS,
 	query_create_session,
 	query_session_enforce_limit,
-} from './session_queries.js';
-import type {QueryDeps} from '../db/query_deps.js';
+} from './session_queries.ts';
+import type {QueryDeps} from '../db/query_deps.ts';
 
 /**
  * Read the session cookie value from a request.

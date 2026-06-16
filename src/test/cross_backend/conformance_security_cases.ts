@@ -22,14 +22,14 @@ import {
 	ERROR_INVALID_CREDENTIALS,
 	ERROR_NO_MATCHING_INVITE,
 	ERROR_ROLE_GRANT_NOT_FOUND,
-} from '$lib/http/error_schemas.js';
+} from '$lib/http/error_schemas.ts';
 import {
 	ERROR_CANNOT_DELETE_KEEPER,
 	ERROR_PURGE_NOT_CONFIRMED,
-} from '$lib/auth/admin_action_specs.js';
-import {ERROR_ROLE_GRANT_OFFER_NOT_FOUND} from '$lib/auth/role_grant_offer_action_specs.js';
-import {DEFAULT_TEST_PASSWORD} from '$lib/testing/test_credentials.js';
-import type {ConformanceCase} from '$lib/testing/cross_backend/conformance_case.js';
+} from '$lib/auth/admin_action_specs.ts';
+import {ERROR_ROLE_GRANT_OFFER_NOT_FOUND} from '$lib/auth/role_grant_offer_action_specs.ts';
+import {DEFAULT_TEST_PASSWORD} from '$lib/testing/test_credentials.ts';
+import type {ConformanceCase} from '$lib/testing/cross_backend/conformance_case.ts';
 
 /** A well-formed UUID that never names a real row — exercises the not-found / mask paths. */
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';

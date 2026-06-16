@@ -25,10 +25,10 @@
  * @module
  */
 
-import {create_context} from '@fuzdev/fuz_ui/context_helpers.js';
+import {create_context} from '@fuzdev/fuz_ui/context_helpers.ts';
 
-import {AsyncSlot} from './async_slot.svelte.js';
-import type {RoleGrantOfferJson} from '../auth/role_grant_offer_schema.js';
+import {AsyncSlot} from './async_slot.svelte.ts';
+import type {RoleGrantOfferJson} from '../auth/role_grant_offer_schema.ts';
 import {
 	ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD,
@@ -36,7 +36,7 @@ import {
 	ROLE_GRANT_OFFER_RETRACTED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
 	ROLE_GRANT_REVOKE_NOTIFICATION_METHOD,
-} from '../auth/role_grant_offer_notifications.js';
+} from '../auth/role_grant_offer_notifications.ts';
 
 /**
  * Svelte context for `RoleGrantOffersState`.

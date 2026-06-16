@@ -37,24 +37,24 @@
  * @module
  */
 
-import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.js';
-import {jsonrpc_errors} from '../http/jsonrpc_errors.js';
+import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.ts';
+import {jsonrpc_errors} from '../http/jsonrpc_errors.ts';
 import {
 	builtin_role_specs_by_name,
 	list_roles_with_grant_path,
 	type RoleSchemaResult,
-} from './role_schema.js';
-import {GRANT_PATH_SELF_SERVICE} from './grant_path_schema.js';
-import type {RouteFactoryDeps} from './deps.js';
-import {query_create_role_grant, query_revoke_role_grant} from './role_grant_queries.js';
-import {is_role_grant_active} from './account_schema.js';
-import {has_scoped_role} from './request_context.js';
+} from './role_schema.ts';
+import {GRANT_PATH_SELF_SERVICE} from './grant_path_schema.ts';
+import type {RouteFactoryDeps} from './deps.ts';
+import {query_create_role_grant, query_revoke_role_grant} from './role_grant_queries.ts';
+import {is_role_grant_active} from './account_schema.ts';
+import {has_scoped_role} from './request_context.ts';
 import {
 	ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
 	self_service_role_set_action_spec,
 	type SelfServiceRoleSetInput,
 	type SelfServiceRoleSetOutput,
-} from './self_service_role_action_specs.js';
+} from './self_service_role_action_specs.ts';
 
 /** Options for `create_self_service_role_actions`. */
 export interface SelfServiceRoleActionsOptions {

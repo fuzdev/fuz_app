@@ -14,16 +14,16 @@
 
 import {z} from 'zod';
 
-import {ActorSummaryJson, RoleGrantSummaryJson, SessionAccountJson} from './account_schema.js';
-import {UsernameProvided} from '../primitive_schemas.js';
-import {Password, PasswordProvided} from './password.js';
-import type {RouteSpec} from '../http/route_spec.js';
+import {ActorSummaryJson, RoleGrantSummaryJson, SessionAccountJson} from './account_schema.ts';
+import {UsernameProvided} from '../primitive_schemas.ts';
+import {Password, PasswordProvided} from './password.ts';
+import type {RouteSpec} from '../http/route_spec.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INVALID_CREDENTIALS,
 	ERROR_INVALID_JSON_BODY,
 	ERROR_INVALID_REQUEST_BODY,
-} from '../http/error_schemas.js';
+} from '../http/error_schemas.ts';
 
 /** Input for `GET /api/account/status`. No parameters — caller is the subject. */
 export const AccountStatusInput = z.null();

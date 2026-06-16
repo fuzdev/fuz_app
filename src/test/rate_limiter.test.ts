@@ -14,9 +14,9 @@ import {
 	default_login_ip_rate_limit,
 	default_login_account_rate_limit,
 	DEFAULT_RATE_LIMITER_MAX_KEYS,
-} from '$lib/rate_limiter.js';
-import {ERROR_RATE_LIMIT_EXCEEDED} from '$lib/http/error_schemas.js';
-import {get_client_ip} from '$lib/http/client_ip.js';
+} from '$lib/rate_limiter.ts';
+import {ERROR_RATE_LIMIT_EXCEEDED} from '$lib/http/error_schemas.ts';
+import {get_client_ip} from '$lib/http/client_ip.ts';
 
 const WINDOW_MS = 60_000; // 1 minute
 const MAX_ATTEMPTS = 3;

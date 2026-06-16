@@ -1,8 +1,8 @@
 import {test, describe, assert} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
-import {update_env_variable} from '$lib/env/update_env_variable.js';
-import {create_mock_fs} from '$lib/testing/mock_fs.js';
+import {update_env_variable} from '$lib/env/update_env_variable.ts';
+import {create_mock_fs} from '$lib/testing/mock_fs.ts';
 
 // null initial means no file exists (triggers ENOENT → create)
 const basic_cases: Array<

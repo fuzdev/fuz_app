@@ -19,7 +19,7 @@ import {test, assert} from 'vitest';
 import {readdirSync, readFileSync, statSync} from 'node:fs';
 import {join} from 'node:path';
 
-import {TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.js';
+import {TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.ts';
 
 /** Walk a directory tree, yielding absolute paths of every regular file. */
 const walk = (root: string): Array<string> => {

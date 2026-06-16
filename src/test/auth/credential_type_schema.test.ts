@@ -14,7 +14,7 @@ import {
 	CREDENTIAL_TYPE_API_TOKEN,
 	CREDENTIAL_TYPE_DAEMON_TOKEN,
 	CREDENTIAL_TYPE_SESSION,
-} from '$lib/auth/credential_type_schema.js';
+} from '$lib/auth/credential_type_schema.ts';
 
 describe('create_credential_type_schema', () => {
 	test('builtins-only round-trip', () => {

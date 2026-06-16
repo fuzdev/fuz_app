@@ -11,11 +11,11 @@
  */
 
 import {describe, assert, test} from 'vitest';
-import type {Result} from '@fuzdev/fuz_util/result.js';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import type {Result} from '@fuzdev/fuz_util/result.ts';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
-import {create_throwing_api, type ThrowingApi} from '$lib/actions/rpc_client.js';
-import type {JsonrpcErrorObject} from '$lib/http/jsonrpc.js';
+import {create_throwing_api, type ThrowingApi} from '$lib/actions/rpc_client.ts';
+import type {JsonrpcErrorObject} from '$lib/http/jsonrpc.ts';
 
 describe('create_throwing_api', () => {
 	test('unwraps {ok: true, value} to value via the typed Proxy', async () => {

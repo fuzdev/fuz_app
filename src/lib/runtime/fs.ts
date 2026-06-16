@@ -4,7 +4,7 @@
  * @module
  */
 
-import type {FsWriteDeps} from './deps.js';
+import type {FsWriteDeps} from './deps.ts';
 
 /**
  * Write a file atomically via temp file + rename.

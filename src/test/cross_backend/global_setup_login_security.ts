@@ -21,13 +21,13 @@
  * @module
  */
 
-import {create_dual_spawn_global_setup} from '$lib/testing/cross_backend/create_dual_spawn_global_setup.js';
-import {ts_spine_node_backend_config} from '$lib/testing/cross_backend/ts_spine_backend_config.js';
-import {rust_spine_stub_backend_config} from '$lib/testing/cross_backend/rust_spine_stub_backend_config.js';
+import {create_dual_spawn_global_setup} from '$lib/testing/cross_backend/create_dual_spawn_global_setup.ts';
+import {ts_spine_node_backend_config} from '$lib/testing/cross_backend/ts_spine_backend_config.ts';
+import {rust_spine_stub_backend_config} from '$lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 import type {TestProject} from 'vitest/node';
 
-import './cross_test_types.js';
-import {prepare_rust_spine_backend} from './global_setup_helpers.js';
+import './cross_test_types.ts';
+import {prepare_rust_spine_backend} from './global_setup_helpers.ts';
 
 // The generic "spawn two backends, provide two handles" maker. Both backends
 // enable the login limiters; the Rust side also opts into XFF resolution (the

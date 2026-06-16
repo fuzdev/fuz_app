@@ -24,18 +24,18 @@ import {
 	cell_get_action_spec,
 	ERROR_CELL_CLONE_KIND_MISMATCH,
 	ERROR_CELL_NOT_FOUND,
-} from '$lib/auth/cell_action_specs.js';
+} from '$lib/auth/cell_action_specs.ts';
 import {
 	cell_item_insert_action_spec,
 	type CellItemPosition,
-} from '$lib/auth/cell_item_action_specs.js';
-import {cell_field_set_action_spec, type CellFieldName} from '$lib/auth/cell_field_action_specs.js';
-import {query_audit_log_list} from '$lib/auth/audit_log_queries.js';
-import {fractional_indices_between} from '@fuzdev/fuz_util/fractional_index.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
-import type {Db} from '$lib/db/db.js';
-import type {TestApp, TestAccount} from '$lib/testing/app_server.js';
-import {describe_db, create_cell_test_app, create_cell, call} from './cell_test_helpers.js';
+} from '$lib/auth/cell_item_action_specs.ts';
+import {cell_field_set_action_spec, type CellFieldName} from '$lib/auth/cell_field_action_specs.ts';
+import {query_audit_log_list} from '$lib/auth/audit_log_queries.ts';
+import {fractional_indices_between} from '@fuzdev/fuz_util/fractional_index.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type {Db} from '$lib/db/db.ts';
+import type {TestApp, TestAccount} from '$lib/testing/app_server.ts';
+import {describe_db, create_cell_test_app, create_cell, call} from './cell_test_helpers.ts';
 
 /** Wire `pub_child` + `priv_child` under `parent` as items AND fields. */
 const wire_children = async (

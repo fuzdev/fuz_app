@@ -27,7 +27,7 @@
  * @module
  */
 
-import type {EnvDeps} from '../runtime/deps.js';
+import type {EnvDeps} from '../runtime/deps.ts';
 
 /**
  * Pattern matching `$$VAR$$`, `$$?VAR$$`, and their escaped forms

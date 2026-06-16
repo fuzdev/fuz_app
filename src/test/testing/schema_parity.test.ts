@@ -15,12 +15,12 @@ import {
 	assert_schema_snapshots_equal,
 	diff_schema_snapshots,
 	format_schema_diffs,
-} from '$lib/testing/schema_parity.js';
+} from '$lib/testing/schema_parity.ts';
 import type {
 	ColumnSnapshot,
 	SchemaSnapshot,
 	TableSnapshot,
-} from '$lib/testing/schema_introspect.js';
+} from '$lib/testing/schema_introspect.ts';
 
 const create_column = (overrides: Partial<ColumnSnapshot> = {}): ColumnSnapshot => ({
 	data_type: 'text',

@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * In-process test helpers for WebSocket JSON-RPC round-trips.
@@ -47,35 +47,35 @@ import {
 	type WSContextInit,
 	type WSEvents,
 } from 'hono/ws';
-import {Logger} from '@fuzdev/fuz_util/log.js';
-import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
+import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {ActionSpecUnion} from '../actions/action_spec.js';
-import type {Action} from '../actions/action_types.js';
-import {ActionPeer} from '../actions/action_peer.js';
-import type {ActionEventEnvironment} from '../actions/action_event_types.js';
-import {create_broadcast_api} from '../actions/broadcast_api.js';
-import {register_action_ws, type RegisterActionWsOptions} from '../actions/register_action_ws.js';
-import {create_stub_db} from './stubs.js';
-import {BackendWebsocketTransport} from '../actions/transports_ws_backend.js';
-import {REQUEST_CONTEXT_KEY, type RequestContext} from '../auth/request_context.js';
-import {ROLE_KEEPER} from '../auth/role_schema.js';
+import type {ActionSpecUnion} from '../actions/action_spec.ts';
+import type {Action} from '../actions/action_types.ts';
+import {ActionPeer} from '../actions/action_peer.ts';
+import type {ActionEventEnvironment} from '../actions/action_event_types.ts';
+import {create_broadcast_api} from '../actions/broadcast_api.ts';
+import {register_action_ws, type RegisterActionWsOptions} from '../actions/register_action_ws.ts';
+import {create_stub_db} from './stubs.ts';
+import {BackendWebsocketTransport} from '../actions/transports_ws_backend.ts';
+import {REQUEST_CONTEXT_KEY, type RequestContext} from '../auth/request_context.ts';
+import {ROLE_KEEPER} from '../auth/role_schema.ts';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
 	type CredentialType,
-} from '../hono_context.js';
-import {create_jsonrpc_request} from '../http/jsonrpc_helpers.js';
-import {create_test_account, create_test_actor, create_test_role_grant} from './entities.js';
+} from '../hono_context.ts';
+import {create_jsonrpc_request} from '../http/jsonrpc_helpers.ts';
+import {create_test_account, create_test_actor, create_test_role_grant} from './entities.ts';
 import {
 	WS_CLIENT_DEFAULT_TIMEOUT_MS,
 	is_response_for,
 	type JsonrpcErrorResponseFrame,
 	type JsonrpcSuccessResponseFrame,
 	type WsClient,
-} from './transports/ws_client.js';
+} from './transports/ws_client.ts';
 
 // ---------------------------------------------------------------------
 // Primitives — used by fuz_app's own tests + consumer one-off tests.

@@ -1,7 +1,7 @@
 import {test, describe, assert} from 'vitest';
 
-import {update_env_variable} from '$lib/env/update_env_variable.js';
-import {create_mock_fs} from '$lib/testing/mock_fs.js';
+import {update_env_variable} from '$lib/env/update_env_variable.ts';
+import {create_mock_fs} from '$lib/testing/mock_fs.ts';
 
 const quote_detection_cases: Array<
 	[label: string, initial: string, key: string, value: string, expected: string]

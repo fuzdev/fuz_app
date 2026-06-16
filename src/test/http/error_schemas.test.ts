@@ -55,7 +55,7 @@ import {
 	ActorNotOnAccountError,
 	NoActorsOnAccountError,
 	AccountVanishedError,
-} from '$lib/http/error_schemas.js';
+} from '$lib/http/error_schemas.ts';
 
 describe('standard error schemas', () => {
 	test('ApiError accepts basic error response', () => {

@@ -11,11 +11,11 @@
 
 import {assert, test} from 'vitest';
 
-import {query_create_role_grant, query_role_grant_has_role} from '$lib/auth/role_grant_queries.js';
-import {create_uuid} from '@fuzdev/fuz_util/id.js';
+import {query_create_role_grant, query_role_grant_has_role} from '$lib/auth/role_grant_queries.ts';
+import {create_uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {describe_db} from '../db_fixture.js';
-import {make_account} from './role_grant_offer_queries.fixtures.js';
+import {describe_db} from '../db_fixture.ts';
+import {make_account} from './role_grant_offer_queries.fixtures.ts';
 
 describe_db('role_grant_queries.scope', (get_db) => {
 	test('query_create_role_grant: global role_grant (scope_id NULL) idempotent on sentinel', async () => {

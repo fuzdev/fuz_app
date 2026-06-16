@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Surface invariant assertions for `AppSurface` data.
@@ -20,8 +20,8 @@ import './assert_dev_env.js';
 
 import {assert} from 'vitest';
 
-import {middleware_applies} from '../http/schema_helpers.js';
-import type {AppSurface, AppSurfaceMiddleware} from '../http/surface.js';
+import {middleware_applies} from '../http/schema_helpers.ts';
+import type {AppSurface, AppSurfaceMiddleware} from '../http/surface.ts';
 import {
 	filter_protected_routes,
 	filter_role_routes,
@@ -31,8 +31,8 @@ import {
 	filter_routes_with_query,
 	filter_public_routes,
 	format_route_key,
-} from '../http/surface_query.js';
-import {PROTOCOL_ACTION_METHODS} from '../actions/action_codegen.js';
+} from '../http/surface_query.ts';
+import {PROTOCOL_ACTION_METHODS} from '../actions/action_codegen.ts';
 
 // --- Structural invariants ---
 

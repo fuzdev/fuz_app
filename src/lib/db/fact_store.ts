@@ -27,9 +27,9 @@
  * @module
  */
 
-import type {QueryDeps} from './query_deps.js';
-import {to_error_message} from '@fuzdev/fuz_util/error.js';
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {QueryDeps} from './query_deps.ts';
+import {to_error_message} from '@fuzdev/fuz_util/error.ts';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
 import {
 	fact_hash_bytes,
@@ -37,13 +37,13 @@ import {
 	fact_hash_verify,
 	fact_hash_extract_refs,
 	type FactHash,
-} from '@fuzdev/fuz_util/fact_hash.js';
+} from '@fuzdev/fuz_util/fact_hash.ts';
 import type {
 	FactMeta,
 	FactPutOptions,
 	FactStore,
 	PutStreamOutcome,
-} from '@fuzdev/fuz_util/fact_store.js';
+} from '@fuzdev/fuz_util/fact_store.ts';
 
 import {
 	query_delete_fact,
@@ -53,13 +53,13 @@ import {
 	query_has_fact,
 	query_put_fact,
 	query_put_fact_refs,
-} from './fact_queries.js';
+} from './fact_queries.ts';
 import {
 	create_disk_fact_fetcher,
 	stream_fact_to_disk,
 	write_fact_bytes_to_disk,
 	type FactDiskStorageDeps,
-} from './fact_disk_storage.js';
+} from './fact_disk_storage.ts';
 
 /** Default embedded-vs-referenced cutoff (1 MiB). */
 export const FACT_EMBEDDED_THRESHOLD_DEFAULT = 1024 * 1024;

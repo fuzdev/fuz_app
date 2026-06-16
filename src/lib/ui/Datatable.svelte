@@ -16,8 +16,8 @@
 		DATATABLE_COLUMN_WIDTH_DEFAULT,
 		DATATABLE_MIN_COLUMN_WIDTH,
 		type DatatableColumn,
-	} from './datatable.js';
-	import {format_value} from './ui_format.js';
+	} from './datatable.ts';
+	import {format_value} from './ui_format.ts';
 
 	const {
 		columns,

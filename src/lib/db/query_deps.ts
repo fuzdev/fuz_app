@@ -7,7 +7,7 @@
  * @module
  */
 
-import type {Db} from './db.js';
+import type {Db} from './db.ts';
 
 /** Base dependency for all query functions. */
 export interface QueryDeps {

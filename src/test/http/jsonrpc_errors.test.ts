@@ -6,7 +6,7 @@
 
 import {describe, assert, test} from 'vitest';
 
-import type {JsonrpcErrorCode, JsonrpcErrorObject} from '$lib/http/jsonrpc.js';
+import type {JsonrpcErrorCode, JsonrpcErrorObject} from '$lib/http/jsonrpc.ts';
 import {
 	JSONRPC_ERROR_CODES,
 	ThrownJsonrpcError,
@@ -16,7 +16,7 @@ import {
 	JSONRPC_ERROR_CODE_TO_HTTP_STATUS,
 	HTTP_STATUS_TO_JSONRPC_ERROR_CODE,
 	http_status_to_jsonrpc_error_code,
-} from '$lib/http/jsonrpc_errors.js';
+} from '$lib/http/jsonrpc_errors.ts';
 
 describe('JSONRPC_ERROR_CODES', () => {
 	test('standard codes have correct values', () => {

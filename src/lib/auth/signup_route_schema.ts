@@ -13,17 +13,17 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import {Username, Email} from '../primitive_schemas.js';
-import {Password} from './password.js';
-import type {RouteSpec} from '../http/route_spec.js';
+import {Username, Email} from '../primitive_schemas.ts';
+import {Password} from './password.ts';
+import type {RouteSpec} from '../http/route_spec.ts';
 import {
 	ERROR_NO_MATCHING_INVITE,
 	ERROR_SIGNUP_CONFLICT,
 	ERROR_INVALID_JSON_BODY,
 	ERROR_INVALID_REQUEST_BODY,
-} from '../http/error_schemas.js';
+} from '../http/error_schemas.ts';
 
 /** Input for `POST /signup`. `email` is optional (absent or `null` = no email) and must match any referenced invite. */
 export const SignupInput = z.strictObject({

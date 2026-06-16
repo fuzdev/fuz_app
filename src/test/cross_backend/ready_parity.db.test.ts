@@ -16,16 +16,16 @@
  * @module
  */
 
-import {default_in_process_setup} from '$lib/testing/cross_backend/in_process_setup.js';
-import {in_process_capabilities} from '$lib/testing/cross_backend/capabilities.js';
-import {describe_ready_cross_tests} from '$lib/testing/cross_backend/ready.js';
+import {default_in_process_setup} from '$lib/testing/cross_backend/in_process_setup.ts';
+import {in_process_capabilities} from '$lib/testing/cross_backend/capabilities.ts';
+import {describe_ready_cross_tests} from '$lib/testing/cross_backend/ready.ts';
 import {
 	create_spine_ready_route_spec,
 	spine_session_options,
-} from '$lib/testing/cross_backend/default_spine_surface.js';
-import {CELL_MIGRATION_NS} from '$lib/db/cell_ddl.js';
-import {CELL_HISTORY_MIGRATION_NS} from '$lib/db/cell_history_ddl.js';
-import {FACT_MIGRATION_NS} from '$lib/db/fact_ddl.js';
+} from '$lib/testing/cross_backend/default_spine_surface.ts';
+import {CELL_MIGRATION_NS} from '$lib/db/cell_ddl.ts';
+import {CELL_HISTORY_MIGRATION_NS} from '$lib/db/cell_history_ddl.ts';
+import {FACT_MIGRATION_NS} from '$lib/db/fact_ddl.ts';
 
 const setup_test = default_in_process_setup({
 	session_options: spine_session_options,

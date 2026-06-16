@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * The **full** live RPC mount for fuz_app's own spine test binary — the
@@ -34,21 +34,21 @@ import '../assert_dev_env.js';
  * @module
  */
 
-import type {RpcAction} from '../../actions/action_rpc.js';
-import type {AppDeps} from '../../auth/deps.js';
-import type {DaemonTokenState} from '../../auth/daemon_token.js';
-import type {NotificationSender} from '../../auth/role_grant_offer_notifications.js';
-import {create_standard_rpc_actions} from '../../auth/standard_rpc_actions.js';
-import {create_all_cell_actions} from '../../auth/all_cell_actions.js';
-import {create_actor_lookup_actions} from '../../auth/actor_lookup_actions.js';
-import {create_actor_search_actions} from '../../auth/actor_search_actions.js';
-import type {RpcEndpointSpec} from '../../http/surface.js';
-import type {AppServerContext} from '../../server/app_server_context.js';
+import type {RpcAction} from '../../actions/action_rpc.ts';
+import type {AppDeps} from '../../auth/deps.ts';
+import type {DaemonTokenState} from '../../auth/daemon_token.ts';
+import type {NotificationSender} from '../../auth/role_grant_offer_notifications.ts';
+import {create_standard_rpc_actions} from '../../auth/standard_rpc_actions.ts';
+import {create_all_cell_actions} from '../../auth/all_cell_actions.ts';
+import {create_actor_lookup_actions} from '../../auth/actor_lookup_actions.ts';
+import {create_actor_search_actions} from '../../auth/actor_search_actions.ts';
+import type {RpcEndpointSpec} from '../../http/surface.ts';
+import type {AppServerContext} from '../../server/app_server_context.ts';
 import {
 	create_testing_action_manifest_action,
 	create_testing_actions,
-} from './testing_reset_actions.js';
-import {SPINE_RPC_PATH, spine_roles, spine_session_options} from './default_spine_surface.js';
+} from './testing_reset_actions.ts';
+import {SPINE_RPC_PATH, spine_roles, spine_session_options} from './default_spine_surface.ts';
 
 /** Options for {@link build_full_spine_rpc_actions} / {@link full_spine_rpc_endpoints}. */
 export interface FullSpineMountOptions {

@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Shared test entity factories for `Account`, `Actor`, `RoleGrant`, `AuditLogEvent`,
@@ -13,11 +13,11 @@ import './assert_dev_env.js';
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {Account, Actor, RoleGrant} from '../auth/account_schema.js';
-import type {AuditLogEvent} from '../auth/audit_log_schema.js';
-import type {RequestContext} from '../auth/request_context.js';
+import type {Account, Actor, RoleGrant} from '../auth/account_schema.ts';
+import type {AuditLogEvent} from '../auth/audit_log_schema.ts';
+import type {RequestContext} from '../auth/request_context.ts';
 
 /** Override type for `create_test_account` — id-like fields accept plain `string`. */
 export type TestAccountOverrides = Partial<Omit<Account, 'id' | 'created_by' | 'updated_by'>> & {

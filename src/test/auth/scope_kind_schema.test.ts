@@ -6,7 +6,7 @@
 
 import {describe, assert, test} from 'vitest';
 
-import {create_scope_kind_schema, ScopeKindName} from '$lib/auth/scope_kind_schema.js';
+import {create_scope_kind_schema, ScopeKindName} from '$lib/auth/scope_kind_schema.ts';
 
 describe('ScopeKindName regex', () => {
 	test('accepts valid lowercase names', () => {

@@ -9,9 +9,9 @@
 
 import {test, describe, assert} from 'vitest';
 
-import {update_env_variable} from '$lib/env/update_env_variable.js';
-import {parse_dotenv} from '$lib/env/dotenv.js';
-import {create_mock_fs} from '$lib/testing/mock_fs.js';
+import {update_env_variable} from '$lib/env/update_env_variable.ts';
+import {parse_dotenv} from '$lib/env/dotenv.ts';
+import {create_mock_fs} from '$lib/testing/mock_fs.ts';
 
 const round_trip_cases: Array<[label: string, key: string, value: string]> = [
 	['plain value', 'KEY', 'plain'],

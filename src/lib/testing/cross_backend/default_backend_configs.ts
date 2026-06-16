@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Family-shared `BackendConfig` builders for cross-process test backends.
@@ -34,15 +34,15 @@ import '../assert_dev_env.js';
  * @module
  */
 
-import type {BackendBootstrapConfig, BackendConfig} from './backend_config.js';
-import type {BackendCapabilities, BackendShapeNotes} from './capabilities.js';
-import {build_test_backend_paths, type TestBackendPaths} from './build_test_backend_paths.js';
+import type {BackendBootstrapConfig, BackendConfig} from './backend_config.ts';
+import type {BackendCapabilities, BackendShapeNotes} from './capabilities.ts';
+import {build_test_backend_paths, type TestBackendPaths} from './build_test_backend_paths.ts';
 import {
 	default_test_bootstrap_token,
 	default_test_cookie_keys,
 	default_test_keeper_password,
 	default_test_keeper_username,
-} from './default_secrets.js';
+} from './default_secrets.ts';
 
 /**
  * Env var both spine binaries read to enable their login rate limiters

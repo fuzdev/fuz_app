@@ -13,9 +13,9 @@ import {
 	zod_to_schema_properties,
 	zod_format_value,
 	type ZodSchemaProperty,
-} from '@fuzdev/fuz_util/zod.js';
+} from '@fuzdev/fuz_util/zod.ts';
 
-import {colors} from './util.js';
+import {colors} from './util.ts';
 
 /**
  * Command metadata for help generation.

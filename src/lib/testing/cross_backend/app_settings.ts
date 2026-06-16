@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-backend effect suite for the `open_signup` app setting.
@@ -34,10 +34,10 @@ import '../assert_dev_env.js';
 
 import {describe, test, assert} from 'vitest';
 
-import {app_settings_update_action_spec} from '../../auth/admin_action_specs.js';
-import {ERROR_NO_MATCHING_INVITE} from '../../http/error_schemas.js';
-import type {RpcPathCrossSuiteOptions} from './setup.js';
-import {SPINE_RPC_PATH} from './default_spine_surface.js';
+import {app_settings_update_action_spec} from '../../auth/admin_action_specs.ts';
+import {ERROR_NO_MATCHING_INVITE} from '../../http/error_schemas.ts';
+import type {RpcPathCrossSuiteOptions} from './setup.ts';
+import {SPINE_RPC_PATH} from './default_spine_surface.ts';
 
 /** Options for the app-settings effect suite (the standard RPC-dispatched shape). */
 export type AppSettingsCrossTestOptions = RpcPathCrossSuiteOptions;

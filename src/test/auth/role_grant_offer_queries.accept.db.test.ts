@@ -11,7 +11,7 @@
  */
 
 import {assert, test} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.js';
+import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	query_role_grant_offer_decline,
@@ -19,11 +19,11 @@ import {
 	query_accept_offer,
 	RoleGrantOfferAlreadyTerminalError,
 	RoleGrantOfferNotFoundError,
-} from '$lib/auth/role_grant_offer_queries.js';
-import {query_role_grant_has_role} from '$lib/auth/role_grant_queries.js';
+} from '$lib/auth/role_grant_offer_queries.ts';
+import {query_role_grant_has_role} from '$lib/auth/role_grant_queries.ts';
 
-import {describe_db} from '../db_fixture.js';
-import {make_account, create_pending_offer} from './role_grant_offer_queries.fixtures.js';
+import {describe_db} from '../db_fixture.ts';
+import {make_account, create_pending_offer} from './role_grant_offer_queries.fixtures.ts';
 
 describe_db('role_grant_offer_queries.accept', (get_db) => {
 	test('accept inserts role_grant + stamps resulting_role_grant_id + emits audit events', async () => {

@@ -31,8 +31,8 @@
  */
 
 import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.js';
-import {zod_unwrap_to_object} from '@fuzdev/fuz_util/zod.js';
+import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import {zod_unwrap_to_object} from '@fuzdev/fuz_util/zod.ts';
 
 /**
  * `acting` field shared by every input that needs the caller's acting actor.

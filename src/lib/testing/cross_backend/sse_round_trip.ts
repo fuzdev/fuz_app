@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-process SSE round-trip suite — the cross-process counterpart to the
@@ -55,14 +55,14 @@ import {
 	account_session_list_action_spec,
 	account_session_revoke_action_spec,
 	account_session_revoke_all_action_spec,
-} from '../../auth/account_action_specs.js';
-import {admin_session_revoke_all_action_spec} from '../../auth/admin_action_specs.js';
-import {audit_log_event_specs} from '../../realtime/sse_auth_guard.js';
-import {SSE_CONNECTED_COMMENT} from '../../realtime/sse_constants.js';
-import {create_sse_transport} from '../transports/sse_transport.js';
-import {create_rpc_post_init} from '../rpc_helpers.js';
-import {type BackendCapabilities, test_if} from './capabilities.js';
-import type {SetupTest} from './setup.js';
+} from '../../auth/account_action_specs.ts';
+import {admin_session_revoke_all_action_spec} from '../../auth/admin_action_specs.ts';
+import {audit_log_event_specs} from '../../realtime/sse_auth_guard.ts';
+import {SSE_CONNECTED_COMMENT} from '../../realtime/sse_constants.ts';
+import {create_sse_transport} from '../transports/sse_transport.ts';
+import {create_rpc_post_init} from '../rpc_helpers.ts';
+import {type BackendCapabilities, test_if} from './capabilities.ts';
+import type {SetupTest} from './setup.ts';
 
 /** Default audit-log SSE stream path — the standard fuz_app `/api/admin/audit/stream`. */
 const DEFAULT_SSE_PATH = '/api/admin/audit/stream';

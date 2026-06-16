@@ -11,9 +11,9 @@
  * @module
  */
 
-import type {QueryDeps} from './query_deps.js';
-import type {AuditLogEvent} from '../auth/audit_log_schema.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {QueryDeps} from './query_deps.ts';
+import type {AuditLogEvent} from '../auth/audit_log_schema.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
 /**
  * Metadata-jsonb keys cell-domain events use to name the cell. This

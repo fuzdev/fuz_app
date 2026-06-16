@@ -18,24 +18,24 @@ import {describe, test, assert} from 'vitest';
 import {
 	invite_create_action_spec,
 	invite_delete_action_spec,
-} from '$lib/auth/admin_action_specs.js';
+} from '$lib/auth/admin_action_specs.ts';
 import {
 	ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
 	ERROR_INVITE_ACCOUNT_EXISTS_EMAIL,
 	ERROR_INVITE_DUPLICATE,
 	ERROR_INVITE_NOT_FOUND,
-} from '$lib/http/error_schemas.js';
-import {query_create_account_with_actor} from '$lib/auth/account_queries.js';
-import {create_test_app} from '$lib/testing/app_server.js';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+} from '$lib/http/error_schemas.ts';
+import {query_create_account_with_actor} from '$lib/auth/account_queries.ts';
+import {create_test_app} from '$lib/testing/app_server.ts';
+import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
+import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 import {
 	RPC_PATH,
 	create_admin_route_specs,
 	describe_db,
 	session_options,
-} from './admin_rpc_test_helpers.js';
+} from './admin_rpc_test_helpers.ts';
 
 // Valid v4 UUID that won't collide with any real invite row.
 const missing_invite_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' as Uuid;

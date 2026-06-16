@@ -12,13 +12,13 @@
 import {assert, describe, test} from 'vitest';
 import {z} from 'zod';
 
-import {RequestResponseActionSpec} from '$lib/actions/action_spec.js';
+import {RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
 import {
 	heartbeat_action,
 	heartbeat_action_spec,
 	heartbeat_handler,
-} from '$lib/actions/heartbeat.js';
-import {create_ws_test_harness} from '$lib/testing/ws_round_trip.js';
+} from '$lib/actions/heartbeat.ts';
+import {create_ws_test_harness} from '$lib/testing/ws_round_trip.ts';
 
 describe('heartbeat_action', () => {
 	test('spec has the expected method + shape', () => {

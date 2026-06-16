@@ -13,8 +13,8 @@
 
 import {z} from 'zod';
 
-import {RateLimitKey} from '../http/error_schemas.js';
-import {RouteAuth} from '../http/auth_shape.js';
+import {RateLimitKey} from '../http/error_schemas.ts';
+import {RouteAuth} from '../http/auth_shape.ts';
 
 export const ActionKind = z.enum(['request_response', 'remote_notification', 'local_call']);
 export type ActionKind = z.infer<typeof ActionKind>;

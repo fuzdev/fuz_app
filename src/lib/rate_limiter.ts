@@ -8,9 +8,9 @@
  */
 
 import type {Context} from 'hono';
-import {LruMap} from '@fuzdev/fuz_util/lru_map.js';
+import {LruMap} from '@fuzdev/fuz_util/lru_map.ts';
 
-import {ERROR_RATE_LIMIT_EXCEEDED} from './http/error_schemas.js';
+import {ERROR_RATE_LIMIT_EXCEEDED} from './http/error_schemas.ts';
 
 /**
  * Default tracked-key cap: bounds worst-case memory under key-enumeration

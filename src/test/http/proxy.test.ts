@@ -9,7 +9,7 @@
 
 import {describe, test, assert, vi} from 'vitest';
 import {Hono} from 'hono';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
 import {
 	normalize_ip,
@@ -20,8 +20,8 @@ import {
 	create_proxy_middleware,
 	create_proxy_middleware_spec,
 	type ParsedProxy,
-} from '$lib/http/proxy.js';
-import {get_client_ip} from '$lib/http/client_ip.js';
+} from '$lib/http/proxy.ts';
+import {get_client_ip} from '$lib/http/client_ip.ts';
 
 // --- normalize_ip ---
 

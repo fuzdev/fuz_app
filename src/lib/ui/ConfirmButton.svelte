@@ -49,13 +49,13 @@
 	import {DEV} from 'esm-env';
 	import type {SvelteHTMLElements} from 'svelte/elements';
 	import type {ComponentProps, Snippet} from 'svelte';
-	import type {OmitStrict} from '@fuzdev/fuz_util/types.js';
-	import {icon_remove} from '@fuzdev/fuz_ui/icons.js';
+	import type {OmitStrict} from '@fuzdev/fuz_util/types.ts';
+	import {icon_remove} from '@fuzdev/fuz_ui/icons.ts';
 	import PendingAnimation from '@fuzdev/fuz_ui/PendingAnimation.svelte';
 	import Svg from '@fuzdev/fuz_ui/Svg.svelte';
 
 	import PopoverButton from './PopoverButton.svelte';
-	import type {Popover} from './popover.svelte.js';
+	import type {Popover} from './popover.svelte.ts';
 
 	const {
 		onconfirm,

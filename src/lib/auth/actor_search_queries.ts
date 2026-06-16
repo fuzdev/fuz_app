@@ -52,10 +52,10 @@
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {QueryDeps} from '../db/query_deps.js';
-import type {ActorLookupRow} from './actor_lookup_queries.js';
+import type {QueryDeps} from '../db/query_deps.ts';
+import type {ActorLookupRow} from './actor_lookup_queries.ts';
 
 /** Inputs for `query_actor_search`. */
 export interface ActorSearchQueryInput {

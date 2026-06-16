@@ -12,19 +12,19 @@
 import {describe, test, assert, vi, afterEach} from 'vitest';
 import {Hono} from 'hono';
 
-import {RateLimiter} from '$lib/rate_limiter.js';
-import {create_proxy_middleware} from '$lib/http/proxy.js';
-import {create_account_route_specs} from '$lib/auth/account_routes.js';
-import {create_signup_route_specs} from '$lib/auth/signup_routes.js';
-import {apply_route_specs} from '$lib/http/route_spec.js';
-import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.js';
-import {create_keyring} from '$lib/auth/keyring.js';
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {PASSWORD_LENGTH_MAX} from '$lib/auth/password.js';
-import {create_bearer_auth_middleware} from '$lib/auth/bearer_auth.js';
-import {ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS} from '$lib/http/error_schemas.js';
-import {Logger} from '@fuzdev/fuz_util/log.js';
-import {create_stub_db, create_noop_stub, create_test_audit_emitter} from '$lib/testing/stubs.js';
+import {RateLimiter} from '$lib/rate_limiter.ts';
+import {create_proxy_middleware} from '$lib/http/proxy.ts';
+import {create_account_route_specs} from '$lib/auth/account_routes.ts';
+import {create_signup_route_specs} from '$lib/auth/signup_routes.ts';
+import {apply_route_specs} from '$lib/http/route_spec.ts';
+import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.ts';
+import {create_keyring} from '$lib/auth/keyring.ts';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {PASSWORD_LENGTH_MAX} from '$lib/auth/password.ts';
+import {create_bearer_auth_middleware} from '$lib/auth/bearer_auth.ts';
+import {ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS} from '$lib/http/error_schemas.ts';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
+import {create_stub_db, create_noop_stub, create_test_audit_emitter} from '$lib/testing/stubs.ts';
 
 const log = new Logger('test', {level: 'off'});
 
@@ -83,7 +83,7 @@ vi.mock('$lib/auth/app_settings_queries.js', () => ({
 }));
 
 vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/auth/session_queries.js')>();
+	const actual = await importOriginal<typeof import('$lib/auth/session_queries.ts')>();
 	return {
 		...actual,
 		query_create_session: (...a: Array<any>) => mock_session_create(...a),

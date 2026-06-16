@@ -19,7 +19,7 @@
 import {describe, test, assert} from 'vitest';
 import {z} from 'zod';
 
-import {input_schema_declares_acting, ActingActor} from '$lib/http/auth_shape.js';
+import {input_schema_declares_acting, ActingActor} from '$lib/http/auth_shape.ts';
 
 describe('input_schema_declares_acting', () => {
 	test('canonical strictObject({acting: ActingActor}) returns true', () => {

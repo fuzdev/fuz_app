@@ -28,21 +28,21 @@ import {
 	format_cross_impl_comparison,
 	format_cross_impl_json,
 	format_cross_impl_markdown,
-} from '../lib/testing/cross_backend/bench/bench_report.js';
-import {run_cross_impl_bench} from '../lib/testing/cross_backend/bench/run_cross_impl_bench.js';
-import {default_bench_scenarios} from '../lib/testing/cross_backend/bench/scenario.js';
-import type {BackendConfig} from '../lib/testing/cross_backend/backend_config.js';
-import {bootstrap_backend} from '../lib/testing/cross_backend/bootstrap_backend.js';
-import type {BootstrappedBackendHandle} from '../lib/testing/cross_backend/setup.js';
+} from '../lib/testing/cross_backend/bench/bench_report.ts';
+import {run_cross_impl_bench} from '../lib/testing/cross_backend/bench/run_cross_impl_bench.ts';
+import {default_bench_scenarios} from '../lib/testing/cross_backend/bench/scenario.ts';
+import type {BackendConfig} from '../lib/testing/cross_backend/backend_config.ts';
+import {bootstrap_backend} from '../lib/testing/cross_backend/bootstrap_backend.ts';
+import type {BootstrappedBackendHandle} from '../lib/testing/cross_backend/setup.ts';
 import {
 	RUST_SPINE_STUB_BIN_ENV,
 	rust_spine_stub_backend_config,
-} from '../lib/testing/cross_backend/rust_spine_stub_backend_config.js';
+} from '../lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 import {
 	ts_spine_bun_backend_config,
 	ts_spine_deno_backend_config,
 	ts_spine_node_backend_config,
-} from '../lib/testing/cross_backend/ts_spine_backend_config.js';
+} from '../lib/testing/cross_backend/ts_spine_backend_config.ts';
 
 const ARTIFACT_PATH = 'src/benchmarks/cross_impl.latest.json';
 const REFERENCE_BACKEND = 'ts_spine_node';

@@ -7,18 +7,18 @@
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
-import type {QueryDeps} from '../db/query_deps.js';
-import {assert_row} from '../db/assert_row.js';
+import type {QueryDeps} from '../db/query_deps.ts';
+import {assert_row} from '../db/assert_row.ts';
 import {
 	to_admin_account,
 	type Account,
 	type Actor,
 	type CreateAccountInput,
 	type AdminAccountEntryJson,
-} from './account_schema.js';
-import {ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT} from './admin_action_specs.js';
+} from './account_schema.ts';
+import {ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT} from './admin_action_specs.ts';
 
 /**
  * The full `account` column set, named explicitly so a row read fails loud

@@ -6,7 +6,7 @@
 
 import {describe, assert, test} from 'vitest';
 
-import {query_purge_account} from '$lib/auth/account_queries.js';
+import {query_purge_account} from '$lib/auth/account_queries.ts';
 import {
 	query_create_session,
 	query_session_get_valid,
@@ -21,11 +21,11 @@ import {
 	hash_session_token,
 	generate_session_token,
 	AUTH_SESSION_LIFETIME_MS,
-} from '$lib/auth/session_queries.js';
-import type {Db} from '$lib/db/db.js';
-import {create_test_account_with_actor} from '$lib/testing/db_entities.js';
+} from '$lib/auth/session_queries.ts';
+import type {Db} from '$lib/db/db.ts';
+import {create_test_account_with_actor} from '$lib/testing/db_entities.ts';
 
-import {describe_db} from '../db_fixture.js';
+import {describe_db} from '../db_fixture.ts';
 
 /** Per-test convenience: returns just the ids the assertions care about. */
 const create_test_account = async (

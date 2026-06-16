@@ -1,4 +1,4 @@
-import './assert_dev_env.js';
+import './assert_dev_env.ts';
 
 /**
  * Auth test app factories for adversarial testing.
@@ -10,24 +10,24 @@ import './assert_dev_env.js';
  */
 
 import {Hono} from 'hono';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {apply_route_specs, type RouteSpec} from '../http/route_spec.js';
-import {is_public_auth, type RouteAuth} from '../http/auth_shape.js';
-import {fuz_auth_guard_resolver} from '../auth/auth_guard_resolver.js';
+import {apply_route_specs, type RouteSpec} from '../http/route_spec.ts';
+import {is_public_auth, type RouteAuth} from '../http/auth_shape.ts';
+import {fuz_auth_guard_resolver} from '../auth/auth_guard_resolver.ts';
 import {
 	REQUEST_CONTEXT_KEY,
 	create_fuz_authorization_handler,
 	type RequestContext,
-} from '../auth/request_context.js';
+} from '../auth/request_context.ts';
 import {
 	ACCOUNT_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
 	type CredentialType,
-} from '../hono_context.js';
-import {create_stub_db} from './stubs.js';
-import {create_test_account, create_test_actor, create_test_role_grant} from './entities.js';
+} from '../hono_context.ts';
+import {create_stub_db} from './stubs.ts';
+import {create_test_account, create_test_actor, create_test_role_grant} from './entities.ts';
 
 /**
  * Create a mock `RequestContext` with optional role role_grant.

@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Cross-process backend configuration.
@@ -20,7 +20,7 @@ import '../assert_dev_env.js';
  * @module
  */
 
-import type {BackendCapabilities} from './capabilities.js';
+import type {BackendCapabilities} from './capabilities.ts';
 
 /**
  * Auth-bootstrap configuration for a spawnable test binary. The runner

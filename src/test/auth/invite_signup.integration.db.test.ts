@@ -11,31 +11,31 @@
 
 import {describe, test, assert, vi, afterEach} from 'vitest';
 
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {create_account_route_specs} from '$lib/auth/account_routes.js';
-import {create_signup_route_specs} from '$lib/auth/signup_routes.js';
-import {create_admin_actions} from '$lib/auth/admin_actions.js';
-import {create_account_actions} from '$lib/auth/account_actions.js';
-import {query_create_invite} from '$lib/auth/invite_queries.js';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {create_account_route_specs} from '$lib/auth/account_routes.ts';
+import {create_signup_route_specs} from '$lib/auth/signup_routes.ts';
+import {create_admin_actions} from '$lib/auth/admin_actions.ts';
+import {create_account_actions} from '$lib/auth/account_actions.ts';
+import {query_create_invite} from '$lib/auth/invite_queries.ts';
 import {
 	app_settings_update_action_spec,
 	invite_create_action_spec,
 	invite_delete_action_spec,
 	invite_list_action_spec,
-} from '$lib/auth/admin_action_specs.js';
-import {account_verify_action_spec} from '$lib/auth/account_action_specs.js';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
-import {create_test_app} from '$lib/testing/app_server.js';
-import {rpc_call_for_spec, type RpcCallResult} from '$lib/testing/rpc_helpers.js';
+} from '$lib/auth/admin_action_specs.ts';
+import {account_verify_action_spec} from '$lib/auth/account_action_specs.ts';
+import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
+import {create_test_app} from '$lib/testing/app_server.ts';
+import {rpc_call_for_spec, type RpcCallResult} from '$lib/testing/rpc_helpers.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
 	auth_integration_truncate_tables,
-} from '$lib/testing/db.js';
-import {run_migrations} from '$lib/db/migrate.js';
-import {auth_migration_ns} from '$lib/auth/migrations.js';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.js';
-import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.js';
+} from '$lib/testing/db.ts';
+import {run_migrations} from '$lib/db/migrate.ts';
+import {auth_migration_ns} from '$lib/auth/migrations.ts';
+import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.ts';
 import {
 	ERROR_NO_MATCHING_INVITE,
 	ERROR_SIGNUP_CONFLICT,
@@ -43,11 +43,11 @@ import {
 	ERROR_INVITE_DUPLICATE,
 	ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
 	ERROR_INVITE_ACCOUNT_EXISTS_EMAIL,
-} from '$lib/http/error_schemas.js';
-import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.js';
-import type {Db} from '$lib/db/db.js';
-import type {AppServerContext} from '$lib/server/app_server_context.js';
-import type {Uuid} from '@fuzdev/fuz_util/id.js';
+} from '$lib/http/error_schemas.ts';
+import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.ts';
+import type {Db} from '$lib/db/db.ts';
+import type {AppServerContext} from '$lib/server/app_server_context.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
 const session_options = create_session_config('test_session');
 const {cookie_name} = session_options;

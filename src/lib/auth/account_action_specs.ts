@@ -9,11 +9,11 @@
  */
 
 import {z} from 'zod';
-import {Blake3Hash} from '@fuzdev/fuz_util/hash_blake3.js';
+import {Blake3Hash} from '@fuzdev/fuz_util/hash_blake3.ts';
 
-import type {RequestResponseActionSpec} from '../actions/action_spec.js';
-import {AuthSessionJson, ClientApiTokenJson, SessionAccountJson} from './account_schema.js';
-import {ApiTokenId} from './api_token.js';
+import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
+import {AuthSessionJson, ClientApiTokenJson, SessionAccountJson} from './account_schema.ts';
+import {ApiTokenId} from './api_token.ts';
 
 // -- Input/output schemas ---------------------------------------------------
 

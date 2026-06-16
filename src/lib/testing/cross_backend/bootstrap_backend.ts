@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * One-call spawn + bootstrap helper.
@@ -7,7 +7,7 @@ import '../assert_dev_env.js';
  * consumer's vitest `globalSetup` reduces to a single await:
  *
  * ```ts
- * import {bootstrap_backend} from '@fuzdev/fuz_app/testing/cross_backend/bootstrap_backend.js';
+ * import {bootstrap_backend} from '@fuzdev/fuz_app/testing/cross_backend/bootstrap_backend.ts';
  *
  * export default async function ({provide}) {
  *   const bootstrapped = await bootstrap_backend(deno_backend_config());
@@ -25,11 +25,11 @@ import '../assert_dev_env.js';
  * @module
  */
 
-import type {BackendConfig} from './backend_config.js';
-import {spawn_backend} from './spawn_backend.js';
-import {bootstrap} from '../transports/bootstrap.js';
-import {create_fetch_transport} from '../transports/fetch_transport.js';
-import type {BootstrappedBackendHandle} from './setup.js';
+import type {BackendConfig} from './backend_config.ts';
+import {spawn_backend} from './spawn_backend.ts';
+import {bootstrap} from '../transports/bootstrap.ts';
+import {create_fetch_transport} from '../transports/fetch_transport.ts';
+import type {BootstrappedBackendHandle} from './setup.ts';
 
 /**
  * Spawn the test binary described by `config`, bootstrap a keeper, and

@@ -5,7 +5,7 @@
  */
 
 import {describe, assert, test} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.js';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 
 import {
 	query_create_api_token,
@@ -14,17 +14,17 @@ import {
 	query_revoke_api_token_for_account,
 	query_api_token_list_for_account,
 	query_api_token_enforce_limit,
-} from '$lib/auth/api_token_queries.js';
-import {generate_api_token} from '$lib/auth/api_token.js';
-import {query_create_account, query_create_actor} from '$lib/auth/account_queries.js';
+} from '$lib/auth/api_token_queries.ts';
+import {generate_api_token} from '$lib/auth/api_token.ts';
+import {query_create_account, query_create_actor} from '$lib/auth/account_queries.ts';
 
-import {describe_db} from '../db_fixture.js';
+import {describe_db} from '../db_fixture.ts';
 
 const log = new Logger('test', {level: 'off'});
 
 /** Create a test account + actor and return both ids. */
 const setup_account = async (
-	get_db: () => import('$lib/db/db.js').Db,
+	get_db: () => import('$lib/db/db.ts').Db,
 ): Promise<{account_id: string; actor_id: string}> => {
 	const db = get_db();
 	const deps = {db};

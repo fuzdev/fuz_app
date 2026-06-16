@@ -10,16 +10,16 @@
 
 import {describe, test, assert, beforeAll, afterAll} from 'vitest';
 
-import {create_test_app, type TestApp} from '$lib/testing/app_server.js';
-import {DEFAULT_TEST_PASSWORD} from '$lib/testing/test_credentials.js';
-import {create_session_config} from '$lib/auth/session_cookie.js';
-import {create_account_route_specs} from '$lib/auth/account_routes.js';
-import {create_account_actions} from '$lib/auth/account_actions.js';
-import {account_verify_action_spec} from '$lib/auth/account_action_specs.js';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.js';
-import {prefix_route_specs} from '$lib/http/route_spec.js';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.js';
-import {query_session_list_for_account} from '$lib/auth/session_queries.js';
+import {create_test_app, type TestApp} from '$lib/testing/app_server.ts';
+import {DEFAULT_TEST_PASSWORD} from '$lib/testing/test_credentials.ts';
+import {create_session_config} from '$lib/auth/session_cookie.ts';
+import {create_account_route_specs} from '$lib/auth/account_routes.ts';
+import {create_account_actions} from '$lib/auth/account_actions.ts';
+import {account_verify_action_spec} from '$lib/auth/account_action_specs.ts';
+import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
+import {prefix_route_specs} from '$lib/http/route_spec.ts';
+import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
+import {query_session_list_for_account} from '$lib/auth/session_queries.ts';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';

@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Bun runtime adapter for spawnable cross-process test server binaries.
@@ -26,8 +26,8 @@ import '../assert_dev_env.js';
 import process from 'node:process';
 import {getConnInfo, upgradeWebSocket, websocket} from 'hono/bun';
 
-import {create_node_runtime} from '../../runtime/node.js';
-import type {ServeHandle, TestingServerAdapter} from './testing_server_core.js';
+import {create_node_runtime} from '../../runtime/node.ts';
+import type {ServeHandle, TestingServerAdapter} from './testing_server_core.ts';
 
 // Minimal Bun API surface this adapter touches. This module is only ever
 // imported by a Bun-run test binary; the declaration keeps it typecheckable

@@ -6,7 +6,7 @@
 
 import {test, assert, describe} from 'vitest';
 
-import {parse_dotenv, load_env_file} from '$lib/env/dotenv.js';
+import {parse_dotenv, load_env_file} from '$lib/env/dotenv.ts';
 
 describe('parse_dotenv', () => {
 	test('parses key=value pairs', () => {

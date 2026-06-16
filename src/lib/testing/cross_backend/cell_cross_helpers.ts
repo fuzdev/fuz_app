@@ -1,4 +1,4 @@
-import '../assert_dev_env.js';
+import '../assert_dev_env.ts';
 
 /**
  * Shared call-site primitives for the cell cross-backend parity suites
@@ -19,8 +19,8 @@ import '../assert_dev_env.js';
 import {assert} from 'vitest';
 import type {z} from 'zod';
 
-import {create_rpc_post_init} from '../rpc_helpers.js';
-import type {FetchTransport} from '../transports/fetch_transport.js';
+import {create_rpc_post_init} from '../rpc_helpers.ts';
+import type {FetchTransport} from '../transports/fetch_transport.ts';
 
 /** Minimal JSON-RPC envelope shape the suites read off responses. */
 export interface RpcResult {

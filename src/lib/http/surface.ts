@@ -9,23 +9,23 @@
 
 import {z} from 'zod';
 
-import type {EventSpec} from '../realtime/sse.js';
-import type {MiddlewareSpec} from './middleware_spec.js';
-import type {RouteSpec} from './route_spec.js';
-import type {RouteAuth} from './auth_shape.js';
-import type {RateLimitKey, RouteErrorSchemas} from './error_schemas.js';
-import type {RpcAction} from '../actions/action_rpc.js';
-import type {ActionKind} from '../actions/action_spec.js';
-import type {WsEndpointSpec} from '../actions/ws_endpoint_spec.js';
+import type {EventSpec} from '../realtime/sse.ts';
+import type {MiddlewareSpec} from './middleware_spec.ts';
+import type {RouteSpec} from './route_spec.ts';
+import type {RouteAuth} from './auth_shape.ts';
+import type {RateLimitKey, RouteErrorSchemas} from './error_schemas.ts';
+import type {RpcAction} from '../actions/action_rpc.ts';
+import type {ActionKind} from '../actions/action_spec.ts';
+import type {WsEndpointSpec} from '../actions/ws_endpoint_spec.ts';
 import {
 	schema_to_surface,
 	middleware_applies,
 	merge_error_schemas,
 	is_null_schema,
 	is_strict_object_schema,
-} from './schema_helpers.js';
-import type {Sensitivity} from '../sensitivity.js';
-import type {SchemaFieldMeta} from '../schema_meta.js';
+} from './schema_helpers.ts';
+import type {Sensitivity} from '../sensitivity.ts';
+import type {SchemaFieldMeta} from '../schema_meta.ts';
 
 // --- Surface types ---
 

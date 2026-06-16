@@ -10,7 +10,7 @@
 
 import type {PGlite} from '@electric-sql/pglite';
 
-import {Db, no_nested_transaction, type DbDriverResult} from './db.js';
+import {Db, no_nested_transaction, type DbDriverResult} from './db.ts';
 
 /**
  * Create a transaction implementation for PGlite.

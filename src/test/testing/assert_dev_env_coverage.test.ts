@@ -42,10 +42,10 @@ const EXEMPT: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The guard import, at any nesting depth: `import './assert_dev_env.js';`,
- * `import '../assert_dev_env.js';`, `import '../../assert_dev_env.js';`, …
+ * The guard import, at any nesting depth: `import './assert_dev_env.ts';`,
+ * `import '../assert_dev_env.ts';`, `import '../../assert_dev_env.ts';`, …
  */
-const GUARD_IMPORT = /^import\s+['"](?:\.\.?\/)+assert_dev_env\.js['"];?$/;
+const GUARD_IMPORT = /^import\s+['"](?:\.\.?\/)+assert_dev_env\.ts['"];?$/;
 
 /** Every `.ts` module under `src/lib/testing`, posix-relative + sorted. */
 const list_testing_modules = (): Array<string> =>
@@ -96,7 +96,7 @@ describe('every testing module carries the assert_dev_env guard', () => {
 				first,
 				GUARD_IMPORT,
 				`${rel}: first statement must be the production-exclusion guard ` +
-					`(\`import './assert_dev_env.js';\`), got: ${JSON.stringify(first)}`,
+					`(\`import './assert_dev_env.ts';\`), got: ${JSON.stringify(first)}`,
 			);
 		});
 	}

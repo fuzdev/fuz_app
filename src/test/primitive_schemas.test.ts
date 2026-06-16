@@ -22,7 +22,7 @@ import {
 	USERNAME_LENGTH_MIN,
 	USERNAME_LENGTH_MAX,
 	USERNAME_PROVIDED_LENGTH_MAX,
-} from '$lib/primitive_schemas.js';
+} from '$lib/primitive_schemas.ts';
 
 // --- Username (creation schema) ---
 

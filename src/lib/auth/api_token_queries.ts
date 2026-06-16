@@ -4,12 +4,12 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.js';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import type {QueryDeps} from '../db/query_deps.js';
-import {assert_row} from '../db/assert_row.js';
-import type {ApiToken} from './account_schema.js';
-import {hash_api_token} from './api_token.js';
+import type {QueryDeps} from '../db/query_deps.ts';
+import {assert_row} from '../db/assert_row.ts';
+import type {ApiToken} from './account_schema.ts';
+import {hash_api_token} from './api_token.ts';
 
 /** Extended deps for `query_validate_api_token` which needs a logger. */
 export interface ApiTokenQueryDeps extends QueryDeps {

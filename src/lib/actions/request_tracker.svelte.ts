@@ -6,7 +6,7 @@
  * @module
  */
 
-import {create_deferred, type Deferred, type AsyncStatus} from '@fuzdev/fuz_util/async.js';
+import {create_deferred, type Deferred, type AsyncStatus} from '@fuzdev/fuz_util/async.ts';
 import {SvelteMap} from 'svelte/reactivity';
 
 import {
@@ -14,8 +14,8 @@ import {
 	type JsonrpcErrorResponse,
 	type JsonrpcRequestId,
 	type JsonrpcResponseOrError,
-} from '../http/jsonrpc.js';
-import {ThrownJsonrpcError, JSONRPC_ERROR_CODES} from '../http/jsonrpc_errors.js';
+} from '../http/jsonrpc.ts';
+import {ThrownJsonrpcError, JSONRPC_ERROR_CODES} from '../http/jsonrpc_errors.ts';
 
 /** ISO datetime string for request creation timestamps. */
 type Datetime = string & {readonly __brand: 'Datetime'};
