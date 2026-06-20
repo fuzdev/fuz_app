@@ -10,12 +10,13 @@
  * own TS impl over the wire — making drift in fuz_app's real HTTP path a
  * fuz_app failure rather than only surfacing through a downstream consumer.
  *
- * **`$lib`-free by contract.** This module + the Node/Deno entries that wrap
- * it are spawned under Gro's loader (which resolves `.js`→`.ts` + package
- * imports but NOT the `$lib` SvelteKit alias), so everything here uses
- * relative `../../lib/...` specifiers and the shared
- * `default_spine_surface.ts` (also `$lib`-free). A `$lib` import anywhere in
- * this graph would still typecheck under vitest but break the spawn.
+ * **`#lib`, not `$lib`, by contract.** This module + the Node/Deno/Bun
+ * entries that wrap it are spawned as raw processes (Gro's loader, `deno
+ * run`, `bun run`) — none of which resolve the Vite-only `$lib` SvelteKit
+ * alias. They reach `src/lib` through the `#lib/*` package.json subpath
+ * import (`"imports": {"#lib/*": "./src/lib/*"}`), which Node, Bun, Deno,
+ * and Gro's loader all resolve uniformly. A `$lib` import anywhere in this
+ * spawn graph would still typecheck under vitest but break the spawn.
  *
  * **NEVER ships in a release.** Lives under `src/test/` (excluded from the
  * `dist` package build) and uses `stub_password_deps` — a deterministic
@@ -29,42 +30,42 @@ import type {Context} from 'hono';
 import type {UpgradeWebSocket} from 'hono/ws';
 import {Logger} from '@fuzdev/fuz_util/log.ts';
 
-import {protocol_actions} from '$lib/actions/protocol.ts';
-import {register_ws_endpoint} from '$lib/actions/register_ws_endpoint.ts';
-import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.ts';
+import {protocol_actions} from '#lib/actions/protocol.ts';
+import {register_ws_endpoint} from '#lib/actions/register_ws_endpoint.ts';
+import {BackendWebsocketTransport} from '#lib/actions/transports_ws_backend.ts';
 import {
 	create_ws_auth_guard,
 	create_ws_logout_closer,
-} from '$lib/actions/transports_ws_auth_guard.ts';
-import {start_daemon_token_rotation} from '$lib/auth/daemon_token_middleware.ts';
-import {load_env} from '$lib/env/load.ts';
-import type {RuntimeDeps} from '$lib/runtime/deps.ts';
-import {cell_audit_events} from '$lib/auth/cell_audit_events.ts';
-import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
-import {create_audit_log_config} from '$lib/auth/audit_log_schema.ts';
-import {CELL_MIGRATION_NS} from '$lib/db/cell_ddl.ts';
-import {CELL_HISTORY_MIGRATION_NS} from '$lib/db/cell_history_ddl.ts';
-import {FACT_MIGRATION_NS} from '$lib/db/fact_ddl.ts';
+} from '#lib/actions/transports_ws_auth_guard.ts';
+import {start_daemon_token_rotation} from '#lib/auth/daemon_token_middleware.ts';
+import {load_env} from '#lib/env/load.ts';
+import type {RuntimeDeps} from '#lib/runtime/deps.ts';
+import {cell_audit_events} from '#lib/auth/cell_audit_events.ts';
+import {create_audit_emitter} from '#lib/auth/audit_emitter.ts';
+import {create_audit_log_config} from '#lib/auth/audit_log_schema.ts';
+import {CELL_MIGRATION_NS} from '#lib/db/cell_ddl.ts';
+import {CELL_HISTORY_MIGRATION_NS} from '#lib/db/cell_history_ddl.ts';
+import {FACT_MIGRATION_NS} from '#lib/db/fact_ddl.ts';
 import {
 	create_serve_cell_fact_route_spec,
 	create_serve_fact_route_spec,
-} from '$lib/server/serve_fact_route.ts';
-import {create_app_backend, type AuditFactory} from '$lib/server/app_backend.ts';
-import {create_app_server} from '$lib/server/app_server.ts';
+} from '#lib/server/serve_fact_route.ts';
+import {create_app_backend, type AuditFactory} from '#lib/server/app_backend.ts';
+import {create_app_server} from '#lib/server/app_server.ts';
 import {
 	RateLimiter,
 	default_login_account_rate_limit,
 	default_login_ip_rate_limit,
-} from '$lib/rate_limiter.ts';
-import {BaseServerEnv, validate_server_env} from '$lib/server/env.ts';
-import {stub_password_deps} from '$lib/testing/app_server.ts';
+} from '#lib/rate_limiter.ts';
+import {BaseServerEnv, validate_server_env} from '#lib/server/env.ts';
+import {stub_password_deps} from '#lib/testing/app_server.ts';
 import {
 	create_spine_ready_route_spec,
 	create_spine_route_specs,
 	spine_session_options,
-} from '$lib/testing/cross_backend/default_spine_surface.ts';
-import {full_spine_rpc_endpoints} from '$lib/testing/cross_backend/full_spine_mount.ts';
-import type {BuiltTestingApp} from '$lib/testing/cross_backend/testing_server_core.ts';
+} from '#lib/testing/cross_backend/default_spine_surface.ts';
+import {full_spine_rpc_endpoints} from '#lib/testing/cross_backend/full_spine_mount.ts';
+import type {BuiltTestingApp} from '#lib/testing/cross_backend/testing_server_core.ts';
 
 /** Resolved bind config the entry passes to `start_testing_server`. */
 export interface SpineServerConfig {

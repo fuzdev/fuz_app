@@ -12,8 +12,8 @@
 import process from 'node:process';
 import {join} from 'node:path';
 
-import {start_testing_server} from '$lib/testing/cross_backend/testing_server_core.ts';
-import {create_node_testing_adapter} from '$lib/testing/cross_backend/testing_server_node.ts';
+import {start_testing_server} from '#lib/testing/cross_backend/testing_server_core.ts';
+import {create_node_testing_adapter} from '#lib/testing/cross_backend/testing_server_node.ts';
 import {build_spine_app, resolve_spine_server_config} from './testing_spine_server.ts';
 
 /** Dir env var whose `{dir}/run/daemon_token` matches `BackendConfig.bootstrap.daemon_token_path`. */
