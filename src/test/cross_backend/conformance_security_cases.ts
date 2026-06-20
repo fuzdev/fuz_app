@@ -262,14 +262,34 @@ const phase_order_cases: ReadonlyArray<ConformanceCase> = [
 	},
 ];
 
+// --- Batch 5: response-header hygiene (no backend fingerprinting) ------
+// Neither spine emits Server / X-Powered-By / WWW-Authenticate. The runner
+// enforces this as an always-on floor on EVERY case; this row makes the
+// property explicit — pinned on a 401, the response most likely to carry a
+// WWW-Authenticate challenge — so a regression names this case, and it ties
+// the parity gate to the cited security.md property.
+
+const response_header_hygiene_cases: ReadonlyArray<ConformanceCase> = [
+	{
+		name: 'anonymous → admin_account_list → 401 emits no backend-fingerprinting headers',
+		request: {method: 'admin_account_list', as: 'anonymous'},
+		expect: {
+			status: 401,
+			headers: {server: null, 'x-powered-by': null, 'www-authenticate': null},
+		},
+		note: 'security.md §Response Headers — the app emits no Server / X-Powered-By / WWW-Authenticate; a 401 carries no auth-scheme challenge a prober could use to fingerprint the backend',
+	},
+];
+
 /**
  * The full declarative security slate, ordered by blast radius
  * (credential ceiling → privilege gates → IDOR masks + enumeration
- * equivalence → phase ordering).
+ * equivalence → phase ordering → response-header hygiene).
  */
 export const conformance_security_cases: ReadonlyArray<ConformanceCase> = [
 	...credential_ceiling_cases,
 	...privilege_gate_cases,
 	...idor_and_enumeration_cases,
 	...phase_order_cases,
+	...response_header_hygiene_cases,
 ];

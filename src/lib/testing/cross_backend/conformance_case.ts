@@ -106,6 +106,19 @@ export const ConformanceCaseExpectation = z.strictObject({
 				'Specific field-value assertions on the success `result` (2xx) or the error ' +
 				'`error.data` (non-2xx). Each key must deep-equal the corresponding response field.',
 		}),
+	headers: z
+		.record(z.string(), z.string().nullable())
+		.optional()
+		.meta({
+			description:
+				'Per-header expectations on the response. Each key is a header name ' +
+				'(case-insensitive); a string value asserts the header is present and equals ' +
+				'it exactly, `null` asserts the header is ABSENT. Independent of this, the ' +
+				'runner enforces an unconditional no-fingerprint invariant on EVERY response ' +
+				'(`Server` / `X-Powered-By` / `WWW-Authenticate` must stay absent on both ' +
+				'spines), so a case only needs `headers` to pin a header beyond that ' +
+				'always-on floor.',
+		}),
 	equivalence_group: z
 		.string()
 		.optional()

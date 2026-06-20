@@ -167,12 +167,16 @@ drive, since it can't delete the subject), and `conformance.cross.test.ts` (the 
 `describe_conformance_table_tests` runner over shared
 `conformance_proof_cases.ts` + the security slate
 `conformance_security_cases.ts` — credential ceiling, privilege gates, IDOR
-masks, login/signup enumeration, and 401-before-400 phase ordering
-(anonymous + malformed input → 401, never a 400 that leaks route shape) —
-plus the runner's `equivalence_group` byte-identity gate (members of a group —
-the login enumeration shadow, the signup existence mask — must return a
-**wire-indistinguishable** `{status, body}`, asserted per impl, so a prober
-hitting either spine can't tell the masked paths apart) — plus the expiry slate
+masks, login/signup enumeration, 401-before-400 phase ordering
+(anonymous + malformed input → 401, never a 400 that leaks route shape), and
+response-header hygiene (a 401 emits no `Server` / `X-Powered-By` /
+`WWW-Authenticate`) — plus the runner's `equivalence_group` byte-identity gate
+(members of a group — the login enumeration shadow, the signup existence mask —
+must return a **wire-indistinguishable** `{status, body}`, asserted per impl, so
+a prober hitting either spine can't tell the masked paths apart) and its
+always-on no-fingerprint header invariant (`FINGERPRINT_HEADERS` absent on
+**every** response, both transports) + the opt-in `expect.headers` axis — plus
+the expiry slate
 `conformance_expiry_cases.ts` (the `expired_session` principal → expired
 server-side session → 401 on a read + a mutation route); the in-process leg is
 `conformance.db.test.ts`, same cases both transports), and

@@ -7,7 +7,9 @@
  * (`gro test`) and cross-process (the conformance gate). They deliberately
  * target `admin_account_list` (admin-gated RPC, on every spine surface) to
  * exercise the three runner branches: error-without-reason (401),
- * error-with-reason (403), and success + output validation (200).
+ * error-with-reason (403), and success + output validation (200). The 200
+ * row additionally exercises the `expect.headers` axis (the absent branch),
+ * the runner-proof for header assertions.
  *
  * These validate the runner, not security behavior — the opinionated
  * security matrix (credential ceiling, IDOR masks, enumeration) lives in
@@ -40,7 +42,10 @@ export const conformance_proof_cases: ReadonlyArray<ConformanceCase> = [
 	{
 		name: 'keeper → admin_account_list → 200',
 		request: {method: 'admin_account_list', as: 'keeper'},
-		expect: {status: 200},
-		note: 'admin holder lists accounts; result validates against admin_account_list output',
+		// The `headers` expectation exercises the runner's `expect.headers` axis
+		// (the absent branch); the always-on no-fingerprint floor runs on every
+		// case regardless. Absent is cross-impl-safe — every spine omits these.
+		expect: {status: 200, headers: {'x-powered-by': null}},
+		note: 'admin holder lists accounts; result validates against admin_account_list output; expect.headers pins X-Powered-By absent',
 	},
 ];

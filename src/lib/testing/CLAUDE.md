@@ -770,7 +770,8 @@ One-shot transport:
 
 - `RpcTestTransport = (url, init) => Promise<Response>` — duck type `Hono.request` already satisfies.
 - `http_transport(app)` — adapter for anything with a `request()` method.
-- `RpcCallResult` — discriminated `{ok: true, status, result}` / `{ok: false, status, error: {code, message, data?}}`.
+- `RpcCallResult` — discriminated `{ok: true, status, headers, result}` / `{ok: false, status, headers, error: {code, message, data?}}`. `headers` is the lowercased-key response-header snapshot so callers can assert header-level properties (e.g. the conformance runner's no-fingerprint invariant).
+- `headers_to_record(headers)` — snapshot a `Headers` into a lowercased-key `Record<string, string>` (multi-value collapses to the comma-joined form; `Set-Cookie` excluded). Used by `rpc_call` and the conformance table's REST branch to thread response headers through for assertions.
 - `RpcCallArgs` — `{app, path, method, params?, headers?, id?, verb?}`. `verb` defaults to `'POST'`; use `'GET'` for `side_effects: false` methods.
 - `rpc_call(args)` — merges `RPC_CALL_DEFAULT_HEADERS` (`host: 'localhost'`, `origin: 'http://localhost:5173'`, `Content-Type: 'application/json'`) under caller headers. Envelope-shape violations throw; JSON-RPC errors return `{ok: false, error}` so callers assert on `error.code` / `error.data.reason`.
 - `rpc_call_typed<T>(args, output_schema)` — parses the success `result` through the schema; throws on envelope failure, error response, or schema mismatch. Use `rpc_call` when the test needs to assert on error shapes.
@@ -966,7 +967,7 @@ wire-shape check passes green on even when behavior is wrong.
 
 - `conformance_case.ts` — `ConformanceCase` Zod schema:
   `{name, request: {method, params?, as, verb?}, expect: {status,
-error_reason?, fields?, equivalence_group?}, note?, xfail?}`. A case is **data** — `method`
+error_reason?, fields?, headers?, equivalence_group?}, note?, xfail?}`. A case is **data** — `method`
   resolves its `input`/`output` from the live registry (RPC) or `RouteSpec`
   (the 6 REST auth routes), so the case never carries a schema. `as` is the
   closed `ConformancePrincipal` enum (`keeper` / `daemon` / `token` /
@@ -988,6 +989,14 @@ error_reason?, fields?, equivalence_group?}, note?, xfail?}`. A case is **data**
   positive `output`-schema parity the runner already enforces. The
   per-case status/reason assertions stay the non-vacuous positive control
   (a both-paths-identically-broken group still fails the per-case checks).
+  `headers` is the **header** negative-space axis: a string value pins a
+  header present-and-equal (case-insensitive name), `null` pins it absent.
+  Independent of it, the runner enforces an always-on **no-fingerprint**
+  invariant on _every_ response (`conformance_table.ts` `FINGERPRINT_HEADERS`
+  — `Server` / `X-Powered-By` / `WWW-Authenticate` must stay absent on both
+  spines, so a framework upgrade adding one can't become a silent
+  backend-fingerprinting oracle). Headers are deliberately kept out of the
+  `equivalence_group` `{status, body}` comparison (`Set-Cookie` / `Date` vary).
 - `conformance_table.ts` — `describe_conformance_table_tests({cases,
 setup_test, surface_source, capabilities, rpc_endpoints, session_options,
 principals?, suite_name?})`. Same `{setup_test, surface_source,

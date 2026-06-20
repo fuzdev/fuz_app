@@ -198,12 +198,33 @@ export const http_transport =
 	async (url, init) =>
 		app.request(url, init);
 
-/** Discriminated return from `rpc_call`. `status` is the HTTP status. */
+/**
+ * Snapshot a `Headers` object into a plain `Record` with lowercased keys
+ * (`Headers` iteration normalizes the casing already). Multiple values for one
+ * header collapse to the comma-joined form `Headers` exposes; `Set-Cookie` is
+ * the lone platform exception these call sites never assert on. Lets a
+ * response's headers travel back through `RpcCallResult` for header-level
+ * assertions (no-fingerprint, `expect.headers`).
+ */
+export const headers_to_record = (headers: Headers): Record<string, string> => {
+	const record: Record<string, string> = {};
+	headers.forEach((value, key) => {
+		record[key] = value;
+	});
+	return record;
+};
+
+/**
+ * Discriminated return from `rpc_call`. `status` is the HTTP status; `headers`
+ * is the response-headers snapshot (lowercased keys) so callers can assert
+ * header-level properties (e.g. no backend-fingerprinting headers).
+ */
 export type RpcCallResult =
-	| {ok: true; status: number; result: unknown}
+	| {ok: true; status: number; headers: Record<string, string>; result: unknown}
 	| {
 			ok: false;
 			status: number;
+			headers: Record<string, string>;
 			error: {code: number; message: string; data?: unknown};
 	  };
 
@@ -307,17 +328,19 @@ export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
 
 	const res = await (typeof app === 'function' ? app(url, init) : app.request(url, init));
 	const status = res.status;
+	const response_headers = headers_to_record(res.headers);
 	const body = await res.json();
 
 	const success = JsonrpcResponse.safeParse(body);
 	if (success.success) {
-		return {ok: true, status, result: success.data.result};
+		return {ok: true, status, headers: response_headers, result: success.data.result};
 	}
 	const error = JsonrpcErrorResponse.safeParse(body);
 	if (error.success) {
 		return {
 			ok: false,
 			status,
+			headers: response_headers,
 			error: {
 				code: error.data.error.code,
 				message: error.data.error.message,
@@ -349,8 +372,13 @@ export const rpc_call_non_browser = (
  * are asserted per call site.
  */
 export type RpcCallResultForSpec<TSpec extends RequestResponseActionSpec> =
-	| {ok: true; status: number; result: z.infer<TSpec['output']>}
-	| {ok: false; status: number; error: {code: number; message: string; data?: unknown}};
+	| {ok: true; status: number; headers: Record<string, string>; result: z.infer<TSpec['output']>}
+	| {
+			ok: false;
+			status: number;
+			headers: Record<string, string>;
+			error: {code: number; message: string; data?: unknown};
+	  };
 
 /** Arguments for `rpc_call_for_spec`. `spec` replaces the loose `method` field. */
 export type RpcCallForSpecArgs<TSpec extends RequestResponseActionSpec> = Omit<
@@ -391,7 +419,12 @@ export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>
 			`rpc_call_for_spec(${spec.method}) result did not match spec.output: ${JSON.stringify(parsed.error.issues)}`,
 		);
 	}
-	return {ok: true, status: res.status, result: parsed.data as z.infer<TSpec['output']>};
+	return {
+		ok: true,
+		status: res.status,
+		headers: res.headers,
+		result: parsed.data as z.infer<TSpec['output']>,
+	};
 };
 
 /**

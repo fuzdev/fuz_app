@@ -25,6 +25,23 @@ browsers silently ignore over plain HTTP — the cookie is never sent, and login
 appears broken with no error. TLS termination at the reverse proxy (nginx) is
 the expected configuration. The app server does not handle TLS directly.
 
+### Response Headers
+
+The app server emits **no backend-fingerprinting response headers** — no
+`Server`, `X-Powered-By`, or `WWW-Authenticate` on any response, including
+401s and errors. Both spines converge on this: a prober cannot tell which
+implementation or framework is serving the request from the response headers,
+and a 401 carries no auth-scheme challenge to probe. The cross-impl
+conformance suite enforces it as an always-on invariant over every case (the
+`FINGERPRINT_HEADERS` floor in the conformance-table runner) plus an explicit
+`expect.headers` row, so a framework upgrade or consumer middleware that adds
+one of these to a single spine fails the suite rather than silently becoming a
+fingerprinting oracle.
+
+This is the *application* posture; `server_tokens off` (see [nginx Static File
+Serving](#nginx-static-file-serving)) suppresses the reverse proxy's own
+`Server` banner at the edge.
+
 ## Credential Type Hierarchy
 
 Three credential types with privilege ceilings enforced by credential type — not

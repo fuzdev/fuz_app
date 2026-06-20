@@ -17,6 +17,12 @@ import '../assert_dev_env.ts';
  * row runs `as` resolves to a `TestFixture` accessor via
  * `resolve_principal` — no inline credential minting.
  *
+ * Every response also passes an always-on **no-fingerprint** invariant
+ * (`assert_no_fingerprint_headers` over `FINGERPRINT_HEADERS` — `Server` /
+ * `X-Powered-By` / `WWW-Authenticate` must stay absent on both spines), and
+ * a row may pin further header expectations via `expect.headers`. Headers are
+ * deliberately kept out of the equivalence-group `{status, body}` comparison.
+ *
  * @module
  */
 
@@ -32,6 +38,7 @@ import {
 } from '../integration_helpers.ts';
 import {
 	find_rpc_action,
+	headers_to_record,
 	rpc_call,
 	resolve_rpc_endpoints_for_setup,
 	type RpcEndpointsSuiteOption,
@@ -168,6 +175,72 @@ const assert_fields = (actual: unknown, fields: Record<string, unknown>, label: 
 	}
 };
 
+/**
+ * Response headers that fingerprint the backend implementation or framework.
+ * Neither spine emits these; the runner asserts they stay absent on EVERY
+ * conformance response so a framework upgrade or consumer middleware that adds
+ * (say) `Server:` to one spine can't silently become a backend-identifying
+ * oracle. Lowercased — matched against the lowercased-key snapshot
+ * `headers_to_record` produces.
+ */
+export const FINGERPRINT_HEADERS: ReadonlyArray<string> = [
+	'server',
+	'x-powered-by',
+	'www-authenticate',
+];
+
+/**
+ * Assert a response carries none of the `FINGERPRINT_HEADERS`. Run on every
+ * case unconditionally — the always-on no-fingerprint floor.
+ */
+export const assert_no_fingerprint_headers = (
+	headers: Record<string, string>,
+	label: string,
+): void => {
+	for (const name of FINGERPRINT_HEADERS) {
+		assert.ok(
+			!(name in headers),
+			`${label}: response leaked backend-fingerprinting header '${name}: ${headers[name]}' — ` +
+				`Server / X-Powered-By / WWW-Authenticate must stay absent on both spines.`,
+		);
+	}
+};
+
+/**
+ * Assert each declared header expectation: a string value must be present and
+ * equal (header name matched case-insensitively), `null` must be absent. The
+ * negative-space twin for headers — `expect.headers` pins a header beyond the
+ * always-on no-fingerprint floor.
+ */
+export const assert_expected_headers = (
+	headers: Record<string, string>,
+	expected: Record<string, string | null>,
+	label: string,
+): void => {
+	for (const [name, value] of Object.entries(expected)) {
+		const key = name.toLowerCase();
+		if (value === null) {
+			assert.ok(
+				!(key in headers),
+				`${label}: header '${name}' expected absent but present as '${headers[key]}'`,
+			);
+		} else {
+			assert.strictEqual(headers[key], value, `${label}: header '${name}'`);
+		}
+	}
+};
+
+/**
+ * Run a case's header invariants: the always-on no-fingerprint floor on every
+ * response plus any declared `expect.headers`. Header assertions are kept off
+ * the equivalence-group `{status, body}` normalized response — `Set-Cookie` /
+ * `Date` legitimately vary, so headers are never compared for byte-identity.
+ */
+const assert_response_headers = (headers: Record<string, string>, c: ConformanceCase): void => {
+	assert_no_fingerprint_headers(headers, c.name);
+	if (c.expect.headers) assert_expected_headers(headers, c.expect.headers, c.name);
+};
+
 const is_success_status = (status: number): boolean => status >= 200 && status < 300;
 
 /**
@@ -229,6 +302,8 @@ const run_rpc_case = async (
 		...(c.request.verb && {verb: c.request.verb}),
 		...(suppress_default_origin && {suppress_default_origin: true}),
 	});
+
+	assert_response_headers(res.headers, c);
 
 	if (is_success_status(c.expect.status)) {
 		assert.ok(
@@ -293,6 +368,7 @@ const run_rest_case = async (
 			c.request.params !== undefined && {body: JSON.stringify(c.request.params)}),
 	};
 	const response = await transport(route.path, init);
+	assert_response_headers(headers_to_record(response.headers), c);
 	assert.strictEqual(response.status, c.expect.status, `${c.name}: status`);
 
 	const body: unknown = await response.json().catch(() => undefined);
