@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.95.0
+
+### Minor Changes
+
+- test: add peer/ping cross-backend suite + ws on_request responder seam ([84ea91a](https://github.com/fuzdev/fuz_app/commit/84ea91a))
+
 ## 0.94.0
 
 ### Minor Changes
