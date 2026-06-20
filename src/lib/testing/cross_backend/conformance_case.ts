@@ -106,6 +106,21 @@ export const ConformanceCaseExpectation = z.strictObject({
 				'Specific field-value assertions on the success `result` (2xx) or the error ' +
 				'`error.data` (non-2xx). Each key must deep-equal the corresponding response field.',
 		}),
+	equivalence_group: z
+		.string()
+		.optional()
+		.meta({
+			description:
+				'Tags this case as a member of an indistinguishability group. After all cases ' +
+				'run, the runner asserts every member of a group produced a BYTE-IDENTICAL ' +
+				'normalized response (`{status, body}`) — checked per impl. This promotes a ' +
+				'masked pair (found-but-unauthorized ≡ not-found, wrong-password ≡ ' +
+				'account-not-found) from "same status + reason" to "wire-indistinguishable", ' +
+				'and holds BOTH impls to it: a prober hitting either spine cannot tell the ' +
+				'members apart. A group needs >= 2 members; a member may still set `fields`. ' +
+				'The negative-space twin of the positive `output`-schema parity the runner ' +
+				'already asserts.',
+		}),
 });
 export type ConformanceCaseExpectation = z.infer<typeof ConformanceCaseExpectation>;
 

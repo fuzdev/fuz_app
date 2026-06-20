@@ -98,6 +98,13 @@ the "account not found" path to equalize Argon2id timing with the real
 `verify_password` call. A regression test asserts byte-identity of both responses —
 a change to either error message fails the test suite.
 
+**Cross-impl parity**: the found-vs-not-found byte-identity is held on both the
+TS spine and the Rust spine by the conformance suite's `equivalence_group` gate
+(`login_enumeration_shadow`) — wrong-password and account-not-found must
+produce a wire-identical `{status, body}` on each impl, so a prober hitting
+either spine cannot distinguish them. (The timing floor stays a TS-internal
+property; it isn't wire-observable for the runner to compare.)
+
 Beyond the constant-time Argon2id baseline, every 401 response is floored to
 `DEFAULT_LOGIN_FAIL_FLOOR_MS` (250ms) plus `DEFAULT_LOGIN_FAIL_JITTER_MS`
 (±25ms) random jitter. The handler races real work against a sleep and `await`s
@@ -444,6 +451,26 @@ role_grants/offers above, the cell surface applies it uniformly:
 to a genuine miss (`auth/cell_actions.ts`). A caller therefore cannot
 enumerate private cells (or offers, or another actor's grants) by id —
 found-and-unauthorized and not-found are wire-indistinguishable.
+
+**Cross-impl parity**: the 404 masks hold on both spines — the cell 404
+(`cell_get` / `cell_update` / `cell_delete` / `cell_clone`) and the
+role-grant / offer 404 return the same wire shape on the TS spine and the
+Rust spine via the cell + conformance cross suites. The in-process cell suite
+(`cell_actions.authz.db.test.ts`) additionally pins the mask
+**byte-identical** across an unviewable cell, a view-but-not-edit cell, and a
+genuine miss — so no distinguishing field (an id echo, a divergent message)
+can creep into one path.
+
+**Phase ordering hides route shape from unauthenticated callers.** Every
+dispatch surface (HTTP RPC, the REST bridge, WS) runs **401 → 400 → 403 →
+handler**: pre-validation authentication fires *before* input validation, so
+an unauthenticated caller hitting an authed route is refused with a 401
+before its body is ever parsed — it never learns the route's input schema or
+shape from a parse error (a 400 leaking required fields / types). Input
+validation runs next, then the authorization phase (403). Both spines
+implement the same order; the Rust spine validates input handler-side, so the
+401 gate short-circuits before any shape is revealed. (Module detail:
+`http/CLAUDE.md` §Validation pipeline; `auth/CLAUDE.md` §Two-phase identity.)
 
 **Role-shaped cell grants validate against the registered role set.** A
 `cell_grant` can name either an actor (`{actor_id}`) or a role

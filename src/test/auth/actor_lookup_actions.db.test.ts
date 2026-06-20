@@ -136,6 +136,63 @@ describe_db('actor_lookup_actions', (get_db) => {
 		assert.ok(!('display_name' in entry), 'display_name key leaked into response');
 	});
 
+	test('lookup row exposes only id/username/display_name — no control-plane fields', async () => {
+		const db = get_db();
+		const test_app = await create_test_app({
+			session_options,
+			create_route_specs,
+			db,
+		});
+		const caller = await test_app.create_account({username: 'caller'});
+		const target = await test_app.create_account({username: 'target_fields'});
+		// Populate the control-plane fields on the underlying rows so the test
+		// proves the WIRE PROJECTION drops them — not that they happened to be
+		// null. `account_id` / `email` / timestamps / role state are deliberately
+		// omitted for control-plane separation + timing-oracle avoidance
+		// (auth/CLAUDE.md §Actor lookup / actor search; security.md §Authorization
+		// "Actor-search scope gate").
+		await db.query(`UPDATE account SET email = $1 WHERE id = $2`, [
+			'target_fields@example.com',
+			target.account.id,
+		]);
+
+		const res = await rpc_call_for_spec({
+			app: test_app.app,
+			path: RPC_PATH,
+			spec: actor_lookup_action_spec,
+			params: {ids: [target.actor.id]},
+			headers: caller.create_session_headers(),
+		});
+		assert.ok(res.ok, JSON.stringify(res));
+		assert.strictEqual(res.result.actors.length, 1);
+		const entry = res.result.actors[0]!;
+
+		// Allowlist: the wire row may carry ONLY these keys. A new field added to
+		// the projection trips this immediately rather than silently shipping.
+		const allowed = new Set(['id', 'username', 'display_name']);
+		for (const key of Object.keys(entry)) {
+			assert.ok(
+				allowed.has(key),
+				`unexpected key '${key}' in actor_lookup row — only id/username/display_name are wire-exposed`,
+			);
+		}
+		// Blocklist: name the specific control-plane / timing-oracle fields that
+		// must never appear, so a regression message points at the threat.
+		for (const forbidden of [
+			'account_id',
+			'email',
+			'email_verified',
+			'created_at',
+			'updated_at',
+			'deleted_at',
+			'role',
+			'role_grants',
+			'password_hash',
+		]) {
+			assert.ok(!(forbidden in entry), `${forbidden} leaked into the actor_lookup wire row`);
+		}
+	});
+
 	test('rejects ids:[] at the schema (min(1))', async () => {
 		const test_app = await create_test_app({
 			session_options,

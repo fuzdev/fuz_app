@@ -171,14 +171,26 @@ const assert_fields = (actual: unknown, fields: Record<string, unknown>, label: 
 const is_success_status = (status: number): boolean => status >= 200 && status < 300;
 
 /**
+ * The wire-distinguishing content a case observed — `{status, body}` where
+ * `body` is the success `result` or the error envelope (`{code, message,
+ * data?}` for RPC, the flat `{error, ...}` for REST). Equivalence groups
+ * compare this for byte-identity, so it is exactly what a prober sees.
+ */
+interface NormalizedResponse {
+	readonly status: number;
+	readonly body: unknown;
+}
+
+/**
  * Run one conformance case end-to-end: resolve the principal, dispatch the
- * request, and assert the expected status / reason / fields.
+ * request, and assert the expected status / reason / fields. Returns the
+ * normalized response so the caller can feed an equivalence group.
  */
 const run_case = async (
 	c: ConformanceCase,
 	options: ConformanceTableOptions,
 	resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup>,
-): Promise<void> => {
+): Promise<NormalizedResponse> => {
 	const fixture = await options.setup_test();
 	const {transport, headers, suppress_default_origin} = await resolve_principal(
 		fixture,
@@ -187,10 +199,9 @@ const run_case = async (
 	);
 
 	if (c.request.method.startsWith('/')) {
-		await run_rest_case(c, options, transport, headers);
-		return;
+		return run_rest_case(c, options, transport, headers);
 	}
-	await run_rpc_case(c, transport, headers, suppress_default_origin, resolved_rpc_endpoints);
+	return run_rpc_case(c, transport, headers, suppress_default_origin, resolved_rpc_endpoints);
 };
 
 /** Dispatch + assert a case targeting an RPC method. */
@@ -200,7 +211,7 @@ const run_rpc_case = async (
 	headers: Record<string, string>,
 	suppress_default_origin: boolean | undefined,
 	resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup>,
-): Promise<void> => {
+): Promise<NormalizedResponse> => {
 	const found = find_rpc_action(resolved_rpc_endpoints, c.request.method);
 	if (!found) {
 		throw new Error(
@@ -235,7 +246,7 @@ const run_rpc_case = async (
 			)}`,
 		);
 		if (c.expect.fields) assert_fields(res.result, c.expect.fields, c.name);
-		return;
+		return {status: res.status, body: res.result};
 	}
 
 	assert.ok(!res.ok, `${c.name}: expected error status ${c.expect.status} but got success`);
@@ -252,6 +263,7 @@ const run_rpc_case = async (
 		assert.strictEqual(reason, c.expect.error_reason, `${c.name}: error.data.reason`);
 	}
 	if (c.expect.fields) assert_fields(res.error.data, c.expect.fields, c.name);
+	return {status: res.status, body: res.error};
 };
 
 /** Dispatch + assert a case targeting one of the 6 REST auth routes. */
@@ -260,7 +272,7 @@ const run_rest_case = async (
 	options: ConformanceTableOptions,
 	transport: FetchTransport,
 	headers: Record<string, string>,
-): Promise<void> => {
+): Promise<NormalizedResponse> => {
 	const suffix = c.request.method as RestAuthRouteSuffix;
 	if (!rest_auth_route_suffixes.includes(suffix)) {
 		throw new Error(
@@ -297,6 +309,7 @@ const run_rest_case = async (
 		assert.strictEqual(error, c.expect.error_reason, `${c.name}: body.error`);
 	}
 	if (c.expect.fields) assert_fields(body, c.expect.fields, c.name);
+	return {status: response.status, body};
 };
 
 /**
@@ -310,15 +323,65 @@ export const describe_conformance_table_tests = (options: ConformanceTableOption
 		options.rpc_endpoints,
 		options.session_options,
 	);
+	// Per-group normalized responses, populated as the member case tests run
+	// and consulted by the per-group byte-identity assertions registered after
+	// the case loop — vitest runs a describe's tests in registration order, so
+	// the group assertions execute last, after every member has recorded.
+	const equivalence_groups = new Map<
+		string,
+		Array<{name: string; normalized: NormalizedResponse}>
+	>();
+	const group_names = new Set<string>();
+	for (const c of options.cases) {
+		if (c.expect.equivalence_group) group_names.add(c.expect.equivalence_group);
+	}
 	describe(options.suite_name ?? 'conformance table', () => {
 		for (const c of options.cases) {
 			const label = c.note ? `${c.name} — ${c.note}` : c.name;
-			const body = (): Promise<void> => run_case(c, options, resolved_rpc_endpoints);
+			const group = c.expect.equivalence_group;
+			const body = async (): Promise<void> => {
+				const normalized = await run_case(c, options, resolved_rpc_endpoints);
+				if (group) {
+					const members = equivalence_groups.get(group) ?? [];
+					members.push({name: c.name, normalized});
+					equivalence_groups.set(group, members);
+				}
+			};
 			if (c.xfail) {
 				xfail_until(c.xfail.tracking_id, c.xfail.reason, label, body);
 			} else {
 				test(label, body);
 			}
+		}
+		// Negative-space gate: every member of an equivalence group must have
+		// produced a byte-identical `{status, body}`. This holds the impl under
+		// test to "a prober cannot distinguish these masked paths" — the
+		// promotion of a masked pair (wrong-password ≡ account-not-found,
+		// found-but-unauthorized ≡ not-found) from "same status + reason" to
+		// "wire-indistinguishable". Runs per impl, so each spine is held to it.
+		for (const group of group_names) {
+			test(`equivalence group '${group}' — members are wire-indistinguishable`, () => {
+				const members = equivalence_groups.get(group) ?? [];
+				assert.ok(
+					members.length >= 2,
+					`equivalence group '${group}': expected >= 2 members to have recorded, got ` +
+						`${members.length} — a group pins indistinguishability between paths, so it ` +
+						`needs at least a pair (check the member cases ran and weren't all xfail).`,
+				);
+				const [first, ...rest] = members;
+				// `members.length >= 2` guarantees `first` is defined; the explicit
+				// assert narrows it for the typechecker (noUncheckedIndexedAccess).
+				assert.ok(first);
+				for (const member of rest) {
+					assert.deepStrictEqual(
+						member.normalized,
+						first.normalized,
+						`equivalence group '${group}': '${member.name}' is distinguishable from ` +
+							`'${first.name}' — a prober could tell these masked paths apart. The ` +
+							`normalized {status, body} must be byte-identical across all members.`,
+					);
+				}
+			});
 		}
 	});
 };

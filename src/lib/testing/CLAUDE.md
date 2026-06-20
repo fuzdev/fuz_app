@@ -966,7 +966,7 @@ wire-shape check passes green on even when behavior is wrong.
 
 - `conformance_case.ts` — `ConformanceCase` Zod schema:
   `{name, request: {method, params?, as, verb?}, expect: {status,
-error_reason?, fields?}, note?, xfail?}`. A case is **data** — `method`
+error_reason?, fields?, equivalence_group?}, note?, xfail?}`. A case is **data** — `method`
   resolves its `input`/`output` from the live registry (RPC) or `RouteSpec`
   (the 6 REST auth routes), so the case never carries a schema. `as` is the
   closed `ConformancePrincipal` enum (`keeper` / `daemon` / `token` /
@@ -978,7 +978,16 @@ error_reason?, fields?}, note?, xfail?}`. A case is **data** — `method`
   `error_reason` is the imported
   `ERROR_*` constant (asserted against the RPC `error.data.reason` or the
   REST flat-body `error`; the bare `unauthenticated()` 401 carries no
-  reason, so `status` pins that denial class).
+  reason, so `status` pins that denial class). `equivalence_group` is the
+  **negative-space** axis: every case tagged with the same group string must
+  produce a **byte-identical** normalized response (`{status, body}`),
+  asserted per impl after the case loop. It promotes a masked pair
+  (wrong-password ≡ account-not-found, found-but-unauthorized ≡ not-found)
+  from "same status + reason" to "wire-indistinguishable", so a prober
+  hitting either spine can't tell the members apart — the twin of the
+  positive `output`-schema parity the runner already enforces. The
+  per-case status/reason assertions stay the non-vacuous positive control
+  (a both-paths-identically-broken group still fails the per-case checks).
 - `conformance_table.ts` — `describe_conformance_table_tests({cases,
 setup_test, surface_source, capabilities, rpc_endpoints, session_options,
 principals?, suite_name?})`. Same `{setup_test, surface_source,

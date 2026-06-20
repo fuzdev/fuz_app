@@ -199,6 +199,54 @@ describe_db('actor_search_actions', (get_db) => {
 		assert.ok(!('display_name' in entry), 'display_name key leaked into response');
 	});
 
+	test('search row exposes only id/username/display_name — no control-plane fields', async () => {
+		const db = get_db();
+		const test_app = await create_test_app({session_options, create_route_specs, db});
+		const admin = await test_app.create_account({username: 'admin_fields', roles: [ROLE_ADMIN]});
+		const target = await test_app.create_account({username: 'searchtarget'});
+		// Populate the control-plane fields on the underlying rows so the test
+		// proves the WIRE PROJECTION drops them — not that they happened to be
+		// null. The search row omits `account_id` / `email` / timestamps / role
+		// state for the same reasons `actor_lookup` does (security.md
+		// §Authorization "Actor-search scope gate").
+		await db.query(`UPDATE account SET email = $1 WHERE id = $2`, [
+			'searchtarget@example.com',
+			target.account.id,
+		]);
+
+		const res = await rpc_call_for_spec({
+			app: test_app.app,
+			path: RPC_PATH,
+			spec: actor_search_action_spec,
+			params: {query: 'searchtarget'},
+			headers: admin.create_session_headers(),
+		});
+		assert.ok(res.ok, JSON.stringify(res));
+		const entry = res.result.actors.find((a) => a.id === target.actor.id);
+		assert.ok(entry, 'target not in result');
+
+		const allowed = new Set(['id', 'username', 'display_name']);
+		for (const key of Object.keys(entry)) {
+			assert.ok(
+				allowed.has(key),
+				`unexpected key '${key}' in actor_search row — only id/username/display_name are wire-exposed`,
+			);
+		}
+		for (const forbidden of [
+			'account_id',
+			'email',
+			'email_verified',
+			'created_at',
+			'updated_at',
+			'deleted_at',
+			'role',
+			'role_grants',
+			'password_hash',
+		]) {
+			assert.ok(!(forbidden in entry), `${forbidden} leaked into the actor_search wire row`);
+		}
+	});
+
 	test('rejects query: "" at the schema (min(1))', async () => {
 		const test_app = await create_test_app({session_options, create_route_specs, db: get_db()});
 		const caller = await test_app.create_account({username: 'caller2', roles: [ROLE_ADMIN]});

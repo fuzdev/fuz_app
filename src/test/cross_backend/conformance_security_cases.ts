@@ -157,16 +157,23 @@ const idor_and_enumeration_cases: ReadonlyArray<ConformanceCase> = [
 	},
 	{
 		// Login shadow: found-wrong-password and not-found converge on an
-		// identical {401, invalid_credentials}. Byte-identity + the timing
-		// floor stay TS-internal (architecture decision 8); these two rows
-		// pin the cross-process structural shadow.
+		// identical {401, invalid_credentials}. The `equivalence_group` lifts
+		// the byte-identity of the two bodies — previously a TS-internal
+		// regression (architecture decision 8) — into the cross-impl gate, so
+		// both spines are held to "wire-indistinguishable", not just "same
+		// status + reason". (The timing floor stays TS-internal — it is not a
+		// wire-observable property the runner can compare.)
 		name: 'login existing account wrong password → 401 invalid_credentials',
 		request: {
 			method: '/login',
 			as: 'anonymous',
 			params: {username: 'keeper', password: WRONG_PASSWORD},
 		},
-		expect: {status: 401, error_reason: ERROR_INVALID_CREDENTIALS},
+		expect: {
+			status: 401,
+			error_reason: ERROR_INVALID_CREDENTIALS,
+			equivalence_group: 'login_enumeration_shadow',
+		},
 		note: 'security.md §Account Enumeration Prevention — wrong-password and account-not-found return an identical 401 invalid_credentials shape',
 	},
 	{
@@ -176,7 +183,11 @@ const idor_and_enumeration_cases: ReadonlyArray<ConformanceCase> = [
 			as: 'anonymous',
 			params: {username: 'no_such_account_xyz', password: WRONG_PASSWORD},
 		},
-		expect: {status: 401, error_reason: ERROR_INVALID_CREDENTIALS},
+		expect: {
+			status: 401,
+			error_reason: ERROR_INVALID_CREDENTIALS,
+			equivalence_group: 'login_enumeration_shadow',
+		},
 		note: 'security.md §Account Enumeration Prevention — account-not-found is wire-indistinguishable from wrong-password',
 	},
 	{
@@ -192,7 +203,11 @@ const idor_and_enumeration_cases: ReadonlyArray<ConformanceCase> = [
 			as: 'anonymous',
 			params: {username: 'brand_new_account', password: DEFAULT_TEST_PASSWORD},
 		},
-		expect: {status: 403, error_reason: ERROR_NO_MATCHING_INVITE},
+		expect: {
+			status: 403,
+			error_reason: ERROR_NO_MATCHING_INVITE,
+			equivalence_group: 'signup_existence_mask',
+		},
 		note: 'security.md §Signup — account creation is invite-gated; a no-invite signup is refused before account creation proceeds',
 	},
 	{
@@ -202,18 +217,59 @@ const idor_and_enumeration_cases: ReadonlyArray<ConformanceCase> = [
 			as: 'anonymous',
 			params: {username: 'keeper', password: DEFAULT_TEST_PASSWORD},
 		},
-		expect: {status: 403, error_reason: ERROR_NO_MATCHING_INVITE},
+		expect: {
+			status: 403,
+			error_reason: ERROR_NO_MATCHING_INVITE,
+			equivalence_group: 'signup_existence_mask',
+		},
 		note: 'security.md §Signup + §Account Enumeration Prevention — the invite gate masks account existence: an existing username returns the same 403 as a free one',
+	},
+];
+
+// --- Batch 4: phase ordering (401 before 400) -------------------------
+// An unauthenticated caller sending MALFORMED input to an authed surface
+// must be refused at the auth phase (401) before input validation (400)
+// ever runs — otherwise a parse error leaks the route's input schema /
+// shape to an anonymous prober. Pins the dispatcher's 401 → 400 → 403 order
+// on both impls. The Rust dispatcher validates input handler-side today, so
+// these rows also guard that a future input-validation port can't reorder
+// ahead of the auth gate undetected (the malformed params would 400 first).
+
+const phase_order_cases: ReadonlyArray<ConformanceCase> = [
+	{
+		// `session_id` validates as a 64-hex Blake3Hash; a number is malformed
+		// and would 400 if validation ran before auth. As anonymous it must 401.
+		name: 'anonymous + malformed params → authed RPC method → 401 (not a 400 schema leak)',
+		request: {
+			method: 'account_session_revoke',
+			as: 'anonymous',
+			params: {session_id: 12345},
+		},
+		expect: {status: 401},
+		note: 'security.md §Authorization "Phase ordering hides route shape from unauthenticated callers" — the 401 → 400 → 403 dispatch order: pre-validation auth fires before input validation, so an unauthenticated caller never learns route shape from a parse failure',
+	},
+	{
+		// REST twin: `/password` is account + session gated; a malformed body
+		// from an anonymous caller must 401 at require_auth, not 400 at parse.
+		name: 'anonymous + malformed body → authed REST /password → 401 (not a 400 schema leak)',
+		request: {
+			method: '/password',
+			as: 'anonymous',
+			params: {current_password: 999, new_password: false},
+		},
+		expect: {status: 401},
+		note: 'security.md §Authorization "Phase ordering hides route shape from unauthenticated callers" — require_auth fires before body parsing, so an unauthenticated caller never sees route-shape information from input parse failures',
 	},
 ];
 
 /**
  * The full declarative security slate, ordered by blast radius
  * (credential ceiling → privilege gates → IDOR masks + enumeration
- * equivalence).
+ * equivalence → phase ordering).
  */
 export const conformance_security_cases: ReadonlyArray<ConformanceCase> = [
 	...credential_ceiling_cases,
 	...privilege_gate_cases,
 	...idor_and_enumeration_cases,
+	...phase_order_cases,
 ];

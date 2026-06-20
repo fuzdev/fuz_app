@@ -358,4 +358,109 @@ describe_db('cell_actions authz', (get_db) => {
 			assert.strictEqual(upd.result.cell.path, '/well-known/admin2');
 		});
 	});
+
+	describe('404-over-403 mask is byte-identical to a genuine miss', () => {
+		// The core "cannot be probed" property for the cell surface: a private
+		// cell the caller cannot view, a cell they can view but not edit, and a
+		// genuinely nonexistent id must all return the SAME 404 — not merely the
+		// same status + reason (which the blocks above pin), but a byte-identical
+		// error envelope `{status, error: {code, message, data}}`. Any
+		// distinguishing field (an id echo, a divergent message, an extra
+		// `data` key on one path) would let a prober confirm a private cell
+		// exists by id — exactly the leak the mask exists to close.
+		// security.md §Authorization "404-over-403 is the general mask".
+		const NONEXISTENT_ID = '00000000-0000-0000-0000-000000000000' as Uuid;
+		const mask = (r: Awaited<ReturnType<typeof call>>): {status: number; error: unknown} => {
+			assert.ok(!r.ok, `expected a denial response, got ${JSON.stringify(r)}`);
+			return {status: r.status, error: r.error};
+		};
+
+		test('cell_get: unviewable private cell ≡ nonexistent id', async () => {
+			const app = await create_cell_test_app(get_db);
+			const owner = await app.create_account({username: 'owner_mask_get'});
+			const stranger = await app.create_account({username: 'stranger_mask_get'});
+			const {id} = await create_cell(app, {
+				data: {kind: 'note'},
+				headers: owner.create_session_headers(),
+			});
+			// Same caller for both probes, so the only variable is the cell's
+			// existence/viewability — the response must not reflect it.
+			const unviewable = await call(
+				app,
+				cell_get_action_spec,
+				{id},
+				stranger.create_session_headers(),
+			);
+			const missing = await call(
+				app,
+				cell_get_action_spec,
+				{id: NONEXISTENT_ID},
+				stranger.create_session_headers(),
+			);
+			assert.strictEqual(unviewable.status, 404);
+			assert.deepStrictEqual(mask(unviewable), mask(missing));
+		});
+
+		test('cell_update: unviewable ≡ view-but-not-edit ≡ nonexistent id', async () => {
+			const app = await create_cell_test_app(get_db);
+			const owner = await app.create_account({username: 'owner_mask_upd'});
+			const stranger = await app.create_account({username: 'stranger_mask_upd'});
+			const viewer = await app.create_account({username: 'viewer_mask_upd'});
+			const {id} = await create_cell(app, {
+				data: {kind: 'note'},
+				headers: owner.create_session_headers(),
+			});
+			const g = await grant_actor(app, owner, id, 'viewer', viewer.actor.id);
+			assert.ok(g.ok, JSON.stringify(g));
+
+			const unviewable = await call(
+				app,
+				cell_update_action_spec,
+				{cell_id: id, data: {kind: 'note', label: 'x'}},
+				stranger.create_session_headers(),
+			);
+			// A viewer can SEE the cell but not edit it — the edit-deny path must
+			// also collapse to the not-found mask, or "I can see it but can't edit"
+			// becomes an existence oracle distinct from "no such cell".
+			const view_not_edit = await call(
+				app,
+				cell_update_action_spec,
+				{cell_id: id, data: {kind: 'note', label: 'x'}},
+				viewer.create_session_headers(),
+			);
+			const missing = await call(
+				app,
+				cell_update_action_spec,
+				{cell_id: NONEXISTENT_ID, data: {kind: 'note', label: 'x'}},
+				stranger.create_session_headers(),
+			);
+			assert.strictEqual(unviewable.status, 404);
+			assert.deepStrictEqual(mask(unviewable), mask(view_not_edit));
+			assert.deepStrictEqual(mask(unviewable), mask(missing));
+		});
+
+		test('cell_delete: unviewable private cell ≡ nonexistent id', async () => {
+			const app = await create_cell_test_app(get_db);
+			const owner = await app.create_account({username: 'owner_mask_del'});
+			const stranger = await app.create_account({username: 'stranger_mask_del'});
+			const {id} = await create_cell(app, {
+				data: {kind: 'note'},
+				headers: owner.create_session_headers(),
+			});
+			const unviewable = await call(
+				app,
+				cell_delete_action_spec,
+				{cell_id: id},
+				stranger.create_session_headers(),
+			);
+			const missing = await call(
+				app,
+				cell_delete_action_spec,
+				{cell_id: NONEXISTENT_ID},
+				stranger.create_session_headers(),
+			);
+			assert.strictEqual(unviewable.status, 404);
+			assert.deepStrictEqual(mask(unviewable), mask(missing));
+		});
+	});
 });
