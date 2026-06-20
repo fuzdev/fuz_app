@@ -1,5 +1,16 @@
 # @fuzdev/fuz_app
 
+## 0.94.0
+
+### Minor Changes
+
+- test: pin response-header no-fingerprint in the conformance gate ([30f1156](https://github.com/fuzdev/fuz_app/commit/30f1156))
+
+### Patch Changes
+
+- test: harden login timing tests ([fdd4c16](https://github.com/fuzdev/fuz_app/commit/fdd4c16))
+- test: pin twin-impl auth probing masks and add equivalent_group byte-identity gate ([c9875ba](https://github.com/fuzdev/fuz_app/commit/c9875ba))
+
 ## 0.93.0
 
 ### Minor Changes
