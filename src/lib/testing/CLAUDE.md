@@ -894,7 +894,10 @@ source of truth for wire-shape conformance.
 - `testing/cross_backend/capabilities.ts` — `BackendCapabilities` vocabulary
   (the **gating** flags `ws` / `sse` / `cell_crud` / `cell_relations` /
   `account_lifecycle` / `fact_serving` / `ready` / `account_status` /
-  `oversized_reject_closes_connection` — each has a `test_if` reader),
+  `oversized_reject_closes_connection` / `peer_request` — each has a `test_if`
+  reader; `peer_request` (server-initiated requests — the `ActionPeer`
+  `peer/ping` round-trip) is `true` only for the Rust spine and `false` for the
+  TS family, whose server request transport is deferred),
   `test_if(cond, name, fn)`
   for capability-gated cases, and `in_process_capabilities` preset. The
   non-gating wiring facts (`bearer_auth` / `trusted_proxy` / `login_rate_limit`,
@@ -1076,6 +1079,30 @@ where one exists (forge) and be offered the role; harmless on the auth-only
 spine. Gated on `capabilities.ws`; cross-process only. fuz_app's own wiring is
 `src/test/cross_backend/role_grant_offer_notification_ws.cross.test.ts`.
 
+### `cross_backend/peer_ping_ws.ts` — `describe_peer_ping_ws_tests`
+
+The server→client **request/response** sibling of the notification suite above —
+the machinery proof for `ActionPeer`. `peer/ping` is `initiator: both`; the
+client→server direction already exists as `heartbeat`, this exercises the new
+server→client one. The observable trigger is a client invoking the `peer/ping`
+**action** over its own socket: the handler initiates a `peer/ping` request back
+to that socket (`ctx.request_client`), awaits the client's echo, validates it
+against `PingResponse`, and returns the validated shape — so one client RPC
+drives the whole round-trip and every outcome (success / `Timeout` / wrong-shape
+/ client-error) surfaces as that RPC's wire response. The client attaches an
+`on_request` responder **at construction** (the `create_ws_transport` seam) so
+the inbound server-initiated request is answered as soon as it arrives; the
+security negatives use the raw `WsClient.send` to inject unsolicited /
+cross-connection frames. Seven cases: the positive round-trip plus
+unsolicited-response rejection, per-connection id isolation, never-reply
+`Timeout`, wrong-shape rejection, client-error forwarding, and the HTTP
+no-transport path. Gated on `capabilities.peer_request` — `true` only on the
+Rust spine (server-initiated requests are Rust-first canonical), so it `.skip`s
+on the TS spines whose server request transport is the deferred convergence
+item; `peer/ping` is a protocol action (manifest-excluded), so parity is
+behavioral here, not via the manifest gate. Cross-process only; fuz_app's own
+wiring is `src/test/cross_backend/peer_ping_ws.cross.test.ts`.
+
 ### `cross_backend/sse_round_trip.ts` — `describe_cross_process_sse_tests`
 
 Cross-process counterpart to the in-process `sse_round_trip.ts` harness —
@@ -1177,12 +1204,19 @@ in-process legs (plain `gro test`) are `src/test/auth/cell_crud_parity.db.test.t
   wire-frame types, and
   predicates (`is_notification`, `is_response_for`, ...). Both in-process
   (`ws_round_trip.ts`) and cross-process (`ws_transport.ts`) impls satisfy
-  this interface.
-- `testing/transports/ws_transport.ts` — `create_ws_transport({base_url, ws_path, cookies, origin?})`
+  this interface. Also owns `deliver_inbound` — the shared
+  parse→(respond|push)→resolve receive core both impls call (so the responder
+  branch is written once) — plus the `WsRequestResponder` / `WsResponderOutcome`
+  types for the **`on_request`** seam: a responder answers a server-initiated
+  request (`{result}` / `{error}` / `undefined` to swallow), the path
+  `describe_peer_ping_ws_tests` drives. With no `on_request` the seam is inert
+  (a server-initiated request flows to `messages` as before).
+- `testing/transports/ws_transport.ts` — `create_ws_transport({base_url, ws_path, cookies, origin?, on_request?})`
   builds a real-upgrade WS client using the `ws` npm package (optional
   peerDep; consumers wiring cross-process tests `npm install --save-dev ws`).
   Threads the keeper cookie onto the upgrade so per-action auth succeeds on
-  the first message.
+  the first message. `on_request` (attached at construction, before the upgrade
+  completes) answers server-initiated requests via the shared `deliver_inbound`.
 - `testing/transports/sse_frame_reader.ts` — `create_sse_frame_reader(reader, default_timeout_ms?)`,
   the transport-agnostic SSE framing core over a
   `ReadableStreamDefaultReader<Uint8Array>`: `\n\n` framing, per-read timeout,

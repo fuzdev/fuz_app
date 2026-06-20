@@ -71,10 +71,13 @@ import {create_jsonrpc_request} from '../http/jsonrpc_helpers.ts';
 import {create_test_account, create_test_actor, create_test_role_grant} from './entities.ts';
 import {
 	WS_CLIENT_DEFAULT_TIMEOUT_MS,
+	deliver_inbound,
 	is_response_for,
 	type JsonrpcErrorResponseFrame,
 	type JsonrpcSuccessResponseFrame,
 	type WsClient,
+	type WsRequestResponder,
+	type WsWaiter,
 } from './transports/ws_client.ts';
 
 // ---------------------------------------------------------------------
@@ -246,6 +249,16 @@ export interface CreateWsTestHarnessOptions {
 	on_socket_open?: RegisterActionWsOptions['on_socket_open'];
 	/** Threaded straight through to `register_action_ws`. */
 	on_socket_close?: RegisterActionWsOptions['on_socket_close'];
+	/**
+	 * Optional responder for **server-initiated** requests, applied to every
+	 * `connect()`. Purely additive (and unexercised until the TS server
+	 * transport gains server-initiated requests — the deferred
+	 * `BackendWebsocketTransport.send()` convergence): with it set, an
+	 * inbound server→client request is answered rather than surfaced as a
+	 * message; without it, behavior is unchanged. Mirrors the cross-process
+	 * `create_ws_transport` seam so suite bodies share one shape.
+	 */
+	on_request?: WsRequestResponder;
 }
 
 /** A harness instance — transport handle + connection factory. */
@@ -345,6 +358,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		log = new Logger('[ws-test]', {level: 'off'}),
 		on_socket_open,
 		on_socket_close,
+		on_request,
 	} = options;
 
 	const stub = create_stub_upgrade();
@@ -394,10 +408,13 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		} as unknown as Context;
 
 		const received: Array<unknown> = [];
-		const waiters: Array<{
-			predicate: (msg: unknown) => boolean;
-			resolve: (msg: unknown) => void;
-		}> = [];
+		const waiters: Array<WsWaiter> = [];
+		// Reply path for a server-initiated request — assigned to the
+		// client→server send below once `send_impl` exists. A `let` (not a
+		// direct `send_impl` reference) keeps the `WSContext.send` closure
+		// TDZ-safe; it stays a no-op until a responder + server-initiated
+		// request are both in play (deferred for the in-process TS server).
+		let reply_to_server: (message: unknown) => void = () => {};
 		// Resolvers awaiting a server-initiated close — fired by the
 		// `WSContext.close` callback below so `wait_for_close` resolves
 		// whether the dispatcher (e.g. an auth-guard revocation) or the
@@ -416,14 +433,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 			send: (data) => {
 				if (is_closed) return;
 				const parsed: unknown = typeof data === 'string' ? JSON.parse(data) : data;
-				received.push(parsed);
-				for (let i = waiters.length - 1; i >= 0; i--) {
-					const waiter = waiters[i]!;
-					if (waiter.predicate(parsed)) {
-						waiter.resolve(parsed);
-						waiters.splice(i, 1);
-					}
-				}
+				deliver_inbound(parsed, received, waiters, on_request, reply_to_server);
 			},
 			close: (code, reason) => {
 				if (is_closed) return;
@@ -490,6 +500,12 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 			// tests await the full dispatch (auth, validation,
 			// handler, send).
 			await (events.onMessage?.(message_event, ws) as Promise<void> | void);
+		};
+
+		// A responder's reply to a server-initiated request goes back to the
+		// server over the same client→server path as any other send.
+		reply_to_server = (message) => {
+			void send_impl(message);
 		};
 
 		return {

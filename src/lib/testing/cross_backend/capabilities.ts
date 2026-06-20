@@ -179,13 +179,34 @@ export interface BackendCapabilities {
 	 * smuggle detector. See `docs/security.md` §"Body Size Limiting".
 	 */
 	readonly oversized_reject_closes_connection: boolean;
+	/**
+	 * The backend can **initiate** a JSON-RPC request to a connected client
+	 * and await its typed reply (the server→client request/response direction
+	 * `ActionPeer` adds). Gates `describe_peer_ping_ws_tests` — the on-demand
+	 * `peer/ping` round-trip plus its security negatives (unsolicited-response
+	 * rejection, per-connection id isolation, never-replying `Timeout`,
+	 * wrong-shape reply rejection).
+	 *
+	 * `true` for the Rust spine (server-initiated requests landed Rust-first
+	 * canonical); `false` for the TS family — the TS server
+	 * `BackendWebsocketTransport.send()` request path is the deferred
+	 * twin-impl convergence item, so a TS backend can't yet drive the
+	 * round-trip. Like ws/sse/cells, `peer/ping` stays off the standard
+	 * declared surface (it's a protocol action, manifest-excluded), so this
+	 * flag is the only opt-in into the peer parity coverage.
+	 */
+	readonly peer_request: boolean;
 }
 
 /**
- * Capability declarations for the in-process Hono transport. Every flag
- * is `true` because in-process testing exercises the full backend with
- * no missing optional behaviors. Cross-process consumers
- * declare each flag explicitly per backend.
+ * Capability declarations for the in-process Hono transport. Nearly every
+ * flag is `true` because in-process testing exercises the full backend
+ * with no missing optional behaviors. The one exception is `peer_request`:
+ * the in-process driver runs the **TS** server (`register_action_ws`),
+ * whose server-initiated request transport is deferred, so it can't drive
+ * a `peer/ping` round-trip — and `describe_peer_ping_ws_tests` is
+ * cross-process-only regardless. Cross-process consumers declare each flag
+ * explicitly per backend.
  */
 export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	ws: true,
@@ -197,6 +218,7 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	ready: true,
 	account_status: true,
 	oversized_reject_closes_connection: true,
+	peer_request: false,
 });
 
 /**

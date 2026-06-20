@@ -79,6 +79,10 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	// posture). A Bun-served consumer overrides to `false` (see the bun spine
 	// config) — fail-loud rather than silently skipping the smuggle detector.
 	oversized_reject_closes_connection: true,
+	// The TS server can't yet initiate server→client requests (the
+	// `BackendWebsocketTransport.send()` request path is the deferred
+	// twin-impl convergence), so the TS family skips the peer/ping suite.
+	peer_request: false,
 });
 
 /**
@@ -102,6 +106,9 @@ export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 	// hyper sends an RST on the oversized-body reject — the connection closes
 	// and the pipelined request is never reached.
 	oversized_reject_closes_connection: true,
+	// Server-initiated requests landed Rust-first canonical — the Rust spine
+	// drives the `peer/ping` round-trip, so the family opts into the suite.
+	peer_request: true,
 });
 
 /**

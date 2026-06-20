@@ -21,11 +21,14 @@ import '../assert_dev_env.ts';
  */
 
 import {
+	create_jsonrpc_error_response,
+	create_jsonrpc_response,
 	is_jsonrpc_error_response,
 	is_jsonrpc_notification,
+	is_jsonrpc_request,
 	is_jsonrpc_response,
 } from '../../http/jsonrpc_helpers.ts';
-import {JSONRPC_VERSION} from '../../http/jsonrpc.ts';
+import {JSONRPC_VERSION, type JsonrpcRequest} from '../../http/jsonrpc.ts';
 
 // ---------------------------------------------------------------------
 // Wire-frame types — describe a parsed wire message as observed on the
@@ -94,6 +97,99 @@ export const is_response_for =
 	(id: number | string) =>
 	(msg: unknown): boolean =>
 		(is_jsonrpc_response(msg) || is_jsonrpc_error_response(msg)) && msg.id === id;
+
+// ---------------------------------------------------------------------
+// Inbound dispatch — the shared receive-and-classify core both the
+// in-process harness and the cross-process transport call, so the
+// `on_request` responder branch is written once, not twice.
+// ---------------------------------------------------------------------
+
+/** A pending `wait_for` entry — predicate + its resolver. */
+export interface WsWaiter {
+	predicate: (msg: unknown) => boolean;
+	resolve: (msg: unknown) => void;
+}
+
+/**
+ * What a `WsRequestResponder` returns for a server-initiated
+ * request:
+ * - `{result}` → reply with a JSON-RPC success
+ * - `{error}` → reply with a JSON-RPC error envelope
+ * - `undefined` → send nothing (models a never-replying peer — exercises
+ *   the server-side `Timeout`)
+ */
+export type WsResponderOutcome =
+	| {result: unknown}
+	| {error: JsonrpcErrorResponseFrame['error']}
+	| undefined;
+
+/**
+ * Answers a **server-initiated** request (the server→client direction
+ * `ActionPeer` adds). Passed at client construction so it's attached
+ * before the upgrade completes — otherwise it races a connect-time ping.
+ * Receives the parsed request frame and returns the reply outcome (or a
+ * promise of it).
+ */
+export type WsRequestResponder = (
+	request: JsonrpcRequest,
+) => WsResponderOutcome | Promise<WsResponderOutcome>;
+
+/**
+ * Deliver one parsed inbound frame to a client's receive sink — the
+ * shared parse→(respond|push)→resolve core.
+ *
+ * A server-initiated **request** (`{method, id}`) is answered by
+ * `on_request` when supplied (replying via `reply`) and is **not**
+ * surfaced as a normal message; everything else — notifications, replies
+ * to the client's own requests, and non-JSON frames — is pushed onto
+ * `received` and resolves any matching `waiters`, exactly as before. With
+ * no `on_request`, every frame (including a server-initiated request)
+ * flows to the sink unchanged, so the seam is purely additive.
+ */
+export const deliver_inbound = (
+	parsed: unknown,
+	received: Array<unknown>,
+	waiters: Array<WsWaiter>,
+	on_request: WsRequestResponder | undefined,
+	reply: (message: unknown) => void,
+): void => {
+	if (on_request && is_jsonrpc_request(parsed)) {
+		void answer_request(parsed, on_request, reply);
+		return;
+	}
+	received.push(parsed);
+	for (let i = waiters.length - 1; i >= 0; i--) {
+		const waiter = waiters[i]!;
+		if (waiter.predicate(parsed)) {
+			waiter.resolve(parsed);
+			waiters.splice(i, 1);
+		}
+	}
+};
+
+const answer_request = async (
+	request: JsonrpcRequest,
+	on_request: WsRequestResponder,
+	reply: (message: unknown) => void,
+): Promise<void> => {
+	let outcome: WsResponderOutcome;
+	try {
+		outcome = await on_request(request);
+	} catch {
+		// A throwing responder models a peer that fails to answer — swallow so
+		// the test client surfaces no unhandled rejection; the server then sees
+		// a never-reply (→ `Timeout`).
+		return;
+	}
+	if (outcome === undefined) return; // swallow — never-replying peer
+	reply(
+		'error' in outcome
+			? // Test wire-frames keep `code` a plain `number` (not the branded
+				// Zod `JsonrpcServerErrorCode`), so cast at the builder boundary.
+				create_jsonrpc_error_response(request.id, outcome.error as never)
+			: create_jsonrpc_response(request.id, outcome.result as never),
+	);
+};
 
 // ---------------------------------------------------------------------
 // WsClient — the test-driver surface every impl implements.

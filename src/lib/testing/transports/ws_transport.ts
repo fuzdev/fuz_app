@@ -23,10 +23,13 @@ import {WebSocket, type RawData} from 'ws';
 
 import {
 	WS_CLIENT_DEFAULT_TIMEOUT_MS,
+	deliver_inbound,
 	is_response_for,
 	type JsonrpcErrorResponseFrame,
 	type JsonrpcSuccessResponseFrame,
 	type WsClient,
+	type WsRequestResponder,
+	type WsWaiter,
 } from './ws_client.ts';
 import {create_jsonrpc_request} from '../../http/jsonrpc_helpers.ts';
 
@@ -55,6 +58,15 @@ export interface WsTransportOptions {
 	 * `WS_CLIENT_DEFAULT_TIMEOUT_MS` if omitted.
 	 */
 	readonly default_timeout_ms?: number;
+	/**
+	 * Optional responder for **server-initiated** requests (the
+	 * server→client direction `ActionPeer` adds). Attached before the
+	 * upgrade so a connect-time or on-demand `peer/ping` is answered as
+	 * soon as it arrives. Omit for the default observe-only client — a
+	 * server-initiated request is then surfaced as a normal message (today's
+	 * behavior).
+	 */
+	readonly on_request?: WsRequestResponder;
 }
 
 /**
@@ -71,7 +83,7 @@ export interface WsTransportOptions {
  *   cause rather than hanging.
  */
 export const create_ws_transport = async (options: WsTransportOptions): Promise<WsClient> => {
-	const {base_url, ws_path, cookies, origin, default_timeout_ms} = options;
+	const {base_url, ws_path, cookies, origin, default_timeout_ms, on_request} = options;
 	const default_timeout = default_timeout_ms ?? WS_CLIENT_DEFAULT_TIMEOUT_MS;
 
 	const ws_url = `${base_url.replace(/^http/i, 'ws')}${ws_path}`;
@@ -84,10 +96,7 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 	});
 
 	const received: Array<unknown> = [];
-	const waiters: Array<{
-		predicate: (msg: unknown) => boolean;
-		resolve: (msg: unknown) => void;
-	}> = [];
+	const waiters: Array<WsWaiter> = [];
 	let close_resolvers: Array<() => void> = [];
 	let close_error: Error | null = null;
 
@@ -106,14 +115,9 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 			// it still see the payload.
 			parsed = text;
 		}
-		received.push(parsed);
-		for (let i = waiters.length - 1; i >= 0; i--) {
-			const waiter = waiters[i]!;
-			if (waiter.predicate(parsed)) {
-				waiter.resolve(parsed);
-				waiters.splice(i, 1);
-			}
-		}
+		deliver_inbound(parsed, received, waiters, on_request, (message) => {
+			if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+		});
 	});
 
 	socket.on('close', () => {
