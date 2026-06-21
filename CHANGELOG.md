@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.97.0
+
+### Minor Changes
+
+- fix: daemon-token middleware soft-fails on browser-context/invalid/no-keeper ([d1f0ad7](https://github.com/fuzdev/fuz_app/commit/d1f0ad7))
+
 ## 0.96.0
 
 ### Minor Changes
