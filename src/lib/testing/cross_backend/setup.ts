@@ -289,6 +289,11 @@ export interface RpcPathCrossSuiteOptions extends CrossSuiteOptions {
  * const bootstrapped: BootstrappedBackendHandle = {
  *   ...handle,
  *   keeper_transport,
+ *   keeper_daemon_transport: create_fetch_transport({
+ *     base_url: config.base_url,
+ *     initial_cookies: keeper.cookies,
+ *     origin: null,
+ *   }),
  *   keeper_account: keeper.account,
  *   keeper_actor: keeper.actor,
  *   keeper_cookies: keeper.cookies,
@@ -304,6 +309,18 @@ export interface RpcPathCrossSuiteOptions extends CrossSuiteOptions {
 export interface BootstrappedBackendHandle extends BackendHandle {
 	/** Transport carrying the keeper session cookie + cookie jar. */
 	readonly keeper_transport: FetchTransport;
+	/**
+	 * Daemon-token transport for the keeper — same cookie jar as
+	 * `keeper_transport` but with `origin: null` so it sends no `Origin`
+	 * header. The daemon-token middleware discards the credential in a
+	 * browser context (any `Origin` / `Referer`), so the `_testing_*`
+	 * daemon-token calls (`_testing_reset` / `_testing_schema_snapshot` /
+	 * `_testing_action_manifest` / `_testing_mint_session`) must route
+	 * through this Origin-free transport. CSRF/cookie-session calls
+	 * (`invite_create`, `role_grant_offer_create`) stay on `keeper_transport`,
+	 * which keeps its default `Origin`.
+	 */
+	readonly keeper_daemon_transport: FetchTransport;
 	/** Keeper account JSON captured from `POST /bootstrap`. */
 	readonly keeper_account: {readonly id: Uuid; readonly username: string};
 	/** Keeper actor JSON captured from `POST /bootstrap`. */
@@ -380,6 +397,15 @@ export const reconstruct_bootstrapped_handle = (
 	keeper_transport: create_fetch_transport({
 		base_url: serialized.config.base_url,
 		initial_cookies: serialized.keeper_cookies,
+	}),
+	// Same cookie jar but Origin-free so the daemon-token middleware doesn't
+	// discard the credential as browser-context — used by the `_testing_*`
+	// daemon-token calls (`_testing_reset` / `_testing_schema_snapshot` /
+	// `_testing_action_manifest` / `_testing_mint_session`).
+	keeper_daemon_transport: create_fetch_transport({
+		base_url: serialized.config.base_url,
+		initial_cookies: serialized.keeper_cookies,
+		origin: null,
 	}),
 });
 
@@ -523,7 +549,7 @@ export const capture_schema_snapshot = async (
 	options: {exclude_tables?: ReadonlyArray<string>} = {},
 ): Promise<SchemaSnapshot> => {
 	const raw = await rpc_via_transport(
-		handle.keeper_transport,
+		handle.keeper_daemon_transport,
 		handle.config.rpc_path,
 		'_testing_schema_snapshot',
 		{exclude_tables: [...(options.exclude_tables ?? [])]},
@@ -551,7 +577,7 @@ export const capture_action_manifest = async (
 	handle: ReconstructedBootstrappedBackendHandle,
 ): Promise<ActionManifest> => {
 	const raw = await rpc_via_transport(
-		handle.keeper_transport,
+		handle.keeper_daemon_transport,
 		handle.config.rpc_path,
 		'_testing_action_manifest',
 		{},
@@ -617,7 +643,7 @@ const fire_testing_reset = async (
 	extra_actors: ReadonlyArray<{id: Uuid; name: string}>;
 }> => {
 	const raw = await rpc_via_transport(
-		handle.keeper_transport,
+		handle.keeper_daemon_transport,
 		handle.config.rpc_path,
 		'_testing_reset',
 		{
@@ -870,6 +896,23 @@ const create_keeper_transport = (
 	});
 
 /**
+ * Origin-free twin of `create_keeper_transport` — same fresh keeper cookie
+ * jar but `origin: null` so the daemon-token middleware doesn't discard the
+ * credential as browser-context. Used for the per-test `_testing_*`
+ * daemon-token calls (the rebuilt handle's `keeper_daemon_transport`).
+ */
+const create_keeper_daemon_transport = (
+	handle: ReconstructedBootstrappedBackendHandle,
+	cookie_name: string,
+	session_cookie: string,
+): FetchTransport =>
+	create_fetch_transport({
+		base_url: handle.config.base_url,
+		initial_cookies: [`${cookie_name}=${session_cookie}`],
+		origin: null,
+	});
+
+/**
  * Build a `SetupTest` against a spawned + bootstrapped backend.
  *
  * Per-test body (unconditional reset — fresh keeper every test):
@@ -918,9 +961,18 @@ export const default_cross_process_setup = (
 		// `session_cookie` for any keeper-acting calls this test makes
 		// (e.g. `fixture.create_account()`'s `invite_create` step).
 		const keeper_transport = create_keeper_transport(handle, cookie_name, keeper.session_cookie);
+		// Origin-free twin for the per-test daemon-token calls — the original
+		// `handle.keeper_daemon_transport` carries the wiped `globalSetup` keeper
+		// cookie, so rebuild it against the freshly re-seeded keeper.
+		const keeper_daemon_transport = create_keeper_daemon_transport(
+			handle,
+			cookie_name,
+			keeper.session_cookie,
+		);
 		const refreshed_handle: ReconstructedBootstrappedBackendHandle = {
 			...handle,
 			keeper_transport,
+			keeper_daemon_transport,
 			keeper_account: keeper.account,
 			keeper_actor: keeper.actor,
 			keeper_cookies: [`${cookie_name}=${keeper.session_cookie}`],
@@ -1010,7 +1062,7 @@ export const default_cross_process_setup = (
 			// cookie server-side over the keeper's daemon-token channel.
 			mint_expired_session: async () => {
 				const raw = await rpc_via_transport(
-					refreshed_handle.keeper_transport,
+					refreshed_handle.keeper_daemon_transport,
 					handle.config.rpc_path,
 					'_testing_mint_session',
 					{account_id: keeper.account.id, expires_in_seconds: EXPIRED_SESSION_OFFSET_SECONDS},

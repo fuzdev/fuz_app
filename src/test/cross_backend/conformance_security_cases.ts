@@ -42,6 +42,14 @@ const WRONG_PASSWORD = 'wrong-password-not-the-real-one';
 // The keeper credential ceiling: a session / api_token credential, even
 // with the keeper role, must NOT reach a keeper-gated route — the
 // credential gate fires before the role gate.
+//
+// The four `account_purge` rejection modes — session, api_token, a discarded
+// invalid daemon token, and a discarded browser-context daemon token — share
+// the `account_purge_credential_ceiling` equivalence group: the runner asserts
+// all four produce a BYTE-IDENTICAL 403 on each spine, so no wrong-credential
+// path is a fingerprinting oracle for which credential was sent. The `daemon`
+// positive control (no Origin → token honored → 400 confirm guard) is the
+// non-vacuous control standing apart from the group.
 
 const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 	{
@@ -51,6 +59,7 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 			status: 403,
 			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
 			fields: {required_credential_types: ['daemon_token']},
+			equivalence_group: 'account_purge_credential_ceiling',
 		},
 		note: 'security.md §Credential Type Hierarchy — a session cookie with a keeper role_grant cannot exercise keeper routes; only a daemon token can',
 	},
@@ -61,6 +70,7 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 			status: 403,
 			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
 			fields: {required_credential_types: ['daemon_token']},
+			equivalence_group: 'account_purge_credential_ceiling',
 		},
 		note: 'security.md §Credential Type Hierarchy — api_token tops out at admin; keeper requires the daemon-token channel',
 	},
@@ -76,6 +86,56 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 		},
 		expect: {status: 400, error_reason: ERROR_PURGE_NOT_CONFIRMED},
 		note: 'security.md §Credential Type Hierarchy — daemon token reaches keeper operations; the 400 confirm guard proves it passed the 403 gates',
+	},
+	{
+		// Regression: an INVALID/malformed daemon token (no Origin) carried with
+		// the keeper's session cookie at a daemon-gated action must soft-fail-
+		// discard the daemon token and surface the identical 403
+		// credential_type_required on both spines. TS once hard-failed the invalid
+		// daemon token with a 401 invalid_daemon_token while the Rust spine
+		// returned `None` → fell through to the session leg → 403; this row pins
+		// the converged behavior so the divergence can't return undetected. The
+		// `invalid_daemon` principal threads the session cookie so the refusing
+		// layer is the credential-type gate (403), not the auth gate (401).
+		name: 'invalid daemon token (+ session) → account_purge → 403 credential_type_required (soft-fail discard, not 401)',
+		request: {
+			method: 'account_purge',
+			as: 'invalid_daemon',
+			params: {account_id: NIL_UUID, confirm: true},
+		},
+		expect: {
+			status: 403,
+			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
+			fields: {required_credential_types: ['daemon_token']},
+			equivalence_group: 'account_purge_credential_ceiling',
+		},
+		note: 'security.md §Credential Type Hierarchy — an invalid daemon token is discarded; auth falls through to the session, which a keeper-gated action refuses with credential_type_required, never a hard invalid-token 401 that would diverge from the Rust spine',
+	},
+	{
+		// Regression: a VALID daemon token carried in a browser context (Origin
+		// present) at a daemon-gated action must be DISCARDED (not honored) on
+		// both spines — the daemon-token middleware drops a header-bearing token
+		// as browser context, mirroring the bearer guard and the Rust spine's
+		// `is_browser_context`. The keeper session cookie rides alongside so auth
+		// falls through to the session leg → 403 credential_type_required. The
+		// contrast with the `daemon` positive control above (no Origin → token
+		// honored → 400 confirm guard) is the proof: the only difference is the
+		// Origin header, so a 403 here (vs 400 there) pins that a valid daemon
+		// token does NOT authenticate from a browser context. Without the discard
+		// the token would clear the credential gate and the spines could diverge.
+		name: 'valid daemon token + Origin (+ session) → account_purge → 403 credential_type_required (browser-context discard, not honored)',
+		request: {
+			method: 'account_purge',
+			as: 'daemon_browser',
+			params: {account_id: NIL_UUID, confirm: true},
+		},
+		expect: {
+			status: 403,
+			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
+			fields: {required_credential_types: ['daemon_token']},
+			equivalence_group: 'account_purge_credential_ceiling',
+		},
+		note: 'security.md §Credential Type Hierarchy + §Browser/CLI split — a daemon token is loopback-only and never legitimately carries an Origin, so a header-bearing one is discarded as browser context; auth falls through to the session, which the keeper-gated action refuses with credential_type_required (the valid token is dropped, not honored — the same guard the bearer leg carries, on both spines)',
 	},
 	{
 		name: 'daemon token → account_token_create → 403 credential_type_required',
@@ -106,6 +166,28 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 			fields: {required_credential_types: ['session']},
 		},
 		note: 'security.md §Credential-channel gating on credential-minting actions — logout is a session-bound operation; a bearer holds no session to end, so it is refused rather than returning a misleading 200 + a phantom logout audit row (gated for forensic fidelity, not lockout)',
+	},
+	// Browser/CLI split (anti-replay): a VALID bearer token replayed from a
+	// browser context (Origin present) must be discarded, so an authed action
+	// sees no credential and 401s — wire-INDISTINGUISHABLE from sending nothing.
+	// The `browser_bearer_replay` equivalence group pins that byte-identity on
+	// each spine: `bearer_browser` (token discarded) and `anonymous` (no token)
+	// produce the same 401. The `token` principal elsewhere is the honored
+	// counterpart (no Origin → same token authenticates), so a 401 here proves
+	// the discard fired rather than the token being invalid. account_verify is
+	// the minimal account-required read; it returns 200 to an honored bearer, so
+	// the 401 is discriminating.
+	{
+		name: 'bearer token + Origin → account_verify → 401 (browser-context discard, no replay)',
+		request: {method: 'account_verify', as: 'bearer_browser'},
+		expect: {status: 401, equivalence_group: 'browser_bearer_replay'},
+		note: 'security.md §Browser/CLI split — a stolen API token cannot be replayed from a browser context; the bearer is discarded when Origin/Referer is present, so the request is wire-indistinguishable from anonymous',
+	},
+	{
+		name: 'anonymous → account_verify → 401 (browser-replayed bearer equivalence baseline)',
+		request: {method: 'account_verify', as: 'anonymous'},
+		expect: {status: 401, equivalence_group: 'browser_bearer_replay'},
+		note: 'security.md §Browser/CLI split — the no-credential baseline a browser-replayed bearer must be byte-identical to (the equivalence group asserts both 401s match)',
 	},
 ];
 

@@ -157,7 +157,7 @@ Everything else listed under §RPC action surfaces.
 - `auth/request_context.ts` — `RequestContext`, `resolve_acting_actor`, `build_request_context`, predicates (`has_role`, `has_scoped_role`, `has_any_scoped_role`), guards (`require_auth`, `require_role`, `require_credential_types`), `refresh_role_grants`.
 - `auth/session_middleware.ts` — `process_session_cookie` integration, `create_session_and_set_cookie` (shared by login / signup / bootstrap).
 - `auth/bearer_auth.ts` — soft-fail bearer middleware; rejects when `Origin` or `Referer` present (browser context).
-- `auth/daemon_token_middleware.ts` — `start_daemon_token_rotation` + `create_daemon_token_middleware` (atomic file write, fail-closed validation, keeper account resolution).
+- `auth/daemon_token_middleware.ts` — `start_daemon_token_rotation` + `create_daemon_token_middleware(state, deps, log)` (atomic file write, soft-fail validation, keeper account resolution). Soft-fails — discards the credential (pass-through, no own 401/503) on **every** non-success path: browser context (`Origin`/`Referer` present), malformed/invalid token, and valid-token-but-no-keeper all `next()` through to the dispatcher's `credential_type_required` (403) gate, mirroring the bearer guard and the Rust spine's `resolve.rs`. Daemon tokens are loopback-only, so browser context never arises in practice — the discard is defense-in-depth.
 
 See root ../../../CLAUDE.md §Middleware Ordering for canonical assembly
 order. The auth-specific invariants are described below in §Cross-cutting

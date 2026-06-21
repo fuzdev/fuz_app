@@ -2,6 +2,7 @@ import {describe, test, assert, vi} from 'vitest';
 import type {Handler} from 'hono';
 
 import {
+	is_browser_context,
 	parse_allowed_origins,
 	should_allow_origin,
 	verify_request_source,
@@ -995,5 +996,37 @@ describe('IPv4-mapped IPv6 origin normalization', () => {
 			false,
 			'raw dotted form does not match because the regex is built from the URL-normalized hex hostname',
 		);
+	});
+});
+
+describe('is_browser_context', () => {
+	test('no Origin/Referer → not browser context', () => {
+		const {c} = create_mock_context();
+		assert.strictEqual(is_browser_context(c as any), false);
+	});
+
+	test('Origin present → browser context', () => {
+		const {c} = create_mock_context({Origin: 'https://app.example'});
+		assert.strictEqual(is_browser_context(c as any), true);
+	});
+
+	test('Referer present → browser context', () => {
+		const {c} = create_mock_context({Referer: 'https://app.example/page'});
+		assert.strictEqual(is_browser_context(c as any), true);
+	});
+
+	test('both present → browser context', () => {
+		const {c} = create_mock_context({
+			Origin: 'https://app.example',
+			Referer: 'https://app.example/page',
+		});
+		assert.strictEqual(is_browser_context(c as any), true);
+	});
+
+	test('empty-string Origin still counts as browser context (!== undefined)', () => {
+		// Mirrors the bearer/daemon-token discard: an abnormal empty Origin is
+		// still browser context, never a legitimate loopback credential.
+		const {c} = create_mock_context({Origin: ''});
+		assert.strictEqual(is_browser_context(c as any), true);
 	});
 });

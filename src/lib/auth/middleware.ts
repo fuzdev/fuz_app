@@ -105,12 +105,20 @@ export const create_auth_middleware_specs = async (
 
 	if (daemon_token_state) {
 		const {create_daemon_token_middleware} = await import('./daemon_token_middleware.ts');
-		const daemon_token_middleware = create_daemon_token_middleware(daemon_token_state, query_deps);
+		const daemon_token_middleware = create_daemon_token_middleware(
+			daemon_token_state,
+			query_deps,
+			deps.log,
+		);
 		specs.push({
 			name: 'daemon_token',
 			path,
 			handler: daemon_token_middleware,
-			errors: {401: ApiError, 500: ApiError, 503: ApiError},
+			// Soft-fails (discards) on every non-success path — browser context,
+			// malformed/invalid token, and no-keeper all `next()` through to the
+			// dispatcher's credential gate (matching the Rust spine's `None`). The
+			// layer returns no error response of its own.
+			errors: {},
 		});
 	}
 

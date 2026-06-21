@@ -38,7 +38,7 @@ conformance suite enforces it as an always-on invariant over every case (the
 one of these to a single spine fails the suite rather than silently becoming a
 fingerprinting oracle.
 
-This is the *application* posture; `server_tokens off` (see [nginx Static File
+This is the _application_ posture; `server_tokens off` (see [nginx Static File
 Serving](#nginx-static-file-serving)) suppresses the reverse proxy's own
 `Server` banner at the edge.
 
@@ -67,13 +67,13 @@ before the handler runs. Five close a credential-minting or lockout threat
 (table below); the sixth — `POST /logout` — is gated for forensic fidelity,
 not a threat (see the note after the table).
 
-| Endpoint                       | Threat closed                                                                                                 |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `account_token_create`         | Bearer-spawn-bearer persistence — leaked API token mints siblings with innocuous names to outlive revocation. |
-| `account_token_revoke`         | Sibling disruption — leaked bearer revokes the legitimate sibling token to disrupt the user.                  |
-| `account_session_revoke`       | Lockout-by-composition — leaked bearer enumerates via `account_session_list` then revokes each session.       |
-| `account_session_revoke_all`   | Lockout — leaked bearer revokes every session in one call.                                                    |
-| `POST /password` (REST)        | Lockout + credential reset — leaked bearer rotates the password to lock the legitimate user out.              |
+| Endpoint                     | Threat closed                                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `account_token_create`       | Bearer-spawn-bearer persistence — leaked API token mints siblings with innocuous names to outlive revocation. |
+| `account_token_revoke`       | Sibling disruption — leaked bearer revokes the legitimate sibling token to disrupt the user.                  |
+| `account_session_revoke`     | Lockout-by-composition — leaked bearer enumerates via `account_session_list` then revokes each session.       |
+| `account_session_revoke_all` | Lockout — leaked bearer revokes every session in one call.                                                    |
+| `POST /password` (REST)      | Lockout + credential reset — leaked bearer rotates the password to lock the legitimate user out.              |
 
 Cookies are tied to a browser context (HttpOnly + SameSite=Strict + Secure)
 — the right trust bar for "mint a long-lived credential / rotate password
@@ -82,7 +82,7 @@ Cookies are tied to a browser context (HttpOnly + SameSite=Strict + Secure)
 scripting from CLI/bearer is legitimate operator workflow.
 
 **`POST /logout` — gated for forensic fidelity, not a threat.** Logout
-*tears down* access, so a leaked bearer "logging out" harms no one — it
+_tears down_ access, so a leaked bearer "logging out" harms no one — it
 holds no session to end. Without the gate the handler would return a
 misleading `200 {ok: true}` and emit a phantom `logout` audit row for an
 event that never happened; the session-credential gate refuses such a
@@ -214,9 +214,14 @@ Rotating filesystem credential for keeper-level operations:
 - Token rotated every 30 seconds (configurable); the previous token is also
   accepted to cover the rotation race window
 - Both the REST guard composition (`require_credential_types(['daemon_token'])`
-  + `require_role(['keeper'])`) and the RPC dispatcher's post-authorization
-  auth gate (`check_action_auth_post_authorization`, JSON-RPC endpoints)
-  check **both**: daemon token credential type AND an active keeper role_grant
+  - `require_role(['keeper'])`) and the RPC dispatcher's post-authorization
+    auth gate (`check_action_auth_post_authorization`, JSON-RPC endpoints)
+    check **both**: daemon token credential type AND an active keeper role_grant
+- **Browser context discard**: like bearer tokens, daemon tokens are silently
+  discarded when `Origin` or `Referer` is present — the middleware calls
+  `next()` without setting a context. Daemon tokens are loopback-only and never
+  legitimately carry an `Origin`, so a header-bearing one is dropped (and the
+  request falls through to `credential_type_required` downstream)
 - Compromising the web layer cannot escalate to keeper — filesystem access required
 
 ## Test Backdoor Actions
@@ -250,7 +255,7 @@ backdoor, fenced on three independent axes:
   (`cargo xtask check-release`).
 
 `_testing_mint_session` is further constrained: its `expires_in_seconds` is
-required negative, so it can only mint an *already-expired* session row, never
+required negative, so it can only mint an _already-expired_ session row, never
 a usable session for an arbitrary account. The constraint is a
 make-impossible-states floor under the gates above — even a misuse cannot forge
 a live credential.
@@ -298,11 +303,11 @@ closes only the affected tab, while `role_grant_revoke` / `session_revoke_all` /
 
 In-memory sliding window. Applied to login, bootstrap, and bearer auth.
 
-| Limiter                     | Default              | Scope                                                                                   |
-| --------------------------- | -------------------- | --------------------------------------------------------------------------------------- |
-| IP rate limiter             | 5 attempts / 15 min  | Per resolved client IP, shared across login + bootstrap + bearer auth + password change |
+| Limiter                     | Default              | Scope                                                                                                                         |
+| --------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| IP rate limiter             | 5 attempts / 15 min  | Per resolved client IP, shared across login + bootstrap + bearer auth + password change                                       |
 | Login account rate limiter  | 10 attempts / 30 min | Per `account.id` when the account exists, per normalized submitted identifier otherwise. Per `account.id` on password change. |
-| Signup account rate limiter | 10 attempts / 30 min | Per submitted username (lowercased), signup only                                        |
+| Signup account rate limiter | 10 attempts / 30 min | Per submitted username (lowercased), signup only                                                                              |
 
 **Rate limiter key normalization**: Submitted identifiers are lowercased + trimmed
 before lookup. When the account exists, the rate limit is keyed by `account.id`
@@ -385,7 +390,7 @@ socket alive**, then answers a correctly-framed pipelined request. This is not a
 desync: Bun frames the next request on `Content-Length`, not on the unread body,
 so there is no smuggling window — only the defense-in-depth close is absent
 (and Bun reads the full oversized body off the socket before discarding it, so
-the cap bounds what the *application* processes, not what the transport reads).
+the cap bounds what the _application_ processes, not what the transport reads).
 The cross-backend suite gates the strong "connection closes" assertion behind
 the `oversized_reject_closes_connection` capability and holds every backend to
 the universal **no-desync** property
@@ -416,11 +421,11 @@ in a DB table. Built-in roles: `keeper` (system-level) and `admin` (app-level).
 Consumer apps extend with app-defined roles at server init; unknown roles are hard
 rejections.
 
-| Role        | Granted how                                    | Scope                                            |
-| ----------- | ---------------------------------------------- | ------------------------------------------------ |
+| Role        | Granted how                                    | Scope                                                |
+| ----------- | ---------------------------------------------- | ---------------------------------------------------- |
 | `keeper`    | Daemon token only (filesystem access required) | System-level: role_grants, audit, bootstrap recovery |
-| `admin`     | CLI or web (by keeper)                         | App-level: users, content, config                |
-| App-defined | Web (by admin)                                 | App-specific (`teacher`, `approved`, etc.)       |
+| `admin`     | CLI or web (by keeper)                         | App-level: users, content, config                    |
+| App-defined | Web (by admin)                                 | App-specific (`teacher`, `approved`, etc.)           |
 
 **Role grants vs flags**: Every capability comes from a time-bounded, revocable role_grant
 with a `granted_by` field. No role_grant = no capability (safe by default).
@@ -444,7 +449,7 @@ fail-loud failure-audit row before any mutation. `ERROR_CANNOT_DELETE_KEEPER`
 and daemon-token resolution both pivot on the keeper account, so removing it
 would brick keeper/daemon auth with no recovery (keeper is non-web-revocable and
 purge itself requires keeper auth); keeper removal stays out-of-band.
-`ERROR_CANNOT_DELETE_LAST_ADMIN` (403) blocks the sole remaining *active* admin —
+`ERROR_CANNOT_DELETE_LAST_ADMIN` (403) blocks the sole remaining _active_ admin —
 the admin count and the target's own admin check both filter `deleted_at IS NULL`,
 so a soft-deleted admin can't authenticate, doesn't count toward the tally, and
 can itself be removed once another active admin exists. The keeper guard is a
@@ -480,7 +485,7 @@ can creep into one path.
 
 **Phase ordering hides route shape from unauthenticated callers.** Every
 dispatch surface (HTTP RPC, the REST bridge, WS) runs **401 → 400 → 403 →
-handler**: pre-validation authentication fires *before* input validation, so
+handler**: pre-validation authentication fires _before_ input validation, so
 an unauthenticated caller hitting an authed route is refused with a 401
 before its body is ever parsed — it never learns the route's input schema or
 shape from a parse error (a 400 leaking required fields / types). Input
@@ -504,14 +509,14 @@ since owner access is implicit.
 **Actor-search scope gate**: `actor_search` (the prefix-search picker over
 `actor.name`) is account-grain authenticated, but an **unbounded global
 search is admin-only**. A non-admin caller must pass at least one `scope_id`;
-results are then filtered to actors holding an *active* role_grant on one of
+results are then filtered to actors holding an _active_ role_grant on one of
 those scopes (active = `revoked_at IS NULL AND (expires_at IS NULL OR
 expires_at > NOW())`, so a revoked or expired membership no longer confers
 search visibility). Omitting `scope_ids` as a non-admin is rejected with
 `invalid_params` / `actor_search_scope_required` — not an empty result, so the
 gate is a hard boundary rather than a silent filter. The admin check is
 account-grain (any actor on the caller's account holding a global `admin`
-role_grant). The gate keys on `scope_ids` *presence*, not authority over the
+role_grant). The gate keys on `scope_ids` _presence_, not authority over the
 scope: a caller who already knows a `scope_id` can scope a search to it, but
 the cap (`ACTOR_SEARCH_LIMIT_MAX`) plus the per-account rate limit bound the
 batched-enumeration surface either way. The sibling `actor_lookup` (batched
@@ -651,7 +656,7 @@ GET /api/cells/:cell_id/facts/:hash
 ```
 
 The check is `can_view_cell(caller, cell) AND cell.refs includes hash` — scoped
-to *that one reference*, **never unioned across the fact's other referrers**.
+to _that one reference_, **never unioned across the fact's other referrers**.
 A caller who can view a cell that references the bytes reads them through that
 cell; a caller who cannot view a given cell cannot read the fact through it,
 regardless of who else references the same bytes.
@@ -661,7 +666,7 @@ bytes share a `fact` row is invisible to the read check. If owner A references
 bytes from a **private** cell and owner B references identical bytes from a
 **public** cell, the two are one `fact` row, but:
 
-- A viewer of B's public cell reads the bytes *through B's cell* — correct,
+- A viewer of B's public cell reads the bytes _through B's cell_ — correct,
   B published them.
 - The same viewer **cannot** reach A's private reference: naming A's cell fails
   `can_view_cell` and returns 404. A's stated privacy intent holds despite the
@@ -747,7 +752,7 @@ create) is still measurably faster than `signup_conflict`
 (`max(work, 250ms)`), so a username-existence oracle survives in
 open-signup mode. Considered acceptable because open-signup defeats
 invite-gated enumeration anyway — an attacker can sign up under any
-free username to confirm a target is *not* taken, and the conflict
+free username to confirm a target is _not_ taken, and the conflict
 response confirms the rest.
 
 **Fallback failure audit on internal errors**: Tx-rollback paths that
@@ -820,11 +825,14 @@ control for those callers, which don't carry auto-attached cookies.
 The combination means a cross-origin request is blocked by middleware even if the
 cookie were somehow sent.
 
-**Browser/CLI split**: Bearer tokens are silently discarded when `Origin` or
-`Referer` headers are present — browsers must use cookie auth. The middleware
-calls `next()` without setting a context, so public actions still work even
-with stale credentials. This reduces the attack surface: a stolen API token
-cannot be replayed from a browser context.
+**Browser/CLI split**: Bearer and daemon tokens are silently discarded when
+`Origin` or `Referer` headers are present — browsers must use cookie auth. The
+middleware calls `next()` without setting a context, so public actions still
+work even with stale credentials. This reduces the attack surface: a stolen API
+token cannot be replayed from a browser context. Daemon tokens carry the same
+guard for symmetry — they are loopback-only and never legitimately carry an
+`Origin`, so a header-bearing daemon token is dropped (and the request falls
+through to `credential_type_required` downstream rather than a hard fail).
 
 ## v1 Deployment: Cookie-Only External Auth
 

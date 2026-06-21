@@ -193,6 +193,9 @@ describe_db('account_delete keeper guard', (get_db) => {
 			path: RPC_PATH,
 			spec: account_purge_action_spec,
 			params: {account_id: admin_b.account.id, confirm: true},
+			// Daemon-token credential — suppress the default `origin` header so the
+			// daemon-token middleware doesn't discard it as a browser context.
+			suppress_default_origin: true,
 			headers: test_app.create_daemon_token_headers(),
 		});
 		assert.strictEqual(

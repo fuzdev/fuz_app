@@ -19,12 +19,9 @@ import {
 	resolve_keeper_account_id,
 } from '$lib/auth/daemon_token_middleware.ts';
 import {ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '$lib/hono_context.ts';
-import {
-	ERROR_INVALID_DAEMON_TOKEN,
-	ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED,
-} from '$lib/http/error_schemas.ts';
 import {ROLE_KEEPER} from '$lib/auth/role_schema.ts';
 import type {QueryDeps} from '$lib/db/query_deps.ts';
+import {Logger} from '@fuzdev/fuz_util/log.ts';
 import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 import {
 	create_test_account,
@@ -68,6 +65,8 @@ const create_state = (overrides: Partial<DaemonTokenState> = {}): DaemonTokenSta
 
 const mock_deps = {db: {}} as unknown as QueryDeps;
 
+const test_log = new Logger('test', {level: 'off'});
+
 const setup_default_mocks = () => {
 	const account = create_test_account({id: 'acct-keeper' as Uuid, username: 'keeper'});
 	const actor = create_test_actor({
@@ -104,7 +103,7 @@ beforeEach(() => {
 /** Create a Hono test app with daemon token middleware. */
 const create_daemon_app = (state: DaemonTokenState): Hono => {
 	const app = new Hono();
-	app.use('/*', create_daemon_token_middleware(state, mock_deps));
+	app.use('/*', create_daemon_token_middleware(state, mock_deps, test_log));
 	app.get('/test', (c) => {
 		const account_id = c.get(ACCOUNT_ID_KEY);
 		const credential_type = c.get(CREDENTIAL_TYPE_KEY);
@@ -266,33 +265,46 @@ describe('create_daemon_token_middleware', () => {
 		assert.strictEqual(body.credential_type, 'daemon_token');
 	});
 
-	test('invalid token returns 401 (fail-closed)', async () => {
+	test('invalid token value soft-fails (pass-through, no context)', async () => {
+		// A well-formed but non-matching token is a soft-fail discard, not a 401 —
+		// it passes through with no identity set, mirroring the bearer guard and
+		// the Rust spine's `resolve.rs` (`None`). On a daemon-gated action the
+		// dispatcher returns `credential_type_required` downstream.
 		const state = create_state();
 		const app = create_daemon_app(state);
 
 		const res = await app.request('/test', {
 			headers: {[DAEMON_TOKEN_HEADER]: generate_daemon_token()},
 		});
-		assert.strictEqual(res.status, 401);
+		assert.strictEqual(res.status, 200);
 		const body = await res.json();
-		assert.strictEqual(body.error, ERROR_INVALID_DAEMON_TOKEN);
+		assert.strictEqual(body.context, null);
+		assert.strictEqual(body.credential_type, null);
 	});
 
-	test('malformed token format returns 401', async () => {
+	test('malformed token format soft-fails (pass-through, no context)', async () => {
+		// A Zod-malformed token is a soft-fail discard, not a 401 — same
+		// pass-through semantics as the invalid-value case.
 		const state = create_state();
 		const app = create_daemon_app(state);
 
 		const res = await app.request('/test', {
 			headers: {[DAEMON_TOKEN_HEADER]: 'not-a-valid-format'},
 		});
-		assert.strictEqual(res.status, 401);
+		assert.strictEqual(res.status, 200);
 		const body = await res.json();
-		assert.strictEqual(body.error, ERROR_INVALID_DAEMON_TOKEN);
+		assert.strictEqual(body.context, null);
+		assert.strictEqual(body.credential_type, null);
 	});
 
-	test('no keeper_account_id returns 503 when lazy refresh also yields null', async () => {
-		// Explicit null on the lazy-refresh lookup so the 503 path is exercised
-		// under known preconditions rather than via `vi.fn()`'s default undefined.
+	test('no keeper_account_id soft-fails (pass-through) when lazy refresh also yields null', async () => {
+		// A valid token with no keeper configured (still pre-bootstrap after the
+		// lazy refresh) is a soft-fail discard — pass through with no identity set,
+		// not a 503. Mirrors the Rust spine's `resolve.rs` (`None`): the request
+		// falls through to anonymous and a daemon-gated action returns
+		// `credential_type_required` downstream. Explicit null on the lazy-refresh
+		// lookup so the no-keeper path is exercised under known preconditions rather
+		// than via `vi.fn()`'s default undefined.
 		mock_query_role_grant_find_account_id_for_role.mockImplementation(async () => null);
 
 		const state = create_state({keeper_account_id: null});
@@ -301,9 +313,10 @@ describe('create_daemon_token_middleware', () => {
 		const res = await app.request('/test', {
 			headers: {[DAEMON_TOKEN_HEADER]: state.current_token},
 		});
-		assert.strictEqual(res.status, 503);
+		assert.strictEqual(res.status, 200);
 		const body = await res.json();
-		assert.strictEqual(body.error, ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED);
+		assert.strictEqual(body.context, null);
+		assert.strictEqual(body.credential_type, null);
 	});
 
 	test('lazy refresh: null state + keeper now exists → 200, mutates state.keeper_account_id', async () => {
@@ -327,10 +340,11 @@ describe('create_daemon_token_middleware', () => {
 		assert.strictEqual(mock_query_role_grant_find_account_id_for_role.mock.calls.length, 1);
 	});
 
-	test('lazy refresh: 503 → keeper lands → 200 (second request)', async () => {
-		// First request fires before the keeper exists: refresh returns null,
-		// 503. Second request fires after bootstrap: refresh now returns the
-		// keeper id, 200. Re-queries every request until a keeper resolves.
+	test('lazy refresh: soft-fail (no keeper) → keeper lands → 200 (second request)', async () => {
+		// First request fires before the keeper exists: refresh returns null, so
+		// the token soft-fails (200 + null context, falls through to anonymous).
+		// Second request fires after bootstrap: refresh now returns the keeper id,
+		// 200 + keeper context. Re-queries every request until a keeper resolves.
 		mock_query_role_grant_find_account_id_for_role.mockImplementation(async () => null);
 
 		const state = create_state({keeper_account_id: null});
@@ -339,7 +353,10 @@ describe('create_daemon_token_middleware', () => {
 		const res1 = await app.request('/test', {
 			headers: {[DAEMON_TOKEN_HEADER]: state.current_token},
 		});
-		assert.strictEqual(res1.status, 503);
+		assert.strictEqual(res1.status, 200);
+		const body1 = await res1.json();
+		assert.strictEqual(body1.context, null);
+		assert.strictEqual(body1.credential_type, null);
 		assert.strictEqual(state.keeper_account_id, null);
 
 		// Bootstrap lands; the keeper now exists.
@@ -364,7 +381,7 @@ describe('create_daemon_token_middleware', () => {
 			c.set(CREDENTIAL_TYPE_KEY, 'session');
 			await next();
 		});
-		app.use('/*', create_daemon_token_middleware(state, mock_deps));
+		app.use('/*', create_daemon_token_middleware(state, mock_deps, test_log));
 		app.get('/test', (c) => {
 			const account_id = c.get(ACCOUNT_ID_KEY);
 			const credential_type = c.get(CREDENTIAL_TYPE_KEY);
@@ -382,6 +399,81 @@ describe('create_daemon_token_middleware', () => {
 		// daemon token overrides the session-derived account id
 		assert.strictEqual(body.account_id, 'acct-keeper');
 		assert.strictEqual(body.credential_type, 'daemon_token');
+	});
+});
+
+describe('browser-context discard', () => {
+	// Daemon tokens are loopback-only and never carry an Origin in production,
+	// so a header-bearing request is a browser context: discard the credential
+	// (pass through, no 401) so the dispatcher returns `credential_type_required`
+	// downstream — exactly mirroring the bearer guard and Rust's `resolve.rs`.
+
+	test('Origin present → 200 pass-through, no context, DEV debug header', async () => {
+		const state = create_state();
+		const app = create_daemon_app(state);
+
+		const res = await app.request('/test', {
+			headers: {[DAEMON_TOKEN_HEADER]: state.current_token, Origin: 'https://x.example'},
+		});
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		// credential discarded — middleware sets no identity
+		assert.strictEqual(body.context, null);
+		assert.strictEqual(body.credential_type, null);
+		assert.strictEqual(
+			res.headers.get('X-Fuz-Auth-Debug'),
+			'daemon_token_discarded_browser_context',
+		);
+	});
+
+	test('Referer present → 200 pass-through, no context, DEV debug header', async () => {
+		const state = create_state();
+		const app = create_daemon_app(state);
+
+		const res = await app.request('/test', {
+			headers: {[DAEMON_TOKEN_HEADER]: state.current_token, Referer: 'https://x.example/page'},
+		});
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.context, null);
+		assert.strictEqual(body.credential_type, null);
+		assert.strictEqual(
+			res.headers.get('X-Fuz-Auth-Debug'),
+			'daemon_token_discarded_browser_context',
+		);
+	});
+
+	test('empty-string Origin → still discarded (browser context)', async () => {
+		const state = create_state();
+		const app = create_daemon_app(state);
+
+		const res = await app.request('/test', {
+			headers: {[DAEMON_TOKEN_HEADER]: state.current_token, Origin: ''},
+		});
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.context, null);
+		assert.strictEqual(body.credential_type, null);
+		assert.strictEqual(
+			res.headers.get('X-Fuz-Auth-Debug'),
+			'daemon_token_discarded_browser_context',
+		);
+	});
+
+	test('no Origin/Referer → authenticates (keeper context, no debug header)', async () => {
+		const state = create_state();
+		const app = create_daemon_app(state);
+
+		const res = await app.request('/test', {
+			headers: {[DAEMON_TOKEN_HEADER]: state.current_token},
+		});
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.ok(body.context);
+		assert.strictEqual(body.context.account_id, 'acct-keeper');
+		assert.strictEqual(body.credential_type, 'daemon_token');
+		// not a browser-context discard → no diagnostic header
+		assert.strictEqual(res.headers.get('X-Fuz-Auth-Debug'), null);
 	});
 });
 
@@ -512,13 +604,15 @@ describe('daemon token rotation lifecycle', () => {
 
 		const app = create_daemon_app(state);
 
-		// initial (two-ago) should be rejected
+		// initial (two-ago) should be discarded — soft-fail pass-through (no
+		// identity set), not a 401. The token no longer matches current/previous.
 		const res = await app.request('/test', {
 			headers: {[DAEMON_TOKEN_HEADER]: initial},
 		});
-		assert.strictEqual(res.status, 401);
+		assert.strictEqual(res.status, 200);
 		const body = await res.json();
-		assert.strictEqual(body.error, ERROR_INVALID_DAEMON_TOKEN);
+		assert.strictEqual(body.context, null);
+		assert.strictEqual(body.credential_type, null);
 
 		// second (previous) and third (current) should work
 		const res2 = await app.request('/test', {

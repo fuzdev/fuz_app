@@ -53,6 +53,14 @@ export const bootstrap_backend = async (
 		return {
 			...handle,
 			keeper_transport,
+			// Origin-free twin carrying the same keeper cookie jar — the
+			// daemon-token middleware discards the credential in a browser
+			// context, so the `_testing_*` daemon-token calls route through this.
+			keeper_daemon_transport: create_fetch_transport({
+				base_url: config.base_url,
+				initial_cookies: keeper.cookies,
+				origin: null,
+			}),
 			keeper_account: keeper.account,
 			keeper_actor: keeper.actor,
 			keeper_cookies: keeper.cookies,

@@ -144,10 +144,7 @@ describe_db('serve_fact_route', (get_db) => {
 		const res = await get_cell_fact(app, cell.id, hash); // anonymous
 		assert.strictEqual(res.status, 200);
 		assert.strictEqual(res.headers.get('x-content-type-options'), 'nosniff');
-		assert.strictEqual(
-			res.headers.get('content-security-policy'),
-			"default-src 'none'; sandbox",
-		);
+		assert.strictEqual(res.headers.get('content-security-policy'), "default-src 'none'; sandbox");
 		// Content-Disposition is deliberately NOT forced (inline images must render).
 		assert.strictEqual(res.headers.get('content-disposition'), null);
 	});

@@ -36,8 +36,39 @@ import {z} from 'zod';
  * - `keeper` — the per-test bootstrapped keeper (holds `ROLE_KEEPER` +
  *   `ROLE_ADMIN`), session credential.
  * - `daemon` — the keeper authenticated via the daemon-token header.
+ * - `invalid_daemon` — a *malformed/invalid* `X-Daemon-Token` carried
+ *   alongside the keeper's session cookie, over a non-browser (no-Origin)
+ *   transport. The middleware soft-fail-discards the invalid daemon token
+ *   (matching the Rust spine's `None`), so auth falls through to the session
+ *   leg: the request authenticates as the keeper-via-session and a
+ *   daemon-gated action then refuses the session credential with
+ *   `credential_type_required` — not a hard `invalid_daemon_token` 401. The
+ *   no-Origin transport keeps the daemon token on the invalid-token path
+ *   rather than the browser-context discard; the session base credential is
+ *   what makes the credential-type gate (not the auth gate) the refusing
+ *   layer (without it the discard would 401 anonymous).
+ * - `daemon_browser` — a *valid* `X-Daemon-Token` carried in a browser
+ *   context (default `Origin` present) alongside the keeper's session cookie.
+ *   Browsers attach `Origin` automatically; the daemon-token middleware
+ *   discards a header-bearing daemon token as browser context (mirroring the
+ *   bearer guard and the Rust spine's `is_browser_context`), so the *valid*
+ *   token is dropped and auth falls through to the session leg → a daemon-gated
+ *   action then refuses the session credential with `credential_type_required`.
+ *   Distinct from `invalid_daemon`: here the token is well-formed and current,
+ *   so a 403 (not a 400 confirm-guard hit like `daemon`) proves the
+ *   browser-context discard fired — a valid daemon token does NOT authenticate
+ *   when an `Origin` is present. `Origin` is deliberately NOT suppressed; its
+ *   presence is the signal under test.
  * - `token` — the keeper authenticated via a bearer api-token (non-browser
  *   context; the runner suppresses `Origin` so the token isn't discarded).
+ * - `bearer_browser` — a *valid* bearer api-token carried in a browser context
+ *   (default `Origin` present), fresh jar so NO session rides alongside. The
+ *   bearer middleware discards the token as browser context (mirroring the
+ *   daemon guard + the Rust spine's `is_browser_context`), so the request
+ *   arrives anonymous and an authed action 401s. Proves a stolen bearer cannot
+ *   be replayed from a browser — wire-indistinguishable from sending no
+ *   credential (the `token` principal is the honored counterpart: it suppresses
+ *   `Origin`, so the same token authenticates).
  * - `anonymous` — no credential, fresh cookie jar.
  * - `fresh_non_admin` — a freshly minted account with no roles, session
  *   credential (via the production invite → signup → login flow).
@@ -55,7 +86,10 @@ import {z} from 'zod';
 export const ConformancePrincipal = z.enum([
 	'keeper',
 	'daemon',
+	'invalid_daemon',
+	'daemon_browser',
 	'token',
+	'bearer_browser',
 	'anonymous',
 	'fresh_non_admin',
 	'role_holder',

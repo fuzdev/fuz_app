@@ -117,7 +117,7 @@ describe('create_auth_middleware_specs', () => {
 		assert.strictEqual(rc.errors, undefined);
 	});
 
-	test('daemon_token middleware has 401, 500, 503 error schemas', async () => {
+	test('daemon_token middleware declares no error schemas (soft-fails through)', async () => {
 		const deps = create_stub_app_deps();
 		const specs = await create_auth_middleware_specs(
 			deps,
@@ -131,10 +131,12 @@ describe('create_auth_middleware_specs', () => {
 			}),
 		);
 		const dt = specs.find((s) => s.name === 'daemon_token')!;
+		// The middleware soft-fails (discards) on every non-success path — browser
+		// context, malformed/invalid token, and no-keeper all `next()` through to
+		// the dispatcher's credential gate — so it returns no error response of its
+		// own and declares none.
 		assert.ok(dt.errors);
-		assert.ok(dt.errors[401]);
-		assert.ok(dt.errors[500]);
-		assert.ok(dt.errors[503]);
+		assert.strictEqual(Object.keys(dt.errors).length, 0);
 	});
 
 	test('bearer_ip_rate_limiter null disables rate limiting', async () => {

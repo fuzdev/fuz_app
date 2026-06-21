@@ -21,14 +21,11 @@ import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_CREDENTIAL_TYPE_REQUIRED,
-	ERROR_BEARER_REJECTED_BROWSER,
 	ERROR_INVALID_TOKEN,
 	ERROR_ACCOUNT_NOT_FOUND,
 	ERROR_FORBIDDEN_ORIGIN,
 	ERROR_RATE_LIMIT_EXCEEDED,
 	ERROR_INVALID_CREDENTIALS,
-	ERROR_INVALID_DAEMON_TOKEN,
-	ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED,
 	ERROR_KEEPER_ACCOUNT_NOT_FOUND,
 	ERROR_ALREADY_BOOTSTRAPPED,
 	ERROR_TOKEN_FILE_MISSING,
@@ -247,14 +244,11 @@ describe('error code constants', () => {
 		assert.strictEqual(ERROR_AUTHENTICATION_REQUIRED, 'authentication_required');
 		assert.strictEqual(ERROR_INSUFFICIENT_PERMISSIONS, 'insufficient_permissions');
 		assert.strictEqual(ERROR_CREDENTIAL_TYPE_REQUIRED, 'credential_type_required');
-		assert.strictEqual(ERROR_BEARER_REJECTED_BROWSER, 'bearer_token_rejected_in_browser_context');
 		assert.strictEqual(ERROR_INVALID_TOKEN, 'invalid_token');
 		assert.strictEqual(ERROR_ACCOUNT_NOT_FOUND, 'account_not_found');
 		assert.strictEqual(ERROR_FORBIDDEN_ORIGIN, 'forbidden_origin');
 		assert.strictEqual(ERROR_RATE_LIMIT_EXCEEDED, 'rate_limit_exceeded');
 		assert.strictEqual(ERROR_INVALID_CREDENTIALS, 'invalid_credentials');
-		assert.strictEqual(ERROR_INVALID_DAEMON_TOKEN, 'invalid_daemon_token');
-		assert.strictEqual(ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED, 'keeper_account_not_configured');
 		assert.strictEqual(ERROR_KEEPER_ACCOUNT_NOT_FOUND, 'keeper_account_not_found');
 		assert.strictEqual(ERROR_ALREADY_BOOTSTRAPPED, 'already_bootstrapped');
 		assert.strictEqual(ERROR_TOKEN_FILE_MISSING, 'token_file_missing');

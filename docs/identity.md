@@ -89,11 +89,15 @@ Browser, CLI, and local daemon use different auth mechanisms by design:
   written to `~/.{app}/run/daemon_token`). Max privilege: keeper. Requires
   filesystem access — compromising the web layer cannot reach keeper routes.
 
-**Bearer tokens are rejected when `Origin` or `Referer` headers are present.**
-Browsers send these automatically; CLI tools don't. This prevents XSS from
-exploiting stolen tokens — even if an attacker extracts a token via browser-side
-code, the browser adds `Origin`/`Referer` automatically and the server rejects it.
-The `secret_fuz_token_` prefix enables automatic secret scanner detection.
+**Bearer and daemon tokens are discarded when `Origin` or `Referer` headers are
+present.** Browsers send these automatically; CLI tools and the loopback daemon
+don't. This prevents XSS from exploiting stolen tokens — even if an attacker
+extracts a token via browser-side code, the browser adds `Origin`/`Referer`
+automatically and the server discards the credential (passing the request
+through unauthenticated rather than failing it, so downstream auth enforcement
+returns a generic error). Daemon tokens get the same guard for symmetry — they
+are loopback-only and never legitimately carry an `Origin`. The
+`secret_fuz_token_` prefix enables automatic secret scanner detection.
 
 **v1 deployment: cookie-only external auth.** External traffic uses cookie auth
 only — the nginx reverse proxy strips the `Authorization` header. Bearer tokens
@@ -173,7 +177,7 @@ would be a footgun:
 
 - **Keeper bootstrap** — the first account created through
   `bootstrap_account` grants itself keeper + admin with `granted_by =
-  null` (root of trust).
+null` (root of trust).
 - **Keeper-gated CLI operations** — role_grant reassignment during emergency
   recovery. Keeper credentials require filesystem access
   (`daemon_token`), so the operator is already privileged.
@@ -198,10 +202,10 @@ role models membership, collaboration, or social attachment, it's an
 offer; if it models unilateral administrative authority, it's a direct
 grant.
 
-| Path          | How                                | Consent model                 | Typical use                          |
-| ------------- | ---------------------------------- | ----------------------------- | ------------------------------------ |
-| Direct grant  | `query_create_role_grant`               | None — immediate              | bootstrap, keeper recovery           |
-| Offer         | `role_grant_offer_create` + accept     | Recipient accepts or declines | admin-granted web role_grants, classroom membership |
+| Path         | How                                | Consent model                 | Typical use                                         |
+| ------------ | ---------------------------------- | ----------------------------- | --------------------------------------------------- |
+| Direct grant | `query_create_role_grant`          | None — immediate              | bootstrap, keeper recovery                          |
+| Offer        | `role_grant_offer_create` + accept | Recipient accepts or declines | admin-granted web role_grants, classroom membership |
 
 The split is **keeper-path stays direct; web-path moves to the offer flow.** The
 admin UI drives `role_grant_offer_create` via RPC (there is no REST

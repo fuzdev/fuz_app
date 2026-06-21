@@ -11,9 +11,28 @@
  */
 
 import {escape_regexp} from '@fuzdev/fuz_util/regexp.ts';
-import type {Handler} from 'hono';
+import type {Context, Handler} from 'hono';
 
 import {ERROR_FORBIDDEN_ORIGIN} from './error_schemas.ts';
+
+/**
+ * True when the request looks like it originated from a browser context — it
+ * carries an `Origin` or `Referer` header. Browsers attach these
+ * automatically on the state-changing surface; loopback / CLI clients don't.
+ * Uses `!== undefined` so an empty-string header still counts as browser
+ * context. Checks `Referer` too (not just `Origin`) because some browser
+ * requests send only `Referer`. Twin of the Rust spine's
+ * `bearer_auth::is_browser_context`.
+ *
+ * The bearer (`auth/bearer_auth.ts`) and daemon-token
+ * (`auth/daemon_token_middleware.ts`) middleware both silently discard their
+ * credential when this is true: a stolen bearer token can't be replayed from a
+ * browser, and the loopback daemon token never legitimately carries an
+ * `Origin`. Distinct from `verify_request_source` — that gates browser
+ * requests against an allowlist; this only detects browser context.
+ */
+export const is_browser_context = (c: Context): boolean =>
+	c.req.header('Origin') !== undefined || c.req.header('Referer') !== undefined;
 
 /**
  * Parses FUZ_ALLOWED_ORIGINS env var into regex matchers for request source verification.

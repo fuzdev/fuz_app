@@ -31,6 +31,7 @@ import {assert, describe, test} from 'vitest';
 import type {AppSurfaceSpec} from '../../http/surface.ts';
 import type {RouteMethod} from '../../http/route_spec.ts';
 import type {SessionOptions} from '../../auth/session_cookie.ts';
+import {DAEMON_TOKEN_HEADER} from '../../auth/daemon_token.ts';
 import {
 	find_auth_route,
 	rest_auth_route_suffixes,
@@ -95,6 +96,17 @@ interface ResolvedPrincipal {
 }
 
 /**
+ * A deliberately malformed `X-Daemon-Token` value for the `invalid_daemon`
+ * principal. Fails the `DaemonToken` Zod schema (not 43 base64url chars), so
+ * the daemon-token middleware soft-fail-discards it rather than authenticating
+ * — the request falls through with no identity, surfacing
+ * `credential_type_required` on a daemon-gated action (matching the Rust
+ * spine's `None`). Sent over a no-Origin transport so it lands on the
+ * invalid-token path, not the browser-context discard.
+ */
+const INVALID_DAEMON_TOKEN_VALUE = 'not-a-valid-daemon-token';
+
+/**
  * Map a `ConformancePrincipal` onto the transport + headers it
  * authenticates with, reading exclusively from the per-test `TestFixture`.
  *
@@ -120,12 +132,59 @@ const resolve_principal = async (
 				headers: fixture.create_daemon_token_headers(),
 				suppress_default_origin: true,
 			};
+		case 'invalid_daemon':
+			// A malformed `X-Daemon-Token` carried ALONGSIDE the keeper's session
+			// cookie, over a non-browser (no-Origin) transport. The invalid daemon
+			// token is soft-fail-discarded (matching the Rust spine's `None`), so
+			// auth falls through to the session leg: the request authenticates as
+			// the keeper-via-session (clearing `require_auth`), then the daemon-gated
+			// action's credential-type gate refuses the session credential →
+			// `403 credential_type_required`. No-Origin keeps the daemon token on
+			// the invalid-token path, NOT the browser-context discard. Without the
+			// base credential this would 401 (anonymous) — the session is what makes
+			// the *credential-type* gate, not the auth gate, the refusing layer.
+			return {
+				transport: fixture.fresh_transport({origin: null}),
+				headers: fixture.create_session_headers({
+					[DAEMON_TOKEN_HEADER]: INVALID_DAEMON_TOKEN_VALUE,
+				}),
+				suppress_default_origin: true,
+			};
+		case 'daemon_browser':
+			// A VALID `X-Daemon-Token` carried in a browser context (default Origin
+			// present) ALONGSIDE the keeper's session cookie. The daemon-token
+			// middleware discards a header-bearing daemon token as browser context
+			// (mirroring the bearer guard + the Rust spine's `is_browser_context`),
+			// so the valid token is dropped and auth falls through to the session
+			// leg → keeper-via-session → a daemon-gated action refuses the session
+			// credential with `credential_type_required`. Origin is NOT suppressed —
+			// its presence is the browser-context signal under test. Unlike the
+			// `daemon` principal (no Origin → token honored → reaches the 400 confirm
+			// guard), the 403 here proves the valid token was discarded, not honored.
+			return {
+				transport: fixture.transport,
+				headers: fixture.create_session_headers(fixture.create_daemon_token_headers()),
+			};
 		case 'token':
 			// Bearer is discarded in a browser context — empty jar + no Origin.
 			return {
 				transport: fixture.fresh_transport({origin: null}),
 				headers: fixture.create_bearer_headers(),
 				suppress_default_origin: true,
+			};
+		case 'bearer_browser':
+			// A VALID bearer api-token in a browser context (default Origin
+			// present), fresh jar so no session rides alongside. The bearer
+			// middleware discards a header-bearing token as browser context
+			// (mirroring the daemon guard + the Rust spine's `is_browser_context`),
+			// so the request arrives anonymous → an authed action 401s. Origin is
+			// NOT suppressed (its presence is the browser-context signal) — the
+			// inverse of the `token` principal, which suppresses it so the same
+			// token is honored. The 401 proves the valid token was discarded, not
+			// honored (a non-discarding leg would authenticate → 200).
+			return {
+				transport: fixture.fresh_transport(),
+				headers: fixture.create_bearer_headers(),
 			};
 		case 'anonymous':
 			// Fresh jar so the keeper cookie (cross-process) can't leak in.

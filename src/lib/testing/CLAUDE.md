@@ -973,9 +973,29 @@ wire-shape check passes green on even when behavior is wrong.
 error_reason?, fields?, headers?, equivalence_group?}, note?, xfail?}`. A case is **data** — `method`
   resolves its `input`/`output` from the live registry (RPC) or `RouteSpec`
   (the 6 REST auth routes), so the case never carries a schema. `as` is the
-  closed `ConformancePrincipal` enum (`keeper` / `daemon` / `token` /
-  `anonymous` / `fresh_non_admin` / `role_holder` / `wrong_role` /
-  `expired_session`) — fixture accessors, never inline credential minting.
+  closed `ConformancePrincipal` enum (`keeper` / `daemon` / `invalid_daemon` /
+  `daemon_browser` / `token` / `bearer_browser` / `anonymous` /
+  `fresh_non_admin` / `role_holder` / `wrong_role` / `expired_session`) —
+  fixture accessors, never inline credential minting.
+  `invalid_daemon` sends a malformed `X-Daemon-Token` alongside the keeper
+  session cookie over a no-Origin transport: the middleware soft-fail-discards
+  the daemon token (matching the Rust spine's `None`), auth falls through to the
+  session leg, and a daemon-gated action then refuses the session credential
+  with `credential_type_required` — not a hard invalid-token 401 (the session
+  base credential is what makes the credential-type gate, not the auth gate, the
+  refusing layer).
+  `daemon_browser` sends a _valid_ `X-Daemon-Token` in a browser context
+  (default `Origin` present) alongside the keeper session cookie: the middleware
+  discards the header-bearing token as browser context (mirroring the bearer
+  guard + the Rust spine's `is_browser_context`), so auth falls through to the
+  session leg → `credential_type_required`. Unlike `daemon` (no Origin → token
+  honored → 400 confirm guard), the 403 proves a valid token is _dropped_, not
+  honored, when an `Origin` is present.
+  `bearer_browser` is the bearer twin: a _valid_ bearer api-token in a browser
+  context (default `Origin` present), fresh jar (no session) — the bearer
+  middleware discards it, so an authed action 401s, wire-indistinguishable from
+  `anonymous` (pinned by the `browser_bearer_replay` equivalence group). The
+  `token` principal is the honored counterpart (suppresses `Origin`).
   `expired_session` is the keeper behind an expired server-side session
   (`fixture.mint_expired_session()`: a backdated `auth_session` row behind a
   still-valid signed cookie, so the DB-row expiry gate is what refuses it).

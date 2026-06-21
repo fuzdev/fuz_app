@@ -23,6 +23,7 @@ import {AUTH_API_TOKEN_ID_KEY, ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hon
 import {query_validate_api_token} from './api_token_queries.ts';
 import type {QueryDeps} from '../db/query_deps.ts';
 import {get_client_ip} from '../http/client_ip.ts';
+import {is_browser_context} from '../http/origin.ts';
 import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.ts';
 
 /**
@@ -75,13 +76,11 @@ export const create_bearer_auth_middleware = (
 			return;
 		}
 
-		// Silently discard bearer tokens in browser context — defense-in-depth:
-		// checks both Origin and Referer (not just Origin) because some browser
-		// requests send only Referer. Uses `!== undefined` so that empty-string
-		// headers (e.g. `Origin: ''`) are still treated as browser context.
-		// Discards rather than returning 403 so that the RPC dispatcher can still
-		// handle public actions or fall through to cookie auth.
-		if (c.req.header('Origin') !== undefined || c.req.header('Referer') !== undefined) {
+		// Silently discard bearer tokens in browser context (`is_browser_context`
+		// — Origin or Referer present). Discards rather than returning 403 so that
+		// the RPC dispatcher can still handle public actions or fall through to
+		// cookie auth.
+		if (is_browser_context(c)) {
 			log.debug('bearer auth rejected: browser context (Origin/Referer present)');
 			// The discard is silent on the wire by design (a stolen-token probe
 			// gets an indistinguishable 401, not a "your token was dropped"

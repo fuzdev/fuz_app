@@ -203,8 +203,8 @@ confirmation.
 
 - **Validation**: `ERROR_INVALID_REQUEST_BODY`, `ERROR_INVALID_JSON_BODY`, `ERROR_INVALID_ROUTE_PARAMS`, `ERROR_INVALID_QUERY_PARAMS`
 - **Auth**: `ERROR_AUTHENTICATION_REQUIRED`, `ERROR_INSUFFICIENT_PERMISSIONS`, `ERROR_CREDENTIAL_TYPE_REQUIRED`, `ERROR_RATE_LIMIT_EXCEEDED`, `ERROR_INVALID_CREDENTIALS`, `ERROR_PAYLOAD_TOO_LARGE`
-- **Origin + bearer**: `ERROR_FORBIDDEN_ORIGIN`, `ERROR_BEARER_REJECTED_BROWSER`, `ERROR_INVALID_TOKEN`, `ERROR_ACCOUNT_NOT_FOUND`
-- **Keeper/daemon**: `ERROR_INVALID_DAEMON_TOKEN`, `ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED`, `ERROR_KEEPER_ACCOUNT_NOT_FOUND`
+- **Origin + bearer**: `ERROR_FORBIDDEN_ORIGIN`, `ERROR_INVALID_TOKEN`, `ERROR_ACCOUNT_NOT_FOUND`
+- **Keeper/daemon**: `ERROR_KEEPER_ACCOUNT_NOT_FOUND`
 - **Bootstrap**: `ERROR_ALREADY_BOOTSTRAPPED`, `ERROR_TOKEN_FILE_MISSING`
 - **Signup/invites**: `ERROR_NO_MATCHING_INVITE`, `ERROR_SIGNUP_CONFLICT`, `ERROR_INVITE_NOT_FOUND`, `ERROR_INVITE_DUPLICATE`, `ERROR_INVITE_ACCOUNT_EXISTS_USERNAME`, `ERROR_INVITE_ACCOUNT_EXISTS_EMAIL`
 - **Admin**: `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_ROLE_GRANT_NOT_FOUND`, `ERROR_INVALID_EVENT_TYPE`
@@ -320,6 +320,7 @@ CSRF is handled by `SameSite: strict` on session cookies (`auth/session_middlewa
 - `parse_allowed_origins(env_value)` — comma-separated patterns → `Array<RegExp>`
 - `should_allow_origin(origin, patterns)` — case-insensitive match
 - `verify_request_source(allowed_patterns)` — Hono handler: `Origin` present → must match allowlist or 403 `ERROR_FORBIDDEN_ORIGIN`; no `Origin` → allow through (curl, CLI, token auth is primary control)
+- `is_browser_context(c)` — true when `Origin` or `Referer` is present (`!== undefined`, so empty-string counts). The bearer + daemon-token middleware discard their credential when true; twin of the Rust spine's `bearer_auth::is_browser_context`. Distinct from `verify_request_source` (allowlist gate) — this only detects browser context
 
 **Origin-only by design.** Fetch spec mandates `Origin` on every unsafe
 method, so a real browser request on any state-changing surface always

@@ -63,9 +63,6 @@ export const ERROR_PAYLOAD_TOO_LARGE = 'payload_too_large' as const;
 /** Request origin not in allowlist. */
 export const ERROR_FORBIDDEN_ORIGIN = 'forbidden_origin' as const;
 
-/** Bearer token sent with Origin/Referer header (browser context). */
-export const ERROR_BEARER_REJECTED_BROWSER = 'bearer_token_rejected_in_browser_context' as const;
-
 /** Bearer token failed validation (missing, malformed, or revoked). */
 export const ERROR_INVALID_TOKEN = 'invalid_token' as const;
 
@@ -110,12 +107,6 @@ export const ERROR_NO_ACTORS_ON_ACCOUNT = 'no_actors_on_account' as const;
 export const ERROR_ACCOUNT_VANISHED = 'account_vanished' as const;
 
 // --- Keeper / daemon token ---
-
-/** Daemon token header present but malformed or not matching current/previous token. */
-export const ERROR_INVALID_DAEMON_TOKEN = 'invalid_daemon_token' as const;
-
-/** Daemon token valid but keeper account not yet resolved (pre-bootstrap). */
-export const ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED = 'keeper_account_not_configured' as const;
 
 /** Keeper account ID set but account row not found. */
 export const ERROR_KEEPER_ACCOUNT_NOT_FOUND = 'keeper_account_not_found' as const;

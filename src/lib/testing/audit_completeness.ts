@@ -667,7 +667,10 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					path: rpc_path,
 					spec: account_purge_action_spec,
 					params: {account_id: target.account.id, confirm: true},
-					// Keeper-gated: daemon-token credential, not a session.
+					// Keeper-gated: daemon-token credential, not a session. Suppress the
+					// default `origin` header — the daemon-token middleware discards the
+					// credential in a browser context (Origin/Referer present).
+					suppress_default_origin: true,
 					headers: fixture.create_daemon_token_headers(),
 				});
 				assert.ok(res.ok, `account_purge failed: ${res.ok ? '' : JSON.stringify(res.error)}`);

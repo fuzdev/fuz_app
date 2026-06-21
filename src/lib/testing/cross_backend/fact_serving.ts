@@ -101,7 +101,10 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 	): Promise<string> =>
 		expect_output(
 			await cross_rpc_call(
-				fixture.transport,
+				// Origin-free transport — the daemon-token middleware discards the
+				// credential when an `Origin` / `Referer` is present (browser
+				// context), and cross-process `fixture.transport` auto-adds `Origin`.
+				fixture.fresh_transport({origin: null}),
 				rpc_path,
 				'_testing_put_fact',
 				content_type === undefined ? {content} : {content, content_type},

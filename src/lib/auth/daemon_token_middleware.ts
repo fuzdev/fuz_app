@@ -10,6 +10,7 @@
  * @module
  */
 
+import {DEV} from 'esm-env';
 import type {MiddlewareHandler} from 'hono';
 import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
@@ -17,10 +18,7 @@ import {type FsWriteDeps, type FsRemoveDeps, type EnvDeps} from '../runtime/deps
 import {write_file_atomic} from '../runtime/fs.ts';
 import {get_app_dir} from '../cli/config.ts';
 import {ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.ts';
-import {
-	ERROR_INVALID_DAEMON_TOKEN,
-	ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED,
-} from '../http/error_schemas.ts';
+import {is_browser_context} from '../http/origin.ts';
 import {query_role_grant_find_account_id_for_role} from './role_grant_queries.ts';
 import type {QueryDeps} from '../db/query_deps.ts';
 import {ROLE_KEEPER} from './role_schema.ts';
@@ -202,9 +200,24 @@ export const start_daemon_token_rotation = async (
  *
  * Checks the `X-Daemon-Token` header. Behavior:
  * - No header: pass through (don't touch existing context).
- * - Header present + Zod-invalid: return 401 (fail-closed).
- * - Header present + invalid value: return 401 (fail-closed, no downgrade).
- * - Header present + valid + `keeper_account_id` null: return 503.
+ * - Header present + `Origin` / `Referer` present: discard the credential
+ *   (browser context) and pass through — daemon tokens are loopback-only and
+ *   never carry an `Origin` in production, so a header-bearing request is not
+ *   a legitimate daemon caller. Mirrors the bearer guard: `next()` rather than
+ *   401, so downstream auth enforcement returns `credential_type_required`
+ *   (not a hard fail). Silent on the wire (anti-enumeration); in `DEV` only,
+ *   sets `X-Fuz-Auth-Debug: daemon_token_discarded_browser_context`.
+ * - Header present + Zod-invalid (malformed): soft-fail discard (pass through,
+ *   not 401) — mirrors the bearer guard and the Rust spine's `resolve.rs`
+ *   (`None`). Downstream a daemon-gated action returns `credential_type_required`;
+ *   a public action proceeds anonymous.
+ * - Header present + invalid value (not the current/previous token): soft-fail
+ *   discard (pass through, not 401) — same downstream behavior.
+ * - Header present + valid + `keeper_account_id` null (still pre-bootstrap
+ *   after the lazy refresh): soft-fail discard (pass through, not 503) —
+ *   mirrors the Rust spine's `resolve.rs` (`None`), so the request falls
+ *   through to anonymous and a daemon-gated action returns
+ *   `credential_type_required` downstream.
  * - Header present + valid + ok: set `c.var.auth_account_id =
  *   state.keeper_account_id`, `CREDENTIAL_TYPE_KEY = 'daemon_token'`
  *   (overrides any existing session / bearer identity).
@@ -215,11 +228,14 @@ export const start_daemon_token_rotation = async (
  * an explicit `acting` value.
  *
  * @param state - the daemon token runtime state
+ * @param deps - query dependencies (pool-level db for keeper-account resolution)
+ * @param log - the logger instance
  * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, and `AUTH_API_TOKEN_ID_KEY` on a valid token
  */
 export const create_daemon_token_middleware = (
 	state: DaemonTokenState,
 	deps: QueryDeps,
+	log: Logger,
 ): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
 		const token_header = c.req.header(DAEMON_TOKEN_HEADER);
@@ -229,15 +245,40 @@ export const create_daemon_token_middleware = (
 			return;
 		}
 
-		// Zod-validate the token format at the I/O boundary
-		const parse_result = DaemonToken.safeParse(token_header);
-		if (!parse_result.success) {
-			return c.json({error: ERROR_INVALID_DAEMON_TOKEN}, 401);
+		// Silently discard daemon tokens in browser context (`is_browser_context`
+		// — Origin or Referer present) — mirrors the bearer guard (and the Rust
+		// spine's `resolve.rs`, which returns `None`). Daemon tokens are
+		// loopback-only and never carry an `Origin` in production, so a
+		// header-bearing request is not a legitimate daemon caller. Discards
+		// (next()) rather than 401 so the dispatcher returns
+		// `credential_type_required` downstream rather than a hard fail.
+		if (is_browser_context(c)) {
+			log.debug('daemon token auth rejected: browser context (Origin/Referer present)');
+			if (DEV) c.header('X-Fuz-Auth-Debug', 'daemon_token_discarded_browser_context');
+			await next();
+			return;
 		}
 
-		// fail-closed: header present but invalid token value
+		// Zod-validate the token format at the I/O boundary. A malformed token is
+		// a soft-fail discard (pass through), not a 401 — mirroring the bearer
+		// guard and the Rust spine's `resolve.rs`, which return `None` on an
+		// unparseable credential. The request falls through: on a daemon-gated
+		// action the dispatcher returns `credential_type_required` downstream; on
+		// a public action it proceeds anonymous.
+		const parse_result = DaemonToken.safeParse(token_header);
+		if (!parse_result.success) {
+			log.debug('daemon token auth soft-fail: malformed token');
+			await next();
+			return;
+		}
+
+		// Well-formed but not the current/previous token — soft-fail discard, not
+		// a 401, for the same reason: no downgrade, falls through to downstream
+		// `credential_type_required` (matching the Rust spine's `None`).
 		if (!validate_daemon_token(parse_result.data, state)) {
-			return c.json({error: ERROR_INVALID_DAEMON_TOKEN}, 401);
+			log.debug('daemon token auth soft-fail: token not found or invalid');
+			await next();
+			return;
 		}
 
 		// daemon token valid — resolve keeper account. `start_daemon_token_rotation`
@@ -248,8 +289,16 @@ export const create_daemon_token_middleware = (
 		if (!state.keeper_account_id) {
 			state.keeper_account_id = await resolve_keeper_account_id(deps);
 		}
+		// Valid token but no keeper configured (still pre-bootstrap after the lazy
+		// refresh) — soft-fail discard (pass through), not a 503. Mirrors the Rust
+		// spine's `resolve.rs`, which returns `None` when the daemon leg can't
+		// resolve a keeper: the request falls through to the next auth leg →
+		// anonymous, so a daemon-gated action returns `credential_type_required`
+		// downstream. The no-keeper state is a transient pre-bootstrap window.
 		if (!state.keeper_account_id) {
-			return c.json({error: ERROR_KEEPER_ACCOUNT_NOT_CONFIGURED}, 503);
+			log.debug('daemon token auth soft-fail: keeper account not configured');
+			await next();
+			return;
 		}
 
 		c.set(ACCOUNT_ID_KEY, state.keeper_account_id);
