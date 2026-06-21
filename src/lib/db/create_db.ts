@@ -14,7 +14,7 @@
  */
 
 import type {Db, DbType} from './db.ts';
-import {create_pg_db} from './db_pg.ts';
+import {create_pg_db, register_pg_type_parsers} from './db_pg.ts';
 import {create_pglite_db} from './db_pglite.ts';
 
 /** Result of database initialization. */
@@ -44,19 +44,7 @@ export interface CreateDbResult {
 export const create_db = async (database_url: string): Promise<CreateDbResult> => {
 	if (database_url.startsWith('postgres://') || database_url.startsWith('postgresql://')) {
 		const {default: pg} = await import('pg');
-		// Parse int8 (BIGINT) as a JS number. pg defaults to returning int8
-		// as a string to avoid 2^53 precision loss; our only int8 column
-		// today (`audit_log.seq`) stays well under that bound, and reading
-		// as number keeps the wire shape uniform across the SERIAL→BIGSERIAL
-		// widening.
-		//
-		// CAVEAT: pg.types.setTypeParser mutates pg.types globally — every
-		// pg.Pool in the process inherits the coercion, including pools the
-		// consumer constructs against unrelated databases. Any future int8
-		// column that could legitimately exceed 2^53 (file sizes, byte
-		// offsets) will silently round; if one lands, localize via a
-		// per-pool `types` override instead of widening this global parser.
-		pg.types.setTypeParser(20, (val) => Number(val));
+		await register_pg_type_parsers();
 		const pool = new pg.Pool({connectionString: database_url});
 		const {db, close} = create_pg_db(pool);
 		return {

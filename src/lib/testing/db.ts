@@ -31,7 +31,7 @@ import {to_error_message} from '@fuzdev/fuz_util/error.ts';
 import type {Db} from '../db/db.ts';
 import {create_pglite_db} from '../db/db_pglite.ts';
 import {assert_valid_sql_identifier} from '../db/sql_identifier.ts';
-import {create_pg_db} from '../db/db_pg.ts';
+import {create_pg_db, register_pg_type_parsers} from '../db/db_pg.ts';
 
 /**
  * CI detection — `CI=true` is set automatically by GitHub Actions, GitLab CI, etc.
@@ -145,6 +145,11 @@ export const create_pg_factory = (
 				pool_ref = null;
 			}
 			const {Pool} = await import('pg');
+			// Mirror production's int8→number coercion (`create_db`) so the
+			// test pg pool reads `BIGSERIAL` columns (e.g. `audit_log.seq`)
+			// as numbers like PGlite does — without this the pg leg of a
+			// `.db.test.ts` sees `seq` as a string and wire-schema parses fail.
+			await register_pg_type_parsers();
 			const pool = new Pool({connectionString: test_url});
 			pool_ref = pool;
 			const {db} = create_pg_db(pool);

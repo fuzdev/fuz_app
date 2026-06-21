@@ -22,6 +22,10 @@ export interface FactRow {
 	bytes: Uint8Array | null;
 	external_url: string | null;
 	content_type: string | null;
+	// int8 (`BIGINT`): the shared `register_pg_type_parsers` makes pg read it as
+	// a number like PGlite, but read sites still coerce `Number(size)` — unlike
+	// `audit_log.seq`, `PgFactStore` is consumer-constructable over a raw pool
+	// that may skip registration, and `size` feeds arithmetic + size-routing.
 	size: number | string;
 	created_at: Date;
 }
@@ -31,6 +35,7 @@ export interface FactMetaRow {
 	hash: FactHash;
 	external_url: string | null;
 	content_type: string | null;
+	// int8 — coerced defensively at read sites, see `FactRow.size`
 	size: number | string;
 	created_at: Date;
 }

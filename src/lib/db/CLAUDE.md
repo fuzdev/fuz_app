@@ -15,9 +15,12 @@ the code.
 - `db.ts` — `Db` abstraction over pg + PGlite, `query` / `query_one` /
   `transaction`, `no_nested_transaction` guard.
 - `create_db.ts` — URL-based driver auto-detection (`postgres` /
-  `pglite-file` / `pglite-memory`); registers the int8 parser so
-  `BIGSERIAL` columns read as JS numbers.
-- `db_pg.ts` / `db_pglite.ts` — driver adapters.
+  `pglite-file` / `pglite-memory`).
+- `db_pg.ts` / `db_pglite.ts` — driver adapters. `db_pg.ts` also exports
+  `register_pg_type_parsers`, the shared int8→number coercion (so
+  `BIGSERIAL` columns read as JS numbers, matching PGlite) — called by both
+  `create_db` and the test pg factory (`testing/db.ts`) so prod and tests
+  read the same wire shape from one registration site.
 - `migrate.ts` — advisory-lock migration runner (`run_migrations`,
   `baseline`), `Migration` / `MigrationNamespace` / `MigrationError`.
 - `query_deps.ts` — `QueryDeps = {db}`, the first param to every `query_*`.
