@@ -1,5 +1,15 @@
 # @fuzdev/fuz_app
 
+## 0.96.0
+
+### Minor Changes
+
+- fix(spine parity): filter soft-deleted actors, nosniff/CSP on fact serving, sort cell refs ([9905822](https://github.com/fuzdev/fuz_app/commit/9905822))
+
+### Patch Changes
+
+- fix: parse BIGINT as number ([2d46838](https://github.com/fuzdev/fuz_app/commit/2d46838))
+
 ## 0.95.0
 
 ### Minor Changes
