@@ -618,8 +618,15 @@ export interface CellListParams {
  * Returns `null` (rather than `[]`) when no refs are present — the column
  * is nullable and the `idx_cell_refs` partial index is `WHERE refs IS NOT
  * NULL`, so an empty array would force every cell into the index.
+ *
+ * Sorts the deduped refs lexicographically so the stored `text[]` is
+ * deterministic and byte-identical to the Rust twin (`fuz_cell`'s
+ * `extract_refs`, which sorts the same `blake3:`-prefixed element form).
+ * The shared `fact_hash_extract_refs` deliberately preserves traversal
+ * order per its contract, so the sort lives here at the storage boundary,
+ * not in the util.
  */
 const derive_refs = (data: Json): Array<FactHash> | null => {
 	const refs = fact_hash_extract_refs(data);
-	return refs.length > 0 ? refs : null;
+	return refs.length > 0 ? refs.sort() : null;
 };

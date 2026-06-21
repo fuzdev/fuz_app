@@ -36,13 +36,13 @@ import {
 const {
 	mock_query_account_by_id,
 	mock_query_actor_by_id,
-	mock_query_actors_by_account,
+	mock_query_active_actors_by_account,
 	mock_query_role_grant_find_active_for_actor,
 	mock_query_role_grant_find_account_id_for_role,
 } = vi.hoisted(() => ({
 	mock_query_account_by_id: vi.fn(),
 	mock_query_actor_by_id: vi.fn(),
-	mock_query_actors_by_account: vi.fn(),
+	mock_query_active_actors_by_account: vi.fn(),
 	mock_query_role_grant_find_active_for_actor: vi.fn(),
 	mock_query_role_grant_find_account_id_for_role: vi.fn(),
 }));
@@ -50,7 +50,7 @@ const {
 vi.mock('$lib/auth/account_queries.js', () => ({
 	query_account_by_id: mock_query_account_by_id,
 	query_actor_by_id: mock_query_actor_by_id,
-	query_actors_by_account: mock_query_actors_by_account,
+	query_active_actors_by_account: mock_query_active_actors_by_account,
 }));
 
 vi.mock('$lib/auth/role_grant_queries.js', () => ({
@@ -84,7 +84,7 @@ const setup_default_mocks = () => {
 	];
 	mock_query_account_by_id.mockImplementation(async () => account);
 	mock_query_actor_by_id.mockImplementation(async () => actor);
-	mock_query_actors_by_account.mockImplementation(async () => [actor]);
+	mock_query_active_actors_by_account.mockImplementation(async () => [actor]);
 	mock_query_role_grant_find_active_for_actor.mockImplementation(async () => role_grants);
 	// Default the lazy-keeper-refresh lookup to a resolvable keeper so tests
 	// that don't care about the refresh path get the happy default. Tests
@@ -95,7 +95,7 @@ const setup_default_mocks = () => {
 beforeEach(() => {
 	mock_query_account_by_id.mockReset();
 	mock_query_actor_by_id.mockReset();
-	mock_query_actors_by_account.mockReset();
+	mock_query_active_actors_by_account.mockReset();
 	mock_query_role_grant_find_active_for_actor.mockReset();
 	mock_query_role_grant_find_account_id_for_role.mockReset();
 	setup_default_mocks();

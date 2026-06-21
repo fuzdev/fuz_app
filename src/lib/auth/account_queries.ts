@@ -328,11 +328,14 @@ export const query_create_actor = async (
 };
 
 /**
- * List every actor on an account, ordered by `created_at`.
+ * List every actor on an account, ordered by `created_at`, **including
+ * soft-deleted (tombstoned) rows**.
  *
- * Used by `resolve_acting_actor` to resolve the acting actor for a
- * request: 1 actor picks transparently, multiple require an explicit
- * `acting` field on the request payload. For lookups by id, use
+ * Used by the admin/snapshot handlers (`account_delete` / `account_purge` /
+ * `account_undelete`) that must enumerate every actor that ever existed on
+ * the account to snapshot names into per-actor audit events. For the
+ * acting-actor resolution path — which must never resolve a tombstoned
+ * actor — use `query_active_actors_by_account`. For lookups by id, use
  * `query_actor_by_id` instead.
  */
 export const query_actors_by_account = async (
@@ -341,6 +344,27 @@ export const query_actors_by_account = async (
 ): Promise<Array<Actor>> => {
 	return deps.db.query<Actor>(
 		`SELECT * FROM actor WHERE account_id = $1 ORDER BY created_at ASC, id ASC`,
+		[account_id],
+	);
+};
+
+/**
+ * List **active** (non-tombstoned) actors on an account, ordered by
+ * `created_at`.
+ *
+ * Filters `deleted_at IS NULL` so a soft-deleted actor can never be resolved
+ * as the acting actor (and carry its `role_grants` into the role gate). Used
+ * by `resolve_acting_actor` to resolve the acting actor for a request: 1
+ * actor picks transparently, multiple require an explicit `acting` field on
+ * the request payload. The admin/snapshot handlers that legitimately need
+ * tombstoned rows stay on the unfiltered `query_actors_by_account`.
+ */
+export const query_active_actors_by_account = async (
+	deps: QueryDeps,
+	account_id: string,
+): Promise<Array<Actor>> => {
+	return deps.db.query<Actor>(
+		`SELECT * FROM actor WHERE account_id = $1 AND deleted_at IS NULL ORDER BY created_at ASC, id ASC`,
 		[account_id],
 	);
 };

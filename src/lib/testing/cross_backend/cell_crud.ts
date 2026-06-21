@@ -135,6 +135,59 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 			},
 		);
 
+		test_if(
+			capabilities.cell_crud,
+			'refs are deduped and lexicographically sorted (deterministic, cross-impl-identical)',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({username: 'cell_refs_owner'});
+				const t = fixture.fresh_transport();
+				const owner_headers = owner.create_session_headers();
+
+				// Three valid distinct fact hashes that sort a < b < c, embedded in
+				// `data` in a deliberately unsorted, nested, duplicated order. Both
+				// spines must derive `refs` as the sorted [a, b, c] regardless of
+				// traversal order or `HashSet` iteration — the byte-identical
+				// cross-backend contract (Rust `extract_refs` ↔ TS `derive_refs`).
+				const ref_a = `blake3:${'a'.repeat(64)}`;
+				const ref_b = `blake3:${'b'.repeat(64)}`;
+				const ref_c = `blake3:${'c'.repeat(64)}`;
+				const sorted = [ref_a, ref_b, ref_c];
+
+				const created = expect_output(
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_create',
+						{data: {kind: 'note', cover: ref_c, nested: {attachments: [ref_b, ref_a, ref_b]}}},
+						owner_headers,
+					),
+					CellCreateOutput,
+				);
+				assert.deepStrictEqual(created.cell.refs, sorted, 'create did not return sorted refs');
+
+				// Read it back — the stored column round-trips sorted too.
+				const got = expect_output(
+					await cross_rpc_call(t, rpc_path, 'cell_get', {id: created.cell.id}, owner_headers),
+					CellGetOutput,
+				);
+				assert.deepStrictEqual(got.cell.refs, sorted, 'get did not return sorted refs');
+
+				// Update reorders the embedded refs — the new column is still sorted.
+				const updated = expect_output(
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_update',
+						{cell_id: created.cell.id, data: {refs: [ref_b, ref_c, ref_a]}},
+						owner_headers,
+					),
+					CellUpdateOutput,
+				);
+				assert.deepStrictEqual(updated.cell.refs, sorted, 'update did not return sorted refs');
+			},
+		);
+
 		test_if(capabilities.cell_crud, 'anon sees public cells only; private is 404', async () => {
 			const fixture = await setup_test();
 			const owner = await fixture.create_account({username: 'cell_anon_owner'});

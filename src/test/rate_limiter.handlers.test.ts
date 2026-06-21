@@ -62,7 +62,7 @@ vi.mock('$lib/auth/account_queries.js', () => ({
 	query_account_by_username_or_email: (...a: Array<any>) => mock_find_by_username_or_email(...a),
 	query_account_by_id: (...a: Array<any>) => mock_account_by_id(...a),
 	query_actor_by_id: (...a: Array<any>) => mock_resolve_actor(...a),
-	query_actors_by_account: async (..._a: Array<any>) => {
+	query_active_actors_by_account: async (..._a: Array<any>) => {
 		const actor = await mock_resolve_actor(..._a);
 		return actor ? [actor] : [];
 	},

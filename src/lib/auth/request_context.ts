@@ -47,7 +47,7 @@ import {
 import {
 	query_account_by_id,
 	query_actor_by_id,
-	query_actors_by_account,
+	query_active_actors_by_account,
 } from './account_queries.ts';
 import {query_role_grant_find_active_for_actor} from './role_grant_queries.ts';
 import type {QueryDeps} from '../db/query_deps.ts';
@@ -276,7 +276,7 @@ export const resolve_acting_actor = async (
 	account_id: string,
 	acting_actor_id: string | undefined,
 ): Promise<ResolveActingActorResult> => {
-	const actors = await query_actors_by_account(deps, account_id);
+	const actors = await query_active_actors_by_account(deps, account_id);
 	if (actors.length === 0) return {ok: false, reason: 'no_actors'};
 	if (acting_actor_id == null) {
 		if (actors.length === 1) return {ok: true, actor_id: actors[0]!.id};

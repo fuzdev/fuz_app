@@ -36,7 +36,7 @@ import {apply_authorization_phase} from '$lib/auth/request_context.ts';
 import {
 	query_account_by_id,
 	query_actor_by_id,
-	query_actors_by_account,
+	query_active_actors_by_account,
 } from '$lib/auth/account_queries.ts';
 import {query_role_grant_find_active_for_actor} from '$lib/auth/role_grant_queries.ts';
 import {
@@ -57,7 +57,7 @@ const mock_deps: QueryDeps = {db: {} as any};
 vi.mock('$lib/auth/account_queries.js', () => ({
 	query_account_by_id: vi.fn(),
 	query_actor_by_id: vi.fn(),
-	query_actors_by_account: vi.fn(),
+	query_active_actors_by_account: vi.fn(),
 }));
 
 vi.mock('$lib/auth/role_grant_queries.js', () => ({
@@ -93,7 +93,7 @@ describe('apply_authorization_phase — short-circuit paths', () => {
 		);
 
 		assert.deepStrictEqual(result, {ok: true, request_context: null});
-		assert.strictEqual(vi.mocked(query_actors_by_account).mock.calls.length, 0);
+		assert.strictEqual(vi.mocked(query_active_actors_by_account).mock.calls.length, 0);
 	});
 
 	test('returns request_context: null when account_id is null (unauthenticated — downstream auth guard handles 401)', async () => {
@@ -105,7 +105,7 @@ describe('apply_authorization_phase — short-circuit paths', () => {
 		);
 
 		assert.deepStrictEqual(result, {ok: true, request_context: null});
-		assert.strictEqual(vi.mocked(query_actors_by_account).mock.calls.length, 0);
+		assert.strictEqual(vi.mocked(query_active_actors_by_account).mock.calls.length, 0);
 	});
 });
 
@@ -146,7 +146,7 @@ describe('apply_authorization_phase — needs_actor: false (account-grain)', () 
 
 describe('apply_authorization_phase — needs_actor: true', () => {
 	test('builds full context on single-actor success (no acting supplied)', async () => {
-		vi.mocked(query_actors_by_account).mockResolvedValue([actor]);
+		vi.mocked(query_active_actors_by_account).mockResolvedValue([actor]);
 		vi.mocked(query_account_by_id).mockResolvedValue(account);
 		vi.mocked(query_actor_by_id).mockResolvedValue(actor);
 		vi.mocked(query_role_grant_find_active_for_actor).mockResolvedValue(role_grants);
@@ -164,8 +164,8 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		});
 	});
 
-	test('returns 500 no_actors_on_account when query_actors_by_account is empty', async () => {
-		vi.mocked(query_actors_by_account).mockResolvedValue([]);
+	test('returns 500 no_actors_on_account when query_active_actors_by_account is empty', async () => {
+		vi.mocked(query_active_actors_by_account).mockResolvedValue([]);
 
 		const result = await apply_authorization_phase(
 			mock_deps,
@@ -182,7 +182,7 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 	});
 
 	test('returns 400 actor_required with available list on multi-actor + no acting', async () => {
-		vi.mocked(query_actors_by_account).mockResolvedValue([actor, second_actor]);
+		vi.mocked(query_active_actors_by_account).mockResolvedValue([actor, second_actor]);
 
 		const result = await apply_authorization_phase(
 			mock_deps,
@@ -204,8 +204,35 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		});
 	});
 
+	test('resolves over the active-actor query so a soft-deleted actor is never the acting actor', async () => {
+		// `resolve_acting_actor` consults `query_active_actors_by_account`
+		// (`deleted_at IS NULL`), not the unfiltered `query_actors_by_account`
+		// the admin/snapshot handlers use. A tombstoned actor therefore never
+		// reaches the resolver: here the filtered query returns only the
+		// surviving `actor` (the soft-deleted sibling is excluded at the SQL
+		// layer), so naming the tombstoned id as `acting` is `actor_not_on_account`.
+		vi.mocked(query_active_actors_by_account).mockResolvedValue([actor]);
+
+		const result = await apply_authorization_phase(
+			mock_deps,
+			ACCOUNT_ID,
+			{account: 'required', actor: 'required'},
+			SECOND_ACTOR_ID, // the (now soft-deleted) sibling — absent from the active list
+		);
+
+		// The resolution result is computed from the active-filtered query's
+		// output: the tombstoned sibling is absent from it, so naming its id as
+		// `acting` is rejected. (If resolution read the unfiltered query, the
+		// tombstoned actor would be present and resolve as `Resolved`.)
+		assert.deepStrictEqual(result, {
+			ok: false,
+			status: 400,
+			body: {error: ERROR_ACTOR_NOT_ON_ACCOUNT},
+		});
+	});
+
 	test('returns 400 actor_not_on_account when supplied acting does not match', async () => {
-		vi.mocked(query_actors_by_account).mockResolvedValue([actor]);
+		vi.mocked(query_active_actors_by_account).mockResolvedValue([actor]);
 
 		const result = await apply_authorization_phase(
 			mock_deps,
@@ -222,11 +249,11 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 	});
 
 	test('returns 500 account_vanished when query_account_by_id is null after resolve (torn read)', async () => {
-		// `query_actors_by_account` succeeds — `resolve_acting_actor` returns
-		// {ok: true}. `build_request_context`'s account lookup then returns
+		// `query_active_actors_by_account` succeeds — `resolve_acting_actor`
+		// returns {ok: true}. `build_request_context`'s account lookup then returns
 		// null (account row deleted between the two reads — production is a
 		// concurrent-deletion race; here we simulate it directly).
-		vi.mocked(query_actors_by_account).mockResolvedValue([actor]);
+		vi.mocked(query_active_actors_by_account).mockResolvedValue([actor]);
 		vi.mocked(query_account_by_id).mockResolvedValue(undefined);
 
 		const result = await apply_authorization_phase(
@@ -244,10 +271,10 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 	});
 
 	test('returns 500 account_vanished when query_actor_by_id is null after resolve (torn read)', async () => {
-		// `query_actors_by_account` returned the actor; `query_account_by_id`
+		// `query_active_actors_by_account` returned the actor; `query_account_by_id`
 		// found the account; but `query_actor_by_id` returns null — the
 		// actor row was deleted between enumeration and lookup.
-		vi.mocked(query_actors_by_account).mockResolvedValue([actor]);
+		vi.mocked(query_active_actors_by_account).mockResolvedValue([actor]);
 		vi.mocked(query_account_by_id).mockResolvedValue(account);
 		vi.mocked(query_actor_by_id).mockResolvedValue(undefined);
 
@@ -272,7 +299,7 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		// flipped between the two reads — production-unreachable on paper,
 		// but the docstring documents that it collapses into the torn-read
 		// 500 shape rather than its own status code.
-		vi.mocked(query_actors_by_account).mockResolvedValue([actor]);
+		vi.mocked(query_active_actors_by_account).mockResolvedValue([actor]);
 		vi.mocked(query_account_by_id).mockResolvedValue(account);
 		vi.mocked(query_actor_by_id).mockResolvedValue({
 			...actor,

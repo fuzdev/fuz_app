@@ -15,6 +15,9 @@
  * - malformed hash / cell_id param → 400 (`invalid_route_params`)
  * - well-formed but absent cell / hash → 404
  * - embedded fact via a viewable public cell → 200 + bytes
+ * - served fact carries the untrusted-content hardening headers
+ *   (`X-Content-Type-Options: nosniff` + `Content-Security-Policy`) and no
+ *   forced `Content-Disposition`
  * - embedded fact via a private cell → owner 200, anon/non-owner 404
  * - cell the caller can view but which doesn't reference the hash → 404
  *   (missing edge mask)
@@ -121,6 +124,32 @@ describe_db('serve_fact_route', (get_db) => {
 		assert.strictEqual(res.headers.get('content-type'), 'text/plain');
 		const back = new Uint8Array(await res.arrayBuffer());
 		assert.deepEqual(back, bytes);
+	});
+
+	test('served fact carries the untrusted-content hardening headers', async () => {
+		// Every served fact carries `X-Content-Type-Options: nosniff` +
+		// `Content-Security-Policy: default-src 'none'; sandbox` so a fact stored
+		// as (or sniffable to) `text/html` can't execute as stored XSS for a
+		// reader of a referencing cell. These values must stay byte-identical to
+		// the Rust twin (`fuz_fact_serving::serve`) for cross-backend parity.
+		const app = await create_cell_test_app(get_db);
+		// Store the bytes AS text/html — the exact stored-XSS shape the headers
+		// neutralize.
+		const hash = await put_embedded(encode('<script>alert(1)</script>'), 'text/html');
+		const cell = await create_cell(app, {
+			data: {kind: 'image', cover: hash},
+			visibility: 'public',
+		});
+
+		const res = await get_cell_fact(app, cell.id, hash); // anonymous
+		assert.strictEqual(res.status, 200);
+		assert.strictEqual(res.headers.get('x-content-type-options'), 'nosniff');
+		assert.strictEqual(
+			res.headers.get('content-security-policy'),
+			"default-src 'none'; sandbox",
+		);
+		// Content-Disposition is deliberately NOT forced (inline images must render).
+		assert.strictEqual(res.headers.get('content-disposition'), null);
 	});
 
 	test('embedded fact via a private cell → anon/non-owner 404, owner 200', async () => {

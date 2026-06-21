@@ -20,7 +20,7 @@ import {query_validate_api_token} from '../auth/api_token_queries.ts';
 import {
 	query_account_by_id,
 	query_actor_by_id,
-	query_actors_by_account,
+	query_active_actors_by_account,
 } from '../auth/account_queries.ts';
 import {query_role_grant_find_active_for_actor} from '../auth/role_grant_queries.ts';
 import type {QueryDeps} from '../db/query_deps.ts';
@@ -46,7 +46,7 @@ vi.mock('../auth/api_token_queries.js', () => ({
 vi.mock('../auth/account_queries.js', () => ({
 	query_account_by_id: vi.fn(),
 	query_actor_by_id: vi.fn(),
-	query_actors_by_account: vi.fn(),
+	query_active_actors_by_account: vi.fn(),
 }));
 
 vi.mock('../auth/role_grant_queries.js', () => ({
@@ -125,7 +125,7 @@ export const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthM
 	const mock_validate = vi.mocked(query_validate_api_token);
 	const mock_find_by_id = vi.mocked(query_account_by_id);
 	const mock_find_actor_by_id = vi.mocked(query_actor_by_id);
-	const mock_find_actors_by_account = vi.mocked(query_actors_by_account);
+	const mock_find_actors_by_account = vi.mocked(query_active_actors_by_account);
 	const mock_find_active_for_actor = vi.mocked(query_role_grant_find_active_for_actor);
 
 	mock_validate
@@ -362,7 +362,7 @@ export const create_test_middleware_stack_app = (
 	const mock_validate = vi.mocked(query_validate_api_token);
 	const mock_find_by_id = vi.mocked(query_account_by_id);
 	const mock_find_actor_by_id = vi.mocked(query_actor_by_id);
-	const mock_find_actors_by_account = vi.mocked(query_actors_by_account);
+	const mock_find_actors_by_account = vi.mocked(query_active_actors_by_account);
 	const mock_find_active_for_actor = vi.mocked(query_role_grant_find_active_for_actor);
 
 	mock_validate.mockReset().mockImplementation(() => Promise.resolve(undefined) as any);
