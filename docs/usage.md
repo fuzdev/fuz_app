@@ -74,13 +74,16 @@ the live DB's columns and compares them against a committed expected column map
 (what a fresh full migration-chain bootstrap produces). A deployed DB missing a
 column the running code expects — the silent-auth-outage class — returns `503`
 so a deploy poll rolls the release back instead of promoting code that can't
-query. The spine ships the *mechanism*; each consumer commits its own
-*expectation* (it adds its own tables), so adoption is three small pieces:
+query. The spine ships the _mechanism_; each consumer commits its own
+_expectation_ (it adds its own tables), so adoption is three small pieces:
 
 1. **Mount the route** next to `create_health_route_spec()`:
 
    ```ts
-   import {create_ready_route_spec, load_expected_schema} from '@fuzdev/fuz_app/http/common_routes.ts';
+   import {
+   	create_ready_route_spec,
+   	load_expected_schema,
+   } from '@fuzdev/fuz_app/http/common_routes.ts';
 
    create_ready_route_spec({
    	expected: load_expected_schema(new URL('./expected_schema.json', import.meta.url)),
@@ -117,7 +120,7 @@ query. The spine ships the *mechanism*; each consumer commits its own
 Column-presence is **engine-portable** (DDL-deterministic), so a fixture
 generated against PGlite at gen-time compares exactly against a live Postgres at
 runtime — and a Rust twin backend (`fuz_http::ready_router` over
-`fuz_db::query_ready_columns`) reads the *same* committed file. The route is
+`fuz_db::query_ready_columns`) reads the _same_ committed file. The route is
 opt-in like `/health`; the gate is made the default at the deploy layer — zap
 polls `/ready` post-deploy, rolls back on `503`, and warns loudly when it's
 absent (`404`) rather than silently skipping. See `db/schema_ready.ts` for the
@@ -451,9 +454,7 @@ export const thing_create_action_spec = {
 
 // Registry — consumers spread this into their own action-spec array for
 // codegen or typed-client generation.
-export const all_thing_action_specs: Array<RequestResponseActionSpec> = [
-	thing_create_action_spec,
-];
+export const all_thing_action_specs: Array<RequestResponseActionSpec> = [thing_create_action_spec];
 ```
 
 Handlers live inside a factory that binds deps (log, DB-adjacent capabilities,
@@ -601,6 +602,7 @@ const route_specs = [
 ```
 
 Key behaviors:
+
 - Single endpoint at mount path (e.g., `/api/rpc`) — GET + POST
 - POST: JSON-RPC 2.0 envelope body (`{jsonrpc: "2.0", method, params, id}`)
 - GET: `?method=...&id=...&params=...` for cacheable reads (`side_effects: false` only)
@@ -658,11 +660,11 @@ import {ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.ts';
 const {transport} = register_ws_endpoint({
 	path: '/api/ws',
 	app,
-	upgradeWebSocket,              // from the runtime adapter (e.g. @hono/deno-ws)
-	allowed_origins,               // from parse_allowed_origins(env.FUZ_ALLOWED_ORIGINS)
-	required_role: ROLE_ADMIN,     // optional — omit for any authenticated account
+	upgradeWebSocket, // from the runtime adapter (e.g. @hono/deno-ws)
+	allowed_origins, // from parse_allowed_origins(env.FUZ_ALLOWED_ORIGINS)
+	required_role: ROLE_ADMIN, // optional — omit for any authenticated account
 	actions: [...protocol_actions, ...my_actions],
-	db: backend.db,                // pool-level — perform_action wraps in db.transaction for side_effects: true
+	db: backend.db, // pool-level — perform_action wraps in db.transaction for side_effects: true
 	log,
 });
 ```
@@ -713,13 +715,13 @@ rationale.
 
 `BackendWebsocketTransport` exposes two primitives for pushing notifications from handlers or audit-event callbacks. `broadcast_filtered(message, predicate)` fans out to every connection whose `ConnectionIdentity` satisfies an arbitrary predicate — reach for it when the ACL is anything other than a single account (e.g. a subscription ACL hook like zap's `zap_run_created`). `send_to_account(account_id, message)` is the targeted single-account wrapper: it delivers to every socket bound to one account (session, bearer, and daemon-token alike, mirroring `close_sockets_for_account`) and is the right primitive when the delivery target is a single known account. Both return the number of sockets the message was written to, but that's bookkeeping, not a delivery receipt — `0` means the recipient has no live sockets, and a non-zero count only says `ws.send` didn't throw. Flows that need durable delivery must persist the event and hydrate from storage on reconnection.
 
-Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/auth/role_grant_offer_notifications.ts`). `create_role_grant_offer_actions` accepts an optional `notification_sender` on its `deps` — pass the `BackendWebsocketTransport` instance directly (it satisfies the interface structurally). Because admin role_grant grant/revoke now run through the `role_grant_offer_create` and `role_grant_revoke` RPC actions, wiring the sender on the action factory covers the full offer lifecycle *and* admin revoke in one place. When wired, offer lifecycle transitions (create/retract/accept/decline) and role_grant revoke fan out `role_grant_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `role_grant_revoke` via the shared `emit_after_commit(ctx, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.ts` — sends fire strictly post-commit **and are discarded if the handler's transaction rolls back** (see ./architecture.md §Fire-and-Forget Pending Effects); exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. `role_grant_offer_notification_specs` is the matching `EventSpec[]` for surface generation; append it to `event_specs` on `create_app_server` so the attack surface reflects the six methods and DEV-mode broadcast validation catches payload drift on SSE broadcasts (WS fan-out via `send_to_account` is not runtime-validated — the Zod `input` schemas on the action specs are contracts, not enforced at send time).
+Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/auth/role_grant_offer_notifications.ts`). `create_role_grant_offer_actions` accepts an optional `notification_sender` on its `deps` — pass the `BackendWebsocketTransport` instance directly (it satisfies the interface structurally). Because admin role_grant grant/revoke now run through the `role_grant_offer_create` and `role_grant_revoke` RPC actions, wiring the sender on the action factory covers the full offer lifecycle _and_ admin revoke in one place. When wired, offer lifecycle transitions (create/retract/accept/decline) and role_grant revoke fan out `role_grant_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `role_grant_revoke` via the shared `emit_after_commit(ctx, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.ts` — sends fire strictly post-commit **and are discarded if the handler's transaction rolls back** (see ./architecture.md §Fire-and-Forget Pending Effects); exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. `role_grant_offer_notification_specs` is the matching `EventSpec[]` for surface generation; append it to `event_specs` on `create_app_server` so the attack surface reflects the six methods and DEV-mode broadcast validation catches payload drift on SSE broadcasts (WS fan-out via `send_to_account` is not runtime-validated — the Zod `input` schemas on the action specs are contracts, not enforced at send time).
 
 Payload shapes are flat and size-bounded: offer-lifecycle notifications carry `{offer: RoleGrantOfferJson}` (decline reason rides on `offer.decline_reason`, capped at `ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX` = 500 chars; supersede adds `reason: 'sibling_accepted'|'role_grant_revoked'|'scope_destroyed'` + `cause_id`). `role_grant_revoke` carries `{role_grant_id, role, scope_id, reason?}` with `reason` capped at `ROLE_GRANT_REVOKED_REASON_LENGTH_MAX` = 500 chars. The revokee/grantor/recipient account id travels via the send target, never in the payload.
 
 ### Server→client requests
 
-Beyond fire-and-forget fan-out, a WebSocket handler can **initiate a request to the originating client and await its typed reply** via `ctx.request_client(method, params, {timeout_ms?})` — the server→client direction of `ActionPeer`. It's present only on WS handlers (`undefined` on HTTP RPC, where there's no return socket — a handler depending on it should refuse, as `peer/ping` does with `peer_no_transport`). It returns a `PeerRequestOutcome` (`{ok: true, value}` | `{ok: false, error}` where `error.kind` is `timeout` / `connection_gone` / `too_many_in_flight` / `client_error` — the last forwarding the client's JSON-RPC envelope verbatim) and never throws. Replies are correlated per-connection (a reply on the wrong socket resolves nothing), bounded by a per-connection in-flight cap, and time out after `DEFAULT_PEER_REQUEST_TIMEOUT` (10s) unless a shorter `timeout_ms` is given. The shipped `peer/ping` protocol action is the reference consumer; for the targeted single-socket primitive `BackendWebsocketTransport.request_connection(connection_id, ...)` and the `PendingPeerRequests` correlation registry see `actions/CLAUDE.md`. A connected client *answers* an inbound server-initiated request through a responder: `FrontendWebsocketTransport` ships a built-in one for `peer/ping` (it echoes a `PingResponse` with zero consumer wiring) and routes any other inbound request through `peer.receive`, sending the response back over the socket. The cross-process test transport's `create_ws_transport({on_request})` is the test-side equivalent.
+Beyond fire-and-forget fan-out, a WebSocket handler can **initiate a request to the originating client and await its typed reply** via `ctx.request_client(method, params, {timeout_ms?})` — the server→client direction of ActionPeer. It's present only on WS handlers (`undefined` on HTTP RPC, where there's no return socket — a handler depending on it should refuse, as `peer/ping` does with `peer_no_transport`). It returns a `PeerRequestOutcome` (`{ok: true, value}` | `{ok: false, error}` where `error.kind` is `timeout` / `connection_gone` / `too_many_in_flight` / `client_error` — the last forwarding the client's JSON-RPC envelope verbatim) and never throws. Replies are correlated per-connection (a reply on the wrong socket resolves nothing), bounded by a per-connection in-flight cap, and time out after `DEFAULT_PEER_REQUEST_TIMEOUT` (10s) unless a shorter `timeout_ms` is given. The shipped `peer/ping` protocol action is the reference consumer; for the targeted single-socket primitive `BackendWebsocketTransport.request_connection(connection_id, ...)` and the `PendingPeerRequests` correlation registry see `actions/CLAUDE.md`. A connected client _answers_ an inbound server-initiated request through a responder: `FrontendWebsocketTransport` ships a built-in one for `peer/ping` (it echoes a `PingResponse` with zero consumer wiring) and routes any other inbound request through `peer.receive`, sending the response back over the socket. The cross-process test transport's `create_ws_transport({on_request})` is the test-side equivalent.
 
 ### Cooperating with `ctx.signal`
 
@@ -741,10 +743,7 @@ after the client has moved on. Two patterns:
 just pass it through:
 
 ```typescript
-const response = await provider_client.messages.create(
-	{...request_body},
-	{signal: ctx.signal},
-);
+const response = await provider_client.messages.create({...request_body}, {signal: ctx.signal});
 ```
 
 **Check `aborted` inside a loop.** For streaming loops or polling work
@@ -826,10 +825,10 @@ Wire the generated surface into `create_rpc_client`:
 
 ```typescript
 import {create_rpc_client} from '@fuzdev/fuz_app/actions/rpc_client.ts';
-import {ActionPeer} from '@fuzdev/fuz_app/actions/action_peer.ts';
+import {ActionDispatcher} from '@fuzdev/fuz_app/actions/action_dispatcher.ts';
 import type {FrontendActionsApi} from './frontend_action_types.js';
 
-const peer = new ActionPeer({environment, transports});
+const peer = new ActionDispatcher({environment, transports});
 const api_result = create_rpc_client<FrontendActionsApi>({peer, environment});
 
 const r = await api_result.thing_create({name: 'foo'}, {signal: abort_controller.signal});
@@ -843,7 +842,7 @@ below to get both shapes from a single bundled factory.
 
 For a frontend-only consumer that just needs the typed Proxy plus the
 default HTTP transport, `create_frontend_rpc_client` bundles
-`ActionRegistry + Transports + ActionPeer + create_rpc_client +
+`ActionRegistry + Transports + ActionDispatcher + create_rpc_client +
 create_throwing_api` into one call. Both Proxy shapes are returned —
 `api` (throwing) and `api_result` (Result) — share the same underlying
 transport so call sites pick per-site at zero construction cost:
@@ -902,7 +901,7 @@ generator above is enough for typed `app.api.X(input, options?)` calls.
 ## Client-authoritative vs server-authoritative dispatch
 
 Two shapes for `request_response` actions over WebSocket. Consumers pick
-once per peer; the choice names who *owns* the call and therefore what
+once per peer; the choice names who _owns_ the call and therefore what
 the right behavior is when the socket is temporarily disconnected.
 
 - **Server-authoritative** (default): the server owns the work, and a
@@ -918,15 +917,15 @@ the right behavior is when the socket is temporarily disconnected.
   happy path; the client's durable queue buffers while disconnected
   and flushes on reconnect.
 
-Flip the default per peer via `ActionPeer.default_send_options`, then
+Flip the default per peer via `ActionDispatcher.default_send_options`, then
 override per-call for exceptions:
 
 ```typescript
-import {ActionPeer} from '@fuzdev/fuz_app/actions/action_peer.ts';
+import {ActionDispatcher} from '@fuzdev/fuz_app/actions/action_dispatcher.ts';
 
 // Client-authoritative peer — every `request_response` call is durably queued
 // by default.
-const peer = new ActionPeer({
+const peer = new ActionDispatcher({
 	environment,
 	transports,
 	default_send_options: {queue: true},
@@ -965,7 +964,7 @@ The state class is transport-agnostic: it consumes a narrow
 a subscription callback for WS notifications. Consumers adapt their
 typed client — from `create_rpc_client` or their generated
 `FrontendActionsApi` — to the `RoleGrantOffersRpc` shape, and plumb their
-`FrontendWebsocketClient` or `ActionPeer` receiver into
+`FrontendWebsocketClient` or `ActionDispatcher` receiver into
 `state.subscribe(...)` or call `state.apply_notification(n)` directly.
 
 ```typescript
@@ -1124,7 +1123,7 @@ export const frontend_context = create_context<Frontend>();
 
 export class Frontend extends Cell<typeof FrontendJson> {
 	readonly api: FrontendActionsApi; // Proxy-typed client from `create_rpc_client`
-	readonly peer: ActionPeer;
+	readonly peer: ActionDispatcher;
 	readonly action_registry: ActionRegistry;
 	// …plus domain cells: models, chats, threads, providers, diskfiles, etc.
 }
@@ -1197,13 +1196,11 @@ const cell_rpc_actions = create_all_cell_actions({log, audit, validate_data}, {r
 they expose. Compose those factories individually only for a deliberately
 partial surface.
 
-| Group | Verbs |
-| ----- | ----- |
-| Core | `cell_create`, `cell_get`, `cell_update`, `cell_delete`, `cell_list`, `cell_clone` |
-| Grants | `cell_grant_create`, `cell_grant_revoke`, `cell_grant_list` |
-| Fields | `cell_field_set`, `cell_field_delete`, `cell_field_list` |
-| Items | `cell_item_insert`, `cell_item_move`, `cell_item_delete`, `cell_item_list` |
-| Audit | `cell_audit_list` |
+- Core — `cell_create`, `cell_get`, `cell_update`, `cell_delete`, `cell_list`, `cell_clone`
+- Grants — `cell_grant_create`, `cell_grant_revoke`, `cell_grant_list`
+- Fields — `cell_field_set`, `cell_field_delete`, `cell_field_list`
+- Items — `cell_item_insert`, `cell_item_move`, `cell_item_delete`, `cell_item_list`
+- Audit — `cell_audit_list`
 
 For typed-client codegen, the matching specs are aggregated as
 `all_cell_action_specs` in `@fuzdev/fuz_app/auth/cell_action_specs.ts`.
@@ -1270,8 +1267,8 @@ import {PgFactStore} from '@fuzdev/fuz_app/db/fact_store.ts';
 import {create_file_fact_fetcher} from '@fuzdev/fuz_app/server/file_fact_fetcher.ts';
 
 const fact_store = new PgFactStore({
-	deps: query_deps,                 // QueryDeps (db + log)
-	embedded_threshold: 16 * 1024,    // bytes at/under this go inline; larger → put_ref
+	deps: query_deps, // QueryDeps (db + log)
+	embedded_threshold: 16 * 1024, // bytes at/under this go inline; larger → put_ref
 	fetcher: create_file_fact_fetcher({facts_dir}), // resolves `file:<shard>/<rest>` URLs
 });
 deps.fact_store = fact_store;

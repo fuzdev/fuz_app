@@ -64,16 +64,14 @@ Six endpoints declare `credential_types: ['session']` on their `auth`
 axis. The dispatcher rejects non-session credentials with 403
 `ERROR_CREDENTIAL_TYPE_REQUIRED` + `required_credential_types: ['session']`
 before the handler runs. Five close a credential-minting or lockout threat
-(table below); the sixth — `POST /logout` — is gated for forensic fidelity,
-not a threat (see the note after the table).
+(list below); the sixth — `POST /logout` — is gated for forensic fidelity,
+not a threat (see the note after the list).
 
-| Endpoint                     | Threat closed                                                                                                 |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `account_token_create`       | Bearer-spawn-bearer persistence — leaked API token mints siblings with innocuous names to outlive revocation. |
-| `account_token_revoke`       | Sibling disruption — leaked bearer revokes the legitimate sibling token to disrupt the user.                  |
-| `account_session_revoke`     | Lockout-by-composition — leaked bearer enumerates via `account_session_list` then revokes each session.       |
-| `account_session_revoke_all` | Lockout — leaked bearer revokes every session in one call.                                                    |
-| `POST /password` (REST)      | Lockout + credential reset — leaked bearer rotates the password to lock the legitimate user out.              |
+- `account_token_create` — Bearer-spawn-bearer persistence — leaked API token mints siblings with innocuous names to outlive revocation.
+- `account_token_revoke` — Sibling disruption — leaked bearer revokes the legitimate sibling token to disrupt the user.
+- `account_session_revoke` — Lockout-by-composition — leaked bearer enumerates via `account_session_list` then revokes each session.
+- `account_session_revoke_all` — Lockout — leaked bearer revokes every session in one call.
+- `POST /password` (REST) — Lockout + credential reset — leaked bearer rotates the password to lock the legitimate user out.
 
 Cookies are tied to a browser context (HttpOnly + SameSite=Strict + Secure)
 — the right trust bar for "mint a long-lived credential / rotate password
@@ -303,11 +301,9 @@ closes only the affected tab, while `role_grant_revoke` / `session_revoke_all` /
 
 In-memory sliding window. Applied to login, bootstrap, and bearer auth.
 
-| Limiter                     | Default              | Scope                                                                                                                         |
-| --------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| IP rate limiter             | 5 attempts / 15 min  | Per resolved client IP, shared across login + bootstrap + bearer auth + password change                                       |
-| Login account rate limiter  | 10 attempts / 30 min | Per `account.id` when the account exists, per normalized submitted identifier otherwise. Per `account.id` on password change. |
-| Signup account rate limiter | 10 attempts / 30 min | Per submitted username (lowercased), signup only                                                                              |
+- IP rate limiter (5 attempts / 15 min) — Per resolved client IP, shared across login + bootstrap + bearer auth + password change
+- Login account rate limiter (10 attempts / 30 min) — Per `account.id` when the account exists, per normalized submitted identifier otherwise. Per `account.id` on password change.
+- Signup account rate limiter (10 attempts / 30 min) — Per submitted username (lowercased), signup only
 
 **Rate limiter key normalization**: Submitted identifiers are lowercased + trimmed
 before lookup. When the account exists, the rate limit is keyed by `account.id`
@@ -962,13 +958,11 @@ PrivateTmp=true
 ReadWritePaths=/var/lib/{app}
 ```
 
-| Directive               | Effect                                                                   |
-| ----------------------- | ------------------------------------------------------------------------ |
-| `NoNewPrivileges`       | Process cannot gain new privileges (no setuid, no capability escalation) |
-| `ProtectSystem=strict`  | Entire filesystem read-only except explicitly allowed paths              |
-| `ProtectHome=read-only` | Home directories read-only (use `ReadWritePaths` for app data)           |
-| `PrivateTmp`            | Isolated `/tmp` — other services cannot read the app's temp files        |
-| `ReadWritePaths`        | Allowlist for writable directories (DB sockets, daemon token, logs)      |
+- `NoNewPrivileges` — Process cannot gain new privileges (no setuid, no capability escalation)
+- `ProtectSystem=strict` — Entire filesystem read-only except explicitly allowed paths
+- `ProtectHome=read-only` — Home directories read-only (use `ReadWritePaths` for app data)
+- `PrivateTmp` — Isolated `/tmp` — other services cannot read the app's temp files
+- `ReadWritePaths` — Allowlist for writable directories (DB sockets, daemon token, logs)
 
 These are defense-in-depth: if an attacker achieves code execution through the
 Deno process, they are sandboxed to the declared paths. Combined with a

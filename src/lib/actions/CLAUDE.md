@@ -656,7 +656,7 @@ returns a Proxy-based typed API. Per-kind dispatch:
 - **`request_response`** — builds `ActionEvent`, runs `parse().handle_async()` to produce the request, calls `peer.send(request, {transport_name, signal, queue})`, transitions to `receive_response`, wires the response, parses (may transition to `receive_error`), runs handler, extracts `Result`.
 - **`remote_notification`** — builds event, creates notification, `peer.send(notification, {transport_name, signal, queue})`. Returns `Result<{value: void}, {error}>`.
 
-`RpcClientCallOptions extends ActionPeerSendOptions` — `{signal?, queue?, transport_name?}`.
+`RpcClientCallOptions extends ActionDispatcherSendOptions` — `{signal?, queue?, transport_name?}`.
 `transport_for_method: (method) => TransportName | undefined` for per-method
 selection. `on_action_event(event)` fires once per dispatched action with
 the live `ActionEvent` (zzz wires reactive history here).
@@ -693,7 +693,7 @@ doesn't get probed as a thenable by `await`.
 ### Frontend factory (`actions/frontend_rpc_client.ts`)
 
 `create_frontend_rpc_client<TApi>({specs, path?, transports?, transport_for_method?, on_action_event?})`
-bundles `ActionRegistry + ActionEventEnvironment + Transports + ActionPeer +
+bundles `ActionRegistry + ActionEventEnvironment + Transports + ActionDispatcher +
 create_rpc_client + create_throwing_api` boilerplate every consumer
 repeats — plus the `lookup_action_handler: () => undefined` stub (frontend
 never registers `request_response` handlers; every method dispatches over
