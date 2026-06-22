@@ -31,6 +31,11 @@ import {
 } from '$lib/testing/db.ts';
 import {run_migrations} from '$lib/db/migrate.ts';
 import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
+import {
+	create_test_extra_actor,
+	create_test_role_grant_direct,
+	soft_delete_test_actor,
+} from '$lib/testing/db_entities.ts';
 import {install_audit_drift_guard} from '$lib/testing/audit_drift_guard.ts';
 import type {AppServerContext} from '$lib/server/app_server_context.ts';
 import type {RouteSpec} from '$lib/http/route_spec.ts';
@@ -227,6 +232,46 @@ describe_db('account_delete keeper guard', (get_db) => {
 		assert.strictEqual(deleted.ok, true);
 
 		// A tries to self-delete → still refused as the last admin.
+		const blocked = await rpc_call_for_spec({
+			app: test_app.app,
+			path: RPC_PATH,
+			spec: account_delete_action_spec,
+			params: {},
+			headers: admin_a.create_session_headers(),
+		});
+		assert.strictEqual(blocked.ok, false);
+		if (!blocked.ok)
+			assert.strictEqual(
+				(blocked.error.data as {reason?: string})?.reason,
+				ERROR_CANNOT_DELETE_LAST_ADMIN,
+			);
+		await test_app.cleanup();
+	});
+
+	test('a tombstoned-actor admin grant does not rescue the last usable admin', async () => {
+		// Actor-level twin of the test above (which tombstones whole *accounts*).
+		// An account that stays *active* but whose only admin grant sits on a
+		// soft-deleted *actor* must not inflate the active-admin count — else
+		// deleting the sole usable admin would be wrongly allowed (fail-open). The
+		// per-actor-delete state is latent (no handler produces it yet), so it's
+		// seeded directly. Mirrors the Rust
+		// `last_admin_guard_ignores_an_admin_grant_on_a_tombstoned_actor`.
+		const db = get_db();
+		const test_app = await create_test_app({session_options, create_route_specs, db});
+		const admin_a = await test_app.create_account({username: 'usable_admin', roles: [ROLE_ADMIN]});
+
+		// A second *active* account whose only admin grant is on a tombstoned actor.
+		const ghost = await test_app.create_account({username: 'ghost_admin'});
+		const ghost_extra = (await create_test_extra_actor(db, ghost.account.id, 'to_delete')).id;
+		await create_test_role_grant_direct(db, {
+			actor_id: ghost_extra,
+			role: ROLE_ADMIN,
+			granted_by: null,
+		});
+		await soft_delete_test_actor(db, ghost_extra);
+
+		// admin_a self-delete → still refused: the tombstoned-actor admin grant does
+		// not count, so admin_a is the last active admin.
 		const blocked = await rpc_call_for_spec({
 			app: test_app.app,
 			path: RPC_PATH,

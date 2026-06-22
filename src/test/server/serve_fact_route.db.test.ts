@@ -26,6 +26,11 @@
  *   reference identical bytes (one fact row); B's viewer reads via B's cell,
  *   but cannot reach A's reference, and the bare-hash endpoint admits no
  *   non-admin via B's public cell to A's bytes.
+ * - **soft-deleted (tombstoned) actor in the public-read resolution**: a
+ *   1-active-+-1-tombstone reader resolves as the owner (the tombstone is
+ *   excluded from the active-actor count), and a tombstoned-only reader
+ *   resolves anonymous — never the deleted actor (the A6 latent multi-actor
+ *   hazard, twin of the Rust `public_request_context.rs` PG suite)
  *
  * @module
  */
@@ -37,6 +42,7 @@ import type {FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
 import {ERROR_INVALID_ROUTE_PARAMS} from '$lib/http/error_schemas.ts';
 import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
 import type {TestApp} from '$lib/testing/app_server.ts';
+import {create_test_extra_actor, soft_delete_test_actor} from '$lib/testing/db_entities.ts';
 import {describe_db, create_cell_test_app, create_cell} from '../auth/cell_test_helpers.ts';
 
 const PUBLIC_HEADERS = {host: 'localhost:5173', origin: 'http://localhost:5173'};
@@ -254,5 +260,85 @@ describe_db('serve_fact_route', (get_db) => {
 		// 4. Anonymous bare-hash → 401, regardless of B's public cell.
 		const bare_anon = await get_bare_fact(app, hash);
 		assert.strictEqual(bare_anon.status, 401);
+	});
+
+	// A6 follow-up: the pure-public read path
+	// (`build_public_request_context` → `query_active_actors_by_account`) counts
+	// only **active** actors, so a soft-deleted (tombstoned) actor neither
+	// demotes an otherwise single-actor account to anonymous nor — the hazard —
+	// gets resolved as the sole actor and carries its `role_grants` into a
+	// public read. Twin of the Rust `public_request_context.rs` PG suite, here
+	// observed end-to-end through the cell serve route: a private cell the owner
+	// can view iff resolution lands on their actor. Latent until per-actor
+	// soft-delete (without a whole-account delete) ships — seeded directly here.
+
+	test('public read: single active-actor owner views own private cell (tombstone control)', async () => {
+		// Control for the two tombstone cases — same setup minus the tombstone, so
+		// the difference is attributable to the soft-delete and nothing else.
+		const app = await create_cell_test_app(get_db);
+		const owner = await app.create_account({username: 'tomb_control_owner'});
+		const bytes = encode('control private bytes');
+		const hash = await put_embedded(bytes, 'text/plain');
+		const cell = await create_cell(app, {
+			data: {kind: 'image', cover: hash}, // private (default)
+			headers: owner.create_session_headers(),
+		});
+
+		// Exactly one active actor → resolves the owner → admitted to their cell.
+		const res = await get_cell_fact(app, cell.id, hash, owner.create_session_headers());
+		assert.strictEqual(res.status, 200);
+		assert.deepEqual(new Uint8Array(await res.arrayBuffer()), bytes);
+	});
+
+	test('public read: 1 active + 1 tombstoned actor still resolves the owner', async () => {
+		// Functional half: 1 active + 1 tombstoned is still a single-actor
+		// account. The tombstone must not push the active count to 2 and demote
+		// the owner to anonymous (denying them their own actor's view).
+		const app = await create_cell_test_app(get_db);
+		const owner = await app.create_account({username: 'tomb_extra_owner'});
+		const bytes = encode('extra-actor private bytes');
+		const hash = await put_embedded(bytes, 'text/plain');
+		const cell = await create_cell(app, {
+			data: {kind: 'image', cover: hash}, // private (default)
+			headers: owner.create_session_headers(),
+		});
+
+		// Add a second actor and tombstone it → 1 active + 1 soft-deleted actor.
+		const extra_id = (await create_test_extra_actor(get_db(), owner.account.id, 'to_delete')).id;
+		await soft_delete_test_actor(get_db(), extra_id);
+
+		// The active count is still 1 → resolves the owner's active actor → 200.
+		// An unfiltered count (2) would fall back to anonymous → 404.
+		const res = await get_cell_fact(app, cell.id, hash, owner.create_session_headers());
+		assert.strictEqual(res.status, 200);
+		assert.deepEqual(new Uint8Array(await res.arrayBuffer()), bytes);
+	});
+
+	test('public read: tombstoned-only account resolves anonymous, not the deleted actor', async () => {
+		// Security half (the hazard the fix closes): an account whose only actor
+		// is tombstoned has *zero* active actors → anonymous. An unfiltered count
+		// would see one actor, resolve the deleted actor, and carry its
+		// `role_grants` into the read — admitting the caller to their own private
+		// cell after the actor was deleted.
+		const app = await create_cell_test_app(get_db);
+		const ghost = await app.create_account({username: 'tomb_ghost_owner'});
+		const bytes = encode('ghost private bytes');
+		const hash = await put_embedded(bytes, 'text/plain');
+		// Create the private cell while the actor is still active (so it owns it).
+		const cell = await create_cell(app, {
+			data: {kind: 'image', cover: hash}, // private (default)
+			headers: ghost.create_session_headers(),
+		});
+
+		// Tombstone the account's only actor → zero active actors. The
+		// account-scoped session stays valid (only account soft-delete revokes
+		// sessions), so the account id still resolves — only the actor count
+		// changes.
+		await soft_delete_test_actor(get_db(), ghost.actor.id);
+
+		// Resolution counts zero active actors → anonymous → 404 on the private
+		// cell. An unfiltered count would resolve the deleted actor → owner → 200.
+		const res = await get_cell_fact(app, cell.id, hash, ghost.create_session_headers());
+		assert.strictEqual(res.status, 404);
 	});
 });

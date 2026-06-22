@@ -103,7 +103,7 @@ import {
 import {ROLE_ADMIN} from '../auth/role_schema.ts';
 import {ActingActor} from '../http/auth_shape.ts';
 import {ACCOUNT_ID_KEY} from '../hono_context.ts';
-import {query_actors_by_account} from '../auth/account_queries.ts';
+import {query_active_actors_by_account} from '../auth/account_queries.ts';
 import {get_route_params, type RouteContext, type RouteSpec} from '../http/route_spec.ts';
 import {ERROR_INVALID_ROUTE_PARAMS} from '../http/error_schemas.ts';
 import type {AppDeps} from '../auth/deps.ts';
@@ -286,9 +286,12 @@ const serve_fact_bytes = async (
 /**
  * Resolve the caller's `RequestContext` on a pure-public route from the
  * session-middleware-set account id. Multi-actor accounts return `null`
- * (no `acting?` slot on a public route to disambiguate); single-actor
+ * (no `acting?` slot on a public route to disambiguate); single active-actor
  * accounts resolve their actor and role_grants for owner / grant / admin
- * admission paths. Unauthenticated callers return `null`.
+ * admission paths. Unauthenticated callers return `null`. Soft-deleted
+ * (tombstoned) actors are excluded from the count
+ * (`query_active_actors_by_account`), matching the acting-actor resolution
+ * path — a tombstoned actor is never resolvable here.
  */
 const build_public_request_context = async (
 	c: Context,
@@ -296,7 +299,7 @@ const build_public_request_context = async (
 ): Promise<RequestContext | null> => {
 	const account_id = c.get(ACCOUNT_ID_KEY);
 	if (!account_id) return null;
-	const actors = await query_actors_by_account({db: route.db}, account_id);
+	const actors = await query_active_actors_by_account({db: route.db}, account_id);
 	if (actors.length !== 1) return null;
 	return build_request_context({db: route.db}, account_id, actors[0]!.id);
 };

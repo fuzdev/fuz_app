@@ -17,11 +17,18 @@ import {
 	query_role_grant_find_account_id_for_role,
 	query_role_grant_revoke_role,
 	query_role_grant_revoke_for_scope,
+	query_account_has_active_global_role,
+	query_count_active_accounts_with_global_role,
+	query_account_has_global_role,
 } from '$lib/auth/role_grant_queries.ts';
 import {query_role_grant_offer_create} from '$lib/auth/role_grant_offer_queries.ts';
 import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.ts';
 import type {Db} from '$lib/db/db.ts';
-import {create_test_account_with_actor} from '$lib/testing/db_entities.ts';
+import {
+	create_test_account_with_actor,
+	create_test_extra_actor,
+	soft_delete_test_actor,
+} from '$lib/testing/db_entities.ts';
 
 import {describe_db} from '../db_fixture.ts';
 
@@ -992,5 +999,75 @@ describe_db('RoleGrantQueries', (get_db) => {
 			[global_offer.id],
 		);
 		assert.strictEqual(global_offer_check[0]!.superseded_at, null);
+	});
+
+	// A6-sibling: the admin-removability guards and keeper resolution must not
+	// count a grant held by a *tombstoned* actor. Soft-delete doesn't revoke
+	// role_grant rows (reversible), so an account whose only admin/keeper grant
+	// sits on a soft-deleted actor would otherwise still read as one. Twin of the
+	// Rust `account_delete.rs` guard tests; latent until per-actor delete ships,
+	// seeded directly here.
+
+	test('tombstoned actor admin grant is excluded from the last-admin guards', async () => {
+		const db = get_db();
+		const deps = {db};
+
+		// Account 1: an active actor holding admin — a usable admin.
+		const a1 = await create_test_actor(db, 'usable_admin');
+		await query_create_role_grant(deps, {
+			actor_id: a1.actor_id,
+			role: ROLE_ADMIN,
+			granted_by: null,
+		});
+
+		// Account 2: its only admin grant sits on an extra actor we then tombstone.
+		const a2 = await create_test_actor(db, 'ghost_admin');
+		const a2_extra = (await create_test_extra_actor(db, a2.account_id, 'to_delete')).id;
+		await query_create_role_grant(deps, {actor_id: a2_extra, role: ROLE_ADMIN, granted_by: null});
+		await soft_delete_test_actor(db, a2_extra);
+
+		// Only account 1 counts; account 2's admin grant is on a tombstone.
+		assert.strictEqual(await query_count_active_accounts_with_global_role(deps, ROLE_ADMIN), 1);
+		assert.strictEqual(
+			await query_account_has_active_global_role(deps, a1.account_id, ROLE_ADMIN),
+			true,
+		);
+		assert.strictEqual(
+			await query_account_has_active_global_role(deps, a2.account_id, ROLE_ADMIN),
+			false,
+		);
+
+		// Activating account 2's base actor restores a usable admin → count rises to 2.
+		await query_create_role_grant(deps, {
+			actor_id: a2.actor_id,
+			role: ROLE_ADMIN,
+			granted_by: null,
+		});
+		assert.strictEqual(await query_count_active_accounts_with_global_role(deps, ROLE_ADMIN), 2);
+	});
+
+	test('tombstoned keeper actor is excluded from resolution but not the removability guard', async () => {
+		const db = get_db();
+		const deps = {db};
+		const k = await create_test_actor(db, 'keeper_host');
+		const k_extra = (await create_test_extra_actor(db, k.account_id, 'keeper_actor')).id;
+		await query_create_role_grant(deps, {actor_id: k_extra, role: ROLE_KEEPER, granted_by: null});
+		await soft_delete_test_actor(db, k_extra);
+
+		// Resolution excludes the tombstoned keeper actor → no keeper resolves.
+		assert.strictEqual(await query_role_grant_find_account_id_for_role(deps, ROLE_KEEPER), null);
+		// The removability guard stays unconditional → still sees the keeper.
+		assert.strictEqual(await query_account_has_global_role(deps, k.account_id, ROLE_KEEPER), true);
+
+		// Control: an active keeper actor resolves the keeper account.
+		await query_create_role_grant(deps, {
+			actor_id: k.actor_id,
+			role: ROLE_KEEPER,
+			granted_by: null,
+		});
+		assert.strictEqual(
+			await query_role_grant_find_account_id_for_role(deps, ROLE_KEEPER),
+			k.account_id,
+		);
 	});
 });

@@ -269,6 +269,13 @@ export const query_role_grant_has_role = async (
  * only global role_grants (`scope_id IS NULL`) since the use case is
  * "is the caller's account broadly admin", not scope-aware.
  *
+ * Deliberately **unconditional** — no `deleted_at` filter on the account or the
+ * granting actor. This backs the keeper removability guard, where the keeper
+ * must read as present *even if* its account or keeper-actor is already
+ * tombstoned (deleting it would brick keeper/daemon auth with no in-band
+ * recovery). That is the opposite posture from `resolve_keeper_account_id`,
+ * which *resolves* the daemon identity and so excludes a tombstoned keeper actor.
+ *
  * Fast under the existing `idx_role_grant_actor` index — the inner
  * `actor_id IN (...)` subquery is index-scan, and the outer EXISTS
  * stops at the first match.
@@ -299,13 +306,16 @@ export const query_account_has_global_role = async (
 
 /**
  * Like `query_account_has_global_role`, but only counts the grant when the
- * **account itself is active** (`deleted_at IS NULL`). Used by the last-admin
- * branch of the removability guard: a soft-deleted admin can't log in and is
- * excluded from `query_count_active_accounts_with_global_role`, so the guard
- * must use the same active-account predicate when testing whether the *target*
- * is an admin — otherwise removing an already-tombstoned admin is falsely
- * blocked as `cannot_delete_last_admin` even though it can't lower the active
- * count. The keeper branch deliberately uses the unconditional
+ * **account and the granting actor are both active** (`deleted_at IS NULL`).
+ * Used by the last-admin branch of the removability guard: a soft-deleted admin
+ * can't log in and is excluded from `query_count_active_accounts_with_global_role`,
+ * so the guard must use the same active predicate when testing whether the
+ * *target* is an admin — otherwise removing an already-tombstoned admin is
+ * falsely blocked as `cannot_delete_last_admin`. Soft-delete does **not** revoke
+ * `role_grant` rows (it's reversible), so the actor join filters `deleted_at IS
+ * NULL` too: a grant held only by a tombstoned actor must not keep the account
+ * reading as an admin (the same tombstone-exclusion the acting-actor resolution
+ * applies). The keeper branch deliberately uses the unconditional
  * `query_account_has_global_role` (a keeper is never removable regardless of
  * tombstone state).
  *
@@ -326,6 +336,7 @@ export const query_account_has_active_global_role = async (
 			JOIN account a ON a.id = act.account_id
 			WHERE a.id = $1
 			  AND a.deleted_at IS NULL
+			  AND act.deleted_at IS NULL
 			  AND rg.role = $2
 			  AND rg.scope_id IS NULL
 			  AND rg.revoked_at IS NULL
@@ -338,10 +349,13 @@ export const query_account_has_active_global_role = async (
 
 /**
  * Count **active** accounts (`deleted_at IS NULL`) holding an active global
- * role_grant for `role`. Used by the last-admin guard on `account_delete` /
- * `account_purge`: a soft-deleted account's admin grant isn't revoked, so a
- * plain grant count would include tombstoned (unusable) admins — this joins
- * `account` and excludes them, counting only admins that can actually log in.
+ * role_grant for `role`, counting only grants on **active actors**
+ * (`act.deleted_at IS NULL`). Used by the last-admin guard on `account_delete` /
+ * `account_purge`: soft-delete revokes neither a tombstoned account's nor a
+ * tombstoned actor's admin grant, so an unfiltered count would include unusable
+ * admins — this joins `account` *and* filters the actor, so an account whose
+ * only admin grant sits on a tombstoned actor no longer counts (otherwise the
+ * guard could fail-open and let the last usable admin be deleted).
  *
  * @param deps - query dependencies
  * @param role - the role to count (e.g. `ROLE_ADMIN`)
@@ -357,6 +371,7 @@ export const query_count_active_accounts_with_global_role = async (
 		 JOIN actor act ON act.account_id = a.id
 		 JOIN role_grant rg ON rg.actor_id = act.id
 		 WHERE a.deleted_at IS NULL
+		   AND act.deleted_at IS NULL
 		   AND rg.role = $1
 		   AND rg.scope_id IS NULL
 		   AND rg.revoked_at IS NULL
@@ -382,7 +397,13 @@ export const query_role_grant_list_for_actor = async (
 /**
  * Find the account ID of an account that holds an active role_grant for a given role.
  *
- * Joins role_grant → actor → account. Returns the first match, or `null` if none.
+ * Joins role_grant → actor → account, counting only an **active account + active
+ * actor** (`deleted_at IS NULL` on both). This *resolves* an identity (the
+ * daemon-token keeper via `resolve_keeper_account_id`), so a tombstoned actor
+ * must not grant the role — the opposite posture from the removability guard
+ * `query_account_has_global_role`, which stays unconditional. Returns the first
+ * match by ascending `account.id` (deterministic under multiple holders), or
+ * `null` if none.
  *
  * @param deps - query dependencies
  * @param role - the role to search for
@@ -398,8 +419,11 @@ export const query_role_grant_find_account_id_for_role = async (
 		 JOIN actor act ON act.id = p.actor_id
 		 JOIN account a ON a.id = act.account_id
 		 WHERE p.role = $1
+		   AND a.deleted_at IS NULL
+		   AND act.deleted_at IS NULL
 		   AND p.revoked_at IS NULL
 		   AND (p.expires_at IS NULL OR p.expires_at > NOW())
+		 ORDER BY a.id ASC
 		 LIMIT 1`,
 		[role],
 	);

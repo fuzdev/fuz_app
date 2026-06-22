@@ -18,7 +18,11 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {query_create_account_with_actor} from '../auth/account_queries.ts';
+import {
+	query_create_account_with_actor,
+	query_create_actor,
+	query_actor_soft_delete,
+} from '../auth/account_queries.ts';
 import {query_create_role_grant} from '../auth/role_grant_queries.ts';
 import type {Account, Actor, CreateRoleGrantInput, RoleGrant} from '../auth/account_schema.ts';
 import type {Db} from '../db/db.ts';
@@ -71,3 +75,25 @@ export const create_test_role_grant_direct = async (
 	db: Db,
 	input: CreateRoleGrantInput,
 ): Promise<RoleGrant> => query_create_role_grant({db}, input);
+
+/**
+ * Add a second `actor` to an existing test account — the multi-actor edge.
+ *
+ * Wraps the production `query_create_actor`; the TS twin of the Rust
+ * `tests/common` `seed_extra_actor` helper. Lets a `.db.test.ts` suite build a
+ * multi-actor account without reimplementing the raw insert.
+ */
+export const create_test_extra_actor = async (
+	db: Db,
+	account_id: string,
+	name: string,
+): Promise<Actor> => query_create_actor({db}, account_id, name);
+
+/**
+ * Soft-delete (tombstone) one actor via the production `query_actor_soft_delete`
+ * — returns `true` when an active row flipped. The TS twin of the Rust
+ * `query_actor_soft_delete` the guard tests use, for seeding the latent
+ * multi-actor tombstone state directly (no per-actor-delete RPC ships yet).
+ */
+export const soft_delete_test_actor = async (db: Db, actor_id: string): Promise<boolean> =>
+	query_actor_soft_delete({db}, actor_id, null);
