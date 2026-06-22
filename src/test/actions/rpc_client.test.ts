@@ -8,7 +8,7 @@ import {describe, assert, test} from 'vitest';
 import {z} from 'zod';
 
 import {create_rpc_client} from '$lib/actions/rpc_client.ts';
-import {ActionPeer} from '$lib/actions/action_peer.ts';
+import {ActionDispatcher} from '$lib/actions/action_dispatcher.ts';
 import {Transports, type Transport} from '$lib/actions/transports.ts';
 import type {ActionEventEnvironment} from '$lib/actions/action_event_types.ts';
 import type {ActionSpecUnion} from '$lib/actions/action_spec.ts';
@@ -119,7 +119,7 @@ describe('create_rpc_client', () => {
 	test('returns undefined for unknown methods', () => {
 		const env = new TestEnvironment([]);
 		const transports = new Transports();
-		const peer = new ActionPeer({environment: env, transports});
+		const peer = new ActionDispatcher({environment: env, transports});
 
 		const client = create_rpc_client<TestClient>({peer, environment: env});
 		assert.strictEqual(client.unknown_method, undefined);
@@ -128,7 +128,7 @@ describe('create_rpc_client', () => {
 	test('has returns true for known methods', () => {
 		const env = new TestEnvironment([ping_spec]);
 		const transports = new Transports();
-		const peer = new ActionPeer({environment: env, transports});
+		const peer = new ActionDispatcher({environment: env, transports});
 
 		const client = create_rpc_client<TestClient>({peer, environment: env});
 		assert.ok('ping' in client);
@@ -138,7 +138,7 @@ describe('create_rpc_client', () => {
 	test('creates callable methods for known specs', () => {
 		const env = new TestEnvironment([ping_spec, toggle_spec]);
 		const transports = new Transports();
-		const peer = new ActionPeer({environment: env, transports});
+		const peer = new ActionDispatcher({environment: env, transports});
 
 		const client = create_rpc_client<TestClient>({peer, environment: env});
 		assert.strictEqual(typeof client.ping, 'function');
@@ -148,7 +148,7 @@ describe('create_rpc_client', () => {
 	test('sync local_call method executes synchronously', () => {
 		const env = new TestEnvironment([toggle_spec]);
 		const transports = new Transports();
-		const peer = new ActionPeer({environment: env, transports});
+		const peer = new ActionDispatcher({environment: env, transports});
 
 		const client = create_rpc_client<TestClient>({peer, environment: env});
 		// Should not throw — sync method with no handler returns null (the output)
@@ -162,7 +162,7 @@ describe('create_rpc_client', () => {
 		const responses = new Map([['ping', {pong: true}]]);
 		transports.register_transport(create_mock_transport(responses));
 
-		const peer = new ActionPeer({environment: env, transports});
+		const peer = new ActionDispatcher({environment: env, transports});
 		const client = create_rpc_client<TestClient>({peer, environment: env});
 
 		const result = await client.ping!(null);
@@ -177,7 +177,7 @@ describe('create_rpc_client', () => {
 		const responses = new Map([['ping', {pong: true}]]);
 		transports.register_transport(create_mock_transport(responses, captured));
 
-		const peer = new ActionPeer({environment: env, transports});
+		const peer = new ActionDispatcher({environment: env, transports});
 		const client = create_rpc_client<TestClient>({peer, environment: env});
 
 		const controller = new AbortController();
@@ -199,7 +199,7 @@ describe('create_rpc_client', () => {
 		transports.register_transport(http); // becomes default
 		transports.register_transport(ws);
 
-		const peer = new ActionPeer({environment: env, transports});
+		const peer = new ActionDispatcher({environment: env, transports});
 		const client = create_rpc_client<TestClient>({
 			peer,
 			environment: env,
@@ -217,7 +217,7 @@ describe('create_rpc_client', () => {
 		const captured: Array<CapturedSend> = [];
 		transports.register_transport(create_mock_transport(undefined, captured));
 
-		const peer = new ActionPeer({environment: env, transports});
+		const peer = new ActionDispatcher({environment: env, transports});
 		const client = create_rpc_client<TestClient>({peer, environment: env});
 
 		const controller = new AbortController();
@@ -234,7 +234,7 @@ describe('create_rpc_client', () => {
 		const responses = new Map([['ping', {pong: true}]]);
 		transports.register_transport(create_mock_transport(responses, captured));
 
-		const peer = new ActionPeer({environment: env, transports});
+		const peer = new ActionDispatcher({environment: env, transports});
 		const client = create_rpc_client<TestClient>({peer, environment: env});
 
 		await client.ping!(null, {queue: true});
@@ -249,7 +249,7 @@ describe('create_rpc_client', () => {
 		const captured: Array<CapturedSend> = [];
 		transports.register_transport(create_mock_transport(undefined, captured));
 
-		const peer = new ActionPeer({environment: env, transports});
+		const peer = new ActionDispatcher({environment: env, transports});
 		const client = create_rpc_client<TestClient>({peer, environment: env});
 
 		await client.pong_notify!(null, {queue: true});
@@ -271,7 +271,7 @@ describe('create_rpc_client', () => {
 		transports.register_transport(http); // becomes default
 		transports.register_transport(ws);
 
-		const peer = new ActionPeer({
+		const peer = new ActionDispatcher({
 			environment: env,
 			transports,
 			default_send_options: {queue: true},
@@ -297,7 +297,7 @@ describe('create_rpc_client', () => {
 			return null;
 		});
 		const transports = new Transports();
-		const peer = new ActionPeer({environment: env, transports});
+		const peer = new ActionDispatcher({environment: env, transports});
 		const client = create_rpc_client<TestClient>({peer, environment: env});
 
 		const controller = new AbortController();

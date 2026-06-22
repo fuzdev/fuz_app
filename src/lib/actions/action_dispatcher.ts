@@ -1,5 +1,5 @@
 /**
- * ActionPeer — symmetric send/receive for JSON-RPC actions.
+ * ActionDispatcher — symmetric send/receive for JSON-RPC actions.
  *
  * Wraps a `Transports` registry and `ActionEventEnvironment` to provide
  * bidirectional action dispatch via JSON-RPC 2.0.
@@ -27,24 +27,24 @@ import {create_action_event} from './action_event.ts';
 import {Transports, type TransportName, type TransportSendOptions} from './transports.ts';
 import type {ActionEventEnvironment} from './action_event_types.ts';
 
-// TODO @api @many refactor frontend_actions_api.ts with action_peer.ts
+// TODO @api @many refactor frontend_actions_api.ts with action_dispatcher.ts
 
 // TODO the goal is to make this fully symmetric but we're not quite there,
 // this does receiving but only part of sending, and some deeper changes may be needed
 
 /**
- * Per-call options for `ActionPeer.send`. Extends `TransportSendOptions`
+ * Per-call options for `ActionDispatcher.send`. Extends `TransportSendOptions`
  * with `transport_name` for per-call transport selection. The peer-wide
- * default for any field lives on `ActionPeerOptions.default_send_options` —
+ * default for any field lives on `ActionDispatcherOptions.default_send_options` —
  * set `queue: true` there once for client-authoritative peers and override
  * per-call for exceptions (e.g. high-frequency position sync where stale
  * replays are wrong).
  */
-export interface ActionPeerSendOptions extends TransportSendOptions {
+export interface ActionDispatcherSendOptions extends TransportSendOptions {
 	transport_name?: TransportName;
 }
 
-export interface ActionPeerOptions {
+export interface ActionDispatcherOptions {
 	environment: ActionEventEnvironment;
 
 	// For sending - optional because some peers may be receive-only
@@ -53,10 +53,10 @@ export interface ActionPeerOptions {
 	// Default send options. `signal` is excluded — signals are inherently
 	// per-call (a shared signal would abort every subsequent call after the
 	// first trip), and peer-level fallback wouldn't be applied anyway.
-	default_send_options?: Omit<ActionPeerSendOptions, 'signal'>;
+	default_send_options?: Omit<ActionDispatcherSendOptions, 'signal'>;
 }
 
-export class ActionPeer {
+export class ActionDispatcher {
 	readonly environment: ActionEventEnvironment;
 	readonly transports: Transports;
 	// TODO maybe expand the pattern of using `transports` in send, so what's used in receive?
@@ -64,9 +64,9 @@ export class ActionPeer {
 	// What deps should it actually know about, and what gains could we have by making it more decoupled?
 	// e.g. don't just decouple for the sake of imagined flexibility!
 
-	default_send_options: Omit<ActionPeerSendOptions, 'signal'>;
+	default_send_options: Omit<ActionDispatcherSendOptions, 'signal'>;
 
-	constructor(options: ActionPeerOptions) {
+	constructor(options: ActionDispatcherOptions) {
 		this.environment = options.environment;
 		this.transports = options.transports ?? new Transports();
 		this.default_send_options = options.default_send_options ?? {};
@@ -84,15 +84,15 @@ export class ActionPeer {
 	// TODO the transport type option here may be bad magic
 	async send(
 		message: JsonrpcRequest,
-		options?: ActionPeerSendOptions,
+		options?: ActionDispatcherSendOptions,
 	): Promise<JsonrpcResponseOrError>;
 	async send(
 		message: JsonrpcNotification,
-		options?: ActionPeerSendOptions,
+		options?: ActionDispatcherSendOptions,
 	): Promise<JsonrpcErrorResponse | null>;
 	async send(
 		message: JsonrpcMessageFromClientToServer,
-		options?: ActionPeerSendOptions,
+		options?: ActionDispatcherSendOptions,
 	): Promise<JsonrpcMessageFromServerToClient | null> {
 		try {
 			const transport = this.transports.get_transport(

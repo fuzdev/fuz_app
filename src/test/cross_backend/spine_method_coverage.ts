@@ -179,6 +179,18 @@ export const SPINE_METHOD_COVERAGE: ReadonlyArray<MethodCoverageEntry> = [
 	{method: 'actor_lookup', tier: 'off_surface', suite: 'describe_actor_lookup_cross_tests'},
 	{method: 'actor_search', tier: 'off_surface', suite: 'describe_actor_search_cross_tests'},
 
+	// --- Off-surface: peer/ping protocol action (capability `peer_request`) ---
+	// A protocol action (filtered from the action manifest), but live-mounted on
+	// the HTTP RPC endpoint too — so an HTTP invocation refuses `peer_no_transport`
+	// rather than `method_not_found`. The WS endpoint registers it via the
+	// `protocol_actions` spread. Covered by `describe_peer_ping_ws_tests`.
+	{
+		method: 'peer/ping',
+		tier: 'off_surface',
+		capability: 'peer_request',
+		suite: 'describe_peer_ping_ws_tests',
+	},
+
 	// --- Backdoor: `_testing_*` daemon-token actions ---
 	// Live-mounted on the test binary only, never on the declared surface
 	// (`assert_no_testing_methods` guards that). The negative-credential gate is

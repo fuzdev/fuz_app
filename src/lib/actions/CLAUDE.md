@@ -91,7 +91,7 @@ registry-only.
 **Symmetric design — universal calling abstraction.** SAES is one spec
 shape driving dispatch across (a) network boundaries (frontend ⇄ backend
 over HTTP / WS) and (b) within the same runtime (`local_call` actions).
-`ActionPeer` is symmetric on both sides (`send` + `receive`). Typed
+`ActionDispatcher` is symmetric on both sides (`send` + `receive`). Typed
 surfaces are paired: `FrontendActionsApi` is "what the frontend can call"
 (typed Proxy from `create_rpc_client`); `BackendActionsApi` is "what the
 backend can call" (typed object from `create_broadcast_api` today;
@@ -148,7 +148,7 @@ multi-source-aware helper uses).
 
 **Protocol actions filtered by default.** Every spec-iterating helper
 accepts `{include_protocol_actions?: boolean}` (default `false`) and drops
-`heartbeat` / `cancel`. Protocol actions ship from fuz_app and spread into
+`heartbeat` / `cancel` / `peer/ping`. Protocol actions ship from fuz_app and spread into
 each consumer's `actions` array at registration time (via
 `protocol_actions` from `actions/protocol.ts`); they should not appear in
 consumer-owned typed surfaces. Pass `include_protocol_actions: true` only
@@ -220,6 +220,7 @@ interface ActionContext {
 	auth: RequestContext | null; // null for public actions
 	request_id: JsonrpcRequestId;
 	connection_id?: Uuid; // populated on WS, undefined on HTTP
+	request_client?: RequestClient; // WS only: initiate a server→client request + await the reply (ActionPeer); undefined on HTTP
 	db: Db; // transaction for mutations, pool for reads
 	pending_effects: Array<Promise<void>>; // eager — see http/CLAUDE.md §Pending Effects
 	post_commit_effects: Array<() => void | Promise<void>>; // deferred — push via `emit_after_commit`
@@ -320,7 +321,7 @@ and optional `dispose()`. All transports share `TransportSendOptions`:
 `Transports` registry holds multiple transports with a `current` selection
 and `allow_fallback: boolean` (default `true`). Explicit
 `transport_for_method` (on `rpc_client`) or
-`default_send_options.transport_name` (on `ActionPeer`) takes precedence.
+`default_send_options.transport_name` (on `ActionDispatcher`) takes precedence.
 
 ### WS close codes (`actions/transports.ts`)
 
@@ -331,8 +332,8 @@ and `allow_fallback: boolean` (default `true`). Explicit
 ### Transport modules
 
 - `actions/transports_http.ts` — `frontend_http_rpc`; thin `fetch` adapter, POST default, GET on `has_side_effects(method) === false`.
-- `actions/transports_ws.ts` — `frontend_websocket_rpc`; thin adapter over `WebsocketRpcConnection` (default impl: `FrontendWebsocketClient`).
-- `actions/transports_ws_backend.ts` — `backend_websocket_rpc`; server-side WS with session tracking; satisfies `FilterableBroadcastTransport`.
+- `actions/transports_ws.ts` — `frontend_websocket_rpc`; thin adapter over `WebsocketRpcConnection` (default impl: `FrontendWebsocketClient`). Answers inbound server→client requests: a built-in `peer_ping_responder` for `peer/ping` (zero-wiring liveness), any other request routed through `peer.receive` with the response sent back over the socket (the frontend half of the ActionPeer receive loop).
+- `actions/transports_ws_backend.ts` — `backend_websocket_rpc`; server-side WS with session tracking; satisfies `FilterableBroadcastTransport`. Server→client requests via `request_connection` (correlation registry in `actions/peer_request.ts`).
 
 `FrontendHttpTransport` synthesizes a JSON-RPC error envelope via
 `http_status_to_jsonrpc_error_code` on non-OK HTTP; DEV warns on drift
@@ -362,7 +363,28 @@ Fan-out: `send(notification)` broadcasts to every connection;
 `broadcast_filtered(message, predicate)` runs per-connection ACL predicate
 over `ConnectionIdentity`; `send_to_account` wraps `broadcast_filtered` and
 structurally satisfies `NotificationSender` (see `auth/CLAUDE.md` §WS
-notifications).
+notifications). `send(request)` is a misuse (a request has no single
+broadcast target) and returns an error envelope.
+
+Server→client request/response (ActionPeer): `request_connection(connection_id,
+method, params, {timeout_ms?})` sends a `{jsonrpc, method, params, id}` frame to
+exactly one socket and awaits the reply, returning a `PeerRequestOutcome`
+(`{ok: true, value}` | `{ok: false, error: PeerRequestError}` —
+`timeout`/`connection_gone`/`too_many_in_flight`/`client_error`). The transport
+owns the socket + the send; the correlation registry — id allocation, the pending
+map (nested `connection_id → s{n}` id, the nesting being the per-connection
+isolation guarantee), deadlines, and the in-flight cap — is `PendingPeerRequests`
+in **`actions/peer_request.ts`** (also home to the peer types/constants +
+`audit_unmatched_peer_response`), composed as `#pending` and unit-tested without a
+socket. `register_action_ws` routes inbound responses back via
+`resolve_peer_response` (→ `#pending.resolve`); connection close drains pending as
+`connection_gone`. Defaults: `DEFAULT_PEER_REQUEST_TIMEOUT` (10s),
+`MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION` (256). Threaded to handlers as
+`ActionContext.request_client` (WS only; `undefined` on HTTP RPC). The `peer/ping`
+protocol action drives it; see `actions/peer_ping.ts`. An inbound reply matching
+no pending entry (unsolicited / cross-connection / late) is dropped + audited via
+`audit_unmatched_peer_response` (sampled warn — first 8, then 1/256; twin of the
+Rust `audit_unmatched_response`).
 
 Return values are bookkeeping, not delivery receipts — `0` means no live
 sockets, non-zero means `ws.send` did not throw. Durable delivery requires
@@ -531,9 +553,10 @@ Two abort signals composed via `AbortSignal.any`:
 
 ## Protocol actions (`actions/protocol.ts`)
 
-Two shared `{spec, handler}` tuples that every consumer spreads into both
-sides' `actions` arrays — disconnect detection and per-request cancel
-work identically across every repo without per-consumer ping plumbing.
+Three shared `{spec, handler}` tuples that every consumer spreads into both
+sides' `actions` arrays — disconnect detection, per-request cancel, and the
+server→client `peer/ping` round-trip work identically across every repo
+without per-consumer ping plumbing.
 
 The category is wire-protocol concerns shipped by fuz_app, not consumer
 domain logic. Protocol vs domain: a future clock-skew probe or
@@ -544,9 +567,12 @@ Two const arrays:
 - `protocol_actions: ReadonlyArray<Action>` — for the server's `register_action_ws` `actions`. Spread before consumer-owned actions.
 - `protocol_action_specs: ReadonlyArray<ActionSpecUnion>` — derived via `.map(a => a.spec)` so the two arrays cannot drift. For the frontend `ActionRegistry`.
 
-Asymmetry intentional — server runs handlers (heartbeat echo + cancel
-stub), frontend registry only stores specs. Both bundles plus the codegen
-`include_protocol_actions: false` default form a three-leg contract.
+Asymmetry intentional — server runs handlers (heartbeat echo, cancel
+stub, peer/ping round-trip), frontend registry only stores specs. Both
+bundles plus the codegen `include_protocol_actions: false` default form a
+three-leg contract; `PROTOCOL_ACTION_METHODS` (in `actions/action_codegen.ts`)
+is the method-name set that drives both the codegen filter and the action-manifest
+exclusion.
 
 **Not auto-spread by `create_frontend_rpc_client` or `register_ws_endpoint`** —
 bundled helpers stay pure factories so the dispatch surface stays
@@ -557,11 +583,12 @@ individual protocol actions without an opt-out flag.
 
 - **`heartbeat_action`** — `request_response`, `initiator: 'frontend'`, `auth: 'authenticated'`, `side_effects: false`, nullary input/output (`z.strictObject({})`). Handler is a stateless no-op echo. Client's activity-aware heartbeat timer fires this whenever idle past `DEFAULT_HEARTBEAT_INTERVAL`; server's `register_action_ws` heartbeat tracker counts the incoming message as activity.
 - **`cancel_action`** — `remote_notification`, `initiator: 'frontend'`, `auth: null`, `side_effects: true`. Params: `CancelNotificationParams = z.strictObject({request_id: JsonrpcRequestId})`. **Handler is an empty stub** — cancel semantics are dispatcher-owned (`register_action_ws` has the `{request_id → AbortController}` map). Wire format is snake_case `cancel` + `{request_id}`, not MCP's `$/cancelRequest` + `{requestId}` — MCP adoption would happen at an MCP adapter's translation layer, not in the base transport.
+- **`peer_ping_action`** — `request_response`, `initiator: 'both'`, `auth: public`, `side_effects: false`. Input `PingActionInput = {nonce?, timeout_ms?}` (`.default({})`); output `PingResponse = {nonce, protocol_version}`. The client→server invocation drives the **server→client** direction: the handler calls `ctx.request_client('peer/ping', {nonce})`, awaits the echo, validates it against `PingResponse` + checks the nonce, and returns it. Over HTTP RPC (`ctx.request_client` absent) it refuses with `peer_no_transport`, so it's mounted on both the WS endpoint (via this bundle) and the HTTP RPC endpoint (the spine full mount). `timeout_ms` is clamped shorten-only. `data.reason` codes (`peer_timeout` / `peer_connection_gone` / `peer_no_transport` / `peer_too_many_in_flight` / `peer_ping_invalid_reply` / `peer_ping_nonce_mismatch`) + the `PingResponse` shape (whose `protocol_version` is `PEER_PROTOCOL_VERSION`) are the cross-impl wire contract (twins of the Rust `REASON_PEER_*`). The frontend half — `peer_ping_responder` (the echo a client sends back, wired into `FrontendWebsocketTransport`) — lives here too. `peer_ping_action` is a plain `RpcAction` literal (not `rpc_action(...)`), so the module stays free of the runtime `action_rpc.ts` import and `protocol_action_specs` doesn't drag the dispatch core into frontend bundles — same discipline as `heartbeat`/`cancel`. See `actions/peer_ping.ts`.
 
 ## Event state machine
 
 Five modules (`action_event_types.ts`, `action_event_data.ts`,
-`action_event_helpers.ts`, `action_event.ts`, `action_peer.ts`) define a
+`action_event_helpers.ts`, `action_event.ts`, `action_dispatcher.ts`) define a
 discriminated-union-based state machine used by the reactive client to
 track an action through its lifecycle. Per-symbol semantics on TSDoc;
 high-level shapes that span modules:
@@ -572,11 +599,18 @@ high-level shapes that span modules:
 - **`ActionEvent.parse()`** — `initial → parsed` via `spec.input.safeParse`. Input validation failures **fail immediately** without routing through an error phase (client-side programming errors, not runtime conditions with handlers). Handler errors DO route through `send_error` / `receive_error`. On `receive_response` with error response, transitions to `receive_error` instead of failing.
 - **Protocol message creation is automatic** — transitioning `parsed → handling` on `send_request` materializes the outgoing `JsonrpcRequest` with a fresh `create_uuid()` id; on `send` (notification) it materializes the `JsonrpcNotification`.
 
-`ActionPeer` is symmetric send + receive over a `Transports` registry and
-`ActionEventEnvironment`. `default_send_options` excludes `signal`
-deliberately — a shared signal would abort every subsequent call after the
-first trip. `transport_name` and `queue` can be defaulted here once to
-flip the peer into client-authoritative mode.
+`ActionDispatcher` (`actions/action_dispatcher.ts`) is symmetric send + receive
+over a `Transports` registry and `ActionEventEnvironment`. `default_send_options`
+excludes `signal` deliberately — a shared signal would abort every subsequent
+call after the first trip. `transport_name` and `queue` can be defaulted here
+once to flip the dispatcher into client-authoritative mode.
+
+**Naming.** `ActionDispatcher` is the (frontend) send/receive coordinator class.
+"ActionPeer" — unbackticked throughout the peer/ping + `request_client` docs — is
+the _capability_ it participates in: the bidirectional peer request/response
+feature. It's a concept, not a symbol. The server→client half of that capability
+is `BackendWebsocketTransport.request_connection` + `PendingPeerRequests` (see
+`actions/peer_request.ts`), not this class.
 
 ## Reactive frontend client
 

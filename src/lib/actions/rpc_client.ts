@@ -26,7 +26,7 @@ import {
 	is_notification_send,
 	extract_action_result,
 } from './action_event_helpers.ts';
-import type {ActionPeer, ActionPeerSendOptions} from './action_peer.ts';
+import type {ActionDispatcher, ActionDispatcherSendOptions} from './action_dispatcher.ts';
 import type {TransportName} from './transports.ts';
 import {jsonrpc_error_messages} from '../http/jsonrpc_errors.ts';
 import type {JsonrpcErrorObject} from '../http/jsonrpc.ts';
@@ -41,13 +41,13 @@ import type {JsonrpcErrorObject} from '../http/jsonrpc.ts';
  */
 export type TransportForMethod = (method: string) => TransportName | undefined;
 
-// TODO @api @many refactor frontend_actions_api.ts with action_peer.ts
+// TODO @api @many refactor frontend_actions_api.ts with action_dispatcher.ts
 
 // TODO @api think about unification between frontend|backend_actions_api.ts
 
 /** Options for `create_rpc_client`. */
 export interface CreateRpcClientOptions<TApi extends object = object> {
-	peer: ActionPeer;
+	peer: ActionDispatcher;
 	environment: ActionEventEnvironment;
 	/**
 	 * Optional callback fired once per dispatched action with the live
@@ -124,7 +124,7 @@ export const create_rpc_client = <TApi extends object>(
 };
 
 const create_action_method = (
-	peer: ActionPeer,
+	peer: ActionDispatcher,
 	environment: ActionEventEnvironment,
 	spec: ActionSpecUnion,
 	on_action_event?: (event: ActionEvent) => void,
@@ -178,11 +178,11 @@ const create_sync_local_call_method = (
 
 /**
  * Per-call options accepted by every typed Proxy method. Same shape as
- * `ActionPeerSendOptions` — the client threads these through unchanged
+ * `ActionDispatcherSendOptions` — the client threads these through unchanged
  * to the underlying peer. `transport_name` overrides the per-method
  * `transport_for_method` selector for this call.
  */
-export interface RpcClientCallOptions extends ActionPeerSendOptions {}
+export interface RpcClientCallOptions extends ActionDispatcherSendOptions {}
 
 /**
  * Async local-call dispatch — returns Result.
@@ -214,7 +214,7 @@ const create_async_local_call_method = (
 };
 
 const create_request_response_method = (
-	peer: ActionPeer,
+	peer: ActionDispatcher,
 	environment: ActionEventEnvironment,
 	spec: RequestResponseActionSpec,
 	on_action_event?: (event: ActionEvent) => void,
@@ -259,7 +259,7 @@ const create_request_response_method = (
 
 /** Fire-and-forget remote notification — returns `Result<{value: void}>` for consistency with `request_response`. */
 const create_remote_notification_method = (
-	peer: ActionPeer,
+	peer: ActionDispatcher,
 	environment: ActionEventEnvironment,
 	spec: RemoteNotificationActionSpec,
 	on_action_event?: (event: ActionEvent) => void,

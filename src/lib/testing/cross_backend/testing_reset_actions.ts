@@ -72,6 +72,7 @@ import {Uuid} from '@fuzdev/fuz_util/id.ts';
 import {fact_hash_bytes, FactHashSchema} from '@fuzdev/fuz_util/fact_hash.ts';
 
 import {rpc_action, type RpcAction} from '../../actions/action_rpc.ts';
+import {protocol_action_specs} from '../../actions/protocol.ts';
 import {query_put_fact} from '../../db/fact_queries.ts';
 import type {RequestResponseActionSpec} from '../../actions/action_spec.ts';
 import type {RouteAuth} from '../../http/auth_shape.ts';
@@ -376,15 +377,25 @@ export const testing_action_manifest_action_spec = {
  * assembled, in `build_full_spine_rpc_actions`), so its static spec is folded
  * in here; the Rust mirror folds in its own descriptor the same way.
  *
- * Pass the protocol-action-free full mount: the protocol actions
- * (`heartbeat` / `cancel`) are excluded by construction so the cross-impl
- * diff stays apples-to-apples (see `action_manifest.ts` §Scope).
+ * Protocol actions (`heartbeat` / `cancel` / `peer/ping`) are filtered out of
+ * the manifest here so the cross-impl diff stays apples-to-apples: the two
+ * impls organize them differently (`peer/ping` is on the TS spine's WS **and**
+ * HTTP-RPC endpoints; heartbeat/cancel WS-only; the Rust stub compiles one
+ * shared registry serving both transports), so including them would be a
+ * spurious divergence (see `action_manifest.ts` §Scope). The exclusion set is
+ * the live `protocol_action_specs` bundle — kept in lockstep with the static
+ * `PROTOCOL_ACTION_METHODS` by a drift-guard test — so this stays off the
+ * heavyweight `action_codegen` module the spawned binary would otherwise pull in.
  */
+const PROTOCOL_METHODS: ReadonlySet<string> = new Set(
+	protocol_action_specs.map((spec) => spec.method),
+);
+
 export const create_testing_action_manifest_action = (
 	mounted: ReadonlyArray<RpcAction>,
 ): RpcAction => {
 	const manifest = build_action_manifest([
-		...mounted.map((action) => action.spec),
+		...mounted.map((action) => action.spec).filter((spec) => !PROTOCOL_METHODS.has(spec.method)),
 		testing_action_manifest_action_spec,
 	]);
 	return rpc_action(testing_action_manifest_action_spec, async () => manifest);

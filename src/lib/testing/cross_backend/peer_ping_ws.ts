@@ -2,7 +2,7 @@ import '../assert_dev_env.ts';
 
 /**
  * Cross-process **server-initiated `peer/ping`** suite — the machinery
- * proof for `ActionPeer` (a backend initiating a JSON-RPC request to a
+ * proof for ActionPeer (a backend initiating a JSON-RPC request to a
  * connected client and awaiting its typed reply). The sibling of the
  * one-way notification suite (`role_grant_offer_notification_ws.ts`),
  * extended from server→client *notifications* to server→client

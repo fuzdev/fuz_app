@@ -236,9 +236,11 @@ per-method auth shape.
   which normalizes each spec to `{method, side_effects, account, actor, roles,
 credential_types}` (auth axes pass through; `roles` / `credential_types` flatten
   to sorted arrays). Twin of `schema_introspect.ts`. Excludes the protocol actions
-  (`heartbeat` / `cancel`) by construction — the two impls organize them
-  differently (TS WS-only; Rust on one shared registry), so the caller passes a
-  protocol-free list.
+  (`heartbeat` / `cancel` / `peer/ping`) — `create_testing_action_manifest_action`
+  filters them via the `protocol_action_specs` method set (Rust drops
+  `PROTOCOL_ACTION_SPECS`); the two impls organize them differently (`peer/ping`
+  on TS WS + HTTP-RPC, heartbeat/cancel WS-only; Rust one shared registry), so
+  including them would be a spurious cross-impl diff.
 - `cross_backend/action_manifest_parity.ts` — `diff_action_manifests` /
   `format_action_manifest_diffs` / `assert_action_manifests_equal` (twin of
   `schema_parity.ts`) — asserts exact method-set + per-method auth-shape parity.
@@ -306,7 +308,7 @@ RPC / WS structural invariants (options-free, apply over `surface.rpc_endpoints`
 
 * `assert_rpc_method_descriptions_present` — every RPC method on every endpoint has a non-empty `description`.
 * `assert_ws_method_descriptions_present` — every WS method on every endpoint has a non-empty `description`.
-* `assert_ws_endpoints_include_protocol_actions` — every WS endpoint includes `heartbeat` + `cancel` (the `protocol_actions` spread from `actions/protocol.js`).
+* `assert_ws_endpoints_include_protocol_actions` — every WS endpoint includes `heartbeat` + `cancel` + `peer/ping` (the `protocol_actions` spread from `actions/protocol.js`).
 * `assert_ws_notifications_have_null_auth` — WS method `kind === 'remote_notification' ⟺ auth === null`; guards against drift between spec union and surface emitter.
 * `assert_no_testing_methods` — no `_testing_*` backdoor action (`TESTING_METHOD_PREFIX`) appears as an RPC or WS method on the declared surface. The test-binary actions are live-mounted only; this guards against a future wiring change folding `create_testing_actions(...)` into the surface-generating registry.
 
@@ -895,10 +897,11 @@ source of truth for wire-shape conformance.
   (the **gating** flags `ws` / `sse` / `cell_crud` / `cell_relations` /
   `account_lifecycle` / `fact_serving` / `ready` / `account_status` /
   `oversized_reject_closes_connection` / `peer_request` — each has a `test_if`
-  reader; `peer_request` (server-initiated requests — the `ActionPeer`
-  `peer/ping` round-trip) is `true` only for the Rust spine and `false` for the
-  TS family, whose server request transport is deferred),
-  `test_if(cond, name, fn)`
+  reader; `peer_request` (server-initiated requests — the ActionPeer
+  `peer/ping` round-trip) is `true` for both the Rust spine and the TS spine
+  (`BackendWebsocketTransport.request_connection`); `ts_default_capabilities`
+  keeps it `false` like sse/ready until a backend wires the `peer/ping` HTTP +
+  WS mount), `test_if(cond, name, fn)`
   for capability-gated cases, and `in_process_capabilities` preset. The
   non-gating wiring facts (`bearer_auth` / `trusted_proxy` / `login_rate_limit`,
   no `test_if` readers) live in the parallel `BackendShapeNotes` record
@@ -1102,7 +1105,7 @@ spine. Gated on `capabilities.ws`; cross-process only. fuz_app's own wiring is
 ### `cross_backend/peer_ping_ws.ts` — `describe_peer_ping_ws_tests`
 
 The server→client **request/response** sibling of the notification suite above —
-the machinery proof for `ActionPeer`. `peer/ping` is `initiator: both`; the
+the machinery proof for ActionPeer. `peer/ping` is `initiator: both`; the
 client→server direction already exists as `heartbeat`, this exercises the new
 server→client one. The observable trigger is a client invoking the `peer/ping`
 **action** over its own socket: the handler initiates a `peer/ping` request back
@@ -1116,12 +1119,12 @@ security negatives use the raw `WsClient.send` to inject unsolicited /
 cross-connection frames. Seven cases: the positive round-trip plus
 unsolicited-response rejection, per-connection id isolation, never-reply
 `Timeout`, wrong-shape rejection, client-error forwarding, and the HTTP
-no-transport path. Gated on `capabilities.peer_request` — `true` only on the
-Rust spine (server-initiated requests are Rust-first canonical), so it `.skip`s
-on the TS spines whose server request transport is the deferred convergence
-item; `peer/ping` is a protocol action (manifest-excluded), so parity is
-behavioral here, not via the manifest gate. Cross-process only; fuz_app's own
-wiring is `src/test/cross_backend/peer_ping_ws.cross.test.ts`.
+no-transport path. Gated on `capabilities.peer_request` — `true` on both the
+Rust spine and the TS spine (the `BackendWebsocketTransport.request_connection`
+path + `register_action_ws` response correlation); `peer/ping` is a protocol
+action (manifest-excluded), so parity is behavioral here, not via the manifest
+gate. Cross-process only; fuz_app's own wiring is
+`src/test/cross_backend/peer_ping_ws.cross.test.ts`.
 
 ### `cross_backend/sse_round_trip.ts` — `describe_cross_process_sse_tests`
 

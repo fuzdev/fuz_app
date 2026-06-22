@@ -12,7 +12,7 @@
 import {describe, assert, test} from 'vitest';
 import {z} from 'zod';
 
-import {ActionPeer} from '$lib/actions/action_peer.ts';
+import {ActionDispatcher} from '$lib/actions/action_dispatcher.ts';
 import {create_broadcast_api, type ShouldDeliverFn} from '$lib/actions/broadcast_api.ts';
 import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.ts';
 import {Transports, type Transport} from '$lib/actions/transports.ts';
@@ -40,11 +40,11 @@ const thing_changed_spec = {
 	description: 'Broadcast notification for tests',
 } satisfies ActionSpecUnion;
 
-const create_test_peer = (transport: BackendWebsocketTransport): ActionPeer => {
+const create_test_peer = (transport: BackendWebsocketTransport): ActionDispatcher => {
 	const env = new MinimalActionEnvironment([thing_changed_spec]);
 	const transports = new Transports();
 	transports.register_transport(transport);
-	return new ActionPeer({
+	return new ActionDispatcher({
 		environment: env,
 		transports,
 		default_send_options: {transport_name: transport.transport_name},
@@ -180,7 +180,7 @@ describe('create_broadcast_api', () => {
 		const transports = new Transports();
 		transports.register_transport(transport);
 		const env = new MinimalActionEnvironment([thing_changed_spec]);
-		const peer = new ActionPeer({
+		const peer = new ActionDispatcher({
 			environment: env,
 			transports,
 			default_send_options: {transport_name: transport.transport_name},
@@ -216,7 +216,7 @@ describe('create_broadcast_api', () => {
 		const transports = new Transports();
 		transports.register_transport(transport);
 		const env = new MinimalActionEnvironment([thing_changed_spec, other_spec]);
-		const peer = new ActionPeer({
+		const peer = new ActionDispatcher({
 			environment: env,
 			transports,
 			default_send_options: {transport_name: transport.transport_name},

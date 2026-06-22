@@ -79,9 +79,11 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	// posture). A Bun-served consumer overrides to `false` (see the bun spine
 	// config) — fail-loud rather than silently skipping the smuggle detector.
 	oversized_reject_closes_connection: true,
-	// The TS server can't yet initiate server→client requests (the
-	// `BackendWebsocketTransport.send()` request path is the deferred
-	// twin-impl convergence), so the TS family skips the peer/ping suite.
+	// Off by default like `sse`/`ready`: the WS backend transport *can* initiate
+	// server→client requests (`BackendWebsocketTransport.request_connection`),
+	// but driving the full `peer/ping` suite also needs `peer/ping` mounted on
+	// the HTTP RPC endpoint (the no-transport case). The TS spine config opts in;
+	// a generic consumer enables it once it wires that mount.
 	peer_request: false,
 });
 

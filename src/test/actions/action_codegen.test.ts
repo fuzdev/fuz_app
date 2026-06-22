@@ -31,6 +31,7 @@ import {
 	is_protocol_action_method,
 } from '$lib/actions/action_codegen.ts';
 import type {ActionSpecUnion} from '$lib/actions/action_spec.ts';
+import {protocol_action_specs} from '$lib/actions/protocol.ts';
 
 // --- helpers ---
 
@@ -641,7 +642,19 @@ const fixture_specs: ReadonlyArray<ActionSpecUnion> = [
 
 describe('PROTOCOL_ACTION_METHODS', () => {
 	test('is the readonly tuple of fuz_app protocol actions', () => {
-		assert.deepStrictEqual([...PROTOCOL_ACTION_METHODS], ['heartbeat', 'cancel']);
+		assert.deepStrictEqual([...PROTOCOL_ACTION_METHODS], ['heartbeat', 'cancel', 'peer/ping']);
+	});
+
+	// Drift guard: the static method-name set (drives the codegen filter, the
+	// `ProtocolActionMethod` literal type, and the WS-endpoint surface invariant)
+	// must match the runtime `protocol_action_specs` bundle (drives the binary's
+	// manifest-exclusion filter). Adding a protocol action to one and not the
+	// other would silently break the cross-impl manifest parity / codegen.
+	test('matches the runtime protocol_action_specs bundle (no drift)', () => {
+		assert.deepStrictEqual(
+			[...PROTOCOL_ACTION_METHODS].sort(),
+			protocol_action_specs.map((spec) => spec.method).sort(),
+		);
 	});
 });
 

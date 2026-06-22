@@ -33,6 +33,7 @@ import {
 	type CredentialType,
 } from '../hono_context.ts';
 import type {Db} from '../db/db.ts';
+import type {RequestClient} from './peer_request.ts';
 import {compile_action_registry} from './compile_action_registry.ts';
 import {
 	JSONRPC_VERSION,
@@ -71,6 +72,14 @@ export interface ActionContext {
 	 * directly; HTTP handlers ignore it.
 	 */
 	connection_id?: Uuid;
+	/**
+	 * Initiate a JSON-RPC request to the originating client and await its typed
+	 * reply — the server→client direction of ActionPeer. Present only on the
+	 * WebSocket transport (it targets the originating socket); `undefined` on
+	 * HTTP RPC, where there is no return socket. Handlers that depend on it
+	 * must handle its absence — e.g. `peer/ping` surfaces `peer_no_transport`.
+	 */
+	request_client?: RequestClient;
 	/**
 	 * Transaction-scoped when `spec.side_effects` is true (the dispatcher
 	 * wraps in `db.transaction`); pool-level otherwise. Handlers that

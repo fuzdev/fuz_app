@@ -667,9 +667,9 @@ const {transport} = register_ws_endpoint({
 });
 ```
 
-Spread `protocol_actions` from `actions/protocol.ts` into `actions` — the bundle holds fuz_app's wire-protocol primitives (`heartbeat`, `cancel`) that complete disconnect detection and per-request cancel. The bundle is not auto-spread by `register_ws_endpoint`; consumers spread it explicitly so the dispatch surface stays grep-traceable and a custom heartbeat / cancel can replace the default by omitting it from the spread.
+Spread `protocol_actions` from `actions/protocol.ts` into `actions` — the bundle holds fuz_app's wire-protocol primitives (`heartbeat`, `cancel`, `peer/ping`) that complete disconnect detection, per-request cancel, and the server→client `peer/ping` round-trip. The bundle is not auto-spread by `register_ws_endpoint`; consumers spread it explicitly so the dispatch surface stays grep-traceable and a custom heartbeat / cancel / peer/ping can replace the default by omitting it from the spread.
 
-Domain deps (backend handle, in-memory caches, repositories) reach action handlers via **factory closures** — define your actions inside a `create_my_actions(deps, options)` factory the same way `create_admin_actions` / `create_account_actions` do, and the handlers close over whatever they need. Per-message `ActionContext` carries the per-request slots only (`auth`, `request_id`, `connection_id`, `db`, `pending_effects`, `client_ip`, `log`, `notify`, `signal`); HTTP RPC and WebSocket handlers see the same shape. Audit fan-out runs through `deps.audit` (see ./architecture.md §Fire-and-Forget Pending Effects).
+Domain deps (backend handle, in-memory caches, repositories) reach action handlers via **factory closures** — define your actions inside a `create_my_actions(deps, options)` factory the same way `create_admin_actions` / `create_account_actions` do, and the handlers close over whatever they need. Per-message `ActionContext` carries the per-request slots only (`auth`, `request_id`, `connection_id`, `request_client`, `db`, `pending_effects`, `client_ip`, `log`, `notify`, `signal`); HTTP RPC and WebSocket handlers see the same shape (`connection_id` / `request_client` are populated on WS, `undefined` on HTTP). Audit fan-out runs through `deps.audit` (see ./architecture.md §Fire-and-Forget Pending Effects).
 
 WS action handlers get the same validation contract as RPC and REST: input
 validated in DEV + production; output validated DEV-only, logging an error
@@ -717,6 +717,10 @@ Handlers consume `send_to_account` through the narrow `NotificationSender` inter
 
 Payload shapes are flat and size-bounded: offer-lifecycle notifications carry `{offer: RoleGrantOfferJson}` (decline reason rides on `offer.decline_reason`, capped at `ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX` = 500 chars; supersede adds `reason: 'sibling_accepted'|'role_grant_revoked'|'scope_destroyed'` + `cause_id`). `role_grant_revoke` carries `{role_grant_id, role, scope_id, reason?}` with `reason` capped at `ROLE_GRANT_REVOKED_REASON_LENGTH_MAX` = 500 chars. The revokee/grantor/recipient account id travels via the send target, never in the payload.
 
+### Server→client requests
+
+Beyond fire-and-forget fan-out, a WebSocket handler can **initiate a request to the originating client and await its typed reply** via `ctx.request_client(method, params, {timeout_ms?})` — the server→client direction of `ActionPeer`. It's present only on WS handlers (`undefined` on HTTP RPC, where there's no return socket — a handler depending on it should refuse, as `peer/ping` does with `peer_no_transport`). It returns a `PeerRequestOutcome` (`{ok: true, value}` | `{ok: false, error}` where `error.kind` is `timeout` / `connection_gone` / `too_many_in_flight` / `client_error` — the last forwarding the client's JSON-RPC envelope verbatim) and never throws. Replies are correlated per-connection (a reply on the wrong socket resolves nothing), bounded by a per-connection in-flight cap, and time out after `DEFAULT_PEER_REQUEST_TIMEOUT` (10s) unless a shorter `timeout_ms` is given. The shipped `peer/ping` protocol action is the reference consumer; for the targeted single-socket primitive `BackendWebsocketTransport.request_connection(connection_id, ...)` and the `PendingPeerRequests` correlation registry see `actions/CLAUDE.md`. A connected client *answers* an inbound server-initiated request through a responder: `FrontendWebsocketTransport` ships a built-in one for `peer/ping` (it echoes a `PingResponse` with zero consumer wiring) and routes any other inbound request through `peer.receive`, sending the response back over the socket. The cross-process test transport's `create_ws_transport({on_request})` is the test-side equivalent.
+
 ### Cooperating with `ctx.signal`
 
 Every handler receives `ctx.signal: AbortSignal`. The dispatcher composes
@@ -754,9 +758,9 @@ for await (const chunk of stream) {
 ```
 
 See `protocol_actions` (`@fuzdev/fuz_app/actions/protocol.ts`) for the
-canonical bundle and `heartbeat.ts` / `cancel.ts` for the per-action wire
-format. The convention is symmetric: the same `ctx.signal` pattern
-applies to both HTTP RPC and WebSocket handlers.
+canonical bundle and `heartbeat.ts` / `cancel.ts` / `peer_ping.ts` for the
+per-action wire format. The convention is symmetric: the same `ctx.signal`
+pattern applies to both HTTP RPC and WebSocket handlers.
 
 ## Typed Client Codegen
 

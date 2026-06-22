@@ -1,5 +1,5 @@
 /**
- * Tests for action_peer.ts — ActionPeer send and receive.
+ * Tests for action_dispatcher.ts — ActionDispatcher send and receive.
  *
  * @module
  */
@@ -7,7 +7,7 @@
 import {describe, assert, test} from 'vitest';
 import {z} from 'zod';
 
-import {ActionPeer} from '$lib/actions/action_peer.ts';
+import {ActionDispatcher} from '$lib/actions/action_dispatcher.ts';
 import {Transports, type Transport} from '$lib/actions/transports.ts';
 import type {ActionEventEnvironment} from '$lib/actions/action_event_types.ts';
 import type {ActionSpecUnion} from '$lib/actions/action_spec.ts';
@@ -83,10 +83,10 @@ const create_mock_transport = (
 	is_ready: () => true,
 });
 
-describe('ActionPeer', () => {
+describe('ActionDispatcher', () => {
 	test('send returns error when no transport available', async () => {
 		const env = new TestEnvironment([ping_spec]);
-		const peer = new ActionPeer({environment: env});
+		const peer = new ActionDispatcher({environment: env});
 
 		const result = await peer.send({jsonrpc: '2.0', method: 'ping', id: 1});
 		assert.ok('error' in result);
@@ -99,7 +99,7 @@ describe('ActionPeer', () => {
 		const responses = new Map([['ping', {pong: true}]]);
 		transports.register_transport(create_mock_transport(responses));
 
-		const peer = new ActionPeer({environment: env, transports});
+		const peer = new ActionDispatcher({environment: env, transports});
 
 		const result = await peer.send({jsonrpc: '2.0', method: 'ping', id: 1});
 		assert.ok('result' in result);
@@ -111,7 +111,7 @@ describe('ActionPeer', () => {
 		// Handler on receive_request returns the output
 		env.add_handler('ping', 'receive_request', () => ({pong: true}));
 
-		const peer = new ActionPeer({environment: env});
+		const peer = new ActionDispatcher({environment: env});
 
 		const result = await peer.receive({jsonrpc: '2.0', method: 'ping', id: 42});
 		assert.ok(result);
@@ -121,7 +121,7 @@ describe('ActionPeer', () => {
 
 	test('receive returns method_not_found for unknown method', async () => {
 		const env = new TestEnvironment([]); // no specs
-		const peer = new ActionPeer({environment: env});
+		const peer = new ActionDispatcher({environment: env});
 
 		const result = await peer.receive({jsonrpc: '2.0', method: 'unknown', id: 1});
 		assert.ok(result);
@@ -136,7 +136,7 @@ describe('ActionPeer', () => {
 			received = true;
 		});
 
-		const peer = new ActionPeer({environment: env});
+		const peer = new ActionDispatcher({environment: env});
 		const result = await peer.receive({
 			jsonrpc: '2.0',
 			method: 'thing_changed',
@@ -149,7 +149,7 @@ describe('ActionPeer', () => {
 
 	test('receive returns invalid_request for non-jsonrpc message', async () => {
 		const env = new TestEnvironment([]);
-		const peer = new ActionPeer({environment: env});
+		const peer = new ActionDispatcher({environment: env});
 
 		const result = await peer.receive({not: 'jsonrpc'});
 		assert.ok(result);
@@ -163,7 +163,7 @@ describe('ActionPeer', () => {
 		const responses = new Map([['ping', {pong: true}]]);
 		transports.register_transport(create_mock_transport(responses, captured));
 
-		const peer = new ActionPeer({
+		const peer = new ActionDispatcher({
 			environment: env,
 			transports,
 			default_send_options: {queue: true},
@@ -181,7 +181,7 @@ describe('ActionPeer', () => {
 		const responses = new Map([['ping', {pong: true}]]);
 		transports.register_transport(create_mock_transport(responses, captured));
 
-		const peer = new ActionPeer({
+		const peer = new ActionDispatcher({
 			environment: env,
 			transports,
 			default_send_options: {queue: true},

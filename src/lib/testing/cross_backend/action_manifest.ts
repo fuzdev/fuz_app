@@ -15,13 +15,13 @@ import '../assert_dev_env.ts';
  * the in-repo `spine_method_coverage` gate: that proves *mounted ⟹ covered*;
  * this proves *TS-mount-set ≡ Rust-mount-set* (method set + auth shape).
  *
- * **Scope — domain + testing surface, not wire protocol.** The manifest is
- * built from exactly the spec list its caller passes
- * (`build_full_spine_rpc_actions` on the TS spine; the spec list minus
- * `PROTOCOL_ACTION_SPECS` on the Rust stub). The protocol actions
- * (`heartbeat` / `cancel`) are excluded by the caller on purpose: the two
- * impls organize them differently (the TS spine mounts them on the WS
- * endpoint only, never the HTTP-RPC endpoint; the Rust stub compiles one
+ * **Scope — domain + testing surface, not wire protocol.** Protocol actions
+ * (`heartbeat` / `cancel` / `peer/ping`) are excluded: on the TS spine
+ * `create_testing_action_manifest_action` filters them via the
+ * `protocol_action_specs` method set; the Rust stub drops `PROTOCOL_ACTION_SPECS`. The
+ * two impls organize protocol actions differently (`peer/ping` is on the TS
+ * spine's WS **and** HTTP-RPC endpoints — it must answer `peer_no_transport`
+ * over HTTP — while heartbeat/cancel stay WS-only; the Rust stub compiles one
  * shared registry serving both transports), so including them would be a
  * spurious cross-impl diff. This matches the scope of the in-repo
  * `spine_method_coverage` gate (also over `build_full_spine_rpc_actions`).

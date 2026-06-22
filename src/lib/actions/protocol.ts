@@ -1,7 +1,7 @@
 /**
- * Canonical bundles of fuz_app's protocol actions — `heartbeat` and
- * `cancel`. Spread these into consumer registrations on both sides of the
- * wire so the registries stay symmetric without per-consumer plumbing.
+ * Canonical bundles of fuz_app's protocol actions — `heartbeat`, `cancel`,
+ * and `peer/ping`. Spread these into consumer registrations on both sides of
+ * the wire so the registries stay symmetric without per-consumer plumbing.
  *
  * Protocol actions are wire-protocol concerns (liveness, abort) shipped by
  * fuz_app, not consumer domain logic. The split is intentional: the server
@@ -23,6 +23,7 @@ import type {ActionSpecUnion} from './action_spec.ts';
 import type {Action} from './action_types.ts';
 import {cancel_action} from './cancel.ts';
 import {heartbeat_action} from './heartbeat.ts';
+import {peer_ping_action} from './peer_ping.ts';
 
 /**
  * Canonical protocol `{spec, handler}` tuples for the server's
@@ -33,7 +34,11 @@ import {heartbeat_action} from './heartbeat.ts';
  * register_action_ws({actions: [...protocol_actions, ...consumer_actions], ...})
  * ```
  */
-export const protocol_actions: ReadonlyArray<Action> = [heartbeat_action, cancel_action];
+export const protocol_actions: ReadonlyArray<Action> = [
+	heartbeat_action,
+	cancel_action,
+	peer_ping_action,
+];
 
 /**
  * Canonical protocol specs for `ActionRegistry` construction on the

@@ -1,7 +1,7 @@
 /**
  * JSON-RPC message builders, type guards, and converters.
  *
- * Used by the SAES runtime (ActionEvent, ActionPeer, transports) and
+ * Used by the SAES runtime (ActionEvent, ActionDispatcher, transports) and
  * the RPC endpoint dispatcher. Complements `http/jsonrpc.ts` (schemas) and
  * `http/jsonrpc_errors.ts` (error infrastructure).
  *

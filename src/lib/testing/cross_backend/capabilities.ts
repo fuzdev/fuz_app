@@ -182,18 +182,21 @@ export interface BackendCapabilities {
 	/**
 	 * The backend can **initiate** a JSON-RPC request to a connected client
 	 * and await its typed reply (the server→client request/response direction
-	 * `ActionPeer` adds). Gates `describe_peer_ping_ws_tests` — the on-demand
+	 * ActionPeer adds). Gates `describe_peer_ping_ws_tests` — the on-demand
 	 * `peer/ping` round-trip plus its security negatives (unsolicited-response
 	 * rejection, per-connection id isolation, never-replying `Timeout`,
 	 * wrong-shape reply rejection).
 	 *
-	 * `true` for the Rust spine (server-initiated requests landed Rust-first
-	 * canonical); `false` for the TS family — the TS server
-	 * `BackendWebsocketTransport.send()` request path is the deferred
-	 * twin-impl convergence item, so a TS backend can't yet drive the
-	 * round-trip. Like ws/sse/cells, `peer/ping` stays off the standard
-	 * declared surface (it's a protocol action, manifest-excluded), so this
-	 * flag is the only opt-in into the peer parity coverage.
+	 * `true` for both the Rust spine (server-initiated requests landed
+	 * Rust-first canonical) and the TS spine
+	 * (`BackendWebsocketTransport.request_connection` drives the round-trip,
+	 * correlated by `register_action_ws`). The conservative
+	 * `ts_default_capabilities` keeps it `false` like sse/ready — a TS backend
+	 * opts in once it mounts `peer/ping` on a WS endpoint **and** the HTTP RPC
+	 * endpoint (the no-transport refusal). Like ws/sse/cells, `peer/ping` stays
+	 * off the standard declared surface (it's a protocol action,
+	 * manifest-excluded), so this flag is the only opt-in into the peer parity
+	 * coverage.
 	 */
 	readonly peer_request: boolean;
 }
@@ -202,10 +205,10 @@ export interface BackendCapabilities {
  * Capability declarations for the in-process Hono transport. Nearly every
  * flag is `true` because in-process testing exercises the full backend
  * with no missing optional behaviors. The one exception is `peer_request`:
- * the in-process driver runs the **TS** server (`register_action_ws`),
- * whose server-initiated request transport is deferred, so it can't drive
- * a `peer/ping` round-trip — and `describe_peer_ping_ws_tests` is
- * cross-process-only regardless. Cross-process consumers declare each flag
+ * `describe_peer_ping_ws_tests` is cross-process-only (it needs a real bound
+ * socket with an `on_request` responder via `create_ws_transport`), so the
+ * in-process driver never runs it — the transport itself supports
+ * server-initiated requests. Cross-process consumers declare each flag
  * explicitly per backend.
  */
 export const in_process_capabilities: BackendCapabilities = Object.freeze({

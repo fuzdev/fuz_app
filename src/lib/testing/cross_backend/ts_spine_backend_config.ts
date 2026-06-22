@@ -43,10 +43,16 @@ export const TS_SPINE_SSE_PATH = '/api/admin/audit/stream';
 
 /**
  * Capabilities for the TS spine binary — `ts_default_capabilities` plus `sse`
- * (the binary wires `audit_log_sse`) and `ready` (the binary live-mounts the
- * `/ready` deploy gate in `build_spine_app`).
+ * (the binary wires `audit_log_sse`), `ready` (the binary live-mounts the
+ * `/ready` deploy gate in `build_spine_app`), and `peer_request` (the backend
+ * WS transport's `request_connection` path drives server→client `peer/ping`).
  */
-const ts_spine_capabilities = Object.freeze({...ts_default_capabilities, sse: true, ready: true});
+const ts_spine_capabilities = Object.freeze({
+	...ts_default_capabilities,
+	sse: true,
+	ready: true,
+	peer_request: true,
+});
 
 /**
  * Capabilities for the **Bun** spine binary — `ts_spine_capabilities` with

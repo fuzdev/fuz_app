@@ -35,6 +35,7 @@ import '../assert_dev_env.ts';
  */
 
 import type {RpcAction} from '../../actions/action_rpc.ts';
+import {peer_ping_action} from '../../actions/peer_ping.ts';
 import type {AppDeps} from '../../auth/deps.ts';
 import type {DaemonTokenState} from '../../auth/daemon_token.ts';
 import type {NotificationSender} from '../../auth/role_grant_offer_notifications.ts';
@@ -98,6 +99,12 @@ export const build_full_spine_rpc_actions = (
 		...create_all_cell_actions(deps, {roles: spine_roles}),
 		...create_actor_lookup_actions(deps),
 		...create_actor_search_actions(deps),
+		// `peer/ping` is mounted on the HTTP RPC endpoint too (not just WS) so an
+		// HTTP invocation reaches the handler and refuses with `peer_no_transport`
+		// rather than `method_not_found`. It's a protocol action, so it's filtered
+		// out of the action manifest (`create_testing_action_manifest_action`) —
+		// the WS endpoint registers it via the `protocol_actions` spread.
+		peer_ping_action,
 	];
 	// Append the `_testing_action_manifest` backdoor last — it closes over the
 	// complete `actions` list (plus its own spec) to dump the live method set

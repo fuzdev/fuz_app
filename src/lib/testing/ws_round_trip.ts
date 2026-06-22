@@ -52,7 +52,7 @@ import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.ts';
 
 import type {ActionSpecUnion} from '../actions/action_spec.ts';
 import type {Action} from '../actions/action_types.ts';
-import {ActionPeer} from '../actions/action_peer.ts';
+import {ActionDispatcher} from '../actions/action_dispatcher.ts';
 import type {ActionEventEnvironment} from '../actions/action_event_types.ts';
 import {create_broadcast_api} from '../actions/broadcast_api.ts';
 import {register_action_ws, type RegisterActionWsOptions} from '../actions/register_action_ws.ts';
@@ -176,7 +176,7 @@ export const create_stub_upgrade = (): StubUpgrade => {
 
 /**
  * Minimal `ActionEventEnvironment` for tests that instantiate an
- * `ActionPeer` without pulling in the full runtime. Pre-loads a
+ * `ActionDispatcher` without pulling in the full runtime. Pre-loads a
  * spec map from the supplied list.
  */
 export class MinimalActionEnvironment implements ActionEventEnvironment {
@@ -571,7 +571,8 @@ export const keeper_identity = (): WsConnectIdentity => ({
 // doesn't re-spell that boilerplate.
 // ---------------------------------------------------------------------
 
-const make_peer = (): ActionPeer => new ActionPeer({environment: new MinimalActionEnvironment([])});
+const make_peer = (): ActionDispatcher =>
+	new ActionDispatcher({environment: new MinimalActionEnvironment([])});
 
 /**
  * Wire a typed broadcast API against the harness's transport, matching

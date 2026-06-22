@@ -143,13 +143,13 @@ strict-parsed against its canonical params schema; the TS spine threads its
 `spine_rpc_endpoints({notification_sender})`), `peer_ping_ws.cross.test.ts` (the
 real-upgrade `describe_peer_ping_ws_tests` suite — the server→client `peer/ping`
 request/response sibling of the notification suite: a client invokes the
-`peer/ping` action, the server pings back over the same socket via `ActionPeer`,
+`peer/ping` action, the server pings back over the same socket via ActionPeer,
 the client's `on_request` responder echoes, and the server validates + returns —
 plus the security negatives (unsolicited-response rejection, per-connection id
 isolation, never-reply `Timeout`, wrong-shape rejection, client-error
-forwarding, HTTP no-transport); gated on `capabilities.peer_request`, so it runs
-on the Rust `spine_stub` and `.skip`s on the TS spines whose server-initiated
-request transport is the deferred convergence item), `sse.cross.test.ts` (the real-streaming-`fetch`
+forwarding, HTTP no-transport); gated on `capabilities.peer_request`, now `true`
+on both the Rust `spine_stub` and the TS spines (the
+`BackendWebsocketTransport.request_connection` path)), `sse.cross.test.ts` (the real-streaming-`fetch`
 `describe_cross_process_sse_tests` suite — live audit-log SSE: connect,
 data frame, account-wide close-on-revoke, session-scoped close-on-revoke),
 `cell.cross.test.ts` (both

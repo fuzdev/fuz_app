@@ -21,7 +21,7 @@
 import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.ts';
 
 import {create_jsonrpc_notification, to_jsonrpc_params} from '../http/jsonrpc_helpers.ts';
-import type {ActionPeer} from './action_peer.ts';
+import type {ActionDispatcher} from './action_dispatcher.ts';
 import type {ActionSpecUnion} from './action_spec.ts';
 import {
 	is_filterable_broadcast_transport,
@@ -46,7 +46,7 @@ export type ShouldDeliverFn = (
 /** Options for `create_broadcast_api`. */
 export interface CreateBroadcastApiOptions {
 	/** The peer holding the transport registry used for sends. */
-	peer: ActionPeer;
+	peer: ActionDispatcher;
 	/**
 	 * Notification specs to expose as broadcast methods. Typically the
 	 * `remote_notification` specs whose initiator is `backend` (or `both`).

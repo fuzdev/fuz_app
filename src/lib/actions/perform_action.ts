@@ -72,6 +72,7 @@ import {
 import type {RateLimiter} from '../rate_limiter.ts';
 import {is_public_auth, type RouteAuth} from '../http/auth_shape.ts';
 import type {ActionContext, ActionHandler, RpcAction} from './action_rpc.ts';
+import type {RequestClient} from './peer_request.ts';
 
 /**
  * Per-call inputs to `perform_action`. Each transport assembles this from
@@ -96,6 +97,13 @@ export interface PerformActionInput {
 	notify: (method: string, params: unknown) => void;
 	/** Stable per-socket id on WS; `undefined` on HTTP. */
 	connection_id?: Uuid;
+	/**
+	 * Initiate a server→client request on the originating WS socket and await
+	 * the typed reply (ActionPeer). Present only on WebSocket dispatch;
+	 * `undefined` on HTTP RPC (no return socket). Handlers must handle its
+	 * absence — e.g. `peer/ping` surfaces `peer_no_transport`.
+	 */
+	request_client?: RequestClient;
 	/**
 	 * Test-harness escape hatch. When set, the live authorization phase is
 	 * skipped and `request_context` is used directly for post-authorization
@@ -167,6 +175,7 @@ export const perform_action = async (
 		signal,
 		notify,
 		connection_id,
+		request_client,
 		preset,
 	} = input;
 	const {
@@ -265,6 +274,7 @@ export const perform_action = async (
 			auth: request_context,
 			request_id: id,
 			connection_id,
+			request_client,
 			db: effective_db,
 			pending_effects,
 			post_commit_effects,

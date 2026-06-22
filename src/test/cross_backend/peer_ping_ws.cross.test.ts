@@ -4,7 +4,7 @@
  *
  * The server→client request/response sibling of
  * `role_grant_offer_notification_ws.cross.test.ts` (server→client
- * notifications): it drives the `ActionPeer` round-trip — a client invokes
+ * notifications): it drives the ActionPeer round-trip — a client invokes
  * the `peer/ping` action, the server pings back over the same socket, the
  * client's `on_request` responder echoes, and the server validates + returns
  * — plus the security negatives (unsolicited-response rejection,

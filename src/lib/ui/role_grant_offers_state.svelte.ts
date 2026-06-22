@@ -11,7 +11,7 @@
  * the consumer adapts from their typed client, plus an `account_id` /
  * `actor_id` getter pair (typically bound to `auth_state`). Notification
  * delivery is pull-only via `subscribe()` — the consumer plumbs their
- * `FrontendWebsocketClient` / `ActionPeer` receiver to `apply_notification`.
+ * `FrontendWebsocketClient` / `ActionDispatcher` receiver to `apply_notification`.
  *
  * Holds six `AsyncSlot`s — one per RPC verb. The cache `#offers` lives on
  * the class (multiple ops write into it via `#merge_offers` /

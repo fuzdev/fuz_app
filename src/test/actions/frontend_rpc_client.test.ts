@@ -1,6 +1,6 @@
 /**
  * Tests for `create_frontend_rpc_client` — bundles
- * `ActionRegistry + ActionEventEnvironment + Transports + ActionPeer +
+ * `ActionRegistry + ActionEventEnvironment + Transports + ActionDispatcher +
  * create_rpc_client + create_throwing_api` into one factory call.
  *
  * The factory returns both Proxy shapes: `api` (typed throwing) and
@@ -15,7 +15,7 @@ import {describe, assert, test, vi} from 'vitest';
 import {z} from 'zod';
 
 import {create_frontend_rpc_client} from '$lib/actions/frontend_rpc_client.ts';
-import {ActionPeer} from '$lib/actions/action_peer.ts';
+import {ActionDispatcher} from '$lib/actions/action_dispatcher.ts';
 import {FrontendHttpTransport} from '$lib/actions/transports_http.ts';
 import type {Transport} from '$lib/actions/transports.ts';
 import type {ActionSpecUnion, RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
@@ -134,9 +134,9 @@ describe('create_frontend_rpc_client', () => {
 		assert.strictEqual(environment.lookup_action_spec('missing'), undefined);
 	});
 
-	test('returned peer is an ActionPeer wired to the same environment', () => {
+	test('returned peer is an ActionDispatcher wired to the same environment', () => {
 		const {peer, environment} = create_frontend_rpc_client<PingApi>({specs: [ping_spec]});
-		assert.instanceOf(peer, ActionPeer);
+		assert.instanceOf(peer, ActionDispatcher);
 		assert.strictEqual(peer.environment, environment);
 	});
 
@@ -257,7 +257,7 @@ describe('create_frontend_rpc_client — type-only fixtures', () => {
 			// api strips Promise<Result<{value: T}>> → Promise<T>.
 			const _ping_throwing_check: (input?: null) => Promise<{pong: true}> = api.ping;
 			const _toggle_throwing_check: (input?: {on: boolean}) => Promise<void> = api.toggle;
-			const _peer_check: ActionPeer = peer;
+			const _peer_check: ActionDispatcher = peer;
 			void _ping_result_check;
 			void _toggle_result_check;
 			void _ping_throwing_check;

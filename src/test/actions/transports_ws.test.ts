@@ -16,6 +16,7 @@ import {
 } from '$lib/actions/transports_ws.ts';
 import {JSONRPC_ERROR_CODES, ThrownJsonrpcError} from '$lib/http/jsonrpc_errors.ts';
 import type {JsonrpcRequest, JsonrpcNotification, JsonrpcRequestId} from '$lib/http/jsonrpc.ts';
+import {PEER_PING_METHOD, PEER_PROTOCOL_VERSION} from '$lib/actions/peer_ping.ts';
 
 interface RequestCall {
 	method: string;
@@ -363,6 +364,71 @@ describe('FrontendWebsocketTransport', () => {
 		await Promise.resolve();
 
 		assert.strictEqual(received.length, 2);
+		transport.dispose();
+	});
+});
+
+describe('FrontendWebsocketTransport server→client receive', () => {
+	test('answers an inbound peer/ping over the same socket without dispatching to receive', async () => {
+		const received: Array<unknown> = [];
+		const fake = create_fake_connection();
+		const transport = new FrontendWebsocketTransport(fake.connection, async (data) => {
+			received.push(data);
+			return null;
+		});
+
+		fake.fire_message({jsonrpc: '2.0', id: 's1', method: PEER_PING_METHOD, params: {nonce: 42}});
+		await Promise.resolve();
+
+		assert.deepStrictEqual(fake.sent_messages, [
+			{jsonrpc: '2.0', id: 's1', result: {nonce: 42, protocol_version: PEER_PROTOCOL_VERSION}},
+		]);
+		assert.strictEqual(
+			received.length,
+			0,
+			'peer/ping is answered directly, never routed to receive',
+		);
+		transport.dispose();
+	});
+
+	test('peer/ping with malformed params echoes nonce 0 (server then surfaces a nonce mismatch)', async () => {
+		const fake = create_fake_connection();
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
+
+		fake.fire_message({jsonrpc: '2.0', id: 's2', method: PEER_PING_METHOD, params: {}});
+		await Promise.resolve();
+
+		assert.deepStrictEqual(fake.sent_messages, [
+			{jsonrpc: '2.0', id: 's2', result: {nonce: 0, protocol_version: PEER_PROTOCOL_VERSION}},
+		]);
+		transport.dispose();
+	});
+
+	test('sends a consumer-handled server request response back over the socket', async () => {
+		const fake = create_fake_connection();
+		const transport = new FrontendWebsocketTransport(fake.connection, async (data) => {
+			// A consumer responder produces a response envelope for the inbound request.
+			const id = (data as {id: JsonrpcRequestId}).id;
+			return {jsonrpc: '2.0', id, result: {handled: true}};
+		});
+
+		fake.fire_message({jsonrpc: '2.0', id: 7, method: 'server_request', params: {}});
+		await Promise.resolve();
+		await Promise.resolve();
+
+		assert.deepStrictEqual(fake.sent_messages, [{jsonrpc: '2.0', id: 7, result: {handled: true}}]);
+		transport.dispose();
+	});
+
+	test('a receive returning null sends nothing back (notification-style handling)', async () => {
+		const fake = create_fake_connection();
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
+
+		fake.fire_message({jsonrpc: '2.0', id: 8, method: 'server_request', params: {}});
+		await Promise.resolve();
+		await Promise.resolve();
+
+		assert.strictEqual(fake.sent_messages.length, 0, 'no reply when the peer produced none');
 		transport.dispose();
 	});
 });

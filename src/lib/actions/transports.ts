@@ -34,7 +34,7 @@ export type TransportName = z.infer<typeof TransportName>;
 /**
  * Per-call options accepted by every transport's `send`. Optional and
  * extensible — adding a field is non-breaking. Source of truth for the
- * shared option shape; `ActionPeerSendOptions` and `RpcClientCallOptions`
+ * shared option shape; `ActionDispatcherSendOptions` and `RpcClientCallOptions`
  * extend it.
  */
 export interface TransportSendOptions {

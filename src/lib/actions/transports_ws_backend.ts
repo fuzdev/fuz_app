@@ -14,16 +14,24 @@ import type {
 	JsonrpcMessageFromServerToClient,
 	JsonrpcNotification,
 	JsonrpcRequest,
+	JsonrpcRequestParams,
+	JsonrpcResponse,
 	JsonrpcResponseOrError,
 	JsonrpcErrorResponse,
 } from '../http/jsonrpc.ts';
 import {jsonrpc_error_messages} from '../http/jsonrpc_errors.ts';
 import {
 	create_jsonrpc_error_response,
+	create_jsonrpc_request,
 	to_jsonrpc_message_id,
 	is_jsonrpc_request,
 } from '../http/jsonrpc_helpers.ts';
 import {WS_CLOSE_SESSION_REVOKED, type Transport, type TransportSendOptions} from './transports.ts';
+import {
+	PendingPeerRequests,
+	type PeerRequestOptions,
+	type PeerRequestOutcome,
+} from './peer_request.ts';
 
 // TODO support a SSE backend transport
 
@@ -79,6 +87,11 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	// Auth identity per connection. Adding a new identity scope (e.g.
 	// `device_id`) means adding a field here, not a new parallel map.
 	#connection_identities: Map<Uuid, ConnectionIdentity> = new Map();
+
+	// Server→client request correlation (ActionPeer). The transport owns the
+	// sockets + the send; the registry owns the pending map, id allocation,
+	// deadlines, and the per-connection in-flight cap (see `peer_request.ts`).
+	#pending: PendingPeerRequests = new PendingPeerRequests();
 
 	/**
 	 * Add a new WebSocket connection with auth info.
@@ -180,6 +193,9 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		this.#connections.delete(connection_id);
 		this.#connection_ids.delete(ws);
 		this.#connection_identities.delete(connection_id);
+		// Wake any handler still awaiting a reply on this socket — the peer is
+		// gone, so the request can never complete.
+		this.#pending.drain(connection_id);
 	}
 
 	#revoke_connection(connection_id: Uuid, ws: WSContext): void {
@@ -187,7 +203,11 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		ws.close(WS_CLOSE_SESSION_REVOKED, 'Session revoked');
 	}
 
-	// TODO needs implementation, only broadcasts notifications for now
+	// `send` is the broadcast/notification surface: notifications fan out to
+	// every socket. A *request* has no single target here — server→client
+	// request/response is `request_connection`, which targets one socket and
+	// correlates the reply. `send(request)` is therefore a misuse and returns
+	// an error rather than guessing a recipient.
 	async send(
 		message: JsonrpcRequest,
 		options?: TransportSendOptions,
@@ -200,13 +220,12 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		message: JsonrpcMessageFromClientToServer,
 		_options?: TransportSendOptions,
 	): Promise<JsonrpcMessageFromServerToClient | null> {
-		// TODO currently just broadcasts all messages to all clients, the transport abstraction is still a WIP
 		if (is_jsonrpc_request(message)) {
 			return create_jsonrpc_error_response(
 				message.id,
-				// TODO maybe use a not yet implemented error message?
 				jsonrpc_error_messages.internal_error(
-					'TODO not yet implemented - backend WebSocket transport cannot send requests expecting responses yet',
+					'backend WebSocket transport cannot broadcast a request expecting a response; ' +
+						'use request_connection(connection_id, ...) to target a single socket',
 				),
 			);
 		}
@@ -286,6 +305,66 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 */
 	send_to_account(account_id: Uuid, message: JsonrpcMessageFromServerToClient): number {
 		return this.broadcast_filtered(message, (id) => id.account_id === account_id);
+	}
+
+	/**
+	 * Initiate a JSON-RPC request to a single connected client and await its
+	 * reply — the server→client request/response direction (ActionPeer).
+	 *
+	 * Sends `{jsonrpc, method, params, id}` to exactly the `connection_id`
+	 * socket (never a broadcast) and registers a pending entry scoped to that
+	 * connection. Resolves when the client's matching reply arrives (routed in
+	 * via `resolve_peer_response`), the deadline elapses (`timeout`), the
+	 * per-connection cap is hit (`too_many_in_flight`), or the socket closes
+	 * (`connection_gone`). Never throws — every failure is a `PeerRequestError`.
+	 *
+	 * Delegates correlation to `#pending` (id allocation, deadline, cap, drain);
+	 * this method owns only the socket lookup + the send. Server-issued ids are
+	 * `s`-prefixed so a malicious client echoing a non-`s` id (or an id it chose
+	 * for its own request) matches nothing.
+	 *
+	 * @returns the client's success `result`, or a `PeerRequestError`
+	 * @mutates this - registers then clears an entry in `#pending`
+	 */
+	request_connection(
+		connection_id: Uuid,
+		method: string,
+		params: JsonrpcRequestParams | undefined,
+		options?: PeerRequestOptions,
+	): Promise<PeerRequestOutcome> {
+		const ws = this.#connections.get(connection_id);
+		if (!ws) return Promise.resolve({ok: false, error: {kind: 'connection_gone'}});
+
+		const registered = this.#pending.register(connection_id, options?.timeout_ms);
+		if (!registered) return Promise.resolve({ok: false, error: {kind: 'too_many_in_flight'}});
+		const {id, outcome} = registered;
+
+		try {
+			ws.send(JSON.stringify(create_jsonrpc_request(method, params, id)));
+		} catch {
+			// Send failed — the socket is gone; settle now so the caller isn't
+			// left awaiting until the deadline.
+			this.#pending.settle(connection_id, id, {ok: false, error: {kind: 'connection_gone'}});
+		}
+		return outcome;
+	}
+
+	/**
+	 * Route an inbound client reply to the matching pending server→client
+	 * request on `connection_id` (delegates to `#pending.resolve`).
+	 *
+	 * Returns `false` when no entry matches — an unsolicited, cross-connection,
+	 * or already-settled reply — so the caller drops it. Per-connection scoping
+	 * means a reply arriving on the wrong socket resolves nothing.
+	 *
+	 * @returns whether a pending request was resolved
+	 * @mutates this - clears the matched entry from `#pending`
+	 */
+	resolve_peer_response(
+		connection_id: Uuid,
+		response: JsonrpcResponse | JsonrpcErrorResponse,
+	): boolean {
+		return this.#pending.resolve(connection_id, response);
 	}
 
 	is_ready(): boolean {

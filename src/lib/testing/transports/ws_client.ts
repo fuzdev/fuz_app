@@ -125,7 +125,7 @@ export type WsResponderOutcome =
 
 /**
  * Answers a **server-initiated** request (the server→client direction
- * `ActionPeer` adds). Passed at client construction so it's attached
+ * ActionPeer adds). Passed at client construction so it's attached
  * before the upgrade completes — otherwise it races a connect-time ping.
  * Receives the parsed request frame and returns the reply outcome (or a
  * promise of it).

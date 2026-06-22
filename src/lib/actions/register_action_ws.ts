@@ -50,6 +50,8 @@ import {
 	to_jsonrpc_message_id,
 	to_jsonrpc_params,
 	is_jsonrpc_request,
+	is_jsonrpc_response,
+	is_jsonrpc_error_response,
 } from '../http/jsonrpc_helpers.ts';
 import {
 	CREDENTIAL_TYPE_KEY,
@@ -63,6 +65,7 @@ import {compile_action_registry} from './compile_action_registry.ts';
 import {cancel_action_spec, CancelNotificationParams} from './cancel.ts';
 import {WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT} from './transports.ts';
 import {BackendWebsocketTransport, type ConnectionIdentity} from './transports_ws_backend.ts';
+import {audit_unmatched_peer_response, type RequestClient} from './peer_request.ts';
 import {perform_action, perform_action_result_to_envelope} from './perform_action.ts';
 
 export type {Action};
@@ -431,6 +434,21 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 						return;
 					}
 
+					// Inbound responses to server-initiated requests (`peer/ping`,
+					// etc.) — route to the pending-request registry scoped to THIS
+					// socket. A response carries `result`/`error` + `id` and no
+					// `method`, so it precedes the request/notification split below.
+					// An unmatched id (unsolicited, cross-connection, or already
+					// settled) resolves nothing and is dropped, so the read loop
+					// survives a junk frame.
+					if (is_jsonrpc_response(json) || is_jsonrpc_error_response(json)) {
+						if (captured_connection_id !== undefined) {
+							const matched = transport.resolve_peer_response(captured_connection_id, json);
+							if (!matched) audit_unmatched_peer_response(log, captured_connection_id, json.id);
+						}
+						return;
+					}
+
 					// Notifications (method + no id) — `cancel` is intercepted
 					// for request-scoped cancellation; other notifications are
 					// silenced per JSON-RPC spec (consumer notification handlers
@@ -518,6 +536,23 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					const post_commit_effects: Array<() => void | Promise<void>> = [];
 
 					const notify = notify_socket(ws);
+					// Server→client request seam (ActionPeer) — closes over this
+					// socket's connection_id so a handler can initiate a request to
+					// the originating client and await the reply. `const` capture so
+					// the narrowed (non-undefined) type holds inside the closure;
+					// `undefined` only in the degenerate case where a message
+					// dispatches before onOpen assigned the id.
+					const conn_id = captured_connection_id;
+					const request_client: RequestClient | undefined =
+						conn_id === undefined
+							? undefined
+							: (request_method, request_params, request_options) =>
+									transport.request_connection(
+										conn_id,
+										request_method,
+										request_params,
+										request_options,
+									);
 					const signal = AbortSignal.any([
 						socket_abort_controller.signal,
 						request_controller.signal,
@@ -535,6 +570,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 								signal,
 								notify,
 								connection_id: captured_connection_id,
+								request_client,
 								preset: upgrade_preset,
 							},
 							{

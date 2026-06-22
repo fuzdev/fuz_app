@@ -1008,8 +1008,9 @@ consumer config.
 | `ready`             | Backend live-mounts the public `/ready` schema-drift deploy gate (gates `describe_ready_cross_tests`).                    |
 | `account_status`    | Backend serves `GET /api/account/status` (bundled into `create_account_route_specs`; `true` for every spine). Gates the integration suite's status wire-shape case — fail-loud on a missing route rather than a silent skip. |
 | `oversized_reject_closes_connection` | Backend closes the connection on an oversized-body 413 without reading the body (`true` for Node/Deno/Rust; `false` for Bun, which drains + keepalives). Gates the strong half of the body-size smuggling probe; the no-desync half runs on every backend. |
+| `peer_request`      | Backend can initiate a server→client request and await the typed reply (`ActionPeer` — `BackendWebsocketTransport.request_connection`). Gates `describe_peer_ping_ws_tests`. `true` on the Rust spine and the TS spine; `ts_default_capabilities` keeps it off until a backend wires the `peer/ping` HTTP + WS mount. |
 
-`in_process_capabilities` (every flag on) and the `ts_default_capabilities` /
+`in_process_capabilities` (every gating flag on except `peer_request`, whose suite is cross-process-only) and the `ts_default_capabilities` /
 `rust_default_capabilities` presets in `default_backend_configs.ts` are the
 starting points consumers extend.
 

@@ -2,7 +2,7 @@
  * Frontend-only typed RPC client factory.
  *
  * Bundles the `ActionRegistry + ActionEventEnvironment + Transports +
- * ActionPeer + create_rpc_client + create_throwing_api` boilerplate every
+ * ActionDispatcher + create_rpc_client + create_throwing_api` boilerplate every
  * consumer repeats. `lookup_action_handler` defaults to `() => undefined`
  * (HTTP-only frontends rarely need handlers); pass `options.lookup_action_handler`
  * to wire WS-pushed `remote_notification` dispatch or a `receive_error` /
@@ -47,7 +47,7 @@
  */
 
 import {ActionRegistry} from './action_registry.ts';
-import {ActionPeer} from './action_peer.ts';
+import {ActionDispatcher} from './action_dispatcher.ts';
 import {Transports, type Transport} from './transports.ts';
 import {FrontendHttpTransport} from './transports_http.ts';
 import {
@@ -148,7 +148,7 @@ export interface FrontendRpcClient<TApi> {
 	 */
 	api_result: TApi;
 	/** Underlying peer — exposed for consumers that need to register more transports or send raw messages. */
-	peer: ActionPeer;
+	peer: ActionDispatcher;
 	/** Action environment — exposed for consumers that need to share it (e.g. attach a notification handler registry). */
 	environment: ActionEventEnvironment;
 }
@@ -169,7 +169,7 @@ export const create_frontend_rpc_client = <TApi extends object>(
 	} else {
 		transports.register_transport(new FrontendHttpTransport(options.path ?? '/api/rpc'));
 	}
-	const peer = new ActionPeer({environment, transports});
+	const peer = new ActionDispatcher({environment, transports});
 	const api_result = create_rpc_client<TApi>({
 		peer,
 		environment,

@@ -12,7 +12,7 @@ import {ActionRegistry} from './action_registry.ts';
  * `BackendRequestResponseMethod` / handler maps. Pairs with `protocol_actions`
  * / `protocol_action_specs` from `actions/protocol.ts` (the runtime bundles).
  */
-export const PROTOCOL_ACTION_METHODS = ['heartbeat', 'cancel'] as const;
+export const PROTOCOL_ACTION_METHODS = ['heartbeat', 'cancel', 'peer/ping'] as const;
 
 /** Methods that ship from fuz_app, kept out of consumer-owned method enums + handler maps. */
 export type ProtocolActionMethod = (typeof PROTOCOL_ACTION_METHODS)[number];

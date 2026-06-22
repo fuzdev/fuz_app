@@ -60,7 +60,7 @@ export interface WsTransportOptions {
 	readonly default_timeout_ms?: number;
 	/**
 	 * Optional responder for **server-initiated** requests (the
-	 * server→client direction `ActionPeer` adds). Attached before the
+	 * server→client direction ActionPeer adds). Attached before the
 	 * upgrade so a connect-time or on-demand `peer/ping` is answered as
 	 * soon as it arrives. Omit for the default observe-only client — a
 	 * server-initiated request is then surfaced as a normal message (today's

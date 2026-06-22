@@ -5,9 +5,14 @@
  * and `AbortSignal`-driven cancel to the underlying connection (the
  * canonical implementation is `FrontendWebsocketClient`). The transport's
  * own job is the `Transport` contract: route inbound server-pushed
- * messages into `peer.receive` and translate the connection's
- * `Promise<R>`/`ThrownJsonrpcError` shape into `JsonrpcResponseOrError`
- * envelopes. No parallel pending-request map.
+ * messages into `peer.receive`, send the resulting response back over the
+ * socket (the server→client ActionPeer receive loop), and translate the
+ * connection's `Promise<R>`/`ThrownJsonrpcError` shape into
+ * `JsonrpcResponseOrError` envelopes. No parallel pending-request map.
+ *
+ * Inbound `peer/ping` requests are answered directly via the built-in
+ * `peer_ping_responder` — a protocol-liveness concern that works with zero
+ * consumer wiring, the same way the server runs the `heartbeat` echo.
  *
  * @module
  */
@@ -33,6 +38,7 @@ import type {
 	JsonrpcErrorResponse,
 } from '../http/jsonrpc.ts';
 import type {Transport, TransportSendOptions} from './transports.ts';
+import {PEER_PING_METHOD, peer_ping_responder} from './peer_ping.ts';
 
 // TODO logging - maybe add a getter to Cell that falls back to the app logger?
 
@@ -69,8 +75,10 @@ export interface WebsocketRpcConnection extends WebsocketConnection {
 /**
  * Thin adapter over `WebsocketRpcConnection` (canonical implementation:
  * `FrontendWebsocketClient`). Routes inbound server-pushed requests and
- * notifications into the supplied `receive` callback; responses are owned
- * by the connection's own `request()` pending map and are ignored here.
+ * notifications into the supplied `receive` callback and sends the request
+ * response back over the socket; an inbound `peer/ping` is answered by the
+ * built-in responder before `receive`. Responses to requests *we* sent are
+ * owned by the connection's own `request()` pending map and are ignored here.
  */
 export class FrontendWebsocketTransport implements Transport {
 	readonly transport_name = 'frontend_websocket_rpc' as const;
@@ -91,7 +99,32 @@ export class FrontendWebsocketTransport implements Transport {
 			try {
 				const data = JSON.parse(event.data);
 
-				if (is_jsonrpc_request(data) || is_jsonrpc_notification(data)) {
+				if (is_jsonrpc_request(data)) {
+					// Built-in protocol responder — answer a server-initiated
+					// `peer/ping` liveness probe over the same socket with zero
+					// consumer wiring (the production twin of the cross-process
+					// test transport's echo responder). Without this the server's
+					// server→client `peer/ping` round-trip would always time out
+					// against a real frontend.
+					if (data.method === PEER_PING_METHOD) {
+						this.#connection.send(
+							create_jsonrpc_response(data.id, peer_ping_responder(data.params)),
+						);
+						return;
+					}
+					// Any other server-initiated request: dispatch through the peer
+					// and send its response back over the socket — completing the
+					// server→client receive loop. (Previously the response was
+					// computed and dropped, so a consumer-handled server request
+					// never got a reply.)
+					const response = await this.#receive(data);
+					if (response !== null && typeof response === 'object') {
+						this.#connection.send(response);
+					}
+					return;
+				}
+
+				if (is_jsonrpc_notification(data)) {
 					await this.#receive(data);
 				}
 				// Responses are owned by `connection.request()` — ignore here.
