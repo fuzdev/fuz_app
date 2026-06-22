@@ -583,7 +583,9 @@ export const describe_standard_admin_integration_tests = (
 				});
 				assert.ok(
 					revoke_res.ok,
-					`admin_session_revoke_all failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
+					`admin_session_revoke_all failed: ${
+						revoke_res.ok ? '' : JSON.stringify(revoke_res.error)
+					}`,
 				);
 
 				// Check audit log

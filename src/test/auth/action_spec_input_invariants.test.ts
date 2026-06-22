@@ -44,7 +44,9 @@ describe('action spec input invariants', () => {
 			const accepts_undefined = spec.input.safeParse(undefined).success;
 			assert.ok(
 				accepts_undefined,
-				`${spec.method}: input accepts {} but rejects undefined — apply .default({}) at the schema root (or .refine() if {} should be rejected too)`,
+				`${
+					spec.method
+				}: input accepts {} but rejects undefined — apply .default({}) at the schema root (or .refine() if {} should be rejected too)`,
 			);
 		}
 	});

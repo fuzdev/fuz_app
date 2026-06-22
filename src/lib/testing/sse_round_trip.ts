@@ -137,12 +137,16 @@ const parse_and_validate_sse_payload = (
 		const spec = event_specs.find((s) => s.method === notification.method);
 		assert.ok(
 			spec,
-			`${route_path}: no EventSpec declared for method '${notification.method}' (declared: ${event_specs.map((s) => s.method).join(', ')})`,
+			`${route_path}: no EventSpec declared for method '${
+				notification.method
+			}' (declared: ${event_specs.map((s) => s.method).join(', ')})`,
 		);
 		const result = spec.params.safeParse(notification.params);
 		if (!result.success) {
 			throw new Error(
-				`${route_path}: params mismatch for method '${notification.method}': ${JSON.stringify(result.error.issues)}`,
+				`${route_path}: params mismatch for method '${notification.method}': ${JSON.stringify(
+					result.error.issues,
+				)}`,
 			);
 		}
 	}
@@ -272,7 +276,9 @@ export const describe_sse_route_tests = (options: SseRouteTestOptions): void => 
 								});
 								assert.ok(
 									revoke_res.ok,
-									`account_session_revoke_all RPC failed (status=${revoke_res.status}): ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
+									`account_session_revoke_all RPC failed (status=${revoke_res.status}): ${
+										revoke_res.ok ? '' : JSON.stringify(revoke_res.error)
+									}`,
 								);
 								const closed = await sse.wait_for_close(2000);
 								assert.ok(

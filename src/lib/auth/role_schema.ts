@@ -178,7 +178,10 @@ const validate_registry_membership = (
 	for (const value of values) {
 		if (!registry.has(value)) {
 			throw new Error(
-				`Role "${role_name}" declares ${field}="${value}" which is not a registered ${field.replace(/s$/, '')}`,
+				`Role "${role_name}" declares ${field}="${value}" which is not a registered ${field.replace(
+					/s$/,
+					'',
+				)}`,
 			);
 		}
 	}

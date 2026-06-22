@@ -76,7 +76,9 @@ export const find_auth_route = (
 ): RouteSpec | undefined => {
 	if (!rest_auth_route_suffixes.includes(suffix)) {
 		throw new Error(
-			`find_auth_route: unknown suffix ${JSON.stringify(suffix)} — expected one of ${rest_auth_route_suffixes.join(', ')}. Use rpc_call for RPC methods.`,
+			`find_auth_route: unknown suffix ${JSON.stringify(
+				suffix,
+			)} — expected one of ${rest_auth_route_suffixes.join(', ')}. Use rpc_call for RPC methods.`,
 		);
 	}
 	return specs.find((s) => s.method === method && s.path.endsWith(suffix));
@@ -120,7 +122,9 @@ export const assert_response_matches_spec = async (
 			const merged = merge_error_schemas(spec);
 			if (merged?.[response.status]) {
 				throw new Error(
-					`${method} ${path} (${response.status}) returned non-JSON but has error schema for status ${response.status}`,
+					`${method} ${path} (${
+						response.status
+					}) returned non-JSON but has error schema for status ${response.status}`,
 				);
 			}
 		}
@@ -131,7 +135,9 @@ export const assert_response_matches_spec = async (
 		const result = spec.output.safeParse(body);
 		if (!result.success) {
 			throw new Error(
-				`Output schema mismatch for ${method} ${path} (${response.status}): ${JSON.stringify(result.error.issues)}`,
+				`Output schema mismatch for ${method} ${path} (${response.status}): ${JSON.stringify(
+					result.error.issues,
+				)}`,
 			);
 		}
 	} else {
@@ -142,7 +148,9 @@ export const assert_response_matches_spec = async (
 				const result = status_schema.safeParse(body);
 				if (!result.success) {
 					throw new Error(
-						`Error schema mismatch for ${method} ${path} (${response.status}): ${JSON.stringify(result.error.issues)}`,
+						`Error schema mismatch for ${method} ${path} (${response.status}): ${JSON.stringify(
+							result.error.issues,
+						)}`,
 					);
 				}
 			}
@@ -256,7 +264,9 @@ export const assert_rate_limit_retry_after_header = (
 	assert.strictEqual(
 		header_value,
 		Math.ceil(body.retry_after),
-		`Retry-After header (${header_value}) should equal ceil(retry_after) (${Math.ceil(body.retry_after)})`,
+		`Retry-After header (${header_value}) should equal ceil(retry_after) (${Math.ceil(
+			body.retry_after,
+		)})`,
 	);
 };
 

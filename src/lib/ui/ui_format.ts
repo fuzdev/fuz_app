@@ -171,7 +171,9 @@ export const format_audit_metadata = (
 				: '';
 		case 'app_settings_update':
 			return metadata.setting
-				? `${metadata.setting as string}: ${JSON.stringify(metadata.old_value)} → ${JSON.stringify(metadata.new_value)}`
+				? `${metadata.setting as string}: ${JSON.stringify(metadata.old_value)} → ${JSON.stringify(
+						metadata.new_value,
+					)}`
 				: '';
 		default:
 			return JSON.stringify(metadata);

@@ -130,7 +130,9 @@ export const format_action_manifest_diffs = (
 				break;
 			case 'auth_field_differs':
 				lines.push(
-					`  ${d.method} auth.${d.field} differs: ${label_a}=${JSON.stringify(d.a)}, ${label_b}=${JSON.stringify(d.b)}`,
+					`  ${d.method} auth.${d.field} differs: ${label_a}=${JSON.stringify(d.a)}, ${
+						label_b
+					}=${JSON.stringify(d.b)}`,
 				);
 				break;
 			default:
@@ -157,6 +159,8 @@ export const assert_action_manifests_equal = (
 	const label_a = labels.a ?? 'a';
 	const label_b = labels.b ?? 'b';
 	throw new Error(
-		`Action-manifest parity failed: ${diffs.length} diff(s) between ${label_a} and ${label_b}\n${format_action_manifest_diffs(diffs, labels)}`,
+		`Action-manifest parity failed: ${diffs.length} diff(s) between ${label_a} and ${
+			label_b
+		}\n${format_action_manifest_diffs(diffs, labels)}`,
 	);
 };

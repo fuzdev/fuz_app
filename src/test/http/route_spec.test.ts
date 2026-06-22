@@ -949,7 +949,9 @@ describe('input validation', () => {
 	test('rejects multipart/form-data', async () => {
 		const app = create_input_app();
 		const boundary = '----boundary123';
-		const body = `--${boundary}\r\nContent-Disposition: form-data; name="name"\r\n\r\ntest\r\n--${boundary}--`;
+		const body = `--${boundary}\r\nContent-Disposition: form-data; name="name"\r\n\r\ntest\r\n--${
+			boundary
+		}--`;
 		const res = await app.request('/test', {
 			method: 'POST',
 			headers: {'Content-Type': `multipart/form-data; boundary=${boundary}`},

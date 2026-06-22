@@ -158,7 +158,9 @@ export class PgFactStore implements FactStore {
 		if (bytes.length > this.#embedded_threshold) {
 			if (this.#disk_root === undefined || this.#fs === undefined) {
 				throw new Error(
-					`fact bytes exceed embedded threshold (${bytes.length} > ${this.#embedded_threshold}); configure disk_root or use put_ref for external storage`,
+					`fact bytes exceed embedded threshold (${bytes.length} > ${
+						this.#embedded_threshold
+					}); configure disk_root or use put_ref for external storage`,
 				);
 			}
 			row_bytes = null;

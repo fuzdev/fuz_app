@@ -4,6 +4,7 @@
  * @module
  */
 
+import {inspect} from 'node:util';
 import {describe, assert, test, vi} from 'vitest';
 import {Hono} from 'hono';
 
@@ -68,6 +69,28 @@ describe('RateLimiter', () => {
 			limiter.record('ip1');
 			const after = limiter.check('ip1');
 			assert.strictEqual(after.allowed, false);
+			limiter.dispose();
+		});
+	});
+
+	describe('inspect privacy', () => {
+		test('inspect exposes options and size but never the tracked keys', () => {
+			const limiter = create_test_limiter();
+			limiter.record('secret-user@example.com');
+			limiter.record('10.1.2.3');
+
+			const output = inspect(limiter);
+			assert.ok(output.includes('size'), 'inspect should surface size');
+			assert.ok(output.includes('max_attempts'), 'inspect should surface options');
+			assert.ok(!output.includes('secret-user@example.com'), 'inspect must not leak keys');
+			assert.ok(!output.includes('10.1.2.3'), 'inspect must not leak keys');
+
+			// The custom inspect method takes precedence even with showHidden, so the
+			// sensitive key set stays out regardless of inspect depth/options.
+			const hidden = inspect(limiter, {showHidden: true, depth: null});
+			assert.ok(!hidden.includes('secret-user@example.com'), 'showHidden must not leak keys');
+			assert.ok(!hidden.includes('10.1.2.3'), 'showHidden must not leak keys');
+
 			limiter.dispose();
 		});
 	});

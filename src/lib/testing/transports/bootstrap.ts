@@ -101,7 +101,9 @@ export const bootstrap = async (options: BootstrapOptions): Promise<BootstrapRes
 	const parsed = BootstrapResponse.safeParse(raw);
 	if (!parsed.success) {
 		throw new Error(
-			`bootstrap(${config.name}) returned unexpected body: ${JSON.stringify(raw)} (${parsed.error.message})`,
+			`bootstrap(${config.name}) returned unexpected body: ${JSON.stringify(raw)} (${
+				parsed.error.message
+			})`,
 		);
 	}
 	return {

@@ -173,7 +173,9 @@ describe_db('actor_lookup_actions', (get_db) => {
 		for (const key of Object.keys(entry)) {
 			assert.ok(
 				allowed.has(key),
-				`unexpected key '${key}' in actor_lookup row — only id/username/display_name are wire-exposed`,
+				`unexpected key '${
+					key
+				}' in actor_lookup row — only id/username/display_name are wire-exposed`,
 			);
 		}
 		// Blocklist: name the specific control-plane / timing-oracle fields that

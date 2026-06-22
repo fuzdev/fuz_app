@@ -132,7 +132,9 @@ export const describe_login_security_cross_tests = (
 	};
 
 	describe('login rate limiting + trusted-proxy parity', () => {
-		test(`per-IP login limit fires 429 + Retry-After after ${ip_limit} attempts from one forwarded IP`, async () => {
+		test(`per-IP login limit fires 429 + Retry-After after ${
+			ip_limit
+		} attempts from one forwarded IP`, async () => {
 			const fixture = await setup_test();
 			// The first `ip_limit` failed logins from one forwarded IP each clear the
 			// limiter (a normal 401), recording against the resolved client IP.

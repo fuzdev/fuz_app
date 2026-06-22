@@ -544,7 +544,9 @@ export const create_audit_log_config = (options?: CreateAuditLogConfigOptions): 
 	for (const [t, schema] of extra_entries) {
 		if (builtin_set.has(t)) {
 			throw new Error(
-				`extra_events key "${t}" collides with a builtin event type — pick a distinct string (e.g. "app_${t}")`,
+				`extra_events key "${
+					t
+				}" collides with a builtin event type — pick a distinct string (e.g. "app_${t}")`,
 			);
 		}
 		const name_check = AuditEventTypeName.safeParse(t);

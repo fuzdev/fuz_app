@@ -194,7 +194,9 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 		// --- 2. Per-account rate limiting on login ---
 
 		describe('per-account rate limiting on login', () => {
-			test(`login is blocked after ${max_attempts} failed attempts for the same username`, async () => {
+			test(`login is blocked after ${
+				max_attempts
+			} failed attempts for the same username`, async () => {
 				const login_account_rate_limiter = create_test_rate_limiter();
 				try {
 					const test_app = await create_test_app({

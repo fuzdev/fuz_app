@@ -175,7 +175,9 @@ export const assert_jsonrpc_success_response = (body: unknown, output_schema?: z
 		const output_result = output_schema.safeParse(result.data.result);
 		if (!output_result.success) {
 			assert.fail(
-				`JSON-RPC result does not match output schema: ${JSON.stringify(output_result.error.issues)}`,
+				`JSON-RPC result does not match output schema: ${JSON.stringify(
+					output_result.error.issues,
+				)}`,
 			);
 		}
 	}
@@ -349,7 +351,9 @@ export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
 		};
 	}
 	throw new Error(
-		`rpc_call: response is not a valid JSON-RPC envelope (method=${method}, status=${status}): ${JSON.stringify(body)}`,
+		`rpc_call: response is not a valid JSON-RPC envelope (method=${method}, status=${
+			status
+		}): ${JSON.stringify(body)}`,
 	);
 };
 
@@ -416,7 +420,9 @@ export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>
 	const parsed = spec.output.safeParse(res.result);
 	if (!parsed.success) {
 		throw new Error(
-			`rpc_call_for_spec(${spec.method}) result did not match spec.output: ${JSON.stringify(parsed.error.issues)}`,
+			`rpc_call_for_spec(${spec.method}) result did not match spec.output: ${JSON.stringify(
+				parsed.error.issues,
+			)}`,
 		);
 	}
 	return {
@@ -443,13 +449,17 @@ export const rpc_call_typed = async <T>(
 	const res = await rpc_call(args);
 	if (!res.ok) {
 		throw new Error(
-			`rpc_call_typed(${args.method}) returned error: code=${res.error.code} message=${res.error.message} data=${JSON.stringify(res.error.data)}`,
+			`rpc_call_typed(${args.method}) returned error: code=${res.error.code} message=${
+				res.error.message
+			} data=${JSON.stringify(res.error.data)}`,
 		);
 	}
 	const parsed = output_schema.safeParse(res.result);
 	if (!parsed.success) {
 		throw new Error(
-			`rpc_call_typed(${args.method}) result did not match output schema: ${JSON.stringify(parsed.error.issues)}`,
+			`rpc_call_typed(${args.method}) result did not match output schema: ${JSON.stringify(
+				parsed.error.issues,
+			)}`,
 		);
 	}
 	return parsed.data;
@@ -515,7 +525,9 @@ export const require_rpc_endpoint_path = (
 	}
 	if (rpc_endpoints.length > 1) {
 		throw new Error(
-			`rpc_endpoints has ${rpc_endpoints.length} entries; this helper expects exactly one. Iterate rpc_endpoints manually for multi-endpoint setups.`,
+			`rpc_endpoints has ${
+				rpc_endpoints.length
+			} entries; this helper expects exactly one. Iterate rpc_endpoints manually for multi-endpoint setups.`,
 		);
 	}
 	return rpc_endpoints[0]!.path;

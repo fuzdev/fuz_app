@@ -69,7 +69,9 @@ export const create_action_route_spec = (
 ): RouteSpec => {
 	if (spec.auth === null) {
 		throw new Error(
-			`Cannot derive route spec from action '${spec.method}': auth is null (only request_response actions with non-null auth can become routes)`,
+			`Cannot derive route spec from action '${
+				spec.method
+			}': auth is null (only request_response actions with non-null auth can become routes)`,
 		);
 	}
 	return {
@@ -103,7 +105,9 @@ export const create_action_event_spec = (
 ): EventSpec => {
 	if (spec.kind !== 'remote_notification') {
 		throw new Error(
-			`Cannot derive event spec from action '${spec.method}': kind is '${spec.kind}' (must be 'remote_notification')`,
+			`Cannot derive event spec from action '${spec.method}': kind is '${
+				spec.kind
+			}' (must be 'remote_notification')`,
 		);
 	}
 	return {

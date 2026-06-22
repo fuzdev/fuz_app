@@ -355,7 +355,9 @@ export const describe_identity_parity_cross_tests = (
 		assert.strictEqual(
 			actual.error,
 			expected_reason,
-			`${label} — status ${status} must carry error reason ${expected_reason ?? '(none)'}, got ${actual.error ?? '(none)'}`,
+			`${label} — status ${status} must carry error reason ${expected_reason ?? '(none)'}, got ${
+				actual.error ?? '(none)'
+			}`,
 		);
 	};
 

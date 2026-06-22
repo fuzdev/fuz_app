@@ -442,7 +442,9 @@ export const generate_actions_api_method_signature = (
 		imports.add_type('@fuzdev/fuz_app/actions/rpc_client.ts', 'RpcClientCallOptions');
 	}
 
-	const result_return = `Result<{value: ActionOutputs['${spec.method}']}, {error: JsonrpcErrorObject}>`;
+	const result_return = `Result<{value: ActionOutputs['${
+		spec.method
+	}']}, {error: JsonrpcErrorObject}>`;
 	const return_type = is_async
 		? `Promise<${result_return}>`
 		: sync_returns_value
@@ -1254,7 +1256,9 @@ export const create_namespace_qualifier = (
 		for (const spec of specs) {
 			if (method_to_ns.has(spec.method)) {
 				throw new Error(
-					`duplicate action method across sources: ${spec.method} (in ${method_to_ns.get(spec.method)} and ${ns})`,
+					`duplicate action method across sources: ${spec.method} (in ${method_to_ns.get(
+						spec.method,
+					)} and ${ns})`,
 				);
 			}
 			method_to_ns.set(spec.method, ns);
@@ -1266,7 +1270,9 @@ export const create_namespace_qualifier = (
 		const ns = method_to_ns.get(spec.method);
 		if (!ns) {
 			throw new Error(
-				`unknown action method passed to qualify_spec: ${spec.method} — not in any registered source`,
+				`unknown action method passed to qualify_spec: ${
+					spec.method
+				} — not in any registered source`,
 			);
 		}
 		return `${ns}.${spec.method}_action_spec`;

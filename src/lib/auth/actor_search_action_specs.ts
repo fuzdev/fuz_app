@@ -108,7 +108,9 @@ export const ActorSearchInput = z.strictObject({
 		.min(1)
 		.max(ACTOR_SEARCH_QUERY_LENGTH_MAX)
 		.meta({
-			description: `Case-insensitive prefix match against \`actor.name\`. Length 1–${ACTOR_SEARCH_QUERY_LENGTH_MAX}.`,
+			description: `Case-insensitive prefix match against \`actor.name\`. Length 1–${
+				ACTOR_SEARCH_QUERY_LENGTH_MAX
+			}.`,
 		}),
 	scope_ids: z.array(Uuid).optional().meta({
 		description:
@@ -121,7 +123,9 @@ export const ActorSearchInput = z.strictObject({
 		.max(ACTOR_SEARCH_LIMIT_MAX)
 		.optional()
 		.meta({
-			description: `Maximum rows to return. Defaults to ${ACTOR_SEARCH_LIMIT_DEFAULT}, hard cap ${ACTOR_SEARCH_LIMIT_MAX}.`,
+			description: `Maximum rows to return. Defaults to ${ACTOR_SEARCH_LIMIT_DEFAULT}, hard cap ${
+				ACTOR_SEARCH_LIMIT_MAX
+			}.`,
 		}),
 });
 export type ActorSearchInput = z.infer<typeof ActorSearchInput>;
@@ -142,7 +146,9 @@ export const actor_search_action_spec = {
 	async: true,
 	rate_limit: 'account',
 	error_reasons: [ERROR_ACTOR_SEARCH_SCOPE_REQUIRED],
-	description: `Case-insensitive prefix search over actor.name, returning {id, username, display_name?} rows. Authenticated + per-account rate-limited; non-admin callers must pass at least one scope_id. Default limit ${ACTOR_SEARCH_LIMIT_DEFAULT}, hard cap ${ACTOR_SEARCH_LIMIT_MAX}.`,
+	description: `Case-insensitive prefix search over actor.name, returning {id, username, display_name?} rows. Authenticated + per-account rate-limited; non-admin callers must pass at least one scope_id. Default limit ${
+		ACTOR_SEARCH_LIMIT_DEFAULT
+	}, hard cap ${ACTOR_SEARCH_LIMIT_MAX}.`,
 } satisfies RequestResponseActionSpec;
 
 /**

@@ -712,7 +712,9 @@ export const assert_keeper_routes_under_prefix = (
 		const under_prefix = prefixes.some((prefix) => route.path.startsWith(prefix));
 		assert.ok(
 			under_prefix,
-			`${format_route_key(route)} is keeper-protected but not under any expected prefix: ${prefixes.join(', ')}`,
+			`${format_route_key(
+				route,
+			)} is keeper-protected but not under any expected prefix: ${prefixes.join(', ')}`,
 		);
 	}
 };

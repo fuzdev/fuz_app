@@ -315,7 +315,9 @@ const consumer_spec_cases: Array<{
 
 describe('create_action_route_spec — consumer spec shapes', () => {
 	for (const tc of consumer_spec_cases) {
-		test(`${tc.name}: method=${tc.expected_method}, auth=${JSON.stringify(tc.expected_auth)}`, () => {
+		test(`${tc.name}: method=${tc.expected_method}, auth=${JSON.stringify(
+			tc.expected_auth,
+		)}`, () => {
 			const route = create_action_route_spec(tc.spec, {
 				path: `/api/${tc.spec.method}`,
 				handler: noop_handler,

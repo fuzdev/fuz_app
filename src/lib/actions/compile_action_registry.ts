@@ -73,7 +73,9 @@ export const compile_action_registry = (
 				spec.auth.account !== 'required'
 			) {
 				throw new Error(
-					`${ctx} declares rate_limit: '${spec.rate_limit}' but auth.account !== 'required' — no account guaranteed for account-keyed limiting. Use 'ip' or set auth.account: 'required'.`,
+					`${ctx} declares rate_limit: '${
+						spec.rate_limit
+					}' but auth.account !== 'required' — no account guaranteed for account-keyed limiting. Use 'ip' or set auth.account: 'required'.`,
 				);
 			}
 		}
@@ -83,7 +85,9 @@ export const compile_action_registry = (
 		if (spec.kind === 'request_response' && action.handler) {
 			if (is_null_schema(spec.input)) {
 				throw new Error(
-					`${ctx} uses z.null() for input — JSON-RPC 2.0 §4.2 forbids "params": null on the wire. Use z.void() for parameterless methods.`,
+					`${
+						ctx
+					} uses z.null() for input — JSON-RPC 2.0 §4.2 forbids "params": null on the wire. Use z.void() for parameterless methods.`,
 				);
 			}
 			action_map.set(spec.method, {spec, handler: action.handler});

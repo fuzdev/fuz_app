@@ -278,6 +278,8 @@ export const log_db_factory_status = (factories: Array<DbFactory>): void => {
 	const enabled = factories.filter((f) => !f.skip).map((f) => f.name);
 	const skipped = factories.filter((f) => f.skip).map((f) => `${f.name} (${f.skip_reason})`);
 	console.log(
-		`[db tests] drivers: ${enabled.join(', ')}${skipped.length ? ` | skipped: ${skipped.join(', ')}` : ''}`,
+		`[db tests] drivers: ${enabled.join(', ')}${
+			skipped.length ? ` | skipped: ${skipped.join(', ')}` : ''
+		}`,
 	);
 };

@@ -34,7 +34,11 @@ test('DELETE FROM targets match auth_integration_truncate_tables', () => {
 		targets,
 		canonical,
 		`_testing_reset DELETE targets diverge from auth_integration_truncate_tables.\n` +
-			`  only in _testing_reset: ${[...targets].filter((t) => !canonical.has(t)).join(', ') || '(none)'}\n` +
-			`  only in canonical list: ${[...canonical].filter((t) => !targets.has(t)).join(', ') || '(none)'}`,
+			`  only in _testing_reset: ${
+				[...targets].filter((t) => !canonical.has(t)).join(', ') || '(none)'
+			}\n` +
+			`  only in canonical list: ${
+				[...canonical].filter((t) => !targets.has(t)).join(', ') || '(none)'
+			}`,
 	);
 });

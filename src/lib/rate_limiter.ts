@@ -150,6 +150,18 @@ export class RateLimiter {
 	}
 
 	/**
+	 * Custom inspect output that exposes only `options` and `size`, never the
+	 * tracked keys. The key set is sensitive (usernames / IP addresses) and
+	 * unbounded, so it must not leak into logs via `util.inspect` /
+	 * `console.log`. The `#attempts` field is already `#private`, but this
+	 * keeps the boundary explicit against `inspect(…, {showHidden: true})`
+	 * and future field-visibility changes.
+	 */
+	[Symbol.for('nodejs.util.inspect.custom')](): {options: RateLimiterOptions; size: number} {
+		return {options: this.options, size: this.size};
+	}
+
+	/**
 	 * Check whether `key` is allowed without recording an attempt.
 	 *
 	 * Prunes timestamps that fell outside the window as a side effect (and

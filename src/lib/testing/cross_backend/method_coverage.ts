@@ -40,14 +40,12 @@ export type MethodCoverageTier =
 	 * the spec-derived round-trip + attack-surface suites — no bespoke suite
 	 * needed.
 	 */
-	| 'declared'
-	/**
+	| 'declared' /**
 	 * Live-mounted but deliberately off the declared surface (stateful or
 	 * opt-in). Covered only by a dedicated imperative `describe_*_cross_tests`
 	 * suite, so the entry must name it.
 	 */
-	| 'off_surface'
-	/**
+	| 'off_surface' /**
 	 * A `_testing_*` daemon-token backdoor — live-mounted on the test binary,
 	 * never on the declared surface. Coverage is the credential-gate suite plus
 	 * the in-process spec-level gate test.
@@ -131,7 +129,9 @@ export const assert_rpc_method_coverage = (input: RpcMethodCoverageInput): void 
 	const stale = [...manifest_methods].filter((m) => !live.has(m));
 	assert.ok(
 		stale.length === 0,
-		`method coverage: ${stale.length} manifest entr(y/ies) name a method the live mount no longer ` +
+		`method coverage: ${
+			stale.length
+		} manifest entr(y/ies) name a method the live mount no longer ` +
 			`exposes — remove the stale row(s):\n  ${sorted(stale)}`,
 	);
 
@@ -180,8 +180,9 @@ export const assert_rpc_method_coverage = (input: RpcMethodCoverageInput): void 
 				);
 				assert.ok(
 					!is_backdoor,
-					`method coverage: '${entry.method}' is tagged 'off_surface' but starts with '${prefix}' ` +
-						`— retag it 'backdoor'`,
+					`method coverage: '${entry.method}' is tagged 'off_surface' but starts with '${
+						prefix
+					}' ` + `— retag it 'backdoor'`,
 				);
 				assert.ok(
 					!!entry.suite,

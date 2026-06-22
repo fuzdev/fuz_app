@@ -195,7 +195,9 @@ export const create_bootstrap_route_specs = (
 				// The error response alerts the operator to delete the token file manually.
 				if (!result.token_file_deleted) {
 					throw new Error(
-						`Bootstrap succeeded but token file was not deleted at ${token_path}. Delete it manually and log in.`,
+						`Bootstrap succeeded but token file was not deleted at ${
+							token_path
+						}. Delete it manually and log in.`,
 					);
 				}
 

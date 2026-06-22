@@ -463,6 +463,16 @@ a handler cannot revoke a role_grant belonging to a different actor. The same
 `RoleGrantOfferNotFoundError` on both a missing offer id and a wrong-recipient
 lookup to avoid disclosing whether an offer id exists.
 
+The 404 mask is scoped to **cross-principal** disclosure. An offer that exists
+on the **caller's own account** but is targeted to a *different actor* (a sibling
+persona) is refused with **403** `role_grant_offer_actor_mismatch`, not masked to
+404 — every actor in that distinction belongs to the one account already
+authenticated, so the 403 leaks nothing across a trust boundary, and masking it
+would only obscure a legitimate "not yours to accept, pick the right persona"
+signal. The cross-account lookup (an offer on another account) stays 404. Both
+arms hold identically on the TS and Rust spines
+(`role_grant_offer_enumeration.cross.test.ts`).
+
 **404-over-403 is the general mask, not a per-handler quirk.** Any
 resource-scoped lookup where existence itself is privileged returns the
 **same `not_found` shape** for "no such row" and "exists but the caller

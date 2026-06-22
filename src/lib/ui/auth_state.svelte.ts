@@ -132,7 +132,9 @@ export class AuthState {
 				try {
 					const data = await response.json();
 					const minutes = Math.ceil((data.retry_after ?? 60) / 60);
-					this.verify_error = `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`;
+					this.verify_error = `Too many attempts. Try again in ${minutes} minute${
+						minutes === 1 ? '' : 's'
+					}.`;
 				} catch {
 					this.verify_error = 'Too many attempts. Try again later.';
 				}
@@ -221,7 +223,9 @@ export class AuthState {
 				try {
 					const data = await response.json();
 					const minutes = Math.ceil((data.retry_after ?? 60) / 60);
-					this.verify_error = `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`;
+					this.verify_error = `Too many attempts. Try again in ${minutes} minute${
+						minutes === 1 ? '' : 's'
+					}.`;
 				} catch {
 					this.verify_error = 'Too many attempts. Try again later.';
 				}

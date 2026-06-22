@@ -235,6 +235,36 @@ const assert_fields = (actual: unknown, fields: Record<string, unknown>, label: 
 };
 
 /**
+ * Whether `key` is present as an own property of `value` or any object nested
+ * within it (arrays and objects walked recursively). The shape-agnostic test
+ * behind `expect.absent_fields` — a secret column leaking at any depth (inside
+ * a list element, a nested record) is caught, not just a top-level field.
+ */
+const has_key_anywhere = (value: unknown, key: string): boolean => {
+	if (Array.isArray(value)) return value.some((v) => has_key_anywhere(v, key));
+	if (value !== null && typeof value === 'object') {
+		if (Object.hasOwn(value, key)) return true;
+		return Object.values(value as Record<string, unknown>).some((v) => has_key_anywhere(v, key));
+	}
+	return false;
+};
+
+/** Assert none of the sensitive field names appear anywhere in the response body. */
+const assert_absent_fields = (
+	body: unknown,
+	absent: ReadonlyArray<string>,
+	label: string,
+): void => {
+	for (const key of absent) {
+		assert.ok(
+			!has_key_anywhere(body, key),
+			`${label}: response must not serialize the sensitive field '${key}' anywhere in its ` +
+				`body — a secret column leaked into the wire shape.`,
+		);
+	}
+};
+
+/**
  * Response headers that fingerprint the backend implementation or framework.
  * Neither spine emits these; the runner asserts they stay absent on EVERY
  * conformance response so a framework upgrade or consumer middleware that adds
@@ -330,10 +360,17 @@ const run_case = async (
 		options.principals,
 	);
 
-	if (c.request.method.startsWith('/')) {
-		return run_rest_case(c, options, transport, headers);
+	const normalized = c.request.method.startsWith('/')
+		? await run_rest_case(c, options, transport, headers)
+		: await run_rpc_case(c, transport, headers, suppress_default_origin, resolved_rpc_endpoints);
+
+	// Negative-space field check, uniform across REST + RPC and success + error
+	// bodies: a sensitive column (`password_hash`, `token_hash`) must not appear
+	// anywhere in what the prober sees.
+	if (c.expect.absent_fields) {
+		assert_absent_fields(normalized.body, c.expect.absent_fields, c.name);
 	}
-	return run_rpc_case(c, transport, headers, suppress_default_origin, resolved_rpc_endpoints);
+	return normalized;
 };
 
 /** Dispatch + assert a case targeting an RPC method. */

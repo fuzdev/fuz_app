@@ -229,7 +229,9 @@ describe_db('actor_search_actions', (get_db) => {
 		for (const key of Object.keys(entry)) {
 			assert.ok(
 				allowed.has(key),
-				`unexpected key '${key}' in actor_search row — only id/username/display_name are wire-exposed`,
+				`unexpected key '${
+					key
+				}' in actor_search row — only id/username/display_name are wire-exposed`,
 			);
 		}
 		for (const forbidden of [

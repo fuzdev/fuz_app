@@ -72,6 +72,8 @@ export const create_db = async (database_url: string): Promise<CreateDbResult> =
 
 	const scheme = database_url.split('://')[0] ?? database_url;
 	throw new Error(
-		`Unsupported database URL scheme: ${scheme}://. Expected postgres://, postgresql://, file://, or memory://`,
+		`Unsupported database URL scheme: ${
+			scheme
+		}://. Expected postgres://, postgresql://, file://, or memory://`,
 	);
 };

@@ -144,7 +144,9 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 					const required_roles = route.auth.roles ?? [];
 					const wrong_roles = roles.filter((r) => !required_roles.includes(r));
 					for (const wrong_role of wrong_roles) {
-						test(`${route.method} ${route.path} (${wrong_role} instead of ${required_roles.join('|')})`, async () => {
+						test(`${route.method} ${route.path} (${wrong_role} instead of ${required_roles.join(
+							'|',
+						)})`, async () => {
 							const app = apps.by_role.get(wrong_role);
 							if (!app) throw new Error(`No test app for role '${wrong_role}'`);
 							const res = await app.request(resolve_test_path(route.path), {

@@ -305,7 +305,9 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 
 				try {
 					const result = await route.db.query(
-						`DELETE FROM "${assert_valid_sql_identifier(name)}" WHERE "${assert_valid_sql_identifier(pk_info.column_name)}" = $1 RETURNING *`,
+						`DELETE FROM "${assert_valid_sql_identifier(
+							name,
+						)}" WHERE "${assert_valid_sql_identifier(pk_info.column_name)}" = $1 RETURNING *`,
 						[id],
 					);
 

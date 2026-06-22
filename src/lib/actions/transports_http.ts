@@ -107,7 +107,9 @@ export class FrontendHttpTransport implements Transport {
 				const actual_code = result.error.code;
 				if (actual_code !== expected_code) {
 					console.warn(
-						`[http_transport] JSON-RPC error code mismatch: got ${actual_code} but ${response.status} should map to ${expected_code}`,
+						`[http_transport] JSON-RPC error code mismatch: got ${actual_code} but ${
+							response.status
+						} should map to ${expected_code}`,
 						result,
 					);
 				}

@@ -73,7 +73,9 @@ export const ActorLookupInput = z.strictObject({
 		.min(1)
 		.max(ACTOR_LOOKUP_IDS_MAX)
 		.meta({
-			description: `Actor ids to resolve. Capped at ${ACTOR_LOOKUP_IDS_MAX}; unknown ids are silently absent from the response.`,
+			description: `Actor ids to resolve. Capped at ${
+				ACTOR_LOOKUP_IDS_MAX
+			}; unknown ids are silently absent from the response.`,
 		}),
 });
 export type ActorLookupInput = z.infer<typeof ActorLookupInput>;
@@ -93,7 +95,9 @@ export const actor_lookup_action_spec = {
 	output: ActorLookupOutput,
 	async: true,
 	rate_limit: 'account',
-	description: `Batched id → (username, display_name) resolver, keyed by actor id. Powers the labels arc for surfaces that stamp an actor id (e.g. cell owners, grant grantors). Authenticated + per-account rate-limited to bound batched username enumeration. Cap ${ACTOR_LOOKUP_IDS_MAX}; unknown ids absent from response.`,
+	description: `Batched id → (username, display_name) resolver, keyed by actor id. Powers the labels arc for surfaces that stamp an actor id (e.g. cell owners, grant grantors). Authenticated + per-account rate-limited to bound batched username enumeration. Cap ${
+		ACTOR_LOOKUP_IDS_MAX
+	}; unknown ids absent from response.`,
 } satisfies RequestResponseActionSpec;
 
 /**

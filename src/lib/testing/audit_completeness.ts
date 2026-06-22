@@ -174,7 +174,9 @@ const assert_event_credential_type = (
 	assert.strictEqual(
 		recorded,
 		credential_type,
-		`Expected '${expected}' audit metadata.credential_type === '${credential_type}' after ${context} (got ${JSON.stringify(recorded)})`,
+		`Expected '${expected}' audit metadata.credential_type === '${credential_type}' after ${
+			context
+		} (got ${JSON.stringify(recorded)})`,
 	);
 };
 
@@ -478,7 +480,9 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				});
 				assert.ok(
 					accept_res.ok,
-					`role_grant_offer_accept failed: ${accept_res.ok ? '' : JSON.stringify(accept_res.error)}`,
+					`role_grant_offer_accept failed: ${
+						accept_res.ok ? '' : JSON.stringify(accept_res.error)
+					}`,
 				);
 
 				const events_after_accept = await list_audit_events(
@@ -734,7 +738,9 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				});
 				assert.ok(
 					settings_res.ok,
-					`app_settings_update failed: ${settings_res.ok ? '' : JSON.stringify(settings_res.error)}`,
+					`app_settings_update failed: ${
+						settings_res.ok ? '' : JSON.stringify(settings_res.error)
+					}`,
 				);
 
 				const res = await fixture.transport(signup_route.path, {
@@ -808,7 +814,9 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				for (const event_type of AUDIT_EVENT_TYPES) {
 					assert.ok(
 						all_covered.has(event_type),
-						`Audit event type '${event_type}' is not covered by the completeness suite and not explicitly excluded — add a test or exclude with justification`,
+						`Audit event type '${
+							event_type
+						}' is not covered by the completeness suite and not explicitly excluded — add a test or exclude with justification`,
 					);
 				}
 			});

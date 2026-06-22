@@ -36,7 +36,9 @@ describe('session constants', () => {
 		assert.strictEqual(
 			SESSION_AGE_MAX,
 			db_lifetime_seconds,
-			`cookie SESSION_AGE_MAX (${SESSION_AGE_MAX}s) must equal DB AUTH_SESSION_LIFETIME_MS / 1000 (${db_lifetime_seconds}s)`,
+			`cookie SESSION_AGE_MAX (${
+				SESSION_AGE_MAX
+			}s) must equal DB AUTH_SESSION_LIFETIME_MS / 1000 (${db_lifetime_seconds}s)`,
 		);
 	});
 });

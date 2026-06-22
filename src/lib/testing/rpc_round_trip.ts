@@ -228,7 +228,9 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 						}
 					} catch (e) {
 						throw new Error(
-							`RPC round-trip POST failed for ${action.spec.method} (status ${res.status}): ${(e as Error).message}`,
+							`RPC round-trip POST failed for ${action.spec.method} (status ${res.status}): ${
+								(e as Error).message
+							}`,
 						);
 					}
 				}
@@ -270,7 +272,9 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 						}
 					} catch (e) {
 						throw new Error(
-							`RPC round-trip GET failed for ${action.spec.method} (status ${res.status}): ${(e as Error).message}`,
+							`RPC round-trip GET failed for ${action.spec.method} (status ${res.status}): ${
+								(e as Error).message
+							}`,
 						);
 					}
 				}
@@ -302,12 +306,16 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 					assert_method_implemented(method, body);
 					assert.ok(
 						res.ok,
-						`success fixture expected a success response, got status ${res.status}: ${JSON.stringify(body)}`,
+						`success fixture expected a success response, got status ${
+							res.status
+						}: ${JSON.stringify(body)}`,
 					);
 					assert_jsonrpc_success_response(body, located.action.spec.output);
 				} catch (e) {
 					throw new Error(
-						`RPC success-fixture failed for ${method} (status ${res.status}): ${(e as Error).message}`,
+						`RPC success-fixture failed for ${method} (status ${res.status}): ${
+							(e as Error).message
+						}`,
 					);
 				}
 			}

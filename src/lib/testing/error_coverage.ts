@@ -283,8 +283,9 @@ export const assert_error_coverage = (
 	if (min_coverage > 0) {
 		assert.ok(
 			ratio >= min_coverage,
-			`Error coverage ${(ratio * 100).toFixed(1)}% below threshold ${(min_coverage * 100).toFixed(1)}%` +
-				`\n  uncovered:\n    ${uncovered_lines.join('\n    ')}`,
+			`Error coverage ${(ratio * 100).toFixed(1)}% below threshold ${(min_coverage * 100).toFixed(
+				1,
+			)}%` + `\n  uncovered:\n    ${uncovered_lines.join('\n    ')}`,
 		);
 	}
 };

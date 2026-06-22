@@ -173,7 +173,9 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 				await assert_response_matches_spec(describe_time_specs, spec.method, url, res);
 			} catch (e) {
 				throw new Error(
-					`Round-trip validation failed for ${route_key} (status ${res.status}): ${(e as Error).message}`,
+					`Round-trip validation failed for ${route_key} (status ${res.status}): ${
+						(e as Error).message
+					}`,
 				);
 			}
 		});
@@ -213,7 +215,9 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 					await assert_response_matches_spec(describe_time_specs, spec.method, url, res);
 				} catch (e) {
 					throw new Error(
-						`Round-trip success-fixture failed for ${route_key} (status ${res.status}): ${(e as Error).message}`,
+						`Round-trip success-fixture failed for ${route_key} (status ${res.status}): ${
+							(e as Error).message
+						}`,
 					);
 				}
 			}

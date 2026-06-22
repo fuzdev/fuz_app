@@ -103,7 +103,9 @@ export const create_self_service_role_actions = (
 		for (const r of eligible) {
 			if (!role_specs.has(r)) {
 				throw new Error(
-					`create_self_service_role_actions: eligible_roles entry "${r}" is not registered in roles.role_specs — typo or missing call to create_role_schema`,
+					`create_self_service_role_actions: eligible_roles entry "${
+						r
+					}" is not registered in roles.role_specs — typo or missing call to create_role_schema`,
 				);
 			}
 		}

@@ -685,7 +685,9 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		const last_receive = this.#last_receive_time ?? now;
 		if (now - last_receive >= this.#heartbeat_receive_timeout) {
 			this.#log?.info(
-				`[socket] receive timeout (${now - last_receive}ms) — closing ${WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT}`,
+				`[socket] receive timeout (${now - last_receive}ms) — closing ${
+					WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT
+				}`,
 			);
 			try {
 				this.ws.close(WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT, 'client heartbeat timeout');

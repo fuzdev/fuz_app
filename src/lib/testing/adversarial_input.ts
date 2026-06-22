@@ -142,7 +142,9 @@ export const generate_input_test_cases = (input_schema: z.ZodType): Array<InputT
 	if (!base_result.success) {
 		throw new Error(
 			`adversarial_input: generated base object fails validation for schema — ` +
-				`fix generate_valid_value for: ${base_result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')}`,
+				`fix generate_valid_value for: ${base_result.error.issues
+					.map((i) => `${i.path.join('.')}: ${i.message}`)
+					.join(', ')}`,
 		);
 	}
 
@@ -465,7 +467,9 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 				.filter((key) => !spec_lookup.has(key));
 			if (missing_specs.length > 0) {
 				throw new Error(
-					`adversarial_input: surface routes with input have no matching RouteSpec: ${missing_specs.join(', ')}`,
+					`adversarial_input: surface routes with input have no matching RouteSpec: ${missing_specs.join(
+						', ',
+					)}`,
 				);
 			}
 
@@ -566,7 +570,9 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 								assert.strictEqual(
 									body.error,
 									ERROR_INVALID_ROUTE_PARAMS,
-									`Expected ${ERROR_INVALID_ROUTE_PARAMS} for ${key} [${tc.label}], got: ${body.error}`,
+									`Expected ${ERROR_INVALID_ROUTE_PARAMS} for ${key} [${tc.label}], got: ${
+										body.error
+									}`,
 								);
 								// validate response body structure matches error schema
 								ValidationError.parse(body);
@@ -617,7 +623,9 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 								assert.strictEqual(
 									body.error,
 									ERROR_INVALID_QUERY_PARAMS,
-									`Expected ${ERROR_INVALID_QUERY_PARAMS} for ${key} [${tc.label}], got: ${body.error}`,
+									`Expected ${ERROR_INVALID_QUERY_PARAMS} for ${key} [${tc.label}], got: ${
+										body.error
+									}`,
 								);
 								// validate response body structure matches error schema
 								ValidationError.parse(body);

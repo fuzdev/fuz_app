@@ -612,7 +612,9 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			config_diagnostics.push({
 				level: 'warning',
 				category: 'security',
-				message: `Session cookie sameSite='${cookie_opts.sameSite}' — weakened from default '${session_cookie_options.sameSite}'`,
+				message: `Session cookie sameSite='${cookie_opts.sameSite}' — weakened from default '${
+					session_cookie_options.sameSite
+				}'`,
 			});
 		}
 		if (cookie_opts.httpOnly === false) {

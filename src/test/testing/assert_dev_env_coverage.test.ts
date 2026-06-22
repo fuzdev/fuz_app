@@ -84,7 +84,9 @@ describe('every testing module carries the assert_dev_env guard', () => {
 		assert.isAbove(
 			modules.length,
 			50,
-			`expected many testing modules under ${TESTING_DIR}, found ${modules.length} — did the path break?`,
+			`expected many testing modules under ${TESTING_DIR}, found ${
+				modules.length
+			} — did the path break?`,
 		);
 	});
 

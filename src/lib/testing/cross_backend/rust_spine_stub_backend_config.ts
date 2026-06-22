@@ -129,7 +129,9 @@ export const rust_spine_stub_backend_config = (
 	} = options;
 	if (!binary_path) {
 		throw new Error(
-			`rust_spine_stub_backend_config: no binary path — set ${RUST_SPINE_STUB_BIN_ENV} to a prebuilt ` +
+			`rust_spine_stub_backend_config: no binary path — set ${
+				RUST_SPINE_STUB_BIN_ENV
+			} to a prebuilt ` +
 				'`testing_spine_stub` binary (build it with `cargo build -p testing_spine_stub --release`) ' +
 				'or pass `binary_path`.',
 		);

@@ -104,7 +104,9 @@ export const assert_non_admin_schemas_no_admin_fields = (
 		for (const field of admin_only_fields) {
 			assert.ok(
 				!prop_names.has(field),
-				`${route.method} ${route.path}: non-admin output schema contains admin-only field '${field}'`,
+				`${route.method} ${route.path}: non-admin output schema contains admin-only field '${
+					field
+				}'`,
 			);
 		}
 	}

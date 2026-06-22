@@ -235,7 +235,9 @@ const serve_fact_bytes = async (
 		if (!row || row.bytes === null) {
 			// Race: meta said embedded but bytes vanished. Treat as not-found.
 			log.warn(
-				`serve_fact: embedded bytes missing for ${hash} (meta said embedded, row=${row ? 'present' : 'null'})`,
+				`serve_fact: embedded bytes missing for ${hash} (meta said embedded, row=${
+					row ? 'present' : 'null'
+				})`,
 			);
 			return c.body(null, 404);
 		}

@@ -145,7 +145,9 @@ export class FormState {
 		const el = this.#form?.querySelector<HTMLElement>(`[name="${field}"]`);
 		if (DEV && !el) {
 			console.warn(
-				`FormState: no element found with name="${field}". Check for typos in the name attribute or form_state.focus() call.`,
+				`FormState: no element found with name="${
+					field
+				}". Check for typos in the name attribute or form_state.focus() call.`,
 			);
 			return;
 		}

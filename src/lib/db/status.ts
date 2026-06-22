@@ -226,7 +226,9 @@ export const format_db_status = (status: DbStatus): string => {
 			} else {
 				const pending_list = m.pending_names.join(', ');
 				lines.push(
-					`    ${m.namespace}: applied ${m.applied_names.length}/${total} (pending: ${pending_list})`,
+					`    ${m.namespace}: applied ${m.applied_names.length}/${total} (pending: ${
+						pending_list
+					})`,
 				);
 			}
 		}

@@ -506,7 +506,9 @@ export const create_action_event = <TMethod extends string = string>(
 	const phase = initial_phase || get_initial_phase(spec.kind, spec.initiator, environment.executor);
 	if (!phase) {
 		throw new Error(
-			`executor '${environment.executor}' cannot initiate action '${spec.method}' with initiator '${spec.initiator}'`,
+			`executor '${environment.executor}' cannot initiate action '${spec.method}' with initiator '${
+				spec.initiator
+			}'`,
 		);
 	}
 

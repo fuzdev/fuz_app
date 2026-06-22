@@ -409,7 +409,9 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		const notify = (notify_method: string, _notify_params: unknown): void => {
 			if (DEV) {
 				log.warn(
-					`ctx.notify('${notify_method}') called on non-streaming transport; notification dropped (method=${method_name})`,
+					`ctx.notify('${
+						notify_method
+					}') called on non-streaming transport; notification dropped (method=${method_name})`,
 				);
 			}
 		};
@@ -535,7 +537,9 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			path: endpoint_path,
 			auth: {account: 'none', actor: 'none'}, // per-action auth inside dispatcher
 			handler: post_handler,
-			description: `JSON-RPC 2.0 endpoint — ${actions.length} method${actions.length === 1 ? '' : 's'}`,
+			description: `JSON-RPC 2.0 endpoint — ${actions.length} method${
+				actions.length === 1 ? '' : 's'
+			}`,
 			input: z.null(), // dispatcher owns body parsing; rpc_endpoints surface has the real schemas
 			output: z.any(), // varies by method
 			transaction: false, // per-action inside dispatcher
@@ -545,7 +549,9 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			path: endpoint_path,
 			auth: {account: 'none', actor: 'none'}, // per-action auth inside dispatcher
 			handler: get_handler,
-			description: `JSON-RPC 2.0 endpoint (cacheable reads) — ${actions.length} method${actions.length === 1 ? '' : 's'}`,
+			description: `JSON-RPC 2.0 endpoint (cacheable reads) — ${actions.length} method${
+				actions.length === 1 ? '' : 's'
+			}`,
 			input: z.null(), // params from query string, validated by dispatcher
 			output: z.any(), // varies by method
 			transaction: false, // per-action inside dispatcher

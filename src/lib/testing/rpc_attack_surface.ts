@@ -125,7 +125,9 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 							const required_roles = method.auth.roles ?? [];
 							const wrong_roles = roles.filter((r) => !required_roles.includes(r));
 							for (const wrong_role of wrong_roles) {
-								test(`${method.name} (${wrong_role} instead of ${required_roles.join('|')})`, async () => {
+								test(`${method.name} (${wrong_role} instead of ${required_roles.join(
+									'|',
+								)})`, async () => {
 									const app = apps.by_role.get(wrong_role);
 									if (!app) throw new Error(`No test app for role '${wrong_role}'`);
 									// Send valid params so we trip the role gate (403), not input

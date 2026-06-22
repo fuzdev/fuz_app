@@ -183,7 +183,9 @@ describe('Username/UsernameProvided cross-schema parity', () => {
 			assert.strictEqual(
 				via_creation,
 				via_login,
-				`schemas diverged for '${raw}': Username='${via_creation}', UsernameProvided='${via_login}'`,
+				`schemas diverged for '${raw}': Username='${via_creation}', UsernameProvided='${
+					via_login
+				}'`,
 			);
 		}
 	});

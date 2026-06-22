@@ -33,14 +33,18 @@ import {input_schema_declares_acting, needs_actor} from '$lib/http/auth_shape.ts
 
 describe('fuz_auth registries — acting biconditional', () => {
 	for (const registry of all_fuz_auth_action_spec_registries) {
-		test(`${registry.name}: every spec satisfies auth.actor !== 'none' ⟺ input declares acting?: ActingActor`, () => {
+		test(`${
+			registry.name
+		}: every spec satisfies auth.actor !== 'none' ⟺ input declares acting?: ActingActor`, () => {
 			for (const spec of registry.specs) {
 				const wants_actor = needs_actor(spec.auth);
 				const declares_acting = input_schema_declares_acting(spec.input);
 				assert.strictEqual(
 					declares_acting,
 					wants_actor,
-					`${spec.method}: auth.actor=${spec.auth.actor} but input ${declares_acting ? 'declares' : 'omits'} acting`,
+					`${spec.method}: auth.actor=${spec.auth.actor} but input ${
+						declares_acting ? 'declares' : 'omits'
+					} acting`,
 				);
 			}
 		});

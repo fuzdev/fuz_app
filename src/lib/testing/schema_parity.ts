@@ -310,7 +310,9 @@ export const format_schema_diffs = (
 				break;
 			case 'column_field_differs':
 				lines.push(
-					`  ${d.table}.${d.column} ${d.field} differs: ${label_a}=${JSON.stringify(d.a)}, ${label_b}=${JSON.stringify(d.b)}`,
+					`  ${d.table}.${d.column} ${d.field} differs: ${label_a}=${JSON.stringify(d.a)}, ${
+						label_b
+					}=${JSON.stringify(d.b)}`,
 				);
 				break;
 			case 'index_only_in':
@@ -318,7 +320,9 @@ export const format_schema_diffs = (
 				break;
 			case 'index_definition_differs':
 				lines.push(
-					`  index ${d.index} on ${d.table} differs:\n    ${label_a}: ${d.a}\n    ${label_b}: ${d.b}`,
+					`  index ${d.index} on ${d.table} differs:\n    ${label_a}: ${d.a}\n    ${label_b}: ${
+						d.b
+					}`,
 				);
 				break;
 			case 'constraint_only_in':
@@ -326,7 +330,9 @@ export const format_schema_diffs = (
 				break;
 			case 'constraint_differs':
 				lines.push(
-					`  constraint ${d.constraint} on ${d.table} differs:\n    ${label_a}: ${d.a.type} ${d.a.definition}\n    ${label_b}: ${d.b.type} ${d.b.definition}`,
+					`  constraint ${d.constraint} on ${d.table} differs:\n    ${label_a}: ${d.a.type} ${
+						d.a.definition
+					}\n    ${label_b}: ${d.b.type} ${d.b.definition}`,
 				);
 				break;
 			case 'sequence_only_in':
@@ -342,7 +348,9 @@ export const format_schema_diffs = (
 				break;
 			case 'enum_labels_differ':
 				lines.push(
-					`  enum ${d.enum_name} labels differ: ${label_a}=${JSON.stringify(d.a)}, ${label_b}=${JSON.stringify(d.b)}`,
+					`  enum ${d.enum_name} labels differ: ${label_a}=${JSON.stringify(d.a)}, ${
+						label_b
+					}=${JSON.stringify(d.b)}`,
 				);
 				break;
 			default:
@@ -381,6 +389,8 @@ export const assert_schema_snapshots_equal = (
 	const label_a = labels.a ?? 'a';
 	const label_b = labels.b ?? 'b';
 	throw new Error(
-		`Schema parity failed: ${diffs.length} diff(s) between ${label_a} and ${label_b}\n${format_schema_diffs(diffs, labels)}`,
+		`Schema parity failed: ${diffs.length} diff(s) between ${label_a} and ${
+			label_b
+		}\n${format_schema_diffs(diffs, labels)}`,
 	);
 };

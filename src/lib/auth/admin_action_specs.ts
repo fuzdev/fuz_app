@@ -57,7 +57,9 @@ export const AdminAccountListInput = z
 			.max(ADMIN_ACCOUNT_LIST_LIMIT_MAX)
 			.nullish()
 			.meta({
-				description: `Max accounts to return (default ${ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT}, max ${ADMIN_ACCOUNT_LIST_LIMIT_MAX}).`,
+				description: `Max accounts to return (default ${ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT}, max ${
+					ADMIN_ACCOUNT_LIST_LIMIT_MAX
+				}).`,
 			}),
 		offset: z.number().int().min(0).nullish().meta({description: 'Pagination offset.'}),
 		include_deleted: z.boolean().nullish().meta({
@@ -140,7 +142,9 @@ export const AuditLogListInput = z
 			.max(AUDIT_LOG_LIST_LIMIT_MAX)
 			.nullish()
 			.meta({
-				description: `Max rows to return (default ${AUDIT_LOG_DEFAULT_LIMIT}, max ${AUDIT_LOG_LIST_LIMIT_MAX}).`,
+				description: `Max rows to return (default ${AUDIT_LOG_DEFAULT_LIMIT}, max ${
+					AUDIT_LOG_LIST_LIMIT_MAX
+				}).`,
 			}),
 		offset: z.number().int().min(0).nullish().meta({description: 'Pagination offset.'}),
 		since_seq: z.number().int().min(0).nullish().meta({
@@ -167,7 +171,9 @@ export const AuditLogRoleGrantHistoryInput = z
 			.max(AUDIT_LOG_LIST_LIMIT_MAX)
 			.nullish()
 			.meta({
-				description: `Max rows to return (default ${AUDIT_LOG_DEFAULT_LIMIT}, max ${AUDIT_LOG_LIST_LIMIT_MAX}).`,
+				description: `Max rows to return (default ${AUDIT_LOG_DEFAULT_LIMIT}, max ${
+					AUDIT_LOG_LIST_LIMIT_MAX
+				}).`,
 			}),
 		offset: z.number().int().min(0).nullish().meta({description: 'Pagination offset.'}),
 		acting: ActingActor,

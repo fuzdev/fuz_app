@@ -661,7 +661,9 @@ const fire_testing_reset = async (
 	const parsed = TestingResetResponseShape.safeParse(raw);
 	if (!parsed.success) {
 		throw new Error(
-			`_testing_reset(${handle.config.name}) returned unexpected result: ${JSON.stringify(raw)} (${parsed.error.message})`,
+			`_testing_reset(${handle.config.name}) returned unexpected result: ${JSON.stringify(raw)} (${
+				parsed.error.message
+			})`,
 		);
 	}
 	return {
@@ -787,7 +789,9 @@ const mint_account = async (
 	const parsed = SignupResponseShape.safeParse(signup_raw);
 	if (!parsed.success) {
 		throw new Error(
-			`signup(${handle.config.name}) returned unexpected body: ${JSON.stringify(signup_raw)} (${parsed.error.message})`,
+			`signup(${handle.config.name}) returned unexpected body: ${JSON.stringify(signup_raw)} (${
+				parsed.error.message
+			})`,
 		);
 	}
 
@@ -816,7 +820,9 @@ const mint_account = async (
 	const token_parsed = TokenCreateResponseShape.safeParse(token_result);
 	if (!token_parsed.success) {
 		throw new Error(
-			`account_token_create(${handle.config.name}) returned unexpected result: ${JSON.stringify(token_result)}`,
+			`account_token_create(${handle.config.name}) returned unexpected result: ${JSON.stringify(
+				token_result,
+			)}`,
 		);
 	}
 
@@ -856,8 +862,9 @@ const grant_roles_via_offer_accept = async (
 		)) as {offer?: {id?: string}} | undefined;
 		if (!offer_result?.offer?.id) {
 			throw new Error(
-				`role_grant_offer_create(${handle.config.name}, role=${role}) returned unexpected result: ` +
-					JSON.stringify(offer_result),
+				`role_grant_offer_create(${handle.config.name}, role=${
+					role
+				}) returned unexpected result: ` + JSON.stringify(offer_result),
 			);
 		}
 		const offer_id = offer_result.offer.id;
@@ -871,8 +878,9 @@ const grant_roles_via_offer_accept = async (
 		);
 		if (!accept_result) {
 			throw new Error(
-				`role_grant_offer_accept(${handle.config.name}, role=${role}) returned unexpected result: ` +
-					JSON.stringify(accept_result),
+				`role_grant_offer_accept(${handle.config.name}, role=${
+					role
+				}) returned unexpected result: ` + JSON.stringify(accept_result),
 			);
 		}
 	}

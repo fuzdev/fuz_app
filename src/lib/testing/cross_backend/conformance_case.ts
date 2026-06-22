@@ -140,6 +140,20 @@ export const ConformanceCaseExpectation = z.strictObject({
 				'Specific field-value assertions on the success `result` (2xx) or the error ' +
 				'`error.data` (non-2xx). Each key must deep-equal the corresponding response field.',
 		}),
+	absent_fields: z
+		.array(z.string())
+		.optional()
+		.meta({
+			description:
+				'Sensitive field names that must NOT appear ANYWHERE (at any depth) in the ' +
+				'normalized response body — the negative-space twin of `fields`. Each name is ' +
+				'searched recursively through the success `result` / error envelope, so a ' +
+				'secret column (`password_hash`, `token_hash`) that leaks at any nesting level ' +
+				'(top-level, inside a list element) fails the case. Pins "this secret never ' +
+				'serializes" on BOTH spines — a serialization regression would otherwise leak ' +
+				'identically and silently on each. Non-vacuous only when the body is known ' +
+				'non-empty (e.g. a list that always contains the caller); note that in the case.',
+		}),
 	headers: z
 		.record(z.string(), z.string().nullable())
 		.optional()

@@ -273,10 +273,14 @@ export const assert_route_auth_acting_biconditional = (
 	const slot_phrase = slots.query !== undefined ? 'input or query schema' : 'input schema';
 	if (wants_actor) {
 		throw new Error(
-			`${context}: auth.actor === '${auth.actor}' requires the ${slot_phrase} to declare 'acting?: ActingActor' (registry-time invariant 2)`,
+			`${context}: auth.actor === '${auth.actor}' requires the ${
+				slot_phrase
+			} to declare 'acting?: ActingActor' (registry-time invariant 2)`,
 		);
 	}
 	throw new Error(
-		`${context}: ${slot_phrase} declares 'acting?: ActingActor' but auth.actor === 'none' (registry-time invariant 2)`,
+		`${context}: ${
+			slot_phrase
+		} declares 'acting?: ActingActor' but auth.actor === 'none' (registry-time invariant 2)`,
 	);
 };

@@ -94,7 +94,9 @@ export const query_audit_log = async <T extends string>(
 	if (!config.event_types.includes(input.event_type)) {
 		audit_unknown_event_type_failures++;
 		console.error(
-			`[audit_log] unknown event_type '${input.event_type}' — register via create_audit_log_config({extra_events})`,
+			`[audit_log] unknown event_type '${
+				input.event_type
+			}' — register via create_audit_log_config({extra_events})`,
 		);
 	}
 	if (input.metadata != null) {
@@ -175,7 +177,9 @@ export const query_audit_log_list = async (
 	const offset = options?.offset ?? 0;
 
 	return deps.db.query<AuditLogEvent>(
-		`SELECT * FROM audit_log ${where} ORDER BY seq DESC LIMIT $${param_index++} OFFSET $${param_index}`,
+		`SELECT * FROM audit_log ${where} ORDER BY seq DESC LIMIT $${param_index++} OFFSET $${
+			param_index
+		}`,
 		[...params, limit, offset],
 	);
 };

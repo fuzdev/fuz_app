@@ -363,10 +363,35 @@ const response_header_hygiene_cases: ReadonlyArray<ConformanceCase> = [
 	},
 ];
 
+// --- Batch: sensitive-field non-disclosure ------------------------------
+// The negative-space twin of the output-schema parity: a wire-shape check
+// passes green even if a backend leaks a secret column, because the leaked
+// field is *additive*. `absent_fields` pins that the credential secrets never
+// serialize — on the success bodies authorized callers actually receive, on
+// BOTH spines (a regression would otherwise leak identically and silently on
+// each). Non-vacuous by construction: the keeper is always a row in its own
+// account list, and `_testing_reset` always seeds the keeper an api token, so
+// each list carries >= 1 element to search.
+const data_exposure_cases: ReadonlyArray<ConformanceCase> = [
+	{
+		name: 'admin_account_list (keeper) → 200 never serializes password_hash',
+		request: {method: 'admin_account_list', as: 'keeper'},
+		expect: {status: 200, absent_fields: ['password_hash']},
+		note: 'security.md §Password Hashing — the password hash is never exposed on any account-listing surface; the keeper is always in its own list so the assertion is non-vacuous',
+	},
+	{
+		name: 'account_token_list (keeper) → 200 never serializes token_hash',
+		request: {method: 'account_token_list', as: 'keeper'},
+		expect: {status: 200, absent_fields: ['token_hash']},
+		note: 'security.md §API Token Security — only the blake3 hash is stored and it is never listed; the keeper always holds the seeded api token so the list is non-empty',
+	},
+];
+
 /**
  * The full declarative security slate, ordered by blast radius
  * (credential ceiling → privilege gates → IDOR masks + enumeration
- * equivalence → phase ordering → response-header hygiene).
+ * equivalence → phase ordering → response-header hygiene → sensitive-field
+ * non-disclosure).
  */
 export const conformance_security_cases: ReadonlyArray<ConformanceCase> = [
 	...credential_ceiling_cases,
@@ -374,4 +399,5 @@ export const conformance_security_cases: ReadonlyArray<ConformanceCase> = [
 	...idor_and_enumeration_cases,
 	...phase_order_cases,
 	...response_header_hygiene_cases,
+	...data_exposure_cases,
 ];

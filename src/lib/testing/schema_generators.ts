@@ -299,7 +299,9 @@ export const generate_valid_body = (
 	if (!result.success) {
 		throw new Error(
 			`generate_valid_body: generated body fails validation — ` +
-				`fix generate_valid_value for: ${result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')}`,
+				`fix generate_valid_value for: ${result.error.issues
+					.map((i) => `${i.path.join('.')}: ${i.message}`)
+					.join(', ')}`,
 		);
 	}
 	return body;

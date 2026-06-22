@@ -64,7 +64,9 @@ export const expect_output = <T>(r: RpcResult, schema: z.ZodType<T>): T => {
 	const parsed = schema.safeParse(r.result);
 	assert.ok(
 		parsed.success,
-		`result does not match output schema: ${parsed.success ? '' : JSON.stringify(parsed.error.issues)} (got ${JSON.stringify(r.result)})`,
+		`result does not match output schema: ${
+			parsed.success ? '' : JSON.stringify(parsed.error.issues)
+		} (got ${JSON.stringify(r.result)})`,
 	);
 	return parsed.data;
 };

@@ -74,13 +74,17 @@ for (const [spec_const, handler_name] of spec_to_handler) {
 		for (const value of thrown) {
 			assert(
 				declared.has(value),
-				`${handler_name} throws reason '${value}' but ${spec_const}.error_reasons doesn't declare it — add it to the spec or stop throwing it`,
+				`${handler_name} throws reason '${value}' but ${
+					spec_const
+				}.error_reasons doesn't declare it — add it to the spec or stop throwing it`,
 			);
 		}
 		for (const value of declared) {
 			assert(
 				thrown.has(value),
-				`${spec_const}.error_reasons declares '${value}' but ${handler_name} doesn't throw it — remove from spec or wire the throw`,
+				`${spec_const}.error_reasons declares '${value}' but ${
+					handler_name
+				} doesn't throw it — remove from spec or wire the throw`,
 			);
 		}
 	});

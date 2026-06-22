@@ -141,7 +141,9 @@ export const create_broadcast_api = <TApi extends object>(
 				if (should_deliver) {
 					if (!is_filterable_broadcast_transport(transport)) {
 						log?.error(
-							`[${method}] should_deliver set but transport ${transport.transport_name} does not support per-connection filtering`,
+							`[${method}] should_deliver set but transport ${
+								transport.transport_name
+							} does not support per-connection filtering`,
 						);
 						return;
 					}

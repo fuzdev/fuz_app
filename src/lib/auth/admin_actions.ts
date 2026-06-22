@@ -542,7 +542,9 @@ export const create_admin_actions = (
 		}
 		if (connection_closer) connection_closer.close_sockets_for_account(input.account_id);
 		deps.log.warn(
-			`account hard-purged (irreversible cascading delete): ${input.account_id} by actor ${auth.actor.id}`,
+			`account hard-purged (irreversible cascading delete): ${input.account_id} by actor ${
+				auth.actor.id
+			}`,
 		);
 		deps.audit.emit(ctx, {
 			event_type: 'account_purge',

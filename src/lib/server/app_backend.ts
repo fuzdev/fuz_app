@@ -162,7 +162,9 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 			for (const ns of options.migration_namespaces) {
 				if (reserved_migration_namespaces.includes(ns.namespace)) {
 					throw new Error(
-						`Migration namespace "${ns.namespace}" is reserved by fuz_app — choose a different namespace`,
+						`Migration namespace "${
+							ns.namespace
+						}" is reserved by fuz_app — choose a different namespace`,
 					);
 				}
 			}
