@@ -51,7 +51,7 @@ keeper routes; only a daemon token can.
 | Credential     | How obtained                          | Max privilege |
 | -------------- | ------------------------------------- | ------------- |
 | Session cookie | Login form (browser only)             | admin         |
-| API token      | `POST /api/tokens` (CLI/programmatic) | admin         |
+| API token      | `account_token_create` RPC (CLI/programmatic) | admin         |
 | Daemon token   | Filesystem (operator-only)            | keeper        |
 
 Session cookies and API tokens can grant admin-level access. Only a daemon token
@@ -100,7 +100,7 @@ already restricts the channel.
 ### Password Hashing
 
 Argon2id with OWASP-recommended parameters. Two password schemas: `Password`
-enforces `MIN_PASSWORD_LENGTH` to `MAX_PASSWORD_LENGTH` (300) on creation paths
+enforces `PASSWORD_LENGTH_MIN` to `PASSWORD_LENGTH_MAX` (300) on creation paths
 (signup, bootstrap, password change). `PasswordProvided` uses `min(1)` on
 login and current-password verification for forward-compatibility if length
 requirements change.
@@ -227,9 +227,10 @@ Rotating filesystem credential for keeper-level operations:
 Cross-process integration tests need a few privileged operations the production
 wire never exposes — wiping auth tables between tests, forging an expired
 session to exercise the DB-row expiry gate, seeding a content-addressed fact
-without a store handle. These live as five `_testing_*` RPC actions
+without a store handle. These live as six `_testing_*` RPC actions
 (`_testing_reset`, `_testing_mint_session`, `_testing_put_fact`,
-`_testing_drain_effects`, `_testing_schema_snapshot`) that a consumer's **test
+`_testing_drain_effects`, `_testing_schema_snapshot`, `_testing_action_manifest`)
+that a consumer's **test
 binary** appends to its RPC endpoint at assembly time. They are a deliberate
 backdoor, fenced on three independent axes:
 
@@ -1049,7 +1050,7 @@ realtime feeds.
   blast radius of a stolen cookie).
 - **Password complexity rules** — NIST 800-63B guidance: complexity requirements
   push users toward predictable patterns. Length-only validation is used
-  (`MIN_PASSWORD_LENGTH`–`MAX_PASSWORD_LENGTH`).
+  (`PASSWORD_LENGTH_MIN`–`PASSWORD_LENGTH_MAX`).
 - **Timing attacks on token validation** — bearer token and session validation use
   blake3 hash-then-compare (`===` on hex strings). Recovering a 64-char hex hash
   character-by-character, then reversing blake3, against 32 bytes of token entropy

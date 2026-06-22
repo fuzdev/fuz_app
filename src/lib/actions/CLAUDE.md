@@ -138,9 +138,9 @@ and options on each function's TSDoc.
 - `compose_gen_file` — wrapper: banner + `imports.build()` + blocks join.
 - `create_namespace_qualifier(sources, imports)` — multi-source consumer helper; registers `import * as ns` per source.
 
-Shared defaults: `DEFAULT_COLLECTIONS_PATH = './action_collections.js'`,
-`DEFAULT_SPECS_MODULE = './action_specs.js'`,
-`DEFAULT_METATYPES_PATH = './action_metatypes.js'`,
+Shared defaults: `DEFAULT_COLLECTIONS_PATH = './action_collections.ts'`,
+`DEFAULT_SPECS_MODULE = './action_specs.ts'`,
+`DEFAULT_METATYPES_PATH = './action_metatypes.ts'`,
 `resolve_spec_qualifier` (the default-vs-callback resolver every
 multi-source-aware helper uses).
 

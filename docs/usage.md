@@ -57,12 +57,12 @@ Route spec factories for common patterns: `create_account_route_specs()`,
 Admin account listing, session listing, session/token revoke-all,
 audit-log reads, invite CRUD, and app-settings get/update are RPC-only —
 pass them via `create_app_server`'s `rpc_endpoints` option (see "Server
-Assembly" below). Use `create_admin_actions(deps, {app_settings: ctx.app_settings})`
-for just the admin actions (omit `app_settings` to expose only the
-non-settings methods), or `create_standard_rpc_actions(deps, options)`
+Assembly" below). Use `create_admin_actions(deps, options)`
+for just the admin actions (the two app-settings methods are always
+included), or `create_standard_rpc_actions(deps, options)`
 from `auth/standard_rpc_actions.ts` for the full fuz_app standard
-surface (admin + role-grant-offer + account in one call — 25 methods with
-`app_settings`, 23 without). `create_app_server` auto-mounts every
+surface (admin + role-grant-offer + account in one call — 28 methods).
+`create_app_server` auto-mounts every
 `RpcEndpointSpec` you pass — you do not call `create_rpc_endpoint`
 yourself. Bootstrap routes and surface route are factory-managed by
 `create_app_server`.
@@ -238,8 +238,8 @@ const {app, surface_spec, bootstrap_status, close} = await create_app_server({
 
 `create_standard_rpc_actions` is from
 `@fuzdev/fuz_app/auth/standard_rpc_actions.ts` and emits the combined
-11 admin + 7 role-grant-offer + 7 account methods (25 total with
-`app_settings`; 23 without). Auto-mounting keeps the surface report
+14 admin + 7 role-grant-offer + 7 account methods (28 total; the two
+app-settings methods are always wired). Auto-mounting keeps the surface report
 in sync with dispatch — the same spec array drives both, by
 construction.
 
@@ -1030,8 +1030,8 @@ first); decline uses a `ConfirmButton` popover with an optional reason
 textarea bounded by `ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX`.
 `RoleGrantOfferForm` takes a `roles` array the caller has already filtered
 by admin-grant-path (`RoleSpec.grant_paths` includes `'admin'`) and
-surfaces the three RPC error reasons
-(`role_grant_offer_self_target`, `role_grant_offer_role_not_grantable`, `role_grant_offer_not_authorized`)
+surfaces the five RPC error reasons
+(`role_grant_offer_self_target`, `role_grant_offer_role_not_grantable`, `role_grant_offer_not_authorized`, `role_grant_offer_actor_account_mismatch`, `role_grant_offer_actor_mismatch`)
 distinctly. `RoleGrantOfferHistory` is backed by the new
 `role_grant_offer_history` action and needs `fetch_history()` called on
 the state class.

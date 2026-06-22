@@ -130,7 +130,7 @@ the test helpers' route list.
 spawned backends. `*.cross.test.ts` bodies are runtime-agnostic — they
 `inject('backend_handle')` and drive `default_spine_surface` over the wire —
 so the same files run under every `cross_backend_*` project; each project's
-`globalSetup` spawns a different backend. Eighteen cross files today:
+`globalSetup` spawns a different backend. The cross files today include:
 `auth.cross.test.ts` (the `describe_standard_cross_process_tests` bundle —
 HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
 `describe_cross_process_ws_tests` suite — live WebSocket, including
@@ -258,7 +258,7 @@ production signup body against the username-scoped invite. In-process leg
 `identity_parity.db.test.ts`).
 
 Two more files — `schema_parity.cross.test.ts` and
-`action_manifest_parity.cross.test.ts` — are **not** among the seventeen above:
+`action_manifest_parity.cross.test.ts` — are **not** among the single-backend files above:
 they run under the shared dual-spawn `cross_backend_parity` project
 (`global_setup_schema_parity.ts` brings up the TS spine + `testing_spine_stub`
 together and provides `parity_handle_a`/`_b`), so both are excluded from the

@@ -20,7 +20,7 @@ documents the cross-cutting invariants that don't fit on any single symbol.
 - **Route caps** — `RouteFactoryDeps` — `Omit<AppDeps, 'db'>`; handlers get `db` via `RouteContext`.
 - **Action caps** — inline — action factories take `Pick<RouteFactoryDeps, 'log' | 'audit'>` (role-grant-offer adds `notification_sender?`).
 - **Parameters** — `*Options` — static startup values, per-factory.
-- **Runtime state** — inline ref — mutable values: `bootstrap_status`, `app_settings` ref, `DaemonTokenState`. NOT in deps or options.
+- **Runtime state** — inline ref — mutable values: `bootstrap_status`, `DaemonTokenState`. NOT in deps or options.
 
 `audit: AuditEmitter` is the bound emitter built once at backend assembly by
 the consumer's `audit_factory` callback over `create_audit_emitter`; closes
@@ -375,8 +375,8 @@ in the HTTP RPC dispatcher (`actions/action_rpc.ts`), the WS dispatcher
 
 ### Migrations
 
-Schema migrations live in `auth/migrations.ts` — two namespaces today (`full_auth_schema`,
-`role_grant_offer_and_scoped_role_grants`) under the reserved
+Schema migrations live in `auth/migrations.ts` — two migrations today (`full_auth_schema`,
+`role_grant_offer_and_scoped_role_grants`) under the single reserved namespace
 `AUTH_MIGRATION_NAMESPACE = 'fuz_auth'`. Consumer namespaces must avoid
 `reserved_migration_namespaces`. Runner contract, error vocabulary, and
 operator recipes (rename, mark applied, reset, baseline) are in
@@ -485,10 +485,10 @@ Closure state:
 
 - `grantable_roles` derived once from `options.roles?.role_specs ?? builtin_role_specs_by_name`
   via `list_roles_with_grant_path(_, GRANT_PATH_ADMIN)`.
-- `options.app_settings` mutable ref — `app_settings_update` mutates so
-  `auth/signup_routes.ts` reads the new value without a DB round trip. When
-  absent, the two app-settings specs are still in the registry but unwired
-  (dispatch returns `method_not_found`).
+- `app_settings_get`/`_update` handlers are always wired and read/write the DB
+  directly (`query_app_settings_load`/`query_app_settings_update`);
+  `auth/signup_routes.ts` reads the current value fresh per request. There is no
+  `options.app_settings` ref.
 - `options.connection_closer?` — handler-side eager WS close on
   `admin_session_revoke_all` / `admin_token_revoke_all` BEFORE the audit
   emit so revocation lands even on audit INSERT failure. Listener-based
@@ -625,18 +625,18 @@ arbitrary sockets.
 `create_standard_rpc_actions(deps, options)` in `auth/standard_rpc_actions.ts`
 spreads `create_admin_actions`, `create_role_grant_offer_actions`, and
 `create_account_actions` into a single `Array<RpcAction>` — the canonical
-fuz_app "standard" surface (25 actions with `app_settings` wired, 23
-without). Frontend mirror is `all_standard_action_specs` in
-`auth/standard_action_specs.ts`.
+fuz_app "standard" surface (28 actions: 14 admin + 7 role-grant-offer + 7
+account; the two app-settings methods are always wired). Frontend mirror is
+`all_standard_action_specs` in `auth/standard_action_specs.ts`.
 
 Option routing — `roles` is shared between admin + role-grant-offer;
-`app_settings` → admin only; `default_ttl_ms` + `authorize` → role-grant-offer
+`default_ttl_ms` + `authorize` → role-grant-offer
 only; `max_tokens` → account only; `connection_closer` → admin + account;
 `notification_sender` → role-grant-offer only.
 
 Pair with `create_app_server`'s `rpc_endpoints` factory form
 `(ctx) => Array<RpcEndpointSpec>` so the combined action list gets
-`ctx.deps` + `ctx.app_settings`. `create_app_server` auto-mounts the
+`ctx.deps`. `create_app_server` auto-mounts the
 endpoint via `create_rpc_endpoint`. To expose the standard surface over
 WebSocket as well, spread `protocol_actions` and the same factory into
 `ws_endpoints` — per-message authorization and rate limiting fire

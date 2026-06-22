@@ -234,7 +234,7 @@ both the consent transition and the capability transition. The
 consumer-facing UI state (`RoleGrantOffersState`) stays live by
 subscribing to the offer-lifecycle WebSocket notifications
 (`role_grant_offer_received` / `_accepted` / `_declined` / `_retracted` /
-`_expired` / `_superseded`).
+`_supersede`, plus `role_grant_revoke`).
 
 ## Role grant history
 

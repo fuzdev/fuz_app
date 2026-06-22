@@ -195,13 +195,17 @@ immutable, content-addressed byte store. `fact` holds bytes embedded in
 Postgres (small) or referenced on a sharded filesystem tree (large);
 `fact_ref` is the dependency graph; `memo` is reserved for computation
 caching (MemoStore, not yet implemented). The `FactStore` interface lives in
-`@fuzdev/fuz_util`; fuz_app ships `PgFactStore` plus the
-`GET /api/facts/:hash` route, which authorizes per-fact through the
-referencing-cell graph. See usage.md §"Fact store".
+`@fuzdev/fuz_util`; fuz_app ships `PgFactStore` plus two serving routes: the
+admin-only `GET /api/facts/:hash` (`create_serve_fact_route_spec`) and the
+per-reference `GET /api/cells/:cell_id/facts/:hash`
+(`create_serve_cell_fact_route_spec`), which authorizes through the
+referencing cell (`can_view_cell` AND the cell references the hash). See
+usage.md §"Fact store".
 
-Cells are TS + Rust twin-impl (the Rust `fuz_cell` crate, gated by
-cross-backend tests); facts are TS-only today. Snapshot lifecycle, GC
-policy, MemoStore, and the fact Rust twin are tracked deferrals.
+Cells and facts are both TS + Rust twin-impl: the Rust `testing_spine_stub`
+migrates the `fuz_cell` and `fuz_facts` namespaces and serves facts, gated by
+the cross-backend schema-parity and `fact_serving` suites. Snapshot
+lifecycle, GC policy, and MemoStore are tracked deferrals.
 
 ## Bootstrap
 
