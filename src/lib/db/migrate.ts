@@ -6,6 +6,17 @@
  * `(namespace, name, sequence, applied_at)` — and the runner verifies the
  * applied list is a name-prefix of the code's migration array at boot.
  *
+ * **`name` is descriptive identity, not a version ordinal.** The runner orders
+ * by the `sequence` column and matches `name` by array position — it never
+ * parses the name — so `name` carries *what the migration is*
+ * (`full_cell_schema`, `role_grant_offer_and_scoped_role_grants`), and the
+ * redundant `_vN` ordinal is avoided (it would only duplicate `sequence`, and
+ * a `cell_v0` name tempts editing "v0" in place). `name` is half the
+ * `schema_version` PK (with `namespace`), so a rename is an identity change
+ * every already-migrated DB sees as `name-divergence-at-N`. This is also the
+ * cross-impl contract: the TS and Rust spines must record byte-identical
+ * `(namespace, name, sequence)` so a consumer can swap backends over one DB.
+ *
  * **Schema is not stabilized yet — append-only is NOT the rule.** While
  * fuz_app is pre-stable, migration bodies, names, and positions can change
  * freely between versions; consumers upgrading across a schema change are

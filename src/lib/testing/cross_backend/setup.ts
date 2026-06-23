@@ -32,7 +32,7 @@ import {DEFAULT_TEST_PASSWORD} from '../test_credentials.ts';
 import type {TestAccount} from '../app_server.ts';
 import type {BackendCapabilities} from './capabilities.ts';
 import {create_fetch_transport, type FetchTransport} from '../transports/fetch_transport.ts';
-import type {SchemaSnapshot} from '../schema_introspect.ts';
+import {MigrationTracker, type SchemaSnapshot} from '../schema_introspect.ts';
 import {ActionManifest} from './action_manifest.ts';
 import type {BackendHandle} from './spawn_backend.ts';
 
@@ -564,6 +564,34 @@ export const capture_schema_snapshot = async (
 };
 
 /**
+ * Capture a no-arg daemon-token introspection RPC and validate the wire
+ * response against `schema`. The shared shape behind the parse-based
+ * `capture_*` cross-impl parity probes: call a `_testing_*` introspection
+ * action over the keeper's daemon-token channel, then `parse` so a shape
+ * drift between the TS and Rust answers fails loud at the boundary.
+ *
+ * (`capture_schema_snapshot` deliberately stays separate: it *casts* rather
+ * than parses — narrowing a large snapshot to the Zod model would silently
+ * drop unmodeled fields the parity diff should still see — and it takes an
+ * `exclude_tables` param.)
+ */
+const capture_via_daemon = async <T>(
+	handle: ReconstructedBootstrappedBackendHandle,
+	method: string,
+	schema: z.ZodType<T>,
+): Promise<T> => {
+	const raw = await rpc_via_transport(
+		handle.keeper_daemon_transport,
+		handle.config.rpc_path,
+		method,
+		{},
+		handle.config.name,
+		{[DAEMON_TOKEN_HEADER]: handle.daemon_token},
+	);
+	return schema.parse(raw);
+};
+
+/**
  * Capture a backend's live RPC action manifest over the
  * `_testing_action_manifest` RPC action (keeper daemon-token channel). The
  * action-surface twin of `capture_schema_snapshot` — pair two calls with
@@ -575,17 +603,24 @@ export const capture_schema_snapshot = async (
  */
 export const capture_action_manifest = async (
 	handle: ReconstructedBootstrappedBackendHandle,
-): Promise<ActionManifest> => {
-	const raw = await rpc_via_transport(
-		handle.keeper_daemon_transport,
-		handle.config.rpc_path,
-		'_testing_action_manifest',
-		{},
-		handle.config.name,
-		{[DAEMON_TOKEN_HEADER]: handle.daemon_token},
-	);
-	return ActionManifest.parse(raw);
-};
+): Promise<ActionManifest> =>
+	capture_via_daemon(handle, '_testing_action_manifest', ActionManifest);
+
+/**
+ * Capture a backend's `schema_version` migration tracker over the
+ * `_testing_migration_tracker` RPC action (keeper daemon-token channel). The
+ * provenance twin of `capture_schema_snapshot` — where that reads the
+ * resulting schema (and excludes the tracker), this reads the tracker rows
+ * themselves. Pair two calls with `assert_migration_trackers_equal`
+ * (`testing/schema_parity.ts`) to gate that the TS spine and the Rust
+ * `testing_spine_stub` record byte-identical migration identity
+ * (`namespace` + `name` + `sequence`) — the invariant the schema-snapshot
+ * gate is blind to.
+ */
+export const capture_migration_tracker = async (
+	handle: ReconstructedBootstrappedBackendHandle,
+): Promise<MigrationTracker> =>
+	capture_via_daemon(handle, '_testing_migration_tracker', MigrationTracker);
 
 /**
  * Backdating offset (seconds) the `mint_expired_session` seam passes to

@@ -3,15 +3,18 @@ import '../assert_dev_env.ts';
 /**
  * Test-binary RPC actions for cross-process integration tests.
  *
- * Five daemon-token-authed actions, bundled by `create_testing_actions`:
+ * Six daemon-token-authed actions, bundled by `create_testing_actions`:
  * **`_testing_reset`** (DB wipe + keeper re-seed), **`_testing_drain_effects`**
  * (audit barrier), **`_testing_mint_session`** (forge an
  * expired-by-construction server-side session for the expiry conformance
  * cases), **`_testing_put_fact`** (seed an embedded fact for the fact-serving
- * suite), and **`_testing_schema_snapshot`** (introspect the live schema for
- * cross-impl parity diffing against a Rust backend's `fuz_db` snapshot).
+ * suite), **`_testing_schema_snapshot`** (introspect the live schema for
+ * cross-impl parity diffing against a Rust backend's `fuz_db` snapshot), and
+ * **`_testing_migration_tracker`** (dump the `schema_version` tracker rows for
+ * cross-impl migration-identity parity — the provenance half the snapshot gate
+ * excludes by design).
  *
- * A sixth daemon-token action, **`_testing_action_manifest`** (dump the live
+ * A further daemon-token action, **`_testing_action_manifest`** (dump the live
  * RPC registry for cross-impl method-set + auth-shape parity), lives here too
  * but is **not** bundled by `create_testing_actions` — it must enumerate
  * *every* mounted method, so it's appended at the full-mount layer
@@ -82,7 +85,12 @@ import type {DaemonTokenState} from '../../auth/daemon_token.ts';
 import type {Db} from '../../db/db.ts';
 import {ROLE_ADMIN, ROLE_KEEPER} from '../../auth/role_schema.ts';
 import {auth_integration_truncate_tables} from '../db.ts';
-import {query_schema_snapshot, SchemaSnapshot} from '../schema_introspect.ts';
+import {
+	query_schema_snapshot,
+	SchemaSnapshot,
+	query_migration_tracker,
+	MigrationTracker,
+} from '../schema_introspect.ts';
 import {ActionManifest, build_action_manifest} from './action_manifest.ts';
 import {query_create_actor} from '../../auth/account_queries.ts';
 import {create_test_account_with_credentials, mint_test_session} from '../app_server.ts';
@@ -334,6 +342,44 @@ export const create_testing_schema_snapshot_action = (): RpcAction =>
 	);
 
 /**
+ * `_testing_migration_tracker` — dump the `schema_version` tracker rows as a
+ * normalized `MigrationTracker` (`[{namespace, name, sequence}]`) for
+ * cross-impl migration-identity diffing. The provenance half of
+ * `_testing_schema_snapshot`: where that captures the resulting *schema*
+ * (and excludes the tracker by design), this captures the tracker *itself*,
+ * so the cross-backend harness can assert the two spines record byte-identical
+ * migration identity. This closes the gap that let the cell/fact
+ * migration-name divergence reach the visiones cutover undetected
+ * (`name-divergence-at-N` — same schema, divergent recorded names).
+ *
+ * `auth` gates on the daemon-token credential, matching `_testing_reset`. The
+ * Rust mirror is `fuz_testing::create_testing_migration_tracker_action_spec`.
+ */
+export const testing_migration_tracker_action_spec = {
+	method: '_testing_migration_tracker',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: TESTING_ACTION_AUTH,
+	side_effects: false,
+	input: z.strictObject({}),
+	output: MigrationTracker,
+	async: true,
+	description:
+		'Test-binary only — dump the schema_version tracker rows as a normalized {namespace, name, ' +
+		'sequence} list for cross-impl migration-identity parity diffing.',
+} as const satisfies RequestResponseActionSpec;
+
+/**
+ * Build the standalone `_testing_migration_tracker` action. No deps — reads
+ * `ctx.db`'s `schema_version` via `query_migration_tracker`. Bundled by
+ * `create_testing_actions`; mount directly for in-process use.
+ */
+export const create_testing_migration_tracker_action = (): RpcAction =>
+	rpc_action(testing_migration_tracker_action_spec, async (_input, ctx) =>
+		query_migration_tracker(ctx.db),
+	);
+
+/**
  * `_testing_action_manifest` — dump the backend's live RPC method set as a
  * normalized `ActionManifest` (one entry per method: `{method, side_effects,
  * account, actor, roles, credential_types}`) for cross-impl parity diffing.
@@ -581,6 +627,7 @@ export const create_testing_actions = (
 		}),
 		create_testing_drain_effects_action(),
 		create_testing_schema_snapshot_action(),
+		create_testing_migration_tracker_action(),
 	];
 };
 

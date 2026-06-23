@@ -27,9 +27,10 @@
  * `_at`-everywhere convention used by `account`, `actor`, `audit_log`,
  * `role_grant`, etc.
  *
- * **Single-migration shape**: `cell_v0` creates the canonical
+ * **Single-migration shape**: `full_cell_schema` creates the canonical
  * cell + cell_grant + cell_field + cell_item layout in one shot from the
- * live exported constants.
+ * live exported constants. The dormant `cell_history` table lives in the
+ * separate `fuz_cell_history` namespace (`cell_history_ddl.ts`).
  *
  * @module
  */
@@ -230,7 +231,7 @@ export const CELL_DROP_TABLES = ['cell_field', 'cell_item', 'cell_grant', 'cell'
 /** Cell migrations. */
 export const CELL_MIGRATIONS: Array<Migration> = [
 	{
-		name: 'cell_v0',
+		name: 'full_cell_schema',
 		up: async (db: Db): Promise<void> => {
 			await db.query(CELL_VISIBILITY_TYPE);
 			await db.query(CELL_SCHEMA);

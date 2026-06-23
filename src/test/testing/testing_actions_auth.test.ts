@@ -1,9 +1,10 @@
 /**
  * Spec-level gate check for the `_testing_*` backdoor actions.
  *
- * The six test-binary actions (`_testing_reset`, `_testing_mint_session`,
+ * The seven test-binary actions (`_testing_reset`, `_testing_mint_session`,
  * `_testing_put_fact`, `_testing_drain_effects`, `_testing_schema_snapshot`,
- * `_testing_action_manifest`) are privileged: they run direct DB writes or
+ * `_testing_migration_tracker`, `_testing_action_manifest`) are privileged:
+ * they run direct DB writes or
  * dump internal state the production wire never exposes. Their only structural
  * fence is the daemon-token credential gate
  * on every spec's `auth` axis. This test pins that wiring directly — the
@@ -26,6 +27,7 @@ import {
 	testing_put_fact_action_spec,
 	testing_drain_effects_action_spec,
 	testing_schema_snapshot_action_spec,
+	testing_migration_tracker_action_spec,
 	testing_action_manifest_action_spec,
 } from '$lib/testing/cross_backend/testing_reset_actions.ts';
 import type {RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
@@ -36,6 +38,7 @@ const testing_action_specs: ReadonlyArray<{name: string; spec: RequestResponseAc
 	{name: '_testing_put_fact', spec: testing_put_fact_action_spec},
 	{name: '_testing_drain_effects', spec: testing_drain_effects_action_spec},
 	{name: '_testing_schema_snapshot', spec: testing_schema_snapshot_action_spec},
+	{name: '_testing_migration_tracker', spec: testing_migration_tracker_action_spec},
 	{name: '_testing_action_manifest', spec: testing_action_manifest_action_spec},
 ];
 

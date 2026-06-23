@@ -44,6 +44,7 @@ import './assert_dev_env.ts';
 import type {
 	ColumnSnapshot,
 	EnumTypeSnapshot,
+	MigrationTracker,
 	SchemaSnapshot,
 	SequenceSnapshot,
 	TableSnapshot,
@@ -392,5 +393,139 @@ export const assert_schema_snapshots_equal = (
 		`Schema parity failed: ${diffs.length} diff(s) between ${label_a} and ${
 			label_b
 		}\n${format_schema_diffs(diffs, labels)}`,
+	);
+};
+
+/**
+ * Structured migration-identity drift entry. Keyed on `(namespace, name)` —
+ * the `schema_version` PK — so a name rename and a partitioning change both
+ * surface as `tracker_row_only_in`, and a re-order surfaces as
+ * `tracker_sequence_differs`.
+ */
+export type MigrationTrackerDiff =
+	| {
+			readonly kind: 'tracker_row_only_in';
+			readonly where: 'a' | 'b';
+			readonly namespace: string;
+			readonly name: string;
+	  }
+	| {
+			readonly kind: 'tracker_sequence_differs';
+			readonly namespace: string;
+			readonly name: string;
+			readonly a: number;
+			readonly b: number;
+	  };
+
+const tracker_key = (namespace: string, name: string): string => `${namespace} ${name}`;
+
+/**
+ * Structural diff between two migration trackers — empty array means the two
+ * spines recorded byte-identical migration identity. Keyed on
+ * `(namespace, name)`; sequence mismatches on a shared key are reported too.
+ * Deterministic order: shared/missing rows in sorted `(namespace, name)` order.
+ */
+export const diff_migration_trackers = (
+	a: MigrationTracker,
+	b: MigrationTracker,
+): Array<MigrationTrackerDiff> => {
+	const diffs: Array<MigrationTrackerDiff> = [];
+	const a_by_key = new Map(a.entries.map((e) => [tracker_key(e.namespace, e.name), e]));
+	const b_by_key = new Map(b.entries.map((e) => [tracker_key(e.namespace, e.name), e]));
+	// Union keyed by `(namespace, name)`; the value is a reference entry (from
+	// whichever side has it) used to recover namespace/name for the diff — so a
+	// row present on only one side needs no non-null assertion.
+	const by_key = new Map([...a_by_key, ...b_by_key]);
+	for (const [key, ref] of [...by_key].sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0))) {
+		const ea = a_by_key.get(key);
+		const eb = b_by_key.get(key);
+		if (!ea) {
+			diffs.push({
+				kind: 'tracker_row_only_in',
+				where: 'b',
+				namespace: ref.namespace,
+				name: ref.name,
+			});
+			continue;
+		}
+		if (!eb) {
+			diffs.push({
+				kind: 'tracker_row_only_in',
+				where: 'a',
+				namespace: ref.namespace,
+				name: ref.name,
+			});
+			continue;
+		}
+		if (ea.sequence !== eb.sequence) {
+			diffs.push({
+				kind: 'tracker_sequence_differs',
+				namespace: ea.namespace,
+				name: ea.name,
+				a: ea.sequence,
+				b: eb.sequence,
+			});
+		}
+	}
+	return diffs;
+};
+
+/**
+ * Render migration-tracker diffs as a human-readable multi-line string.
+ * Empty diffs produce an empty string.
+ */
+export const format_migration_tracker_diffs = (
+	diffs: ReadonlyArray<MigrationTrackerDiff>,
+	labels: SchemaDiffLabels = {},
+): string => {
+	if (diffs.length === 0) return '';
+	const label_a = labels.a ?? 'a';
+	const label_b = labels.b ?? 'b';
+	const lines: Array<string> = [];
+	for (const d of diffs) {
+		switch (d.kind) {
+			case 'tracker_row_only_in':
+				lines.push(
+					`  migration ${d.namespace}/${d.name} only in ${d.where === 'a' ? label_a : label_b}`,
+				);
+				break;
+			case 'tracker_sequence_differs':
+				lines.push(
+					`  migration ${d.namespace}/${d.name} sequence differs: ${label_a}=${d.a}, ${
+						label_b
+					}=${d.b}`,
+				);
+				break;
+			default:
+				d satisfies never;
+				break;
+		}
+	}
+	return lines.join('\n');
+};
+
+/**
+ * Throw if the two spines' `schema_version` trackers disagree — the gate for
+ * the swap-freely invariant (any consumer can swap TS↔Rust over one DB without
+ * re-bootstrapping). This catches what `assert_schema_snapshots_equal` is blind
+ * to by design: the snapshot excludes the tracker, so a migration-name or
+ * partitioning divergence that yields an identical *schema* (e.g. `cell_v0` vs
+ * `full_cell_schema`, or `cell_history` bundled vs isolated) passes schema
+ * parity but breaks the runner's positional name-prefix check at boot
+ * (`name-divergence-at-N`). The error names the impls and lists every diff.
+ */
+export const assert_migration_trackers_equal = (
+	a: MigrationTracker,
+	b: MigrationTracker,
+	labels: SchemaDiffLabels = {},
+): void => {
+	const diffs = diff_migration_trackers(a, b);
+	if (diffs.length === 0) return;
+	const label_a = labels.a ?? 'a';
+	const label_b = labels.b ?? 'b';
+	throw new Error(
+		`Migration-identity parity failed: ${diffs.length} diff(s) between ${label_a} and ${
+			label_b
+		}\n${format_migration_tracker_diffs(diffs, labels)}`,
 	);
 };

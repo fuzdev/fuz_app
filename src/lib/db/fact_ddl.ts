@@ -62,7 +62,7 @@ export const FACT_DROP_TABLES = ['memo', 'fact_ref', 'fact'] as const;
 /** Fact + memo migrations. */
 export const FACT_MIGRATIONS: Array<Migration> = [
 	{
-		name: 'facts_v0',
+		name: 'full_fact_schema',
 		up: async (db: Db): Promise<void> => {
 			await db.query(FACTS_SCHEMA);
 			await db.query(FACT_REFS_SCHEMA);

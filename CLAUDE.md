@@ -307,12 +307,27 @@ drift between bootstrapped DBs. Captures tables / columns (with
 `udt_name` for int4 vs int8) / indexes / constraints / sequences / enum
 types (`pg_enum` labels in declared order); the
 `schema_version` migration tracker is always excluded (framework
-bookkeeping, not domain schema). Diffs are tagged-union by kind so failure
-messages name the specific divergence. fuz_app gates its own TS spine ↔
-`testing_spine_stub` schema (auth + cell + cell_history + fact + the
-`cell_visibility` enum) via the `cross_backend_parity` project
-(`npm run test:cross:parity`), which also runs the action-manifest parity
-gate (the RPC method-set + per-method auth-shape twin of schema parity).
+bookkeeping, not domain schema). **That exclusion is the gate's scope, not the
+parity contract**: the TS and Rust spines are permanent twins that must stay
+migration-identity-aligned — identical namespaces, migration names, and
+partitioning, so the tracker rows are byte-identical and any consumer can swap
+TS↔Rust over one DB without re-bootstrapping. Because the snapshot gate is
+provenance-agnostic (it can't see tracker drift — that gap let the cell/fact
+migration-name divergence reach the visiones cutover undetected), a **separate
+`_testing_migration_tracker` gate** dumps the `schema_version` rows and asserts
+the two bootstrapped spines record identical `(namespace, name, sequence)`.
+Migration names are **descriptive** on both spines (`full_auth_schema`,
+`full_cell_schema`, `full_cell_history_schema`, `full_fact_schema` + named
+appends like `role_grant_offer_and_scoped_role_grants`) — identity, not an
+ordinal; the `schema_version.sequence` column carries order, so `_vN` in a name
+would only duplicate it. `cell_history` is isolated in its own
+`fuz_cell_history` namespace (spliced after `fuz_cell`) on both spines. Diffs
+are tagged-union by kind so failure messages name the specific divergence.
+fuz_app gates its own TS spine ↔ `testing_spine_stub` schema (auth + cell +
+cell_history + fact + the `cell_visibility` enum) **and** tracker identity via
+the `cross_backend_parity` project (`npm run test:cross:parity`), which also
+runs the action-manifest parity gate (the RPC method-set + per-method
+auth-shape twin of schema parity).
 
 When working on tests, touch both directories together:
 

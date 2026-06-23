@@ -96,6 +96,60 @@ export const SchemaSnapshot = z.object({
 });
 export type SchemaSnapshot = z.infer<typeof SchemaSnapshot>;
 
+/**
+ * A single `schema_version` tracker row — the migration-identity primitive.
+ *
+ * Where `SchemaSnapshot` is provenance-agnostic (it captures the resulting
+ * tables and deliberately *excludes* the tracker), this **is** the tracker:
+ * the `(namespace, name, sequence)` the migration runner records per applied
+ * migration. `sequence` carries order; `name` carries identity (the PK is
+ * `(namespace, name)`). The cross-impl gate diffs these between the two
+ * bootstrapped spines so a migration-name or partitioning drift — invisible
+ * to the schema snapshot — is a gated fact, not a latent interop break.
+ */
+export const MigrationTrackerEntry = z.object({
+	/** Migration namespace (e.g. `fuz_cell`, `fuz_cell_history`). */
+	namespace: z.string(),
+	/** Migration name within the namespace (e.g. `full_cell_schema`). */
+	name: z.string(),
+	/** Per-namespace apply order, starting at 0. */
+	sequence: z.number().int(),
+});
+export type MigrationTrackerEntry = z.infer<typeof MigrationTrackerEntry>;
+
+/**
+ * The full `schema_version` tracker as a deterministically-ordered list,
+ * wrapped in an object so it round-trips cleanly as a JSON-RPC result.
+ * Sorted by `(namespace, sequence)` on capture.
+ */
+export const MigrationTracker = z.object({
+	entries: z.array(MigrationTrackerEntry),
+});
+export type MigrationTracker = z.infer<typeof MigrationTracker>;
+
+/**
+ * Read every `schema_version` row into a deterministic `MigrationTracker`.
+ *
+ * The migration-identity twin of `query_schema_snapshot`: that captures the
+ * resulting schema (and excludes this tracker); this captures the tracker
+ * rows themselves, so the cross-impl gate can assert the two spines record
+ * byte-identical migration identity.
+ */
+export const query_migration_tracker = async (db: Db): Promise<MigrationTracker> => {
+	const rows = await db.query<{namespace: string; name: string; sequence: number}>(
+		`SELECT namespace, name, sequence
+		 FROM schema_version
+		 ORDER BY namespace ASC, sequence ASC`,
+	);
+	return {
+		entries: rows.map((r) => ({
+			namespace: r.namespace,
+			name: r.name,
+			sequence: r.sequence,
+		})),
+	};
+};
+
 /** Filter options for `query_schema_snapshot`. */
 export interface QuerySchemaSnapshotOptions {
 	/**

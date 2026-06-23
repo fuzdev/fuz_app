@@ -15,9 +15,12 @@ import {
 	assert_schema_snapshots_equal,
 	diff_schema_snapshots,
 	format_schema_diffs,
+	assert_migration_trackers_equal,
+	diff_migration_trackers,
 } from '$lib/testing/schema_parity.ts';
 import type {
 	ColumnSnapshot,
+	MigrationTracker,
 	SchemaSnapshot,
 	TableSnapshot,
 } from '$lib/testing/schema_introspect.ts';
@@ -465,6 +468,109 @@ describe('assert_schema_snapshots_equal', () => {
 			assert.ok(err instanceof Error);
 			assert.match(err.message, /1 diff\(s\) between deno and rust/);
 			assert.match(err.message, /table foo only in deno/);
+		}
+	});
+});
+
+// The full spine tracker both twin spines must record byte-identically.
+const spine_tracker: MigrationTracker = {
+	entries: [
+		{namespace: 'fuz_auth', name: 'full_auth_schema', sequence: 0},
+		{namespace: 'fuz_auth', name: 'role_grant_offer_and_scoped_role_grants', sequence: 1},
+		{namespace: 'fuz_cell', name: 'full_cell_schema', sequence: 0},
+		{namespace: 'fuz_cell_history', name: 'full_cell_history_schema', sequence: 0},
+		{namespace: 'fuz_facts', name: 'full_fact_schema', sequence: 0},
+	],
+};
+
+describe('diff_migration_trackers', () => {
+	test('identical trackers produce no diff', () => {
+		assert.deepStrictEqual(diff_migration_trackers(spine_tracker, spine_tracker), []);
+	});
+
+	test('order-insensitive — keyed on (namespace, name), not array position', () => {
+		const reordered: MigrationTracker = {entries: [...spine_tracker.entries].reverse()};
+		assert.deepStrictEqual(diff_migration_trackers(spine_tracker, reordered), []);
+	});
+
+	// The exact drift that broke the 2026-06-23 visiones cutover: one spine
+	// names the cell migration `cell_v0`, the other `full_cell_schema`. The
+	// schema is identical, but the `(namespace, name)` PK differs, so the row
+	// appears `only_in` each side — a real interop break the snapshot gate
+	// (which excludes `schema_version`) cannot see.
+	test('a migration-name divergence surfaces as two row_only_in diffs', () => {
+		const renamed: MigrationTracker = {
+			entries: spine_tracker.entries.map((e) =>
+				e.namespace === 'fuz_cell' ? {...e, name: 'cell_v0'} : e,
+			),
+		};
+		// Sorted by (namespace, name): `cell_v0` (only in b) precedes
+		// `full_cell_schema` (only in a) lexically.
+		const diffs = diff_migration_trackers(spine_tracker, renamed);
+		assert.deepStrictEqual(diffs, [
+			{kind: 'tracker_row_only_in', where: 'b', namespace: 'fuz_cell', name: 'cell_v0'},
+			{kind: 'tracker_row_only_in', where: 'a', namespace: 'fuz_cell', name: 'full_cell_schema'},
+		]);
+	});
+
+	// The partitioning drift: one spine bundles cell_history into `fuz_cell`,
+	// the other isolates it in `fuz_cell_history`. The isolating side has a row
+	// the bundling side lacks.
+	test('a missing namespace row surfaces as row_only_in', () => {
+		const bundled: MigrationTracker = {
+			entries: spine_tracker.entries.filter((e) => e.namespace !== 'fuz_cell_history'),
+		};
+		const diffs = diff_migration_trackers(spine_tracker, bundled);
+		assert.deepStrictEqual(diffs, [
+			{
+				kind: 'tracker_row_only_in',
+				where: 'a',
+				namespace: 'fuz_cell_history',
+				name: 'full_cell_history_schema',
+			},
+		]);
+	});
+
+	test('a sequence divergence on a shared key surfaces as tracker_sequence_differs', () => {
+		const shifted: MigrationTracker = {
+			entries: spine_tracker.entries.map((e) =>
+				e.namespace === 'fuz_auth' && e.name === 'role_grant_offer_and_scoped_role_grants'
+					? {...e, sequence: 2}
+					: e,
+			),
+		};
+		const diffs = diff_migration_trackers(spine_tracker, shifted);
+		assert.deepStrictEqual(diffs, [
+			{
+				kind: 'tracker_sequence_differs',
+				namespace: 'fuz_auth',
+				name: 'role_grant_offer_and_scoped_role_grants',
+				a: 1,
+				b: 2,
+			},
+		]);
+	});
+});
+
+describe('assert_migration_trackers_equal', () => {
+	test('no-op when trackers match', () => {
+		assert.doesNotThrow(() => assert_migration_trackers_equal(spine_tracker, spine_tracker));
+	});
+
+	test('throws naming the divergent migration', () => {
+		const renamed: MigrationTracker = {
+			entries: spine_tracker.entries.map((e) =>
+				e.namespace === 'fuz_facts' ? {...e, name: 'facts_v0'} : e,
+			),
+		};
+		try {
+			assert_migration_trackers_equal(spine_tracker, renamed, {a: 'ts', b: 'rust'});
+			assert.fail('expected throw');
+		} catch (err) {
+			assert.ok(err instanceof Error);
+			assert.match(err.message, /Migration-identity parity failed/);
+			assert.match(err.message, /fuz_facts\/full_fact_schema only in ts/);
+			assert.match(err.message, /fuz_facts\/facts_v0 only in rust/);
 		}
 	});
 });

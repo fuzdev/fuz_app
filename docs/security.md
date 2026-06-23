@@ -227,9 +227,10 @@ Rotating filesystem credential for keeper-level operations:
 Cross-process integration tests need a few privileged operations the production
 wire never exposes — wiping auth tables between tests, forging an expired
 session to exercise the DB-row expiry gate, seeding a content-addressed fact
-without a store handle. These live as six `_testing_*` RPC actions
+without a store handle. These live as seven `_testing_*` RPC actions
 (`_testing_reset`, `_testing_mint_session`, `_testing_put_fact`,
-`_testing_drain_effects`, `_testing_schema_snapshot`, `_testing_action_manifest`)
+`_testing_drain_effects`, `_testing_schema_snapshot`,
+`_testing_migration_tracker`, `_testing_action_manifest`)
 that a consumer's **test
 binary** appends to its RPC endpoint at assembly time. They are a deliberate
 backdoor, fenced on three independent axes:

@@ -50,7 +50,7 @@ export const CELL_HISTORY_DROP_TABLES = ['cell_history'] as const;
 /** Cell-history migrations. */
 export const CELL_HISTORY_MIGRATIONS: Array<Migration> = [
 	{
-		name: 'cell_history_v0',
+		name: 'full_cell_history_schema',
 		up: async (db: Db): Promise<void> => {
 			await db.query(CELL_HISTORY_SCHEMA);
 			for (const sql of CELL_HISTORY_INDEXES) {

@@ -263,14 +263,14 @@ they run under the shared dual-spawn `cross_backend_parity` project
 (`global_setup_schema_parity.ts` brings up the TS spine + `testing_spine_stub`
 together and provides `parity_handle_a`/`_b`), so both are excluded from the
 single-backend projects' glob. `schema_parity.cross.test.ts` diffs the two
-backends' full DDL (auth + cell
-
-- cell_history + fact + the `cell_visibility` enum) via `query_schema_snapshot`
-- `assert_schema_snapshots_equal`; `action_manifest_parity.cross.test.ts` diffs
-  the two backends' live RPC method set + per-method auth shape via
-  `_testing_action_manifest` + `assert_action_manifests_equal` (exact parity —
-  method set + every auth axis) — both under
-  `npm run test:cross:parity`.
+backends' full DDL (auth + cell + cell_history + fact + the `cell_visibility`
+enum) via `query_schema_snapshot` + `assert_schema_snapshots_equal`, **and**
+their `schema_version` migration identity via `_testing_migration_tracker` +
+`assert_migration_trackers_equal` (the swap-freely gate the snapshot's
+`schema_version` exclusion can't cover); `action_manifest_parity.cross.test.ts`
+diffs the two backends' live RPC method set + per-method auth shape via
+`_testing_action_manifest` + `assert_action_manifests_equal` (exact parity —
+method set + every auth axis) — all under `npm run test:cross:parity`.
 
 A third out-of-the-seventeen file, `login_security.cross.test.ts`, runs under
 its own dual-spawn `cross_backend_security` project
