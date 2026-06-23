@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.98.1
+
+### Patch Changes
+
+- fix: action codegen output ([6444365](https://github.com/fuzdev/fuz_app/commit/6444365))
+
 ## 0.98.0
 
 ### Minor Changes
