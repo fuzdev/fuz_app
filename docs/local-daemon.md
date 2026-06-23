@@ -35,6 +35,8 @@ import {argon2_password_deps} from '@fuzdev/fuz_app/auth/password_argon2.ts';
 import {create_validated_keyring} from '@fuzdev/fuz_app/auth/keyring.ts';
 import {create_audit_emitter} from '@fuzdev/fuz_app/auth/audit_emitter.ts';
 import {BaseServerEnv} from '@fuzdev/fuz_app/server/env.ts';
+import {create_health_route_spec} from '@fuzdev/fuz_app/http/common_routes.ts';
+import {prefix_route_specs} from '@fuzdev/fuz_app/http/route_spec.ts';
 
 // 1. Init backend — PGlite file-based DB, auth migrations run automatically
 const keyring_result = create_validated_keyring(cookie_secret);

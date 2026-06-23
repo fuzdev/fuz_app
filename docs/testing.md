@@ -215,13 +215,13 @@ Pass `db_factories` to `describe_rate_limiting_tests` (or to consumer-side
 The standard suites take a unified `{setup_test, surface_source, capabilities}`
 shape plus the factory inputs (`session_options`, `create_route_specs`,
 `rpc_endpoints`). `default_in_process_suite_options` from
-`@fuzdev/fuz_app/testing/cross_backend/setup.ts` emits the entire bag in
+`@fuzdev/fuz_app/testing/cross_backend/in_process_setup.ts` emits the entire bag in
 one call — pass it directly when the suite has no extras, spread when
 the suite adds its own (`roles`, `skip_routes`, `input_overrides`,
 `db_factories`, ...).
 
 ```typescript
-import {default_in_process_suite_options} from '@fuzdev/fuz_app/testing/cross_backend/setup.ts';
+import {default_in_process_suite_options} from '@fuzdev/fuz_app/testing/cross_backend/in_process_setup.ts';
 
 // Suite-extras-free: helper output is the entire options bag.
 describe_standard_integration_tests(
@@ -340,7 +340,7 @@ describe('app-specific attack surface', () => {
 // src/test/server/server.integration.db.test.ts
 import {describe_standard_integration_tests} from '@fuzdev/fuz_app/testing/integration.ts';
 import {describe_standard_admin_integration_tests} from '@fuzdev/fuz_app/testing/admin_integration.ts';
-import {default_in_process_suite_options} from '@fuzdev/fuz_app/testing/cross_backend/setup.ts';
+import {default_in_process_suite_options} from '@fuzdev/fuz_app/testing/cross_backend/in_process_setup.ts';
 import {ROLE_KEEPER, ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.ts';
 import {create_my_route_specs} from '$lib/server/my_route_specs.js';
 import {build_rpc_endpoint_specs} from '$lib/server/my_rpc_endpoints.js';
@@ -419,7 +419,7 @@ same as the other Tier 1 suites.
 ```typescript
 // src/test/server/rate_limiting.db.test.ts
 import {describe_rate_limiting_tests} from '@fuzdev/fuz_app/testing/rate_limiting.ts';
-import {default_in_process_suite_options} from '@fuzdev/fuz_app/testing/cross_backend/setup.ts';
+import {default_in_process_suite_options} from '@fuzdev/fuz_app/testing/cross_backend/in_process_setup.ts';
 import {create_my_route_specs} from '$lib/server/my_route_specs.js';
 import {build_rpc_endpoint_specs} from '$lib/server/my_rpc_endpoints.js';
 import {db_factories} from '../db_fixture.js';

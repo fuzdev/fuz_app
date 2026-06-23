@@ -284,10 +284,13 @@ the `submit_*` prefix where the verb collides with a slot name.
   gap via `since_seq`), `disconnect()`. SSE stays on `EventSource` —
   streaming is not an RPC concern.
 - `admin_accounts_state.svelte.ts` — `AdminAccountsState` +
-  `admin_accounts_rpc_context` + narrow `AdminAccountsRpc` (seven
-  methods: `list_accounts`, `list_sessions`, `create_role_grant`,
+  `admin_accounts_rpc_context` + narrow `AdminAccountsRpc` (nine
+  methods: `list_accounts` (`include_deleted?`), `delete_account`,
+  `undelete_account`, `list_sessions`, `create_role_grant`,
   `revoke_role_grant`, `retract_offer`, `session_revoke_all`,
-  `token_revoke_all` — the last three are also reused by
+  `token_revoke_all` — `delete_account`/`undelete_account` back
+  `submit_delete`/`submit_undelete` (the `account_lifecycle` capability);
+  `session_revoke_all`/`token_revoke_all` are also reused by
   `AdminSessionsState`). Slots: `list` (AsyncSlot), `grant`
   (`KeyedAsyncSlot<string, RoleGrantOfferJson>` — slot owns the
   created offer; key composed by exported
