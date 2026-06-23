@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.99.0
+
+### Minor Changes
+
+- feat: rework migrations ([262b34f](https://github.com/fuzdev/fuz_app/commit/262b34f))
+
 ## 0.98.1
 
 ### Patch Changes
