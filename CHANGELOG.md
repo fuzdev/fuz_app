@@ -1,5 +1,16 @@
 # @fuzdev/fuz_app
 
+## 0.98.0
+
+### Minor Changes
+
+- test: improve cross-backend auth tests ([f651b8f](https://github.com/fuzdev/fuz_app/commit/f651b8f))
+- feat: rework `ActionDispatcher` and add peer requests ([3f6acc0](https://github.com/fuzdev/fuz_app/commit/3f6acc0))
+
+### Patch Changes
+
+- fix: some queries now select only active actors and ignore tombstones ([1e7e3fc](https://github.com/fuzdev/fuz_app/commit/1e7e3fc))
+
 ## 0.97.0
 
 ### Minor Changes
