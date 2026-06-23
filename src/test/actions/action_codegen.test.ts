@@ -27,6 +27,8 @@ import {
 	compose_gen_file,
 	create_namespace_qualifier,
 	resolve_spec_qualifier,
+	to_action_spec_identifier,
+	to_action_property_key,
 	PROTOCOL_ACTION_METHODS,
 	is_protocol_action_method,
 } from '$lib/actions/action_codegen.ts';
@@ -1751,5 +1753,101 @@ describe('create_namespace_qualifier', () => {
 		);
 		const stranger = {...create_rr('frontend'), method: 'unregistered'} as ActionSpecUnion;
 		assert.throws(() => qualify_spec(stranger), /unknown action method passed to qualify_spec/);
+	});
+});
+
+// --- non-identifier method names (slash) ------------------------------------
+//
+// Regression coverage for the `peer/ping` protocol action and any future
+// method whose name isn't a bare JS identifier: emitted property keys must be
+// quoted and derived spec identifiers sanitized (`peer/ping` →
+// `peer_ping_action_spec`), while indexed-access lookups keep the raw method
+// string (`ActionInputs['peer/ping']`). Before this, codegen emitted
+// `peer/ping: specs.peer/ping_action_spec` — invalid TS on both the key and
+// the identifier.
+
+describe('non-identifier method names (slash)', () => {
+	const slash_spec: ActionSpecUnion = {
+		method: 'peer/echo',
+		kind: 'request_response',
+		initiator: 'frontend',
+		auth: {account: 'required', actor: 'none'},
+		side_effects: false,
+		input: z.strictObject({nonce: z.string()}),
+		output: z.strictObject({nonce: z.string()}),
+		async: true,
+		description: 'Echo a nonce.',
+	};
+
+	test('to_action_spec_identifier sanitizes non-identifier characters', () => {
+		assert.strictEqual(to_action_spec_identifier('peer/ping'), 'peer_ping_action_spec');
+		assert.strictEqual(to_action_spec_identifier('thing_create'), 'thing_create_action_spec');
+	});
+
+	test('to_action_property_key quotes only non-identifier names', () => {
+		assert.strictEqual(to_action_property_key('peer/ping'), "'peer/ping'");
+		assert.strictEqual(to_action_property_key('thing_create'), 'thing_create');
+	});
+
+	test('generate_action_specs_record quotes the key and sanitizes the identifier', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_specs_record([slash_spec], imports);
+		assert.ok(result.includes("'peer/echo': specs.peer_echo_action_spec,"));
+		assert.ok(result.includes("'peer/echo': typeof specs.peer_echo_action_spec;"));
+		// No invalid `/`-bearing identifier leaks through.
+		assert.ok(!result.includes('peer/echo_action_spec'));
+	});
+
+	test('generate_action_inputs_outputs quotes keys and sanitizes identifiers', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_inputs_outputs([slash_spec], imports);
+		assert.ok(result.includes("'peer/echo': specs.peer_echo_action_spec.input,"));
+		assert.ok(result.includes("'peer/echo': z.infer<typeof specs.peer_echo_action_spec.input>;"));
+		assert.ok(result.includes("'peer/echo': specs.peer_echo_action_spec.output,"));
+		assert.ok(!result.includes('peer/echo_action_spec'));
+	});
+
+	test('generate_frontend_actions_api quotes the key, raw method in indexed access', () => {
+		const imports = new ImportBuilder();
+		const result = generate_frontend_actions_api([slash_spec], imports);
+		assert.ok(
+			result.includes(
+				"'peer/echo': (input: ActionInputs['peer/echo'], options?: RpcClientCallOptions)",
+			),
+		);
+	});
+
+	test('generate_action_event_datas quotes the key, raw method in type args', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_event_datas([slash_spec], imports);
+		assert.ok(
+			result.includes(
+				"'peer/echo': ActionEventRequestResponseData<'peer/echo', ActionInputs['peer/echo'], ActionOutputs['peer/echo']>;",
+			),
+		);
+	});
+
+	test('real peer/ping protocol action emits valid TS when included', () => {
+		const imports = new ImportBuilder();
+		const result = generate_action_specs_record(protocol_action_specs, imports, {
+			include_protocol_actions: true,
+		});
+		assert.ok(result.includes("'peer/ping': specs.peer_ping_action_spec,"));
+		assert.ok(!result.includes('peer/ping_action_spec'));
+	});
+
+	test('create_namespace_qualifier sanitizes the derived identifier', () => {
+		const imports = new ImportBuilder();
+		const {qualify_spec} = create_namespace_qualifier(
+			[{ns: 'talk_specs', module: './action_specs.ts', specs: [slash_spec]}],
+			imports,
+		);
+		assert.strictEqual(qualify_spec(slash_spec), 'talk_specs.peer_echo_action_spec');
+	});
+
+	test('resolve_spec_qualifier default sanitizes the derived identifier', () => {
+		const imports = new ImportBuilder();
+		const qualify = resolve_spec_qualifier(imports);
+		assert.strictEqual(qualify(slash_spec), 'specs.peer_echo_action_spec');
 	});
 });
