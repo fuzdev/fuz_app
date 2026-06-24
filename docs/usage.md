@@ -1286,10 +1286,17 @@ mismatch.
 
 ```typescript
 import {create_serve_fact_route_spec} from '@fuzdev/fuz_app/server/serve_fact_route.ts';
+import {create_x_accel_config} from '@fuzdev/fuz_app/server/x_accel.ts';
 
 create_serve_fact_route_spec({
 	facts_dir,
-	x_accel_redirect_prefix, // set in production → nginx serves bytes via X-Accel-Redirect
+	// Production: a validated X-Accel handle. `create_x_accel_config` throws
+	// unless the facts `location` in `nginx_config` is `internal;`, so the
+	// redirect can't be enabled against a public facts location that would
+	// bypass every cell-visibility check. Dev/tests omit it → stream from disk.
+	x_accel: x_accel_redirect_prefix
+		? create_x_accel_config(x_accel_redirect_prefix, nginx_config)
+		: undefined,
 	log,
 });
 ```
@@ -1300,8 +1307,11 @@ passes `can_view_cell` for them. A miss, an orphan fact, or a fact reachable
 only through cells the caller can't view all return the same `404` — fact
 existence never leaks. Embedded facts stream from Postgres; external facts
 return an `X-Accel-Redirect` header in production (nginx serves the bytes) or
-stream from disk in dev/test. Env: `FUZ_FACTS_DIR`,
-`FUZ_FACTS_X_ACCEL_REDIRECT_PREFIX`.
+stream from disk in dev/test. The redirect prefix is wrapped in a validated
+`XAccelConfig` (built via `create_x_accel_config`), which fails loud at boot
+unless the facts nginx `location` is `internal;` — a public facts location
+would serve any fact's bytes to anyone who guesses the path, bypassing every
+cell-visibility check. Env: `FUZ_FACTS_DIR`, `FUZ_FACTS_X_ACCEL_REDIRECT_PREFIX`.
 
 ### Status
 

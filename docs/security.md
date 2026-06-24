@@ -717,6 +717,19 @@ trusted to address the filesystem, even though the write path only ever emits
 that shape — defense-in-depth against a future row-injection bug handing nginx
 an attacker-controlled path.
 
+**X-Accel facts location must be `internal;` (fail-loud at boot).** The
+`X-Accel-Redirect` path's confidentiality depends on the nginx facts `location`
+being marked `internal;` — only the authz'd handler's internal redirect may
+reach it. A *public* facts location would serve any fact's bytes to anyone who
+guesses the `<shard>/<rest>` path, bypassing every cell-visibility check. The
+redirect prefix is therefore gated behind a validated `XAccelConfig`
+(`server/x_accel.ts`): it can only be constructed via `create_x_accel_config`,
+which runs `validate_facts_internal_location` and throws at boot on a missing or
+non-`internal;` location — so X-Accel serving is impossible to enable without
+proving the location is internal. This is a best-effort string check, not a full
+nginx parser, and is distinct from `validate_nginx_config` (which covers the
+`/api` Authorization-strip + security headers, not the facts-location rule).
+
 ## Signup
 
 Account creation is invite-gated by default. When `open_signup` is enabled

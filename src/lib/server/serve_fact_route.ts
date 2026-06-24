@@ -14,8 +14,11 @@
  * (filesystem-backed `file:<shard>/<rest>` URLs) either return an
  * `X-Accel-Redirect` header pointing into nginx's internal facts location
  * (production) or stream from disk via the filesystem `FactExternalFetcher`
- * (dev / tests). The runtime mode is selected by the optional
- * `x_accel_redirect_prefix` factory option — set in prod, unset in dev.
+ * (dev / tests). The runtime mode is selected by the optional `x_accel`
+ * factory option — a validated `XAccelConfig` (built via
+ * `create_x_accel_config` in `server/x_accel.ts`) set in prod, unset in dev.
+ * The handle can only be obtained by proving the facts nginx location is
+ * `internal;`, so X-Accel serving can't be enabled against a public location.
  *
  * REST, not RPC: binary responses don't fit the JSON-RPC envelope.
  *
@@ -112,6 +115,7 @@ import {query_cell_get} from '../db/cell_queries.ts';
 import {query_cell_grant_list_for_cell} from '../db/cell_grant_queries.ts';
 import {can_view_cell} from '../auth/cell_authorize.ts';
 import {parse_file_fact_url} from '../db/file_fact_url.ts';
+import type {XAccelConfig} from './x_accel.ts';
 
 /** `Cache-Control` for fact responses — 5 min revocation window. */
 const CACHE_CONTROL = 'private, max-age=300';
@@ -185,19 +189,20 @@ export interface CreateServeFactRouteSpecOptions {
 	facts_dir: string;
 	/**
 	 * When set, external facts return an `X-Accel-Redirect` pointing at
-	 * `${prefix}<shard>/<rest>` — nginx's internal facts location serves
-	 * the bytes. When unset, external facts stream from
-	 * `<facts_dir>/<shard>/<rest>` directly. Production sets this (e.g.
-	 * `/_facts/`); tests + dev leave it unset.
+	 * `${x_accel.redirect_prefix}<shard>/<rest>` — nginx's internal facts
+	 * location serves the bytes. When unset, external facts stream from
+	 * `<facts_dir>/<shard>/<rest>` directly. Production sets a validated
+	 * `XAccelConfig` (built via `create_x_accel_config`, which proves the
+	 * facts location is `internal;`); tests + dev leave it unset.
 	 */
-	x_accel_redirect_prefix?: string;
+	x_accel?: XAccelConfig;
 	log: Logger;
 }
 
 /** Serving config threaded into the shared byte-serving helper. */
 interface ServeFactConfig {
 	facts_dir: string;
-	x_accel_redirect_prefix?: string;
+	x_accel?: XAccelConfig;
 	log: Logger;
 }
 
@@ -219,7 +224,7 @@ const serve_fact_bytes = async (
 	hash: FactHash,
 	config: ServeFactConfig,
 ): Promise<Response> => {
-	const {facts_dir, x_accel_redirect_prefix, log} = config;
+	const {facts_dir, x_accel, log} = config;
 
 	const meta = await query_get_fact_meta({db: route.db}, hash);
 	if (!meta) {
@@ -259,13 +264,13 @@ const serve_fact_bytes = async (
 	}
 	const {shard, rest} = parsed;
 
-	if (x_accel_redirect_prefix !== undefined) {
-		// Production: hand off to nginx via the internal facts location.
+	if (x_accel !== undefined) {
+		// Production: hand off to nginx via the validated `internal;` facts location.
 		return c.body(null, 200, {
 			'Content-Type': content_type,
 			'Content-Length': size,
 			'Cache-Control': CACHE_CONTROL,
-			'X-Accel-Redirect': `${x_accel_redirect_prefix}${shard}/${rest}`,
+			'X-Accel-Redirect': `${x_accel.redirect_prefix}${shard}/${rest}`,
 			...FACT_SECURITY_HEADERS,
 		});
 	}
@@ -319,8 +324,8 @@ const build_public_request_context = async (
 export const create_serve_cell_fact_route_spec = (
 	options: CreateServeFactRouteSpecOptions,
 ): RouteSpec => {
-	const {facts_dir, x_accel_redirect_prefix, log} = options;
-	const config: ServeFactConfig = {facts_dir, x_accel_redirect_prefix, log};
+	const {facts_dir, x_accel, log} = options;
+	const config: ServeFactConfig = {facts_dir, x_accel, log};
 	return {
 		method: 'GET',
 		path: '/api/cells/:cell_id/facts/:hash',
@@ -385,8 +390,8 @@ export const create_serve_cell_fact_route_spec = (
 export const create_serve_fact_route_spec = (
 	options: CreateServeFactRouteSpecOptions,
 ): RouteSpec => {
-	const {facts_dir, x_accel_redirect_prefix, log} = options;
-	const config: ServeFactConfig = {facts_dir, x_accel_redirect_prefix, log};
+	const {facts_dir, x_accel, log} = options;
+	const config: ServeFactConfig = {facts_dir, x_accel, log};
 	return {
 		method: 'GET',
 		path: '/api/facts/:hash',
