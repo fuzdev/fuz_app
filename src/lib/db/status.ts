@@ -304,9 +304,9 @@ export const format_db_status = (status: DbStatus): string => {
 			const total = m.applied_names.length + m.pending_names.length;
 			if (m.divergence) {
 				lines.push(
-					`    ${m.namespace}: DIVERGED (${m.applied_names.length}/${total}) — ${
-						format_divergence(m.divergence)
-					}`,
+					`    ${m.namespace}: DIVERGED (${m.applied_names.length}/${total}) — ${format_divergence(
+						m.divergence,
+					)}`,
 				);
 			} else if (m.up_to_date) {
 				lines.push(`    ${m.namespace}: up to date (${m.applied_names.length}/${total})`);

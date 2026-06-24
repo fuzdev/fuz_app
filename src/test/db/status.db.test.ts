@@ -70,10 +70,7 @@ describe('query_db_status name-divergence detection', () => {
 		// `format_db_status` renders DIVERGED with the detail, not up-to-date
 		const formatted = format_db_status(status);
 		assert.ok(formatted.includes('DIVERGED'), formatted);
-		assert.ok(
-			formatted.includes("database has 'cell_v0', code has 'full_cell_schema'"),
-			formatted,
-		);
+		assert.ok(formatted.includes("database has 'cell_v0', code has 'full_cell_schema'"), formatted);
 		assert.ok(!formatted.includes('fuz_cell: up to date'), formatted);
 	});
 
@@ -224,7 +221,10 @@ describe('query_db_status connectivity and tables', () => {
 		const widget = status.tables.find((t) => t.name === 'widget')!;
 		assert.strictEqual(widget.row_count, 3);
 		// the `schema_version` tracker (created in beforeEach) is listed too
-		assert.ok(status.tables.some((t) => t.name === 'schema_version'), 'schema_version listed');
+		assert.ok(
+			status.tables.some((t) => t.name === 'schema_version'),
+			'schema_version listed',
+		);
 	});
 
 	test('no namespaces passed → migrations empty', async () => {
