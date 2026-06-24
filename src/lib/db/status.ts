@@ -4,6 +4,11 @@
  * Queries migration state and table info without a running server.
  * Returns structured data that consumer scripts can print however they like.
  *
+ * The migration check is **name-divergence aware**: it name-prefix-verifies the
+ * applied migrations against the code's list (mirroring `run_migrations`), so a
+ * divergent history (same count, different names) reports a `divergence` and
+ * renders `DIVERGED` rather than a false `up_to_date`.
+ *
  * @module
  */
 
@@ -11,6 +16,35 @@ import {to_error_message} from '@fuzdev/fuz_util/error.ts';
 
 import type {Db} from './db.ts';
 import type {MigrationNamespace} from './migrate.ts';
+
+/**
+ * A divergence between the recorded migration tracker and the code's list.
+ *
+ * Either variant is a state the migration runner refuses to boot against — a
+ * re-bootstrap (drop + migrate) is needed. Structured (not a pre-formatted
+ * string) so programmatic consumers can branch on `kind`; `format_db_status`
+ * renders the operator-facing line. The discriminated-union twin of the Rust
+ * `fuz_db` `Divergence` enum.
+ */
+export type Divergence =
+	| {
+			/** An applied name doesn't match the code's name at `position`. */
+			kind: 'name_mismatch';
+			/** Sequence position of the first mismatch. */
+			position: number;
+			/** The name recorded in the tracker at `position`. */
+			applied: string;
+			/** The name the code declares at `position`. */
+			expected: string;
+	  }
+	| {
+			/** The tracker records more migrations than the code declares. */
+			kind: 'binary_older';
+			/** Count recorded in the tracker. */
+			applied: number;
+			/** Count the code declares. */
+			declared: number;
+	  };
 
 /**
  * Migration status for a single namespace.
@@ -21,8 +55,18 @@ export interface MigrationStatus {
 	applied_names: Array<string>;
 	/** Names of code migrations not yet applied (suffix of the code array). */
 	pending_names: Array<string>;
-	/** Whether `applied_names` is the full code array (no pending work). */
+	/**
+	 * Whether `applied_names` is the full code array with no name divergence
+	 * (no pending work, no diverged history).
+	 */
 	up_to_date: boolean;
+	/**
+	 * The first applied/code divergence, if any. Absent when the applied names
+	 * are a clean prefix of the code's list (the only state the runner boots
+	 * against). Present means a divergent bootstrap history — a re-bootstrap
+	 * (drop + migrate) is needed.
+	 */
+	divergence?: Divergence;
 }
 
 /**
@@ -150,14 +194,38 @@ export const query_db_status = async (
 				);
 				const applied_names = rows.map((r) => r.name);
 				const code_names = ns_migrations.map((m) => m.name);
-				// pending = the suffix of code names beyond applied.length (callers
-				// see the boot algorithm's tail without paying for verify here)
-				const pending_names = code_names.slice(applied_names.length);
+				const total = code_names.length;
+				const applied = applied_names.length;
+
+				// Name-prefix verify, mirroring the migration runner: the applied
+				// names must equal the first `applied` code names by position. A
+				// divergent history (a renamed/reordered migration, same count or not)
+				// is the exact state `run_migrations` refuses to boot against, so a
+				// count-only check would report a DB the runner rejects as up-to-date.
+				let divergence: Divergence | undefined;
+				if (applied > total) {
+					divergence = {kind: 'binary_older', applied, declared: total};
+				} else {
+					const position = applied_names.findIndex((name, i) => name !== code_names[i]);
+					if (position !== -1) {
+						divergence = {
+							kind: 'name_mismatch',
+							position,
+							applied: applied_names[position]!,
+							expected: code_names[position]!,
+						};
+					}
+				}
+
+				// pending = the suffix of code names past the applied count (clamped:
+				// a binary-older history has no pending tail)
+				const pending_names = code_names.slice(Math.min(applied, total));
 				migrations.push({
 					namespace,
 					applied_names,
 					pending_names,
-					up_to_date: applied_names.length === code_names.length && pending_names.length === 0,
+					up_to_date: applied === total && pending_names.length === 0 && divergence === undefined,
+					...(divergence ? {divergence} : {}),
 				});
 			}
 		} else {
@@ -181,6 +249,19 @@ export const query_db_status = async (
 		migrations,
 		...(old_tracker_shape ? {old_tracker_shape: true} : {}),
 	};
+};
+
+/**
+ * Render a `Divergence` as the operator-facing detail line. Twin of the Rust
+ * `Divergence` `Display`.
+ */
+const format_divergence = (divergence: Divergence): string => {
+	switch (divergence.kind) {
+		case 'name_mismatch':
+			return `position ${divergence.position}: database has '${divergence.applied}', code has '${divergence.expected}'`;
+		case 'binary_older':
+			return `database has ${divergence.applied} applied but code declares ${divergence.declared} (binary older than database)`;
+	}
 };
 
 /**
@@ -221,7 +302,13 @@ export const format_db_status = (status: DbStatus): string => {
 		lines.push('  Migrations:');
 		for (const m of status.migrations) {
 			const total = m.applied_names.length + m.pending_names.length;
-			if (m.up_to_date) {
+			if (m.divergence) {
+				lines.push(
+					`    ${m.namespace}: DIVERGED (${m.applied_names.length}/${total}) — ${
+						format_divergence(m.divergence)
+					}`,
+				);
+			} else if (m.up_to_date) {
 				lines.push(`    ${m.namespace}: up to date (${m.applied_names.length}/${total})`);
 			} else {
 				const pending_list = m.pending_names.join(', ');
