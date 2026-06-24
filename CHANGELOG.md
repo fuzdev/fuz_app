@@ -1,10 +1,16 @@
 # @fuzdev/fuz_app
 
+## 0.101.1
+
+### Patch Changes
+
+- feat: support divergence detection in db status helpers ([a7468df](https://github.com/fuzdev/fuz_app/commit/a7468df))
+
 ## 0.101.0
 
 ### Minor Changes
 
-- refactor: consolidate env handling ([e82a96e](https://github.com/fuzdev/fuz_app/commit/e82a96e))
+- consolidate env handling ([e82a96e](https://github.com/fuzdev/fuz_app/commit/e82a96e)) ([refactor](https://github.com/fuzdev/fuz_app/commit/refactor))
 - chore: rework APIs to avoid forced cross-backend deps ([8a1dbee](https://github.com/fuzdev/fuz_app/commit/8a1dbee))
 
 ## 0.100.0
