@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.102.0
+
+### Minor Changes
+
+- feat: role grants with cross-backend tests ([7a1d74b](https://github.com/fuzdev/fuz_app/commit/7a1d74b))
+
 ## 0.101.1
 
 ### Patch Changes
