@@ -30,6 +30,21 @@ describe('read_env_var', () => {
 		assert.strictEqual(await read_env_var(deps, '/.env', 'NOPE'), undefined);
 	});
 
+	test('inherits `export ` tolerance and inline-comment stripping from the shared parser', async () => {
+		const deps = {
+			read_text_file: (_path: string) =>
+				Promise.resolve('export DATABASE_URL=postgres://host/db # primary'),
+		};
+		assert.strictEqual(await read_env_var(deps, '/.env', 'DATABASE_URL'), 'postgres://host/db');
+	});
+
+	test('returns an empty string for an explicitly empty value', async () => {
+		// `KEY=` is set-but-empty (distinct from absent → undefined); the old
+		// single-var regex returned undefined here, the shared parser returns ''.
+		const deps = {read_text_file: (_path: string) => Promise.resolve('FOO=')};
+		assert.strictEqual(await read_env_var(deps, '/.env', 'FOO'), '');
+	});
+
 	test('returns undefined when the file is absent', async () => {
 		const err: any = new Error('not found');
 		err.code = 'ENOENT';

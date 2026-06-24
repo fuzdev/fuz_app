@@ -196,6 +196,18 @@ describe('parse_dotenv', () => {
 	test('only strips `export ` with a trailing space (not a key like `export_mode`)', () => {
 		assert.deepStrictEqual(parse_dotenv('export_mode=1'), {export_mode: '1'});
 	});
+
+	test('strips `export ` with extra whitespace before the key', () => {
+		assert.deepStrictEqual(parse_dotenv('export   FOO=bar'), {FOO: 'bar'});
+	});
+
+	test('`export ` is only stripped at the line start, not inside a value', () => {
+		assert.deepStrictEqual(parse_dotenv('FOO=export bar'), {FOO: 'export bar'});
+	});
+
+	test('export and bare forms of the same key — last wins', () => {
+		assert.deepStrictEqual(parse_dotenv('export FOO=a\nFOO=b'), {FOO: 'b'});
+	});
 });
 
 describe('load_env_file', () => {

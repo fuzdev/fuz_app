@@ -63,6 +63,32 @@ describe('update_env_variable + parse_dotenv round-trip', () => {
 		assert.deepStrictEqual(parse_dotenv(written), {KEY: 'new'});
 	});
 
+	test('preserves `export ` when the new value needs quoting', async () => {
+		const fs = create_mock_fs({'/test/.env': 'export KEY=old\n'});
+
+		await update_env_variable('KEY', 'has "quote" and spaces', {
+			env_file_path: '/test/.env',
+			read_file: fs.read_file,
+			write_file: fs.write_file,
+		});
+
+		const written = fs.get_file('/test/.env')!;
+		assert.ok(written.startsWith('export KEY='), 'export prefix preserved through the quote branch');
+		assert.deepStrictEqual(parse_dotenv(written), {KEY: 'has "quote" and spaces'});
+	});
+
+	test('preserves `export ` and the inline comment when updating', async () => {
+		const fs = create_mock_fs({'/test/.env': 'export KEY=old # the key\n'});
+
+		await update_env_variable('KEY', 'new', {
+			env_file_path: '/test/.env',
+			read_file: fs.read_file,
+			write_file: fs.write_file,
+		});
+
+		assert.strictEqual(fs.get_file('/test/.env'), 'export KEY=new # the key\n');
+	});
+
 	test('round-trip when key already exists with quoted value', async () => {
 		const fs = create_mock_fs({'/test/.env': 'KEY="initial"'});
 
