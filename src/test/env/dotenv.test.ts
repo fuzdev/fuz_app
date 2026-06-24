@@ -184,6 +184,18 @@ describe('parse_dotenv', () => {
 		// the trailing `"` gets consumed as `\"` so there's no closing quote, value stays raw
 		assert.deepStrictEqual(parse_dotenv(`FOO="${inner}"`), {FOO: `"${inner}"`});
 	});
+
+	test('tolerates a leading `export ` prefix', () => {
+		assert.deepStrictEqual(parse_dotenv('export FOO=bar'), {FOO: 'bar'});
+	});
+
+	test('`export ` prefix combines with quote and comment stripping', () => {
+		assert.deepStrictEqual(parse_dotenv('export FOO="bar baz" # c'), {FOO: 'bar baz'});
+	});
+
+	test('only strips `export ` with a trailing space (not a key like `export_mode`)', () => {
+		assert.deepStrictEqual(parse_dotenv('export_mode=1'), {export_mode: '1'});
+	});
 });
 
 describe('load_env_file', () => {

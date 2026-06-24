@@ -22,23 +22,30 @@ import type {FsReadDeps} from '../runtime/deps.ts';
  * values keep `#` literal when no whitespace precedes it so URL fragments
  * like `KEY=https://x.com#frag` round-trip unchanged.
  *
+ * A leading `export ` on a line is ignored, so a shell-sourceable `.env`
+ * (`export KEY=value`) parses identically to a plain `KEY=value`.
+ *
  * Trailing whitespace on unquoted values is lost (the raw value is trimmed);
  * wrap the value in `"..."` or `'...'` to preserve surrounding spacing.
  *
  * @param content - dotenv file content
  * @returns parsed key-value pairs
  */
-// Line tokenization (trim, skip empties/comments, split on first `=`) is
-// mirrored in `update_env_variable.ts`'s `find_last_key_line_index`.
+// Line tokenization (trim, skip empties/comments, strip a leading `export `,
+// split on first `=`) is mirrored in `update_env_variable.ts`'s
+// `find_last_key_line_index`.
 export const parse_dotenv = (content: string): Record<string, string> => {
 	const result: Record<string, string> = {};
 	for (const line of content.split('\n')) {
 		const trimmed = line.trim();
 		if (!trimmed || trimmed.startsWith('#')) continue;
-		const eq_index = trimmed.indexOf('=');
+		// tolerate a leading `export ` so shell-sourceable `.env` files parse
+		// the same as plain `KEY=value` ones
+		const assignment = trimmed.startsWith('export ') ? trimmed.slice(7) : trimmed;
+		const eq_index = assignment.indexOf('=');
 		if (eq_index === -1) continue;
-		const key = trimmed.slice(0, eq_index).trim();
-		let value = trimmed.slice(eq_index + 1).trim();
+		const key = assignment.slice(0, eq_index).trim();
+		let value = assignment.slice(eq_index + 1).trim();
 
 		if (value.startsWith('"')) {
 			const close = find_closing_double_quote(value);

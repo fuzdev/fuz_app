@@ -27,6 +27,7 @@ export interface UpdateEnvVariableOptions {
  * - **Duplicate keys**: updates the LAST occurrence (matches dotenv behavior)
  * - **Inline comments**: preserved after the value (e.g., `KEY=value # comment`)
  * - **Quote style**: preserved from original (quoted/unquoted)
+ * - **`export ` prefix**: preserved when updating an `export KEY=…` line
  *
  * @warning Not atomic; not safe for concurrent writers. Reads the file, mutates
  * in memory, then writes it back — a crash or concurrent write can corrupt
@@ -70,6 +71,9 @@ export const update_env_variable = async (
 
 	const updated_lines = lines.map((line, idx) => {
 		if (idx === last_match_idx) {
+			// preserve a leading `export ` (the rest of the line's leading
+			// whitespace is normalized away, same as for a plain assignment)
+			const export_prefix = line.trimStart().startsWith('export ') ? 'export ' : '';
 			const equals_pos = line.indexOf('=');
 			const value_part = line.substring(equals_pos + 1);
 
@@ -78,8 +82,8 @@ export const update_env_variable = async (
 			const has_quotes = is_quoted_value(trimmed_value);
 
 			return has_quotes
-				? `${key}=${quote_value(value)}${inline_comment}`
-				: `${key}=${value}${inline_comment}`;
+				? `${export_prefix}${key}=${quote_value(value)}${inline_comment}`
+				: `${export_prefix}${key}=${value}${inline_comment}`;
 		}
 		return line;
 	});
@@ -97,16 +101,17 @@ export const update_env_variable = async (
 };
 
 // Keep this tokenization aligned with `parse_dotenv` in `env/dotenv.ts`:
-// trim, skip empties/comments, split on the first `=`.
+// trim, skip empties/comments, strip a leading `export `, split on the first `=`.
 const find_last_key_line_index = (lines: Array<string>, key: string): number => {
 	if (!key) return -1;
 	let last_match_idx = -1;
 	lines.forEach((line, idx) => {
 		const trimmed = line.trim();
 		if (!trimmed || trimmed.startsWith('#')) return;
-		const eq_index = trimmed.indexOf('=');
+		const assignment = trimmed.startsWith('export ') ? trimmed.slice(7) : trimmed;
+		const eq_index = assignment.indexOf('=');
 		if (eq_index === -1) return;
-		if (trimmed.slice(0, eq_index).trim() === key) last_match_idx = idx;
+		if (assignment.slice(0, eq_index).trim() === key) last_match_idx = idx;
 	});
 	return last_match_idx;
 };

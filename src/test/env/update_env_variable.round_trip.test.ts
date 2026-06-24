@@ -49,6 +49,20 @@ describe('update_env_variable + parse_dotenv round-trip', () => {
 		assert.strictEqual(parsed[key], value);
 	});
 
+	test('preserves a leading `export ` prefix when updating in place', async () => {
+		const fs = create_mock_fs({'/test/.env': 'export KEY=old\n'});
+
+		await update_env_variable('KEY', 'new', {
+			env_file_path: '/test/.env',
+			read_file: fs.read_file,
+			write_file: fs.write_file,
+		});
+
+		const written = fs.get_file('/test/.env')!;
+		assert.strictEqual(written, 'export KEY=new\n');
+		assert.deepStrictEqual(parse_dotenv(written), {KEY: 'new'});
+	});
+
 	test('round-trip when key already exists with quoted value', async () => {
 		const fs = create_mock_fs({'/test/.env': 'KEY="initial"'});
 

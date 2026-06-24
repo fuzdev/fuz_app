@@ -18,6 +18,7 @@ import type {
 	FsWriteDeps,
 } from '../runtime/deps.ts';
 import type {QueryDeps} from '../db/query_deps.ts';
+import {load_env_file} from '../env/dotenv.ts';
 import {
 	query_account_by_username,
 	query_actors_by_account,
@@ -142,25 +143,26 @@ export const generate_random_key = async (deps: CommandDeps): Promise<string> =>
 /**
  * Read a single env var from a dotenv-style file.
  *
+ * Delegates to `load_env_file` so the value is tokenized exactly like every
+ * other dotenv read — surrounding quotes, inline comments, and escapes are
+ * handled, and a leading `export ` is tolerated. Returns `undefined` when the
+ * file is absent or the variable is unset; a read error other than the file
+ * not existing (permission denied, I/O failure) propagates rather than being
+ * masked as "not found".
+ *
  * @param deps - file read capability
  * @param env_path - path to the .env file
  * @param name - the variable name to read
  * @returns the value, or `undefined` if the file or variable doesn't exist
+ * @throws Error if reading fails for any reason other than `ENOENT` / `NotFound`
  */
 export const read_env_var = async (
-	deps: Pick<FsReadDeps, 'stat' | 'read_text_file'>,
+	deps: Pick<FsReadDeps, 'read_text_file'>,
 	env_path: string,
 	name: string,
 ): Promise<string | undefined> => {
-	const stat = await deps.stat(env_path);
-	if (!stat?.is_file) return undefined;
-	try {
-		const content = await deps.read_text_file(env_path);
-		const match = new RegExp(`^${name}=(.+)$`, 'm').exec(content);
-		return match?.[1]?.trim();
-	} catch {
-		return undefined;
-	}
+	const env = await load_env_file(deps, env_path);
+	return env?.[name];
 };
 
 // === Setup helpers ===
