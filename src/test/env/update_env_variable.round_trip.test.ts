@@ -73,7 +73,10 @@ describe('update_env_variable + parse_dotenv round-trip', () => {
 		});
 
 		const written = fs.get_file('/test/.env')!;
-		assert.ok(written.startsWith('export KEY='), 'export prefix preserved through the quote branch');
+		assert.ok(
+			written.startsWith('export KEY='),
+			'export prefix preserved through the quote branch',
+		);
 		assert.deepStrictEqual(parse_dotenv(written), {KEY: 'has "quote" and spaces'});
 	});
 
