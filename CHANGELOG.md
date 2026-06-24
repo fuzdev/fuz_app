@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.100.0
+
+### Minor Changes
+
+- feat: gate X-Accel fact serving behind a validated XAccelConfig boot check ([308c740](https://github.com/fuzdev/fuz_app/commit/308c740))
+
 ## 0.99.0
 
 ### Minor Changes
