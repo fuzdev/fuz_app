@@ -69,6 +69,6 @@ describe('read_env_var', () => {
 			thrown = e;
 		}
 		assert.instanceOf(thrown, Error);
-		assert.match((thrown as Error).message, /permission denied/);
+		assert.match(thrown.message, /permission denied/);
 	});
 });

@@ -38,6 +38,19 @@ export const SPINE_SSE_PATH = '/api/admin/audit/stream';
 export const SPINE_CELL_EDITOR_ROLE = 'cell_editor';
 
 /**
+ * Admin-grantable app role the role-gated-participation cross suite exercises.
+ * Registered with `grant_paths: ['admin']` so it enters the admin grant flow —
+ * the cross-backend proof that an app-defined role is conferrable (offer /
+ * `role_grant_assign`) admin-only on **both** spines. Must match the
+ * `participant` entry in the Rust `testing_spine_stub`'s `RoleRegistry`
+ * **and** its `known_roles` (the registry feeds the cell vocabulary too) — a
+ * cross-language test contract. Distinct from `SPINE_CELL_EDITOR_ROLE`
+ * (no grant path): this one is the *grantable* role, that one is the
+ * bootstrap-seed-only cell role.
+ */
+export const SPINE_PARTICIPANT_ROLE = 'participant';
+
+/**
  * Committed expected-schema fixture for the spine `/ready` deploy gate — the
  * column map a fresh full spine bootstrap (auth + cell + cell_history + fact)
  * produces. Resolved relative to this module so the spawned TS binary (which

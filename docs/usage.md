@@ -61,7 +61,7 @@ Assembly" below). Use `create_admin_actions(deps, options)`
 for just the admin actions (the two app-settings methods are always
 included), or `create_standard_rpc_actions(deps, options)`
 from `auth/standard_rpc_actions.ts` for the full fuz_app standard
-surface (admin + role-grant-offer + account in one call — 28 methods).
+surface (admin + role-grant-offer + account in one call).
 `create_app_server` auto-mounts every
 `RpcEndpointSpec` you pass — you do not call `create_rpc_endpoint`
 yourself. Bootstrap routes and surface route are factory-managed by
@@ -238,7 +238,7 @@ const {app, surface_spec, bootstrap_status, close} = await create_app_server({
 
 `create_standard_rpc_actions` is from
 `@fuzdev/fuz_app/auth/standard_rpc_actions.ts` and emits the combined
-14 admin + 7 role-grant-offer + 7 account methods (28 total; the two
+admin + role-grant-offer + account methods (the two
 app-settings methods are always wired). Auto-mounting keeps the surface report
 in sync with dispatch — the same spec array drives both, by
 construction.

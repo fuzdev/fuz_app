@@ -53,6 +53,7 @@ export const SPINE_METHOD_COVERAGE: ReadonlyArray<MethodCoverageEntry> = [
 	{method: 'role_grant_offer_list', tier: 'declared'},
 	{method: 'role_grant_offer_history', tier: 'declared'},
 	{method: 'role_grant_revoke', tier: 'declared'},
+	{method: 'role_grant_assign', tier: 'declared'},
 
 	// account self-service
 	{method: 'account_verify', tier: 'declared'},

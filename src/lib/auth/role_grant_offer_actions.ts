@@ -1,8 +1,9 @@
 /**
  * Role grant offer RPC action handlers — the consentful-role-grants action surface.
  *
- * Seven actions: six offer-lifecycle methods (create / accept / decline /
- * retract / list / history) plus `role_grant_revoke` (admin-only). All mount
+ * Eight actions: six offer-lifecycle methods (create / accept / decline /
+ * retract / list / history) plus `role_grant_revoke` and `role_grant_assign`
+ * (both admin-only). All mount
  * on a consumer's JSON-RPC endpoint via `create_rpc_endpoint`. The action
  * specs themselves live in `auth/role_grant_offer_action_specs.ts`. Mutations
  * declare `side_effects: true` so the RPC dispatcher wraps the handler in
@@ -23,6 +24,10 @@
  *   dispatcher rejects non-admin callers before the handler runs.
  *   The admin-grant-path gate prevents revoking keeper / daemon-scoped
  *   roles via this surface. Keys on `actor_id` to survive multi-actor accounts.
+ * - `role_grant_assign` — spec-level `auth: {role: 'admin'}`; the immediate
+ *   consent-free conferral path. The admin-grant-path gate prevents assigning
+ *   keeper / daemon-scoped roles via this surface. No holder-propagation — only
+ *   admins confer (see participation-gates.md Decision 7).
  *
  * Audit events are emitted in-transaction by the query layer (atomic with
  * the role_grant write on accept/revoke) or by the handler via the bound
@@ -37,6 +42,8 @@
  *
  * @module
  */
+
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
 import {
 	rpc_action,
@@ -72,10 +79,11 @@ import {
 	RoleGrantOfferSelfTargetError,
 } from './role_grant_offer_queries.ts';
 import {
+	query_create_role_grant,
 	query_role_grant_find_active_role_for_actor,
 	query_revoke_role_grant,
 } from './role_grant_queries.ts';
-import {query_actor_by_id} from './account_queries.ts';
+import {query_actor_by_id, query_active_actors_by_account} from './account_queries.ts';
 import type {AuditLogEvent} from './audit_log_schema.ts';
 import {has_scoped_role, type RequestActorContext, type RequestContext} from './request_context.ts';
 import type {RouteFactoryDeps} from './deps.ts';
@@ -106,6 +114,7 @@ import {
 	role_grant_offer_list_action_spec,
 	role_grant_offer_history_action_spec,
 	role_grant_revoke_action_spec,
+	role_grant_assign_action_spec,
 	type RoleGrantOfferCreateInput,
 	type RoleGrantOfferCreateOutput,
 	type RoleGrantOfferAcceptInput,
@@ -119,6 +128,8 @@ import {
 	type RoleGrantOfferHistoryOutput,
 	type RoleGrantRevokeInput,
 	type RoleGrantRevokeOutput,
+	type RoleGrantAssignInput,
+	type RoleGrantAssignOutput,
 } from './role_grant_offer_action_specs.ts';
 
 /**
@@ -176,48 +187,20 @@ const fan_out_audit_events = (events: Array<AuditLogEvent>, audit: AuditEmitter)
 };
 
 // eslint-disable-next-line @typescript-eslint/require-await
-const default_authorize: RoleGrantOfferCreateAuthorize = async (auth, input, _deps, _ctx) => {
-	// Caller must hold an active role_grant for the offered role. Global (no scope)
-	// check — the scope-aware "only in this classroom" policy is consumer-level.
-	// Reads from the in-memory `auth.role_grants` snapshot loaded once per request
-	// by `create_request_context_middleware`; no DB roundtrip needed.
-	return has_scoped_role(auth, input.role, null);
-};
-
-/**
- * Authorization callback that admits any admin and otherwise falls back to
- * the symmetric default (caller must hold the offered role globally).
- *
- * The admin-grant-path filter in `create_handler` runs **before** the
- * `authorize` callback, so this never sees roles whose `grant_paths`
- * omits `'admin'`. Drop into
- * `create_role_grant_offer_actions({authorize: authorize_admin_or_holder})`
- * (or any factory that forwards `authorize`, e.g. `create_standard_rpc_actions`)
- * for the common "admins offer anything; users offer what they hold"
- * pattern. Scope-aware policies (e.g. classroom_teacher offering
- * classroom_student in their own scope) wrap this and short-circuit `true`
- * before delegating.
- */
-export const authorize_admin_or_holder: RoleGrantOfferCreateAuthorize = async (
-	auth,
-	input,
-	_deps,
-	_ctx,
-	// eslint-disable-next-line @typescript-eslint/require-await
-) => {
-	// Admin bypass keys on **global** admin role_grants only — `has_scoped_role(_, _, null)`
-	// rejects scoped admin role_grants. Without this, a `{role: 'admin', scope_id: scope_X}`
-	// role_grant would let the holder offer any admin-grant-path role without holding it
-	// themselves, escalating scoped admin to global authority over the offer surface.
-	if (has_scoped_role(auth, ROLE_ADMIN, null)) return true;
-	return has_scoped_role(auth, input.role, null);
+const default_authorize: RoleGrantOfferCreateAuthorize = async (auth, _input, _deps, _ctx) => {
+	// Admin-only conferral: the caller must hold a *global* `admin` grant. Holding
+	// the offered role itself confers no power to offer it (no holder-propagation —
+	// see participation-gates.md Decision 6). The global check (scope_id null) stops
+	// a scoped `admin` escalating into global authority over the offer surface.
+	// Reads the in-memory `auth.role_grants` snapshot; no DB roundtrip.
+	return has_scoped_role(auth, ROLE_ADMIN, null);
 };
 
 // -- Action factory ---------------------------------------------------------
 
 /**
- * Create the seven role-grant-offer RPC actions (six offer-lifecycle methods
- * plus `role_grant_revoke`).
+ * Create the eight role-grant-offer RPC actions (six offer-lifecycle methods
+ * plus `role_grant_revoke` and the immediate `role_grant_assign`).
  *
  * @param deps - `RouteFactoryDeps` (`log`, `audit`, …) plus optional `notification_sender` for WS fan-out — when absent, WS fan-out is silently skipped (DB-only side effects still happen). Consumers wiring `BackendWebsocketTransport` assign its instance directly (the transport's `send_to_account` signature accepts the broader `JsonrpcMessageFromServerToClient`, which is contravariantly compatible)
  * @param options - role schema, default TTL, authorization override
@@ -687,6 +670,83 @@ export const create_role_grant_offer_actions = (
 		return {ok: true, revoked: true};
 	};
 
+	// The immediate admin-only conferral path — the consent-free sibling of
+	// `role_grant_offer_create`. Admin-gated at the dispatcher (`roles:
+	// ['admin']`), it re-checks admin-grantability (so keeper / CLI-only roles
+	// can't be web-assigned), resolves the target actor, writes the idempotent
+	// grant, and emits a `role_grant_create` audit row — the same event the
+	// offer-accept and self-service paths emit. No WS notification in v1 (the
+	// grantee picks the capability up on its next authenticated request).
+	const assign_handler = async (
+		input: RoleGrantAssignInput,
+		ctx: ActionActorContext,
+	): Promise<RoleGrantAssignOutput> => {
+		const auth = ctx.auth;
+
+		// Admin-grant-path gate — the same registry check the offer/revoke gates
+		// use; keeper / daemon-scoped roles stay CLI-only. Denial is
+		// forensic-audited (`role_grant_id` omitted — no grant was created).
+		if (!role_has_grant_path(role_specs, input.role, GRANT_PATH_ADMIN)) {
+			audit.emit_role_grant_target(ctx, auth, {
+				event_type: 'role_grant_create',
+				outcome: 'failure',
+				target_account_id: input.to_account_id,
+				target_actor_id: input.to_actor_id ?? null,
+				metadata: {role: input.role, scope_id: input.scope_id ?? null},
+			});
+			throw jsonrpc_errors.forbidden('role not web-grantable', {
+				reason: ERROR_ROLE_NOT_WEB_GRANTABLE,
+			});
+		}
+
+		// Resolve the grant's target actor. A supplied `to_actor_id` must be an
+		// active actor of `to_account_id`; otherwise the account's sole active
+		// actor is used (a multi-actor account must name one). A missing /
+		// actorless account 404-masks. Inlined (not a helper) so the
+		// actor-account-mismatch throw stays in the handler body the
+		// error_reasons drift scan reads.
+		const actors = await query_active_actors_by_account(ctx, input.to_account_id);
+		let target_actor_id: Uuid;
+		if (input.to_actor_id != null) {
+			if (!actors.some((a) => a.id === input.to_actor_id)) {
+				throw jsonrpc_errors.invalid_params('to_actor_id does not belong to to_account_id', {
+					reason: ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
+				});
+			}
+			target_actor_id = input.to_actor_id;
+		} else if (actors.length === 1) {
+			target_actor_id = actors[0]!.id;
+		} else if (actors.length === 0) {
+			throw jsonrpc_errors.not_found('account');
+		} else {
+			throw jsonrpc_errors.invalid_params('to_actor_id is required for a multi-actor account');
+		}
+
+		// Idempotent write — re-assigning an already-held grant returns the
+		// existing row. `scope_kind` stays null: `scope_id` alone is the v1
+		// discriminator. `granted_by` is the assigning admin.
+		const grant = await query_create_role_grant(ctx, {
+			actor_id: target_actor_id,
+			role: input.role,
+			scope_kind: null,
+			scope_id: input.scope_id ?? null,
+			granted_by: auth.actor.id,
+		});
+
+		audit.emit_role_grant_target(ctx, auth, {
+			event_type: 'role_grant_create',
+			target_account_id: input.to_account_id,
+			target_actor_id,
+			metadata: {
+				role: grant.role,
+				role_grant_id: grant.id,
+				scope_id: grant.scope_id,
+			},
+		});
+
+		return {ok: true, role_grant_id: grant.id};
+	};
+
 	return [
 		rpc_action(role_grant_offer_create_action_spec, create_handler),
 		rpc_action(role_grant_offer_accept_action_spec, accept_handler),
@@ -695,5 +755,6 @@ export const create_role_grant_offer_actions = (
 		rpc_action(role_grant_offer_list_action_spec, list_handler),
 		rpc_action(role_grant_offer_history_action_spec, history_handler),
 		rpc_action(role_grant_revoke_action_spec, revoke_handler),
+		rpc_action(role_grant_assign_action_spec, assign_handler),
 	];
 };

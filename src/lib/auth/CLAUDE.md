@@ -436,7 +436,7 @@ are excluded.
   records, regardless of outcome. Default
   `default_action_account_rate_limit` is 1200/15min per actor.
 
-### Admin actions — fourteen specs
+### Admin actions
 
 `create_admin_actions(deps, options?)` in `auth/admin_actions.ts`.
 
@@ -501,7 +501,7 @@ visibility — `target_account_id` is null (FK rejects missing ids), and the
 probed id is preserved under `metadata.attempted_account_id`. Every gated
 event additionally records `credential_type` in metadata (defense in depth).
 
-### Role-grant-offer actions — seven specs
+### Role-grant-offer actions
 
 `create_role_grant_offer_actions(deps, options?)` in
 `auth/role_grant_offer_actions.ts`.
@@ -525,19 +525,22 @@ event additionally records `credential_type` in metadata (defense in depth).
 - `role_grant_offer_list_action_spec` — input `{account_id?}`; output `{offers}`.
 - `role_grant_offer_history_action_spec` — input `{account_id?, limit?, offset?}`; output `{offers}`.
 - `role_grant_revoke_action_spec` — input `{actor_id, role_grant_id, reason?}`; output `{ok, revoked}`.
+- `role_grant_assign_action_spec` — admin-only immediate conferral (no consent step); input `{to_account_id, to_actor_id?, role, scope_id?}`; output `{ok, role_grant_id}`. Runs the same admin-grant-path gate as offer-create, resolves the target actor (named `to_actor_id` ∈ the account's active actors, else its sole active actor — multi-actor → `invalid_params`, actorless → 404), writes via the idempotent `query_create_role_grant` (`scope_kind` stays null), and emits a `role_grant_create` audit row. No WS notification in v1. Reasons: `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH`.
 
 Every input carries `acting?: ActingActor` (registry-time invariant 2).
 `role_grant_revoke` keys on **`actor_id`**, not `account_id` — role_grants
 are actor-scoped and deriving actor from account collapses under multi-actor
 accounts.
 
-`role_grant_offer_create` runs the **admin-grant-path gate first** (offered
+`role_grant_offer_create` runs the **admin-grantability gate first** (offered
 role's `RoleSpec.grant_paths` must include `'admin'`), then the
-`RoleGrantOfferCreateAuthorize` callback. Default: caller holds the offered
-role globally. Pre-built `authorize_admin_or_holder` admits any admin and
-otherwise falls back to the default — drop into `create_role_grant_offer_actions({authorize: authorize_admin_or_holder})`
-or `create_standard_rpc_actions` for "admins offer anything; users offer
-what they hold."
+`RoleGrantOfferCreateAuthorize` callback. **Default `default_authorize`: the
+caller must hold a _global_ `admin` grant** — conferral is admin-only, with no
+holder-propagation (holding the offered role confers no power to offer it). The
+global check (`has_scoped_role(_, ROLE_ADMIN, null)`) stops a scoped `admin`
+escalating into global authority over the offer surface. A consumer needing
+scope-aware delegation (e.g. a classroom teacher offering within their own
+scope) supplies a custom `authorize` callback.
 
 Error reasons (`as const` literals):
 
@@ -589,7 +592,7 @@ Options: `roles?: RoleSchemaResult` (drives admin-grant-path lookup),
 `default_ttl_ms?` (defaults to `ROLE_GRANT_OFFER_DEFAULT_TTL_MS` = 30 days),
 `authorize?: RoleGrantOfferCreateAuthorize`.
 
-### Account actions — seven self-service specs
+### Account actions — self-service
 
 `create_account_actions(deps, options?)` in `auth/account_actions.ts`.
 
@@ -625,8 +628,8 @@ arbitrary sockets.
 `create_standard_rpc_actions(deps, options)` in `auth/standard_rpc_actions.ts`
 spreads `create_admin_actions`, `create_role_grant_offer_actions`, and
 `create_account_actions` into a single `Array<RpcAction>` — the canonical
-fuz_app "standard" surface (28 actions: 14 admin + 7 role-grant-offer + 7
-account; the two app-settings methods are always wired). Frontend mirror is
+fuz_app "standard" surface (admin + role-grant-offer + account; the two
+app-settings methods are always wired). Frontend mirror is
 `all_standard_action_specs` in `auth/standard_action_specs.ts`.
 
 Option routing — `roles` is shared between admin + role-grant-offer;

@@ -13,13 +13,9 @@
 import {describe, test, assert} from 'vitest';
 
 import {create_test_app} from '$lib/testing/app_server.ts';
-import {ROLE_ADMIN, create_role_schema} from '$lib/auth/role_schema.ts';
+import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
 import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
-import {
-	authorize_admin_or_holder,
-	create_role_grant_offer_actions,
-} from '$lib/auth/role_grant_offer_actions.ts';
-import {query_create_role_grant} from '$lib/auth/role_grant_queries.ts';
+import {create_role_grant_offer_actions} from '$lib/auth/role_grant_offer_actions.ts';
 import {
 	role_grant_offer_create_action_spec,
 	ERROR_ROLE_GRANT_OFFER_SELF_TARGET,
@@ -137,92 +133,6 @@ describe_db('role_grant_offer_actions.create', (get_db) => {
 			assert.ok(second.ok);
 			assert.strictEqual(second.result.offer.id, offer_id_1);
 			assert.strictEqual(second.result.offer.message, 'second');
-		});
-	});
-
-	describe('authorize_admin_or_holder', () => {
-		const teacher_roles = create_role_schema([{name: 'teacher', grant_paths: ['admin']}]);
-		const auth_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
-			...create_rpc_endpoint({
-				path: RPC_PATH,
-				actions: create_role_grant_offer_actions(ctx.deps, {
-					authorize: authorize_admin_or_holder,
-					roles: teacher_roles,
-				}),
-				log: ctx.deps.log,
-			}),
-		];
-
-		test('admin without the role can still offer it', async () => {
-			const test_app = await create_test_app({
-				session_options,
-				create_route_specs: auth_route_specs,
-				db: get_db(),
-				roles: [ROLE_ADMIN],
-			});
-			const recipient = await test_app.create_account({username: 'aaoh_admin_recipient'});
-
-			const res = await rpc_call_for_spec({
-				app: test_app.app,
-				path: RPC_PATH,
-				spec: role_grant_offer_create_action_spec,
-				params: {to_account_id: recipient.account.id, role: 'teacher'},
-				headers: test_app.create_session_headers(),
-			});
-			assert.ok(res.ok, JSON.stringify(res));
-			assert.strictEqual(res.result.offer.role, 'teacher');
-		});
-
-		test('non-admin without the role is forbidden', async () => {
-			const test_app = await create_test_app({
-				session_options,
-				create_route_specs: auth_route_specs,
-				db: get_db(),
-			});
-			const caller = await test_app.create_account({username: 'aaoh_nonadmin_caller'});
-			const recipient = await test_app.create_account({username: 'aaoh_nonadmin_recipient'});
-
-			const res = await rpc_call_for_spec({
-				app: test_app.app,
-				path: RPC_PATH,
-				spec: role_grant_offer_create_action_spec,
-				params: {to_account_id: recipient.account.id, role: 'teacher'},
-				headers: caller.create_session_headers(),
-			});
-			assert.ok(!res.ok);
-			assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.forbidden);
-			assert.strictEqual(
-				(res.error.data as {reason: string} | undefined)?.reason,
-				ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
-			);
-		});
-
-		test('non-admin who holds the role globally can offer it', async () => {
-			const test_app = await create_test_app({
-				session_options,
-				create_route_specs: auth_route_specs,
-				db: get_db(),
-			});
-			const caller = await test_app.create_account({username: 'aaoh_holder_caller'});
-			const recipient = await test_app.create_account({username: 'aaoh_holder_recipient'});
-			await query_create_role_grant(
-				{db: get_db()},
-				{
-					actor_id: caller.actor.id,
-					role: 'teacher',
-					granted_by: caller.actor.id,
-				},
-			);
-
-			const res = await rpc_call_for_spec({
-				app: test_app.app,
-				path: RPC_PATH,
-				spec: role_grant_offer_create_action_spec,
-				params: {to_account_id: recipient.account.id, role: 'teacher'},
-				headers: caller.create_session_headers(),
-			});
-			assert.ok(res.ok, JSON.stringify(res));
-			assert.strictEqual(res.result.offer.role, 'teacher');
 		});
 	});
 

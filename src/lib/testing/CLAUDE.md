@@ -1452,6 +1452,44 @@ The in-process counterparts already exist (`describe_rate_limiting_tests` plus t
 proxy middleware tests), so there's no in-process leg. `npm run test:cross:security`.
 Cited property: `docs/security.md` §"Rate Limiting" + §"Trusted Proxy / Client IP".
 
+### Role-gated participation parity — `cross_backend/role_grant_participation.ts`
+
+The role-gated-participation capstone — TS↔Rust agreement that an **app-defined
+role is conferred identically** on both spines. A `participant`
+(`grant_paths: ['admin']`) app-role is registered on both spines (`spine_roles`
+in `default_spine_surface.ts` + the Rust `testing_spine_stub`'s `RoleRegistry`
+and `known_roles`); the cross legs prove the three conferral properties agree.
+
+**Declarative-max, imperative-as-escape-hatch.** The single-request matrix is
+declarative (`conformance_participation_cases.ts`, run via
+`describe_conformance_table_tests`): **(a) grantability** —
+`role_grant_assign` of `participant` passes the admin-grant-path gate and dies
+_past_ it (404, nonexistent account) while a non-grantable role (`keeper`,
+unregistered) is refused _at_ it (403 `role_not_web_grantable`), and the
+`role_grant_offer_create` grant-path gate matches (403
+`role_grant_offer_role_not_grantable`); **(b) admin-only conferral** — a
+non-admin _holder_ of `participant` (and a fresh non-admin) can't offer it (403
+`role_grant_offer_not_authorized` — no holder-propagation); **(c)
+`role_grant_assign` is admin-only** — non-admin holder / fresh → 403
+`insufficient_permissions` (dispatcher gate), anon → 401; plus the
+`to_actor_id`-must-belong-to-`to_account_id` resolution arm (400
+`role_grant_offer_actor_account_mismatch`).
+
+`describe_role_grant_participation_cross_tests` (this module) is the **imperative
+escape hatch** for the multi-step success paths a static row can't express (they
+need a real recipient): admin **assigns** `participant` to a fresh account
+(`{ok, role_grant_id}` + idempotent re-assign), and admin **offers**
+`participant` → recipient **accepts** → a role_grant lands. The `role_holder`
+principal is seeded via `extra_accounts: [{username, roles: ['participant']}]`
+(bootstrap-cradle direct grant) and named through `principals.role_holder`.
+
+Both legs run in-process (`conformance_participation.db.test.ts`, plain
+`gro test`) and cross-process (`conformance_participation.cross.test.ts`, TS
+node/deno/bun + Rust stub). Landing the TS `role_grant_assign` action also turned
+the `cross_backend_parity` action-manifest gate green (it was Rust-only before).
+Cited property: `docs/identity.md` + the role-gated-participation design
+(admin-only conferral, immediate assign).
+
 ### Building a TS test-server binary — `testing_server_core.ts` + adapters
 
 The reusable shape for standing up a **spawnable TS** cross-process test

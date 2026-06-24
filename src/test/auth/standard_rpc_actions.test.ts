@@ -102,10 +102,11 @@ describe('create_standard_rpc_actions', () => {
 	test('admin + role-grant-offer + account action counts add up', () => {
 		// admin factory emits 14 actions (includes account_delete +
 		// account_purge + account_undelete + the two always-on app-settings
-		// methods). role-grant-offer factory emits 7. account factory emits 7.
+		// methods). role-grant-offer factory emits 8 (six offer-lifecycle +
+		// role_grant_revoke + role_grant_assign). account factory emits 7.
 		// Combined helper should equal the sum.
 		const actions = create_standard_rpc_actions(deps);
-		assert.strictEqual(actions.length, 14 + 7 + 7);
+		assert.strictEqual(actions.length, 14 + 8 + 7);
 	});
 
 	test('authorize option reaches the role_grant_offer_create handler', async () => {

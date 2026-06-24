@@ -202,16 +202,25 @@ role models membership, collaboration, or social attachment, it's an
 offer; if it models unilateral administrative authority, it's a direct
 grant.
 
-| Path         | How                                | Consent model                 | Typical use                                         |
-| ------------ | ---------------------------------- | ----------------------------- | --------------------------------------------------- |
-| Direct grant | `query_create_role_grant`          | None — immediate              | bootstrap, keeper recovery                          |
-| Offer        | `role_grant_offer_create` + accept | Recipient accepts or declines | admin-granted web role_grants, classroom membership |
+| Path           | How                                | Consent model                 | Typical use                                         |
+| -------------- | ---------------------------------- | ----------------------------- | --------------------------------------------------- |
+| Direct grant   | `query_create_role_grant`          | None — immediate              | bootstrap, keeper recovery                          |
+| Offer          | `role_grant_offer_create` + accept | Recipient accepts or declines | role_grants the recipient should opt into, classroom membership |
+| Immediate assign | `role_grant_assign`              | None — admin confers directly | unlocking a capability for a known account ("you may now post")  |
 
-The split is **keeper-path stays direct; web-path moves to the offer flow.** The
+Both web conferral paths are **admin-only** and run the same
+admin-grantability gate (the role's `RoleSpec.grant_paths` must include
+`'admin'`); holding a role confers no power to hand it out. The split is
+**keeper-path stays direct (internal `query_create_role_grant`); web-path is
+admin-gated, via either the consent offer flow or the immediate assign.** The
 admin UI drives `role_grant_offer_create` via RPC (there is no REST
 grant/revoke route); the recipient's UI gets a
 `role_grant_offer_received` WS notification, the admin sees a "pending —
-awaiting acceptance" state until the recipient responds. Admin revoke
+awaiting acceptance" state until the recipient responds. For a capability
+*unlock* the admin reaches for `role_grant_assign` instead — same admin gate
+and idempotent `query_create_role_grant` write, no offer for the grantee to
+accept (no WS notification; the grantee picks the capability up on its next
+authenticated request). Admin revoke
 runs through the `role_grant_revoke` RPC action, which also supersedes any
 sibling pending offers for the same `(actor, role, scope)`. App-level
 social roles (classroom membership, workspace invites, future org

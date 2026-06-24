@@ -189,6 +189,16 @@ the expiry slate
 `conformance_expiry_cases.ts` (the `expired_session` principal → expired
 server-side session → 401 on a read + a mutation route); the in-process leg is
 `conformance.db.test.ts`, same cases both transports), and
+`conformance_participation.cross.test.ts` (the role-gated-participation capstone
+— TS↔Rust agreement on app-role conferral: the declarative
+`conformance_participation_cases.ts` single-request matrix — grantability
+gate-pass-404 vs gate-403 on **both** `role_grant_assign` and
+`role_grant_offer_create`, admin-only conferral / no holder-propagation,
+dispatcher admin gate, anon-401, `to_actor_id`-mismatch — plus the imperative
+`describe_role_grant_participation_cross_tests` success paths (assign-lands +
+idempotency, offer→accept-lands); seeds a `participant` (`grant_paths:
+['admin']`) app-role on both spines with the holder via `extra_accounts`;
+in-process leg `conformance_participation.db.test.ts`), and
 `origin.cross.test.ts` (the imperative `describe_origin_cross_tests` — Origin
 allowlist: disallowed → 403 `forbidden_origin`, absent → pass; in-process leg
 `auth/origin_parity.db.test.ts`), and `ready.cross.test.ts` (the imperative

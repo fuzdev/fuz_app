@@ -599,8 +599,8 @@ describe('create_app_server', () => {
 
 	test('rpc_endpoints factory + create_standard_rpc_actions compose', async () => {
 		// End-to-end check: the factory form of rpc_endpoints paired with
-		// the combined admin+role-grant-offer+account helper should put all 28
-		// methods (14 admin + 7 role-grant-offer + 7 account) on the surface
+		// the combined admin+role-grant-offer+account helper should put all 29
+		// methods (14 admin + 8 role-grant-offer + 7 account) on the surface
 		// and auto-mount them.
 		const {create_standard_rpc_actions} = await import('$lib/auth/standard_rpc_actions.ts');
 		const result = await create_app_server(
@@ -617,7 +617,7 @@ describe('create_app_server', () => {
 			(e) => e.path === '/api/rpc',
 		);
 		assert.isDefined(rpc_endpoint);
-		assert.strictEqual(rpc_endpoint.methods.length, 14 + 7 + 7);
+		assert.strictEqual(rpc_endpoint.methods.length, 14 + 8 + 7);
 		const method_names = new Set(rpc_endpoint.methods.map((m) => m.name));
 		// sample a few from each surface
 		assert.isTrue(method_names.has('admin_account_list'));

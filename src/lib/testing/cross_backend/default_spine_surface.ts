@@ -31,6 +31,7 @@ import {create_account_route_specs} from '../../auth/account_routes.ts';
 import {create_audit_log_route_specs} from '../../auth/audit_log_routes.ts';
 import type {NotificationSender} from '../../auth/role_grant_offer_notifications.ts';
 import {create_role_schema, type RoleSchemaResult} from '../../auth/role_schema.ts';
+import {GRANT_PATH_ADMIN} from '../../auth/grant_path_schema.ts';
 import {create_session_config, type SessionOptions} from '../../auth/session_cookie.ts';
 import {create_signup_route_specs} from '../../auth/signup_routes.ts';
 import {create_standard_rpc_actions} from '../../auth/standard_rpc_actions.ts';
@@ -48,6 +49,7 @@ import {create_test_app_surface_spec} from '../stubs.ts';
 import {
 	SPINE_CELL_EDITOR_ROLE,
 	SPINE_EXPECTED_SCHEMA_URL,
+	SPINE_PARTICIPANT_ROLE,
 	SPINE_RPC_PATH,
 } from './spine_surface_constants.ts';
 
@@ -58,14 +60,19 @@ import {
 export const spine_session_options: SessionOptions<string> = create_session_config('fuz_session');
 
 /**
- * The spine's closed role registry: built-ins plus `SPINE_CELL_EDITOR_ROLE`.
- * Threaded into the cell spec set's role-validity gate; the Rust stub mirrors
- * the same membership. When the spine grows additional grantable roles,
- * thread their registry through `create_role_schema` here so the admin suite
- * picks up grant-path coverage.
+ * The spine's closed role registry: built-ins plus two app roles —
+ * `SPINE_CELL_EDITOR_ROLE` (no grant path; the role-shaped-`cell_grant`
+ * suite's bootstrap-seeded role) and `SPINE_PARTICIPANT_ROLE`
+ * (`grant_paths: ['admin']`; the role-gated-participation suite's
+ * admin-grantable role). Threaded into the cell spec set's role-validity gate
+ * **and** the auth grantability gates; the Rust stub mirrors the same
+ * membership in both its `RoleRegistry` and `known_roles`. The `participant`
+ * entry also gives the admin suite real app-role grant-path coverage
+ * (`admin_account_list.grantable_roles` carries it on both spines).
  */
 export const spine_roles: RoleSchemaResult = create_role_schema([
 	{name: SPINE_CELL_EDITOR_ROLE, grant_paths: []},
+	{name: SPINE_PARTICIPANT_ROLE, grant_paths: [GRANT_PATH_ADMIN]},
 ]);
 
 /** Options for {@link spine_rpc_endpoints}. */

@@ -1,6 +1,7 @@
 /**
  * Role grant offer RPC action specs — declarative contract for the
- * consentful-role-grants surface (offer lifecycle + admin revoke).
+ * consentful-role-grants surface (offer lifecycle + admin revoke + the
+ * immediate admin-only `role_grant_assign`).
  *
  * Import this module for the specs, Input/Output schemas, `ERROR_ROLE_GRANT_OFFER_*`
  * reason constants, and the `all_role_grant_offer_action_specs` registry.
@@ -196,6 +197,36 @@ export const RoleGrantRevokeOutput = z.strictObject({
 });
 export type RoleGrantRevokeOutput = z.infer<typeof RoleGrantRevokeOutput>;
 
+/**
+ * Input for `role_grant_assign` — the immediate admin-only conferral path, the
+ * consent-free sibling of `role_grant_offer_create`. An admin assigns a
+ * role_grant straight onto the target actor; there is no offer for a grantee to
+ * accept. No `message` (no offer to carry it on) and no `scope_kind` (`scope_id`
+ * alone is the v1 scope discriminator — the grant row's `scope_kind` stays null).
+ */
+export const RoleGrantAssignInput = z.strictObject({
+	to_account_id: Uuid.meta({description: 'Account id of the grantee.'}),
+	to_actor_id: Uuid.nullish().meta({
+		description:
+			"Optional actor-grain target on the grantee account. When set, must belong to `to_account_id`. Omit to resolve the account's sole active actor — a multi-actor account must name one.",
+	}),
+	role: RoleName.meta({
+		description: "Role to assign. Must be admin-grantable (its `grant_paths` includes `'admin'`).",
+	}),
+	scope_id: Uuid.nullish().meta({
+		description: 'Scope id for resource-scoped grants. `null` for a global role_grant.',
+	}),
+	acting: ActingActor,
+});
+export type RoleGrantAssignInput = z.infer<typeof RoleGrantAssignInput>;
+
+/** Output for `role_grant_assign`. */
+export const RoleGrantAssignOutput = z.strictObject({
+	ok: z.literal(true),
+	role_grant_id: Uuid,
+});
+export type RoleGrantAssignOutput = z.infer<typeof RoleGrantAssignOutput>;
+
 // -- Action specs -----------------------------------------------------------
 
 /**
@@ -321,9 +352,29 @@ export const role_grant_revoke_action_spec = {
 } satisfies RequestResponseActionSpec;
 
 /**
+ * `rate_limit: 'account'` bounds admin-side burn of `role_grant_assign` — the
+ * action is admin-gated and audit-trailed, but the per-account cap matches
+ * `role_grant_revoke` so a single admin script can't churn grants in a loop.
+ */
+export const role_grant_assign_action_spec = {
+	method: 'role_grant_assign',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: {account: 'required', actor: 'required', roles: ['admin']},
+	side_effects: true,
+	input: RoleGrantAssignInput,
+	output: RoleGrantAssignOutput,
+	async: true,
+	description:
+		"Immediately assign a role_grant to a target account — admin-only, no consent step (the capability-unlock UX). The role's `grant_paths` must include `'admin'`. Idempotent: re-assigning an active grant returns it. Emits a role_grant_create audit event.",
+	error_reasons: [ERROR_ROLE_NOT_WEB_GRANTABLE, ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH],
+	rate_limit: 'account',
+} satisfies RequestResponseActionSpec;
+
+/**
  * All role-grant-offer action specs — a codegen-ready registry. Consumers spread
- * this into their own action-spec array to include offer lifecycle + revoke
- * methods in a typed client surface.
+ * this into their own action-spec array to include offer lifecycle + revoke +
+ * assign methods in a typed client surface.
  */
 export const all_role_grant_offer_action_specs: Array<RequestResponseActionSpec> = [
 	role_grant_offer_create_action_spec,
@@ -333,4 +384,5 @@ export const all_role_grant_offer_action_specs: Array<RequestResponseActionSpec>
 	role_grant_offer_list_action_spec,
 	role_grant_offer_history_action_spec,
 	role_grant_revoke_action_spec,
+	role_grant_assign_action_spec,
 ];

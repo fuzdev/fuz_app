@@ -430,7 +430,8 @@ with a `granted_by` field. No role_grant = no capability (safe by default).
 
 **Grant authority enforcement**: The admin-grant-path gate
 (`RoleSpec.grant_paths` includes `'admin'`) is checked server-side on every
-grant request. Direct API calls respect the same restrictions as the UI.
+web grant request — the offer-create flow and the immediate `role_grant_assign`
+alike. Direct API calls respect the same restrictions as the UI.
 Keeper's `grant_paths` is `['bootstrap']` (no `'admin'`), so it cannot be
 granted via web.
 
@@ -552,18 +553,29 @@ Two code paths, one invariant:
   — the consentful path. The admin UI drives the same
   `role_grant_offer_create` RPC action as any other grantor; a role_grant row
   only exists after the recipient atomically accepts. Consumer-app role
-  grants (classroom membership, future workspace invites) use the same
-  offer flow.
+  grants where the recipient should opt in (classroom membership, future
+  workspace invites) use the offer flow.
+- **Immediate assign** (`role_grant_assign`) — the admin-only direct web path,
+  for a capability *unlock* where waiting on consent is the wrong model ("you
+  may now post"). It runs the same admin-grant-path gate and the same
+  idempotent write as the offer flow, but skips the offer — no row for the
+  grantee to accept. Its safeguards are **admin-only conferral** (no
+  holder-propagation — holding a role confers no power to hand it out) and a
+  `role_grant_create` audit row, not recipient consent.
 
 Why the split matters for security:
 
-1. **No unsolicited capability delivery.** A web-path admin cannot
-   backfill a role onto an arbitrary account without the recipient
-   observing and agreeing. Closes a class of social-engineering attacks
-   where a compromised or hostile admin drafts an account into a group
-   the account owner has no awareness of ("silent membership in a
-   private workspace", "drafted teacher of a classroom you've never
-   heard of").
+1. **No unsolicited membership via the offer flow.** When a role models
+   membership the recipient should agree to, exposing it through the offer
+   flow guarantees a web-path admin cannot draft an account into the group
+   without the recipient observing and agreeing. Closes a class of
+   social-engineering attacks where a compromised or hostile admin drafts an
+   account into a group the account owner has no awareness of ("silent
+   membership in a private workspace", "drafted teacher of a classroom you've
+   never heard of"). `role_grant_assign` deliberately trades consent for
+   immediacy (the capability-unlock model above), so it is **not** the path
+   for membership-shaped roles — its boundary is admin-only conferral + audit,
+   an explicit admin action, never a peer or self-service one.
 2. **The recipient sees the grant before it takes effect.** The
    `role_grant_offer_received` notification plus the persistent inbox give
    the recipient an audit-visible, client-visible record of every
