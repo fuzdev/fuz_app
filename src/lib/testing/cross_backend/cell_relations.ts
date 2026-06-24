@@ -84,7 +84,7 @@ import type {FetchTransport} from '../transports/fetch_transport.ts';
 import {test_if} from './capabilities.ts';
 import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.ts';
 import type {RpcPathCrossSuiteOptions} from './setup.ts';
-import {SPINE_RPC_PATH} from './default_spine_surface.ts';
+import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
 
 /** Create a cell over the wire and return its id (the parity gate parses the output). */
 const create_cell = async (

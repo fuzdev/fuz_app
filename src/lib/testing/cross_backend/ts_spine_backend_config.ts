@@ -25,21 +25,10 @@ import {
 	make_default_ts_backend_config,
 	ts_default_capabilities,
 } from './default_backend_configs.ts';
+import {SPINE_SSE_PATH} from './spine_surface_constants.ts';
 
 /** Env var naming the backend root dir; `{dir}/run/daemon_token` must match `bootstrap.daemon_token_path`. */
 export const TS_SPINE_DIR_ENV = 'FUZ_TESTING_TS_SPINE_DIR';
-
-/**
- * Audit-log SSE stream path the TS spine binary serves (it wires
- * `audit_log_sse`). Matches `SPINE_SSE_PATH` in `testing/cross_backend/default_spine_surface.ts`
- * and the cross-process SSE suite's default. Scoped to the TS configs
- * (which advertise `capabilities.sse: true`) — the shared
- * `ts_default_capabilities` stays `sse: false` because not every consumer
- * wires `audit_log_sse`, so the default stays honest for backends that don't
- * serve the stream. (The Rust `testing_spine_stub` does serve it and opts in
- * via `rust_spine_stub_backend_config`.)
- */
-export const TS_SPINE_SSE_PATH = '/api/admin/audit/stream';
 
 /**
  * Capabilities for the TS spine binary — `ts_default_capabilities` plus `sse`
@@ -138,7 +127,7 @@ export const ts_spine_node_backend_config = (
 			},
 			capabilities: ts_spine_capabilities,
 		}),
-		sse_path: TS_SPINE_SSE_PATH,
+		sse_path: SPINE_SSE_PATH,
 	};
 };
 
@@ -167,7 +156,7 @@ export const ts_spine_bun_backend_config = (
 			},
 			capabilities: ts_spine_bun_capabilities,
 		}),
-		sse_path: TS_SPINE_SSE_PATH,
+		sse_path: SPINE_SSE_PATH,
 	};
 };
 
@@ -214,6 +203,6 @@ export const ts_spine_deno_backend_config = (
 			},
 			capabilities: ts_spine_capabilities,
 		}),
-		sse_path: TS_SPINE_SSE_PATH,
+		sse_path: SPINE_SSE_PATH,
 	};
 };

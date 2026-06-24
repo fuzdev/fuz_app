@@ -39,7 +39,7 @@ import {fileURLToPath} from 'node:url';
 
 import type {BackendConfig} from './backend_config.ts';
 import {build_test_backend_paths} from './build_test_backend_paths.ts';
-import {SPINE_EXPECTED_SCHEMA_URL} from './default_spine_surface.ts';
+import {SPINE_EXPECTED_SCHEMA_URL} from './spine_surface_constants.ts';
 import {
 	LOGIN_RATE_LIMIT_ENABLED_ENV,
 	make_default_rust_backend_config,

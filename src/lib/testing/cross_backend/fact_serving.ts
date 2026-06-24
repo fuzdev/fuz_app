@@ -46,7 +46,7 @@ import {CellCreateOutput} from '../../auth/cell_action_specs.ts';
 import type {FetchTransport} from '../transports/fetch_transport.ts';
 import {test_if} from './capabilities.ts';
 import {cross_rpc_call, expect_output} from './cell_cross_helpers.ts';
-import {SPINE_RPC_PATH} from './default_spine_surface.ts';
+import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
 import type {RpcPathCrossSuiteOptions, SetupTest} from './setup.ts';
 
 /**

@@ -55,7 +55,7 @@ import {connect} from 'node:net';
 import {describe, test, assert} from 'vitest';
 
 import {DAEMON_TOKEN_HEADER} from '../../auth/daemon_token.ts';
-import {SPINE_RPC_PATH} from './default_spine_surface.ts';
+import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
 
 /** Options for the credential-header robustness probe — needs the raw URL + a valid daemon token. */
 export interface CredentialHeaderRobustnessCrossTestOptions {

@@ -23,10 +23,10 @@ import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
 import {create_audit_log_config} from '$lib/auth/audit_log_schema.ts';
 import {CELL_MIGRATION_NS} from '$lib/db/cell_ddl.ts';
 import {
-	SPINE_RPC_PATH,
 	spine_roles,
 	spine_session_options,
 } from '$lib/testing/cross_backend/default_spine_surface.ts';
+import {SPINE_RPC_PATH} from '$lib/testing/cross_backend/spine_surface_constants.ts';
 import {default_in_process_setup} from '$lib/testing/cross_backend/in_process_setup.ts';
 import type {ExtraAccountSpec, SetupTest} from '$lib/testing/cross_backend/setup.ts';
 import type {AppServerContext} from '$lib/server/app_server_context.ts';

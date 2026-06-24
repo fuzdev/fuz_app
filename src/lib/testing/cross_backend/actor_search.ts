@@ -42,7 +42,7 @@ import {
 	ERROR_ACTOR_SEARCH_SCOPE_REQUIRED,
 } from '../../auth/actor_search_action_specs.ts';
 import type {RpcPathCrossSuiteOptions} from './setup.ts';
-import {SPINE_RPC_PATH} from './default_spine_surface.ts';
+import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
 
 /** Options for the actor-search parity suite (the standard RPC-dispatched shape). */
 export type ActorSearchCrossTestOptions = RpcPathCrossSuiteOptions;

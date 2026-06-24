@@ -54,7 +54,7 @@ import {connect} from 'node:net';
 
 import {describe, test, assert} from 'vitest';
 
-import {SPINE_RPC_PATH} from './default_spine_surface.ts';
+import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
 
 /** Options for the smuggling probe — needs the raw URL, not a transport. */
 export interface BodySizeSmugglingCrossTestOptions {

@@ -58,7 +58,7 @@ import {ERROR_CREDENTIAL_TYPE_REQUIRED} from '../../http/error_schemas.ts';
 import {rpc_call} from '../rpc_helpers.ts';
 import type {FetchTransport} from '../transports/fetch_transport.ts';
 import type {RpcPathCrossSuiteOptions, TestFixture} from './setup.ts';
-import {SPINE_RPC_PATH} from './default_spine_surface.ts';
+import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
 
 /** A well-formed UUID that never names a real row. */
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';

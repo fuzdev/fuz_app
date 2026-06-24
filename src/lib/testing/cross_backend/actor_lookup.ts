@@ -36,7 +36,7 @@ import {describe, test, assert} from 'vitest';
 
 import {actor_lookup_action_spec} from '../../auth/actor_lookup_action_specs.ts';
 import type {RpcPathCrossSuiteOptions} from './setup.ts';
-import {SPINE_RPC_PATH} from './default_spine_surface.ts';
+import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
 
 /**
  * Options for the actor-lookup parity suite. The standard RPC-dispatched

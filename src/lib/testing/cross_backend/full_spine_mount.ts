@@ -49,7 +49,8 @@ import {
 	create_testing_action_manifest_action,
 	create_testing_actions,
 } from './testing_reset_actions.ts';
-import {SPINE_RPC_PATH, spine_roles, spine_session_options} from './default_spine_surface.ts';
+import {spine_roles, spine_session_options} from './default_spine_surface.ts';
+import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
 
 /** Options for {@link build_full_spine_rpc_actions} / {@link full_spine_rpc_endpoints}. */
 export interface FullSpineMountOptions {

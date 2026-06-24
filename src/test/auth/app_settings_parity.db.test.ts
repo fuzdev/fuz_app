@@ -21,8 +21,8 @@ import {
 	create_spine_route_specs,
 	spine_rpc_endpoints,
 	spine_session_options,
-	SPINE_RPC_PATH,
 } from '$lib/testing/cross_backend/default_spine_surface.ts';
+import {SPINE_RPC_PATH} from '$lib/testing/cross_backend/spine_surface_constants.ts';
 import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
 
 const setup_test = default_in_process_setup({

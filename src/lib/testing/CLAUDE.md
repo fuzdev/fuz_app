@@ -1347,8 +1347,9 @@ the same reasons the sibling `cross_backend/origin.ts` suite is imperative.
 Both backends read the **same** committed
 `testing/cross_backend/expected_schema.json` (column-presence is engine-portable,
 so one fixture is the cross-impl contract): the TS spine via
-`create_spine_ready_route_spec` (an `import.meta.url` URL off `default_spine_surface.ts`),
-the Rust `testing_spine_stub` via the absolute path `rust_spine_stub_backend_config`
+`create_spine_ready_route_spec`, which reads the `SPINE_EXPECTED_SCHEMA_URL`
+`import.meta.url` constant off `spine_surface_constants.ts`; the Rust
+`testing_spine_stub` via the absolute path `rust_spine_stub_backend_config`
 passes through `FUZ_RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH`. The fixture covers the full
 spine bootstrap (auth + cell + cell_history + fact) and is regenerated +
 drift-guarded by `src/test/cross_backend/spine_expected_schema.db.test.ts`

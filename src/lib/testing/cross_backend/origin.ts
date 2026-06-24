@@ -33,7 +33,7 @@ import {describe, test, assert} from 'vitest';
 import {account_verify_action_spec} from '../../auth/account_action_specs.ts';
 import {ERROR_FORBIDDEN_ORIGIN} from '../../http/error_schemas.ts';
 import type {RpcPathCrossSuiteOptions} from './setup.ts';
-import {SPINE_RPC_PATH} from './default_spine_surface.ts';
+import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
 
 /**
  * Options for the origin parity suite. The standard RPC-dispatched

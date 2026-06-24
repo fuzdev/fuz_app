@@ -33,7 +33,7 @@ import {ERROR_ACCOUNT_NOT_FOUND, ERROR_AUTHENTICATION_REQUIRED} from '../../http
 import {test_if} from './capabilities.ts';
 import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.ts';
 import type {RpcPathCrossSuiteOptions} from './setup.ts';
-import {SPINE_RPC_PATH} from './default_spine_surface.ts';
+import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
 
 /**
  * Options for the account-lifecycle parity suite. The standard

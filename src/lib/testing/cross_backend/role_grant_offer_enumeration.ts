@@ -52,7 +52,7 @@ import {
 	ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH,
 	ERROR_ROLE_GRANT_OFFER_NOT_FOUND,
 } from '../../auth/role_grant_offer_action_specs.ts';
-import {SPINE_RPC_PATH} from './default_spine_surface.ts';
+import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
 import type {SetupTest} from './setup.ts';
 
 /** A well-formed UUID that never names a real offer — exercises the not-found arm. */

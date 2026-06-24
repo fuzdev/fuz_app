@@ -40,20 +40,22 @@ import type {AppSurfaceSpec, RpcEndpointSpec} from '../../http/surface.ts';
 import type {AppServerContext} from '../../server/app_server_context.ts';
 import {create_test_app_surface_spec} from '../stubs.ts';
 
+// Pure path / role / fixture-URL constants live on the hono-free
+// `spine_surface_constants.ts` leaf so cross-process suite modules can import them
+// without dragging this module's eager in-process route handlers
+// (→ `session_middleware` → `hono/cookie`). Import only the constants this
+// module uses internally; callers that need a bare constant reach for the leaf.
+import {
+	SPINE_CELL_EDITOR_ROLE,
+	SPINE_EXPECTED_SCHEMA_URL,
+	SPINE_RPC_PATH,
+} from './spine_surface_constants.ts';
+
 /**
  * Session config — cookie name matches the binary's issued session cookie
  * (`fuz_session`) so cookie-attribute assertions + jar extraction line up.
  */
 export const spine_session_options: SessionOptions<string> = create_session_config('fuz_session');
-
-/**
- * App role the role-shaped-`cell_grant` cross suite exercises. Registered
- * with no grant path (`grant_paths: []`) so it stays a valid registry member
- * without entering the admin / self-service grant flows — holders are seeded
- * directly via `extra_accounts`. Must match the `cell_editor` entry in the
- * Rust `testing_spine_stub`'s `known_roles` (cross-language test contract).
- */
-export const SPINE_CELL_EDITOR_ROLE = 'cell_editor';
 
 /**
  * The spine's closed role registry: built-ins plus `SPINE_CELL_EDITOR_ROLE`.
@@ -65,18 +67,6 @@ export const SPINE_CELL_EDITOR_ROLE = 'cell_editor';
 export const spine_roles: RoleSchemaResult = create_role_schema([
 	{name: SPINE_CELL_EDITOR_ROLE, grant_paths: []},
 ]);
-
-/** RPC endpoint mount path — matches the binary's `/api/rpc`. */
-export const SPINE_RPC_PATH = '/api/rpc';
-
-/**
- * Audit-log SSE stream path — `/api/admin` prefix + the
- * `create_audit_log_route_specs` `/audit/stream` route. Matches the default
- * `BackendConfig.sse_path` and the cross-process SSE suite's default. Only
- * mounted by the TS spine binary (which wires `audit_log_sse`); the shared
- * surface stub leaves `ctx.audit_sse` null so the snapshot stays SSE-free.
- */
-export const SPINE_SSE_PATH = '/api/admin/audit/stream';
 
 /** Options for {@link spine_rpc_endpoints}. */
 export interface SpineRpcEndpointsOptions {
@@ -170,19 +160,6 @@ export const create_spine_route_specs = (ctx: AppServerContext): Array<RouteSpec
 		? prefix_route_specs('/api/admin', create_audit_log_route_specs({stream: ctx.audit_sse}))
 		: []),
 ];
-
-/**
- * Committed expected-schema fixture for the spine `/ready` deploy gate — the
- * column map a fresh full spine bootstrap (auth + cell + cell_history + fact)
- * produces. Resolved relative to this module so the spawned TS binary (which
- * imports this source under its loader) reads it off disk via `node:fs`.
- * Regenerated + guarded by `src/test/cross_backend/spine_expected_schema.db.test.ts`.
- *
- * The Rust `testing_spine_stub` reads the **same** committed file (its absolute
- * path passed via env by `rust_spine_stub_backend_config`) — column-presence is
- * engine-portable, so one fixture is the cross-impl contract.
- */
-export const SPINE_EXPECTED_SCHEMA_URL: URL = new URL('./expected_schema.json', import.meta.url);
 
 /**
  * The spine's `/ready` route spec — the column-presence schema-drift deploy

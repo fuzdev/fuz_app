@@ -53,7 +53,7 @@ import {
 import {test_if} from './capabilities.ts';
 import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.ts';
 import type {RpcPathCrossSuiteOptions} from './setup.ts';
-import {SPINE_RPC_PATH} from './default_spine_surface.ts';
+import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
 
 export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions): void => {
 	const {setup_test, capabilities} = options;
