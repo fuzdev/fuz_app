@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.104.0
+
+### Minor Changes
+
+- feat: cell tree refs and moderation ([146dca9](https://github.com/fuzdev/fuz_app/commit/146dca9))
+
 ## 0.103.0
 
 ### Minor Changes
