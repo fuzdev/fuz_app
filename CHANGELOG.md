@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.103.0
+
+### Minor Changes
+
+- feat: add `cell.kind` ([75b3639](https://github.com/fuzdev/fuz_app/commit/75b3639))
+
 ## 0.102.0
 
 ### Minor Changes
