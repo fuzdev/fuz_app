@@ -176,10 +176,14 @@ consumer's `validate_data` pass-through callback on `CellActionDeps`.
   `visibility` / `path`), the write-once capability/identity axis; a stray
   `kind` inside `data` is rejected fail-loud (`ERROR_CELL_KIND_IN_DATA`).
 - `auth/cell_action_specs.ts` — `CellVisibility` enum, `CellPath` brand,
-  `CellJson`, the six generic verb specs (`cell_create / get / update /
-delete / list / clone`), error reasons, and `all_cell_action_specs`
+  `CellJson`, the generic verb specs (`cell_create / get / update /
+delete / list / clone / moderate`), error reasons, and `all_cell_action_specs`
   (spreads in the grant / field / item / audit registries so codegen + UI
-  see one cell namespace). `CellJson` has no hub axis; `path` is global.
+  see one cell namespace). `CellJson` has no hub axis; `path` is global. The
+  directory-tree columns `parent_id` / `root_id` (containment, immutable in v1)
+  - the `moderation` lifecycle marker (`pending` / `approved` / `rejected`) are
+    top-level `CellJson` keys, peer to `visibility` (set by the create authorizer's
+    verdict + the `cell_moderate` verb, never in `data`).
 - `auth/cell_grant_action_specs.ts` / `cell_field_action_specs.ts` /
   `cell_item_action_specs.ts` / `cell_audit_action_specs.ts` — the
   `cell_grant_*` (3) / `cell_field_*` (3) / `cell_item_*` (4) /
@@ -204,18 +208,32 @@ auth, ids)`: batched strict relation-read filter. Every relation read —
   Two queries for the whole id-set (avoids the N+1 of a per-row check). The
   reverse list verbs additionally cap the fetch by the wire `limit` so a
   heavily inbound-linked target can't force an unbounded scan.
-- `auth/cell_actions.ts` — `create_cell_actions(deps)`, the six generic
+- `auth/cell_actions.ts` — `create_cell_actions(deps)`, the generic
   handlers. `cell_create` stamps `created_by` + writes the top-level `kind`
-  column; `path` writes are admin-only. `cell_update` gates `visibility`
+  column; `path` writes are admin-only. It also resolves the directory tree:
+  `parent_id` (wire) → the governing `root_id` (`parent.root_id ?? parent.id`),
+  **404**-masking a hidden parent. `cell_update` gates `visibility`
   writes on `can_manage_cell` (`ERROR_CELL_VISIBILITY_MANAGE_ONLY`) and
-  **never touches `kind`** (write-once at birth — not an update field).
+  **never touches `kind`** / `parent_id` / `root_id` / `moderation` (all
+  write-once-at-birth or control-gated, never on the update patch).
   `cell_get` bundles visibility-filtered `fields` + `items` (one over the cap
   for truncation detection). `cell_clone` deep-walks viewable children only
-  (each clone inherits its source's `kind`). The optional `authorize_create`
-  dep (`CellCreateAuthorize` — wider `auth` + `{kind, data, scope_id}` input
-  than `validate_data`) gates create by capability; it runs after the
-  validator, before the insert, deny → `cell_not_found` 404 IDOR mask.
-  `None`/omitted = open create (the default; mirrors `validate_data`).
+  (each clone inherits its source's `kind`; clones are unparented). The optional
+  parent-aware `authorize_create` dep (`CellCreateAuthorize` — wider input
+  `{kind, data, parent_id, root_id, root_data, scope_id}` than `validate_data`,
+  returning a `CellCreateVerdict` `{allow:false} | {allow:true, moderation_required}`)
+  gates create by capability; it runs after the validator + the parent-resolve.
+  A **viewable**-parent / root-creation deny is **403** `cell_create_forbidden`
+  (the create-path **404** mask is reserved for a hidden parent); `Allow` folds
+  the moderation outcome (born `pending`+private vs `approved`+author-visibility).
+  The authorizer is **pure** — the handler reads the governing root's `data`
+  in-tx and hands it over as `root_data`, so a directory policy resolves
+  `root.data.policy[kind]` without its own DB read (which also dodges the
+  single-connection PGlite deadlock). `None`/omitted = open create (the default;
+  mirrors `validate_data`). `cell_moderate` is the `pending → approved | rejected`
+  transition, gated on `can_manage_cell` of the **governing root** (admin / root
+  owner — the author lands a 403, the anti-self-approval guard); approve flips
+  `moderation → approved` + `visibility → public`, reject sets `rejected`.
 - `auth/cell_grant_actions.ts` / `cell_field_actions.ts` /
   `cell_item_actions.ts` / `cell_audit_actions.ts` — the relation + ACL +
   audit handlers, exporting `to_grant_json` / `to_field_json` /

@@ -19,6 +19,7 @@ import {
 	cell_get_action_spec,
 	cell_list_action_spec,
 	ERROR_CELL_NOT_FOUND,
+	ERROR_CELL_CREATE_FORBIDDEN,
 	ERROR_CELL_KIND_IN_DATA,
 	ERROR_CELL_KIND_EMPTY,
 	ERROR_CELL_PATH_ADMIN_ONLY,
@@ -35,17 +36,21 @@ import {
 	error_reason,
 } from './cell_test_helpers.ts';
 
-// Authorizer doubles — pure functions of the input (no role logic; role- and
-// admin-bypass gating is the cross suite's `test_cell_gated_create_authorize`).
-const deny_all: CellCreateAuthorize = () => false;
-const allow_all: CellCreateAuthorize = () => true;
-const deny_gated: CellCreateAuthorize = (_auth, input) => input.kind !== 'gated';
+// Authorizer doubles — pure functions of the input returning a `CellCreateVerdict`
+// (no role logic; the directory-policy gating is the cross suite's
+// `test_cell_gated_create_authorize`). These creates are parentless (roots), so
+// a `{allow: false}` verdict surfaces as the 403 `cell_create_forbidden` (the
+// 404 mask is reserved for a *hidden parent*, which never runs the authorizer).
+const deny_all: CellCreateAuthorize = () => ({allow: false});
+const allow_all: CellCreateAuthorize = () => ({allow: true, moderation_required: false});
+const deny_gated: CellCreateAuthorize = (_auth, input) =>
+	input.kind === 'gated' ? {allow: false} : {allow: true, moderation_required: false};
 
 describe_db('cell create authorizer + kind invariants', (get_db) => {
 	install_audit_drift_guard();
 
 	describe('authorize_create gate', () => {
-		test('deny-all → cell_create is the cell_not_found 404 IDOR mask', async () => {
+		test('deny-all → cell_create is forbidden (403) for a parentless create', async () => {
 			const app = await create_cell_test_app(get_db, [], deny_all);
 			const actor = await app.create_account({username: 'authz_deny'});
 			const res = await call(
@@ -55,7 +60,7 @@ describe_db('cell create authorizer + kind invariants', (get_db) => {
 				actor.create_session_headers(),
 			);
 			assert.ok(!res.ok, 'deny-all must block create');
-			assert.strictEqual(error_reason(res), ERROR_CELL_NOT_FOUND);
+			assert.strictEqual(error_reason(res), ERROR_CELL_CREATE_FORBIDDEN);
 		});
 
 		test('allow-all → create succeeds and stamps the kind column', async () => {
@@ -77,7 +82,7 @@ describe_db('cell create authorizer + kind invariants', (get_db) => {
 			const h = actor.create_session_headers();
 			const gated = await call(app, cell_create_action_spec, {kind: 'gated', data: {}}, h);
 			assert.ok(!gated.ok, 'the gated kind is denied');
-			assert.strictEqual(error_reason(gated), ERROR_CELL_NOT_FOUND);
+			assert.strictEqual(error_reason(gated), ERROR_CELL_CREATE_FORBIDDEN);
 			const ungated = await call(app, cell_create_action_spec, {kind: 'note', data: {}}, h);
 			assert.ok(ungated.ok, JSON.stringify(ungated));
 			const typeless = await call(app, cell_create_action_spec, {data: {}}, h);
@@ -98,7 +103,7 @@ describe_db('cell create authorizer + kind invariants', (get_db) => {
 		});
 
 		test('an async authorizer is awaited', async () => {
-			const async_deny: CellCreateAuthorize = () => Promise.resolve(false);
+			const async_deny: CellCreateAuthorize = () => Promise.resolve({allow: false});
 			const app = await create_cell_test_app(get_db, [], async_deny);
 			const actor = await app.create_account({username: 'authz_async'});
 			const res = await call(
@@ -108,7 +113,7 @@ describe_db('cell create authorizer + kind invariants', (get_db) => {
 				actor.create_session_headers(),
 			);
 			assert.ok(!res.ok, 'an async deny is awaited and blocks');
-			assert.strictEqual(error_reason(res), ERROR_CELL_NOT_FOUND);
+			assert.strictEqual(error_reason(res), ERROR_CELL_CREATE_FORBIDDEN);
 		});
 	});
 

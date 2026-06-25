@@ -915,13 +915,15 @@ source of truth for wire-shape conformance.
   parity suite — both `true` on every backend that live-mounts the full cell
   surface (TS spine binary, in-process app, Rust stub). A backend mounting only
   plain CRUD would declare `cell_crud: true, cell_relations: false`.
-  `cell_gated_create` gates `describe_cell_gated_create_cross_tests` (the
-  cell-creation-authorizer parity proof); unlike `cell_crud`/`cell_relations`
+  `cell_gated_create` gates `describe_cell_gated_create_cross_tests` +
+  `describe_cell_moderate_cross_tests` (the parent-aware-creation-authorizer +
+  `cell_moderate` parity proofs); unlike `cell_crud`/`cell_relations`
   it is **cross-only** (`false` in-process) — `true` only on the reference
   spine binaries that live-mount the `test_cell_gated_create_authorize` policy
   (the TS spine `full_spine_mount` + the Rust `testing_spine_stub`), since the
-  authorizer adds no method/column/wire shape and so the schema + manifest
-  parity gates are blind to an authorizer divergence.
+  authorizer _behavior_ adds no method/wire shape and so the schema + manifest
+  parity gates are blind to an authorizer divergence (the `cell_moderate`
+  _verb_ it pairs with is on the manifest, separately gated).
   `account_lifecycle` gates `describe_account_lifecycle_cross_tests` (the
   `account_delete` / `account_undelete` / `account_purge` parity suite); unlike
   cells those verbs **are** on the declared surface (in `create_admin_actions`,
@@ -1197,22 +1199,29 @@ backdoor, cell).
   holder who can `cell_get` still gets the IDOR 404). Only **actor-shaped**
   grants are exercised — role-shaped principals need a closed role registry the
   Rust spine deliberately lacks.
-- **`describe_cell_gated_create_cross_tests`** (gates on
-  `capabilities.cell_gated_create`, **cross-only**) — the cell-creation
-  authorizer (`CellCreateAuthorize`) parity proof. Both spines mount the same
-  `test_cell_gated_create_authorize` policy (gate `kind: 'gated'` behind the
-  `participant` role or admin): a non-participant is denied with the
-  `cell_not_found` 404 IDOR mask, an ungated kind is open, a `participant` is
-  admitted, and admin bypasses. The authorizer adds no method/column/wire
-  shape, so schema + manifest parity are **blind** to a divergence — this is the
-  only gate that catches one. In-process hook coverage is the standalone
-  `auth/cell_create_authorize.db.test.ts` (this cross suite skips in-process,
-  where the default app mounts no authorizer).
+- **`describe_cell_gated_create_cross_tests`** + **`describe_cell_moderate_cross_tests`**
+  (gate on `capabilities.cell_gated_create`, **cross-only**) — the parent-aware
+  cell-creation authorizer (`CellCreateAuthorize`, **directory model**) +
+  the `cell_moderate` verb parity proofs. Both spines mount the same
+  `test_cell_gated_create_authorize` policy: a `kind: 'space'` **root** is
+  admin-only (a non-admin → **403** `cell_create_forbidden`); a **contribution**
+  under a space is gated by the root's `data.policy[kind] = {min_role,
+moderation_required}`, with `moderation` set per the verdict (`pending`+private
+  vs `approved`+author-visibility); a **hidden** parent **404**-masks vs a
+  **visible** one **403**s; plain parentless creates stay open. The moderate
+  suite then proves the `pending → approved | rejected` transition: an admin
+  (root manager) approves → public, the **author** self-approve → 403
+  (anti-self-approval), a non-viewer → 404, reject → stays private. The
+  authorizer _behavior_ adds no method/wire shape, so schema + manifest parity
+  are **blind** to a divergence — these are the only gates that catch one (the
+  `cell_moderate` verb itself is manifest-covered). In-process hook coverage is
+  the standalone `auth/cell_create_authorize.db.test.ts` (these cross suites skip
+  in-process, where the default app mounts no authorizer).
 
 `cell_crud` / `cell_relations` gate `true` on TS + Rust (cells run on both, no
 `.skip`); `cell_gated_create` is cross-only (the policy is a spine-binary
 fixture). Cross-process wiring is `src/test/cross_backend/cell.cross.test.ts`
-(all three suites); the in-process legs (plain `gro test`) for crud/relations
+(all the cell suites); the in-process legs (plain `gro test`) for crud/relations
 are `src/test/auth/cell_crud_parity.db.test.ts`
 
 - `cell_relations_parity.db.test.ts`, sharing the full-surface

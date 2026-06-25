@@ -1219,13 +1219,23 @@ string. Content stays duck-typed in `data`.
   payload (create, update, clone-merge) and may throw a `ZodError`, which
   surfaces as `invalid_params` (`-32602`). Omit to pass payloads through
   unchecked.
-- `authorize_create` — a per-kind **capability** gate (`CellCreateAuthorize`):
-  `(auth, {kind, data, scope_id}) => boolean | Promise<boolean>`. Runs in
-  `cell_create` after `validate_data`, before the insert; returning `false`
-  surfaces as the `cell_not_found` 404 IDOR mask (a gated kind is
-  indistinguishable from a missing resource). Omit for open create. Async-capable
-  for DB/policy calls. (`scope_id` is designed-in for future scoped enforcement;
-  `null` in v1.)
+- `authorize_create` — a **parent-aware capability gate** (`CellCreateAuthorize`):
+  `(auth, {kind, data, parent_id, root_id, root_data, scope_id}) =>
+  CellCreateVerdict | Promise<CellCreateVerdict>`, where a verdict is
+  `{allow: false}` or `{allow: true, moderation_required}`. Runs in `cell_create`
+  after `validate_data` and after the handler resolves the directory tree
+  (`parent_id` → the governing `root_id`, **404**-masking a hidden parent). It
+  gates both roots and contributions; a `{allow: false}` for a **viewable**
+  parent / a root creation is **403** `cell_create_forbidden` (the 404 mask is
+  reserved for the hidden-parent case). An `{allow: true}` folds the moderation
+  outcome — `moderation_required: true` → born `pending` + private; `false` →
+  born `approved` at the author's visibility. The predicate is **pure**: it
+  reads the governing root's policy off the handler-supplied `root_data` (no DB
+  read of its own). Omit for open create. (`scope_id` is designed-in for future
+  scoped enforcement; `null` in v1.) The companion `cell_moderate` verb
+  transitions a `pending` contribution (`approved | rejected`), gated on
+  `can_manage` of the governing root — not the contribution, so the author can't
+  self-approve.
 
 `create_cell_grant_actions` takes `roles` (a `create_role_schema()` result) so
 role-shaped grants validate against the app's role vocabulary.

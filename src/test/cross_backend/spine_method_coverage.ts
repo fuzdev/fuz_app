@@ -173,6 +173,17 @@ export const SPINE_METHOD_COVERAGE: ReadonlyArray<MethodCoverageEntry> = [
 		capability: 'cell_relations',
 		suite: 'describe_cell_relations_cross_tests',
 	},
+	// The moderation transition (`pending → approved | rejected`). Behavioral
+	// coverage needs a *pending* contribution, which only exists when the
+	// directory authorizer is mounted — so it rides the `cell_gated_create`
+	// capability (the reference-spine-only policy), driven by the moderate cases
+	// in the `cell_gated_create` cross file.
+	{
+		method: 'cell_moderate',
+		tier: 'off_surface',
+		capability: 'cell_gated_create',
+		suite: 'describe_cell_moderate_cross_tests',
+	},
 
 	// --- Off-surface: opt-in actor resolvers (ungated) ---
 	// Not in `create_standard_rpc_actions`; always mounted on the spine, their

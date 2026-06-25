@@ -49,3 +49,16 @@ export const CellCloneAuditMetadata = z.looseObject({
 	kind: z.string().optional(),
 });
 export type CellCloneAuditMetadata = z.infer<typeof CellCloneAuditMetadata>;
+
+/**
+ * Metadata envelope for `cell_moderate`. `cell_id` is the moderated
+ * contribution; `root_id` is its governing root (the container whose
+ * moderation authority gated the call); `moderation` is the terminal decision
+ * applied (`'approved'` | `'rejected'`).
+ */
+export const CellModerateAuditMetadata = z.looseObject({
+	cell_id: Uuid,
+	root_id: Uuid,
+	moderation: z.enum(['approved', 'rejected']),
+});
+export type CellModerateAuditMetadata = z.infer<typeof CellModerateAuditMetadata>;

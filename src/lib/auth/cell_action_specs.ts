@@ -120,6 +120,32 @@ export const ERROR_CELL_KIND_IN_DATA = 'cell_kind_in_data' as const;
 export const ERROR_CELL_KIND_EMPTY = 'cell_kind_empty' as const;
 
 /**
+ * Error reason — the parent-aware `CellCreateAuthorize` denied the create for a
+ * **viewable** parent (or a root creation): "you see it, you can't contribute
+ * here." A **403** `forbidden`, distinct from the create-path **404** mask used
+ * when the parent itself isn't viewable (twin of the Rust
+ * `ERROR_CELL_CREATE_FORBIDDEN`).
+ */
+export const ERROR_CELL_CREATE_FORBIDDEN = 'cell_create_forbidden' as const;
+
+/**
+ * Error reason — `cell_moderate` caller can view the contribution but lacks
+ * moderation authority over its governing root (not admin / not the root's
+ * manager). A **403** `forbidden`. The author can view their own pending
+ * contribution, so they reach this gate — and are denied here, which is the
+ * anti-self-approval guard (twin of the Rust `ERROR_CELL_MODERATE_FORBIDDEN`).
+ */
+export const ERROR_CELL_MODERATE_FORBIDDEN = 'cell_moderate_forbidden' as const;
+
+/**
+ * Error reason — `cell_moderate` target has no governing root (`root_id` is
+ * null): it's a root or an unparented cell, not a gated contribution, so there
+ * is nothing to moderate. A **400** `invalid_params` (twin of the Rust
+ * `ERROR_CELL_NOT_A_CONTRIBUTION`).
+ */
+export const ERROR_CELL_NOT_A_CONTRIBUTION = 'cell_not_a_contribution' as const;
+
+/**
  * Error reason — null-auth `cell_list` caller passed a `created_by`
  * filter. The filter is a soft account-id enumeration vector ("does
  * account X have any public cells?"), so we require an authenticated
@@ -204,6 +230,18 @@ export const CellJson = z.strictObject({
 			"Access-control tag. `'public'` admits everyone (including unauthenticated visitors); `'private'` (default) admits admin / owner / `cell_grant`-admitted callers. Top-level column, not inside `data`.",
 	}),
 	refs: z.array(FactHashSchema).nullable(),
+	parent_id: Uuid.nullable().meta({
+		description:
+			'Immediate container in the directory tree (the directory this cell lives in). `null` = a root (parentless). Set once at create, immutable in v1.',
+	}),
+	root_id: Uuid.nullable().meta({
+		description:
+			'Governing root of the directory subtree, denormalized for flat-subtree queries (`root_id = parent.root_id ?? parent.id`). `null` for a root. Set once at create, immutable in v1.',
+	}),
+	moderation: z.string().nullable().meta({
+		description:
+			"Approval-lifecycle marker for a gated contribution (`'pending'` / `'approved'` / `'rejected'`); `null` = unmoderated. A control field with a non-author writer — peer to `visibility`, never inside `data` (set by the create authorizer's verdict, transitioned only by `cell_moderate`).",
+	}),
 	created_by: Uuid.nullable(),
 	updated_by: Uuid.nullable(),
 	created_at: z.string(),
@@ -238,6 +276,10 @@ export const CellCreateInput = z.strictObject({
 	}),
 	path: CellPath.nullish().meta({
 		description: 'Admin-only named lookup alias. Globally unique on active rows.',
+	}),
+	parent_id: Uuid.nullish().meta({
+		description:
+			'Immediate container — the directory this cell is created in. Omit / null = a root (parentless). The handler resolves `root_id` from it and gates the create through the parent-aware authorizer; `root_id` / `moderation` are handler-derived, never wire input.',
 	}),
 	acting: ActingActor,
 });
@@ -365,6 +407,14 @@ export const CellListInput = z
 		path_prefix: CellPath.optional().meta({
 			description: 'Match cells whose path starts with this.',
 		}),
+		root_id: Uuid.optional().meta({
+			description:
+				'Scope to a directory subtree by governing root (`cell.root_id = ?`) — the feed + mod-queue key.',
+		}),
+		moderation: z.string().optional().meta({
+			description:
+				"Filter by moderation lifecycle marker (`'pending'` drives the moderation queue).",
+		}),
 		shared_with: z.literal('me').optional().meta({
 			description:
 				'Narrow to cells admitting the caller via `cell_grant`, excluding cells the caller owns. Self-only — a `Uuid` form would need cross-actor role_grant loading.',
@@ -413,6 +463,37 @@ export type CellCloneInput = z.infer<typeof CellCloneInput>;
 
 export const CellCloneOutput = z.strictObject({cell: CellJson});
 export type CellCloneOutput = z.infer<typeof CellCloneOutput>;
+
+// -- cell_moderate ----------------------------------------------------------
+
+/**
+ * The terminal transition a `cell_moderate` call applies to a gated
+ * contribution's `moderation` lifecycle. The born state (`'pending'`) is set
+ * by the create authorizer, never on the wire; the verb only moves it to a
+ * terminal state. `'approved'` publishes (also flips `visibility → 'public'`);
+ * `'rejected'` leaves it private.
+ */
+export const CellModerationDecision = z.enum(['approved', 'rejected']);
+export type CellModerationDecision = z.infer<typeof CellModerationDecision>;
+
+/**
+ * Input for `cell_moderate` — the `pending → approved | rejected` transition,
+ * gated on moderation authority over the **governing root** (admin / root
+ * owner in v1), not the contribution (which the author manages, and could
+ * otherwise self-approve). 404 when the target isn't viewable; 403 when it is
+ * but the caller isn't a root manager (the author lands here).
+ */
+export const CellModerateInput = z.strictObject({
+	cell_id: Uuid.meta({description: 'Contribution to moderate.'}),
+	moderation: CellModerationDecision.meta({
+		description: 'Terminal decision: `approved` (publishes, visibility → public) or `rejected`.',
+	}),
+	acting: ActingActor,
+});
+export type CellModerateInput = z.infer<typeof CellModerateInput>;
+
+export const CellModerateOutput = z.strictObject({cell: CellJson});
+export type CellModerateOutput = z.infer<typeof CellModerateOutput>;
 
 // -- Action specs -----------------------------------------------------------
 
@@ -497,9 +578,23 @@ export const cell_clone_action_spec = {
 		'Clone a cell (optionally deep). New owner is the caller; `path` is always nulled. Provenance recorded only in the `cell_clone` audit row. Per-account rate-limited — `deep: true` walks `cell_item` rows and fans out, so unbounded clone is a write-amplification vector.',
 } satisfies RequestResponseActionSpec;
 
+export const cell_moderate_action_spec = {
+	method: 'cell_moderate',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: {account: 'required', actor: 'required'},
+	side_effects: true,
+	input: CellModerateInput,
+	output: CellModerateOutput,
+	async: true,
+	rate_limit: 'account',
+	description:
+		'Moderate a gated contribution (`pending → approved | rejected`). Gated on moderation authority over the governing root (admin / root owner), not the contribution — so the author cannot self-approve. Approval flips `moderation → approved` + `visibility → public`; rejection sets `moderation → rejected`. 404 on an unviewable target, 403 for a viewable target whose caller is not a root manager.',
+} satisfies RequestResponseActionSpec;
+
 /**
  * All cell-layer action specs — composed by app registries. Bundles the
- * six generic verbs (this module), the three `cell_grant_*` specs, the
+ * seven generic verbs (this module), the three `cell_grant_*` specs, the
  * three `cell_field_*` specs, the four `cell_item_*` specs, and the
  * `cell_audit_list` spec so codegen + UI clients see a single cell
  * namespace.
@@ -511,6 +606,7 @@ export const all_cell_action_specs = [
 	cell_delete_action_spec,
 	cell_list_action_spec,
 	cell_clone_action_spec,
+	cell_moderate_action_spec,
 	...all_cell_grant_action_specs,
 	...all_cell_field_action_specs,
 	...all_cell_item_action_specs,

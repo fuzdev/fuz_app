@@ -152,7 +152,7 @@ on both the Rust `spine_stub` and the TS spines (the
 `BackendWebsocketTransport.request_connection` path)), `sse.cross.test.ts` (the real-streaming-`fetch`
 `describe_cross_process_sse_tests` suite — live audit-log SSE: connect,
 data frame, account-wide close-on-revoke, session-scoped close-on-revoke),
-`cell.cross.test.ts` (three suites:
+`cell.cross.test.ts` (the cell parity suites:
 `describe_cell_crud_cross_tests` — the CRUD lifecycle + authz matrix — and
 `describe_cell_relations_cross_tests` — grant / field / item / clone / audit,
 incl. the editor-grant `cell_visibility_manage_only` 403, the **D8 relation-read
@@ -161,11 +161,15 @@ children in the `cell_get` bundle + forward lists — no-existence-leak-via-edge
 and **clone D8** (a cloner who can't view a child silently drops it; an admin
 read of the clone confirms, and the `cell_clone` audit row records no skipped
 count) — each response parsed against its Zod output schema — and
-`describe_cell_gated_create_cross_tests` — the `CellCreateAuthorize` parity proof
-(gated `kind` denied to a non-participant → `cell_not_found` 404, ungated open,
-`participant` admitted, admin bypass), gated on `capabilities.cell_gated_create`
-(cross-only, the test policy is a spine-binary fixture)), and
-`account_lifecycle.cross.test.ts`
+`describe_cell_gated_create_cross_tests` + `describe_cell_moderate_cross_tests` —
+the parent-aware `CellCreateAuthorize` (directory model) + `cell_moderate` parity
+proofs (a non-admin `space` root → 403 `cell_create_forbidden`; a contribution
+gated by the root's `data.policy[kind]`; `moderation` set per the verdict
+(`pending`+private vs `approved`); **404** on a hidden parent vs **403** on a
+visible one; and the `cell_moderate` transition — admin approves → public,
+the author self-approve → 403, a non-viewer → 404, reject → private), gated on
+`capabilities.cell_gated_create` (cross-only, the test policy is a spine-binary
+fixture)), and `account_lifecycle.cross.test.ts`
 (`describe_account_lifecycle_cross_tests` — soft-delete → undelete round-trip,
 keeper-confirmed purge, the `cannot_delete_keeper` guard, fail-closed
 (a soft-deleted account's session + bearer no longer authenticate),

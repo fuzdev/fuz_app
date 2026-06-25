@@ -98,10 +98,13 @@ export const build_full_spine_rpc_actions = (
 			session_options: spine_session_options,
 			daemon_token_state: options.daemon_token_state,
 		}),
-		// Mount the `cell_gated_create` test policy (twin of the Rust stub's
-		// `TestCellGatedCreateAuthorize`) so the cross-backend authorizer-parity
-		// suite has a known gate. It only gates `kind: 'gated'`; every other kind
-		// stays open, so the other cell suites are unaffected.
+		// Mount the directory-model `cell_gated_create` test policy (twin of the
+		// Rust stub's `TestCellGatedCreateAuthorize`) so the cross-backend
+		// authorizer-parity suite has a known gate: `kind: 'space'` roots are
+		// admin-only, contributions are gated by the root's `data.policy`, and
+		// plain parentless creates stay open (the other cell suites are
+		// unaffected). The handler hands the governing root's `data` to the
+		// (pure) authorizer.
 		...create_all_cell_actions(
 			{...deps, authorize_create: test_cell_gated_create_authorize},
 			{roles: spine_roles},

@@ -55,8 +55,11 @@
 		"deleted_at",
 		"id",
 		"kind",
+		"moderation",
+		"parent_id",
 		"path",
 		"refs",
+		"root_id",
 		"updated_at",
 		"updated_by",
 		"visibility"

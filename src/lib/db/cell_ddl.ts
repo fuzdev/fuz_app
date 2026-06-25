@@ -77,6 +77,15 @@ END $$`;
  * `CellCreateAuthorize`) and is **write-once**: set at INSERT and carried on
  * no update path, so a cell's kind is fixed at birth. Content stays
  * duck-typed in `data`; `kind` is a capability tag, not a content-type.
+ *
+ * `parent_id` / `root_id` are the **directory tree** (containment): `parent_id`
+ * is the immediate container (nullable self-FK; `NULL` = a root), `root_id` is
+ * the governing root denormalized for flat-subtree queries (`root_id =
+ * parent.root_id ?? parent.id`, so a root has `NULL`). Both are set once at
+ * create and immutable in v1 (carried on no update path). `moderation`
+ * (nullable text — `pending` / `approved` / `rejected`; `NULL` = unmoderated)
+ * is the approval-lifecycle marker, peer to `visibility` (a control field with
+ * a non-author writer — see `auth/cell_actions.ts`), never inside `data`.
  */
 export const CELL_SCHEMA = `
 CREATE TABLE IF NOT EXISTS cell (
@@ -86,6 +95,9 @@ CREATE TABLE IF NOT EXISTS cell (
 	visibility cell_visibility NOT NULL DEFAULT 'private',
 	path TEXT,
 	refs TEXT[],
+	parent_id UUID REFERENCES cell(id) ON DELETE SET NULL,
+	root_id UUID REFERENCES cell(id) ON DELETE SET NULL,
+	moderation TEXT,
 	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 	updated_at TIMESTAMPTZ,
 	deleted_at TIMESTAMPTZ,
@@ -105,6 +117,10 @@ CREATE TABLE IF NOT EXISTS cell (
  * - `idx_cell_data`: shape-driven queries (`data @> ...`).
  * - `idx_cell_refs`: cells-by-fact discovery (cross-cell reference graph).
  * - `idx_cell_created_by`: "cells this actor created" queries.
+ * - `idx_cell_root`: flat-subtree feed/scope queries by governing root
+ *   (`cell.root_id = ?`). Active-only.
+ * - `idx_cell_moderation_pending`: the moderation queue — pending
+ *   contributions per governing root. Partial on `moderation = 'pending'`.
  *
  * Parent↔child membership and named relations live in sibling tables;
  * see `CELL_ITEM_INDEXES` / `CELL_FIELD_INDEXES` below.
@@ -123,6 +139,10 @@ export const CELL_INDEXES: Array<string> = [
 		WHERE refs IS NOT NULL AND deleted_at IS NULL`,
 	`CREATE INDEX IF NOT EXISTS idx_cell_created_by ON cell(created_by)
 		WHERE deleted_at IS NULL`,
+	`CREATE INDEX IF NOT EXISTS idx_cell_root ON cell(root_id)
+		WHERE deleted_at IS NULL`,
+	`CREATE INDEX IF NOT EXISTS idx_cell_moderation_pending ON cell(root_id)
+		WHERE moderation = 'pending'`,
 ];
 
 /**

@@ -18,9 +18,11 @@
 import {describe, test, assert} from 'vitest';
 
 import {
+	cell_create_action_spec,
 	cell_update_action_spec,
 	cell_delete_action_spec,
 	cell_clone_action_spec,
+	cell_moderate_action_spec,
 	ERROR_CELL_NOT_FOUND,
 } from '$lib/auth/cell_action_specs.ts';
 import {
@@ -135,6 +137,29 @@ describe_db('cell audit', (get_db) => {
 
 			// cell_clone
 			assert.ok((await call(app, cell_clone_action_spec, {source_id: parent}, h)).ok);
+
+			// cell_moderate — create a contribution under `parent` (the owner owns
+			// `parent`, so it manages the governing root), then moderate it. No
+			// authorizer is mounted in-process, so the contribution is born
+			// unmoderated; the verb still flips the marker + emits its event, which
+			// is what the completeness check counts.
+			const contribution = await call(
+				app,
+				cell_create_action_spec,
+				{kind: 'post', data: {}, parent_id: parent},
+				h,
+			);
+			assert.ok(contribution.ok, JSON.stringify(contribution));
+			assert.ok(
+				(
+					await call(
+						app,
+						cell_moderate_action_spec,
+						{cell_id: contribution.result.cell.id, moderation: 'approved'},
+						h,
+					)
+				).ok,
+			);
 
 			// cell_delete
 			assert.ok((await call(app, cell_delete_action_spec, {cell_id: child_b}, h)).ok);

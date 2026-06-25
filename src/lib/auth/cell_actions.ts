@@ -62,6 +62,7 @@ import {
 	cell_delete_action_spec,
 	cell_list_action_spec,
 	cell_clone_action_spec,
+	cell_moderate_action_spec,
 	ERROR_CELL_NOT_FOUND,
 	ERROR_CELL_PATH_ADMIN_ONLY,
 	ERROR_CELL_PATH_TAKEN,
@@ -69,10 +70,15 @@ import {
 	ERROR_CELL_GET_REQUIRES_ID_OR_PATH,
 	ERROR_CELL_KIND_IN_DATA,
 	ERROR_CELL_KIND_EMPTY,
+	ERROR_CELL_CREATE_FORBIDDEN,
+	ERROR_CELL_MODERATE_FORBIDDEN,
+	ERROR_CELL_NOT_A_CONTRIBUTION,
 	ERROR_CELL_LIST_CREATED_BY_REQUIRES_AUTH,
 	ERROR_CELL_LIST_SHARED_WITH_REQUIRES_AUTH,
 	CELL_LIST_LIMIT_DEFAULT,
 	CELL_RELATIONS_BUNDLE_LIMIT,
+	type CellModerateInput,
+	type CellModerateOutput,
 	type CellCreateInput,
 	type CellCreateOutput,
 	type CellGetInput,
@@ -94,6 +100,7 @@ import {
 	query_cell_get_by_path,
 	query_cell_update,
 	query_cell_delete,
+	query_cell_set_moderation,
 	query_cell_list,
 	query_cell_load_many,
 	type CellRow,
@@ -114,35 +121,58 @@ import {to_grant_json} from './cell_grant_actions.ts';
 import {to_field_json} from './cell_field_actions.ts';
 import {to_item_json} from './cell_item_actions.ts';
 import type {GrantJson} from './cell_grant_action_specs.ts';
-import type {CellAuditMetadata, CellCloneAuditMetadata} from './cell_audit_metadata.ts';
+import type {
+	CellAuditMetadata,
+	CellCloneAuditMetadata,
+	CellModerateAuditMetadata,
+} from './cell_audit_metadata.ts';
 import type {CellData} from './cell_data_schema.ts';
 
 /**
  * Input to a `CellCreateAuthorize` callback — the TS twin of the Rust
- * `CellCreateAuthorizeInput`.
+ * `CellCreateAuthorizeInput`. **Parent-aware**: it carries the directory
+ * context (`parent_id` / the handler-resolved `root_id`) so the authorizer can
+ * resolve the governing root's policy.
  */
 export interface CellCreateAuthorizeInput {
 	/** The cell's `kind` (the top-level `cell.kind` value); `null` for a typeless cell. */
 	kind: string | null;
 	/** The cell `data` (kind-free — a `kind` key is rejected upstream). For richer M3-era policies (e.g. content pre-screen). */
 	data: CellData;
+	/** The immediate container the create targets. `null` = a root creation; otherwise a contribution under that parent. */
+	parent_id: Uuid | null;
+	/** The governing root of the directory subtree, resolved by the handler from the parent (`parent.root_id ?? parent.id`). `null` for a root creation. */
+	root_id: Uuid | null;
+	/** The governing root's `data` — the handler reads it in-tx (when an authorizer is mounted) and hands it over, so a directory-aware authorizer resolves `root.data.policy[kind]` **without a DB read of its own** (pure predicate; reading in-tx avoids the single-connection PGlite deadlock a separate handle would hit). `null` for a root creation, or when no authorizer is mounted. */
+	root_data: CellData | null;
 	/** Target scope — designed-in for M2 space-scoping; **always `null` in v1** (cells carry no scope column). */
 	scope_id: Uuid | null;
 }
 
 /**
- * Opt-in creation authorizer — the TS twin of the Rust `CellCreateAuthorize`
- * trait. Answers "may *this actor* create *this kind* of cell?". Runs in
- * `cell_create` after `validate_data`, before the insert; returning `false`
- * surfaces as the existing `cell_not_found` 404 (IDOR mask), so a denied
- * caller can't distinguish a gated kind from a missing resource. Omitted =
- * today's open create (all consumers untouched). Async-capable (DB / policy
- * calls) — the create handler is already async with `auth` in hand.
+ * An authorizer's decision for a `cell_create` — the TS twin of the Rust
+ * `Verdict`. Folds the moderation outcome into the authority decision (one
+ * policy resolution, not two): `{allow: false}` denies (the handler surfaces a
+ * 403 `forbidden` for a viewable parent / a root creation), `{allow: true,
+ * moderation_required}` admits — `true` → born `pending` + private, `false` →
+ * born `approved` at the author's visibility.
+ */
+export type CellCreateVerdict = {allow: false} | {allow: true; moderation_required: boolean};
+
+/**
+ * Opt-in, parent-aware creation authorizer — the TS twin of the Rust
+ * `CellCreateAuthorize` trait. Gates both roots (`parent_id = null`) and
+ * contributions; answers "may *this actor* create *this kind* here?" and
+ * returns a `CellCreateVerdict`. Runs in `cell_create` after `validate_data`
+ * and after the handler resolves `root_id` from the parent (an unviewable
+ * parent already 404-masks before this runs). Omitted = today's open create
+ * (all consumers untouched). Async-capable (DB / policy calls) — a DB-backed
+ * impl closes over its own `db` (the create handler stays unaware).
  */
 export type CellCreateAuthorize = (
 	auth: RequestActorContext,
 	input: CellCreateAuthorizeInput,
-) => boolean | Promise<boolean>;
+) => CellCreateVerdict | Promise<CellCreateVerdict>;
 
 /**
  * Dependencies for `create_cell_actions`.
@@ -202,6 +232,9 @@ export const to_cell_json = (row: CellRow): CellJson => ({
 	kind: row.kind,
 	visibility: row.visibility,
 	refs: row.refs,
+	parent_id: row.parent_id,
+	root_id: row.root_id,
+	moderation: row.moderation,
 	created_by: row.created_by,
 	updated_by: row.updated_by,
 	created_at: typeof row.created_at === 'string' ? row.created_at : row.created_at.toISOString(),
@@ -288,17 +321,73 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// known kinds with malformed payloads surface as invalid_params.
 		const validated_data = validate_data_or_throw(input.data);
 		const kind = input.kind ?? null;
-		// Creation authorizer (opt-in): may this actor create this kind? Runs
-		// after shape validation, before the insert. Deny → 404 IDOR mask (the
-		// established cell-layer deny shape — a gated kind is indistinguishable
-		// from a missing resource). Receives the **raw** `input.data` (not the
-		// `validate_data`-normalized value) to match the Rust twin, so a
-		// consumer with a transforming validator can't diverge TS↔Rust.
-		if (
-			authorize_create &&
-			!(await authorize_create(auth, {kind, data: input.data, scope_id: null}))
-		) {
-			throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+		// Directory tree: resolve the governing `root_id` from the parent (and
+		// the root's `data` for the authorizer's policy read). Runs whether or
+		// not an authorizer is mounted — `root_id` is written regardless, and an
+		// unviewable parent 404-masks the attempt (the same IDOR mask the read
+		// path uses; never reveals a hidden container). A root creation
+		// (`parent_id` null/absent) has `root_id = null`. `root_data` is read
+		// **in-tx** (only when an authorizer is mounted), reusing the parent row
+		// when the parent *is* the root, else one read by `root_id` — so the
+		// authorizer stays pure + the read rides the handler's connection (no
+		// separate-handle deadlock on the single-connection PGlite).
+		const parent_id = input.parent_id ?? null;
+		let root_id: Uuid | null = null;
+		let root_data: CellData | null = null;
+		if (parent_id !== null) {
+			const parent = await query_cell_get(ctx, parent_id);
+			if (!parent) throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+			const parent_grants = await query_cell_grant_list_for_cell(ctx, parent.id);
+			if (!can_view_cell(auth, parent, parent_grants)) {
+				throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+			}
+			root_id = parent.root_id ?? parent.id;
+			if (authorize_create) {
+				root_data =
+					root_id === parent.id
+						? parent.data
+						: ((await query_cell_get(ctx, root_id))?.data ?? null);
+			}
+		}
+		// Parent-aware creation authorizer (opt-in). Runs after shape validation
+		// and after the parent-resolve (a hidden parent already 404-masked).
+		// `{allow: false}` for a *viewable* parent / a root creation is a 403
+		// `forbidden` (not the 404 mask); an `{allow: true}` verdict folds the
+		// moderation outcome. Receives the **raw** `input.data` (not the
+		// `validate_data`-normalized value) to match the Rust twin, so a consumer
+		// with a transforming validator can't diverge TS↔Rust. `scope_id` is
+		// `null` in v1. Without an authorizer, create is open: `moderation` stays
+		// null and the author's visibility holds.
+		let moderation: string | null = null;
+		let visibility = input.visibility;
+		if (authorize_create) {
+			const verdict = await authorize_create(auth, {
+				kind,
+				data: input.data,
+				parent_id,
+				root_id,
+				root_data,
+				scope_id: null,
+			});
+			if (!verdict.allow) {
+				throw jsonrpc_errors.forbidden('cell creation is not permitted here', {
+					reason: ERROR_CELL_CREATE_FORBIDDEN,
+				});
+			}
+			// Moderation is a *contribution* concept — only stamp it for a create
+			// with a parent. A root / unparented create stays `moderation = null`
+			// at the author's visibility even under a mounted authorizer (there is
+			// no container to be moderated under).
+			if (parent_id !== null) {
+				if (verdict.moderation_required) {
+					// Born pending: stays private until `cell_moderate` approves it.
+					moderation = 'pending';
+					visibility = 'private';
+				} else {
+					// Born approved + live immediately at the author's visibility.
+					moderation = 'approved';
+				}
+			}
 		}
 		let row: CellRow;
 		try {
@@ -310,8 +399,11 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				// schema-validated runtime shape.
 				data: validated_data as unknown as Json,
 				kind,
-				visibility: input.visibility,
+				visibility,
 				path: input.path ?? null,
+				parent_id,
+				root_id,
+				moderation,
 				created_by: auth.actor.id,
 			});
 		} catch (err) {
@@ -480,6 +572,58 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		}
 		emit_cell_audit(ctx, 'cell_delete', existing, deps, auth);
 		return {ok: true, deleted: true};
+	};
+
+	const moderate_handler = async (
+		input: CellModerateInput,
+		ctx: ActionActorContext,
+	): Promise<CellModerateOutput> => {
+		const auth = ctx.auth;
+		const existing = await query_cell_get(ctx, input.cell_id);
+		// 404 covers miss + unviewable so a pending (private) contribution
+		// doesn't leak existence to a non-viewer.
+		if (!existing) throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+		const grants = await query_cell_grant_list_for_cell(ctx, existing.id);
+		if (!can_view_cell(auth, existing, grants)) {
+			throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+		}
+		// Only a contribution (with a governing root) is moderatable.
+		if (existing.root_id === null) {
+			throw jsonrpc_errors.invalid_params(
+				'cell is not a contribution (no governing root to moderate under)',
+				{reason: ERROR_CELL_NOT_A_CONTRIBUTION},
+			);
+		}
+		// Authority is over the governing ROOT (admin / root owner), not the
+		// contribution — the author manages the contribution and could otherwise
+		// self-approve. A viewable-but-unauthorized caller (incl. the author) → 403.
+		const root = await query_cell_get(ctx, existing.root_id);
+		if (!root) throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+		if (!can_manage_cell(auth, root)) {
+			throw jsonrpc_errors.forbidden(
+				'cell_moderate requires moderation authority over the governing root',
+				{reason: ERROR_CELL_MODERATE_FORBIDDEN},
+			);
+		}
+		const approved = input.moderation === 'approved';
+		const updated = await query_cell_set_moderation(ctx, input.cell_id, input.moderation, {
+			set_visibility_public: approved,
+			updated_by: auth.actor.id,
+		});
+		// Raced with a deleter between the authz check and the UPDATE.
+		if (!updated) throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+		deps.audit.emit(ctx, {
+			event_type: 'cell_moderate',
+			actor_id: auth.actor.id,
+			account_id: auth.account.id,
+			ip: ctx.client_ip,
+			metadata: {
+				cell_id: updated.id,
+				root_id: existing.root_id,
+				moderation: input.moderation,
+			} satisfies CellModerateAuditMetadata,
+		});
+		return {cell: to_cell_json(updated)};
 	};
 
 	/**
@@ -709,6 +853,8 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			ref: input.ref,
 			created_by: input.created_by,
 			path_prefix: input.path_prefix,
+			root_id: input.root_id,
+			moderation: input.moderation,
 			viewer_actor_id: caller_actor_id,
 			viewer_is_admin: auth ? has_role(auth, ROLE_ADMIN) : false,
 			caller_actor_id,
@@ -746,5 +892,6 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		rpc_action(cell_delete_action_spec, delete_handler),
 		rpc_action(cell_list_action_spec, list_handler),
 		rpc_action(cell_clone_action_spec, clone_handler),
+		rpc_action(cell_moderate_action_spec, moderate_handler),
 	];
 };

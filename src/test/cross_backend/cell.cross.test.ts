@@ -22,7 +22,10 @@ import {
 } from '$lib/testing/cross_backend/setup.ts';
 import {describe_cell_crud_cross_tests} from '$lib/testing/cross_backend/cell_crud.ts';
 import {describe_cell_relations_cross_tests} from '$lib/testing/cross_backend/cell_relations.ts';
-import {describe_cell_gated_create_cross_tests} from '$lib/testing/cross_backend/cell_gated_create.ts';
+import {
+	describe_cell_gated_create_cross_tests,
+	describe_cell_moderate_cross_tests,
+} from '$lib/testing/cross_backend/cell_gated_create.ts';
 
 import './cross_test_types.ts';
 
@@ -34,3 +37,4 @@ const {rpc_path} = handle.config;
 describe_cell_crud_cross_tests({setup_test, capabilities, rpc_path});
 describe_cell_relations_cross_tests({setup_test, capabilities, rpc_path});
 describe_cell_gated_create_cross_tests({setup_test, capabilities, rpc_path});
+describe_cell_moderate_cross_tests({setup_test, capabilities, rpc_path});

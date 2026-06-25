@@ -19,7 +19,11 @@
 
 import type {z} from 'zod';
 
-import {CellAuditMetadata, CellCloneAuditMetadata} from './cell_audit_metadata.ts';
+import {
+	CellAuditMetadata,
+	CellCloneAuditMetadata,
+	CellModerateAuditMetadata,
+} from './cell_audit_metadata.ts';
 import {
 	CellGrantCreateAuditMetadata,
 	CellGrantRevokeAuditMetadata,
@@ -37,7 +41,7 @@ import {
 /**
  * Cell-layer `event_type → metadata schema` map for `extra_events`.
  *
- * Covers the six generic cell verbs' mutation events plus the grant /
+ * Covers the seven generic cell verbs' mutation events plus the grant /
  * field / item relation events. Read-only verbs (`cell_get`, `cell_list`,
  * `cell_*_list`, `cell_audit_list`) emit nothing and are absent here.
  */
@@ -46,6 +50,7 @@ export const cell_audit_events: Readonly<Record<string, z.ZodType>> = {
 	cell_update: CellAuditMetadata,
 	cell_delete: CellAuditMetadata,
 	cell_clone: CellCloneAuditMetadata,
+	cell_moderate: CellModerateAuditMetadata,
 	cell_grant_create: CellGrantCreateAuditMetadata,
 	cell_grant_revoke: CellGrantRevokeAuditMetadata,
 	cell_field_set: CellFieldSetAuditMetadata,

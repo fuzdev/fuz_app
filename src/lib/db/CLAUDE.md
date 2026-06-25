@@ -53,19 +53,29 @@ The wire schemas + RPC handlers + authz predicates for this layer live in
   `('private', 'public')`) — a top-level access-control column, peer to
   `cell_grant`, not a `data` field. `cell.kind text` (nullable) is the
   write-once capability/identity axis — likewise a top-level column, not a
-  `data` field (`idx_cell_kind` partial-active). Nullable `created_by` /
-  `updated_by` FKs to `actor` (NULL = system origin). GIN on `data` / `refs`;
-  global partial-unique on `path`.
+  `data` field (`idx_cell_kind` partial-active). `cell.parent_id` / `root_id`
+  (nullable self-FKs to `cell.id`) are the **directory tree** — immediate
+  container + governing root (`root_id = parent.root_id ?? parent.id`, null for a
+  root), immutable in v1 (`idx_cell_root` partial-active for subtree feeds).
+  `cell.moderation text` (nullable — `pending` / `approved` / `rejected`) is the
+  approval-lifecycle marker, peer to `visibility` (partial `idx_cell_moderation_pending`
+  on `root_id WHERE moderation = 'pending'` for the mod queue), set by the create
+  authorizer's verdict + the `cell_moderate` verb, never in `data`. Nullable
+  `created_by` / `updated_by` FKs to `actor` (NULL = system origin). GIN on `data`
+  / `refs`; global partial-unique on `path`.
 - **`cell_history_ddl.ts`** — dormant `cell_history` table
   (`CELL_HISTORY_MIGRATION_NS`, namespace `fuz_cell_history`), FK → `cell.id`.
   Ships present-but-unwritten; no snapshot lifecycle yet.
 - **`cell_queries.ts`** — `query_cell_create / get / get_by_path / update /
-delete`, `_list_by_kind / _list_by_creator`, the
+delete / set_moderation`, `_list_by_kind / _list_by_creator`, the
   generic `query_cell_list` (filter + SQL-side visibility predicate mirroring
   `can_view_cell`; the `kind` filter narrows by the `cell.kind` column, the
-  `ref` filter by `cell.refs`), and
+  `ref` filter by `cell.refs`, plus `root_id` / `moderation` filters for the
+  per-root feed + mod queue), and
   `query_cell_load_many` (bulk id load, no visibility filter — feeds the
-  strict relation-read filter). `cell.refs` derived from
+  strict relation-read filter). `query_cell_set_moderation` is the dedicated
+  `cell_moderate` write (`moderation` is absent from `CellUpdatePatch`, so an
+  author can't self-approve via `cell_update`). `cell.refs` derived from
   `data` via `extract_refs` on create/update. `CellRow.grant_count` is a
   derived projection (correlated subquery on `idx_cell_grant_cell`).
 - **`cell_grant_queries.ts`** — resource-side ACL: `query_cell_grant_create`

@@ -50,6 +50,9 @@ export interface CellRow {
 	visibility: CellVisibility;
 	path: string | null;
 	refs: Array<FactHash> | null;
+	parent_id: Uuid | null;
+	root_id: Uuid | null;
+	moderation: string | null;
 	created_at: Date;
 	updated_at: Date | null;
 	deleted_at: Date | null;
@@ -76,12 +79,19 @@ const grant_count_projection = (cell_alias: string): string =>
  * Input for `query_cell_create`. `refs` is derived from `data`. `kind` is
  * the write-once capability axis (`cell.kind` column) — set here at INSERT
  * and absent from `CellUpdatePatch`, so it can never change post-create.
+ * `parent_id` / `root_id` / `moderation` are the directory-tree + lifecycle
+ * columns the handler derives (parent containment, governing root, the
+ * create-authorizer verdict) — likewise write-once / control-gated, never on
+ * `CellUpdatePatch`.
  */
 export interface CellCreateQueryInput {
 	data: Json;
 	kind?: string | null;
 	visibility?: CellVisibility;
 	path?: string | null;
+	parent_id?: Uuid | null;
+	root_id?: Uuid | null;
+	moderation?: string | null;
 	created_by?: Uuid | null;
 }
 
@@ -125,8 +135,8 @@ export const query_cell_create = async (
 	const refs = derive_refs(input.data);
 	const row = await deps.db.query_one<CellRow>(
 		`INSERT INTO cell
-		   (data, kind, visibility, path, refs, created_by)
-		 VALUES ($1::jsonb, $2, COALESCE($3::cell_visibility, 'private'::cell_visibility), $4, $5::text[], $6)
+		   (data, kind, visibility, path, refs, parent_id, root_id, moderation, created_by)
+		 VALUES ($1::jsonb, $2, COALESCE($3::cell_visibility, 'private'::cell_visibility), $4, $5::text[], $6, $7, $8, $9)
 		 RETURNING *, ${grant_count_projection('cell')}`,
 		[
 			JSON.stringify(input.data),
@@ -134,6 +144,9 @@ export const query_cell_create = async (
 			input.visibility ?? null,
 			input.path ?? null,
 			refs,
+			input.parent_id ?? null,
+			input.root_id ?? null,
+			input.moderation ?? null,
 			input.created_by ?? null,
 		],
 	);
@@ -286,6 +299,43 @@ export const query_cell_delete = async (
 };
 
 /**
+ * Transition a contribution's `moderation` marker (the `cell_moderate` verb's
+ * write). On `set_visibility_public` (an approval) it also flips `visibility`
+ * to `'public'` so the approved contribution goes live; a rejection leaves
+ * visibility untouched (stays private). `updated_at` / `updated_by` are stamped.
+ *
+ * `moderation` is deliberately **not** writable through `query_cell_update`
+ * (it's absent from `CellUpdatePatch`) — gating the transition on a dedicated
+ * query (with the manage-tier authority check in the handler) is what stops an
+ * author self-approving their own pending cell.
+ *
+ * @param deps - query deps
+ * @param id - cell id
+ * @param moderation - the terminal marker to write (`'approved'` | `'rejected'`)
+ * @param options - `set_visibility_public` flips visibility on approval; `updated_by` records the moderator
+ * @returns the updated row, or `null` when no active row matched (raced delete)
+ * @mutates `cell` - sets `moderation` (+ maybe `visibility`) on one row
+ */
+export const query_cell_set_moderation = async (
+	deps: QueryDeps,
+	id: Uuid,
+	moderation: string,
+	options: {set_visibility_public: boolean; updated_by?: Uuid | null},
+): Promise<CellRow | null> => {
+	const row = await deps.db.query_one<CellRow>(
+		`UPDATE cell SET
+		   moderation = $2,
+		   visibility = CASE WHEN $3::bool THEN 'public'::cell_visibility ELSE visibility END,
+		   updated_by = $4,
+		   updated_at = NOW()
+		 WHERE id = $1 AND deleted_at IS NULL
+		 RETURNING *, ${grant_count_projection('cell')}`,
+		[id, moderation, options.set_visibility_public, options.updated_by ?? null],
+	);
+	return row ?? null;
+};
+
+/**
  * List active cells with the given `kind`, newest first. Uses the
  * `idx_cell_kind` index (`cell.kind = ?`).
  *
@@ -411,7 +461,7 @@ export const query_cell_list = async (
 	// supplied wildcards (`%`, `_`, `\`) match literally — Postgres 11+ has
 	// the function and pglite/PG 16 supports it.
 	//
-	// Two SQL shapes share the same 14-param positional layout:
+	// Two SQL shapes share the same 16-param positional layout:
 	//
 	// - `shared_with_caller_only: false` — cell-driven scan with the
 	//   visibility predicate (admin / public / owner / grant-admits).
@@ -438,6 +488,8 @@ export const query_cell_list = async (
 		role_grant_roles,
 		role_grant_scope_ids,
 		params.visibility ?? null,
+		params.root_id ?? null,
+		params.moderation ?? null,
 	]);
 };
 
@@ -484,6 +536,8 @@ const build_general_sql = (order_column: string, order_direction: string): strin
 	   AND ($4::uuid IS NULL OR c.created_by = $4)
 	   AND ($5::text IS NULL OR starts_with(c.path, $5))
 	   AND ($10::uuid[] IS NULL OR c.id = ANY($10))
+	   AND ($15::uuid IS NULL OR c.root_id = $15)
+	   AND ($16::text IS NULL OR c.moderation = $16::text)
 	   AND (
 	     $6::bool
 	     OR c.visibility = 'public'
@@ -522,6 +576,8 @@ const build_shared_with_sql = (order_column: string, order_direction: string): s
 	   AND ($4::uuid IS NULL OR c.created_by = $4)
 	   AND ($5::text IS NULL OR starts_with(c.path, $5))
 	   AND ($10::uuid[] IS NULL OR c.id = ANY($10))
+	   AND ($15::uuid IS NULL OR c.root_id = $15)
+	   AND ($16::text IS NULL OR c.moderation = $16::text)
 	   AND $7::uuid IS NOT NULL
 	   AND c.created_by IS DISTINCT FROM $7
 	   AND c.id IN (
@@ -557,6 +613,19 @@ export interface CellListParams {
 	 * literal matching.
 	 */
 	path_prefix?: string;
+	/** Scope to a directory subtree by governing root (`cell.root_id = ?`, uses `idx_cell_root`). */
+	root_id?: Uuid;
+	/**
+	 * Filter by moderation lifecycle marker (`'pending'` drives the mod queue via
+	 * `idx_cell_moderation_pending`).
+	 *
+	 * Note: the visibility predicate still applies, so a `'pending'` (private)
+	 * queue surfaces only to viewers it admits — admin / owner / grant. A
+	 * non-admin container manager won't see pending children here until a
+	 * manager-scoped visibility branch is added, so for now the queue is an admin
+	 * surface (`cell_moderate` of a known id still works regardless).
+	 */
+	moderation?: string;
 	/**
 	 * Batch-fetch by id. The visibility predicate still runs, so callers
 	 * passing ids they can't view simply get fewer rows back. Order of
