@@ -49,6 +49,7 @@ import {
 	create_testing_action_manifest_action,
 	create_testing_actions,
 } from './testing_reset_actions.ts';
+import {test_cell_gated_create_authorize} from './test_cell_gated_create_authorize.ts';
 import {spine_roles, spine_session_options} from './default_spine_surface.ts';
 import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
 
@@ -97,7 +98,14 @@ export const build_full_spine_rpc_actions = (
 			session_options: spine_session_options,
 			daemon_token_state: options.daemon_token_state,
 		}),
-		...create_all_cell_actions(deps, {roles: spine_roles}),
+		// Mount the `cell_gated_create` test policy (twin of the Rust stub's
+		// `TestCellGatedCreateAuthorize`) so the cross-backend authorizer-parity
+		// suite has a known gate. It only gates `kind: 'gated'`; every other kind
+		// stays open, so the other cell suites are unaffected.
+		...create_all_cell_actions(
+			{...deps, authorize_create: test_cell_gated_create_authorize},
+			{roles: spine_roles},
+		),
 		...create_actor_lookup_actions(deps),
 		...create_actor_search_actions(deps),
 		// `peer/ping` is mounted on the HTTP RPC endpoint too (not just WS) so an

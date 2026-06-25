@@ -28,7 +28,12 @@ import '../assert_dev_env.ts';
  * - `path` write by a non-admin → 403 (`cell_path_admin_only`), on both create
  *   and update (even by the owner);
  * - `cell_get` with neither `id` nor `path` → `invalid_params`;
- * - null-auth `cell_list` with `created_by` → `invalid_params`.
+ * - null-auth `cell_list` with `created_by` → `invalid_params`;
+ * - a denied caller (non-editor update / non-admin path create) carrying a
+ *   `kind` inside `data` still gets the authz error (404 / 403), never the
+ *   kind error — authz runs before the input-shape checks, on both spines;
+ * - an empty-string `kind` is rejected on create (`cell_kind_empty`) and is
+ *   accepted as a list filter that matches nothing.
  *
  * The visibility-manage-tier 403 (`cell_visibility_manage_only`) needs a
  * non-owner editor, which only a `cell_grant` can produce, so it lives in
@@ -75,7 +80,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 						t,
 						rpc_path,
 						'cell_create',
-						{data: {kind: 'note', label: 'hi'}},
+						{kind: 'note', data: {label: 'hi'}},
 						owner_headers,
 					),
 					CellCreateOutput,
@@ -105,7 +110,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 						t,
 						rpc_path,
 						'cell_update',
-						{cell_id, data: {kind: 'note', label: 'hi2'}, visibility: 'public'},
+						{cell_id, data: {label: 'hi2'}, visibility: 'public'},
 						owner_headers,
 					),
 					CellUpdateOutput,
@@ -159,7 +164,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 						t,
 						rpc_path,
 						'cell_create',
-						{data: {kind: 'note', cover: ref_c, nested: {attachments: [ref_b, ref_a, ref_b]}}},
+						{kind: 'note', data: {cover: ref_c, nested: {attachments: [ref_b, ref_a, ref_b]}}},
 						owner_headers,
 					),
 					CellCreateOutput,
@@ -199,7 +204,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 					authed,
 					rpc_path,
 					'cell_create',
-					{data: {kind: 'note'}, visibility: 'private'},
+					{kind: 'note', data: {}, visibility: 'private'},
 					owner_headers,
 				),
 				CellCreateOutput,
@@ -209,7 +214,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 					authed,
 					rpc_path,
 					'cell_create',
-					{data: {kind: 'note'}, visibility: 'public'},
+					{kind: 'note', data: {}, visibility: 'public'},
 					owner_headers,
 				),
 				CellCreateOutput,
@@ -246,7 +251,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 						t,
 						rpc_path,
 						'cell_create',
-						{data: {kind: 'note'}},
+						{kind: 'note', data: {}},
 						owner.create_session_headers(),
 					),
 					CellCreateOutput,
@@ -260,7 +265,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 					t,
 					rpc_path,
 					'cell_update',
-					{cell_id: priv.id, data: {kind: 'note', label: 'x'}},
+					{cell_id: priv.id, data: {label: 'x'}},
 					other_headers,
 				);
 				assert.ok(!edit.ok, 'non-owner edited a private cell');
@@ -290,7 +295,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 						t,
 						rpc_path,
 						'cell_create',
-						{data: {kind: 'note'}},
+						{kind: 'note', data: {}},
 						owner.create_session_headers(),
 					),
 					CellCreateOutput,
@@ -320,7 +325,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 					t,
 					rpc_path,
 					'cell_create',
-					{data: {kind: 'note'}, path: 'parity/dup'},
+					{kind: 'note', data: {}, path: 'parity/dup'},
 					admin_headers,
 				),
 				CellCreateOutput,
@@ -329,7 +334,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 				t,
 				rpc_path,
 				'cell_create',
-				{data: {kind: 'note'}, path: 'parity/dup'},
+				{kind: 'note', data: {}, path: 'parity/dup'},
 				admin_headers,
 			);
 			assert.ok(!dup.ok, 'duplicate path was accepted');
@@ -349,7 +354,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 					t,
 					rpc_path,
 					'cell_create',
-					{data: {kind: 'note'}, path: 'parity/forbidden'},
+					{kind: 'note', data: {}, path: 'parity/forbidden'},
 					owner_headers,
 				);
 				assert.ok(!create_with_path.ok, 'non-admin set a path on create');
@@ -357,7 +362,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 
 				// Even owning the cell, a non-admin cannot write `path` on update.
 				const owned = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_create', {data: {kind: 'note'}}, owner_headers),
+					await cross_rpc_call(t, rpc_path, 'cell_create', {kind: 'note', data: {}}, owner_headers),
 					CellCreateOutput,
 				).cell;
 				const update_path = await cross_rpc_call(
@@ -401,6 +406,96 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 				);
 				assert.ok(!bad.ok, 'anon created_by filter accepted');
 				assert.strictEqual(error_reason(bad), 'cell_list_created_by_requires_auth');
+			},
+		);
+
+		test_if(
+			capabilities.cell_crud,
+			'authz before input-shape: a non-editor update with kind-in-data → 404, not the kind error',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({username: 'cell_order_owner'});
+				const other = await fixture.create_account({username: 'cell_order_other'});
+				const t = fixture.fresh_transport();
+				const priv = expect_output(
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_create',
+						{kind: 'note', data: {}},
+						owner.create_session_headers(),
+					),
+					CellCreateOutput,
+				).cell;
+				// `can_edit` (404 IDOR mask) must fire before `reject_kind_in_data`
+				// on both spines — a denied caller can't tell a malformed payload
+				// from a missing cell.
+				const edit = await cross_rpc_call(
+					t,
+					rpc_path,
+					'cell_update',
+					{cell_id: priv.id, data: {kind: 'post'}},
+					other.create_session_headers(),
+				);
+				assert.ok(!edit.ok, 'non-editor reached the kind check');
+				assert.strictEqual(error_reason(edit), 'cell_not_found');
+			},
+		);
+
+		test_if(
+			capabilities.cell_crud,
+			'authz before input-shape: a non-admin create with path + kind-in-data → 403, not the kind error',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({username: 'cell_order_path'});
+				const t = fixture.fresh_transport();
+				// The path-admin gate (403) fires before `reject_kind_in_data`.
+				const bad = await cross_rpc_call(
+					t,
+					rpc_path,
+					'cell_create',
+					{data: {kind: 'note'}, path: 'parity/order'},
+					owner.create_session_headers(),
+				);
+				assert.ok(!bad.ok, 'non-admin path write was not refused first');
+				assert.strictEqual(error_reason(bad), 'cell_path_admin_only');
+			},
+		);
+
+		test_if(
+			capabilities.cell_crud,
+			'empty kind: rejected on create (cell_kind_empty); accepted as a filter that matches nothing',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({username: 'cell_kind_empty'});
+				const t = fixture.fresh_transport();
+				const owner_headers = owner.create_session_headers();
+
+				const empty = await cross_rpc_call(
+					t,
+					rpc_path,
+					'cell_create',
+					{kind: '', data: {}},
+					owner_headers,
+				);
+				assert.ok(!empty.ok, 'an empty kind was stored');
+				assert.strictEqual(error_reason(empty), 'cell_kind_empty');
+
+				// The list filter accepts '' on both spines (TS dropped the
+				// min-length Rust never had) and matches nothing — no cell carries
+				// an empty kind.
+				const note = expect_output(
+					await cross_rpc_call(t, rpc_path, 'cell_create', {kind: 'note', data: {}}, owner_headers),
+					CellCreateOutput,
+				).cell;
+				const listed = expect_output(
+					await cross_rpc_call(t, rpc_path, 'cell_list', {kind: ''}, owner_headers),
+					CellListOutput,
+				);
+				assert.ok(
+					!listed.cells.some((c) => c.id === note.id),
+					'empty-kind filter matched a non-empty-kind cell',
+				);
 			},
 		);
 	});

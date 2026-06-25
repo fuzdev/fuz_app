@@ -85,6 +85,10 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	// the HTTP RPC endpoint (the no-transport case). The TS spine config opts in;
 	// a generic consumer enables it once it wires that mount.
 	peer_request: false,
+	// Off by default — the `cell_gated_create` test policy is a fuz_app test
+	// fixture, mounted only on the spine binaries (`ts_spine_*`), not generic
+	// consumers.
+	cell_gated_create: false,
 });
 
 /**
@@ -111,6 +115,9 @@ export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 	// Server-initiated requests landed Rust-first canonical — the Rust spine
 	// drives the `peer/ping` round-trip, so the family opts into the suite.
 	peer_request: true,
+	// Off by default — the `testing_spine_stub` preset opts in (it mounts the
+	// `TestCellGatedCreateAuthorize` policy); a generic Rust consumer doesn't.
+	cell_gated_create: false,
 });
 
 /**

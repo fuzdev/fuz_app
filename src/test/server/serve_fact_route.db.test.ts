@@ -75,7 +75,7 @@ describe_db('serve_fact_route', (get_db) => {
 
 	test('malformed hash param → 400', async () => {
 		const app = await create_cell_test_app(get_db);
-		const cell = await create_cell(app, {data: {kind: 'image'}, visibility: 'public'});
+		const cell = await create_cell(app, {kind: 'image', data: {}, visibility: 'public'});
 		const res = await get_cell_fact(app, cell.id, 'not-a-blake3-hash');
 		assert.strictEqual(res.status, 400);
 		const body = (await res.json()) as {error?: string};
@@ -106,7 +106,8 @@ describe_db('serve_fact_route', (get_db) => {
 		// get 404, never "the fact exists elsewhere".
 		const hash = await put_embedded(encode('unreferenced bytes'), 'text/plain');
 		const cell = await create_cell(app, {
-			data: {kind: 'note', text: 'no refs'},
+			kind: 'note',
+			data: {text: 'no refs'},
 			visibility: 'public',
 		});
 
@@ -120,7 +121,8 @@ describe_db('serve_fact_route', (get_db) => {
 		const bytes = encode('public cover bytes');
 		const hash = await put_embedded(bytes, 'text/plain');
 		const cell = await create_cell(app, {
-			data: {kind: 'image', cover: hash},
+			kind: 'image',
+			data: {cover: hash},
 			visibility: 'public',
 			headers: owner.create_session_headers(),
 		});
@@ -143,7 +145,8 @@ describe_db('serve_fact_route', (get_db) => {
 		// neutralize.
 		const hash = await put_embedded(encode('<script>alert(1)</script>'), 'text/html');
 		const cell = await create_cell(app, {
-			data: {kind: 'image', cover: hash},
+			kind: 'image',
+			data: {cover: hash},
 			visibility: 'public',
 		});
 
@@ -162,7 +165,8 @@ describe_db('serve_fact_route', (get_db) => {
 		const bytes = encode('secret cover bytes');
 		const hash = await put_embedded(bytes, 'application/octet-stream');
 		const cell = await create_cell(app, {
-			data: {kind: 'image', cover: hash}, // private (default visibility)
+			kind: 'image',
+			data: {cover: hash}, // private (default visibility)
 			headers: owner.create_session_headers(),
 		});
 
@@ -189,7 +193,7 @@ describe_db('serve_fact_route', (get_db) => {
 		const hash = await put_embedded(bytes, 'text/plain');
 		// Reference it from a public cell so the only thing gating the bare-hash
 		// read is the admin auth, not reachability.
-		await create_cell(app, {data: {kind: 'image', cover: hash}, visibility: 'public'});
+		await create_cell(app, {kind: 'image', data: {cover: hash}, visibility: 'public'});
 
 		// Anonymous → 401 (auth required) at the pre-validation guard.
 		const anon = await get_bare_fact(app, hash);
@@ -229,12 +233,14 @@ describe_db('serve_fact_route', (get_db) => {
 
 		// A references it from a PRIVATE cell (A's stated intent: private).
 		const a_cell = await create_cell(app, {
-			data: {kind: 'doc', cover: hash}, // private (default)
+			kind: 'doc',
+			data: {cover: hash}, // private (default)
 			headers: a.create_session_headers(),
 		});
 		// B references identical bytes from a PUBLIC cell (B's published copy).
 		const b_cell = await create_cell(app, {
-			data: {kind: 'image', cover: hash},
+			kind: 'image',
+			data: {cover: hash},
 			visibility: 'public',
 			headers: b.create_session_headers(),
 		});
@@ -280,7 +286,8 @@ describe_db('serve_fact_route', (get_db) => {
 		const bytes = encode('control private bytes');
 		const hash = await put_embedded(bytes, 'text/plain');
 		const cell = await create_cell(app, {
-			data: {kind: 'image', cover: hash}, // private (default)
+			kind: 'image',
+			data: {cover: hash}, // private (default)
 			headers: owner.create_session_headers(),
 		});
 
@@ -299,7 +306,8 @@ describe_db('serve_fact_route', (get_db) => {
 		const bytes = encode('extra-actor private bytes');
 		const hash = await put_embedded(bytes, 'text/plain');
 		const cell = await create_cell(app, {
-			data: {kind: 'image', cover: hash}, // private (default)
+			kind: 'image',
+			data: {cover: hash}, // private (default)
 			headers: owner.create_session_headers(),
 		});
 
@@ -326,7 +334,8 @@ describe_db('serve_fact_route', (get_db) => {
 		const hash = await put_embedded(bytes, 'text/plain');
 		// Create the private cell while the actor is still active (so it owns it).
 		const cell = await create_cell(app, {
-			data: {kind: 'image', cover: hash}, // private (default)
+			kind: 'image',
+			data: {cover: hash}, // private (default)
 			headers: ghost.create_session_headers(),
 		});
 

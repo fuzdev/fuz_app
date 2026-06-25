@@ -91,7 +91,7 @@ const create_cell = async (
 	t: FetchTransport,
 	rpc_path: string,
 	h: Record<string, string>,
-	params: Record<string, unknown>,
+	params: {kind?: string; data?: Record<string, unknown>; visibility?: string},
 ): Promise<string> =>
 	expect_output(await cross_rpc_call(t, rpc_path, 'cell_create', params, h), CellCreateOutput).cell
 		.id;
@@ -186,7 +186,7 @@ export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOp
 				const editor_h = editor.create_session_headers();
 
 				const cell = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_create', {data: {kind: 'note'}}, owner_h),
+					await cross_rpc_call(t, rpc_path, 'cell_create', {kind: 'note', data: {}}, owner_h),
 					CellCreateOutput,
 				).cell;
 
@@ -195,7 +195,7 @@ export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOp
 					t,
 					rpc_path,
 					'cell_update',
-					{cell_id: cell.id, data: {kind: 'note', label: 'x'}},
+					{cell_id: cell.id, data: {label: 'x'}},
 					editor_h,
 				);
 				assert.ok(!pre.ok, 'non-grantee edited a private cell');
@@ -226,7 +226,7 @@ export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOp
 						t,
 						rpc_path,
 						'cell_update',
-						{cell_id: cell.id, data: {kind: 'note', label: 'by editor'}},
+						{cell_id: cell.id, data: {label: 'by editor'}},
 						editor_h,
 					),
 					CellUpdateOutput,
@@ -264,7 +264,7 @@ export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOp
 					t,
 					rpc_path,
 					'cell_update',
-					{cell_id: cell.id, data: {kind: 'note', label: 'y'}},
+					{cell_id: cell.id, data: {label: 'y'}},
 					editor_h,
 				);
 				assert.ok(!post.ok, 'revoked editor still edited');
@@ -284,7 +284,7 @@ export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOp
 				const editor_h = editor.create_session_headers();
 
 				const cell = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_create', {data: {kind: 'note'}}, owner_h),
+					await cross_rpc_call(t, rpc_path, 'cell_create', {kind: 'note', data: {}}, owner_h),
 					CellCreateOutput,
 				).cell;
 				expect_output(
@@ -308,7 +308,7 @@ export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOp
 						t,
 						rpc_path,
 						'cell_update',
-						{cell_id: cell.id, data: {kind: 'note', label: 'ok'}},
+						{cell_id: cell.id, data: {label: 'ok'}},
 						editor_h,
 					),
 					CellUpdateOutput,
@@ -335,11 +335,11 @@ export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOp
 				const h = owner.create_session_headers();
 
 				const source = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_create', {data: {kind: 'note'}}, h),
+					await cross_rpc_call(t, rpc_path, 'cell_create', {kind: 'note', data: {}}, h),
 					CellCreateOutput,
 				).cell;
 				const target = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_create', {data: {kind: 'note'}}, h),
+					await cross_rpc_call(t, rpc_path, 'cell_create', {kind: 'note', data: {}}, h),
 					CellCreateOutput,
 				).cell;
 
@@ -411,7 +411,7 @@ export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOp
 
 				const make = async (): Promise<string> =>
 					expect_output(
-						await cross_rpc_call(t, rpc_path, 'cell_create', {data: {kind: 'note'}}, h),
+						await cross_rpc_call(t, rpc_path, 'cell_create', {kind: 'note', data: {}}, h),
 						CellCreateOutput,
 					).cell.id;
 				const parent = await make();
@@ -518,7 +518,7 @@ export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOp
 							t,
 							rpc_path,
 							'cell_create',
-							{data: {kind: 'note', ...(label === undefined ? {} : {label})}},
+							{kind: 'note', data: {...(label === undefined ? {} : {label})}},
 							h,
 						),
 						CellCreateOutput,
@@ -614,7 +614,7 @@ export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOp
 				const viewer_h = viewer.create_session_headers();
 
 				const cell = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_create', {data: {kind: 'note'}}, owner_h),
+					await cross_rpc_call(t, rpc_path, 'cell_create', {kind: 'note', data: {}}, owner_h),
 					CellCreateOutput,
 				).cell;
 				// A mutation so the timeline has at least the create + update events.
@@ -623,7 +623,7 @@ export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOp
 						t,
 						rpc_path,
 						'cell_update',
-						{cell_id: cell.id, data: {kind: 'note', label: 'v2'}},
+						{cell_id: cell.id, data: {label: 'v2'}},
 						owner_h,
 					),
 					CellUpdateOutput,
@@ -684,14 +684,16 @@ export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOp
 				// items and fields. The private child is owned by `owner`, so only
 				// `owner` (and admin) can view it.
 				const parent = await create_cell(t, rpc_path, owner_h, {
-					data: {kind: 'collection'},
+					kind: 'collection',
+					data: {},
 					visibility: 'public',
 				});
 				const pub_child = await create_cell(t, rpc_path, owner_h, {
-					data: {kind: 'note'},
+					kind: 'note',
+					data: {},
 					visibility: 'public',
 				});
-				const priv_child = await create_cell(t, rpc_path, owner_h, {data: {kind: 'note'}});
+				const priv_child = await create_cell(t, rpc_path, owner_h, {kind: 'note', data: {}});
 				await wire_children(t, rpc_path, owner_h, parent, pub_child, priv_child);
 
 				// Anonymous: only the public child surfaces in the bundle …
@@ -745,9 +747,9 @@ export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOp
 				const viewer_h = viewer.create_session_headers();
 
 				// Private parent; one child the viewer will be granted, one they won't.
-				const parent = await create_cell(t, rpc_path, owner_h, {data: {kind: 'collection'}});
-				const shared_child = await create_cell(t, rpc_path, owner_h, {data: {kind: 'note'}});
-				const priv_child = await create_cell(t, rpc_path, owner_h, {data: {kind: 'note'}});
+				const parent = await create_cell(t, rpc_path, owner_h, {kind: 'collection', data: {}});
+				const shared_child = await create_cell(t, rpc_path, owner_h, {kind: 'note', data: {}});
+				const priv_child = await create_cell(t, rpc_path, owner_h, {kind: 'note', data: {}});
 				await wire_children(t, rpc_path, owner_h, parent, shared_child, priv_child);
 
 				// Grant the viewer on parent AND shared_child — but not priv_child.
@@ -797,14 +799,16 @@ export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOp
 				const admin_h = fixture.create_session_headers();
 
 				const parent = await create_cell(t, rpc_path, owner_h, {
-					data: {kind: 'collection'},
+					kind: 'collection',
+					data: {},
 					visibility: 'public',
 				});
 				const pub_child = await create_cell(t, rpc_path, owner_h, {
-					data: {kind: 'note'},
+					kind: 'note',
+					data: {},
 					visibility: 'public',
 				});
-				const priv_child = await create_cell(t, rpc_path, owner_h, {data: {kind: 'note'}});
+				const priv_child = await create_cell(t, rpc_path, owner_h, {kind: 'note', data: {}});
 				await wire_children(t, rpc_path, owner_h, parent, pub_child, priv_child);
 
 				// The cloner can read the public parent but not the private child.
@@ -869,14 +873,16 @@ export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOp
 				const admin_h = fixture.create_session_headers();
 
 				const parent = await create_cell(t, rpc_path, owner_h, {
-					data: {kind: 'collection'},
+					kind: 'collection',
+					data: {},
 					visibility: 'public',
 				});
 				const pub_child = await create_cell(t, rpc_path, owner_h, {
-					data: {kind: 'note'},
+					kind: 'note',
+					data: {},
 					visibility: 'public',
 				});
-				const priv_child = await create_cell(t, rpc_path, owner_h, {data: {kind: 'note'}});
+				const priv_child = await create_cell(t, rpc_path, owner_h, {kind: 'note', data: {}});
 				await wire_children(t, rpc_path, owner_h, parent, pub_child, priv_child);
 
 				const clone = expect_output(

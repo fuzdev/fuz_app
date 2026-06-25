@@ -11,17 +11,19 @@
  * `auth/cell_actions.ts`.
  *
  * **Discipline**: a field joins `CellData` only when at least two
- * consumers in different domains read it generically. `kind` (editor
- * dispatch + sub-API registry), `label` (list/index rendering), and
- * `summary` (card subtitle + share-target description) meet this bar.
- * Future candidates require evidence of generic usage — otherwise they
- * stay per-kind.
+ * consumers in different domains read it generically. `label` (list/index
+ * rendering) and `summary` (card subtitle + share-target description) meet
+ * this bar. Future candidates require evidence of generic usage — otherwise
+ * they stay per-kind.
  *
- * **Visibility is not in here.** Access control is a peer of `cell_grant`,
- * not content metadata — `cell.visibility` lives as a top-level column on
- * `CellJson` and `CellRow` (the `CellVisibility` enum is defined in
- * `auth/cell_action_specs.ts` next to the wire fields that use it), and is
- * enforced by `can_view_cell` reading the column directly (no JSON dive).
+ * **`kind` is not in here, and is rejected if present.** Like `visibility`,
+ * a cell's `kind` is a top-level column (`cell.kind` on `CellJson` /
+ * `CellRow`), not content metadata — it is the capability / identity axis a
+ * creation authorizer gates on, write-once at birth. A stray `kind` key
+ * inside `data` is a fail-loud `ERROR_CELL_KIND_IN_DATA` at the create /
+ * update / clone-patch boundary (single source of truth). Access control
+ * (`cell.visibility`) is likewise a peer column, enforced by `can_view_cell`
+ * reading the column directly (no JSON dive).
  *
  * @module
  */
@@ -31,14 +33,10 @@ import {z} from 'zod';
 /**
  * Base cell-data shape. All fields optional; loose mode admits arbitrary
  * additional keys so apps can attach metadata or stage new kinds without
- * touching the wire schema.
- *
- * `kind` is optional because cells without a registered kind are valid —
- * admin-curated content, in-development types, or unknown shapes pass
- * through. Known kinds get richer validation via the per-kind sub-API.
+ * touching the wire schema. `kind` lives on the top-level `cell.kind`
+ * column, not here (see the module doc).
  */
 export const CellData = z.looseObject({
-	kind: z.string().optional(),
 	label: z.string().optional(),
 	summary: z.string().optional(),
 });

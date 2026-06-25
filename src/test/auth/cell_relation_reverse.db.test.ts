@@ -47,18 +47,20 @@ describe_db('cell relation reverse authz', (get_db) => {
 			const owner = await app.create_account({username: 'rv_owner'});
 			const h = owner.create_session_headers();
 			const {id: child} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				visibility: 'public',
 				headers: h,
 			});
 			const {id: pub_parent} = await create_cell(app, {
-				data: {kind: 'collection'},
+				kind: 'collection',
+				data: {},
 				visibility: 'public',
 				items: [child],
 				headers: h,
 			});
 			// A private parent of the same child — must NOT surface to anon.
-			await create_cell(app, {data: {kind: 'collection'}, items: [child], headers: h});
+			await create_cell(app, {kind: 'collection', data: {}, items: [child], headers: h});
 
 			const res = await call(app, cell_item_list_action_spec, {child_id: child});
 			assert.ok(res.ok, JSON.stringify(res));
@@ -74,12 +76,14 @@ describe_db('cell relation reverse authz', (get_db) => {
 			const viewer = await app.create_account({username: 'rv_viewer'});
 			const h = owner.create_session_headers();
 			const {id: child} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				visibility: 'public',
 				headers: h,
 			});
 			const {id: priv_parent} = await create_cell(app, {
-				data: {kind: 'collection'},
+				kind: 'collection',
+				data: {},
 				items: [child],
 				headers: h,
 			});
@@ -102,8 +106,8 @@ describe_db('cell relation reverse authz', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'rv_priv_owner'});
 			const h = owner.create_session_headers();
-			const {id: priv_child} = await create_cell(app, {data: {kind: 'note'}, headers: h});
-			await create_cell(app, {data: {kind: 'collection'}, items: [priv_child], headers: h});
+			const {id: priv_child} = await create_cell(app, {kind: 'note', data: {}, headers: h});
+			await create_cell(app, {kind: 'collection', data: {}, items: [priv_child], headers: h});
 
 			const res = await call(app, cell_item_list_action_spec, {child_id: priv_child});
 			assert.ok(!res.ok);
@@ -118,16 +122,18 @@ describe_db('cell relation reverse authz', (get_db) => {
 			const owner = await app.create_account({username: 'rvf_owner'});
 			const h = owner.create_session_headers();
 			const {id: target} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				visibility: 'public',
 				headers: h,
 			});
 			const {id: pub_source} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				visibility: 'public',
 				headers: h,
 			});
-			const {id: priv_source} = await create_cell(app, {data: {kind: 'note'}, headers: h});
+			const {id: priv_source} = await create_cell(app, {kind: 'note', data: {}, headers: h});
 			for (const source of [pub_source, priv_source]) {
 				const r = await call(
 					app,
@@ -150,8 +156,8 @@ describe_db('cell relation reverse authz', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'rvf_priv_owner'});
 			const h = owner.create_session_headers();
-			const {id: target} = await create_cell(app, {data: {kind: 'note'}, headers: h}); // private
-			const {id: source} = await create_cell(app, {data: {kind: 'note'}, headers: h});
+			const {id: target} = await create_cell(app, {kind: 'note', data: {}, headers: h}); // private
+			const {id: source} = await create_cell(app, {kind: 'note', data: {}, headers: h});
 			assert.ok(
 				(
 					await call(

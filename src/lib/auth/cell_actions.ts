@@ -53,6 +53,7 @@ import {has_role, type RequestActorContext} from './request_context.ts';
 import {ROLE_ADMIN} from './role_schema.ts';
 import type {RouteFactoryDeps} from './deps.ts';
 import type {Json} from '@fuzdev/fuz_util/json.ts';
+import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
 import {
 	cell_create_action_spec,
@@ -66,7 +67,8 @@ import {
 	ERROR_CELL_PATH_TAKEN,
 	ERROR_CELL_VISIBILITY_MANAGE_ONLY,
 	ERROR_CELL_GET_REQUIRES_ID_OR_PATH,
-	ERROR_CELL_CLONE_KIND_MISMATCH,
+	ERROR_CELL_KIND_IN_DATA,
+	ERROR_CELL_KIND_EMPTY,
 	ERROR_CELL_LIST_CREATED_BY_REQUIRES_AUTH,
 	ERROR_CELL_LIST_SHARED_WITH_REQUIRES_AUTH,
 	CELL_LIST_LIMIT_DEFAULT,
@@ -116,6 +118,33 @@ import type {CellAuditMetadata, CellCloneAuditMetadata} from './cell_audit_metad
 import type {CellData} from './cell_data_schema.ts';
 
 /**
+ * Input to a `CellCreateAuthorize` callback — the TS twin of the Rust
+ * `CellCreateAuthorizeInput`.
+ */
+export interface CellCreateAuthorizeInput {
+	/** The cell's `kind` (the top-level `cell.kind` value); `null` for a typeless cell. */
+	kind: string | null;
+	/** The cell `data` (kind-free — a `kind` key is rejected upstream). For richer M3-era policies (e.g. content pre-screen). */
+	data: CellData;
+	/** Target scope — designed-in for M2 space-scoping; **always `null` in v1** (cells carry no scope column). */
+	scope_id: Uuid | null;
+}
+
+/**
+ * Opt-in creation authorizer — the TS twin of the Rust `CellCreateAuthorize`
+ * trait. Answers "may *this actor* create *this kind* of cell?". Runs in
+ * `cell_create` after `validate_data`, before the insert; returning `false`
+ * surfaces as the existing `cell_not_found` 404 (IDOR mask), so a denied
+ * caller can't distinguish a gated kind from a missing resource. Omitted =
+ * today's open create (all consumers untouched). Async-capable (DB / policy
+ * calls) — the create handler is already async with `auth` in hand.
+ */
+export type CellCreateAuthorize = (
+	auth: RequestActorContext,
+	input: CellCreateAuthorizeInput,
+) => boolean | Promise<boolean>;
+
+/**
  * Dependencies for `create_cell_actions`.
  *
  * `validate_data` is the optional sub-API hook for per-kind shape
@@ -125,9 +154,13 @@ import type {CellData} from './cell_data_schema.ts';
  * `invalid_params` JSON-RPC error so per-kind validation failures
  * surface to clients with code -32602 (not -32603 / internal). When
  * omitted, payloads pass through as-is.
+ *
+ * `authorize_create` is the optional creation-gate hook (see
+ * `CellCreateAuthorize`). When omitted, create is open (today's behavior).
  */
 export type CellActionDeps = Pick<RouteFactoryDeps, 'log' | 'audit'> & {
 	validate_data?: (data: CellData) => CellData;
+	authorize_create?: CellCreateAuthorize;
 };
 
 const to_iso_nullable = (value: Date | string | null): string | null => {
@@ -144,10 +177,29 @@ const to_iso_nullable = (value: Date | string | null): string | null => {
 const path_taken_error = (): ReturnType<typeof jsonrpc_errors.conflict> =>
 	jsonrpc_errors.conflict('cell.path is already taken', {reason: ERROR_CELL_PATH_TAKEN});
 
+/**
+ * Reject a `kind` key supplied inside `data`. `kind` is the top-level
+ * `cell.kind` column (write-once capability axis), so a copy inside the
+ * loose `data` blob would be a second source of truth that silently
+ * diverges on update. Fail-loud `invalid_params` at every wire-`data`
+ * boundary (create / update / clone-patch).
+ */
+const reject_kind_in_data = (data: CellData): void => {
+	if (Object.hasOwn(data, 'kind')) {
+		throw jsonrpc_errors.invalid_params(
+			'cell.data must not contain `kind` (it is a top-level field)',
+			{
+				reason: ERROR_CELL_KIND_IN_DATA,
+			},
+		);
+	}
+};
+
 export const to_cell_json = (row: CellRow): CellJson => ({
 	id: row.id,
 	path: row.path as CellPath | null,
 	data: row.data,
+	kind: row.kind,
 	visibility: row.visibility,
 	refs: row.refs,
 	created_by: row.created_by,
@@ -177,7 +229,7 @@ const emit_cell_audit = (
 		ip: ctx.client_ip,
 		metadata: {
 			cell_id: row.id,
-			kind: row.data.kind,
+			kind: row.kind ?? undefined,
 			path: row.path,
 		} satisfies CellAuditMetadata,
 	});
@@ -185,7 +237,7 @@ const emit_cell_audit = (
 
 /** Create the six generic cell RPC actions. */
 export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
-	const {validate_data} = deps;
+	const {validate_data, authorize_create} = deps;
 
 	/**
 	 * Run the optional `validate_data` deps callback and convert any thrown
@@ -221,9 +273,33 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				reason: ERROR_CELL_PATH_ADMIN_ONLY,
 			});
 		}
+		// `kind` is the top-level column — reject a stray copy inside `data`,
+		// and reject an empty `kind` (a tag tags nothing — `null` is the typeless
+		// state), so `kind` stays a clean `null | non-empty-string`. Both run
+		// after the path-admin gate so an unauthorized caller sees that first.
+		reject_kind_in_data(input.data);
+		if (input.kind === '') {
+			throw jsonrpc_errors.invalid_params(
+				'cell.kind must not be empty (use null for a typeless cell)',
+				{reason: ERROR_CELL_KIND_EMPTY},
+			);
+		}
 		// Per-kind shape validation (sub-API). Unknown kinds pass through;
 		// known kinds with malformed payloads surface as invalid_params.
 		const validated_data = validate_data_or_throw(input.data);
+		const kind = input.kind ?? null;
+		// Creation authorizer (opt-in): may this actor create this kind? Runs
+		// after shape validation, before the insert. Deny → 404 IDOR mask (the
+		// established cell-layer deny shape — a gated kind is indistinguishable
+		// from a missing resource). Receives the **raw** `input.data` (not the
+		// `validate_data`-normalized value) to match the Rust twin, so a
+		// consumer with a transforming validator can't diverge TS↔Rust.
+		if (
+			authorize_create &&
+			!(await authorize_create(auth, {kind, data: input.data, scope_id: null}))
+		) {
+			throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+		}
 		let row: CellRow;
 		try {
 			row = await query_cell_create(ctx, {
@@ -233,6 +309,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				// extend `Json`. The DB column is JSONB; the cast trusts the
 				// schema-validated runtime shape.
 				data: validated_data as unknown as Json,
+				kind,
 				visibility: input.visibility,
 				path: input.path ?? null,
 				created_by: auth.actor.id,
@@ -352,7 +429,10 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// Per-kind shape validation when `data` is supplied. Patch-only —
 		// we don't validate the existing row's data on update (validation
 		// is for incoming patches). `data` writes fully replace, so the
-		// patch IS the post-update state.
+		// patch IS the post-update state. A stray `kind` inside it is rejected
+		// (kind is the write-once top-level column — `cell_update` cannot
+		// change it, structurally: it is not even a field on `CellUpdateInput`).
+		if (input.data !== undefined) reject_kind_in_data(input.data);
 		const validated_data =
 			input.data !== undefined ? validate_data_or_throw(input.data) : undefined;
 		let updated: CellRow | null;
@@ -420,26 +500,13 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		auth: RequestActorContext,
 		options: {patch_data?: CellData},
 	): Promise<CellRow> => {
+		// A patch is wire-supplied `data` — reject a stray `kind` (kind is the
+		// immutable top-level column; the clone inherits `source.kind`).
+		if (options.patch_data !== undefined) reject_kind_in_data(options.patch_data);
 		// Both `source.data` and `options.patch_data` are CellData (loose
 		// objects). Patch-last shallow merge composes cleanly.
 		const merged_data: CellData =
 			options.patch_data !== undefined ? {...source.data, ...options.patch_data} : source.data;
-		// Block cross-kind patches before per-kind shape validation: a
-		// kind-A → kind-B patch can pass `validate_data` coincidentally
-		// (loose shapes accept overlapping fields) and produce an
-		// incoherent result. Reject when the merged kind diverges from the
-		// source's kind. Both undefined or equal kinds pass through;
-		// one-sided undefined is permissive (caller patching unrelated
-		// fields on a typeless source).
-		if (
-			source.data.kind !== undefined &&
-			merged_data.kind !== undefined &&
-			source.data.kind !== merged_data.kind
-		) {
-			throw jsonrpc_errors.invalid_params('cell_clone cannot change kind via with_data_patch', {
-				reason: ERROR_CELL_CLONE_KIND_MISMATCH,
-			});
-		}
 		// Per-kind shape validation runs on the merged result (sub-API).
 		// Source rows are validated on their original create; the patch
 		// could violate the kind shape (e.g., remove a required field).
@@ -447,6 +514,9 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		return query_cell_create(ctx, {
 			// Boundary cast (see `create_handler`).
 			data: validated_data as unknown as Json,
+			// Clone inherits the source's kind verbatim — kind is fixed at
+			// birth and a `with_data_patch` can't reach the column.
+			kind: source.kind,
 			visibility: source.visibility,
 			path: null, // admin-only paths cannot auto-clone
 			created_by: auth.actor.id,
@@ -588,7 +658,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// — emit directly rather than threading it through `emit_cell_audit`.
 		// `kind` is read from `source.data` (not the cloned row) so the
 		// audit trail attributes the clone to the source's shape.
-		const source_kind = source.data.kind;
+		const source_kind = source.kind ?? undefined;
 		const cloned_child_count = deep ? cloneable_items.length : 0;
 		deps.audit.emit(ctx, {
 			event_type: 'cell_clone',
@@ -634,7 +704,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		const caller_actor_id = auth?.actor?.id ?? null;
 		const rows = await query_cell_list(ctx, {
 			ids: input.ids,
-			data_kind: input.data_kind,
+			kind: input.kind,
 			visibility: input.visibility,
 			ref: input.ref,
 			created_by: input.created_by,

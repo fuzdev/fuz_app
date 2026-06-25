@@ -4,7 +4,7 @@
  * end (this is what guards the no-hub parameter renumbering in
  * `query_cell_list`):
  *
- * - `data_kind`, `visibility`, `created_by`, `path_prefix`, `ids`, `ref`.
+ * - `kind`, `visibility`, `created_by`, `path_prefix`, `ids`, `ref`.
  * - `order_by` / `order_direction` + `limit` / `offset` paging.
  * - `shared_with: 'me'` (grant-admitted, owner-excluded, `cell_grants`
  *   enrichment) and its null-auth guard.
@@ -41,26 +41,26 @@ const FACT_HASH = `blake3:${'a'.repeat(64)}` as FactHash;
 
 describe_db('cell_actions cell_list', (get_db) => {
 	describe('scalar filters', () => {
-		test('data_kind narrows to the matching kind', async () => {
+		test('kind narrows to the matching kind', async () => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'l_kind'});
 			const h = owner.create_session_headers();
-			await create_cell(app, {data: {kind: 'apple'}, headers: h});
-			await create_cell(app, {data: {kind: 'apple'}, headers: h});
-			await create_cell(app, {data: {kind: 'banana'}, headers: h});
+			await create_cell(app, {kind: 'apple', data: {}, headers: h});
+			await create_cell(app, {kind: 'apple', data: {}, headers: h});
+			await create_cell(app, {kind: 'banana', data: {}, headers: h});
 
-			const res = await call(app, cell_list_action_spec, {data_kind: 'apple'}, h);
+			const res = await call(app, cell_list_action_spec, {kind: 'apple'}, h);
 			assert.ok(res.ok, JSON.stringify(res));
 			assert.strictEqual(res.result.cells.length, 2);
-			assert.ok(res.result.cells.every((c) => c.data.kind === 'apple'));
+			assert.ok(res.result.cells.every((c) => c.kind === 'apple'));
 		});
 
 		test('visibility filter narrows owner results to public', async () => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'l_vis'});
 			const h = owner.create_session_headers();
-			await create_cell(app, {data: {kind: 'note'}, visibility: 'public', headers: h});
-			await create_cell(app, {data: {kind: 'note'}, headers: h}); // private
+			await create_cell(app, {kind: 'note', data: {}, visibility: 'public', headers: h});
+			await create_cell(app, {kind: 'note', data: {}, headers: h}); // private
 
 			const res = await call(app, cell_list_action_spec, {visibility: 'public'}, h);
 			assert.ok(res.ok, JSON.stringify(res));
@@ -73,8 +73,8 @@ describe_db('cell_actions cell_list', (get_db) => {
 			const owner1 = await app.create_account({username: 'l_cb1'});
 			const owner2 = await app.create_account({username: 'l_cb2'});
 			const admin = await app.create_account({username: 'l_cb_admin', roles: [ROLE_ADMIN]});
-			await create_cell(app, {data: {kind: 'note'}, headers: owner1.create_session_headers()});
-			await create_cell(app, {data: {kind: 'note'}, headers: owner2.create_session_headers()});
+			await create_cell(app, {kind: 'note', data: {}, headers: owner1.create_session_headers()});
+			await create_cell(app, {kind: 'note', data: {}, headers: owner2.create_session_headers()});
 
 			const res = await call(
 				app,
@@ -91,9 +91,9 @@ describe_db('cell_actions cell_list', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const admin = await app.create_account({username: 'l_pp_admin', roles: [ROLE_ADMIN]});
 			const h = admin.create_session_headers();
-			await create_cell(app, {data: {kind: 'note'}, path: '/a/1' as CellPath, headers: h});
-			await create_cell(app, {data: {kind: 'note'}, path: '/a/2' as CellPath, headers: h});
-			await create_cell(app, {data: {kind: 'note'}, path: '/b/1' as CellPath, headers: h});
+			await create_cell(app, {kind: 'note', data: {}, path: '/a/1' as CellPath, headers: h});
+			await create_cell(app, {kind: 'note', data: {}, path: '/a/2' as CellPath, headers: h});
+			await create_cell(app, {kind: 'note', data: {}, path: '/b/1' as CellPath, headers: h});
 
 			const res = await call(app, cell_list_action_spec, {path_prefix: '/a' as CellPath}, h);
 			assert.ok(res.ok, JSON.stringify(res));
@@ -105,9 +105,9 @@ describe_db('cell_actions cell_list', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'l_ids'});
 			const h = owner.create_session_headers();
-			const {id: a} = await create_cell(app, {data: {kind: 'note'}, headers: h});
-			const {id: b} = await create_cell(app, {data: {kind: 'note'}, headers: h});
-			await create_cell(app, {data: {kind: 'note'}, headers: h}); // not requested
+			const {id: a} = await create_cell(app, {kind: 'note', data: {}, headers: h});
+			const {id: b} = await create_cell(app, {kind: 'note', data: {}, headers: h});
+			await create_cell(app, {kind: 'note', data: {}, headers: h}); // not requested
 
 			const res = await call(app, cell_list_action_spec, {ids: [a, b]}, h);
 			assert.ok(res.ok, JSON.stringify(res));
@@ -118,8 +118,8 @@ describe_db('cell_actions cell_list', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'l_ref'});
 			const h = owner.create_session_headers();
-			const {id} = await create_cell(app, {data: {kind: 'note', cover: FACT_HASH}, headers: h});
-			await create_cell(app, {data: {kind: 'note'}, headers: h}); // no ref
+			const {id} = await create_cell(app, {kind: 'note', data: {cover: FACT_HASH}, headers: h});
+			await create_cell(app, {kind: 'note', data: {}, headers: h}); // no ref
 
 			const res = await call(app, cell_list_action_spec, {ref: FACT_HASH}, h);
 			assert.ok(res.ok, JSON.stringify(res));
@@ -133,9 +133,9 @@ describe_db('cell_actions cell_list', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'l_order'});
 			const h = owner.create_session_headers();
-			const {id: first} = await create_cell(app, {data: {kind: 'note', label: '1'}, headers: h});
-			const {id: second} = await create_cell(app, {data: {kind: 'note', label: '2'}, headers: h});
-			const {id: third} = await create_cell(app, {data: {kind: 'note', label: '3'}, headers: h});
+			const {id: first} = await create_cell(app, {kind: 'note', data: {label: '1'}, headers: h});
+			const {id: second} = await create_cell(app, {kind: 'note', data: {label: '2'}, headers: h});
+			const {id: third} = await create_cell(app, {kind: 'note', data: {label: '3'}, headers: h});
 
 			const asc = await call(
 				app,
@@ -169,11 +169,12 @@ describe_db('cell_actions cell_list', (get_db) => {
 			const owner = await app.create_account({username: 'sw_owner'});
 			const viewer = await app.create_account({username: 'sw_viewer'});
 			const {id: shared} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 			// A cell the viewer owns — must NOT appear under shared_with: me.
-			await create_cell(app, {data: {kind: 'note'}, headers: viewer.create_session_headers()});
+			await create_cell(app, {kind: 'note', data: {}, headers: viewer.create_session_headers()});
 
 			const g = await call(
 				app,
@@ -205,8 +206,8 @@ describe_db('cell_actions cell_list', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'anon_owner'});
 			const h = owner.create_session_headers();
-			await create_cell(app, {data: {kind: 'note'}, visibility: 'public', headers: h});
-			await create_cell(app, {data: {kind: 'note'}, headers: h}); // private
+			await create_cell(app, {kind: 'note', data: {}, visibility: 'public', headers: h});
+			await create_cell(app, {kind: 'note', data: {}, headers: h}); // private
 
 			const res = await call(app, cell_list_action_spec, {});
 			assert.ok(res.ok, JSON.stringify(res));
@@ -237,14 +238,14 @@ describe_db('cell_actions cell_list', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const admin = await app.create_account({username: 'dup_admin', roles: [ROLE_ADMIN]});
 			const h = admin.create_session_headers();
-			await create_cell(app, {data: {kind: 'note'}, path: '/dup' as CellPath, headers: h});
+			await create_cell(app, {kind: 'note', data: {}, path: '/dup' as CellPath, headers: h});
 
 			// Second create at the same global path violates idx_cell_path_unique
 			// and surfaces as a clean conflict (409).
 			const dup = await call(
 				app,
 				cell_create_action_spec,
-				{data: {kind: 'note'}, path: '/dup' as CellPath},
+				{kind: 'note', data: {}, path: '/dup' as CellPath},
 				h,
 			);
 			assert.ok(!dup.ok);
@@ -257,7 +258,8 @@ describe_db('cell_actions cell_list', (get_db) => {
 			const admin = await app.create_account({username: 'reuse_admin', roles: [ROLE_ADMIN]});
 			const h = admin.create_session_headers();
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				path: '/reuse' as CellPath,
 				headers: h,
 			});
@@ -270,7 +272,7 @@ describe_db('cell_actions cell_list', (get_db) => {
 			const reuse = await call(
 				app,
 				cell_create_action_spec,
-				{data: {kind: 'note'}, path: '/reuse' as CellPath},
+				{kind: 'note', data: {}, path: '/reuse' as CellPath},
 				h,
 			);
 			assert.ok(reuse.ok, JSON.stringify(reuse));

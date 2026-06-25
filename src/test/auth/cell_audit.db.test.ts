@@ -63,20 +63,13 @@ describe_db('cell audit', (get_db) => {
 			const h = owner.create_session_headers();
 
 			// cell_create ×3
-			const {id: parent} = await create_cell(app, {data: {kind: 'collection'}, headers: h});
-			const {id: child_a} = await create_cell(app, {data: {kind: 'note'}, headers: h});
-			const {id: child_b} = await create_cell(app, {data: {kind: 'note'}, headers: h});
+			const {id: parent} = await create_cell(app, {kind: 'collection', data: {}, headers: h});
+			const {id: child_a} = await create_cell(app, {kind: 'note', data: {}, headers: h});
+			const {id: child_b} = await create_cell(app, {kind: 'note', data: {}, headers: h});
 
 			// cell_update
 			assert.ok(
-				(
-					await call(
-						app,
-						cell_update_action_spec,
-						{cell_id: parent, data: {kind: 'collection', label: 'x'}},
-						h,
-					)
-				).ok,
+				(await call(app, cell_update_action_spec, {cell_id: parent, data: {label: 'x'}}, h)).ok,
 			);
 
 			// cell_grant_create + cell_grant_revoke
@@ -159,7 +152,7 @@ describe_db('cell audit', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'au_noop'});
 			const h = owner.create_session_headers();
-			const {id} = await create_cell(app, {data: {kind: 'note'}, headers: h});
+			const {id} = await create_cell(app, {kind: 'note', data: {}, headers: h});
 
 			// Delete a field / item slot that was never set — idempotent ok,
 			// `deleted: false`, and crucially no audit row.
@@ -194,7 +187,8 @@ describe_db('cell audit', (get_db) => {
 			const editor = await app.create_account({username: 'al_editor'});
 			const admin = await app.create_account({username: 'al_admin', roles: [ROLE_ADMIN]});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 
@@ -257,7 +251,8 @@ describe_db('cell audit', (get_db) => {
 			const owner = await app.create_account({username: 'al_pub_owner'});
 			const stranger = await app.create_account({username: 'al_pub_stranger'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				visibility: 'public',
 				headers: owner.create_session_headers(),
 			});

@@ -51,16 +51,19 @@ The wire schemas + RPC handlers + authz predicates for this layer live in
   tables; single-migration `CELL_MIGRATION_NS` (namespace `fuz_cell`).
   `cell.visibility cell_visibility NOT NULL DEFAULT 'private'` (PG ENUM
   `('private', 'public')`) — a top-level access-control column, peer to
-  `cell_grant`, not a `data` field. Nullable `created_by` / `updated_by`
-  FKs to `actor` (NULL = system origin). GIN on `data` / `refs`; global
-  partial-unique on `path`.
+  `cell_grant`, not a `data` field. `cell.kind text` (nullable) is the
+  write-once capability/identity axis — likewise a top-level column, not a
+  `data` field (`idx_cell_kind` partial-active). Nullable `created_by` /
+  `updated_by` FKs to `actor` (NULL = system origin). GIN on `data` / `refs`;
+  global partial-unique on `path`.
 - **`cell_history_ddl.ts`** — dormant `cell_history` table
   (`CELL_HISTORY_MIGRATION_NS`, namespace `fuz_cell_history`), FK → `cell.id`.
   Ships present-but-unwritten; no snapshot lifecycle yet.
 - **`cell_queries.ts`** — `query_cell_create / get / get_by_path / update /
-delete`, `_list_by_data_kind / _list_by_creator`, the
+delete`, `_list_by_kind / _list_by_creator`, the
   generic `query_cell_list` (filter + SQL-side visibility predicate mirroring
-  `can_view_cell`; the `ref` filter narrows by `cell.refs`), and
+  `can_view_cell`; the `kind` filter narrows by the `cell.kind` column, the
+  `ref` filter by `cell.refs`), and
   `query_cell_load_many` (bulk id load, no visibility filter — feeds the
   strict relation-read filter). `cell.refs` derived from
   `data` via `extract_refs` on create/update. `CellRow.grant_count` is a

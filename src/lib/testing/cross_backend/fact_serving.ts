@@ -132,8 +132,8 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 				rpc_path,
 				'cell_create',
 				acting === undefined
-					? {data: {kind: 'doc', cover: hash}, visibility}
-					: {data: {kind: 'doc', cover: hash}, visibility, acting},
+					? {kind: 'doc', data: {cover: hash}, visibility}
+					: {kind: 'doc', data: {cover: hash}, visibility, acting},
 				headers,
 			),
 			CellCreateOutput,

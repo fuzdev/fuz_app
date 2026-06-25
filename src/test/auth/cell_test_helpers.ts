@@ -42,6 +42,7 @@ import {create_role_schema, ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema
 import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
 import {create_audit_log_config} from '$lib/auth/audit_log_schema.ts';
 import {create_all_cell_actions} from '$lib/auth/all_cell_actions.ts';
+import type {CellCreateAuthorize} from '$lib/auth/cell_actions.ts';
 import {cell_audit_events} from '$lib/auth/cell_audit_events.ts';
 import {
 	cell_create_action_spec,
@@ -124,19 +125,34 @@ export const cell_test_facts_dir = mkdtempSync(join(tmpdir(), 'fuz-cell-facts-')
  * per-kind shape validation is sub-API and out of scope for the
  * generic-layer suites.
  */
-export const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
-	...create_rpc_endpoint({
-		path: RPC_PATH,
-		actions: [...create_all_cell_actions(ctx.deps, {roles: cell_test_roles})],
-		log: ctx.deps.log,
-	}),
-	create_serve_cell_fact_route_spec({
-		deps: ctx.deps,
-		facts_dir: cell_test_facts_dir,
-		log: ctx.deps.log,
-	}),
-	create_serve_fact_route_spec({deps: ctx.deps, facts_dir: cell_test_facts_dir, log: ctx.deps.log}),
-];
+export const create_cell_route_specs =
+	(authorize_create?: CellCreateAuthorize) =>
+	(ctx: AppServerContext): Array<RouteSpec> => [
+		...create_rpc_endpoint({
+			path: RPC_PATH,
+			actions: [
+				...create_all_cell_actions({...ctx.deps, authorize_create}, {roles: cell_test_roles}),
+			],
+			log: ctx.deps.log,
+		}),
+		create_serve_cell_fact_route_spec({
+			deps: ctx.deps,
+			facts_dir: cell_test_facts_dir,
+			log: ctx.deps.log,
+		}),
+		create_serve_fact_route_spec({
+			deps: ctx.deps,
+			facts_dir: cell_test_facts_dir,
+			log: ctx.deps.log,
+		}),
+	];
+
+/**
+ * Default cell route specs — open create (no creation authorizer). Pass a
+ * `CellCreateAuthorize` to `create_cell_route_specs` (or the third arg of
+ * `create_cell_test_app`) to gate `cell_create`.
+ */
+export const create_route_specs = create_cell_route_specs();
 
 /**
  * Audit factory registering the cell event types so cell handlers'
@@ -147,11 +163,21 @@ const cell_audit_config = create_audit_log_config({extra_events: cell_audit_even
 const cell_audit_factory: AuditFactory = ({db, log}) =>
 	create_audit_emitter({db, log, audit_log_config: cell_audit_config});
 
-/** Create a cell test app bound to `get_db`, with cell events registered. */
-export const create_cell_test_app = (get_db: () => Db, roles?: Array<string>): Promise<TestApp> =>
+/**
+ * Create a cell test app bound to `get_db`, with cell events registered.
+ * Pass `authorize_create` to mount a `CellCreateAuthorize` creation gate
+ * (default: open create).
+ */
+export const create_cell_test_app = (
+	get_db: () => Db,
+	roles?: Array<string>,
+	authorize_create?: CellCreateAuthorize,
+): Promise<TestApp> =>
 	create_test_app({
 		session_options,
-		create_route_specs,
+		create_route_specs: authorize_create
+			? create_cell_route_specs(authorize_create)
+			: create_route_specs,
 		audit_factory: cell_audit_factory,
 		db: get_db(),
 		roles: roles ?? [],
@@ -193,6 +219,7 @@ export const create_cell = async (
 	test_app: TestApp,
 	params: {
 		data: CellCreateInput['data'];
+		kind?: string;
 		visibility?: CellVisibility;
 		items?: Array<Uuid>;
 		path?: CellPath;
@@ -203,7 +230,7 @@ export const create_cell = async (
 	const res = await call(
 		test_app,
 		cell_create_action_spec,
-		{data: params.data, visibility: params.visibility, path: params.path},
+		{kind: params.kind, data: params.data, visibility: params.visibility, path: params.path},
 		headers,
 	);
 	assert.ok(res.ok, `cell_create failed: ${res.ok ? '' : JSON.stringify(res.error)}`);

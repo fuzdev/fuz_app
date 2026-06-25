@@ -46,6 +46,7 @@ import type {CellVisibility} from '../auth/cell_action_specs.ts';
 export interface CellRow {
 	id: Uuid;
 	data: CellData;
+	kind: string | null;
 	visibility: CellVisibility;
 	path: string | null;
 	refs: Array<FactHash> | null;
@@ -71,9 +72,14 @@ export interface CellRow {
 const grant_count_projection = (cell_alias: string): string =>
 	`(SELECT COUNT(*)::int FROM cell_grant WHERE cell_id = ${cell_alias}.id) AS grant_count`;
 
-/** Input for `query_cell_create`. `refs` is derived from `data`. */
+/**
+ * Input for `query_cell_create`. `refs` is derived from `data`. `kind` is
+ * the write-once capability axis (`cell.kind` column) — set here at INSERT
+ * and absent from `CellUpdatePatch`, so it can never change post-create.
+ */
 export interface CellCreateQueryInput {
 	data: Json;
+	kind?: string | null;
 	visibility?: CellVisibility;
 	path?: string | null;
 	created_by?: Uuid | null;
@@ -119,11 +125,12 @@ export const query_cell_create = async (
 	const refs = derive_refs(input.data);
 	const row = await deps.db.query_one<CellRow>(
 		`INSERT INTO cell
-		   (data, visibility, path, refs, created_by)
-		 VALUES ($1::jsonb, COALESCE($2::cell_visibility, 'private'::cell_visibility), $3, $4::text[], $5)
+		   (data, kind, visibility, path, refs, created_by)
+		 VALUES ($1::jsonb, $2, COALESCE($3::cell_visibility, 'private'::cell_visibility), $4, $5::text[], $6)
 		 RETURNING *, ${grant_count_projection('cell')}`,
 		[
 			JSON.stringify(input.data),
+			input.kind ?? null,
 			input.visibility ?? null,
 			input.path ?? null,
 			refs,
@@ -279,15 +286,15 @@ export const query_cell_delete = async (
 };
 
 /**
- * List cells whose `data.kind` matches the given value, newest first.
- * Uses the `idx_cell_data` GIN index (`data @> ...`).
+ * List active cells with the given `kind`, newest first. Uses the
+ * `idx_cell_kind` index (`cell.kind = ?`).
  *
  * @param deps - query deps
- * @param kind - `data.kind` value to match (e.g. `'collection'`, `'entry'`)
+ * @param kind - `cell.kind` value to match (e.g. `'collection'`, `'entry'`)
  * @param options - pagination
  * @returns matching active rows
  */
-export const query_cell_list_by_data_kind = async (
+export const query_cell_list_by_kind = async (
 	deps: QueryDeps,
 	kind: string,
 	options?: Pick<CellListOptions, 'limit' | 'offset'>,
@@ -295,11 +302,11 @@ export const query_cell_list_by_data_kind = async (
 	deps.db.query<CellRow>(
 		`SELECT *, ${grant_count_projection('cell')}
 		 FROM cell
-		 WHERE data @> $1::jsonb
+		 WHERE kind = $1
 		   AND deleted_at IS NULL
 		 ORDER BY created_at DESC
 		 LIMIT $2 OFFSET $3`,
-		[JSON.stringify({kind}), options?.limit ?? null, options?.offset ?? 0],
+		[kind, options?.limit ?? null, options?.offset ?? 0],
 	);
 
 /**
@@ -418,7 +425,7 @@ export const query_cell_list = async (
 
 	return deps.db.query<CellRow>(sql, [
 		params.include_deleted === true,
-		params.data_kind ?? null,
+		params.kind ?? null,
 		params.ref ?? null,
 		params.created_by ?? null,
 		params.path_prefix ?? null,
@@ -471,7 +478,7 @@ const build_general_sql = (order_column: string, order_direction: string): strin
 	`${CALLER_ROLE_GRANTS_CTE}
 	 SELECT c.*, ${grant_count_projection('c')} FROM cell c
 	 WHERE ($1::bool OR c.deleted_at IS NULL)
-	   AND ($2::text IS NULL OR c.data @> jsonb_build_object('kind', $2::text))
+	   AND ($2::text IS NULL OR c.kind = $2::text)
 	   AND ($14::cell_visibility IS NULL OR c.visibility = $14::cell_visibility)
 	   AND ($3::text IS NULL OR c.refs @> ARRAY[$3]::text[])
 	   AND ($4::uuid IS NULL OR c.created_by = $4)
@@ -509,7 +516,7 @@ const build_shared_with_sql = (order_column: string, order_direction: string): s
 	`${CALLER_ROLE_GRANTS_CTE}
 	 SELECT c.*, ${grant_count_projection('c')} FROM cell c
 	 WHERE ($1::bool OR c.deleted_at IS NULL)
-	   AND ($2::text IS NULL OR c.data @> jsonb_build_object('kind', $2::text))
+	   AND ($2::text IS NULL OR c.kind = $2::text)
 	   AND ($14::cell_visibility IS NULL OR c.visibility = $14::cell_visibility)
 	   AND ($3::text IS NULL OR c.refs @> ARRAY[$3]::text[])
 	   AND ($4::uuid IS NULL OR c.created_by = $4)
@@ -531,8 +538,8 @@ const build_shared_with_sql = (order_column: string, order_direction: string): s
 
 /** Parameters for `query_cell_list`. All filter dimensions are optional. */
 export interface CellListParams {
-	/** Match `data.kind = ?` via `data @> {"kind": ?}` (uses `idx_cell_data`). */
-	data_kind?: string;
+	/** Match `cell.kind = ?` (uses `idx_cell_kind`). */
+	kind?: string;
 	/**
 	 * Match `cell.visibility = ?` directly on the top-level column.
 	 * Additional narrowing on top of the SQL-side auth visibility
@@ -596,7 +603,7 @@ export interface CellListParams {
 	/**
 	 * When `true`, narrow to cells admitting the caller via a
 	 * `cell_grant` row AND that the caller does not own. Authenticated
-	 * only (`viewer_actor_id` must be set). Combine with `data_kind` /
+	 * only (`viewer_actor_id` must be set). Combine with `kind` /
 	 * `path_prefix` etc. to scope further.
 	 */
 	shared_with_caller_only?: boolean;

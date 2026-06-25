@@ -85,17 +85,20 @@ describe_db('cell relation visibility (D8)', (get_db) => {
 		const app = await create_cell_test_app(get_db);
 		const owner = await app.create_account({username: 'rel_owner'});
 		const {id: parent} = await create_cell(app, {
-			data: {kind: 'collection'},
+			kind: 'collection',
+			data: {},
 			visibility: 'public',
 			headers: owner.create_session_headers(),
 		});
 		const {id: pub_child} = await create_cell(app, {
-			data: {kind: 'note', label: 'pub'},
+			kind: 'note',
+			data: {label: 'pub'},
 			visibility: 'public',
 			headers: owner.create_session_headers(),
 		});
 		const {id: priv_child} = await create_cell(app, {
-			data: {kind: 'note', label: 'secret'},
+			kind: 'note',
+			data: {label: 'secret'},
 			headers: owner.create_session_headers(),
 		});
 		await wire_children(app, owner, parent, pub_child, priv_child);
@@ -121,17 +124,20 @@ describe_db('cell relation visibility (D8)', (get_db) => {
 		const app = await create_cell_test_app(get_db);
 		const owner = await app.create_account({username: 'rel_owner_list'});
 		const {id: parent} = await create_cell(app, {
-			data: {kind: 'collection'},
+			kind: 'collection',
+			data: {},
 			visibility: 'public',
 			headers: owner.create_session_headers(),
 		});
 		const {id: pub_child} = await create_cell(app, {
-			data: {kind: 'note'},
+			kind: 'note',
+			data: {},
 			visibility: 'public',
 			headers: owner.create_session_headers(),
 		});
 		const {id: priv_child} = await create_cell(app, {
-			data: {kind: 'note'},
+			kind: 'note',
+			data: {},
 			headers: owner.create_session_headers(),
 		});
 		await wire_children(app, owner, parent, pub_child, priv_child);
@@ -155,17 +161,20 @@ describe_db('cell relation visibility (D8)', (get_db) => {
 		const app = await create_cell_test_app(get_db);
 		const owner = await app.create_account({username: 'rel_owner_self'});
 		const {id: parent} = await create_cell(app, {
-			data: {kind: 'collection'},
+			kind: 'collection',
+			data: {},
 			visibility: 'public',
 			headers: owner.create_session_headers(),
 		});
 		const {id: pub_child} = await create_cell(app, {
-			data: {kind: 'note'},
+			kind: 'note',
+			data: {},
 			visibility: 'public',
 			headers: owner.create_session_headers(),
 		});
 		const {id: priv_child} = await create_cell(app, {
-			data: {kind: 'note'},
+			kind: 'note',
+			data: {},
 			headers: owner.create_session_headers(),
 		});
 		await wire_children(app, owner, parent, pub_child, priv_child);
@@ -181,15 +190,18 @@ describe_db('cell relation visibility (D8)', (get_db) => {
 		const owner = await app.create_account({username: 'rel_owner_grant'});
 		const viewer = await app.create_account({username: 'rel_viewer'});
 		const {id: parent} = await create_cell(app, {
-			data: {kind: 'collection'},
+			kind: 'collection',
+			data: {},
 			headers: owner.create_session_headers(),
 		});
 		const {id: shared_child} = await create_cell(app, {
-			data: {kind: 'note'},
+			kind: 'note',
+			data: {},
 			headers: owner.create_session_headers(),
 		});
 		const {id: priv_child} = await create_cell(app, {
-			data: {kind: 'note'},
+			kind: 'note',
+			data: {},
 			headers: owner.create_session_headers(),
 		});
 		await wire_children(app, owner, parent, shared_child, priv_child);

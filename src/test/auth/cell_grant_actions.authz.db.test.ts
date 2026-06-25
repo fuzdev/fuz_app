@@ -62,7 +62,8 @@ describe_db('cell_grant_actions authz', (get_db) => {
 			const editor = await app.create_account({username: 'g_editor'});
 			const target = await app.create_account({username: 'g_target'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 
@@ -104,7 +105,8 @@ describe_db('cell_grant_actions authz', (get_db) => {
 			const v_target = await app.create_account({username: 'o_viewer'});
 			const e_target = await app.create_account({username: 'o_editor'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 
@@ -138,7 +140,8 @@ describe_db('cell_grant_actions authz', (get_db) => {
 			const admin = await app.create_account({username: 'a_admin', roles: [ROLE_ADMIN]});
 			const target = await app.create_account({username: 'a_target'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 
@@ -161,7 +164,8 @@ describe_db('cell_grant_actions authz', (get_db) => {
 			const owner = await app.create_account({username: 's_owner'});
 			const viewer = await app.create_account({username: 's_viewer'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 			const v = await grant_actor(app, owner, id, 'viewer', viewer.actor.id);
@@ -192,7 +196,8 @@ describe_db('cell_grant_actions authz', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'p_owner'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 			const res = await grant_actor(app, owner, id, 'viewer', owner.actor.id);
@@ -205,7 +210,8 @@ describe_db('cell_grant_actions authz', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'u_owner'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 			const res = await call(
@@ -226,7 +232,8 @@ describe_db('cell_grant_actions authz', (get_db) => {
 			const owner = await app.create_account({username: 'role_owner'});
 			const member = await app.create_account({username: 'role_member', roles: [ROLE_MEMBER]});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 

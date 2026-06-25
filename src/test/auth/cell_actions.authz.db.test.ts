@@ -65,7 +65,8 @@ describe_db('cell_actions authz', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'owner_self'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note', label: 'mine'},
+				kind: 'note',
+				data: {label: 'mine'},
 				headers: owner.create_session_headers(),
 			});
 
@@ -78,7 +79,7 @@ describe_db('cell_actions authz', (get_db) => {
 			const upd = await call(
 				app,
 				cell_update_action_spec,
-				{cell_id: id, data: {kind: 'note', label: 'edited'}},
+				{cell_id: id, data: {label: 'edited'}},
 				owner.create_session_headers(),
 			);
 			assert.ok(upd.ok, JSON.stringify(upd));
@@ -99,7 +100,8 @@ describe_db('cell_actions authz', (get_db) => {
 			const owner = await app.create_account({username: 'owner_priv'});
 			const stranger = await app.create_account({username: 'stranger'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 
@@ -111,7 +113,7 @@ describe_db('cell_actions authz', (get_db) => {
 			const upd = await call(
 				app,
 				cell_update_action_spec,
-				{cell_id: id, data: {kind: 'note', label: 'x'}},
+				{cell_id: id, data: {label: 'x'}},
 				stranger.create_session_headers(),
 			);
 			assert.ok(!upd.ok);
@@ -133,7 +135,8 @@ describe_db('cell_actions authz', (get_db) => {
 			const owner = await app.create_account({username: 'owner_for_admin'});
 			const admin = await app.create_account({username: 'admin_acct', roles: [ROLE_ADMIN]});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 
@@ -145,7 +148,7 @@ describe_db('cell_actions authz', (get_db) => {
 			const upd = await call(
 				app,
 				cell_update_action_spec,
-				{cell_id: id, data: {kind: 'note', label: 'admin-edit'}},
+				{cell_id: id, data: {label: 'admin-edit'}},
 				admin.create_session_headers(),
 			);
 			assert.ok(upd.ok, JSON.stringify(upd));
@@ -165,12 +168,14 @@ describe_db('cell_actions authz', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'owner_pub'});
 			const {id: pub_id} = await create_cell(app, {
-				data: {kind: 'note', label: 'public'},
+				kind: 'note',
+				data: {label: 'public'},
 				visibility: 'public',
 				headers: owner.create_session_headers(),
 			});
 			const {id: priv_id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 
@@ -192,7 +197,8 @@ describe_db('cell_actions authz', (get_db) => {
 			const owner = await app.create_account({username: 'owner_v'});
 			const viewer = await app.create_account({username: 'viewer'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 			const g = await grant_actor(app, owner, id, 'viewer', viewer.actor.id);
@@ -207,7 +213,7 @@ describe_db('cell_actions authz', (get_db) => {
 			const upd = await call(
 				app,
 				cell_update_action_spec,
-				{cell_id: id, data: {kind: 'note', label: 'nope'}},
+				{cell_id: id, data: {label: 'nope'}},
 				viewer.create_session_headers(),
 			);
 			assert.ok(!upd.ok);
@@ -219,7 +225,8 @@ describe_db('cell_actions authz', (get_db) => {
 			const owner = await app.create_account({username: 'owner_e'});
 			const editor = await app.create_account({username: 'editor'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 			const g = await grant_actor(app, owner, id, 'editor', editor.actor.id);
@@ -234,7 +241,7 @@ describe_db('cell_actions authz', (get_db) => {
 			const upd = await call(
 				app,
 				cell_update_action_spec,
-				{cell_id: id, data: {kind: 'note', label: 'editor-edit'}},
+				{cell_id: id, data: {label: 'editor-edit'}},
 				editor.create_session_headers(),
 			);
 			assert.ok(upd.ok, JSON.stringify(upd));
@@ -255,7 +262,8 @@ describe_db('cell_actions authz', (get_db) => {
 			const owner = await app.create_account({username: 'owner_vis'});
 			const editor = await app.create_account({username: 'editor_vis'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 			const g = await grant_actor(app, owner, id, 'editor', editor.actor.id);
@@ -277,7 +285,7 @@ describe_db('cell_actions authz', (get_db) => {
 			const same = await call(
 				app,
 				cell_update_action_spec,
-				{cell_id: id, visibility: 'private', data: {kind: 'note', label: 'edit-no-flip'}},
+				{cell_id: id, visibility: 'private', data: {label: 'edit-no-flip'}},
 				editor.create_session_headers(),
 			);
 			assert.ok(same.ok, JSON.stringify(same));
@@ -288,7 +296,8 @@ describe_db('cell_actions authz', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'owner_flip'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 			const flip = await call(
@@ -310,7 +319,7 @@ describe_db('cell_actions authz', (get_db) => {
 			const res = await call(
 				app,
 				cell_create_action_spec,
-				{data: {kind: 'note'}, path: '/well-known/x' as CellPath},
+				{kind: 'note', data: {}, path: '/well-known/x' as CellPath},
 				owner.create_session_headers(),
 			);
 			assert.ok(!res.ok);
@@ -322,7 +331,8 @@ describe_db('cell_actions authz', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'owner_path_upd'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 			const res = await call(
@@ -340,7 +350,8 @@ describe_db('cell_actions authz', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const admin = await app.create_account({username: 'admin_path', roles: [ROLE_ADMIN]});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				path: '/well-known/admin' as CellPath,
 				headers: admin.create_session_headers(),
 			});
@@ -380,7 +391,8 @@ describe_db('cell_actions authz', (get_db) => {
 			const owner = await app.create_account({username: 'owner_mask_get'});
 			const stranger = await app.create_account({username: 'stranger_mask_get'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 			// Same caller for both probes, so the only variable is the cell's
@@ -407,7 +419,8 @@ describe_db('cell_actions authz', (get_db) => {
 			const stranger = await app.create_account({username: 'stranger_mask_upd'});
 			const viewer = await app.create_account({username: 'viewer_mask_upd'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 			const g = await grant_actor(app, owner, id, 'viewer', viewer.actor.id);
@@ -416,7 +429,7 @@ describe_db('cell_actions authz', (get_db) => {
 			const unviewable = await call(
 				app,
 				cell_update_action_spec,
-				{cell_id: id, data: {kind: 'note', label: 'x'}},
+				{cell_id: id, data: {label: 'x'}},
 				stranger.create_session_headers(),
 			);
 			// A viewer can SEE the cell but not edit it — the edit-deny path must
@@ -425,13 +438,13 @@ describe_db('cell_actions authz', (get_db) => {
 			const view_not_edit = await call(
 				app,
 				cell_update_action_spec,
-				{cell_id: id, data: {kind: 'note', label: 'x'}},
+				{cell_id: id, data: {label: 'x'}},
 				viewer.create_session_headers(),
 			);
 			const missing = await call(
 				app,
 				cell_update_action_spec,
-				{cell_id: NONEXISTENT_ID, data: {kind: 'note', label: 'x'}},
+				{cell_id: NONEXISTENT_ID, data: {label: 'x'}},
 				stranger.create_session_headers(),
 			);
 			assert.strictEqual(unviewable.status, 404);
@@ -444,7 +457,8 @@ describe_db('cell_actions authz', (get_db) => {
 			const owner = await app.create_account({username: 'owner_mask_del'});
 			const stranger = await app.create_account({username: 'stranger_mask_del'});
 			const {id} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 			const unviewable = await call(

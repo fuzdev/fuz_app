@@ -897,8 +897,9 @@ source of truth for wire-shape conformance.
 
 - `testing/cross_backend/capabilities.ts` — `BackendCapabilities` vocabulary
   (the **gating** flags `ws` / `sse` / `cell_crud` / `cell_relations` /
-  `account_lifecycle` / `fact_serving` / `ready` / `account_status` /
-  `oversized_reject_closes_connection` / `peer_request` — each has a `test_if`
+  `cell_gated_create` / `account_lifecycle` / `fact_serving` / `ready` /
+  `account_status` / `oversized_reject_closes_connection` / `peer_request` —
+  each has a `test_if`
   reader; `peer_request` (server-initiated requests — the ActionPeer
   `peer/ping` round-trip) is `true` for both the Rust spine and the TS spine
   (`BackendWebsocketTransport.request_connection`); `ts_default_capabilities`
@@ -914,6 +915,13 @@ source of truth for wire-shape conformance.
   parity suite — both `true` on every backend that live-mounts the full cell
   surface (TS spine binary, in-process app, Rust stub). A backend mounting only
   plain CRUD would declare `cell_crud: true, cell_relations: false`.
+  `cell_gated_create` gates `describe_cell_gated_create_cross_tests` (the
+  cell-creation-authorizer parity proof); unlike `cell_crud`/`cell_relations`
+  it is **cross-only** (`false` in-process) — `true` only on the reference
+  spine binaries that live-mount the `test_cell_gated_create_authorize` policy
+  (the TS spine `full_spine_mount` + the Rust `testing_spine_stub`), since the
+  authorizer adds no method/column/wire shape and so the schema + manifest
+  parity gates are blind to an authorizer divergence.
   `account_lifecycle` gates `describe_account_lifecycle_cross_tests` (the
   `account_delete` / `account_undelete` / `account_purge` parity suite); unlike
   cells those verbs **are** on the declared surface (in `create_admin_actions`,
@@ -1154,7 +1162,7 @@ the stream \_can't* open on a spine without SSE — a self-cleaning tripwire for
 the spine that should grow it, distinct from the consumer-legit capability
 skip the shared suite emits.
 
-### `cross_backend/cell_crud.ts` + `cell_relations.ts` — cell parity suites
+### `cross_backend/cell_crud.ts` + `cell_relations.ts` + `cell_gated_create.ts` — cell parity suites
 
 The cell-layer parity coverage is split across two sibling suites. Cells
 can't ride the generic `describe_rpc_round_trip_tests` (stateful verbs need a
@@ -1189,10 +1197,23 @@ backdoor, cell).
   holder who can `cell_get` still gets the IDOR 404). Only **actor-shaped**
   grants are exercised — role-shaped principals need a closed role registry the
   Rust spine deliberately lacks.
+- **`describe_cell_gated_create_cross_tests`** (gates on
+  `capabilities.cell_gated_create`, **cross-only**) — the cell-creation
+  authorizer (`CellCreateAuthorize`) parity proof. Both spines mount the same
+  `test_cell_gated_create_authorize` policy (gate `kind: 'gated'` behind the
+  `participant` role or admin): a non-participant is denied with the
+  `cell_not_found` 404 IDOR mask, an ungated kind is open, a `participant` is
+  admitted, and admin bypasses. The authorizer adds no method/column/wire
+  shape, so schema + manifest parity are **blind** to a divergence — this is the
+  only gate that catches one. In-process hook coverage is the standalone
+  `auth/cell_create_authorize.db.test.ts` (this cross suite skips in-process,
+  where the default app mounts no authorizer).
 
-Both gate `true` on TS + Rust (cells run on both, no `.skip`). Cross-process
-wiring is `src/test/cross_backend/cell.cross.test.ts` (both suites); the
-in-process legs (plain `gro test`) are `src/test/auth/cell_crud_parity.db.test.ts`
+`cell_crud` / `cell_relations` gate `true` on TS + Rust (cells run on both, no
+`.skip`); `cell_gated_create` is cross-only (the policy is a spine-binary
+fixture). Cross-process wiring is `src/test/cross_backend/cell.cross.test.ts`
+(all three suites); the in-process legs (plain `gro test`) for crud/relations
+are `src/test/auth/cell_crud_parity.db.test.ts`
 
 - `cell_relations_parity.db.test.ts`, sharing the full-surface
   `create_cell_parity_setup` (`cell_parity_helpers.ts`) which mounts every cell

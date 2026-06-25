@@ -54,6 +54,7 @@
 		"data",
 		"deleted_at",
 		"id",
+		"kind",
 		"path",
 		"refs",
 		"updated_at",

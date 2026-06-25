@@ -182,7 +182,9 @@ and mounts their surfaces explicitly.
 **Cells** (`db/cell_*`, `auth/cell_*`, namespace `fuz_cell`) — the universal
 mutable data primitive. A `cell` row carries identity, a `jsonb data` body,
 ownership (`created_by`/`updated_by`), `visibility`, an optional global
-`path`, and auto-extracted `blake3:` fact refs. Cell-to-cell relationships
+`path`, an optional write-once `kind` (the capability/identity axis a
+creation authorizer gates on — a top-level column, not a `data` field), and
+auto-extracted `blake3:` fact refs. Cell-to-cell relationships
 live in two sibling tables — `cell_field` (named) and `cell_item` (ordered) —
 and resource-side ACL in `cell_grant`. Authorization is pure predicates
 (`can_view_cell` / `can_edit_cell` / `can_manage_cell`) with strict

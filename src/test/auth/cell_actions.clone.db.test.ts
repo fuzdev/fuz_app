@@ -5,7 +5,9 @@
  *   item + field edges with the source.
  * - deep clone (depth=1): direct children are cloned as new caller-owned
  *   cells; field edges still shallow-share targets.
- * - `with_data_patch` patch-last merge; cross-kind patch rejected.
+ * - `with_data_patch` patch-last merge; a clone preserves the source's
+ *   `kind`, and a `with_data_patch` carrying a `kind` key is rejected
+ *   (`ERROR_CELL_KIND_IN_DATA` — kind is the immutable top-level column).
  * - 404 IDOR mask when the source is unviewable.
  * - audit `cell_clone` envelope (`source_id` / `new_id` / `deep` /
  *   `item_count`) — no skipped-child count, so the source's hidden-child
@@ -22,7 +24,7 @@ import {describe, test, assert} from 'vitest';
 import {
 	cell_clone_action_spec,
 	cell_get_action_spec,
-	ERROR_CELL_CLONE_KIND_MISMATCH,
+	ERROR_CELL_KIND_IN_DATA,
 	ERROR_CELL_NOT_FOUND,
 } from '$lib/auth/cell_action_specs.ts';
 import {
@@ -90,12 +92,14 @@ describe_db('cell_clone', (get_db) => {
 
 			// Public source so the cloner can view it.
 			const {id: child} = await create_cell(app, {
-				data: {kind: 'note', label: 'shared-child'},
+				kind: 'note',
+				data: {label: 'shared-child'},
 				visibility: 'public',
 				headers: owner.create_session_headers(),
 			});
 			const {id: source} = await create_cell(app, {
-				data: {kind: 'collection', label: 'src'},
+				kind: 'collection',
+				data: {label: 'src'},
 				visibility: 'public',
 				items: [child],
 				headers: owner.create_session_headers(),
@@ -127,7 +131,8 @@ describe_db('cell_clone', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'cl_patch'});
 			const {id: source} = await create_cell(app, {
-				data: {kind: 'note', label: 'orig', summary: 'keep'},
+				kind: 'note',
+				data: {label: 'orig', summary: 'keep'},
 				visibility: 'public',
 				headers: owner.create_session_headers(),
 			});
@@ -140,18 +145,35 @@ describe_db('cell_clone', (get_db) => {
 			assert.ok(res.ok, JSON.stringify(res));
 			assert.strictEqual(res.result.cell.data.label, 'patched');
 			assert.strictEqual(res.result.cell.data.summary, 'keep');
+			// The clone inherits the source's kind verbatim (top-level column).
+			assert.strictEqual(res.result.cell.kind, 'note');
 		});
 	});
 
 	describe('kind + authz guards', () => {
-		test('cross-kind with_data_patch is rejected', async () => {
+		test('clone preserves the source kind; a kind key in with_data_patch is rejected', async () => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'cl_kind'});
 			const {id: source} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				visibility: 'public',
 				headers: owner.create_session_headers(),
 			});
+
+			// A plain clone inherits the source's kind — kind is the immutable
+			// top-level column, fixed at birth.
+			const ok = await call(
+				app,
+				cell_clone_action_spec,
+				{source_id: source},
+				owner.create_session_headers(),
+			);
+			assert.ok(ok.ok, JSON.stringify(ok));
+			assert.strictEqual(ok.result.cell.kind, 'note');
+
+			// A `with_data_patch` can never reach the kind column — a stray `kind`
+			// key inside the patch `data` is rejected fail-loud.
 			const res = await call(
 				app,
 				cell_clone_action_spec,
@@ -160,10 +182,7 @@ describe_db('cell_clone', (get_db) => {
 			);
 			assert.ok(!res.ok);
 			assert.strictEqual(res.status, 400);
-			assert.strictEqual(
-				(res.error.data as {reason?: string}).reason,
-				ERROR_CELL_CLONE_KIND_MISMATCH,
-			);
+			assert.strictEqual((res.error.data as {reason?: string}).reason, ERROR_CELL_KIND_IN_DATA);
 		});
 
 		test('cloning an unviewable source 404s (IDOR mask)', async () => {
@@ -171,7 +190,8 @@ describe_db('cell_clone', (get_db) => {
 			const owner = await app.create_account({username: 'cl_priv_owner'});
 			const stranger = await app.create_account({username: 'cl_stranger'});
 			const {id: source} = await create_cell(app, {
-				data: {kind: 'note'}, // private
+				kind: 'note',
+				data: {}, // private
 				headers: owner.create_session_headers(),
 			});
 			const res = await call(
@@ -191,12 +211,14 @@ describe_db('cell_clone', (get_db) => {
 			const app = await create_cell_test_app(get_db);
 			const owner = await app.create_account({username: 'cl_deep_owner'});
 			const {id: child} = await create_cell(app, {
-				data: {kind: 'note', label: 'kid'},
+				kind: 'note',
+				data: {label: 'kid'},
 				visibility: 'public',
 				headers: owner.create_session_headers(),
 			});
 			const {id: source} = await create_cell(app, {
-				data: {kind: 'collection'},
+				kind: 'collection',
+				data: {},
 				visibility: 'public',
 				items: [child],
 				headers: owner.create_session_headers(),
@@ -235,17 +257,20 @@ describe_db('cell_clone', (get_db) => {
 			const cloner = await app.create_account({username: 'cl_d8_cloner'});
 
 			const {id: parent} = await create_cell(app, {
-				data: {kind: 'collection'},
+				kind: 'collection',
+				data: {},
 				visibility: 'public',
 				headers: owner.create_session_headers(),
 			});
 			const {id: pub_child} = await create_cell(app, {
-				data: {kind: 'note', label: 'pub'},
+				kind: 'note',
+				data: {label: 'pub'},
 				visibility: 'public',
 				headers: owner.create_session_headers(),
 			});
 			const {id: priv_child} = await create_cell(app, {
-				data: {kind: 'note', label: 'secret'}, // private, owned by owner
+				kind: 'note',
+				data: {label: 'secret'}, // private, owned by owner
 				headers: owner.create_session_headers(),
 			});
 			await wire_children(app, owner, parent, pub_child, priv_child);
@@ -288,17 +313,20 @@ describe_db('cell_clone', (get_db) => {
 			const cloner = await app.create_account({username: 'cl_d8_deep_cloner'});
 
 			const {id: parent} = await create_cell(app, {
-				data: {kind: 'collection'},
+				kind: 'collection',
+				data: {},
 				visibility: 'public',
 				headers: owner.create_session_headers(),
 			});
 			const {id: pub_child} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				visibility: 'public',
 				headers: owner.create_session_headers(),
 			});
 			const {id: priv_child} = await create_cell(app, {
-				data: {kind: 'note'},
+				kind: 'note',
+				data: {},
 				headers: owner.create_session_headers(),
 			});
 			await wire_children(app, owner, parent, pub_child, priv_child);

@@ -199,6 +199,20 @@ export interface BackendCapabilities {
 	 * coverage.
 	 */
 	readonly peer_request: boolean;
+	/**
+	 * A test `CellCreateAuthorize` policy is live-mounted on the backend's cell
+	 * layer — creating a `kind: 'gated'` cell requires the `participant` role
+	 * or admin; every other kind (and a typeless cell) is open. Gates
+	 * `describe_cell_gated_create_cross_tests`, the TS↔Rust cell-creation-
+	 * authorizer parity proof. The authorizer adds no method / column / wire
+	 * shape, so schema-snapshot + action-manifest parity are **blind** to an
+	 * authorizer divergence — this behavioral cross case is the only gate that
+	 * catches one. `true` only on the reference spine binaries that mount the
+	 * test policy (the TS spine `full_spine_mount` + the Rust
+	 * `testing_spine_stub`); consumers and the in-process default app don't
+	 * mount it.
+	 */
+	readonly cell_gated_create: boolean;
 }
 
 /**
@@ -222,6 +236,9 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	account_status: true,
 	oversized_reject_closes_connection: true,
 	peer_request: false,
+	// Cross-process-only: the test `CellCreateAuthorize` policy is mounted on the
+	// spine binaries' full mount + the Rust stub, not the in-process default app.
+	cell_gated_create: false,
 });
 
 /**

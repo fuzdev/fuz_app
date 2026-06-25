@@ -70,11 +70,19 @@ END $$`;
  *
  * `path` is the global namespace axis (no tenant/hub scoping) — globally
  * unique on active rows via `idx_cell_path_unique`.
+ *
+ * `kind` is the capability / identity axis — a nullable top-level column
+ * (peer to `visibility` / `path`), **not** a field inside `data`. It is the
+ * discriminator a creation authorizer gates on (see `auth/cell_actions.ts`
+ * `CellCreateAuthorize`) and is **write-once**: set at INSERT and carried on
+ * no update path, so a cell's kind is fixed at birth. Content stays
+ * duck-typed in `data`; `kind` is a capability tag, not a content-type.
  */
 export const CELL_SCHEMA = `
 CREATE TABLE IF NOT EXISTS cell (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 	data JSONB NOT NULL,
+	kind TEXT,
 	visibility cell_visibility NOT NULL DEFAULT 'private',
 	path TEXT,
 	refs TEXT[],
@@ -92,7 +100,9 @@ CREATE TABLE IF NOT EXISTS cell (
  * - `idx_cell_path_unique`: global `path` uniqueness + read-side path
  *   lookup. Partial on path + active so reused paths after soft delete are
  *   allowed.
- * - `idx_cell_data`: shape-driven queries (`data ? 'kind'`, `data @> ...`).
+ * - `idx_cell_kind`: the `cell_list` kind filter (`cell.kind = ?`) and
+ *   kind-scoped scans. Active-only.
+ * - `idx_cell_data`: shape-driven queries (`data @> ...`).
  * - `idx_cell_refs`: cells-by-fact discovery (cross-cell reference graph).
  * - `idx_cell_created_by`: "cells this actor created" queries.
  *
@@ -105,6 +115,8 @@ export const CELL_INDEXES: Array<string> = [
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_cell_path_unique
 		ON cell(path)
 		WHERE path IS NOT NULL AND deleted_at IS NULL`,
+	`CREATE INDEX IF NOT EXISTS idx_cell_kind ON cell(kind)
+		WHERE deleted_at IS NULL`,
 	`CREATE INDEX IF NOT EXISTS idx_cell_data ON cell USING gin(data)
 		WHERE deleted_at IS NULL`,
 	`CREATE INDEX IF NOT EXISTS idx_cell_refs ON cell USING gin(refs)

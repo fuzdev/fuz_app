@@ -60,14 +60,17 @@ export const RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH_ENV = 'FUZ_RUST_SPINE_STUB_EXP
 /**
  * Capabilities for the Rust `testing_spine_stub` — `rust_default_capabilities`
  * plus `sse` (the stub serves `GET /api/admin/audit/stream` over the spine
- * `fuz_realtime::SseRegistry` + audit listener) and `ready` (it live-mounts
- * `/ready` over the env-supplied fixture path). Named (not inline) so every
- * spine preset is greppable, mirroring `ts_spine_capabilities`.
+ * `fuz_realtime::SseRegistry` + audit listener), `ready` (it live-mounts
+ * `/ready` over the env-supplied fixture path), and `cell_gated_create` (it
+ * mounts the `TestCellGatedCreateAuthorize` policy on its cell layer). Named
+ * (not inline) so every spine preset is greppable, mirroring
+ * `ts_spine_capabilities`.
  */
 const rust_spine_stub_capabilities = Object.freeze({
 	...rust_default_capabilities,
 	sse: true,
 	ready: true,
+	cell_gated_create: true,
 });
 
 /** Default listening port — slots beside zzz's 1175/1176; matches the binary's `DEFAULT_PORT`. */

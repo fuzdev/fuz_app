@@ -76,7 +76,7 @@ export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteO
 				// Owner creates a private cell (default visibility) and grants
 				// view access to anyone holding CELL_EDITOR_ROLE.
 				const created = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_create', {data: {kind: 'note'}}, owner_h),
+					await cross_rpc_call(t, rpc_path, 'cell_create', {kind: 'note', data: {}}, owner_h),
 					CellCreateOutput,
 				);
 				const cell_id = created.cell.id;
@@ -127,7 +127,7 @@ export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteO
 				const owner = await fixture.create_account({username: 'cell_unknown_role_owner'});
 				const owner_h = owner.create_session_headers();
 				const created = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_create', {data: {kind: 'note'}}, owner_h),
+					await cross_rpc_call(t, rpc_path, 'cell_create', {kind: 'note', data: {}}, owner_h),
 					CellCreateOutput,
 				);
 				const denied = await cross_rpc_call(
@@ -158,7 +158,7 @@ export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteO
 				assert.ok(holder, `fixture must seed the ${CELL_ROLE_HOLDER_USERNAME} extra account`);
 
 				const created = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_create', {data: {kind: 'note'}}, owner_h),
+					await cross_rpc_call(t, rpc_path, 'cell_create', {kind: 'note', data: {}}, owner_h),
 					CellCreateOutput,
 				);
 				const cell_id = created.cell.id;
@@ -178,7 +178,7 @@ export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteO
 						t,
 						rpc_path,
 						'cell_update',
-						{cell_id, data: {kind: 'note', label: 'by role editor'}},
+						{cell_id, data: {label: 'by role editor'}},
 						holder.create_session_headers(),
 					),
 					CellUpdateOutput,

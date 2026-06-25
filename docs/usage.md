@@ -1205,12 +1205,30 @@ partial surface.
 For typed-client codegen, the matching specs are aggregated as
 `all_cell_action_specs` in `@fuzdev/fuz_app/auth/cell_action_specs.ts`.
 
-`validate_data` is an optional per-kind shape hook on `create_cell_actions`
-— it runs on every incoming `data` payload (create, update, clone-merge) and
-may throw a `ZodError`, which surfaces to the client as `invalid_params`
-(`-32602`). Omit it to pass payloads through unchecked. `create_cell_grant_actions`
-takes `roles` (a `create_role_schema()` result) so role-shaped grants
-validate against the app's role vocabulary.
+A cell's `kind` is a **top-level field** (`cell.kind` column), not a `data`
+field — it is the write-once capability/identity axis, set at create and
+immutable after (`cell_update` carries no `kind`; a stray `kind` inside `data`
+is rejected `invalid_params` / `cell_kind_in_data`). It is a non-empty tag or
+absent (`null` = typeless cell) — an empty `kind` is rejected
+`invalid_params` / `cell_kind_empty`, so `kind` is always `null` or a non-empty
+string. Content stays duck-typed in `data`.
+
+`create_cell_actions` takes two optional hooks on its deps:
+
+- `validate_data` — a per-kind **shape** hook; runs on every incoming `data`
+  payload (create, update, clone-merge) and may throw a `ZodError`, which
+  surfaces as `invalid_params` (`-32602`). Omit to pass payloads through
+  unchecked.
+- `authorize_create` — a per-kind **capability** gate (`CellCreateAuthorize`):
+  `(auth, {kind, data, scope_id}) => boolean | Promise<boolean>`. Runs in
+  `cell_create` after `validate_data`, before the insert; returning `false`
+  surfaces as the `cell_not_found` 404 IDOR mask (a gated kind is
+  indistinguishable from a missing resource). Omit for open create. Async-capable
+  for DB/policy calls. (`scope_id` is designed-in for future scoped enforcement;
+  `null` in v1.)
+
+`create_cell_grant_actions` takes `roles` (a `create_role_schema()` result) so
+role-shaped grants validate against the app's role vocabulary.
 
 ### Authorization model
 

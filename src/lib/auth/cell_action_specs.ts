@@ -104,12 +104,20 @@ export const ERROR_CELL_VISIBILITY_MANAGE_ONLY = 'cell_visibility_manage_only' a
 export const ERROR_CELL_GET_REQUIRES_ID_OR_PATH = 'cell_get_requires_id_or_path' as const;
 
 /**
- * Error reason — `cell_clone` `with_data_patch` would change `data.kind`.
- * Per-kind shape validation can pass coincidentally (e.g., one kind's
- * schema accepts most of another's fields), so we reject the cross-kind
- * patch explicitly to prevent incoherent clones.
+ * Error reason — a `kind` key was supplied inside `data`. `kind` is a
+ * top-level column (`cell.kind`), not content metadata; accepting it inside
+ * `data` would create two sources of truth. Rejected fail-loud at the
+ * create / update / clone-patch boundary so the column stays canonical.
  */
-export const ERROR_CELL_CLONE_KIND_MISMATCH = 'cell_clone_kind_mismatch' as const;
+export const ERROR_CELL_KIND_IN_DATA = 'cell_kind_in_data' as const;
+
+/**
+ * Error reason — `cell_create` was given an empty-string `kind`. `kind` is a
+ * non-empty capability tag or absent (`null` = typeless cell); `""` (a tag
+ * that tags nothing) is rejected fail-loud so `kind` stays a clean
+ * `null | non-empty-string` (twin of the Rust `ERROR_CELL_KIND_EMPTY`).
+ */
+export const ERROR_CELL_KIND_EMPTY = 'cell_kind_empty' as const;
 
 /**
  * Error reason — null-auth `cell_list` caller passed a `created_by`
@@ -187,6 +195,10 @@ export const CellJson = z.strictObject({
 	id: Uuid,
 	path: CellPath.nullable(),
 	data: CellData,
+	kind: z.string().nullable().meta({
+		description:
+			'Capability / identity tag — a write-once top-level column (peer to `visibility` / `path`), not a field inside `data`. `null` for a typeless cell. The discriminator a creation authorizer gates on; fixed at birth.',
+	}),
 	visibility: CellVisibility.meta({
 		description:
 			"Access-control tag. `'public'` admits everyone (including unauthenticated visitors); `'private'` (default) admits admin / owner / `cell_grant`-admitted callers. Top-level column, not inside `data`.",
@@ -214,7 +226,11 @@ export type CellJson = z.infer<typeof CellJson>;
 export const CellCreateInput = z.strictObject({
 	data: CellData.meta({
 		description:
-			'Cell data. Base fields (kind / label / summary) typed; extras loose. Per-kind shape is sub-API.',
+			'Cell content. Base fields (label / summary) typed; extras loose. A `kind` key here is rejected (`ERROR_CELL_KIND_IN_DATA`) — kind is the top-level field. Per-kind shape is sub-API.',
+	}),
+	kind: z.string().nullish().meta({
+		description:
+			'Capability / identity tag, written to the top-level `cell.kind` column (not `data`). Write-once — fixed at birth, not updatable. Non-empty when present (an empty string is rejected `ERROR_CELL_KIND_EMPTY`); omit / null for a typeless cell. A creation authorizer (if mounted) gates on this.',
 	}),
 	visibility: CellVisibility.optional().meta({
 		description:
@@ -323,7 +339,7 @@ export type CellDeleteOutput = z.infer<typeof CellDeleteOutput>;
  * `shared_with: 'me'` narrows to cells that admit the caller via a
  * `cell_grant` row (actor-shaped or role-shaped principal) AND that
  * the caller does not own. Authenticated only; combine with
- * `data_kind` / `path_prefix` etc. to scope further. Combining with
+ * `kind` / `path_prefix` etc. to scope further. Combining with
  * `created_by: <my-actor-id>` produces an empty result by definition
  * (owner is implicit, never appears as a grant principal); we don't
  * reject the combination at the schema layer because SQL emptiness is
@@ -336,7 +352,10 @@ export const CellListInput = z
 			.max(CELL_LIST_LIMIT_MAX)
 			.optional()
 			.meta({description: 'Batch-fetch by id. Visibility predicate still applies.'}),
-		data_kind: z.string().min(1).optional().meta({description: 'Match `data.kind = ?`.'}),
+		kind: z.string().optional().meta({
+			description:
+				'Match `cell.kind = ?`. An empty string matches nothing — no cell carries an empty kind.',
+		}),
 		visibility: CellVisibility.optional().meta({
 			description:
 				"Match `cell.visibility = ?`. The SQL-side auth-narrow already filters to public-or-admitted; this is an additional narrowing filter (e.g. `visibility: 'public'` on the discovery feed so authed callers don't see their own private entries mixed in).",

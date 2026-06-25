@@ -33,14 +33,17 @@ export const TS_SPINE_DIR_ENV = 'FUZ_TESTING_TS_SPINE_DIR';
 /**
  * Capabilities for the TS spine binary — `ts_default_capabilities` plus `sse`
  * (the binary wires `audit_log_sse`), `ready` (the binary live-mounts the
- * `/ready` deploy gate in `build_spine_app`), and `peer_request` (the backend
- * WS transport's `request_connection` path drives server→client `peer/ping`).
+ * `/ready` deploy gate in `build_spine_app`), `peer_request` (the backend
+ * WS transport's `request_connection` path drives server→client `peer/ping`),
+ * and `cell_gated_create` (the binary's `full_spine_mount` mounts the
+ * `test_cell_gated_create_authorize` policy).
  */
 const ts_spine_capabilities = Object.freeze({
 	...ts_default_capabilities,
 	sse: true,
 	ready: true,
 	peer_request: true,
+	cell_gated_create: true,
 });
 
 /**
