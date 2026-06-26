@@ -18,6 +18,7 @@ import {
 	auth_integration_truncate_tables,
 	log_db_factory_status,
 } from '$lib/testing/db.ts';
+import {create_pglet_factory} from './db_pglet_factory.ts';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 
@@ -27,7 +28,8 @@ const init_schema = async (db: Db): Promise<void> => {
 
 export const pglite_factory = create_pglite_factory(init_schema);
 export const pg_factory = create_pg_factory(init_schema, TEST_DATABASE_URL);
-export const db_factories = [pglite_factory, pg_factory];
+export const pglet_factory = create_pglet_factory(init_schema);
+export const db_factories = [pglite_factory, pg_factory, pglet_factory];
 
 log_db_factory_status(db_factories);
 

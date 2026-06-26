@@ -152,20 +152,24 @@ export const auth_migrations: Array<Migration> = [
 			);
 			await db.query('ALTER TABLE role_grant ADD COLUMN IF NOT EXISTS revoked_reason TEXT NULL');
 			// Paired-null CHECK on `(scope_kind, scope_id)` — both null encodes
-			// the global case; both non-null encodes a scoped grant. The DO
-			// block makes constraint addition idempotent across migration
-			// re-runs (Postgres has no `ADD CONSTRAINT IF NOT EXISTS` for
-			// CHECK constraints — `pg_constraint` lookup is the established
-			// shape).
-			await db.query(`DO $$ BEGIN
-				IF NOT EXISTS (
-					SELECT 1 FROM pg_constraint WHERE conname = 'role_grant_scope_kind_paired'
-				) THEN
-					ALTER TABLE role_grant
-						ADD CONSTRAINT role_grant_scope_kind_paired
-						CHECK ((scope_kind IS NULL) = (scope_id IS NULL));
-				END IF;
-			END $$`);
+			// the global case; both non-null encodes a scoped grant. Idempotent
+			// across migration re-runs without PL/pgSQL: probe
+			// `information_schema.table_constraints`, then add only if absent
+			// (Postgres has no `ADD CONSTRAINT IF NOT EXISTS` for CHECK). A plain
+			// `try { ADD } catch (dup)` is unusable here — the migration runs in a
+			// chain transaction, so a caught duplicate-object error would abort it.
+			// Backend-portable: server PG, PGlite, and pglet all expose the view.
+			const scope_pair_check = await db.query(
+				`SELECT 1 FROM information_schema.table_constraints
+				 WHERE table_schema = 'public'
+				   AND table_name = 'role_grant'
+				   AND constraint_name = 'role_grant_scope_kind_paired'`,
+			);
+			if (scope_pair_check.length === 0) {
+				await db.query(`ALTER TABLE role_grant
+					ADD CONSTRAINT role_grant_scope_kind_paired
+					CHECK ((scope_kind IS NULL) = (scope_id IS NULL))`);
+			}
 			// Swap the (actor_id, role) partial unique for a scope-aware variant.
 			// Existing rows have `scope_id = NULL` (and `scope_kind = NULL` per
 			// the pair invariant) and collapse to the index-side `'GLOBAL'`
