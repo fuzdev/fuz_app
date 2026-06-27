@@ -59,41 +59,81 @@ const get_free_port = (): Promise<number> =>
 		});
 	});
 
+// Process-level cleanup registry — the spawned server's kill handle is fired on
+// `exit` *and* on SIGINT/SIGTERM. `process.once('exit', kill)` alone leaks the
+// server when vitest tears down its worker pool by signal (a signal-killed worker
+// never emits `exit`), which strands one `pglet_server` per run.
+const live_kills: Set<() => void> = new Set();
+let cleanup_installed = false;
+
+const register_server_cleanup = (kill: () => void): void => {
+	live_kills.add(kill);
+	if (cleanup_installed) return;
+	cleanup_installed = true;
+	const fire_all = (): void => {
+		for (const k of live_kills) {
+			try {
+				k();
+			} catch {
+				// best-effort exit-time cleanup
+			}
+		}
+		live_kills.clear();
+	};
+	process.once('exit', fire_all);
+	// Tear children down, then restore the default handler and re-raise so the
+	// process still exits with the right signal.
+	const passthrough = (signal: NodeJS.Signals): void => {
+		fire_all();
+		process.removeAllListeners(signal);
+		process.kill(process.pid, signal);
+	};
+	process.once('SIGINT', () => passthrough('SIGINT'));
+	process.once('SIGTERM', () => passthrough('SIGTERM'));
+};
+
 /**
- * Spawn `pglet_server --storage memory` on a free port and wait until it accepts
+ * Spawn `pglet_server` (in-memory B+tree) on a free port and wait until it accepts
  * a `SELECT 1` over node-postgres.
  *
  * @throws Error if the binary fails to spawn or never becomes ready
  */
 const spawn_pglet_server = async (bin: string): Promise<PgletServer> => {
 	const port = await get_free_port();
-	const child = spawn(bin, ['--storage', 'memory', '--port', String(port)], {stdio: 'ignore'});
+	// Default storage is the in-memory CoW B+tree (no `--data-dir`), which gives
+	// real `BEGIN`/`COMMIT`/`ROLLBACK` — matching the pg / pglite / pglet-wasm legs.
+	// `detached` puts the server in its own process group so the whole group can be
+	// torn down together (no stray child outliving the test process).
+	const child = spawn(bin, ['--port', String(port)], {stdio: 'ignore', detached: true});
 	const url = `postgres://postgres@127.0.0.1:${port}/postgres`;
 	const kill = (): void => {
 		try {
-			child.kill('SIGKILL');
+			// Kill the process group (detached spawn) so no stray server survives.
+			if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL');
 		} catch {
-			// already exited
+			// already exited / group already gone
 		}
 	};
-	// Kill the server when the test process exits (close() can't — the singleton
-	// must outlive each describe block's afterAll).
-	process.once('exit', kill);
+	// The singleton server must outlive each describe block's afterAll, so tie its
+	// lifetime to the test *process*. `exit` alone misses vitest's signal-based
+	// worker teardown (which would strand the server), so cover SIGINT/SIGTERM too.
+	register_server_cleanup(kill);
+	child.unref();
 
 	// A spawn failure (e.g. ENOENT for a bad path) fires asynchronously; surface
 	// it as a clear error rather than a readiness timeout.
-	let spawn_error: Error | null = null;
+	let spawn_error_message: string | null = null;
 	child.once('error', (err) => {
-		spawn_error = new Error(`failed to spawn pglet server "${bin}": ${to_error_message(err)}`);
+		spawn_error_message = `failed to spawn pglet server "${bin}": ${to_error_message(err)}`;
 	});
 
 	const {Client} = await import('pg');
 	const deadline = Date.now() + READY_TIMEOUT_MS;
 	let last_error: unknown;
 	while (Date.now() < deadline) {
-		if (spawn_error) {
+		if (spawn_error_message) {
 			kill();
-			throw spawn_error;
+			throw new Error(spawn_error_message);
 		}
 		const client = new Client({connectionString: url, connectionTimeoutMillis: 1000});
 		try {
@@ -117,12 +157,6 @@ const spawn_pglet_server = async (bin: string): Promise<PgletServer> => {
 	);
 };
 
-// Module-level singletons — shared across the `db` project's files (isolate:
-// false), one spawned server for the run.
-let server: PgletServer | null = null;
-let pool: Pool | null = null;
-let db: Db | null = null;
-
 /**
  * Create a pglet (wire-server) database factory for tests.
  *
@@ -131,9 +165,20 @@ let db: Db | null = null;
  * `schema_version` and re-runs `init_schema` (idempotent, mirroring the `pg`
  * factory) so migrations re-evaluate against the live tables.
  *
+ * The spawned server is **per-factory-instance** (the state below lives in this
+ * closure, not module scope): pglet has no `DROP SCHEMA`, so a server shared
+ * across fixtures with *different* schemas would accumulate tables and leak them
+ * into whole-database introspection (e.g. an auth FK-count test seeing fact
+ * tables). One server per `create_pglet_factory` call keeps each fixture's schema
+ * isolated; within a fixture every suite shares the one server (same schema).
+ *
  * @param init_schema - callback to initialize the database schema
  */
 export const create_pglet_factory = (init_schema: (db: Db) => Promise<void>): DbFactory => {
+	// Per-factory-instance server/pool/db, spawned lazily on first `create()`.
+	let server: PgletServer | null = null;
+	let pool: Pool | null = null;
+	let db: Db | null = null;
 	const skip = !PGLET_SERVER_BIN;
 	return {
 		name: 'pglet',
@@ -159,8 +204,9 @@ export const create_pglet_factory = (init_schema: (db: Db) => Promise<void>): Db
 			return db;
 		},
 		async close() {
-			// No-op: the singleton server lives for the `db` project's run and is
-			// killed by the process-exit hook in `spawn_pglet_server`.
+			// No-op: this factory's server lives for the whole `db` run (it must
+			// outlive each suite's afterAll) and is killed by the process-exit /
+			// signal hooks registered in `spawn_pglet_server`.
 		},
 	};
 };

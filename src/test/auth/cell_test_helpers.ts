@@ -32,6 +32,8 @@ import {
 	auth_integration_truncate_tables,
 	log_db_factory_status,
 } from '$lib/testing/db.ts';
+import {create_pglet_factory} from '../db_pglet_factory.ts';
+import {create_pglet_wasm_factory} from '../db_pglet_wasm_factory.ts';
 import {run_migrations} from '$lib/db/migrate.ts';
 import {auth_migration_ns} from '$lib/auth/migrations.ts';
 import {CELL_MIGRATION_NS, CELL_DROP_TABLES} from '$lib/db/cell_ddl.ts';
@@ -89,13 +91,16 @@ const init_schema = async (db: Db): Promise<void> => {
 	]);
 };
 
-// Both drivers — pg auto-skips when `TEST_DATABASE_URL` is unset. The cell
-// migration is idempotent (guarded `CREATE TYPE` + `CREATE TABLE IF NOT
-// EXISTS`), so re-running against a persistent pg after `create_pg_factory`
-// resets `schema_version` is safe. Mirrors `../db_fixture.ts`.
+// All four drivers — pg auto-skips when `TEST_DATABASE_URL` is unset, and the
+// pglet legs (native + wasm) auto-skip when `PGLET_SERVER_BIN` / `PGLET_WASM_PKG`
+// are unset. The cell migration is idempotent (guarded `CREATE TYPE` + `CREATE
+// TABLE IF NOT EXISTS`), so re-running against a persistent pg after
+// `create_pg_factory` resets `schema_version` is safe. Mirrors `../db_fixture.ts`.
 const cell_factories = [
 	create_pglite_factory(init_schema),
 	create_pg_factory(init_schema, process.env.TEST_DATABASE_URL),
+	create_pglet_factory(init_schema),
+	create_pglet_wasm_factory(init_schema),
 ];
 log_db_factory_status(cell_factories);
 

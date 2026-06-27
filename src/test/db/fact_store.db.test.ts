@@ -28,6 +28,8 @@ import {
 	create_describe_db,
 	log_db_factory_status,
 } from '$lib/testing/db.ts';
+import {create_pglet_factory} from '../db_pglet_factory.ts';
+import {create_pglet_wasm_factory} from '../db_pglet_wasm_factory.ts';
 import {run_migrations} from '$lib/db/migrate.ts';
 import {FACT_MIGRATION_NS, FACT_DROP_TABLES} from '$lib/db/fact_ddl.ts';
 import {PgFactStore, type FactExternalFetcher} from '$lib/db/fact_store.ts';
@@ -40,6 +42,8 @@ const init_schema = async (db: Db): Promise<void> => {
 const fact_factories = [
 	create_pglite_factory(init_schema),
 	create_pg_factory(init_schema, process.env.TEST_DATABASE_URL),
+	create_pglet_factory(init_schema),
+	create_pglet_wasm_factory(init_schema),
 ];
 log_db_factory_status(fact_factories);
 

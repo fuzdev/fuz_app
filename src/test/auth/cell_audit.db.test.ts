@@ -171,7 +171,11 @@ describe_db('cell audit', (get_db) => {
 			// No unknown-event drift, and no dead registry entry: the emitted
 			// set equals the registry exactly.
 			assert.deepStrictEqual(emitted, registered);
-		});
+			// This single test drives every cell mutation verb sequentially (~20
+			// awaited RPCs). Over the native pglet leg each is a TCP round-trip +
+			// transaction, so the default 5s is tight (the in-process pglite / wasm
+			// legs make it comfortably). Give it headroom so it's not transport-flaky.
+		}, 30_000);
 
 		test('a no-op field/item delete emits no audit event', async () => {
 			const app = await create_cell_test_app(get_db);
