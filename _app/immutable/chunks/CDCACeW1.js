@@ -1,0 +1,1 @@
+import{i as o,j as l,k as m,E as v,l as y,m as f,o as p,q as i,H as T,u as A}from"./CEFmx-d6.js";import{B as E}from"./UV7MVIIl.js";function k(d,_,e){var s;o&&(s=A,l());var r=new E(d);m(()=>{var a=_()??null;if(o){var h=y(s),u=h===T,c=a!==null;if(u!==c){var t=f();p(t),r.anchor=t,i(!1),r.ensure(a,a&&(n=>e(n,a))),i(!0);return}}r.ensure(a,a&&(n=>e(n,a)))},v)}export{k as c};

@@ -1,0 +1,1 @@
+import{p as r}from"./CMHP-j6k.js";import{s as t}from"./D357Fw5u.js";const e={get error(){return r.error},get status(){return r.status},get url(){return r.url}};t.updated.check;const a=e;export{a as p};
