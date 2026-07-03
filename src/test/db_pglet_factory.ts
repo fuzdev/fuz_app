@@ -16,11 +16,12 @@
  *
  *   PGLET_SERVER_BIN=/path/to/pglet_server gro test
  *
- * Lifecycle mirrors the `pg` factory: one server for the whole `db` project run
- * (`isolate: false` + `fileParallelism: false`), with `DROP TABLE schema_version`
- * + `init_schema` per `create()` and the harness `beforeEach` TRUNCATE giving
- * per-test isolation. A fresh in-memory server starts empty, so no `DROP SCHEMA`
- * (which pglet doesn't implement) is needed.
+ * Lifecycle mirrors the `pg` factory: one long-lived server per factory instance,
+ * kept for the whole run (`isolate: false` + `fileParallelism: false`) rather than
+ * per-test — see `create_pglet_factory` below for why it is per-factory, not global
+ * — with `DROP TABLE schema_version` + `init_schema` per `create()` and the harness
+ * `beforeEach` TRUNCATE giving per-test isolation. A fresh in-memory server starts
+ * empty, so no `DROP SCHEMA` (which pglet doesn't implement) is needed.
  *
  * @module
  */

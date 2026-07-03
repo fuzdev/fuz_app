@@ -1,9 +1,9 @@
 /**
  * Shared database test fixture for fuz_app.
  *
- * Creates pglite + pg factories with the full auth schema via migrations.
- * Consumer test files import `describe_db` for the convenience wrapper
- * or `db_factories` for manual composition.
+ * Creates the pglite, pg, pglet (native wire), and pglet-wasm factories with the
+ * full auth schema via migrations. Consumer test files import `describe_db` for the
+ * convenience wrapper or `db_factories` for manual composition.
  *
  * @module
  */
