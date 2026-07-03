@@ -85,13 +85,25 @@ const load_wasm_module = async (pkg_dir: string): Promise<PgletWasmModule> => {
  * are normalized here: `int8` columns arrive as JS `BigInt` (→ `Number`, the
  * `register_pg_type_parsers` analog for `BIGSERIAL` ids/sizes), and `timestamp` /
  * `timestamptz` columns arrive as ISO strings (→ `Date`, matching both other drivers).
+ *
+ * A `BigInt` value only ever comes from an `INT8` column, so the column metadata
+ * tells us up front whether anything needs rewriting: when a result has neither an
+ * `int8` nor a `timestamp`/`timestamptz` column, the rows are returned as-is —
+ * skipping the per-row object rebuild on the common (text/uuid/jsonb) path.
  */
 const coerce_result = (result: WasmQueryResult): {rows: Array<unknown>} => {
-	const timestamp_columns = new Set(
-		result.fields
-			.filter((f) => f.dataTypeName === 'TIMESTAMP' || f.dataTypeName === 'TIMESTAMPTZ')
-			.map((f) => f.name),
-	);
+	let has_int8 = false;
+	const timestamp_columns = new Set<string>();
+	for (const f of result.fields) {
+		if (f.dataTypeName === 'INT8') {
+			has_int8 = true;
+		} else if (f.dataTypeName === 'TIMESTAMP' || f.dataTypeName === 'TIMESTAMPTZ') {
+			timestamp_columns.add(f.name);
+		}
+	}
+	if (!has_int8 && timestamp_columns.size === 0) {
+		return {rows: result.rows};
+	}
 	const rows = result.rows.map((row) => {
 		const out: WasmRow = {};
 		for (const key in row) {
