@@ -18,9 +18,14 @@
  *
  * Uses the `PgletBtree` binding — an in-memory copy-on-write B+tree with real
  * `BEGIN`/`COMMIT`/`ROLLBACK` transactions and bound-`$N`-parameter queries, which
- * is what fuz_app's `Db` requires. A fresh instance is created per `create()`
- * (cheap, in-memory), so no `DROP SCHEMA` (which pglet doesn't implement) is needed;
- * the harness `beforeEach` TRUNCATE gives per-test isolation.
+ * is what fuz_app's `Db` requires.
+ *
+ * **Per-`create()` isolation via `fork()`.** The auth schema is migrated **once**
+ * into a module-level base instance; each `create()` then `base.fork()`s a fresh,
+ * isolated copy-on-write branch instead of re-running the migrations. A fork shares
+ * the base's pages until written (cheap — no row deep-copy), so per-suite setup drops
+ * from a full migration run to a page-map clone. The harness `beforeEach` TRUNCATE
+ * still gives per-test isolation within a suite.
  *
  * @module
  */
@@ -59,11 +64,13 @@ interface PgletBtreeInstance {
 	exec: (sql: string) => void;
 	query: (sql: string) => WasmQueryResult;
 	queryParams: (sql: string, params: Array<unknown>) => WasmQueryResult;
+	/** Branch a fresh, isolated copy-on-write instance at this one's committed state. */
+	fork: () => PgletBtreeInstance;
 	free: () => void;
 }
 
-// Module-level cache — initialize the WASM module once per vitest worker; each
-// `create()` makes a fresh `PgletBtree` over it.
+// Module-level cache — initialize the WASM module once per vitest worker; the
+// factory seeds one migrated base over it and each `create()` forks that base.
 let wasm_module: PgletWasmModule | null = null;
 
 /** Load + `initSync` the `pglet_wasm` pkg from `PGLET_WASM_PKG` (cached). */
@@ -163,14 +170,17 @@ const create_pglet_wasm_db = (pglet: PgletBtreeInstance): DbDriverResult => {
 /**
  * Create a pglet-wasm (in-process) database factory for tests.
  *
- * Skipped unless `PGLET_WASM_PKG` is set. Loads the wasm module once and creates a
- * fresh in-memory `PgletBtree` per `create()`, running `init_schema` against it.
+ * Skipped unless `PGLET_WASM_PKG` is set. Loads the wasm module once, migrates the
+ * schema once into a base `PgletBtree`, and `base.fork()`s a fresh isolated instance
+ * per `create()` instead of re-running `init_schema`.
  *
- * @param init_schema - callback to initialize the database schema
+ * @param init_schema - callback to initialize the database schema (run once on the base)
  */
 export const create_pglet_wasm_factory = (init_schema: (db: Db) => Promise<void>): DbFactory => {
 	const skip = !PGLET_WASM_PKG;
 	let current_close: (() => Promise<void>) | null = null;
+	// The migrated base, seeded once per worker; each `create()` forks it.
+	let base: PgletBtreeInstance | null = null;
 	return {
 		name: 'pglet-wasm',
 		skip,
@@ -180,14 +190,20 @@ export const create_pglet_wasm_factory = (init_schema: (db: Db) => Promise<void>
 				throw new Error('PGLET_WASM_PKG required for pglet-wasm tests.');
 			}
 			const mod = await load_wasm_module(PGLET_WASM_PKG);
-			const pglet = new mod.PgletBtree();
-			const {db, close} = create_pglet_wasm_db(pglet);
+			// Seed the base once (run the migrations), then leave it pristine — every
+			// `create()` forks a fresh copy-on-write branch of its committed state
+			// instead of paying the migration cost again.
+			if (!base) {
+				base = new mod.PgletBtree();
+				const {db: base_db} = create_pglet_wasm_db(base);
+				await init_schema(base_db);
+			}
+			const {db, close} = create_pglet_wasm_db(base.fork());
 			current_close = close;
-			await init_schema(db);
 			return db;
 		},
 		async close() {
-			// Free the wasm instance for this suite; the module stays cached.
+			// Free the forked wasm instance for this suite; the base + module stay cached.
 			await current_close?.();
 			current_close = null;
 		},
