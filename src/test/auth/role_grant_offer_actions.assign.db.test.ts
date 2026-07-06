@@ -4,8 +4,8 @@
  * roles: ['admin']}` — the RPC dispatcher rejects non-admin callers before the
  * handler runs).
  *
- * The TS twin of the Rust `handle_role_grant_assign` PG suite
- * (`private_fuz/crates/fuz_auth/tests/role_grant_offer.rs`): the happy path
+ * The TS twin of the Rust spine's `handle_role_grant_assign` PG suite
+ * (the `fuz_auth` crate's `role_grant_offer` tests): the happy path
  * (admin assigns an admin-grantable role) and the non-grantable rejection
  * (`keeper` carries the bootstrap grant path only). Plus the supporting
  * branches the Rust handler resolves — dispatcher admin gate, target-actor

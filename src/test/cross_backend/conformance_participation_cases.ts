@@ -24,8 +24,8 @@
  *   non-admin is refused at the dispatcher → 403 `insufficient_permissions`;
  *   anonymous → 401.
  *
- * Cites `lore/fuz/design/participation-gates.md` (Decisions 6–7) — referenced
- * via the public quest's design intent, not embedded here.
+ * Derived from the participation-gates design (Decisions 6–7) — referenced
+ * by intent, not embedded here.
  *
  * @module
  */
@@ -123,8 +123,8 @@ export const conformance_participation_cases: ReadonlyArray<ConformanceCase> = [
 			as: 'keeper',
 			params: {to_account_id: NIL_UUID, role: ROLE_KEEPER},
 		},
-		// The offer verb runs the SAME registry grant-path gate as assign (the
-		// quest widened grantability for both conferral paths); keeper carries no
+		// The offer verb runs the SAME registry grant-path gate as assign
+		// (grantability was widened for both conferral paths); keeper carries no
 		// admin grant path, so the offer is refused at the gate too — proving the
 		// gate is consistent across offer + assign on both spines. Distinct reason
 		// from assign's `role_not_web_grantable` (`role_grant_offer_role_not_grantable`).
