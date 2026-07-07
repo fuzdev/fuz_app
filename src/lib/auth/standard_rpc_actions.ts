@@ -25,7 +25,7 @@ import {
 	type RoleGrantOfferActionOptions,
 } from './role_grant_offer_actions.ts';
 import {create_account_actions, type AccountActionOptions} from './account_actions.ts';
-import type {RouteFactoryDeps} from './deps.ts';
+import type {ActionFactoryDeps} from './deps.ts';
 import type {NotificationSender} from './role_grant_offer_notifications.ts';
 import type {RpcAction} from '../actions/action_rpc.ts';
 
@@ -44,12 +44,12 @@ export interface StandardRpcActionsOptions
 /**
  * Dependencies for `create_standard_rpc_actions`.
  *
- * Stack-standard `RouteFactoryDeps` slice (`log`, `audit`) plus an optional
+ * Stack-standard `ActionFactoryDeps` (`log`, `audit`) plus an optional
  * `notification_sender` consumed only by the role-grant-offer sub-factory
  * for WS fan-out. Admin and account sub-factories ignore
  * `notification_sender`.
  */
-export interface StandardRpcActionsDeps extends Pick<RouteFactoryDeps, 'log' | 'audit'> {
+export interface StandardRpcActionsDeps extends ActionFactoryDeps {
 	notification_sender?: NotificationSender | null;
 }
 
@@ -61,7 +61,7 @@ export interface StandardRpcActionsDeps extends Pick<RouteFactoryDeps, 'log' | '
  * and `create_account_actions(deps, {max_tokens})`. The shared `roles`
  * option flows to admin + role-grant-offer.
  *
- * @param deps - `StandardRpcActionsDeps` (`log`, `audit` from `RouteFactoryDeps`; optional `notification_sender` for WS fan-out)
+ * @param deps - `StandardRpcActionsDeps` (`log`, `audit` from `ActionFactoryDeps`; optional `notification_sender` for WS fan-out)
  * @param options - role schema, role-grant-offer config, account config
  * @returns RPC actions to pass as `rpc_endpoints` or spread into `create_rpc_endpoint`
  */

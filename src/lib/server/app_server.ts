@@ -231,8 +231,8 @@ export interface AppServerOptions {
 	/**
 	 * Enable factory-managed audit log SSE.
 	 *
-	 * When truthy, creates an `AuditLogSse` instance internally, appends the SSE
-	 * listener to `backend.deps.audit.on_event_chain` (composing with the
+	 * When truthy, creates an `AuditLogSse` instance internally, registers the SSE
+	 * listener via `backend.deps.audit.add_listener` (composing with the
 	 * consumer's `on_audit_event` callback rather than rebuilding `AppDeps`), and
 	 * auto-includes `audit_log_event_specs` in the surface. The result is exposed
 	 * on `AppServerContext` (for route factories) and `AppServer` (for the caller),
@@ -297,8 +297,8 @@ export interface AppServerOptions {
 	 *
 	 * Each spec's `auth_guard?` defaults to `true` — the factory
 	 * composes `create_ws_auth_guard` + `create_ws_logout_closer`
-	 * against the mounted transport and appends them to
-	 * `deps.audit.on_event_chain`. Wiring is deduped by transport
+	 * against the mounted transport and registers them via
+	 * `deps.audit.add_listener`. Wiring is deduped by transport
 	 * **reference identity** so two specs sharing one
 	 * `BackendWebsocketTransport` instance get a single pair of
 	 * listeners; wrapped / proxied transports dedupe as separate
@@ -420,8 +420,8 @@ export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
  * static serving. Database migrations belong to the backend lifecycle —
  * pass `migration_namespaces` to `create_app_backend`.
  *
- * When `audit_log_sse` is set, the SSE registry's listener is appended to
- * `backend.deps.audit.on_event_chain` — no shallow-copy of `AppDeps`. The
+ * When `audit_log_sse` is set, the SSE registry's listener is registered via
+ * `backend.deps.audit.add_listener` — no shallow-copy of `AppDeps`. The
  * `audit_sse` field on the returned `AppServer` (and the
  * `AppServerContext` passed to `create_route_specs`) is non-null in that
  * case; consumers can call `require_audit_sse(ctx)` / `require_audit_sse(server)`
@@ -458,8 +458,8 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			? create_rate_limiter(default_action_account_rate_limit)
 			: options.action_account_rate_limiter;
 
-	// Factory-managed audit SSE — appends a listener to the bound emitter's
-	// chain so SSE fan-out runs alongside the consumer's `on_audit_event`
+	// Factory-managed audit SSE — registers a listener on the bound emitter
+	// so SSE fan-out runs alongside the consumer's `on_audit_event`
 	// without rebuilding `AppDeps`.
 	const audit_sse: AuditLogSse | null = options.audit_log_sse
 		? create_audit_log_sse({
@@ -468,7 +468,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			})
 		: null;
 	if (audit_sse) {
-		deps.audit.on_event_chain.push(audit_sse.on_audit_event);
+		deps.audit.add_listener(audit_sse.on_audit_event);
 	}
 
 	// Proxy middleware
@@ -774,12 +774,12 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 
 			if (endpoint.auth_guard !== false && !guarded_transports.has(endpoint_transport)) {
 				guarded_transports.add(endpoint_transport);
-				deps.audit.on_event_chain.push(create_ws_auth_guard(endpoint_transport, log));
-				deps.audit.on_event_chain.push(create_ws_logout_closer(endpoint_transport, log));
+				deps.audit.add_listener(create_ws_auth_guard(endpoint_transport, log));
+				deps.audit.add_listener(create_ws_logout_closer(endpoint_transport, log));
 			}
 			if (endpoint.extra_audit_handlers?.length) {
 				for (const handler of endpoint.extra_audit_handlers) {
-					deps.audit.on_event_chain.push(handler);
+					deps.audit.add_listener(handler);
 				}
 			}
 		}

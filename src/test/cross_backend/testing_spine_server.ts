@@ -300,10 +300,8 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 			transport: ws_transport,
 			log,
 		});
-		app_backend.deps.audit.on_event_chain.push(
-			create_ws_auth_guard(ws_transport, log),
-			create_ws_logout_closer(ws_transport, log),
-		);
+		app_backend.deps.audit.add_listener(create_ws_auth_guard(ws_transport, log));
+		app_backend.deps.audit.add_listener(create_ws_logout_closer(ws_transport, log));
 	};
 
 	return {app: app_server.app, close, mount_websocket};

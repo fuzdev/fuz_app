@@ -35,7 +35,7 @@ import {
 } from '../actions/action_rpc.ts';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.ts';
 import {is_pg_unique_violation} from '../db/pg_error.ts';
-import type {RouteFactoryDeps} from './deps.ts';
+import type {ActionFactoryDeps} from './deps.ts';
 
 import {
 	cell_item_insert_action_spec,
@@ -73,7 +73,7 @@ import type {
 	CellItemDeleteAuditMetadata,
 } from './cell_item_audit_metadata.ts';
 
-export type CellItemActionDeps = Pick<RouteFactoryDeps, 'log' | 'audit'>;
+export type CellItemActionDeps = ActionFactoryDeps;
 
 export const to_item_json = (row: CellItemRow): ItemJson => ({
 	parent_id: row.parent_id,

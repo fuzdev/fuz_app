@@ -12,9 +12,10 @@
  * @module
  */
 
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
+
 import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_rpc.ts';
 
-import type {RouteFactoryDeps} from './deps.ts';
 import {query_actors_by_ids} from './actor_lookup_queries.ts';
 import {
 	actor_lookup_action_spec,
@@ -24,7 +25,9 @@ import {
 } from './actor_lookup_action_specs.ts';
 
 /** Dependencies for `create_actor_lookup_actions`. */
-export type ActorLookupActionDeps = Pick<RouteFactoryDeps, 'log'>;
+export interface ActorLookupActionDeps {
+	log: Logger;
+}
 
 export const create_actor_lookup_actions = (_deps: ActorLookupActionDeps): Array<RpcAction> => {
 	const handler = async (

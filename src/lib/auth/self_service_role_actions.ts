@@ -45,7 +45,7 @@ import {
 	type RoleSchemaResult,
 } from './role_schema.ts';
 import {GRANT_PATH_SELF_SERVICE} from './grant_path_schema.ts';
-import type {RouteFactoryDeps} from './deps.ts';
+import type {ActionFactoryDeps} from './deps.ts';
 import {query_create_role_grant, query_revoke_role_grant} from './role_grant_queries.ts';
 import {is_role_grant_active} from './account_schema.ts';
 import {has_scoped_role} from './request_context.ts';
@@ -82,7 +82,7 @@ export interface SelfServiceRoleActionsOptions {
 /**
  * Build the unified self-service role toggle RPC action.
  *
- * @param deps - `RouteFactoryDeps` (`log`, `audit`, …); `audit.emit` writes
+ * @param deps - `ActionFactoryDeps` (`log`, `audit`); `audit.emit` writes
  *   audit rows via the captured pool. The bound emitter encapsulates
  *   `on_audit_event` fan-out and the optional `AuditLogConfig`.
  * @param options - optional eligible-role override plus optional role schema for default-eligibility derivation
@@ -90,7 +90,7 @@ export interface SelfServiceRoleActionsOptions {
  * @throws Error at factory time if any `eligible_roles` entry is missing from `options.roles.role_specs`
  */
 export const create_self_service_role_actions = (
-	deps: Pick<RouteFactoryDeps, 'log' | 'audit'>,
+	deps: ActionFactoryDeps,
 	options: SelfServiceRoleActionsOptions = {},
 ): Array<RpcAction> => {
 	const role_specs = options.roles?.role_specs ?? builtin_role_specs_by_name;

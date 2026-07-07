@@ -18,7 +18,6 @@ import type {MiddlewareSpec} from '../http/middleware_spec.ts';
 import {ApiError, RateLimitError} from '../http/error_schemas.ts';
 import type {AppDeps} from '../auth/deps.ts';
 import type {AuditEmitter} from '../auth/audit_emitter.ts';
-import type {AuditLogEvent} from '../auth/audit_log_schema.ts';
 import type {BootstrapServerOptions} from '../server/app_server.ts';
 import type {AppServerContext} from '../server/app_server_context.ts';
 import {Db} from '../db/db.ts';
@@ -123,19 +122,24 @@ const stub_db = create_noop_stub('stub_db');
  * Build a no-op `AuditEmitter` for tests that don't assert on audit fan-out.
  *
  * `emit` / `emit_role_grant_target` are no-ops; `emit_pool` resolves
- * immediately; `notify` is a no-op; `on_event_chain` is a frozen empty
- * array — pushing onto it throws at runtime, so a test that wires a
- * listener fails loudly instead of silently never firing. Tests asserting
- * on real audit-row persistence (or on listener fan-out) build a real
- * emitter via `create_audit_emitter` against a stub or real DB —
- * `create_test_app` already does this on the test backend.
+ * immediately; `notify` is a no-op; `add_listener` throws, so a test that
+ * wires a listener fails loudly instead of silently never firing
+ * (`create_recording_audit_emitter` accepts listeners); `listener_count`
+ * returns 0. Tests asserting on real audit-row persistence (or on listener
+ * fan-out) build a real emitter via `create_audit_emitter` against a stub or
+ * real DB — `create_test_app` already does this on the test backend.
  */
 export const create_test_audit_emitter = (): AuditEmitter => ({
 	emit: () => {},
 	emit_role_grant_target: () => {},
 	emit_pool: async () => {},
 	notify: () => {},
-	on_event_chain: Object.freeze([]) as unknown as Array<(event: AuditLogEvent) => void>,
+	add_listener: () => {
+		throw new Error(
+			'create_test_audit_emitter accepts no listeners — use create_recording_audit_emitter',
+		);
+	},
+	listener_count: () => 0,
 });
 
 /**

@@ -405,18 +405,18 @@ patterns:
   callback on `CreateAppBackendOptions` — typically a one-liner over
   `create_audit_emitter`. `audit.emit(ctx, input)` writes via the pool
   captured inside the closure, so entries persist when the request
-  transaction rolls back. The emitter also captures the `on_audit_event`
-  subscriber chain and the optional `AuditLogConfig` so handlers cannot
+  transaction rolls back. The emitter also captures its registered
+  listeners and the optional `AuditLogConfig` so handlers cannot
   silently fall back to the builtin config or a stale callback. Action
-  factories take `Pick<RouteFactoryDeps, 'log' | 'audit'>` directly.
+  factories take `ActionFactoryDeps` (`{log, audit}`) directly.
 - `session_touch_fire_and_forget(deps, token_hash, pending_effects, log)` and
   `query_validate_api_token(deps, raw_token, ip, pending_effects)` keep their
   `pending_effects: Array<Promise<void>> | undefined` shape — they run from
   middleware (no `RouteContext` / `ActionContext` in scope) and don't need
   the audit-emit envelope.
 
-When `audit_log_sse` is set on `create_app_server`, the factory appends
-`audit_sse.on_audit_event` to `backend.deps.audit.on_event_chain` so SSE
+When `audit_log_sse` is set on `create_app_server`, the factory registers
+`audit_sse.on_audit_event` via `backend.deps.audit.add_listener` so SSE
 fan-out runs alongside the consumer's callback (no shallow copy of `AppDeps`).
 The flush middleware uses `try/finally` + `Promise.allSettled` to ensure the
 eager `pending_effects` queue flushes even when handlers throw.

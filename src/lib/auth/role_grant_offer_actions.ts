@@ -44,6 +44,7 @@
  */
 
 import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
 
 import {
 	rpc_action,
@@ -86,7 +87,7 @@ import {
 import {query_actor_by_id, query_active_actors_by_account} from './account_queries.ts';
 import type {AuditLogEvent} from './audit_log_schema.ts';
 import {has_scoped_role, type RequestActorContext, type RequestContext} from './request_context.ts';
-import type {RouteFactoryDeps} from './deps.ts';
+import type {ActionFactoryDeps} from './deps.ts';
 import type {AuditEmitter} from './audit_emitter.ts';
 import {
 	build_role_grant_offer_accepted_notification,
@@ -144,7 +145,7 @@ import {
 export type RoleGrantOfferCreateAuthorize = (
 	auth: RequestContext,
 	input: {to_account_id: string; role: string; scope_id: string | null},
-	deps: Pick<RouteFactoryDeps, 'log'>,
+	deps: {log: Logger},
 	ctx: ActionContext,
 ) => boolean | Promise<boolean>;
 
@@ -202,12 +203,12 @@ const default_authorize: RoleGrantOfferCreateAuthorize = async (auth, _input, _d
  * Create the eight role-grant-offer RPC actions (six offer-lifecycle methods
  * plus `role_grant_revoke` and the immediate `role_grant_assign`).
  *
- * @param deps - `RouteFactoryDeps` (`log`, `audit`, …) plus optional `notification_sender` for WS fan-out — when absent, WS fan-out is silently skipped (DB-only side effects still happen). Consumers wiring `BackendWebsocketTransport` assign its instance directly (the transport's `send_to_account` signature accepts the broader `JsonrpcMessageFromServerToClient`, which is contravariantly compatible)
+ * @param deps - `ActionFactoryDeps` (`log`, `audit`) plus optional `notification_sender` for WS fan-out — when absent, WS fan-out is silently skipped (DB-only side effects still happen). Consumers wiring `BackendWebsocketTransport` assign its instance directly (the transport's `send_to_account` signature accepts the broader `JsonrpcMessageFromServerToClient`, which is contravariantly compatible)
  * @param options - role schema, default TTL, authorization override
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
 export const create_role_grant_offer_actions = (
-	deps: Pick<RouteFactoryDeps, 'log' | 'audit'> & {
+	deps: ActionFactoryDeps & {
 		notification_sender?: NotificationSender | null;
 	},
 	options: RoleGrantOfferActionOptions = {},

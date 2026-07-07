@@ -31,7 +31,7 @@ import {
 	type RpcAction,
 } from '../actions/action_rpc.ts';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.ts';
-import type {RouteFactoryDeps} from './deps.ts';
+import type {ActionFactoryDeps} from './deps.ts';
 
 import {
 	cell_field_set_action_spec,
@@ -62,7 +62,7 @@ import type {
 	CellFieldDeleteAuditMetadata,
 } from './cell_field_audit_metadata.ts';
 
-export type CellFieldActionDeps = Pick<RouteFactoryDeps, 'log' | 'audit'>;
+export type CellFieldActionDeps = ActionFactoryDeps;
 
 export const to_field_json = (row: CellFieldRow): FieldJson => ({
 	source_id: row.source_id,

@@ -18,7 +18,7 @@ documents the cross-cutting invariants that don't fit on any single symbol.
 
 - **Capabilities** — `AppDeps` — stateless, injectable per env: `stat`, `read_text_file`, `delete_file`, `keyring`, `password`, `db`, `log`, `audit`.
 - **Route caps** — `RouteFactoryDeps` — `Omit<AppDeps, 'db'>`; handlers get `db` via `RouteContext`.
-- **Action caps** — inline — action factories take `Pick<RouteFactoryDeps, 'log' | 'audit'>` (role-grant-offer adds `notification_sender?`).
+- **Action caps** — `ActionFactoryDeps` (`auth/deps.ts`) — the `{log, audit}` shape action factories take; `RouteFactoryDeps`/`AppDeps` satisfy it structurally (role-grant-offer adds `notification_sender?`). The two pure-read actor factories (`actor_lookup`/`actor_search`) take only `{log: Logger}`.
 - **Parameters** — `*Options` — static startup values, per-factory.
 - **Runtime state** — inline ref — mutable values: `bootstrap_status`, `DaemonTokenState`. NOT in deps or options.
 
@@ -96,17 +96,21 @@ upstream in `auth/signup_routes.ts` via `query_invite_find_unclaimed_match_for_u
 `auth/audit_emitter.ts` defines the `AuditEmitter` capability that lives on
 `AppDeps.audit`. Built once at backend assembly via the consumer's
 `audit_factory` callback over `create_audit_emitter`; closes over the pool +
-`on_audit_event` chain + optional `AuditLogConfig`. Four methods:
+its registered listeners + optional `AuditLogConfig`. Six methods:
 
 - `emit(ctx, input)` — fire-and-forget pool write, pushes to `ctx.pending_effects`
 - `emit_role_grant_target(ctx, auth, input)` — lifts `actor_id` / `account_id` / `ip` boilerplate for role-grant-shape events
 - `emit_pool(input)` — awaitable pool write for code paths without `pending_effects` (cleanup sweeps)
 - `notify(event)` — fan out an already-written row to listeners (used by in-tx audit batches like `query_accept_offer.audit_events`)
+- `add_listener(listener)` — append-only listener registration (twin of Rust `fuz_auth` `AuditEmitter::add_listener`)
+- `listener_count()` — registered-listener count, for tests / diagnostics
 
-`on_event_chain` is the mutable subscriber list. `create_app_server` appends
-the audit-log SSE listener and per-endpoint WS auth guards / logout closers
-here so SSE + WS fan-out compose on top of the consumer's `on_audit_event`
-callback without shallow-copying `AppDeps`.
+Listeners are closure-private and append-only. `create_app_server` registers
+the audit-log SSE listener and per-endpoint WS auth guards / logout closers via
+`add_listener` so SSE + WS fan-out compose on top of the consumer's
+`on_audit_event` callback without shallow-copying `AppDeps`. `notify` iterates a
+snapshot so a listener registered mid-fan-out fires only on the next event
+(converges with the Rust twin's cloned vec).
 
 **Drift counters** (`auth/audit_log_queries.ts`) — `audit_metadata_validation_failures`
 and `audit_unknown_event_type_failures` are process-wide, fail-open
@@ -607,7 +611,7 @@ builders, plus `role_grant_offer_notification_specs: Array<EventSpec>` for
 `create_app_server`'s `event_specs` (drives surface generation and
 DEV-mode `create_validated_broadcaster` payload validation).
 
-Deps: `Pick<RouteFactoryDeps, 'log' | 'audit'> & {notification_sender?: NotificationSender | null}`.
+Deps: `ActionFactoryDeps & {notification_sender?: NotificationSender | null}`.
 `NotificationSender` is the narrow structural capability
 (`send_to_account(account_id, message): number`); `BackendWebsocketTransport`
 satisfies it structurally. Target account travels via the send argument, not

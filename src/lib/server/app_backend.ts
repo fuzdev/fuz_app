@@ -104,7 +104,7 @@ export interface CreateAppBackendOptions {
 	log?: Logger;
 	/**
 	 * Build the bound `AuditEmitter` once the backend's pool `Db` + `Logger`
-	 * exist. Required — the factory owns subscriber-chain composition and
+	 * exist. Required — the factory owns listener composition and
 	 * `AuditLogConfig` selection without `create_app_backend` holding a
 	 * default. Typical body:
 	 *
@@ -118,8 +118,8 @@ export interface CreateAppBackendOptions {
 	 * ```
 	 *
 	 * Additional listeners (factory-managed audit SSE, per-endpoint WS
-	 * auth guards) are appended at `create_app_server` time via
-	 * `audit.on_event_chain.push(...)`.
+	 * auth guards) are registered at `create_app_server` time via
+	 * `audit.add_listener(...)`.
 	 */
 	audit_factory: AuditFactory;
 	/**

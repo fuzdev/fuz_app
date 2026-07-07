@@ -398,8 +398,8 @@ open connections.
 
 `create_ws_auth_guard(transport, log)` returns an `on_audit_event` callback.
 For standard WS endpoints mounted via `AppServerOptions.ws_endpoints`,
-`create_app_server` composes this guard onto `backend.deps.audit.on_event_chain`
-automatically (per `WsEndpointSpec.auth_guard`). For custom wiring, append
+`create_app_server` registers this guard via `backend.deps.audit.add_listener`
+automatically (per `WsEndpointSpec.auth_guard`). For custom wiring, register
 inside the consumer's `audit_factory` body.
 
 `ws_disconnect_event_types` (ReadonlySet): `session_revoke`, `token_revoke`,

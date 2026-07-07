@@ -317,8 +317,8 @@ describe('create_audit_emitter — emit', () => {
 	});
 });
 
-describe('create_audit_emitter — on_event_chain', () => {
-	test('appended listener fires alongside the initial subscriber', async () => {
+describe('create_audit_emitter — add_listener', () => {
+	test('registered listener fires alongside the initial subscriber', async () => {
 		const initial: Array<AuditLogEvent> = [];
 		const appended: Array<AuditLogEvent> = [];
 		const audit = create_audit_emitter({
@@ -326,7 +326,7 @@ describe('create_audit_emitter — on_event_chain', () => {
 			log,
 			on_audit_event: (event) => initial.push(event),
 		});
-		audit.on_event_chain.push((event) => appended.push(event));
+		audit.add_listener((event) => appended.push(event));
 		const ctx = create_ctx();
 
 		audit.emit(ctx, create_input());
@@ -334,6 +334,18 @@ describe('create_audit_emitter — on_event_chain', () => {
 
 		assert.strictEqual(initial.length, 1);
 		assert.strictEqual(appended.length, 1);
+	});
+
+	test('listener_count reflects the initial subscriber plus registrations', () => {
+		const audit = create_audit_emitter({
+			db: create_mock_db(),
+			log,
+			on_audit_event: () => {},
+		});
+		assert.strictEqual(audit.listener_count(), 1);
+		audit.add_listener(() => {});
+		audit.add_listener(() => {});
+		assert.strictEqual(audit.listener_count(), 3);
 	});
 
 	test('listener throw in earlier slot does not skip later listeners', async () => {
@@ -346,7 +358,7 @@ describe('create_audit_emitter — on_event_chain', () => {
 				throw new Error('first listener boom');
 			},
 		});
-		audit.on_event_chain.push((event) => reached.push(event));
+		audit.add_listener((event) => reached.push(event));
 		const ctx = create_ctx();
 
 		audit.emit(ctx, create_input());
@@ -357,7 +369,7 @@ describe('create_audit_emitter — on_event_chain', () => {
 });
 
 describe('create_audit_emitter — notify', () => {
-	test('fans pre-written event to every listener on the chain', () => {
+	test('fans pre-written event to every registered listener', () => {
 		const a: Array<AuditLogEvent> = [];
 		const b: Array<AuditLogEvent> = [];
 		const audit = create_audit_emitter({
@@ -365,7 +377,7 @@ describe('create_audit_emitter — notify', () => {
 			log,
 			on_audit_event: (event) => a.push(event),
 		});
-		audit.on_event_chain.push((event) => b.push(event));
+		audit.add_listener((event) => b.push(event));
 
 		audit.notify(FAKE_EVENT);
 
@@ -376,11 +388,11 @@ describe('create_audit_emitter — notify', () => {
 
 describe('create_audit_emitter — frozen shape', () => {
 	// The freeze is the load-bearing invariant that made the pre-decorator
-	// `patch_audit_emit_capture` go away — assignment to any of the four
-	// method slots used to silently bypass `emit_role_grant_target`'s
+	// `patch_audit_emit_capture` go away — assignment to any of the method
+	// slots used to silently bypass `emit_role_grant_target`'s
 	// closure-captured `emit`. The freeze converts that footgun into a
-	// loud TypeError. `on_event_chain` is left mutable on purpose so
-	// `create_app_server` can `.push(listener)` post-build.
+	// loud TypeError. The listener list is closure-private, so `add_listener`
+	// keeps working post-build without exposing a mutable array.
 	test('returned object is frozen', () => {
 		const audit = create_audit_emitter({db: create_mock_db(), log});
 		assert.strictEqual(Object.isFrozen(audit), true);
@@ -397,15 +409,38 @@ describe('create_audit_emitter — frozen shape', () => {
 		}, TypeError);
 	});
 
-	test('on_event_chain.push continues to work post-build', () => {
-		// `create_app_server` relies on this; if the array itself got
-		// frozen accidentally the production SSE / WS guard composition
-		// breaks at server assembly. Keep both invariants pinned.
+	test('add_listener continues to work post-build', () => {
+		// `create_app_server` relies on this — freezing the emitter must not
+		// block post-assembly listener registration or the production SSE /
+		// WS guard composition breaks at server assembly.
 		const audit = create_audit_emitter({db: create_mock_db(), log});
 		const received: Array<AuditLogEvent> = [];
-		audit.on_event_chain.push((event) => received.push(event));
+		audit.add_listener((event) => received.push(event));
 		audit.notify(FAKE_EVENT);
 		assert.strictEqual(received.length, 1);
+	});
+
+	test('notify snapshots the listener list — a listener registered mid-fan-out fires only next time', () => {
+		// A listener that registers another listener during `notify` must not
+		// have the newcomer fire for the in-flight event — `notify` iterates a
+		// snapshot copy (converges with the Rust twin's cloned vec). The
+		// newcomer picks up on the next `notify`.
+		const audit = create_audit_emitter({db: create_mock_db(), log});
+		const late: Array<AuditLogEvent> = [];
+		audit.add_listener(() => {
+			audit.add_listener((event) => late.push(event));
+		});
+
+		audit.notify(FAKE_EVENT);
+		// The late listener was registered during the first fan-out but must
+		// not have fired for `FAKE_EVENT`.
+		assert.strictEqual(late.length, 0);
+
+		audit.notify(FAKE_EVENT);
+		// Now it fires for the second event. The first listener also ran again,
+		// registering a *third* listener, but that one likewise waits — so the
+		// late array grows by exactly one per `notify`.
+		assert.strictEqual(late.length, 1);
 	});
 });
 

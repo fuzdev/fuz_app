@@ -244,8 +244,8 @@ describe('create_app_backend', () => {
 		async () => {
 			// Reference identity is the strongest contract — proves the factory
 			// output flows through to `AppDeps.audit` without being re-wrapped or
-			// shallow-copied (the latter would silently break `on_event_chain`
-			// composition by `create_app_server`).
+			// shallow-copied (the latter would silently break listener
+			// composition — `add_listener` — by `create_app_server`).
 			let returned: ReturnType<typeof create_audit_emitter> | null = null;
 			const backend = await create_app_backend({
 				database_url: 'memory://',

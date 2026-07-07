@@ -13,7 +13,7 @@ import {
 	type AuditEmitter,
 	type CreateAuditEmitterOptions,
 } from '../auth/audit_emitter.ts';
-import type {AuditLogInput} from '../auth/audit_log_schema.ts';
+import type {AuditLogEvent, AuditLogInput} from '../auth/audit_log_schema.ts';
 import type {AuditFactory} from '../server/app_backend.ts';
 
 /**
@@ -90,7 +90,9 @@ export interface RecordingAuditEmitter {
  * and the `event_type` / `outcome` / `target_*_id` / `metadata` fields
  * forward from the input envelope. Tests asserting on role-grant-shape
  * emissions read out of the same homogeneous `calls` array.
- * `notify` is a no-op; `on_event_chain` is an empty array.
+ * `notify` is a no-op; `add_listener` records into a local array that
+ * `listener_count` reports (registered listeners never fire — this emitter
+ * captures `emit` shapes, not fan-out).
  *
  * `emit` AND `emit_pool` both append to `calls` so cleanup-sweep tests
  * (which use `emit_pool` exclusively — see `auth/cleanup.ts`) can also
@@ -113,6 +115,7 @@ export const create_recording_audit_emitter = (
 	calls_ref?: Array<AuditLogInput>,
 ): RecordingAuditEmitter => {
 	const calls = calls_ref ?? [];
+	const listeners: Array<(event: AuditLogEvent) => void> = [];
 	const emitter: AuditEmitter = {
 		emit: (_ctx, input) => {
 			calls.push(input as AuditLogInput);
@@ -134,7 +137,10 @@ export const create_recording_audit_emitter = (
 			return Promise.resolve();
 		},
 		notify: () => undefined,
-		on_event_chain: [],
+		add_listener: (listener) => {
+			listeners.push(listener);
+		},
+		listener_count: () => listeners.length,
 	};
 	return {emitter, calls};
 };

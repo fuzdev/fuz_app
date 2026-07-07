@@ -33,7 +33,7 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `stub_mw` — pass-through middleware (`async (_c, next) => next()`).
 - `stub_app_deps` — frozen `AppDeps`, every capability throwing, `audit` a no-op `AuditEmitter` from `create_test_audit_emitter`.
 - `create_stub_app_deps()` — factory: fresh `AppDeps` with no-op FS/keyring/password, a `create_noop_stub` DB, silent `Logger`, no-op `audit`.
-- `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` no-op, `emit_pool` resolves immediately, `notify` no-op, `on_event_chain` empty.
+- `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` no-op, `emit_pool` resolves immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0.
 - `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `subscribe` returns a no-op cleanup; `on_audit_event` no-op; `registry` is a fresh `SubscriberRegistry` (live `.size` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
 - `create_stub_api_middleware({include_daemon_token?})` — stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin/session/request_context/bearer_auth, optional daemon_token) for surface generation without booting real auth. See `auth/CLAUDE.md` §Middleware for the real stack.
 - `create_stub_app_server_context(session_options)` — stub `AppServerContext`; rate limiters null, `bootstrap_status.available: false`, `app_settings.open_signup: false`.

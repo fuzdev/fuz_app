@@ -79,7 +79,7 @@ import {
 	query_app_settings_load_with_username,
 	query_app_settings_update,
 } from './app_settings_queries.ts';
-import type {RouteFactoryDeps} from './deps.ts';
+import type {ActionFactoryDeps} from './deps.ts';
 import {is_pg_unique_violation} from '../db/pg_error.ts';
 import {
 	ERROR_ACCOUNT_NOT_FOUND,
@@ -161,15 +161,15 @@ export interface AdminActionOptions {
 /**
  * Create the admin-only RPC actions.
  *
- * @param deps - `RouteFactoryDeps` (`log`, `audit`, …). `log` drives RPC-
+ * @param deps - `ActionFactoryDeps` (`log`, `audit`). `log` drives RPC-
  *   internal error logging; `audit.emit` writes audit rows via the captured
- *   pool. The bound emitter encapsulates `on_audit_event` fan-out and the
- *   optional `AuditLogConfig`.
+ *   pool. The bound emitter encapsulates listener fan-out and the optional
+ *   `AuditLogConfig`.
  * @param options - role schema for `grantable_roles` derivation
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
 export const create_admin_actions = (
-	deps: Pick<RouteFactoryDeps, 'log' | 'audit'>,
+	deps: ActionFactoryDeps,
 	options: AdminActionOptions = {},
 ): Array<RpcAction> => {
 	const role_specs = options.roles?.role_specs ?? builtin_role_specs_by_name;
@@ -222,9 +222,10 @@ export const create_admin_actions = (
 		const count = await query_session_revoke_all_for_account(ctx, input.account_id);
 		// Handler-side belt+suspenders — close the target account's live WS
 		// sockets BEFORE the audit emit so revocation lands even if the audit
-		// INSERT fails. Listener-based close (`transports_ws_auth_guard` on
-		// `audit.on_event_chain`) stays as a fail-safe for out-of-band emit
-		// sites. Idempotent — see `account_actions.ts::session_revoke_handler`.
+		// INSERT fails. Listener-based close (`transports_ws_auth_guard`
+		// registered via `audit.add_listener`) stays as a fail-safe for
+		// out-of-band emit sites. Idempotent — see
+		// `account_actions.ts::session_revoke_handler`.
 		if (connection_closer) {
 			connection_closer.close_sockets_for_account(input.account_id);
 		}

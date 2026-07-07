@@ -219,8 +219,8 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
 	 * eagerly close affected WebSocket sockets for the account BEFORE
 	 * emitting the corresponding audit event. Mirrors the self-service
 	 * action surface (see `AccountActionOptions.connection_closer`). When
-	 * absent, only the listener-based close (`transports_ws_auth_guard` on
-	 * `audit.on_event_chain`) runs.
+	 * absent, only the listener-based close (`transports_ws_auth_guard`
+	 * registered via `audit.add_listener`) runs.
 	 */
 	connection_closer?: ConnectionCloser | null;
 	/**

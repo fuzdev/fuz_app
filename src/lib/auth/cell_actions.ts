@@ -51,7 +51,7 @@ import {jsonrpc_errors, dev_only} from '../http/jsonrpc_errors.ts';
 import {is_pg_unique_violation} from '../db/pg_error.ts';
 import {has_role, type RequestActorContext} from './request_context.ts';
 import {ROLE_ADMIN} from './role_schema.ts';
-import type {RouteFactoryDeps} from './deps.ts';
+import type {ActionFactoryDeps} from './deps.ts';
 import type {Json} from '@fuzdev/fuz_util/json.ts';
 import type {Uuid} from '@fuzdev/fuz_util/id.ts';
 
@@ -188,7 +188,7 @@ export type CellCreateAuthorize = (
  * `authorize_create` is the optional creation-gate hook (see
  * `CellCreateAuthorize`). When omitted, create is open (today's behavior).
  */
-export type CellActionDeps = Pick<RouteFactoryDeps, 'log' | 'audit'> & {
+export type CellActionDeps = ActionFactoryDeps & {
 	validate_data?: (data: CellData) => CellData;
 	authorize_create?: CellCreateAuthorize;
 };

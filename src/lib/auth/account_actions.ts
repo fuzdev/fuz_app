@@ -39,7 +39,7 @@ import {
 } from './api_token_queries.ts';
 import {generate_api_token} from './api_token.ts';
 import {DEFAULT_MAX_TOKENS} from './account_route_schema.ts';
-import type {RouteFactoryDeps} from './deps.ts';
+import type {ActionFactoryDeps} from './deps.ts';
 import {
 	account_verify_action_spec,
 	account_session_list_action_spec,
@@ -89,14 +89,14 @@ export interface AccountActionOptions {
 /**
  * Create the self-service account RPC actions.
  *
- * @param deps - `RouteFactoryDeps` (`log`, `audit`, …). `audit.emit` writes
+ * @param deps - `ActionFactoryDeps` (`log`, `audit`). `audit.emit` writes
  *   audit rows via the captured pool; the bound emitter encapsulates
  *   `on_audit_event` fan-out and the optional `AuditLogConfig`.
  * @param options - per-factory configuration
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
 export const create_account_actions = (
-	deps: Pick<RouteFactoryDeps, 'log' | 'audit'>,
+	deps: ActionFactoryDeps,
 	options: AccountActionOptions = {},
 ): Array<RpcAction> => {
 	const {max_tokens = DEFAULT_MAX_TOKENS, connection_closer = null} = options;

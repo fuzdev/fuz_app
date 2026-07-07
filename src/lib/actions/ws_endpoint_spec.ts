@@ -80,7 +80,7 @@ export interface WsEndpointSpec {
 	/**
 	 * Default `true` — auto-composes `create_ws_auth_guard` +
 	 * `create_ws_logout_closer` against this endpoint's transport and
-	 * appends them to `deps.audit.on_event_chain`. Wiring is deduped by
+	 * registers them via `deps.audit.add_listener`. Wiring is deduped by
 	 * transport **reference identity** (`WeakSet<BackendWebsocketTransport>`),
 	 * so two `WsEndpointSpec`s sharing the exact same instance get a
 	 * single pair of listeners.
@@ -112,7 +112,7 @@ export interface WsEndpointSpec {
 	 */
 	auth_guard?: boolean;
 	/**
-	 * Extra audit-event handlers appended to `deps.audit.on_event_chain`
+	 * Extra audit-event handlers registered via `deps.audit.add_listener`
 	 * AFTER the standard `auth_guard` wiring (when enabled). By the time
 	 * these run, the standard guards may have already closed sockets. Use
 	 * for role-revoke disconnection, custom analytics, etc.

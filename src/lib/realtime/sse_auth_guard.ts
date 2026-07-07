@@ -171,14 +171,14 @@ export const AUDIT_LOG_SSE_MAX_PER_SCOPE = 10;
  *
  * Combines `SubscriberRegistry`, `create_sse_auth_guard`, and the broadcast
  * call into a single object. The result satisfies `AuditLogRouteOptions['stream']`
- * and provides the `on_audit_event` listener for the audit emitter's chain.
+ * and provides the `on_audit_event` listener for the audit emitter.
  *
  * Most consumers pass `audit_log_sse: true` to `create_app_server` and never
- * touch this directly — the factory builds an `AuditLogSse`, appends
- * `audit_sse.on_audit_event` to `backend.deps.audit.on_event_chain`, and
+ * touch this directly — the factory builds an `AuditLogSse`, registers
+ * `audit_sse.on_audit_event` via `backend.deps.audit.add_listener`, and
  * exposes it via `AppServerContext.audit_sse`. Reach for the manual path
  * (compose inside `audit_factory` body, or
- * `audit.on_event_chain.push(audit_sse.on_audit_event)` post-assembly) only
+ * `audit.add_listener(audit_sse.on_audit_event)` post-assembly) only
  * when wiring outside `create_app_server`.
  *
  * @param options - factory options

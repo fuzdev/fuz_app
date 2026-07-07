@@ -24,10 +24,11 @@
  * @module
  */
 
+import type {Logger} from '@fuzdev/fuz_util/log.ts';
+
 import {jsonrpc_errors} from '../http/jsonrpc_errors.ts';
 import {rpc_action, type ActionAuthContext, type RpcAction} from '../actions/action_rpc.ts';
 
-import type {RouteFactoryDeps} from './deps.ts';
 import {query_actor_search} from './actor_search_queries.ts';
 import {query_account_has_global_role} from './role_grant_queries.ts';
 import {ROLE_ADMIN} from './role_schema.ts';
@@ -41,7 +42,9 @@ import {
 } from './actor_search_action_specs.ts';
 
 /** Dependencies for `create_actor_search_actions`. */
-export type ActorSearchActionDeps = Pick<RouteFactoryDeps, 'log'>;
+export interface ActorSearchActionDeps {
+	log: Logger;
+}
 
 export const create_actor_search_actions = (_deps: ActorSearchActionDeps): Array<RpcAction> => {
 	const handler = async (

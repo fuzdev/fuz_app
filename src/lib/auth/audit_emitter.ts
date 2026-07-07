@@ -1,8 +1,8 @@
 /**
  * Bound audit-emit capability.
  *
- * `AuditEmitter` closes over the pool-level `Db`, the `on_audit_event`
- * subscriber chain, and the optional `AuditLogConfig`. Built by the
+ * `AuditEmitter` closes over the pool-level `Db`, its registered
+ * listeners, and the optional `AuditLogConfig`. Built by the
  * consumer's `audit_factory` callback on `CreateAppBackendOptions` —
  * `create_app_backend` invokes the factory once with its constructed
  * `{db, log}` and lands the result on `AppDeps.audit`. Consumers reach
@@ -26,16 +26,16 @@
  *   Same write-then-notify semantics as `emit`, just synchronous-with-await.
  * - `notify(event)` — fan out an already-written audit row (e.g. rows
  *   returned by `query_accept_offer` that were inserted in-transaction by
- *   the query layer). Runs every listener on the chain; per-listener throws
+ *   the query layer). Runs every registered listener; per-listener throws
  *   are isolated.
  *
- * The chain is a documented mutable seam — `create_app_server` appends
- * additional listeners after the backend is built (the factory-managed
- * audit-log SSE, per-endpoint WS auth guards and logout closers, any
- * `extra_audit_handlers` on a `WsEndpointSpec`) before the first request
- * runs. Consumers can also append listeners directly on the emitter
- * they return from `audit_factory` for setups that don't pass through
- * `create_app_server`.
+ * Listeners are a documented registration seam — `create_app_server`
+ * registers additional listeners via `add_listener` after the backend is
+ * built (the factory-managed audit-log SSE, per-endpoint WS auth guards and
+ * logout closers, any `extra_audit_handlers` on a `WsEndpointSpec`) before
+ * the first request runs. Consumers can also register listeners directly on
+ * the emitter they return from `audit_factory` for setups that don't pass
+ * through `create_app_server`.
  *
  * @module
  */
@@ -139,7 +139,7 @@ export interface AuditEmitter {
 	 */
 	emit_pool<T extends string>(input: AuditLogInput<T>): Promise<void>;
 	/**
-	 * Fan out an already-written audit row to the listener chain.
+	 * Fan out an already-written audit row to the registered listeners.
 	 *
 	 * Use only when the row was inserted in-transaction by a query helper
 	 * that returned the `AuditLogEvent` (e.g. `query_accept_offer.audit_events`).
@@ -148,14 +148,22 @@ export interface AuditEmitter {
 	 */
 	notify(event: AuditLogEvent): void;
 	/**
-	 * Mutable subscriber chain. `create_app_server` appends the
-	 * factory-managed audit-log SSE listener and per-endpoint WS auth
-	 * guards / logout closers here so SSE + WS fan-out compose on top of
-	 * the consumer's `on_audit_event` callback without shallow-copying
-	 * `AppDeps`. Consumers can also append listeners directly for setups
-	 * that don't run through `create_app_server`.
+	 * Register an audit-event listener. Append-only — listeners fire in
+	 * registration order on every successful `emit` / `emit_pool` and on
+	 * every `notify`.
+	 *
+	 * `create_app_server` registers the factory-managed audit-log SSE
+	 * listener and per-endpoint WS auth guards / logout closers here so
+	 * SSE + WS fan-out compose on top of the consumer's `on_audit_event`
+	 * callback without shallow-copying `AppDeps`. Consumers can also
+	 * register listeners directly for setups that don't run through
+	 * `create_app_server`.
+	 *
+	 * Twin of the Rust `fuz_auth` `AuditEmitter::add_listener`.
 	 */
-	readonly on_event_chain: Array<(event: AuditLogEvent) => void>;
+	add_listener(listener: (event: AuditLogEvent) => void): void;
+	/** Count of registered listeners — introspection for tests and diagnostics. */
+	listener_count(): number;
 }
 
 /**
@@ -191,8 +199,8 @@ export interface CreateAuditEmitterOptions {
 	/** Logger for write + listener-callback failures. */
 	log: Logger;
 	/**
-	 * Initial subscriber appended to `on_event_chain`. Omit for backends
-	 * that compose listeners post-assembly (e.g. via `audit_log_sse`).
+	 * Initial listener — registered as the first listener when set. Omit for
+	 * backends that compose listeners post-assembly (e.g. via `audit_log_sse`).
 	 */
 	on_audit_event?: ((event: AuditLogEvent) => void) | null;
 	/**
@@ -224,11 +232,17 @@ export interface CreateAuditEmitterOptions {
  */
 export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditEmitter => {
 	const {db, log, audit_log_config = builtin_audit_log_config, emit_decorator} = options;
-	const on_event_chain: Array<(event: AuditLogEvent) => void> = [];
-	if (options.on_audit_event) on_event_chain.push(options.on_audit_event);
+	// Closure-private listener list — no mutable array is exposed on the
+	// returned (frozen) emitter; registration goes through `add_listener`.
+	const listeners: Array<(event: AuditLogEvent) => void> = [];
+	if (options.on_audit_event) listeners.push(options.on_audit_event);
 
 	const notify = (event: AuditLogEvent): void => {
-		for (const listener of on_event_chain) {
+		// Snapshot-at-notify: iterate a copy so a listener that registers
+		// another listener mid-fan-out doesn't have the newcomer fire for the
+		// in-flight event (it fires on the next `notify`). Converges with the
+		// Rust twin, which clones the listener vec before iterating.
+		for (const listener of [...listeners]) {
 			try {
 				listener(event);
 			} catch (err) {
@@ -278,6 +292,11 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 		});
 	};
 
+	const add_listener = (listener: (event: AuditLogEvent) => void): void => {
+		listeners.push(listener);
+	};
+	const listener_count = (): number => listeners.length;
+
 	// Freeze the slot layout so consumers cannot hot-patch `emit` /
 	// `emit_role_grant_target` / `emit_pool` / `notify` after construction.
 	// The previous test helper `patch_audit_emit_capture` did exactly this
@@ -286,8 +305,16 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 	// `this.emit`, so the patch silently bypassed role-grant-shape emits.
 	// Tests that need instrumentation pass `emit_decorator` so the wrap
 	// is captured by the closure before the freeze (see
-	// `create_emit_ordering_audit_factory`). `on_event_chain` is a
-	// frozen reference but its array contents stay mutable —
-	// `create_app_server` appends to it post-assembly, by design.
-	return Object.freeze({emit, emit_role_grant_target, emit_pool, notify, on_event_chain});
+	// `create_emit_ordering_audit_factory`). The listener list stays
+	// closure-private; registration is append-only via `add_listener`
+	// (`create_app_server` registers its SSE + WS listeners post-assembly,
+	// by design).
+	return Object.freeze({
+		emit,
+		emit_role_grant_target,
+		emit_pool,
+		notify,
+		add_listener,
+		listener_count,
+	});
 };

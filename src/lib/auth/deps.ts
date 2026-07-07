@@ -39,11 +39,11 @@ export interface AppDeps {
 	/** Structured logger instance. */
 	log: Logger;
 	/**
-	 * Bound audit emitter. Closes over the pool, the `on_audit_event`
-	 * subscriber chain, and the optional `AuditLogConfig`. Built once at
-	 * backend assembly via `create_audit_emitter` so handlers can never
-	 * accidentally write audits against the request transaction — there
-	 * is no pool slot on the handler context.
+	 * Bound audit emitter. Closes over the pool, its registered listeners,
+	 * and the optional `AuditLogConfig`. Built once at backend assembly via
+	 * `create_audit_emitter` so handlers can never accidentally write audits
+	 * against the request transaction — there is no pool slot on the handler
+	 * context.
 	 */
 	audit: AuditEmitter;
 	/**
@@ -63,3 +63,19 @@ export interface AppDeps {
  * via `RouteContext`, so factories don't capture a pool-level `Db`.
  */
 export type RouteFactoryDeps = Omit<AppDeps, 'db'>;
+
+/**
+ * Capabilities for action-spec factories — the "Action caps" shape.
+ *
+ * The minimal slice every `create_*_actions` factory needs: a `log` for
+ * RPC-internal error logging and the bound `audit` emitter for
+ * fire-and-forget audit writes. `RouteFactoryDeps` (and `AppDeps`)
+ * satisfy it structurally, so consumers pass their fuller deps bundle
+ * straight through.
+ */
+export interface ActionFactoryDeps {
+	/** Structured logger instance. */
+	log: Logger;
+	/** Bound audit emitter for fire-and-forget audit writes. */
+	audit: AuditEmitter;
+}

@@ -18,9 +18,9 @@
  *
  * For standard WS endpoints mounted via `AppServerOptions.ws_endpoints`,
  * `create_app_server` composes the guard automatically per
- * `WsEndpointSpec.auth_guard`. For custom wiring, append the handler
+ * `WsEndpointSpec.auth_guard`. For custom wiring, register the handler
  * inside the consumer's `audit_factory` body (or via
- * `audit.on_event_chain.push(...)` post-assembly).
+ * `audit.add_listener(...)` post-assembly).
  *
  * @module
  */
@@ -72,8 +72,8 @@ export const ws_disconnect_event_types: ReadonlySet<string> = new Set([
  *
  * @param log - logger for disconnect events (info level on non-zero closures)
  * @returns an `on_audit_event` callback suitable for `create_audit_emitter`'s
- *   `on_audit_event` slot, or for appending onto
- *   `audit.on_event_chain` post-assembly. The returned callback mutates
+ *   `on_audit_event` slot, or for registering via
+ *   `audit.add_listener` post-assembly. The returned callback mutates
  *   `transport` (closing matching sockets via
  *   `close_sockets_for_session` / `_token` / `_account`) on every relevant event.
  */

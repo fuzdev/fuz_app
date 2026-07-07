@@ -271,8 +271,8 @@ describe('create_app_server.ws_endpoints', () => {
 		const fake_ws = create_fake_ws();
 		transport.add_connection(fake_ws.ws, session_hash, account_id);
 
-		// `notify` walks `on_event_chain` synchronously — the auto-mount
-		// appended listeners to this same emitter during assembly.
+		// `notify` walks the registered listeners synchronously — the
+		// auto-mount registered listeners on this same emitter during assembly.
 		const event: AuditLogEvent = create_test_audit_event({
 			event_type: 'session_revoke',
 			account_id,
@@ -314,11 +314,16 @@ describe('create_app_server.ws_endpoints', () => {
 		const stub = create_stub_upgrade();
 		const {config, audit} = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
-		// Capture both the event payload (so we know the right event flowed
-		// through) and the relative call order (so we anchor the docstring's
-		// "AFTER the standard auth_guard wiring" promise).
+		// Listeners register append-only in mount order: the standard
+		// [auth_guard, logout_closer] land ahead of any extra handler. Prove
+		// the ordering via the auth_guard's observable effect — it closes the
+		// socket — captured at the instant the extra handler fires. The extra
+		// handler seeing `closes.length === 1` means the standard guard
+		// already ran, anchoring the docstring's "AFTER the standard
+		// auth_guard wiring" promise without reaching into listener internals.
 		const received_events: Array<AuditLogEvent> = [];
-		const fire_order: Array<string> = [];
+		let closes_seen_by_extra = -1;
+		const fake_ws = create_fake_ws();
 		await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
@@ -328,21 +333,15 @@ describe('create_app_server.ws_endpoints', () => {
 					extra_audit_handlers: [
 						(e) => {
 							received_events.push(e);
-							fire_order.push('extra');
+							closes_seen_by_extra = fake_ws.closes.length;
 						},
 					],
 				}),
 			],
 		});
 
-		// Chain shape after auto-mount: [auth_guard, logout_closer, extra].
-		// Unshift a sentinel so the relative ordering across the standard
-		// guards is observable.
-		audit.on_event_chain.unshift(() => fire_order.push('head_sentinel'));
-
 		const session_hash = 'session_hash_a';
 		const account_id: Uuid = create_uuid();
-		const fake_ws = create_fake_ws();
 		transport.add_connection(fake_ws.ws, session_hash, account_id);
 
 		const event = create_test_audit_event({
@@ -353,11 +352,12 @@ describe('create_app_server.ws_endpoints', () => {
 		audit.notify(event);
 
 		// Standard guard fired (socket closed) AND the extra handler received
-		// the same event AND the extra handler ran after the head sentinel.
+		// the same event AND — because the standard guards registered before
+		// the extra handler — the socket was already closed when the extra ran.
 		assert.strictEqual(fake_ws.closes.length, 1);
 		assert.strictEqual(received_events.length, 1);
 		assert.strictEqual(received_events[0]!.event_type, 'session_revoke');
-		assert.deepStrictEqual(fire_order, ['head_sentinel', 'extra']);
+		assert.strictEqual(closes_seen_by_extra, 1);
 	});
 
 	test('auth_guard dedupes by transport reference: shared transport gets a single pair of listeners', async () => {
@@ -379,7 +379,7 @@ describe('create_app_server.ws_endpoints', () => {
 		assert.strictEqual(result.ws_endpoints['/api/ws_b'], shared_transport);
 
 		// One (auth_guard, logout_closer) pair, not two.
-		assert.strictEqual(audit.on_event_chain.length, 2);
+		assert.strictEqual(audit.listener_count(), 2);
 	});
 
 	test('rate limiter threading: action limiters flow from AppServerContext into the WS mount', async () => {
@@ -468,10 +468,10 @@ describe('create_app_server.ws_endpoints', () => {
 		assert.strictEqual(fake_ws.closes[0]!.code, WS_CLOSE_SESSION_REVOKED);
 	});
 
-	test('audit_log_sse + ws_endpoints co-mount: both append to on_event_chain and the WS guard fires on session_revoke', async () => {
-		// `audit_log_sse: true` appends the SSE listener first (line ~461);
-		// the WS auto-mount appends the auth_guard pair later (line ~741-2).
-		// Both share `deps.audit.on_event_chain` — chain composition must
+	test('audit_log_sse + ws_endpoints co-mount: both register listeners and the WS guard fires on session_revoke', async () => {
+		// `audit_log_sse: true` registers the SSE listener first (line ~461);
+		// the WS auto-mount registers the auth_guard pair later (line ~741-2).
+		// Both register on `deps.audit` — listener composition must
 		// not break either consumer.
 		const stub = create_stub_upgrade();
 		const {config, audit} = await create_test_setup();
@@ -492,7 +492,7 @@ describe('create_app_server.ws_endpoints', () => {
 		transport.add_connection(fake_ws.ws, session_hash, account_id);
 
 		// Chain length: 1 (audit_sse listener) + 2 (auth_guard + logout_closer).
-		assert.strictEqual(audit.on_event_chain.length, 3);
+		assert.strictEqual(audit.listener_count(), 3);
 
 		const event: AuditLogEvent = create_test_audit_event({
 			event_type: 'session_revoke',
@@ -529,7 +529,7 @@ describe('create_app_server.ws_endpoints', () => {
 		});
 
 		// Both registrations appended — chain has both entries.
-		assert.strictEqual(audit.on_event_chain.length, 2);
+		assert.strictEqual(audit.listener_count(), 2);
 
 		audit.notify(create_test_audit_event({event_type: 'login'}));
 		assert.strictEqual(call_count, 2);
@@ -721,7 +721,7 @@ describe('create_app_server.ws_endpoints', () => {
 		});
 
 		// One (auth_guard, logout_closer) pair appended.
-		assert.strictEqual(audit.on_event_chain.length, 2);
+		assert.strictEqual(audit.listener_count(), 2);
 
 		// Sanity: the wired guard actually fires.
 		const session_hash = 'session_hash_explicit_true';
@@ -755,7 +755,7 @@ describe('create_app_server.ws_endpoints', () => {
 			],
 		});
 
-		assert.strictEqual(audit.on_event_chain.length, 4);
+		assert.strictEqual(audit.listener_count(), 4);
 	});
 
 	test('shared transport with mixed auth_guard config: OR-semantics, any non-false wires the guard', async () => {
@@ -777,7 +777,7 @@ describe('create_app_server.ws_endpoints', () => {
 
 		// Guard wired exactly once (by the `true` spec); the `false` spec
 		// doesn't subtract.
-		assert.strictEqual(audit.on_event_chain.length, 2);
+		assert.strictEqual(audit.listener_count(), 2);
 
 		// And it actually fires.
 		const session_hash = 'session_hash_mixed_or';
@@ -846,6 +846,6 @@ describe('create_app_server.ws_endpoints', () => {
 		});
 
 		// No listeners appended for the shared transport.
-		assert.strictEqual(audit.on_event_chain.length, 0);
+		assert.strictEqual(audit.listener_count(), 0);
 	});
 });

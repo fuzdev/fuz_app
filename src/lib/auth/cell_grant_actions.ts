@@ -33,7 +33,7 @@
 import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.ts';
 import {jsonrpc_errors} from '../http/jsonrpc_errors.ts';
 import type {RoleSchemaResult} from './role_schema.ts';
-import type {RouteFactoryDeps} from './deps.ts';
+import type {ActionFactoryDeps} from './deps.ts';
 
 import {
 	cell_grant_create_action_spec,
@@ -74,7 +74,7 @@ import type {
  * `cell_grant_create`. The other slots match `CellActionDeps` so
  * audit-log emit goes through the same fire-and-forget plumbing.
  */
-export type CellGrantActionDeps = Pick<RouteFactoryDeps, 'log' | 'audit'> & {
+export type CellGrantActionDeps = ActionFactoryDeps & {
 	roles: RoleSchemaResult;
 };
 
