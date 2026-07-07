@@ -40,8 +40,8 @@
 		</label>
 	{/if}
 	{#if app_settings.list.error}
-		<p class="color_c_50">{app_settings.list.error}</p>
+		<p class="palette_c_50">{app_settings.list.error}</p>
 	{:else if app_settings.update.error}
-		<p class="color_c_50">{app_settings.update.error}</p>
+		<p class="palette_c_50">{app_settings.update.error}</p>
 	{/if}
 </div>

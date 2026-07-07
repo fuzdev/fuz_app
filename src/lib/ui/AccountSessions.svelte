@@ -44,18 +44,18 @@
 	<h2>
 		sessions
 		{#if account_sessions.active_count > 0}
-			<span class="chip color_a">{account_sessions.active_count} active</span>
+			<span class="chip palette_a">{account_sessions.active_count} active</span>
 		{/if}
 	</h2>
 
 	{#if account_sessions.list.loading}
 		<p class="text_50">loading sessions...</p>
 	{:else if account_sessions.list.error}
-		<p class="color_c_50">{account_sessions.list.error}</p>
+		<p class="palette_c_50">{account_sessions.list.error}</p>
 	{:else}
 		{@const revoke_all_error = account_sessions.revoke_all.error}
 		{#if revoke_all_error}
-			<p class="color_c_50">{revoke_all_error}</p>
+			<p class="palette_c_50">{revoke_all_error}</p>
 		{/if}
 		{#if account_sessions.active_count > 1}
 			<div class="mb_md">
@@ -65,7 +65,7 @@
 		<Datatable {columns} rows={account_sessions.sessions} height="300px">
 			{#snippet cell(column, row)}
 				{#if column.key === 'id'}
-					<span class="chip color_b">active</span>
+					<span class="chip palette_b">active</span>
 					<code class="text_50">{truncate_uuid(row.id)}</code>
 				{:else if column.key === 'created_at'}
 					<span title={format_datetime_local(row.created_at)}>
@@ -90,7 +90,7 @@
 						{revoking ? 'revoking…' : 'revoke'}
 					</button>
 					{#if revoke_error}
-						<span class="color_c_50 font_size_sm">{revoke_error}</span>
+						<span class="palette_c_50 font_size_sm">{revoke_error}</span>
 					{/if}
 				{:else if column.format}
 					{column.format(row[column.key], row)}

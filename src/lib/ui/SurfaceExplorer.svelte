@@ -87,10 +87,10 @@
 	};
 
 	const auth_chip_class = (auth: RouteAuth): string => {
-		if (is_public_auth(auth)) return 'chip color_b';
-		if (is_keeper_auth(auth)) return 'chip color_c';
-		if (is_role_auth(auth)) return 'chip color_d';
-		if (is_plain_authenticated_auth(auth)) return 'chip color_a';
+		if (is_public_auth(auth)) return 'chip palette_b';
+		if (is_keeper_auth(auth)) return 'chip palette_c';
+		if (is_role_auth(auth)) return 'chip palette_d';
+		if (is_plain_authenticated_auth(auth)) return 'chip palette_a';
 		return 'chip';
 	};
 
@@ -100,12 +100,12 @@
 <section>
 	<div class="row" style:gap="var(--space_md)" style:flex-wrap="wrap" style:align-items="center">
 		<span class="chip">{surface.routes.length} routes</span>
-		{#if summary.none > 0}<span class="chip color_b">{summary.none} public</span>{/if}
-		{#if summary.authenticated > 0}<span class="chip color_a"
+		{#if summary.none > 0}<span class="chip palette_b">{summary.none} public</span>{/if}
+		{#if summary.authenticated > 0}<span class="chip palette_a"
 				>{summary.authenticated} authenticated</span
 			>{/if}
-		{#if role_count > 0}<span class="chip color_d">{role_count} role</span>{/if}
-		{#if summary.keeper > 0}<span class="chip color_c">{summary.keeper} keeper</span>{/if}
+		{#if role_count > 0}<span class="chip palette_d">{role_count} role</span>{/if}
+		{#if summary.keeper > 0}<span class="chip palette_c">{summary.keeper} keeper</span>{/if}
 		<span class="chip">{surface.middleware.length} middleware</span>
 		{#if rpc_method_count > 0}<span class="chip">{rpc_method_count} rpc methods</span>{/if}
 		{#if ws_method_count > 0}<span class="chip">{ws_method_count} ws methods</span>{/if}
@@ -113,7 +113,7 @@
 		{#if surface.events.length}<span class="chip">{surface.events.length} events</span>{/if}
 		{#if surface.diagnostics.length}{@const warnings = surface.diagnostics.filter(
 				(d: AppSurfaceDiagnostic) => d.level === 'warning',
-			)}{#if warnings.length}<span class="chip color_e"
+			)}{#if warnings.length}<span class="chip palette_e"
 					>{warnings.length} warning{warnings.length === 1 ? '' : 's'}</span
 				>{/if}{/if}
 	</div>
@@ -376,10 +376,10 @@
 				<code>{endpoint.path}</code>
 				<span class="chip">{endpoint.methods.length} methods</span>
 				{#each endpoint.required_roles as role (role)}
-					<span class="chip color_d">role:{role}</span>
+					<span class="chip palette_d">role:{role}</span>
 				{/each}
 				{#each endpoint.allowed_origins as origin (origin)}
-					<span class="chip color_b"><code>{origin}</code></span>
+					<span class="chip palette_b"><code>{origin}</code></span>
 				{/each}
 			</div>
 			{#if endpoint.methods.length === 0}
@@ -457,7 +457,9 @@
 				<tbody>
 					{#each surface.diagnostics as d, i (i)}
 						<tr>
-							<td><span class={d.level === 'warning' ? 'chip color_e' : 'chip'}>{d.level}</span></td
+							<td
+								><span class={d.level === 'warning' ? 'chip palette_e' : 'chip'}>{d.level}</span
+								></td
 							>
 							<td><code>{d.category}</code></td>
 							<td>{d.message}</td>

@@ -151,6 +151,6 @@
 	</div>
 
 	{#if local_error}
-		<p class="color_c_50 font_size_sm mt_xs mb_0">{local_error}</p>
+		<p class="palette_c_50 font_size_sm mt_xs mb_0">{local_error}</p>
 	{/if}
 </form>

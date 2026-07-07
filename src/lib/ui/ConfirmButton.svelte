@@ -130,7 +130,7 @@
 		{:else}
 			<button
 				type="button"
-				class="color_c bg_100"
+				class="palette_c bg_100"
 				class:icon_button={!popover_button_content}
 				onclick={() => confirm(popover)}
 				title={rest.title ? `confirm ${rest.title}` : 'confirm'}

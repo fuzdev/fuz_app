@@ -36,14 +36,14 @@
 	<h1>active sessions</h1>
 	{#if admin_sessions.active_count > 0}
 		<p>
-			<span class="chip color_a">{admin_sessions.active_count} active</span>
+			<span class="chip palette_a">{admin_sessions.active_count} active</span>
 		</p>
 	{/if}
 
 	{#if admin_sessions.list.loading}
 		<p class="text_50">loading sessions...</p>
 	{:else if admin_sessions.list.error}
-		<p class="color_c_50">{admin_sessions.list.error}</p>
+		<p class="palette_c_50">{admin_sessions.list.error}</p>
 	{:else}
 		<Datatable {columns} rows={admin_sessions.sessions} height="400px">
 			{#snippet cell(column, row)}
@@ -72,7 +72,7 @@
 						pending={admin_sessions.revoke_sessions.loading(row.account_id)}
 					/>
 					{#if revoke_sessions_error}
-						<span class="color_c_50 font_size_sm">{revoke_sessions_error}</span>
+						<span class="palette_c_50 font_size_sm">{revoke_sessions_error}</span>
 					{/if}
 					<ConfirmButton
 						onconfirm={() => admin_sessions.submit_revoke_tokens(row.account_id)}
@@ -82,7 +82,7 @@
 						pending={admin_sessions.revoke_tokens.loading(row.account_id)}
 					/>
 					{#if revoke_tokens_error}
-						<span class="color_c_50 font_size_sm">{revoke_tokens_error}</span>
+						<span class="palette_c_50 font_size_sm">{revoke_tokens_error}</span>
 					{/if}
 				{:else if column.format}
 					{column.format(row[column.key], row)}
