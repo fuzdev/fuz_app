@@ -89,7 +89,7 @@
 		/>
 	</label>
 	{#if form_state.show('username') && username && !username_valid}
-		<p class="color_c_50 font_size_sm mt_0 mb_xs">
+		<p class="palette_c_50 font_size_sm mt_0 mb_xs">
 			3-39 chars, starts with a letter, ends with letter/number, middle allows dash/underscore
 		</p>
 	{/if}
@@ -117,7 +117,7 @@
 			/>
 		</label>
 		{#if form_state.show('password') && password && password.length < PASSWORD_LENGTH_MIN}
-			<p class="color_c_50 font_size_sm mt_0 mb_xs">
+			<p class="palette_c_50 font_size_sm mt_0 mb_xs">
 				password must be at least {PASSWORD_LENGTH_MIN} characters
 			</p>
 		{/if}
@@ -133,7 +133,7 @@
 			/>
 		</label>
 		{#if form_state.show('password_confirm') && password && password_confirm && !passwords_match}
-			<p class="color_c_50 font_size_sm mt_0 mb_xs">passwords do not match</p>
+			<p class="palette_c_50 font_size_sm mt_0 mb_xs">passwords do not match</p>
 		{/if}
 	</fieldset>
 	<div class="row gap_sm">
@@ -141,12 +141,12 @@
 			pending={auth_state.verifying}
 			disabled={auth_state.verifying}
 			onclick={handle_signup}
-			class={auth_state.verify_error ? 'color_c' : ''}
+			class={auth_state.verify_error ? 'palette_c' : ''}
 		>
 			sign up
 		</PendingButton>
 	</div>
 	{#if auth_state.verify_error}
-		<p class="color_c_50 font_size_sm mt_xs mb_0">{auth_state.verify_error}</p>
+		<p class="palette_c_50 font_size_sm mt_xs mb_0">{auth_state.verify_error}</p>
 	{/if}
 </form>

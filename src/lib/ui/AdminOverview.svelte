@@ -92,7 +92,7 @@
 		{#if accounts.list.loading}
 			<p class="text_50">loading...</p>
 		{:else if accounts.list.error}
-			<p class="color_c_50">{accounts.list.error}</p>
+			<p class="palette_c_50">{accounts.list.error}</p>
 		{:else}
 			<div class="baseline-row gap_xs">
 				<strong class="font_size_lg">{accounts.account_count}</strong>
@@ -134,7 +134,7 @@
 		{#if sessions.list.loading}
 			<p class="text_50">loading...</p>
 		{:else if sessions.list.error}
-			<p class="color_c_50">{sessions.list.error}</p>
+			<p class="palette_c_50">{sessions.list.error}</p>
 		{:else}
 			<div class="baseline-row gap_xs">
 				<strong class="font_size_lg">{sessions.active_count}</strong>
@@ -164,12 +164,12 @@
 		{#if invites.list.loading}
 			<p class="text_50">loading...</p>
 		{:else if invites.list.error}
-			<p class="color_c_50">{invites.list.error}</p>
+			<p class="palette_c_50">{invites.list.error}</p>
 		{:else}
 			<div class="baseline-row gap_sm">
 				<span class="text_50">public signup</span>
 				{#if app_settings.settings?.open_signup}
-					<span class="chip color_b">open</span>
+					<span class="chip palette_b">open</span>
 				{:else}
 					<span class="chip">closed</span>
 				{/if}
@@ -187,7 +187,7 @@
 						<li>
 							<span>{invite.email || invite.username || '—'}</span>
 							{#if invite.claimed_at}
-								<span class="chip font_size_sm color_b">claimed</span>
+								<span class="chip font_size_sm palette_b">claimed</span>
 							{:else}
 								<span class="chip font_size_sm">unclaimed</span>
 							{/if}
@@ -209,7 +209,7 @@
 		{#if audit_log.list.loading}
 			<p class="text_50">loading...</p>
 		{:else if audit_log.list.error}
-			<p class="color_c_50">{audit_log.list.error}</p>
+			<p class="palette_c_50">{audit_log.list.error}</p>
 		{:else if recent_events.length === 0}
 			<p class="text_50">no events</p>
 		{:else}
@@ -221,7 +221,7 @@
 						>
 						<code class="font_size_sm">{event.event_type}</code>
 						{#if event.outcome === 'failure'}
-							<span class="chip font_size_sm color_c">fail</span>
+							<span class="chip font_size_sm palette_c">fail</span>
 						{/if}
 					</li>
 				{/each}
@@ -237,10 +237,10 @@
 		{#if audit_log.list.loading}
 			<p class="text_50">loading...</p>
 		{:else if audit_log.list.error}
-			<p class="color_c_50">{audit_log.list.error}</p>
+			<p class="palette_c_50">{audit_log.list.error}</p>
 		{:else}
 			<div class="baseline-row gap_xs">
-				<strong class="font_size_lg" class:color_c_50={failed_logins.length > 0}>
+				<strong class="font_size_lg" class:palette_c_50={failed_logins.length > 0}>
 					{failed_logins.length}
 				</strong>
 				<span class="text_50">failed logins</span>
@@ -274,12 +274,12 @@
 		{#if app_settings.list.loading}
 			<p class="text_50">loading...</p>
 		{:else if app_settings.list.error}
-			<p class="color_c_50">{app_settings.list.error}</p>
+			<p class="palette_c_50">{app_settings.list.error}</p>
 		{:else}
 			<div class="baseline-row gap_sm">
 				<span class="text_50">public signup</span>
 				{#if app_settings.settings?.open_signup}
-					<span class="chip color_b">open</span>
+					<span class="chip palette_b">open</span>
 				{:else}
 					<span class="chip">invite-only</span>
 				{/if}

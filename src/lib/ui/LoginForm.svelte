@@ -99,12 +99,12 @@
 			pending={auth_state.verifying}
 			disabled={auth_state.verifying}
 			onclick={handle_login}
-			class={auth_state.verify_error ? 'color_c' : ''}
+			class={auth_state.verify_error ? 'palette_c' : ''}
 		>
 			log in
 		</PendingButton>
 	</div>
 	{#if auth_state.verify_error}
-		<p class="color_c_50 font_size_sm mt_xs mb_0">{auth_state.verify_error}</p>
+		<p class="palette_c_50 font_size_sm mt_xs mb_0">{auth_state.verify_error}</p>
 	{/if}
 </form>

@@ -178,7 +178,7 @@
 	}
 
 	.datatable-resize-handle:hover {
-		background: var(--color_a_10);
+		background: var(--palette_a_10);
 	}
 
 	.datatable-row {

@@ -54,14 +54,14 @@
 	const status_chip_class = (status: string): string => {
 		switch (status) {
 			case 'accepted':
-				return 'chip color_b';
+				return 'chip palette_b';
 			case 'pending':
-				return 'chip color_a';
+				return 'chip palette_a';
 			case 'declined':
 			case 'retracted':
 			case 'superseded':
 			case 'expired':
-				return 'chip color_c';
+				return 'chip palette_c';
 			default:
 				return 'chip';
 		}
@@ -85,7 +85,7 @@
 	{#if role_grant_offers.list_history.loading}
 		<p class="text_50">loading history...</p>
 	{:else if role_grant_offers.list_history.error}
-		<p class="color_c_50">{role_grant_offers.list_history.error}</p>
+		<p class="palette_c_50">{role_grant_offers.list_history.error}</p>
 	{:else}
 		<Datatable {columns} rows={role_grant_offers.history} height="400px" row_key="id">
 			{#snippet cell(column, row)}

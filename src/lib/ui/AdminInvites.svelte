@@ -59,7 +59,7 @@
 	</section>
 	{#if admin_invites.invite_count > 0}
 		<p>
-			<span class="chip color_a"
+			<span class="chip palette_a"
 				>{admin_invites.unclaimed_count} unclaimed / {admin_invites.invite_count} total</span
 			>
 		</p>
@@ -103,7 +103,7 @@
 	</form>
 
 	{#if admin_invites.list.error || admin_invites.create.error}
-		<p class="color_c_50">{admin_invites.list.error ?? admin_invites.create.error}</p>
+		<p class="palette_c_50">{admin_invites.list.error ?? admin_invites.create.error}</p>
 	{/if}
 
 	{#if admin_invites.list.loading}
@@ -113,7 +113,7 @@
 			{#snippet cell(column, row)}
 				{#if column.key === 'claimed_at'}
 					{#if row.claimed_at}
-						<span class="chip color_b">claimed</span>
+						<span class="chip palette_b">claimed</span>
 						<span class="text_50 font_size_sm" title={format_datetime_local(row.claimed_at)}>
 							{#if row.claimed_by_username}
 								by {row.claimed_by_username}
@@ -142,7 +142,7 @@
 							pending={admin_invites.remove.loading(row.id)}
 						/>
 						{#if remove_error}
-							<span class="color_c_50 font_size_sm">{remove_error}</span>
+							<span class="palette_c_50 font_size_sm">{remove_error}</span>
 						{/if}
 					{:else}
 						<span class="text_50">-</span>

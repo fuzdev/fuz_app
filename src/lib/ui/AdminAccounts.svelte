@@ -44,7 +44,7 @@
 	<h1>accounts</h1>
 	{#if admin_accounts.account_count > 0}
 		<p>
-			<span class="chip color_a"
+			<span class="chip palette_a"
 				>{admin_accounts.account_count} account{admin_accounts.account_count === 1 ? '' : 's'}</span
 			>
 		</p>
@@ -66,7 +66,7 @@
 	{#if admin_accounts.list.loading}
 		<p class="text_50">loading accounts...</p>
 	{:else if admin_accounts.list.error}
-		<p class="color_c_50">{admin_accounts.list.error}</p>
+		<p class="palette_c_50">{admin_accounts.list.error}</p>
 	{:else}
 		<Datatable {columns} rows={admin_accounts.accounts} height="400px">
 			{#snippet cell(column, row)}
@@ -76,7 +76,7 @@
 						<span class="text_50 font_size_sm">
 							{row.account.email}
 							{#if row.account.email_verified}
-								<span class="chip font_size_sm color_b">verified</span>
+								<span class="chip font_size_sm palette_b">verified</span>
 							{:else}
 								<span class="chip font_size_sm">unverified</span>
 							{/if}
@@ -94,7 +94,7 @@
 					{#each row.role_grants as role_grant (role_grant.id)}
 						{@const scope = scope_label(role_grant.scope_id, role_grant.role)}
 						<div class="row">
-							<span class="chip color_b">{role_grant.role}</span>
+							<span class="chip palette_b">{role_grant.role}</span>
 							{#if scope !== null}
 								<span class="text_50 font_size_sm" title={role_grant.scope_id ?? undefined}>
 									{scope}
@@ -119,7 +119,7 @@
 									pending={admin_accounts.revoke.loading(role_grant.id)}
 								/>
 								{#if revoke_error}
-									<span class="color_c_50 font_size_sm">{revoke_error}</span>
+									<span class="palette_c_50 font_size_sm">{revoke_error}</span>
 								{/if}
 							{/if}
 						</div>
@@ -147,7 +147,7 @@
 								pending={admin_accounts.retract.loading(offer.id)}
 							/>
 							{#if retract_error}
-								<span class="color_c_50 font_size_sm">{retract_error}</span>
+								<span class="palette_c_50 font_size_sm">{retract_error}</span>
 							{/if}
 						</div>
 					{/each}
@@ -167,13 +167,13 @@
 								pending={admin_accounts.grant.loading(key)}
 							>
 								{#snippet popover_content(_popover, do_confirm)}
-									<button type="button" class="color_b bg_100" onclick={() => do_confirm()}>
+									<button type="button" class="palette_b bg_100" onclick={() => do_confirm()}>
 										<span class="py_sm">offer '{role}' to @{row.account.username}</span>
 									</button>
 								{/snippet}
 							</ConfirmButton>
 							{#if grant_error}
-								<span class="color_c_50 font_size_sm">{grant_error}</span>
+								<span class="palette_c_50 font_size_sm">{grant_error}</span>
 							{/if}
 						{/if}
 					{/each}
@@ -181,7 +181,7 @@
 					{#if row.account.deleted_at}
 						{@const undelete_error = admin_accounts.undelete.error(row.account.id)}
 						<span
-							class="chip font_size_sm color_c"
+							class="chip font_size_sm palette_c"
 							title={format_datetime_local(row.account.deleted_at)}
 						>
 							deleted {format_relative_time(row.account.deleted_at)}
@@ -195,7 +195,7 @@
 							reactivate
 						</button>
 						{#if undelete_error}
-							<span class="color_c_50 font_size_sm">{undelete_error}</span>
+							<span class="palette_c_50 font_size_sm">{undelete_error}</span>
 						{/if}
 					{:else}
 						{@const delete_error = admin_accounts.soft_delete.error(row.account.id)}
@@ -207,13 +207,13 @@
 							pending={admin_accounts.soft_delete.loading(row.account.id)}
 						>
 							{#snippet popover_content(_popover, do_confirm)}
-								<button type="button" class="color_c bg_100" onclick={() => do_confirm()}>
+								<button type="button" class="palette_c bg_100" onclick={() => do_confirm()}>
 									<span class="py_sm">soft-delete @{row.account.username} (reversible)</span>
 								</button>
 							{/snippet}
 						</ConfirmButton>
 						{#if delete_error}
-							<span class="color_c_50 font_size_sm">{delete_error}</span>
+							<span class="palette_c_50 font_size_sm">{delete_error}</span>
 						{/if}
 					{/if}
 				{/if}

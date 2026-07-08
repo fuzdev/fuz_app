@@ -45,7 +45,7 @@
 	{#if loading}
 		<p class="text_50">loading surface...</p>
 	{:else if error}
-		<p class="color_c_50">{error}</p>
+		<p class="palette_c_50">{error}</p>
 		<button type="button" onclick={() => void load()}>retry</button>
 	{:else if surface}
 		<SurfaceExplorer {surface} />
