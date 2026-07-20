@@ -187,8 +187,15 @@ export const query_session_list_for_account = async (
  * - `POST /bootstrap` and `POST /signup` manage their own transactions
  *   and pass the transaction-scoped `deps` to `create_session_and_set_cookie`
  *
- * The transaction ensures the INSERT + enforce_limit pair is atomic —
- * concurrent session creation cannot interleave between the two statements.
+ * The transaction makes one creator's INSERT + enforce_limit pair atomic, but it
+ * does **not** serialize concurrent creators. Under Read Committed, two
+ * transactions can't see each other's uncommitted session row, so each computes
+ * its `OFFSET` eviction against a stale count, each preserves its own row, and
+ * both commit above `max_sessions`. A transaction is necessary here but not
+ * sufficient. Closing this needs one serialization point per
+ * `(account_id, credential_kind)` — a locked parent row or a transaction-scoped
+ * advisory lock — taken before count/evict/insert, plus a stable tie-breaker
+ * alongside `created_at` so the survivors are deterministic.
  *
  * @param deps - query dependencies (must be transaction-scoped)
  * @param account_id - the account to enforce the limit for

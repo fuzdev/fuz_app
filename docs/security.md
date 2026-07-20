@@ -14,7 +14,9 @@ fuz_app's auth stack is designed to protect against:
 - **Password brute force** — rate limiting + account enumeration prevention
 - **Credential theft** — HttpOnly cookies, bearer token origin rejection
 - **Privilege escalation** — credential type hierarchy, admin-grant-path enforcement
-- **Insider threats** — audit trail for all auth mutations, granted_by provenance
+- **Insider threats** — best-effort audit trail for auth mutations (see
+  [Audit Logging](#audit-logging) — a failed audit write is logged and swallowed,
+  never blocking the mutation), granted_by provenance
 
 Current deployment target: single-process, single-node. See [Known Limitations](#known-limitations).
 
@@ -140,9 +142,12 @@ legitimate operator.
 
 **Hardening layers**:
 
-- **Atomic DB lock**: `bootstrap_lock` single-row latch prevents TOCTOU races
-- **Account existence guard**: Belt-and-suspenders check inside the transaction —
-  refuses bootstrap if accounts already exist, even if the lock was tampered with
+- **Atomic DB lock**: `bootstrap_lock` single-row latch prevents TOCTOU races —
+  the UPDATE-guarded latch is the *single* account-creation signal. An earlier
+  belt-and-suspenders `query_account_has_any` check inside the transaction was
+  removed as redundant once both the production and test writers came to flip
+  the same lock row; direct DB tampering with `bootstrap_lock` is out of scope
+  for the write contract
 - **Early in-memory check**: `bootstrap_status.available` short-circuits before
   any rate limiting, file reads, or crypto after bootstrap completes
 - **Token file deletion enforcement**: If the token file cannot be deleted after
@@ -205,10 +210,17 @@ legitimate operator.
 
 Rotating filesystem credential for keeper-level operations:
 
-- Server writes a random token to `~/.{app}/run/daemon_token` (mode 0600)
+- Server writes a random token to `~/.{app}/run/daemon_token`
   as JSON `{"token": "<base64url>"}` — wrapper leaves room for future
   fields (rotated_at, version) without changing every reader; matched by
   the Rust spine writer (`fuz_auth::write_token_file`) for wire parity
+- **Mode `0600` is not guaranteed.** The write applies it only when the runtime
+  supplies the *optional* `chmod` dependency, and neither the standard Node nor
+  the standard Deno `RuntimeDeps` factory does — so under an ordinary runtime the
+  file lands at whatever the process umask allows. A consumer that stores a
+  keeper-equivalent credential must wire `chmod` explicitly, or place the file
+  under an owner-only (`0700`) parent directory. Treat the parent directory as
+  the load-bearing control until a real secret-file capability lands
 - Token rotated every 30 seconds (configurable); the previous token is also
   accepted to cover the rotation race window
 - Both the REST guard composition (`require_credential_types(['daemon_token'])`
@@ -1036,7 +1048,13 @@ is required and each intermediate proxy must be in `trusted_proxies`.
 
 ## Audit Logging
 
-All auth mutations are logged fire-and-forget (never blocks or breaks auth flows).
+All auth mutations *attempt* a fire-and-forget audit write (never blocks or breaks
+auth flows). Delivery is **best-effort, not durable**: a failed insert is caught
+and logged, not retried — the mutation still succeeds and no audit row exists for
+that event. Listeners (the audit SSE stream, the socket-revocation listeners) are
+notified only *after* a successful insert, so an audit outage also suppresses the
+security reactions chained off it. Enforcement that must survive an audit failure
+cannot be built on the listener path alone.
 The audit log's identity columns (`actor_id`, `account_id`, `target_account_id`,
 `target_actor_id`) carry **no foreign key** — they are plain `UUID`. An audit log
 is an append-only historical record, not a live relational entity: a soft-delete

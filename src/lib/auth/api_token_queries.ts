@@ -155,8 +155,13 @@ export const query_api_token_list_for_account = async (
  * Race safety: this function must run inside a transaction alongside the
  * INSERT that created the new token. The caller (the `account_token_create`
  * RPC handler) runs under the dispatcher's transaction path because the
- * spec declares `side_effects: true`, ensuring the INSERT + enforce_limit
- * pair is atomic — concurrent token creation cannot interleave.
+ * spec declares `side_effects: true`, making one creator's INSERT +
+ * enforce_limit pair atomic. That does **not** serialize concurrent creators:
+ * under Read Committed, two transactions can't see each other's uncommitted
+ * token row, so each evicts against a stale count and both can commit above
+ * `max_tokens`. Closing this needs one serialization point per
+ * `(account_id, credential_kind)` before count/evict/insert — see the matching
+ * note on `query_session_enforce_limit`.
  *
  * @param deps - query dependencies (must be transaction-scoped)
  * @param account_id - the account to enforce the limit for
