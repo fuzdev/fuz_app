@@ -1012,7 +1012,7 @@ Inside a layout:
 
 <RoleGrantOfferInbox
 	format_actor={(id) => username_lookup(id) ?? id}
-	format_scope={(scope_id, role) => classroom_name(scope_id) ?? 'global'}
+	format_scope={({scope_id, role}) => classroom_name(scope_id) ?? 'global'}
 />
 
 <RoleGrantOfferForm
@@ -1175,8 +1175,14 @@ const backend = await create_app_backend({
 ```
 
 `CELL_MIGRATION_NS` (namespace `fuz_cell`) creates `cell`, `cell_grant`,
-`cell_field`, `cell_item`, and the dormant `cell_history` table. It FKs into
-the `actor` table, so it must follow the builtin auth namespace.
+`cell_field`, and `cell_item`. It FKs into the `actor` table, so it must follow
+the builtin auth namespace.
+
+The dormant `cell_history` table is **not** part of that namespace — it lives in
+its own `fuz_cell_history` namespace (`CELL_HISTORY_MIGRATION_NS` in
+`db/cell_history_ddl.ts`), spliced after `fuz_cell`. A consumer that wants it
+must splice that namespace in as well. The split is deliberate and matches the
+Rust twin, so the `schema_version` trackers stay byte-identical across spines.
 
 ### Action surface
 

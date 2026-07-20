@@ -498,7 +498,7 @@ describe('app-specific integration', () => {
 `create_test_app` returns:
 
 - `app` — Hono app instance for `app.request()`
-- `server` — the `TestAppServer` (bootstrapped account, actor, session, token)
+- `backend` — the `TestAppServer` (bootstrapped account, actor, session, token)
 - `create_session_headers(extra?)` — headers with the bootstrapped session cookie
 - `create_bearer_headers(extra?)` — headers with the bootstrapped Bearer token
 - `create_account({username?, password_value?, roles?})` — create additional accounts with built-in header helpers
