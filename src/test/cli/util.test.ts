@@ -1,6 +1,6 @@
-import {test, assert, describe} from 'vitest';
+import { test, assert, describe } from 'vitest';
 
-import {colors, run_local, confirm} from '$lib/cli/util.ts';
+import { colors, run_local, confirm } from '$lib/cli/util.ts';
 
 describe('colors', () => {
 	test('has all expected color keys', () => {
@@ -23,12 +23,12 @@ describe('colors', () => {
 
 describe('run_local', () => {
 	test('delegates to runtime.run_command', async () => {
-		const calls: Array<{cmd: string; args: Array<string>}> = [];
+		const calls: Array<{ cmd: string; args: Array<string> }> = [];
 		const runtime = {
 			run_command: (cmd: string, args: Array<string>) => {
-				calls.push({cmd, args});
-				return Promise.resolve({success: true, code: 0, stdout: 'ok', stderr: ''});
-			},
+				calls.push({ cmd, args });
+				return Promise.resolve({ success: true, code: 0, stdout: 'ok', stderr: '' });
+			}
 		};
 
 		const result = await run_local(runtime, 'echo', ['hello']);
@@ -49,7 +49,7 @@ describe('confirm', () => {
 				const bytes = encoder.encode('y\n');
 				buf.set(bytes);
 				return Promise.resolve(bytes.length);
-			},
+			}
 		};
 
 		const result = await confirm(runtime, 'Continue?');
@@ -64,7 +64,7 @@ describe('confirm', () => {
 				const bytes = encoder.encode('yes\n');
 				buf.set(bytes);
 				return Promise.resolve(bytes.length);
-			},
+			}
 		};
 
 		const result = await confirm(runtime, 'Continue?');
@@ -79,7 +79,7 @@ describe('confirm', () => {
 				const bytes = encoder.encode('n\n');
 				buf.set(bytes);
 				return Promise.resolve(bytes.length);
-			},
+			}
 		};
 
 		const result = await confirm(runtime, 'Continue?');
@@ -94,7 +94,7 @@ describe('confirm', () => {
 				const bytes = encoder.encode('Y\n');
 				buf.set(bytes);
 				return Promise.resolve(bytes.length);
-			},
+			}
 		};
 
 		const result = await confirm(runtime, 'Continue?');
@@ -109,7 +109,7 @@ describe('confirm', () => {
 				const bytes = encoder.encode('YES\n');
 				buf.set(bytes);
 				return Promise.resolve(bytes.length);
-			},
+			}
 		};
 
 		const result = await confirm(runtime, 'Continue?');
@@ -119,7 +119,7 @@ describe('confirm', () => {
 	test('returns false on EOF', async () => {
 		const runtime = {
 			stdout_write: (_data: Uint8Array) => Promise.resolve(_data.length),
-			stdin_read: (_buf: Uint8Array) => Promise.resolve(null),
+			stdin_read: (_buf: Uint8Array) => Promise.resolve(null)
 		};
 
 		const result = await confirm(runtime, 'Continue?');
@@ -134,7 +134,7 @@ describe('confirm', () => {
 				const bytes = encoder.encode('\n');
 				buf.set(bytes);
 				return Promise.resolve(bytes.length);
-			},
+			}
 		};
 
 		const result = await confirm(runtime, 'Continue?');
@@ -149,7 +149,7 @@ describe('confirm', () => {
 				written = decoder.decode(data);
 				return Promise.resolve(data.length);
 			},
-			stdin_read: (_buf: Uint8Array) => Promise.resolve(null),
+			stdin_read: (_buf: Uint8Array) => Promise.resolve(null)
 		};
 
 		await confirm(runtime, 'Do it?');

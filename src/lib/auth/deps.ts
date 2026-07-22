@@ -8,14 +8,14 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
-import type {FactStore} from '@fuzdev/fuz_util/fact_store.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import type { FactStore } from '@fuzdev/fuz_util/fact_store.ts';
 
-import type {Keyring} from './keyring.ts';
-import type {PasswordHashDeps} from './password.ts';
-import type {Db} from '../db/db.ts';
-import type {StatResult} from '../runtime/deps.ts';
-import type {AuditEmitter} from './audit_emitter.ts';
+import type { Keyring } from './keyring.ts';
+import type { PasswordHashDeps } from './password.ts';
+import type { Db } from '../db/db.ts';
+import type { StatResult } from '../runtime/deps.ts';
+import type { AuditEmitter } from './audit_emitter.ts';
 
 /**
  * Stateless capabilities bundle for fuz_app backends.

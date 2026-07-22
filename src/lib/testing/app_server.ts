@@ -14,46 +14,50 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import type {Hono} from 'hono';
-import {z} from 'zod';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type { Hono } from 'hono';
+import { z } from 'zod';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {DEFAULT_TEST_PASSWORD} from './test_credentials.ts';
-import {ROLE_KEEPER} from '../auth/role_schema.ts';
-import {create_validated_keyring, type Keyring} from '../auth/keyring.ts';
-import {generate_api_token} from '../auth/api_token.ts';
-import type {Db, DbType} from '../db/db.ts';
-import type {PasswordHashDeps} from '../auth/password.ts';
-import {query_create_account_with_actor} from '../auth/account_queries.ts';
-import {query_create_role_grant} from '../auth/role_grant_queries.ts';
+import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
+import { ROLE_KEEPER } from '../auth/role_schema.ts';
+import { create_validated_keyring, type Keyring } from '../auth/keyring.ts';
+import { generate_api_token } from '../auth/api_token.ts';
+import type { Db, DbType } from '../db/db.ts';
+import type { PasswordHashDeps } from '../auth/password.ts';
+import { query_create_account_with_actor } from '../auth/account_queries.ts';
+import { query_create_role_grant } from '../auth/role_grant_queries.ts';
 import {
 	generate_session_token,
 	hash_session_token,
 	AUTH_SESSION_LIFETIME_MS,
-	query_create_session,
+	query_create_session
 } from '../auth/session_queries.ts';
-import {query_create_api_token} from '../auth/api_token_queries.ts';
-import {create_session_cookie_value, type SessionOptions} from '../auth/session_cookie.ts';
-import {run_migrations, type MigrationNamespace} from '../db/migrate.ts';
-import {auth_migration_ns} from '../auth/migrations.ts';
-import {default_audit_factory, type AppBackend, type AuditFactory} from '../server/app_backend.ts';
+import { query_create_api_token } from '../auth/api_token_queries.ts';
+import { create_session_cookie_value, type SessionOptions } from '../auth/session_cookie.ts';
+import { run_migrations, type MigrationNamespace } from '../db/migrate.ts';
+import { auth_migration_ns } from '../auth/migrations.ts';
+import {
+	default_audit_factory,
+	type AppBackend,
+	type AuditFactory
+} from '../server/app_backend.ts';
 import {
 	create_app_server,
 	type AppServerOptions,
 	type BootstrapServerOptions,
-	type BootstrapLiveOptions,
+	type BootstrapLiveOptions
 } from '../server/app_server.ts';
-import type {AppServerContext} from '../server/app_server_context.ts';
-import type {AppSurface, AppSurfaceSpec} from '../http/surface.ts';
-import type {RouteSpec} from '../http/route_spec.ts';
+import type { AppServerContext } from '../server/app_server_context.ts';
+import type { AppSurface, AppSurfaceSpec } from '../http/surface.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
 import {
 	generate_daemon_token,
 	DAEMON_TOKEN_HEADER,
-	type DaemonTokenState,
+	type DaemonTokenState
 } from '../auth/daemon_token.ts';
-import {create_pglite_factory, type DbFactory} from './db.ts';
-import type {RpcEndpointsSuiteOption} from './rpc_helpers.ts';
+import { create_pglite_factory, type DbFactory } from './db.ts';
+import type { RpcEndpointsSuiteOption } from './rpc_helpers.ts';
 
 /**
  * Fast password stub for tests that don't exercise login/password flows.
@@ -64,7 +68,7 @@ import type {RpcEndpointsSuiteOption} from './rpc_helpers.ts';
 export const stub_password_deps: PasswordHashDeps = {
 	hash_password: async (p) => `stub_hash_${p}`,
 	verify_password: async (p, h) => h === `stub_hash_${p}`,
-	verify_dummy: async () => false,
+	verify_dummy: async () => false
 };
 
 /** 64-hex-char test cookie secret — deterministic, never used in production. */
@@ -94,7 +98,7 @@ const fallback_factories_by_namespaces = new Map<string, DbFactory>();
  * seam at the test layer.
  */
 const resolve_fallback_factory = (
-	migration_namespaces?: ReadonlyArray<MigrationNamespace>,
+	migration_namespaces?: ReadonlyArray<MigrationNamespace>
 ): DbFactory => {
 	if (!migration_namespaces || migration_namespaces.length === 0) {
 		return fallback_pglite_factory;
@@ -145,10 +149,10 @@ export type BootstrapTestKeeperOptions = CreateTestAccountWithCredentialsOptions
  *   `role_grant` (one per role), `api_token`, and `auth_session`.
  */
 export const create_test_account_with_credentials = async (
-	options: CreateTestAccountWithCredentialsOptions,
+	options: CreateTestAccountWithCredentialsOptions
 ): Promise<{
-	account: {id: Uuid; username: string};
-	actor: {id: Uuid};
+	account: { id: Uuid; username: string };
+	actor: { id: Uuid };
 	api_token: string;
 	session_cookie: string;
 }> => {
@@ -160,42 +164,42 @@ export const create_test_account_with_credentials = async (
 		username = 'keeper',
 		password_value = DEFAULT_TEST_PASSWORD,
 		roles = [],
-		email,
+		email
 	} = options;
 
-	const deps = {db};
+	const deps = { db };
 	const password_hash = await password.hash_password(password_value);
-	const {account, actor} = await query_create_account_with_actor(deps, {
+	const { account, actor } = await query_create_account_with_actor(deps, {
 		username,
 		password_hash,
-		...(email !== undefined && {email}),
+		...(email !== undefined && { email })
 	});
 
 	// Grant roles
 	for (const role of roles) {
-		await query_create_role_grant(deps, {actor_id: actor.id, role, granted_by: null});
+		await query_create_role_grant(deps, { actor_id: actor.id, role, granted_by: null });
 	}
 
 	// Create API token (account-scoped — acting actor is per-request)
-	const {token: api_token, id: token_id, token_hash} = generate_api_token();
+	const { token: api_token, id: token_id, token_hash } = generate_api_token();
 	await query_create_api_token(deps, token_id, account.id, 'test-cli', token_hash);
 
 	// Create session (account-scoped — acting actor is per-request).
 	// Shares the mint primitive with `mint_test_session` / the
 	// `_testing_mint_session` action; here with the standard 30-day lifetime.
-	const {session_cookie} = await mint_test_session({
+	const { session_cookie } = await mint_test_session({
 		db,
 		keyring,
 		session_options,
 		account_id: account.id,
-		expires_in_seconds: AUTH_SESSION_LIFETIME_MS / 1000,
+		expires_in_seconds: AUTH_SESSION_LIFETIME_MS / 1000
 	});
 
 	return {
-		account: {id: account.id, username: account.username},
-		actor: {id: actor.id},
+		account: { id: account.id, username: account.username },
+		actor: { id: actor.id },
 		api_token,
-		session_cookie,
+		session_cookie
 	};
 };
 
@@ -232,15 +236,15 @@ export interface MintTestSessionOptions {
  * @mutates `options.db` — inserts one `auth_session` row.
  */
 export const mint_test_session = async (
-	options: MintTestSessionOptions,
-): Promise<{session_cookie: string}> => {
-	const {db, keyring, session_options, account_id, expires_in_seconds} = options;
+	options: MintTestSessionOptions
+): Promise<{ session_cookie: string }> => {
+	const { db, keyring, session_options, account_id, expires_in_seconds } = options;
 	const session_token = generate_session_token();
 	const session_hash = hash_session_token(session_token);
 	const expires_at = new Date(Date.now() + expires_in_seconds * 1000);
-	await query_create_session({db}, session_hash, account_id, expires_at);
+	await query_create_session({ db }, session_hash, account_id, expires_at);
 	const session_cookie = await create_session_cookie_value(keyring, session_token, session_options);
-	return {session_cookie};
+	return { session_cookie };
 };
 
 /**
@@ -259,10 +263,10 @@ export const mint_test_session = async (
  *   API token/session_cookie rows AND flips `bootstrap_lock.bootstrapped`.
  */
 export const bootstrap_test_keeper = async (
-	options: BootstrapTestKeeperOptions,
+	options: BootstrapTestKeeperOptions
 ): Promise<{
-	account: {id: Uuid; username: string};
-	actor: {id: Uuid};
+	account: { id: Uuid; username: string };
+	actor: { id: Uuid };
 	api_token: string;
 	session_cookie: string;
 }> => {
@@ -270,7 +274,7 @@ export const bootstrap_test_keeper = async (
 	// Lock flip — mirrors production `bootstrap_account` so test/prod write
 	// semantics stay in parity.
 	await options.db.query(
-		'UPDATE bootstrap_lock SET bootstrapped = true WHERE id = 1 AND bootstrapped = false',
+		'UPDATE bootstrap_lock SET bootstrapped = true WHERE id = 1 AND bootstrapped = false'
 	);
 	return result;
 };
@@ -280,9 +284,9 @@ export const bootstrap_test_keeper = async (
  */
 export interface TestAppServer extends AppBackend {
 	/** The bootstrapped account. */
-	account: {id: Uuid; username: string};
+	account: { id: Uuid; username: string };
 	/** The actor linked to the account. */
-	actor: {id: Uuid};
+	actor: { id: Uuid };
 	/** Raw API token for Bearer auth. */
 	api_token: string;
 	/** Signed session cookie value for cookie auth. */
@@ -341,7 +345,7 @@ export interface TestAppServerOptions {
 }
 
 /** Silent logger for tests — suppresses all output. */
-const test_log = new Logger('test', {level: 'off'});
+const test_log = new Logger('test', { level: 'off' });
 
 /**
  * Create an app server with a bootstrapped account for testing.
@@ -369,7 +373,7 @@ const test_log = new Logger('test', {level: 'off'});
  * passes token-aware stubs that resolve against the configured token_path.
  */
 interface TestFsStubs {
-	stat: (path: string) => Promise<{is_file: boolean; is_directory: boolean} | null>;
+	stat: (path: string) => Promise<{ is_file: boolean; is_directory: boolean } | null>;
 	read_text_file: (path: string) => Promise<string>;
 	delete_file: (path: string) => Promise<void>;
 }
@@ -377,7 +381,7 @@ interface TestFsStubs {
 const default_test_fs_stubs: TestFsStubs = {
 	stat: async () => null,
 	read_text_file: async () => '',
-	delete_file: async () => {},
+	delete_file: async () => {}
 };
 
 interface BuildTestBackendOptions {
@@ -404,21 +408,21 @@ interface BuildTestBackendOptions {
  * resets it to false before this runs).
  */
 const _build_test_backend = async (
-	options: BuildTestBackendOptions,
-): Promise<{backend: AppBackend; keyring: Keyring}> => {
+	options: BuildTestBackendOptions
+): Promise<{ backend: AppBackend; keyring: Keyring }> => {
 	const {
 		db: existing_db,
 		db_type = 'pglite-memory',
 		password = stub_password_deps,
 		audit_factory = default_audit_factory,
 		fs_stubs = default_test_fs_stubs,
-		migration_namespaces,
+		migration_namespaces
 	} = options;
 
 	if (existing_db && migration_namespaces && migration_namespaces.length > 0) {
 		throw new Error(
 			'test app setup: pass either `db` (caller owns migrations) or `migration_namespaces` ' +
-				'(harness migrates), not both',
+				'(harness migrates), not both'
 		);
 	}
 
@@ -431,9 +435,9 @@ const _build_test_backend = async (
 	if (existing_db) {
 		// Reset singleton config row from a previous test (harmless on fresh pglite).
 		await existing_db.query(
-			'UPDATE app_settings SET open_signup = false, updated_at = NULL, updated_by = NULL WHERE open_signup = true OR updated_at IS NOT NULL',
+			'UPDATE app_settings SET open_signup = false, updated_at = NULL, updated_by = NULL WHERE open_signup = true OR updated_at IS NOT NULL'
 		);
-		const audit = audit_factory({db: existing_db, log: test_log});
+		const audit = audit_factory({ db: existing_db, log: test_log });
 		backend = {
 			db_type,
 			db_name: 'test',
@@ -445,8 +449,8 @@ const _build_test_backend = async (
 				db: existing_db,
 				log: test_log,
 				audit,
-				...fs_stubs,
-			},
+				...fs_stubs
+			}
 		};
 	} else {
 		// In-memory PGlite via cached factory — reuses the WASM instance from test_db.ts
@@ -454,7 +458,7 @@ const _build_test_backend = async (
 		// on each call, but the expensive WASM cold start only happens once per worker thread.
 		// `migration_namespaces` selects an auth+extras factory; auth-only is the default.
 		const db = await resolve_fallback_factory(migration_namespaces).create();
-		const audit = audit_factory({db, log: test_log});
+		const audit = audit_factory({ db, log: test_log });
 		backend = {
 			db_type: 'pglite-memory',
 			db_name: '(memory)',
@@ -466,25 +470,25 @@ const _build_test_backend = async (
 				db,
 				log: test_log,
 				audit,
-				...fs_stubs,
-			},
+				...fs_stubs
+			}
 		};
 	}
-	return {backend, keyring: keyring_result.keyring};
+	return { backend, keyring: keyring_result.keyring };
 };
 
 export const create_test_app_server = async (
-	options: TestAppServerOptions,
+	options: TestAppServerOptions
 ): Promise<TestAppServer> => {
 	const {
 		session_options,
 		password = stub_password_deps,
 		username = 'keeper',
 		password_value = DEFAULT_TEST_PASSWORD,
-		roles = [ROLE_KEEPER],
+		roles = [ROLE_KEEPER]
 	} = options;
 
-	const {backend, keyring} = await _build_test_backend(options);
+	const { backend, keyring } = await _build_test_backend(options);
 
 	const bootstrapped = await bootstrap_test_keeper({
 		db: backend.deps.db,
@@ -493,14 +497,14 @@ export const create_test_app_server = async (
 		password,
 		username,
 		password_value,
-		roles,
+		roles
 	});
 
 	return {
 		...backend,
 		...bootstrapped,
 		keyring,
-		cleanup: () => backend.close(),
+		cleanup: () => backend.close()
 	};
 };
 
@@ -560,8 +564,8 @@ export type SuiteAppOptions = Partial<
  * A bootstrapped test account with credentials.
  */
 export interface TestAccount {
-	account: {id: Uuid; username: string};
-	actor: {id: Uuid};
+	account: { id: Uuid; username: string };
+	actor: { id: Uuid };
 	/** Signed session cookie value. */
 	session_cookie: string;
 	/** Raw API token for Bearer auth. */
@@ -630,14 +634,14 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		current_token: test_daemon_token,
 		previous_token: null,
 		rotated_at: new Date(),
-		keeper_account_id: test_server.account.id,
+		keeper_account_id: test_server.account.id
 	};
 
 	const result = await create_app_server({
 		backend: test_server,
 		session_options: options.session_options,
 		allowed_origins: [/^http:\/\/localhost/],
-		proxy: {trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1'},
+		proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
 		env_schema: z.object({}),
 		ip_rate_limiter: null,
 		login_account_rate_limiter: null,
@@ -648,36 +652,36 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		rpc_endpoints: options.rpc_endpoints,
 		bootstrap: options.bootstrap,
 		...options.app_options,
-		create_route_specs: options.create_route_specs,
+		create_route_specs: options.create_route_specs
 	});
-	const {app, surface_spec} = result;
+	const { app, surface_spec } = result;
 
-	const {cookie_name} = options.session_options;
-	const {password = stub_password_deps} = options;
+	const { cookie_name } = options.session_options;
+	const { password = stub_password_deps } = options;
 
 	const create_session_headers = (extra?: Record<string, string>): Record<string, string> => ({
 		host: 'localhost',
 		origin: 'http://localhost:5173',
 		cookie: `${cookie_name}=${test_server.session_cookie}`,
-		...extra,
+		...extra
 	});
 
 	const create_bearer_headers = (extra?: Record<string, string>): Record<string, string> => ({
 		host: 'localhost',
 		authorization: `Bearer ${test_server.api_token}`,
-		...extra,
+		...extra
 	});
 
 	const create_daemon_token_headers = (extra?: Record<string, string>): Record<string, string> => ({
 		host: 'localhost',
 		[DAEMON_TOKEN_HEADER]: test_daemon_token,
-		...extra,
+		...extra
 	});
 
 	let account_counter = 0;
 
 	const create_account = async (
-		account_options?: CreateTestAppAccountArgs,
+		account_options?: CreateTestAppAccountArgs
 	): Promise<TestAccount> => {
 		account_counter++;
 		const bootstrapped = await create_test_account_with_credentials({
@@ -688,7 +692,7 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 			username: account_options?.username ?? `test_user_${account_counter}`,
 			password_value: account_options?.password_value ?? DEFAULT_TEST_PASSWORD,
 			roles: account_options?.roles ?? [],
-			...(account_options?.email !== undefined && {email: account_options.email}),
+			...(account_options?.email !== undefined && { email: account_options.email })
 		});
 
 		return {
@@ -697,13 +701,13 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 				host: 'localhost',
 				origin: 'http://localhost:5173',
 				cookie: `${cookie_name}=${bootstrapped.session_cookie}`,
-				...extra,
+				...extra
 			}),
 			create_bearer_headers: (extra?: Record<string, string>): Record<string, string> => ({
 				host: 'localhost',
 				authorization: `Bearer ${bootstrapped.api_token}`,
-				...extra,
-			}),
+				...extra
+			})
 		};
 	};
 
@@ -717,7 +721,7 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		create_bearer_headers,
 		create_daemon_token_headers,
 		create_account,
-		cleanup: () => test_server.cleanup(),
+		cleanup: () => test_server.cleanup()
 	};
 };
 
@@ -784,16 +788,16 @@ export interface TestAppForBootstrap {
  * @returns a `TestAppForBootstrap` ready for the test to drive bootstrap
  */
 export const create_test_app_for_bootstrap = async (
-	options: CreateTestAppForBootstrapOptions,
+	options: CreateTestAppForBootstrapOptions
 ): Promise<TestAppForBootstrap> => {
-	const {session_options, bootstrap, bootstrap_token} = options;
+	const { session_options, bootstrap, bootstrap_token } = options;
 
 	// Caller-supplied DB may carry lock state from a prior test — reset to false
 	// before `_build_test_backend` runs (which doesn't touch the lock itself).
 	// Fresh pglite already starts at false (factory init).
 	if (options.db) {
 		await options.db.query(
-			'UPDATE bootstrap_lock SET bootstrapped = false WHERE bootstrapped = true',
+			'UPDATE bootstrap_lock SET bootstrapped = false WHERE bootstrapped = true'
 		);
 	}
 
@@ -803,16 +807,16 @@ export const create_test_app_for_bootstrap = async (
 	const fs_stubs: TestFsStubs = {
 		stat: async (path: string) =>
 			path === bootstrap.token_path && !token_file_deleted
-				? {is_file: true, is_directory: false}
+				? { is_file: true, is_directory: false }
 				: null,
 		read_text_file: async (path: string) =>
 			path === bootstrap.token_path && !token_file_deleted ? bootstrap_token : '',
 		delete_file: async (path: string) => {
 			if (path === bootstrap.token_path) token_file_deleted = true;
-		},
+		}
 	};
 
-	const {backend} = await _build_test_backend({...options, fs_stubs});
+	const { backend } = await _build_test_backend({ ...options, fs_stubs });
 
 	// Daemon token state isn't reachable pre-bootstrap (no keeper account)
 	// but the field is required by AppServerOptions; pass a placeholder.
@@ -820,14 +824,14 @@ export const create_test_app_for_bootstrap = async (
 		current_token: generate_daemon_token(),
 		previous_token: null,
 		rotated_at: new Date(),
-		keeper_account_id: null,
+		keeper_account_id: null
 	};
 
 	const result = await create_app_server({
 		backend,
 		session_options,
 		allowed_origins: [/^http:\/\/localhost/],
-		proxy: {trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1'},
+		proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
 		env_schema: z.object({}),
 		ip_rate_limiter: null,
 		login_account_rate_limiter: null,
@@ -838,13 +842,13 @@ export const create_test_app_for_bootstrap = async (
 		rpc_endpoints: options.rpc_endpoints,
 		bootstrap,
 		...options.app_options,
-		create_route_specs: options.create_route_specs,
+		create_route_specs: options.create_route_specs
 	});
 
 	const create_request_headers = (extra?: Record<string, string>): Record<string, string> => ({
 		host: 'localhost',
 		origin: 'http://localhost:5173',
-		...extra,
+		...extra
 	});
 
 	return {
@@ -854,6 +858,6 @@ export const create_test_app_for_bootstrap = async (
 		surface: result.surface_spec.surface,
 		route_specs: result.surface_spec.route_specs,
 		create_request_headers,
-		cleanup: () => backend.close(),
+		cleanup: () => backend.close()
 	};
 };

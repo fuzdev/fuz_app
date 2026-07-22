@@ -38,16 +38,16 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, assert} from 'vitest';
-import {z} from 'zod';
-import {FactHashSchema} from '@fuzdev/fuz_util/fact_hash.ts';
+import { describe, assert } from 'vitest';
+import { z } from 'zod';
+import { FactHashSchema } from '@fuzdev/fuz_util/fact_hash.ts';
 
-import {CellCreateOutput} from '../../auth/cell_action_specs.ts';
-import type {FetchTransport} from '../transports/fetch_transport.ts';
-import {test_if} from './capabilities.ts';
-import {cross_rpc_call, expect_output} from './cell_cross_helpers.ts';
-import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
-import type {RpcPathCrossSuiteOptions, SetupTest} from './setup.ts';
+import { CellCreateOutput } from '../../auth/cell_action_specs.ts';
+import type { FetchTransport } from '../transports/fetch_transport.ts';
+import { test_if } from './capabilities.ts';
+import { cross_rpc_call, expect_output } from './cell_cross_helpers.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import type { RpcPathCrossSuiteOptions, SetupTest } from './setup.ts';
 
 /**
  * The fact suite adds one optional knob to the shared cell options: a setup
@@ -71,24 +71,24 @@ const NIL_UUID = '00000000-0000-0000-0000-000000000000';
  * a TS↔Rust drift in the seeder's envelope (extra field, non-`blake3:` hash)
  * fails here rather than silently downstream.
  */
-const TestingPutFactOutput = z.strictObject({hash: FactHashSchema});
+const TestingPutFactOutput = z.strictObject({ hash: FactHashSchema });
 
 /** GET a fact over a cross-process `FetchTransport`; returns `{status, content_type, text}`. */
 const fact_get = async (
 	transport: FetchTransport,
 	path: string,
-	headers: Record<string, string>,
-): Promise<{status: number; content_type: string | null; text: string}> => {
-	const res = await transport(path, {method: 'GET', headers});
+	headers: Record<string, string>
+): Promise<{ status: number; content_type: string | null; text: string }> => {
+	const res = await transport(path, { method: 'GET', headers });
 	return {
 		status: res.status,
 		content_type: res.headers.get('content-type'),
-		text: await res.text(),
+		text: await res.text()
 	};
 };
 
 export const describe_fact_serving_cross_tests = (options: FactServingCrossTestOptions): void => {
-	const {setup_test, setup_test_multi_actor, capabilities} = options;
+	const { setup_test, setup_test_multi_actor, capabilities } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
 	type Fixture = Awaited<ReturnType<typeof setup_test>>;
@@ -97,20 +97,20 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 	const put_fact = async (
 		fixture: Fixture,
 		content: string,
-		content_type?: string,
+		content_type?: string
 	): Promise<string> =>
 		expect_output(
 			await cross_rpc_call(
 				// Origin-free transport — the daemon-token middleware discards the
 				// credential when an `Origin` / `Referer` is present (browser
 				// context), and cross-process `fixture.transport` auto-adds `Origin`.
-				fixture.fresh_transport({origin: null}),
+				fixture.fresh_transport({ origin: null }),
 				rpc_path,
 				'_testing_put_fact',
-				content_type === undefined ? {content} : {content, content_type},
-				fixture.create_daemon_token_headers(),
+				content_type === undefined ? { content } : { content, content_type },
+				fixture.create_daemon_token_headers()
 			),
-			TestingPutFactOutput,
+			TestingPutFactOutput
 		).hash;
 
 	/**
@@ -124,7 +124,7 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 		headers: Record<string, string>,
 		hash: string,
 		visibility: 'public' | 'private',
-		acting?: string,
+		acting?: string
 	): Promise<string> =>
 		expect_output(
 			await cross_rpc_call(
@@ -132,11 +132,11 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 				rpc_path,
 				'cell_create',
 				acting === undefined
-					? {kind: 'doc', data: {cover: hash}, visibility}
-					: {kind: 'doc', data: {cover: hash}, visibility, acting},
-				headers,
+					? { kind: 'doc', data: { cover: hash }, visibility }
+					: { kind: 'doc', data: { cover: hash }, visibility, acting },
+				headers
 			),
-			CellCreateOutput,
+			CellCreateOutput
 		).cell.id;
 
 	const cell_fact_path = (cell_id: string, hash: string): string =>
@@ -153,15 +153,15 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 					fixture.transport,
 					fixture.create_session_headers(),
 					hash,
-					'public',
+					'public'
 				);
-				const anon = fixture.fresh_transport({origin: null});
+				const anon = fixture.fresh_transport({ origin: null });
 				const got = await fact_get(anon, cell_fact_path(cell_id, hash), {});
 				assert.strictEqual(got.status, 200, `expected 200, body: ${got.text}`);
 				assert.strictEqual(got.text, 'public-fact-bytes');
 				// The served `Content-Type` echoes the seeded value on both backends.
 				assert.strictEqual(got.content_type, 'text/plain', 'served content-type drifted');
-			},
+			}
 		);
 
 		test_if(
@@ -169,8 +169,8 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 			'cross-owner dedup does not leak: A’s private reference stays 404 while B publishes the same bytes',
 			async () => {
 				const fixture = await setup_test();
-				const a = await fixture.create_account({username: 'fact_owner_a'});
-				const b = await fixture.create_account({username: 'fact_owner_b'});
+				const a = await fixture.create_account({ username: 'fact_owner_a' });
+				const b = await fixture.create_account({ username: 'fact_owner_b' });
 				// One fact, identical bytes from both owners — deduped to a single row.
 				const hash = await put_fact(fixture, 'shared-deduped-bytes');
 				const t = fixture.fresh_transport();
@@ -178,18 +178,18 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 				const b_cell = await create_cell_with_ref(t, b.create_session_headers(), hash, 'public');
 
 				// B published it from a public cell → readable via B's cell (anon OK).
-				const anon = fixture.fresh_transport({origin: null});
+				const anon = fixture.fresh_transport({ origin: null });
 				const via_b = await fact_get(anon, cell_fact_path(b_cell, hash), {});
 				assert.strictEqual(
 					via_b.status,
 					200,
-					`B's public cell should serve the fact: ${via_b.text}`,
+					`B's public cell should serve the fact: ${via_b.text}`
 				);
 				// Seeded without a content_type → both backends fall back to octet-stream.
 				assert.strictEqual(
 					via_b.content_type,
 					'application/octet-stream',
-					'no-content-type fact should serve as octet-stream',
+					'no-content-type fact should serve as octet-stream'
 				);
 
 				// A's PRIVATE reference must NOT leak — to anon or to B — even though
@@ -202,7 +202,7 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 				// A can read its own private cell's fact.
 				const a_via_a = await fact_get(t, cell_fact_path(a_cell, hash), a.create_session_headers());
 				assert.strictEqual(a_via_a.status, 200, 'A could not read its own private fact');
-			},
+			}
 		);
 
 		test_if(
@@ -225,7 +225,7 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 					t,
 					admin_headers,
 					UNRELATED_HASH,
-					'public',
+					'public'
 				);
 				const no_edge = await fact_get(t, cell_fact_path(unrelated_cell, hash), admin_headers);
 				assert.strictEqual(no_edge.status, 404, 'cell without the edge did not 404');
@@ -237,15 +237,15 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 				const edge_no_bytes = await fact_get(
 					t,
 					cell_fact_path(unrelated_cell, UNRELATED_HASH),
-					admin_headers,
+					admin_headers
 				);
 				assert.strictEqual(edge_no_bytes.status, 404, 'edge to an absent fact did not 404');
-			},
+			}
 		);
 
 		test_if(capabilities.fact_serving, 'bare-hash route is admin-only', async () => {
 			const fixture = await setup_test();
-			const non_admin = await fixture.create_account({username: 'fact_non_admin'});
+			const non_admin = await fixture.create_account({ username: 'fact_non_admin' });
 			const hash = await put_fact(fixture, 'bare-hash-bytes');
 			const t = fixture.fresh_transport();
 
@@ -258,12 +258,12 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 			const as_non_admin = await fact_get(
 				t,
 				`/api/facts/${hash}`,
-				non_admin.create_session_headers(),
+				non_admin.create_session_headers()
 			);
 			assert.strictEqual(as_non_admin.status, 403, 'non-admin reached the bare-hash route');
 
 			// anonymous → 401.
-			const anon = fixture.fresh_transport({origin: null});
+			const anon = fixture.fresh_transport({ origin: null });
 			const as_anon = await fact_get(anon, `/api/facts/${hash}`, {});
 			assert.strictEqual(as_anon.status, 401, 'anon reached the bare-hash route');
 		});
@@ -301,7 +301,7 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 				assert.strictEqual(
 					own_private.status,
 					404,
-					"multi-actor owner's private read was admitted",
+					"multi-actor owner's private read was admitted"
 				);
 
 				// A PUBLIC cell still admits the anonymous-treated caller → 200, proving
@@ -309,7 +309,7 @@ export const describe_fact_serving_cross_tests = (options: FactServingCrossTestO
 				const via_public = await fact_get(t, cell_fact_path(public_cell, hash), keeper);
 				assert.strictEqual(via_public.status, 200, 'multi-actor caller blocked from a public cell');
 				assert.strictEqual(via_public.text, 'multi-actor-bytes');
-			},
+			}
 		);
 	});
 };

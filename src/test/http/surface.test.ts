@@ -8,39 +8,39 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import {z} from 'zod';
+import { describe, assert, test } from 'vitest';
+import { z } from 'zod';
 
 import {
 	generate_app_surface,
 	create_app_surface_spec,
 	collect_middleware_errors,
 	env_schema_to_surface,
-	events_to_surface,
+	events_to_surface
 } from '$lib/http/surface.ts';
-import type {RouteSpec} from '$lib/http/route_spec.ts';
-import type {MiddlewareSpec} from '$lib/http/middleware_spec.ts';
-import type {EventSpec} from '$lib/realtime/sse.ts';
+import type { RouteSpec } from '$lib/http/route_spec.ts';
+import type { MiddlewareSpec } from '$lib/http/middleware_spec.ts';
+import type { EventSpec } from '$lib/realtime/sse.ts';
 
-const noop_handler = async (c: any) => c.json({ok: true});
+const noop_handler = async (c: any) => c.json({ ok: true });
 const noop_middleware = async (_c: any, next: any) => next();
 
 const create_route = (overrides: Partial<RouteSpec> = {}): RouteSpec => ({
 	method: 'GET',
 	path: '/test',
-	auth: {account: 'none', actor: 'none'},
+	auth: { account: 'none', actor: 'none' },
 	description: 'Test route',
 	input: z.null(),
-	output: z.strictObject({ok: z.boolean()}),
+	output: z.strictObject({ ok: z.boolean() }),
 	handler: noop_handler,
-	...overrides,
+	...overrides
 });
 
 const create_middleware = (overrides: Partial<MiddlewareSpec> = {}): MiddlewareSpec => ({
 	name: 'test_mw',
 	path: '/*',
 	handler: noop_middleware,
-	...overrides,
+	...overrides
 });
 
 describe('generate_app_surface', () => {
@@ -50,7 +50,7 @@ describe('generate_app_surface', () => {
 
 		const surface = generate_app_surface({
 			route_specs: [route],
-			middleware_specs: [mw],
+			middleware_specs: [mw]
 		});
 
 		assert.strictEqual(surface.routes.length, 1);
@@ -62,12 +62,12 @@ describe('generate_app_surface', () => {
 
 	test('marks GET as non-mutation and POST as mutation', () => {
 		const routes = [
-			create_route({method: 'GET', path: '/read'}),
-			create_route({method: 'POST', path: '/write'}),
-			create_route({method: 'DELETE', path: '/remove'}),
+			create_route({ method: 'GET', path: '/read' }),
+			create_route({ method: 'POST', path: '/write' }),
+			create_route({ method: 'DELETE', path: '/remove' })
 		];
 
-		const surface = generate_app_surface({route_specs: routes, middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: routes, middleware_specs: [] });
 
 		assert.strictEqual(surface.routes[0]!.is_mutation, false);
 		assert.strictEqual(surface.routes[1]!.is_mutation, true);
@@ -75,23 +75,26 @@ describe('generate_app_surface', () => {
 	});
 
 	test('surfaces raw_body — defaults false, true when the spec marks it', () => {
-		const routes = [create_route({path: '/json'}), create_route({path: '/binary', raw_body: true})];
+		const routes = [
+			create_route({ path: '/json' }),
+			create_route({ path: '/binary', raw_body: true })
+		];
 
-		const surface = generate_app_surface({route_specs: routes, middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: routes, middleware_specs: [] });
 
 		assert.strictEqual(surface.routes[0]!.raw_body, false);
 		assert.strictEqual(surface.routes[1]!.raw_body, true);
 	});
 
 	test('computes applicable_middleware for routes', () => {
-		const route = create_route({path: '/api/things'});
-		const global_mw = create_middleware({name: 'global', path: '/*'});
-		const api_mw = create_middleware({name: 'api_only', path: '/api/*'});
-		const other_mw = create_middleware({name: 'admin_only', path: '/admin/*'});
+		const route = create_route({ path: '/api/things' });
+		const global_mw = create_middleware({ name: 'global', path: '/*' });
+		const api_mw = create_middleware({ name: 'api_only', path: '/api/*' });
+		const other_mw = create_middleware({ name: 'admin_only', path: '/admin/*' });
 
 		const surface = generate_app_surface({
 			route_specs: [route],
-			middleware_specs: [global_mw, api_mw, other_mw],
+			middleware_specs: [global_mw, api_mw, other_mw]
 		});
 
 		const applicable = surface.routes[0]!.applicable_middleware;
@@ -102,11 +105,11 @@ describe('generate_app_surface', () => {
 
 	test('preserves auth on surface routes', () => {
 		const routes = [
-			create_route({path: '/public', auth: {account: 'none', actor: 'none'}}),
-			create_route({path: '/authed', auth: {account: 'required', actor: 'none'}}),
+			create_route({ path: '/public', auth: { account: 'none', actor: 'none' } }),
+			create_route({ path: '/authed', auth: { account: 'required', actor: 'none' } }),
 			create_route({
 				path: '/admin',
-				auth: {account: 'required', actor: 'required', roles: ['admin']},
+				auth: { account: 'required', actor: 'required', roles: ['admin'] }
 			}),
 			create_route({
 				path: '/keeper',
@@ -114,44 +117,44 @@ describe('generate_app_surface', () => {
 					account: 'required',
 					actor: 'required',
 					roles: ['keeper'],
-					credential_types: ['daemon_token'],
-				},
-			}),
+					credential_types: ['daemon_token']
+				}
+			})
 		];
 
-		const surface = generate_app_surface({route_specs: routes, middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: routes, middleware_specs: [] });
 
-		assert.deepStrictEqual(surface.routes[0]!.auth, {account: 'none', actor: 'none'});
-		assert.deepStrictEqual(surface.routes[1]!.auth, {account: 'required', actor: 'none'});
+		assert.deepStrictEqual(surface.routes[0]!.auth, { account: 'none', actor: 'none' });
+		assert.deepStrictEqual(surface.routes[1]!.auth, { account: 'required', actor: 'none' });
 		assert.deepStrictEqual(surface.routes[2]!.auth, {
 			account: 'required',
 			actor: 'required',
-			roles: ['admin'],
+			roles: ['admin']
 		});
 		assert.deepStrictEqual(surface.routes[3]!.auth, {
 			account: 'required',
 			actor: 'required',
 			roles: ['keeper'],
-			credential_types: ['daemon_token'],
+			credential_types: ['daemon_token']
 		});
 	});
 
 	test('converts input/output schemas to JSON Schema surface representation', () => {
 		const route = create_route({
-			input: z.strictObject({name: z.string()}),
-			output: z.strictObject({id: z.string()}),
+			input: z.strictObject({ name: z.string() }),
+			output: z.strictObject({ id: z.string() })
 		});
 
-		const surface = generate_app_surface({route_specs: [route], middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
 
 		assert.ok(surface.routes[0]!.input_schema);
 		assert.ok(surface.routes[0]!.output_schema);
 	});
 
 	test('null input schema produces null surface representation', () => {
-		const route = create_route({input: z.null()});
+		const route = create_route({ input: z.null() });
 
-		const surface = generate_app_surface({route_specs: [route], middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
 
 		assert.strictEqual(surface.routes[0]!.input_schema, null);
 	});
@@ -159,15 +162,15 @@ describe('generate_app_surface', () => {
 	test('rate_limit_key is null when not set', () => {
 		const route = create_route();
 
-		const surface = generate_app_surface({route_specs: [route], middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
 
 		assert.strictEqual(surface.routes[0]!.rate_limit_key, null);
 	});
 
 	test('rate_limit_key is preserved when set', () => {
-		const route = create_route({rate_limit: 'ip'});
+		const route = create_route({ rate_limit: 'ip' });
 
-		const surface = generate_app_surface({route_specs: [route], middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
 
 		assert.strictEqual(surface.routes[0]!.rate_limit_key, 'ip');
 	});
@@ -175,15 +178,15 @@ describe('generate_app_surface', () => {
 	test('params_schema is null when no params', () => {
 		const route = create_route();
 
-		const surface = generate_app_surface({route_specs: [route], middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
 
 		assert.strictEqual(surface.routes[0]!.params_schema, null);
 	});
 
 	test('params_schema is set when params defined', () => {
-		const route = create_route({params: z.strictObject({id: z.string()})});
+		const route = create_route({ params: z.strictObject({ id: z.string() }) });
 
-		const surface = generate_app_surface({route_specs: [route], middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
 
 		assert.ok(surface.routes[0]!.params_schema);
 	});
@@ -191,28 +194,28 @@ describe('generate_app_surface', () => {
 	test('query_schema is null when no query', () => {
 		const route = create_route();
 
-		const surface = generate_app_surface({route_specs: [route], middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
 
 		assert.strictEqual(surface.routes[0]!.query_schema, null);
 	});
 
 	test('query_schema is set when query defined', () => {
-		const route = create_route({query: z.strictObject({q: z.string()})});
+		const route = create_route({ query: z.strictObject({ q: z.string() }) });
 
-		const surface = generate_app_surface({route_specs: [route], middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: [route], middleware_specs: [] });
 
 		assert.ok(surface.routes[0]!.query_schema);
 	});
 
 	test('includes env when env_schema provided', () => {
 		const env_schema = z.strictObject({
-			PORT: z.number().default(4040),
+			PORT: z.number().default(4040)
 		});
 
 		const surface = generate_app_surface({
 			route_specs: [],
 			middleware_specs: [],
-			env_schema,
+			env_schema
 		});
 
 		assert.ok(surface.env);
@@ -221,7 +224,7 @@ describe('generate_app_surface', () => {
 	});
 
 	test('defaults env to empty array when no env_schema', () => {
-		const surface = generate_app_surface({route_specs: [], middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: [], middleware_specs: [] });
 
 		assert.deepStrictEqual(surface.env, []);
 	});
@@ -230,16 +233,16 @@ describe('generate_app_surface', () => {
 		const event_specs: Array<EventSpec> = [
 			{
 				method: 'thing_created',
-				params: z.strictObject({id: z.string()}),
+				params: z.strictObject({ id: z.string() }),
 				description: 'Created',
-				channel: 'things',
-			},
+				channel: 'things'
+			}
 		];
 
 		const surface = generate_app_surface({
 			route_specs: [],
 			middleware_specs: [],
-			event_specs,
+			event_specs
 		});
 
 		assert.ok(surface.events);
@@ -252,27 +255,27 @@ describe('generate_app_surface', () => {
 		const surface = generate_app_surface({
 			route_specs: [],
 			middleware_specs: [],
-			event_specs: [],
+			event_specs: []
 		});
 
 		assert.deepStrictEqual(surface.events, []);
 	});
 
 	test('merges middleware error schemas into route error schemas', () => {
-		const ApiError = z.strictObject({error: z.string()});
+		const ApiError = z.strictObject({ error: z.string() });
 		const mw = create_middleware({
 			name: 'auth',
 			path: '/api/*',
-			errors: {401: ApiError},
+			errors: { 401: ApiError }
 		});
 		const route = create_route({
 			path: '/api/things',
-			auth: {account: 'required', actor: 'none'},
+			auth: { account: 'required', actor: 'none' }
 		});
 
 		const surface = generate_app_surface({
 			route_specs: [route],
-			middleware_specs: [mw],
+			middleware_specs: [mw]
 		});
 
 		assert.ok(surface.routes[0]!.error_schemas);
@@ -280,23 +283,23 @@ describe('generate_app_surface', () => {
 	});
 
 	test('middleware error schemas on surface are serialized', () => {
-		const ApiError = z.strictObject({error: z.string()});
+		const ApiError = z.strictObject({ error: z.string() });
 		const mw = create_middleware({
 			name: 'origin',
 			path: '/api/*',
-			errors: {403: ApiError},
+			errors: { 403: ApiError }
 		});
 
-		const surface = generate_app_surface({route_specs: [], middleware_specs: [mw]});
+		const surface = generate_app_surface({ route_specs: [], middleware_specs: [mw] });
 
 		assert.ok(surface.middleware[0]!.error_schemas);
 		assert.ok(surface.middleware[0]!.error_schemas['403']);
 	});
 
 	test('middleware without errors has null error_schemas', () => {
-		const mw = create_middleware({name: 'logger'});
+		const mw = create_middleware({ name: 'logger' });
 
-		const surface = generate_app_surface({route_specs: [], middleware_specs: [mw]});
+		const surface = generate_app_surface({ route_specs: [], middleware_specs: [mw] });
 
 		assert.strictEqual(surface.middleware[0]!.error_schemas, null);
 	});
@@ -309,14 +312,14 @@ describe('generate_app_surface', () => {
 				{
 					path: '/api/ws',
 					allowed_origins: [/^http:\/\/localhost(:\d+)?$/i, /^https:\/\/[^./:]+\.fuz\.dev$/i],
-					actions: [],
-				},
-			],
+					actions: []
+				}
+			]
 		});
 
 		assert.deepStrictEqual(surface.ws_endpoints[0]!.allowed_origins, [
 			'/^http:\\/\\/localhost(:\\d+)?$/i',
-			'/^https:\\/\\/[^./:]+\\.fuz\\.dev$/i',
+			'/^https:\\/\\/[^./:]+\\.fuz\\.dev$/i'
 		]);
 	});
 
@@ -324,7 +327,7 @@ describe('generate_app_surface', () => {
 		const surface = generate_app_surface({
 			route_specs: [],
 			middleware_specs: [],
-			ws_endpoints: [{path: '/api/ws', allowed_origins: [], actions: []}],
+			ws_endpoints: [{ path: '/api/ws', allowed_origins: [], actions: [] }]
 		});
 
 		assert.deepStrictEqual(surface.ws_endpoints[0]!.allowed_origins, []);
@@ -336,7 +339,7 @@ describe('create_app_surface_spec', () => {
 		const route = create_route();
 		const mw = create_middleware();
 
-		const spec = create_app_surface_spec({route_specs: [route], middleware_specs: [mw]});
+		const spec = create_app_surface_spec({ route_specs: [route], middleware_specs: [mw] });
 
 		assert.ok(spec.surface);
 		assert.strictEqual(spec.route_specs.length, 1);
@@ -348,10 +351,10 @@ describe('create_app_surface_spec', () => {
 
 describe('collect_middleware_errors', () => {
 	test('collects errors from matching middleware', () => {
-		const ApiError = z.strictObject({error: z.string()});
+		const ApiError = z.strictObject({ error: z.string() });
 		const middleware = [
-			create_middleware({name: 'auth', path: '/api/*', errors: {401: ApiError}}),
-			create_middleware({name: 'logger', path: '/*'}),
+			create_middleware({ name: 'auth', path: '/api/*', errors: { 401: ApiError } }),
+			create_middleware({ name: 'logger', path: '/*' })
 		];
 
 		const errors = collect_middleware_errors(middleware, '/api/things');
@@ -361,7 +364,7 @@ describe('collect_middleware_errors', () => {
 	});
 
 	test('returns null when no middleware has errors', () => {
-		const middleware = [create_middleware({name: 'logger', path: '/*'})];
+		const middleware = [create_middleware({ name: 'logger', path: '/*' })];
 
 		const errors = collect_middleware_errors(middleware, '/api/things');
 
@@ -369,9 +372,9 @@ describe('collect_middleware_errors', () => {
 	});
 
 	test('skips middleware that does not apply to path', () => {
-		const ApiError = z.strictObject({error: z.string()});
+		const ApiError = z.strictObject({ error: z.string() });
 		const middleware = [
-			create_middleware({name: 'admin_auth', path: '/admin/*', errors: {401: ApiError}}),
+			create_middleware({ name: 'admin_auth', path: '/admin/*', errors: { 401: ApiError } })
 		];
 
 		const errors = collect_middleware_errors(middleware, '/api/things');
@@ -380,11 +383,11 @@ describe('collect_middleware_errors', () => {
 	});
 
 	test('merges errors from multiple matching middleware', () => {
-		const AuthError = z.strictObject({error: z.literal('auth')});
-		const OriginError = z.strictObject({error: z.literal('origin')});
+		const AuthError = z.strictObject({ error: z.literal('auth') });
+		const OriginError = z.strictObject({ error: z.literal('origin') });
 		const middleware = [
-			create_middleware({name: 'auth', path: '/api/*', errors: {401: AuthError}}),
-			create_middleware({name: 'origin', path: '/api/*', errors: {403: OriginError}}),
+			create_middleware({ name: 'auth', path: '/api/*', errors: { 401: AuthError } }),
+			create_middleware({ name: 'origin', path: '/api/*', errors: { 403: OriginError } })
 		];
 
 		const errors = collect_middleware_errors(middleware, '/api/things');
@@ -399,7 +402,7 @@ describe('env_schema_to_surface', () => {
 	test('extracts env entries from schema', () => {
 		const schema = z.strictObject({
 			PORT: z.number().default(4040),
-			SECRET: z.string(),
+			SECRET: z.string()
 		});
 
 		const entries = env_schema_to_surface(schema);
@@ -416,7 +419,7 @@ describe('env_schema_to_surface', () => {
 
 	test('detects sensitivity from meta', () => {
 		const schema = z.strictObject({
-			API_KEY: z.string().meta({sensitivity: 'secret', description: 'The API key'}),
+			API_KEY: z.string().meta({ sensitivity: 'secret', description: 'The API key' })
 		});
 
 		const entries = env_schema_to_surface(schema);
@@ -427,7 +430,7 @@ describe('env_schema_to_surface', () => {
 
 	test('non-sensitive fields default to sensitivity=null', () => {
 		const schema = z.strictObject({
-			PORT: z.number().default(3000),
+			PORT: z.number().default(3000)
 		});
 
 		const entries = env_schema_to_surface(schema);
@@ -441,11 +444,11 @@ describe('events_to_surface', () => {
 		const specs: Array<EventSpec> = [
 			{
 				method: 'created',
-				params: z.strictObject({id: z.string()}),
+				params: z.strictObject({ id: z.string() }),
 				description: 'Created',
-				channel: 'things',
+				channel: 'things'
 			},
-			{method: 'deleted', params: z.strictObject({id: z.string()}), description: 'Deleted'},
+			{ method: 'deleted', params: z.strictObject({ id: z.string() }), description: 'Deleted' }
 		];
 
 		const events = events_to_surface(specs);

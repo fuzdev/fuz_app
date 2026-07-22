@@ -9,15 +9,19 @@
  * @module
  */
 
-import {assert, describe, test} from 'vitest';
+import { assert, describe, test } from 'vitest';
 
 import {
 	create_session_cookie_value,
 	SESSION_AGE_MAX,
 	session_cookie_options,
-	type SessionOptions,
+	type SessionOptions
 } from '$lib/auth/session_cookie.ts';
-import {create_test_keyring, TEST_IDENTITY, test_session_options} from './session_test_helpers.ts';
+import {
+	create_test_keyring,
+	TEST_IDENTITY,
+	test_session_options
+} from './session_test_helpers.ts';
 
 describe('session constants', () => {
 	test('SESSION_AGE_MAX is 30 days in seconds', () => {
@@ -31,14 +35,14 @@ describe('session constants', () => {
 		// extension model. If they drift, either DB sessions outlive cookies
 		// (active user logged out while session is alive) or cookies outlive
 		// DB sessions (cookie validates against a missing session row).
-		const {AUTH_SESSION_LIFETIME_MS} = await import('$lib/auth/session_queries.ts');
+		const { AUTH_SESSION_LIFETIME_MS } = await import('$lib/auth/session_queries.ts');
 		const db_lifetime_seconds = AUTH_SESSION_LIFETIME_MS / 1000;
 		assert.strictEqual(
 			SESSION_AGE_MAX,
 			db_lifetime_seconds,
 			`cookie SESSION_AGE_MAX (${
 				SESSION_AGE_MAX
-			}s) must equal DB AUTH_SESSION_LIFETIME_MS / 1000 (${db_lifetime_seconds}s)`,
+			}s) must equal DB AUTH_SESSION_LIFETIME_MS / 1000 (${db_lifetime_seconds}s)`
 		);
 	});
 });
@@ -50,7 +54,7 @@ describe('session_cookie_options', () => {
 			httpOnly: true,
 			secure: true,
 			sameSite: 'strict',
-			maxAge: SESSION_AGE_MAX,
+			maxAge: SESSION_AGE_MAX
 		});
 	});
 });
@@ -62,7 +66,7 @@ describe('create_session_cookie_value', () => {
 			keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			1000,
+			1000
 		);
 		assert.ok(value.includes('.'));
 	});
@@ -74,7 +78,7 @@ describe('create_session_cookie_value', () => {
 			keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 		const result = await keyring.verify(signed);
 		assert.ok(result);
@@ -87,7 +91,7 @@ describe('create_session_cookie_value', () => {
 			keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			1000,
+			1000
 		);
 		const result = await keyring.verify(signed);
 		assert.ok(result);
@@ -109,13 +113,13 @@ describe('create_session_cookie_value', () => {
 			keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 		const value2 = await create_session_cookie_value(
 			keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 		assert.strictEqual(value1, value2);
 	});
@@ -126,7 +130,7 @@ describe('create_session_cookie_value', () => {
 		const keyring = create_test_keyring();
 		const custom_options: SessionOptions<string> = {
 			...test_session_options,
-			max_age: 60,
+			max_age: 60
 		};
 		const now = 1000;
 		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, custom_options, now);
@@ -134,7 +138,7 @@ describe('create_session_cookie_value', () => {
 		assert.ok(result);
 		assert.ok(
 			result.value.endsWith(`:${now + 60}`),
-			`expected expires_at = ${now + 60}, got value: ${result.value}`,
+			`expected expires_at = ${now + 60}, got value: ${result.value}`
 		);
 	});
 });

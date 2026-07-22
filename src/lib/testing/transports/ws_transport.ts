@@ -19,7 +19,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {WebSocket, type RawData} from 'ws';
+import { WebSocket, type RawData } from 'ws';
 
 import {
 	WS_CLIENT_DEFAULT_TIMEOUT_MS,
@@ -29,9 +29,9 @@ import {
 	type JsonrpcSuccessResponseFrame,
 	type WsClient,
 	type WsRequestResponder,
-	type WsWaiter,
+	type WsWaiter
 } from './ws_client.ts';
-import {create_jsonrpc_request} from '../../http/jsonrpc_helpers.ts';
+import { create_jsonrpc_request } from '../../http/jsonrpc_helpers.ts';
 
 /** Construction options for `create_ws_transport`. */
 export interface WsTransportOptions {
@@ -83,7 +83,7 @@ export interface WsTransportOptions {
  *   cause rather than hanging.
  */
 export const create_ws_transport = async (options: WsTransportOptions): Promise<WsClient> => {
-	const {base_url, ws_path, cookies, origin, default_timeout_ms, on_request} = options;
+	const { base_url, ws_path, cookies, origin, default_timeout_ms, on_request } = options;
 	const default_timeout = default_timeout_ms ?? WS_CLIENT_DEFAULT_TIMEOUT_MS;
 
 	const ws_url = `${base_url.replace(/^http/i, 'ws')}${ws_path}`;
@@ -92,7 +92,7 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 
 	const socket = new WebSocket(ws_url, {
 		headers,
-		origin: origin ?? base_url,
+		origin: origin ?? base_url
 	});
 
 	const received: Array<unknown> = [];
@@ -164,7 +164,7 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 
 	const wait_for_impl = <T>(
 		predicate: (msg: unknown) => boolean,
-		timeout_ms = default_timeout,
+		timeout_ms = default_timeout
 	): Promise<T> => {
 		for (const msg of received) {
 			if (predicate(msg)) return Promise.resolve(msg as T);
@@ -175,7 +175,7 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 				resolve: (msg: unknown) => {
 					clearTimeout(timer);
 					resolve(msg as T);
-				},
+				}
 			};
 			const timer = setTimeout(() => {
 				const i = waiters.indexOf(waiter);
@@ -200,12 +200,12 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 			id: number | string,
 			method: string,
 			params: unknown,
-			timeout_ms?: number,
+			timeout_ms?: number
 		): Promise<R> {
 			await send_impl(create_jsonrpc_request(method, params as never, id));
 			const msg = await wait_for_impl<JsonrpcSuccessResponseFrame<R> | JsonrpcErrorResponseFrame>(
 				is_response_for(id),
-				timeout_ms,
+				timeout_ms
 			);
 			if ('error' in msg) {
 				const detail =
@@ -222,6 +222,6 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 			if (close_error) throw close_error;
 		},
 		wait_for: wait_for_impl,
-		wait_for_close,
+		wait_for_close
 	};
 };

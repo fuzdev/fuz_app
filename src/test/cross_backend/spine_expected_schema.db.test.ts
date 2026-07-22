@@ -18,23 +18,23 @@
  * @module
  */
 
-import {describe, test, assert, beforeAll, afterAll} from 'vitest';
-import {PGlite} from '@electric-sql/pglite';
+import { describe, test, assert, beforeAll, afterAll } from 'vitest';
+import { PGlite } from '@electric-sql/pglite';
 
-import type {Db} from '$lib/db/db.ts';
-import {create_pglite_db} from '$lib/db/db_pglite.ts';
-import {run_migrations} from '$lib/db/migrate.ts';
-import {auth_migration_ns} from '$lib/auth/migrations.ts';
-import {CELL_MIGRATION_NS} from '$lib/db/cell_ddl.ts';
-import {CELL_HISTORY_MIGRATION_NS} from '$lib/db/cell_history_ddl.ts';
-import {FACT_MIGRATION_NS} from '$lib/db/fact_ddl.ts';
-import {sync_expected_schema_fixture} from '$lib/testing/schema_ready_fixture.ts';
+import type { Db } from '$lib/db/db.ts';
+import { create_pglite_db } from '$lib/db/db_pglite.ts';
+import { run_migrations } from '$lib/db/migrate.ts';
+import { auth_migration_ns } from '$lib/auth/migrations.ts';
+import { CELL_MIGRATION_NS } from '$lib/db/cell_ddl.ts';
+import { CELL_HISTORY_MIGRATION_NS } from '$lib/db/cell_history_ddl.ts';
+import { FACT_MIGRATION_NS } from '$lib/db/fact_ddl.ts';
+import { sync_expected_schema_fixture } from '$lib/testing/schema_ready_fixture.ts';
 
 // The committed fixture loaded at runtime by `create_spine_ready_route_spec`
 // (TS) and the Rust `testing_spine_stub`'s `/ready` (via the env-supplied path).
 const FIXTURE_URL = new URL(
 	'../../lib/testing/cross_backend/expected_schema.json',
-	import.meta.url,
+	import.meta.url
 );
 
 let db: Db;
@@ -50,7 +50,7 @@ beforeAll(async () => {
 		auth_migration_ns,
 		CELL_MIGRATION_NS,
 		CELL_HISTORY_MIGRATION_NS,
-		FACT_MIGRATION_NS,
+		FACT_MIGRATION_NS
 	]);
 });
 
@@ -60,10 +60,10 @@ afterAll(async () => {
 
 describe('spine expected_schema fixture', () => {
 	test('committed expected_schema.json matches a fresh full spine bootstrap', async () => {
-		const {live, committed} = await sync_expected_schema_fixture({
+		const { live, committed } = await sync_expected_schema_fixture({
 			db,
 			fixture_url: FIXTURE_URL,
-			update: process.env.UPDATE_SCHEMA_READY === '1',
+			update: process.env.UPDATE_SCHEMA_READY === '1'
 		});
 		assert.deepEqual(live, committed);
 	});

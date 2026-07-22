@@ -4,12 +4,12 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type {QueryDeps} from '../db/query_deps.ts';
-import {assert_row} from '../db/assert_row.ts';
-import type {ApiToken} from './account_schema.ts';
-import {hash_api_token} from './api_token.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
+import { assert_row } from '../db/assert_row.ts';
+import type { ApiToken } from './account_schema.ts';
+import { hash_api_token } from './api_token.ts';
 
 /** Extended deps for `query_validate_api_token` which needs a logger. */
 export interface ApiTokenQueryDeps extends QueryDeps {
@@ -34,13 +34,13 @@ export const query_create_api_token = async (
 	account_id: string,
 	name: string,
 	token_hash: string,
-	expires_at?: Date | null,
+	expires_at?: Date | null
 ): Promise<ApiToken> => {
 	const row = await deps.db.query_one<ApiToken>(
 		`INSERT INTO api_token (id, account_id, name, token_hash, expires_at)
 		 VALUES ($1, $2, $3, $4, $5)
 		 RETURNING *`,
-		[id, account_id, name, token_hash, expires_at?.toISOString() ?? null],
+		[id, account_id, name, token_hash, expires_at?.toISOString() ?? null]
 	);
 	return assert_row(row, 'INSERT INTO api_token');
 };
@@ -64,14 +64,14 @@ export const query_validate_api_token = async (
 	deps: ApiTokenQueryDeps,
 	raw_token: string,
 	ip: string | undefined,
-	pending_effects: Array<Promise<void>> | undefined,
+	pending_effects: Array<Promise<void>> | undefined
 ): Promise<ApiToken | undefined> => {
 	const token_hash = hash_api_token(raw_token);
 	const row = await deps.db.query_one<ApiToken>(
 		`SELECT * FROM api_token
 		 WHERE token_hash = $1
 		   AND (expires_at IS NULL OR expires_at > NOW())`,
-		[token_hash],
+		[token_hash]
 	);
 	if (!row) return undefined;
 
@@ -79,7 +79,7 @@ export const query_validate_api_token = async (
 	const p: Promise<void> = deps.db
 		.query(`UPDATE api_token SET last_used_at = NOW(), last_used_ip = $1 WHERE id = $2`, [
 			ip ?? null,
-			row.id,
+			row.id
 		])
 		.then(() => {})
 		.catch((err) => {
@@ -100,11 +100,11 @@ export const query_validate_api_token = async (
  */
 export const query_revoke_all_api_tokens_for_account = async (
 	deps: QueryDeps,
-	account_id: string,
+	account_id: string
 ): Promise<number> => {
-	const rows = await deps.db.query<{id: string}>(
+	const rows = await deps.db.query<{ id: string }>(
 		`DELETE FROM api_token WHERE account_id = $1 RETURNING id`,
-		[account_id],
+		[account_id]
 	);
 	return rows.length;
 };
@@ -123,11 +123,11 @@ export const query_revoke_all_api_tokens_for_account = async (
 export const query_revoke_api_token_for_account = async (
 	deps: QueryDeps,
 	id: string,
-	account_id: string,
+	account_id: string
 ): Promise<boolean> => {
-	const rows = await deps.db.query<{id: string}>(
+	const rows = await deps.db.query<{ id: string }>(
 		`DELETE FROM api_token WHERE id = $1 AND account_id = $2 RETURNING id`,
-		[id, account_id],
+		[id, account_id]
 	);
 	return rows.length > 0;
 };
@@ -140,12 +140,12 @@ export const query_revoke_api_token_for_account = async (
  */
 export const query_api_token_list_for_account = async (
 	deps: QueryDeps,
-	account_id: string,
+	account_id: string
 ): Promise<Array<Omit<ApiToken, 'token_hash'>>> => {
 	return deps.db.query<Omit<ApiToken, 'token_hash'>>(
 		`SELECT id, account_id, name, expires_at, last_used_at, last_used_ip, created_at
 		 FROM api_token WHERE account_id = $1 ORDER BY created_at DESC`,
-		[account_id],
+		[account_id]
 	);
 };
 
@@ -172,9 +172,9 @@ export const query_api_token_list_for_account = async (
 export const query_api_token_enforce_limit = async (
 	deps: QueryDeps,
 	account_id: string,
-	max_tokens: number,
+	max_tokens: number
 ): Promise<number> => {
-	const rows = await deps.db.query<{id: string}>(
+	const rows = await deps.db.query<{ id: string }>(
 		`DELETE FROM api_token
 		 WHERE id IN (
 		   SELECT id FROM api_token
@@ -182,7 +182,7 @@ export const query_api_token_enforce_limit = async (
 		   ORDER BY created_at DESC
 		   OFFSET $2
 		 ) RETURNING id`,
-		[account_id, max_tokens],
+		[account_id, max_tokens]
 	);
 	return rows.length;
 };

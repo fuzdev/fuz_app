@@ -21,11 +21,11 @@ import './assert_dev_env.ts';
 import {
 	query_create_account_with_actor,
 	query_create_actor,
-	query_actor_soft_delete,
+	query_actor_soft_delete
 } from '../auth/account_queries.ts';
-import {query_create_role_grant} from '../auth/role_grant_queries.ts';
-import type {Account, Actor, CreateRoleGrantInput, RoleGrant} from '../auth/account_schema.ts';
-import type {Db} from '../db/db.ts';
+import { query_create_role_grant } from '../auth/role_grant_queries.ts';
+import type { Account, Actor, CreateRoleGrantInput, RoleGrant } from '../auth/account_schema.ts';
+import type { Db } from '../db/db.ts';
 
 /** The `{account, actor}` row pair returned by `create_test_account_with_actor`. */
 export interface TestAccountWithActor {
@@ -44,11 +44,11 @@ export interface TestAccountWithActor {
  */
 export const create_test_account_with_actor = async (
 	db: Db,
-	options: {username: string; password_hash?: string},
+	options: { username: string; password_hash?: string }
 ): Promise<TestAccountWithActor> =>
 	query_create_account_with_actor(
-		{db},
-		{username: options.username, password_hash: options.password_hash ?? 'hash'},
+		{ db },
+		{ username: options.username, password_hash: options.password_hash ?? 'hash' }
 	);
 
 /**
@@ -73,8 +73,8 @@ export const create_test_account_with_actor = async (
  */
 export const create_test_role_grant_direct = async (
 	db: Db,
-	input: CreateRoleGrantInput,
-): Promise<RoleGrant> => query_create_role_grant({db}, input);
+	input: CreateRoleGrantInput
+): Promise<RoleGrant> => query_create_role_grant({ db }, input);
 
 /**
  * Add a second `actor` to an existing test account — the multi-actor edge.
@@ -86,8 +86,8 @@ export const create_test_role_grant_direct = async (
 export const create_test_extra_actor = async (
 	db: Db,
 	account_id: string,
-	name: string,
-): Promise<Actor> => query_create_actor({db}, account_id, name);
+	name: string
+): Promise<Actor> => query_create_actor({ db }, account_id, name);
 
 /**
  * Soft-delete (tombstone) one actor via the production `query_actor_soft_delete`
@@ -96,4 +96,4 @@ export const create_test_extra_actor = async (
  * multi-actor tombstone state directly (no per-actor-delete RPC ships yet).
  */
 export const soft_delete_test_actor = async (db: Db, actor_id: string): Promise<boolean> =>
-	query_actor_soft_delete({db}, actor_id, null);
+	query_actor_soft_delete({ db }, actor_id, null);

@@ -54,13 +54,13 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {account_verify_action_spec} from '../../auth/account_action_specs.ts';
-import {ERROR_PAYLOAD_TOO_LARGE} from '../../http/error_schemas.ts';
-import type {FetchTransport} from '../transports/fetch_transport.ts';
-import type {RpcPathCrossSuiteOptions} from './setup.ts';
-import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
+import { account_verify_action_spec } from '../../auth/account_action_specs.ts';
+import { ERROR_PAYLOAD_TOO_LARGE } from '../../http/error_schemas.ts';
+import type { FetchTransport } from '../transports/fetch_transport.ts';
+import type { RpcPathCrossSuiteOptions } from './setup.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /**
  * Options for the body-size parity suite — the standard RPC-dispatched
@@ -89,14 +89,14 @@ const BODY_LIMIT_DEFAULT_BYTES = 1024 * 1024;
  */
 const sized_envelope = (id: string, target_bytes: number): string => {
 	const method = account_verify_action_spec.method;
-	const base = JSON.stringify({jsonrpc: '2.0', method, id, params: {pad: ''}});
+	const base = JSON.stringify({ jsonrpc: '2.0', method, id, params: { pad: '' } });
 	const pad = 'x'.repeat(Math.max(0, target_bytes - base.length));
-	return JSON.stringify({jsonrpc: '2.0', method, id, params: {pad}});
+	return JSON.stringify({ jsonrpc: '2.0', method, id, params: { pad } });
 };
 
 /** A small, well-formed nullary `account_verify` body — well under the cap. */
 const small_envelope = (id: string): string =>
-	JSON.stringify({jsonrpc: '2.0', method: account_verify_action_spec.method, id});
+	JSON.stringify({ jsonrpc: '2.0', method: account_verify_action_spec.method, id });
 
 /**
  * Issue a request, retrying once if the call *throws* (vs. returning a
@@ -109,7 +109,7 @@ const small_envelope = (id: string): string =>
 const fetch_retrying_once = async (
 	transport: FetchTransport,
 	path: string,
-	init: RequestInit,
+	init: RequestInit
 ): Promise<Response> => {
 	try {
 		return await transport(path, init);
@@ -119,15 +119,15 @@ const fetch_retrying_once = async (
 };
 
 export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions): void => {
-	const {setup_test} = options;
+	const { setup_test } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
 	/** POST `body` to the RPC path as the keeper, retry-once on a dead socket. */
 	const post = (fixture: Awaited<ReturnType<typeof setup_test>>, body: string): Promise<Response> =>
 		fetch_retrying_once(fixture.transport, rpc_path, {
 			method: 'POST',
-			headers: {...fixture.create_session_headers(), 'content-type': 'application/json'},
-			body,
+			headers: { ...fixture.create_session_headers(), 'content-type': 'application/json' },
+			body
 		});
 
 	describe('body-size limit parity', () => {
@@ -138,7 +138,7 @@ export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions
 			// over the cap: both impls reject on a strict `>`.
 			const res = await post(fixture, sized_envelope('over-limit', BODY_LIMIT_DEFAULT_BYTES + 1));
 			assert.strictEqual(res.status, 413, 'a body one byte over the cap must be rejected with 413');
-			const body = (await res.json().catch(() => undefined)) as {error?: unknown} | undefined;
+			const body = (await res.json().catch(() => undefined)) as { error?: unknown } | undefined;
 			assert.strictEqual(body?.error, ERROR_PAYLOAD_TOO_LARGE);
 		});
 

@@ -15,33 +15,33 @@
  * @module
  */
 
-import {test, assert} from 'vitest';
+import { test, assert } from 'vitest';
 
-import {create_session_config} from '$lib/auth/session_cookie.ts';
-import {create_test_app} from '$lib/testing/app_server.ts';
+import { create_session_config } from '$lib/auth/session_cookie.ts';
+import { create_test_app } from '$lib/testing/app_server.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
-	auth_integration_truncate_tables,
+	auth_integration_truncate_tables
 } from '$lib/testing/db.ts';
-import {run_migrations} from '$lib/db/migrate.ts';
-import {auth_migration_ns} from '$lib/auth/migrations.ts';
-import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
-import {role_grant_revoke_action_spec} from '$lib/auth/role_grant_offer_action_specs.ts';
-import {query_create_role_grant} from '$lib/auth/role_grant_queries.ts';
-import {query_role_grant_offer_create} from '$lib/auth/role_grant_offer_queries.ts';
+import { run_migrations } from '$lib/db/migrate.ts';
+import { auth_migration_ns } from '$lib/auth/migrations.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
+import { role_grant_revoke_action_spec } from '$lib/auth/role_grant_offer_action_specs.ts';
+import { query_create_role_grant } from '$lib/auth/role_grant_queries.ts';
+import { query_role_grant_offer_create } from '$lib/auth/role_grant_offer_queries.ts';
 import {
 	ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
-	ROLE_GRANT_REVOKE_NOTIFICATION_METHOD,
+	ROLE_GRANT_REVOKE_NOTIFICATION_METHOD
 } from '$lib/auth/role_grant_offer_notifications.ts';
-import {create_rpc_post_init} from '$lib/testing/rpc_helpers.ts';
-import type {Db} from '$lib/db/db.ts';
-import type {Hono} from 'hono';
+import { create_rpc_post_init } from '$lib/testing/rpc_helpers.ts';
+import type { Db } from '$lib/db/db.ts';
+import type { Hono } from 'hono';
 import {
 	NOTIFICATION_TEST_RPC_PATH,
 	create_capture_sender,
 	create_notification_route_specs_factory,
-	type CapturedNotificationCall,
+	type CapturedNotificationCall
 } from './notification_helpers.ts';
 
 const session_options = create_session_config('test_session');
@@ -57,7 +57,7 @@ const RPC_PATH = NOTIFICATION_TEST_RPC_PATH;
 const revoke_rpc = async (
 	app: Hono,
 	headers: Record<string, string>,
-	params: {actor_id: string; role_grant_id: string; reason?: string},
+	params: { actor_id: string; role_grant_id: string; reason?: string }
 ): Promise<Response> => {
 	const init = create_rpc_post_init(role_grant_revoke_action_spec.method, params, 'revoke-test');
 	return app.request(RPC_PATH, {
@@ -66,8 +66,8 @@ const revoke_rpc = async (
 			'Content-Type': 'application/json',
 			host: 'localhost',
 			origin: 'http://localhost:5173',
-			...headers,
-		},
+			...headers
+		}
 	});
 };
 
@@ -79,19 +79,19 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 			session_options,
 			create_route_specs: create_notification_route_specs_factory(sender),
 			db: get_db(),
-			roles: [ROLE_ADMIN],
+			roles: [ROLE_ADMIN]
 		});
-		const target = await test_app.create_account({username: 'rpc_revoke_single_target'});
+		const target = await test_app.create_account({ username: 'rpc_revoke_single_target' });
 		const db = get_db();
-		const {id: role_grant_id} = await query_create_role_grant(
-			{db},
-			{actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id},
+		const { id: role_grant_id } = await query_create_role_grant(
+			{ db },
+			{ actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id }
 		);
 
 		calls.length = 0;
 		const res = await revoke_rpc(test_app.app, test_app.create_session_headers(), {
 			actor_id: target.actor.id,
-			role_grant_id,
+			role_grant_id
 		});
 		assert.strictEqual(res.status, 200);
 
@@ -117,25 +117,25 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 			session_options,
 			create_route_specs: create_notification_route_specs_factory(sender),
 			db: get_db(),
-			roles: [ROLE_ADMIN],
+			roles: [ROLE_ADMIN]
 		});
-		const target = await test_app.create_account({username: 'rpc_revoke_reason_target'});
+		const target = await test_app.create_account({ username: 'rpc_revoke_reason_target' });
 		const db = get_db();
 		const role_grant = await query_create_role_grant(
-			{db},
-			{actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id},
+			{ db },
+			{ actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id }
 		);
 
 		calls.length = 0;
 		await revoke_rpc(test_app.app, test_app.create_session_headers(), {
 			actor_id: target.actor.id,
 			role_grant_id: role_grant.id,
-			reason: 'policy violation',
+			reason: 'policy violation'
 		});
 
 		const revokes = calls.filter((c) => c.method === ROLE_GRANT_REVOKE_NOTIFICATION_METHOD);
 		assert.strictEqual(revokes.length, 1);
-		const params = revokes[0]?.params as {reason?: string | null};
+		const params = revokes[0]?.params as { reason?: string | null };
 		assert.strictEqual(params.reason, 'policy violation');
 	});
 
@@ -146,44 +146,44 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 			session_options,
 			create_route_specs: create_notification_route_specs_factory(sender),
 			db: get_db(),
-			roles: [ROLE_ADMIN],
+			roles: [ROLE_ADMIN]
 		});
 		const grantor_b = await test_app.create_account({
 			username: 'rpc_revoke_grantor_b',
-			roles: [ROLE_ADMIN],
+			roles: [ROLE_ADMIN]
 		});
-		const target = await test_app.create_account({username: 'rpc_revoke_supersede_target'});
+		const target = await test_app.create_account({ username: 'rpc_revoke_supersede_target' });
 		const db = get_db();
-		const {id: role_grant_id} = await query_create_role_grant(
-			{db},
-			{actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id},
+		const { id: role_grant_id } = await query_create_role_grant(
+			{ db },
+			{ actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id }
 		);
 
 		// Two pending offers for the same (target, ROLE_ADMIN, null scope).
 		const expires_at = new Date(Date.now() + 60 * 60 * 1000);
-		const {id: offer_a_id} = await query_role_grant_offer_create(
-			{db},
+		const { id: offer_a_id } = await query_role_grant_offer_create(
+			{ db },
 			{
 				from_actor_id: test_app.backend.actor.id,
 				to_account_id: target.account.id,
 				role: ROLE_ADMIN,
-				expires_at,
-			},
+				expires_at
+			}
 		);
-		const {id: offer_b_id} = await query_role_grant_offer_create(
-			{db},
+		const { id: offer_b_id } = await query_role_grant_offer_create(
+			{ db },
 			{
 				from_actor_id: grantor_b.actor.id,
 				to_account_id: target.account.id,
 				role: ROLE_ADMIN,
-				expires_at,
-			},
+				expires_at
+			}
 		);
 
 		calls.length = 0;
 		const res = await revoke_rpc(test_app.app, test_app.create_session_headers(), {
 			actor_id: target.actor.id,
-			role_grant_id,
+			role_grant_id
 		});
 		assert.strictEqual(res.status, 200);
 
@@ -192,7 +192,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 		assert.strictEqual(revokes[0]?.account_id, target.account.id);
 
 		const supersedes = calls.filter(
-			(c) => c.method === ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
+			(c) => c.method === ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD
 		);
 		assert.strictEqual(supersedes.length, 2);
 
@@ -202,7 +202,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 
 		for (const call of supersedes) {
 			const params = call.params as {
-				offer?: {id?: string};
+				offer?: { id?: string };
 				reason?: string;
 				cause_id?: string;
 			};
@@ -210,7 +210,7 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 			assert.strictEqual(params.cause_id, role_grant_id);
 			assert.ok(
 				params.offer?.id === offer_a_id || params.offer?.id === offer_b_id,
-				`supersede payload should reference one of the pending offers; got ${params.offer?.id}`,
+				`supersede payload should reference one of the pending offers; got ${params.offer?.id}`
 			);
 		}
 	});
@@ -222,23 +222,23 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 			session_options,
 			create_route_specs: create_notification_route_specs_factory(sender),
 			db: get_db(),
-			roles: [ROLE_ADMIN],
+			roles: [ROLE_ADMIN]
 		});
-		const target = await test_app.create_account({username: 'rpc_revoke_no_offers_target'});
+		const target = await test_app.create_account({ username: 'rpc_revoke_no_offers_target' });
 		const db = get_db();
 		const role_grant = await query_create_role_grant(
-			{db},
-			{actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id},
+			{ db },
+			{ actor_id: target.actor.id, role: ROLE_ADMIN, granted_by: test_app.backend.actor.id }
 		);
 
 		calls.length = 0;
 		await revoke_rpc(test_app.app, test_app.create_session_headers(), {
 			actor_id: target.actor.id,
-			role_grant_id: role_grant.id,
+			role_grant_id: role_grant.id
 		});
 		const revokes = calls.filter((c) => c.method === ROLE_GRANT_REVOKE_NOTIFICATION_METHOD);
 		const supersedes = calls.filter(
-			(c) => c.method === ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
+			(c) => c.method === ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD
 		);
 		assert.strictEqual(revokes.length, 1);
 		assert.strictEqual(supersedes.length, 0);
@@ -251,19 +251,19 @@ describe_db('role_grant_revoke notifications', (get_db) => {
 			session_options,
 			create_route_specs: create_notification_route_specs_factory(sender),
 			db: get_db(),
-			roles: [ROLE_KEEPER, ROLE_ADMIN],
+			roles: [ROLE_KEEPER, ROLE_ADMIN]
 		});
 		// bootstrap account has the keeper role_grant.
-		const keeper_rows = await get_db().query<{id: string; actor_id: string}>(
+		const keeper_rows = await get_db().query<{ id: string; actor_id: string }>(
 			`SELECT id, actor_id FROM role_grant WHERE role = $1 AND revoked_at IS NULL LIMIT 1`,
-			[ROLE_KEEPER],
+			[ROLE_KEEPER]
 		);
 		const keeper_role_grant = keeper_rows[0]!;
 
 		calls.length = 0;
 		const res = await revoke_rpc(test_app.app, test_app.create_session_headers(), {
 			actor_id: keeper_role_grant.actor_id,
-			role_grant_id: keeper_role_grant.id,
+			role_grant_id: keeper_role_grant.id
 		});
 		assert.strictEqual(res.status, 403);
 		assert.strictEqual(calls.length, 0);

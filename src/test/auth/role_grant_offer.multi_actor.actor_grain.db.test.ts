@@ -10,36 +10,36 @@
  * @module
  */
 
-import {assert, describe, test} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import { assert, describe, test } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import {create_test_app} from '$lib/testing/app_server.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import { create_test_app } from '$lib/testing/app_server.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import {
 	role_grant_offer_create_action_spec,
 	role_grant_offer_accept_action_spec,
 	ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
-	ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH,
+	ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH
 } from '$lib/auth/role_grant_offer_action_specs.ts';
 import {
 	query_accept_offer,
 	query_role_grant_offer_create,
 	RoleGrantOfferActorAccountMismatchError,
-	RoleGrantOfferActorMismatchError,
+	RoleGrantOfferActorMismatchError
 } from '$lib/auth/role_grant_offer_queries.ts';
-import type {AuditLogEvent} from '$lib/auth/audit_log_schema.ts';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
+import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
+import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
 
 import {
 	RPC_PATH,
 	create_route_specs,
 	describe_db,
-	session_options,
+	session_options
 } from './role_grant_offer_test_helpers.ts';
-import {create_multi_actor_helpers} from './role_grant_offer.multi_actor.fixtures.ts';
+import { create_multi_actor_helpers } from './role_grant_offer.multi_actor.fixtures.ts';
 
 describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
-	const {build_app_with_audit, add_second_actor} = create_multi_actor_helpers(get_db);
+	const { build_app_with_audit, add_second_actor } = create_multi_actor_helpers(get_db);
 
 	describe('actor-grain offers (`to_actor_id` set)', () => {
 		test('only the named actor may accept; wrong-actor rejects with role_grant_offer_actor_mismatch', async () => {
@@ -47,9 +47,9 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			const recipient = await test_app.create_account({username: 'multi_actor_target'});
+			const recipient = await test_app.create_account({ username: 'multi_actor_target' });
 			const second_actor_id = await add_second_actor(recipient.account.id, 'second');
 
 			const create_res = await rpc_call_for_spec({
@@ -59,9 +59,9 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 				params: {
 					to_account_id: recipient.account.id,
 					to_actor_id: recipient.actor.id,
-					role: ROLE_ADMIN,
+					role: ROLE_ADMIN
 				},
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(create_res.ok);
 			assert.strictEqual(create_res.result.offer.to_actor_id, recipient.actor.id);
@@ -70,29 +70,29 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 			const wrong_err = await assert_rejects(() =>
 				get_db().transaction(async (tx) =>
 					query_accept_offer(
-						{db: tx},
+						{ db: tx },
 						{
 							offer_id: create_res.result.offer.id,
 							to_account_id: recipient.account.id,
 							actor_id: second_actor_id,
-							ip: null,
-						},
-					),
-				),
+							ip: null
+						}
+					)
+				)
 			);
 			assert.ok(wrong_err instanceof RoleGrantOfferActorMismatchError);
 
 			// Correct actor — succeeds.
 			const accepted = await get_db().transaction(async (tx) =>
 				query_accept_offer(
-					{db: tx},
+					{ db: tx },
 					{
 						offer_id: create_res.result.offer.id,
 						to_account_id: recipient.account.id,
 						actor_id: recipient.actor.id,
-						ip: null,
-					},
-				),
+						ip: null
+					}
+				)
 			);
 			assert.strictEqual(accepted.role_grant.actor_id, recipient.actor.id);
 		});
@@ -107,9 +107,9 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			const recipient = await test_app.create_account({username: 'multi_actor_b_session'});
+			const recipient = await test_app.create_account({ username: 'multi_actor_b_session' });
 			const second_actor_id = await add_second_actor(recipient.account.id, 'recipient_b');
 
 			// Offer targeted at actor B.
@@ -120,9 +120,9 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 				params: {
 					to_account_id: recipient.account.id,
 					to_actor_id: second_actor_id,
-					role: ROLE_ADMIN,
+					role: ROLE_ADMIN
 				},
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(create_res.ok);
 
@@ -133,14 +133,14 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: role_grant_offer_accept_action_spec,
-				params: {offer_id: create_res.result.offer.id, acting: recipient.actor.id},
-				headers: recipient.create_session_headers(),
+				params: { offer_id: create_res.result.offer.id, acting: recipient.actor.id },
+				headers: recipient.create_session_headers()
 			});
 			assert.ok(!wrong_actor_res.ok);
 			assert.strictEqual(wrong_actor_res.status, 403);
 			assert.strictEqual(
-				(wrong_actor_res.error.data as {reason: string} | undefined)?.reason,
-				ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH,
+				(wrong_actor_res.error.data as { reason: string } | undefined)?.reason,
+				ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH
 			);
 
 			// Recipient passes `acting: actor_b` and retries — succeeds.
@@ -148,8 +148,8 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: role_grant_offer_accept_action_spec,
-				params: {offer_id: create_res.result.offer.id, acting: second_actor_id},
-				headers: recipient.create_session_headers(),
+				params: { offer_id: create_res.result.offer.id, acting: second_actor_id },
+				headers: recipient.create_session_headers()
 			});
 			assert.ok(accept_res.ok);
 			assert.strictEqual(accept_res.result.offer.to_actor_id, second_actor_id);
@@ -163,9 +163,9 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			const recipient = await test_app.create_account({username: 'multi_actor_action_wrong'});
+			const recipient = await test_app.create_account({ username: 'multi_actor_action_wrong' });
 			const second_actor_id = await add_second_actor(recipient.account.id, 'second_wrong');
 
 			// Offer targeted at the second actor.
@@ -176,9 +176,9 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 				params: {
 					to_account_id: recipient.account.id,
 					to_actor_id: second_actor_id,
-					role: ROLE_ADMIN,
+					role: ROLE_ADMIN
 				},
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(create_res.ok);
 
@@ -186,21 +186,21 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: role_grant_offer_accept_action_spec,
-				params: {offer_id: create_res.result.offer.id, acting: recipient.actor.id},
-				headers: recipient.create_session_headers(),
+				params: { offer_id: create_res.result.offer.id, acting: recipient.actor.id },
+				headers: recipient.create_session_headers()
 			});
 			assert.ok(!accept_res.ok);
 			assert.strictEqual(accept_res.status, 403);
 			assert.strictEqual(
-				(accept_res.error.data as {reason: string} | undefined)?.reason,
-				ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH,
+				(accept_res.error.data as { reason: string } | undefined)?.reason,
+				ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH
 			);
 		});
 
 		test('create envelope carries the target actor on actor-grain offers', async () => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await build_app_with_audit(events);
-			const recipient = await test_app.create_account({username: 'multi_actor_envelope'});
+			const recipient = await test_app.create_account({ username: 'multi_actor_envelope' });
 
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
@@ -209,15 +209,15 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 				params: {
 					to_account_id: recipient.account.id,
 					to_actor_id: recipient.actor.id,
-					role: ROLE_ADMIN,
+					role: ROLE_ADMIN
 				},
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(res.ok);
 			const create_event = events.find(
 				(e) =>
 					e.event_type === 'role_grant_offer_create' &&
-					(e.metadata as {offer_id?: string}).offer_id === res.result.offer.id,
+					(e.metadata as { offer_id?: string }).offer_id === res.result.offer.id
 			);
 			assert.ok(create_event);
 			assert.strictEqual(create_event.target_account_id, recipient.account.id);
@@ -229,23 +229,23 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			const recipient = await test_app.create_account({username: 'multi_actor_xacct_recipient'});
-			const stranger = await test_app.create_account({username: 'multi_actor_xacct_stranger'});
+			const recipient = await test_app.create_account({ username: 'multi_actor_xacct_recipient' });
+			const stranger = await test_app.create_account({ username: 'multi_actor_xacct_stranger' });
 
 			// Direct query: throws.
 			const err = await assert_rejects(() =>
 				query_role_grant_offer_create(
-					{db: get_db()},
+					{ db: get_db() },
 					{
 						from_actor_id: test_app.backend.actor.id,
 						to_account_id: recipient.account.id,
 						to_actor_id: stranger.actor.id,
 						role: ROLE_ADMIN,
-						expires_at: new Date(Date.now() + 60 * 60 * 1000),
-					},
-				),
+						expires_at: new Date(Date.now() + 60 * 60 * 1000)
+					}
+				)
 			);
 			assert.ok(err instanceof RoleGrantOfferActorAccountMismatchError);
 
@@ -257,15 +257,15 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 				params: {
 					to_account_id: recipient.account.id,
 					to_actor_id: stranger.actor.id,
-					role: ROLE_ADMIN,
+					role: ROLE_ADMIN
 				},
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(!res.ok);
 			assert.strictEqual(res.status, 400);
 			assert.strictEqual(
-				(res.error.data as {reason: string} | undefined)?.reason,
-				ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
+				(res.error.data as { reason: string } | undefined)?.reason,
+				ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH
 			);
 		});
 
@@ -279,7 +279,7 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			await add_second_actor(test_app.backend.account.id, 'admin_second');
 
@@ -290,9 +290,9 @@ describe_db('role_grant_offer.multi_actor — actor_grain', (get_db) => {
 				params: {
 					to_account_id: test_app.backend.account.id,
 					role: ROLE_ADMIN,
-					acting: test_app.backend.actor.id,
+					acting: test_app.backend.actor.id
 				},
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(!res.ok);
 			assert.strictEqual(res.status, 400);

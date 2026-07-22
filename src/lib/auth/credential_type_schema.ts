@@ -20,7 +20,7 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
 /**
  * Letter (lowercase a-z) start and end (or single letter), with letters
@@ -35,7 +35,7 @@ export const CredentialTypeName = z
 	.string()
 	.regex(
 		CREDENTIAL_TYPE_NAME_REGEX,
-		'Credential-type names must be lowercase letters and underscores (a-z_), no leading/trailing underscore',
+		'Credential-type names must be lowercase letters and underscores (a-z_), no leading/trailing underscore'
 	);
 export type CredentialTypeName = z.infer<typeof CredentialTypeName>;
 
@@ -59,7 +59,7 @@ export const CREDENTIAL_TYPE_DAEMON_TOKEN = 'daemon_token';
 export const BUILTIN_CREDENTIAL_TYPES = [
 	CREDENTIAL_TYPE_SESSION,
 	CREDENTIAL_TYPE_API_TOKEN,
-	CREDENTIAL_TYPE_DAEMON_TOKEN,
+	CREDENTIAL_TYPE_DAEMON_TOKEN
 ] as const;
 
 /** Zod enum for builtin credential types only. */
@@ -87,16 +87,16 @@ export interface CredentialTypeMeta {
 export const builtin_credential_type_meta: ReadonlyMap<string, CredentialTypeMeta> = new Map([
 	[
 		CREDENTIAL_TYPE_SESSION,
-		{description: 'Cookie-based session credential, signed and validated server-side.'},
+		{ description: 'Cookie-based session credential, signed and validated server-side.' }
 	],
 	[
 		CREDENTIAL_TYPE_API_TOKEN,
-		{description: 'HTTP Authorization: Bearer API token credential, hashed at rest.'},
+		{ description: 'HTTP Authorization: Bearer API token credential, hashed at rest.' }
 	],
 	[
 		CREDENTIAL_TYPE_DAEMON_TOKEN,
-		{description: 'Filesystem-proof daemon-token credential, scoped to the keeper account.'},
-	],
+		{ description: 'Filesystem-proof daemon-token credential, scoped to the keeper account.' }
+	]
 ]);
 
 /** The result of `create_credential_type_schema` — a Zod schema and metadata map. */
@@ -144,7 +144,7 @@ export interface CredentialTypeSchemaResult {
  * ```
  */
 export const create_credential_type_schema = (
-	consumer_types: Record<string, CredentialTypeMeta> = {},
+	consumer_types: Record<string, CredentialTypeMeta> = {}
 ): CredentialTypeSchemaResult => {
 	const consumer_names = Object.keys(consumer_types);
 
@@ -171,5 +171,5 @@ export const create_credential_type_schema = (
 		credential_types.set(name, consumer_types[name]!);
 	}
 
-	return {CredentialType, credential_types};
+	return { CredentialType, credential_types };
 };

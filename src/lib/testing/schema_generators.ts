@@ -10,16 +10,16 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 import {
 	zod_unwrap_def,
 	zod_get_base_type,
 	zod_unwrap_to_object,
 	zod_extract_fields,
-	type ZodFieldInfo,
+	type ZodFieldInfo
 } from '@fuzdev/fuz_util/zod.ts';
 
-import {is_null_schema} from '../http/schema_helpers.ts';
+import { is_null_schema } from '../http/schema_helpers.ts';
 
 /**
  * Detect format constraints on a field by converting to JSON Schema.
@@ -172,15 +172,15 @@ export const generate_valid_value = (field: ZodFieldInfo, field_schema: z.ZodTyp
 				// no constraint
 			}
 			if (min_items === 0) return [];
-			const def = zod_unwrap_def(field_schema) as {element?: z.ZodType};
+			const def = zod_unwrap_def(field_schema) as { element?: z.ZodType };
 			const element_schema = def.element;
 			if (!element_schema) return [];
 			const element_field: ZodFieldInfo = {
 				...field,
-				base_type: zod_get_base_type(element_schema),
+				base_type: zod_get_base_type(element_schema)
 			};
 			const item = generate_valid_value(element_field, element_schema);
-			return Array.from({length: min_items}, () => item);
+			return Array.from({ length: min_items }, () => item);
 		}
 		case 'object': {
 			// Recursively generate valid nested objects
@@ -204,12 +204,12 @@ export const generate_valid_value = (field: ZodFieldInfo, field_schema: z.ZodTyp
 			// 'union'` with a `def.options` array. Picking `options[0]` is a
 			// pragmatic default; consumers needing a specific branch can pass
 			// an override via the relevant test helper.
-			const def = zod_unwrap_def(field_schema) as {options?: Array<z.ZodType>};
+			const def = zod_unwrap_def(field_schema) as { options?: Array<z.ZodType> };
 			const first = def.options?.[0];
 			if (first) {
 				const inner_field: ZodFieldInfo = {
 					...field,
-					base_type: zod_get_base_type(first),
+					base_type: zod_get_base_type(first)
 				};
 				return generate_valid_value(inner_field, first);
 			}
@@ -221,7 +221,7 @@ export const generate_valid_value = (field: ZodFieldInfo, field_schema: z.ZodTyp
 			// `z.literal('foo')` as well as required discriminator fields in
 			// `z.discriminatedUnion` variants — without this branch the literal
 			// would fall through to the default and break parse.
-			const literal_def = zod_unwrap_def(field_schema) as {values?: ReadonlyArray<unknown>};
+			const literal_def = zod_unwrap_def(field_schema) as { values?: ReadonlyArray<unknown> };
 			if (literal_def.values && literal_def.values.length > 0) {
 				return literal_def.values[0];
 			}
@@ -230,7 +230,7 @@ export const generate_valid_value = (field: ZodFieldInfo, field_schema: z.ZodTyp
 		case 'enum': {
 			const enum_def = zod_unwrap_def(field_schema);
 			if ('entries' in enum_def) {
-				const entries = (enum_def as {entries: unknown}).entries;
+				const entries = (enum_def as { entries: unknown }).entries;
 				// Zod 4 enum entries is an object {key: value}, not an array
 				if (entries && typeof entries === 'object') {
 					const values = Object.values(entries as Record<string, unknown>);
@@ -273,7 +273,7 @@ export const resolve_valid_path = (path: string, params_schema?: z.ZodObject): s
  *   summary instead of a confusing 400 in downstream tests.
  */
 export const generate_valid_body = (
-	input_schema: z.ZodType,
+	input_schema: z.ZodType
 ): Record<string, unknown> | undefined => {
 	if (is_null_schema(input_schema)) return undefined;
 	const object_schema = zod_unwrap_to_object(input_schema);
@@ -301,7 +301,7 @@ export const generate_valid_body = (
 			`generate_valid_body: generated body fails validation — ` +
 				`fix generate_valid_value for: ${result.error.issues
 					.map((i) => `${i.path.join('.')}: ${i.message}`)
-					.join(', ')}`,
+					.join(', ')}`
 		);
 	}
 	return body;

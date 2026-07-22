@@ -22,19 +22,19 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {admin_account_list_action_spec} from '$lib/auth/admin_action_specs.ts';
-import {create_test_app} from '$lib/testing/app_server.ts';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
-import {query_create_role_grant} from '$lib/auth/role_grant_queries.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { admin_account_list_action_spec } from '$lib/auth/admin_action_specs.ts';
+import { create_test_app } from '$lib/testing/app_server.ts';
+import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
+import { query_create_role_grant } from '$lib/auth/role_grant_queries.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import {
 	RPC_PATH,
 	create_admin_route_specs,
 	describe_db,
-	session_options,
+	session_options
 } from './admin_rpc_test_helpers.ts';
 
 // Valid v4 UUID for the synthetic scope. Any non-bootstrap-account scope id
@@ -47,11 +47,11 @@ describe_db('role_grant_scope_role_gate', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: create_admin_route_specs,
-				db: get_db(),
+				db: get_db()
 			});
 
 			// Create a non-admin account ("alice") with no role_grants.
-			const alice = await test_app.create_account({username: 'alice'});
+			const alice = await test_app.create_account({ username: 'alice' });
 
 			// Grant alice a scoped admin role_grant. This is the privilege-escalation
 			// shape: an admin issued admin@scope intending to delegate scoped
@@ -61,7 +61,7 @@ describe_db('role_grant_scope_role_gate', (get_db) => {
 				role: ROLE_ADMIN,
 				scope_kind: 'classroom',
 				scope_id: test_scope_id,
-				granted_by: null,
+				granted_by: null
 			});
 
 			// Call a global-admin RPC action with alice's session.
@@ -70,7 +70,7 @@ describe_db('role_grant_scope_role_gate', (get_db) => {
 				path: RPC_PATH,
 				spec: admin_account_list_action_spec,
 				params: {},
-				headers: alice.create_session_headers(),
+				headers: alice.create_session_headers()
 			});
 
 			// Pre-fix: this assertion FAILS (the dispatcher admits alice → 200).
@@ -79,7 +79,7 @@ describe_db('role_grant_scope_role_gate', (get_db) => {
 			assert.ok(
 				!res.ok,
 				`scoped admin@${test_scope_id} should NOT unlock global admin_account_list — ` +
-					`but the gate admitted alice. This is the privilege escalation Finding 6 documents.`,
+					`but the gate admitted alice. This is the privilege escalation Finding 6 documents.`
 			);
 			assert.strictEqual(res.status, 403);
 		});

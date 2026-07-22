@@ -13,28 +13,28 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
 import {
 	invite_create_action_spec,
-	invite_delete_action_spec,
+	invite_delete_action_spec
 } from '$lib/auth/admin_action_specs.ts';
 import {
 	ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
 	ERROR_INVITE_ACCOUNT_EXISTS_EMAIL,
 	ERROR_INVITE_DUPLICATE,
-	ERROR_INVITE_NOT_FOUND,
+	ERROR_INVITE_NOT_FOUND
 } from '$lib/http/error_schemas.ts';
-import {query_create_account_with_actor} from '$lib/auth/account_queries.ts';
-import {create_test_app} from '$lib/testing/app_server.ts';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { query_create_account_with_actor } from '$lib/auth/account_queries.ts';
+import { create_test_app } from '$lib/testing/app_server.ts';
+import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import {
 	RPC_PATH,
 	create_admin_route_specs,
 	describe_db,
-	session_options,
+	session_options
 } from './admin_rpc_test_helpers.ts';
 
 // Valid v4 UUID that won't collide with any real invite row.
@@ -47,7 +47,7 @@ describe_db('invite_actions_failure', (get_db) => {
 				session_options,
 				create_route_specs: create_admin_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 
 			const res = await rpc_call_for_spec({
@@ -55,11 +55,11 @@ describe_db('invite_actions_failure', (get_db) => {
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
 				params: {},
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(!res.ok, 'Expected 400 for missing identifier');
 			assert.strictEqual(res.status, 400);
-			const issues = (res.error.data as {issues: Array<{message: string}>}).issues;
+			const issues = (res.error.data as { issues: Array<{ message: string }> }).issues;
 			assert.ok(Array.isArray(issues) && issues.length > 0);
 			assert.ok(issues.some((i) => i.message.includes('email or username')));
 		});
@@ -69,7 +69,7 @@ describe_db('invite_actions_failure', (get_db) => {
 				session_options,
 				create_route_specs: create_admin_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const existing_username = test_app.backend.account.username;
 
@@ -77,14 +77,14 @@ describe_db('invite_actions_failure', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {username: existing_username},
-				headers: test_app.create_session_headers(),
+				params: { username: existing_username },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(!res.ok, 'Expected 409 for existing username');
 			assert.strictEqual(res.status, 409);
 			assert.strictEqual(
-				(res.error.data as {reason: string}).reason,
-				ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
+				(res.error.data as { reason: string }).reason,
+				ERROR_INVITE_ACCOUNT_EXISTS_USERNAME
 			);
 		});
 
@@ -93,30 +93,30 @@ describe_db('invite_actions_failure', (get_db) => {
 				session_options,
 				create_route_specs: create_admin_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const existing_email = 'existing@example.test';
 			await query_create_account_with_actor(
-				{db: test_app.backend.deps.db},
+				{ db: test_app.backend.deps.db },
 				{
 					username: 'account_with_email',
 					password_hash: 'stub_hash_irrelevant',
-					email: existing_email,
-				},
+					email: existing_email
+				}
 			);
 
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {email: existing_email},
-				headers: test_app.create_session_headers(),
+				params: { email: existing_email },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(!res.ok, 'Expected 409 for existing email');
 			assert.strictEqual(res.status, 409);
 			assert.strictEqual(
-				(res.error.data as {reason: string}).reason,
-				ERROR_INVITE_ACCOUNT_EXISTS_EMAIL,
+				(res.error.data as { reason: string }).reason,
+				ERROR_INVITE_ACCOUNT_EXISTS_EMAIL
 			);
 		});
 
@@ -125,7 +125,7 @@ describe_db('invite_actions_failure', (get_db) => {
 				session_options,
 				create_route_specs: create_admin_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const invitee_username = 'prospective_user';
 
@@ -133,8 +133,8 @@ describe_db('invite_actions_failure', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {username: invitee_username},
-				headers: test_app.create_session_headers(),
+				params: { username: invitee_username },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(first.ok, 'First invite should succeed');
 
@@ -142,12 +142,12 @@ describe_db('invite_actions_failure', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {username: invitee_username},
-				headers: test_app.create_session_headers(),
+				params: { username: invitee_username },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(!second.ok, 'Expected 409 for duplicate unclaimed invite');
 			assert.strictEqual(second.status, 409);
-			assert.strictEqual((second.error.data as {reason: string}).reason, ERROR_INVITE_DUPLICATE);
+			assert.strictEqual((second.error.data as { reason: string }).reason, ERROR_INVITE_DUPLICATE);
 		});
 	});
 
@@ -157,19 +157,19 @@ describe_db('invite_actions_failure', (get_db) => {
 				session_options,
 				create_route_specs: create_admin_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_delete_action_spec,
-				params: {invite_id: missing_invite_id},
-				headers: test_app.create_session_headers(),
+				params: { invite_id: missing_invite_id },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(!res.ok, 'Expected 404 for missing invite');
 			assert.strictEqual(res.status, 404);
-			assert.strictEqual((res.error.data as {reason: string}).reason, ERROR_INVITE_NOT_FOUND);
+			assert.strictEqual((res.error.data as { reason: string }).reason, ERROR_INVITE_NOT_FOUND);
 		});
 	});
 });

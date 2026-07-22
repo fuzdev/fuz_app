@@ -34,24 +34,24 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type {RpcAction} from '../../actions/action_rpc.ts';
-import {peer_ping_action} from '../../actions/peer_ping.ts';
-import type {AppDeps} from '../../auth/deps.ts';
-import type {DaemonTokenState} from '../../auth/daemon_token.ts';
-import type {NotificationSender} from '../../auth/role_grant_offer_notifications.ts';
-import {create_standard_rpc_actions} from '../../auth/standard_rpc_actions.ts';
-import {create_all_cell_actions} from '../../auth/all_cell_actions.ts';
-import {create_actor_lookup_actions} from '../../auth/actor_lookup_actions.ts';
-import {create_actor_search_actions} from '../../auth/actor_search_actions.ts';
-import type {RpcEndpointSpec} from '../../http/surface.ts';
-import type {AppServerContext} from '../../server/app_server_context.ts';
+import type { RpcAction } from '../../actions/action_rpc.ts';
+import { peer_ping_action } from '../../actions/peer_ping.ts';
+import type { AppDeps } from '../../auth/deps.ts';
+import type { DaemonTokenState } from '../../auth/daemon_token.ts';
+import type { NotificationSender } from '../../auth/role_grant_offer_notifications.ts';
+import { create_standard_rpc_actions } from '../../auth/standard_rpc_actions.ts';
+import { create_all_cell_actions } from '../../auth/all_cell_actions.ts';
+import { create_actor_lookup_actions } from '../../auth/actor_lookup_actions.ts';
+import { create_actor_search_actions } from '../../auth/actor_search_actions.ts';
+import type { RpcEndpointSpec } from '../../http/surface.ts';
+import type { AppServerContext } from '../../server/app_server_context.ts';
 import {
 	create_testing_action_manifest_action,
-	create_testing_actions,
+	create_testing_actions
 } from './testing_reset_actions.ts';
-import {test_cell_gated_create_authorize} from './test_cell_gated_create_authorize.ts';
-import {spine_roles, spine_session_options} from './default_spine_surface.ts';
-import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
+import { test_cell_gated_create_authorize } from './test_cell_gated_create_authorize.ts';
+import { spine_roles, spine_session_options } from './default_spine_surface.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** Options for {@link build_full_spine_rpc_actions} / {@link full_spine_rpc_endpoints}. */
 export interface FullSpineMountOptions {
@@ -87,16 +87,16 @@ export interface FullSpineMountOptions {
  */
 export const build_full_spine_rpc_actions = (
 	deps: AppDeps,
-	options: FullSpineMountOptions,
+	options: FullSpineMountOptions
 ): Array<RpcAction> => {
 	const actions: Array<RpcAction> = [
 		...create_standard_rpc_actions(
-			{...deps, notification_sender: options.notification_sender ?? null},
-			{roles: spine_roles},
+			{ ...deps, notification_sender: options.notification_sender ?? null },
+			{ roles: spine_roles }
 		),
 		...create_testing_actions(deps, {
 			session_options: spine_session_options,
-			daemon_token_state: options.daemon_token_state,
+			daemon_token_state: options.daemon_token_state
 		}),
 		// Mount the directory-model `cell_gated_create` test policy (twin of the
 		// Rust stub's `TestCellGatedCreateAuthorize`) so the cross-backend
@@ -106,8 +106,8 @@ export const build_full_spine_rpc_actions = (
 		// unaffected). The handler hands the governing root's `data` to the
 		// (pure) authorizer.
 		...create_all_cell_actions(
-			{...deps, authorize_create: test_cell_gated_create_authorize},
-			{roles: spine_roles},
+			{ ...deps, authorize_create: test_cell_gated_create_authorize },
+			{ roles: spine_roles }
 		),
 		...create_actor_lookup_actions(deps),
 		...create_actor_search_actions(deps),
@@ -116,7 +116,7 @@ export const build_full_spine_rpc_actions = (
 		// rather than `method_not_found`. It's a protocol action, so it's filtered
 		// out of the action manifest (`create_testing_action_manifest_action`) —
 		// the WS endpoint registers it via the `protocol_actions` spread.
-		peer_ping_action,
+		peer_ping_action
 	];
 	// Append the `_testing_action_manifest` backdoor last — it closes over the
 	// complete `actions` list (plus its own spec) to dump the live method set
@@ -135,7 +135,7 @@ export const build_full_spine_rpc_actions = (
  */
 export const full_spine_rpc_endpoints = (
 	ctx: AppServerContext,
-	options: FullSpineMountOptions,
+	options: FullSpineMountOptions
 ): Array<RpcEndpointSpec> => [
-	{path: SPINE_RPC_PATH, actions: build_full_spine_rpc_actions(ctx.deps, options)},
+	{ path: SPINE_RPC_PATH, actions: build_full_spine_rpc_actions(ctx.deps, options) }
 ];

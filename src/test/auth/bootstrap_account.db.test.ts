@@ -4,34 +4,34 @@
  * @module
  */
 
-import {assert, test, beforeEach} from 'vitest';
+import { assert, test, beforeEach } from 'vitest';
 
-import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
-import {query_role_grant_has_role} from '$lib/auth/role_grant_queries.ts';
-import {bootstrap_account, type BootstrapAccountDeps} from '$lib/auth/bootstrap_account.ts';
-import {stub_password_deps} from '$lib/testing/app_server.ts';
-import {argon2_password_deps} from '$lib/auth/password_argon2.ts';
-import type {Db} from '$lib/db/db.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
+import { query_role_grant_has_role } from '$lib/auth/role_grant_queries.ts';
+import { bootstrap_account, type BootstrapAccountDeps } from '$lib/auth/bootstrap_account.ts';
+import { stub_password_deps } from '$lib/testing/app_server.ts';
+import { argon2_password_deps } from '$lib/auth/password_argon2.ts';
+import type { Db } from '$lib/db/db.ts';
 import {
 	ERROR_INVALID_TOKEN,
 	ERROR_ALREADY_BOOTSTRAPPED,
-	ERROR_TOKEN_FILE_MISSING,
+	ERROR_TOKEN_FILE_MISSING
 } from '$lib/http/error_schemas.ts';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {describe_db} from '../db_fixture.ts';
+import { describe_db } from '../db_fixture.ts';
 
-const log = new Logger('test', {level: 'off'});
+const log = new Logger('test', { level: 'off' });
 const TEST_TOKEN = 'bootstrap_secret_token_abc123';
 
 const create_mock_fs = (
-	files: Record<string, string> = {},
+	files: Record<string, string> = {}
 ): {
 	read_text_file: (path: string) => Promise<string>;
 	delete_file: (path: string) => Promise<void>;
 	files: Record<string, string>;
 } => {
-	const store = {...files};
+	const store = { ...files };
 	return {
 		files: store,
 		read_text_file: async (path: string): Promise<string> => {
@@ -41,7 +41,7 @@ const create_mock_fs = (
 		delete_file: async (path: string): Promise<void> => {
 			if (!(path in store)) throw new Error(`ENOENT: no such file: ${path}`);
 			delete store[path];
-		},
+		}
 	};
 };
 
@@ -51,23 +51,23 @@ const create_deps = (
 		fs?: ReturnType<typeof create_mock_fs>;
 		password?: BootstrapAccountDeps['password'];
 		token_path?: string;
-	} = {},
+	} = {}
 ): BootstrapAccountDeps => {
-	const fs = overrides.fs ?? create_mock_fs({'/token': TEST_TOKEN});
+	const fs = overrides.fs ?? create_mock_fs({ '/token': TEST_TOKEN });
 	return {
 		log,
 		db,
 		token_path: overrides.token_path ?? '/token',
 		read_text_file: fs.read_text_file,
 		delete_file: fs.delete_file,
-		password: overrides.password ?? stub_password_deps,
+		password: overrides.password ?? stub_password_deps
 	};
 };
 
 /** Check the bootstrap_lock state in the DB. */
 const get_lock_state = async (db: Db): Promise<boolean> => {
-	const row = await db.query_one<{bootstrapped: boolean}>(
-		'SELECT bootstrapped FROM bootstrap_lock WHERE id = 1',
+	const row = await db.query_one<{ bootstrapped: boolean }>(
+		'SELECT bootstrapped FROM bootstrap_lock WHERE id = 1'
 	);
 	return row?.bootstrapped ?? false;
 };
@@ -82,7 +82,7 @@ describe_db('bootstrap_account', (get_db) => {
 		const db = get_db();
 		const result = await bootstrap_account(create_deps(db), TEST_TOKEN, {
 			username: 'keeper',
-			password: 'secure_password_12',
+			password: 'secure_password_12'
 		});
 
 		assert.strictEqual(result.ok, true);
@@ -92,7 +92,7 @@ describe_db('bootstrap_account', (get_db) => {
 		assert.strictEqual(result.actor.account_id, result.account.id);
 		assert.strictEqual(result.actor.name, 'keeper');
 
-		const {keeper, admin} = result.role_grants;
+		const { keeper, admin } = result.role_grants;
 		assert.strictEqual(keeper.role, ROLE_KEEPER);
 		assert.strictEqual(keeper.actor_id, result.actor.id);
 		assert.strictEqual(keeper.granted_by, null);
@@ -109,7 +109,7 @@ describe_db('bootstrap_account', (get_db) => {
 
 		await bootstrap_account(create_deps(db), TEST_TOKEN, {
 			username: 'keeper',
-			password: 'secure_password_12',
+			password: 'secure_password_12'
 		});
 
 		assert.strictEqual(await get_lock_state(db), true);
@@ -119,7 +119,7 @@ describe_db('bootstrap_account', (get_db) => {
 		const db = get_db();
 		const result = await bootstrap_account(create_deps(db), TEST_TOKEN, {
 			username: 'keeper',
-			password: 'my_password_1234',
+			password: 'my_password_1234'
 		});
 
 		assert.strictEqual(result.ok, true);
@@ -132,9 +132,9 @@ describe_db('bootstrap_account', (get_db) => {
 	test('password is hashed with argon2 when using argon2_password_deps', async () => {
 		const db = get_db();
 		const result = await bootstrap_account(
-			create_deps(db, {password: argon2_password_deps}),
+			create_deps(db, { password: argon2_password_deps }),
 			TEST_TOKEN,
-			{username: 'keeper', password: 'my_password_1234'},
+			{ username: 'keeper', password: 'my_password_1234' }
 		);
 
 		assert.strictEqual(result.ok, true);
@@ -145,10 +145,10 @@ describe_db('bootstrap_account', (get_db) => {
 
 	test('deletes the token file on success', async () => {
 		const db = get_db();
-		const fs = create_mock_fs({'/token': TEST_TOKEN});
-		await bootstrap_account(create_deps(db, {fs}), TEST_TOKEN, {
+		const fs = create_mock_fs({ '/token': TEST_TOKEN });
+		await bootstrap_account(create_deps(db, { fs }), TEST_TOKEN, {
 			username: 'keeper',
-			password: 'password_12_chars',
+			password: 'password_12_chars'
 		});
 
 		assert.strictEqual('/token' in fs.files, false);
@@ -156,10 +156,10 @@ describe_db('bootstrap_account', (get_db) => {
 
 	test('does not delete the token file on failure', async () => {
 		const db = get_db();
-		const fs = create_mock_fs({'/token': TEST_TOKEN});
-		await bootstrap_account(create_deps(db, {fs}), 'wrong_token', {
+		const fs = create_mock_fs({ '/token': TEST_TOKEN });
+		await bootstrap_account(create_deps(db, { fs }), 'wrong_token', {
 			username: 'keeper',
-			password: 'password_12_chars',
+			password: 'password_12_chars'
 		});
 
 		assert.strictEqual('/token' in fs.files, true);
@@ -170,15 +170,15 @@ describe_db('bootstrap_account', (get_db) => {
 		// first bootstrap
 		const first = await bootstrap_account(create_deps(db), TEST_TOKEN, {
 			username: 'first_keeper',
-			password: 'password_12_chars',
+			password: 'password_12_chars'
 		});
 		assert.strictEqual(first.ok, true);
 
 		// second attempt with new token file
-		const fs2 = create_mock_fs({'/token': 'new_token'});
-		const result = await bootstrap_account(create_deps(db, {fs: fs2}), 'new_token', {
+		const fs2 = create_mock_fs({ '/token': 'new_token' });
+		const result = await bootstrap_account(create_deps(db, { fs: fs2 }), 'new_token', {
 			username: 'second_keeper',
-			password: 'password_12_chars',
+			password: 'password_12_chars'
 		});
 
 		assert.strictEqual(result.ok, false);
@@ -192,7 +192,7 @@ describe_db('bootstrap_account', (get_db) => {
 		const db = get_db();
 		const result = await bootstrap_account(create_deps(db), 'wrong_token', {
 			username: 'keeper',
-			password: 'password_12_chars',
+			password: 'password_12_chars'
 		});
 
 		assert.strictEqual(result.ok, false);
@@ -208,9 +208,9 @@ describe_db('bootstrap_account', (get_db) => {
 	test('fails when token file is missing', async () => {
 		const db = get_db();
 		const fs = create_mock_fs({});
-		const result = await bootstrap_account(create_deps(db, {fs}), TEST_TOKEN, {
+		const result = await bootstrap_account(create_deps(db, { fs }), TEST_TOKEN, {
 			username: 'keeper',
-			password: 'password_12_chars',
+			password: 'password_12_chars'
 		});
 
 		assert.strictEqual(result.ok, false);
@@ -225,10 +225,10 @@ describe_db('bootstrap_account', (get_db) => {
 
 	test('both role_grants are verifiable via query_role_grant_has_role', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const result = await bootstrap_account(create_deps(db), TEST_TOKEN, {
 			username: 'keeper',
-			password: 'password_12_chars',
+			password: 'password_12_chars'
 		});
 
 		assert.strictEqual(result.ok, true);
@@ -242,7 +242,7 @@ describe_db('bootstrap_account', (get_db) => {
 		const db = get_db();
 		const result = await bootstrap_account(create_deps(db), TEST_TOKEN, {
 			username: 'keeper',
-			password: 'password_12_chars',
+			password: 'password_12_chars'
 		});
 
 		assert.strictEqual(result.ok, true);
@@ -252,7 +252,7 @@ describe_db('bootstrap_account', (get_db) => {
 
 	test('returns token_file_deleted: false when file deletion fails', async () => {
 		const db = get_db();
-		const fs = create_mock_fs({'/token': TEST_TOKEN});
+		const fs = create_mock_fs({ '/token': TEST_TOKEN });
 		const result = await bootstrap_account(
 			{
 				log,
@@ -262,10 +262,10 @@ describe_db('bootstrap_account', (get_db) => {
 				delete_file: async () => {
 					throw new Error('EPERM: permission denied');
 				},
-				password: stub_password_deps,
+				password: stub_password_deps
 			},
 			TEST_TOKEN,
-			{username: 'keeper', password: 'password_12_chars'},
+			{ username: 'keeper', password: 'password_12_chars' }
 		);
 
 		assert.strictEqual(result.ok, true);

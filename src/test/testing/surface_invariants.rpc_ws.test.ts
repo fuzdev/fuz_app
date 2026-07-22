@@ -8,8 +8,8 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
-import {z} from 'zod';
+import { describe, test, assert } from 'vitest';
+import { z } from 'zod';
 
 import {
 	assert_rpc_method_descriptions_present,
@@ -17,51 +17,51 @@ import {
 	assert_ws_endpoints_include_protocol_actions,
 	assert_ws_notifications_have_null_auth,
 	assert_no_testing_methods,
-	assert_rpc_ws_surface_invariants,
+	assert_rpc_ws_surface_invariants
 } from '$lib/testing/surface_invariants.ts';
-import {create_spine_surface_spec} from '$lib/testing/cross_backend/default_spine_surface.ts';
-import {generate_app_surface, type AppSurface} from '$lib/http/surface.ts';
+import { create_spine_surface_spec } from '$lib/testing/cross_backend/default_spine_surface.ts';
+import { generate_app_surface, type AppSurface } from '$lib/http/surface.ts';
 import type {
 	RequestResponseActionSpec,
-	RemoteNotificationActionSpec,
+	RemoteNotificationActionSpec
 } from '$lib/actions/action_spec.ts';
-import type {RpcAction} from '$lib/actions/action_rpc.ts';
-import {protocol_actions} from '$lib/actions/protocol.ts';
+import type { RpcAction } from '$lib/actions/action_rpc.ts';
+import { protocol_actions } from '$lib/actions/protocol.ts';
 
 const rpc_account_verify_spec: RequestResponseActionSpec = {
 	method: 'account_verify',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none'},
+	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
 	input: z.strictObject({}),
 	output: z.strictObject({}),
 	async: true,
-	description: 'Verify the session.',
+	description: 'Verify the session.'
 };
 
 const rpc_admin_list_spec: RequestResponseActionSpec = {
 	method: 'admin_account_list',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required', roles: ['admin']},
+	auth: { account: 'required', actor: 'required', roles: ['admin'] },
 	side_effects: false,
-	input: z.strictObject({acting: z.strictObject({actor_id: z.string()})}),
+	input: z.strictObject({ acting: z.strictObject({ actor_id: z.string() }) }),
 	output: z.strictObject({}),
 	async: true,
-	description: 'List accounts.',
+	description: 'List accounts.'
 };
 
 const ws_account_verify_spec: RequestResponseActionSpec = {
 	method: 'ws_account_verify',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none'},
+	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
 	input: z.strictObject({}),
 	output: z.strictObject({}),
 	async: true,
-	description: 'Verify session over WS.',
+	description: 'Verify session over WS.'
 };
 
 const ws_role_grant_offer_received_spec: RemoteNotificationActionSpec = {
@@ -70,10 +70,10 @@ const ws_role_grant_offer_received_spec: RemoteNotificationActionSpec = {
 	initiator: 'backend',
 	auth: null,
 	side_effects: true,
-	input: z.strictObject({offer: z.strictObject({id: z.string()})}),
+	input: z.strictObject({ offer: z.strictObject({ id: z.string() }) }),
 	output: z.void(),
 	async: true,
-	description: 'Notify recipient of a new role-grant offer.',
+	description: 'Notify recipient of a new role-grant offer.'
 };
 
 /** A `_testing_*` backdoor spec — must never reach a declared surface. */
@@ -81,17 +81,17 @@ const rpc_testing_reset_spec: RequestResponseActionSpec = {
 	method: '_testing_reset',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none', credential_types: ['daemon_token']},
+	auth: { account: 'required', actor: 'none', credential_types: ['daemon_token'] },
 	side_effects: true,
 	input: z.strictObject({}),
 	output: z.strictObject({}),
 	async: true,
-	description: 'Test-binary only — wipe + re-seed.',
+	description: 'Test-binary only — wipe + re-seed.'
 };
 
 const rpc_action = (spec: RequestResponseActionSpec): RpcAction => ({
 	spec,
-	handler: async () => ({}),
+	handler: async () => ({})
 });
 
 const noop_handler = async () => ({});
@@ -104,8 +104,8 @@ const build_valid_surface = (): AppSurface =>
 		rpc_endpoints: [
 			{
 				path: '/api/rpc',
-				actions: [rpc_action(rpc_account_verify_spec), rpc_action(rpc_admin_list_spec)],
-			},
+				actions: [rpc_action(rpc_account_verify_spec), rpc_action(rpc_admin_list_spec)]
+			}
 		],
 		ws_endpoints: [
 			{
@@ -114,11 +114,11 @@ const build_valid_surface = (): AppSurface =>
 				required_roles: [],
 				actions: [
 					...protocol_actions,
-					{spec: ws_account_verify_spec, handler: noop_handler},
-					{spec: ws_role_grant_offer_received_spec},
-				],
-			},
-		],
+					{ spec: ws_account_verify_spec, handler: noop_handler },
+					{ spec: ws_role_grant_offer_received_spec }
+				]
+			}
+		]
 	});
 
 describe('assert_rpc_method_descriptions_present', () => {
@@ -127,7 +127,7 @@ describe('assert_rpc_method_descriptions_present', () => {
 	});
 
 	test('passes when there are no rpc endpoints', () => {
-		const surface = generate_app_surface({route_specs: [], middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: [], middleware_specs: [] });
 		assert_rpc_method_descriptions_present(surface);
 	});
 
@@ -136,7 +136,7 @@ describe('assert_rpc_method_descriptions_present', () => {
 		surface.rpc_endpoints[0]!.methods[0]!.description = '';
 		assert.throws(
 			() => assert_rpc_method_descriptions_present(surface),
-			/'account_verify'.*'\/api\/rpc'.*empty description/,
+			/'account_verify'.*'\/api\/rpc'.*empty description/
 		);
 	});
 });
@@ -147,7 +147,7 @@ describe('assert_ws_method_descriptions_present', () => {
 	});
 
 	test('passes when there are no ws endpoints', () => {
-		const surface = generate_app_surface({route_specs: [], middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: [], middleware_specs: [] });
 		assert_ws_method_descriptions_present(surface);
 	});
 
@@ -157,7 +157,7 @@ describe('assert_ws_method_descriptions_present', () => {
 		target.description = '';
 		assert.throws(
 			() => assert_ws_method_descriptions_present(surface),
-			/'ws_account_verify'.*'\/api\/ws'.*empty description/,
+			/'ws_account_verify'.*'\/api\/ws'.*empty description/
 		);
 	});
 });
@@ -168,29 +168,29 @@ describe('assert_ws_endpoints_include_protocol_actions', () => {
 	});
 
 	test('passes when there are no ws endpoints', () => {
-		const surface = generate_app_surface({route_specs: [], middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: [], middleware_specs: [] });
 		assert_ws_endpoints_include_protocol_actions(surface);
 	});
 
 	test('fails when an endpoint omits heartbeat', () => {
 		const surface = build_valid_surface();
 		surface.ws_endpoints[0]!.methods = surface.ws_endpoints[0]!.methods.filter(
-			(m) => m.name !== 'heartbeat',
+			(m) => m.name !== 'heartbeat'
 		);
 		assert.throws(
 			() => assert_ws_endpoints_include_protocol_actions(surface),
-			/missing protocol action method 'heartbeat'/,
+			/missing protocol action method 'heartbeat'/
 		);
 	});
 
 	test('fails when an endpoint omits cancel', () => {
 		const surface = build_valid_surface();
 		surface.ws_endpoints[0]!.methods = surface.ws_endpoints[0]!.methods.filter(
-			(m) => m.name !== 'cancel',
+			(m) => m.name !== 'cancel'
 		);
 		assert.throws(
 			() => assert_ws_endpoints_include_protocol_actions(surface),
-			/missing protocol action method 'cancel'/,
+			/missing protocol action method 'cancel'/
 		);
 	});
 });
@@ -201,16 +201,16 @@ describe('assert_ws_notifications_have_null_auth', () => {
 	});
 
 	test('passes when there are no ws endpoints', () => {
-		const surface = generate_app_surface({route_specs: [], middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: [], middleware_specs: [] });
 		assert_ws_notifications_have_null_auth(surface);
 	});
 
 	test('fails when a notification has non-null auth', () => {
 		const surface = build_valid_surface();
 		const notification = surface.ws_endpoints[0]!.methods.find(
-			(m) => m.kind === 'remote_notification',
+			(m) => m.kind === 'remote_notification'
 		)!;
-		notification.auth = {account: 'required', actor: 'none'};
+		notification.auth = { account: 'required', actor: 'none' };
 		assert.throws(() => assert_ws_notifications_have_null_auth(surface), /violates kind ⇔ auth/);
 	});
 
@@ -228,7 +228,7 @@ describe('assert_no_testing_methods', () => {
 	});
 
 	test('passes for an empty surface', () => {
-		const surface = generate_app_surface({route_specs: [], middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: [], middleware_specs: [] });
 		assert_no_testing_methods(surface);
 	});
 
@@ -246,13 +246,13 @@ describe('assert_no_testing_methods', () => {
 			rpc_endpoints: [
 				{
 					path: '/api/rpc',
-					actions: [rpc_action(rpc_account_verify_spec), rpc_action(rpc_testing_reset_spec)],
-				},
-			],
+					actions: [rpc_action(rpc_account_verify_spec), rpc_action(rpc_testing_reset_spec)]
+				}
+			]
 		});
 		assert.throws(
 			() => assert_no_testing_methods(surface),
-			/exposes test-backdoor method '_testing_reset'/,
+			/exposes test-backdoor method '_testing_reset'/
 		);
 	});
 
@@ -261,10 +261,10 @@ describe('assert_no_testing_methods', () => {
 		// No real `_testing_*` WS spec exists (they're RPC-only), so inject one
 		// to prove the WS arm of the invariant fires too.
 		const cloned = surface.ws_endpoints[0]!.methods[0]!;
-		surface.ws_endpoints[0]!.methods.push({...cloned, name: '_testing_ws_backdoor'});
+		surface.ws_endpoints[0]!.methods.push({ ...cloned, name: '_testing_ws_backdoor' });
 		assert.throws(
 			() => assert_no_testing_methods(surface),
-			/exposes test-backdoor method '_testing_ws_backdoor'/,
+			/exposes test-backdoor method '_testing_ws_backdoor'/
 		);
 	});
 });
@@ -275,7 +275,7 @@ describe('assert_rpc_ws_surface_invariants', () => {
 	});
 
 	test('passes for an empty surface', () => {
-		const surface = generate_app_surface({route_specs: [], middleware_specs: []});
+		const surface = generate_app_surface({ route_specs: [], middleware_specs: [] });
 		assert_rpc_ws_surface_invariants(surface);
 	});
 
@@ -288,9 +288,9 @@ describe('assert_rpc_ws_surface_invariants', () => {
 	test('runs the ws invariants when rpc invariants pass', () => {
 		const surface = build_valid_surface();
 		const notification = surface.ws_endpoints[0]!.methods.find(
-			(m) => m.kind === 'remote_notification',
+			(m) => m.kind === 'remote_notification'
 		)!;
-		notification.auth = {account: 'required', actor: 'none'};
+		notification.auth = { account: 'required', actor: 'none' };
 		assert.throws(() => assert_rpc_ws_surface_invariants(surface), /violates kind ⇔ auth/);
 	});
 
@@ -298,7 +298,7 @@ describe('assert_rpc_ws_surface_invariants', () => {
 		const surface = generate_app_surface({
 			route_specs: [],
 			middleware_specs: [],
-			rpc_endpoints: [{path: '/api/rpc', actions: [rpc_action(rpc_testing_reset_spec)]}],
+			rpc_endpoints: [{ path: '/api/rpc', actions: [rpc_action(rpc_testing_reset_spec)] }]
 		});
 		assert.throws(() => assert_rpc_ws_surface_invariants(surface), /test-backdoor method/);
 	});

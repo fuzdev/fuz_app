@@ -7,14 +7,14 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 /** Metadata envelope for `cell_item_insert`. */
 export const CellItemInsertAuditMetadata = z.looseObject({
 	parent_id: Uuid,
 	position: z.string(),
-	child_id: Uuid,
+	child_id: Uuid
 });
 export type CellItemInsertAuditMetadata = z.infer<typeof CellItemInsertAuditMetadata>;
 
@@ -26,7 +26,7 @@ export type CellItemInsertAuditMetadata = z.infer<typeof CellItemInsertAuditMeta
 export const CellItemMoveAuditMetadata = z.looseObject({
 	parent_id: Uuid,
 	position_old: z.string(),
-	position_new: z.string(),
+	position_new: z.string()
 });
 export type CellItemMoveAuditMetadata = z.infer<typeof CellItemMoveAuditMetadata>;
 
@@ -34,6 +34,6 @@ export type CellItemMoveAuditMetadata = z.infer<typeof CellItemMoveAuditMetadata
 export const CellItemDeleteAuditMetadata = z.looseObject({
 	parent_id: Uuid,
 	position: z.string(),
-	child_id: Uuid,
+	child_id: Uuid
 });
 export type CellItemDeleteAuditMetadata = z.infer<typeof CellItemDeleteAuditMetadata>;

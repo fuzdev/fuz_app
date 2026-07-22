@@ -8,7 +8,7 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
 import {
 	type CommandDeps,
@@ -17,10 +17,10 @@ import {
 	type FsReadDeps,
 	type FsRemoveDeps,
 	type FsWriteDeps,
-	type LogDeps,
+	type LogDeps
 } from '../runtime/deps.ts';
-import {write_file_atomic} from '../runtime/fs.ts';
-import {get_app_dir} from './config.ts';
+import { write_file_atomic } from '../runtime/fs.ts';
+import { get_app_dir } from './config.ts';
 
 /**
  * Daemon info schema for `~/.{name}/run/daemon.json`.
@@ -35,7 +35,7 @@ export const DaemonInfo = z.strictObject({
 	/** ISO timestamp when server started. */
 	started: z.string(),
 	/** Package version of the application. */
-	app_version: z.string(),
+	app_version: z.string()
 });
 export type DaemonInfo = z.infer<typeof DaemonInfo>;
 
@@ -48,7 +48,7 @@ export type DaemonInfo = z.infer<typeof DaemonInfo>;
  */
 export const get_daemon_info_path = (
 	runtime: Pick<EnvDeps, 'env_get'>,
-	name: string,
+	name: string
 ): string | null => {
 	const app_dir = get_app_dir(runtime, name);
 	return app_dir ? `${app_dir}/run/daemon.json` : null;
@@ -66,7 +66,7 @@ export const get_daemon_info_path = (
 export const write_daemon_info = async (
 	runtime: Pick<EnvDeps, 'env_get'> & Pick<FsWriteDeps, 'mkdir' | 'write_text_file' | 'rename'>,
 	name: string,
-	info: DaemonInfo,
+	info: DaemonInfo
 ): Promise<void> => {
 	const app_dir = get_app_dir(runtime, name);
 	if (!app_dir) {
@@ -74,7 +74,7 @@ export const write_daemon_info = async (
 	}
 
 	const run_dir = `${app_dir}/run`;
-	await runtime.mkdir(run_dir, {recursive: true});
+	await runtime.mkdir(run_dir, { recursive: true });
 
 	const content = JSON.stringify(info, null, '\t');
 	await write_file_atomic(runtime, `${run_dir}/daemon.json`, content + '\n');
@@ -89,7 +89,7 @@ export const write_daemon_info = async (
  */
 export const read_daemon_info = async (
 	runtime: Pick<EnvDeps, 'env_get'> & Pick<FsReadDeps, 'stat' | 'read_text_file'> & LogDeps,
-	name: string,
+	name: string
 ): Promise<DaemonInfo | null> => {
 	const daemon_path = get_daemon_info_path(runtime, name);
 	if (!daemon_path) {
@@ -144,13 +144,13 @@ export const check_daemon_health = async (
 	deps: FetchDeps,
 	port: number,
 	host = 'localhost',
-	timeout_ms = 2000,
+	timeout_ms = 2000
 ): Promise<boolean> => {
 	try {
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), timeout_ms);
 		const response = await deps.fetch(`http://${host}:${port}/health`, {
-			signal: controller.signal,
+			signal: controller.signal
 		});
 		clearTimeout(timer);
 		return response.ok;
@@ -190,17 +190,17 @@ export const stop_daemon = async (
 		FsRemoveDeps &
 		CommandDeps &
 		LogDeps,
-	name: string,
+	name: string
 ): Promise<StopDaemonResult> => {
 	const daemon_path = get_daemon_info_path(runtime, name);
 	if (!daemon_path) {
-		return {stopped: false, message: '$HOME not set'};
+		return { stopped: false, message: '$HOME not set' };
 	}
 
 	// check if daemon.json exists
 	const stat = await runtime.stat(daemon_path);
 	if (!stat) {
-		return {stopped: false, message: 'No daemon running (no daemon.json found)'};
+		return { stopped: false, message: 'No daemon running (no daemon.json found)' };
 	}
 
 	// read and validate daemon info
@@ -212,7 +212,7 @@ export const stop_daemon = async (
 		} catch {
 			// already removed
 		}
-		return {stopped: false, message: 'Corrupt daemon.json, removed'};
+		return { stopped: false, message: 'Corrupt daemon.json, removed' };
 	}
 
 	// send SIGTERM
@@ -227,11 +227,11 @@ export const stop_daemon = async (
 	}
 
 	if (stopped) {
-		return {stopped: true, pid: info.pid, message: `Stopped daemon (pid ${info.pid})`};
+		return { stopped: true, pid: info.pid, message: `Stopped daemon (pid ${info.pid})` };
 	}
 	return {
 		stopped: false,
 		pid: info.pid,
-		message: `Process ${info.pid} not running, cleaned up stale daemon.json`,
+		message: `Process ${info.pid} not running, cleaned up stale daemon.json`
 	};
 };

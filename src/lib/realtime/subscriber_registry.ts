@@ -20,7 +20,7 @@
  * @module
  */
 
-import type {SseStream} from './sse.ts';
+import type { SseStream } from './sse.ts';
 
 export interface Subscriber<T> {
 	stream: SseStream<T>;
@@ -130,7 +130,7 @@ export class SubscriberRegistry<T> {
 			this.#enforce_scope_limit(scope, this.#max_per_scope);
 		}
 
-		const subscriber: Subscriber<T> = {stream, channels, scope, groups};
+		const subscriber: Subscriber<T> = { stream, channels, scope, groups };
 		this.#subscribers.add(subscriber);
 		return () => {
 			this.#subscribers.delete(subscriber);

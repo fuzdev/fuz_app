@@ -6,10 +6,10 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {format_env_display_value} from '../env/mask.ts';
-import type {AppSurface} from '../http/surface.ts';
+import { format_env_display_value } from '../env/mask.ts';
+import type { AppSurface } from '../http/surface.ts';
 
 /**
  * Log a startup summary from an `AppSurface`.
@@ -23,10 +23,10 @@ import type {AppSurface} from '../http/surface.ts';
 export const log_startup_summary = (
 	surface: AppSurface,
 	log: Logger,
-	env_values?: Record<string, unknown>,
+	env_values?: Record<string, unknown>
 ): void => {
 	log.info(
-		`Surface: ${surface.routes.length} routes, ${surface.middleware.length} middleware layers`,
+		`Surface: ${surface.routes.length} routes, ${surface.middleware.length} middleware layers`
 	);
 
 	// Endpoint surfaces — logged when non-empty so operators can confirm
@@ -46,7 +46,7 @@ export const log_startup_summary = (
 		const required = surface.env.filter((e) => !e.optional);
 		const secret = surface.env.filter((e) => e.sensitivity === 'secret');
 		log.info(
-			`Env: ${surface.env.length} vars (${required.length} required, ${secret.length} secret)`,
+			`Env: ${surface.env.length} vars (${required.length} required, ${secret.length} secret)`
 		);
 
 		if (env_values) {
@@ -54,7 +54,7 @@ export const log_startup_summary = (
 				const value = env_values[entry.name];
 				if (value === undefined) continue;
 				log.info(
-					`  ${entry.name}=${format_env_display_value(value, entry.sensitivity === 'secret')}`,
+					`  ${entry.name}=${format_env_display_value(value, entry.sensitivity === 'secret')}`
 				);
 			}
 		}

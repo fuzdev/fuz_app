@@ -9,10 +9,10 @@
  * @module
  */
 
-import {z} from 'zod';
-import {hash_blake3} from '@fuzdev/fuz_util/hash_blake3.ts';
+import { z } from 'zod';
+import { hash_blake3 } from '@fuzdev/fuz_util/hash_blake3.ts';
 
-import {generate_random_base64url} from '../crypto.ts';
+import { generate_random_base64url } from '../crypto.ts';
 
 /** Prefix for all fuz API tokens (enables secret scanning). */
 export const API_TOKEN_PREFIX = 'secret_fuz_token_';
@@ -44,10 +44,10 @@ export const hash_api_token = (token: string): string => hash_blake3(token);
  *
  * @returns the raw token, a public id, and the blake3 hash for storage
  */
-export const generate_api_token = (): {token: string; id: string; token_hash: string} => {
+export const generate_api_token = (): { token: string; id: string; token_hash: string } => {
 	const raw = generate_random_base64url();
 	const token = `${API_TOKEN_PREFIX}${raw}`;
 	const token_hash = hash_api_token(token);
 	const id = `tok_${raw.slice(0, 12)}`;
-	return {token, id, token_hash};
+	return { token, id, token_hash };
 };

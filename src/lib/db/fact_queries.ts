@@ -12,9 +12,9 @@
  * @module
  */
 
-import type {QueryDeps} from './query_deps.ts';
+import type { QueryDeps } from './query_deps.ts';
 
-import type {FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
+import type { FactHash } from '@fuzdev/fuz_util/fact_hash.ts';
 
 /** Row shape for `SELECT … FROM fact`. */
 export interface FactRow {
@@ -57,14 +57,14 @@ export const query_put_fact = async (
 		external_url: string | null;
 		content_type: string | null;
 		size: number;
-	},
+	}
 ): Promise<boolean> => {
-	const row = await deps.db.query_one<{hash: FactHash}>(
+	const row = await deps.db.query_one<{ hash: FactHash }>(
 		`INSERT INTO fact (hash, bytes, external_url, content_type, size)
 		 VALUES ($1, $2, $3, $4, $5)
 		 ON CONFLICT (hash) DO NOTHING
 		 RETURNING hash`,
-		[input.hash, input.bytes, input.external_url, input.content_type, input.size],
+		[input.hash, input.bytes, input.external_url, input.content_type, input.size]
 	);
 	return row !== undefined;
 };
@@ -77,14 +77,14 @@ export const query_put_fact = async (
 export const query_put_fact_refs = async (
 	deps: QueryDeps,
 	source_hash: FactHash,
-	target_hashes: Array<FactHash>,
+	target_hashes: Array<FactHash>
 ): Promise<void> => {
 	if (target_hashes.length === 0) return;
 	await deps.db.query(
 		`INSERT INTO fact_ref (source_hash, target_hash)
 		 SELECT $1::text, unnest($2::text[])
 		 ON CONFLICT (source_hash, target_hash) DO NOTHING`,
-		[source_hash, target_hashes],
+		[source_hash, target_hashes]
 	);
 };
 
@@ -96,7 +96,7 @@ export const query_get_fact = async (deps: QueryDeps, hash: FactHash): Promise<F
 	const row = await deps.db.query_one<FactRow>(
 		`SELECT hash, bytes, external_url, content_type, size, created_at
 		 FROM fact WHERE hash = $1`,
-		[hash],
+		[hash]
 	);
 	return row ?? null;
 };
@@ -106,12 +106,12 @@ export const query_get_fact = async (deps: QueryDeps, hash: FactHash): Promise<F
  */
 export const query_get_fact_meta = async (
 	deps: QueryDeps,
-	hash: FactHash,
+	hash: FactHash
 ): Promise<FactMetaRow | null> => {
 	const row = await deps.db.query_one<FactMetaRow>(
 		`SELECT hash, external_url, content_type, size, created_at
 		 FROM fact WHERE hash = $1`,
-		[hash],
+		[hash]
 	);
 	return row ?? null;
 };
@@ -120,9 +120,9 @@ export const query_get_fact_meta = async (
  * Cheap existence check. Backed by the `fact` PK index.
  */
 export const query_has_fact = async (deps: QueryDeps, hash: FactHash): Promise<boolean> => {
-	const row = await deps.db.query_one<{exists: boolean}>(
+	const row = await deps.db.query_one<{ exists: boolean }>(
 		`SELECT EXISTS(SELECT 1 FROM fact WHERE hash = $1) AS exists`,
-		[hash],
+		[hash]
 	);
 	return row?.exists ?? false;
 };
@@ -133,11 +133,11 @@ export const query_has_fact = async (deps: QueryDeps, hash: FactHash): Promise<b
  */
 export const query_get_fact_refs = async (
 	deps: QueryDeps,
-	source_hash: FactHash,
+	source_hash: FactHash
 ): Promise<Array<FactHash>> => {
-	const rows = await deps.db.query<{target_hash: FactHash}>(
+	const rows = await deps.db.query<{ target_hash: FactHash }>(
 		`SELECT target_hash FROM fact_ref WHERE source_hash = $1`,
-		[source_hash],
+		[source_hash]
 	);
 	return rows.map((r) => r.target_hash);
 };
@@ -156,15 +156,15 @@ export const query_get_fact_refs = async (
  */
 export const query_delete_fact = async (
 	deps: QueryDeps,
-	hash: FactHash,
-): Promise<{size: number; external_url: string | null} | null> => {
-	const row = await deps.db.query_one<{size: number | string; external_url: string | null}>(
+	hash: FactHash
+): Promise<{ size: number; external_url: string | null } | null> => {
+	const row = await deps.db.query_one<{ size: number | string; external_url: string | null }>(
 		`DELETE FROM fact WHERE hash = $1
 		 RETURNING size, external_url`,
-		[hash],
+		[hash]
 	);
 	if (!row) return null;
-	return {size: Number(row.size), external_url: row.external_url};
+	return { size: Number(row.size), external_url: row.external_url };
 };
 
 /**
@@ -209,9 +209,12 @@ export interface OrphanFactsListResult {
 export const query_orphan_facts_list = async (
 	deps: QueryDeps,
 	older_than: Date | null,
-	sample_limit: number,
+	sample_limit: number
 ): Promise<OrphanFactsListResult> => {
-	const summary = await deps.db.query_one<{count: number | string; total: number | string | null}>(
+	const summary = await deps.db.query_one<{
+		count: number | string;
+		total: number | string | null;
+	}>(
 		`SELECT COUNT(*)::bigint AS count, COALESCE(SUM(size), 0)::bigint AS total
 		 FROM fact f
 		 WHERE NOT EXISTS (
@@ -220,7 +223,7 @@ export const query_orphan_facts_list = async (
 		     AND c.deleted_at IS NULL
 		 )
 		 AND ($1::timestamptz IS NULL OR f.created_at < $1::timestamptz)`,
-		[older_than],
+		[older_than]
 	);
 	const sample_rows = await deps.db.query<{
 		hash: FactHash;
@@ -238,7 +241,7 @@ export const query_orphan_facts_list = async (
 		 AND ($1::timestamptz IS NULL OR f.created_at < $1::timestamptz)
 		 ORDER BY f.created_at ASC
 		 LIMIT $2`,
-		[older_than, sample_limit],
+		[older_than, sample_limit]
 	);
 	return {
 		count: Number(summary?.count ?? 0),
@@ -247,8 +250,8 @@ export const query_orphan_facts_list = async (
 			hash: r.hash,
 			size: Number(r.size),
 			created_at: typeof r.created_at === 'string' ? r.created_at : r.created_at.toISOString(),
-			external_url: r.external_url,
-		})),
+			external_url: r.external_url
+		}))
 	};
 };
 
@@ -261,8 +264,8 @@ export const query_orphan_facts_list = async (
  */
 export const query_orphan_facts_select_for_delete = async (
 	deps: QueryDeps,
-	older_than: Date,
-): Promise<Array<{hash: FactHash; size: number; external_url: string | null}>> => {
+	older_than: Date
+): Promise<Array<{ hash: FactHash; size: number; external_url: string | null }>> => {
 	const rows = await deps.db.query<{
 		hash: FactHash;
 		size: number | string;
@@ -276,7 +279,7 @@ export const query_orphan_facts_select_for_delete = async (
 		     AND c.deleted_at IS NULL
 		 )
 		 AND f.created_at < $1::timestamptz`,
-		[older_than],
+		[older_than]
 	);
-	return rows.map((r) => ({hash: r.hash, size: Number(r.size), external_url: r.external_url}));
+	return rows.map((r) => ({ hash: r.hash, size: Number(r.size), external_url: r.external_url }));
 };

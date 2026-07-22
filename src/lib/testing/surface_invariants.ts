@@ -18,10 +18,10 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {assert} from 'vitest';
+import { assert } from 'vitest';
 
-import {middleware_applies} from '../http/schema_helpers.ts';
-import type {AppSurface, AppSurfaceMiddleware} from '../http/surface.ts';
+import { middleware_applies } from '../http/schema_helpers.ts';
+import type { AppSurface, AppSurfaceMiddleware } from '../http/surface.ts';
 import {
 	filter_protected_routes,
 	filter_role_routes,
@@ -30,9 +30,9 @@ import {
 	filter_routes_with_params,
 	filter_routes_with_query,
 	filter_public_routes,
-	format_route_key,
+	format_route_key
 } from '../http/surface_query.ts';
-import {PROTOCOL_ACTION_METHODS} from '../actions/action_codegen.ts';
+import { PROTOCOL_ACTION_METHODS } from '../actions/action_codegen.ts';
 
 // --- Structural invariants ---
 
@@ -44,7 +44,7 @@ export const assert_protected_routes_declare_401 = (surface: AppSurface): void =
 	for (const route of routes) {
 		assert.ok(
 			route.error_schemas && '401' in route.error_schemas,
-			`${format_route_key(route)} is protected but missing 401 error schema`,
+			`${format_route_key(route)} is protected but missing 401 error schema`
 		);
 	}
 };
@@ -58,7 +58,7 @@ export const assert_role_routes_declare_403 = (surface: AppSurface): void => {
 	for (const route of [...role_routes, ...keeper_routes]) {
 		assert.ok(
 			route.error_schemas && '403' in route.error_schemas,
-			`${format_route_key(route)} requires role/keeper but missing 403 error schema`,
+			`${format_route_key(route)} requires role/keeper but missing 403 error schema`
 		);
 	}
 };
@@ -71,7 +71,7 @@ export const assert_input_routes_declare_400 = (surface: AppSurface): void => {
 	for (const route of routes) {
 		assert.ok(
 			route.error_schemas && '400' in route.error_schemas,
-			`${format_route_key(route)} has input but missing 400 error schema`,
+			`${format_route_key(route)} has input but missing 400 error schema`
 		);
 	}
 };
@@ -84,7 +84,7 @@ export const assert_params_routes_declare_400 = (surface: AppSurface): void => {
 	for (const route of routes) {
 		assert.ok(
 			route.error_schemas && '400' in route.error_schemas,
-			`${format_route_key(route)} has params but missing 400 error schema`,
+			`${format_route_key(route)} has params but missing 400 error schema`
 		);
 	}
 };
@@ -97,7 +97,7 @@ export const assert_query_routes_declare_400 = (surface: AppSurface): void => {
 	for (const route of routes) {
 		assert.ok(
 			route.error_schemas && '400' in route.error_schemas,
-			`${format_route_key(route)} has query schema but missing 400 error schema`,
+			`${format_route_key(route)} has query schema but missing 400 error schema`
 		);
 	}
 };
@@ -129,7 +129,7 @@ export const assert_no_duplicate_routes = (surface: AppSurface): void => {
  */
 export const assert_middleware_errors_propagated = (surface: AppSurface): void => {
 	const middleware_with_errors: Array<AppSurfaceMiddleware> = surface.middleware.filter(
-		(m) => m.error_schemas !== null,
+		(m) => m.error_schemas !== null
 	);
 	for (const route of surface.routes) {
 		for (const mw of middleware_with_errors) {
@@ -137,7 +137,7 @@ export const assert_middleware_errors_propagated = (surface: AppSurface): void =
 			for (const status of Object.keys(mw.error_schemas!)) {
 				assert.ok(
 					route.error_schemas && status in route.error_schemas,
-					`${format_route_key(route)} missing status ${status} from middleware '${mw.name}'`,
+					`${format_route_key(route)} missing status ${status} from middleware '${mw.name}'`
 				);
 			}
 		}
@@ -167,7 +167,7 @@ export const assert_error_schemas_structurally_valid = (surface: AppSurface): vo
 const assert_branch_has_error_property = (
 	schema: unknown,
 	route_key: string,
-	status: string,
+	status: string
 ): void => {
 	const branches = get_union_branches(schema);
 	if (branches) {
@@ -182,7 +182,7 @@ const assert_branch_has_error_property = (
 		const props = s.properties as Record<string, unknown>;
 		assert.ok(
 			'error' in props,
-			`${route_key} error schema for status ${status} missing 'error' property`,
+			`${route_key} error schema for status ${status} missing 'error' property`
 		);
 	}
 };
@@ -235,7 +235,7 @@ export const assert_error_code_status_consistency = (surface: AppSurface): void 
 	for (const [code, statuses] of code_to_statuses) {
 		assert.ok(
 			statuses.size === 1,
-			`Error code '${code}' appears at multiple status codes: ${[...statuses].sort().join(', ')}`,
+			`Error code '${code}' appears at multiple status codes: ${[...statuses].sort().join(', ')}`
 		);
 	}
 };
@@ -328,7 +328,7 @@ export const assert_404_schemas_use_specific_errors = (surface: AppSurface): voi
 		assert.ok(
 			has_specific_error_schema(route.error_schemas['404']),
 			`${format_route_key(route)} declares 404 with params but uses generic error schema — ` +
-				`use a specific z.literal() or z.enum() error code`,
+				`use a specific z.literal() or z.enum() error code`
 		);
 	}
 };
@@ -431,7 +431,7 @@ export const audit_error_schema_tightness = (surface: AppSurface): Array<ErrorSc
 				route_path: route.path,
 				status,
 				specificity,
-				error_codes: extract_error_codes(schema),
+				error_codes: extract_error_codes(schema)
 			});
 		}
 	}
@@ -452,7 +452,7 @@ export const assert_rpc_method_descriptions_present = (surface: AppSurface): voi
 		for (const method of ep.methods) {
 			assert.ok(
 				method.description.length > 0,
-				`RPC method '${method.name}' on endpoint '${ep.path}' has empty description`,
+				`RPC method '${method.name}' on endpoint '${ep.path}' has empty description`
 			);
 		}
 	}
@@ -470,7 +470,7 @@ export const assert_ws_method_descriptions_present = (surface: AppSurface): void
 		for (const method of ep.methods) {
 			assert.ok(
 				method.description.length > 0,
-				`WS method '${method.name}' on endpoint '${ep.path}' has empty description`,
+				`WS method '${method.name}' on endpoint '${ep.path}' has empty description`
 			);
 		}
 	}
@@ -500,7 +500,7 @@ export const assert_ws_endpoints_include_protocol_actions = (surface: AppSurface
 			assert.ok(
 				method_names.has(expected),
 				`WS endpoint '${ep.path}' is missing protocol action method '${expected}' — ` +
-					`spread \`protocol_actions\` from 'actions/protocol.js' into \`actions\``,
+					`spread \`protocol_actions\` from 'actions/protocol.js' into \`actions\``
 			);
 		}
 	}
@@ -526,7 +526,7 @@ export const assert_ws_notifications_have_null_auth = (surface: AppSurface): voi
 				is_notification === has_null_auth,
 				`WS method '${method.name}' on endpoint '${ep.path}' violates kind ⇔ auth: ` +
 					`kind='${method.kind}', auth=${has_null_auth ? 'null' : 'non-null'} ` +
-					`(notifications must have auth: null; request_response must have a RouteAuth)`,
+					`(notifications must have auth: null; request_response must have a RouteAuth)`
 			);
 		}
 	}
@@ -571,7 +571,7 @@ export const assert_no_testing_methods = (surface: AppSurface): void => {
 				!method.name.startsWith(TESTING_METHOD_PREFIX),
 				`RPC endpoint '${ep.path}' exposes test-backdoor method '${method.name}' on the ` +
 					`declared surface — '${TESTING_METHOD_PREFIX}*' actions must be live-mounted only, ` +
-					`never folded into the surface-generating registry`,
+					`never folded into the surface-generating registry`
 			);
 		}
 	}
@@ -580,7 +580,7 @@ export const assert_no_testing_methods = (surface: AppSurface): void => {
 			assert.ok(
 				!method.name.startsWith(TESTING_METHOD_PREFIX),
 				`WS endpoint '${ep.path}' exposes test-backdoor method '${method.name}' on the ` +
-					`declared surface — '${TESTING_METHOD_PREFIX}*' actions must be live-mounted only`,
+					`declared surface — '${TESTING_METHOD_PREFIX}*' actions must be live-mounted only`
 			);
 		}
 	}
@@ -617,7 +617,7 @@ export interface SurfaceSecurityPolicyOptions {
 const DEFAULT_SENSITIVE_PATTERNS: Array<string | RegExp> = [
 	/\/login$/,
 	/\/password$/,
-	/\/bootstrap$/,
+	/\/bootstrap$/
 ];
 
 /**
@@ -629,11 +629,11 @@ const DEFAULT_SENSITIVE_PATTERNS: Array<string | RegExp> = [
  */
 export const assert_sensitive_routes_rate_limited = (
 	surface: AppSurface,
-	sensitive_patterns: Array<string | RegExp> = DEFAULT_SENSITIVE_PATTERNS,
+	sensitive_patterns: Array<string | RegExp> = DEFAULT_SENSITIVE_PATTERNS
 ): void => {
 	for (const route of surface.routes) {
 		const matches = sensitive_patterns.some((pattern) =>
-			typeof pattern === 'string' ? route.path.includes(pattern) : pattern.test(route.path),
+			typeof pattern === 'string' ? route.path.includes(pattern) : pattern.test(route.path)
 		);
 		if (!matches) continue;
 		const has_rate_limit =
@@ -641,7 +641,7 @@ export const assert_sensitive_routes_rate_limited = (
 			(route.error_schemas !== null && '429' in route.error_schemas);
 		assert.ok(
 			has_rate_limit,
-			`${format_route_key(route)} matches a sensitive pattern but has no rate limiting declared`,
+			`${format_route_key(route)} matches a sensitive pattern but has no rate limiting declared`
 		);
 	}
 };
@@ -654,7 +654,7 @@ export const assert_sensitive_routes_rate_limited = (
  */
 export const assert_no_unexpected_public_mutations = (
 	surface: AppSurface,
-	allowlist: Array<string> = [],
+	allowlist: Array<string> = []
 ): void => {
 	const public_routes = filter_public_routes(surface);
 	const mutations = public_routes.filter((r) => r.is_mutation);
@@ -664,7 +664,7 @@ export const assert_no_unexpected_public_mutations = (
 		assert.ok(
 			allowset.has(key),
 			`${key} is a public mutation route not in the allowlist. ` +
-				`Add it to public_mutation_allowlist if intentional.`,
+				`Add it to public_mutation_allowlist if intentional.`
 		);
 	}
 };
@@ -689,7 +689,7 @@ export const assert_mutation_routes_use_post = (surface: AppSurface): void => {
 	for (const route of input_routes) {
 		assert.ok(
 			route.method !== 'GET',
-			`${format_route_key(route)} has input schema on GET route — use POST or move to params/query`,
+			`${format_route_key(route)} has input schema on GET route — use POST or move to params/query`
 		);
 	}
 };
@@ -705,7 +705,7 @@ const DEFAULT_KEEPER_ROUTE_PREFIXES: Array<string> = ['/api/'];
  */
 export const assert_keeper_routes_under_prefix = (
 	surface: AppSurface,
-	prefixes: Array<string> = DEFAULT_KEEPER_ROUTE_PREFIXES,
+	prefixes: Array<string> = DEFAULT_KEEPER_ROUTE_PREFIXES
 ): void => {
 	const keeper_routes = filter_keeper_routes(surface);
 	for (const route of keeper_routes) {
@@ -713,8 +713,8 @@ export const assert_keeper_routes_under_prefix = (
 		assert.ok(
 			under_prefix,
 			`${format_route_key(
-				route,
-			)} is keeper-protected but not under any expected prefix: ${prefixes.join(', ')}`,
+				route
+			)} is keeper-protected but not under any expected prefix: ${prefixes.join(', ')}`
 		);
 	}
 };
@@ -725,7 +725,7 @@ export const assert_keeper_routes_under_prefix = (
 const SPECIFICITY_ORDER: Record<ErrorSchemaSpecificity, number> = {
 	literal: 2,
 	enum: 1,
-	generic: 0,
+	generic: 0
 };
 
 /** Options for `assert_error_schema_tightness`. */
@@ -774,7 +774,7 @@ export const fuz_app_stock_route_tightness_allowlist: ReadonlyArray<string> = []
  */
 export const default_error_schema_tightness: ErrorSchemaTightnessOptions = {
 	ignore_statuses: [401, 403, 429],
-	allowlist: [...fuz_app_stock_route_tightness_allowlist],
+	allowlist: [...fuz_app_stock_route_tightness_allowlist]
 };
 
 /**
@@ -790,7 +790,7 @@ export const default_error_schema_tightness: ErrorSchemaTightnessOptions = {
  */
 export const assert_error_schema_tightness = (
 	surface: AppSurface,
-	options?: ErrorSchemaTightnessOptions,
+	options?: ErrorSchemaTightnessOptions
 ): void => {
 	const min_specificity = options?.min_specificity ?? 'enum';
 	const ignore_statuses = new Set(options?.ignore_statuses?.map(String));
@@ -811,7 +811,7 @@ export const assert_error_schema_tightness = (
 
 	assert.ok(
 		failures.length === 0,
-		`Error schemas below '${min_specificity}' threshold:\n  ${failures.join('\n  ')}`,
+		`Error schemas below '${min_specificity}' threshold:\n  ${failures.join('\n  ')}`
 	);
 };
 
@@ -881,7 +881,7 @@ export const assert_rpc_ws_surface_invariants = (surface: AppSurface): void => {
  */
 export const assert_surface_security_policy = (
 	surface: AppSurface,
-	options: SurfaceSecurityPolicyOptions = {},
+	options: SurfaceSecurityPolicyOptions = {}
 ): void => {
 	assert_sensitive_routes_rate_limited(surface, options.sensitive_route_patterns);
 	assert_no_unexpected_public_mutations(surface, options.public_mutation_allowlist);

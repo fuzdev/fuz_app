@@ -7,10 +7,10 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {Username, Email} from '../primitive_schemas.ts';
+import { Username, Email } from '../primitive_schemas.ts';
 
 /** Invite row from the database. */
 export interface Invite {
@@ -31,14 +31,14 @@ export const InviteJson = z.strictObject({
 	claimed_by: Uuid.nullable(),
 	claimed_at: z.string().nullable(),
 	created_at: z.string(),
-	created_by: Uuid.nullable(),
+	created_by: Uuid.nullable()
 });
 export type InviteJson = z.infer<typeof InviteJson>;
 
 /** Zod schema for invite data with resolved creator/claimer usernames. */
 export const InviteWithUsernamesJson = InviteJson.extend({
 	created_by_username: z.string().nullable(),
-	claimed_by_username: z.string().nullable(),
+	claimed_by_username: z.string().nullable()
 });
 export type InviteWithUsernamesJson = z.infer<typeof InviteWithUsernamesJson>;
 

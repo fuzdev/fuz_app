@@ -26,9 +26,9 @@ import {
 	is_jsonrpc_error_response,
 	is_jsonrpc_notification,
 	is_jsonrpc_request,
-	is_jsonrpc_response,
+	is_jsonrpc_response
 } from '../../http/jsonrpc_helpers.ts';
-import {JSONRPC_VERSION, type JsonrpcRequest} from '../../http/jsonrpc.ts';
+import { JSONRPC_VERSION, type JsonrpcRequest } from '../../http/jsonrpc.ts';
 
 // ---------------------------------------------------------------------
 // Wire-frame types — describe a parsed wire message as observed on the
@@ -56,7 +56,7 @@ export interface JsonrpcSuccessResponseFrame<R = unknown> {
 export interface JsonrpcErrorResponseFrame<D = unknown> {
 	jsonrpc: typeof JSONRPC_VERSION;
 	id: number | string;
-	error: {code: number; message: string; data?: D};
+	error: { code: number; message: string; data?: D };
 }
 
 // ---------------------------------------------------------------------
@@ -119,9 +119,7 @@ export interface WsWaiter {
  *   the server-side `Timeout`)
  */
 export type WsResponderOutcome =
-	| {result: unknown}
-	| {error: JsonrpcErrorResponseFrame['error']}
-	| undefined;
+	{ result: unknown } | { error: JsonrpcErrorResponseFrame['error'] } | undefined;
 
 /**
  * Answers a **server-initiated** request (the server→client direction
@@ -131,7 +129,7 @@ export type WsResponderOutcome =
  * promise of it).
  */
 export type WsRequestResponder = (
-	request: JsonrpcRequest,
+	request: JsonrpcRequest
 ) => WsResponderOutcome | Promise<WsResponderOutcome>;
 
 /**
@@ -151,7 +149,7 @@ export const deliver_inbound = (
 	received: Array<unknown>,
 	waiters: Array<WsWaiter>,
 	on_request: WsRequestResponder | undefined,
-	reply: (message: unknown) => void,
+	reply: (message: unknown) => void
 ): void => {
 	if (on_request && is_jsonrpc_request(parsed)) {
 		void answer_request(parsed, on_request, reply);
@@ -170,7 +168,7 @@ export const deliver_inbound = (
 const answer_request = async (
 	request: JsonrpcRequest,
 	on_request: WsRequestResponder,
-	reply: (message: unknown) => void,
+	reply: (message: unknown) => void
 ): Promise<void> => {
 	let outcome: WsResponderOutcome;
 	try {
@@ -187,7 +185,7 @@ const answer_request = async (
 			? // Test wire-frames keep `code` a plain `number` (not the branded
 				// Zod `JsonrpcServerErrorCode`), so cast at the builder boundary.
 				create_jsonrpc_error_response(request.id, outcome.error as never)
-			: create_jsonrpc_response(request.id, outcome.result as never),
+			: create_jsonrpc_response(request.id, outcome.result as never)
 	);
 };
 
@@ -227,7 +225,7 @@ export interface WsClient {
 		id: number | string,
 		method: string,
 		params: unknown,
-		timeout_ms?: number,
+		timeout_ms?: number
 	) => Promise<R>;
 	/**
 	 * Close the connection. Returns a promise that resolves once the

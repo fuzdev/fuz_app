@@ -17,10 +17,10 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {Username, Email} from '../primitive_schemas.ts';
+import { Username, Email } from '../primitive_schemas.ts';
 
 // Types
 
@@ -108,8 +108,8 @@ export interface RoleGrant {
 }
 
 export const is_role_grant_active = (
-	p: {revoked_at?: string | null; expires_at: string | null},
-	now: Date = new Date(),
+	p: { revoked_at?: string | null; expires_at: string | null },
+	now: Date = new Date()
 ): boolean => !p.revoked_at && (!p.expires_at || new Date(p.expires_at) > now);
 
 /** Server-side auth session, keyed by blake3 hash of session token. */
@@ -141,7 +141,7 @@ export const SessionAccountJson = z.strictObject({
 	username: Username,
 	email: Email.nullable(),
 	email_verified: z.boolean(),
-	created_at: z.string(),
+	created_at: z.string()
 });
 export type SessionAccountJson = z.infer<typeof SessionAccountJson>;
 
@@ -151,7 +151,7 @@ export const AuthSessionJson = z.strictObject({
 	account_id: Uuid,
 	created_at: z.string(),
 	expires_at: z.string(),
-	last_seen_at: z.string(),
+	last_seen_at: z.string()
 });
 export type AuthSessionJson = z.infer<typeof AuthSessionJson>;
 
@@ -163,7 +163,7 @@ export const ClientApiTokenJson = z.strictObject({
 	expires_at: z.string().nullable(),
 	last_used_at: z.string().nullable(),
 	last_used_ip: z.string().nullable(),
-	created_at: z.string(),
+	created_at: z.string()
 });
 export type ClientApiTokenJson = z.infer<typeof ClientApiTokenJson>;
 
@@ -175,14 +175,14 @@ export const RoleGrantSummaryJson = z.strictObject({
 	scope_id: Uuid.nullable(),
 	created_at: z.string(),
 	expires_at: z.string().nullable(),
-	granted_by: Uuid.nullable(),
+	granted_by: Uuid.nullable()
 });
 export type RoleGrantSummaryJson = z.infer<typeof RoleGrantSummaryJson>;
 
 /** Zod schema for the actor summary returned in admin account listings. */
 export const ActorSummaryJson = z.strictObject({
 	id: Uuid,
-	name: z.string(),
+	name: z.string()
 });
 export type ActorSummaryJson = z.infer<typeof ActorSummaryJson>;
 
@@ -196,7 +196,7 @@ export const AdminAccountJson = SessionAccountJson.extend({
 	 * is requested with `include_deleted`) and offer reactivation via
 	 * `account_undelete`. Active listings always carry `null` here.
 	 */
-	deleted_at: z.string().nullable(),
+	deleted_at: z.string().nullable()
 });
 export type AdminAccountJson = z.infer<typeof AdminAccountJson>;
 
@@ -221,7 +221,7 @@ export const PendingOfferSummaryJson = z.strictObject({
 	from_actor_id: Uuid,
 	from_username: z.string(),
 	created_at: z.string(),
-	expires_at: z.string(),
+	expires_at: z.string()
 });
 export type PendingOfferSummaryJson = z.infer<typeof PendingOfferSummaryJson>;
 
@@ -230,7 +230,7 @@ export const AdminAccountEntryJson = z.strictObject({
 	account: AdminAccountJson,
 	actor: ActorSummaryJson.nullable(),
 	role_grants: z.array(RoleGrantSummaryJson),
-	pending_offers: z.array(PendingOfferSummaryJson),
+	pending_offers: z.array(PendingOfferSummaryJson)
 });
 export type AdminAccountEntryJson = z.infer<typeof AdminAccountEntryJson>;
 
@@ -270,7 +270,7 @@ export const to_session_account = (account: Account): SessionAccount => ({
 	username: account.username,
 	email: account.email,
 	email_verified: account.email_verified,
-	created_at: account.created_at,
+	created_at: account.created_at
 });
 
 /**
@@ -283,5 +283,5 @@ export const to_admin_account = (account: Account): AdminAccountJson => ({
 	...to_session_account(account),
 	updated_at: account.updated_at,
 	updated_by: account.updated_by,
-	deleted_at: account.deleted_at,
+	deleted_at: account.deleted_at
 });

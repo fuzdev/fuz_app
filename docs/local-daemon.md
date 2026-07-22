@@ -28,15 +28,15 @@ Use `create_app_backend` + `create_app_server` — the same two-step pattern
 as full server apps. PGlite is auto-detected from the `database_url`:
 
 ```ts
-import {create_app_backend} from '@fuzdev/fuz_app/server/app_backend.ts';
-import {create_app_server} from '@fuzdev/fuz_app/server/app_server.ts';
-import {create_session_config} from '@fuzdev/fuz_app/auth/session_cookie.ts';
-import {argon2_password_deps} from '@fuzdev/fuz_app/auth/password_argon2.ts';
-import {create_validated_keyring} from '@fuzdev/fuz_app/auth/keyring.ts';
-import {create_audit_emitter} from '@fuzdev/fuz_app/auth/audit_emitter.ts';
-import {BaseServerEnv} from '@fuzdev/fuz_app/server/env.ts';
-import {create_health_route_spec} from '@fuzdev/fuz_app/http/common_routes.ts';
-import {prefix_route_specs} from '@fuzdev/fuz_app/http/route_spec.ts';
+import { create_app_backend } from '@fuzdev/fuz_app/server/app_backend.ts';
+import { create_app_server } from '@fuzdev/fuz_app/server/app_server.ts';
+import { create_session_config } from '@fuzdev/fuz_app/auth/session_cookie.ts';
+import { argon2_password_deps } from '@fuzdev/fuz_app/auth/password_argon2.ts';
+import { create_validated_keyring } from '@fuzdev/fuz_app/auth/keyring.ts';
+import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
+import { BaseServerEnv } from '@fuzdev/fuz_app/server/env.ts';
+import { create_health_route_spec } from '@fuzdev/fuz_app/http/common_routes.ts';
+import { prefix_route_specs } from '@fuzdev/fuz_app/http/route_spec.ts';
 
 // 1. Init backend — PGlite file-based DB, auth migrations run automatically
 const keyring_result = create_validated_keyring(cookie_secret);
@@ -52,27 +52,27 @@ const backend = await create_app_backend({
 	},
 	read_text_file: (p) => Deno.readTextFile(p),
 	delete_file: (p) => Deno.remove(p),
-	audit_factory: ({db, log}) => create_audit_emitter({db, log}),
+	audit_factory: ({ db, log }) => create_audit_emitter({ db, log })
 });
 
 // 2. Assemble Hono app (auth middleware, routes, bootstrap — all handled)
-const {app, close} = await create_app_server({
+const { app, close } = await create_app_server({
 	backend,
 	session_options: create_session_config('my_session'),
 	allowed_origins: ['http://localhost:*'],
 	proxy: {
 		trusted_proxies: ['127.0.0.1', '::1'],
-		get_connection_ip: (c) => getConnInfo(c).remote.address,
+		get_connection_ip: (c) => getConnInfo(c).remote.address
 	},
 	bootstrap: {
 		mode: 'live',
-		token_path: `${app_dir}/config/auth_token`,
+		token_path: `${app_dir}/config/auth_token`
 	},
 	create_route_specs: (ctx) => [
 		create_health_route_spec(),
-		...prefix_route_specs('/api', my_routes(ctx)),
+		...prefix_route_specs('/api', my_routes(ctx))
 	],
-	env_schema: BaseServerEnv,
+	env_schema: BaseServerEnv
 	// event_specs defaults to [] when omitted
 });
 ```
@@ -100,11 +100,11 @@ session creation. Use it for app-specific setup like generating CLI API tokens.
 Use in-memory PGlite for tests (`database_url: 'memory://'`):
 
 ```ts
-import {create_test_app} from '@fuzdev/fuz_app/testing/app_server.ts';
+import { create_test_app } from '@fuzdev/fuz_app/testing/app_server.ts';
 
-const {app, create_session_headers, create_account, cleanup} = await create_test_app({
+const { app, create_session_headers, create_account, cleanup } = await create_test_app({
 	session_options: create_session_config('test_session'),
-	create_route_specs: (ctx) => my_routes(ctx),
+	create_route_specs: (ctx) => my_routes(ctx)
 });
 
 // create_test_app handles PGlite, migrations, and test defaults

@@ -16,16 +16,16 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
-import {z} from 'zod';
+import { describe, test, assert } from 'vitest';
+import { z } from 'zod';
 
-import {input_schema_declares_acting, ActingActor} from '$lib/http/auth_shape.ts';
+import { input_schema_declares_acting, ActingActor } from '$lib/http/auth_shape.ts';
 
 describe('input_schema_declares_acting', () => {
 	test('canonical strictObject({acting: ActingActor}) returns true', () => {
 		// The audit-actor migration's standard shape — every listing-style
 		// admin / role-grant-offer / account / audit spec uses this.
-		const schema = z.strictObject({acting: ActingActor});
+		const schema = z.strictObject({ acting: ActingActor });
 		assert.strictEqual(input_schema_declares_acting(schema), true);
 	});
 
@@ -33,12 +33,12 @@ describe('input_schema_declares_acting', () => {
 		// Mixed required + acting — admin_session_revoke_all,
 		// audit_log_role_grant_history, etc. The predicate fires on any
 		// object schema that has the canonical `acting` slot.
-		const schema = z.strictObject({account_id: z.string(), acting: ActingActor});
+		const schema = z.strictObject({ account_id: z.string(), acting: ActingActor });
 		assert.strictEqual(input_schema_declares_acting(schema), true);
 	});
 
 	test('object without acting returns false', () => {
-		const schema = z.strictObject({something_else: z.string()});
+		const schema = z.strictObject({ something_else: z.string() });
 		assert.strictEqual(input_schema_declares_acting(schema), false);
 	});
 
@@ -47,7 +47,7 @@ describe('input_schema_declares_acting', () => {
 		// field must not trip the predicate. The dispatcher's authorization
 		// phase only resolves an actor when the input declares the canonical
 		// `ActingActor` slot.
-		const schema = z.strictObject({acting: z.string().optional()});
+		const schema = z.strictObject({ acting: z.string().optional() });
 		assert.strictEqual(input_schema_declares_acting(schema), false);
 	});
 
@@ -74,17 +74,17 @@ describe('input_schema_declares_acting', () => {
 	// is bypassed at runtime — the handler runs without `ctx.auth`.
 
 	test('z.optional wrapper around the canonical strictObject still returns true', () => {
-		const schema = z.optional(z.strictObject({acting: ActingActor}));
+		const schema = z.optional(z.strictObject({ acting: ActingActor }));
 		assert.strictEqual(input_schema_declares_acting(schema), true);
 	});
 
 	test('z.nullable wrapper around the canonical strictObject still returns true', () => {
-		const schema = z.nullable(z.strictObject({acting: ActingActor}));
+		const schema = z.nullable(z.strictObject({ acting: ActingActor }));
 		assert.strictEqual(input_schema_declares_acting(schema), true);
 	});
 
 	test('default-wrapped strictObject still returns true', () => {
-		const schema = z.strictObject({acting: ActingActor}).default({});
+		const schema = z.strictObject({ acting: ActingActor }).default({});
 		assert.strictEqual(input_schema_declares_acting(schema), true);
 	});
 
@@ -93,7 +93,7 @@ describe('input_schema_declares_acting', () => {
 		// the predicate. Wrapper peeling must not weaken it — a consumer
 		// schema with a locally-defined `acting` field does not trip the
 		// predicate even when wrapped.
-		const schema = z.optional(z.strictObject({acting: z.string().optional()}));
+		const schema = z.optional(z.strictObject({ acting: z.string().optional() }));
 		assert.strictEqual(input_schema_declares_acting(schema), false);
 	});
 });

@@ -13,22 +13,22 @@
  * @module
  */
 
-import {DEV} from 'esm-env';
-import {create_context} from '@fuzdev/fuz_ui/context_helpers.ts';
+import { DEV } from 'esm-env';
+import { create_context } from '@fuzdev/fuz_ui/context_helpers.ts';
 
-import {AsyncSlot} from './async_slot.svelte.ts';
+import { AsyncSlot } from './async_slot.svelte.ts';
 import type {
 	AuditLogEventJson,
 	AuditLogEventWithUsernamesJson,
-	RoleGrantHistoryEventJson,
+	RoleGrantHistoryEventJson
 } from '../auth/audit_log_schema.ts';
 import type {
 	AuditLogListInput,
 	AuditLogListOutput,
 	AuditLogRoleGrantHistoryInput,
-	AuditLogRoleGrantHistoryOutput,
+	AuditLogRoleGrantHistoryOutput
 } from '../auth/admin_action_specs.ts';
-import type {SseNotification} from '../realtime/sse.ts';
+import type { SseNotification } from '../realtime/sse.ts';
 
 /**
  * Narrow RPC surface consumed by `AuditLogState`. Consumers adapt their typed
@@ -39,7 +39,7 @@ import type {SseNotification} from '../realtime/sse.ts';
 export interface AuditLogRpc {
 	list: (input?: AuditLogListInput) => Promise<AuditLogListOutput>;
 	role_grant_history: (
-		input?: AuditLogRoleGrantHistoryInput,
+		input?: AuditLogRoleGrantHistoryInput
 	) => Promise<AuditLogRoleGrantHistoryOutput>;
 }
 
@@ -91,7 +91,7 @@ export class AuditLogState {
 
 	async fetch(options?: AuditLogListInput): Promise<void> {
 		await this.list.run(async () => {
-			const {events} = await this.#get_rpc().list(options);
+			const { events } = await this.#get_rpc().list(options);
 			this.events = events;
 			this.#update_last_seq(events);
 		});
@@ -99,7 +99,7 @@ export class AuditLogState {
 
 	async fetch_role_grant_history(limit?: number, offset?: number): Promise<void> {
 		await this.role_grant_history.run(async () => {
-			const {events} = await this.#get_rpc().role_grant_history({limit, offset});
+			const { events } = await this.#get_rpc().role_grant_history({ limit, offset });
 			this.role_grant_history_events = events;
 		});
 	}
@@ -137,7 +137,7 @@ export class AuditLogState {
 				const event: AuditLogEventWithUsernamesJson = {
 					...raw,
 					username: null,
-					target_username: null,
+					target_username: null
 				};
 				// prepend — newest first, matching the fetch sort order
 				this.events = [event, ...this.events];
@@ -171,7 +171,7 @@ export class AuditLogState {
 	/** Fetch events missed during disconnection, keyed by `since_seq`. */
 	async #fill_gap(since_seq: number): Promise<void> {
 		try {
-			const {events: gap_events} = await this.#get_rpc().list({since_seq, limit: 200});
+			const { events: gap_events } = await this.#get_rpc().list({ since_seq, limit: 200 });
 			if (gap_events.length === 0) return;
 			// merge — deduplicate by id, keep newest-first order
 			const existing_ids = new Set(this.events.map((e) => e.id));

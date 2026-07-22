@@ -32,7 +32,7 @@ shape:
 
 ```ts
 const get_rpc = admin_accounts_rpc_context.get();
-const admin_accounts = new AdminAccountsState({get_rpc});
+const admin_accounts = new AdminAccountsState({ get_rpc });
 ```
 
 or for direct calls:

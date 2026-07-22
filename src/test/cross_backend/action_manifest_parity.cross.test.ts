@@ -32,13 +32,13 @@
  * @module
  */
 
-import {inject, describe, test} from 'vitest';
+import { inject, describe, test } from 'vitest';
 
 import {
 	capture_action_manifest,
-	reconstruct_bootstrapped_handle,
+	reconstruct_bootstrapped_handle
 } from '$lib/testing/cross_backend/setup.ts';
-import {assert_action_manifests_equal} from '$lib/testing/cross_backend/action_manifest_parity.ts';
+import { assert_action_manifests_equal } from '$lib/testing/cross_backend/action_manifest_parity.ts';
 
 import './cross_test_types.ts';
 
@@ -48,8 +48,8 @@ describe('cross-backend action-manifest parity', () => {
 		const rust = reconstruct_bootstrapped_handle(inject('parity_handle_b'));
 		const [ts_manifest, rust_manifest] = await Promise.all([
 			capture_action_manifest(ts),
-			capture_action_manifest(rust),
+			capture_action_manifest(rust)
 		]);
-		assert_action_manifests_equal(ts_manifest, rust_manifest, {a: 'ts', b: 'rust'});
+		assert_action_manifests_equal(ts_manifest, rust_manifest, { a: 'ts', b: 'rust' });
 	});
 });

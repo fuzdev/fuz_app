@@ -9,30 +9,30 @@
 	 * @module
 	 */
 
-	import {onDestroy} from 'svelte';
+	import { onDestroy } from 'svelte';
 
-	import {AuditLogState, audit_log_rpc_context} from './audit_log_state.svelte.ts';
+	import { AuditLogState, audit_log_rpc_context } from './audit_log_state.svelte.ts';
 	import {
 		AUDIT_EVENT_TYPES,
-		type AuditLogEventWithUsernamesJson,
+		type AuditLogEventWithUsernamesJson
 	} from '../auth/audit_log_schema.ts';
 	import {
 		format_relative_time,
 		format_datetime_local,
 		format_audit_metadata,
-		truncate_uuid,
+		truncate_uuid
 	} from './ui_format.ts';
 	import Datatable from './Datatable.svelte';
-	import type {DatatableColumn} from './datatable.ts';
+	import type { DatatableColumn } from './datatable.ts';
 
 	const get_rpc = audit_log_rpc_context.get();
-	const audit_log = new AuditLogState({get_rpc});
+	const audit_log = new AuditLogState({ get_rpc });
 
 	let filter_event_type: string = $state.raw('');
 	let streaming = $state.raw(false);
 
 	const load = (): void => {
-		void audit_log.fetch(filter_event_type ? {event_type: filter_event_type} : undefined);
+		void audit_log.fetch(filter_event_type ? { event_type: filter_event_type } : undefined);
 	};
 
 	load();
@@ -64,13 +64,13 @@
 	// resolver in the query chains the same fallback, so the displayed
 	// label is identical under v1 1:1.
 	const columns: Array<DatatableColumn<AuditLogEventWithUsernamesJson>> = [
-		{key: 'created_at', label: 'time', width: 100},
-		{key: 'event_type', label: 'event', width: 200},
-		{key: 'outcome', label: 'outcome', width: 100},
-		{key: 'actor_id', label: 'actor', width: 130},
-		{key: 'target_actor_id', label: 'target', width: 130},
-		{key: 'ip', label: 'ip', width: 130},
-		{key: 'metadata', label: 'metadata', width: 200},
+		{ key: 'created_at', label: 'time', width: 100 },
+		{ key: 'event_type', label: 'event', width: 200 },
+		{ key: 'outcome', label: 'outcome', width: 100 },
+		{ key: 'actor_id', label: 'actor', width: 130 },
+		{ key: 'target_actor_id', label: 'target', width: 130 },
+		{ key: 'ip', label: 'ip', width: 130 },
+		{ key: 'metadata', label: 'metadata', width: 200 }
 	];
 </script>
 

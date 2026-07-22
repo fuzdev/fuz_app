@@ -16,7 +16,7 @@
  * Minimal interface that both pg and pglite satisfy.
  */
 export interface DbClient {
-	query: <T = unknown>(text: string, values?: Array<unknown>) => Promise<{rows: Array<T>}>;
+	query: <T = unknown>(text: string, values?: Array<unknown>) => Promise<{ rows: Array<T> }>;
 }
 
 /**

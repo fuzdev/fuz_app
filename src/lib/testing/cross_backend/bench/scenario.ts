@@ -1,8 +1,8 @@
 import '../../assert_dev_env.ts';
 
-import {rpc_call} from '../../rpc_helpers.ts';
-import type {FetchTransport} from '../../transports/fetch_transport.ts';
-import type {BackendCapabilities} from '../capabilities.ts';
+import { rpc_call } from '../../rpc_helpers.ts';
+import type { FetchTransport } from '../../transports/fetch_transport.ts';
+import type { BackendCapabilities } from '../capabilities.ts';
 
 /**
  * Context handed to a `BenchScenario.run`. Carries a ready, pre-authed
@@ -48,10 +48,10 @@ export interface BenchScenario {
 const rpc_scenario =
 	(method: string, params?: unknown) =>
 	async (ctx: BenchScenarioContext): Promise<void> => {
-		const result = await rpc_call({app: ctx.transport, path: ctx.rpc_path, method, params});
+		const result = await rpc_call({ app: ctx.transport, path: ctx.rpc_path, method, params });
 		if (!result.ok) {
 			throw new Error(
-				`bench scenario '${method}' failed: ${result.error.code} ${result.error.message}`,
+				`bench scenario '${method}' failed: ${result.error.code} ${result.error.message}`
 			);
 		}
 	};
@@ -71,7 +71,7 @@ const rpc_scenario =
  * tier.
  */
 export const default_bench_scenarios: ReadonlyArray<BenchScenario> = [
-	{name: 'account_verify', run: rpc_scenario('account_verify')},
-	{name: 'account_session_list', run: rpc_scenario('account_session_list')},
-	{name: 'audit_log_list', run: rpc_scenario('audit_log_list', {limit: 20})},
+	{ name: 'account_verify', run: rpc_scenario('account_verify') },
+	{ name: 'account_session_list', run: rpc_scenario('account_session_list') },
+	{ name: 'audit_log_list', run: rpc_scenario('audit_log_list', { limit: 20 }) }
 ];

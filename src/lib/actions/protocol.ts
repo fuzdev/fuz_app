@@ -19,11 +19,11 @@
  * @module
  */
 
-import type {ActionSpecUnion} from './action_spec.ts';
-import type {Action} from './action_types.ts';
-import {cancel_action} from './cancel.ts';
-import {heartbeat_action} from './heartbeat.ts';
-import {peer_ping_action} from './peer_ping.ts';
+import type { ActionSpecUnion } from './action_spec.ts';
+import type { Action } from './action_types.ts';
+import { cancel_action } from './cancel.ts';
+import { heartbeat_action } from './heartbeat.ts';
+import { peer_ping_action } from './peer_ping.ts';
 
 /**
  * Canonical protocol `{spec, handler}` tuples for the server's
@@ -37,7 +37,7 @@ import {peer_ping_action} from './peer_ping.ts';
 export const protocol_actions: ReadonlyArray<Action> = [
 	heartbeat_action,
 	cancel_action,
-	peer_ping_action,
+	peer_ping_action
 ];
 
 /**
@@ -54,5 +54,5 @@ export const protocol_actions: ReadonlyArray<Action> = [
  * place — the two arrays cannot drift.
  */
 export const protocol_action_specs: ReadonlyArray<ActionSpecUnion> = protocol_actions.map(
-	(a) => a.spec,
+	(a) => a.spec
 );

@@ -7,7 +7,7 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
 /** Minimum password length (OWASP recommendation). */
 export const PASSWORD_LENGTH_MIN = 12;
@@ -20,7 +20,7 @@ export const Password = z
 	.string()
 	.min(PASSWORD_LENGTH_MIN)
 	.max(PASSWORD_LENGTH_MAX)
-	.meta({sensitivity: 'secret'});
+	.meta({ sensitivity: 'secret' });
 export type Password = z.infer<typeof Password>;
 
 /** Password submitted for login or verification — minimal validation for forward-compatibility if length requirements change. */
@@ -28,7 +28,7 @@ export const PasswordProvided = z
 	.string()
 	.min(1)
 	.max(PASSWORD_LENGTH_MAX)
-	.meta({sensitivity: 'secret'});
+	.meta({ sensitivity: 'secret' });
 export type PasswordProvided = z.infer<typeof PasswordProvided>;
 
 /**

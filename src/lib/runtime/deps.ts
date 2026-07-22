@@ -112,7 +112,7 @@ export interface FsReadDeps {
  */
 export interface FsWriteDeps {
 	/** Create a directory. */
-	mkdir: (path: string, options?: {recursive?: boolean}) => Promise<void>;
+	mkdir: (path: string, options?: { recursive?: boolean }) => Promise<void>;
 	/** Write text to a file. */
 	write_text_file: (path: string, content: string) => Promise<void>;
 	/** Write bytes to a file. */
@@ -165,7 +165,7 @@ export interface FsStreamDeps {
  */
 export interface FsRemoveDeps {
 	/** Remove a file or directory. */
-	remove: (path: string, options?: {recursive?: boolean}) => Promise<void>;
+	remove: (path: string, options?: { recursive?: boolean }) => Promise<void>;
 }
 
 /**
@@ -183,7 +183,7 @@ export interface CommandDeps {
 	run_command: (
 		cmd: string,
 		args: Array<string>,
-		options?: RunCommandOptions,
+		options?: RunCommandOptions
 	) => Promise<CommandResult>;
 }
 

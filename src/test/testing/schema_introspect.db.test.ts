@@ -11,15 +11,15 @@
  * @module
  */
 
-import {describe, test, assert, beforeAll} from 'vitest';
+import { describe, test, assert, beforeAll } from 'vitest';
 
-import type {Db} from '$lib/db/db.ts';
-import {run_migrations} from '$lib/db/migrate.ts';
-import {auth_migration_ns} from '$lib/auth/migrations.ts';
-import {CELL_MIGRATION_NS} from '$lib/db/cell_ddl.ts';
-import {create_pglite_factory} from '$lib/testing/db.ts';
-import {query_schema_snapshot} from '$lib/testing/schema_introspect.ts';
-import {diff_schema_snapshots} from '$lib/testing/schema_parity.ts';
+import type { Db } from '$lib/db/db.ts';
+import { run_migrations } from '$lib/db/migrate.ts';
+import { auth_migration_ns } from '$lib/auth/migrations.ts';
+import { CELL_MIGRATION_NS } from '$lib/db/cell_ddl.ts';
+import { create_pglite_factory } from '$lib/testing/db.ts';
+import { query_schema_snapshot } from '$lib/testing/schema_introspect.ts';
+import { diff_schema_snapshots } from '$lib/testing/schema_parity.ts';
 
 const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [auth_migration_ns]);
@@ -73,7 +73,7 @@ describe('query_schema_snapshot', () => {
 	test('exclude_tables removes the named tables from the snapshot', async () => {
 		const full = await query_schema_snapshot(db);
 		assert.ok(full.tables.audit_log, 'audit_log expected present without exclude');
-		const filtered = await query_schema_snapshot(db, {exclude_tables: ['audit_log']});
+		const filtered = await query_schema_snapshot(db, { exclude_tables: ['audit_log'] });
 		assert.strictEqual(filtered.tables.audit_log, undefined);
 		// Other tables remain
 		assert.ok(filtered.tables.account, 'account table should still be present');

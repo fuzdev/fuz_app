@@ -20,7 +20,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type {BackendCapabilities} from './capabilities.ts';
+import type { BackendCapabilities } from './capabilities.ts';
 
 /**
  * Auth-bootstrap configuration for a spawnable test binary. The runner

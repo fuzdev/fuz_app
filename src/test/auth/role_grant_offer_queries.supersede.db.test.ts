@@ -13,8 +13,8 @@
  * @module
  */
 
-import {assert, test} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import { assert, test } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	query_role_grant_offer_decline,
@@ -25,25 +25,25 @@ import {
 	query_role_grant_offer_sweep_expired,
 	query_accept_offer,
 	RoleGrantOfferAlreadyTerminalError,
-	RoleGrantOfferExpiredError,
+	RoleGrantOfferExpiredError
 } from '$lib/auth/role_grant_offer_queries.ts';
-import {query_revoke_role_grant} from '$lib/auth/role_grant_queries.ts';
-import {query_audit_log, query_audit_log_list} from '$lib/auth/audit_log_queries.ts';
-import {create_uuid} from '@fuzdev/fuz_util/id.ts';
+import { query_revoke_role_grant } from '$lib/auth/role_grant_queries.ts';
+import { query_audit_log, query_audit_log_list } from '$lib/auth/audit_log_queries.ts';
+import { create_uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {describe_db} from '../db_fixture.ts';
+import { describe_db } from '../db_fixture.ts';
 import {
 	make_account,
 	future,
 	hour,
 	create_pending_offer,
-	insert_superseded_offer,
+	insert_superseded_offer
 } from './role_grant_offer_queries.fixtures.ts';
 
 describe_db('role_grant_offer_queries.supersede', (get_db) => {
 	test('two grantors produce distinct pending offers for same (to_account, role, scope)', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor_a = await make_account(db, 'coexist_a');
 		const grantor_b = await make_account(db, 'coexist_b');
 		const recipient = await make_account(db, 'coexist_recipient');
@@ -52,12 +52,12 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 		const offer_a = await create_pending_offer(db, grantor_a, recipient, {
 			role: 'classroom_student',
 			scope_id: classroom,
-			message: 'from A',
+			message: 'from A'
 		});
 		const offer_b = await create_pending_offer(db, grantor_b, recipient, {
 			role: 'classroom_student',
 			scope_id: classroom,
-			message: 'from B',
+			message: 'from B'
 		});
 		assert.notStrictEqual(offer_a.id, offer_b.id);
 		assert.strictEqual(offer_a.from_actor_id, grantor_a.actor_id);
@@ -75,13 +75,13 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 		const first = await create_pending_offer(db, grantor, recipient, {
 			role: 'classroom_student',
 			scope_id: classroom,
-			message: 'first',
+			message: 'first'
 		});
 		const second = await create_pending_offer(db, grantor, recipient, {
 			role: 'classroom_student',
 			scope_id: classroom,
 			message: 'second',
-			expires_at: future(hour * 2),
+			expires_at: future(hour * 2)
 		});
 		assert.strictEqual(second.id, first.id);
 		assert.strictEqual(second.message, 'second');
@@ -89,7 +89,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 	test('accept on expired pending offer throws RoleGrantOfferExpiredError', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor = await make_account(db, 'grantor_expired_accept');
 		const recipient = await make_account(db, 'recipient_expired_accept');
 
@@ -97,15 +97,15 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 		// create helper accepts a past Date and stores it verbatim. Use the
 		// public path so the test exercises the real upsert.
 		const expired_offer = await create_pending_offer(db, grantor, recipient, {
-			expires_at: future(-60_000),
+			expires_at: future(-60_000)
 		});
 
 		const err = await assert_rejects(() =>
 			query_accept_offer(deps, {
 				offer_id: expired_offer.id,
 				to_account_id: recipient.account_id,
-				actor_id: recipient.actor_id,
-			}),
+				actor_id: recipient.actor_id
+			})
 		);
 		assert.ok(err instanceof RoleGrantOfferExpiredError);
 
@@ -119,7 +119,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 		}>(
 			`SELECT accepted_at, resulting_role_grant_id, superseded_at, declined_at, retracted_at
 			 FROM role_grant_offer WHERE id = $1`,
-			[expired_offer.id],
+			[expired_offer.id]
 		);
 		const r = check_rows[0]!;
 		assert.strictEqual(r.accepted_at, null);
@@ -131,7 +131,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 	test('accept supersedes sibling pending offers and emits audit events', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor_a = await make_account(db, 'sibling_a');
 		const grantor_b = await make_account(db, 'sibling_b');
 		const grantor_c = await make_account(db, 'sibling_c');
@@ -140,21 +140,21 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 		const offer_a = await create_pending_offer(db, grantor_a, recipient, {
 			role: 'classroom_student',
-			scope_id: classroom,
+			scope_id: classroom
 		});
 		const offer_b = await create_pending_offer(db, grantor_b, recipient, {
 			role: 'classroom_student',
-			scope_id: classroom,
+			scope_id: classroom
 		});
 		const offer_c = await create_pending_offer(db, grantor_c, recipient, {
 			role: 'classroom_student',
-			scope_id: classroom,
+			scope_id: classroom
 		});
 
 		const result = await query_accept_offer(deps, {
 			offer_id: offer_a.id,
 			to_account_id: recipient.account_id,
-			actor_id: recipient.actor_id,
+			actor_id: recipient.actor_id
 		});
 
 		assert.strictEqual(result.superseded_offers.length, 2);
@@ -167,17 +167,17 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 		// from_account_id is populated via CTE join on `actor` — each sibling's
 		// entry must carry its own grantor account, never a cross-contamination.
 		// Direct guard so a broken join fails here before any notification test.
-		const grantor_b_account = await db.query<{account_id: string}>(
+		const grantor_b_account = await db.query<{ account_id: string }>(
 			`SELECT account_id FROM actor WHERE id = $1`,
-			[grantor_b.actor_id],
+			[grantor_b.actor_id]
 		);
-		const grantor_c_account = await db.query<{account_id: string}>(
+		const grantor_c_account = await db.query<{ account_id: string }>(
 			`SELECT account_id FROM actor WHERE id = $1`,
-			[grantor_c.actor_id],
+			[grantor_c.actor_id]
 		);
 		const expected_accounts: Record<string, string> = {
 			[offer_b.id]: grantor_b_account[0]!.account_id,
-			[offer_c.id]: grantor_c_account[0]!.account_id,
+			[offer_c.id]: grantor_c_account[0]!.account_id
 		};
 		for (const sibling of result.superseded_offers) {
 			assert.strictEqual(sibling.from_account_id, expected_accounts[sibling.id]);
@@ -193,7 +193,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 		}>(
 			`SELECT accepted_at, declined_at, retracted_at, superseded_at
 			 FROM role_grant_offer WHERE id = ANY($1)`,
-			[[offer_b.id, offer_c.id]],
+			[[offer_b.id, offer_c.id]]
 		);
 		assert.strictEqual(sibling_rows.length, 2);
 		for (const row of sibling_rows) {
@@ -212,7 +212,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 		assert.strictEqual(result.audit_events[1]?.event_type, 'role_grant_create');
 		for (const e of result.audit_events.slice(2)) {
 			assert.strictEqual(e.event_type, 'role_grant_offer_supersede');
-			const md = e.metadata as {reason?: string; cause_id?: string};
+			const md = e.metadata as { reason?: string; cause_id?: string };
 			assert.strictEqual(md.reason, 'sibling_accepted');
 			assert.strictEqual(md.cause_id, offer_a.id);
 		}
@@ -226,15 +226,15 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 			query_accept_offer(deps, {
 				offer_id: offer_b.id,
 				to_account_id: recipient.account_id,
-				actor_id: recipient.actor_id,
-			}),
+				actor_id: recipient.actor_id
+			})
 		);
 		assert.ok(err instanceof RoleGrantOfferAlreadyTerminalError);
 	});
 
 	test('history_for_account returns offers in both directions, newest first, with pagination', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor = await make_account(db, 'history_grantor');
 		const recipient = await make_account(db, 'history_recipient');
 		const outsider = await make_account(db, 'history_outsider');
@@ -247,7 +247,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 		// a deterministic gap between the two `created_at` values.
 		await db.query(
 			`UPDATE role_grant_offer SET created_at = NOW() - INTERVAL '1 hour' WHERE id = $1`,
-			[outgoing.id],
+			[outgoing.id]
 		);
 		const incoming = await create_pending_offer(db, outsider, grantor);
 
@@ -255,7 +255,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 		// Newest-first ordering — pin index, not multiset.
 		assert.deepStrictEqual(
 			for_grantor.map((o) => o.id),
-			[incoming.id, outgoing.id],
+			[incoming.id, outgoing.id]
 		);
 
 		// limit + offset paginate the same ordering.
@@ -271,7 +271,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 	test('decline on A does not affect B from a different grantor', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor_a = await make_account(db, 'decline_coexist_a');
 		const grantor_b = await make_account(db, 'decline_coexist_b');
 		const recipient = await make_account(db, 'decline_coexist_recipient');
@@ -279,18 +279,18 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 		const offer_a = await create_pending_offer(db, grantor_a, recipient, {
 			role: 'classroom_student',
-			scope_id: classroom,
+			scope_id: classroom
 		});
 		const offer_b = await create_pending_offer(db, grantor_b, recipient, {
 			role: 'classroom_student',
-			scope_id: classroom,
+			scope_id: classroom
 		});
 
 		const declined = await query_role_grant_offer_decline(
 			deps,
 			offer_a.id,
 			recipient.account_id,
-			null,
+			null
 		);
 		assert.ok(declined?.declined_at);
 
@@ -305,7 +305,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 	test('retract on A does not affect B from a different grantor', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor_a = await make_account(db, 'retract_coexist_a');
 		const grantor_b = await make_account(db, 'retract_coexist_b');
 		const recipient = await make_account(db, 'retract_coexist_recipient');
@@ -313,11 +313,11 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 		const offer_a = await create_pending_offer(db, grantor_a, recipient, {
 			role: 'classroom_student',
-			scope_id: classroom,
+			scope_id: classroom
 		});
 		const offer_b = await create_pending_offer(db, grantor_b, recipient, {
 			role: 'classroom_student',
-			scope_id: classroom,
+			scope_id: classroom
 		});
 
 		const retracted = await query_role_grant_offer_retract(deps, offer_a.id, grantor_a.actor_id);
@@ -330,7 +330,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 	test('decline and retract on a superseded offer both throw already_terminal', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor_a = await make_account(db, 'superseded_grantor_a');
 		const grantor_b = await make_account(db, 'superseded_grantor_b');
 		const recipient = await make_account(db, 'superseded_recipient');
@@ -338,18 +338,18 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 		const offer_a = await create_pending_offer(db, grantor_a, recipient, {
 			role: 'classroom_student',
-			scope_id: classroom,
+			scope_id: classroom
 		});
 		const offer_b = await create_pending_offer(db, grantor_b, recipient, {
 			role: 'classroom_student',
-			scope_id: classroom,
+			scope_id: classroom
 		});
 
 		// Accept A → B becomes superseded.
 		const result = await query_accept_offer(deps, {
 			offer_id: offer_a.id,
 			to_account_id: recipient.account_id,
-			actor_id: recipient.actor_id,
+			actor_id: recipient.actor_id
 		});
 		assert.strictEqual(result.superseded_offers.length, 1);
 		assert.strictEqual(result.superseded_offers[0]!.id, offer_b.id);
@@ -357,20 +357,20 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 		// Decline on B must throw already_terminal — exercises the superseded_at
 		// branch in resolve_terminal_or_missing.
 		const decline_err = await assert_rejects(() =>
-			query_role_grant_offer_decline(deps, offer_b.id, recipient.account_id, null),
+			query_role_grant_offer_decline(deps, offer_b.id, recipient.account_id, null)
 		);
 		assert.ok(decline_err instanceof RoleGrantOfferAlreadyTerminalError);
 
 		// Retract on B by the original grantor — also terminal.
 		const retract_err = await assert_rejects(() =>
-			query_role_grant_offer_retract(deps, offer_b.id, grantor_b.actor_id),
+			query_role_grant_offer_retract(deps, offer_b.id, grantor_b.actor_id)
 		);
 		assert.ok(retract_err instanceof RoleGrantOfferAlreadyTerminalError);
 	});
 
 	test('sweep_expired does not return expired superseded offers', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor = await make_account(db, 'sweep_superseded_grantor');
 		const recipient = await make_account(db, 'sweep_superseded_recipient');
 
@@ -379,7 +379,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 		const superseded_expired_id = await insert_superseded_offer(db, grantor, recipient, {
 			role: 'teacher',
 			expires_at: future(-hour),
-			superseded_at: new Date(Date.now() - 30 * 60_000),
+			superseded_at: new Date(Date.now() - 30 * 60_000)
 		});
 
 		const swept = await query_role_grant_offer_sweep_expired(deps);
@@ -391,7 +391,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 	test('revoke-bypass regression: accept A → revoke → cannot accept superseded B', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor_a = await make_account(db, 'bypass_grantor_a');
 		const grantor_b = await make_account(db, 'bypass_grantor_b');
 		const recipient = await make_account(db, 'bypass_recipient');
@@ -399,18 +399,18 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 
 		const offer_a = await create_pending_offer(db, grantor_a, recipient, {
 			role: 'classroom_student',
-			scope_id: classroom,
+			scope_id: classroom
 		});
 		const offer_b = await create_pending_offer(db, grantor_b, recipient, {
 			role: 'classroom_student',
-			scope_id: classroom,
+			scope_id: classroom
 		});
 
 		// Recipient accepts A — B is superseded in the same transaction.
 		const accept = await query_accept_offer(deps, {
 			offer_id: offer_a.id,
 			to_account_id: recipient.account_id,
-			actor_id: recipient.actor_id,
+			actor_id: recipient.actor_id
 		});
 		assert.strictEqual(accept.superseded_offers.length, 1);
 		assert.strictEqual(accept.superseded_offers[0]!.id, offer_b.id);
@@ -421,7 +421,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 			accept.role_grant.id,
 			recipient.actor_id,
 			null,
-			'ended',
+			'ended'
 		);
 		assert.ok(revoke);
 		assert.strictEqual(revoke.id, accept.role_grant.id);
@@ -436,8 +436,8 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 				role: revoke.role,
 				role_grant_id: revoke.id,
 				scope_id: revoke.scope_id,
-				reason: 'ended',
-			},
+				reason: 'ended'
+			}
 		});
 
 		// Attempting to accept the stale B offer must throw already_terminal —
@@ -446,15 +446,15 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 			query_accept_offer(deps, {
 				offer_id: offer_b.id,
 				to_account_id: recipient.account_id,
-				actor_id: recipient.actor_id,
-			}),
+				actor_id: recipient.actor_id
+			})
 		);
 		assert.ok(err instanceof RoleGrantOfferAlreadyTerminalError);
 
 		// Audit chain: role_grant_offer_accept(A) → role_grant_create(source_offer_id=A)
 		// → role_grant_offer_supersede(B, reason sibling_accepted, cause_id=A)
 		// → role_grant_revoke.
-		const events = await query_audit_log_list(deps, {account_id: recipient.account_id});
+		const events = await query_audit_log_list(deps, { account_id: recipient.account_id });
 		const by_type = new Map<string, typeof events>();
 		for (const e of events) {
 			const list = by_type.get(e.event_type) ?? [];
@@ -465,8 +465,8 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 		const role_grant_creates = by_type.get('role_grant_create') ?? [];
 		assert.strictEqual(role_grant_creates.length, 1);
 		assert.strictEqual(
-			(role_grant_creates[0]!.metadata as {source_offer_id?: string}).source_offer_id,
-			offer_a.id,
+			(role_grant_creates[0]!.metadata as { source_offer_id?: string }).source_offer_id,
+			offer_a.id
 		);
 		const supersedes = by_type.get('role_grant_offer_supersede') ?? [];
 		assert.strictEqual(supersedes.length, 1);

@@ -18,14 +18,14 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type {BackendConfig} from './backend_config.ts';
-import {build_test_backend_paths} from './build_test_backend_paths.ts';
+import type { BackendConfig } from './backend_config.ts';
+import { build_test_backend_paths } from './build_test_backend_paths.ts';
 import {
 	LOGIN_RATE_LIMIT_ENABLED_ENV,
 	make_default_ts_backend_config,
-	ts_default_capabilities,
+	ts_default_capabilities
 } from './default_backend_configs.ts';
-import {SPINE_SSE_PATH} from './spine_surface_constants.ts';
+import { SPINE_SSE_PATH } from './spine_surface_constants.ts';
 
 /** Env var naming the backend root dir; `{dir}/run/daemon_token` must match `bootstrap.daemon_token_path`. */
 export const TS_SPINE_DIR_ENV = 'FUZ_TESTING_TS_SPINE_DIR';
@@ -43,7 +43,7 @@ const ts_spine_capabilities = Object.freeze({
 	sse: true,
 	ready: true,
 	peer_request: true,
-	cell_gated_create: true,
+	cell_gated_create: true
 });
 
 /**
@@ -59,7 +59,7 @@ const ts_spine_capabilities = Object.freeze({
  */
 const ts_spine_bun_capabilities = Object.freeze({
 	...ts_spine_capabilities,
-	oversized_reject_closes_connection: false,
+	oversized_reject_closes_connection: false
 });
 
 /** Default port for the Node TS spine binary — slots beside the Rust `spine_stub` (1177). */
@@ -105,16 +105,16 @@ export interface TsSpineBackendConfigOptions {
  * backend-config option drives both impls.
  */
 const login_rate_limit_env = (enable: boolean | undefined): Record<string, string> =>
-	enable ? {[LOGIN_RATE_LIMIT_ENABLED_ENV]: 'true'} : {};
+	enable ? { [LOGIN_RATE_LIMIT_ENABLED_ENV]: 'true' } : {};
 
 /**
  * `BackendConfig` for the Node TS spine binary — spawned via `gro run`
  * (Gro's TS loader resolves the `$lib`-free entry's relative imports).
  */
 export const ts_spine_node_backend_config = (
-	options: TsSpineBackendConfigOptions = {},
+	options: TsSpineBackendConfigOptions = {}
 ): BackendConfig => {
-	const {port = TS_SPINE_NODE_DEFAULT_PORT, database_url, enable_login_rate_limit} = options;
+	const { port = TS_SPINE_NODE_DEFAULT_PORT, database_url, enable_login_rate_limit } = options;
 	const name = 'ts_spine_node';
 	const paths = build_test_backend_paths(name);
 	return {
@@ -126,11 +126,11 @@ export const ts_spine_node_backend_config = (
 			paths,
 			extra_env: {
 				[TS_SPINE_DIR_ENV]: paths.root,
-				...login_rate_limit_env(enable_login_rate_limit),
+				...login_rate_limit_env(enable_login_rate_limit)
 			},
-			capabilities: ts_spine_capabilities,
+			capabilities: ts_spine_capabilities
 		}),
-		sse_path: SPINE_SSE_PATH,
+		sse_path: SPINE_SSE_PATH
 	};
 };
 
@@ -141,9 +141,9 @@ export const ts_spine_node_backend_config = (
  * the Node path), and `Bun.serve` + `hono/bun` need no extra deps.
  */
 export const ts_spine_bun_backend_config = (
-	options: TsSpineBackendConfigOptions = {},
+	options: TsSpineBackendConfigOptions = {}
 ): BackendConfig => {
-	const {port = TS_SPINE_BUN_DEFAULT_PORT, database_url, enable_login_rate_limit} = options;
+	const { port = TS_SPINE_BUN_DEFAULT_PORT, database_url, enable_login_rate_limit } = options;
 	const name = 'ts_spine_bun';
 	const paths = build_test_backend_paths(name);
 	return {
@@ -155,11 +155,11 @@ export const ts_spine_bun_backend_config = (
 			paths,
 			extra_env: {
 				[TS_SPINE_DIR_ENV]: paths.root,
-				...login_rate_limit_env(enable_login_rate_limit),
+				...login_rate_limit_env(enable_login_rate_limit)
 			},
-			capabilities: ts_spine_bun_capabilities,
+			capabilities: ts_spine_bun_capabilities
 		}),
-		sse_path: SPINE_SSE_PATH,
+		sse_path: SPINE_SSE_PATH
 	};
 };
 
@@ -175,9 +175,9 @@ export const ts_spine_bun_backend_config = (
  * built package; this binary tests live source instead.)
  */
 export const ts_spine_deno_backend_config = (
-	options: TsSpineBackendConfigOptions = {},
+	options: TsSpineBackendConfigOptions = {}
 ): BackendConfig => {
-	const {port = TS_SPINE_DENO_DEFAULT_PORT, database_url, enable_login_rate_limit} = options;
+	const { port = TS_SPINE_DENO_DEFAULT_PORT, database_url, enable_login_rate_limit } = options;
 	const name = 'ts_spine_deno';
 	const paths = build_test_backend_paths(name);
 	return {
@@ -196,16 +196,16 @@ export const ts_spine_deno_backend_config = (
 				'--allow-run',
 				'--unstable-detect-cjs',
 				'--sloppy-imports',
-				TS_SPINE_DENO_ENTRY,
+				TS_SPINE_DENO_ENTRY
 			],
 			database_url,
 			paths,
 			extra_env: {
 				[TS_SPINE_DIR_ENV]: paths.root,
-				...login_rate_limit_env(enable_login_rate_limit),
+				...login_rate_limit_env(enable_login_rate_limit)
 			},
-			capabilities: ts_spine_capabilities,
+			capabilities: ts_spine_capabilities
 		}),
-		sse_path: SPINE_SSE_PATH,
+		sse_path: SPINE_SSE_PATH
 	};
 };

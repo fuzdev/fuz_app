@@ -16,21 +16,21 @@
  * @module
  */
 
-import {default_in_process_setup} from '$lib/testing/cross_backend/in_process_setup.ts';
-import {in_process_capabilities} from '$lib/testing/cross_backend/capabilities.ts';
-import {describe_ready_cross_tests} from '$lib/testing/cross_backend/ready.ts';
+import { default_in_process_setup } from '$lib/testing/cross_backend/in_process_setup.ts';
+import { in_process_capabilities } from '$lib/testing/cross_backend/capabilities.ts';
+import { describe_ready_cross_tests } from '$lib/testing/cross_backend/ready.ts';
 import {
 	create_spine_ready_route_spec,
-	spine_session_options,
+	spine_session_options
 } from '$lib/testing/cross_backend/default_spine_surface.ts';
-import {CELL_MIGRATION_NS} from '$lib/db/cell_ddl.ts';
-import {CELL_HISTORY_MIGRATION_NS} from '$lib/db/cell_history_ddl.ts';
-import {FACT_MIGRATION_NS} from '$lib/db/fact_ddl.ts';
+import { CELL_MIGRATION_NS } from '$lib/db/cell_ddl.ts';
+import { CELL_HISTORY_MIGRATION_NS } from '$lib/db/cell_history_ddl.ts';
+import { FACT_MIGRATION_NS } from '$lib/db/fact_ddl.ts';
 
 const setup_test = default_in_process_setup({
 	session_options: spine_session_options,
 	migration_namespaces: [CELL_MIGRATION_NS, CELL_HISTORY_MIGRATION_NS, FACT_MIGRATION_NS],
-	create_route_specs: () => [create_spine_ready_route_spec()],
+	create_route_specs: () => [create_spine_ready_route_spec()]
 });
 
-describe_ready_cross_tests({setup_test, capabilities: in_process_capabilities});
+describe_ready_cross_tests({ setup_test, capabilities: in_process_capabilities });

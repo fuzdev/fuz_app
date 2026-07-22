@@ -10,20 +10,20 @@
  * @module
  */
 
-import {inject} from 'vitest';
+import { inject } from 'vitest';
 
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import {
 	default_cross_process_setup,
-	reconstruct_bootstrapped_handle,
+	reconstruct_bootstrapped_handle
 } from '$lib/testing/cross_backend/setup.ts';
-import {describe_app_settings_cross_tests} from '$lib/testing/cross_backend/app_settings.ts';
+import { describe_app_settings_cross_tests } from '$lib/testing/cross_backend/app_settings.ts';
 
 import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 // The keeper needs `ROLE_ADMIN` to call the admin-gated `app_settings_update`.
-const setup_test = default_cross_process_setup(handle, {extra_keeper_roles: [ROLE_ADMIN]});
-const {capabilities, rpc_path} = handle.config;
+const setup_test = default_cross_process_setup(handle, { extra_keeper_roles: [ROLE_ADMIN] });
+const { capabilities, rpc_path } = handle.config;
 
-describe_app_settings_cross_tests({setup_test, capabilities, rpc_path});
+describe_app_settings_cross_tests({ setup_test, capabilities, rpc_path });

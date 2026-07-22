@@ -15,7 +15,7 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
 // TODO consider `.brand()` on Username and Email for compile-time safety
 
@@ -66,7 +66,7 @@ export const UsernameProvided = z
 	.min(1)
 	.max(USERNAME_PROVIDED_LENGTH_MAX)
 	.transform((s) => s.trim().toLowerCase())
-	.refine((s) => s.length > 0, {message: 'Username must not be empty after trimming whitespace'});
+	.refine((s) => s.length > 0, { message: 'Username must not be empty after trimming whitespace' });
 export type UsernameProvided = z.infer<typeof UsernameProvided>;
 
 /**
@@ -125,7 +125,7 @@ export const Email = z
 	.refine(
 		(s) => s.length <= EMAIL_LENGTH_MAX && utf8_encoder.encode(s).length <= EMAIL_LENGTH_MAX,
 		{
-			message: `Email must be at most ${EMAIL_LENGTH_MAX} bytes`,
-		},
+			message: `Email must be at most ${EMAIL_LENGTH_MAX} bytes`
+		}
 	);
 export type Email = z.infer<typeof Email>;

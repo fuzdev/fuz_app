@@ -10,24 +10,24 @@
  * @module
  */
 
-import {DEV} from 'esm-env';
-import type {MiddlewareHandler} from 'hono';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import { DEV } from 'esm-env';
+import type { MiddlewareHandler } from 'hono';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {type FsWriteDeps, type FsRemoveDeps, type EnvDeps} from '../runtime/deps.ts';
-import {write_file_atomic} from '../runtime/fs.ts';
-import {get_app_dir} from '../cli/config.ts';
-import {ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.ts';
-import {is_browser_context} from '../http/origin.ts';
-import {query_role_grant_find_account_id_for_role} from './role_grant_queries.ts';
-import type {QueryDeps} from '../db/query_deps.ts';
-import {ROLE_KEEPER} from './role_schema.ts';
+import { type FsWriteDeps, type FsRemoveDeps, type EnvDeps } from '../runtime/deps.ts';
+import { write_file_atomic } from '../runtime/fs.ts';
+import { get_app_dir } from '../cli/config.ts';
+import { ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY } from '../hono_context.ts';
+import { is_browser_context } from '../http/origin.ts';
+import { query_role_grant_find_account_id_for_role } from './role_grant_queries.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
+import { ROLE_KEEPER } from './role_schema.ts';
 import {
 	DaemonToken,
 	DAEMON_TOKEN_HEADER,
 	generate_daemon_token,
 	validate_daemon_token,
-	type DaemonTokenState,
+	type DaemonTokenState
 } from './daemon_token.ts';
 
 /** Default rotation interval in milliseconds (30 seconds). */
@@ -49,7 +49,7 @@ export type DaemonTokenWriteDeps = Pick<EnvDeps, 'env_get'> &
  */
 export const get_daemon_token_path = (
 	runtime: Pick<EnvDeps, 'env_get'>,
-	name: string,
+	name: string
 ): string | null => {
 	const app_dir = get_app_dir(runtime, name);
 	return app_dir ? `${app_dir}/run/daemon_token` : null;
@@ -73,9 +73,9 @@ export const get_daemon_token_path = (
 export const write_daemon_token = async (
 	runtime: DaemonTokenWriteDeps,
 	token_path: string,
-	token: string,
+	token: string
 ): Promise<void> => {
-	await write_file_atomic(runtime, token_path, JSON.stringify({token}) + '\n');
+	await write_file_atomic(runtime, token_path, JSON.stringify({ token }) + '\n');
 	if (runtime.chmod) {
 		await runtime.chmod(token_path, 0o600);
 	}
@@ -139,14 +139,14 @@ export const start_daemon_token_rotation = async (
 	runtime: DaemonTokenWriteDeps & FsRemoveDeps,
 	deps: QueryDeps,
 	options: DaemonTokenRotationOptions,
-	log: Logger,
+	log: Logger
 ): Promise<DaemonTokenRotation> => {
-	const {token_path, rotation_interval_ms = DEFAULT_ROTATION_INTERVAL_MS} = options;
+	const { token_path, rotation_interval_ms = DEFAULT_ROTATION_INTERVAL_MS } = options;
 
 	// ensure parent directory exists
 	const last_slash = token_path.lastIndexOf('/');
 	if (last_slash > 0) {
-		await runtime.mkdir(token_path.slice(0, last_slash), {recursive: true});
+		await runtime.mkdir(token_path.slice(0, last_slash), { recursive: true });
 	}
 
 	// resolve keeper account (may be null pre-bootstrap; the middleware
@@ -162,7 +162,7 @@ export const start_daemon_token_rotation = async (
 		current_token: initial_token,
 		previous_token: null,
 		rotated_at: new Date(),
-		keeper_account_id,
+		keeper_account_id
 	};
 
 	let writing = false;
@@ -192,7 +192,7 @@ export const start_daemon_token_rotation = async (
 		}
 	};
 
-	return {state, stop};
+	return { state, stop };
 };
 
 /**
@@ -235,7 +235,7 @@ export const start_daemon_token_rotation = async (
 export const create_daemon_token_middleware = (
 	state: DaemonTokenState,
 	deps: QueryDeps,
-	log: Logger,
+	log: Logger
 ): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
 		const token_header = c.req.header(DAEMON_TOKEN_HEADER);

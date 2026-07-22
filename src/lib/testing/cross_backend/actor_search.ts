@@ -35,14 +35,14 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
 import {
 	actor_search_action_spec,
-	ERROR_ACTOR_SEARCH_SCOPE_REQUIRED,
+	ERROR_ACTOR_SEARCH_SCOPE_REQUIRED
 } from '../../auth/actor_search_action_specs.ts';
-import type {RpcPathCrossSuiteOptions} from './setup.ts';
-import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
+import type { RpcPathCrossSuiteOptions } from './setup.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** Options for the actor-search parity suite (the standard RPC-dispatched shape). */
 export type ActorSearchCrossTestOptions = RpcPathCrossSuiteOptions;
@@ -52,10 +52,10 @@ const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
 /** Build the JSON-RPC envelope body for an `actor_search` call. */
 const search_envelope = (params: Record<string, unknown>, id: string): string =>
-	JSON.stringify({jsonrpc: '2.0', method: actor_search_action_spec.method, params, id});
+	JSON.stringify({ jsonrpc: '2.0', method: actor_search_action_spec.method, params, id });
 
 export const describe_actor_search_cross_tests = (options: ActorSearchCrossTestOptions): void => {
-	const {setup_test} = options;
+	const { setup_test } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
 	describe('actor_search parity', () => {
@@ -63,8 +63,8 @@ export const describe_actor_search_cross_tests = (options: ActorSearchCrossTestO
 			const fixture = await setup_test();
 			const res = await fixture.fresh_transport()(rpc_path, {
 				method: 'POST',
-				headers: {'content-type': 'application/json'},
-				body: search_envelope({query: 'a'}, 'anon-search'),
+				headers: { 'content-type': 'application/json' },
+				body: search_envelope({ query: 'a' }, 'anon-search')
 			});
 			assert.strictEqual(res.status, 401, 'unauthenticated actor_search must be refused');
 		});
@@ -74,15 +74,15 @@ export const describe_actor_search_cross_tests = (options: ActorSearchCrossTestO
 			const account = await fixture.create_account();
 			const res = await fixture.fresh_transport()(rpc_path, {
 				method: 'POST',
-				headers: {...account.create_session_headers(), 'content-type': 'application/json'},
-				body: search_envelope({query: 'a'}, 'nonadmin-noscope'),
+				headers: { ...account.create_session_headers(), 'content-type': 'application/json' },
+				body: search_envelope({ query: 'a' }, 'nonadmin-noscope')
 			});
 			assert.strictEqual(res.status, 400, 'non-admin unbounded search must be rejected');
-			const body = (await res.json()) as {error?: {data?: {reason?: unknown}}};
+			const body = (await res.json()) as { error?: { data?: { reason?: unknown } } };
 			assert.strictEqual(
 				body.error?.data?.reason,
 				ERROR_ACTOR_SEARCH_SCOPE_REQUIRED,
-				'rejection carries the scope-required reason',
+				'rejection carries the scope-required reason'
 			);
 		});
 
@@ -91,11 +91,11 @@ export const describe_actor_search_cross_tests = (options: ActorSearchCrossTestO
 			const account = await fixture.create_account();
 			const res = await fixture.fresh_transport()(rpc_path, {
 				method: 'POST',
-				headers: {...account.create_session_headers(), 'content-type': 'application/json'},
-				body: search_envelope({query: 'a', scope_ids: [NIL_UUID]}, 'nonadmin-scope'),
+				headers: { ...account.create_session_headers(), 'content-type': 'application/json' },
+				body: search_envelope({ query: 'a', scope_ids: [NIL_UUID] }, 'nonadmin-scope')
 			});
 			assert.strictEqual(res.status, 200, 'non-admin with a scope filter is allowed');
-			const body = (await res.json()) as {result?: {actors?: unknown}};
+			const body = (await res.json()) as { result?: { actors?: unknown } };
 			assert(Array.isArray(body.result?.actors), 'response carries an actors array');
 		});
 
@@ -103,11 +103,11 @@ export const describe_actor_search_cross_tests = (options: ActorSearchCrossTestO
 			const fixture = await setup_test();
 			const res = await fixture.transport(rpc_path, {
 				method: 'POST',
-				headers: {...fixture.create_session_headers(), 'content-type': 'application/json'},
-				body: search_envelope({query: 'a'}, 'admin-noscope'),
+				headers: { ...fixture.create_session_headers(), 'content-type': 'application/json' },
+				body: search_envelope({ query: 'a' }, 'admin-noscope')
 			});
 			assert.strictEqual(res.status, 200, 'admin unbounded search is allowed');
-			const body = (await res.json()) as {result?: {actors?: unknown}};
+			const body = (await res.json()) as { result?: { actors?: unknown } };
 			assert(Array.isArray(body.result?.actors), 'response carries an actors array');
 		});
 	});

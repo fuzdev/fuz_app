@@ -4,18 +4,18 @@
  * @module
  */
 
-import {DEV} from 'esm-env';
+import { DEV } from 'esm-env';
 
 import {
 	ThrownJsonrpcError,
 	jsonrpc_error_messages,
 	http_status_to_jsonrpc_error_code,
-	UNKNOWN_ERROR_MESSAGE,
+	UNKNOWN_ERROR_MESSAGE
 } from '../http/jsonrpc_errors.ts';
 import {
 	create_jsonrpc_error_response,
 	to_jsonrpc_message_id,
-	is_jsonrpc_error_response,
+	is_jsonrpc_error_response
 } from '../http/jsonrpc_helpers.ts';
 import type {
 	JsonrpcMessageFromClientToServer,
@@ -23,9 +23,9 @@ import type {
 	JsonrpcNotification,
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
-	JsonrpcErrorResponse,
+	JsonrpcErrorResponse
 } from '../http/jsonrpc.ts';
-import type {Transport, TransportSendOptions} from './transports.ts';
+import type { Transport, TransportSendOptions } from './transports.ts';
 
 /**
  * Thin `fetch` adapter for the JSON-RPC endpoint. POST by default; GET when
@@ -44,24 +44,24 @@ export class FrontendHttpTransport implements Transport {
 	constructor(
 		url: string,
 		headers?: Record<string, string>,
-		has_side_effects?: (method: string) => boolean,
+		has_side_effects?: (method: string) => boolean
 	) {
 		this.#url = url;
-		this.#headers = headers ?? {'content-type': 'application/json', accept: 'application/json'};
+		this.#headers = headers ?? { 'content-type': 'application/json', accept: 'application/json' };
 		this.#has_side_effects = has_side_effects;
 	}
 
 	async send(
 		message: JsonrpcRequest,
-		options?: TransportSendOptions,
+		options?: TransportSendOptions
 	): Promise<JsonrpcResponseOrError>;
 	async send(
 		message: JsonrpcNotification,
-		options?: TransportSendOptions,
+		options?: TransportSendOptions
 	): Promise<JsonrpcErrorResponse | null>;
 	async send(
 		message: JsonrpcMessageFromClientToServer,
-		options?: TransportSendOptions,
+		options?: TransportSendOptions
 	): Promise<JsonrpcMessageFromServerToClient | null> {
 		const signal = options?.signal;
 		try {
@@ -78,14 +78,14 @@ export class FrontendHttpTransport implements Transport {
 				response = await fetch(`${this.#url}${separator}${search_params.toString()}`, {
 					method: 'GET',
 					headers: this.#headers,
-					signal,
+					signal
 				});
 			} else {
 				response = await fetch(this.#url, {
 					method: 'POST',
 					headers: this.#headers,
 					body: JSON.stringify(message),
-					signal,
+					signal
 				});
 			}
 
@@ -96,7 +96,7 @@ export class FrontendHttpTransport implements Transport {
 			if (!response.ok) {
 				return create_jsonrpc_error_response(to_jsonrpc_message_id(message), {
 					code: http_status_to_jsonrpc_error_code(response.status),
-					message: `HTTP error: ${response.status} ${response.statusText}`,
+					message: `HTTP error: ${response.status} ${response.statusText}`
 				});
 			}
 
@@ -110,7 +110,7 @@ export class FrontendHttpTransport implements Transport {
 						`[http_transport] JSON-RPC error code mismatch: got ${actual_code} but ${
 							response.status
 						} should map to ${expected_code}`,
-						result,
+						result
 					);
 				}
 			}
@@ -121,14 +121,14 @@ export class FrontendHttpTransport implements Transport {
 				return create_jsonrpc_error_response(to_jsonrpc_message_id(message), {
 					code: error.code,
 					message: error.message,
-					data: error.data,
+					data: error.data
 				});
 			}
 			return create_jsonrpc_error_response(
 				to_jsonrpc_message_id(message),
 				jsonrpc_error_messages.internal_error('error sending request', {
-					error: (error as Error).message || UNKNOWN_ERROR_MESSAGE,
-				}),
+					error: (error as Error).message || UNKNOWN_ERROR_MESSAGE
+				})
 			);
 		}
 	}

@@ -4,9 +4,9 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
+import { describe, assert, test } from 'vitest';
 
-import {create_keyring, validate_keyring, create_validated_keyring} from '$lib/auth/keyring.ts';
+import { create_keyring, validate_keyring, create_validated_keyring } from '$lib/auth/keyring.ts';
 
 const TEST_KEY = 'test-secret-key-that-is-at-least-32-chars';
 const OTHER_KEY = 'other-secret-key-that-is-different-32ch';
@@ -105,7 +105,7 @@ describe('Keyring.verify', () => {
 			['long value', 'x'.repeat(1000)],
 			['special chars', '!@#$%^&*()'],
 			['whitespace', '  spaces  '],
-			['newlines', 'line1\nline2'],
+			['newlines', 'line1\nline2']
 		] as const;
 
 		test.each(SPECIAL_VALUES)('handles %s: %s', async (_name, value) => {
@@ -198,7 +198,7 @@ describe('Keyring.verify', () => {
 describe('concurrent access', () => {
 	test('concurrent sign calls return consistent results', async () => {
 		const keyring = create_keyring(TEST_KEY)!;
-		const promises = Array.from({length: 10}, () => keyring.sign('concurrent'));
+		const promises = Array.from({ length: 10 }, () => keyring.sign('concurrent'));
 		const results = await Promise.all(promises);
 		// All results should be identical (deterministic + cached key)
 		assert.strictEqual(new Set(results).size, 1);
@@ -207,10 +207,10 @@ describe('concurrent access', () => {
 	test('concurrent verify calls all succeed', async () => {
 		const keyring = create_keyring(TEST_KEY)!;
 		const signed = await keyring.sign('test');
-		const promises = Array.from({length: 10}, () => keyring.verify(signed));
+		const promises = Array.from({ length: 10 }, () => keyring.verify(signed));
 		const results = await Promise.all(promises);
 		for (const result of results) {
-			assert.deepEqual(result, {value: 'test', key_index: 0});
+			assert.deepEqual(result, { value: 'test', key_index: 0 });
 		}
 	});
 
@@ -223,14 +223,14 @@ describe('concurrent access', () => {
 			keyring.sign('new1'),
 			keyring.verify(old_signed),
 			keyring.sign('new2'),
-			keyring.verify(old_signed),
+			keyring.verify(old_signed)
 		];
 		const [signed1, verified1, signed2, verified2] = await Promise.all(promises);
 
 		assert.ok(signed1);
 		assert.ok(signed2);
-		assert.deepEqual(verified1, {value: 'old', key_index: 1});
-		assert.deepEqual(verified2, {value: 'old', key_index: 1});
+		assert.deepEqual(verified1, { value: 'old', key_index: 1 });
+		assert.deepEqual(verified2, { value: 'old', key_index: 1 });
 	});
 });
 
@@ -239,7 +239,7 @@ describe('key rotation', () => {
 		const keyring = create_keyring(`${TEST_KEY}__${OTHER_KEY}`)!;
 		const signed = await keyring.sign('test');
 		const result = await keyring.verify(signed);
-		assert.deepEqual(result, {value: 'test', key_index: 0});
+		assert.deepEqual(result, { value: 'test', key_index: 0 });
 	});
 
 	test('returns key_index 1 when signed with old key', async () => {
@@ -248,7 +248,7 @@ describe('key rotation', () => {
 
 		const new_keyring = create_keyring(`${TEST_KEY}__${OTHER_KEY}`)!;
 		const result = await new_keyring.verify(signed);
-		assert.deepEqual(result, {value: 'test', key_index: 1});
+		assert.deepEqual(result, { value: 'test', key_index: 1 });
 	});
 
 	test('returns null when no key matches', async () => {

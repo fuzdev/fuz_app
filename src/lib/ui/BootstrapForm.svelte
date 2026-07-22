@@ -12,18 +12,18 @@
 	 * @module
 	 */
 
-	import {goto} from '$app/navigation';
-	import {resolve} from '$app/paths';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
-	import {autofocus} from '@fuzdev/fuz_ui/autofocus.svelte.ts';
+	import { autofocus } from '@fuzdev/fuz_ui/autofocus.svelte.ts';
 
-	import {Username} from '../primitive_schemas.ts';
-	import {PASSWORD_LENGTH_MIN} from '../auth/password.ts';
-	import {auth_state_context} from './auth_state.svelte.ts';
-	import {FormState} from './form_state.svelte.ts';
+	import { Username } from '../primitive_schemas.ts';
+	import { PASSWORD_LENGTH_MIN } from '../auth/password.ts';
+	import { auth_state_context } from './auth_state.svelte.ts';
+	import { FormState } from './form_state.svelte.ts';
 
 	const {
-		redirect_on_bootstrap = resolve('/'),
+		redirect_on_bootstrap = resolve('/')
 	}: {
 		/**
 		 * Path to navigate to after the first-keeper account is created.
@@ -48,7 +48,7 @@
 			username_valid &&
 			password.length >= PASSWORD_LENGTH_MIN &&
 			passwords_match &&
-			!auth_state.verifying,
+			!auth_state.verifying
 	);
 
 	const handle_bootstrap = async (): Promise<void> => {

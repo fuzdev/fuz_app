@@ -50,11 +50,11 @@ Three credential types with privilege ceilings enforced by credential type — n
 just by role_grant existence. A session cookie with a keeper role_grant cannot exercise
 keeper routes; only a daemon token can.
 
-| Credential     | How obtained                          | Max privilege |
-| -------------- | ------------------------------------- | ------------- |
-| Session cookie | Login form (browser only)             | admin         |
+| Credential     | How obtained                                  | Max privilege |
+| -------------- | --------------------------------------------- | ------------- |
+| Session cookie | Login form (browser only)                     | admin         |
 | API token      | `account_token_create` RPC (CLI/programmatic) | admin         |
-| Daemon token   | Filesystem (operator-only)            | keeper        |
+| Daemon token   | Filesystem (operator-only)                    | keeper        |
 
 Session cookies and API tokens can grant admin-level access. Only a daemon token
 — which requires local filesystem access — can reach keeper-level operations
@@ -143,7 +143,7 @@ legitimate operator.
 **Hardening layers**:
 
 - **Atomic DB lock**: `bootstrap_lock` single-row latch prevents TOCTOU races —
-  the UPDATE-guarded latch is the *single* account-creation signal. An earlier
+  the UPDATE-guarded latch is the _single_ account-creation signal. An earlier
   belt-and-suspenders `query_account_has_any` check inside the transaction was
   removed as redundant once both the production and test writers came to flip
   the same lock row; direct DB tampering with `bootstrap_lock` is out of scope
@@ -215,7 +215,7 @@ Rotating filesystem credential for keeper-level operations:
   fields (rotated_at, version) without changing every reader; matched by
   the Rust spine writer (`fuz_auth::write_token_file`) for wire parity
 - **Mode `0600` is not guaranteed.** The write applies it only when the runtime
-  supplies the *optional* `chmod` dependency, and neither the standard Node nor
+  supplies the _optional_ `chmod` dependency, and neither the standard Node nor
   the standard Deno `RuntimeDeps` factory does — so under an ordinary runtime the
   file lands at whatever the process umask allows. A consumer that stores a
   keeper-equivalent credential must wire `chmod` explicitly, or place the file
@@ -475,7 +475,7 @@ a handler cannot revoke a role_grant belonging to a different actor. The same
 lookup to avoid disclosing whether an offer id exists.
 
 The 404 mask is scoped to **cross-principal** disclosure. An offer that exists
-on the **caller's own account** but is targeted to a *different actor* (a sibling
+on the **caller's own account** but is targeted to a _different actor_ (a sibling
 persona) is refused with **403** `role_grant_offer_actor_mismatch`, not masked to
 404 — every actor in that distinction belongs to the one account already
 authenticated, so the 403 leaks nothing across a trust boundary, and masking it
@@ -568,7 +568,7 @@ Two code paths, one invariant:
   grants where the recipient should opt in (classroom membership, future
   workspace invites) use the offer flow.
 - **Immediate assign** (`role_grant_assign`) — the admin-only direct web path,
-  for a capability *unlock* where waiting on consent is the wrong model ("you
+  for a capability _unlock_ where waiting on consent is the wrong model ("you
   may now post"). It runs the same admin-grant-path gate and the same
   idempotent write as the offer flow, but skips the offer — no row for the
   grantee to accept. Its safeguards are **admin-only conferral** (no
@@ -744,7 +744,7 @@ an attacker-controlled path.
 **X-Accel facts location must be `internal;` (fail-loud at boot).** The
 `X-Accel-Redirect` path's confidentiality depends on the nginx facts `location`
 being marked `internal;` — only the authz'd handler's internal redirect may
-reach it. A *public* facts location would serve any fact's bytes to anyone who
+reach it. A _public_ facts location would serve any fact's bytes to anyone who
 guesses the `<shard>/<rest>` path, bypassing every cell-visibility check. The
 redirect prefix is therefore gated behind a validated `XAccelConfig`
 (`server/x_accel.ts`): it can only be constructed via `create_x_accel_config`,
@@ -916,7 +916,7 @@ enables nginx-level caching for immutable SvelteKit assets (`/_app`).
 required security properties. Add to deploy scripts:
 
 ```typescript
-import {validate_nginx_config} from '@fuzdev/fuz_app/server/validate_nginx.ts';
+import { validate_nginx_config } from '@fuzdev/fuz_app/server/validate_nginx.ts';
 
 const result = validate_nginx_config(NGINX_CONFIG);
 if (!result.ok) throw new Error(result.errors.join('\n'));
@@ -1048,11 +1048,11 @@ is required and each intermediate proxy must be in `trusted_proxies`.
 
 ## Audit Logging
 
-All auth mutations *attempt* a fire-and-forget audit write (never blocks or breaks
+All auth mutations _attempt_ a fire-and-forget audit write (never blocks or breaks
 auth flows). Delivery is **best-effort, not durable**: a failed insert is caught
 and logged, not retried — the mutation still succeeds and no audit row exists for
 that event. Listeners (the audit SSE stream, the socket-revocation listeners) are
-notified only *after* a successful insert, so an audit outage also suppresses the
+notified only _after_ a successful insert, so an audit outage also suppresses the
 security reactions chained off it. Enforcement that must survive an audit failure
 cannot be built on the listener path alone.
 The audit log's identity columns (`actor_id`, `account_id`, `target_account_id`,

@@ -11,7 +11,7 @@
  * @module
  */
 
-import type {RoleGrantOfferJson} from '$lib/auth/role_grant_offer_schema.ts';
+import type { RoleGrantOfferJson } from '$lib/auth/role_grant_offer_schema.ts';
 
 /** Build a default-shaped `RoleGrantOfferJson` for stubs; override any field. */
 export const make_offer = (overrides: Partial<RoleGrantOfferJson> = {}): RoleGrantOfferJson => ({
@@ -31,5 +31,5 @@ export const make_offer = (overrides: Partial<RoleGrantOfferJson> = {}): RoleGra
 	retracted_at: null,
 	superseded_at: null,
 	resulting_role_grant_id: null,
-	...overrides,
+	...overrides
 });

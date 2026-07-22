@@ -29,11 +29,11 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
-import {JsonrpcRequestId} from '../http/jsonrpc.ts';
-import type {RemoteNotificationActionSpec} from './action_spec.ts';
-import type {Action} from './action_types.ts';
+import { JsonrpcRequestId } from '../http/jsonrpc.ts';
+import type { RemoteNotificationActionSpec } from './action_spec.ts';
+import type { Action } from './action_types.ts';
 
 /**
  * Params for the `cancel` notification. `request_id` is the id of the
@@ -41,7 +41,7 @@ import type {Action} from './action_types.ts';
  * same socket; cancels from other sockets (or for unknown ids) are ignored.
  */
 export const CancelNotificationParams = z.strictObject({
-	request_id: JsonrpcRequestId,
+	request_id: JsonrpcRequestId
 });
 export type CancelNotificationParams = z.infer<typeof CancelNotificationParams>;
 
@@ -63,7 +63,7 @@ export const cancel_action_spec = {
 	output: z.void(),
 	async: true,
 	description:
-		'Client-initiated cancellation of an in-flight request by id. Dispatcher-handled: aborts the ctx.signal of the matching pending request on the same socket. Unknown or completed ids no-op.',
+		'Client-initiated cancellation of an in-flight request by id. Dispatcher-handled: aborts the ctx.signal of the matching pending request on the same socket. Unknown or completed ids no-op.'
 } satisfies RemoteNotificationActionSpec;
 
 /**
@@ -84,5 +84,5 @@ export const cancel_handler = (): void => {};
  */
 export const cancel_action: Action = {
 	spec: cancel_action_spec,
-	handler: cancel_handler,
+	handler: cancel_handler
 };

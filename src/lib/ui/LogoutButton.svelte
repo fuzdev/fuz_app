@@ -8,10 +8,10 @@
 	 * @module
 	 */
 
-	import type {ComponentProps, Snippet} from 'svelte';
+	import type { ComponentProps, Snippet } from 'svelte';
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
 
-	import {auth_state_context} from './auth_state.svelte.ts';
+	import { auth_state_context } from './auth_state.svelte.ts';
 
 	const {
 		onclick,

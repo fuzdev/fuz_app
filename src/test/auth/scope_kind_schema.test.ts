@@ -4,9 +4,9 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
+import { describe, assert, test } from 'vitest';
 
-import {create_scope_kind_schema, ScopeKindName} from '$lib/auth/scope_kind_schema.ts';
+import { create_scope_kind_schema, ScopeKindName } from '$lib/auth/scope_kind_schema.ts';
 
 describe('ScopeKindName regex', () => {
 	test('accepts valid lowercase names', () => {
@@ -32,9 +32,9 @@ describe('ScopeKindName regex', () => {
 
 describe('create_scope_kind_schema', () => {
 	test('builds schema from consumer kinds', () => {
-		const {ScopeKind, scope_kinds} = create_scope_kind_schema({
-			classroom: {description: 'A classroom.'},
-			tenant: {},
+		const { ScopeKind, scope_kinds } = create_scope_kind_schema({
+			classroom: { description: 'A classroom.' },
+			tenant: {}
 		});
 		assert.ok(ScopeKind.safeParse('classroom').success);
 		assert.ok(ScopeKind.safeParse('tenant').success);
@@ -45,19 +45,19 @@ describe('create_scope_kind_schema', () => {
 	});
 
 	test('empty registry produces a schema that rejects every input', () => {
-		const {ScopeKind, scope_kinds} = create_scope_kind_schema({});
+		const { ScopeKind, scope_kinds } = create_scope_kind_schema({});
 		assert.strictEqual(scope_kinds.size, 0);
 		assert.ok(!ScopeKind.safeParse('classroom').success);
 		assert.ok(!ScopeKind.safeParse('').success);
 	});
 
 	test('rejects invalid scope-kind names at construction', () => {
-		assert.throws(() => create_scope_kind_schema({'': {}}), /Invalid scope-kind name/);
-		assert.throws(() => create_scope_kind_schema({Classroom: {}}), /Invalid scope-kind name/);
-		assert.throws(() => create_scope_kind_schema({GLOBAL: {}}), /Invalid scope-kind name/);
-		assert.throws(() => create_scope_kind_schema({_leading: {}}), /Invalid scope-kind name/);
-		assert.throws(() => create_scope_kind_schema({trailing_: {}}), /Invalid scope-kind name/);
-		assert.throws(() => create_scope_kind_schema({'has-dash': {}}), /Invalid scope-kind name/);
-		assert.throws(() => create_scope_kind_schema({'has.dot': {}}), /Invalid scope-kind name/);
+		assert.throws(() => create_scope_kind_schema({ '': {} }), /Invalid scope-kind name/);
+		assert.throws(() => create_scope_kind_schema({ Classroom: {} }), /Invalid scope-kind name/);
+		assert.throws(() => create_scope_kind_schema({ GLOBAL: {} }), /Invalid scope-kind name/);
+		assert.throws(() => create_scope_kind_schema({ _leading: {} }), /Invalid scope-kind name/);
+		assert.throws(() => create_scope_kind_schema({ trailing_: {} }), /Invalid scope-kind name/);
+		assert.throws(() => create_scope_kind_schema({ 'has-dash': {} }), /Invalid scope-kind name/);
+		assert.throws(() => create_scope_kind_schema({ 'has.dot': {} }), /Invalid scope-kind name/);
 	});
 });

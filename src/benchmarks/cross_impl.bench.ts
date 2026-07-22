@@ -21,27 +21,27 @@
  * @module
  */
 
-import {writeFileSync} from 'node:fs';
+import { writeFileSync } from 'node:fs';
 
 import {
 	compare_cross_impl,
 	format_cross_impl_comparison,
 	format_cross_impl_json,
-	format_cross_impl_markdown,
+	format_cross_impl_markdown
 } from '../lib/testing/cross_backend/bench/bench_report.ts';
-import {run_cross_impl_bench} from '../lib/testing/cross_backend/bench/run_cross_impl_bench.ts';
-import {default_bench_scenarios} from '../lib/testing/cross_backend/bench/scenario.ts';
-import type {BackendConfig} from '../lib/testing/cross_backend/backend_config.ts';
-import {bootstrap_backend} from '../lib/testing/cross_backend/bootstrap_backend.ts';
-import type {BootstrappedBackendHandle} from '../lib/testing/cross_backend/setup.ts';
+import { run_cross_impl_bench } from '../lib/testing/cross_backend/bench/run_cross_impl_bench.ts';
+import { default_bench_scenarios } from '../lib/testing/cross_backend/bench/scenario.ts';
+import type { BackendConfig } from '../lib/testing/cross_backend/backend_config.ts';
+import { bootstrap_backend } from '../lib/testing/cross_backend/bootstrap_backend.ts';
+import type { BootstrappedBackendHandle } from '../lib/testing/cross_backend/setup.ts';
 import {
 	RUST_SPINE_STUB_BIN_ENV,
-	rust_spine_stub_backend_config,
+	rust_spine_stub_backend_config
 } from '../lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 import {
 	ts_spine_bun_backend_config,
 	ts_spine_deno_backend_config,
-	ts_spine_node_backend_config,
+	ts_spine_node_backend_config
 } from '../lib/testing/cross_backend/ts_spine_backend_config.ts';
 
 const ARTIFACT_PATH = 'src/benchmarks/cross_impl.latest.json';
@@ -50,7 +50,7 @@ const REFERENCE_BACKEND = 'ts_spine_node';
 const configs: Array<BackendConfig> = [
 	ts_spine_node_backend_config(),
 	ts_spine_deno_backend_config(),
-	ts_spine_bun_backend_config(),
+	ts_spine_bun_backend_config()
 ];
 
 // Include the Rust spine only when its prebuilt binary is available — keeps
@@ -69,11 +69,11 @@ try {
 		handles.push(await bootstrap_backend(config));
 	}
 
-	const result = await run_cross_impl_bench({handles, scenarios: default_bench_scenarios});
+	const result = await run_cross_impl_bench({ handles, scenarios: default_bench_scenarios });
 
 	console.log(`\n${format_cross_impl_markdown(result)}\n`);
 	console.log(
-		format_cross_impl_comparison(compare_cross_impl(result, {reference: REFERENCE_BACKEND})),
+		format_cross_impl_comparison(compare_cross_impl(result, { reference: REFERENCE_BACKEND }))
 	);
 
 	writeFileSync(ARTIFACT_PATH, `${format_cross_impl_json(result)}\n`);

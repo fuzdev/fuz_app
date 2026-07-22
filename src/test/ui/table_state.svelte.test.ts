@@ -6,14 +6,14 @@
  * @module
  */
 
-import {describe, test, assert, vi, beforeEach, afterEach} from 'vitest';
+import { describe, test, assert, vi, beforeEach, afterEach } from 'vitest';
 
-import {TableState, TABLE_LIMIT_MAX} from '$lib/ui/table_state.svelte.ts';
+import { TableState, TABLE_LIMIT_MAX } from '$lib/ui/table_state.svelte.ts';
 
 const json_response = (body: unknown, status = 200): Response =>
 	new Response(JSON.stringify(body), {
 		status,
-		headers: {'Content-Type': 'application/json'},
+		headers: { 'Content-Type': 'application/json' }
 	});
 
 let fetch_mock: ReturnType<typeof vi.fn>;
@@ -29,9 +29,9 @@ afterEach(() => {
 
 describe('TableState.fetch', () => {
 	test('populates rows, columns, and total on success', async () => {
-		const columns = [{name: 'id', type: 'uuid'}];
-		const rows = [{id: '1'}, {id: '2'}];
-		fetch_mock.mockResolvedValueOnce(json_response({columns, rows, total: 2, primary_key: 'id'}));
+		const columns = [{ name: 'id', type: 'uuid' }];
+		const rows = [{ id: '1' }, { id: '2' }];
+		fetch_mock.mockResolvedValueOnce(json_response({ columns, rows, total: 2, primary_key: 'id' }));
 
 		const state = new TableState();
 		await state.fetch('accounts');
@@ -45,7 +45,7 @@ describe('TableState.fetch', () => {
 	});
 
 	test('sets error on non-ok response', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({error: 'table_not_found'}, 404));
+		fetch_mock.mockResolvedValueOnce(json_response({ error: 'table_not_found' }, 404));
 
 		const state = new TableState();
 		await state.fetch('nonexistent');
@@ -54,7 +54,7 @@ describe('TableState.fetch', () => {
 	});
 
 	test('fetches from correct endpoint with query params', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({columns: [], rows: [], total: 0}));
+		fetch_mock.mockResolvedValueOnce(json_response({ columns: [], rows: [], total: 0 }));
 
 		const state = new TableState();
 		await state.fetch('accounts', 50, 25);
@@ -66,7 +66,7 @@ describe('TableState.fetch', () => {
 	});
 
 	test('clamps limit to TABLE_LIMIT_MAX', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({columns: [], rows: [], total: 0}));
+		fetch_mock.mockResolvedValueOnce(json_response({ columns: [], rows: [], total: 0 }));
 
 		const state = new TableState();
 		await state.fetch('accounts', 0, TABLE_LIMIT_MAX + 1000);
@@ -75,7 +75,7 @@ describe('TableState.fetch', () => {
 	});
 
 	test('clamps limit minimum to 1', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({columns: [], rows: [], total: 0}));
+		fetch_mock.mockResolvedValueOnce(json_response({ columns: [], rows: [], total: 0 }));
 
 		const state = new TableState();
 		await state.fetch('accounts', 0, 0);
@@ -84,7 +84,7 @@ describe('TableState.fetch', () => {
 	});
 
 	test('clamps negative limit to 1', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({columns: [], rows: [], total: 0}));
+		fetch_mock.mockResolvedValueOnce(json_response({ columns: [], rows: [], total: 0 }));
 
 		const state = new TableState();
 		await state.fetch('accounts', 0, -10);
@@ -93,7 +93,7 @@ describe('TableState.fetch', () => {
 	});
 
 	test('loading is false after fetch completes', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({columns: [], rows: [], total: 0}));
+		fetch_mock.mockResolvedValueOnce(json_response({ columns: [], rows: [], total: 0 }));
 
 		const state = new TableState();
 		await state.fetch('accounts');
@@ -102,7 +102,7 @@ describe('TableState.fetch', () => {
 	});
 
 	test('sets error_data on non-ok response', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({error: 'table_not_found'}, 404));
+		fetch_mock.mockResolvedValueOnce(json_response({ error: 'table_not_found' }, 404));
 
 		const state = new TableState();
 		await state.fetch('nonexistent');
@@ -166,7 +166,7 @@ describe('TableState pagination', () => {
 		const state = new TableState();
 		state.total = 100;
 		state.offset = 90;
-		state.rows = Array.from({length: 10}, (_, i) => ({id: String(i)}));
+		state.rows = Array.from({ length: 10 }, (_, i) => ({ id: String(i) }));
 		assert.strictEqual(state.showing_end, 100);
 	});
 
@@ -203,14 +203,14 @@ describe('TableState.delete_row', () => {
 	test('returns false if no primary_key', async () => {
 		const state = new TableState();
 		state.primary_key = null;
-		const result = await state.delete_row({id: '1'});
+		const result = await state.delete_row({ id: '1' });
 		assert.strictEqual(result, false);
 	});
 
 	test('returns false if pk value is null', async () => {
 		const state = new TableState();
 		state.primary_key = 'id';
-		const result = await state.delete_row({id: null});
+		const result = await state.delete_row({ id: null });
 		assert.strictEqual(result, false);
 	});
 
@@ -222,15 +222,15 @@ describe('TableState.delete_row', () => {
 	});
 
 	test('removes row from local state on successful delete', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({ok: true}));
+		fetch_mock.mockResolvedValueOnce(json_response({ ok: true }));
 
 		const state = new TableState();
 		state.table_name = 'accounts';
 		state.primary_key = 'id';
-		state.rows = [{id: '1'}, {id: '2'}];
+		state.rows = [{ id: '1' }, { id: '2' }];
 		state.total = 2;
 
-		const result = await state.delete_row({id: '1'});
+		const result = await state.delete_row({ id: '1' });
 
 		assert.strictEqual(result, true);
 		assert.strictEqual(state.rows.length, 1);
@@ -240,57 +240,57 @@ describe('TableState.delete_row', () => {
 
 	test('sets delete_error on failure', async () => {
 		fetch_mock.mockResolvedValueOnce(
-			json_response({error: 'foreign_key_violation', detail: 'referenced by sessions'}, 409),
+			json_response({ error: 'foreign_key_violation', detail: 'referenced by sessions' }, 409)
 		);
 
 		const state = new TableState();
 		state.table_name = 'accounts';
 		state.primary_key = 'id';
-		state.rows = [{id: '1'}];
+		state.rows = [{ id: '1' }];
 
-		const result = await state.delete_row({id: '1'});
+		const result = await state.delete_row({ id: '1' });
 
 		assert.strictEqual(result, false);
 		assert.strictEqual(state.delete_error, 'foreign_key_violation: referenced by sessions');
 	});
 
 	test('sets delete_error with fallback when error field is missing', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({detail: 'something went wrong'}, 500));
+		fetch_mock.mockResolvedValueOnce(json_response({ detail: 'something went wrong' }, 500));
 
 		const state = new TableState();
 		state.table_name = 'accounts';
 		state.primary_key = 'id';
-		state.rows = [{id: '1'}];
+		state.rows = [{ id: '1' }];
 
-		const result = await state.delete_row({id: '1'});
+		const result = await state.delete_row({ id: '1' });
 
 		assert.strictEqual(result, false);
 		assert.strictEqual(state.delete_error, 'unknown error: something went wrong');
 	});
 
 	test('sets delete_error to error field when no detail', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({error: 'row_not_found'}, 404));
+		fetch_mock.mockResolvedValueOnce(json_response({ error: 'row_not_found' }, 404));
 
 		const state = new TableState();
 		state.table_name = 'accounts';
 		state.primary_key = 'id';
-		state.rows = [{id: '1'}];
+		state.rows = [{ id: '1' }];
 
-		const result = await state.delete_row({id: '1'});
+		const result = await state.delete_row({ id: '1' });
 
 		assert.strictEqual(result, false);
 		assert.strictEqual(state.delete_error, 'row_not_found');
 	});
 
 	test('sends DELETE to correct endpoint', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({ok: true}));
+		fetch_mock.mockResolvedValueOnce(json_response({ ok: true }));
 
 		const state = new TableState();
 		state.table_name = 'accounts';
 		state.primary_key = 'id';
-		state.rows = [{id: 'abc-123'}];
+		state.rows = [{ id: 'abc-123' }];
 
-		await state.delete_row({id: 'abc-123'});
+		await state.delete_row({ id: 'abc-123' });
 
 		const url = fetch_mock.mock.calls[0]![0] as string;
 		assert.ok(url.includes('/api/db/tables/accounts/rows/abc-123'));
@@ -298,28 +298,28 @@ describe('TableState.delete_row', () => {
 	});
 
 	test('encodes special characters in pk value for URL', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({ok: true}));
+		fetch_mock.mockResolvedValueOnce(json_response({ ok: true }));
 
 		const state = new TableState();
 		state.table_name = 'items';
 		state.primary_key = 'name';
-		state.rows = [{name: 'foo/bar baz'}];
+		state.rows = [{ name: 'foo/bar baz' }];
 
-		await state.delete_row({name: 'foo/bar baz'});
+		await state.delete_row({ name: 'foo/bar baz' });
 
 		const url = fetch_mock.mock.calls[0]![0] as string;
 		assert.ok(url.includes('/api/db/tables/items/rows/foo%2Fbar%20baz'));
 	});
 
 	test('clears deleting state after completion', async () => {
-		fetch_mock.mockResolvedValueOnce(json_response({ok: true}));
+		fetch_mock.mockResolvedValueOnce(json_response({ ok: true }));
 
 		const state = new TableState();
 		state.table_name = 'accounts';
 		state.primary_key = 'id';
-		state.rows = [{id: '1'}];
+		state.rows = [{ id: '1' }];
 
-		await state.delete_row({id: '1'});
+		await state.delete_row({ id: '1' });
 
 		assert.strictEqual(state.deleting, null);
 	});
@@ -330,9 +330,9 @@ describe('TableState.delete_row', () => {
 		const state = new TableState();
 		state.table_name = 'accounts';
 		state.primary_key = 'id';
-		state.rows = [{id: '1'}];
+		state.rows = [{ id: '1' }];
 
-		const result = await state.delete_row({id: '1'});
+		const result = await state.delete_row({ id: '1' });
 
 		assert.strictEqual(result, false);
 		assert.strictEqual(state.delete_error, 'Network error');

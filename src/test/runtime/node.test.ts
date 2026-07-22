@@ -7,15 +7,15 @@
  * @module
  */
 
-import {describe, assert, test, beforeEach, afterEach} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
-import {mkdtemp, rm} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import { describe, assert, test, beforeEach, afterEach } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import {create_node_runtime} from '$lib/runtime/node.ts';
+import { create_node_runtime } from '$lib/runtime/node.ts';
 
-import {collect_stream, stream_of} from './byte_stream.ts';
+import { collect_stream, stream_of } from './byte_stream.ts';
 
 const rt = create_node_runtime([]);
 
@@ -26,7 +26,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-	await rm(dir, {recursive: true, force: true});
+	await rm(dir, { recursive: true, force: true });
 });
 
 describe('create_node_runtime streaming + size', () => {

@@ -9,23 +9,23 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {create_account_route_specs} from '$lib/auth/account_routes.ts';
+import { create_account_route_specs } from '$lib/auth/account_routes.ts';
 import {
 	app_settings_get_action_spec,
-	app_settings_update_action_spec,
+	app_settings_update_action_spec
 } from '$lib/auth/admin_action_specs.ts';
-import {create_test_app} from '$lib/testing/app_server.ts';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
-import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.ts';
-import {prefix_route_specs} from '$lib/http/route_spec.ts';
+import { create_test_app } from '$lib/testing/app_server.ts';
+import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
+import { prefix_route_specs } from '$lib/http/route_spec.ts';
 import {
 	RPC_PATH,
 	create_admin_route_specs_with,
 	describe_db,
-	session_options,
+	session_options
 } from './admin_rpc_test_helpers.ts';
 
 const create_route_specs = create_admin_route_specs_with((ctx) => [
@@ -34,9 +34,9 @@ const create_route_specs = create_admin_route_specs_with((ctx) => [
 			session_options,
 			ip_rate_limiter: ctx.ip_rate_limiter,
 			login_account_rate_limiter: ctx.login_account_rate_limiter,
-			login_fail_floor_ms: 0,
-		}),
-	]),
+			login_fail_floor_ms: 0
+		})
+	])
 ]);
 
 describe_db('app settings RPC actions', (get_db) => {
@@ -46,14 +46,14 @@ describe_db('app settings RPC actions', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_get_action_spec,
 				params: {},
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(r.ok);
 			assert.strictEqual(r.result.settings.open_signup, false);
@@ -63,15 +63,15 @@ describe_db('app settings RPC actions', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
+				db: get_db()
 			});
-			const non_admin = await test_app.create_account({username: 'regular'});
+			const non_admin = await test_app.create_account({ username: 'regular' });
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_get_action_spec,
 				params: {},
-				headers: non_admin.create_session_headers(),
+				headers: non_admin.create_session_headers()
 			});
 			assert.ok(!r.ok);
 			assert.strictEqual(r.status, 403);
@@ -81,7 +81,7 @@ describe_db('app settings RPC actions', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
+				db: get_db()
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
@@ -90,8 +90,8 @@ describe_db('app settings RPC actions', (get_db) => {
 				params: {},
 				headers: {
 					host: 'localhost',
-					origin: 'http://localhost:5173',
-				},
+					origin: 'http://localhost:5173'
+				}
 			});
 			assert.ok(!r.ok);
 			assert.strictEqual(r.error.code, JSONRPC_ERROR_CODES.unauthenticated);
@@ -104,14 +104,14 @@ describe_db('app settings RPC actions', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_update_action_spec,
-				params: {open_signup: true},
-				headers: test_app.create_session_headers(),
+				params: { open_signup: true },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(r.ok);
 			assert.strictEqual(r.result.ok, true);
@@ -124,21 +124,21 @@ describe_db('app settings RPC actions', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_update_action_spec,
-				params: {open_signup: true},
-				headers: test_app.create_session_headers(),
+				params: { open_signup: true },
+				headers: test_app.create_session_headers()
 			});
 			const off_r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_update_action_spec,
-				params: {open_signup: false},
-				headers: test_app.create_session_headers(),
+				params: { open_signup: false },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(off_r.ok);
 			assert.strictEqual(off_r.result.settings.open_signup, false);
@@ -148,7 +148,7 @@ describe_db('app settings RPC actions', (get_db) => {
 				path: RPC_PATH,
 				spec: app_settings_get_action_spec,
 				params: {},
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(get_r.ok);
 			assert.strictEqual(get_r.result.settings.open_signup, false);
@@ -158,15 +158,15 @@ describe_db('app settings RPC actions', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
+				db: get_db()
 			});
-			const non_admin = await test_app.create_account({username: 'regular'});
+			const non_admin = await test_app.create_account({ username: 'regular' });
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_update_action_spec,
-				params: {open_signup: true},
-				headers: non_admin.create_session_headers(),
+				params: { open_signup: true },
+				headers: non_admin.create_session_headers()
 			});
 			assert.ok(!r.ok);
 			assert.strictEqual(r.status, 403);
@@ -177,18 +177,18 @@ describe_db('app settings RPC actions', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_update_action_spec,
-				params: {open_signup: true},
-				headers: test_app.create_session_headers(),
+				params: { open_signup: true },
+				headers: test_app.create_session_headers()
 			});
 
-			const rows = await get_db().query<{event_type: string; metadata: unknown}>(
-				`SELECT event_type, metadata FROM audit_log WHERE event_type = 'app_settings_update' ORDER BY seq DESC LIMIT 1`,
+			const rows = await get_db().query<{ event_type: string; metadata: unknown }>(
+				`SELECT event_type, metadata FROM audit_log WHERE event_type = 'app_settings_update' ORDER BY seq DESC LIMIT 1`
 			);
 			assert.strictEqual(rows.length, 1);
 			assert.strictEqual(rows[0]!.event_type, 'app_settings_update');

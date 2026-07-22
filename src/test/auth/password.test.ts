@@ -4,14 +4,14 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
+import { describe, assert, test } from 'vitest';
 
-import {hash_password, verify_password, verify_dummy} from '$lib/auth/password_argon2.ts';
+import { hash_password, verify_password, verify_dummy } from '$lib/auth/password_argon2.ts';
 import {
 	PASSWORD_LENGTH_MIN,
 	PASSWORD_LENGTH_MAX,
 	Password,
-	PasswordProvided,
+	PasswordProvided
 } from '$lib/auth/password.ts';
 
 describe('hash_password', () => {
@@ -70,7 +70,7 @@ describe('verify_dummy', () => {
 		const elapsed = performance.now() - start;
 		assert.ok(
 			elapsed > 1,
-			`verify_dummy completed in ${elapsed.toFixed(1)}ms — should take >1ms for Argon2`,
+			`verify_dummy completed in ${elapsed.toFixed(1)}ms — should take >1ms for Argon2`
 		);
 	});
 });

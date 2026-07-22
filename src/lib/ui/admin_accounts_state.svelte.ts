@@ -13,14 +13,14 @@
  * @module
  */
 
-import {create_context} from '@fuzdev/fuz_ui/context_helpers.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { create_context } from '@fuzdev/fuz_ui/context_helpers.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {AsyncSlot} from './async_slot.svelte.ts';
-import {KeyedAsyncSlot} from './keyed_async_slot.svelte.ts';
-import type {AdminAccountEntryJson} from '../auth/account_schema.ts';
-import type {RoleName} from '../auth/role_schema.ts';
-import type {RoleGrantOfferJson} from '../auth/role_grant_offer_schema.ts';
+import { AsyncSlot } from './async_slot.svelte.ts';
+import { KeyedAsyncSlot } from './keyed_async_slot.svelte.ts';
+import type { AdminAccountEntryJson } from '../auth/account_schema.ts';
+import type { RoleName } from '../auth/role_schema.ts';
+import type { RoleGrantOfferJson } from '../auth/role_grant_offer_schema.ts';
 import type {
 	AdminAccountListOutput,
 	AccountDeleteOutput,
@@ -29,14 +29,14 @@ import type {
 	AdminSessionRevokeAllInput,
 	AdminSessionRevokeAllOutput,
 	AdminTokenRevokeAllInput,
-	AdminTokenRevokeAllOutput,
+	AdminTokenRevokeAllOutput
 } from '../auth/admin_action_specs.ts';
 import type {
 	RoleGrantOfferCreateInput,
 	RoleGrantOfferCreateOutput,
 	RoleGrantOfferOkOutput,
 	RoleGrantRevokeInput,
-	RoleGrantRevokeOutput,
+	RoleGrantRevokeOutput
 } from '../auth/role_grant_offer_action_specs.ts';
 
 /**
@@ -125,7 +125,7 @@ export class AdminAccountsState {
 
 	async fetch(): Promise<void> {
 		await this.list.run(async () => {
-			const {accounts, grantable_roles} = await this.#get_rpc().list_accounts(this.show_deleted);
+			const { accounts, grantable_roles } = await this.#get_rpc().list_accounts(this.show_deleted);
 			this.accounts = accounts;
 			this.grantable_roles = grantable_roles;
 		});
@@ -187,14 +187,14 @@ export class AdminAccountsState {
 	async submit_grant(
 		account_id: Uuid,
 		role: RoleName,
-		to_actor_id?: Uuid | null,
+		to_actor_id?: Uuid | null
 	): Promise<RoleGrantOfferJson | undefined> {
 		const key = grant_key(account_id, role, to_actor_id);
 		const offer = await this.grant.run(key, async () => {
 			const result = await this.#get_rpc().create_role_grant({
 				to_account_id: account_id,
 				role,
-				...(to_actor_id ? {to_actor_id} : {}),
+				...(to_actor_id ? { to_actor_id } : {})
 			});
 			return result.offer;
 		});
@@ -216,7 +216,7 @@ export class AdminAccountsState {
 			await this.#get_rpc().revoke_role_grant({
 				actor_id,
 				role_grant_id,
-				reason: reason ?? null,
+				reason: reason ?? null
 			});
 		});
 		if (this.revoke.succeeded(role_grant_id)) await this.fetch();

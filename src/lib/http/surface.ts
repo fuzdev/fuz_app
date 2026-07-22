@@ -7,25 +7,25 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
-import type {EventSpec} from '../realtime/sse.ts';
-import type {MiddlewareSpec} from './middleware_spec.ts';
-import type {RouteSpec} from './route_spec.ts';
-import type {RouteAuth} from './auth_shape.ts';
-import type {RateLimitKey, RouteErrorSchemas} from './error_schemas.ts';
-import type {RpcAction} from '../actions/action_rpc.ts';
-import type {ActionKind} from '../actions/action_spec.ts';
-import type {WsEndpointSpec} from '../actions/ws_endpoint_spec.ts';
+import type { EventSpec } from '../realtime/sse.ts';
+import type { MiddlewareSpec } from './middleware_spec.ts';
+import type { RouteSpec } from './route_spec.ts';
+import type { RouteAuth } from './auth_shape.ts';
+import type { RateLimitKey, RouteErrorSchemas } from './error_schemas.ts';
+import type { RpcAction } from '../actions/action_rpc.ts';
+import type { ActionKind } from '../actions/action_spec.ts';
+import type { WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
 import {
 	schema_to_surface,
 	middleware_applies,
 	merge_error_schemas,
 	is_null_schema,
-	is_strict_object_schema,
+	is_strict_object_schema
 } from './schema_helpers.ts';
-import type {Sensitivity} from '../sensitivity.ts';
-import type {SchemaFieldMeta} from '../schema_meta.ts';
+import type { Sensitivity } from '../sensitivity.ts';
+import type { SchemaFieldMeta } from '../schema_meta.ts';
 
 // --- Surface types ---
 
@@ -218,7 +218,7 @@ export interface GenerateAppSurfaceOptions {
  */
 export const collect_middleware_errors = (
 	middleware: Array<MiddlewareSpec>,
-	route_path: string,
+	route_path: string
 ): RouteErrorSchemas | null => {
 	const errors: RouteErrorSchemas = {};
 	for (const mw of middleware) {
@@ -245,7 +245,7 @@ export const env_schema_to_surface = (schema: z.ZodObject): Array<AppSurfaceEnv>
 			description: meta?.description ?? '',
 			sensitivity: meta?.sensitivity ?? null,
 			has_default: undef_result.success && undef_result.data !== undefined,
-			optional: undef_result.success,
+			optional: undef_result.success
 		});
 	}
 	return entries;
@@ -259,7 +259,7 @@ export const events_to_surface = (event_specs: Array<EventSpec>): Array<AppSurfa
 		method: spec.method,
 		description: spec.description,
 		channel: spec.channel ?? null,
-		params_schema: schema_to_surface(spec.params),
+		params_schema: schema_to_surface(spec.params)
 	}));
 };
 
@@ -268,7 +268,7 @@ export const events_to_surface = (event_specs: Array<EventSpec>): Array<AppSurfa
  * and optional env/event metadata.
  */
 export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSurface => {
-	const {route_specs, middleware_specs, env_schema, event_specs, rpc_endpoints, ws_endpoints} =
+	const { route_specs, middleware_specs, env_schema, event_specs, rpc_endpoints, ws_endpoints } =
 		options;
 	const diagnostics: Array<AppSurfaceDiagnostic> = [];
 
@@ -279,7 +279,7 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 				level: 'warning',
 				category: 'schema',
 				message: 'Input schema is not z.strictObject() — unknown keys will be silently stripped',
-				source: `${r.method} ${r.path} input`,
+				source: `${r.method} ${r.path} input`
 			});
 		}
 	}
@@ -300,7 +300,7 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 					mw_error_schemas = schemas;
 				}
 			}
-			return {name: m.name, path: m.path, error_schemas: mw_error_schemas};
+			return { name: m.name, path: m.path, error_schemas: mw_error_schemas };
 		}),
 		routes: route_specs.map((r) => {
 			const applicable_middleware = middleware_specs
@@ -338,7 +338,7 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 				query_schema: r.query ? schema_to_surface(r.query) : null,
 				input_schema: schema_to_surface(r.input),
 				output_schema: schema_to_surface(r.output),
-				error_schemas,
+				error_schemas
 			};
 		}),
 		rpc_endpoints: rpc_endpoints?.length
@@ -351,8 +351,8 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 						output_schema: schema_to_surface(a.spec.output),
 						side_effects: a.spec.side_effects,
 						description: a.spec.description,
-						rate_limit_key: a.spec.rate_limit ?? null,
-					})),
+						rate_limit_key: a.spec.rate_limit ?? null
+					}))
 				}))
 			: [],
 		ws_endpoints: ws_endpoints?.length
@@ -377,12 +377,12 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 							description: a.spec.description,
 							side_effects: a.spec.side_effects,
 							rate_limit_key:
-								a.spec.kind === 'request_response' ? (a.spec.rate_limit ?? null) : null,
-						})),
+								a.spec.kind === 'request_response' ? (a.spec.rate_limit ?? null) : null
+						}))
 				}))
 			: [],
 		env: env_schema ? env_schema_to_surface(env_schema) : [],
-		events: event_specs?.length ? events_to_surface(event_specs) : [],
+		events: event_specs?.length ? events_to_surface(event_specs) : []
 	};
 };
 
@@ -396,6 +396,6 @@ export const create_app_surface_spec = (options: GenerateAppSurfaceOptions): App
 		route_specs: options.route_specs,
 		middleware_specs: options.middleware_specs,
 		rpc_endpoints: options.rpc_endpoints ?? [],
-		ws_endpoints: options.ws_endpoints ? [...options.ws_endpoints] : [],
+		ws_endpoints: options.ws_endpoints ? [...options.ws_endpoints] : []
 	};
 };

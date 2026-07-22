@@ -21,7 +21,7 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
 export const JSONRPC_VERSION = '2.0';
 
@@ -48,7 +48,7 @@ export const JsonrpcRequestParamsMeta = JsonrpcMcpMeta.extend({
 	 * for this request. The value is an opaque token attached to subsequent
 	 * notifications. The receiver is not obligated to provide these notifications.
 	 */
-	progressToken: JsonrpcProgressToken.optional(),
+	progressToken: JsonrpcProgressToken.optional()
 });
 export type JsonrpcRequestParamsMeta = z.infer<typeof JsonrpcRequestParamsMeta>;
 
@@ -77,7 +77,7 @@ export const JsonrpcRequest = z.looseObject({
 	jsonrpc: z.literal(JSONRPC_VERSION),
 	id: JsonrpcRequestId,
 	method: JsonrpcMethod,
-	params: JsonrpcRequestParams.optional(),
+	params: JsonrpcRequestParams.optional()
 });
 export type JsonrpcRequest = z.infer<typeof JsonrpcRequest>;
 
@@ -85,7 +85,7 @@ export type JsonrpcRequest = z.infer<typeof JsonrpcRequest>;
 export const JsonrpcNotification = z.looseObject({
 	jsonrpc: z.literal(JSONRPC_VERSION),
 	method: JsonrpcMethod,
-	params: JsonrpcNotificationParams.optional(),
+	params: JsonrpcNotificationParams.optional()
 });
 export type JsonrpcNotification = z.infer<typeof JsonrpcNotification>;
 
@@ -93,7 +93,7 @@ export type JsonrpcNotification = z.infer<typeof JsonrpcNotification>;
 export const JsonrpcResponse = z.looseObject({
 	jsonrpc: z.literal(JSONRPC_VERSION),
 	id: JsonrpcRequestId,
-	result: JsonrpcResult,
+	result: JsonrpcResult
 });
 export type JsonrpcResponse = z.infer<typeof JsonrpcResponse>;
 
@@ -129,7 +129,7 @@ export const JsonrpcErrorCode = z.union([
 	z.literal(JSONRPC_METHOD_NOT_FOUND),
 	z.literal(JSONRPC_INVALID_PARAMS),
 	z.literal(JSONRPC_INTERNAL_ERROR),
-	JsonrpcServerErrorCode,
+	JsonrpcServerErrorCode
 ]);
 export type JsonrpcErrorCode = z.infer<typeof JsonrpcErrorCode>;
 
@@ -137,7 +137,7 @@ export type JsonrpcErrorCode = z.infer<typeof JsonrpcErrorCode>;
 export const JsonrpcErrorObject = z.looseObject({
 	code: JsonrpcErrorCode,
 	message: z.string(),
-	data: z.unknown().optional(),
+	data: z.unknown().optional()
 });
 export type JsonrpcErrorObject = z.infer<typeof JsonrpcErrorObject>;
 
@@ -145,7 +145,7 @@ export type JsonrpcErrorObject = z.infer<typeof JsonrpcErrorObject>;
 export const JsonrpcErrorResponse = z.looseObject({
 	jsonrpc: z.literal(JSONRPC_VERSION),
 	id: JsonrpcRequestId.nullable(),
-	error: JsonrpcErrorObject,
+	error: JsonrpcErrorObject
 });
 export type JsonrpcErrorResponse = z.infer<typeof JsonrpcErrorResponse>;
 
@@ -158,7 +158,7 @@ export const JsonrpcMessage = z.union([
 	JsonrpcRequest,
 	JsonrpcNotification,
 	JsonrpcResponse,
-	JsonrpcErrorResponse,
+	JsonrpcErrorResponse
 ]);
 export type JsonrpcMessage = z.infer<typeof JsonrpcMessage>;
 
@@ -170,6 +170,6 @@ export type JsonrpcMessageFromClientToServer = z.infer<typeof JsonrpcMessageFrom
 export const JsonrpcMessageFromServerToClient = z.union([
 	JsonrpcNotification,
 	JsonrpcResponse,
-	JsonrpcErrorResponse,
+	JsonrpcErrorResponse
 ]);
 export type JsonrpcMessageFromServerToClient = z.infer<typeof JsonrpcMessageFromServerToClient>;

@@ -15,8 +15,8 @@
  * @module
  */
 
-import type {Db} from './db.ts';
-import type {Migration, MigrationNamespace} from './migrate.ts';
+import type { Db } from './db.ts';
+import type { Migration, MigrationNamespace } from './migrate.ts';
 
 /** `fact` table — content-addressed byte store. */
 export const FACTS_SCHEMA = `
@@ -68,8 +68,8 @@ export const FACT_MIGRATIONS: Array<Migration> = [
 			await db.query(FACT_REFS_SCHEMA);
 			await db.query(FACT_REFS_TARGET_INDEX);
 			await db.query(MEMOS_SCHEMA);
-		},
-	},
+		}
+	}
 ];
 
 /** Namespace identifier for fact + memo migrations. */
@@ -78,5 +78,5 @@ export const FACT_MIGRATION_NAMESPACE = 'fuz_facts';
 /** Migration namespace consumed by `run_migrations`. */
 export const FACT_MIGRATION_NS: MigrationNamespace = {
 	namespace: FACT_MIGRATION_NAMESPACE,
-	migrations: FACT_MIGRATIONS,
+	migrations: FACT_MIGRATIONS
 };

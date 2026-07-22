@@ -29,12 +29,12 @@
  * @module
  */
 
-import {has_role, type RequestContext} from './request_context.ts';
-import {is_role_grant_active} from './account_schema.ts';
-import {ROLE_ADMIN} from './role_schema.ts';
+import { has_role, type RequestContext } from './request_context.ts';
+import { is_role_grant_active } from './account_schema.ts';
+import { ROLE_ADMIN } from './role_schema.ts';
 
-import type {CellRow} from '../db/cell_queries.ts';
-import type {CellGrantRow} from '../db/cell_grant_queries.ts';
+import type { CellRow } from '../db/cell_queries.ts';
+import type { CellGrantRow } from '../db/cell_grant_queries.ts';
 
 const cell_is_public = (cell: CellRow): boolean => cell.visibility === 'public';
 
@@ -58,7 +58,7 @@ const cell_is_public = (cell: CellRow): boolean => cell.visibility === 'public';
 const grant_admits = (
 	auth: RequestContext,
 	grants: ReadonlyArray<CellGrantRow> | null,
-	required_level: 'viewer' | 'editor',
+	required_level: 'viewer' | 'editor'
 ): boolean => {
 	if (grants === null) return false;
 	const now = new Date();
@@ -78,7 +78,7 @@ const grant_admits = (
 			(p) =>
 				p.role === g.role &&
 				(g.scope_id === null || p.scope_id === g.scope_id) &&
-				is_role_grant_active(p, now),
+				is_role_grant_active(p, now)
 		);
 		if (matched) return true;
 	}
@@ -117,7 +117,7 @@ const is_owner = (auth: RequestContext, cell: CellRow): boolean =>
 export const can_view_cell = (
 	auth: RequestContext | null,
 	cell: CellRow,
-	grants: ReadonlyArray<CellGrantRow> | null,
+	grants: ReadonlyArray<CellGrantRow> | null
 ): boolean => {
 	if (auth && has_role(auth, ROLE_ADMIN)) return true;
 	if (cell_is_public(cell)) return true;
@@ -148,7 +148,7 @@ export const can_view_cell = (
 export const can_edit_cell = (
 	auth: RequestContext | null,
 	cell: CellRow,
-	grants: ReadonlyArray<CellGrantRow> | null,
+	grants: ReadonlyArray<CellGrantRow> | null
 ): boolean => {
 	if (!auth) return false;
 	if (has_role(auth, ROLE_ADMIN)) return true;

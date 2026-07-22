@@ -46,22 +46,22 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, assert} from 'vitest';
+import { describe, assert } from 'vitest';
 
 import {
 	CellCreateOutput,
 	CellDeleteOutput,
 	CellGetOutput,
 	CellListOutput,
-	CellUpdateOutput,
+	CellUpdateOutput
 } from '../../auth/cell_action_specs.ts';
-import {test_if} from './capabilities.ts';
-import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.ts';
-import type {RpcPathCrossSuiteOptions} from './setup.ts';
-import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
+import { test_if } from './capabilities.ts';
+import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
+import type { RpcPathCrossSuiteOptions } from './setup.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions): void => {
-	const {setup_test, capabilities} = options;
+	const { setup_test, capabilities } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
 	describe('cell CRUD parity', () => {
@@ -70,7 +70,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 			'owner lifecycle: create → get → update → delete → list',
 			async () => {
 				const fixture = await setup_test();
-				const owner = await fixture.create_account({username: 'cell_owner'});
+				const owner = await fixture.create_account({ username: 'cell_owner' });
 				const t = fixture.fresh_transport();
 				const owner_headers = owner.create_session_headers();
 
@@ -80,10 +80,10 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 						t,
 						rpc_path,
 						'cell_create',
-						{kind: 'note', data: {label: 'hi'}},
-						owner_headers,
+						{ kind: 'note', data: { label: 'hi' } },
+						owner_headers
 					),
-					CellCreateOutput,
+					CellCreateOutput
 				);
 				assert.strictEqual(created.cell.visibility, 'private');
 				assert.strictEqual(created.cell.created_by, owner.actor.id);
@@ -93,8 +93,8 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 
 				// get by id — full CellGetOutput envelope; relations empty in the first cut
 				const got = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_get', {id: cell_id}, owner_headers),
-					CellGetOutput,
+					await cross_rpc_call(t, rpc_path, 'cell_get', { id: cell_id }, owner_headers),
+					CellGetOutput
 				);
 				assert.strictEqual(got.cell.id, cell_id);
 				assert.deepStrictEqual(got.fields, []);
@@ -110,10 +110,10 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 						t,
 						rpc_path,
 						'cell_update',
-						{cell_id, data: {label: 'hi2'}, visibility: 'public'},
-						owner_headers,
+						{ cell_id, data: { label: 'hi2' }, visibility: 'public' },
+						owner_headers
 					),
-					CellUpdateOutput,
+					CellUpdateOutput
 				);
 				assert.strictEqual(updated.cell.visibility, 'public');
 				assert.strictEqual(updated.cell.updated_by, owner.actor.id);
@@ -121,23 +121,23 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 				// list includes it
 				const listed = expect_output(
 					await cross_rpc_call(t, rpc_path, 'cell_list', {}, owner_headers),
-					CellListOutput,
+					CellListOutput
 				);
 				assert.ok(
 					listed.cells.some((c) => c.id === cell_id),
-					'owner cell_list omitted the cell',
+					'owner cell_list omitted the cell'
 				);
 
 				// delete → subsequent get is 404
 				const deleted = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_delete', {cell_id}, owner_headers),
-					CellDeleteOutput,
+					await cross_rpc_call(t, rpc_path, 'cell_delete', { cell_id }, owner_headers),
+					CellDeleteOutput
 				);
 				assert.strictEqual(deleted.deleted, true);
-				const gone = await cross_rpc_call(t, rpc_path, 'cell_get', {id: cell_id}, owner_headers);
+				const gone = await cross_rpc_call(t, rpc_path, 'cell_get', { id: cell_id }, owner_headers);
 				assert.ok(!gone.ok, 'deleted cell still readable');
 				assert.strictEqual(error_reason(gone), 'cell_not_found');
-			},
+			}
 		);
 
 		test_if(
@@ -145,7 +145,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 			'refs are deduped and lexicographically sorted (deterministic, cross-impl-identical)',
 			async () => {
 				const fixture = await setup_test();
-				const owner = await fixture.create_account({username: 'cell_refs_owner'});
+				const owner = await fixture.create_account({ username: 'cell_refs_owner' });
 				const t = fixture.fresh_transport();
 				const owner_headers = owner.create_session_headers();
 
@@ -164,17 +164,20 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 						t,
 						rpc_path,
 						'cell_create',
-						{kind: 'note', data: {cover: ref_c, nested: {attachments: [ref_b, ref_a, ref_b]}}},
-						owner_headers,
+						{
+							kind: 'note',
+							data: { cover: ref_c, nested: { attachments: [ref_b, ref_a, ref_b] } }
+						},
+						owner_headers
 					),
-					CellCreateOutput,
+					CellCreateOutput
 				);
 				assert.deepStrictEqual(created.cell.refs, sorted, 'create did not return sorted refs');
 
 				// Read it back — the stored column round-trips sorted too.
 				const got = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_get', {id: created.cell.id}, owner_headers),
-					CellGetOutput,
+					await cross_rpc_call(t, rpc_path, 'cell_get', { id: created.cell.id }, owner_headers),
+					CellGetOutput
 				);
 				assert.deepStrictEqual(got.cell.refs, sorted, 'get did not return sorted refs');
 
@@ -184,18 +187,18 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 						t,
 						rpc_path,
 						'cell_update',
-						{cell_id: created.cell.id, data: {refs: [ref_b, ref_c, ref_a]}},
-						owner_headers,
+						{ cell_id: created.cell.id, data: { refs: [ref_b, ref_c, ref_a] } },
+						owner_headers
 					),
-					CellUpdateOutput,
+					CellUpdateOutput
 				);
 				assert.deepStrictEqual(updated.cell.refs, sorted, 'update did not return sorted refs');
-			},
+			}
 		);
 
 		test_if(capabilities.cell_crud, 'anon sees public cells only; private is 404', async () => {
 			const fixture = await setup_test();
-			const owner = await fixture.create_account({username: 'cell_anon_owner'});
+			const owner = await fixture.create_account({ username: 'cell_anon_owner' });
 			const owner_headers = owner.create_session_headers();
 			const authed = fixture.fresh_transport();
 
@@ -204,33 +207,33 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 					authed,
 					rpc_path,
 					'cell_create',
-					{kind: 'note', data: {}, visibility: 'private'},
-					owner_headers,
+					{ kind: 'note', data: {}, visibility: 'private' },
+					owner_headers
 				),
-				CellCreateOutput,
+				CellCreateOutput
 			).cell;
 			const pub = expect_output(
 				await cross_rpc_call(
 					authed,
 					rpc_path,
 					'cell_create',
-					{kind: 'note', data: {}, visibility: 'public'},
-					owner_headers,
+					{ kind: 'note', data: {}, visibility: 'public' },
+					owner_headers
 				),
-				CellCreateOutput,
+				CellCreateOutput
 			).cell;
 
-			const anon = fixture.fresh_transport({origin: null});
-			const anon_pub = await cross_rpc_call(anon, rpc_path, 'cell_get', {id: pub.id}, {});
+			const anon = fixture.fresh_transport({ origin: null });
+			const anon_pub = await cross_rpc_call(anon, rpc_path, 'cell_get', { id: pub.id }, {});
 			assert.ok(anon_pub.ok, `anon could not read public cell: ${JSON.stringify(anon_pub.error)}`);
 
-			const anon_priv = await cross_rpc_call(anon, rpc_path, 'cell_get', {id: priv.id}, {});
+			const anon_priv = await cross_rpc_call(anon, rpc_path, 'cell_get', { id: priv.id }, {});
 			assert.ok(!anon_priv.ok, 'anon read a private cell');
 			assert.strictEqual(error_reason(anon_priv), 'cell_not_found');
 
 			const anon_list = expect_output(
 				await cross_rpc_call(anon, rpc_path, 'cell_list', {}, {}),
-				CellListOutput,
+				CellListOutput
 			);
 			const anon_ids = anon_list.cells.map((c) => c.id);
 			assert.ok(anon_ids.includes(pub.id), 'anon list missing public cell');
@@ -242,8 +245,8 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 			'non-owner edit/read/delete of a private cell → 404 (IDOR mask)',
 			async () => {
 				const fixture = await setup_test();
-				const owner = await fixture.create_account({username: 'cell_idor_owner'});
-				const other = await fixture.create_account({username: 'cell_idor_other'});
+				const owner = await fixture.create_account({ username: 'cell_idor_owner' });
+				const other = await fixture.create_account({ username: 'cell_idor_other' });
 				const t = fixture.fresh_transport();
 
 				const priv = expect_output(
@@ -251,22 +254,22 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 						t,
 						rpc_path,
 						'cell_create',
-						{kind: 'note', data: {}},
-						owner.create_session_headers(),
+						{ kind: 'note', data: {} },
+						owner.create_session_headers()
 					),
-					CellCreateOutput,
+					CellCreateOutput
 				).cell;
 				const other_headers = other.create_session_headers();
 
-				const read = await cross_rpc_call(t, rpc_path, 'cell_get', {id: priv.id}, other_headers);
+				const read = await cross_rpc_call(t, rpc_path, 'cell_get', { id: priv.id }, other_headers);
 				assert.strictEqual(error_reason(read), 'cell_not_found');
 
 				const edit = await cross_rpc_call(
 					t,
 					rpc_path,
 					'cell_update',
-					{cell_id: priv.id, data: {label: 'x'}},
-					other_headers,
+					{ cell_id: priv.id, data: { label: 'x' } },
+					other_headers
 				);
 				assert.ok(!edit.ok, 'non-owner edited a private cell');
 				assert.strictEqual(error_reason(edit), 'cell_not_found');
@@ -275,12 +278,12 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 					t,
 					rpc_path,
 					'cell_delete',
-					{cell_id: priv.id},
-					other_headers,
+					{ cell_id: priv.id },
+					other_headers
 				);
 				assert.ok(!del.ok, 'non-owner deleted a private cell');
 				assert.strictEqual(error_reason(del), 'cell_not_found');
-			},
+			}
 		);
 
 		test_if(
@@ -288,17 +291,17 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 			'admin (keeper) reaches another actor’s private cell',
 			async () => {
 				const fixture = await setup_test();
-				const owner = await fixture.create_account({username: 'cell_admin_owner'});
+				const owner = await fixture.create_account({ username: 'cell_admin_owner' });
 				const t = fixture.fresh_transport();
 				const priv = expect_output(
 					await cross_rpc_call(
 						t,
 						rpc_path,
 						'cell_create',
-						{kind: 'note', data: {}},
-						owner.create_session_headers(),
+						{ kind: 'note', data: {} },
+						owner.create_session_headers()
 					),
-					CellCreateOutput,
+					CellCreateOutput
 				).cell;
 				// `fixture` is the bootstrapped keeper (holds ROLE_ADMIN).
 				const admin_read = expect_output(
@@ -306,13 +309,13 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 						t,
 						rpc_path,
 						'cell_get',
-						{id: priv.id},
-						fixture.create_session_headers(),
+						{ id: priv.id },
+						fixture.create_session_headers()
 					),
-					CellGetOutput,
+					CellGetOutput
 				);
 				assert.strictEqual(admin_read.cell.id, priv.id);
-			},
+			}
 		);
 
 		test_if(capabilities.cell_crud, 'duplicate active path → 409 conflict', async () => {
@@ -325,17 +328,17 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 					t,
 					rpc_path,
 					'cell_create',
-					{kind: 'note', data: {}, path: 'parity/dup'},
-					admin_headers,
+					{ kind: 'note', data: {}, path: 'parity/dup' },
+					admin_headers
 				),
-				CellCreateOutput,
+				CellCreateOutput
 			);
 			const dup = await cross_rpc_call(
 				t,
 				rpc_path,
 				'cell_create',
-				{kind: 'note', data: {}, path: 'parity/dup'},
-				admin_headers,
+				{ kind: 'note', data: {}, path: 'parity/dup' },
+				admin_headers
 			);
 			assert.ok(!dup.ok, 'duplicate path was accepted');
 			assert.strictEqual(error_reason(dup), 'cell_path_taken');
@@ -346,7 +349,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 			'path write by non-admin → 403 (create and update)',
 			async () => {
 				const fixture = await setup_test();
-				const owner = await fixture.create_account({username: 'cell_path_owner'});
+				const owner = await fixture.create_account({ username: 'cell_path_owner' });
 				const t = fixture.fresh_transport();
 				const owner_headers = owner.create_session_headers();
 
@@ -354,27 +357,33 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 					t,
 					rpc_path,
 					'cell_create',
-					{kind: 'note', data: {}, path: 'parity/forbidden'},
-					owner_headers,
+					{ kind: 'note', data: {}, path: 'parity/forbidden' },
+					owner_headers
 				);
 				assert.ok(!create_with_path.ok, 'non-admin set a path on create');
 				assert.strictEqual(error_reason(create_with_path), 'cell_path_admin_only');
 
 				// Even owning the cell, a non-admin cannot write `path` on update.
 				const owned = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_create', {kind: 'note', data: {}}, owner_headers),
-					CellCreateOutput,
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_create',
+						{ kind: 'note', data: {} },
+						owner_headers
+					),
+					CellCreateOutput
 				).cell;
 				const update_path = await cross_rpc_call(
 					t,
 					rpc_path,
 					'cell_update',
-					{cell_id: owned.id, path: 'parity/owned'},
-					owner_headers,
+					{ cell_id: owned.id, path: 'parity/owned' },
+					owner_headers
 				);
 				assert.ok(!update_path.ok, 'non-admin set a path on update');
 				assert.strictEqual(error_reason(update_path), 'cell_path_admin_only');
-			},
+			}
 		);
 
 		test_if(capabilities.cell_crud, 'cell_get without id or path → invalid_params', async () => {
@@ -384,7 +393,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 				rpc_path,
 				'cell_get',
 				{},
-				fixture.create_session_headers(),
+				fixture.create_session_headers()
 			);
 			assert.ok(!bad.ok, 'cell_get with empty params succeeded');
 			// -32602 invalid_params (refine or handler guard).
@@ -396,17 +405,17 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 			'null-auth cell_list with created_by → invalid_params',
 			async () => {
 				const fixture = await setup_test();
-				const anon = fixture.fresh_transport({origin: null});
+				const anon = fixture.fresh_transport({ origin: null });
 				const bad = await cross_rpc_call(
 					anon,
 					rpc_path,
 					'cell_list',
-					{created_by: fixture.actor.id},
-					{},
+					{ created_by: fixture.actor.id },
+					{}
 				);
 				assert.ok(!bad.ok, 'anon created_by filter accepted');
 				assert.strictEqual(error_reason(bad), 'cell_list_created_by_requires_auth');
-			},
+			}
 		);
 
 		test_if(
@@ -414,18 +423,18 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 			'authz before input-shape: a non-editor update with kind-in-data → 404, not the kind error',
 			async () => {
 				const fixture = await setup_test();
-				const owner = await fixture.create_account({username: 'cell_order_owner'});
-				const other = await fixture.create_account({username: 'cell_order_other'});
+				const owner = await fixture.create_account({ username: 'cell_order_owner' });
+				const other = await fixture.create_account({ username: 'cell_order_other' });
 				const t = fixture.fresh_transport();
 				const priv = expect_output(
 					await cross_rpc_call(
 						t,
 						rpc_path,
 						'cell_create',
-						{kind: 'note', data: {}},
-						owner.create_session_headers(),
+						{ kind: 'note', data: {} },
+						owner.create_session_headers()
 					),
-					CellCreateOutput,
+					CellCreateOutput
 				).cell;
 				// `can_edit` (404 IDOR mask) must fire before `reject_kind_in_data`
 				// on both spines — a denied caller can't tell a malformed payload
@@ -434,12 +443,12 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 					t,
 					rpc_path,
 					'cell_update',
-					{cell_id: priv.id, data: {kind: 'post'}},
-					other.create_session_headers(),
+					{ cell_id: priv.id, data: { kind: 'post' } },
+					other.create_session_headers()
 				);
 				assert.ok(!edit.ok, 'non-editor reached the kind check');
 				assert.strictEqual(error_reason(edit), 'cell_not_found');
-			},
+			}
 		);
 
 		test_if(
@@ -447,19 +456,19 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 			'authz before input-shape: a non-admin create with path + kind-in-data → 403, not the kind error',
 			async () => {
 				const fixture = await setup_test();
-				const owner = await fixture.create_account({username: 'cell_order_path'});
+				const owner = await fixture.create_account({ username: 'cell_order_path' });
 				const t = fixture.fresh_transport();
 				// The path-admin gate (403) fires before `reject_kind_in_data`.
 				const bad = await cross_rpc_call(
 					t,
 					rpc_path,
 					'cell_create',
-					{data: {kind: 'note'}, path: 'parity/order'},
-					owner.create_session_headers(),
+					{ data: { kind: 'note' }, path: 'parity/order' },
+					owner.create_session_headers()
 				);
 				assert.ok(!bad.ok, 'non-admin path write was not refused first');
 				assert.strictEqual(error_reason(bad), 'cell_path_admin_only');
-			},
+			}
 		);
 
 		test_if(
@@ -467,7 +476,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 			'empty kind: rejected on create (cell_kind_empty); accepted as a filter that matches nothing',
 			async () => {
 				const fixture = await setup_test();
-				const owner = await fixture.create_account({username: 'cell_kind_empty'});
+				const owner = await fixture.create_account({ username: 'cell_kind_empty' });
 				const t = fixture.fresh_transport();
 				const owner_headers = owner.create_session_headers();
 
@@ -475,8 +484,8 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 					t,
 					rpc_path,
 					'cell_create',
-					{kind: '', data: {}},
-					owner_headers,
+					{ kind: '', data: {} },
+					owner_headers
 				);
 				assert.ok(!empty.ok, 'an empty kind was stored');
 				assert.strictEqual(error_reason(empty), 'cell_kind_empty');
@@ -485,18 +494,24 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 				// min-length Rust never had) and matches nothing — no cell carries
 				// an empty kind.
 				const note = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_create', {kind: 'note', data: {}}, owner_headers),
-					CellCreateOutput,
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_create',
+						{ kind: 'note', data: {} },
+						owner_headers
+					),
+					CellCreateOutput
 				).cell;
 				const listed = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_list', {kind: ''}, owner_headers),
-					CellListOutput,
+					await cross_rpc_call(t, rpc_path, 'cell_list', { kind: '' }, owner_headers),
+					CellListOutput
 				);
 				assert.ok(
 					!listed.cells.some((c) => c.id === note.id),
-					'empty-kind filter matched a non-empty-kind cell',
+					'empty-kind filter matched a non-empty-kind cell'
 				);
-			},
+			}
 		);
 	});
 };

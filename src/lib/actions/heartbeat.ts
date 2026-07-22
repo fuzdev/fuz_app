@@ -18,10 +18,10 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
-import type {RequestResponseActionSpec} from './action_spec.ts';
-import type {Action} from './action_types.ts';
+import type { RequestResponseActionSpec } from './action_spec.ts';
+import type { Action } from './action_types.ts';
 
 /**
  * `ActionSpec` for the shared heartbeat. Account-required, actor-none —
@@ -33,12 +33,12 @@ export const heartbeat_action_spec = {
 	method: 'heartbeat',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none'},
+	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
 	input: z.strictObject({}).default({}),
 	output: z.strictObject({}),
 	async: true,
-	description: 'Shared activity ping — keeps the socket alive and exercises the dispatch path.',
+	description: 'Shared activity ping — keeps the socket alive and exercises the dispatch path.'
 } satisfies RequestResponseActionSpec;
 
 /** Handler — nullary echo. Stateless, suitable for high-frequency pings. */
@@ -54,5 +54,5 @@ export const heartbeat_handler = (): Record<string, never> => ({});
  */
 export const heartbeat_action: Action = {
 	spec: heartbeat_action_spec,
-	handler: heartbeat_handler,
+	handler: heartbeat_handler
 };

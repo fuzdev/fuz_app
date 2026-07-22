@@ -17,14 +17,14 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, beforeAll, assert} from 'vitest';
+import { describe, test, beforeAll, assert } from 'vitest';
 
-import {ROLE_ADMIN} from '../auth/role_schema.ts';
-import {JSONRPC_METHOD_NOT_FOUND, JsonrpcErrorResponse} from '../http/jsonrpc.ts';
-import type {TestAccount} from './app_server.ts';
-import {generate_valid_body} from './schema_generators.ts';
-import type {AppSurfaceSpec, AppSurfaceRpcMethod} from '../http/surface.ts';
-import {is_public_auth} from '../http/auth_shape.ts';
+import { ROLE_ADMIN } from '../auth/role_schema.ts';
+import { JSONRPC_METHOD_NOT_FOUND, JsonrpcErrorResponse } from '../http/jsonrpc.ts';
+import type { TestAccount } from './app_server.ts';
+import { generate_valid_body } from './schema_generators.ts';
+import type { AppSurfaceSpec, AppSurfaceRpcMethod } from '../http/surface.ts';
+import { is_public_auth } from '../http/auth_shape.ts';
 import {
 	create_rpc_post_init,
 	create_rpc_get_url,
@@ -33,12 +33,12 @@ import {
 	resolve_rpc_endpoints_for_setup,
 	find_rpc_action,
 	find_rpc_method,
-	type RpcEndpointsSuiteOption,
+	type RpcEndpointsSuiteOption
 } from './rpc_helpers.ts';
-import type {KeeperHeaderProvider} from './integration_helpers.ts';
-import type {BackendCapabilities} from './cross_backend/capabilities.ts';
-import type {SetupTest, TestFixture} from './cross_backend/setup.ts';
-import type {SessionOptions} from '../auth/session_cookie.ts';
+import type { KeeperHeaderProvider } from './integration_helpers.ts';
+import type { BackendCapabilities } from './cross_backend/capabilities.ts';
+import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
+import type { SessionOptions } from '../auth/session_cookie.ts';
 
 /** Options for `describe_rpc_round_trip_tests`. */
 export interface RpcRoundTripTestOptions {
@@ -103,11 +103,11 @@ const pick_rpc_auth_headers = (
 	method: AppSurfaceRpcMethod,
 	keeper: KeeperHeaderProvider,
 	authed_account: TestAccount,
-	admin_account: TestAccount,
+	admin_account: TestAccount
 ): Record<string, string> => {
-	const {auth} = method;
+	const { auth } = method;
 	if (is_public_auth(auth)) {
-		return {host: 'localhost', origin: 'http://localhost:5173'};
+		return { host: 'localhost', origin: 'http://localhost:5173' };
 	}
 	if (auth.credential_types?.includes('daemon_token')) {
 		return keeper.create_daemon_token_headers();
@@ -139,7 +139,7 @@ const assert_method_implemented = (method: string, body: unknown): void => {
 	if (parsed.success && parsed.data.error.code === JSONRPC_METHOD_NOT_FOUND) {
 		assert.fail(
 			`method '${method}' is registered on the local surface but the backend` +
-				` returned method-not-found — backend is missing this method (parity gap)`,
+				` returned method-not-found — backend is missing this method (parity gap)`
 		);
 	}
 };
@@ -170,7 +170,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 	// match what the running backend serves.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
-		options.session_options,
+		options.session_options
 	);
 	const surface_rpc_endpoints = options.surface_source.surface.rpc_endpoints;
 	void options.capabilities;
@@ -184,11 +184,11 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 			fixture = await options.setup_test();
 			authed_account = await fixture.create_account({
 				username: 'rpc_round_trip_authed',
-				roles: [],
+				roles: []
 			});
 			admin_account = await fixture.create_account({
 				username: 'rpc_round_trip_admin',
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 		});
 
@@ -210,7 +210,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 						surface_method,
 						fixture,
 						authed_account,
-						admin_account,
+						admin_account
 					);
 
 					const init = create_rpc_post_init(action.spec.method, params);
@@ -230,7 +230,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 						throw new Error(
 							`RPC round-trip POST failed for ${action.spec.method} (status ${res.status}): ${
 								(e as Error).message
-							}`,
+							}`
 						);
 					}
 				}
@@ -256,11 +256,11 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 						surface_method,
 						fixture,
 						authed_account,
-						admin_account,
+						admin_account
 					);
 
 					const url = create_rpc_get_url(ep_spec.path, action.spec.method, params);
-					const res = await fixture.transport(url, {headers});
+					const res = await fixture.transport(url, { headers });
 					const body = await res.json();
 
 					try {
@@ -274,7 +274,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 						throw new Error(
 							`RPC round-trip GET failed for ${action.spec.method} (status ${res.status}): ${
 								(e as Error).message
-							}`,
+							}`
 						);
 					}
 				}
@@ -295,7 +295,7 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 					surface.method_spec,
 					fixture,
 					authed_account,
-					admin_account,
+					admin_account
 				);
 				const init = create_rpc_post_init(method, params);
 				Object.assign(init.headers as Record<string, string>, headers);
@@ -308,14 +308,14 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 						res.ok,
 						`success fixture expected a success response, got status ${
 							res.status
-						}: ${JSON.stringify(body)}`,
+						}: ${JSON.stringify(body)}`
 					);
 					assert_jsonrpc_success_response(body, located.action.spec.output);
 				} catch (e) {
 					throw new Error(
 						`RPC success-fixture failed for ${method} (status ${res.status}): ${
 							(e as Error).message
-						}`,
+						}`
 					);
 				}
 			}

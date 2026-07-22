@@ -28,12 +28,12 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {account_verify_action_spec} from '../../auth/account_action_specs.ts';
-import {ERROR_FORBIDDEN_ORIGIN} from '../../http/error_schemas.ts';
-import type {RpcPathCrossSuiteOptions} from './setup.ts';
-import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
+import { account_verify_action_spec } from '../../auth/account_action_specs.ts';
+import { ERROR_FORBIDDEN_ORIGIN } from '../../http/error_schemas.ts';
+import type { RpcPathCrossSuiteOptions } from './setup.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /**
  * Options for the origin parity suite. The standard RPC-dispatched
@@ -44,10 +44,10 @@ export type OriginCrossTestOptions = RpcPathCrossSuiteOptions;
 
 /** Build the JSON-RPC envelope body for a nullary `account_verify` call. */
 const verify_envelope = (id: string): string =>
-	JSON.stringify({jsonrpc: '2.0', method: account_verify_action_spec.method, id});
+	JSON.stringify({ jsonrpc: '2.0', method: account_verify_action_spec.method, id });
 
 export const describe_origin_cross_tests = (options: OriginCrossTestOptions): void => {
-	const {setup_test} = options;
+	const { setup_test } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
 	describe('origin verification parity', () => {
@@ -61,12 +61,12 @@ export const describe_origin_cross_tests = (options: OriginCrossTestOptions): vo
 				headers: {
 					...fixture.create_session_headers(),
 					origin: 'http://evil.com',
-					'content-type': 'application/json',
+					'content-type': 'application/json'
 				},
-				body: verify_envelope('evil-origin'),
+				body: verify_envelope('evil-origin')
 			});
 			assert.strictEqual(res.status, 403, 'disallowed Origin must be rejected with 403');
-			const body = (await res.json().catch(() => undefined)) as {error?: unknown} | undefined;
+			const body = (await res.json().catch(() => undefined)) as { error?: unknown } | undefined;
 			assert.strictEqual(body?.error, ERROR_FORBIDDEN_ORIGIN);
 		});
 
@@ -75,13 +75,13 @@ export const describe_origin_cross_tests = (options: OriginCrossTestOptions): vo
 			// `origin: null` so no Origin header is sent at all (a header omission
 			// alone wouldn't suffice cross-process — the jar auto-adds the default
 			// allowed Origin). The keeper cookie rides via an explicit header.
-			const res = await fixture.fresh_transport({origin: null})(rpc_path, {
+			const res = await fixture.fresh_transport({ origin: null })(rpc_path, {
 				method: 'POST',
 				headers: {
 					...fixture.create_session_headers(),
-					'content-type': 'application/json',
+					'content-type': 'application/json'
 				},
-				body: verify_envelope('no-origin'),
+				body: verify_envelope('no-origin')
 			});
 			assert.strictEqual(res.status, 200, 'absent Origin with a valid session must pass');
 		});

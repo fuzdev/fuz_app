@@ -10,7 +10,7 @@
  * @module
  */
 
-import type {Context} from 'hono';
+import type { Context } from 'hono';
 
 /** Client IP resolved by the trusted-proxy middleware, or `'unknown'` if unset. */
 export const get_client_ip = (c: Context): string => c.get('client_ip') || 'unknown';

@@ -47,12 +47,12 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {assert, describe} from 'vitest';
+import { assert, describe } from 'vitest';
 
-import {rpc_call} from '../rpc_helpers.ts';
-import {create_ws_transport} from '../transports/ws_transport.ts';
-import {is_notification_with} from '../transports/ws_client.ts';
-import {ROLE_ADMIN} from '../../auth/role_schema.ts';
+import { rpc_call } from '../rpc_helpers.ts';
+import { create_ws_transport } from '../transports/ws_transport.ts';
+import { is_notification_with } from '../transports/ws_client.ts';
+import { ROLE_ADMIN } from '../../auth/role_schema.ts';
 import {
 	ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
@@ -65,10 +65,10 @@ import {
 	RoleGrantOfferDeclinedParams,
 	RoleGrantOfferRetractedParams,
 	RoleGrantOfferSupersedeParams,
-	RoleGrantRevokeParams,
+	RoleGrantRevokeParams
 } from '../../auth/role_grant_offer_notifications.ts';
-import {type BackendCapabilities, test_if} from './capabilities.ts';
-import type {SetupTest, TestAccountFixture, TestFixture} from './setup.ts';
+import { type BackendCapabilities, test_if } from './capabilities.ts';
+import type { SetupTest, TestAccountFixture, TestFixture } from './setup.ts';
 
 /** JSON-RPC endpoint path — matches the spine's `/api/rpc` (and the forge's). */
 const RPC_PATH = '/api/rpc';
@@ -94,16 +94,16 @@ export interface RoleGrantOfferNotificationWsTestOptions {
  * params schema. Gated on `capabilities.ws`.
  */
 export const describe_role_grant_offer_notification_ws_tests = (
-	options: RoleGrantOfferNotificationWsTestOptions,
+	options: RoleGrantOfferNotificationWsTestOptions
 ): void => {
-	const {setup_test, capabilities, base_url, ws_path} = options;
+	const { setup_test, capabilities, base_url, ws_path } = options;
 
 	// -- shared helpers -------------------------------------------------------
 
 	/** Open a WS transport for a single session cookie (`<name>=<value>`). */
 	const open_ws = (cookie: string | undefined) => {
 		assert.ok(cookie, 'expected a session cookie for the WS upgrade');
-		return create_ws_transport({base_url, ws_path, cookies: [cookie], origin: base_url});
+		return create_ws_transport({ base_url, ws_path, cookies: [cookie], origin: base_url });
 	};
 
 	/** Drive a JSON-RPC call over the fixture's HTTP transport. */
@@ -111,8 +111,8 @@ export const describe_role_grant_offer_notification_ws_tests = (
 		fixture: TestFixture,
 		method: string,
 		params: unknown,
-		headers: Record<string, string>,
-	) => rpc_call({app: fixture.transport, path: RPC_PATH, method, params, headers});
+		headers: Record<string, string>
+	) => rpc_call({ app: fixture.transport, path: RPC_PATH, method, params, headers });
 
 	/**
 	 * Create a fresh pending `ROLE_ADMIN` offer from `grantor_headers` (defaults
@@ -121,16 +121,16 @@ export const describe_role_grant_offer_notification_ws_tests = (
 	const create_pending_offer = async (
 		fixture: TestFixture,
 		to_account_id: string,
-		grantor_headers: Record<string, string> = fixture.create_session_headers(),
-	): Promise<{id: string}> => {
+		grantor_headers: Record<string, string> = fixture.create_session_headers()
+	): Promise<{ id: string }> => {
 		const res = await rpc(
 			fixture,
 			'role_grant_offer_create',
-			{to_account_id, role: ROLE_ADMIN},
-			grantor_headers,
+			{ to_account_id, role: ROLE_ADMIN },
+			grantor_headers
 		);
 		if (!res.ok) assert.fail(`offer create failed: ${JSON.stringify(res)}`);
-		return (res.result as {offer: {id: string}}).offer;
+		return (res.result as { offer: { id: string } }).offer;
 	};
 
 	/**
@@ -141,17 +141,17 @@ export const describe_role_grant_offer_notification_ws_tests = (
 	 */
 	const create_active_role_grant = async (
 		fixture: TestFixture,
-		recipient: TestAccountFixture,
+		recipient: TestAccountFixture
 	): Promise<string> => {
 		const offer = await create_pending_offer(fixture, recipient.account.id);
 		const accepted = await rpc(
 			fixture,
 			'role_grant_offer_accept',
-			{offer_id: offer.id},
-			recipient.create_session_headers(),
+			{ offer_id: offer.id },
+			recipient.create_session_headers()
 		);
 		if (!accepted.ok) assert.fail(`accept failed: ${JSON.stringify(accepted)}`);
-		return (accepted.result as {role_grant_id: string}).role_grant_id;
+		return (accepted.result as { role_grant_id: string }).role_grant_id;
 	};
 
 	// -- tests ----------------------------------------------------------------
@@ -168,7 +168,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				// `create_account` rides the real offer/accept handlers (that
 				// earlier notification lands before the socket opens, so it's not
 				// the one we observe).
-				const recipient = await fixture.create_account({roles: [ROLE_ADMIN]});
+				const recipient = await fixture.create_account({ roles: [ROLE_ADMIN] });
 
 				const recipient_ws = await open_ws(recipient.create_session_headers().cookie);
 				try {
@@ -178,17 +178,17 @@ export const describe_role_grant_offer_notification_ws_tests = (
 					const created = await rpc(
 						fixture,
 						'role_grant_offer_create',
-						{to_account_id: recipient.account.id, role: ROLE_ADMIN},
-						fixture.create_session_headers(),
+						{ to_account_id: recipient.account.id, role: ROLE_ADMIN },
+						fixture.create_session_headers()
 					);
 					assert.isTrue(created.ok, `offer create failed: ${JSON.stringify(created)}`);
 
 					const frame = await recipient_ws.wait_for(
-						is_notification_with<{offer: {to_account_id: string}}>(
+						is_notification_with<{ offer: { to_account_id: string } }>(
 							ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
-							(p) => p.offer.to_account_id === recipient.account.id,
+							(p) => p.offer.to_account_id === recipient.account.id
 						),
-						5000,
+						5000
 					);
 
 					// Params strict-parse against the canonical wire schema — guards
@@ -199,7 +199,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				} finally {
 					await recipient_ws.close();
 				}
-			},
+			}
 		);
 
 		test_if(
@@ -207,7 +207,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 			'accept delivers role_grant_offer_accepted to the grantor WS',
 			async () => {
 				const fixture = await setup_test();
-				const recipient = await fixture.create_account({roles: [ROLE_ADMIN]});
+				const recipient = await fixture.create_account({ roles: [ROLE_ADMIN] });
 
 				// Grantor = keeper; open its socket BEFORE the recipient accepts.
 				const grantor = await open_ws(fixture.create_session_headers().cookie);
@@ -216,17 +216,17 @@ export const describe_role_grant_offer_notification_ws_tests = (
 					const accepted = await rpc(
 						fixture,
 						'role_grant_offer_accept',
-						{offer_id: offer.id},
-						recipient.create_session_headers(),
+						{ offer_id: offer.id },
+						recipient.create_session_headers()
 					);
 					assert.isTrue(accepted.ok, `accept failed: ${JSON.stringify(accepted)}`);
 
 					const frame = await grantor.wait_for(
-						is_notification_with<{offer: {id: string}}>(
+						is_notification_with<{ offer: { id: string } }>(
 							ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
-							(p) => p.offer.id === offer.id,
+							(p) => p.offer.id === offer.id
 						),
-						5000,
+						5000
 					);
 					const params = RoleGrantOfferAcceptedParams.parse(frame.params);
 					assert.strictEqual(params.offer.id, offer.id);
@@ -234,7 +234,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				} finally {
 					await grantor.close();
 				}
-			},
+			}
 		);
 
 		test_if(
@@ -242,7 +242,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 			'decline delivers role_grant_offer_declined to the grantor WS',
 			async () => {
 				const fixture = await setup_test();
-				const recipient = await fixture.create_account({roles: [ROLE_ADMIN]});
+				const recipient = await fixture.create_account({ roles: [ROLE_ADMIN] });
 
 				const grantor = await open_ws(fixture.create_session_headers().cookie);
 				try {
@@ -250,17 +250,17 @@ export const describe_role_grant_offer_notification_ws_tests = (
 					const declined = await rpc(
 						fixture,
 						'role_grant_offer_decline',
-						{offer_id: offer.id, reason: 'no thanks'},
-						recipient.create_session_headers(),
+						{ offer_id: offer.id, reason: 'no thanks' },
+						recipient.create_session_headers()
 					);
 					assert.isTrue(declined.ok, `decline failed: ${JSON.stringify(declined)}`);
 
 					const frame = await grantor.wait_for(
-						is_notification_with<{offer: {id: string}}>(
+						is_notification_with<{ offer: { id: string } }>(
 							ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD,
-							(p) => p.offer.id === offer.id,
+							(p) => p.offer.id === offer.id
 						),
-						5000,
+						5000
 					);
 					const params = RoleGrantOfferDeclinedParams.parse(frame.params);
 					assert.strictEqual(params.offer.id, offer.id);
@@ -269,7 +269,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				} finally {
 					await grantor.close();
 				}
-			},
+			}
 		);
 
 		test_if(
@@ -277,7 +277,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 			'retract delivers role_grant_offer_retracted to the recipient WS',
 			async () => {
 				const fixture = await setup_test();
-				const recipient = await fixture.create_account({roles: [ROLE_ADMIN]});
+				const recipient = await fixture.create_account({ roles: [ROLE_ADMIN] });
 
 				// Recipient learns their pending offer was pulled — open its socket.
 				const recipient_ws = await open_ws(recipient.create_session_headers().cookie);
@@ -286,17 +286,17 @@ export const describe_role_grant_offer_notification_ws_tests = (
 					const retracted = await rpc(
 						fixture,
 						'role_grant_offer_retract',
-						{offer_id: offer.id},
-						fixture.create_session_headers(),
+						{ offer_id: offer.id },
+						fixture.create_session_headers()
 					);
 					assert.isTrue(retracted.ok, `retract failed: ${JSON.stringify(retracted)}`);
 
 					const frame = await recipient_ws.wait_for(
-						is_notification_with<{offer: {id: string}}>(
+						is_notification_with<{ offer: { id: string } }>(
 							ROLE_GRANT_OFFER_RETRACTED_NOTIFICATION_METHOD,
-							(p) => p.offer.id === offer.id,
+							(p) => p.offer.id === offer.id
 						),
-						5000,
+						5000
 					);
 					const params = RoleGrantOfferRetractedParams.parse(frame.params);
 					assert.strictEqual(params.offer.id, offer.id);
@@ -305,7 +305,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				} finally {
 					await recipient_ws.close();
 				}
-			},
+			}
 		);
 
 		test_if(
@@ -313,7 +313,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 			'revoke delivers a flat role_grant_revoke to the revokee WS',
 			async () => {
 				const fixture = await setup_test();
-				const revokee = await fixture.create_account({roles: [ROLE_ADMIN]});
+				const revokee = await fixture.create_account({ roles: [ROLE_ADMIN] });
 
 				const role_grant_id = await create_active_role_grant(fixture, revokee);
 
@@ -322,17 +322,17 @@ export const describe_role_grant_offer_notification_ws_tests = (
 					const revoked = await rpc(
 						fixture,
 						'role_grant_revoke',
-						{actor_id: revokee.actor.id, role_grant_id, reason: 'cleanup'},
-						fixture.create_session_headers(),
+						{ actor_id: revokee.actor.id, role_grant_id, reason: 'cleanup' },
+						fixture.create_session_headers()
 					);
 					assert.isTrue(revoked.ok, `revoke failed: ${JSON.stringify(revoked)}`);
 
 					const frame = await revokee_ws.wait_for(
-						is_notification_with<{role_grant_id: string}>(
+						is_notification_with<{ role_grant_id: string }>(
 							ROLE_GRANT_REVOKE_NOTIFICATION_METHOD,
-							(p) => p.role_grant_id === role_grant_id,
+							(p) => p.role_grant_id === role_grant_id
 						),
-						5000,
+						5000
 					);
 					// Flat params — guards the no-`offer`-wrapper, `revoked_by`-omitted
 					// shape against drift.
@@ -344,7 +344,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				} finally {
 					await revokee_ws.close();
 				}
-			},
+			}
 		);
 
 		test_if(
@@ -354,8 +354,8 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				const fixture = await setup_test();
 				// Three identities: keeper (grantor 1, socket), a second admin grantor
 				// (grantor 2), and the recipient.
-				const grantor2 = await fixture.create_account({roles: [ROLE_ADMIN]});
-				const recipient = await fixture.create_account({roles: [ROLE_ADMIN]});
+				const grantor2 = await fixture.create_account({ roles: [ROLE_ADMIN] });
+				const recipient = await fixture.create_account({ roles: [ROLE_ADMIN] });
 
 				// Two coexisting pending offers for the same (recipient, role) — keyed
 				// per grantor, so they don't upsert each other.
@@ -363,7 +363,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				const grantor2_offer = await create_pending_offer(
 					fixture,
 					recipient.account.id,
-					grantor2.create_session_headers(),
+					grantor2.create_session_headers()
 				);
 
 				// Open grantor 1 (keeper) — its offer is the one that gets superseded
@@ -373,17 +373,17 @@ export const describe_role_grant_offer_notification_ws_tests = (
 					const accepted = await rpc(
 						fixture,
 						'role_grant_offer_accept',
-						{offer_id: grantor2_offer.id},
-						recipient.create_session_headers(),
+						{ offer_id: grantor2_offer.id },
+						recipient.create_session_headers()
 					);
 					assert.isTrue(accepted.ok, `accept failed: ${JSON.stringify(accepted)}`);
 
 					const frame = await grantor1_ws.wait_for(
-						is_notification_with<{offer: {id: string}}>(
+						is_notification_with<{ offer: { id: string } }>(
 							ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
-							(p) => p.offer.id === keeper_offer.id,
+							(p) => p.offer.id === keeper_offer.id
 						),
-						5000,
+						5000
 					);
 					const params = RoleGrantOfferSupersedeParams.parse(frame.params);
 					assert.strictEqual(params.offer.id, keeper_offer.id);
@@ -394,7 +394,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				} finally {
 					await grantor1_ws.close();
 				}
-			},
+			}
 		);
 
 		test_if(
@@ -402,8 +402,8 @@ export const describe_role_grant_offer_notification_ws_tests = (
 			'revoke supersedes a pending sibling offer and notifies its grantor WS',
 			async () => {
 				const fixture = await setup_test();
-				const grantor = await fixture.create_account({roles: [ROLE_ADMIN]});
-				const revokee = await fixture.create_account({roles: [ROLE_ADMIN]});
+				const grantor = await fixture.create_account({ roles: [ROLE_ADMIN] });
+				const revokee = await fixture.create_account({ roles: [ROLE_ADMIN] });
 
 				const role_grant_id = await create_active_role_grant(fixture, revokee);
 
@@ -412,7 +412,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				const sibling_offer = await create_pending_offer(
 					fixture,
 					revokee.account.id,
-					grantor.create_session_headers(),
+					grantor.create_session_headers()
 				);
 
 				// Watch the sibling grantor's socket for the supersede push.
@@ -421,17 +421,17 @@ export const describe_role_grant_offer_notification_ws_tests = (
 					const revoked = await rpc(
 						fixture,
 						'role_grant_revoke',
-						{actor_id: revokee.actor.id, role_grant_id},
-						fixture.create_session_headers(),
+						{ actor_id: revokee.actor.id, role_grant_id },
+						fixture.create_session_headers()
 					);
 					assert.isTrue(revoked.ok, `revoke failed: ${JSON.stringify(revoked)}`);
 
 					const frame = await grantor_ws.wait_for(
-						is_notification_with<{offer: {id: string}}>(
+						is_notification_with<{ offer: { id: string } }>(
 							ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
-							(p) => p.offer.id === sibling_offer.id,
+							(p) => p.offer.id === sibling_offer.id
 						),
-						5000,
+						5000
 					);
 					const params = RoleGrantOfferSupersedeParams.parse(frame.params);
 					assert.strictEqual(params.offer.id, sibling_offer.id);
@@ -442,7 +442,7 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				} finally {
 					await grantor_ws.close();
 				}
-			},
+			}
 		);
 	});
 };

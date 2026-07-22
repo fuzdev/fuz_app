@@ -35,8 +35,8 @@
  * @module
  */
 
-import type {Db} from './db.ts';
-import type {Migration, MigrationNamespace} from './migrate.ts';
+import type { Db } from './db.ts';
+import type { Migration, MigrationNamespace } from './migrate.ts';
 
 /**
  * `cell_visibility` enum — access-control axis for a cell. Lives as a
@@ -142,7 +142,7 @@ export const CELL_INDEXES: Array<string> = [
 	`CREATE INDEX IF NOT EXISTS idx_cell_root ON cell(root_id)
 		WHERE deleted_at IS NULL`,
 	`CREATE INDEX IF NOT EXISTS idx_cell_moderation_pending ON cell(root_id)
-		WHERE moderation = 'pending'`,
+		WHERE moderation = 'pending'`
 ];
 
 /**
@@ -194,7 +194,7 @@ export const CELL_GRANT_INDEXES: Array<string> = [
 		ON cell_grant(cell_id, actor_id) WHERE actor_id IS NOT NULL`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_cell_grant_unique_role_scope
 		ON cell_grant(cell_id, role, scope_id) NULLS NOT DISTINCT
-		WHERE role IS NOT NULL`,
+		WHERE role IS NOT NULL`
 ];
 
 /**
@@ -225,7 +225,7 @@ CREATE TABLE IF NOT EXISTS cell_field (
  * toggles, and the join filter is sufficient).
  */
 export const CELL_FIELD_INDEXES: Array<string> = [
-	`CREATE INDEX IF NOT EXISTS idx_cell_field_target ON cell_field(target_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_cell_field_target ON cell_field(target_id)`
 ];
 
 /**
@@ -254,7 +254,7 @@ CREATE TABLE IF NOT EXISTS cell_item (
  */
 export const CELL_ITEM_INDEXES: Array<string> = [
 	`CREATE INDEX IF NOT EXISTS idx_cell_item_parent_position ON cell_item(parent_id, position)`,
-	`CREATE INDEX IF NOT EXISTS idx_cell_item_child ON cell_item(child_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_cell_item_child ON cell_item(child_id)`
 ];
 
 /** Tables created by `CELL_MIGRATION_NS`, in drop order (children first). */
@@ -282,8 +282,8 @@ export const CELL_MIGRATIONS: Array<Migration> = [
 			for (const sql of CELL_ITEM_INDEXES) {
 				await db.query(sql);
 			}
-		},
-	},
+		}
+	}
 ];
 
 /** Namespace identifier for cell migrations. */
@@ -292,5 +292,5 @@ export const CELL_MIGRATION_NAMESPACE = 'fuz_cell';
 /** Migration namespace consumed by `run_migrations`. */
 export const CELL_MIGRATION_NS: MigrationNamespace = {
 	namespace: CELL_MIGRATION_NAMESPACE,
-	migrations: CELL_MIGRATIONS,
+	migrations: CELL_MIGRATIONS
 };

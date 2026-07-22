@@ -15,8 +15,8 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import type {
 	JsonrpcErrorObject,
@@ -24,9 +24,9 @@ import type {
 	JsonrpcRequestId,
 	JsonrpcRequestParams,
 	JsonrpcResponse,
-	JsonrpcResult,
+	JsonrpcResult
 } from '../http/jsonrpc.ts';
-import {is_jsonrpc_error_response} from '../http/jsonrpc_helpers.ts';
+import { is_jsonrpc_error_response } from '../http/jsonrpc_helpers.ts';
 
 /**
  * Default deadline (ms) for a server→client peer request before it resolves
@@ -52,15 +52,14 @@ export const MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION = 256;
  *   code / message / data.
  */
 export type PeerRequestError =
-	| {kind: 'timeout'}
-	| {kind: 'connection_gone'}
-	| {kind: 'too_many_in_flight'}
-	| {kind: 'client_error'; error: JsonrpcErrorObject};
+	| { kind: 'timeout' }
+	| { kind: 'connection_gone' }
+	| { kind: 'too_many_in_flight' }
+	| { kind: 'client_error'; error: JsonrpcErrorObject };
 
 /** Outcome of a server→client peer request: the client's success `result`, or a `PeerRequestError`. */
 export type PeerRequestOutcome =
-	| {ok: true; value: JsonrpcResult}
-	| {ok: false; error: PeerRequestError};
+	{ ok: true; value: JsonrpcResult } | { ok: false; error: PeerRequestError };
 
 /** Per-call options for a server→client peer request. */
 export interface PeerRequestOptions {
@@ -82,7 +81,7 @@ export interface PeerRequestOptions {
 export type RequestClient = (
 	method: string,
 	params: JsonrpcRequestParams | undefined,
-	options?: PeerRequestOptions,
+	options?: PeerRequestOptions
 ) => Promise<PeerRequestOutcome>;
 
 /** A pending server→client request awaiting the client's reply. */
@@ -141,8 +140,8 @@ export class PendingPeerRequests {
 	 */
 	register(
 		connection_id: Uuid,
-		timeout_ms?: number,
-	): {id: JsonrpcRequestId; outcome: Promise<PeerRequestOutcome>} | null {
+		timeout_ms?: number
+	): { id: JsonrpcRequestId; outcome: Promise<PeerRequestOutcome> } | null {
 		const existing = this.#pending.get(connection_id);
 		if ((existing?.size ?? 0) >= this.#max_in_flight) return null;
 		const conn_pending = existing ?? new Map<JsonrpcRequestId, PendingPeerRequest>();
@@ -152,12 +151,12 @@ export class PendingPeerRequests {
 		const ms = timeout_ms ?? this.#default_timeout_ms;
 		const outcome = new Promise<PeerRequestOutcome>((resolve) => {
 			const timer = setTimeout(
-				() => this.settle(connection_id, id, {ok: false, error: {kind: 'timeout'}}),
-				ms,
+				() => this.settle(connection_id, id, { ok: false, error: { kind: 'timeout' } }),
+				ms
 			);
-			conn_pending.set(id, {resolve, timer});
+			conn_pending.set(id, { resolve, timer });
 		});
-		return {id, outcome};
+		return { id, outcome };
 	}
 
 	/**
@@ -172,12 +171,12 @@ export class PendingPeerRequests {
 	 * @mutates this - clears the matched entry from `#pending`
 	 */
 	resolve(connection_id: Uuid, response: JsonrpcResponse | JsonrpcErrorResponse): boolean {
-		const {id} = response;
+		const { id } = response;
 		if (id == null) return false;
 		if (!this.#pending.get(connection_id)?.has(id)) return false;
 		const outcome: PeerRequestOutcome = is_jsonrpc_error_response(response)
-			? {ok: false, error: {kind: 'client_error', error: response.error}}
-			: {ok: true, value: response.result};
+			? { ok: false, error: { kind: 'client_error', error: response.error } }
+			: { ok: true, value: response.result };
 		this.settle(connection_id, id, outcome);
 		return true;
 	}
@@ -210,7 +209,7 @@ export class PendingPeerRequests {
 		if (!conn_pending) return;
 		for (const entry of conn_pending.values()) {
 			clearTimeout(entry.timer);
-			entry.resolve({ok: false, error: {kind: 'connection_gone'}});
+			entry.resolve({ ok: false, error: { kind: 'connection_gone' } });
 		}
 		this.#pending.delete(connection_id);
 	}
@@ -245,13 +244,13 @@ let unmatched_peer_responses = 0;
 export const audit_unmatched_peer_response = (
 	log: Logger,
 	connection_id: Uuid,
-	id: JsonrpcRequestId | null,
+	id: JsonrpcRequestId | null
 ): void => {
 	const n = unmatched_peer_responses++;
 	if (n < 8 || n % 256 === 0) {
 		log.warn(
 			'ws: dropped unmatched peer response (unsolicited, cross-connection, or already settled)',
-			{connection_id, id, total: n + 1},
+			{ connection_id, id, total: n + 1 }
 		);
 	}
 };

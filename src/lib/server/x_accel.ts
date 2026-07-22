@@ -20,7 +20,7 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
 /** Result of the facts-location check. */
 export interface NginxFactsValidation {
@@ -77,7 +77,7 @@ const find_location_blocks = (config: string): Array<NginxLocationBlock> => {
 			else if (ch === '}') depth--;
 			i++;
 		}
-		blocks.push({path, content: config.slice(brace, i)});
+		blocks.push({ path, content: config.slice(brace, i) });
 		search = i;
 	}
 	return blocks;
@@ -97,7 +97,7 @@ const find_location_blocks = (config: string): Array<NginxLocationBlock> => {
  */
 export const validate_facts_internal_location = (
 	config: string,
-	facts_location: string,
+	facts_location: string
 ): NginxFactsValidation => {
 	const errors: Array<string> = [];
 	const normalized = trim_trailing_slashes(facts_location);
@@ -108,17 +108,17 @@ export const validate_facts_internal_location = (
 		errors.push(
 			`No nginx \`location ${facts_location}\` block found — the X-Accel facts location must ` +
 				`exist and be marked \`internal;\` so only the authz'd handler's redirect can reach it. ` +
-				`A public facts location bypasses every cell-visibility check.`,
+				`A public facts location bypasses every cell-visibility check.`
 		);
 	} else if (!matching.some((block) => is_internal(block.content))) {
 		errors.push(
 			`nginx \`location ${facts_location}\` is NOT marked \`internal;\` — a public facts ` +
 				`location serves any fact's bytes to anyone who guesses the path, bypassing every ` +
-				`cell-visibility check. Add \`internal;\` to the block.`,
+				`cell-visibility check. Add \`internal;\` to the block.`
 		);
 	}
 
-	return {ok: errors.length === 0, errors};
+	return { ok: errors.length === 0, errors };
 };
 
 /**
@@ -135,7 +135,7 @@ export const validate_facts_internal_location = (
 export const XAccelConfig = z
 	.strictObject({
 		/** The validated redirect prefix the serving path prepends (e.g. `/_facts/`). */
-		redirect_prefix: z.string(),
+		redirect_prefix: z.string()
 	})
 	.brand('XAccelConfig');
 export type XAccelConfig = z.infer<typeof XAccelConfig>;
@@ -170,11 +170,11 @@ export class XAccelConfigError extends Error {
  */
 export const create_x_accel_config = (
 	redirect_prefix: string,
-	nginx_config: string,
+	nginx_config: string
 ): XAccelConfig => {
 	const validation = validate_facts_internal_location(nginx_config, redirect_prefix);
 	if (!validation.ok) {
 		throw new XAccelConfigError(validation.errors);
 	}
-	return XAccelConfig.parse({redirect_prefix});
+	return XAccelConfig.parse({ redirect_prefix });
 };

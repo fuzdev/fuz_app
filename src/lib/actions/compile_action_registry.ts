@@ -27,10 +27,10 @@
  * @module
  */
 
-import type {Action} from './action_types.ts';
-import type {RpcAction} from './action_rpc.ts';
-import {assert_route_auth_acting_biconditional} from '../http/auth_shape.ts';
-import {is_null_schema} from '../http/schema_helpers.ts';
+import type { Action } from './action_types.ts';
+import type { RpcAction } from './action_rpc.ts';
+import { assert_route_auth_acting_biconditional } from '../http/auth_shape.ts';
+import { is_null_schema } from '../http/schema_helpers.ts';
 
 /** Result returned by `compile_action_registry`. */
 export interface ActionRegistryCompileResult {
@@ -53,12 +53,12 @@ export interface ActionRegistryCompileResult {
  */
 export const compile_action_registry = (
 	actions: ReadonlyArray<Action>,
-	ctx_label: string,
+	ctx_label: string
 ): ActionRegistryCompileResult => {
 	const action_map: Map<string, RpcAction> = new Map();
 	const seen_methods: Set<string> = new Set();
 	for (const action of actions) {
-		const {spec} = action;
+		const { spec } = action;
 		const ctx = `${ctx_label} "${spec.method}"`;
 		if (seen_methods.has(spec.method)) {
 			throw new Error(`Duplicate ${ctx_label} method: ${spec.method}`);
@@ -67,7 +67,7 @@ export const compile_action_registry = (
 		// Auth-shape invariants apply to any spec with non-null auth (which
 		// per the spec union means `kind === 'request_response'`).
 		if (spec.auth !== null) {
-			assert_route_auth_acting_biconditional(spec.auth, {input: spec.input}, ctx);
+			assert_route_auth_acting_biconditional(spec.auth, { input: spec.input }, ctx);
 			if (
 				(spec.rate_limit === 'account' || spec.rate_limit === 'both') &&
 				spec.auth.account !== 'required'
@@ -75,7 +75,7 @@ export const compile_action_registry = (
 				throw new Error(
 					`${ctx} declares rate_limit: '${
 						spec.rate_limit
-					}' but auth.account !== 'required' — no account guaranteed for account-keyed limiting. Use 'ip' or set auth.account: 'required'.`,
+					}' but auth.account !== 'required' — no account guaranteed for account-keyed limiting. Use 'ip' or set auth.account: 'required'.`
 				);
 			}
 		}
@@ -87,11 +87,11 @@ export const compile_action_registry = (
 				throw new Error(
 					`${
 						ctx
-					} uses z.null() for input — JSON-RPC 2.0 §4.2 forbids "params": null on the wire. Use z.void() for parameterless methods.`,
+					} uses z.null() for input — JSON-RPC 2.0 §4.2 forbids "params": null on the wire. Use z.void() for parameterless methods.`
 				);
 			}
-			action_map.set(spec.method, {spec, handler: action.handler});
+			action_map.set(spec.method, { spec, handler: action.handler });
 		}
 	}
-	return {action_map};
+	return { action_map };
 };

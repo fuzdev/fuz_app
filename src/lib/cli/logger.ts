@@ -12,7 +12,7 @@
  * @module
  */
 
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 // TODO: inline ANSI codes duplicate what Logger does internally with `styleText`.
 // Long-term, expose a color helper from Logger or converge with `st` from fuz_util/print.ts.
@@ -80,5 +80,5 @@ export const create_cli_logger = (logger: Logger): CliLogger => ({
 		logger.info(c ? `\x1b[2m${msg}\x1b[0m` : msg);
 	},
 
-	logger,
+	logger
 });

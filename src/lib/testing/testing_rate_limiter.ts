@@ -30,7 +30,7 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {RateLimiter, type RateLimitResult} from '../rate_limiter.ts';
+import { RateLimiter, type RateLimitResult } from '../rate_limiter.ts';
 
 /**
  * `RateLimiter` plus bucket tracking. Every `check`/`record` call adds

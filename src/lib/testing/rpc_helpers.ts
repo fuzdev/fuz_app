@@ -10,21 +10,25 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {assert} from 'vitest';
-import {z} from 'zod';
+import { assert } from 'vitest';
+import { z } from 'zod';
 
 import {
 	JSONRPC_VERSION,
 	JsonrpcErrorResponse,
 	JsonrpcResponse,
-	type JsonrpcErrorCode,
+	type JsonrpcErrorCode
 } from '../http/jsonrpc.ts';
-import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
-import type {RpcAction} from '../actions/action_rpc.ts';
-import type {AppSurfaceRpcEndpoint, AppSurfaceRpcMethod, RpcEndpointSpec} from '../http/surface.ts';
-import type {AppServerContext} from '../server/app_server_context.ts';
-import type {SessionOptions} from '../auth/session_cookie.ts';
-import {create_stub_app_server_context} from './stubs.ts';
+import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
+import type { RpcAction } from '../actions/action_rpc.ts';
+import type {
+	AppSurfaceRpcEndpoint,
+	AppSurfaceRpcMethod,
+	RpcEndpointSpec
+} from '../http/surface.ts';
+import type { AppServerContext } from '../server/app_server_context.ts';
+import type { SessionOptions } from '../auth/session_cookie.ts';
+import { create_stub_app_server_context } from './stubs.ts';
 
 /**
  * Union accepted by the suite-level `rpc_endpoints` option — eager array or
@@ -37,8 +41,7 @@ import {create_stub_app_server_context} from './stubs.ts';
  * `CreateTestAppOptions` for live dispatch.
  */
 export type RpcEndpointsSuiteOption =
-	| Array<RpcEndpointSpec>
-	| ((ctx: AppServerContext) => Array<RpcEndpointSpec>);
+	Array<RpcEndpointSpec> | ((ctx: AppServerContext) => Array<RpcEndpointSpec>);
 
 /**
  * Resolve a suite's `rpc_endpoints` option to an array for setup-time
@@ -64,7 +67,7 @@ export type RpcEndpointsSuiteOption =
  */
 export const resolve_rpc_endpoints_for_setup = (
 	rpc_endpoints: RpcEndpointsSuiteOption,
-	session_options: SessionOptions<string>,
+	session_options: SessionOptions<string>
 ): Array<RpcEndpointSpec> => {
 	if (typeof rpc_endpoints !== 'function') return rpc_endpoints;
 	const first = rpc_endpoints(create_stub_app_server_context(session_options));
@@ -74,9 +77,9 @@ export const resolve_rpc_endpoints_for_setup = (
 			eps
 				.map((ep) => ({
 					path: ep.path,
-					methods: ep.actions.map((a) => a.spec.method).sort(),
+					methods: ep.actions.map((a) => a.spec.method).sort()
 				}))
-				.sort((a, b) => a.path.localeCompare(b.path)),
+				.sort((a, b) => a.path.localeCompare(b.path))
 		);
 	const summary_a = summarize(first);
 	const summary_b = summarize(second);
@@ -84,7 +87,7 @@ export const resolve_rpc_endpoints_for_setup = (
 		throw new Error(
 			'rpc_endpoints factory is not path-pure: two invocations with equivalent stub ctxs produced different (path, method) shapes. ' +
 				`The factory must be pure wrt endpoint path and action method list — see ../testing/rpc_helpers.ts. ` +
-				`first=${summary_a} second=${summary_b}`,
+				`first=${summary_a} second=${summary_b}`
 		);
 	}
 	return first;
@@ -105,14 +108,14 @@ export const resolve_rpc_endpoints_for_setup = (
 export const create_rpc_post_init = (
 	method: string,
 	params?: unknown,
-	id: string | number = 'test',
+	id: string | number = 'test'
 ): RequestInit => {
-	const envelope: Record<string, unknown> = {jsonrpc: JSONRPC_VERSION, method, id};
+	const envelope: Record<string, unknown> = { jsonrpc: JSONRPC_VERSION, method, id };
 	if (params !== undefined && params !== null) envelope.params = params;
 	return {
 		method: 'POST',
-		headers: {'Content-Type': 'application/json'},
-		body: JSON.stringify(envelope),
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(envelope)
 	};
 };
 
@@ -127,9 +130,9 @@ export const create_rpc_get_url = (
 	endpoint_path: string,
 	method: string,
 	params?: unknown,
-	id: string | number = 'test',
+	id: string | number = 'test'
 ): string => {
-	const search = new URLSearchParams({method, id: String(id)});
+	const search = new URLSearchParams({ method, id: String(id) });
 	if (params !== undefined && params !== null) {
 		search.set('params', JSON.stringify(params));
 	}
@@ -146,7 +149,7 @@ export const create_rpc_get_url = (
  */
 export const assert_jsonrpc_error_response = (
 	body: unknown,
-	expected_code?: JsonrpcErrorCode,
+	expected_code?: JsonrpcErrorCode
 ): void => {
 	const result = JsonrpcErrorResponse.safeParse(body);
 	assert.ok(result.success, `not a valid JSON-RPC error response: ${JSON.stringify(body)}`);
@@ -154,7 +157,7 @@ export const assert_jsonrpc_error_response = (
 		assert.strictEqual(
 			result.data.error.code,
 			expected_code as number,
-			`expected error code ${expected_code}, got ${result.data.error.code}`,
+			`expected error code ${expected_code}, got ${result.data.error.code}`
 		);
 	}
 };
@@ -176,8 +179,8 @@ export const assert_jsonrpc_success_response = (body: unknown, output_schema?: z
 		if (!output_result.success) {
 			assert.fail(
 				`JSON-RPC result does not match output schema: ${JSON.stringify(
-					output_result.error.issues,
-				)}`,
+					output_result.error.issues
+				)}`
 			);
 		}
 	}
@@ -222,12 +225,12 @@ export const headers_to_record = (headers: Headers): Record<string, string> => {
  * header-level properties (e.g. no backend-fingerprinting headers).
  */
 export type RpcCallResult =
-	| {ok: true; status: number; headers: Record<string, string>; result: unknown}
+	| { ok: true; status: number; headers: Record<string, string>; result: unknown }
 	| {
 			ok: false;
 			status: number;
 			headers: Record<string, string>;
-			error: {code: number; message: string; data?: unknown};
+			error: { code: number; message: string; data?: unknown };
 	  };
 
 /**
@@ -236,7 +239,7 @@ export type RpcCallResult =
  * bare `RpcTestTransport` callable (cross-process `fixture.transport`).
  */
 export type RpcCallApp =
-	| {request: (input: string, init: RequestInit) => Promise<Response> | Response}
+	| { request: (input: string, init: RequestInit) => Promise<Response> | Response }
 	| RpcTestTransport;
 
 /** Arguments for `rpc_call`. */
@@ -272,13 +275,13 @@ export interface RpcCallArgs {
 /** Base default headers merged into every `rpc_call` request. */
 const RPC_CALL_DEFAULT_HEADERS_BASE: Readonly<Record<string, string>> = {
 	host: 'localhost',
-	'Content-Type': 'application/json',
+	'Content-Type': 'application/json'
 };
 
 /** Default headers merged into every `rpc_call` request. Includes `origin`. */
 const RPC_CALL_DEFAULT_HEADERS: Readonly<Record<string, string>> = {
 	...RPC_CALL_DEFAULT_HEADERS_BASE,
-	origin: 'http://localhost:5173',
+	origin: 'http://localhost:5173'
 };
 
 /**
@@ -302,7 +305,7 @@ export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
 		headers,
 		id = 'test',
 		verb = 'POST',
-		suppress_default_origin,
+		suppress_default_origin
 	} = args;
 
 	const defaults = suppress_default_origin
@@ -313,7 +316,7 @@ export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
 	let init: RequestInit;
 	if (verb === 'GET') {
 		url = create_rpc_get_url(path, method, params, id);
-		init = {method: 'GET', headers: {...defaults, ...headers}};
+		init = { method: 'GET', headers: { ...defaults, ...headers } };
 	} else {
 		url = path;
 		const post = create_rpc_post_init(method, params, id);
@@ -322,9 +325,9 @@ export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
 			headers: {
 				...defaults,
 				...(post.headers as Record<string, string>),
-				...headers,
+				...headers
 			},
-			body: post.body,
+			body: post.body
 		};
 	}
 
@@ -335,7 +338,7 @@ export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
 
 	const success = JsonrpcResponse.safeParse(body);
 	if (success.success) {
-		return {ok: true, status, headers: response_headers, result: success.data.result};
+		return { ok: true, status, headers: response_headers, result: success.data.result };
 	}
 	const error = JsonrpcErrorResponse.safeParse(body);
 	if (error.success) {
@@ -346,14 +349,14 @@ export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
 			error: {
 				code: error.data.error.code,
 				message: error.data.error.message,
-				data: error.data.error.data,
-			},
+				data: error.data.error.data
+			}
 		};
 	}
 	throw new Error(
 		`rpc_call: response is not a valid JSON-RPC envelope (method=${method}, status=${
 			status
-		}): ${JSON.stringify(body)}`,
+		}): ${JSON.stringify(body)}`
 	);
 };
 
@@ -366,8 +369,8 @@ export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
  * Equivalent to `rpc_call({...args, suppress_default_origin: true})`.
  */
 export const rpc_call_non_browser = (
-	args: Omit<RpcCallArgs, 'suppress_default_origin'>,
-): Promise<RpcCallResult> => rpc_call({...args, suppress_default_origin: true});
+	args: Omit<RpcCallArgs, 'suppress_default_origin'>
+): Promise<RpcCallResult> => rpc_call({ ...args, suppress_default_origin: true });
 
 /**
  * Typed discriminated result returned by `rpc_call_for_spec`. The success
@@ -376,12 +379,12 @@ export const rpc_call_non_browser = (
  * are asserted per call site.
  */
 export type RpcCallResultForSpec<TSpec extends RequestResponseActionSpec> =
-	| {ok: true; status: number; headers: Record<string, string>; result: z.infer<TSpec['output']>}
+	| { ok: true; status: number; headers: Record<string, string>; result: z.infer<TSpec['output']> }
 	| {
 			ok: false;
 			status: number;
 			headers: Record<string, string>;
-			error: {code: number; message: string; data?: unknown};
+			error: { code: number; message: string; data?: unknown };
 	  };
 
 /** Arguments for `rpc_call_for_spec`. `spec` replaces the loose `method` field. */
@@ -410,10 +413,10 @@ export type RpcCallForSpecArgs<TSpec extends RequestResponseActionSpec> = Omit<
  *   or if `rpc_call` itself throws on an envelope violation.
  */
 export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>(
-	args: RpcCallForSpecArgs<TSpec>,
+	args: RpcCallForSpecArgs<TSpec>
 ): Promise<RpcCallResultForSpec<TSpec>> => {
-	const {spec, params, ...rest} = args;
-	const res = await rpc_call({...rest, method: spec.method, params});
+	const { spec, params, ...rest } = args;
+	const res = await rpc_call({ ...rest, method: spec.method, params });
 	if (!res.ok) {
 		return res;
 	}
@@ -421,15 +424,15 @@ export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>
 	if (!parsed.success) {
 		throw new Error(
 			`rpc_call_for_spec(${spec.method}) result did not match spec.output: ${JSON.stringify(
-				parsed.error.issues,
-			)}`,
+				parsed.error.issues
+			)}`
 		);
 	}
 	return {
 		ok: true,
 		status: res.status,
 		headers: res.headers,
-		result: parsed.data as z.infer<TSpec['output']>,
+		result: parsed.data as z.infer<TSpec['output']>
 	};
 };
 
@@ -444,22 +447,22 @@ export const rpc_call_for_spec = async <TSpec extends RequestResponseActionSpec>
  */
 export const rpc_call_typed = async <T>(
 	args: RpcCallArgs,
-	output_schema: z.ZodType<T>,
+	output_schema: z.ZodType<T>
 ): Promise<T> => {
 	const res = await rpc_call(args);
 	if (!res.ok) {
 		throw new Error(
 			`rpc_call_typed(${args.method}) returned error: code=${res.error.code} message=${
 				res.error.message
-			} data=${JSON.stringify(res.error.data)}`,
+			} data=${JSON.stringify(res.error.data)}`
 		);
 	}
 	const parsed = output_schema.safeParse(res.result);
 	if (!parsed.success) {
 		throw new Error(
 			`rpc_call_typed(${args.method}) result did not match output schema: ${JSON.stringify(
-				parsed.error.issues,
-			)}`,
+				parsed.error.issues
+			)}`
 		);
 	}
 	return parsed.data;
@@ -474,11 +477,11 @@ export const rpc_call_typed = async <T>(
  */
 export const find_rpc_action = (
 	rpc_endpoints: ReadonlyArray<RpcEndpointSpec>,
-	method: string,
-): {path: string; action: RpcAction} | undefined => {
+	method: string
+): { path: string; action: RpcAction } | undefined => {
 	for (const ep of rpc_endpoints) {
 		for (const action of ep.actions) {
-			if (action.spec.method === method) return {path: ep.path, action};
+			if (action.spec.method === method) return { path: ep.path, action };
 		}
 	}
 	return undefined;
@@ -491,11 +494,11 @@ export const find_rpc_action = (
  */
 export const find_rpc_method = (
 	rpc_endpoints: ReadonlyArray<AppSurfaceRpcEndpoint>,
-	method: string,
-): {path: string; method_spec: AppSurfaceRpcMethod} | undefined => {
+	method: string
+): { path: string; method_spec: AppSurfaceRpcMethod } | undefined => {
 	for (const ep of rpc_endpoints) {
 		for (const method_spec of ep.methods) {
-			if (method_spec.name === method) return {path: ep.path, method_spec};
+			if (method_spec.name === method) return { path: ep.path, method_spec };
 		}
 	}
 	return undefined;
@@ -516,18 +519,18 @@ export const find_rpc_method = (
  *   docs) or has more than one entry (ambiguous).
  */
 export const require_rpc_endpoint_path = (
-	rpc_endpoints: ReadonlyArray<RpcEndpointSpec>,
+	rpc_endpoints: ReadonlyArray<RpcEndpointSpec>
 ): string => {
 	if (rpc_endpoints.length === 0) {
 		throw new Error(
-			'rpc_endpoints is empty — the admin/audit integration suites require an RPC endpoint. Pass `rpc_endpoints` on the suite options.',
+			'rpc_endpoints is empty — the admin/audit integration suites require an RPC endpoint. Pass `rpc_endpoints` on the suite options.'
 		);
 	}
 	if (rpc_endpoints.length > 1) {
 		throw new Error(
 			`rpc_endpoints has ${
 				rpc_endpoints.length
-			} entries; this helper expects exactly one. Iterate rpc_endpoints manually for multi-endpoint setups.`,
+			} entries; this helper expects exactly one. Iterate rpc_endpoints manually for multi-endpoint setups.`
 		);
 	}
 	return rpc_endpoints[0]!.path;

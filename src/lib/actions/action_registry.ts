@@ -31,9 +31,9 @@ import type {
 	ActionSpecUnion,
 	RequestResponseActionSpec,
 	RemoteNotificationActionSpec,
-	LocalCallActionSpec,
+	LocalCallActionSpec
 } from './action_spec.ts';
-import {is_public_auth} from '../http/auth_shape.ts';
+import { is_public_auth } from '../http/auth_shape.ts';
 
 // The auth (`public_*`, `authenticated_*`) and initiator-direction
 // (`backend_to_frontend_*`, `frontend_to_backend_*`) getters are pre-built
@@ -134,7 +134,7 @@ export class ActionRegistry {
 	get broadcast_specs(): Array<RemoteNotificationActionSpec> {
 		const streams_targets = this.#get_streams_target_methods();
 		return this.remote_notification_specs.filter(
-			(spec) => spec.initiator !== 'frontend' && !streams_targets.has(spec.method),
+			(spec) => spec.initiator !== 'frontend' && !streams_targets.has(spec.method)
 		);
 	}
 
@@ -145,7 +145,7 @@ export class ActionRegistry {
 	get backend_initiated_specs(): Array<ActionSpecUnion> {
 		const streams_targets = this.#get_streams_target_methods();
 		return this.specs.filter(
-			(spec) => spec.initiator !== 'frontend' && !streams_targets.has(spec.method),
+			(spec) => spec.initiator !== 'frontend' && !streams_targets.has(spec.method)
 		);
 	}
 
@@ -182,7 +182,7 @@ export class ActionRegistry {
 			(spec) =>
 				spec.auth?.account === 'required' &&
 				!spec.auth.roles?.length &&
-				!spec.auth.credential_types?.length,
+				!spec.auth.credential_types?.length
 		);
 	}
 

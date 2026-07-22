@@ -18,27 +18,27 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, assert, afterAll} from 'vitest';
+import { describe, test, assert, afterAll } from 'vitest';
 
-import type {SessionOptions} from '../auth/session_cookie.ts';
+import type { SessionOptions } from '../auth/session_cookie.ts';
 import {
 	find_auth_route,
 	assert_response_matches_spec,
-	assert_no_error_info_leakage,
+	assert_no_error_info_leakage
 } from './integration_helpers.ts';
 import {
 	find_rpc_action,
 	rpc_call_for_spec,
 	require_rpc_endpoint_path,
 	resolve_rpc_endpoints_for_setup,
-	type RpcEndpointsSuiteOption,
+	type RpcEndpointsSuiteOption
 } from './rpc_helpers.ts';
 import {
 	ErrorCoverageCollector,
 	assert_error_coverage,
-	DEFAULT_INTEGRATION_ERROR_COVERAGE,
+	DEFAULT_INTEGRATION_ERROR_COVERAGE
 } from './error_coverage.ts';
-import {is_public_auth} from '../http/auth_shape.ts';
+import { is_public_auth } from '../http/auth_shape.ts';
 import {
 	account_verify_action_spec,
 	account_session_list_action_spec,
@@ -46,14 +46,14 @@ import {
 	account_session_revoke_all_action_spec,
 	account_token_create_action_spec,
 	account_token_list_action_spec,
-	account_token_revoke_action_spec,
+	account_token_revoke_action_spec
 } from '../auth/account_action_specs.ts';
-import {invite_create_action_spec} from '../auth/admin_action_specs.ts';
-import {LoginOutput, AccountStatusOutput} from '../auth/account_route_schema.ts';
-import type {AppSurfaceSpec} from '../http/surface.ts';
-import {test_if, type BackendCapabilities} from './cross_backend/capabilities.ts';
-import type {SetupTest} from './cross_backend/setup.ts';
-import {DEFAULT_TEST_PASSWORD} from './test_credentials.ts';
+import { invite_create_action_spec } from '../auth/admin_action_specs.ts';
+import { LoginOutput, AccountStatusOutput } from '../auth/account_route_schema.ts';
+import type { AppSurfaceSpec } from '../http/surface.ts';
+import { test_if, type BackendCapabilities } from './cross_backend/capabilities.ts';
+import type { SetupTest } from './cross_backend/setup.ts';
+import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
 
 /**
  * Configuration for `describe_standard_integration_tests`.
@@ -143,7 +143,7 @@ export interface StandardIntegrationTestOptions {
  *   `account_verify` / `account_session_*` / `account_token_*`.
  */
 export const describe_standard_integration_tests = (
-	options: StandardIntegrationTestOptions,
+	options: StandardIntegrationTestOptions
 ): void => {
 	const route_specs = options.surface_source.route_specs;
 	// Hard-fail early so consumers see a clear setup error instead of a
@@ -152,12 +152,12 @@ export const describe_standard_integration_tests = (
 	// path; the running backend handles live dispatch.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
-		options.session_options,
+		options.session_options
 	);
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 
 	describe('standard_integration', () => {
-		const {cookie_name} = options.session_options;
+		const { cookie_name } = options.session_options;
 
 		// Error coverage tracking across test groups
 		const error_collector = new ErrorCoverageCollector();
@@ -188,7 +188,7 @@ export const describe_standard_integration_tests = (
 				// (same spirit as the [401, 403, 429] ignore in the attack-surface
 				// tightness defaults); otherwise #10 adding /logout's 403 to the spine
 				// surface tips the ratio under threshold here though the gate is tested.
-				ignore_statuses: [403],
+				ignore_statuses: [403]
 			});
 		});
 
@@ -200,7 +200,7 @@ export const describe_standard_integration_tests = (
 				const login_route = find_auth_route(route_specs, '/login', 'POST');
 				assert.ok(
 					login_route,
-					'Expected POST /login route — ensure create_route_specs includes account routes',
+					'Expected POST /login route — ensure create_route_specs includes account routes'
 				);
 
 				const res = await fixture.transport(login_route.path, {
@@ -208,12 +208,12 @@ export const describe_standard_integration_tests = (
 					headers: {
 						host: 'localhost',
 						origin: 'http://localhost:5173',
-						'content-type': 'application/json',
+						'content-type': 'application/json'
 					},
 					body: JSON.stringify({
 						username: fixture.account.username,
-						password: DEFAULT_TEST_PASSWORD,
-					}),
+						password: DEFAULT_TEST_PASSWORD
+					})
 				});
 
 				assert.strictEqual(res.status, 200);
@@ -230,7 +230,7 @@ export const describe_standard_integration_tests = (
 				const login_route = find_auth_route(route_specs, '/login', 'POST');
 				assert.ok(
 					login_route,
-					'Expected POST /login route — ensure create_route_specs includes account routes',
+					'Expected POST /login route — ensure create_route_specs includes account routes'
 				);
 
 				const res = await fixture.transport(login_route.path, {
@@ -238,12 +238,12 @@ export const describe_standard_integration_tests = (
 					headers: {
 						host: 'localhost',
 						origin: 'http://localhost:5173',
-						'content-type': 'application/json',
+						'content-type': 'application/json'
 					},
 					body: JSON.stringify({
 						username: fixture.account.username,
-						password: 'wrong-password',
-					}),
+						password: 'wrong-password'
+					})
 				});
 
 				assert.strictEqual(res.status, 401);
@@ -257,7 +257,7 @@ export const describe_standard_integration_tests = (
 				const login_route = find_auth_route(route_specs, '/login', 'POST');
 				assert.ok(
 					login_route,
-					'Expected POST /login route — ensure create_route_specs includes account routes',
+					'Expected POST /login route — ensure create_route_specs includes account routes'
 				);
 
 				const res = await fixture.transport(login_route.path, {
@@ -265,12 +265,12 @@ export const describe_standard_integration_tests = (
 					headers: {
 						host: 'localhost',
 						origin: 'http://localhost:5173',
-						'content-type': 'application/json',
+						'content-type': 'application/json'
 					},
 					body: JSON.stringify({
 						username: 'nonexistent_user',
-						password: DEFAULT_TEST_PASSWORD,
-					}),
+						password: DEFAULT_TEST_PASSWORD
+					})
 				});
 
 				assert.strictEqual(res.status, 401);
@@ -284,7 +284,7 @@ export const describe_standard_integration_tests = (
 				const login_route = find_auth_route(route_specs, '/login', 'POST');
 				assert.ok(
 					login_route,
-					'Expected POST /login route — ensure create_route_specs includes account routes',
+					'Expected POST /login route — ensure create_route_specs includes account routes'
 				);
 
 				const res = await fixture.transport(login_route.path, {
@@ -292,12 +292,12 @@ export const describe_standard_integration_tests = (
 					headers: {
 						host: 'localhost',
 						origin: 'http://localhost:5173',
-						'content-type': 'application/json',
+						'content-type': 'application/json'
 					},
 					body: JSON.stringify({
 						username: `  ${fixture.account.username}  `,
-						password: DEFAULT_TEST_PASSWORD,
-					}),
+						password: DEFAULT_TEST_PASSWORD
+					})
 				});
 
 				assert.strictEqual(res.status, 200);
@@ -311,11 +311,11 @@ export const describe_standard_integration_tests = (
 				const logout_route = find_auth_route(route_specs, '/logout', 'POST');
 				assert.ok(
 					login_route,
-					'Expected POST /login route — ensure create_route_specs includes account routes',
+					'Expected POST /login route — ensure create_route_specs includes account routes'
 				);
 				assert.ok(
 					logout_route,
-					'Expected POST /logout route — ensure create_route_specs includes account routes',
+					'Expected POST /logout route — ensure create_route_specs includes account routes'
 				);
 
 				// Login
@@ -324,12 +324,12 @@ export const describe_standard_integration_tests = (
 					headers: {
 						host: 'localhost',
 						origin: 'http://localhost:5173',
-						'content-type': 'application/json',
+						'content-type': 'application/json'
 					},
 					body: JSON.stringify({
 						username: fixture.account.username,
-						password: DEFAULT_TEST_PASSWORD,
-					}),
+						password: DEFAULT_TEST_PASSWORD
+					})
 				});
 				assert.strictEqual(login_res.status, 200);
 
@@ -343,23 +343,23 @@ export const describe_standard_integration_tests = (
 				const create_headers = () => ({
 					host: 'localhost',
 					origin: 'http://localhost:5173',
-					cookie: `${cookie_name}=${login_cookie}`,
+					cookie: `${cookie_name}=${login_cookie}`
 				});
 
 				// Verify works
 				const verify_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: create_headers(),
+					headers: create_headers()
 				});
 				assert.strictEqual(verify_res.status, 200);
 
 				// Logout
 				const logout_res = await fixture.transport(logout_route.path, {
 					method: 'POST',
-					headers: create_headers(),
+					headers: create_headers()
 				});
 				assert.strictEqual(logout_res.status, 200);
 				const logout_body = await logout_res.json();
@@ -367,16 +367,16 @@ export const describe_standard_integration_tests = (
 				assert.strictEqual(
 					logout_body.username,
 					fixture.account.username,
-					'Logout response should include the username',
+					'Logout response should include the username'
 				);
 
 				// Verify fails after logout (session revoked)
 				const verify_after = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: create_headers(),
+					headers: create_headers()
 				});
 				assert.strictEqual(verify_after.status, 401);
 			});
@@ -390,7 +390,7 @@ export const describe_standard_integration_tests = (
 				const login_route = find_auth_route(route_specs, '/login', 'POST');
 				assert.ok(
 					login_route,
-					'Expected POST /login route — ensure create_route_specs includes account routes',
+					'Expected POST /login route — ensure create_route_specs includes account routes'
 				);
 
 				const make_login = (username: string, password: string) =>
@@ -399,9 +399,9 @@ export const describe_standard_integration_tests = (
 						headers: {
 							host: 'localhost',
 							origin: 'http://localhost:5173',
-							'content-type': 'application/json',
+							'content-type': 'application/json'
 						},
-						body: JSON.stringify({username, password}),
+						body: JSON.stringify({ username, password })
 					});
 
 				// wrong password for existing user
@@ -420,12 +420,12 @@ export const describe_standard_integration_tests = (
 				assert.deepStrictEqual(
 					wrong_pw_keys,
 					no_user_keys,
-					'Response keys must be identical to prevent account enumeration',
+					'Response keys must be identical to prevent account enumeration'
 				);
 				assert.strictEqual(
 					wrong_pw_body.error,
 					no_user_body.error,
-					'Error codes must be identical',
+					'Error codes must be identical'
 				);
 			});
 
@@ -438,7 +438,7 @@ export const describe_standard_integration_tests = (
 				const login_route = find_auth_route(route_specs, '/login', 'POST');
 				assert.ok(
 					login_route,
-					'Expected POST /login route — ensure create_route_specs includes account routes',
+					'Expected POST /login route — ensure create_route_specs includes account routes'
 				);
 
 				const res = await fixture.transport(login_route.path, {
@@ -446,12 +446,12 @@ export const describe_standard_integration_tests = (
 					headers: {
 						host: 'localhost',
 						origin: 'http://localhost:5173',
-						'content-type': 'application/json',
+						'content-type': 'application/json'
 					},
 					body: JSON.stringify({
 						username: fixture.account.username,
-						password: DEFAULT_TEST_PASSWORD,
-					}),
+						password: DEFAULT_TEST_PASSWORD
+					})
 				});
 				assert.strictEqual(res.status, 200);
 				const body = await res.json();
@@ -489,21 +489,21 @@ export const describe_standard_integration_tests = (
 					const login_route = find_auth_route(route_specs, '/login', 'POST');
 					assert.ok(
 						login_route,
-						'Expected POST /login route — ensure create_route_specs includes account routes',
+						'Expected POST /login route — ensure create_route_specs includes account routes'
 					);
 					// `/status` is the sibling of `/login` under the same account prefix.
 					const status_path = login_route.path.replace(/\/login$/, '/status');
 
 					const res = await fixture.transport(status_path, {
 						method: 'GET',
-						headers: fixture.create_session_headers({host: 'localhost'}),
+						headers: fixture.create_session_headers({ host: 'localhost' })
 					});
 					assert.strictEqual(
 						res.status,
 						200,
 						`expected 200 from ${status_path} — capabilities.account_status is true, so the ` +
 							`account surface must bundle GET /status. A 404 means the backend declares the ` +
-							`capability but doesn't mount the route.`,
+							`capability but doesn't mount the route.`
 					);
 					const body = await res.json();
 					// Throws on any extra/missing field across account/actor/role_grants.
@@ -512,9 +512,9 @@ export const describe_standard_integration_tests = (
 					assert.ok(parsed.actor, 'single-actor keeper must resolve a non-null actor');
 					assert.ok(
 						parsed.role_grants.length > 0,
-						'single-actor keeper must have populated role_grants',
+						'single-actor keeper must have populated role_grants'
 					);
-				},
+				}
 			);
 		});
 
@@ -526,7 +526,7 @@ export const describe_standard_integration_tests = (
 				const login_route = find_auth_route(route_specs, '/login', 'POST');
 				assert.ok(
 					login_route,
-					'Expected POST /login route — ensure create_route_specs includes account routes',
+					'Expected POST /login route — ensure create_route_specs includes account routes'
 				);
 
 				const res = await fixture.transport(login_route.path, {
@@ -534,12 +534,12 @@ export const describe_standard_integration_tests = (
 					headers: {
 						host: 'localhost',
 						origin: 'http://localhost:5173',
-						'content-type': 'application/json',
+						'content-type': 'application/json'
 					},
 					body: JSON.stringify({
 						username: fixture.account.username,
-						password: DEFAULT_TEST_PASSWORD,
-					}),
+						password: DEFAULT_TEST_PASSWORD
+					})
 				});
 
 				assert.strictEqual(res.status, 200);
@@ -560,11 +560,11 @@ export const describe_standard_integration_tests = (
 			test('no cookie on protected route returns 401', async () => {
 				const fixture = await options.setup_test();
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.fresh_transport()},
+					app: { request: fixture.fresh_transport() },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: {host: 'localhost'},
+					headers: { host: 'localhost' }
 				});
 				assert.strictEqual(res.status, 401);
 			});
@@ -572,11 +572,11 @@ export const describe_standard_integration_tests = (
 			test('corrupted cookie returns 401', async () => {
 				const fixture = await options.setup_test();
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: {cookie: `${cookie_name}=random_garbage_value`},
+					headers: { cookie: `${cookie_name}=random_garbage_value` }
 				});
 				assert.strictEqual(res.status, 401);
 			});
@@ -598,11 +598,11 @@ export const describe_standard_integration_tests = (
 
 				// List own sessions to get the session ID
 				const list_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_session_list_action_spec,
 					params: undefined,
-					headers,
+					headers
 				});
 				assert.ok(list_res.ok, 'account_session_list should succeed');
 				assert.ok(list_res.result.sessions.length >= 1);
@@ -610,11 +610,11 @@ export const describe_standard_integration_tests = (
 
 				// Revoke that session by ID
 				const revoke_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_session_revoke_action_spec,
-					params: {session_id},
-					headers,
+					params: { session_id },
+					headers
 				});
 				assert.ok(revoke_res.ok, 'account_session_revoke should succeed');
 				assert.strictEqual(revoke_res.result.ok, true);
@@ -622,11 +622,11 @@ export const describe_standard_integration_tests = (
 
 				// Session should no longer work
 				const after = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers,
+					headers
 				});
 				assert.strictEqual(after.status, 401);
 			});
@@ -637,31 +637,31 @@ export const describe_standard_integration_tests = (
 
 				// Verify works
 				const before = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers,
+					headers
 				});
 				assert.strictEqual(before.status, 200);
 
 				// Revoke all sessions
 				const revoke_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_session_revoke_all_action_spec,
 					params: undefined,
-					headers,
+					headers
 				});
 				assert.ok(revoke_res.ok, 'account_session_revoke_all should succeed');
 
 				// Verify fails after revocation
 				const after = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers,
+					headers
 				});
 				assert.strictEqual(after.status, 401);
 			});
@@ -676,15 +676,15 @@ export const describe_standard_integration_tests = (
 				const password_route = find_auth_route(route_specs, '/password', 'POST');
 				assert.ok(
 					login_route,
-					'Expected POST /login route — ensure create_route_specs includes account routes',
+					'Expected POST /login route — ensure create_route_specs includes account routes'
 				);
 				assert.ok(
 					password_route,
-					'Expected POST /password route — ensure create_route_specs includes account routes',
+					'Expected POST /password route — ensure create_route_specs includes account routes'
 				);
 
 				const headers = fixture.create_session_headers({
-					'content-type': 'application/json',
+					'content-type': 'application/json'
 				});
 
 				// Change password
@@ -693,25 +693,25 @@ export const describe_standard_integration_tests = (
 					headers,
 					body: JSON.stringify({
 						current_password: DEFAULT_TEST_PASSWORD,
-						new_password: 'new-password-456',
-					}),
+						new_password: 'new-password-456'
+					})
 				});
 				assert.strictEqual(change_res.status, 200);
 				const change_body = await change_res.json();
 				assert.strictEqual(change_body.ok, true);
 				assert.ok(
 					typeof change_body.sessions_revoked === 'number',
-					'Expected sessions_revoked count',
+					'Expected sessions_revoked count'
 				);
 				assert.ok(change_body.sessions_revoked >= 1, 'Expected at least 1 session revoked');
 
 				// Old session should be invalid
 				const verify_after = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: fixture.create_session_headers(),
+					headers: fixture.create_session_headers()
 				});
 				assert.strictEqual(verify_after.status, 401);
 
@@ -721,12 +721,12 @@ export const describe_standard_integration_tests = (
 					headers: {
 						host: 'localhost',
 						origin: 'http://localhost:5173',
-						'content-type': 'application/json',
+						'content-type': 'application/json'
 					},
 					body: JSON.stringify({
 						username: fixture.account.username,
-						password: 'new-password-456',
-					}),
+						password: 'new-password-456'
+					})
 				});
 				assert.strictEqual(login_res.status, 200);
 				const login_body = await login_res.json();
@@ -738,29 +738,29 @@ export const describe_standard_integration_tests = (
 				const password_route = find_auth_route(route_specs, '/password', 'POST');
 				assert.ok(
 					password_route,
-					'Expected POST /password route — ensure create_route_specs includes account routes',
+					'Expected POST /password route — ensure create_route_specs includes account routes'
 				);
 
 				const res = await fixture.transport(password_route.path, {
 					method: 'POST',
 					headers: fixture.create_session_headers({
-						'content-type': 'application/json',
+						'content-type': 'application/json'
 					}),
 					body: JSON.stringify({
 						current_password: 'wrong-password-999',
-						new_password: 'new-password-456',
-					}),
+						new_password: 'new-password-456'
+					})
 				});
 				assert.strictEqual(res.status, 401);
 				error_collector.record(route_specs, 'POST', password_route.path, 401);
 
 				// Session should still be valid (password didn't change)
 				const verify_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: fixture.create_session_headers(),
+					headers: fixture.create_session_headers()
 				});
 				assert.strictEqual(verify_res.status, 200);
 			});
@@ -777,11 +777,11 @@ export const describe_standard_integration_tests = (
 			test('valid origin is accepted', async () => {
 				const fixture = await options.setup_test();
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: fixture.create_session_headers(),
+					headers: fixture.create_session_headers()
 				});
 				assert.strictEqual(res.status, 200);
 			});
@@ -793,12 +793,12 @@ export const describe_standard_integration_tests = (
 			test('valid bearer token authenticates', async () => {
 				const fixture = await options.setup_test();
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
 					headers: fixture.create_bearer_headers(),
-					suppress_default_origin: true,
+					suppress_default_origin: true
 				});
 				assert.strictEqual(res.status, 200);
 			});
@@ -809,12 +809,12 @@ export const describe_standard_integration_tests = (
 				// indicator; the default `Origin: <base_url>` would silently
 				// discard the bearer cross-process.
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.fresh_transport({origin: null})},
+					app: { request: fixture.fresh_transport({ origin: null }) },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: {authorization: 'Bearer secret_fuz_token_invalid'},
-					suppress_default_origin: true,
+					headers: { authorization: 'Bearer secret_fuz_token_invalid' },
+					suppress_default_origin: true
 				});
 				assert.strictEqual(res.status, 401);
 			});
@@ -827,22 +827,22 @@ export const describe_standard_integration_tests = (
 				// doesn't auto-add the default Origin (which would discard
 				// the bearer as browser-context cross-process).
 				const ok_res = await rpc_call_for_spec({
-					app: {request: fixture.fresh_transport({origin: null})},
+					app: { request: fixture.fresh_transport({ origin: null }) },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
 					headers: bearer_headers,
-					suppress_default_origin: true,
+					suppress_default_origin: true
 				});
 				assert.strictEqual(ok_res.status, 200);
 
 				// With Origin — bearer silently discarded (browser context), falls through to no auth.
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.fresh_transport()},
+					app: { request: fixture.fresh_transport() },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: {...bearer_headers, origin: 'http://localhost:5173'},
+					headers: { ...bearer_headers, origin: 'http://localhost:5173' }
 				});
 				assert.strictEqual(res.status, 401);
 			});
@@ -856,14 +856,14 @@ export const describe_standard_integration_tests = (
 
 				// Create a new token via RPC
 				const create_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_token_create_action_spec,
-					params: {name: 'test-revoke'},
-					headers: fixture.create_session_headers(),
+					params: { name: 'test-revoke' },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(create_res.ok, 'account_token_create should succeed');
-				const {token, id} = create_res.result;
+				const { token, id } = create_res.result;
 
 				// Verify token works — fresh transport so the per-test session
 				// cookie in `fixture.transport`'s jar can't give a false pass
@@ -871,34 +871,34 @@ export const describe_standard_integration_tests = (
 				// so the transport doesn't auto-add a default Origin (which
 				// would discard the bearer as browser-context cross-process).
 				const use_res = await rpc_call_for_spec({
-					app: {request: fixture.fresh_transport({origin: null})},
+					app: { request: fixture.fresh_transport({ origin: null }) },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: {authorization: `Bearer ${token}`},
-					suppress_default_origin: true,
+					headers: { authorization: `Bearer ${token}` },
+					suppress_default_origin: true
 				});
 				assert.strictEqual(use_res.status, 200);
 
 				// Revoke via RPC
 				const revoke_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_token_revoke_action_spec,
-					params: {token_id: id},
-					headers: fixture.create_session_headers(),
+					params: { token_id: id },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(revoke_res.ok, 'account_token_revoke should succeed');
 
 				// Token should no longer work — fresh transport same reason as
 				// the `use_res` call above.
 				const after_res = await rpc_call_for_spec({
-					app: {request: fixture.fresh_transport({origin: null})},
+					app: { request: fixture.fresh_transport({ origin: null }) },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: {authorization: `Bearer ${token}`},
-					suppress_default_origin: true,
+					headers: { authorization: `Bearer ${token}` },
+					suppress_default_origin: true
 				});
 				assert.strictEqual(after_res.status, 401);
 			});
@@ -927,17 +927,17 @@ export const describe_standard_integration_tests = (
 						s.auth.actor === 'none' &&
 						!s.input &&
 						!s.params &&
-						!s.query,
+						!s.query
 				);
 				if (!admin_route) return;
 
 				// Probe with a freshly-created account — it holds no admin role
 				// (the keeper fixture behind `create_session_headers` does, so it
 				// would pass the gate).
-				const non_admin = await fixture.create_account({username: 'non_admin_admin_probe'});
+				const non_admin = await fixture.create_account({ username: 'non_admin_admin_probe' });
 				const res = await fixture.transport(admin_route.path, {
 					method: admin_route.method,
-					headers: {cookie: `${cookie_name}=${non_admin.session_cookie}`},
+					headers: { cookie: `${cookie_name}=${non_admin.session_cookie}` }
 				});
 				assert.strictEqual(res.status, 403);
 				const body = await res.json();
@@ -948,25 +948,25 @@ export const describe_standard_integration_tests = (
 				const fixture = await options.setup_test();
 
 				// Create a second account
-				const user_b = await fixture.create_account({username: 'user_b'});
+				const user_b = await fixture.create_account({ username: 'user_b' });
 
 				// User A revokes all their own sessions
 				const revoke_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_session_revoke_all_action_spec,
 					params: undefined,
-					headers: fixture.create_session_headers(),
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(revoke_res.ok, 'account_session_revoke_all should succeed');
 
 				// User B's session should still work
 				const verify_b = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: {cookie: `${cookie_name}=${user_b.session_cookie}`},
+					headers: { cookie: `${cookie_name}=${user_b.session_cookie}` }
 				});
 				assert.strictEqual(verify_b.status, 200);
 			});
@@ -974,16 +974,16 @@ export const describe_standard_integration_tests = (
 			test("user A cannot revoke user B's session by ID", async () => {
 				const fixture = await options.setup_test();
 
-				const user_b = await fixture.create_account({username: 'user_b'});
-				const user_b_headers = {cookie: `${cookie_name}=${user_b.session_cookie}`};
+				const user_b = await fixture.create_account({ username: 'user_b' });
+				const user_b_headers = { cookie: `${cookie_name}=${user_b.session_cookie}` };
 
 				// Get user B's session ID by listing as user B
 				const list_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_session_list_action_spec,
 					params: undefined,
-					headers: user_b_headers,
+					headers: user_b_headers
 				});
 				assert.ok(list_res.ok, 'account_session_list should succeed');
 				assert.ok(list_res.result.sessions.length >= 1);
@@ -991,26 +991,26 @@ export const describe_standard_integration_tests = (
 
 				// User A tries to revoke user B's session by ID
 				const revoke_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_session_revoke_action_spec,
-					params: {session_id: session_id_b},
-					headers: fixture.create_session_headers(),
+					params: { session_id: session_id_b },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(revoke_res.ok, 'account_session_revoke should succeed');
 				assert.strictEqual(
 					revoke_res.result.revoked,
 					false,
-					'Should not revoke another account session',
+					'Should not revoke another account session'
 				);
 
 				// User B's session should still work
 				const verify_b = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: user_b_headers,
+					headers: user_b_headers
 				});
 				assert.strictEqual(verify_b.status, 200);
 			});
@@ -1018,16 +1018,16 @@ export const describe_standard_integration_tests = (
 			test("user A cannot revoke user B's token by ID", async () => {
 				const fixture = await options.setup_test();
 
-				const user_b = await fixture.create_account({username: 'user_b'});
-				const user_b_headers = {cookie: `${cookie_name}=${user_b.session_cookie}`};
+				const user_b = await fixture.create_account({ username: 'user_b' });
+				const user_b_headers = { cookie: `${cookie_name}=${user_b.session_cookie}` };
 
 				// Get user B's token ID by listing as user B
 				const list_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_token_list_action_spec,
 					params: undefined,
-					headers: user_b_headers,
+					headers: user_b_headers
 				});
 				assert.ok(list_res.ok, 'account_token_list should succeed');
 				assert.ok(list_res.result.tokens.length >= 1);
@@ -1035,27 +1035,27 @@ export const describe_standard_integration_tests = (
 
 				// User A tries to revoke user B's token by ID
 				const revoke_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_token_revoke_action_spec,
-					params: {token_id: token_id_b},
-					headers: fixture.create_session_headers(),
+					params: { token_id: token_id_b },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(revoke_res.ok, 'account_token_revoke should succeed');
 				assert.strictEqual(
 					revoke_res.result.revoked,
 					false,
-					'Should not revoke another account token',
+					'Should not revoke another account token'
 				);
 
 				// User B's bearer token should still work
 				const verify_b = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: {authorization: `Bearer ${user_b.api_token}`},
-					suppress_default_origin: true,
+					headers: { authorization: `Bearer ${user_b.api_token}` },
+					suppress_default_origin: true
 				});
 				assert.strictEqual(verify_b.status, 200);
 			});
@@ -1063,15 +1063,15 @@ export const describe_standard_integration_tests = (
 			test("user A's session list does not include user B's sessions", async () => {
 				const fixture = await options.setup_test();
 
-				const user_b = await fixture.create_account({username: 'user_b'});
+				const user_b = await fixture.create_account({ username: 'user_b' });
 
 				// User A lists sessions
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_session_list_action_spec,
 					params: undefined,
-					headers: fixture.create_session_headers(),
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(res.ok, 'account_session_list should succeed');
 
@@ -1080,7 +1080,7 @@ export const describe_standard_integration_tests = (
 					assert.strictEqual(
 						session.account_id,
 						fixture.account.id,
-						`Session ${session.id} should belong to user A, not user B (${user_b.account.id})`,
+						`Session ${session.id} should belong to user A, not user B (${user_b.account.id})`
 					);
 				}
 			});
@@ -1088,15 +1088,15 @@ export const describe_standard_integration_tests = (
 			test("user A's token list does not include user B's tokens", async () => {
 				const fixture = await options.setup_test();
 
-				const user_b = await fixture.create_account({username: 'user_b'});
+				const user_b = await fixture.create_account({ username: 'user_b' });
 
 				// User A lists tokens
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_token_list_action_spec,
 					params: undefined,
-					headers: fixture.create_session_headers(),
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(res.ok, 'account_token_list should succeed');
 
@@ -1105,7 +1105,7 @@ export const describe_standard_integration_tests = (
 					assert.strictEqual(
 						token.account_id,
 						fixture.account.id,
-						`Token ${token.id} should belong to user A, not user B (${user_b.account.id})`,
+						`Token ${token.id} should belong to user A, not user B (${user_b.account.id})`
 					);
 				}
 			});
@@ -1124,7 +1124,7 @@ export const describe_standard_integration_tests = (
 				const login_route = find_auth_route(route_specs, '/login', 'POST');
 				assert.ok(
 					login_route,
-					'Expected POST /login route — ensure create_route_specs includes account routes',
+					'Expected POST /login route — ensure create_route_specs includes account routes'
 				);
 
 				const res = await fixture.transport(login_route.path, {
@@ -1132,12 +1132,12 @@ export const describe_standard_integration_tests = (
 					headers: {
 						host: 'localhost',
 						origin: 'http://localhost:5173',
-						'content-type': 'application/json',
+						'content-type': 'application/json'
 					},
 					body: JSON.stringify({
 						username: 'nonexistent_user_xyz',
-						password: 'any-password',
-					}),
+						password: 'any-password'
+					})
 				});
 				assert.strictEqual(res.status, 401);
 				await assert_response_matches_spec(route_specs, 'POST', login_route.path, res);
@@ -1148,13 +1148,13 @@ export const describe_standard_integration_tests = (
 				const logout_route = find_auth_route(route_specs, '/logout', 'POST');
 				assert.ok(
 					logout_route,
-					'Expected POST /logout route — ensure create_route_specs includes account routes',
+					'Expected POST /logout route — ensure create_route_specs includes account routes'
 				);
 
 				const res = await fixture.transport(logout_route.path, {
 					method: 'POST',
-					headers: fixture.create_session_headers({'content-type': 'application/json'}),
-					body: JSON.stringify({}),
+					headers: fixture.create_session_headers({ 'content-type': 'application/json' }),
+					body: JSON.stringify({})
 				});
 				assert.strictEqual(res.status, 200);
 				await assert_response_matches_spec(route_specs, 'POST', logout_route.path, res);
@@ -1165,7 +1165,7 @@ export const describe_standard_integration_tests = (
 				const logout_route = find_auth_route(route_specs, '/logout', 'POST');
 				assert.ok(
 					logout_route,
-					'Expected POST /logout route — ensure create_route_specs includes account routes',
+					'Expected POST /logout route — ensure create_route_specs includes account routes'
 				);
 
 				const res = await fixture.fresh_transport()(logout_route.path, {
@@ -1173,9 +1173,9 @@ export const describe_standard_integration_tests = (
 					headers: {
 						host: 'localhost',
 						origin: 'http://localhost:5173',
-						'content-type': 'application/json',
+						'content-type': 'application/json'
 					},
-					body: JSON.stringify({}),
+					body: JSON.stringify({})
 				});
 				assert.strictEqual(res.status, 401);
 				await assert_response_matches_spec(route_specs, 'POST', logout_route.path, res);
@@ -1204,51 +1204,51 @@ export const describe_standard_integration_tests = (
 				// probes and convert their expected 401s into 200s.
 				const unauthed = fixture.fresh_transport();
 				const session_list = await rpc_call_for_spec({
-					app: {request: unauthed},
+					app: { request: unauthed },
 					path: rpc_path,
 					spec: account_session_list_action_spec,
 					params: undefined,
-					headers: {host: 'localhost'},
+					headers: { host: 'localhost' }
 				});
 				assert.strictEqual(session_list.status, 401);
 				error_collector.record(route_specs, 'POST', rpc_path, 401);
 
 				const session_revoke_all = await rpc_call_for_spec({
-					app: {request: unauthed},
+					app: { request: unauthed },
 					path: rpc_path,
 					spec: account_session_revoke_all_action_spec,
 					params: undefined,
-					headers: {host: 'localhost'},
+					headers: { host: 'localhost' }
 				});
 				assert.strictEqual(session_revoke_all.status, 401);
 				error_collector.record(route_specs, 'POST', rpc_path, 401);
 
 				const token_list = await rpc_call_for_spec({
-					app: {request: unauthed},
+					app: { request: unauthed },
 					path: rpc_path,
 					spec: account_token_list_action_spec,
 					params: undefined,
-					headers: {host: 'localhost'},
+					headers: { host: 'localhost' }
 				});
 				assert.strictEqual(token_list.status, 401);
 				error_collector.record(route_specs, 'POST', rpc_path, 401);
 
 				const token_create = await rpc_call_for_spec({
-					app: {request: unauthed},
+					app: { request: unauthed },
 					path: rpc_path,
 					spec: account_token_create_action_spec,
-					params: {name: 'unauth-probe'},
-					headers: {host: 'localhost'},
+					params: { name: 'unauth-probe' },
+					headers: { host: 'localhost' }
 				});
 				assert.strictEqual(token_create.status, 401);
 				error_collector.record(route_specs, 'POST', rpc_path, 401);
 
 				const verify = await rpc_call_for_spec({
-					app: {request: unauthed},
+					app: { request: unauthed },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: {host: 'localhost'},
+					headers: { host: 'localhost' }
 				});
 				assert.strictEqual(verify.status, 401);
 				error_collector.record(route_specs, 'POST', rpc_path, 401);
@@ -1257,8 +1257,8 @@ export const describe_standard_integration_tests = (
 				if (logout_route) {
 					const res = await unauthed(logout_route.path, {
 						method: 'POST',
-						headers: {host: 'localhost', 'content-type': 'application/json'},
-						body: JSON.stringify({}),
+						headers: { host: 'localhost', 'content-type': 'application/json' },
+						body: JSON.stringify({})
 					});
 					assert.strictEqual(res.status, 401, 'POST /logout without auth should return 401');
 					error_collector.record(route_specs, 'POST', logout_route.path, 401);
@@ -1272,11 +1272,11 @@ export const describe_standard_integration_tests = (
 			test('401 responses contain no leaky fields', async () => {
 				const fixture = await options.setup_test();
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.fresh_transport()},
+					app: { request: fixture.fresh_transport() },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: {host: 'localhost'},
+					headers: { host: 'localhost' }
 				});
 				assert.strictEqual(res.status, 401);
 				assert.ok(!res.ok);
@@ -1285,7 +1285,7 @@ export const describe_standard_integration_tests = (
 				// equally be free of stack traces, file paths, or other internals.
 				assert_no_error_info_leakage(
 					res.error,
-					`RPC ${account_verify_action_spec.method} 401 error envelope`,
+					`RPC ${account_verify_action_spec.method} 401 error envelope`
 				);
 			});
 		});
@@ -1308,20 +1308,20 @@ export const describe_standard_integration_tests = (
 				const logout_route = find_auth_route(route_specs, '/logout', 'POST');
 				assert.ok(
 					logout_route,
-					'Expected POST /logout route — ensure create_route_specs includes account routes',
+					'Expected POST /logout route — ensure create_route_specs includes account routes'
 				);
 
 				const bearer_headers = fixture.create_bearer_headers({
-					'content-type': 'application/json',
+					'content-type': 'application/json'
 				});
 				const res = await fixture.fresh_transport()(logout_route.path, {
 					method: 'POST',
-					headers: {...bearer_headers, origin: 'http://localhost:5173'},
+					headers: { ...bearer_headers, origin: 'http://localhost:5173' }
 				});
 				assert.strictEqual(
 					res.status,
 					401,
-					'Bearer with Origin should be discarded → unauthenticated',
+					'Bearer with Origin should be discarded → unauthenticated'
 				);
 				error_collector.record(route_specs, 'POST', logout_route.path, 401);
 			});
@@ -1331,20 +1331,20 @@ export const describe_standard_integration_tests = (
 				const password_route = find_auth_route(route_specs, '/password', 'POST');
 				assert.ok(
 					password_route,
-					'Expected POST /password route — ensure create_route_specs includes account routes',
+					'Expected POST /password route — ensure create_route_specs includes account routes'
 				);
 
 				const bearer_headers = fixture.create_bearer_headers({
-					'content-type': 'application/json',
+					'content-type': 'application/json'
 				});
 				const res = await fixture.fresh_transport()(password_route.path, {
 					method: 'POST',
-					headers: {...bearer_headers, referer: 'http://localhost:5173/admin'},
+					headers: { ...bearer_headers, referer: 'http://localhost:5173/admin' }
 				});
 				assert.strictEqual(
 					res.status,
 					401,
-					'Bearer with Referer should be discarded → unauthenticated',
+					'Bearer with Referer should be discarded → unauthenticated'
 				);
 				error_collector.record(route_specs, 'POST', password_route.path, 401);
 			});
@@ -1360,39 +1360,39 @@ export const describe_standard_integration_tests = (
 
 				// Create an API token via RPC
 				const create_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_token_create_action_spec,
-					params: {name: 'test-token'},
-					headers: fixture.create_session_headers(),
+					params: { name: 'test-token' },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(create_res.ok, 'account_token_create should succeed');
-				const {token: raw_token} = create_res.result;
+				const { token: raw_token } = create_res.result;
 				assert.ok(raw_token, 'Expected raw token in create response');
 
 				// Verify bearer token works
 				const verify_before = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: {authorization: `Bearer ${raw_token}`},
-					suppress_default_origin: true,
+					headers: { authorization: `Bearer ${raw_token}` },
+					suppress_default_origin: true
 				});
 				assert.strictEqual(
 					verify_before.status,
 					200,
-					'Bearer token should work before password change',
+					'Bearer token should work before password change'
 				);
 
 				// Change password (still REST)
 				const change_res = await fixture.transport(password_route.path, {
 					method: 'POST',
-					headers: fixture.create_session_headers({'content-type': 'application/json'}),
+					headers: fixture.create_session_headers({ 'content-type': 'application/json' }),
 					body: JSON.stringify({
 						current_password: DEFAULT_TEST_PASSWORD,
-						new_password: 'new-password-456',
-					}),
+						new_password: 'new-password-456'
+					})
 				});
 				assert.strictEqual(change_res.status, 200);
 				const change_body = await change_res.json();
@@ -1401,17 +1401,17 @@ export const describe_standard_integration_tests = (
 
 				// Bearer token should now be invalid
 				const verify_after = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: {authorization: `Bearer ${raw_token}`},
-					suppress_default_origin: true,
+					headers: { authorization: `Bearer ${raw_token}` },
+					suppress_default_origin: true
 				});
 				assert.strictEqual(
 					verify_after.status,
 					401,
-					'Bearer token should be rejected after password change',
+					'Bearer token should be rejected after password change'
 				);
 			});
 		});
@@ -1423,7 +1423,7 @@ export const describe_standard_integration_tests = (
 				const fixture = await options.setup_test();
 
 				const signup_route = route_specs.find(
-					(s) => s.method === 'POST' && s.path.endsWith('/signup') && is_public_auth(s.auth),
+					(s) => s.method === 'POST' && s.path.endsWith('/signup') && is_public_auth(s.auth)
 				);
 				if (!signup_route) return; // signup is optional
 
@@ -1447,15 +1447,15 @@ export const describe_standard_integration_tests = (
 
 				// Create invite for alice@example.com via RPC
 				const invite_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: invite_create_action_spec,
-					params: {email: 'alice@example.com'},
-					headers: fixture.create_session_headers(),
+					params: { email: 'alice@example.com' },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(
 					invite_res.ok,
-					`invite_create failed: ${invite_res.ok ? '' : JSON.stringify(invite_res.error)}`,
+					`invite_create failed: ${invite_res.ok ? '' : JSON.stringify(invite_res.error)}`
 				);
 
 				// Try to sign up with a different email — should fail (no matching invite)
@@ -1464,18 +1464,18 @@ export const describe_standard_integration_tests = (
 					headers: {
 						host: 'localhost',
 						origin: 'http://localhost:5173',
-						'content-type': 'application/json',
+						'content-type': 'application/json'
 					},
 					body: JSON.stringify({
 						username: 'eve_attacker',
 						password: 'test-password-123456',
-						email: 'eve@attacker.com',
-					}),
+						email: 'eve@attacker.com'
+					})
 				});
 				assert.strictEqual(
 					signup_res.status,
 					403,
-					'Signup with non-matching email should be rejected',
+					'Signup with non-matching email should be rejected'
 				);
 				const body = await signup_res.json();
 				assert.strictEqual(body.error, 'no_matching_invite');
@@ -1490,7 +1490,7 @@ export const describe_standard_integration_tests = (
 
 				// Find signup route (POST ending in /signup, public)
 				const signup_route = route_specs.find(
-					(s) => s.method === 'POST' && s.path.endsWith('/signup') && is_public_auth(s.auth),
+					(s) => s.method === 'POST' && s.path.endsWith('/signup') && is_public_auth(s.auth)
 				);
 				if (!signup_route) return; // signup is optional
 
@@ -1509,20 +1509,20 @@ export const describe_standard_integration_tests = (
 				// Mint the conflict-test sibling account for the username-conflict
 				// assertion below. Both transports preserve hardcoded usernames
 				// now that fresh-keeper-per-test wipes the DB between tests.
-				const existing_user = await fixture.create_account({username: 'existing_user'});
+				const existing_user = await fixture.create_account({ username: 'existing_user' });
 
 				// Create an invite for a specific test email via RPC
 				const test_email = 'signup-test@example.com';
 				const invite_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: invite_create_action_spec,
-					params: {email: test_email},
-					headers: admin_headers,
+					params: { email: test_email },
+					headers: admin_headers
 				});
 				assert.ok(
 					invite_res.ok,
-					`invite_create failed: ${invite_res.ok ? '' : JSON.stringify(invite_res.error)}`,
+					`invite_create failed: ${invite_res.ok ? '' : JSON.stringify(invite_res.error)}`
 				);
 
 				// Attempt 1: signup with a non-matching email (no invite match) → 403
@@ -1531,13 +1531,13 @@ export const describe_standard_integration_tests = (
 					headers: {
 						host: 'localhost',
 						origin: 'http://localhost:5173',
-						'content-type': 'application/json',
+						'content-type': 'application/json'
 					},
 					body: JSON.stringify({
 						username: 'nomatch_user',
 						password: 'test-password-123456',
-						email: 'wrong-email@example.com',
-					}),
+						email: 'wrong-email@example.com'
+					})
 				});
 				assert.strictEqual(no_match_res.status, 403, 'Expected 403 for non-matching invite');
 				const no_match_body = await no_match_res.json();
@@ -1545,15 +1545,15 @@ export const describe_standard_integration_tests = (
 				// Create invite for a different email via RPC
 				const conflict_email = 'conflict-test@example.com';
 				const invite2_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: invite_create_action_spec,
-					params: {email: conflict_email},
-					headers: admin_headers,
+					params: { email: conflict_email },
+					headers: admin_headers
 				});
 				assert.ok(
 					invite2_res.ok,
-					`invite2_create failed: ${invite2_res.ok ? '' : JSON.stringify(invite2_res.error)}`,
+					`invite2_create failed: ${invite2_res.ok ? '' : JSON.stringify(invite2_res.error)}`
 				);
 
 				// Attempt 2: signup with the invited email but a colliding username → 409
@@ -1562,13 +1562,13 @@ export const describe_standard_integration_tests = (
 					headers: {
 						host: 'localhost',
 						origin: 'http://localhost:5173',
-						'content-type': 'application/json',
+						'content-type': 'application/json'
 					},
 					body: JSON.stringify({
 						username: existing_user.account.username,
 						password: 'test-password-123456',
-						email: conflict_email,
-					}),
+						email: conflict_email
+					})
 				});
 				assert.strictEqual(conflict_res.status, 409, 'Expected 409 for username conflict');
 				const conflict_body = await conflict_res.json();
@@ -1580,19 +1580,19 @@ export const describe_standard_integration_tests = (
 					no_match_keys,
 					conflict_keys,
 					'Response keys must be identical — no extra fields should reveal ' +
-						'whether the failure was "no invite" vs "conflict"',
+						'whether the failure was "no invite" vs "conflict"'
 				);
 
 				// Assert both use documented generic error codes with no field-level detail
 				assert.strictEqual(
 					no_match_body.error,
 					'no_matching_invite',
-					'Expected generic no_matching_invite error code',
+					'Expected generic no_matching_invite error code'
 				);
 				assert.strictEqual(
 					conflict_body.error,
 					'signup_conflict',
-					'Expected generic signup_conflict error code',
+					'Expected generic signup_conflict error code'
 				);
 			});
 		});

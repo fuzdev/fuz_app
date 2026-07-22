@@ -7,12 +7,12 @@
  * @module
  */
 
-import {hash_blake3} from '@fuzdev/fuz_util/hash_blake3.ts';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import { hash_blake3 } from '@fuzdev/fuz_util/hash_blake3.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {generate_random_base64url} from '../crypto.ts';
-import type {QueryDeps} from '../db/query_deps.ts';
-import type {AuthSession} from './account_schema.ts';
+import { generate_random_base64url } from '../crypto.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
+import type { AuthSession } from './account_schema.ts';
 
 /** Session lifetime in milliseconds (30 days). */
 export const AUTH_SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
@@ -52,12 +52,12 @@ export const query_create_session = async (
 	deps: QueryDeps,
 	token_hash: string,
 	account_id: string,
-	expires_at: Date,
+	expires_at: Date
 ): Promise<void> => {
 	await deps.db.query(`INSERT INTO auth_session (id, account_id, expires_at) VALUES ($1, $2, $3)`, [
 		token_hash,
 		account_id,
-		expires_at.toISOString(),
+		expires_at.toISOString()
 	]);
 };
 
@@ -69,11 +69,11 @@ export const query_create_session = async (
  */
 export const query_session_get_valid = async (
 	deps: QueryDeps,
-	token_hash: string,
+	token_hash: string
 ): Promise<AuthSession | undefined> => {
 	return deps.db.query_one<AuthSession>(
 		`SELECT * FROM auth_session WHERE id = $1 AND expires_at > NOW()`,
-		[token_hash],
+		[token_hash]
 	);
 };
 
@@ -96,7 +96,7 @@ export const query_session_touch = async (deps: QueryDeps, token_hash: string): 
 		       ELSE expires_at
 		     END
 		 WHERE id = $1`,
-		[token_hash, new_expires.toISOString()],
+		[token_hash, new_expires.toISOString()]
 	);
 };
 
@@ -114,7 +114,7 @@ export const query_session_touch = async (deps: QueryDeps, token_hash: string): 
  */
 export const query_session_revoke_by_hash_unscoped = async (
 	deps: QueryDeps,
-	token_hash: string,
+	token_hash: string
 ): Promise<void> => {
 	await deps.db.query(`DELETE FROM auth_session WHERE id = $1`, [token_hash]);
 };
@@ -133,11 +133,11 @@ export const query_session_revoke_by_hash_unscoped = async (
 export const query_session_revoke_for_account = async (
 	deps: QueryDeps,
 	token_hash: string,
-	account_id: string,
+	account_id: string
 ): Promise<boolean> => {
-	const rows = await deps.db.query<{id: string}>(
+	const rows = await deps.db.query<{ id: string }>(
 		`DELETE FROM auth_session WHERE id = $1 AND account_id = $2 RETURNING id`,
-		[token_hash, account_id],
+		[token_hash, account_id]
 	);
 	return rows.length > 0;
 };
@@ -150,11 +150,11 @@ export const query_session_revoke_for_account = async (
  */
 export const query_session_revoke_all_for_account = async (
 	deps: QueryDeps,
-	account_id: string,
+	account_id: string
 ): Promise<number> => {
-	const rows = await deps.db.query<{id: string}>(
+	const rows = await deps.db.query<{ id: string }>(
 		`DELETE FROM auth_session WHERE account_id = $1 RETURNING id`,
-		[account_id],
+		[account_id]
 	);
 	return rows.length;
 };
@@ -165,11 +165,11 @@ export const query_session_revoke_all_for_account = async (
 export const query_session_list_for_account = async (
 	deps: QueryDeps,
 	account_id: string,
-	limit = 50,
+	limit = 50
 ): Promise<Array<AuthSession>> => {
 	return deps.db.query<AuthSession>(
 		`SELECT * FROM auth_session WHERE account_id = $1 ORDER BY created_at DESC LIMIT $2`,
-		[account_id, limit],
+		[account_id, limit]
 	);
 };
 
@@ -206,9 +206,9 @@ export const query_session_list_for_account = async (
 export const query_session_enforce_limit = async (
 	deps: QueryDeps,
 	account_id: string,
-	max_sessions: number,
+	max_sessions: number
 ): Promise<number> => {
-	const rows = await deps.db.query<{id: string}>(
+	const rows = await deps.db.query<{ id: string }>(
 		`DELETE FROM auth_session
 		 WHERE id IN (
 		   SELECT id FROM auth_session
@@ -216,7 +216,7 @@ export const query_session_enforce_limit = async (
 		   ORDER BY created_at DESC
 		   OFFSET $2
 		 ) RETURNING id`,
-		[account_id, max_sessions],
+		[account_id, max_sessions]
 	);
 	return rows.length;
 };
@@ -230,15 +230,15 @@ export const query_session_enforce_limit = async (
  */
 export const query_session_list_all_active = async (
 	deps: QueryDeps,
-	limit = 200,
-): Promise<Array<AuthSession & {username: string}>> => {
-	return deps.db.query<AuthSession & {username: string}>(
+	limit = 200
+): Promise<Array<AuthSession & { username: string }>> => {
+	return deps.db.query<AuthSession & { username: string }>(
 		`SELECT s.id, s.account_id, s.created_at, s.expires_at, s.last_seen_at, a.username
 		 FROM auth_session s
 		 JOIN account a ON a.id = s.account_id
 		 WHERE s.expires_at > NOW()
 		 ORDER BY s.last_seen_at DESC LIMIT $1`,
-		[limit],
+		[limit]
 	);
 };
 
@@ -249,8 +249,8 @@ export const query_session_list_all_active = async (
  * @mutates `auth_session` table - deletes every row past `expires_at`
  */
 export const query_session_cleanup_expired = async (deps: QueryDeps): Promise<number> => {
-	const rows = await deps.db.query<{id: string}>(
-		`DELETE FROM auth_session WHERE expires_at <= NOW() RETURNING id`,
+	const rows = await deps.db.query<{ id: string }>(
+		`DELETE FROM auth_session WHERE expires_at <= NOW() RETURNING id`
 	);
 	return rows.length;
 };
@@ -273,7 +273,7 @@ export const session_touch_fire_and_forget = (
 	deps: QueryDeps,
 	token_hash: string,
 	pending_effects: Array<Promise<void>> | undefined,
-	log: Logger,
+	log: Logger
 ): Promise<void> => {
 	const p = query_session_touch(deps, token_hash).catch((err) => {
 		log.error('Session touch failed:', err);

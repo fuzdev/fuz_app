@@ -10,29 +10,29 @@
 
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
 
-	import {AdminInvitesState, admin_invites_rpc_context} from './admin_invites_state.svelte.ts';
+	import { AdminInvitesState, admin_invites_rpc_context } from './admin_invites_state.svelte.ts';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import Datatable from './Datatable.svelte';
-	import type {DatatableColumn} from './datatable.ts';
-	import type {InviteWithUsernamesJson} from '../auth/invite_schema.ts';
-	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.ts';
+	import type { DatatableColumn } from './datatable.ts';
+	import type { InviteWithUsernamesJson } from '../auth/invite_schema.ts';
+	import { format_relative_time, format_datetime_local, truncate_uuid } from './ui_format.ts';
 	import OpenSignupToggle from './OpenSignupToggle.svelte';
 
 	const get_rpc = admin_invites_rpc_context.get();
-	const admin_invites = new AdminInvitesState({get_rpc});
+	const admin_invites = new AdminInvitesState({ get_rpc });
 
 	let invite_email = $state.raw('');
 	let invite_username = $state.raw('');
 
 	const can_create = $derived(
-		(invite_email.trim() || invite_username.trim()) && !admin_invites.create.loading,
+		(invite_email.trim() || invite_username.trim()) && !admin_invites.create.loading
 	);
 
 	const handle_create = async (): Promise<void> => {
 		if (!can_create) return;
 		const success = await admin_invites.submit_create(
 			invite_email.trim() || undefined,
-			invite_username.trim() || undefined,
+			invite_username.trim() || undefined
 		);
 		if (success) {
 			invite_email = '';
@@ -43,12 +43,12 @@
 	void admin_invites.fetch();
 
 	const columns: Array<DatatableColumn<InviteWithUsernamesJson>> = [
-		{key: 'email', label: 'email', width: 180, format: (v) => v ?? '-'},
-		{key: 'username', label: 'username', width: 140, format: (v) => v ?? '-'},
-		{key: 'claimed_at', label: 'status', width: 160},
-		{key: 'created_at', label: 'created', width: 100},
-		{key: 'created_by', label: 'created by', width: 120},
-		{key: 'id', label: 'actions', width: 100},
+		{ key: 'email', label: 'email', width: 180, format: (v) => v ?? '-' },
+		{ key: 'username', label: 'username', width: 140, format: (v) => v ?? '-' },
+		{ key: 'claimed_at', label: 'status', width: 160 },
+		{ key: 'created_at', label: 'created', width: 100 },
+		{ key: 'created_by', label: 'created by', width: 120 },
+		{ key: 'id', label: 'actions', width: 100 }
 	];
 </script>
 

@@ -9,24 +9,24 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import {z} from 'zod';
+import { describe, assert, test } from 'vitest';
+import { z } from 'zod';
 
-import {ActionDispatcher} from '$lib/actions/action_dispatcher.ts';
-import {create_broadcast_api, type ShouldDeliverFn} from '$lib/actions/broadcast_api.ts';
-import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.ts';
-import {Transports, type Transport} from '$lib/actions/transports.ts';
+import { ActionDispatcher } from '$lib/actions/action_dispatcher.ts';
+import { create_broadcast_api, type ShouldDeliverFn } from '$lib/actions/broadcast_api.ts';
+import { BackendWebsocketTransport } from '$lib/actions/transports_ws_backend.ts';
+import { Transports, type Transport } from '$lib/actions/transports.ts';
 import type {
 	JsonrpcErrorResponse,
 	JsonrpcMessageFromClientToServer,
 	JsonrpcMessageFromServerToClient,
 	JsonrpcNotification,
 	JsonrpcRequest,
-	JsonrpcResponseOrError,
+	JsonrpcResponseOrError
 } from '$lib/http/jsonrpc.ts';
-import type {ActionSpecUnion} from '$lib/actions/action_spec.ts';
-import {MinimalActionEnvironment, create_fake_ws} from '$lib/testing/ws_round_trip.ts';
-import {create_uuid} from '@fuzdev/fuz_util/id.ts';
+import type { ActionSpecUnion } from '$lib/actions/action_spec.ts';
+import { MinimalActionEnvironment, create_fake_ws } from '$lib/testing/ws_round_trip.ts';
+import { create_uuid } from '@fuzdev/fuz_util/id.ts';
 
 const thing_changed_spec = {
 	method: 'thing_changed',
@@ -34,10 +34,10 @@ const thing_changed_spec = {
 	initiator: 'backend',
 	auth: null,
 	side_effects: true,
-	input: z.strictObject({id: z.string(), owner_account_id: z.string().optional()}),
+	input: z.strictObject({ id: z.string(), owner_account_id: z.string().optional() }),
 	output: z.void(),
 	async: true,
-	description: 'Broadcast notification for tests',
+	description: 'Broadcast notification for tests'
 } satisfies ActionSpecUnion;
 
 const create_test_peer = (transport: BackendWebsocketTransport): ActionDispatcher => {
@@ -47,12 +47,12 @@ const create_test_peer = (transport: BackendWebsocketTransport): ActionDispatche
 	return new ActionDispatcher({
 		environment: env,
 		transports,
-		default_send_options: {transport_name: transport.transport_name},
+		default_send_options: { transport_name: transport.transport_name }
 	});
 };
 
 interface TestApi {
-	thing_changed: (input: {id: string; owner_account_id?: string}) => Promise<void>;
+	thing_changed: (input: { id: string; owner_account_id?: string }) => Promise<void>;
 }
 
 describe('create_broadcast_api', () => {
@@ -62,7 +62,7 @@ describe('create_broadcast_api', () => {
 		const api = create_broadcast_api<TestApi>({
 			peer,
 			specs: [thing_changed_spec],
-			log: null,
+			log: null
 		});
 		assert.typeOf(api.thing_changed, 'function');
 	});
@@ -80,22 +80,22 @@ describe('create_broadcast_api', () => {
 		const api = create_broadcast_api<TestApi>({
 			peer,
 			specs: [thing_changed_spec],
-			log: null,
+			log: null
 		});
-		await api.thing_changed({id: 'x'});
+		await api.thing_changed({ id: 'x' });
 
 		assert.strictEqual(a.sends.length, 1);
 		assert.strictEqual(b.sends.length, 1);
 		const parsed = JSON.parse(a.sends[0]!);
 		assert.strictEqual(parsed.method, 'thing_changed');
-		assert.deepStrictEqual(parsed.params, {id: 'x'});
+		assert.deepStrictEqual(parsed.params, { id: 'x' });
 		assert.strictEqual(parsed.id, undefined); // notification has no id
 	});
 
 	test('validates input and skips send on failure', async () => {
 		const transport = new BackendWebsocketTransport();
 		const peer = create_test_peer(transport);
-		const {ws} = create_fake_ws();
+		const { ws } = create_fake_ws();
 		transport.add_connection(ws, 'hash_a', create_uuid());
 
 		const log_errors: Array<Array<unknown>> = [];
@@ -107,12 +107,12 @@ describe('create_broadcast_api', () => {
 				info: () => {},
 				warn: () => {},
 				debug: () => {},
-				trace: () => {},
-			} as never,
+				trace: () => {}
+			} as never
 		});
 
 		// `id` must be a string; pass a number to trip Zod
-		await api.thing_changed({id: 42 as unknown as string});
+		await api.thing_changed({ id: 42 as unknown as string });
 
 		assert.strictEqual(log_errors.length, 1);
 		const first = log_errors[0]!;
@@ -125,10 +125,10 @@ describe('create_broadcast_api', () => {
 		const api = create_broadcast_api<TestApi>({
 			peer,
 			specs: [thing_changed_spec],
-			log: null,
+			log: null
 		});
 		// Should not throw
-		await api.thing_changed({id: 'x'});
+		await api.thing_changed({ id: 'x' });
 		assert.strictEqual(transport.is_ready(), false);
 	});
 
@@ -143,7 +143,7 @@ describe('create_broadcast_api', () => {
 		transport.add_connection(b.ws, 'hash_b', account_b);
 
 		const should_deliver: ShouldDeliverFn = (identity, _method, input) => {
-			const payload = input as {owner_account_id?: string};
+			const payload = input as { owner_account_id?: string };
 			return identity.account_id === payload.owner_account_id;
 		};
 
@@ -151,9 +151,9 @@ describe('create_broadcast_api', () => {
 			peer,
 			specs: [thing_changed_spec],
 			log: null,
-			should_deliver,
+			should_deliver
 		});
-		await api.thing_changed({id: 'x', owner_account_id: account_a});
+		await api.thing_changed({ id: 'x', owner_account_id: account_a });
 
 		assert.strictEqual(a.sends.length, 1);
 		assert.strictEqual(b.sends.length, 0);
@@ -167,7 +167,7 @@ describe('create_broadcast_api', () => {
 			async send(message: JsonrpcRequest): Promise<JsonrpcResponseOrError>;
 			async send(message: JsonrpcNotification): Promise<JsonrpcErrorResponse | null>;
 			async send(
-				message: JsonrpcMessageFromClientToServer,
+				message: JsonrpcMessageFromClientToServer
 			): Promise<JsonrpcMessageFromServerToClient | null> {
 				this.sent.push(message);
 				return null;
@@ -183,7 +183,7 @@ describe('create_broadcast_api', () => {
 		const peer = new ActionDispatcher({
 			environment: env,
 			transports,
-			default_send_options: {transport_name: transport.transport_name},
+			default_send_options: { transport_name: transport.transport_name }
 		});
 
 		const log_errors: Array<Array<unknown>> = [];
@@ -195,12 +195,12 @@ describe('create_broadcast_api', () => {
 				info: () => {},
 				warn: () => {},
 				debug: () => {},
-				trace: () => {},
+				trace: () => {}
 			} as never,
-			should_deliver: () => true,
+			should_deliver: () => true
 		});
 
-		await api.thing_changed({id: 'x'});
+		await api.thing_changed({ id: 'x' });
 
 		assert.strictEqual(transport.sent.length, 0);
 		assert.strictEqual(log_errors.length, 1);
@@ -210,7 +210,7 @@ describe('create_broadcast_api', () => {
 	test('registers a method for each spec', () => {
 		const other_spec: ActionSpecUnion = {
 			...thing_changed_spec,
-			method: 'other_thing_changed',
+			method: 'other_thing_changed'
 		};
 		const transport = new BackendWebsocketTransport();
 		const transports = new Transports();
@@ -219,12 +219,12 @@ describe('create_broadcast_api', () => {
 		const peer = new ActionDispatcher({
 			environment: env,
 			transports,
-			default_send_options: {transport_name: transport.transport_name},
+			default_send_options: { transport_name: transport.transport_name }
 		});
 		const api = create_broadcast_api<Record<string, (input: unknown) => Promise<void>>>({
 			peer,
 			specs: [thing_changed_spec, other_spec],
-			log: null,
+			log: null
 		});
 		assert.typeOf(api.thing_changed, 'function');
 		assert.typeOf(api.other_thing_changed, 'function');
@@ -233,7 +233,7 @@ describe('create_broadcast_api', () => {
 	test('should_deliver sees validated payload, not raw input', async () => {
 		const transport = new BackendWebsocketTransport();
 		const peer = create_test_peer(transport);
-		const {ws} = create_fake_ws();
+		const { ws } = create_fake_ws();
 		transport.add_connection(ws, 'hash_a', create_uuid());
 
 		let seen_input: unknown = null;
@@ -247,11 +247,11 @@ describe('create_broadcast_api', () => {
 			peer,
 			specs: [thing_changed_spec],
 			log: null,
-			should_deliver,
+			should_deliver
 		});
-		await api.thing_changed({id: 'x'});
+		await api.thing_changed({ id: 'x' });
 
 		assert.strictEqual(seen_method, 'thing_changed');
-		assert.deepStrictEqual(seen_input, {id: 'x'});
+		assert.deepStrictEqual(seen_input, { id: 'x' });
 	});
 });

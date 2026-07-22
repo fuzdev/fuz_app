@@ -23,23 +23,23 @@
  * @module
  */
 
-import {rpc_action, type ActionAuthContext, type RpcAction} from '../actions/action_rpc.ts';
-import type {ConnectionCloser} from '../actions/connection_closer.ts';
-import {to_session_account, type SessionAccountJson} from './account_schema.ts';
+import { rpc_action, type ActionAuthContext, type RpcAction } from '../actions/action_rpc.ts';
+import type { ConnectionCloser } from '../actions/connection_closer.ts';
+import { to_session_account, type SessionAccountJson } from './account_schema.ts';
 import {
 	query_session_list_for_account,
 	query_session_revoke_for_account,
-	query_session_revoke_all_for_account,
+	query_session_revoke_all_for_account
 } from './session_queries.ts';
 import {
 	query_api_token_enforce_limit,
 	query_api_token_list_for_account,
 	query_create_api_token,
-	query_revoke_api_token_for_account,
+	query_revoke_api_token_for_account
 } from './api_token_queries.ts';
-import {generate_api_token} from './api_token.ts';
-import {DEFAULT_MAX_TOKENS} from './account_route_schema.ts';
-import type {ActionFactoryDeps} from './deps.ts';
+import { generate_api_token } from './api_token.ts';
+import { DEFAULT_MAX_TOKENS } from './account_route_schema.ts';
+import type { ActionFactoryDeps } from './deps.ts';
 import {
 	account_verify_action_spec,
 	account_session_list_action_spec,
@@ -60,7 +60,7 @@ import {
 	type TokenListInput,
 	type TokenListOutput,
 	type TokenRevokeInput,
-	type TokenRevokeOutput,
+	type TokenRevokeOutput
 } from './account_action_specs.ts';
 
 /** Options for `create_account_actions`. */
@@ -97,9 +97,9 @@ export interface AccountActionOptions {
  */
 export const create_account_actions = (
 	deps: ActionFactoryDeps,
-	options: AccountActionOptions = {},
+	options: AccountActionOptions = {}
 ): Array<RpcAction> => {
-	const {max_tokens = DEFAULT_MAX_TOKENS, connection_closer = null} = options;
+	const { max_tokens = DEFAULT_MAX_TOKENS, connection_closer = null } = options;
 
 	const verify_handler = (_input: VerifyInput, ctx: ActionAuthContext): SessionAccountJson => {
 		return to_session_account(ctx.auth.account);
@@ -107,20 +107,20 @@ export const create_account_actions = (
 
 	const session_list_handler = async (
 		_input: SessionListInput,
-		ctx: ActionAuthContext,
+		ctx: ActionAuthContext
 	): Promise<SessionListOutput> => {
 		const sessions = await query_session_list_for_account(ctx, ctx.auth.account.id);
-		return {sessions};
+		return { sessions };
 	};
 
 	const session_revoke_handler = async (
 		input: SessionRevokeInput,
-		ctx: ActionAuthContext,
+		ctx: ActionAuthContext
 	): Promise<SessionRevokeOutput> => {
 		const revoked = await query_session_revoke_for_account(
 			ctx,
 			input.session_id,
-			ctx.auth.account.id,
+			ctx.auth.account.id
 		);
 		// Handler-side belt+suspenders: close the live WS socket bound to this
 		// session BEFORE the audit emit, so revocation lands even if the audit
@@ -143,14 +143,14 @@ export const create_account_actions = (
 			account_id: ctx.auth.account.id,
 			ip: ctx.client_ip,
 			// `credential_type` defense in depth — see `docs/security.md` §Credential-channel gating.
-			metadata: {session_id: input.session_id, credential_type: ctx.credential_type ?? undefined},
+			metadata: { session_id: input.session_id, credential_type: ctx.credential_type ?? undefined }
 		});
-		return {ok: true, revoked};
+		return { ok: true, revoked };
 	};
 
 	const session_revoke_all_handler = async (
 		_input: SessionRevokeAllInput,
-		ctx: ActionAuthContext,
+		ctx: ActionAuthContext
 	): Promise<SessionRevokeAllOutput> => {
 		const count = await query_session_revoke_all_for_account(ctx, ctx.auth.account.id);
 		// Handler-side belt+suspenders — see session_revoke_handler comment.
@@ -168,16 +168,16 @@ export const create_account_actions = (
 			event_type: 'session_revoke_all',
 			account_id: ctx.auth.account.id,
 			ip: ctx.client_ip,
-			metadata: {count, credential_type: ctx.credential_type ?? undefined},
+			metadata: { count, credential_type: ctx.credential_type ?? undefined }
 		});
-		return {ok: true, count};
+		return { ok: true, count };
 	};
 
 	const token_create_handler = async (
 		input: TokenCreateInput,
-		ctx: ActionAuthContext,
+		ctx: ActionAuthContext
 	): Promise<TokenCreateOutput> => {
-		const {token, id, token_hash} = generate_api_token();
+		const { token, id, token_hash } = generate_api_token();
 		await query_create_api_token(ctx, id, ctx.auth.account.id, input.name, token_hash);
 		if (max_tokens != null) {
 			await query_api_token_enforce_limit(ctx, ctx.auth.account.id, max_tokens);
@@ -189,28 +189,28 @@ export const create_account_actions = (
 			metadata: {
 				token_id: id,
 				name: input.name,
-				credential_type: ctx.credential_type ?? undefined,
-			},
+				credential_type: ctx.credential_type ?? undefined
+			}
 		});
-		return {ok: true, token, id, name: input.name};
+		return { ok: true, token, id, name: input.name };
 	};
 
 	const token_list_handler = async (
 		_input: TokenListInput,
-		ctx: ActionAuthContext,
+		ctx: ActionAuthContext
 	): Promise<TokenListOutput> => {
 		const tokens = await query_api_token_list_for_account(ctx, ctx.auth.account.id);
-		return {tokens};
+		return { tokens };
 	};
 
 	const token_revoke_handler = async (
 		input: TokenRevokeInput,
-		ctx: ActionAuthContext,
+		ctx: ActionAuthContext
 	): Promise<TokenRevokeOutput> => {
 		const revoked = await query_revoke_api_token_for_account(
 			ctx,
 			input.token_id,
-			ctx.auth.account.id,
+			ctx.auth.account.id
 		);
 		// Handler-side belt+suspenders — see session_revoke_handler comment.
 		if (revoked && connection_closer) {
@@ -221,9 +221,9 @@ export const create_account_actions = (
 			outcome: revoked ? 'success' : 'failure',
 			account_id: ctx.auth.account.id,
 			ip: ctx.client_ip,
-			metadata: {token_id: input.token_id, credential_type: ctx.credential_type ?? undefined},
+			metadata: { token_id: input.token_id, credential_type: ctx.credential_type ?? undefined }
 		});
-		return {ok: true, revoked};
+		return { ok: true, revoked };
 	};
 
 	return [
@@ -233,6 +233,6 @@ export const create_account_actions = (
 		rpc_action(account_session_revoke_all_action_spec, session_revoke_all_handler),
 		rpc_action(account_token_create_action_spec, token_create_handler),
 		rpc_action(account_token_list_action_spec, token_list_handler),
-		rpc_action(account_token_revoke_action_spec, token_revoke_handler),
+		rpc_action(account_token_revoke_action_spec, token_revoke_handler)
 	];
 };

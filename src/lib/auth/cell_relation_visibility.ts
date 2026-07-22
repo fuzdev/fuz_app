@@ -13,13 +13,13 @@
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type {QueryDeps} from '../db/query_deps.ts';
-import type {RequestContext} from './request_context.ts';
-import {can_view_cell} from './cell_authorize.ts';
-import {query_cell_load_many} from '../db/cell_queries.ts';
-import {query_cell_grant_list_for_cells, type CellGrantRow} from '../db/cell_grant_queries.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
+import type { RequestContext } from './request_context.ts';
+import { can_view_cell } from './cell_authorize.ts';
+import { query_cell_load_many } from '../db/cell_queries.ts';
+import { query_cell_grant_list_for_cells, type CellGrantRow } from '../db/cell_grant_queries.ts';
 
 /**
  * Return the subset of `target_ids` the caller may view.
@@ -37,7 +37,7 @@ import {query_cell_grant_list_for_cells, type CellGrantRow} from '../db/cell_gra
 export const filter_visible_target_ids = async (
 	deps: QueryDeps,
 	auth: RequestContext | null,
-	target_ids: ReadonlyArray<Uuid>,
+	target_ids: ReadonlyArray<Uuid>
 ): Promise<Set<Uuid>> => {
 	const visible = new Set<Uuid>();
 	if (target_ids.length === 0) return visible;

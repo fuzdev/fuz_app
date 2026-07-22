@@ -22,10 +22,10 @@
  * @module
  */
 
-import type {QueryDeps} from './query_deps.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
-import type {CellGrantLevel} from '../auth/cell_grant_action_specs.ts';
-import {assert_row} from './assert_row.ts';
+import type { QueryDeps } from './query_deps.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { CellGrantLevel } from '../auth/cell_grant_action_specs.ts';
+import { assert_row } from './assert_row.ts';
 
 /** Row shape returned by `cell_grant` SELECTs. */
 export interface CellGrantRow {
@@ -46,8 +46,7 @@ export interface CellGrantRow {
  * typed name to an id upstream of the handler.
  */
 export type CellGrantPrincipalQueryInput =
-	| {kind: 'actor'; actor_id: Uuid}
-	| {kind: 'role'; role: string; scope_id: Uuid | null};
+	{ kind: 'actor'; actor_id: Uuid } | { kind: 'role'; role: string; scope_id: Uuid | null };
 
 /** Input for `query_cell_grant_create`. */
 export interface CellGrantCreateQueryInput {
@@ -73,9 +72,9 @@ export interface CellGrantCreateQueryInput {
  */
 export const query_cell_grant_create = async (
 	deps: QueryDeps,
-	input: CellGrantCreateQueryInput,
+	input: CellGrantCreateQueryInput
 ): Promise<CellGrantRow> => {
-	const {cell_id, level, principal, granted_by} = input;
+	const { cell_id, level, principal, granted_by } = input;
 	if (principal.kind === 'actor') {
 		const row = await deps.db.query_one<CellGrantRow>(
 			`INSERT INTO cell_grant (cell_id, level, actor_id, granted_by)
@@ -83,7 +82,7 @@ export const query_cell_grant_create = async (
 			 ON CONFLICT (cell_id, actor_id) WHERE actor_id IS NOT NULL
 			 DO UPDATE SET level = EXCLUDED.level, granted_by = EXCLUDED.granted_by
 			 RETURNING *`,
-			[cell_id, level, principal.actor_id, granted_by],
+			[cell_id, level, principal.actor_id, granted_by]
 		);
 		return assert_row(row, 'INSERT INTO cell_grant (actor)');
 	}
@@ -93,7 +92,7 @@ export const query_cell_grant_create = async (
 		 ON CONFLICT (cell_id, role, scope_id) WHERE role IS NOT NULL
 		 DO UPDATE SET level = EXCLUDED.level, granted_by = EXCLUDED.granted_by
 		 RETURNING *`,
-		[cell_id, level, principal.role, principal.scope_id, granted_by],
+		[cell_id, level, principal.role, principal.scope_id, granted_by]
 	);
 	return assert_row(row, 'INSERT INTO cell_grant (role)');
 };
@@ -107,10 +106,10 @@ export const query_cell_grant_create = async (
  */
 export const query_cell_grant_get = async (
 	deps: QueryDeps,
-	grant_id: Uuid,
+	grant_id: Uuid
 ): Promise<CellGrantRow | null> => {
 	const row = await deps.db.query_one<CellGrantRow>(`SELECT * FROM cell_grant WHERE id = $1`, [
-		grant_id,
+		grant_id
 	]);
 	return row ?? null;
 };
@@ -129,11 +128,11 @@ export const query_cell_grant_get = async (
  */
 export const query_cell_grant_delete = async (
 	deps: QueryDeps,
-	grant_id: Uuid,
+	grant_id: Uuid
 ): Promise<CellGrantRow | null> => {
 	const row = await deps.db.query_one<CellGrantRow>(
 		`DELETE FROM cell_grant WHERE id = $1 RETURNING *`,
-		[grant_id],
+		[grant_id]
 	);
 	return row ?? null;
 };
@@ -150,13 +149,13 @@ export const query_cell_grant_delete = async (
  */
 export const query_cell_grant_list_for_cell = async (
 	deps: QueryDeps,
-	cell_id: Uuid,
+	cell_id: Uuid
 ): Promise<Array<CellGrantRow>> =>
 	deps.db.query<CellGrantRow>(
 		`SELECT * FROM cell_grant
 		 WHERE cell_id = $1
 		 ORDER BY created_at ASC`,
-		[cell_id],
+		[cell_id]
 	);
 
 /**
@@ -172,14 +171,14 @@ export const query_cell_grant_list_for_cell = async (
  */
 export const query_cell_grant_list_for_cells = async (
 	deps: QueryDeps,
-	cell_ids: ReadonlyArray<Uuid>,
+	cell_ids: ReadonlyArray<Uuid>
 ): Promise<Array<CellGrantRow>> => {
 	if (cell_ids.length === 0) return [];
 	return deps.db.query<CellGrantRow>(
 		`SELECT * FROM cell_grant
 		 WHERE cell_id = ANY($1::uuid[])
 		 ORDER BY cell_id, created_at ASC`,
-		[cell_ids as Array<Uuid>],
+		[cell_ids as Array<Uuid>]
 	);
 };
 
@@ -201,7 +200,7 @@ export const query_cell_grants_for_caller_in_cells = async (
 	cell_ids: Array<Uuid>,
 	caller_actor_id: Uuid | null,
 	role_grant_roles: Array<string>,
-	role_grant_scope_ids: Array<Uuid | null>,
+	role_grant_scope_ids: Array<Uuid | null>
 ): Promise<Array<CellGrantRow>> => {
 	if (cell_ids.length === 0) {
 		return [];
@@ -219,6 +218,6 @@ export const query_cell_grants_for_caller_in_cells = async (
 		     )
 		   )
 		 ORDER BY g.cell_id, g.created_at ASC`,
-		[cell_ids, caller_actor_id, role_grant_roles, role_grant_scope_ids],
+		[cell_ids, caller_actor_id, role_grant_roles, role_grant_scope_ids]
 	);
 };

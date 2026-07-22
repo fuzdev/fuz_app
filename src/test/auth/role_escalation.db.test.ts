@@ -10,46 +10,46 @@
  * @module
  */
 
-import {assert, test} from 'vitest';
+import { assert, test } from 'vitest';
 
-import {ROLE_KEEPER, ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import { ROLE_KEEPER, ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import {
 	query_create_role_grant,
 	query_revoke_role_grant,
 	query_role_grant_has_role,
-	query_role_grant_find_active_for_actor,
+	query_role_grant_find_active_for_actor
 } from '$lib/auth/role_grant_queries.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
-import type {Db} from '$lib/db/db.ts';
-import {create_test_account_with_actor} from '$lib/testing/db_entities.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Db } from '$lib/db/db.ts';
+import { create_test_account_with_actor } from '$lib/testing/db_entities.ts';
 
-import {describe_db} from '../db_fixture.ts';
+import { describe_db } from '../db_fixture.ts';
 
 /** Per-test convenience: returns just the ids the assertions care about. */
 const create_test_actor = async (
 	database: Db,
-	username: string,
-): Promise<{account_id: Uuid; actor_id: Uuid}> => {
-	const {account, actor} = await create_test_account_with_actor(database, {username});
-	return {account_id: account.id, actor_id: actor.id};
+	username: string
+): Promise<{ account_id: Uuid; actor_id: Uuid }> => {
+	const { account, actor } = await create_test_account_with_actor(database, { username });
+	return { account_id: account.id, actor_id: actor.id };
 };
 
 describe_db('RoleEscalation', (get_db) => {
 	test('admin with only admin role cannot directly grant keeper at query level', async () => {
 		const db = get_db();
-		const deps = {db};
-		const {actor_id: admin_id} = await create_test_actor(db, 'escalation_admin');
-		const {actor_id: target_id} = await create_test_actor(db, 'escalation_target');
+		const deps = { db };
+		const { actor_id: admin_id } = await create_test_actor(db, 'escalation_admin');
+		const { actor_id: target_id } = await create_test_actor(db, 'escalation_target');
 
 		// grant admin role to admin_id
-		await query_create_role_grant(deps, {actor_id: admin_id, role: ROLE_ADMIN, granted_by: null});
+		await query_create_role_grant(deps, { actor_id: admin_id, role: ROLE_ADMIN, granted_by: null });
 
 		// admin grants keeper to target — at the query level this succeeds (no policy enforcement);
 		// the admin-grant-path enforcement is in the action handler, not the query layer
 		const role_grant = await query_create_role_grant(deps, {
 			actor_id: target_id,
 			role: ROLE_KEEPER,
-			granted_by: admin_id,
+			granted_by: admin_id
 		});
 		// query layer allows this — it's the action handler that enforces the admin-grant-path gate
 		assert.ok(role_grant.id);
@@ -59,14 +59,14 @@ describe_db('RoleEscalation', (get_db) => {
 
 	test('self-grant at query level records granted_by correctly', async () => {
 		const db = get_db();
-		const deps = {db};
-		const {actor_id} = await create_test_actor(db, 'self_grant');
+		const deps = { db };
+		const { actor_id } = await create_test_actor(db, 'self_grant');
 
 		// self-grant admin
 		const role_grant = await query_create_role_grant(deps, {
 			actor_id,
 			role: ROLE_ADMIN,
-			granted_by: actor_id,
+			granted_by: actor_id
 		});
 		assert.strictEqual(role_grant.actor_id, actor_id);
 		assert.strictEqual(role_grant.granted_by, actor_id);
@@ -75,20 +75,20 @@ describe_db('RoleEscalation', (get_db) => {
 
 	test('granting the same role twice is idempotent and preserves original granter', async () => {
 		const db = get_db();
-		const deps = {db};
-		const {actor_id: granter_a} = await create_test_actor(db, 'esc_granter_a');
-		const {actor_id: granter_b} = await create_test_actor(db, 'esc_granter_b');
-		const {actor_id: target} = await create_test_actor(db, 'esc_target_idem');
+		const deps = { db };
+		const { actor_id: granter_a } = await create_test_actor(db, 'esc_granter_a');
+		const { actor_id: granter_b } = await create_test_actor(db, 'esc_granter_b');
+		const { actor_id: target } = await create_test_actor(db, 'esc_target_idem');
 
 		const first = await query_create_role_grant(deps, {
 			actor_id: target,
 			role: ROLE_ADMIN,
-			granted_by: granter_a,
+			granted_by: granter_a
 		});
 		const second = await query_create_role_grant(deps, {
 			actor_id: target,
 			role: ROLE_ADMIN,
-			granted_by: granter_b,
+			granted_by: granter_b
 		});
 
 		// idempotent — same role_grant, original granter preserved
@@ -98,22 +98,22 @@ describe_db('RoleEscalation', (get_db) => {
 
 	test('revoking then regranting creates a new role_grant with new granter', async () => {
 		const db = get_db();
-		const deps = {db};
-		const {actor_id: granter_a} = await create_test_actor(db, 'esc_rg_a');
-		const {actor_id: granter_b} = await create_test_actor(db, 'esc_rg_b');
-		const {actor_id: target} = await create_test_actor(db, 'esc_rg_target');
+		const deps = { db };
+		const { actor_id: granter_a } = await create_test_actor(db, 'esc_rg_a');
+		const { actor_id: granter_b } = await create_test_actor(db, 'esc_rg_b');
+		const { actor_id: target } = await create_test_actor(db, 'esc_rg_target');
 
 		const first = await query_create_role_grant(deps, {
 			actor_id: target,
 			role: ROLE_ADMIN,
-			granted_by: granter_a,
+			granted_by: granter_a
 		});
 		await query_revoke_role_grant(deps, first.id, target, null);
 
 		const second = await query_create_role_grant(deps, {
 			actor_id: target,
 			role: ROLE_ADMIN,
-			granted_by: granter_b,
+			granted_by: granter_b
 		});
 
 		assert.notStrictEqual(first.id, second.id);
@@ -122,12 +122,16 @@ describe_db('RoleEscalation', (get_db) => {
 
 	test('actor with admin role cannot see other actor role_grants via find_active_for_actor', async () => {
 		const db = get_db();
-		const deps = {db};
-		const {actor_id: admin_id} = await create_test_actor(db, 'esc_admin_peek');
-		const {actor_id: other_id} = await create_test_actor(db, 'esc_other_peek');
+		const deps = { db };
+		const { actor_id: admin_id } = await create_test_actor(db, 'esc_admin_peek');
+		const { actor_id: other_id } = await create_test_actor(db, 'esc_other_peek');
 
-		await query_create_role_grant(deps, {actor_id: admin_id, role: ROLE_ADMIN, granted_by: null});
-		await query_create_role_grant(deps, {actor_id: other_id, role: ROLE_KEEPER, granted_by: null});
+		await query_create_role_grant(deps, { actor_id: admin_id, role: ROLE_ADMIN, granted_by: null });
+		await query_create_role_grant(deps, {
+			actor_id: other_id,
+			role: ROLE_KEEPER,
+			granted_by: null
+		});
 
 		// querying with admin's actor_id only returns admin's role_grants
 		const admin_role_grants = await query_role_grant_find_active_for_actor(deps, admin_id);

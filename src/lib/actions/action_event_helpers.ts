@@ -4,32 +4,32 @@
  * @module
  */
 
-import type {Result} from '@fuzdev/fuz_util/result.ts';
+import type { Result } from '@fuzdev/fuz_util/result.ts';
 
 import {
 	type ActionEventStep,
 	type ActionExecutor,
 	action_event_step_transitions,
 	action_event_phase_by_kind,
-	action_event_phase_transitions,
+	action_event_phase_transitions
 } from './action_event_types.ts';
 import type {
 	ActionEventData,
 	ActionEventRequestResponseData,
 	ActionEventRemoteNotificationData,
-	ActionEventLocalCallData,
+	ActionEventLocalCallData
 } from './action_event_data.ts';
-import type {ActionEventPhase, ActionInitiator, ActionKind} from './action_spec.ts';
-import type {JsonrpcErrorObject} from '../http/jsonrpc.ts';
-import type {ActionEvent} from './action_event.ts';
+import type { ActionEventPhase, ActionInitiator, ActionKind } from './action_spec.ts';
+import type { JsonrpcErrorObject } from '../http/jsonrpc.ts';
+import type { ActionEvent } from './action_event.ts';
 
 // Type guards for action kinds
 export const is_request_response = (
-	data: ActionEventData,
+	data: ActionEventData
 ): data is ActionEventRequestResponseData => data.kind === 'request_response';
 
 export const is_remote_notification = (
-	data: ActionEventData,
+	data: ActionEventData
 ): data is ActionEventRemoteNotificationData => data.kind === 'remote_notification';
 
 export const is_local_call = (data: ActionEventData): data is ActionEventLocalCallData =>
@@ -37,61 +37,62 @@ export const is_local_call = (data: ActionEventData): data is ActionEventLocalCa
 
 // Type guards for specific states
 export const is_send_request = (
-	data: ActionEventData,
-): data is ActionEventRequestResponseData & {phase: 'send_request'} =>
+	data: ActionEventData
+): data is ActionEventRequestResponseData & { phase: 'send_request' } =>
 	data.kind === 'request_response' && data.phase === 'send_request';
 
 export const is_receive_request = (
-	data: ActionEventData,
-): data is ActionEventRequestResponseData & {phase: 'receive_request'} =>
+	data: ActionEventData
+): data is ActionEventRequestResponseData & { phase: 'receive_request' } =>
 	data.kind === 'request_response' && data.phase === 'receive_request';
 
 export const is_send_response = (
-	data: ActionEventData,
-): data is ActionEventRequestResponseData & {phase: 'send_response'} =>
+	data: ActionEventData
+): data is ActionEventRequestResponseData & { phase: 'send_response' } =>
 	data.kind === 'request_response' && data.phase === 'send_response';
 
 export const is_receive_response = (
-	data: ActionEventData,
-): data is ActionEventRequestResponseData & {phase: 'receive_response'} =>
+	data: ActionEventData
+): data is ActionEventRequestResponseData & { phase: 'receive_response' } =>
 	data.kind === 'request_response' && data.phase === 'receive_response';
 
 export const is_notification_send = (
-	data: ActionEventData,
-): data is ActionEventRemoteNotificationData & {phase: 'send'} =>
+	data: ActionEventData
+): data is ActionEventRemoteNotificationData & { phase: 'send' } =>
 	data.kind === 'remote_notification' && data.phase === 'send';
 
 export const is_notification_receive = (
-	data: ActionEventData,
-): data is ActionEventRemoteNotificationData & {phase: 'receive'} =>
+	data: ActionEventData
+): data is ActionEventRemoteNotificationData & { phase: 'receive' } =>
 	data.kind === 'remote_notification' && data.phase === 'receive';
 
 export const is_execute = (
-	data: ActionEventData,
-): data is ActionEventLocalCallData & {phase: 'execute'} =>
+	data: ActionEventData
+): data is ActionEventLocalCallData & { phase: 'execute' } =>
 	data.kind === 'local_call' && data.phase === 'execute';
 
 // Step state guards
-export const is_initial = (data: ActionEventData): data is ActionEventData & {step: 'initial'} =>
+export const is_initial = (data: ActionEventData): data is ActionEventData & { step: 'initial' } =>
 	data.step === 'initial';
 
-export const is_parsed = (data: ActionEventData): data is ActionEventData & {step: 'parsed'} =>
+export const is_parsed = (data: ActionEventData): data is ActionEventData & { step: 'parsed' } =>
 	data.step === 'parsed';
 
-export const is_handling = (data: ActionEventData): data is ActionEventData & {step: 'handling'} =>
-	data.step === 'handling';
+export const is_handling = (
+	data: ActionEventData
+): data is ActionEventData & { step: 'handling' } => data.step === 'handling';
 
-export const is_handled = (data: ActionEventData): data is ActionEventData & {step: 'handled'} =>
+export const is_handled = (data: ActionEventData): data is ActionEventData & { step: 'handled' } =>
 	data.step === 'handled';
 
-export const is_failed = (data: ActionEventData): data is ActionEventData & {step: 'failed'} =>
+export const is_failed = (data: ActionEventData): data is ActionEventData & { step: 'failed' } =>
 	data.step === 'failed';
 
 // Combined type guards for specific states with parsed input
 // These check for 'parsed' or 'handling' steps since protocol messages
 // are created when transitioning from 'parsed' to 'handling'
 export const is_send_request_with_parsed_input = <TMethod extends string = string>(
-	data: ActionEventData,
+	data: ActionEventData
 ): data is ActionEventRequestResponseData<TMethod> & {
 	phase: 'send_request';
 	step: 'parsed' | 'handling';
@@ -99,7 +100,7 @@ export const is_send_request_with_parsed_input = <TMethod extends string = strin
 } => is_send_request(data) && (data.step === 'parsed' || data.step === 'handling');
 
 export const is_notification_send_with_parsed_input = <TMethod extends string = string>(
-	data: ActionEventData,
+	data: ActionEventData
 ): data is ActionEventRemoteNotificationData<TMethod> & {
 	phase: 'send';
 	step: 'parsed' | 'handling';
@@ -144,7 +145,7 @@ export const validate_phase_transition = (from: ActionEventPhase, to: ActionEven
 export const get_initial_phase = (
 	kind: ActionKind,
 	initiator: ActionInitiator,
-	executor: ActionExecutor,
+	executor: ActionExecutor
 ): ActionEventPhase | null => {
 	if (initiator !== 'both' && initiator !== executor) return null;
 
@@ -176,7 +177,7 @@ export const create_initial_data = (
 	phase: ActionEventPhase,
 	method: string,
 	executor: ActionExecutor,
-	input: unknown,
+	input: unknown
 ): ActionEventData => ({
 	kind,
 	phase,
@@ -189,7 +190,7 @@ export const create_initial_data = (
 	progress: null,
 	request: null,
 	response: null,
-	notification: null,
+	notification: null
 });
 
 /**
@@ -203,9 +204,9 @@ export const create_initial_data = (
  *   callers should check `is_action_complete` first)
  */
 export const extract_action_result = (
-	event: ActionEvent,
-): Result<{value: ActionEventData['output']}, {error: JsonrpcErrorObject}> => {
-	const {data} = event;
+	event: ActionEvent
+): Result<{ value: ActionEventData['output'] }, { error: JsonrpcErrorObject }> => {
+	const { data } = event;
 
 	// `data.error` populated → error path. This covers two cases:
 	// 1. `step === 'failed'` — explicit terminal failure.
@@ -217,11 +218,11 @@ export const extract_action_result = (
 	//    register an error-phase handler. Preferring `data.error` lets
 	//    consumers skip the boilerplate `receive_error` rethrow stub.
 	if (data.error) {
-		return {ok: false, error: data.error};
+		return { ok: false, error: data.error };
 	}
 
 	if (data.step === 'handled') {
-		return {ok: true, value: data.output};
+		return { ok: true, value: data.output };
 	}
 
 	// `step === 'failed'` with `data.error === null` is a malformed event;

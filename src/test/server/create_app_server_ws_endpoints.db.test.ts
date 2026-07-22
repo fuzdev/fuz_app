@@ -31,53 +31,53 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
-import type {WSEvents} from 'hono/ws';
-import {z} from 'zod';
-import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.ts';
+import { describe, test, assert } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
+import type { WSEvents } from 'hono/ws';
+import { z } from 'zod';
+import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {create_keyring} from '$lib/auth/keyring.ts';
-import {create_session_config} from '$lib/auth/session_cookie.ts';
-import {create_health_route_spec} from '$lib/http/common_routes.ts';
-import {create_app_server, type AppServerOptions} from '$lib/server/app_server.ts';
-import type {AppBackend} from '$lib/server/app_backend.ts';
-import {create_audit_emitter, type AuditEmitter} from '$lib/auth/audit_emitter.ts';
-import {stub_password_deps} from '$lib/testing/app_server.ts';
-import {create_pglite_factory} from '$lib/testing/db.ts';
-import {run_migrations} from '$lib/db/migrate.ts';
-import {auth_migration_ns} from '$lib/auth/migrations.ts';
+import { create_keyring } from '$lib/auth/keyring.ts';
+import { create_session_config } from '$lib/auth/session_cookie.ts';
+import { create_health_route_spec } from '$lib/http/common_routes.ts';
+import { create_app_server, type AppServerOptions } from '$lib/server/app_server.ts';
+import type { AppBackend } from '$lib/server/app_backend.ts';
+import { create_audit_emitter, type AuditEmitter } from '$lib/auth/audit_emitter.ts';
+import { stub_password_deps } from '$lib/testing/app_server.ts';
+import { create_pglite_factory } from '$lib/testing/db.ts';
+import { run_migrations } from '$lib/db/migrate.ts';
+import { auth_migration_ns } from '$lib/auth/migrations.ts';
 import {
 	create_stub_upgrade,
 	create_fake_hono_context,
 	create_fake_ws,
-	dispatch_ws_message,
+	dispatch_ws_message
 } from '$lib/testing/ws_round_trip.ts';
-import {create_test_audit_event} from '$lib/testing/entities.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
-import {protocol_actions} from '$lib/actions/protocol.ts';
-import {parse_allowed_origins} from '$lib/http/origin.ts';
-import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.ts';
-import {WS_CLOSE_SESSION_REVOKED} from '$lib/actions/transports.ts';
-import type {AuditLogEvent} from '$lib/auth/audit_log_schema.ts';
-import type {WsEndpointSpec} from '$lib/actions/ws_endpoint_spec.ts';
-import type {Action} from '$lib/actions/action_types.ts';
-import type {LocalCallActionSpec} from '$lib/actions/action_spec.ts';
-import type {RouteSpec} from '$lib/http/route_spec.ts';
-import {create_rate_limiter} from '$lib/rate_limiter.ts';
-import {all_standard_action_specs} from '$lib/auth/standard_action_specs.ts';
-import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.ts';
+import { create_test_audit_event } from '$lib/testing/entities.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import { protocol_actions } from '$lib/actions/protocol.ts';
+import { parse_allowed_origins } from '$lib/http/origin.ts';
+import { BackendWebsocketTransport } from '$lib/actions/transports_ws_backend.ts';
+import { WS_CLOSE_SESSION_REVOKED } from '$lib/actions/transports.ts';
+import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
+import type { WsEndpointSpec } from '$lib/actions/ws_endpoint_spec.ts';
+import type { Action } from '$lib/actions/action_types.ts';
+import type { LocalCallActionSpec } from '$lib/actions/action_spec.ts';
+import type { RouteSpec } from '$lib/http/route_spec.ts';
+import { create_rate_limiter } from '$lib/rate_limiter.ts';
+import { all_standard_action_specs } from '$lib/auth/standard_action_specs.ts';
+import { create_standard_rpc_actions } from '$lib/auth/standard_rpc_actions.ts';
 
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
 const keyring = create_keyring(TEST_KEY)!;
 const session_options = create_session_config('test_session');
-const log = new Logger('test', {level: 'off'});
+const log = new Logger('test', { level: 'off' });
 
 const fs_stubs = {
 	stat: async () => null,
 	read_text_file: async () => '',
-	delete_file: async (_path: string) => {},
+	delete_file: async (_path: string) => {}
 };
 
 const factory = create_pglite_factory(async () => {});
@@ -87,10 +87,10 @@ const base_config: Omit<AppServerOptions, 'backend'> = {
 	allowed_origins: [/^http:\/\/localhost/],
 	proxy: {
 		trusted_proxies: ['127.0.0.1'],
-		get_connection_ip: () => '127.0.0.1',
+		get_connection_ip: () => '127.0.0.1'
 	},
 	env_schema: z.object({}),
-	create_route_specs: () => [create_health_route_spec()],
+	create_route_specs: () => [create_health_route_spec()]
 };
 
 /** Build an `AppBackend` + base config; returns both so tests can hold a
@@ -103,7 +103,7 @@ const create_test_setup = async (): Promise<{
 }> => {
 	const db = await factory.create();
 	const migration_results = await run_migrations(db, [auth_migration_ns]);
-	const audit = create_audit_emitter({db, log});
+	const audit = create_audit_emitter({ db, log });
 	const backend: AppBackend = {
 		db_type: 'pglite-memory',
 		db_name: '(memory)',
@@ -115,10 +115,10 @@ const create_test_setup = async (): Promise<{
 			password: stub_password_deps,
 			db,
 			audit,
-			...fs_stubs,
-		},
+			...fs_stubs
+		}
 	};
-	return {config: {backend, ...base_config}, audit};
+	return { config: { backend, ...base_config }, audit };
 };
 
 const ALLOWED_ORIGINS: ReadonlyArray<RegExp> = parse_allowed_origins('http://localhost:3000');
@@ -130,17 +130,17 @@ const build_minimal_spec = (overrides?: Partial<WsEndpointSpec>): WsEndpointSpec
 	path: '/api/ws',
 	allowed_origins: ALLOWED_ORIGINS,
 	actions: [...protocol_actions],
-	...overrides,
+	...overrides
 });
 
 describe('create_app_server.ws_endpoints', () => {
 	test('array form auto-mounts: AppServer.ws_endpoints carries the transport, surface lists the actions', async () => {
 		const stub = create_stub_upgrade();
-		const {config} = await create_test_setup();
+		const { config } = await create_test_setup();
 		const result = await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
-			ws_endpoints: [build_minimal_spec()],
+			ws_endpoints: [build_minimal_spec()]
 		});
 
 		// Path → transport map for broadcast / fan-out.
@@ -162,7 +162,7 @@ describe('create_app_server.ws_endpoints', () => {
 
 	test('factory form receives AppServerContext (with rate limiters + deps)', async () => {
 		const stub = create_stub_upgrade();
-		const {config} = await create_test_setup();
+		const { config } = await create_test_setup();
 		let captured_keys: Array<string> = [];
 		const result = await create_app_server({
 			...config,
@@ -174,7 +174,7 @@ describe('create_app_server.ws_endpoints', () => {
 				assert.isDefined(ctx.action_ip_rate_limiter);
 				assert.isDefined(ctx.action_account_rate_limiter);
 				return [build_minimal_spec()];
-			},
+			}
 		});
 
 		assert.isTrue(captured_keys.includes('deps'));
@@ -187,48 +187,48 @@ describe('create_app_server.ws_endpoints', () => {
 		// Feature-flag-gated WS surface: the factory may legitimately return
 		// no endpoints. The "upgradeWebSocket required" check fires
 		// post-resolution so an empty array stays safe.
-		const {config} = await create_test_setup();
+		const { config } = await create_test_setup();
 		const result = await create_app_server({
 			...config,
-			ws_endpoints: () => [],
+			ws_endpoints: () => []
 		});
 		assert.deepStrictEqual(Object.keys(result.ws_endpoints), []);
 	});
 
 	test('throws when ws_endpoints resolves non-empty but upgradeWebSocket is missing', async () => {
-		const {config} = await create_test_setup();
+		const { config } = await create_test_setup();
 		const err = await assert_rejects(() =>
 			create_app_server({
 				...config,
-				ws_endpoints: [build_minimal_spec()],
-			}),
+				ws_endpoints: [build_minimal_spec()]
+			})
 		);
 		assert.match(err.message, /ws_endpoints resolved non-empty but upgradeWebSocket is missing/);
 	});
 
 	test('throws on duplicate paths across two WsEndpointSpecs', async () => {
 		const stub = create_stub_upgrade();
-		const {config} = await create_test_setup();
+		const { config } = await create_test_setup();
 		const err = await assert_rejects(() =>
 			create_app_server({
 				...config,
 				upgradeWebSocket: stub.upgradeWebSocket,
-				ws_endpoints: [build_minimal_spec(), build_minimal_spec()],
-			}),
+				ws_endpoints: [build_minimal_spec(), build_minimal_spec()]
+			})
 		);
 		assert.match(err.message, /duplicate ws_endpoints path: \/api\/ws/);
 	});
 
 	test('multi-endpoint: separate paths get separate auto-created transports', async () => {
 		const stub = create_stub_upgrade();
-		const {config} = await create_test_setup();
+		const { config } = await create_test_setup();
 		const result = await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
 			ws_endpoints: [
-				build_minimal_spec({path: '/api/ws_a'}),
-				build_minimal_spec({path: '/api/ws_b'}),
-			],
+				build_minimal_spec({ path: '/api/ws_a' }),
+				build_minimal_spec({ path: '/api/ws_b' })
+			]
 		});
 
 		assert.deepStrictEqual(Object.keys(result.ws_endpoints).sort(), ['/api/ws_a', '/api/ws_b']);
@@ -240,16 +240,16 @@ describe('create_app_server.ws_endpoints', () => {
 
 	test('multi-endpoint with supplied transports: AppServer.ws_endpoints returns the same references', async () => {
 		const stub = create_stub_upgrade();
-		const {config} = await create_test_setup();
+		const { config } = await create_test_setup();
 		const transport_a = new BackendWebsocketTransport();
 		const transport_b = new BackendWebsocketTransport();
 		const result = await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
 			ws_endpoints: [
-				build_minimal_spec({path: '/api/ws_a', transport: transport_a}),
-				build_minimal_spec({path: '/api/ws_b', transport: transport_b}),
-			],
+				build_minimal_spec({ path: '/api/ws_a', transport: transport_a }),
+				build_minimal_spec({ path: '/api/ws_b', transport: transport_b })
+			]
 		});
 
 		assert.strictEqual(result.ws_endpoints['/api/ws_a'], transport_a);
@@ -258,12 +258,12 @@ describe('create_app_server.ws_endpoints', () => {
 
 	test('auth_guard default-on: session_revoke event closes the affected socket', async () => {
 		const stub = create_stub_upgrade();
-		const {config, audit} = await create_test_setup();
+		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
 		await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
-			ws_endpoints: [build_minimal_spec({transport})],
+			ws_endpoints: [build_minimal_spec({ transport })]
 		});
 
 		const session_hash = 'session_hash_a';
@@ -276,7 +276,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const event: AuditLogEvent = create_test_audit_event({
 			event_type: 'session_revoke',
 			account_id,
-			metadata: {session_id: session_hash},
+			metadata: { session_id: session_hash }
 		});
 		audit.notify(event);
 
@@ -286,12 +286,12 @@ describe('create_app_server.ws_endpoints', () => {
 
 	test('auth_guard: false skips the auto-wired listeners', async () => {
 		const stub = create_stub_upgrade();
-		const {config, audit} = await create_test_setup();
+		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
 		await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
-			ws_endpoints: [build_minimal_spec({transport, auth_guard: false})],
+			ws_endpoints: [build_minimal_spec({ transport, auth_guard: false })]
 		});
 
 		const session_hash = 'session_hash_a';
@@ -302,7 +302,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const event: AuditLogEvent = create_test_audit_event({
 			event_type: 'session_revoke',
 			account_id,
-			metadata: {session_id: session_hash},
+			metadata: { session_id: session_hash }
 		});
 		audit.notify(event);
 
@@ -312,7 +312,7 @@ describe('create_app_server.ws_endpoints', () => {
 
 	test('extra_audit_handlers fire alongside the standard guards (and run after them)', async () => {
 		const stub = create_stub_upgrade();
-		const {config, audit} = await create_test_setup();
+		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
 		// Listeners register append-only in mount order: the standard
 		// [auth_guard, logout_closer] land ahead of any extra handler. Prove
@@ -334,10 +334,10 @@ describe('create_app_server.ws_endpoints', () => {
 						(e) => {
 							received_events.push(e);
 							closes_seen_by_extra = fake_ws.closes.length;
-						},
-					],
-				}),
-			],
+						}
+					]
+				})
+			]
 		});
 
 		const session_hash = 'session_hash_a';
@@ -347,7 +347,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const event = create_test_audit_event({
 			event_type: 'session_revoke',
 			account_id,
-			metadata: {session_id: session_hash},
+			metadata: { session_id: session_hash }
 		});
 		audit.notify(event);
 
@@ -364,15 +364,15 @@ describe('create_app_server.ws_endpoints', () => {
 		// Two specs share one transport instance — wiring auth_guard twice
 		// would have the chain close sockets twice per revoke event.
 		const stub = create_stub_upgrade();
-		const {config, audit} = await create_test_setup();
+		const { config, audit } = await create_test_setup();
 		const shared_transport = new BackendWebsocketTransport();
 		const result = await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
 			ws_endpoints: [
-				build_minimal_spec({path: '/api/ws_a', transport: shared_transport}),
-				build_minimal_spec({path: '/api/ws_b', transport: shared_transport}),
-			],
+				build_minimal_spec({ path: '/api/ws_a', transport: shared_transport }),
+				build_minimal_spec({ path: '/api/ws_b', transport: shared_transport })
+			]
 		});
 
 		assert.strictEqual(result.ws_endpoints['/api/ws_a'], shared_transport);
@@ -384,10 +384,10 @@ describe('create_app_server.ws_endpoints', () => {
 
 	test('rate limiter threading: action limiters flow from AppServerContext into the WS mount', async () => {
 		const stub = create_stub_upgrade();
-		const {config} = await create_test_setup();
+		const { config } = await create_test_setup();
 		const action_account_rate_limiter = create_rate_limiter({
 			max_attempts: 999,
-			window_ms: 60_000,
+			window_ms: 60_000
 		});
 		let captured_account_limiter: unknown = null;
 
@@ -398,7 +398,7 @@ describe('create_app_server.ws_endpoints', () => {
 			ws_endpoints: (ctx) => {
 				captured_account_limiter = ctx.action_account_rate_limiter;
 				return [build_minimal_spec()];
-			},
+			}
 		});
 
 		assert.strictEqual(captured_account_limiter, action_account_rate_limiter);
@@ -410,7 +410,7 @@ describe('create_app_server.ws_endpoints', () => {
 		// standard actions onto WS so the seven account_* methods (and the
 		// rest of the standard surface) are reachable over both transports.
 		const stub = create_stub_upgrade();
-		const {config} = await create_test_setup();
+		const { config } = await create_test_setup();
 		const result = await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
@@ -420,10 +420,10 @@ describe('create_app_server.ws_endpoints', () => {
 					{
 						path: '/api/ws',
 						allowed_origins: ALLOWED_ORIGINS,
-						actions: [...protocol_actions, ...standard],
-					},
+						actions: [...protocol_actions, ...standard]
+					}
 				];
-			},
+			}
 		});
 
 		const ws_endpoint = result.surface_spec.surface.ws_endpoints[0];
@@ -436,7 +436,7 @@ describe('create_app_server.ws_endpoints', () => {
 		// list so adding a standard action doesn't have to update this test.
 		assert.strictEqual(
 			ws_endpoint.methods.length,
-			all_standard_action_specs.length + protocol_actions.length,
+			all_standard_action_specs.length + protocol_actions.length
 		);
 	});
 
@@ -445,12 +445,12 @@ describe('create_app_server.ws_endpoints', () => {
 		// BOTH `create_ws_auth_guard` (revoke events) AND
 		// `create_ws_logout_closer` (the self-service logout branch).
 		const stub = create_stub_upgrade();
-		const {config, audit} = await create_test_setup();
+		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
 		await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
-			ws_endpoints: [build_minimal_spec({transport})],
+			ws_endpoints: [build_minimal_spec({ transport })]
 		});
 
 		const session_hash = 'session_hash_logout';
@@ -460,7 +460,7 @@ describe('create_app_server.ws_endpoints', () => {
 
 		const event: AuditLogEvent = create_test_audit_event({
 			event_type: 'logout',
-			account_id,
+			account_id
 		});
 		audit.notify(event);
 
@@ -474,13 +474,13 @@ describe('create_app_server.ws_endpoints', () => {
 		// Both register on `deps.audit` — listener composition must
 		// not break either consumer.
 		const stub = create_stub_upgrade();
-		const {config, audit} = await create_test_setup();
+		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
 		const result = await create_app_server({
 			...config,
 			audit_log_sse: true,
 			upgradeWebSocket: stub.upgradeWebSocket,
-			ws_endpoints: [build_minimal_spec({transport})],
+			ws_endpoints: [build_minimal_spec({ transport })]
 		});
 
 		assert.isDefined(result.audit_sse);
@@ -497,7 +497,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const event: AuditLogEvent = create_test_audit_event({
 			event_type: 'session_revoke',
 			account_id,
-			metadata: {session_id: session_hash},
+			metadata: { session_id: session_hash }
 		});
 		audit.notify(event);
 
@@ -510,7 +510,7 @@ describe('create_app_server.ws_endpoints', () => {
 
 	test('extra_audit_handlers are never deduped: same handler passed twice fires twice', async () => {
 		const stub = create_stub_upgrade();
-		const {config, audit} = await create_test_setup();
+		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
 		let call_count = 0;
 		const handler = (): void => {
@@ -523,15 +523,15 @@ describe('create_app_server.ws_endpoints', () => {
 				build_minimal_spec({
 					transport,
 					auth_guard: false,
-					extra_audit_handlers: [handler, handler],
-				}),
-			],
+					extra_audit_handlers: [handler, handler]
+				})
+			]
 		});
 
 		// Both registrations appended — chain has both entries.
 		assert.strictEqual(audit.listener_count(), 2);
 
-		audit.notify(create_test_audit_event({event_type: 'login'}));
+		audit.notify(create_test_audit_event({ event_type: 'login' }));
 		assert.strictEqual(call_count, 2);
 	});
 
@@ -541,7 +541,7 @@ describe('create_app_server.ws_endpoints', () => {
 		// into action_map). Surface emission filters them out so attack-
 		// surface tests reflect dispatchable methods only.
 		const stub = create_stub_upgrade();
-		const {config} = await create_test_setup();
+		const { config } = await create_test_setup();
 		const local_call_spec: LocalCallActionSpec = {
 			method: 'frontend_local_helper',
 			kind: 'local_call',
@@ -551,7 +551,7 @@ describe('create_app_server.ws_endpoints', () => {
 			input: z.strictObject({}),
 			output: z.strictObject({}),
 			async: true,
-			description: 'frontend-only helper that rides on the registry',
+			description: 'frontend-only helper that rides on the registry'
 		};
 		const result = await create_app_server({
 			...config,
@@ -560,9 +560,9 @@ describe('create_app_server.ws_endpoints', () => {
 				{
 					path: '/api/ws',
 					allowed_origins: ALLOWED_ORIGINS,
-					actions: [...protocol_actions, {spec: local_call_spec}],
-				},
-			],
+					actions: [...protocol_actions, { spec: local_call_spec }]
+				}
+			]
 		});
 
 		const ws_endpoint = result.surface_spec.surface.ws_endpoints[0];
@@ -584,26 +584,26 @@ describe('create_app_server.ws_endpoints', () => {
 		// middleware chain) so the dispatcher's wire framing is tested
 		// against the same closure the production path would build.
 		const stub = create_stub_upgrade();
-		const {config} = await create_test_setup();
-		const open_events: Array<{connection_id: Uuid}> = [];
+		const { config } = await create_test_setup();
+		const open_events: Array<{ connection_id: Uuid }> = [];
 
 		const result = await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
 			ws_endpoints: [
 				build_minimal_spec({
-					on_socket_open: ({connection_id}) => {
-						open_events.push({connection_id});
+					on_socket_open: ({ connection_id }) => {
+						open_events.push({ connection_id });
 					},
 					// Disable server heartbeat — the test runs in fake time-zero
 					// and the round-trip doesn't need timeout watchdogs.
-					heartbeat: false,
-				}),
-			],
+					heartbeat: false
+				})
+			]
 		});
 
 		const create_events = stub.get_create_events();
-		const fake_ctx = create_fake_hono_context({credential_type: 'session'});
+		const fake_ctx = create_fake_hono_context({ credential_type: 'session' });
 		const events: WSEvents = await create_events(fake_ctx);
 
 		const fake_ws = create_fake_ws();
@@ -619,9 +619,9 @@ describe('create_app_server.ws_endpoints', () => {
 		await dispatch_ws_message(
 			events.onMessage,
 			new MessageEvent('message', {
-				data: JSON.stringify({jsonrpc: '2.0', method: 'heartbeat', id: 1, params: {}}),
+				data: JSON.stringify({ jsonrpc: '2.0', method: 'heartbeat', id: 1, params: {} })
 			}),
-			fake_ws.ws,
+			fake_ws.ws
 		);
 
 		assert.strictEqual(fake_ws.sends.length, 1);
@@ -632,18 +632,18 @@ describe('create_app_server.ws_endpoints', () => {
 
 		// Tear down — `on_socket_close` would fire here if wired.
 		await Promise.resolve(
-			events.onClose?.(new CloseEvent('close', {code: 1000, reason: ''}), fake_ws.ws),
+			events.onClose?.(new CloseEvent('close', { code: 1000, reason: '' }), fake_ws.ws)
 		);
 		assert.strictEqual(transport.get_connection_count(), 0);
 	});
 
 	test('required_roles: ROLE_ADMIN appears on the surface and unauthenticated upgrade is rejected at the upgrade-time chain', async () => {
 		const stub = create_stub_upgrade();
-		const {config} = await create_test_setup();
+		const { config } = await create_test_setup();
 		const result = await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
-			ws_endpoints: [build_minimal_spec({required_roles: [ROLE_ADMIN]})],
+			ws_endpoints: [build_minimal_spec({ required_roles: [ROLE_ADMIN] })]
 		});
 
 		// Surface documents the upgrade-time gate.
@@ -655,8 +655,8 @@ describe('create_app_server.ws_endpoints', () => {
 		// `require_role`, so this yields 401.
 		const res = await result.app.fetch(
 			new Request('http://localhost:3000/api/ws', {
-				headers: {Origin: 'http://localhost:3000'},
-			}),
+				headers: { Origin: 'http://localhost:3000' }
+			})
 		);
 		assert.strictEqual(res.status, 401);
 	});
@@ -665,23 +665,23 @@ describe('create_app_server.ws_endpoints', () => {
 		// Without this guard, the WS auto-mount (runs after `apply_route_specs`)
 		// would silently shadow the consumer's GET route — Hono is last-wins.
 		const stub = create_stub_upgrade();
-		const {config} = await create_test_setup();
+		const { config } = await create_test_setup();
 		const colliding_route_spec: RouteSpec = {
 			method: 'GET',
 			path: '/api/ws',
-			auth: {account: 'none', actor: 'none'},
-			handler: (c) => c.json({hi: 'from rest'}),
+			auth: { account: 'none', actor: 'none' },
+			handler: (c) => c.json({ hi: 'from rest' }),
 			description: 'consumer route that overlaps the WS path',
 			input: z.null(),
-			output: z.strictObject({hi: z.string()}),
+			output: z.strictObject({ hi: z.string() })
 		};
 		const err = await assert_rejects(() =>
 			create_app_server({
 				...config,
 				upgradeWebSocket: stub.upgradeWebSocket,
 				create_route_specs: () => [create_health_route_spec(), colliding_route_spec],
-				ws_endpoints: [build_minimal_spec()],
-			}),
+				ws_endpoints: [build_minimal_spec()]
+			})
 		);
 		assert.match(err.message, /ws_endpoints path collides with a GET RouteSpec: \/api\/ws/);
 	});
@@ -691,33 +691,33 @@ describe('create_app_server.ws_endpoints', () => {
 		// claims. This anchors the narrow scope of the cross-surface check
 		// so a future refactor doesn't widen it accidentally.
 		const stub = create_stub_upgrade();
-		const {config} = await create_test_setup();
+		const { config } = await create_test_setup();
 		const non_colliding_route_spec: RouteSpec = {
 			method: 'POST',
 			path: '/api/ws',
-			auth: {account: 'none', actor: 'none'},
-			handler: (c) => c.json({hi: 'posted'}),
+			auth: { account: 'none', actor: 'none' },
+			handler: (c) => c.json({ hi: 'posted' }),
 			description: 'consumer POST at the same path as the WS upgrade',
 			input: z.strictObject({}),
-			output: z.strictObject({hi: z.string()}),
+			output: z.strictObject({ hi: z.string() })
 		};
 		const result = await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
 			create_route_specs: () => [create_health_route_spec(), non_colliding_route_spec],
-			ws_endpoints: [build_minimal_spec()],
+			ws_endpoints: [build_minimal_spec()]
 		});
 		assert.isDefined(result.ws_endpoints['/api/ws']);
 	});
 
 	test('explicit auth_guard: true wires the listener pair (matches the default-on path)', async () => {
 		const stub = create_stub_upgrade();
-		const {config, audit} = await create_test_setup();
+		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
 		await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
-			ws_endpoints: [build_minimal_spec({transport, auth_guard: true})],
+			ws_endpoints: [build_minimal_spec({ transport, auth_guard: true })]
 		});
 
 		// One (auth_guard, logout_closer) pair appended.
@@ -732,8 +732,8 @@ describe('create_app_server.ws_endpoints', () => {
 			create_test_audit_event({
 				event_type: 'session_revoke',
 				account_id,
-				metadata: {session_id: session_hash},
-			}),
+				metadata: { session_id: session_hash }
+			})
 		);
 		assert.strictEqual(fake_ws.closes.length, 1);
 	});
@@ -743,16 +743,16 @@ describe('create_app_server.ws_endpoints', () => {
 		// (4 listeners total). Sibling to the shared-transport dedupe test;
 		// confirms dedupe is scoped to reference identity, not endpoint count.
 		const stub = create_stub_upgrade();
-		const {config, audit} = await create_test_setup();
+		const { config, audit } = await create_test_setup();
 		const transport_a = new BackendWebsocketTransport();
 		const transport_b = new BackendWebsocketTransport();
 		await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
 			ws_endpoints: [
-				build_minimal_spec({path: '/api/ws_a', transport: transport_a}),
-				build_minimal_spec({path: '/api/ws_b', transport: transport_b}),
-			],
+				build_minimal_spec({ path: '/api/ws_a', transport: transport_a }),
+				build_minimal_spec({ path: '/api/ws_b', transport: transport_b })
+			]
 		});
 
 		assert.strictEqual(audit.listener_count(), 4);
@@ -764,15 +764,15 @@ describe('create_app_server.ws_endpoints', () => {
 		// specs does not matter — this is the order where the `true`-config
 		// spec comes second.
 		const stub = create_stub_upgrade();
-		const {config, audit} = await create_test_setup();
+		const { config, audit } = await create_test_setup();
 		const shared_transport = new BackendWebsocketTransport();
 		await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
 			ws_endpoints: [
-				build_minimal_spec({path: '/api/ws_a', transport: shared_transport, auth_guard: false}),
-				build_minimal_spec({path: '/api/ws_b', transport: shared_transport, auth_guard: true}),
-			],
+				build_minimal_spec({ path: '/api/ws_a', transport: shared_transport, auth_guard: false }),
+				build_minimal_spec({ path: '/api/ws_b', transport: shared_transport, auth_guard: true })
+			]
 		});
 
 		// Guard wired exactly once (by the `true` spec); the `false` spec
@@ -788,8 +788,8 @@ describe('create_app_server.ws_endpoints', () => {
 			create_test_audit_event({
 				event_type: 'session_revoke',
 				account_id,
-				metadata: {session_id: session_hash},
-			}),
+				metadata: { session_id: session_hash }
+			})
 		);
 		assert.strictEqual(fake_ws.closes.length, 1);
 	});
@@ -800,13 +800,13 @@ describe('create_app_server.ws_endpoints', () => {
 		// default. This locks that in so a future refactor can't scope the
 		// check to consumer-only routes.
 		const stub = create_stub_upgrade();
-		const {config} = await create_test_setup();
+		const { config } = await create_test_setup();
 		const err = await assert_rejects(() =>
 			create_app_server({
 				...config,
 				upgradeWebSocket: stub.upgradeWebSocket,
-				ws_endpoints: [build_minimal_spec({path: '/api/surface'})],
-			}),
+				ws_endpoints: [build_minimal_spec({ path: '/api/surface' })]
+			})
 		);
 		assert.match(err.message, /ws_endpoints path collides with a GET RouteSpec: \/api\/surface/);
 	});
@@ -816,11 +816,11 @@ describe('create_app_server.ws_endpoints', () => {
 		// `register_ws_endpoint` (covered in register_ws_endpoint.test.ts);
 		// this test confirms the array threads through unchanged.
 		const stub = create_stub_upgrade();
-		const {config} = await create_test_setup();
+		const { config } = await create_test_setup();
 		const result = await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
-			ws_endpoints: [build_minimal_spec({required_roles: [ROLE_ADMIN, 'keeper']})],
+			ws_endpoints: [build_minimal_spec({ required_roles: [ROLE_ADMIN, 'keeper'] })]
 		});
 
 		const ws_endpoint = result.surface_spec.surface.ws_endpoints[0];
@@ -834,15 +834,15 @@ describe('create_app_server.ws_endpoints', () => {
 		// case so a future refactor doesn't quietly start wiring listeners
 		// when every consumer opted out.
 		const stub = create_stub_upgrade();
-		const {config, audit} = await create_test_setup();
+		const { config, audit } = await create_test_setup();
 		const shared_transport = new BackendWebsocketTransport();
 		await create_app_server({
 			...config,
 			upgradeWebSocket: stub.upgradeWebSocket,
 			ws_endpoints: [
-				build_minimal_spec({path: '/api/ws_a', transport: shared_transport, auth_guard: false}),
-				build_minimal_spec({path: '/api/ws_b', transport: shared_transport, auth_guard: false}),
-			],
+				build_minimal_spec({ path: '/api/ws_a', transport: shared_transport, auth_guard: false }),
+				build_minimal_spec({ path: '/api/ws_b', transport: shared_transport, auth_guard: false })
+			]
 		});
 
 		// No listeners appended for the shared transport.

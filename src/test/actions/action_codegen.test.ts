@@ -4,8 +4,8 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import {z} from 'zod';
+import { describe, assert, test } from 'vitest';
+import { z } from 'zod';
 
 import {
 	ImportBuilder,
@@ -30,10 +30,10 @@ import {
 	to_action_spec_identifier,
 	to_action_property_key,
 	PROTOCOL_ACTION_METHODS,
-	is_protocol_action_method,
+	is_protocol_action_method
 } from '$lib/actions/action_codegen.ts';
-import type {ActionSpecUnion} from '$lib/actions/action_spec.ts';
-import {protocol_action_specs} from '$lib/actions/protocol.ts';
+import type { ActionSpecUnion } from '$lib/actions/action_spec.ts';
+import { protocol_action_specs } from '$lib/actions/protocol.ts';
 
 // --- helpers ---
 
@@ -41,12 +41,12 @@ const create_rr = (initiator: 'frontend' | 'backend' | 'both'): ActionSpecUnion 
 	method: 'thing_create',
 	kind: 'request_response',
 	initiator,
-	auth: {account: 'required', actor: 'none'},
+	auth: { account: 'required', actor: 'none' },
 	side_effects: true,
-	input: z.strictObject({name: z.string()}),
-	output: z.strictObject({id: z.string()}),
+	input: z.strictObject({ name: z.string() }),
+	output: z.strictObject({ id: z.string() }),
 	async: true,
-	description: 'Create a thing',
+	description: 'Create a thing'
 });
 
 const create_rn = (initiator: 'frontend' | 'backend' | 'both'): ActionSpecUnion => ({
@@ -55,15 +55,15 @@ const create_rn = (initiator: 'frontend' | 'backend' | 'both'): ActionSpecUnion 
 	initiator,
 	auth: null,
 	side_effects: true,
-	input: z.strictObject({id: z.string()}),
+	input: z.strictObject({ id: z.string() }),
 	output: z.void(),
 	async: true,
-	description: 'A thing was created',
+	description: 'A thing was created'
 });
 
 const create_lc = (
 	initiator: 'frontend' | 'backend' | 'both',
-	async_: boolean = false,
+	async_: boolean = false
 ): ActionSpecUnion => ({
 	method: 'toggle_menu',
 	kind: 'local_call',
@@ -73,7 +73,7 @@ const create_lc = (
 	input: z.null(),
 	output: z.null(),
 	async: async_,
-	description: 'Toggle the menu',
+	description: 'Toggle the menu'
 });
 
 // --- ImportBuilder ---
@@ -184,7 +184,7 @@ describe('get_executor_phases', () => {
 				'send_error',
 				'receive_error',
 				'receive_request',
-				'send_response',
+				'send_response'
 			]);
 			assert.deepStrictEqual(new Set(frontend_phases), all_rr_phases);
 			assert.deepStrictEqual(new Set(backend_phases), all_rr_phases);
@@ -229,21 +229,21 @@ describe('generate_actions_api_method_signature', () => {
 		assert.ok(sig.includes('options?: RpcClientCallOptions'));
 		assert.ok(
 			sig.includes(
-				"Promise<Result<{value: ActionOutputs['thing_create']}, {error: JsonrpcErrorObject}>>",
-			),
+				"Promise<Result<{value: ActionOutputs['thing_create']}, {error: JsonrpcErrorObject}>>"
+			)
 		);
 		const built = imports.build();
 		assert.ok(
-			built.includes("import type {ActionInputs, ActionOutputs} from './action_collections.ts'"),
+			built.includes("import type {ActionInputs, ActionOutputs} from './action_collections.ts'")
 		);
 		assert.ok(
 			built.includes(
-				"import type {RpcClientCallOptions} from '@fuzdev/fuz_app/actions/rpc_client.ts'",
-			),
+				"import type {RpcClientCallOptions} from '@fuzdev/fuz_app/actions/rpc_client.ts'"
+			)
 		);
 		assert.ok(built.includes("import type {Result} from '@fuzdev/fuz_util/result.ts'"));
 		assert.ok(
-			built.includes("import type {JsonrpcErrorObject} from '@fuzdev/fuz_app/http/jsonrpc.ts'"),
+			built.includes("import type {JsonrpcErrorObject} from '@fuzdev/fuz_app/http/jsonrpc.ts'")
 		);
 	});
 
@@ -260,8 +260,8 @@ describe('generate_actions_api_method_signature', () => {
 		assert.ok(sig.includes('options?: RpcClientCallOptions'));
 		assert.ok(
 			sig.includes(
-				"Promise<Result<{value: ActionOutputs['thing_created']}, {error: JsonrpcErrorObject}>>",
-			),
+				"Promise<Result<{value: ActionOutputs['thing_created']}, {error: JsonrpcErrorObject}>>"
+			)
 		);
 		// Must NOT regress to the old void shape.
 		assert.ok(!/=>\s*void\s*;?$/.test(sig), `notification regressed to void: ${sig}`);
@@ -273,8 +273,8 @@ describe('generate_actions_api_method_signature', () => {
 		assert.ok(sig.includes('options?: RpcClientCallOptions'));
 		assert.ok(
 			sig.includes(
-				"Promise<Result<{value: ActionOutputs['toggle_menu']}, {error: JsonrpcErrorObject}>>",
-			),
+				"Promise<Result<{value: ActionOutputs['toggle_menu']}, {error: JsonrpcErrorObject}>>"
+			)
 		);
 	});
 
@@ -298,12 +298,12 @@ describe('generate_actions_api_method_signature', () => {
 	test('sync local_call — Result wrap when sync_returns_value: false', () => {
 		const imports = new ImportBuilder();
 		const sig = generate_actions_api_method_signature(create_lc('frontend', false), imports, {
-			sync_returns_value: false,
+			sync_returns_value: false
 		});
 		assert.ok(!sig.includes('options?: RpcClientCallOptions'));
 		assert.ok(!sig.includes('Promise<'));
 		assert.ok(
-			sig.includes("Result<{value: ActionOutputs['toggle_menu']}, {error: JsonrpcErrorObject}>"),
+			sig.includes("Result<{value: ActionOutputs['toggle_menu']}, {error: JsonrpcErrorObject}>")
 		);
 		const built = imports.build();
 		assert.ok(built.includes('Result'));
@@ -346,17 +346,17 @@ describe('generate_actions_api_method_signature', () => {
 			method: 'admin_account_list',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: {account: 'required', actor: 'none'},
+			auth: { account: 'required', actor: 'none' },
 			side_effects: false,
-			input: z.strictObject({acting: z.string().optional()}),
-			output: z.strictObject({accounts: z.array(z.string())}),
+			input: z.strictObject({ acting: z.string().optional() }),
+			output: z.strictObject({ accounts: z.array(z.string()) }),
 			async: true,
-			description: 'List all accounts.',
+			description: 'List all accounts.'
 		};
 		const sig = generate_actions_api_method_signature(spec, imports);
 		assert.ok(
 			sig.includes("input?: ActionInputs['admin_account_list']"),
-			`expected optional input, got: ${sig}`,
+			`expected optional input, got: ${sig}`
 		);
 	});
 
@@ -370,20 +370,20 @@ describe('generate_actions_api_method_signature', () => {
 			method: 'audit_log_list',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: {account: 'required', actor: 'none'},
+			auth: { account: 'required', actor: 'none' },
 			side_effects: false,
 			input: z.strictObject({
 				event_type: z.string().nullish(),
-				limit: z.number().nullish(),
+				limit: z.number().nullish()
 			}),
-			output: z.strictObject({events: z.array(z.string())}),
+			output: z.strictObject({ events: z.array(z.string()) }),
 			async: true,
-			description: 'List audit log events.',
+			description: 'List audit log events.'
 		};
 		const sig = generate_actions_api_method_signature(spec, imports);
 		assert.ok(
 			sig.includes("input?: ActionInputs['audit_log_list']"),
-			`expected optional input, got: ${sig}`,
+			`expected optional input, got: ${sig}`
 		);
 	});
 
@@ -397,25 +397,25 @@ describe('generate_actions_api_method_signature', () => {
 			method: 'admin_session_revoke_all',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: {account: 'required', actor: 'none'},
+			auth: { account: 'required', actor: 'none' },
 			side_effects: true,
 			input: z.strictObject({
 				account_id: z.string(),
-				acting: z.string().optional(),
+				acting: z.string().optional()
 			}),
-			output: z.strictObject({ok: z.literal(true)}),
+			output: z.strictObject({ ok: z.literal(true) }),
 			async: true,
-			description: 'Revoke all sessions for an account.',
+			description: 'Revoke all sessions for an account.'
 		};
 		const sig = generate_actions_api_method_signature(spec, imports);
 		assert.ok(
 			sig.includes("input: ActionInputs['admin_session_revoke_all']"),
-			`expected required input, got: ${sig}`,
+			`expected required input, got: ${sig}`
 		);
 		// Belt-and-suspenders — must NOT emit the optional shape.
 		assert.ok(
 			!sig.includes("input?: ActionInputs['admin_session_revoke_all']"),
-			`expected required input, got optional: ${sig}`,
+			`expected required input, got optional: ${sig}`
 		);
 	});
 
@@ -427,24 +427,24 @@ describe('generate_actions_api_method_signature', () => {
 			method: 'wrapped_input',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: {account: 'required', actor: 'none'},
+			auth: { account: 'required', actor: 'none' },
 			side_effects: false,
-			input: z.optional(z.strictObject({account_id: z.string()})),
-			output: z.strictObject({ok: z.literal(true)}),
+			input: z.optional(z.strictObject({ account_id: z.string() })),
+			output: z.strictObject({ ok: z.literal(true) }),
 			async: true,
-			description: 'Wrapped optional input.',
+			description: 'Wrapped optional input.'
 		};
 		const sig = generate_actions_api_method_signature(spec, imports);
 		assert.ok(
 			sig.includes("input?: ActionInputs['wrapped_input']"),
-			`expected optional input, got: ${sig}`,
+			`expected optional input, got: ${sig}`
 		);
 	});
 
 	test('custom collections_path threads through', () => {
 		const imports = new ImportBuilder();
 		generate_actions_api_method_signature(create_rr('frontend'), imports, {
-			collections_path: './my_collections.ts',
+			collections_path: './my_collections.ts'
 		});
 		const built = imports.build();
 		assert.ok(built.includes("from './my_collections.ts'"));
@@ -524,7 +524,7 @@ describe('get_handler_return_type', () => {
 			create_rr('frontend'),
 			'receive_request',
 			imports,
-			'./action_collections.ts',
+			'./action_collections.ts'
 		);
 		assert.ok(result.includes("ActionOutputs['thing_create']"));
 		assert.ok(result.includes('Promise'));
@@ -536,7 +536,7 @@ describe('get_handler_return_type', () => {
 			create_rr('frontend'),
 			'receive_request',
 			imports,
-			'./action_collections.ts',
+			'./action_collections.ts'
 		);
 		assert.ok(imports.has_imports());
 	});
@@ -547,7 +547,7 @@ describe('get_handler_return_type', () => {
 			create_lc('frontend', true),
 			'execute',
 			imports,
-			'./action_collections.ts',
+			'./action_collections.ts'
 		);
 		assert.ok(result.includes("ActionOutputs['toggle_menu']"));
 		assert.ok(result.includes('Promise'));
@@ -559,7 +559,7 @@ describe('get_handler_return_type', () => {
 			create_lc('frontend', false),
 			'execute',
 			imports,
-			'./action_collections.ts',
+			'./action_collections.ts'
 		);
 		assert.ok(result.includes("ActionOutputs['toggle_menu']"));
 		assert.ok(!result.includes('Promise'));
@@ -571,7 +571,7 @@ describe('get_handler_return_type', () => {
 			create_rr('frontend'),
 			'send_request',
 			imports,
-			'./action_collections.ts',
+			'./action_collections.ts'
 		);
 		assert.strictEqual(result, 'void | Promise<void>');
 	});
@@ -589,12 +589,12 @@ const fixture_specs: ReadonlyArray<ActionSpecUnion> = [
 		method: 'heartbeat',
 		kind: 'request_response',
 		initiator: 'both',
-		auth: {account: 'required', actor: 'none'},
+		auth: { account: 'required', actor: 'none' },
 		side_effects: false,
 		input: z.strictObject({}),
 		output: z.strictObject({}),
 		async: true,
-		description: 'Liveness probe.',
+		description: 'Liveness probe.'
 	},
 	{
 		method: 'cancel',
@@ -602,21 +602,21 @@ const fixture_specs: ReadonlyArray<ActionSpecUnion> = [
 		initiator: 'frontend',
 		auth: null,
 		side_effects: true,
-		input: z.strictObject({request_id: z.union([z.string(), z.number()])}),
+		input: z.strictObject({ request_id: z.union([z.string(), z.number()]) }),
 		output: z.void(),
 		async: true,
-		description: 'Cancel a pending request.',
+		description: 'Cancel a pending request.'
 	},
 	{
 		method: 'thing_create',
 		kind: 'request_response',
 		initiator: 'frontend',
-		auth: {account: 'required', actor: 'none'},
+		auth: { account: 'required', actor: 'none' },
 		side_effects: true,
-		input: z.strictObject({name: z.string()}),
-		output: z.strictObject({id: z.string()}),
+		input: z.strictObject({ name: z.string() }),
+		output: z.strictObject({ id: z.string() }),
 		async: true,
-		description: 'Create a thing.',
+		description: 'Create a thing.'
 	},
 	{
 		method: 'thing_changed',
@@ -624,10 +624,10 @@ const fixture_specs: ReadonlyArray<ActionSpecUnion> = [
 		initiator: 'backend',
 		auth: null,
 		side_effects: true,
-		input: z.strictObject({id: z.string()}),
+		input: z.strictObject({ id: z.string() }),
 		output: z.void(),
 		async: true,
-		description: 'A thing changed on the server.',
+		description: 'A thing changed on the server.'
 	},
 	{
 		method: 'menu_toggle',
@@ -638,8 +638,8 @@ const fixture_specs: ReadonlyArray<ActionSpecUnion> = [
 		input: z.null(),
 		output: z.null(),
 		async: false,
-		description: 'Toggle the main menu.',
-	},
+		description: 'Toggle the main menu.'
+	}
 ];
 
 describe('PROTOCOL_ACTION_METHODS', () => {
@@ -655,7 +655,7 @@ describe('PROTOCOL_ACTION_METHODS', () => {
 	test('matches the runtime protocol_action_specs bundle (no drift)', () => {
 		assert.deepStrictEqual(
 			[...PROTOCOL_ACTION_METHODS].sort(),
-			protocol_action_specs.map((spec) => spec.method).sort(),
+			protocol_action_specs.map((spec) => spec.method).sort()
 		);
 	});
 });
@@ -698,12 +698,12 @@ describe('generate_action_method_enums', () => {
 			'LocalCallActionMethod',
 			'FrontendActionMethod',
 			'BackendActionMethod',
-			'BackendRequestResponseMethod',
+			'BackendRequestResponseMethod'
 		]) {
 			assert.ok(result.includes(`export const ${name} = z.enum([`), `missing const ${name}`);
 			assert.ok(
 				result.includes(`export type ${name} = z.infer<typeof ${name}>;`),
-				`missing type ${name}`,
+				`missing type ${name}`
 			);
 		}
 		// FrontendRequestResponseMethod and BroadcastActionMethod are kind-narrow;
@@ -722,11 +722,11 @@ describe('generate_action_method_enums', () => {
 		// generate_action_method_enum_block for this case.
 		const imports = new ImportBuilder();
 		const result = generate_action_method_enums(fixture_specs, imports, {
-			emit: new Set(['backend_handled']),
+			emit: new Set(['backend_handled'])
 		});
 		const section = result.slice(
 			result.indexOf('export const BackendRequestResponseMethod'),
-			result.indexOf('export type BackendRequestResponseMethod'),
+			result.indexOf('export type BackendRequestResponseMethod')
 		);
 		// thing_create: request_response + initiator: 'frontend' → backend handles.
 		assert.ok(section.includes("'thing_create'"));
@@ -744,13 +744,13 @@ describe('generate_action_method_enums', () => {
 				method: 'completion_create',
 				kind: 'request_response',
 				initiator: 'frontend',
-				auth: {account: 'required', actor: 'none'},
+				auth: { account: 'required', actor: 'none' },
 				side_effects: true,
 				input: z.strictObject({}),
 				output: z.strictObject({}),
 				async: true,
 				description: 'create',
-				streams: 'completion_progress',
+				streams: 'completion_progress'
 			},
 			{
 				method: 'completion_progress',
@@ -761,7 +761,7 @@ describe('generate_action_method_enums', () => {
 				input: z.strictObject({}),
 				output: z.void(),
 				async: true,
-				description: 'progress',
+				description: 'progress'
 			},
 			{
 				method: 'filer_change',
@@ -772,12 +772,12 @@ describe('generate_action_method_enums', () => {
 				input: z.strictObject({}),
 				output: z.void(),
 				async: true,
-				description: 'change',
-			},
+				description: 'change'
+			}
 		];
 		const imports = new ImportBuilder();
 		const result = generate_action_method_enums(specs, imports, {
-			emit: new Set(['broadcast']),
+			emit: new Set(['broadcast'])
 		});
 		assert.ok(result.includes("'filer_change'"));
 		assert.ok(!result.includes("'completion_progress'"));
@@ -791,7 +791,7 @@ describe('generate_action_method_enums', () => {
 		// (protocol action) is filtered out by default.
 		const rr_section = result.slice(
 			result.indexOf('export const RequestResponseActionMethod'),
-			result.indexOf('export type RequestResponseActionMethod'),
+			result.indexOf('export type RequestResponseActionMethod')
 		);
 		assert.ok(rr_section.includes("'thing_create'"));
 		assert.ok(!rr_section.includes("'heartbeat'"));
@@ -802,7 +802,7 @@ describe('generate_action_method_enums', () => {
 		// cancel (protocol action) is filtered out by default.
 		const rn_section = result.slice(
 			result.indexOf('export const RemoteNotificationActionMethod'),
-			result.indexOf('export type RemoteNotificationActionMethod'),
+			result.indexOf('export type RemoteNotificationActionMethod')
 		);
 		assert.ok(rn_section.includes("'thing_changed'"));
 		assert.ok(!rn_section.includes("'cancel'"));
@@ -812,17 +812,17 @@ describe('generate_action_method_enums', () => {
 	test('include_protocol_actions: true retains heartbeat + cancel', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_method_enums(fixture_specs, imports, {
-			include_protocol_actions: true,
+			include_protocol_actions: true
 		});
 		const rr_section = result.slice(
 			result.indexOf('export const RequestResponseActionMethod'),
-			result.indexOf('export type RequestResponseActionMethod'),
+			result.indexOf('export type RequestResponseActionMethod')
 		);
 		assert.ok(rr_section.includes("'heartbeat'"));
 		assert.ok(rr_section.includes("'thing_create'"));
 		const rn_section = result.slice(
 			result.indexOf('export const RemoteNotificationActionMethod'),
-			result.indexOf('export type RemoteNotificationActionMethod'),
+			result.indexOf('export type RemoteNotificationActionMethod')
 		);
 		assert.ok(rn_section.includes("'cancel'"));
 		assert.ok(rn_section.includes("'thing_changed'"));
@@ -831,7 +831,7 @@ describe('generate_action_method_enums', () => {
 	test('emit option restricts to a subset', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_method_enums(fixture_specs, imports, {
-			emit: new Set(['all', 'request_response']),
+			emit: new Set(['all', 'request_response'])
 		});
 		assert.ok(result.includes('export const ActionMethod'));
 		assert.ok(result.includes('export const RequestResponseActionMethod'));
@@ -871,21 +871,21 @@ describe('generate_action_method_enum_block', () => {
 		// `kind === 'request_response' && initiator !== 'backend'`.
 		const specs: ReadonlyArray<ActionSpecUnion> = [
 			create_rr('frontend'), // thing_create → backend handles
-			{...create_rr('backend'), method: 'pulled'}, // backend initiates → not in this set
-			{...create_rr('both'), method: 'echoed'}, // either side → backend handles
-			create_rn('backend'), // wrong kind → excluded by predicate
+			{ ...create_rr('backend'), method: 'pulled' }, // backend initiates → not in this set
+			{ ...create_rr('both'), method: 'echoed' }, // either side → backend handles
+			create_rn('backend') // wrong kind → excluded by predicate
 		];
 		const imports = new ImportBuilder();
 		const result = generate_action_method_enum_block(specs, imports, {
 			name: 'BackendRequestResponseMethod',
 			jsdoc: 'Names of `request_response` actions handled on the server.',
-			predicate: (s) => s.kind === 'request_response' && s.initiator !== 'backend',
+			predicate: (s) => s.kind === 'request_response' && s.initiator !== 'backend'
 		});
 		assert.ok(result.includes('export const BackendRequestResponseMethod = z.enum(['));
 		assert.ok(
 			result.includes(
-				'export type BackendRequestResponseMethod = z.infer<typeof BackendRequestResponseMethod>;',
-			),
+				'export type BackendRequestResponseMethod = z.infer<typeof BackendRequestResponseMethod>;'
+			)
 		);
 		assert.ok(result.includes("'thing_create'"));
 		assert.ok(result.includes("'echoed'"));
@@ -902,7 +902,7 @@ describe('generate_action_method_enum_block', () => {
 		const result = generate_action_method_enum_block(fixture_specs, imports, {
 			name: 'NeverMatches',
 			jsdoc: 'Subset that never qualifies.',
-			predicate: () => false,
+			predicate: () => false
 		});
 		assert.strictEqual(result, '');
 		assert.ok(!imports.has_imports());
@@ -915,7 +915,7 @@ describe('generate_action_method_enum_block', () => {
 		const default_result = generate_action_method_enum_block(fixture_specs, imports_default, {
 			name: 'BackendRequestResponseMethod',
 			jsdoc: 'jsdoc',
-			predicate: (s) => s.kind === 'request_response' && s.initiator !== 'backend',
+			predicate: (s) => s.kind === 'request_response' && s.initiator !== 'backend'
 		});
 		assert.ok(default_result.includes("'thing_create'"));
 		assert.ok(!default_result.includes("'heartbeat'"));
@@ -925,7 +925,7 @@ describe('generate_action_method_enum_block', () => {
 			name: 'BackendRequestResponseMethod',
 			jsdoc: 'jsdoc',
 			predicate: (s) => s.kind === 'request_response' && s.initiator !== 'backend',
-			include_protocol_actions: true,
+			include_protocol_actions: true
 		});
 		assert.ok(inclusive_result.includes("'thing_create'"));
 		assert.ok(inclusive_result.includes("'heartbeat'"));
@@ -936,7 +936,7 @@ describe('generate_action_method_enum_block', () => {
 		const result = generate_action_method_enum_block(fixture_specs, imports, {
 			name: 'MyEnum',
 			jsdoc: 'Custom jsdoc.',
-			predicate: (s) => s.method === 'thing_create',
+			predicate: (s) => s.method === 'thing_create'
 		});
 		assert.ok(result.startsWith('/**\n * Custom jsdoc.\n */\nexport const MyEnum'));
 	});
@@ -966,7 +966,7 @@ describe('generate_typed_action_event_alias', () => {
 		const imports = new ImportBuilder();
 		generate_typed_action_event_alias(imports, {
 			collections_path: '../gen/collections.ts',
-			metatypes_path: '../gen/metatypes.ts',
+			metatypes_path: '../gen/metatypes.ts'
 		});
 		const built = imports.build();
 		assert.ok(built.includes("from '../gen/collections.ts'"));
@@ -985,8 +985,8 @@ describe('generate_action_specs_record', () => {
 		assert.ok(result.includes('export interface ActionSpecs {'));
 		assert.ok(
 			result.includes(
-				'export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);',
-			),
+				'export const action_specs: Array<ActionSpecUnion> = Object.values(ActionSpecs);'
+			)
 		);
 		// Per-spec value entries — protocol actions (heartbeat, cancel) excluded by default.
 		assert.ok(result.includes('thing_create: specs.thing_create_action_spec,'));
@@ -1005,7 +1005,7 @@ describe('generate_action_specs_record', () => {
 	test('include_protocol_actions: true retains heartbeat + cancel', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_specs_record(fixture_specs, imports, {
-			include_protocol_actions: true,
+			include_protocol_actions: true
 		});
 		assert.ok(result.includes('heartbeat: specs.heartbeat_action_spec,'));
 		assert.ok(result.includes('cancel: specs.cancel_action_spec,'));
@@ -1017,7 +1017,7 @@ describe('generate_action_specs_record', () => {
 		// would short-circuit the helper before the `* as specs` import is added.
 		const consumer_specs = fixture_specs.filter((s) => !is_protocol_action_method(s.method));
 		generate_action_specs_record(consumer_specs.slice(0, 1), imports, {
-			specs_module: '../shared/action_specs.ts',
+			specs_module: '../shared/action_specs.ts'
 		});
 		assert.ok(imports.build().includes("import * as specs from '../shared/action_specs.ts';"));
 	});
@@ -1041,7 +1041,7 @@ describe('generate_action_inputs_outputs', () => {
 
 		// `z.infer` interface entries — same exclusion.
 		assert.ok(
-			result.includes('thing_create: z.infer<typeof specs.thing_create_action_spec.input>;'),
+			result.includes('thing_create: z.infer<typeof specs.thing_create_action_spec.input>;')
 		);
 		assert.ok(!result.includes('heartbeat: z.infer<typeof specs.heartbeat_action_spec.input>;'));
 
@@ -1054,7 +1054,7 @@ describe('generate_action_inputs_outputs', () => {
 	test('include_protocol_actions: true retains heartbeat + cancel', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_inputs_outputs(fixture_specs, imports, {
-			include_protocol_actions: true,
+			include_protocol_actions: true
 		});
 		assert.ok(result.includes('heartbeat: specs.heartbeat_action_spec.input,'));
 		assert.ok(result.includes('cancel: specs.cancel_action_spec.input,'));
@@ -1071,8 +1071,8 @@ describe('generate_action_event_datas', () => {
 		// request_response → 3-arg variant. thing_create stays; heartbeat (protocol action) filtered.
 		assert.ok(
 			result.includes(
-				"thing_create: ActionEventRequestResponseData<'thing_create', ActionInputs['thing_create'], ActionOutputs['thing_create']>;",
-			),
+				"thing_create: ActionEventRequestResponseData<'thing_create', ActionInputs['thing_create'], ActionOutputs['thing_create']>;"
+			)
 		);
 		assert.ok(!result.includes("'heartbeat',"));
 		assert.ok(!result.includes('heartbeat: ActionEvent'));
@@ -1080,16 +1080,16 @@ describe('generate_action_event_datas', () => {
 		// remote_notification → 2-arg variant (no output). cancel (protocol action) filtered.
 		assert.ok(
 			result.includes(
-				"thing_changed: ActionEventRemoteNotificationData<'thing_changed', ActionInputs['thing_changed']>;",
-			),
+				"thing_changed: ActionEventRemoteNotificationData<'thing_changed', ActionInputs['thing_changed']>;"
+			)
 		);
 		assert.ok(!result.includes('cancel: ActionEvent'));
 
 		// local_call → 3-arg variant.
 		assert.ok(
 			result.includes(
-				"menu_toggle: ActionEventLocalCallData<'menu_toggle', ActionInputs['menu_toggle'], ActionOutputs['menu_toggle']>;",
-			),
+				"menu_toggle: ActionEventLocalCallData<'menu_toggle', ActionInputs['menu_toggle'], ActionOutputs['menu_toggle']>;"
+			)
 		);
 
 		// Imports the three data types (deduped by ImportBuilder).
@@ -1114,7 +1114,7 @@ describe('generate_action_event_datas', () => {
 		const imports = new ImportBuilder();
 		generate_action_event_datas(fixture_specs, imports, {
 			same_file: false,
-			collections_path: '../gen/collections.ts',
+			collections_path: '../gen/collections.ts'
 		});
 		const built = imports.build();
 		assert.ok(built.includes("from '../gen/collections.ts'"));
@@ -1124,7 +1124,7 @@ describe('generate_action_event_datas', () => {
 
 	test('same_file: false defaults collections_path to ./action_collections.ts', () => {
 		const imports = new ImportBuilder();
-		generate_action_event_datas(fixture_specs, imports, {same_file: false});
+		generate_action_event_datas(fixture_specs, imports, { same_file: false });
 		const built = imports.build();
 		assert.ok(built.includes("from './action_collections.ts'"));
 		assert.ok(built.includes('ActionInputs'));
@@ -1140,7 +1140,7 @@ describe('generate_action_event_datas', () => {
 		// suppressed.
 		const imports = new ImportBuilder();
 		generate_action_event_datas(fixture_specs, imports, {
-			collections_path: '../gen/collections.ts',
+			collections_path: '../gen/collections.ts'
 		});
 		const built = imports.build();
 		assert.ok(!built.includes('ActionInputs'));
@@ -1159,8 +1159,8 @@ describe('generate_frontend_actions_api', () => {
 		// request_response: signature with options + Promise<Result>.
 		assert.ok(
 			result.includes(
-				"thing_create: (input: ActionInputs['thing_create'], options?: RpcClientCallOptions)",
-			),
+				"thing_create: (input: ActionInputs['thing_create'], options?: RpcClientCallOptions)"
+			)
 		);
 		// sync local_call: direct return, no options.
 		assert.ok(result.includes("menu_toggle: (input?: void) => ActionOutputs['menu_toggle'];"));
@@ -1179,7 +1179,7 @@ describe('generate_frontend_actions_api', () => {
 	test('include_protocol_actions: true retains heartbeat + cancel', () => {
 		const imports = new ImportBuilder();
 		const result = generate_frontend_actions_api(fixture_specs, imports, {
-			include_protocol_actions: true,
+			include_protocol_actions: true
 		});
 		// heartbeat's input is `z.strictObject({})` (empty object) — `safeParse({})`
 		// succeeds, so the emitted parameter is `input?:`. The protocol-action
@@ -1187,8 +1187,8 @@ describe('generate_frontend_actions_api', () => {
 		// of all-optional shape the probe relaxation targets.
 		assert.ok(
 			result.includes(
-				"heartbeat: (input?: ActionInputs['heartbeat'], options?: RpcClientCallOptions)",
-			),
+				"heartbeat: (input?: ActionInputs['heartbeat'], options?: RpcClientCallOptions)"
+			)
 		);
 		assert.ok(result.includes('cancel:'));
 	});
@@ -1198,7 +1198,7 @@ describe('generate_frontend_actions_api', () => {
 		// narrows the consumer-owned remainder.
 		const imports = new ImportBuilder();
 		const result = generate_frontend_actions_api(fixture_specs, imports, {
-			method_filter: (s) => s.kind === 'request_response',
+			method_filter: (s) => s.kind === 'request_response'
 		});
 		assert.ok(result.includes('thing_create:'));
 		assert.ok(!result.includes('heartbeat:')); // protocol-action filter
@@ -1231,7 +1231,7 @@ describe('generate_frontend_action_handlers', () => {
 	test('honors collections_path option for the ActionOutputs side-effect import', () => {
 		const imports = new ImportBuilder();
 		generate_frontend_action_handlers(fixture_specs, imports, {
-			collections_path: '../gen/action_collections.ts',
+			collections_path: '../gen/action_collections.ts'
 		});
 		assert.ok(imports.build().includes("from '../gen/action_collections.ts'"));
 	});
@@ -1245,7 +1245,7 @@ describe('generate_backend_actions_api', () => {
 		assert.ok(result.includes('export interface BackendActionsApi {'));
 		// thing_changed (remote_notification, backend initiator) is in.
 		assert.ok(
-			result.includes("thing_changed: (input: ActionInputs['thing_changed']) => Promise<void>;"),
+			result.includes("thing_changed: (input: ActionInputs['thing_changed']) => Promise<void>;")
 		);
 		// cancel (remote_notification, frontend initiator) is OUT.
 		assert.ok(!result.includes('cancel:'));
@@ -1256,7 +1256,7 @@ describe('generate_backend_actions_api', () => {
 
 		// Emits the broadcast_action_specs runtime array alongside the interface.
 		assert.ok(
-			result.includes('export const broadcast_action_specs: ReadonlyArray<ActionSpecUnion> = ['),
+			result.includes('export const broadcast_action_specs: ReadonlyArray<ActionSpecUnion> = [')
 		);
 		assert.ok(result.includes('specs.thing_changed_action_spec,'));
 		assert.ok(!result.includes('specs.cancel_action_spec,'));
@@ -1276,7 +1276,7 @@ describe('generate_backend_actions_api', () => {
 
 		assert.ok(result.includes('export interface BackendActionsApi {}'));
 		assert.ok(
-			result.includes('export const broadcast_action_specs: ReadonlyArray<ActionSpecUnion> = [];'),
+			result.includes('export const broadcast_action_specs: ReadonlyArray<ActionSpecUnion> = [];')
 		);
 		// Dead-import skip: only `ActionSpecUnion` is referenced; `* as specs`
 		// and `ActionInputs` would have nothing to reference.
@@ -1290,7 +1290,7 @@ describe('generate_backend_actions_api', () => {
 		const imports = new ImportBuilder();
 		generate_backend_actions_api(fixture_specs, imports, {
 			specs_module: '../shared/action_specs.ts',
-			collections_path: '../gen/collections.ts',
+			collections_path: '../gen/collections.ts'
 		});
 		const built = imports.build();
 		assert.ok(built.includes("import * as specs from '../shared/action_specs.ts';"));
@@ -1318,7 +1318,7 @@ describe('qualify_spec', () => {
 
 	test('generate_action_specs_record uses qualified identifiers and skips * as specs', () => {
 		const imports = new ImportBuilder();
-		const result = generate_action_specs_record(fixture_specs, imports, {qualify_spec});
+		const result = generate_action_specs_record(fixture_specs, imports, { qualify_spec });
 
 		assert.ok(result.includes('thing_create: local_specs.thing_create_action_spec,'));
 		assert.ok(result.includes('thing_changed: local_specs.thing_changed_action_spec,'));
@@ -1340,7 +1340,7 @@ describe('qualify_spec', () => {
 		const imports = new ImportBuilder();
 		generate_action_specs_record(fixture_specs, imports, {
 			qualify_spec,
-			specs_module: '../shared/action_specs.ts',
+			specs_module: '../shared/action_specs.ts'
 		});
 		const built = imports.build();
 		assert.ok(!built.includes('../shared/action_specs.ts'));
@@ -1349,12 +1349,12 @@ describe('qualify_spec', () => {
 
 	test('generate_action_inputs_outputs uses qualified .input/.output identifiers', () => {
 		const imports = new ImportBuilder();
-		const result = generate_action_inputs_outputs(fixture_specs, imports, {qualify_spec});
+		const result = generate_action_inputs_outputs(fixture_specs, imports, { qualify_spec });
 
 		assert.ok(result.includes('thing_create: local_specs.thing_create_action_spec.input,'));
 		assert.ok(result.includes('thing_create: local_specs.thing_create_action_spec.output,'));
 		assert.ok(
-			result.includes('thing_create: z.infer<typeof local_specs.thing_create_action_spec.input>;'),
+			result.includes('thing_create: z.infer<typeof local_specs.thing_create_action_spec.input>;')
 		);
 		// Default form must not leak — anchor on the leading tab + method.
 		assert.ok(!result.includes('\tthing_create: specs.thing_create_action_spec.input,'));
@@ -1367,7 +1367,7 @@ describe('qualify_spec', () => {
 
 	test('generate_backend_actions_api uses qualified spec references in array', () => {
 		const imports = new ImportBuilder();
-		const result = generate_backend_actions_api(fixture_specs, imports, {qualify_spec});
+		const result = generate_backend_actions_api(fixture_specs, imports, { qualify_spec });
 
 		// thing_changed is the only backend-initiated remote_notification in
 		// the fixture; it must be qualified with local_specs.
@@ -1391,7 +1391,7 @@ describe('qualify_spec', () => {
 				: `wire_specs.${s.method}_action_spec`;
 		const imports = new ImportBuilder();
 		const result = generate_action_specs_record(fixture_specs, imports, {
-			qualify_spec: mixed_qualify,
+			qualify_spec: mixed_qualify
 		});
 		assert.ok(result.includes('thing_create: wire_specs.thing_create_action_spec,'));
 		assert.ok(result.includes('menu_toggle: client_specs.menu_toggle_action_spec,'));
@@ -1418,7 +1418,7 @@ describe('resolve_spec_qualifier', () => {
 	test('specs_module override — registers from the overridden path', () => {
 		const imports = new ImportBuilder();
 		const qualify = resolve_spec_qualifier(imports, {
-			specs_module: '../shared/action_specs.ts',
+			specs_module: '../shared/action_specs.ts'
 		});
 		assert.strictEqual(qualify(spec), 'specs.thing_create_action_spec');
 		assert.ok(imports.build().includes("import * as specs from '../shared/action_specs.ts';"));
@@ -1427,7 +1427,7 @@ describe('resolve_spec_qualifier', () => {
 	test('qualify_spec callback — returned verbatim, no specs import added', () => {
 		const imports = new ImportBuilder();
 		const callback = (s: ActionSpecUnion): string => `custom_ns.${s.method}_action_spec`;
-		const qualify = resolve_spec_qualifier(imports, {qualify_spec: callback});
+		const qualify = resolve_spec_qualifier(imports, { qualify_spec: callback });
 		assert.strictEqual(qualify(spec), 'custom_ns.thing_create_action_spec');
 		assert.strictEqual(qualify, callback, 'callback identity preserved');
 		assert.ok(!imports.build().includes('* as specs'));
@@ -1438,7 +1438,7 @@ describe('resolve_spec_qualifier', () => {
 		const callback = (s: ActionSpecUnion): string => `wire.${s.method}_action_spec`;
 		const qualify = resolve_spec_qualifier(imports, {
 			qualify_spec: callback,
-			specs_module: '../shared/action_specs.ts',
+			specs_module: '../shared/action_specs.ts'
 		});
 		assert.strictEqual(qualify(spec), 'wire.thing_create_action_spec');
 		const built = imports.build();
@@ -1460,7 +1460,7 @@ describe('empty-input behavior', () => {
 		assert.ok(result.includes('export const ActionSpecs = {} as const;'));
 		assert.ok(result.includes('export interface ActionSpecs {}'));
 		assert.ok(
-			result.includes('export const action_specs: Array<ActionSpecUnion> = Object.values('),
+			result.includes('export const action_specs: Array<ActionSpecUnion> = Object.values(')
 		);
 		const built = imports.build();
 		assert.ok(built.includes('ActionSpecUnion')); // referenced in the array type
@@ -1481,7 +1481,7 @@ describe('empty-input behavior', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_event_datas([], imports, {
 			same_file: false,
-			collections_path: './action_collections.ts',
+			collections_path: './action_collections.ts'
 		});
 		assert.ok(result.includes('export interface ActionEventDatas {}'));
 		// `same_file: false` would normally add the import, but the body is
@@ -1501,7 +1501,7 @@ describe('empty-input behavior', () => {
 		// else → filtered is empty → no imports emitted.
 		const imports = new ImportBuilder();
 		const result = generate_frontend_actions_api(fixture_specs, imports, {
-			method_filter: () => false,
+			method_filter: () => false
 		});
 		assert.ok(result.includes('export interface FrontendActionsApi {}'));
 		assert.ok(!imports.has_imports());
@@ -1520,7 +1520,7 @@ describe('empty-input behavior', () => {
 		// Spec list with only protocol actions → filtered is empty → empty body
 		// without the consumer needing to pre-filter.
 		const all_protocol_specs: ReadonlyArray<ActionSpecUnion> = fixture_specs.filter((s) =>
-			is_protocol_action_method(s.method),
+			is_protocol_action_method(s.method)
 		);
 		const imports = new ImportBuilder();
 		const result = generate_frontend_actions_api(all_protocol_specs, imports);
@@ -1542,13 +1542,13 @@ describe('generate_backend_actions_api — streams target exclusion', () => {
 				method: 'completion_create',
 				kind: 'request_response',
 				initiator: 'frontend',
-				auth: {account: 'required', actor: 'none'},
+				auth: { account: 'required', actor: 'none' },
 				side_effects: true,
 				input: z.strictObject({}),
 				output: z.strictObject({}),
 				async: true,
 				description: 'create',
-				streams: 'completion_progress',
+				streams: 'completion_progress'
 			},
 			{
 				method: 'completion_progress',
@@ -1559,7 +1559,7 @@ describe('generate_backend_actions_api — streams target exclusion', () => {
 				input: z.strictObject({}),
 				output: z.void(),
 				async: true,
-				description: 'progress',
+				description: 'progress'
 			},
 			{
 				method: 'filer_change',
@@ -1570,15 +1570,15 @@ describe('generate_backend_actions_api — streams target exclusion', () => {
 				input: z.strictObject({}),
 				output: z.void(),
 				async: true,
-				description: 'change',
-			},
+				description: 'change'
+			}
 		];
 		const imports = new ImportBuilder();
 		const result = generate_backend_actions_api(specs, imports);
 
 		// filer_change is a real broadcast — included.
 		assert.ok(
-			result.includes("filer_change: (input: ActionInputs['filer_change']) => Promise<void>;"),
+			result.includes("filer_change: (input: ActionInputs['filer_change']) => Promise<void>;")
 		);
 		assert.ok(result.includes('specs.filer_change_action_spec,'));
 		// completion_progress is a streams target — excluded from both interface and array.
@@ -1602,10 +1602,10 @@ describe('generate_backend_action_handlers_map', () => {
 
 		const built = imports.build();
 		assert.ok(
-			built.includes("import type {ActionInputs, ActionOutputs} from './action_collections.ts';"),
+			built.includes("import type {ActionInputs, ActionOutputs} from './action_collections.ts';")
 		);
 		assert.ok(
-			built.includes("import type {BackendRequestResponseMethod} from './action_metatypes.ts';"),
+			built.includes("import type {BackendRequestResponseMethod} from './action_metatypes.ts';")
 		);
 	});
 
@@ -1616,7 +1616,7 @@ describe('generate_backend_action_handlers_map', () => {
 			method_enum_name: 'ZzzHandledMethod',
 			context_type: 'ZzzHandlerContext',
 			collections_path: '../gen/action_collections.ts',
-			metatypes_path: '../gen/action_metatypes.ts',
+			metatypes_path: '../gen/action_metatypes.ts'
 		});
 
 		assert.ok(result.includes('export type ZzzActionHandlers = {'));
@@ -1639,7 +1639,7 @@ describe('compose_gen_file', () => {
 		const result = compose_gen_file({
 			origin_path: 'src/lib/foo.gen.ts',
 			imports,
-			blocks: ['export const x = 1;', 'export const y = 2;'],
+			blocks: ['export const x = 1;', 'export const y = 2;']
 		});
 
 		// Banner appears at top + bottom.
@@ -1657,7 +1657,7 @@ describe('compose_gen_file', () => {
 		const result = compose_gen_file({
 			origin_path: 'src/foo.gen.ts',
 			imports,
-			blocks: ['block one', '', 'block two', ''],
+			blocks: ['block one', '', 'block two', '']
 		});
 		// No four-consecutive-newlines artifact from empty blocks joining.
 		assert.ok(!result.includes('\n\n\n\n'));
@@ -1670,7 +1670,7 @@ describe('compose_gen_file', () => {
 		const result = compose_gen_file({
 			origin_path: 'src/empty.gen.ts',
 			imports,
-			blocks: [],
+			blocks: []
 		});
 		// Banner still present even with no blocks.
 		assert.ok(result.includes('generated by src/empty.gen.ts'));
@@ -1682,76 +1682,76 @@ describe('compose_gen_file', () => {
 describe('create_namespace_qualifier', () => {
 	test('registers `* as ns` imports and returns a qualifier callback', () => {
 		const local_specs = [
-			{...create_rr('frontend'), method: 'tx_thing'},
+			{ ...create_rr('frontend'), method: 'tx_thing' }
 		] as ReadonlyArray<ActionSpecUnion>;
 		const upstream_specs = [
-			{...create_rr('frontend'), method: 'admin_account_list'},
+			{ ...create_rr('frontend'), method: 'admin_account_list' }
 		] as ReadonlyArray<ActionSpecUnion>;
 
 		const imports = new ImportBuilder();
-		const {qualify_spec, all_specs} = create_namespace_qualifier(
+		const { qualify_spec, all_specs } = create_namespace_qualifier(
 			[
-				{ns: 'tx_specs', module: './action_specs.ts', specs: local_specs},
+				{ ns: 'tx_specs', module: './action_specs.ts', specs: local_specs },
 				{
 					ns: 'admin_specs',
 					module: '@fuzdev/fuz_app/auth/admin_action_specs.ts',
-					specs: upstream_specs,
-				},
+					specs: upstream_specs
+				}
 			],
-			imports,
+			imports
 		);
 
 		// Imports registered with the right aliases.
 		const built = imports.build();
 		assert.ok(built.includes("import * as tx_specs from './action_specs.ts';"));
 		assert.ok(
-			built.includes("import * as admin_specs from '@fuzdev/fuz_app/auth/admin_action_specs.ts';"),
+			built.includes("import * as admin_specs from '@fuzdev/fuz_app/auth/admin_action_specs.ts';")
 		);
 
 		// Qualifier returns the right namespaced identifier per spec.
 		assert.strictEqual(qualify_spec(local_specs[0]!), 'tx_specs.tx_thing_action_spec');
 		assert.strictEqual(
 			qualify_spec(upstream_specs[0]!),
-			'admin_specs.admin_account_list_action_spec',
+			'admin_specs.admin_account_list_action_spec'
 		);
 
 		// all_specs concatenates every source in declared order.
 		assert.deepStrictEqual(
 			all_specs.map((s) => s.method),
-			['tx_thing', 'admin_account_list'],
+			['tx_thing', 'admin_account_list']
 		);
 	});
 
 	test('throws on duplicate method across sources', () => {
-		const a = [{...create_rr('frontend'), method: 'collide'}] as ReadonlyArray<ActionSpecUnion>;
-		const b = [{...create_rr('frontend'), method: 'collide'}] as ReadonlyArray<ActionSpecUnion>;
+		const a = [{ ...create_rr('frontend'), method: 'collide' }] as ReadonlyArray<ActionSpecUnion>;
+		const b = [{ ...create_rr('frontend'), method: 'collide' }] as ReadonlyArray<ActionSpecUnion>;
 		const imports = new ImportBuilder();
 		assert.throws(
 			() =>
 				create_namespace_qualifier(
 					[
-						{ns: 'a_specs', module: './a.ts', specs: a},
-						{ns: 'b_specs', module: './b.ts', specs: b},
+						{ ns: 'a_specs', module: './a.ts', specs: a },
+						{ ns: 'b_specs', module: './b.ts', specs: b }
 					],
-					imports,
+					imports
 				),
-			/duplicate action method across sources: collide/,
+			/duplicate action method across sources: collide/
 		);
 	});
 
 	test('qualify_spec throws on unregistered method', () => {
 		const imports = new ImportBuilder();
-		const {qualify_spec} = create_namespace_qualifier(
+		const { qualify_spec } = create_namespace_qualifier(
 			[
 				{
 					ns: 'ns_specs',
 					module: './specs.ts',
-					specs: [create_rr('frontend')] as ReadonlyArray<ActionSpecUnion>,
-				},
+					specs: [create_rr('frontend')] as ReadonlyArray<ActionSpecUnion>
+				}
 			],
-			imports,
+			imports
 		);
-		const stranger = {...create_rr('frontend'), method: 'unregistered'} as ActionSpecUnion;
+		const stranger = { ...create_rr('frontend'), method: 'unregistered' } as ActionSpecUnion;
 		assert.throws(() => qualify_spec(stranger), /unknown action method passed to qualify_spec/);
 	});
 });
@@ -1771,12 +1771,12 @@ describe('non-identifier method names (slash)', () => {
 		method: 'peer/echo',
 		kind: 'request_response',
 		initiator: 'frontend',
-		auth: {account: 'required', actor: 'none'},
+		auth: { account: 'required', actor: 'none' },
 		side_effects: false,
-		input: z.strictObject({nonce: z.string()}),
-		output: z.strictObject({nonce: z.string()}),
+		input: z.strictObject({ nonce: z.string() }),
+		output: z.strictObject({ nonce: z.string() }),
 		async: true,
-		description: 'Echo a nonce.',
+		description: 'Echo a nonce.'
 	};
 
 	test('to_action_spec_identifier sanitizes non-identifier characters', () => {
@@ -1812,8 +1812,8 @@ describe('non-identifier method names (slash)', () => {
 		const result = generate_frontend_actions_api([slash_spec], imports);
 		assert.ok(
 			result.includes(
-				"'peer/echo': (input: ActionInputs['peer/echo'], options?: RpcClientCallOptions)",
-			),
+				"'peer/echo': (input: ActionInputs['peer/echo'], options?: RpcClientCallOptions)"
+			)
 		);
 	});
 
@@ -1822,15 +1822,15 @@ describe('non-identifier method names (slash)', () => {
 		const result = generate_action_event_datas([slash_spec], imports);
 		assert.ok(
 			result.includes(
-				"'peer/echo': ActionEventRequestResponseData<'peer/echo', ActionInputs['peer/echo'], ActionOutputs['peer/echo']>;",
-			),
+				"'peer/echo': ActionEventRequestResponseData<'peer/echo', ActionInputs['peer/echo'], ActionOutputs['peer/echo']>;"
+			)
 		);
 	});
 
 	test('real peer/ping protocol action emits valid TS when included', () => {
 		const imports = new ImportBuilder();
 		const result = generate_action_specs_record(protocol_action_specs, imports, {
-			include_protocol_actions: true,
+			include_protocol_actions: true
 		});
 		assert.ok(result.includes("'peer/ping': specs.peer_ping_action_spec,"));
 		assert.ok(!result.includes('peer/ping_action_spec'));
@@ -1838,9 +1838,9 @@ describe('non-identifier method names (slash)', () => {
 
 	test('create_namespace_qualifier sanitizes the derived identifier', () => {
 		const imports = new ImportBuilder();
-		const {qualify_spec} = create_namespace_qualifier(
-			[{ns: 'talk_specs', module: './action_specs.ts', specs: [slash_spec]}],
-			imports,
+		const { qualify_spec } = create_namespace_qualifier(
+			[{ ns: 'talk_specs', module: './action_specs.ts', specs: [slash_spec] }],
+			imports
 		);
 		assert.strictEqual(qualify_spec(slash_spec), 'talk_specs.peer_echo_action_spec');
 	});

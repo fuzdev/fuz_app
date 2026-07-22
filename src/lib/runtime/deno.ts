@@ -8,9 +8,9 @@
  * @module
  */
 
-import {to_error_message} from '@fuzdev/fuz_util/error.ts';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
-import type {RuntimeDeps, StatResult, CommandResult} from './deps.ts';
+import type { RuntimeDeps, StatResult, CommandResult } from './deps.ts';
 
 // Deno API declarations — this module is only imported by Deno consumers.
 // Module-scoped declarations don't pollute the global type namespace.
@@ -23,15 +23,15 @@ declare const Deno: {
 	cwd: () => string;
 	exit: (code: number) => never;
 	stat: (
-		path: string,
-	) => Promise<{isFile: boolean; isDirectory: boolean; size: number; mtime: Date | null}>;
-	mkdir: (path: string, options?: {recursive?: boolean}) => Promise<void>;
+		path: string
+	) => Promise<{ isFile: boolean; isDirectory: boolean; size: number; mtime: Date | null }>;
+	mkdir: (path: string, options?: { recursive?: boolean }) => Promise<void>;
 	readTextFile: (path: string) => Promise<string>;
 	readFile: (path: string) => Promise<Uint8Array>;
-	readDir: (path: string) => AsyncIterable<{name: string}>;
+	readDir: (path: string) => AsyncIterable<{ name: string }>;
 	open: (
 		path: string,
-		options?: {read?: boolean; write?: boolean; create?: boolean; truncate?: boolean},
+		options?: { read?: boolean; write?: boolean; create?: boolean; truncate?: boolean }
 	) => Promise<{
 		read: (buf: Uint8Array) => Promise<number | null>;
 		seek: (offset: number, whence: number) => Promise<number>;
@@ -40,11 +40,11 @@ declare const Deno: {
 		readable: ReadableStream<Uint8Array>;
 		writable: WritableStream<Uint8Array>;
 	}>;
-	SeekMode: {Start: number};
+	SeekMode: { Start: number };
 	writeTextFile: (path: string, content: string) => Promise<void>;
 	writeFile: (path: string, data: Uint8Array) => Promise<void>;
 	rename: (oldPath: string, newPath: string) => Promise<void>;
-	remove: (path: string, options?: {recursive?: boolean}) => Promise<void>;
+	remove: (path: string, options?: { recursive?: boolean }) => Promise<void>;
 	Command: new (
 		cmd: string,
 		options: {
@@ -53,10 +53,10 @@ declare const Deno: {
 			signal?: AbortSignal;
 			stdout: 'piped' | 'inherit';
 			stderr: 'piped' | 'inherit';
-		},
+		}
 	) => {
 		spawn: () => {
-			status: Promise<{code: number; success: boolean}>;
+			status: Promise<{ code: number; success: boolean }>;
 			stdout: ReadableStream<Uint8Array>;
 			stderr: ReadableStream<Uint8Array>;
 			kill: (signal?: string) => void;
@@ -67,8 +67,8 @@ declare const Deno: {
 			stderr: Uint8Array;
 		}>;
 	};
-	stdout: {write: (data: Uint8Array) => Promise<number>};
-	stdin: {read: (buffer: Uint8Array) => Promise<number | null>};
+	stdout: { write: (data: Uint8Array) => Promise<number> };
+	stdin: { read: (buffer: Uint8Array) => Promise<number | null> };
 };
 
 /**
@@ -99,7 +99,7 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 				is_file: s.isFile,
 				is_directory: s.isDirectory,
 				size: s.size,
-				mtime_ms: s.mtime?.getTime(),
+				mtime_ms: s.mtime?.getTime()
 			};
 		} catch {
 			return null;
@@ -108,9 +108,9 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 	mkdir: (path, options) => Deno.mkdir(path, options),
 	read_text_file: (path) => Deno.readTextFile(path),
 	read_file: (path) => Deno.readFile(path),
-	read_file_stream: async (path) => (await Deno.open(path, {read: true})).readable,
+	read_file_stream: async (path) => (await Deno.open(path, { read: true })).readable,
 	write_file_stream: async (path, data) => {
-		const file = await Deno.open(path, {write: true, create: true, truncate: true});
+		const file = await Deno.open(path, { write: true, create: true, truncate: true });
 		// `pipeTo` closes the writable (and so the underlying file) on completion
 		// and aborts it on error — no manual `close()` needed.
 		await data.pipeTo(file.writable);
@@ -119,8 +119,8 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 		const s = await Deno.stat(path);
 		const file_size = s.size;
 		const bytes_to_read = Math.max(0, file_size - offset);
-		if (bytes_to_read === 0) return {content: '', bytes_read: 0, file_size};
-		const handle = await Deno.open(path, {read: true});
+		if (bytes_to_read === 0) return { content: '', bytes_read: 0, file_size };
+		const handle = await Deno.open(path, { read: true });
 		try {
 			await handle.seek(offset, Deno.SeekMode.Start);
 			const buffer = new Uint8Array(bytes_to_read);
@@ -128,7 +128,7 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 			return {
 				content: new TextDecoder().decode(buffer.subarray(0, bytes_read)),
 				bytes_read,
-				file_size,
+				file_size
 			};
 		} finally {
 			handle.close();
@@ -143,7 +143,7 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 	write_file: (path, data) => Deno.writeFile(path, data),
 	rename: (old_path, new_path) => Deno.rename(old_path, new_path),
 	fsync: async (path) => {
-		const file = await Deno.open(path, {read: true});
+		const file = await Deno.open(path, { read: true });
 		try {
 			await file.sync();
 		} finally {
@@ -175,7 +175,7 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 						if (options?.signal?.aborted) return;
 						timed_out = true;
 					},
-					{once: true},
+					{ once: true }
 				);
 			}
 			try {
@@ -184,14 +184,14 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 					cwd: options?.cwd,
 					signal,
 					stdout: 'piped',
-					stderr: 'piped',
+					stderr: 'piped'
 				});
 				const result = await proc.output();
 				const base: CommandResult = {
 					success: result.code === 0 && !timed_out,
 					code: result.code,
 					stdout: new TextDecoder().decode(result.stdout),
-					stderr: new TextDecoder().decode(result.stderr),
+					stderr: new TextDecoder().decode(result.stderr)
 				};
 				if (options?.timeout_ms !== undefined) base.timed_out = timed_out;
 				return base;
@@ -204,7 +204,7 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 				success: false,
 				code: 1,
 				stdout: '',
-				stderr: `Failed to execute command: ${message}`,
+				stderr: `Failed to execute command: ${message}`
 			};
 		}
 	},
@@ -212,7 +212,7 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 		const proc = new Deno.Command(cmd, {
 			args,
 			stdout: 'inherit',
-			stderr: 'inherit',
+			stderr: 'inherit'
 		});
 		const result = await proc.output();
 		return result.code;
@@ -223,5 +223,5 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 	stdin_read: (buffer) => Deno.stdin.read(buffer),
 
 	// === Logging ===
-	warn: (...args) => console.warn(...args),
+	warn: (...args) => console.warn(...args)
 });

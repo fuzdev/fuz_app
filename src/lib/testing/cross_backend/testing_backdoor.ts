@@ -52,13 +52,13 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {ERROR_CREDENTIAL_TYPE_REQUIRED} from '../../http/error_schemas.ts';
-import {rpc_call} from '../rpc_helpers.ts';
-import type {FetchTransport} from '../transports/fetch_transport.ts';
-import type {RpcPathCrossSuiteOptions, TestFixture} from './setup.ts';
-import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
+import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '../../http/error_schemas.ts';
+import { rpc_call } from '../rpc_helpers.ts';
+import type { FetchTransport } from '../transports/fetch_transport.ts';
+import type { RpcPathCrossSuiteOptions, TestFixture } from './setup.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** A well-formed UUID that never names a real row. */
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
@@ -68,19 +68,19 @@ const NIL_UUID = '00000000-0000-0000-0000-000000000000';
  * session/bearer cases reach the 403 credential gate rather than a 400 on
  * input validation). The handlers never run — the gate refuses first.
  */
-const backdoor_methods: ReadonlyArray<{method: string; params: unknown}> = [
-	{method: '_testing_reset', params: {}},
-	{method: '_testing_mint_session', params: {account_id: NIL_UUID, expires_in_seconds: -60}},
-	{method: '_testing_put_fact', params: {content: 'backdoor-probe'}},
+const backdoor_methods: ReadonlyArray<{ method: string; params: unknown }> = [
+	{ method: '_testing_reset', params: {} },
+	{ method: '_testing_mint_session', params: { account_id: NIL_UUID, expires_in_seconds: -60 } },
+	{ method: '_testing_put_fact', params: { content: 'backdoor-probe' } },
 	// The schema-dump read — `exclude_tables` is optional, so `{}` is valid
 	// and clears the 400 phase like the writes above.
-	{method: '_testing_schema_snapshot', params: {}},
+	{ method: '_testing_schema_snapshot', params: {} },
 	// The migration-tracker-dump read — input is an empty strict object, so `{}`
 	// is valid and clears the 400 phase, reaching the credential gate like the rest.
-	{method: '_testing_migration_tracker', params: {}},
+	{ method: '_testing_migration_tracker', params: {} },
 	// The RPC-registry-dump read — input is an empty strict object, so `{}` is
 	// valid and clears the 400 phase, reaching the credential gate like the rest.
-	{method: '_testing_action_manifest', params: {}},
+	{ method: '_testing_action_manifest', params: {} }
 ];
 
 /** A non-daemon principal + the denial it must hit on every backdoor method. */
@@ -103,13 +103,13 @@ const principals: ReadonlyArray<BackdoorPrincipal> = [
 		name: 'anonymous',
 		status: 401,
 		// Fresh jar so the keeper cookie (cross-process) can't leak in.
-		resolve: (f) => ({transport: f.fresh_transport(), headers: {}}),
+		resolve: (f) => ({ transport: f.fresh_transport(), headers: {} })
 	},
 	{
 		name: 'session',
 		status: 403,
 		reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
-		resolve: (f) => ({transport: f.transport, headers: f.create_session_headers()}),
+		resolve: (f) => ({ transport: f.transport, headers: f.create_session_headers() })
 	},
 	{
 		name: 'bearer',
@@ -119,45 +119,45 @@ const principals: ReadonlyArray<BackdoorPrincipal> = [
 		// jar + no Origin) — the credential must actually resolve so the refusal
 		// lands on the credential-type gate, not on bearer-discard (→ 401).
 		resolve: (f) => ({
-			transport: f.fresh_transport({origin: null}),
+			transport: f.fresh_transport({ origin: null }),
 			headers: f.create_bearer_headers(),
-			suppress_default_origin: true,
-		}),
-	},
+			suppress_default_origin: true
+		})
+	}
 ];
 
 /** Options for the testing-backdoor negative-credential suite. */
 export type TestingBackdoorCrossTestOptions = RpcPathCrossSuiteOptions;
 
 export const describe_testing_backdoor_cross_tests = (
-	options: TestingBackdoorCrossTestOptions,
+	options: TestingBackdoorCrossTestOptions
 ): void => {
-	const {setup_test} = options;
+	const { setup_test } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
 	describe('testing backdoor credential gate parity', () => {
-		for (const {method, params} of backdoor_methods) {
+		for (const { method, params } of backdoor_methods) {
 			for (const principal of principals) {
 				test(`${method} rejects ${principal.name} → ${principal.status}`, async () => {
 					const fixture = await setup_test();
-					const {transport, headers, suppress_default_origin} = principal.resolve(fixture);
+					const { transport, headers, suppress_default_origin } = principal.resolve(fixture);
 					const res = await rpc_call({
 						app: transport,
 						path: rpc_path,
 						method,
 						params,
 						headers,
-						...(suppress_default_origin && {suppress_default_origin: true}),
+						...(suppress_default_origin && { suppress_default_origin: true })
 					});
 					const label = `${method} ${principal.name}`;
 					assert.ok(
 						!res.ok,
-						`${label}: expected denial (${principal.status}) but the call succeeded`,
+						`${label}: expected denial (${principal.status}) but the call succeeded`
 					);
 					assert.strictEqual(res.status, principal.status, `${label}: status`);
 					// `!res.ok` narrows `res` to the error variant for `res.error`.
 					if (principal.reason !== undefined && !res.ok) {
-						const reason = (res.error.data as {reason?: unknown} | undefined)?.reason;
+						const reason = (res.error.data as { reason?: unknown } | undefined)?.reason;
 						assert.strictEqual(reason, principal.reason, `${label}: error.data.reason`);
 					}
 				});

@@ -46,19 +46,19 @@
  * @module
  */
 
-import {ActionRegistry} from './action_registry.ts';
-import {ActionDispatcher} from './action_dispatcher.ts';
-import {Transports, type Transport} from './transports.ts';
-import {FrontendHttpTransport} from './transports_http.ts';
+import { ActionRegistry } from './action_registry.ts';
+import { ActionDispatcher } from './action_dispatcher.ts';
+import { Transports, type Transport } from './transports.ts';
+import { FrontendHttpTransport } from './transports_http.ts';
 import {
 	create_rpc_client,
 	create_throwing_api,
 	type ThrowingApi,
-	type TransportForMethod,
+	type TransportForMethod
 } from './rpc_client.ts';
-import type {ActionEvent} from './action_event.ts';
-import type {ActionEventEnvironment} from './action_event_types.ts';
-import type {ActionSpecUnion} from './action_spec.ts';
+import type { ActionEvent } from './action_event.ts';
+import type { ActionEventEnvironment } from './action_event_types.ts';
+import type { ActionSpecUnion } from './action_spec.ts';
 
 /** Options for `create_frontend_rpc_client`. */
 export interface CreateFrontendRpcClientOptions<TApi extends object = object> {
@@ -155,13 +155,13 @@ export interface FrontendRpcClient<TApi> {
 
 /** Build a frontend-only typed RPC client. See module doc for the bundle's design. */
 export const create_frontend_rpc_client = <TApi extends object>(
-	options: CreateFrontendRpcClientOptions<TApi>,
+	options: CreateFrontendRpcClientOptions<TApi>
 ): FrontendRpcClient<TApi> => {
 	const registry = new ActionRegistry([...options.specs]);
 	const environment: ActionEventEnvironment = {
 		executor: 'frontend',
 		lookup_action_spec: (method) => registry.spec_by_method.get(method),
-		lookup_action_handler: options.lookup_action_handler ?? (() => undefined),
+		lookup_action_handler: options.lookup_action_handler ?? (() => undefined)
 	};
 	const transports = new Transports();
 	if (options.transports) {
@@ -169,13 +169,13 @@ export const create_frontend_rpc_client = <TApi extends object>(
 	} else {
 		transports.register_transport(new FrontendHttpTransport(options.path ?? '/api/rpc'));
 	}
-	const peer = new ActionDispatcher({environment, transports});
+	const peer = new ActionDispatcher({ environment, transports });
 	const api_result = create_rpc_client<TApi>({
 		peer,
 		environment,
 		on_action_event: options.on_action_event,
-		transport_for_method: options.transport_for_method,
+		transport_for_method: options.transport_for_method
 	});
 	const api = create_throwing_api(api_result);
-	return {api, api_result, peer, environment};
+	return { api, api_result, peer, environment };
 };

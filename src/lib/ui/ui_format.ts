@@ -14,7 +14,7 @@
  */
 export const format_relative_time = (
 	timestamp: string | number | Date,
-	now: number = Date.now(),
+	now: number = Date.now()
 ): string => {
 	const ts =
 		typeof timestamp === 'number'
@@ -120,7 +120,7 @@ export const format_datetime_local = (timestamp: string | number | Date): string
  */
 export const format_audit_metadata = (
 	event_type: string,
-	metadata: Record<string, unknown> | null,
+	metadata: Record<string, unknown> | null
 ): string => {
 	if (!metadata) return '';
 	switch (event_type) {
@@ -134,7 +134,7 @@ export const format_audit_metadata = (
 			return [
 				metadata.username ? `user: ${metadata.username as string}` : '',
 				metadata.invite_id ? 'via invite' : '',
-				metadata.open_signup ? 'open signup' : '',
+				metadata.open_signup ? 'open signup' : ''
 			]
 				.filter(Boolean)
 				.join(', ');
@@ -161,7 +161,7 @@ export const format_audit_metadata = (
 		case 'invite_create':
 			return [
 				metadata.email ? `email: ${metadata.email as string}` : '',
-				metadata.username ? `user: ${metadata.username as string}` : '',
+				metadata.username ? `user: ${metadata.username as string}` : ''
 			]
 				.filter(Boolean)
 				.join(', ');
@@ -172,7 +172,7 @@ export const format_audit_metadata = (
 		case 'app_settings_update':
 			return metadata.setting
 				? `${metadata.setting as string}: ${JSON.stringify(metadata.old_value)} → ${JSON.stringify(
-						metadata.new_value,
+						metadata.new_value
 					)}`
 				: '';
 		default:

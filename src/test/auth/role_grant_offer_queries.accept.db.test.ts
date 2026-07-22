@@ -10,25 +10,25 @@
  * @module
  */
 
-import {assert, test} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import { assert, test } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	query_role_grant_offer_decline,
 	query_role_grant_offer_find_pending,
 	query_accept_offer,
 	RoleGrantOfferAlreadyTerminalError,
-	RoleGrantOfferNotFoundError,
+	RoleGrantOfferNotFoundError
 } from '$lib/auth/role_grant_offer_queries.ts';
-import {query_role_grant_has_role} from '$lib/auth/role_grant_queries.ts';
+import { query_role_grant_has_role } from '$lib/auth/role_grant_queries.ts';
 
-import {describe_db} from '../db_fixture.ts';
-import {make_account, create_pending_offer} from './role_grant_offer_queries.fixtures.ts';
+import { describe_db } from '../db_fixture.ts';
+import { make_account, create_pending_offer } from './role_grant_offer_queries.fixtures.ts';
 
 describe_db('role_grant_offer_queries.accept', (get_db) => {
 	test('accept inserts role_grant + stamps resulting_role_grant_id + emits audit events', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor = await make_account(db, 'grantor_accept');
 		const recipient = await make_account(db, 'recipient_accept');
 
@@ -37,7 +37,7 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 		const result = await query_accept_offer(deps, {
 			offer_id: offer.id,
 			to_account_id: recipient.account_id,
-			actor_id: recipient.actor_id,
+			actor_id: recipient.actor_id
 		});
 
 		assert.strictEqual(result.created, true);
@@ -76,7 +76,7 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 
 	test('accept is idempotent on race — second call returns already-created role_grant', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor = await make_account(db, 'grantor_race');
 		const recipient = await make_account(db, 'recipient_race');
 
@@ -85,7 +85,7 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 		const first = await query_accept_offer(deps, {
 			offer_id: offer.id,
 			to_account_id: recipient.account_id,
-			actor_id: recipient.actor_id,
+			actor_id: recipient.actor_id
 		});
 		// Second call simulates the losing side of a race — the offer is now
 		// accepted and has a resulting_role_grant_id; the helper should return that
@@ -93,7 +93,7 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 		const second = await query_accept_offer(deps, {
 			offer_id: offer.id,
 			to_account_id: recipient.account_id,
-			actor_id: recipient.actor_id,
+			actor_id: recipient.actor_id
 		});
 		assert.strictEqual(first.created, true);
 		assert.strictEqual(second.created, false);
@@ -106,7 +106,7 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 
 	test('accept throws already_terminal for declined / retracted offers', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor = await make_account(db, 'grantor_terminal');
 		const recipient = await make_account(db, 'recipient_terminal');
 
@@ -117,15 +117,15 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 			query_accept_offer(deps, {
 				offer_id: declined.id,
 				to_account_id: recipient.account_id,
-				actor_id: recipient.actor_id,
-			}),
+				actor_id: recipient.actor_id
+			})
 		);
 		assert.ok(err instanceof RoleGrantOfferAlreadyTerminalError);
 	});
 
 	test('accept rejects when to_account_id does not match the offer', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor = await make_account(db, 'grantor_idor_accept');
 		const recipient = await make_account(db, 'recipient_idor_accept');
 		const attacker = await make_account(db, 'attacker_idor_accept');
@@ -136,8 +136,8 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 			query_accept_offer(deps, {
 				offer_id: offer.id,
 				to_account_id: attacker.account_id,
-				actor_id: attacker.actor_id,
-			}),
+				actor_id: attacker.actor_id
+			})
 		);
 		assert.ok(err instanceof RoleGrantOfferNotFoundError);
 		// offer is still pending — the wrong-recipient call must not accept it.
@@ -154,7 +154,7 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 		}>(
 			`SELECT accepted_at, declined_at, retracted_at, superseded_at, resulting_role_grant_id
 			 FROM role_grant_offer WHERE id = $1`,
-			[offer.id],
+			[offer.id]
 		);
 		const r = rows[0]!;
 		assert.strictEqual(r.accepted_at, null);
@@ -172,7 +172,7 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 		// "for all callers including tests and future direct consumers" — so
 		// pin the contract here.
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor = await make_account(db, 'grantor_actor_check');
 		const recipient = await make_account(db, 'recipient_actor_check');
 		const stranger = await make_account(db, 'stranger_actor_check');
@@ -183,15 +183,15 @@ describe_db('role_grant_offer_queries.accept', (get_db) => {
 			query_accept_offer(deps, {
 				offer_id: offer.id,
 				to_account_id: recipient.account_id,
-				actor_id: stranger.actor_id,
-			}),
+				actor_id: stranger.actor_id
+			})
 		);
 		// Plain Error (no dedicated subclass — direct callers are expected to
 		// be rare). Match on the documented message shape so a refactor to a
 		// subclass surfaces here rather than silently passing.
 		assert.ok(
 			err.message.includes(`does not belong to account ${recipient.account_id}`),
-			`unexpected message: ${err.message}`,
+			`unexpected message: ${err.message}`
 		);
 		assert.ok(err.message.includes(stranger.actor_id));
 		assert.ok(err.message.includes(offer.id));

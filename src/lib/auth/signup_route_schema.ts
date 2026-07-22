@@ -12,24 +12,24 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {Username, Email} from '../primitive_schemas.ts';
-import {Password} from './password.ts';
-import type {RouteSpec} from '../http/route_spec.ts';
+import { Username, Email } from '../primitive_schemas.ts';
+import { Password } from './password.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
 import {
 	ERROR_NO_MATCHING_INVITE,
 	ERROR_SIGNUP_CONFLICT,
 	ERROR_INVALID_JSON_BODY,
-	ERROR_INVALID_REQUEST_BODY,
+	ERROR_INVALID_REQUEST_BODY
 } from '../http/error_schemas.ts';
 
 /** Input for `POST /signup`. `email` is optional (absent or `null` = no email) and must match any referenced invite. */
 export const SignupInput = z.strictObject({
 	username: Username,
 	password: Password,
-	email: Email.nullish(),
+	email: Email.nullish()
 });
 export type SignupInput = z.infer<typeof SignupInput>;
 
@@ -42,8 +42,8 @@ export type SignupInput = z.infer<typeof SignupInput>;
  */
 export const SignupOutput = z.strictObject({
 	ok: z.literal(true),
-	account: z.strictObject({id: Uuid, username: Username}),
-	actor: z.strictObject({id: Uuid}),
+	account: z.strictObject({ id: Uuid, username: Username }),
+	actor: z.strictObject({ id: Uuid })
 });
 export type SignupOutput = z.infer<typeof SignupOutput>;
 
@@ -60,11 +60,11 @@ export interface SignupRouteShapeOptions {
  * of truth — the shape can't drift between the live route and the surface.
  */
 export const create_signup_route_shape = (
-	options: SignupRouteShapeOptions,
+	options: SignupRouteShapeOptions
 ): Omit<RouteSpec, 'handler'> => ({
 	method: 'POST',
 	path: '/signup',
-	auth: {account: 'none', actor: 'none'},
+	auth: { account: 'none', actor: 'none' },
 	description: 'Create account (invite-gated or open signup)',
 	transaction: false, // manages its own transaction for TOCTOU safety
 	input: SignupInput,
@@ -72,9 +72,9 @@ export const create_signup_route_shape = (
 	rate_limit: options.signup_account_rate_limited ? 'both' : 'ip',
 	errors: {
 		400: z.looseObject({
-			error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]),
+			error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY])
 		}),
-		403: z.looseObject({error: z.literal(ERROR_NO_MATCHING_INVITE)}),
-		409: z.looseObject({error: z.literal(ERROR_SIGNUP_CONFLICT)}),
-	},
+		403: z.looseObject({ error: z.literal(ERROR_NO_MATCHING_INVITE) }),
+		409: z.looseObject({ error: z.literal(ERROR_SIGNUP_CONFLICT) })
+	}
 });

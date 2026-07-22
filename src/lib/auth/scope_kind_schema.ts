@@ -30,7 +30,7 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
 /**
  * Letter (lowercase a-z) start and end (or single letter), with letters
@@ -45,7 +45,7 @@ export const ScopeKindName = z
 	.string()
 	.regex(
 		SCOPE_KIND_NAME_REGEX,
-		'Scope-kind names must be lowercase letters and underscores (a-z_), no leading/trailing underscore',
+		'Scope-kind names must be lowercase letters and underscores (a-z_), no leading/trailing underscore'
 	);
 export type ScopeKindName = z.infer<typeof ScopeKindName>;
 
@@ -104,7 +104,7 @@ export interface ScopeKindSchemaResult {
  * ```
  */
 export const create_scope_kind_schema = (
-	consumer_kinds: Record<string, ScopeKindMeta>,
+	consumer_kinds: Record<string, ScopeKindMeta>
 ): ScopeKindSchemaResult => {
 	const names = Object.keys(consumer_kinds);
 
@@ -130,5 +130,5 @@ export const create_scope_kind_schema = (
 		scope_kinds.set(name, consumer_kinds[name]!);
 	}
 
-	return {ScopeKind, scope_kinds};
+	return { ScopeKind, scope_kinds };
 };

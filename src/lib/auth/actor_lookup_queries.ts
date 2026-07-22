@@ -28,9 +28,9 @@
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type {QueryDeps} from '../db/query_deps.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
 
 /** Row shape returned to handlers — wire mapping happens at the action layer. */
 export interface ActorLookupRow {
@@ -46,7 +46,7 @@ export interface ActorLookupRow {
  */
 export const query_actors_by_ids = async (
 	deps: QueryDeps,
-	ids: ReadonlyArray<Uuid>,
+	ids: ReadonlyArray<Uuid>
 ): Promise<Array<ActorLookupRow>> => {
 	if (ids.length === 0) return [];
 	return deps.db.query<ActorLookupRow>(
@@ -54,6 +54,6 @@ export const query_actors_by_ids = async (
 		 FROM actor act
 		 JOIN account a ON a.id = act.account_id
 		 WHERE act.id = ANY($1)`,
-		[ids as Array<Uuid>],
+		[ids as Array<Uuid>]
 	);
 };

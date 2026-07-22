@@ -24,30 +24,30 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import type {SessionOptions} from '../auth/session_cookie.ts';
-import {ROLE_ADMIN} from '../auth/role_schema.ts';
+import type { SessionOptions } from '../auth/session_cookie.ts';
+import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import {
 	AUDIT_EVENT_TYPES,
 	type AuditEventType,
-	type AuditLogEventWithUsernamesJson,
+	type AuditLogEventWithUsernamesJson
 } from '../auth/audit_log_schema.ts';
-import type {TestAccount} from './app_server.ts';
-import {DEFAULT_TEST_PASSWORD} from './test_credentials.ts';
-import {find_auth_route} from './integration_helpers.ts';
+import type { TestAccount } from './app_server.ts';
+import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
+import { find_auth_route } from './integration_helpers.ts';
 import {
 	rpc_call_for_spec,
 	require_rpc_endpoint_path,
 	resolve_rpc_endpoints_for_setup,
 	type RpcCallArgs,
-	type RpcEndpointsSuiteOption,
+	type RpcEndpointsSuiteOption
 } from './rpc_helpers.ts';
-import {role_grant_offer_and_accept} from './role_grant_helpers.ts';
+import { role_grant_offer_and_accept } from './role_grant_helpers.ts';
 import {
 	role_grant_offer_accept_action_spec,
 	role_grant_offer_create_action_spec,
-	role_grant_revoke_action_spec,
+	role_grant_revoke_action_spec
 } from '../auth/role_grant_offer_action_specs.ts';
 import {
 	account_delete_action_spec,
@@ -59,7 +59,7 @@ import {
 	audit_log_list_action_spec,
 	AUDIT_LOG_LIST_LIMIT_MAX,
 	invite_create_action_spec,
-	invite_delete_action_spec,
+	invite_delete_action_spec
 } from '../auth/admin_action_specs.ts';
 import {
 	account_session_list_action_spec,
@@ -67,11 +67,11 @@ import {
 	account_session_revoke_all_action_spec,
 	account_token_create_action_spec,
 	account_token_list_action_spec,
-	account_token_revoke_action_spec,
+	account_token_revoke_action_spec
 } from '../auth/account_action_specs.ts';
-import type {AppSurfaceSpec} from '../http/surface.ts';
-import type {BackendCapabilities} from './cross_backend/capabilities.ts';
-import type {SetupTest, TestFixture} from './cross_backend/setup.ts';
+import type { AppSurfaceSpec } from '../http/surface.ts';
+import type { BackendCapabilities } from './cross_backend/capabilities.ts';
+import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
 
 /**
  * Configuration for `describe_audit_completeness_tests`.
@@ -113,7 +113,7 @@ export interface AuditCompletenessTestOptions {
  * every flow.
  */
 const create_admin_observer = (fixture: TestFixture): Promise<TestAccount> =>
-	fixture.create_account({username: 'audit_observer', roles: [ROLE_ADMIN]});
+	fixture.create_account({ username: 'audit_observer', roles: [ROLE_ADMIN] });
 
 /**
  * List audit log events via the `audit_log_list` RPC. Replaces the previous
@@ -132,14 +132,14 @@ const list_audit_events = async (
 	app: RpcCallArgs['app'],
 	rpc_path: string,
 	observer: TestAccount,
-	params: {event_type?: AuditEventType} = {},
+	params: { event_type?: AuditEventType } = {}
 ): Promise<Array<AuditLogEventWithUsernamesJson>> => {
 	const res = await rpc_call_for_spec({
 		app,
 		path: rpc_path,
 		spec: audit_log_list_action_spec,
-		params: {limit: AUDIT_LOG_LIST_LIMIT_MAX, ...params},
-		headers: observer.create_session_headers(),
+		params: { limit: AUDIT_LOG_LIST_LIMIT_MAX, ...params },
+		headers: observer.create_session_headers()
 	});
 	assert.ok(res.ok, `audit_log_list failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
 	return res.result.events;
@@ -147,13 +147,13 @@ const list_audit_events = async (
 
 /** Assert that audit events contain the expected event type. */
 const assert_has_event = (
-	events: ReadonlyArray<{event_type: string}>,
+	events: ReadonlyArray<{ event_type: string }>,
 	expected: AuditEventType,
-	context: string,
+	context: string
 ): void => {
 	assert.ok(
 		events.some((e) => e.event_type === expected),
-		`Expected '${expected}' audit event after ${context}`,
+		`Expected '${expected}' audit event after ${context}`
 	);
 };
 
@@ -166,7 +166,7 @@ const assert_event_credential_type = (
 	events: ReadonlyArray<AuditLogEventWithUsernamesJson>,
 	expected: AuditEventType,
 	credential_type: string,
-	context: string,
+	context: string
 ): void => {
 	const match = events.find((e) => e.event_type === expected);
 	assert.ok(match, `Expected '${expected}' audit event after ${context}`);
@@ -176,7 +176,7 @@ const assert_event_credential_type = (
 		credential_type,
 		`Expected '${expected}' audit metadata.credential_type === '${credential_type}' after ${
 			context
-		} (got ${JSON.stringify(recorded)})`,
+		} (got ${JSON.stringify(recorded)})`
 	);
 };
 
@@ -184,17 +184,17 @@ const assert_event_credential_type = (
 const UNAUTHENTICATED_JSON_HEADERS: Record<string, string> = {
 	host: 'localhost',
 	origin: 'http://localhost:5173',
-	'content-type': 'application/json',
+	'content-type': 'application/json'
 };
 
 /** Standard request headers for session-authenticated JSON requests. */
 const json_session_headers = (
 	fixture: TestFixture,
-	extra?: Record<string, string>,
+	extra?: Record<string, string>
 ): Record<string, string> =>
 	fixture.create_session_headers({
 		'content-type': 'application/json',
-		...extra,
+		...extra
 	});
 
 /**
@@ -216,7 +216,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 	// confusing test failure when `rpc_endpoints` is missing.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
-		options.session_options,
+		options.session_options
 	);
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 	void options.capabilities;
@@ -236,12 +236,12 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					headers: UNAUTHENTICATED_JSON_HEADERS,
 					body: JSON.stringify({
 						username: fixture.account.username,
-						password: DEFAULT_TEST_PASSWORD,
-					}),
+						password: DEFAULT_TEST_PASSWORD
+					})
 				});
 				assert.strictEqual(res.status, 200);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'login', 'POST /login (success)');
 			});
 
@@ -256,12 +256,12 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					headers: UNAUTHENTICATED_JSON_HEADERS,
 					body: JSON.stringify({
 						username: fixture.account.username,
-						password: 'wrong-password',
-					}),
+						password: 'wrong-password'
+					})
 				});
 				assert.strictEqual(res.status, 401);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'login', 'POST /login (failure)');
 			});
 
@@ -273,11 +273,11 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 
 				const res = await fixture.transport(logout_route.path, {
 					method: 'POST',
-					headers: fixture.create_session_headers(),
+					headers: fixture.create_session_headers()
 				});
 				assert.strictEqual(res.status, 200);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'logout', 'POST /logout');
 			});
 
@@ -285,18 +285,18 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				const fixture = await options.setup_test();
 				const observer = await create_admin_observer(fixture);
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_token_create_action_spec,
-					params: {name: 'audit-test'},
-					headers: fixture.create_session_headers(),
+					params: { name: 'audit-test' },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(
 					res.ok,
-					`account_token_create failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+					`account_token_create failed: ${res.ok ? '' : JSON.stringify(res.error)}`
 				);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'token_create', 'account_token_create RPC');
 				assert_event_credential_type(events, 'token_create', 'session', 'account_token_create RPC');
 			});
@@ -307,29 +307,29 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 
 				// get a token ID to revoke
 				const list_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_token_list_action_spec,
 					params: undefined,
-					headers: fixture.create_session_headers(),
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(list_res.ok, 'account_token_list should succeed');
-				const {tokens} = list_res.result;
+				const { tokens } = list_res.result;
 				assert.ok(tokens.length > 0, 'Expected at least one token');
 
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_token_revoke_action_spec,
-					params: {token_id: tokens[0]!.id},
-					headers: fixture.create_session_headers(),
+					params: { token_id: tokens[0]!.id },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(
 					res.ok,
-					`account_token_revoke failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+					`account_token_revoke failed: ${res.ok ? '' : JSON.stringify(res.error)}`
 				);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'token_revoke', 'account_token_revoke RPC');
 				assert_event_credential_type(events, 'token_revoke', 'session', 'account_token_revoke RPC');
 			});
@@ -346,44 +346,44 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					headers: UNAUTHENTICATED_JSON_HEADERS,
 					body: JSON.stringify({
 						username: fixture.account.username,
-						password: DEFAULT_TEST_PASSWORD,
-					}),
+						password: DEFAULT_TEST_PASSWORD
+					})
 				});
 
 				// get session IDs (newest first — `account_session_list` orders DESC
 				// by `created_at`, so [0] is the just-logged-in session and [1] is
 				// the bootstrap session driving the RPC call).
 				const list_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_session_list_action_spec,
 					params: undefined,
-					headers: fixture.create_session_headers(),
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(list_res.ok, 'account_session_list should succeed');
-				const {sessions} = list_res.result;
+				const { sessions } = list_res.result;
 				assert.ok(sessions.length >= 2, 'Expected at least 2 sessions');
 
 				// revoke the newest session — not the bootstrap one driving auth.
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_session_revoke_action_spec,
-					params: {session_id: sessions[0]!.id},
-					headers: fixture.create_session_headers(),
+					params: { session_id: sessions[0]!.id },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(
 					res.ok,
-					`account_session_revoke failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+					`account_session_revoke failed: ${res.ok ? '' : JSON.stringify(res.error)}`
 				);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'session_revoke', 'account_session_revoke RPC');
 				assert_event_credential_type(
 					events,
 					'session_revoke',
 					'session',
-					'account_session_revoke RPC',
+					'account_session_revoke RPC'
 				);
 			});
 
@@ -392,24 +392,24 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				const observer = await create_admin_observer(fixture);
 
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_session_revoke_all_action_spec,
 					params: undefined,
-					headers: fixture.create_session_headers(),
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(
 					res.ok,
-					`account_session_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+					`account_session_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`
 				);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'session_revoke_all', 'account_session_revoke_all RPC');
 				assert_event_credential_type(
 					events,
 					'session_revoke_all',
 					'session',
-					'account_session_revoke_all RPC',
+					'account_session_revoke_all RPC'
 				);
 			});
 
@@ -424,12 +424,12 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					headers: json_session_headers(fixture),
 					body: JSON.stringify({
 						current_password: DEFAULT_TEST_PASSWORD,
-						new_password: 'new-password-456',
-					}),
+						new_password: 'new-password-456'
+					})
 				});
 				assert.strictEqual(res.status, 200);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'password_change', 'POST /password');
 				assert_event_credential_type(events, 'password_change', 'session', 'POST /password');
 			});
@@ -442,53 +442,51 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				const fixture = await options.setup_test();
 				const observer = await create_admin_observer(fixture);
 
-				const target = await fixture.create_account({username: 'audit_target'});
+				const target = await fixture.create_account({ username: 'audit_target' });
 
 				const offer_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: role_grant_offer_create_action_spec,
-					params: {to_account_id: target.account.id, role: ROLE_ADMIN},
-					headers: fixture.create_session_headers(),
+					params: { to_account_id: target.account.id, role: ROLE_ADMIN },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(
 					offer_res.ok,
-					`role_grant_offer_create failed: ${offer_res.ok ? '' : JSON.stringify(offer_res.error)}`,
+					`role_grant_offer_create failed: ${offer_res.ok ? '' : JSON.stringify(offer_res.error)}`
 				);
-				const {offer} = offer_res.result;
+				const { offer } = offer_res.result;
 
 				// Admin offer emits `role_grant_offer_create` only — the role_grant doesn't
 				// exist yet. Drive the accept to confirm `role_grant_offer_accept` and
 				// `role_grant_create` both fire on the downstream consent transition.
 				const events_after_offer = await list_audit_events(
-					{request: fixture.transport},
+					{ request: fixture.transport },
 					rpc_path,
-					observer,
+					observer
 				);
 				assert_has_event(
 					events_after_offer,
 					'role_grant_offer_create',
-					'role_grant_offer_create RPC',
+					'role_grant_offer_create RPC'
 				);
 
 				const accept_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: role_grant_offer_accept_action_spec,
-					params: {offer_id: offer.id},
-					headers: target.create_session_headers(),
+					params: { offer_id: offer.id },
+					headers: target.create_session_headers()
 				});
 				assert.ok(
 					accept_res.ok,
-					`role_grant_offer_accept failed: ${
-						accept_res.ok ? '' : JSON.stringify(accept_res.error)
-					}`,
+					`role_grant_offer_accept failed: ${accept_res.ok ? '' : JSON.stringify(accept_res.error)}`
 				);
 
 				const events_after_accept = await list_audit_events(
-					{request: fixture.transport},
+					{ request: fixture.transport },
 					rpc_path,
-					observer,
+					observer
 				);
 				assert_has_event(events_after_accept, 'role_grant_offer_accept', 'offer accept RPC');
 				assert_has_event(events_after_accept, 'role_grant_create', 'offer accept RPC');
@@ -498,33 +496,33 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				const fixture = await options.setup_test();
 				const observer = await create_admin_observer(fixture);
 
-				const target = await fixture.create_account({username: 'audit_revoke_target'});
+				const target = await fixture.create_account({ username: 'audit_revoke_target' });
 
 				// Offer + accept to materialize a role_grant we can revoke. The
 				// consent path itself is covered by the `offer + accept` test above;
 				// here we only need the role_grant to exist.
-				const {role_grant_id} = await role_grant_offer_and_accept({
-					app: {request: fixture.transport},
+				const { role_grant_id } = await role_grant_offer_and_accept({
+					app: { request: fixture.transport },
 					rpc_path,
 					grantor: fixture,
 					recipient: target,
-					role: ROLE_ADMIN,
+					role: ROLE_ADMIN
 				});
 
 				// Revoke via RPC.
 				const revoke_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: role_grant_revoke_action_spec,
-					params: {actor_id: target.actor.id, role_grant_id},
-					headers: fixture.create_session_headers(),
+					params: { actor_id: target.actor.id, role_grant_id },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(
 					revoke_res.ok,
-					`role_grant_revoke failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`,
+					`role_grant_revoke failed: ${revoke_res.ok ? '' : JSON.stringify(revoke_res.error)}`
 				);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'role_grant_revoke', 'role_grant_revoke RPC');
 
 				// Audit envelope must populate both target columns —
@@ -539,21 +537,21 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 			test('admin session revoke-all produces session_revoke_all event', async () => {
 				const fixture = await options.setup_test();
 				const observer = await create_admin_observer(fixture);
-				const target = await fixture.create_account({username: 'audit_sessions_target'});
+				const target = await fixture.create_account({ username: 'audit_sessions_target' });
 
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: admin_session_revoke_all_action_spec,
-					params: {account_id: target.account.id},
-					headers: fixture.create_session_headers(),
+					params: { account_id: target.account.id },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(
 					res.ok,
-					`admin_session_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+					`admin_session_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`
 				);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				// admin session revoke-all also produces session_revoke_all
 				assert_has_event(events, 'session_revoke_all', 'admin_session_revoke_all RPC');
 			});
@@ -561,21 +559,21 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 			test('admin token revoke-all produces token_revoke_all event', async () => {
 				const fixture = await options.setup_test();
 				const observer = await create_admin_observer(fixture);
-				const target = await fixture.create_account({username: 'audit_tokens_target'});
+				const target = await fixture.create_account({ username: 'audit_tokens_target' });
 
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: admin_token_revoke_all_action_spec,
-					params: {account_id: target.account.id},
-					headers: fixture.create_session_headers(),
+					params: { account_id: target.account.id },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(
 					res.ok,
-					`admin_token_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`,
+					`admin_token_revoke_all failed: ${res.ok ? '' : JSON.stringify(res.error)}`
 				);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'token_revoke_all', 'admin_token_revoke_all RPC');
 			});
 		});
@@ -588,31 +586,31 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				const observer = await create_admin_observer(fixture);
 
 				const create_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: invite_create_action_spec,
-					params: {username: 'invited_user'},
-					headers: fixture.create_session_headers(),
+					params: { username: 'invited_user' },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(
 					create_res.ok,
-					`invite_create failed: ${create_res.ok ? '' : JSON.stringify(create_res.error)}`,
+					`invite_create failed: ${create_res.ok ? '' : JSON.stringify(create_res.error)}`
 				);
-				const {invite} = create_res.result;
+				const { invite } = create_res.result;
 
 				const delete_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: invite_delete_action_spec,
-					params: {invite_id: invite.id},
-					headers: fixture.create_session_headers(),
+					params: { invite_id: invite.id },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(
 					delete_res.ok,
-					`invite_delete failed: ${delete_res.ok ? '' : JSON.stringify(delete_res.error)}`,
+					`invite_delete failed: ${delete_res.ok ? '' : JSON.stringify(delete_res.error)}`
 				);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'invite_create', 'invite_create RPC');
 				assert_has_event(events, 'invite_delete', 'invite_delete RPC');
 			});
@@ -626,15 +624,15 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				const observer = await create_admin_observer(fixture);
 
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: app_settings_update_action_spec,
-					params: {open_signup: true},
-					headers: fixture.create_session_headers(),
+					params: { open_signup: true },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(res.ok, `app_settings_update failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'app_settings_update', 'app_settings_update RPC');
 			});
 		});
@@ -645,18 +643,18 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 			test('account_delete (admin) produces account_delete + actor_delete events', async () => {
 				const fixture = await options.setup_test();
 				const observer = await create_admin_observer(fixture);
-				const target = await fixture.create_account({username: 'audit_delete_target'});
+				const target = await fixture.create_account({ username: 'audit_delete_target' });
 
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_delete_action_spec,
-					params: {account_id: target.account.id},
-					headers: fixture.create_session_headers(),
+					params: { account_id: target.account.id },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(res.ok, `account_delete failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'account_delete', 'account_delete RPC');
 				assert_has_event(events, 'actor_delete', 'account_delete RPC (per-actor cascade)');
 			});
@@ -664,22 +662,22 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 			test('account_purge (keeper) produces account_purge + actor_purge events', async () => {
 				const fixture = await options.setup_test();
 				const observer = await create_admin_observer(fixture);
-				const target = await fixture.create_account({username: 'audit_purge_target'});
+				const target = await fixture.create_account({ username: 'audit_purge_target' });
 
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_purge_action_spec,
-					params: {account_id: target.account.id, confirm: true},
+					params: { account_id: target.account.id, confirm: true },
 					// Keeper-gated: daemon-token credential, not a session. Suppress the
 					// default `origin` header — the daemon-token middleware discards the
 					// credential in a browser context (Origin/Referer present).
 					suppress_default_origin: true,
-					headers: fixture.create_daemon_token_headers(),
+					headers: fixture.create_daemon_token_headers()
 				});
 				assert.ok(res.ok, `account_purge failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'account_purge', 'account_purge RPC');
 				assert_has_event(events, 'actor_purge', 'account_purge RPC (per-actor cascade)');
 			});
@@ -687,27 +685,27 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 			test('account_undelete (admin) produces account_undelete + actor_undelete events', async () => {
 				const fixture = await options.setup_test();
 				const observer = await create_admin_observer(fixture);
-				const target = await fixture.create_account({username: 'audit_undelete_target'});
+				const target = await fixture.create_account({ username: 'audit_undelete_target' });
 
 				const del = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_delete_action_spec,
-					params: {account_id: target.account.id},
-					headers: fixture.create_session_headers(),
+					params: { account_id: target.account.id },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(del.ok, `account_delete failed: ${del.ok ? '' : JSON.stringify(del.error)}`);
 
 				const res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_undelete_action_spec,
-					params: {account_id: target.account.id},
-					headers: fixture.create_session_headers(),
+					params: { account_id: target.account.id },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(res.ok, `account_undelete failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'account_undelete', 'account_undelete RPC');
 				assert_has_event(events, 'actor_undelete', 'account_undelete RPC (per-actor cascade)');
 			});
@@ -730,17 +728,15 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 
 				// enable open signup via RPC
 				const settings_res = await rpc_call_for_spec({
-					app: {request: fixture.transport},
+					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: app_settings_update_action_spec,
-					params: {open_signup: true},
-					headers: fixture.create_session_headers(),
+					params: { open_signup: true },
+					headers: fixture.create_session_headers()
 				});
 				assert.ok(
 					settings_res.ok,
-					`app_settings_update failed: ${
-						settings_res.ok ? '' : JSON.stringify(settings_res.error)
-					}`,
+					`app_settings_update failed: ${settings_res.ok ? '' : JSON.stringify(settings_res.error)}`
 				);
 
 				const res = await fixture.transport(signup_route.path, {
@@ -748,12 +744,12 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					headers: UNAUTHENTICATED_JSON_HEADERS,
 					body: JSON.stringify({
 						username: 'signup_user',
-						password: 'signup-password-123',
-					}),
+						password: 'signup-password-123'
+					})
 				});
 				assert.strictEqual(res.status, 200);
 
-				const events = await list_audit_events({request: fixture.transport}, rpc_path, observer);
+				const events = await list_audit_events({ request: fixture.transport }, rpc_path, observer);
 				assert_has_event(events, 'signup', 'POST /signup');
 			});
 		});
@@ -787,7 +783,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				'actor_delete',
 				'actor_purge',
 				'actor_undelete',
-				'app_settings_update',
+				'app_settings_update'
 			]);
 
 			/** Event types excluded with justification. */
@@ -806,7 +802,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				'role_grant_offer_decline',
 				'role_grant_offer_retract',
 				'role_grant_offer_expire',
-				'role_grant_offer_supersede',
+				'role_grant_offer_supersede'
 			]);
 
 			test('all audit event types are covered or explicitly excluded', () => {
@@ -816,7 +812,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 						all_covered.has(event_type),
 						`Audit event type '${
 							event_type
-						}' is not covered by the completeness suite and not explicitly excluded — add a test or exclude with justification`,
+						}' is not covered by the completeness suite and not explicitly excluded — add a test or exclude with justification`
 					);
 				}
 			});
@@ -825,7 +821,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				for (const event_type of EXCLUDED_EVENT_TYPES) {
 					assert.ok(
 						!COVERED_EVENT_TYPES.has(event_type),
-						`Event type '${event_type}' is in both COVERED and EXCLUDED — remove from one`,
+						`Event type '${event_type}' is in both COVERED and EXCLUDED — remove from one`
 					);
 				}
 			});

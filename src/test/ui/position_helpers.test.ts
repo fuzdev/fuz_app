@@ -4,11 +4,15 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {generate_position_styles, type Position, type Alignment} from '$lib/ui/position_helpers.ts';
+import {
+	generate_position_styles,
+	type Position,
+	type Alignment
+} from '$lib/ui/position_helpers.ts';
 
-const COMMON_STYLES = {position: 'absolute', 'z-index': '10'};
+const COMMON_STYLES = { position: 'absolute', 'z-index': '10' };
 
 describe('generate_position_styles', () => {
 	// --- cardinal positions (all 12 combos) ---
@@ -29,8 +33,8 @@ describe('generate_position_styles', () => {
 				top: '0',
 				bottom: 'auto',
 				transform: '',
-				'transform-origin': 'right',
-			},
+				'transform-origin': 'right'
+			}
 		},
 		{
 			position: 'left',
@@ -42,8 +46,8 @@ describe('generate_position_styles', () => {
 				top: '50%',
 				bottom: 'auto',
 				transform: 'translateY(-50%)',
-				'transform-origin': 'right',
-			},
+				'transform-origin': 'right'
+			}
 		},
 		{
 			position: 'left',
@@ -55,8 +59,8 @@ describe('generate_position_styles', () => {
 				top: 'auto',
 				bottom: '0',
 				transform: '',
-				'transform-origin': 'right',
-			},
+				'transform-origin': 'right'
+			}
 		},
 		// right
 		{
@@ -69,8 +73,8 @@ describe('generate_position_styles', () => {
 				top: '0',
 				bottom: 'auto',
 				transform: '',
-				'transform-origin': 'left',
-			},
+				'transform-origin': 'left'
+			}
 		},
 		{
 			position: 'right',
@@ -82,8 +86,8 @@ describe('generate_position_styles', () => {
 				top: '50%',
 				bottom: 'auto',
 				transform: 'translateY(-50%)',
-				'transform-origin': 'left',
-			},
+				'transform-origin': 'left'
+			}
 		},
 		{
 			position: 'right',
@@ -95,8 +99,8 @@ describe('generate_position_styles', () => {
 				top: 'auto',
 				bottom: '0',
 				transform: '',
-				'transform-origin': 'left',
-			},
+				'transform-origin': 'left'
+			}
 		},
 		// top
 		{
@@ -109,8 +113,8 @@ describe('generate_position_styles', () => {
 				left: '0',
 				right: 'auto',
 				transform: '',
-				'transform-origin': 'bottom',
-			},
+				'transform-origin': 'bottom'
+			}
 		},
 		{
 			position: 'top',
@@ -122,8 +126,8 @@ describe('generate_position_styles', () => {
 				left: '50%',
 				right: 'auto',
 				transform: 'translateX(-50%)',
-				'transform-origin': 'bottom',
-			},
+				'transform-origin': 'bottom'
+			}
 		},
 		{
 			position: 'top',
@@ -135,8 +139,8 @@ describe('generate_position_styles', () => {
 				left: 'auto',
 				right: '0',
 				transform: '',
-				'transform-origin': 'bottom',
-			},
+				'transform-origin': 'bottom'
+			}
 		},
 		// bottom
 		{
@@ -149,8 +153,8 @@ describe('generate_position_styles', () => {
 				left: '0',
 				right: 'auto',
 				transform: '',
-				'transform-origin': 'top',
-			},
+				'transform-origin': 'top'
+			}
 		},
 		{
 			position: 'bottom',
@@ -162,8 +166,8 @@ describe('generate_position_styles', () => {
 				left: '50%',
 				right: 'auto',
 				transform: 'translateX(-50%)',
-				'transform-origin': 'top',
-			},
+				'transform-origin': 'top'
+			}
 		},
 		{
 			position: 'bottom',
@@ -175,12 +179,12 @@ describe('generate_position_styles', () => {
 				left: 'auto',
 				right: '0',
 				transform: '',
-				'transform-origin': 'top',
-			},
-		},
+				'transform-origin': 'top'
+			}
+		}
 	];
 
-	test.each(CARDINAL_CASES)('$position/$align', ({position, align, expected}) => {
+	test.each(CARDINAL_CASES)('$position/$align', ({ position, align, expected }) => {
 		assert.deepStrictEqual(generate_position_styles(position, align), expected);
 	});
 
@@ -192,7 +196,7 @@ describe('generate_position_styles', () => {
 			top: '50%',
 			left: '50%',
 			transform: 'translate(-50%, -50%)',
-			'transform-origin': 'center',
+			'transform-origin': 'center'
 		});
 	});
 
@@ -203,7 +207,7 @@ describe('generate_position_styles', () => {
 			left: '0',
 			width: '100%',
 			height: '100%',
-			'transform-origin': 'center',
+			'transform-origin': 'center'
 		});
 	});
 
@@ -222,11 +226,11 @@ describe('generate_position_styles', () => {
 	// --- offsets ---
 
 	test.each([
-		{position: 'left' as Position, prop: 'right'},
-		{position: 'right' as Position, prop: 'left'},
-		{position: 'top' as Position, prop: 'bottom'},
-		{position: 'bottom' as Position, prop: 'top'},
-	])('$position offset applies calc to $prop', ({position, prop}) => {
+		{ position: 'left' as Position, prop: 'right' },
+		{ position: 'right' as Position, prop: 'left' },
+		{ position: 'top' as Position, prop: 'bottom' },
+		{ position: 'bottom' as Position, prop: 'top' }
+	])('$position offset applies calc to $prop', ({ position, prop }) => {
 		const styles = generate_position_styles(position, 'start', '10px');
 		assert.strictEqual(styles[prop], 'calc(100% + 10px)');
 	});
@@ -234,11 +238,11 @@ describe('generate_position_styles', () => {
 	test('offset accepts different CSS units', () => {
 		assert.strictEqual(
 			generate_position_styles('left', 'start', '5rem').right,
-			'calc(100% + 5rem)',
+			'calc(100% + 5rem)'
 		);
 		assert.strictEqual(
 			generate_position_styles('left', 'start', '-8px').right,
-			'calc(100% + -8px)',
+			'calc(100% + -8px)'
 		);
 	});
 

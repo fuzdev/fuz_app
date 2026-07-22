@@ -50,12 +50,12 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {connect} from 'node:net';
+import { connect } from 'node:net';
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {DAEMON_TOKEN_HEADER} from '../../auth/daemon_token.ts';
-import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
+import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** Options for the credential-header robustness probe — needs the raw URL + a valid daemon token. */
 export interface CredentialHeaderRobustnessCrossTestOptions {
@@ -83,12 +83,12 @@ const GARBAGE_TOKEN = 'not-a-real-credential-value';
 const send_raw = (
 	base_url: string,
 	request_bytes: string,
-	read_timeout_ms: number,
+	read_timeout_ms: number
 ): Promise<string> =>
 	new Promise((resolve) => {
 		const url = new URL(base_url);
 		const port = Number(url.port) || (url.protocol === 'https:' ? 443 : 80);
-		const socket = connect({host: url.hostname, port});
+		const socket = connect({ host: url.hostname, port });
 		let received = '';
 		let settled = false;
 		const finish = (): void => {
@@ -133,7 +133,7 @@ const rpc_post = (
 	host: string,
 	path: string,
 	header_lines: ReadonlyArray<string>,
-	body: string,
+	body: string
 ): string =>
 	`POST ${path} HTTP/1.1\r\n` +
 	`Host: ${host}\r\n` +
@@ -151,12 +151,12 @@ const rpc_post = (
  * no-escalation assertion holds regardless of which duplicate header wins.
  */
 const purge_body = (id: string): string =>
-	JSON.stringify({jsonrpc: '2.0', method: 'account_purge', id, params: {account_id: NIL_UUID}});
+	JSON.stringify({ jsonrpc: '2.0', method: 'account_purge', id, params: { account_id: NIL_UUID } });
 
 export const describe_credential_header_robustness_cross_tests = (
-	options: CredentialHeaderRobustnessCrossTestOptions,
+	options: CredentialHeaderRobustnessCrossTestOptions
 ): void => {
-	const {base_url, daemon_token} = options;
+	const { base_url, daemon_token } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 	const host = new URL(base_url).host;
 
@@ -166,7 +166,7 @@ export const describe_credential_header_robustness_cross_tests = (
 				host,
 				rpc_path,
 				[`${DAEMON_TOKEN_HEADER}: ${daemon_token}`, `${DAEMON_TOKEN_HEADER}: ${GARBAGE_TOKEN}`],
-				purge_body('dup-daemon'),
+				purge_body('dup-daemon')
 			);
 			const raw = await send_raw(base_url, req, 2000);
 			assert.strictEqual(
@@ -174,15 +174,15 @@ export const describe_credential_header_robustness_cross_tests = (
 				1,
 				`a duplicated X-Daemon-Token must yield exactly one response (no desync). Raw head: ${raw.slice(
 					0,
-					120,
-				)}`,
+					120
+				)}`
 			);
 			const status = first_status(raw);
 			assert.ok(status !== null, `expected an HTTP response. Raw head: ${raw.slice(0, 120)}`);
 			assert.ok(
 				!is_success_status(status),
 				`a duplicated daemon token must not perform a keeper operation; whichever copy wins, ` +
-					`the result must be non-2xx (got ${status})`,
+					`the result must be non-2xx (got ${status})`
 			);
 		});
 
@@ -191,7 +191,7 @@ export const describe_credential_header_robustness_cross_tests = (
 				host,
 				rpc_path,
 				[`Authorization: Bearer ${GARBAGE_TOKEN}`, `Authorization: Bearer ${GARBAGE_TOKEN}-2`],
-				purge_body('dup-bearer'),
+				purge_body('dup-bearer')
 			);
 			const raw = await send_raw(base_url, req, 2000);
 			assert.strictEqual(
@@ -199,14 +199,14 @@ export const describe_credential_header_robustness_cross_tests = (
 				1,
 				`duplicate Authorization headers must yield exactly one response (no desync). Raw head: ${raw.slice(
 					0,
-					120,
-				)}`,
+					120
+				)}`
 			);
 			const status = first_status(raw);
 			assert.ok(status !== null, `expected an HTTP response. Raw head: ${raw.slice(0, 120)}`);
 			assert.ok(
 				!is_success_status(status),
-				`garbage bearer tokens (even duplicated) must not authenticate (got ${status})`,
+				`garbage bearer tokens (even duplicated) must not authenticate (got ${status})`
 			);
 		});
 
@@ -219,27 +219,27 @@ export const describe_credential_header_robustness_cross_tests = (
 			// never frame a SECOND request (no smuggle), and the garbage credential
 			// never authenticates (no 2xx). `<= 1` (not `=== 1`) because a strict
 			// parser may close without a readable response — that's also "no smuggle".
-			const malformed: ReadonlyArray<{readonly label: string; readonly value: string}> = [
-				{label: 'CRLF header-split', value: `${GARBAGE_TOKEN}\r\nX-Injected: 1`},
-				{label: 'bare CR', value: `${GARBAGE_TOKEN}\rX-Injected: 1`},
+			const malformed: ReadonlyArray<{ readonly label: string; readonly value: string }> = [
+				{ label: 'CRLF header-split', value: `${GARBAGE_TOKEN}\r\nX-Injected: 1` },
+				{ label: 'bare CR', value: `${GARBAGE_TOKEN}\rX-Injected: 1` }
 			];
-			for (const {label, value} of malformed) {
+			for (const { label, value } of malformed) {
 				const req = rpc_post(
 					host,
 					rpc_path,
 					[`${DAEMON_TOKEN_HEADER}: ${value}`],
-					purge_body('ctrl-char'),
+					purge_body('ctrl-char')
 				);
 				const raw = await send_raw(base_url, req, 2000);
 				assert.ok(
 					count_responses(raw) <= 1,
 					`${label}: a control-char-injected credential header must not frame a second ` +
-						`request (no smuggle). Raw head: ${raw.slice(0, 120)}`,
+						`request (no smuggle). Raw head: ${raw.slice(0, 120)}`
 				);
 				const status = first_status(raw);
 				assert.ok(
 					status === null || !is_success_status(status),
-					`${label}: a malformed credential header must never authenticate (got ${status})`,
+					`${label}: a malformed credential header must never authenticate (got ${status})`
 				);
 			}
 		});
@@ -252,7 +252,7 @@ export const describe_credential_header_robustness_cross_tests = (
 				host,
 				rpc_path,
 				[`${DAEMON_TOKEN_HEADER}: ${oversized}`],
-				purge_body('oversized'),
+				purge_body('oversized')
 			);
 			await send_raw(base_url, req, 2000);
 
@@ -264,8 +264,8 @@ export const describe_credential_header_robustness_cross_tests = (
 				first_status(raw) !== null,
 				`server must still respond after an oversized-header request (no crash / wedge). Raw head: ${raw.slice(
 					0,
-					120,
-				)}`,
+					120
+				)}`
 			);
 		});
 	});

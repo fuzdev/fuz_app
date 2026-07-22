@@ -40,7 +40,7 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 /**
  * Minimal structural context required by `emit_after_commit`. Both
@@ -80,7 +80,7 @@ export interface EmitAfterCommitContext {
  */
 export const emit_after_commit = (
 	ctx: EmitAfterCommitContext,
-	fn: () => void | Promise<void>,
+	fn: () => void | Promise<void>
 ): void => {
 	ctx.post_commit_effects.push(fn);
 };
@@ -113,7 +113,7 @@ export const emit_after_commit = (
  */
 export const dispatch_with_post_commit_rollback = async <T>(
 	post_commit_effects: Array<() => void | Promise<void>> | undefined,
-	dispatch: () => T | Promise<T>,
+	dispatch: () => T | Promise<T>
 ): Promise<Awaited<T>> => {
 	const depth = post_commit_effects?.length ?? 0;
 	try {
@@ -139,7 +139,7 @@ export const dispatch_with_post_commit_rollback = async <T>(
 export const flush_pending_effects = async (
 	effects: ReadonlyArray<Promise<void>>,
 	log: Logger,
-	on_rejection?: (reason: unknown) => void,
+	on_rejection?: (reason: unknown) => void
 ): Promise<void> => {
 	if (effects.length === 0) return;
 	const results = await Promise.allSettled(effects);
@@ -162,7 +162,7 @@ export const flush_pending_effects = async (
  */
 export const flush_post_commit_effects = async (
 	effects: ReadonlyArray<() => void | Promise<void>>,
-	log: Logger,
+	log: Logger
 ): Promise<void> => {
 	const promises: Array<Promise<void>> = [];
 	for (const fn of effects) {
@@ -172,7 +172,7 @@ export const flush_post_commit_effects = async (
 				promises.push(
 					result.catch((err) => {
 						log.error('post-commit side effect failed:', err);
-					}),
+					})
 				);
 			}
 		} catch (err) {

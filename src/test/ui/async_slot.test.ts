@@ -15,10 +15,10 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {AsyncSlot} from '$lib/ui/async_slot.svelte.ts';
-import {make_deferred, signal_rejection} from './async_test_helpers.ts';
+import { AsyncSlot } from '$lib/ui/async_slot.svelte.ts';
+import { make_deferred, signal_rejection } from './async_test_helpers.ts';
 
 /** Resolves to a value after the next microtask; lets tests await between actions. */
 const tick = async <T>(value: T): Promise<T> => value;
@@ -37,7 +37,7 @@ describe('AsyncSlot — initial state', () => {
 	});
 
 	test('`initial` seeds data and marks success', () => {
-		const slot = new AsyncSlot<number>({initial: 42});
+		const slot = new AsyncSlot<number>({ initial: 42 });
 		assert.strictEqual(slot.status, 'success');
 		assert.strictEqual(slot.data, 42);
 		assert.strictEqual(slot.initial, false);
@@ -99,7 +99,7 @@ describe('AsyncSlot — run() failure path', () => {
 		const slot = new AsyncSlot<number>();
 		await slot.run(async () => {
 			// eslint-disable-next-line @typescript-eslint/only-throw-error -- testing non-Error throw
-			throw {reason: 'oops'};
+			throw { reason: 'oops' };
 		});
 		assert.strictEqual(slot.error, 'Request failed');
 	});
@@ -142,14 +142,14 @@ describe('AsyncSlot — run() failure path', () => {
 				if (e && typeof e === 'object' && 'reason' in e) {
 					return e as RpcError;
 				}
-				return {reason: 'unknown'};
-			},
+				return { reason: 'unknown' };
+			}
 		});
 		await slot.run(async () => {
 			// eslint-disable-next-line @typescript-eslint/only-throw-error -- structured throw
-			throw {reason: 'rate_limit', retry_after: 30};
+			throw { reason: 'rate_limit', retry_after: 30 };
 		});
-		assert.deepStrictEqual(slot.error, {reason: 'rate_limit', retry_after: 30});
+		assert.deepStrictEqual(slot.error, { reason: 'rate_limit', retry_after: 30 });
 	});
 });
 
@@ -168,7 +168,7 @@ describe('AsyncSlot — preserve_error_on_retry', () => {
 	});
 
 	test('preserve_error_on_retry keeps prior error during pending state', async () => {
-		const slot = new AsyncSlot<number>({preserve_error_on_retry: true});
+		const slot = new AsyncSlot<number>({ preserve_error_on_retry: true });
 		await slot.run(async () => {
 			throw new Error('first');
 		});
@@ -184,7 +184,7 @@ describe('AsyncSlot — preserve_error_on_retry', () => {
 	});
 
 	test('preserve_error_on_retry + manual abort keeps the prior error visible', async () => {
-		const slot = new AsyncSlot<number>({preserve_error_on_retry: true});
+		const slot = new AsyncSlot<number>({ preserve_error_on_retry: true });
 		await slot.run(async () => {
 			throw new Error('first');
 		});
@@ -282,7 +282,7 @@ describe('AsyncSlot — abort()', () => {
 		assert.strictEqual(
 			slot.status,
 			'success',
-			'#has_succeeded tracks success independently of data sentinel',
+			'#has_succeeded tracks success independently of data sentinel'
 		);
 		assert.strictEqual(slot.data, null);
 	});
@@ -317,7 +317,7 @@ describe('AsyncSlot — external signal', () => {
 	test('aborts the in-flight run', async () => {
 		const slot = new AsyncSlot<number>();
 		const ac = new AbortController();
-		const run_promise = slot.run(signal_rejection<number>, {signal: ac.signal});
+		const run_promise = slot.run(signal_rejection<number>, { signal: ac.signal });
 		ac.abort(new Error('caller cancelled'));
 		await run_promise;
 		assert.strictEqual(slot.status, 'initial');
@@ -328,7 +328,7 @@ describe('AsyncSlot — external signal', () => {
 		const slot = new AsyncSlot<number>();
 		const ac = new AbortController();
 		ac.abort();
-		await slot.run(signal_rejection<number>, {signal: ac.signal});
+		await slot.run(signal_rejection<number>, { signal: ac.signal });
 		assert.strictEqual(slot.status, 'initial');
 	});
 
@@ -347,7 +347,7 @@ describe('AsyncSlot — external signal', () => {
 			if (args[0] === 'abort') removed++;
 			original_remove(...args);
 		}) as typeof ac.signal.removeEventListener;
-		await slot.run(async () => 1, {signal: ac.signal});
+		await slot.run(async () => 1, { signal: ac.signal });
 		assert.strictEqual(added, 1, 'one abort listener was attached');
 		assert.strictEqual(removed, 1, 'and it was removed when the run completed');
 	});
@@ -371,7 +371,7 @@ describe('AsyncSlot — external signal', () => {
 			async () => {
 				throw new Error('nope');
 			},
-			{signal: ac.signal},
+			{ signal: ac.signal }
 		);
 		assert.strictEqual(slot.status, 'failure');
 		assert.strictEqual(added, 1);
@@ -396,7 +396,7 @@ describe('AsyncSlot — external signal', () => {
 		// First run holds the external signal; its callback ignores the
 		// signal so it stays open until we resolve the deferred manually.
 		const first = make_deferred<number>();
-		const first_run = slot.run(() => first.promise, {signal: ac.signal});
+		const first_run = slot.run(() => first.promise, { signal: ac.signal });
 		assert.strictEqual(added, 1, 'first run attached its listener');
 		// Second run (no external signal) supersedes the first.
 		await slot.run(async () => 2);
@@ -406,7 +406,7 @@ describe('AsyncSlot — external signal', () => {
 		assert.strictEqual(
 			removed,
 			1,
-			"first run's finally removes its external listener even after supersession",
+			"first run's finally removes its external listener even after supersession"
 		);
 	});
 });
@@ -456,7 +456,7 @@ describe('AsyncSlot — set() and reset()', () => {
 	});
 
 	test('reset() returns to initial and aborts in-flight', async () => {
-		const slot = new AsyncSlot<number>({initial: 1});
+		const slot = new AsyncSlot<number>({ initial: 1 });
 		assert.strictEqual(slot.data, 1);
 		let abort_fired = false;
 		const run_promise = slot.run((signal) => {
@@ -496,7 +496,7 @@ describe('AsyncSlot — set() and reset()', () => {
 		assert.strictEqual(
 			slot.status,
 			'success',
-			'set() counts as a prior success for the abort revert',
+			'set() counts as a prior success for the abort revert'
 		);
 		assert.strictEqual(slot.data, 42, 'set() value preserved across the aborted run');
 	});

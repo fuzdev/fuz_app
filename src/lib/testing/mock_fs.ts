@@ -20,7 +20,7 @@ export interface MockFs {
  * can exercise the same "file doesn't exist" code path as `node:fs`.
  */
 export const create_mock_fs = (initial_files: Record<string, string> = {}): MockFs => {
-	const files = {...initial_files};
+	const files = { ...initial_files };
 
 	return {
 		read_file: async (path, _encoding) => {
@@ -39,6 +39,6 @@ export const create_mock_fs = (initial_files: Record<string, string> = {}): Mock
 		write_file: async (path, content, _encoding) => {
 			files[path] = content;
 		},
-		get_file: (path) => files[path],
+		get_file: (path) => files[path]
 	};
 };

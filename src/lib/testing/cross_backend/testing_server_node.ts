@@ -16,19 +16,19 @@ import '../assert_dev_env.ts';
  */
 
 import process from 'node:process';
-import {serve, type ServerType} from '@hono/node-server';
-import {getConnInfo} from '@hono/node-server/conninfo';
-import {createNodeWebSocket} from '@hono/node-ws';
+import { serve, type ServerType } from '@hono/node-server';
+import { getConnInfo } from '@hono/node-server/conninfo';
+import { createNodeWebSocket } from '@hono/node-ws';
 
-import {create_node_runtime} from '../../runtime/node.ts';
-import type {ServeHandle, TestingServerAdapter} from './testing_server_core.ts';
+import { create_node_runtime } from '../../runtime/node.ts';
+import type { ServeHandle, TestingServerAdapter } from './testing_server_core.ts';
 
 const node_serve_handle = (server: ServerType): ServeHandle => ({
 	shutdown: () =>
 		new Promise((resolve, reject) => {
 			server.close((err) => (err ? reject(err) : resolve()));
 		}),
-	native: server,
+	native: server
 });
 
 /** Build the Node {@link TestingServerAdapter}. */
@@ -37,21 +37,21 @@ export const create_node_testing_adapter = (): TestingServerAdapter => ({
 	runtime: create_node_runtime(),
 	get_connection_ip: (c) => getConnInfo(c).remote.address,
 	prepare_websocket: (app) => {
-		const {upgradeWebSocket, injectWebSocket} = createNodeWebSocket({app});
+		const { upgradeWebSocket, injectWebSocket } = createNodeWebSocket({ app });
 		return {
 			upgrade_websocket: upgradeWebSocket,
 			attach_to_server: (handle) => {
 				// `handle.native` is the `ServerType` from `serve()` —
 				// type-erased at the {@link ServeHandle} seam, so it downcasts here.
 				injectWebSocket(handle.native as ServerType);
-			},
+			}
 		};
 	},
-	serve: ({fetch, port, hostname}) => node_serve_handle(serve({fetch, port, hostname})),
+	serve: ({ fetch, port, hostname }) => node_serve_handle(serve({ fetch, port, hostname })),
 	pid: process.pid,
 	register_shutdown_signals: (handler) => {
 		process.on('SIGINT', () => void handler());
 		process.on('SIGTERM', () => void handler());
 	},
-	exit: (code) => process.exit(code),
+	exit: (code) => process.exit(code)
 });

@@ -8,10 +8,10 @@
  * @module
  */
 
-import {z} from 'zod';
-import {timingSafeEqual} from 'node:crypto';
+import { z } from 'zod';
+import { timingSafeEqual } from 'node:crypto';
 
-import {generate_random_base64url} from '../crypto.ts';
+import { generate_random_base64url } from '../crypto.ts';
 
 /** Daemon token format: 43 base64url characters (256 bits). */
 export const DaemonToken = z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'Invalid daemon token format');

@@ -4,46 +4,50 @@
  * @module
  */
 
-import {writeFileSync, mkdtempSync, rmSync} from 'node:fs';
-import {join} from 'node:path';
-import {tmpdir} from 'node:os';
-import {describe, assert, test, afterEach} from 'vitest';
-import {z} from 'zod';
+import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { describe, assert, test, afterEach } from 'vitest';
+import { z } from 'zod';
 
 import {
 	stub,
 	stub_handler,
 	stub_mw,
 	create_throwing_stub,
-	create_noop_stub,
+	create_noop_stub
 } from '$lib/testing/stubs.ts';
 import {
 	create_test_request_context,
 	create_test_app_from_specs,
-	resolve_test_path,
+	resolve_test_path
 } from '$lib/testing/auth_apps.ts';
 import {
 	resolve_fixture_path,
 	assert_surface_matches_snapshot,
 	assert_surface_deterministic,
 	assert_only_expected_public_routes,
-	assert_full_middleware_stack,
+	assert_full_middleware_stack
 } from '$lib/testing/assertions.ts';
 import {
 	describe_adversarial_auth,
-	resolve_standard_error_schema_tightness,
+	resolve_standard_error_schema_tightness
 } from '$lib/testing/attack_surface.ts';
-import {describe_adversarial_404} from '$lib/testing/adversarial_404.ts';
-import {resolve_valid_path, generate_valid_body} from '$lib/testing/schema_generators.ts';
-import type {RouteSpec} from '$lib/http/route_spec.ts';
-import type {MiddlewareSpec} from '$lib/http/middleware_spec.ts';
-import {generate_app_surface, create_app_surface_spec, type AppSurface} from '$lib/http/surface.ts';
+import { describe_adversarial_404 } from '$lib/testing/adversarial_404.ts';
+import { resolve_valid_path, generate_valid_body } from '$lib/testing/schema_generators.ts';
+import type { RouteSpec } from '$lib/http/route_spec.ts';
+import type { MiddlewareSpec } from '$lib/http/middleware_spec.ts';
+import {
+	generate_app_surface,
+	create_app_surface_spec,
+	type AppSurface
+} from '$lib/http/surface.ts';
 import {
 	audit_error_schema_tightness,
 	assert_error_schema_tightness,
-	fuz_app_stock_route_tightness_allowlist,
+	fuz_app_stock_route_tightness_allowlist
 } from '$lib/testing/surface_invariants.ts';
-import {ActingActor} from '$lib/http/auth_shape.ts';
+import { ActingActor } from '$lib/http/auth_shape.ts';
 
 describe('stubs', () => {
 	test('stub throws on property access', () => {
@@ -89,7 +93,7 @@ describe('create_noop_stub', () => {
 	});
 
 	test('respects overrides', () => {
-		const s = create_noop_stub('test_dep', {name: 'explicit'});
+		const s = create_noop_stub('test_dep', { name: 'explicit' });
 		assert.strictEqual(s.name, 'explicit');
 	});
 
@@ -131,7 +135,7 @@ describe('resolve_test_path', () => {
 	test('replaces multiple params', () => {
 		assert.strictEqual(
 			resolve_test_path('/api/users/:user_id/posts/:post_id'),
-			'/api/users/test_user_id/posts/test_post_id',
+			'/api/users/test_user_id/posts/test_post_id'
 		);
 	});
 
@@ -153,31 +157,31 @@ describe('create_test_app_from_specs', () => {
 		{
 			method: 'GET',
 			path: '/public',
-			auth: {account: 'none', actor: 'none'},
-			handler: (c) => c.json({ok: true}),
+			auth: { account: 'none', actor: 'none' },
+			handler: (c) => c.json({ ok: true }),
 			description: 'Public route',
 			input: z.null(),
-			output: z.null(),
+			output: z.null()
 		},
 		{
 			method: 'GET',
 			path: '/protected',
-			auth: {account: 'required', actor: 'none'},
-			handler: (c) => c.json({secret: true}),
+			auth: { account: 'required', actor: 'none' },
+			handler: (c) => c.json({ secret: true }),
 			description: 'Protected route',
 			input: z.null(),
-			output: z.null(),
+			output: z.null()
 		},
 		{
 			method: 'POST',
 			path: '/admin',
-			auth: {account: 'required', actor: 'required', roles: ['admin']},
-			handler: (c) => c.json({admin: true}),
+			auth: { account: 'required', actor: 'required', roles: ['admin'] },
+			handler: (c) => c.json({ admin: true }),
 			description: 'Admin route',
-			query: z.strictObject({acting: ActingActor}),
+			query: z.strictObject({ acting: ActingActor }),
 			input: z.null(),
-			output: z.null(),
-		},
+			output: z.null()
+		}
 	];
 
 	test('creates app without auth context', async () => {
@@ -202,7 +206,7 @@ describe('create_test_app_from_specs', () => {
 	test('role app passes role guard', async () => {
 		const ctx = create_test_request_context('admin');
 		const app = create_test_app_from_specs(test_specs, ctx);
-		const res = await app.request('/admin', {method: 'POST'});
+		const res = await app.request('/admin', { method: 'POST' });
 		assert.strictEqual(res.status, 200);
 	});
 });
@@ -212,55 +216,55 @@ describe('create_test_app_from_specs', () => {
 /** Build a minimal surface for assertion helper tests. */
 const build_test_surface = (): AppSurface => {
 	const middleware: Array<MiddlewareSpec> = [
-		{name: 'origin', path: '/api/*', handler: stub_mw},
-		{name: 'session', path: '/api/*', handler: stub_mw},
+		{ name: 'origin', path: '/api/*', handler: stub_mw },
+		{ name: 'session', path: '/api/*', handler: stub_mw }
 	];
 	const routes: Array<RouteSpec> = [
 		{
 			method: 'GET',
 			path: '/health',
-			auth: {account: 'none', actor: 'none'},
+			auth: { account: 'none', actor: 'none' },
 			handler: stub_handler,
 			description: 'Health check',
 			input: z.null(),
-			output: z.null(),
+			output: z.null()
 		},
 		{
 			method: 'POST',
 			path: '/api/login',
-			auth: {account: 'none', actor: 'none'},
+			auth: { account: 'none', actor: 'none' },
 			handler: stub_handler,
 			description: 'Login',
 			input: z.null(),
-			output: z.null(),
+			output: z.null()
 		},
 		{
 			method: 'GET',
 			path: '/api/protected',
-			auth: {account: 'required', actor: 'none'},
+			auth: { account: 'required', actor: 'none' },
 			handler: stub_handler,
 			description: 'Protected resource',
 			input: z.null(),
-			output: z.null(),
+			output: z.null()
 		},
 		{
 			method: 'POST',
 			path: '/api/admin',
-			auth: {account: 'required', actor: 'required', roles: ['admin']},
+			auth: { account: 'required', actor: 'required', roles: ['admin'] },
 			handler: stub_handler,
 			description: 'Admin action',
 			input: z.null(),
-			output: z.null(),
-		},
+			output: z.null()
+		}
 	];
-	return generate_app_surface({middleware_specs: middleware, route_specs: routes});
+	return generate_app_surface({ middleware_specs: middleware, route_specs: routes });
 };
 
 describe('assert_surface_matches_snapshot', () => {
 	let tmp_dir: string;
 
 	afterEach(() => {
-		if (tmp_dir) rmSync(tmp_dir, {recursive: true, force: true});
+		if (tmp_dir) rmSync(tmp_dir, { recursive: true, force: true });
 	});
 
 	test('passes when surface matches snapshot file', () => {
@@ -275,7 +279,7 @@ describe('assert_surface_matches_snapshot', () => {
 		tmp_dir = mkdtempSync(join(tmpdir(), 'surface-test-'));
 		const surface = build_test_surface();
 		const snapshot_path = join(tmp_dir, 'snapshot.json');
-		const modified = {...surface, routes: []};
+		const modified = { ...surface, routes: [] };
 		writeFileSync(snapshot_path, JSON.stringify(modified));
 		assert.throws(() => assert_surface_matches_snapshot(surface, snapshot_path));
 	});
@@ -298,7 +302,7 @@ describe('assert_only_expected_public_routes', () => {
 		// Only list one — the other becomes "unexpected"
 		assert.throws(
 			() => assert_only_expected_public_routes(surface, ['GET /health']),
-			/Unexpected public routes.*POST \/api\/login/,
+			/Unexpected public routes.*POST \/api\/login/
 		);
 	});
 
@@ -309,9 +313,9 @@ describe('assert_only_expected_public_routes', () => {
 				assert_only_expected_public_routes(surface, [
 					'GET /health',
 					'POST /api/login',
-					'GET /api/missing',
+					'GET /api/missing'
 				]),
-			/Expected public routes missing.*GET \/api\/missing/,
+			/Expected public routes missing.*GET \/api\/missing/
 		);
 	});
 });
@@ -326,7 +330,7 @@ describe('assert_full_middleware_stack', () => {
 		const surface = build_test_surface();
 		assert.throws(
 			() => assert_full_middleware_stack(surface, '/api/', ['origin', 'session', 'extra']),
-			/has wrong middleware stack/,
+			/has wrong middleware stack/
 		);
 	});
 
@@ -334,7 +338,7 @@ describe('assert_full_middleware_stack', () => {
 		const surface = build_test_surface();
 		assert.throws(
 			() => assert_full_middleware_stack(surface, '/nonexistent/', ['origin']),
-			/No routes found under/,
+			/No routes found under/
 		);
 	});
 });
@@ -344,40 +348,40 @@ const adversarial_specs: Array<RouteSpec> = [
 	{
 		method: 'GET',
 		path: '/public',
-		auth: {account: 'none', actor: 'none'},
-		handler: (c) => c.json({ok: true}),
+		auth: { account: 'none', actor: 'none' },
+		handler: (c) => c.json({ ok: true }),
 		description: 'Public route',
 		input: z.null(),
-		output: z.null(),
+		output: z.null()
 	},
 	{
 		method: 'GET',
 		path: '/protected',
-		auth: {account: 'required', actor: 'none'},
-		handler: (c) => c.json({secret: true}),
+		auth: { account: 'required', actor: 'none' },
+		handler: (c) => c.json({ secret: true }),
 		description: 'Protected route',
 		input: z.null(),
-		output: z.null(),
+		output: z.null()
 	},
 	{
 		method: 'POST',
 		path: '/admin-only',
-		auth: {account: 'required', actor: 'required', roles: ['admin']},
-		handler: (c) => c.json({admin: true}),
+		auth: { account: 'required', actor: 'required', roles: ['admin'] },
+		handler: (c) => c.json({ admin: true }),
 		description: 'Admin route',
-		query: z.strictObject({acting: ActingActor}),
+		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
-		output: z.null(),
+		output: z.null()
 	},
 	{
 		method: 'DELETE',
 		path: '/keeper-role',
-		auth: {account: 'required', actor: 'required', roles: ['keeper']},
-		handler: (c) => c.json({keeper: true}),
+		auth: { account: 'required', actor: 'required', roles: ['keeper'] },
+		handler: (c) => c.json({ keeper: true }),
 		description: 'Keeper role route',
-		query: z.strictObject({acting: ActingActor}),
+		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
-		output: z.null(),
+		output: z.null()
 	},
 	{
 		method: 'POST',
@@ -386,14 +390,14 @@ const adversarial_specs: Array<RouteSpec> = [
 			account: 'required',
 			actor: 'required',
 			roles: ['keeper'],
-			credential_types: ['daemon_token'],
+			credential_types: ['daemon_token']
 		},
-		handler: (c) => c.json({keeper: true}),
+		handler: (c) => c.json({ keeper: true }),
 		description: 'Keeper auth route',
-		query: z.strictObject({acting: ActingActor}),
+		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
-		output: z.null(),
-	},
+		output: z.null()
+	}
 ];
 
 const adversarial_middleware: Array<MiddlewareSpec> = [];
@@ -402,35 +406,35 @@ describe_adversarial_auth({
 	build: () =>
 		create_app_surface_spec({
 			middleware_specs: adversarial_middleware,
-			route_specs: adversarial_specs,
+			route_specs: adversarial_specs
 		}),
-	roles: ['admin', 'keeper'],
+	roles: ['admin', 'keeper']
 });
 
 // --- resolve_valid_path and generate_valid_body tests ---
 
 describe('resolve_valid_path', () => {
 	test('replaces uuid params with nil UUID', () => {
-		const params = z.strictObject({id: z.uuid()});
+		const params = z.strictObject({ id: z.uuid() });
 		assert.strictEqual(
 			resolve_valid_path('/things/:id', params),
-			'/things/00000000-0000-0000-0000-000000000000',
+			'/things/00000000-0000-0000-0000-000000000000'
 		);
 	});
 
 	test('replaces non-uuid params with test_ prefix', () => {
-		const params = z.strictObject({name: z.string()});
+		const params = z.strictObject({ name: z.string() });
 		assert.strictEqual(resolve_valid_path('/things/:name', params), '/things/test_name');
 	});
 
 	test('handles multiple params', () => {
 		const params = z.strictObject({
 			account_id: z.uuid(),
-			role_grant_id: z.uuid(),
+			role_grant_id: z.uuid()
 		});
 		assert.strictEqual(
 			resolve_valid_path('/accounts/:account_id/role_grants/:role_grant_id', params),
-			'/accounts/00000000-0000-0000-0000-000000000000/role_grants/00000000-0000-0000-0000-000000000000',
+			'/accounts/00000000-0000-0000-0000-000000000000/role_grants/00000000-0000-0000-0000-000000000000'
 		);
 	});
 
@@ -445,7 +449,7 @@ describe('generate_valid_body', () => {
 	});
 
 	test('generates valid body for simple object schema', () => {
-		const schema = z.strictObject({name: z.string().min(1)});
+		const schema = z.strictObject({ name: z.string().min(1) });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		assert.ok(typeof body.name === 'string');
@@ -455,7 +459,7 @@ describe('generate_valid_body', () => {
 	});
 
 	test('generates valid body with uuid field', () => {
-		const schema = z.strictObject({id: z.uuid()});
+		const schema = z.strictObject({ id: z.uuid() });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		assert.strictEqual(body.id, '00000000-0000-0000-0000-000000000000');
@@ -465,7 +469,7 @@ describe('generate_valid_body', () => {
 	test('skips optional fields without defaults', () => {
 		const schema = z.strictObject({
 			required_field: z.string(),
-			optional_field: z.string().optional(),
+			optional_field: z.string().optional()
 		});
 		const body = generate_valid_body(schema);
 		assert.ok(body);
@@ -476,7 +480,7 @@ describe('generate_valid_body', () => {
 
 	test('generates valid body with absolute path refinement', () => {
 		const AbsPath = z.string().refine((p) => p.startsWith('/'));
-		const schema = z.strictObject({path: AbsPath});
+		const schema = z.strictObject({ path: AbsPath });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		const path = body.path;
@@ -486,7 +490,7 @@ describe('generate_valid_body', () => {
 	});
 
 	test('generates valid body with date-time field', () => {
-		const schema = z.strictObject({created: z.iso.datetime()});
+		const schema = z.strictObject({ created: z.iso.datetime() });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		assert.strictEqual(body.created, '2020-01-01T00:00:00.000Z');
@@ -497,8 +501,8 @@ describe('generate_valid_body', () => {
 		const schema = z.strictObject({
 			config: z.strictObject({
 				name: z.string(),
-				count: z.number(),
-			}),
+				count: z.number()
+			})
 		});
 		const body = generate_valid_body(schema);
 		assert.ok(body);
@@ -512,8 +516,8 @@ describe('generate_valid_body', () => {
 		const schema = z.strictObject({
 			settings: z.strictObject({
 				required_field: z.string(),
-				optional_field: z.number().optional(),
-			}),
+				optional_field: z.number().optional()
+			})
 		});
 		const body = generate_valid_body(schema);
 		assert.ok(body);
@@ -524,7 +528,7 @@ describe('generate_valid_body', () => {
 	});
 
 	test('generates valid body with email field', () => {
-		const schema = z.strictObject({email: z.email()});
+		const schema = z.strictObject({ email: z.email() });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		assert.strictEqual(body.email, 'test@example.com');
@@ -532,7 +536,7 @@ describe('generate_valid_body', () => {
 	});
 
 	test('generates valid body with url refinement', () => {
-		const schema = z.strictObject({link: z.url()});
+		const schema = z.strictObject({ link: z.url() });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		const link = body.link;
@@ -546,7 +550,7 @@ describe('generate_valid_body', () => {
 			.string()
 			.refine((p) => p.startsWith('/'))
 			.brand('AbsPath');
-		const schema = z.strictObject({path: Branded});
+		const schema = z.strictObject({ path: Branded });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		const path = body.path;
@@ -557,7 +561,7 @@ describe('generate_valid_body', () => {
 
 	test('generates valid body with enum field', () => {
 		const schema = z.strictObject({
-			status: z.enum(['active', 'inactive', 'pending']),
+			status: z.enum(['active', 'inactive', 'pending'])
 		});
 		const body = generate_valid_body(schema);
 		assert.ok(body);
@@ -568,7 +572,7 @@ describe('generate_valid_body', () => {
 	test('includes fields with defaults', () => {
 		const schema = z.strictObject({
 			name: z.string(),
-			color: z.string().default('blue'),
+			color: z.string().default('blue')
 		});
 		const body = generate_valid_body(schema);
 		assert.ok(body);
@@ -580,7 +584,7 @@ describe('generate_valid_body', () => {
 	test('throws for unsatisfiable schema', () => {
 		// Refinement that always rejects — generation produces a value that fails validation
 		const schema = z.strictObject({
-			impossible: z.string().refine(() => false, 'always fails'),
+			impossible: z.string().refine(() => false, 'always fails')
 		});
 		assert.throws(() => generate_valid_body(schema), /generate_valid_body/);
 	});
@@ -590,7 +594,8 @@ describe('generate_valid_body', () => {
 		// (`^[0-9a-f]{64}$`). The generator must produce a value that round-trips
 		// through the input schema without error — previously it returned the
 		// default `'xxxxxxxxxx'` which fails the regex.
-		const {account_session_revoke_action_spec} = await import('$lib/auth/account_action_specs.ts');
+		const { account_session_revoke_action_spec } =
+			await import('$lib/auth/account_action_specs.ts');
 		const body = generate_valid_body(account_session_revoke_action_spec.input);
 		assert.ok(body);
 		const parsed = account_session_revoke_action_spec.input.safeParse(body);
@@ -609,72 +614,72 @@ const adversarial_404_specs: Array<RouteSpec> = [
 	{
 		method: 'GET',
 		path: '/things/:id',
-		auth: {account: 'required', actor: 'none'},
+		auth: { account: 'required', actor: 'none' },
 		handler: stub_handler,
 		description: 'Get a thing',
-		params: z.strictObject({id: z.uuid()}),
+		params: z.strictObject({ id: z.uuid() }),
 		input: z.null(),
-		output: z.looseObject({name: z.string()}),
-		errors: {404: z.looseObject({error: z.literal(ERROR_THING_NOT_FOUND)})},
+		output: z.looseObject({ name: z.string() }),
+		errors: { 404: z.looseObject({ error: z.literal(ERROR_THING_NOT_FOUND) }) }
 	},
 	// Route with params + enum 404 → should generate a test (uses first enum value)
 	{
 		method: 'DELETE',
 		path: '/items/:id',
-		auth: {account: 'required', actor: 'required', roles: ['admin']},
+		auth: { account: 'required', actor: 'required', roles: ['admin'] },
 		handler: stub_handler,
 		description: 'Delete an item',
-		params: z.strictObject({id: z.uuid()}),
-		query: z.strictObject({acting: ActingActor}),
+		params: z.strictObject({ id: z.uuid() }),
+		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
-		output: z.looseObject({ok: z.literal(true)}),
+		output: z.looseObject({ ok: z.literal(true) }),
 		errors: {
-			404: z.looseObject({error: z.enum([ERROR_ITEM_NOT_FOUND, ERROR_WIDGET_NOT_FOUND])}),
-		},
+			404: z.looseObject({ error: z.enum([ERROR_ITEM_NOT_FOUND, ERROR_WIDGET_NOT_FOUND]) })
+		}
 	},
 	// Route with params + input + 404 → should generate a test with valid body
 	{
 		method: 'POST',
 		path: '/things/:id/rename',
-		auth: {account: 'required', actor: 'none'},
+		auth: { account: 'required', actor: 'none' },
 		handler: stub_handler,
 		description: 'Rename a thing',
-		params: z.strictObject({id: z.uuid()}),
-		input: z.strictObject({name: z.string().min(1)}),
-		output: z.looseObject({ok: z.literal(true)}),
-		errors: {404: z.looseObject({error: z.literal(ERROR_THING_NOT_FOUND)})},
+		params: z.strictObject({ id: z.uuid() }),
+		input: z.strictObject({ name: z.string().min(1) }),
+		output: z.looseObject({ ok: z.literal(true) }),
+		errors: { 404: z.looseObject({ error: z.literal(ERROR_THING_NOT_FOUND) }) }
 	},
 	// Route with params but no 404 → should be skipped
 	{
 		method: 'GET',
 		path: '/widgets/:id',
-		auth: {account: 'none', actor: 'none'},
+		auth: { account: 'none', actor: 'none' },
 		handler: stub_handler,
 		description: 'Get a widget',
-		params: z.strictObject({id: z.uuid()}),
+		params: z.strictObject({ id: z.uuid() }),
 		input: z.null(),
-		output: z.looseObject({name: z.string()}),
+		output: z.looseObject({ name: z.string() })
 	},
 	// Route with 404 but no params → should be skipped
 	{
 		method: 'GET',
 		path: '/status',
-		auth: {account: 'none', actor: 'none'},
+		auth: { account: 'none', actor: 'none' },
 		handler: stub_handler,
 		description: 'Status check',
 		input: z.null(),
-		output: z.looseObject({ok: z.literal(true)}),
-		errors: {404: z.looseObject({error: z.literal('not_configured')})},
-	},
+		output: z.looseObject({ ok: z.literal(true) }),
+		errors: { 404: z.looseObject({ error: z.literal('not_configured') }) }
+	}
 ];
 
 describe_adversarial_404({
 	build: () =>
 		create_app_surface_spec({
 			middleware_specs: adversarial_middleware,
-			route_specs: adversarial_404_specs,
+			route_specs: adversarial_404_specs
 		}),
-	roles: ['admin', 'keeper'],
+	roles: ['admin', 'keeper']
 });
 
 // Verifies describe_adversarial_404 handles routes with no params + 404 gracefully (zero tests created).
@@ -687,22 +692,22 @@ describe_adversarial_404({
 				{
 					method: 'GET',
 					path: '/health',
-					auth: {account: 'none', actor: 'none'},
+					auth: { account: 'none', actor: 'none' },
 					handler: stub_handler,
 					description: 'Health',
 					input: z.null(),
-					output: z.null(),
-				},
-			],
+					output: z.null()
+				}
+			]
 		}),
-	roles: [],
+	roles: []
 });
 
 describe('error schema tightness baseline', () => {
 	test('audit returns typed entries for all error schemas', () => {
 		const surface_spec = create_app_surface_spec({
 			middleware_specs: adversarial_middleware,
-			route_specs: adversarial_specs,
+			route_specs: adversarial_specs
 		});
 		const audit = audit_error_schema_tightness(surface_spec.surface);
 		assert.ok(Array.isArray(audit));
@@ -716,7 +721,7 @@ describe('error schema tightness baseline', () => {
 		for (const entry of audit) {
 			assert.ok(
 				valid_specificities.has(entry.specificity),
-				`unexpected specificity: ${entry.specificity}`,
+				`unexpected specificity: ${entry.specificity}`
 			);
 		}
 	});
@@ -724,10 +729,10 @@ describe('error schema tightness baseline', () => {
 	test('assert_error_schema_tightness passes with permissive threshold', () => {
 		const surface_spec = create_app_surface_spec({
 			middleware_specs: adversarial_middleware,
-			route_specs: adversarial_specs,
+			route_specs: adversarial_specs
 		});
 		// generic threshold = no failures (baseline — consumers tighten from here)
-		assert_error_schema_tightness(surface_spec.surface, {min_specificity: 'generic'});
+		assert_error_schema_tightness(surface_spec.surface, { min_specificity: 'generic' });
 	});
 });
 
@@ -742,23 +747,23 @@ describe('resolve_standard_error_schema_tightness', () => {
 		{
 			method: 'POST',
 			path: '/api/foo',
-			auth: {account: 'none', actor: 'none'},
+			auth: { account: 'none', actor: 'none' },
 			handler: stub_handler,
 			description: 'Consumer-allowlisted generic route',
-			input: z.strictObject({name: z.string()}),
+			input: z.strictObject({ name: z.string() }),
 			output: z.null(),
-			errors: {400: z.looseObject({error: z.string()})},
+			errors: { 400: z.looseObject({ error: z.string() }) }
 		},
 		{
 			method: 'POST',
 			path: '/api/unlisted',
-			auth: {account: 'none', actor: 'none'},
+			auth: { account: 'none', actor: 'none' },
 			handler: stub_handler,
 			description: 'Generic route not in any allowlist',
-			input: z.strictObject({name: z.string()}),
+			input: z.strictObject({ name: z.string() }),
 			output: z.null(),
-			errors: {400: z.looseObject({error: z.string()})},
-		},
+			errors: { 400: z.looseObject({ error: z.string() }) }
+		}
 	];
 
 	test('null → null (opt-out preserved)', () => {
@@ -774,7 +779,7 @@ describe('resolve_standard_error_schema_tightness', () => {
 
 	test('consumer allowlist is additive — stock entries prefix, consumer entries suffix', () => {
 		const resolved = resolve_standard_error_schema_tightness({
-			allowlist: ['POST /api/foo'],
+			allowlist: ['POST /api/foo']
 		});
 		assert.ok(resolved);
 		// deepStrictEqual pins the exact concat order: stock first, then consumer.
@@ -782,17 +787,17 @@ describe('resolve_standard_error_schema_tightness', () => {
 		// appended rather than replacing.
 		assert.deepStrictEqual(resolved.allowlist, [
 			...fuz_app_stock_route_tightness_allowlist,
-			'POST /api/foo',
+			'POST /api/foo'
 		]);
 
 		// Runtime behavior: consumer-allowlisted route passes, unlisted fails.
 		const surface_spec = create_app_surface_spec({
 			middleware_specs: [],
-			route_specs: mixed_specs,
+			route_specs: mixed_specs
 		});
 		assert.throws(
 			() => assert_error_schema_tightness(surface_spec.surface, resolved),
-			/POST \/api\/unlisted → 400 \(generic\)/,
+			/POST \/api\/unlisted → 400 \(generic\)/
 		);
 		try {
 			assert_error_schema_tightness(surface_spec.surface, resolved);
@@ -804,13 +809,13 @@ describe('resolve_standard_error_schema_tightness', () => {
 	});
 
 	test('consumer ignore_statuses is additive', () => {
-		const resolved = resolve_standard_error_schema_tightness({ignore_statuses: [503]});
+		const resolved = resolve_standard_error_schema_tightness({ ignore_statuses: [503] });
 		assert.ok(resolved);
 		assert.deepStrictEqual(resolved.ignore_statuses, [401, 403, 429, 503]);
 	});
 
 	test('consumer min_specificity overrides default', () => {
-		const resolved = resolve_standard_error_schema_tightness({min_specificity: 'literal'});
+		const resolved = resolve_standard_error_schema_tightness({ min_specificity: 'literal' });
 		assert.ok(resolved);
 		assert.strictEqual(resolved.min_specificity, 'literal');
 		// stock allowlist survives the override

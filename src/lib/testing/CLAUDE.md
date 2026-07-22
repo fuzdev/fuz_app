@@ -270,7 +270,7 @@ const snapshot_deno = await query_schema_snapshot(db);
 await drop_recreate_db('app_test');
 await spawn_backend(rust_config);
 const snapshot_rust = await query_schema_snapshot(db);
-assert_schema_snapshots_equal(snapshot_deno, snapshot_rust, {a: 'deno', b: 'rust'});
+assert_schema_snapshots_equal(snapshot_deno, snapshot_rust, { a: 'deno', b: 'rust' });
 ```
 
 Each impl's _own_ tests still gate its DDL correctness independently — this

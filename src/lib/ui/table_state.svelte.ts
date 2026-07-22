@@ -40,12 +40,12 @@
  * @module
  */
 
-import {to_error_message} from '@fuzdev/fuz_util/error.ts';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
-import {AsyncSlot} from './async_slot.svelte.ts';
-import {parse_response_error, ui_fetch} from './ui_fetch.ts';
-import {format_value} from './ui_format.ts';
-import type {ColumnInfo} from '../http/db_routes.ts';
+import { AsyncSlot } from './async_slot.svelte.ts';
+import { parse_response_error, ui_fetch } from './ui_fetch.ts';
+import { format_value } from './ui_format.ts';
+import type { ColumnInfo } from '../http/db_routes.ts';
 
 /** Maximum number of rows that can be fetched in a single page. */
 export const TABLE_LIMIT_MAX = 1000;
@@ -81,7 +81,7 @@ export class TableState {
 		this.limit = Math.max(1, Math.min(TABLE_LIMIT_MAX, limit));
 		await this.list.run(async () => {
 			const response = await ui_fetch(
-				`/api/db/tables/${table_name}?offset=${this.offset}&limit=${this.limit}`,
+				`/api/db/tables/${table_name}?offset=${this.offset}&limit=${this.limit}`
 			);
 			if (!response.ok) {
 				throw new Error(await parse_response_error(response, 'Failed to fetch table'));
@@ -123,7 +123,7 @@ export class TableState {
 		try {
 			const response = await ui_fetch(
 				`/api/db/tables/${this.table_name}/rows/${encodeURIComponent(pk_str)}`,
-				{method: 'DELETE'},
+				{ method: 'DELETE' }
 			);
 			if (!response.ok) {
 				try {

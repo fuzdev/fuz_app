@@ -11,8 +11,8 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 /**
  * Principal columns as stored on `cell_grant`. Discriminated by which
@@ -21,8 +21,8 @@ import {Uuid} from '@fuzdev/fuz_util/id.ts';
  * carry only the id; names are never persisted in the audit envelope.
  */
 export const CellGrantPrincipalAuditMetadata = z.union([
-	z.looseObject({actor_id: Uuid}),
-	z.looseObject({role: z.string(), scope_id: Uuid.nullable()}),
+	z.looseObject({ actor_id: Uuid }),
+	z.looseObject({ role: z.string(), scope_id: Uuid.nullable() })
 ]);
 export type CellGrantPrincipalAuditMetadata = z.infer<typeof CellGrantPrincipalAuditMetadata>;
 
@@ -38,7 +38,7 @@ export const CellGrantCreateAuditMetadata = z.looseObject({
 	cell_id: Uuid,
 	grant_id: Uuid,
 	level: z.enum(['viewer', 'editor']),
-	principal: CellGrantPrincipalAuditMetadata,
+	principal: CellGrantPrincipalAuditMetadata
 });
 export type CellGrantCreateAuditMetadata = z.infer<typeof CellGrantCreateAuditMetadata>;
 
@@ -56,6 +56,6 @@ export const CellGrantRevokeAuditMetadata = z.looseObject({
 	grant_id: Uuid,
 	level: z.enum(['viewer', 'editor']),
 	principal: CellGrantPrincipalAuditMetadata,
-	self: z.literal(true).optional(),
+	self: z.literal(true).optional()
 });
 export type CellGrantRevokeAuditMetadata = z.infer<typeof CellGrantRevokeAuditMetadata>;

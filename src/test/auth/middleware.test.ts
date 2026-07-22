@@ -4,11 +4,11 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
+import { describe, assert, test } from 'vitest';
 
-import {create_auth_middleware_specs, type AuthMiddlewareOptions} from '$lib/auth/middleware.ts';
-import {RateLimiter} from '$lib/rate_limiter.ts';
-import {create_stub_app_deps} from '$lib/testing/stubs.ts';
+import { create_auth_middleware_specs, type AuthMiddlewareOptions } from '$lib/auth/middleware.ts';
+import { RateLimiter } from '$lib/rate_limiter.ts';
+import { create_stub_app_deps } from '$lib/testing/stubs.ts';
 
 const create_options = (overrides?: Partial<AuthMiddlewareOptions>): AuthMiddlewareOptions => ({
 	allowed_origins: [],
@@ -16,10 +16,10 @@ const create_options = (overrides?: Partial<AuthMiddlewareOptions>): AuthMiddlew
 		cookie_name: 'test_session',
 		context_key: 'session_identity',
 		encode_identity: (id: string) => id,
-		decode_identity: (payload: string) => payload,
+		decode_identity: (payload: string) => payload
 	},
 	bearer_ip_rate_limiter: null,
-	...overrides,
+	...overrides
 });
 
 describe('create_auth_middleware_specs', () => {
@@ -46,7 +46,7 @@ describe('create_auth_middleware_specs', () => {
 
 	test('custom path is applied to all middleware', async () => {
 		const deps = create_stub_app_deps();
-		const specs = await create_auth_middleware_specs(deps, create_options({path: '/custom/*'}));
+		const specs = await create_auth_middleware_specs(deps, create_options({ path: '/custom/*' }));
 		for (const spec of specs) {
 			assert.strictEqual(spec.path, '/custom/*');
 		}
@@ -61,9 +61,9 @@ describe('create_auth_middleware_specs', () => {
 					current_token: 'tok123',
 					previous_token: null,
 					rotated_at: new Date(),
-					keeper_account_id: null,
-				},
-			}),
+					keeper_account_id: null
+				}
+			})
 		);
 		assert.strictEqual(specs.length, 5);
 		assert.strictEqual(specs[4]!.name, 'daemon_token');
@@ -79,9 +79,9 @@ describe('create_auth_middleware_specs', () => {
 					current_token: 'tok',
 					previous_token: null,
 					rotated_at: new Date(),
-					keeper_account_id: null,
-				},
-			}),
+					keeper_account_id: null
+				}
+			})
 		);
 		const daemon = specs.find((s) => s.name === 'daemon_token');
 		assert.ok(daemon);
@@ -126,9 +126,9 @@ describe('create_auth_middleware_specs', () => {
 					current_token: 'tok',
 					previous_token: null,
 					rotated_at: new Date(),
-					keeper_account_id: null,
-				},
-			}),
+					keeper_account_id: null
+				}
+			})
 		);
 		const dt = specs.find((s) => s.name === 'daemon_token')!;
 		// The middleware soft-fails (discards) on every non-success path — browser
@@ -144,7 +144,7 @@ describe('create_auth_middleware_specs', () => {
 		// null = explicit opt-out — should not throw
 		const specs = await create_auth_middleware_specs(
 			deps,
-			create_options({bearer_ip_rate_limiter: null}),
+			create_options({ bearer_ip_rate_limiter: null })
 		);
 		assert.strictEqual(specs.length, 4);
 	});
@@ -154,11 +154,11 @@ describe('create_auth_middleware_specs', () => {
 		const custom_limiter = new RateLimiter({
 			max_attempts: 100,
 			window_ms: 60_000,
-			cleanup_interval_ms: 0,
+			cleanup_interval_ms: 0
 		});
 		const specs = await create_auth_middleware_specs(
 			deps,
-			create_options({bearer_ip_rate_limiter: custom_limiter}),
+			create_options({ bearer_ip_rate_limiter: custom_limiter })
 		);
 		assert.strictEqual(specs.length, 4);
 	});

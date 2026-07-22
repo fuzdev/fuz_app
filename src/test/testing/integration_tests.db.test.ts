@@ -7,38 +7,38 @@
  * @module
  */
 
-import {test, assert, describe, beforeAll, beforeEach, afterAll} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { test, assert, describe, beforeAll, beforeEach, afterAll } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {fuz_session_config} from '$lib/auth/session_cookie.ts';
-import {create_health_route_spec} from '$lib/http/common_routes.ts';
-import {create_account_route_specs} from '$lib/auth/account_routes.ts';
-import {create_account_actions} from '$lib/auth/account_actions.ts';
-import {account_verify_action_spec} from '$lib/auth/account_action_specs.ts';
-import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.ts';
-import type {AppServerContext} from '$lib/server/app_server_context.ts';
-import type {RpcEndpointSpec} from '$lib/http/surface.ts';
-import {create_test_app} from '$lib/testing/app_server.ts';
+import { fuz_session_config } from '$lib/auth/session_cookie.ts';
+import { create_health_route_spec } from '$lib/http/common_routes.ts';
+import { create_account_route_specs } from '$lib/auth/account_routes.ts';
+import { create_account_actions } from '$lib/auth/account_actions.ts';
+import { account_verify_action_spec } from '$lib/auth/account_action_specs.ts';
+import { prefix_route_specs, type RouteSpec } from '$lib/http/route_spec.ts';
+import type { AppServerContext } from '$lib/server/app_server_context.ts';
+import type { RpcEndpointSpec } from '$lib/http/surface.ts';
+import { create_test_app } from '$lib/testing/app_server.ts';
 import {
 	find_route_spec,
 	find_auth_route,
-	assert_response_matches_spec,
+	assert_response_matches_spec
 } from '$lib/testing/integration_helpers.ts';
-import {rpc_call, rpc_call_non_browser} from '$lib/testing/rpc_helpers.ts';
+import { rpc_call, rpc_call_non_browser } from '$lib/testing/rpc_helpers.ts';
 
 /** Duck-type of `Hono.request`; matches `RpcCallArgs.app`. */
 interface TestApp {
 	request: (input: string, init: RequestInit) => Promise<Response> | Response;
 }
-import {describe_standard_integration_tests} from '$lib/testing/integration.ts';
-import {auth_integration_truncate_tables} from '$lib/testing/db.ts';
-import {default_in_process_suite_options} from '$lib/testing/cross_backend/in_process_setup.ts';
+import { describe_standard_integration_tests } from '$lib/testing/integration.ts';
+import { auth_integration_truncate_tables } from '$lib/testing/db.ts';
+import { default_in_process_suite_options } from '$lib/testing/cross_backend/in_process_setup.ts';
 
-import {pglite_factory} from '../db_fixture.ts';
+import { pglite_factory } from '../db_fixture.ts';
 
 const RPC_PATH = '/api/rpc';
-const rpc_log = new Logger('integration-tests-rpc', {level: 'off'});
+const rpc_log = new Logger('integration-tests-rpc', { level: 'off' });
 
 /** Route factory using fuz_app's own account routes. */
 const test_route_factory = (ctx: AppServerContext): Array<RouteSpec> => [
@@ -49,9 +49,9 @@ const test_route_factory = (ctx: AppServerContext): Array<RouteSpec> => [
 			session_options: fuz_session_config,
 			ip_rate_limiter: ctx.ip_rate_limiter,
 			login_account_rate_limiter: ctx.login_account_rate_limiter,
-			login_fail_floor_ms: 0,
-		}),
-	),
+			login_fail_floor_ms: 0
+		})
+	)
 ];
 
 /** RPC endpoint factory — ctx-bound so the actions' bound `audit` emitter matches each test's real backend. */
@@ -60,21 +60,21 @@ const test_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpec> => [
 		path: RPC_PATH,
 		actions: create_account_actions({
 			log: rpc_log,
-			audit: ctx.deps.audit,
-		}),
-	},
+			audit: ctx.deps.audit
+		})
+	}
 ];
 
 /** Hit `account_verify` via RPC and return the HTTP status. */
 const rpc_verify_status = async (
 	app: TestApp,
-	headers: Record<string, string>,
+	headers: Record<string, string>
 ): Promise<number> => {
 	const res = await rpc_call({
 		app,
 		path: RPC_PATH,
 		method: account_verify_action_spec.method,
-		headers,
+		headers
 	});
 	return res.status;
 };
@@ -85,13 +85,13 @@ const rpc_verify_status = async (
  */
 const rpc_verify_status_no_origin = async (
 	app: TestApp,
-	headers: Record<string, string>,
+	headers: Record<string, string>
 ): Promise<number> => {
 	const res = await rpc_call_non_browser({
 		app,
 		path: RPC_PATH,
 		method: account_verify_action_spec.method,
-		headers,
+		headers
 	});
 	return res.status;
 };
@@ -102,8 +102,8 @@ describe_standard_integration_tests(
 	default_in_process_suite_options({
 		session_options: fuz_session_config,
 		create_route_specs: test_route_factory,
-		rpc_endpoints: test_rpc_endpoints,
-	}),
+		rpc_endpoints: test_rpc_endpoints
+	})
 );
 
 // --- Standalone tests for the helpers ---
@@ -129,7 +129,7 @@ describe('create_test_app', () => {
 		const test_app = await create_test_app({
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
-			db,
+			db
 		});
 
 		const res = await test_app.app.request('/health');
@@ -143,12 +143,12 @@ describe('create_test_app', () => {
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
 			db,
-			rpc_endpoints: test_rpc_endpoints,
+			rpc_endpoints: test_rpc_endpoints
 		});
 
 		assert.strictEqual(
 			await rpc_verify_status(test_app.app, test_app.create_session_headers()),
-			200,
+			200
 		);
 	});
 
@@ -157,12 +157,12 @@ describe('create_test_app', () => {
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
 			db,
-			rpc_endpoints: test_rpc_endpoints,
+			rpc_endpoints: test_rpc_endpoints
 		});
 
 		assert.strictEqual(
 			await rpc_verify_status_no_origin(test_app.app, test_app.create_bearer_headers()),
-			200,
+			200
 		);
 	});
 
@@ -171,26 +171,26 @@ describe('create_test_app', () => {
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
 			db,
-			rpc_endpoints: test_rpc_endpoints,
+			rpc_endpoints: test_rpc_endpoints
 		});
 
-		const account = await test_app.create_account({username: 'new_user'});
+		const account = await test_app.create_account({ username: 'new_user' });
 		assert.strictEqual(account.account.username, 'new_user');
 		assert.ok(account.session_cookie.length > 0);
 		assert.ok(account.api_token.length > 0);
 
 		// Session cookie works
 		assert.strictEqual(
-			await rpc_verify_status(test_app.app, {cookie: `fuz_session=${account.session_cookie}`}),
-			200,
+			await rpc_verify_status(test_app.app, { cookie: `fuz_session=${account.session_cookie}` }),
+			200
 		);
 
 		// Bearer token works
 		assert.strictEqual(
 			await rpc_verify_status_no_origin(test_app.app, {
-				authorization: `Bearer ${account.api_token}`,
+				authorization: `Bearer ${account.api_token}`
 			}),
-			200,
+			200
 		);
 	});
 
@@ -199,7 +199,7 @@ describe('create_test_app', () => {
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
 			db,
-			rpc_endpoints: test_rpc_endpoints,
+			rpc_endpoints: test_rpc_endpoints
 		});
 
 		assert.ok(test_app.route_specs.length > 0);
@@ -212,12 +212,12 @@ describe('create_test_app', () => {
 		const test_app = await create_test_app({
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
-			db,
+			db
 		});
 
 		const res = await test_app.app.request('/api/account/verify', {
 			method: 'GET',
-			headers: test_app.create_session_headers(),
+			headers: test_app.create_session_headers()
 		});
 		assert.strictEqual(res.status, 200);
 		// nginx `auth_request` reads status only; body must be empty so the subrequest
@@ -230,12 +230,12 @@ describe('create_test_app', () => {
 		const test_app = await create_test_app({
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
-			db,
+			db
 		});
 
 		const res = await test_app.app.request('/api/account/verify', {
 			method: 'GET',
-			headers: {host: 'localhost', origin: 'http://localhost:5173'},
+			headers: { host: 'localhost', origin: 'http://localhost:5173' }
 		});
 		assert.strictEqual(res.status, 401);
 	});
@@ -247,22 +247,22 @@ describe('find_route_spec', () => {
 			{
 				method: 'GET',
 				path: '/verify',
-				auth: {account: 'required', actor: 'none'},
+				auth: { account: 'required', actor: 'none' },
 				handler: () => new Response(),
 				description: 'test',
-				input: {safeParse: () => ({success: true})} as never,
-				output: {safeParse: () => ({success: true})} as never,
+				input: { safeParse: () => ({ success: true }) } as never,
+				output: { safeParse: () => ({ success: true }) } as never
 			},
 			{
 				method: 'POST',
 				path: '/tokens/:id/revoke',
-				auth: {account: 'required', actor: 'none'},
+				auth: { account: 'required', actor: 'none' },
 				handler: () => new Response(),
 				description: 'test',
-				input: {safeParse: () => ({success: true})} as never,
-				output: {safeParse: () => ({success: true})} as never,
-			},
-		]),
+				input: { safeParse: () => ({ success: true }) } as never,
+				output: { safeParse: () => ({ success: true }) } as never
+			}
+		])
 	];
 
 	test('exact match', () => {
@@ -288,12 +288,12 @@ describe('find_auth_route', () => {
 		{
 			method: 'POST',
 			path: '/login',
-			auth: {account: 'none', actor: 'none'},
+			auth: { account: 'none', actor: 'none' },
 			handler: () => new Response(),
 			description: 'test',
-			input: {safeParse: () => ({success: true})} as never,
-			output: {safeParse: () => ({success: true})} as never,
-		},
+			input: { safeParse: () => ({ success: true }) } as never,
+			output: { safeParse: () => ({ success: true }) } as never
+		}
 	]);
 
 	test('finds by suffix and method', () => {
@@ -329,14 +329,14 @@ describe('assert_response_matches_spec', () => {
 		const test_app = await create_test_app({
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
-			db,
+			db
 		});
 
 		// `/api/account/logout` is a session-authenticated POST that still lives on REST.
 		const res = await test_app.app.request('/api/account/logout', {
 			method: 'POST',
-			headers: test_app.create_session_headers({'content-type': 'application/json'}),
-			body: JSON.stringify({}),
+			headers: test_app.create_session_headers({ 'content-type': 'application/json' }),
+			body: JSON.stringify({})
 		});
 		assert.strictEqual(res.status, 200);
 
@@ -348,7 +348,7 @@ describe('assert_response_matches_spec', () => {
 		const test_app = await create_test_app({
 			session_options: fuz_session_config,
 			create_route_specs: test_route_factory,
-			db,
+			db
 		});
 
 		const res = await test_app.app.request('/api/account/logout', {
@@ -356,9 +356,9 @@ describe('assert_response_matches_spec', () => {
 			headers: {
 				host: 'localhost',
 				origin: 'http://localhost:5173',
-				'content-type': 'application/json',
+				'content-type': 'application/json'
 			},
-			body: JSON.stringify({}),
+			body: JSON.stringify({})
 		});
 		assert.strictEqual(res.status, 401);
 
@@ -367,10 +367,10 @@ describe('assert_response_matches_spec', () => {
 	});
 
 	test('throws for missing route spec', async () => {
-		const res = new Response('{}', {status: 200});
+		const res = new Response('{}', { status: 200 });
 		await assert_rejects(
 			() => assert_response_matches_spec([], 'GET', '/nonexistent', res),
-			/No route spec found/,
+			/No route spec found/
 		);
 	});
 });

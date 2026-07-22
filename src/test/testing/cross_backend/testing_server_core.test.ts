@@ -11,9 +11,9 @@
  * @module
  */
 
-import {test, assert, describe} from 'vitest';
+import { test, assert, describe } from 'vitest';
 
-import {is_loopback_host} from '$lib/testing/cross_backend/testing_server_core.ts';
+import { is_loopback_host } from '$lib/testing/cross_backend/testing_server_core.ts';
 
 describe('is_loopback_host', () => {
 	test('accepts loopback hosts', () => {
@@ -23,7 +23,7 @@ describe('is_loopback_host', () => {
 			'127.0.0.2', // all of 127.0.0.0/8 is loopback
 			'127.255.255.255',
 			'::1',
-			'[::1]', // bracketed IPv6 literal
+			'[::1]' // bracketed IPv6 literal
 		]) {
 			assert.ok(is_loopback_host(host), `${host} should be accepted as loopback`);
 		}

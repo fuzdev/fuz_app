@@ -32,15 +32,15 @@
  * @module
  */
 
-import {to_error_message} from '@fuzdev/fuz_util/error.ts';
-import {create_context} from '@fuzdev/fuz_ui/context_helpers.ts';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
+import { create_context } from '@fuzdev/fuz_ui/context_helpers.ts';
 
-import {ui_fetch} from './ui_fetch.ts';
+import { ui_fetch } from './ui_fetch.ts';
 import {
 	type ActorSummaryJson,
 	is_role_grant_active,
 	type RoleGrantSummaryJson,
-	type SessionAccount,
+	type SessionAccount
 } from '../auth/account_schema.ts';
 
 /**
@@ -57,7 +57,7 @@ export class AuthState {
 	actor: ActorSummaryJson | null = $state.raw(null);
 	role_grants: Array<RoleGrantSummaryJson> = $state.raw([]);
 	readonly active_role_grants: Array<RoleGrantSummaryJson> = $derived(
-		this.role_grants.filter((p) => is_role_grant_active(p)),
+		this.role_grants.filter((p) => is_role_grant_active(p))
 	);
 	readonly roles: Array<string> = $derived(this.active_role_grants.map((p) => p.role));
 
@@ -117,8 +117,8 @@ export class AuthState {
 		try {
 			const response = await ui_fetch('/api/account/login', {
 				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({username, password}),
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ username, password })
 			});
 
 			if (response.ok) {
@@ -165,8 +165,8 @@ export class AuthState {
 		try {
 			const response = await ui_fetch('/api/account/bootstrap', {
 				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({token, username, password}),
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ token, username, password })
 			});
 
 			if (response.ok) {
@@ -204,13 +204,13 @@ export class AuthState {
 		this.verify_error = null;
 
 		try {
-			const body: Record<string, string> = {username, password};
+			const body: Record<string, string> = { username, password };
 			if (email) body.email = email;
 
 			const response = await ui_fetch('/api/account/signup', {
 				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify(body),
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body)
 			});
 
 			if (response.ok) {
@@ -253,7 +253,7 @@ export class AuthState {
 	 */
 	async logout(): Promise<void> {
 		try {
-			await ui_fetch('/api/account/logout', {method: 'POST'});
+			await ui_fetch('/api/account/logout', { method: 'POST' });
 		} catch {
 			// Best-effort — clear local state regardless
 		}

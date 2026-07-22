@@ -9,26 +9,26 @@
 	 * @module
 	 */
 
-	import {AdminSessionsState} from './admin_sessions_state.svelte.ts';
-	import {admin_accounts_rpc_context} from './admin_accounts_state.svelte.ts';
-	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.ts';
+	import { AdminSessionsState } from './admin_sessions_state.svelte.ts';
+	import { admin_accounts_rpc_context } from './admin_accounts_state.svelte.ts';
+	import { format_relative_time, format_datetime_local, truncate_uuid } from './ui_format.ts';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import Datatable from './Datatable.svelte';
-	import type {DatatableColumn} from './datatable.ts';
-	import type {AdminSessionJson} from '../auth/audit_log_schema.ts';
+	import type { DatatableColumn } from './datatable.ts';
+	import type { AdminSessionJson } from '../auth/audit_log_schema.ts';
 
 	const get_rpc = admin_accounts_rpc_context.get();
-	const admin_sessions = new AdminSessionsState({get_rpc});
+	const admin_sessions = new AdminSessionsState({ get_rpc });
 
 	void admin_sessions.fetch();
 
 	const columns: Array<DatatableColumn<AdminSessionJson>> = [
-		{key: 'username', label: 'user', width: 120},
-		{key: 'id', label: 'session', width: 130},
-		{key: 'created_at', label: 'created', width: 100},
-		{key: 'last_seen_at', label: 'last seen', width: 100},
-		{key: 'expires_at', label: 'expires', width: 100},
-		{key: 'account_id', label: '', width: 220},
+		{ key: 'username', label: 'user', width: 120 },
+		{ key: 'id', label: 'session', width: 130 },
+		{ key: 'created_at', label: 'created', width: 100 },
+		{ key: 'last_seen_at', label: 'last seen', width: 100 },
+		{ key: 'expires_at', label: 'expires', width: 100 },
+		{ key: 'account_id', label: '', width: 220 }
 	];
 </script>
 

@@ -1,20 +1,20 @@
-import {vitePreprocess} from '@sveltejs/vite-plugin-svelte';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import adapter from '@sveltejs/adapter-static';
-import {svelte_preprocess_mdz} from '@fuzdev/mdz/svelte_preprocess_mdz.js';
-import {svelte_preprocess_fuz_code} from '@fuzdev/fuz_code/svelte_preprocess_fuz_code.js';
-import {execSync} from 'node:child_process';
+import { svelte_preprocess_mdz } from '@fuzdev/mdz/svelte_preprocess_mdz.js';
+import { svelte_preprocess_fuz_code } from '@fuzdev/fuz_code/svelte_preprocess_fuz_code.js';
+import { execSync } from 'node:child_process';
 
 /** @type {import('@sveltejs/kit').Config} */
 export default {
 	preprocess: [svelte_preprocess_mdz(), svelte_preprocess_fuz_code(), vitePreprocess()],
-	compilerOptions: {runes: true},
-	vitePlugin: {inspector: true},
+	compilerOptions: { runes: true },
+	vitePlugin: { inspector: true },
 	kit: {
 		adapter: adapter(),
-		paths: {relative: false}, // use root-absolute paths for SSR path comparison: https://svelte.dev/docs/kit/configuration#paths
-		alias: {$routes: 'src/routes'},
-		prerender: {handleUnseenRoutes: 'ignore'},
-		version: {name: execSync('git rev-parse HEAD').toString().trim()},
+		paths: { relative: false }, // use root-absolute paths for SSR path comparison: https://svelte.dev/docs/kit/configuration#paths
+		alias: { $routes: 'src/routes' },
+		prerender: { handleUnseenRoutes: 'ignore' },
+		version: { name: execSync('git rev-parse HEAD').toString().trim() }
 
 		// Example CSP using https://ui.fuz.dev/docs/csp
 		//
@@ -25,5 +25,5 @@ export default {
 		// 		extend: [csp_directives_of_fuzdev],
 		// 	}),
 		// },
-	},
+	}
 };

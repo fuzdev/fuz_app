@@ -17,8 +17,8 @@
  * @module
  */
 
-import type {Db} from './db.ts';
-import type {Migration, MigrationNamespace} from './migrate.ts';
+import type { Db } from './db.ts';
+import type { Migration, MigrationNamespace } from './migrate.ts';
 
 /** `cell_history` table — append-only log of cell snapshot references. */
 export const CELL_HISTORY_SCHEMA = `
@@ -41,7 +41,7 @@ export const CELL_HISTORY_INDEXES: Array<string> = [
 	`CREATE INDEX IF NOT EXISTS idx_cell_history_cell
 		ON cell_history(cell_id, created_at DESC)`,
 	`CREATE INDEX IF NOT EXISTS idx_cell_history_fact
-		ON cell_history(fact_hash)`,
+		ON cell_history(fact_hash)`
 ];
 
 /** Tables created by `CELL_HISTORY_MIGRATION_NS`, in drop order. */
@@ -56,8 +56,8 @@ export const CELL_HISTORY_MIGRATIONS: Array<Migration> = [
 			for (const sql of CELL_HISTORY_INDEXES) {
 				await db.query(sql);
 			}
-		},
-	},
+		}
+	}
 ];
 
 /** Namespace identifier for cell-history migrations. */
@@ -66,5 +66,5 @@ export const CELL_HISTORY_MIGRATION_NAMESPACE = 'fuz_cell_history';
 /** Migration namespace consumed by `run_migrations`. */
 export const CELL_HISTORY_MIGRATION_NS: MigrationNamespace = {
 	namespace: CELL_HISTORY_MIGRATION_NAMESPACE,
-	migrations: CELL_HISTORY_MIGRATIONS,
+	migrations: CELL_HISTORY_MIGRATIONS
 };

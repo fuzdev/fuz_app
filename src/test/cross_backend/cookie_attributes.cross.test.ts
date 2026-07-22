@@ -9,18 +9,18 @@
  * @module
  */
 
-import {inject} from 'vitest';
+import { inject } from 'vitest';
 
 import {
 	default_cross_process_setup,
-	reconstruct_bootstrapped_handle,
+	reconstruct_bootstrapped_handle
 } from '$lib/testing/cross_backend/setup.ts';
-import {describe_cookie_attributes_cross_tests} from '$lib/testing/cross_backend/cookie_attributes.ts';
+import { describe_cookie_attributes_cross_tests } from '$lib/testing/cross_backend/cookie_attributes.ts';
 
 import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle);
-const {cookie_name} = handle.config;
+const { cookie_name } = handle.config;
 
-describe_cookie_attributes_cross_tests({setup_test, cookie_name});
+describe_cookie_attributes_cross_tests({ setup_test, cookie_name });

@@ -12,11 +12,11 @@
  * @module
  */
 
-import {create_context} from '@fuzdev/fuz_ui/context_helpers.ts';
+import { create_context } from '@fuzdev/fuz_ui/context_helpers.ts';
 
-import {AsyncSlot} from './async_slot.svelte.ts';
-import {KeyedAsyncSlot} from './keyed_async_slot.svelte.ts';
-import type {AuthSessionJson} from '../auth/account_schema.ts';
+import { AsyncSlot } from './async_slot.svelte.ts';
+import { KeyedAsyncSlot } from './keyed_async_slot.svelte.ts';
+import type { AuthSessionJson } from '../auth/account_schema.ts';
 
 /**
  * Narrow RPC surface consumed by `AccountSessionsState`. Consumers adapt their
@@ -31,9 +31,9 @@ import type {AuthSessionJson} from '../auth/account_schema.ts';
  * - `revoke_all` → `account_session_revoke_all`
  */
 export interface AccountSessionsRpc {
-	list: () => Promise<{sessions: Array<AuthSessionJson>}>;
-	revoke: (params: {session_id: string}) => Promise<{ok: true; revoked: boolean}>;
-	revoke_all: () => Promise<{ok: true; count: number}>;
+	list: () => Promise<{ sessions: Array<AuthSessionJson> }>;
+	revoke: (params: { session_id: string }) => Promise<{ ok: true; revoked: boolean }>;
+	revoke_all: () => Promise<{ ok: true; count: number }>;
 }
 
 /**
@@ -68,14 +68,14 @@ export class AccountSessionsState {
 
 	async fetch(): Promise<void> {
 		await this.list.run(async () => {
-			const {sessions} = await this.#get_rpc().list();
+			const { sessions } = await this.#get_rpc().list();
 			this.sessions = sessions;
 		});
 	}
 
 	async submit_revoke(id: string): Promise<void> {
 		await this.revoke.run(id, async () => {
-			await this.#get_rpc().revoke({session_id: id});
+			await this.#get_rpc().revoke({ session_id: id });
 		});
 		if (this.revoke.succeeded(id)) await this.fetch();
 	}

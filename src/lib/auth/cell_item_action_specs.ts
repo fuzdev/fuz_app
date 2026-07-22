@@ -10,15 +10,15 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 import {
 	FRACTIONAL_INDEX_LENGTH_MAX,
-	FRACTIONAL_INDEX_REGEX,
+	FRACTIONAL_INDEX_REGEX
 } from '@fuzdev/fuz_util/fractional_index.ts';
 
-import {ActingActor} from '../http/auth_shape.ts';
-import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
+import { ActingActor } from '../http/auth_shape.ts';
+import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 
 // -- Error reasons ----------------------------------------------------------
 
@@ -66,7 +66,7 @@ export const ItemJson = z.strictObject({
 	parent_id: Uuid,
 	position: CellItemPosition,
 	child_id: Uuid,
-	created_at: z.string(),
+	created_at: z.string()
 });
 export type ItemJson = z.infer<typeof ItemJson>;
 
@@ -79,16 +79,16 @@ export type ItemJson = z.infer<typeof ItemJson>;
  * position)` unique violation; client refreshes bracket and retries.
  */
 export const CellItemInsertInput = z.strictObject({
-	parent_id: Uuid.meta({description: 'Cell to insert into.'}),
-	child_id: Uuid.meta({description: 'Cell to insert as a child.'}),
+	parent_id: Uuid.meta({ description: 'Cell to insert into.' }),
+	child_id: Uuid.meta({ description: 'Cell to insert as a child.' }),
 	position: CellItemPosition.meta({
-		description: 'Fractional-indexing key. Client-computed via `fractional_index_between`.',
+		description: 'Fractional-indexing key. Client-computed via `fractional_index_between`.'
 	}),
-	acting: ActingActor,
+	acting: ActingActor
 });
 export type CellItemInsertInput = z.infer<typeof CellItemInsertInput>;
 
-export const CellItemInsertOutput = z.strictObject({item: ItemJson});
+export const CellItemInsertOutput = z.strictObject({ item: ItemJson });
 export type CellItemInsertOutput = z.infer<typeof CellItemInsertOutput>;
 
 // -- cell_item_move ---------------------------------------------------------
@@ -98,29 +98,29 @@ export type CellItemInsertOutput = z.infer<typeof CellItemInsertOutput>;
  * moves are a future extension).
  */
 export const CellItemMoveInput = z.strictObject({
-	parent_id: Uuid.meta({description: 'Parent cell.'}),
-	position: CellItemPosition.meta({description: 'Current position of the row to move.'}),
-	new_position: CellItemPosition.meta({description: 'New fractional-indexing key.'}),
-	acting: ActingActor,
+	parent_id: Uuid.meta({ description: 'Parent cell.' }),
+	position: CellItemPosition.meta({ description: 'Current position of the row to move.' }),
+	new_position: CellItemPosition.meta({ description: 'New fractional-indexing key.' }),
+	acting: ActingActor
 });
 export type CellItemMoveInput = z.infer<typeof CellItemMoveInput>;
 
-export const CellItemMoveOutput = z.strictObject({item: ItemJson});
+export const CellItemMoveOutput = z.strictObject({ item: ItemJson });
 export type CellItemMoveOutput = z.infer<typeof CellItemMoveOutput>;
 
 // -- cell_item_delete -------------------------------------------------------
 
 /** Input for `cell_item_delete`. Idempotent on the slot key. */
 export const CellItemDeleteInput = z.strictObject({
-	parent_id: Uuid.meta({description: 'Parent cell.'}),
-	position: CellItemPosition.meta({description: 'Slot to delete.'}),
-	acting: ActingActor,
+	parent_id: Uuid.meta({ description: 'Parent cell.' }),
+	position: CellItemPosition.meta({ description: 'Slot to delete.' }),
+	acting: ActingActor
 });
 export type CellItemDeleteInput = z.infer<typeof CellItemDeleteInput>;
 
 export const CellItemDeleteOutput = z.strictObject({
 	ok: z.literal(true),
-	deleted: z.boolean(),
+	deleted: z.boolean()
 });
 export type CellItemDeleteOutput = z.infer<typeof CellItemDeleteOutput>;
 
@@ -140,27 +140,27 @@ export type CellItemDeleteOutput = z.infer<typeof CellItemDeleteOutput>;
 export const CellItemListInput = z
 	.strictObject({
 		parent_id: Uuid.optional().meta({
-			description: 'List forward items whose parent is this cell.',
+			description: 'List forward items whose parent is this cell.'
 		}),
 		child_id: Uuid.optional().meta({
-			description: 'List reverse parents whose child is this cell.',
+			description: 'List reverse parents whose child is this cell.'
 		}),
 		position_after: CellItemPosition.optional().meta({
-			description: 'Cursor for forward pagination — return rows whose position > this.',
+			description: 'Cursor for forward pagination — return rows whose position > this.'
 		}),
 		limit: z.number().int().positive().max(500).optional().meta({
 			description:
-				'Page size cap (max 500). Omit for unbounded — explicit list calls escape the bundled `cell_get` cap.',
+				'Page size cap (max 500). Omit for unbounded — explicit list calls escape the bundled `cell_get` cap.'
 		}),
-		acting: ActingActor,
+		acting: ActingActor
 	})
 	.refine((v) => Boolean(v.parent_id) !== Boolean(v.child_id), {
-		message: ERROR_CELL_ITEM_LIST_REQUIRES_PARENT_OR_CHILD,
+		message: ERROR_CELL_ITEM_LIST_REQUIRES_PARENT_OR_CHILD
 	});
 export type CellItemListInput = z.infer<typeof CellItemListInput>;
 
 export const CellItemListOutput = z.strictObject({
-	items: z.array(ItemJson),
+	items: z.array(ItemJson)
 });
 export type CellItemListOutput = z.infer<typeof CellItemListOutput>;
 
@@ -170,53 +170,53 @@ export const cell_item_insert_action_spec = {
 	method: 'cell_item_insert',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: true,
 	input: CellItemInsertInput,
 	output: CellItemInsertOutput,
 	async: true,
 	description:
-		'Insert a cell as an ordered child at `position` under `parent`. Caller must be able to edit `parent` and view `child`. Returns `cell_item_position_taken` on `(parent_id, position)` unique violation; client refreshes bracket and retries.',
+		'Insert a cell as an ordered child at `position` under `parent`. Caller must be able to edit `parent` and view `child`. Returns `cell_item_position_taken` on `(parent_id, position)` unique violation; client refreshes bracket and retries.'
 } satisfies RequestResponseActionSpec;
 
 export const cell_item_move_action_spec = {
 	method: 'cell_item_move',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: true,
 	input: CellItemMoveInput,
 	output: CellItemMoveOutput,
 	async: true,
 	description:
-		'Move an item within its parent to a new position. Caller must be able to edit `parent`. Returns `cell_item_position_taken` on the new-position unique violation.',
+		'Move an item within its parent to a new position. Caller must be able to edit `parent`. Returns `cell_item_position_taken` on the new-position unique violation.'
 } satisfies RequestResponseActionSpec;
 
 export const cell_item_delete_action_spec = {
 	method: 'cell_item_delete',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: true,
 	input: CellItemDeleteInput,
 	output: CellItemDeleteOutput,
 	async: true,
 	description:
-		'Delete the item at `(parent, position)`. Idempotent — `deleted: false` when no row matched. Caller must be able to edit `parent`.',
+		'Delete the item at `(parent, position)`. Idempotent — `deleted: false` when no row matched. Caller must be able to edit `parent`.'
 } satisfies RequestResponseActionSpec;
 
 export const cell_item_list_action_spec = {
 	method: 'cell_item_list',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'optional', actor: 'optional'},
+	auth: { account: 'optional', actor: 'optional' },
 	side_effects: false,
 	input: CellItemListInput,
 	output: CellItemListOutput,
 	async: true,
 	rate_limit: 'ip',
 	description:
-		'List forward items (pass `parent_id`) or reverse parents (pass `child_id`). Forward listing filters children to those the caller may view (strict target-visibility). Reverse listing has 2-layer authz: gate on `can_view_cell(child)` first (404 otherwise), then filter rows by per-parent `can_view_cell`. Per-IP rate-limited — symmetric with `cell_get` to bound public-surface id-walking.',
+		'List forward items (pass `parent_id`) or reverse parents (pass `child_id`). Forward listing filters children to those the caller may view (strict target-visibility). Reverse listing has 2-layer authz: gate on `can_view_cell(child)` first (404 otherwise), then filter rows by per-parent `can_view_cell`. Per-IP rate-limited — symmetric with `cell_get` to bound public-surface id-walking.'
 } satisfies RequestResponseActionSpec;
 
 /** All cell_item action specs — composed into `all_cell_action_specs`. */
@@ -224,5 +224,5 @@ export const all_cell_item_action_specs = [
 	cell_item_insert_action_spec,
 	cell_item_move_action_spec,
 	cell_item_delete_action_spec,
-	cell_item_list_action_spec,
+	cell_item_list_action_spec
 ] as const;

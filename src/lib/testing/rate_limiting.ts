@@ -22,31 +22,31 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import type {SessionOptions} from '../auth/session_cookie.ts';
-import type {AppServerContext} from '../server/app_server_context.ts';
-import type {RouteSpec} from '../http/route_spec.ts';
-import {RateLimiter} from '../rate_limiter.ts';
-import {RateLimitError} from '../http/error_schemas.ts';
-import {auth_migration_ns} from '../auth/migrations.ts';
-import {create_test_app, type SuiteAppOptions} from './app_server.ts';
+import type { SessionOptions } from '../auth/session_cookie.ts';
+import type { AppServerContext } from '../server/app_server_context.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
+import { RateLimiter } from '../rate_limiter.ts';
+import { RateLimitError } from '../http/error_schemas.ts';
+import { auth_migration_ns } from '../auth/migrations.ts';
+import { create_test_app, type SuiteAppOptions } from './app_server.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
 	auth_integration_truncate_tables,
-	type DbFactory,
+	type DbFactory
 } from './db.ts';
-import {find_auth_route, assert_rate_limit_retry_after_header} from './integration_helpers.ts';
+import { find_auth_route, assert_rate_limit_retry_after_header } from './integration_helpers.ts';
 import {
 	rpc_call_non_browser,
 	require_rpc_endpoint_path,
 	resolve_rpc_endpoints_for_setup,
-	type RpcEndpointsSuiteOption,
+	type RpcEndpointsSuiteOption
 } from './rpc_helpers.ts';
-import {run_migrations} from '../db/migrate.ts';
-import type {Db} from '../db/db.ts';
-import {account_verify_action_spec} from '../auth/account_action_specs.ts';
+import { run_migrations } from '../db/migrate.ts';
+import type { Db } from '../db/db.ts';
+import { account_verify_action_spec } from '../auth/account_action_specs.ts';
 
 /**
  * Configuration for `describe_rate_limiting_tests`.
@@ -109,7 +109,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 	// path; real handlers run per-test via the top-level `rpc_endpoints` slot on `CreateTestAppOptions`.
 	const rpc_endpoints_for_setup = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
-		options.session_options,
+		options.session_options
 	);
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
 
@@ -121,7 +121,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 
 	/** Create a tight rate limiter for testing — low attempt count, long window. */
 	const create_test_rate_limiter = (): RateLimiter =>
-		new RateLimiter({max_attempts, window_ms: 60_000, cleanup_interval_ms: 0});
+		new RateLimiter({ max_attempts, window_ms: 60_000, cleanup_interval_ms: 0 });
 
 	describe_db('rate_limiting', (get_db) => {
 		// --- 1. IP rate limiting on login ---
@@ -139,13 +139,13 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 							...options.app_options,
 							ip_rate_limiter,
 							login_account_rate_limiter: null,
-							bearer_ip_rate_limiter: null,
-						},
+							bearer_ip_rate_limiter: null
+						}
 					});
 					const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
 					assert.ok(
 						login_route,
-						'Expected POST /login route — ensure create_route_specs includes account routes',
+						'Expected POST /login route — ensure create_route_specs includes account routes'
 					);
 
 					// Fire max_attempts failed login requests (sequential — must exhaust the window)
@@ -156,14 +156,14 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 							headers: {
 								host: 'localhost',
 								origin: 'http://localhost:5173',
-								'content-type': 'application/json',
+								'content-type': 'application/json'
 							},
-							body: JSON.stringify({username: 'nonexistent', password: 'wrong'}),
+							body: JSON.stringify({ username: 'nonexistent', password: 'wrong' })
 						});
 						assert.notStrictEqual(
 							res.status,
 							429,
-							`Request ${i + 1}/${max_attempts} should not be rate limited`,
+							`Request ${i + 1}/${max_attempts} should not be rate limited`
 						);
 					}
 
@@ -173,16 +173,16 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 						headers: {
 							host: 'localhost',
 							origin: 'http://localhost:5173',
-							'content-type': 'application/json',
+							'content-type': 'application/json'
 						},
-						body: JSON.stringify({username: 'nonexistent', password: 'wrong'}),
+						body: JSON.stringify({ username: 'nonexistent', password: 'wrong' })
 					});
 					assert.strictEqual(blocked_res.status, 429);
 					const body = await blocked_res.json();
 					RateLimitError.parse(body);
 					assert.ok(
 						typeof body.retry_after === 'number' && body.retry_after > 0,
-						'Expected positive retry_after',
+						'Expected positive retry_after'
 					);
 					assert_rate_limit_retry_after_header(blocked_res, body);
 				} finally {
@@ -208,13 +208,13 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 							...options.app_options,
 							ip_rate_limiter: null,
 							login_account_rate_limiter,
-							bearer_ip_rate_limiter: null,
-						},
+							bearer_ip_rate_limiter: null
+						}
 					});
 					const login_route = find_auth_route(test_app.route_specs, '/login', 'POST');
 					assert.ok(
 						login_route,
-						'Expected POST /login route — ensure create_route_specs includes account routes',
+						'Expected POST /login route — ensure create_route_specs includes account routes'
 					);
 
 					const target_username = 'rate_limit_target';
@@ -227,14 +227,14 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 							headers: {
 								host: 'localhost',
 								origin: 'http://localhost:5173',
-								'content-type': 'application/json',
+								'content-type': 'application/json'
 							},
-							body: JSON.stringify({username: target_username, password: 'wrong'}),
+							body: JSON.stringify({ username: target_username, password: 'wrong' })
 						});
 						assert.notStrictEqual(
 							res.status,
 							429,
-							`Request ${i + 1}/${max_attempts} should not be rate limited`,
+							`Request ${i + 1}/${max_attempts} should not be rate limited`
 						);
 					}
 
@@ -244,16 +244,16 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 						headers: {
 							host: 'localhost',
 							origin: 'http://localhost:5173',
-							'content-type': 'application/json',
+							'content-type': 'application/json'
 						},
-						body: JSON.stringify({username: target_username, password: 'wrong'}),
+						body: JSON.stringify({ username: target_username, password: 'wrong' })
 					});
 					assert.strictEqual(blocked_res.status, 429);
 					const body = await blocked_res.json();
 					RateLimitError.parse(body);
 					assert.ok(
 						typeof body.retry_after === 'number' && body.retry_after > 0,
-						'Expected positive retry_after',
+						'Expected positive retry_after'
 					);
 					assert_rate_limit_retry_after_header(blocked_res, body);
 
@@ -263,14 +263,14 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 						headers: {
 							host: 'localhost',
 							origin: 'http://localhost:5173',
-							'content-type': 'application/json',
+							'content-type': 'application/json'
 						},
-						body: JSON.stringify({username: 'different_user', password: 'wrong'}),
+						body: JSON.stringify({ username: 'different_user', password: 'wrong' })
 					});
 					assert.notStrictEqual(
 						other_res.status,
 						429,
-						'Different username should not be rate limited',
+						'Different username should not be rate limited'
 					);
 				} finally {
 					login_account_rate_limiter.dispose();
@@ -293,8 +293,8 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 							...options.app_options,
 							ip_rate_limiter: null,
 							login_account_rate_limiter: null,
-							bearer_ip_rate_limiter,
-						},
+							bearer_ip_rate_limiter
+						}
 					});
 					// Probe `account_verify` via RPC with an invalid bearer token.
 					// The REST `/api/account/verify` shim is status-only (empty body
@@ -312,7 +312,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 					// blocked probe so `rpc_call_non_browser` doesn't throw on the
 					// non-envelope body.
 					const bearer_probe_headers: Record<string, string> = {
-						authorization: 'Bearer secret_fuz_token_invalid',
+						authorization: 'Bearer secret_fuz_token_invalid'
 					};
 
 					// Fire max_attempts invalid bearer requests (sequential — must exhaust the window)
@@ -322,12 +322,12 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 							path: rpc_path,
 							method: account_verify_action_spec.method,
 							id: 'rl-probe',
-							headers: bearer_probe_headers,
+							headers: bearer_probe_headers
 						});
 						assert.notStrictEqual(
 							res.status,
 							429,
-							`Request ${i + 1}/${max_attempts} should not be rate limited`,
+							`Request ${i + 1}/${max_attempts} should not be rate limited`
 						);
 					}
 
@@ -339,13 +339,13 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 						headers: {
 							host: 'localhost',
 							'content-type': 'application/json',
-							...bearer_probe_headers,
+							...bearer_probe_headers
 						},
 						body: JSON.stringify({
 							jsonrpc: '2.0',
 							method: account_verify_action_spec.method,
-							id: 'rl-probe-blocked',
-						}),
+							id: 'rl-probe-blocked'
+						})
 					});
 					assert.strictEqual(blocked_res.status, 429);
 					const body = await blocked_res.json();

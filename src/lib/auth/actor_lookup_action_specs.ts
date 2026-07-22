@@ -48,10 +48,10 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
+import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 
 /**
  * Hard cap on the number of ids resolvable in one call. Bounds the
@@ -63,7 +63,7 @@ export const ACTOR_LOOKUP_IDS_MAX = 50;
 export const ActorLookupEntryJson = z.strictObject({
 	id: Uuid,
 	username: z.string(),
-	display_name: z.string().optional(),
+	display_name: z.string().optional()
 });
 export type ActorLookupEntryJson = z.infer<typeof ActorLookupEntryJson>;
 
@@ -75,13 +75,13 @@ export const ActorLookupInput = z.strictObject({
 		.meta({
 			description: `Actor ids to resolve. Capped at ${
 				ACTOR_LOOKUP_IDS_MAX
-			}; unknown ids are silently absent from the response.`,
-		}),
+			}; unknown ids are silently absent from the response.`
+		})
 });
 export type ActorLookupInput = z.infer<typeof ActorLookupInput>;
 
 export const ActorLookupOutput = z.strictObject({
-	actors: z.array(ActorLookupEntryJson),
+	actors: z.array(ActorLookupEntryJson)
 });
 export type ActorLookupOutput = z.infer<typeof ActorLookupOutput>;
 
@@ -89,7 +89,7 @@ export const actor_lookup_action_spec = {
 	method: 'actor_lookup',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none'},
+	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
 	input: ActorLookupInput,
 	output: ActorLookupOutput,
@@ -97,7 +97,7 @@ export const actor_lookup_action_spec = {
 	rate_limit: 'account',
 	description: `Batched id → (username, display_name) resolver, keyed by actor id. Powers the labels arc for surfaces that stamp an actor id (e.g. cell owners, grant grantors). Authenticated + per-account rate-limited to bound batched username enumeration. Cap ${
 		ACTOR_LOOKUP_IDS_MAX
-	}; unknown ids absent from response.`,
+	}; unknown ids absent from response.`
 } satisfies RequestResponseActionSpec;
 
 /**

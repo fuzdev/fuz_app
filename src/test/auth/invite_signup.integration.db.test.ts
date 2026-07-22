@@ -9,48 +9,48 @@
  * @module
  */
 
-import {describe, test, assert, vi, afterEach} from 'vitest';
+import { describe, test, assert, vi, afterEach } from 'vitest';
 
-import {create_session_config} from '$lib/auth/session_cookie.ts';
-import {create_account_route_specs} from '$lib/auth/account_routes.ts';
-import {create_signup_route_specs} from '$lib/auth/signup_routes.ts';
-import {create_admin_actions} from '$lib/auth/admin_actions.ts';
-import {create_account_actions} from '$lib/auth/account_actions.ts';
-import {query_create_invite} from '$lib/auth/invite_queries.ts';
+import { create_session_config } from '$lib/auth/session_cookie.ts';
+import { create_account_route_specs } from '$lib/auth/account_routes.ts';
+import { create_signup_route_specs } from '$lib/auth/signup_routes.ts';
+import { create_admin_actions } from '$lib/auth/admin_actions.ts';
+import { create_account_actions } from '$lib/auth/account_actions.ts';
+import { query_create_invite } from '$lib/auth/invite_queries.ts';
 import {
 	app_settings_update_action_spec,
 	invite_create_action_spec,
 	invite_delete_action_spec,
-	invite_list_action_spec,
+	invite_list_action_spec
 } from '$lib/auth/admin_action_specs.ts';
-import {account_verify_action_spec} from '$lib/auth/account_action_specs.ts';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
-import {create_test_app} from '$lib/testing/app_server.ts';
-import {rpc_call_for_spec, type RpcCallResult} from '$lib/testing/rpc_helpers.ts';
+import { account_verify_action_spec } from '$lib/auth/account_action_specs.ts';
+import { create_rpc_endpoint } from '$lib/actions/action_rpc.ts';
+import { create_test_app } from '$lib/testing/app_server.ts';
+import { rpc_call_for_spec, type RpcCallResult } from '$lib/testing/rpc_helpers.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
-	auth_integration_truncate_tables,
+	auth_integration_truncate_tables
 } from '$lib/testing/db.ts';
-import {run_migrations} from '$lib/db/migrate.ts';
-import {auth_migration_ns} from '$lib/auth/migrations.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
-import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.ts';
+import { run_migrations } from '$lib/db/migrate.ts';
+import { auth_migration_ns } from '$lib/auth/migrations.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
 import {
 	ERROR_NO_MATCHING_INVITE,
 	ERROR_SIGNUP_CONFLICT,
 	ERROR_INVITE_NOT_FOUND,
 	ERROR_INVITE_DUPLICATE,
 	ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
-	ERROR_INVITE_ACCOUNT_EXISTS_EMAIL,
+	ERROR_INVITE_ACCOUNT_EXISTS_EMAIL
 } from '$lib/http/error_schemas.ts';
-import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.ts';
-import type {Db} from '$lib/db/db.ts';
-import type {AppServerContext} from '$lib/server/app_server_context.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { prefix_route_specs, type RouteSpec } from '$lib/http/route_spec.ts';
+import type { Db } from '$lib/db/db.ts';
+import type { AppServerContext } from '$lib/server/app_server_context.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 const session_options = create_session_config('test_session');
-const {cookie_name} = session_options;
+const { cookie_name } = session_options;
 
 const RPC_PATH = '/api/rpc';
 
@@ -66,7 +66,7 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 			session_options,
 			ip_rate_limiter: ctx.ip_rate_limiter,
 			login_account_rate_limiter: ctx.login_account_rate_limiter,
-			login_fail_floor_ms: 0,
+			login_fail_floor_ms: 0
 		}),
 		...create_signup_route_specs(ctx.deps, {
 			session_options,
@@ -75,14 +75,14 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 			// disable the denial-time floor so the failure-shape tests don't
 			// each wait ~250ms; the floor is exercised separately in its own
 			// describe block
-			signup_fail_floor_ms: 0,
-		}),
+			signup_fail_floor_ms: 0
+		})
 	]),
 	...create_rpc_endpoint({
 		path: RPC_PATH,
 		actions: [...create_admin_actions(ctx.deps), ...create_account_actions(ctx.deps)],
-		log: ctx.deps.log,
-	}),
+		log: ctx.deps.log
+	})
 ];
 
 /** JSON POST helper — used by the signup arm of this file. */
@@ -90,12 +90,12 @@ const json_request = (
 	app: any,
 	path: string,
 	body: unknown,
-	headers: Record<string, string>,
+	headers: Record<string, string>
 ): Promise<Response> =>
 	app.request(path, {
 		method: 'POST',
-		headers: {'content-type': 'application/json', ...headers},
-		body: JSON.stringify(body),
+		headers: { 'content-type': 'application/json', ...headers },
+		body: JSON.stringify(body)
 	});
 
 /**
@@ -107,13 +107,13 @@ const json_request = (
 const assert_rpc_error = (
 	result: RpcCallResult,
 	expected_code: number,
-	expected_reason?: string,
+	expected_reason?: string
 ): void => {
 	assert.strictEqual(result.ok, false, 'expected RPC error response');
 	if (result.ok) return;
 	assert.strictEqual(result.error.code, expected_code);
 	if (expected_reason !== undefined) {
-		const data = result.error.data as {reason?: string} | undefined;
+		const data = result.error.data as { reason?: string } | undefined;
 		assert.strictEqual(data?.reason, expected_reason);
 	}
 };
@@ -125,14 +125,14 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {email: 'new@example.com'},
-				headers: test_app.create_session_headers(),
+				params: { email: 'new@example.com' },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(r.ok, 'invite_create should succeed');
 			assert.strictEqual(r.result.ok, true);
@@ -147,14 +147,14 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {username: 'newuser'},
-				headers: test_app.create_session_headers(),
+				params: { username: 'newuser' },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(r.ok);
 			assert.strictEqual(r.result.invite.username, 'newuser');
@@ -165,14 +165,14 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
 				params: {},
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert_rpc_error(r, JSONRPC_ERROR_CODES.invalid_params);
 		});
@@ -182,21 +182,21 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {email: 'dupe@example.com'},
-				headers: test_app.create_session_headers(),
+				params: { email: 'dupe@example.com' },
+				headers: test_app.create_session_headers()
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {email: 'dupe@example.com'},
-				headers: test_app.create_session_headers(),
+				params: { email: 'dupe@example.com' },
+				headers: test_app.create_session_headers()
 			});
 			assert_rpc_error(r, JSONRPC_ERROR_CODES.conflict, ERROR_INVITE_DUPLICATE);
 		});
@@ -205,16 +205,16 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
+				db: get_db()
 			});
 			// Bootstrapped account has keeper role but not admin
-			const non_admin = await test_app.create_account({username: 'regular'});
+			const non_admin = await test_app.create_account({ username: 'regular' });
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {email: 'nope@example.com'},
-				headers: non_admin.create_session_headers(),
+				params: { email: 'nope@example.com' },
+				headers: non_admin.create_session_headers()
 			});
 			assert_rpc_error(r, JSONRPC_ERROR_CODES.forbidden);
 		});
@@ -224,28 +224,28 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {email: 'a@example.com'},
-				headers: test_app.create_session_headers(),
+				params: { email: 'a@example.com' },
+				headers: test_app.create_session_headers()
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {username: 'buser'},
-				headers: test_app.create_session_headers(),
+				params: { username: 'buser' },
+				headers: test_app.create_session_headers()
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_list_action_spec,
 				params: {},
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(r.ok);
 			assert.strictEqual(r.result.invites.length, 2);
@@ -256,14 +256,14 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const create_r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {email: 'del@example.com'},
-				headers: test_app.create_session_headers(),
+				params: { email: 'del@example.com' },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(create_r.ok);
 
@@ -271,8 +271,8 @@ describe_db('invite + signup integration', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_delete_action_spec,
-				params: {invite_id: create_r.result.invite.id},
-				headers: test_app.create_session_headers(),
+				params: { invite_id: create_r.result.invite.id },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(del_r.ok);
 
@@ -282,7 +282,7 @@ describe_db('invite + signup integration', (get_db) => {
 				path: RPC_PATH,
 				spec: invite_list_action_spec,
 				params: {},
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(list_r.ok);
 			assert.strictEqual(list_r.result.invites.length, 0);
@@ -293,15 +293,15 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Try to create invite for the bootstrapped account's username
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {username: test_app.backend.account.username},
-				headers: test_app.create_session_headers(),
+				params: { username: test_app.backend.account.username },
+				headers: test_app.create_session_headers()
 			});
 			assert_rpc_error(r, JSONRPC_ERROR_CODES.conflict, ERROR_INVITE_ACCOUNT_EXISTS_USERNAME);
 		});
@@ -311,18 +311,18 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Set email on the bootstrapped account
 			await get_db().query(`UPDATE account SET email = 'existing@example.com' WHERE id = $1`, [
-				test_app.backend.account.id,
+				test_app.backend.account.id
 			]);
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {email: 'existing@example.com'},
-				headers: test_app.create_session_headers(),
+				params: { email: 'existing@example.com' },
+				headers: test_app.create_session_headers()
 			});
 			assert_rpc_error(r, JSONRPC_ERROR_CODES.conflict, ERROR_INVITE_ACCOUNT_EXISTS_EMAIL);
 		});
@@ -332,15 +332,15 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Try uppercase variant of bootstrapped account's username
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {username: test_app.backend.account.username.toUpperCase()},
-				headers: test_app.create_session_headers(),
+				params: { username: test_app.backend.account.username.toUpperCase() },
+				headers: test_app.create_session_headers()
 			});
 			assert_rpc_error(r, JSONRPC_ERROR_CODES.conflict, ERROR_INVITE_ACCOUNT_EXISTS_USERNAME);
 		});
@@ -350,17 +350,17 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			await get_db().query(`UPDATE account SET email = 'CaseTest@Example.COM' WHERE id = $1`, [
-				test_app.backend.account.id,
+				test_app.backend.account.id
 			]);
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {email: 'casetest@example.com'},
-				headers: test_app.create_session_headers(),
+				params: { email: 'casetest@example.com' },
+				headers: test_app.create_session_headers()
 			});
 			assert_rpc_error(r, JSONRPC_ERROR_CODES.conflict, ERROR_INVITE_ACCOUNT_EXISTS_EMAIL);
 		});
@@ -370,14 +370,14 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {username: '123invalid'},
-				headers: test_app.create_session_headers(),
+				params: { username: '123invalid' },
+				headers: test_app.create_session_headers()
 			});
 			assert_rpc_error(r, JSONRPC_ERROR_CODES.invalid_params);
 		});
@@ -387,14 +387,14 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {email: 'not-an-email'},
-				headers: test_app.create_session_headers(),
+				params: { email: 'not-an-email' },
+				headers: test_app.create_session_headers()
 			});
 			assert_rpc_error(r, JSONRPC_ERROR_CODES.invalid_params);
 		});
@@ -404,15 +404,15 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Invite with both fields — username matches existing account, email does not
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {username: test_app.backend.account.username, email: 'fresh@example.com'},
-				headers: test_app.create_session_headers(),
+				params: { username: test_app.backend.account.username, email: 'fresh@example.com' },
+				headers: test_app.create_session_headers()
 			});
 			assert_rpc_error(r, JSONRPC_ERROR_CODES.conflict, ERROR_INVITE_ACCOUNT_EXISTS_USERNAME);
 		});
@@ -422,21 +422,21 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {email: 'unique@example.com'},
-				headers: test_app.create_session_headers(),
+				params: { email: 'unique@example.com' },
+				headers: test_app.create_session_headers()
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {email: 'UNIQUE@EXAMPLE.COM'},
-				headers: test_app.create_session_headers(),
+				params: { email: 'UNIQUE@EXAMPLE.COM' },
+				headers: test_app.create_session_headers()
 			});
 			assert_rpc_error(r, JSONRPC_ERROR_CODES.conflict, ERROR_INVITE_DUPLICATE);
 		});
@@ -446,14 +446,14 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_delete_action_spec,
-				params: {invite_id: '00000000-0000-4000-8000-000000000099' as Uuid},
-				headers: test_app.create_session_headers(),
+				params: { invite_id: '00000000-0000-4000-8000-000000000099' as Uuid },
+				headers: test_app.create_session_headers()
 			});
 			assert_rpc_error(r, JSONRPC_ERROR_CODES.not_found, ERROR_INVITE_NOT_FOUND);
 		});
@@ -465,22 +465,22 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Admin creates invite
 			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {username: 'newuser'},
-				headers: test_app.create_session_headers(),
+				params: { username: 'newuser' },
+				headers: test_app.create_session_headers()
 			});
 			// User signs up
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'newuser', password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'newuser', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 200);
 			const body = await res.json();
@@ -496,20 +496,20 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {email: 'signup@example.com'},
-				headers: test_app.create_session_headers(),
+				params: { email: 'signup@example.com' },
+				headers: test_app.create_session_headers()
 			});
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'emailuser', password: 'securepassword123', email: 'signup@example.com'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'emailuser', password: 'securepassword123', email: 'signup@example.com' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 200);
 		});
@@ -518,13 +518,13 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
+				db: get_db()
 			});
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'noinvite', password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'noinvite', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 403);
 			const body = await res.json();
@@ -536,21 +536,21 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Create invite directly via query to bypass route-level account-exists check
 			await query_create_invite(
-				{db: get_db()},
-				{username: test_app.backend.account.username, created_by: null},
+				{ db: get_db() },
+				{ username: test_app.backend.account.username, created_by: null }
 			);
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
 				{
 					username: test_app.backend.account.username,
-					password: 'securepassword123',
+					password: 'securepassword123'
 				},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 409);
 			const body = await res.json();
@@ -562,25 +562,25 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Create an account with an email first
-			const existing = await test_app.create_account({username: 'existing'});
+			const existing = await test_app.create_account({ username: 'existing' });
 			// Manually set email on the existing account
 			await get_db().query(`UPDATE account SET email = 'taken@example.com' WHERE id = $1`, [
-				existing.account.id,
+				existing.account.id
 			]);
 			// Create invite directly via query to bypass route-level account-exists check
-			await query_create_invite({db: get_db()}, {email: 'taken@example.com', created_by: null});
+			await query_create_invite({ db: get_db() }, { email: 'taken@example.com', created_by: null });
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
 				{
 					username: 'newuser',
 					password: 'securepassword123',
-					email: 'taken@example.com',
+					email: 'taken@example.com'
 				},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 409);
 			const body = await res.json();
@@ -592,39 +592,42 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 
 			// Set up username conflict
 			await query_create_invite(
-				{db: get_db()},
-				{username: test_app.backend.account.username, created_by: null},
+				{ db: get_db() },
+				{ username: test_app.backend.account.username, created_by: null }
 			);
 			const res_username = await json_request(
 				test_app.app,
 				'/api/account/signup',
 				{
 					username: test_app.backend.account.username,
-					password: 'securepassword123',
+					password: 'securepassword123'
 				},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			const body_username = await res_username.json();
 
 			// Set up email conflict
 			await get_db().query(`UPDATE account SET email = 'conflict@example.com' WHERE id = $1`, [
-				test_app.backend.account.id,
+				test_app.backend.account.id
 			]);
-			await query_create_invite({db: get_db()}, {email: 'conflict@example.com', created_by: null});
+			await query_create_invite(
+				{ db: get_db() },
+				{ email: 'conflict@example.com', created_by: null }
+			);
 			const res_email = await json_request(
 				test_app.app,
 				'/api/account/signup',
 				{
 					username: 'uniqueuser',
 					password: 'securepassword123',
-					email: 'conflict@example.com',
+					email: 'conflict@example.com'
 				},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			const body_email = await res_email.json();
 
@@ -640,21 +643,21 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {username: 'claimcheck'},
-				headers: test_app.create_session_headers(),
+				params: { username: 'claimcheck' },
+				headers: test_app.create_session_headers()
 			});
 			// Sign up
 			await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'claimcheck', password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'claimcheck', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			// Check invite list
 			const list_r = await rpc_call_for_spec({
@@ -662,7 +665,7 @@ describe_db('invite + signup integration', (get_db) => {
 				path: RPC_PATH,
 				spec: invite_list_action_spec,
 				params: {},
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(list_r.ok);
 			assert.strictEqual(list_r.result.invites.length, 1);
@@ -675,20 +678,20 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {username: 'verifyuser'},
-				headers: test_app.create_session_headers(),
+				params: { username: 'verifyuser' },
+				headers: test_app.create_session_headers()
 			});
 			const signup_res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'verifyuser', password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'verifyuser', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			// Extract session cookie from signup response
 			const set_cookie = signup_res.headers.get('set-cookie');
@@ -701,11 +704,11 @@ describe_db('invite + signup integration', (get_db) => {
 				path: RPC_PATH,
 				spec: account_verify_action_spec,
 				params: undefined,
-				headers: {cookie: cookie_value},
+				headers: { cookie: cookie_value }
 			});
 			assert.ok(
 				verify_res.ok,
-				`account_verify failed: ${verify_res.ok ? '' : JSON.stringify(verify_res.error)}`,
+				`account_verify failed: ${verify_res.ok ? '' : JSON.stringify(verify_res.error)}`
 			);
 			assert.strictEqual(verify_res.result.username, 'verifyuser');
 		});
@@ -715,22 +718,22 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Admin creates email-only invite
 			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {email: 'alice@example.com'},
-				headers: test_app.create_session_headers(),
+				params: { email: 'alice@example.com' },
+				headers: test_app.create_session_headers()
 			});
 			// User signs up with matching username but no email
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'alice', password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'alice', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 403);
 			const body = await res.json();
@@ -742,22 +745,22 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Admin creates invite with both fields
 			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {email: 'both@example.com', username: 'bothuser'},
-				headers: test_app.create_session_headers(),
+				params: { email: 'both@example.com', username: 'bothuser' },
+				headers: test_app.create_session_headers()
 			});
 			// Only email matches — should fail
 			const res1 = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'wronguser', password: 'securepassword123', email: 'both@example.com'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'wronguser', password: 'securepassword123', email: 'both@example.com' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res1.status, 403);
 
@@ -765,8 +768,8 @@ describe_db('invite + signup integration', (get_db) => {
 			const res2 = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'bothuser', password: 'securepassword123', email: 'wrong@example.com'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'bothuser', password: 'securepassword123', email: 'wrong@example.com' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res2.status, 403);
 
@@ -774,8 +777,8 @@ describe_db('invite + signup integration', (get_db) => {
 			const res3 = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'bothuser', password: 'securepassword123', email: 'both@example.com'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'bothuser', password: 'securepassword123', email: 'both@example.com' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res3.status, 200);
 		});
@@ -785,22 +788,22 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Admin creates invite with mixed-case email
 			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {email: 'Alice@Example.COM'},
-				headers: test_app.create_session_headers(),
+				params: { email: 'Alice@Example.COM' },
+				headers: test_app.create_session_headers()
 			});
 			// User signs up with lowercase email
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'aliceuser', password: 'securepassword123', email: 'alice@example.com'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'aliceuser', password: 'securepassword123', email: 'alice@example.com' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 200);
 		});
@@ -810,22 +813,22 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Admin creates invite with mixed-case username
 			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {username: 'CaseUser'},
-				headers: test_app.create_session_headers(),
+				params: { username: 'CaseUser' },
+				headers: test_app.create_session_headers()
 			});
 			// User signs up with lowercase username
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'caseuser', password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'caseuser', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 200);
 		});
@@ -834,13 +837,13 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
+				db: get_db()
 			});
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: '123invalid', password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: '123invalid', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 400);
 		});
@@ -849,13 +852,13 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
+				db: get_db()
 			});
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'validuser', password: 'short'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'validuser', password: 'short' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 400);
 		});
@@ -864,13 +867,13 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
+				db: get_db()
 			});
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'a'.repeat(40), password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'a'.repeat(40), password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 400);
 		});
@@ -880,32 +883,32 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {username: 'raceuser'},
-				headers: test_app.create_session_headers(),
+				params: { username: 'raceuser' },
+				headers: test_app.create_session_headers()
 			});
 			// First signup succeeds
 			const res1 = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'raceuser', password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'raceuser', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res1.status, 200);
 
 			// Insert a second invite for the same username — account already exists
 			// from the first signup, so the unique constraint rejects the second signup
-			await query_create_invite({db: get_db()}, {username: 'raceuser', created_by: null});
+			await query_create_invite({ db: get_db() }, { username: 'raceuser', created_by: null });
 			const res2 = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'raceuser', password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'raceuser', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res2.status, 409);
 			const body = await res2.json();
@@ -917,30 +920,30 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const create_r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_create_action_spec,
-				params: {username: 'claimedel'},
-				headers: test_app.create_session_headers(),
+				params: { username: 'claimedel' },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(create_r.ok);
 			// Sign up to claim it
 			await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'claimedel', password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'claimedel', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			// Try to delete the now-claimed invite
 			const del_r = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: invite_delete_action_spec,
-				params: {invite_id: create_r.result.invite.id},
-				headers: test_app.create_session_headers(),
+				params: { invite_id: create_r.result.invite.id },
+				headers: test_app.create_session_headers()
 			});
 			assert_rpc_error(del_r, JSONRPC_ERROR_CODES.not_found, ERROR_INVITE_NOT_FOUND);
 		});
@@ -952,23 +955,23 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Enable open signup via admin RPC
 			const enable_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_update_action_spec,
-				params: {open_signup: true},
-				headers: test_app.create_session_headers(),
+				params: { open_signup: true },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(enable_res.ok);
 			// Sign up without any invite
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'openuser', password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'openuser', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 200);
 			const body = await res.json();
@@ -983,14 +986,14 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
+				db: get_db()
 			});
 			// open_signup defaults to false — no invite means 403
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'closeduser', password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'closeduser', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 403);
 			const body = await res.json();
@@ -1002,15 +1005,15 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Enable open signup
 			const enable_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_update_action_spec,
-				params: {open_signup: true},
-				headers: test_app.create_session_headers(),
+				params: { open_signup: true },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(enable_res.ok);
 			// Try to sign up with the bootstrapped account's username
@@ -1019,9 +1022,9 @@ describe_db('invite + signup integration', (get_db) => {
 				'/api/account/signup',
 				{
 					username: test_app.backend.account.username,
-					password: 'securepassword123',
+					password: 'securepassword123'
 				},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 409);
 			const body = await res.json();
@@ -1033,15 +1036,15 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Enable open signup
 			const enable_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_update_action_spec,
-				params: {open_signup: true},
-				headers: test_app.create_session_headers(),
+				params: { open_signup: true },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(enable_res.ok);
 			// Disable open signup
@@ -1049,16 +1052,16 @@ describe_db('invite + signup integration', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_update_action_spec,
-				params: {open_signup: false},
-				headers: test_app.create_session_headers(),
+				params: { open_signup: false },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(disable_res.ok);
 			// Signup without invite should now fail
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'toggleduser', password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'toggleduser', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 403);
 			const body = await res.json();
@@ -1070,27 +1073,27 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Enable open signup
 			const enable_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_update_action_spec,
-				params: {open_signup: true},
-				headers: test_app.create_session_headers(),
+				params: { open_signup: true },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(enable_res.ok);
 			// Sign up
 			await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'audituser', password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'audituser', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			// Check audit log
-			const rows = await get_db().query<{event_type: string; metadata: unknown}>(
-				`SELECT event_type, metadata FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`,
+			const rows = await get_db().query<{ event_type: string; metadata: unknown }>(
+				`SELECT event_type, metadata FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`
 			);
 			assert.strictEqual(rows.length, 1);
 			const metadata = rows[0]!.metadata as any;
@@ -1114,13 +1117,13 @@ describe_db('invite + signup integration', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs,
-				db: get_db(),
+				db: get_db()
 			});
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'nomatch', password: 'securepassword123', email: 'nomatch@example.com'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'nomatch', password: 'securepassword123', email: 'nomatch@example.com' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 403);
 			const rows = await get_db().query<{
@@ -1131,7 +1134,7 @@ describe_db('invite + signup integration', (get_db) => {
 				metadata: unknown;
 			}>(
 				`SELECT event_type, outcome, account_id, actor_id, metadata
-				 FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`,
+				 FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`
 			);
 			assert.strictEqual(rows.length, 1);
 			const row = rows[0]!;
@@ -1150,20 +1153,20 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Create an invite directly to bypass the route-level account-exists check.
 			// The invite carries the bootstrapped account's username so the find succeeds
 			// but the account insert collides on the case-insensitive username unique.
-			const {id: invite_id} = await query_create_invite(
-				{db: get_db()},
-				{username: test_app.backend.account.username, created_by: null},
+			const { id: invite_id } = await query_create_invite(
+				{ db: get_db() },
+				{ username: test_app.backend.account.username, created_by: null }
 			);
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: test_app.backend.account.username, password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: test_app.backend.account.username, password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 409);
 			const rows = await get_db().query<{
@@ -1174,7 +1177,7 @@ describe_db('invite + signup integration', (get_db) => {
 				metadata: unknown;
 			}>(
 				`SELECT event_type, outcome, account_id, actor_id, metadata
-				 FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`,
+				 FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`
 			);
 			assert.strictEqual(rows.length, 1);
 			const row = rows[0]!;
@@ -1194,27 +1197,27 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Enable open signup
 			const enable_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: app_settings_update_action_spec,
-				params: {open_signup: true},
-				headers: test_app.create_session_headers(),
+				params: { open_signup: true },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(enable_res.ok);
 			// Collide on the bootstrapped account's username
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: test_app.backend.account.username, password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: test_app.backend.account.username, password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			assert.strictEqual(res.status, 409);
-			const rows = await get_db().query<{outcome: string; metadata: unknown}>(
-				`SELECT outcome, metadata FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`,
+			const rows = await get_db().query<{ outcome: string; metadata: unknown }>(
+				`SELECT outcome, metadata FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`
 			);
 			assert.strictEqual(rows.length, 1);
 			const row = rows[0]!;
@@ -1246,28 +1249,28 @@ describe_db('invite + signup integration', (get_db) => {
 					ip_rate_limiter: null,
 					signup_account_rate_limiter: null,
 					signup_fail_floor_ms: FLOOR_MS,
-					signup_fail_jitter_ms: 0, // determinism for the assertion
-				}),
+					signup_fail_jitter_ms: 0 // determinism for the assertion
+				})
 			]),
 			...create_rpc_endpoint({
 				path: RPC_PATH,
 				actions: [...create_admin_actions(ctx.deps), ...create_account_actions(ctx.deps)],
-				log: ctx.deps.log,
-			}),
+				log: ctx.deps.log
+			})
 		];
 
 		test('no_match (403) takes at least the floor', async () => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: create_route_specs_floored,
-				db: get_db(),
+				db: get_db()
 			});
 			const t0 = performance.now();
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'nomatchfloor', password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'nomatchfloor', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			const elapsed = performance.now() - t0;
 			assert.strictEqual(res.status, 403);
@@ -1275,7 +1278,7 @@ describe_db('invite + signup integration', (get_db) => {
 			// platforms, and `performance.now()` is monotonic but bucketed.
 			assert.ok(
 				elapsed >= FLOOR_MS - 10,
-				`expected elapsed (${elapsed.toFixed(1)}ms) >= ${FLOOR_MS - 10}ms (floor=${FLOOR_MS})`,
+				`expected elapsed (${elapsed.toFixed(1)}ms) >= ${FLOOR_MS - 10}ms (floor=${FLOOR_MS})`
 			);
 		});
 
@@ -1284,27 +1287,27 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs: create_route_specs_floored,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			// Seed an invite for the bootstrapped account's username so the
 			// find succeeds inside the tx and the unique constraint fires
 			// on the account insert.
 			await query_create_invite(
-				{db: get_db()},
-				{username: test_app.backend.account.username, created_by: null},
+				{ db: get_db() },
+				{ username: test_app.backend.account.username, created_by: null }
 			);
 			const t0 = performance.now();
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: test_app.backend.account.username, password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: test_app.backend.account.username, password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 			const elapsed = performance.now() - t0;
 			assert.strictEqual(res.status, 409);
 			assert.ok(
 				elapsed >= FLOOR_MS - 10,
-				`expected elapsed (${elapsed.toFixed(1)}ms) >= ${FLOOR_MS - 10}ms (floor=${FLOOR_MS})`,
+				`expected elapsed (${elapsed.toFixed(1)}ms) >= ${FLOOR_MS - 10}ms (floor=${FLOOR_MS})`
 			);
 		});
 	});
@@ -1326,9 +1329,9 @@ describe_db('invite + signup integration', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			await query_create_invite({db: get_db()}, {username: 'internalerr', created_by: null});
+			await query_create_invite({ db: get_db() }, { username: 'internalerr', created_by: null });
 
 			// Make the signup tx body reject with a generic Error — the catch
 			// handler should treat this as an `internal_error` and emit the
@@ -1343,8 +1346,8 @@ describe_db('invite + signup integration', (get_db) => {
 			const res = await json_request(
 				test_app.app,
 				'/api/account/signup',
-				{username: 'internalerr', password: 'securepassword123'},
-				{host: 'localhost', origin: 'http://localhost:5173'},
+				{ username: 'internalerr', password: 'securepassword123' },
+				{ host: 'localhost', origin: 'http://localhost:5173' }
 			);
 
 			// Status is not 200 — the rethrow propagates. Hono's default
@@ -1359,7 +1362,7 @@ describe_db('invite + signup integration', (get_db) => {
 				metadata: unknown;
 			}>(
 				`SELECT event_type, outcome, account_id, metadata
-				 FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`,
+				 FROM audit_log WHERE event_type = 'signup' ORDER BY seq DESC LIMIT 1`
 			);
 			assert.strictEqual(rows.length, 1);
 			const row = rows[0]!;

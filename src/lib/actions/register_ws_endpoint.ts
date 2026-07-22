@@ -21,23 +21,23 @@
  * @module
  */
 
-import type {Context, MiddlewareHandler} from 'hono';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { Context, MiddlewareHandler } from 'hono';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	apply_authorization_phase,
 	REQUEST_CONTEXT_KEY,
 	require_auth,
-	require_role,
+	require_role
 } from '../auth/request_context.ts';
-import {verify_request_source} from '../http/origin.ts';
-import type {RoleName} from '../auth/role_schema.ts';
-import type {Db} from '../db/db.ts';
-import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '../hono_context.ts';
+import { verify_request_source } from '../http/origin.ts';
+import type { RoleName } from '../auth/role_schema.ts';
+import type { Db } from '../db/db.ts';
+import { ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
 import {
 	register_action_ws,
 	type RegisterActionWsOptions,
-	type RegisterActionWsResult,
+	type RegisterActionWsResult
 } from './register_action_ws.ts';
 
 /** Options for `register_ws_endpoint`. */
@@ -63,7 +63,7 @@ export interface RegisterWsEndpointOptions extends RegisterActionWsOptions {
 /** Synthesized auth shape for WS upgrade: account + actor both required. */
 const WS_UPGRADE_AUTH = {
 	account: 'required' as const,
-	actor: 'required' as const,
+	actor: 'required' as const
 };
 
 /**
@@ -89,10 +89,10 @@ const create_ws_authorization_middleware = (db: Db): MiddlewareHandler => {
 		const acting_param = c.req.query('acting');
 		const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
 		const result = await apply_authorization_phase(
-			{db},
+			{ db },
 			account_id,
 			WS_UPGRADE_AUTH,
-			acting_param ?? undefined,
+			acting_param ?? undefined
 		);
 		if (!result.ok) return c.json(result.body, result.status);
 		if (result.request_context !== null) {
@@ -118,7 +118,7 @@ const create_ws_authorization_middleware = (db: Db): MiddlewareHandler => {
  *   then registers the `GET path` route via the inner `register_action_ws`
  */
 export const register_ws_endpoint = (
-	options: RegisterWsEndpointOptions,
+	options: RegisterWsEndpointOptions
 ): RegisterActionWsResult => {
 	const {
 		app,
@@ -137,5 +137,5 @@ export const register_ws_endpoint = (
 		app.use(path, require_role(required_roles));
 	}
 
-	return register_action_ws({app, path, db, log, ...rest});
+	return register_action_ws({ app, path, db, log, ...rest });
 };

@@ -15,11 +15,11 @@
  * @module
  */
 
-import {query_create_account_with_actor} from '$lib/auth/account_queries.ts';
-import {query_role_grant_offer_create} from '$lib/auth/role_grant_offer_queries.ts';
-import type {RoleGrantOffer} from '$lib/auth/role_grant_offer_schema.ts';
-import type {Db} from '$lib/db/db.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { query_create_account_with_actor } from '$lib/auth/account_queries.ts';
+import { query_role_grant_offer_create } from '$lib/auth/role_grant_offer_queries.ts';
+import type { RoleGrantOffer } from '$lib/auth/role_grant_offer_schema.ts';
+import type { Db } from '$lib/db/db.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 export interface TestAccount {
 	account_id: Uuid;
@@ -27,12 +27,12 @@ export interface TestAccount {
 }
 
 export const make_account = async (db: Db, username: string): Promise<TestAccount> => {
-	const deps = {db};
-	const {account, actor} = await query_create_account_with_actor(deps, {
+	const deps = { db };
+	const { account, actor } = await query_create_account_with_actor(deps, {
 		username,
-		password_hash: 'hash',
+		password_hash: 'hash'
 	});
-	return {account_id: account.id, actor_id: actor.id};
+	return { account_id: account.id, actor_id: actor.id };
 };
 
 export const future = (ms_from_now: number): Date => new Date(Date.now() + ms_from_now);
@@ -62,10 +62,10 @@ export interface CreatePendingOfferOptions {
  */
 const resolve_scope_pair = (
 	scope_kind: string | null | undefined,
-	scope_id: Uuid | null | undefined,
-): {scope_kind: string | null; scope_id: Uuid | null} => {
-	if (scope_id == null) return {scope_kind: null, scope_id: null};
-	return {scope_kind: scope_kind ?? 'test', scope_id};
+	scope_id: Uuid | null | undefined
+): { scope_kind: string | null; scope_id: Uuid | null } => {
+	if (scope_id == null) return { scope_kind: null, scope_id: null };
+	return { scope_kind: scope_kind ?? 'test', scope_id };
 };
 
 /** Test helper — create a pending offer with sensible defaults. */
@@ -73,11 +73,11 @@ export const create_pending_offer = (
 	db: Db,
 	grantor: TestAccount,
 	recipient: TestAccount,
-	options: CreatePendingOfferOptions = {},
+	options: CreatePendingOfferOptions = {}
 ): Promise<RoleGrantOffer> => {
 	const pair = resolve_scope_pair(options.scope_kind, options.scope_id);
 	return query_role_grant_offer_create(
-		{db},
+		{ db },
 		{
 			from_actor_id: grantor.actor_id,
 			to_account_id: recipient.account_id,
@@ -85,8 +85,8 @@ export const create_pending_offer = (
 			scope_kind: pair.scope_kind,
 			scope_id: pair.scope_id,
 			message: options.message ?? null,
-			expires_at: options.expires_at ?? future(hour),
-		},
+			expires_at: options.expires_at ?? future(hour)
+		}
 	);
 };
 
@@ -114,12 +114,12 @@ export const insert_superseded_offer = async (
 	db: Db,
 	grantor: TestAccount,
 	recipient: TestAccount,
-	options: InsertSupersededOfferOptions = {},
+	options: InsertSupersededOfferOptions = {}
 ): Promise<Uuid> => {
 	const expires_at = options.expires_at ?? future(hour);
 	const superseded_at = options.superseded_at ?? new Date(Date.now() - 60_000);
 	const pair = resolve_scope_pair(options.scope_kind, options.scope_id);
-	const rows = await db.query<{id: Uuid}>(
+	const rows = await db.query<{ id: Uuid }>(
 		`INSERT INTO role_grant_offer (from_actor_id, to_account_id, role, scope_kind, scope_id, expires_at, superseded_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING id`,
@@ -130,8 +130,8 @@ export const insert_superseded_offer = async (
 			pair.scope_kind,
 			pair.scope_id,
 			expires_at.toISOString(),
-			superseded_at.toISOString(),
-		],
+			superseded_at.toISOString()
+		]
 	);
 	return rows[0]!.id;
 };

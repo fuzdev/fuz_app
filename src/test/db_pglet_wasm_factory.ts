@@ -34,22 +34,22 @@
  * @module
  */
 
-import {join} from 'node:path';
-import {pathToFileURL} from 'node:url';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-import {Db, no_nested_transaction, type DbDriverResult} from '$lib/db/db.ts';
-import type {DbFactory} from '$lib/testing/db.ts';
+import { Db, no_nested_transaction, type DbDriverResult } from '$lib/db/db.ts';
+import type { DbFactory } from '$lib/testing/db.ts';
 
 const PGLET_WASM_PKG = process.env.PGLET_WASM_PKG;
 
 /** The transaction handle the adapter hands the callback (query only — no savepoints). */
 interface PgletTx {
-	query: <T = unknown>(sql: string, params?: Array<unknown>) => Promise<{rows: Array<T>}>;
+	query: <T = unknown>(sql: string, params?: Array<unknown>) => Promise<{ rows: Array<T> }>;
 }
 
 /** The ergonomic `@fuzdev/pglet_wasm` adapter surface the factory uses (`create_pglet_db`'s return). */
 interface PgletDb {
-	query: <T = unknown>(sql: string, params?: Array<unknown>) => Promise<{rows: Array<T>}>;
+	query: <T = unknown>(sql: string, params?: Array<unknown>) => Promise<{ rows: Array<T> }>;
 	transaction: <T>(fn: (tx: PgletTx) => Promise<T>) => Promise<T>;
 	/** Branch a fresh, isolated copy-on-write instance at this one's committed state. */
 	fork: () => PgletDb;
@@ -65,7 +65,7 @@ interface PgletCoercionOptions {
 
 /** The slice of the package's Node entry (`index.js`) the factory imports. */
 interface PgletWasmModule {
-	create_pglet_db: (options?: {coercion?: PgletCoercionOptions}) => PgletDb;
+	create_pglet_db: (options?: { coercion?: PgletCoercionOptions }) => PgletDb;
 }
 
 // Module-level cache — import the adapter once per vitest worker. The `node` export condition's
@@ -87,15 +87,15 @@ const load_wasm_module = async (pkg_dir: string): Promise<PgletWasmModule> => {
 const create_pglet_transaction =
 	(pglet: PgletDb) =>
 	async <T>(fn: (tx_db: Db) => Promise<T>): Promise<T> =>
-		pglet.transaction((tx) => fn(new Db({client: tx, transaction: no_nested_transaction})));
+		pglet.transaction((tx) => fn(new Db({ client: tx, transaction: no_nested_transaction })));
 
 /** Wrap a `PgletDb` as a fuz_app `Db` — it duck-types as a `DbClient` (`query(sql, params) → {rows}`). */
 const create_pglet_wasm_db = (pglet: PgletDb): DbDriverResult => ({
-	db: new Db({client: pglet, transaction: create_pglet_transaction(pglet)}),
+	db: new Db({ client: pglet, transaction: create_pglet_transaction(pglet) }),
 	close: () => {
 		pglet.close();
 		return Promise.resolve();
-	},
+	}
 });
 
 /**
@@ -124,11 +124,11 @@ export const create_pglet_wasm_factory = (init_schema: (db: Db) => Promise<void>
 			// Seed the base once (run the migrations) with fuz_app's int8→Number convention, then
 			// leave it pristine — every `create()` forks a copy-on-write branch of its committed state.
 			if (!base) {
-				base = mod.create_pglet_db({coercion: {int8: 'number'}});
-				const {db: base_db} = create_pglet_wasm_db(base);
+				base = mod.create_pglet_db({ coercion: { int8: 'number' } });
+				const { db: base_db } = create_pglet_wasm_db(base);
 				await init_schema(base_db);
 			}
-			const {db, close} = create_pglet_wasm_db(base.fork());
+			const { db, close } = create_pglet_wasm_db(base.fork());
 			current_close = close;
 			return db;
 		},
@@ -136,6 +136,6 @@ export const create_pglet_wasm_factory = (init_schema: (db: Db) => Promise<void>
 			// Free the forked wasm instance for this suite; the base + module stay cached.
 			await current_close?.();
 			current_close = null;
-		},
+		}
 	};
 };

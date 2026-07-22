@@ -43,13 +43,13 @@
 	 * @module
 	 */
 
-	import type {SvelteHTMLElements} from 'svelte/elements';
-	import type {Snippet} from 'svelte';
-	import {scale} from 'svelte/transition';
-	import type {OmitStrict} from '@fuzdev/fuz_util/types.ts';
+	import type { SvelteHTMLElements } from 'svelte/elements';
+	import type { Snippet } from 'svelte';
+	import { scale } from 'svelte/transition';
+	import type { OmitStrict } from '@fuzdev/fuz_util/types.ts';
 
-	import {Popover} from './popover.svelte.ts';
-	import type {Position, Alignment} from './position_helpers.ts';
+	import { Popover } from './popover.svelte.ts';
+	import type { Position, Alignment } from './position_helpers.ts';
 
 	const {
 		position = 'bottom',
@@ -110,7 +110,7 @@
 			{@attach popover.trigger({
 				position,
 				align,
-				disable_outside_click,
+				disable_outside_click
 			})}
 			{...rest}
 		>
@@ -124,10 +124,10 @@
 				position,
 				align,
 				disable_outside_click,
-				popover_class,
+				popover_class
 			})}
-			in:scale={{duration: 80}}
-			out:scale={{duration: 200}}
+			in:scale={{ duration: 80 }}
+			out:scale={{ duration: 200 }}
 			{...popover_attrs}
 		>
 			{@render popover_content(popover)}

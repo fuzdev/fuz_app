@@ -11,24 +11,24 @@
  * @module
  */
 
-import {inject} from 'vitest';
+import { inject } from 'vitest';
 
 import {
 	default_cross_process_setup,
-	reconstruct_bootstrapped_handle,
+	reconstruct_bootstrapped_handle
 } from '$lib/testing/cross_backend/setup.ts';
 import {
 	describe_cell_grant_role_cross_tests,
 	CELL_EDITOR_ROLE,
-	CELL_ROLE_HOLDER_USERNAME,
+	CELL_ROLE_HOLDER_USERNAME
 } from '$lib/testing/cross_backend/cell_grant_role.ts';
 
 import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle, {
-	extra_accounts: [{username: CELL_ROLE_HOLDER_USERNAME, roles: [CELL_EDITOR_ROLE]}],
+	extra_accounts: [{ username: CELL_ROLE_HOLDER_USERNAME, roles: [CELL_EDITOR_ROLE] }]
 });
-const {capabilities, rpc_path} = handle.config;
+const { capabilities, rpc_path } = handle.config;
 
-describe_cell_grant_role_cross_tests({setup_test, capabilities, rpc_path});
+describe_cell_grant_role_cross_tests({ setup_test, capabilities, rpc_path });

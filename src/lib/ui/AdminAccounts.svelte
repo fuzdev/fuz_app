@@ -12,17 +12,17 @@
 	import {
 		AdminAccountsState,
 		admin_accounts_rpc_context,
-		grant_key,
+		grant_key
 	} from './admin_accounts_state.svelte.ts';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import Datatable from './Datatable.svelte';
-	import type {DatatableColumn} from './datatable.ts';
-	import type {AdminAccountEntryJson} from '../auth/account_schema.ts';
-	import {format_relative_time, format_datetime_local} from './ui_format.ts';
-	import {format_scope_context, resolve_scope_label} from './format_scope.ts';
+	import type { DatatableColumn } from './datatable.ts';
+	import type { AdminAccountEntryJson } from '../auth/account_schema.ts';
+	import { format_relative_time, format_datetime_local } from './ui_format.ts';
+	import { format_scope_context, resolve_scope_label } from './format_scope.ts';
 
 	const get_rpc = admin_accounts_rpc_context.get();
-	const admin_accounts = new AdminAccountsState({get_rpc});
+	const admin_accounts = new AdminAccountsState({ get_rpc });
 	const get_format_scope = format_scope_context.get();
 	const format_scope = $derived(get_format_scope());
 
@@ -33,10 +33,10 @@
 	void admin_accounts.fetch();
 
 	const columns: Array<DatatableColumn<AdminAccountEntryJson>> = [
-		{key: 'account', label: 'username', width: 180},
-		{key: 'role_grants', label: 'role_grants', width: 240},
-		{key: 'actor', label: 'grant', width: 200},
-		{key: 'pending_offers', label: 'manage', width: 140},
+		{ key: 'account', label: 'username', width: 180 },
+		{ key: 'role_grants', label: 'role_grants', width: 240 },
+		{ key: 'actor', label: 'grant', width: 200 },
+		{ key: 'pending_offers', label: 'manage', width: 140 }
 	];
 </script>
 

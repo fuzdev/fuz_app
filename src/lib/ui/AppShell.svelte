@@ -9,11 +9,11 @@
 	 * @module
 	 */
 
-	import type {Snippet} from 'svelte';
-	import type {SvelteHTMLElements} from 'svelte/elements';
-	import {is_editable, swallow} from '@fuzdev/fuz_util/dom.ts';
+	import type { Snippet } from 'svelte';
+	import type { SvelteHTMLElements } from 'svelte/elements';
+	import { is_editable, swallow } from '@fuzdev/fuz_util/dom.ts';
 
-	import {SidebarState, sidebar_state_context} from './sidebar_state.svelte.ts';
+	import { SidebarState, sidebar_state_context } from './sidebar_state.svelte.ts';
 
 	const {
 		children,
@@ -45,11 +45,11 @@
 		 */
 		show_toggle?: boolean;
 		/** Custom toggle-button renderer; receives the title, visibility, and toggle callback. */
-		toggle_button?: Snippet<[{title: string; show_sidebar: boolean; toggle: () => void}]>;
+		toggle_button?: Snippet<[{ title: string; show_sidebar: boolean; toggle: () => void }]>;
 	} = $props();
 
 	const get_sidebar_state = sidebar_state_context.set(
-		() => sidebar_state_prop ?? new SidebarState(),
+		() => sidebar_state_prop ?? new SidebarState()
 	);
 	const sidebar_state = $derived(get_sidebar_state());
 
@@ -57,7 +57,7 @@
 
 	const button_title = $derived(
 		(sidebar_state.show_sidebar ? 'hide sidebar' : 'show sidebar') +
-			(keyboard_shortcut ? ` [${keyboard_shortcut}]` : ''),
+			(keyboard_shortcut ? ` [${keyboard_shortcut}]` : '')
 	);
 </script>
 
@@ -82,7 +82,7 @@
 			{@render toggle_button({
 				title: button_title,
 				show_sidebar: sidebar_state.show_sidebar,
-				toggle: () => sidebar_state.toggle_sidebar(),
+				toggle: () => sidebar_state.toggle_sidebar()
 			})}
 		{:else}
 			<button

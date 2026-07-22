@@ -50,7 +50,7 @@ token; the server hashes it (blake3) to look up the `auth_session` row. This ena
 per-session revocation, admin session management, and audit trails.
 
 ```typescript
-import {create_session_config} from '@fuzdev/fuz_app/auth/session_cookie.ts';
+import { create_session_config } from '@fuzdev/fuz_app/auth/session_cookie.ts';
 const my_session_config = create_session_config('my_session');
 ```
 
@@ -67,7 +67,7 @@ const my_config: SessionOptions<number> = {
 	decode_identity: (payload) => {
 		const n = parseInt(payload, 10);
 		return Number.isFinite(n) && n > 0 ? n : null;
-	},
+	}
 };
 ```
 
@@ -155,7 +155,7 @@ Structured context fields (`namespace`, `at_index`, `unknown_names`)
 accompany each kind.
 
 **`baseline(db, ns, names[])`** INSERTs tracker rows for a name-prefix of
-`ns.migrations` *without executing them* — the only sanctioned
+`ns.migrations` _without executing them_ — the only sanctioned
 non-execution path. Used to promote an existing schema (e.g. preserved
 through a tracker-shape upgrade) into the new tracker. Probes for the
 pre-0.42 tracker shape, creates the new-shape table if absent, acquires
@@ -255,12 +255,12 @@ for consumer use.
 Apps extend `BaseServerEnv` with app-specific env vars using Zod's `.extend()`:
 
 ```typescript
-import {BaseServerEnv} from '@fuzdev/fuz_app/server/env.ts';
-import {z} from 'zod';
+import { BaseServerEnv } from '@fuzdev/fuz_app/server/env.ts';
+import { z } from 'zod';
 
 const MyAppEnv = BaseServerEnv.extend({
-	FEATURE_FLAGS: z.string().optional().meta({description: 'Comma-separated feature flags'}),
-	SMTP_API_KEY: z.string().meta({description: 'SMTP API key', sensitivity: 'secret'}),
+	FEATURE_FLAGS: z.string().optional().meta({ description: 'Comma-separated feature flags' }),
+	SMTP_API_KEY: z.string().meta({ description: 'SMTP API key', sensitivity: 'secret' })
 });
 type MyAppEnv = z.infer<typeof MyAppEnv>;
 ```
@@ -428,7 +428,7 @@ request context (`method`, `path`) — use for monitoring, metrics, or alerting.
 
 For work that must run **only after the transaction commits** (WS fan-out:
 role_grant offer / revoke notifications), use `emit_after_commit(ctx, fn)` from
-`http/pending_effects.js`. It pushes a deferred *thunk* onto a separate
+`http/pending_effects.js`. It pushes a deferred _thunk_ onto a separate
 `post_commit_effects` queue (distinct from the eager `pending_effects` promise
 queue above). The contract is two-sided: the thunk runs at flush time (after
 the wrapping `db.transaction` resolves, never mid-transaction), **and it is

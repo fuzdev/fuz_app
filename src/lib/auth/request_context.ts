@@ -35,31 +35,36 @@
  * @module
  */
 
-import type {Context, MiddlewareHandler} from 'hono';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { Context, MiddlewareHandler } from 'hono';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {type Account, type Actor, is_role_grant_active, type RoleGrant} from './account_schema.ts';
+import {
+	type Account,
+	type Actor,
+	is_role_grant_active,
+	type RoleGrant
+} from './account_schema.ts';
 import {
 	hash_session_token,
 	session_touch_fire_and_forget,
-	query_session_get_valid,
+	query_session_get_valid
 } from './session_queries.ts';
 import {
 	query_account_by_id,
 	query_actor_by_id,
-	query_active_actors_by_account,
+	query_active_actors_by_account
 } from './account_queries.ts';
-import {query_role_grant_find_active_for_actor} from './role_grant_queries.ts';
-import type {QueryDeps} from '../db/query_deps.ts';
+import { query_role_grant_find_active_for_actor } from './role_grant_queries.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
-	type CredentialType,
+	type CredentialType
 } from '../hono_context.ts';
-import type {RouteSpec} from '../http/route_spec.ts';
-import {is_public_auth, needs_actor, type RouteAuth} from '../http/auth_shape.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
+import { is_public_auth, needs_actor, type RouteAuth } from '../http/auth_shape.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
@@ -67,7 +72,7 @@ import {
 	ERROR_ACTOR_REQUIRED,
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
 	ERROR_NO_ACTORS_ON_ACCOUNT,
-	ERROR_ACCOUNT_VANISHED,
+	ERROR_ACCOUNT_VANISHED
 } from '../http/error_schemas.ts';
 
 /**
@@ -130,7 +135,7 @@ export const require_request_context = (c: Context): RequestContext => {
 	const ctx = get_request_context(c);
 	if (!ctx) {
 		throw new Error(
-			'require_request_context: no request context — is the dispatcher authorization phase wired?',
+			'require_request_context: no request context — is the dispatcher authorization phase wired?'
 		);
 	}
 	return ctx;
@@ -167,7 +172,7 @@ export interface RequestActorContext extends RequestContext {
 export const has_role = (
 	ctx: RequestContext | null,
 	role: string,
-	now: Date = new Date(),
+	now: Date = new Date()
 ): boolean =>
 	ctx?.role_grants.some((p) => p.role === role && is_role_grant_active(p, now)) ?? false;
 
@@ -206,11 +211,11 @@ export const has_scoped_role = (
 	ctx: RequestContext | null,
 	role: string,
 	scope_id: string | null,
-	now: Date = new Date(),
+	now: Date = new Date()
 ): boolean => {
 	if (!ctx) return false;
 	return ctx.role_grants.some(
-		(p) => p.role === role && p.scope_id === scope_id && is_role_grant_active(p, now),
+		(p) => p.role === role && p.scope_id === scope_id && is_role_grant_active(p, now)
 	);
 };
 
@@ -230,12 +235,12 @@ export const has_any_scoped_role = (
 	ctx: RequestContext | null,
 	roles: ReadonlyArray<string>,
 	scope_id: string | null,
-	now: Date = new Date(),
+	now: Date = new Date()
 ): boolean => {
 	if (!ctx) return false;
 	if (roles.length === 0) return false;
 	return ctx.role_grants.some(
-		(p) => roles.includes(p.role) && p.scope_id === scope_id && is_role_grant_active(p, now),
+		(p) => roles.includes(p.role) && p.scope_id === scope_id && is_role_grant_active(p, now)
 	);
 };
 
@@ -244,10 +249,10 @@ export const has_any_scoped_role = (
  * error the caller maps to an HTTP response.
  */
 export type ResolveActingActorResult =
-	| {ok: true; actor_id: string}
-	| {ok: false; reason: 'no_actors'}
-	| {ok: false; reason: 'actor_required'; available: Array<{id: string; name: string}>}
-	| {ok: false; reason: 'actor_not_on_account'};
+	| { ok: true; actor_id: string }
+	| { ok: false; reason: 'no_actors' }
+	| { ok: false; reason: 'actor_required'; available: Array<{ id: string; name: string }> }
+	| { ok: false; reason: 'actor_not_on_account' };
 
 /**
  * Resolve the acting actor for an authenticated request.
@@ -274,21 +279,21 @@ export type ResolveActingActorResult =
 export const resolve_acting_actor = async (
 	deps: QueryDeps,
 	account_id: string,
-	acting_actor_id: string | undefined,
+	acting_actor_id: string | undefined
 ): Promise<ResolveActingActorResult> => {
 	const actors = await query_active_actors_by_account(deps, account_id);
-	if (actors.length === 0) return {ok: false, reason: 'no_actors'};
+	if (actors.length === 0) return { ok: false, reason: 'no_actors' };
 	if (acting_actor_id == null) {
-		if (actors.length === 1) return {ok: true, actor_id: actors[0]!.id};
+		if (actors.length === 1) return { ok: true, actor_id: actors[0]!.id };
 		return {
 			ok: false,
 			reason: 'actor_required',
-			available: actors.map((a) => ({id: a.id, name: a.name})),
+			available: actors.map((a) => ({ id: a.id, name: a.name }))
 		};
 	}
 	const match = actors.find((a) => a.id === acting_actor_id);
-	if (!match) return {ok: false, reason: 'actor_not_on_account'};
-	return {ok: true, actor_id: match.id};
+	if (!match) return { ok: false, reason: 'actor_not_on_account' };
+	return { ok: true, actor_id: match.id };
 };
 
 /**
@@ -313,7 +318,7 @@ export const resolve_acting_actor = async (
 export const create_request_context_middleware = (
 	deps: QueryDeps,
 	log: Logger,
-	session_context_key = 'auth_session_id',
+	session_context_key = 'auth_session_id'
 ): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
 		c.set(REQUEST_CONTEXT_KEY, null);
@@ -353,7 +358,7 @@ export const create_request_context_middleware = (
  */
 export const require_auth: MiddlewareHandler = async (c, next): Promise<Response | void> => {
 	if (c.get(ACCOUNT_ID_KEY) == null) {
-		return c.json({error: ERROR_AUTHENTICATION_REQUIRED}, 401);
+		return c.json({ error: ERROR_AUTHENTICATION_REQUIRED }, 401);
 	}
 	await next();
 };
@@ -384,11 +389,11 @@ export const require_auth: MiddlewareHandler = async (c, next): Promise<Response
 export const require_role = (roles: ReadonlyArray<string>): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
 		if (c.get(ACCOUNT_ID_KEY) == null) {
-			return c.json({error: ERROR_AUTHENTICATION_REQUIRED}, 401);
+			return c.json({ error: ERROR_AUTHENTICATION_REQUIRED }, 401);
 		}
 		const ctx = get_request_context(c);
 		if (!ctx || !has_any_scoped_role(ctx, roles, null)) {
-			return c.json({error: ERROR_INSUFFICIENT_PERMISSIONS, required_roles: roles}, 403);
+			return c.json({ error: ERROR_INSUFFICIENT_PERMISSIONS, required_roles: roles }, 403);
 		}
 		await next();
 	};
@@ -411,20 +416,20 @@ export const require_role = (roles: ReadonlyArray<string>): MiddlewareHandler =>
  * @param credential_types - allowed credential types (any-of)
  */
 export const require_credential_types = (
-	credential_types: ReadonlyArray<string>,
+	credential_types: ReadonlyArray<string>
 ): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
 		if (c.get(ACCOUNT_ID_KEY) == null) {
-			return c.json({error: ERROR_AUTHENTICATION_REQUIRED}, 401);
+			return c.json({ error: ERROR_AUTHENTICATION_REQUIRED }, 401);
 		}
 		const credential_type: CredentialType | null = c.get(CREDENTIAL_TYPE_KEY) ?? null;
 		if (!credential_type || !credential_types.includes(credential_type)) {
 			return c.json(
 				{
 					error: ERROR_CREDENTIAL_TYPE_REQUIRED,
-					required_credential_types: credential_types,
+					required_credential_types: credential_types
 				},
-				403,
+				403
 			);
 		}
 		await next();
@@ -449,15 +454,15 @@ export const require_credential_types = (
  */
 export const refresh_role_grants = async (
 	ctx: RequestContext,
-	deps: QueryDeps,
+	deps: QueryDeps
 ): Promise<RequestContext> => {
 	if (!ctx.actor) {
 		throw new Error(
-			'refresh_role_grants: account-grain context has no actor / role_grants to refresh',
+			'refresh_role_grants: account-grain context has no actor / role_grants to refresh'
 		);
 	}
 	const role_grants = await query_role_grant_find_active_for_actor(deps, ctx.actor.id);
-	return {...ctx, role_grants};
+	return { ...ctx, role_grants };
 };
 
 /**
@@ -482,7 +487,7 @@ export const refresh_role_grants = async (
 export const build_request_context = async (
 	deps: QueryDeps,
 	account_id: string,
-	actor_id: string,
+	actor_id: string
 ): Promise<RequestActorContext | null> => {
 	const account = await query_account_by_id(deps, account_id);
 	if (!account) return null;
@@ -492,7 +497,7 @@ export const build_request_context = async (
 	if (actor.account_id !== account.id) return null;
 
 	const role_grants = await query_role_grant_find_active_for_actor(deps, actor.id);
-	return {account, actor, role_grants};
+	return { account, actor, role_grants };
 };
 
 /**
@@ -515,11 +520,11 @@ export const build_request_context = async (
  */
 export const build_account_context = async (
 	deps: QueryDeps,
-	account_id: string,
+	account_id: string
 ): Promise<RequestContext | null> => {
 	const account = await query_account_by_id(deps, account_id);
 	if (!account) return null;
-	return {account, actor: null, role_grants: []};
+	return { account, actor: null, role_grants: [] };
 };
 
 /**
@@ -534,10 +539,10 @@ export const build_account_context = async (
  * architecture takes priority for the rationale.
  */
 export type AuthorizationFailureBody =
-	| {error: typeof ERROR_ACTOR_REQUIRED; available: Array<{id: string; name: string}>}
-	| {error: typeof ERROR_ACTOR_NOT_ON_ACCOUNT}
-	| {error: typeof ERROR_NO_ACTORS_ON_ACCOUNT}
-	| {error: typeof ERROR_ACCOUNT_VANISHED};
+	| { error: typeof ERROR_ACTOR_REQUIRED; available: Array<{ id: string; name: string }> }
+	| { error: typeof ERROR_ACTOR_NOT_ON_ACCOUNT }
+	| { error: typeof ERROR_NO_ACTORS_ON_ACCOUNT }
+	| { error: typeof ERROR_ACCOUNT_VANISHED };
 
 /**
  * Result of the authorization phase. Pure data — the auth domain stops
@@ -557,8 +562,8 @@ export type AuthorizationFailureBody =
  *   violation); `account_vanished` (torn read after resolve).
  */
 export type AuthorizationResult =
-	| {ok: true; request_context: RequestContext | null}
-	| {ok: false; status: 400 | 500; body: AuthorizationFailureBody};
+	| { ok: true; request_context: RequestContext | null }
+	| { ok: false; status: 400 | 500; body: AuthorizationFailureBody };
 
 /**
  * Apply the dispatcher's authorization phase against the flat-record
@@ -598,21 +603,21 @@ export const apply_authorization_phase = async (
 	deps: QueryDeps,
 	account_id: string | null,
 	auth: RouteAuth,
-	acting_value: string | undefined,
+	acting_value: string | undefined
 ): Promise<AuthorizationResult> => {
-	if (is_public_auth(auth)) return {ok: true, request_context: null};
+	if (is_public_auth(auth)) return { ok: true, request_context: null };
 
 	if (account_id == null) {
 		// Optional-auth route hit without a credential — leave `RequestContext`
 		// null so the handler can branch on it. `'required'` callers already
 		// got rejected at the pre-validation gate.
-		return {ok: true, request_context: null};
+		return { ok: true, request_context: null };
 	}
 
 	if (!needs_actor(auth)) {
 		const ctx = await build_account_context(deps, account_id);
-		if (!ctx) return {ok: false, status: 500, body: {error: ERROR_ACCOUNT_VANISHED}};
-		return {ok: true, request_context: ctx};
+		if (!ctx) return { ok: false, status: 500, body: { error: ERROR_ACCOUNT_VANISHED } };
+		return { ok: true, request_context: ctx };
 	}
 
 	// actor 'required' or 'optional' — resolve.
@@ -622,23 +627,23 @@ export const apply_authorization_phase = async (
 			if (auth.actor === 'optional') {
 				// Multi-actor account, no pick — fall back to account-only context.
 				const ctx = await build_account_context(deps, account_id);
-				if (!ctx) return {ok: false, status: 500, body: {error: ERROR_ACCOUNT_VANISHED}};
-				return {ok: true, request_context: ctx};
+				if (!ctx) return { ok: false, status: 500, body: { error: ERROR_ACCOUNT_VANISHED } };
+				return { ok: true, request_context: ctx };
 			}
 			return {
 				ok: false,
 				status: 400,
-				body: {error: ERROR_ACTOR_REQUIRED, available: acting.available},
+				body: { error: ERROR_ACTOR_REQUIRED, available: acting.available }
 			};
 		}
 		if (acting.reason === 'actor_not_on_account') {
-			return {ok: false, status: 400, body: {error: ERROR_ACTOR_NOT_ON_ACCOUNT}};
+			return { ok: false, status: 400, body: { error: ERROR_ACTOR_NOT_ON_ACCOUNT } };
 		}
-		return {ok: false, status: 500, body: {error: ERROR_NO_ACTORS_ON_ACCOUNT}};
+		return { ok: false, status: 500, body: { error: ERROR_NO_ACTORS_ON_ACCOUNT } };
 	}
 	const ctx = await build_request_context(deps, account_id, acting.actor_id);
-	if (!ctx) return {ok: false, status: 500, body: {error: ERROR_ACCOUNT_VANISHED}};
-	return {ok: true, request_context: ctx};
+	if (!ctx) return { ok: false, status: 500, body: { error: ERROR_ACCOUNT_VANISHED } };
+	return { ok: true, request_context: ctx };
 };
 
 /**
@@ -662,7 +667,7 @@ export const apply_authorization_phase = async (
  * through `c.var`.
  */
 export const create_fuz_authorization_handler = (
-	deps: QueryDeps,
+	deps: QueryDeps
 ): ((c: Context, spec: RouteSpec) => Promise<Response | void>) => {
 	return async (c, spec) => {
 		// Test escape hatch: harnesses that pre-populate `REQUEST_CONTEXT_KEY`
@@ -697,9 +702,9 @@ export const create_fuz_authorization_handler = (
  * `acting?: ActingActor`.
  */
 const extract_validated_acting = (c: Context): string | undefined => {
-	const validated_input = c.get('validated_input') as {acting?: unknown} | undefined;
+	const validated_input = c.get('validated_input') as { acting?: unknown } | undefined;
 	if (validated_input && typeof validated_input.acting === 'string') return validated_input.acting;
-	const validated_query = c.get('validated_query') as {acting?: unknown} | undefined;
+	const validated_query = c.get('validated_query') as { acting?: unknown } | undefined;
 	if (validated_query && typeof validated_query.acting === 'string') return validated_query.acting;
 	return undefined;
 };

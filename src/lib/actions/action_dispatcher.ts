@@ -13,19 +13,19 @@ import {
 	JsonrpcNotification,
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
-	JsonrpcErrorResponse,
+	JsonrpcErrorResponse
 } from '../http/jsonrpc.ts';
 import {
 	create_jsonrpc_error_response,
 	create_jsonrpc_error_response_from_thrown,
 	to_jsonrpc_message_id,
 	is_jsonrpc_request,
-	is_jsonrpc_notification,
+	is_jsonrpc_notification
 } from '../http/jsonrpc_helpers.ts';
-import {jsonrpc_error_messages} from '../http/jsonrpc_errors.ts';
-import {create_action_event} from './action_event.ts';
-import {Transports, type TransportName, type TransportSendOptions} from './transports.ts';
-import type {ActionEventEnvironment} from './action_event_types.ts';
+import { jsonrpc_error_messages } from '../http/jsonrpc_errors.ts';
+import { create_action_event } from './action_event.ts';
+import { Transports, type TransportName, type TransportSendOptions } from './transports.ts';
+import type { ActionEventEnvironment } from './action_event_types.ts';
 
 // TODO @api @many refactor frontend_actions_api.ts with action_dispatcher.ts
 
@@ -84,26 +84,26 @@ export class ActionDispatcher {
 	// TODO the transport type option here may be bad magic
 	async send(
 		message: JsonrpcRequest,
-		options?: ActionDispatcherSendOptions,
+		options?: ActionDispatcherSendOptions
 	): Promise<JsonrpcResponseOrError>;
 	async send(
 		message: JsonrpcNotification,
-		options?: ActionDispatcherSendOptions,
+		options?: ActionDispatcherSendOptions
 	): Promise<JsonrpcErrorResponse | null>;
 	async send(
 		message: JsonrpcMessageFromClientToServer,
-		options?: ActionDispatcherSendOptions,
+		options?: ActionDispatcherSendOptions
 	): Promise<JsonrpcMessageFromServerToClient | null> {
 		try {
 			const transport = this.transports.get_transport(
-				options?.transport_name ?? this.default_send_options.transport_name,
+				options?.transport_name ?? this.default_send_options.transport_name
 			);
 
 			if (!transport) {
 				this.environment.log?.error('[peer] send failed: no transport available');
 				return create_jsonrpc_error_response(
 					to_jsonrpc_message_id(message),
-					jsonrpc_error_messages.service_unavailable('no transport available'),
+					jsonrpc_error_messages.service_unavailable('no transport available')
 				);
 			}
 
@@ -111,19 +111,19 @@ export class ActionDispatcher {
 			this.environment.log?.debug(
 				`[peer] send ${message_type}:`,
 				message.method,
-				`via ${transport.transport_name}`,
+				`via ${transport.transport_name}`
 			);
 
 			const result = await transport.send(message, {
 				signal: options?.signal,
-				queue: options?.queue ?? this.default_send_options.queue,
+				queue: options?.queue ?? this.default_send_options.queue
 			});
 
 			if (result && 'error' in result) {
 				this.environment.log?.error(
 					`[peer] send ${message_type} failed:`,
 					message.method,
-					result.error.message,
+					result.error.message
 				);
 			}
 
@@ -163,7 +163,7 @@ export class ActionDispatcher {
 		} else {
 			return create_jsonrpc_error_response(
 				to_jsonrpc_message_id(message),
-				jsonrpc_error_messages.invalid_request(),
+				jsonrpc_error_messages.invalid_request()
 			);
 		}
 	}
@@ -174,7 +174,7 @@ export class ActionDispatcher {
 			this.environment.log?.warn(`[peer] receive request: method not found:`, request.method);
 			return create_jsonrpc_error_response(
 				request.id,
-				jsonrpc_error_messages.method_not_found(request.method),
+				jsonrpc_error_messages.method_not_found(request.method)
 			);
 		}
 
@@ -206,7 +206,7 @@ export class ActionDispatcher {
 				this.environment.log?.error(
 					`[peer] receive request failed:`,
 					request.method,
-					event.data.error,
+					event.data.error
 				);
 				return create_jsonrpc_error_response(request.id, event.data.error);
 			}
@@ -224,11 +224,11 @@ export class ActionDispatcher {
 			this.environment.log?.error(
 				`[peer] receive request: unexpected state:`,
 				request.method,
-				event.data,
+				event.data
 			);
 			return create_jsonrpc_error_response(
 				request.id,
-				jsonrpc_error_messages.internal_error('unknown error'),
+				jsonrpc_error_messages.internal_error('unknown error')
 			);
 		} catch (error) {
 			this.environment.log?.error(`[peer] receive request exception:`, request.method, error);
@@ -241,7 +241,7 @@ export class ActionDispatcher {
 		if (!spec) {
 			this.environment.log?.warn(
 				`[peer] receive notification: method not found:`,
-				notification.method,
+				notification.method
 			);
 			return;
 		}
@@ -260,14 +260,14 @@ export class ActionDispatcher {
 				this.environment.log?.error(
 					`[peer] receive notification failed:`,
 					notification.method,
-					event.data.error,
+					event.data.error
 				);
 			}
 		} catch (error) {
 			this.environment.log?.error(
 				`[peer] receive notification exception:`,
 				notification.method,
-				error,
+				error
 			);
 		}
 	}

@@ -6,17 +6,17 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import { describe, assert, test } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	create_mock_runtime,
 	reset_mock_runtime,
 	set_mock_stdin,
-	MockExitError,
+	MockExitError
 } from '$lib/runtime/mock.ts';
 
-import {collect_stream, stream_of} from './byte_stream.ts';
+import { collect_stream, stream_of } from './byte_stream.ts';
 
 describe('create_mock_runtime', () => {
 	test('creates a runtime with default empty state', () => {
@@ -133,7 +133,7 @@ describe('file system', () => {
 	test('mkdir recursive creates intermediate dirs', async () => {
 		const rt = create_mock_runtime();
 
-		await rt.mkdir('/a/b/c', {recursive: true});
+		await rt.mkdir('/a/b/c', { recursive: true });
 
 		assert.ok(rt.mock_dirs.has('/a'));
 		assert.ok(rt.mock_dirs.has('/a/b'));
@@ -185,7 +185,7 @@ describe('streaming file system', () => {
 
 		await rt.write_file_stream(
 			'/out.bin',
-			stream_of([new Uint8Array([1, 2]), new Uint8Array([3]), new Uint8Array([4, 5])]),
+			stream_of([new Uint8Array([1, 2]), new Uint8Array([3]), new Uint8Array([4, 5])])
 		);
 
 		assert.deepStrictEqual(rt.mock_fs_bytes.get('/out.bin'), new Uint8Array([1, 2, 3, 4, 5]));
@@ -255,7 +255,7 @@ describe('commands', () => {
 			success: false,
 			code: 1,
 			stdout: '',
-			stderr: 'fatal',
+			stderr: 'fatal'
 		});
 
 		const result = await rt.run_command('git', ['status']);
@@ -314,7 +314,7 @@ describe('reset_mock_runtime', () => {
 		rt.mock_env.set('X', '1');
 		rt.mock_fs.set('/f', 'c');
 		rt.mock_dirs.add('/d');
-		rt.mock_command_results.set('k', {success: true, code: 0, stdout: '', stderr: ''});
+		rt.mock_command_results.set('k', { success: true, code: 0, stdout: '', stderr: '' });
 		try {
 			rt.exit(0);
 		} catch {

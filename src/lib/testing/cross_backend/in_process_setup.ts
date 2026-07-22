@@ -17,36 +17,36 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type {RouteSpec} from '../../http/route_spec.ts';
-import type {AppSurfaceSpec} from '../../http/surface.ts';
-import type {BootstrapServerOptions} from '../../server/app_server.ts';
-import type {AppServerContext} from '../../server/app_server_context.ts';
-import type {SessionOptions} from '../../auth/session_cookie.ts';
-import {ROLE_KEEPER} from '../../auth/role_schema.ts';
-import {query_create_actor} from '../../auth/account_queries.ts';
+import type { RouteSpec } from '../../http/route_spec.ts';
+import type { AppSurfaceSpec } from '../../http/surface.ts';
+import type { BootstrapServerOptions } from '../../server/app_server.ts';
+import type { AppServerContext } from '../../server/app_server_context.ts';
+import type { SessionOptions } from '../../auth/session_cookie.ts';
+import { ROLE_KEEPER } from '../../auth/role_schema.ts';
+import { query_create_actor } from '../../auth/account_queries.ts';
 import {
 	create_test_app,
 	create_test_account_with_credentials,
 	mint_test_session,
 	type CreateTestAppOptions,
-	type SuiteAppOptions,
+	type SuiteAppOptions
 } from '../app_server.ts';
-import {create_test_app_surface_spec} from '../stubs.ts';
+import { create_test_app_surface_spec } from '../stubs.ts';
 import {
 	http_transport,
 	type RpcTestTransport,
-	type RpcEndpointsSuiteOption,
+	type RpcEndpointsSuiteOption
 } from '../rpc_helpers.ts';
-import {in_process_capabilities, type BackendCapabilities} from './capabilities.ts';
-import type {FetchTransport} from '../transports/fetch_transport.ts';
+import { in_process_capabilities, type BackendCapabilities } from './capabilities.ts';
+import type { FetchTransport } from '../transports/fetch_transport.ts';
 import {
 	build_extra_account_fixture,
 	EXPIRED_SESSION_OFFSET_SECONDS,
 	type SetupTest,
 	type ExtraAccountFixture,
-	type ExtraAccountSpec,
+	type ExtraAccountSpec
 } from './setup.ts';
 
 /**
@@ -59,7 +59,7 @@ import {
 const in_process_fetch_transport = (app: Parameters<typeof http_transport>[0]): FetchTransport => {
 	const call = http_transport(app);
 	const transport = ((url: string, init: RequestInit) => call(url, init)) as RpcTestTransport;
-	return Object.assign(transport, {cookies: (): ReadonlyArray<string> => []}) as FetchTransport;
+	return Object.assign(transport, { cookies: (): ReadonlyArray<string> => [] }) as FetchTransport;
 };
 
 /**
@@ -119,7 +119,7 @@ export const default_in_process_setup =
 		// `grant_paths` excludes `'admin'` (e.g. `ROLE_KEEPER`) — see
 		// `ExtraAccountSpec` for why this bypass is bootstrap-cradle-only.
 		const extra_accounts: Record<string, ExtraAccountFixture> = {};
-		const {cookie_name} = options.session_options;
+		const { cookie_name } = options.session_options;
 		for (const spec of options.extra_accounts ?? []) {
 			const seeded = await create_test_account_with_credentials({
 				db: test_app.backend.deps.db,
@@ -128,7 +128,7 @@ export const default_in_process_setup =
 				password: test_app.backend.deps.password,
 				username: spec.username,
 				password_value: spec.password_value,
-				roles: [...spec.roles],
+				roles: [...spec.roles]
 			});
 			extra_accounts[spec.username] = build_extra_account_fixture(seeded, cookie_name);
 		}
@@ -137,14 +137,14 @@ export const default_in_process_setup =
 		// the cross-process `_testing_reset` `extra_actors` path; no production
 		// wire mints a second actor, so this bootstrap-cradle insert is the
 		// only way into a multi-actor keeper state.
-		const extra_actors: Array<{id: Uuid; name: string}> = [];
+		const extra_actors: Array<{ id: Uuid; name: string }> = [];
 		for (const name of options.extra_actors ?? []) {
 			const seeded_actor = await query_create_actor(
-				{db: test_app.backend.deps.db},
+				{ db: test_app.backend.deps.db },
 				test_app.backend.account.id,
-				name,
+				name
 			);
-			extra_actors.push({id: seeded_actor.id, name: seeded_actor.name});
+			extra_actors.push({ id: seeded_actor.id, name: seeded_actor.name });
 		}
 
 		return {
@@ -164,15 +164,15 @@ export const default_in_process_setup =
 			// Forge directly against the live backend's DB + keyring — no wire
 			// hop needed in-process.
 			mint_expired_session: async () => {
-				const {session_cookie} = await mint_test_session({
+				const { session_cookie } = await mint_test_session({
 					db: test_app.backend.deps.db,
 					keyring: test_app.backend.keyring,
 					session_options: options.session_options,
 					account_id: test_app.backend.account.id,
-					expires_in_seconds: EXPIRED_SESSION_OFFSET_SECONDS,
+					expires_in_seconds: EXPIRED_SESSION_OFFSET_SECONDS
 				});
 				return `${cookie_name}=${session_cookie}`;
-			},
+			}
 		};
 	};
 
@@ -269,7 +269,7 @@ export interface DefaultInProcessSuiteOptions {
  * uniform shape keeps consumer call sites mechanical.
  */
 export const default_in_process_suite_options = <const O extends DefaultInProcessSuiteOptions>(
-	options: O,
+	options: O
 ): {
 	setup_test: SetupTest;
 	surface_source: AppSurfaceSpec;
@@ -286,7 +286,7 @@ export const default_in_process_suite_options = <const O extends DefaultInProces
 		app_options: options.app_options,
 		roles: [ROLE_KEEPER, ...(options.extra_keeper_roles ?? [])],
 		extra_accounts: options.extra_accounts,
-		extra_actors: options.extra_actors,
+		extra_actors: options.extra_actors
 	}),
 	surface_source:
 		options.surface_source ??
@@ -297,10 +297,10 @@ export const default_in_process_suite_options = <const O extends DefaultInProces
 			// Mirror what `create_test_app` → `create_app_server` will mount.
 			// Both helpers read from the top-level `bootstrap` slot so surface
 			// and live app stay in sync by construction.
-			bootstrap: options.bootstrap,
+			bootstrap: options.bootstrap
 		}),
 	capabilities: in_process_capabilities,
 	session_options: options.session_options,
 	create_route_specs: options.create_route_specs,
-	rpc_endpoints: options.rpc_endpoints,
+	rpc_endpoints: options.rpc_endpoints
 });

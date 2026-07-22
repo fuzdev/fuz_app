@@ -24,7 +24,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type {RpcTestTransport} from '../rpc_helpers.ts';
+import type { RpcTestTransport } from '../rpc_helpers.ts';
 
 /** Construction options for `create_fetch_transport`. */
 export interface FetchTransportOptions {
@@ -73,13 +73,13 @@ export interface FetchTransport extends RpcTestTransport {
  * attributes (`Expires`, `Max-Age`, `Path`, `Domain`, `SameSite`)
  * don't affect cross-process test plumbing.
  */
-const parse_set_cookie = (value: string): {name: string; cookie: string} | null => {
+const parse_set_cookie = (value: string): { name: string; cookie: string } | null => {
 	const head = value.split(';', 1)[0]!.trim();
 	const eq = head.indexOf('=');
 	if (eq <= 0) return null;
 	const name = head.slice(0, eq).trim();
 	if (!name) return null;
-	return {name, cookie: head};
+	return { name, cookie: head };
 };
 
 /**
@@ -99,7 +99,7 @@ const parse_set_cookie = (value: string): {name: string; cookie: string} | null 
  * - `Cookie` is set from the jar unless the caller already provided one.
  */
 export const create_fetch_transport = (options: FetchTransportOptions): FetchTransport => {
-	const {base_url, initial_cookies, origin} = options;
+	const { base_url, initial_cookies, origin } = options;
 	const jar: Map<string, string> = new Map();
 	if (initial_cookies) {
 		for (const raw of initial_cookies) {
@@ -120,7 +120,7 @@ export const create_fetch_transport = (options: FetchTransportOptions): FetchTra
 		if (!headers.has('Cookie') && jar.size > 0) {
 			headers.set('Cookie', Array.from(jar.values()).join('; '));
 		}
-		const response = await fetch(target, {...init, headers});
+		const response = await fetch(target, { ...init, headers });
 		// `Headers.getSetCookie()` returns each `Set-Cookie` value as a
 		// separate string — the only way to read multiple cookies set in
 		// one response (Headers.get() collapses to a single comma-joined
@@ -136,7 +136,7 @@ export const create_fetch_transport = (options: FetchTransportOptions): FetchTra
 	// Attach the cookies() accessor onto the callable. Using a property
 	// definition keeps it non-enumerable-ish and avoids polluting `.bind`
 	// / `.call` reflection on the function.
-	Object.defineProperty(transport, 'cookies', {value: cookies, enumerable: false});
+	Object.defineProperty(transport, 'cookies', { value: cookies, enumerable: false });
 
 	return transport;
 };

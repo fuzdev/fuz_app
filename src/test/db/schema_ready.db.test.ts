@@ -14,16 +14,16 @@
  * @module
  */
 
-import {describe, test, assert, beforeAll, afterAll} from 'vitest';
-import {PGlite} from '@electric-sql/pglite';
+import { describe, test, assert, beforeAll, afterAll } from 'vitest';
+import { PGlite } from '@electric-sql/pglite';
 
-import type {Db} from '$lib/db/db.ts';
-import {create_pglite_db} from '$lib/db/db_pglite.ts';
-import {run_migrations} from '$lib/db/migrate.ts';
-import {auth_migration_ns} from '$lib/auth/migrations.ts';
-import {check_schema_drift, query_public_columns} from '$lib/db/schema_ready.ts';
-import {create_ready_route_spec} from '$lib/http/common_routes.ts';
-import {sync_expected_schema_fixture} from '$lib/testing/schema_ready_fixture.ts';
+import type { Db } from '$lib/db/db.ts';
+import { create_pglite_db } from '$lib/db/db_pglite.ts';
+import { run_migrations } from '$lib/db/migrate.ts';
+import { auth_migration_ns } from '$lib/auth/migrations.ts';
+import { check_schema_drift, query_public_columns } from '$lib/db/schema_ready.ts';
+import { create_ready_route_spec } from '$lib/http/common_routes.ts';
+import { sync_expected_schema_fixture } from '$lib/testing/schema_ready_fixture.ts';
 
 const FIXTURE_URL = new URL('./expected_auth_schema.json', import.meta.url);
 
@@ -43,10 +43,10 @@ afterAll(async () => {
 
 describe('schema_ready', () => {
 	test('committed expected_auth_schema.json matches a fresh auth bootstrap', async () => {
-		const {live, committed} = await sync_expected_schema_fixture({
+		const { live, committed } = await sync_expected_schema_fixture({
 			db,
 			fixture_url: FIXTURE_URL,
-			update: process.env.UPDATE_SCHEMA_READY === '1',
+			update: process.env.UPDATE_SCHEMA_READY === '1'
 		});
 		assert.deepEqual(live, committed);
 	});
@@ -68,28 +68,28 @@ describe('schema_ready', () => {
 
 	test('check_schema_drift flags a missing column', async () => {
 		const drift = await check_schema_drift(db, {
-			account: ['id', 'deleted_at', 'nonexistent_col'],
+			account: ['id', 'deleted_at', 'nonexistent_col']
 		});
 		assert.ok(!drift.ok);
-		assert.deepEqual(drift.missing_columns, [{table: 'account', columns: ['nonexistent_col']}]);
+		assert.deepEqual(drift.missing_columns, [{ table: 'account', columns: ['nonexistent_col'] }]);
 		assert.deepEqual(drift.missing_tables, []);
 	});
 
 	test('check_schema_drift flags a missing table', async () => {
-		const drift = await check_schema_drift(db, {nonexistent_table: ['id']});
+		const drift = await check_schema_drift(db, { nonexistent_table: ['id'] });
 		assert.ok(!drift.ok);
 		assert.deepEqual(drift.missing_tables, ['nonexistent_table']);
 	});
 
 	test('check_schema_drift ignores extra live columns (forward-compatible)', async () => {
 		// Expect only a subset — extra live columns must not fail readiness.
-		const drift = await check_schema_drift(db, {account: ['id', 'username']});
+		const drift = await check_schema_drift(db, { account: ['id', 'username'] });
 		assert.ok(drift.ok);
 	});
 
 	test('create_ready_route_spec throws on an empty expected map (fail-loud, no silent pass)', () => {
 		// An empty expectation would answer 200 for any live DB, silently
 		// disabling the gate — catch the misconfiguration at assembly, not in prod.
-		assert.throws(() => create_ready_route_spec({expected: {}}), /empty/);
+		assert.throws(() => create_ready_route_spec({ expected: {} }), /empty/);
 	});
 });

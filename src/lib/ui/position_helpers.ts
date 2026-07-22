@@ -4,7 +4,7 @@
  * @module
  */
 
-import {UnreachableError} from '@fuzdev/fuz_util/error.ts';
+import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 
 /**
  * Basic position options for UI elements (cardinal directions).
@@ -30,11 +30,11 @@ export type Alignment = 'start' | 'center' | 'end';
 export const generate_position_styles = (
 	position: Position = 'center',
 	align: Alignment = 'center',
-	offset = '0',
+	offset = '0'
 ): Record<string, string> => {
 	const styles: Record<string, string> = {
 		position: 'absolute',
-		'z-index': '10',
+		'z-index': '10'
 	};
 
 	// Check if there's an offset to apply

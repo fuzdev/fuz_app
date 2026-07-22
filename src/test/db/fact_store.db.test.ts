@@ -18,22 +18,22 @@
  * @module
  */
 
-import {test, assert} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
-import {fact_hash_bytes, fact_hash_verify, type FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
+import { test, assert } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
+import { fact_hash_bytes, fact_hash_verify, type FactHash } from '@fuzdev/fuz_util/fact_hash.ts';
 
 import {
 	create_pglite_factory,
 	create_pg_factory,
 	create_describe_db,
-	log_db_factory_status,
+	log_db_factory_status
 } from '$lib/testing/db.ts';
-import {create_pglet_factory} from '../db_pglet_factory.ts';
-import {create_pglet_wasm_factory} from '../db_pglet_wasm_factory.ts';
-import {run_migrations} from '$lib/db/migrate.ts';
-import {FACT_MIGRATION_NS, FACT_DROP_TABLES} from '$lib/db/fact_ddl.ts';
-import {PgFactStore, type FactExternalFetcher} from '$lib/db/fact_store.ts';
-import type {Db} from '$lib/db/db.ts';
+import { create_pglet_factory } from '../db_pglet_factory.ts';
+import { create_pglet_wasm_factory } from '../db_pglet_wasm_factory.ts';
+import { run_migrations } from '$lib/db/migrate.ts';
+import { FACT_MIGRATION_NS, FACT_DROP_TABLES } from '$lib/db/fact_ddl.ts';
+import { PgFactStore, type FactExternalFetcher } from '$lib/db/fact_store.ts';
+import type { Db } from '$lib/db/db.ts';
 
 const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [FACT_MIGRATION_NS]);
@@ -43,7 +43,7 @@ const fact_factories = [
 	create_pglite_factory(init_schema),
 	create_pg_factory(init_schema, process.env.TEST_DATABASE_URL),
 	create_pglet_factory(init_schema),
-	create_pglet_wasm_factory(init_schema),
+	create_pglet_wasm_factory(init_schema)
 ];
 log_db_factory_status(fact_factories);
 
@@ -67,9 +67,9 @@ const stub_fetcher = (responses: ReadonlyMap<string, Uint8Array>): FactExternalF
 			start(controller) {
 				controller.enqueue(bytes);
 				controller.close();
-			},
+			}
 		});
-	},
+	}
 });
 
 describe_db('pg_fact_store', (get_db) => {
@@ -78,11 +78,11 @@ describe_db('pg_fact_store', (get_db) => {
 		embedded_threshold?: number;
 	}): PgFactStore =>
 		new PgFactStore({
-			deps: {db: get_db()},
-			...(overrides?.fetcher ? {fetcher: overrides.fetcher} : {}),
+			deps: { db: get_db() },
+			...(overrides?.fetcher ? { fetcher: overrides.fetcher } : {}),
 			...(overrides?.embedded_threshold !== undefined
-				? {embedded_threshold: overrides.embedded_threshold}
-				: {}),
+				? { embedded_threshold: overrides.embedded_threshold }
+				: {})
 		});
 
 	test('put is idempotent: same bytes twice → same hash, one row', async () => {
@@ -94,9 +94,9 @@ describe_db('pg_fact_store', (get_db) => {
 		assert.equal(hash_a, hash_b);
 		assert.equal(hash_a, fact_hash_bytes(bytes));
 
-		const rows = await get_db().query<{count: string | number}>(
+		const rows = await get_db().query<{ count: string | number }>(
 			`SELECT COUNT(*)::int AS count FROM fact WHERE hash = $1`,
-			[hash_a],
+			[hash_a]
 		);
 		assert.equal(Number(rows[0]!.count), 1);
 	});
@@ -119,7 +119,7 @@ describe_db('pg_fact_store', (get_db) => {
 
 		const manifest = await store.put(encode('opaque binary manifest'), {
 			content_type: 'application/octet-stream',
-			refs: [cover, detail],
+			refs: [cover, detail]
 		});
 
 		const refs = await store.get_refs(manifest);
@@ -137,10 +137,10 @@ describe_db('pg_fact_store', (get_db) => {
 			cover,
 			items: [item],
 			label: 'Auto-extract test',
-			fake_hex_not_a_ref: 'af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262',
+			fake_hex_not_a_ref: 'af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262'
 		});
 		const manifest_hash = await store.put(encode(manifest_json), {
-			content_type: 'application/json',
+			content_type: 'application/json'
 		});
 
 		const refs = await store.get_refs(manifest_hash);
@@ -150,9 +150,9 @@ describe_db('pg_fact_store', (get_db) => {
 	test('binary content with no explicit refs records no refs', async () => {
 		const store = make_store();
 		// JSON-shaped string but content_type is octet-stream → should NOT auto-extract
-		const json_text = JSON.stringify({cover: FAKE_BLAKE});
+		const json_text = JSON.stringify({ cover: FAKE_BLAKE });
 		const hash = await store.put(encode(json_text), {
-			content_type: 'application/octet-stream',
+			content_type: 'application/octet-stream'
 		});
 		const refs = await store.get_refs(hash);
 		assert.deepEqual(refs, []);
@@ -168,7 +168,7 @@ describe_db('pg_fact_store', (get_db) => {
 	test('get_meta returns content_type, size, created_at, external=false', async () => {
 		const store = make_store();
 		const bytes = encode('meta probe');
-		const hash = await store.put(bytes, {content_type: 'text/plain'});
+		const hash = await store.put(bytes, { content_type: 'text/plain' });
 
 		const meta = await store.get_meta(hash);
 		assert(meta !== null);
@@ -179,7 +179,7 @@ describe_db('pg_fact_store', (get_db) => {
 	});
 
 	test('put rejects bytes over the embedded threshold', async () => {
-		const store = make_store({embedded_threshold: 16});
+		const store = make_store({ embedded_threshold: 16 });
 		const bytes = encode('this string is definitely longer than sixteen bytes');
 		await assert_rejects(() => store.put(bytes), /embedded threshold/);
 	});
@@ -188,11 +188,11 @@ describe_db('pg_fact_store', (get_db) => {
 		const url = 'https://example.test/large.png';
 		const bytes = encode('pretend-this-is-a-large-image');
 		const fetcher = stub_fetcher(new Map([[url, bytes]]));
-		const store = make_store({fetcher});
+		const store = make_store({ fetcher });
 
 		const hash = await store.put_ref(url, bytes.length, {
 			content_type: 'image/png',
-			refs: [],
+			refs: []
 		});
 		assert.equal(hash, fact_hash_bytes(bytes));
 
@@ -211,11 +211,11 @@ describe_db('pg_fact_store', (get_db) => {
 		const url = 'https://example.test/short.bin';
 		const bytes = encode('actual content');
 		const fetcher = stub_fetcher(new Map([[url, bytes]]));
-		const store = make_store({fetcher});
+		const store = make_store({ fetcher });
 
 		await assert_rejects(
-			() => store.put_ref(url, bytes.length + 5, {content_type: 'application/octet-stream'}),
-			/size mismatch/,
+			() => store.put_ref(url, bytes.length + 5, { content_type: 'application/octet-stream' }),
+			/size mismatch/
 		);
 	});
 
@@ -229,7 +229,7 @@ describe_db('pg_fact_store', (get_db) => {
 		// path so retrieval sees mismatched bytes.
 		const fetcher_responses = new Map([[url, original]]);
 		const fetcher = stub_fetcher(fetcher_responses);
-		const store = make_store({fetcher});
+		const store = make_store({ fetcher });
 
 		const hash = await store.put_ref(url, original.length);
 		fetcher_responses.set(url, tampered);
@@ -263,7 +263,7 @@ describe_db('pg_fact_store', (get_db) => {
 		const url = 'https://example.test/external.bin';
 		const bytes = encode('external content');
 		const fetcher = stub_fetcher(new Map([[url, bytes]]));
-		const store = make_store({fetcher});
+		const store = make_store({ fetcher });
 
 		const hash = await store.put_ref(url, bytes.length);
 		const result = await store.delete(hash);

@@ -4,11 +4,11 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import {z} from 'zod';
+import { describe, assert, test } from 'vitest';
+import { z } from 'zod';
 
-import {JSONRPC_INTERNAL_ERROR} from '$lib/http/jsonrpc.ts';
-import type {ActionEventData, ActionEventDataUnion} from '$lib/actions/action_event_data.ts';
+import { JSONRPC_INTERNAL_ERROR } from '$lib/http/jsonrpc.ts';
+import type { ActionEventData, ActionEventDataUnion } from '$lib/actions/action_event_data.ts';
 import {
 	is_request_response,
 	is_remote_notification,
@@ -26,11 +26,11 @@ import {
 	should_validate_output,
 	is_action_complete,
 	create_initial_data,
-	extract_action_result,
+	extract_action_result
 } from '$lib/actions/action_event_helpers.ts';
-import {ActionEvent} from '$lib/actions/action_event.ts';
-import type {ActionEventEnvironment} from '$lib/actions/action_event_types.ts';
-import type {RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
+import { ActionEvent } from '$lib/actions/action_event.ts';
+import type { ActionEventEnvironment } from '$lib/actions/action_event_types.ts';
+import type { RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
 
 describe('kind type guards', () => {
 	test('is_request_response', () => {
@@ -110,7 +110,7 @@ describe('validate_phase_transition', () => {
 	test('rejects send_request → send_response', () => {
 		assert.throws(
 			() => validate_phase_transition('send_request', 'send_response'),
-			/Invalid phase transition/,
+			/Invalid phase transition/
 		);
 	});
 });
@@ -119,7 +119,7 @@ describe('get_initial_phase', () => {
 	test('frontend executor for frontend-initiated request_response', () => {
 		assert.strictEqual(
 			get_initial_phase('request_response', 'frontend', 'frontend'),
-			'send_request',
+			'send_request'
 		);
 	});
 
@@ -164,7 +164,7 @@ describe('is_action_complete', () => {
 		const data = {
 			...create_initial_data('request_response', 'send_request', 'test', 'frontend', null),
 			step: 'failed' as const,
-			error: {code: JSONRPC_INTERNAL_ERROR, message: 'test'},
+			error: { code: JSONRPC_INTERNAL_ERROR, message: 'test' }
 		} as ActionEventData;
 		assert.ok(is_action_complete(data));
 	});
@@ -172,7 +172,7 @@ describe('is_action_complete', () => {
 	test('handled in terminal phase is complete', () => {
 		const data = {
 			...create_initial_data('request_response', 'receive_response', 'test', 'frontend', null),
-			step: 'handled' as const,
+			step: 'handled' as const
 		};
 		assert.ok(is_action_complete(data));
 	});
@@ -180,7 +180,7 @@ describe('is_action_complete', () => {
 	test('handled in non-terminal phase is not complete', () => {
 		const data = {
 			...create_initial_data('request_response', 'send_request', 'test', 'frontend', null),
-			step: 'handled' as const,
+			step: 'handled' as const
 		};
 		assert.ok(!is_action_complete(data));
 	});
@@ -189,14 +189,14 @@ describe('is_action_complete', () => {
 describe('create_initial_data', () => {
 	test('creates data with all expected fields', () => {
 		const data = create_initial_data('request_response', 'send_request', 'my_method', 'frontend', {
-			foo: 'bar',
+			foo: 'bar'
 		});
 		assert.strictEqual(data.kind, 'request_response');
 		assert.strictEqual(data.phase, 'send_request');
 		assert.strictEqual(data.step, 'initial');
 		assert.strictEqual(data.method, 'my_method');
 		assert.strictEqual(data.executor, 'frontend');
-		assert.deepStrictEqual(data.input, {foo: 'bar'});
+		assert.deepStrictEqual(data.input, { foo: 'bar' });
 		assert.isNull(data.output);
 		assert.isNull(data.error);
 		assert.isNull(data.progress);
@@ -211,41 +211,41 @@ describe('extract_action_result', () => {
 		method: 'test',
 		kind: 'request_response',
 		initiator: 'frontend',
-		auth: {account: 'required', actor: 'none'},
+		auth: { account: 'required', actor: 'none' },
 		side_effects: false,
 		async: true,
 		input: z.strictObject({}),
-		output: z.strictObject({n: z.number()}),
-		description: 'test',
+		output: z.strictObject({ n: z.number() }),
+		description: 'test'
 	} satisfies RequestResponseActionSpec;
 	const environment: ActionEventEnvironment = {
 		executor: 'frontend',
 		lookup_action_spec: () => undefined,
-		lookup_action_handler: () => undefined,
+		lookup_action_handler: () => undefined
 	};
 
 	test('handled step on success returns ok=true with value', () => {
 		const data = {
 			...create_initial_data('request_response', 'receive_response', 'test', 'frontend', {}),
 			step: 'handled' as const,
-			output: {n: 1},
+			output: { n: 1 }
 		} as ActionEventDataUnion;
 		const event = new ActionEvent(environment, spec, data);
 		const result = extract_action_result(event);
-		assert.deepStrictEqual(result, {ok: true, value: {n: 1}});
+		assert.deepStrictEqual(result, { ok: true, value: { n: 1 } });
 	});
 
 	test('failed step returns ok=false with error', () => {
 		const data = {
 			...create_initial_data('request_response', 'send_request', 'test', 'frontend', {}),
 			step: 'failed' as const,
-			error: {code: JSONRPC_INTERNAL_ERROR, message: 'boom'},
+			error: { code: JSONRPC_INTERNAL_ERROR, message: 'boom' }
 		} as ActionEventDataUnion;
 		const event = new ActionEvent(environment, spec, data);
 		const result = extract_action_result(event);
 		assert.deepStrictEqual(result, {
 			ok: false,
-			error: {code: JSONRPC_INTERNAL_ERROR, message: 'boom'},
+			error: { code: JSONRPC_INTERNAL_ERROR, message: 'boom' }
 		});
 	});
 
@@ -257,13 +257,13 @@ describe('extract_action_result', () => {
 		const data = {
 			...create_initial_data('request_response', 'receive_error', 'test', 'frontend', {}),
 			step: 'handled' as const,
-			error: {code: JSONRPC_INTERNAL_ERROR, message: 'server error'},
+			error: { code: JSONRPC_INTERNAL_ERROR, message: 'server error' }
 		} as ActionEventDataUnion;
 		const event = new ActionEvent(environment, spec, data);
 		const result = extract_action_result(event);
 		assert.deepStrictEqual(result, {
 			ok: false,
-			error: {code: JSONRPC_INTERNAL_ERROR, message: 'server error'},
+			error: { code: JSONRPC_INTERNAL_ERROR, message: 'server error' }
 		});
 	});
 
@@ -271,13 +271,13 @@ describe('extract_action_result', () => {
 		const data = {
 			...create_initial_data('request_response', 'send_error', 'test', 'frontend', {}),
 			step: 'handled' as const,
-			error: {code: JSONRPC_INTERNAL_ERROR, message: 'send failed'},
+			error: { code: JSONRPC_INTERNAL_ERROR, message: 'send failed' }
 		} as ActionEventDataUnion;
 		const event = new ActionEvent(environment, spec, data);
 		const result = extract_action_result(event);
 		assert.deepStrictEqual(result, {
 			ok: false,
-			error: {code: JSONRPC_INTERNAL_ERROR, message: 'send failed'},
+			error: { code: JSONRPC_INTERNAL_ERROR, message: 'send failed' }
 		});
 	});
 
@@ -287,7 +287,7 @@ describe('extract_action_result', () => {
 			'send_request',
 			'test',
 			'frontend',
-			{},
+			{}
 		) as ActionEventDataUnion;
 		const event = new ActionEvent(environment, spec, data);
 		assert.throws(() => extract_action_result(event), /non-terminal/);

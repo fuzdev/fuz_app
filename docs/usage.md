@@ -12,25 +12,25 @@ by middleware; handlers access validated data via `get_route_input(c, schema)`,
 which infers the typed shape from the schema directly.
 
 ```typescript
-import {get_route_input, type RouteSpec} from '@fuzdev/fuz_app/http/route_spec.ts';
-import {z} from 'zod';
+import { get_route_input, type RouteSpec } from '@fuzdev/fuz_app/http/route_spec.ts';
+import { z } from 'zod';
 
-const My_Input = z.strictObject({name: z.string().min(1)});
-const My_Output = z.strictObject({ok: z.literal(true), id: z.string()});
+const My_Input = z.strictObject({ name: z.string().min(1) });
+const My_Output = z.strictObject({ ok: z.literal(true), id: z.string() });
 
 const my_route_spec: RouteSpec = {
 	method: 'POST',
 	path: '/things',
-	auth: {account: 'required', actor: 'required', roles: ['admin']},
+	auth: { account: 'required', actor: 'required', roles: ['admin'] },
 	description: 'Create a thing',
 	input: My_Input,
 	output: My_Output,
-	errors: {409: ForeignKeyError}, // handler-specific; overrides auto-derived
+	errors: { 409: ForeignKeyError }, // handler-specific; overrides auto-derived
 	handler: async (c) => {
-		const {name} = get_route_input(c, My_Input); // typed as {name: string}
+		const { name } = get_route_input(c, My_Input); // typed as {name: string}
 		const id = create_thing(name);
-		return c.json({ok: true, id});
-	},
+		return c.json({ ok: true, id });
+	}
 };
 ```
 
@@ -82,12 +82,12 @@ _expectation_ (it adds its own tables), so adoption is three small pieces:
    ```ts
    import {
    	create_ready_route_spec,
-   	load_expected_schema,
+   	load_expected_schema
    } from '@fuzdev/fuz_app/http/common_routes.ts';
 
    create_ready_route_spec({
    	expected: load_expected_schema(new URL('./expected_schema.json', import.meta.url)),
-   	log: ctx.deps.log,
+   	log: ctx.deps.log
    });
    ```
 
@@ -106,10 +106,10 @@ _expectation_ (it adds its own tables), so adoption is three small pieces:
    your full migration chain, then
 
    ```ts
-   const {live, committed} = await sync_expected_schema_fixture({
+   const { live, committed } = await sync_expected_schema_fixture({
    	db,
    	fixture_url: new URL('../../lib/server/expected_schema.json', import.meta.url),
-   	update: process.env.UPDATE_SCHEMA_READY === '1',
+   	update: process.env.UPDATE_SCHEMA_READY === '1'
    });
    assert.deepEqual(live, committed);
    ```
@@ -134,11 +134,11 @@ then `create_app_server()` assembles the Hono app. `validate_server_env()`
 bridges the loaded env to the validated artifacts needed:
 
 ```typescript
-import {load_env} from '@fuzdev/fuz_app/env/load.ts';
-import {create_app_backend} from '@fuzdev/fuz_app/server/app_backend.ts';
-import {create_app_server} from '@fuzdev/fuz_app/server/app_server.ts';
-import {validate_server_env} from '@fuzdev/fuz_app/server/env.ts';
-import {create_audit_emitter} from '@fuzdev/fuz_app/auth/audit_emitter.ts';
+import { load_env } from '@fuzdev/fuz_app/env/load.ts';
+import { create_app_backend } from '@fuzdev/fuz_app/server/app_backend.ts';
+import { create_app_server } from '@fuzdev/fuz_app/server/app_server.ts';
+import { validate_server_env } from '@fuzdev/fuz_app/server/env.ts';
+import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
 
 // 1. Load env, validate (caller handles errors)
 const env = load_env(app_env_schema, (key) => Deno.env.get(key));
@@ -146,7 +146,7 @@ const env_config = validate_server_env(env);
 if (!env_config.ok) {
 	/* log env_config.field + env_config.errors, exit */
 }
-const {keyring, allowed_origins, bootstrap_token_path} = env_config;
+const { keyring, allowed_origins, bootstrap_token_path } = env_config;
 
 // 2. Init backend (DB + auth migrations + deps with fs)
 //
@@ -158,10 +158,10 @@ const {keyring, allowed_origins, bootstrap_token_path} = env_config;
 const audit_log_config = create_audit_log_config({
 	extra_events: {
 		// Either a Zod schema (validates metadata):
-		thing_created: z.looseObject({thing_id: z.string(), name: z.string()}),
+		thing_created: z.looseObject({ thing_id: z.string(), name: z.string() }),
 		// …or `null` (registers the event_type without metadata validation):
-		thing_archived: null,
-	},
+		thing_archived: null
+	}
 });
 
 const backend = await create_app_backend({
@@ -171,7 +171,7 @@ const backend = await create_app_backend({
 	stat: async (p) => {
 		try {
 			const s = await Deno.stat(p);
-			return {is_file: s.isFile, is_directory: s.isDirectory};
+			return { is_file: s.isFile, is_directory: s.isDirectory };
 		} catch {
 			return null;
 		}
@@ -180,36 +180,36 @@ const backend = await create_app_backend({
 	delete_file: (p) => Deno.remove(p),
 	// audit_factory runs after create_db + migrations; the consumer owns
 	// subscriber-chain composition and AuditLogConfig selection.
-	audit_factory: ({db, log}) => create_audit_emitter({db, log, audit_log_config}),
+	audit_factory: ({ db, log }) => create_audit_emitter({ db, log, audit_log_config })
 });
 
 // 3. Assemble Hono app
-const {app, surface_spec, bootstrap_status, close} = await create_app_server({
+const { app, surface_spec, bootstrap_status, close } = await create_app_server({
 	backend,
 	session_options: create_session_config('my_session'),
 	allowed_origins,
 	proxy: {
 		trusted_proxies: ['127.0.0.1', '::1'],
-		get_connection_ip: (c) => getConnInfo(c).remote.address,
+		get_connection_ip: (c) => getConnInfo(c).remote.address
 	},
 	// Discriminated union — explicit 'disabled' branch is the reviewable
 	// "no bootstrap configured" wiring; conditional on env presence.
 	bootstrap: bootstrap_token_path
 		? {
 				mode: 'live',
-				token_path: bootstrap_token_path,
+				token_path: bootstrap_token_path
 				// on_bootstrap: async (result, c) => { /* optional post-bootstrap work */ },
 				// route_prefix: '/api/account',  // default
 			}
-		: {mode: 'disabled'},
-	migration_namespaces: [{namespace: 'my_app', migrations: MY_APP_MIGRATIONS}],
+		: { mode: 'disabled' },
+	migration_namespaces: [{ namespace: 'my_app', migrations: MY_APP_MIGRATIONS }],
 	create_route_specs: (ctx) => [
 		create_health_route_spec(),
 		create_ready_route_spec({
 			expected: load_expected_schema(new URL('./expected_schema.json', import.meta.url)),
-			log: ctx.deps.log,
+			log: ctx.deps.log
 		}),
-		...prefix_route_specs('/api', app_specific_routes(ctx)),
+		...prefix_route_specs('/api', app_specific_routes(ctx))
 	],
 	// surface_route: false,  // disable auto-created GET /api/surface
 	audit_log_sse: true, // factory-managed audit SSE (auto-registers its listener via backend.deps.audit.add_listener + adds event specs)
@@ -227,12 +227,12 @@ const {app, surface_spec, bootstrap_status, close} = await create_app_server({
 				...my_app_rpc_actions(ctx.deps),
 				...create_standard_rpc_actions(ctx.deps, {
 					app_settings: ctx.app_settings,
-					notification_sender: ws_transport, // optional; for role-grant-offer WS fan-out
-				}),
-			],
-		},
+					notification_sender: ws_transport // optional; for role-grant-offer WS fan-out
+				})
+			]
+		}
 	],
-	static_serving: {serve_static, spa_fallback: '/200.html'},
+	static_serving: { serve_static, spa_fallback: '/200.html' }
 });
 ```
 
@@ -250,10 +250,10 @@ plus `create_standard_rpc_actions(ctx.deps, …)` into `create_app_server`'s
 `ws_endpoints` factory and supply `upgradeWebSocket` at the top level:
 
 ```typescript
-import {upgradeWebSocket} from '@hono/node-ws'; // or 'hono/deno'
-import {protocol_actions} from '@fuzdev/fuz_app/actions/protocol.ts';
+import { upgradeWebSocket } from '@hono/node-ws'; // or 'hono/deno'
+import { protocol_actions } from '@fuzdev/fuz_app/actions/protocol.ts';
 
-const {app, ws_endpoints} = await create_app_server({
+const { app, ws_endpoints } = await create_app_server({
 	// …other options…
 	upgradeWebSocket,
 	ws_endpoints: (ctx) => [
@@ -263,12 +263,12 @@ const {app, ws_endpoints} = await create_app_server({
 			actions: [
 				...protocol_actions,
 				...create_standard_rpc_actions(ctx.deps, {
-					app_settings: ctx.app_settings,
+					app_settings: ctx.app_settings
 				}),
-				...my_app_ws_actions(ctx.deps),
-			],
-		},
-	],
+				...my_app_ws_actions(ctx.deps)
+			]
+		}
+	]
 });
 
 // Retain the transport for broadcasts / fan-out:
@@ -302,8 +302,8 @@ pass `max_body_size` to override or `null` to disable.
 ## SSE Endpoints
 
 ```typescript
-import {create_sse_response, type SseNotification} from '@fuzdev/fuz_app/realtime/sse.ts';
-import {SubscriberRegistry} from '@fuzdev/fuz_app/realtime/subscriber_registry.ts';
+import { create_sse_response, type SseNotification } from '@fuzdev/fuz_app/realtime/sse.ts';
+import { SubscriberRegistry } from '@fuzdev/fuz_app/realtime/subscriber_registry.ts';
 
 const registry = new SubscriberRegistry<SseNotification>();
 
@@ -311,23 +311,23 @@ const registry = new SubscriberRegistry<SseNotification>();
 const subscribe_spec: RouteSpec = {
 	method: 'GET',
 	path: '/subscribe',
-	auth: {account: 'required', actor: 'required', roles: ['admin']},
+	auth: { account: 'required', actor: 'required', roles: ['admin'] },
 	description: 'Subscribe to events',
 	input: z.null(),
 	output: z.null(),
 	handler: (c) => {
-		const {response, stream} = create_sse_response<SseNotification>(c, log);
-		const unsubscribe = registry.subscribe(stream, {channels: ['things']});
+		const { response, stream } = create_sse_response<SseNotification>(c, log);
+		const unsubscribe = registry.subscribe(stream, { channels: ['things'] });
 		c.req.raw.signal.addEventListener('abort', () => {
 			unsubscribe();
 			stream.close();
 		});
 		return response;
-	},
+	}
 };
 
 // Broadcast from any handler
-registry.broadcast('things', {method: 'thing_created', params: {id, name}});
+registry.broadcast('things', { method: 'thing_created', params: { id, name } });
 ```
 
 Channels filter broadcasts — `subscribe(stream, {channels: ['things']})` only
@@ -343,13 +343,13 @@ change. The simplest way to wire audit SSE is the factory-managed option on
 
 ```typescript
 // Factory-managed (recommended):
-const {app, audit_sse} = await create_app_server({
+const { app, audit_sse } = await create_app_server({
 	// ...other options...
 	audit_log_sse: true, // or {role: 'custom_role'}
 	create_route_specs: (ctx) => [
-		...create_audit_log_route_specs({stream: ctx.audit_sse!}),
+		...create_audit_log_route_specs({ stream: ctx.audit_sse! })
 		// ...other routes
-	],
+	]
 });
 ```
 
@@ -400,20 +400,20 @@ runs alongside the consumer's callback, and auto-appends
 and DEV-only validation via `create_validated_broadcaster()`:
 
 ```typescript
-import {type EventSpec, create_validated_broadcaster} from '@fuzdev/fuz_app/realtime/sse.ts';
+import { type EventSpec, create_validated_broadcaster } from '@fuzdev/fuz_app/realtime/sse.ts';
 
 const event_specs: Array<EventSpec> = [
 	{
 		method: 'thing_created',
-		params: z.strictObject({id: z.string()}),
+		params: z.strictObject({ id: z.string() }),
 		description: 'Created',
-		channel: 'things',
-	},
+		channel: 'things'
+	}
 ];
 
 // Wrap registry for DEV validation (zero overhead in production)
 const validated = create_validated_broadcaster(registry, event_specs, log);
-validated.broadcast('things', {method: 'thing_created', params: {id: '1'}});
+validated.broadcast('things', { method: 'thing_created', params: { id: '1' } });
 ```
 
 ## Canonical action-spec shape
@@ -425,17 +425,17 @@ need for separate `*_METHOD` constants, and lines up with the
 `to_action_spec_identifier()` convention used by codegen.
 
 ```typescript
-import type {RequestResponseActionSpec} from '@fuzdev/fuz_app/actions/action_spec.ts';
-import {ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.ts';
-import {ActingActor} from '@fuzdev/fuz_app/http/auth_shape.ts';
+import type { RequestResponseActionSpec } from '@fuzdev/fuz_app/actions/action_spec.ts';
+import { ROLE_ADMIN } from '@fuzdev/fuz_app/auth/role_schema.ts';
+import { ActingActor } from '@fuzdev/fuz_app/http/auth_shape.ts';
 
 // Input/output schemas: strict objects, paired with same-named z.infer exports.
 // `acting?: ActingActor` is required on every input whose spec sets
 // `actor: 'required'` — registry-time invariant 2 enforces the biconditional.
-export const ThingCreateInput = z.strictObject({name: z.string(), acting: ActingActor});
+export const ThingCreateInput = z.strictObject({ name: z.string(), acting: ActingActor });
 export type ThingCreateInput = z.infer<typeof ThingCreateInput>;
 
-export const ThingCreateOutput = z.strictObject({id: z.string()});
+export const ThingCreateOutput = z.strictObject({ id: z.string() });
 export type ThingCreateOutput = z.infer<typeof ThingCreateOutput>;
 
 // Module-scope spec. `satisfies` narrows to the literal method string while
@@ -444,12 +444,12 @@ export const thing_create_action_spec = {
 	method: 'thing_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
+	auth: { account: 'required', actor: 'required', roles: [ROLE_ADMIN] },
 	side_effects: true,
 	input: ThingCreateInput,
 	output: ThingCreateOutput,
 	async: true,
-	description: 'Create a thing. Admin-only.',
+	description: 'Create a thing. Admin-only.'
 } satisfies RequestResponseActionSpec;
 
 // Registry — consumers spread this into their own action-spec array for
@@ -469,21 +469,21 @@ export interface ThingActionOptions {
 
 export const create_thing_actions = (
 	deps: ActionFactoryDeps,
-	options: ThingActionOptions = {},
+	options: ThingActionOptions = {}
 ): Array<RpcAction> => {
 	const actions: Array<RpcAction> = [];
 
 	const thing_create_handler: ActionHandler<ThingCreateInput, ThingCreateOutput> = async (
 		input,
-		ctx,
+		ctx
 	) => {
 		const id = await create_thing(ctx.db, input.name);
-		return {id};
+		return { id };
 	};
 
 	actions.push({
 		spec: thing_create_action_spec,
-		handler: thing_create_handler as RpcAction['handler'],
+		handler: thing_create_handler as RpcAction['handler']
 	});
 
 	// Conditional handlers — the spec stays in `all_thing_action_specs`
@@ -491,13 +491,13 @@ export const create_thing_actions = (
 	// when the necessary option is provided. Callers without the option
 	// get `method_not_found` instead of a malformed handler.
 	if (options.shared_state) {
-		const {shared_state} = options;
+		const { shared_state } = options;
 		actions.push({
 			spec: thing_mutate_action_spec,
 			handler: (async (input, ctx) => {
 				shared_state.value = input.value;
 				/* ... */
-			}) as RpcAction['handler'],
+			}) as RpcAction['handler']
 		});
 	}
 
@@ -514,22 +514,22 @@ driving an integration test through `rpc_call`) — no need to keep a parallel
 Action specs define the contract; bridge functions produce transport-specific specs:
 
 ```typescript
-import type {ActionSpec} from '@fuzdev/fuz_app/actions/action_spec.ts';
+import type { ActionSpec } from '@fuzdev/fuz_app/actions/action_spec.ts';
 import {
 	create_action_route_spec,
-	create_action_event_spec,
+	create_action_event_spec
 } from '@fuzdev/fuz_app/actions/action_bridge.ts';
 
 const thing_create_action: ActionSpec = {
 	method: 'thing_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none'},
+	auth: { account: 'required', actor: 'none' },
 	side_effects: true,
 	async: true,
-	input: z.strictObject({name: z.string()}),
-	output: z.strictObject({id: z.string()}),
-	description: 'Create a thing',
+	input: z.strictObject({ name: z.string() }),
+	output: z.strictObject({ id: z.string() }),
+	description: 'Create a thing'
 };
 
 const thing_created_action: ActionSpec = {
@@ -539,9 +539,9 @@ const thing_created_action: ActionSpec = {
 	auth: null,
 	side_effects: true,
 	async: true,
-	input: z.strictObject({id: z.string()}),
+	input: z.strictObject({ id: z.string() }),
 	output: z.void(),
-	description: 'A thing was created',
+	description: 'A thing was created'
 };
 
 // Mix action-derived and hand-written specs freely
@@ -555,16 +555,16 @@ const route_specs = [
 			account: 'required',
 			actor: 'required',
 			roles: ['keeper'],
-			credential_types: ['daemon_token'],
-		}, // override default auth mapping
+			credential_types: ['daemon_token']
+		} // override default auth mapping
 	}),
-	...existing_hand_written_specs,
+	...existing_hand_written_specs
 ];
 
-const event_specs = [create_action_event_spec(thing_created_action, {channel: 'things'})];
+const event_specs = [create_action_event_spec(thing_created_action, { channel: 'things' })];
 
 // Wire into surface (snapshot-testable, always accurate)
-const surface = generate_app_surface({middleware_specs, route_specs, env_schema, event_specs});
+const surface = generate_app_surface({ middleware_specs, route_specs, env_schema, event_specs });
 ```
 
 Auth mapping: `route.auth` is `spec.auth` verbatim — both surfaces share the four-axis `RouteAuth` shape from `http/auth_shape.ts` (`{account, actor, roles?, credential_types?}`). HTTP method derived from side effects (`true` -> POST, `false` -> GET). Override via `config.auth` or `config.http_method`.
@@ -574,7 +574,7 @@ Auth mapping: `route.auth` is `spec.auth` verbatim — both surfaces share the f
 `create_rpc_endpoint` produces a single endpoint (GET + POST on the same path) with an internal dispatcher. Method name is in the JSON-RPC envelope (POST body or GET query string), not the URL.
 
 ```typescript
-import {create_rpc_endpoint, type RpcAction} from '@fuzdev/fuz_app/actions/action_rpc.ts';
+import { create_rpc_endpoint, type RpcAction } from '@fuzdev/fuz_app/actions/action_rpc.ts';
 
 const actions: Array<RpcAction> = [
 	{
@@ -583,21 +583,21 @@ const actions: Array<RpcAction> = [
 			// input: validated {name: string} (from spec.input)
 			// ctx: {auth, db, pending_effects, log, notify, signal, ...}
 			const id = await create_thing(ctx.db, input.name);
-			return {id};
-		},
+			return { id };
+		}
 	},
 	{
 		spec: thing_list_action, // side_effects: false → available via GET
 		handler: async (_input, ctx) => {
-			return {items: await list_things(ctx.db)};
-		},
-	},
+			return { items: await list_things(ctx.db) };
+		}
+	}
 ];
 
 // Compose with other route specs
 const route_specs = [
-	...create_rpc_endpoint({path: '/api/rpc', actions, log}),
-	...other_hand_written_specs,
+	...create_rpc_endpoint({ path: '/api/rpc', actions, log }),
+	...other_hand_written_specs
 ];
 ```
 
@@ -620,7 +620,7 @@ Key behaviors:
 
 ```typescript
 assert_surface_security_policy(surface, {
-	public_mutation_allowlist: ['POST /api/rpc'],
+	public_mutation_allowlist: ['POST /api/rpc']
 });
 ```
 
@@ -629,20 +629,20 @@ Per-action auth and schemas are visible in `surface.rpc_endpoints`, not `surface
 **Composable RPC test suites**: Two composable suites test RPC endpoints alongside REST route suites:
 
 ```typescript
-import {describe_rpc_attack_surface_tests} from '@fuzdev/fuz_app/testing/rpc_attack_surface.ts';
-import {describe_rpc_round_trip_tests} from '@fuzdev/fuz_app/testing/rpc_round_trip.ts';
+import { describe_rpc_attack_surface_tests } from '@fuzdev/fuz_app/testing/rpc_attack_surface.ts';
+import { describe_rpc_round_trip_tests } from '@fuzdev/fuz_app/testing/rpc_round_trip.ts';
 
 // Attack surface tests (no DB) — same {build, roles} config as REST suite
 describe_rpc_attack_surface_tests({
 	build: create_my_app_surface_spec, // same build function as REST
-	roles: ['admin', 'keeper'],
+	roles: ['admin', 'keeper']
 });
 
 // Round-trip validation (DB-backed)
 describe_rpc_round_trip_tests({
 	session_options: my_session_config,
 	create_route_specs: my_route_specs,
-	rpc_endpoints: [my_rpc_endpoint_spec],
+	rpc_endpoints: [my_rpc_endpoint_spec]
 });
 ```
 
@@ -653,11 +653,11 @@ The attack surface suite runs 3 test groups: per-method auth enforcement (JSON-R
 `register_ws_endpoint` mounts a JSON-RPC 2.0 WebSocket endpoint with the standard upgrade stack (origin check + auth + optional role) and per-message dispatch. The canonical consumer shape:
 
 ```typescript
-import {register_ws_endpoint} from '@fuzdev/fuz_app/actions/register_ws_endpoint.ts';
-import {protocol_actions} from '@fuzdev/fuz_app/actions/protocol.ts';
-import {ROLE_ADMIN} from '@fuzdev/fuz_app/auth/role_schema.ts';
+import { register_ws_endpoint } from '@fuzdev/fuz_app/actions/register_ws_endpoint.ts';
+import { protocol_actions } from '@fuzdev/fuz_app/actions/protocol.ts';
+import { ROLE_ADMIN } from '@fuzdev/fuz_app/auth/role_schema.ts';
 
-const {transport} = register_ws_endpoint({
+const { transport } = register_ws_endpoint({
 	path: '/api/ws',
 	app,
 	upgradeWebSocket, // from the runtime adapter (e.g. @hono/deno-ws)
@@ -665,7 +665,7 @@ const {transport} = register_ws_endpoint({
 	required_role: ROLE_ADMIN, // optional — omit for any authenticated account
 	actions: [...protocol_actions, ...my_actions],
 	db: backend.db, // pool-level — perform_action wraps in db.transaction for side_effects: true
-	log,
+	log
 });
 ```
 
@@ -684,7 +684,7 @@ The returned `transport: BackendWebsocketTransport` is what you hand to `create_
 import {
 	create_ws_auth_guard,
 	create_ws_logout_closer,
-	type AuditEventHandler,
+	type AuditEventHandler
 } from '@fuzdev/fuz_app/actions/transports_ws_auth_guard.ts';
 
 const ws_guard = create_ws_auth_guard(transport, log);
@@ -696,7 +696,7 @@ const on_audit_event: AuditEventHandler = (event) => {
 };
 const backend = await create_app_backend({
 	// ...
-	audit_factory: ({db, log}) => create_audit_emitter({db, log, on_audit_event}),
+	audit_factory: ({ db, log }) => create_audit_emitter({ db, log, on_audit_event })
 });
 ```
 
@@ -743,7 +743,7 @@ after the client has moved on. Two patterns:
 just pass it through:
 
 ```typescript
-const response = await provider_client.messages.create({...request_body}, {signal: ctx.signal});
+const response = await provider_client.messages.create({ ...request_body }, { signal: ctx.signal });
 ```
 
 **Check `aborted` inside a loop.** For streaming loops or polling work
@@ -774,18 +774,18 @@ committed artifact consumers import from. Canonical output:
 
 ```typescript
 // frontend_action_types.gen.ts
-import type {Gen} from '@fuzdev/gro/gen.ts';
-import {ActionRegistry} from '@fuzdev/fuz_app/actions/action_registry.ts';
+import type { Gen } from '@fuzdev/gro/gen.ts';
+import { ActionRegistry } from '@fuzdev/fuz_app/actions/action_registry.ts';
 import {
 	ImportBuilder,
 	create_banner,
 	generate_actions_api_method_signature,
 	to_action_spec_input_identifier,
-	to_action_spec_output_identifier,
+	to_action_spec_output_identifier
 } from '@fuzdev/fuz_app/actions/action_codegen.ts';
-import {all_my_action_specs} from './action_specs.js';
+import { all_my_action_specs } from './action_specs.js';
 
-export const gen: Gen = ({origin_path}) => {
+export const gen: Gen = ({ origin_path }) => {
 	const registry = new ActionRegistry(all_my_action_specs);
 	const imports = new ImportBuilder();
 	imports.add('zod', 'z');
@@ -824,14 +824,14 @@ close the gap.
 Wire the generated surface into `create_rpc_client`:
 
 ```typescript
-import {create_rpc_client} from '@fuzdev/fuz_app/actions/rpc_client.ts';
-import {ActionDispatcher} from '@fuzdev/fuz_app/actions/action_dispatcher.ts';
-import type {FrontendActionsApi} from './frontend_action_types.js';
+import { create_rpc_client } from '@fuzdev/fuz_app/actions/rpc_client.ts';
+import { ActionDispatcher } from '@fuzdev/fuz_app/actions/action_dispatcher.ts';
+import type { FrontendActionsApi } from './frontend_action_types.js';
 
-const peer = new ActionDispatcher({environment, transports});
-const api_result = create_rpc_client<FrontendActionsApi>({peer, environment});
+const peer = new ActionDispatcher({ environment, transports });
+const api_result = create_rpc_client<FrontendActionsApi>({ peer, environment });
 
-const r = await api_result.thing_create({name: 'foo'}, {signal: abort_controller.signal});
+const r = await api_result.thing_create({ name: 'foo' }, { signal: abort_controller.signal });
 if (!r.ok) throw new Error(r.error.message);
 ```
 
@@ -848,12 +848,12 @@ create_throwing_api` into one call. Both Proxy shapes are returned —
 transport so call sites pick per-site at zero construction cost:
 
 ```typescript
-import {create_frontend_rpc_client} from '@fuzdev/fuz_app/actions/frontend_rpc_client.ts';
-import {all_standard_action_specs} from '@fuzdev/fuz_app/auth/standard_action_specs.ts';
-import type {FrontendActionsApi} from './frontend_action_types.js';
+import { create_frontend_rpc_client } from '@fuzdev/fuz_app/actions/frontend_rpc_client.ts';
+import { all_standard_action_specs } from '@fuzdev/fuz_app/auth/standard_action_specs.ts';
+import type { FrontendActionsApi } from './frontend_action_types.js';
 
-const {api, api_result} = create_frontend_rpc_client<FrontendActionsApi>({
-	specs: all_standard_action_specs,
+const { api, api_result } = create_frontend_rpc_client<FrontendActionsApi>({
+	specs: all_standard_action_specs
 });
 
 // hot path:    await api.account_verify()
@@ -874,11 +874,11 @@ routing (e.g. action methods on WS, REST RPC on HTTP — a zap-style
 mixed split):
 
 ```typescript
-const {api, api_result} = create_frontend_rpc_client<FrontendActionsApi>({
+const { api, api_result } = create_frontend_rpc_client<FrontendActionsApi>({
 	specs: all_specs,
 	transports: [ws_transport, http_transport],
 	transport_for_method: (method) =>
-		method.startsWith('tx_') ? 'frontend_websocket_rpc' : 'frontend_http_rpc',
+		method.startsWith('tx_') ? 'frontend_websocket_rpc' : 'frontend_http_rpc'
 });
 ```
 
@@ -921,19 +921,19 @@ Flip the default per peer via `ActionDispatcher.default_send_options`, then
 override per-call for exceptions:
 
 ```typescript
-import {ActionDispatcher} from '@fuzdev/fuz_app/actions/action_dispatcher.ts';
+import { ActionDispatcher } from '@fuzdev/fuz_app/actions/action_dispatcher.ts';
 
 // Client-authoritative peer — every `request_response` call is durably queued
 // by default.
 const peer = new ActionDispatcher({
 	environment,
 	transports,
-	default_send_options: {queue: true},
+	default_send_options: { queue: true }
 });
 
 // Per-call override for high-frequency inputs where stale replays are wrong
 // (e.g. position sync, where an old move should not land after reconnect).
-await app.api.move(input, {queue: false});
+await app.api.move(input, { queue: false });
 ```
 
 The typed Proxy method signature (generated by
@@ -1012,7 +1012,7 @@ Inside a layout:
 
 <RoleGrantOfferInbox
 	format_actor={(id) => username_lookup(id) ?? id}
-	format_scope={({scope_id, role}) => classroom_name(scope_id) ?? 'global'}
+	format_scope={({ scope_id, role }) => classroom_name(scope_id) ?? 'global'}
 />
 
 <RoleGrantOfferForm
@@ -1064,7 +1064,7 @@ match on `ERROR_*` constants):
 <script lang="ts">
 	import {
 		create_admin_rpc_adapters,
-		provide_admin_rpc_contexts,
+		provide_admin_rpc_contexts
 	} from '@fuzdev/fuz_app/ui/admin_rpc_adapters.ts';
 
 	// `api` is the typed throwing Proxy from `create_frontend_rpc_client`.
@@ -1096,7 +1096,7 @@ components the canonical shape is:
 
 ```ts
 const get_rpc = admin_accounts_rpc_context.get();
-const admin_accounts = new AdminAccountsState({get_rpc});
+const admin_accounts = new AdminAccountsState({ get_rpc });
 // or, for direct calls without a state class:
 const rpc = $derived(get_rpc());
 ```
@@ -1130,7 +1130,7 @@ export class Frontend extends Cell<typeof FrontendJson> {
 
 // consumer call sites read cleanly — qualifier comes from `app`, not the local:
 const app = frontend_context.get();
-await app.api.provider_update_api_key({provider_name, api_key: '…'});
+await app.api.provider_update_api_key({ provider_name, api_key: '…' });
 ```
 
 Every action method lives on `app.api.*` — no per-domain adapter type
@@ -1166,11 +1166,11 @@ Splice the cell namespace into the backend alongside any consumer
 namespaces:
 
 ```typescript
-import {CELL_MIGRATION_NS} from '@fuzdev/fuz_app/db/cell_ddl.ts';
+import { CELL_MIGRATION_NS } from '@fuzdev/fuz_app/db/cell_ddl.ts';
 
 const backend = await create_app_backend({
 	// …deps
-	migration_namespaces: [CELL_MIGRATION_NS /*, …app namespaces */],
+	migration_namespaces: [CELL_MIGRATION_NS /*, …app namespaces */]
 });
 ```
 
@@ -1191,9 +1191,9 @@ UI see a single surface. Mount the full layer with `create_all_cell_actions`
 into an RPC endpoint's `actions`:
 
 ```typescript
-import {create_all_cell_actions} from '@fuzdev/fuz_app/auth/all_cell_actions.ts';
+import { create_all_cell_actions } from '@fuzdev/fuz_app/auth/all_cell_actions.ts';
 
-const cell_rpc_actions = create_all_cell_actions({log, audit, validate_data}, {roles});
+const cell_rpc_actions = create_all_cell_actions({ log, audit, validate_data }, { roles });
 ```
 
 `create_all_cell_actions` bundles the five underlying factories
@@ -1227,7 +1227,7 @@ string. Content stays duck-typed in `data`.
   unchecked.
 - `authorize_create` — a **parent-aware capability gate** (`CellCreateAuthorize`):
   `(auth, {kind, data, parent_id, root_id, root_data, scope_id}) =>
-  CellCreateVerdict | Promise<CellCreateVerdict>`, where a verdict is
+CellCreateVerdict | Promise<CellCreateVerdict>`, where a verdict is
   `{allow: false}` or `{allow: true, moderation_required}`. Runs in `cell_create`
   after `validate_data` and after the handler resolves the directory tree
   (`parent_id` → the governing `root_id`, **404**-masking a hidden parent). It
@@ -1285,7 +1285,7 @@ the Postgres implementation and the HTTP serving plumbing; facts are
 ### Migration
 
 ```typescript
-import {FACT_MIGRATION_NS} from '@fuzdev/fuz_app/db/fact_ddl.ts';
+import { FACT_MIGRATION_NS } from '@fuzdev/fuz_app/db/fact_ddl.ts';
 ```
 
 `FACT_MIGRATION_NS` (namespace `fuz_facts`) creates `fact`, `fact_ref`,
@@ -1297,13 +1297,13 @@ and `memo`. Splice it into `migration_namespaces` like any other namespace.
 `PgFactStore` and assigns `deps.fact_store`:
 
 ```typescript
-import {PgFactStore} from '@fuzdev/fuz_app/db/fact_store.ts';
-import {create_file_fact_fetcher} from '@fuzdev/fuz_app/server/file_fact_fetcher.ts';
+import { PgFactStore } from '@fuzdev/fuz_app/db/fact_store.ts';
+import { create_file_fact_fetcher } from '@fuzdev/fuz_app/server/file_fact_fetcher.ts';
 
 const fact_store = new PgFactStore({
 	deps: query_deps, // QueryDeps (db + log)
 	embedded_threshold: 16 * 1024, // bytes at/under this go inline; larger → put_ref
-	fetcher: create_file_fact_fetcher({facts_dir}), // resolves `file:<shard>/<rest>` URLs
+	fetcher: create_file_fact_fetcher({ facts_dir }) // resolves `file:<shard>/<rest>` URLs
 });
 deps.fact_store = fact_store;
 ```
@@ -1319,8 +1319,8 @@ mismatch.
 ### Serving facts
 
 ```typescript
-import {create_serve_fact_route_spec} from '@fuzdev/fuz_app/server/serve_fact_route.ts';
-import {create_x_accel_config} from '@fuzdev/fuz_app/server/x_accel.ts';
+import { create_serve_fact_route_spec } from '@fuzdev/fuz_app/server/serve_fact_route.ts';
+import { create_x_accel_config } from '@fuzdev/fuz_app/server/x_accel.ts';
 
 create_serve_fact_route_spec({
 	facts_dir,
@@ -1331,7 +1331,7 @@ create_serve_fact_route_spec({
 	x_accel: x_accel_redirect_prefix
 		? create_x_accel_config(x_accel_redirect_prefix, nginx_config)
 		: undefined,
-	log,
+	log
 });
 ```
 
@@ -1361,17 +1361,17 @@ facts are TS-only).
 import {
 	create_pglite_factory,
 	create_pg_factory,
-	type DbFactory,
+	type DbFactory
 } from '@fuzdev/fuz_app/testing/db.ts';
-import {run_migrations} from '@fuzdev/fuz_app/db/migrate.ts';
-import {auth_migration_ns} from '@fuzdev/fuz_app/auth/migrations.ts';
+import { run_migrations } from '@fuzdev/fuz_app/db/migrate.ts';
+import { auth_migration_ns } from '@fuzdev/fuz_app/auth/migrations.ts';
 
 const init_schema = async (db: Db) => {
 	await run_migrations(db, [auth_migration_ns]);
 };
 const factories: Array<DbFactory> = [
 	create_pglite_factory(init_schema),
-	create_pg_factory(init_schema, process.env.DATABASE_URL),
+	create_pg_factory(init_schema, process.env.DATABASE_URL)
 ];
 
 for (const factory of factories) {

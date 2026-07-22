@@ -15,10 +15,10 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {readFileSync, writeFileSync} from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
-import type {Db} from '../db/db.ts';
-import {query_public_columns, type ExpectedSchema} from '../db/schema_ready.ts';
+import type { Db } from '../db/db.ts';
+import { query_public_columns, type ExpectedSchema } from '../db/schema_ready.ts';
 
 /** Options for `sync_expected_schema_fixture`. */
 export interface SyncExpectedSchemaFixtureOptions {
@@ -64,13 +64,13 @@ export interface SyncExpectedSchemaFixtureResult {
  * @returns the live column map and the committed map (post-write when `update`)
  */
 export const sync_expected_schema_fixture = async (
-	options: SyncExpectedSchemaFixtureOptions,
+	options: SyncExpectedSchemaFixtureOptions
 ): Promise<SyncExpectedSchemaFixtureResult> => {
-	const {db, fixture_url, update} = options;
+	const { db, fixture_url, update } = options;
 	const live = await query_public_columns(db);
 	if (update) {
 		writeFileSync(fixture_url, JSON.stringify(live, null, '\t') + '\n');
 	}
 	const committed = JSON.parse(readFileSync(fixture_url, 'utf8')) as ExpectedSchema;
-	return {live, committed};
+	return { live, committed };
 };

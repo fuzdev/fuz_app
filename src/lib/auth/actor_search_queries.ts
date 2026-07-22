@@ -52,10 +52,10 @@
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type {QueryDeps} from '../db/query_deps.ts';
-import type {ActorLookupRow} from './actor_lookup_queries.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
+import type { ActorLookupRow } from './actor_lookup_queries.ts';
 
 /** Inputs for `query_actor_search`. */
 export interface ActorSearchQueryInput {
@@ -84,7 +84,7 @@ const escape_like_pattern = (s: string): string => s.replace(/[\\%_]/g, '\\$&');
  */
 export const query_actor_search = async (
 	deps: QueryDeps,
-	input: ActorSearchQueryInput,
+	input: ActorSearchQueryInput
 ): Promise<Array<ActorLookupRow>> => {
 	const escaped_prefix = escape_like_pattern(input.query.toLowerCase());
 	const scope_ids = input.scope_ids ?? [];
@@ -98,7 +98,7 @@ export const query_actor_search = async (
 			 WHERE LOWER(act.name) LIKE $1 || '%' ESCAPE '\\'
 			 ORDER BY display_name, id
 			 LIMIT $2`,
-			[escaped_prefix, input.limit],
+			[escaped_prefix, input.limit]
 		);
 	}
 
@@ -118,6 +118,6 @@ export const query_actor_search = async (
 		 WHERE LOWER(act.name) LIKE $1 || '%' ESCAPE '\\'
 		 ORDER BY display_name, id
 		 LIMIT $3`,
-		[escaped_prefix, scope_ids as Array<Uuid>, input.limit],
+		[escaped_prefix, scope_ids as Array<Uuid>, input.limit]
 	);
 };

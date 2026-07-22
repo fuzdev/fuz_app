@@ -18,15 +18,15 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import type {SessionOptions} from '../auth/session_cookie.ts';
-import type {BootstrapLiveOptions} from '../server/app_server.ts';
-import type {AppServerContext} from '../server/app_server_context.ts';
-import type {RouteSpec} from '../http/route_spec.ts';
-import {ERROR_ALREADY_BOOTSTRAPPED, ERROR_INVALID_TOKEN} from '../http/error_schemas.ts';
-import {create_test_app_for_bootstrap} from './app_server.ts';
-import type {RpcEndpointsSuiteOption} from './rpc_helpers.ts';
+import type { SessionOptions } from '../auth/session_cookie.ts';
+import type { BootstrapLiveOptions } from '../server/app_server.ts';
+import type { AppServerContext } from '../server/app_server_context.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
+import { ERROR_ALREADY_BOOTSTRAPPED, ERROR_INVALID_TOKEN } from '../http/error_schemas.ts';
+import { create_test_app_for_bootstrap } from './app_server.ts';
+import type { RpcEndpointsSuiteOption } from './rpc_helpers.ts';
 
 const DEFAULT_TEST_TOKEN = 'test-bootstrap-token-value-deterministic';
 const TEST_USERNAME = 'keeper';
@@ -66,25 +66,25 @@ export const describe_bootstrap_success_tests = (options: BootstrapSuccessTestOp
 				create_route_specs: options.create_route_specs,
 				rpc_endpoints: options.rpc_endpoints,
 				bootstrap: options.bootstrap,
-				bootstrap_token: token,
+				bootstrap_token: token
 			});
 			try {
 				const response = await test_app.app.request(bootstrap_path, {
 					method: 'POST',
-					headers: test_app.create_request_headers({'content-type': 'application/json'}),
+					headers: test_app.create_request_headers({ 'content-type': 'application/json' }),
 					body: JSON.stringify({
 						token,
 						username: TEST_USERNAME,
-						password: TEST_PASSWORD,
-					}),
+						password: TEST_PASSWORD
+					})
 				});
 
 				// Response shape
 				assert.strictEqual(response.status, 200);
 				const body = (await response.json()) as {
 					ok: boolean;
-					account: {id: string; username: string};
-					actor: {id: string};
+					account: { id: string; username: string };
+					actor: { id: string };
 				};
 				assert.strictEqual(body.ok, true);
 				assert.strictEqual(body.account.username, TEST_USERNAME);
@@ -92,15 +92,15 @@ export const describe_bootstrap_success_tests = (options: BootstrapSuccessTestOp
 				assert.ok(body.actor.id);
 
 				// Observable state: account exists in DB
-				const account = await test_app.backend.deps.db.query_one<{username: string}>(
+				const account = await test_app.backend.deps.db.query_one<{ username: string }>(
 					'SELECT username FROM account WHERE username = $1',
-					[TEST_USERNAME],
+					[TEST_USERNAME]
 				);
 				assert.ok(account);
 
 				// Observable state: bootstrap_lock flipped to true
-				const lock = await test_app.backend.deps.db.query_one<{bootstrapped: boolean}>(
-					'SELECT bootstrapped FROM bootstrap_lock WHERE id = 1',
+				const lock = await test_app.backend.deps.db.query_one<{ bootstrapped: boolean }>(
+					'SELECT bootstrapped FROM bootstrap_lock WHERE id = 1'
 				);
 				assert.ok(lock);
 				assert.strictEqual(lock.bootstrapped, true);
@@ -110,7 +110,7 @@ export const describe_bootstrap_success_tests = (options: BootstrapSuccessTestOp
 					event_type: string;
 					account_id: string;
 				}>(
-					"SELECT event_type, account_id FROM audit_log WHERE event_type = 'bootstrap' AND outcome = 'success' LIMIT 1",
+					"SELECT event_type, account_id FROM audit_log WHERE event_type = 'bootstrap' AND outcome = 'success' LIMIT 1"
 				);
 				assert.ok(audit_row);
 				assert.strictEqual(audit_row.account_id, body.account.id);
@@ -125,33 +125,33 @@ export const describe_bootstrap_success_tests = (options: BootstrapSuccessTestOp
 				create_route_specs: options.create_route_specs,
 				rpc_endpoints: options.rpc_endpoints,
 				bootstrap: options.bootstrap,
-				bootstrap_token: token,
+				bootstrap_token: token
 			});
 			try {
 				// First bootstrap succeeds
 				const first = await test_app.app.request(bootstrap_path, {
 					method: 'POST',
-					headers: test_app.create_request_headers({'content-type': 'application/json'}),
+					headers: test_app.create_request_headers({ 'content-type': 'application/json' }),
 					body: JSON.stringify({
 						token,
 						username: TEST_USERNAME,
-						password: TEST_PASSWORD,
-					}),
+						password: TEST_PASSWORD
+					})
 				});
 				assert.strictEqual(first.status, 200);
 
 				// Second attempt blocked by lock
 				const second = await test_app.app.request(bootstrap_path, {
 					method: 'POST',
-					headers: test_app.create_request_headers({'content-type': 'application/json'}),
+					headers: test_app.create_request_headers({ 'content-type': 'application/json' }),
 					body: JSON.stringify({
 						token,
 						username: 'another_user',
-						password: TEST_PASSWORD,
-					}),
+						password: TEST_PASSWORD
+					})
 				});
 				assert.strictEqual(second.status, 403);
-				const body = (await second.json()) as {error: string};
+				const body = (await second.json()) as { error: string };
 				assert.strictEqual(body.error, ERROR_ALREADY_BOOTSTRAPPED);
 			} finally {
 				await test_app.cleanup();
@@ -164,25 +164,25 @@ export const describe_bootstrap_success_tests = (options: BootstrapSuccessTestOp
 				create_route_specs: options.create_route_specs,
 				rpc_endpoints: options.rpc_endpoints,
 				bootstrap: options.bootstrap,
-				bootstrap_token: token,
+				bootstrap_token: token
 			});
 			try {
 				const response = await test_app.app.request(bootstrap_path, {
 					method: 'POST',
-					headers: test_app.create_request_headers({'content-type': 'application/json'}),
+					headers: test_app.create_request_headers({ 'content-type': 'application/json' }),
 					body: JSON.stringify({
 						token: 'wrong-token-value-that-does-not-match',
 						username: TEST_USERNAME,
-						password: TEST_PASSWORD,
-					}),
+						password: TEST_PASSWORD
+					})
 				});
 				assert.strictEqual(response.status, 401);
-				const body = (await response.json()) as {error: string};
+				const body = (await response.json()) as { error: string };
 				assert.strictEqual(body.error, ERROR_INVALID_TOKEN);
 
 				// Observable state: lock NOT flipped (transaction rolled back on auth failure)
-				const lock = await test_app.backend.deps.db.query_one<{bootstrapped: boolean}>(
-					'SELECT bootstrapped FROM bootstrap_lock WHERE id = 1',
+				const lock = await test_app.backend.deps.db.query_one<{ bootstrapped: boolean }>(
+					'SELECT bootstrapped FROM bootstrap_lock WHERE id = 1'
 				);
 				assert.ok(lock);
 				assert.strictEqual(lock.bootstrapped, false);

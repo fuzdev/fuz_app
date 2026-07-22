@@ -5,9 +5,9 @@
  * @module
  */
 
-import type {WSContext} from 'hono/ws';
-import {to_error_message} from '@fuzdev/fuz_util/error.ts';
-import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.ts';
+import type { WSContext } from 'hono/ws';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
+import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import type {
 	JsonrpcMessageFromClientToServer,
@@ -17,20 +17,24 @@ import type {
 	JsonrpcRequestParams,
 	JsonrpcResponse,
 	JsonrpcResponseOrError,
-	JsonrpcErrorResponse,
+	JsonrpcErrorResponse
 } from '../http/jsonrpc.ts';
-import {jsonrpc_error_messages} from '../http/jsonrpc_errors.ts';
+import { jsonrpc_error_messages } from '../http/jsonrpc_errors.ts';
 import {
 	create_jsonrpc_error_response,
 	create_jsonrpc_request,
 	to_jsonrpc_message_id,
-	is_jsonrpc_request,
+	is_jsonrpc_request
 } from '../http/jsonrpc_helpers.ts';
-import {WS_CLOSE_SESSION_REVOKED, type Transport, type TransportSendOptions} from './transports.ts';
+import {
+	WS_CLOSE_SESSION_REVOKED,
+	type Transport,
+	type TransportSendOptions
+} from './transports.ts';
 import {
 	PendingPeerRequests,
 	type PeerRequestOptions,
-	type PeerRequestOutcome,
+	type PeerRequestOutcome
 } from './peer_request.ts';
 
 // TODO support a SSE backend transport
@@ -64,13 +68,13 @@ export interface ConnectionIdentity {
 export interface FilterableBroadcastTransport extends Transport {
 	broadcast_filtered: (
 		message: JsonrpcMessageFromServerToClient,
-		predicate: (identity: ConnectionIdentity) => boolean,
+		predicate: (identity: ConnectionIdentity) => boolean
 	) => number;
 }
 
 /** Type guard for `FilterableBroadcastTransport`. */
 export const is_filterable_broadcast_transport = (
-	transport: Transport,
+	transport: Transport
 ): transport is FilterableBroadcastTransport =>
 	'broadcast_filtered' in transport &&
 	typeof (transport as FilterableBroadcastTransport).broadcast_filtered === 'function';
@@ -110,12 +114,12 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		ws: WSContext,
 		token_hash: string | null,
 		account_id: Uuid,
-		api_token_id: string | null = null,
+		api_token_id: string | null = null
 	): Uuid {
 		const connection_id = create_uuid();
 		this.#connections.set(connection_id, ws);
 		this.#connection_ids.set(ws, connection_id);
-		this.#connection_identities.set(connection_id, {token_hash, account_id, api_token_id});
+		this.#connection_identities.set(connection_id, { token_hash, account_id, api_token_id });
 		return connection_id;
 	}
 
@@ -210,23 +214,23 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	// an error rather than guessing a recipient.
 	async send(
 		message: JsonrpcRequest,
-		options?: TransportSendOptions,
+		options?: TransportSendOptions
 	): Promise<JsonrpcResponseOrError>;
 	async send(
 		message: JsonrpcNotification,
-		options?: TransportSendOptions,
+		options?: TransportSendOptions
 	): Promise<JsonrpcErrorResponse | null>;
 	async send(
 		message: JsonrpcMessageFromClientToServer,
-		_options?: TransportSendOptions,
+		_options?: TransportSendOptions
 	): Promise<JsonrpcMessageFromServerToClient | null> {
 		if (is_jsonrpc_request(message)) {
 			return create_jsonrpc_error_response(
 				message.id,
 				jsonrpc_error_messages.internal_error(
 					'backend WebSocket transport cannot broadcast a request expecting a response; ' +
-						'use request_connection(connection_id, ...) to target a single socket',
-				),
+						'use request_connection(connection_id, ...) to target a single socket'
+				)
 			);
 		}
 
@@ -237,8 +241,8 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 			return create_jsonrpc_error_response(
 				to_jsonrpc_message_id(message),
 				jsonrpc_error_messages.internal_error(
-					to_error_message(error, 'failed to broadcast notification'),
-				),
+					to_error_message(error, 'failed to broadcast notification')
+				)
 			);
 		}
 	}
@@ -268,7 +272,7 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 */
 	broadcast_filtered(
 		message: JsonrpcMessageFromServerToClient,
-		predicate: (identity: ConnectionIdentity) => boolean,
+		predicate: (identity: ConnectionIdentity) => boolean
 	): number {
 		const serialized = JSON.stringify(message);
 		let count = 0;
@@ -282,7 +286,7 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 			} catch (error) {
 				console.error(
 					'[backend websocket transport] Error broadcasting filtered to client:',
-					error,
+					error
 				);
 			}
 		}
@@ -330,21 +334,21 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		connection_id: Uuid,
 		method: string,
 		params: JsonrpcRequestParams | undefined,
-		options?: PeerRequestOptions,
+		options?: PeerRequestOptions
 	): Promise<PeerRequestOutcome> {
 		const ws = this.#connections.get(connection_id);
-		if (!ws) return Promise.resolve({ok: false, error: {kind: 'connection_gone'}});
+		if (!ws) return Promise.resolve({ ok: false, error: { kind: 'connection_gone' } });
 
 		const registered = this.#pending.register(connection_id, options?.timeout_ms);
-		if (!registered) return Promise.resolve({ok: false, error: {kind: 'too_many_in_flight'}});
-		const {id, outcome} = registered;
+		if (!registered) return Promise.resolve({ ok: false, error: { kind: 'too_many_in_flight' } });
+		const { id, outcome } = registered;
 
 		try {
 			ws.send(JSON.stringify(create_jsonrpc_request(method, params, id)));
 		} catch {
 			// Send failed — the socket is gone; settle now so the caller isn't
 			// left awaiting until the deadline.
-			this.#pending.settle(connection_id, id, {ok: false, error: {kind: 'connection_gone'}});
+			this.#pending.settle(connection_id, id, { ok: false, error: { kind: 'connection_gone' } });
 		}
 		return outcome;
 	}
@@ -362,7 +366,7 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 */
 	resolve_peer_response(
 		connection_id: Uuid,
-		response: JsonrpcResponse | JsonrpcErrorResponse,
+		response: JsonrpcResponse | JsonrpcErrorResponse
 	): boolean {
 		return this.#pending.resolve(connection_id, response);
 	}

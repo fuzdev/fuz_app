@@ -8,19 +8,19 @@
 	 * @module
 	 */
 
-	import {slide} from 'svelte/transition';
+	import { slide } from 'svelte/transition';
 
-	import type {AppSurface, AppSurfaceRoute, AppSurfaceDiagnostic} from '../http/surface.ts';
-	import {surface_auth_summary, format_route_key} from '../http/surface_query.ts';
+	import type { AppSurface, AppSurfaceRoute, AppSurfaceDiagnostic } from '../http/surface.ts';
+	import { surface_auth_summary, format_route_key } from '../http/surface_query.ts';
 	import {
 		is_keeper_auth,
 		is_plain_authenticated_auth,
 		is_public_auth,
 		is_role_auth,
-		type RouteAuth,
+		type RouteAuth
 	} from '../http/auth_shape.ts';
 
-	const {surface}: {surface: AppSurface} = $props();
+	const { surface }: { surface: AppSurface } = $props();
 
 	const auth_types = ['all', 'none', 'authenticated', 'role', 'keeper'] as const;
 
@@ -30,15 +30,15 @@
 	const summary = $derived(surface_auth_summary(surface));
 
 	const rpc_method_count = $derived(
-		surface.rpc_endpoints.reduce((sum, ep) => sum + ep.methods.length, 0),
+		surface.rpc_endpoints.reduce((sum, ep) => sum + ep.methods.length, 0)
 	);
 	const ws_method_count = $derived(
-		surface.ws_endpoints.reduce((sum, ep) => sum + ep.methods.length, 0),
+		surface.ws_endpoints.reduce((sum, ep) => sum + ep.methods.length, 0)
 	);
 
 	const auth_matches_filter = (
 		auth: AppSurfaceRoute['auth'],
-		filter: (typeof auth_types)[number],
+		filter: (typeof auth_types)[number]
 	): boolean => {
 		switch (filter) {
 			case 'all':
@@ -55,7 +55,7 @@
 	};
 
 	const filtered_routes: Array<AppSurfaceRoute> = $derived(
-		surface.routes.filter((r) => auth_matches_filter(r.auth, auth_filter)),
+		surface.routes.filter((r) => auth_matches_filter(r.auth, auth_filter))
 	);
 
 	let expanded_event: string | null = $state.raw(null);
@@ -112,7 +112,7 @@
 		{#if surface.env.length}<span class="chip">{surface.env.length} env</span>{/if}
 		{#if surface.events.length}<span class="chip">{surface.events.length} events</span>{/if}
 		{#if surface.diagnostics.length}{@const warnings = surface.diagnostics.filter(
-				(d: AppSurfaceDiagnostic) => d.level === 'warning',
+				(d: AppSurfaceDiagnostic) => d.level === 'warning'
 			)}{#if warnings.length}<span class="chip color_e"
 					>{warnings.length} warning{warnings.length === 1 ? '' : 's'}</span
 				>{/if}{/if}
@@ -282,7 +282,7 @@
 								{#if event.params_schema}
 									<code
 										>{Object.keys(
-											(event.params_schema as any).properties ?? event.params_schema,
+											(event.params_schema as any).properties ?? event.params_schema
 										).join(', ')}</code
 									>
 								{:else}

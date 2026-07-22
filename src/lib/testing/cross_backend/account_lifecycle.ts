@@ -19,7 +19,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, assert} from 'vitest';
+import { describe, assert } from 'vitest';
 
 import {
 	AccountDeleteOutput,
@@ -27,13 +27,16 @@ import {
 	AccountPurgeOutput,
 	AdminAccountListOutput,
 	AuditLogListOutput,
-	ERROR_CANNOT_DELETE_KEEPER,
+	ERROR_CANNOT_DELETE_KEEPER
 } from '../../auth/admin_action_specs.ts';
-import {ERROR_ACCOUNT_NOT_FOUND, ERROR_AUTHENTICATION_REQUIRED} from '../../http/error_schemas.ts';
-import {test_if} from './capabilities.ts';
-import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.ts';
-import type {RpcPathCrossSuiteOptions} from './setup.ts';
-import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
+import {
+	ERROR_ACCOUNT_NOT_FOUND,
+	ERROR_AUTHENTICATION_REQUIRED
+} from '../../http/error_schemas.ts';
+import { test_if } from './capabilities.ts';
+import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
+import type { RpcPathCrossSuiteOptions } from './setup.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /**
  * Options for the account-lifecycle parity suite. The standard
@@ -43,9 +46,9 @@ import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
 export type AccountLifecycleCrossTestOptions = RpcPathCrossSuiteOptions;
 
 export const describe_account_lifecycle_cross_tests = (
-	options: AccountLifecycleCrossTestOptions,
+	options: AccountLifecycleCrossTestOptions
 ): void => {
-	const {setup_test, capabilities} = options;
+	const { setup_test, capabilities } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
 	describe('account lifecycle parity', () => {
@@ -54,7 +57,7 @@ export const describe_account_lifecycle_cross_tests = (
 			'soft-delete → undelete round-trip (admin)',
 			async () => {
 				const fixture = await setup_test();
-				const victim = await fixture.create_account({username: 'lifecycle_victim'});
+				const victim = await fixture.create_account({ username: 'lifecycle_victim' });
 				const t = fixture.fresh_transport();
 				// Keeper account holds ROLE_ADMIN — its session is admin-capable.
 				const admin_headers = fixture.create_session_headers();
@@ -64,10 +67,10 @@ export const describe_account_lifecycle_cross_tests = (
 						t,
 						rpc_path,
 						'account_delete',
-						{account_id: victim.account.id},
-						admin_headers,
+						{ account_id: victim.account.id },
+						admin_headers
 					),
-					AccountDeleteOutput,
+					AccountDeleteOutput
 				);
 				assert.strictEqual(deleted.deleted, true);
 
@@ -76,29 +79,29 @@ export const describe_account_lifecycle_cross_tests = (
 						t,
 						rpc_path,
 						'account_undelete',
-						{account_id: victim.account.id},
-						admin_headers,
+						{ account_id: victim.account.id },
+						admin_headers
 					),
-					AccountUndeleteOutput,
+					AccountUndeleteOutput
 				);
 				assert.strictEqual(undeleted.undeleted, true);
-			},
+			}
 		);
 
 		test_if(capabilities.account_lifecycle, 'purge (keeper, confirmed)', async () => {
 			const fixture = await setup_test();
-			const victim = await fixture.create_account({username: 'lifecycle_purge'});
-			const t = fixture.fresh_transport({origin: null});
+			const victim = await fixture.create_account({ username: 'lifecycle_purge' });
+			const t = fixture.fresh_transport({ origin: null });
 			// Purge is keeper-gated: daemon-token credential, not a session.
 			const purged = expect_output(
 				await cross_rpc_call(
 					t,
 					rpc_path,
 					'account_purge',
-					{account_id: victim.account.id, confirm: true},
-					fixture.create_daemon_token_headers(),
+					{ account_id: victim.account.id, confirm: true },
+					fixture.create_daemon_token_headers()
 				),
-				AccountPurgeOutput,
+				AccountPurgeOutput
 			);
 			assert.strictEqual(purged.purged, true);
 		});
@@ -114,23 +117,23 @@ export const describe_account_lifecycle_cross_tests = (
 					t,
 					rpc_path,
 					'account_delete',
-					{account_id: fixture.account.id},
-					fixture.create_session_headers(),
+					{ account_id: fixture.account.id },
+					fixture.create_session_headers()
 				);
 				assert.strictEqual(del.ok, false, 'delete of keeper account must be refused');
 				assert.strictEqual(error_reason(del), ERROR_CANNOT_DELETE_KEEPER);
 
-				const tp = fixture.fresh_transport({origin: null});
+				const tp = fixture.fresh_transport({ origin: null });
 				const purge = await cross_rpc_call(
 					tp,
 					rpc_path,
 					'account_purge',
-					{account_id: fixture.account.id, confirm: true},
-					fixture.create_daemon_token_headers(),
+					{ account_id: fixture.account.id, confirm: true },
+					fixture.create_daemon_token_headers()
 				);
 				assert.strictEqual(purge.ok, false, 'purge of keeper account must be refused');
 				assert.strictEqual(error_reason(purge), ERROR_CANNOT_DELETE_KEEPER);
-			},
+			}
 		);
 
 		test_if(
@@ -138,7 +141,7 @@ export const describe_account_lifecycle_cross_tests = (
 			'fail-closed: a soft-deleted account’s session + bearer credentials no longer authenticate',
 			async () => {
 				const fixture = await setup_test();
-				const victim = await fixture.create_account({username: 'lifecycle_failclosed'});
+				const victim = await fixture.create_account({ username: 'lifecycle_failclosed' });
 				const admin_headers = fixture.create_session_headers();
 
 				// Sanity: the victim's session authenticates while active, so the
@@ -149,7 +152,7 @@ export const describe_account_lifecycle_cross_tests = (
 					rpc_path,
 					'account_verify',
 					undefined,
-					victim.create_session_headers(),
+					victim.create_session_headers()
 				);
 				assert.ok(before.ok, 'victim session authenticates before deletion');
 
@@ -158,10 +161,10 @@ export const describe_account_lifecycle_cross_tests = (
 						fixture.fresh_transport(),
 						rpc_path,
 						'account_delete',
-						{account_id: victim.account.id},
-						admin_headers,
+						{ account_id: victim.account.id },
+						admin_headers
 					),
-					AccountDeleteOutput,
+					AccountDeleteOutput
 				);
 				assert.strictEqual(deleted.deleted, true);
 
@@ -173,30 +176,30 @@ export const describe_account_lifecycle_cross_tests = (
 					rpc_path,
 					'account_verify',
 					undefined,
-					victim.create_session_headers(),
+					victim.create_session_headers()
 				);
 				assert.strictEqual(
 					session_probe.ok,
 					false,
-					'soft-deleted account session must not authenticate',
+					'soft-deleted account session must not authenticate'
 				);
 				assert.strictEqual(error_reason(session_probe), ERROR_AUTHENTICATION_REQUIRED);
 
 				// The victim's bearer token must fail closed too.
 				const bearer_probe = await cross_rpc_call(
-					fixture.fresh_transport({origin: null}),
+					fixture.fresh_transport({ origin: null }),
 					rpc_path,
 					'account_verify',
 					undefined,
-					victim.create_bearer_headers(),
+					victim.create_bearer_headers()
 				);
 				assert.strictEqual(
 					bearer_probe.ok,
 					false,
-					'soft-deleted account bearer token must not authenticate',
+					'soft-deleted account bearer token must not authenticate'
 				);
 				assert.strictEqual(error_reason(bearer_probe), ERROR_AUTHENTICATION_REQUIRED);
-			},
+			}
 		);
 
 		test_if(
@@ -212,21 +215,21 @@ export const describe_account_lifecycle_cross_tests = (
 					t,
 					rpc_path,
 					'account_delete',
-					{account_id: fixture.account.id},
-					fixture.create_session_headers(),
+					{ account_id: fixture.account.id },
+					fixture.create_session_headers()
 				);
 				assert.strictEqual(error_reason(del), ERROR_CANNOT_DELETE_KEEPER);
 
 				// Deterministic barrier before reading: await in-flight
 				// fire-and-forget audit writes (the real await on the Rust spine;
 				// satisfied-by-construction on the TS spine via await_pending_effects).
-				const td = fixture.fresh_transport({origin: null});
+				const td = fixture.fresh_transport({ origin: null });
 				const drained = await cross_rpc_call(
 					td,
 					rpc_path,
 					'_testing_drain_effects',
 					undefined,
-					fixture.create_daemon_token_headers(),
+					fixture.create_daemon_token_headers()
 				);
 				assert.ok(drained.ok, `_testing_drain_effects failed: ${JSON.stringify(drained.error)}`);
 
@@ -238,21 +241,21 @@ export const describe_account_lifecycle_cross_tests = (
 						t,
 						rpc_path,
 						'audit_log_list',
-						{event_type: 'account_delete'},
-						fixture.create_session_headers(),
+						{ event_type: 'account_delete' },
+						fixture.create_session_headers()
 					),
-					AuditLogListOutput,
+					AuditLogListOutput
 				);
 				const failure = listed.events.find(
 					(e) =>
 						e.outcome === 'failure' &&
-						(e.metadata as {reason?: unknown} | null)?.reason === ERROR_CANNOT_DELETE_KEEPER,
+						(e.metadata as { reason?: unknown } | null)?.reason === ERROR_CANNOT_DELETE_KEEPER
 				);
 				assert.ok(
 					failure,
-					'keeper-removal guard must emit an account_delete outcome=failure audit row with reason cannot_delete_keeper',
+					'keeper-removal guard must emit an account_delete outcome=failure audit row with reason cannot_delete_keeper'
 				);
-			},
+			}
 		);
 
 		test_if(
@@ -260,7 +263,7 @@ export const describe_account_lifecycle_cross_tests = (
 			'deterministic: double-undelete → second call is not_found',
 			async () => {
 				const fixture = await setup_test();
-				const victim = await fixture.create_account({username: 'lifecycle_double'});
+				const victim = await fixture.create_account({ username: 'lifecycle_double' });
 				const t = fixture.fresh_transport();
 				const admin_headers = fixture.create_session_headers();
 
@@ -269,10 +272,10 @@ export const describe_account_lifecycle_cross_tests = (
 						t,
 						rpc_path,
 						'account_delete',
-						{account_id: victim.account.id},
-						admin_headers,
+						{ account_id: victim.account.id },
+						admin_headers
 					),
-					AccountDeleteOutput,
+					AccountDeleteOutput
 				);
 				assert.strictEqual(deleted.deleted, true);
 
@@ -282,10 +285,10 @@ export const describe_account_lifecycle_cross_tests = (
 						t,
 						rpc_path,
 						'account_undelete',
-						{account_id: victim.account.id},
-						admin_headers,
+						{ account_id: victim.account.id },
+						admin_headers
 					),
-					AccountUndeleteOutput,
+					AccountUndeleteOutput
 				);
 				assert.strictEqual(undeleted.undeleted, true);
 
@@ -296,12 +299,12 @@ export const describe_account_lifecycle_cross_tests = (
 					t,
 					rpc_path,
 					'account_undelete',
-					{account_id: victim.account.id},
-					admin_headers,
+					{ account_id: victim.account.id },
+					admin_headers
 				);
 				assert.strictEqual(again.ok, false, 'double-undelete must not silently succeed');
 				assert.strictEqual(error_reason(again), ERROR_ACCOUNT_NOT_FOUND);
-			},
+			}
 		);
 
 		// The last-admin guard (`ERROR_CANNOT_DELETE_LAST_ADMIN`) is **not**
@@ -317,7 +320,7 @@ export const describe_account_lifecycle_cross_tests = (
 			'admin_account_list include_deleted surfaces tombstoned rows with deleted_at set',
 			async () => {
 				const fixture = await setup_test();
-				const victim = await fixture.create_account({username: 'lifecycle_listed'});
+				const victim = await fixture.create_account({ username: 'lifecycle_listed' });
 				const admin_headers = fixture.create_session_headers();
 
 				const t = fixture.fresh_transport();
@@ -326,21 +329,21 @@ export const describe_account_lifecycle_cross_tests = (
 						t,
 						rpc_path,
 						'account_delete',
-						{account_id: victim.account.id},
-						admin_headers,
+						{ account_id: victim.account.id },
+						admin_headers
 					),
-					AccountDeleteOutput,
+					AccountDeleteOutput
 				);
 				assert.strictEqual(deleted.deleted, true);
 
 				// Default listing excludes the tombstone.
 				const active_only = expect_output(
 					await cross_rpc_call(t, rpc_path, 'admin_account_list', {}, admin_headers),
-					AdminAccountListOutput,
+					AdminAccountListOutput
 				);
 				assert.ok(
 					!active_only.accounts.some((a) => a.account.id === victim.account.id),
-					'default listing excludes the soft-deleted account',
+					'default listing excludes the soft-deleted account'
 				);
 
 				// `include_deleted` surfaces it with `deleted_at` populated.
@@ -349,18 +352,18 @@ export const describe_account_lifecycle_cross_tests = (
 						t,
 						rpc_path,
 						'admin_account_list',
-						{include_deleted: true},
-						admin_headers,
+						{ include_deleted: true },
+						admin_headers
 					),
-					AdminAccountListOutput,
+					AdminAccountListOutput
 				);
 				const row = with_deleted.accounts.find((a) => a.account.id === victim.account.id);
 				assert.ok(row, 'include_deleted surfaces the tombstoned row');
 				assert.ok(
 					row.account.deleted_at !== null,
-					'tombstoned row carries a non-null deleted_at on both spines',
+					'tombstoned row carries a non-null deleted_at on both spines'
 				);
-			},
+			}
 		);
 	});
 };

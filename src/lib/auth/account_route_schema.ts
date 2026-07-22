@@ -12,17 +12,17 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
-import {ActorSummaryJson, RoleGrantSummaryJson, SessionAccountJson} from './account_schema.ts';
-import {UsernameProvided} from '../primitive_schemas.ts';
-import {Password, PasswordProvided} from './password.ts';
-import type {RouteSpec} from '../http/route_spec.ts';
+import { ActorSummaryJson, RoleGrantSummaryJson, SessionAccountJson } from './account_schema.ts';
+import { UsernameProvided } from '../primitive_schemas.ts';
+import { Password, PasswordProvided } from './password.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INVALID_CREDENTIALS,
 	ERROR_INVALID_JSON_BODY,
-	ERROR_INVALID_REQUEST_BODY,
+	ERROR_INVALID_REQUEST_BODY
 } from '../http/error_schemas.ts';
 
 /** Input for `GET /api/account/status`. No parameters — caller is the subject. */
@@ -33,27 +33,27 @@ export type AccountStatusInput = z.infer<typeof AccountStatusInput>;
 export const AccountStatusOutput = z.strictObject({
 	account: SessionAccountJson,
 	actor: ActorSummaryJson.nullable(),
-	role_grants: z.array(RoleGrantSummaryJson),
+	role_grants: z.array(RoleGrantSummaryJson)
 });
 export type AccountStatusOutput = z.infer<typeof AccountStatusOutput>;
 
 /** Error body for `GET /api/account/status` on the unauthenticated path. */
 export const AccountStatusUnauthenticatedError = z.looseObject({
 	error: z.literal(ERROR_AUTHENTICATION_REQUIRED),
-	bootstrap_available: z.boolean().optional(),
+	bootstrap_available: z.boolean().optional()
 });
 export type AccountStatusUnauthenticatedError = z.infer<typeof AccountStatusUnauthenticatedError>;
 
 /** Input for `POST /login`. Accepts a username or email in the `username` field. */
 export const LoginInput = z.strictObject({
 	username: UsernameProvided,
-	password: PasswordProvided,
+	password: PasswordProvided
 });
 export type LoginInput = z.infer<typeof LoginInput>;
 
 /** Output for `POST /login`. Session cookie is the operative side effect. */
 export const LoginOutput = z.strictObject({
-	ok: z.literal(true),
+	ok: z.literal(true)
 });
 export type LoginOutput = z.infer<typeof LoginOutput>;
 
@@ -64,14 +64,14 @@ export type LogoutInput = z.infer<typeof LogoutInput>;
 /** Output for `POST /logout`. Includes the revoked account's username for UI redraw. */
 export const LogoutOutput = z.strictObject({
 	ok: z.literal(true),
-	username: z.string(),
+	username: z.string()
 });
 export type LogoutOutput = z.infer<typeof LogoutOutput>;
 
 /** Input for `POST /password`. `current_password` is minimally validated; `new_password` enforces the full policy. */
 export const PasswordChangeInput = z.strictObject({
 	current_password: PasswordProvided,
-	new_password: Password,
+	new_password: Password
 });
 export type PasswordChangeInput = z.infer<typeof PasswordChangeInput>;
 
@@ -79,7 +79,7 @@ export type PasswordChangeInput = z.infer<typeof PasswordChangeInput>;
 export const PasswordChangeOutput = z.strictObject({
 	ok: z.literal(true),
 	sessions_revoked: z.number(),
-	tokens_revoked: z.number(),
+	tokens_revoked: z.number()
 });
 export type PasswordChangeOutput = z.infer<typeof PasswordChangeOutput>;
 
@@ -104,13 +104,13 @@ export const DEFAULT_MAX_TOKENS = 10;
 export const account_status_route_shape = {
 	method: 'GET',
 	path: '/status',
-	auth: {account: 'none', actor: 'none'},
+	auth: { account: 'none', actor: 'none' },
 	description: 'Current account info (unauthenticated: 401 with bootstrap status)',
 	input: AccountStatusInput,
 	output: AccountStatusOutput,
 	errors: {
-		401: AccountStatusUnauthenticatedError,
-	},
+		401: AccountStatusUnauthenticatedError
+	}
 } satisfies Omit<RouteSpec, 'handler'>;
 
 /** Option inputs that shape the account route metadata (not its handlers). */
@@ -130,35 +130,35 @@ export interface AccountRouteShapeOptions {
  * yields non-optional shapes under `noUncheckedIndexedAccess`.
  */
 export const create_account_route_shapes = (
-	options: AccountRouteShapeOptions,
+	options: AccountRouteShapeOptions
 ): [
 	Omit<RouteSpec, 'handler'>,
 	Omit<RouteSpec, 'handler'>,
 	Omit<RouteSpec, 'handler'>,
-	Omit<RouteSpec, 'handler'>,
+	Omit<RouteSpec, 'handler'>
 ] => [
 	{
 		method: 'GET',
 		path: '/verify',
-		auth: {account: 'required', actor: 'none'},
+		auth: { account: 'required', actor: 'none' },
 		description: 'Session-validity probe for nginx auth_request (empty body, 200 or 401)',
 		input: z.null(),
-		output: z.null(),
+		output: z.null()
 	},
 	{
 		method: 'POST',
 		path: '/login',
-		auth: {account: 'none', actor: 'none'},
+		auth: { account: 'none', actor: 'none' },
 		description: 'Exchange credentials for session',
 		input: LoginInput,
 		output: LoginOutput,
 		rate_limit: 'both',
 		errors: {
 			400: z.looseObject({
-				error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]),
+				error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY])
 			}),
-			401: z.looseObject({error: z.literal(ERROR_INVALID_CREDENTIALS)}),
-		},
+			401: z.looseObject({ error: z.literal(ERROR_INVALID_CREDENTIALS) })
+		}
 	},
 	{
 		method: 'POST',
@@ -167,24 +167,24 @@ export const create_account_route_shapes = (
 		// Logout is a session-bound operation; a bearer / daemon token holds no session
 		// to end, so the dispatcher rejects it (403 `credential_type_required`) rather than
 		// returning a misleading 200 + a phantom `logout` audit row for a no-op.
-		auth: {account: 'required', actor: 'none', credential_types: ['session']},
+		auth: { account: 'required', actor: 'none', credential_types: ['session'] },
 		description: 'Revoke current session and clear cookie',
 		input: LogoutInput,
-		output: LogoutOutput,
+		output: LogoutOutput
 	},
 	{
 		method: 'POST',
 		path: '/password',
 		// `credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.
-		auth: {account: 'required', actor: 'none', credential_types: ['session']},
+		auth: { account: 'required', actor: 'none', credential_types: ['session'] },
 		description: 'Change password (revokes all sessions and API tokens)',
 		input: PasswordChangeInput,
 		output: PasswordChangeOutput,
 		rate_limit: options.login_account_rate_limited ? 'both' : 'ip',
 		errors: {
 			400: z.looseObject({
-				error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]),
-			}),
-		},
-	},
+				error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY])
+			})
+		}
+	}
 ];

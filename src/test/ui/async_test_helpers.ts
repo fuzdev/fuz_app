@@ -24,7 +24,7 @@ export const make_deferred = <T>(): {
 		resolve_fn = res;
 		reject_fn = rej;
 	});
-	return {promise, resolve: resolve_fn, reject: reject_fn};
+	return { promise, resolve: resolve_fn, reject: reject_fn };
 };
 
 /**
@@ -39,6 +39,6 @@ export const signal_rejection = <T>(signal: AbortSignal): Promise<T> =>
 				const reason: unknown = signal.reason;
 				reject(reason instanceof Error ? reason : new Error(String(reason)));
 			},
-			{once: true},
+			{ once: true }
 		);
 	});

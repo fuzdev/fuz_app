@@ -4,9 +4,9 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {assert_valid_sql_identifier, VALID_SQL_IDENTIFIER} from '$lib/db/sql_identifier.ts';
+import { assert_valid_sql_identifier, VALID_SQL_IDENTIFIER } from '$lib/db/sql_identifier.ts';
 
 describe('VALID_SQL_IDENTIFIER', () => {
 	test('matches simple identifiers', () => {
@@ -38,7 +38,7 @@ describe('assert_valid_sql_identifier', () => {
 		assert.throws(() => assert_valid_sql_identifier('1bad'), /Invalid SQL identifier/);
 		assert.throws(
 			() => assert_valid_sql_identifier("x'; DROP TABLE y;--"),
-			/Invalid SQL identifier/,
+			/Invalid SQL identifier/
 		);
 		assert.throws(() => assert_valid_sql_identifier('a b'), /Invalid SQL identifier/);
 	});

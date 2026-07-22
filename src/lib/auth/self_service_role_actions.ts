@@ -37,23 +37,23 @@
  * @module
  */
 
-import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.ts';
-import {jsonrpc_errors} from '../http/jsonrpc_errors.ts';
+import { rpc_action, type ActionActorContext, type RpcAction } from '../actions/action_rpc.ts';
+import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import {
 	builtin_role_specs_by_name,
 	list_roles_with_grant_path,
-	type RoleSchemaResult,
+	type RoleSchemaResult
 } from './role_schema.ts';
-import {GRANT_PATH_SELF_SERVICE} from './grant_path_schema.ts';
-import type {ActionFactoryDeps} from './deps.ts';
-import {query_create_role_grant, query_revoke_role_grant} from './role_grant_queries.ts';
-import {is_role_grant_active} from './account_schema.ts';
-import {has_scoped_role} from './request_context.ts';
+import { GRANT_PATH_SELF_SERVICE } from './grant_path_schema.ts';
+import type { ActionFactoryDeps } from './deps.ts';
+import { query_create_role_grant, query_revoke_role_grant } from './role_grant_queries.ts';
+import { is_role_grant_active } from './account_schema.ts';
+import { has_scoped_role } from './request_context.ts';
 import {
 	ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
 	self_service_role_set_action_spec,
 	type SelfServiceRoleSetInput,
-	type SelfServiceRoleSetOutput,
+	type SelfServiceRoleSetOutput
 } from './self_service_role_action_specs.ts';
 
 /** Options for `create_self_service_role_actions`. */
@@ -91,7 +91,7 @@ export interface SelfServiceRoleActionsOptions {
  */
 export const create_self_service_role_actions = (
 	deps: ActionFactoryDeps,
-	options: SelfServiceRoleActionsOptions = {},
+	options: SelfServiceRoleActionsOptions = {}
 ): Array<RpcAction> => {
 	const role_specs = options.roles?.role_specs ?? builtin_role_specs_by_name;
 
@@ -105,7 +105,7 @@ export const create_self_service_role_actions = (
 				throw new Error(
 					`create_self_service_role_actions: eligible_roles entry "${
 						r
-					}" is not registered in roles.role_specs — typo or missing call to create_role_schema`,
+					}" is not registered in roles.role_specs — typo or missing call to create_role_schema`
 				);
 			}
 		}
@@ -114,14 +114,14 @@ export const create_self_service_role_actions = (
 	const reject_if_ineligible = (role: string): void => {
 		if (!eligible.has(role)) {
 			throw jsonrpc_errors.forbidden('role not eligible for self-service', {
-				reason: ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
+				reason: ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE
 			});
 		}
 	};
 
 	const handler = async (
 		input: SelfServiceRoleSetInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<SelfServiceRoleSetOutput> => {
 		const auth = ctx.auth;
 		reject_if_ineligible(input.role);
@@ -137,7 +137,7 @@ export const create_self_service_role_actions = (
 			// query's `ON CONFLICT DO NOTHING`. Worst case both responses report
 			// `changed: true`; the DB still ends up with exactly one role_grant.
 			if (has_scoped_role(auth, input.role, null)) {
-				return {ok: true, enabled: true, changed: false};
+				return { ok: true, enabled: true, changed: false };
 			}
 
 			const role_grant = await query_create_role_grant(ctx, {
@@ -145,7 +145,7 @@ export const create_self_service_role_actions = (
 				role: input.role,
 				scope_id: null,
 				expires_at: null,
-				granted_by: auth.actor.id,
+				granted_by: auth.actor.id
 			});
 
 			// `role_grant_create` is the canonical actor-bound-subject event —
@@ -166,11 +166,11 @@ export const create_self_service_role_actions = (
 					role: role_grant.role,
 					role_grant_id: role_grant.id,
 					scope_id: role_grant.scope_id,
-					self_service: true,
-				},
+					self_service: true
+				}
 			});
 
-			return {ok: true, enabled: true, changed: true};
+			return { ok: true, enabled: true, changed: true };
 		}
 
 		// Find an active global role_grant for this (actor, role) in the in-memory
@@ -180,16 +180,16 @@ export const create_self_service_role_actions = (
 		// middleware load).
 		const now = new Date();
 		const target = auth.role_grants.find(
-			(p) => p.role === input.role && p.scope_id === null && is_role_grant_active(p, now),
+			(p) => p.role === input.role && p.scope_id === null && is_role_grant_active(p, now)
 		);
 		if (!target) {
-			return {ok: true, enabled: false, changed: false};
+			return { ok: true, enabled: false, changed: false };
 		}
 
 		const result = await query_revoke_role_grant(ctx, target.id, auth.actor.id, auth.actor.id);
 		if (!result) {
 			// Raced with another revoker — treat as already revoked.
-			return {ok: true, enabled: false, changed: false};
+			return { ok: true, enabled: false, changed: false };
 		}
 
 		// Same actor-bound rule as the grant branch — `role_grant_revoke`
@@ -207,11 +207,11 @@ export const create_self_service_role_actions = (
 				role: result.role,
 				role_grant_id: result.id,
 				scope_id: result.scope_id,
-				self_service: true,
-			},
+				self_service: true
+			}
 		});
 
-		return {ok: true, enabled: false, changed: true};
+		return { ok: true, enabled: false, changed: true };
 	};
 
 	return [rpc_action(self_service_role_set_action_spec, handler)];

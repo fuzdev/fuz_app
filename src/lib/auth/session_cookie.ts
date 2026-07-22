@@ -10,7 +10,7 @@
  * @module
  */
 
-import type {Keyring} from './keyring.ts';
+import type { Keyring } from './keyring.ts';
 
 /** Cookie max age in seconds (30 days — aligned with AUTH_SESSION_LIFETIME_MS). */
 export const SESSION_AGE_MAX = 60 * 60 * 24 * 30;
@@ -54,7 +54,7 @@ export const session_cookie_options: SessionCookieOptions = {
 	httpOnly: true,
 	secure: true,
 	sameSite: 'strict',
-	maxAge: SESSION_AGE_MAX,
+	maxAge: SESSION_AGE_MAX
 };
 
 /**
@@ -162,7 +162,7 @@ export const parse_session = async <TIdentity>(
 	signed_value: string | undefined,
 	keyring: Keyring,
 	options: SessionOptions<TIdentity>,
-	now_seconds?: number,
+	now_seconds?: number
 ): Promise<ParsedSession<TIdentity> | null | undefined> => {
 	if (!signed_value) return undefined;
 
@@ -197,7 +197,7 @@ export const parse_session = async <TIdentity>(
 		identity,
 		should_refresh_signature: result.key_index > 0,
 		should_refresh_expiration,
-		key_index: result.key_index,
+		key_index: result.key_index
 	};
 };
 
@@ -217,7 +217,7 @@ export const create_session_cookie_value = async <TIdentity>(
 	keyring: Keyring,
 	identity: TIdentity,
 	options: SessionOptions<TIdentity>,
-	now_seconds?: number,
+	now_seconds?: number
 ): Promise<string> => {
 	const max_age = options.max_age ?? SESSION_AGE_MAX;
 	const now = now_seconds ?? Math.floor(Date.now() / 1000);
@@ -254,7 +254,7 @@ export const create_session_config = (cookie_name: string): SessionOptions<strin
 	cookie_name,
 	context_key: 'auth_session_id',
 	encode_identity: (session_id) => session_id,
-	decode_identity: (payload) => payload || null,
+	decode_identity: (payload) => payload || null
 });
 
 /** Canonical session config for fuz_app auth. */
@@ -278,7 +278,7 @@ export const process_session_cookie = async <TIdentity>(
 	signed_value: string | undefined,
 	keyring: Keyring,
 	options: SessionOptions<TIdentity>,
-	now_seconds?: number,
+	now_seconds?: number
 ): Promise<ProcessSessionResult<TIdentity>> => {
 	const now = now_seconds ?? Math.floor(Date.now() / 1000);
 
@@ -286,12 +286,12 @@ export const process_session_cookie = async <TIdentity>(
 
 	if (parsed === undefined) {
 		// No cookie present
-		return {valid: false, action: 'none'};
+		return { valid: false, action: 'none' };
 	}
 
 	if (parsed === null) {
 		// Invalid cookie - should be cleared
-		return {valid: false, action: 'clear'};
+		return { valid: false, action: 'clear' };
 	}
 
 	// Valid session — re-sign if the verifying key isn't primary OR if the
@@ -303,10 +303,10 @@ export const process_session_cookie = async <TIdentity>(
 			keyring,
 			parsed.identity,
 			options,
-			now,
+			now
 		);
-		return {valid: true, action: 'refresh', new_signed_value, identity: parsed.identity};
+		return { valid: true, action: 'refresh', new_signed_value, identity: parsed.identity };
 	}
 
-	return {valid: true, action: 'none', identity: parsed.identity};
+	return { valid: true, action: 'none', identity: parsed.identity };
 };

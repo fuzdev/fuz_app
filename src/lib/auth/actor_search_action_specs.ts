@@ -72,11 +72,11 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
-import {ActorLookupEntryJson} from './actor_lookup_action_specs.ts';
+import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
+import { ActorLookupEntryJson } from './actor_lookup_action_specs.ts';
 
 /**
  * Hard cap on the number of rows returned per call. Bounds the search-result
@@ -110,11 +110,11 @@ export const ActorSearchInput = z.strictObject({
 		.meta({
 			description: `Case-insensitive prefix match against \`actor.name\`. Length 1–${
 				ACTOR_SEARCH_QUERY_LENGTH_MAX
-			}.`,
+			}.`
 		}),
 	scope_ids: z.array(Uuid).optional().meta({
 		description:
-			'Restrict results to actors holding a role_grant on any of these scopes. Required (non-empty) for non-admin callers; admin callers may omit or pass empty for unbounded search. Caller is responsible for pre-filtering against their own authority — the SQL filter does not enforce it.',
+			'Restrict results to actors holding a role_grant on any of these scopes. Required (non-empty) for non-admin callers; admin callers may omit or pass empty for unbounded search. Caller is responsible for pre-filtering against their own authority — the SQL filter does not enforce it.'
 	}),
 	limit: z
 		.number()
@@ -125,13 +125,13 @@ export const ActorSearchInput = z.strictObject({
 		.meta({
 			description: `Maximum rows to return. Defaults to ${ACTOR_SEARCH_LIMIT_DEFAULT}, hard cap ${
 				ACTOR_SEARCH_LIMIT_MAX
-			}.`,
-		}),
+			}.`
+		})
 });
 export type ActorSearchInput = z.infer<typeof ActorSearchInput>;
 
 export const ActorSearchOutput = z.strictObject({
-	actors: z.array(ActorLookupEntryJson),
+	actors: z.array(ActorLookupEntryJson)
 });
 export type ActorSearchOutput = z.infer<typeof ActorSearchOutput>;
 
@@ -139,7 +139,7 @@ export const actor_search_action_spec = {
 	method: 'actor_search',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none'},
+	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
 	input: ActorSearchInput,
 	output: ActorSearchOutput,
@@ -148,7 +148,7 @@ export const actor_search_action_spec = {
 	error_reasons: [ERROR_ACTOR_SEARCH_SCOPE_REQUIRED],
 	description: `Case-insensitive prefix search over actor.name, returning {id, username, display_name?} rows. Authenticated + per-account rate-limited; non-admin callers must pass at least one scope_id. Default limit ${
 		ACTOR_SEARCH_LIMIT_DEFAULT
-	}, hard cap ${ACTOR_SEARCH_LIMIT_MAX}.`,
+	}, hard cap ${ACTOR_SEARCH_LIMIT_MAX}.`
 } satisfies RequestResponseActionSpec;
 
 /**

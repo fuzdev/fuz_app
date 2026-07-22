@@ -11,17 +11,17 @@
  * @module
  */
 
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type {AppDeps} from '../auth/deps.ts';
-import {create_audit_emitter, type AuditEmitter} from '../auth/audit_emitter.ts';
-import type {DbType, Db} from '../db/db.ts';
-import type {Keyring} from '../auth/keyring.ts';
-import type {PasswordHashDeps} from '../auth/password.ts';
-import type {StatResult} from '../runtime/deps.ts';
-import {run_migrations, type MigrationNamespace, type MigrationResult} from '../db/migrate.ts';
-import {auth_migration_ns, reserved_migration_namespaces} from '../auth/migrations.ts';
-import {create_db} from '../db/create_db.ts';
+import type { AppDeps } from '../auth/deps.ts';
+import { create_audit_emitter, type AuditEmitter } from '../auth/audit_emitter.ts';
+import type { DbType, Db } from '../db/db.ts';
+import type { Keyring } from '../auth/keyring.ts';
+import type { PasswordHashDeps } from '../auth/password.ts';
+import type { StatResult } from '../runtime/deps.ts';
+import { run_migrations, type MigrationNamespace, type MigrationResult } from '../db/migrate.ts';
+import { auth_migration_ns, reserved_migration_namespaces } from '../auth/migrations.ts';
+import { create_db } from '../db/create_db.ts';
 
 /**
  * Result of `create_app_backend()` — database metadata + deps bundle.
@@ -66,7 +66,7 @@ export interface AppBackend {
  * the callback shape exists specifically to make that mistake structurally
  * impossible.
  */
-export type AuditFactory = (params: {db: Db; log: Logger}) => AuditEmitter;
+export type AuditFactory = (params: { db: Db; log: Logger }) => AuditEmitter;
 
 /**
  * Trivial `AuditFactory` for consumers that don't compose `on_audit_event`
@@ -79,7 +79,8 @@ export type AuditFactory = (params: {db: Db; log: Logger}) => AuditEmitter;
  * `audit_log_config` / `emit_decorator`; the factory composes those
  * three fields itself so there's nothing this constant can pass through.
  */
-export const default_audit_factory: AuditFactory = ({db, log}) => create_audit_emitter({db, log});
+export const default_audit_factory: AuditFactory = ({ db, log }) =>
+	create_audit_emitter({ db, log });
 
 /**
  * Input for `create_app_backend()`.
@@ -148,10 +149,10 @@ export interface CreateAppBackendOptions {
  * @throws Error if `migration_namespaces` contains a namespace in `reserved_migration_namespaces`
  */
 export const create_app_backend = async (options: CreateAppBackendOptions): Promise<AppBackend> => {
-	const {database_url, keyring, password, stat, read_text_file, delete_file, audit_factory} =
+	const { database_url, keyring, password, stat, read_text_file, delete_file, audit_factory } =
 		options;
 	const log = options.log ?? new Logger('server');
-	const {db, close, db_type, db_name} = await create_db(database_url);
+	const { db, close, db_type, db_name } = await create_db(database_url);
 	// Everything after `create_db` can throw — reserved-namespace check,
 	// `run_migrations` (seven MigrationError kinds), `audit_factory`.
 	// Without this guard the pool leaks because `close` is only returned
@@ -164,16 +165,16 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 					throw new Error(
 						`Migration namespace "${
 							ns.namespace
-						}" is reserved by fuz_app — choose a different namespace`,
+						}" is reserved by fuz_app — choose a different namespace`
 					);
 				}
 			}
 		}
 		const migration_results = await run_migrations(db, [
 			auth_migration_ns,
-			...(options.migration_namespaces ?? []),
+			...(options.migration_namespaces ?? [])
 		]);
-		const audit = audit_factory({db, log});
+		const audit = audit_factory({ db, log });
 		return {
 			db_type,
 			db_name,
@@ -187,8 +188,8 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 				read_text_file,
 				delete_file,
 				log,
-				audit,
-			},
+				audit
+			}
 		};
 	} catch (err) {
 		try {

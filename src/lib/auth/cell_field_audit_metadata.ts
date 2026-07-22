@@ -8,8 +8,8 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 /**
  * Metadata envelope for `cell_field_set`. Emitted on every successful
@@ -20,7 +20,7 @@ import {Uuid} from '@fuzdev/fuz_util/id.ts';
 export const CellFieldSetAuditMetadata = z.looseObject({
 	source_id: Uuid,
 	name: z.string(),
-	target_id: Uuid,
+	target_id: Uuid
 });
 export type CellFieldSetAuditMetadata = z.infer<typeof CellFieldSetAuditMetadata>;
 
@@ -28,6 +28,6 @@ export type CellFieldSetAuditMetadata = z.infer<typeof CellFieldSetAuditMetadata
 export const CellFieldDeleteAuditMetadata = z.looseObject({
 	source_id: Uuid,
 	name: z.string(),
-	target_id: Uuid,
+	target_id: Uuid
 });
 export type CellFieldDeleteAuditMetadata = z.infer<typeof CellFieldDeleteAuditMetadata>;

@@ -14,64 +14,64 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {test, assert, describe} from 'vitest';
-import {z} from 'zod';
-import {zod_unwrap_to_object, zod_extract_fields} from '@fuzdev/fuz_util/zod.ts';
+import { test, assert, describe } from 'vitest';
+import { z } from 'zod';
+import { zod_unwrap_to_object, zod_extract_fields } from '@fuzdev/fuz_util/zod.ts';
 
-import type {RouteSpec} from '../http/route_spec.ts';
-import {is_null_schema} from '../http/schema_helpers.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
+import { is_null_schema } from '../http/schema_helpers.ts';
 import {
 	filter_routes_with_input,
 	filter_routes_with_params,
-	filter_routes_with_query,
+	filter_routes_with_query
 } from '../http/surface_query.ts';
 import {
 	ValidationError,
 	ERROR_INVALID_REQUEST_BODY,
 	ERROR_INVALID_JSON_BODY,
 	ERROR_INVALID_ROUTE_PARAMS,
-	ERROR_INVALID_QUERY_PARAMS,
+	ERROR_INVALID_QUERY_PARAMS
 } from '../http/error_schemas.ts';
-import {create_auth_test_apps, select_auth_app} from './auth_apps.ts';
-import type {AdversarialTestOptions} from './attack_surface.ts';
-import {detect_format, generate_valid_value, resolve_valid_path} from './schema_generators.ts';
+import { create_auth_test_apps, select_auth_app } from './auth_apps.ts';
+import type { AdversarialTestOptions } from './attack_surface.ts';
+import { detect_format, generate_valid_value, resolve_valid_path } from './schema_generators.ts';
 
 // --- Payload generation ---
 
 /** One wrong-type value per base type — one representative is sufficient. */
-const wrong_type_for = (base_type: string): {label: string; value: unknown} | null => {
+const wrong_type_for = (base_type: string): { label: string; value: unknown } | null => {
 	switch (base_type) {
 		case 'string':
 		case 'uuid':
 		case 'email':
-			return {label: 'number instead of string', value: 42};
+			return { label: 'number instead of string', value: 42 };
 		case 'number':
 		case 'int':
-			return {label: 'string instead of number', value: 'not_a_number'};
+			return { label: 'string instead of number', value: 'not_a_number' };
 		case 'boolean':
-			return {label: 'number instead of boolean', value: 42};
+			return { label: 'number instead of boolean', value: 42 };
 		case 'array':
-			return {label: 'string instead of array', value: 'not_an_array'};
+			return { label: 'string instead of array', value: 'not_an_array' };
 		case 'object':
-			return {label: 'string instead of object', value: 'not_an_object'};
+			return { label: 'string instead of object', value: 'not_an_object' };
 		case 'enum':
-			return {label: 'number instead of enum', value: 42};
+			return { label: 'number instead of enum', value: 42 };
 		default:
 			return null;
 	}
 };
 
 /** Format violation payloads — one per constraint type. */
-const format_violation = (format: string): {label: string; value: string} | null => {
+const format_violation = (format: string): { label: string; value: string } | null => {
 	switch (format) {
 		case 'uuid':
-			return {label: 'malformed uuid', value: 'not-a-uuid'};
+			return { label: 'malformed uuid', value: 'not-a-uuid' };
 		case 'email':
-			return {label: 'malformed email', value: 'not-an-email'};
+			return { label: 'malformed email', value: 'not-an-email' };
 		case 'date-time':
-			return {label: 'malformed datetime', value: 'not-a-date'};
+			return { label: 'malformed datetime', value: 'not-a-date' };
 		case 'pattern':
-			return {label: 'pattern violation', value: "'; DROP TABLE --"};
+			return { label: 'pattern violation', value: "'; DROP TABLE --" };
 		default:
 			return null;
 	}
@@ -144,7 +144,7 @@ export const generate_input_test_cases = (input_schema: z.ZodType): Array<InputT
 			`adversarial_input: generated base object fails validation for schema — ` +
 				`fix generate_valid_value for: ${base_result.error.issues
 					.map((i) => `${i.path.join('.')}: ${i.message}`)
-					.join(', ')}`,
+					.join(', ')}`
 		);
 	}
 
@@ -152,17 +152,17 @@ export const generate_input_test_cases = (input_schema: z.ZodType): Array<InputT
 	cases.push({
 		label: 'non-object body (array)',
 		body: [1, 2, 3],
-		expected_error: ERROR_INVALID_JSON_BODY,
+		expected_error: ERROR_INVALID_JSON_BODY
 	});
 
 	// whole-body structural: extra unknown key (enforces strictObject)
 	// only emit if the schema rejects unknown keys (i.e. uses z.strictObject)
-	const extra_key_result = input_schema.safeParse({...base, __adversarial_extra: 'rejected'});
+	const extra_key_result = input_schema.safeParse({ ...base, __adversarial_extra: 'rejected' });
 	if (!extra_key_result.success) {
 		cases.push({
 			label: 'extra unknown key',
-			body: {...base, __adversarial_extra: 'should_be_rejected'},
-			expected_error: ERROR_INVALID_REQUEST_BODY,
+			body: { ...base, __adversarial_extra: 'should_be_rejected' },
+			expected_error: ERROR_INVALID_REQUEST_BODY
 		});
 	}
 
@@ -178,7 +178,7 @@ export const generate_input_test_cases = (input_schema: z.ZodType): Array<InputT
 			cases.push({
 				label: `missing: ${field.name}`,
 				body: without,
-				expected_error: ERROR_INVALID_REQUEST_BODY,
+				expected_error: ERROR_INVALID_REQUEST_BODY
 			});
 		}
 
@@ -187,8 +187,8 @@ export const generate_input_test_cases = (input_schema: z.ZodType): Array<InputT
 		if (wrong) {
 			cases.push({
 				label: `wrong type: ${field.name} (${wrong.label})`,
-				body: {...base, [field.name]: wrong.value},
-				expected_error: ERROR_INVALID_REQUEST_BODY,
+				body: { ...base, [field.name]: wrong.value },
+				expected_error: ERROR_INVALID_REQUEST_BODY
 			});
 		}
 
@@ -196,8 +196,8 @@ export const generate_input_test_cases = (input_schema: z.ZodType): Array<InputT
 		if (field.required && !field.nullable && field.base_type !== 'null') {
 			cases.push({
 				label: `null: ${field.name}`,
-				body: {...base, [field.name]: null},
-				expected_error: ERROR_INVALID_REQUEST_BODY,
+				body: { ...base, [field.name]: null },
+				expected_error: ERROR_INVALID_REQUEST_BODY
 			});
 		}
 
@@ -208,8 +208,8 @@ export const generate_input_test_cases = (input_schema: z.ZodType): Array<InputT
 			if (violation) {
 				cases.push({
 					label: `format: ${field.name} (${violation.label})`,
-					body: {...base, [field.name]: violation.value},
-					expected_error: ERROR_INVALID_REQUEST_BODY,
+					body: { ...base, [field.name]: violation.value },
+					expected_error: ERROR_INVALID_REQUEST_BODY
 				});
 			}
 		}
@@ -227,15 +227,15 @@ export const generate_input_test_cases = (input_schema: z.ZodType): Array<InputT
 				if (typeof json.minLength === 'number' && json.minLength > 0) {
 					cases.push({
 						label: `empty string: ${field.name}`,
-						body: {...base, [field.name]: ''},
-						expected_error: ERROR_INVALID_REQUEST_BODY,
+						body: { ...base, [field.name]: '' },
+						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
 				if (typeof json.maxLength === 'number') {
 					cases.push({
 						label: `over maxLength: ${field.name} (${json.maxLength + 1} chars)`,
-						body: {...base, [field.name]: 'x'.repeat(json.maxLength + 1)},
-						expected_error: ERROR_INVALID_REQUEST_BODY,
+						body: { ...base, [field.name]: 'x'.repeat(json.maxLength + 1) },
+						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
 			}
@@ -245,42 +245,42 @@ export const generate_input_test_cases = (input_schema: z.ZodType): Array<InputT
 				if (typeof json.minimum === 'number') {
 					cases.push({
 						label: `below minimum: ${field.name} (${json.minimum - 1})`,
-						body: {...base, [field.name]: json.minimum - 1},
-						expected_error: ERROR_INVALID_REQUEST_BODY,
+						body: { ...base, [field.name]: json.minimum - 1 },
+						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
 				if (typeof json.maximum === 'number') {
 					cases.push({
 						label: `above maximum: ${field.name} (${json.maximum + 1})`,
-						body: {...base, [field.name]: json.maximum + 1},
-						expected_error: ERROR_INVALID_REQUEST_BODY,
+						body: { ...base, [field.name]: json.maximum + 1 },
+						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
 				if (typeof json.exclusiveMinimum === 'number') {
 					cases.push({
 						label: `at exclusive minimum: ${field.name} (${json.exclusiveMinimum})`,
-						body: {...base, [field.name]: json.exclusiveMinimum},
-						expected_error: ERROR_INVALID_REQUEST_BODY,
+						body: { ...base, [field.name]: json.exclusiveMinimum },
+						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
 				if (typeof json.exclusiveMaximum === 'number') {
 					cases.push({
 						label: `at exclusive maximum: ${field.name} (${json.exclusiveMaximum})`,
-						body: {...base, [field.name]: json.exclusiveMaximum},
-						expected_error: ERROR_INVALID_REQUEST_BODY,
+						body: { ...base, [field.name]: json.exclusiveMaximum },
+						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
 				// 0 and negative for positive-only fields
 				if (typeof json.minimum === 'number' && json.minimum > 0) {
 					cases.push({
 						label: `zero for positive-only: ${field.name}`,
-						body: {...base, [field.name]: 0},
-						expected_error: ERROR_INVALID_REQUEST_BODY,
+						body: { ...base, [field.name]: 0 },
+						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 					cases.push({
 						label: `negative for positive-only: ${field.name}`,
-						body: {...base, [field.name]: -1},
-						expected_error: ERROR_INVALID_REQUEST_BODY,
+						body: { ...base, [field.name]: -1 },
+						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
 			}
@@ -290,16 +290,16 @@ export const generate_input_test_cases = (input_schema: z.ZodType): Array<InputT
 				if (typeof json.minItems === 'number' && json.minItems > 0) {
 					cases.push({
 						label: `empty array for minItems > 0: ${field.name}`,
-						body: {...base, [field.name]: []},
-						expected_error: ERROR_INVALID_REQUEST_BODY,
+						body: { ...base, [field.name]: [] },
+						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
 				if (typeof json.maxItems === 'number') {
 					// generate an array one item over the max (items are null — schema-agnostic)
 					cases.push({
 						label: `over maxItems: ${field.name} (${json.maxItems + 1} items)`,
-						body: {...base, [field.name]: Array.from({length: json.maxItems + 1}, () => null)},
-						expected_error: ERROR_INVALID_REQUEST_BODY,
+						body: { ...base, [field.name]: Array.from({ length: json.maxItems + 1 }, () => null) },
+						expected_error: ERROR_INVALID_REQUEST_BODY
 					});
 				}
 			}
@@ -345,7 +345,7 @@ export const generate_params_test_cases = (params_schema: z.ZodObject): Array<Pa
 		if (violation) {
 			cases.push({
 				label: `${violation.label}: param ${field.name}`,
-				params: {...base_params, [field.name]: violation.value},
+				params: { ...base_params, [field.name]: violation.value }
 			});
 		}
 	}
@@ -387,7 +387,7 @@ export const generate_query_test_cases = (query_schema: z.ZodObject): Array<Quer
 			}
 			cases.push({
 				label: `missing query: ${field.name}`,
-				query: without,
+				query: without
 			});
 		}
 
@@ -400,7 +400,7 @@ export const generate_query_test_cases = (query_schema: z.ZodObject): Array<Quer
 		if (violation) {
 			cases.push({
 				label: `${violation.label}: query ${field.name}`,
-				query: {...base_query, [field.name]: violation.value},
+				query: { ...base_query, [field.name]: violation.value }
 			});
 		}
 	}
@@ -435,8 +435,8 @@ const build_query_url = (path: string, query: Record<string, string>): string =>
  * middleware is actually exercised.
  */
 export const describe_adversarial_input = (options: AdversarialTestOptions): void => {
-	const {build, roles} = options;
-	const {surface, route_specs} = build();
+	const { build, roles } = options;
+	const { surface, route_specs } = build();
 
 	const routes_with_input = filter_routes_with_input(surface);
 	const routes_with_params = filter_routes_with_params(surface);
@@ -468,8 +468,8 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 			if (missing_specs.length > 0) {
 				throw new Error(
 					`adversarial_input: surface routes with input have no matching RouteSpec: ${missing_specs.join(
-						', ',
-					)}`,
+						', '
+					)}`
 				);
 			}
 
@@ -496,18 +496,18 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 									// GET routes with non-null input use ?params= query string (RPC convention)
 									const params_json = JSON.stringify(tc.body);
 									const url = `${base_url}?params=${encodeURIComponent(params_json)}`;
-									res = await app.request(url, {method: 'GET'});
+									res = await app.request(url, { method: 'GET' });
 								} else {
 									res = await app.request(base_url, {
 										method: route.method,
-										headers: {'Content-Type': 'application/json'},
-										body: JSON.stringify(tc.body),
+										headers: { 'Content-Type': 'application/json' },
+										body: JSON.stringify(tc.body)
 									});
 								}
 								assert.strictEqual(
 									res.status,
 									400,
-									`Expected 400 for ${key} [${tc.label}], got ${res.status}`,
+									`Expected 400 for ${key} [${tc.label}], got ${res.status}`
 								);
 								const body = await res.json();
 								// GET RPC: valid-but-wrong-shape JSON (e.g. array) fails schema validation
@@ -519,7 +519,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 								assert.strictEqual(
 									body.error,
 									expected_error,
-									`Expected ${expected_error} for ${key} [${tc.label}], got: ${body.error}`,
+									`Expected ${expected_error} for ${key} [${tc.label}], got: ${body.error}`
 								);
 								// validate response body structure matches error schema
 								if (tc.expected_error === 'invalid_request_body') {
@@ -533,7 +533,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 				test('generated input test cases', () => {
 					assert.ok(
 						input_test_count > 0,
-						'No input test cases generated — schema walking may be broken',
+						'No input test cases generated — schema walking may be broken'
 					);
 				});
 			});
@@ -560,11 +560,11 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 						for (const tc of test_cases) {
 							test(tc.label, async () => {
 								const url = build_fuzz_url(route.path, tc.params);
-								const res = await app.request(url, {method: route.method});
+								const res = await app.request(url, { method: route.method });
 								assert.strictEqual(
 									res.status,
 									400,
-									`Expected 400 for ${key} [${tc.label}], got ${res.status}`,
+									`Expected 400 for ${key} [${tc.label}], got ${res.status}`
 								);
 								const body = await res.json();
 								assert.strictEqual(
@@ -572,7 +572,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 									ERROR_INVALID_ROUTE_PARAMS,
 									`Expected ${ERROR_INVALID_ROUTE_PARAMS} for ${key} [${tc.label}], got: ${
 										body.error
-									}`,
+									}`
 								);
 								// validate response body structure matches error schema
 								ValidationError.parse(body);
@@ -613,11 +613,11 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 						for (const tc of test_cases) {
 							test(tc.label, async () => {
 								const url = build_query_url(base_url, tc.query);
-								const res = await app.request(url, {method: route.method});
+								const res = await app.request(url, { method: route.method });
 								assert.strictEqual(
 									res.status,
 									400,
-									`Expected 400 for ${key} [${tc.label}], got ${res.status}`,
+									`Expected 400 for ${key} [${tc.label}], got ${res.status}`
 								);
 								const body = await res.json();
 								assert.strictEqual(
@@ -625,7 +625,7 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 									ERROR_INVALID_QUERY_PARAMS,
 									`Expected ${ERROR_INVALID_QUERY_PARAMS} for ${key} [${tc.label}], got: ${
 										body.error
-									}`,
+									}`
 								);
 								// validate response body structure matches error schema
 								ValidationError.parse(body);

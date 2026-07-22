@@ -4,14 +4,14 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
+import { describe, assert, test } from 'vitest';
 
-import {Transports, WS_CLOSE_SESSION_REVOKED, type Transport} from '$lib/actions/transports.ts';
+import { Transports, WS_CLOSE_SESSION_REVOKED, type Transport } from '$lib/actions/transports.ts';
 
 const create_mock_transport = (name: string, ready = true): Transport => ({
 	transport_name: name,
 	send: async () => null as any,
-	is_ready: () => ready,
+	is_ready: () => ready
 });
 
 describe('WS_CLOSE_SESSION_REVOKED', () => {

@@ -1,8 +1,8 @@
-import {UnreachableError} from '@fuzdev/fuz_util/error.ts';
-import {zod_get_base_type} from '@fuzdev/fuz_util/zod.ts';
+import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
+import { zod_get_base_type } from '@fuzdev/fuz_util/zod.ts';
 
-import type {ActionSpecUnion, ActionEventPhase} from './action_spec.ts';
-import {ActionRegistry} from './action_registry.ts';
+import type { ActionSpecUnion, ActionEventPhase } from './action_spec.ts';
+import { ActionRegistry } from './action_registry.ts';
 
 /**
  * Method names of fuz_app's protocol actions — `heartbeat` (auth-aware client
@@ -121,7 +121,7 @@ export class ImportBuilder {
 			return this;
 		}
 
-		module_imports.set(name, {name, kind});
+		module_imports.set(name, { name, kind });
 		return this;
 	}
 
@@ -207,9 +207,9 @@ export class ImportBuilder {
 /** Phases an executor can handle for the given spec — kind + initiator → set of phases. */
 export const get_executor_phases = (
 	spec: ActionSpecUnion,
-	executor: 'frontend' | 'backend',
+	executor: 'frontend' | 'backend'
 ): Array<ActionEventPhase> => {
-	const {kind, initiator} = spec;
+	const { kind, initiator } = spec;
 	const phases: Array<ActionEventPhase> = [];
 
 	switch (kind) {
@@ -287,7 +287,7 @@ export const get_handler_return_type = (
 	spec: ActionSpecUnion,
 	phase: ActionEventPhase,
 	imports: ImportBuilder,
-	collections_path: string = DEFAULT_COLLECTIONS_PATH,
+	collections_path: string = DEFAULT_COLLECTIONS_PATH
 ): string => {
 	// For request_response receive_request, handler returns the output
 	if (spec.kind === 'request_response' && phase === 'receive_request') {
@@ -330,9 +330,9 @@ export const generate_phase_handlers = (
 	spec: ActionSpecUnion,
 	executor: 'frontend' | 'backend',
 	imports: ImportBuilder,
-	options?: {action_event_type?: string; collections_path?: string},
+	options?: { action_event_type?: string; collections_path?: string }
 ): string => {
-	const {method} = spec;
+	const { method } = spec;
 	const phases = get_executor_phases(spec, executor);
 
 	if (phases.length === 0) {
@@ -440,7 +440,7 @@ ActingActor})` and other all-optional-fields strict objects. The second
 export const generate_actions_api_method_signature = (
 	spec: ActionSpecUnion,
 	imports: ImportBuilder,
-	options?: {sync_returns_value?: boolean; collections_path?: string},
+	options?: { sync_returns_value?: boolean; collections_path?: string }
 ): string => {
 	const sync_returns_value = options?.sync_returns_value ?? true;
 	const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
@@ -506,7 +506,7 @@ export const generate_actions_api_method_signature = (
 const format_method_enum_block = (
 	name: string,
 	jsdoc: string,
-	methods: ReadonlyArray<string>,
+	methods: ReadonlyArray<string>
 ): string => {
 	const lines = methods.map((m) => `\t'${m}',`).join('\n');
 	return `/**
@@ -540,7 +540,7 @@ export const action_method_enum_kinds_all: ReadonlySet<ActionMethodEnumKind> = n
 	'backend',
 	'frontend_handled',
 	'backend_handled',
-	'broadcast',
+	'broadcast'
 ]);
 
 /**
@@ -553,7 +553,7 @@ export const action_method_enum_kinds_all: ReadonlySet<ActionMethodEnumKind> = n
  */
 const filter_protocol_actions = (
 	specs: ReadonlyArray<ActionSpecUnion>,
-	include_protocol_actions: boolean | undefined,
+	include_protocol_actions: boolean | undefined
 ): ReadonlyArray<ActionSpecUnion> =>
 	include_protocol_actions ? specs : specs.filter((s) => !is_protocol_action_method(s.method));
 
@@ -577,7 +577,7 @@ export const resolve_spec_qualifier = (
 	options?: {
 		specs_module?: string;
 		qualify_spec?: (spec: ActionSpecUnion) => string;
-	},
+	}
 ): ((spec: ActionSpecUnion) => string) => {
 	if (options?.qualify_spec) return options.qualify_spec;
 	const specs_module = options?.specs_module ?? DEFAULT_SPECS_MODULE;
@@ -612,7 +612,7 @@ export const resolve_spec_qualifier = (
 export const generate_action_method_enums = (
 	specs: ReadonlyArray<ActionSpecUnion>,
 	imports: ImportBuilder,
-	options?: {emit?: ReadonlySet<ActionMethodEnumKind>; include_protocol_actions?: boolean},
+	options?: { emit?: ReadonlySet<ActionMethodEnumKind>; include_protocol_actions?: boolean }
 ): string => {
 	const emit = options?.emit ?? action_method_enum_kinds_all;
 	const filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
@@ -623,7 +623,7 @@ export const generate_action_method_enums = (
 		kind: ActionMethodEnumKind,
 		name: string,
 		methods: ReadonlyArray<string>,
-		jsdoc: string,
+		jsdoc: string
 	): void => {
 		if (!emit.has(kind)) return;
 		// `z.enum([])` is invalid — skip empty kinds rather than emit broken code.
@@ -636,25 +636,25 @@ export const generate_action_method_enums = (
 		'all',
 		'ActionMethod',
 		registry.methods,
-		'All action method names. Request/response actions have two types per method.',
+		'All action method names. Request/response actions have two types per method.'
 	);
 	emit_block(
 		'request_response',
 		'RequestResponseActionMethod',
 		registry.request_response_methods,
-		'Names of all request_response actions.',
+		'Names of all request_response actions.'
 	);
 	emit_block(
 		'remote_notification',
 		'RemoteNotificationActionMethod',
 		registry.remote_notification_methods,
-		'Names of all remote_notification actions.',
+		'Names of all remote_notification actions.'
 	);
 	emit_block(
 		'local_call',
 		'LocalCallActionMethod',
 		registry.local_call_methods,
-		'Names of all local_call actions.',
+		'Names of all local_call actions.'
 	);
 	// Loose: every spec the side might encounter (call, receive, or execute).
 	// Drives the typed-Proxy method enum keyed by FrontendActionsApi.
@@ -662,33 +662,33 @@ export const generate_action_method_enums = (
 		'frontend',
 		'FrontendActionMethod',
 		registry.methods_relevant_to_frontend,
-		'Names of all actions in the typed FrontendActionsApi surface — every spec the frontend may encounter (call, receive, or execute locally).',
+		'Names of all actions in the typed FrontendActionsApi surface — every spec the frontend may encounter (call, receive, or execute locally).'
 	);
 	emit_block(
 		'backend',
 		'BackendActionMethod',
 		registry.methods_relevant_to_backend,
-		'Names of all actions the backend may encounter — request_response and remote_notification (local_call is frontend-only).',
+		'Names of all actions the backend may encounter — request_response and remote_notification (local_call is frontend-only).'
 	);
 	// Narrow: request_response actions this side handles (receives).
 	emit_block(
 		'frontend_handled',
 		'FrontendRequestResponseMethod',
 		registry.frontend_handled_methods,
-		'Names of request_response actions the frontend handles (initiator excludes frontend).',
+		'Names of request_response actions the frontend handles (initiator excludes frontend).'
 	);
 	emit_block(
 		'backend_handled',
 		'BackendRequestResponseMethod',
 		registry.backend_handled_methods,
-		'Names of request_response actions the backend handles (initiator excludes backend).',
+		'Names of request_response actions the backend handles (initiator excludes backend).'
 	);
 	// Broadcast: backend-initiated remote_notification, excluding `streams` targets.
 	emit_block(
 		'broadcast',
 		'BroadcastActionMethod',
 		registry.broadcast_methods,
-		"Names of remote_notification actions exposed by the broadcast API (backend-initiated, excluding request-scoped progress notifications named by another action's `streams`).",
+		"Names of remote_notification actions exposed by the broadcast API (backend-initiated, excluding request-scoped progress notifications named by another action's `streams`)."
 	);
 
 	if (blocks.length === 0) return '';
@@ -719,7 +719,7 @@ export const generate_action_method_enum_block = (
 		jsdoc: string;
 		predicate: (spec: ActionSpecUnion) => boolean;
 		include_protocol_actions?: boolean;
-	},
+	}
 ): string => {
 	const filtered = filter_protocol_actions(specs, options.include_protocol_actions);
 	const methods = filtered.filter(options.predicate).map((s) => s.method);
@@ -742,7 +742,7 @@ export const generate_action_method_enum_block = (
  */
 export const generate_typed_action_event_alias = (
 	imports: ImportBuilder,
-	options?: {collections_path?: string; metatypes_path?: string},
+	options?: { collections_path?: string; metatypes_path?: string }
 ): string => {
 	const collections_path = options?.collections_path ?? DEFAULT_COLLECTIONS_PATH;
 	const metatypes_path = options?.metatypes_path ?? DEFAULT_METATYPES_PATH;
@@ -778,7 +778,7 @@ export const generate_action_specs_record = (
 		specs_module?: string;
 		qualify_spec?: (spec: ActionSpecUnion) => string;
 		include_protocol_actions?: boolean;
-	},
+	}
 ): string => {
 	const filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
 	imports.add_type('@fuzdev/fuz_app/actions/action_spec.ts', 'ActionSpecUnion');
@@ -839,7 +839,7 @@ export const generate_action_inputs_outputs = (
 		specs_module?: string;
 		qualify_spec?: (spec: ActionSpecUnion) => string;
 		include_protocol_actions?: boolean;
-	},
+	}
 ): string => {
 	const filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
 
@@ -927,7 +927,7 @@ ${outputs_type}
 export const generate_action_event_datas = (
 	specs: ReadonlyArray<ActionSpecUnion>,
 	imports: ImportBuilder,
-	options?: {same_file?: boolean; collections_path?: string; include_protocol_actions?: boolean},
+	options?: { same_file?: boolean; collections_path?: string; include_protocol_actions?: boolean }
 ): string => {
 	const filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
 
@@ -998,7 +998,7 @@ export const generate_frontend_actions_api = (
 		collections_path?: string;
 		sync_returns_value?: boolean;
 		include_protocol_actions?: boolean;
-	},
+	}
 ): string => {
 	const protocol_filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
 	const filter = options?.method_filter;
@@ -1024,8 +1024,8 @@ export interface FrontendActionsApi {}`;
 		.map((spec) =>
 			generate_actions_api_method_signature(spec, imports, {
 				sync_returns_value: options?.sync_returns_value,
-				collections_path: options?.collections_path,
-			}),
+				collections_path: options?.collections_path
+			})
 		)
 		.map((line) => `\t${line}`)
 		.join('\n');
@@ -1045,7 +1045,7 @@ ${lines}
 export const generate_frontend_action_handlers = (
 	specs: ReadonlyArray<ActionSpecUnion>,
 	imports: ImportBuilder,
-	options?: {collections_path?: string; include_protocol_actions?: boolean},
+	options?: { collections_path?: string; include_protocol_actions?: boolean }
 ): string => {
 	const filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
 	const interface_doc = `/**
@@ -1065,7 +1065,7 @@ export interface FrontendActionHandlers {}`;
 
 	const handler_options = {
 		action_event_type: 'TypedActionEvent',
-		collections_path: options?.collections_path,
+		collections_path: options?.collections_path
 	};
 	const lines = filtered
 		.map((spec) => generate_phase_handlers(spec, 'frontend', imports, handler_options))
@@ -1118,7 +1118,7 @@ export const generate_backend_actions_api = (
 		collections_path?: string;
 		qualify_spec?: (spec: ActionSpecUnion) => string;
 		include_protocol_actions?: boolean;
-	},
+	}
 ): string => {
 	const protocol_filtered = filter_protocol_actions(specs, options?.include_protocol_actions);
 	const registry = new ActionRegistry([...protocol_filtered]);
@@ -1152,7 +1152,7 @@ export const broadcast_action_specs: ReadonlyArray<ActionSpecUnion> = [];`;
 		broadcast
 			.map(
 				(s) =>
-					`\t${to_action_property_key(s.method)}: (input: ActionInputs['${s.method}']) => Promise<void>;`,
+					`\t${to_action_property_key(s.method)}: (input: ActionInputs['${s.method}']) => Promise<void>;`
 			)
 			.join('\n') +
 		'\n';
@@ -1193,7 +1193,7 @@ export const generate_backend_action_handlers_map = (
 		context_type?: string;
 		collections_path?: string;
 		metatypes_path?: string;
-	},
+	}
 ): string => {
 	const type_name = options?.type_name ?? 'BackendActionHandlers';
 	const method_enum_name = options?.method_enum_name ?? 'BackendRequestResponseMethod';
@@ -1273,7 +1273,7 @@ export interface SpecSource {
  */
 export const create_namespace_qualifier = (
 	sources: ReadonlyArray<SpecSource>,
-	imports: ImportBuilder,
+	imports: ImportBuilder
 ): {
 	qualify_spec: (spec: ActionSpecUnion) => string;
 	all_specs: ReadonlyArray<ActionSpecUnion>;
@@ -1281,14 +1281,14 @@ export const create_namespace_qualifier = (
 	const method_to_ns = new Map<string, string>();
 	const all_specs: Array<ActionSpecUnion> = [];
 
-	for (const {ns, module, specs} of sources) {
+	for (const { ns, module, specs } of sources) {
 		imports.add(module, `* as ${ns}`);
 		for (const spec of specs) {
 			if (method_to_ns.has(spec.method)) {
 				throw new Error(
 					`duplicate action method across sources: ${spec.method} (in ${method_to_ns.get(
-						spec.method,
-					)} and ${ns})`,
+						spec.method
+					)} and ${ns})`
 				);
 			}
 			method_to_ns.set(spec.method, ns);
@@ -1302,13 +1302,13 @@ export const create_namespace_qualifier = (
 			throw new Error(
 				`unknown action method passed to qualify_spec: ${
 					spec.method
-				} — not in any registered source`,
+				} — not in any registered source`
 			);
 		}
 		return `${ns}.${to_action_spec_identifier(spec.method)}`;
 	};
 
-	return {qualify_spec, all_specs};
+	return { qualify_spec, all_specs };
 };
 
 /**

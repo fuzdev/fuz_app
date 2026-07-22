@@ -20,11 +20,11 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type {BackendConfig} from '../cross_backend/backend_config.ts';
-import type {FetchTransport} from './fetch_transport.ts';
+import type { BackendConfig } from '../cross_backend/backend_config.ts';
+import type { FetchTransport } from './fetch_transport.ts';
 
 /**
  * The `BootstrapOutput` envelope shape the cross-process bootstrap call
@@ -35,8 +35,8 @@ import type {FetchTransport} from './fetch_transport.ts';
  * testing doesn't pull the full auth-domain schema into its dep graph.
  */
 const BootstrapResponse = z.object({
-	account: z.object({id: Uuid, username: z.string()}),
-	actor: z.object({id: Uuid}),
+	account: z.object({ id: Uuid, username: z.string() }),
+	actor: z.object({ id: Uuid })
 });
 
 /** Input for `bootstrap()`. */
@@ -66,9 +66,9 @@ export interface BootstrapResult {
 	 */
 	readonly transport: FetchTransport;
 	/** Account JSON returned by `POST /bootstrap`. */
-	readonly account: {readonly id: Uuid; readonly username: string};
+	readonly account: { readonly id: Uuid; readonly username: string };
 	/** Actor JSON returned by `POST /bootstrap`. */
-	readonly actor: {readonly id: Uuid};
+	readonly actor: { readonly id: Uuid };
 	/** Raw `Set-Cookie` values for threading into a WS transport. */
 	readonly cookies: ReadonlyArray<string>;
 }
@@ -83,15 +83,15 @@ export interface BootstrapResult {
  *   context to debug.
  */
 export const bootstrap = async (options: BootstrapOptions): Promise<BootstrapResult> => {
-	const {transport, config} = options;
+	const { transport, config } = options;
 	const response = await transport(config.bootstrap_path, {
 		method: 'POST',
-		headers: {'Content-Type': 'application/json'},
+		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
 			token: config.bootstrap.token,
 			username: config.bootstrap.username,
-			password: config.bootstrap.password,
-		}),
+			password: config.bootstrap.password
+		})
 	});
 	if (!response.ok) {
 		const body = await response.text().catch(() => '<unreadable>');
@@ -103,13 +103,13 @@ export const bootstrap = async (options: BootstrapOptions): Promise<BootstrapRes
 		throw new Error(
 			`bootstrap(${config.name}) returned unexpected body: ${JSON.stringify(raw)} (${
 				parsed.error.message
-			})`,
+			})`
 		);
 	}
 	return {
 		transport,
 		account: parsed.data.account,
 		actor: parsed.data.actor,
-		cookies: transport.cookies(),
+		cookies: transport.cookies()
 	};
 };

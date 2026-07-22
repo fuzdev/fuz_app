@@ -17,8 +17,8 @@
  * @module
  */
 
-import {DEV} from 'esm-env';
-import type {ContentfulStatusCode} from 'hono/utils/http-status';
+import { DEV } from 'esm-env';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import {
 	JSONRPC_PARSE_ERROR,
@@ -27,7 +27,7 @@ import {
 	JSONRPC_INVALID_PARAMS,
 	JSONRPC_INTERNAL_ERROR,
 	type JsonrpcErrorCode,
-	type JsonrpcErrorObject,
+	type JsonrpcErrorObject
 } from './jsonrpc.ts';
 
 /** Default message for unknown errors. */
@@ -103,7 +103,7 @@ export const JSONRPC_ERROR_CODES = Object.freeze({
 	 * not a failure — the request did not complete because the caller asked
 	 * for it to stop.
 	 */
-	request_cancelled: -32010 as JsonrpcErrorCode,
+	request_cancelled: -32010 as JsonrpcErrorCode
 }) as Readonly<Record<JsonrpcErrorName, JsonrpcErrorCode>>;
 
 /**
@@ -141,101 +141,101 @@ export const jsonrpc_error_messages = Object.freeze({
 	parse_error: (data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.parse_error,
 		message: 'parse error',
-		data,
+		data
 	}),
 
 	invalid_request: (data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.invalid_request,
 		message: 'invalid request',
-		data,
+		data
 	}),
 
 	method_not_found: (method?: string, data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.method_not_found,
 		message: method ? `method not found: ${method}` : 'method not found',
-		data,
+		data
 	}),
 
 	invalid_params: (message?: string, data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.invalid_params,
 		message: message ?? 'invalid params',
-		data,
+		data
 	}),
 
 	internal_error: (
 		message: string = 'internal server error',
-		data?: unknown,
+		data?: unknown
 	): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.internal_error,
 		message,
-		data,
+		data
 	}),
 
 	unauthenticated: (message: string = 'unauthenticated', data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.unauthenticated,
 		message,
-		data,
+		data
 	}),
 
 	forbidden: (message: string = 'forbidden', data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.forbidden,
 		message,
-		data,
+		data
 	}),
 
 	not_found: (resource?: string, data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.not_found,
 		message: resource ? `${resource} not found` : 'not found',
-		data,
+		data
 	}),
 
 	conflict: (message: string = 'conflict', data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.conflict,
 		message,
-		data,
+		data
 	}),
 
 	validation_error: (message: string = 'validation error', data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.validation_error,
 		message,
-		data,
+		data
 	}),
 
 	rate_limited: (message: string = 'rate limited', data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.rate_limited,
 		message,
-		data,
+		data
 	}),
 
 	service_unavailable: (
 		message: string = 'service unavailable',
-		data?: unknown,
+		data?: unknown
 	): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.service_unavailable,
 		message,
-		data,
+		data
 	}),
 
 	timeout: (message: string = 'timeout', data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.timeout,
 		message,
-		data,
+		data
 	}),
 
 	queue_overflow: (message: string = 'queue overflow', data?: unknown): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.queue_overflow,
 		message,
-		data,
+		data
 	}),
 
 	request_cancelled: (
 		message: string = 'request cancelled',
-		data?: unknown,
+		data?: unknown
 	): JsonrpcErrorObject => ({
 		code: JSONRPC_ERROR_CODES.request_cancelled,
 		message,
-		data,
-	}),
+		data
+	})
 }) as Readonly<Record<JsonrpcErrorName, (...args: Array<any>) => JsonrpcErrorObject>>;
 
 /**
@@ -257,7 +257,7 @@ export class ThrownJsonrpcError extends Error {
 
 const create_error_thrower =
 	<TFn extends (...args: Array<any>) => JsonrpcErrorObject>(
-		error_fn: TFn,
+		error_fn: TFn
 	): ((...args: Parameters<TFn>) => ThrownJsonrpcError) =>
 	(...args: Parameters<TFn>) => {
 		const m = error_fn(...args);
@@ -284,7 +284,7 @@ export const jsonrpc_errors = {
 	service_unavailable: create_error_thrower(jsonrpc_error_messages.service_unavailable),
 	timeout: create_error_thrower(jsonrpc_error_messages.timeout),
 	queue_overflow: create_error_thrower(jsonrpc_error_messages.queue_overflow),
-	request_cancelled: create_error_thrower(jsonrpc_error_messages.request_cancelled),
+	request_cancelled: create_error_thrower(jsonrpc_error_messages.request_cancelled)
 } as const satisfies Record<JsonrpcErrorName, (...args: Array<any>) => ThrownJsonrpcError>;
 
 // --- HTTP status mapping ---
@@ -314,7 +314,7 @@ export const JSONRPC_ERROR_CODE_TO_HTTP_STATUS: Record<number, number> = {
 	[-32006]: 429, // rate_limited
 	[-32007]: 503, // service_unavailable
 	[-32008]: 504, // timeout
-	[-32010]: 499, // request_cancelled (nginx "client closed request")
+	[-32010]: 499 // request_cancelled (nginx "client closed request")
 };
 
 /**
@@ -328,8 +328,8 @@ export const HTTP_STATUS_TO_JSONRPC_ERROR_CODE: Record<number, JsonrpcErrorCode>
 	Object.fromEntries(
 		Object.entries(JSONRPC_ERROR_CODE_TO_HTTP_STATUS).map(([code, status]) => [
 			status,
-			Number(code) as JsonrpcErrorCode,
-		]),
+			Number(code) as JsonrpcErrorCode
+		])
 	) as Record<number, JsonrpcErrorCode>;
 
 /**
@@ -368,9 +368,9 @@ export const http_status_to_jsonrpc_error_code = (status: number): JsonrpcErrorC
 export const JSONRPC_ERROR_CODE_TO_NAME: Readonly<Record<number, JsonrpcErrorName>> = Object.freeze(
 	Object.fromEntries(
 		(Object.entries(JSONRPC_ERROR_CODES) as Array<[JsonrpcErrorName, JsonrpcErrorCode]>).map(
-			([name, code]) => [code as number, name],
-		),
-	),
+			([name, code]) => [code as number, name]
+		)
+	)
 );
 
 /**

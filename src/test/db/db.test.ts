@@ -7,39 +7,39 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import { describe, assert, test } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import {Db, no_nested_transaction, type DbClient} from '$lib/db/db.ts';
+import { Db, no_nested_transaction, type DbClient } from '$lib/db/db.ts';
 
 /** Create a mock DbClient that returns the given rows. */
 const create_mock_client = (
-	rows: Array<unknown> = [],
-): DbClient & {calls: Array<{text: string; values?: Array<unknown>}>} => {
-	const calls: Array<{text: string; values?: Array<unknown>}> = [];
+	rows: Array<unknown> = []
+): DbClient & { calls: Array<{ text: string; values?: Array<unknown> }> } => {
+	const calls: Array<{ text: string; values?: Array<unknown> }> = [];
 	return {
 		calls,
 		query: async <T>(text: string, values?: Array<unknown>) => {
-			calls.push({text, values});
-			return {rows: rows as Array<T>};
-		},
+			calls.push({ text, values });
+			return { rows: rows as Array<T> };
+		}
 	};
 };
 
 describe('Db', () => {
 	describe('query', () => {
 		test('returns rows from client', async () => {
-			const client = create_mock_client([{id: 1}, {id: 2}]);
-			const db = new Db({client, transaction: no_nested_transaction});
+			const client = create_mock_client([{ id: 1 }, { id: 2 }]);
+			const db = new Db({ client, transaction: no_nested_transaction });
 
 			const result = await db.query('SELECT * FROM t');
 
-			assert.deepStrictEqual(result, [{id: 1}, {id: 2}]);
+			assert.deepStrictEqual(result, [{ id: 1 }, { id: 2 }]);
 		});
 
 		test('returns empty array for no rows', async () => {
 			const client = create_mock_client([]);
-			const db = new Db({client, transaction: no_nested_transaction});
+			const db = new Db({ client, transaction: no_nested_transaction });
 
 			const result = await db.query('SELECT * FROM t WHERE false');
 
@@ -48,7 +48,7 @@ describe('Db', () => {
 
 		test('passes text and values to client', async () => {
 			const client = create_mock_client([]);
-			const db = new Db({client, transaction: no_nested_transaction});
+			const db = new Db({ client, transaction: no_nested_transaction });
 
 			await db.query('SELECT * FROM t WHERE id = $1 AND name = $2', [42, 'test']);
 
@@ -60,7 +60,7 @@ describe('Db', () => {
 
 		test('passes undefined values when omitted', async () => {
 			const client = create_mock_client([]);
-			const db = new Db({client, transaction: no_nested_transaction});
+			const db = new Db({ client, transaction: no_nested_transaction });
 
 			await db.query('SELECT 1');
 
@@ -71,9 +71,9 @@ describe('Db', () => {
 			const client: DbClient = {
 				query: async () => {
 					throw new Error('connection lost');
-				},
+				}
 			};
-			const db = new Db({client, transaction: no_nested_transaction});
+			const db = new Db({ client, transaction: no_nested_transaction });
 
 			await assert_rejects(() => db.query('SELECT 1'), /connection lost/);
 		});
@@ -81,17 +81,17 @@ describe('Db', () => {
 
 	describe('query_one', () => {
 		test('returns first row when rows exist', async () => {
-			const client = create_mock_client([{id: 1}, {id: 2}]);
-			const db = new Db({client, transaction: no_nested_transaction});
+			const client = create_mock_client([{ id: 1 }, { id: 2 }]);
+			const db = new Db({ client, transaction: no_nested_transaction });
 
 			const result = await db.query_one('SELECT * FROM t');
 
-			assert.deepStrictEqual(result, {id: 1});
+			assert.deepStrictEqual(result, { id: 1 });
 		});
 
 		test('returns undefined for no rows', async () => {
 			const client = create_mock_client([]);
-			const db = new Db({client, transaction: no_nested_transaction});
+			const db = new Db({ client, transaction: no_nested_transaction });
 
 			const result = await db.query_one('SELECT * FROM t WHERE false');
 
@@ -99,8 +99,8 @@ describe('Db', () => {
 		});
 
 		test('passes values through', async () => {
-			const client = create_mock_client([{id: 5}]);
-			const db = new Db({client, transaction: no_nested_transaction});
+			const client = create_mock_client([{ id: 5 }]);
+			const db = new Db({ client, transaction: no_nested_transaction });
 
 			await db.query_one('SELECT * FROM t WHERE id = $1', [5]);
 
@@ -117,9 +117,9 @@ describe('Db', () => {
 				client,
 				transaction: async (fn) => {
 					transaction_called = true;
-					const tx_db = new Db({client, transaction: no_nested_transaction});
+					const tx_db = new Db({ client, transaction: no_nested_transaction });
 					return fn(tx_db);
-				},
+				}
 			});
 
 			await db.transaction(async (tx) => {
@@ -134,9 +134,9 @@ describe('Db', () => {
 			const db = new Db({
 				client,
 				transaction: async (fn) => {
-					const tx_db = new Db({client, transaction: no_nested_transaction});
+					const tx_db = new Db({ client, transaction: no_nested_transaction });
 					return fn(tx_db);
-				},
+				}
 			});
 
 			const result = await db.transaction(async () => 'hello');
@@ -149,9 +149,9 @@ describe('Db', () => {
 			const db = new Db({
 				client,
 				transaction: async (fn) => {
-					const tx_db = new Db({client, transaction: no_nested_transaction});
+					const tx_db = new Db({ client, transaction: no_nested_transaction });
 					return fn(tx_db);
-				},
+				}
 			});
 
 			await assert_rejects(
@@ -159,7 +159,7 @@ describe('Db', () => {
 					db.transaction(async () => {
 						throw new Error('rollback me');
 					}),
-				/rollback me/,
+				/rollback me/
 			);
 		});
 	});
@@ -169,7 +169,7 @@ describe('no_nested_transaction', () => {
 	test('throws immediately', () => {
 		assert.throws(
 			() => no_nested_transaction(async () => {}),
-			/Nested transactions are not supported/,
+			/Nested transactions are not supported/
 		);
 	});
 });

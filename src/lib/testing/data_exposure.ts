@@ -17,22 +17,22 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, beforeAll, assert} from 'vitest';
+import { describe, test, beforeAll, assert } from 'vitest';
 
-import type {AppSurface, AppSurfaceSpec} from '../http/surface.ts';
-import {ROLE_ADMIN} from '../auth/role_schema.ts';
-import type {TestAccount} from './app_server.ts';
-import {resolve_valid_path, generate_valid_body} from './schema_generators.ts';
-import {is_null_schema, is_strict_object_schema} from '../http/schema_helpers.ts';
-import {is_keeper_auth, is_public_auth} from '../http/auth_shape.ts';
+import type { AppSurface, AppSurfaceSpec } from '../http/surface.ts';
+import { ROLE_ADMIN } from '../auth/role_schema.ts';
+import type { TestAccount } from './app_server.ts';
+import { resolve_valid_path, generate_valid_body } from './schema_generators.ts';
+import { is_null_schema, is_strict_object_schema } from '../http/schema_helpers.ts';
+import { is_keeper_auth, is_public_auth } from '../http/auth_shape.ts';
 import {
 	sensitive_field_blocklist,
 	admin_only_field_blocklist,
 	assert_no_sensitive_fields_in_json,
-	pick_auth_headers,
+	pick_auth_headers
 } from './integration_helpers.ts';
-import type {BackendCapabilities} from './cross_backend/capabilities.ts';
-import type {SetupTest, TestFixture} from './cross_backend/setup.ts';
+import type { BackendCapabilities } from './cross_backend/capabilities.ts';
+import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
 
 // --- Schema introspection ---
 
@@ -74,7 +74,7 @@ export const collect_json_schema_property_names = (schema: unknown): Set<string>
  */
 export const assert_output_schemas_no_sensitive_fields = (
 	surface: AppSurface,
-	sensitive_fields: ReadonlyArray<string> = sensitive_field_blocklist,
+	sensitive_fields: ReadonlyArray<string> = sensitive_field_blocklist
 ): void => {
 	for (const route of surface.routes) {
 		if (route.output_schema === null) continue;
@@ -82,7 +82,7 @@ export const assert_output_schemas_no_sensitive_fields = (
 		for (const field of sensitive_fields) {
 			assert.ok(
 				!prop_names.has(field),
-				`${route.method} ${route.path}: output schema contains sensitive field '${field}'`,
+				`${route.method} ${route.path}: output schema contains sensitive field '${field}'`
 			);
 		}
 	}
@@ -93,10 +93,10 @@ export const assert_output_schemas_no_sensitive_fields = (
  */
 export const assert_non_admin_schemas_no_admin_fields = (
 	surface: AppSurface,
-	admin_only_fields: ReadonlyArray<string> = admin_only_field_blocklist,
+	admin_only_fields: ReadonlyArray<string> = admin_only_field_blocklist
 ): void => {
 	const non_admin = surface.routes.filter(
-		(r) => !is_keeper_auth(r.auth) && !(r.auth.roles?.includes('admin') ?? false),
+		(r) => !is_keeper_auth(r.auth) && !(r.auth.roles?.includes('admin') ?? false)
 	);
 	for (const route of non_admin) {
 		if (route.output_schema === null) continue;
@@ -106,7 +106,7 @@ export const assert_non_admin_schemas_no_admin_fields = (
 				!prop_names.has(field),
 				`${route.method} ${route.path}: non-admin output schema contains admin-only field '${
 					field
-				}'`,
+				}'`
 			);
 		}
 	}
@@ -143,10 +143,10 @@ export interface DataExposureTestOptions {
  *    contain no sensitive fields
  */
 export const describe_data_exposure_tests = (options: DataExposureTestOptions): void => {
-	const {surface, route_specs} = options.surface_source;
+	const { surface, route_specs } = options.surface_source;
 	const {
 		sensitive_fields = sensitive_field_blocklist,
-		admin_only_fields = admin_only_field_blocklist,
+		admin_only_fields = admin_only_field_blocklist
 	} = options;
 	const skip_set = new Set(options.skip_routes);
 	void options.capabilities;
@@ -168,7 +168,7 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 					for (const field of sensitive_fields) {
 						assert.ok(
 							!prop_names.has(field),
-							`${route.method} ${route.path} error ${status}: contains sensitive field '${field}'`,
+							`${route.method} ${route.path} error ${status}: contains sensitive field '${field}'`
 						);
 					}
 				}
@@ -185,11 +185,11 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 			fixture = await options.setup_test();
 			authed_account = await fixture.create_account({
 				username: 'exposure_authed',
-				roles: [],
+				roles: []
 			});
 			admin_account = await fixture.create_account({
 				username: 'exposure_admin',
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 		});
 
@@ -207,7 +207,7 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 
 				const res = await fixture.transport(url, {
 					method: spec.method,
-					headers: {host: 'localhost', origin: 'http://localhost:5173'},
+					headers: { host: 'localhost', origin: 'http://localhost:5173' }
 				});
 
 				if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
@@ -225,7 +225,7 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 				assert_no_sensitive_fields_in_json(
 					error_body,
 					sensitive_fields,
-					`unauthenticated ${route_key} (${res.status})`,
+					`unauthenticated ${route_key} (${res.status})`
 				);
 			}
 		});
@@ -245,7 +245,7 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 
 				const res = await fixture.transport(url, {
 					method: spec.method,
-					headers,
+					headers
 				});
 
 				assert.strictEqual(res.status, 403, `${route_key} should return 403 for non-admin user`);
@@ -289,9 +289,9 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 					method: spec.method,
 					headers: {
 						...headers,
-						...(body ? {'content-type': 'application/json'} : {}),
+						...(body ? { 'content-type': 'application/json' } : {})
 					},
-					...(body ? {body: JSON.stringify(body)} : {}),
+					...(body ? { body: JSON.stringify(body) } : {})
 				};
 
 				const res = await fixture.transport(url, request_init);
@@ -313,7 +313,7 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 				assert_no_sensitive_fields_in_json(
 					response_body,
 					sensitive_fields,
-					`${route_key} (${res.status})`,
+					`${route_key} (${res.status})`
 				);
 
 				// Admin-only field check applies to non-elevated routes with strict
@@ -323,7 +323,7 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 					assert_no_sensitive_fields_in_json(
 						response_body,
 						admin_only_fields,
-						`non-admin ${route_key} (${res.status})`,
+						`non-admin ${route_key} (${res.status})`
 					);
 				}
 			}

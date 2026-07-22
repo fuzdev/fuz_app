@@ -7,9 +7,9 @@
  * @module
  */
 
-import {describe, test, assert, vi} from 'vitest';
-import {Hono} from 'hono';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { describe, test, assert, vi } from 'vitest';
+import { Hono } from 'hono';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	normalize_ip,
@@ -19,9 +19,9 @@ import {
 	validate_ip_strict,
 	create_proxy_middleware,
 	create_proxy_middleware_spec,
-	type ParsedProxy,
+	type ParsedProxy
 } from '$lib/http/proxy.ts';
-import {get_client_ip} from '$lib/http/client_ip.ts';
+import { get_client_ip } from '$lib/http/client_ip.ts';
 
 // --- normalize_ip ---
 
@@ -166,22 +166,22 @@ describe('validate_ip_strict', () => {
 describe('parse_proxy_entry', () => {
 	test('parses plain IPv4 address', () => {
 		const result = parse_proxy_entry('127.0.0.1');
-		assert.deepStrictEqual(result, {type: 'ip', address: '127.0.0.1'});
+		assert.deepStrictEqual(result, { type: 'ip', address: '127.0.0.1' });
 	});
 
 	test('parses plain IPv6 address', () => {
 		const result = parse_proxy_entry('::1');
-		assert.deepStrictEqual(result, {type: 'ip', address: '::1'});
+		assert.deepStrictEqual(result, { type: 'ip', address: '::1' });
 	});
 
 	test('normalizes plain IP to lowercase', () => {
 		const result = parse_proxy_entry('FE80::1');
-		assert.deepStrictEqual(result, {type: 'ip', address: 'fe80::1'});
+		assert.deepStrictEqual(result, { type: 'ip', address: 'fe80::1' });
 	});
 
 	test('normalizes IPv4-mapped IPv6 to plain IPv4', () => {
 		const result = parse_proxy_entry('::ffff:127.0.0.1');
-		assert.deepStrictEqual(result, {type: 'ip', address: '127.0.0.1'});
+		assert.deepStrictEqual(result, { type: 'ip', address: '127.0.0.1' });
 	});
 
 	test('throws on invalid plain IP', () => {
@@ -234,21 +234,21 @@ describe('parse_proxy_entry', () => {
 		// 10.0.0.5/8 has host bits set — almost certainly a config mistake
 		assert.throws(
 			() => parse_proxy_entry('10.0.0.5/8'),
-			/Non-network-aligned CIDR \(host bits set\)/,
+			/Non-network-aligned CIDR \(host bits set\)/
 		);
 	});
 
 	test('throws on non-network-aligned IPv6 CIDR', () => {
 		assert.throws(
 			() => parse_proxy_entry('fe80::1/10'),
-			/Non-network-aligned CIDR \(host bits set\)/,
+			/Non-network-aligned CIDR \(host bits set\)/
 		);
 	});
 
 	test('throws on IPv4 CIDR prefix > 32', () => {
 		assert.throws(
 			() => parse_proxy_entry('10.0.0.0/33'),
-			/Invalid CIDR prefix for IPv4 \(max 32\)/,
+			/Invalid CIDR prefix for IPv4 \(max 32\)/
 		);
 	});
 
@@ -279,7 +279,7 @@ describe('parse_proxy_entry', () => {
 	test('throws on float CIDR prefix', () => {
 		assert.throws(
 			() => parse_proxy_entry('10.0.0.0/8.5'),
-			/Invalid CIDR prefix \(not an integer\)/,
+			/Invalid CIDR prefix \(not an integer\)/
 		);
 	});
 
@@ -308,13 +308,13 @@ describe('parse_proxy_entry', () => {
 
 describe('is_trusted_ip', () => {
 	test('matches exact IPv4 address', () => {
-		const proxies: Array<ParsedProxy> = [{type: 'ip', address: '127.0.0.1'}];
+		const proxies: Array<ParsedProxy> = [{ type: 'ip', address: '127.0.0.1' }];
 		assert.ok(is_trusted_ip('127.0.0.1', proxies));
 		assert.ok(!is_trusted_ip('127.0.0.2', proxies));
 	});
 
 	test('matches exact IPv6 address', () => {
-		const proxies: Array<ParsedProxy> = [{type: 'ip', address: '::1'}];
+		const proxies: Array<ParsedProxy> = [{ type: 'ip', address: '::1' }];
 		assert.ok(is_trusted_ip('::1', proxies));
 		assert.ok(!is_trusted_ip('::2', proxies));
 	});
@@ -363,7 +363,7 @@ describe('is_trusted_ip', () => {
 		const proxies = [
 			parse_proxy_entry('127.0.0.1'),
 			parse_proxy_entry('10.0.0.0/8'),
-			parse_proxy_entry('::1'),
+			parse_proxy_entry('::1')
 		];
 		assert.ok(is_trusted_ip('127.0.0.1', proxies));
 		assert.ok(is_trusted_ip('10.5.5.5', proxies));
@@ -402,7 +402,7 @@ describe('is_trusted_ip', () => {
 	});
 
 	test('IPv6 exact match is case-insensitive', () => {
-		const proxies: Array<ParsedProxy> = [{type: 'ip', address: 'fe80::1'}];
+		const proxies: Array<ParsedProxy> = [{ type: 'ip', address: 'fe80::1' }];
 		assert.ok(is_trusted_ip('fe80::1', proxies));
 		assert.ok(is_trusted_ip('FE80::1', proxies));
 		assert.ok(is_trusted_ip('Fe80::1', proxies));
@@ -522,7 +522,7 @@ describe('resolve_client_ip', () => {
 		// client, cdn (10.x), nginx (127.0.0.1)
 		assert.strictEqual(
 			resolve_client_ip('203.0.113.1, 10.1.2.3, 127.0.0.1', multi_trusted),
-			'203.0.113.1',
+			'203.0.113.1'
 		);
 	});
 
@@ -620,7 +620,7 @@ describe('resolve_client_ip', () => {
 		// proxy case the JSDoc tradeoff documents).
 		assert.strictEqual(
 			resolve_client_ip('203.0.113.1, 198.51.100.7:8080', localhost),
-			'203.0.113.1',
+			'203.0.113.1'
 		);
 	});
 
@@ -671,7 +671,7 @@ describe('resolve_client_ip', () => {
 			assert.strictEqual(resolve_client_ip('::2, ::01', trusted), '::2');
 			assert.strictEqual(
 				resolve_client_ip('::2, 0000:0000:0000:0000:0000:0000:0000:0001', trusted),
-				'::2',
+				'::2'
 			);
 		});
 
@@ -694,27 +694,27 @@ describe('resolve_client_ip', () => {
 
 	describe('IPv6 in XFF chains', () => {
 		test('resolves IPv6 loopback from XFF', () => {
-			const trusted: Array<ParsedProxy> = [{type: 'ip', address: '127.0.0.1'}];
+			const trusted: Array<ParsedProxy> = [{ type: 'ip', address: '127.0.0.1' }];
 			const result = resolve_client_ip('::1, 203.0.113.50, 127.0.0.1', trusted);
 			assert.strictEqual(result, '203.0.113.50');
 		});
 
 		test('resolves IPv4-mapped IPv6 in XFF', () => {
-			const trusted: Array<ParsedProxy> = [{type: 'ip', address: '127.0.0.1'}];
+			const trusted: Array<ParsedProxy> = [{ type: 'ip', address: '127.0.0.1' }];
 			const result = resolve_client_ip('::ffff:203.0.113.50', trusted);
 			assert.strictEqual(result, '203.0.113.50');
 		});
 
 		test('handles full IPv6 address in XFF', () => {
-			const trusted: Array<ParsedProxy> = [{type: 'ip', address: '127.0.0.1'}];
+			const trusted: Array<ParsedProxy> = [{ type: 'ip', address: '127.0.0.1' }];
 			const result = resolve_client_ip('2001:db8::1', trusted);
 			assert.strictEqual(result, '2001:db8::1');
 		});
 
 		test('handles mixed IPv4 and IPv6 in XFF chain', () => {
 			const trusted: Array<ParsedProxy> = [
-				{type: 'ip', address: '127.0.0.1'},
-				{type: 'ip', address: '10.0.0.1'},
+				{ type: 'ip', address: '127.0.0.1' },
+				{ type: 'ip', address: '10.0.0.1' }
 			];
 			const result = resolve_client_ip('2001:db8::1, 10.0.0.1', trusted);
 			assert.strictEqual(result, '2001:db8::1');
@@ -728,30 +728,30 @@ describe('create_proxy_middleware', () => {
 	/** Create a test app with proxy middleware and an echo route. */
 	const create_test_app = (
 		trusted_proxies: Array<string>,
-		connection_ip: string | null = '127.0.0.1',
+		connection_ip: string | null = '127.0.0.1'
 	): Hono => {
 		const app = new Hono();
 		app.use(
 			'*',
 			create_proxy_middleware({
 				trusted_proxies,
-				get_connection_ip: () => connection_ip ?? undefined,
-			}),
+				get_connection_ip: () => connection_ip ?? undefined
+			})
 		);
-		app.get('/ip', (c) => c.json({ip: get_client_ip(c)}));
+		app.get('/ip', (c) => c.json({ ip: get_client_ip(c) }));
 		return app;
 	};
 
 	test('trusted connection + X-Forwarded-For → resolves client IP', async () => {
 		const app = create_test_app(['127.0.0.1']);
-		const res = await app.request('/ip', {headers: {'X-Forwarded-For': '203.0.113.1'}});
+		const res = await app.request('/ip', { headers: { 'X-Forwarded-For': '203.0.113.1' } });
 		const body = await res.json();
 		assert.strictEqual(body.ip, '203.0.113.1');
 	});
 
 	test('untrusted connection + X-Forwarded-For → ignores header, uses connection IP', async () => {
 		const app = create_test_app(['10.0.0.0/8'], '192.168.1.1');
-		const res = await app.request('/ip', {headers: {'X-Forwarded-For': 'spoofed'}});
+		const res = await app.request('/ip', { headers: { 'X-Forwarded-For': 'spoofed' } });
 		const body = await res.json();
 		assert.strictEqual(body.ip, '192.168.1.1');
 	});
@@ -772,14 +772,14 @@ describe('create_proxy_middleware', () => {
 
 	test('no connection IP + X-Forwarded-For → ignores header, returns unknown', async () => {
 		const app = create_test_app(['127.0.0.1'], null);
-		const res = await app.request('/ip', {headers: {'X-Forwarded-For': '203.0.113.1'}});
+		const res = await app.request('/ip', { headers: { 'X-Forwarded-For': '203.0.113.1' } });
 		const body = await res.json();
 		assert.strictEqual(body.ip, 'unknown');
 	});
 
 	test('empty trusted_proxies → always uses connection IP', async () => {
 		const app = create_test_app([], '192.168.1.1');
-		const res = await app.request('/ip', {headers: {'X-Forwarded-For': 'spoofed'}});
+		const res = await app.request('/ip', { headers: { 'X-Forwarded-For': 'spoofed' } });
 		const body = await res.json();
 		assert.strictEqual(body.ip, '192.168.1.1');
 	});
@@ -787,7 +787,7 @@ describe('create_proxy_middleware', () => {
 	test('multi-hop chain with CIDR trusted proxies', async () => {
 		const app = create_test_app(['127.0.0.1', '10.0.0.0/8']);
 		const res = await app.request('/ip', {
-			headers: {'X-Forwarded-For': '203.0.113.1, 10.1.2.3'},
+			headers: { 'X-Forwarded-For': '203.0.113.1, 10.1.2.3' }
 		});
 		const body = await res.json();
 		assert.strictEqual(body.ip, '203.0.113.1');
@@ -796,8 +796,8 @@ describe('create_proxy_middleware', () => {
 	test('different XFF values resolve to distinct client IPs', async () => {
 		const app = create_test_app(['127.0.0.1']);
 
-		const res_a = await app.request('/ip', {headers: {'X-Forwarded-For': '10.0.0.1'}});
-		const res_b = await app.request('/ip', {headers: {'X-Forwarded-For': '10.0.0.2'}});
+		const res_a = await app.request('/ip', { headers: { 'X-Forwarded-For': '10.0.0.1' } });
+		const res_b = await app.request('/ip', { headers: { 'X-Forwarded-For': '10.0.0.2' } });
 		const body_a = await res_a.json();
 		const body_b = await res_b.json();
 		assert.strictEqual(body_a.ip, '10.0.0.1');
@@ -807,7 +807,7 @@ describe('create_proxy_middleware', () => {
 	test('XFF with empty segments in chain', async () => {
 		const app = create_test_app(['127.0.0.1']);
 		const res = await app.request('/ip', {
-			headers: {'X-Forwarded-For': '203.0.113.1, , 127.0.0.1'},
+			headers: { 'X-Forwarded-For': '203.0.113.1, , 127.0.0.1' }
 		});
 		const body = await res.json();
 		assert.strictEqual(body.ip, '203.0.113.1');
@@ -818,7 +818,7 @@ describe('create_proxy_middleware', () => {
 		// leftmost entry. The middleware uses that, not the ?? connection_ip fallback.
 		const app = create_test_app(['127.0.0.1', '10.0.0.0/8'], '127.0.0.1');
 		const res = await app.request('/ip', {
-			headers: {'X-Forwarded-For': '10.1.1.1, 10.2.2.2'},
+			headers: { 'X-Forwarded-For': '10.1.1.1, 10.2.2.2' }
 		});
 		const body = await res.json();
 		assert.strictEqual(body.ip, '10.1.1.1');
@@ -826,7 +826,7 @@ describe('create_proxy_middleware', () => {
 
 	test('IPv6 connection IP with trusted proxy', async () => {
 		const app = create_test_app(['::1'], '::1');
-		const res = await app.request('/ip', {headers: {'X-Forwarded-For': '203.0.113.1'}});
+		const res = await app.request('/ip', { headers: { 'X-Forwarded-For': '203.0.113.1' } });
 		const body = await res.json();
 		assert.strictEqual(body.ip, '203.0.113.1');
 	});
@@ -842,7 +842,7 @@ describe('create_proxy_middleware', () => {
 		// Verify the resolved XFF IP wins over the connection IP
 		const app = create_test_app(['127.0.0.1'], '127.0.0.1');
 		const res = await app.request('/ip', {
-			headers: {'X-Forwarded-For': '198.51.100.42'},
+			headers: { 'X-Forwarded-For': '198.51.100.42' }
 		});
 		const body = await res.json();
 		assert.strictEqual(body.ip, '198.51.100.42');
@@ -851,7 +851,7 @@ describe('create_proxy_middleware', () => {
 	test('IPv4-mapped IPv6 connection IP is trusted and normalized', async () => {
 		// Deno dual-stack: connection reports ::ffff:127.0.0.1, config has 127.0.0.1
 		const app = create_test_app(['127.0.0.1'], '::ffff:127.0.0.1');
-		const res = await app.request('/ip', {headers: {'X-Forwarded-For': '203.0.113.1'}});
+		const res = await app.request('/ip', { headers: { 'X-Forwarded-For': '203.0.113.1' } });
 		const body = await res.json();
 		assert.strictEqual(body.ip, '203.0.113.1');
 	});
@@ -867,7 +867,7 @@ describe('create_proxy_middleware', () => {
 
 	test('untrusted connection IP is still normalized', async () => {
 		const app = create_test_app(['10.0.0.0/8'], '::ffff:192.168.1.1');
-		const res = await app.request('/ip', {headers: {'X-Forwarded-For': 'spoofed'}});
+		const res = await app.request('/ip', { headers: { 'X-Forwarded-For': 'spoofed' } });
 		const body = await res.json();
 		// Untrusted, so XFF ignored. Connection IP normalized.
 		assert.strictEqual(body.ip, '192.168.1.1');
@@ -875,7 +875,7 @@ describe('create_proxy_middleware', () => {
 
 	test('IPv6 CIDR trusted proxy resolves XFF client IP', async () => {
 		const app = create_test_app(['fe80::/10'], 'fe80::1');
-		const res = await app.request('/ip', {headers: {'X-Forwarded-For': '203.0.113.1'}});
+		const res = await app.request('/ip', { headers: { 'X-Forwarded-For': '203.0.113.1' } });
 		const body = await res.json();
 		assert.strictEqual(body.ip, '203.0.113.1');
 	});
@@ -883,7 +883,7 @@ describe('create_proxy_middleware', () => {
 	test('IPv6 client IP in XFF chain is resolved correctly', async () => {
 		const app = create_test_app(['127.0.0.1']);
 		const res = await app.request('/ip', {
-			headers: {'X-Forwarded-For': '2001:db8::1, 127.0.0.1'},
+			headers: { 'X-Forwarded-For': '2001:db8::1, 127.0.0.1' }
 		});
 		const body = await res.json();
 		assert.strictEqual(body.ip, '2001:db8::1');
@@ -892,7 +892,7 @@ describe('create_proxy_middleware', () => {
 	test('empty X-Forwarded-For header value falls back to connection IP', async () => {
 		// An empty string is falsy — middleware treats it as "no header present"
 		const app = create_test_app(['127.0.0.1']);
-		const res = await app.request('/ip', {headers: {'X-Forwarded-For': ''}});
+		const res = await app.request('/ip', { headers: { 'X-Forwarded-For': '' } });
 		const body = await res.json();
 		assert.strictEqual(body.ip, '127.0.0.1');
 	});
@@ -913,7 +913,7 @@ describe('create_proxy_middleware', () => {
 		// configuration. See `resolve_client_ip` JSDoc.
 		const app = create_test_app(['127.0.0.1']);
 		const res = await app.request('/ip', {
-			headers: {'X-Forwarded-For': 'attacker-controlled, 127.0.0.1'},
+			headers: { 'X-Forwarded-For': 'attacker-controlled, 127.0.0.1' }
 		});
 		const body = await res.json();
 		assert.strictEqual(body.ip, '127.0.0.1');
@@ -923,10 +923,10 @@ describe('create_proxy_middleware', () => {
 		const app = new Hono();
 		const middleware = create_proxy_middleware({
 			trusted_proxies: ['127.0.0.1'],
-			get_connection_ip: () => '127.0.0.1',
+			get_connection_ip: () => '127.0.0.1'
 		});
 		app.use('/*', middleware);
-		app.get('/test', (c) => c.json({ip: get_client_ip(c)}));
+		app.get('/test', (c) => c.json({ ip: get_client_ip(c) }));
 
 		// Hono concatenates multiple same-name headers with ", "
 		// Result: "10.0.0.1, 203.0.113.50" — rightmost-first walk resolves to 203.0.113.50
@@ -934,8 +934,8 @@ describe('create_proxy_middleware', () => {
 		const res = await app.request('/test', {
 			headers: new Headers([
 				['X-Forwarded-For', '10.0.0.1'],
-				['X-Forwarded-For', '203.0.113.50'],
-			]),
+				['X-Forwarded-For', '203.0.113.50']
+			])
 		});
 		const body = await res.json();
 		// the rightmost untrusted IP should be the resolved client
@@ -949,7 +949,7 @@ describe('create_proxy_middleware_spec', () => {
 	test('returns a valid MiddlewareSpec', () => {
 		const spec = create_proxy_middleware_spec({
 			trusted_proxies: ['127.0.0.1'],
-			get_connection_ip: () => '127.0.0.1',
+			get_connection_ip: () => '127.0.0.1'
 		});
 		assert.strictEqual(spec.name, 'trusted_proxy');
 		assert.strictEqual(spec.path, '*');
@@ -962,9 +962,9 @@ describe('create_proxy_middleware_spec', () => {
 describe('get_client_ip without proxy middleware', () => {
 	test('returns unknown when no middleware sets client_ip', async () => {
 		const app = new Hono();
-		app.get('/ip', (c) => c.json({ip: get_client_ip(c)}));
+		app.get('/ip', (c) => c.json({ ip: get_client_ip(c) }));
 
-		const res = await app.request('/ip', {headers: {'X-Forwarded-For': 'spoofed'}});
+		const res = await app.request('/ip', { headers: { 'X-Forwarded-For': 'spoofed' } });
 		const body = await res.json();
 		assert.strictEqual(body.ip, 'unknown');
 	});
@@ -978,30 +978,30 @@ describe('CIDR boundary IPs', () => {
 			name: 'network address (x.x.x.0) is in /24',
 			ip: '10.0.0.0',
 			cidr: '10.0.0.0/24',
-			expected: true,
+			expected: true
 		},
 		{
 			name: 'broadcast address (x.x.x.255) is in /24',
 			ip: '10.0.0.255',
 			cidr: '10.0.0.0/24',
-			expected: true,
+			expected: true
 		},
-		{name: 'first address outside /24', ip: '10.0.1.0', cidr: '10.0.0.0/24', expected: false},
+		{ name: 'first address outside /24', ip: '10.0.1.0', cidr: '10.0.0.0/24', expected: false },
 		{
 			name: 'last address before /24 range',
 			ip: '9.255.255.255',
 			cidr: '10.0.0.0/24',
-			expected: false,
+			expected: false
 		},
-		{name: '0.0.0.0 is in 0.0.0.0/0', ip: '0.0.0.0', cidr: '0.0.0.0/0', expected: true},
+		{ name: '0.0.0.0 is in 0.0.0.0/0', ip: '0.0.0.0', cidr: '0.0.0.0/0', expected: true },
 		{
 			name: '255.255.255.255 is in 0.0.0.0/0',
 			ip: '255.255.255.255',
 			cidr: '0.0.0.0/0',
-			expected: true,
+			expected: true
 		},
-		{name: '/32 matches only the exact IP', ip: '10.0.0.1', cidr: '10.0.0.1/32', expected: true},
-		{name: '/32 rejects adjacent IP', ip: '10.0.0.2', cidr: '10.0.0.1/32', expected: false},
+		{ name: '/32 matches only the exact IP', ip: '10.0.0.1', cidr: '10.0.0.1/32', expected: true },
+		{ name: '/32 rejects adjacent IP', ip: '10.0.0.2', cidr: '10.0.0.1/32', expected: false }
 	];
 
 	for (const tc of cidr_boundary_cases) {
@@ -1033,11 +1033,11 @@ describe('IPv4-mapped IPv6 in XFF chain', () => {
 		// client → IPv6 CDN → IPv4-mapped proxy → IPv4 proxy
 		const proxies = [
 			parse_proxy_entry('2001:db8::100'), // IPv6 CDN
-			parse_proxy_entry('10.0.0.0/8'), // IPv4 internal range
+			parse_proxy_entry('10.0.0.0/8') // IPv4 internal range
 		];
 		const result = resolve_client_ip(
 			'203.0.113.50, 2001:db8::100, ::ffff:10.0.0.5, 10.0.0.1',
-			proxies,
+			proxies
 		);
 		// right-to-left: 10.0.0.1 trusted (CIDR), ::ffff:10.0.0.5 → 10.0.0.5 trusted (CIDR),
 		// 2001:db8::100 trusted (exact), 203.0.113.50 untrusted → client
@@ -1062,13 +1062,13 @@ describe('undefined connection IP', () => {
 			'*',
 			create_proxy_middleware({
 				trusted_proxies: ['10.0.0.1'],
-				get_connection_ip: () => undefined as any,
-			}),
+				get_connection_ip: () => undefined as any
+			})
 		);
-		app.get('/test', (c) => c.json({ip: c.get('client_ip')}));
+		app.get('/test', (c) => c.json({ ip: c.get('client_ip') }));
 
 		const res = await app.request('/test', {
-			headers: {'X-Forwarded-For': '1.2.3.4, 10.0.0.1'},
+			headers: { 'X-Forwarded-For': '1.2.3.4, 10.0.0.1' }
 		});
 		const body = await res.json();
 		assert.strictEqual(body.ip, 'unknown');
@@ -1080,10 +1080,10 @@ describe('undefined connection IP', () => {
 			'*',
 			create_proxy_middleware({
 				trusted_proxies: ['10.0.0.1'],
-				get_connection_ip: () => undefined as any,
-			}),
+				get_connection_ip: () => undefined as any
+			})
 		);
-		app.get('/test', (c) => c.json({ip: c.get('client_ip')}));
+		app.get('/test', (c) => c.json({ ip: c.get('client_ip') }));
 
 		const res = await app.request('/test');
 		const body = await res.json();
@@ -1095,7 +1095,7 @@ describe('undefined connection IP', () => {
 
 describe('proxy middleware logging', () => {
 	test('logs debug when XFF ignored due to untrusted connection', async () => {
-		const log = new Logger('test', {level: 'debug'});
+		const log = new Logger('test', { level: 'debug' });
 		const debug_spy = vi.spyOn(log, 'debug');
 		const app = new Hono();
 		app.use(
@@ -1103,17 +1103,17 @@ describe('proxy middleware logging', () => {
 			create_proxy_middleware({
 				trusted_proxies: ['10.0.0.0/8'],
 				get_connection_ip: () => '192.168.1.1',
-				log,
-			}),
+				log
+			})
 		);
-		app.get('/test', (c) => c.json({ip: get_client_ip(c)}));
+		app.get('/test', (c) => c.json({ ip: get_client_ip(c) }));
 
-		await app.request('/test', {headers: {'X-Forwarded-For': 'spoofed'}});
+		await app.request('/test', { headers: { 'X-Forwarded-For': 'spoofed' } });
 		assert.ok(debug_spy.mock.calls.length > 0, 'debug should have been called');
 	});
 
 	test('logs warn when all XFF entries are trusted', async () => {
-		const log = new Logger('test', {level: 'warn'});
+		const log = new Logger('test', { level: 'warn' });
 		const warn_spy = vi.spyOn(log, 'warn');
 		const app = new Hono();
 		app.use(
@@ -1121,17 +1121,17 @@ describe('proxy middleware logging', () => {
 			create_proxy_middleware({
 				trusted_proxies: ['127.0.0.1', '10.0.0.0/8'],
 				get_connection_ip: () => '127.0.0.1',
-				log,
-			}),
+				log
+			})
 		);
-		app.get('/test', (c) => c.json({ip: get_client_ip(c)}));
+		app.get('/test', (c) => c.json({ ip: get_client_ip(c) }));
 
-		await app.request('/test', {headers: {'X-Forwarded-For': '10.1.1.1, 10.2.2.2'}});
+		await app.request('/test', { headers: { 'X-Forwarded-For': '10.1.1.1, 10.2.2.2' } });
 		assert.ok(warn_spy.mock.calls.length > 0, 'warn should have been called');
 	});
 
 	test('logs warn when connection IP is undefined', async () => {
-		const log = new Logger('test', {level: 'warn'});
+		const log = new Logger('test', { level: 'warn' });
 		const warn_spy = vi.spyOn(log, 'warn');
 		const app = new Hono();
 		app.use(
@@ -1139,10 +1139,10 @@ describe('proxy middleware logging', () => {
 			create_proxy_middleware({
 				trusted_proxies: ['127.0.0.1'],
 				get_connection_ip: () => undefined,
-				log,
-			}),
+				log
+			})
 		);
-		app.get('/test', (c) => c.json({ip: get_client_ip(c)}));
+		app.get('/test', (c) => c.json({ ip: get_client_ip(c) }));
 
 		await app.request('/test');
 		assert.ok(warn_spy.mock.calls.length > 0, 'warn should have been called');

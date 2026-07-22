@@ -8,26 +8,26 @@
 	 * @module
 	 */
 
-	import {AuditLogState, audit_log_rpc_context} from './audit_log_state.svelte.ts';
-	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.ts';
+	import { AuditLogState, audit_log_rpc_context } from './audit_log_state.svelte.ts';
+	import { format_relative_time, format_datetime_local, truncate_uuid } from './ui_format.ts';
 	import Datatable from './Datatable.svelte';
-	import type {DatatableColumn} from './datatable.ts';
-	import type {RoleGrantHistoryEventJson} from '../auth/audit_log_schema.ts';
-	import {format_scope_context, resolve_scope_label} from './format_scope.ts';
+	import type { DatatableColumn } from './datatable.ts';
+	import type { RoleGrantHistoryEventJson } from '../auth/audit_log_schema.ts';
+	import { format_scope_context, resolve_scope_label } from './format_scope.ts';
 
 	const get_rpc = audit_log_rpc_context.get();
-	const audit_log = new AuditLogState({get_rpc});
+	const audit_log = new AuditLogState({ get_rpc });
 	const get_format_scope = format_scope_context.get();
 	const format_scope = $derived(get_format_scope());
 
 	void audit_log.fetch_role_grant_history();
 
 	const columns: Array<DatatableColumn<RoleGrantHistoryEventJson>> = [
-		{key: 'event_type', label: 'action', width: 100},
-		{key: 'metadata', label: 'role', width: 160},
-		{key: 'username', label: 'by', width: 140},
-		{key: 'target_username', label: 'target', width: 140},
-		{key: 'created_at', label: 'time', width: 100},
+		{ key: 'event_type', label: 'action', width: 100 },
+		{ key: 'metadata', label: 'role', width: 160 },
+		{ key: 'username', label: 'by', width: 140 },
+		{ key: 'target_username', label: 'target', width: 140 },
+		{ key: 'created_at', label: 'time', width: 100 }
 	];
 
 	// Metadata is `Record<string, unknown>`; narrow before reusing `resolve_scope_label`.

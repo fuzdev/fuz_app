@@ -49,20 +49,20 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {assert, describe} from 'vitest';
+import { assert, describe } from 'vitest';
 
 import {
 	account_session_list_action_spec,
 	account_session_revoke_action_spec,
-	account_session_revoke_all_action_spec,
+	account_session_revoke_all_action_spec
 } from '../../auth/account_action_specs.ts';
-import {admin_session_revoke_all_action_spec} from '../../auth/admin_action_specs.ts';
-import {audit_log_event_specs} from '../../realtime/sse_auth_guard.ts';
-import {SSE_CONNECTED_COMMENT} from '../../realtime/sse_constants.ts';
-import {create_sse_transport} from '../transports/sse_transport.ts';
-import {create_rpc_post_init} from '../rpc_helpers.ts';
-import {type BackendCapabilities, test_if} from './capabilities.ts';
-import type {SetupTest} from './setup.ts';
+import { admin_session_revoke_all_action_spec } from '../../auth/admin_action_specs.ts';
+import { audit_log_event_specs } from '../../realtime/sse_auth_guard.ts';
+import { SSE_CONNECTED_COMMENT } from '../../realtime/sse_constants.ts';
+import { create_sse_transport } from '../transports/sse_transport.ts';
+import { create_rpc_post_init } from '../rpc_helpers.ts';
+import { type BackendCapabilities, test_if } from './capabilities.ts';
+import type { SetupTest } from './setup.ts';
 
 /** Default audit-log SSE stream path — the standard fuz_app `/api/admin/audit/stream`. */
 const DEFAULT_SSE_PATH = '/api/admin/audit/stream';
@@ -115,7 +115,7 @@ const assert_audit_data_frame = (frame: string): void => {
 		result.success,
 		`audit data frame params mismatch for '${String(payload.method)}': ${
 			result.success ? '' : JSON.stringify(result.error.issues)
-		}`,
+		}`
 	);
 };
 
@@ -125,7 +125,7 @@ const assert_audit_data_frame = (frame: string): void => {
  * close-on-revoke, and session-scoped close-on-revoke.
  */
 export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOptions): void => {
-	const {setup_test, capabilities, base_url, rpc_path, origin} = options;
+	const { setup_test, capabilities, base_url, rpc_path, origin } = options;
 	const sse_path = options.sse_path ?? DEFAULT_SSE_PATH;
 
 	describe('cross-process sse', () => {
@@ -135,14 +135,14 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 				base_url,
 				sse_path,
 				cookies: fixture.transport.cookies(),
-				origin,
+				origin
 			});
 			try {
 				const first = await sse.read_frame();
 				assert.strictEqual(
 					first + '\n\n',
 					SSE_CONNECTED_COMMENT,
-					'first frame must be the connected comment',
+					'first frame must be the connected comment'
 				);
 			} finally {
 				await sse.close();
@@ -158,37 +158,40 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 			'broadcasts an audit event as a data frame',
 			async () => {
 				const fixture = await setup_test();
-				const secondary = await fixture.create_account({username: 'sse_revoke_target', roles: []});
+				const secondary = await fixture.create_account({
+					username: 'sse_revoke_target',
+					roles: []
+				});
 				const sse = await create_sse_transport({
 					base_url,
 					sse_path,
 					cookies: fixture.transport.cookies(),
-					origin,
+					origin
 				});
 				try {
 					const first = await sse.read_frame();
 					assert.strictEqual(
 						first + '\n\n',
 						SSE_CONNECTED_COMMENT,
-						'first frame must be the connected comment',
+						'first frame must be the connected comment'
 					);
 					const res = await fixture.transport(
 						rpc_path!,
 						create_rpc_post_init(admin_session_revoke_all_action_spec.method, {
-							account_id: secondary.account.id,
-						}),
+							account_id: secondary.account.id
+						})
 					);
 					assert.strictEqual(
 						res.status,
 						200,
-						`admin_session_revoke_all RPC failed (status=${res.status})`,
+						`admin_session_revoke_all RPC failed (status=${res.status})`
 					);
 					const data_frame = await sse.read_frame();
 					assert_audit_data_frame(data_frame);
 				} finally {
 					await sse.close();
 				}
-			},
+			}
 		);
 
 		// Revoke the subscriber's OWN sessions → `session_revoke_all` targets the
@@ -202,30 +205,30 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 					base_url,
 					sse_path,
 					cookies: fixture.transport.cookies(),
-					origin,
+					origin
 				});
 				try {
 					const first = await sse.read_frame();
 					assert.strictEqual(
 						first + '\n\n',
 						SSE_CONNECTED_COMMENT,
-						'first frame must be the connected comment',
+						'first frame must be the connected comment'
 					);
 					const res = await fixture.transport(
 						rpc_path!,
-						create_rpc_post_init(account_session_revoke_all_action_spec.method),
+						create_rpc_post_init(account_session_revoke_all_action_spec.method)
 					);
 					assert.strictEqual(
 						res.status,
 						200,
-						`account_session_revoke_all RPC failed (status=${res.status})`,
+						`account_session_revoke_all RPC failed (status=${res.status})`
 					);
 					const closed = await sse.wait_for_close(2000);
 					assert.ok(closed, 'stream did not close within 2s after session_revoke_all');
 				} finally {
 					await sse.close();
 				}
-			},
+			}
 		);
 
 		// Single `session_revoke` of the subscriber's OWN session → the
@@ -246,47 +249,47 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 					base_url,
 					sse_path,
 					cookies: fixture.transport.cookies(),
-					origin,
+					origin
 				});
 				try {
 					const first = await sse.read_frame();
 					assert.strictEqual(
 						first + '\n\n',
 						SSE_CONNECTED_COMMENT,
-						'first frame must be the connected comment',
+						'first frame must be the connected comment'
 					);
 					const list_res = await fixture.transport(
 						rpc_path!,
-						create_rpc_post_init(account_session_list_action_spec.method),
+						create_rpc_post_init(account_session_list_action_spec.method)
 					);
 					assert.strictEqual(
 						list_res.status,
 						200,
-						`account_session_list RPC failed (status=${list_res.status})`,
+						`account_session_list RPC failed (status=${list_res.status})`
 					);
 					const list_body = (await list_res.json()) as {
-						result?: {sessions?: ReadonlyArray<{id?: unknown}>};
+						result?: { sessions?: ReadonlyArray<{ id?: unknown }> };
 					};
 					const session_id = list_body.result?.sessions?.[0]?.id;
 					assert.ok(
 						typeof session_id === 'string' && session_id.length > 0,
-						'expected the subscriber session id (blake3 hash) to revoke',
+						'expected the subscriber session id (blake3 hash) to revoke'
 					);
 					const revoke_res = await fixture.transport(
 						rpc_path!,
-						create_rpc_post_init(account_session_revoke_action_spec.method, {session_id}),
+						create_rpc_post_init(account_session_revoke_action_spec.method, { session_id })
 					);
 					assert.strictEqual(
 						revoke_res.status,
 						200,
-						`account_session_revoke RPC failed (status=${revoke_res.status})`,
+						`account_session_revoke RPC failed (status=${revoke_res.status})`
 					);
 					const closed = await sse.wait_for_close(2000);
 					assert.ok(closed, 'stream did not close within 2s after session_revoke');
 				} finally {
 					await sse.close();
 				}
-			},
+			}
 		);
 	});
 };

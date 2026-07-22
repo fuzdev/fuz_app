@@ -100,7 +100,7 @@ test pass.
 Deno's manual mode reconciles `node_modules` against the consumer's
 declared range. If the local fuz_app's `version` doesn't satisfy the
 consumer's `^x.y.z` constraint, Deno errors with "Could not find
-@fuzdev/fuz_app in a node_modules folder" — *not* because the symlink
+@fuzdev/fuz_app in a node_modules folder" — _not_ because the symlink
 itself is rejected, but because the version doesn't match. The fix is
 to bump the consumer's `package.json` + `deno.json` constraints to
 admit the locally-published version, then re-run `npm install`. The
@@ -115,9 +115,9 @@ fuz_app uses **deep path imports** — no barrel/index exports. The wildcard
 `exports` in `package.json` (`"./*.js"`) makes every module in `dist/` importable:
 
 ```typescript
-import {create_app_server} from '@fuzdev/fuz_app/server/app_server.ts';
-import {create_session_config} from '@fuzdev/fuz_app/auth/session_cookie.ts';
-import type {RouteSpec} from '@fuzdev/fuz_app/http/route_spec.ts';
+import { create_app_server } from '@fuzdev/fuz_app/server/app_server.ts';
+import { create_session_config } from '@fuzdev/fuz_app/auth/session_cookie.ts';
+import type { RouteSpec } from '@fuzdev/fuz_app/http/route_spec.ts';
 ```
 
 Dense subsystems have nested `CLAUDE.md` — consult those when working in

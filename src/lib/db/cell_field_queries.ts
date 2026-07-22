@@ -17,9 +17,9 @@
  * @module
  */
 
-import type {QueryDeps} from './query_deps.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
-import {assert_row} from './assert_row.ts';
+import type { QueryDeps } from './query_deps.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { assert_row } from './assert_row.ts';
 
 /** Row shape returned by `cell_field` SELECTs. */
 export interface CellFieldRow {
@@ -51,7 +51,7 @@ export interface CellFieldSetQueryInput {
  */
 export const query_cell_field_set = async (
 	deps: QueryDeps,
-	input: CellFieldSetQueryInput,
+	input: CellFieldSetQueryInput
 ): Promise<CellFieldRow> => {
 	const row = await deps.db.query_one<CellFieldRow>(
 		`INSERT INTO cell_field (source_id, name, target_id)
@@ -59,7 +59,7 @@ export const query_cell_field_set = async (
 		 ON CONFLICT (source_id, name)
 		 DO UPDATE SET target_id = EXCLUDED.target_id, created_at = NOW()
 		 RETURNING *`,
-		[input.source_id, input.name, input.target_id],
+		[input.source_id, input.name, input.target_id]
 	);
 	return assert_row(row, 'INSERT INTO cell_field');
 };
@@ -79,11 +79,11 @@ export const query_cell_field_set = async (
 export const query_cell_field_get = async (
 	deps: QueryDeps,
 	source_id: Uuid,
-	name: string,
+	name: string
 ): Promise<CellFieldRow | null> => {
 	const row = await deps.db.query_one<CellFieldRow>(
 		`SELECT * FROM cell_field WHERE source_id = $1 AND name = $2`,
-		[source_id, name],
+		[source_id, name]
 	);
 	return row ?? null;
 };
@@ -99,11 +99,11 @@ export const query_cell_field_get = async (
 export const query_cell_field_delete = async (
 	deps: QueryDeps,
 	source_id: Uuid,
-	name: string,
+	name: string
 ): Promise<CellFieldRow | null> => {
 	const row = await deps.db.query_one<CellFieldRow>(
 		`DELETE FROM cell_field WHERE source_id = $1 AND name = $2 RETURNING *`,
-		[source_id, name],
+		[source_id, name]
 	);
 	return row ?? null;
 };
@@ -122,7 +122,7 @@ export const query_cell_field_delete = async (
 export const query_cell_field_list_for_source = async (
 	deps: QueryDeps,
 	source_id: Uuid,
-	options?: {limit?: number; name_after?: string},
+	options?: { limit?: number; name_after?: string }
 ): Promise<Array<CellFieldRow>> => {
 	const limit = options?.limit ?? null;
 	const name_after = options?.name_after ?? null;
@@ -134,7 +134,7 @@ export const query_cell_field_list_for_source = async (
 		   AND ($3::text IS NULL OR f.name > $3)
 		 ORDER BY f.name ASC
 		 LIMIT $2`,
-		[source_id, limit, name_after],
+		[source_id, limit, name_after]
 	);
 };
 
@@ -158,7 +158,7 @@ export const query_cell_field_list_for_source = async (
 export const query_cell_field_list_for_target = async (
 	deps: QueryDeps,
 	target_id: Uuid,
-	options?: {limit?: number},
+	options?: { limit?: number }
 ): Promise<Array<CellFieldRow>> =>
 	deps.db.query<CellFieldRow>(
 		`SELECT f.* FROM cell_field f
@@ -167,5 +167,5 @@ export const query_cell_field_list_for_target = async (
 		   AND s.deleted_at IS NULL
 		 ORDER BY f.created_at ASC
 		 LIMIT $2`,
-		[target_id, options?.limit ?? null],
+		[target_id, options?.limit ?? null]
 	);

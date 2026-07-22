@@ -35,17 +35,17 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, assert} from 'vitest';
+import { describe, assert } from 'vitest';
 
-import {CellCreateOutput, CellGetOutput, CellUpdateOutput} from '../../auth/cell_action_specs.ts';
+import { CellCreateOutput, CellGetOutput, CellUpdateOutput } from '../../auth/cell_action_specs.ts';
 import {
 	CellGrantCreateOutput,
-	ERROR_CELL_GRANT_UNKNOWN_ROLE,
+	ERROR_CELL_GRANT_UNKNOWN_ROLE
 } from '../../auth/cell_grant_action_specs.ts';
-import {test_if} from './capabilities.ts';
-import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.ts';
-import type {RpcPathCrossSuiteOptions} from './setup.ts';
-import {SPINE_CELL_EDITOR_ROLE, SPINE_RPC_PATH} from './spine_surface_constants.ts';
+import { test_if } from './capabilities.ts';
+import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
+import type { RpcPathCrossSuiteOptions } from './setup.ts';
+import { SPINE_CELL_EDITOR_ROLE, SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** App role the holder is seeded with; matches the spine's registered role. */
 export const CELL_EDITOR_ROLE = SPINE_CELL_EDITOR_ROLE;
@@ -57,7 +57,7 @@ export const CELL_ROLE_HOLDER_USERNAME = 'cell_role_holder';
 const UNREGISTERED_ROLE = 'not_a_registered_role';
 
 export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteOptions): void => {
-	const {setup_test, capabilities} = options;
+	const { setup_test, capabilities } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
 	describe('cell_grant role-shaped parity', () => {
@@ -67,17 +67,17 @@ export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteO
 			async () => {
 				const fixture = await setup_test();
 				const t = fixture.transport;
-				const owner = await fixture.create_account({username: 'cell_role_owner'});
+				const owner = await fixture.create_account({ username: 'cell_role_owner' });
 				const owner_h = owner.create_session_headers();
 				const holder = fixture.extra_accounts[CELL_ROLE_HOLDER_USERNAME];
 				assert.ok(holder, `fixture must seed the ${CELL_ROLE_HOLDER_USERNAME} extra account`);
-				const stranger = await fixture.create_account({username: 'cell_role_stranger'});
+				const stranger = await fixture.create_account({ username: 'cell_role_stranger' });
 
 				// Owner creates a private cell (default visibility) and grants
 				// view access to anyone holding CELL_EDITOR_ROLE.
 				const created = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_create', {kind: 'note', data: {}}, owner_h),
-					CellCreateOutput,
+					await cross_rpc_call(t, rpc_path, 'cell_create', { kind: 'note', data: {} }, owner_h),
+					CellCreateOutput
 				);
 				const cell_id = created.cell.id;
 				expect_output(
@@ -85,10 +85,10 @@ export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteO
 						t,
 						rpc_path,
 						'cell_grant_create',
-						{cell_id, level: 'viewer', principal: {kind: 'role', role: CELL_EDITOR_ROLE}},
-						owner_h,
+						{ cell_id, level: 'viewer', principal: { kind: 'role', role: CELL_EDITOR_ROLE } },
+						owner_h
 					),
-					CellGrantCreateOutput,
+					CellGrantCreateOutput
 				);
 
 				// Holder of the role is admitted through the role-shaped grant.
@@ -97,10 +97,10 @@ export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteO
 						t,
 						rpc_path,
 						'cell_get',
-						{id: cell_id},
-						holder.create_session_headers(),
+						{ id: cell_id },
+						holder.create_session_headers()
 					),
-					CellGetOutput,
+					CellGetOutput
 				);
 				assert.strictEqual(holder_view.cell.id, cell_id, 'holder sees the granted cell');
 
@@ -110,12 +110,12 @@ export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteO
 					t,
 					rpc_path,
 					'cell_get',
-					{id: cell_id},
-					stranger.create_session_headers(),
+					{ id: cell_id },
+					stranger.create_session_headers()
 				);
 				assert.ok(!stranger_view.ok, 'non-holder must not see the cell');
 				assert.strictEqual(error_reason(stranger_view), 'cell_not_found');
-			},
+			}
 		);
 
 		test_if(
@@ -124,11 +124,11 @@ export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteO
 			async () => {
 				const fixture = await setup_test();
 				const t = fixture.transport;
-				const owner = await fixture.create_account({username: 'cell_unknown_role_owner'});
+				const owner = await fixture.create_account({ username: 'cell_unknown_role_owner' });
 				const owner_h = owner.create_session_headers();
 				const created = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_create', {kind: 'note', data: {}}, owner_h),
-					CellCreateOutput,
+					await cross_rpc_call(t, rpc_path, 'cell_create', { kind: 'note', data: {} }, owner_h),
+					CellCreateOutput
 				);
 				const denied = await cross_rpc_call(
 					t,
@@ -137,13 +137,13 @@ export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteO
 					{
 						cell_id: created.cell.id,
 						level: 'viewer',
-						principal: {kind: 'role', role: UNREGISTERED_ROLE},
+						principal: { kind: 'role', role: UNREGISTERED_ROLE }
 					},
-					owner_h,
+					owner_h
 				);
 				assert.ok(!denied.ok, 'granting an unregistered role must fail');
 				assert.strictEqual(error_reason(denied), ERROR_CELL_GRANT_UNKNOWN_ROLE);
-			},
+			}
 		);
 
 		test_if(
@@ -152,14 +152,14 @@ export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteO
 			async () => {
 				const fixture = await setup_test();
 				const t = fixture.transport;
-				const owner = await fixture.create_account({username: 'cell_role_edit_owner'});
+				const owner = await fixture.create_account({ username: 'cell_role_edit_owner' });
 				const owner_h = owner.create_session_headers();
 				const holder = fixture.extra_accounts[CELL_ROLE_HOLDER_USERNAME];
 				assert.ok(holder, `fixture must seed the ${CELL_ROLE_HOLDER_USERNAME} extra account`);
 
 				const created = expect_output(
-					await cross_rpc_call(t, rpc_path, 'cell_create', {kind: 'note', data: {}}, owner_h),
-					CellCreateOutput,
+					await cross_rpc_call(t, rpc_path, 'cell_create', { kind: 'note', data: {} }, owner_h),
+					CellCreateOutput
 				);
 				const cell_id = created.cell.id;
 				expect_output(
@@ -167,10 +167,10 @@ export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteO
 						t,
 						rpc_path,
 						'cell_grant_create',
-						{cell_id, level: 'editor', principal: {kind: 'role', role: CELL_EDITOR_ROLE}},
-						owner_h,
+						{ cell_id, level: 'editor', principal: { kind: 'role', role: CELL_EDITOR_ROLE } },
+						owner_h
 					),
-					CellGrantCreateOutput,
+					CellGrantCreateOutput
 				);
 
 				const edited = expect_output(
@@ -178,17 +178,17 @@ export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteO
 						t,
 						rpc_path,
 						'cell_update',
-						{cell_id, data: {label: 'by role editor'}},
-						holder.create_session_headers(),
+						{ cell_id, data: { label: 'by role editor' } },
+						holder.create_session_headers()
 					),
-					CellUpdateOutput,
+					CellUpdateOutput
 				);
 				assert.strictEqual(
 					edited.cell.updated_by,
 					holder.actor.id,
-					'edit attributed to the holder',
+					'edit attributed to the holder'
 				);
-			},
+			}
 		);
 	});
 };

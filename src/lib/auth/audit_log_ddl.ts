@@ -49,5 +49,5 @@ export const AUDIT_LOG_INDEXES = [
 	`CREATE INDEX IF NOT EXISTS idx_audit_log_account ON audit_log(account_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_audit_log_event_type ON audit_log(event_type)`,
 	`CREATE INDEX IF NOT EXISTS idx_audit_log_target_account ON audit_log(target_account_id)`,
-	`CREATE INDEX IF NOT EXISTS idx_audit_log_target_actor ON audit_log(target_actor_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_audit_log_target_actor ON audit_log(target_actor_id)`
 ];

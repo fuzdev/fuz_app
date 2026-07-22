@@ -7,19 +7,19 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import {Hono} from 'hono';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { describe, assert, test } from 'vitest';
+import { Hono } from 'hono';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {create_account_status_route_spec} from '$lib/auth/account_routes.ts';
-import {apply_route_specs} from '$lib/http/route_spec.ts';
-import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.ts';
-import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.ts';
-import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
-import {create_stub_db} from '$lib/testing/stubs.ts';
+import { create_account_status_route_spec } from '$lib/auth/account_routes.ts';
+import { apply_route_specs } from '$lib/http/route_spec.ts';
+import { fuz_auth_guard_resolver } from '$lib/auth/auth_guard_resolver.ts';
+import { REQUEST_CONTEXT_KEY, type RequestContext } from '$lib/auth/request_context.ts';
+import { ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY } from '$lib/hono_context.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_stub_db } from '$lib/testing/stubs.ts';
 
-const log = new Logger('test', {level: 'off'});
+const log = new Logger('test', { level: 'off' });
 const db = create_stub_db();
 
 /** Create a test request context for an authenticated user. */
@@ -35,7 +35,7 @@ const create_test_ctx = (): RequestContext => ({
 		created_by: null,
 		updated_by: null,
 		deleted_at: null,
-		deleted_by: null,
+		deleted_by: null
 	},
 	actor: {
 		id: 'act_1' as Uuid,
@@ -45,15 +45,15 @@ const create_test_ctx = (): RequestContext => ({
 		updated_at: null,
 		updated_by: null,
 		deleted_at: null,
-		deleted_by: null,
+		deleted_by: null
 	},
-	role_grants: [],
+	role_grants: []
 });
 
 /** Create a test Hono app with route specs and optional auth context. */
 const create_test_app = (
 	specs: Parameters<typeof apply_route_specs>[1],
-	auth_ctx?: RequestContext,
+	auth_ctx?: RequestContext
 ): Hono => {
 	const app = new Hono();
 	if (auth_ctx) {
@@ -73,11 +73,11 @@ describe('account status route spec metadata', () => {
 		const spec = create_account_status_route_spec();
 		assert.strictEqual(spec.method, 'GET');
 		assert.strictEqual(spec.path, '/status');
-		assert.deepStrictEqual(spec.auth, {account: 'none', actor: 'none'});
+		assert.deepStrictEqual(spec.auth, { account: 'none', actor: 'none' });
 	});
 
 	test('accepts a custom path', () => {
-		const spec = create_account_status_route_spec({path: '/custom/status'});
+		const spec = create_account_status_route_spec({ path: '/custom/status' });
 		assert.strictEqual(spec.path, '/custom/status');
 	});
 });
@@ -94,7 +94,7 @@ describe('account status unauthenticated', () => {
 	});
 
 	test('includes bootstrap_available when bootstrap_status is available', async () => {
-		const spec = create_account_status_route_spec({bootstrap_status: {available: true}});
+		const spec = create_account_status_route_spec({ bootstrap_status: { available: true } });
 		const app = create_test_app([spec]);
 		const res = await app.request('/status');
 		assert.strictEqual(res.status, 401);
@@ -103,7 +103,7 @@ describe('account status unauthenticated', () => {
 	});
 
 	test('omits bootstrap_available when not available', async () => {
-		const spec = create_account_status_route_spec({bootstrap_status: {available: false}});
+		const spec = create_account_status_route_spec({ bootstrap_status: { available: false } });
 		const app = create_test_app([spec]);
 		const res = await app.request('/status');
 		assert.strictEqual(res.status, 401);
@@ -121,8 +121,8 @@ describe('account status unauthenticated', () => {
 	});
 
 	test('bootstrap_available reflects the shared mutable reference', async () => {
-		const bootstrap_status = {available: true};
-		const spec = create_account_status_route_spec({bootstrap_status});
+		const bootstrap_status = { available: true };
+		const spec = create_account_status_route_spec({ bootstrap_status });
 		const app = create_test_app([spec]);
 
 		const res1 = await app.request('/status');
@@ -164,7 +164,7 @@ describe('account status authenticated', () => {
 	});
 
 	test('does not include bootstrap_available', async () => {
-		const spec = create_account_status_route_spec({bootstrap_status: {available: true}});
+		const spec = create_account_status_route_spec({ bootstrap_status: { available: true } });
 		const ctx = create_test_ctx();
 		const app = create_test_app([spec], ctx);
 		const res = await app.request('/status');

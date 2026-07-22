@@ -7,20 +7,20 @@
  * @module
  */
 
-import {timingSafeEqual} from 'node:crypto';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import { timingSafeEqual } from 'node:crypto';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type {PasswordHashDeps} from './password.ts';
+import type { PasswordHashDeps } from './password.ts';
 import {
 	ERROR_INVALID_TOKEN,
 	ERROR_ALREADY_BOOTSTRAPPED,
-	ERROR_TOKEN_FILE_MISSING,
+	ERROR_TOKEN_FILE_MISSING
 } from '../http/error_schemas.ts';
-import {ROLE_ADMIN, ROLE_KEEPER} from './role_schema.ts';
-import type {Account, Actor, RoleGrant} from './account_schema.ts';
-import {query_create_account_with_actor} from './account_queries.ts';
-import {query_create_role_grant} from './role_grant_queries.ts';
-import type {Db} from '../db/db.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from './role_schema.ts';
+import type { Account, Actor, RoleGrant } from './account_schema.ts';
+import { query_create_account_with_actor } from './account_queries.ts';
+import { query_create_role_grant } from './role_grant_queries.ts';
+import type { Db } from '../db/db.ts';
 
 /** Input for the bootstrap account creation. */
 export interface BootstrapAccountInput {
@@ -33,16 +33,16 @@ export interface BootstrapAccountSuccess {
 	ok: true;
 	account: Account;
 	actor: Actor;
-	role_grants: {keeper: RoleGrant; admin: RoleGrant};
+	role_grants: { keeper: RoleGrant; admin: RoleGrant };
 	/** Whether the bootstrap token file was successfully deleted after account creation. */
 	token_file_deleted: boolean;
 }
 
 /** Bootstrap failure result. */
 export type BootstrapAccountFailure =
-	| {ok: false; error: typeof ERROR_ALREADY_BOOTSTRAPPED; status: 403}
-	| {ok: false; error: typeof ERROR_TOKEN_FILE_MISSING; status: 404}
-	| {ok: false; error: typeof ERROR_INVALID_TOKEN; status: 401};
+	| { ok: false; error: typeof ERROR_ALREADY_BOOTSTRAPPED; status: 403 }
+	| { ok: false; error: typeof ERROR_TOKEN_FILE_MISSING; status: 404 }
+	| { ok: false; error: typeof ERROR_INVALID_TOKEN; status: 401 };
 
 /** Bootstrap account result — either success or a bootstrap verification failure. */
 export type BootstrapAccountResult = BootstrapAccountSuccess | BootstrapAccountFailure;
@@ -88,23 +88,23 @@ export interface BootstrapAccountDeps {
 export const bootstrap_account = async (
 	deps: BootstrapAccountDeps,
 	provided_token: string,
-	input: BootstrapAccountInput,
+	input: BootstrapAccountInput
 ): Promise<BootstrapAccountResult> => {
-	const {db, token_path, read_text_file, delete_file, password, log} = deps;
+	const { db, token_path, read_text_file, delete_file, password, log } = deps;
 
 	// 1. Read and verify token (non-destructive, before transaction)
 	let expected_token: string;
 	try {
 		expected_token = (await read_text_file(token_path)).trim();
 	} catch {
-		return {ok: false, error: ERROR_TOKEN_FILE_MISSING, status: 404};
+		return { ok: false, error: ERROR_TOKEN_FILE_MISSING, status: 404 };
 	}
 	// Defense-in-depth: no .trim() on provided_token — tokens must match exactly.
 	// The expected_token is already trimmed above.
 	const provided_buf = Buffer.from(provided_token);
 	const expected_buf = Buffer.from(expected_token);
 	if (provided_buf.length !== expected_buf.length || !timingSafeEqual(provided_buf, expected_buf)) {
-		return {ok: false, error: ERROR_INVALID_TOKEN, status: 401};
+		return { ok: false, error: ERROR_INVALID_TOKEN, status: 401 };
 	}
 
 	// 2. Hash password (CPU-intensive, before transaction)
@@ -112,37 +112,37 @@ export const bootstrap_account = async (
 
 	// 3. Atomic transaction: lock + create
 	const tx_result = await db.transaction(async (tx) => {
-		const lock_rows = await tx.query<{id: number}>(
-			'UPDATE bootstrap_lock SET bootstrapped = true WHERE id = 1 AND bootstrapped = false RETURNING id',
+		const lock_rows = await tx.query<{ id: number }>(
+			'UPDATE bootstrap_lock SET bootstrapped = true WHERE id = 1 AND bootstrapped = false RETURNING id'
 		);
 		if (lock_rows.length === 0) {
-			return {ok: false as const, error: ERROR_ALREADY_BOOTSTRAPPED, status: 403 as const};
+			return { ok: false as const, error: ERROR_ALREADY_BOOTSTRAPPED, status: 403 as const };
 		}
 
-		const tx_deps = {db: tx};
-		const {account, actor} = await query_create_account_with_actor(tx_deps, {
+		const tx_deps = { db: tx };
+		const { account, actor } = await query_create_account_with_actor(tx_deps, {
 			username: input.username,
-			password_hash,
+			password_hash
 		});
 
 		const keeper_role_grant = await query_create_role_grant(tx_deps, {
 			actor_id: actor.id,
 			role: ROLE_KEEPER,
 			granted_by: null,
-			expires_at: null,
+			expires_at: null
 		});
 		const admin_role_grant = await query_create_role_grant(tx_deps, {
 			actor_id: actor.id,
 			role: ROLE_ADMIN,
 			granted_by: null,
-			expires_at: null,
+			expires_at: null
 		});
 
 		return {
 			ok: true as const,
 			account,
 			actor,
-			role_grants: {keeper: keeper_role_grant, admin: admin_role_grant},
+			role_grants: { keeper: keeper_role_grant, admin: admin_role_grant }
 		};
 	});
 
@@ -155,9 +155,9 @@ export const bootstrap_account = async (
 	} catch {
 		token_file_deleted = false;
 		log.error(
-			`CRITICAL: Failed to delete bootstrap token file at ${token_path}. Delete it manually.`,
+			`CRITICAL: Failed to delete bootstrap token file at ${token_path}. Delete it manually.`
 		);
 	}
 
-	return {...tx_result, token_file_deleted};
+	return { ...tx_result, token_file_deleted };
 };

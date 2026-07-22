@@ -9,7 +9,7 @@
  * @module
  */
 
-import {assert, test} from 'vitest';
+import { assert, test } from 'vitest';
 
 import {
 	query_accept_offer,
@@ -17,17 +17,17 @@ import {
 	query_role_grant_offer_retract,
 	query_role_grant_offer_list,
 	query_role_grant_offer_find_pending,
-	query_role_grant_offer_sweep_expired,
+	query_role_grant_offer_sweep_expired
 } from '$lib/auth/role_grant_offer_queries.ts';
-import {create_uuid} from '@fuzdev/fuz_util/id.ts';
+import { create_uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {describe_db} from '../db_fixture.ts';
+import { describe_db } from '../db_fixture.ts';
 import {
 	make_account,
 	create_pending_offer,
 	insert_superseded_offer,
 	future,
-	hour,
+	hour
 } from './role_grant_offer_queries.fixtures.ts';
 
 describe_db('role_grant_offer_queries.list', (get_db) => {
@@ -38,7 +38,7 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 		// each path so a refactor that drops one of the IS NULL checks fails
 		// here rather than leaking terminal rows into a recipient's inbox.
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor = await make_account(db, 'grantor_list');
 		const recipient = await make_account(db, 'recipient_list');
 
@@ -48,42 +48,42 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 		// accepted — terminal
 		const acceptable = await create_pending_offer(db, grantor, recipient, {
 			role: 'admin',
-			scope_id: create_uuid(),
+			scope_id: create_uuid()
 		});
 		await db.transaction((tx) =>
 			query_accept_offer(
-				{db: tx},
+				{ db: tx },
 				{
 					offer_id: acceptable.id,
 					to_account_id: recipient.account_id,
-					actor_id: recipient.actor_id,
-				},
-			),
+					actor_id: recipient.actor_id
+				}
+			)
 		);
 
 		// declined — terminal
 		const declinable = await create_pending_offer(db, grantor, recipient, {
 			role: 'classroom_student',
-			scope_id: create_uuid(),
+			scope_id: create_uuid()
 		});
 		await query_role_grant_offer_decline(deps, declinable.id, recipient.account_id, null);
 
 		// retracted — terminal
 		const retractable = await create_pending_offer(db, grantor, recipient, {
 			role: 'classroom_student',
-			scope_id: create_uuid(),
+			scope_id: create_uuid()
 		});
 		await query_role_grant_offer_retract(deps, retractable.id, grantor.actor_id);
 
 		// superseded — terminal (no public API sets `superseded_at` outside the
 		// accept / revoke supersede CTEs, so the fixture raw-INSERTs).
-		await insert_superseded_offer(db, grantor, recipient, {scope_id: create_uuid()});
+		await insert_superseded_offer(db, grantor, recipient, { scope_id: create_uuid() });
 
 		// expired-pending
 		await create_pending_offer(db, grantor, recipient, {
 			role: 'classroom_student',
 			scope_id: create_uuid(),
-			expires_at: future(-hour),
+			expires_at: future(-hour)
 		});
 
 		const list = await query_role_grant_offer_list(deps, recipient.account_id);
@@ -96,7 +96,7 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 		// same predicate structure — a missing IS NULL would silently break
 		// the supersede revoke-bypass forecloser.
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor = await make_account(db, 'grantor_find');
 		const recipient = await make_account(db, 'recipient_find');
 
@@ -107,24 +107,24 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 		// accepted
 		const acceptable = await create_pending_offer(db, grantor, recipient, {
 			role: 'admin',
-			scope_id: create_uuid(),
+			scope_id: create_uuid()
 		});
 		await db.transaction((tx) =>
 			query_accept_offer(
-				{db: tx},
+				{ db: tx },
 				{
 					offer_id: acceptable.id,
 					to_account_id: recipient.account_id,
-					actor_id: recipient.actor_id,
-				},
-			),
+					actor_id: recipient.actor_id
+				}
+			)
 		);
 		assert.strictEqual(await query_role_grant_offer_find_pending(deps, acceptable.id), null);
 
 		// declined
 		const declinable = await create_pending_offer(db, grantor, recipient, {
 			role: 'classroom_student',
-			scope_id: create_uuid(),
+			scope_id: create_uuid()
 		});
 		await query_role_grant_offer_decline(deps, declinable.id, recipient.account_id, null);
 		assert.strictEqual(await query_role_grant_offer_find_pending(deps, declinable.id), null);
@@ -132,14 +132,14 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 		// retracted
 		const retractable = await create_pending_offer(db, grantor, recipient, {
 			role: 'classroom_student',
-			scope_id: create_uuid(),
+			scope_id: create_uuid()
 		});
 		await query_role_grant_offer_retract(deps, retractable.id, grantor.actor_id);
 		assert.strictEqual(await query_role_grant_offer_find_pending(deps, retractable.id), null);
 
 		// superseded
 		const superseded_id = await insert_superseded_offer(db, grantor, recipient, {
-			scope_id: create_uuid(),
+			scope_id: create_uuid()
 		});
 		assert.strictEqual(await query_role_grant_offer_find_pending(deps, superseded_id), null);
 
@@ -147,7 +147,7 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 		const expired = await create_pending_offer(db, grantor, recipient, {
 			role: 'classroom_student',
 			scope_id: create_uuid(),
-			expires_at: future(-hour),
+			expires_at: future(-hour)
 		});
 		assert.strictEqual(await query_role_grant_offer_find_pending(deps, expired.id), null);
 
@@ -157,7 +157,7 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 
 	test('sweep returns only expired pending offers', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor = await make_account(db, 'grantor_sweep');
 		const recipient = await make_account(db, 'recipient_sweep');
 
@@ -165,7 +165,7 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 		const expired = await create_pending_offer(db, grantor, recipient, {
 			role: 'classroom_student',
 			scope_id: create_uuid(),
-			expires_at: future(-hour),
+			expires_at: future(-hour)
 		});
 
 		const swept = await query_role_grant_offer_sweep_expired(deps);
@@ -180,7 +180,7 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 		// urgent offer. Three rows with distinct deadlines pin both order
 		// and stability.
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor = await make_account(db, 'grantor_list_order');
 		const recipient = await make_account(db, 'recipient_list_order');
 		// Insert in reverse expiry order so the result depends on ORDER BY,
@@ -188,44 +188,44 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 		const late = await create_pending_offer(db, grantor, recipient, {
 			role: 'a',
 			scope_id: create_uuid(),
-			expires_at: future(hour * 3),
+			expires_at: future(hour * 3)
 		});
 		const middle = await create_pending_offer(db, grantor, recipient, {
 			role: 'b',
 			scope_id: create_uuid(),
-			expires_at: future(hour * 2),
+			expires_at: future(hour * 2)
 		});
 		const soon = await create_pending_offer(db, grantor, recipient, {
 			role: 'c',
 			scope_id: create_uuid(),
-			expires_at: future(hour),
+			expires_at: future(hour)
 		});
 		const list = await query_role_grant_offer_list(deps, recipient.account_id);
 		assert.deepStrictEqual(
 			list.map((o) => o.id),
-			[soon.id, middle.id, late.id],
+			[soon.id, middle.id, late.id]
 		);
 	});
 
 	test('sweep_expired orders by expires_at ASC (oldest expiry first)', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor = await make_account(db, 'grantor_sweep_order');
 		const recipient = await make_account(db, 'recipient_sweep_order');
 		const newer = await create_pending_offer(db, grantor, recipient, {
 			role: 'a',
 			scope_id: create_uuid(),
-			expires_at: future(-5 * 60_000),
+			expires_at: future(-5 * 60_000)
 		});
 		const oldest = await create_pending_offer(db, grantor, recipient, {
 			role: 'b',
 			scope_id: create_uuid(),
-			expires_at: future(-hour * 3),
+			expires_at: future(-hour * 3)
 		});
 		const middle = await create_pending_offer(db, grantor, recipient, {
 			role: 'c',
 			scope_id: create_uuid(),
-			expires_at: future(-hour),
+			expires_at: future(-hour)
 		});
 		const swept = await query_role_grant_offer_sweep_expired(deps);
 		const ids = swept.map((o) => o.id);

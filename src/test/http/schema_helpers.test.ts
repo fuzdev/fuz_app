@@ -4,8 +4,8 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import {z} from 'zod';
+import { describe, assert, test } from 'vitest';
+import { z } from 'zod';
 
 import {
 	is_null_schema,
@@ -13,7 +13,7 @@ import {
 	is_void_schema,
 	schema_to_surface,
 	middleware_applies,
-	merge_error_schemas,
+	merge_error_schemas
 } from '$lib/http/schema_helpers.ts';
 
 describe('is_null_schema', () => {
@@ -26,7 +26,7 @@ describe('is_null_schema', () => {
 	});
 
 	test('returns false for z.strictObject()', () => {
-		assert.strictEqual(is_null_schema(z.strictObject({name: z.string()})), false);
+		assert.strictEqual(is_null_schema(z.strictObject({ name: z.string() })), false);
 	});
 
 	test('returns false for z.nullable(z.string()) — accepts null but is not z.null()', () => {
@@ -56,21 +56,21 @@ describe('is_void_schema', () => {
 	});
 
 	test('returns false for z.strictObject()', () => {
-		assert.strictEqual(is_void_schema(z.strictObject({name: z.string()})), false);
+		assert.strictEqual(is_void_schema(z.strictObject({ name: z.string() })), false);
 	});
 });
 
 describe('is_strict_object_schema', () => {
 	test('returns true for z.strictObject()', () => {
-		assert.strictEqual(is_strict_object_schema(z.strictObject({name: z.string()})), true);
+		assert.strictEqual(is_strict_object_schema(z.strictObject({ name: z.string() })), true);
 	});
 
 	test('returns false for z.object()', () => {
-		assert.strictEqual(is_strict_object_schema(z.object({name: z.string()})), false);
+		assert.strictEqual(is_strict_object_schema(z.object({ name: z.string() })), false);
 	});
 
 	test('returns false for z.looseObject()', () => {
-		assert.strictEqual(is_strict_object_schema(z.looseObject({name: z.string()})), false);
+		assert.strictEqual(is_strict_object_schema(z.looseObject({ name: z.string() })), false);
 	});
 
 	test('returns false for z.string()', () => {
@@ -88,7 +88,7 @@ describe('schema_to_surface', () => {
 	});
 
 	test('returns JSON Schema for object schema', () => {
-		const schema = z.strictObject({name: z.string()});
+		const schema = z.strictObject({ name: z.string() });
 		const result = schema_to_surface(schema) as Record<string, unknown>;
 		assert.ok(result);
 		assert.strictEqual(result.type, 'object');
@@ -96,7 +96,7 @@ describe('schema_to_surface', () => {
 	});
 
 	test('strips $schema from output', () => {
-		const schema = z.strictObject({id: z.number()});
+		const schema = z.strictObject({ id: z.number() });
 		const result = schema_to_surface(schema) as Record<string, unknown>;
 		assert.ok(result);
 		assert.strictEqual('$schema' in result, false);
@@ -111,7 +111,7 @@ describe('schema_to_surface', () => {
 	test('strips default from output to avoid non-deterministic function defaults', () => {
 		const schema = z.strictObject({
 			created: z.string().default(() => new Date().toISOString()),
-			name: z.string(),
+			name: z.string()
 		});
 		const result = schema_to_surface(schema) as Record<string, unknown>;
 		assert.ok(result);
@@ -127,8 +127,8 @@ describe('schema_to_surface', () => {
 	test('strips default from nested schemas', () => {
 		const schema = z.strictObject({
 			outer: z.strictObject({
-				inner: z.number().default(42),
-			}),
+				inner: z.number().default(42)
+			})
 		});
 		const result = schema_to_surface(schema) as Record<string, unknown>;
 		assert.ok(result);
@@ -144,7 +144,7 @@ describe('schema_to_surface', () => {
 
 	test('surface is deterministic with function defaults', () => {
 		const schema = z.strictObject({
-			ts: z.string().default(() => new Date().toISOString()),
+			ts: z.string().default(() => new Date().toISOString())
 		});
 		const a = schema_to_surface(schema);
 		const b = schema_to_surface(schema);
@@ -208,16 +208,16 @@ describe('middleware_applies', () => {
 describe('merge_error_schemas', () => {
 	test('returns null for no-auth no-input route', () => {
 		const result = merge_error_schemas({
-			auth: {account: 'none', actor: 'none'},
-			input: z.null(),
+			auth: { account: 'none', actor: 'none' },
+			input: z.null()
 		});
 		assert.strictEqual(result, null);
 	});
 
 	test('derives 401 for authenticated route', () => {
 		const result = merge_error_schemas({
-			auth: {account: 'required', actor: 'none'},
-			input: z.null(),
+			auth: { account: 'required', actor: 'none' },
+			input: z.null()
 		});
 		assert.ok(result);
 		assert.ok(result[401]);
@@ -226,8 +226,8 @@ describe('merge_error_schemas', () => {
 
 	test('derives 400 for route with input', () => {
 		const result = merge_error_schemas({
-			auth: {account: 'none', actor: 'none'},
-			input: z.strictObject({name: z.string()}),
+			auth: { account: 'none', actor: 'none' },
+			input: z.strictObject({ name: z.string() })
 		});
 		assert.ok(result);
 		assert.ok(result[400]);
@@ -235,9 +235,9 @@ describe('merge_error_schemas', () => {
 
 	test('derives 400 for route with params', () => {
 		const result = merge_error_schemas({
-			auth: {account: 'none', actor: 'none'},
+			auth: { account: 'none', actor: 'none' },
 			input: z.null(),
-			params: z.strictObject({id: z.string()}),
+			params: z.strictObject({ id: z.string() })
 		});
 		assert.ok(result);
 		assert.ok(result[400]);
@@ -245,8 +245,8 @@ describe('merge_error_schemas', () => {
 
 	test('derives 401 + 403 for role route', () => {
 		const result = merge_error_schemas({
-			auth: {account: 'required', actor: 'required', roles: ['admin']},
-			input: z.null(),
+			auth: { account: 'required', actor: 'required', roles: ['admin'] },
+			input: z.null()
 		});
 		assert.ok(result);
 		assert.ok(result[401]);
@@ -259,9 +259,9 @@ describe('merge_error_schemas', () => {
 				account: 'required',
 				actor: 'required',
 				roles: ['keeper'],
-				credential_types: ['daemon_token'],
+				credential_types: ['daemon_token']
 			},
-			input: z.null(),
+			input: z.null()
 		});
 		assert.ok(result);
 		assert.ok(result[401]);
@@ -270,9 +270,9 @@ describe('merge_error_schemas', () => {
 
 	test('derives 429 for ip rate-limited route', () => {
 		const result = merge_error_schemas({
-			auth: {account: 'none', actor: 'none'},
+			auth: { account: 'none', actor: 'none' },
 			input: z.null(),
-			rate_limit: 'ip',
+			rate_limit: 'ip'
 		});
 		assert.ok(result);
 		assert.ok(result[429]);
@@ -280,9 +280,9 @@ describe('merge_error_schemas', () => {
 
 	test('derives 429 for account rate-limited route', () => {
 		const result = merge_error_schemas({
-			auth: {account: 'none', actor: 'none'},
+			auth: { account: 'none', actor: 'none' },
 			input: z.null(),
-			rate_limit: 'account',
+			rate_limit: 'account'
 		});
 		assert.ok(result);
 		assert.ok(result[429]);
@@ -290,20 +290,20 @@ describe('merge_error_schemas', () => {
 
 	test('derives 429 for both rate-limited route', () => {
 		const result = merge_error_schemas({
-			auth: {account: 'none', actor: 'none'},
+			auth: { account: 'none', actor: 'none' },
 			input: z.null(),
-			rate_limit: 'both',
+			rate_limit: 'both'
 		});
 		assert.ok(result);
 		assert.ok(result[429]);
 	});
 
 	test('explicit errors override derived', () => {
-		const Custom404 = z.looseObject({error: z.literal('not_found')});
+		const Custom404 = z.looseObject({ error: z.literal('not_found') });
 		const result = merge_error_schemas({
-			auth: {account: 'required', actor: 'none'},
+			auth: { account: 'required', actor: 'none' },
 			input: z.null(),
-			errors: {404: Custom404},
+			errors: { 404: Custom404 }
 		});
 		assert.ok(result);
 		assert.strictEqual(result[404], Custom404);
@@ -311,28 +311,28 @@ describe('merge_error_schemas', () => {
 	});
 
 	test('middleware errors merge with derived', () => {
-		const MwError = z.looseObject({error: z.string()});
+		const MwError = z.looseObject({ error: z.string() });
 		const result = merge_error_schemas(
 			{
-				auth: {account: 'none', actor: 'none'},
-				input: z.null(),
+				auth: { account: 'none', actor: 'none' },
+				input: z.null()
 			},
-			{503: MwError},
+			{ 503: MwError }
 		);
 		assert.ok(result);
 		assert.strictEqual(result[503], MwError);
 	});
 
 	test('explicit overrides middleware for same status', () => {
-		const MwError = z.looseObject({error: z.literal('mw')});
-		const RouteError = z.looseObject({error: z.literal('route')});
+		const MwError = z.looseObject({ error: z.literal('mw') });
+		const RouteError = z.looseObject({ error: z.literal('route') });
 		const result = merge_error_schemas(
 			{
-				auth: {account: 'none', actor: 'none'},
+				auth: { account: 'none', actor: 'none' },
 				input: z.null(),
-				errors: {500: RouteError},
+				errors: { 500: RouteError }
 			},
-			{500: MwError},
+			{ 500: MwError }
 		);
 		assert.ok(result);
 		assert.strictEqual(result[500], RouteError);

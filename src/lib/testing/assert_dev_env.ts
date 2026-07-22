@@ -7,11 +7,11 @@
  * and testing, `false` in production builds.
  */
 
-import {DEV} from 'esm-env';
+import { DEV } from 'esm-env';
 
 if (!DEV) {
 	throw new Error(
 		'fuz_app testing utilities must not be imported in production. ' +
-			'These modules are intended for use in test files only.',
+			'These modules are intended for use in test files only.'
 	);
 }

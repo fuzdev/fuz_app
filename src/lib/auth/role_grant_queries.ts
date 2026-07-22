@@ -7,16 +7,16 @@
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type {QueryDeps} from '../db/query_deps.ts';
-import type {RoleGrant, CreateRoleGrantInput} from './account_schema.ts';
-import {assert_row} from '../db/assert_row.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
+import type { RoleGrant, CreateRoleGrantInput } from './account_schema.ts';
+import { assert_row } from '../db/assert_row.ts';
 import {
 	ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
-	ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID,
+	ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID
 } from './role_grant_offer_ddl.ts';
-import type {SupersededOffer} from './role_grant_offer_schema.ts';
+import type { SupersededOffer } from './role_grant_offer_schema.ts';
 
 /**
  * Grant a role_grant to an actor.
@@ -40,7 +40,7 @@ import type {SupersededOffer} from './role_grant_offer_schema.ts';
  */
 export const query_create_role_grant = async (
 	deps: QueryDeps,
-	input: CreateRoleGrantInput,
+	input: CreateRoleGrantInput
 ): Promise<RoleGrant> => {
 	const inserted = await deps.db.query_one<RoleGrant>(
 		`INSERT INTO role_grant (actor_id, role, scope_kind, scope_id, expires_at, granted_by, source_offer_id)
@@ -61,8 +61,8 @@ export const query_create_role_grant = async (
 			input.scope_id ?? null,
 			input.expires_at?.toISOString() ?? null,
 			input.granted_by ?? null,
-			input.source_offer_id ?? null,
-		],
+			input.source_offer_id ?? null
+		]
 	);
 	if (inserted) return inserted;
 	// Active role_grant already exists — return it (idempotent grant).
@@ -73,7 +73,7 @@ export const query_create_role_grant = async (
 		   AND scope_kind IS NOT DISTINCT FROM $3
 		   AND scope_id IS NOT DISTINCT FROM $4
 		   AND revoked_at IS NULL`,
-		[input.actor_id, input.role, input.scope_kind ?? null, input.scope_id ?? null],
+		[input.actor_id, input.role, input.scope_kind ?? null, input.scope_id ?? null]
 	);
 	return assert_row(existing, 'idempotent role_grant grant');
 };
@@ -105,14 +105,14 @@ export const query_create_role_grant = async (
 export const query_role_grant_find_active_role_for_actor = async (
 	deps: QueryDeps,
 	role_grant_id: string,
-	actor_id: string,
-): Promise<{role: string; account_id: Uuid} | null> => {
-	const row = await deps.db.query_one<{role: string; account_id: Uuid}>(
+	actor_id: string
+): Promise<{ role: string; account_id: Uuid } | null> => {
+	const row = await deps.db.query_one<{ role: string; account_id: Uuid }>(
 		`SELECT role_grant.role, actor.account_id
 		   FROM role_grant
 		   JOIN actor ON actor.id = role_grant.actor_id
 		  WHERE role_grant.id = $1 AND role_grant.actor_id = $2 AND role_grant.revoked_at IS NULL`,
-		[role_grant_id, actor_id],
+		[role_grant_id, actor_id]
 	);
 	return row ?? null;
 };
@@ -161,7 +161,7 @@ export const query_revoke_role_grant = async (
 	role_grant_id: Uuid,
 	actor_id: Uuid,
 	revoked_by: Uuid | null,
-	reason?: string | null,
+	reason?: string | null
 ): Promise<RevokeRoleGrantResult | null> => {
 	const rows = await deps.db.query<{
 		id: Uuid;
@@ -172,7 +172,7 @@ export const query_revoke_role_grant = async (
 		`UPDATE role_grant SET revoked_at = NOW(), revoked_by = $3, revoked_reason = $4
 		 WHERE id = $1 AND actor_id = $2 AND revoked_at IS NULL
 		 RETURNING id, role, scope_kind, scope_id`,
-		[role_grant_id, actor_id, revoked_by ?? null, reason ?? null],
+		[role_grant_id, actor_id, revoked_by ?? null, reason ?? null]
 	);
 	const revoked = rows[0];
 	if (!revoked) return null;
@@ -200,14 +200,14 @@ export const query_revoke_role_grant = async (
 		SELECT u.*, grantor.account_id AS from_account_id
 		FROM updated u
 		JOIN actor grantor ON grantor.id = u.from_actor_id`,
-		[actor_id, revoked.role, revoked.scope_id],
+		[actor_id, revoked.role, revoked.scope_id]
 	);
 	return {
 		id: revoked.id,
 		role: revoked.role,
 		scope_kind: revoked.scope_kind,
 		scope_id: revoked.scope_id,
-		superseded_offers,
+		superseded_offers
 	};
 };
 
@@ -216,7 +216,7 @@ export const query_revoke_role_grant = async (
  */
 export const query_role_grant_find_active_for_actor = async (
 	deps: QueryDeps,
-	actor_id: string,
+	actor_id: string
 ): Promise<Array<RoleGrant>> => {
 	return deps.db.query<RoleGrant>(
 		`SELECT * FROM role_grant
@@ -224,7 +224,7 @@ export const query_role_grant_find_active_for_actor = async (
 		   AND revoked_at IS NULL
 		   AND (expires_at IS NULL OR expires_at > NOW())
 		 ORDER BY created_at`,
-		[actor_id],
+		[actor_id]
 	);
 };
 
@@ -242,9 +242,9 @@ export const query_role_grant_has_role = async (
 	deps: QueryDeps,
 	actor_id: string,
 	role: string,
-	scope_id?: string | null,
+	scope_id?: string | null
 ): Promise<boolean> => {
-	const row = await deps.db.query_one<{exists: boolean}>(
+	const row = await deps.db.query_one<{ exists: boolean }>(
 		`SELECT EXISTS(
 			SELECT 1 FROM role_grant
 			WHERE actor_id = $1
@@ -253,7 +253,7 @@ export const query_role_grant_has_role = async (
 			  AND revoked_at IS NULL
 			  AND (expires_at IS NULL OR expires_at > NOW())
 		 ) AS exists`,
-		[actor_id, role, scope_id ?? null],
+		[actor_id, role, scope_id ?? null]
 	);
 	return row?.exists ?? false;
 };
@@ -288,9 +288,9 @@ export const query_role_grant_has_role = async (
 export const query_account_has_global_role = async (
 	deps: QueryDeps,
 	account_id: string,
-	role: string,
+	role: string
 ): Promise<boolean> => {
-	const row = await deps.db.query_one<{exists: boolean}>(
+	const row = await deps.db.query_one<{ exists: boolean }>(
 		`SELECT EXISTS(
 			SELECT 1 FROM role_grant
 			WHERE actor_id IN (SELECT id FROM actor WHERE account_id = $1)
@@ -299,7 +299,7 @@ export const query_account_has_global_role = async (
 			  AND revoked_at IS NULL
 			  AND (expires_at IS NULL OR expires_at > NOW())
 		 ) AS exists`,
-		[account_id, role],
+		[account_id, role]
 	);
 	return row?.exists ?? false;
 };
@@ -327,9 +327,9 @@ export const query_account_has_global_role = async (
 export const query_account_has_active_global_role = async (
 	deps: QueryDeps,
 	account_id: string,
-	role: string,
+	role: string
 ): Promise<boolean> => {
-	const row = await deps.db.query_one<{exists: boolean}>(
+	const row = await deps.db.query_one<{ exists: boolean }>(
 		`SELECT EXISTS(
 			SELECT 1 FROM role_grant rg
 			JOIN actor act ON act.id = rg.actor_id
@@ -342,7 +342,7 @@ export const query_account_has_active_global_role = async (
 			  AND rg.revoked_at IS NULL
 			  AND (rg.expires_at IS NULL OR rg.expires_at > NOW())
 		 ) AS exists`,
-		[account_id, role],
+		[account_id, role]
 	);
 	return row?.exists ?? false;
 };
@@ -363,9 +363,9 @@ export const query_account_has_active_global_role = async (
  */
 export const query_count_active_accounts_with_global_role = async (
 	deps: QueryDeps,
-	role: string,
+	role: string
 ): Promise<number> => {
-	const row = await deps.db.query_one<{count: string | number}>(
+	const row = await deps.db.query_one<{ count: string | number }>(
 		`SELECT COUNT(DISTINCT a.id) AS count
 		 FROM account a
 		 JOIN actor act ON act.account_id = a.id
@@ -376,7 +376,7 @@ export const query_count_active_accounts_with_global_role = async (
 		   AND rg.scope_id IS NULL
 		   AND rg.revoked_at IS NULL
 		   AND (rg.expires_at IS NULL OR rg.expires_at > NOW())`,
-		[role],
+		[role]
 	);
 	return Number(row?.count ?? 0);
 };
@@ -386,11 +386,11 @@ export const query_count_active_accounts_with_global_role = async (
  */
 export const query_role_grant_list_for_actor = async (
 	deps: QueryDeps,
-	actor_id: string,
+	actor_id: string
 ): Promise<Array<RoleGrant>> => {
 	return deps.db.query<RoleGrant>(
 		`SELECT * FROM role_grant WHERE actor_id = $1 ORDER BY created_at DESC`,
-		[actor_id],
+		[actor_id]
 	);
 };
 
@@ -411,9 +411,9 @@ export const query_role_grant_list_for_actor = async (
  */
 export const query_role_grant_find_account_id_for_role = async (
 	deps: QueryDeps,
-	role: string,
+	role: string
 ): Promise<string | null> => {
-	const row = await deps.db.query_one<{account_id: string}>(
+	const row = await deps.db.query_one<{ account_id: string }>(
 		`SELECT a.id AS account_id
 		 FROM role_grant p
 		 JOIN actor act ON act.id = p.actor_id
@@ -425,7 +425,7 @@ export const query_role_grant_find_account_id_for_role = async (
 		   AND (p.expires_at IS NULL OR p.expires_at > NOW())
 		 ORDER BY a.id ASC
 		 LIMIT 1`,
-		[role],
+		[role]
 	);
 	return row?.account_id ?? null;
 };
@@ -491,7 +491,7 @@ export const query_role_grant_revoke_for_scope = async (
 	deps: QueryDeps,
 	scope_id: Uuid,
 	revoked_by: Uuid | null,
-	reason?: string | null,
+	reason?: string | null
 ): Promise<RevokeForScopeResult> => {
 	// Revoke every active role_grant at the scope. CTE returns `actor_id` directly
 	// from the role_grant row (drives `target_actor_id` audit envelopes); a join
@@ -514,7 +514,7 @@ export const query_role_grant_revoke_for_scope = async (
 		SELECT u.id AS role_grant_id, u.role, u.scope_kind, u.scope_id, u.actor_id, a.account_id
 		FROM updated u
 		JOIN actor a ON a.id = u.actor_id`,
-		[scope_id, revoked_by ?? null, reason ?? null],
+		[scope_id, revoked_by ?? null, reason ?? null]
 	);
 	// Supersede every pending offer at the scope — tuple-matched or orphan,
 	// no distinction. The cause of every supersede in this cascade is the
@@ -535,9 +535,9 @@ export const query_role_grant_revoke_for_scope = async (
 		SELECT u.*, grantor.account_id AS from_account_id
 		FROM updated u
 		JOIN actor grantor ON grantor.id = u.from_actor_id`,
-		[scope_id],
+		[scope_id]
 	);
-	return {revoked, superseded_offers};
+	return { revoked, superseded_offers };
 };
 
 /** Result of `query_role_grant_revoke_role` — every role_grant revoked plus the pending offers superseded by the bulk revoke. */
@@ -589,7 +589,7 @@ export const query_role_grant_revoke_role = async (
 	actor_id: string,
 	role: string,
 	revoked_by: string | null,
-	reason?: string | null,
+	reason?: string | null
 ): Promise<RevokeRoleResult> => {
 	// CTE pulls the revokee's `account_id` via a join on `actor` so callers
 	// can address the revokee without an extra round-trip.
@@ -609,10 +609,10 @@ export const query_role_grant_revoke_role = async (
 		SELECT u.id AS role_grant_id, u.role, u.scope_kind, u.scope_id, a.account_id
 		FROM updated u
 		JOIN actor a ON a.id = u.actor_id`,
-		[actor_id, role, revoked_by ?? null, reason ?? null],
+		[actor_id, role, revoked_by ?? null, reason ?? null]
 	);
 	if (revoked.length === 0) {
-		return {revoked: [], superseded_offers: []};
+		return { revoked: [], superseded_offers: [] };
 	}
 	const superseded_offers = await deps.db.query<SupersededOffer>(
 		`WITH updated AS (
@@ -631,7 +631,7 @@ export const query_role_grant_revoke_role = async (
 		SELECT u.*, grantor.account_id AS from_account_id
 		FROM updated u
 		JOIN actor grantor ON grantor.id = u.from_actor_id`,
-		[actor_id, role],
+		[actor_id, role]
 	);
-	return {revoked, superseded_offers};
+	return { revoked, superseded_offers };
 };

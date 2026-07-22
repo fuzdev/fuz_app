@@ -19,15 +19,15 @@
  * @module
  */
 
-import {create_admin_actions, type AdminActionOptions} from './admin_actions.ts';
+import { create_admin_actions, type AdminActionOptions } from './admin_actions.ts';
 import {
 	create_role_grant_offer_actions,
-	type RoleGrantOfferActionOptions,
+	type RoleGrantOfferActionOptions
 } from './role_grant_offer_actions.ts';
-import {create_account_actions, type AccountActionOptions} from './account_actions.ts';
-import type {ActionFactoryDeps} from './deps.ts';
-import type {NotificationSender} from './role_grant_offer_notifications.ts';
-import type {RpcAction} from '../actions/action_rpc.ts';
+import { create_account_actions, type AccountActionOptions } from './account_actions.ts';
+import type { ActionFactoryDeps } from './deps.ts';
+import type { NotificationSender } from './role_grant_offer_notifications.ts';
+import type { RpcAction } from '../actions/action_rpc.ts';
 
 /**
  * Options for `create_standard_rpc_actions`.
@@ -67,9 +67,9 @@ export interface StandardRpcActionsDeps extends ActionFactoryDeps {
  */
 export const create_standard_rpc_actions = (
 	deps: StandardRpcActionsDeps,
-	options: StandardRpcActionsOptions = {},
+	options: StandardRpcActionsOptions = {}
 ): Array<RpcAction> => [
 	...create_admin_actions(deps, options),
 	...create_role_grant_offer_actions(deps, options),
-	...create_account_actions(deps, options),
+	...create_account_actions(deps, options)
 ];

@@ -7,24 +7,24 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import {Hono} from 'hono';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { describe, assert, test } from 'vitest';
+import { Hono } from 'hono';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	create_health_route_spec,
 	create_server_status_route_spec,
-	create_surface_route_spec,
+	create_surface_route_spec
 } from '$lib/http/common_routes.ts';
-import {apply_route_specs} from '$lib/http/route_spec.ts';
-import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.ts';
-import type {AppSurface} from '$lib/http/surface.ts';
-import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.ts';
-import {ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.ts';
-import {create_stub_db} from '$lib/testing/stubs.ts';
-import {create_test_context} from '$lib/testing/entities.ts';
+import { apply_route_specs } from '$lib/http/route_spec.ts';
+import { fuz_auth_guard_resolver } from '$lib/auth/auth_guard_resolver.ts';
+import type { AppSurface } from '$lib/http/surface.ts';
+import { REQUEST_CONTEXT_KEY, type RequestContext } from '$lib/auth/request_context.ts';
+import { ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY } from '$lib/hono_context.ts';
+import { create_stub_db } from '$lib/testing/stubs.ts';
+import { create_test_context } from '$lib/testing/entities.ts';
 
-const log = new Logger('test', {level: 'off'});
+const log = new Logger('test', { level: 'off' });
 const db = create_stub_db();
 
 /** Create a test request context for an authenticated user (no role_grants). */
@@ -33,7 +33,7 @@ const create_test_ctx = (): RequestContext => create_test_context([]);
 /** Create a test Hono app with route specs and optional auth context. */
 const create_test_app = (
 	specs: Parameters<typeof apply_route_specs>[1],
-	auth_ctx?: RequestContext,
+	auth_ctx?: RequestContext
 ): Hono => {
 	const app = new Hono();
 	if (auth_ctx) {
@@ -53,7 +53,7 @@ describe('health route spec metadata', () => {
 		const spec = create_health_route_spec();
 		assert.strictEqual(spec.method, 'GET');
 		assert.strictEqual(spec.path, '/health');
-		assert.deepStrictEqual(spec.auth, {account: 'none', actor: 'none'});
+		assert.deepStrictEqual(spec.auth, { account: 'none', actor: 'none' });
 		assert.strictEqual(spec.description, 'Health check');
 	});
 });
@@ -75,19 +75,19 @@ describe('health route handler', () => {
 
 		// With cookie header
 		const res_cookie = await app.request('/health', {
-			headers: {cookie: 'test_session=some_value'},
+			headers: { cookie: 'test_session=some_value' }
 		});
 		assert.strictEqual(res_cookie.status, 200);
 
 		// With bearer header
 		const res_bearer = await app.request('/health', {
-			headers: {authorization: 'Bearer some_token'},
+			headers: { authorization: 'Bearer some_token' }
 		});
 		assert.strictEqual(res_bearer.status, 200);
 
 		// With both
 		const res_both = await app.request('/health', {
-			headers: {cookie: 'test_session=some_value', authorization: 'Bearer some_token'},
+			headers: { cookie: 'test_session=some_value', authorization: 'Bearer some_token' }
 		});
 		assert.strictEqual(res_both.status, 200);
 	});
@@ -97,11 +97,11 @@ describe('server status route spec metadata', () => {
 	test('method is GET, path is /api/server/status, auth is authenticated', () => {
 		const spec = create_server_status_route_spec({
 			version: '1.0.0',
-			get_uptime_ms: () => 5000,
+			get_uptime_ms: () => 5000
 		});
 		assert.strictEqual(spec.method, 'GET');
 		assert.strictEqual(spec.path, '/api/server/status');
-		assert.deepStrictEqual(spec.auth, {account: 'required', actor: 'none'});
+		assert.deepStrictEqual(spec.auth, { account: 'required', actor: 'none' });
 		assert.strictEqual(spec.description, 'Server version and uptime');
 	});
 });
@@ -110,7 +110,7 @@ describe('server status route handler', () => {
 	test('returns version and uptime_ms', async () => {
 		const spec = create_server_status_route_spec({
 			version: '2.5.1',
-			get_uptime_ms: () => 12345,
+			get_uptime_ms: () => 12345
 		});
 		const ctx = create_test_ctx();
 		const app = create_test_app([spec], ctx);
@@ -128,7 +128,7 @@ describe('server status route handler', () => {
 			get_uptime_ms: () => {
 				call_count++;
 				return call_count * 1000;
-			},
+			}
 		});
 		const ctx = create_test_ctx();
 		const app = create_test_app([spec], ctx);
@@ -144,12 +144,12 @@ describe('server status route handler', () => {
 });
 
 const test_surface: AppSurface = {
-	middleware: [{name: 'origin', path: '/api/*', error_schemas: null}],
+	middleware: [{ name: 'origin', path: '/api/*', error_schemas: null }],
 	routes: [
 		{
 			method: 'GET',
 			path: '/health',
-			auth: {account: 'none', actor: 'none'},
+			auth: { account: 'none', actor: 'none' },
 			applicable_middleware: [],
 			description: 'Health check',
 			is_mutation: false,
@@ -159,13 +159,13 @@ const test_surface: AppSurface = {
 			params_schema: null,
 			query_schema: null,
 			input_schema: null,
-			output_schema: {type: 'object', properties: {status: {type: 'string'}}},
-			error_schemas: null,
+			output_schema: { type: 'object', properties: { status: { type: 'string' } } },
+			error_schemas: null
 		},
 		{
 			method: 'POST',
 			path: '/api/login',
-			auth: {account: 'required', actor: 'none'},
+			auth: { account: 'required', actor: 'none' },
 			applicable_middleware: ['origin'],
 			description: 'Login',
 			is_mutation: true,
@@ -174,31 +174,31 @@ const test_surface: AppSurface = {
 			rate_limit_key: null,
 			params_schema: null,
 			query_schema: null,
-			input_schema: {type: 'object'},
-			output_schema: {type: 'object'},
-			error_schemas: {'401': {type: 'object'}},
-		},
+			input_schema: { type: 'object' },
+			output_schema: { type: 'object' },
+			error_schemas: { '401': { type: 'object' } }
+		}
 	],
 	rpc_endpoints: [],
 	ws_endpoints: [],
 	env: [],
 	events: [],
-	diagnostics: [],
+	diagnostics: []
 };
 
 describe('surface route spec metadata', () => {
 	test('method is GET, path is /api/surface, auth is authenticated', () => {
-		const spec = create_surface_route_spec({surface: test_surface});
+		const spec = create_surface_route_spec({ surface: test_surface });
 		assert.strictEqual(spec.method, 'GET');
 		assert.strictEqual(spec.path, '/api/surface');
-		assert.deepStrictEqual(spec.auth, {account: 'required', actor: 'none'});
+		assert.deepStrictEqual(spec.auth, { account: 'required', actor: 'none' });
 		assert.strictEqual(spec.description, 'Application surface (routes, middleware, schemas)');
 	});
 });
 
 describe('surface route handler', () => {
 	test('returns the surface data as JSON', async () => {
-		const spec = create_surface_route_spec({surface: test_surface});
+		const spec = create_surface_route_spec({ surface: test_surface });
 		const ctx = create_test_ctx();
 		const app = create_test_app([spec], ctx);
 		const res = await app.request('/api/surface');
@@ -219,9 +219,9 @@ describe('surface route handler', () => {
 			ws_endpoints: [],
 			env: [],
 			events: [],
-			diagnostics: [],
+			diagnostics: []
 		};
-		const spec = create_surface_route_spec({surface: mutable_surface});
+		const spec = create_surface_route_spec({ surface: mutable_surface });
 		const ctx = create_test_ctx();
 		const app = create_test_app([spec], ctx);
 

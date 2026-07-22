@@ -11,10 +11,10 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
-import {RateLimitKey} from '../http/error_schemas.ts';
-import {RouteAuth} from '../http/auth_shape.ts';
+import { RateLimitKey } from '../http/error_schemas.ts';
+import { RouteAuth } from '../http/auth_shape.ts';
 
 export const ActionKind = z.enum(['request_response', 'remote_notification', 'local_call']);
 export type ActionKind = z.infer<typeof ActionKind>;
@@ -82,14 +82,14 @@ export const ActionSpec = z.strictObject({
 	 * `streams` and `error_reasons`; remote_notification / local_call
 	 * dispatchers don't read it.
 	 */
-	rate_limit: RateLimitKey.optional(),
+	rate_limit: RateLimitKey.optional()
 });
 export type ActionSpec = z.infer<typeof ActionSpec>;
 
 export const RequestResponseActionSpec = ActionSpec.extend({
 	kind: z.literal('request_response').default('request_response'),
 	auth: RouteAuth,
-	async: z.literal(true).default(true),
+	async: z.literal(true).default(true)
 });
 export type RequestResponseActionSpec = z.infer<typeof RequestResponseActionSpec>;
 
@@ -98,7 +98,7 @@ export const RemoteNotificationActionSpec = ActionSpec.extend({
 	auth: z.null().default(null),
 	side_effects: z.literal(true).default(true),
 	output: z.custom<z.ZodVoid>((v) => v instanceof z.ZodVoid),
-	async: z.literal(true).default(true),
+	async: z.literal(true).default(true)
 });
 export type RemoteNotificationActionSpec = z.infer<typeof RemoteNotificationActionSpec>;
 
@@ -108,14 +108,14 @@ export type RemoteNotificationActionSpec = z.infer<typeof RemoteNotificationActi
  */
 export const LocalCallActionSpec = ActionSpec.extend({
 	kind: z.literal('local_call').default('local_call'),
-	auth: z.null().default(null),
+	auth: z.null().default(null)
 });
 export type LocalCallActionSpec = z.infer<typeof LocalCallActionSpec>;
 
 export const ActionSpecUnion = z.union([
 	RequestResponseActionSpec,
 	RemoteNotificationActionSpec,
-	LocalCallActionSpec,
+	LocalCallActionSpec
 ]);
 export type ActionSpecUnion = z.infer<typeof ActionSpecUnion>;
 
@@ -136,6 +136,6 @@ export const ActionEventPhase = z.enum([
 	'receive_error',
 	'send',
 	'receive',
-	'execute',
+	'execute'
 ]);
 export type ActionEventPhase = z.infer<typeof ActionEventPhase>;

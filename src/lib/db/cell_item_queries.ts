@@ -20,9 +20,9 @@
  * @module
  */
 
-import type {QueryDeps} from './query_deps.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
-import {assert_row} from './assert_row.ts';
+import type { QueryDeps } from './query_deps.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { assert_row } from './assert_row.ts';
 
 /** Row shape returned by `cell_item` SELECTs. */
 export interface CellItemRow {
@@ -52,13 +52,13 @@ export interface CellItemInsertQueryInput {
  */
 export const query_cell_item_insert = async (
 	deps: QueryDeps,
-	input: CellItemInsertQueryInput,
+	input: CellItemInsertQueryInput
 ): Promise<CellItemRow> => {
 	const row = await deps.db.query_one<CellItemRow>(
 		`INSERT INTO cell_item (parent_id, position, child_id)
 		 VALUES ($1, $2, $3)
 		 RETURNING *`,
-		[input.parent_id, input.position, input.child_id],
+		[input.parent_id, input.position, input.child_id]
 	);
 	return assert_row(row, 'INSERT INTO cell_item');
 };
@@ -72,11 +72,11 @@ export const query_cell_item_insert = async (
 export const query_cell_item_get = async (
 	deps: QueryDeps,
 	parent_id: Uuid,
-	position: string,
+	position: string
 ): Promise<CellItemRow | null> => {
 	const row = await deps.db.query_one<CellItemRow>(
 		`SELECT * FROM cell_item WHERE parent_id = $1 AND position = $2`,
-		[parent_id, position],
+		[parent_id, position]
 	);
 	return row ?? null;
 };
@@ -98,14 +98,14 @@ export const query_cell_item_move = async (
 	deps: QueryDeps,
 	parent_id: Uuid,
 	position_old: string,
-	position_new: string,
+	position_new: string
 ): Promise<CellItemRow | null> => {
 	const row = await deps.db.query_one<CellItemRow>(
 		`UPDATE cell_item
 		 SET position = $3
 		 WHERE parent_id = $1 AND position = $2
 		 RETURNING *`,
-		[parent_id, position_old, position_new],
+		[parent_id, position_old, position_new]
 	);
 	return row ?? null;
 };
@@ -121,11 +121,11 @@ export const query_cell_item_move = async (
 export const query_cell_item_delete = async (
 	deps: QueryDeps,
 	parent_id: Uuid,
-	position: string,
+	position: string
 ): Promise<CellItemRow | null> => {
 	const row = await deps.db.query_one<CellItemRow>(
 		`DELETE FROM cell_item WHERE parent_id = $1 AND position = $2 RETURNING *`,
-		[parent_id, position],
+		[parent_id, position]
 	);
 	return row ?? null;
 };
@@ -142,7 +142,7 @@ export const query_cell_item_delete = async (
 export const query_cell_item_list_for_parent = async (
 	deps: QueryDeps,
 	parent_id: Uuid,
-	options?: {limit?: number; position_after?: string},
+	options?: { limit?: number; position_after?: string }
 ): Promise<Array<CellItemRow>> => {
 	const limit = options?.limit ?? null;
 	const position_after = options?.position_after ?? null;
@@ -154,7 +154,7 @@ export const query_cell_item_list_for_parent = async (
 		   AND ($3::text IS NULL OR i.position > $3)
 		 ORDER BY i.position ASC
 		 LIMIT $2`,
-		[parent_id, limit, position_after],
+		[parent_id, limit, position_after]
 	);
 };
 
@@ -173,7 +173,7 @@ export const query_cell_item_list_for_parent = async (
 export const query_cell_item_list_for_child = async (
 	deps: QueryDeps,
 	child_id: Uuid,
-	options?: {limit?: number},
+	options?: { limit?: number }
 ): Promise<Array<CellItemRow>> =>
 	deps.db.query<CellItemRow>(
 		`SELECT i.* FROM cell_item i
@@ -182,5 +182,5 @@ export const query_cell_item_list_for_child = async (
 		   AND p.deleted_at IS NULL
 		 ORDER BY i.created_at ASC
 		 LIMIT $2`,
-		[child_id, options?.limit ?? null],
+		[child_id, options?.limit ?? null]
 	);

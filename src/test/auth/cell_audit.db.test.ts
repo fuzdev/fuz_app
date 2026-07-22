@@ -15,7 +15,7 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
 import {
 	cell_create_action_spec,
@@ -23,67 +23,72 @@ import {
 	cell_delete_action_spec,
 	cell_clone_action_spec,
 	cell_moderate_action_spec,
-	ERROR_CELL_NOT_FOUND,
+	ERROR_CELL_NOT_FOUND
 } from '$lib/auth/cell_action_specs.ts';
 import {
 	cell_grant_create_action_spec,
-	cell_grant_revoke_action_spec,
+	cell_grant_revoke_action_spec
 } from '$lib/auth/cell_grant_action_specs.ts';
 import {
 	cell_field_set_action_spec,
 	cell_field_delete_action_spec,
-	type CellFieldName,
+	type CellFieldName
 } from '$lib/auth/cell_field_action_specs.ts';
 import {
 	cell_item_insert_action_spec,
 	cell_item_move_action_spec,
 	cell_item_delete_action_spec,
-	type CellItemPosition,
+	type CellItemPosition
 } from '$lib/auth/cell_item_action_specs.ts';
 import {
 	cell_audit_list_action_spec,
-	CellAuditEventJson,
+	CellAuditEventJson
 } from '$lib/auth/cell_audit_action_specs.ts';
-import {cell_audit_events} from '$lib/auth/cell_audit_events.ts';
-import {query_audit_log_list} from '$lib/auth/audit_log_queries.ts';
-import {fractional_index_between} from '@fuzdev/fuz_util/fractional_index.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import { cell_audit_events } from '$lib/auth/cell_audit_events.ts';
+import { query_audit_log_list } from '$lib/auth/audit_log_queries.ts';
+import { fractional_index_between } from '@fuzdev/fuz_util/fractional_index.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import {
 	describe_db,
 	create_cell_test_app,
 	create_cell,
 	call,
-	error_reason,
+	error_reason
 } from './cell_test_helpers.ts';
 
 describe_db('cell audit', (get_db) => {
 	describe('emission + completeness', () => {
 		test('every mutation verb emits exactly its registered event type', async () => {
 			const app = await create_cell_test_app(get_db);
-			const owner = await app.create_account({username: 'au_owner'});
-			const other = await app.create_account({username: 'au_other'});
+			const owner = await app.create_account({ username: 'au_owner' });
+			const other = await app.create_account({ username: 'au_other' });
 			const h = owner.create_session_headers();
 
 			// cell_create ×3
-			const {id: parent} = await create_cell(app, {kind: 'collection', data: {}, headers: h});
-			const {id: child_a} = await create_cell(app, {kind: 'note', data: {}, headers: h});
-			const {id: child_b} = await create_cell(app, {kind: 'note', data: {}, headers: h});
+			const { id: parent } = await create_cell(app, { kind: 'collection', data: {}, headers: h });
+			const { id: child_a } = await create_cell(app, { kind: 'note', data: {}, headers: h });
+			const { id: child_b } = await create_cell(app, { kind: 'note', data: {}, headers: h });
 
 			// cell_update
 			assert.ok(
-				(await call(app, cell_update_action_spec, {cell_id: parent, data: {label: 'x'}}, h)).ok,
+				(await call(app, cell_update_action_spec, { cell_id: parent, data: { label: 'x' } }, h)).ok
 			);
 
 			// cell_grant_create + cell_grant_revoke
 			const granted = await call(
 				app,
 				cell_grant_create_action_spec,
-				{cell_id: parent, level: 'viewer', principal: {kind: 'actor', actor_id: other.actor.id}},
-				h,
+				{
+					cell_id: parent,
+					level: 'viewer',
+					principal: { kind: 'actor', actor_id: other.actor.id }
+				},
+				h
 			);
 			assert.ok(granted.ok, JSON.stringify(granted));
 			assert.ok(
-				(await call(app, cell_grant_revoke_action_spec, {grant_id: granted.result.grant.id}, h)).ok,
+				(await call(app, cell_grant_revoke_action_spec, { grant_id: granted.result.grant.id }, h))
+					.ok
 			);
 
 			// cell_field_set + cell_field_delete
@@ -92,20 +97,20 @@ describe_db('cell audit', (get_db) => {
 					await call(
 						app,
 						cell_field_set_action_spec,
-						{source_id: parent, name: 'link' as CellFieldName, target_id: child_a},
-						h,
+						{ source_id: parent, name: 'link' as CellFieldName, target_id: child_a },
+						h
 					)
-				).ok,
+				).ok
 			);
 			assert.ok(
 				(
 					await call(
 						app,
 						cell_field_delete_action_spec,
-						{source_id: parent, name: 'link' as CellFieldName},
-						h,
+						{ source_id: parent, name: 'link' as CellFieldName },
+						h
 					)
-				).ok,
+				).ok
 			);
 
 			// cell_item_insert + cell_item_move + cell_item_delete
@@ -115,10 +120,10 @@ describe_db('cell audit', (get_db) => {
 					await call(
 						app,
 						cell_item_insert_action_spec,
-						{parent_id: parent, child_id: child_a, position: pos1},
-						h,
+						{ parent_id: parent, child_id: child_a, position: pos1 },
+						h
 					)
-				).ok,
+				).ok
 			);
 			const pos2 = fractional_index_between(pos1, null) as CellItemPosition;
 			assert.ok(
@@ -126,17 +131,17 @@ describe_db('cell audit', (get_db) => {
 					await call(
 						app,
 						cell_item_move_action_spec,
-						{parent_id: parent, position: pos1, new_position: pos2},
-						h,
+						{ parent_id: parent, position: pos1, new_position: pos2 },
+						h
 					)
-				).ok,
+				).ok
 			);
 			assert.ok(
-				(await call(app, cell_item_delete_action_spec, {parent_id: parent, position: pos2}, h)).ok,
+				(await call(app, cell_item_delete_action_spec, { parent_id: parent, position: pos2 }, h)).ok
 			);
 
 			// cell_clone
-			assert.ok((await call(app, cell_clone_action_spec, {source_id: parent}, h)).ok);
+			assert.ok((await call(app, cell_clone_action_spec, { source_id: parent }, h)).ok);
 
 			// cell_moderate — create a contribution under `parent` (the owner owns
 			// `parent`, so it manages the governing root), then moderate it. No
@@ -146,8 +151,8 @@ describe_db('cell audit', (get_db) => {
 			const contribution = await call(
 				app,
 				cell_create_action_spec,
-				{kind: 'post', data: {}, parent_id: parent},
-				h,
+				{ kind: 'post', data: {}, parent_id: parent },
+				h
 			);
 			assert.ok(contribution.ok, JSON.stringify(contribution));
 			assert.ok(
@@ -155,16 +160,16 @@ describe_db('cell audit', (get_db) => {
 					await call(
 						app,
 						cell_moderate_action_spec,
-						{cell_id: contribution.result.cell.id, moderation: 'approved'},
-						h,
+						{ cell_id: contribution.result.cell.id, moderation: 'approved' },
+						h
 					)
-				).ok,
+				).ok
 			);
 
 			// cell_delete
-			assert.ok((await call(app, cell_delete_action_spec, {cell_id: child_b}, h)).ok);
+			assert.ok((await call(app, cell_delete_action_spec, { cell_id: child_b }, h)).ok);
 
-			const rows = await query_audit_log_list({db: get_db()}, {limit: 200});
+			const rows = await query_audit_log_list({ db: get_db() }, { limit: 200 });
 			const emitted = new Set(rows.map((r) => r.event_type));
 			const registered = new Set(Object.keys(cell_audit_events));
 
@@ -179,29 +184,29 @@ describe_db('cell audit', (get_db) => {
 
 		test('a no-op field/item delete emits no audit event', async () => {
 			const app = await create_cell_test_app(get_db);
-			const owner = await app.create_account({username: 'au_noop'});
+			const owner = await app.create_account({ username: 'au_noop' });
 			const h = owner.create_session_headers();
-			const {id} = await create_cell(app, {kind: 'note', data: {}, headers: h});
+			const { id } = await create_cell(app, { kind: 'note', data: {}, headers: h });
 
 			// Delete a field / item slot that was never set — idempotent ok,
 			// `deleted: false`, and crucially no audit row.
 			const fd = await call(
 				app,
 				cell_field_delete_action_spec,
-				{source_id: id, name: 'absent' as CellFieldName},
-				h,
+				{ source_id: id, name: 'absent' as CellFieldName },
+				h
 			);
 			assert.ok(fd.ok && !fd.result.deleted, JSON.stringify(fd));
 			const id_pos = fractional_index_between(null, null) as CellItemPosition;
 			const itd = await call(
 				app,
 				cell_item_delete_action_spec,
-				{parent_id: id, position: id_pos},
-				h,
+				{ parent_id: id, position: id_pos },
+				h
 			);
 			assert.ok(itd.ok && !itd.result.deleted, JSON.stringify(itd));
 
-			const rows = await query_audit_log_list({db: get_db()}, {limit: 50});
+			const rows = await query_audit_log_list({ db: get_db() }, { limit: 50 });
 			const types = rows.map((r) => r.event_type);
 			assert.ok(!types.includes('cell_field_delete'), 'no field-delete event');
 			assert.ok(!types.includes('cell_item_delete'), 'no item-delete event');
@@ -211,25 +216,25 @@ describe_db('cell audit', (get_db) => {
 	describe('cell_audit_list manage-tier gate (regression)', () => {
 		test('owner + admin read the timeline; viewer / editor / public-stranger 404', async () => {
 			const app = await create_cell_test_app(get_db);
-			const owner = await app.create_account({username: 'al_owner'});
-			const viewer = await app.create_account({username: 'al_viewer'});
-			const editor = await app.create_account({username: 'al_editor'});
-			const admin = await app.create_account({username: 'al_admin', roles: [ROLE_ADMIN]});
-			const {id} = await create_cell(app, {
+			const owner = await app.create_account({ username: 'al_owner' });
+			const viewer = await app.create_account({ username: 'al_viewer' });
+			const editor = await app.create_account({ username: 'al_editor' });
+			const admin = await app.create_account({ username: 'al_admin', roles: [ROLE_ADMIN] });
+			const { id } = await create_cell(app, {
 				kind: 'note',
 				data: {},
-				headers: owner.create_session_headers(),
+				headers: owner.create_session_headers()
 			});
 
 			for (const [acct, level] of [
 				[viewer, 'viewer'],
-				[editor, 'editor'],
+				[editor, 'editor']
 			] as const) {
 				const g = await call(
 					app,
 					cell_grant_create_action_spec,
-					{cell_id: id, level, principal: {kind: 'actor', actor_id: acct.actor.id}},
-					owner.create_session_headers(),
+					{ cell_id: id, level, principal: { kind: 'actor', actor_id: acct.actor.id } },
+					owner.create_session_headers()
 				);
 				assert.ok(g.ok, JSON.stringify(g));
 			}
@@ -238,8 +243,8 @@ describe_db('cell audit', (get_db) => {
 			const as_owner = await call(
 				app,
 				cell_audit_list_action_spec,
-				{cell_id: id},
-				owner.create_session_headers(),
+				{ cell_id: id },
+				owner.create_session_headers()
 			);
 			assert.ok(as_owner.ok, JSON.stringify(as_owner));
 			assert.ok(as_owner.result.events.length > 0);
@@ -255,10 +260,10 @@ describe_db('cell audit', (get_db) => {
 					await call(
 						app,
 						cell_audit_list_action_spec,
-						{cell_id: id},
-						admin.create_session_headers(),
+						{ cell_id: id },
+						admin.create_session_headers()
 					)
-				).ok,
+				).ok
 			);
 
 			// Viewer + editor: IDOR-mask 404 (manage tier only).
@@ -266,8 +271,8 @@ describe_db('cell audit', (get_db) => {
 				const res = await call(
 					app,
 					cell_audit_list_action_spec,
-					{cell_id: id},
-					acct.create_session_headers(),
+					{ cell_id: id },
+					acct.create_session_headers()
 				);
 				assert.ok(!res.ok);
 				assert.strictEqual(res.status, 404);
@@ -277,21 +282,21 @@ describe_db('cell audit', (get_db) => {
 
 		test('a public cell does not expose its timeline to a non-owner authed caller', async () => {
 			const app = await create_cell_test_app(get_db);
-			const owner = await app.create_account({username: 'al_pub_owner'});
-			const stranger = await app.create_account({username: 'al_pub_stranger'});
-			const {id} = await create_cell(app, {
+			const owner = await app.create_account({ username: 'al_pub_owner' });
+			const stranger = await app.create_account({ username: 'al_pub_stranger' });
+			const { id } = await create_cell(app, {
 				kind: 'note',
 				data: {},
 				visibility: 'public',
-				headers: owner.create_session_headers(),
+				headers: owner.create_session_headers()
 			});
 			// Stranger can VIEW the public cell, but the audit timeline is
 			// manage-tier — they must not read who-touched-it.
 			const res = await call(
 				app,
 				cell_audit_list_action_spec,
-				{cell_id: id},
-				stranger.create_session_headers(),
+				{ cell_id: id },
+				stranger.create_session_headers()
 			);
 			assert.ok(!res.ok);
 			assert.strictEqual(res.status, 404);

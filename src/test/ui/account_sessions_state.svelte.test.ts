@@ -9,13 +9,13 @@
  * @module
  */
 
-import {describe, test, assert, vi, afterEach} from 'vitest';
+import { describe, test, assert, vi, afterEach } from 'vitest';
 
 import {
 	AccountSessionsState,
-	type AccountSessionsRpc,
+	type AccountSessionsRpc
 } from '$lib/ui/account_sessions_state.svelte.ts';
-import type {AuthSessionJson} from '$lib/auth/account_schema.ts';
+import type { AuthSessionJson } from '$lib/auth/account_schema.ts';
 
 afterEach(() => {
 	vi.restoreAllMocks();
@@ -28,21 +28,21 @@ const make_session = (overrides: Partial<AuthSessionJson> = {}): AuthSessionJson
 		created_at: '2026-01-01T00:00:00.000Z',
 		expires_at: '2026-02-01T00:00:00.000Z',
 		last_seen_at: '2026-01-02T00:00:00.000Z',
-		...overrides,
+		...overrides
 	}) as AuthSessionJson;
 
 const make_rpc = (overrides: Partial<AccountSessionsRpc> = {}): AccountSessionsRpc => ({
-	list: vi.fn().mockResolvedValue({sessions: []}),
-	revoke: vi.fn().mockResolvedValue({ok: true, revoked: true}),
-	revoke_all: vi.fn().mockResolvedValue({ok: true, count: 0}),
-	...overrides,
+	list: vi.fn().mockResolvedValue({ sessions: [] }),
+	revoke: vi.fn().mockResolvedValue({ ok: true, revoked: true }),
+	revoke_all: vi.fn().mockResolvedValue({ ok: true, count: 0 }),
+	...overrides
 });
 
 describe('AccountSessionsState.fetch', () => {
 	test('populates sessions on success', async () => {
-		const sessions = [make_session({id: 'sess-1'}), make_session({id: 'sess-2'})];
-		const rpc = make_rpc({list: vi.fn().mockResolvedValueOnce({sessions})});
-		const state = new AccountSessionsState({get_rpc: () => rpc});
+		const sessions = [make_session({ id: 'sess-1' }), make_session({ id: 'sess-2' })];
+		const rpc = make_rpc({ list: vi.fn().mockResolvedValueOnce({ sessions }) });
+		const state = new AccountSessionsState({ get_rpc: () => rpc });
 
 		await state.fetch();
 
@@ -54,12 +54,12 @@ describe('AccountSessionsState.fetch', () => {
 
 	test('active_count reflects sessions length', async () => {
 		const sessions = [
-			make_session({id: 's-1'}),
-			make_session({id: 's-2'}),
-			make_session({id: 's-3'}),
+			make_session({ id: 's-1' }),
+			make_session({ id: 's-2' }),
+			make_session({ id: 's-3' })
 		];
-		const rpc = make_rpc({list: vi.fn().mockResolvedValueOnce({sessions})});
-		const state = new AccountSessionsState({get_rpc: () => rpc});
+		const rpc = make_rpc({ list: vi.fn().mockResolvedValueOnce({ sessions }) });
+		const state = new AccountSessionsState({ get_rpc: () => rpc });
 
 		await state.fetch();
 
@@ -67,8 +67,8 @@ describe('AccountSessionsState.fetch', () => {
 	});
 
 	test('sets error on rpc rejection', async () => {
-		const rpc = make_rpc({list: vi.fn().mockRejectedValueOnce(new Error('unauthorized'))});
-		const state = new AccountSessionsState({get_rpc: () => rpc});
+		const rpc = make_rpc({ list: vi.fn().mockRejectedValueOnce(new Error('unauthorized')) });
+		const state = new AccountSessionsState({ get_rpc: () => rpc });
 
 		await state.fetch();
 
@@ -78,7 +78,7 @@ describe('AccountSessionsState.fetch', () => {
 
 	test('calls rpc.list', async () => {
 		const rpc = make_rpc();
-		const state = new AccountSessionsState({get_rpc: () => rpc});
+		const state = new AccountSessionsState({ get_rpc: () => rpc });
 		await state.fetch();
 		assert.strictEqual((rpc.list as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 	});
@@ -86,25 +86,25 @@ describe('AccountSessionsState.fetch', () => {
 
 describe('AccountSessionsState.submit_revoke', () => {
 	test('refetches sessions after successful revoke', async () => {
-		const sessions_after = [make_session({id: 'sess-2'})];
-		const list = vi.fn().mockResolvedValueOnce({sessions: sessions_after});
-		const rpc = make_rpc({list});
-		const state = new AccountSessionsState({get_rpc: () => rpc});
-		state.sessions = [make_session({id: 'sess-1'}), make_session({id: 'sess-2'})];
+		const sessions_after = [make_session({ id: 'sess-2' })];
+		const list = vi.fn().mockResolvedValueOnce({ sessions: sessions_after });
+		const rpc = make_rpc({ list });
+		const state = new AccountSessionsState({ get_rpc: () => rpc });
+		state.sessions = [make_session({ id: 'sess-1' }), make_session({ id: 'sess-2' })];
 
 		await state.submit_revoke('sess-1');
 
 		assert.strictEqual(state.sessions.length, 1);
 		assert.strictEqual(state.sessions[0]!.id, 'sess-2');
 		assert.deepStrictEqual((rpc.revoke as ReturnType<typeof vi.fn>).mock.calls[0]![0], {
-			session_id: 'sess-1',
+			session_id: 'sess-1'
 		});
 	});
 
 	test('does not refetch on revoke failure', async () => {
-		const rpc = make_rpc({revoke: vi.fn().mockRejectedValueOnce(new Error('not_found'))});
-		const state = new AccountSessionsState({get_rpc: () => rpc});
-		state.sessions = [make_session({id: 'sess-1'})];
+		const rpc = make_rpc({ revoke: vi.fn().mockRejectedValueOnce(new Error('not_found')) });
+		const state = new AccountSessionsState({ get_rpc: () => rpc });
+		state.sessions = [make_session({ id: 'sess-1' })];
 
 		await state.submit_revoke('sess-1');
 
@@ -116,8 +116,8 @@ describe('AccountSessionsState.submit_revoke', () => {
 describe('AccountSessionsState.submit_revoke_all', () => {
 	test('clears sessions on success', async () => {
 		const rpc = make_rpc();
-		const state = new AccountSessionsState({get_rpc: () => rpc});
-		state.sessions = [make_session({id: 'sess-1'}), make_session({id: 'sess-2'})];
+		const state = new AccountSessionsState({ get_rpc: () => rpc });
+		state.sessions = [make_session({ id: 'sess-1' }), make_session({ id: 'sess-2' })];
 
 		await state.submit_revoke_all();
 
@@ -126,9 +126,9 @@ describe('AccountSessionsState.submit_revoke_all', () => {
 	});
 
 	test('sets error on failure and does not clear sessions', async () => {
-		const rpc = make_rpc({revoke_all: vi.fn().mockRejectedValueOnce(new Error('server_error'))});
-		const state = new AccountSessionsState({get_rpc: () => rpc});
-		state.sessions = [make_session({id: 'sess-1'})];
+		const rpc = make_rpc({ revoke_all: vi.fn().mockRejectedValueOnce(new Error('server_error')) });
+		const state = new AccountSessionsState({ get_rpc: () => rpc });
+		state.sessions = [make_session({ id: 'sess-1' })];
 
 		await state.submit_revoke_all();
 
@@ -138,7 +138,7 @@ describe('AccountSessionsState.submit_revoke_all', () => {
 
 	test('calls rpc.revoke_all', async () => {
 		const rpc = make_rpc();
-		const state = new AccountSessionsState({get_rpc: () => rpc});
+		const state = new AccountSessionsState({ get_rpc: () => rpc });
 		await state.submit_revoke_all();
 		assert.strictEqual((rpc.revoke_all as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 	});

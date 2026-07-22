@@ -7,19 +7,19 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
-import {Hono} from 'hono';
+import { describe, test, assert } from 'vitest';
+import { Hono } from 'hono';
 
-import {create_keyring} from '$lib/auth/keyring.ts';
+import { create_keyring } from '$lib/auth/keyring.ts';
 import {
 	create_session_config,
 	create_session_cookie_value,
 	SESSION_AGE_MAX,
-	type SessionOptions,
+	type SessionOptions
 } from '$lib/auth/session_cookie.ts';
-import {create_session_middleware} from '$lib/auth/session_middleware.ts';
+import { create_session_middleware } from '$lib/auth/session_middleware.ts';
 
-import {OLD_KEY, TEST_KEY} from './session_test_helpers.ts';
+import { OLD_KEY, TEST_KEY } from './session_test_helpers.ts';
 
 const create_test_keyring = (key = TEST_KEY) => create_keyring(key)!;
 
@@ -28,13 +28,13 @@ const create_config = (cookie_name = 'test_session') => create_session_config(co
 /** Create a Hono test app with session middleware and a test handler that echoes the identity. */
 const create_test_app = (
 	keyring: ReturnType<typeof create_keyring>,
-	options: SessionOptions<string>,
+	options: SessionOptions<string>
 ): Hono => {
 	const app = new Hono();
 	app.use('/*', create_session_middleware(keyring!, options));
 	app.get('/test', (c) => {
 		const identity = (c as any).get(options.context_key);
-		return c.json({identity});
+		return c.json({ identity });
 	});
 	return app;
 };
@@ -58,7 +58,7 @@ describe('create_session_middleware', () => {
 
 		const cookie_value = await create_session_cookie_value(keyring, 'user-42', options);
 		const res = await app.request('/test', {
-			headers: {Cookie: `${options.cookie_name}=${cookie_value}`},
+			headers: { Cookie: `${options.cookie_name}=${cookie_value}` }
 		});
 
 		assert.strictEqual(res.status, 200);
@@ -75,7 +75,7 @@ describe('create_session_middleware', () => {
 		const past = Math.floor(Date.now() / 1000) - SESSION_AGE_MAX - 1;
 		const cookie_value = await create_session_cookie_value(keyring, 'user-42', options, past);
 		const res = await app.request('/test', {
-			headers: {Cookie: `${options.cookie_name}=${cookie_value}`},
+			headers: { Cookie: `${options.cookie_name}=${cookie_value}` }
 		});
 
 		assert.strictEqual(res.status, 200);
@@ -87,7 +87,7 @@ describe('create_session_middleware', () => {
 		assert.ok(set_cookie, 'should set a cookie header to clear');
 		assert.ok(
 			set_cookie.includes(options.cookie_name),
-			'clear cookie should reference the cookie name',
+			'clear cookie should reference the cookie name'
 		);
 	});
 
@@ -102,7 +102,7 @@ describe('create_session_middleware', () => {
 		const app = create_test_app(rotated_keyring, options);
 
 		const res = await app.request('/test', {
-			headers: {Cookie: `${options.cookie_name}=${cookie_value}`},
+			headers: { Cookie: `${options.cookie_name}=${cookie_value}` }
 		});
 
 		assert.strictEqual(res.status, 200);
@@ -114,7 +114,7 @@ describe('create_session_middleware', () => {
 		assert.ok(set_cookie, 'should refresh cookie on key rotation');
 		assert.ok(
 			set_cookie.includes(options.cookie_name),
-			'refresh cookie should reference the cookie name',
+			'refresh cookie should reference the cookie name'
 		);
 	});
 
@@ -127,7 +127,7 @@ describe('create_session_middleware', () => {
 		const app = create_test_app(rotated_keyring, options);
 
 		const res = await app.request('/test', {
-			headers: {Cookie: `${options.cookie_name}=${cookie_value}`},
+			headers: { Cookie: `${options.cookie_name}=${cookie_value}` }
 		});
 
 		const set_cookie = res.headers.get('set-cookie')!;
@@ -135,7 +135,7 @@ describe('create_session_middleware', () => {
 		assert.ok(set_cookie.includes('Secure'), 'refreshed cookie must have Secure');
 		assert.ok(
 			set_cookie.toLowerCase().includes('samesite=strict'),
-			'refreshed cookie must have SameSite=Strict',
+			'refreshed cookie must have SameSite=Strict'
 		);
 		assert.ok(set_cookie.includes('Path=/'), 'refreshed cookie must have Path=/');
 		assert.ok(set_cookie.includes('Max-Age='), 'refreshed cookie must have Max-Age');
@@ -147,7 +147,7 @@ describe('create_session_middleware', () => {
 		const app = create_test_app(keyring, options);
 
 		const res = await app.request('/test', {
-			headers: {Cookie: `${options.cookie_name}=tampered.invalidsignature`},
+			headers: { Cookie: `${options.cookie_name}=tampered.invalidsignature` }
 		});
 
 		const set_cookie = res.headers.get('set-cookie')!;
@@ -160,7 +160,7 @@ describe('create_session_middleware', () => {
 		const app = create_test_app(keyring, options);
 
 		const res = await app.request('/test', {
-			headers: {Cookie: `${options.cookie_name}=tampered.invalidsignature`},
+			headers: { Cookie: `${options.cookie_name}=tampered.invalidsignature` }
 		});
 
 		assert.strictEqual(res.status, 200);
@@ -175,19 +175,19 @@ describe('create_session_middleware', () => {
 		const keyring = create_test_keyring();
 		const options: SessionOptions<string> = {
 			...create_config(),
-			context_key: 'custom_identity',
+			context_key: 'custom_identity'
 		};
 
 		const app = new Hono();
 		app.use('/*', create_session_middleware(keyring, options));
 		app.get('/test', (c) => {
 			const identity = (c as any).get('custom_identity');
-			return c.json({identity});
+			return c.json({ identity });
 		});
 
 		const cookie_value = await create_session_cookie_value(keyring, 'user-99', options);
 		const res = await app.request('/test', {
-			headers: {Cookie: `${options.cookie_name}=${cookie_value}`},
+			headers: { Cookie: `${options.cookie_name}=${cookie_value}` }
 		});
 
 		assert.strictEqual(res.status, 200);
@@ -204,7 +204,7 @@ describe('create_session_middleware', () => {
 		let downstream_called = false;
 		app.get('/test', (c) => {
 			downstream_called = true;
-			return c.json({ok: true});
+			return c.json({ ok: true });
 		});
 
 		await app.request('/test');

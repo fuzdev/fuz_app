@@ -16,19 +16,19 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {upgradeWebSocket} from 'hono/deno';
+import { upgradeWebSocket } from 'hono/deno';
 
-import {create_deno_runtime} from '../../runtime/deno.ts';
-import type {ServeHandle, TestingServerAdapter} from './testing_server_core.ts';
+import { create_deno_runtime } from '../../runtime/deno.ts';
+import type { ServeHandle, TestingServerAdapter } from './testing_server_core.ts';
 
 // Minimal Deno API surface this adapter touches. This module is only ever
 // imported by a Deno-run test binary; the declaration keeps it typecheckable
 // under the Node toolchain.
 declare const Deno: {
 	serve: (
-		options: {port: number; hostname: string},
-		handler: (request: Request, info: unknown) => Response | Promise<Response>,
-	) => {shutdown: () => Promise<void>};
+		options: { port: number; hostname: string },
+		handler: (request: Request, info: unknown) => Response | Promise<Response>
+	) => { shutdown: () => Promise<void> };
 	pid: number;
 	exit: (code: number) => never;
 	addSignalListener: (signal: string, handler: () => void) => void;
@@ -39,12 +39,12 @@ export const create_deno_testing_adapter = (): TestingServerAdapter => ({
 	runtime_label: 'Deno',
 	runtime: create_deno_runtime([]),
 	get_connection_ip: (c) =>
-		(c.env as {remoteAddr?: {hostname?: string}} | undefined)?.remoteAddr?.hostname,
+		(c.env as { remoteAddr?: { hostname?: string } } | undefined)?.remoteAddr?.hostname,
 	// Deno's WS upgrade is module-level and stateless — no post-serve attach.
-	prepare_websocket: () => ({upgrade_websocket: upgradeWebSocket}),
-	serve: ({fetch, port, hostname}) => {
-		const server = Deno.serve({port, hostname}, fetch as Parameters<typeof Deno.serve>[1]);
-		const handle: ServeHandle = {shutdown: () => server.shutdown(), native: server};
+	prepare_websocket: () => ({ upgrade_websocket: upgradeWebSocket }),
+	serve: ({ fetch, port, hostname }) => {
+		const server = Deno.serve({ port, hostname }, fetch as Parameters<typeof Deno.serve>[1]);
+		const handle: ServeHandle = { shutdown: () => server.shutdown(), native: server };
 		return handle;
 	},
 	pid: Deno.pid,
@@ -52,5 +52,5 @@ export const create_deno_testing_adapter = (): TestingServerAdapter => ({
 		Deno.addSignalListener('SIGINT', () => void handler());
 		Deno.addSignalListener('SIGTERM', () => void handler());
 	},
-	exit: (code) => Deno.exit(code),
+	exit: (code) => Deno.exit(code)
 });

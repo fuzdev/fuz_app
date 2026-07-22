@@ -23,8 +23,8 @@
  * @module
  */
 
-import {FACT_HASH_PREFIX, type FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
-import {z} from 'zod';
+import { FACT_HASH_PREFIX, type FactHash } from '@fuzdev/fuz_util/fact_hash.ts';
+import { z } from 'zod';
 
 /** Anchored, capture-group form: `^file:(<shard>)/(<rest>)$`. */
 export const FILE_FACT_URL_PATTERN = /^file:([0-9a-f]{2})\/([0-9a-f]{62})$/;
@@ -47,9 +47,9 @@ export const is_file_fact_url = (s: string): s is FileFactUrl => FILE_FACT_URL_P
  * `put_stream`) and the URL minted into the `fact` row can't disagree.
  * Mirrors the Rust `fact_disk_path` in `fuz_fact`.
  */
-export const fact_disk_path = (hash: FactHash): {shard: string; rest: string} => {
+export const fact_disk_path = (hash: FactHash): { shard: string; rest: string } => {
 	const hex = hash.slice(FACT_HASH_PREFIX.length);
-	return {shard: hex.slice(0, 2), rest: hex.slice(2)};
+	return { shard: hex.slice(0, 2), rest: hex.slice(2) };
 };
 
 /**
@@ -58,11 +58,11 @@ export const fact_disk_path = (hash: FactHash): {shard: string; rest: string} =>
  * whether that's a 404 (read), a skip (GC), or a hard reject (write).
  */
 export const parse_file_fact_url = (
-	url: string,
-): {url: FileFactUrl; shard: string; rest: string} | null => {
+	url: string
+): { url: FileFactUrl; shard: string; rest: string } | null => {
 	const m = FILE_FACT_URL_PATTERN.exec(url);
 	if (!m) return null;
-	return {url: url as FileFactUrl, shard: m[1]!, rest: m[2]!};
+	return { url: url as FileFactUrl, shard: m[1]!, rest: m[2]! };
 };
 
 /**

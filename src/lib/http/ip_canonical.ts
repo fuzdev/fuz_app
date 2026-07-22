@@ -34,7 +34,7 @@
  * @module
  */
 
-import {convertIPv6ToBinary, distinctRemoteAddr} from 'hono/utils/ipaddr';
+import { convertIPv6ToBinary, distinctRemoteAddr } from 'hono/utils/ipaddr';
 
 /**
  * Allowed character set for a bare IP literal.

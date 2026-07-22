@@ -15,12 +15,12 @@
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {AsyncSlot} from './async_slot.svelte.ts';
-import {KeyedAsyncSlot} from './keyed_async_slot.svelte.ts';
-import type {AdminAccountsRpc} from './admin_accounts_state.svelte.ts';
-import type {AdminSessionJson} from '../auth/audit_log_schema.ts';
+import { AsyncSlot } from './async_slot.svelte.ts';
+import { KeyedAsyncSlot } from './keyed_async_slot.svelte.ts';
+import type { AdminAccountsRpc } from './admin_accounts_state.svelte.ts';
+import type { AdminSessionJson } from '../auth/audit_log_schema.ts';
 
 /**
  * Options for `AdminSessionsState`.
@@ -54,21 +54,21 @@ export class AdminSessionsState {
 
 	async fetch(): Promise<void> {
 		await this.list.run(async () => {
-			const {sessions} = await this.#get_rpc().list_sessions();
+			const { sessions } = await this.#get_rpc().list_sessions();
 			this.sessions = sessions;
 		});
 	}
 
 	async submit_revoke_sessions(account_id: Uuid): Promise<void> {
 		await this.revoke_sessions.run(account_id, async () => {
-			await this.#get_rpc().session_revoke_all({account_id});
+			await this.#get_rpc().session_revoke_all({ account_id });
 		});
 		if (this.revoke_sessions.succeeded(account_id)) await this.fetch();
 	}
 
 	async submit_revoke_tokens(account_id: Uuid): Promise<void> {
 		await this.revoke_tokens.run(account_id, async () => {
-			await this.#get_rpc().token_revoke_all({account_id});
+			await this.#get_rpc().token_revoke_all({ account_id });
 		});
 		if (this.revoke_tokens.succeeded(account_id)) await this.fetch();
 	}

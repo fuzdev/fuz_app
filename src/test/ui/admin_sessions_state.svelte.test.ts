@@ -10,14 +10,14 @@
  * @module
  */
 
-import {describe, test, assert, vi, afterEach} from 'vitest';
+import { describe, test, assert, vi, afterEach } from 'vitest';
 
-import {AdminSessionsState} from '$lib/ui/admin_sessions_state.svelte.ts';
-import type {AdminAccountsRpc} from '$lib/ui/admin_accounts_state.svelte.ts';
-import type {AdminSessionJson} from '$lib/auth/audit_log_schema.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { AdminSessionsState } from '$lib/ui/admin_sessions_state.svelte.ts';
+import type { AdminAccountsRpc } from '$lib/ui/admin_accounts_state.svelte.ts';
+import type { AdminSessionJson } from '$lib/auth/audit_log_schema.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {make_offer} from './role_grant_offer_fixtures.ts';
+import { make_offer } from './role_grant_offer_fixtures.ts';
 
 const acct_1 = 'acct-1' as Uuid;
 
@@ -26,16 +26,16 @@ afterEach(() => {
 });
 
 const make_rpc = (overrides: Partial<AdminAccountsRpc> = {}): AdminAccountsRpc => ({
-	list_accounts: vi.fn().mockResolvedValue({accounts: [], grantable_roles: []}),
-	delete_account: vi.fn().mockResolvedValue({ok: true, deleted: true}),
-	undelete_account: vi.fn().mockResolvedValue({ok: true, undeleted: true}),
-	list_sessions: vi.fn().mockResolvedValue({sessions: []}),
-	create_role_grant: vi.fn().mockResolvedValue({offer: make_offer()}),
-	revoke_role_grant: vi.fn().mockResolvedValue({ok: true, revoked: true}),
-	retract_offer: vi.fn().mockResolvedValue({ok: true}),
-	session_revoke_all: vi.fn().mockResolvedValue({ok: true, count: 1}),
-	token_revoke_all: vi.fn().mockResolvedValue({ok: true, count: 1}),
-	...overrides,
+	list_accounts: vi.fn().mockResolvedValue({ accounts: [], grantable_roles: [] }),
+	delete_account: vi.fn().mockResolvedValue({ ok: true, deleted: true }),
+	undelete_account: vi.fn().mockResolvedValue({ ok: true, undeleted: true }),
+	list_sessions: vi.fn().mockResolvedValue({ sessions: [] }),
+	create_role_grant: vi.fn().mockResolvedValue({ offer: make_offer() }),
+	revoke_role_grant: vi.fn().mockResolvedValue({ ok: true, revoked: true }),
+	retract_offer: vi.fn().mockResolvedValue({ ok: true }),
+	session_revoke_all: vi.fn().mockResolvedValue({ ok: true, count: 1 }),
+	token_revoke_all: vi.fn().mockResolvedValue({ ok: true, count: 1 }),
+	...overrides
 });
 
 const make_session = (overrides: Partial<AdminSessionJson> = {}): AdminSessionJson =>
@@ -46,14 +46,14 @@ const make_session = (overrides: Partial<AdminSessionJson> = {}): AdminSessionJs
 		created_at: '2026-01-01T00:00:00.000Z',
 		expires_at: '2026-02-01T00:00:00.000Z',
 		last_seen_at: '2026-01-02T00:00:00.000Z',
-		...overrides,
+		...overrides
 	}) as AdminSessionJson;
 
 describe('AdminSessionsState.fetch', () => {
 	test('populates sessions on success', async () => {
-		const sessions = [make_session({id: 'sess-a'})];
-		const rpc = make_rpc({list_sessions: vi.fn().mockResolvedValueOnce({sessions})});
-		const state = new AdminSessionsState({get_rpc: () => rpc});
+		const sessions = [make_session({ id: 'sess-a' })];
+		const rpc = make_rpc({ list_sessions: vi.fn().mockResolvedValueOnce({ sessions }) });
+		const state = new AdminSessionsState({ get_rpc: () => rpc });
 
 		await state.fetch();
 
@@ -64,17 +64,21 @@ describe('AdminSessionsState.fetch', () => {
 
 	test('sets error on list slot when rpc rejects', async () => {
 		const rpc = make_rpc({
-			list_sessions: vi.fn().mockRejectedValueOnce(new Error('forbidden')),
+			list_sessions: vi.fn().mockRejectedValueOnce(new Error('forbidden'))
 		});
-		const state = new AdminSessionsState({get_rpc: () => rpc});
+		const state = new AdminSessionsState({ get_rpc: () => rpc });
 		await state.fetch();
 		assert.strictEqual(state.list.error, 'forbidden');
 	});
 
 	test('active_count reflects sessions length', async () => {
-		const sessions = [make_session({id: 'a'}), make_session({id: 'b'}), make_session({id: 'c'})];
-		const rpc = make_rpc({list_sessions: vi.fn().mockResolvedValueOnce({sessions})});
-		const state = new AdminSessionsState({get_rpc: () => rpc});
+		const sessions = [
+			make_session({ id: 'a' }),
+			make_session({ id: 'b' }),
+			make_session({ id: 'c' })
+		];
+		const rpc = make_rpc({ list_sessions: vi.fn().mockResolvedValueOnce({ sessions }) });
+		const state = new AdminSessionsState({ get_rpc: () => rpc });
 
 		await state.fetch();
 		assert.strictEqual(state.active_count, 3);
@@ -82,14 +86,14 @@ describe('AdminSessionsState.fetch', () => {
 
 	test('loading is false after fetch', async () => {
 		const rpc = make_rpc();
-		const state = new AdminSessionsState({get_rpc: () => rpc});
+		const state = new AdminSessionsState({ get_rpc: () => rpc });
 		await state.fetch();
 		assert.strictEqual(state.list.loading, false);
 	});
 
 	test('calls rpc.list_sessions', async () => {
 		const rpc = make_rpc();
-		const state = new AdminSessionsState({get_rpc: () => rpc});
+		const state = new AdminSessionsState({ get_rpc: () => rpc });
 		await state.fetch();
 		assert.strictEqual((rpc.list_sessions as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 	});
@@ -98,12 +102,12 @@ describe('AdminSessionsState.fetch', () => {
 describe('AdminSessionsState.submit_revoke_sessions', () => {
 	test('calls rpc.session_revoke_all with {account_id} and refetches', async () => {
 		const rpc = make_rpc();
-		const state = new AdminSessionsState({get_rpc: () => rpc});
+		const state = new AdminSessionsState({ get_rpc: () => rpc });
 
 		await state.submit_revoke_sessions(acct_1);
 
 		assert.deepStrictEqual((rpc.session_revoke_all as ReturnType<typeof vi.fn>).mock.calls[0]![0], {
-			account_id: acct_1,
+			account_id: acct_1
 		});
 		assert.strictEqual((rpc.list_sessions as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 		assert.strictEqual(state.revoke_sessions.error(acct_1), null);
@@ -112,9 +116,9 @@ describe('AdminSessionsState.submit_revoke_sessions', () => {
 	test('sets error on revoke_sessions slot when rpc rejects, does not refetch', async () => {
 		const rpc = make_rpc();
 		(rpc.session_revoke_all as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-			new Error('server_error'),
+			new Error('server_error')
 		);
-		const state = new AdminSessionsState({get_rpc: () => rpc});
+		const state = new AdminSessionsState({ get_rpc: () => rpc });
 
 		await state.submit_revoke_sessions(acct_1);
 
@@ -124,18 +128,18 @@ describe('AdminSessionsState.submit_revoke_sessions', () => {
 	});
 
 	test('tracks revoking state via revoke_sessions.loading(account_id)', async () => {
-		let resolve_fn: (v: {ok: true; count: number}) => void;
+		let resolve_fn: (v: { ok: true; count: number }) => void;
 		const rpc = make_rpc();
 		(rpc.session_revoke_all as ReturnType<typeof vi.fn>).mockReturnValueOnce(
-			new Promise<{ok: true; count: number}>((resolve) => {
+			new Promise<{ ok: true; count: number }>((resolve) => {
 				resolve_fn = resolve;
-			}),
+			})
 		);
-		const state = new AdminSessionsState({get_rpc: () => rpc});
+		const state = new AdminSessionsState({ get_rpc: () => rpc });
 
 		const revoke_promise = state.submit_revoke_sessions(acct_1);
 		assert.ok(state.revoke_sessions.loading(acct_1));
-		resolve_fn!({ok: true, count: 1});
+		resolve_fn!({ ok: true, count: 1 });
 		await revoke_promise;
 		assert.ok(!state.revoke_sessions.loading(acct_1));
 	});
@@ -144,12 +148,12 @@ describe('AdminSessionsState.submit_revoke_sessions', () => {
 describe('AdminSessionsState.submit_revoke_tokens', () => {
 	test('calls rpc.token_revoke_all with {account_id} and refetches', async () => {
 		const rpc = make_rpc();
-		const state = new AdminSessionsState({get_rpc: () => rpc});
+		const state = new AdminSessionsState({ get_rpc: () => rpc });
 
 		await state.submit_revoke_tokens(acct_1);
 
 		assert.deepStrictEqual((rpc.token_revoke_all as ReturnType<typeof vi.fn>).mock.calls[0]![0], {
-			account_id: acct_1,
+			account_id: acct_1
 		});
 		assert.strictEqual((rpc.list_sessions as ReturnType<typeof vi.fn>).mock.calls.length, 1);
 		assert.strictEqual(state.revoke_tokens.error(acct_1), null);
@@ -158,9 +162,9 @@ describe('AdminSessionsState.submit_revoke_tokens', () => {
 	test('sets error on revoke_tokens slot when rpc rejects', async () => {
 		const rpc = make_rpc();
 		(rpc.token_revoke_all as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-			new Error('server_error'),
+			new Error('server_error')
 		);
-		const state = new AdminSessionsState({get_rpc: () => rpc});
+		const state = new AdminSessionsState({ get_rpc: () => rpc });
 
 		await state.submit_revoke_tokens(acct_1);
 
@@ -169,18 +173,18 @@ describe('AdminSessionsState.submit_revoke_tokens', () => {
 	});
 
 	test('tracks revoking state via revoke_tokens.loading(account_id)', async () => {
-		let resolve_fn: (v: {ok: true; count: number}) => void;
+		let resolve_fn: (v: { ok: true; count: number }) => void;
 		const rpc = make_rpc();
 		(rpc.token_revoke_all as ReturnType<typeof vi.fn>).mockReturnValueOnce(
-			new Promise<{ok: true; count: number}>((resolve) => {
+			new Promise<{ ok: true; count: number }>((resolve) => {
 				resolve_fn = resolve;
-			}),
+			})
 		);
-		const state = new AdminSessionsState({get_rpc: () => rpc});
+		const state = new AdminSessionsState({ get_rpc: () => rpc });
 
 		const revoke_promise = state.submit_revoke_tokens(acct_1);
 		assert.ok(state.revoke_tokens.loading(acct_1));
-		resolve_fn!({ok: true, count: 1});
+		resolve_fn!({ ok: true, count: 1 });
 		await revoke_promise;
 		assert.ok(!state.revoke_tokens.loading(acct_1));
 	});

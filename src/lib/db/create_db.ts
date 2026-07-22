@@ -13,9 +13,9 @@
  * @module
  */
 
-import type {Db, DbType} from './db.ts';
-import {create_pg_db, register_pg_type_parsers} from './db_pg.ts';
-import {create_pglite_db} from './db_pglite.ts';
+import type { Db, DbType } from './db.ts';
+import { create_pg_db, register_pg_type_parsers } from './db_pg.ts';
+import { create_pglite_db } from './db_pglite.ts';
 
 /** Result of database initialization. */
 export interface CreateDbResult {
@@ -43,37 +43,37 @@ export interface CreateDbResult {
  */
 export const create_db = async (database_url: string): Promise<CreateDbResult> => {
 	if (database_url.startsWith('postgres://') || database_url.startsWith('postgresql://')) {
-		const {default: pg} = await import('pg');
+		const { default: pg } = await import('pg');
 		await register_pg_type_parsers();
-		const pool = new pg.Pool({connectionString: database_url});
-		const {db, close} = create_pg_db(pool);
+		const pool = new pg.Pool({ connectionString: database_url });
+		const { db, close } = create_pg_db(pool);
 		return {
 			db,
 			close,
 			db_type: 'postgres',
-			db_name: new URL(database_url).pathname.slice(1) || 'postgres',
+			db_name: new URL(database_url).pathname.slice(1) || 'postgres'
 		};
 	}
 
 	if (database_url.startsWith('memory://')) {
-		const {PGlite} = await import('@electric-sql/pglite');
+		const { PGlite } = await import('@electric-sql/pglite');
 		const pglite = new PGlite(database_url);
-		const {db, close} = create_pglite_db(pglite);
-		return {db, close, db_type: 'pglite-memory', db_name: '(memory)'};
+		const { db, close } = create_pglite_db(pglite);
+		return { db, close, db_type: 'pglite-memory', db_name: '(memory)' };
 	}
 
 	if (database_url.startsWith('file://')) {
 		const path = new URL(database_url).pathname;
-		const {PGlite} = await import('@electric-sql/pglite');
+		const { PGlite } = await import('@electric-sql/pglite');
 		const pglite = new PGlite(path);
-		const {db, close} = create_pglite_db(pglite);
-		return {db, close, db_type: 'pglite-file', db_name: path};
+		const { db, close } = create_pglite_db(pglite);
+		return { db, close, db_type: 'pglite-file', db_name: path };
 	}
 
 	const scheme = database_url.split('://')[0] ?? database_url;
 	throw new Error(
 		`Unsupported database URL scheme: ${
 			scheme
-		}://. Expected postgres://, postgresql://, file://, or memory://`,
+		}://. Expected postgres://, postgresql://, file://, or memory://`
 	);
 };

@@ -21,13 +21,13 @@
  * @module
  */
 
-import {inject, describe} from 'vitest';
+import { inject, describe } from 'vitest';
 
 import {
 	default_cross_process_setup,
-	reconstruct_bootstrapped_handle,
+	reconstruct_bootstrapped_handle
 } from '$lib/testing/cross_backend/setup.ts';
-import {describe_login_security_cross_tests} from '$lib/testing/cross_backend/login_security.ts';
+import { describe_login_security_cross_tests } from '$lib/testing/cross_backend/login_security.ts';
 
 import './cross_test_types.ts';
 
@@ -35,9 +35,9 @@ const ts = reconstruct_bootstrapped_handle(inject('security_handle_a'));
 const rust = reconstruct_bootstrapped_handle(inject('security_handle_b'));
 
 describe('TS spine (node)', () => {
-	describe_login_security_cross_tests({setup_test: default_cross_process_setup(ts)});
+	describe_login_security_cross_tests({ setup_test: default_cross_process_setup(ts) });
 });
 
 describe('Rust spine_stub', () => {
-	describe_login_security_cross_tests({setup_test: default_cross_process_setup(rust)});
+	describe_login_security_cross_tests({ setup_test: default_cross_process_setup(rust) });
 });

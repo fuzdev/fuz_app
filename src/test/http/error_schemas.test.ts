@@ -4,7 +4,7 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
+import { describe, assert, test } from 'vitest';
 
 import {
 	ApiError,
@@ -51,29 +51,29 @@ import {
 	ActorRequiredError,
 	ActorNotOnAccountError,
 	NoActorsOnAccountError,
-	AccountVanishedError,
+	AccountVanishedError
 } from '$lib/http/error_schemas.ts';
 
 describe('standard error schemas', () => {
 	test('ApiError accepts basic error response', () => {
-		const result = ApiError.safeParse({error: ERROR_AUTHENTICATION_REQUIRED});
+		const result = ApiError.safeParse({ error: ERROR_AUTHENTICATION_REQUIRED });
 		assert.isTrue(result.success);
 	});
 
 	test('ApiError allows extra fields (looseObject)', () => {
-		const result = ApiError.safeParse({error: 'test', extra: 'field'});
+		const result = ApiError.safeParse({ error: 'test', extra: 'field' });
 		assert.isTrue(result.success);
 	});
 
 	test('ApiError rejects missing error field', () => {
-		const result = ApiError.safeParse({message: 'wrong'});
+		const result = ApiError.safeParse({ message: 'wrong' });
 		assert.isFalse(result.success);
 	});
 
 	test('ValidationError accepts error with issues', () => {
 		const result = ValidationError.safeParse({
 			error: 'invalid_request_body',
-			issues: [{code: 'invalid_type', message: 'Expected string', path: ['name']}],
+			issues: [{ code: 'invalid_type', message: 'Expected string', path: ['name'] }]
 		});
 		assert.isTrue(result.success);
 	});
@@ -81,13 +81,13 @@ describe('standard error schemas', () => {
 	test('PermissionError requires insufficient_permissions literal', () => {
 		const valid = PermissionError.safeParse({
 			error: ERROR_INSUFFICIENT_PERMISSIONS,
-			required_roles: ['admin'],
+			required_roles: ['admin']
 		});
 		assert.isTrue(valid.success);
 
 		const invalid = PermissionError.safeParse({
 			error: 'wrong_error',
-			required_roles: ['admin'],
+			required_roles: ['admin']
 		});
 		assert.isFalse(invalid.success);
 	});
@@ -95,13 +95,13 @@ describe('standard error schemas', () => {
 	test('CredentialTypeRequiredError requires credential_type_required literal', () => {
 		const valid = CredentialTypeRequiredError.safeParse({
 			error: ERROR_CREDENTIAL_TYPE_REQUIRED,
-			required_credential_types: ['daemon_token'],
+			required_credential_types: ['daemon_token']
 		});
 		assert.isTrue(valid.success);
 
 		const invalid = CredentialTypeRequiredError.safeParse({
 			error: 'wrong_error',
-			required_credential_types: ['daemon_token'],
+			required_credential_types: ['daemon_token']
 		});
 		assert.isFalse(invalid.success);
 	});
@@ -109,27 +109,27 @@ describe('standard error schemas', () => {
 	test('RateLimitError requires rate_limit_exceeded and retry_after', () => {
 		const valid = RateLimitError.safeParse({
 			error: ERROR_RATE_LIMIT_EXCEEDED,
-			retry_after: 60,
+			retry_after: 60
 		});
 		assert.isTrue(valid.success);
 
 		const missing_retry = RateLimitError.safeParse({
-			error: ERROR_RATE_LIMIT_EXCEEDED,
+			error: ERROR_RATE_LIMIT_EXCEEDED
 		});
 		assert.isFalse(missing_retry.success);
 	});
 
 	test('PayloadTooLargeError requires payload_too_large literal', () => {
-		const valid = PayloadTooLargeError.safeParse({error: ERROR_PAYLOAD_TOO_LARGE});
+		const valid = PayloadTooLargeError.safeParse({ error: ERROR_PAYLOAD_TOO_LARGE });
 		assert.isTrue(valid.success);
 
-		const invalid = PayloadTooLargeError.safeParse({error: 'wrong_error'});
+		const invalid = PayloadTooLargeError.safeParse({ error: 'wrong_error' });
 		assert.isFalse(invalid.success);
 	});
 
 	test('ForeignKeyError accepts error without detail or constraint', () => {
 		const result = ForeignKeyError.safeParse({
-			error: ERROR_FOREIGN_KEY_VIOLATION,
+			error: ERROR_FOREIGN_KEY_VIOLATION
 		});
 		assert.isTrue(result.success);
 	});
@@ -137,26 +137,29 @@ describe('standard error schemas', () => {
 
 describe('derive_error_schemas', () => {
 	test('auth none + no input derives no errors', () => {
-		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}});
+		const errors = derive_error_schemas({ auth: { account: 'none', actor: 'none' } });
 		assert.deepStrictEqual(errors, {});
 	});
 
 	test('auth none + has input derives 400', () => {
-		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}, has_input: true});
+		const errors = derive_error_schemas({
+			auth: { account: 'none', actor: 'none' },
+			has_input: true
+		});
 		assert.ok(errors[400]);
 		assert.strictEqual(errors[401], undefined);
 	});
 
 	test('auth authenticated derives 401', () => {
-		const errors = derive_error_schemas({auth: {account: 'required', actor: 'none'}});
+		const errors = derive_error_schemas({ auth: { account: 'required', actor: 'none' } });
 		assert.ok(errors[401]);
 		assert.strictEqual(errors[403], undefined);
 	});
 
 	test('auth authenticated + has input derives 400 and 401', () => {
 		const errors = derive_error_schemas({
-			auth: {account: 'required', actor: 'none'},
-			has_input: true,
+			auth: { account: 'required', actor: 'none' },
+			has_input: true
 		});
 		assert.ok(errors[400]);
 		assert.ok(errors[401]);
@@ -164,14 +167,14 @@ describe('derive_error_schemas', () => {
 
 	test('auth role derives 401 and 403 with PermissionError', () => {
 		const errors = derive_error_schemas({
-			auth: {account: 'required', actor: 'required', roles: ['admin']},
+			auth: { account: 'required', actor: 'required', roles: ['admin'] }
 		});
 		assert.ok(errors[401]);
 		assert.ok(errors[403]);
 		// Verify the 403 schema is PermissionError (accepts required_role)
 		const result = (errors[403] as any).safeParse({
 			error: ERROR_INSUFFICIENT_PERMISSIONS,
-			required_roles: ['admin'],
+			required_roles: ['admin']
 		});
 		assert.isTrue(result.success);
 	});
@@ -182,8 +185,8 @@ describe('derive_error_schemas', () => {
 				account: 'required',
 				actor: 'required',
 				roles: ['keeper'],
-				credential_types: ['daemon_token'],
-			},
+				credential_types: ['daemon_token']
+			}
 		});
 		assert.ok(errors[401]);
 		assert.ok(errors[403]);
@@ -191,46 +194,58 @@ describe('derive_error_schemas', () => {
 		// gates are set; verify the credential-type shape parses.
 		const result = (errors[403] as any).safeParse({
 			error: ERROR_CREDENTIAL_TYPE_REQUIRED,
-			required_credential_types: ['daemon_token'],
+			required_credential_types: ['daemon_token']
 		});
 		assert.isTrue(result.success);
 	});
 
 	test('does not auto-derive 429 without rate_limit', () => {
-		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}, has_input: true});
+		const errors = derive_error_schemas({
+			auth: { account: 'none', actor: 'none' },
+			has_input: true
+		});
 		assert.strictEqual(errors[429], undefined);
 	});
 
 	test('rate_limit ip derives 429', () => {
-		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}, rate_limit: 'ip'});
+		const errors = derive_error_schemas({
+			auth: { account: 'none', actor: 'none' },
+			rate_limit: 'ip'
+		});
 		assert.ok(errors[429]);
 	});
 
 	test('rate_limit account derives 429', () => {
 		const errors = derive_error_schemas({
-			auth: {account: 'none', actor: 'none'},
-			rate_limit: 'account',
+			auth: { account: 'none', actor: 'none' },
+			rate_limit: 'account'
 		});
 		assert.ok(errors[429]);
 	});
 
 	test('rate_limit both derives 429', () => {
 		const errors = derive_error_schemas({
-			auth: {account: 'none', actor: 'none'},
+			auth: { account: 'none', actor: 'none' },
 			has_input: true,
-			rate_limit: 'both',
+			rate_limit: 'both'
 		});
 		assert.ok(errors[400]);
 		assert.ok(errors[429]);
 	});
 
 	test('has_params derives 400', () => {
-		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}, has_params: true});
+		const errors = derive_error_schemas({
+			auth: { account: 'none', actor: 'none' },
+			has_params: true
+		});
 		assert.ok(errors[400]);
 	});
 
 	test('has_query derives 400', () => {
-		const errors = derive_error_schemas({auth: {account: 'none', actor: 'none'}, has_query: true});
+		const errors = derive_error_schemas({
+			auth: { account: 'none', actor: 'none' },
+			has_query: true
+		});
 		assert.ok(errors[400]);
 	});
 });
@@ -269,40 +284,40 @@ describe('error code constants', () => {
 	});
 
 	test('constants are used by standard error schemas', () => {
-		assert.isTrue(ApiError.safeParse({error: ERROR_AUTHENTICATION_REQUIRED}).success);
+		assert.isTrue(ApiError.safeParse({ error: ERROR_AUTHENTICATION_REQUIRED }).success);
 		assert.isTrue(
 			PermissionError.safeParse({
 				error: ERROR_INSUFFICIENT_PERMISSIONS,
-				required_roles: ['admin'],
-			}).success,
+				required_roles: ['admin']
+			}).success
 		);
 		assert.isTrue(
 			CredentialTypeRequiredError.safeParse({
 				error: ERROR_CREDENTIAL_TYPE_REQUIRED,
-				required_credential_types: ['daemon_token'],
-			}).success,
+				required_credential_types: ['daemon_token']
+			}).success
 		);
 		assert.isTrue(
 			ValidationError.safeParse({
 				error: ERROR_INVALID_REQUEST_BODY,
-				issues: [{code: 'invalid_type', message: 'Expected string', path: ['name']}],
-			}).success,
+				issues: [{ code: 'invalid_type', message: 'Expected string', path: ['name'] }]
+			}).success
 		);
 		assert.isTrue(
 			RateLimitError.safeParse({
 				error: ERROR_RATE_LIMIT_EXCEEDED,
-				retry_after: 60,
-			}).success,
+				retry_after: 60
+			}).success
 		);
 		assert.isTrue(
 			PayloadTooLargeError.safeParse({
-				error: ERROR_PAYLOAD_TOO_LARGE,
-			}).success,
+				error: ERROR_PAYLOAD_TOO_LARGE
+			}).success
 		);
 		assert.isTrue(
 			ForeignKeyError.safeParse({
-				error: ERROR_FOREIGN_KEY_VIOLATION,
-			}).success,
+				error: ERROR_FOREIGN_KEY_VIOLATION
+			}).success
 		);
 	});
 });
@@ -311,74 +326,74 @@ describe('authorization-phase actor error schemas', () => {
 	test('ActorRequiredError accepts available[] with id+name entries', () => {
 		const result = ActorRequiredError.safeParse({
 			error: ERROR_ACTOR_REQUIRED,
-			available: [{id: '00000000-0000-4000-8000-000000000001', name: 'alice'}],
+			available: [{ id: '00000000-0000-4000-8000-000000000001', name: 'alice' }]
 		});
 		assert.isTrue(result.success);
 	});
 
 	test('ActorRequiredError rejects missing available', () => {
-		const result = ActorRequiredError.safeParse({error: ERROR_ACTOR_REQUIRED});
+		const result = ActorRequiredError.safeParse({ error: ERROR_ACTOR_REQUIRED });
 		assert.isFalse(result.success);
 	});
 
 	test('ActorNotOnAccountError accepts the literal-only shape', () => {
-		const result = ActorNotOnAccountError.safeParse({error: ERROR_ACTOR_NOT_ON_ACCOUNT});
+		const result = ActorNotOnAccountError.safeParse({ error: ERROR_ACTOR_NOT_ON_ACCOUNT });
 		assert.isTrue(result.success);
 	});
 
 	test('NoActorsOnAccountError accepts the literal-only shape', () => {
-		const result = NoActorsOnAccountError.safeParse({error: ERROR_NO_ACTORS_ON_ACCOUNT});
+		const result = NoActorsOnAccountError.safeParse({ error: ERROR_NO_ACTORS_ON_ACCOUNT });
 		assert.isTrue(result.success);
 	});
 
 	test('AccountVanishedError accepts the literal-only shape', () => {
-		const result = AccountVanishedError.safeParse({error: ERROR_ACCOUNT_VANISHED});
+		const result = AccountVanishedError.safeParse({ error: ERROR_ACCOUNT_VANISHED });
 		assert.isTrue(result.success);
 	});
 
 	test('derive_error_schemas with actor !== none folds actor errors into 400 + 500', () => {
 		const errors = derive_error_schemas({
-			auth: {account: 'required', actor: 'optional'},
-			has_input: true,
+			auth: { account: 'required', actor: 'optional' },
+			has_input: true
 		});
 		// 400 union accepts ValidationError + actor 400 shapes.
 		assert.ok(errors[400]);
 		const validation_match = errors[400].safeParse({
 			error: ERROR_INVALID_REQUEST_BODY,
-			issues: [],
+			issues: []
 		});
 		assert.isTrue(validation_match.success);
 		const actor_required_match = errors[400].safeParse({
 			error: ERROR_ACTOR_REQUIRED,
-			available: [],
+			available: []
 		});
 		assert.isTrue(actor_required_match.success);
 		const actor_not_on_account_match = errors[400].safeParse({
-			error: ERROR_ACTOR_NOT_ON_ACCOUNT,
+			error: ERROR_ACTOR_NOT_ON_ACCOUNT
 		});
 		assert.isTrue(actor_not_on_account_match.success);
 		// 500 union accepts both invariant + torn-read shapes.
 		assert.ok(errors[500]);
-		const no_actors_match = errors[500].safeParse({error: ERROR_NO_ACTORS_ON_ACCOUNT});
+		const no_actors_match = errors[500].safeParse({ error: ERROR_NO_ACTORS_ON_ACCOUNT });
 		assert.isTrue(no_actors_match.success);
-		const account_vanished_match = errors[500].safeParse({error: ERROR_ACCOUNT_VANISHED});
+		const account_vanished_match = errors[500].safeParse({ error: ERROR_ACCOUNT_VANISHED });
 		assert.isTrue(account_vanished_match.success);
 	});
 
 	test('derive_error_schemas with actor === none leaves 400 narrow and omits 500', () => {
 		const errors = derive_error_schemas({
-			auth: {account: 'required', actor: 'none'},
-			has_input: true,
+			auth: { account: 'required', actor: 'none' },
+			has_input: true
 		});
 		assert.ok(errors[400]);
 		const validation_match = errors[400].safeParse({
 			error: ERROR_INVALID_REQUEST_BODY,
-			issues: [],
+			issues: []
 		});
 		assert.isTrue(validation_match.success);
 		const actor_required_match = errors[400].safeParse({
 			error: ERROR_ACTOR_REQUIRED,
-			available: [],
+			available: []
 		});
 		// `error` is an enum of validation codes — `ERROR_ACTOR_REQUIRED`
 		// isn't a member, so the parse fails even though `issues` is now optional.
@@ -390,12 +405,12 @@ describe('authorization-phase actor error schemas', () => {
 		// Parameterless acting-aware route (no input/params/query) — auth phase
 		// can still emit actor errors before the (empty) input validation step.
 		const errors = derive_error_schemas({
-			auth: {account: 'required', actor: 'required', roles: ['admin']},
+			auth: { account: 'required', actor: 'required', roles: ['admin'] }
 		});
 		assert.ok(errors[400]);
 		const actor_required_match = errors[400].safeParse({
 			error: ERROR_ACTOR_REQUIRED,
-			available: [],
+			available: []
 		});
 		assert.isTrue(actor_required_match.success);
 		assert.ok(errors[500]);

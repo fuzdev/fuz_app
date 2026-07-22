@@ -32,11 +32,11 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {rpc_call, type RpcCallResult} from '../rpc_helpers.ts';
-import {SPINE_PARTICIPANT_ROLE, SPINE_RPC_PATH} from './spine_surface_constants.ts';
-import type {SetupTest} from './setup.ts';
+import { rpc_call, type RpcCallResult } from '../rpc_helpers.ts';
+import { SPINE_PARTICIPANT_ROLE, SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import type { SetupTest } from './setup.ts';
 
 /** Options for the role-gated-participation success-path parity suite. */
 export interface RoleGrantParticipationCrossTestOptions {
@@ -47,22 +47,23 @@ export interface RoleGrantParticipationCrossTestOptions {
 }
 
 export const describe_role_grant_participation_cross_tests = (
-	options: RoleGrantParticipationCrossTestOptions,
+	options: RoleGrantParticipationCrossTestOptions
 ): void => {
-	const {setup_test} = options;
+	const { setup_test } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
 	const rpc = (
 		transport: Parameters<typeof rpc_call>[0]['app'],
 		method: string,
 		params: unknown,
-		headers: Record<string, string>,
-	): Promise<RpcCallResult> => rpc_call({app: transport, path: rpc_path, method, params, headers});
+		headers: Record<string, string>
+	): Promise<RpcCallResult> =>
+		rpc_call({ app: transport, path: rpc_path, method, params, headers });
 
 	describe('role-gated participation conferral (success paths)', () => {
 		test('admin assigns the participant app-role to a fresh account (idempotent)', async () => {
 			const fixture = await setup_test();
-			const recipient = await fixture.create_account({username: 'participation_assignee'});
+			const recipient = await fixture.create_account({ username: 'participation_assignee' });
 
 			// The keeper holds ROLE_ADMIN (seeded via extra_keeper_roles), so it
 			// clears the dispatcher admin gate; `participant` is admin-grantable, so
@@ -71,35 +72,35 @@ export const describe_role_grant_participation_cross_tests = (
 			const first = await rpc(
 				fixture.transport,
 				'role_grant_assign',
-				{to_account_id: recipient.account.id, role: SPINE_PARTICIPANT_ROLE},
-				fixture.create_session_headers(),
+				{ to_account_id: recipient.account.id, role: SPINE_PARTICIPANT_ROLE },
+				fixture.create_session_headers()
 			);
 			assert.ok(first.ok, `assign must succeed: ${JSON.stringify(first)}`);
-			const assigned = first.result as {ok: boolean; role_grant_id: string};
+			const assigned = first.result as { ok: boolean; role_grant_id: string };
 			assert.strictEqual(assigned.ok, true);
 			assert.ok(
 				typeof assigned.role_grant_id === 'string' && assigned.role_grant_id.length > 0,
-				'assign returns the new role_grant id',
+				'assign returns the new role_grant id'
 			);
 
 			// Idempotent — re-assigning the active grant returns the existing id.
 			const second = await rpc(
 				fixture.transport,
 				'role_grant_assign',
-				{to_account_id: recipient.account.id, role: SPINE_PARTICIPANT_ROLE},
-				fixture.create_session_headers(),
+				{ to_account_id: recipient.account.id, role: SPINE_PARTICIPANT_ROLE },
+				fixture.create_session_headers()
 			);
 			assert.ok(second.ok, `re-assign must succeed: ${JSON.stringify(second)}`);
 			assert.strictEqual(
-				(second.result as {role_grant_id: string}).role_grant_id,
+				(second.result as { role_grant_id: string }).role_grant_id,
 				assigned.role_grant_id,
-				're-assigning an active grant returns the existing role_grant id',
+				're-assigning an active grant returns the existing role_grant id'
 			);
 		});
 
 		test('admin offers the participant app-role and the recipient accepts', async () => {
 			const fixture = await setup_test();
-			const recipient = await fixture.create_account({username: 'participation_offeree'});
+			const recipient = await fixture.create_account({ username: 'participation_offeree' });
 
 			// Admin-only conferral via the consent flow: the keeper (admin) offers
 			// the app-role, proving the widened grant-path gate admits it through
@@ -107,23 +108,23 @@ export const describe_role_grant_participation_cross_tests = (
 			const created = await rpc(
 				fixture.transport,
 				'role_grant_offer_create',
-				{to_account_id: recipient.account.id, role: SPINE_PARTICIPANT_ROLE},
-				fixture.create_session_headers(),
+				{ to_account_id: recipient.account.id, role: SPINE_PARTICIPANT_ROLE },
+				fixture.create_session_headers()
 			);
 			assert.ok(created.ok, `offer create must succeed: ${JSON.stringify(created)}`);
-			const offer_id = (created.result as {offer: {id: string}}).offer.id;
+			const offer_id = (created.result as { offer: { id: string } }).offer.id;
 
 			// The recipient accepts → a role_grant lands.
 			const accepted = await rpc(
 				fixture.fresh_transport(),
 				'role_grant_offer_accept',
-				{offer_id},
-				recipient.create_session_headers(),
+				{ offer_id },
+				recipient.create_session_headers()
 			);
 			assert.ok(accepted.ok, `accept must succeed: ${JSON.stringify(accepted)}`);
 			assert.ok(
-				typeof (accepted.result as {role_grant_id?: unknown}).role_grant_id === 'string',
-				'accept lands a role_grant for the app-role',
+				typeof (accepted.result as { role_grant_id?: unknown }).role_grant_id === 'string',
+				'accept lands a role_grant for the app-role'
 			);
 		});
 	});

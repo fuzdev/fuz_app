@@ -21,25 +21,25 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
 import {
 	CREDENTIAL_TYPE_DAEMON_TOKEN,
-	type CredentialTypeSchemaResult,
+	type CredentialTypeSchemaResult
 } from './credential_type_schema.ts';
 import {
 	GRANT_PATH_ADMIN,
 	GRANT_PATH_BOOTSTRAP,
-	type GrantPathSchemaResult,
+	type GrantPathSchemaResult
 } from './grant_path_schema.ts';
-import type {ScopeKindSchemaResult} from './scope_kind_schema.ts';
+import type { ScopeKindSchemaResult } from './scope_kind_schema.ts';
 
 /** Valid role name: lowercase letters and underscores, no leading/trailing underscore. */
 export const RoleName = z
 	.string()
 	.regex(
 		/^[a-z][a-z_]*[a-z]$|^[a-z]$/,
-		'Role names must be lowercase letters and underscores (a-z_), no leading/trailing underscore',
+		'Role names must be lowercase letters and underscores (a-z_), no leading/trailing underscore'
 	);
 export type RoleName = z.infer<typeof RoleName>;
 
@@ -134,8 +134,8 @@ export const builtin_role_specs_by_name: ReadonlyMap<string, RoleSpec> = new Map
 				'System-level role; controls the keep. Requires the daemon-token credential and lands via the bootstrap grant path.',
 			required_credential_types: [CREDENTIAL_TYPE_DAEMON_TOKEN],
 			applicable_scope_kinds: [],
-			grant_paths: [GRANT_PATH_BOOTSTRAP],
-		},
+			grant_paths: [GRANT_PATH_BOOTSTRAP]
+		}
 	],
 	[
 		ROLE_ADMIN,
@@ -145,9 +145,9 @@ export const builtin_role_specs_by_name: ReadonlyMap<string, RoleSpec> = new Map
 				'App-level administrative role. Web-grantable through the admin path; manages users and content.',
 			required_credential_types: [],
 			applicable_scope_kinds: [],
-			grant_paths: [GRANT_PATH_ADMIN],
-		},
-	],
+			grant_paths: [GRANT_PATH_ADMIN]
+		}
+	]
 ]);
 
 /** Optional registries to validate `RoleSpec` cross-axis fields against at construction time. */
@@ -172,7 +172,7 @@ const validate_registry_membership = (
 	role_name: string,
 	field: 'required_credential_types' | 'applicable_scope_kinds' | 'grant_paths',
 	values: ReadonlyArray<string> | undefined,
-	registry: ReadonlyMap<string, unknown> | null,
+	registry: ReadonlyMap<string, unknown> | null
 ): void => {
 	if (!registry || !values) return;
 	for (const value of values) {
@@ -180,8 +180,8 @@ const validate_registry_membership = (
 			throw new Error(
 				`Role "${role_name}" declares ${field}="${value}" which is not a registered ${field.replace(
 					/s$/,
-					'',
-				)}`,
+					''
+				)}`
 			);
 		}
 	}
@@ -243,7 +243,7 @@ const validate_registry_membership = (
  */
 export const create_role_schema = (
 	consumer_roles: ReadonlyArray<RoleSpec>,
-	options: CreateRoleSchemaOptions = {},
+	options: CreateRoleSchemaOptions = {}
 ): RoleSchemaResult => {
 	const credential_types_registry = options.credential_types?.credential_types ?? null;
 	const scope_kinds_registry = options.scope_kinds?.scope_kinds ?? null;
@@ -267,13 +267,13 @@ export const create_role_schema = (
 			spec.name,
 			'required_credential_types',
 			spec.required_credential_types,
-			credential_types_registry,
+			credential_types_registry
 		);
 		validate_registry_membership(
 			spec.name,
 			'applicable_scope_kinds',
 			spec.applicable_scope_kinds,
-			scope_kinds_registry,
+			scope_kinds_registry
 		);
 		validate_registry_membership(spec.name, 'grant_paths', spec.grant_paths, grant_paths_registry);
 	}
@@ -286,7 +286,7 @@ export const create_role_schema = (
 	const all_names = [...role_specs.keys()];
 	const Role = z.enum(all_names as [string, ...Array<string>]);
 
-	return {Role, role_specs};
+	return { Role, role_specs };
 };
 
 /**
@@ -299,7 +299,7 @@ export const create_role_schema = (
 export const role_has_grant_path = (
 	role_specs: ReadonlyMap<string, RoleSpec>,
 	role: string,
-	grant_path: string,
+	grant_path: string
 ): boolean => {
 	const spec = role_specs.get(role);
 	return !!spec?.grant_paths?.includes(grant_path);
@@ -308,7 +308,7 @@ export const role_has_grant_path = (
 /** Filter helper: list every role whose `grant_paths` includes the given path. */
 export const list_roles_with_grant_path = (
 	role_specs: ReadonlyMap<string, RoleSpec>,
-	grant_path: string,
+	grant_path: string
 ): Array<string> => {
 	const out: Array<string> = [];
 	for (const [name, spec] of role_specs) {

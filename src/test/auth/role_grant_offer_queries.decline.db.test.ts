@@ -7,21 +7,21 @@
  * @module
  */
 
-import {assert, test} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import { assert, test } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	query_role_grant_offer_decline,
-	RoleGrantOfferAlreadyTerminalError,
+	RoleGrantOfferAlreadyTerminalError
 } from '$lib/auth/role_grant_offer_queries.ts';
 
-import {describe_db} from '../db_fixture.ts';
-import {make_account, create_pending_offer} from './role_grant_offer_queries.fixtures.ts';
+import { describe_db } from '../db_fixture.ts';
+import { make_account, create_pending_offer } from './role_grant_offer_queries.fixtures.ts';
 
 describe_db('role_grant_offer_queries.decline', (get_db) => {
 	test('decline marks offer terminal and joins grantor account_id', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor = await make_account(db, 'grantor_decline');
 		const recipient = await make_account(db, 'recipient_decline');
 		const offer = await create_pending_offer(db, grantor, recipient);
@@ -29,7 +29,7 @@ describe_db('role_grant_offer_queries.decline', (get_db) => {
 			deps,
 			offer.id,
 			recipient.account_id,
-			'no thanks',
+			'no thanks'
 		);
 		assert.ok(declined);
 		assert.ok(declined.declined_at);
@@ -44,20 +44,20 @@ describe_db('role_grant_offer_queries.decline', (get_db) => {
 
 	test('decline on terminal offer throws already_terminal', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor = await make_account(db, 'grantor_decline_terminal');
 		const recipient = await make_account(db, 'recipient_decline_terminal');
 		const offer = await create_pending_offer(db, grantor, recipient);
 		await query_role_grant_offer_decline(deps, offer.id, recipient.account_id, null);
 		const err = await assert_rejects(() =>
-			query_role_grant_offer_decline(deps, offer.id, recipient.account_id, null),
+			query_role_grant_offer_decline(deps, offer.id, recipient.account_id, null)
 		);
 		assert.ok(err instanceof RoleGrantOfferAlreadyTerminalError);
 	});
 
 	test('decline with wrong recipient returns null (IDOR guard)', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 		const grantor = await make_account(db, 'grantor_idor');
 		const recipient = await make_account(db, 'recipient_idor');
 		const attacker = await make_account(db, 'attacker_idor');

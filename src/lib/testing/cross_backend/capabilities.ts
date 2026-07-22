@@ -36,7 +36,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {test} from 'vitest';
+import { test } from 'vitest';
 
 /**
  * Backend wiring facts recorded for documentation — **not** gating flags.
@@ -238,7 +238,7 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	peer_request: false,
 	// Cross-process-only: the test `CellCreateAuthorize` policy is mounted on the
 	// spine binaries' full mount + the Rust stub, not the in-process default app.
-	cell_gated_create: false,
+	cell_gated_create: false
 });
 
 /**
@@ -249,7 +249,7 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 export const in_process_shape_notes: BackendShapeNotes = Object.freeze({
 	bearer_auth: true,
 	trusted_proxy: true,
-	login_rate_limit: true,
+	login_rate_limit: true
 });
 
 /**

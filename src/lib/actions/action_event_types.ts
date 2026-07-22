@@ -4,10 +4,10 @@
  * @module
  */
 
-import {z} from 'zod';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import { z } from 'zod';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type {ActionEventPhase, ActionKind, ActionSpecUnion} from './action_spec.ts';
+import type { ActionEventPhase, ActionKind, ActionSpecUnion } from './action_spec.ts';
 
 export const ActionExecutor = z.enum(['frontend', 'backend']);
 export type ActionExecutor = z.infer<typeof ActionExecutor>;
@@ -30,7 +30,7 @@ export const action_event_step_transitions: Record<
 	parsed: ['handling', 'failed'],
 	handling: ['handled', 'failed'],
 	handled: [],
-	failed: [],
+	failed: []
 };
 
 export const action_event_phase_by_kind: Record<ActionKind, ReadonlyArray<ActionEventPhase>> = {
@@ -40,10 +40,10 @@ export const action_event_phase_by_kind: Record<ActionKind, ReadonlyArray<Action
 		'send_response',
 		'receive_response',
 		'send_error',
-		'receive_error',
+		'receive_error'
 	],
 	remote_notification: ['send', 'receive'],
-	local_call: ['execute'],
+	local_call: ['execute']
 };
 
 export const action_event_phase_transitions: Record<ActionEventPhase, ActionEventPhase | null> = {
@@ -55,14 +55,14 @@ export const action_event_phase_transitions: Record<ActionEventPhase, ActionEven
 	receive_error: null,
 	send: null,
 	receive: null,
-	execute: null,
+	execute: null
 };
 
 export interface ActionEventEnvironment {
 	readonly executor: ActionExecutor;
 	lookup_action_handler: (
 		method: string,
-		phase: ActionEventPhase,
+		phase: ActionEventPhase
 	) => ((event: any) => any) | undefined;
 	lookup_action_spec: (method: string) => ActionSpecUnion | undefined;
 	readonly log?: Logger | null;

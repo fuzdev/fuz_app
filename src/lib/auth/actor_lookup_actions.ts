@@ -12,16 +12,16 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {rpc_action, type ActionContext, type RpcAction} from '../actions/action_rpc.ts';
+import { rpc_action, type ActionContext, type RpcAction } from '../actions/action_rpc.ts';
 
-import {query_actors_by_ids} from './actor_lookup_queries.ts';
+import { query_actors_by_ids } from './actor_lookup_queries.ts';
 import {
 	actor_lookup_action_spec,
 	type ActorLookupInput,
 	type ActorLookupOutput,
-	type ActorLookupEntryJson,
+	type ActorLookupEntryJson
 } from './actor_lookup_action_specs.ts';
 
 /** Dependencies for `create_actor_lookup_actions`. */
@@ -32,7 +32,7 @@ export interface ActorLookupActionDeps {
 export const create_actor_lookup_actions = (_deps: ActorLookupActionDeps): Array<RpcAction> => {
 	const handler = async (
 		input: ActorLookupInput,
-		ctx: ActionContext,
+		ctx: ActionContext
 	): Promise<ActorLookupOutput> => {
 		const rows = await query_actors_by_ids(ctx, input.ids);
 		return {
@@ -41,9 +41,9 @@ export const create_actor_lookup_actions = (_deps: ActorLookupActionDeps): Array
 				return {
 					id: row.id,
 					username: row.username,
-					...(display_name ? {display_name} : {}),
+					...(display_name ? { display_name } : {})
 				};
-			}),
+			})
 		};
 	};
 	return [rpc_action(actor_lookup_action_spec, handler)];

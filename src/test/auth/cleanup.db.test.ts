@@ -12,26 +12,26 @@
  * @module
  */
 
-import {assert, test} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { assert, test } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {query_create_account_with_actor} from '$lib/auth/account_queries.ts';
-import {query_role_grant_offer_create} from '$lib/auth/role_grant_offer_queries.ts';
-import {query_audit_log_list} from '$lib/auth/audit_log_queries.ts';
+import { query_create_account_with_actor } from '$lib/auth/account_queries.ts';
+import { query_role_grant_offer_create } from '$lib/auth/role_grant_offer_queries.ts';
+import { query_audit_log_list } from '$lib/auth/audit_log_queries.ts';
 import {
 	cleanup_expired_role_grant_offers,
 	run_auth_cleanup,
-	type AuthCleanupDeps,
+	type AuthCleanupDeps
 } from '$lib/auth/cleanup.ts';
-import {hash_session_token, query_create_session} from '$lib/auth/session_queries.ts';
-import type {AuditLogEvent} from '$lib/auth/audit_log_schema.ts';
-import {create_audit_emitter, type AuditEmitter} from '$lib/auth/audit_emitter.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
-import type {Db} from '$lib/db/db.ts';
+import { hash_session_token, query_create_session } from '$lib/auth/session_queries.ts';
+import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
+import { create_audit_emitter, type AuditEmitter } from '$lib/auth/audit_emitter.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Db } from '$lib/db/db.ts';
 
-import {describe_db} from '../db_fixture.ts';
+import { describe_db } from '../db_fixture.ts';
 
-const log = new Logger('cleanup-test', {level: 'off'});
+const log = new Logger('cleanup-test', { level: 'off' });
 
 /**
  * Build a real `AuditEmitter` over the test pool with a one-shot `notify`
@@ -40,8 +40,8 @@ const log = new Logger('cleanup-test', {level: 'off'});
  */
 const create_audit_with_listener = (
 	db: Db,
-	on_event: (event: AuditLogEvent) => void,
-): AuditEmitter => create_audit_emitter({db, log, on_audit_event: on_event});
+	on_event: (event: AuditLogEvent) => void
+): AuditEmitter => create_audit_emitter({ db, log, on_audit_event: on_event });
 const hour_ms = 60 * 60 * 1000;
 const past = (ms_ago: number): Date => new Date(Date.now() - ms_ago);
 const future = (ms_from_now: number): Date => new Date(Date.now() + ms_from_now);
@@ -54,24 +54,24 @@ interface TestAccounts {
 }
 
 const seed_accounts = async (db: Db): Promise<TestAccounts> => {
-	const {actor: grantor_actor} = await query_create_account_with_actor(
-		{db},
-		{username: 'cleanup_grantor', password_hash: 'hash'},
+	const { actor: grantor_actor } = await query_create_account_with_actor(
+		{ db },
+		{ username: 'cleanup_grantor', password_hash: 'hash' }
 	);
-	const {account: recipient_account, actor: recipient_actor} =
+	const { account: recipient_account, actor: recipient_actor } =
 		await query_create_account_with_actor(
-			{db},
-			{username: 'cleanup_recipient', password_hash: 'hash'},
+			{ db },
+			{ username: 'cleanup_recipient', password_hash: 'hash' }
 		);
-	const {account: recipient_account_2} = await query_create_account_with_actor(
-		{db},
-		{username: 'cleanup_recipient_2', password_hash: 'hash'},
+	const { account: recipient_account_2 } = await query_create_account_with_actor(
+		{ db },
+		{ username: 'cleanup_recipient_2', password_hash: 'hash' }
 	);
 	return {
 		grantor_actor_id: grantor_actor.id,
 		recipient_account_id: recipient_account.id,
 		recipient_actor_id: recipient_actor.id,
-		recipient_account_id_2: recipient_account_2.id,
+		recipient_account_id_2: recipient_account_2.id
 	};
 };
 
@@ -81,18 +81,18 @@ const insert_offer = (
 	grantor_actor_id: Uuid,
 	recipient_account_id: Uuid,
 	expires_at: Date,
-	role = 'teacher',
+	role = 'teacher'
 ) =>
 	query_role_grant_offer_create(
-		{db},
+		{ db },
 		{
 			from_actor_id: grantor_actor_id,
 			to_account_id: recipient_account_id,
 			role,
 			scope_id: null,
 			message: null,
-			expires_at,
-		},
+			expires_at
+		}
 	);
 
 describe_db('auth_cleanup', (get_db) => {
@@ -106,21 +106,21 @@ describe_db('auth_cleanup', (get_db) => {
 			accounts.grantor_actor_id,
 			accounts.recipient_account_id,
 			past(hour_ms),
-			'teacher',
+			'teacher'
 		);
 		await insert_offer(
 			db,
 			accounts.grantor_actor_id,
 			accounts.recipient_account_id_2,
 			past(hour_ms),
-			'moderator',
+			'moderator'
 		);
 		await insert_offer(
 			db,
 			accounts.grantor_actor_id,
 			accounts.recipient_account_id,
 			future(hour_ms),
-			'admin',
+			'admin'
 		);
 
 		const callback_events: Array<AuditLogEvent> = [];
@@ -129,14 +129,14 @@ describe_db('auth_cleanup', (get_db) => {
 			log,
 			audit: create_audit_with_listener(db, (event) => {
 				callback_events.push(event);
-			}),
+			})
 		};
 
 		const count = await cleanup_expired_role_grant_offers(deps);
 		assert.strictEqual(count, 2);
 
 		// Two audit rows, both `role_grant_offer_expire`, callback fired twice.
-		const rows = await query_audit_log_list({db}, {event_type: 'role_grant_offer_expire'});
+		const rows = await query_audit_log_list({ db }, { event_type: 'role_grant_offer_expire' });
 		assert.strictEqual(rows.length, 2);
 		for (const row of rows) {
 			assert.strictEqual(row.event_type, 'role_grant_offer_expire');
@@ -152,7 +152,7 @@ describe_db('auth_cleanup', (get_db) => {
 			db,
 			accounts.grantor_actor_id,
 			accounts.recipient_account_id,
-			future(hour_ms),
+			future(hour_ms)
 		);
 
 		const callback_events: Array<AuditLogEvent> = [];
@@ -161,14 +161,14 @@ describe_db('auth_cleanup', (get_db) => {
 			log,
 			audit: create_audit_with_listener(db, (event) => {
 				callback_events.push(event);
-			}),
+			})
 		};
 
 		const count = await cleanup_expired_role_grant_offers(deps);
 		assert.strictEqual(count, 0);
 		assert.strictEqual(callback_events.length, 0);
 
-		const rows = await query_audit_log_list({db}, {event_type: 'role_grant_offer_expire'});
+		const rows = await query_audit_log_list({ db }, { event_type: 'role_grant_offer_expire' });
 		assert.strictEqual(rows.length, 0);
 	});
 
@@ -181,14 +181,14 @@ describe_db('auth_cleanup', (get_db) => {
 			accounts.grantor_actor_id,
 			accounts.recipient_account_id,
 			past(hour_ms),
-			'teacher',
+			'teacher'
 		);
 		await insert_offer(
 			db,
 			accounts.grantor_actor_id,
 			accounts.recipient_account_id_2,
 			past(hour_ms),
-			'moderator',
+			'moderator'
 		);
 
 		let call_count = 0;
@@ -198,7 +198,7 @@ describe_db('auth_cleanup', (get_db) => {
 			audit: create_audit_with_listener(db, () => {
 				call_count += 1;
 				if (call_count === 1) throw new Error('synthetic callback failure');
-			}),
+			})
 		};
 
 		const count = await cleanup_expired_role_grant_offers(deps);
@@ -207,7 +207,7 @@ describe_db('auth_cleanup', (get_db) => {
 		assert.strictEqual(count, 2);
 		assert.strictEqual(call_count, 2);
 
-		const rows = await query_audit_log_list({db}, {event_type: 'role_grant_offer_expire'});
+		const rows = await query_audit_log_list({ db }, { event_type: 'role_grant_offer_expire' });
 		assert.strictEqual(rows.length, 2);
 	});
 
@@ -217,10 +217,10 @@ describe_db('auth_cleanup', (get_db) => {
 
 		// One expired session.
 		await query_create_session(
-			{db},
+			{ db },
 			hash_session_token('cleanup-expired'),
 			accounts.recipient_account_id,
-			past(hour_ms),
+			past(hour_ms)
 		);
 		// Two expired offers.
 		await insert_offer(
@@ -228,20 +228,20 @@ describe_db('auth_cleanup', (get_db) => {
 			accounts.grantor_actor_id,
 			accounts.recipient_account_id,
 			past(hour_ms),
-			'teacher',
+			'teacher'
 		);
 		await insert_offer(
 			db,
 			accounts.grantor_actor_id,
 			accounts.recipient_account_id_2,
 			past(hour_ms),
-			'moderator',
+			'moderator'
 		);
 
 		const result = await run_auth_cleanup({
 			db,
 			log,
-			audit: create_audit_with_listener(db, () => undefined),
+			audit: create_audit_with_listener(db, () => undefined)
 		});
 		assert.strictEqual(result.expired_sessions, 1);
 		assert.strictEqual(result.expired_offers, 2);

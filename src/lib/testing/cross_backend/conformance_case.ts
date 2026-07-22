@@ -25,7 +25,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
 /**
  * Closed enum of fixture-provisioned principals a case runs `as`. Each
@@ -94,7 +94,7 @@ export const ConformancePrincipal = z.enum([
 	'fresh_non_admin',
 	'role_holder',
 	'wrong_role',
-	'expired_session',
+	'expired_session'
 ]);
 export type ConformancePrincipal = z.infer<typeof ConformancePrincipal>;
 
@@ -104,23 +104,23 @@ export const ConformanceCaseRequest = z.strictObject({
 		description:
 			'RPC method name (e.g. `admin_account_list`) or a REST auth-route suffix ' +
 			'(e.g. `/login`). A leading `/` selects the REST branch; otherwise the ' +
-			'runner resolves the RPC action from the spec registry.',
+			'runner resolves the RPC action from the spec registry.'
 	}),
 	params: z
 		.unknown()
 		.optional()
-		.meta({description: 'Request params / body. Omit for nullary methods.'}),
+		.meta({ description: 'Request params / body. Omit for nullary methods.' }),
 	as: ConformancePrincipal,
 	verb: z
 		.enum(['POST', 'GET'])
 		.optional()
-		.meta({description: 'HTTP verb. Defaults to POST; use GET for `side_effects: false` reads.'}),
+		.meta({ description: 'HTTP verb. Defaults to POST; use GET for `side_effects: false` reads.' })
 });
 export type ConformanceCaseRequest = z.infer<typeof ConformanceCaseRequest>;
 
 /** The expected response shape a conformance case asserts. */
 export const ConformanceCaseExpectation = z.strictObject({
-	status: z.number().int().meta({description: 'Expected HTTP status code.'}),
+	status: z.number().int().meta({ description: 'Expected HTTP status code.' }),
 	error_reason: z
 		.string()
 		.optional()
@@ -130,7 +130,7 @@ export const ConformanceCaseExpectation = z.strictObject({
 				'`http/error_schemas.ts`, never a string literal. Asserted against the RPC ' +
 				'`error.data.reason` (when the denial carries one) or the REST flat-body ' +
 				'`error` field. The pre-validation 401 carries `data.reason` too; a denial ' +
-				'that genuinely omits it falls back to the `status` assertion to pin the class.',
+				'that genuinely omits it falls back to the `status` assertion to pin the class.'
 		}),
 	fields: z
 		.record(z.string(), z.unknown())
@@ -138,7 +138,7 @@ export const ConformanceCaseExpectation = z.strictObject({
 		.meta({
 			description:
 				'Specific field-value assertions on the success `result` (2xx) or the error ' +
-				'`error.data` (non-2xx). Each key must deep-equal the corresponding response field.',
+				'`error.data` (non-2xx). Each key must deep-equal the corresponding response field.'
 		}),
 	absent_fields: z
 		.array(z.string())
@@ -152,7 +152,7 @@ export const ConformanceCaseExpectation = z.strictObject({
 				'(top-level, inside a list element) fails the case. Pins "this secret never ' +
 				'serializes" on BOTH spines — a serialization regression would otherwise leak ' +
 				'identically and silently on each. Non-vacuous only when the body is known ' +
-				'non-empty (e.g. a list that always contains the caller); note that in the case.',
+				'non-empty (e.g. a list that always contains the caller); note that in the case.'
 		}),
 	headers: z
 		.record(z.string(), z.string().nullable())
@@ -165,7 +165,7 @@ export const ConformanceCaseExpectation = z.strictObject({
 				'runner enforces an unconditional no-fingerprint invariant on EVERY response ' +
 				'(`Server` / `X-Powered-By` / `WWW-Authenticate` must stay absent on both ' +
 				'spines), so a case only needs `headers` to pin a header beyond that ' +
-				'always-on floor.',
+				'always-on floor.'
 		}),
 	equivalence_group: z
 		.string()
@@ -180,8 +180,8 @@ export const ConformanceCaseExpectation = z.strictObject({
 				'and holds BOTH impls to it: a prober hitting either spine cannot tell the ' +
 				'members apart. A group needs >= 2 members; a member may still set `fields`. ' +
 				'The negative-space twin of the positive `output`-schema parity the runner ' +
-				'already asserts.',
-		}),
+				'already asserts.'
+		})
 });
 export type ConformanceCaseExpectation = z.infer<typeof ConformanceCaseExpectation>;
 
@@ -195,8 +195,8 @@ export type ConformanceCaseExpectation = z.infer<typeof ConformanceCaseExpectati
 export const ConformanceCaseXfail = z.strictObject({
 	tracking_id: z
 		.string()
-		.meta({description: 'Tracking id for the deferred gap (issue id or tracking slug).'}),
-	reason: z.string().meta({description: 'Why this case is deferred-by-design.'}),
+		.meta({ description: 'Tracking id for the deferred gap (issue id or tracking slug).' }),
+	reason: z.string().meta({ description: 'Why this case is deferred-by-design.' })
 });
 export type ConformanceCaseXfail = z.infer<typeof ConformanceCaseXfail>;
 
@@ -211,13 +211,13 @@ export type ConformanceCaseXfail = z.infer<typeof ConformanceCaseXfail>;
  * is verified in review.
  */
 export const ConformanceCase = z.strictObject({
-	name: z.string().meta({description: 'The assertion, used as the test label.'}),
+	name: z.string().meta({ description: 'The assertion, used as the test label.' }),
 	request: ConformanceCaseRequest,
 	expect: ConformanceCaseExpectation,
 	note: z
 		.string()
 		.optional()
-		.meta({description: 'Free-text note printed in the label / failure output.'}),
-	xfail: ConformanceCaseXfail.optional(),
+		.meta({ description: 'Free-text note printed in the label / failure output.' }),
+	xfail: ConformanceCaseXfail.optional()
 });
 export type ConformanceCase = z.infer<typeof ConformanceCase>;

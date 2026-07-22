@@ -19,12 +19,12 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type {QueryDeps} from '../db/query_deps.ts';
-import {query_session_cleanup_expired} from './session_queries.ts';
-import {query_role_grant_offer_sweep_expired} from './role_grant_offer_queries.ts';
-import type {AuditEmitter} from './audit_emitter.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
+import { query_session_cleanup_expired } from './session_queries.ts';
+import { query_role_grant_offer_sweep_expired } from './role_grant_offer_queries.ts';
+import type { AuditEmitter } from './audit_emitter.ts';
 
 /** Dependencies for the cleanup helpers. */
 export interface AuthCleanupDeps extends QueryDeps {
@@ -77,8 +77,8 @@ export const cleanup_expired_role_grant_offers = async (deps: AuthCleanupDeps): 
 			metadata: {
 				offer_id: offer.id,
 				role: offer.role,
-				scope_id: offer.scope_id,
-			},
+				scope_id: offer.scope_id
+			}
 		});
 	}
 	return expired.length;
@@ -101,5 +101,5 @@ export const cleanup_expired_role_grant_offers = async (deps: AuthCleanupDeps): 
 export const run_auth_cleanup = async (deps: AuthCleanupDeps): Promise<AuthCleanupResult> => {
 	const expired_sessions = await query_session_cleanup_expired(deps);
 	const expired_offers = await cleanup_expired_role_grant_offers(deps);
-	return {expired_sessions, expired_offers};
+	return { expired_sessions, expired_offers };
 };

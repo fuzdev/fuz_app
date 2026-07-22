@@ -14,21 +14,21 @@
  * @module
  */
 
-import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.ts';
-import {jsonrpc_errors} from '../http/jsonrpc_errors.ts';
-import type {AuditLogEvent} from './audit_log_schema.ts';
+import { rpc_action, type ActionActorContext, type RpcAction } from '../actions/action_rpc.ts';
+import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
+import type { AuditLogEvent } from './audit_log_schema.ts';
 
 import {
 	cell_audit_list_action_spec,
 	CELL_AUDIT_LIST_DEFAULT_LIMIT,
 	type CellAuditEventJson,
 	type CellAuditListInput,
-	type CellAuditListOutput,
+	type CellAuditListOutput
 } from './cell_audit_action_specs.ts';
-import {ERROR_CELL_NOT_FOUND} from './cell_action_specs.ts';
-import {query_cell_get} from '../db/cell_queries.ts';
-import {query_audit_log_list_by_cell} from '../db/cell_audit_queries.ts';
-import {can_manage_cell} from './cell_authorize.ts';
+import { ERROR_CELL_NOT_FOUND } from './cell_action_specs.ts';
+import { query_cell_get } from '../db/cell_queries.ts';
+import { query_audit_log_list_by_cell } from '../db/cell_audit_queries.ts';
+import { can_manage_cell } from './cell_authorize.ts';
 
 /**
  * Project a DB row onto the narrowed wire shape. `account_id` /
@@ -43,18 +43,18 @@ const to_cell_audit_event_json = (row: AuditLogEvent): CellAuditEventJson => ({
 	outcome: row.outcome,
 	actor_id: row.actor_id,
 	created_at:
-		typeof row.created_at === 'string' ? row.created_at : (row.created_at as Date).toISOString(),
+		typeof row.created_at === 'string' ? row.created_at : (row.created_at as Date).toISOString()
 });
 
 export const create_cell_audit_actions = (): Array<RpcAction> => {
 	const handler = async (
 		input: CellAuditListInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<CellAuditListOutput> => {
 		const auth = ctx.auth;
 		const cell = await query_cell_get(ctx, input.cell_id);
 		if (!cell) {
-			throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		}
 		// Manage-tier gate (admin / owner). A populated timeline leaks both
 		// the existence of the cell and the actor IDs that touched it (incl.
@@ -63,12 +63,12 @@ export const create_cell_audit_actions = (): Array<RpcAction> => {
 		// get the same 404 as a non-viewer on `cell_get` (IDOR mask). Grants
 		// aren't consulted (manage tier is owner/admin only).
 		if (!can_manage_cell(auth, cell)) {
-			throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		}
 		const rows = await query_audit_log_list_by_cell(ctx, cell.id, {
-			limit: CELL_AUDIT_LIST_DEFAULT_LIMIT,
+			limit: CELL_AUDIT_LIST_DEFAULT_LIMIT
 		});
-		return {events: rows.map(to_cell_audit_event_json)};
+		return { events: rows.map(to_cell_audit_event_json) };
 	};
 
 	return [rpc_action(cell_audit_list_action_spec, handler)];

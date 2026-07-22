@@ -12,13 +12,13 @@
  * @module
  */
 
-import {inject} from 'vitest';
+import { inject } from 'vitest';
 
 import {
 	default_cross_process_setup,
-	reconstruct_bootstrapped_handle,
+	reconstruct_bootstrapped_handle
 } from '$lib/testing/cross_backend/setup.ts';
-import {describe_fact_serving_cross_tests} from '$lib/testing/cross_backend/fact_serving.ts';
+import { describe_fact_serving_cross_tests } from '$lib/testing/cross_backend/fact_serving.ts';
 
 import './cross_test_types.ts';
 
@@ -30,8 +30,8 @@ const setup_test = default_cross_process_setup(handle);
 // account-grain credentials, so this runs on TS and Rust alike. The rest of the
 // suite runs against the single-actor `setup_test`.
 const setup_test_multi_actor = default_cross_process_setup(handle, {
-	extra_actors: ['second_persona'],
+	extra_actors: ['second_persona']
 });
-const {capabilities, rpc_path} = handle.config;
+const { capabilities, rpc_path } = handle.config;
 
-describe_fact_serving_cross_tests({setup_test, setup_test_multi_actor, capabilities, rpc_path});
+describe_fact_serving_cross_tests({ setup_test, setup_test_multi_actor, capabilities, rpc_path });

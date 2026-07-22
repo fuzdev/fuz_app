@@ -11,10 +11,10 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
-import {z} from 'zod';
+import { describe, test, assert } from 'vitest';
+import { z } from 'zod';
 
-import {detect_format} from '$lib/testing/schema_generators.ts';
+import { detect_format } from '$lib/testing/schema_generators.ts';
 
 describe('detect_format — anyOf descent', () => {
 	test('detects email through .nullish()', () => {

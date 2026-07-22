@@ -9,31 +9,31 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type {z} from 'zod';
+import type { z } from 'zod';
 
-import type {SessionOptions} from '../auth/session_cookie.ts';
-import type {MiddlewareSpec} from '../http/middleware_spec.ts';
-import {ApiError, RateLimitError} from '../http/error_schemas.ts';
-import type {AppDeps} from '../auth/deps.ts';
-import type {AuditEmitter} from '../auth/audit_emitter.ts';
-import type {BootstrapServerOptions} from '../server/app_server.ts';
-import type {AppServerContext} from '../server/app_server_context.ts';
-import {Db} from '../db/db.ts';
-import {prefix_route_specs, type RouteSpec} from '../http/route_spec.ts';
-import {bootstrap_route_shape} from '../auth/bootstrap_route_schema.ts';
-import {create_rpc_endpoint} from '../actions/action_rpc.ts';
+import type { SessionOptions } from '../auth/session_cookie.ts';
+import type { MiddlewareSpec } from '../http/middleware_spec.ts';
+import { ApiError, RateLimitError } from '../http/error_schemas.ts';
+import type { AppDeps } from '../auth/deps.ts';
+import type { AuditEmitter } from '../auth/audit_emitter.ts';
+import type { BootstrapServerOptions } from '../server/app_server.ts';
+import type { AppServerContext } from '../server/app_server_context.ts';
+import { Db } from '../db/db.ts';
+import { prefix_route_specs, type RouteSpec } from '../http/route_spec.ts';
+import { bootstrap_route_shape } from '../auth/bootstrap_route_schema.ts';
+import { create_rpc_endpoint } from '../actions/action_rpc.ts';
 import {
 	create_app_surface_spec,
 	type AppSurfaceSpec,
-	type RpcEndpointSpec,
+	type RpcEndpointSpec
 } from '../http/surface.ts';
-import type {WsEndpointSpec} from '../actions/ws_endpoint_spec.ts';
-import type {EventSpec, SseNotification} from '../realtime/sse.ts';
-import {AUDIT_LOG_SSE_MAX_PER_SCOPE, type AuditLogSse} from '../realtime/sse_auth_guard.ts';
-import {SubscriberRegistry} from '../realtime/subscriber_registry.ts';
-import {BaseServerEnv} from '../server/env.ts';
+import type { WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
+import type { EventSpec, SseNotification } from '../realtime/sse.ts';
+import { AUDIT_LOG_SSE_MAX_PER_SCOPE, type AuditLogSse } from '../realtime/sse_auth_guard.ts';
+import { SubscriberRegistry } from '../realtime/subscriber_registry.ts';
+import { BaseServerEnv } from '../server/env.ts';
 
 /**
  * Create a Proxy that throws descriptive errors on any property access or method call.
@@ -69,9 +69,9 @@ export const create_throwing_stub = <T = any>(label: string): T =>
 			if (prop === 'toJSON') return () => `[throwing_stub:${label}]`;
 			throw new Error(
 				`Throwing stub '${label}' — unexpected access to '${prop}'. ` +
-					`This dep should not be reached in this test.`,
+					`This dep should not be reached in this test.`
 			);
-		},
+		}
 	}) as T;
 
 /**
@@ -85,12 +85,12 @@ export const create_throwing_stub = <T = any>(label: string): T =>
  * @param overrides - explicit properties to set (e.g. `{db: stub_db}`)
  */
 export const create_noop_stub = <T = any>(_label: string, overrides?: Record<string, unknown>): T =>
-	new Proxy({...(overrides ?? {})} as any, {
+	new Proxy({ ...(overrides ?? {}) } as any, {
 		get: (target, prop) => {
 			if (prop in target) return (target as Record<string | symbol, unknown>)[prop];
 			if (typeof prop === 'symbol' || prop === 'then' || prop === 'toJSON') return undefined;
 			return async () => undefined;
-		},
+		}
 	}) as T;
 
 /** Throwing stub — use for deps that should never be reached. */
@@ -106,8 +106,8 @@ export const stub: any = create_throwing_stub('stub');
  */
 export const create_stub_db = (): Db =>
 	new Db({
-		client: {query: async () => ({rows: []})},
-		transaction: async (fn) => fn(create_stub_db()),
+		client: { query: async () => ({ rows: [] }) },
+		transaction: async (fn) => fn(create_stub_db())
 	});
 
 /** Stub handler that returns a 200 response. */
@@ -136,10 +136,10 @@ export const create_test_audit_emitter = (): AuditEmitter => ({
 	notify: () => {},
 	add_listener: () => {
 		throw new Error(
-			'create_test_audit_emitter accepts no listeners — use create_recording_audit_emitter',
+			'create_test_audit_emitter accepts no listeners — use create_recording_audit_emitter'
 		);
 	},
-	listener_count: () => 0,
+	listener_count: () => 0
 });
 
 /**
@@ -154,13 +154,13 @@ export const create_test_audit_emitter = (): AuditEmitter => ({
  */
 export const create_stub_audit_sse = (): AuditLogSse => {
 	const registry = new SubscriberRegistry<SseNotification>({
-		max_per_scope: AUDIT_LOG_SSE_MAX_PER_SCOPE,
+		max_per_scope: AUDIT_LOG_SSE_MAX_PER_SCOPE
 	});
 	return {
 		subscribe: () => () => {},
-		log: new Logger('test:audit_sse', {level: 'off'}),
+		log: new Logger('test:audit_sse', { level: 'off' }),
 		on_audit_event: () => {},
-		registry,
+		registry
 	};
 };
 
@@ -173,7 +173,7 @@ export const stub_app_deps: AppDeps = {
 	password: create_throwing_stub('password'),
 	db: create_throwing_stub('db'),
 	log: create_throwing_stub('log'),
-	audit: create_test_audit_emitter(),
+	audit: create_test_audit_emitter()
 };
 
 /**
@@ -186,8 +186,8 @@ export const create_stub_app_deps = (): AppDeps => ({
 	keyring: create_noop_stub('keyring'),
 	password: create_noop_stub('password'),
 	db: stub_db,
-	log: new Logger('test', {level: 'off'}),
-	audit: create_test_audit_emitter(),
+	log: new Logger('test', { level: 'off' }),
+	audit: create_test_audit_emitter()
 });
 
 /** Create the API middleware stub array matching `create_auth_middleware_specs` output. */
@@ -196,22 +196,22 @@ export const create_stub_api_middleware = (options?: {
 	include_daemon_token?: boolean;
 }): Array<MiddlewareSpec> => {
 	const specs: Array<MiddlewareSpec> = [
-		{name: 'origin', path: '/api/*', handler: stub_mw, errors: {403: ApiError}},
-		{name: 'session', path: '/api/*', handler: stub_mw},
-		{name: 'request_context', path: '/api/*', handler: stub_mw},
+		{ name: 'origin', path: '/api/*', handler: stub_mw, errors: { 403: ApiError } },
+		{ name: 'session', path: '/api/*', handler: stub_mw },
+		{ name: 'request_context', path: '/api/*', handler: stub_mw },
 		{
 			name: 'bearer_auth',
 			path: '/api/*',
 			handler: stub_mw,
-			errors: {401: ApiError, 403: ApiError, 429: RateLimitError},
-		},
+			errors: { 401: ApiError, 403: ApiError, 429: RateLimitError }
+		}
 	];
 	if (options?.include_daemon_token) {
 		specs.push({
 			name: 'daemon_token',
 			path: '/api/*',
 			handler: stub_mw,
-			errors: {401: ApiError, 500: ApiError, 503: ApiError},
+			errors: { 401: ApiError, 500: ApiError, 503: ApiError }
 		});
 	}
 	return specs;
@@ -226,7 +226,7 @@ export const create_stub_api_middleware = (options?: {
  * @param session_options - consumer's session config (required — varies per app)
  */
 export const create_stub_app_server_context = (
-	session_options: SessionOptions<string>,
+	session_options: SessionOptions<string>
 ): AppServerContext => {
 	const deps = create_stub_app_deps();
 	return {
@@ -236,16 +236,16 @@ export const create_stub_app_server_context = (
 			db_type: 'pglite-memory' as any,
 			db_name: 'test',
 			migration_results: [],
-			close: async () => {},
+			close: async () => {}
 		},
-		bootstrap_status: {available: false, token_path: null},
+		bootstrap_status: { available: false, token_path: null },
 		session_options,
 		ip_rate_limiter: null,
 		login_account_rate_limiter: null,
 		signup_account_rate_limiter: null,
 		action_ip_rate_limiter: null,
 		action_account_rate_limiter: null,
-		audit_sse: null,
+		audit_sse: null
 	};
 };
 
@@ -279,8 +279,7 @@ export interface CreateTestAppSurfaceSpecOptions {
 	 * only, never mounts.
 	 */
 	ws_endpoints?:
-		| ReadonlyArray<WsEndpointSpec>
-		| ((ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>);
+		ReadonlyArray<WsEndpointSpec> | ((ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>);
 	/** Transform middleware array (e.g., zap's `extend_middleware_for_zap_binary`). */
 	transform_middleware?: (specs: Array<MiddlewareSpec>) => Array<MiddlewareSpec>;
 	/**
@@ -314,7 +313,7 @@ export interface CreateTestAppSurfaceSpecOptions {
  * @returns the surface spec for the standard suites
  */
 export const create_test_app_surface_spec = (
-	options: CreateTestAppSurfaceSpecOptions,
+	options: CreateTestAppSurfaceSpecOptions
 ): AppSurfaceSpec => {
 	const ctx = create_stub_app_server_context(options.session_options);
 	const consumer_routes = options.create_route_specs(ctx);
@@ -330,8 +329,8 @@ export const create_test_app_surface_spec = (
 			create_rpc_endpoint({
 				path: endpoint.path,
 				actions: endpoint.actions,
-				log: ctx.deps.log,
-			}),
+				log: ctx.deps.log
+			})
 		) ?? [];
 	// Resolve ws endpoints (mirrors create_app_server). Surface-only —
 	// no `register_ws_endpoint` call here, so no `upgradeWebSocket` needed.
@@ -348,7 +347,7 @@ export const create_test_app_surface_spec = (
 					// Surface generation reads the route shape only — the live hono
 					// handler never runs here, so a stub satisfies the RouteSpec type
 					// without pulling the in-process Hono app onto cross-process consumers.
-					{...bootstrap_route_shape, handler: stub_handler},
+					{ ...bootstrap_route_shape, handler: stub_handler }
 				])
 			: [];
 	const route_specs = [...consumer_routes, ...rpc_route_specs, ...bootstrap_route_specs];
@@ -364,6 +363,6 @@ export const create_test_app_surface_spec = (
 		env_schema: options.env_schema ?? BaseServerEnv,
 		event_specs: options.event_specs,
 		rpc_endpoints: resolved_rpc_endpoints,
-		ws_endpoints: resolved_ws_endpoints,
+		ws_endpoints: resolved_ws_endpoints
 	});
 };

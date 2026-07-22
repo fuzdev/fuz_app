@@ -10,34 +10,34 @@
  * @module
  */
 
-import {afterEach, describe, assert, test, vi} from 'vitest';
-import {Hono} from 'hono';
-import {z} from 'zod';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
-import {ActingActor} from '$lib/http/auth_shape.ts';
+import { afterEach, describe, assert, test, vi } from 'vitest';
+import { Hono } from 'hono';
+import { z } from 'zod';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { ActingActor } from '$lib/http/auth_shape.ts';
 
 import {
 	register_action_ws,
 	type SocketCloseContext,
-	type SocketOpenContext,
+	type SocketOpenContext
 } from '$lib/actions/register_action_ws.ts';
-import type {ActionContext} from '$lib/actions/action_rpc.ts';
-import type {ActionSpecUnion, RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
-import {BackendWebsocketTransport} from '$lib/actions/transports_ws_backend.ts';
-import {WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT} from '$lib/actions/transports.ts';
-import {type CredentialType} from '$lib/hono_context.ts';
-import {JSONRPC_ERROR_CODES} from '$lib/http/jsonrpc_errors.ts';
-import {RateLimiter} from '$lib/rate_limiter.ts';
-import {create_stub_db} from '$lib/testing/stubs.ts';
+import type { ActionContext } from '$lib/actions/action_rpc.ts';
+import type { ActionSpecUnion, RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
+import { BackendWebsocketTransport } from '$lib/actions/transports_ws_backend.ts';
+import { WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT } from '$lib/actions/transports.ts';
+import { type CredentialType } from '$lib/hono_context.ts';
+import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
+import { RateLimiter } from '$lib/rate_limiter.ts';
+import { create_stub_db } from '$lib/testing/stubs.ts';
 import {
 	create_fake_hono_context,
 	create_fake_ws,
 	create_stub_upgrade,
 	dispatch_ws_message,
-	type FakeWs,
+	type FakeWs
 } from '$lib/testing/ws_round_trip.ts';
 
-const log = new Logger('test', {level: 'off'});
+const log = new Logger('test', { level: 'off' });
 
 // --- spec fixtures -------------------------------------------------------
 
@@ -45,24 +45,24 @@ const echo_spec: RequestResponseActionSpec = {
 	method: 'echo',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none'},
+	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
-	input: z.strictObject({value: z.string()}),
-	output: z.strictObject({value: z.string()}),
+	input: z.strictObject({ value: z.string() }),
+	output: z.strictObject({ value: z.string() }),
 	async: true,
-	description: 'echo',
+	description: 'echo'
 };
 
 const no_input_spec: RequestResponseActionSpec = {
 	method: 'ping',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'none', actor: 'none'},
+	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
 	input: z.null(),
 	output: z.null(),
 	async: true,
-	description: 'ping',
+	description: 'ping'
 };
 
 const keeper_spec: RequestResponseActionSpec = {
@@ -73,25 +73,25 @@ const keeper_spec: RequestResponseActionSpec = {
 		account: 'required',
 		actor: 'required',
 		roles: ['keeper'],
-		credential_types: ['daemon_token'],
+		credential_types: ['daemon_token']
 	},
 	side_effects: false,
-	input: z.strictObject({acting: ActingActor}),
+	input: z.strictObject({ acting: ActingActor }),
 	output: z.null(),
 	async: true,
-	description: 'keeper only',
+	description: 'keeper only'
 };
 
 const role_spec: RequestResponseActionSpec = {
 	method: 'role_only',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required', roles: ['admin']},
+	auth: { account: 'required', actor: 'required', roles: ['admin'] },
 	side_effects: false,
-	input: z.strictObject({acting: ActingActor}),
+	input: z.strictObject({ acting: ActingActor }),
 	output: z.null(),
 	async: true,
-	description: 'role only',
+	description: 'role only'
 };
 
 const specs: Array<ActionSpecUnion> = [echo_spec, no_input_spec, keeper_spec, role_spec];
@@ -115,7 +115,7 @@ const build_harness = async (opts: {
 	artificial_delay?: number;
 	on_socket_open?: (ctx: SocketOpenContext) => void | Promise<void>;
 	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;
-	heartbeat?: boolean | {timeout?: number};
+	heartbeat?: boolean | { timeout?: number };
 	actions?: Array<{
 		spec: ActionSpecUnion;
 		handler?: (input: unknown, ctx: ActionContext) => unknown;
@@ -125,9 +125,9 @@ const build_harness = async (opts: {
 }): Promise<Harness> => {
 	const stub = create_stub_upgrade();
 	const actions =
-		opts.actions ?? specs.map((spec) => ({spec, handler: opts.handlers[spec.method]}));
+		opts.actions ?? specs.map((spec) => ({ spec, handler: opts.handlers[spec.method] }));
 	const stub_db = create_stub_db();
-	const {transport} = register_action_ws({
+	const { transport } = register_action_ws({
 		path: '/ws',
 		app: new Hono(),
 		upgradeWebSocket: stub.upgradeWebSocket,
@@ -139,12 +139,12 @@ const build_harness = async (opts: {
 		heartbeat: opts.heartbeat ?? false,
 		action_ip_rate_limiter: opts.action_ip_rate_limiter,
 		action_account_rate_limiter: opts.action_account_rate_limiter,
-		log,
+		log
 	});
 
 	const c = create_fake_hono_context({
 		credential_type: opts.credential_type ?? 'session',
-		role: opts.role,
+		role: opts.role
 	});
 	const events = await stub.get_create_events()(c);
 	const fake = create_fake_ws();
@@ -157,13 +157,13 @@ const build_harness = async (opts: {
 		},
 		on_message: async (data: unknown) => {
 			const event = new MessageEvent('message', {
-				data: typeof data === 'string' ? data : JSON.stringify(data),
+				data: typeof data === 'string' ? data : JSON.stringify(data)
 			});
 			if (events.onMessage) await dispatch_ws_message(events.onMessage, event, fake.ws);
 		},
 		on_close: async () => {
 			await (events.onClose?.(new CloseEvent('close'), fake.ws) as Promise<void> | void);
-		},
+		}
 	};
 };
 
@@ -175,29 +175,29 @@ describe('register_action_ws', () => {
 	test('dispatches a valid request and returns the handler output', async () => {
 		const h = await build_harness({
 			handlers: {
-				echo: (input) => ({value: `hi ${(input as {value: string}).value}`}),
-			},
+				echo: (input) => ({ value: `hi ${(input as { value: string }).value}` })
+			}
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'echo', params: {value: 'world'}});
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value: 'world' } });
 
 		assert.strictEqual(h.fake.sends.length, 1);
 		const res = parse_json(h.fake.sends[0]!);
-		assert.deepStrictEqual(res, {jsonrpc: '2.0', id: 1, result: {value: 'hi world'}});
+		assert.deepStrictEqual(res, { jsonrpc: '2.0', id: 1, result: { value: 'hi world' } });
 	});
 
 	test('handler receives request_id, notify, and signal on ctx', async () => {
-		const captured: {ctx: ActionContext | null} = {ctx: null};
+		const captured: { ctx: ActionContext | null } = { ctx: null };
 		const h = await build_harness({
 			handlers: {
 				echo: (input, ctx) => {
 					captured.ctx = ctx;
-					return {value: (input as {value: string}).value};
-				},
-			},
+					return { value: (input as { value: string }).value };
+				}
+			}
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 'req-abc', method: 'echo', params: {value: 'x'}});
+		await h.on_message({ jsonrpc: '2.0', id: 'req-abc', method: 'echo', params: { value: 'x' } });
 
 		assert.ok(captured.ctx);
 		assert.strictEqual(captured.ctx.request_id, 'req-abc');
@@ -209,28 +209,28 @@ describe('register_action_ws', () => {
 		const h = await build_harness({
 			handlers: {
 				echo: (_input, ctx) => {
-					ctx.notify('progress', {n: 1});
-					ctx.notify('progress', {n: 2});
-					return {value: 'ok'};
-				},
-			},
+					ctx.notify('progress', { n: 1 });
+					ctx.notify('progress', { n: 2 });
+					return { value: 'ok' };
+				}
+			}
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'echo', params: {value: 'x'}});
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value: 'x' } });
 
 		assert.strictEqual(h.fake.sends.length, 3);
 		const n1 = parse_json(h.fake.sends[0]!);
 		const n2 = parse_json(h.fake.sends[1]!);
 		const res = parse_json(h.fake.sends[2]!);
-		assert.deepStrictEqual(n1, {jsonrpc: '2.0', method: 'progress', params: {n: 1}});
-		assert.deepStrictEqual(n2, {jsonrpc: '2.0', method: 'progress', params: {n: 2}});
+		assert.deepStrictEqual(n1, { jsonrpc: '2.0', method: 'progress', params: { n: 1 } });
+		assert.deepStrictEqual(n2, { jsonrpc: '2.0', method: 'progress', params: { n: 2 } });
 		assert.strictEqual(res.id, 1);
 	});
 
 	test('ctx.connection_id is stable across messages and matches on_socket_open', async () => {
-		const captured: {open_id: string | null; handler_ids: Array<string>} = {
+		const captured: { open_id: string | null; handler_ids: Array<string> } = {
 			open_id: null,
-			handler_ids: [],
+			handler_ids: []
 		};
 		const h = await build_harness({
 			on_socket_open: (ctx) => {
@@ -241,13 +241,13 @@ describe('register_action_ws', () => {
 					// connection_id is optional on ActionContext (HTTP handlers see
 					// undefined). On WS it is always populated.
 					captured.handler_ids.push(ctx.connection_id!);
-					return {value: 'ok'};
-				},
-			},
+					return { value: 'ok' };
+				}
+			}
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'echo', params: {value: 'x'}});
-		await h.on_message({jsonrpc: '2.0', id: 2, method: 'echo', params: {value: 'y'}});
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value: 'x' } });
+		await h.on_message({ jsonrpc: '2.0', id: 2, method: 'echo', params: { value: 'y' } });
 
 		assert.ok(captured.open_id);
 		assert.strictEqual(captured.handler_ids.length, 2);
@@ -256,17 +256,17 @@ describe('register_action_ws', () => {
 	});
 
 	test('ctx.signal fires when the socket is closed', async () => {
-		const captured: {signal: AbortSignal | null} = {signal: null};
+		const captured: { signal: AbortSignal | null } = { signal: null };
 		const h = await build_harness({
 			handlers: {
 				echo: (input, ctx) => {
 					captured.signal = ctx.signal;
-					return {value: (input as {value: string}).value};
-				},
-			},
+					return { value: (input as { value: string }).value };
+				}
+			}
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'echo', params: {value: 'x'}});
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value: 'x' } });
 		assert.ok(captured.signal);
 		assert.strictEqual(captured.signal.aborted, false);
 
@@ -275,9 +275,9 @@ describe('register_action_ws', () => {
 	});
 
 	test('rejects batch JSON-RPC with invalid_request', async () => {
-		const h = await build_harness({handlers: {echo: () => ({value: 'x'})}});
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
 		await h.on_open();
-		await h.on_message([{jsonrpc: '2.0', id: 1, method: 'echo', params: {value: 'x'}}]);
+		await h.on_message([{ jsonrpc: '2.0', id: 1, method: 'echo', params: { value: 'x' } }]);
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.strictEqual(res.id, null);
@@ -287,9 +287,9 @@ describe('register_action_ws', () => {
 	});
 
 	test('parse error on malformed JSON', async () => {
-		const h = await build_harness({handlers: {echo: () => ({value: 'x'})}});
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
 		await h.on_open();
-		const event = new MessageEvent('message', {data: '{not json'});
+		const event = new MessageEvent('message', { data: '{not json' });
 		// drive onMessage directly with bad data
 		const stub = create_stub_upgrade();
 		const stub_db = create_stub_db();
@@ -297,13 +297,13 @@ describe('register_action_ws', () => {
 			path: '/ws',
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
-			actions: [{spec: echo_spec, handler: () => ({value: 'x'})}],
+			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: stub_db,
 			heartbeat: false,
-			log,
+			log
 		});
 		const events = await stub.get_create_events()(
-			create_fake_hono_context({credential_type: 'session'}),
+			create_fake_hono_context({ credential_type: 'session' })
 		);
 		const fake = create_fake_ws();
 		events.onOpen?.(new Event('open'), fake.ws);
@@ -314,25 +314,25 @@ describe('register_action_ws', () => {
 	});
 
 	test('silently drops JSON-RPC notifications (method + no id)', async () => {
-		const h = await build_harness({handlers: {echo: () => ({value: 'x'})}});
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', method: 'echo', params: {value: 'x'}});
+		await h.on_message({ jsonrpc: '2.0', method: 'echo', params: { value: 'x' } });
 		assert.strictEqual(h.fake.sends.length, 0);
 	});
 
 	test('invalid envelope (not request, not notification) returns invalid_request', async () => {
-		const h = await build_harness({handlers: {echo: () => ({value: 'x'})}});
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1}); // missing method
+		await h.on_message({ jsonrpc: '2.0', id: 1 }); // missing method
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_request);
 	});
 
 	test('method_not_found for unknown method', async () => {
-		const h = await build_harness({handlers: {echo: () => ({value: 'x'})}});
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'missing'});
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'missing' });
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.strictEqual(res.id, 1);
@@ -341,9 +341,9 @@ describe('register_action_ws', () => {
 
 	test('method_not_found when handler is missing for a registered spec', async () => {
 		// spec exists (echo) but no handler wired
-		const h = await build_harness({handlers: {}});
+		const h = await build_harness({ handlers: {} });
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'echo', params: {value: 'x'}});
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value: 'x' } });
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.method_not_found);
@@ -351,12 +351,12 @@ describe('register_action_ws', () => {
 
 	test('keeper action rejected without daemon_token + keeper role', async () => {
 		const h = await build_harness({
-			handlers: {keeper_only: () => null},
+			handlers: { keeper_only: () => null },
 			credential_type: 'session',
-			role: 'keeper',
+			role: 'keeper'
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'keeper_only', params: {}});
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'keeper_only', params: {} });
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.forbidden);
@@ -364,12 +364,12 @@ describe('register_action_ws', () => {
 
 	test('keeper action allowed with daemon_token + keeper role', async () => {
 		const h = await build_harness({
-			handlers: {keeper_only: () => null},
+			handlers: { keeper_only: () => null },
 			credential_type: 'daemon_token',
-			role: 'keeper',
+			role: 'keeper'
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'keeper_only', params: {}});
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'keeper_only', params: {} });
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.ok(!res.error, `unexpected error: ${JSON.stringify(res.error)}`);
@@ -378,11 +378,11 @@ describe('register_action_ws', () => {
 
 	test('role-based auth allowed when request_context has the required role', async () => {
 		const h = await build_harness({
-			handlers: {role_only: () => null},
-			role: 'admin',
+			handlers: { role_only: () => null },
+			role: 'admin'
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'role_only', params: {}});
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'role_only', params: {} });
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.ok(!res.error, `unexpected error: ${JSON.stringify(res.error)}`);
@@ -391,11 +391,11 @@ describe('register_action_ws', () => {
 
 	test('role-based auth rejected when request_context lacks the required role', async () => {
 		const h = await build_harness({
-			handlers: {role_only: () => null},
+			handlers: { role_only: () => null }
 			// no role — default RequestContext has no role_grants
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'role_only', params: {}});
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'role_only', params: {} });
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.forbidden);
@@ -403,9 +403,9 @@ describe('register_action_ws', () => {
 	});
 
 	test('invalid params return invalid_params with issues', async () => {
-		const h = await build_harness({handlers: {echo: () => ({value: 'x'})}});
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'echo', params: {value: 42}});
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value: 42 } });
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_params);
@@ -417,11 +417,11 @@ describe('register_action_ws', () => {
 			handlers: {
 				echo: () => {
 					throw new Error('boom');
-				},
-			},
+				}
+			}
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 77, method: 'echo', params: {value: 'x'}});
+		await h.on_message({ jsonrpc: '2.0', id: 77, method: 'echo', params: { value: 'x' } });
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.strictEqual(res.id, 77);
@@ -436,21 +436,21 @@ describe('register_action_ws', () => {
 			account_id: unknown;
 			connection_id: unknown;
 		}
-		const captured: {value: Captured | null} = {value: null};
+		const captured: { value: Captured | null } = { value: null };
 		const h = await build_harness({
 			handlers: {
 				echo: (input, ctx) => {
 					captured.value = {
 						request_id: ctx.request_id,
 						account_id: ctx.auth?.account.id,
-						connection_id: ctx.connection_id,
+						connection_id: ctx.connection_id
 					};
-					return {value: (input as {value: string}).value};
-				},
-			},
+					return { value: (input as { value: string }).value };
+				}
+			}
 		});
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 'r1', method: 'echo', params: {value: 'x'}});
+		await h.on_message({ jsonrpc: '2.0', id: 'r1', method: 'echo', params: { value: 'x' } });
 
 		assert.ok(captured.value);
 		assert.strictEqual(captured.value.request_id, 'r1');
@@ -464,22 +464,22 @@ describe('register_action_ws', () => {
 			handlers: {
 				echo: (input) => {
 					dispatched_at = Date.now();
-					return {value: (input as {value: string}).value};
-				},
+					return { value: (input as { value: string }).value };
+				}
 			},
-			artificial_delay: 30,
+			artificial_delay: 30
 		});
 		await h.on_open();
 		const sent_at = Date.now();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'echo', params: {value: 'x'}});
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value: 'x' } });
 		assert.ok(
 			dispatched_at - sent_at >= 25,
-			`expected ≥25ms delay, got ${dispatched_at - sent_at}ms`,
+			`expected ≥25ms delay, got ${dispatched_at - sent_at}ms`
 		);
 	});
 
 	test('transport tracks connections on open and removes on close', async () => {
-		const h = await build_harness({handlers: {echo: () => ({value: 'x'})}});
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
 		assert.strictEqual(h.transport.is_ready(), false);
 		await h.on_open();
 		assert.strictEqual(h.transport.is_ready(), true);
@@ -495,11 +495,11 @@ describe('register_action_ws', () => {
 			path: '/ws',
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
-			actions: [{spec: echo_spec, handler: () => ({value: 'x'})}],
+			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
 			db: stub_db,
 			transport: supplied,
 			heartbeat: false,
-			log,
+			log
 		});
 		assert.strictEqual(result.transport, supplied);
 	});
@@ -510,11 +510,11 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		let captured: SocketOpenContext | null = null;
 		let calls = 0;
 		const h = await build_harness({
-			handlers: {echo: () => ({value: 'x'})},
+			handlers: { echo: () => ({ value: 'x' }) },
 			on_socket_open: (ctx) => {
 				calls++;
 				captured = ctx;
-			},
+			}
 		});
 
 		await h.on_open();
@@ -534,10 +534,10 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		let is_ready_inside: boolean | null = null;
 		let captured_transport: BackendWebsocketTransport | null = null;
 		const h = await build_harness({
-			handlers: {echo: () => ({value: 'x'})},
+			handlers: { echo: () => ({ value: 'x' }) },
 			on_socket_open: () => {
 				is_ready_inside = captured_transport!.is_ready();
-			},
+			}
 		});
 		captured_transport = h.transport;
 
@@ -547,10 +547,10 @@ describe('register_action_ws socket lifecycle hooks', () => {
 
 	test('on_socket_open notify routes a notification back to the originating socket', async () => {
 		const h = await build_harness({
-			handlers: {echo: () => ({value: 'x'})},
+			handlers: { echo: () => ({ value: 'x' }) },
 			on_socket_open: (ctx) => {
-				ctx.notify('hello', {connection_id: ctx.connection_id});
-			},
+				ctx.notify('hello', { connection_id: ctx.connection_id });
+			}
 		});
 
 		await h.on_open();
@@ -567,24 +567,24 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		// handlers see a per-request composite (socket + per-request
 		// controller) so explicit cancel can target one request. The two
 		// references differ, but both fire on close.
-		const captured: {open: AbortSignal | null; handler: AbortSignal | null} = {
+		const captured: { open: AbortSignal | null; handler: AbortSignal | null } = {
 			open: null,
-			handler: null,
+			handler: null
 		};
 		const h = await build_harness({
 			handlers: {
 				echo: (_input, ctx) => {
 					captured.handler = ctx.signal;
-					return {value: 'x'};
-				},
+					return { value: 'x' };
+				}
 			},
 			on_socket_open: (ctx) => {
 				captured.open = ctx.signal;
-			},
+			}
 		});
 
 		await h.on_open();
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'echo', params: {value: 'x'}});
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value: 'x' } });
 		assert.ok(captured.open);
 		assert.ok(captured.handler);
 
@@ -601,31 +601,31 @@ describe('register_action_ws socket lifecycle hooks', () => {
 			handlers: {
 				echo: () => {
 					events.push('handler');
-					return {value: 'x'};
-				},
+					return { value: 'x' };
+				}
 			},
 			on_socket_open: async () => {
 				events.push('open:start');
 				await new Promise((resolve) => setTimeout(resolve, 10));
 				events.push('open:end');
-			},
+			}
 		});
 
 		// Simulate real adapter: open fires, then messages arrive. Caller drives
 		// them in sequence (awaiting open before sending is the harness contract).
 		const open_promise = h.on_open();
 		await open_promise;
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'echo', params: {value: 'x'}});
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value: 'x' } });
 
 		assert.deepStrictEqual(events, ['open:start', 'open:end', 'handler']);
 	});
 
 	test('on_socket_open that throws closes the socket with an error frame + code 1011', async () => {
 		const h = await build_harness({
-			handlers: {echo: () => ({value: 'x'})},
+			handlers: { echo: () => ({ value: 'x' }) },
 			on_socket_open: () => {
 				throw new Error('bootstrap boom');
-			},
+			}
 		});
 
 		await h.on_open();
@@ -642,12 +642,12 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		let close_seen_account_id: string | null = null;
 		let transport_ready_inside_close: boolean | null = null;
 		const h = await build_harness({
-			handlers: {echo: () => ({value: 'x'})},
+			handlers: { echo: () => ({ value: 'x' }) },
 			on_socket_close: (ctx) => {
 				close_seen_connection_id = ctx.connection_id;
 				close_seen_account_id = ctx.identity.account_id;
 				transport_ready_inside_close = h.transport.is_ready();
-			},
+			}
 		});
 
 		await h.on_open();
@@ -669,10 +669,10 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		// it was captured at open time, independently of the transport.
 		let close_identity_account: string | null = null;
 		const h = await build_harness({
-			handlers: {echo: () => ({value: 'x'})},
+			handlers: { echo: () => ({ value: 'x' }) },
 			on_socket_close: (ctx) => {
 				close_identity_account = ctx.identity.account_id;
-			},
+			}
 		});
 
 		await h.on_open();
@@ -689,10 +689,10 @@ describe('register_action_ws socket lifecycle hooks', () => {
 
 	test('on_socket_close error is logged and swallowed (transport still cleans up)', async () => {
 		const h = await build_harness({
-			handlers: {echo: () => ({value: 'x'})},
+			handlers: { echo: () => ({ value: 'x' }) },
 			on_socket_close: () => {
 				throw new Error('cleanup boom');
-			},
+			}
 		});
 
 		await h.on_open();
@@ -705,10 +705,10 @@ describe('register_action_ws socket lifecycle hooks', () => {
 	test('on_socket_close is skipped when the socket never opened', async () => {
 		let close_calls = 0;
 		const h = await build_harness({
-			handlers: {echo: () => ({value: 'x'})},
+			handlers: { echo: () => ({ value: 'x' }) },
 			on_socket_close: () => {
 				close_calls++;
-			},
+			}
 		});
 
 		// Drive onClose without ever opening — no captured_connection_id,
@@ -728,8 +728,8 @@ describe('register_action_ws server heartbeat', () => {
 		// tick interval = max(100, timeout/2) = 100 — the first tick after
 		// open evaluates silence and closes.
 		const h = await build_harness({
-			handlers: {echo: () => ({value: 'x'})},
-			heartbeat: {timeout: 200},
+			handlers: { echo: () => ({ value: 'x' }) },
+			heartbeat: { timeout: 200 }
 		});
 		await h.on_open();
 		assert.strictEqual(h.fake.closes.length, 0);
@@ -744,14 +744,14 @@ describe('register_action_ws server heartbeat', () => {
 	test('incoming message resets the receive-silence window', async () => {
 		vi.useFakeTimers();
 		const h = await build_harness({
-			handlers: {echo: (input) => ({value: (input as {value: string}).value})},
-			heartbeat: {timeout: 400},
+			handlers: { echo: (input) => ({ value: (input as { value: string }).value }) },
+			heartbeat: { timeout: 400 }
 		});
 		await h.on_open();
 
 		// Just before the first tick at t=200, drive a message.
 		vi.advanceTimersByTime(150);
-		await h.on_message({jsonrpc: '2.0', id: 1, method: 'echo', params: {value: 'x'}});
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value: 'x' } });
 
 		// Advance past the original threshold (400ms). Without the activity
 		// reset, tick at t=400 would have closed (silence=400). With reset at
@@ -768,8 +768,8 @@ describe('register_action_ws server heartbeat', () => {
 	test('cold-start grace — no close before timeout elapses since open', async () => {
 		vi.useFakeTimers();
 		const h = await build_harness({
-			handlers: {echo: () => ({value: 'x'})},
-			heartbeat: {timeout: 400},
+			handlers: { echo: () => ({ value: 'x' }) },
+			heartbeat: { timeout: 400 }
 		});
 		await h.on_open();
 
@@ -786,8 +786,8 @@ describe('register_action_ws server heartbeat', () => {
 	test('heartbeat: false disables the timer (silent socket stays open)', async () => {
 		vi.useFakeTimers();
 		const h = await build_harness({
-			handlers: {echo: () => ({value: 'x'})},
-			heartbeat: false,
+			handlers: { echo: () => ({ value: 'x' }) },
+			heartbeat: false
 		});
 		await h.on_open();
 
@@ -799,8 +799,8 @@ describe('register_action_ws server heartbeat', () => {
 	test('timer is stopped on close', async () => {
 		vi.useFakeTimers();
 		const h = await build_harness({
-			handlers: {echo: () => ({value: 'x'})},
-			heartbeat: {timeout: 400},
+			handlers: { echo: () => ({ value: 'x' }) },
+			heartbeat: { timeout: 400 }
 		});
 		await h.on_open();
 		await h.on_close();
@@ -818,27 +818,27 @@ describe('register_action_ws rate limit', () => {
 			max_attempts,
 			window_ms: 60_000,
 			cleanup_interval_ms: 0,
-			max_keys: null,
+			max_keys: null
 		});
 
 	const account_keyed_spec: RequestResponseActionSpec = {
 		method: 'throttled_echo',
 		kind: 'request_response',
 		initiator: 'frontend',
-		auth: {account: 'required', actor: 'none'},
+		auth: { account: 'required', actor: 'none' },
 		side_effects: false,
-		input: z.strictObject({value: z.string()}),
-		output: z.strictObject({value: z.string()}),
+		input: z.strictObject({ value: z.string() }),
+		output: z.strictObject({ value: z.string() }),
 		async: true,
 		description: 'Account-keyed throttled echo',
-		rate_limit: 'account',
+		rate_limit: 'account'
 	};
 
 	test('registration rejects public + account', () => {
 		const stub = create_stub_upgrade();
 		const bad_spec: RequestResponseActionSpec = {
 			...account_keyed_spec,
-			auth: {account: 'none', actor: 'none'},
+			auth: { account: 'none', actor: 'none' }
 		};
 		const stub_db = create_stub_db();
 		assert.throws(
@@ -847,12 +847,12 @@ describe('register_action_ws rate limit', () => {
 					path: '/ws',
 					app: new Hono(),
 					upgradeWebSocket: stub.upgradeWebSocket,
-					actions: [{spec: bad_spec, handler: () => ({value: 'x'})}],
+					actions: [{ spec: bad_spec, handler: () => ({ value: 'x' }) }],
 					db: stub_db,
 					heartbeat: false,
-					log,
+					log
 				}),
-			/auth\.account !== 'required'.*account-keyed/,
+			/auth\.account !== 'required'.*account-keyed/
 		);
 	});
 
@@ -860,13 +860,13 @@ describe('register_action_ws rate limit', () => {
 		const limiter = make_limiter(2);
 		const h = await build_harness({
 			handlers: {},
-			actions: [{spec: account_keyed_spec, handler: (input) => input as {value: string}}],
-			action_account_rate_limiter: limiter,
+			actions: [{ spec: account_keyed_spec, handler: (input) => input as { value: string } }],
+			action_account_rate_limiter: limiter
 		});
 		await h.on_open();
 
 		const send = (id: number) =>
-			h.on_message({jsonrpc: '2.0', method: 'throttled_echo', params: {value: 'x'}, id});
+			h.on_message({ jsonrpc: '2.0', method: 'throttled_echo', params: { value: 'x' }, id });
 
 		await send(1);
 		await send(2);
@@ -885,13 +885,13 @@ describe('register_action_ws rate limit', () => {
 	test('action without rate_limit is unaffected', async () => {
 		const limiter = make_limiter(1);
 		const h = await build_harness({
-			handlers: {echo: (input) => input as {value: string}},
-			action_account_rate_limiter: limiter,
+			handlers: { echo: (input) => input as { value: string } },
+			action_account_rate_limiter: limiter
 		});
 		await h.on_open();
 
 		const send = (id: number) =>
-			h.on_message({jsonrpc: '2.0', method: 'echo', params: {value: 'x'}, id});
+			h.on_message({ jsonrpc: '2.0', method: 'echo', params: { value: 'x' }, id });
 
 		await send(1);
 		await send(2);

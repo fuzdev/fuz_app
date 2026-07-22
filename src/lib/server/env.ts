@@ -9,11 +9,11 @@
  * @module
  */
 
-import {z} from 'zod';
-import {to_error_message} from '@fuzdev/fuz_util/error.ts';
+import { z } from 'zod';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
-import {create_validated_keyring, type Keyring} from '../auth/keyring.ts';
-import {parse_allowed_origins} from '../http/origin.ts';
+import { create_validated_keyring, type Keyring } from '../auth/keyring.ts';
+import { parse_allowed_origins } from '../http/origin.ts';
 
 /**
  * Base Zod schema for server environment variables.
@@ -24,37 +24,37 @@ import {parse_allowed_origins} from '../http/origin.ts';
  * Apps can use directly or extend with app-specific fields via `.extend()`.
  */
 export const BaseServerEnv = z.strictObject({
-	NODE_ENV: z.enum(['development', 'production']).meta({description: 'Runtime environment mode'}),
+	NODE_ENV: z.enum(['development', 'production']).meta({ description: 'Runtime environment mode' }),
 	PORT: z.coerce
 		.number()
 		.int()
 		.min(1)
 		.max(65535)
 		.default(4040)
-		.meta({description: 'HTTP server port'}),
-	HOST: z.string().default('localhost').meta({description: 'HTTP server bind address'}),
+		.meta({ description: 'HTTP server port' }),
+	HOST: z.string().default('localhost').meta({ description: 'HTTP server bind address' }),
 	DATABASE_URL: z.string().min(1).meta({
 		description: 'Database URL (postgres://, file://, or memory://)',
-		sensitivity: 'secret',
+		sensitivity: 'secret'
 	}),
 	SECRET_FUZ_COOKIE_KEYS: z.string().min(32).meta({
 		description: 'Cookie signing keys, separated by __ for rotation',
-		sensitivity: 'secret',
+		sensitivity: 'secret'
 	}),
 	FUZ_ALLOWED_ORIGINS: z.string().min(1, 'FUZ_ALLOWED_ORIGINS is required').meta({
-		description: 'Comma-separated origin patterns for API verification',
+		description: 'Comma-separated origin patterns for API verification'
 	}),
-	PUBLIC_FUZ_API_URL: z.string().default('/api').meta({description: 'Public API base URL'}),
-	PUBLIC_FUZ_WEBSOCKET_URL: z.string().optional().meta({description: 'Public WebSocket URL'}),
+	PUBLIC_FUZ_API_URL: z.string().default('/api').meta({ description: 'Public API base URL' }),
+	PUBLIC_FUZ_WEBSOCKET_URL: z.string().optional().meta({ description: 'Public WebSocket URL' }),
 	PUBLIC_FUZ_CONTACT_EMAIL: z
 		.union([z.email(), z.literal('')])
 		.optional()
-		.meta({description: 'Public contact email address'}),
+		.meta({ description: 'Public contact email address' }),
 	FUZ_BOOTSTRAP_TOKEN_PATH: z
 		.string()
 		.optional()
-		.meta({description: 'Path to one-shot admin bootstrap token', sensitivity: 'secret'}),
-	SMTP_HOST: z.string().optional().meta({description: 'SMTP server hostname'}),
+		.meta({ description: 'Path to one-shot admin bootstrap token', sensitivity: 'secret' }),
+	SMTP_HOST: z.string().optional().meta({ description: 'SMTP server hostname' }),
 	// SMTP usernames are frequently not emails (SendGrid uses "apikey",
 	// AWS SES / Postmark use token-style credentials), so validate as a plain
 	// string — `z.email()` here would reject valid provider configs. Marked
@@ -64,17 +64,17 @@ export const BaseServerEnv = z.strictObject({
 	SMTP_USER: z
 		.string()
 		.optional()
-		.meta({description: 'SMTP authentication username', sensitivity: 'secret'}),
+		.meta({ description: 'SMTP authentication username', sensitivity: 'secret' }),
 	SMTP_PASSWORD: z
 		.string()
 		.optional()
-		.meta({description: 'SMTP authentication password', sensitivity: 'secret'}),
+		.meta({ description: 'SMTP authentication password', sensitivity: 'secret' }),
 	FUZ_FACTS_DIR: z.string().min(1).default('./.facts').meta({
-		description: 'Directory for referenced (large) fact bytes, sharded <shard>/<rest>',
+		description: 'Directory for referenced (large) fact bytes, sharded <shard>/<rest>'
 	}),
 	FUZ_FACTS_X_ACCEL_REDIRECT_PREFIX: z.string().optional().meta({
-		description: 'Internal nginx prefix for X-Accel-Redirect fact delivery (production only)',
-	}),
+		description: 'Internal nginx prefix for X-Accel-Redirect fact delivery (production only)'
+	})
 });
 export type BaseServerEnv = z.infer<typeof BaseServerEnv>;
 
@@ -111,7 +111,7 @@ export type ServerEnvOptionsResult = ServerEnvOptions | ServerEnvOptionsError;
 export const validate_server_env = (env: BaseServerEnv): ServerEnvOptionsResult => {
 	const keyring_result = create_validated_keyring(env.SECRET_FUZ_COOKIE_KEYS);
 	if (!keyring_result.ok) {
-		return {ok: false, field: 'SECRET_FUZ_COOKIE_KEYS', errors: keyring_result.errors};
+		return { ok: false, field: 'SECRET_FUZ_COOKIE_KEYS', errors: keyring_result.errors };
 	}
 	let allowed_origins: Array<RegExp>;
 	try {
@@ -120,20 +120,20 @@ export const validate_server_env = (env: BaseServerEnv): ServerEnvOptionsResult 
 		return {
 			ok: false,
 			field: 'FUZ_ALLOWED_ORIGINS',
-			errors: [to_error_message(err, 'Invalid FUZ_ALLOWED_ORIGINS')],
+			errors: [to_error_message(err, 'Invalid FUZ_ALLOWED_ORIGINS')]
 		};
 	}
 	if (allowed_origins.length === 0) {
 		return {
 			ok: false,
 			field: 'FUZ_ALLOWED_ORIGINS',
-			errors: ['FUZ_ALLOWED_ORIGINS contains no valid patterns'],
+			errors: ['FUZ_ALLOWED_ORIGINS contains no valid patterns']
 		};
 	}
 	return {
 		ok: true,
 		keyring: keyring_result.keyring,
 		allowed_origins,
-		bootstrap_token_path: env.FUZ_BOOTSTRAP_TOKEN_PATH ?? null,
+		bootstrap_token_path: env.FUZ_BOOTSTRAP_TOKEN_PATH ?? null
 	};
 };

@@ -22,18 +22,18 @@
  * @module
  */
 
-import {test, assert} from 'vitest';
+import { test, assert } from 'vitest';
 
-import {admin_session_revoke_all_action_spec} from '$lib/auth/admin_action_specs.ts';
-import {create_test_app} from '$lib/testing/app_server.ts';
-import {ERROR_NO_ACTORS_ON_ACCOUNT} from '$lib/http/error_schemas.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
+import { admin_session_revoke_all_action_spec } from '$lib/auth/admin_action_specs.ts';
+import { create_test_app } from '$lib/testing/app_server.ts';
+import { ERROR_NO_ACTORS_ON_ACCOUNT } from '$lib/http/error_schemas.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
 import {
 	RPC_PATH,
 	create_admin_route_specs,
 	describe_db,
-	session_options,
+	session_options
 } from './admin_rpc_test_helpers.ts';
 
 describe_db('bearer auth + dispatcher authorization phase — empty actor list', (get_db) => {
@@ -42,7 +42,7 @@ describe_db('bearer auth + dispatcher authorization phase — empty actor list',
 			session_options,
 			create_route_specs: create_admin_route_specs,
 			db: get_db(),
-			roles: [ROLE_ADMIN],
+			roles: [ROLE_ADMIN]
 		});
 
 		// Delete every actor on the bootstrap account directly. The bearer
@@ -50,7 +50,7 @@ describe_db('bearer auth + dispatcher authorization phase — empty actor list',
 		// account row is intact — so this isolates the dispatcher's
 		// authorization phase as the only code that walks the actor list.
 		await test_app.backend.deps.db.query('DELETE FROM actor WHERE account_id = $1', [
-			test_app.backend.account.id,
+			test_app.backend.account.id
 		]);
 
 		// Hit a role-gated RPC method (`auth: {account: 'required', actor: 'required', roles: ['admin']}`) over the
@@ -61,9 +61,9 @@ describe_db('bearer auth + dispatcher authorization phase — empty actor list',
 			app: test_app.app,
 			path: RPC_PATH,
 			spec: admin_session_revoke_all_action_spec,
-			params: {account_id: test_app.backend.account.id},
+			params: { account_id: test_app.backend.account.id },
 			headers: test_app.create_bearer_headers(),
-			suppress_default_origin: true,
+			suppress_default_origin: true
 		});
 
 		// The dispatcher folds the auth-phase failure into a JSON-RPC
@@ -75,8 +75,8 @@ describe_db('bearer auth + dispatcher authorization phase — empty actor list',
 		assert.strictEqual(res.status, 500);
 		assert.strictEqual(res.error.message, ERROR_NO_ACTORS_ON_ACCOUNT);
 		assert.strictEqual(
-			(res.error.data as {reason?: string} | undefined)?.reason,
-			ERROR_NO_ACTORS_ON_ACCOUNT,
+			(res.error.data as { reason?: string } | undefined)?.reason,
+			ERROR_NO_ACTORS_ON_ACCOUNT
 		);
 
 		await test_app.cleanup();

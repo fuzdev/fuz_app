@@ -7,45 +7,45 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import {Hono} from 'hono';
-import {z} from 'zod';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { describe, assert, test } from 'vitest';
+import { Hono } from 'hono';
+import { z } from 'zod';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {apply_route_specs, type RouteSpec} from '$lib/http/route_spec.ts';
+import { apply_route_specs, type RouteSpec } from '$lib/http/route_spec.ts';
 import {
 	ActingActor,
 	is_keeper_auth,
 	is_plain_authenticated_auth,
 	is_public_auth,
-	is_role_auth,
+	is_role_auth
 } from '$lib/http/auth_shape.ts';
-import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.ts';
-import type {MiddlewareSpec} from '$lib/http/middleware_spec.ts';
-import {generate_app_surface} from '$lib/http/surface.ts';
+import { fuz_auth_guard_resolver } from '$lib/auth/auth_guard_resolver.ts';
+import type { MiddlewareSpec } from '$lib/http/middleware_spec.ts';
+import { generate_app_surface } from '$lib/http/surface.ts';
 import {
 	REQUEST_CONTEXT_KEY,
 	require_auth,
 	require_role,
-	type RequestContext,
+	type RequestContext
 } from '$lib/auth/request_context.ts';
 import {
 	ACCOUNT_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
-	type CredentialType,
+	type CredentialType
 } from '$lib/hono_context.ts';
-import {session_cookie_options} from '$lib/auth/session_cookie.ts';
-import {API_TOKEN_PREFIX} from '$lib/auth/api_token.ts';
-import {PASSWORD_LENGTH_MIN} from '$lib/auth/password.ts';
+import { session_cookie_options } from '$lib/auth/session_cookie.ts';
+import { API_TOKEN_PREFIX } from '$lib/auth/api_token.ts';
+import { PASSWORD_LENGTH_MIN } from '$lib/auth/password.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
-	ERROR_INSUFFICIENT_PERMISSIONS,
+	ERROR_INSUFFICIENT_PERMISSIONS
 } from '$lib/http/error_schemas.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
-import {create_stub_db} from '$lib/testing/stubs.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_stub_db } from '$lib/testing/stubs.ts';
 
-const log = new Logger('test', {level: 'off'});
+const log = new Logger('test', { level: 'off' });
 const stub_db = create_stub_db();
 
 /** Create a test request context with an arbitrary list of role_grant roles. */
@@ -61,7 +61,7 @@ const create_test_ctx_with_role_grants = (roles: ReadonlyArray<string>): Request
 		deleted_at: null,
 		deleted_by: null,
 		email: null,
-		email_verified: false,
+		email_verified: false
 	},
 	actor: {
 		id: 'act_1' as Uuid,
@@ -71,7 +71,7 @@ const create_test_ctx_with_role_grants = (roles: ReadonlyArray<string>): Request
 		updated_at: null,
 		updated_by: null,
 		deleted_at: null,
-		deleted_by: null,
+		deleted_by: null
 	},
 	role_grants: roles.map((role, i) => ({
 		id: `perm_${i + 1}` as Uuid,
@@ -85,8 +85,8 @@ const create_test_ctx_with_role_grants = (roles: ReadonlyArray<string>): Request
 		revoked_by: null,
 		revoked_reason: null,
 		granted_by: null,
-		source_offer_id: null,
-	})),
+		source_offer_id: null
+	}))
 });
 
 /** Create a test request context with optional single role. */
@@ -97,7 +97,7 @@ const create_test_ctx = (role?: string): RequestContext =>
 const create_test_app = (
 	specs: Array<RouteSpec>,
 	auth_ctx?: RequestContext,
-	credential_type?: CredentialType,
+	credential_type?: CredentialType
 ): Hono => {
 	const app = new Hono();
 	// Simulate request context middleware — sets context if provided
@@ -119,30 +119,30 @@ const test_route_specs: Array<RouteSpec> = [
 	{
 		method: 'GET',
 		path: '/public',
-		auth: {account: 'none', actor: 'none'},
-		handler: (c) => c.json({ok: true}),
+		auth: { account: 'none', actor: 'none' },
+		handler: (c) => c.json({ ok: true }),
 		description: 'Public endpoint',
 		input: z.null(),
-		output: z.null(),
+		output: z.null()
 	},
 	{
 		method: 'GET',
 		path: '/authed',
-		auth: {account: 'required', actor: 'none'},
-		handler: (c) => c.json({ok: true}),
+		auth: { account: 'required', actor: 'none' },
+		handler: (c) => c.json({ ok: true }),
 		description: 'Requires authentication',
 		input: z.null(),
-		output: z.null(),
+		output: z.null()
 	},
 	{
 		method: 'POST',
 		path: '/admin',
-		auth: {account: 'required', actor: 'required', roles: ['admin']},
-		handler: (c) => c.json({ok: true}),
+		auth: { account: 'required', actor: 'required', roles: ['admin'] },
+		handler: (c) => c.json({ ok: true }),
 		description: 'Requires admin role',
-		query: z.strictObject({acting: ActingActor}),
+		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
-		output: z.null(),
+		output: z.null()
 	},
 	{
 		method: 'POST',
@@ -151,13 +151,13 @@ const test_route_specs: Array<RouteSpec> = [
 			account: 'required',
 			actor: 'required',
 			roles: ['keeper'],
-			credential_types: ['daemon_token'],
+			credential_types: ['daemon_token']
 		},
-		handler: (c) => c.json({ok: true}),
+		handler: (c) => c.json({ ok: true }),
 		description: 'Requires keeper credentials',
-		query: z.strictObject({acting: ActingActor}),
+		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
-		output: z.null(),
+		output: z.null()
 	},
 	{
 		method: 'DELETE',
@@ -166,14 +166,14 @@ const test_route_specs: Array<RouteSpec> = [
 			account: 'required',
 			actor: 'required',
 			roles: ['keeper'],
-			credential_types: ['daemon_token'],
+			credential_types: ['daemon_token']
 		},
-		handler: (c) => c.json({ok: true}),
+		handler: (c) => c.json({ ok: true }),
 		description: 'Requires keeper credentials (DELETE)',
-		query: z.strictObject({acting: ActingActor}),
+		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
-		output: z.null(),
-	},
+		output: z.null()
+	}
 ];
 
 /**
@@ -191,18 +191,18 @@ interface CredentialDescriptor {
 }
 
 const CREDENTIALS = {
-	none: {credential_type: null, role_grants: []},
-	'session+empty': {credential_type: 'session', role_grants: []},
-	'session+viewer': {credential_type: 'session', role_grants: ['viewer']},
-	'session+admin': {credential_type: 'session', role_grants: ['admin']},
-	'session+keeper': {credential_type: 'session', role_grants: ['keeper']},
-	'api_token+empty': {credential_type: 'api_token', role_grants: []},
-	'api_token+admin': {credential_type: 'api_token', role_grants: ['admin']},
-	'api_token+keeper': {credential_type: 'api_token', role_grants: ['keeper']},
-	'daemon_token+empty': {credential_type: 'daemon_token', role_grants: []},
-	'daemon_token+admin': {credential_type: 'daemon_token', role_grants: ['admin']},
-	'daemon_token+keeper': {credential_type: 'daemon_token', role_grants: ['keeper']},
-	'daemon_token+keeper+admin': {credential_type: 'daemon_token', role_grants: ['keeper', 'admin']},
+	none: { credential_type: null, role_grants: [] },
+	'session+empty': { credential_type: 'session', role_grants: [] },
+	'session+viewer': { credential_type: 'session', role_grants: ['viewer'] },
+	'session+admin': { credential_type: 'session', role_grants: ['admin'] },
+	'session+keeper': { credential_type: 'session', role_grants: ['keeper'] },
+	'api_token+empty': { credential_type: 'api_token', role_grants: [] },
+	'api_token+admin': { credential_type: 'api_token', role_grants: ['admin'] },
+	'api_token+keeper': { credential_type: 'api_token', role_grants: ['keeper'] },
+	'daemon_token+empty': { credential_type: 'daemon_token', role_grants: [] },
+	'daemon_token+admin': { credential_type: 'daemon_token', role_grants: ['admin'] },
+	'daemon_token+keeper': { credential_type: 'daemon_token', role_grants: ['keeper'] },
+	'daemon_token+keeper+admin': { credential_type: 'daemon_token', role_grants: ['keeper', 'admin'] }
 } as const satisfies Record<string, CredentialDescriptor>;
 
 type CredentialName = keyof typeof CREDENTIALS;
@@ -247,82 +247,82 @@ interface AuthMatrixCase {
  */
 const auth_matrix: ReadonlyArray<AuthMatrixCase> = [
 	// GET /public — open to all credentials including unauthenticated.
-	{credential: 'none', method: 'GET', path: '/public', expected: 200},
-	{credential: 'session+empty', method: 'GET', path: '/public', expected: 200},
-	{credential: 'session+viewer', method: 'GET', path: '/public', expected: 200},
-	{credential: 'session+admin', method: 'GET', path: '/public', expected: 200},
-	{credential: 'session+keeper', method: 'GET', path: '/public', expected: 200},
-	{credential: 'api_token+empty', method: 'GET', path: '/public', expected: 200},
-	{credential: 'api_token+admin', method: 'GET', path: '/public', expected: 200},
-	{credential: 'api_token+keeper', method: 'GET', path: '/public', expected: 200},
-	{credential: 'daemon_token+empty', method: 'GET', path: '/public', expected: 200},
-	{credential: 'daemon_token+admin', method: 'GET', path: '/public', expected: 200},
-	{credential: 'daemon_token+keeper', method: 'GET', path: '/public', expected: 200},
-	{credential: 'daemon_token+keeper+admin', method: 'GET', path: '/public', expected: 200},
+	{ credential: 'none', method: 'GET', path: '/public', expected: 200 },
+	{ credential: 'session+empty', method: 'GET', path: '/public', expected: 200 },
+	{ credential: 'session+viewer', method: 'GET', path: '/public', expected: 200 },
+	{ credential: 'session+admin', method: 'GET', path: '/public', expected: 200 },
+	{ credential: 'session+keeper', method: 'GET', path: '/public', expected: 200 },
+	{ credential: 'api_token+empty', method: 'GET', path: '/public', expected: 200 },
+	{ credential: 'api_token+admin', method: 'GET', path: '/public', expected: 200 },
+	{ credential: 'api_token+keeper', method: 'GET', path: '/public', expected: 200 },
+	{ credential: 'daemon_token+empty', method: 'GET', path: '/public', expected: 200 },
+	{ credential: 'daemon_token+admin', method: 'GET', path: '/public', expected: 200 },
+	{ credential: 'daemon_token+keeper', method: 'GET', path: '/public', expected: 200 },
+	{ credential: 'daemon_token+keeper+admin', method: 'GET', path: '/public', expected: 200 },
 
 	// GET /authed — any authenticated credential admits; only `none` 401s.
-	{credential: 'none', method: 'GET', path: '/authed', expected: 401},
-	{credential: 'session+empty', method: 'GET', path: '/authed', expected: 200},
-	{credential: 'session+viewer', method: 'GET', path: '/authed', expected: 200},
-	{credential: 'session+admin', method: 'GET', path: '/authed', expected: 200},
-	{credential: 'session+keeper', method: 'GET', path: '/authed', expected: 200},
-	{credential: 'api_token+empty', method: 'GET', path: '/authed', expected: 200},
-	{credential: 'api_token+admin', method: 'GET', path: '/authed', expected: 200},
-	{credential: 'api_token+keeper', method: 'GET', path: '/authed', expected: 200},
-	{credential: 'daemon_token+empty', method: 'GET', path: '/authed', expected: 200},
-	{credential: 'daemon_token+admin', method: 'GET', path: '/authed', expected: 200},
-	{credential: 'daemon_token+keeper', method: 'GET', path: '/authed', expected: 200},
-	{credential: 'daemon_token+keeper+admin', method: 'GET', path: '/authed', expected: 200},
+	{ credential: 'none', method: 'GET', path: '/authed', expected: 401 },
+	{ credential: 'session+empty', method: 'GET', path: '/authed', expected: 200 },
+	{ credential: 'session+viewer', method: 'GET', path: '/authed', expected: 200 },
+	{ credential: 'session+admin', method: 'GET', path: '/authed', expected: 200 },
+	{ credential: 'session+keeper', method: 'GET', path: '/authed', expected: 200 },
+	{ credential: 'api_token+empty', method: 'GET', path: '/authed', expected: 200 },
+	{ credential: 'api_token+admin', method: 'GET', path: '/authed', expected: 200 },
+	{ credential: 'api_token+keeper', method: 'GET', path: '/authed', expected: 200 },
+	{ credential: 'daemon_token+empty', method: 'GET', path: '/authed', expected: 200 },
+	{ credential: 'daemon_token+admin', method: 'GET', path: '/authed', expected: 200 },
+	{ credential: 'daemon_token+keeper', method: 'GET', path: '/authed', expected: 200 },
+	{ credential: 'daemon_token+keeper+admin', method: 'GET', path: '/authed', expected: 200 },
 
 	// POST /admin — role: admin. RoleGrant-driven; admits any credential type
 	// holding an active `admin` role_grant.
-	{credential: 'none', method: 'POST', path: '/admin', expected: 401},
-	{credential: 'session+empty', method: 'POST', path: '/admin', expected: 403},
-	{credential: 'session+viewer', method: 'POST', path: '/admin', expected: 403},
-	{credential: 'session+admin', method: 'POST', path: '/admin', expected: 200},
-	{credential: 'session+keeper', method: 'POST', path: '/admin', expected: 403},
-	{credential: 'api_token+empty', method: 'POST', path: '/admin', expected: 403},
-	{credential: 'api_token+admin', method: 'POST', path: '/admin', expected: 200},
-	{credential: 'api_token+keeper', method: 'POST', path: '/admin', expected: 403},
-	{credential: 'daemon_token+empty', method: 'POST', path: '/admin', expected: 403},
-	{credential: 'daemon_token+admin', method: 'POST', path: '/admin', expected: 200},
-	{credential: 'daemon_token+keeper', method: 'POST', path: '/admin', expected: 403},
-	{credential: 'daemon_token+keeper+admin', method: 'POST', path: '/admin', expected: 200},
+	{ credential: 'none', method: 'POST', path: '/admin', expected: 401 },
+	{ credential: 'session+empty', method: 'POST', path: '/admin', expected: 403 },
+	{ credential: 'session+viewer', method: 'POST', path: '/admin', expected: 403 },
+	{ credential: 'session+admin', method: 'POST', path: '/admin', expected: 200 },
+	{ credential: 'session+keeper', method: 'POST', path: '/admin', expected: 403 },
+	{ credential: 'api_token+empty', method: 'POST', path: '/admin', expected: 403 },
+	{ credential: 'api_token+admin', method: 'POST', path: '/admin', expected: 200 },
+	{ credential: 'api_token+keeper', method: 'POST', path: '/admin', expected: 403 },
+	{ credential: 'daemon_token+empty', method: 'POST', path: '/admin', expected: 403 },
+	{ credential: 'daemon_token+admin', method: 'POST', path: '/admin', expected: 200 },
+	{ credential: 'daemon_token+keeper', method: 'POST', path: '/admin', expected: 403 },
+	{ credential: 'daemon_token+keeper+admin', method: 'POST', path: '/admin', expected: 200 },
 
 	// POST /keeper — keeper. Two-arm gate: daemon_token credential type AND
 	// active keeper role_grant; either alone rejects.
-	{credential: 'none', method: 'POST', path: '/keeper', expected: 401},
-	{credential: 'session+empty', method: 'POST', path: '/keeper', expected: 403},
-	{credential: 'session+viewer', method: 'POST', path: '/keeper', expected: 403},
-	{credential: 'session+admin', method: 'POST', path: '/keeper', expected: 403},
-	{credential: 'session+keeper', method: 'POST', path: '/keeper', expected: 403},
-	{credential: 'api_token+empty', method: 'POST', path: '/keeper', expected: 403},
-	{credential: 'api_token+admin', method: 'POST', path: '/keeper', expected: 403},
-	{credential: 'api_token+keeper', method: 'POST', path: '/keeper', expected: 403},
-	{credential: 'daemon_token+empty', method: 'POST', path: '/keeper', expected: 403},
-	{credential: 'daemon_token+admin', method: 'POST', path: '/keeper', expected: 403},
-	{credential: 'daemon_token+keeper', method: 'POST', path: '/keeper', expected: 200},
-	{credential: 'daemon_token+keeper+admin', method: 'POST', path: '/keeper', expected: 200},
+	{ credential: 'none', method: 'POST', path: '/keeper', expected: 401 },
+	{ credential: 'session+empty', method: 'POST', path: '/keeper', expected: 403 },
+	{ credential: 'session+viewer', method: 'POST', path: '/keeper', expected: 403 },
+	{ credential: 'session+admin', method: 'POST', path: '/keeper', expected: 403 },
+	{ credential: 'session+keeper', method: 'POST', path: '/keeper', expected: 403 },
+	{ credential: 'api_token+empty', method: 'POST', path: '/keeper', expected: 403 },
+	{ credential: 'api_token+admin', method: 'POST', path: '/keeper', expected: 403 },
+	{ credential: 'api_token+keeper', method: 'POST', path: '/keeper', expected: 403 },
+	{ credential: 'daemon_token+empty', method: 'POST', path: '/keeper', expected: 403 },
+	{ credential: 'daemon_token+admin', method: 'POST', path: '/keeper', expected: 403 },
+	{ credential: 'daemon_token+keeper', method: 'POST', path: '/keeper', expected: 200 },
+	{ credential: 'daemon_token+keeper+admin', method: 'POST', path: '/keeper', expected: 200 },
 
 	// DELETE /keeper-delete — same auth as POST /keeper, different HTTP
 	// method. Verifies the gate isn't sensitive to method.
-	{credential: 'none', method: 'DELETE', path: '/keeper-delete', expected: 401},
-	{credential: 'session+empty', method: 'DELETE', path: '/keeper-delete', expected: 403},
-	{credential: 'session+viewer', method: 'DELETE', path: '/keeper-delete', expected: 403},
-	{credential: 'session+admin', method: 'DELETE', path: '/keeper-delete', expected: 403},
-	{credential: 'session+keeper', method: 'DELETE', path: '/keeper-delete', expected: 403},
-	{credential: 'api_token+empty', method: 'DELETE', path: '/keeper-delete', expected: 403},
-	{credential: 'api_token+admin', method: 'DELETE', path: '/keeper-delete', expected: 403},
-	{credential: 'api_token+keeper', method: 'DELETE', path: '/keeper-delete', expected: 403},
-	{credential: 'daemon_token+empty', method: 'DELETE', path: '/keeper-delete', expected: 403},
-	{credential: 'daemon_token+admin', method: 'DELETE', path: '/keeper-delete', expected: 403},
-	{credential: 'daemon_token+keeper', method: 'DELETE', path: '/keeper-delete', expected: 200},
+	{ credential: 'none', method: 'DELETE', path: '/keeper-delete', expected: 401 },
+	{ credential: 'session+empty', method: 'DELETE', path: '/keeper-delete', expected: 403 },
+	{ credential: 'session+viewer', method: 'DELETE', path: '/keeper-delete', expected: 403 },
+	{ credential: 'session+admin', method: 'DELETE', path: '/keeper-delete', expected: 403 },
+	{ credential: 'session+keeper', method: 'DELETE', path: '/keeper-delete', expected: 403 },
+	{ credential: 'api_token+empty', method: 'DELETE', path: '/keeper-delete', expected: 403 },
+	{ credential: 'api_token+admin', method: 'DELETE', path: '/keeper-delete', expected: 403 },
+	{ credential: 'api_token+keeper', method: 'DELETE', path: '/keeper-delete', expected: 403 },
+	{ credential: 'daemon_token+empty', method: 'DELETE', path: '/keeper-delete', expected: 403 },
+	{ credential: 'daemon_token+admin', method: 'DELETE', path: '/keeper-delete', expected: 403 },
+	{ credential: 'daemon_token+keeper', method: 'DELETE', path: '/keeper-delete', expected: 200 },
 	{
 		credential: 'daemon_token+keeper+admin',
 		method: 'DELETE',
 		path: '/keeper-delete',
-		expected: 200,
-	},
+		expected: 200
+	}
 ];
 
 describe('auth matrix — credential × route', () => {
@@ -334,11 +334,11 @@ describe('auth matrix — credential × route', () => {
 				: undefined;
 			const credential_type = descriptor.credential_type ?? undefined;
 			const app = create_test_app(test_route_specs, auth_ctx, credential_type);
-			const res = await app.request(c.path, {method: c.method});
+			const res = await app.request(c.path, { method: c.method });
 			assert.strictEqual(
 				res.status,
 				c.expected,
-				`Expected ${c.expected} for ${c.credential} → ${c.method} ${c.path} (got ${res.status})`,
+				`Expected ${c.expected} for ${c.credential} → ${c.method} ${c.path} (got ${res.status})`
 			);
 		});
 	}
@@ -360,11 +360,11 @@ describe('targeted adversarial tests', () => {
 				revoked_by: null,
 				revoked_reason: null,
 				granted_by: null,
-				source_offer_id: null,
-			},
+				source_offer_id: null
+			}
 		];
 		const app = create_test_app(test_route_specs, ctx);
-		const res = await app.request('/admin', {method: 'POST'});
+		const res = await app.request('/admin', { method: 'POST' });
 		assert.strictEqual(res.status, 403);
 	});
 
@@ -383,29 +383,29 @@ describe('targeted adversarial tests', () => {
 				revoked_by: 'someone' as Uuid,
 				revoked_reason: null,
 				granted_by: null,
-				source_offer_id: null,
-			},
+				source_offer_id: null
+			}
 		];
 		const app = create_test_app(test_route_specs, ctx);
-		const res = await app.request('/admin', {method: 'POST'});
+		const res = await app.request('/admin', { method: 'POST' });
 		assert.strictEqual(res.status, 403);
 	});
 
 	test('admin cannot access keeper routes', async () => {
 		const app = create_test_app(test_route_specs, create_test_ctx('admin'));
-		const res = await app.request('/keeper', {method: 'POST'});
+		const res = await app.request('/keeper', { method: 'POST' });
 		assert.strictEqual(res.status, 403);
 	});
 
 	test('keeper cannot access admin routes', async () => {
 		const app = create_test_app(test_route_specs, create_test_ctx('keeper'));
-		const res = await app.request('/admin', {method: 'POST'});
+		const res = await app.request('/admin', { method: 'POST' });
 		assert.strictEqual(res.status, 403);
 	});
 
 	test('require_auth returns 401 with JSON body', async () => {
 		const app = new Hono();
-		app.get('/test', require_auth, (c) => c.json({ok: true}));
+		app.get('/test', require_auth, (c) => c.json({ ok: true }));
 
 		const res = await app.request('/test');
 		assert.strictEqual(res.status, 401);
@@ -422,7 +422,7 @@ describe('targeted adversarial tests', () => {
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			await next();
 		});
-		app.get('/test', require_role(['admin']), (c) => c.json({ok: true}));
+		app.get('/test', require_role(['admin']), (c) => c.json({ ok: true }));
 
 		const res = await app.request('/test');
 		assert.strictEqual(res.status, 403);
@@ -459,7 +459,7 @@ describe('surface generation integrity', () => {
 		const middleware: Array<MiddlewareSpec> = [];
 		const surface = generate_app_surface({
 			middleware_specs: middleware,
-			route_specs: test_route_specs,
+			route_specs: test_route_specs
 		});
 
 		// Every category should be present — categorize via the predicates.
@@ -474,13 +474,13 @@ describe('surface generation integrity', () => {
 	});
 
 	test('surface route count matches spec count', () => {
-		const surface = generate_app_surface({middleware_specs: [], route_specs: test_route_specs});
+		const surface = generate_app_surface({ middleware_specs: [], route_specs: test_route_specs });
 		assert.strictEqual(surface.routes.length, test_route_specs.length);
 	});
 
 	test('surface is deterministic', () => {
-		const surface1 = generate_app_surface({middleware_specs: [], route_specs: test_route_specs});
-		const surface2 = generate_app_surface({middleware_specs: [], route_specs: test_route_specs});
+		const surface1 = generate_app_surface({ middleware_specs: [], route_specs: test_route_specs });
+		const surface2 = generate_app_surface({ middleware_specs: [], route_specs: test_route_specs });
 		assert.strictEqual(JSON.stringify(surface1), JSON.stringify(surface2));
 	});
 });

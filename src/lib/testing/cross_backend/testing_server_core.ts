@@ -28,12 +28,12 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type {Context, Hono} from 'hono';
-import type {UpgradeWebSocket} from 'hono/ws';
-import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.ts';
+import type { Context, Hono } from 'hono';
+import type { UpgradeWebSocket } from 'hono/ws';
+import { Logger, type Logger as LoggerType } from '@fuzdev/fuz_util/log.ts';
 
-import {write_daemon_info, read_daemon_info, is_daemon_running} from '../../cli/daemon.ts';
-import type {RuntimeDeps} from '../../runtime/deps.ts';
+import { write_daemon_info, read_daemon_info, is_daemon_running } from '../../cli/daemon.ts';
+import type { RuntimeDeps } from '../../runtime/deps.ts';
 
 /**
  * Adapter-built handle to a bound HTTP server.
@@ -77,7 +77,7 @@ export interface TestingServerAdapter {
 	/** Build the WS upgrade closure after the caller's `build_app` returns the app. */
 	prepare_websocket: (app: Hono) => PreparedWebsocket;
 	/** Bind `app.fetch` to `port` on `hostname`; return a {@link ServeHandle}. */
-	serve: (options: {fetch: Hono['fetch']; port: number; hostname: string}) => ServeHandle;
+	serve: (options: { fetch: Hono['fetch']; port: number; hostname: string }) => ServeHandle;
 	/** Current process pid (for `daemon.json`). */
 	pid: number;
 	/** Register SIGINT/SIGTERM listeners that invoke `handler` once each. */
@@ -158,14 +158,14 @@ export const is_loopback_host = (host: string): boolean => {
  * `is_loopback_host`).
  */
 export const start_testing_server = async (options: StartTestingServerOptions): Promise<void> => {
-	const {adapter, daemon_name, host, port, app_version, build_app} = options;
+	const { adapter, daemon_name, host, port, app_version, build_app } = options;
 	const log = options.log ?? new Logger(`[${daemon_name}]`);
-	const {runtime} = adapter;
+	const { runtime } = adapter;
 
 	if (!is_loopback_host(host)) {
 		log.error(
 			`FATAL: binding to '${host}' exposes the test binary (which ships deterministic ` +
-				`dev secrets) beyond loopback. Use --host localhost (default), 127.0.0.1, or ::1 instead.`,
+				`dev secrets) beyond loopback. Use --host localhost (default), 127.0.0.1, or ::1 instead.`
 		);
 		adapter.exit(1);
 	}
@@ -192,11 +192,11 @@ export const start_testing_server = async (options: StartTestingServerOptions): 
 		pid: adapter.pid,
 		port,
 		started: new Date().toISOString(),
-		app_version: app_version ?? '0.0.0-test',
+		app_version: app_version ?? '0.0.0-test'
 	});
 
 	log.info(`Listening on http://${host}:${port} (${adapter.runtime_label}, test mode)`);
-	const server = adapter.serve({fetch: built.app.fetch, port, hostname: host});
+	const server = adapter.serve({ fetch: built.app.fetch, port, hostname: host });
 	ws?.attach_to_server?.(server);
 
 	let shutting_down = false;

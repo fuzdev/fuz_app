@@ -35,12 +35,12 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
-import {ThrownJsonrpcError, JSONRPC_ERROR_CODES} from '../http/jsonrpc_errors.ts';
-import type {RequestResponseActionSpec} from './action_spec.ts';
-import type {ActionContext, RpcAction} from './action_rpc.ts';
-import {DEFAULT_PEER_REQUEST_TIMEOUT, type PeerRequestError} from './peer_request.ts';
+import { ThrownJsonrpcError, JSONRPC_ERROR_CODES } from '../http/jsonrpc_errors.ts';
+import type { RequestResponseActionSpec } from './action_spec.ts';
+import type { ActionContext, RpcAction } from './action_rpc.ts';
+import { DEFAULT_PEER_REQUEST_TIMEOUT, type PeerRequestError } from './peer_request.ts';
 
 /** Wire method name (both directions). Twin of the Rust `PEER_PING_METHOD`. */
 export const PEER_PING_METHOD = 'peer/ping';
@@ -77,7 +77,7 @@ export const REASON_PEER_PING_NONCE_MISMATCH = 'peer_ping_nonce_mismatch';
 export const PingActionInput = z
 	.strictObject({
 		nonce: z.number().int().optional(),
-		timeout_ms: z.number().int().positive().optional(),
+		timeout_ms: z.number().int().positive().optional()
 	})
 	// `.default({})` so omitting `params` entirely (undefined) is accepted — both
 	// fields are optional, so an empty invocation is valid (server-issued nonce,
@@ -87,7 +87,7 @@ export type PingActionInput = z.infer<typeof PingActionInput>;
 
 /** Params of the server→client `peer/ping` request frame. Twin of the Rust `PingRequest`. */
 export const PingRequestParams = z.strictObject({
-	nonce: z.number().int(),
+	nonce: z.number().int()
 });
 export type PingRequestParams = z.infer<typeof PingRequestParams>;
 
@@ -97,7 +97,7 @@ export type PingRequestParams = z.infer<typeof PingRequestParams>;
  */
 export const PingResponse = z.strictObject({
 	nonce: z.number().int(),
-	protocol_version: z.number().int(),
+	protocol_version: z.number().int()
 });
 export type PingResponse = z.infer<typeof PingResponse>;
 
@@ -111,14 +111,14 @@ export const peer_ping_action_spec = {
 	method: PEER_PING_METHOD,
 	kind: 'request_response',
 	initiator: 'both',
-	auth: {account: 'none', actor: 'none'},
+	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
 	input: PingActionInput,
 	output: PingResponse,
 	async: true,
 	description:
 		'Liveness round-trip — the handler pings the originating client back over its socket, ' +
-		'validates the echo, and returns it. Refused as no-transport over HTTP RPC.',
+		'validates the echo, and returns it. Refused as no-transport over HTTP RPC.'
 } satisfies RequestResponseActionSpec;
 
 /** Monotonic fallback nonce when the caller omits one — mirrors the Rust `next_nonce`. */
@@ -129,19 +129,19 @@ const peer_request_error_to_jsonrpc = (error: PeerRequestError): ThrownJsonrpcEr
 	switch (error.kind) {
 		case 'timeout':
 			return new ThrownJsonrpcError(JSONRPC_ERROR_CODES.timeout, 'peer request timed out', {
-				reason: REASON_PEER_TIMEOUT,
+				reason: REASON_PEER_TIMEOUT
 			});
 		case 'connection_gone':
 			return new ThrownJsonrpcError(
 				JSONRPC_ERROR_CODES.service_unavailable,
 				'peer connection gone',
-				{reason: REASON_PEER_CONNECTION_GONE},
+				{ reason: REASON_PEER_CONNECTION_GONE }
 			);
 		case 'too_many_in_flight':
 			return new ThrownJsonrpcError(
 				JSONRPC_ERROR_CODES.queue_overflow,
 				'too many in-flight peer requests',
-				{reason: REASON_PEER_TOO_MANY_IN_FLIGHT},
+				{ reason: REASON_PEER_TOO_MANY_IN_FLIGHT }
 			);
 		case 'client_error':
 			// Forward the client's envelope verbatim so its own code / message /
@@ -161,13 +161,13 @@ const peer_request_error_to_jsonrpc = (error: PeerRequestError): ThrownJsonrpcEr
  */
 export const peer_ping_handler = async (
 	input: PingActionInput,
-	ctx: ActionContext,
+	ctx: ActionContext
 ): Promise<PingResponse> => {
 	if (!ctx.request_client) {
 		throw new ThrownJsonrpcError(
 			JSONRPC_ERROR_CODES.invalid_request,
 			'peer/ping has no return transport',
-			{reason: REASON_PEER_NO_TRANSPORT},
+			{ reason: REASON_PEER_NO_TRANSPORT }
 		);
 	}
 
@@ -179,8 +179,8 @@ export const peer_ping_handler = async (
 			? DEFAULT_PEER_REQUEST_TIMEOUT
 			: Math.min(input.timeout_ms, DEFAULT_PEER_REQUEST_TIMEOUT);
 
-	const request_params: PingRequestParams = {nonce};
-	const outcome = await ctx.request_client(PEER_PING_METHOD, request_params, {timeout_ms});
+	const request_params: PingRequestParams = { nonce };
+	const outcome = await ctx.request_client(PEER_PING_METHOD, request_params, { timeout_ms });
 	if (!outcome.ok) throw peer_request_error_to_jsonrpc(outcome.error);
 
 	const parsed = PingResponse.safeParse(outcome.value);
@@ -188,14 +188,14 @@ export const peer_ping_handler = async (
 		throw new ThrownJsonrpcError(
 			JSONRPC_ERROR_CODES.validation_error,
 			'peer/ping reply failed validation',
-			{reason: REASON_PEER_PING_INVALID_REPLY},
+			{ reason: REASON_PEER_PING_INVALID_REPLY }
 		);
 	}
 	if (parsed.data.nonce !== nonce) {
 		throw new ThrownJsonrpcError(
 			JSONRPC_ERROR_CODES.validation_error,
 			'peer/ping reply nonce mismatch',
-			{reason: REASON_PEER_PING_NONCE_MISMATCH},
+			{ reason: REASON_PEER_PING_NONCE_MISMATCH }
 		);
 	}
 	return parsed.data;
@@ -216,7 +216,7 @@ export const peer_ping_handler = async (
  */
 export const peer_ping_responder = (params: unknown): PingResponse => {
 	const parsed = PingRequestParams.safeParse(params);
-	return {nonce: parsed.success ? parsed.data.nonce : 0, protocol_version: PEER_PROTOCOL_VERSION};
+	return { nonce: parsed.success ? parsed.data.nonce : 0, protocol_version: PEER_PROTOCOL_VERSION };
 };
 
 /**
@@ -232,5 +232,5 @@ export const peer_ping_responder = (params: unknown): PingResponse => {
  */
 export const peer_ping_action: RpcAction = {
 	spec: peer_ping_action_spec,
-	handler: peer_ping_handler,
+	handler: peer_ping_handler
 };

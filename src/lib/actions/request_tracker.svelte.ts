@@ -6,19 +6,19 @@
  * @module
  */
 
-import {create_deferred, type Deferred, type AsyncStatus} from '@fuzdev/fuz_util/async.ts';
-import {SvelteMap} from 'svelte/reactivity';
+import { create_deferred, type Deferred, type AsyncStatus } from '@fuzdev/fuz_util/async.ts';
+import { SvelteMap } from 'svelte/reactivity';
 
 import {
 	JSONRPC_INTERNAL_ERROR,
 	type JsonrpcErrorResponse,
 	type JsonrpcRequestId,
-	type JsonrpcResponseOrError,
+	type JsonrpcResponseOrError
 } from '../http/jsonrpc.ts';
-import {ThrownJsonrpcError, JSONRPC_ERROR_CODES} from '../http/jsonrpc_errors.ts';
+import { ThrownJsonrpcError, JSONRPC_ERROR_CODES } from '../http/jsonrpc_errors.ts';
 
 /** ISO datetime string for request creation timestamps. */
-type Datetime = string & {readonly __brand: 'Datetime'};
+type Datetime = string & { readonly __brand: 'Datetime' };
 const get_datetime_now = (): Datetime => new Date().toISOString() as Datetime;
 
 // TODO what if this uses a tracker id param that's an opaque UUID but can be used for action association?
@@ -36,7 +36,7 @@ export class RequestTrackerItem {
 		deferred: Deferred<JsonrpcResponseOrError>,
 		created: Datetime,
 		status: AsyncStatus,
-		timeout: NodeJS.Timeout | undefined,
+		timeout: NodeJS.Timeout | undefined
 	) {
 		this.id = id;
 		this.deferred = deferred;
@@ -82,14 +82,14 @@ export class RequestTracker {
 			this.reject_request(id, {
 				jsonrpc: '2.0' as const,
 				id,
-				error: {code: JSONRPC_INTERNAL_ERROR, message: `request timed out: ${id}`},
+				error: { code: JSONRPC_INTERNAL_ERROR, message: `request timed out: ${id}` }
 			});
 		}, this.request_timeout_ms);
 
 		// Store the request tracker using the new class
 		this.pending_requests.set(
 			id,
-			new RequestTrackerItem(id, deferred, created, 'pending', timeout),
+			new RequestTrackerItem(id, deferred, created, 'pending', timeout)
 		);
 
 		return deferred;
@@ -143,7 +143,7 @@ export class RequestTracker {
 		const error = new ThrownJsonrpcError(
 			error_message.error.code,
 			error_message.error.message,
-			error_message.error.data,
+			error_message.error.data
 		);
 		request.deferred.reject(error);
 		this.pending_requests.delete(id);
@@ -156,7 +156,7 @@ export class RequestTracker {
 	handle_message(message: any): void {
 		if (!message) return; // ignore invalid values
 
-		const {id} = message;
+		const { id } = message;
 		// TODO maybe log a warning/error?
 		if (id == null) return; // ignore notifications and errors without ids
 
@@ -209,8 +209,8 @@ export class RequestTracker {
 			request.deferred.reject(
 				new ThrownJsonrpcError(
 					JSONRPC_ERROR_CODES.internal_error, // TODO canceled error?
-					reason || 'request cancelled',
-				),
+					reason || 'request cancelled'
+				)
 			);
 			this.pending_requests.delete(id);
 		}

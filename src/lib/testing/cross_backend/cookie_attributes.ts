@@ -42,10 +42,10 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {DEFAULT_TEST_PASSWORD} from '../test_credentials.ts';
-import type {SetupTest} from './setup.ts';
+import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
+import type { SetupTest } from './setup.ts';
 
 /** Options for the session-cookie-attribute parity suite. */
 export interface CookieAttributesCrossTestOptions {
@@ -101,7 +101,7 @@ const parse_set_cookie = (raw: string): ParsedSetCookie | null => {
 			attributes.set(attr.slice(0, attr_eq).trim().toLowerCase(), attr.slice(attr_eq + 1).trim());
 		}
 	}
-	return {name, value, attributes};
+	return { name, value, attributes };
 };
 
 /**
@@ -125,15 +125,15 @@ const assert_hardened_flags = (cookie: ParsedSetCookie, label: string): void => 
 	assert.strictEqual(
 		cookie.attributes.get('samesite')?.toLowerCase(),
 		'strict',
-		`${label}: cookie must be SameSite=Strict (CSRF backstop)`,
+		`${label}: cookie must be SameSite=Strict (CSRF backstop)`
 	);
 	assert.strictEqual(cookie.attributes.get('path'), '/', `${label}: cookie Path must be '/'`);
 };
 
 export const describe_cookie_attributes_cross_tests = (
-	options: CookieAttributesCrossTestOptions,
+	options: CookieAttributesCrossTestOptions
 ): void => {
-	const {setup_test, cookie_name} = options;
+	const { setup_test, cookie_name } = options;
 	const login_path = options.login_path ?? '/api/account/login';
 	const logout_path = options.logout_path ?? '/api/account/logout';
 	// Fresh-keeper-per-test wipes the DB between tests, so a literal username
@@ -143,14 +143,14 @@ export const describe_cookie_attributes_cross_tests = (
 	describe('session cookie attribute parity', () => {
 		test('successful login sets a hardened session cookie (HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age>0)', async () => {
 			const fixture = await setup_test();
-			await fixture.create_account({username, password_value: DEFAULT_TEST_PASSWORD});
+			await fixture.create_account({ username, password_value: DEFAULT_TEST_PASSWORD });
 
 			// Fresh transport so no pre-existing cookie rides along; the default
 			// Origin (= base_url) is allowlisted, so the login clears the Origin gate.
 			const res = await fixture.fresh_transport()(login_path, {
 				method: 'POST',
-				headers: {'content-type': 'application/json'},
-				body: JSON.stringify({username, password: DEFAULT_TEST_PASSWORD}),
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ username, password: DEFAULT_TEST_PASSWORD })
 			});
 			assert.strictEqual(res.status, 200, 'valid credentials must log in');
 
@@ -162,46 +162,46 @@ export const describe_cookie_attributes_cross_tests = (
 			assert.ok(
 				Number.isInteger(max_age) && max_age > 0,
 				`login cookie must carry a positive integer Max-Age (got ${cookie.attributes.get(
-					'max-age',
-				)})`,
+					'max-age'
+				)})`
 			);
 		});
 
 		test('failed login (wrong password) sets no session cookie', async () => {
 			const fixture = await setup_test();
-			await fixture.create_account({username, password_value: DEFAULT_TEST_PASSWORD});
+			await fixture.create_account({ username, password_value: DEFAULT_TEST_PASSWORD });
 
 			const res = await fixture.fresh_transport()(login_path, {
 				method: 'POST',
-				headers: {'content-type': 'application/json'},
-				body: JSON.stringify({username, password: `wrong-${DEFAULT_TEST_PASSWORD}`}),
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ username, password: `wrong-${DEFAULT_TEST_PASSWORD}` })
 			});
 			assert.strictEqual(res.status, 401, 'wrong password must be rejected');
 			assert.strictEqual(
 				find_session_cookie(res, cookie_name),
 				undefined,
-				'a failed login must not Set-Cookie a session — no credential is minted on denial',
+				'a failed login must not Set-Cookie a session — no credential is minted on denial'
 			);
 		});
 
 		test('logout clears the session cookie with Max-Age=0 and hardened flags', async () => {
 			const fixture = await setup_test();
-			await fixture.create_account({username, password_value: DEFAULT_TEST_PASSWORD});
+			await fixture.create_account({ username, password_value: DEFAULT_TEST_PASSWORD });
 
 			// Log in on a fresh transport so its jar carries the session cookie into
 			// the logout request (logout is session-authenticated).
 			const transport = fixture.fresh_transport();
 			const login_res = await transport(login_path, {
 				method: 'POST',
-				headers: {'content-type': 'application/json'},
-				body: JSON.stringify({username, password: DEFAULT_TEST_PASSWORD}),
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ username, password: DEFAULT_TEST_PASSWORD })
 			});
 			assert.strictEqual(login_res.status, 200, 'precondition: login must succeed');
 
 			const res = await transport(logout_path, {
 				method: 'POST',
-				headers: {'content-type': 'application/json'},
-				body: JSON.stringify({}),
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({})
 			});
 			assert.strictEqual(res.status, 200, 'logout must succeed for an authenticated session');
 
@@ -210,7 +210,7 @@ export const describe_cookie_attributes_cross_tests = (
 			assert.strictEqual(
 				cookie.attributes.get('max-age'),
 				'0',
-				'logout must clear the cookie with Max-Age=0',
+				'logout must clear the cookie with Max-Age=0'
 			);
 			assert_hardened_flags(cookie, 'logout Set-Cookie');
 		});

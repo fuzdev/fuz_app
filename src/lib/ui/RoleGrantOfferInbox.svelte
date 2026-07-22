@@ -10,18 +10,18 @@
 	 */
 
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
-	import {SvelteMap} from 'svelte/reactivity';
+	import { SvelteMap } from 'svelte/reactivity';
 
-	import {role_grant_offers_state_context} from './role_grant_offers_state.svelte.ts';
+	import { role_grant_offers_state_context } from './role_grant_offers_state.svelte.ts';
 	import ConfirmButton from './ConfirmButton.svelte';
-	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.ts';
-	import {ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX} from '../auth/role_grant_offer_schema.ts';
-	import {format_scope_context, resolve_scope_label, type FormatScope} from './format_scope.ts';
+	import { format_relative_time, format_datetime_local, truncate_uuid } from './ui_format.ts';
+	import { ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX } from '../auth/role_grant_offer_schema.ts';
+	import { format_scope_context, resolve_scope_label, type FormatScope } from './format_scope.ts';
 
 	const {
 		format_actor = truncate_uuid,
 		format_scope,
-		format_role = (role: string) => role,
+		format_role = (role: string) => role
 	}: {
 		/** Display label for `from_actor_id`. Defaults to a truncated uuid. */
 		format_actor?: (from_actor_id: string) => string;

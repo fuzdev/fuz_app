@@ -4,7 +4,7 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
+import { describe, assert, test } from 'vitest';
 
 import {
 	format_relative_time,
@@ -13,7 +13,7 @@ import {
 	format_datetime_local,
 	format_audit_metadata,
 	truncate_middle,
-	truncate_uuid,
+	truncate_uuid
 } from '$lib/ui/ui_format.ts';
 
 const t = (iso: string): number => new Date(iso).getTime();
@@ -27,62 +27,62 @@ describe('format_relative_time', () => {
 	test('returns minutes ago', () => {
 		assert.strictEqual(
 			format_relative_time('2026-01-15T12:00:00Z', t('2026-01-15T12:05:00Z')),
-			'5m ago',
+			'5m ago'
 		);
 	});
 
 	test('returns hours ago', () => {
 		assert.strictEqual(
 			format_relative_time('2026-01-15T12:00:00Z', t('2026-01-15T15:00:00Z')),
-			'3h ago',
+			'3h ago'
 		);
 	});
 
 	test('returns days ago', () => {
 		assert.strictEqual(
 			format_relative_time('2026-01-15T12:00:00Z', t('2026-01-18T12:00:00Z')),
-			'3d ago',
+			'3d ago'
 		);
 	});
 
 	test('returns weeks ago for 7-34 days', () => {
 		assert.strictEqual(
 			format_relative_time('2026-01-15T12:00:00Z', t('2026-01-22T12:00:00Z')),
-			'1w ago',
+			'1w ago'
 		);
 		assert.strictEqual(
 			format_relative_time('2026-01-15T12:00:00Z', t('2026-02-01T12:00:00Z')),
-			'2w ago',
+			'2w ago'
 		);
 		assert.strictEqual(
 			format_relative_time('2026-01-15T12:00:00Z', t('2026-02-15T12:00:00Z')),
-			'4w ago',
+			'4w ago'
 		);
 	});
 
 	test('returns months ago for 5 weeks to 12 months', () => {
 		assert.strictEqual(
 			format_relative_time('2026-01-15T12:00:00Z', t('2026-03-15T12:00:00Z')),
-			'1mo ago',
+			'1mo ago'
 		);
 		assert.strictEqual(
 			format_relative_time('2026-01-15T12:00:00Z', t('2026-07-15T12:00:00Z')),
-			'6mo ago',
+			'6mo ago'
 		);
 		assert.strictEqual(
 			format_relative_time('2026-01-15T12:00:00Z', t('2026-12-01T12:00:00Z')),
-			'10mo ago',
+			'10mo ago'
 		);
 	});
 
 	test('returns years ago for 12 months or more', () => {
 		assert.strictEqual(
 			format_relative_time('2026-01-15T12:00:00Z', t('2027-01-20T12:00:00Z')),
-			'1y ago',
+			'1y ago'
 		);
 		assert.strictEqual(
 			format_relative_time('2026-01-15T12:00:00Z', t('2029-06-15T12:00:00Z')),
-			'3y ago',
+			'3y ago'
 		);
 	});
 
@@ -93,42 +93,42 @@ describe('format_relative_time', () => {
 	test('returns "just now" for small clock skew (under 1 minute)', () => {
 		assert.strictEqual(
 			format_relative_time('2026-01-15T12:00:30Z', t('2026-01-15T12:00:00Z')),
-			'just now',
+			'just now'
 		);
 	});
 
 	test('returns future relative time for timestamps ahead', () => {
 		assert.strictEqual(
 			format_relative_time('2026-01-15T12:05:00Z', t('2026-01-15T12:00:00Z')),
-			'in 5m',
+			'in 5m'
 		);
 	});
 
 	test('returns future hours', () => {
 		assert.strictEqual(
 			format_relative_time('2026-01-15T15:00:00Z', t('2026-01-15T12:00:00Z')),
-			'in 3h',
+			'in 3h'
 		);
 	});
 
 	test('returns future days', () => {
 		assert.strictEqual(
 			format_relative_time('2026-01-18T12:00:00Z', t('2026-01-15T12:00:00Z')),
-			'in 3d',
+			'in 3d'
 		);
 	});
 
 	test('returns future weeks', () => {
 		assert.strictEqual(
 			format_relative_time('2026-01-29T12:00:00Z', t('2026-01-15T12:00:00Z')),
-			'in 2w',
+			'in 2w'
 		);
 	});
 
 	test('returns future months', () => {
 		assert.strictEqual(
 			format_relative_time('2026-07-15T12:00:00Z', t('2026-01-15T12:00:00Z')),
-			'in 6mo',
+			'in 6mo'
 		);
 	});
 
@@ -140,7 +140,7 @@ describe('format_relative_time', () => {
 	test('returns "1m ago" at exactly 1 minute', () => {
 		assert.strictEqual(
 			format_relative_time('2026-01-15T12:00:00Z', t('2026-01-15T12:01:00Z')),
-			'1m ago',
+			'1m ago'
 		);
 	});
 
@@ -261,14 +261,14 @@ describe('format_datetime_local', () => {
 	test('formats ISO string to readable UTC datetime', () => {
 		assert.strictEqual(
 			format_datetime_local('2026-03-21T14:30:00.000Z'),
-			'2026-03-21 14:30:00 UTC',
+			'2026-03-21 14:30:00 UTC'
 		);
 	});
 
 	test('formats Date object', () => {
 		assert.strictEqual(
 			format_datetime_local(new Date('2026-01-15T08:00:00.000Z')),
-			'2026-01-15 08:00:00 UTC',
+			'2026-01-15 08:00:00 UTC'
 		);
 	});
 
@@ -284,7 +284,7 @@ describe('format_datetime_local', () => {
 	test('strips sub-second precision', () => {
 		assert.strictEqual(
 			format_datetime_local('2026-03-21T14:30:45.123Z'),
-			'2026-03-21 14:30:45 UTC',
+			'2026-03-21 14:30:45 UTC'
 		);
 	});
 });
@@ -295,7 +295,7 @@ describe('format_audit_metadata', () => {
 	});
 
 	test('login shows username', () => {
-		assert.strictEqual(format_audit_metadata('login', {username: 'alice'}), 'user: alice');
+		assert.strictEqual(format_audit_metadata('login', { username: 'alice' }), 'user: alice');
 	});
 
 	test('login returns empty for missing username', () => {
@@ -308,8 +308,8 @@ describe('format_audit_metadata', () => {
 
 	test('bootstrap shows error', () => {
 		assert.strictEqual(
-			format_audit_metadata('bootstrap', {error: 'db failed'}),
-			'error: db failed',
+			format_audit_metadata('bootstrap', { error: 'db failed' }),
+			'error: db failed'
 		);
 	});
 
@@ -319,89 +319,92 @@ describe('format_audit_metadata', () => {
 
 	test('signup combines fields', () => {
 		assert.strictEqual(
-			format_audit_metadata('signup', {username: 'bob', invite_id: 'inv_1', open_signup: false}),
-			'user: bob, via invite',
+			format_audit_metadata('signup', { username: 'bob', invite_id: 'inv_1', open_signup: false }),
+			'user: bob, via invite'
 		);
 	});
 
 	test('signup with open signup', () => {
 		assert.strictEqual(
-			format_audit_metadata('signup', {username: 'bob', open_signup: true}),
-			'user: bob, open signup',
+			format_audit_metadata('signup', { username: 'bob', open_signup: true }),
+			'user: bob, open signup'
 		);
 	});
 
 	test('password_change shows sessions revoked', () => {
 		assert.strictEqual(
-			format_audit_metadata('password_change', {sessions_revoked: 3}),
-			'3 sessions revoked',
+			format_audit_metadata('password_change', { sessions_revoked: 3 }),
+			'3 sessions revoked'
 		);
 	});
 
 	test('session_revoke truncates session_id', () => {
 		const result = format_audit_metadata('session_revoke', {
-			session_id: 'abcdef1234567890abcdef1234567890',
+			session_id: 'abcdef1234567890abcdef1234567890'
 		});
 		assert.strictEqual(result, 'session: abcdef…67890');
 	});
 
 	test('session_revoke_all shows count', () => {
-		assert.strictEqual(format_audit_metadata('session_revoke_all', {count: 5}), '5 sessions');
+		assert.strictEqual(format_audit_metadata('session_revoke_all', { count: 5 }), '5 sessions');
 	});
 
 	test('token_create shows name', () => {
-		assert.strictEqual(format_audit_metadata('token_create', {name: 'My Token'}), '"My Token"');
+		assert.strictEqual(format_audit_metadata('token_create', { name: 'My Token' }), '"My Token"');
 	});
 
 	test('token_revoke truncates token_id', () => {
 		const result = format_audit_metadata('token_revoke', {
-			token_id: 'tok_abcdef1234567890',
+			token_id: 'tok_abcdef1234567890'
 		});
 		assert.ok(result.startsWith('token: '));
 	});
 
 	test('token_revoke_all shows count', () => {
-		assert.strictEqual(format_audit_metadata('token_revoke_all', {count: 2}), '2 tokens');
+		assert.strictEqual(format_audit_metadata('token_revoke_all', { count: 2 }), '2 tokens');
 	});
 
 	test('role_grant_create shows role', () => {
-		assert.strictEqual(format_audit_metadata('role_grant_create', {role: 'admin'}), 'role: admin');
+		assert.strictEqual(
+			format_audit_metadata('role_grant_create', { role: 'admin' }),
+			'role: admin'
+		);
 	});
 
 	test('role_grant_revoke shows role', () => {
 		assert.strictEqual(
-			format_audit_metadata('role_grant_revoke', {role: 'viewer'}),
-			'role: viewer',
+			format_audit_metadata('role_grant_revoke', { role: 'viewer' }),
+			'role: viewer'
 		);
 	});
 
 	test('invite_create combines email and username', () => {
 		assert.strictEqual(
-			format_audit_metadata('invite_create', {email: 'a@b.com', username: 'alice'}),
-			'email: a@b.com, user: alice',
+			format_audit_metadata('invite_create', { email: 'a@b.com', username: 'alice' }),
+			'email: a@b.com, user: alice'
 		);
 	});
 
 	test('invite_create with only email', () => {
 		assert.strictEqual(
-			format_audit_metadata('invite_create', {email: 'a@b.com'}),
-			'email: a@b.com',
+			format_audit_metadata('invite_create', { email: 'a@b.com' }),
+			'email: a@b.com'
 		);
 	});
 
 	test('invite_delete truncates invite_id', () => {
 		assert.strictEqual(
 			format_audit_metadata('invite_delete', {
-				invite_id: 'abcdef1234567890abcdef1234567890',
+				invite_id: 'abcdef1234567890abcdef1234567890'
 			}),
-			'invite: abcdef…67890',
+			'invite: abcdef…67890'
 		);
 	});
 
 	test('unknown event_type returns JSON stringified metadata', () => {
 		assert.strictEqual(
-			format_audit_metadata('custom_event' as any, {key: 'value'}),
-			'{"key":"value"}',
+			format_audit_metadata('custom_event' as any, { key: 'value' }),
+			'{"key":"value"}'
 		);
 	});
 
@@ -410,9 +413,9 @@ describe('format_audit_metadata', () => {
 			format_audit_metadata('app_settings_update', {
 				setting: 'open_signup',
 				old_value: false,
-				new_value: true,
+				new_value: true
 			}),
-			'open_signup: false → true',
+			'open_signup: false → true'
 		);
 	});
 });
@@ -439,7 +442,7 @@ describe('format_value', () => {
 	});
 
 	test('object returns JSON string', () => {
-		assert.strictEqual(format_value({a: 1}), '{"a":1}');
+		assert.strictEqual(format_value({ a: 1 }), '{"a":1}');
 	});
 
 	test('undefined returns "undefined"', () => {

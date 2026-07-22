@@ -6,10 +6,10 @@
  * @module
  */
 
-import {describe, test, assert, vi, beforeEach, afterEach} from 'vitest';
+import { describe, test, assert, vi, beforeEach, afterEach } from 'vitest';
 
-import {Popover} from '$lib/ui/popover.svelte.ts';
-import type {Position, Alignment} from '$lib/ui/position_helpers.ts';
+import { Popover } from '$lib/ui/popover.svelte.ts';
+import type { Position, Alignment } from '$lib/ui/position_helpers.ts';
 
 // --- test helpers ---
 
@@ -26,13 +26,13 @@ const create_test_elements = (): TestElements => {
 	const content = document.createElement('div');
 	container.append(trigger, content);
 	document.body.appendChild(container);
-	return {container, trigger, content};
+	return { container, trigger, content };
 };
 
 /** Dispatches a click on `document` with the given node as `event.target`. */
 const dispatch_outside_click = (target: Node = document.body): void => {
-	const event = new Event('click', {bubbles: true, cancelable: true});
-	Object.defineProperty(event, 'target', {value: target});
+	const event = new Event('click', { bubbles: true, cancelable: true });
+	Object.defineProperty(event, 'target', { value: target });
 	document.dispatchEvent(event);
 };
 
@@ -41,7 +41,7 @@ const assert_style = (el: HTMLElement, prop: string, expected: string): void => 
 	assert.strictEqual(
 		el.style.getPropertyValue(prop),
 		expected,
-		`style '${prop}' should be '${expected}'`,
+		`style '${prop}' should be '${expected}'`
 	);
 };
 
@@ -100,7 +100,7 @@ describe('Popover', () => {
 				disable_outside_click: true,
 				popover_class: 'custom',
 				onshow,
-				onhide,
+				onhide
 			});
 
 			assert.strictEqual(popover.position, 'top');
@@ -122,7 +122,7 @@ describe('Popover', () => {
 	describe('show/hide/toggle', () => {
 		test('show sets visible and calls onshow (idempotent)', () => {
 			const onshow = vi.fn();
-			popover = new Popover({onshow});
+			popover = new Popover({ onshow });
 
 			popover.show();
 			assert.strictEqual(popover.visible, true);
@@ -134,7 +134,7 @@ describe('Popover', () => {
 
 		test('hide clears visible and calls onhide (idempotent)', () => {
 			const onhide = vi.fn();
-			popover = new Popover({onhide});
+			popover = new Popover({ onhide });
 			popover.show();
 
 			popover.hide();
@@ -148,7 +148,7 @@ describe('Popover', () => {
 		test('toggle flips visibility', () => {
 			const onshow = vi.fn();
 			const onhide = vi.fn();
-			popover = new Popover({onshow, onhide});
+			popover = new Popover({ onshow, onhide });
 
 			popover.toggle();
 			assert.strictEqual(popover.visible, true);
@@ -177,7 +177,7 @@ describe('Popover', () => {
 			const events: Array<string> = [];
 			popover = new Popover({
 				onshow: () => events.push('show'),
-				onhide: () => events.push('hide'),
+				onhide: () => events.push('hide')
 			});
 
 			popover.show();
@@ -201,7 +201,7 @@ describe('Popover', () => {
 
 	describe('update', () => {
 		test('replaces all configuration fields', () => {
-			popover = new Popover({position: 'left', align: 'end', popover_class: 'old'});
+			popover = new Popover({ position: 'left', align: 'end', popover_class: 'old' });
 			const onshow = vi.fn();
 			const onhide = vi.fn();
 
@@ -212,7 +212,7 @@ describe('Popover', () => {
 				disable_outside_click: true,
 				popover_class: 'new',
 				onshow,
-				onhide,
+				onhide
 			});
 
 			assert.strictEqual(popover.position, 'right');
@@ -228,8 +228,8 @@ describe('Popover', () => {
 		});
 
 		test('partial update preserves unspecified fields', () => {
-			popover = new Popover({position: 'left', align: 'end', offset: '10px'});
-			popover.update({position: 'right'});
+			popover = new Popover({ position: 'left', align: 'end', offset: '10px' });
+			popover.update({ position: 'right' });
 
 			assert.strictEqual(popover.position, 'right');
 			assert.strictEqual(popover.align, 'end');
@@ -237,7 +237,7 @@ describe('Popover', () => {
 		});
 
 		test('empty update is a no-op', () => {
-			popover = new Popover({position: 'top', align: 'start', offset: '5px'});
+			popover = new Popover({ position: 'top', align: 'start', offset: '5px' });
 			popover.update({});
 
 			assert.strictEqual(popover.position, 'top');
@@ -260,7 +260,7 @@ describe('Popover', () => {
 		});
 
 		test('forwards parameters to popover', () => {
-			attach(popover.trigger({position: 'right', align: 'start'})(els.trigger));
+			attach(popover.trigger({ position: 'right', align: 'start' })(els.trigger));
 
 			assert.strictEqual(popover.position, 'right');
 			assert.strictEqual(popover.align, 'start');
@@ -291,19 +291,19 @@ describe('Popover', () => {
 		});
 
 		test('applies position styles to the DOM', () => {
-			attach(popover.content({position: 'bottom', align: 'start', offset: '15px'})(els.content));
+			attach(popover.content({ position: 'bottom', align: 'start', offset: '15px' })(els.content));
 
 			assert_styles(els.content, {
 				top: 'calc(100% + 15px)',
 				bottom: 'auto',
 				left: '0px',
 				right: 'auto',
-				'transform-origin': 'top',
+				'transform-origin': 'top'
 			});
 		});
 
 		test('adds popover_class and removes on cleanup', () => {
-			attach(popover.content({popover_class: 'my-popover'})(els.content));
+			attach(popover.content({ popover_class: 'my-popover' })(els.content));
 			assert.ok(els.content.classList.contains('my-popover'));
 
 			detach_last();
@@ -324,7 +324,7 @@ describe('Popover', () => {
 		test('z-index applied for every position type', () => {
 			const positions: Array<Position> = ['left', 'right', 'top', 'bottom', 'center', 'overlay'];
 			for (const position of positions) {
-				attach(popover.content({position})(els.content));
+				attach(popover.content({ position })(els.content));
 				assert.strictEqual(els.content.style.zIndex, '10', `z-index for '${position}'`);
 				detach_last();
 			}
@@ -367,8 +367,8 @@ describe('Popover', () => {
 					top: '0px',
 					bottom: 'auto',
 					transform: '',
-					'transform-origin': 'right',
-				},
+					'transform-origin': 'right'
+				}
 			},
 			{
 				position: 'left',
@@ -379,8 +379,8 @@ describe('Popover', () => {
 					top: '50%',
 					bottom: 'auto',
 					transform: 'translateY(-50%)',
-					'transform-origin': 'right',
-				},
+					'transform-origin': 'right'
+				}
 			},
 			{
 				position: 'left',
@@ -391,8 +391,8 @@ describe('Popover', () => {
 					top: 'auto',
 					bottom: '0px',
 					transform: '',
-					'transform-origin': 'right',
-				},
+					'transform-origin': 'right'
+				}
 			},
 			// right
 			{
@@ -404,8 +404,8 @@ describe('Popover', () => {
 					top: '0px',
 					bottom: 'auto',
 					transform: '',
-					'transform-origin': 'left',
-				},
+					'transform-origin': 'left'
+				}
 			},
 			{
 				position: 'right',
@@ -416,8 +416,8 @@ describe('Popover', () => {
 					top: '50%',
 					bottom: 'auto',
 					transform: 'translateY(-50%)',
-					'transform-origin': 'left',
-				},
+					'transform-origin': 'left'
+				}
 			},
 			{
 				position: 'right',
@@ -428,8 +428,8 @@ describe('Popover', () => {
 					top: 'auto',
 					bottom: '0px',
 					transform: '',
-					'transform-origin': 'left',
-				},
+					'transform-origin': 'left'
+				}
 			},
 			// top
 			{
@@ -441,8 +441,8 @@ describe('Popover', () => {
 					left: '0px',
 					right: 'auto',
 					transform: '',
-					'transform-origin': 'bottom',
-				},
+					'transform-origin': 'bottom'
+				}
 			},
 			{
 				position: 'top',
@@ -453,8 +453,8 @@ describe('Popover', () => {
 					left: '50%',
 					right: 'auto',
 					transform: 'translateX(-50%)',
-					'transform-origin': 'bottom',
-				},
+					'transform-origin': 'bottom'
+				}
 			},
 			{
 				position: 'top',
@@ -465,8 +465,8 @@ describe('Popover', () => {
 					left: 'auto',
 					right: '0px',
 					transform: '',
-					'transform-origin': 'bottom',
-				},
+					'transform-origin': 'bottom'
+				}
 			},
 			// bottom
 			{
@@ -478,8 +478,8 @@ describe('Popover', () => {
 					left: '0px',
 					right: 'auto',
 					transform: '',
-					'transform-origin': 'top',
-				},
+					'transform-origin': 'top'
+				}
 			},
 			{
 				position: 'bottom',
@@ -490,8 +490,8 @@ describe('Popover', () => {
 					left: '50%',
 					right: 'auto',
 					transform: 'translateX(-50%)',
-					'transform-origin': 'top',
-				},
+					'transform-origin': 'top'
+				}
 			},
 			{
 				position: 'bottom',
@@ -502,74 +502,74 @@ describe('Popover', () => {
 					left: 'auto',
 					right: '0px',
 					transform: '',
-					'transform-origin': 'top',
-				},
-			},
+					'transform-origin': 'top'
+				}
+			}
 		];
 
 		test.each(CARDINAL_CASES)(
 			'$position/$align applies correct styles',
-			({position, align, expected}) => {
-				attach(popover.content({position, align})(els.content));
+			({ position, align, expected }) => {
+				attach(popover.content({ position, align })(els.content));
 				assert_styles(els.content, expected);
-			},
+			}
 		);
 
 		test('center ignores alignment and offset', () => {
-			attach(popover.content({position: 'center', align: 'start', offset: '10px'})(els.content));
+			attach(popover.content({ position: 'center', align: 'start', offset: '10px' })(els.content));
 			assert_styles(els.content, {
 				top: '50%',
 				left: '50%',
 				transform: 'translate(-50%, -50%)',
-				'transform-origin': 'center',
+				'transform-origin': 'center'
 			});
 		});
 
 		test('overlay ignores alignment and offset', () => {
-			attach(popover.content({position: 'overlay', align: 'end', offset: '10px'})(els.content));
+			attach(popover.content({ position: 'overlay', align: 'end', offset: '10px' })(els.content));
 			assert_styles(els.content, {
 				top: '0px',
 				left: '0px',
 				width: '100%',
 				height: '100%',
-				'transform-origin': 'center',
+				'transform-origin': 'center'
 			});
 		});
 
 		test('offset produces calc expression for each cardinal direction', () => {
-			const offset_cases: Array<{position: Position; prop: string}> = [
-				{position: 'left', prop: 'right'},
-				{position: 'right', prop: 'left'},
-				{position: 'top', prop: 'bottom'},
-				{position: 'bottom', prop: 'top'},
+			const offset_cases: Array<{ position: Position; prop: string }> = [
+				{ position: 'left', prop: 'right' },
+				{ position: 'right', prop: 'left' },
+				{ position: 'top', prop: 'bottom' },
+				{ position: 'bottom', prop: 'top' }
 			];
-			for (const {position, prop} of offset_cases) {
-				attach(popover.content({position, align: 'start', offset: '10px'})(els.content));
+			for (const { position, prop } of offset_cases) {
+				attach(popover.content({ position, align: 'start', offset: '10px' })(els.content));
 				assert_style(els.content, prop, 'calc(100% + 10px)');
 				detach_last();
 			}
 		});
 
 		test('dynamic position update reapplies styles', () => {
-			popover = new Popover({position: 'bottom', align: 'center', offset: '0'});
+			popover = new Popover({ position: 'bottom', align: 'center', offset: '0' });
 			attach(popover.content()(els.content));
 			assert_style(els.content, 'top', '100%');
 			assert_style(els.content, 'left', '50%');
 
 			// attachments read at attach time — recreate after update
 			detach_last();
-			popover.update({position: 'right', align: 'start', offset: '15px'});
+			popover.update({ position: 'right', align: 'start', offset: '15px' });
 			attach(popover.content()(els.content));
 			assert_style(els.content, 'left', 'calc(100% + 15px)');
 			assert_style(els.content, 'top', '0px');
 		});
 
 		test('multiple sequential updates', () => {
-			popover = new Popover({position: 'bottom', align: 'center'});
+			popover = new Popover({ position: 'bottom', align: 'center' });
 			attach(popover.content()(els.content));
 			detach_last();
 
-			popover.update({position: 'top', align: 'end', offset: '5px'});
+			popover.update({ position: 'top', align: 'end', offset: '5px' });
 			attach(popover.content()(els.content));
 			assert_style(els.content, 'bottom', 'calc(100% + 5px)');
 			assert_style(els.content, 'right', '0px');
@@ -583,7 +583,7 @@ describe('Popover', () => {
 	describe('outside click', () => {
 		test('hides popover when clicking outside', () => {
 			const onhide = vi.fn();
-			popover = new Popover({onhide});
+			popover = new Popover({ onhide });
 			attach(popover.trigger()(els.trigger));
 			attach(popover.content()(els.content));
 
@@ -596,7 +596,7 @@ describe('Popover', () => {
 
 		test('does not hide when disable_outside_click is true', () => {
 			const onhide = vi.fn();
-			popover = new Popover({disable_outside_click: true, onhide});
+			popover = new Popover({ disable_outside_click: true, onhide });
 			attach(popover.trigger()(els.trigger));
 			attach(popover.content()(els.content));
 
@@ -643,13 +643,13 @@ describe('Popover', () => {
 			assert.strictEqual(popover.visible, false);
 
 			// disable outside click
-			popover.update({disable_outside_click: true});
+			popover.update({ disable_outside_click: true });
 			popover.show();
 			dispatch_outside_click();
 			assert.strictEqual(popover.visible, true);
 
 			// re-enable
-			popover.update({disable_outside_click: false});
+			popover.update({ disable_outside_click: false });
 			dispatch_outside_click();
 			assert.strictEqual(popover.visible, false);
 		});
@@ -718,20 +718,20 @@ describe('Popover', () => {
 
 	describe('class management', () => {
 		test('update swaps popover_class on content element', () => {
-			popover = new Popover({popover_class: 'initial'});
+			popover = new Popover({ popover_class: 'initial' });
 			attach(popover.content()(els.content));
 			assert.ok(els.content.classList.contains('initial'));
 
-			popover.update({popover_class: 'updated'});
+			popover.update({ popover_class: 'updated' });
 			assert.ok(!els.content.classList.contains('initial'));
 			assert.ok(els.content.classList.contains('updated'));
 		});
 
 		test('update to empty string removes class', () => {
-			popover = new Popover({popover_class: 'to-remove'});
+			popover = new Popover({ popover_class: 'to-remove' });
 			attach(popover.content()(els.content));
 
-			popover.update({popover_class: ''});
+			popover.update({ popover_class: '' });
 			assert.ok(!els.content.classList.contains('to-remove'));
 		});
 	});
@@ -771,7 +771,7 @@ describe('Popover', () => {
 		test('rapid toggle cycles count correctly', () => {
 			const onshow = vi.fn();
 			const onhide = vi.fn();
-			popover = new Popover({onshow, onhide});
+			popover = new Popover({ onshow, onhide });
 			attach(popover.trigger()(els.trigger));
 
 			for (let i = 0; i < 10; i++) {
@@ -806,7 +806,7 @@ describe('Popover', () => {
 		});
 
 		test('state preserved across attachment recreation', () => {
-			popover = new Popover({position: 'top', align: 'start'});
+			popover = new Popover({ position: 'top', align: 'start' });
 			let cleanup = popover.trigger()(els.trigger);
 
 			els.trigger.click();

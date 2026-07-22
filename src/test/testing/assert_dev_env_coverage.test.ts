@@ -27,10 +27,10 @@
  * @module
  */
 
-import {test, assert, describe} from 'vitest';
-import {readdirSync, readFileSync} from 'node:fs';
-import {fileURLToPath} from 'node:url';
-import {dirname, join} from 'node:path';
+import { test, assert, describe } from 'vitest';
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 /** Absolute path to `src/lib/testing`, resolved relative to this test. */
 const TESTING_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../lib/testing');
@@ -38,7 +38,7 @@ const TESTING_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../lib/tes
 /** Modules that legitimately omit the guard (see the module doc). */
 const EXEMPT: ReadonlySet<string> = new Set([
 	'assert_dev_env.ts',
-	'cross_backend/make_cross_backend_project.ts',
+	'cross_backend/make_cross_backend_project.ts'
 ]);
 
 /**
@@ -49,7 +49,7 @@ const GUARD_IMPORT = /^import\s+['"](?:\.\.?\/)+assert_dev_env\.ts['"];?$/;
 
 /** Every `.ts` module under `src/lib/testing`, posix-relative + sorted. */
 const list_testing_modules = (): Array<string> =>
-	readdirSync(TESTING_DIR, {recursive: true, encoding: 'utf8'})
+	readdirSync(TESTING_DIR, { recursive: true, encoding: 'utf8' })
 		.filter((p) => p.endsWith('.ts'))
 		.map((p) => p.split('\\').join('/'))
 		.sort();
@@ -86,7 +86,7 @@ describe('every testing module carries the assert_dev_env guard', () => {
 			50,
 			`expected many testing modules under ${TESTING_DIR}, found ${
 				modules.length
-			} — did the path break?`,
+			} — did the path break?`
 		);
 	});
 
@@ -98,7 +98,7 @@ describe('every testing module carries the assert_dev_env guard', () => {
 				first,
 				GUARD_IMPORT,
 				`${rel}: first statement must be the production-exclusion guard ` +
-					`(\`import './assert_dev_env.ts';\`), got: ${JSON.stringify(first)}`,
+					`(\`import './assert_dev_env.ts';\`), got: ${JSON.stringify(first)}`
 			);
 		});
 	}

@@ -4,8 +4,8 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
-import {z} from 'zod';
+import { describe, test, assert } from 'vitest';
+import { z } from 'zod';
 
 import {
 	filter_protected_routes,
@@ -22,61 +22,63 @@ import {
 	filter_mutation_routes,
 	filter_rate_limited_routes,
 	format_route_key,
-	surface_auth_summary,
+	surface_auth_summary
 } from '$lib/http/surface_query.ts';
-import {generate_app_surface, type AppSurface} from '$lib/http/surface.ts';
-import type {RouteSpec} from '$lib/http/route_spec.ts';
-import type {MiddlewareSpec} from '$lib/http/middleware_spec.ts';
-import {stub_handler, stub_mw} from '$lib/testing/stubs.ts';
-import {is_public_auth} from '$lib/http/auth_shape.ts';
+import { generate_app_surface, type AppSurface } from '$lib/http/surface.ts';
+import type { RouteSpec } from '$lib/http/route_spec.ts';
+import type { MiddlewareSpec } from '$lib/http/middleware_spec.ts';
+import { stub_handler, stub_mw } from '$lib/testing/stubs.ts';
+import { is_public_auth } from '$lib/http/auth_shape.ts';
 
-const test_middleware: Array<MiddlewareSpec> = [{name: 'origin', path: '/api/*', handler: stub_mw}];
+const test_middleware: Array<MiddlewareSpec> = [
+	{ name: 'origin', path: '/api/*', handler: stub_mw }
+];
 
 const test_specs: Array<RouteSpec> = [
 	{
 		method: 'GET',
 		path: '/health',
-		auth: {account: 'none', actor: 'none'},
+		auth: { account: 'none', actor: 'none' },
 		handler: stub_handler,
 		description: 'Health check',
 		input: z.null(),
-		output: z.null(),
+		output: z.null()
 	},
 	{
 		method: 'POST',
 		path: '/api/login',
-		auth: {account: 'none', actor: 'none'},
+		auth: { account: 'none', actor: 'none' },
 		handler: stub_handler,
 		description: 'Login',
-		input: z.strictObject({username: z.string()}),
-		output: z.null(),
+		input: z.strictObject({ username: z.string() }),
+		output: z.null()
 	},
 	{
 		method: 'GET',
 		path: '/api/me',
-		auth: {account: 'required', actor: 'none'},
+		auth: { account: 'required', actor: 'none' },
 		handler: stub_handler,
 		description: 'Current user',
 		input: z.null(),
-		output: z.null(),
+		output: z.null()
 	},
 	{
 		method: 'POST',
 		path: '/api/admin/grant',
-		auth: {account: 'required', actor: 'required', roles: ['admin']},
+		auth: { account: 'required', actor: 'required', roles: ['admin'] },
 		handler: stub_handler,
 		description: 'Grant role',
-		input: z.strictObject({role: z.string()}),
-		output: z.null(),
+		input: z.strictObject({ role: z.string() }),
+		output: z.null()
 	},
 	{
 		method: 'DELETE',
 		path: '/api/admin/revoke',
-		auth: {account: 'required', actor: 'required', roles: ['admin']},
+		auth: { account: 'required', actor: 'required', roles: ['admin'] },
 		handler: stub_handler,
 		description: 'Revoke role',
 		input: z.null(),
-		output: z.null(),
+		output: z.null()
 	},
 	{
 		method: 'POST',
@@ -85,47 +87,47 @@ const test_specs: Array<RouteSpec> = [
 			account: 'required',
 			actor: 'required',
 			roles: ['keeper'],
-			credential_types: ['daemon_token'],
+			credential_types: ['daemon_token']
 		},
 		handler: stub_handler,
 		description: 'Keeper sync',
 		input: z.null(),
-		output: z.null(),
+		output: z.null()
 	},
 	{
 		method: 'GET',
 		path: '/api/accounts/:id',
-		auth: {account: 'required', actor: 'required', roles: ['admin']},
+		auth: { account: 'required', actor: 'required', roles: ['admin'] },
 		handler: stub_handler,
 		description: 'Get account by id',
 		input: z.null(),
 		output: z.null(),
-		params: z.strictObject({id: z.string()}),
+		params: z.strictObject({ id: z.string() })
 	},
 	{
 		method: 'GET',
 		path: '/api/audit-log',
-		auth: {account: 'required', actor: 'required', roles: ['admin']},
+		auth: { account: 'required', actor: 'required', roles: ['admin'] },
 		handler: stub_handler,
 		description: 'Audit log',
 		input: z.null(),
 		output: z.null(),
-		query: z.strictObject({limit: z.number().optional()}),
+		query: z.strictObject({ limit: z.number().optional() })
 	},
 	{
 		method: 'POST',
 		path: '/api/account/login',
-		auth: {account: 'none', actor: 'none'},
+		auth: { account: 'none', actor: 'none' },
 		handler: stub_handler,
 		description: 'Login with rate limit',
-		input: z.strictObject({username: z.string()}),
+		input: z.strictObject({ username: z.string() }),
 		output: z.null(),
-		rate_limit: 'ip',
-	},
+		rate_limit: 'ip'
+	}
 ];
 
 const build_surface = (): AppSurface =>
-	generate_app_surface({middleware_specs: test_middleware, route_specs: test_specs});
+	generate_app_surface({ middleware_specs: test_middleware, route_specs: test_specs });
 
 describe('filter_protected_routes', () => {
 	test('excludes public routes', () => {

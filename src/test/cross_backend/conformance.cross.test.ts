@@ -10,43 +10,43 @@
  * @module
  */
 
-import {inject} from 'vitest';
+import { inject } from 'vitest';
 
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import {
 	default_cross_process_setup,
-	reconstruct_bootstrapped_handle,
+	reconstruct_bootstrapped_handle
 } from '$lib/testing/cross_backend/setup.ts';
-import {describe_conformance_table_tests} from '$lib/testing/cross_backend/conformance_table.ts';
+import { describe_conformance_table_tests } from '$lib/testing/cross_backend/conformance_table.ts';
 import {
 	create_spine_surface_spec,
 	spine_rpc_endpoints,
-	spine_session_options,
+	spine_session_options
 } from '$lib/testing/cross_backend/default_spine_surface.ts';
 
-import {conformance_proof_cases} from './conformance_proof_cases.ts';
-import {conformance_security_cases} from './conformance_security_cases.ts';
-import {conformance_expiry_cases} from './conformance_expiry_cases.ts';
-import {conformance_app_settings_cases} from './conformance_app_settings_cases.ts';
+import { conformance_proof_cases } from './conformance_proof_cases.ts';
+import { conformance_security_cases } from './conformance_security_cases.ts';
+import { conformance_expiry_cases } from './conformance_expiry_cases.ts';
+import { conformance_app_settings_cases } from './conformance_app_settings_cases.ts';
 import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 // `ROLE_ADMIN` on the fresh-per-test keeper so the success case can list
 // accounts; `ROLE_KEEPER` alone does not grant admin reach.
-const setup_test = default_cross_process_setup(handle, {extra_keeper_roles: [ROLE_ADMIN]});
-const {capabilities} = handle.config;
+const setup_test = default_cross_process_setup(handle, { extra_keeper_roles: [ROLE_ADMIN] });
+const { capabilities } = handle.config;
 
 describe_conformance_table_tests({
 	cases: [
 		...conformance_proof_cases,
 		...conformance_security_cases,
 		...conformance_expiry_cases,
-		...conformance_app_settings_cases,
+		...conformance_app_settings_cases
 	],
 	setup_test,
 	surface_source: create_spine_surface_spec(),
 	capabilities,
 	rpc_endpoints: spine_rpc_endpoints,
 	session_options: spine_session_options,
-	suite_name: 'conformance table (cross-process)',
+	suite_name: 'conformance table (cross-process)'
 });

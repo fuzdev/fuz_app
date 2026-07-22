@@ -13,30 +13,30 @@
  * @module
  */
 
-import type {Context, Handler, Hono, MiddlewareHandler} from 'hono';
-import type {z} from 'zod';
-import {DEV} from 'esm-env';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { Context, Handler, Hono, MiddlewareHandler } from 'hono';
+import type { z } from 'zod';
+import { DEV } from 'esm-env';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type {Db} from '../db/db.ts';
+import type { Db } from '../db/db.ts';
 import {
 	type RouteErrorSchemas,
 	type RateLimitKey,
 	ERROR_INVALID_JSON_BODY,
 	ERROR_INVALID_REQUEST_BODY,
 	ERROR_INVALID_ROUTE_PARAMS,
-	ERROR_INVALID_QUERY_PARAMS,
+	ERROR_INVALID_QUERY_PARAMS
 } from './error_schemas.ts';
 import {
 	ThrownJsonrpcError,
 	jsonrpc_error_code_to_http_status,
 	jsonrpc_error_code_to_name,
-	dev_only,
+	dev_only
 } from './jsonrpc_errors.ts';
-import {is_null_schema, merge_error_schemas} from './schema_helpers.ts';
-import {dispatch_with_post_commit_rollback} from './pending_effects.ts';
-import type {MiddlewareSpec} from './middleware_spec.ts';
-import {assert_route_auth_acting_biconditional, type RouteAuth} from './auth_shape.ts';
+import { is_null_schema, merge_error_schemas } from './schema_helpers.ts';
+import { dispatch_with_post_commit_rollback } from './pending_effects.ts';
+import type { MiddlewareSpec } from './middleware_spec.ts';
+import { assert_route_auth_acting_biconditional, type RouteAuth } from './auth_shape.ts';
 
 /**
  * Two-phase auth guard set returned by `AuthGuardResolver`.
@@ -259,7 +259,7 @@ export function get_route_query(c: Context, _schema?: z.ZodType): unknown {
  */
 const create_input_validation = (
 	input_schema: z.ZodType,
-	method: RouteMethod,
+	method: RouteMethod
 ): Array<MiddlewareHandler> => {
 	if (method === 'GET') return [];
 	if (is_null_schema(input_schema)) return [];
@@ -269,16 +269,16 @@ const create_input_validation = (
 		try {
 			body = await c.req.json();
 		} catch {
-			return c.json({error: ERROR_INVALID_JSON_BODY}, 400);
+			return c.json({ error: ERROR_INVALID_JSON_BODY }, 400);
 		}
 		if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-			return c.json({error: ERROR_INVALID_JSON_BODY}, 400);
+			return c.json({ error: ERROR_INVALID_JSON_BODY }, 400);
 		}
 		const result = input_schema.safeParse(body);
 		if (!result.success) {
 			return c.json(
-				{error: ERROR_INVALID_REQUEST_BODY, issues: dev_only(result.error.issues)},
-				400,
+				{ error: ERROR_INVALID_REQUEST_BODY, issues: dev_only(result.error.issues) },
+				400
 			);
 		}
 		c.set('validated_input', result.data);
@@ -304,8 +304,8 @@ const create_params_validation = (params_schema?: z.ZodObject): Array<Middleware
 		const result = params_schema.safeParse(raw_params);
 		if (!result.success) {
 			return c.json(
-				{error: ERROR_INVALID_ROUTE_PARAMS, issues: dev_only(result.error.issues)},
-				400,
+				{ error: ERROR_INVALID_ROUTE_PARAMS, issues: dev_only(result.error.issues) },
+				400
 			);
 		}
 		c.set('validated_params', result.data);
@@ -331,8 +331,8 @@ const create_query_validation = (query_schema?: z.ZodObject): Array<MiddlewareHa
 		const result = query_schema.safeParse(raw_query);
 		if (!result.success) {
 			return c.json(
-				{error: ERROR_INVALID_QUERY_PARAMS, issues: dev_only(result.error.issues)},
-				400,
+				{ error: ERROR_INVALID_QUERY_PARAMS, issues: dev_only(result.error.issues) },
+				400
 			);
 		}
 		c.set('validated_query', result.data);
@@ -353,7 +353,7 @@ const wrap_output_validation = (
 	handler: Handler,
 	output_schema: z.ZodType,
 	error_schemas: RouteErrorSchemas | null,
-	log: Logger,
+	log: Logger
 ): Handler => {
 	if (!DEV) return handler;
 	if (is_null_schema(output_schema) && !error_schemas) return handler;
@@ -383,7 +383,7 @@ const wrap_output_validation = (
 					if (!result.success) {
 						log.error(
 							`Error schema mismatch (${response.status}): ${c.req.method} ${c.req.path}`,
-							result.error.issues,
+							result.error.issues
 						);
 					}
 				} catch {
@@ -448,7 +448,7 @@ const wrap_error_catch = (handler: Handler, log: Logger): Handler => {
 			log.error('Unhandled handler error', err);
 			const body: Record<string, unknown> = {
 				error: 'internal_error',
-				message: dev_only(err instanceof Error ? err.message : undefined),
+				message: dev_only(err instanceof Error ? err.message : undefined)
 			};
 			return c.json(body, 500);
 		}
@@ -474,9 +474,11 @@ const build_rest_error_body = (err: ThrownJsonrpcError): Record<string, unknown>
 		err.data !== null &&
 		typeof err.data === 'object' &&
 		!Array.isArray(err.data) &&
-		typeof (err.data as {reason?: unknown}).reason === 'string'
+		typeof (err.data as { reason?: unknown }).reason === 'string'
 	) {
-		const {reason: data_reason, ...other} = err.data as Record<string, unknown> & {reason: string};
+		const { reason: data_reason, ...other } = err.data as Record<string, unknown> & {
+			reason: string;
+		};
 		reason = data_reason;
 		Object.assign(rest, other);
 	} else {
@@ -485,7 +487,7 @@ const build_rest_error_body = (err: ThrownJsonrpcError): Record<string, unknown>
 			Object.assign(rest, err.data);
 		}
 	}
-	const body: Record<string, unknown> = {error: reason, ...rest};
+	const body: Record<string, unknown> = { error: reason, ...rest };
 	if (err.message && err.message !== reason) body.message = err.message;
 	return body;
 };
@@ -538,23 +540,23 @@ export const apply_route_specs = (
 	resolve_auth_guards: AuthGuardResolver,
 	log: Logger,
 	db: Db,
-	authorize?: AuthorizationHandler,
+	authorize?: AuthorizationHandler
 ): void => {
 	const registered = new Set<string>();
 	for (const spec of specs) {
 		const route_key = `${spec.method} ${spec.path}`;
 		if (registered.has(route_key)) {
 			throw new Error(
-				`Duplicate route: ${route_key} — each method+path combination must be unique`,
+				`Duplicate route: ${route_key} — each method+path combination must be unique`
 			);
 		}
 		registered.add(route_key);
 		assert_route_auth_acting_biconditional(
 			spec.auth,
-			{input: spec.input, query: spec.query},
-			`Route "${route_key}"`,
+			{ input: spec.input, query: spec.query },
+			`Route "${route_key}"`
 		);
-		const {pre_validation: pre_validation_guards, post_authorization: post_authorization_guards} =
+		const { pre_validation: pre_validation_guards, post_authorization: post_authorization_guards } =
 			resolve_auth_guards(spec.auth);
 		const params_validation = create_params_validation(spec.params);
 		const query_validation = create_query_validation(spec.query);
@@ -566,7 +568,7 @@ export const apply_route_specs = (
 						const response = await authorize(c, spec);
 						if (response) return response;
 						await next();
-					},
+					}
 				]
 			: [];
 		// Step 1: adapt RouteHandler → Handler (construct RouteContext, call spec.handler)
@@ -581,12 +583,12 @@ export const apply_route_specs = (
 		let handler: Handler = (c) => {
 			const route_context = {
 				pending_effects: c.var.pending_effects,
-				post_commit_effects: c.var.post_commit_effects,
+				post_commit_effects: c.var.post_commit_effects
 			};
 			return dispatch_with_post_commit_rollback(c.var.post_commit_effects, () =>
 				use_transaction
-					? db.transaction(async (tx) => inner(c, {db: tx, ...route_context}))
-					: inner(c, {db, ...route_context}),
+					? db.transaction(async (tx) => inner(c, { db: tx, ...route_context }))
+					: inner(c, { db, ...route_context })
 			);
 		};
 		// Step 2: output validation
@@ -602,7 +604,7 @@ export const apply_route_specs = (
 			...input_validation,
 			...authorization,
 			...post_authorization_guards,
-			handler,
+			handler
 		);
 	}
 };
@@ -616,6 +618,6 @@ export const apply_route_specs = (
 export const prefix_route_specs = (prefix: string, specs: Array<RouteSpec>): Array<RouteSpec> => {
 	return specs.map((spec) => ({
 		...spec,
-		path: spec.path === '/' ? prefix : `${prefix}${spec.path}`,
+		path: spec.path === '/' ? prefix : `${prefix}${spec.path}`
 	}));
 };

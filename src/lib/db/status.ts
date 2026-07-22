@@ -12,10 +12,10 @@
  * @module
  */
 
-import {to_error_message} from '@fuzdev/fuz_util/error.ts';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
-import type {Db} from './db.ts';
-import type {MigrationNamespace} from './migrate.ts';
+import type { Db } from './db.ts';
+import type { MigrationNamespace } from './migrate.ts';
 
 /**
  * A divergence between the recorded migration tracker and the code's list.
@@ -102,27 +102,27 @@ export interface DbStatus {
 const has_table_column = async (
 	db: Db,
 	table_name: string,
-	column_name: string,
+	column_name: string
 ): Promise<boolean> => {
-	const row = await db.query_one<{exists: boolean}>(
+	const row = await db.query_one<{ exists: boolean }>(
 		`SELECT EXISTS (
 			SELECT 1 FROM information_schema.columns
 			WHERE table_schema = 'public'
 			  AND table_name = $1
 			  AND column_name = $2
 		) as exists`,
-		[table_name, column_name],
+		[table_name, column_name]
 	);
 	return row?.exists ?? false;
 };
 
 const has_table = async (db: Db, table_name: string): Promise<boolean> => {
-	const row = await db.query_one<{exists: boolean}>(
+	const row = await db.query_one<{ exists: boolean }>(
 		`SELECT EXISTS (
 			SELECT 1 FROM information_schema.tables
 			WHERE table_schema = 'public' AND table_name = $1
 		) as exists`,
-		[table_name],
+		[table_name]
 	);
 	return row?.exists ?? false;
 };
@@ -141,7 +141,7 @@ const has_table = async (db: Db, table_name: string): Promise<boolean> => {
  */
 export const query_db_status = async (
 	db: Db,
-	namespaces?: Array<MigrationNamespace>,
+	namespaces?: Array<MigrationNamespace>
 ): Promise<DbStatus> => {
 	// check connectivity
 	try {
@@ -152,26 +152,26 @@ export const query_db_status = async (
 			error: to_error_message(err),
 			table_count: 0,
 			tables: [],
-			migrations: [],
+			migrations: []
 		};
 	}
 
 	// list tables with row counts
-	const table_rows = await db.query<{table_name: string}>(
+	const table_rows = await db.query<{ table_name: string }>(
 		`SELECT table_name FROM information_schema.tables
 		 WHERE table_schema = 'public'
-		 ORDER BY table_name`,
+		 ORDER BY table_name`
 	);
 
 	const tables: Array<TableStatus> = [];
-	for (const {table_name} of table_rows) {
+	for (const { table_name } of table_rows) {
 		// table_name from information_schema is trusted (no parameterized DDL)
-		const result = await db.query_one<{count: string}>(
-			`SELECT COUNT(*) as count FROM "${table_name}"`,
+		const result = await db.query_one<{ count: string }>(
+			`SELECT COUNT(*) as count FROM "${table_name}"`
 		);
 		tables.push({
 			name: table_name,
-			row_count: result ? parseInt(result.count, 10) : 0,
+			row_count: result ? parseInt(result.count, 10) : 0
 		});
 	}
 
@@ -185,12 +185,12 @@ export const query_db_status = async (
 		if (old_shape) old_tracker_shape = true;
 
 		if (sv_exists && !old_shape) {
-			for (const {namespace, migrations: ns_migrations} of namespaces) {
-				const rows = await db.query<{name: string}>(
+			for (const { namespace, migrations: ns_migrations } of namespaces) {
+				const rows = await db.query<{ name: string }>(
 					`SELECT name FROM schema_version
 					 WHERE namespace = $1
 					 ORDER BY sequence ASC`,
-					[namespace],
+					[namespace]
 				);
 				const applied_names = rows.map((r) => r.name);
 				const code_names = ns_migrations.map((m) => m.name);
@@ -204,7 +204,7 @@ export const query_db_status = async (
 				// count-only check would report a DB the runner rejects as up-to-date.
 				let divergence: Divergence | undefined;
 				if (applied > total) {
-					divergence = {kind: 'binary_older', applied, declared: total};
+					divergence = { kind: 'binary_older', applied, declared: total };
 				} else {
 					const position = applied_names.findIndex((name, i) => name !== code_names[i]);
 					if (position !== -1) {
@@ -212,7 +212,7 @@ export const query_db_status = async (
 							kind: 'name_mismatch',
 							position,
 							applied: applied_names[position]!,
-							expected: code_names[position]!,
+							expected: code_names[position]!
 						};
 					}
 				}
@@ -225,18 +225,18 @@ export const query_db_status = async (
 					applied_names,
 					pending_names,
 					up_to_date: applied === total && pending_names.length === 0 && divergence === undefined,
-					...(divergence ? {divergence} : {}),
+					...(divergence ? { divergence } : {})
 				});
 			}
 		} else {
 			// no tracker, or pre-0.42 shape — every namespace shows as "nothing applied yet"
-			for (const {namespace, migrations: ns_migrations} of namespaces) {
+			for (const { namespace, migrations: ns_migrations } of namespaces) {
 				const code_names = ns_migrations.map((m) => m.name);
 				migrations.push({
 					namespace,
 					applied_names: [],
 					pending_names: code_names,
-					up_to_date: code_names.length === 0,
+					up_to_date: code_names.length === 0
 				});
 			}
 		}
@@ -247,7 +247,7 @@ export const query_db_status = async (
 		table_count: tables.length,
 		tables,
 		migrations,
-		...(old_tracker_shape ? {old_tracker_shape: true} : {}),
+		...(old_tracker_shape ? { old_tracker_shape: true } : {})
 	};
 };
 
@@ -293,7 +293,7 @@ export const format_db_status = (status: DbStatus): string => {
 		lines.push('');
 		lines.push('  Migrations: pre-0.42 schema_version shape detected.');
 		lines.push(
-			'    Drop the table and re-run, or call `baseline()` first if preserving the schema.',
+			'    Drop the table and re-run, or call `baseline()` first if preserving the schema.'
 		);
 	}
 
@@ -305,8 +305,8 @@ export const format_db_status = (status: DbStatus): string => {
 			if (m.divergence) {
 				lines.push(
 					`    ${m.namespace}: DIVERGED (${m.applied_names.length}/${total}) — ${format_divergence(
-						m.divergence,
-					)}`,
+						m.divergence
+					)}`
 				);
 			} else if (m.up_to_date) {
 				lines.push(`    ${m.namespace}: up to date (${m.applied_names.length}/${total})`);
@@ -315,7 +315,7 @@ export const format_db_status = (status: DbStatus): string => {
 				lines.push(
 					`    ${m.namespace}: applied ${m.applied_names.length}/${total} (pending: ${
 						pending_list
-					})`,
+					})`
 				);
 			}
 		}

@@ -12,14 +12,14 @@
  * @module
  */
 
-import {create_context} from '@fuzdev/fuz_ui/context_helpers.ts';
+import { create_context } from '@fuzdev/fuz_ui/context_helpers.ts';
 
-import {AsyncSlot} from './async_slot.svelte.ts';
-import type {AppSettingsWithUsernameJson} from '../auth/app_settings_schema.ts';
+import { AsyncSlot } from './async_slot.svelte.ts';
+import type { AppSettingsWithUsernameJson } from '../auth/app_settings_schema.ts';
 import type {
 	AppSettingsGetOutput,
 	AppSettingsUpdateInput,
-	AppSettingsUpdateOutput,
+	AppSettingsUpdateOutput
 } from '../auth/admin_action_specs.ts';
 
 /**
@@ -58,14 +58,14 @@ export class AppSettingsState {
 
 	async fetch(): Promise<void> {
 		await this.list.run(async () => {
-			const {settings} = await this.#get_rpc().get();
+			const { settings } = await this.#get_rpc().get();
 			this.settings = settings;
 		});
 	}
 
 	async update_open_signup(value: boolean): Promise<void> {
 		await this.update.run(async () => {
-			const {settings} = await this.#get_rpc().update({open_signup: value});
+			const { settings } = await this.#get_rpc().update({ open_signup: value });
 			this.settings = settings;
 		});
 	}

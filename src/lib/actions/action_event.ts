@@ -7,10 +7,10 @@
  * @module
  */
 
-import {z} from 'zod';
-import {create_uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { create_uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type {ActionEventPhase, ActionKind, ActionSpecUnion} from './action_spec.ts';
+import type { ActionEventPhase, ActionKind, ActionSpecUnion } from './action_spec.ts';
 import {
 	create_jsonrpc_request,
 	create_jsonrpc_response,
@@ -18,17 +18,17 @@ import {
 	create_jsonrpc_notification,
 	to_jsonrpc_params,
 	to_jsonrpc_result,
-	is_jsonrpc_error_response,
+	is_jsonrpc_error_response
 } from '../http/jsonrpc_helpers.ts';
-import {jsonrpc_error_messages, ThrownJsonrpcError} from '../http/jsonrpc_errors.ts';
+import { jsonrpc_error_messages, ThrownJsonrpcError } from '../http/jsonrpc_errors.ts';
 import type {
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
 	JsonrpcNotification,
-	JsonrpcErrorObject,
+	JsonrpcErrorObject
 } from '../http/jsonrpc.ts';
-import type {ActionEventEnvironment, ActionEventStep} from './action_event_types.ts';
-import {ActionEventData, type ActionEventDataUnion} from './action_event_data.ts';
+import type { ActionEventEnvironment, ActionEventStep } from './action_event_types.ts';
+import { ActionEventData, type ActionEventDataUnion } from './action_event_data.ts';
 import {
 	validate_step_transition,
 	validate_phase_transition,
@@ -38,14 +38,14 @@ import {
 	get_initial_phase,
 	is_request_response,
 	is_send_request_with_parsed_input,
-	is_notification_send_with_parsed_input,
+	is_notification_send_with_parsed_input
 } from './action_event_helpers.ts';
 
 // TODO maybe just use runes in this module and remove `observe`
 export type ActionEventChangeObserver<TMethod extends string = string> = (
 	new_data: ActionEventDataUnion<TMethod>,
 	old_data: ActionEventDataUnion<TMethod>,
-	event: ActionEvent<TMethod>,
+	event: ActionEvent<TMethod>
 ) => void;
 
 /**
@@ -54,7 +54,7 @@ export type ActionEventChangeObserver<TMethod extends string = string> = (
 export class ActionEvent<
 	TMethod extends string = string,
 	TPhase extends ActionEventPhase = ActionEventPhase,
-	TStep extends ActionEventStep = ActionEventStep,
+	TStep extends ActionEventStep = ActionEventStep
 > {
 	#data: ActionEventDataUnion<TMethod>;
 	#listeners: Set<ActionEventChangeObserver<TMethod>> = new Set();
@@ -67,19 +67,19 @@ export class ActionEvent<
 	 * value comes from `lookup_action_spec(method)` keyed off the Proxy
 	 * get trap, so the narrowing matches the dispatched method.
 	 */
-	readonly spec: ActionSpecUnion & {method: TMethod};
+	readonly spec: ActionSpecUnion & { method: TMethod };
 
-	get data(): ActionEventDataUnion<TMethod> & {phase: TPhase; step: TStep} {
-		return this.#data as ActionEventDataUnion<TMethod> & {phase: TPhase; step: TStep};
+	get data(): ActionEventDataUnion<TMethod> & { phase: TPhase; step: TStep } {
+		return this.#data as ActionEventDataUnion<TMethod> & { phase: TPhase; step: TStep };
 	}
 
 	constructor(
 		environment: ActionEventEnvironment,
 		spec: ActionSpecUnion,
-		data: ActionEventDataUnion<TMethod>,
+		data: ActionEventDataUnion<TMethod>
 	) {
 		this.environment = environment;
-		this.spec = spec as ActionSpecUnion & {method: TMethod};
+		this.spec = spec as ActionSpecUnion & { method: TMethod };
 		this.#data = data;
 	}
 
@@ -152,7 +152,7 @@ export class ActionEvent<
 
 		const parsed = this.spec.input.safeParse(this.#data.input);
 		if (parsed.success) {
-			this.#transition_step('parsed', {input: parsed.data});
+			this.#transition_step('parsed', { input: parsed.data });
 		} else {
 			// Input validation errors fail immediately without transitioning to error phases.
 			// Design decision: Input validation failures are client-side programming errors
@@ -162,8 +162,8 @@ export class ActionEvent<
 				// no need to protect this info
 				jsonrpc_error_messages.invalid_params(
 					`failed to parse input: ${z.prettifyError(parsed.error)}`,
-					{validation_errors: parsed.error.issues},
-				),
+					{ validation_errors: parsed.error.issues }
+				)
 			);
 		}
 
@@ -206,7 +206,7 @@ export class ActionEvent<
 			// Preserve ThrownJsonrpcError structure, wrap others as internal_error
 			const error_json =
 				error instanceof ThrownJsonrpcError
-					? {code: error.code, message: error.message, data: error.data}
+					? { code: error.code, message: error.message, data: error.data }
 					: jsonrpc_error_messages.internal_error('unknown error');
 
 			// If we're already in an error phase, transition to failed
@@ -260,7 +260,7 @@ export class ActionEvent<
 			// Preserve ThrownJsonrpcError structure, wrap others as internal_error
 			const error_json =
 				error instanceof ThrownJsonrpcError
-					? {code: error.code, message: error.message, data: error.data}
+					? { code: error.code, message: error.message, data: error.data }
 					: jsonrpc_error_messages.internal_error('unknown error');
 
 			this.#fail(error_json);
@@ -298,49 +298,49 @@ export class ActionEvent<
 	}
 
 	update_progress(progress: unknown): void {
-		this.#update_data({progress});
+		this.#update_data({ progress });
 	}
 
 	set_request(request: JsonrpcRequest): void {
 		this.#validate_protocol_setter('request', {
 			kind: 'request_response',
-			phase: 'receive_request',
+			phase: 'receive_request'
 		});
-		this.#update_data({request});
+		this.#update_data({ request });
 	}
 
 	set_response(response: JsonrpcResponseOrError): void {
 		this.#validate_protocol_setter('response', {
 			kind: 'request_response',
-			phase: 'receive_response',
+			phase: 'receive_response'
 		});
 
 		const output = 'result' in response ? response.result : null;
-		this.#update_data({response, output});
+		this.#update_data({ response, output });
 	}
 
 	set_notification(notification: JsonrpcNotification): void {
 		this.#validate_protocol_setter('notification', {
 			kind: 'remote_notification',
-			phase: 'receive',
+			phase: 'receive'
 		});
-		this.#update_data({notification});
+		this.#update_data({ notification });
 	}
 
 	#transition_step(step: ActionEventStep, updates?: Partial<ActionEventData>): void {
 		validate_step_transition(this.#data.step, step);
-		this.#update_data({...updates, step});
+		this.#update_data({ ...updates, step });
 	}
 
 	/** Shallowly merge `updates` with the current data immutably. */
 	#update_data(updates: Partial<ActionEventData>): void {
-		const new_data = {...this.#data, ...updates} as ActionEventDataUnion<TMethod>;
+		const new_data = { ...this.#data, ...updates } as ActionEventDataUnion<TMethod>;
 		this.set_data(new_data);
 	}
 
 	// TODO usage of this in this module is silently swallowing errors, maybe log on the environment?
 	#fail(error: JsonrpcErrorObject): void {
-		this.#transition_step('failed', {error});
+		this.#transition_step('failed', { error });
 	}
 
 	/**
@@ -365,21 +365,21 @@ export class ActionEvent<
 	 */
 	#transition_to_error_phase(
 		phase: 'send_error' | 'receive_error',
-		error: JsonrpcErrorObject,
+		error: JsonrpcErrorObject
 	): void {
 		const new_data = {
 			...this.#data,
 			phase,
 			step: 'parsed' as const,
 			error,
-			output: null,
+			output: null
 		};
 		this.set_data(new_data as ActionEventDataUnion<TMethod>);
 	}
 
 	#validate_protocol_setter(
 		field: string,
-		requirements: {kind: ActionKind; phase: ActionEventPhase},
+		requirements: { kind: ActionKind; phase: ActionEventPhase }
 	): void {
 		if (this.#data.kind !== requirements.kind || this.#data.phase !== requirements.phase) {
 			throw new Error(`can only set ${field} in ${requirements.phase} phase`);
@@ -397,8 +397,8 @@ export class ActionEvent<
 				request: create_jsonrpc_request(
 					this.spec.method,
 					to_jsonrpc_params(this.#data.input),
-					create_uuid(),
-				),
+					create_uuid()
+				)
 			};
 		}
 
@@ -406,8 +406,8 @@ export class ActionEvent<
 			return {
 				notification: create_jsonrpc_notification(
 					this.spec.method,
-					to_jsonrpc_params(this.#data.input),
-				),
+					to_jsonrpc_params(this.#data.input)
+				)
 			};
 		}
 
@@ -418,13 +418,13 @@ export class ActionEvent<
 		if (output !== undefined && should_validate_output(this.spec.kind, this.#data.phase)) {
 			const parsed = this.spec.output.safeParse(output);
 			if (parsed.success) {
-				this.#transition_step('handled', {output: parsed.data});
+				this.#transition_step('handled', { output: parsed.data });
 			} else {
 				this.#fail(
 					jsonrpc_error_messages.validation_error(
 						`failed to parse output: ${z.prettifyError(parsed.error)}`,
-						{output, validation_errors: parsed.error.issues},
-					),
+						{ output, validation_errors: parsed.error.issues }
+					)
 				);
 			}
 		} else {
@@ -438,14 +438,14 @@ export class ActionEvent<
 			phase,
 			this.#data.method,
 			this.#data.executor,
-			this.#data.input,
+			this.#data.input
 		);
 
 		// Carry forward data based on transition
 		if (is_request_response(this.#data)) {
 			if (phase === 'receive_response' && this.#data.request) {
 				// Carry forward the request when transitioning to receive_response
-				return {...base_data, request: this.#data.request} as ActionEventDataUnion<TMethod>;
+				return { ...base_data, request: this.#data.request } as ActionEventDataUnion<TMethod>;
 			} else if (phase === 'send_response' && this.#data.request) {
 				// Create the response when transitioning to send_response
 				const response = this.#create_response_from_data();
@@ -453,14 +453,14 @@ export class ActionEvent<
 					...base_data,
 					output: this.#data.output,
 					request: this.#data.request,
-					response,
+					response
 				} as ActionEventDataUnion<TMethod>;
 			} else if (phase === 'send_error' && this.#data.error) {
 				// Carry forward error and request (if available) when transitioning to send_error
 				return {
 					...base_data,
 					error: this.#data.error,
-					request: this.#data.request || null,
+					request: this.#data.request || null
 				} as ActionEventDataUnion<TMethod>;
 			} else if (phase === 'receive_error' && this.#data.error) {
 				// Carry forward error, request, and response when transitioning to receive_error
@@ -468,7 +468,7 @@ export class ActionEvent<
 					...base_data,
 					error: this.#data.error,
 					request: this.#data.request,
-					response: this.#data.response,
+					response: this.#data.response
 				} as ActionEventDataUnion<TMethod>;
 			}
 		}
@@ -501,14 +501,14 @@ export const create_action_event = <TMethod extends string = string>(
 	environment: ActionEventEnvironment,
 	spec: ActionSpecUnion,
 	input: unknown,
-	initial_phase?: ActionEventPhase,
+	initial_phase?: ActionEventPhase
 ): ActionEvent<TMethod> => {
 	const phase = initial_phase || get_initial_phase(spec.kind, spec.initiator, environment.executor);
 	if (!phase) {
 		throw new Error(
 			`executor '${environment.executor}' cannot initiate action '${spec.method}' with initiator '${
 				spec.initiator
-			}'`,
+			}'`
 		);
 	}
 
@@ -517,7 +517,7 @@ export const create_action_event = <TMethod extends string = string>(
 		phase,
 		spec.method as TMethod,
 		environment.executor,
-		input,
+		input
 	) as ActionEventDataUnion<TMethod>;
 
 	return new ActionEvent(environment, spec, initial_data);
@@ -530,7 +530,7 @@ export const create_action_event = <TMethod extends string = string>(
  */
 export const create_action_event_from_json = <TMethod extends string = string>(
 	json: ActionEventDataUnion<TMethod>,
-	environment: ActionEventEnvironment,
+	environment: ActionEventEnvironment
 ): ActionEvent<TMethod> => {
 	const spec = environment.lookup_action_spec(json.method);
 	if (!spec) {
@@ -544,7 +544,7 @@ export const create_action_event_from_json = <TMethod extends string = string>(
 // TODO how to avoid casting? this should generally be safe but we dont have schemas for each possible action event state
 export const parse_action_event = (
 	raw_json: unknown,
-	environment: ActionEventEnvironment,
+	environment: ActionEventEnvironment
 ): ActionEvent => {
 	const json = ActionEventData.parse(raw_json);
 	return create_action_event_from_json(json as ActionEventDataUnion, environment);

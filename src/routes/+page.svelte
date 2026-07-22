@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Svg from '@fuzdev/fuz_ui/Svg.svelte';
-	import {logo_fuz_app} from '@fuzdev/fuz_ui/logos.ts';
-	import {resolve} from '$app/paths';
+	import { logo_fuz_app } from '@fuzdev/fuz_ui/logos.ts';
+	import { resolve } from '$app/paths';
 </script>
 
 <main class="column align-items:center mx_auto">

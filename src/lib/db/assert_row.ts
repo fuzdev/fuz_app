@@ -21,7 +21,7 @@ export const assert_row = <T>(row: T | undefined, context?: string): T => {
 		throw new Error(
 			context
 				? `Expected row from ${context}, but got undefined`
-				: 'Expected INSERT RETURNING to produce a row, but got undefined',
+				: 'Expected INSERT RETURNING to produce a row, but got undefined'
 		);
 	}
 	return row;

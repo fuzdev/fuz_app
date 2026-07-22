@@ -13,7 +13,7 @@
  * @module
  */
 
-import {test, assert, afterEach, vi} from 'vitest';
+import { test, assert, afterEach, vi } from 'vitest';
 
 afterEach(() => {
 	vi.doUnmock('esm-env');
@@ -22,12 +22,12 @@ afterEach(() => {
 
 test('dev_only drops the value in production (DEV=false)', async () => {
 	vi.resetModules();
-	vi.doMock('esm-env', () => ({DEV: false}));
-	const {dev_only} = await import('$lib/http/jsonrpc_errors.ts');
+	vi.doMock('esm-env', () => ({ DEV: false }));
+	const { dev_only } = await import('$lib/http/jsonrpc_errors.ts');
 	// The leak shapes both call patterns produce: a wrapped `data` object (RPC)
 	// and a bare issues array (REST) — both must vanish in production.
-	assert.strictEqual(dev_only({issues: [{code: 'custom', message: 'x', path: []}]}), undefined);
-	assert.strictEqual(dev_only([{code: 'custom', message: 'x', path: []}]), undefined);
+	assert.strictEqual(dev_only({ issues: [{ code: 'custom', message: 'x', path: [] }] }), undefined);
+	assert.strictEqual(dev_only([{ code: 'custom', message: 'x', path: [] }]), undefined);
 	// Internal-error masking composes through the same gate: a raw exception
 	// message drops to undefined, so the `internal_error` builder falls back to
 	// its generic default and the REST body omits `message`.
@@ -37,8 +37,8 @@ test('dev_only drops the value in production (DEV=false)', async () => {
 
 test('dev_only passes the value through in development (DEV=true)', async () => {
 	vi.resetModules();
-	vi.doMock('esm-env', () => ({DEV: true}));
-	const {dev_only} = await import('$lib/http/jsonrpc_errors.ts');
-	const issues = [{code: 'custom', message: 'x', path: []}];
+	vi.doMock('esm-env', () => ({ DEV: true }));
+	const { dev_only } = await import('$lib/http/jsonrpc_errors.ts');
+	const issues = [{ code: 'custom', message: 'x', path: [] }];
 	assert.strictEqual(dev_only(issues), issues);
 });

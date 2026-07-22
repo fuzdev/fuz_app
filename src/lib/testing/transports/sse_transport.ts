@@ -17,7 +17,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {create_sse_frame_reader} from './sse_frame_reader.ts';
+import { create_sse_frame_reader } from './sse_frame_reader.ts';
 
 /** Construction options for `create_sse_transport`. */
 export interface SseTransportOptions {
@@ -73,16 +73,16 @@ export interface SseTransport {
  * @throws Error if the connect fails (status, content type, or no body).
  */
 export const create_sse_transport = async (options: SseTransportOptions): Promise<SseTransport> => {
-	const {base_url, sse_path, cookies, origin, default_timeout_ms} = options;
+	const { base_url, sse_path, cookies, origin, default_timeout_ms } = options;
 
 	const url = `${base_url}${sse_path}`;
 	const headers: Record<string, string> = {
 		Accept: 'text/event-stream',
-		Origin: origin ?? base_url,
+		Origin: origin ?? base_url
 	};
 	if (cookies.length > 0) headers.Cookie = cookies.join('; ');
 
-	const res = await fetch(url, {method: 'GET', headers});
+	const res = await fetch(url, { method: 'GET', headers });
 	if (!res.ok) {
 		throw new Error(`SSE connect to ${url} failed: status ${res.status}`);
 	}
@@ -94,9 +94,9 @@ export const create_sse_transport = async (options: SseTransportOptions): Promis
 		throw new Error(`SSE connect to ${url}: response has no body`);
 	}
 
-	const {read_frame, wait_for_close, cancel} = create_sse_frame_reader(
+	const { read_frame, wait_for_close, cancel } = create_sse_frame_reader(
 		res.body.getReader(),
-		default_timeout_ms,
+		default_timeout_ms
 	);
-	return {read_frame, wait_for_close, close: cancel};
+	return { read_frame, wait_for_close, close: cancel };
 };

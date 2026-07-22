@@ -4,19 +4,19 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
-import {z} from 'zod';
+import { describe, test, assert } from 'vitest';
+import { z } from 'zod';
 
-import {BaseServerEnv, validate_server_env} from '$lib/server/env.ts';
-import {env_schema_to_surface} from '$lib/http/surface.ts';
-import type {SchemaFieldMeta} from '$lib/schema_meta.ts';
+import { BaseServerEnv, validate_server_env } from '$lib/server/env.ts';
+import { env_schema_to_surface } from '$lib/http/surface.ts';
+import type { SchemaFieldMeta } from '$lib/schema_meta.ts';
 
 /** Minimal valid env for BaseServerEnv (only required fields, no defaults). */
 const VALID_ENV: Record<string, string> = {
 	NODE_ENV: 'development',
 	SECRET_FUZ_COOKIE_KEYS: 'a'.repeat(32),
 	FUZ_ALLOWED_ORIGINS: 'http://localhost:*',
-	DATABASE_URL: 'memory://',
+	DATABASE_URL: 'memory://'
 };
 
 describe('BaseServerEnv', () => {
@@ -42,7 +42,7 @@ describe('BaseServerEnv', () => {
 			PUBLIC_FUZ_CONTACT_EMAIL: 'test@example.com',
 			SMTP_HOST: 'smtp.example.com',
 			SMTP_USER: 'noreply@example.com',
-			SMTP_PASSWORD: 'secret',
+			SMTP_PASSWORD: 'secret'
 		});
 		assert.strictEqual(result.PORT, 8080);
 		assert.strictEqual(result.HOST, '0.0.0.0');
@@ -53,33 +53,33 @@ describe('BaseServerEnv', () => {
 	});
 
 	test('coerces PORT from string to number', () => {
-		const result = BaseServerEnv.parse({...VALID_ENV, PORT: '3000'});
+		const result = BaseServerEnv.parse({ ...VALID_ENV, PORT: '3000' });
 		assert.strictEqual(result.PORT, 3000);
 	});
 
 	test('rejects unknown fields (strict)', () => {
 		const result = BaseServerEnv.safeParse({
 			...VALID_ENV,
-			UNKNOWN_FIELD: 'hello',
+			UNKNOWN_FIELD: 'hello'
 		});
 		assert.isFalse(result.success);
 	});
 
 	test('rejects missing NODE_ENV', () => {
-		const {NODE_ENV: _, ...without} = VALID_ENV;
+		const { NODE_ENV: _, ...without } = VALID_ENV;
 		const result = BaseServerEnv.safeParse(without);
 		assert.isFalse(result.success);
 	});
 
 	test('rejects invalid NODE_ENV', () => {
-		const result = BaseServerEnv.safeParse({...VALID_ENV, NODE_ENV: 'staging'});
+		const result = BaseServerEnv.safeParse({ ...VALID_ENV, NODE_ENV: 'staging' });
 		assert.isFalse(result.success);
 	});
 
 	test('rejects short SECRET_FUZ_COOKIE_KEYS', () => {
 		const result = BaseServerEnv.safeParse({
 			...VALID_ENV,
-			SECRET_FUZ_COOKIE_KEYS: 'short',
+			SECRET_FUZ_COOKIE_KEYS: 'short'
 		});
 		assert.isFalse(result.success);
 	});
@@ -87,46 +87,46 @@ describe('BaseServerEnv', () => {
 	test('rejects empty FUZ_ALLOWED_ORIGINS', () => {
 		const result = BaseServerEnv.safeParse({
 			...VALID_ENV,
-			FUZ_ALLOWED_ORIGINS: '',
+			FUZ_ALLOWED_ORIGINS: ''
 		});
 		assert.isFalse(result.success);
 	});
 
 	test('rejects empty string for DATABASE_URL', () => {
-		const result = BaseServerEnv.safeParse({...VALID_ENV, DATABASE_URL: ''});
+		const result = BaseServerEnv.safeParse({ ...VALID_ENV, DATABASE_URL: '' });
 		assert.isFalse(result.success);
 	});
 
 	test('rejects missing DATABASE_URL', () => {
-		const {DATABASE_URL: _, ...without} = VALID_ENV;
+		const { DATABASE_URL: _, ...without } = VALID_ENV;
 		const result = BaseServerEnv.safeParse(without);
 		assert.isFalse(result.success);
 	});
 
 	test('allows empty string for PUBLIC_FUZ_CONTACT_EMAIL', () => {
-		const result = BaseServerEnv.parse({...VALID_ENV, PUBLIC_FUZ_CONTACT_EMAIL: ''});
+		const result = BaseServerEnv.parse({ ...VALID_ENV, PUBLIC_FUZ_CONTACT_EMAIL: '' });
 		assert.strictEqual(result.PUBLIC_FUZ_CONTACT_EMAIL, '');
 	});
 
 	test('allows empty string for SMTP_USER', () => {
-		const result = BaseServerEnv.parse({...VALID_ENV, SMTP_USER: ''});
+		const result = BaseServerEnv.parse({ ...VALID_ENV, SMTP_USER: '' });
 		assert.strictEqual(result.SMTP_USER, '');
 	});
 
 	test('is extensible via .extend()', () => {
 		const extended = BaseServerEnv.extend({
-			ADMIN_TOKEN: z.string().min(10),
+			ADMIN_TOKEN: z.string().min(10)
 		});
 		const result = extended.safeParse({
 			...VALID_ENV,
-			ADMIN_TOKEN: 'long-enough-token',
+			ADMIN_TOKEN: 'long-enough-token'
 		});
 		assert.isTrue(result.success);
 	});
 
 	test('all 15 fields have .meta() with description', () => {
 		for (const [name, field_schema] of Object.entries(BaseServerEnv.shape)) {
-			const meta = (field_schema as z.ZodType).meta() as {description?: string} | undefined;
+			const meta = (field_schema as z.ZodType).meta() as { description?: string } | undefined;
 			assert.ok(meta, `${name} should have .meta()`);
 			assert.ok(meta.description, `${name} should have a description`);
 		}
@@ -145,17 +145,17 @@ describe('BaseServerEnv', () => {
 			'FUZ_BOOTSTRAP_TOKEN_PATH',
 			'SECRET_FUZ_COOKIE_KEYS',
 			'SMTP_PASSWORD',
-			'SMTP_USER',
+			'SMTP_USER'
 		]);
 	});
 
 	test('.extend() preserves parent field metadata', () => {
 		const extended = BaseServerEnv.extend({
-			CUSTOM: z.string().meta({description: 'Custom field'}),
+			CUSTOM: z.string().meta({ description: 'Custom field' })
 		});
-		const port_meta = (extended.shape.PORT as z.ZodType).meta() as {description?: string};
+		const port_meta = (extended.shape.PORT as z.ZodType).meta() as { description?: string };
 		assert.strictEqual(port_meta.description, 'HTTP server port');
-		const custom_meta = (extended.shape.CUSTOM as z.ZodType).meta() as {description?: string};
+		const custom_meta = (extended.shape.CUSTOM as z.ZodType).meta() as { description?: string };
 		assert.strictEqual(custom_meta.description, 'Custom field');
 	});
 });
@@ -214,7 +214,7 @@ describe('validate_server_env', () => {
 	test('valid env returns ok with keyring, allowed_origins, bootstrap_token_path', () => {
 		const env = BaseServerEnv.parse({
 			...VALID_ENV,
-			FUZ_BOOTSTRAP_TOKEN_PATH: '/tmp/token',
+			FUZ_BOOTSTRAP_TOKEN_PATH: '/tmp/token'
 		});
 		const result = validate_server_env(env);
 		assert.isTrue(result.ok);
@@ -228,11 +228,11 @@ describe('validate_server_env', () => {
 
 	test('invalid cookie keys returns error with field', () => {
 		const env = BaseServerEnv.parse({
-			...VALID_ENV,
+			...VALID_ENV
 			// Override with a valid-for-zod but invalid-for-keyring key (min 32 chars for zod, but keyring validates differently)
 		});
 		// Force an env with short keys past Zod (simulate runtime scenario)
-		const bad_env = {...env, SECRET_FUZ_COOKIE_KEYS: 'short'};
+		const bad_env = { ...env, SECRET_FUZ_COOKIE_KEYS: 'short' };
 		const result = validate_server_env(bad_env);
 		assert.isFalse(result.ok);
 		assert.strictEqual(result.field, 'SECRET_FUZ_COOKIE_KEYS');
@@ -249,7 +249,7 @@ describe('validate_server_env', () => {
 
 	test('comma-only FUZ_ALLOWED_ORIGINS returns error', () => {
 		const env = BaseServerEnv.parse(VALID_ENV);
-		const bad_env = {...env, FUZ_ALLOWED_ORIGINS: ',,,'};
+		const bad_env = { ...env, FUZ_ALLOWED_ORIGINS: ',,,' };
 		const result = validate_server_env(bad_env);
 		assert.isFalse(result.ok);
 		assert.strictEqual(result.field, 'FUZ_ALLOWED_ORIGINS');
@@ -258,7 +258,7 @@ describe('validate_server_env', () => {
 
 	test('invalid origin pattern returns error', () => {
 		const env = BaseServerEnv.parse(VALID_ENV);
-		const bad_env = {...env, FUZ_ALLOWED_ORIGINS: 'not-a-valid-origin'};
+		const bad_env = { ...env, FUZ_ALLOWED_ORIGINS: 'not-a-valid-origin' };
 		const result = validate_server_env(bad_env);
 		assert.isFalse(result.ok);
 		assert.strictEqual(result.field, 'FUZ_ALLOWED_ORIGINS');
@@ -268,7 +268,7 @@ describe('validate_server_env', () => {
 	test('multiple origin patterns produce correct array length', () => {
 		const env = BaseServerEnv.parse({
 			...VALID_ENV,
-			FUZ_ALLOWED_ORIGINS: 'http://localhost:*,https://example.com,https://*.fuz.dev',
+			FUZ_ALLOWED_ORIGINS: 'http://localhost:*,https://example.com,https://*.fuz.dev'
 		});
 		const result = validate_server_env(env);
 		assert.isTrue(result.ok);

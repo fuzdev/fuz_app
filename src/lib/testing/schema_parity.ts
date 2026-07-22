@@ -47,12 +47,12 @@ import type {
 	MigrationTracker,
 	SchemaSnapshot,
 	SequenceSnapshot,
-	TableSnapshot,
+	TableSnapshot
 } from './schema_introspect.ts';
 
 /** Structured drift entry. `where` is the named source impl ('a' or 'b'). */
 export type SchemaDiff =
-	| {readonly kind: 'table_only_in'; readonly where: 'a' | 'b'; readonly table: string}
+	| { readonly kind: 'table_only_in'; readonly where: 'a' | 'b'; readonly table: string }
 	| {
 			readonly kind: 'column_only_in';
 			readonly where: 'a' | 'b';
@@ -90,17 +90,17 @@ export type SchemaDiff =
 			readonly kind: 'constraint_differs';
 			readonly table: string;
 			readonly constraint: string;
-			readonly a: {type: string; definition: string};
-			readonly b: {type: string; definition: string};
+			readonly a: { type: string; definition: string };
+			readonly b: { type: string; definition: string };
 	  }
-	| {readonly kind: 'sequence_only_in'; readonly where: 'a' | 'b'; readonly sequence: string}
+	| { readonly kind: 'sequence_only_in'; readonly where: 'a' | 'b'; readonly sequence: string }
 	| {
 			readonly kind: 'sequence_data_type_differs';
 			readonly sequence: string;
 			readonly a: string;
 			readonly b: string;
 	  }
-	| {readonly kind: 'enum_only_in'; readonly where: 'a' | 'b'; readonly enum_name: string}
+	| { readonly kind: 'enum_only_in'; readonly where: 'a' | 'b'; readonly enum_name: string }
 	| {
 			readonly kind: 'enum_labels_differ';
 			readonly enum_name: string;
@@ -123,11 +123,11 @@ export const diff_schema_snapshots = (a: SchemaSnapshot, b: SchemaSnapshot): Arr
 		const ta = a.tables[table];
 		const tb = b.tables[table];
 		if (!ta) {
-			diffs.push({kind: 'table_only_in', where: 'b', table});
+			diffs.push({ kind: 'table_only_in', where: 'b', table });
 			continue;
 		}
 		if (!tb) {
-			diffs.push({kind: 'table_only_in', where: 'a', table});
+			diffs.push({ kind: 'table_only_in', where: 'a', table });
 			continue;
 		}
 		diff_table(table, ta, tb, diffs);
@@ -138,11 +138,11 @@ export const diff_schema_snapshots = (a: SchemaSnapshot, b: SchemaSnapshot): Arr
 		const sa = a.sequences[sequence];
 		const sb = b.sequences[sequence];
 		if (!sa) {
-			diffs.push({kind: 'sequence_only_in', where: 'b', sequence});
+			diffs.push({ kind: 'sequence_only_in', where: 'b', sequence });
 			continue;
 		}
 		if (!sb) {
-			diffs.push({kind: 'sequence_only_in', where: 'a', sequence});
+			diffs.push({ kind: 'sequence_only_in', where: 'a', sequence });
 			continue;
 		}
 		diff_sequence(sequence, sa, sb, diffs);
@@ -153,11 +153,11 @@ export const diff_schema_snapshots = (a: SchemaSnapshot, b: SchemaSnapshot): Arr
 		const ea = a.enums[enum_name];
 		const eb = b.enums[enum_name];
 		if (!ea) {
-			diffs.push({kind: 'enum_only_in', where: 'b', enum_name});
+			diffs.push({ kind: 'enum_only_in', where: 'b', enum_name });
 			continue;
 		}
 		if (!eb) {
-			diffs.push({kind: 'enum_only_in', where: 'a', enum_name});
+			diffs.push({ kind: 'enum_only_in', where: 'a', enum_name });
 			continue;
 		}
 		diff_enum(enum_name, ea, eb, diffs);
@@ -171,25 +171,25 @@ const COLUMN_FIELDS = [
 	'udt_name',
 	'is_nullable',
 	'column_default',
-	'is_identity',
+	'is_identity'
 ] as const satisfies ReadonlyArray<keyof ColumnSnapshot>;
 
 const diff_table = (
 	table: string,
 	a: TableSnapshot,
 	b: TableSnapshot,
-	out: Array<SchemaDiff>,
+	out: Array<SchemaDiff>
 ): void => {
 	const all_columns = new Set([...Object.keys(a.columns), ...Object.keys(b.columns)]);
 	for (const column of [...all_columns].sort()) {
 		const ca = a.columns[column];
 		const cb = b.columns[column];
 		if (!ca) {
-			out.push({kind: 'column_only_in', where: 'b', table, column});
+			out.push({ kind: 'column_only_in', where: 'b', table, column });
 			continue;
 		}
 		if (!cb) {
-			out.push({kind: 'column_only_in', where: 'a', table, column});
+			out.push({ kind: 'column_only_in', where: 'a', table, column });
 			continue;
 		}
 		for (const field of COLUMN_FIELDS) {
@@ -200,7 +200,7 @@ const diff_table = (
 					column,
 					field,
 					a: ca[field],
-					b: cb[field],
+					b: cb[field]
 				});
 			}
 		}
@@ -213,15 +213,15 @@ const diff_table = (
 		const def_a = a_indexes.get(index);
 		const def_b = b_indexes.get(index);
 		if (def_a === undefined) {
-			out.push({kind: 'index_only_in', where: 'b', table, index});
+			out.push({ kind: 'index_only_in', where: 'b', table, index });
 			continue;
 		}
 		if (def_b === undefined) {
-			out.push({kind: 'index_only_in', where: 'a', table, index});
+			out.push({ kind: 'index_only_in', where: 'a', table, index });
 			continue;
 		}
 		if (def_a !== def_b) {
-			out.push({kind: 'index_definition_differs', table, index, a: def_a, b: def_b});
+			out.push({ kind: 'index_definition_differs', table, index, a: def_a, b: def_b });
 		}
 	}
 
@@ -232,11 +232,11 @@ const diff_table = (
 		const ca = a_constraints.get(constraint);
 		const cb = b_constraints.get(constraint);
 		if (!ca) {
-			out.push({kind: 'constraint_only_in', where: 'b', table, constraint});
+			out.push({ kind: 'constraint_only_in', where: 'b', table, constraint });
 			continue;
 		}
 		if (!cb) {
-			out.push({kind: 'constraint_only_in', where: 'a', table, constraint});
+			out.push({ kind: 'constraint_only_in', where: 'a', table, constraint });
 			continue;
 		}
 		if (ca.type !== cb.type || ca.definition !== cb.definition) {
@@ -244,8 +244,8 @@ const diff_table = (
 				kind: 'constraint_differs',
 				table,
 				constraint,
-				a: {type: ca.type, definition: ca.definition},
-				b: {type: cb.type, definition: cb.definition},
+				a: { type: ca.type, definition: ca.definition },
+				b: { type: cb.type, definition: cb.definition }
 			});
 		}
 	}
@@ -255,14 +255,14 @@ const diff_sequence = (
 	sequence: string,
 	a: SequenceSnapshot,
 	b: SequenceSnapshot,
-	out: Array<SchemaDiff>,
+	out: Array<SchemaDiff>
 ): void => {
 	if (a.data_type !== b.data_type) {
 		out.push({
 			kind: 'sequence_data_type_differs',
 			sequence,
 			a: a.data_type,
-			b: b.data_type,
+			b: b.data_type
 		});
 	}
 };
@@ -271,13 +271,13 @@ const diff_enum = (
 	enum_name: string,
 	a: EnumTypeSnapshot,
 	b: EnumTypeSnapshot,
-	out: Array<SchemaDiff>,
+	out: Array<SchemaDiff>
 ): void => {
 	// Labels are an ordered set — compare positionally, so both a missing/extra
 	// label and a reorder (a real schema change) surface as drift.
 	const differ = a.labels.length !== b.labels.length || a.labels.some((l, i) => l !== b.labels[i]);
 	if (differ) {
-		out.push({kind: 'enum_labels_differ', enum_name, a: a.labels, b: b.labels});
+		out.push({ kind: 'enum_labels_differ', enum_name, a: a.labels, b: b.labels });
 	}
 };
 
@@ -293,7 +293,7 @@ export interface SchemaDiffLabels {
  */
 export const format_schema_diffs = (
 	diffs: ReadonlyArray<SchemaDiff>,
-	labels: SchemaDiffLabels = {},
+	labels: SchemaDiffLabels = {}
 ): string => {
 	if (diffs.length === 0) return '';
 	const label_a = labels.a ?? 'a';
@@ -313,7 +313,7 @@ export const format_schema_diffs = (
 				lines.push(
 					`  ${d.table}.${d.column} ${d.field} differs: ${label_a}=${JSON.stringify(d.a)}, ${
 						label_b
-					}=${JSON.stringify(d.b)}`,
+					}=${JSON.stringify(d.b)}`
 				);
 				break;
 			case 'index_only_in':
@@ -323,7 +323,7 @@ export const format_schema_diffs = (
 				lines.push(
 					`  index ${d.index} on ${d.table} differs:\n    ${label_a}: ${d.a}\n    ${label_b}: ${
 						d.b
-					}`,
+					}`
 				);
 				break;
 			case 'constraint_only_in':
@@ -333,7 +333,7 @@ export const format_schema_diffs = (
 				lines.push(
 					`  constraint ${d.constraint} on ${d.table} differs:\n    ${label_a}: ${d.a.type} ${
 						d.a.definition
-					}\n    ${label_b}: ${d.b.type} ${d.b.definition}`,
+					}\n    ${label_b}: ${d.b.type} ${d.b.definition}`
 				);
 				break;
 			case 'sequence_only_in':
@@ -341,7 +341,7 @@ export const format_schema_diffs = (
 				break;
 			case 'sequence_data_type_differs':
 				lines.push(
-					`  sequence ${d.sequence} data_type differs: ${label_a}=${d.a}, ${label_b}=${d.b}`,
+					`  sequence ${d.sequence} data_type differs: ${label_a}=${d.a}, ${label_b}=${d.b}`
 				);
 				break;
 			case 'enum_only_in':
@@ -351,7 +351,7 @@ export const format_schema_diffs = (
 				lines.push(
 					`  enum ${d.enum_name} labels differ: ${label_a}=${JSON.stringify(d.a)}, ${
 						label_b
-					}=${JSON.stringify(d.b)}`,
+					}=${JSON.stringify(d.b)}`
 				);
 				break;
 			default:
@@ -383,7 +383,7 @@ export const format_schema_diffs = (
 export const assert_schema_snapshots_equal = (
 	a: SchemaSnapshot,
 	b: SchemaSnapshot,
-	labels: SchemaDiffLabels = {},
+	labels: SchemaDiffLabels = {}
 ): void => {
 	const diffs = diff_schema_snapshots(a, b);
 	if (diffs.length === 0) return;
@@ -392,7 +392,7 @@ export const assert_schema_snapshots_equal = (
 	throw new Error(
 		`Schema parity failed: ${diffs.length} diff(s) between ${label_a} and ${
 			label_b
-		}\n${format_schema_diffs(diffs, labels)}`,
+		}\n${format_schema_diffs(diffs, labels)}`
 	);
 };
 
@@ -427,7 +427,7 @@ const tracker_key = (namespace: string, name: string): string => `${namespace} $
  */
 export const diff_migration_trackers = (
 	a: MigrationTracker,
-	b: MigrationTracker,
+	b: MigrationTracker
 ): Array<MigrationTrackerDiff> => {
 	const diffs: Array<MigrationTrackerDiff> = [];
 	const a_by_key = new Map(a.entries.map((e) => [tracker_key(e.namespace, e.name), e]));
@@ -444,7 +444,7 @@ export const diff_migration_trackers = (
 				kind: 'tracker_row_only_in',
 				where: 'b',
 				namespace: ref.namespace,
-				name: ref.name,
+				name: ref.name
 			});
 			continue;
 		}
@@ -453,7 +453,7 @@ export const diff_migration_trackers = (
 				kind: 'tracker_row_only_in',
 				where: 'a',
 				namespace: ref.namespace,
-				name: ref.name,
+				name: ref.name
 			});
 			continue;
 		}
@@ -463,7 +463,7 @@ export const diff_migration_trackers = (
 				namespace: ea.namespace,
 				name: ea.name,
 				a: ea.sequence,
-				b: eb.sequence,
+				b: eb.sequence
 			});
 		}
 	}
@@ -476,7 +476,7 @@ export const diff_migration_trackers = (
  */
 export const format_migration_tracker_diffs = (
 	diffs: ReadonlyArray<MigrationTrackerDiff>,
-	labels: SchemaDiffLabels = {},
+	labels: SchemaDiffLabels = {}
 ): string => {
 	if (diffs.length === 0) return '';
 	const label_a = labels.a ?? 'a';
@@ -486,14 +486,14 @@ export const format_migration_tracker_diffs = (
 		switch (d.kind) {
 			case 'tracker_row_only_in':
 				lines.push(
-					`  migration ${d.namespace}/${d.name} only in ${d.where === 'a' ? label_a : label_b}`,
+					`  migration ${d.namespace}/${d.name} only in ${d.where === 'a' ? label_a : label_b}`
 				);
 				break;
 			case 'tracker_sequence_differs':
 				lines.push(
 					`  migration ${d.namespace}/${d.name} sequence differs: ${label_a}=${d.a}, ${
 						label_b
-					}=${d.b}`,
+					}=${d.b}`
 				);
 				break;
 			default:
@@ -517,7 +517,7 @@ export const format_migration_tracker_diffs = (
 export const assert_migration_trackers_equal = (
 	a: MigrationTracker,
 	b: MigrationTracker,
-	labels: SchemaDiffLabels = {},
+	labels: SchemaDiffLabels = {}
 ): void => {
 	const diffs = diff_migration_trackers(a, b);
 	if (diffs.length === 0) return;
@@ -526,6 +526,6 @@ export const assert_migration_trackers_equal = (
 	throw new Error(
 		`Migration-identity parity failed: ${diffs.length} diff(s) between ${label_a} and ${
 			label_b
-		}\n${format_migration_tracker_diffs(diffs, labels)}`,
+		}\n${format_migration_tracker_diffs(diffs, labels)}`
 	);
 };

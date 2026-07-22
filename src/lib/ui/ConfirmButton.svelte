@@ -46,16 +46,16 @@
 	 * @module
 	 */
 
-	import {DEV} from 'esm-env';
-	import type {SvelteHTMLElements} from 'svelte/elements';
-	import type {ComponentProps, Snippet} from 'svelte';
-	import type {OmitStrict} from '@fuzdev/fuz_util/types.ts';
-	import {icon_remove} from '@fuzdev/fuz_ui/icons.ts';
+	import { DEV } from 'esm-env';
+	import type { SvelteHTMLElements } from 'svelte/elements';
+	import type { ComponentProps, Snippet } from 'svelte';
+	import type { OmitStrict } from '@fuzdev/fuz_util/types.ts';
+	import { icon_remove } from '@fuzdev/fuz_ui/icons.ts';
 	import PendingAnimation from '@fuzdev/fuz_ui/PendingAnimation.svelte';
 	import Svg from '@fuzdev/fuz_ui/Svg.svelte';
 
 	import PopoverButton from './PopoverButton.svelte';
-	import type {Popover} from './popover.svelte.ts';
+	import type { Popover } from './popover.svelte.ts';
 
 	const {
 		onconfirm,
@@ -96,12 +96,12 @@
 		$effect(() => {
 			if (popover_content_prop && popover_button_attrs) {
 				console.error(
-					'ConfirmButton has both popover_content and popover_button_attrs defined - popover_content takes precedence',
+					'ConfirmButton has both popover_content and popover_button_attrs defined - popover_content takes precedence'
 				);
 			}
 			if (popover_content_prop && popover_button_content) {
 				console.error(
-					'ConfirmButton has both popover_content and popover_button_content defined - popover_content takes precedence',
+					'ConfirmButton has both popover_content and popover_button_content defined - popover_content takes precedence'
 				);
 			}
 			if (label !== undefined && children) {

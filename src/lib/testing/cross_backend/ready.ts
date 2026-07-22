@@ -29,10 +29,10 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, assert} from 'vitest';
+import { describe, assert } from 'vitest';
 
-import {test_if} from './capabilities.ts';
-import type {CrossSuiteOptions} from './setup.ts';
+import { test_if } from './capabilities.ts';
+import type { CrossSuiteOptions } from './setup.ts';
 
 /** Options for the readiness-probe parity suite. */
 export interface ReadyCrossTestOptions extends CrossSuiteOptions {
@@ -41,7 +41,7 @@ export interface ReadyCrossTestOptions extends CrossSuiteOptions {
 }
 
 export const describe_ready_cross_tests = (options: ReadyCrossTestOptions): void => {
-	const {setup_test, capabilities} = options;
+	const { setup_test, capabilities } = options;
 	const ready_path = options.ready_path ?? '/ready';
 
 	describe('readiness probe parity', () => {
@@ -56,11 +56,11 @@ export const describe_ready_cross_tests = (options: ReadyCrossTestOptions): void
 				// how a deploy gate (zap) polls it post-deploy. A freshly bootstrapped
 				// spine covers the committed expected column map, so the drift check
 				// passes.
-				const res = await fixture.fresh_transport({origin: null})(ready_path, {method: 'GET'});
+				const res = await fixture.fresh_transport({ origin: null })(ready_path, { method: 'GET' });
 				assert.strictEqual(res.status, 200, 'a clean spine bootstrap must report ready');
-				const body = (await res.json().catch(() => undefined)) as {ready?: unknown} | undefined;
+				const body = (await res.json().catch(() => undefined)) as { ready?: unknown } | undefined;
 				assert.strictEqual(body?.ready, true);
-			},
+			}
 		);
 	});
 };

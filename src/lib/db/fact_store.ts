@@ -27,22 +27,22 @@
  * @module
  */
 
-import type {QueryDeps} from './query_deps.ts';
-import {to_error_message} from '@fuzdev/fuz_util/error.ts';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { QueryDeps } from './query_deps.ts';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	fact_hash_bytes,
 	fact_hash_stream,
 	fact_hash_verify,
 	fact_hash_extract_refs,
-	type FactHash,
+	type FactHash
 } from '@fuzdev/fuz_util/fact_hash.ts';
 import type {
 	FactMeta,
 	FactPutOptions,
 	FactStore,
-	PutStreamOutcome,
+	PutStreamOutcome
 } from '@fuzdev/fuz_util/fact_store.ts';
 
 import {
@@ -52,13 +52,13 @@ import {
 	query_get_fact_refs,
 	query_has_fact,
 	query_put_fact,
-	query_put_fact_refs,
+	query_put_fact_refs
 } from './fact_queries.ts';
 import {
 	create_disk_fact_fetcher,
 	stream_fact_to_disk,
 	write_fact_bytes_to_disk,
-	type FactDiskStorageDeps,
+	type FactDiskStorageDeps
 } from './fact_disk_storage.ts';
 
 /** Default embedded-vs-referenced cutoff (1 MiB). */
@@ -88,7 +88,7 @@ export const create_default_fetcher = (): FactExternalFetcher => ({
 			throw new Error(`fact fetch failed: ${response.status} ${url}`);
 		}
 		return new Uint8Array(await response.arrayBuffer());
-	},
+	}
 });
 
 /**
@@ -160,7 +160,7 @@ export class PgFactStore implements FactStore {
 				throw new Error(
 					`fact bytes exceed embedded threshold (${bytes.length} > ${
 						this.#embedded_threshold
-					}); configure disk_root or use put_ref for external storage`,
+					}); configure disk_root or use put_ref for external storage`
 				);
 			}
 			row_bytes = null;
@@ -174,7 +174,7 @@ export class PgFactStore implements FactStore {
 			bytes: row_bytes,
 			external_url: row_external_url,
 			content_type: options?.content_type ?? null,
-			size: bytes.length,
+			size: bytes.length
 		});
 		if (inserted) {
 			await query_put_fact_refs(this.#deps, hash, resolve_refs(bytes, options));
@@ -202,11 +202,11 @@ export class PgFactStore implements FactStore {
 	async put_stream(
 		stream: ReadableStream<Uint8Array>,
 		max_bytes: number,
-		options?: FactPutOptions,
+		options?: FactPutOptions
 	): Promise<PutStreamOutcome> {
 		if (this.#fs === undefined) {
 			throw new Error(
-				'PgFactStore.put_stream requires `fs` (FactDiskStorageDeps) to be configured',
+				'PgFactStore.put_stream requires `fs` (FactDiskStorageDeps) to be configured'
 			);
 		}
 		const streamed = await stream_fact_to_disk(
@@ -214,7 +214,7 @@ export class PgFactStore implements FactStore {
 			this.#disk_root,
 			stream,
 			max_bytes,
-			this.#embedded_threshold,
+			this.#embedded_threshold
 		);
 		const row_bytes = streamed.placement.kind === 'embedded' ? streamed.placement.bytes : null;
 		const row_external_url =
@@ -224,12 +224,12 @@ export class PgFactStore implements FactStore {
 			bytes: row_bytes,
 			external_url: row_external_url,
 			content_type: options?.content_type ?? null,
-			size: streamed.size,
+			size: streamed.size
 		});
 		if (inserted && options?.refs && options.refs.length > 0) {
 			await query_put_fact_refs(this.#deps, streamed.hash, options.refs);
 		}
-		return {hash: streamed.hash, sha256: streamed.sha256, size: streamed.size};
+		return { hash: streamed.hash, sha256: streamed.sha256, size: streamed.size };
 	}
 
 	/**
@@ -240,10 +240,10 @@ export class PgFactStore implements FactStore {
 	 */
 	async put_ref(url: string, size: number, options?: FactPutOptions): Promise<FactHash> {
 		const stream = await this.#fetcher.fetch_stream(url);
-		const {hash, byte_count} = await hash_counted_stream(stream);
+		const { hash, byte_count } = await hash_counted_stream(stream);
 		if (byte_count !== size) {
 			throw new Error(
-				`fact size mismatch for ${url}: caller declared ${size}, streamed ${byte_count}`,
+				`fact size mismatch for ${url}: caller declared ${size}, streamed ${byte_count}`
 			);
 		}
 		const inserted = await query_put_fact(this.#deps, {
@@ -251,7 +251,7 @@ export class PgFactStore implements FactStore {
 			bytes: null,
 			external_url: url,
 			content_type: options?.content_type ?? null,
-			size,
+			size
 		});
 		if (inserted && options?.refs && options.refs.length > 0) {
 			await query_put_fact_refs(this.#deps, hash, options.refs);
@@ -279,13 +279,13 @@ export class PgFactStore implements FactStore {
 		} catch (err) {
 			this.#log?.warn(
 				`PgFactStore.get fetch failed for ${hash} at ${row.external_url}:`,
-				to_error_message(err),
+				to_error_message(err)
 			);
 			return null;
 		}
 		if (!fact_hash_verify(hash, bytes)) {
 			this.#log?.warn(
-				`PgFactStore.get verify mismatch for ${hash} at ${row.external_url}; treating as not-found`,
+				`PgFactStore.get verify mismatch for ${hash} at ${row.external_url}; treating as not-found`
 			);
 			return null;
 		}
@@ -303,7 +303,7 @@ export class PgFactStore implements FactStore {
 			content_type: row.content_type,
 			size: Number(row.size),
 			created_at: row.created_at,
-			external: row.external_url !== null,
+			external: row.external_url !== null
 		};
 	}
 
@@ -330,7 +330,7 @@ export class PgFactStore implements FactStore {
 	 * @returns `{size, external_url}` for the deleted row, or `null` if
 	 *   no row matched the hash.
 	 */
-	async delete(hash: FactHash): Promise<{size: number; external_url: string | null} | null> {
+	async delete(hash: FactHash): Promise<{ size: number; external_url: string | null } | null> {
 		return query_delete_fact(this.#deps, hash);
 	}
 }
@@ -356,18 +356,18 @@ const resolve_refs = (bytes: Uint8Array, options: FactPutOptions | undefined): A
 
 /** Hash a stream while counting bytes. Lets `put_ref` verify size in one pass. */
 const hash_counted_stream = async (
-	stream: ReadableStream<Uint8Array>,
-): Promise<{hash: FactHash; byte_count: number}> => {
+	stream: ReadableStream<Uint8Array>
+): Promise<{ hash: FactHash; byte_count: number }> => {
 	let byte_count = 0;
 	const counting = new TransformStream<Uint8Array, Uint8Array>({
 		transform(chunk, controller) {
 			byte_count += chunk.length;
 			controller.enqueue(chunk);
-		},
+		}
 	});
 	const piped = stream.pipeThrough(counting);
 	const hash = await fact_hash_stream(piped);
-	return {hash, byte_count};
+	return { hash, byte_count };
 };
 
 /**

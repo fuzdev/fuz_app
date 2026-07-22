@@ -91,15 +91,15 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
 import {
 	ERROR_INVALID_CREDENTIALS,
 	ERROR_INVALID_REQUEST_BODY,
-	ERROR_NO_MATCHING_INVITE,
+	ERROR_NO_MATCHING_INVITE
 } from '../../http/error_schemas.ts';
-import {DEFAULT_TEST_PASSWORD} from '../test_credentials.ts';
-import type {SetupTest} from './setup.ts';
+import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
+import type { SetupTest } from './setup.ts';
 
 /**
  * The flat-REST `{error}` reason each terminal login/signup status carries on
@@ -114,7 +114,7 @@ const REASON_BY_STATUS: Readonly<Record<number, string | undefined>> = {
 	200: undefined,
 	400: ERROR_INVALID_REQUEST_BODY,
 	401: ERROR_INVALID_CREDENTIALS,
-	403: ERROR_NO_MATCHING_INVITE,
+	403: ERROR_NO_MATCHING_INVITE
 };
 
 /** Options for the identity-primitive parity suite. */
@@ -148,9 +148,9 @@ interface SignupUsernameCase {
  * another) is caught. All → 400 at signup input validation.
  */
 const USERNAME_NON_ASCII_CASES: ReadonlyArray<SignupUsernameCase> = [
-	{username: 'café_user', label: 'accented Latin mid-string', status: 400},
-	{username: 'Ωmega_user', label: 'leading Greek', status: 400},
-	{username: '日本_user', label: 'leading CJK', status: 400},
+	{ username: 'café_user', label: 'accented Latin mid-string', status: 400 },
+	{ username: 'Ωmega_user', label: 'leading Greek', status: 400 },
+	{ username: '日本_user', label: 'leading CJK', status: 400 }
 ];
 
 /**
@@ -174,14 +174,14 @@ const VALID_USERNAME_NO_INVITE_STATUS = 403;
  * only variable is length.
  */
 const USERNAME_LENGTH_CASES: ReadonlyArray<SignupUsernameCase> = [
-	{username: 'ab', label: '2 chars — below min', status: 400},
-	{username: 'abc', label: '3 chars — at min', status: VALID_USERNAME_NO_INVITE_STATUS},
+	{ username: 'ab', label: '2 chars — below min', status: 400 },
+	{ username: 'abc', label: '3 chars — at min', status: VALID_USERNAME_NO_INVITE_STATUS },
 	{
 		username: `a${'b'.repeat(38)}`,
 		label: '39 chars — at max',
-		status: VALID_USERNAME_NO_INVITE_STATUS,
+		status: VALID_USERNAME_NO_INVITE_STATUS
 	},
-	{username: `a${'b'.repeat(39)}`, label: '40 chars — above max', status: 400},
+	{ username: `a${'b'.repeat(39)}`, label: '40 chars — above max', status: 400 }
 ];
 
 /**
@@ -195,20 +195,20 @@ const USERNAME_LENGTH_CASES: ReadonlyArray<SignupUsernameCase> = [
  * pinning that neither impl over-rejects them.
  */
 const USERNAME_FORMAT_CASES: ReadonlyArray<SignupUsernameCase> = [
-	{username: '1user', label: 'leading digit', status: 400},
-	{username: '_user', label: 'leading underscore', status: 400},
-	{username: '-user', label: 'leading dash', status: 400},
-	{username: 'user_', label: 'trailing underscore', status: 400},
-	{username: 'user-', label: 'trailing dash', status: 400},
-	{username: 'us er', label: 'embedded space', status: 400},
-	{username: 'user@x', label: 'embedded at-sign', status: 400},
-	{username: 'user.x', label: 'embedded dot', status: 400},
+	{ username: '1user', label: 'leading digit', status: 400 },
+	{ username: '_user', label: 'leading underscore', status: 400 },
+	{ username: '-user', label: 'leading dash', status: 400 },
+	{ username: 'user_', label: 'trailing underscore', status: 400 },
+	{ username: 'user-', label: 'trailing dash', status: 400 },
+	{ username: 'us er', label: 'embedded space', status: 400 },
+	{ username: 'user@x', label: 'embedded at-sign', status: 400 },
+	{ username: 'user.x', label: 'embedded dot', status: 400 },
 	{
 		username: 'us_er',
 		label: 'underscore mid-string (valid)',
-		status: VALID_USERNAME_NO_INVITE_STATUS,
+		status: VALID_USERNAME_NO_INVITE_STATUS
 	},
-	{username: 'us-er', label: 'dash mid-string (valid)', status: VALID_USERNAME_NO_INVITE_STATUS},
+	{ username: 'us-er', label: 'dash mid-string (valid)', status: VALID_USERNAME_NO_INVITE_STATUS }
 ];
 
 /** A signup email case: the submitted email, a human label, and the status it must settle to. */
@@ -232,20 +232,24 @@ interface SignupEmailCase {
  * settle) isolates the email.
  */
 const SIGNUP_EMAIL_CASES: ReadonlyArray<SignupEmailCase> = [
-	{email: 'not-an-email', label: 'no @ or dot', status: 400},
-	{email: 'user@host', label: 'no dot in domain', status: 400},
-	{email: '@example.com', label: 'empty local part', status: 400},
-	{email: 'user@', label: 'empty domain', status: 400},
-	{email: 'user@.com', label: 'domain starts with a dot', status: 400},
-	{email: 'user@com.', label: 'domain ends with a dot', status: 400},
-	{email: 'a@@b.c', label: 'two @', status: 400},
-	{email: ' user@example.com', label: 'leading whitespace', status: 400},
-	{email: 'user@example.com ', label: 'trailing whitespace', status: 400},
-	{email: 'us er@example.com', label: 'internal whitespace', status: 400},
-	{email: 'a\u0085b@c.d', label: 'NEL U+0085 (Unicode ws JS \\s omits)', status: 400},
-	{email: 'a\ufeffb@c.d', label: 'BOM/ZWNBSP U+FEFF', status: 400},
+	{ email: 'not-an-email', label: 'no @ or dot', status: 400 },
+	{ email: 'user@host', label: 'no dot in domain', status: 400 },
+	{ email: '@example.com', label: 'empty local part', status: 400 },
+	{ email: 'user@', label: 'empty domain', status: 400 },
+	{ email: 'user@.com', label: 'domain starts with a dot', status: 400 },
+	{ email: 'user@com.', label: 'domain ends with a dot', status: 400 },
+	{ email: 'a@@b.c', label: 'two @', status: 400 },
+	{ email: ' user@example.com', label: 'leading whitespace', status: 400 },
+	{ email: 'user@example.com ', label: 'trailing whitespace', status: 400 },
+	{ email: 'us er@example.com', label: 'internal whitespace', status: 400 },
+	{ email: 'a\u0085b@c.d', label: 'NEL U+0085 (Unicode ws JS \\s omits)', status: 400 },
+	{ email: 'a\ufeffb@c.d', label: 'BOM/ZWNBSP U+FEFF', status: 400 },
 	// 255 bytes total (243-char local + "@example.com") — one over the 254-byte bound.
-	{email: `${'a'.repeat(243)}@example.com`, label: 'over the 254-byte bound (ASCII)', status: 400},
+	{
+		email: `${'a'.repeat(243)}@example.com`,
+		label: 'over the 254-byte bound (ASCII)',
+		status: 400
+	},
 	// Multibyte: the bound is UTF-8 BYTES, not code units. `\u00fc` (ü) is 2
 	// bytes / 1 code unit, so 121×ü + "@example.com" is 254 bytes (accepted) and
 	// 122×ü is 256 bytes (rejected) — both far under 254 code units, so a
@@ -254,35 +258,35 @@ const SIGNUP_EMAIL_CASES: ReadonlyArray<SignupEmailCase> = [
 	{
 		email: `${'\u00fc'.repeat(121)}@example.com`,
 		label: 'multibyte at the 254-byte bound',
-		status: VALID_USERNAME_NO_INVITE_STATUS,
+		status: VALID_USERNAME_NO_INVITE_STATUS
 	},
 	{
 		email: `${'\u00fc'.repeat(122)}@example.com`,
 		label: 'multibyte over the 254-byte bound',
-		status: 400,
+		status: 400
 	},
-	{email: 'user@example.com', label: 'well-formed', status: VALID_USERNAME_NO_INVITE_STATUS},
+	{ email: 'user@example.com', label: 'well-formed', status: VALID_USERNAME_NO_INVITE_STATUS },
 	{
 		email: 'a@b.c',
 		label: 'single-char TLD (looser than z.email)',
-		status: VALID_USERNAME_NO_INVITE_STATUS,
+		status: VALID_USERNAME_NO_INVITE_STATUS
 	},
 	{
 		email: 'a..b@c.d',
 		label: 'consecutive dots (looser than z.email)',
-		status: VALID_USERNAME_NO_INVITE_STATUS,
+		status: VALID_USERNAME_NO_INVITE_STATUS
 	},
 	{
 		email: 'user+tag@example.co.uk',
 		label: 'plus-tag + multi-label',
-		status: VALID_USERNAME_NO_INVITE_STATUS,
-	},
+		status: VALID_USERNAME_NO_INVITE_STATUS
+	}
 ];
 
 export const describe_identity_parity_cross_tests = (
-	options: IdentityParityCrossTestOptions,
+	options: IdentityParityCrossTestOptions
 ): void => {
-	const {setup_test} = options;
+	const { setup_test } = options;
 	const login_path = options.login_path ?? '/api/account/login';
 	const signup_path = options.signup_path ?? '/api/account/signup';
 
@@ -301,12 +305,12 @@ export const describe_identity_parity_cross_tests = (
 	const post_json = async (
 		fixture: Fixture,
 		path: string,
-		body: Record<string, unknown>,
+		body: Record<string, unknown>
 	): Promise<Attempt> => {
 		const res = await fixture.fresh_transport()(path, {
 			method: 'POST',
-			headers: {'content-type': 'application/json'},
-			body: JSON.stringify(body),
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(body)
 		});
 		const text = await res.text().catch(() => '');
 		let error: string | undefined;
@@ -315,29 +319,29 @@ export const describe_identity_parity_cross_tests = (
 			if (
 				parsed &&
 				typeof parsed === 'object' &&
-				typeof (parsed as {error?: unknown}).error === 'string'
+				typeof (parsed as { error?: unknown }).error === 'string'
 			) {
-				error = (parsed as {error: string}).error;
+				error = (parsed as { error: string }).error;
 			}
 		} catch {
 			// non-JSON body — leave `error` undefined.
 		}
-		return {status: res.status, error};
+		return { status: res.status, error };
 	};
 
 	/** POST a login with the given identifier (username or email). */
 	const login = (
 		fixture: Fixture,
 		username: string,
-		password: string = DEFAULT_TEST_PASSWORD,
-	): Promise<Attempt> => post_json(fixture, login_path, {username, password});
+		password: string = DEFAULT_TEST_PASSWORD
+	): Promise<Attempt> => post_json(fixture, login_path, { username, password });
 
 	/** POST a signup with a valid password and the given username. */
 	const signup = (
 		fixture: Fixture,
 		username: string,
-		password: string = DEFAULT_TEST_PASSWORD,
-	): Promise<Attempt> => post_json(fixture, signup_path, {username, password});
+		password: string = DEFAULT_TEST_PASSWORD
+	): Promise<Attempt> => post_json(fixture, signup_path, { username, password });
 
 	/**
 	 * Assert an attempt settled to `status` **and** carried the flat-REST error
@@ -349,7 +353,7 @@ export const describe_identity_parity_cross_tests = (
 		assert.strictEqual(
 			actual.status,
 			status,
-			`${label} — expected status ${status}, got ${actual.status}`,
+			`${label} — expected status ${status}, got ${actual.status}`
 		);
 		const expected_reason = REASON_BY_STATUS[status];
 		assert.strictEqual(
@@ -357,23 +361,23 @@ export const describe_identity_parity_cross_tests = (
 			expected_reason,
 			`${label} — status ${status} must carry error reason ${expected_reason ?? '(none)'}, got ${
 				actual.error ?? '(none)'
-			}`,
+			}`
 		);
 	};
 
 	/** Run a table of signup username cases, asserting each settles to its expected `{status, reason}`. */
 	const describe_signup_username_cases = (
 		suite_name: string,
-		cases: ReadonlyArray<SignupUsernameCase>,
+		cases: ReadonlyArray<SignupUsernameCase>
 	): void => {
 		describe(suite_name, () => {
-			for (const {username, label, status} of cases) {
+			for (const { username, label, status } of cases) {
 				test(`${label} — "${username}" → ${status}`, async () => {
 					const fixture = await setup_test();
 					assert_attempt(
 						await signup(fixture, username),
 						status,
-						`username "${username}" (${label})`,
+						`username "${username}" (${label})`
 					);
 				});
 			}
@@ -386,13 +390,13 @@ export const describe_identity_parity_cross_tests = (
 			// Mixed-case ASCII username (valid per the `Username` regex), stored
 			// lowercase; an all-uppercase submission matches only if the lookup
 			// folds case on this backend.
-			await fixture.create_account({username: 'Canon_Mixed_User'});
+			await fixture.create_account({ username: 'Canon_Mixed_User' });
 			assert_attempt(await login(fixture, 'CANON_MIXED_USER'), 200, 'uppercase login');
 		});
 
 		test('whitespace-trim login — surrounding whitespace is trimmed on lookup', async () => {
 			const fixture = await setup_test();
-			await fixture.create_account({username: 'Canon_Trim_User'});
+			await fixture.create_account({ username: 'Canon_Trim_User' });
 			assert_attempt(await login(fixture, '  canon_trim_user  '), 200, 'whitespace-trim login');
 		});
 
@@ -404,7 +408,7 @@ export const describe_identity_parity_cross_tests = (
 			// so the canonical form differs and the lookup misses → 401
 			// `invalid_credentials` (asserted, not just the status — a backend that
 			// 401'd with a different body would still be wrong).
-			await fixture.create_account({username: 'canon_admin_user'});
+			await fixture.create_account({ username: 'canon_admin_user' });
 			const homograph = `canon_adm${TURKISH_DOTTED_I}n_user`;
 			assert_attempt(await login(fixture, homograph), 401, 'Turkish-İ homograph');
 		});
@@ -424,7 +428,7 @@ export const describe_identity_parity_cross_tests = (
 			const fixture = await setup_test();
 			await fixture.create_account({
 				username: 'email_exact_user',
-				email: 'email-exact@example.com',
+				email: 'email-exact@example.com'
 			});
 			assert_attempt(await login(fixture, 'email-exact@example.com'), 200, 'exact-email login');
 		});
@@ -433,12 +437,12 @@ export const describe_identity_parity_cross_tests = (
 			const fixture = await setup_test();
 			await fixture.create_account({
 				username: 'email_mixed_user',
-				email: 'Email.Mixed@Example.COM',
+				email: 'Email.Mixed@Example.COM'
 			});
 			assert_attempt(
 				await login(fixture, 'email.mixed@example.com'),
 				200,
-				'mixed-case-email login',
+				'mixed-case-email login'
 			);
 		});
 
@@ -446,7 +450,7 @@ export const describe_identity_parity_cross_tests = (
 			const fixture = await setup_test();
 			await fixture.create_account({
 				username: 'email_upper_user',
-				email: 'email-upper@example.com',
+				email: 'email-upper@example.com'
 			});
 			assert_attempt(await login(fixture, 'EMAIL-UPPER@EXAMPLE.COM'), 200, 'uppercase-email login');
 		});
@@ -455,12 +459,12 @@ export const describe_identity_parity_cross_tests = (
 			const fixture = await setup_test();
 			await fixture.create_account({
 				username: 'email_dual_user',
-				email: 'email-dual@example.com',
+				email: 'email-dual@example.com'
 			});
 			assert_attempt(
 				await login(fixture, 'email_dual_user'),
 				200,
-				'username login with email present',
+				'username login with email present'
 			);
 		});
 
@@ -468,12 +472,12 @@ export const describe_identity_parity_cross_tests = (
 			const fixture = await setup_test();
 			await fixture.create_account({
 				username: 'email_present_user',
-				email: 'email-present@example.com',
+				email: 'email-present@example.com'
 			});
 			assert_attempt(
 				await login(fixture, 'email-absent@example.com'),
 				401,
-				'non-existent-email login',
+				'non-existent-email login'
 			);
 		});
 	});
@@ -514,10 +518,10 @@ export const describe_identity_parity_cross_tests = (
 				await post_json(fixture, login_path, {
 					username: 'some_user',
 					password: DEFAULT_TEST_PASSWORD,
-					unexpected_field: 'x',
+					unexpected_field: 'x'
 				}),
 				400,
-				'unknown body key',
+				'unknown body key'
 			);
 		});
 	});
@@ -527,7 +531,7 @@ export const describe_identity_parity_cross_tests = (
 	// is ever stored (the precondition the no-collision login case relies on).
 	describe_signup_username_cases(
 		'username creation ASCII-only invariant parity',
-		USERNAME_NON_ASCII_CASES,
+		USERNAME_NON_ASCII_CASES
 	);
 
 	// Both edges of `[USERNAME_LENGTH_MIN, USERNAME_LENGTH_MAX]` = [3, 39], each
@@ -546,17 +550,17 @@ export const describe_identity_parity_cross_tests = (
 	// each case isolates the email; the `a@b.c` accept pins the deliberately
 	// looser-than-`z.email()` rule the validator port converged on.
 	describe('signup email format parity', () => {
-		for (const {email, label, status} of SIGNUP_EMAIL_CASES) {
+		for (const { email, label, status } of SIGNUP_EMAIL_CASES) {
 			test(`${label} → ${status}`, async () => {
 				const fixture = await setup_test();
 				assert_attempt(
 					await post_json(fixture, signup_path, {
 						username: 'email_fmt_user',
 						password: DEFAULT_TEST_PASSWORD,
-						email,
+						email
 					}),
 					status,
-					`email "${email}" (${label})`,
+					`email "${email}" (${label})`
 				);
 			});
 		}
@@ -571,10 +575,10 @@ export const describe_identity_parity_cross_tests = (
 				await post_json(fixture, signup_path, {
 					username: 'email_null_user',
 					password: DEFAULT_TEST_PASSWORD,
-					email: null,
+					email: null
 				}),
 				VALID_USERNAME_NO_INVITE_STATUS,
-				'null email',
+				'null email'
 			);
 		});
 	});
@@ -591,10 +595,10 @@ export const describe_identity_parity_cross_tests = (
 				await post_json(fixture, signup_path, {
 					username: 'strict_signup_user',
 					password: DEFAULT_TEST_PASSWORD,
-					unexpected_field: 'x',
+					unexpected_field: 'x'
 				}),
 				400,
-				'signup unknown body key',
+				'signup unknown body key'
 			);
 		});
 	});

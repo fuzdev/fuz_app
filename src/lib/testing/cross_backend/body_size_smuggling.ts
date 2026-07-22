@@ -50,11 +50,11 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {connect} from 'node:net';
+import { connect } from 'node:net';
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** Options for the smuggling probe — needs the raw URL, not a transport. */
 export interface BodySizeSmugglingCrossTestOptions {
@@ -90,12 +90,12 @@ const BODY_LIMIT_DEFAULT_BYTES = 1024 * 1024;
 const send_raw = (
 	base_url: string,
 	request_bytes: string,
-	read_timeout_ms: number,
+	read_timeout_ms: number
 ): Promise<string> =>
 	new Promise((resolve) => {
 		const url = new URL(base_url);
 		const port = Number(url.port) || (url.protocol === 'https:' ? 443 : 80);
-		const socket = connect({host: url.hostname, port});
+		const socket = connect({ host: url.hostname, port });
 		let received = '';
 		let settled = false;
 		const finish = (): void => {
@@ -128,9 +128,9 @@ const send_raw = (
 const count_responses = (raw: string): number => (raw.match(/HTTP\/1\.[01] \d{3}/g) ?? []).length;
 
 export const describe_body_size_smuggling_cross_tests = (
-	options: BodySizeSmugglingCrossTestOptions,
+	options: BodySizeSmugglingCrossTestOptions
 ): void => {
-	const {base_url} = options;
+	const { base_url } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 	const closes_connection = options.closes_connection ?? true;
 	const host = new URL(base_url).host;
@@ -150,7 +150,7 @@ export const describe_body_size_smuggling_cross_tests = (
 				n >= 2,
 				`expected ≥2 responses on one keep-alive connection (got ${n}); without ` +
 					`connection reuse — or with an undercounting matcher — the smuggling ` +
-					`assertion below is not a real signal. Raw head: ${response.slice(0, 120)}`,
+					`assertion below is not a real signal. Raw head: ${response.slice(0, 120)}`
 			);
 		});
 
@@ -188,7 +188,7 @@ export const describe_body_size_smuggling_cross_tests = (
 				assert.ok(
 					n <= 1,
 					`expected at most one response (oversized reject closes the connection; the ` +
-						`pipelined GET must not be reached). Saw ${n}. Raw head: ${response.slice(0, 120)}`,
+						`pipelined GET must not be reached). Saw ${n}. Raw head: ${response.slice(0, 120)}`
 				);
 			} else {
 				// Drain-and-keepalive posture (Bun): `Bun.serve` reads the full
@@ -205,7 +205,7 @@ export const describe_body_size_smuggling_cross_tests = (
 					n <= 2,
 					`expected at most two responses (the 413 + one framed reply to the ` +
 						`pipelined GET); more means the oversized body was reparsed as requests ` +
-						`(a desync). Saw ${n}. Raw head: ${response.slice(0, 120)}`,
+						`(a desync). Saw ${n}. Raw head: ${response.slice(0, 120)}`
 				);
 			}
 		});

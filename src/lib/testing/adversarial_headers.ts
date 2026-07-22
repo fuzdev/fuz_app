@@ -9,14 +9,14 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {test, assert, describe} from 'vitest';
-import type {z} from 'zod';
+import { test, assert, describe } from 'vitest';
+import type { z } from 'zod';
 
-import {ApiError, ERROR_FORBIDDEN_ORIGIN} from '../http/error_schemas.ts';
+import { ApiError, ERROR_FORBIDDEN_ORIGIN } from '../http/error_schemas.ts';
 import {
 	create_test_middleware_stack_app,
 	TEST_MIDDLEWARE_PATH,
-	type TestMiddlewareStackOptions,
+	type TestMiddlewareStackOptions
 } from './middleware.ts';
 
 // --- Adversarial header attack types and runner ---
@@ -47,50 +47,50 @@ export interface AdversarialHeaderCase {
  * @param allowed_origin - an origin that passes the origin check
  */
 export const create_standard_adversarial_cases = (
-	allowed_origin: string,
+	allowed_origin: string
 ): Array<AdversarialHeaderCase> => [
 	{
 		name: 'bearer token with Origin header is rejected before token validation',
 		headers: {
 			Authorization: 'Bearer secret_fuz_token_test',
-			Origin: 'https://attacker.com',
+			Origin: 'https://attacker.com'
 		},
 		expected_status: 403,
 		expected_error: ERROR_FORBIDDEN_ORIGIN,
-		validate_expectation: 'not_called',
+		validate_expectation: 'not_called'
 	},
 	{
 		name: 'bearer token with allowed Origin — bearer silently discarded (browser context)',
 		headers: {
 			Authorization: 'Bearer secret_fuz_token_test',
-			Origin: allowed_origin,
+			Origin: allowed_origin
 		},
 		expected_status: 200,
-		validate_expectation: 'not_called',
+		validate_expectation: 'not_called'
 	},
 	{
 		name: 'request with no auth headers passes through all middleware',
 		headers: {},
 		expected_status: 200,
-		validate_expectation: 'not_called',
+		validate_expectation: 'not_called'
 	},
 	{
 		name: 'empty Origin header is rejected by origin middleware before bearer auth (defense-in-depth)',
 		headers: {
 			Authorization: 'Bearer secret_fuz_token_test',
-			Origin: '',
+			Origin: ''
 		},
 		expected_status: 403,
 		expected_error: ERROR_FORBIDDEN_ORIGIN,
-		validate_expectation: 'not_called',
+		validate_expectation: 'not_called'
 	},
 	{
 		name: 'lowercase bearer scheme is recognized (case-insensitive per RFC 7235), soft-fails',
 		headers: {
-			Authorization: 'bearer secret_fuz_token_test',
+			Authorization: 'bearer secret_fuz_token_test'
 		},
 		expected_status: 200,
-		validate_expectation: 'called',
+		validate_expectation: 'called'
 	},
 	{
 		name: 'bearer token with rogue Referer (no Origin) passes origin check, bearer silently discarded (browser-context indicator)',
@@ -99,20 +99,20 @@ export const create_standard_adversarial_cases = (
 		// the token, so the request reaches the route as unauthenticated.
 		headers: {
 			Authorization: 'Bearer secret_fuz_token_test',
-			Referer: 'https://attacker.com/page',
+			Referer: 'https://attacker.com/page'
 		},
 		expected_status: 200,
-		validate_expectation: 'not_called',
+		validate_expectation: 'not_called'
 	},
 	{
 		name: 'bearer token with allowed Referer (no Origin) — bearer silently discarded (browser context)',
 		headers: {
 			Authorization: 'Bearer secret_fuz_token_test',
-			Referer: `${allowed_origin}/page`,
+			Referer: `${allowed_origin}/page`
 		},
 		expected_status: 200,
-		validate_expectation: 'not_called',
-	},
+		validate_expectation: 'not_called'
+	}
 ];
 
 // --- Convenience wrapper ---
@@ -136,15 +136,15 @@ export const describe_standard_adversarial_headers = (
 	suite_name: string,
 	options: TestMiddlewareStackOptions,
 	allowed_origin: string,
-	extra_cases?: Array<AdversarialHeaderCase>,
+	extra_cases?: Array<AdversarialHeaderCase>
 ): void => {
 	const cases = [...create_standard_adversarial_cases(allowed_origin), ...(extra_cases ?? [])];
 
 	describe(suite_name, () => {
 		for (const tc of cases) {
 			test(tc.name, async () => {
-				const {app, mock_validate} = create_test_middleware_stack_app(options);
-				const res = await app.request(TEST_MIDDLEWARE_PATH, {headers: tc.headers});
+				const { app, mock_validate } = create_test_middleware_stack_app(options);
+				const res = await app.request(TEST_MIDDLEWARE_PATH, { headers: tc.headers });
 				assert.strictEqual(res.status, tc.expected_status);
 				const body = await res.json();
 				if (tc.expected_error) {
@@ -160,12 +160,12 @@ export const describe_standard_adversarial_headers = (
 					assert.strictEqual(
 						mock_validate.mock.calls.length,
 						0,
-						'validate should not have been called — middleware should short-circuit',
+						'validate should not have been called — middleware should short-circuit'
 					);
 				} else {
 					assert.ok(
 						mock_validate.mock.calls.length > 0,
-						'validate should have been called — request reached token validation',
+						'validate should have been called — request reached token validation'
 					);
 				}
 			});

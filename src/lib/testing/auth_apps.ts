@@ -9,33 +9,33 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {Hono} from 'hono';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { Hono } from 'hono';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {apply_route_specs, type RouteSpec} from '../http/route_spec.ts';
-import {is_public_auth, type RouteAuth} from '../http/auth_shape.ts';
-import {fuz_auth_guard_resolver} from '../auth/auth_guard_resolver.ts';
+import { apply_route_specs, type RouteSpec } from '../http/route_spec.ts';
+import { is_public_auth, type RouteAuth } from '../http/auth_shape.ts';
+import { fuz_auth_guard_resolver } from '../auth/auth_guard_resolver.ts';
 import {
 	REQUEST_CONTEXT_KEY,
 	create_fuz_authorization_handler,
-	type RequestContext,
+	type RequestContext
 } from '../auth/request_context.ts';
 import {
 	ACCOUNT_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
-	type CredentialType,
+	type CredentialType
 } from '../hono_context.ts';
-import {create_stub_db} from './stubs.ts';
-import {create_test_account, create_test_actor, create_test_role_grant} from './entities.ts';
+import { create_stub_db } from './stubs.ts';
+import { create_test_account, create_test_actor, create_test_role_grant } from './entities.ts';
 
 /**
  * Create a mock `RequestContext` with optional role role_grant.
  */
 export const create_test_request_context = (role?: string): RequestContext => ({
-	account: create_test_account({id: 'acc_1', username: 'testuser'}),
-	actor: create_test_actor({id: 'act_1', account_id: 'acc_1', name: 'testuser'}),
-	role_grants: role ? [create_test_role_grant({id: 'perm_1', actor_id: 'act_1', role})] : [],
+	account: create_test_account({ id: 'acc_1', username: 'testuser' }),
+	actor: create_test_actor({ id: 'act_1', account_id: 'acc_1', name: 'testuser' }),
+	role_grants: role ? [create_test_role_grant({ id: 'perm_1', actor_id: 'act_1', role })] : []
 });
 
 /**
@@ -48,7 +48,7 @@ export const create_test_request_context = (role?: string): RequestContext => ({
 export const create_test_app_from_specs = (
 	route_specs: Array<RouteSpec>,
 	auth_ctx?: RequestContext,
-	credential_type?: CredentialType,
+	credential_type?: CredentialType
 ): Hono => {
 	const app = new Hono();
 	const db = create_stub_db();
@@ -67,9 +67,9 @@ export const create_test_app_from_specs = (
 		app,
 		route_specs,
 		fuz_auth_guard_resolver,
-		new Logger('test', {level: 'off'}),
+		new Logger('test', { level: 'off' }),
 		db,
-		create_fuz_authorization_handler({db}),
+		create_fuz_authorization_handler({ db })
 	);
 	return app;
 };
@@ -90,7 +90,7 @@ export interface AuthTestApps {
  */
 export const create_auth_test_apps = (
 	route_specs: Array<RouteSpec>,
-	roles: Array<string>,
+	roles: Array<string>
 ): AuthTestApps => {
 	const by_role = new Map<string, Hono>();
 	for (const role of roles) {
@@ -102,9 +102,9 @@ export const create_auth_test_apps = (
 		keeper: create_test_app_from_specs(
 			route_specs,
 			create_test_request_context('keeper'),
-			'daemon_token',
+			'daemon_token'
 		),
-		by_role,
+		by_role
 	};
 };
 

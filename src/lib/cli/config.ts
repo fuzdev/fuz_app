@@ -8,9 +8,9 @@
  * @module
  */
 
-import type {z} from 'zod';
+import type { z } from 'zod';
 
-import type {EnvDeps, FsReadDeps, FsWriteDeps, LogDeps} from '../runtime/deps.ts';
+import type { EnvDeps, FsReadDeps, FsWriteDeps, LogDeps } from '../runtime/deps.ts';
 
 /**
  * Get the CLI config directory path (`~/.{name}`).
@@ -47,7 +47,7 @@ export const get_config_path = (runtime: Pick<EnvDeps, 'env_get'>, name: string)
 export const load_config = async <T>(
 	runtime: Pick<FsReadDeps, 'stat' | 'read_text_file'> & LogDeps,
 	path: string,
-	schema: z.ZodType<T>,
+	schema: z.ZodType<T>
 ): Promise<T | null> => {
 	// check if file exists
 	const stat = await runtime.stat(path);
@@ -83,10 +83,10 @@ export const save_config = async <T>(
 	runtime: Pick<FsWriteDeps, 'mkdir' | 'write_text_file'>,
 	path: string,
 	dir: string,
-	config: T,
+	config: T
 ): Promise<void> => {
 	// ensure directory exists
-	await runtime.mkdir(dir, {recursive: true});
+	await runtime.mkdir(dir, { recursive: true });
 
 	// write with pretty formatting
 	const content = JSON.stringify(config, null, '\t');

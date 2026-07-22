@@ -32,11 +32,11 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {actor_lookup_action_spec} from '../../auth/actor_lookup_action_specs.ts';
-import type {RpcPathCrossSuiteOptions} from './setup.ts';
-import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
+import { actor_lookup_action_spec } from '../../auth/actor_lookup_action_specs.ts';
+import type { RpcPathCrossSuiteOptions } from './setup.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /**
  * Options for the actor-lookup parity suite. The standard RPC-dispatched
@@ -50,10 +50,10 @@ const forbidden_row_keys = ['account_id', 'email', 'created_at', 'updated_at', '
 
 /** Build the JSON-RPC envelope body for an `actor_lookup` call. */
 const lookup_envelope = (ids: ReadonlyArray<string>, id: string): string =>
-	JSON.stringify({jsonrpc: '2.0', method: actor_lookup_action_spec.method, params: {ids}, id});
+	JSON.stringify({ jsonrpc: '2.0', method: actor_lookup_action_spec.method, params: { ids }, id });
 
 export const describe_actor_lookup_cross_tests = (options: ActorLookupCrossTestOptions): void => {
-	const {setup_test} = options;
+	const { setup_test } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
 	describe('actor_lookup parity', () => {
@@ -61,8 +61,8 @@ export const describe_actor_lookup_cross_tests = (options: ActorLookupCrossTestO
 			const fixture = await setup_test();
 			const res = await fixture.fresh_transport()(rpc_path, {
 				method: 'POST',
-				headers: {'content-type': 'application/json'},
-				body: lookup_envelope([fixture.actor.id], 'anon-lookup'),
+				headers: { 'content-type': 'application/json' },
+				body: lookup_envelope([fixture.actor.id], 'anon-lookup')
 			});
 			assert.strictEqual(res.status, 401, 'unauthenticated actor_lookup must be refused');
 		});
@@ -71,11 +71,11 @@ export const describe_actor_lookup_cross_tests = (options: ActorLookupCrossTestO
 			const fixture = await setup_test();
 			const res = await fixture.transport(rpc_path, {
 				method: 'POST',
-				headers: {...fixture.create_session_headers(), 'content-type': 'application/json'},
-				body: lookup_envelope([fixture.actor.id], 'keeper-lookup'),
+				headers: { ...fixture.create_session_headers(), 'content-type': 'application/json' },
+				body: lookup_envelope([fixture.actor.id], 'keeper-lookup')
 			});
 			assert.strictEqual(res.status, 200, 'authenticated actor_lookup must succeed');
-			const body = (await res.json()) as {result?: {actors?: Array<Record<string, unknown>>}};
+			const body = (await res.json()) as { result?: { actors?: Array<Record<string, unknown>> } };
 			const actors = body.result?.actors;
 			assert(Array.isArray(actors), 'response carries an actors array');
 			assert.strictEqual(actors.length, 1, 'the keeper actor resolves to exactly one row');
@@ -85,7 +85,7 @@ export const describe_actor_lookup_cross_tests = (options: ActorLookupCrossTestO
 			assert.strictEqual(
 				row.username,
 				fixture.account.username,
-				'resolved row carries the keeper username',
+				'resolved row carries the keeper username'
 			);
 			for (const key of forbidden_row_keys) {
 				assert(!(key in row), `actor_lookup row must not leak '${key}'`);
@@ -96,8 +96,8 @@ export const describe_actor_lookup_cross_tests = (options: ActorLookupCrossTestO
 			const fixture = await setup_test();
 			const res = await fixture.transport(rpc_path, {
 				method: 'POST',
-				headers: {...fixture.create_session_headers(), 'content-type': 'application/json'},
-				body: lookup_envelope([], 'empty-lookup'),
+				headers: { ...fixture.create_session_headers(), 'content-type': 'application/json' },
+				body: lookup_envelope([], 'empty-lookup')
 			});
 			assert.strictEqual(res.status, 400, 'empty ids must fail input validation');
 		});

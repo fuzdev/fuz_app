@@ -30,38 +30,38 @@
  * @module
  */
 
-import {describe, test, assert, vi, afterEach} from 'vitest';
+import { describe, test, assert, vi, afterEach } from 'vitest';
 
-import {apply_authorization_phase} from '$lib/auth/request_context.ts';
+import { apply_authorization_phase } from '$lib/auth/request_context.ts';
 import {
 	query_account_by_id,
 	query_actor_by_id,
-	query_active_actors_by_account,
+	query_active_actors_by_account
 } from '$lib/auth/account_queries.ts';
-import {query_role_grant_find_active_for_actor} from '$lib/auth/role_grant_queries.ts';
+import { query_role_grant_find_active_for_actor } from '$lib/auth/role_grant_queries.ts';
 import {
 	ERROR_ACTOR_REQUIRED,
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
 	ERROR_NO_ACTORS_ON_ACCOUNT,
-	ERROR_ACCOUNT_VANISHED,
+	ERROR_ACCOUNT_VANISHED
 } from '$lib/http/error_schemas.ts';
 import {
 	create_test_account,
 	create_test_actor,
-	create_test_role_grant,
+	create_test_role_grant
 } from '$lib/testing/entities.ts';
-import type {QueryDeps} from '$lib/db/query_deps.ts';
+import type { QueryDeps } from '$lib/db/query_deps.ts';
 
-const mock_deps: QueryDeps = {db: {} as any};
+const mock_deps: QueryDeps = { db: {} as any };
 
 vi.mock('$lib/auth/account_queries.js', () => ({
 	query_account_by_id: vi.fn(),
 	query_actor_by_id: vi.fn(),
-	query_active_actors_by_account: vi.fn(),
+	query_active_actors_by_account: vi.fn()
 }));
 
 vi.mock('$lib/auth/role_grant_queries.js', () => ({
-	query_role_grant_find_active_for_actor: vi.fn(),
+	query_role_grant_find_active_for_actor: vi.fn()
 }));
 
 afterEach(() => {
@@ -72,15 +72,15 @@ const ACCOUNT_ID = 'acct-1';
 const ACTOR_ID = 'actor-1';
 const SECOND_ACTOR_ID = 'actor-2';
 
-const account = create_test_account({id: ACCOUNT_ID, username: 'alice'});
-const actor = create_test_actor({id: ACTOR_ID, account_id: ACCOUNT_ID, name: 'alice'});
+const account = create_test_account({ id: ACCOUNT_ID, username: 'alice' });
+const actor = create_test_actor({ id: ACTOR_ID, account_id: ACCOUNT_ID, name: 'alice' });
 const second_actor = create_test_actor({
 	id: SECOND_ACTOR_ID,
 	account_id: ACCOUNT_ID,
-	name: 'alice-pro',
+	name: 'alice-pro'
 });
 const role_grants = [
-	create_test_role_grant({id: 'role_grant-1', actor_id: ACTOR_ID, role: 'admin'}),
+	create_test_role_grant({ id: 'role_grant-1', actor_id: ACTOR_ID, role: 'admin' })
 ];
 
 describe('apply_authorization_phase — short-circuit paths', () => {
@@ -88,11 +88,11 @@ describe('apply_authorization_phase — short-circuit paths', () => {
 		const result = await apply_authorization_phase(
 			mock_deps,
 			ACCOUNT_ID,
-			{account: 'none', actor: 'none'},
-			undefined,
+			{ account: 'none', actor: 'none' },
+			undefined
 		);
 
-		assert.deepStrictEqual(result, {ok: true, request_context: null});
+		assert.deepStrictEqual(result, { ok: true, request_context: null });
 		assert.strictEqual(vi.mocked(query_active_actors_by_account).mock.calls.length, 0);
 	});
 
@@ -100,11 +100,11 @@ describe('apply_authorization_phase — short-circuit paths', () => {
 		const result = await apply_authorization_phase(
 			mock_deps,
 			null,
-			{account: 'required', actor: 'required'},
-			undefined,
+			{ account: 'required', actor: 'required' },
+			undefined
 		);
 
-		assert.deepStrictEqual(result, {ok: true, request_context: null});
+		assert.deepStrictEqual(result, { ok: true, request_context: null });
 		assert.strictEqual(vi.mocked(query_active_actors_by_account).mock.calls.length, 0);
 	});
 });
@@ -116,13 +116,13 @@ describe('apply_authorization_phase — needs_actor: false (account-grain)', () 
 		const result = await apply_authorization_phase(
 			mock_deps,
 			ACCOUNT_ID,
-			{account: 'required', actor: 'none'},
-			undefined,
+			{ account: 'required', actor: 'none' },
+			undefined
 		);
 
 		assert.deepStrictEqual(result, {
 			ok: true,
-			request_context: {account, actor: null, role_grants: []},
+			request_context: { account, actor: null, role_grants: [] }
 		});
 	});
 
@@ -132,14 +132,14 @@ describe('apply_authorization_phase — needs_actor: false (account-grain)', () 
 		const result = await apply_authorization_phase(
 			mock_deps,
 			ACCOUNT_ID,
-			{account: 'required', actor: 'none'},
-			undefined,
+			{ account: 'required', actor: 'none' },
+			undefined
 		);
 
 		assert.deepStrictEqual(result, {
 			ok: false,
 			status: 500,
-			body: {error: ERROR_ACCOUNT_VANISHED},
+			body: { error: ERROR_ACCOUNT_VANISHED }
 		});
 	});
 });
@@ -154,13 +154,13 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		const result = await apply_authorization_phase(
 			mock_deps,
 			ACCOUNT_ID,
-			{account: 'required', actor: 'required'},
-			undefined,
+			{ account: 'required', actor: 'required' },
+			undefined
 		);
 
 		assert.deepStrictEqual(result, {
 			ok: true,
-			request_context: {account, actor, role_grants},
+			request_context: { account, actor, role_grants }
 		});
 	});
 
@@ -170,14 +170,14 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		const result = await apply_authorization_phase(
 			mock_deps,
 			ACCOUNT_ID,
-			{account: 'required', actor: 'required'},
-			undefined,
+			{ account: 'required', actor: 'required' },
+			undefined
 		);
 
 		assert.deepStrictEqual(result, {
 			ok: false,
 			status: 500,
-			body: {error: ERROR_NO_ACTORS_ON_ACCOUNT},
+			body: { error: ERROR_NO_ACTORS_ON_ACCOUNT }
 		});
 	});
 
@@ -187,8 +187,8 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		const result = await apply_authorization_phase(
 			mock_deps,
 			ACCOUNT_ID,
-			{account: 'required', actor: 'required'},
-			undefined,
+			{ account: 'required', actor: 'required' },
+			undefined
 		);
 
 		assert.deepStrictEqual(result, {
@@ -197,10 +197,10 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 			body: {
 				error: ERROR_ACTOR_REQUIRED,
 				available: [
-					{id: ACTOR_ID, name: 'alice'},
-					{id: SECOND_ACTOR_ID, name: 'alice-pro'},
-				],
-			},
+					{ id: ACTOR_ID, name: 'alice' },
+					{ id: SECOND_ACTOR_ID, name: 'alice-pro' }
+				]
+			}
 		});
 	});
 
@@ -216,8 +216,8 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		const result = await apply_authorization_phase(
 			mock_deps,
 			ACCOUNT_ID,
-			{account: 'required', actor: 'required'},
-			SECOND_ACTOR_ID, // the (now soft-deleted) sibling — absent from the active list
+			{ account: 'required', actor: 'required' },
+			SECOND_ACTOR_ID // the (now soft-deleted) sibling — absent from the active list
 		);
 
 		// The resolution result is computed from the active-filtered query's
@@ -227,7 +227,7 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		assert.deepStrictEqual(result, {
 			ok: false,
 			status: 400,
-			body: {error: ERROR_ACTOR_NOT_ON_ACCOUNT},
+			body: { error: ERROR_ACTOR_NOT_ON_ACCOUNT }
 		});
 	});
 
@@ -237,14 +237,14 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		const result = await apply_authorization_phase(
 			mock_deps,
 			ACCOUNT_ID,
-			{account: 'required', actor: 'required'},
-			'actor-not-here',
+			{ account: 'required', actor: 'required' },
+			'actor-not-here'
 		);
 
 		assert.deepStrictEqual(result, {
 			ok: false,
 			status: 400,
-			body: {error: ERROR_ACTOR_NOT_ON_ACCOUNT},
+			body: { error: ERROR_ACTOR_NOT_ON_ACCOUNT }
 		});
 	});
 
@@ -259,14 +259,14 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		const result = await apply_authorization_phase(
 			mock_deps,
 			ACCOUNT_ID,
-			{account: 'required', actor: 'required'},
-			undefined,
+			{ account: 'required', actor: 'required' },
+			undefined
 		);
 
 		assert.deepStrictEqual(result, {
 			ok: false,
 			status: 500,
-			body: {error: ERROR_ACCOUNT_VANISHED},
+			body: { error: ERROR_ACCOUNT_VANISHED }
 		});
 	});
 
@@ -281,14 +281,14 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		const result = await apply_authorization_phase(
 			mock_deps,
 			ACCOUNT_ID,
-			{account: 'required', actor: 'required'},
-			undefined,
+			{ account: 'required', actor: 'required' },
+			undefined
 		);
 
 		assert.deepStrictEqual(result, {
 			ok: false,
 			status: 500,
-			body: {error: ERROR_ACCOUNT_VANISHED},
+			body: { error: ERROR_ACCOUNT_VANISHED }
 		});
 	});
 
@@ -303,20 +303,20 @@ describe('apply_authorization_phase — needs_actor: true', () => {
 		vi.mocked(query_account_by_id).mockResolvedValue(account);
 		vi.mocked(query_actor_by_id).mockResolvedValue({
 			...actor,
-			account_id: 'different-account' as typeof actor.account_id,
+			account_id: 'different-account' as typeof actor.account_id
 		});
 
 		const result = await apply_authorization_phase(
 			mock_deps,
 			ACCOUNT_ID,
-			{account: 'required', actor: 'required'},
-			undefined,
+			{ account: 'required', actor: 'required' },
+			undefined
 		);
 
 		assert.deepStrictEqual(result, {
 			ok: false,
 			status: 500,
-			body: {error: ERROR_ACCOUNT_VANISHED},
+			body: { error: ERROR_ACCOUNT_VANISHED }
 		});
 	});
 });

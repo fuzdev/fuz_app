@@ -9,14 +9,14 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
-import {Blake3Hash} from '@fuzdev/fuz_util/hash_blake3.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { Blake3Hash } from '@fuzdev/fuz_util/hash_blake3.ts';
 
-import {AuthSessionJson} from './account_schema.ts';
-import {Email} from '../primitive_schemas.ts';
-import {ApiTokenId} from './api_token.ts';
-import {BuiltinCredentialType} from './credential_type_schema.ts';
+import { AuthSessionJson } from './account_schema.ts';
+import { Email } from '../primitive_schemas.ts';
+import { ApiTokenId } from './api_token.ts';
+import { BuiltinCredentialType } from './credential_type_schema.ts';
 
 /**
  * Defense-in-depth audit field — records the credential channel
@@ -27,7 +27,7 @@ import {BuiltinCredentialType} from './credential_type_schema.ts';
  */
 const credential_type_meta = BuiltinCredentialType.optional().meta({
 	description:
-		'Credential channel the request arrived on. Defense in depth — the spec gate restricts to `session`, but the row preserves what actually authenticated the request in case the gate is loosened or bypassed in a future refactor.',
+		'Credential channel the request arrived on. Defense in depth — the spec gate restricts to `session`, but the row preserves what actually authenticated the request in case the gate is loosened or bypassed in a future refactor.'
 });
 
 /**
@@ -63,7 +63,7 @@ export const AUDIT_EVENT_TYPES = Object.freeze([
 	'actor_delete',
 	'actor_purge',
 	'actor_undelete',
-	'app_settings_update',
+	'app_settings_update'
 ] as const);
 
 /** Zod schema for audit event types. */
@@ -79,7 +79,7 @@ export const AUDIT_EVENT_TYPE_NAME_REGEX = /^[A-Za-z][A-Za-z0-9_./-]*$/;
 
 /** Zod schema for valid audit event-type name strings. */
 export const AuditEventTypeName = z.string().regex(AUDIT_EVENT_TYPE_NAME_REGEX, {
-	message: 'must start with a letter; only letters, digits, _ . / - allowed',
+	message: 'must start with a letter; only letters, digits, _ . / - allowed'
 });
 export type AuditEventTypeName = z.infer<typeof AuditEventTypeName>;
 
@@ -97,54 +97,56 @@ export type AuditOutcome = z.infer<typeof AuditOutcome>;
 export const audit_metadata_schemas = Object.freeze({
 	login: z
 		.looseObject({
-			username: z.string().meta({description: 'Username submitted with the login attempt.'}),
+			username: z.string().meta({ description: 'Username submitted with the login attempt.' })
 		})
 		.nullable(),
 	logout: z.null(),
 	bootstrap: z
 		.looseObject({
-			error: z.string().meta({description: 'Error message for a failed bootstrap attempt.'}),
+			error: z.string().meta({ description: 'Error message for a failed bootstrap attempt.' })
 		})
 		.nullable(),
 	signup: z.looseObject({
-		username: z.string().meta({description: 'Username submitted at signup.'}),
+		username: z.string().meta({ description: 'Username submitted at signup.' }),
 		invite_id: Uuid.optional().meta({
 			description:
-				'Invite consumed by this signup. Set on success and on `signup_conflict` failure rows when an invite was matched at attempt time.',
+				'Invite consumed by this signup. Set on success and on `signup_conflict` failure rows when an invite was matched at attempt time.'
 		}),
 		open_signup: z.boolean().optional().meta({
 			description:
-				'True when the signup occurred via the `open_signup` setting (no invite required). Set on success rows under `open_signup` and on failure rows when the attempt was made under `open_signup`.',
+				'True when the signup occurred via the `open_signup` setting (no invite required). Set on success rows under `open_signup` and on failure rows when the attempt was made under `open_signup`.'
 		}),
 		reason: z.string().optional().meta({
 			description:
-				'Failure category: `no_match` (no unclaimed invite matched), `signup_conflict` (username/email already exists, raised by the DB unique constraint), `internal_error` (catch-all for non-classified tx failures — Argon2 fault, session create error, DB outage mid-tx). Set only on `outcome=failure`.',
+				'Failure category: `no_match` (no unclaimed invite matched), `signup_conflict` (username/email already exists, raised by the DB unique constraint), `internal_error` (catch-all for non-classified tx failures — Argon2 fault, session create error, DB outage mid-tx). Set only on `outcome=failure`.'
 		}),
 		email: Email.optional().meta({
 			description:
-				'Email submitted at signup — recorded on failure rows for forensic correlation. Omitted on success rows because the email is already tied to the resulting account.',
-		}),
+				'Email submitted at signup — recorded on failure rows for forensic correlation. Omitted on success rows because the email is already tied to the resulting account.'
+		})
 	}),
 	password_change: z
 		.looseObject({
 			sessions_revoked: z.number().optional().meta({
 				description:
-					'Number of sessions revoked as a side effect of the password change. Present on `outcome=success`.',
+					'Number of sessions revoked as a side effect of the password change. Present on `outcome=success`.'
 			}),
 			tokens_revoked: z.number().optional().meta({
 				description:
-					'Number of API tokens revoked as a side effect of the password change. Present on `outcome=success`.',
+					'Number of API tokens revoked as a side effect of the password change. Present on `outcome=success`.'
 			}),
 			reason: z.enum(['concurrent_change']).optional().meta({
 				description:
-					'Failure category. `concurrent_change` indicates another password change committed first against the same starting hash (verify-write race loser). Absent for typed-wrong-password failures.',
+					'Failure category. `concurrent_change` indicates another password change committed first against the same starting hash (verify-write race loser). Absent for typed-wrong-password failures.'
 			}),
-			credential_type: credential_type_meta,
+			credential_type: credential_type_meta
 		})
 		.nullable(),
 	session_revoke: z.looseObject({
-		session_id: Blake3Hash.meta({description: 'Blake3 hash identifying the revoked session row.'}),
-		credential_type: credential_type_meta,
+		session_id: Blake3Hash.meta({
+			description: 'Blake3 hash identifying the revoked session row.'
+		}),
+		credential_type: credential_type_meta
 	}),
 	session_revoke_all: z.looseObject({
 		// Omitted on `outcome='failure'` (no revocation attempted — e.g. target
@@ -153,41 +155,41 @@ export const audit_metadata_schemas = Object.freeze({
 		// column is null in that case because it's a FK to `account`).
 		count: z.number().optional().meta({
 			description:
-				'Number of sessions revoked. Omitted on `outcome=failure` because no revocation was attempted.',
+				'Number of sessions revoked. Omitted on `outcome=failure` because no revocation was attempted.'
 		}),
 		reason: z
 			.string()
 			.optional()
-			.meta({description: 'Failure category. Set only on `outcome=failure`.'}),
+			.meta({ description: 'Failure category. Set only on `outcome=failure`.' }),
 		attempted_account_id: Uuid.optional().meta({
 			description:
-				'Probed account id when the target lookup missed (FK constraint forces `target_account_id` to null).',
+				'Probed account id when the target lookup missed (FK constraint forces `target_account_id` to null).'
 		}),
-		credential_type: credential_type_meta,
+		credential_type: credential_type_meta
 	}),
 	token_create: z.looseObject({
-		token_id: ApiTokenId.meta({description: 'Public id of the created API token (`tok_…`).'}),
-		name: z.string().meta({description: 'Operator-supplied label for the token.'}),
-		credential_type: credential_type_meta,
+		token_id: ApiTokenId.meta({ description: 'Public id of the created API token (`tok_…`).' }),
+		name: z.string().meta({ description: 'Operator-supplied label for the token.' }),
+		credential_type: credential_type_meta
 	}),
 	token_revoke: z.looseObject({
-		token_id: ApiTokenId.meta({description: 'Public id of the revoked API token (`tok_…`).'}),
-		credential_type: credential_type_meta,
+		token_id: ApiTokenId.meta({ description: 'Public id of the revoked API token (`tok_…`).' }),
+		credential_type: credential_type_meta
 	}),
 	token_revoke_all: z.looseObject({
 		// Same shape as `session_revoke_all` for failures.
 		count: z.number().optional().meta({
 			description:
-				'Number of tokens revoked. Omitted on `outcome=failure` because no revocation was attempted.',
+				'Number of tokens revoked. Omitted on `outcome=failure` because no revocation was attempted.'
 		}),
 		reason: z
 			.string()
 			.optional()
-			.meta({description: 'Failure category. Set only on `outcome=failure`.'}),
+			.meta({ description: 'Failure category. Set only on `outcome=failure`.' }),
 		attempted_account_id: Uuid.optional().meta({
 			description:
-				'Probed account id when the target lookup missed (FK constraint forces `target_account_id` to null).',
-		}),
+				'Probed account id when the target lookup missed (FK constraint forces `target_account_id` to null).'
+		})
 	}),
 	// `role_grant_id` is optional on `role_grant_create` because failed grants
 	// (e.g. admin-grant-path denied) never produce a role_grant row.
@@ -196,108 +198,108 @@ export const audit_metadata_schemas = Object.freeze({
 	// riding on `z.looseObject` permissiveness so the field is part of
 	// the documented schema surface.
 	role_grant_create: z.looseObject({
-		role: z.string().meta({description: 'Role being granted.'}),
+		role: z.string().meta({ description: 'Role being granted.' }),
 		role_grant_id: Uuid.optional().meta({
 			description:
-				'Id of the resulting role_grant row. Omitted when the grant failed (e.g. admin-grant-path denial).',
+				'Id of the resulting role_grant row. Omitted when the grant failed (e.g. admin-grant-path denial).'
 		}),
 		scope_id: Uuid.nullish().meta({
-			description: 'Scope of the granted role_grant; null for global role_grants.',
+			description: 'Scope of the granted role_grant; null for global role_grants.'
 		}),
 		source_offer_id: Uuid.optional().meta({
-			description: 'Offer this grant resolved, when the grant originated from an accepted offer.',
+			description: 'Offer this grant resolved, when the grant originated from an accepted offer.'
 		}),
 		self_service: z.boolean().optional().meta({
-			description: 'True when the grant came from the self-service role toggle.',
-		}),
+			description: 'True when the grant came from the self-service role toggle.'
+		})
 	}),
 	role_grant_revoke: z.looseObject({
-		role: z.string().meta({description: 'Role being revoked.'}),
-		role_grant_id: Uuid.meta({description: 'Id of the revoked role_grant row.'}),
+		role: z.string().meta({ description: 'Role being revoked.' }),
+		role_grant_id: Uuid.meta({ description: 'Id of the revoked role_grant row.' }),
 		scope_id: Uuid.nullish().meta({
-			description: 'Scope of the revoked role_grant; null for global role_grants.',
+			description: 'Scope of the revoked role_grant; null for global role_grants.'
 		}),
 		reason: z
 			.string()
 			.optional()
-			.meta({description: 'Optional admin-supplied or self-service reason text.'}),
+			.meta({ description: 'Optional admin-supplied or self-service reason text.' }),
 		self_service: z.boolean().optional().meta({
-			description: 'True when the revoke came from the self-service role toggle.',
-		}),
+			description: 'True when the revoke came from the self-service role toggle.'
+		})
 	}),
 	// `offer_id` is optional because failed creates (e.g. admin-grant-path
 	// denied, `authorize` callback denied) never produce an offer row.
 	role_grant_offer_create: z.looseObject({
 		offer_id: Uuid.optional().meta({
-			description: 'Id of the created offer row. Omitted when the create failed before insert.',
+			description: 'Id of the created offer row. Omitted when the create failed before insert.'
 		}),
-		role: z.string().meta({description: 'Role being offered.'}),
+		role: z.string().meta({ description: 'Role being offered.' }),
 		scope_id: Uuid.nullish().meta({
-			description: 'Scope of the offered role; null for global offers.',
+			description: 'Scope of the offered role; null for global offers.'
 		}),
-		to_account_id: Uuid.meta({description: 'Account the offer is directed to.'}),
+		to_account_id: Uuid.meta({ description: 'Account the offer is directed to.' })
 	}),
 	// `role_grant_create` is emitted alongside on accept — two events per accept by
 	// design: offer-lifecycle audit + role-grant-lifecycle audit.
 	role_grant_offer_accept: z.looseObject({
-		offer_id: Uuid.meta({description: 'Id of the accepted offer.'}),
-		role_grant_id: Uuid.meta({description: 'Id of the resulting role_grant row.'}),
-		role: z.string().meta({description: 'Role granted by the offer.'}),
+		offer_id: Uuid.meta({ description: 'Id of the accepted offer.' }),
+		role_grant_id: Uuid.meta({ description: 'Id of the resulting role_grant row.' }),
+		role: z.string().meta({ description: 'Role granted by the offer.' }),
 		scope_id: Uuid.nullish().meta({
-			description: 'Scope of the resulting role_grant; null for global role_grants.',
-		}),
+			description: 'Scope of the resulting role_grant; null for global role_grants.'
+		})
 	}),
 	role_grant_offer_decline: z.looseObject({
-		offer_id: Uuid.meta({description: 'Id of the declined offer.'}),
-		role: z.string().meta({description: 'Role that was offered.'}),
+		offer_id: Uuid.meta({ description: 'Id of the declined offer.' }),
+		role: z.string().meta({ description: 'Role that was offered.' }),
 		scope_id: Uuid.nullish().meta({
-			description: 'Scope of the offered role; null for global offers.',
+			description: 'Scope of the offered role; null for global offers.'
 		}),
 		reason: z
 			.string()
 			.optional()
-			.meta({description: 'Optional decline reason text from the recipient.'}),
+			.meta({ description: 'Optional decline reason text from the recipient.' })
 	}),
 	role_grant_offer_retract: z.looseObject({
-		offer_id: Uuid.meta({description: 'Id of the retracted offer.'}),
-		role: z.string().meta({description: 'Role that was offered.'}),
+		offer_id: Uuid.meta({ description: 'Id of the retracted offer.' }),
+		role: z.string().meta({ description: 'Role that was offered.' }),
 		scope_id: Uuid.nullish().meta({
-			description: 'Scope of the offered role; null for global offers.',
-		}),
+			description: 'Scope of the offered role; null for global offers.'
+		})
 	}),
 	role_grant_offer_expire: z.looseObject({
-		offer_id: Uuid.meta({description: 'Id of the expired offer.'}),
-		role: z.string().meta({description: 'Role that was offered.'}),
+		offer_id: Uuid.meta({ description: 'Id of the expired offer.' }),
+		role: z.string().meta({ description: 'Role that was offered.' }),
 		scope_id: Uuid.nullish().meta({
-			description: 'Scope of the offered role; null for global offers.',
-		}),
+			description: 'Scope of the offered role; null for global offers.'
+		})
 	}),
 	// Emitted when an offer is obsoleted by an external event. `reason`
 	// distinguishes the trigger; `cause_id` points to the accepted offer
 	// (for `sibling_accepted`), the revoked role_grant (for `role_grant_revoked`),
 	// or the destroyed parent scope row (for `scope_destroyed`).
 	role_grant_offer_supersede: z.looseObject({
-		offer_id: Uuid.meta({description: 'Id of the superseded offer.'}),
-		role: z.string().meta({description: 'Role that was offered.'}),
+		offer_id: Uuid.meta({ description: 'Id of the superseded offer.' }),
+		role: z.string().meta({ description: 'Role that was offered.' }),
 		scope_id: Uuid.nullish().meta({
-			description: 'Scope of the offered role; null for global offers.',
+			description: 'Scope of the offered role; null for global offers.'
 		}),
 		reason: z.enum(['sibling_accepted', 'role_grant_revoked', 'scope_destroyed']).meta({
 			description:
-				'Trigger that obsoleted the offer: a sibling offer was accepted, the resulting role_grant was revoked, or the parent scope row was destroyed.',
+				'Trigger that obsoleted the offer: a sibling offer was accepted, the resulting role_grant was revoked, or the parent scope row was destroyed.'
 		}),
 		cause_id: Uuid.meta({
 			description:
-				'Row that caused the supersede: accepted offer (`sibling_accepted`), revoked role_grant (`role_grant_revoked`), or destroyed parent scope row (`scope_destroyed`).',
-		}),
+				'Row that caused the supersede: accepted offer (`sibling_accepted`), revoked role_grant (`role_grant_revoked`), or destroyed parent scope row (`scope_destroyed`).'
+		})
 	}),
 	invite_create: z.looseObject({
-		invite_id: Uuid.meta({description: 'Id of the created invite.'}),
-		email: z.string().nullable().meta({description: 'Invited email address; null when not set.'}),
-		username: z.string().nullable().meta({description: 'Invited username; null when not set.'}),
+		invite_id: Uuid.meta({ description: 'Id of the created invite.' }),
+		email: z.string().nullable().meta({ description: 'Invited email address; null when not set.' }),
+		username: z.string().nullable().meta({ description: 'Invited username; null when not set.' })
 	}),
 	invite_delete: z.looseObject({
-		invite_id: Uuid.meta({description: 'Id of the deleted invite.'}),
+		invite_id: Uuid.meta({ description: 'Id of the deleted invite.' })
 	}),
 	// Account/actor deletion snapshots identity into metadata so the
 	// identity behind a now-orphaned audit id survives a purge (the
@@ -308,34 +310,34 @@ export const audit_metadata_schemas = Object.freeze({
 	// `attempted_account_id`). See `auth/CLAUDE.md` §Account/actor deletion
 	// (delete = soft, purge = hard).
 	account_delete: z.looseObject({
-		username: z.string().optional().meta({description: 'Username at soft-delete time.'}),
+		username: z.string().optional().meta({ description: 'Username at soft-delete time.' }),
 		email: z
 			.string()
 			.nullable()
 			.optional()
-			.meta({description: 'Email at soft-delete time; null when unset.'}),
+			.meta({ description: 'Email at soft-delete time; null when unset.' }),
 		reason: z
 			.string()
 			.optional()
-			.meta({description: 'Failure category. Set only on `outcome=failure`.'}),
+			.meta({ description: 'Failure category. Set only on `outcome=failure`.' }),
 		attempted_account_id: Uuid.optional().meta({
-			description: 'Probed account id when the target was missing (`outcome=failure`).',
-		}),
+			description: 'Probed account id when the target was missing (`outcome=failure`).'
+		})
 	}),
 	account_purge: z.looseObject({
-		username: z.string().optional().meta({description: 'Username at purge time.'}),
+		username: z.string().optional().meta({ description: 'Username at purge time.' }),
 		email: z
 			.string()
 			.nullable()
 			.optional()
-			.meta({description: 'Email at purge time; null when unset.'}),
+			.meta({ description: 'Email at purge time; null when unset.' }),
 		reason: z
 			.string()
 			.optional()
-			.meta({description: 'Failure category. Set only on `outcome=failure`.'}),
+			.meta({ description: 'Failure category. Set only on `outcome=failure`.' }),
 		attempted_account_id: Uuid.optional().meta({
-			description: 'Probed account id when the target was missing (`outcome=failure`).',
-		}),
+			description: 'Probed account id when the target was missing (`outcome=failure`).'
+		})
 	}),
 	// `account_undelete` / `actor_undelete` are the reactivation events
 	// (clearing the soft-delete tombstone). Same identity-snapshot shape as
@@ -343,34 +345,34 @@ export const audit_metadata_schemas = Object.freeze({
 	// `attempted_account_id` carry the not-found failure shape. Admin-only —
 	// the self path is unreachable (a tombstoned account can't authenticate).
 	account_undelete: z.looseObject({
-		username: z.string().optional().meta({description: 'Username at reactivation time.'}),
+		username: z.string().optional().meta({ description: 'Username at reactivation time.' }),
 		email: z
 			.string()
 			.nullable()
 			.optional()
-			.meta({description: 'Email at reactivation time; null when unset.'}),
+			.meta({ description: 'Email at reactivation time; null when unset.' }),
 		reason: z
 			.string()
 			.optional()
-			.meta({description: 'Failure category. Set only on `outcome=failure`.'}),
+			.meta({ description: 'Failure category. Set only on `outcome=failure`.' }),
 		attempted_account_id: Uuid.optional().meta({
-			description: 'Probed account id when the target was missing/not-deleted (`outcome=failure`).',
-		}),
+			description: 'Probed account id when the target was missing/not-deleted (`outcome=failure`).'
+		})
 	}),
 	actor_delete: z.looseObject({
-		name: z.string().optional().meta({description: 'Actor display name at soft-delete time.'}),
+		name: z.string().optional().meta({ description: 'Actor display name at soft-delete time.' })
 	}),
 	actor_purge: z.looseObject({
-		name: z.string().optional().meta({description: 'Actor display name at purge time.'}),
+		name: z.string().optional().meta({ description: 'Actor display name at purge time.' })
 	}),
 	actor_undelete: z.looseObject({
-		name: z.string().optional().meta({description: 'Actor display name at reactivation time.'}),
+		name: z.string().optional().meta({ description: 'Actor display name at reactivation time.' })
 	}),
 	app_settings_update: z.looseObject({
-		setting: z.string().meta({description: 'Name of the setting that changed.'}),
-		old_value: z.unknown().meta({description: 'Setting value before the update.'}),
-		new_value: z.unknown().meta({description: 'Setting value after the update.'}),
-	}),
+		setting: z.string().meta({ description: 'Name of the setting that changed.' }),
+		old_value: z.unknown().meta({ description: 'Setting value before the update.' }),
+		new_value: z.unknown().meta({ description: 'Setting value after the update.' })
+	})
 }) satisfies Record<AuditEventType, z.ZodType>;
 
 /** Mapped type of metadata shapes per event type, derived from Zod schemas. */
@@ -448,7 +450,7 @@ export interface AuditLogEvent {
  * Use after checking `event_type` to get typed metadata access.
  */
 export const get_audit_metadata = <T extends AuditEventType>(
-	event: AuditLogEvent & {event_type: T},
+	event: AuditLogEvent & { event_type: T }
 ): AuditMetadataMap[T] | null => {
 	return event.metadata as AuditMetadataMap[T] | null;
 };
@@ -502,7 +504,7 @@ export interface AuditLogConfig {
 /** Builtin fuz_app audit-log config — every existing event type and its metadata schema. */
 export const builtin_audit_log_config: AuditLogConfig = Object.freeze({
 	event_types: AUDIT_EVENT_TYPES,
-	metadata_schemas: audit_metadata_schemas,
+	metadata_schemas: audit_metadata_schemas
 });
 
 /** Options for `create_audit_log_config`. */
@@ -540,19 +542,19 @@ export const create_audit_log_config = (options?: CreateAuditLogConfigOptions): 
 	if (extra_entries.length === 0) return builtin_audit_log_config;
 	const builtin_set: ReadonlySet<string> = new Set(AUDIT_EVENT_TYPES);
 	const extra_keys: Array<string> = [];
-	const metadata_schemas: Record<string, z.ZodType> = {...audit_metadata_schemas};
+	const metadata_schemas: Record<string, z.ZodType> = { ...audit_metadata_schemas };
 	for (const [t, schema] of extra_entries) {
 		if (builtin_set.has(t)) {
 			throw new Error(
 				`extra_events key "${
 					t
-				}" collides with a builtin event type — pick a distinct string (e.g. "app_${t}")`,
+				}" collides with a builtin event type — pick a distinct string (e.g. "app_${t}")`
 			);
 		}
 		const name_check = AuditEventTypeName.safeParse(t);
 		if (!name_check.success) {
 			throw new Error(
-				`extra_events key "${t}" has invalid format: ${name_check.error.issues[0]!.message}`,
+				`extra_events key "${t}" has invalid format: ${name_check.error.issues[0]!.message}`
 			);
 		}
 		extra_keys.push(t);
@@ -560,7 +562,7 @@ export const create_audit_log_config = (options?: CreateAuditLogConfigOptions): 
 	}
 	return Object.freeze({
 		event_types: Object.freeze([...AUDIT_EVENT_TYPES, ...extra_keys]),
-		metadata_schemas: Object.freeze(metadata_schemas),
+		metadata_schemas: Object.freeze(metadata_schemas)
 	});
 };
 
@@ -605,26 +607,26 @@ export const AuditLogEventJson = z.strictObject({
 	target_actor_id: Uuid.nullable(),
 	ip: z.string().nullable(),
 	created_at: z.string(),
-	metadata: z.record(z.string(), z.unknown()).nullable(),
+	metadata: z.record(z.string(), z.unknown()).nullable()
 });
 export type AuditLogEventJson = z.infer<typeof AuditLogEventJson>;
 
 /** Zod schema for audit log events with resolved usernames. */
 export const AuditLogEventWithUsernamesJson = AuditLogEventJson.extend({
 	username: z.string().nullable(),
-	target_username: z.string().nullable(),
+	target_username: z.string().nullable()
 });
 export type AuditLogEventWithUsernamesJson = z.infer<typeof AuditLogEventWithUsernamesJson>;
 
 /** Zod schema for role_grant history events with resolved usernames. */
 export const RoleGrantHistoryEventJson = AuditLogEventJson.extend({
 	username: z.string().nullable(),
-	target_username: z.string().nullable(),
+	target_username: z.string().nullable()
 });
 export type RoleGrantHistoryEventJson = z.infer<typeof RoleGrantHistoryEventJson>;
 
 /** Zod schema for admin session listing (session + username). */
 export const AdminSessionJson = AuthSessionJson.extend({
-	username: z.string(),
+	username: z.string()
 });
 export type AdminSessionJson = z.infer<typeof AdminSessionJson>;
