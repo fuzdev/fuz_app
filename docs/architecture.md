@@ -214,8 +214,13 @@ lifecycle, GC policy, and MemoStore are tracked deferrals.
 `bootstrap_account` (from `auth/bootstrap_account.ts`) provides one-shot admin account
 creation. Uses an atomic `bootstrap_lock` table to prevent TOCTOU races. Flow: read
 token file → timing-safe compare → hash password → acquire lock in transaction →
-verify no accounts exist → create account + actor + keeper/admin role_grants → delete
+create account + actor + keeper/admin role_grants → delete
 token file (reported via `token_file_deleted` on the success result).
+
+The conditional `UPDATE` on `bootstrap_lock` **is** the existence check — winning
+that row is what authorizes the insert. An earlier belt-and-suspenders
+"no accounts exist" query was deliberately removed so the lock is the single
+signal; see the repo-root `CLAUDE.md` § Test/prod write-semantics parity.
 
 Filesystem access (`stat`, `read_text_file`, `delete_file`) flows through `AppDeps` —
 provided at `create_app_backend` time.

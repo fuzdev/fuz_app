@@ -295,7 +295,9 @@ during the connection lifetime require active enforcement:
   - `session_revoke` — a specific session revoked; closes only the stream
     whose `scope` matches the revoked session's hash (session-scoped)
   - `session_revoke_all` — all sessions invalidated for a subscriber
+  - `token_revoke_all` — all API tokens invalidated; closes the account's streams
   - `password_change` — password change implicitly revokes all sessions and API tokens
+  - `logout` — explicit logout; closes the account's streams
 - **Failure guard**: Events with `outcome='failure'` are ignored. Failed
   revoke attempts carry attacker-submitted identifiers (e.g. guessed session
   hashes) in metadata — acting on them would let any authenticated user close
@@ -315,7 +317,7 @@ closes only the affected tab, while `role_grant_revoke` / `session_revoke_all` /
 
 In-memory sliding window. Applied to login, bootstrap, and bearer auth.
 
-- IP rate limiter (5 attempts / 15 min) — Per resolved client IP, shared across login + bootstrap + bearer auth + password change
+- IP rate limiter (5 attempts / 15 min) — Per resolved client IP, shared across login + bootstrap + password change. Bearer auth is gated by a **separate, independently-tracked** IP bucket (`bearer_ip_rate_limiter`, same defaults, its own counter), so bearer attempts do not consume the login allowance and vice versa
 - Login account rate limiter (10 attempts / 30 min) — Per `account.id` when the account exists, per normalized submitted identifier otherwise. Per `account.id` on password change.
 - Signup account rate limiter (10 attempts / 30 min) — Per submitted username (lowercased), signup only
 
@@ -490,8 +492,11 @@ resource-scoped lookup where existence itself is privileged returns the
 can't view it" — never a `forbidden` that would confirm the id. Beyond
 role_grants/offers above, the cell surface applies it uniformly:
 `cell_get` / `cell_update` / `cell_delete` / `cell_clone` all return 404
-(`ERROR_CELL_NOT_FOUND`) when the caller fails `can_view_cell`, identical
-to a genuine miss (`auth/cell_actions.ts`). A caller therefore cannot
+(`ERROR_CELL_NOT_FOUND`) when the caller fails the verb's own authorization
+predicate — `can_view_cell` for the reads (`cell_get` / `cell_clone`),
+`can_edit_cell` for the writes (`cell_update` / `cell_delete`) — identical
+to a genuine miss (`auth/cell_actions.ts`). The uniform property is the
+**wire shape**, not a single shared predicate. A caller therefore cannot
 enumerate private cells (or offers, or another actor's grants) by id —
 found-and-unauthorized and not-found are wire-indistinguishable.
 
@@ -556,11 +561,17 @@ Missing consent is an authorization bug, not a missing button.
 
 Two code paths, one invariant:
 
-- **Direct grant** (`query_create_role_grant`) — reserved for paths where a
-  reaching-for-consent step would itself be the vulnerability: keeper
-  bootstrap, keeper-gated recovery CLI, migrations, and test fixtures.
-  These paths are filesystem- or process-gated (daemon token, test
-  harness) and are not reachable by a network attacker.
+- **Direct grant** (`query_create_role_grant`) — the low-level write, with no
+  consent step of its own. Two kinds of caller reach it. The
+  process-gated ones are where a reaching-for-consent step would itself be the
+  vulnerability: keeper bootstrap (`bootstrap_account.ts`), the dev/setup
+  seeding path, and test fixtures — filesystem- or process-gated, not
+  network-reachable. But two **network** RPC actions also call it directly:
+  `self_service_role_set` (self-target only, so the grantee and the caller are
+  the same actor — consent is structural rather than a separate step) and
+  `role_grant_assign` (admin-only, described under _Immediate assign_ below).
+  So "direct grant" names the write, not an off-network boundary; the
+  authorization property comes from each caller's own gate.
 - **Offer flow** (`role_grant_offer_create` → recipient `role_grant_offer_accept`)
   — the consentful path. The admin UI drives the same
   `role_grant_offer_create` RPC action as any other grantor; a role_grant row
@@ -708,6 +719,16 @@ Content-dedup is a pure storage optimization; it can never widen a fact's
 effective visibility. This closes the cross-owner leak that a bare-hash,
 union-of-referrers read model would otherwise create (A's private bytes
 becoming world-readable the instant B publishes identical bytes).
+
+**Served bytes are inert.** Fact bytes are caller-supplied content served back
+over the app's own origin, so every fact response — on all three serve paths —
+carries `X-Content-Type-Options: nosniff` and
+`Content-Security-Policy: default-src 'none'; sandbox`
+(`server/serve_fact_route.ts`). The CSP denies every fetch and puts the
+response in a unique opaque origin, so a stored HTML/SVG payload cannot execute
+as same-origin script or reach back into the app. Fact responses also carry
+`Cache-Control: private, max-age=300` — a deliberate 5-minute window in which a
+client may reuse bytes whose authorizing cell grant has since been revoked.
 
 **404-mask.** An unviewable cell, a missing cell, and a cell that doesn't
 reference the requested hash all return the **same 404** — never 403, never a
@@ -880,6 +901,19 @@ guard for symmetry — they are loopback-only and never legitimately carry an
 through to `credential_type_required` downstream rather than a hard fail).
 
 ## v1 Deployment: Cookie-Only External Auth
+
+> **This is a recommended posture, not a property fuz_app enforces — and it is
+> not what the reference deployment recipes do.** The recipes forward
+> `Authorization` on the general `/api` block so API-token clients keep working
+> through nginx, on the reasoning that the browser-context guard (below) is what
+> stops browser token leakage. That reasoning is sound for XSS exfiltration but
+> does **not** cover replay of a token stolen from CI, an env var, or a config
+> file: such a client sends no `Origin` and is admitted. Adopt the strip below
+> if you want that replay surface closed and your clients don't need bearer auth
+> through the proxy; otherwise treat external bearer as enabled and rely on
+> token revocation, per-token scoping, and the limiter. `validate_nginx_config`
+> currently treats the strip as a hard requirement, so it will reject a
+> forwarding config — see its notes before wiring it into a deployment gate.
 
 For the initial release, external traffic should use **cookie auth only**. Strip
 the `Authorization` header at the nginx reverse proxy:
@@ -1099,7 +1133,10 @@ realtime feeds.
   blake3 hash-then-compare (`===` on hex strings). Recovering a 64-char hex hash
   character-by-character, then reversing blake3, against 32 bytes of token entropy
   is not a practical attack. `timingSafeEqual` (from `node:crypto`) is used where
-  it matters: daemon token validation, bootstrap token comparison, cookie signing.
+  it matters: daemon token validation and bootstrap token comparison. Cookie
+  signature verification is constant-time too, but via a different primitive —
+  WebCrypto `subtle.verify` HMAC-SHA256 (`keyring.ts`), whose comparison the
+  spec requires be constant-time.
   Password-path timing defense is separate: `verify_dummy()` equalizes Argon2id
   timing across found/not-found login paths, and an additional 250ms ±25ms
   floor on 401 responses equalizes every other path difference (DB lookup,
