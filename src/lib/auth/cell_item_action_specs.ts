@@ -29,8 +29,12 @@ export const ERROR_CELL_ITEM_LIST_REQUIRES_PARENT_OR_CHILD =
 /**
  * Error reason — `(parent_id, position)` collision on `cell_item_insert`
  * or `cell_item_move`. Surfaces when two clients computed the same
- * fractional-indexing key (rare given helper-side jitter; the safety
- * net for the residual race). Client refreshes its bracket and retries.
+ * fractional-indexing key (rare given helper-side jitter, which is on by
+ * default; the safety net for the residual race). A client that opts out
+ * with `{jitter: false}` gets bare deterministic mids, so two of them
+ * racing the same bracket collide every time and this stops being rare —
+ * that mode is for reproducible callers (seeders, fixtures), not concurrent
+ * ones. Client refreshes its bracket and retries.
  */
 export const ERROR_CELL_ITEM_POSITION_TAKEN = 'cell_item_position_taken' as const;
 
