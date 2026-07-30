@@ -14,7 +14,7 @@
 
 import type { QueryDeps } from './query_deps.ts';
 
-import type { FactHash } from '@fuzdev/fuz_util/fact_hash.ts';
+import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 
 /** Row shape for `SELECT … FROM fact`. */
 export interface FactRow {

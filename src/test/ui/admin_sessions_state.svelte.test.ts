@@ -38,7 +38,13 @@ const make_rpc = (overrides: Partial<AdminAccountsRpc> = {}): AdminAccountsRpc =
 	...overrides
 });
 
-const make_session = (overrides: Partial<AdminSessionJson> = {}): AdminSessionJson =>
+/**
+ * `id` widens back to `string` so fixtures read as `'sess-1'` rather than 64
+ * hex chars. These tests drive state against a mocked rpc, so nothing parses.
+ */
+type AdminSessionOverrides = Omit<Partial<AdminSessionJson>, 'id'> & { id?: string };
+
+const make_session = (overrides: AdminSessionOverrides = {}): AdminSessionJson =>
 	({
 		id: 'sess-1',
 		account_id: 'acct-1',

@@ -12,7 +12,7 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { generate_random_base64url } from '../crypto.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
-import type { AuthSession } from './account_schema.ts';
+import type { AuthSession, SessionId } from './account_schema.ts';
 
 /** Session lifetime in milliseconds (30 days). */
 export const AUTH_SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
@@ -23,11 +23,14 @@ export const AUTH_SESSION_EXTEND_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 /**
  * Hash a session token to its storage key using blake3.
  *
+ * The sole minting point for `SessionId` — `hash_blake3` returns bare hex, so
+ * the brand is applied here, where the value gains its meaning.
+ *
  * @param token - the raw session token
  * @returns hex-encoded blake3 hash
  */
-export const hash_session_token = (token: string): string => {
-	return hash_blake3(token);
+export const hash_session_token = (token: string): SessionId => {
+	return hash_blake3(token) as SessionId;
 };
 
 /**

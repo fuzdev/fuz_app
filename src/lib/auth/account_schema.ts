@@ -19,6 +19,7 @@
 
 import { z } from 'zod';
 import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { Blake3Hash } from '@fuzdev/fuz_util/hash_schemas.ts';
 
 import { Username, Email } from '../primitive_schemas.ts';
 
@@ -112,9 +113,21 @@ export const is_role_grant_active = (
 	now: Date = new Date()
 ): boolean => !p.revoked_at && (!p.expires_at || new Date(p.expires_at) > now);
 
+/**
+ * A session's storage key — the blake3 hash of its raw token, branded so a
+ * bare `string` can't stand in for one. `Blake3Hash` (`hash_schemas.ts`) is
+ * the shape; this is the meaning. Mint only via `hash_session_token`, or
+ * `SessionId.parse` at an external boundary.
+ *
+ * The raw token itself is never typed — it stays a `string` that exists only
+ * long enough to be hashed.
+ */
+export const SessionId = Blake3Hash.brand('SessionId');
+export type SessionId = z.infer<typeof SessionId>;
+
 /** Server-side auth session, keyed by blake3 hash of session token. */
 export interface AuthSession {
-	id: string;
+	id: SessionId;
 	account_id: Uuid;
 	created_at: string;
 	expires_at: string;
@@ -147,7 +160,7 @@ export type SessionAccountJson = z.infer<typeof SessionAccountJson>;
 
 /** Zod schema for `AuthSession` — id is the blake3 hash, safe for client. */
 export const AuthSessionJson = z.strictObject({
-	id: z.string(),
+	id: SessionId,
 	account_id: Uuid,
 	created_at: z.string(),
 	expires_at: z.string(),

@@ -11,9 +11,8 @@
 
 import { z } from 'zod';
 import { Uuid } from '@fuzdev/fuz_util/id.ts';
-import { Blake3Hash } from '@fuzdev/fuz_util/hash_blake3.ts';
 
-import { AuthSessionJson } from './account_schema.ts';
+import { AuthSessionJson, SessionId } from './account_schema.ts';
 import { Email } from '../primitive_schemas.ts';
 import { ApiTokenId } from './api_token.ts';
 import { BuiltinCredentialType } from './credential_type_schema.ts';
@@ -143,7 +142,7 @@ export const audit_metadata_schemas = Object.freeze({
 		})
 		.nullable(),
 	session_revoke: z.looseObject({
-		session_id: Blake3Hash.meta({
+		session_id: SessionId.meta({
 			description: 'Blake3 hash identifying the revoked session row.'
 		}),
 		credential_type: credential_type_meta

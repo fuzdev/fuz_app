@@ -24,7 +24,8 @@
 import type { QueryDeps } from './query_deps.ts';
 import type { Json } from '@fuzdev/fuz_util/json.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
-import { fact_hash_extract_refs, type FactHash } from '@fuzdev/fuz_util/fact_hash.ts';
+import { fact_hash_extract_refs } from '@fuzdev/fuz_util/fact_hash.ts';
+import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { assert_row } from './assert_row.ts';
 
 import type { CellData } from '../auth/cell_data_schema.ts';

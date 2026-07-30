@@ -40,7 +40,7 @@ import '../assert_dev_env.ts';
 
 import { describe, assert } from 'vitest';
 import { z } from 'zod';
-import { FactHashSchema } from '@fuzdev/fuz_util/fact_hash.ts';
+import { FactHashSchema } from '@fuzdev/fuz_util/hash_schemas.ts';
 
 import { CellCreateOutput } from '../../auth/cell_action_specs.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';

@@ -39,6 +39,7 @@
 
 import { describe, test, assert } from 'vitest';
 
+import { SessionId } from '$lib/auth/account_schema.ts';
 import { create_session_config } from '$lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '$lib/auth/account_routes.ts';
 import { create_account_actions } from '$lib/auth/account_actions.ts';
@@ -200,7 +201,7 @@ describe_db('connection_closer wiring', (get_db) => {
 					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
 			// blake3 hash format but not a real session
-			const bogus_hash = 'a'.repeat(64);
+			const bogus_hash = SessionId.parse('a'.repeat(64));
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,

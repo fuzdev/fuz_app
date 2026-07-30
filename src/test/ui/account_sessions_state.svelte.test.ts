@@ -21,7 +21,13 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-const make_session = (overrides: Partial<AuthSessionJson> = {}): AuthSessionJson =>
+/**
+ * `id` widens back to `string` so fixtures read as `'sess-1'` rather than 64
+ * hex chars. These tests drive state against a mocked rpc, so nothing parses.
+ */
+type SessionOverrides = Omit<Partial<AuthSessionJson>, 'id'> & { id?: string };
+
+const make_session = (overrides: SessionOverrides = {}): AuthSessionJson =>
 	({
 		id: 'sess-1',
 		account_id: 'acct-1',

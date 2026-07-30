@@ -9,10 +9,14 @@
  */
 
 import { z } from 'zod';
-import { Blake3Hash } from '@fuzdev/fuz_util/hash_blake3.ts';
 
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
-import { AuthSessionJson, ClientApiTokenJson, SessionAccountJson } from './account_schema.ts';
+import {
+	AuthSessionJson,
+	ClientApiTokenJson,
+	SessionAccountJson,
+	SessionId
+} from './account_schema.ts';
 import { ApiTokenId } from './api_token.ts';
 
 // -- Input/output schemas ---------------------------------------------------
@@ -33,7 +37,7 @@ export type SessionListOutput = z.infer<typeof SessionListOutput>;
 
 /** Input for `account_session_revoke`. `session_id` is the blake3 hash. */
 export const SessionRevokeInput = z.strictObject({
-	session_id: Blake3Hash.meta({ description: 'Session id (blake3 hash) to revoke.' })
+	session_id: SessionId.meta({ description: 'Session id (blake3 hash) to revoke.' })
 });
 export type SessionRevokeInput = z.infer<typeof SessionRevokeInput>;
 

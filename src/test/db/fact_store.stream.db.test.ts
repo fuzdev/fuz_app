@@ -29,7 +29,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
-import { fact_hash_bytes, FACT_HASH_PREFIX } from '@fuzdev/fuz_util/fact_hash.ts';
+import { fact_hash_bytes } from '@fuzdev/fuz_util/fact_hash.ts';
+import { FACT_HASH_PREFIX } from '@fuzdev/fuz_util/hash_schemas.ts';
 
 import {
 	create_pglite_factory,

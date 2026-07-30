@@ -11,7 +11,7 @@
  *
  * Dispatcher ordering note: the pipeline is **401 → 400 → 403 → handler**,
  * so `credential_types` (403) fires *after* input validation (400). The
- * `params` shapes below are deliberately well-formed (`Blake3Hash`-shaped
+ * `params` shapes below are deliberately well-formed (`SessionId`-shaped
  * session ids, `tok_`-prefixed token ids, valid `Password` lengths) so
  * the 403 credential-gate fires instead of an `invalid_params` 400 —
  * tightening any input schema must keep these fixtures valid or the
@@ -21,6 +21,8 @@
  */
 
 import { describe, test, assert } from 'vitest';
+
+import { SessionId } from '$lib/auth/account_schema.ts';
 
 import { create_session_config } from '$lib/auth/session_cookie.ts';
 import { create_account_route_specs } from '$lib/auth/account_routes.ts';
@@ -125,7 +127,7 @@ describe_db('credential_channel_gate', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_session_revoke_action_spec,
-				params: { session_id: '0'.repeat(64) },
+				params: { session_id: SessionId.parse('0'.repeat(64)) },
 				headers: test_app.create_bearer_headers(),
 				suppress_default_origin: true
 			});
@@ -212,7 +214,7 @@ describe_db('credential_channel_gate', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_session_revoke_action_spec,
-				params: { session_id: '0'.repeat(64) }
+				params: { session_id: SessionId.parse('0'.repeat(64)) }
 			});
 			assert.strictEqual(res.ok, false);
 			assert.strictEqual(res.status, 401);
@@ -282,7 +284,7 @@ describe_db('credential_channel_gate', (get_db) => {
 					app: test_app.app,
 					path: RPC_PATH,
 					spec: account_session_revoke_action_spec,
-					params: { session_id: '0'.repeat(64) },
+					params: { session_id: SessionId.parse('0'.repeat(64)) },
 					headers: test_app.create_bearer_headers(),
 					suppress_default_origin: true
 				}),

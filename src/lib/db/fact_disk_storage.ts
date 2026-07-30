@@ -35,7 +35,7 @@ import { Blake3Hasher } from '@fuzdev/blake3_wasm';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import { blake3_ready } from '@fuzdev/fuz_util/hash_blake3.ts';
 import { to_hex } from '@fuzdev/fuz_util/hex.ts';
-import { FACT_HASH_PREFIX, type FactHash } from '@fuzdev/fuz_util/fact_hash.ts';
+import { FACT_HASH_PREFIX, type FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { FsReadDeps, FsWriteDeps, FsStreamDeps, FsRemoveDeps } from '../runtime/deps.ts';

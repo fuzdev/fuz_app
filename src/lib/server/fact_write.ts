@@ -15,7 +15,8 @@ import { randomBytes } from 'node:crypto';
 import { writeFile, rename, mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { FACT_HASH_PREFIX, fact_hash_bytes, type FactHash } from '@fuzdev/fuz_util/fact_hash.ts';
+import { fact_hash_bytes } from '@fuzdev/fuz_util/fact_hash.ts';
+import { FACT_HASH_PREFIX, type FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import type { FactStore } from '@fuzdev/fuz_util/fact_store.ts';
 import { mint_file_fact_url } from '../db/file_fact_url.ts';
 

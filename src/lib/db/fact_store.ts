@@ -35,9 +35,9 @@ import {
 	fact_hash_bytes,
 	fact_hash_stream,
 	fact_hash_verify,
-	fact_hash_extract_refs,
-	type FactHash
+	fact_hash_extract_refs
 } from '@fuzdev/fuz_util/fact_hash.ts';
+import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import type {
 	FactMeta,
 	FactPutOptions,

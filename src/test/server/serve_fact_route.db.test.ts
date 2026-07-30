@@ -38,7 +38,7 @@
 import { test, assert } from 'vitest';
 
 import { PgFactStore } from '$lib/db/fact_store.ts';
-import type { FactHash } from '@fuzdev/fuz_util/fact_hash.ts';
+import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { ERROR_INVALID_ROUTE_PARAMS } from '$lib/http/error_schemas.ts';
 import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import type { TestApp } from '$lib/testing/app_server.ts';

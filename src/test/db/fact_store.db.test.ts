@@ -20,7 +20,8 @@
 
 import { test, assert } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
-import { fact_hash_bytes, fact_hash_verify, type FactHash } from '@fuzdev/fuz_util/fact_hash.ts';
+import { fact_hash_bytes, fact_hash_verify } from '@fuzdev/fuz_util/fact_hash.ts';
+import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 
 import {
 	create_pglite_factory,
