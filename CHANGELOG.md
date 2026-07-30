@@ -1,5 +1,12 @@
 # @fuzdev/fuz_app
 
+## 0.105.0
+
+### Minor Changes
+
+- refactor: add branded `SessionId` ([fa6d489](https://github.com/fuzdev/fuz_app/commit/fa6d489))
+- refactor: audit emission and dep injection patterns ([5c2565e](https://github.com/fuzdev/fuz_app/commit/5c2565e))
+
 ## 0.104.0
 
 ### Minor Changes
