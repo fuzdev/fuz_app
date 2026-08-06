@@ -1310,11 +1310,9 @@ deps.fact_store = fact_store;
 
 `put(bytes)` is idempotent (same bytes → same hash → one row) and rejects
 content over `embedded_threshold` so the caller routes large payloads
-through `put_ref` explicitly. `write_fact(fact_store, embedded_threshold,
-facts_dir, bytes, options)` (`server/fact_write.js`) handles that routing —
-embed when small, else atomic temp-write + rename into the shard tree, then
-`put_ref`. Reads of external facts verify the hash and return `null` on
-mismatch.
+through `put_ref` explicitly — embed when small, else atomic temp-write +
+rename into the shard tree, then `put_ref`. Reads of external facts verify
+the hash and return `null` on mismatch.
 
 ### Serving facts
 

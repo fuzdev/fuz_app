@@ -12,10 +12,8 @@
  *
  * This is a best-effort string check (brace-matched `location` blocks), the TS
  * twin of the Rust `fuz_fact_serving` `nginx.rs` — not a real nginx parser, but
- * it catches the security-critical omission. Distinct from
- * `validate_nginx_config` (`server/validate_nginx.ts`), which validates the
- * `/api` Authorization-strip + security headers and takes no facts-location
- * path.
+ * it catches the security-critical omission. This is the only nginx property
+ * fuz_app validates; there is no general config validator.
  *
  * @module
  */

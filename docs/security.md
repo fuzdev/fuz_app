@@ -213,7 +213,16 @@ Rotating filesystem credential for keeper-level operations:
 - Server writes a random token to `~/.{app}/run/daemon_token`
   as JSON `{"token": "<base64url>"}` — wrapper leaves room for future
   fields (rotated_at, version) without changing every reader; matched by
-  the Rust spine writer (`fuz_auth::write_token_file`) for wire parity
+  the Rust spine writer (`fuz_testing::write_token_file`) for wire parity
+- **Twin divergence — the Rust spine no longer mounts this credential in
+  production.** Its writer moved from `fuz_auth` into the test-only
+  `fuz_testing` crate, which a release audit keeps out of every production
+  binary, so a Rust-backed consumer cannot mint or persist a daemon token and
+  its `daemon_token_state` is always `None`. No caller in the ecosystem sends
+  `X-Daemon-Token` outside the cross-backend harness. The wire format and the
+  gates below stay identical, so a TS consumer that wants the credential still
+  works — but if you are choosing whether to mount it, note the Rust side
+  concluded there was nothing to mount it for
 - **Mode `0600` is not guaranteed.** The write applies it only when the runtime
   supplies the _optional_ `chmod` dependency, and neither the standard Node nor
   the standard Deno `RuntimeDeps` factory does — so under an ordinary runtime the
@@ -772,8 +781,8 @@ redirect prefix is therefore gated behind a validated `XAccelConfig`
 which runs `validate_facts_internal_location` and throws at boot on a missing or
 non-`internal;` location — so X-Accel serving is impossible to enable without
 proving the location is internal. This is a best-effort string check, not a full
-nginx parser, and is distinct from `validate_nginx_config` (which covers the
-`/api` Authorization-strip + security headers, not the facts-location rule).
+nginx parser. It is the only nginx property fuz_app validates — see
+§Config Validation.
 
 ## Signup
 
@@ -900,43 +909,61 @@ guard for symmetry — they are loopback-only and never legitimately carry an
 `Origin`, so a header-bearing daemon token is dropped (and the request falls
 through to `credential_type_required` downstream rather than a hard fail).
 
-## v1 Deployment: Cookie-Only External Auth
+## External Bearer Auth Is Enabled
 
-> **This is a recommended posture, not a property fuz_app enforces — and it is
-> not what the reference deployment recipes do.** The recipes forward
-> `Authorization` on the general `/api` block so API-token clients keep working
-> through nginx, on the reasoning that the browser-context guard (below) is what
-> stops browser token leakage. That reasoning is sound for XSS exfiltration but
-> does **not** cover replay of a token stolen from CI, an env var, or a config
-> file: such a client sends no `Origin` and is admitted. Adopt the strip below
-> if you want that replay surface closed and your clients don't need bearer auth
-> through the proxy; otherwise treat external bearer as enabled and rely on
-> token revocation, per-token scoping, and the limiter. `validate_nginx_config`
-> currently treats the strip as a hard requirement, so it will reject a
-> forwarding config — see its notes before wiring it into a deployment gate.
+External traffic reaches the API over **both** cookie and bearer auth. The
+reference deployment recipes forward `Authorization` on the general `/api`
+block, and every deployed consumer builds its site from those recipes. This
+section describes that posture and names what it costs, because an earlier
+version of this document recommended the opposite ("strip `Authorization` at
+nginx, cookie-only for v1") while no deployment ever did it.
 
-For the initial release, external traffic should use **cookie auth only**. Strip
-the `Authorization` header at the nginx reverse proxy:
+**What is actually in force:**
+
+- **Browser callers** — cookie auth. A bearer or daemon-token credential
+  presented alongside an `Origin`/`Referer` header is silently discarded by the
+  browser-context guard (see Browser/CLI split above), so a token exfiltrated by
+  XSS cannot be replayed from the page that stole it.
+- **Non-browser callers** — bearer auth works through the proxy. This is load
+  bearing: `fuzf`'s repo commands, and any server-to-server client, authenticate
+  this way.
+
+**What that costs.** The browser-context guard closes browser XSS exfiltration.
+It does **not** close replay of a token stolen from CI, an env var, a config
+file, or a backup — that attacker uses curl, sends no `Origin`, and is admitted.
+An API token is account-wide and, by default, non-expiring, so such a token
+reaches every action whose spec accepts the bearer channel, plus any role-gated
+action whose role the compromised account holds.
+
+**Compensating controls**, in the order they bite:
+
+1. **Credential-channel gating on the sensitive specs.** An action spec names
+   which credential types admit; the credential-lifecycle mutations
+   (`account_session_revoke`, `account_session_revoke_all`,
+   `account_token_create`, `account_token_revoke`) are `['session']` on both
+   spines, so a leaked token cannot mint another token, revoke one, or kill a
+   session. See §Credential-channel gating. Consumers should extend the same
+   treatment to their own high-consequence mutations rather than leaving them at
+   "any authenticated credential".
+2. **Per-token scoping.** fuz_forge's scoped-token policy bounds which RPC
+   methods a given token may call. This is the strongest available control and
+   the right one to reach for when issuing a token to automation.
+3. **Revocation and the rate limiter**, which bound the window and the blast
+   rate but not the reach.
+
+Not yet available, and the reason this is a stated tradeoff rather than a solved
+problem: per-token IP binding, and token expiry by default.
+
+**If you want the replay surface closed** and your clients don't need bearer
+through the proxy, strip the header at nginx:
 
 ```nginx
 proxy_set_header Authorization "";
 ```
 
-This creates a clean security boundary:
-
-- **Browser users (external, via nginx)** — cookie auth only. Bearer tokens
-  are stripped before reaching the app.
-- **Local CLI (direct to app, bypasses nginx)** — daemon token auth works
-  normally. API token auth also works for local tooling if needed.
-
-The app still contains bearer auth code — when external API token access is
-needed later (with IP binding or scoping), remove the nginx directive. No code
-changes required.
-
-**Why**: Cookie auth has the strongest browser-side protections (`HttpOnly`,
-`Secure`, `SameSite=Strict`). Disabling external bearer auth eliminates the
-attack surface of stolen API tokens being replayed from arbitrary IPs. Local
-daemon tokens are unaffected because they never traverse the reverse proxy.
+This is a per-deployment decision, not a fuz_app default. Note that a consumer
+serving git smart-HTTP or a bearer-authenticated file store needs carve-out
+`location` blocks for those routes, as fuz_forge does.
 
 ## nginx Static File Serving
 
@@ -946,26 +973,21 @@ enables nginx-level caching for immutable SvelteKit assets (`/_app`).
 
 ### Config Validation
 
-`validate_nginx_config` checks consumer `NGINX_CONFIG` template strings for
-required security properties. Add to deploy scripts:
+There is no general nginx-config validator. An earlier `validate_nginx_config`
+treated the `Authorization` strip as a hard requirement, which made it reject
+every deployed consumer's config; it was never wired into a deploy and has been
+removed rather than left to drift further from what the recipes build.
 
-```typescript
-import { validate_nginx_config } from '@fuzdev/fuz_app/server/validate_nginx.ts';
-
-const result = validate_nginx_config(NGINX_CONFIG);
-if (!result.ok) throw new Error(result.errors.join('\n'));
-if (result.warnings.length > 0) console.warn(result.warnings.join('\n'));
-```
-
-Checks: Authorization header stripping in `/api` blocks, HSTS, security headers,
-`server_tokens off`, `limit_req`, XFF header choice, and the `add_header`
-inheritance gotcha. This is string pattern matching, not a real nginx parser —
-it catches common security omissions in fuz_app deploy configs.
+The one nginx property that *is* checked is the facts location, because
+confidentiality depends on it: `XAccelConfig` (`server/x_accel.ts`) can only be
+constructed by passing the config through a check that the facts location is
+`internal;`, so X-Accel fact serving cannot be enabled un-validated. See
+§Serving Facts.
 
 Recommended locations:
 
 ```nginx
-location /api { proxy_pass ...; proxy_set_header Authorization ""; }
+location /api { proxy_pass ...; }
 location = /health { proxy_pass ...; }
 location /_app { expires 1y; add_header Cache-Control "public, immutable"; try_files $uri =404; }
 location / { try_files $uri $uri/index.html $uri.html =404; }
