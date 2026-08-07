@@ -83,7 +83,7 @@ export const derive_http_method = (side_effects: ActionSideEffects): RouteMethod
  * is all-or-nothing there. **Bridge something with no request/response shape —
  * an SSE stream, a file download — and rule 3's reasoning applies instead**:
  * pass `options.auth` with `required_scope: 'surface:<name>'`, naming your own
- * surface. See ../../../docs/security.md §Token scoping.
+ * surface. See `docs/security.md` §Token scoping.
  *
  * Skipped for a public action (`account: 'none', actor: 'none'`), where the
  * same holder reaches the route by dropping the credential, so the guard would
