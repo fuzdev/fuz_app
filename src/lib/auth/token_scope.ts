@@ -110,7 +110,7 @@ export const token_scope_admits_method = (scope: TokenScope, method: string): bo
  *
  * **A narrowed token reaches no non-RPC surface at all** — the load-bearing
  * half of token scoping, and what "rule 3" names wherever this module's
- * callers and the Rust twin use that shorthand. See ../../../docs/security.md
+ * callers and the Rust twin use that shorthand. See `docs/security.md`
  * §Token scoping.
  *
  * A method-name allowlist alone would have been a false promise: the db-admin
