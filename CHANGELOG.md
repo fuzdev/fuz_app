@@ -1,5 +1,27 @@
 # @fuzdev/fuz_app
 
+## 0.106.1
+
+### Patch Changes
+
+- fix: brand `session_id` on the `AccountSessionsRpc` adapter, and require `fuz_util >=0.68.0` ([25a0233](https://github.com/fuzdev/fuz_app/commit/25a0233))
+
+  `SessionId` became a branded type in 0.105.0, but `AccountSessionsRpc.revoke`
+  kept declaring `{session_id: string}`. fuz_app's own code compiled because
+  `AccountSessionsState.submit_revoke` widened the id back to `string` on the way
+  through — so the gap was invisible in-repo and only surfaced in consumers,
+  where adapting a typed RPC client to the interface fails to assign a plain
+  `string` to the branded parameter. `AccountSessionsRpc.revoke` and
+  `AccountSessionsState.submit_revoke` now take `SessionId`; `AuthSessionJson.id`
+  already is one, so consumers wiring the adapter from their generated client
+  compile without a cast.
+
+  The `@fuzdev/fuz_util` peer range moves from `>=0.65.2` to `>=0.68.0`. The
+  published bundle imports `@fuzdev/fuz_util/hash_schemas.ts`, which does not
+  exist below 0.68 — a consumer satisfying the old range installed cleanly and
+  then failed at import with `Cannot find package`. The range now states what the
+  code actually needs.
+
 ## 0.106.0
 
 ### Minor Changes
@@ -29,7 +51,7 @@
     cross-process test that mints a secondary account. Consumers running
     cross-backend suites against the Rust spine need this fix.
 
-- refactor: remove validate_nginx and fact_write, document the real bearer posture ([6576390](https://github.com/fuzdev/fuz_app/commit/6576390))
+- remove validate_nginx and fact_write, document the real bearer posture ([6576390](https://github.com/fuzdev/fuz_app/commit/6576390)) ([refactor](https://github.com/fuzdev/fuz_app/commit/refactor))
 - feat: scope api tokens with default-deny at mint ([45e059c](https://github.com/fuzdev/fuz_app/commit/45e059c))
 
   `api_token` gains a `scope JSONB NOT NULL` column via the appended
