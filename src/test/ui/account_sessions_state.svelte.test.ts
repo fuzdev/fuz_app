@@ -15,7 +15,7 @@ import {
 	AccountSessionsState,
 	type AccountSessionsRpc
 } from '$lib/ui/account_sessions_state.svelte.ts';
-import type { AuthSessionJson } from '$lib/auth/account_schema.ts';
+import type { AuthSessionJson, SessionId } from '$lib/auth/account_schema.ts';
 
 afterEach(() => {
 	vi.restoreAllMocks();
@@ -36,6 +36,9 @@ const make_session = (overrides: SessionOverrides = {}): AuthSessionJson =>
 		last_seen_at: '2026-01-02T00:00:00.000Z',
 		...overrides
 	}) as AuthSessionJson;
+
+/** The same widening for a bare id argument — a readable label, never parsed. */
+const session_id = (id: string): SessionId => id as SessionId;
 
 const make_rpc = (overrides: Partial<AccountSessionsRpc> = {}): AccountSessionsRpc => ({
 	list: vi.fn().mockResolvedValue({ sessions: [] }),
@@ -98,7 +101,7 @@ describe('AccountSessionsState.submit_revoke', () => {
 		const state = new AccountSessionsState({ get_rpc: () => rpc });
 		state.sessions = [make_session({ id: 'sess-1' }), make_session({ id: 'sess-2' })];
 
-		await state.submit_revoke('sess-1');
+		await state.submit_revoke(session_id('sess-1'));
 
 		assert.strictEqual(state.sessions.length, 1);
 		assert.strictEqual(state.sessions[0]!.id, 'sess-2');
@@ -112,7 +115,7 @@ describe('AccountSessionsState.submit_revoke', () => {
 		const state = new AccountSessionsState({ get_rpc: () => rpc });
 		state.sessions = [make_session({ id: 'sess-1' })];
 
-		await state.submit_revoke('sess-1');
+		await state.submit_revoke(session_id('sess-1'));
 
 		assert.strictEqual(state.revoke.error('sess-1'), 'not_found');
 		assert.strictEqual((rpc.list as ReturnType<typeof vi.fn>).mock.calls.length, 0);

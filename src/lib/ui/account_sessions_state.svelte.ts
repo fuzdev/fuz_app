@@ -16,7 +16,7 @@ import { create_context } from '@fuzdev/fuz_ui/context_helpers.ts';
 
 import { AsyncSlot } from './async_slot.svelte.ts';
 import { KeyedAsyncSlot } from './keyed_async_slot.svelte.ts';
-import type { AuthSessionJson } from '../auth/account_schema.ts';
+import type { AuthSessionJson, SessionId } from '../auth/account_schema.ts';
 
 /**
  * Narrow RPC surface consumed by `AccountSessionsState`. Consumers adapt their
@@ -32,7 +32,7 @@ import type { AuthSessionJson } from '../auth/account_schema.ts';
  */
 export interface AccountSessionsRpc {
 	list: () => Promise<{ sessions: Array<AuthSessionJson> }>;
-	revoke: (params: { session_id: string }) => Promise<{ ok: true; revoked: boolean }>;
+	revoke: (params: { session_id: SessionId }) => Promise<{ ok: true; revoked: boolean }>;
 	revoke_all: () => Promise<{ ok: true; count: number }>;
 }
 
@@ -73,7 +73,7 @@ export class AccountSessionsState {
 		});
 	}
 
-	async submit_revoke(id: string): Promise<void> {
+	async submit_revoke(id: SessionId): Promise<void> {
 		await this.revoke.run(id, async () => {
 			await this.#get_rpc().revoke({ session_id: id });
 		});
