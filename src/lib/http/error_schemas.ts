@@ -256,7 +256,7 @@ export type CredentialTypeRequiredError = z.infer<typeof CredentialTypeRequiredE
  * Token-scope error — returned by the `require_token_scope` guard (and its
  * direct-call twin `token_scope_surface_denial`) when a **narrowed** api token
  * reaches a capability its scope does not admit. See
- * ../../../docs/security.md §Token scoping.
+ * `docs/security.md` §Token scoping.
  *
  * `required_scope` carries the capability string the route demands, verbatim
  * from its `auth.required_scope` — `surface:audit_stream` for a non-RPC

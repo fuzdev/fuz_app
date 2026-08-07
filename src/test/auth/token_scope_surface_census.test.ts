@@ -253,7 +253,7 @@ const NON_SURFACE_SITES: ReadonlyArray<string> = [
  * satisfies — puts every `public` row behind a credential this census no
  * longer describes. That exact rewrite is how the capability string came to
  * exist. A consumer carries its own census; the spine cannot see its surfaces,
- * and cannot see its own surfaces re-authed. See ../../../docs/security.md
+ * and cannot see its own surfaces re-authed. See `docs/security.md`
  * §Token scoping.
  */
 const RULE_3_SURFACE_SITES: Record<TokenSurface, { file: string; source: string } | null> = {
