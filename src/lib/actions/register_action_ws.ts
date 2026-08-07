@@ -36,6 +36,7 @@ import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import {
 	get_request_context,
 	require_request_context,
+	token_scope_surface_denial,
 	type RequestContext
 } from '../auth/request_context.ts';
 import { hash_session_token } from '../auth/session_queries.ts';
@@ -68,10 +69,6 @@ import { WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT } from './transports.ts';
 import { BackendWebsocketTransport, type ConnectionIdentity } from './transports_ws_backend.ts';
 import { audit_unmatched_peer_response, type RequestClient } from './peer_request.ts';
 import { perform_action, perform_action_result_to_envelope } from './perform_action.ts';
-import {
-	token_scope_admits_non_rpc,
-	token_scope_surface_denied_body
-} from '../auth/token_scope.ts';
 
 export type { Action };
 
@@ -283,10 +280,8 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		// scoped token that could upgrade would observe far more than it was
 		// granted.
 		async (c, next) => {
-			const scope = c.get(TOKEN_SCOPE_KEY);
-			if (scope && !token_scope_admits_non_rpc(scope)) {
-				return c.json(token_scope_surface_denied_body('ws_upgrade'), 403);
-			}
+			const denied = token_scope_surface_denial(c, 'ws_upgrade');
+			if (denied) return denied;
 			return next();
 		},
 		upgradeWebSocket((c) => {

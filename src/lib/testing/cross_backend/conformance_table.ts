@@ -41,11 +41,17 @@ import {
 	find_rpc_action,
 	headers_to_record,
 	rpc_call,
+	rpc_call_for_spec,
 	resolve_rpc_endpoints_for_setup,
 	type RpcEndpointsSuiteOption
 } from '../rpc_helpers.ts';
+import { account_token_create_action_spec } from '../../auth/account_action_specs.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
-import { type ConformanceCase, type ConformancePrincipal } from './conformance_case.ts';
+import {
+	SCOPED_TOKEN_ADMITTED_METHOD,
+	type ConformanceCase,
+	type ConformancePrincipal
+} from './conformance_case.ts';
 import type { BackendCapabilities } from './capabilities.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
 import { xfail_until } from './xfail.ts';
@@ -107,17 +113,67 @@ interface ResolvedPrincipal {
 const INVALID_DAEMON_TOKEN_VALUE = 'not-a-valid-daemon-token';
 
 /**
+ * Mint the `scoped_token` principal's narrowed bearer token over the
+ * production `account_token_create` path.
+ *
+ * Minted rather than seeded, and minted *here* rather than in a case. The
+ * seed stays `full` because `_testing_reset`'s api token backs every other
+ * bearer principal, and a case that minted its own credential would be the
+ * setup-DSL trap the case schema exists to avoid.
+ *
+ * `account_token_create` is session-only, so this runs over the keeper's
+ * session — which also makes the mint itself a live assertion that a narrowed
+ * scope is *accepted* at the mint boundary, not merely stored.
+ */
+const mint_scoped_token = async (
+	fixture: TestFixture,
+	resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup>
+): Promise<string> => {
+	const found = find_rpc_action(resolved_rpc_endpoints, account_token_create_action_spec.method);
+	if (!found) {
+		throw new Error(
+			`conformance: principal 'scoped_token' needs '${account_token_create_action_spec.method}' ` +
+				`on the surface to mint its narrowed token, but the method is not registered on ` +
+				`rpc_endpoints.`
+		);
+	}
+	// Spec-bound rather than a loose `rpc_call`: `params` type-checks against
+	// `TokenCreateInput` (so dropping `scope` is a compile error, not a runtime
+	// 400 in every test at once), and `result.token` comes back typed and
+	// output-validated — no cast, no hand-rolled presence check.
+	const res = await rpc_call_for_spec({
+		app: fixture.transport,
+		path: found.path,
+		spec: account_token_create_action_spec,
+		params: {
+			name: 'conformance scoped token',
+			scope: { kind: 'methods', methods: [SCOPED_TOKEN_ADMITTED_METHOD] }
+		},
+		headers: fixture.create_session_headers()
+	});
+	if (!res.ok) {
+		throw new Error(
+			`conformance: minting the 'scoped_token' principal failed with ${res.status}: ` +
+				JSON.stringify(res.error)
+		);
+	}
+	return res.result.token;
+};
+
+/**
  * Map a `ConformancePrincipal` onto the transport + headers it
  * authenticates with, reading exclusively from the per-test `TestFixture`.
  *
  * The five always-available principals resolve from fixture accessors;
  * `role_holder` / `wrong_role` read a seeded `extra_accounts` entry named
- * via `options.principals` (throws a clear setup error when unconfigured).
+ * via `options.principals` (throws a clear setup error when unconfigured);
+ * `scoped_token` mints its narrowed credential over the production path.
  */
 const resolve_principal = async (
 	fixture: TestFixture,
 	as: ConformancePrincipal,
-	principals: ConformancePrincipalConfig | undefined
+	principals: ConformancePrincipalConfig | undefined,
+	resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup>
 ): Promise<ResolvedPrincipal> => {
 	switch (as) {
 		case 'keeper':
@@ -186,6 +242,17 @@ const resolve_principal = async (
 				transport: fixture.fresh_transport(),
 				headers: fixture.create_bearer_headers()
 			};
+		case 'scoped_token': {
+			// A narrowed bearer, otherwise identical to `token` — empty jar + no
+			// Origin, so the credential is honored rather than browser-discarded
+			// and the scope gate is what any denial comes from.
+			const token = await mint_scoped_token(fixture, resolved_rpc_endpoints);
+			return {
+				transport: fixture.fresh_transport({ origin: null }),
+				headers: { authorization: `Bearer ${token}` },
+				suppress_default_origin: true
+			};
+		}
 		case 'anonymous':
 			// Fresh jar so the keeper cookie (cross-process) can't leak in.
 			return { transport: fixture.fresh_transport(), headers: {} };
@@ -357,7 +424,8 @@ const run_case = async (
 	const { transport, headers, suppress_default_origin } = await resolve_principal(
 		fixture,
 		c.request.as,
-		options.principals
+		options.principals,
+		resolved_rpc_endpoints
 	);
 
 	const normalized = c.request.method.startsWith('/')

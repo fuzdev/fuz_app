@@ -21,7 +21,8 @@ import {
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_INVALID_CREDENTIALS,
 	ERROR_NO_MATCHING_INVITE,
-	ERROR_ROLE_GRANT_NOT_FOUND
+	ERROR_ROLE_GRANT_NOT_FOUND,
+	ERROR_TOKEN_SCOPE_REQUIRED
 } from '$lib/http/error_schemas.ts';
 import {
 	ERROR_CANNOT_DELETE_KEEPER,
@@ -29,7 +30,10 @@ import {
 } from '$lib/auth/admin_action_specs.ts';
 import { ERROR_ROLE_GRANT_OFFER_NOT_FOUND } from '$lib/auth/role_grant_offer_action_specs.ts';
 import { DEFAULT_TEST_PASSWORD } from '$lib/testing/test_credentials.ts';
-import type { ConformanceCase } from '$lib/testing/cross_backend/conformance_case.ts';
+import {
+	SCOPED_TOKEN_ADMITTED_METHOD,
+	type ConformanceCase
+} from '$lib/testing/cross_backend/conformance_case.ts';
 
 /** A well-formed UUID that never names a real row — exercises the not-found / mask paths. */
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
@@ -214,6 +218,70 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 		request: { method: 'account_verify', as: 'anonymous' },
 		expect: { status: 401, equivalence_group: 'browser_bearer_replay' },
 		note: 'security.md §Browser/CLI split — the no-credential baseline a browser-replayed bearer must be byte-identical to (the equivalence group asserts both 401s match)'
+	}
+];
+
+// --- Batch: token scope (per-credential authority narrowing) ----------
+// The `scoped_token` principal holds a bearer minted with
+// `{kind: 'methods', methods: [SCOPED_TOKEN_ADMITTED_METHOD]}`. Scope is
+// enforced in each spine's own dispatcher — a per-method check between the
+// credential gate and the role gate — so nothing but a wire assertion keeps
+// the two implementations from drifting on *which* denial fires or *what*
+// capability string it names.
+//
+// The batch is a three-part shape: the admitted method proves the credential
+// authenticates at all (without it every denial below would pass vacuously on
+// a spine that simply rejected the token), two unadmitted methods prove the
+// denial and that `required_scope` tracks the method rather than being a
+// constant, and the session-only method proves the *ordering* — credential
+// before scope, so a channel that may never call an action learns nothing
+// about the caller's scope.
+const token_scope_cases: ReadonlyArray<ConformanceCase> = [
+	{
+		name: `scoped token → ${SCOPED_TOKEN_ADMITTED_METHOD} (admitted) → 200`,
+		request: { method: SCOPED_TOKEN_ADMITTED_METHOD, as: 'scoped_token' },
+		expect: { status: 200 },
+		note: 'security.md §API Token Security — a narrowed token still authenticates and still reaches the methods it names; this is the non-vacuous control for the denials below (a spine that rejected the credential outright would pass those and fail this)'
+	},
+	{
+		name: 'scoped token → account_token_list (not admitted) → 403 token_scope_required',
+		request: { method: 'account_token_list', as: 'scoped_token' },
+		expect: {
+			status: 403,
+			error_reason: ERROR_TOKEN_SCOPE_REQUIRED,
+			fields: { required_scope: 'rpc:account_token_list' }
+		},
+		note: 'security.md §API Token Security — a token scoped to named methods denies every method it does not list, and both spines name the missing capability identically'
+	},
+	{
+		name: 'scoped token → account_session_list (not admitted) → 403 token_scope_required',
+		request: { method: 'account_session_list', as: 'scoped_token' },
+		expect: {
+			status: 403,
+			error_reason: ERROR_TOKEN_SCOPE_REQUIRED,
+			fields: { required_scope: 'rpc:account_session_list' }
+		},
+		note: 'security.md §API Token Security — the second unadmitted method pins that `required_scope` names the method that was refused rather than a fixed string, on both spines'
+	},
+	{
+		// Session-only AND unadmitted by the scope, so exactly one of the two
+		// denials can fire. `credential_type_required` is the correct one: the
+		// coarser fact ("this channel may never call me") outranks the finer, and
+		// naming the missing scope here would confirm the endpoint to a channel
+		// that should not learn it exists. Well-formed params for the reason the
+		// two credential-ceiling cases above carry them.
+		name: 'scoped token → account_token_create → 403 credential_type_required (credential gate precedes scope gate)',
+		request: {
+			method: 'account_token_create',
+			as: 'scoped_token',
+			params: { scope: { kind: 'full' } }
+		},
+		expect: {
+			status: 403,
+			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
+			fields: { required_credential_types: ['session'] }
+		},
+		note: 'security.md §Credential-channel gating on credential-minting actions — the credential gate runs before the scope gate on both spines, so a bearer refused by channel is never told which scope it lacked'
 	}
 ];
 
@@ -419,12 +487,13 @@ const data_exposure_cases: ReadonlyArray<ConformanceCase> = [
 
 /**
  * The full declarative security slate, ordered by blast radius
- * (credential ceiling → privilege gates → IDOR masks + enumeration
- * equivalence → phase ordering → response-header hygiene → sensitive-field
- * non-disclosure).
+ * (credential ceiling → token scope → privilege gates → IDOR masks +
+ * enumeration equivalence → phase ordering → response-header hygiene →
+ * sensitive-field non-disclosure).
  */
 export const conformance_security_cases: ReadonlyArray<ConformanceCase> = [
 	...credential_ceiling_cases,
+	...token_scope_cases,
 	...privilege_gate_cases,
 	...idor_and_enumeration_cases,
 	...phase_order_cases,

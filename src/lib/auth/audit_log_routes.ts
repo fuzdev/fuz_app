@@ -18,7 +18,11 @@ import type { RouteSpec } from '../http/route_spec.ts';
 import { create_audit_log_route_shape } from './audit_log_route_schema.ts';
 import { create_sse_response, type SseStream, type SseNotification } from '../realtime/sse.ts';
 import type { SubscribeOptions } from '../realtime/subscriber_registry.ts';
-import { AUTH_SESSION_TOKEN_HASH_KEY, require_request_context } from './request_context.ts';
+import {
+	AUTH_SESSION_TOKEN_HASH_KEY,
+	require_request_context,
+	token_scope_surface_denial
+} from './request_context.ts';
 import { AUDIT_LOG_CHANNEL } from '../realtime/sse_auth_guard.ts';
 
 /** Options for audit log route specs. */
@@ -53,6 +57,14 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 		{
 			...create_audit_log_route_shape(options.required_role),
 			handler: (c) => {
+				// Rule 3 — a narrowed token holds no audit feed. Same reasoning as
+				// the WS upgrade: this is a long-lived server→client stream whose
+				// contents are decided by the account's role, not by any
+				// per-message scope check, so there is no point after open at
+				// which a narrowing could apply.
+				const denied = token_scope_surface_denial(c, 'audit_stream');
+				if (denied) return denied;
+
 				const ctx = require_request_context(c);
 				// scope = session hash (capped → tabs-per-session limit and
 				// session-specific `session_revoke` close). groups = [account_id]

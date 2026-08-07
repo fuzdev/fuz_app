@@ -69,6 +69,15 @@ import { z } from 'zod';
  *   be replayed from a browser — wire-indistinguishable from sending no
  *   credential (the `token` principal is the honored counterpart: it suppresses
  *   `Origin`, so the same token authenticates).
+ * - `scoped_token` — the keeper authenticated via a bearer api-token minted
+ *   with a **narrowed** `TokenScope` (`{kind: 'methods', methods:
+ *   [SCOPED_TOKEN_ADMITTED_METHOD]}`), non-browser context. Minted through the
+ *   production `account_token_create` path over the keeper's session, not
+ *   seeded — `_testing_reset` deliberately seeds a `full` token, and a harness
+ *   that narrowed the seed would silently re-scope every other bearer case.
+ *   The scope gate sits between the credential gate and the role gate, so this
+ *   principal is what distinguishes `token_scope_required` from the
+ *   credential-type and role denials on either side of it.
  * - `anonymous` — no credential, fresh cookie jar.
  * - `fresh_non_admin` — a freshly minted account with no roles, session
  *   credential (via the production invite → signup → login flow).
@@ -90,6 +99,7 @@ export const ConformancePrincipal = z.enum([
 	'daemon_browser',
 	'token',
 	'bearer_browser',
+	'scoped_token',
 	'anonymous',
 	'fresh_non_admin',
 	'role_holder',
@@ -97,6 +107,18 @@ export const ConformancePrincipal = z.enum([
 	'expired_session'
 ]);
 export type ConformancePrincipal = z.infer<typeof ConformancePrincipal>;
+
+/**
+ * The single RPC method the `scoped_token` principal's narrowed token admits.
+ *
+ * Part of the principal's contract, so the runner (which mints the token) and
+ * the cases (which assert the denials) agree on one value. `account_verify` is
+ * the minimal `credential_types: any` read on the spine: it clears the
+ * credential gate a bearer must pass first, and holds no role gate that could
+ * shadow the scope denial — so a case naming any *other* method isolates the
+ * scope gate and nothing else.
+ */
+export const SCOPED_TOKEN_ADMITTED_METHOD = 'account_verify';
 
 /** The request a conformance case issues. */
 export const ConformanceCaseRequest = z.strictObject({

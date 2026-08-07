@@ -101,15 +101,12 @@ import {
 	build_request_context,
 	get_request_context,
 	has_role,
+	token_scope_surface_denial,
 	type RequestContext
 } from '../auth/request_context.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
-import {
-	token_scope_admits_non_rpc,
-	token_scope_surface_denied_body
-} from '../auth/token_scope.ts';
 import { ActingActor } from '../http/auth_shape.ts';
-import { ACCOUNT_ID_KEY, TOKEN_SCOPE_KEY } from '../hono_context.ts';
+import { ACCOUNT_ID_KEY } from '../hono_context.ts';
 import { query_active_actors_by_account } from '../auth/account_queries.ts';
 import { get_route_params, type RouteContext, type RouteSpec } from '../http/route_spec.ts';
 import { ERROR_INVALID_ROUTE_PARAMS } from '../http/error_schemas.ts';
@@ -417,15 +414,13 @@ export const create_serve_fact_route_spec = (
 		handler: async (c, route) => {
 			const { hash } = get_route_params<{ hash: FactHash }>(c);
 
-			// Token-scope surface gate (rule 3) — a narrowed token gets no
-			// bare-hash read. This route serves *any* stored fact by hash with no
-			// per-reference cell check (that is the per-cell route's job), so it
-			// is the broad capability of the pair; gating it keeps a narrowed
-			// token to the cell-scoped route its RPC methods can justify.
-			const token_scope = c.get(TOKEN_SCOPE_KEY);
-			if (token_scope && !token_scope_admits_non_rpc(token_scope)) {
-				return c.json(token_scope_surface_denied_body('fact_bare'), 403);
-			}
+			// Rule 3 — a narrowed token gets no bare-hash read. This route serves
+			// *any* stored fact by hash with no per-reference cell check (that is
+			// the per-cell route's job), so it is the broad capability of the
+			// pair; gating it keeps a narrowed token to the cell-scoped route its
+			// RPC methods can justify.
+			const denied = token_scope_surface_denial(c, 'fact_bare');
+			if (denied) return denied;
 
 			// Defense-in-depth: the auth phase already gated this on the admin
 			// role, but re-check the resolved context so a mounting/auth-shape

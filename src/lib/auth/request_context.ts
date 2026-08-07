@@ -64,7 +64,12 @@ import {
 	TEST_CONTEXT_PRESET_KEY,
 	type CredentialType
 } from '../hono_context.ts';
-import { token_scope_full } from './token_scope.ts';
+import {
+	token_scope_admits_non_rpc,
+	token_scope_full,
+	token_scope_surface_denied_body,
+	type TokenSurface
+} from './token_scope.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import { is_public_auth, needs_actor, type RouteAuth } from '../http/auth_shape.ts';
 import {
@@ -353,6 +358,30 @@ export const create_request_context_middleware = (
 
 		await next();
 	};
+};
+
+/**
+ * Refuse a non-RPC spine surface to a narrowed token — **rule 3**, in one place.
+ *
+ * Called by every surface rule 3 covers: the bare-hash fact read, the audit SSE
+ * stream, and the WS upgrade (as pre-upgrade middleware, since
+ * `upgradeWebSocket`'s callback cannot produce a denial).
+ *
+ * An unset `TOKEN_SCOPE_KEY` is the anonymous caller, who holds no credential to
+ * narrow, so it passes. Sharing that branch is the point — hand-rolled per
+ * surface it is one `&&` from either refusing every anonymous read or admitting
+ * an authenticated caller whose middleware forgot to set the key.
+ *
+ * @param c - the request context, after the auth middleware chain
+ * @param surface - the surface being gated; names itself in the denial
+ * @returns the 403 to return, or `null` when the caller may proceed
+ */
+export const token_scope_surface_denial = (c: Context, surface: TokenSurface): Response | null => {
+	const scope = c.get(TOKEN_SCOPE_KEY);
+	if (scope && !token_scope_admits_non_rpc(scope)) {
+		return c.json(token_scope_surface_denied_body(surface), 403);
+	}
+	return null;
 };
 
 /**

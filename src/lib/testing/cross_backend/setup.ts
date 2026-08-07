@@ -845,11 +845,15 @@ const mint_account = async (
 	// `{ok: true}` and we already have the cookie via the jar.
 	await login_response.arrayBuffer().catch(() => undefined);
 
+	// `scope` is required at mint — there is no absent state, which is the whole
+	// point of the default-deny design. A minted-account fixture stands in for an
+	// ordinary account credential, so it takes full account authority; the
+	// narrowed credential is the conformance table's `scoped_token` principal.
 	const token_result = await rpc_via_transport(
 		transport,
 		handle.config.rpc_path,
 		'account_token_create',
-		{},
+		{ scope: { kind: 'full' } },
 		handle.config.name
 	);
 	const token_parsed = TokenCreateResponseShape.safeParse(token_result);
