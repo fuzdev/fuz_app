@@ -30,13 +30,15 @@ export const ActionSpec = z.strictObject({
 	kind: ActionKind,
 	initiator: ActionInitiator,
 	/**
-	 * The four-axis auth shape (canonical schema in `http/auth_shape.ts`).
+	 * The flat auth shape (canonical schema in `http/auth_shape.ts`).
 	 * `null` for `remote_notification` and `local_call` — those don't
 	 * dispatch through the request/response auth gate.
 	 *
 	 * See `http/auth_shape.ts` for the design rationale (orthogonal
 	 * authentication / account-resolution / actor-resolution / role-and-
-	 * credential authorization axes).
+	 * credential authorization axes). `token_surface` is the one field an
+	 * action may not set — `compile_action_registry` rejects it, since
+	 * nothing on the RPC path mounts a guard from it.
 	 */
 	auth: RouteAuth.nullable(),
 	side_effects: ActionSideEffects,

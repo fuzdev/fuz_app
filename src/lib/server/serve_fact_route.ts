@@ -101,7 +101,6 @@ import {
 	build_request_context,
 	get_request_context,
 	has_role,
-	token_scope_surface_denial,
 	type RequestContext
 } from '../auth/request_context.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
@@ -398,7 +397,17 @@ export const create_serve_fact_route_spec = (
 	return {
 		method: 'GET',
 		path: '/api/facts/:hash',
-		auth: { account: 'required', actor: 'required', roles: [ROLE_ADMIN] },
+		auth: {
+			account: 'required',
+			actor: 'required',
+			roles: [ROLE_ADMIN],
+			// Rule 3 — a narrowed token gets no bare-hash read. This route
+			// serves *any* stored fact by hash with no per-reference cell check
+			// (that is the per-cell route's job), so it is the broad capability
+			// of the pair; gating it keeps a narrowed token to the cell-scoped
+			// route its RPC methods can justify.
+			token_surface: 'fact_bare'
+		},
 		description:
 			'Serve content-addressed fact bytes by bare hash — admin only. Non-admin reads go through GET /api/cells/:cell_id/facts/:hash (per-reference).',
 		params: bare_hash_params_schema,
@@ -413,14 +422,6 @@ export const create_serve_fact_route_spec = (
 		errors: params_400_error,
 		handler: async (c, route) => {
 			const { hash } = get_route_params<{ hash: FactHash }>(c);
-
-			// Rule 3 — a narrowed token gets no bare-hash read. This route serves
-			// *any* stored fact by hash with no per-reference cell check (that is
-			// the per-cell route's job), so it is the broad capability of the
-			// pair; gating it keeps a narrowed token to the cell-scoped route its
-			// RPC methods can justify.
-			const denied = token_scope_surface_denial(c, 'fact_bare');
-			if (denied) return denied;
 
 			// Defense-in-depth: the auth phase already gated this on the admin
 			// role, but re-check the resolved context so a mounting/auth-shape

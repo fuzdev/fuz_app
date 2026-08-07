@@ -57,7 +57,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, assert, test } from 'vitest';
 
-import { TOKEN_SURFACE_CAPABILITIES, type TokenSurface } from '$lib/auth/token_scope.ts';
+import {
+	is_token_surface,
+	TOKEN_SURFACE_CAPABILITIES,
+	type TokenSurface
+} from '$lib/auth/token_scope.ts';
 
 /** How a reviewed site relates to the credential's `TokenScope`. */
 type CensusRole =
@@ -121,22 +125,29 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
 			'WS upgrade — rule 3 rejects a narrowed token at the boundary (server-initiated pushes have no per-recipient filter), and the socket retains the scope for the per-message gate'
 	},
 	{
-		file: 'auth/audit_log_routes.ts',
+		file: 'actions/register_ws_endpoint.ts',
 		role: 'consults',
-		reason: 'long-lived admin SSE feed — no point after open at which a narrowing could be applied'
+		reason:
+			'the composed upgrade stack mounts the rule-3 guard between `require_auth` and the role guard, so a narrowed token hears about its scope rather than about a role it also lacks; `register_action_ws` repeats the check for consumers that mount it directly'
+	},
+	{
+		file: 'auth/audit_log_route_schema.ts',
+		role: 'consults',
+		reason:
+			'declares `token_surface: audit_stream` on the route shape — a long-lived admin SSE feed with no point after open at which a narrowing could be applied'
 	},
 	{
 		file: 'server/serve_fact_route.ts',
 		role: 'consults',
 		reason:
-			'the admin-only bare-hash read serves any stored fact with no per-reference cell check; the sibling per-cell route is ungated because its authz is the `(cell, hash)` edge, which a narrowed token can already reach through the RPC methods it names'
+			'declares `token_surface: fact_bare` — the admin-only bare-hash read serves any stored fact with no per-reference cell check; the sibling per-cell route is ungated because its authz is the `(cell, hash)` edge, which a narrowed token can already reach through the RPC methods it names'
 	},
 	// --- Exempt, with reasons ---
 	{
-		file: 'actions/register_ws_endpoint.ts',
+		file: 'auth/audit_log_routes.ts',
 		role: 'exempt',
 		reason:
-			'the upgrade stack (origin → auth → acting-actor → role) around `register_action_ws`; it resolves an actor and adds no reach of its own, and the rule-3 gate sits in the inner registration it delegates to'
+			'the SSE handler behind the shape above; it reads the resolved context to key the subscription and adds no reach of its own, the rule-3 decision having been declared on the shape it spreads'
 	},
 	{
 		file: 'auth/account_routes.ts',
@@ -157,14 +168,22 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
  * `require_request_context` alone, so a scan for the context *keys* would have
  * missed it.
  */
-const CREDENTIAL_MARKERS = [
+const CREDENTIAL_MARKERS: ReadonlyArray<string | RegExp> = [
 	'ACCOUNT_ID_KEY',
 	'CREDENTIAL_TYPE_KEY',
 	'TOKEN_SCOPE_KEY',
 	'REQUEST_CONTEXT_KEY',
 	'require_request_context',
 	'get_request_context',
-	'token_scope_surface_denial'
+	'token_scope_surface_denial',
+	// A route shape declaring the rule-3 slot decides about a credential's
+	// scope without otherwise touching one, so it needs its own marker.
+	// Anchored to a property declaration rather than matched as a substring:
+	// the field is *named* in the `RouteAuth` definition, in the resolver that
+	// reads it, and in the registry error that rejects it on an action — none
+	// of which consume a credential, and all of which a bare `token_surface: '`
+	// would drag into the census.
+	/^\s*token_surface: '/mu
 ] as const;
 
 /**
@@ -173,7 +192,9 @@ const CREDENTIAL_MARKERS = [
  * a credential rather than resolve one and which no production server mounts.
  *
  * An explicit list rather than a path filter in the walker, so the exclusions
- * are as reviewable as the inclusions.
+ * are as reviewable as the inclusions. Keep it to files whose *code* reaches a
+ * marker — a file that only mentions one in a comment is handled by
+ * `strip_comments` and never reaches this list.
  */
 const NON_SURFACE_SITES: ReadonlyArray<string> = [
 	'hono_context.ts',
@@ -183,28 +204,60 @@ const NON_SURFACE_SITES: ReadonlyArray<string> = [
 ];
 
 /**
- * Which file gates each rule-3 surface, or `null` when the spine does not mount
- * it.
+ * Which file gates each rule-3 surface and the exact source it must contain,
+ * or `null` when the spine does not mount the surface.
  *
- * `db_admin` is `null` because the TS spine ships no table browser — the
- * capability string exists so a consumer that mounts one (the Rust
- * `fuz_db_admin` router, or a consumer-side equivalent) denies with the same
- * body. A consumer carries its own census; the spine cannot see its surfaces.
+ * Two shapes, because there are two kinds of surface. A route spec declares
+ * `token_surface` on its `auth` and `fuz_auth_guard_resolver` mounts the guard
+ * ahead of the role gate; the WS upgrade is not a route spec, so it calls the
+ * shared decision directly. Both are exact-match, so a gate that is imported
+ * and documented but never reached still fails — the original miss's shape.
+ *
+ * `db_admin` is `null`, but **not** because the spine ships no table browser —
+ * `http/db_routes.ts` is exactly that, a generic browser over the `public`
+ * schema with row `DELETE`. It needs no `token_surface` because its shipped
+ * auth is `credential_types: ['daemon_token']`, and a daemon token resolves to
+ * `full` by construction: no narrowed credential can reach it, and the
+ * credential gate — which now runs ahead of the scope guard — answers first
+ * with the coarser `credential_type_required`. Declaring the surface would
+ * invert that and name a scope to a channel that may never call the route at
+ * all.
+ *
+ * **The hazard that reasoning rests on is the consumer's auth, not ours.** A
+ * consumer mounting `create_db_route_specs` under a widened `auth` — dropping
+ * the credential gate, or swapping keeper for an admin role a bearer
+ * satisfies — puts every `public` row behind a credential this census no
+ * longer describes. That exact rewrite is how the capability string came to
+ * exist. A consumer carries its own census; the spine cannot see its surfaces,
+ * and cannot see its own surfaces re-authed. See ../../../docs/security.md
+ * §Token scoping.
  */
-const RULE_3_SURFACE_SITES: Record<TokenSurface, string | null> = {
-	fact_bare: 'server/serve_fact_route.ts',
-	ws_upgrade: 'actions/register_action_ws.ts',
-	audit_stream: 'auth/audit_log_routes.ts',
+const RULE_3_SURFACE_SITES: Record<TokenSurface, { file: string; source: string } | null> = {
+	fact_bare: {
+		file: 'server/serve_fact_route.ts',
+		source: "token_surface: 'fact_bare'"
+	},
+	ws_upgrade: {
+		file: 'actions/register_action_ws.ts',
+		source: "token_scope_surface_denial(c, 'ws_upgrade')"
+	},
+	audit_stream: {
+		file: 'auth/audit_log_route_schema.ts',
+		source: "token_surface: 'audit_stream'"
+	},
 	db_admin: null
 };
+
+/** Matches a route spec's `token_surface: '<name>'` declaration. */
+const TOKEN_SURFACE_DECLARATION = /token_surface:\s*'([a-z_]+)'/gu;
 
 const lib_dir = fileURLToPath(new URL('../../lib', import.meta.url));
 
 /** Read a censused file's source by its `src/lib`-relative path. */
 const read_lib_source = (file: string): string => readFileSync(join(lib_dir, file), 'utf-8');
 
-/** Walk `src/lib` for files that reach a resolved credential. */
-const discover_credential_sites = (): Set<string> => {
+/** Walk `src/lib` for files whose source matches a predicate, by relative path. */
+const discover_lib_files = (matches: (source: string) => boolean): Set<string> => {
 	const found = new Set<string>();
 	const walk = (dir: string, prefix: string): void => {
 		for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -212,14 +265,45 @@ const discover_credential_sites = (): Set<string> => {
 			if (entry.isDirectory()) {
 				walk(join(dir, entry.name), rel);
 			} else if (entry.name.endsWith('.ts') || entry.name.endsWith('.svelte')) {
-				const source = readFileSync(join(dir, entry.name), 'utf-8');
-				if (CREDENTIAL_MARKERS.some((marker) => source.includes(marker))) found.add(rel);
+				if (matches(readFileSync(join(dir, entry.name), 'utf-8'))) found.add(rel);
 			}
 		}
 	};
 	walk(lib_dir, '');
 	return found;
 };
+
+/**
+ * Blank out comments, preserving every newline so line-anchored markers still
+ * match at their real positions.
+ *
+ * The census asks whether a file **reaches** a resolved credential, and prose
+ * doesn't. Without this, documenting a marker pulls the documenting file into
+ * the census — which happened twice: `http/error_schemas.ts` naming
+ * `token_scope_surface_denial` in the TSDoc for the shape it declares, and
+ * `actions/action_bridge.ts` telling consumers to read `TOKEN_SCOPE_KEY`
+ * themselves. Both were the right thing to write and neither touches a
+ * credential. Parking them in `NON_SURFACE_SITES` would have made the
+ * exclusion list absorb a scanner bug, and left every future cross-reference
+ * a tripwire.
+ */
+const strip_comments = (source: string): string =>
+	source
+		.replace(/\/\*[\s\S]*?\*\//gu, (block) => block.replace(/[^\n]/gu, ' '))
+		.replace(/\/\/[^\n]*/gu, '');
+
+/** Walk `src/lib` for files that reach a resolved credential. */
+const discover_credential_sites = (): Set<string> =>
+	discover_lib_files((raw) => {
+		const source = strip_comments(raw);
+		return CREDENTIAL_MARKERS.some((marker) =>
+			typeof marker === 'string' ? source.includes(marker) : marker.test(source)
+		);
+	});
+
+/** Walk `src/lib` for files declaring `token_surface` on a route spec. */
+const discover_declared_token_surfaces = (): Set<string> =>
+	discover_lib_files((raw) => strip_comments(raw).includes('token_surface:'));
 
 describe('token scope surface census', () => {
 	/**
@@ -273,7 +357,8 @@ describe('token scope surface census', () => {
 		assert.deepStrictEqual(consulting, [
 			'actions/action_rpc.ts',
 			'actions/register_action_ws.ts',
-			'auth/audit_log_routes.ts',
+			'actions/register_ws_endpoint.ts',
+			'auth/audit_log_route_schema.ts',
 			'server/serve_fact_route.ts'
 		]);
 	});
@@ -310,19 +395,40 @@ describe('token scope surface census', () => {
 	 * in `RULE_3_SURFACE_SITES` while reading as exempt in `CENSUS`. `db_admin`
 	 * is exempt by absence, not by allowance; see `RULE_3_SURFACE_SITES`.
 	 */
-	test('every mounted rule-3 surface is censused as consulting and calls the guard', () => {
+	test('every mounted rule-3 surface is censused as consulting and reaches the guard', () => {
 		const consulting = new Set(CENSUS.filter((e) => e.role === 'consults').map((e) => e.file));
 		for (const surface of Object.keys(TOKEN_SURFACE_CAPABILITIES) as Array<TokenSurface>) {
-			const file = RULE_3_SURFACE_SITES[surface];
-			if (file === null) continue;
+			const site = RULE_3_SURFACE_SITES[surface];
+			if (site === null) continue;
 			assert.ok(
-				consulting.has(file),
-				`${file} gates the ${surface} surface but is not censused as consulting scope`
+				consulting.has(site.file),
+				`${site.file} gates the ${surface} surface but is not censused as consulting scope`
 			);
 			assert.ok(
-				read_lib_source(file).includes(`token_scope_surface_denial(c, '${surface}')`),
-				`${file} gates the ${surface} surface but never calls token_scope_surface_denial for it`
+				read_lib_source(site.file).includes(site.source),
+				`${site.file} gates the ${surface} surface but does not contain \`${site.source}\``
 			);
 		}
+	});
+
+	/**
+	 * Every declared `token_surface` names a real surface.
+	 *
+	 * `RouteAuth` types the field as a plain string so `http/` needs no `auth/`
+	 * import, which means a typo is a value error rather than a type error.
+	 * `fuz_auth_guard_resolver` throws on one at registration; this catches it
+	 * without standing an app up.
+	 */
+	test('declared token surfaces exist', () => {
+		const declared = new Set<string>();
+		for (const file of discover_declared_token_surfaces()) {
+			for (const match of strip_comments(read_lib_source(file)).matchAll(
+				TOKEN_SURFACE_DECLARATION
+			)) {
+				declared.add(match[1]!);
+			}
+		}
+		const unknown = [...declared].filter((s) => !is_token_surface(s)).sort();
+		assert.deepStrictEqual(unknown, [], 'route specs declare token surfaces that do not exist');
 	});
 });

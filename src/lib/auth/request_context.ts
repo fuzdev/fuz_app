@@ -71,7 +71,8 @@ import {
 	type TokenSurface
 } from './token_scope.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
-import { is_public_auth, needs_actor, type RouteAuth } from '../http/auth_shape.ts';
+import { is_public_auth, needs_actor, parse_acting, type RouteAuth } from '../http/auth_shape.ts';
+import { is_null_schema } from '../http/schema_helpers.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
@@ -363,9 +364,10 @@ export const create_request_context_middleware = (
 /**
  * Refuse a non-RPC spine surface to a narrowed token — **rule 3**, in one place.
  *
- * Called by every surface rule 3 covers: the bare-hash fact read, the audit SSE
- * stream, and the WS upgrade (as pre-upgrade middleware, since
- * `upgradeWebSocket`'s callback cannot produce a denial).
+ * The decision every surface rule 3 covers shares: the bare-hash fact read, the
+ * audit SSE stream, and the WS upgrade. Route specs reach it declaratively via
+ * `auth.token_surface` (see `require_token_surface`); the WS upgrade calls it
+ * directly, since `upgradeWebSocket`'s callback cannot produce a denial.
  *
  * An unset `TOKEN_SCOPE_KEY` is the anonymous caller, who holds no credential to
  * narrow, so it passes. Sharing that branch is the point — hand-rolled per
@@ -383,6 +385,25 @@ export const token_scope_surface_denial = (c: Context, surface: TokenSurface): R
 	}
 	return null;
 };
+
+/**
+ * Create middleware refusing a rule-3 surface to a narrowed token.
+ *
+ * The route-spec form of `token_scope_surface_denial`, mounted by
+ * `fuz_auth_guard_resolver` from `auth.token_surface`. Lands in the
+ * `pre_authorization` phase, so a narrowed token is told about its scope rather
+ * than about the role it also lacks — and learns nothing about the route's
+ * input shape on the way.
+ *
+ * @param surface - the surface this route exposes
+ */
+export const require_token_surface =
+	(surface: TokenSurface): MiddlewareHandler =>
+	async (c, next): Promise<Response | void> => {
+		const denied = token_scope_surface_denial(c, surface);
+		if (denied) return denied;
+		await next();
+	};
 
 /**
  * Middleware that requires authentication.
@@ -439,6 +460,12 @@ export const require_role = (roles: ReadonlyArray<string>): MiddlewareHandler =>
  * Returns 401 if unauthenticated, 403 with
  * `ERROR_CREDENTIAL_TYPE_REQUIRED` + `required_credential_types` echoing
  * the spec's allowlist when the wire-side credential isn't in it.
+ *
+ * Reads only `ACCOUNT_ID_KEY` + `CREDENTIAL_TYPE_KEY`, both set by the auth
+ * middleware — never the resolved `RequestContext`. That is why
+ * `fuz_auth_guard_resolver` mounts it in the `pre_authorization` phase: a
+ * wrong channel is refused before the route resolves an actor for it, so the
+ * denial costs no DB work and discloses no account state.
  * Body shape is symmetric with the role gate (`ERROR_INSUFFICIENT_PERMISSIONS` +
  * `required_roles`) and matches what the RPC dispatcher's post-auth
  * gate emits for the same condition. Today's only credential gate is
@@ -602,8 +629,8 @@ export type AuthorizationResult =
  * Apply the dispatcher's authorization phase against the flat-record
  * `RouteAuth` shape. Shared by the route-spec wrapper, the HTTP RPC
  * dispatcher, and the per-message WS dispatcher. Phase order:
- * pre-validation 401 → input validation 400 → authorization phase →
- * post-authorization 403.
+ * pre-authorization 401 → authorization phase → post-authorization 403 →
+ * input validation 400.
  *
  * Pure data — the function does not touch a Hono context. Each transport
  * passes `account_id` (extracted from its own credential surface) and
@@ -618,7 +645,7 @@ export type AuthorizationResult =
  *   never see a `RequestContext`.
  * - `account_id == null` on any non-public route → same null
  *   `request_context`. The `'required'` callers were already rejected at
- *   the pre-validation gate in the dispatcher; only genuine anonymous
+ *   the pre-authorization gate in the dispatcher; only genuine anonymous
  *   access on an `'optional'` axis lands here.
  * - `actor === 'none'` → builds account-only context via
  *   `build_account_context`. Null lookup → `account_vanished` 500 failure.
@@ -643,7 +670,7 @@ export const apply_authorization_phase = async (
 	if (account_id == null) {
 		// Optional-auth route hit without a credential — leave `RequestContext`
 		// null so the handler can branch on it. `'required'` callers already
-		// got rejected at the pre-validation gate.
+		// got rejected at the pre-authorization gate.
 		return { ok: true, request_context: null };
 	}
 
@@ -682,16 +709,15 @@ export const apply_authorization_phase = async (
 /**
  * Create the route-spec authorization handler used by `apply_route_specs`.
  *
- * Reads `acting` off `c.var.validated_input` (or `c.var.validated_query`
- * for GET routes) — input validation runs first, so the authorization
- * phase consumes the typed Zod field instead of pre-parsing the body.
- * Public routes (`auth.account === 'none' && auth.actor === 'none'`)
- * skip the phase entirely.
+ * Reads the `acting` selector via `read_route_acting` — `c.var.validated_query`
+ * on GETs, the raw body on mutations, since input validation now runs after
+ * the authority gates. Public routes (`auth.account === 'none' &&
+ * auth.actor === 'none'`) skip the phase entirely.
  *
  * Per registry-time invariant 2, `auth.actor !== 'none'` ⟺ the input
- * (or query) schema declares `acting?: ActingActor` — so reading from
- * `c.var.validated_input.acting` / `c.var.validated_query.acting` is
- * type-safe.
+ * (or query) schema declares `acting?: ActingActor` — so the selector is
+ * present on exactly the specs that read it, and input validation is what
+ * rejects a malformed one.
  *
  * Resolved contexts land on `REQUEST_CONTEXT_KEY` so the post-authorization
  * REST middleware (`require_role`, `require_credential_types`) reads the
@@ -709,7 +735,7 @@ export const create_fuz_authorization_handler = (
 		// Production middleware never sets this flag.
 		if (c.get(TEST_CONTEXT_PRESET_KEY)) return;
 		if (is_public_auth(spec.auth)) return;
-		const acting_value = needs_actor(spec.auth) ? extract_validated_acting(c) : undefined;
+		const acting_value = needs_actor(spec.auth) ? await read_route_acting(c, spec) : undefined;
 		const account_id: string | null = c.get(ACCOUNT_ID_KEY) ?? null;
 		const result = await apply_authorization_phase(deps, account_id, spec.auth, acting_value);
 		if (!result.ok) return c.json(result.body, result.status);
@@ -724,20 +750,39 @@ export const create_fuz_authorization_handler = (
 };
 
 /**
- * Read `acting` off the validated input (or validated query) on the Hono
- * context. Input/query validation runs before the authorization phase,
- * so this reads a typed Zod field — not the raw body.
+ * Read the `acting` actor selector for the authorization phase.
  *
- * Returns `undefined` when `validated_input` / `validated_query` isn't
- * set or doesn't carry `acting`. Per registry-time invariant 2, the
- * dispatcher only calls this when `auth.actor !== 'none'`, which by
- * the biconditional means the input schema declares
- * `acting?: ActingActor`.
+ * REST is bi-located: GETs declare `acting` on `query`, mutations on `input`.
+ * Query validation still runs ahead of the authorization phase, so the GET
+ * half reads a typed Zod field. Input validation now runs *after* the
+ * authority gates (nothing about a route's body shape reaches a caller those
+ * gates refuse), so the mutation half reads the raw body instead.
+ *
+ * The raw read mirrors `create_input_validation`'s own skip conditions exactly
+ * — GETs and null-input specs — so this never parses a body the route itself
+ * would have left alone. That matters for the routes carrying raw bytes rather
+ * than JSON (git smart-HTTP, binary uploads): they declare `input: z.null()`,
+ * so their stream reaches the handler untouched, and they carry `acting` on
+ * `query` regardless.
+ *
+ * `parse_acting` owns what counts as a selector and why a malformed one reads
+ * as omitted.
+ *
+ * @param c - the request context, after query validation
+ * @param spec - the route being dispatched; decides where `acting` can live
+ * @returns the actor id, or `undefined` when absent, malformed, or unreadable
  */
-const extract_validated_acting = (c: Context): string | undefined => {
-	const validated_input = c.get('validated_input') as { acting?: unknown } | undefined;
-	if (validated_input && typeof validated_input.acting === 'string') return validated_input.acting;
+const read_route_acting = async (c: Context, spec: RouteSpec): Promise<string | undefined> => {
 	const validated_query = c.get('validated_query') as { acting?: unknown } | undefined;
 	if (validated_query && typeof validated_query.acting === 'string') return validated_query.acting;
-	return undefined;
+	if (spec.method === 'GET' || is_null_schema(spec.input)) return undefined;
+	let body: unknown;
+	try {
+		body = await c.req.json();
+	} catch {
+		// Malformed body — input validation answers with the 400.
+		return undefined;
+	}
+	if (typeof body !== 'object' || body === null) return undefined;
+	return parse_acting((body as { acting?: unknown }).acting);
 };

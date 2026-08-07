@@ -21,6 +21,7 @@ import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_CREDENTIAL_TYPE_REQUIRED,
+	ERROR_TOKEN_SCOPE_REQUIRED,
 	ERROR_INVALID_TOKEN,
 	ERROR_ACCOUNT_NOT_FOUND,
 	ERROR_FORBIDDEN_ORIGIN,
@@ -197,6 +198,48 @@ describe('derive_error_schemas', () => {
 			required_credential_types: ['daemon_token']
 		});
 		assert.isTrue(result.success);
+	});
+
+	/**
+	 * `auth.token_surface` mounts `require_token_surface`, a framework-emitted
+	 * 403 at a fixed middleware site — exactly the class this derivation
+	 * covers. Without it the audit stream and the bare-hash fact read (both
+	 * role-gated *and* surface-gated) would derive `PermissionError` alone, so
+	 * a narrowed token's real denial would fail DEV-mode error-schema
+	 * validation and go undocumented in the generated attack surface.
+	 */
+	test('auth token_surface derives 403 with TokenScopeRequiredError', () => {
+		const errors = derive_error_schemas({
+			auth: { account: 'required', actor: 'required', token_surface: 'audit_stream' }
+		});
+		assert.ok(errors[403]);
+		const result = (errors[403] as any).safeParse({
+			error: ERROR_TOKEN_SCOPE_REQUIRED,
+			required_scope: 'surface:audit_stream'
+		});
+		assert.isTrue(result.success);
+	});
+
+	test('token_surface alongside a role gate derives a 403 union admitting both', () => {
+		const errors = derive_error_schemas({
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['admin'],
+				token_surface: 'fact_bare'
+			}
+		});
+		assert.ok(errors[403]);
+		const scope_denial = (errors[403] as any).safeParse({
+			error: ERROR_TOKEN_SCOPE_REQUIRED,
+			required_scope: 'surface:fact_bare'
+		});
+		assert.isTrue(scope_denial.success, 'the pre-authorization scope refusal must parse');
+		const role_denial = (errors[403] as any).safeParse({
+			error: ERROR_INSUFFICIENT_PERMISSIONS,
+			required_roles: ['admin']
+		});
+		assert.isTrue(role_denial.success, 'the post-authorization role denial must still parse');
 	});
 
 	test('does not auto-derive 429 without rate_limit', () => {

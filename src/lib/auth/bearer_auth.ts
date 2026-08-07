@@ -37,7 +37,7 @@ import { rate_limit_exceeded_response, type RateLimiter } from '../rate_limiter.
  *
  * Soft-fails for invalid, expired, or empty tokens — calls `next()` without
  * setting account identity, letting downstream auth enforcement (the RPC
- * dispatcher's pre-validation / post-authorization auth gates or
+ * dispatcher's pre-authorization / post-authorization auth gates or
  * `require_auth`) return a consistent JSON-RPC or route-level error. This
  * avoids leaking token-specific diagnostics
  * (`invalid_token`, `account_not_found`) that could aid enumeration attacks,

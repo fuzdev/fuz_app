@@ -20,7 +20,7 @@ import '../assert_dev_env.ts';
  *
  * For every backdoor method, three principals:
  *
- * - **anonymous** (no credential) → `401` (pre-validation auth refuses an
+ * - **anonymous** (no credential) → `401` (pre-authorization auth refuses an
  *   account-less caller before anything else).
  * - **session** (the keeper's browser-context cookie) → `403`
  *   `credential_type_required` — a session cookie, even one carrying the
@@ -29,10 +29,11 @@ import '../assert_dev_env.ts';
  *   `credential_type_required` — same ceiling; an api token cannot reach
  *   keeper operations.
  *
- * Each method is sent with **valid** params so the session/bearer cases
- * clear the dispatcher's input-validation (400) phase and actually reach the
- * post-authorization credential gate (the order is 401 → 400 → 403); the
- * handler never runs (the gate refuses first), so the writes never execute.
+ * Each method is sent with **valid** params so each case varies only the
+ * credential. (Validation runs after the gates — the order is 401 → authz →
+ * 403 → 400 — so the shapes are belt-and-suspenders here rather than load-
+ * bearing.) The handler never runs (the gate refuses first), so the writes
+ * never execute.
  *
  * Complements the spec-level gate check (which pins that each spec *declares*
  * `credential_types: ['daemon_token']`) and the surface-absence invariant

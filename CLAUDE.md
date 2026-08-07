@@ -199,7 +199,7 @@ deps). Consumers destructure `ctx.deps` when calling them.
 7. **Session parsing** (`/api/*`) — parses cookie, sets identity on context
 8. **Request context** (`/api/*`) — validates the session and sets `c.var.account_id` + `CREDENTIAL_TYPE_KEY`. Account-only — does not load actor or role_grants.
 9. **Bearer auth** (`/api/*`) — CLI clients; same account-only shape. Rejected when `Origin` or `Referer` is present.
-10. **Routes** — `apply_route_specs` with `fuz_auth_guard_resolver` (params → query → **pre-validation auth (401)** → **input validation (400)** → **authorization phase** → **post-authorization auth (403)** → handler). Order is **401 → 400 → 403 → handler**: `require_auth` fires before body parsing so unauthenticated callers never see route-shape information from input parse failures; input validation runs next so the authorization phase can read `c.var.validated_input.acting` as a typed Zod field; the authorization phase resolves the acting actor when `auth.actor !== 'none'` (per registry-time invariant 2, biconditionally implies the input declared `acting?: ActingActor`); finally `require_credential_types(types)` / `require_role(roles)` consume the populated `RequestContext`. Account-grain routes (`auth.actor === 'none'`) run with `RequestContext.actor: null`. Same priority as the RPC dispatcher (`actions/action_rpc.ts`).
+10. **Routes** — `apply_route_specs` with `fuz_auth_guard_resolver` (params → query → **pre-authorization auth (401 + credential type + rule-3 token scope)** → **authorization phase** → **post-authorization auth (403 role)** → **input validation (400)** → handler). Order is **401 → authz → 403 → 400 → handler**: `require_auth`, `require_credential_types(types)`, and `require_token_surface(surface)` all read what the auth middleware set, so they fire before body parsing (no route-shape information to a caller they refuse) and before actor resolution (a wrong channel costs no DB work and learns no account state); the authorization phase then resolves the acting actor when `auth.actor !== 'none'` (per registry-time invariant 2, biconditionally implies the input declared `acting?: ActingActor`) from the `acting` selector — `c.var.validated_query.acting` on GETs, read off the raw body on mutations; `require_role(roles)` follows as the one gate needing the populated `RequestContext`; body validation runs last, so a 400 never describes the route to a caller the authority gates refused. Account-grain routes (`auth.actor === 'none'`) run with `RequestContext.actor: null`. Same coarse-to-fine priority as the RPC dispatcher (`actions/action_rpc.ts`).
 11. **Static serving** (optional) — SvelteKit static fallback
 
 Session parsing is separate from auth enforcement — login and bootstrap routes
@@ -210,7 +210,7 @@ routes (logout, password_change, account_verify) without picking a persona.
 ### Route Spec System
 
 Routes are data (`RouteSpec[]`). `apply_route_specs` registers them with
-auto-validation (params → query → pre-validation auth → authorization
+auto-validation (params → query → pre-authorization auth → authorization
 phase → post-authorization auth → input validation → handler → DEV-only
 output + error validation). Duplicate method+path throws at registration. Declarative transactions: `transaction?: boolean` defaults
 to `false` for GET, `true` for mutations. Handlers receive `(c, route)`
@@ -240,8 +240,8 @@ Two bindings live in `actions/`:
 - `action_bridge.ts` — `create_action_route_spec` derives REST `RouteSpec` (escape hatch for SSE, files, custom paths); `create_action_event_spec` derives `EventSpec`.
 
 `ActionContext` is the single handler-context shape across HTTP RPC, WS,
-and the REST bridge. Phase order is **401 → 400 → 403 → handler** on every
-transport — same as the REST pipeline. WS authorizes per-message, so
+and the REST bridge. Phase order is **401 → authz → 403 → 400 → handler** on
+every transport — same as the REST pipeline. WS authorizes per-message, so
 role_grant changes during a connection lifetime are picked up on the next
 message.
 

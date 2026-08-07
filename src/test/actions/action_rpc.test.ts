@@ -20,12 +20,18 @@ import {
 	ACCOUNT_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
+	TOKEN_SCOPE_KEY,
 	type CredentialType
 } from '$lib/hono_context.ts';
 import { create_test_request_context } from '$lib/testing/auth_apps.ts';
 import { create_test_actor } from '$lib/testing/entities.ts';
 import { jsonrpc_errors, JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
-import { ERROR_AUTHENTICATION_REQUIRED } from '$lib/http/error_schemas.ts';
+import { token_scope_methods, type TokenScope } from '$lib/auth/token_scope.ts';
+import {
+	ERROR_AUTHENTICATION_REQUIRED,
+	ERROR_INSUFFICIENT_PERMISSIONS,
+	ERROR_TOKEN_SCOPE_REQUIRED
+} from '$lib/http/error_schemas.ts';
 import { RateLimiter } from '$lib/rate_limiter.ts';
 import { ActingActor } from '$lib/http/auth_shape.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
@@ -93,10 +99,12 @@ const create_test_app = (
 	actions: Array<RpcAction>,
 	{
 		auth_context,
-		credential_type
+		credential_type,
+		token_scope
 	}: {
 		auth_context?: ReturnType<typeof create_test_request_context>;
 		credential_type?: CredentialType;
+		token_scope?: TokenScope;
 	} = {}
 ): Hono => {
 	const app = new Hono();
@@ -107,6 +115,9 @@ const create_test_app = (
 			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
 			if (credential_type) {
 				(c as any).set(CREDENTIAL_TYPE_KEY, credential_type);
+			}
+			if (token_scope) {
+				(c as any).set(TOKEN_SCOPE_KEY, token_scope);
 			}
 			await next();
 		});
@@ -268,7 +279,7 @@ describe('POST dispatcher', () => {
 		assert.strictEqual(res.status, 401);
 		const body = await res.json();
 		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.unauthenticated as number);
-		// The pre-validation 401 carries `data.reason` (symmetric with the 403
+		// The pre-authorization 401 carries `data.reason` (symmetric with the 403
 		// gates) so callers can assert reason, not just status.
 		assert.strictEqual(body.error.data.reason, ERROR_AUTHENTICATION_REQUIRED);
 	});
@@ -293,6 +304,61 @@ describe('POST dispatcher', () => {
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
 		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
+	});
+
+	/**
+	 * The role gate is the *last* authority gate, so it is the one that pins
+	 * the whole 401 → authz → 403 → 400 order: if validation had stayed ahead
+	 * of it, malformed params would answer `invalid_params` here and describe
+	 * the method's input shape to a caller who may never call it. The
+	 * credential and scope gates are covered by their own siblings; this is
+	 * the tightest case.
+	 */
+	test('the role gate precedes input validation', async () => {
+		const admin_spec: RequestResponseActionSpec = {
+			...create_post_spec(),
+			method: 'admin_action',
+			auth: { account: 'required', actor: 'required', roles: ['admin'] },
+			input: z.strictObject({ name: z.string(), acting: ActingActor })
+		};
+		const app = create_test_app(
+			[{ spec: admin_spec, handler: () => ({ id: '1' }) }],
+			{ auth_context: create_test_request_context() } // no admin role
+		);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: rpc_request('admin_action', { name: 123 }) // `name` should be a string
+		});
+		assert.strictEqual(res.status, 403);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
+		assert.strictEqual(body.error.data.reason, ERROR_INSUFFICIENT_PERMISSIONS);
+	});
+
+	/**
+	 * Same pin for the per-method scope gate, which sits between the
+	 * credential and role gates. A narrowed token calling a method it doesn't
+	 * name hears `token_scope_required` whatever it sent — the RPC twin of
+	 * `require_token_surface` on the non-RPC surfaces.
+	 */
+	test('the token-scope gate precedes input validation', async () => {
+		const app = create_test_app([{ spec: create_post_spec(), handler: () => ({ id: '1' }) }], {
+			auth_context: create_test_request_context(),
+			credential_type: 'api_token',
+			token_scope: token_scope_methods(['thing_list'])
+		});
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: rpc_request('thing_create', { name: 123 }) // `name` should be a string
+		});
+		assert.strictEqual(res.status, 403);
+		const body = await res.json();
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
+		assert.strictEqual(body.error.data.reason, ERROR_TOKEN_SCOPE_REQUIRED);
 	});
 
 	test('returns invalid_params for schema-invalid params', async () => {
@@ -1133,6 +1199,29 @@ describe('rate limit', () => {
 					log
 				}),
 			/auth\.account !== 'required'.*account-keyed/
+		);
+	});
+
+	/**
+	 * `ActionSpec.auth` is the same `RouteAuth` a route spec carries, so
+	 * `token_surface` parses here — but only `apply_route_specs` mounts a guard
+	 * from it, and `perform_action` never reads it. Declaring it on an action
+	 * would be a security control that silently does nothing, which is the exact
+	 * shape token scoping exists to refuse. Registration rejects it instead.
+	 */
+	test('registration rejects auth.token_surface on an action spec', () => {
+		const bad_spec: RequestResponseActionSpec = {
+			...account_keyed_spec(),
+			auth: { account: 'required', actor: 'none', token_surface: 'db_admin' }
+		};
+		assert.throws(
+			() =>
+				create_rpc_endpoint({
+					path: '/api/rpc',
+					actions: [{ spec: bad_spec, handler: () => ({ ok: true as const }) }],
+					log
+				}),
+			/auth\.token_surface.*route specs only/
 		);
 	});
 

@@ -252,6 +252,24 @@ export const CredentialTypeRequiredError = z.looseObject({
 });
 export type CredentialTypeRequiredError = z.infer<typeof CredentialTypeRequiredError>;
 
+/**
+ * Token-scope error — returned by the `require_token_surface` guard (and its
+ * direct-call twin `token_scope_surface_denial`) when a **narrowed** api token
+ * reaches a non-RPC spine surface it may not touch. See
+ * ../../../docs/security.md §Token scoping.
+ *
+ * `required_scope` carries the capability string the surface demands
+ * (`surface:audit_stream`, `surface:fact_bare`, …), matching the Rust
+ * `token_scope_surface_denied_response`. Third in the family with
+ * `PermissionError` and `CredentialTypeRequiredError` — each names what the
+ * route demanded rather than what the caller holds.
+ */
+export const TokenScopeRequiredError = z.looseObject({
+	error: z.literal(ERROR_TOKEN_SCOPE_REQUIRED),
+	required_scope: z.string()
+});
+export type TokenScopeRequiredError = z.infer<typeof TokenScopeRequiredError>;
+
 /** Rate limit error — returned when a rate limiter rejects the request. */
 export const RateLimitError = z.looseObject({
 	error: z.literal(ERROR_RATE_LIMIT_EXCEEDED),
@@ -340,12 +358,16 @@ export type RateLimitKey = z.infer<typeof RateLimitKey>;
  * Derivation rules under the new flat-record auth shape:
  * - **Has input / params / query schema**: 400 (`ValidationError`).
  * - **`auth.account === 'required'`** or **`auth.actor === 'required'`**: 401
- *   (`ApiError`) — pre-validation 401 fires when the credential isn't there.
+ *   (`ApiError`) — pre-authorization 401 fires when the credential isn't there.
  *   `'optional'` does not derive 401.
  * - **`auth.roles?.length`**: 403 (`PermissionError` carrying `required_roles`).
  * - **`auth.credential_types?.length`**: 403 (`CredentialTypeRequiredError`
  *   carrying `required_credential_types` — symmetric with `PermissionError`).
  *   Today the only credential gate is keeper; future gates reuse the literal.
+ * - **`auth.token_surface`**: 403 (`TokenScopeRequiredError` carrying
+ *   `required_scope`) — the rule-3 refusal `require_token_surface` emits.
+ *   A route declaring more than one of these three gates derives the union
+ *   of their shapes, since any of them can be the one that answers.
  * - **`auth.actor !== 'none'`** (`'optional'` or `'required'`): extends 400
  *   with `ActorRequiredError` / `ActorNotOnAccountError` and adds 500 union
  *   of `NoActorsOnAccountError` / `AccountVanishedError`. The dispatcher's
@@ -379,7 +401,7 @@ export const derive_error_schemas = ({
 		errors[400] = ValidationError;
 	}
 
-	// 401 fires when the dispatcher's pre-validation gate rejects an
+	// 401 fires when the dispatcher's pre-authorization gate rejects an
 	// unauthenticated caller — `account === 'required'` (no credential) or
 	// `actor === 'required'` (no credential to resolve an actor against,
 	// per registry-time invariant 3 forbidding accountless actors in v1).
@@ -387,18 +409,20 @@ export const derive_error_schemas = ({
 		errors[401] = ApiError;
 	}
 
-	// 403 fires when `auth.roles` or `auth.credential_types` rejects a
-	// resolved request context. With both axes set, the 403 body could be
-	// either shape — emit the union so DEV-mode error-schema validation
-	// accepts whichever the dispatcher produced.
-	const has_role_gate = !!auth.roles?.length;
-	const has_credential_gate = !!auth.credential_types?.length;
-	if (has_role_gate && has_credential_gate) {
-		errors[403] = z.union([PermissionError, CredentialTypeRequiredError]);
-	} else if (has_role_gate) {
-		errors[403] = PermissionError;
-	} else if (has_credential_gate) {
-		errors[403] = CredentialTypeRequiredError;
+	// 403 fires from any of three gates: the rule-3 token-scope refusal
+	// (`auth.token_surface`, pre-authorization), the credential-type gate, and
+	// the role gate (both post-authorization). A route can declare any
+	// combination, so collect the shapes its gates can emit — in the order they
+	// fire — and union them when there's more than one, so DEV-mode
+	// error-schema validation accepts whichever the pipeline produced.
+	const forbidden_shapes: Array<z.ZodType> = [];
+	if (auth.token_surface !== undefined) forbidden_shapes.push(TokenScopeRequiredError);
+	if (auth.credential_types?.length) forbidden_shapes.push(CredentialTypeRequiredError);
+	if (auth.roles?.length) forbidden_shapes.push(PermissionError);
+	if (forbidden_shapes.length === 1) {
+		errors[403] = forbidden_shapes[0]!;
+	} else if (forbidden_shapes.length > 1) {
+		errors[403] = z.union(forbidden_shapes);
 	}
 
 	if (rate_limit) {

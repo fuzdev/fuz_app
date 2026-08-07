@@ -41,14 +41,20 @@ import { assert_route_auth_acting_biconditional, type RouteAuth } from './auth_s
 /**
  * Two-phase auth guard set returned by `AuthGuardResolver`.
  *
- * `pre_validation` runs before input validation — 401 checks live here
- * so unauthenticated callers never see route-shape information from
- * input parsing failures. `post_authorization` runs after the
- * authorization phase has populated `RequestContext` — role / keeper
- * checks live here because they read `c.var.request_context.role_grants`.
+ * `pre_authorization` runs before the authorization phase — the 401 check
+ * and the rule-3 token-scope refusal live here, so a caller either one turns
+ * away never reaches the actor resolution or the route's body.
+ * `post_authorization` runs after the authorization phase has populated
+ * `RequestContext` — credential / role checks live here because they read
+ * `c.var.request_context.role_grants`.
+ *
+ * Both phases run ahead of body validation, which is why neither is named
+ * for it: route-shape information stays behind every authority gate. The
+ * names say which side of the authorization phase a guard sits on, the only
+ * axis that still distinguishes them.
  */
 export interface AuthGuards {
-	pre_validation: Array<MiddlewareHandler>;
+	pre_authorization: Array<MiddlewareHandler>;
 	post_authorization: Array<MiddlewareHandler>;
 }
 
@@ -62,12 +68,13 @@ export interface AuthGuards {
 export type AuthGuardResolver = (auth: RouteAuth) => AuthGuards;
 
 /**
- * Per-route authorization phase. Runs after pre-validation auth guards
- * AND input validation; resolves the acting actor (when `auth.actor !== 'none'`)
- * by reading `c.var.validated_input.acting` and sets the request context on
- * the Hono context. Per-route order in `apply_route_specs`: params → query
- * → pre-validation auth (401) → input validation (400) → authorization
- * phase → post-authorization auth (403) → handler.
+ * Per-route authorization phase. Runs after the pre-authorization auth guards
+ * and before input validation; resolves the acting actor (when `auth.actor !==
+ * 'none'`) from the `acting` selector — `c.var.validated_query.acting` on GETs,
+ * read off the raw body on mutations — and sets the request context on the Hono
+ * context. Per-route order in `apply_route_specs`: params → query →
+ * pre-authorization auth (401 + rule-3 scope) → authorization phase →
+ * post-authorization auth (403) → input validation (400) → handler.
  *
  * Returns a `Response` to short-circuit (resolution failure → 400 / 500),
  * or `void` to continue. The http framework stays auth-agnostic — fuz_app
@@ -502,19 +509,15 @@ const build_rest_error_body = (err: ThrownJsonrpcError): Record<string, unknown>
  * validation, wraps with error catch layer (catches `ThrownJsonrpcError`
  * and generic errors), and registers the route.
  *
- * Per-route middleware order: params → query → pre-validation auth
- * guards (401) → input validation (400) → authorization phase →
- * post-authorization auth guards (403) → handler. The 401 check runs
- * before any body parsing so unauthenticated callers never see
- * route-shape information from parse failures. Input validation runs
- * before the authorization phase (validate first, authorize after) so
- * the authorization phase reads `c.var.validated_input.acting` as a
- * typed Zod field instead of pre-parsing the raw body. Role /
- * credential-type denials still surface 403 last; trade-off is that
- * authenticated-but-unauthorized callers can distinguish 400
- * (validation) from 403 (authorization), a defense-in-depth concession
- * deemed acceptable because the route surface is public via
- * spec/codegen JSON.
+ * Per-route middleware order: params → query → pre-authorization auth
+ * guards (401 + rule-3 scope) → authorization phase →
+ * post-authorization auth guards (403) → input validation (400) →
+ * handler. Body validation runs behind every authority gate, so a caller
+ * any of them refuse never sees route-shape information from a parse
+ * failure — a 400 there would confirm the route exists and describe how
+ * to call it. Params and query still validate first (they address the
+ * route rather than carry its payload, and the authorization phase reads
+ * `acting` off the query on GETs).
  *
  * Each handler receives a `RouteContext` with:
  * - `db`: transaction-scoped when `RouteSpec.transaction` is true; pool-level otherwise
@@ -529,7 +532,7 @@ const build_rest_error_body = (err: ThrownJsonrpcError): Record<string, unknown>
  * `input` only — `ActionSpec` has no `query` shape.
  *
  * @param resolve_auth_guards - maps `RouteAuth` to middleware — use `fuz_auth_guard_resolver` from `auth/auth_guard_resolver.ts`
- * @param authorize - optional authorization phase; runs after input validation
+ * @param authorize - optional authorization phase; runs after the pre-authorization guards and before the post-authorization guards
  * @param db - used for transaction wrapping and `RouteContext`
  * @mutates `app`
  * @throws Error if two specs share the same `method` + `path` (each combination must be unique), or if any spec violates the actor-acting biconditional
@@ -556,8 +559,10 @@ export const apply_route_specs = (
 			{ input: spec.input, query: spec.query },
 			`Route "${route_key}"`
 		);
-		const { pre_validation: pre_validation_guards, post_authorization: post_authorization_guards } =
-			resolve_auth_guards(spec.auth);
+		const {
+			pre_authorization: pre_authorization_guards,
+			post_authorization: post_authorization_guards
+		} = resolve_auth_guards(spec.auth);
 		const params_validation = create_params_validation(spec.params);
 		const query_validation = create_query_validation(spec.query);
 		const input_validation = create_input_validation(spec.input, spec.method);
@@ -600,10 +605,10 @@ export const apply_route_specs = (
 			[spec.path],
 			...params_validation,
 			...query_validation,
-			...pre_validation_guards,
-			...input_validation,
+			...pre_authorization_guards,
 			...authorization,
 			...post_authorization_guards,
+			...input_validation,
 			handler
 		);
 	}

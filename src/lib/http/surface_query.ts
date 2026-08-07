@@ -8,7 +8,7 @@
  * `filter_keeper_routes`) group the new flat-record `RouteAuth` shape into
  * the legacy categorical buckets (`'authenticated'`, `'role'`, `'keeper'`)
  * for adversarial test runners and the surface explorer. The buckets are
- * derived views over the four axes (`account`, `actor`, `roles`,
+ * derived views over the authority axes (`account`, `actor`, `roles`,
  * `credential_types`) — see `http/auth_shape.ts` for the canonical shape.
  *
  * @module
@@ -138,7 +138,7 @@ export const format_route_key = (route: AppSurfaceRoute): string => `${route.met
 /**
  * Summarize route auth distribution across the surface.
  *
- * Categorical view over the four-axis flat record. Multi-role specs
+ * Categorical view over the flat auth record. Multi-role specs
  * contribute one count per role they admit.
  *
  * @returns counts by auth category, with role counts broken out by role name

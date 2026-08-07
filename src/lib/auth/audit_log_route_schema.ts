@@ -37,7 +37,17 @@ export const create_audit_log_route_shape = (
 ): Omit<RouteSpec, 'handler'> => ({
 	method: 'GET',
 	path: '/audit/stream',
-	auth: { account: 'required', actor: 'required', roles: [required_role] },
+	auth: {
+		account: 'required',
+		actor: 'required',
+		roles: [required_role],
+		// Rule 3 — a narrowed token holds no audit feed. Same reasoning as the
+		// WS upgrade: this is a long-lived server→client stream whose contents
+		// are decided by the account's role, not by any per-message scope
+		// check, so there is no point after open at which a narrowing could
+		// apply.
+		token_surface: 'audit_stream'
+	},
 	description: 'Subscribe to realtime audit log events',
 	query: AuditStreamQuery,
 	input: z.null(),

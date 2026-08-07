@@ -9,13 +9,12 @@
  * Positive controls assert (a) session-credential calls still reach the
  * handler on the same gated specs and (b) un-gated specs accept bearer.
  *
- * Dispatcher ordering note: the pipeline is **401 → 400 → 403 → handler**,
- * so `credential_types` (403) fires *after* input validation (400). The
- * `params` shapes below are deliberately well-formed (`SessionId`-shaped
- * session ids, `tok_`-prefixed token ids, valid `Password` lengths) so
- * the 403 credential-gate fires instead of an `invalid_params` 400 —
- * tightening any input schema must keep these fixtures valid or the
- * tests will collapse to the wrong rejection code.
+ * Dispatcher ordering note: the pipeline is **401 → authz → 403 → 400 →
+ * handler**, so `credential_types` (403) fires *before* input validation
+ * (400) and the fixtures below could be any shape. They stay well-formed
+ * (`SessionId`-shaped session ids, `tok_`-prefixed token ids, valid
+ * `Password` lengths) so each row varies only the credential; § authority
+ * gates precede input validation is where the ordering itself is pinned.
  *
  * @module
  */
@@ -43,7 +42,7 @@ import {
 	create_describe_db,
 	create_pglite_factory
 } from '$lib/testing/db.ts';
-import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
+import { rpc_call, rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
 import { find_auth_route } from '$lib/testing/integration_helpers.ts';
 import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '$lib/http/error_schemas.ts';
 import { run_migrations } from '$lib/db/migrate.ts';
@@ -174,9 +173,62 @@ describe_db('credential_channel_gate', (get_db) => {
 		});
 	});
 
+	describe('authority gates precede input validation', () => {
+		// The dispatcher runs 401 → authz → 403 → 400, so a caller the authority
+		// gates refuse is never told what the action's input looks like. A 400
+		// here would confirm the method exists and describe how to call it, to a
+		// channel that should have learned neither — the same disclosure argument
+		// that puts the credential gate ahead of the scope gate. Both spines run
+		// this order; the cross-backend conformance batch carries the wire twin.
+
+		test('bearer + missing required `scope` → 403 credential_type_required, not 400', async () => {
+			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const res = await rpc_call({
+				app: test_app.app,
+				path: RPC_PATH,
+				method: account_token_create_action_spec.method,
+				// `scope` is required — a malformed request on a channel the
+				// credential gate refuses outright.
+				params: {},
+				headers: test_app.create_bearer_headers(),
+				suppress_default_origin: true
+			});
+			assert_credential_type_required(res);
+		});
+
+		test('anonymous + missing required `scope` → 401, not 400', async () => {
+			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const res = await rpc_call({
+				app: test_app.app,
+				path: RPC_PATH,
+				method: account_token_create_action_spec.method,
+				params: {}
+			});
+			assert.isFalse(res.ok);
+			assert.strictEqual(
+				res.status,
+				401,
+				'expected 401 from the auth gate, not 400 from validation'
+			);
+		});
+
+		test('session + missing required `scope` → 400 (validation still runs once authority passes)', async () => {
+			const test_app = await create_test_app({ session_options, create_route_specs, db: get_db() });
+			const res = await rpc_call({
+				app: test_app.app,
+				path: RPC_PATH,
+				method: account_token_create_action_spec.method,
+				params: {},
+				headers: test_app.create_session_headers()
+			});
+			assert.isFalse(res.ok);
+			assert.strictEqual(res.status, 400, 'a caller the gates admit still gets the shape error');
+		});
+	});
+
 	describe('anonymous → 401 not 403 (auth gate fires before credential gate)', () => {
-		// Pins the dispatcher's 401→400→403 ordering at the rejection paths:
-		// an unauthenticated caller must surface `unauthenticated` (401), not
+		// Pins the dispatcher's ordering at the rejection paths: an
+		// unauthenticated caller must surface `unauthenticated` (401), not
 		// `credential_type_required` (403). The latter would leak credential-
 		// policy information to callers that haven't even authenticated.
 

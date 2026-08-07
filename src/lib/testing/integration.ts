@@ -916,8 +916,9 @@ export const describe_standard_integration_tests = (
 				// Pick an admin REST route where a clean role-denial 403 is
 				// reachable: account-grain (`actor: 'none'`, so the authorization
 				// phase doesn't first demand an acting actor → `actor_required`)
-				// and input/param/query-free (so input validation doesn't 400
-				// first, per the 401 → 400 → 403 phase order). Admin surfaces are
+				// and input/param/query-free (params and query still validate ahead
+				// of the auth phase — only body validation moved behind the gates,
+				// per the 401 → authz → 403 → 400 order). Admin surfaces are
 				// RPC-first now; a consumer may expose no such REST route (fuz_app
 				// itself, zzz) — then this REST-era check is a no-op and RPC denial
 				// is covered by `describe_rpc_attack_surface_tests`.

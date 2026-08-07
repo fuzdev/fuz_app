@@ -43,7 +43,7 @@ consumers.
 
 - `method` — `'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'`
 - `path` — Hono path (supports `:param` segments)
-- `auth: RouteAuth` — flat record `{account, actor, roles?, credential_types?}` from `http/auth_shape.ts`. Each axis is `'none' | 'optional' | 'required'`. Same shape governs `ActionSpec.auth` (see `actions/CLAUDE.md`).
+- `auth: RouteAuth` — flat record `{account, actor, roles?, credential_types?, token_surface?}` from `http/auth_shape.ts`. `account` / `actor` are `'none' | 'optional' | 'required'`. `token_surface` names a non-RPC spine surface a narrowed token may not reach (rule 3) and is route-spec-only — `compile_action_registry` rejects it on an `ActionSpec`, where nothing would mount a guard from it. Otherwise the same shape governs `ActionSpec.auth` (see `actions/CLAUDE.md`).
 - `handler: RouteHandler` — `(c: Context, route: RouteContext) => Response | Promise<Response>`
 - `description` — free-text, surfaced in `AppSurface`
 - `params?: z.ZodObject` — strict-object schema for URL path params
@@ -97,20 +97,22 @@ wrapper). See `auth/signup_routes.ts`.
 
 1. **Params validation** — `spec.params` → `validated_params` context var; mismatch returns 400 `ERROR_INVALID_ROUTE_PARAMS` with Zod `issues`
 2. **Query validation** — `spec.query` → `validated_query`; mismatch returns 400 `ERROR_INVALID_QUERY_PARAMS`
-3. **Pre-validation auth guards** — `require_auth` (401 `ERROR_AUTHENTICATION_REQUIRED`) when `auth.account === 'required'` or `auth.actor === 'required'`. Fires before any body parsing so unauthenticated callers never see route-shape information from input parse failures. The `AuthGuardResolver` (e.g. `fuz_auth_guard_resolver` from `auth/auth_guard_resolver.ts`) returns this set as `pre_validation: Array<MiddlewareHandler>`.
-4. **Input validation** — JSON body parsed + validated; mismatch returns 400 `ERROR_INVALID_JSON_BODY` (not JSON) or `ERROR_INVALID_REQUEST_BODY` (schema failure with `issues`). Skipped on GET and `z.null()` inputs. The validated input lands on `c.var.validated_input` so the authorization phase reads `acting` as a typed Zod field.
-5. **Authorization phase** — when `spec.auth.actor !== 'none'`, resolves the acting actor against `c.var.account_id` (set by the auth middleware) plus `validated_input.acting` (or `validated_query.acting` for GET routes), builds `RequestContext` via `build_request_context`, and sets `REQUEST_CONTEXT_KEY`. When `auth.account !== 'none' && auth.actor === 'none'`, an account-only context is built. Resolution failures return 400 `ERROR_ACTOR_REQUIRED` (with `available[]`) or `ERROR_ACTOR_NOT_ON_ACCOUNT` (or 500 `ERROR_NO_ACTORS_ON_ACCOUNT` on signup-invariant violation, 500 `ERROR_ACCOUNT_VANISHED` on torn account/actor reads after a successful resolve). Public routes (`account: 'none' && actor: 'none'`) skip this phase entirely.
-6. **Post-authorization auth guards** — `require_credential_types(types)` (403 `ERROR_CREDENTIAL_TYPE_REQUIRED` with `required_credential_types: ReadonlyArray<string>`) fires first when `auth.credential_types?.length`; `require_role(roles)` (403 `ERROR_INSUFFICIENT_PERMISSIONS` with `required_roles: ReadonlyArray<string>`) fires next when `auth.roles?.length`. Both read `REQUEST_CONTEXT_KEY` populated by step 5. Multi-role specs admit any-of via `has_any_scoped_role(ctx, roles, null)`.
+3. **Pre-authorization auth guards** — every gate that reads only what the auth middleware set, in coarse-to-fine order: `require_auth` (401 `ERROR_AUTHENTICATION_REQUIRED`) when `auth.account === 'required'` or `auth.actor === 'required'`; `require_credential_types(types)` (403 `ERROR_CREDENTIAL_TYPE_REQUIRED` with `required_credential_types: ReadonlyArray<string>`) when `auth.credential_types?.length`; `require_token_surface(surface)` (403 `ERROR_TOKEN_SCOPE_REQUIRED` with `required_scope`, the rule-3 token-scope refusal) when `auth.token_surface` names a non-RPC spine surface. All fire before any body parsing — so a caller they refuse never sees route-shape information from input parse failures — and before actor resolution, so a wrong channel costs no DB work and never learns account state (e.g. that the account is multi-actor). The `AuthGuardResolver` (e.g. `fuz_auth_guard_resolver` from `auth/auth_guard_resolver.ts`) returns this set as `pre_authorization: Array<MiddlewareHandler>`.
+4. **Authorization phase** — when `spec.auth.actor !== 'none'`, resolves the acting actor against `c.var.account_id` (set by the auth middleware) plus the `acting` selector (`validated_query.acting` on GETs; read off the raw body on mutations, since body validation now runs after the gates), builds `RequestContext` via `build_request_context`, and sets `REQUEST_CONTEXT_KEY`. When `auth.account !== 'none' && auth.actor === 'none'`, an account-only context is built. Resolution failures return 400 `ERROR_ACTOR_REQUIRED` (with `available[]`) or `ERROR_ACTOR_NOT_ON_ACCOUNT` (or 500 `ERROR_NO_ACTORS_ON_ACCOUNT` on signup-invariant violation, 500 `ERROR_ACCOUNT_VANISHED` on torn account/actor reads after a successful resolve). Public routes (`account: 'none' && actor: 'none'`) skip this phase entirely.
+5. **Post-authorization auth guards** — `require_role(roles)` (403 `ERROR_INSUFFICIENT_PERMISSIONS` with `required_roles: ReadonlyArray<string>`) when `auth.roles?.length`. The only gate in this phase, because it is the only one that reads `REQUEST_CONTEXT_KEY` (populated by step 4) rather than the auth middleware's own context vars. Multi-role specs admit any-of via `has_any_scoped_role(ctx, roles, null)`.
+6. **Input validation** — JSON body parsed + validated; mismatch returns 400 `ERROR_INVALID_JSON_BODY` (not JSON) or `ERROR_INVALID_REQUEST_BODY` (schema failure with `issues`). Skipped on GET and `z.null()` inputs. The validated input lands on `c.var.validated_input`.
 7. **Handler** — wrapped in transaction when `use_transaction` (see above), receives `RouteContext`
 8. **DEV-only output + error validation** — wraps the handler (see below)
 9. **Error catch** — catches `ThrownJsonrpcError` → maps to HTTP status + the flat REST `ApiError` body (`{error: <reason>, message?, ...rest_data}`); catches generic `Error` → 500 `{error: 'internal_error', message?}` (message only in DEV). The reason string comes from `err.data.reason` when set (consumer-supplied canonical reason override) or from `jsonrpc_error_code_to_name(err.code)` (e.g. `-32003 → 'not_found'`). The flat shape matches what middleware and direct handlers emit — REST callers see one envelope across every emit site, while the JSON-RPC dispatcher keeps its own `{jsonrpc, id, error: {code, message, data}}` envelope on the RPC mount.
 
-**Ordering: 401 → 400 → 403 → handler.** Mirrors the RPC dispatcher
-(`actions/action_rpc.ts`) so HTTP RPC and REST fail with the same priority.
-The alternative (403-before-400) was rejected because defense-in-depth via
-attack-surface obscurity is illusory when the surface is published in
-`library.json` codegen anyway. The trade-off is that an
-authenticated-but-unauthorized caller can distinguish 400 from 403.
+**Ordering: 401 → authz → 403 → 400 → handler.** Mirrors the RPC dispatcher
+(`actions/action_rpc.ts`) so HTTP RPC and REST fail with the same priority, and
+matches the Rust spine, which validates handler-side. Body validation runs last
+so a caller the authority gates refuse learns nothing about the route's input
+shape — a 400 would confirm the route exists and describe how to call it.
+Params and query still validate first: they are part of addressing the route,
+not of its payload, and the authorization phase reads `acting` off the query on
+GETs.
 
 Duplicate `method path` pairs throw at registration.
 
@@ -500,6 +502,16 @@ All four routes use the keeper auth shape (`{account: 'required', actor: 'requir
 Param schemas use `VALID_SQL_IDENTIFIER` regex, and every table name gets
 `assert_valid_sql_identifier()` before string-interpolating into SQL —
 the identifier validation is the only reason the interpolation is safe.
+
+**Do not widen the auth on these specs.** They serve paginated rows of any
+`public` table — `account.password_hash`, `auth_session`, `api_token` — plus
+row `DELETE`. `credential_types: ['daemon_token']` is what keeps every bearer
+credential out, and it's why the specs need no `auth.token_surface`: a daemon
+token resolves to `full` by construction, so no narrowed token can reach them
+(see ../../../docs/security.md §Token scoping). Re-auth them to a role a bearer
+satisfies and both controls are gone at once — the token's scope stops
+applying and the credential gate stops firing. A consumer that does this owns
+the surface census for it.
 
 Interfaces exported for consumer use: `TableInfo`, `TableWithCount`,
 `PrimaryKeyInfo`, `ColumnInfo`, `DbRouteOptions`.

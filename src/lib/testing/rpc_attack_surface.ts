@@ -139,8 +139,10 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 								)})`, async () => {
 									const app = apps.by_role.get(wrong_role);
 									if (!app) throw new Error(`No test app for role '${wrong_role}'`);
-									// Send valid params so we trip the role gate (403), not input
-									// validation (400). Dispatcher ordering: 401 → 400 → 403.
+									// Send valid params so the probe varies only the role. Dispatcher
+									// ordering is 401 → authz → 403 → 400, so the role gate trips
+									// ahead of validation regardless; valid params also keep the
+									// authorization phase from answering `actor_required` first.
 									const action = find_rpc_action(rpc_endpoint_specs, endpoint.path, method.name);
 									const params = action ? generate_valid_body(action.spec.input) : undefined;
 									const res = await app.request(

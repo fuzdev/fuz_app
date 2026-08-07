@@ -108,20 +108,27 @@ export const token_scope_admits_method = (scope: TokenScope, method: string): bo
 /**
  * Does `scope` admit a non-RPC spine surface?
  *
- * **Rule 3, and it is the load-bearing one.** A method-name allowlist alone
- * would have been a false promise: the db-admin browser serves paginated rows of
- * any `public` table (including `account.password_hash`, `auth_session`, and
- * `api_token`) plus row `DELETE`, gated on a global role a bearer credential
- * satisfies. A token whose UI badge read "scoped to `cell_get`" could still
- * delete an account row.
+ * **A narrowed token reaches no non-RPC surface at all** — the load-bearing
+ * half of token scoping, and what "rule 3" names wherever this module's
+ * callers and the Rust twin use that shorthand. See ../../../docs/security.md
+ * §Token scoping.
  *
- * So a narrowed token reaches no non-RPC surface at all. Strictly more
- * restrictive than naming each surface, no vocabulary to maintain, and one
- * sentence a user can hold: *a scoped token is RPC-only*.
+ * A method-name allowlist alone would have been a false promise: the db-admin
+ * browser serves paginated rows of any `public` table (including
+ * `account.password_hash`, `auth_session`, and `api_token`) plus row `DELETE`,
+ * gated on a global role a bearer credential satisfies. A token whose UI badge
+ * read "scoped to `cell_get`" could still delete an account row.
+ *
+ * Denying every non-RPC surface outright is strictly more restrictive than
+ * naming each one, keeps no vocabulary to maintain, and fits in one sentence a
+ * user can hold: *a scoped token is RPC-only*.
  */
 export const token_scope_admits_non_rpc = (scope: TokenScope): boolean => scope.kind === 'full';
 
-/** Surfaces gated by rule 3. Capability strings match the Rust `TokenSurface`. */
+/**
+ * The non-RPC surfaces a narrowed token is refused (rule 3). Capability
+ * strings match the Rust `TokenSurface`.
+ */
 export const TOKEN_SURFACE_CAPABILITIES = {
 	db_admin: 'surface:db_admin',
 	fact_bare: 'surface:fact_bare',
@@ -129,6 +136,18 @@ export const TOKEN_SURFACE_CAPABILITIES = {
 	ws_upgrade: 'surface:ws_upgrade'
 } as const;
 export type TokenSurface = keyof typeof TOKEN_SURFACE_CAPABILITIES;
+
+/**
+ * Is `value` one of the named surfaces?
+ *
+ * `RouteAuth.token_surface` is typed as a plain string so `http/` needs no
+ * `auth/` import, which makes a typo a value error rather than a type error.
+ * This is what turns it back into one, at the single point where a declared
+ * surface becomes a mounted guard — so the check and the narrowing can't drift
+ * apart the way a separate `in` test plus an `as` cast can.
+ */
+export const is_token_surface = (value: string): value is TokenSurface =>
+	value in TOKEN_SURFACE_CAPABILITIES;
 
 /**
  * Build the flat denial body a non-RPC surface returns when a narrowed token

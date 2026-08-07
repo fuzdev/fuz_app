@@ -199,12 +199,97 @@ legitimate operator.
 - **Soft-fail for invalid tokens**: Bearer middleware never returns 401 or
   error diagnostics. Invalid, expired, or empty tokens are treated as "no
   credential" — downstream auth enforcement (the RPC dispatcher's
-  pre-validation auth gate, or `require_auth` on REST) returns generic
+  pre-authorization auth gate, or `require_auth` on REST) returns generic
   errors without leaking token-specific information (`invalid_token`,
   `account_not_found`). Rate limiting (429) is the only hard-fail from
   bearer middleware
 - **Token limits**: Per-account cap (default 10, configurable). Oldest token
   evicted on creation when limit is reached
+
+### Token scoping
+
+A token carries a scope naming what it may do, stored on
+`api_token.scope JSONB NOT NULL`. Two variants and nothing else — `full`
+(every RPC method, every spine surface) or `methods` (only the named RPC
+methods). `account_token_create` takes a **required** `scope`, so full
+authority is spelled at mint rather than defaulted into; sessions and daemon
+tokens resolve to `full` by construction. `parse_token_scope` fails closed —
+an unreadable document refuses the credential rather than widening it.
+
+**A narrowed token is RPC-only.** `methods` denies every non-RPC spine
+surface outright, whatever its method list says: the db-admin table browser,
+the bare-hash fact read (`GET /api/facts/:hash`), the audit SSE stream
+(`GET /audit/stream`), and the WebSocket upgrade. This is the load-bearing
+half of the design, and it is strictly more restrictive than naming each
+surface. A method-name allowlist alone would have been a false promise — the
+db-admin browser serves paginated rows of any `public` table (including
+`account.password_hash`, `auth_session`, `api_token`) plus row `DELETE`,
+gated on a global role a bearer satisfies, so a token whose UI badge read
+"scoped to `cell_get`" could still delete an account row.
+
+Enforcement sits at two kinds of site, both ahead of the role gate:
+
+- **Per method**, inside `perform_action` — between the credential gate and
+  the role gate, so the order is credential → scope → role.
+- **Per surface**, declaratively — a route spec names itself with
+  `auth.token_surface`, and `fuz_auth_guard_resolver` mounts the refusal as a
+  pre-authorization guard. The WS upgrade calls the same shared decision
+  directly (`upgradeWebSocket`'s callback cannot produce a denial).
+
+Three declarations throw at registration rather than mount: an unknown surface
+name, the field on an `ActionSpec` (nothing there mounts a guard from it), and
+the field on an unrestricted route (the same holder reaches it by dropping the
+credential). Each would be a control that silently does nothing.
+
+Denials are `403` with a flat `{error: 'token_scope_required', required_scope}`
+body (`-32002` in the JSON-RPC envelope for the per-method gate), identical on
+both spines. The coarser credential gate outranks the scope gate when both
+would fire: a channel that may never call the method learns that, not which
+scope it is missing.
+
+**Consumers carry their own census.** The spine gates the surfaces the spine
+mounts. A consumer that mounts its own bearer-reachable surface — a file store,
+git smart-HTTP — or that rewrites a spine route's `auth` to admit a credential
+the shipped gate refused, has to make the same call for that surface. The
+second case is the sharper one, and `http/db_routes.ts` is the live example:
+the shipped table browser needs no surface gate because
+`credential_types: ['daemon_token']` already excludes every bearer, but a
+consumer that re-auths it to a role a bearer satisfies loses both controls at
+once and puts every `public` row — password hashes, sessions, tokens — behind
+a scoped credential.
+
+Two other consumer-side shapes reach no gate on their own:
+
+- **A bridged action** (`create_action_route_spec`) runs its own handler
+  through the REST pipeline and never reaches `perform_action`, so the
+  per-method scope check does not fire on it.
+- **Any consumer-authored non-RPC route.** `auth.token_surface` validates
+  against the spine's four named surfaces, so it cannot name a consumer's own.
+
+Both gate the same way — read the scope off the request and refuse a narrowed
+one:
+
+```typescript
+import { TOKEN_SCOPE_KEY } from '@fuzdev/fuz_app/hono_context.ts';
+import { token_scope_admits_non_rpc } from '@fuzdev/fuz_app/auth/token_scope.ts';
+
+const require_full_scope: MiddlewareHandler = async (c, next) => {
+	const scope = c.get(TOKEN_SCOPE_KEY);
+	// Unset is the anonymous caller — no credential to narrow, so it passes
+	// through to whatever gate actually governs the route.
+	if (scope && !token_scope_admits_non_rpc(scope)) {
+		return c.json({error: 'token_scope_required', required_scope: 'surface:<name>'}, 403);
+	}
+	await next();
+};
+```
+
+Mount it in the same position the spine's guard occupies — before the role
+gate, so a narrowed token hears about its scope rather than about a role it
+also lacks. `src/test/auth/token_scope_surface_census.test.ts` is
+the pattern: enumerate every credential-consuming site and classify each as
+resolving the scope, consulting it, or exempt with a stated reason, so an
+unreviewed surface fails the suite instead of shipping ungated.
 
 ## Daemon Token
 
@@ -518,15 +603,20 @@ Rust spine via the cell + conformance cross suites. The in-process cell suite
 genuine miss — so no distinguishing field (an id echo, a divergent message)
 can creep into one path.
 
-**Phase ordering hides route shape from unauthenticated callers.** Every
-dispatch surface (HTTP RPC, the REST bridge, WS) runs **401 → 400 → 403 →
-handler**: pre-validation authentication fires _before_ input validation, so
-an unauthenticated caller hitting an authed route is refused with a 401
-before its body is ever parsed — it never learns the route's input schema or
-shape from a parse error (a 400 leaking required fields / types). Input
-validation runs next, then the authorization phase (403). Both spines
-implement the same order; the Rust spine validates input handler-side, so the
-401 gate short-circuits before any shape is revealed. (Module detail:
+**Phase ordering hides route shape from callers who lack the authority to
+call.** Every dispatch surface (HTTP RPC, the REST bridge, WS) runs **401 →
+authorization phase → 403 → 400 → handler**: authentication, then actor
+resolution, then the credential / scope / role gates, and only then input
+validation. A caller any of those refuse never learns the route's input
+schema or shape from a parse error (a 400 leaking required fields / types) —
+a 400 would confirm the method exists and describe how to call it, to a
+channel that should have learned neither. Coarse authority facts before fine
+ones, and no shape disclosure before authority is settled: the same argument
+that puts the credential gate ahead of the scope gate. Both spines implement
+the same order (the Rust spine validates input handler-side, which is what
+puts it last there). Pinned by
+`account_actions.credential_gate.db.test.ts` §authority gates precede input
+validation and by a cross-backend conformance row. (Module detail:
 `http/CLAUDE.md` §Validation pipeline; `auth/CLAUDE.md` §Two-phase identity.)
 
 **Role-shaped cell grants validate against the registered role set.** A
@@ -931,9 +1021,11 @@ nginx, cookie-only for v1") while no deployment ever did it.
 **What that costs.** The browser-context guard closes browser XSS exfiltration.
 It does **not** close replay of a token stolen from CI, an env var, a config
 file, or a backup — that attacker uses curl, sends no `Origin`, and is admitted.
-An API token is account-wide and, by default, non-expiring, so such a token
-reaches every action whose spec accepts the bearer channel, plus any role-gated
-action whose role the compromised account holds.
+An API token is account-wide and, by default, non-expiring, so a leaked
+`full`-scoped token reaches every action whose spec accepts the bearer channel,
+plus any role-gated action whose role the compromised account holds. A narrowed
+token is bounded by its scope instead (§Token scoping), which is the second
+compensating control below.
 
 **Compensating controls**, in the order they bite:
 
@@ -945,9 +1037,10 @@ action whose role the compromised account holds.
    session. See §Credential-channel gating. Consumers should extend the same
    treatment to their own high-consequence mutations rather than leaving them at
    "any authenticated credential".
-2. **Per-token scoping.** fuz_forge's scoped-token policy bounds which RPC
-   methods a given token may call. This is the strongest available control and
-   the right one to reach for when issuing a token to automation.
+2. **Per-token scoping.** A token minted with a narrowed scope calls only the
+   RPC methods it names and reaches no non-RPC spine surface at all. This is
+   the strongest available control and the right one to reach for when issuing
+   a token to automation. See §Token scoping.
 3. **Revocation and the rate limiter**, which bound the window and the blast
    rate but not the reach.
 

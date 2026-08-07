@@ -274,12 +274,15 @@ Sets `c.var.account_id` + `CREDENTIAL_TYPE_KEY` on a valid credential.
 Account-only — never loads actor or role_grants, never populates
 `REQUEST_CONTEXT_KEY`.
 
-**Authorization runs after input validation**, matching the dispatcher's
-401 → 400 → 403 phase order (see `http/CLAUDE.md` §Validation pipeline).
-When the route's input declares `acting?: ActingActor` or its auth requires
-role_grants, the authorization phase calls `resolve_acting_actor` over the
-validated `acting` value and builds an actor-bound `RequestContext`.
-Account-grain routes run with `RequestContext.actor: null`.
+**Authorization runs before input validation**, matching the dispatcher's
+401 → authz → 403 → 400 phase order (see `http/CLAUDE.md` §Validation
+pipeline). When the route's input declares `acting?: ActingActor` or its auth
+requires role_grants, the authorization phase calls `resolve_acting_actor` over
+the `acting` selector — the validated query value on GETs, read off the raw
+body on mutations — and builds an actor-bound `RequestContext`. A malformed
+selector reads as omitted (it only ever picks among actors the account already
+owns, and input validation rejects it a step later). Account-grain routes run
+with `RequestContext.actor: null`.
 
 `apply_authorization_phase` is pure data — returns `AuthorizationResult`
 (`{ok: true, request_context: RequestContext | null} | {ok: false, status, body}`)
@@ -399,7 +402,10 @@ Keeper is not a dedicated guard — it's a composable `RouteAuth` shape:
 `{account: 'required', actor: 'required', roles: ['keeper'], credential_types: ['daemon_token']}`.
 The two-part check is `require_credential_types(['daemon_token'])` (403
 `ERROR_CREDENTIAL_TYPE_REQUIRED`) followed by `require_role(['keeper'])`
-(403 `ERROR_INSUFFICIENT_PERMISSIONS`). Same scope-aware semantics mirrored
+(403 `ERROR_INSUFFICIENT_PERMISSIONS`) — the channel gate lands
+pre-authorization and the role gate post-authorization, so a non-daemon
+credential is refused before the route resolves an actor for it. Same
+scope-aware semantics mirrored
 in the HTTP RPC dispatcher (`actions/action_rpc.ts`), the WS dispatcher
 (`actions/register_action_ws.ts`), and the admin bypasses inside
 `auth/role_grant_offer_actions.ts`.

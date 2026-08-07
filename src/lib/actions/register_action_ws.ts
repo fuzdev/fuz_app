@@ -217,10 +217,10 @@ export interface RegisterActionWsResult {
  * - Notifications (method + no id) are silently dropped per JSON-RPC spec.
  *   Exception: `cancel` notifications abort the matching pending request's
  *   `ctx.signal` before bubbling out.
- * - Per-message dispatch goes through `perform_action`: pre-validation
- *   auth (401) → input validation (400) → authorization phase →
- *   post-authorization auth (403) → rate limit (429) → handler (with
- *   transaction wrap iff `spec.side_effects: true`) → DEV output validation.
+ * - Per-message dispatch goes through `perform_action`: pre-authorization
+ *   auth (401) → authorization phase → post-authorization auth (403) →
+ *   input validation (400) → rate limit (429) → handler (with transaction
+ *   wrap iff `spec.side_effects: true`) → DEV output validation.
  * - Authorization phase runs **per message** — role_grant changes during a
  *   connection lifetime are picked up on the next message without any
  *   in-place refresh. Authentication invalidation closes the socket via

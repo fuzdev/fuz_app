@@ -1396,9 +1396,9 @@ read) it fires three principals over real HTTP: **anonymous** → 401, **session
 proving the daemon-token gate that fences each backdoor action holds end-to-end
 on the real dispatcher (the spec-derived `describe_rpc_attack_surface_tests`
 never enumerates them because they're off the declared surface). Each method is
-sent with **valid** params so the session/bearer cases clear the 400
-input-validation phase and reach the 403 credential gate (order is
-401 → 400 → 403); the handler never runs. Cited property: `docs/security.md`
+sent with **valid** params so each case varies only the credential (validation
+runs after the gates — order is 401 → authz → 403 → 400); the handler never
+runs. Cited property: `docs/security.md`
 §Test Backdoor Actions. Cross-process only (the `_testing_*` actions are
 mounted on the spawned binary, not the in-process app — like the ws/sse
 suites); ungated, since every cross backend that uses

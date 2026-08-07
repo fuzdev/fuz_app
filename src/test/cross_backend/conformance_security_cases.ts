@@ -154,11 +154,9 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 		request: {
 			method: 'account_token_create',
 			as: 'daemon',
-			// A well-formed request, so the assertion isolates the *credential*
-			// denial. `scope` became required when token scoping landed, and the TS
-			// dispatcher validates input before the credential gate (the Rust one
-			// validates handler-side, after) — so `params: {}` would 400 on one
-			// backend and 403 on the other, testing the wrong thing on both.
+			// Well-formed, so this row isolates the *credential* denial. Its
+			// bearer sibling below sends `params: {}` to pin the gate ordering
+			// instead.
 			params: { scope: { kind: 'full' } }
 		},
 		expect: {
@@ -169,23 +167,24 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 		note: 'security.md §Credential-channel gating on credential-minting actions — token minting requires a browser-context session, closing bearer/daemon-spawn-bearer persistence'
 	},
 	{
-		name: 'api_token (bearer) → account_token_create → 403 credential_type_required',
+		name: 'api_token (bearer) → account_token_create with empty params → 403 credential_type_required (authority gates precede input validation)',
 		request: {
 			method: 'account_token_create',
 			as: 'token',
-			// A well-formed request, so the assertion isolates the *credential*
-			// denial. `scope` became required when token scoping landed, and the TS
-			// dispatcher validates input before the credential gate (the Rust one
-			// validates handler-side, after) — so `params: {}` would 400 on one
-			// backend and 403 on the other, testing the wrong thing on both.
-			params: { scope: { kind: 'full' } }
+			// Deliberately malformed — `scope` is required. Both dispatchers run
+			// 401 → authz → 403 → 400, so the caller hears that this channel may
+			// never mint a token and learns nothing about the shape of the request
+			// it would have to send. A 400 here would confirm the method exists
+			// and describe how to call it, to a channel that should have learned
+			// neither.
+			params: {}
 		},
 		expect: {
 			status: 403,
 			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
 			fields: { required_credential_types: ['session'] }
 		},
-		note: 'security.md §Credential-channel gating on credential-minting actions — a leaked bearer cannot mint sibling tokens to outlive revocation'
+		note: 'security.md §Credential-channel gating on credential-minting actions — a leaked bearer cannot mint sibling tokens to outlive revocation; the empty params also pin that no input-shape detail precedes the credential denial'
 	},
 	{
 		name: 'api_token (bearer) → /logout → 403 credential_type_required',
@@ -268,8 +267,8 @@ const token_scope_cases: ReadonlyArray<ConformanceCase> = [
 		// denials can fire. `credential_type_required` is the correct one: the
 		// coarser fact ("this channel may never call me") outranks the finer, and
 		// naming the missing scope here would confirm the endpoint to a channel
-		// that should not learn it exists. Well-formed params for the reason the
-		// two credential-ceiling cases above carry them.
+		// that should not learn it exists. Well-formed params so this row varies
+		// only the credential, leaving the ordering pin to its sibling above.
 		name: 'scoped token → account_token_create → 403 credential_type_required (credential gate precedes scope gate)',
 		request: {
 			method: 'account_token_create',
@@ -410,10 +409,12 @@ const idor_and_enumeration_cases: ReadonlyArray<ConformanceCase> = [
 // An unauthenticated caller sending MALFORMED input to an authed surface
 // must be refused at the auth phase (401) before input validation (400)
 // ever runs — otherwise a parse error leaks the route's input schema /
-// shape to an anonymous prober. Pins the dispatcher's 401 → 400 → 403 order
-// on both impls. The Rust dispatcher validates input handler-side today, so
-// these rows also guard that a future input-validation port can't reorder
-// ahead of the auth gate undetected (the malformed params would 400 first).
+// shape to an anonymous prober. The anonymous end of the dispatchers'
+// 401 → authz → 403 → 400 order on both impls; the 403 end is pinned by the
+// bearer `account_token_create` row in the credential-ceiling batch above.
+// The Rust dispatcher validates input handler-side today, so these rows also
+// guard that a future input-validation port can't reorder ahead of the auth
+// gate undetected (the malformed params would 400 first).
 
 const phase_order_cases: ReadonlyArray<ConformanceCase> = [
 	{
@@ -426,7 +427,7 @@ const phase_order_cases: ReadonlyArray<ConformanceCase> = [
 			params: { session_id: 12345 }
 		},
 		expect: { status: 401 },
-		note: 'security.md §Authorization "Phase ordering hides route shape from unauthenticated callers" — the 401 → 400 → 403 dispatch order: pre-validation auth fires before input validation, so an unauthenticated caller never learns route shape from a parse failure'
+		note: 'security.md §Authorization "Phase ordering hides route shape from callers who lack the authority to call" — the 401 → authz → 403 → 400 dispatch order: pre-authorization auth fires before input validation, so an unauthenticated caller never learns route shape from a parse failure'
 	},
 	{
 		// REST twin: `/password` is account + session gated; a malformed body
@@ -438,7 +439,7 @@ const phase_order_cases: ReadonlyArray<ConformanceCase> = [
 			params: { current_password: 999, new_password: false }
 		},
 		expect: { status: 401 },
-		note: 'security.md §Authorization "Phase ordering hides route shape from unauthenticated callers" — require_auth fires before body parsing, so an unauthenticated caller never sees route-shape information from input parse failures'
+		note: 'security.md §Authorization "Phase ordering hides route shape from callers who lack the authority to call" — require_auth fires before body parsing, so an unauthenticated caller never sees route-shape information from input parse failures'
 	}
 ];
 

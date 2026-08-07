@@ -195,7 +195,7 @@ describe_db('serve_fact_route', (get_db) => {
 		// read is the admin auth, not reachability.
 		await create_cell(app, { kind: 'image', data: { cover: hash }, visibility: 'public' });
 
-		// Anonymous → 401 (auth required) at the pre-validation guard.
+		// Anonymous → 401 (auth required) at the pre-authorization guard.
 		const anon = await get_bare_fact(app, hash);
 		assert.strictEqual(anon.status, 401);
 

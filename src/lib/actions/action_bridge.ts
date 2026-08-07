@@ -28,8 +28,14 @@ export interface ActionRouteOptions {
 	http_method?: RouteMethod;
 	/**
 	 * Override the route's auth shape — defaults to the action spec's `auth`
-	 * (the canonical four-axis shape from `http/auth_shape.ts` is shared
-	 * verbatim between action specs and route specs, so no mapping is needed).
+	 * (the canonical shape from `http/auth_shape.ts` is shared verbatim between
+	 * action specs and route specs, so no mapping is needed).
+	 *
+	 * This is also the only place a bridged route can declare
+	 * `token_surface`, which `ActionSpec.auth` is forbidden to carry — see the
+	 * token-scope note on `create_action_route_spec`. Overriding to *widen*
+	 * (admitting a credential the action's own gate refused) makes this route
+	 * the consumer's to audit, not the spine's.
 	 */
 	auth?: RouteAuth;
 	/** Handler-specific error schemas (HTTP status code → Zod schema). Transport-specific — not on ActionSpec. */
@@ -56,6 +62,17 @@ export const derive_http_method = (side_effects: ActionSideEffects): RouteMethod
  * Error schemas are transport-specific (keyed by HTTP status codes) and belong
  * on the options, not the action spec. Action specs define the contract;
  * transport concerns like HTTP error codes are added at the bridge layer.
+ *
+ * **A bridged route does not inherit the dispatcher's token-scope gate.** The
+ * route runs `options.handler` through the REST pipeline; it never reaches
+ * `perform_action`, which is where the per-method scope check lives. So a
+ * bridged route is a non-RPC surface, and by token scoping's RPC-only rule a
+ * **narrowed** api token should not reach it — but nothing here refuses one,
+ * because the auth shape is copied from a spec that is forbidden to declare
+ * `token_surface`. If the route is reachable by bearer, decide: pass
+ * `options.auth` with a `token_surface` when one of the spine's named surfaces
+ * fits, or gate it yourself (read `TOKEN_SCOPE_KEY` and consult
+ * `token_scope_admits_non_rpc`). See ../../../docs/security.md §Token scoping.
  *
  * @param spec - the action spec (must have non-null `auth`)
  * @param options - HTTP-specific options (path, handler, optional overrides)

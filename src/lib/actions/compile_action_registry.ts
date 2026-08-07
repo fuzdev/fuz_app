@@ -3,21 +3,31 @@
  *
  * `create_rpc_endpoint` (HTTP RPC) and `register_action_ws` (WebSocket)
  * both build a `Map<method, RpcAction>` from a list of action specs and
- * gate the build on the same registry-time invariants:
+ * gate the build on the same checks, in this order (named rather than
+ * numbered — "registry-time invariant N" elsewhere in the codebase refers to
+ * the `RouteAuth` cross-axis set in `http/auth_shape.ts`, a different list):
  *
- * 1. **Auth-shape biconditional** — per `assert_route_auth_acting_biconditional`
- *    in `http/auth_shape.ts`: `auth.actor !== 'none' ⟺ input declares
- *    acting?: ActingActor`. Fires for every spec with non-null auth.
- * 2. **Rate-limit / account axis** — `rate_limit: 'account' | 'both'`
- *    requires `auth.account === 'required'`; without an account on the
- *    request there is no key for the per-account bucket.
- * 3. **JSON-RPC §4.2 wire validity** — `request_response` specs whose
- *    handler will reach the dispatch map must not use `z.null()` for
- *    input (the wire format forbids `"params": null`; use `z.void()`
- *    for parameterless methods).
- * 4. **Duplicate method names** — JSON-RPC keys on `method`, so every
- *    spec in the array must declare a unique `method` regardless of
- *    kind / handler presence.
+ * - **Auth-shape biconditional** — per `assert_route_auth_acting_biconditional`
+ *   in `http/auth_shape.ts`: `auth.actor !== 'none' ⟺ input declares
+ *   acting?: ActingActor` (that set's invariant 2). Fires for every spec with
+ *   non-null auth.
+ * - **No `auth.token_surface` on an action** — `ActionSpec.auth` is the same
+ *   `RouteAuth` a route spec carries, so the field parses here, but only
+ *   `apply_route_specs` mounts a guard from it and `perform_action` never
+ *   reads it. Declaring it on an action would be a security control that
+ *   silently does nothing, which is the exact shape token scoping was built
+ *   to refuse. Rejected loudly instead; actions are governed by the
+ *   per-method scope gate inside `perform_action`.
+ * - **Rate-limit / account axis** — `rate_limit: 'account' | 'both'`
+ *   requires `auth.account === 'required'`; without an account on the
+ *   request there is no key for the per-account bucket.
+ * - **JSON-RPC §4.2 wire validity** — `request_response` specs whose
+ *   handler will reach the dispatch map must not use `z.null()` for
+ *   input (the wire format forbids `"params": null`; use `z.void()`
+ *   for parameterless methods).
+ * - **Duplicate method names** — JSON-RPC keys on `method`, so every
+ *   spec in the array must declare a unique `method` regardless of
+ *   kind / handler presence.
  *
  * Pre-consolidation each dispatcher inlined these checks; the comment
  * in `actions/register_action_ws.ts` literally said "mirrors the HTTP RPC
@@ -68,6 +78,11 @@ export const compile_action_registry = (
 		// per the spec union means `kind === 'request_response'`).
 		if (spec.auth !== null) {
 			assert_route_auth_acting_biconditional(spec.auth, { input: spec.input }, ctx);
+			if (spec.auth.token_surface !== undefined) {
+				throw new Error(
+					`${ctx} declares auth.token_surface: '${spec.auth.token_surface}' — that slot is for route specs only. Actions dispatch through the RPC endpoint, where a narrowed token is gated per method by the scope check in perform_action; rule 3 governs whole non-RPC surfaces, not individual methods. Remove the field.`
+				);
+			}
 			if (
 				(spec.rate_limit === 'account' || spec.rate_limit === 'both') &&
 				spec.auth.account !== 'required'

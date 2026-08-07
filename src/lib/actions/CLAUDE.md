@@ -29,14 +29,16 @@ Canonical source of truth. Three concrete kinds discriminate on `kind`:
 - `remote_notification` — `auth: null`, `side_effects: true`, `output: z.ZodVoid`, `async: true`.
 - `local_call` — `auth: null`, `side_effects` arbitrary, `output` arbitrary, `async` boolean.
 
-`RouteAuth` is the flat record `{account, actor, roles?, credential_types?}`
-from `http/auth_shape.ts` — same shape governs `RouteSpec.auth` so the four
-axes drive one auth surface across REST and SAES. Cross-axis invariants:
-roles imply `actor: 'required'`; `account: 'none'` implies `actor: 'none'`
-(no accountless actors in v1); the unrestricted leaf
+`RouteAuth` is the flat record
+`{account, actor, roles?, credential_types?, token_surface?}` from
+`http/auth_shape.ts` — same shape governs `RouteSpec.auth` so one auth
+surface drives REST and SAES. Cross-axis invariants: roles imply
+`actor: 'required'`; `account: 'none'` implies `actor: 'none'` (no
+accountless actors in v1); the unrestricted leaf
 (`account: 'none', actor: 'none'`) cannot declare roles or credential
 gates. The biconditional `actor !== 'none' ⟺ input declares acting?: ActingActor`
 is enforced at registration time via `assert_route_auth_acting_biconditional`.
+`token_surface` is the one axis actions cannot use — see §Registry compile.
 
 Optional fields:
 
@@ -73,14 +75,14 @@ non-`remote_notification` kind.
 ## Registry compile (`actions/compile_action_registry.ts`)
 
 `compile_action_registry` is the shared registration loop called by both
-`create_rpc_endpoint` and `register_action_ws`. Validates four
-registry-time invariants and returns the `Map<method, RpcAction>` the
-dispatchers use:
+`create_rpc_endpoint` and `register_action_ws`. Validates these checks in
+order and returns the `Map<method, RpcAction>` the dispatchers use:
 
-1. **Auth-shape biconditional** — `actor !== 'none' ⟺ input declares acting?: ActingActor` (via `assert_route_auth_acting_biconditional`).
-2. **Rate-limit account axis** — `rate_limit: 'account' | 'both'` requires `auth.account === 'required'`.
-3. **JSON-RPC §4.2 wire validity** — `request_response` specs with a handler may not use `z.null()` for input (use `z.void()` for nullary).
-4. **Unique method names** across the array.
+- **Auth-shape biconditional** — `actor !== 'none' ⟺ input declares acting?: ActingActor` (via `assert_route_auth_acting_biconditional`).
+- **No `auth.token_surface`** — the slot is route-spec-only; nothing mounts a guard from it on an action, so declaring it would be a control that silently does nothing. Narrowed tokens are gated per method by the scope check in `perform_action`; rule 3 governs whole non-RPC surfaces.
+- **Rate-limit account axis** — `rate_limit: 'account' | 'both'` requires `auth.account === 'required'`.
+- **JSON-RPC §4.2 wire validity** — `request_response` specs with a handler may not use `z.null()` for input (use `z.void()` for nullary).
+- **Unique method names** across the array.
 
 Only `request_response` specs with a handler reach the dispatch map;
 `remote_notification` / handler-less specs (e.g. WS `cancel`) stay
@@ -175,6 +177,17 @@ Derives transport-specific specs from action specs. HTTP-specific concerns
 (path, handler, errors) come from options, not the action spec.
 
 - `create_action_route_spec(spec, options)` — one action → one `RouteSpec`. HTTP method defaults by `side_effects` (`true` → POST, `false` → GET; override via `options.http_method`). `route.auth` is `spec.auth` verbatim. `transaction: spec.side_effects`. Throws if `spec.auth` is null.
+
+**The bridge does not carry the token-scope gate.** A bridged route runs
+`options.handler` through the REST pipeline and never reaches
+`perform_action`, so the per-method scope check doesn't fire — and the copied
+`spec.auth` can't carry `token_surface` either (actions are forbidden it). A
+bearer-reachable bridged route is therefore a non-RPC surface a **narrowed**
+token can reach, which is what the RPC-only rule exists to prevent. Pass
+`options.auth` with a `token_surface`, or gate it in the handler against
+`TOKEN_SCOPE_KEY` + `token_scope_admits_non_rpc`. fuz_app mounts no bridged
+routes itself; this is consumer-facing.
+
 - `create_action_event_spec(spec, {channel?})` — one notification action → one `EventSpec` for SSE surface + `create_validated_broadcaster`. Throws on non-`remote_notification` kind.
 - `derive_http_method(side_effects)` — exported for custom bridges.
 
@@ -190,11 +203,10 @@ The HTTP RPC dispatcher is a thin shim around `perform_action`
 parsing, GET vs POST split, `c.json` binding); the
 auth/validation/dispatch pipeline is shared with the WebSocket dispatcher.
 
-**Phase order: 401 → 400 → 403 → handler.** Validate first, authorize
-after. Trade-off: an unauthorized caller sees the validation step. The
-alternative ordering (403-before-400) was rejected because
-defense-in-depth via attack-surface obscurity is illusory when the surface
-is published in `library.json` codegen anyway.
+**Phase order: 401 → authz → 403 → 400 → handler.** Authorize first,
+validate after — a caller the authority gates refuse never learns the
+action's input shape, and the coarse authority facts settle before the fine
+ones. Matches the Rust spine, which validates handler-side.
 
 Shim responsibilities (per-request):
 
@@ -267,12 +279,12 @@ The transport-agnostic post-parse pipeline. Each transport assembles a
 `perform_action(input, deps)`, and binds the discriminated
 `PerformActionResult` to its wire shape.
 
-Pipeline (401 → 400 → 403 → handler):
+Pipeline (401 → authz → 403 → 400 → handler):
 
-1. Pre-validation auth (401)
-2. Validate params (400) — `spec.input.safeParse` with `z.void()` / `?? {}` rules
-3. Authorization phase — `apply_authorization_phase` against `account_id` + `validated_input.acting`. Test escape hatch via `preset.request_context`
-4. Post-authorization auth (403) — credential-type gate first, role gate second
+1. Pre-authorization auth (401)
+2. Authorization phase — `apply_authorization_phase` against `account_id` + `read_acting(auth, raw_params)`, which takes the selector off the raw params (malformed reads as omitted) since validation now runs later. Test escape hatch via `preset.request_context`
+3. Post-authorization auth (403) — credential-type gate, then token scope, then role
+4. Validate params (400) — `spec.input.safeParse` with `z.void()` / `?? {}` rules
 5. Rate limit (429) — throttle-requests semantics
 6. Dispatch + DEV output validation + error normalization — `spec.side_effects` picks transaction vs pool. `ThrownJsonrpcError` preserves code + data; generic throws become `internal_error`
 

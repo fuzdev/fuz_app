@@ -23,7 +23,13 @@ import { generate_app_surface, events_to_surface } from '$lib/http/surface.ts';
 import { middleware_applies, schema_to_surface } from '$lib/http/schema_helpers.ts';
 import type { EventSpec } from '$lib/realtime/sse.ts';
 import { REQUEST_CONTEXT_KEY } from '$lib/auth/request_context.ts';
-import { ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY } from '$lib/hono_context.ts';
+import {
+	token_scope_full,
+	token_scope_methods,
+	token_scope_surface_denied_body,
+	type TokenScope
+} from '$lib/auth/token_scope.ts';
+import { ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY, TOKEN_SCOPE_KEY } from '$lib/hono_context.ts';
 import { create_test_request_context } from '$lib/testing/auth_apps.ts';
 import { ApiError, RateLimitError } from '$lib/http/error_schemas.ts';
 import { create_stub_db } from '$lib/testing/stubs.ts';
@@ -214,6 +220,105 @@ describe('apply_route_specs', () => {
 
 		const res = await app.request('/admin', { method: 'POST' });
 		assert.strictEqual(res.status, 200);
+	});
+});
+
+describe('auth.token_surface (rule 3)', () => {
+	/**
+	 * Mount one role-gated route declaring a rule-3 surface, under a caller
+	 * holding `role` and the given scope.
+	 */
+	const build_app = (role: string, scope: TokenScope): Hono => {
+		const app = new Hono();
+		app.use('/*', async (c, next) => {
+			const ctx = create_test_request_context(role);
+			(c as any).set(ACCOUNT_ID_KEY, ctx.account.id);
+			(c as any).set(REQUEST_CONTEXT_KEY, ctx);
+			(c as any).set(TOKEN_SCOPE_KEY, scope);
+			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
+			await next();
+		});
+		const specs: Array<RouteSpec> = [
+			{
+				method: 'GET',
+				path: '/stream',
+				auth: {
+					account: 'required',
+					actor: 'required',
+					roles: ['admin'],
+					token_surface: 'audit_stream'
+				},
+				handler: (c) => c.json({ streamed: true }),
+				description: 'Rule-3 surface',
+				query: z.strictObject({ acting: ActingActor }),
+				input: z.null(),
+				output: z.null()
+			}
+		];
+		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+		return app;
+	};
+
+	test('a narrowed token is refused with the surface denial', async () => {
+		const res = await build_app('admin', token_scope_methods(['cell_get'])).request('/stream');
+		assert.strictEqual(res.status, 403);
+		assert.deepStrictEqual(await res.json(), token_scope_surface_denied_body('audit_stream'));
+	});
+
+	test('a full token reaches the handler', async () => {
+		const res = await build_app('admin', token_scope_full()).request('/stream');
+		assert.strictEqual(res.status, 200);
+	});
+
+	/**
+	 * The ordering half, and the reason this slot exists rather than an
+	 * in-handler check: the handler runs after the role gate, so a narrowed
+	 * token whose account also lacks the role would be told about the
+	 * deployment's role structure by a credential the scope gate was never
+	 * going to admit. Rust runs its rule-3 checks before the role gate; this
+	 * is where TS matches it.
+	 */
+	test('scope is decided before the role gate', async () => {
+		const res = await build_app('viewer', token_scope_methods(['cell_get'])).request('/stream');
+		assert.strictEqual(res.status, 403);
+		assert.deepStrictEqual(
+			await res.json(),
+			token_scope_surface_denied_body('audit_stream'),
+			'a narrowed token lacking the role must hear about its scope, not the role'
+		);
+	});
+
+	test('an unknown surface is refused at registration', () => {
+		assert.throws(
+			() =>
+				fuz_auth_guard_resolver({
+					account: 'required',
+					actor: 'required',
+					token_surface: 'not_a_surface'
+				}),
+			/not a known token surface/u
+		);
+	});
+
+	/**
+	 * The leaf invariant, extended to this field. On an unrestricted route the
+	 * same holder reaches the handler by dropping the credential, so the guard
+	 * would read as a control and enforce nothing — the shape
+	 * `compile_action_registry` refuses on an `ActionSpec` for the same reason.
+	 * `RouteAuth`'s `.superRefine` can't carry this one (it would need `auth/`'s
+	 * surface vocabulary, and the route pipeline never parses the schema), so
+	 * the resolver is where it lands.
+	 */
+	test('a surface gate on an unrestricted route is refused at registration', () => {
+		assert.throws(
+			() =>
+				fuz_auth_guard_resolver({
+					account: 'none',
+					actor: 'none',
+					token_surface: 'audit_stream'
+				}),
+			/unrestricted route/u
+		);
 	});
 });
 

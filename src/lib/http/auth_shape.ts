@@ -1,5 +1,5 @@
 /**
- * Canonical four-axis auth shape for action specs and route specs.
+ * Canonical auth shape for action specs and route specs.
  *
  * Replaces the discriminated `'public' | 'authenticated' | 'keeper' | {role}`
  * literal that conflated authentication, account resolution, actor resolution,
@@ -11,6 +11,8 @@
  * - `roles` — disjunction of permitted roles (any-of); absent = no role check.
  * - `credential_types` — restricts the credential channel (e.g. daemon_token);
  *   absent = any authenticated credential.
+ * - `token_surface` — names a non-RPC spine surface a narrowed api token may
+ *   not reach (rule 3); route specs only, absent = no scope gate.
  *
  * The same shape governs both `ActionSpec.auth` (in `actions/action_spec.ts`)
  * and `RouteSpec.auth` (in `http/route_spec.ts`). The canonical schema
@@ -61,6 +63,31 @@ export const ActingActor = Uuid.optional().meta({
 export type ActingActor = z.infer<typeof ActingActor>;
 
 /**
+ * Read an `acting` selector out of an unvalidated value.
+ *
+ * The authorization phase runs **before** input validation on both dispatchers
+ * (see `http/CLAUDE.md` §Validation pipeline), so it reads the selector raw.
+ *
+ * **A malformed selector reads as omitted, not as an error.** Safe because
+ * `acting` only ever picks among actors the resolved account already owns — a
+ * value that names nothing grants nothing — and because the typed input schema
+ * rejects it a step later, so the caller still gets a 400. Refusing here
+ * instead would put an input-shape complaint ahead of the authority gates,
+ * which is the ordering this pipeline exists to avoid.
+ *
+ * Both callers pass through here so that rule has one home: the action
+ * dispatcher's `read_acting` and the REST authorization handler's
+ * `read_route_acting`. Twin of the Rust dispatcher's `read_acting`.
+ *
+ * @param value - the raw `acting` field, from params / query / body
+ * @returns the actor id, or `undefined` when absent or malformed
+ */
+export const parse_acting = (value: unknown): string | undefined => {
+	const parsed = ActingActor.safeParse(value);
+	return parsed.success ? parsed.data : undefined;
+};
+
+/**
  * Per-axis auth state — names the dispatcher's behavior on `account` and
  * `actor` independently:
  *
@@ -78,7 +105,7 @@ export const AuthAxisState = z.enum(['none', 'optional', 'required']);
 export type AuthAxisState = z.infer<typeof AuthAxisState>;
 
 /**
- * The canonical four-axis auth shape used by both `ActionSpec.auth` and
+ * The canonical auth shape used by both `ActionSpec.auth` and
  * `RouteSpec.auth`.
  *
  * Cross-axis registry invariants enforced via `.superRefine`:
@@ -90,7 +117,11 @@ export type AuthAxisState = z.infer<typeof AuthAxisState>;
  *    is invalid in v1. The credential resolver always binds account before
  *    actor today; agent-token / group-actor credentials will lift this.
  * 4. **Unrestricted is leaf.** `account === 'none' && actor === 'none'`
- *    ⟹ no `roles`, no `credential_types` (nothing left to gate).
+ *    ⟹ no `roles`, no `credential_types` (nothing left to gate). The same
+ *    rule covers `token_surface`, but enforcing it needs the surface
+ *    vocabulary from `auth/`, so it lives with the other `token_surface`
+ *    check in `fuz_auth_guard_resolver` — which is also the only site every
+ *    route spec traverses, since the route pipeline never parses this schema.
  *
  * Invariant 2 — the `actor !== 'none' ⟺ input or query declares
  * acting?: ActingActor` biconditional — needs introspection of the
@@ -103,7 +134,25 @@ export const RouteAuth = z
 		account: AuthAxisState,
 		actor: AuthAxisState,
 		roles: z.array(z.string()).readonly().optional(),
-		credential_types: z.array(z.string()).readonly().optional()
+		credential_types: z.array(z.string()).readonly().optional(),
+		/**
+		 * Names this route as one of the non-RPC spine surfaces a **narrowed**
+		 * credential may not reach — token scoping's rule 3. Declaring it makes
+		 * the guard resolver refuse a narrowed token here, ahead of the role
+		 * gate, instead of the route hand-rolling the check in its handler
+		 * (which the auth phase has already role-gated by then, so a narrowed
+		 * token whose account lacks the role would be told about the role
+		 * rather than about the scope).
+		 *
+		 * Opt-in rather than blanket: rule 3 exempts the account REST routes,
+		 * whose reads and mints cross no boundary, and the RPC endpoint, whose
+		 * scope check is per-method inside the dispatcher — and all of those
+		 * are route specs too.
+		 *
+		 * Typed as a plain string here to keep `http/` from importing `auth/`;
+		 * the resolver validates it against the known surfaces at registration.
+		 */
+		token_surface: z.string().optional()
 	})
 	.superRefine((value, ctx) => {
 		// invariant 1: roles imply actor
@@ -146,7 +195,7 @@ export const RouteAuth = z
 	});
 export type RouteAuth = z.infer<typeof RouteAuth>;
 
-// --- Predicates over the four-axis shape ---
+// --- Predicates over the flat-record shape ---
 //
 // Pure derived reads of `RouteAuth`. Live here so every consumer that
 // branches on the shape (the dispatcher's authorization phase, route

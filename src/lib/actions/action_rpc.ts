@@ -156,7 +156,7 @@ export type ActionHandler<TInput = any, TOutput = any> = (
  * `ActionContext` narrowed to a non-null `RequestContext`.
  *
  * Used by handlers whose spec declares `auth.account === 'required'`
- * (with `auth.actor === 'none'`) — the dispatcher's pre-validation 401
+ * (with `auth.actor === 'none'`) — the dispatcher's pre-authorization 401
  * gate guarantees `request_context` is populated before the handler
  * runs, but the actor slot stays null because no `acting` resolution
  * happened. Selected automatically by `rpc_action`'s conditional return
@@ -337,13 +337,14 @@ const jsonrpc_error_envelope = (
  * 1. **Parse envelope** — POST: JSON body as `JsonrpcRequest`. GET: `method`
  *    and `params` from query string.
  * 2. **Lookup method** — find the `RpcAction` by method name.
- * 3. **Pre-validation auth** — short-circuit `unauthenticated` when no
- *    account is on the request, before input validation runs.
+ * 3. **Pre-authorization auth** — short-circuit `unauthenticated` when no
+ *    account is on the request, before any later phase runs.
  * 4. **Authorization phase** — resolve the acting actor (when the action's
  *    auth requires role_grants or its input declares `acting?: ActingActor`)
  *    and build the request context. Runs before input validation so
  *    role-grant-grain auth checks return 403 before 400 invalid_params;
- *    `acting` is read from raw params via a string typeguard.
+ *    `acting` is read from raw params by `read_acting`, which parses it as
+ *    a UUID and treats anything else as omitted.
  * 5. **Post-authorization auth** — enforce role / keeper requirements
  *    against the request context.
  * 6. **Validate params** — parse input against the action's `input` schema.

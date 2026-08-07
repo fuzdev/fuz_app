@@ -5,22 +5,32 @@
  * `perform_action` runs the post-parse pipeline that every action-spec
  * handler must traverse:
  *
- * 1. **Pre-validation auth (401)** — short-circuits unauthenticated callers
- *    on `'required'` axes before input validation runs, so callers never
- *    see `invalid_params` for methods with required input.
- * 2. **Validate params (400)** — `spec.input.safeParse(raw_params)` with
- *    `z.void()` / `?? {}` rules. The validated input lands inside the
- *    function so the authorization phase reads `acting` as a typed Zod
- *    field.
- * 3. **Authorization phase** — when `auth.actor !== 'none'` (or
+ * 1. **Pre-authorization auth (401)** — short-circuits unauthenticated callers
+ *    on `'required'` axes.
+ * 2. **Authorization phase** — when `auth.actor !== 'none'` (or
  *    `auth.account !== 'none' && actor === 'none'`), resolves the actor
  *    via `apply_authorization_phase` against the supplied `account_id`
- *    plus `validated_input.acting`. Failures fold into a JSON-RPC error
- *    envelope. The test-harness escape hatch lives in the caller — pass
+ *    plus the request's `acting` selector, read off the raw params by
+ *    `read_acting`. Failures fold into a JSON-RPC error envelope. The
+ *    test-harness escape hatch lives in the caller — pass
  *    `preset.request_context` to skip the live phase and use a pre-baked
  *    context instead.
- * 4. **Post-authorization auth (403)** — gates `auth.credential_types` and
- *    `auth.roles` against the resolved context.
+ * 3. **Post-authorization auth (403)** — gates `auth.credential_types`,
+ *    the credential's `token_scope`, and `auth.roles` against the resolved
+ *    context.
+ * 4. **Validate params (400)** — `spec.input.safeParse(raw_params)` with
+ *    `z.void()` / `?? {}` rules. Runs **after** the authority gates: a
+ *    400 describing the action's input shape to a caller those gates
+ *    refuse would confirm the method exists and describe how to call it,
+ *    to a channel that should have learned nothing. Coarse authority
+ *    facts before fine ones, and no shape disclosure before authority is
+ *    settled — the same argument that puts the credential gate ahead of
+ *    the scope gate. The cost: a malformed request from an *authenticated*
+ *    caller now pays for the authorization phase's actor + role_grant reads
+ *    before being rejected, where validation used to turn it away first.
+ *    Not a new DoS lever — the same caller reaches that work anyway by
+ *    sending well-formed params — but it does remove a cheap-rejection path
+ *    that buggy clients used to hit.
  * 5. **Rate limit (429)** — per-action IP / account throttling, throttle-
  *    requests semantics (every invocation records, regardless of outcome).
  * 6. **Dispatch + DEV-only output validation + error normalization** —
@@ -71,7 +81,7 @@ import {
 	ERROR_TOKEN_SCOPE_REQUIRED
 } from '../http/error_schemas.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
-import { is_public_auth, type RouteAuth } from '../http/auth_shape.ts';
+import { is_public_auth, needs_actor, parse_acting, type RouteAuth } from '../http/auth_shape.ts';
 import type { ActionContext, ActionHandler, RpcAction } from './action_rpc.ts';
 import type { RequestClient } from './peer_request.ts';
 import { token_scope_admits_method, type TokenScope } from '../auth/token_scope.ts';
@@ -164,10 +174,10 @@ export type PerformActionResult =
  * transport calls into this with pre-parsed inputs and binds the result
  * to its wire shape.
  *
- * Phase order: 401 → 400 → 403 → handler. On the test-preset path the
- * dispatcher skips the live authorization phase and uses the supplied
- * pre-baked context for post-authorization checks; pre-validation 401
- * still fires when the harness omits `account_id`.
+ * Phase order: 401 → authz → 403 → 400 → handler. On the test-preset path
+ * the dispatcher skips the live authorization phase and uses the supplied
+ * pre-baked context for post-authorization checks; the 401 still fires when
+ * the harness omits `account_id`.
  */
 export const perform_action = async (
 	input: PerformActionInput,
@@ -198,39 +208,26 @@ export const perform_action = async (
 	const { spec, handler } = action;
 	const action_auth = spec.auth;
 
-	// step 1: pre-validation auth — 401 short-circuit before input validation.
-	const pre = check_action_auth_pre_validation(action_auth, account_id);
+	// step 1: pre-authorization auth — 401 short-circuit.
+	const pre = check_action_auth_pre_authorization(action_auth, account_id);
 	if (pre) return error_result(pre);
 
-	// step 2: validate params. JSON-RPC 2.0 §4.2 forbids `params: null`;
-	// registration sites reject `z.null()` inputs. Empty-body convention
-	// (`raw_params ?? {}`) lets all-optional-object methods omit `params`.
-	const params = is_void_schema(spec.input) ? raw_params : (raw_params ?? {});
-	const parse_result = spec.input.safeParse(params);
-	if (!parse_result.success) {
-		return error_result(
-			jsonrpc_error_messages.invalid_params(
-				'invalid params',
-				dev_only({ issues: parse_result.error.issues })
-			)
-		);
-	}
-	const validated_input = parse_result.data;
-
-	// step 3: authorization phase. `acting` reads off the typed Zod field
-	// validated in step 2. Per registry-time invariant 2,
-	// `auth.actor !== 'none' ⟺ input declares acting?: ActingActor` — so
-	// the typed read is safe whenever the dispatcher needs it.
+	// step 2: authorization phase. `acting` reads off the raw params rather
+	// than a validated field, because validation now runs after the authority
+	// gates. Per registry-time invariant 2,
+	// `auth.actor !== 'none' ⟺ input declares acting?: ActingActor` — so the
+	// selector is present on exactly the specs that need it, and step 4 is
+	// what rejects a malformed one.
 	let request_context: RequestContext | null = null;
 	if (preset !== undefined) {
 		request_context = preset.request_context;
 	} else if (!is_public_auth(action_auth)) {
-		const validated_with_acting = validated_input as { acting?: unknown } | undefined;
-		const acting_value =
-			validated_with_acting && typeof validated_with_acting.acting === 'string'
-				? validated_with_acting.acting
-				: undefined;
-		const result = await apply_authorization_phase({ db }, account_id, action_auth, acting_value);
+		const result = await apply_authorization_phase(
+			{ db },
+			account_id,
+			action_auth,
+			read_acting(action_auth, raw_params)
+		);
 		if (!result.ok) {
 			const { error: reason, ...rest } = result.body;
 			const code = http_status_to_jsonrpc_error_code(result.status);
@@ -245,7 +242,7 @@ export const perform_action = async (
 		request_context = result.request_context;
 	}
 
-	// step 4: post-authorization auth — credential gate first, role gate second.
+	// step 3: post-authorization auth — credential gate, then scope, then role.
 	const post = check_action_auth_post_authorization(
 		action_auth,
 		request_context,
@@ -254,6 +251,21 @@ export const perform_action = async (
 		token_scope
 	);
 	if (post) return error_result(post);
+
+	// step 4: validate params. JSON-RPC 2.0 §4.2 forbids `params: null`;
+	// registration sites reject `z.null()` inputs. Empty-body convention
+	// (`raw_params ?? {}`) lets all-optional-object methods omit `params`.
+	const params = is_void_schema(spec.input) ? raw_params : (raw_params ?? {});
+	const parse_result = spec.input.safeParse(params);
+	if (!parse_result.success) {
+		return error_result(
+			jsonrpc_error_messages.invalid_params(
+				'invalid params',
+				dev_only({ issues: parse_result.error.issues })
+			)
+		);
+	}
+	const validated_input = parse_result.data;
 
 	// step 5: rate limit — throttle-requests semantics (record on every
 	// invocation, no success-reset). Same limiters shared with the WS
@@ -363,16 +375,32 @@ const rate_limited_result = (retry_after: number): PerformActionResult => {
 };
 
 /**
- * Pre-validation auth gate — fires before input validation so missing
- * credentials short-circuit with `unauthenticated` instead of leaking
- * a `invalid_params` error for methods with required input.
+ * Read the `acting` actor selector off the raw params for the authorization
+ * phase.
+ *
+ * Consulted only when the spec declares an actor axis; `parse_acting` owns
+ * what counts as a selector and why a malformed one reads as omitted.
+ *
+ * @param auth - the spec's auth shape; no actor axis means no selector
+ * @param raw_params - the request's unvalidated params
+ * @returns the actor id, or `undefined` when absent, malformed, or unwanted
+ */
+const read_acting = (auth: RouteAuth, raw_params: unknown): string | undefined => {
+	if (!needs_actor(auth)) return undefined;
+	if (typeof raw_params !== 'object' || raw_params === null) return undefined;
+	return parse_acting((raw_params as { acting?: unknown }).acting);
+};
+
+/**
+ * Pre-authorization auth gate — fires before the authorization phase so
+ * missing credentials short-circuit with `unauthenticated`.
  *
  * 401 fires when `auth.account === 'required'` (or `auth.actor === 'required'`,
  * since registry-time invariant 3 forbids accountless actors in v1) and
  * no account is on the request. `'optional'` axes pass through — the
  * authorization phase decides based on whatever the credential supports.
  */
-const check_action_auth_pre_validation = (
+const check_action_auth_pre_authorization = (
 	auth: RouteAuth,
 	account_id: string | null
 ): JsonrpcErrorObject | null => {
