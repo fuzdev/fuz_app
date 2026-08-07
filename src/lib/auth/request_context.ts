@@ -60,9 +60,11 @@ import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
+	TOKEN_SCOPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
 	type CredentialType
 } from '../hono_context.ts';
+import { token_scope_full } from './token_scope.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import { is_public_auth, needs_actor, type RouteAuth } from '../http/auth_shape.ts';
 import {
@@ -342,6 +344,8 @@ export const create_request_context_middleware = (
 
 		c.set(ACCOUNT_ID_KEY, session.account_id);
 		c.set(CREDENTIAL_TYPE_KEY, 'session');
+		// A session is full account authority by construction.
+		c.set(TOKEN_SCOPE_KEY, token_scope_full());
 		c.set(AUTH_SESSION_TOKEN_HASH_KEY, token_hash);
 
 		// Touch session (fire-and-forget, don't block the request)

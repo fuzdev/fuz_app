@@ -46,12 +46,18 @@ export type SelfServiceRoleSetOutput = z.infer<typeof SelfServiceRoleSetOutput>;
  * `role_grant_create` or `role_grant_revoke` audit row with
  * `self_service: true`. Without the cap, a caller could flap the role in
  * a loop to inflate the audit log and obscure other activity.
+ *
+ * `credential_types: ['session']` — see `docs/security.md` §Credential-channel
+ * gating. Self-toggling a role moves the caller's own authority, the same
+ * privilege-pivot shape as `role_grant_offer_accept`. The verb exists to serve
+ * a UI affordance, so the bearer channel buys nothing and a leaked
+ * account-wide token self-granting an eligible role is what the gate refuses.
  */
 export const self_service_role_set_action_spec = {
 	method: 'self_service_role_set',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: { account: 'required', actor: 'required' },
+	auth: { account: 'required', actor: 'required', credential_types: ['session'] },
 	side_effects: true,
 	input: SelfServiceRoleSetInput,
 	output: SelfServiceRoleSetOutput,

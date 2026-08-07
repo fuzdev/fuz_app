@@ -259,11 +259,22 @@ export const role_grant_offer_create_action_spec = {
 	rate_limit: 'account'
 } satisfies RequestResponseActionSpec;
 
+/**
+ * `credential_types: ['session']` — see `docs/security.md` §Credential-channel
+ * gating. The only offer verb that moves the *caller's own* authority:
+ * accepting a pending admin offer over a leaked API token is a privilege pivot
+ * in the same family the credential-lifecycle mutations are gated to prevent
+ * (the token is account-wide and non-expiring, and the resulting role_grant
+ * outlives revoking it). Consent inherently belongs to a human at a browser,
+ * and no automation accepts an offer on its own behalf. The sibling verbs stay
+ * ungated deliberately — `_create` is the offering side, and `_decline` /
+ * `_retract` destroy a pending offer and confer nothing.
+ */
 export const role_grant_offer_accept_action_spec = {
 	method: 'role_grant_offer_accept',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: { account: 'required', actor: 'required' },
+	auth: { account: 'required', actor: 'required', credential_types: ['session'] },
 	side_effects: true,
 	input: RoleGrantOfferAcceptInput,
 	output: RoleGrantOfferAcceptOutput,

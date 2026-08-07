@@ -859,7 +859,7 @@ export const describe_standard_integration_tests = (
 					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_token_create_action_spec,
-					params: { name: 'test-revoke' },
+					params: { name: 'test-revoke', scope: { kind: 'full' as const } },
 					headers: fixture.create_session_headers()
 				});
 				assert.ok(create_res.ok, 'account_token_create should succeed');
@@ -1237,7 +1237,7 @@ export const describe_standard_integration_tests = (
 					app: { request: unauthed },
 					path: rpc_path,
 					spec: account_token_create_action_spec,
-					params: { name: 'unauth-probe' },
+					params: { name: 'unauth-probe', scope: { kind: 'full' as const } },
 					headers: { host: 'localhost' }
 				});
 				assert.strictEqual(token_create.status, 401);
@@ -1363,7 +1363,7 @@ export const describe_standard_integration_tests = (
 					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_token_create_action_spec,
-					params: { name: 'test-token' },
+					params: { name: 'test-token', scope: { kind: 'full' as const } },
 					headers: fixture.create_session_headers()
 				});
 				assert.ok(create_res.ok, 'account_token_create should succeed');

@@ -144,6 +144,12 @@ export interface ApiToken {
 	last_used_at: string | null;
 	last_used_ip: string | null;
 	created_at: string;
+	/**
+	 * The token's authority narrowing (`api_token.scope`, `NOT NULL`). Stored as
+	 * JSONB; read back through `parse_token_scope`, which is fail-closed — an
+	 * unreadable document refuses the credential rather than widening it.
+	 */
+	scope: unknown;
 }
 
 // Client-safe Zod schemas — for route output validation and ActionSpec outputs.
@@ -176,7 +182,14 @@ export const ClientApiTokenJson = z.strictObject({
 	expires_at: z.string().nullable(),
 	last_used_at: z.string().nullable(),
 	last_used_ip: z.string().nullable(),
-	created_at: z.string()
+	created_at: z.string(),
+	/**
+	 * Human-readable scope label (`full` / `full (grandfathered)` /
+	 * `N methods`). A label rather than the document so the list stays a display
+	 * surface — nothing authorizes off this, and a grandfathered token reads
+	 * differently from a deliberately-full one.
+	 */
+	scope: z.string()
 });
 export type ClientApiTokenJson = z.infer<typeof ClientApiTokenJson>;
 

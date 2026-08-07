@@ -40,6 +40,7 @@ import type { Db } from '$lib/db/db.ts';
 import { create_test_account_with_actor } from '$lib/testing/db_entities.ts';
 
 import { describe_db } from '../db_fixture.ts';
+import { token_scope_full } from '../../lib/auth/token_scope.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -133,9 +134,23 @@ describe_db('CrossAccountIsolation', (get_db) => {
 		const { id: tok_a2, token_hash: h_a2 } = generate_api_token();
 		const { id: tok_b1, token_hash: h_b1 } = generate_api_token();
 
-		await query_create_api_token(deps, tok_a1, alice.account_id, 'alice-1', h_a1);
-		await query_create_api_token(deps, tok_a2, alice.account_id, 'alice-2', h_a2);
-		await query_create_api_token(deps, tok_b1, bob.account_id, 'bob-1', h_b1);
+		await query_create_api_token(
+			deps,
+			tok_a1,
+			alice.account_id,
+			'alice-1',
+			h_a1,
+			token_scope_full()
+		);
+		await query_create_api_token(
+			deps,
+			tok_a2,
+			alice.account_id,
+			'alice-2',
+			h_a2,
+			token_scope_full()
+		);
+		await query_create_api_token(deps, tok_b1, bob.account_id, 'bob-1', h_b1, token_scope_full());
 
 		const alice_tokens = await query_api_token_list_for_account(deps, alice.account_id);
 		const bob_tokens = await query_api_token_list_for_account(deps, bob.account_id);
@@ -151,7 +166,14 @@ describe_db('CrossAccountIsolation', (get_db) => {
 		const bob = await create_user(db, 'iso_bob_trev');
 
 		const { id: tok_id, token_hash } = generate_api_token();
-		await query_create_api_token(deps, tok_id, alice.account_id, 'protected', token_hash);
+		await query_create_api_token(
+			deps,
+			tok_id,
+			alice.account_id,
+			'protected',
+			token_hash,
+			token_scope_full()
+		);
 
 		// bob tries to revoke alice's token
 		const revoked = await query_revoke_api_token_for_account(deps, tok_id, bob.account_id);
@@ -170,10 +192,24 @@ describe_db('CrossAccountIsolation', (get_db) => {
 
 		for (let i = 0; i < 3; i++) {
 			const { id, token_hash } = generate_api_token();
-			await query_create_api_token(deps, id, alice.account_id, `alice-${i}`, token_hash);
+			await query_create_api_token(
+				deps,
+				id,
+				alice.account_id,
+				`alice-${i}`,
+				token_hash,
+				token_scope_full()
+			);
 		}
 		const { id: bob_tok, token_hash: bob_hash } = generate_api_token();
-		await query_create_api_token(deps, bob_tok, bob.account_id, 'bob-1', bob_hash);
+		await query_create_api_token(
+			deps,
+			bob_tok,
+			bob.account_id,
+			'bob-1',
+			bob_hash,
+			token_scope_full()
+		);
 
 		const count = await query_revoke_all_api_tokens_for_account(deps, alice.account_id);
 		assert.strictEqual(count, 3);
@@ -191,8 +227,8 @@ describe_db('CrossAccountIsolation', (get_db) => {
 
 		const { id: tok_a, token: raw_a, token_hash: h_a } = generate_api_token();
 		const { id: tok_b, token: raw_b, token_hash: h_b } = generate_api_token();
-		await query_create_api_token(deps, tok_a, alice.account_id, 'alice', h_a);
-		await query_create_api_token(deps, tok_b, bob.account_id, 'bob', h_b);
+		await query_create_api_token(deps, tok_a, alice.account_id, 'alice', h_a, token_scope_full());
+		await query_create_api_token(deps, tok_b, bob.account_id, 'bob', h_b, token_scope_full());
 
 		const result_a = await query_validate_api_token({ db, log }, raw_a, '127.0.0.1', undefined);
 		const result_b = await query_validate_api_token({ db, log }, raw_b, '127.0.0.1', undefined);

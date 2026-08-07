@@ -10,6 +10,7 @@ import type { QueryDeps } from '../db/query_deps.ts';
 import { assert_row } from '../db/assert_row.ts';
 import type { ApiToken } from './account_schema.ts';
 import { hash_api_token } from './api_token.ts';
+import { type TokenScope, parse_stored_token_scope, serialize_token_scope } from './token_scope.ts';
 
 /** Extended deps for `query_validate_api_token` which needs a logger. */
 export interface ApiTokenQueryDeps extends QueryDeps {
@@ -34,13 +35,21 @@ export const query_create_api_token = async (
 	account_id: string,
 	name: string,
 	token_hash: string,
+	scope: TokenScope,
 	expires_at?: Date | null
 ): Promise<ApiToken> => {
 	const row = await deps.db.query_one<ApiToken>(
-		`INSERT INTO api_token (id, account_id, name, token_hash, expires_at)
-		 VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO api_token (id, account_id, name, token_hash, scope, expires_at)
+		 VALUES ($1, $2, $3, $4, $5::jsonb, $6)
 		 RETURNING *`,
-		[id, account_id, name, token_hash, expires_at?.toISOString() ?? null]
+		[
+			id,
+			account_id,
+			name,
+			token_hash,
+			serialize_token_scope(scope),
+			expires_at?.toISOString() ?? null
+		]
 	);
 	return assert_row(row, 'INSERT INTO api_token');
 };
@@ -74,6 +83,15 @@ export const query_validate_api_token = async (
 		[token_hash]
 	);
 	if (!row) return undefined;
+
+	// **Fail-closed on an unreadable scope**: refuse the credential, the same
+	// outcome as an unknown token hash. The scope *is* the gate here, so a parse
+	// failure must not fall through to full authority — that would hand a
+	// narrowed token everything precisely when something is already wrong.
+	if (parse_stored_token_scope(row.scope) === null) {
+		deps.log.warn(`api_token.scope is unreadable for ${row.id}; refusing the credential`);
+		return undefined;
+	}
 
 	// Fire-and-forget usage tracking
 	const p: Promise<void> = deps.db
@@ -143,7 +161,7 @@ export const query_api_token_list_for_account = async (
 	account_id: string
 ): Promise<Array<Omit<ApiToken, 'token_hash'>>> => {
 	return deps.db.query<Omit<ApiToken, 'token_hash'>>(
-		`SELECT id, account_id, name, expires_at, last_used_at, last_used_ip, created_at
+		`SELECT id, account_id, name, expires_at, last_used_at, last_used_ip, created_at, scope
 		 FROM api_token WHERE account_id = $1 ORDER BY created_at DESC`,
 		[account_id]
 	);

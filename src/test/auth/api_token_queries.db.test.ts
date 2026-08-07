@@ -19,6 +19,7 @@ import { generate_api_token } from '$lib/auth/api_token.ts';
 import { query_create_account, query_create_actor } from '$lib/auth/account_queries.ts';
 
 import { describe_db } from '../db_fixture.ts';
+import { token_scope_full } from '../../lib/auth/token_scope.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -44,7 +45,14 @@ describe_db('ApiTokenQueries', (get_db) => {
 			const deps = { db };
 			const { id, token_hash } = generate_api_token();
 
-			const token = await query_create_api_token(deps, id, account_id, 'my-token', token_hash);
+			const token = await query_create_api_token(
+				deps,
+				id,
+				account_id,
+				'my-token',
+				token_hash,
+				token_scope_full()
+			);
 
 			assert.strictEqual(token.id, id);
 			assert.strictEqual(token.account_id, account_id);
@@ -67,6 +75,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 				account_id,
 				'expiring',
 				token_hash,
+				token_scope_full(),
 				expires
 			);
 
@@ -80,7 +89,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 			const db = get_db();
 			const deps = { db };
 			const { id, token, token_hash } = generate_api_token();
-			await query_create_api_token(deps, id, account_id, 'valid', token_hash);
+			await query_create_api_token(deps, id, account_id, 'valid', token_hash, token_scope_full());
 
 			const result = await query_validate_api_token({ db, log }, token, '127.0.0.1', undefined);
 
@@ -108,7 +117,15 @@ describe_db('ApiTokenQueries', (get_db) => {
 			const deps = { db };
 			const { id, token, token_hash } = generate_api_token();
 			const past = new Date('2000-01-01T00:00:00Z');
-			await query_create_api_token(deps, id, account_id, 'expired', token_hash, past);
+			await query_create_api_token(
+				deps,
+				id,
+				account_id,
+				'expired',
+				token_hash,
+				token_scope_full(),
+				past
+			);
 
 			const result = await query_validate_api_token({ db, log }, token, '127.0.0.1', undefined);
 
@@ -120,7 +137,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 			const db = get_db();
 			const deps = { db };
 			const { id, token, token_hash } = generate_api_token();
-			await query_create_api_token(deps, id, account_id, 'tracked', token_hash);
+			await query_create_api_token(deps, id, account_id, 'tracked', token_hash, token_scope_full());
 
 			const effects: Array<Promise<void>> = [];
 			await query_validate_api_token({ db, log }, token, '10.0.0.1', effects);
@@ -141,7 +158,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 			const db = get_db();
 			const deps = { db };
 			const { id, token, token_hash } = generate_api_token();
-			await query_create_api_token(deps, id, account_id, 'usage', token_hash);
+			await query_create_api_token(deps, id, account_id, 'usage', token_hash, token_scope_full());
 
 			const effects: Array<Promise<void>> = [];
 			await query_validate_api_token({ db, log }, token, undefined, effects);
@@ -161,7 +178,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 			const db = get_db();
 			const deps = { db };
 			const { id, token_hash } = generate_api_token();
-			await query_create_api_token(deps, id, account_id, 'doomed', token_hash);
+			await query_create_api_token(deps, id, account_id, 'doomed', token_hash, token_scope_full());
 
 			const result = await query_revoke_api_token_for_account(deps, id, account_id);
 
@@ -183,7 +200,14 @@ describe_db('ApiTokenQueries', (get_db) => {
 			const db = get_db();
 			const deps = { db };
 			const { id, token, token_hash } = generate_api_token();
-			await query_create_api_token(deps, id, account_id, 'revoke-me', token_hash);
+			await query_create_api_token(
+				deps,
+				id,
+				account_id,
+				'revoke-me',
+				token_hash,
+				token_scope_full()
+			);
 			await query_revoke_api_token_for_account(deps, id, account_id);
 
 			const result = await query_validate_api_token({ db, log }, token, '127.0.0.1', undefined);
@@ -199,7 +223,14 @@ describe_db('ApiTokenQueries', (get_db) => {
 			const deps = { db };
 			for (let i = 0; i < 3; i++) {
 				const { id, token_hash } = generate_api_token();
-				await query_create_api_token(deps, id, account_id, `token-${i}`, token_hash);
+				await query_create_api_token(
+					deps,
+					id,
+					account_id,
+					`token-${i}`,
+					token_hash,
+					token_scope_full()
+				);
 			}
 
 			const count = await query_revoke_all_api_tokens_for_account(deps, account_id);
@@ -224,7 +255,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 			const db = get_db();
 			const deps = { db };
 			const { id, token_hash } = generate_api_token();
-			await query_create_api_token(deps, id, account_id, 'mine', token_hash);
+			await query_create_api_token(deps, id, account_id, 'mine', token_hash, token_scope_full());
 
 			const result = await query_revoke_api_token_for_account(deps, id, account_id);
 
@@ -236,7 +267,14 @@ describe_db('ApiTokenQueries', (get_db) => {
 			const db = get_db();
 			const deps = { db };
 			const { id, token_hash } = generate_api_token();
-			await query_create_api_token(deps, id, account_id, 'protected', token_hash);
+			await query_create_api_token(
+				deps,
+				id,
+				account_id,
+				'protected',
+				token_hash,
+				token_scope_full()
+			);
 
 			const result = await query_revoke_api_token_for_account(
 				deps,
@@ -258,7 +296,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 			const db = get_db();
 			const deps = { db };
 			const { id, token_hash } = generate_api_token();
-			await query_create_api_token(deps, id, account_id, 'listed', token_hash);
+			await query_create_api_token(deps, id, account_id, 'listed', token_hash, token_scope_full());
 
 			const tokens = await query_api_token_list_for_account(deps, account_id);
 
@@ -284,7 +322,14 @@ describe_db('ApiTokenQueries', (get_db) => {
 			const deps = { db };
 			for (let i = 0; i < 3; i++) {
 				const { id, token_hash } = generate_api_token();
-				await query_create_api_token(deps, id, account_id, `token-${i}`, token_hash);
+				await query_create_api_token(
+					deps,
+					id,
+					account_id,
+					`token-${i}`,
+					token_hash,
+					token_scope_full()
+				);
 			}
 
 			const tokens = await query_api_token_list_for_account(deps, account_id);
@@ -301,7 +346,14 @@ describe_db('ApiTokenQueries', (get_db) => {
 			const db = get_db();
 			const deps = { db };
 			const { id, token, token_hash } = generate_api_token();
-			await query_create_api_token(deps, id, account_id, 'ip-tracked', token_hash);
+			await query_create_api_token(
+				deps,
+				id,
+				account_id,
+				'ip-tracked',
+				token_hash,
+				token_scope_full()
+			);
 
 			// Verify initial state — no usage yet
 			const before = await db.query<{ last_used_ip: string | null; last_used_at: string | null }>(
@@ -349,7 +401,14 @@ describe_db('ApiTokenQueries', (get_db) => {
 
 			for (let i = 0; i < token_count; i++) {
 				const { id, token_hash } = generate_api_token();
-				await query_create_api_token(deps, id, account_id, `token-${i}`, token_hash);
+				await query_create_api_token(
+					deps,
+					id,
+					account_id,
+					`token-${i}`,
+					token_hash,
+					token_scope_full()
+				);
 			}
 
 			const evicted = await query_api_token_enforce_limit(deps, account_id, limit);

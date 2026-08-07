@@ -55,6 +55,7 @@ import {
 } from '../http/jsonrpc_helpers.ts';
 import {
 	CREDENTIAL_TYPE_KEY,
+	TOKEN_SCOPE_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	TEST_CONTEXT_PRESET_KEY,
 	type CredentialType
@@ -67,6 +68,10 @@ import { WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT } from './transports.ts';
 import { BackendWebsocketTransport, type ConnectionIdentity } from './transports_ws_backend.ts';
 import { audit_unmatched_peer_response, type RequestClient } from './peer_request.ts';
 import { perform_action, perform_action_result_to_envelope } from './perform_action.ts';
+import {
+	token_scope_admits_non_rpc,
+	token_scope_surface_denied_body
+} from '../auth/token_scope.ts';
 
 export type { Action };
 
@@ -265,6 +270,25 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 
 	app.get(
 		path,
+		// Token-scope surface gate — a narrowed token cannot hold a socket.
+		//
+		// Mounted as pre-upgrade middleware rather than inside the
+		// `upgradeWebSocket` callback, which must return `WSEvents` and so has no
+		// way to produce a denial response.
+		//
+		// Rule 3, doing real work rather than being conservative for its own
+		// sake: server-initiated pushes (broadcasts, role-grant-offer
+		// notifications, peer requests) reach whatever the account's connection
+		// reaches, and there is no per-recipient filter to narrow them by. So a
+		// scoped token that could upgrade would observe far more than it was
+		// granted.
+		async (c, next) => {
+			const scope = c.get(TOKEN_SCOPE_KEY);
+			if (scope && !token_scope_admits_non_rpc(scope)) {
+				return c.json(token_scope_surface_denied_body('ws_upgrade'), 403);
+			}
+			return next();
+		},
 		upgradeWebSocket((c) => {
 			// Upgrade-time identity capture. `require_auth` middleware has
 			// already rejected unauthenticated upgrades, so request_context is
@@ -284,6 +308,11 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			const account_id: Uuid = upgrade_context.account.id;
 			const client_ip = get_client_ip(c);
 			const credential_type: CredentialType = c.get(CREDENTIAL_TYPE_KEY)!;
+			// Captured at upgrade and consulted per message. Rule 3 rejects a
+			// narrowed token at the boundary below, so in practice this is always
+			// `full` on a live socket — but the per-message gate runs regardless,
+			// so the invariant is enforced rather than assumed.
+			const token_scope = c.get(TOKEN_SCOPE_KEY) ?? null;
 			// Session-based connections have a token hash for targeted revocation.
 			// Bearer/daemon connections pass null — still reachable via
 			// `close_sockets_for_account` / `close_sockets_for_token`.
@@ -566,6 +595,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 								request_id: id,
 								account_id,
 								credential_type,
+								token_scope,
 								client_ip,
 								signal,
 								notify,

@@ -20,6 +20,7 @@ import { generate_api_token, hash_api_token, API_TOKEN_PREFIX } from '$lib/auth/
 import type { Db } from '$lib/db/db.ts';
 
 import { describe_db } from '../db_fixture.ts';
+import { serialize_token_scope, token_scope_full } from '../../lib/auth/token_scope.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -87,7 +88,14 @@ describe_db('ApiTokenQueries', (get_db) => {
 		const { account_id } = await create_test_account(get_db(), 'alice');
 		const deps = { db: get_db() };
 		const { id, token_hash } = generate_api_token();
-		const record = await query_create_api_token(deps, id, account_id, 'CLI token', token_hash);
+		const record = await query_create_api_token(
+			deps,
+			id,
+			account_id,
+			'CLI token',
+			token_hash,
+			token_scope_full()
+		);
 		assert.strictEqual(record.id, id);
 		assert.strictEqual(record.account_id, account_id);
 		assert.strictEqual(record.name, 'CLI token');
@@ -104,6 +112,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 			account_id,
 			'CI token',
 			token_hash,
+			token_scope_full(),
 			expires
 		);
 		assert.ok(record.expires_at);
@@ -114,7 +123,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		const db = get_db();
 		const deps = { db };
 		const { token, id, token_hash } = generate_api_token();
-		await query_create_api_token(deps, id, account_id, 'Test', token_hash);
+		await query_create_api_token(deps, id, account_id, 'Test', token_hash, token_scope_full());
 
 		const found = await query_validate_api_token({ db, log }, token, undefined, undefined);
 		assert.ok(found);
@@ -138,7 +147,15 @@ describe_db('ApiTokenQueries', (get_db) => {
 		const deps = { db };
 		const { token, id, token_hash } = generate_api_token();
 		const past = new Date(Date.now() - 1000);
-		await query_create_api_token(deps, id, account_id, 'Expired', token_hash, past);
+		await query_create_api_token(
+			deps,
+			id,
+			account_id,
+			'Expired',
+			token_hash,
+			token_scope_full(),
+			past
+		);
 
 		const found = await query_validate_api_token({ db, log }, token, undefined, undefined);
 		assert.strictEqual(found, undefined);
@@ -149,7 +166,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		const db = get_db();
 		const deps = { db };
 		const { token, id, token_hash } = generate_api_token();
-		await query_create_api_token(deps, id, account_id, 'Revoke me', token_hash);
+		await query_create_api_token(deps, id, account_id, 'Revoke me', token_hash, token_scope_full());
 
 		assert.strictEqual(await query_revoke_api_token_for_account(deps, id, account_id), true);
 		const found = await query_validate_api_token({ db, log }, token, undefined, undefined);
@@ -170,8 +187,22 @@ describe_db('ApiTokenQueries', (get_db) => {
 		const deps = { db: get_db() };
 		const t1 = generate_api_token();
 		const t2 = generate_api_token();
-		await query_create_api_token(deps, t1.id, account_id, 'Token 1', t1.token_hash);
-		await query_create_api_token(deps, t2.id, account_id, 'Token 2', t2.token_hash);
+		await query_create_api_token(
+			deps,
+			t1.id,
+			account_id,
+			'Token 1',
+			t1.token_hash,
+			token_scope_full()
+		);
+		await query_create_api_token(
+			deps,
+			t2.id,
+			account_id,
+			'Token 2',
+			t2.token_hash,
+			token_scope_full()
+		);
 
 		const list = await query_api_token_list_for_account(deps, account_id);
 		assert.strictEqual(list.length, 2);
@@ -185,7 +216,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		const db = get_db();
 		const deps = { db };
 		const { token, id, token_hash } = generate_api_token();
-		await query_create_api_token(deps, id, account_id, 'Own token', token_hash);
+		await query_create_api_token(deps, id, account_id, 'Own token', token_hash, token_scope_full());
 
 		const revoked = await query_revoke_api_token_for_account(deps, id, account_id);
 		assert.strictEqual(revoked, true);
@@ -200,7 +231,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		const db = get_db();
 		const deps = { db };
 		const { token, id, token_hash } = generate_api_token();
-		await query_create_api_token(deps, id, alice_id, 'Alice token', token_hash);
+		await query_create_api_token(deps, id, alice_id, 'Alice token', token_hash, token_scope_full());
 
 		// Bob tries to revoke Alice's token
 		const revoked = await query_revoke_api_token_for_account(deps, id, bob_id);
@@ -216,7 +247,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		const db = get_db();
 		const deps = { db };
 		const { id, token_hash } = generate_api_token();
-		await query_create_api_token(deps, id, account_id, 'Cascade', token_hash);
+		await query_create_api_token(deps, id, account_id, 'Cascade', token_hash, token_scope_full());
 
 		await query_purge_account(deps, account_id);
 
@@ -229,8 +260,22 @@ describe_db('ApiTokenQueries', (get_db) => {
 		const deps = { db: get_db() };
 		const t1 = generate_api_token();
 		const t2 = generate_api_token();
-		await query_create_api_token(deps, t1.id, account_id, 'Token 1', t1.token_hash);
-		await query_create_api_token(deps, t2.id, account_id, 'Token 2', t2.token_hash);
+		await query_create_api_token(
+			deps,
+			t1.id,
+			account_id,
+			'Token 1',
+			t1.token_hash,
+			token_scope_full()
+		);
+		await query_create_api_token(
+			deps,
+			t2.id,
+			account_id,
+			'Token 2',
+			t2.token_hash,
+			token_scope_full()
+		);
 
 		const evicted = await query_api_token_enforce_limit(deps, account_id, 5);
 		assert.strictEqual(evicted, 0);
@@ -254,8 +299,19 @@ describe_db('ApiTokenQueries', (get_db) => {
 			const t = generate_api_token();
 			tokens.push({ ...t, label });
 			await db.query(
-				`INSERT INTO api_token (id, account_id, name, token_hash, created_at) VALUES ($1, $2, $3, $4, $5)`,
-				[t.id, account_id, label, t.token_hash, new Date(base + offset).toISOString()]
+				`INSERT INTO api_token (id, account_id, name, token_hash, created_at, scope)
+				 VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+				[
+					t.id,
+					account_id,
+					label,
+					t.token_hash,
+					new Date(base + offset).toISOString(),
+					// Raw insert (these cases control `created_at` to pin eviction
+					// order), so the scope is supplied explicitly — the NOT NULL
+					// constraint is the point, not an obstacle.
+					serialize_token_scope(token_scope_full())
+				]
 			);
 		}
 
@@ -275,9 +331,30 @@ describe_db('ApiTokenQueries', (get_db) => {
 		const t1 = generate_api_token();
 		const t2 = generate_api_token();
 		const t3 = generate_api_token();
-		await query_create_api_token(deps, t1.id, account_id, 'Token 1', t1.token_hash);
-		await query_create_api_token(deps, t2.id, account_id, 'Token 2', t2.token_hash);
-		await query_create_api_token(deps, t3.id, account_id, 'Token 3', t3.token_hash);
+		await query_create_api_token(
+			deps,
+			t1.id,
+			account_id,
+			'Token 1',
+			t1.token_hash,
+			token_scope_full()
+		);
+		await query_create_api_token(
+			deps,
+			t2.id,
+			account_id,
+			'Token 2',
+			t2.token_hash,
+			token_scope_full()
+		);
+		await query_create_api_token(
+			deps,
+			t3.id,
+			account_id,
+			'Token 3',
+			t3.token_hash,
+			token_scope_full()
+		);
 
 		const evicted = await query_api_token_enforce_limit(deps, account_id, 3);
 		assert.strictEqual(evicted, 0);
@@ -298,8 +375,19 @@ describe_db('ApiTokenQueries', (get_db) => {
 		] as const) {
 			const t = generate_api_token();
 			await db.query(
-				`INSERT INTO api_token (id, account_id, name, token_hash, created_at) VALUES ($1, $2, $3, $4, $5)`,
-				[t.id, account_id, label, t.token_hash, new Date(base + offset).toISOString()]
+				`INSERT INTO api_token (id, account_id, name, token_hash, created_at, scope)
+				 VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+				[
+					t.id,
+					account_id,
+					label,
+					t.token_hash,
+					new Date(base + offset).toISOString(),
+					// Raw insert (these cases control `created_at` to pin eviction
+					// order), so the scope is supplied explicitly — the NOT NULL
+					// constraint is the point, not an obstacle.
+					serialize_token_scope(token_scope_full())
+				]
 			);
 		}
 
@@ -316,8 +404,22 @@ describe_db('ApiTokenQueries', (get_db) => {
 		const deps = { db: get_db() };
 		const t1 = generate_api_token();
 		const t2 = generate_api_token();
-		await query_create_api_token(deps, t1.id, account_id, 'Token 1', t1.token_hash);
-		await query_create_api_token(deps, t2.id, account_id, 'Token 2', t2.token_hash);
+		await query_create_api_token(
+			deps,
+			t1.id,
+			account_id,
+			'Token 1',
+			t1.token_hash,
+			token_scope_full()
+		);
+		await query_create_api_token(
+			deps,
+			t2.id,
+			account_id,
+			'Token 2',
+			t2.token_hash,
+			token_scope_full()
+		);
 
 		const evicted = await query_api_token_enforce_limit(deps, account_id, 0);
 		assert.strictEqual(evicted, 2);
@@ -334,10 +436,31 @@ describe_db('ApiTokenQueries', (get_db) => {
 		const a2 = generate_api_token();
 		const a3 = generate_api_token();
 		const b1 = generate_api_token();
-		await query_create_api_token(deps, a1.id, alice_id, 'Alice 1', a1.token_hash);
-		await query_create_api_token(deps, a2.id, alice_id, 'Alice 2', a2.token_hash);
-		await query_create_api_token(deps, a3.id, alice_id, 'Alice 3', a3.token_hash);
-		await query_create_api_token(deps, b1.id, bob_id, 'Bob 1', b1.token_hash);
+		await query_create_api_token(
+			deps,
+			a1.id,
+			alice_id,
+			'Alice 1',
+			a1.token_hash,
+			token_scope_full()
+		);
+		await query_create_api_token(
+			deps,
+			a2.id,
+			alice_id,
+			'Alice 2',
+			a2.token_hash,
+			token_scope_full()
+		);
+		await query_create_api_token(
+			deps,
+			a3.id,
+			alice_id,
+			'Alice 3',
+			a3.token_hash,
+			token_scope_full()
+		);
+		await query_create_api_token(deps, b1.id, bob_id, 'Bob 1', b1.token_hash, token_scope_full());
 
 		await query_api_token_enforce_limit(deps, alice_id, 1);
 
@@ -352,7 +475,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 		const db = get_db();
 		const deps = { db };
 		const { token, id, token_hash } = generate_api_token();
-		await query_create_api_token(deps, id, account_id, 'Test', token_hash);
+		await query_create_api_token(deps, id, account_id, 'Test', token_hash, token_scope_full());
 
 		// make the fire-and-forget UPDATE fail while allowing the SELECT through
 		const original_query = db.query.bind(db);

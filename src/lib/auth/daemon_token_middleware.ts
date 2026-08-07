@@ -17,7 +17,13 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import { type FsWriteDeps, type FsRemoveDeps, type EnvDeps } from '../runtime/deps.ts';
 import { write_file_atomic } from '../runtime/fs.ts';
 import { get_app_dir } from '../cli/config.ts';
-import { ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY } from '../hono_context.ts';
+import {
+	ACCOUNT_ID_KEY,
+	AUTH_API_TOKEN_ID_KEY,
+	CREDENTIAL_TYPE_KEY,
+	TOKEN_SCOPE_KEY
+} from '../hono_context.ts';
+import { token_scope_full } from './token_scope.ts';
 import { is_browser_context } from '../http/origin.ts';
 import { query_role_grant_find_account_id_for_role } from './role_grant_queries.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
@@ -303,6 +309,9 @@ export const create_daemon_token_middleware = (
 
 		c.set(ACCOUNT_ID_KEY, state.keeper_account_id);
 		c.set(CREDENTIAL_TYPE_KEY, 'daemon_token');
+		// Singular, filesystem-proved, keeper-bound — no minting step at which a
+		// narrowing could have been chosen.
+		c.set(TOKEN_SCOPE_KEY, token_scope_full());
 		c.set(AUTH_API_TOKEN_ID_KEY, null);
 
 		await next();

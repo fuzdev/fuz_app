@@ -19,7 +19,13 @@ import { DEV } from 'esm-env';
 import type { MiddlewareHandler } from 'hono';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { AUTH_API_TOKEN_ID_KEY, ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY } from '../hono_context.ts';
+import {
+	AUTH_API_TOKEN_ID_KEY,
+	ACCOUNT_ID_KEY,
+	CREDENTIAL_TYPE_KEY,
+	TOKEN_SCOPE_KEY
+} from '../hono_context.ts';
+import { parse_stored_token_scope, token_scope_full } from './token_scope.ts';
 import { query_validate_api_token } from './api_token_queries.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { get_client_ip } from '../http/client_ip.ts';
@@ -135,6 +141,10 @@ export const create_bearer_auth_middleware = (
 		c.set(ACCOUNT_ID_KEY, api_token.account_id);
 		c.set(CREDENTIAL_TYPE_KEY, 'api_token');
 		c.set(AUTH_API_TOKEN_ID_KEY, api_token.id);
+		// `query_validate_api_token` is fail-closed on an unreadable scope, so a
+		// token that got this far has a readable one. The `?? token_scope_full()`
+		// is unreachable defensive cover, not a fallback with meaning.
+		c.set(TOKEN_SCOPE_KEY, parse_stored_token_scope(api_token.scope) ?? token_scope_full());
 
 		await next();
 	};

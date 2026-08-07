@@ -67,12 +67,14 @@ import {
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
-	ERROR_CREDENTIAL_TYPE_REQUIRED
+	ERROR_CREDENTIAL_TYPE_REQUIRED,
+	ERROR_TOKEN_SCOPE_REQUIRED
 } from '../http/error_schemas.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
 import { is_public_auth, type RouteAuth } from '../http/auth_shape.ts';
 import type { ActionContext, ActionHandler, RpcAction } from './action_rpc.ts';
 import type { RequestClient } from './peer_request.ts';
+import { token_scope_admits_method, type TokenScope } from '../auth/token_scope.ts';
 
 /**
  * Per-call inputs to `perform_action`. Each transport assembles this from
@@ -89,6 +91,13 @@ export interface PerformActionInput {
 	account_id: string | null;
 	/** Credential type the request arrived on, or `null` for anonymous. */
 	credential_type: CredentialType | null;
+	/**
+	 * The credential's authority narrowing — `null` only for the anonymous
+	 * caller, who holds no credential to narrow. Every resolved credential
+	 * carries one, so this mirrors the `null` shape `credential_type` already
+	 * has rather than introducing a permissive absent case.
+	 */
+	token_scope: TokenScope | null;
 	/** Resolved client IP (`'unknown'` if upstream couldn't resolve). */
 	client_ip: string;
 	/** Per-request abort signal. HTTP: `c.req.raw.signal`. WS: `AbortSignal.any([socket, request])`. */
@@ -170,6 +179,7 @@ export const perform_action = async (
 		request_id: id,
 		account_id,
 		credential_type,
+		token_scope,
 		client_ip,
 		signal,
 		notify,
@@ -236,7 +246,13 @@ export const perform_action = async (
 	}
 
 	// step 4: post-authorization auth — credential gate first, role gate second.
-	const post = check_action_auth_post_authorization(action_auth, request_context, credential_type);
+	const post = check_action_auth_post_authorization(
+		action_auth,
+		request_context,
+		credential_type,
+		action.spec.method,
+		token_scope
+	);
 	if (post) return error_result(post);
 
 	// step 5: rate limit — throttle-requests semantics (record on every
@@ -379,20 +395,31 @@ const check_action_auth_pre_validation = (
  * resolved the actor + role_grants. Enforces `auth.credential_types` and
  * `auth.roles`.
  *
- * Credential gate fires first: if the spec restricts credential types
- * and the request didn't arrive on one of them, emit
- * `ERROR_CREDENTIAL_TYPE_REQUIRED` 403 with `required_credential_types`
- * echoing the spec's allowlist (symmetric with the role gate's
- * `required_roles`).
+ * ## Gate order: credential → scope → role
  *
- * Role gate fires second: if the spec declares any roles and the actor
- * doesn't hold one globally, emit `ERROR_INSUFFICIENT_PERMISSIONS` 403
- * with `required_roles` (the multi-role disjunction).
+ * **Credential first** because it is the coarser fact ("this channel may never
+ * call me" outranks "this token may not"), because it preserves every existing
+ * wire assertion — a session-only spec called over bearer keeps returning
+ * `ERROR_CREDENTIAL_TYPE_REQUIRED` — and because it leaks less: telling a
+ * bearer caller "your token lacks `rpc:X`" on an endpoint no bearer may ever
+ * reach confirms the endpoint to a channel that should not learn it.
+ *
+ * **Scope second**, before the role gate, because scope is a fact about the
+ * credential decided without a DB read, while the role gate reads the resolved
+ * actor's grants. Coarse → fine, and an under-scoped token learns nothing about
+ * the deployment's role structure. `token_scope` is `null` only for the
+ * anonymous caller, who has no credential to narrow.
+ *
+ * **Role gate third**: if the spec declares any roles and the actor doesn't hold
+ * one globally, emit `ERROR_INSUFFICIENT_PERMISSIONS` 403 with `required_roles`
+ * (the multi-role disjunction).
  */
 const check_action_auth_post_authorization = (
 	auth: RouteAuth,
 	request_context: RequestContext | null,
-	credential_type: CredentialType | null
+	credential_type: CredentialType | null,
+	method: string,
+	token_scope: TokenScope | null
 ): JsonrpcErrorObject | null => {
 	if (auth.credential_types?.length) {
 		if (!credential_type || !auth.credential_types.includes(credential_type)) {
@@ -401,6 +428,14 @@ const check_action_auth_post_authorization = (
 				required_credential_types: auth.credential_types
 			});
 		}
+	}
+	// Token-scope gate — second of three. See the doc comment for why the order
+	// is credential → scope → role.
+	if (token_scope && !token_scope_admits_method(token_scope, method)) {
+		return jsonrpc_error_messages.forbidden('forbidden', {
+			reason: ERROR_TOKEN_SCOPE_REQUIRED,
+			required_scope: `rpc:${method}`
+		});
 	}
 	if (auth.roles?.length) {
 		if (!has_any_scoped_role(request_context, auth.roles, null)) {

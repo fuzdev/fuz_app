@@ -192,6 +192,41 @@ export const auth_migrations: Array<Migration> = [
 				   WHERE revoked_at IS NULL`
 			);
 		}
+	},
+	// v2: per-credential token scoping — `api_token.scope JSONB NOT NULL`.
+	//
+	// Name must match the Rust twin's migration byte for byte
+	// (`fuz_auth/src/migrations.rs`) or the `_testing_migration_tracker` parity
+	// gate fails and the swap-freely invariant breaks.
+	//
+	// Three statements, and the middle one is the whole compatibility story:
+	//
+	// 1. Add the column nullable, so the ALTER is instant on a populated table.
+	// 2. Backfill every pre-existing token as full authority, flagged
+	//    `grandfathered` — tokens minted before scoping existed keep working,
+	//    but the debt is a *value in the row*, not an absence. That distinction
+	//    is the point: it stays distinguishable from a deliberately minted full
+	//    token, so the list can label it and an operator can count what needs
+	//    re-minting.
+	// 3. `SET NOT NULL`, which is what makes "unscoped" unrepresentable from
+	//    here on. A missing scope is exactly the permissive default that made
+	//    the 2026-02 `scope` column a false promise; after this statement the
+	//    database cannot hold one.
+	//
+	// The backfilled literal is pinned by the Rust twin's migration test —
+	// `parse_token_scope` is fail-closed, so a drift between this literal and
+	// the parser stops every pre-scoping token loudly rather than widening it.
+	{
+		name: 'api_token_scope',
+		up: async (db: Db): Promise<void> => {
+			await db.query('ALTER TABLE api_token ADD COLUMN IF NOT EXISTS scope JSONB');
+			await db.query(
+				`UPDATE api_token
+				    SET scope = '{"version":1,"kind":"full","grandfathered":true}'::jsonb
+				  WHERE scope IS NULL`
+			);
+			await db.query('ALTER TABLE api_token ALTER COLUMN scope SET NOT NULL');
+		}
 	}
 ];
 

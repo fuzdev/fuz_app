@@ -30,6 +30,7 @@
 		"last_used_at",
 		"last_used_ip",
 		"name",
+		"scope",
 		"token_hash"
 	],
 	"app_settings": ["id", "open_signup", "updated_at", "updated_by"],

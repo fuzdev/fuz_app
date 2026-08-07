@@ -296,7 +296,7 @@ describe_db('session_token_limits', (get_db) => {
 					app: test_app.app,
 					path: RPC_PATH,
 					spec: account_token_create_action_spec,
-					params: { name },
+					params: { name, scope: { kind: 'full' as const } },
 					headers: test_app.create_session_headers()
 				});
 				assert.ok(res.ok, `token_create failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
@@ -350,7 +350,7 @@ describe_db('session_token_limits', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_token_create_action_spec,
-				params: { name: 'sole-survivor' },
+				params: { name: 'sole-survivor', scope: { kind: 'full' as const } },
 				headers: test_app.create_session_headers()
 			});
 			assert.ok(create_res.ok, 'token_create should succeed');
@@ -391,7 +391,7 @@ describe_db('session_token_limits', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_token_create_action_spec,
-				params: { name: 'doomed' },
+				params: { name: 'doomed', scope: { kind: 'full' as const } },
 				headers: test_app.create_session_headers()
 			});
 			assert.ok(create_res.ok, 'token_create still returns ok=true');
@@ -429,7 +429,7 @@ describe_db('session_token_limits', (get_db) => {
 					app: test_app.app,
 					path: RPC_PATH,
 					spec: account_token_create_action_spec,
-					params: { name: `token-${i}` },
+					params: { name: `token-${i}`, scope: { kind: 'full' as const } },
 					headers: test_app.create_session_headers()
 				});
 				assert.ok(res.ok, `token_create ${i} failed: ${res.ok ? '' : JSON.stringify(res.error)}`);

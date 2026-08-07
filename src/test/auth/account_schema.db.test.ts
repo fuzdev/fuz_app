@@ -186,7 +186,13 @@ describe_db('auth schema', (get_db) => {
 			{ column_name: 'expires_at', data_type: 'timestamp with time zone', is_nullable: 'YES' },
 			{ column_name: 'last_used_at', data_type: 'timestamp with time zone', is_nullable: 'YES' },
 			{ column_name: 'last_used_ip', data_type: 'text', is_nullable: 'YES' },
-			{ column_name: 'created_at', data_type: 'timestamp with time zone', is_nullable: 'NO' }
+			{ column_name: 'created_at', data_type: 'timestamp with time zone', is_nullable: 'NO' },
+			// Appended by the `api_token_scope` migration, hence last in
+			// `ordinal_position`. `is_nullable: 'NO'` is the load-bearing
+			// assertion: an absent scope must be unrepresentable, which is the
+			// permissive default the pre-2026-02 `scope` column had and that made
+			// it a false promise.
+			{ column_name: 'scope', data_type: 'jsonb', is_nullable: 'NO' }
 		]);
 	});
 

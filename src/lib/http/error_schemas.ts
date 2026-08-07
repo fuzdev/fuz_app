@@ -49,6 +49,19 @@ export const ERROR_INSUFFICIENT_PERMISSIONS = 'insufficient_permissions' as cons
  */
 export const ERROR_CREDENTIAL_TYPE_REQUIRED = 'credential_type_required' as const;
 
+/**
+ * The credential is admitted on this channel, but the specific token's scope
+ * does not grant the requested capability.
+ *
+ * The body carries `required_scope: string` in the stable
+ * `<section>:<id>` capability format — `rpc:<method>` for an action,
+ * `surface:<name>` for a non-RPC surface. Distinct from
+ * `credential_type_required` (which is about the *channel*) and from
+ * `insufficient_permissions` (about the *account's* roles): this one says the
+ * account could do it but this token was minted narrower.
+ */
+export const ERROR_TOKEN_SCOPE_REQUIRED = 'token_scope_required' as const;
+
 /** Rate limiter rejected the request. */
 export const ERROR_RATE_LIMIT_EXCEEDED = 'rate_limit_exceeded' as const;
 

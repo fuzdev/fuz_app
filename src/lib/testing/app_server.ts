@@ -58,6 +58,7 @@ import {
 } from '../auth/daemon_token.ts';
 import { create_pglite_factory, type DbFactory } from './db.ts';
 import type { RpcEndpointsSuiteOption } from './rpc_helpers.ts';
+import { token_scope_full } from '../auth/token_scope.ts';
 
 /**
  * Fast password stub for tests that don't exercise login/password flows.
@@ -182,7 +183,14 @@ export const create_test_account_with_credentials = async (
 
 	// Create API token (account-scoped — acting actor is per-request)
 	const { token: api_token, id: token_id, token_hash } = generate_api_token();
-	await query_create_api_token(deps, token_id, account.id, 'test-cli', token_hash);
+	await query_create_api_token(
+		deps,
+		token_id,
+		account.id,
+		'test-cli',
+		token_hash,
+		token_scope_full()
+	);
 
 	// Create session (account-scoped — acting actor is per-request).
 	// Shares the mint primitive with `mint_test_session` / the

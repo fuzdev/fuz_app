@@ -13,6 +13,8 @@
 
 import { z } from 'zod';
 
+import type { TokenScope } from './auth/token_scope.ts';
+
 import type { RequestContext } from './auth/request_context.ts';
 import {
 	CREDENTIAL_TYPE_API_TOKEN,
@@ -43,6 +45,21 @@ export const CREDENTIAL_TYPE_KEY = 'credential_type';
 
 /** Hono context variable name for the authenticated API token id. */
 export const AUTH_API_TOKEN_ID_KEY = 'auth_api_token_id';
+
+/**
+ * Hono context variable name for the credential's `TokenScope`.
+ *
+ * Set by every auth middleware that resolves a credential — bearer reads it
+ * from the token row; session and daemon-token set `full`, because a browser
+ * session *is* full account authority (narrowing it is what role grants are
+ * for) and the daemon token is singular, filesystem-proved, and keeper-bound.
+ *
+ * Unset only for the anonymous caller, who holds no credential to narrow.
+ * Downstream must not read an unset value as permissive for an *authenticated*
+ * caller — that absent case is exactly the permissive default this design
+ * removes.
+ */
+export const TOKEN_SCOPE_KEY = 'token_scope';
 
 /**
  * Hono context variable name for the authenticated account id.
@@ -81,6 +98,14 @@ declare module 'hono' {
 		validated_query: unknown;
 		/** How the request was authenticated (`'session'`, `'api_token'`, or `'daemon_token'`). */
 		credential_type: CredentialType | null;
+		/**
+		 * The credential's authority narrowing. Set by every auth middleware that
+		 * resolves a credential — bearer reads it off the token row; session and
+		 * daemon-token set `full`. Absent only for the anonymous caller, who holds
+		 * no credential to narrow; downstream must not read absent as permissive
+		 * for an authenticated one.
+		 */
+		token_scope: TokenScope | undefined;
 		/**
 		 * Authenticated account id. Set by the session / bearer / daemon-token
 		 * middleware on a valid credential; `null` for unauthenticated requests.

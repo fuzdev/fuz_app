@@ -37,6 +37,11 @@ import {
 	query_create_api_token,
 	query_revoke_api_token_for_account
 } from './api_token_queries.ts';
+import {
+	parse_stored_token_scope,
+	token_scope_from_input,
+	token_scope_label
+} from './token_scope.ts';
 import { generate_api_token } from './api_token.ts';
 import { DEFAULT_MAX_TOKENS } from './account_route_schema.ts';
 import type { ActionFactoryDeps } from './deps.ts';
@@ -178,7 +183,11 @@ export const create_account_actions = (
 		ctx: ActionAuthContext
 	): Promise<TokenCreateOutput> => {
 		const { token, id, token_hash } = generate_api_token();
-		await query_create_api_token(ctx, id, ctx.auth.account.id, input.name, token_hash);
+		// `input.scope` is required by `TokenCreateInput` — default-deny at mint.
+		// There is deliberately no permissive fallback here: an omitted scope is
+		// a validation error upstream, not a full-authority token.
+		const scope = token_scope_from_input(input.scope);
+		await query_create_api_token(ctx, id, ctx.auth.account.id, input.name, token_hash, scope);
 		if (max_tokens != null) {
 			await query_api_token_enforce_limit(ctx, ctx.auth.account.id, max_tokens);
 		}
@@ -199,7 +208,15 @@ export const create_account_actions = (
 		_input: TokenListInput,
 		ctx: ActionAuthContext
 	): Promise<TokenListOutput> => {
-		const tokens = await query_api_token_list_for_account(ctx, ctx.auth.account.id);
+		const rows = await query_api_token_list_for_account(ctx, ctx.auth.account.id);
+		// Project the stored document down to its display label. Display-only, so
+		// an unreadable document degrades to a marker rather than failing the
+		// list — the opposite of the resolve path, and deliberately so: this is
+		// the surface an operator uses to *find* a bad token.
+		const tokens = rows.map(({ scope, ...rest }) => {
+			const parsed = parse_stored_token_scope(scope);
+			return { ...rest, scope: parsed ? token_scope_label(parsed) : 'unreadable' };
+		});
 		return { tokens };
 	};
 

@@ -10,6 +10,8 @@
 
 import { z } from 'zod';
 
+import { TokenScopeInput } from './token_scope.ts';
+
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import {
 	AuthSessionJson,
@@ -59,15 +61,28 @@ export const SessionRevokeAllOutput = z.strictObject({
 });
 export type SessionRevokeAllOutput = z.infer<typeof SessionRevokeAllOutput>;
 
-/** Input for `account_token_create`. */
-export const TokenCreateInput = z
-	.strictObject({
-		name: z
-			.string()
-			.default('CLI token')
-			.meta({ description: 'Human-friendly label; shown in the token list.' })
+/**
+ * Input for `account_token_create`.
+ *
+ * `scope` is **required** — default-deny at mint. There is deliberately no
+ * permissive default: a caller who wants full authority spells
+ * `{kind: 'full'}`, and the stored document records that they did. That is the
+ * reversal of the 2026-02 design, where the field existed but nothing depended
+ * on it. Because `scope` has no default, the object as a whole no longer
+ * carries `.prefault({})`.
+ */
+export const TokenCreateInput = z.strictObject({
+	name: z
+		.string()
+		.default('CLI token')
+		.meta({ description: 'Human-friendly label; shown in the token list.' }),
+	scope: TokenScopeInput.meta({
+		description:
+			"What the token may do. `{kind:'full'}` for full account authority, or " +
+			"`{kind:'methods',methods:[…]}` to narrow it to named RPC methods — a " +
+			'narrowed token is RPC-only and reaches no non-RPC surface.'
 	})
-	.prefault({});
+});
 export type TokenCreateInput = z.infer<typeof TokenCreateInput>;
 
 /** Output for `account_token_create`. `token` is returned exactly once. */

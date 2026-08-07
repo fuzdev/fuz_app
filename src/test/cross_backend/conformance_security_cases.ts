@@ -147,7 +147,16 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 	},
 	{
 		name: 'daemon token → account_token_create → 403 credential_type_required',
-		request: { method: 'account_token_create', as: 'daemon', params: {} },
+		request: {
+			method: 'account_token_create',
+			as: 'daemon',
+			// A well-formed request, so the assertion isolates the *credential*
+			// denial. `scope` became required when token scoping landed, and the TS
+			// dispatcher validates input before the credential gate (the Rust one
+			// validates handler-side, after) — so `params: {}` would 400 on one
+			// backend and 403 on the other, testing the wrong thing on both.
+			params: { scope: { kind: 'full' } }
+		},
 		expect: {
 			status: 403,
 			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
@@ -157,7 +166,16 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 	},
 	{
 		name: 'api_token (bearer) → account_token_create → 403 credential_type_required',
-		request: { method: 'account_token_create', as: 'token', params: {} },
+		request: {
+			method: 'account_token_create',
+			as: 'token',
+			// A well-formed request, so the assertion isolates the *credential*
+			// denial. `scope` became required when token scoping landed, and the TS
+			// dispatcher validates input before the credential gate (the Rust one
+			// validates handler-side, after) — so `params: {}` would 400 on one
+			// backend and 403 on the other, testing the wrong thing on both.
+			params: { scope: { kind: 'full' } }
+		},
 		expect: {
 			status: 403,
 			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,

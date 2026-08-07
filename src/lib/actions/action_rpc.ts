@@ -29,6 +29,7 @@ import {
 import {
 	ACCOUNT_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
+	TOKEN_SCOPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
 	type CredentialType
 } from '../hono_context.ts';
@@ -440,6 +441,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				request_id: id,
 				account_id: c.get(ACCOUNT_ID_KEY) ?? null,
 				credential_type: c.get(CREDENTIAL_TYPE_KEY) ?? null,
+				token_scope: c.get(TOKEN_SCOPE_KEY) ?? null,
 				client_ip: get_client_ip(c),
 				signal: c.req.raw.signal,
 				notify,

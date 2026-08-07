@@ -356,7 +356,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				method: 'account_token_create',
-				params: { name: 'closer_target' },
+				params: { name: 'closer_target', scope: { kind: 'full' } },
 				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(create_res.ok, true);
@@ -445,7 +445,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				method: 'account_token_create',
-				params: { name: 'target_owned' },
+				params: { name: 'target_owned', scope: { kind: 'full' } },
 				headers: target.create_session_headers()
 			});
 			assert.strictEqual(create_res.ok, true);
@@ -1070,7 +1070,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				method: 'account_token_create',
-				params: { name: 'absent_closer_target' },
+				params: { name: 'absent_closer_target', scope: { kind: 'full' } },
 				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(create_res.ok, true);
