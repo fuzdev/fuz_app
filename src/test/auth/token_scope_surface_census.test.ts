@@ -206,7 +206,7 @@ const CREDENTIAL_MARKERS: ReadonlyArray<string | RegExp> = [
  * An explicit list rather than a path filter in the walker, so the exclusions
  * are as reviewable as the inclusions. Keep it to files whose *code* reaches a
  * marker — a file that only mentions one in a comment is handled by
- * `strip_comments` and never reaches this list.
+ * `strip_comment_lines` and never reaches this list.
  */
 const NON_SURFACE_SITES: ReadonlyArray<string> = [
 	'hono_context.ts',
@@ -304,9 +304,12 @@ const discover_lib_files = (matches: (source: string) => boolean): Set<string> =
 	return found;
 };
 
+/** A line whose first non-whitespace is a comment token — `//`, `/*`, or a `*` continuation. */
+const COMMENT_LINE = /^\s*(?:\/\/|\/\*|\*)/u;
+
 /**
- * Blank out comments, preserving every newline so line-anchored markers still
- * match at their real positions.
+ * Blank whole comment lines, preserving every newline so line-anchored markers
+ * still match at their real positions.
  *
  * The census asks whether a file **reaches** a resolved credential, and prose
  * doesn't. Without this, documenting a marker pulls the documenting file into
@@ -317,16 +320,32 @@ const discover_lib_files = (matches: (source: string) => boolean): Set<string> =
  * credential. Parking them in `NON_SURFACE_SITES` would have made the
  * exclusion list absorb a scanner bug, and left every future cross-reference
  * a tripwire.
+ *
+ * **Line-oriented, because a span-oriented stripper is unsafe here.** The
+ * earlier form blanked `/\*` to the next `*\/` with no string-literal
+ * awareness, and `app.use('/api/*', bearer_middleware)` supplies that opener —
+ * so the blanked span ran to the end of some later doc block, taking every
+ * marker between them with it. A file that silently leaves the discovered set
+ * is never reviewed, which is the one failure direction this census cannot
+ * tolerate; over-discovery merely demands a census row, which fails loud. No
+ * literal can open a multi-line blank when only a line's own first token
+ * decides it. Nine files under `src/lib` carry such a literal, two of them
+ * already in `NON_SURFACE_SITES` — where an under-scanned file and an exempt
+ * one look identical.
+ *
+ * Relies on doc blocks carrying their ` * ` continuations, which the formatter
+ * guarantees. Twin of the Rust censuses' `strip_comment_lines`.
  */
-const strip_comments = (source: string): string =>
+const strip_comment_lines = (source: string): string =>
 	source
-		.replace(/\/\*[\s\S]*?\*\//gu, (block) => block.replace(/[^\n]/gu, ' '))
-		.replace(/\/\/[^\n]*/gu, '');
+		.split('\n')
+		.map((line) => (COMMENT_LINE.test(line) ? '' : line))
+		.join('\n');
 
 /** Walk `src/lib` for files that reach a resolved credential. */
 const discover_credential_sites = (): Set<string> =>
 	discover_lib_files((raw) => {
-		const source = strip_comments(raw);
+		const source = strip_comment_lines(raw);
 		return CREDENTIAL_MARKERS.some((marker) =>
 			typeof marker === 'string' ? source.includes(marker) : marker.test(source)
 		);
@@ -334,7 +353,7 @@ const discover_credential_sites = (): Set<string> =>
 
 /** Walk `src/lib` for files naming a token surface in code. */
 const discover_declared_token_surfaces = (): Set<string> =>
-	discover_lib_files((raw) => strip_comments(raw).includes("'surface:"));
+	discover_lib_files((raw) => strip_comment_lines(raw).includes("'surface:"));
 
 describe('token scope surface census', () => {
 	/**
@@ -440,7 +459,7 @@ describe('token scope surface census', () => {
 				`${site.file} gates the ${surface} surface but is not censused as consulting scope`
 			);
 			assert.ok(
-				read_lib_source(site.file).includes(site.source),
+				strip_comment_lines(read_lib_source(site.file)).includes(site.source),
 				`${site.file} gates the ${surface} surface but does not contain \`${site.source}\``
 			);
 		}
@@ -467,7 +486,9 @@ describe('token scope surface census', () => {
 	test('the spine declares only surfaces it mounts', () => {
 		const declared = new Set<string>();
 		for (const file of discover_declared_token_surfaces()) {
-			for (const match of strip_comments(read_lib_source(file)).matchAll(TOKEN_SURFACE_LITERAL)) {
+			for (const match of strip_comment_lines(read_lib_source(file)).matchAll(
+				TOKEN_SURFACE_LITERAL
+			)) {
 				declared.add(match[1]!);
 			}
 		}
@@ -476,6 +497,40 @@ describe('token scope surface census', () => {
 			unknown,
 			[],
 			'src/lib names token surfaces the spine does not mount — consumers may name their own, this repo may not'
+		);
+	});
+
+	/**
+	 * The stripper drops prose and keeps code — including code that only *looks*
+	 * like a comment opener.
+	 *
+	 * Pinned because the failure it prevents is silent in the worst direction.
+	 * The span-oriented form this replaced read the `/*` inside a route-glob
+	 * literal as a comment opener and blanked everything up to the next `*\/`,
+	 * so a file's real markers could vanish and the file with them — and a file
+	 * that leaves the discovered set is never reviewed at all. The `'/api/*'`
+	 * case below is that regression, held as a literal because it is the exact
+	 * shape `testing/middleware.ts` mounts.
+	 */
+	test('the stripper drops prose and keeps code', () => {
+		const stripped = strip_comment_lines(
+			[
+				'/**',
+				' * a doc comment naming require_request_context(',
+				' */',
+				'// a leading note naming require_request_context(',
+				"app.use('/api/*', bearer_middleware);",
+				'const context = require_request_context(c); // a trailing note'
+			].join('\n')
+		);
+		assert.strictEqual(
+			stripped.match(/require_request_context\(/gu)?.length,
+			1,
+			'prose about a marker must not read as the marker, but the call must survive'
+		);
+		assert.ok(
+			stripped.includes("'/api/*'"),
+			'a route-glob literal must survive intact — reading its `/*` as a comment opener is what blanked whole files'
 		);
 	});
 });
