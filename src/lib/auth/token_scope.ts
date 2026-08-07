@@ -126,44 +126,137 @@ export const token_scope_admits_method = (scope: TokenScope, method: string): bo
 export const token_scope_admits_non_rpc = (scope: TokenScope): boolean => scope.kind === 'full';
 
 /**
- * The non-RPC surfaces a narrowed token is refused (rule 3). Capability
- * strings match the Rust `TokenSurface`.
+ * The non-RPC surfaces the **spine itself** mounts (rule 3). Twin of the Rust
+ * `TokenSurface` enum, name for name.
+ *
+ * Not a registry a consumer registers into. `RouteAuth.required_scope` accepts
+ * any well-formed `surface:<name>` (see `parse_token_scope_capability`), so a
+ * consumer names its own non-RPC surface without an upstream release. This
+ * tuple is what the *spine* may declare, and what its surface census iterates
+ * — the closure is a check on fuz_app's own routes, not a vocabulary consumers
+ * have to ask permission to extend.
+ *
+ * A surface name never decides anything: rule 3 is all-or-nothing
+ * (`token_scope_admits_non_rpc`), so the name only labels *which* surface
+ * refused, in the `required_scope` a denial reports. That is the same field
+ * whose `rpc:<method>` arm has always carried arbitrary consumer method names.
  */
-export const TOKEN_SURFACE_CAPABILITIES = {
-	db_admin: 'surface:db_admin',
-	fact_bare: 'surface:fact_bare',
-	audit_stream: 'surface:audit_stream',
-	ws_upgrade: 'surface:ws_upgrade'
-} as const;
-export type TokenSurface = keyof typeof TOKEN_SURFACE_CAPABILITIES;
+export const TOKEN_SURFACES = ['db_admin', 'fact_bare', 'audit_stream', 'ws_upgrade'] as const;
+export type TokenSurface = (typeof TOKEN_SURFACES)[number];
 
 /**
- * Is `value` one of the named surfaces?
+ * Is `value` one of the surfaces the spine mounts?
  *
- * `RouteAuth.token_surface` is typed as a plain string so `http/` needs no
- * `auth/` import, which makes a typo a value error rather than a type error.
- * This is what turns it back into one, at the single point where a declared
- * surface becomes a mounted guard — so the check and the narrowing can't drift
- * apart the way a separate `in` test plus an `as` cast can.
+ * Membership, not well-formedness — `parse_token_scope_capability` is the format
+ * check the guard resolver runs on a declaration, and it is deliberately looser.
+ * Used where the *spine's* own surfaces are the question: the direct-call denial
+ * helpers, and the census assertion that fuz_app declares no surface it doesn't
+ * mount.
  */
 export const is_token_surface = (value: string): value is TokenSurface =>
-	value in TOKEN_SURFACE_CAPABILITIES;
+	(TOKEN_SURFACES as ReadonlyArray<string>).includes(value);
 
 /**
- * Build the flat denial body a non-RPC surface returns when a narrowed token
- * reaches it: `{error: 'token_scope_required', required_scope: 'surface:<name>'}`
- * at 403.
+ * Name format for the identifier half of a capability string. Mirrors
+ * `RoleName` / `CredentialTypeName` / `ScopeKindName`.
  *
- * One shape for every surface, matching the Rust
+ * Applied to the `surface:` arm only. The `rpc:` arm's identifier is an action
+ * method name, whose vocabulary belongs to `ActionSpec` (and includes shapes
+ * like `peer/ping` this regex would refuse) — the capability parser checks it
+ * is non-empty and leaves the rest to the registry that owns it.
+ */
+export const TOKEN_SURFACE_NAME_REGEX = /^[a-z][a-z_]*[a-z]$|^[a-z]$/;
+
+// Capability-string prefixes. Private: `token_scope_method_capability` builds
+// the one capability anything computes, and `parse_token_scope_capability` reads
+// one back, so nothing outside this module concatenates these itself.
+const CAPABILITY_RPC_PREFIX = 'rpc:';
+const CAPABILITY_SURFACE_PREFIX = 'surface:';
+
+/**
+ * The capability string an action method is refused under: `rpc:<method>`.
+ *
+ * Exported because two sites *compute* one — the dispatcher's per-method gate
+ * and the REST bridge, which must agree — where a `surface:` capability is
+ * always written as a literal on a route spec, so nothing computes one.
+ */
+export const token_scope_method_capability = (method: string): string =>
+	`${CAPABILITY_RPC_PREFIX}${method}`;
+
+/**
+ * A parsed `required_scope` capability — what a route demands of the calling
+ * credential's `TokenScope`.
+ *
+ * `capability` is the wire string verbatim, carried rather than re-derived so a
+ * denial reports exactly what the route declared. The arms are asymmetric on
+ * purpose, and the asymmetry is the whole design: the `rpc:` identifier is
+ * **consumed by a predicate** (`token_scope_admits_method`), so it is kept; the
+ * `surface:` identifier is **pure label**, because rule 3 is all-or-nothing
+ * (`token_scope_admits_non_rpc` never looks at which surface). That is why one
+ * half of the vocabulary needs no registry.
+ */
+export type TokenScopeCapability =
+	{ kind: 'rpc'; capability: string; method: string } | { kind: 'surface'; capability: string };
+
+/**
+ * Parse a capability string into the question it asks, or `null` when it is
+ * not a capability at all.
+ *
+ * Callers turn `null` into a registration-time throw: `RouteAuth.required_scope`
+ * is typed as a plain string so `http/` needs no `auth/` import, and this is the
+ * single point where that string becomes a mounted guard, so it is where the
+ * value gets checked. Refusing an unknown prefix is what keeps the `surface:`
+ * namespace fuz_app's own — a route cannot mint an `rpc:`-looking capability out
+ * of a surface gate, which would put a method name in front of a whole-surface
+ * refusal.
+ *
+ * @param value - the declared capability string, e.g. `surface:audit_stream`
+ * @returns the parsed capability, or `null` on an unknown prefix / empty or malformed identifier
+ */
+export const parse_token_scope_capability = (value: string): TokenScopeCapability | null => {
+	if (value.startsWith(CAPABILITY_RPC_PREFIX)) {
+		const method = value.slice(CAPABILITY_RPC_PREFIX.length);
+		return method.length > 0 ? { kind: 'rpc', capability: value, method } : null;
+	}
+	if (value.startsWith(CAPABILITY_SURFACE_PREFIX)) {
+		const surface = value.slice(CAPABILITY_SURFACE_PREFIX.length);
+		return TOKEN_SURFACE_NAME_REGEX.test(surface) ? { kind: 'surface', capability: value } : null;
+	}
+	return null;
+};
+
+/**
+ * Does `scope` admit `capability`?
+ *
+ * The one place the two arms of the vocabulary meet their two predicates, so a
+ * `surface:` capability can never be answered by a method-list membership test
+ * (which would let a narrowed token onto a surface by listing a method named
+ * after it) and an `rpc:` capability can never be answered by rule 3 (which
+ * would refuse a token the method it was minted for).
+ */
+export const token_scope_admits_capability = (
+	scope: TokenScope,
+	capability: TokenScopeCapability
+): boolean =>
+	capability.kind === 'rpc'
+		? token_scope_admits_method(scope, capability.method)
+		: token_scope_admits_non_rpc(scope);
+
+/**
+ * Build the flat denial body a non-RPC route returns when a narrowed token
+ * reaches a capability it lacks:
+ * `{error: 'token_scope_required', required_scope: '<section>:<id>'}` at 403.
+ *
+ * One shape for every capability, matching the Rust
  * `token_scope_surface_denied_response`. These are REST-ish routes whose
  * sibling denials are already flat, so the JSON-RPC envelope stays with the
  * dispatcher's per-method gate and stops there.
  */
-export const token_scope_surface_denied_body = (
-	surface: TokenSurface
+export const token_scope_denied_body = (
+	capability: string
 ): { error: 'token_scope_required'; required_scope: string } => ({
 	error: 'token_scope_required',
-	required_scope: TOKEN_SURFACE_CAPABILITIES[surface]
+	required_scope: capability
 });
 
 /** Stable label for the token list / UI. */

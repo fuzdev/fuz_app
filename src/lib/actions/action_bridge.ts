@@ -11,8 +11,9 @@
 import type { z } from 'zod';
 
 import type { ActionSpec, ActionSideEffects } from './action_spec.ts';
+import { token_scope_method_capability } from '../auth/token_scope.ts';
 import type { RouteSpec, RouteMethod, RouteHandler } from '../http/route_spec.ts';
-import type { RouteAuth } from '../http/auth_shape.ts';
+import { is_public_auth, type RouteAuth } from '../http/auth_shape.ts';
 import type { EventSpec } from '../realtime/sse.ts';
 import type { RouteErrorSchemas } from '../http/error_schemas.ts';
 
@@ -31,11 +32,14 @@ export interface ActionRouteOptions {
 	 * (the canonical shape from `http/auth_shape.ts` is shared verbatim between
 	 * action specs and route specs, so no mapping is needed).
 	 *
-	 * This is also the only place a bridged route can declare
-	 * `token_surface`, which `ActionSpec.auth` is forbidden to carry — see the
-	 * token-scope note on `create_action_route_spec`. Overriding to *widen*
-	 * (admitting a credential the action's own gate refused) makes this route
-	 * the consumer's to audit, not the spine's.
+	 * The bridge fills in `required_scope` on whichever shape it ends up with,
+	 * so an override still gets the token-scope gate; declare `required_scope`
+	 * here to name a different capability (e.g. `surface:<name>` when the
+	 * bridged route is a stream rather than a request/response call — see the
+	 * token-scope note on `create_action_route_spec`).
+	 *
+	 * Overriding to *widen* (admitting a credential the action's own gate
+	 * refused) makes this route the consumer's to audit, not the spine's.
 	 */
 	auth?: RouteAuth;
 	/** Handler-specific error schemas (HTTP status code → Zod schema). Transport-specific — not on ActionSpec. */
@@ -63,16 +67,27 @@ export const derive_http_method = (side_effects: ActionSideEffects): RouteMethod
  * on the options, not the action spec. Action specs define the contract;
  * transport concerns like HTTP error codes are added at the bridge layer.
  *
- * **A bridged route does not inherit the dispatcher's token-scope gate.** The
- * route runs `options.handler` through the REST pipeline; it never reaches
- * `perform_action`, which is where the per-method scope check lives. So a
- * bridged route is a non-RPC surface, and by token scoping's RPC-only rule a
- * **narrowed** api token should not reach it — but nothing here refuses one,
- * because the auth shape is copied from a spec that is forbidden to declare
- * `token_surface`. If the route is reachable by bearer, decide: pass
- * `options.auth` with a `token_surface` when one of the spine's named surfaces
- * fits, or gate it yourself (read `TOKEN_SCOPE_KEY` and consult
- * `token_scope_admits_non_rpc`). See ../../../docs/security.md §Token scoping.
+ * **The bridge carries the token-scope gate across for you.** A bridged route
+ * runs `options.handler` through the REST pipeline and never reaches
+ * `perform_action`, so the dispatcher's per-method scope check cannot fire on
+ * it — which would leave a bearer-reachable route that a **narrowed** api token
+ * walks straight through. So the derived spec declares
+ * `auth.required_scope: 'rpc:<method>'`, and `fuz_auth_guard_resolver` mounts
+ * the same refusal ahead of the role gate. A token that lists the method
+ * reaches the bridged route; one that doesn't gets the 403 it would have gotten
+ * over RPC.
+ *
+ * Per-method rather than rule 3's blanket refusal because a bridged route
+ * *has* a method identity — which is exactly what the non-RPC surfaces rule 3
+ * covers (the db browser, a bare-hash read, a stream) do not, and why that rule
+ * is all-or-nothing there. **Bridge something with no request/response shape —
+ * an SSE stream, a file download — and rule 3's reasoning applies instead**:
+ * pass `options.auth` with `required_scope: 'surface:<name>'`, naming your own
+ * surface. See ../../../docs/security.md §Token scoping.
+ *
+ * Skipped for a public action (`account: 'none', actor: 'none'`), where the
+ * same holder reaches the route by dropping the credential, so the guard would
+ * enforce nothing — the shape `fuz_auth_guard_resolver` refuses outright.
  *
  * @param spec - the action spec (must have non-null `auth`)
  * @param options - HTTP-specific options (path, handler, optional overrides)
@@ -91,10 +106,17 @@ export const create_action_route_spec = (
 			}': auth is null (only request_response actions with non-null auth can become routes)`
 		);
 	}
+	const auth = options.auth ?? spec.auth;
+	// Carry the dispatcher's per-method scope gate across — see the token-scope
+	// note above. An explicit capability wins; a public route has no credential
+	// to narrow, and the resolver rejects the gate on that shape anyway.
+	const derives_scope_gate = auth.required_scope === undefined && !is_public_auth(auth);
 	return {
 		method: options.http_method ?? derive_http_method(spec.side_effects),
 		path: options.path,
-		auth: options.auth ?? spec.auth,
+		auth: derives_scope_gate
+			? { ...auth, required_scope: token_scope_method_capability(spec.method) }
+			: auth,
 		handler: options.handler,
 		description: spec.description,
 		...(options.params ? { params: options.params } : {}),

@@ -201,16 +201,16 @@ describe('derive_error_schemas', () => {
 	});
 
 	/**
-	 * `auth.token_surface` mounts `require_token_surface`, a framework-emitted
+	 * `auth.required_scope` mounts `require_token_scope`, a framework-emitted
 	 * 403 at a fixed middleware site — exactly the class this derivation
 	 * covers. Without it the audit stream and the bare-hash fact read (both
 	 * role-gated *and* surface-gated) would derive `PermissionError` alone, so
 	 * a narrowed token's real denial would fail DEV-mode error-schema
 	 * validation and go undocumented in the generated attack surface.
 	 */
-	test('auth token_surface derives 403 with TokenScopeRequiredError', () => {
+	test('auth required_scope derives 403 with TokenScopeRequiredError', () => {
 		const errors = derive_error_schemas({
-			auth: { account: 'required', actor: 'required', token_surface: 'audit_stream' }
+			auth: { account: 'required', actor: 'required', required_scope: 'surface:audit_stream' }
 		});
 		assert.ok(errors[403]);
 		const result = (errors[403] as any).safeParse({
@@ -220,13 +220,13 @@ describe('derive_error_schemas', () => {
 		assert.isTrue(result.success);
 	});
 
-	test('token_surface alongside a role gate derives a 403 union admitting both', () => {
+	test('required_scope alongside a role gate derives a 403 union admitting both', () => {
 		const errors = derive_error_schemas({
 			auth: {
 				account: 'required',
 				actor: 'required',
 				roles: ['admin'],
-				token_surface: 'fact_bare'
+				required_scope: 'surface:fact_bare'
 			}
 		});
 		assert.ok(errors[403]);

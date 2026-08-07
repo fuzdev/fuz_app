@@ -7,7 +7,7 @@
  * 1. `verify_request_source(allowed_origins)` — reject disallowed origins
  *    before the upgrade handshake runs.
  * 2. `require_auth` — reject unauthenticated upgrades.
- * 3. `require_token_surface('ws_upgrade')` — rule 3: a narrowed token
+ * 3. `require_token_scope('surface:ws_upgrade')` — rule 3: a narrowed token
  *    cannot hold a socket. Mounted here, ahead of the role guard, so a
  *    narrowed token is told about its scope rather than about a role it
  *    also lacks. `register_action_ws` repeats the check on its own route
@@ -35,7 +35,7 @@ import {
 	REQUEST_CONTEXT_KEY,
 	require_auth,
 	require_role,
-	require_token_surface
+	require_token_scope
 } from '../auth/request_context.ts';
 import { verify_request_source } from '../http/origin.ts';
 import type { RoleName } from '../auth/role_schema.ts';
@@ -141,7 +141,7 @@ export const register_ws_endpoint = (
 
 	app.use(path, verify_request_source(allowed_origins));
 	app.use(path, require_auth);
-	app.use(path, require_token_surface('ws_upgrade'));
+	app.use(path, require_token_scope('surface:ws_upgrade'));
 	app.use(path, create_ws_authorization_middleware(db));
 	if (required_roles?.length) {
 		app.use(path, require_role(required_roles));

@@ -46,7 +46,7 @@ export const create_audit_log_route_shape = (
 		// are decided by the account's role, not by any per-message scope
 		// check, so there is no point after open at which a narrowing could
 		// apply.
-		token_surface: 'audit_stream'
+		required_scope: 'surface:audit_stream'
 	},
 	description: 'Subscribe to realtime audit log events',
 	query: AuditStreamQuery,

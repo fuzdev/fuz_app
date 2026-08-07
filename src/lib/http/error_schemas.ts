@@ -253,16 +253,18 @@ export const CredentialTypeRequiredError = z.looseObject({
 export type CredentialTypeRequiredError = z.infer<typeof CredentialTypeRequiredError>;
 
 /**
- * Token-scope error — returned by the `require_token_surface` guard (and its
+ * Token-scope error — returned by the `require_token_scope` guard (and its
  * direct-call twin `token_scope_surface_denial`) when a **narrowed** api token
- * reaches a non-RPC spine surface it may not touch. See
+ * reaches a capability its scope does not admit. See
  * ../../../docs/security.md §Token scoping.
  *
- * `required_scope` carries the capability string the surface demands
- * (`surface:audit_stream`, `surface:fact_bare`, …), matching the Rust
- * `token_scope_surface_denied_response`. Third in the family with
- * `PermissionError` and `CredentialTypeRequiredError` — each names what the
- * route demanded rather than what the caller holds.
+ * `required_scope` carries the capability string the route demands, verbatim
+ * from its `auth.required_scope` — `surface:audit_stream` for a non-RPC
+ * surface, `rpc:<method>` for a bridged action — matching the Rust
+ * `token_scope_surface_denied_response` and the dispatcher's own per-method
+ * denial. Third in the family with `PermissionError` and
+ * `CredentialTypeRequiredError` — each names what the route demanded rather
+ * than what the caller holds.
  */
 export const TokenScopeRequiredError = z.looseObject({
 	error: z.literal(ERROR_TOKEN_SCOPE_REQUIRED),
@@ -364,8 +366,8 @@ export type RateLimitKey = z.infer<typeof RateLimitKey>;
  * - **`auth.credential_types?.length`**: 403 (`CredentialTypeRequiredError`
  *   carrying `required_credential_types` — symmetric with `PermissionError`).
  *   Today the only credential gate is keeper; future gates reuse the literal.
- * - **`auth.token_surface`**: 403 (`TokenScopeRequiredError` carrying
- *   `required_scope`) — the rule-3 refusal `require_token_surface` emits.
+ * - **`auth.required_scope`**: 403 (`TokenScopeRequiredError` carrying
+ *   `required_scope`) — the refusal `require_token_scope` emits.
  *   A route declaring more than one of these three gates derives the union
  *   of their shapes, since any of them can be the one that answers.
  * - **`auth.actor !== 'none'`** (`'optional'` or `'required'`): extends 400
@@ -409,14 +411,14 @@ export const derive_error_schemas = ({
 		errors[401] = ApiError;
 	}
 
-	// 403 fires from any of three gates: the rule-3 token-scope refusal
-	// (`auth.token_surface`, pre-authorization), the credential-type gate, and
+	// 403 fires from any of three gates: the token-scope refusal
+	// (`auth.required_scope`, pre-authorization), the credential-type gate, and
 	// the role gate (both post-authorization). A route can declare any
 	// combination, so collect the shapes its gates can emit — in the order they
 	// fire — and union them when there's more than one, so DEV-mode
 	// error-schema validation accepts whichever the pipeline produced.
 	const forbidden_shapes: Array<z.ZodType> = [];
-	if (auth.token_surface !== undefined) forbidden_shapes.push(TokenScopeRequiredError);
+	if (auth.required_scope !== undefined) forbidden_shapes.push(TokenScopeRequiredError);
 	if (auth.credential_types?.length) forbidden_shapes.push(CredentialTypeRequiredError);
 	if (auth.roles?.length) forbidden_shapes.push(PermissionError);
 	if (forbidden_shapes.length === 1) {

@@ -11,13 +11,15 @@
  *   in `http/auth_shape.ts`: `auth.actor !== 'none' ⟺ input declares
  *   acting?: ActingActor` (that set's invariant 2). Fires for every spec with
  *   non-null auth.
- * - **No `auth.token_surface` on an action** — `ActionSpec.auth` is the same
+ * - **No `auth.required_scope` on an action** — `ActionSpec.auth` is the same
  *   `RouteAuth` a route spec carries, so the field parses here, but only
  *   `apply_route_specs` mounts a guard from it and `perform_action` never
  *   reads it. Declaring it on an action would be a security control that
  *   silently does nothing, which is the exact shape token scoping was built
  *   to refuse. Rejected loudly instead; actions are governed by the
- *   per-method scope gate inside `perform_action`.
+ *   per-method scope gate inside `perform_action`, which derives the same
+ *   `rpc:<method>` capability from `spec.method` rather than trusting a
+ *   hand-written one.
  * - **Rate-limit / account axis** — `rate_limit: 'account' | 'both'`
  *   requires `auth.account === 'required'`; without an account on the
  *   request there is no key for the per-account bucket.
@@ -78,9 +80,9 @@ export const compile_action_registry = (
 		// per the spec union means `kind === 'request_response'`).
 		if (spec.auth !== null) {
 			assert_route_auth_acting_biconditional(spec.auth, { input: spec.input }, ctx);
-			if (spec.auth.token_surface !== undefined) {
+			if (spec.auth.required_scope !== undefined) {
 				throw new Error(
-					`${ctx} declares auth.token_surface: '${spec.auth.token_surface}' — that slot is for route specs only. Actions dispatch through the RPC endpoint, where a narrowed token is gated per method by the scope check in perform_action; rule 3 governs whole non-RPC surfaces, not individual methods. Remove the field.`
+					`${ctx} declares auth.required_scope: '${spec.auth.required_scope}' — that slot is for route specs only. Actions dispatch through the RPC endpoint, where a narrowed token is gated per method by the scope check in perform_action, which derives the capability from the method name. Remove the field.`
 				);
 			}
 			if (

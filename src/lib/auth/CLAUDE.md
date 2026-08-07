@@ -61,6 +61,7 @@ Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
 - `auth/scope_kind_schema.ts` — `ScopeKindName`, `create_scope_kind_schema` (open registry, no builtins).
 - `auth/credential_type_schema.ts` — `CredentialTypeName`, `CREDENTIAL_TYPE_SESSION` / `_API_TOKEN` / `_DAEMON_TOKEN`, `create_credential_type_schema`.
 - `auth/grant_path_schema.ts` — `GrantPathName`, `GRANT_PATH_ADMIN` / `_SELF_SERVICE` / `_SYSTEM` / `_BOOTSTRAP`, `create_grant_path_schema`.
+- `auth/token_scope.ts` — per-credential authority narrowing stored on `api_token.scope`: `TokenScope` / `TokenScopeInput` + constructors, `parse_stored_token_scope` (fail-closed), `token_scope_admits_method` / `_non_rpc`, and the `<section>:<id>` capability vocabulary `RouteAuth.required_scope` is written in (`parse_token_scope_capability`, `token_scope_admits_capability`, `token_scope_denied_body`, `TOKEN_SURFACES`). Not an open registry — see ../../../docs/security.md §Token scoping for why the identifier half is deliberately unregistered.
 - `auth/auth_ddl.ts` — `CREATE TABLE` / index / seed strings for the core identity tables.
 - `auth/audit_log_schema.ts` — `AUDIT_EVENT_TYPES` (27 builtins), `AuditEventType` / `AuditEventTypeName`, `audit_metadata_schemas`, `AuditLogEvent`, `AuditLogInput`, `AuditLogConfig`, `create_audit_log_config`.
 - `auth/audit_log_ddl.ts` — `audit_log` table DDL with `seq BIGSERIAL` for cursor-based gap fill (BIGSERIAL converges with the Rust spine; `create_db` registers a `pg.types` int8 parser so `seq` still reads as a JS number).
@@ -123,7 +124,7 @@ they track the same config. Sample via `get_*`; `reset_*` are test-only.
 - `auth/bootstrap_routes.ts` — `POST /bootstrap` + `check_bootstrap_status`; `BootstrapStatus` runtime ref.
 - `auth/signup_routes.ts` — `POST /signup` (open or invite-gated).
 - `auth/audit_log_routes.ts` — optional `GET /audit/stream` (SSE); list/history are on the RPC surface.
-- `auth/auth_guard_resolver.ts` — `fuz_auth_guard_resolver` injected into `apply_route_specs` so the framework stays auth-agnostic.
+- `auth/auth_guard_resolver.ts` — `fuz_auth_guard_resolver` injected into `apply_route_specs` so the framework stays auth-agnostic. Maps each `RouteAuth` axis to a guard and is the single site every route spec traverses, so it also carries the two invariants the schema can't (a `required_scope` that isn't a well-formed capability, and one on an unrestricted route).
 
 **Hono-free route shapes.** Each cookie/SSE-coupled route module has a sibling
 `*_route_schema.ts` (`account_route_schema.ts`, `signup_route_schema.ts`,
@@ -158,7 +159,7 @@ Everything else listed under §RPC action surfaces.
 ### Middleware
 
 - `auth/middleware.ts` — `create_auth_middleware_specs(deps, options)` assembles `[origin, session, request_context, bearer_auth]` + optional `daemon_token`.
-- `auth/request_context.ts` — `RequestContext`, `resolve_acting_actor`, `build_request_context`, predicates (`has_role`, `has_scoped_role`, `has_any_scoped_role`), guards (`require_auth`, `require_role`, `require_credential_types`), `refresh_role_grants`.
+- `auth/request_context.ts` — `RequestContext`, `resolve_acting_actor`, `build_request_context`, predicates (`has_role`, `has_scoped_role`, `has_any_scoped_role`), guards (`require_auth`, `require_role`, `require_credential_types`, `require_token_scope`), `token_scope_surface_denial` (the direct-call form, for surfaces that aren't route specs), `refresh_role_grants`.
 - `auth/session_middleware.ts` — `process_session_cookie` integration, `create_session_and_set_cookie` (shared by login / signup / bootstrap).
 - `auth/bearer_auth.ts` — soft-fail bearer middleware; rejects when `Origin` or `Referer` present (browser context).
 - `auth/daemon_token_middleware.ts` — `start_daemon_token_rotation` + `create_daemon_token_middleware(state, deps, log)` (atomic file write, soft-fail validation, keeper account resolution). Soft-fails — discards the credential (pass-through, no own 401/503) on **every** non-success path: browser context (`Origin`/`Referer` present), malformed/invalid token, and valid-token-but-no-keeper all `next()` through to the dispatcher's `credential_type_required` (403) gate, mirroring the bearer guard and the Rust spine's `resolve.rs`. Daemon tokens are loopback-only, so browser context never arises in practice — the discard is defense-in-depth.

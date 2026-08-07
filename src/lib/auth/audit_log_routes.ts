@@ -53,7 +53,7 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 		{
 			...create_audit_log_route_shape(options.required_role),
 			handler: (c) => {
-				// Rule 3 is declared on the route shape's `auth.token_surface`,
+				// Rule 3 is declared on the route shape's `auth.required_scope`,
 				// so a narrowed token is refused ahead of the role gate rather
 				// than here.
 				const ctx = require_request_context(c);

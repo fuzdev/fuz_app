@@ -84,7 +84,11 @@ import type { RateLimiter } from '../rate_limiter.ts';
 import { is_public_auth, needs_actor, parse_acting, type RouteAuth } from '../http/auth_shape.ts';
 import type { ActionContext, ActionHandler, RpcAction } from './action_rpc.ts';
 import type { RequestClient } from './peer_request.ts';
-import { token_scope_admits_method, type TokenScope } from '../auth/token_scope.ts';
+import {
+	token_scope_admits_method,
+	token_scope_method_capability,
+	type TokenScope
+} from '../auth/token_scope.ts';
 
 /**
  * Per-call inputs to `perform_action`. Each transport assembles this from
@@ -462,7 +466,7 @@ const check_action_auth_post_authorization = (
 	if (token_scope && !token_scope_admits_method(token_scope, method)) {
 		return jsonrpc_error_messages.forbidden('forbidden', {
 			reason: ERROR_TOKEN_SCOPE_REQUIRED,
-			required_scope: `rpc:${method}`
+			required_scope: token_scope_method_capability(method)
 		});
 	}
 	if (auth.roles?.length) {

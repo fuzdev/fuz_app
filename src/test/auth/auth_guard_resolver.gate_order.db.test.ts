@@ -71,12 +71,12 @@ describe('fuz_auth_guard_resolver phase assignment', () => {
 			actor: 'required',
 			credential_types: ['session'],
 			roles: ['admin'],
-			token_surface: 'audit_stream'
+			required_scope: 'surface:audit_stream'
 		});
 		assert.lengthOf(
 			guards.pre_authorization,
 			3,
-			'require_auth + require_credential_types + require_token_surface'
+			'require_auth + require_credential_types + require_token_scope'
 		);
 		assert.lengthOf(
 			guards.post_authorization,

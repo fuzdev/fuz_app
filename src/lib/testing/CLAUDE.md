@@ -1346,6 +1346,42 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   complete action list plus its own spec. Daemon-token-gated like its siblings;
   the Rust mirror is `fuz_testing::create_testing_action_manifest_action_spec`.
 
+### Token-scope surface parity — `cross_backend/token_scope_surface.ts`
+
+`describe_token_scope_surface_cross_tests({setup_test, capabilities, rpc_path?,
+sse_path?})` — the `surface:<name>` twin of the conformance slate's
+`token_scope_cases`, which cover only the `rpc:<method>` arm. Token scoping's
+RPC-only rule (_a narrowed api token reaches no non-RPC surface_) is the
+load-bearing half of the design and had **no** cross-impl gate: the schema gate
+can't see it (no column), the action-manifest gate can't see it (no method), and
+the spec-derived suites can't see it (REST routes, off the declared RPC surface).
+
+Mints a narrowed bearer through the production `account_token_create` path and
+fires it at the two surfaces whose denial **body** is observable over plain
+HTTP — the audit SSE stream (`capabilities.sse`) and the admin-only bare-hash
+fact read (`capabilities.fact_serving`) — asserting the exact flat
+`{error: 'token_scope_required', required_scope: 'surface:<name>'}` both spines
+contract on (`token_scope_denied_body` ↔
+`fuz_auth::token_scope_surface_denied_response`).
+
+The fifth case is the one with no prior pin anywhere: **scope outranks role**. A
+narrowed token on an account that _also_ lacks the gating role must hear
+`token_scope_required`, not `insufficient_permissions` — the observable the
+TS↔Rust ordering divergence produced before both spines converged on running the
+surface gate ahead of the role gate. Every other scoped-token probe uses the
+keeper's token, whose account holds the role, so both orderings look identical
+there; that is why the divergence survived as long as it did. Verified to
+discriminate: dropping the route's `required_scope` turns it into a 403
+`insufficient_permissions` + `required_roles`, exactly the pre-convergence shape.
+
+Two non-vacuity controls: the narrowed token must still reach the RPC method it
+_does_ name, and a full bearer must get past the scope gate on the same route.
+The WS upgrade is deliberately omitted — `create_ws_transport` threads cookies,
+not bearer headers, and a refused upgrade's body isn't readable, so it can't
+serve a body-parity gate (its per-spine coverage stays in the two surface
+censuses). Cross-process only; fuz_app's own wiring is
+`src/test/cross_backend/token_scope_surface.cross.test.ts`.
+
 ### Origin verification parity — `cross_backend/origin.ts`
 
 `describe_origin_cross_tests({setup_test, capabilities, rpc_path?})` — the

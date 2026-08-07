@@ -26,7 +26,7 @@ import { REQUEST_CONTEXT_KEY } from '$lib/auth/request_context.ts';
 import {
 	token_scope_full,
 	token_scope_methods,
-	token_scope_surface_denied_body,
+	token_scope_denied_body,
 	type TokenScope
 } from '$lib/auth/token_scope.ts';
 import { ACCOUNT_ID_KEY, TEST_CONTEXT_PRESET_KEY, TOKEN_SCOPE_KEY } from '$lib/hono_context.ts';
@@ -223,12 +223,16 @@ describe('apply_route_specs', () => {
 	});
 });
 
-describe('auth.token_surface (rule 3)', () => {
+describe('auth.required_scope', () => {
 	/**
-	 * Mount one role-gated route declaring a rule-3 surface, under a caller
+	 * Mount one role-gated route declaring `required_scope`, under a caller
 	 * holding `role` and the given scope.
 	 */
-	const build_app = (role: string, scope: TokenScope): Hono => {
+	const build_app = (
+		role: string,
+		scope: TokenScope,
+		required_scope = 'surface:audit_stream'
+	): Hono => {
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
 			const ctx = create_test_request_context(role);
@@ -246,10 +250,10 @@ describe('auth.token_surface (rule 3)', () => {
 					account: 'required',
 					actor: 'required',
 					roles: ['admin'],
-					token_surface: 'audit_stream'
+					required_scope
 				},
 				handler: (c) => c.json({ streamed: true }),
-				description: 'Rule-3 surface',
+				description: 'Scope-gated route',
 				query: z.strictObject({ acting: ActingActor }),
 				input: z.null(),
 				output: z.null()
@@ -262,7 +266,7 @@ describe('auth.token_surface (rule 3)', () => {
 	test('a narrowed token is refused with the surface denial', async () => {
 		const res = await build_app('admin', token_scope_methods(['cell_get'])).request('/stream');
 		assert.strictEqual(res.status, 403);
-		assert.deepStrictEqual(await res.json(), token_scope_surface_denied_body('audit_stream'));
+		assert.deepStrictEqual(await res.json(), token_scope_denied_body('surface:audit_stream'));
 	});
 
 	test('a full token reaches the handler', async () => {
@@ -283,21 +287,63 @@ describe('auth.token_surface (rule 3)', () => {
 		assert.strictEqual(res.status, 403);
 		assert.deepStrictEqual(
 			await res.json(),
-			token_scope_surface_denied_body('audit_stream'),
+			token_scope_denied_body('surface:audit_stream'),
 			'a narrowed token lacking the role must hear about its scope, not the role'
 		);
 	});
 
-	test('an unknown surface is refused at registration', () => {
-		assert.throws(
-			() =>
-				fuz_auth_guard_resolver({
-					account: 'required',
-					actor: 'required',
-					token_surface: 'not_a_surface'
-				}),
-			/not a known token surface/u
-		);
+	/**
+	 * The `rpc:` arm — what `create_action_route_spec` declares on a bridged
+	 * route, whose handler never reaches the dispatcher's per-method gate. The
+	 * two arms of the vocabulary answer different questions of the same scope,
+	 * so this pins that a listed method passes where rule 3 would have refused.
+	 */
+	test('an rpc capability admits a narrowed token that lists the method', async () => {
+		const admitted = await build_app(
+			'admin',
+			token_scope_methods(['thing_create']),
+			'rpc:thing_create'
+		).request('/stream');
+		assert.strictEqual(admitted.status, 200);
+
+		const refused = await build_app(
+			'admin',
+			token_scope_methods(['cell_get']),
+			'rpc:thing_create'
+		).request('/stream');
+		assert.strictEqual(refused.status, 403);
+		assert.deepStrictEqual(await refused.json(), token_scope_denied_body('rpc:thing_create'));
+	});
+
+	/**
+	 * The vocabulary is open on the identifier and closed on the prefix. A
+	 * consumer names its own surface without registering it — the name decides
+	 * nothing, since rule 3 is all-or-nothing — but an unknown section would
+	 * put an unreadable capability on the wire, and letting a route mint an
+	 * `rpc:`-shaped capability out of a surface gate would name a method in
+	 * front of a whole-surface refusal.
+	 */
+	test('a consumer surface name is admitted, a malformed capability is not', async () => {
+		const res = await build_app(
+			'admin',
+			token_scope_methods(['cell_get']),
+			'surface:file_store'
+		).request('/stream');
+		assert.strictEqual(res.status, 403);
+		assert.deepStrictEqual(await res.json(), token_scope_denied_body('surface:file_store'));
+
+		for (const bad of ['not_a_capability', 'surface:', 'rpc:', 'surface:Not Valid', 'files:read']) {
+			assert.throws(
+				() =>
+					fuz_auth_guard_resolver({
+						account: 'required',
+						actor: 'required',
+						required_scope: bad
+					}),
+				/not a valid token-scope capability/u,
+				`expected "${bad}" to be refused at registration`
+			);
+		}
 	});
 
 	/**
@@ -306,16 +352,16 @@ describe('auth.token_surface (rule 3)', () => {
 	 * would read as a control and enforce nothing — the shape
 	 * `compile_action_registry` refuses on an `ActionSpec` for the same reason.
 	 * `RouteAuth`'s `.superRefine` can't carry this one (it would need `auth/`'s
-	 * surface vocabulary, and the route pipeline never parses the schema), so
+	 * capability vocabulary, and the route pipeline never parses the schema), so
 	 * the resolver is where it lands.
 	 */
-	test('a surface gate on an unrestricted route is refused at registration', () => {
+	test('a scope gate on an unrestricted route is refused at registration', () => {
 		assert.throws(
 			() =>
 				fuz_auth_guard_resolver({
 					account: 'none',
 					actor: 'none',
-					token_surface: 'audit_stream'
+					required_scope: 'surface:audit_stream'
 				}),
 			/unrestricted route/u
 		);

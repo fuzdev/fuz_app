@@ -2,7 +2,7 @@
  * Auth guard resolver for the route spec system.
  *
  * Maps the five-axis `RouteAuth` (`account` / `actor` / `roles` /
- * `credential_types` / `token_surface`) to two-phase middleware sets that
+ * `credential_types` / `required_scope`) to two-phase middleware sets that
  * `apply_route_specs` weaves into the per-route pipeline:
  *
  * - `pre_authorization` runs before the authorization phase, and holds every
@@ -11,7 +11,7 @@
  *   (per registry-time invariant 3, `actor: 'required'` today implies a
  *   credential — accountless actors are out of scope for v1),
  *   `require_credential_types(types)` whenever `auth.credential_types?.length`,
- *   and the rule-3 scope guard whenever `auth.token_surface` names a surface.
+ *   and the token-scope guard whenever `auth.required_scope` names a capability.
  *   All three fire before any body parsing, so a caller they refuse never sees
  *   route-shape information — and before the authorization phase, so a wrong
  *   channel costs no actor resolution.
@@ -40,9 +40,8 @@ import {
 	require_auth,
 	require_credential_types,
 	require_role,
-	require_token_surface
+	require_token_scope
 } from './request_context.ts';
-import { is_token_surface, TOKEN_SURFACE_CAPABILITIES } from './token_scope.ts';
 import { is_public_auth } from '../http/auth_shape.ts';
 import type { AuthGuardResolver } from '../http/route_spec.ts';
 
@@ -54,7 +53,7 @@ import type { AuthGuardResolver } from '../http/route_spec.ts';
  *
  * - `account === 'required'` or `actor === 'required'` → pre-authorization `require_auth`
  * - `credential_types?.length` → pre-authorization `require_credential_types(types)`
- * - `token_surface` → pre-authorization `require_token_surface(surface)` (rule 3)
+ * - `required_scope` → pre-authorization `require_token_scope(capability)`
  * - `roles?.length` → post-authorization `require_role(roles)` (multi-role any-of)
  *
  * Guards run in declaration order, which is the coarse-to-fine order above:
@@ -62,11 +61,15 @@ import type { AuthGuardResolver } from '../http/route_spec.ts';
  * scope to check), then the channel, then the scope, then the role — the last
  * being the only one that needs the resolved `RequestContext`.
  *
- * @throws Error if `auth.token_surface` names a surface that doesn't exist —
- *   `RouteAuth` types it as a plain string to keep `http/` free of an `auth/`
- *   import, so this is where the value is checked. A typo would otherwise
- *   mount a guard that denies with an undefined capability string.
- * @throws Error if `auth.token_surface` sits on an unrestricted route
+ * @throws Error if `auth.required_scope` is not a well-formed capability string
+ *   (via `require_token_scope`) — `RouteAuth` types it as a plain string to keep
+ *   `http/` free of an `auth/` import, so this is where the value is checked.
+ *   The check is on *shape*, not membership: the vocabulary is deliberately open
+ *   so a consumer can name its own surface, and a `surface:` name decides
+ *   nothing (rule 3 is all-or-nothing), so the closed set would only have been
+ *   a spelling check on a diagnostic string. fuz_app's own declarations are
+ *   pinned to the surfaces it actually mounts by the surface census.
+ * @throws Error if `auth.required_scope` sits on an unrestricted route
  *   (`account: 'none' && actor: 'none'`). The same holder reaches that route
  *   by dropping the credential, so the guard reads as a control and enforces
  *   nothing — the shape `compile_action_registry` refuses on an `ActionSpec`
@@ -83,18 +86,13 @@ export const fuz_auth_guard_resolver: AuthGuardResolver = (auth) => {
 	if (auth.credential_types?.length) {
 		pre_authorization.push(require_credential_types(auth.credential_types));
 	}
-	if (auth.token_surface !== undefined) {
-		if (!is_token_surface(auth.token_surface)) {
-			throw new Error(
-				`auth.token_surface "${auth.token_surface}" is not a known token surface — expected one of ${Object.keys(TOKEN_SURFACE_CAPABILITIES).join(', ')}`
-			);
-		}
+	if (auth.required_scope !== undefined) {
 		if (is_public_auth(auth)) {
 			throw new Error(
-				`auth.token_surface "${auth.token_surface}" on an unrestricted route (account: 'none', actor: 'none') — the same holder reaches it by dropping the credential, so the guard would enforce nothing. Gate the route on a credential, or drop the field.`
+				`auth.required_scope "${auth.required_scope}" on an unrestricted route (account: 'none', actor: 'none') — the same holder reaches it by dropping the credential, so the guard would enforce nothing. Gate the route on a credential, or drop the field.`
 			);
 		}
-		pre_authorization.push(require_token_surface(auth.token_surface));
+		pre_authorization.push(require_token_scope(auth.required_scope));
 	}
 	if (auth.roles?.length) {
 		post_authorization.push(require_role(auth.roles));

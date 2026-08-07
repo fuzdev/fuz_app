@@ -30,7 +30,7 @@ Canonical source of truth. Three concrete kinds discriminate on `kind`:
 - `local_call` — `auth: null`, `side_effects` arbitrary, `output` arbitrary, `async` boolean.
 
 `RouteAuth` is the flat record
-`{account, actor, roles?, credential_types?, token_surface?}` from
+`{account, actor, roles?, credential_types?, required_scope?}` from
 `http/auth_shape.ts` — same shape governs `RouteSpec.auth` so one auth
 surface drives REST and SAES. Cross-axis invariants: roles imply
 `actor: 'required'`; `account: 'none'` implies `actor: 'none'` (no
@@ -38,7 +38,7 @@ accountless actors in v1); the unrestricted leaf
 (`account: 'none', actor: 'none'`) cannot declare roles or credential
 gates. The biconditional `actor !== 'none' ⟺ input declares acting?: ActingActor`
 is enforced at registration time via `assert_route_auth_acting_biconditional`.
-`token_surface` is the one axis actions cannot use — see §Registry compile.
+`required_scope` is the one axis actions cannot use — see §Registry compile.
 
 Optional fields:
 
@@ -79,7 +79,7 @@ non-`remote_notification` kind.
 order and returns the `Map<method, RpcAction>` the dispatchers use:
 
 - **Auth-shape biconditional** — `actor !== 'none' ⟺ input declares acting?: ActingActor` (via `assert_route_auth_acting_biconditional`).
-- **No `auth.token_surface`** — the slot is route-spec-only; nothing mounts a guard from it on an action, so declaring it would be a control that silently does nothing. Narrowed tokens are gated per method by the scope check in `perform_action`; rule 3 governs whole non-RPC surfaces.
+- **No `auth.required_scope`** — the slot is route-spec-only; nothing mounts a guard from it on an action, so declaring it would be a control that silently does nothing. Narrowed tokens are gated per method by the scope check in `perform_action`, which derives the `rpc:<method>` capability from `spec.method` rather than trusting a hand-written one.
 - **Rate-limit account axis** — `rate_limit: 'account' | 'both'` requires `auth.account === 'required'`.
 - **JSON-RPC §4.2 wire validity** — `request_response` specs with a handler may not use `z.null()` for input (use `z.void()` for nullary).
 - **Unique method names** across the array.
@@ -176,17 +176,24 @@ and `FrontendActionHandlers`.
 Derives transport-specific specs from action specs. HTTP-specific concerns
 (path, handler, errors) come from options, not the action spec.
 
-- `create_action_route_spec(spec, options)` — one action → one `RouteSpec`. HTTP method defaults by `side_effects` (`true` → POST, `false` → GET; override via `options.http_method`). `route.auth` is `spec.auth` verbatim. `transaction: spec.side_effects`. Throws if `spec.auth` is null.
+- `create_action_route_spec(spec, options)` — one action → one `RouteSpec`. HTTP method defaults by `side_effects` (`true` → POST, `false` → GET; override via `options.http_method`). `route.auth` is `spec.auth` plus a derived `required_scope`. `transaction: spec.side_effects`. Throws if `spec.auth` is null.
 
-**The bridge does not carry the token-scope gate.** A bridged route runs
+**The bridge carries the token-scope gate across.** A bridged route runs
 `options.handler` through the REST pipeline and never reaches
-`perform_action`, so the per-method scope check doesn't fire — and the copied
-`spec.auth` can't carry `token_surface` either (actions are forbidden it). A
-bearer-reachable bridged route is therefore a non-RPC surface a **narrowed**
-token can reach, which is what the RPC-only rule exists to prevent. Pass
-`options.auth` with a `token_surface`, or gate it in the handler against
-`TOKEN_SCOPE_KEY` + `token_scope_admits_non_rpc`. fuz_app mounts no bridged
-routes itself; this is consumer-facing.
+`perform_action`, so the dispatcher's per-method scope check cannot fire on it
+— leaving a bearer-reachable surface a **narrowed** token walks through, which
+is what the RPC-only rule exists to prevent. So the derived spec declares
+`auth.required_scope: 'rpc:<method>'` and `fuz_auth_guard_resolver` mounts the
+refusal ahead of the role gate. Per-method rather than a blanket refusal
+because a bridged route _has_ a method identity, which the non-RPC surfaces
+the RPC-only rule covers do not.
+
+Bridge something with no request/response shape — an SSE stream, a file
+download — and the whole-surface rule applies instead: pass `options.auth` with
+`required_scope: 'surface:<name>'`, naming your own surface (the vocabulary is
+open on the identifier). An `options.auth` that omits `required_scope` still
+gets the derived one; public actions get none (the guard would enforce
+nothing). fuz_app mounts no bridged routes itself; this is consumer-facing.
 
 - `create_action_event_spec(spec, {channel?})` — one notification action → one `EventSpec` for SSE surface + `create_validated_broadcaster`. Throws on non-`remote_notification` kind.
 - `derive_http_method(side_effects)` — exported for custom bridges.

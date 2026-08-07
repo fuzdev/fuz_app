@@ -11,8 +11,9 @@
  * - `roles` — disjunction of permitted roles (any-of); absent = no role check.
  * - `credential_types` — restricts the credential channel (e.g. daemon_token);
  *   absent = any authenticated credential.
- * - `token_surface` — names a non-RPC spine surface a narrowed api token may
- *   not reach (rule 3); route specs only, absent = no scope gate.
+ * - `required_scope` — the capability an api token's scope must admit to reach
+ *   this route (`rpc:<method>` or `surface:<name>`); route specs only,
+ *   absent = no scope gate.
  *
  * The same shape governs both `ActionSpec.auth` (in `actions/action_spec.ts`)
  * and `RouteSpec.auth` (in `http/route_spec.ts`). The canonical schema
@@ -118,8 +119,8 @@ export type AuthAxisState = z.infer<typeof AuthAxisState>;
  *    actor today; agent-token / group-actor credentials will lift this.
  * 4. **Unrestricted is leaf.** `account === 'none' && actor === 'none'`
  *    ⟹ no `roles`, no `credential_types` (nothing left to gate). The same
- *    rule covers `token_surface`, but enforcing it needs the surface
- *    vocabulary from `auth/`, so it lives with the other `token_surface`
+ *    rule covers `required_scope`, but enforcing it needs the capability
+ *    vocabulary from `auth/`, so it lives with the other `required_scope`
  *    check in `fuz_auth_guard_resolver` — which is also the only site every
  *    route spec traverses, since the route pipeline never parses this schema.
  *
@@ -136,23 +137,32 @@ export const RouteAuth = z
 		roles: z.array(z.string()).readonly().optional(),
 		credential_types: z.array(z.string()).readonly().optional(),
 		/**
-		 * Names this route as one of the non-RPC spine surfaces a **narrowed**
-		 * credential may not reach — token scoping's rule 3. Declaring it makes
-		 * the guard resolver refuse a narrowed token here, ahead of the role
-		 * gate, instead of the route hand-rolling the check in its handler
-		 * (which the auth phase has already role-gated by then, so a narrowed
-		 * token whose account lacks the role would be told about the role
-		 * rather than about the scope).
+		 * The capability a **narrowed** api token's scope must admit to reach this
+		 * route, in the `<section>:<id>` vocabulary a denial reports back as
+		 * `required_scope`:
 		 *
-		 * Opt-in rather than blanket: rule 3 exempts the account REST routes,
-		 * whose reads and mints cross no boundary, and the RPC endpoint, whose
-		 * scope check is per-method inside the dispatcher — and all of those
-		 * are route specs too.
+		 * - `surface:<name>` — a non-RPC surface, refused to every narrowed token
+		 *   whatever its method list says (token scoping's rule that a narrowed
+		 *   token is RPC-only). `surface:audit_stream` and `surface:fact_bare` are
+		 *   the spine's; a consumer names its own without registering it.
+		 * - `rpc:<method>` — one action method, refused unless the token lists it.
+		 *   What a route bridged from an `ActionSpec` declares: it carries the
+		 *   method's identity but never reaches the dispatcher's per-method gate.
 		 *
-		 * Typed as a plain string here to keep `http/` from importing `auth/`;
-		 * the resolver validates it against the known surfaces at registration.
+		 * Declaring it makes the guard resolver mount the refusal ahead of the role
+		 * gate, instead of the route hand-rolling the check in its handler (which
+		 * the auth phase has already role-gated by then, so a narrowed token whose
+		 * account lacks the role would be told about the role rather than about the
+		 * scope).
+		 *
+		 * Opt-in rather than blanket: the account REST routes cross no boundary, and
+		 * the RPC endpoint runs its own per-method check inside the dispatcher — and
+		 * both are route specs too.
+		 *
+		 * Typed as a plain string here to keep `http/` from importing `auth/`; the
+		 * resolver parses it at registration and throws on a malformed one.
 		 */
-		token_surface: z.string().optional()
+		required_scope: z.string().optional()
 	})
 	.superRefine((value, ctx) => {
 		// invariant 1: roles imply actor

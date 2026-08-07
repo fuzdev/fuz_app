@@ -280,7 +280,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		// scoped token that could upgrade would observe far more than it was
 		// granted.
 		async (c, next) => {
-			const denied = token_scope_surface_denial(c, 'ws_upgrade');
+			const denied = token_scope_surface_denial(c, 'surface:ws_upgrade');
 			if (denied) return denied;
 			return next();
 		},

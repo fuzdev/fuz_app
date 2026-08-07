@@ -341,7 +341,7 @@ describe('POST dispatcher', () => {
 	 * Same pin for the per-method scope gate, which sits between the
 	 * credential and role gates. A narrowed token calling a method it doesn't
 	 * name hears `token_scope_required` whatever it sent — the RPC twin of
-	 * `require_token_surface` on the non-RPC surfaces.
+	 * `require_token_scope` on the non-RPC surfaces.
 	 */
 	test('the token-scope gate precedes input validation', async () => {
 		const app = create_test_app([{ spec: create_post_spec(), handler: () => ({ id: '1' }) }], {
@@ -1204,15 +1204,15 @@ describe('rate limit', () => {
 
 	/**
 	 * `ActionSpec.auth` is the same `RouteAuth` a route spec carries, so
-	 * `token_surface` parses here — but only `apply_route_specs` mounts a guard
+	 * `required_scope` parses here — but only `apply_route_specs` mounts a guard
 	 * from it, and `perform_action` never reads it. Declaring it on an action
 	 * would be a security control that silently does nothing, which is the exact
 	 * shape token scoping exists to refuse. Registration rejects it instead.
 	 */
-	test('registration rejects auth.token_surface on an action spec', () => {
+	test('registration rejects auth.required_scope on an action spec', () => {
 		const bad_spec: RequestResponseActionSpec = {
 			...account_keyed_spec(),
-			auth: { account: 'required', actor: 'none', token_surface: 'db_admin' }
+			auth: { account: 'required', actor: 'none', required_scope: 'surface:db_admin' }
 		};
 		assert.throws(
 			() =>
@@ -1221,7 +1221,7 @@ describe('rate limit', () => {
 					actions: [{ spec: bad_spec, handler: () => ({ ok: true as const }) }],
 					log
 				}),
-			/auth\.token_surface.*route specs only/
+			/auth\.required_scope.*route specs only/
 		);
 	});
 

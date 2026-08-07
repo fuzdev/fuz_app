@@ -65,10 +65,11 @@ import {
 	type CredentialType
 } from '../hono_context.ts';
 import {
-	token_scope_admits_non_rpc,
+	parse_token_scope_capability,
+	token_scope_admits_capability,
+	token_scope_denied_body,
 	token_scope_full,
-	token_scope_surface_denied_body,
-	type TokenSurface
+	type TokenScopeCapability
 } from './token_scope.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import { is_public_auth, needs_actor, parse_acting, type RouteAuth } from '../http/auth_shape.ts';
@@ -362,48 +363,83 @@ export const create_request_context_middleware = (
 };
 
 /**
- * Refuse a non-RPC spine surface to a narrowed token — **rule 3**, in one place.
+ * Refuse a capability the calling credential's scope does not admit.
  *
- * The decision every surface rule 3 covers shares: the bare-hash fact read, the
- * audit SSE stream, and the WS upgrade. Route specs reach it declaratively via
- * `auth.token_surface` (see `require_token_surface`); the WS upgrade calls it
- * directly, since `upgradeWebSocket`'s callback cannot produce a denial.
+ * The decision every token-scope gate outside the action dispatcher shares.
+ * Private because the two exported forms below are the whole surface: a route
+ * spec declares `auth.required_scope` and gets `require_token_scope`; anything
+ * that is not a route spec calls `token_scope_surface_denial`.
  *
  * An unset `TOKEN_SCOPE_KEY` is the anonymous caller, who holds no credential to
  * narrow, so it passes. Sharing that branch is the point — hand-rolled per
  * surface it is one `&&` from either refusing every anonymous read or admitting
  * an authenticated caller whose middleware forgot to set the key.
- *
- * @param c - the request context, after the auth middleware chain
- * @param surface - the surface being gated; names itself in the denial
- * @returns the 403 to return, or `null` when the caller may proceed
  */
-export const token_scope_surface_denial = (c: Context, surface: TokenSurface): Response | null => {
+const token_scope_denial = (c: Context, capability: TokenScopeCapability): Response | null => {
 	const scope = c.get(TOKEN_SCOPE_KEY);
-	if (scope && !token_scope_admits_non_rpc(scope)) {
-		return c.json(token_scope_surface_denied_body(surface), 403);
+	if (scope && !token_scope_admits_capability(scope, capability)) {
+		return c.json(token_scope_denied_body(capability.capability), 403);
 	}
 	return null;
 };
 
 /**
- * Create middleware refusing a rule-3 surface to a narrowed token.
+ * Refuse a non-RPC surface to a narrowed token — rule 3, for callers that are
+ * not route specs. Under the Rust twin's name
+ * (`token_scope_surface_denied_response`).
  *
- * The route-spec form of `token_scope_surface_denial`, mounted by
- * `fuz_auth_guard_resolver` from `auth.token_surface`. Lands in the
- * `pre_authorization` phase, so a narrowed token is told about its scope rather
- * than about the role it also lacks — and learns nothing about the route's
- * input shape on the way.
+ * The WS upgrade is the spine's one such caller: `upgradeWebSocket`'s callback
+ * must return `WSEvents` and so cannot produce a denial, which is why the gate
+ * runs as pre-upgrade middleware calling this rather than as a route-spec
+ * declaration. A consumer hand-rolling its own upgrade is in the same position
+ * and reaches for the same function.
  *
- * @param surface - the surface this route exposes
+ * Takes the whole capability string, not a bare surface name — one spelling
+ * across route-spec declarations and direct calls alike, and the twin of the
+ * Rust signature. It needs no parse: the surface arm's identifier is pure label,
+ * since rule 3 never asks *which* surface. And it is deliberately not narrowed
+ * to the spine's four — the name decides nothing, so there is nothing for a
+ * closed set to protect, while a consumer surface would have nothing to pass.
+ * fuz_app's own uses are pinned two ways by the surface census: the exact call
+ * site, and the scan asserting every `'surface:<name>'` literal in `src/lib`
+ * names a surface the spine actually mounts.
+ *
+ * @param c - the request context, after the auth middleware chain
+ * @param capability - the `surface:<name>` this route demands; names itself in the denial
+ * @returns the 403 to return, or `null` when the caller may proceed
  */
-export const require_token_surface =
-	(surface: TokenSurface): MiddlewareHandler =>
-	async (c, next): Promise<Response | void> => {
-		const denied = token_scope_surface_denial(c, surface);
+export const token_scope_surface_denial = (c: Context, capability: string): Response | null =>
+	token_scope_denial(c, { kind: 'surface', capability });
+
+/**
+ * Create middleware refusing a route to a credential whose scope does not admit
+ * `capability`.
+ *
+ * The route-spec form, mounted by `fuz_auth_guard_resolver` from
+ * `auth.required_scope`. Lands in the `pre_authorization` phase, so a narrowed
+ * token is told about its scope rather than about the role it also lacks — and
+ * learns nothing about the route's input shape on the way.
+ *
+ * Parses at construction, so a malformed capability is a registration-time
+ * throw rather than a guard that mounts and reports nonsense.
+ *
+ * @param capability - the capability string this route demands, e.g. `surface:audit_stream`
+ * @returns middleware that 403s a credential whose scope lacks it
+ * @throws Error if `capability` is not a well-formed `rpc:<method>` / `surface:<name>` string
+ */
+export const require_token_scope = (capability: string): MiddlewareHandler => {
+	const parsed = parse_token_scope_capability(capability);
+	if (parsed === null) {
+		throw new Error(
+			`auth.required_scope "${capability}" is not a valid token-scope capability \u2014 expected 'rpc:<method>' or 'surface:<name>', where a surface name is lowercase letters and underscores`
+		);
+	}
+	return async (c, next): Promise<Response | void> => {
+		const denied = token_scope_denial(c, parsed);
 		if (denied) return denied;
 		await next();
 	};
+};
 
 /**
  * Middleware that requires authentication.

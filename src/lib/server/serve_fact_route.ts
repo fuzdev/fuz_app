@@ -406,7 +406,7 @@ export const create_serve_fact_route_spec = (
 			// (that is the per-cell route's job), so it is the broad capability
 			// of the pair; gating it keeps a narrowed token to the cell-scoped
 			// route its RPC methods can justify.
-			token_surface: 'fact_bare'
+			required_scope: 'surface:fact_bare'
 		},
 		description:
 			'Serve content-addressed fact bytes by bare hash — admin only. Non-admin reads go through GET /api/cells/:cell_id/facts/:hash (per-reference).',

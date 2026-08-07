@@ -230,16 +230,36 @@ gated on a global role a bearer satisfies, so a token whose UI badge read
 Enforcement sits at two kinds of site, both ahead of the role gate:
 
 - **Per method**, inside `perform_action` — between the credential gate and
-  the role gate, so the order is credential → scope → role.
-- **Per surface**, declaratively — a route spec names itself with
-  `auth.token_surface`, and `fuz_auth_guard_resolver` mounts the refusal as a
-  pre-authorization guard. The WS upgrade calls the same shared decision
-  directly (`upgradeWebSocket`'s callback cannot produce a denial).
+  the role gate, so the order is credential → scope → role. Every transport
+  that reaches the dispatcher (HTTP RPC, WebSocket) inherits it.
+- **Declaratively on a route spec** — `auth.required_scope` names the
+  capability the caller's scope must admit, and `fuz_auth_guard_resolver`
+  mounts the refusal as a pre-authorization guard. The WS upgrade calls the
+  same shared decision directly (`upgradeWebSocket`'s callback cannot produce a
+  denial).
 
-Three declarations throw at registration rather than mount: an unknown surface
-name, the field on an `ActionSpec` (nothing there mounts a guard from it), and
-the field on an unrestricted route (the same holder reaches it by dropping the
-credential). Each would be a control that silently does nothing.
+`required_scope` is the `<section>:<id>` capability string a denial reports
+back, and it has two arms:
+
+- `surface:<name>` — a non-RPC surface, refused to **every** narrowed token
+  whatever its method list says. `surface:audit_stream` and
+  `surface:fact_bare` are the spine's; the WS upgrade and the db-admin browser
+  round out the four the spine knows.
+- `rpc:<method>` — one action method, refused unless the token lists it. What
+  `create_action_route_spec` puts on a bridged route (below), and what the
+  dispatcher's per-method gate reports.
+
+**The identifier half is deliberately open.** A consumer names its own surface
+— `surface:file_store`, `surface:git_http` — with no upstream release and no
+registration. Nothing is lost by that: the RPC-only rule is all-or-nothing, so a
+surface
+name decides nothing and only labels which surface refused, and the sibling
+`rpc:` arm has always carried arbitrary consumer method names on the same wire
+field. Registration throws on a malformed capability (unknown section, empty or
+non-`[a-z_]` surface name), on the field appearing on an `ActionSpec` (the
+dispatcher derives it from the method there), and on an unrestricted route (the
+same holder reaches it by dropping the credential) — each of the last two would
+be a control that silently does nothing.
 
 Denials are `403` with a flat `{error: 'token_scope_required', required_scope}`
 body (`-32002` in the JSON-RPC envelope for the per-method gate), identical on
@@ -258,38 +278,44 @@ consumer that re-auths it to a role a bearer satisfies loses both controls at
 once and puts every `public` row — password hashes, sessions, tokens — behind
 a scoped credential.
 
-Two other consumer-side shapes reach no gate on their own:
-
-- **A bridged action** (`create_action_route_spec`) runs its own handler
-  through the REST pipeline and never reaches `perform_action`, so the
-  per-method scope check does not fire on it.
-- **Any consumer-authored non-RPC route.** `auth.token_surface` validates
-  against the spine's four named surfaces, so it cannot name a consumer's own.
-
-Both gate the same way — read the scope off the request and refuse a narrowed
-one:
+Declaring the capability is the whole of it — you get the refusal, in the right
+position (ahead of the role gate, so a narrowed token hears about its scope
+rather than about a role it also lacks), and a `token_scope_required` entry in
+your generated attack surface:
 
 ```typescript
-import { TOKEN_SCOPE_KEY } from '@fuzdev/fuz_app/hono_context.ts';
-import { token_scope_admits_non_rpc } from '@fuzdev/fuz_app/auth/token_scope.ts';
-
-const require_full_scope: MiddlewareHandler = async (c, next) => {
-	const scope = c.get(TOKEN_SCOPE_KEY);
-	// Unset is the anonymous caller — no credential to narrow, so it passes
-	// through to whatever gate actually governs the route.
-	if (scope && !token_scope_admits_non_rpc(scope)) {
-		return c.json({error: 'token_scope_required', required_scope: 'surface:<name>'}, 403);
-	}
-	await next();
+const stream_route: RouteSpec = {
+	method: 'GET',
+	path: '/api/files/:id',
+	auth: {
+		account: 'required',
+		actor: 'required',
+		roles: ['admin'],
+		required_scope: 'surface:file_store',
+	},
+	// ...
 };
 ```
 
-Mount it in the same position the spine's guard occupies — before the role
-gate, so a narrowed token hears about its scope rather than about a role it
-also lacks. `src/test/auth/token_scope_surface_census.test.ts` is
-the pattern: enumerate every credential-consuming site and classify each as
-resolving the scope, consulting it, or exempt with a stated reason, so an
-unreviewed surface fails the suite instead of shipping ungated.
+A surface that isn't a route spec — your own WebSocket upgrade, anything Hono's
+`upgradeWebSocket` shape rules out — calls `token_scope_surface_denial(c, 'surface:<name>')`
+directly instead, which is what the spine's own WS gate does. Mount it in the
+position the resolver would have: after `require_auth`, before the role gate.
+
+**A bridged action gates itself.** `create_action_route_spec` runs its own
+handler through the REST pipeline and never reaches `perform_action`, so the
+dispatcher's per-method check cannot fire on it — the bridge therefore derives
+`required_scope: 'rpc:<method>'` onto the route it produces. A token minted for
+that method reaches the bridged route; one that wasn't gets the 403 it would
+have gotten over RPC. Bridge something with no request/response shape (an SSE
+stream, a file download) and the whole-surface rule applies instead: pass
+`options.auth` with your own `surface:<name>`.
+
+What the spine still cannot do for you is **know your surface exists**.
+`src/test/auth/token_scope_surface_census.test.ts` is the pattern: enumerate
+every credential-consuming site and classify each as resolving the scope,
+consulting it, or exempt with a stated reason, so an unreviewed surface fails
+the suite instead of shipping ungated.
 
 ## Daemon Token
 

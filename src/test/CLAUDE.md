@@ -215,6 +215,15 @@ allowlist: disallowed → 403 `forbidden_origin`, absent → pass; in-process le
 `capabilities.ready`, both backends reading the same committed
 `expected_schema.json`; in-process leg `cross_backend/ready_parity.db.test.ts`,
 fixture guard `cross_backend/spine_expected_schema.db.test.ts`), and
+`token_scope_surface.cross.test.ts` (the `surface:<name>` half of token
+scoping via `describe_token_scope_surface_cross_tests` — a narrowed bearer
+refused the audit stream + the bare-hash fact read with the exact flat
+`{error: 'token_scope_required', required_scope}` both spines contract on, plus
+the **scope-outranks-role** pin: a narrowed token whose account also lacks the
+gating role must hear about its scope, not the role. The conformance slate's
+`token_scope_cases` cover only the `rpc:<method>` arm, and no other gate can see
+this one — no column for the schema gate, no method for the manifest gate, off
+the declared surface for the spec-derived suites), and
 `testing_backdoor.cross.test.ts` (the imperative
 `describe_testing_backdoor_cross_tests` — the `_testing_*` backdoor credential
 gate: `_testing_reset` / `_testing_mint_session` / `_testing_put_fact` /

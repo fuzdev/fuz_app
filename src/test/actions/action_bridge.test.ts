@@ -84,7 +84,11 @@ describe('create_action_route_spec', () => {
 
 		assert.strictEqual(route.method, 'POST');
 		assert.strictEqual(route.path, '/api/things');
-		assert.deepStrictEqual(route.auth, { account: 'required', actor: 'none' });
+		assert.deepStrictEqual(route.auth, {
+			account: 'required',
+			actor: 'none',
+			required_scope: 'rpc:thing_create'
+		});
 		assert.strictEqual(route.description, 'Create a thing');
 		assert.strictEqual(route.handler, noop_handler);
 		assert.strictEqual(route.input, spec.input);
@@ -122,7 +126,8 @@ describe('create_action_route_spec', () => {
 		assert.deepStrictEqual(route.auth, {
 			account: 'required',
 			actor: 'required',
-			roles: ['admin']
+			roles: ['admin'],
+			required_scope: 'rpc:thing_create'
 		});
 	});
 
@@ -143,7 +148,8 @@ describe('create_action_route_spec', () => {
 			account: 'required',
 			actor: 'required',
 			roles: ['keeper'],
-			credential_types: ['daemon_token']
+			credential_types: ['daemon_token'],
+			required_scope: 'rpc:thing_create'
 		});
 	});
 
@@ -216,6 +222,87 @@ describe('create_action_route_spec', () => {
 	});
 });
 
+/**
+ * The bridge's token-scope gate.
+ *
+ * A bridged route runs its own handler through the REST pipeline and never
+ * reaches `perform_action`, so the dispatcher's per-method scope check cannot
+ * fire on it. Left alone that is a bearer-reachable surface a **narrowed** api
+ * token walks straight through — the shape token scoping's RPC-only rule exists
+ * to refuse. So the bridge declares the capability itself, and these pin that it
+ * does, that it names the action's own method rather than a blanket refusal, and
+ * that it stays out of the two places where the guard would enforce nothing.
+ */
+describe('create_action_route_spec — token scope', () => {
+	test('derives the per-method capability from the action', () => {
+		const route = create_action_route_spec(create_request_response_spec(), {
+			path: '/api/things',
+			handler: noop_handler
+		});
+		assert.strictEqual(route.auth.required_scope, 'rpc:thing_create');
+	});
+
+	/**
+	 * Per-method, not rule 3's blanket refusal: a bridged route carries the
+	 * method's identity, which is exactly what the non-RPC surfaces rule 3
+	 * covers do not have. A token minted for this method reaches it.
+	 */
+	test('the capability names the method, not a surface', () => {
+		const route = create_action_route_spec(create_request_response_spec(), {
+			path: '/api/things',
+			handler: noop_handler
+		});
+		assert.ok(!route.auth.required_scope?.startsWith('surface:'));
+	});
+
+	/**
+	 * A public action has no credential to narrow — the same holder reaches the
+	 * route by dropping it — so the gate would read as a control and enforce
+	 * nothing. `fuz_auth_guard_resolver` throws on exactly that shape, so
+	 * deriving it here would make every bridged public action fail to register.
+	 */
+	test('a public action gets no gate', () => {
+		const route = create_action_route_spec(create_public_get_spec(), {
+			path: '/api/things',
+			handler: noop_handler
+		});
+		assert.strictEqual(route.auth.required_scope, undefined);
+	});
+
+	/**
+	 * The escape hatch, and the one case that matters: bridge something with no
+	 * request/response shape (an SSE stream, a file download) and rule 3's
+	 * reasoning applies instead of the method's. An explicit `required_scope`
+	 * on the auth override wins.
+	 */
+	test('an explicit capability on the auth override wins', () => {
+		const route = create_action_route_spec(create_request_response_spec(), {
+			path: '/api/things/stream',
+			handler: noop_handler,
+			auth: {
+				account: 'required',
+				actor: 'none',
+				required_scope: 'surface:thing_stream'
+			}
+		});
+		assert.strictEqual(route.auth.required_scope, 'surface:thing_stream');
+	});
+
+	/**
+	 * An override that doesn't mention scope still gets the gate. Widening the
+	 * credential axis without noticing the scope axis is the exact shape of the
+	 * consumer defect this whole control family keeps finding.
+	 */
+	test('an auth override that omits the capability still gets one', () => {
+		const route = create_action_route_spec(create_request_response_spec(), {
+			path: '/api/things',
+			handler: noop_handler,
+			auth: { account: 'required', actor: 'required', roles: ['admin'] }
+		});
+		assert.strictEqual(route.auth.required_scope, 'rpc:thing_create');
+	});
+});
+
 // --- Table-driven tests with real consumer spec shapes ---
 
 /** Spec shapes modeled on real tx and zzz action specs. */
@@ -239,7 +326,12 @@ const consumer_spec_cases: Array<{
 			description: 'Generate plan from options'
 		},
 		expected_method: 'GET',
-		expected_auth: { account: 'required', actor: 'required', roles: ['admin'] }
+		expected_auth: {
+			account: 'required',
+			actor: 'required',
+			roles: ['admin'],
+			required_scope: 'rpc:zap_plan'
+		}
 	},
 	{
 		name: 'zap_apply (keeper auth, side_effects → POST)',
@@ -264,7 +356,8 @@ const consumer_spec_cases: Array<{
 			account: 'required',
 			actor: 'required',
 			roles: ['keeper'],
-			credential_types: ['daemon_token']
+			credential_types: ['daemon_token'],
+			required_scope: 'rpc:zap_apply'
 		}
 	},
 	{
@@ -313,7 +406,11 @@ const consumer_spec_cases: Array<{
 			description: 'Load session data'
 		},
 		expected_method: 'POST',
-		expected_auth: { account: 'required', actor: 'none' }
+		expected_auth: {
+			account: 'required',
+			actor: 'none',
+			required_scope: 'rpc:session_load'
+		}
 	}
 ];
 

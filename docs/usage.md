@@ -567,7 +567,7 @@ const event_specs = [create_action_event_spec(thing_created_action, { channel: '
 const surface = generate_app_surface({ middleware_specs, route_specs, env_schema, event_specs });
 ```
 
-Auth mapping: `route.auth` is `spec.auth` verbatim — both surfaces share the `RouteAuth` shape from `http/auth_shape.ts` (`{account, actor, roles?, credential_types?, token_surface?}`; `token_surface` is route-spec-only and rejected on an action spec). HTTP method derived from side effects (`true` -> POST, `false` -> GET). Override via `config.auth` or `config.http_method`.
+Auth mapping: `route.auth` is `spec.auth` plus a derived `required_scope: 'rpc:<method>'` — both surfaces share the `RouteAuth` shape from `http/auth_shape.ts` (`{account, actor, roles?, credential_types?, required_scope?}`; `required_scope` is route-spec-only and rejected on an action spec, since the dispatcher derives it from `spec.method` there). The bridge fills it in because a bridged handler never reaches `perform_action`, so the per-method token-scope gate would otherwise not fire on this transport; pass `config.auth` with your own `required_scope` to name a different capability. HTTP method derived from side effects (`true` -> POST, `false` -> GET). Override via `config.auth` or `config.http_method`.
 
 ### Single JSON-RPC 2.0 Endpoint
 

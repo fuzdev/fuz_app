@@ -36,9 +36,10 @@ export const ActionSpec = z.strictObject({
 	 *
 	 * See `http/auth_shape.ts` for the design rationale (orthogonal
 	 * authentication / account-resolution / actor-resolution / role-and-
-	 * credential authorization axes). `token_surface` is the one field an
+	 * credential authorization axes). `required_scope` is the one field an
 	 * action may not set — `compile_action_registry` rejects it, since
-	 * nothing on the RPC path mounts a guard from it.
+	 * nothing on the RPC path mounts a guard from it; the dispatcher derives
+	 * the same `rpc:<method>` capability from `spec.method` instead.
 	 */
 	auth: RouteAuth.nullable(),
 	side_effects: ActionSideEffects,
