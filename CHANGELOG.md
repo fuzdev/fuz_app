@@ -1,5 +1,141 @@
 # @fuzdev/fuz_app
 
+## 0.108.0
+
+### Minor Changes
+
+- fix: stop a successful auth from refunding the per-IP rate limit budget, and give each auth surface its own IP bucket ([1c49825](https://github.com/fuzdev/fuz_app/commit/1c49825))
+
+  **Behavior change on every auth route.** A successful login, password change,
+  signup, or bootstrap no longer calls `reset` on a per-IP limiter. The
+  account-grain reset stays where one exists — login, password change, and signup.
+  Bootstrap has no account-grain bucket (it predates any account), so a successful
+  bootstrap now clears nothing at all.
+
+  The per-IP bucket is the distributed-spray backstop, and refunding it on success
+  made that budget unbounded: an attacker holding any one credential could
+  interleave their own logins with guesses against arbitrary victim usernames and
+  spray indefinitely from a single address. The per-account limiter still bounds
+  any single target, but the IP-level aggregate — the thing that bounds guessing
+  _across_ targets — was neutralized by one login. Under `open_signup` the cheapest
+  version needs no credential at all: creating a throwaway account zeroed the
+  budget, and the per-account limiter never applies to the attacker's own signups.
+
+  Clearing the account-grain bucket is safe for the reason the IP one isn't: that
+  key _is_ the account being attacked, so clearing it requires that account's
+  credential and can only widen the budget against an account the caller already
+  holds.
+
+  Rejected alternative worth naming: decrementing instead of zeroing. It reads as
+  the moderate option and is not one — at the cap the attacker cycles
+  success-then-guess forever, doubling the cost per guess while leaving the budget
+  unbounded. The cross-backend and in-process tests both bound total requests
+  specifically so that implementation fails them.
+
+  **Breaking: `ip_rate_limiter` is gone, replaced by three per-surface fields.**
+  On `AppServerOptions` and `AppServerContext`:
+  `login_ip_rate_limiter` (login + password change), `signup_ip_rate_limiter`,
+  `bootstrap_ip_rate_limiter`. The route-factory options follow —
+  `AccountRouteOptions.login_ip_rate_limiter`,
+  `SignupRouteOptions.signup_ip_rate_limiter`,
+  `BootstrapRouteOptions.bootstrap_ip_rate_limiter` — and
+  `AuthSessionRouteOptions` no longer carries a limiter field at all (each factory
+  names its own). Each defaults to its own 5/15min limiter when omitted; `null`
+  still disables. **A consumer that passed `ip_rate_limiter: null` to disable
+  rate limiting must now pass all three**, or signup and bootstrap silently get
+  live default limiters. Startup config diagnostics now name the disabled surface.
+
+  The split is what makes the monotone bucket affordable. Once a success no longer
+  refunds it, one shared instance means a failure on any surface spends the budget
+  that bounds guessing on every other one: a fumbled bootstrap token leaves the
+  operator's _login_ budget nearly exhausted on a deployment where their new
+  account is the only one that exists, and an open-signup bot denies login to
+  every user behind its egress. Login and password change still share one instance
+  — password change is password-bearing on the same account grain, and the Rust
+  spine shares `login_ip_rate_limiter` across both.
+
+  The 5-attempt cap was deliberately **not** widened. Widening buys NAT'd-egress
+  headroom by loosening the one bound that caps credential guessing from a single
+  address; splitting the shared bucket buys the same headroom without touching
+  that bound. Consumers wanting the old single-budget posture pass the same
+  `RateLimiter` instance to all three fields.
+
+  **Costs to accept**, now bounded per-surface but not eliminated: on a NAT'd
+  egress the IP budget is unforgiving within its window, and accidental exhaustion
+  is likelier than under the refund. Sustaining a _deliberate_ lockout also got
+  cheaper — under the refund an attacker holding an egress at the cap lost the
+  whole bucket the moment any user logged in successfully; now losing that race
+  costs them nothing. The refund was never a defense against this (a full bucket
+  refuses the very success that would clear it), but it did make the attack
+  fragile. There is no operator "clear this IP" action; within a window the
+  remedies are waiting it out or restarting. All documented in `docs/security.md`
+  §Rate Limiting.
+
+  Converges with the Rust spine, which had the identical refund defect and already
+  kept `signup_ip_rate_limiter` separate from `login_ip_rate_limiter`. Pinned on
+  both impls over real HTTP by a new `login_security` cross-backend case
+  (interleaved successes must still 429 within a bounded request budget) and
+  in-process by `rate_limiter.handlers.test.ts` (login + signup),
+  `password_change.test.ts`, and `rate_limiter.bootstrap.db.test.ts`.
+
+- refactor: remove the bearer-auth rate limiter, and index `api_token.token_hash` ([609ee35](https://github.com/fuzdev/fuz_app/commit/609ee35))
+
+  **Breaking: `bearer_ip_rate_limiter` is gone.** Removed from
+  `AppServerOptions`, `AuthMiddlewareOptions`, and
+  `create_bearer_auth_middleware`'s signature (now `(deps, log)`), along with its
+  `config_diagnostics` warning. Consumers passing it — including
+  `rate_limiters_disabled`-style bundles that set it to `null` — drop the field.
+  The bearer middleware now has no hard-fail at all: it returns no status of its
+  own, so every outcome soft-fails to "no credential" for the dispatcher to
+  answer, and its `MiddlewareSpec` declares no errors (routes no longer inherit a
+  429 from it).
+
+  An API token is 32 bytes of CSPRNG output resolved by a blake3 hash lookup, so
+  guessing one is bounded by entropy — ~184 bits even discounting the
+  publicly-visible token-id prefix. The limiter made an unreachable number
+  slightly larger, and it was not free: the check/record had to precede the async
+  token lookup to close its own TOCTOU window, so a burst of concurrent requests
+  carrying a **valid** token recorded against itself and the last one 429'd — an
+  availability bug for exactly the automation bearer auth exists to serve. It also
+  short-circuited ahead of the RPC dispatcher, so a throttled RPC call answered
+  with a REST-shaped error instead of a JSON-RPC envelope. Rate limiting stays on
+  the password-bearing surfaces (login, bootstrap, password change, signup) and on
+  bounding attacker-controlled writes. The Rust spine never had a bearer limiter;
+  this converges to it.
+
+  **Breaking: `describe_rate_limiting_tests` creates 2 groups, not 3**, and its
+  `rpc_endpoints` option is now optional — only the removed bearer group needed an
+  RPC path, so the suite no longer hard-fails at setup when it is absent.
+
+  **New migration: `api_token_hash_unique_index`.** `full_auth_schema` indexed
+  `api_token(account_id)` and nothing else, so `query_validate_api_token`'s
+  `WHERE token_hash = $1` — the lookup on the hot path of every
+  bearer-authenticated request — has been a sequential scan since the table
+  shipped. `UNIQUE` rather than a plain index: both spines resolve a token with an
+  at-most-one read, so two rows sharing a hash would let the implementations
+  silently disagree about which credential answered. The migration name matches
+  the Rust twin byte for byte.
+
+### Patch Changes
+
+- Give the credential-cap evictions a stable tie-breaker, and pin the session cap ([f716eff](https://github.com/fuzdev/fuz_app/commit/f716eff))
+  across both spines.
+
+  `query_session_enforce_limit` and `query_api_token_enforce_limit` now order by
+  `created_at DESC, id DESC`. `created_at` defaults to `NOW()` — the _transaction_
+  timestamp — so rows born in one transaction tie, and an untied `OFFSET` could
+  keep a different set on two evaluations of the same rows. The `id` leg makes the
+  survivors deterministic; it does not make the row just inserted a guaranteed
+  survivor, and it does not close the concurrent-creator race (both TSDoc comments
+  say so explicitly).
+
+  Adds `describe_session_cap_cross_tests`
+  (`testing/cross_backend/session_cap.ts`) — a cross-backend suite asserting that
+  logging in past `DEFAULT_MAX_SESSIONS` evicts the oldest session while the
+  newest cookie still resolves. The Rust spine had no session cap at all until
+  now, so the control was shipped on one implementation and absent on the other
+  with nothing crossing the wire to notice; this is the pin that fails on either.
+
 ## 0.107.0
 
 ### Minor Changes
