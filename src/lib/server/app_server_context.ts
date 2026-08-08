@@ -27,8 +27,16 @@ export interface AppServerContext {
 	backend: AppBackend;
 	bootstrap_status: BootstrapStatus;
 	session_options: SessionOptions<string>;
-	/** Shared IP rate limiter (from options). `null` when not configured. */
-	ip_rate_limiter: RateLimiter | null;
+	/**
+	 * Per-IP login + password-change rate limiter (from options). `null` when
+	 * not configured. One instance per auth surface — see
+	 * `AppServerOptions.login_ip_rate_limiter` for why these aren't shared.
+	 */
+	login_ip_rate_limiter: RateLimiter | null;
+	/** Per-IP signup rate limiter (from options). `null` when not configured. */
+	signup_ip_rate_limiter: RateLimiter | null;
+	/** Per-IP bootstrap rate limiter (from options). `null` when not configured. */
+	bootstrap_ip_rate_limiter: RateLimiter | null;
 	/** Per-account login rate limiter (from options). `null` when not configured. */
 	login_account_rate_limiter: RateLimiter | null;
 	/** Per-account signup rate limiter (from options). `null` when not configured. */

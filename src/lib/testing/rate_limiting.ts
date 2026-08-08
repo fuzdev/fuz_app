@@ -106,7 +106,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 
 		describe('IP rate limiting on login', () => {
 			test(`login is blocked after ${max_attempts} failed attempts`, async () => {
-				const ip_rate_limiter = create_test_rate_limiter();
+				const login_ip_rate_limiter = create_test_rate_limiter();
 				try {
 					const test_app = await create_test_app({
 						session_options: options.session_options,
@@ -115,7 +115,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 						rpc_endpoints: options.rpc_endpoints,
 						app_options: {
 							...options.app_options,
-							ip_rate_limiter,
+							login_ip_rate_limiter,
 							login_account_rate_limiter: null
 						}
 					});
@@ -163,7 +163,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 					);
 					assert_rate_limit_retry_after_header(blocked_res, body);
 				} finally {
-					ip_rate_limiter.dispose();
+					login_ip_rate_limiter.dispose();
 				}
 			});
 		});
@@ -183,7 +183,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 						rpc_endpoints: options.rpc_endpoints,
 						app_options: {
 							...options.app_options,
-							ip_rate_limiter: null,
+							login_ip_rate_limiter: null,
 							login_account_rate_limiter
 						}
 					});

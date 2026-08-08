@@ -25,6 +25,13 @@ import '../assert_dev_env.ts';
  *   not `429`). A backend that ignored XFF and keyed on the (loopback) TCP
  *   peer would 429 the fresh-IP request too — so the `401` proves the limiter
  *   keys on the resolved `X-Forwarded-For` client IP.
+ * - **a success does not refund the per-IP budget** — the distributed-spray
+ *   backstop. Failed guesses against *distinct* usernames from one forwarded
+ *   IP, interleaved with the attacker's own successful logins, must still 429
+ *   within a bounded total-request budget. Both spines used to clear the IP
+ *   bucket on success, which made that budget unbounded: one credential (or,
+ *   under open signup, none) bought unlimited guesses against arbitrary victims
+ *   from a single address. Only the account-grain bucket is forgiven now.
  *
  * **Determinism without a limiter reset.** Limiter state is in-memory and the
  * per-test `_testing_reset` wipes only the DB, never the buckets — so each
@@ -74,6 +81,7 @@ export interface LoginSecurityCrossTestOptions {
 const XFF_IP_LIMIT = '203.0.113.1';
 const XFF_SEGREGATION_EXHAUST = '203.0.113.2';
 const XFF_SEGREGATION_FRESH = '203.0.113.3';
+const XFF_SPRAY = '203.0.113.4';
 
 /** A non-routable, non-existent identifier — login resolves to the not-found path (records the bucket, returns 401). */
 const PROBE_PASSWORD = 'login_security_wrong_password';
@@ -133,6 +141,26 @@ export const describe_login_security_cross_tests = (
 		};
 	};
 
+	/**
+	 * POST a login expected to *succeed*, on a fresh transport with the given
+	 * `X-Forwarded-For`. The mirror of `attempt` — used to prove that a success
+	 * does not refund the resolved IP's bucket.
+	 */
+	const succeed = async (
+		fixture: Fixture,
+		forwarded_for: string,
+		username: string,
+		password: string
+	): Promise<number> => {
+		const res = await fixture.fresh_transport()(login_path, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json', 'x-forwarded-for': forwarded_for },
+			body: JSON.stringify({ username, password })
+		});
+		await res.text();
+		return res.status;
+	};
+
 	describe('login rate limiting + trusted-proxy parity', () => {
 		test(`per-IP login limit fires 429 + Retry-After after ${
 			ip_limit
@@ -186,6 +214,56 @@ export const describe_login_security_cross_tests = (
 				fresh.status,
 				401,
 				"a fresh forwarded IP must not inherit another IP's limit"
+			);
+		});
+
+		test('a success does not refund the per-IP budget (distributed-spray backstop)', async () => {
+			const fixture = await setup_test();
+			// The attacker's own account. Minting rides the setup path from
+			// loopback with no XFF, so it lands on a different bucket than
+			// XFF_SPRAY and can't confound the count.
+			const attacker = await fixture.create_account({
+				username: 'spray_attacker',
+				password_value: 'spray_attacker_password'
+			});
+
+			let budget = 0;
+			let limited = false;
+
+			for (let i = 0; i < ip_limit * 3; i++) {
+				// Their own successful login — the move that used to zero the
+				// whole IP window — then one guess against a fresh victim
+				// username, so no per-account bucket accumulates and only the
+				// IP aggregate can stop this.
+				const own = await succeed(
+					fixture,
+					XFF_SPRAY,
+					attacker.account.username,
+					'spray_attacker_password'
+				);
+				budget++;
+				// Either leg may trip: the aggregate governs the *address*, so
+				// once it fills even the attacker's own login is refused. That
+				// is the property — no move from this IP buys more attempts.
+				if (own === 429) {
+					limited = true;
+					break;
+				}
+				assert.strictEqual(own, 200, "the attacker's own login must succeed");
+
+				const guess = await attempt(fixture, XFF_SPRAY, `spray_victim_${i}`);
+				budget++;
+				if (guess.status === 429) {
+					limited = true;
+					break;
+				}
+				assert.strictEqual(guess.status, 401, 'a guess against an unknown user must 401');
+			}
+
+			assert(limited, 'the per-IP aggregate must eventually 429 the spray');
+			assert(
+				budget <= ip_limit * 2 + 2,
+				`interleaved successes must not extend the per-IP budget (spent ${budget})`
 			);
 		});
 	});

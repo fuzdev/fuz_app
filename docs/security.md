@@ -439,9 +439,66 @@ In-memory sliding window. Applied to login, bootstrap, password change, and
 signup — the password-bearing surfaces. **Bearer auth carries no rate limiter**
 (see below).
 
-- IP rate limiter (5 attempts / 15 min) — Per resolved client IP, shared across login + bootstrap + password change (and signup, when the consumer wires it)
+- Login IP rate limiter (5 attempts / 15 min) — Per resolved client IP, shared by login + password change (the same instance, mirroring the Rust spine's `login_ip_rate_limiter`)
+- Signup IP rate limiter (5 attempts / 15 min) — Per resolved client IP, signup only
+- Bootstrap IP rate limiter (5 attempts / 15 min) — Per resolved client IP, bootstrap only
 - Login account rate limiter (10 attempts / 30 min) — Per `account.id` when the account exists, per normalized submitted identifier otherwise. Per `account.id` on password change.
 - Signup account rate limiter (10 attempts / 30 min) — Per submitted username (lowercased), signup only
+
+**Success clears the account bucket only.** A successful login, password change,
+or signup resets that principal's *account-grain* counter — forgiving a user's
+own typos, which is safe because the key **is** the account being attacked, so
+clearing it requires that account's credential. Bootstrap is the exception in
+the other direction: it has no account-grain bucket (it predates any account),
+so a successful bootstrap clears **nothing**.
+
+The **per-IP buckets are never cleared**. They are the distributed-spray
+backstop: if a success refunded one, an attacker holding any one credential
+could interleave their own logins with guesses against arbitrary victim
+usernames and spray indefinitely from a single address — and under open signup
+the cheapest version needs no credential at all, since creating a throwaway
+account would zero the budget. Nothing records on an IP bucket on success on any
+path, so with no reset each is a pure monotone-within-window failure counter that
+only time clears.
+
+**One IP bucket per surface, not one shared across all four.** Because they are
+monotone, a shared instance meant a failure on any surface spent the budget that
+bounds guessing on every other one — a fumbled bootstrap token could leave the
+operator's login budget nearly exhausted on a deployment where their new account
+is the only one that exists, and an open-signup bot could deny login to every
+user behind its egress. Login and password change still share (password change
+is password-bearing on the same account grain, and the Rust spine shares the
+same instance across both); signup and bootstrap each get their own. Consumers
+wanting the old single-budget posture pass the same `RateLimiter` to
+`login_ip_rate_limiter` / `signup_ip_rate_limiter` / `bootstrap_ip_rate_limiter`.
+
+The 5-attempt cap was deliberately **not** widened when the buckets became
+monotone. Widening buys NAT'd-egress headroom by loosening the one bound that
+caps credential guessing from a single address; splitting the shared bucket buys
+the same headroom without touching that bound.
+
+Costs to accept, both bounded by the split above but not eliminated by it:
+
+- On a NAT'd egress the IP budget is unforgiving within its window — a
+  colleague's earlier failed logins still count against you, and successes no
+  longer drain the bucket for everyone. Accidental exhaustion is meaningfully
+  more likely than it was under the refund.
+- Sustaining a deliberate lockout got cheaper. Under the refund, an attacker
+  holding an egress at the cap lost the whole bucket the moment any user logged
+  in successfully; now losing that race costs them nothing, so ~1 failed request
+  per `window / max_attempts` holds the address at the cap. The refund was never
+  a *defense* against this (a full bucket refuses the very success that would
+  clear it) — it was an accident that made the attack fragile.
+- There is no operator "clear this IP" action. Within a window the only remedies
+  are waiting it out or restarting the process (in-memory state, see
+  §Known Limitations). `RateLimiter.reset` is public, so a consumer can expose
+  an admin action over it — on IP keys that is an operator escape hatch, not the
+  success-forgiveness the method's TSDoc forbids.
+
+Pinned on both spines by the `login_security` cross-backend suite (interleaved
+successes must still 429 within a bounded request budget) and, in-process, by
+`rate_limiter.handlers.test.ts` (login + signup), `password_change.test.ts`, and
+`rate_limiter.bootstrap.db.test.ts`.
 
 **Rate limiter key normalization**: Submitted identifiers are lowercased + trimmed
 before lookup. When the account exists, the rate limit is keyed by `account.id`

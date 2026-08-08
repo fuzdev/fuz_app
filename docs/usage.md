@@ -291,7 +291,9 @@ Consumer migration namespaces must not appear in `reserved_migration_namespaces`
 
 Consumer-specific code (env loading, error formatting/exit, custom
 middleware) stays in the consumer. Rate limiters default automatically
-(`ip_rate_limiter`: 5/15min, `login_account_rate_limiter`: 10/30min,
+(`login_ip_rate_limiter` / `signup_ip_rate_limiter` / `bootstrap_ip_rate_limiter`:
+5/15min each — one bucket per auth surface, see docs/security.md
+§Rate Limiting; `login_account_rate_limiter`: 10/30min,
 `action_ip_rate_limiter`: 600/15min, `action_account_rate_limiter`:
 1200/15min) — pass `null` to disable, or a custom `RateLimiter` instance
 to override. The two `action_*` limiters back the per-action `rate_limit?`

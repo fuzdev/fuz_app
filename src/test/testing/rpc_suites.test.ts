@@ -228,7 +228,7 @@ describe('rpc_helpers', () => {
 		// Stub ctx exposes `deps` and nulled rate limiters — enough for
 		// canonical action factories like `create_standard_rpc_actions`.
 		assert.ok(captured_ctx.deps);
-		assert.strictEqual(captured_ctx.ip_rate_limiter, null);
+		assert.strictEqual(captured_ctx.login_ip_rate_limiter, null);
 	});
 
 	test('resolve_rpc_endpoints_for_setup throws when factory is not path-pure', () => {

@@ -80,7 +80,7 @@ describe_pg('password change concurrent race', (get_db) => {
 					'/api/account',
 					create_account_route_specs(ctx.deps, {
 						session_options,
-						ip_rate_limiter: null,
+						login_ip_rate_limiter: null,
 						login_account_rate_limiter: null,
 						login_fail_floor_ms: 0
 					})

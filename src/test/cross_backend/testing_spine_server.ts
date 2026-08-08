@@ -197,7 +197,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	// transitively pulls `vitest` and can't be imported into the spawned binary —
 	// the same local-redeclare `testing_spine_server_node.ts` does for `TS_SPINE_DIR_ENV`.
 	const login_rate_limit_enabled = runtime.env_get('FUZ_LOGIN_RATE_LIMIT_ENABLED') === 'true';
-	const ip_rate_limiter = login_rate_limit_enabled
+	const login_ip_rate_limiter = login_rate_limit_enabled
 		? new RateLimiter(default_login_ip_rate_limit)
 		: null;
 	const login_account_rate_limiter = login_rate_limit_enabled
@@ -212,8 +212,14 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		// Login limiters: null unless `FUZ_LOGIN_RATE_LIMIT_ENABLED` is set (above).
 		// `create_spine_route_specs` reads these off `AppServerContext` and wires
 		// them onto `POST /api/account/login`. Every other limiter stays disabled
-		// for the same many-round-trips-from-one-host reason.
-		ip_rate_limiter,
+		// for the same many-round-trips-from-one-host reason — including the
+		// sibling per-surface IP limiters, which now default to live instances
+		// (`create_app_server` builds one per surface when the field is omitted),
+		// so an omission here would 429 the bootstrap + signup round trips the
+		// standard cross suites fire from loopback.
+		login_ip_rate_limiter,
+		signup_ip_rate_limiter: null,
+		bootstrap_ip_rate_limiter: null,
 		login_account_rate_limiter,
 		signup_account_rate_limiter: null,
 		action_ip_rate_limiter: null,
@@ -280,7 +286,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 
 	const close = async (): Promise<void> => {
 		await daemon_token_rotation.stop();
-		ip_rate_limiter?.dispose();
+		login_ip_rate_limiter?.dispose();
 		login_account_rate_limiter?.dispose();
 		await app_server.close();
 	};

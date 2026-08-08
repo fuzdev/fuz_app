@@ -184,21 +184,35 @@ const login_fail_delay = (floor_ms: number, jitter_ms: number): Promise<void> =>
 };
 
 /**
- * Shared options for route factories that create sessions and rate-limit by IP.
+ * Shared options for route factories that create sessions.
  *
  * Extended by `AccountRouteOptions` and `SignupRouteOptions`.
  * Consumers can destructure these from `AppServerContext` once and spread into multiple factories.
+ *
+ * The per-IP limiter is deliberately *not* here. Each auth surface names its
+ * own (`login_ip_rate_limiter`, `signup_ip_rate_limiter`,
+ * `bootstrap_ip_rate_limiter`) because the buckets are monotone within their
+ * window — see `RateLimiter.reset`. A shared base field made one instance the
+ * path of least resistance, which let a failure on any surface spend the
+ * budget that bounds guessing on every other one.
  */
 export interface AuthSessionRouteOptions {
 	session_options: SessionOptions<string>;
-	/** Rate limiter for auth attempts, keyed by client IP. Pass `null` to disable. */
-	ip_rate_limiter: RateLimiter | null;
 }
 
 /**
  * Per-factory configuration for account route specs.
  */
 export interface AccountRouteOptions extends AuthSessionRouteOptions {
+	/**
+	 * Rate limiter for login + password-change attempts, keyed by client IP.
+	 * Pass `null` to disable. The distributed-spray backstop: login is the one
+	 * surface that guesses *other* accounts' credentials, so this bucket is
+	 * never refunded on success (see `RateLimiter.reset`). Password change
+	 * shares it — it is password-bearing on the same account grain, and the
+	 * Rust spine shares the same instance across both.
+	 */
+	login_ip_rate_limiter: RateLimiter | null;
 	/** Rate limiter for login attempts, keyed by submitted username. Pass `null` to disable. */
 	login_account_rate_limiter: RateLimiter | null;
 	/** Max active sessions per account. Evicts oldest on login. Default 5, `null` disables. */
@@ -247,7 +261,7 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
  * Self-service session/token management is on `auth/account_actions.ts`.
  *
  * @param deps - stateless capabilities (keyring, password, log)
- * @param options - per-factory configuration (session_options, ip_rate_limiter, login_account_rate_limiter, bootstrap_status)
+ * @param options - per-factory configuration (session_options, login_ip_rate_limiter, login_account_rate_limiter, bootstrap_status)
  * @returns route specs (not yet applied to Hono)
  */
 export const create_account_route_specs = (
@@ -257,7 +271,7 @@ export const create_account_route_specs = (
 	const { keyring, password } = deps;
 	const {
 		session_options,
-		ip_rate_limiter,
+		login_ip_rate_limiter,
 		login_account_rate_limiter,
 		max_sessions = DEFAULT_MAX_SESSIONS,
 		login_fail_floor_ms = DEFAULT_LOGIN_FAIL_FLOOR_MS,
@@ -287,9 +301,9 @@ export const create_account_route_specs = (
 			...login_shape,
 			handler: async (c, route) => {
 				// Per-IP rate limit check (before any DB/password work)
-				const ip = ip_rate_limiter ? get_client_ip(c) : null;
-				if (ip_rate_limiter && ip) {
-					const check = ip_rate_limiter.check(ip);
+				const ip = login_ip_rate_limiter ? get_client_ip(c) : null;
+				if (login_ip_rate_limiter && ip) {
+					const check = login_ip_rate_limiter.check(ip);
 					if (!check.allowed) {
 						return rate_limit_exceeded_response(c, check.retry_after);
 					}
@@ -325,7 +339,7 @@ export const create_account_route_specs = (
 					// enumeration prevention: verify_dummy equalizes Argon2id timing;
 					// login_fail_delay equalizes every other path difference.
 					await password.verify_dummy(pw);
-					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
+					if (login_ip_rate_limiter && ip) login_ip_rate_limiter.record(ip);
 					if (login_account_rate_limiter) login_account_rate_limiter.record(account_rate_key);
 					deps.audit.emit(route, {
 						event_type: 'login',
@@ -339,7 +353,7 @@ export const create_account_route_specs = (
 
 				const valid = await password.verify_password(pw, account.password_hash);
 				if (!valid) {
-					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
+					if (login_ip_rate_limiter && ip) login_ip_rate_limiter.record(ip);
 					if (login_account_rate_limiter) login_account_rate_limiter.record(account_rate_key);
 					deps.audit.emit(route, {
 						event_type: 'login',
@@ -352,8 +366,11 @@ export const create_account_route_specs = (
 					return c.json({ error: ERROR_INVALID_CREDENTIALS }, 401);
 				}
 
-				// Successful login — reset rate limits
-				if (ip_rate_limiter && ip) ip_rate_limiter.reset(ip);
+				// Successful login — clear the account-grain failure history only.
+				// The IP aggregate is deliberately left standing: it is the
+				// distributed-spray backstop, so a success on one account must not
+				// refund the budget shared by every other account reachable from
+				// that address. See `RateLimiter.reset`.
 				if (login_account_rate_limiter) login_account_rate_limiter.reset(account_rate_key);
 
 				await create_session_and_set_cookie({
@@ -413,9 +430,9 @@ export const create_account_route_specs = (
 			...password_shape,
 			handler: async (c, route) => {
 				// per-IP rate limit check (before argon2 work)
-				const ip = ip_rate_limiter ? get_client_ip(c) : null;
-				if (ip_rate_limiter && ip) {
-					const check = ip_rate_limiter.check(ip);
+				const ip = login_ip_rate_limiter ? get_client_ip(c) : null;
+				if (login_ip_rate_limiter && ip) {
+					const check = login_ip_rate_limiter.check(ip);
 					if (!check.allowed) {
 						return rate_limit_exceeded_response(c, check.retry_after);
 					}
@@ -436,7 +453,7 @@ export const create_account_route_specs = (
 
 				const valid = await password.verify_password(current_password, ctx.account.password_hash);
 				if (!valid) {
-					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
+					if (login_ip_rate_limiter && ip) login_ip_rate_limiter.record(ip);
 					if (login_account_rate_limiter) login_account_rate_limiter.record(ctx.account.id);
 					deps.audit.emit(route, {
 						event_type: 'password_change',
@@ -467,15 +484,17 @@ export const create_account_route_specs = (
 				);
 
 				// Verify-success contract — the caller proved knowledge, so wipe
-				// their failure history. The race-loser branch below re-records
-				// one on top of the wiped slate so net cost stays 1 (mirrors the
-				// verify-fail branch above's `record`-from-prior+1 outcome when
-				// prior was 0; for prior > 0 the race-loser pays exactly 1,
-				// matching the OLD pre-S1 behavior). Deferring from "after
-				// verify" to "after UPDATE settled" is what closes the S1
-				// bypass — a throw between reset and the UPDATE could have
-				// wiped an attacker's budget.
-				if (ip_rate_limiter && ip) ip_rate_limiter.reset(ip);
+				// their account-grain failure history. The race-loser branch below
+				// re-records one on top of the wiped slate so net cost stays 1 on
+				// that bucket. Deferring from "after verify" to "after UPDATE
+				// settled" is what closes the S1 bypass — a throw between reset
+				// and the UPDATE could have wiped an attacker's budget.
+				//
+				// The IP aggregate is deliberately not cleared: it is the same
+				// instance login uses, so refunding it here reopens the spray path
+				// through a route that only needs the caller's *own* password. Its
+				// record on the race-loser branch below therefore accumulates
+				// rather than netting out, which is the intent.
 				if (login_account_rate_limiter) login_account_rate_limiter.reset(ctx.account.id);
 
 				if (!updated) {
@@ -486,7 +505,7 @@ export const create_account_route_specs = (
 					// audit log can distinguish "user typoed" from "two clients
 					// raced." Sessions/tokens were already revoked by the winner;
 					// no cookie clear here either.
-					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
+					if (login_ip_rate_limiter && ip) login_ip_rate_limiter.record(ip);
 					if (login_account_rate_limiter) login_account_rate_limiter.record(ctx.account.id);
 					deps.audit.emit(route, {
 						event_type: 'password_change',

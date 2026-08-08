@@ -153,12 +153,35 @@ export interface AppServerOptions {
 	};
 
 	/**
-	 * Shared IP rate limiter for login, bootstrap, password change, and signup.
-	 * Omit or `undefined` to use a default limiter (5 attempts per 15 minutes).
-	 * Pass `null` to explicitly disable rate limiting.
+	 * Per-IP rate limiter for login + password change — the distributed-spray
+	 * backstop. Omit or `undefined` to use a default limiter (5 attempts per
+	 * 15 minutes). Pass `null` to explicitly disable rate limiting.
 	 * Also available on `AppServerContext` for route factory callbacks.
+	 *
+	 * One instance per auth surface, not one shared across all four. These
+	 * buckets are monotone within their window — a success never refunds them
+	 * (see `RateLimiter.reset`) — so a shared instance let a failure on any
+	 * surface spend the budget that bounds guessing on every other one, and
+	 * let one caller's exhaustion deny four routes at once. Pass the same
+	 * limiter to two of these fields to opt back into a shared budget.
 	 */
-	ip_rate_limiter?: RateLimiter | null;
+	login_ip_rate_limiter?: RateLimiter | null;
+	/**
+	 * Per-IP rate limiter for signup. Omit or `undefined` to use a default
+	 * limiter (5 attempts per 15 minutes). Pass `null` to explicitly disable.
+	 * Separate from `login_ip_rate_limiter` because an open-signup deployment
+	 * lets any unauthenticated caller spend it. Also available on
+	 * `AppServerContext` for route factory callbacks.
+	 */
+	signup_ip_rate_limiter?: RateLimiter | null;
+	/**
+	 * Per-IP rate limiter for bootstrap. Omit or `undefined` to use a default
+	 * limiter (5 attempts per 15 minutes). Pass `null` to explicitly disable.
+	 * Separate from `login_ip_rate_limiter` so a fumbled bootstrap token can't
+	 * spend the operator's login budget. Wired directly into the factory-managed
+	 * bootstrap route; also on `AppServerContext` for symmetry.
+	 */
+	bootstrap_ip_rate_limiter?: RateLimiter | null;
 	/**
 	 * Per-account rate limiter for login attempts.
 	 * Omit or `undefined` to use a default limiter (10 attempts per 30 minutes).
@@ -426,8 +449,20 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	const { log } = deps;
 
 	// Rate limiter defaults (undefined = default, null = disable)
-	const ip_rate_limiter =
-		options.ip_rate_limiter === undefined ? create_rate_limiter() : options.ip_rate_limiter;
+	// One instance per surface — see `AppServerOptions.login_ip_rate_limiter`
+	// for why these are not a single shared bucket.
+	const login_ip_rate_limiter =
+		options.login_ip_rate_limiter === undefined
+			? create_rate_limiter()
+			: options.login_ip_rate_limiter;
+	const signup_ip_rate_limiter =
+		options.signup_ip_rate_limiter === undefined
+			? create_rate_limiter()
+			: options.signup_ip_rate_limiter;
+	const bootstrap_ip_rate_limiter =
+		options.bootstrap_ip_rate_limiter === undefined
+			? create_rate_limiter()
+			: options.bootstrap_ip_rate_limiter;
 	const login_account_rate_limiter =
 		options.login_account_rate_limiter === undefined
 			? create_rate_limiter(default_login_account_rate_limit)
@@ -500,7 +535,9 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		backend,
 		bootstrap_status,
 		session_options: options.session_options,
-		ip_rate_limiter,
+		login_ip_rate_limiter,
+		signup_ip_rate_limiter,
+		bootstrap_ip_rate_limiter,
 		login_account_rate_limiter,
 		signup_account_rate_limiter,
 		action_ip_rate_limiter,
@@ -521,7 +558,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			session_options: options.session_options,
 			bootstrap_status,
 			on_bootstrap: options.bootstrap.mode === 'live' ? options.bootstrap.on_bootstrap : undefined,
-			ip_rate_limiter
+			bootstrap_ip_rate_limiter
 		});
 		const prefix = options.bootstrap.route_prefix ?? '/api/account';
 		factory_routes.push(...prefix_route_specs(prefix, bootstrap_routes));
@@ -611,12 +648,21 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			});
 		}
 	}
-	if (ip_rate_limiter === null) {
-		config_diagnostics.push({
-			level: 'warning',
-			category: 'config',
-			message: 'IP rate limiter explicitly disabled (null)'
-		});
+	// One diagnostic per surface — a deployment that disables login's limiter
+	// but keeps signup's is a different posture than one that disables both,
+	// and a single collapsed warning hid which surface was open.
+	for (const [name, limiter] of [
+		['login', login_ip_rate_limiter],
+		['signup', signup_ip_rate_limiter],
+		['bootstrap', bootstrap_ip_rate_limiter]
+	] as const) {
+		if (limiter === null) {
+			config_diagnostics.push({
+				level: 'warning',
+				category: 'config',
+				message: `${name} IP rate limiter explicitly disabled (null)`
+			});
+		}
 	}
 	if (config_diagnostics.length) {
 		surface_spec.surface.diagnostics = [...surface_spec.surface.diagnostics, ...config_diagnostics];

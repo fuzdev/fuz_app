@@ -36,13 +36,13 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => {
 		...prefix_route_specs('/api/account', [
 			...create_account_route_specs(deps, {
 				session_options,
-				ip_rate_limiter: null,
+				login_ip_rate_limiter: null,
 				login_account_rate_limiter: null,
 				login_fail_floor_ms: 0
 			}),
 			...create_signup_route_specs(deps, {
 				session_options,
-				ip_rate_limiter: null,
+				signup_ip_rate_limiter: null,
 				signup_account_rate_limiter: null
 			})
 		]),

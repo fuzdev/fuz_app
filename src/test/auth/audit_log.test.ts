@@ -206,7 +206,7 @@ describe('account route audit logging', () => {
 		find_account?: ReturnType<typeof vi.fn>;
 		verify_password?: ReturnType<typeof vi.fn>;
 		inject_ctx?: RequestContext;
-		ip_rate_limiter?: RateLimiter | null;
+		login_ip_rate_limiter?: RateLimiter | null;
 	}): Hono => {
 		if (options?.find_account) {
 			mock_find_by_username_or_email.mockImplementation(options.find_account as any);
@@ -229,7 +229,7 @@ describe('account route audit logging', () => {
 			},
 			{
 				session_options,
-				ip_rate_limiter: options?.ip_rate_limiter ?? null,
+				login_ip_rate_limiter: options?.login_ip_rate_limiter ?? null,
 				login_account_rate_limiter: null,
 				login_fail_floor_ms: 0
 			}
@@ -397,7 +397,7 @@ describe('account route audit logging', () => {
 			},
 			{
 				session_options,
-				ip_rate_limiter: null,
+				login_ip_rate_limiter: null,
 				login_account_rate_limiter: null,
 				login_fail_floor_ms: 0
 			}
@@ -435,7 +435,7 @@ describe('account route audit logging', () => {
 		const limiter = new RateLimiter({ max_attempts: 1, window_ms: 60_000, cleanup_interval_ms: 0 });
 		const app = create_account_test_app({
 			verify_password: vi.fn(() => Promise.resolve(false)),
-			ip_rate_limiter: limiter
+			login_ip_rate_limiter: limiter
 		});
 
 		// first request: 401 (wrong password), creates audit entry

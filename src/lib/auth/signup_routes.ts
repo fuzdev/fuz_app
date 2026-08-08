@@ -60,6 +60,16 @@ const signup_fail_delay = (floor_ms: number, jitter_ms: number): Promise<void> =
  * Per-factory configuration for signup route specs.
  */
 export interface SignupRouteOptions extends AuthSessionRouteOptions {
+	/**
+	 * Rate limiter for signup attempts, keyed by client IP. Pass `null` to
+	 * disable. Its own instance, not login's: signup failures bound username
+	 * *enumeration* (the 403/409 split), not credential guessing, and an
+	 * open-signup deployment lets any unauthenticated caller spend this budget
+	 * — which must not cost anyone their login attempts. Never refunded on
+	 * success (see `RateLimiter.reset`). Mirrors the Rust spine's
+	 * `signup_ip_rate_limiter`.
+	 */
+	signup_ip_rate_limiter: RateLimiter | null;
 	/** Rate limiter for signup attempts, keyed by submitted username. Pass `null` to disable. */
 	signup_account_rate_limiter: RateLimiter | null;
 	/**
@@ -92,7 +102,7 @@ export const create_signup_route_specs = (
 	const { keyring, password } = deps;
 	const {
 		session_options,
-		ip_rate_limiter,
+		signup_ip_rate_limiter,
 		signup_account_rate_limiter,
 		signup_fail_floor_ms = DEFAULT_SIGNUP_FAIL_FLOOR_MS,
 		signup_fail_jitter_ms = DEFAULT_SIGNUP_FAIL_JITTER_MS
@@ -105,9 +115,9 @@ export const create_signup_route_specs = (
 			}),
 			handler: async (c, route) => {
 				// Per-IP rate limit check (before any work). 429 stays fast.
-				const ip = ip_rate_limiter ? get_client_ip(c) : null;
-				if (ip_rate_limiter && ip) {
-					const check = ip_rate_limiter.check(ip);
+				const ip = signup_ip_rate_limiter ? get_client_ip(c) : null;
+				if (signup_ip_rate_limiter && ip) {
+					const check = signup_ip_rate_limiter.check(ip);
 					if (!check.allowed) {
 						return rate_limit_exceeded_response(c, check.retry_after);
 					}
@@ -217,7 +227,7 @@ export const create_signup_route_specs = (
 					});
 				} catch (e: unknown) {
 					if (e instanceof NoMatchingInviteError) {
-						if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
+						if (signup_ip_rate_limiter && ip) signup_ip_rate_limiter.record(ip);
 						if (signup_account_rate_limiter) signup_account_rate_limiter.record(account_key);
 						emit_failure_audit('no_match');
 						await delay;
@@ -225,7 +235,7 @@ export const create_signup_route_specs = (
 					}
 					// Unique constraint violation: username or email already exists.
 					if (is_pg_unique_violation(e)) {
-						if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
+						if (signup_ip_rate_limiter && ip) signup_ip_rate_limiter.record(ip);
 						if (signup_account_rate_limiter) signup_account_rate_limiter.record(account_key);
 						emit_failure_audit('signup_conflict');
 						await delay;
@@ -242,8 +252,12 @@ export const create_signup_route_specs = (
 					throw e;
 				}
 
-				// Reset rate limiters on success
-				if (ip_rate_limiter && ip) ip_rate_limiter.reset(ip);
+				// Clear the account-grain bucket only — the IP aggregate stands.
+				// This is the cheapest version of the spray path `RateLimiter.reset`
+				// describes: where login at least costs the attacker a credential,
+				// an open-signup deployment let an *unauthenticated* caller zero a
+				// shared IP budget by creating throwaway accounts, and the
+				// per-account limiter never applies to the attacker's own signups.
 				if (signup_account_rate_limiter) signup_account_rate_limiter.reset(account_key);
 
 				deps.audit.emit(route, {

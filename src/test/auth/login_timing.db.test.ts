@@ -82,7 +82,7 @@ describe('login verify_dummy behavior', () => {
 					'/api/account',
 					create_account_route_specs(ctx.deps, {
 						session_options,
-						ip_rate_limiter: ctx.ip_rate_limiter,
+						login_ip_rate_limiter: ctx.login_ip_rate_limiter,
 						login_account_rate_limiter: ctx.login_account_rate_limiter,
 						// these tests assert the verify-branch, not timing — skip the
 						// ~250ms denial floor so they stay fast (the floor has its own
@@ -141,7 +141,7 @@ describe('login denial timing floor', () => {
 			'/api/account',
 			create_account_route_specs(ctx.deps, {
 				session_options,
-				ip_rate_limiter: ctx.ip_rate_limiter,
+				login_ip_rate_limiter: ctx.login_ip_rate_limiter,
 				login_account_rate_limiter: ctx.login_account_rate_limiter,
 				login_fail_floor_ms: FLOOR_MS,
 				login_fail_jitter_ms: 0

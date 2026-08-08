@@ -76,7 +76,7 @@ const bootstrap_factory = create_pglite_factory(async (db) => {
  *   so bootstrap always fails with `invalid_token` (status 401) in most tests.
  */
 const create_bootstrap_app = async (
-	ip_rate_limiter: RateLimiter | null,
+	bootstrap_ip_rate_limiter: RateLimiter | null,
 	read_text_file = vi.fn(() => Promise.resolve('wrong_token')),
 	extra?: {
 		on_bootstrap?: (result: any, c: any) => Promise<void>;
@@ -105,7 +105,7 @@ const create_bootstrap_app = async (
 			session_options,
 			bootstrap_status,
 			on_bootstrap: extra?.on_bootstrap,
-			ip_rate_limiter
+			bootstrap_ip_rate_limiter
 		}
 	);
 
@@ -218,7 +218,7 @@ describe('bootstrap handler rate limiting', () => {
 		limiter.dispose();
 	});
 
-	test('successful bootstrap resets the rate limit counter', async () => {
+	test('successful bootstrap does NOT reset the rate limit counter', async () => {
 		const limiter = create_test_limiter();
 
 		// read_text_file fails first 2 calls (wrong token), succeeds on 3rd (matching token)
@@ -248,8 +248,15 @@ describe('bootstrap handler rate limiting', () => {
 			actor: { id: body.actor.id }
 		});
 
-		// Rate limit fully reset
-		assert.strictEqual(limiter.check(TEST_CONNECTION_IP).remaining, MAX_ATTEMPTS);
+		// The shared IP aggregate stands (see `RateLimiter.reset`). Bootstrap is
+		// one-shot, so at most `max_attempts - 1` residual entries survive on the
+		// operator's own address — a bounded, one-time cost for closing the
+		// refund path on an instance login and password change also use.
+		assert.strictEqual(
+			limiter.check(TEST_CONNECTION_IP).remaining,
+			1,
+			'a success must not refund the shared per-IP budget'
+		);
 
 		// Bootstrap status flipped to unavailable
 		assert.strictEqual(

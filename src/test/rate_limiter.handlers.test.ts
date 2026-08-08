@@ -3,8 +3,9 @@
  *
  * Uses vi.mock to stub query functions — no real database needed.
  * Focuses on verifying that handlers correctly integrate with the RateLimiter:
- * checking before work, recording failures, resetting on success, and
- * using the trusted proxy middleware for IP extraction. The bearer group is the
+ * checking before work, recording failures, forgiving the *account-grain*
+ * bucket on success while the per-IP aggregate keeps accumulating, and using
+ * the trusted proxy middleware for IP extraction. The bearer group is the
  * inverse — it pins that the bearer path carries no limiter at all.
  *
  * @module
@@ -152,7 +153,7 @@ interface LoginTestApp {
 }
 
 const create_login_app = (
-	ip_rate_limiter: RateLimiter | null,
+	login_ip_rate_limiter: RateLimiter | null,
 	login_account_rate_limiter: RateLimiter | null = null
 ): LoginTestApp => {
 	// Reset module-level mocks for login tests
@@ -187,7 +188,7 @@ const create_login_app = (
 		},
 		{
 			session_options,
-			ip_rate_limiter,
+			login_ip_rate_limiter,
 			login_account_rate_limiter,
 			// disable the 401 minimum-delay floor so failure tests don't wait
 			// ~250ms × N attempts
@@ -362,7 +363,78 @@ describe('login handler rate limiting', () => {
 		limiter.dispose();
 	});
 
-	test('successful login resets the rate limit counter', async () => {
+	test('IP budget survives interleaved successes (distributed-spray backstop)', async () => {
+		// The invariant stated adversarially: failed guesses from one IP,
+		// interleaved with the attacker's own successful logins, must still 429
+		// within a bounded total-request budget.
+		//
+		// The `budget` bound is what makes this adversarial rather than a
+		// behavior snapshot. A "decrement instead of zero" implementation still
+		// loops to the iteration cap and fails here — which is the point, since
+		// that alternative reads as a moderate compromise and is not one: at the
+		// cap the attacker just cycles success/guess forever.
+		//
+		// Scope: only the per-IP limiter is wired here, so every request can use
+		// the one `login_request` username without the account bucket
+		// confounding the count. The full shape — guesses against *distinct*
+		// victim usernames, which is what makes the attack worth mounting — is
+		// pinned over real HTTP on both spines by the `login_security`
+		// cross-backend suite.
+		const limiter = create_test_limiter();
+		const { app, find_by_username_or_email, mock_verify_password } = create_login_app(limiter);
+
+		let budget = 0;
+		let limited = false;
+
+		/** One request. Returns `true` once the IP bucket trips. */
+		const spend = async (expected: number): Promise<boolean> => {
+			const res = await login_request(app);
+			budget++;
+			// Either leg may trip: the aggregate governs the *address*, so once
+			// it fills the attacker's own login is refused too. That is the
+			// property — no move from this IP buys more attempts.
+			if (res.status === 429) {
+				// Pin *which* limiter answered. Only the IP one is wired here,
+				// so a 429 can't come from anywhere else — assert it anyway, so
+				// a future test that wires a second limiter can't quietly turn
+				// this into a pass for the wrong reason.
+				assert.strictEqual(
+					limiter.check(TEST_CONNECTION_IP).allowed,
+					false,
+					'the 429 must come from the per-IP bucket'
+				);
+				return true;
+			}
+			assert.strictEqual(res.status, expected);
+			return false;
+		};
+
+		for (let i = 0; i < MAX_ATTEMPTS * 4; i++) {
+			// The attacker's own successful login — the move that used to refund
+			// the whole IP window.
+			find_by_username_or_email.mockResolvedValueOnce(fake_account);
+			mock_verify_password.mockResolvedValueOnce(true);
+			if (await spend(200)) {
+				limited = true;
+				break;
+			}
+			// Then one failed guess (default mocks: account not found).
+			if (await spend(401)) {
+				limited = true;
+				break;
+			}
+		}
+
+		assert.ok(limited, 'the per-IP aggregate must eventually 429 the spray');
+		assert.ok(
+			budget <= MAX_ATTEMPTS * 2 + 2,
+			`interleaved successes must not extend the per-IP budget (spent ${budget})`
+		);
+
+		limiter.dispose();
+	});
+
+	test('successful login does NOT reset the per-IP counter', async () => {
 		const limiter = create_test_limiter();
 		const { app, find_by_username_or_email, mock_verify_password } = create_login_app(limiter);
 
@@ -378,17 +450,30 @@ describe('login handler rate limiting', () => {
 		const res = await login_request(app);
 		assert.strictEqual(res.status, 200);
 
-		// Rate limit fully reset — all attempts available
-		assert.strictEqual(limiter.check(TEST_CONNECTION_IP).remaining, MAX_ATTEMPTS);
+		// The IP aggregate stands. Refunding it here is what let an attacker
+		// holding any one credential spray arbitrary victims indefinitely from
+		// a single address — see `RateLimiter.reset`. Only the account-grain
+		// bucket is forgiven on success.
+		assert.strictEqual(
+			limiter.check(TEST_CONNECTION_IP).remaining,
+			1,
+			'a success must not refund the shared per-IP budget'
+		);
 
 		// Session cookie set on success
 		const cookies = res.headers.get('Set-Cookie');
 		assert.ok(cookies, 'successful login should set session cookie');
 		assert.ok(cookies.includes('test_session='), 'cookie name should match session config');
 
-		// Counter restarts from zero — a new failure counts fresh
+		// The window keeps accumulating across the success — a further failure
+		// exhausts it rather than starting a fresh budget. This is the bound the
+		// spray relied on being resettable.
 		await login_request(app);
-		assert.strictEqual(limiter.check(TEST_CONNECTION_IP).remaining, MAX_ATTEMPTS - 1);
+		assert.strictEqual(
+			limiter.check(TEST_CONNECTION_IP).remaining,
+			0,
+			'failures keep accumulating across a success'
+		);
 
 		limiter.dispose();
 	});
@@ -934,7 +1019,7 @@ describe('password max length validation', () => {
 // --- Signup handler rate limiting ---
 
 const create_signup_app = (
-	ip_rate_limiter: RateLimiter | null,
+	signup_ip_rate_limiter: RateLimiter | null,
 	signup_account_rate_limiter: RateLimiter | null = null
 ): Hono => {
 	// Reset signup-related mocks
@@ -964,7 +1049,7 @@ const create_signup_app = (
 		},
 		{
 			session_options,
-			ip_rate_limiter,
+			signup_ip_rate_limiter,
 			signup_account_rate_limiter,
 			// disable the denial-time floor so failure tests don't wait
 			// ~250ms × N attempts
@@ -1054,6 +1139,46 @@ describe('signup handler per-account rate limiting', () => {
 		assert.strictEqual(account_limiter.check('newuser').remaining, MAX_ATTEMPTS);
 
 		account_limiter.dispose();
+	});
+
+	test('successful signup does NOT reset the per-IP counter', async () => {
+		// The cheapest version of the refund path `RateLimiter.reset` forbids:
+		// where login at least costs the attacker a credential, an open-signup
+		// deployment let an *unauthenticated* caller zero this bucket by
+		// creating throwaway accounts — and the per-account limiter never
+		// applies to the attacker's own signups, so the IP bucket is the only
+		// thing bounding them.
+		const ip_limiter = create_test_limiter();
+		const app = create_signup_app(ip_limiter, null);
+
+		// Accumulate failures (no invite match → 403, records the IP bucket)
+		await signup_request(app);
+		await signup_request(app);
+		assert.strictEqual(ip_limiter.check(TEST_CONNECTION_IP).remaining, MAX_ATTEMPTS - 2);
+
+		// Make signup succeed: invite found + claim succeeds
+		mock_invite_find_unclaimed_match.mockResolvedValueOnce({ id: 'inv_1' });
+		mock_invite_claim.mockResolvedValueOnce(true);
+
+		const res = await signup_request(app);
+		assert.strictEqual(res.status, 200);
+
+		assert.strictEqual(
+			ip_limiter.check(TEST_CONNECTION_IP).remaining,
+			1,
+			'a success must not refund the per-IP budget'
+		);
+
+		// The window keeps accumulating across the success — a further failure
+		// exhausts it rather than starting fresh.
+		await signup_request(app);
+		assert.strictEqual(
+			ip_limiter.check(TEST_CONNECTION_IP).remaining,
+			0,
+			'failures keep accumulating across a success'
+		);
+
+		ip_limiter.dispose();
 	});
 
 	test('case variants share the same signup rate limit bucket', async () => {

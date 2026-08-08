@@ -21,7 +21,7 @@ import './assert_dev_env.ts';
  * import {TestingRateLimiter} from '@fuzdev/fuz_app/testing/testing_rate_limiter.ts';
  *
  * const limiter = new TestingRateLimiter(default_login_ip_rate_limit);
- * await create_app_server({backend, ip_rate_limiter: limiter, ...});
+ * await create_app_server({backend, login_ip_rate_limiter: limiter, ...});
  *
  * // Inside the `_testing_reset` handler's `reset_state`:
  * limiter.reset_all();
@@ -61,6 +61,12 @@ export class TestingRateLimiter extends RateLimiter {
 	 * safe to call before any check/record activity. Designed to be invoked
 	 * from a `_testing_reset` handler's `reset_state` callback so the test
 	 * binary's rate-limit buckets don't leak across test cases.
+	 *
+	 * This is the **one sanctioned caller that clears IP-aggregate keys** —
+	 * `RateLimiter.reset` forbids that for production code, because refunding
+	 * the IP bucket on a successful auth reopens the distributed-spray path.
+	 * Here it is test-state teardown between cases, not success-forgiveness, so
+	 * the rule doesn't apply.
 	 */
 	reset_all(): void {
 		for (const key of this.#seen_keys) {

@@ -140,20 +140,21 @@ export const create_spine_route_specs = (ctx: AppServerContext): Array<RouteSpec
 		...create_account_route_specs(ctx.deps, {
 			session_options: spine_session_options,
 			// Honor the limiters the server was assembled with (on `AppServerContext`
-			// per the `ip_rate_limiter` / `login_account_rate_limiter` TSDoc) rather
-			// than hardcoding `null`. The standard spine binary passes `null` (the
-			// cross suites fire many loopback logins and must not trip a limiter), so
-			// this is behavior-preserving there; the dedicated login-security cross
-			// backend passes real limiters to exercise the 429 + `Retry-After` path
-			// and XFF-keyed bucketing over the wire (see `login_security.ts`).
-			ip_rate_limiter: ctx.ip_rate_limiter,
+			// per the `login_ip_rate_limiter` / `login_account_rate_limiter` TSDoc)
+			// rather than hardcoding `null`. The standard spine binary passes `null`
+			// (the cross suites fire many loopback logins and must not trip a
+			// limiter), so this is behavior-preserving there; the dedicated
+			// login-security cross backend passes real limiters to exercise the 429 +
+			// `Retry-After` path and XFF-keyed bucketing over the wire (see
+			// `login_security.ts`).
+			login_ip_rate_limiter: ctx.login_ip_rate_limiter,
 			login_account_rate_limiter: ctx.login_account_rate_limiter,
 			login_fail_floor_ms: 0,
 			bootstrap_status: ctx.bootstrap_status
 		}),
 		...create_signup_route_specs(ctx.deps, {
 			session_options: spine_session_options,
-			ip_rate_limiter: null,
+			signup_ip_rate_limiter: null,
 			signup_account_rate_limiter: null,
 			// Disable the denial floor so the identity-parity suite's accepted
 			// cases (valid username/email, no invite → 403 no-matching-invite)

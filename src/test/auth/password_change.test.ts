@@ -141,7 +141,7 @@ interface PasswordChangeTestApp {
 }
 
 const create_password_change_app = (
-	ip_rate_limiter: RateLimiter | null,
+	login_ip_rate_limiter: RateLimiter | null,
 	login_account_rate_limiter: RateLimiter | null = null,
 	connection_closer: ConnectionCloser | null = null,
 	audit_events: Array<AuditLogInput> | null = null
@@ -178,7 +178,7 @@ const create_password_change_app = (
 		},
 		{
 			session_options,
-			ip_rate_limiter,
+			login_ip_rate_limiter,
 			login_account_rate_limiter,
 			login_fail_floor_ms: 0,
 			connection_closer
@@ -472,7 +472,7 @@ describe('password change rate limiting', () => {
 		limiter.dispose();
 	});
 
-	test('successful password change resets rate limit counter', async () => {
+	test('successful password change does NOT reset the per-IP counter', async () => {
 		const limiter = create_test_limiter();
 		const { app, mock_verify_password } = create_password_change_app(limiter);
 
@@ -486,13 +486,19 @@ describe('password change rate limiting', () => {
 		const res = await password_change_request(app);
 		assert.strictEqual(res.status, 200);
 
-		// rate limit fully reset
-		assert.strictEqual(limiter.check(TEST_CONNECTION_IP).remaining, MAX_ATTEMPTS);
+		// This limiter is the same instance login uses, so refunding it here
+		// would reopen the spray path through a route that only needs the
+		// caller's own password. Only the account-grain bucket is forgiven.
+		assert.strictEqual(
+			limiter.check(TEST_CONNECTION_IP).remaining,
+			1,
+			'a success must not refund the shared per-IP budget'
+		);
 
 		limiter.dispose();
 	});
 
-	test('ip_rate_limiter null allows unlimited failed attempts', async () => {
+	test('login_ip_rate_limiter null allows unlimited failed attempts', async () => {
 		const { app } = create_password_change_app(null);
 
 		// well beyond MAX_ATTEMPTS — should never see 429

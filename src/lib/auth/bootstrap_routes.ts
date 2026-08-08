@@ -46,8 +46,18 @@ export interface BootstrapRouteOptions {
 	 * Use for app-specific post-bootstrap work like generating API tokens.
 	 */
 	on_bootstrap?: (result: BootstrapAccountSuccess, c: Context) => Promise<void>;
-	/** Rate limiter for bootstrap attempts (per-IP). Pass `null` to disable. */
-	ip_rate_limiter: RateLimiter | null;
+	/**
+	 * Rate limiter for bootstrap attempts, keyed by client IP. Pass `null` to
+	 * disable. Its own instance, not login's: bootstrap is one-shot and its
+	 * bucket is never refunded on success (see `RateLimiter.reset`), so a
+	 * fumbled token would otherwise leave the operator's *login* budget nearly
+	 * spent on a deployment where their new account is the only one that
+	 * exists. The Rust spine rate-limits bootstrap not at all (the token is
+	 * 32 bytes of CSPRNG compared in constant time); this is the tighter side
+	 * of that divergence, kept because the token also sits in a file whose
+	 * read path an operator can misconfigure.
+	 */
+	bootstrap_ip_rate_limiter: RateLimiter | null;
 }
 
 /**
@@ -112,7 +122,7 @@ export const create_bootstrap_route_specs = (
 	options: BootstrapRouteOptions
 ): Array<RouteSpec> => {
 	const { keyring } = deps;
-	const { session_options, bootstrap_status, on_bootstrap, ip_rate_limiter } = options;
+	const { session_options, bootstrap_status, on_bootstrap, bootstrap_ip_rate_limiter } = options;
 	const { token_path } = bootstrap_status;
 
 	return [
@@ -128,9 +138,9 @@ export const create_bootstrap_route_specs = (
 				}
 
 				// Per-IP rate limit check (before any token/DB work)
-				const ip = ip_rate_limiter ? get_client_ip(c) : null;
-				if (ip_rate_limiter && ip) {
-					const check = ip_rate_limiter.check(ip);
+				const ip = bootstrap_ip_rate_limiter ? get_client_ip(c) : null;
+				if (bootstrap_ip_rate_limiter && ip) {
+					const check = bootstrap_ip_rate_limiter.check(ip);
 					if (!check.allowed) {
 						return rate_limit_exceeded_response(c, check.retry_after);
 					}
@@ -153,7 +163,7 @@ export const create_bootstrap_route_specs = (
 					input
 				);
 				if (!result.ok) {
-					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
+					if (bootstrap_ip_rate_limiter && ip) bootstrap_ip_rate_limiter.record(ip);
 					deps.audit.emit(route, {
 						event_type: 'bootstrap',
 						outcome: 'failure',
@@ -163,8 +173,15 @@ export const create_bootstrap_route_specs = (
 					return c.json({ error: result.error }, result.status);
 				}
 
-				// Successful bootstrap — update state immediately
-				if (ip_rate_limiter && ip) ip_rate_limiter.reset(ip);
+				// Successful bootstrap — update state immediately. Nothing is
+				// reset: bootstrap has no account-grain bucket to forgive (it
+				// predates any account), and the IP bucket is never refunded on
+				// success (see `RateLimiter.reset`). So this is the one auth
+				// surface where a success clears nothing at all. Bootstrap is
+				// one-shot, so at most `max_attempts - 1` residual entries
+				// survive — and they sit on this route's own limiter, not
+				// login's, so a fumbled token can't spend the operator's login
+				// budget on a deployment where their account is the only one.
 				bootstrap_status.available = false;
 
 				await create_session_and_set_cookie({

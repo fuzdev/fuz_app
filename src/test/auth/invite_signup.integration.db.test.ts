@@ -64,13 +64,13 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...prefix_route_specs('/api/account', [
 		...create_account_route_specs(ctx.deps, {
 			session_options,
-			ip_rate_limiter: ctx.ip_rate_limiter,
+			login_ip_rate_limiter: ctx.login_ip_rate_limiter,
 			login_account_rate_limiter: ctx.login_account_rate_limiter,
 			login_fail_floor_ms: 0
 		}),
 		...create_signup_route_specs(ctx.deps, {
 			session_options,
-			ip_rate_limiter: null,
+			signup_ip_rate_limiter: null,
 			signup_account_rate_limiter: null,
 			// disable the denial-time floor so the failure-shape tests don't
 			// each wait ~250ms; the floor is exercised separately in its own
@@ -1246,7 +1246,7 @@ describe_db('invite + signup integration', (get_db) => {
 			...prefix_route_specs('/api/account', [
 				...create_signup_route_specs(ctx.deps, {
 					session_options,
-					ip_rate_limiter: null,
+					signup_ip_rate_limiter: null,
 					signup_account_rate_limiter: null,
 					signup_fail_floor_ms: FLOOR_MS,
 					signup_fail_jitter_ms: 0 // determinism for the assertion

@@ -304,8 +304,9 @@ its own dual-spawn `cross_backend_security` project
 (`global_setup_login_security.ts` brings up the TS spine + `testing_spine_stub`
 with the login limiters enabled + the loopback proxy trusted, providing
 `security_handle_a`/`_b`) and drives `describe_login_security_cross_tests`
-against each impl: the per-IP login `429` + `Retry-After` shape and the
-`X-Forwarded-For` bucket keying. It needs a dedicated project because the
+against each impl: the per-IP login `429` + `Retry-After` shape, the
+`X-Forwarded-For` bucket keying, and the distributed-spray backstop (a success
+must not refund the per-IP budget). It needs a dedicated project because the
 limiters can only be enabled on a backend nothing else shares — the standard
 suites fire many loopback logins a live limiter would `429` — so the standard
 backends keep every limiter null. `npm run test:cross:security`; cross-process

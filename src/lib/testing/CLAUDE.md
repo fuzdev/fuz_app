@@ -1497,7 +1497,7 @@ pay the 250ms denial floor.
 
 `describe_login_security_cross_tests({setup_test, login_path?})` — the imperative
 suite pinning **login rate limiting + `X-Forwarded-For` client-IP resolution**
-over real HTTP on both spines. Two cases:
+over real HTTP on both spines:
 
 - **per-IP limit fires** — `default_login_ip_rate_limit.max_attempts` (5, the
   shared cap on both impls) failed logins from one forwarded IP → 401, the next →
@@ -1507,15 +1507,26 @@ over real HTTP on both spines. Two cases:
 - **XFF keying** — exhaust one forwarded IP to 429, then a _distinct_ forwarded IP
   → 401 (not 429), proving the limiter keys on the resolved `X-Forwarded-For` IP,
   not the loopback TCP peer (a backend ignoring XFF would 429 the fresh IP too).
+- **a success does not refund the per-IP budget** — the distributed-spray
+  backstop. Failed guesses against distinct usernames from one forwarded IP,
+  interleaved with the attacker's own successful logins, must still 429 within a
+  bounded total-request budget. Both spines used to clear the IP bucket on
+  success; only the account-grain bucket is forgiven now. The **budget bound** is
+  what makes this adversarial — a decrement-instead-of-zero implementation loops
+  to the iteration cap and fails here. Either leg may trip: the aggregate governs
+  the address, so once it fills the attacker's own login is refused too.
 
 **Cross-process only**, on a **dedicated dual-spawn project** (`cross_backend_security`
 via `global_setup_login_security.ts`) — the limiters can't be enabled on a backend
 the standard suites share (they fire many loopback logins a live limiter would
 429), so the standard backends keep every limiter null. Determinism without a
 limiter reset: each case uses its own forwarded IP (a fresh bucket) plus its own
-non-existent username. Zero Rust code change — the stub's `FUZ_LOGIN_RATE_LIMIT_ENABLED`
+non-existent username; the spray case additionally mints its attacker account
+over the setup path (loopback, no XFF), so minting can't touch the bucket under
+test. Zero Rust code change — the stub's `FUZ_LOGIN_RATE_LIMIT_ENABLED`
 and `FUZ_TRUSTED_PROXIES` env-gates were already wired; the TS side env-gates the
-limiters in the binary, and `create_spine_route_specs` honors `ctx.ip_rate_limiter`.
+limiters in the binary, and `create_spine_route_specs` honors
+`ctx.login_ip_rate_limiter`.
 The in-process counterparts already exist (`describe_rate_limiting_tests` plus the
 proxy middleware tests), so there's no in-process leg. `npm run test:cross:security`.
 Cited property: `docs/security.md` §"Rate Limiting" + §"Trusted Proxy / Client IP".

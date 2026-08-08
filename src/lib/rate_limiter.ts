@@ -49,7 +49,18 @@ export interface RateLimiterOptions {
 	max_keys?: number | null;
 }
 
-/** Default options for per-IP login rate limiting: 5 attempts per 15 minutes. */
+/**
+ * Default options for per-IP auth rate limiting: 5 attempts per 15 minutes.
+ * The default for each of the three per-surface IP limiters (login + password
+ * change, signup, bootstrap) and the shared cap the Rust spine's
+ * `DEFAULT_LOGIN_IP_RATE_LIMIT` pins.
+ *
+ * Deliberately **not** widened when the buckets became monotone (a success no
+ * longer refunds them — see `RateLimiter.reset`). Widening would have bought
+ * NAT'd egress headroom by loosening the one bound that caps credential
+ * guessing from a single address; splitting one shared bucket into three
+ * per-surface ones buys the same headroom without touching that bound.
+ */
 export const default_login_ip_rate_limit: RateLimiterOptions = {
 	max_attempts: 5,
 	window_ms: 15 * 60_000,
@@ -118,7 +129,7 @@ export interface RateLimitResult {
  * key-enumeration attack at the cost of a slight per-op overhead and the
  * LRU trade-off described on `RateLimiterOptions.max_keys`.
  *
- * Parameters that accept `RateLimiter | null` (e.g. `ip_rate_limiter`,
+ * Parameters that accept `RateLimiter | null` (e.g. `login_ip_rate_limiter`,
  * `login_account_rate_limiter`) silently disable rate limiting when `null`
  * is passed — no checks are performed and all requests are allowed through.
  */
@@ -233,7 +244,29 @@ export class RateLimiter {
 	}
 
 	/**
-	 * Clear all attempts for `key` (e.g. after successful login).
+	 * Clear all attempts for `key`.
+	 *
+	 * **Account-grain keys only.** Called after a successful auth to forgive a
+	 * user's own typos, which is safe because the key *is* the account being
+	 * attacked — clearing it requires that account's credential and can only
+	 * widen the budget against an account the caller already holds.
+	 *
+	 * Never call this on an **IP-aggregate** key. That bucket is the
+	 * distributed-spray backstop, and success on one account must not zero the
+	 * budget shared by every other account reachable from the same IP;
+	 * otherwise an attacker interleaves their own logins (or, under open signup,
+	 * throwaway account creations needing no credential at all) with guesses
+	 * against arbitrary victims and sprays indefinitely from one address.
+	 * Nothing records on the IP bucket on success on any path, so with no reset
+	 * it is a pure monotone-within-window failure counter that only time clears.
+	 *
+	 * Because they are monotone, the IP buckets are **one instance per auth
+	 * surface** (`login_ip_rate_limiter`, `signup_ip_rate_limiter`,
+	 * `bootstrap_ip_rate_limiter`) rather than one shared across all of them.
+	 * A single instance meant a failure on any surface spent the budget that
+	 * bounds guessing on every other one, and one caller's exhaustion denied
+	 * four routes at once — a cost that used to be masked by the reset this
+	 * doc forbids.
 	 *
 	 * @mutates internal map - removes the entry for `key`
 	 */
