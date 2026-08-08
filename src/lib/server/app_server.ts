@@ -153,7 +153,7 @@ export interface AppServerOptions {
 	};
 
 	/**
-	 * Shared IP rate limiter for login, bootstrap, and bearer auth.
+	 * Shared IP rate limiter for login, bootstrap, password change, and signup.
 	 * Omit or `undefined` to use a default limiter (5 attempts per 15 minutes).
 	 * Pass `null` to explicitly disable rate limiting.
 	 * Also available on `AppServerContext` for route factory callbacks.
@@ -173,12 +173,6 @@ export interface AppServerOptions {
 	 * Also available on `AppServerContext` for route factory callbacks.
 	 */
 	signup_account_rate_limiter?: RateLimiter | null;
-	/**
-	 * Rate limiter for bearer token auth attempts (per-IP).
-	 * Omit or `undefined` to use a default limiter (5 attempts per 15 minutes).
-	 * Pass `null` to explicitly disable rate limiting.
-	 */
-	bearer_ip_rate_limiter?: RateLimiter | null;
 	/**
 	 * Per-IP rate limiter for the action dispatchers (HTTP RPC + WebSocket).
 	 * Consulted for actions whose spec declares `rate_limit: 'ip'` or `'both'`.
@@ -442,10 +436,6 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		options.signup_account_rate_limiter === undefined
 			? create_rate_limiter(default_login_account_rate_limit)
 			: options.signup_account_rate_limiter;
-	const bearer_ip_rate_limiter =
-		options.bearer_ip_rate_limiter === undefined
-			? create_rate_limiter()
-			: options.bearer_ip_rate_limiter;
 	const action_ip_rate_limiter =
 		options.action_ip_rate_limiter === undefined
 			? create_rate_limiter(default_action_ip_rate_limit)
@@ -475,7 +465,6 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	const auth_middleware = await create_auth_middleware_specs(deps, {
 		allowed_origins: options.allowed_origins,
 		session_options: options.session_options,
-		bearer_ip_rate_limiter,
 		daemon_token_state: options.daemon_token_state
 	});
 	let middleware_specs: Array<MiddlewareSpec> = [proxy_spec, ...auth_middleware];
@@ -627,13 +616,6 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			level: 'warning',
 			category: 'config',
 			message: 'IP rate limiter explicitly disabled (null)'
-		});
-	}
-	if (bearer_ip_rate_limiter === null) {
-		config_diagnostics.push({
-			level: 'warning',
-			category: 'config',
-			message: 'Bearer IP rate limiter explicitly disabled (null)'
 		});
 	}
 	if (config_diagnostics.length) {

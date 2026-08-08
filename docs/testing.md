@@ -14,7 +14,7 @@ fuz_app provides composable test suites that cover auth security:
 - `describe_standard_attack_surface_tests` — Snapshot, structure (invariants + security policy), adversarial auth, adversarial input, adversarial 404
 - `describe_standard_integration_tests` — Login/logout, cookies, sessions, revocation, password change + token revocation, origin, bearer (incl. browser context on mutations), tokens, cross-account, expired credentials, signup invite edge cases, schema validation
 - `describe_standard_admin_integration_tests` — Account listing, role_grant grants, session/token management, audit log, admin trail, admin-to-admin isolation, schema validation
-- `describe_rate_limiting_tests` — IP rate limiting on login, per-account rate limiting, bearer auth IP rate limiting
+- `describe_rate_limiting_tests` — IP rate limiting on login, per-account rate limiting
 - `describe_round_trip_validation` — Schema-driven positive-path validation — valid requests, output schema conformance
 - `describe_standard_adversarial_headers` — Header injection attacks — Host spoofing, XFF manipulation, Origin bypass, Bearer validation
 - `describe_data_exposure_tests` — Schema-level + runtime field blocklist checks — sensitive fields never leak through responses
@@ -428,16 +428,18 @@ describe_rate_limiting_tests({
 	...default_in_process_suite_options({
 		session_options: my_session_config,
 		create_route_specs: create_my_route_specs,
-		rpc_endpoints: build_rpc_endpoint_specs // required — bearer auth IP rate limiting probes `account_verify` via RPC
+		rpc_endpoints: build_rpc_endpoint_specs // optional — both groups drive REST auth routes
 	}),
 	db_factories // optional — defaults to pglite-only
 });
 ```
 
 Tests create a tight rate limiter (2 attempts / 1 minute by default) and verify
-that login (IP and per-account) and bearer auth routes return 429 after the limit
-is exceeded. Each test group asserts that required routes exist — missing routes
-fail with a descriptive message suggesting the consumer check their `create_route_specs`.
+that login returns 429 after the limit is exceeded, keyed per-IP and per-account.
+Each test group asserts that required routes exist — missing routes fail with a
+descriptive message suggesting the consumer check their `create_route_specs`.
+There is no bearer group: the bearer path carries no rate limiter on either
+spine (see ./security.md §Why bearer auth is not rate limited).
 
 ## Bootstrap Coverage
 
@@ -835,7 +837,7 @@ assert_error_coverage(collector, route_specs, {
 - `describe_standard_integration_tests` (`testing/integration.ts`) — 10-group auth integration suite
 - `describe_standard_admin_integration_tests` (`testing/admin_integration.ts`) — 7-group admin integration suite
 - `describe_standard_tests` (`testing/standard.ts`) — Combined integration + admin suite (convenience wrapper)
-- `describe_rate_limiting_tests` (`testing/rate_limiting.ts`) — 3-group rate limiting suite (IP, per-account, bearer)
+- `describe_rate_limiting_tests` (`testing/rate_limiting.ts`) — 2-group rate limiting suite (IP, per-account)
 - `describe_round_trip_validation` (`testing/round_trip.ts`) — Schema-driven positive-path validation for all routes
 - `describe_sse_route_tests` (`testing/sse_round_trip.ts`) — SSE validation — connect, payload schema, close-on-revoke
 - `describe_standard_adversarial_headers` (`testing/adversarial_headers.ts`) — Header injection attack suite (7 cases)

@@ -30,7 +30,6 @@ import { query_validate_api_token } from './api_token_queries.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { is_browser_context } from '../http/origin.ts';
-import { rate_limit_exceeded_response, type RateLimiter } from '../rate_limiter.ts';
 
 /**
  * Create middleware that authenticates via bearer token.
@@ -51,20 +50,20 @@ import { rate_limit_exceeded_response, type RateLimiter } from '../rate_limiter.
  * (e.g. by session middleware). Acting-actor resolution + `RequestContext`
  * construction are deferred to the dispatcher's authorization phase.
  *
- * Rate limiting (429) is the only hard-fail — it's a throttling concern
- * independent of auth identity.
+ * There is deliberately **no rate limit on this path**, and no 429 — every
+ * failure soft-fails to "no credential". An API token is 32 bytes of CSPRNG
+ * output resolved by a blake3 hash lookup, so guessing is bounded by entropy,
+ * not by throttling; a limiter here would buy nothing measurable while costing
+ * availability (the check/record has to precede the async lookup to close its
+ * own TOCTOU window, so concurrent requests bearing a *valid* token race each
+ * other into a 429). The Rust spine never had one here; this is the converged
+ * shape. See ../../../docs/security.md §Why bearer auth is not rate limited.
  *
  * @param deps - query dependencies (pool-level db for middleware)
- * @param ip_rate_limiter - per-IP rate limiter for bearer token attempts (null to disable)
  * @param log - the logger instance
  * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, and `AUTH_API_TOKEN_ID_KEY` on success
- * @mutates `ip_rate_limiter` - records on attempt; resets on a valid token
  */
-export const create_bearer_auth_middleware = (
-	deps: QueryDeps,
-	ip_rate_limiter: RateLimiter | null,
-	log: Logger
-): MiddlewareHandler => {
+export const create_bearer_auth_middleware = (deps: QueryDeps, log: Logger): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
 		// Skip if an account is already authenticated (e.g. by session middleware)
 		if (c.get(ACCOUNT_ID_KEY) != null) {
@@ -108,18 +107,8 @@ export const create_bearer_auth_middleware = (
 			return;
 		}
 
+		// `ip` feeds the token's `last_used_ip` bookkeeping, not a limiter.
 		const ip = get_client_ip(c);
-
-		// Per-IP rate limit: record before async DB work to close the TOCTOU
-		// window where concurrent requests could all pass check() before any
-		// reaches record(). On valid token, reset the counter below.
-		if (ip_rate_limiter) {
-			const check = ip_rate_limiter.check(ip);
-			if (!check.allowed) {
-				return rate_limit_exceeded_response(c, check.retry_after);
-			}
-			ip_rate_limiter.record(ip);
-		}
 
 		const api_token = await query_validate_api_token(
 			{ ...deps, log },
@@ -128,15 +117,12 @@ export const create_bearer_auth_middleware = (
 			c.var.pending_effects
 		);
 		if (!api_token) {
-			// Invalid or expired token — soft-fail. Rate limit counter stays
-			// incremented (recorded above), correctly penalizing bad attempts.
+			// Invalid or expired token — soft-fail, indistinguishable from
+			// sending no credential at all.
 			log.debug('bearer auth soft-fail: token not found or expired');
 			await next();
 			return;
 		}
-
-		// Valid token — reset rate limit counter
-		if (ip_rate_limiter) ip_rate_limiter.reset(ip);
 
 		c.set(ACCOUNT_ID_KEY, api_token.account_id);
 		c.set(CREDENTIAL_TYPE_KEY, 'api_token');

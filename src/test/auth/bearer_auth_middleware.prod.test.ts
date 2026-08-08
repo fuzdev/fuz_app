@@ -34,7 +34,7 @@ test('bearer browser-context discard omits the debug header in production (DEV=f
 	// The discard path runs before any DB or rate-limiter work, so stub deps suffice.
 	const log = { debug() {} } as unknown as Logger;
 	const app = new Hono();
-	app.use('/api/*', create_bearer_auth_middleware({} as QueryDeps, null, log));
+	app.use('/api/*', create_bearer_auth_middleware({} as QueryDeps, log));
 	app.get('/api/test', (c) => c.text('ok'));
 
 	// Authorization + Origin → browser-context discard branch.

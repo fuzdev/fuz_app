@@ -27,7 +27,6 @@ import type { QueryDeps } from '../db/query_deps.ts';
 import { create_proxy_middleware } from '../http/proxy.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { verify_request_source, parse_allowed_origins } from '../http/origin.ts';
-import type { RateLimiter } from '../rate_limiter.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '../auth/request_context.ts';
 import {
 	ACCOUNT_ID_KEY,
@@ -169,14 +168,12 @@ export const TEST_CLIENT_IP = '127.0.0.1';
  * enabling assertions on `REQUEST_CONTEXT_KEY` and `CREDENTIAL_TYPE_KEY`.
  */
 export const create_bearer_auth_test_app = (
-	tc: BearerAuthTestOptions,
-	ip_rate_limiter: RateLimiter | null = null
+	tc: BearerAuthTestOptions
 ): { app: Hono; mocks: BearerAuthMocks } => {
 	const mocks = create_bearer_auth_mocks(tc);
 
 	const bearer_middleware = create_bearer_auth_middleware(
 		STUB_DEPS,
-		ip_rate_limiter,
 		new Logger('test', { level: 'off' })
 	);
 
@@ -239,13 +236,12 @@ export const create_bearer_auth_test_app = (
  */
 export const describe_bearer_auth_cases = (
 	suite_name: string,
-	cases: Array<BearerAuthTestCase>,
-	ip_rate_limiter: RateLimiter | null = null
+	cases: Array<BearerAuthTestCase>
 ): void => {
 	describe(suite_name, () => {
 		for (const tc of cases) {
 			test(tc.name, async () => {
-				const { app, mocks } = create_bearer_auth_test_app(tc, ip_rate_limiter);
+				const { app, mocks } = create_bearer_auth_test_app(tc);
 
 				const res = await app.request('/api/test', {
 					method: 'GET',
@@ -329,8 +325,6 @@ export interface TestMiddlewareStackOptions {
 	allowed_origins?: string;
 	/** Connection IP or factory. @default first trusted proxy */
 	connection_ip?: string | (() => string | undefined);
-	/** Rate limiter for bearer auth. @default `null` */
-	ip_rate_limiter?: RateLimiter | null;
 }
 
 /** Return type of `create_test_middleware_stack_app`. */
@@ -384,11 +378,7 @@ export const create_test_middleware_stack_app = (
 	const allowed_patterns = parse_allowed_origins(allowed_origins_str);
 	const origin_mw = verify_request_source(allowed_patterns);
 
-	const bearer_mw = create_bearer_auth_middleware(
-		STUB_DEPS,
-		options?.ip_rate_limiter ?? null,
-		new Logger('test', { level: 'off' })
-	);
+	const bearer_mw = create_bearer_auth_middleware(STUB_DEPS, new Logger('test', { level: 'off' }));
 
 	const app = new Hono();
 	app.use('*', proxy_mw);

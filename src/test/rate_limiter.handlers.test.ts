@@ -1,10 +1,11 @@
 /**
- * Integration tests for rate limiting through login and bearer auth HTTP handlers.
+ * Integration tests for rate limiting through the login and signup HTTP handlers.
  *
  * Uses vi.mock to stub query functions — no real database needed.
  * Focuses on verifying that handlers correctly integrate with the RateLimiter:
  * checking before work, recording failures, resetting on success, and
- * using the trusted proxy middleware for IP extraction.
+ * using the trusted proxy middleware for IP extraction. The bearer group is the
+ * inverse — it pins that the bearer path carries no limiter at all.
  *
  * @module
  */
@@ -221,14 +222,14 @@ interface BearerTestApp {
 	mock_validate: ReturnType<typeof vi.fn>;
 }
 
-const create_bearer_app = (ip_rate_limiter: RateLimiter | null): BearerTestApp => {
+const create_bearer_app = (): BearerTestApp => {
 	const mock_validate = vi.fn(() => Promise.resolve(undefined));
 	mock_validate_api_token.mockReset().mockImplementation(mock_validate);
 	mock_account_by_id.mockReset().mockImplementation(() => Promise.resolve(null));
 	mock_resolve_actor.mockReset().mockImplementation(() => Promise.resolve(null));
 	mock_role_grant_find_active.mockReset().mockImplementation(() => Promise.resolve([]));
 
-	const bearer_middleware = create_bearer_auth_middleware({ db }, ip_rate_limiter, log);
+	const bearer_middleware = create_bearer_auth_middleware({ db }, log);
 
 	const app = new Hono();
 	app.use('*', test_proxy_middleware);
@@ -839,135 +840,41 @@ describe('login error response consistency (account enumeration prevention)', ()
 	});
 });
 
-describe('bearer auth rate limiting', () => {
-	test('returns 429 when per-IP limit exhausted (invalid tokens)', async () => {
-		const limiter = create_test_limiter();
-		const { app } = create_bearer_app(limiter);
+describe('bearer auth has no rate limiter', () => {
+	// The bearer path deliberately carries no limiter and can never 429 — an API
+	// token is 32 bytes of CSPRNG output resolved by a hash lookup, so entropy
+	// bounds guessing and throttling adds nothing. These two pin that: the first
+	// is the inverse of the old exhaustion test, the second is the availability
+	// bug the limiter caused, since check/record had to precede the async lookup.
 
-		// Exhaust the limit with invalid token attempts (soft-fail 200, but record() fires)
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
-			const res = await bearer_request(app);
-			assert.strictEqual(res.status, 200);
+	// well past any limiter threshold the old bearer path would have enforced
+	const BURST = MAX_ATTEMPTS * 4;
+
+	test('invalid tokens never 429, however many are tried', async () => {
+		const { app } = create_bearer_app();
+
+		for (let i = 0; i < BURST; i++) {
+			const res = await bearer_request(app, `invalid_token_${i}`);
+			assert.strictEqual(res.status, 200, 'soft-fails to "no credential", never throttled');
 		}
-
-		// Next request should be rate-limited (429 is the only hard-fail)
-		const res = await bearer_request(app);
-		assert.strictEqual(res.status, 429);
-		const body = await res.json();
-		assert.strictEqual(body.error, ERROR_RATE_LIMIT_EXCEEDED);
-		assert.strictEqual(typeof body.retry_after, 'number');
-		assert.ok(body.retry_after > 0);
-
-		limiter.dispose();
 	});
 
-	test('blocked request skips token validation (no hash/DB work)', async () => {
-		const limiter = create_test_limiter();
-		const { app, mock_validate } = create_bearer_app(limiter);
-
-		// Exhaust the limit
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
-			await bearer_request(app);
-		}
-
-		const validate_calls = mock_validate.mock.calls.length;
-
-		// Blocked request — rate limit check short-circuits before validate
-		const res = await bearer_request(app);
-		assert.strictEqual(res.status, 429);
-		assert.strictEqual(
-			mock_validate.mock.calls.length,
-			validate_calls,
-			'should not call validate when rate-limited'
+	test('concurrent requests with a valid token all succeed', async () => {
+		const { app, mock_validate } = create_bearer_app();
+		mock_validate.mockImplementation(() =>
+			Promise.resolve({ id: 'tok_1', account_id: 'acc_1', scope: null })
 		);
 
-		limiter.dispose();
-	});
-
-	test('valid token resets rate limit counter', async () => {
-		const limiter = create_test_limiter();
-		const mock_validate = vi.fn((): Promise<any> => Promise.resolve(undefined));
-		const mock_find_by_id = vi.fn((): Promise<any> => Promise.resolve(null));
-		mock_validate_api_token.mockReset().mockImplementation(mock_validate);
-		mock_account_by_id.mockReset().mockImplementation(mock_find_by_id);
-		mock_resolve_actor
-			.mockReset()
-			.mockImplementation(() => Promise.resolve({ id: 'actor_1', account_id: 'acc_1' }));
-		mock_role_grant_find_active.mockReset().mockImplementation(() => Promise.resolve([]));
-
-		const bearer_middleware = create_bearer_auth_middleware({ db }, limiter, log);
-
-		const app = new Hono();
-		app.use('*', test_proxy_middleware);
-		app.use('/api/*', bearer_middleware);
-		app.get('/api/test', (c) => c.json({ ok: true }));
-
-		// Accumulate failures
-		await bearer_request(app);
-		await bearer_request(app);
-		assert.strictEqual(limiter.check(TEST_CONNECTION_IP).remaining, 1);
-
-		// Succeed: validate returns a token, account + actor found
-		mock_validate.mockResolvedValueOnce({ id: 'tok_1', account_id: 'acc_1' });
-		mock_find_by_id.mockResolvedValueOnce({ id: 'acc_1' });
-
-		const res = await bearer_request(app, 'valid_token');
-		assert.strictEqual(res.status, 200);
-
-		// Rate limit fully reset
-		assert.strictEqual(limiter.check(TEST_CONNECTION_IP).remaining, MAX_ATTEMPTS);
-
-		limiter.dispose();
-	});
-
-	test('ip_rate_limiter null allows unlimited invalid attempts', async () => {
-		const { app } = create_bearer_app(null);
-
-		// Well beyond MAX_ATTEMPTS — should never see 429 (soft-fail 200 for each)
-		for (let i = 0; i < MAX_ATTEMPTS + 5; i++) {
-			const res = await bearer_request(app);
-			assert.strictEqual(res.status, 200, `request ${i + 1} should soft-fail to 200, not 429`);
-		}
-	});
-
-	test('different IPs rate-limited independently', async () => {
-		const limiter = create_test_limiter();
-		const { app } = create_bearer_app(limiter);
-
-		// Exhaust limit for 10.0.0.1
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
-			await bearer_request(app, 'bad', { 'X-Forwarded-For': '10.0.0.1' });
-		}
-
-		// 10.0.0.1 blocked
-		assert.strictEqual(
-			(await bearer_request(app, 'bad', { 'X-Forwarded-For': '10.0.0.1' })).status,
-			429
+		// `Array.from` fires every request before any is awaited, so they are all
+		// mid-flight together — the shape that used to trip the limiter.
+		// `Promise.resolve` normalizes `bearer_request`'s `Response | Promise<Response>`.
+		const results = await Promise.all(
+			Array.from({ length: BURST }, () => Promise.resolve(bearer_request(app, 'valid_token')))
 		);
 
-		// 10.0.0.2 unaffected (soft-fail 200, not rate-limited)
-		assert.strictEqual(
-			(await bearer_request(app, 'bad', { 'X-Forwarded-For': '10.0.0.2' })).status,
-			200
-		);
-
-		limiter.dispose();
-	});
-
-	test('429 response shape matches login rate limiting', async () => {
-		const limiter = create_test_limiter();
-		const { app } = create_bearer_app(limiter);
-
-		for (let i = 0; i < MAX_ATTEMPTS; i++) {
-			await bearer_request(app);
+		for (const res of results) {
+			assert.strictEqual(res.status, 200, 'a valid token must not be throttled by its own burst');
 		}
-
-		const res = await bearer_request(app);
-		const body = await res.json();
-		assert.deepStrictEqual(Object.keys(body).sort(), ['error', 'retry_after']);
-		assert.strictEqual(body.error, ERROR_RATE_LIMIT_EXCEEDED);
-
-		limiter.dispose();
 	});
 });
 

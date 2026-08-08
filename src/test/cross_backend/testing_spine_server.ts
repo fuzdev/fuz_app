@@ -216,7 +216,6 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		ip_rate_limiter,
 		login_account_rate_limiter,
 		signup_account_rate_limiter: null,
-		bearer_ip_rate_limiter: null,
 		action_ip_rate_limiter: null,
 		action_account_rate_limiter: null,
 		daemon_token_state: daemon_token_rotation.state,

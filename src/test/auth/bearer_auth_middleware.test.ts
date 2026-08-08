@@ -8,17 +8,15 @@
  * @module
  */
 
-import { assert, describe, test, vi } from 'vitest';
+import { assert, describe, test } from 'vitest';
 
 import {
 	describe_bearer_auth_cases,
 	create_bearer_auth_test_app,
 	TEST_CLIENT_IP,
-	type BearerAuthTestCase,
-	type BearerAuthTestOptions
+	type BearerAuthTestCase
 } from '$lib/testing/middleware.ts';
 import { create_test_request_context } from '$lib/testing/auth_apps.ts';
-import { RateLimitError, ERROR_RATE_LIMIT_EXCEEDED } from '$lib/http/error_schemas.ts';
 
 // --- Test data ---
 
@@ -200,97 +198,5 @@ describe('bearer browser-context discard diagnostic (DEV)', () => {
 			headers: { Authorization: 'Bearer secret_fuz_token_test' }
 		});
 		assert.strictEqual(non_browser.headers.get('X-Fuz-Auth-Debug'), null);
-	});
-});
-
-// --- Rate limiter integration at unit level ---
-
-// --- Rate limiter side-effect assertions (mock limiter) ---
-
-describe('bearer auth rate limiter side effects', () => {
-	const create_mock_limiter = () => ({
-		check: vi.fn((_key: string) => ({ allowed: true, remaining: 5, retry_after: 0 })),
-		record: vi.fn((_key: string) => ({ allowed: true, remaining: 4, retry_after: 0 })),
-		reset: vi.fn((_key: string) => undefined)
-	});
-
-	test('invalid token calls record() with resolved client IP (soft-fail, counter stays)', async () => {
-		const mock_limiter = create_mock_limiter();
-		const tc: BearerAuthTestOptions = {
-			name: '',
-			headers: { Authorization: 'Bearer secret_fuz_token_bad' },
-			mock_validate_result: undefined,
-			expected_status: 'next' // soft-fail — middleware calls next(), route handler returns 200
-		};
-		const { app } = create_bearer_auth_test_app(tc, mock_limiter as any);
-		const res = await app.request('/api/test', { headers: tc.headers });
-
-		// Soft-fail means the route handler runs (200), not the middleware (401)
-		assert.strictEqual(res.status, 200);
-		assert.strictEqual(mock_limiter.check.mock.calls.length, 1);
-		assert.strictEqual(mock_limiter.check.mock.calls[0]![0], TEST_CLIENT_IP);
-		assert.strictEqual(mock_limiter.record.mock.calls.length, 1);
-		assert.strictEqual(mock_limiter.record.mock.calls[0]![0], TEST_CLIENT_IP);
-		assert.strictEqual(mock_limiter.reset.mock.calls.length, 0);
-	});
-
-	test('valid token calls reset() with resolved client IP', async () => {
-		const mock_limiter = create_mock_limiter();
-		const tc: BearerAuthTestOptions = {
-			name: '',
-			headers: { Authorization: 'Bearer secret_fuz_token_good' },
-			mock_validate_result: MOCK_API_TOKEN,
-			expected_status: 'next'
-		};
-		const { app } = create_bearer_auth_test_app(tc, mock_limiter as any);
-		await app.request('/api/test', { headers: tc.headers });
-
-		assert.strictEqual(mock_limiter.check.mock.calls.length, 1);
-		// record() is called eagerly before DB work to close the TOCTOU window,
-		// then reset() is called on valid token — net effect: no recorded failure
-		assert.strictEqual(mock_limiter.record.mock.calls.length, 1);
-		assert.strictEqual(mock_limiter.record.mock.calls[0]![0], TEST_CLIENT_IP);
-		assert.strictEqual(mock_limiter.reset.mock.calls.length, 1);
-		assert.strictEqual(mock_limiter.reset.mock.calls[0]![0], TEST_CLIENT_IP);
-	});
-
-	test('rate-limited request short-circuits before validate', async () => {
-		const mock_limiter = create_mock_limiter();
-		mock_limiter.check.mockReturnValue({ allowed: false, remaining: 0, retry_after: 42 });
-		const tc: BearerAuthTestOptions = {
-			name: '',
-			headers: { Authorization: 'Bearer secret_fuz_token_any' },
-			expected_status: 429,
-			expected_error: ERROR_RATE_LIMIT_EXCEEDED
-		};
-		const { app, mocks } = create_bearer_auth_test_app(tc, mock_limiter as any);
-		const res = await app.request('/api/test', { headers: tc.headers });
-
-		assert.strictEqual(res.status, 429);
-		const body = await res.json();
-		assert.strictEqual(body.error, ERROR_RATE_LIMIT_EXCEEDED);
-		assert.strictEqual(body.retry_after, 42);
-		RateLimitError.parse(body);
-		assert.strictEqual(mocks.mock_validate.mock.calls.length, 0, 'validate should be skipped');
-		assert.strictEqual(mock_limiter.record.mock.calls.length, 0);
-		assert.strictEqual(mock_limiter.reset.mock.calls.length, 0);
-	});
-
-	test('Origin rejection skips rate limiter entirely', async () => {
-		const mock_limiter = create_mock_limiter();
-		const tc: BearerAuthTestOptions = {
-			name: '',
-			headers: {
-				Authorization: 'Bearer secret_fuz_token_any',
-				Origin: 'https://evil.com'
-			},
-			expected_status: 'next'
-		};
-		const { app } = create_bearer_auth_test_app(tc, mock_limiter as any);
-		await app.request('/api/test', { headers: tc.headers });
-
-		assert.strictEqual(mock_limiter.check.mock.calls.length, 0, 'check should not be called');
-		assert.strictEqual(mock_limiter.record.mock.calls.length, 0);
-		assert.strictEqual(mock_limiter.reset.mock.calls.length, 0);
 	});
 });

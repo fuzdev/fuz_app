@@ -7,7 +7,6 @@
 import { describe, assert, test } from 'vitest';
 
 import { create_auth_middleware_specs, type AuthMiddlewareOptions } from '$lib/auth/middleware.ts';
-import { RateLimiter } from '$lib/rate_limiter.ts';
 import { create_stub_app_deps } from '$lib/testing/stubs.ts';
 
 const create_options = (overrides?: Partial<AuthMiddlewareOptions>): AuthMiddlewareOptions => ({
@@ -18,7 +17,6 @@ const create_options = (overrides?: Partial<AuthMiddlewareOptions>): AuthMiddlew
 		encode_identity: (id: string) => id,
 		decode_identity: (payload: string) => payload
 	},
-	bearer_ip_rate_limiter: null,
 	...overrides
 });
 
@@ -96,16 +94,15 @@ describe('create_auth_middleware_specs', () => {
 		assert.ok(origin.errors[403]);
 	});
 
-	test('bearer_auth middleware has only 429 error schema (soft-fail for auth errors)', async () => {
+	test('bearer_auth middleware declares no errors (soft-fails on every path)', async () => {
 		const deps = create_stub_app_deps();
 		const specs = await create_auth_middleware_specs(deps, create_options());
 		const bearer = specs.find((s) => s.name === 'bearer_auth')!;
 		assert.ok(bearer.errors);
-		assert.ok(bearer.errors[429]);
-		// Bearer middleware soft-fails for invalid tokens — no 401 or 403.
-		// Auth enforcement happens downstream (check_action_auth / require_auth).
-		assert.strictEqual(bearer.errors[401], undefined);
-		assert.strictEqual(bearer.errors[403], undefined);
+		// The layer returns no status of its own: invalid tokens soft-fail to "no
+		// credential" and it carries no rate limiter, so not even a 429. Auth
+		// enforcement happens downstream (check_action_auth / require_auth).
+		assert.strictEqual(Object.keys(bearer.errors).length, 0);
 	});
 
 	test('session and request_context have no error schemas', async () => {
@@ -137,30 +134,6 @@ describe('create_auth_middleware_specs', () => {
 		// own and declares none.
 		assert.ok(dt.errors);
 		assert.strictEqual(Object.keys(dt.errors).length, 0);
-	});
-
-	test('bearer_ip_rate_limiter null disables rate limiting', async () => {
-		const deps = create_stub_app_deps();
-		// null = explicit opt-out — should not throw
-		const specs = await create_auth_middleware_specs(
-			deps,
-			create_options({ bearer_ip_rate_limiter: null })
-		);
-		assert.strictEqual(specs.length, 4);
-	});
-
-	test('custom bearer_ip_rate_limiter is accepted', async () => {
-		const deps = create_stub_app_deps();
-		const custom_limiter = new RateLimiter({
-			max_attempts: 100,
-			window_ms: 60_000,
-			cleanup_interval_ms: 0
-		});
-		const specs = await create_auth_middleware_specs(
-			deps,
-			create_options({ bearer_ip_rate_limiter: custom_limiter })
-		);
-		assert.strictEqual(specs.length, 4);
 	});
 
 	test('all specs have handler functions', async () => {

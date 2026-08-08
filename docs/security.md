@@ -201,8 +201,8 @@ legitimate operator.
   credential" — downstream auth enforcement (the RPC dispatcher's
   pre-authorization auth gate, or `require_auth` on REST) returns generic
   errors without leaking token-specific information (`invalid_token`,
-  `account_not_found`). Rate limiting (429) is the only hard-fail from
-  bearer middleware
+  `account_not_found`). The bearer middleware has no hard-fail at all — it
+  never returns a status of its own
 - **Token limits**: Per-account cap (default 10, configurable). Oldest token
   evicted on creation when limit is reached
 
@@ -435,9 +435,11 @@ closes only the affected tab, while `role_grant_revoke` / `session_revoke_all` /
 
 ## Rate Limiting
 
-In-memory sliding window. Applied to login, bootstrap, and bearer auth.
+In-memory sliding window. Applied to login, bootstrap, password change, and
+signup — the password-bearing surfaces. **Bearer auth carries no rate limiter**
+(see below).
 
-- IP rate limiter (5 attempts / 15 min) — Per resolved client IP, shared across login + bootstrap + password change. Bearer auth is gated by a **separate, independently-tracked** IP bucket (`bearer_ip_rate_limiter`, same defaults, its own counter), so bearer attempts do not consume the login allowance and vice versa
+- IP rate limiter (5 attempts / 15 min) — Per resolved client IP, shared across login + bootstrap + password change (and signup, when the consumer wires it)
 - Login account rate limiter (10 attempts / 30 min) — Per `account.id` when the account exists, per normalized submitted identifier otherwise. Per `account.id` on password change.
 - Signup account rate limiter (10 attempts / 30 min) — Per submitted username (lowercased), signup only
 
@@ -470,14 +472,35 @@ returns `429 {error: "rate_limit_exceeded", retry_after}` with a
 `Retry-After: ceil(retry_after)` header on both impls (`rate_limit_exceeded_response`
 ↔ `route_response::rate_limit_exceeded`).
 
+### Why bearer auth is not rate limited
+
+An API token is 32 bytes of CSPRNG output (`secret_fuz_token_` + 43 base64url
+chars) resolved by a blake3 hash lookup. Guessing one is bounded by entropy, not
+by throttling: even ignoring every edge control, the residual search space after
+subtracting the publicly-visible token id prefix is ~184 bits. A limiter here
+changes an unreachable number into a slightly larger unreachable number.
+
+It is not free, though. The check/record must precede the async token lookup to
+close its own TOCTOU window, so a burst of concurrent requests carrying a
+**valid** token records against itself and the last one 429s — an availability
+bug for exactly the automation bearer auth exists to serve (CI runners, a NAT'd
+office egress). The limiter also short-circuits ahead of the RPC dispatcher, so
+a throttled RPC call would answer with a REST-shaped error instead of a
+JSON-RPC envelope.
+
+Rate limiting belongs on low-entropy credentials — passwords — and on bounding
+attacker-controlled writes. The Rust spine never had a bearer limiter; this is
+the converged shape on both.
+
 ### Rate Limiter Limitations
 
-- **Check-then-record race (login only)**: Bearer auth uses record-before-validate
-  (closed the TOCTOU window). Login handler still uses check-then-record:
+- **Check-then-record race**: the login handler uses check-then-record —
   `check(ip)` is sync; async Argon2 work follows (~100ms). Concurrent requests
   from the same IP may all pass the check before any records. Practical impact:
   up to `max_attempts + N_concurrent` may pass per window. Single-process
-  architecture limits concurrency.
+  architecture limits concurrency. The alternative (record-before-validate)
+  closes the window but throttles concurrent *legitimate* callers, which is why
+  bearer auth dropped its limiter rather than keeping that shape.
 - **Blocked requests don't extend lockout**: A 429 response calls `check()` but
   not `record()`. Continued abuse during lockout doesn't extend the window.
 - **Single-process**: See [Known Limitations](#known-limitations).

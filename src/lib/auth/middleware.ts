@@ -10,9 +10,8 @@
 import type { SessionOptions } from './session_cookie.ts';
 import type { AppDeps } from './deps.ts';
 import type { DaemonTokenState } from './daemon_token.ts';
-import type { RateLimiter } from '../rate_limiter.ts';
 import type { MiddlewareSpec } from '../http/middleware_spec.ts';
-import { ApiError, RateLimitError } from '../http/error_schemas.ts';
+import { ApiError } from '../http/error_schemas.ts';
 
 /**
  * Per-factory configuration for the standard auth middleware stack.
@@ -24,8 +23,6 @@ export interface AuthMiddlewareOptions {
 	path?: string;
 	/** Daemon token state for keeper auth. Omit to disable daemon token middleware. */
 	daemon_token_state?: DaemonTokenState;
-	/** Rate limiter for bearer token auth attempts (per-IP). Pass `null` to disable. */
-	bearer_ip_rate_limiter: RateLimiter | null;
 }
 
 /**
@@ -45,13 +42,7 @@ export const create_auth_middleware_specs = async (
 	options: AuthMiddlewareOptions
 ): Promise<Array<MiddlewareSpec>> => {
 	const { keyring, db } = deps;
-	const {
-		allowed_origins,
-		session_options,
-		path = '/api/*',
-		daemon_token_state,
-		bearer_ip_rate_limiter
-	} = options;
+	const { allowed_origins, session_options, path = '/api/*', daemon_token_state } = options;
 
 	const query_deps = { db };
 
@@ -74,11 +65,7 @@ export const create_auth_middleware_specs = async (
 
 	const session_middleware = create_session_middleware(keyring, session_options);
 	const request_context_middleware = create_request_context_middleware(query_deps, deps.log);
-	const bearer_auth_middleware = create_bearer_auth_middleware(
-		query_deps,
-		bearer_ip_rate_limiter,
-		deps.log
-	);
+	const bearer_auth_middleware = create_bearer_auth_middleware(query_deps, deps.log);
 
 	const specs: Array<MiddlewareSpec> = [
 		{
@@ -93,13 +80,14 @@ export const create_auth_middleware_specs = async (
 			name: 'bearer_auth',
 			path,
 			handler: bearer_auth_middleware,
-			// Bearer middleware soft-fails for invalid/expired tokens (calls next()
-			// without setting context). Only 429 is a hard-fail from this layer.
-			// Auth enforcement (401/403) happens downstream — the RPC dispatcher's
-			// pre-authorization / post-authorization auth gates, or `require_auth` /
-			// `require_role` on REST — producing consistent JSON-RPC or
-			// route-level errors.
-			errors: { 429: RateLimitError }
+			// Soft-fails on every non-success path — browser context, malformed,
+			// invalid, and expired tokens all `next()` through without setting
+			// context. The layer returns no error response of its own (it carries
+			// no rate limiter, so not even a 429). Auth enforcement (401/403)
+			// happens downstream — the RPC dispatcher's pre-authorization /
+			// post-authorization auth gates, or `require_auth` / `require_role` on
+			// REST — producing consistent JSON-RPC or route-level errors.
+			errors: {}
 		}
 	];
 

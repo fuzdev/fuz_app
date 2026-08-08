@@ -341,7 +341,7 @@ export type RouteErrorSchemas = Partial<Record<number, z.ZodType>>;
  * Rate limit key type — declares what a route or RPC action's rate limiter
  * is keyed on.
  *
- * - `'ip'` — per-IP rate limiting (bootstrap, password change, bearer auth)
+ * - `'ip'` — per-IP rate limiting (login, bootstrap, password change, signup)
  * - `'account'` — per-account rate limiting. On REST auth routes the key is
  *   the submitted identifier (login). On RPC actions (post-auth) the key is
  *   the resolved actor id (`request_context.actor.id`) — separate namespace.

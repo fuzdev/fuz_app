@@ -457,8 +457,8 @@ file that imports from `middleware.ts` gets these mocks globally. Pair with
 - `BearerAuthTestOptions`, `BearerAuthTestCase` — test-case table shape for the bearer auth runner.
 - `create_bearer_auth_mocks(tc)` — configures the module-level mocks per test case; returns spy references.
 - `TEST_CLIENT_IP = '127.0.0.1'` — IP set by the proxy stub in `create_bearer_auth_test_app`.
-- `create_bearer_auth_test_app(tc, ip_rate_limiter?)` — Hono app with bearer middleware + echo route at `/api/test` returning `{ok, account_id, credential_type, api_token_id, request_context_set}` — the account-grain identity bearer auth writes, plus a flag for tests that pre-populate `REQUEST_CONTEXT_KEY` via `pre_context`.
-- `describe_bearer_auth_cases(suite_name, cases, ip_rate_limiter?)` — table-driven runner; one `test()` per case; asserts status, error, body fields, `api_token_id`, context preservation.
+- `create_bearer_auth_test_app(tc)` — Hono app with bearer middleware + echo route at `/api/test` returning `{ok, account_id, credential_type, api_token_id, request_context_set}` — the account-grain identity bearer auth writes, plus a flag for tests that pre-populate `REQUEST_CONTEXT_KEY` via `pre_context`.
+- `describe_bearer_auth_cases(suite_name, cases)` — table-driven runner; one `test()` per case; asserts status, error, body fields, `api_token_id`, context preservation.
 - `TEST_MIDDLEWARE_PATH = '/api/test'` — path used by the echo route in the stack factory.
 - `create_test_middleware_stack_app(options?)` — real proxy + origin + bearer middleware for integration-shape testing. Echo route returns `{ok, client_ip, has_context}`.
 
@@ -571,17 +571,19 @@ Options: `{setup_test, surface_source, capabilities, sensitive_fields?, admin_on
 
 ### `rate_limiting.ts` — `describe_rate_limiting_tests`
 
-Three test groups:
+Two test groups:
 
 1. IP rate limiting on login — fires `max_attempts + 1` requests; last should be 429 with `RateLimitError` body + valid `Retry-After` header.
 2. Per-account rate limiting on login — same username exhausts the bucket; a different username is not blocked.
-3. Bearer auth IP rate limiting — invalid bearer tokens exhaust the IP bucket via the `account_verify` RPC method.
+
+No bearer group — the bearer path carries no rate limiter on either spine
+(`auth/bearer_auth.ts`), which is also why `rpc_endpoints` is optional here.
 
 Each group asserts its required route exists with a descriptive message.
 Creates a tight rate limiter (default `max_attempts: 2`, `window_ms: 60_000`)
 per test and disposes it in `finally`.
 
-Options: `{session_options, create_route_specs, rpc_endpoints, app_options?, db_factories?, max_attempts?}`.
+Options: `{session_options, create_route_specs, rpc_endpoints?, app_options?, db_factories?, max_attempts?}`.
 Reads inputs directly from the options bag instead of going through the
 `setup_test` fixture protocol — the per-test rate-limiter overrides need a
 fresh `TestApp` per test that the single-fixture model can't carry.

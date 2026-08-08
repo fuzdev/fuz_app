@@ -227,6 +227,32 @@ export const auth_migrations: Array<Migration> = [
 			);
 			await db.query('ALTER TABLE api_token ALTER COLUMN scope SET NOT NULL');
 		}
+	},
+	// Index the column every bearer request looks up.
+	//
+	// `full_auth_schema` indexes `api_token(account_id)` and nothing else, so
+	// `query_validate_api_token`'s `WHERE token_hash = $1` — the lookup on the
+	// hot path of *every* bearer-authenticated request, valid or not — has been
+	// a sequential scan since the table shipped. The asymmetry is accidental:
+	// `auth_session` gets the same access pattern for free because its session
+	// hash *is* the primary key.
+	//
+	// UNIQUE rather than a plain index, because both spines resolve a token with
+	// an at-most-one read (`query_one` / `query_opt`). Two rows sharing a hash
+	// would mean the two impls could silently disagree about which credential
+	// answered; the constraint makes that unrepresentable instead of merely
+	// improbable.
+	//
+	// The name must match the Rust twin's `api_token_hash_unique_index` byte for
+	// byte or the `_testing_migration_tracker` parity gate fails and the
+	// swap-freely invariant breaks.
+	{
+		name: 'api_token_hash_unique_index',
+		up: async (db: Db): Promise<void> => {
+			await db.query(
+				'CREATE UNIQUE INDEX IF NOT EXISTS idx_api_token_hash ON api_token(token_hash)'
+			);
+		}
 	}
 ];
 

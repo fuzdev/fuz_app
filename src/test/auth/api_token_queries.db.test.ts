@@ -6,6 +6,7 @@
 
 import { describe, assert, test } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	query_create_api_token,
@@ -17,6 +18,7 @@ import {
 } from '$lib/auth/api_token_queries.ts';
 import { generate_api_token } from '$lib/auth/api_token.ts';
 import { query_create_account, query_create_actor } from '$lib/auth/account_queries.ts';
+import { is_pg_unique_violation } from '$lib/db/pg_error.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import { token_scope_full } from '../../lib/auth/token_scope.ts';
@@ -80,6 +82,31 @@ describe_db('ApiTokenQueries', (get_db) => {
 			);
 
 			assert.ok(token.expires_at);
+		});
+
+		// Pins the `api_token_hash_unique_index` migration. `query_validate_api_token`
+		// resolves a token with an at-most-one read on both spines, so two rows
+		// sharing a hash would let the impls disagree about which credential
+		// answered — the index makes that unrepresentable rather than improbable.
+		test('a duplicate token_hash is rejected by the unique index', async () => {
+			const { account_id } = await setup_account(get_db);
+			const db = get_db();
+			const deps = { db };
+			const { id, token_hash } = generate_api_token();
+			await query_create_api_token(deps, id, account_id, 'first', token_hash, token_scope_full());
+
+			const error = await assert_rejects(() =>
+				query_create_api_token(
+					deps,
+					generate_api_token().id,
+					account_id,
+					'second',
+					token_hash,
+					token_scope_full()
+				)
+			);
+
+			assert.ok(is_pg_unique_violation(error), `expected a unique violation, got ${error.message}`);
 		});
 	});
 

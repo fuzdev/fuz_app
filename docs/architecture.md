@@ -299,9 +299,9 @@ shapes: `ApiError`, `ValidationError`, `PermissionError`,
   `ActorRequiredError` / `ActorNotOnAccountError` and a 500 union of
   `NoActorsOnAccountError` / `AccountVanishedError` is added so DEV-mode error-schema
   validation matches what the dispatcher's authorization phase actually emits.
-- `MiddlewareSpec.errors` declares what each middleware layer can return (origin → 403,
-  bearer_auth → 429; the daemon_token layer soft-fails through on every non-success
-  path, so it declares none)
+- `MiddlewareSpec.errors` declares what each middleware layer can return (origin → 403;
+  the bearer_auth and daemon_token layers soft-fail through on every non-success path,
+  so they declare none)
 - Routes declare handler-specific errors via `RouteSpec.errors`
 - `merge_error_schemas(spec, middleware_errors?)` merges all three —
   later layers override earlier for the same status code.
