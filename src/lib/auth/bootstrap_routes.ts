@@ -21,7 +21,7 @@ import { get_client_ip } from '../http/client_ip.ts';
 import { rate_limit_exceeded_response, type RateLimiter } from '../rate_limiter.ts';
 import type { RouteFactoryDeps } from './deps.ts';
 import type { StatResult } from '../runtime/deps.ts';
-import { ERROR_ALREADY_BOOTSTRAPPED } from '../http/error_schemas.ts';
+import { ERROR_ALREADY_BOOTSTRAPPED, ERROR_TOKEN_FILE_MISSING } from '../http/error_schemas.ts';
 
 /**
  * Bootstrap status — runtime state computed once at startup.
@@ -163,6 +163,15 @@ export const create_bootstrap_route_specs = (
 					input
 				);
 				if (!result.ok) {
+					// An unreadable token file closes the window. Bootstrap cannot
+					// succeed without one, and `check_bootstrap_status` already reads
+					// an unreadable file as unavailable at startup — so leaving the
+					// flag set means the two disagree, and every later request takes
+					// this leg and writes another audit row. The limiter would bound
+					// that channel; closing it ends it, and stops `/status`
+					// advertising a window that can't be walked through. Twin of the
+					// Rust spine's `bootstrap_handler`, which does the same.
+					if (result.error === ERROR_TOKEN_FILE_MISSING) bootstrap_status.available = false;
 					if (bootstrap_ip_rate_limiter && ip) bootstrap_ip_rate_limiter.record(ip);
 					deps.audit.emit(route, {
 						event_type: 'bootstrap',

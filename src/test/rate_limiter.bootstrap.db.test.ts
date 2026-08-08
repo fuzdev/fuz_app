@@ -24,7 +24,11 @@ import { run_migrations } from '$lib/db/migrate.ts';
 import { auth_migration_ns } from '$lib/auth/migrations.ts';
 import { create_pglite_factory } from '$lib/testing/db.ts';
 import { create_test_audit_emitter } from '$lib/testing/stubs.ts';
-import { ERROR_RATE_LIMIT_EXCEEDED, ERROR_ALREADY_BOOTSTRAPPED } from '$lib/http/error_schemas.ts';
+import {
+	ERROR_RATE_LIMIT_EXCEEDED,
+	ERROR_ALREADY_BOOTSTRAPPED,
+	ERROR_TOKEN_FILE_MISSING
+} from '$lib/http/error_schemas.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 const log = new Logger('test', { level: 'off' });
@@ -300,6 +304,37 @@ describe('bootstrap handler rate limiting', () => {
 		);
 
 		limiter.dispose();
+	});
+});
+
+describe('unreadable token file closes the window', () => {
+	test('the second attempt takes the write-free closed-window path', async () => {
+		// Bootstrap can't succeed without a readable token, and
+		// `check_bootstrap_status` already reads an unreadable file as
+		// unavailable at startup — so leaving the flag set means the two
+		// disagree, and every later request writes another audit row. The
+		// limiter would bound that channel; closing it ends it. Twin of the
+		// Rust spine's `bootstrap_handler`. `null` limiter so the assertion is
+		// about the window, not about the bucket absorbing the flood.
+		const unreadable = vi.fn(() => Promise.reject(new Error('ENOENT')));
+		const { app, bootstrap_status } = await create_bootstrap_app(null, unreadable);
+
+		const first = await bootstrap_request(app);
+		assert.strictEqual(first.status, 404);
+		assert.strictEqual((await first.json()).error, ERROR_TOKEN_FILE_MISSING);
+		assert.isFalse(
+			bootstrap_status.available,
+			'an unreadable token file must close the window'
+		);
+
+		const second = await bootstrap_request(app);
+		assert.strictEqual(second.status, 403);
+		assert.strictEqual((await second.json()).error, ERROR_ALREADY_BOOTSTRAPPED);
+		assert.strictEqual(
+			unreadable.mock.calls.length,
+			1,
+			'the closed window short-circuits before the token read'
+		);
 	});
 });
 
