@@ -181,6 +181,10 @@ export const query_api_token_list_for_account = async (
  * `(account_id, credential_kind)` before count/evict/insert — see the matching
  * note on `query_session_enforce_limit`.
  *
+ * Ordering carries the same `id DESC` stability tie-breaker, with the same
+ * caveat, as `query_session_enforce_limit` — deterministic survivors under a
+ * `created_at` tie, not a guarantee that the row just inserted survives.
+ *
  * @param deps - query dependencies (must be transaction-scoped)
  * @param account_id - the account to enforce the limit for
  * @param max_tokens - maximum number of tokens to keep
@@ -197,7 +201,7 @@ export const query_api_token_enforce_limit = async (
 		 WHERE id IN (
 		   SELECT id FROM api_token
 		   WHERE account_id = $1
-		   ORDER BY created_at DESC
+		   ORDER BY created_at DESC, id DESC
 		   OFFSET $2
 		 ) RETURNING id`,
 		[account_id, max_tokens]

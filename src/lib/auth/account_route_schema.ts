@@ -83,7 +83,16 @@ export const PasswordChangeOutput = z.strictObject({
 });
 export type PasswordChangeOutput = z.infer<typeof PasswordChangeOutput>;
 
-/** Default maximum sessions per account. */
+/**
+ * Default maximum sessions per account.
+ *
+ * The Rust twin pins the same 5 as a `const` (`fuz_auth`'s
+ * `DEFAULT_MAX_SESSIONS`) rather than a route-state field, because its
+ * `AccountRouteState` has no `Default` and a new field would break every
+ * exhaustive literal in every consumer workspace. So this stays the
+ * configurable side of the pair (`null` disables), and the two ship the same
+ * number — retuning means editing both.
+ */
 export const DEFAULT_MAX_SESSIONS = 5;
 
 /** Default maximum API tokens per account. */

@@ -197,8 +197,19 @@ export const query_session_list_for_account = async (
  * both commit above `max_sessions`. A transaction is necessary here but not
  * sufficient. Closing this needs one serialization point per
  * `(account_id, credential_kind)` — a locked parent row or a transaction-scoped
- * advisory lock — taken before count/evict/insert, plus a stable tie-breaker
- * alongside `created_at` so the survivors are deterministic.
+ * advisory lock — taken before count/evict/insert.
+ *
+ * Ordering is `created_at DESC, id DESC`. The `id` leg is a **stability**
+ * tie-breaker, not a recency one: `created_at` defaults to `NOW()`, the
+ * *transaction* timestamp, so two sessions born in one transaction — or in two
+ * transactions that started in the same microsecond — tie, and an untied
+ * `OFFSET` may keep a different set on two evaluations of the same rows. `id` is
+ * the blake3 token hash, so the tie-break is arbitrary but deterministic; it
+ * makes the survivors reproducible, it does not make the row just inserted a
+ * guaranteed survivor. Only the serialization point above does that.
+ *
+ * Expired-but-unreaped rows count toward the cap (the predicate is `account_id`
+ * alone). Matches the Rust twin `query_session_enforce_limit`.
  *
  * @param deps - query dependencies (must be transaction-scoped)
  * @param account_id - the account to enforce the limit for
@@ -216,7 +227,7 @@ export const query_session_enforce_limit = async (
 		 WHERE id IN (
 		   SELECT id FROM auth_session
 		   WHERE account_id = $1
-		   ORDER BY created_at DESC
+		   ORDER BY created_at DESC, id DESC
 		   OFFSET $2
 		 ) RETURNING id`,
 		[account_id, max_sessions]
