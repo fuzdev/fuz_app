@@ -57,7 +57,7 @@ import { is_browser_context } from '../http/origin.ts';
  * availability (the check/record has to precede the async lookup to close its
  * own TOCTOU window, so concurrent requests bearing a *valid* token race each
  * other into a 429). The Rust spine never had one here; this is the converged
- * shape. See ../../../docs/security.md §Why bearer auth is not rate limited.
+ * shape. See `docs/security.md` §Why bearer auth is not rate limited.
  *
  * @param deps - query dependencies (pool-level db for middleware)
  * @param log - the logger instance
