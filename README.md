@@ -45,6 +45,10 @@ Deno.serve({port: PORT, hostname: HOST}, app.fetch);
 
 See [CLAUDE.md](CLAUDE.md) for more usage patterns and the AI-generated docs.
 
+## Contributing
+
+[fuz.dev/contributing](https://www.fuz.dev/contributing)
+
 ## License
 
 [MIT](LICENSE)
