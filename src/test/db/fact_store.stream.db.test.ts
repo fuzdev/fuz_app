@@ -36,6 +36,7 @@ import {
 	create_pglite_factory,
 	create_pg_factory,
 	create_describe_db,
+	drop_auth_schema,
 	log_db_factory_status
 } from '$lib/testing/db.ts';
 import { create_pglet_factory } from '../db_pglet_factory.ts';
@@ -52,9 +53,19 @@ const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [FACT_MIGRATION_NS]);
 };
 
+/**
+ * `init_schema` with the whole-`public`-schema reset the pg factory needs — one
+ * persistent database shared across every file under `isolate: false`, where
+ * `create()` drops only `schema_version`. Same reason as `../db_fixture.ts`.
+ */
+const init_schema_pg = async (db: Db): Promise<void> => {
+	await drop_auth_schema(db);
+	await init_schema(db);
+};
+
 const fact_factories = [
 	create_pglite_factory(init_schema),
-	create_pg_factory(init_schema, process.env.TEST_DATABASE_URL),
+	create_pg_factory(init_schema_pg, process.env.TEST_DATABASE_URL),
 	create_pglet_factory(init_schema),
 	create_pglet_wasm_factory(init_schema)
 ];

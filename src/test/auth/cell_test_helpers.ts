@@ -29,6 +29,7 @@ import {
 	create_pglite_factory,
 	create_pg_factory,
 	create_describe_db,
+	drop_auth_schema,
 	auth_integration_truncate_tables,
 	log_db_factory_status
 } from '$lib/testing/db.ts';
@@ -91,14 +92,24 @@ const init_schema = async (db: Db): Promise<void> => {
 	]);
 };
 
+/**
+ * `init_schema` with the whole-`public`-schema reset the pg factory needs — one
+ * persistent database shared across every file under `isolate: false`, where
+ * `create()` drops only `schema_version`. Same reason as `../db_fixture.ts`.
+ */
+const init_schema_pg = async (db: Db): Promise<void> => {
+	await drop_auth_schema(db);
+	await init_schema(db);
+};
+
 // All four drivers — pg auto-skips when `TEST_DATABASE_URL` is unset, and the
 // pglet legs (native + wasm) auto-skip when `PGLET_SERVER_BIN` / `PGLET_WASM_PKG`
 // are unset. The cell migration is idempotent (guarded `CREATE TYPE` + `CREATE
-// TABLE IF NOT EXISTS`), so re-running against a persistent pg after
-// `create_pg_factory` resets `schema_version` is safe. Mirrors `../db_fixture.ts`.
+// TABLE IF NOT EXISTS`), so re-running it is safe on any driver. Mirrors
+// `../db_fixture.ts`.
 const cell_factories = [
 	create_pglite_factory(init_schema),
-	create_pg_factory(init_schema, process.env.TEST_DATABASE_URL),
+	create_pg_factory(init_schema_pg, process.env.TEST_DATABASE_URL),
 	create_pglet_factory(init_schema),
 	create_pglet_wasm_factory(init_schema)
 ];
