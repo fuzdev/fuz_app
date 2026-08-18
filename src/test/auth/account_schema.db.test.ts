@@ -226,10 +226,13 @@ describe_db('auth schema', (get_db) => {
 		assert.strictEqual(actors.length, 0);
 	});
 
-	// Non-PK indexes — every named CREATE INDEX in `auth/auth_ddl.ts`,
-	// `auth/audit_log_ddl.ts`, and `auth/role_grant_offer_ddl.ts`. Drift here
-	// means a migration changed an index name or dropped one without updating
-	// this test.
+	// Non-PK indexes — every named CREATE INDEX a bootstrapped DB ends up with:
+	// the DDL modules (`auth/auth_ddl.ts`, `auth/audit_log_ddl.ts`,
+	// `auth/role_grant_offer_ddl.ts`) plus the index-creating appended entries
+	// in `auth/migrations.ts`. Drift here means a migration changed an index
+	// name or dropped one without updating this test. An index that exists only
+	// for its query plan (`idx_audit_log_metadata`) has no behavior to assert,
+	// so presence here is the only in-process gate it gets.
 	test('expected non-PK indexes are present', async () => {
 		const db = get_db();
 		const rows = await db.query<{ tablename: string; indexname: string }>(
@@ -252,11 +255,15 @@ describe_db('auth schema', (get_db) => {
 			'auth_session.idx_auth_session_account',
 			'auth_session.idx_auth_session_expires',
 			'api_token.idx_api_token_account',
+			// appended by `api_token_hash_unique_index`
+			'api_token.idx_api_token_hash',
 			'audit_log.idx_audit_log_seq',
 			'audit_log.idx_audit_log_account',
 			'audit_log.idx_audit_log_event_type',
 			'audit_log.idx_audit_log_target_account',
 			'audit_log.idx_audit_log_target_actor',
+			// appended by `audit_log_metadata_gin_index`
+			'audit_log.idx_audit_log_metadata',
 			'invite.idx_invite_email_unclaimed',
 			'invite.idx_invite_username_unclaimed',
 			'invite.idx_invite_claimed',

@@ -5,8 +5,10 @@
  * `new_id` (clone), `source_id` / `target_id` (cell_field events),
  * `parent_id` / `child_id` (cell_item events).
  *
- * Each `metadata @> '{...}'::jsonb` clause hits the existing GIN on
- * `audit_log.metadata`; Postgres bitmap-ORs the index scans together.
+ * Each `metadata @> '{...}'::jsonb` clause hits `idx_audit_log_metadata`
+ * (the `jsonb_path_ops` GIN on `audit_log.metadata`, shipped by the
+ * `audit_log_metadata_gin_index` migration); Postgres bitmap-ORs the index
+ * scans together.
  *
  * @module
  */

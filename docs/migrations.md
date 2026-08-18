@@ -8,13 +8,28 @@ subsystem map see ../src/lib/auth/CLAUDE.md.
 
 ## Schema stability
 
-**Pre-stable: append-only is NOT the rule today.** Migration bodies, names,
-and positions can change between versions; consumers upgrading across a
-schema change drop and re-bootstrap their dev/test databases. Bias toward
-editing existing migration entries rather than appending patch migrations.
+**The rule differs per namespace** — which one applies depends on whether
+consumers hold long-lived data in it.
 
-Once the schema is declared stable a hard append-only-after-publish rule will
-apply and the cliff will be called out in that release's notes.
+**`fuz_auth` is frozen: append, never edit.** Consumers run deployed
+databases on it, and an already-bootstrapped DB recorded the released
+entries as applied — so editing a body is a silent no-op there: the DDL
+never re-runs, the runner sees nothing new, and the shape the code expects
+never lands. Every change ships as a new appended entry with idempotent DDL
+(`ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`), so a fresh
+bootstrap and an old deployed DB converge. `auth/migrations.ts`'s module doc
+carries the incident that set the rule.
+
+**`fuz_cell` / `fuz_cell_history` / `fuz_facts` are pre-stable**: each is a
+single `full_*_schema` entry, rewritten in place when its shape changes, and
+consumers drop and re-bootstrap across the change. When one of them takes on
+long-lived consumer data it joins the frozen set, and the cliff will be
+called out in that release's notes.
+
+Every entry, frozen or not, is twinned by an identically named migration on
+the Rust spine — the `_testing_migration_tracker` parity gate compares the
+`(namespace, name, sequence)` rows so a consumer can swap implementations
+over one database.
 
 ## Runner contract
 

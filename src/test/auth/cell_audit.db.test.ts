@@ -11,6 +11,9 @@
  * - `cell_audit_list` REGRESSION: manage-tier gate (admin / owner only) —
  *   viewers, editors, and any authed caller on a public cell get the
  *   IDOR-mask 404; the wire shape carries no `ip`.
+ * - `cell_audit_list` relation keys: a cell named only as a relation event's
+ *   `target_id` / `child_id` / `new_id` still reaches its own timeline, so
+ *   `CELL_AUDIT_METADATA_KEYS` can't lose a key silently.
  *
  * @module
  */
@@ -47,6 +50,7 @@ import {
 import { cell_audit_events } from '$lib/auth/cell_audit_events.ts';
 import { query_audit_log_list } from '$lib/auth/audit_log_queries.ts';
 import { fractional_index_between } from '@fuzdev/fuz_util/fractional_index.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import {
 	describe_db,
@@ -300,6 +304,72 @@ describe_db('cell audit', (get_db) => {
 			);
 			assert.ok(!res.ok);
 			assert.strictEqual(res.status, 404);
+		});
+
+		// The timeline matches on six metadata keys, and only `cell_id` is
+		// exercised by the tests above — a cell reached solely through a
+		// relation event's `target_id` / `child_id` / `new_id` would drop off
+		// its own timeline silently if `CELL_AUDIT_METADATA_KEYS` (in
+		// `db/cell_audit_queries.ts`) lost a key or an envelope renamed one.
+		// This drives the relation verbs on a parent and then reads the
+		// *related* cells' timelines, where `cell_id` never names them.
+		test('the timeline reaches a cell named only by a relation key', async () => {
+			const app = await create_cell_test_app(get_db);
+			const owner = await app.create_account({ username: 'al_rel_owner' });
+			const h = owner.create_session_headers();
+			const { id: parent } = await create_cell(app, {
+				kind: 'collection',
+				data: {},
+				headers: h
+			});
+			const { id: child } = await create_cell(app, { kind: 'note', data: {}, headers: h });
+
+			// `cell_field_set` names `child` as `target_id` only.
+			assert.ok(
+				(
+					await call(
+						app,
+						cell_field_set_action_spec,
+						{ source_id: parent, name: 'link' as CellFieldName, target_id: child },
+						h
+					)
+				).ok
+			);
+			// `cell_item_insert` names `child` as `child_id` only.
+			const position = fractional_index_between(null, null) as CellItemPosition;
+			assert.ok(
+				(
+					await call(
+						app,
+						cell_item_insert_action_spec,
+						{ parent_id: parent, child_id: child, position },
+						h
+					)
+				).ok
+			);
+			// `cell_clone` names the new cell as `new_id` only.
+			const cloned = await call(app, cell_clone_action_spec, { source_id: parent }, h);
+			assert.ok(cloned.ok, JSON.stringify(cloned));
+
+			const timeline = async (cell_id: Uuid): Promise<Set<string>> => {
+				const res = await call(app, cell_audit_list_action_spec, { cell_id }, h);
+				assert.ok(res.ok, JSON.stringify(res));
+				return new Set(res.result.events.map((e) => e.event_type));
+			};
+
+			const child_events = await timeline(child);
+			assert.ok(child_events.has('cell_field_set'), 'reached via target_id');
+			assert.ok(child_events.has('cell_item_insert'), 'reached via child_id');
+
+			const clone_events = await timeline(cloned.result.cell.id);
+			assert.ok(clone_events.has('cell_clone'), 'reached via new_id');
+
+			// `source_id` names the parent on both the field and clone events.
+			const parent_events = await timeline(parent);
+			assert.ok(parent_events.has('cell_field_set'), 'reached via source_id');
+			assert.ok(parent_events.has('cell_clone'), 'reached via source_id');
+			// `parent_id` names it on the item event.
+			assert.ok(parent_events.has('cell_item_insert'), 'reached via parent_id');
 		});
 	});
 });

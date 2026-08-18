@@ -119,15 +119,26 @@ adapters directly instead of duplicating transaction wiring.
 
 ## Migrations
 
-**Pre-stable schema.** fuz_app's schema is not stabilized yet, so the
-"append-only after publish" rule does not apply today: migration bodies,
-names, and positions can change freely between versions, and consumers
-upgrading across a schema change are expected to drop and re-bootstrap
-their dev/test databases. Bias toward editing the existing v0/v1 entries
-rather than appending v2 patch migrations. The runner contract below is
-the one that will apply once the schema is declared stable (the cliff
-will be called out in that release's notes); until then it is the shape
-the runner enforces but not the policy authors are held to.
+**The policy is per namespace** — see ./migrations.md §Schema
+stability for the full statement.
+
+`fuz_auth` is **frozen and append-only**: consumers hold long-lived
+databases that recorded the released entries as applied, so editing one is a
+silent no-op there — the DDL never re-runs, the runner sees nothing new, and
+the shape the code expects never lands. Every auth schema change ships as a
+new appended entry with idempotent DDL, so a fresh bootstrap and an old
+deployed DB converge. The `auth_migrations` module doc in
+`auth/migrations.ts` carries the incident that set the rule;
+`db/schema_ready.ts` is the runtime net when discipline lapses.
+
+`fuz_cell` / `fuz_cell_history` / `fuz_facts` are still pre-stable, each a
+single `full_*_schema` entry rewritten in place; consumers drop and
+re-bootstrap across a change.
+
+Either way the entry is twinned: the Rust spine ships an identically named
+migration, and the `_testing_migration_tracker` parity gate asserts both
+spines record the same `(namespace, name, sequence)` rows so a consumer can
+swap implementations over one database.
 
 `run_migrations(db, namespaces)` (from `db/migrate.ts`) applies pending
 migrations per namespace. The shared `schema_version` table records one

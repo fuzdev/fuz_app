@@ -322,10 +322,7 @@ describe('unreadable token file closes the window', () => {
 		const first = await bootstrap_request(app);
 		assert.strictEqual(first.status, 404);
 		assert.strictEqual((await first.json()).error, ERROR_TOKEN_FILE_MISSING);
-		assert.isFalse(
-			bootstrap_status.available,
-			'an unreadable token file must close the window'
-		);
+		assert.isFalse(bootstrap_status.available, 'an unreadable token file must close the window');
 
 		const second = await bootstrap_request(app);
 		assert.strictEqual(second.status, 403);

@@ -95,7 +95,8 @@ child_id`, fractional-index keyed): `query_cell_item_insert` (throws
 - **`cell_audit_queries.ts`** — `query_audit_log_list_by_cell`: matches
   `audit_log` rows whose `metadata` names the cell on any of six cell-domain
   keys (`cell_id` / `source_id` / `new_id` / `parent_id` / `child_id` /
-  `target_id`), bitmap-OR over the metadata GIN.
+  `target_id`), bitmap-OR over `idx_audit_log_metadata` (the `jsonb_path_ops`
+  GIN the `audit_log_metadata_gin_index` auth migration ships).
 
 ## Fact layer
 
@@ -155,6 +156,9 @@ auth_migration_ns (built-in, fuz_auth)
 
 ### Pre-stable migration policy
 
-Pre-stable: when an introducing migration needs to change shape, **rewrite
-the original in place** rather than appending a follow-up — consumers
-re-bootstrap dev DBs on upgrade. See ../../../docs/migrations.md.
+Scoped to the namespaces on this page (`fuz_cell` / `fuz_cell_history` /
+`fuz_facts`): each is a single `full_*_schema` entry, so when it needs to
+change shape, **rewrite the original in place** rather than appending a
+follow-up — consumers re-bootstrap dev DBs on upgrade. The `fuz_auth`
+namespace is the opposite — frozen and append-only, since consumers hold
+deployed databases on it. See ../../../docs/migrations.md §Schema stability.

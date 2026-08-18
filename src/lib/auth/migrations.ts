@@ -37,6 +37,13 @@
  * DBs (no long-lived data) may still drop + re-bootstrap freely on a break —
  * the freeze is the contract for the deployed chain, not local iteration.
  *
+ * **Every entry is twinned on the Rust spine** (`fuz_auth/src/migrations.rs`),
+ * and the two names must match byte for byte: the `_testing_migration_tracker`
+ * parity gate compares the `(namespace, name, sequence)` rows both spines
+ * record, and a divergence there breaks the swap-freely invariant (a consumer
+ * pointing either implementation at one database). Append on both sides in the
+ * same change, so no entry below repeats the rule.
+ *
  * @module
  */
 
@@ -195,10 +202,6 @@ export const auth_migrations: Array<Migration> = [
 	},
 	// v2: per-credential token scoping — `api_token.scope JSONB NOT NULL`.
 	//
-	// Name must match the Rust twin's migration byte for byte
-	// (`fuz_auth/src/migrations.rs`) or the `_testing_migration_tracker` parity
-	// gate fails and the swap-freely invariant breaks.
-	//
 	// Three statements, and the middle one is the whole compatibility story:
 	//
 	// 1. Add the column nullable, so the ALTER is instant on a populated table.
@@ -242,15 +245,31 @@ export const auth_migrations: Array<Migration> = [
 	// would mean the two impls could silently disagree about which credential
 	// answered; the constraint makes that unrepresentable instead of merely
 	// improbable.
-	//
-	// The name must match the Rust twin's `api_token_hash_unique_index` byte for
-	// byte or the `_testing_migration_tracker` parity gate fails and the
-	// swap-freely invariant breaks.
 	{
 		name: 'api_token_hash_unique_index',
 		up: async (db: Db): Promise<void> => {
 			await db.query(
 				'CREATE UNIQUE INDEX IF NOT EXISTS idx_api_token_hash ON api_token(token_hash)'
+			);
+		}
+	},
+	// The GIN the per-cell audit timeline assumes.
+	//
+	// `full_auth_schema` ships only btree indexes (seq, account, event_type,
+	// targets), but `db/cell_audit_queries.ts` reconstructs the per-cell
+	// timeline by OR-ing `metadata @> '{...}'::jsonb` containment clauses —
+	// sequential scans without this index, degrading with audit volume.
+	//
+	// `jsonb_path_ops` rather than the default `jsonb_ops`: it serves exactly
+	// the `@>` containment operator these queries use, with a smaller, faster
+	// index. Server PG and PGlite honor the opclass; PG-compatible engines
+	// without operator classes parse and ignore it, serving `@>` from their
+	// generic GIN.
+	{
+		name: 'audit_log_metadata_gin_index',
+		up: async (db: Db): Promise<void> => {
+			await db.query(
+				'CREATE INDEX IF NOT EXISTS idx_audit_log_metadata ON audit_log USING gin (metadata jsonb_path_ops)'
 			);
 		}
 	}
