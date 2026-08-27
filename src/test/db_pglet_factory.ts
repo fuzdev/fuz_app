@@ -21,7 +21,8 @@
  * per-test — see `create_pglet_factory` below for why it is per-factory, not global
  * — with `DROP TABLE schema_version` + `init_schema` per `create()` and the harness
  * `beforeEach` TRUNCATE giving per-test isolation. A fresh in-memory server starts
- * empty, so no `DROP SCHEMA` (which pglet doesn't implement) is needed.
+ * empty, so no `DROP SCHEMA public CASCADE` reset is needed (pglet does implement it,
+ * so a shared server is possible — see `create_pglet_factory` for the trade).
  *
  * @module
  */
@@ -167,11 +168,14 @@ const spawn_pglet_server = async (bin: string): Promise<PgletServer> => {
  * factory) so migrations re-evaluate against the live tables.
  *
  * The spawned server is **per-factory-instance** (the state below lives in this
- * closure, not module scope): pglet has no `DROP SCHEMA`, so a server shared
- * across fixtures with *different* schemas would accumulate tables and leak them
- * into whole-database introspection (e.g. an auth FK-count test seeing fact
- * tables). One server per `create_pglet_factory` call keeps each fixture's schema
- * isolated; within a fixture every suite shares the one server (same schema).
+ * closure, not module scope): without a per-fixture reset, a server shared across
+ * fixtures with *different* schemas would accumulate tables and leak them into
+ * whole-database introspection (e.g. an auth FK-count test seeing fact tables).
+ * pglet does implement `DROP SCHEMA public CASCADE; CREATE SCHEMA public`, so one
+ * shared server with that reset per `create()` (as the `pg` factory does) is the
+ * alternative; one server per `create_pglet_factory` call is kept for now because it
+ * keeps each fixture's schema isolated with no reset step, and the per-server cost
+ * is sub-ms. Within a fixture every suite shares the one server (same schema).
  *
  * @param init_schema - callback to initialize the database schema
  */
