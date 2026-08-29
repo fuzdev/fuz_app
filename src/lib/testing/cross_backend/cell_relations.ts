@@ -28,6 +28,12 @@ import '../assert_dev_env.ts';
  * - **clone** — shallow copies item / field *edges* (shared `child_id` /
  *   `target_id`); deep clones each viewable child into a fresh cell at the
  *   same position. Both null `path` and stamp the caller as owner.
+ * - **`shared_with: 'me'`** — the grant-driven `cell_list` branch: a grantee
+ *   lists exactly the cells that admit them via `cell_grant`, their own cells
+ *   excluded, with the `cell_grants` enrichment keyed by cell id. Plus the two
+ *   guards — null-auth is `cell_list_shared_with_requires_auth`, and any value
+ *   other than `'me'` is `invalid_params` on both spines. The cross twin of
+ *   the in-process `auth/cell_actions.list.db.test.ts` §"shared_with: me".
  * - **audit** — `cell_audit_list` is manage-tier: the owner reads the cell's
  *   timeline; a viewer-grant holder who can `cell_get` the cell still gets the
  *   IDOR 404 on the timeline (D14).
@@ -60,7 +66,8 @@ import {
 	CellCreateOutput,
 	CellUpdateOutput,
 	CellCloneOutput,
-	CellGetOutput
+	CellGetOutput,
+	CellListOutput
 } from '../../auth/cell_action_specs.ts';
 import { AuditLogListOutput } from '../../auth/admin_action_specs.ts';
 import {
@@ -269,6 +276,92 @@ export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOp
 				);
 				assert.ok(!post.ok, 'revoked editor still edited');
 				assert.strictEqual(error_reason(post), 'cell_not_found');
+			}
+		);
+
+		test_if(
+			capabilities.cell_relations,
+			"cell_list shared_with: 'me' lists grant-admitted cells, excludes owned, enriches cell_grants",
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({ username: 'cell_shared_owner' });
+				const viewer = await fixture.create_account({ username: 'cell_shared_viewer' });
+				const t = fixture.fresh_transport();
+				const owner_h = owner.create_session_headers();
+				const viewer_h = viewer.create_session_headers();
+
+				const shared = await create_cell(t, rpc_path, owner_h, { kind: 'note', data: {} });
+				// A cell the viewer owns — owner ≠ sharee, so it must NOT appear.
+				await create_cell(t, rpc_path, viewer_h, { kind: 'note', data: {} });
+				// The grant-admit control: owner-owned but NOT granted to the viewer.
+				// Without it the semi-join is untested — the shared-with SQL's two
+				// conjuncts (created_by IS DISTINCT FROM caller AND id IN grant-set)
+				// would select the same set, so dropping the grant clause changes
+				// nothing. This ungranted cell is exactly what dropping it would leak.
+				await create_cell(t, rpc_path, owner_h, { kind: 'note', data: {} });
+
+				const grant = expect_output(
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_grant_create',
+						{
+							cell_id: shared,
+							level: 'viewer',
+							principal: { kind: 'actor', actor_id: viewer.actor.id }
+						},
+						owner_h
+					),
+					CellGrantCreateOutput
+				).grant;
+
+				const listed = expect_output(
+					await cross_rpc_call(t, rpc_path, 'cell_list', { shared_with: 'me' }, viewer_h),
+					CellListOutput
+				);
+				assert.deepStrictEqual(
+					listed.cells.map((c) => c.id),
+					[shared],
+					'shared_with list is not exactly the grant-admitted cell'
+				);
+				// The enrichment: the caller's own admit grants, keyed by cell id.
+				assert.ok(listed.cell_grants, 'shared_with list omitted the cell_grants enrichment');
+				const grants = listed.cell_grants[shared];
+				assert.ok(grants, 'cell_grants missing the shared cell key');
+				assert.strictEqual(grants.length, 1);
+				assert.strictEqual(grants[0]!.id, grant.id);
+			}
+		);
+
+		test_if(
+			capabilities.cell_relations,
+			'null-auth cell_list shared_with → cell_list_shared_with_requires_auth',
+			async () => {
+				const fixture = await setup_test();
+				const anon = fixture.fresh_transport({ origin: null });
+				const bad = await cross_rpc_call(anon, rpc_path, 'cell_list', { shared_with: 'me' }, {});
+				assert.ok(!bad.ok, 'anon shared_with filter accepted');
+				assert.strictEqual(error_reason(bad), 'cell_list_shared_with_requires_auth');
+			}
+		);
+
+		test_if(
+			capabilities.cell_relations,
+			"cell_list shared_with other than 'me' → invalid_params",
+			async () => {
+				const fixture = await setup_test();
+				// TS rejects at the schema (`z.literal('me')`), Rust in the handler
+				// guard — both must land on -32602, so a caller can't widen the
+				// grant-driven branch to another actor on either spine.
+				const bad = await cross_rpc_call(
+					fixture.fresh_transport(),
+					rpc_path,
+					'cell_list',
+					{ shared_with: 'not-me' },
+					fixture.create_session_headers()
+				);
+				assert.ok(!bad.ok, "cell_list accepted a shared_with other than 'me'");
+				assert.strictEqual(bad.error?.code, -32602);
 			}
 		);
 

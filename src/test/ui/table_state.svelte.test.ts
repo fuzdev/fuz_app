@@ -31,7 +31,9 @@ describe('TableState.fetch', () => {
 	test('populates rows, columns, and total on success', async () => {
 		const columns = [{ name: 'id', type: 'uuid' }];
 		const rows = [{ id: '1' }, { id: '2' }];
-		fetch_mock.mockResolvedValueOnce(json_response({ columns, rows, total: 2, primary_key: 'id' }));
+		fetch_mock.mockResolvedValueOnce(
+			json_response({ columns, rows, total: 2, primary_key: 'id', deletable: true })
+		);
 
 		const state = new TableState();
 		await state.fetch('accounts');
@@ -41,6 +43,8 @@ describe('TableState.fetch', () => {
 		assert.strictEqual(state.columns.length, 1);
 		assert.strictEqual(state.total, 2);
 		assert.strictEqual(state.primary_key, 'id');
+		assert.strictEqual(state.deletable, true);
+		assert.strictEqual(state.can_delete, true);
 		assert.strictEqual(state.list.error, null);
 	});
 
@@ -121,6 +125,9 @@ describe('TableState.fetch', () => {
 		assert.strictEqual(state.columns.length, 0);
 		assert.strictEqual(state.total, 0);
 		assert.strictEqual(state.primary_key, null);
+		// Absent `deletable` must fail closed — a server that doesn't report it
+		// gets no delete affordance rather than an unguarded one.
+		assert.strictEqual(state.deletable, false);
 	});
 });
 
@@ -207,9 +214,20 @@ describe('TableState.delete_row', () => {
 		assert.strictEqual(result, false);
 	});
 
+	test('returns false when the table is excluded by policy', async () => {
+		const state = new TableState();
+		state.primary_key = 'id';
+		state.deletable = false;
+		assert.strictEqual(state.can_delete, false);
+		const result = await state.delete_row({ id: '1' });
+		assert.strictEqual(result, false);
+		assert.strictEqual(fetch_mock.mock.calls.length, 0, 'no request fired for an excluded table');
+	});
+
 	test('returns false if pk value is null', async () => {
 		const state = new TableState();
 		state.primary_key = 'id';
+		state.deletable = true;
 		const result = await state.delete_row({ id: null });
 		assert.strictEqual(result, false);
 	});
@@ -217,6 +235,7 @@ describe('TableState.delete_row', () => {
 	test('returns false if pk value is undefined', async () => {
 		const state = new TableState();
 		state.primary_key = 'id';
+		state.deletable = true;
 		const result = await state.delete_row({});
 		assert.strictEqual(result, false);
 	});
@@ -227,6 +246,7 @@ describe('TableState.delete_row', () => {
 		const state = new TableState();
 		state.table_name = 'accounts';
 		state.primary_key = 'id';
+		state.deletable = true;
 		state.rows = [{ id: '1' }, { id: '2' }];
 		state.total = 2;
 
@@ -246,6 +266,7 @@ describe('TableState.delete_row', () => {
 		const state = new TableState();
 		state.table_name = 'accounts';
 		state.primary_key = 'id';
+		state.deletable = true;
 		state.rows = [{ id: '1' }];
 
 		const result = await state.delete_row({ id: '1' });
@@ -260,6 +281,7 @@ describe('TableState.delete_row', () => {
 		const state = new TableState();
 		state.table_name = 'accounts';
 		state.primary_key = 'id';
+		state.deletable = true;
 		state.rows = [{ id: '1' }];
 
 		const result = await state.delete_row({ id: '1' });
@@ -274,6 +296,7 @@ describe('TableState.delete_row', () => {
 		const state = new TableState();
 		state.table_name = 'accounts';
 		state.primary_key = 'id';
+		state.deletable = true;
 		state.rows = [{ id: '1' }];
 
 		const result = await state.delete_row({ id: '1' });
@@ -288,6 +311,7 @@ describe('TableState.delete_row', () => {
 		const state = new TableState();
 		state.table_name = 'accounts';
 		state.primary_key = 'id';
+		state.deletable = true;
 		state.rows = [{ id: 'abc-123' }];
 
 		await state.delete_row({ id: 'abc-123' });
@@ -303,6 +327,7 @@ describe('TableState.delete_row', () => {
 		const state = new TableState();
 		state.table_name = 'items';
 		state.primary_key = 'name';
+		state.deletable = true;
 		state.rows = [{ name: 'foo/bar baz' }];
 
 		await state.delete_row({ name: 'foo/bar baz' });
@@ -317,6 +342,7 @@ describe('TableState.delete_row', () => {
 		const state = new TableState();
 		state.table_name = 'accounts';
 		state.primary_key = 'id';
+		state.deletable = true;
 		state.rows = [{ id: '1' }];
 
 		await state.delete_row({ id: '1' });
@@ -330,6 +356,7 @@ describe('TableState.delete_row', () => {
 		const state = new TableState();
 		state.table_name = 'accounts';
 		state.primary_key = 'id';
+		state.deletable = true;
 		state.rows = [{ id: '1' }];
 
 		const result = await state.delete_row({ id: '1' });

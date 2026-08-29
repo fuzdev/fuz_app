@@ -289,6 +289,10 @@ describe_db('auth schema', (get_db) => {
 			foreign_column_name: string;
 			delete_rule: string;
 		}>(
+			// Catalog joins are fully qualified (schema *and* table / constraint
+			// schema): PG constraint names are unique per table, not per schema, so
+			// joining on `constraint_name` alone would cross-product two same-named
+			// constraints on different tables into phantom drift rows.
 			`SELECT tc.table_name, kcu.column_name,
 			        ccu.table_name AS foreign_table_name,
 			        ccu.column_name AS foreign_column_name,
@@ -297,10 +301,13 @@ describe_db('auth schema', (get_db) => {
 			   JOIN information_schema.key_column_usage kcu
 			     ON tc.constraint_name = kcu.constraint_name
 			    AND tc.table_schema = kcu.table_schema
+			    AND tc.table_name = kcu.table_name
 			   JOIN information_schema.referential_constraints rc
 			     ON tc.constraint_name = rc.constraint_name
+			    AND tc.constraint_schema = rc.constraint_schema
 			   JOIN information_schema.constraint_column_usage ccu
 			     ON ccu.constraint_name = tc.constraint_name
+			    AND ccu.constraint_schema = tc.constraint_schema
 			  WHERE tc.constraint_type = 'FOREIGN KEY'
 			    AND tc.table_schema = 'public'
 			  ORDER BY tc.table_name, kcu.column_name`

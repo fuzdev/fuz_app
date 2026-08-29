@@ -60,8 +60,22 @@ export class TableState {
 	offset = $state.raw(0);
 	limit = $state.raw(100);
 	primary_key: string | null = $state.raw(null);
+	/**
+	 * Whether the server will accept a row `DELETE` on this table. False for a
+	 * table with no single-column primary key *and* for one the server excludes
+	 * by policy (the audit trail, singleton bookkeeping rows), which `primary_key`
+	 * alone can't distinguish — it reports the key shape, not the policy.
+	 */
+	deletable = $state.raw(false);
 	deleting: string | null = $state.raw(null);
 	delete_error: string | null = $state.raw(null);
+
+	/**
+	 * Whether to offer a delete affordance at all. Gate rendering on this rather
+	 * than on `primary_key`, or a policy-excluded table shows a button whose only
+	 * outcome is a `table_not_deletable` refusal.
+	 */
+	readonly can_delete = $derived(this.deletable && this.primary_key !== null);
 
 	// Pagination computed values
 	readonly showing_start = $derived(this.total === 0 ? 0 : this.offset + 1);
@@ -91,6 +105,7 @@ export class TableState {
 			this.rows = data.rows ?? [];
 			this.total = data.total ?? 0;
 			this.primary_key = data.primary_key ?? null;
+			this.deletable = data.deletable ?? false;
 		});
 	}
 
@@ -107,11 +122,11 @@ export class TableState {
 	 * Optimistically drops it from `rows` and decrements `total` on success;
 	 * surfaces server errors on `delete_error`.
 	 *
-	 * @returns `true` when the row was removed; `false` on missing primary key or server error
+	 * @returns `true` when the row was removed; `false` when the table isn't deletable or the server refused
 	 * @mutates `this`
 	 */
 	async delete_row(row: Record<string, unknown>): Promise<boolean> {
-		if (!this.primary_key) return false;
+		if (!this.can_delete || !this.primary_key) return false;
 
 		const pk_value = row[this.primary_key];
 		if (pk_value === null || pk_value === undefined) return false;

@@ -17,6 +17,7 @@ import {
 	ForeignKeyError,
 	ERROR_TABLE_NOT_FOUND,
 	ERROR_TABLE_NO_PRIMARY_KEY,
+	ERROR_TABLE_NOT_DELETABLE,
 	ERROR_ROW_NOT_FOUND,
 	ERROR_FOREIGN_KEY_VIOLATION,
 	ERROR_INVALID_ROUTE_PARAMS,
@@ -61,6 +62,35 @@ export const DB_TABLE_ROWS_DEFAULT_LIMIT = 100;
 export const DB_TABLE_ROWS_LIMIT_MAX = 1000;
 
 /**
+ * Tables this endpoint refuses to delete rows from, whatever their key shape.
+ *
+ * Two kinds, one rule — a generic storage endpoint has no business deleting a
+ * row whose meaning lives in the domain layer:
+ *
+ * - `audit_log` — the trail and the tamper path would otherwise be the same
+ *   surface. It is also how revocation propagates: `realtime/sse_auth_guard.ts`
+ *   and the WS auth guard close live streams by listening to audit events, so a
+ *   raw row delete here is invisible to them.
+ *   `bootstrap_lock` — deleting the singleton leaves `check_bootstrap_status`
+ *   advertising an open bootstrap window on the next boot that
+ *   `bootstrap_account.ts`'s atomic flip then always refuses.
+ * - `app_settings` — deleting the singleton makes every settings read throw.
+ * - `schema_version` — the migration tracker. Already refused by the
+ *   single-column-primary-key rule (its key is `(namespace, name)`), but that
+ *   is incidental: naming it here keeps the protection if the key shape ever
+ *   changes.
+ *
+ * Consumers extend this with `DbRouteOptions.non_deletable_tables` — the
+ * builtin set is a floor, never replaced.
+ */
+export const NON_DELETABLE_TABLES: ReadonlyArray<string> = Object.freeze([
+	'audit_log',
+	'bootstrap_lock',
+	'app_settings',
+	'schema_version'
+]);
+
+/**
  * Per-factory configuration for db routes.
  */
 export interface DbRouteOptions {
@@ -70,13 +100,64 @@ export interface DbRouteOptions {
 	extra_stats?: (db: Db) => Promise<Record<string, unknown>>;
 	/** Optional logger for server-side diagnostics (e.g. FK violation details). */
 	log?: Logger;
+	/**
+	 * Consumer tables to exclude from row deletion, unioned with the builtin
+	 * `NON_DELETABLE_TABLES` (which this never replaces).
+	 */
+	non_deletable_tables?: ReadonlyArray<string>;
 }
+
+/**
+ * Resolve a table's primary-key column names in key order
+ * (`key_column_usage.ordinal_position`). Empty for a table with no primary key;
+ * length `> 1` for a composite primary key.
+ *
+ * Every column is returned (no `LIMIT`) so callers see the full key shape: the
+ * row-`DELETE` route acts only on a single-column primary key, and an earlier
+ * `LIMIT 1` (no `ORDER BY`) hid a composite PK behind one arbitrary column,
+ * causing single-column deletes to over-match.
+ */
+const query_primary_key_columns = async (db: Db, name: string): Promise<Array<string>> => {
+	const pk_rows = await db.query<PrimaryKeyInfo>(
+		`SELECT kcu.column_name
+		 FROM information_schema.table_constraints tc
+		 JOIN information_schema.key_column_usage kcu
+		   ON tc.constraint_name = kcu.constraint_name
+		   AND tc.table_schema = kcu.table_schema
+		   AND tc.table_name = kcu.table_name
+		 WHERE tc.constraint_type = 'PRIMARY KEY'
+		   AND tc.table_schema = 'public'
+		   AND tc.table_name = $1
+		 ORDER BY kcu.ordinal_position`,
+		[name]
+	);
+	return pk_rows.map((row) => row.column_name);
+};
+
+/**
+ * Whether `name` is a table in the `public` schema. Both the detail and
+ * row-`DELETE` routes gate on this before interpolating the name into SQL, so
+ * an unknown table is a 404 rather than a raw PG error.
+ */
+const query_table_exists = async (db: Db, name: string): Promise<boolean> => {
+	const row = await db.query_one<TableInfo>(
+		`SELECT table_name FROM information_schema.tables
+		 WHERE table_schema = 'public' AND table_name = $1`,
+		[name]
+	);
+	return row !== undefined;
+};
 
 /**
  * Create the db API route specs.
  */
 export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec> => {
-	const { db_type, db_name, extra_stats, log } = options;
+	const { db_type, db_name, extra_stats, log, non_deletable_tables } = options;
+
+	const non_deletable: ReadonlySet<string> = new Set([
+		...NON_DELETABLE_TABLES,
+		...(non_deletable_tables ?? [])
+	]);
 
 	return [
 		{
@@ -200,19 +281,14 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 				total: z.number(),
 				offset: z.number(),
 				limit: z.number(),
-				primary_key: z.string().nullable()
+				primary_key: z.string().nullable(),
+				deletable: z.boolean()
 			}),
 			handler: async (c, route) => {
 				const { name } = get_route_params<{ name: string }>(c);
 				const { offset, limit } = get_route_query<{ offset: number; limit: number }>(c);
 
-				const exists = await route.db.query_one<TableInfo>(
-					`SELECT table_name FROM information_schema.tables
-					 WHERE table_schema = 'public' AND table_name = $1`,
-					[name]
-				);
-
-				if (!exists) {
+				if (!(await query_table_exists(route.db, name))) {
 					return c.json({ error: ERROR_TABLE_NOT_FOUND }, 404);
 				}
 
@@ -229,26 +305,23 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 				);
 				const total = count_result ? parseInt(count_result.count, 10) : 0;
 
-				const pk_info = await route.db.query_one<PrimaryKeyInfo>(
-					`SELECT kcu.column_name
-					 FROM information_schema.table_constraints tc
-					 JOIN information_schema.key_column_usage kcu
-					   ON tc.constraint_name = kcu.constraint_name
-					   AND tc.table_schema = kcu.table_schema
-					 WHERE tc.constraint_type = 'PRIMARY KEY'
-					   AND tc.table_schema = 'public'
-					   AND tc.table_name = $1
-					 LIMIT 1`,
-					[name]
-				);
-				const primary_key = pk_info?.column_name ?? null;
+				// Surface a single-column PK for the delete affordance; a
+				// composite (or absent) PK has no single deletable column, so
+				// report null — twinning the row-DELETE's single-column rule.
+				const pk_columns = await query_primary_key_columns(route.db, name);
+				const primary_key = pk_columns.length === 1 ? pk_columns[0]! : null;
+				// `deletable` is exactly what the row-DELETE will accept, so a
+				// client can hide the affordance rather than discover the refusal.
+				// `primary_key` stays a truthful report of the key shape — a policy
+				// exclusion must not masquerade as one.
+				const deletable = primary_key !== null && !non_deletable.has(name);
 
 				const rows = await route.db.query(
 					`SELECT * FROM "${assert_valid_sql_identifier(name)}" LIMIT $1 OFFSET $2`,
 					[limit, offset]
 				);
 
-				return c.json({ columns, rows, total, offset, limit, primary_key });
+				return c.json({ columns, rows, total, offset, limit, primary_key, deletable });
 			}
 		},
 		{
@@ -270,7 +343,11 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 			output: z.looseObject({ success: z.boolean() }),
 			errors: {
 				400: z.looseObject({
-					error: z.enum([ERROR_INVALID_ROUTE_PARAMS, ERROR_TABLE_NO_PRIMARY_KEY])
+					error: z.enum([
+						ERROR_INVALID_ROUTE_PARAMS,
+						ERROR_TABLE_NO_PRIMARY_KEY,
+						ERROR_TABLE_NOT_DELETABLE
+					])
 				}),
 				404: z.looseObject({
 					error: z.enum([ERROR_TABLE_NOT_FOUND, ERROR_ROW_NOT_FOUND])
@@ -280,38 +357,39 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 			handler: async (c, route) => {
 				const { name, id } = get_route_params<{ name: string; id: string }>(c);
 
-				const exists = await route.db.query_one<TableInfo>(
-					`SELECT table_name FROM information_schema.tables
-					 WHERE table_schema = 'public' AND table_name = $1`,
-					[name]
-				);
-
-				if (!exists) {
+				if (!(await query_table_exists(route.db, name))) {
 					return c.json({ error: ERROR_TABLE_NOT_FOUND }, 404);
 				}
 
-				const pk_info = await route.db.query_one<PrimaryKeyInfo>(
-					`SELECT kcu.column_name
-					 FROM information_schema.table_constraints tc
-					 JOIN information_schema.key_column_usage kcu
-					   ON tc.constraint_name = kcu.constraint_name
-					   AND tc.table_schema = kcu.table_schema
-					 WHERE tc.constraint_type = 'PRIMARY KEY'
-					   AND tc.table_schema = 'public'
-					   AND tc.table_name = $1
-					 LIMIT 1`,
-					[name]
-				);
+				// Policy exclusion, checked before the key shape: the trail and the
+				// framework's singleton bookkeeping rows are never row-deletable through
+				// a generic storage endpoint (see `NON_DELETABLE_TABLES`). 400 rather
+				// than 403 — this says nothing about the caller's authority, and it sits
+				// beside the structural refusal below as the same kind of answer: this
+				// table exposes no deletable row here. A 403 would also have to be
+				// declared as a union with whatever the route's `auth` derives, which a
+				// consumer rewriting `auth` (as fuz_forge does) would silently invalidate.
+				if (non_deletable.has(name)) {
+					return c.json({ error: ERROR_TABLE_NOT_DELETABLE }, 400);
+				}
 
-				if (!pk_info) {
+				// Single-column primary keys only. Deleting by a single
+				// `WHERE "<col>" = $1` is safe only when the PK is exactly one
+				// column: on a composite PK that filter matches every row sharing
+				// the column's value and silently over-deletes (deleting one
+				// cell_field row would wipe every field of that name on every
+				// cell); an absent PK has nothing to target. Refuse both.
+				const pk_columns = await query_primary_key_columns(route.db, name);
+				if (pk_columns.length !== 1) {
 					return c.json({ error: ERROR_TABLE_NO_PRIMARY_KEY }, 400);
 				}
+				const pk_column = pk_columns[0]!;
 
 				try {
 					const result = await route.db.query(
 						`DELETE FROM "${assert_valid_sql_identifier(
 							name
-						)}" WHERE "${assert_valid_sql_identifier(pk_info.column_name)}" = $1 RETURNING *`,
+						)}" WHERE "${assert_valid_sql_identifier(pk_column)}" = $1 RETURNING *`,
 						[id]
 					);
 

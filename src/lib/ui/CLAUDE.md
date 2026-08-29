@@ -244,9 +244,12 @@ destructive actions.
 - `table_state.svelte.ts` — `TableState`. Paginated DB browser state.
   Holds one `AsyncSlot` (`list`) + payload fields (`table_name`,
   `columns`, `rows`, `total`, `offset`, `limit` capped by
-  `TABLE_LIMIT_MAX = 1000`, `primary_key`). Derived
-  `showing_start`/`showing_end`/`has_prev`/`has_next`. Methods:
-  `fetch`, `go_prev`/`go_next`, `delete_row`. `delete_row` uses
+  `TABLE_LIMIT_MAX = 1000`, `primary_key`, `deletable`). Derived
+  `showing_start`/`showing_end`/`has_prev`/`has_next`, plus
+  `can_delete` (`deletable && primary_key !== null`) — gate the
+  delete affordance on that, not on `primary_key`, or a
+  policy-excluded table shows a button that only ever refuses.
+  Methods: `fetch`, `go_prev`/`go_next`, `delete_row`. `delete_row` uses
   plain try/catch + scalar `deleting` / `delete_error` fields (no
   slot — error must survive past `list.run()` retries).
 - `form_state.svelte.ts` — `FormState`. Enter-advance between

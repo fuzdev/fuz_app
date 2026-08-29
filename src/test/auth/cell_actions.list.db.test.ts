@@ -191,6 +191,12 @@ describe_db('cell_actions cell_list', (get_db) => {
 			});
 			// A cell the viewer owns — must NOT appear under shared_with: me.
 			await create_cell(app, { kind: 'note', data: {}, headers: viewer.create_session_headers() });
+			// The grant-admit control: owner-owned but NOT granted to the viewer.
+			// Without it the shared-with semi-join is untested — the two conjuncts
+			// (created_by IS DISTINCT FROM caller AND id IN grant-set) select the
+			// same set, so dropping the grant clause changes nothing. This is the
+			// cell dropping it would leak.
+			await create_cell(app, { kind: 'note', data: {}, headers: owner.create_session_headers() });
 
 			const g = await call(
 				app,

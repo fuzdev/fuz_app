@@ -171,8 +171,20 @@ export const ERROR_FOREIGN_KEY_VIOLATION = 'foreign_key_violation' as const;
 /** Table name not found in `information_schema`. */
 export const ERROR_TABLE_NOT_FOUND = 'table_not_found' as const;
 
-/** Table has no primary key constraint (cannot delete by PK). */
+/**
+ * Table has no single-column primary key, so there is no column the row-`DELETE`
+ * can target: either no primary key at all, or a composite one (a single-column
+ * `WHERE` on one member of a composite key over-matches).
+ */
 export const ERROR_TABLE_NO_PRIMARY_KEY = 'table_no_primary_key' as const;
+
+/**
+ * Table is excluded from row deletion by policy — the audit trail and the
+ * framework's singleton bookkeeping rows (`bootstrap_lock`, `app_settings`,
+ * `schema_version`), whose invariants live in the domain layer rather than in
+ * a generic storage endpoint. See `http/db_routes.ts`'s `NON_DELETABLE_TABLES`.
+ */
+export const ERROR_TABLE_NOT_DELETABLE = 'table_not_deletable' as const;
 
 /** Row with the given PK value not found. */
 export const ERROR_ROW_NOT_FOUND = 'row_not_found' as const;

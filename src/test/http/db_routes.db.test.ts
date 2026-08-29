@@ -58,7 +58,8 @@ afterAll(async () => {
 beforeEach(async () => {
 	// clean up FK test tables from prior runs (isolate: false shares state)
 	await db.query('DROP TABLE IF EXISTS fk_test_child, fk_test_parent CASCADE');
-	await db.query('TRUNCATE api_token, auth_session, role_grant, actor, account CASCADE');
+	await db.query('DROP TABLE IF EXISTS composite_pk_test, consumer_ledger CASCADE');
+	await db.query('TRUNCATE audit_log, api_token, auth_session, role_grant, actor, account CASCADE');
 });
 
 describe('route spec metadata', () => {
@@ -199,6 +200,55 @@ describe('GET /tables/:name handler', () => {
 		assert.strictEqual(body.primary_key, 'id');
 	});
 
+	test('excluded table reports deletable false while primary_key stays truthful', async () => {
+		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const app = create_test_app(specs);
+		const res = await app.request('/tables/audit_log');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		// The key shape is reported honestly — the exclusion is policy, not schema.
+		assert.strictEqual(body.primary_key, 'id');
+		assert.strictEqual(body.deletable, false);
+	});
+
+	test('ordinary table reports deletable true', async () => {
+		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const app = create_test_app(specs);
+		const res = await app.request('/tables/account');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.primary_key, 'id');
+		assert.strictEqual(body.deletable, true);
+	});
+
+	test('composite primary key reports deletable false', async () => {
+		await db.query(`CREATE TABLE composite_pk_test (
+			source_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			PRIMARY KEY (source_id, name)
+		)`);
+		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const app = create_test_app(specs);
+		const res = await app.request('/tables/composite_pk_test');
+		const body = await res.json();
+		assert.strictEqual(body.deletable, false);
+	});
+
+	test('composite primary key reports primary_key null (no single deletable column)', async () => {
+		await db.query(`CREATE TABLE composite_pk_test (
+			source_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			value TEXT,
+			PRIMARY KEY (source_id, name)
+		)`);
+		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const app = create_test_app(specs);
+		const res = await app.request('/tables/composite_pk_test');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.primary_key, null);
+	});
+
 	test('invalid table name returns 400', async () => {
 		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
@@ -303,6 +353,83 @@ describe('DELETE /tables/:name/rows/:id handler', () => {
 		// Regression guard: PG detail/constraint must not leak to client (scrubbed 2026-03-19)
 		assert.strictEqual(body.detail, undefined, 'PG detail must not leak to client');
 		assert.strictEqual(body.constraint, undefined, 'PG constraint must not leak to client');
+	});
+
+	test('excluded table delete is refused and deletes nothing', async () => {
+		await db.query(
+			`INSERT INTO audit_log (event_type, outcome) VALUES ('login', 'success'), ('logout', 'success')`
+		);
+		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const app = create_test_app(specs);
+		const target = await db.query<{ id: string }>(`SELECT id FROM audit_log LIMIT 1`);
+		const res = await app.request(`/tables/audit_log/rows/${target[0]!.id}`, { method: 'DELETE' });
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.error, 'table_not_deletable');
+		const remaining = await db.query<{ count: string }>(`SELECT COUNT(*) as count FROM audit_log`);
+		assert.strictEqual(parseInt(remaining[0]!.count, 10), 2, 'the trail must survive the refusal');
+	});
+
+	test('the exclusion is checked before the primary-key shape', async () => {
+		// `schema_version` is composite, so both refusals apply; the policy one
+		// must win, or removing a table from the exclusion set would silently
+		// change which error a caller sees.
+		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const app = create_test_app(specs);
+		const res = await app.request('/tables/schema_version/rows/fuz_auth', { method: 'DELETE' });
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.error, 'table_not_deletable');
+	});
+
+	test('consumer non_deletable_tables extends the builtin set rather than replacing it', async () => {
+		await db.query(`CREATE TABLE consumer_ledger (id TEXT PRIMARY KEY)`);
+		await db.query(`INSERT INTO consumer_ledger (id) VALUES ('a')`);
+		const specs = create_db_route_specs({
+			db_type: 'pglite-memory',
+			db_name: 'test',
+			non_deletable_tables: ['consumer_ledger']
+		});
+		const app = create_test_app(specs);
+
+		const consumer_res = await app.request('/tables/consumer_ledger/rows/a', { method: 'DELETE' });
+		assert.strictEqual(consumer_res.status, 400);
+		assert.strictEqual((await consumer_res.json()).error, 'table_not_deletable');
+
+		// The builtin floor still holds alongside the consumer's addition.
+		await db.query(`INSERT INTO audit_log (event_type, outcome) VALUES ('login', 'success')`);
+		const builtin = await db.query<{ id: string }>(`SELECT id FROM audit_log LIMIT 1`);
+		const builtin_res = await app.request(`/tables/audit_log/rows/${builtin[0]!.id}`, {
+			method: 'DELETE'
+		});
+		assert.strictEqual(builtin_res.status, 400);
+		assert.strictEqual((await builtin_res.json()).error, 'table_not_deletable');
+	});
+
+	test('composite primary key delete is refused and deletes nothing', async () => {
+		await db.query(`CREATE TABLE composite_pk_test (
+			source_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			value TEXT,
+			PRIMARY KEY (source_id, name)
+		)`);
+		// Three rows sharing the same `name` across different `source_id`s — the
+		// over-delete trap a single-column WHERE "name" = $1 would spring.
+		await db.query(
+			`INSERT INTO composite_pk_test (source_id, name, value)
+			 VALUES ('s1', 'title', 'a'), ('s2', 'title', 'b'), ('s3', 'title', 'c')`
+		);
+		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const app = create_test_app(specs);
+		const res = await app.request('/tables/composite_pk_test/rows/title', { method: 'DELETE' });
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.error, 'table_no_primary_key');
+		// The refusal must not delete anything.
+		const remaining = await db.query<{ count: string }>(
+			`SELECT COUNT(*) as count FROM composite_pk_test`
+		);
+		assert.strictEqual(parseInt(remaining[0]!.count, 10), 3);
 	});
 
 	test('invalid table name returns 400', async () => {

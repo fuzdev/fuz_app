@@ -210,7 +210,7 @@ confirmation.
 - **Bootstrap**: `ERROR_ALREADY_BOOTSTRAPPED`, `ERROR_TOKEN_FILE_MISSING`
 - **Signup/invites**: `ERROR_NO_MATCHING_INVITE`, `ERROR_SIGNUP_CONFLICT`, `ERROR_INVITE_NOT_FOUND`, `ERROR_INVITE_DUPLICATE`, `ERROR_INVITE_ACCOUNT_EXISTS_USERNAME`, `ERROR_INVITE_ACCOUNT_EXISTS_EMAIL`
 - **Admin**: `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_ROLE_GRANT_NOT_FOUND`, `ERROR_INVALID_EVENT_TYPE`
-- **DB browser**: `ERROR_FOREIGN_KEY_VIOLATION`, `ERROR_TABLE_NOT_FOUND`, `ERROR_TABLE_NO_PRIMARY_KEY`, `ERROR_ROW_NOT_FOUND`
+- **DB browser**: `ERROR_FOREIGN_KEY_VIOLATION`, `ERROR_TABLE_NOT_FOUND`, `ERROR_TABLE_NO_PRIMARY_KEY`, `ERROR_TABLE_NOT_DELETABLE`, `ERROR_ROW_NOT_FOUND`
 
 ## Schema Helpers
 
@@ -495,8 +495,39 @@ generic table browser; the factory is domain-agnostic.
 
 - `GET /health` — connected probe + table count + optional `extra_stats(db)`. Returns `{connected: false}` at 503 on failure
 - `GET /tables` — list public tables with row counts
-- `GET /tables/:name` — columns + rows (paginated via `?offset`/`?limit`, limit clamped to `[1, 1000]` with default 100) + total count + primary key
-- `DELETE /tables/:name/rows/:id` — delete by PK. Returns 400 if table has no PK (`ERROR_TABLE_NO_PRIMARY_KEY`), 404 if row missing (`ERROR_ROW_NOT_FOUND`) or table missing (`ERROR_TABLE_NOT_FOUND`), 409 on FK violation (pg error code `23503`)
+- `GET /tables/:name` — columns + rows (paginated via `?offset`/`?limit`, limit clamped to `[1, 1000]` with default 100) + total count + `primary_key` (the single PK column, or `null` when the table has none or a composite one) + `deletable` (whether the row-`DELETE` will accept this table at all — see below)
+- `DELETE /tables/:name/rows/:id` — delete by PK. Returns 400 if the table is excluded by policy (`ERROR_TABLE_NOT_DELETABLE`) or has no single-column PK (`ERROR_TABLE_NO_PRIMARY_KEY`), 404 if row missing (`ERROR_ROW_NOT_FOUND`) or table missing (`ERROR_TABLE_NOT_FOUND`), 409 on FK violation (pg error code `23503`)
+
+**Single-column primary keys only.** The `DELETE` filters on one column
+(`WHERE "<pk>" = $1`), which is correct only when the primary key _is_ that one
+column. `query_primary_key_columns` returns every PK column in
+`ordinal_position` order, and the route proceeds only at length exactly 1 — a
+composite key (a single-column filter would match every row sharing that
+column's value and silently over-delete) and an absent key both refuse with 400
+and delete nothing. `GET /tables/:name` reports `primary_key: null` in the same
+two cases, so the UI (`ui/table_state.svelte.ts`) disables delete without firing
+a request. Twin of the Rust spine's `fuz_db_admin` router.
+
+**Some tables are never row-deletable.** `NON_DELETABLE_TABLES` — `audit_log`,
+`bootstrap_lock`, `app_settings`, `schema_version` — refuses the `DELETE` with
+400 `ERROR_TABLE_NOT_DELETABLE` before the key-shape check, because a generic
+storage endpoint has no business deleting a row whose meaning lives in the
+domain layer. `audit_log` is the sharpest: it is both the trail and, since
+`realtime/sse_auth_guard.ts` and the WS auth guard close live streams by
+listening to audit events, part of how revocation propagates. The three
+singletons each fail differently on deletion — `bootstrap_lock` leaves
+`check_bootstrap_status` advertising a window `bootstrap_account.ts` then always
+refuses, `app_settings` makes every settings read throw, `schema_version` is the
+migration tracker (composite-keyed, so already refused — named here so the
+protection survives a key-shape change). Consumers add their own via
+`DbRouteOptions.non_deletable_tables`, which is unioned with the builtin set and
+never replaces it.
+
+`GET /tables/:name` reports `deletable` = exactly what the `DELETE` will accept
+(single-column PK **and** not excluded), so a client hides the affordance
+instead of discovering the refusal — `ui/table_state.svelte.ts` gates on
+`can_delete`. `primary_key` stays a truthful report of the key shape; a policy
+exclusion must not masquerade as one.
 
 All four routes use the keeper auth shape (`{account: 'required', actor: 'required', roles: ['keeper'], credential_types: ['daemon_token']}`).
 Param schemas use `VALID_SQL_IDENTIFIER` regex, and every table name gets
@@ -514,7 +545,7 @@ applying and the credential gate stops firing. A consumer that does this owns
 the surface census for it.
 
 Interfaces exported for consumer use: `TableInfo`, `TableWithCount`,
-`PrimaryKeyInfo`, `ColumnInfo`, `DbRouteOptions`.
+`PrimaryKeyInfo`, `ColumnInfo`, `DbRouteOptions`, `NON_DELETABLE_TABLES`.
 
 ## Cross-Module Notes
 
