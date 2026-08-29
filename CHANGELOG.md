@@ -1,5 +1,170 @@
 # @fuzdev/fuz_app
 
+## 0.109.0
+
+### Minor Changes
+
+- feat: allowlist the db-admin browser and bound its reads ([e08af77](https://github.com/fuzdev/fuz_app/commit/e08af77))
+
+  `create_db_route_specs` now requires `browsable_tables` — an explicit allowlist
+  gating the table list, detail, and row-`DELETE`. An unlisted table 404s exactly
+  like one that doesn't exist, and the credential floor (`NON_BROWSABLE_TABLES`:
+  `account`, `auth_session`, `api_token`, `bootstrap_lock`) is subtracted even
+  when named.
+
+  Reads are bounded: browse and delete run under `SET LOCAL statement_timeout`
+  (`DB_ADMIN_STATEMENT_TIMEOUT_MS`), bytea / bytea[] values return as
+  `<N bytes>` placeholders, and `offset`/`limit` accept strict integer spellings
+  only (`[+-]?digits`, twinning the Rust spine — `1e2`, `5.0`, and whitespace
+  now 400).
+
+  The row-`DELETE` compares `"<pk>"::text = $1` (a mistyped id is a 404, not a
+  PG cast error) and defers its `db_admin_row_delete` audit emit via
+  `emit_after_commit`, so the trail can't claim a delete that failed at COMMIT.
+
+  Also: the two GET routes now declare `transaction: true` (visible in
+  `generate_app_surface`), the UI page-size cap is single-sourced from
+  `DB_TABLE_ROWS_LIMIT_MAX` (`TABLE_LIMIT_MAX` is gone), and
+  `EmitAfterCommitContext` dropped its unused `log` field, so `RouteContext`
+  satisfies it directly.
+
+  **Breaking**: `DbRouteOptions.browsable_tables` is required — name the tables
+  your deployment browses (there is deliberately no "all" option).
+
+- feat: audit db-admin row deletes (`db_admin_row_delete`) ([47ccb4c](https://github.com/fuzdev/fuz_app/commit/47ccb4c))
+
+  Every successful `DELETE /tables/:name/rows/:id` through the db-admin browser
+  emits a `db_admin_row_delete` audit event — account-grain attribution, metadata
+  `{table, pk_column, id}`; refusals emit nothing. New builtin in
+  `AUDIT_EVENT_TYPES`, twinned by the Rust spine's `AuditEventType::DbAdminRowDelete`.
+
+  **Breaking**: `create_db_route_specs(options)` is now
+  `create_db_route_specs(deps, options)` — `deps` is the new `DbRouteDeps`, a
+  structural `audit` slice of `AppDeps`; pass `ctx.deps`. Wrappers that re-auth
+  the specs must thread the deps through.
+
+- fix: add the `audit_log.metadata` GIN the per-cell audit timeline assumes ([21f59b3](https://github.com/fuzdev/fuz_app/commit/21f59b3))
+
+  **New migration: `audit_log_metadata_gin_index`.** `query_audit_log_list_by_cell`
+  reconstructs a cell's timeline by OR-ing `metadata @> '{...}'::jsonb` containment
+  clauses against `audit_log`, but `full_auth_schema` ships only btree indexes — so
+  every timeline read has been a sequential scan of the whole log, degrading with
+  audit volume. The query's own docs claimed the clauses hit "the existing GIN on
+  `audit_log.metadata`"; no migration ever created one. They now name
+  `idx_audit_log_metadata`.
+
+  `jsonb_path_ops` rather than the default `jsonb_ops` — it serves exactly the `@>`
+  operator these queries use, from a smaller index. The migration name matches the
+  Rust twin byte for byte, as the migration-tracker parity gate requires. No API or
+  wire change.
+
+  Docs correction that came out of it: `docs/migrations.md` and
+  `docs/architecture.md` claimed append-only "is NOT the rule today" and told
+  authors to edit released entries in place. That is true of the pre-stable
+  `fuz_cell` / `fuz_cell_history` / `fuz_facts` namespaces and **false** of
+  `fuz_auth`, which is frozen — an operator who followed it against a deployed
+  auth database would land a silent no-op. Both now state the rule per namespace.
+
+- feat: exclude the audit trail and singleton bookkeeping from db-admin row-delete ([f0e0d90](https://github.com/fuzdev/fuz_app/commit/f0e0d90))
+
+  `http/db_routes.ts` gains `NON_DELETABLE_TABLES` — `audit_log`,
+  `bootstrap_lock`, `app_settings`, `schema_version` — refused with 400
+  `table_not_deletable` before the key-shape check. A generic storage endpoint has
+  no business deleting a row whose meaning lives in the domain layer: deleting an
+  `audit_log` row tampers with the trail _and_ with revocation (the SSE and WS auth
+  guards close live streams by listening to audit events); deleting
+  `bootstrap_lock` leaves `check_bootstrap_status` advertising a window that
+  `bootstrap_account.ts` then always refuses; deleting `app_settings` makes every
+  settings read throw. `schema_version` is composite-keyed so it was already
+  refused — naming it makes that intentional rather than incidental.
+
+  `DbRouteOptions.non_deletable_tables` adds consumer tables; it is unioned with
+  the builtin set and never replaces it.
+
+  `GET /tables/:name` gains `deletable: boolean` — what the `DELETE` will actually
+  accept — so clients hide the affordance instead of discovering the refusal.
+  `TableState` gains `deletable` plus a derived `can_delete`; gate delete UI on
+  `can_delete` rather than `primary_key`. Absent `deletable` in a response reads as
+  `false`, so the affordance fails closed.
+
+  Rust twin (`fuz_db_admin`) needs the same exclusion set, error code, and
+  `deletable` field to stay wire-identical.
+
+### Patch Changes
+
+- fix: refuse db-admin row-`DELETE` on composite or absent primary keys ([f0e0d90](https://github.com/fuzdev/fuz_app/commit/f0e0d90))
+
+  `http/db_routes.ts` looked up primary keys with `LIMIT 1`, so a composite key
+  surfaced as one arbitrary member column and `DELETE /tables/:name/rows/:id`
+  filtered on that column alone — deleting one `cell_field` row wiped every field
+  of that name on every cell while reporting `{success: true}`. Five `public`
+  tables have composite keys (`cell_field`, `cell_item`, `fact_ref`, `memo`,
+  `schema_version`).
+
+  The delete now proceeds only when the key is exactly one column — composite or
+  absent refuses with 400 `table_no_primary_key` and deletes nothing — and
+  `GET /tables/:name` reports `primary_key: null` in the same two cases, so
+  `TableState` withholds the delete affordance. Keeper-only surface; converges
+  with the Rust spine's `fuz_db_admin`.
+
+  Also: `cell_list({shared_with: 'me'})` now runs in the cross-backend
+  `cell_relations` suite via `describe_cell_relations_cross_tests`.
+
+- fix: an unreadable token file now closes the bootstrap window ([79281eb](https://github.com/fuzdev/fuz_app/commit/79281eb))
+
+  `POST /api/account/bootstrap` returned `404 token_file_missing` and left
+  `bootstrap_status.available` set, so every later request took the same leg and
+  wrote another `bootstrap` failure audit row — one INSERT per request from any
+  unauthenticated caller, for the life of the process. `check_bootstrap_status`
+  already reads an unreadable file as unavailable at startup, so the boot check
+  and the request path disagreed about the same condition. Reachable by deleting
+  the token or narrowing its permissions after boot.
+
+  They now agree: the first such failure flips `available` to `false`, later
+  requests take the write-free `403 already_bootstrapped` short-circuit, and
+  `GET /api/account/status` stops advertising a window that can't be walked
+  through.
+
+  **Behavior change on the error path.** A deployment whose token file becomes
+  unreadable mid-window now needs the file restored **and** the server restarted
+  before bootstrap reopens. Bootstrap could not have succeeded in that state
+  either way; the refusal is just sticky now.
+
+  Converges with the Rust spine's `bootstrap_handler`.
+
+- fix: map PG 18's `23001` restrict_violation to the db-admin delete's 409 ([bef0672](https://github.com/fuzdev/fuz_app/commit/bef0672))
+
+  PostgreSQL 18 raises SQLSTATE `23001` (`restrict_violation`) instead of
+  `23503` for `ON DELETE RESTRICT` foreign keys, so deleting a
+  RESTRICT-referenced row through `DELETE /tables/:name/rows/:id` returned a
+  500 on PG 18 backends instead of the 409 `foreign_key_violation` it returns
+  on PG ≤17 (and PGlite). Both codes now map to the same 409. Also adds
+  `pg_error_code` to `db/pg_error.ts` — the SQLSTATE extractor the route (and
+  `is_pg_unique_violation`) now share. Converges with the Rust spine's
+  `fuz_db_admin` (its `PgErrorKind` gained `RestrictViolation`, plus
+  `InvalidTextRepresentation`/`NumericValueOutOfRange` for the typed-compare
+  404s).
+
+- fix: compare db-admin delete ids typed instead of via `::text` ([bef0672](https://github.com/fuzdev/fuz_app/commit/bef0672))
+
+  `DELETE /tables/:name/rows/:id` filtered with `WHERE "<pk>"::text = $1`, which
+  seq-scans (the cast defeats the PK index — under the browser's
+  `statement_timeout` a large table's delete could time out) and compares
+  renderings rather than values (a valid uppercase-uuid spelling matched
+  nothing; citext lost case-insensitivity). The filter is now typed —
+  `WHERE "<pk>" = $1` with the id sent as an untyped text-format parameter, so
+  PG coerces it with the PK type's input function: index-scan deletes and
+  canonical per-type semantics. An id that cannot be a value of the PK type
+  (22P02/22003), or that carries a NUL byte the server encoding rejects
+  (22021 — previously a 500), maps to the same masked 404 `row_not_found` as
+  a typed miss.
+  The accepted cost: non-canonical spellings of the same value now match
+  (`'007'` deletes bigint row `7`).
+
+  The `db_admin_row_delete` audit metadata now records `id` as the deleted
+  row's canonical `::text` rendering (read back via `RETURNING`), not the
+  URL-supplied spelling. Converges with the Rust spine's `fuz_db_admin`.
+
 ## 0.108.0
 
 ### Minor Changes
@@ -78,7 +243,7 @@
   in-process by `rate_limiter.handlers.test.ts` (login + signup),
   `password_change.test.ts`, and `rate_limiter.bootstrap.db.test.ts`.
 
-- refactor: remove the bearer-auth rate limiter, and index `api_token.token_hash` ([609ee35](https://github.com/fuzdev/fuz_app/commit/609ee35))
+- remove the bearer-auth rate limiter, and index `api_token.token_hash` ([609ee35](https://github.com/fuzdev/fuz_app/commit/609ee35)) ([refactor](https://github.com/fuzdev/fuz_app/commit/refactor))
 
   **Breaking: `bearer_ip_rate_limiter` is gone.** Removed from
   `AppServerOptions`, `AuthMiddlewareOptions`, and
