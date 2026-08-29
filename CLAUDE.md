@@ -183,8 +183,9 @@ tests.
 
 The top-level `create_route_specs` callback receives `(ctx: AppServerContext)`.
 Individual factories take narrower deps: `create_account_route_specs(deps: RouteFactoryDeps, options)`,
-`create_audit_log_route_specs(options?)`, `create_db_route_specs(options)` (no
-deps). Consumers destructure `ctx.deps` when calling them.
+`create_audit_log_route_specs(options?)`, `create_db_route_specs(deps: DbRouteDeps, options)`
+(a structural `audit` slice — `ctx.deps` satisfies it). Consumers destructure
+`ctx.deps` when calling them.
 
 ### Middleware Ordering
 

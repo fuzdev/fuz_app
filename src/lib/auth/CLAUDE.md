@@ -379,7 +379,7 @@ token_create                role_grant_offer_supersede
 token_revoke                invite_create
 token_revoke_all            invite_delete
 account_delete              app_settings_update
-account_purge
+account_purge               db_admin_row_delete
 account_undelete
 actor_delete
 actor_purge

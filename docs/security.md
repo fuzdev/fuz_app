@@ -1321,6 +1321,14 @@ id intact on historical rows for forensic correlation rather than nulling it.
 Deleting or purging an account additionally snapshots its identifying values
 (`username` / `email`, and per-actor `name`) into the deletion event's metadata,
 so the identity behind a now-orphaned id survives even after the row is gone.
+Append-only is also enforced at the one HTTP surface that could have broken it:
+`http/db_routes.ts`'s `NON_DELETABLE_TABLES` refuses a row `DELETE` on `audit_log`
+with `400 table_not_deletable`, ahead of the key-shape check. `audit_log` has a
+single-column primary key, so the keeper-gated browser would otherwise delete a
+trail row and report success. It is the sharpest of the four excluded tables
+because it is both the trail and part of how revocation propagates — the SSE and
+WS auth guards close live streams by listening to audit events, so a raw row
+delete would be invisible to them. Direct DB access remains out of scope.
 Each event records an `outcome` (`success` or `failure`), so login/bootstrap/password
 change failures are tracked without needing separate event types.
 
@@ -1330,7 +1338,7 @@ Instrumented event types:
 `session_revoke_all`, `token_create`, `token_revoke`, `token_revoke_all`,
 `role_grant_create`, `role_grant_revoke`, `account_delete`, `account_purge`,
 `account_undelete`, `actor_delete`, `actor_purge`, `actor_undelete`,
-`invite_create`, `invite_delete`, `app_settings_update`
+`invite_create`, `invite_delete`, `app_settings_update`, `db_admin_row_delete`
 (plus the `role_grant_offer_*` consent-flow events)
 
 Admin read surface: `audit_log_list` RPC action (filterable by event type,

@@ -110,6 +110,9 @@ Drop tracker rows; idempotent migrations re-apply on next boot:
 DELETE FROM schema_version WHERE namespace = $ns;
 ```
 
+Tracker surgery is direct SQL by design — `schema_version` is one of
+`http/db_routes.ts`'s `NON_DELETABLE_TABLES`, so the db-admin browser refuses it.
+
 A `set_applied()` / `rename_applied()` helper was considered and rejected —
 even one sanctioned bypass that doesn't name the operator's intent invites
 use as a regular tool. Direct SQL forces the operator to consciously violate

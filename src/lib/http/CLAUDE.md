@@ -491,7 +491,9 @@ Auth-aware variants (account status, bootstrap status) live in `auth/` —
 `public` schema via `information_schema`. Wired by consumers that want a
 generic table browser; the factory is domain-agnostic.
 
-`create_db_route_specs({db_type, db_name, extra_stats?, log?})`:
+`create_db_route_specs(deps, {db_type, db_name, extra_stats?, log?, non_deletable_tables?})` —
+`deps` is `DbRouteDeps`, a structural `audit` slice of `AppDeps` declared in
+`http/db_routes.ts` so this directory stays auth-free (`ctx.deps` satisfies it):
 
 - `GET /health` — connected probe + table count + optional `extra_stats(db)`. Returns `{connected: false}` at 503 on failure
 - `GET /tables` — list public tables with row counts
@@ -528,6 +530,15 @@ never replaces it.
 instead of discovering the refusal — `ui/table_state.svelte.ts` gates on
 `can_delete`. `primary_key` stays a truthful report of the key shape; a policy
 exclusion must not masquerade as one.
+
+**Every successful row delete is audited.** The `DELETE` handler emits
+`db_admin_row_delete` through `deps.audit` (pool-routed, so the row survives a
+later rollback) — account-grain attribution (the browser's gate is
+account-grain, so no actor is claimed), metadata `{table, pk_column, id}`.
+Refusals emit nothing. The completeness gate covers the event via the
+`db_routes.db.test.ts` emission tests (excluded-with-justification in
+`testing/audit_completeness.ts`). Twinned by `fuz_db_admin`'s emission on the
+Rust spine.
 
 All four routes use the keeper auth shape (`{account: 'required', actor: 'required', roles: ['keeper'], credential_types: ['daemon_token']}`).
 Param schemas use `VALID_SQL_IDENTIFIER` regex, and every table name gets

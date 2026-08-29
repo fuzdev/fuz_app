@@ -62,7 +62,8 @@ export const AUDIT_EVENT_TYPES = Object.freeze([
 	'actor_delete',
 	'actor_purge',
 	'actor_undelete',
-	'app_settings_update'
+	'app_settings_update',
+	'db_admin_row_delete'
 ] as const);
 
 /** Zod schema for audit event types. */
@@ -371,6 +372,20 @@ export const audit_metadata_schemas = Object.freeze({
 		setting: z.string().meta({ description: 'Name of the setting that changed.' }),
 		old_value: z.unknown().meta({ description: 'Setting value before the update.' }),
 		new_value: z.unknown().meta({ description: 'Setting value after the update.' })
+	}),
+	// Row deleted through the generic db-admin table browser
+	// (`http/db_routes.ts` / the Rust spine's `fuz_db_admin`). Account-grain
+	// attribution (`account_id`, no `actor_id`) — the browser's gate is
+	// account-grain by construction. Emitted only on a successful delete;
+	// post-composite-refusal the delete is provably single-row, so no count.
+	db_admin_row_delete: z.looseObject({
+		table: z.string().meta({ description: 'Table the row was deleted from.' }),
+		pk_column: z.string().meta({
+			description: 'Single primary-key column the `DELETE` filtered on.'
+		}),
+		id: z.string().meta({
+			description: 'Primary-key value of the deleted row, as the URL-supplied string.'
+		})
 	})
 }) satisfies Record<AuditEventType, z.ZodType>;
 

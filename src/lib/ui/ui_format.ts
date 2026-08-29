@@ -175,6 +175,13 @@ export const format_audit_metadata = (
 						metadata.new_value
 					)}`
 				: '';
+		case 'db_admin_row_delete':
+			return metadata.table
+				? `${metadata.table as string}.${metadata.pk_column as string}: ${truncate_middle(
+						metadata.id as string,
+						12
+					)}`
+				: '';
 		default:
 			return JSON.stringify(metadata);
 	}

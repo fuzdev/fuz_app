@@ -11,9 +11,11 @@ import { Hono } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_db_route_specs, type ColumnInfo } from '$lib/http/db_routes.ts';
+import { create_recording_audit_emitter } from '$lib/testing/audit_drift_guard.ts';
 import { apply_route_specs, type RouteSpec } from '$lib/http/route_spec.ts';
 import { fuz_auth_guard_resolver } from '$lib/auth/auth_guard_resolver.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '$lib/auth/request_context.ts';
+import { audit_metadata_schemas } from '$lib/auth/audit_log_schema.ts';
 import { create_test_context } from '$lib/testing/entities.ts';
 import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY } from '$lib/hono_context.ts';
 import type { Db } from '$lib/db/db.ts';
@@ -32,6 +34,11 @@ let db: Db;
 
 /** Create a request context with keeper role. */
 const keeper_ctx: RequestContext = create_test_context([{ role: 'keeper' }]);
+
+/** Recording audit emitter — `audit.calls` resets per test in `beforeEach`. */
+const audit = create_recording_audit_emitter();
+/** Deps for `create_db_route_specs` — the recording emitter as `audit`. */
+const deps = { audit: audit.emitter };
 
 /** Create a test Hono app with keeper auth (daemon_token credential) and db route specs. */
 const create_test_app = (specs: Array<RouteSpec>) => {
@@ -60,16 +67,17 @@ beforeEach(async () => {
 	await db.query('DROP TABLE IF EXISTS fk_test_child, fk_test_parent CASCADE');
 	await db.query('DROP TABLE IF EXISTS composite_pk_test, consumer_ledger CASCADE');
 	await db.query('TRUNCATE audit_log, api_token, auth_session, role_grant, actor, account CASCADE');
+	audit.calls.length = 0;
 });
 
 describe('route spec metadata', () => {
 	test('creates 4 route specs', () => {
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		assert.strictEqual(specs.length, 4);
 	});
 
 	test('all specs require keeper auth', () => {
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		for (const spec of specs) {
 			assert.deepStrictEqual(spec.auth, {
 				account: 'required',
@@ -81,7 +89,7 @@ describe('route spec metadata', () => {
 	});
 
 	test('spec paths and methods are correct', () => {
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		assert.strictEqual(specs[0]!.method, 'GET');
 		assert.strictEqual(specs[0]!.path, '/health');
 		assert.strictEqual(specs[1]!.method, 'GET');
@@ -93,7 +101,7 @@ describe('route spec metadata', () => {
 	});
 
 	test('all specs have descriptions', () => {
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		for (const spec of specs) {
 			assert.ok(spec.description);
 		}
@@ -109,14 +117,14 @@ describe('route spec metadata', () => {
 		// fails loudly inside fuz_app CI instead of surfacing as a
 		// confusing throw the first time a consumer
 		// (mageguild / zap) registers these routes.
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		assert.doesNotThrow(() => create_test_app(specs));
 	});
 });
 
 describe('GET /health handler', () => {
 	test('returns connected true with table count', async () => {
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request('/health');
 		assert.strictEqual(res.status, 200);
@@ -129,7 +137,7 @@ describe('GET /health handler', () => {
 	});
 
 	test('includes extra_stats when provided', async () => {
-		const specs = create_db_route_specs({
+		const specs = create_db_route_specs(deps, {
 			db_type: 'pglite-memory',
 			db_name: 'test',
 			extra_stats: async () => ({ custom_count: 42 })
@@ -143,7 +151,7 @@ describe('GET /health handler', () => {
 
 describe('GET /tables handler', () => {
 	test('lists public tables with row counts', async () => {
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request('/tables');
 		assert.strictEqual(res.status, 200);
@@ -161,7 +169,7 @@ describe('GET /tables handler', () => {
 
 describe('GET /tables/:name handler', () => {
 	test('returns columns and empty rows for empty table', async () => {
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request('/tables/account');
 		assert.strictEqual(res.status, 200);
@@ -181,7 +189,7 @@ describe('GET /tables/:name handler', () => {
 	test('returns rows with pagination', async () => {
 		await db.query(`INSERT INTO account (username, password_hash) VALUES ('u1', 'h1')`);
 		await db.query(`INSERT INTO account (username, password_hash) VALUES ('u2', 'h2')`);
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request('/tables/account?offset=0&limit=1');
 		assert.strictEqual(res.status, 200);
@@ -193,7 +201,7 @@ describe('GET /tables/:name handler', () => {
 	});
 
 	test('detects primary key', async () => {
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request('/tables/account');
 		const body = await res.json();
@@ -201,7 +209,7 @@ describe('GET /tables/:name handler', () => {
 	});
 
 	test('excluded table reports deletable false while primary_key stays truthful', async () => {
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request('/tables/audit_log');
 		assert.strictEqual(res.status, 200);
@@ -212,7 +220,7 @@ describe('GET /tables/:name handler', () => {
 	});
 
 	test('ordinary table reports deletable true', async () => {
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request('/tables/account');
 		assert.strictEqual(res.status, 200);
@@ -227,7 +235,7 @@ describe('GET /tables/:name handler', () => {
 			name TEXT NOT NULL,
 			PRIMARY KEY (source_id, name)
 		)`);
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request('/tables/composite_pk_test');
 		const body = await res.json();
@@ -241,7 +249,7 @@ describe('GET /tables/:name handler', () => {
 			value TEXT,
 			PRIMARY KEY (source_id, name)
 		)`);
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request('/tables/composite_pk_test');
 		assert.strictEqual(res.status, 200);
@@ -250,14 +258,14 @@ describe('GET /tables/:name handler', () => {
 	});
 
 	test('invalid table name returns 400', async () => {
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request('/tables/Robert%27;DROP%20TABLE');
 		assert.strictEqual(res.status, 400);
 	});
 
 	test('nonexistent table returns 404', async () => {
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request('/tables/nonexistent_table');
 		assert.strictEqual(res.status, 404);
@@ -280,7 +288,7 @@ describe('SQL injection resistance', () => {
 
 	for (const { name, value } of sql_injection_payloads) {
 		test(`rejects ${name} in table name`, async () => {
-			const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+			const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 			const app = create_test_app(specs);
 			const res = await app.request(`/tables/${encodeURIComponent(value)}`);
 			assert.strictEqual(res.status, 400, `${name} should be rejected`);
@@ -288,7 +296,7 @@ describe('SQL injection resistance', () => {
 	}
 
 	test('rejects SQL injection in DELETE row id param', async () => {
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		// The id param is passed via parameterized query ($1), so injection attempts
 		// cannot execute arbitrary SQL. The UUID-typed id column rejects the non-UUID
@@ -308,7 +316,7 @@ describe('DELETE /tables/:name/rows/:id handler', () => {
 			`INSERT INTO account (username, password_hash) VALUES ('to_delete', 'hash') RETURNING id`
 		);
 		const id = result[0]!.id;
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request(`/tables/account/rows/${id}`, { method: 'DELETE' });
 		assert.strictEqual(res.status, 200);
@@ -317,7 +325,7 @@ describe('DELETE /tables/:name/rows/:id handler', () => {
 	});
 
 	test('row not found returns 404', async () => {
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request('/tables/account/rows/00000000-0000-0000-0000-000000000000', {
 			method: 'DELETE'
@@ -342,7 +350,7 @@ describe('DELETE /tables/:name/rows/:id handler', () => {
 		const parent_id = parent[0]!.id;
 		await db.query(`INSERT INTO fk_test_child (parent_id) VALUES ($1)`, [parent_id]);
 
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request(`/tables/fk_test_parent/rows/${parent_id}`, {
 			method: 'DELETE'
@@ -359,7 +367,7 @@ describe('DELETE /tables/:name/rows/:id handler', () => {
 		await db.query(
 			`INSERT INTO audit_log (event_type, outcome) VALUES ('login', 'success'), ('logout', 'success')`
 		);
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const target = await db.query<{ id: string }>(`SELECT id FROM audit_log LIMIT 1`);
 		const res = await app.request(`/tables/audit_log/rows/${target[0]!.id}`, { method: 'DELETE' });
@@ -374,7 +382,7 @@ describe('DELETE /tables/:name/rows/:id handler', () => {
 		// `schema_version` is composite, so both refusals apply; the policy one
 		// must win, or removing a table from the exclusion set would silently
 		// change which error a caller sees.
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request('/tables/schema_version/rows/fuz_auth', { method: 'DELETE' });
 		assert.strictEqual(res.status, 400);
@@ -385,7 +393,7 @@ describe('DELETE /tables/:name/rows/:id handler', () => {
 	test('consumer non_deletable_tables extends the builtin set rather than replacing it', async () => {
 		await db.query(`CREATE TABLE consumer_ledger (id TEXT PRIMARY KEY)`);
 		await db.query(`INSERT INTO consumer_ledger (id) VALUES ('a')`);
-		const specs = create_db_route_specs({
+		const specs = create_db_route_specs(deps, {
 			db_type: 'pglite-memory',
 			db_name: 'test',
 			non_deletable_tables: ['consumer_ledger']
@@ -419,7 +427,7 @@ describe('DELETE /tables/:name/rows/:id handler', () => {
 			`INSERT INTO composite_pk_test (source_id, name, value)
 			 VALUES ('s1', 'title', 'a'), ('s2', 'title', 'b'), ('s3', 'title', 'c')`
 		);
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request('/tables/composite_pk_test/rows/title', { method: 'DELETE' });
 		assert.strictEqual(res.status, 400);
@@ -433,9 +441,77 @@ describe('DELETE /tables/:name/rows/:id handler', () => {
 	});
 
 	test('invalid table name returns 400', async () => {
-		const specs = create_db_route_specs({ db_type: 'pglite-memory', db_name: 'test' });
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
 		const app = create_test_app(specs);
 		const res = await app.request('/tables/bad--name/rows/1', { method: 'DELETE' });
 		assert.strictEqual(res.status, 400);
+	});
+});
+
+describe('DELETE audit emission', () => {
+	test('successful delete emits db_admin_row_delete with table, pk column, and id', async () => {
+		const result = await db.query<{ id: string }>(
+			`INSERT INTO account (username, password_hash) VALUES ('audited', 'hash') RETURNING id`
+		);
+		const id = result[0]!.id;
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
+		const app = create_test_app(specs);
+		const res = await app.request(`/tables/account/rows/${id}`, { method: 'DELETE' });
+		assert.strictEqual(res.status, 200);
+
+		assert.strictEqual(audit.calls.length, 1, 'exactly one audit emission');
+		const call = audit.calls[0]!;
+		assert.strictEqual(call.event_type, 'db_admin_row_delete');
+		// Account-grain attribution — the browser's gate is account-grain, so
+		// the emission claims no actor.
+		assert.strictEqual(call.account_id, keeper_ctx.account.id);
+		assert.isUndefined(call.actor_id);
+		assert.deepStrictEqual(call.metadata, { table: 'account', pk_column: 'id', id });
+		// The recording emitter bypasses `query_audit_log`'s fail-open metadata
+		// validation, so bind the emitted shape to the builtin schema here — a
+		// schema key rename fails this parse instead of bumping a prod counter.
+		audit_metadata_schemas.db_admin_row_delete.parse(call.metadata);
+	});
+
+	test('refused and missed deletes emit nothing', async () => {
+		await db.query(`INSERT INTO audit_log (event_type, outcome) VALUES ('login', 'success')`);
+		const excluded = await db.query<{ id: string }>(`SELECT id FROM audit_log LIMIT 1`);
+		const specs = create_db_route_specs(deps, { db_type: 'pglite-memory', db_name: 'test' });
+		const app = create_test_app(specs);
+
+		// policy exclusion
+		let res = await app.request(`/tables/audit_log/rows/${excluded[0]!.id}`, {
+			method: 'DELETE'
+		});
+		assert.strictEqual(res.status, 400);
+		// composite-PK refusal
+		await db.query(`CREATE TABLE composite_pk_test (a TEXT, b TEXT, PRIMARY KEY (a, b))`);
+		res = await app.request('/tables/composite_pk_test/rows/anything', { method: 'DELETE' });
+		assert.strictEqual(res.status, 400);
+		// row not found
+		res = await app.request('/tables/account/rows/00000000-0000-0000-0000-000000000000', {
+			method: 'DELETE'
+		});
+		assert.strictEqual(res.status, 404);
+		// table not found
+		res = await app.request('/tables/nonexistent_table/rows/x', { method: 'DELETE' });
+		assert.strictEqual(res.status, 404);
+		// FK violation — the DELETE query throws before the emit is reached
+		await db.query(`CREATE TABLE fk_test_parent (
+			id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+			name TEXT NOT NULL
+		)`);
+		await db.query(`CREATE TABLE fk_test_child (
+			id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+			parent_id TEXT NOT NULL REFERENCES fk_test_parent(id) ON DELETE RESTRICT
+		)`);
+		const parent = await db.query<{ id: string }>(
+			`INSERT INTO fk_test_parent (name) VALUES ('p') RETURNING id`
+		);
+		await db.query(`INSERT INTO fk_test_child (parent_id) VALUES ($1)`, [parent[0]!.id]);
+		res = await app.request(`/tables/fk_test_parent/rows/${parent[0]!.id}`, { method: 'DELETE' });
+		assert.strictEqual(res.status, 409);
+
+		assert.strictEqual(audit.calls.length, 0, 'only a successful delete is audited');
 	});
 });

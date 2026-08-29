@@ -802,7 +802,11 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 				'role_grant_offer_decline',
 				'role_grant_offer_retract',
 				'role_grant_offer_expire',
-				'role_grant_offer_supersede'
+				'role_grant_offer_supersede',
+				// `db_admin_row_delete` fires from the generic db-admin browser
+				// (`http/db_routes.ts`), which the standard test app doesn't mount —
+				// covered in `db_routes.db.test.ts`.
+				'db_admin_row_delete'
 			]);
 
 			test('all audit event types are covered or explicitly excluded', () => {

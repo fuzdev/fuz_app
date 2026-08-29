@@ -251,7 +251,8 @@ provided) writes to DB then mutates the ref, so `app_settings_get` and the signu
 middleware read from memory (no DB hit). Currently holds `open_signup` (boolean, default
 `false`). `updated_by` is a plain UUID column (no FK to `actor`) — this is intentional to
 avoid test truncation cascades and because it's audit metadata, not a relational
-constraint.
+constraint. Deleting the singleton makes every settings read throw, so
+`app_settings` is one of `http/db_routes.ts`'s `NON_DELETABLE_TABLES`.
 
 ## Static File Serving
 

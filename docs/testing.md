@@ -92,7 +92,7 @@ export const create_my_route_specs = (ctx: AppServerContext): Array<RouteSpec> =
 ```
 
 Factory signatures take narrowed deps: `create_account_route_specs(deps: RouteFactoryDeps, options)`,
-`create_audit_log_route_specs(options?)`, `create_db_route_specs(options)`.
+`create_audit_log_route_specs(options?)`, `create_db_route_specs(deps, options)`.
 `ctx.deps` (`AppDeps`) structurally satisfies all narrowed types. Admin
 account listing, session/token revoke-all, audit-log reads, invite CRUD,
 and app-settings get/update are all RPC-only — mount

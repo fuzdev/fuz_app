@@ -37,6 +37,7 @@ import {
 	ERROR_FOREIGN_KEY_VIOLATION,
 	ERROR_TABLE_NOT_FOUND,
 	ERROR_TABLE_NO_PRIMARY_KEY,
+	ERROR_TABLE_NOT_DELETABLE,
 	ERROR_ROW_NOT_FOUND,
 	ERROR_INVALID_QUERY_PARAMS,
 	ERROR_NO_MATCHING_INVITE,
@@ -317,6 +318,7 @@ describe('error code constants', () => {
 		assert.strictEqual(ERROR_FOREIGN_KEY_VIOLATION, 'foreign_key_violation');
 		assert.strictEqual(ERROR_TABLE_NOT_FOUND, 'table_not_found');
 		assert.strictEqual(ERROR_TABLE_NO_PRIMARY_KEY, 'table_no_primary_key');
+		assert.strictEqual(ERROR_TABLE_NOT_DELETABLE, 'table_not_deletable');
 		assert.strictEqual(ERROR_ROW_NOT_FOUND, 'row_not_found');
 		assert.strictEqual(ERROR_NO_MATCHING_INVITE, 'no_matching_invite');
 		assert.strictEqual(ERROR_SIGNUP_CONFLICT, 'signup_conflict');

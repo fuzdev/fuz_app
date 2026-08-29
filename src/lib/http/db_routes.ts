@@ -2,13 +2,15 @@
  * API route specs for database administration.
  *
  * Generic PostgreSQL table browser using `information_schema`.
- * Provides: list tables, view columns/rows (paginated), delete rows by PK, health check.
+ * Provides: list tables, view columns/rows (paginated), delete rows by PK
+ * (audited as `db_admin_row_delete`), health check.
  *
  * @module
  */
 
 import { z } from 'zod';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import type { Db, DbType } from '../db/db.ts';
 import { get_route_params, get_route_query, type RouteSpec } from './route_spec.ts';
@@ -24,6 +26,7 @@ import {
 	ERROR_DATABASE_CONNECTION_FAILED
 } from './error_schemas.ts';
 import { assert_valid_sql_identifier, VALID_SQL_IDENTIFIER } from '../db/sql_identifier.ts';
+import { get_client_ip } from './client_ip.ts';
 
 /**
  * Table metadata from `information_schema`.
@@ -91,6 +94,30 @@ export const NON_DELETABLE_TABLES: ReadonlyArray<string> = Object.freeze([
 ]);
 
 /**
+ * Capabilities the db routes need — a narrow structural slice of `AppDeps`
+ * (`auth/deps.ts`), declared here so `http/` stays auth-free. The bound
+ * `auth/audit_emitter.ts` `AuditEmitter` (and therefore `AppDeps.audit` /
+ * `RouteFactoryDeps.audit`) satisfies `audit` structurally.
+ */
+export interface DbRouteDeps {
+	/**
+	 * Pool-routed fire-and-forget audit emit — the row lands even when the
+	 * handler's transaction rolls back.
+	 */
+	audit: {
+		emit: (
+			ctx: { pending_effects: Array<Promise<void>> },
+			input: {
+				event_type: 'db_admin_row_delete';
+				account_id: Uuid | null;
+				ip: string;
+				metadata: { table: string; pk_column: string; id: string };
+			}
+		) => void;
+	};
+}
+
+/**
  * Per-factory configuration for db routes.
  */
 export interface DbRouteOptions {
@@ -151,7 +178,10 @@ const query_table_exists = async (db: Db, name: string): Promise<boolean> => {
 /**
  * Create the db API route specs.
  */
-export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec> => {
+export const create_db_route_specs = (
+	deps: DbRouteDeps,
+	options: DbRouteOptions
+): Array<RouteSpec> => {
 	const { db_type, db_name, extra_stats, log, non_deletable_tables } = options;
 
 	const non_deletable: ReadonlySet<string> = new Set([
@@ -396,6 +426,17 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 					if (result.length === 0) {
 						return c.json({ error: ERROR_ROW_NOT_FOUND }, 404);
 					}
+
+					// The trail for the trail-adjacent surface: every successful row
+					// delete through this generic endpoint is audited. Account-grain
+					// attribution — the browser is a raw storage surface, so no actor
+					// is claimed; mirrors the Rust twin's emission in `fuz_db_admin`.
+					deps.audit.emit(route, {
+						event_type: 'db_admin_row_delete',
+						account_id: c.var.request_context?.account.id ?? null,
+						ip: get_client_ip(c),
+						metadata: { table: name, pk_column, id }
+					});
 
 					return c.json({ success: true });
 				} catch (err) {

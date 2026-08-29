@@ -418,6 +418,21 @@ describe('format_audit_metadata', () => {
 			'open_signup: false → true'
 		);
 	});
+
+	test('db_admin_row_delete shows table.pk_column and truncated id', () => {
+		assert.strictEqual(
+			format_audit_metadata('db_admin_row_delete', {
+				table: 'account',
+				pk_column: 'id',
+				id: 'abcdef1234567890abcdef1234567890'
+			}),
+			'account.id: abcdef…67890'
+		);
+	});
+
+	test('db_admin_row_delete returns empty for missing table', () => {
+		assert.strictEqual(format_audit_metadata('db_admin_row_delete', {}), '');
+	});
 });
 
 describe('format_value', () => {
