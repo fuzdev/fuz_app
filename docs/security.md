@@ -149,7 +149,9 @@ legitimate operator.
   the same lock row; direct DB tampering with `bootstrap_lock` is out of scope
   for the write contract
 - **Early in-memory check**: `bootstrap_status.available` short-circuits before
-  any rate limiting, file reads, or crypto after bootstrap completes
+  any rate limiting, file reads, or crypto after bootstrap completes — and an
+  unreadable token file flips it to `false`, closing the window rather than
+  leaving the probe answering (and audit-writing) indefinitely
 - **Token file deletion enforcement**: If the token file cannot be deleted after
   successful bootstrap, the handler throws after completing all success work
   (session, `on_bootstrap` callback, audit log). The error response forces
@@ -1147,8 +1149,9 @@ compensating control below.
    RPC methods it names and reaches no non-RPC spine surface at all. This is
    the strongest available control and the right one to reach for when issuing
    a token to automation. See §Token scoping.
-3. **Revocation and the rate limiter**, which bound the window and the blast
-   rate but not the reach.
+3. **Revocation**, which bounds the window but not the reach. (Bearer auth is
+   deliberately not rate limited — see §Why bearer auth is not rate limited —
+   so revocation and the two controls above are the whole set.)
 
 Not yet available, and the reason this is a stated tradeoff rather than a solved
 problem: per-token IP binding, and token expiry by default.
