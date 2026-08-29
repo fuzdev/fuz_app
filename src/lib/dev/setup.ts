@@ -19,6 +19,7 @@ import type {
 } from '../runtime/deps.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { load_env_file } from '../env/dotenv.ts';
+import { write_file_atomic } from '../runtime/fs.ts';
 import {
 	query_account_by_username,
 	query_actors_by_account,
@@ -82,8 +83,6 @@ export interface SetupEnvOptions {
 	 * Replaces `^KEY=$` (empty value) patterns in the env file.
 	 */
 	replacements?: Record<string, () => Promise<string>>;
-	/** Optional callback to set file permissions (e.g. `Deno.chmod`). */
-	set_permissions?: (path: string, mode: number) => Promise<void>;
 	log?: SetupLogger;
 }
 
@@ -91,8 +90,6 @@ export interface SetupEnvOptions {
 export interface SetupBootstrapTokenOptions {
 	/** State directory override. Defaults to `~/.{app_name}`. */
 	state_dir?: string;
-	/** Optional callback to set file/directory permissions. */
-	set_permissions?: (path: string, mode: number) => Promise<void>;
 	log?: SetupLogger;
 }
 
@@ -176,9 +173,9 @@ export const read_env_var = async (
  * @param deps - file read, write, and command capabilities
  * @param env_path - path for the env file (e.g. `.env.development`)
  * @param example_path - path to the example template
- * @param options - extra replacements, permissions, logger
+ * @param options - extra replacements, logger
  * @returns result indicating whether the file was created or updated
- * @mutates filesystem - writes `env_path` (creating from `example_path` if missing) and optionally chmods to `0o600`
+ * @mutates filesystem - writes `env_path` atomically at mode `0o600` (creating from `example_path` if missing)
  */
 export const setup_env_file = async (
 	deps: FsReadDeps & FsWriteDeps & CommandDeps,
@@ -187,7 +184,6 @@ export const setup_env_file = async (
 	options?: SetupEnvOptions
 ): Promise<SetupEnvResult> => {
 	const log = options?.log ?? default_setup_logger;
-	const set_permissions = options?.set_permissions;
 
 	// build the full replacement map (SECRET_FUZ_COOKIE_KEYS + extras)
 	const replacements: Record<string, () => Promise<string>> = {
@@ -212,8 +208,10 @@ export const setup_env_file = async (
 		}
 
 		if (changed) {
-			await deps.write_text_file(env_path, content);
-			if (set_permissions) await set_permissions(env_path, 0o600);
+			// Atomic replace at 0600 — the backfill just wrote secrets into the
+			// file, so publishing a fresh owner-only inode also repairs a
+			// hand-made permissive .env in the same step the old chmod covered.
+			await write_file_atomic(deps, env_path, content, { mode: 0o600 });
 		} else {
 			log.skip(`${env_path} already configured`);
 		}
@@ -230,8 +228,7 @@ export const setup_env_file = async (
 			content = content.replace(pattern, `${key}=${value}`);
 		}
 	}
-	await deps.write_text_file(env_path, content);
-	if (set_permissions) await set_permissions(env_path, 0o600);
+	await write_file_atomic(deps, env_path, content, { mode: 0o600 });
 	log.ok(`Created ${env_path} with generated secrets`);
 	return { created: true, updated: true, path: env_path };
 };
@@ -244,9 +241,9 @@ export const setup_env_file = async (
  *
  * @param deps - file, command, and env capabilities
  * @param app_name - application name (used for default state directory)
- * @param options - state_dir override, permissions, logger
+ * @param options - state_dir override, logger
  * @returns result indicating whether a token was created
- * @mutates filesystem - creates state directory and writes the token file (optionally chmods to `0o700` / `0o600`)
+ * @mutates filesystem - creates the state directory (`0o700`) and writes the token file atomically at `0o600`
  */
 export const setup_bootstrap_token = async (
 	deps: FsReadDeps & FsWriteDeps & CommandDeps & EnvDeps,
@@ -254,7 +251,6 @@ export const setup_bootstrap_token = async (
 	options?: SetupBootstrapTokenOptions
 ): Promise<SetupTokenResult> => {
 	const log = options?.log ?? default_setup_logger;
-	const set_permissions = options?.set_permissions;
 
 	const home = deps.env_get('HOME');
 	if (!home) {
@@ -271,11 +267,13 @@ export const setup_bootstrap_token = async (
 		return { created: false, token_path };
 	}
 
-	await deps.mkdir(state_dir, { recursive: true });
-	if (set_permissions) await set_permissions(state_dir, 0o700);
+	// Modes apply at creation — an already-existing state dir keeps its mode.
+	// The token itself is always freshly created here (the stat above skipped
+	// existing files), so its 0600 holds unconditionally; the server-side
+	// `read_secure_file` refuses anything laxer at read time.
+	await deps.mkdir(state_dir, { recursive: true, mode: 0o700 });
 	const key = await generate_random_key(deps);
-	await deps.write_text_file(token_path, key + '\n');
-	if (set_permissions) await set_permissions(token_path, 0o600);
+	await write_file_atomic(deps, token_path, key + '\n', { mode: 0o600 });
 	log.ok(`Created ~/.${app_name}/secret_bootstrap_token (one-shot, deleted after first use)`);
 	return { created: true, token_path };
 };
@@ -285,7 +283,7 @@ export const setup_bootstrap_token = async (
  *
  * @param deps - file, command, env, and remove capabilities
  * @param app_name - application name
- * @param options - state_dir override, permissions, logger
+ * @param options - state_dir override, logger
  * @returns result from creating the new token
  * @mutates filesystem - removes the existing token file (if any) then writes a fresh one
  */
@@ -295,7 +293,6 @@ export const reset_bootstrap_token = async (
 	options?: SetupBootstrapTokenOptions
 ): Promise<SetupTokenResult> => {
 	const log = options?.log ?? default_setup_logger;
-	const set_permissions = options?.set_permissions;
 
 	const home = deps.env_get('HOME');
 	if (!home) {
@@ -312,7 +309,7 @@ export const reset_bootstrap_token = async (
 		log.ok('Removed existing bootstrap token');
 	}
 
-	return setup_bootstrap_token(deps, app_name, { state_dir, set_permissions, log });
+	return setup_bootstrap_token(deps, app_name, { state_dir, log });
 };
 
 // === Database helpers ===

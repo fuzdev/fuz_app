@@ -75,8 +75,9 @@ const session_options = create_session_config('test_session');
 const log = new Logger('test', { level: 'off' });
 
 const fs_stubs = {
-	stat: async () => null,
-	read_text_file: async () => '',
+	read_secure_file: async (path: string): Promise<Uint8Array> => {
+		throw new Error(`ENOENT: no such file or directory: ${path}`);
+	},
 	delete_file: async (_path: string) => {}
 };
 

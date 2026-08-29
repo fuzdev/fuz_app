@@ -17,6 +17,7 @@ import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as NodeWebReadableStream } from 'node:stream/web';
 
 import type { RuntimeDeps, StatResult, CommandResult } from './deps.ts';
+import { load_secure_file_node } from './secure_file.ts';
 
 /**
  * Create a `RuntimeDeps` backed by Node.js APIs.
@@ -58,6 +59,7 @@ export const create_node_runtime = (
 	},
 	read_text_file: (path) => readFile(path, 'utf-8'),
 	read_file: (path) => readFile(path).then((buf) => new Uint8Array(buf)),
+	read_secure_file: load_secure_file_node,
 	// `Readable.toWeb` / `fromWeb` bridge Node streams to the web stream shape
 	// the interface speaks. The casts cross Node's `stream/web` ReadableStream
 	// and the global DOM `ReadableStream` (structurally identical here).
@@ -93,7 +95,12 @@ export const create_node_runtime = (
 		}
 	},
 	readdir: (path) => readdir(path),
-	write_text_file: (path, content) => writeFile(path, content, 'utf-8'),
+	write_text_file: (path, content, options) =>
+		writeFile(path, content, {
+			encoding: 'utf-8',
+			mode: options?.mode,
+			flag: options?.exclusive ? 'wx' : 'w'
+		}),
 	write_file: (path, data) => writeFile(path, data),
 	rename: (old_path, new_path) => rename(old_path, new_path),
 	fsync: async (path) => {

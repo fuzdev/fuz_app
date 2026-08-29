@@ -171,8 +171,7 @@ const create_password_change_app = (
 				verify_password: mock_verify_password,
 				verify_dummy: vi.fn(() => Promise.resolve(false))
 			},
-			stat: noop,
-			read_text_file: noop,
+			read_secure_file: noop,
 			delete_file: noop,
 			audit
 		},

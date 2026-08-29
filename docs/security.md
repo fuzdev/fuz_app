@@ -167,9 +167,13 @@ legitimate operator.
   regression-tested (a cookie attribute change fails the test suite)
 - **Server-side sessions**: Cookie contains a signed opaque ID (HMAC-SHA256);
   session data is DB-resident, stored as a blake3 hash
-- **Sliding expiry**: 30-day window, extended on activity at both layers — DB
-  session via `query_session_touch`, cookie via `process_session_cookie`
-  (re-signs within 1 day of expiry). Lifetimes match exactly — invariant-tested
+- **Absolute lifetime**: 30-day hard cap, set once at mint on both layers —
+  the DB row's `expires_at` and the cookie's embedded expiry are fixed, and
+  there is deliberately no touch/renewal on either (a sliding window renews a
+  leaked cookie forever at one request per window; both spines converged on
+  the hard cap). The only recovery from an aged-out session is a fresh login.
+  `last_seen_at` is decorative (always equals `created_at`) and slated for
+  removal on its own twin migration
 - **Session limits**: Per-account cap (default 5, configurable). Oldest session
   evicted on login when limit is reached
 - **Password change**: Revokes all sessions and clears the session cookie.
@@ -181,9 +185,11 @@ legitimate operator.
 `SECRET_FUZ_COOKIE_KEYS` supports key rotation via `__`-separated keys:
 
 1. **Prepend** the new key — it becomes the primary signer
-2. **Old keys remain** for verification — active sessions are re-signed
-   transparently on the next request
-3. **Remove old keys** after the rotation window (e.g., max session lifetime) —
+2. **Old keys remain** for verification — a cookie signed by a retired key
+   keeps verifying as-is (it is never re-signed; any re-sign would extend the
+   absolute lifetime)
+3. **Remove old keys** after the rotation window — exactly `SESSION_AGE_MAX`
+   (30 days), since every cookie a retired key signed has expired by then —
    or accept that sessions signed with removed keys will be invalidated
 4. **Emergency rotation** — replace all keys at once. All active sessions are
    immediately invalidated; users must log in again
@@ -193,6 +199,13 @@ legitimate operator.
 - **Secret scanning prefix**: `secret_fuz_token_` triggers automatic secret
   scanner detection
 - **Blake3-hashed server-side**: Raw token is never stored — only the hash
+- **Required lifetime at mint**: `account_token_create` takes a required
+  `lifetime` union — `{kind:'eternal'}` or `{kind:'ttl', days}` — with
+  deliberately no default, so `expires_at IS NULL` always means "deliberately
+  eternal" and a bounded token needs no follow-up plumbing (the validate
+  chokepoint has enforced `expires_at` all along, on both spines). A
+  framework-level ceiling (`max_token_ttl_days`) is deferred until `fuzf`
+  grows an expiry story (an expiry-aware token read + a 401 hint)
 - **Browser context discard**: Bearer tokens are silently discarded (not
   rejected) when `Origin` or `Referer` headers are present — the middleware
   calls `next()` without setting a context, so public actions still work.
@@ -324,26 +337,22 @@ the suite instead of shipping ungated.
 
 Rotating filesystem credential for keeper-level operations:
 
-- Server writes a random token to `~/.{app}/run/daemon_token`
-  as JSON `{"token": "<base64url>"}` — wrapper leaves room for future
-  fields (rotated_at, version) without changing every reader; matched by
-  the Rust spine writer (`fuz_testing::write_token_file`) for wire parity
-- **Twin divergence — the Rust spine no longer mounts this credential in
-  production.** Its writer moved from `fuz_auth` into the test-only
-  `fuz_testing` crate, which a release audit keeps out of every production
-  binary, so a Rust-backed consumer cannot mint or persist a daemon token and
-  its `daemon_token_state` is always `None`. No caller in the ecosystem sends
-  `X-Daemon-Token` outside the cross-backend harness. The wire format and the
-  gates below stay identical, so a TS consumer that wants the credential still
-  works — but if you are choosing whether to mount it, note the Rust side
-  concluded there was nothing to mount it for
-- **Mode `0600` is not guaranteed.** The write applies it only when the runtime
-  supplies the _optional_ `chmod` dependency, and neither the standard Node nor
-  the standard Deno `RuntimeDeps` factory does — so under an ordinary runtime the
-  file lands at whatever the process umask allows. A consumer that stores a
-  keeper-equivalent credential must wire `chmod` explicitly, or place the file
-  under an owner-only (`0700`) parent directory. Treat the parent directory as
-  the load-bearing control until a real secret-file capability lands
+- The token file lives at `~/.{app}/run/daemon_token` as JSON
+  `{"token": "<base64url>"}` — wrapper leaves room for future fields
+  (rotated_at, version) without changing every reader; matched by the Rust
+  spine writer (`fuz_testing::write_token_file`) for wire parity
+- **The producer is test-only on both spines.** No production assembly mints
+  daemon tokens: the TS writer lives in `testing/daemon_token_rotation.ts`
+  behind the dev-env guard (importing it in a production bundle throws), and
+  the Rust writer lives in `fuz_testing`, which a release audit keeps out of
+  every production binary. The credential's only remaining role is the
+  cross-process harness's keeper channel (`_testing_reset` &c.);
+  `auth/daemon_token_middleware.ts` keeps only the consumer half. No caller
+  in the ecosystem sends `X-Daemon-Token` outside that harness
+- **Mode `0600` is applied at creation.** The test-only producer writes the
+  file via `write_file_atomic` with a unique exclusive temp and mode `0600`,
+  so it never exists group/other-readable (the old optional-`chmod` pattern,
+  under which a default umask landed it at `0644`, is gone)
 - Token rotated every 30 seconds (configurable); the previous token is also
   accepted to cover the rotation race window
 - Both the REST guard composition (`require_credential_types(['daemon_token'])`
@@ -1130,7 +1139,9 @@ nginx, cookie-only for v1") while no deployment ever did it.
 **What that costs.** The browser-context guard closes browser XSS exfiltration.
 It does **not** close replay of a token stolen from CI, an env var, a config
 file, or a backup — that attacker uses curl, sends no `Origin`, and is admitted.
-An API token is account-wide and, by default, non-expiring, so a leaked
+An API token is account-wide and lives until its minted `lifetime` says
+otherwise (`{kind:'eternal'}` is a legitimate choice a caller must spell), so
+a leaked eternal
 `full`-scoped token reaches every action whose spec accepts the bearer channel,
 plus any role-gated action whose role the compromised account holds. A narrowed
 token is bounded by its scope instead (§Token scoping), which is the second

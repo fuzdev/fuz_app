@@ -52,10 +52,13 @@
 
 	// sessions
 	const unique_users = $derived(new Set(sessions.sessions.map((s) => s.username)).size);
+	// newest session by mint time — sessions carry no activity signal
+	// (`last_seen_at` is decorative post-hard-cap; see `docs/security.md`
+	// §Session Security)
 	const most_recent = $derived(
 		sessions.sessions.length > 0
 			? sessions.sessions.reduce((a, b) =>
-					new Date(a.last_seen_at) > new Date(b.last_seen_at) ? a : b
+					new Date(a.created_at) > new Date(b.created_at) ? a : b
 				)
 			: null
 	);
@@ -146,10 +149,10 @@
 			</div>
 			{#if most_recent}
 				<div class="baseline-row gap_xs font_size_sm mt_sm">
-					<span class="text_50">last active:</span>
+					<span class="text_50">newest session:</span>
 					<strong>{most_recent.username}</strong>
-					<span class="text_50" title={format_datetime_local(most_recent.last_seen_at)}
-						>{format_relative_time(most_recent.last_seen_at)}</span
+					<span class="text_50" title={format_datetime_local(most_recent.created_at)}
+						>{format_relative_time(most_recent.created_at)}</span
 					>
 				</div>
 			{/if}

@@ -25,8 +25,9 @@ const keyring = create_keyring(TEST_KEY)!;
 const session_options = create_session_config('test_session');
 
 const fs_stubs = {
-	stat: async () => null,
-	read_text_file: async () => '',
+	read_secure_file: async (path: string): Promise<Uint8Array> => {
+		throw new Error(`ENOENT: no such file or directory: ${path}`);
+	},
 	delete_file: async (_path: string) => {}
 };
 

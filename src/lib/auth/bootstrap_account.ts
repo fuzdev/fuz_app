@@ -9,6 +9,7 @@
 
 import { timingSafeEqual } from 'node:crypto';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
 import type { PasswordHashDeps } from './password.ts';
 import {
@@ -54,8 +55,13 @@ export interface BootstrapAccountDeps {
 	db: Db;
 	/** Path to the bootstrap token file on disk. */
 	token_path: string;
-	/** Read a file's contents as a string. */
-	read_text_file: (path: string) => Promise<string>;
+	/**
+	 * Hardened secret-file read (see `FsSecureReadDeps.read_secure_file`) —
+	 * the token mints the keeper account, so a symlinked, group/other-readable,
+	 * or oversized file must refuse rather than be honored. Throws on refusal;
+	 * every throw reads as `TOKEN_FILE_MISSING` upstream.
+	 */
+	read_secure_file: (path: string) => Promise<Uint8Array>;
 	/** Delete a file. */
 	delete_file: (path: string) => Promise<void>;
 	/** Only hashing is needed — verification happens separately during login. */
@@ -90,13 +96,17 @@ export const bootstrap_account = async (
 	provided_token: string,
 	input: BootstrapAccountInput
 ): Promise<BootstrapAccountResult> => {
-	const { db, token_path, read_text_file, delete_file, password, log } = deps;
+	const { db, token_path, read_secure_file, delete_file, password, log } = deps;
 
-	// 1. Read and verify token (non-destructive, before transaction)
+	// 1. Read and verify token (non-destructive, before transaction). The
+	// secure read fails loud on a symlink / permissive mode / oversized file —
+	// every refusal masks as the same TOKEN_FILE_MISSING the wire always
+	// carried, with the specific reason logged for the operator.
 	let expected_token: string;
 	try {
-		expected_token = (await read_text_file(token_path)).trim();
-	} catch {
+		expected_token = new TextDecoder().decode(await read_secure_file(token_path)).trim();
+	} catch (err) {
+		log.warn(`bootstrap token file rejected: ${to_error_message(err)}`);
 		return { ok: false, error: ERROR_TOKEN_FILE_MISSING, status: 404 };
 	}
 	// Defense-in-depth: no .trim() on provided_token — tokens must match exactly.

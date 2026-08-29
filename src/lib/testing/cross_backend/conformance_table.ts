@@ -147,7 +147,8 @@ const mint_scoped_token = async (
 		spec: account_token_create_action_spec,
 		params: {
 			name: 'conformance scoped token',
-			scope: { kind: 'methods', methods: [SCOPED_TOKEN_ADMITTED_METHOD] }
+			scope: { kind: 'methods', methods: [SCOPED_TOKEN_ADMITTED_METHOD] },
+			lifetime: { kind: 'eternal' }
 		},
 		headers: fixture.create_session_headers()
 	});

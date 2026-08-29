@@ -32,7 +32,7 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `stub_handler()` — fresh `Response('stub')`.
 - `stub_mw` — pass-through middleware (`async (_c, next) => next()`).
 - `stub_app_deps` — frozen `AppDeps`, every capability throwing, `audit` a no-op `AuditEmitter` from `create_test_audit_emitter`.
-- `create_stub_app_deps()` — factory: fresh `AppDeps` with no-op FS/keyring/password, a `create_noop_stub` DB, silent `Logger`, no-op `audit`.
+- `create_stub_app_deps()` — factory: fresh `AppDeps` with no-op keyring/password/`delete_file`, a `read_secure_file` that throws ENOENT (the no-token-file state), a `create_noop_stub` DB, silent `Logger`, no-op `audit`.
 - `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` no-op, `emit_pool` resolves immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0.
 - `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `subscribe` returns a no-op cleanup; `on_audit_event` no-op; `registry` is a fresh `SubscriberRegistry` (live `.size` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
 - `create_stub_api_middleware({include_daemon_token?})` — stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin/session/request_context/bearer_auth, optional daemon_token) for surface generation without booting real auth. See `auth/CLAUDE.md` §Middleware for the real stack.
@@ -1417,6 +1417,20 @@ Cross-process only — the per-surface in-process TS pins live beside each
 module's own tests (`account_status.test.ts`, `action_rpc.test.ts`,
 `serve_fact_route.db.test.ts`); fuz_app's own wiring is
 `cross_backend/query_shape.cross.test.ts`.
+
+### API-token lifetime parity — `cross_backend/token_lifetime.ts`
+
+`describe_token_lifetime_cross_tests({setup_test, rpc_path?})` — the
+imperative round-trip on `account_token_create`'s required `lifetime` union:
+a `{kind:'ttl', days}` mint returns and stores a bounded `expires_at`
+(create output + `account_token_list` read-back), `{kind:'eternal'}` stores
+NULL, and an omitted or out-of-range lifetime 400s identically on both
+spines. Exists because the action-manifest parity gate captures no param
+schemas while the Rust spine hand-parses params — a spine that silently
+dropped the field would answer the same mint with a 200 and an eternal
+token; only the stored-state read-back catches it. Ungated (mint + list are
+on every spine's standard surface). Runs both legs
+(`token_lifetime_parity.db.test.ts` + `token_lifetime.cross.test.ts`).
 
 ### Readiness probe parity — `cross_backend/ready.ts`
 

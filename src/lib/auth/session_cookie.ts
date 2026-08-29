@@ -12,17 +12,15 @@
 
 import type { Keyring } from './keyring.ts';
 
-/** Cookie max age in seconds (30 days — aligned with AUTH_SESSION_LIFETIME_MS). */
-export const SESSION_AGE_MAX = 60 * 60 * 24 * 30;
-
 /**
- * Threshold (seconds) at which `process_session_cookie` re-signs a still-valid
- * cookie to extend its embedded expiration. Mirrors the DB-side
- * `AUTH_SESSION_EXTEND_THRESHOLD_MS` so a continuously-active user's cookie
- * stays in sync with their server-side session lifetime. Set
- * `SessionOptions.refresh_threshold_seconds = 0` to disable.
+ * Cookie max age in seconds (30 days — aligned with AUTH_SESSION_LIFETIME_MS).
+ *
+ * This is an **absolute** session lifetime: the cookie is signed once at
+ * mint (`expires_at = mint + max_age`) and never re-signed, matching the DB
+ * row's fixed `expires_at`. There is deliberately no sliding renewal on
+ * either leg — see `docs/security.md` §Session Security.
  */
-export const SESSION_REFRESH_THRESHOLD_S = 60 * 60 * 24;
+export const SESSION_AGE_MAX = 60 * 60 * 24 * 30;
 
 /** Separator between identity payload and expires_at in signed value. */
 const VALUE_SEPARATOR = ':';
@@ -109,14 +107,6 @@ export interface SessionOptions<TIdentity> {
 	 * cannot carry `maxAge` so the two values can't drift.
 	 */
 	max_age?: number;
-	/**
-	 * Threshold (seconds) for expiration-based cookie refresh. When a parsed
-	 * cookie's `expires_at - now <= refresh_threshold_seconds`,
-	 * `process_session_cookie` returns `action: 'refresh'` with a freshly-signed
-	 * value (extending the embedded expiration by `max_age`). Defaults to
-	 * `SESSION_REFRESH_THRESHOLD_S` (1 day). Set to `0` to disable.
-	 */
-	refresh_threshold_seconds?: number;
 	cookie_options?: Partial<Omit<SessionCookieOptions, 'maxAge'>>;
 	/** Encode identity into the cookie payload (before the `:expires_at` suffix). */
 	encode_identity: (identity: TIdentity) => string;
@@ -130,17 +120,7 @@ export interface SessionOptions<TIdentity> {
 export interface ParsedSession<TIdentity> {
 	/** The decoded identity. */
 	identity: TIdentity;
-	/** True if verified with a non-primary key (needs re-signing). */
-	should_refresh_signature: boolean;
-	/**
-	 * True if the embedded `expires_at` is within
-	 * `options.refresh_threshold_seconds` of `now`. Signals that the cookie is
-	 * valid but should be re-signed to extend its lifetime — mirrors
-	 * `query_session_touch`'s DB-side extension so the cookie and server
-	 * session don't drift. Always false when the threshold is `0`.
-	 */
-	should_refresh_expiration: boolean;
-	/** Index of the key that verified the signature. */
+	/** Index of the key that verified the signature (0 = primary). */
 	key_index: number;
 }
 
@@ -148,9 +128,7 @@ export interface ParsedSession<TIdentity> {
  * Parse a signed session cookie value.
  *
  * The signed value format is `${encode(identity)}:${expires_at}`.
- * Tries all keys in order to support key rotation. The result's
- * `should_refresh_expiration` flag fires when the cookie is within
- * `options.refresh_threshold_seconds` of `expires_at`.
+ * Tries all keys in order to support key rotation.
  *
  * @param signed_value - the raw cookie value (signed)
  * @param keyring - key ring for verification
@@ -190,13 +168,8 @@ export const parse_session = async <TIdentity>(
 	const now = now_seconds ?? Math.floor(Date.now() / 1000);
 	if (expires_at <= now) return null;
 
-	const refresh_threshold = options.refresh_threshold_seconds ?? SESSION_REFRESH_THRESHOLD_S;
-	const should_refresh_expiration = refresh_threshold > 0 && expires_at - now <= refresh_threshold;
-
 	return {
 		identity,
-		should_refresh_signature: result.key_index > 0,
-		should_refresh_expiration,
 		key_index: result.key_index
 	};
 };
@@ -233,9 +206,7 @@ export interface ProcessSessionResult<TIdentity> {
 	/** Whether the session is valid. */
 	valid: boolean;
 	/** Action the adapter should take. */
-	action: 'none' | 'clear' | 'refresh';
-	/** New signed value when action is 'refresh'. */
-	new_signed_value?: string;
+	action: 'none' | 'clear';
 	/** The decoded identity if the cookie was valid. */
 	identity?: TIdentity;
 }
@@ -263,9 +234,14 @@ export const fuz_session_config: SessionOptions<string> = create_session_config(
 /**
  * Process a session cookie and determine what action to take.
  *
- * `action: 'refresh'` fires on key rotation **or** impending expiration
- * (within `options.refresh_threshold_seconds`); both produce a freshly-signed
- * `new_signed_value`.
+ * There is deliberately no refresh action: any re-sign computes a fresh
+ * `now + max_age` expiry, extending the cookie past the DB row's fixed
+ * `expires_at` — the holder would go silently anonymous while carrying a
+ * self-perpetuating cookie. The absolute lifetime is one signing at mint,
+ * on both legs, matching the Rust spine. A cookie signed by a retired
+ * (non-primary) key keeps verifying until the key leaves the keyring;
+ * retired keys are safe to drop after `SESSION_AGE_MAX` (see
+ * `docs/security.md` §Cookie Key Rotation).
  *
  * @param signed_value - the raw cookie value (may be undefined)
  * @param keyring - key ring for verification and signing
@@ -292,20 +268,6 @@ export const process_session_cookie = async <TIdentity>(
 	if (parsed === null) {
 		// Invalid cookie - should be cleared
 		return { valid: false, action: 'clear' };
-	}
-
-	// Valid session — re-sign if the verifying key isn't primary OR if the
-	// embedded expiration is approaching the threshold. The latter mirrors
-	// `query_session_touch`'s DB-side extension so a continuously-active user's
-	// cookie doesn't hard-expire while their server session is still alive.
-	if (parsed.should_refresh_signature || parsed.should_refresh_expiration) {
-		const new_signed_value = await create_session_cookie_value(
-			keyring,
-			parsed.identity,
-			options,
-			now
-		);
-		return { valid: true, action: 'refresh', new_signed_value, identity: parsed.identity };
 	}
 
 	return { valid: true, action: 'none', identity: parsed.identity };

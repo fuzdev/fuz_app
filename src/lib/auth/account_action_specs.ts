@@ -11,6 +11,7 @@
 import { z } from 'zod';
 
 import { TokenScopeInput } from './token_scope.ts';
+import { TokenLifetimeInput } from './token_lifetime.ts';
 
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import {
@@ -70,6 +71,10 @@ export type SessionRevokeAllOutput = z.infer<typeof SessionRevokeAllOutput>;
  * reversal of the 2026-02 design, where the field existed but nothing depended
  * on it. Because `scope` has no default, the object as a whole no longer
  * carries `.prefault({})`.
+ *
+ * `lifetime` follows the same rule — a never-expiring token is
+ * `{kind: 'eternal'}`, spelled out, so `expires_at IS NULL` always means
+ * "deliberately eternal" (see `auth/token_lifetime.ts`).
  */
 export const TokenCreateInput = z.strictObject({
 	name: z
@@ -81,6 +86,11 @@ export const TokenCreateInput = z.strictObject({
 			"What the token may do. `{kind:'full'}` for full account authority, or " +
 			"`{kind:'methods',methods:[…]}` to narrow it to named RPC methods — a " +
 			'narrowed token is RPC-only and reaches no non-RPC surface.'
+	}),
+	lifetime: TokenLifetimeInput.meta({
+		description:
+			"How long the token lives. `{kind:'eternal'}` never expires; " +
+			"`{kind:'ttl',days:N}` expires N days from mint."
 	})
 });
 export type TokenCreateInput = z.infer<typeof TokenCreateInput>;
@@ -90,7 +100,11 @@ export const TokenCreateOutput = z.strictObject({
 	ok: z.literal(true),
 	token: z.string().meta({ description: 'Raw token — shown once, store securely.' }),
 	id: ApiTokenId,
-	name: z.string()
+	name: z.string(),
+	expires_at: z
+		.string()
+		.nullable()
+		.meta({ description: 'ISO 8601 expiry, or `null` for an eternal token.' })
 });
 export type TokenCreateOutput = z.infer<typeof TokenCreateOutput>;
 

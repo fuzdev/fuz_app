@@ -853,7 +853,7 @@ const mint_account = async (
 		transport,
 		handle.config.rpc_path,
 		'account_token_create',
-		{ scope: { kind: 'full' } },
+		{ scope: { kind: 'full' }, lifetime: { kind: 'eternal' } },
 		handle.config.name
 	);
 	const token_parsed = TokenCreateResponseShape.safeParse(token_result);

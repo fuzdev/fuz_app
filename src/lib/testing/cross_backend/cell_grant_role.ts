@@ -37,7 +37,12 @@ import '../assert_dev_env.ts';
 
 import { describe, assert } from 'vitest';
 
-import { CellCreateOutput, CellGetOutput, CellUpdateOutput } from '../../auth/cell_action_specs.ts';
+import {
+	CellCreateOutput,
+	CellGetOutput,
+	CellListOutput,
+	CellUpdateOutput
+} from '../../auth/cell_action_specs.ts';
 import {
 	CellGrantCreateOutput,
 	ERROR_CELL_GRANT_UNKNOWN_ROLE
@@ -115,6 +120,101 @@ export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteO
 				);
 				assert.ok(!stranger_view.ok, 'non-holder must not see the cell');
 				assert.strictEqual(error_reason(stranger_view), 'cell_not_found');
+			}
+		);
+
+		test_if(
+			capabilities.cell_relations,
+			"cell_list shared_with:'me' admits through the role branch of the grant predicate",
+			async () => {
+				// The role-admit arm of the shared-with predicate (the
+				// `caller_role_grants` branch of the CTE in the Rust
+				// `query_cell_list` / the TS list query) — pinned nowhere else:
+				// the actor-shaped `shared_with:'me'` case in `cell_relations.ts`
+				// runs the CTE but its role branch never matches, and the
+				// storage-half copy in `fuz_cell/tests` is a textually separate
+				// EXISTS the CTE can silently drift from. An ungranted control
+				// cell keeps the semi-join non-vacuous (dropping it must change
+				// the result), and a non-holder proves the branch keys on the
+				// role, not on authentication.
+				const fixture = await setup_test();
+				const t = fixture.transport;
+				const owner = await fixture.create_account({ username: 'cell_role_list_owner' });
+				const owner_h = owner.create_session_headers();
+				const holder = fixture.extra_accounts[CELL_ROLE_HOLDER_USERNAME];
+				assert.ok(holder, `fixture must seed the ${CELL_ROLE_HOLDER_USERNAME} extra account`);
+				const stranger = await fixture.create_account({ username: 'cell_role_list_stranger' });
+
+				const granted = expect_output(
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_create',
+						{ kind: 'note', data: { label: 'role-shared' } },
+						owner_h
+					),
+					CellCreateOutput
+				);
+				// control: same owner, same visibility, no grant — must stay out
+				const ungranted = expect_output(
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_create',
+						{ kind: 'note', data: { label: 'unshared control' } },
+						owner_h
+					),
+					CellCreateOutput
+				);
+				expect_output(
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_grant_create',
+						{
+							cell_id: granted.cell.id,
+							level: 'viewer',
+							principal: { kind: 'role', role: CELL_EDITOR_ROLE }
+						},
+						owner_h
+					),
+					CellGrantCreateOutput
+				);
+
+				const holder_list = expect_output(
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_list',
+						{ shared_with: 'me' },
+						holder.create_session_headers()
+					),
+					CellListOutput
+				);
+				const holder_ids = holder_list.cells.map((c) => c.id);
+				assert.ok(
+					holder_ids.includes(granted.cell.id),
+					'the role-granted cell must reach a holder of the role via shared_with:me'
+				);
+				assert.ok(
+					!holder_ids.includes(ungranted.cell.id),
+					'the ungranted control cell must not — the semi-join is load-bearing'
+				);
+
+				const stranger_list = expect_output(
+					await cross_rpc_call(
+						t,
+						rpc_path,
+						'cell_list',
+						{ shared_with: 'me' },
+						stranger.create_session_headers()
+					),
+					CellListOutput
+				);
+				assert.ok(
+					!stranger_list.cells.some((c) => c.id === granted.cell.id),
+					'a non-holder must not be admitted through the role branch'
+				);
 			}
 		);
 

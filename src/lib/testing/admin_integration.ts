@@ -790,7 +790,11 @@ export const describe_standard_admin_integration_tests = (
 					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_token_create_action_spec,
-					params: { name: 'audit-test-token', scope: { kind: 'full' as const } },
+					params: {
+						name: 'audit-test-token',
+						scope: { kind: 'full' as const },
+						lifetime: { kind: 'eternal' as const }
+					},
 					headers: fixture.create_session_headers()
 				});
 				assert.ok(
@@ -949,7 +953,11 @@ export const describe_standard_admin_integration_tests = (
 					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_token_create_action_spec,
-					params: { name: 'admin-b-token', scope: { kind: 'full' as const } },
+					params: {
+						name: 'admin-b-token',
+						scope: { kind: 'full' as const },
+						lifetime: { kind: 'eternal' as const }
+					},
 					headers: create_headers(admin_b.session_cookie)
 				});
 				assert.ok(

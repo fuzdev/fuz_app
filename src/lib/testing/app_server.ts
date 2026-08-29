@@ -376,19 +376,22 @@ const test_log = new Logger('test', { level: 'off' });
  *   API token, and session row.
  */
 /**
- * Filesystem stubs for `AppDeps.{stat, read_text_file, delete_file}` in
- * test backends. Default is all no-op; `create_test_app_for_bootstrap`
- * passes token-aware stubs that resolve against the configured token_path.
+ * Filesystem stubs for `AppDeps.{read_secure_file, delete_file}` in
+ * test backends. The default secure read throws (no token file exists — the
+ * Rust in-memory store's shape); `create_test_app_for_bootstrap` passes
+ * token-aware stubs that resolve against the configured token_path. Stub
+ * callbacks skip the real runtimes' permission checks by design — those are
+ * pinned by `src/test/runtime/secure_file.test.ts` against real files.
  */
 interface TestFsStubs {
-	stat: (path: string) => Promise<{ is_file: boolean; is_directory: boolean } | null>;
-	read_text_file: (path: string) => Promise<string>;
+	read_secure_file: (path: string) => Promise<Uint8Array>;
 	delete_file: (path: string) => Promise<void>;
 }
 
 const default_test_fs_stubs: TestFsStubs = {
-	stat: async () => null,
-	read_text_file: async () => '',
+	read_secure_file: async (path) => {
+		throw new Error(`ENOENT: no such file or directory: ${path}`);
+	},
 	delete_file: async () => {}
 };
 
@@ -810,16 +813,18 @@ export const create_test_app_for_bootstrap = async (
 		);
 	}
 
-	// Token-aware fs stubs: the bootstrap route's filesystem operations resolve
-	// against the configured token_path; everything else returns no-op defaults.
+	// Token-aware fs stubs: the bootstrap route's secure read resolves against
+	// the configured token_path (both the boot-time availability probe and the
+	// request-time read go through it); a deleted or unknown path throws like
+	// the real runtimes' ENOENT.
 	let token_file_deleted = false;
 	const fs_stubs: TestFsStubs = {
-		stat: async (path: string) =>
-			path === bootstrap.token_path && !token_file_deleted
-				? { is_file: true, is_directory: false }
-				: null,
-		read_text_file: async (path: string) =>
-			path === bootstrap.token_path && !token_file_deleted ? bootstrap_token : '',
+		read_secure_file: async (path: string) => {
+			if (path === bootstrap.token_path && !token_file_deleted) {
+				return new TextEncoder().encode(bootstrap_token);
+			}
+			throw new Error(`ENOENT: no such file or directory: ${path}`);
+		},
 		delete_file: async (path: string) => {
 			if (path === bootstrap.token_path) token_file_deleted = true;
 		}

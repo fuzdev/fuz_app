@@ -36,7 +36,6 @@
  */
 
 import type { Context, MiddlewareHandler } from 'hono';
-import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	type Account,
@@ -44,11 +43,7 @@ import {
 	is_role_grant_active,
 	type RoleGrant
 } from './account_schema.ts';
-import {
-	hash_session_token,
-	session_touch_fire_and_forget,
-	query_session_get_valid
-} from './session_queries.ts';
+import { hash_session_token, query_session_get_valid } from './session_queries.ts';
 import {
 	query_account_by_id,
 	query_actor_by_id,
@@ -320,13 +315,11 @@ export const resolve_acting_actor = async (
  * `require_auth` / `require_role` enforce.
  *
  * @param deps - query dependencies (pool-level db for middleware)
- * @param log - the logger instance
  * @param session_context_key - the Hono context key where session middleware stored the session token
  * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, `AUTH_SESSION_TOKEN_HASH_KEY`, and `AUTH_API_TOKEN_ID_KEY`
  */
 export const create_request_context_middleware = (
 	deps: QueryDeps,
-	log: Logger,
 	session_context_key = 'auth_session_id'
 ): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
@@ -354,9 +347,6 @@ export const create_request_context_middleware = (
 		// A session is full account authority by construction.
 		c.set(TOKEN_SCOPE_KEY, token_scope_full());
 		c.set(AUTH_SESSION_TOKEN_HASH_KEY, token_hash);
-
-		// Touch session (fire-and-forget, don't block the request)
-		void session_touch_fire_and_forget(deps, token_hash, c.var.pending_effects, log);
 
 		await next();
 	};

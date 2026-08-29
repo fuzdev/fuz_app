@@ -9,6 +9,7 @@
  */
 
 import type { RuntimeDeps, StatResult, CommandResult, RunCommandOptions } from './deps.ts';
+import { assert_secure_mode, assert_secure_size } from './secure_file.ts';
 
 /* eslint-disable @typescript-eslint/require-await */
 
@@ -22,6 +23,13 @@ export interface MockRuntime extends RuntimeDeps {
 	mock_fs: Map<string, string>;
 	/** Mock binary file system (path -> bytes). */
 	mock_fs_bytes: Map<string, Uint8Array>;
+	/**
+	 * Recorded POSIX modes (path -> mode), written by `write_text_file`'s
+	 * `mode` option. A file with no recorded mode reads as `0o644` (the
+	 * default-umask hazard) — so `read_secure_file` refuses it unless the
+	 * writer asked for `0o600` explicitly, mirroring the real runtimes.
+	 */
+	mock_fs_modes: Map<string, number>;
 	/** Mock directories that exist. */
 	mock_dirs: Set<string>;
 	/** Exit calls recorded (exit codes). */
@@ -67,6 +75,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 	const mock_env: Map<string, string> = new Map();
 	const mock_fs: Map<string, string> = new Map();
 	const mock_fs_bytes: Map<string, Uint8Array> = new Map();
+	const mock_fs_modes: Map<string, number> = new Map();
 	const mock_dirs: Set<string> = new Set();
 	const exit_calls: Array<number> = [];
 	const command_calls: Array<{ cmd: string; args: Array<string>; options?: RunCommandOptions }> =
@@ -83,6 +92,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 		mock_env,
 		mock_fs,
 		mock_fs_bytes,
+		mock_fs_modes,
 		mock_dirs,
 		exit_calls,
 		command_calls,
@@ -157,6 +167,27 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 			error.code = 'ENOENT';
 			throw error;
 		},
+		read_secure_file: async (path) => {
+			let bytes = mock_fs_bytes.get(path);
+			if (bytes === undefined) {
+				const content = mock_fs.get(path);
+				if (content !== undefined) bytes = new TextEncoder().encode(content);
+			}
+			if (bytes === undefined) {
+				const error: NodeJS.ErrnoException = new Error(
+					`ENOENT: no such file or directory: ${path}`
+				);
+				error.code = 'ENOENT';
+				throw error;
+			}
+			// A file written without an explicit mode reads as 0o644 — the
+			// default-umask hazard — so the secure read refuses it unless the
+			// writer asked for 0600, mirroring the real runtimes (simulated
+			// modes, so no platform gate).
+			assert_secure_mode(path, mock_fs_modes.get(path) ?? 0o644);
+			assert_secure_size(path, bytes.length);
+			return bytes;
+		},
 		read_file_stream: async (path) => {
 			let bytes = mock_fs_bytes.get(path);
 			if (bytes === undefined) {
@@ -227,8 +258,14 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 			}
 			return Array.from(seen).sort();
 		},
-		write_text_file: async (path, content) => {
+		write_text_file: async (path, content, options) => {
+			if (options?.exclusive && (mock_fs.has(path) || mock_fs_bytes.has(path))) {
+				const error: NodeJS.ErrnoException = new Error(`EEXIST: file already exists: ${path}`);
+				error.code = 'EEXIST';
+				throw error;
+			}
 			mock_fs.set(path, content);
+			if (options?.mode !== undefined) mock_fs_modes.set(path, options.mode);
 		},
 		write_file: async (path, data) => {
 			mock_fs_bytes.set(path, data);
@@ -269,10 +306,19 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 				mock_fs_bytes.set(new_path, bytes);
 				mock_fs_bytes.delete(old_path);
 			}
+			// the inode's mode travels with the rename (POSIX semantics)
+			const mode = mock_fs_modes.get(old_path);
+			if (mode !== undefined) {
+				mock_fs_modes.set(new_path, mode);
+				mock_fs_modes.delete(old_path);
+			} else {
+				mock_fs_modes.delete(new_path);
+			}
 		},
 		remove: async (path, options) => {
 			mock_fs.delete(path);
 			mock_fs_bytes.delete(path);
+			mock_fs_modes.delete(path);
 			mock_dirs.delete(path);
 			if (options?.recursive) {
 				const prefix = path.endsWith('/') ? path : path + '/';

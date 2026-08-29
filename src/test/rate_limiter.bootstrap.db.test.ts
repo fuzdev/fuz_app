@@ -61,7 +61,7 @@ const session_options = create_session_config('test_session');
 interface BootstrapTestApp {
 	app: Hono;
 	bootstrap_status: { available: boolean; token_path: string | null };
-	read_text_file: ReturnType<typeof vi.fn>;
+	read_secure_file: ReturnType<typeof vi.fn>;
 }
 
 // Cached PGlite factory for bootstrap tests — single WASM init, reset between calls.
@@ -76,12 +76,12 @@ const bootstrap_factory = create_pglite_factory(async (db) => {
  * repeated WASM cold-start overhead. The schema is reset between calls.
  *
  * @param rate_limiter - Rate limiter to wire in (null to disable)
- * @param read_text_file - Override for the token file read. Defaults to returning 'wrong_token'
+ * @param read_secure_file - Override for the token file read. Defaults to returning 'wrong_token'
  *   so bootstrap always fails with `invalid_token` (status 401) in most tests.
  */
 const create_bootstrap_app = async (
 	bootstrap_ip_rate_limiter: RateLimiter | null,
-	read_text_file = vi.fn(() => Promise.resolve('wrong_token')),
+	read_secure_file = vi.fn(() => Promise.resolve(new TextEncoder().encode('wrong_token'))),
 	extra?: {
 		on_bootstrap?: (result: any, c: any) => Promise<void>;
 		delete_file?: (path: string) => Promise<void>;
@@ -100,8 +100,7 @@ const create_bootstrap_app = async (
 				verify_password: vi.fn().mockResolvedValue(false),
 				verify_dummy: vi.fn().mockResolvedValue(false)
 			},
-			stat: vi.fn(() => Promise.resolve({ is_file: true, is_directory: false })),
-			read_text_file,
+			read_secure_file,
 			delete_file: extra?.delete_file ?? vi.fn(() => Promise.resolve(undefined)),
 			audit: create_test_audit_emitter()
 		},
@@ -122,7 +121,7 @@ const create_bootstrap_app = async (
 	app.use('*', test_proxy_middleware);
 	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
 
-	return { app, bootstrap_status, read_text_file };
+	return { app, bootstrap_status, read_secure_file };
 };
 
 const bootstrap_request = (
@@ -151,7 +150,7 @@ afterEach(() => {
 });
 
 describe('bootstrap handler rate limiting', () => {
-	// Bootstrap failure: read_text_file returns 'wrong_token', request sends 'test_token' → token mismatch → 401
+	// Bootstrap failure: read_secure_file returns 'wrong_token', request sends 'test_token' → token mismatch → 401
 	test('returns 429 when limit exhausted', async () => {
 		const limiter = create_test_limiter();
 		const { app } = await create_bootstrap_app(limiter);
@@ -192,19 +191,19 @@ describe('bootstrap handler rate limiting', () => {
 
 	test('blocked request does not read token file', async () => {
 		const limiter = create_test_limiter();
-		const { app, read_text_file } = await create_bootstrap_app(limiter);
+		const { app, read_secure_file } = await create_bootstrap_app(limiter);
 
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
 			await bootstrap_request(app);
 		}
 
-		const calls_before = read_text_file.mock.calls.length;
+		const calls_before = read_secure_file.mock.calls.length;
 
 		// Rate-limited — handler short-circuits before bootstrap logic
 		const res = await bootstrap_request(app);
 		assert.strictEqual(res.status, 429);
 		assert.strictEqual(
-			read_text_file.mock.calls.length,
+			read_secure_file.mock.calls.length,
 			calls_before,
 			'should not read token file when rate-limited'
 		);
@@ -225,14 +224,14 @@ describe('bootstrap handler rate limiting', () => {
 	test('successful bootstrap does NOT reset the rate limit counter', async () => {
 		const limiter = create_test_limiter();
 
-		// read_text_file fails first 2 calls (wrong token), succeeds on 3rd (matching token)
-		const read_text_file = vi
+		// read_secure_file fails first 2 calls (wrong token), succeeds on 3rd (matching token)
+		const read_secure_file = vi
 			.fn()
-			.mockResolvedValueOnce('wrong_token')
-			.mockResolvedValueOnce('wrong_token')
-			.mockResolvedValue('test_token');
+			.mockResolvedValueOnce(new TextEncoder().encode('wrong_token'))
+			.mockResolvedValueOnce(new TextEncoder().encode('wrong_token'))
+			.mockResolvedValue(new TextEncoder().encode('test_token'));
 
-		const { app, bootstrap_status } = await create_bootstrap_app(limiter, read_text_file);
+		const { app, bootstrap_status } = await create_bootstrap_app(limiter, read_secure_file);
 
 		// Accumulate failures
 		await bootstrap_request(app);
@@ -403,12 +402,12 @@ describe('username validation', () => {
 
 describe('on_bootstrap callback error handling', () => {
 	test('on_bootstrap failure does not prevent success response', async () => {
-		const read_text_file = vi.fn().mockResolvedValue('test_token');
+		const read_secure_file = vi.fn().mockResolvedValue(new TextEncoder().encode('test_token'));
 		const on_bootstrap = vi.fn(async () => {
 			throw new Error('callback failed');
 		});
 
-		const { app } = await create_bootstrap_app(null, read_text_file, { on_bootstrap });
+		const { app } = await create_bootstrap_app(null, read_secure_file, { on_bootstrap });
 
 		const res = await bootstrap_request(app);
 		assert.strictEqual(res.status, 200);
@@ -418,10 +417,10 @@ describe('on_bootstrap callback error handling', () => {
 
 describe('token file deletion failure', () => {
 	test('returns 500 when token file deletion fails', async () => {
-		const read_text_file = vi.fn().mockResolvedValue('test_token');
+		const read_secure_file = vi.fn().mockResolvedValue(new TextEncoder().encode('test_token'));
 		const delete_file = vi.fn().mockRejectedValue(new Error('EPERM'));
 
-		const { app } = await create_bootstrap_app(null, read_text_file, { delete_file });
+		const { app } = await create_bootstrap_app(null, read_secure_file, { delete_file });
 
 		const res = await bootstrap_request(app);
 		assert.strictEqual(res.status, 500);

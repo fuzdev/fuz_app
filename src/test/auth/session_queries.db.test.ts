@@ -10,7 +10,6 @@ import { query_purge_account } from '$lib/auth/account_queries.ts';
 import {
 	query_create_session,
 	query_session_get_valid,
-	query_session_touch,
 	query_session_revoke_by_hash_unscoped,
 	query_session_revoke_for_account,
 	query_session_revoke_all_for_account,
@@ -220,7 +219,10 @@ describe_db('AuthSessionQueries', (get_db) => {
 		assert.ok(new Date(list[0]!.created_at) >= new Date(list[1]!.created_at));
 	});
 
-	test('touch updates last_seen_at', async () => {
+	test('a validated session is never renewed — expires_at and last_seen_at are immutable', async () => {
+		// The hard cap: there is no touch/renewal query. `query_session_get_valid`
+		// is a pure read, so N validations leave the row byte-identical — a
+		// leaked cookie cannot keep itself alive by being used.
 		const db = get_db();
 		const deps = { db };
 		const { account_id } = await create_test_account(db, 'frank');
@@ -234,12 +236,13 @@ describe_db('AuthSessionQueries', (get_db) => {
 
 		const before = await query_session_get_valid(deps, token_hash);
 		assert.ok(before);
-
-		await query_session_touch(deps, token_hash);
-
-		const after = await query_session_get_valid(deps, token_hash);
-		assert.ok(after);
-		assert.ok(new Date(after.last_seen_at) >= new Date(before.last_seen_at));
+		const again = await query_session_get_valid(deps, token_hash);
+		assert.ok(again);
+		assert.strictEqual(new Date(again.expires_at).getTime(), new Date(before.expires_at).getTime());
+		assert.strictEqual(
+			new Date(again.last_seen_at).getTime(),
+			new Date(before.last_seen_at).getTime()
+		);
 	});
 
 	test('cleanup_expired removes expired sessions', async () => {
@@ -533,55 +536,5 @@ describe_db('AuthSessionQueries', (get_db) => {
 		// Bob's expired session should not appear
 		const bob_sessions = active_sessions.filter((s) => s.account_id === bob_id);
 		assert.strictEqual(bob_sessions.length, 0);
-	});
-
-	test('touch does not extend expiry when session has plenty of time remaining', async () => {
-		const db = get_db();
-		const deps = { db };
-		const { account_id } = await create_test_account(db, 'touch_no_extend');
-		const token_hash = hash_session_token('far_future');
-		// Expires 30 days from now — well above the 1 day threshold
-		const far_future = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-		await query_create_session(deps, token_hash, account_id, far_future);
-
-		const before = await query_session_get_valid(deps, token_hash);
-		assert.ok(before);
-		const expires_before = new Date(before.expires_at).getTime();
-
-		await query_session_touch(deps, token_hash);
-
-		const after = await query_session_get_valid(deps, token_hash);
-		assert.ok(after);
-		const expires_after = new Date(after.expires_at).getTime();
-
-		// last_seen_at should be updated
-		assert.ok(new Date(after.last_seen_at) >= new Date(before.last_seen_at));
-		// expires_at should NOT change — still far in the future
-		assert.strictEqual(expires_after, expires_before);
-	});
-
-	test('touch extends expiry when session expires within 1 day', async () => {
-		const db = get_db();
-		const deps = { db };
-		const { account_id } = await create_test_account(db, 'touch_extend');
-		const token_hash = hash_session_token('near_expiry');
-		// Expires in 30 minutes — well under the 1 day threshold
-		const near_expiry = new Date(Date.now() + 30 * 60 * 1000);
-		await query_create_session(deps, token_hash, account_id, near_expiry);
-
-		const before = await query_session_get_valid(deps, token_hash);
-		assert.ok(before);
-		const expires_before = new Date(before.expires_at).getTime();
-
-		await query_session_touch(deps, token_hash);
-
-		const after = await query_session_get_valid(deps, token_hash);
-		assert.ok(after);
-		const expires_after = new Date(after.expires_at).getTime();
-
-		// last_seen_at should be updated
-		assert.ok(new Date(after.last_seen_at) >= new Date(before.last_seen_at));
-		// expires_at should be extended — it was under the 1 day threshold
-		assert.ok(expires_after > expires_before);
 	});
 });

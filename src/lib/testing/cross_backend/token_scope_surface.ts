@@ -111,7 +111,7 @@ const mint_narrowed_token = async (
 		transport,
 		rpc_path,
 		account_token_create_action_spec.method,
-		{ scope: { kind: 'methods', methods: [ADMITTED_METHOD] } },
+		{ scope: { kind: 'methods', methods: [ADMITTED_METHOD] }, lifetime: { kind: 'eternal' } },
 		session_headers
 	);
 	assert.ok(res.ok, `minting a narrowed token failed: ${JSON.stringify(res.error)}`);

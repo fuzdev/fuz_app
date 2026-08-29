@@ -8,7 +8,6 @@
  */
 
 import { assert, describe, test } from 'vitest';
-import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { Hono } from 'hono';
 
 import { query_create_account_with_actor } from '$lib/auth/account_queries.ts';
@@ -25,8 +24,6 @@ import { create_request_context_middleware, require_auth } from '$lib/auth/reque
 
 import { ERROR_AUTHENTICATION_REQUIRED } from '$lib/http/error_schemas.ts';
 import { describe_db } from '../db_fixture.ts';
-
-const log = new Logger('test', { level: 'off' });
 
 describe_db('session revoke blocks access', (get_db) => {
 	test('valid session token gives access; after revoke the same token is rejected', async () => {
@@ -52,7 +49,7 @@ describe_db('session revoke blocks access', (get_db) => {
 				if (session_token) c.set('auth_session_id', session_token);
 				await next();
 			});
-			app.use('/*', create_request_context_middleware(deps, log));
+			app.use('/*', create_request_context_middleware(deps));
 			app.use('/*', require_auth);
 			app.get('/protected', (c) => c.json({ ok: true }));
 			return app;
@@ -100,7 +97,7 @@ describe_db('session revoke blocks access', (get_db) => {
 					if (session_token) c.set('auth_session_id', session_token);
 					await next();
 				});
-				app.use('/*', create_request_context_middleware(deps, log));
+				app.use('/*', create_request_context_middleware(deps));
 				app.use('/*', require_auth);
 				app.get('/protected', (c) => c.json({ ok: true }));
 				return app;
@@ -153,7 +150,7 @@ describe_db('session revoke blocks access', (get_db) => {
 					if (session_token) c.set('auth_session_id', session_token);
 					await next();
 				});
-				app.use('/*', create_request_context_middleware(deps, log));
+				app.use('/*', create_request_context_middleware(deps));
 				app.use('/*', require_auth);
 				app.get('/protected', (c) => c.json({ ok: true }));
 				return app;

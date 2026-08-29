@@ -247,7 +247,17 @@ the admin `app_settings_update` toggle then an anonymous `POST /signup`,
 proving the signup handler reads the toggle fresh from the database), and
 `cell_grant_role.cross.test.ts` (role-shaped `cell_grant` parity — the
 role-validity gate: admit holder, exclude non-holder, reject unregistered role,
-editor-level edit; the actor-shaped grants live in `cell.cross.test.ts`), and
+editor-level edit, and the `cell_list shared_with:'me'` **role-admit** branch
+(the `caller_role_grants` CTE arm, with an ungranted control cell — the one
+pin on the CTE copy of the grant predicate, which the storage-half EXISTS in
+`fuz_cell/tests` can otherwise drift from); the actor-shaped grants live in
+`cell.cross.test.ts`), and `token_lifetime.cross.test.ts` (the api-token
+`lifetime` round-trip via `describe_token_lifetime_cross_tests` — ttl mint →
+non-null `expires_at` on create output + `account_token_list` read-back,
+eternal → NULL control, omitted/out-of-range → 400 on both spines; the
+manifest parity gate is blind to param schemas, so this round-trip is what
+keeps a spine from silently dropping the field; in-process leg
+`token_lifetime_parity.db.test.ts`), and
 `fact_serving.cross.test.ts` (the cell-gated fact-serving routes
 `GET /api/cells/:cell_id/facts/:hash` + the admin-only `GET /api/facts/:hash`
 via `describe_fact_serving_cross_tests`, gated on `capabilities.fact_serving`),

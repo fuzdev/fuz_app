@@ -37,7 +37,7 @@ import {
 	create_ws_auth_guard,
 	create_ws_logout_closer
 } from '#lib/actions/transports_ws_auth_guard.ts';
-import { start_daemon_token_rotation } from '#lib/auth/daemon_token_middleware.ts';
+import { start_daemon_token_rotation } from '#lib/testing/daemon_token_rotation.ts';
 import { load_env } from '#lib/env/load.ts';
 import type { RuntimeDeps } from '#lib/runtime/deps.ts';
 import { cell_audit_events } from '#lib/auth/cell_audit_events.ts';
@@ -139,8 +139,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		database_url: env.DATABASE_URL,
 		keyring,
 		password: stub_password_deps,
-		stat: runtime.stat,
-		read_text_file: runtime.read_text_file,
+		read_secure_file: runtime.read_secure_file,
 		delete_file: runtime.remove,
 		audit_factory: cell_audit_factory,
 		// Splice the `fuz_cell` + `fuz_facts` schemas after the builtin auth

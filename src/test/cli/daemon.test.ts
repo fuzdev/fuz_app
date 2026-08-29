@@ -74,9 +74,10 @@ describe('write_daemon_info', () => {
 		assert.strictEqual(calls[0]!.method, 'mkdir');
 		assert.ok((calls[0]!.args[0] as string).endsWith('.zzz/run'));
 		assert.strictEqual(calls[1]!.method, 'write_text_file');
-		assert.ok((calls[1]!.args[0] as string).endsWith('daemon.json.tmp'));
+		// unique temp: `.daemon.json.tmp.{pid}.{counter}` in the run dir
+		assert.match(calls[1]!.args[0] as string, /\/\.daemon\.json\.tmp\.\d+\.\d+$/);
 		assert.strictEqual(calls[2]!.method, 'rename');
-		assert.ok((calls[2]!.args[0] as string).endsWith('daemon.json.tmp'));
+		assert.strictEqual(calls[2]!.args[0], calls[1]!.args[0]);
 		assert.ok((calls[2]!.args[1] as string).endsWith('daemon.json'));
 
 		const written = JSON.parse(calls[1]!.args[1] as string);

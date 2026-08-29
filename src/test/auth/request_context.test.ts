@@ -5,9 +5,7 @@
  */
 
 import { describe, assert, test, vi, afterEach } from 'vitest';
-import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { Hono } from 'hono';
-import { wait } from '@fuzdev/fuz_util/async.ts';
 
 import {
 	has_role,
@@ -36,18 +34,13 @@ import {
 	create_test_context
 } from '$lib/testing/entities.ts';
 import type { QueryDeps } from '$lib/db/query_deps.ts';
-import {
-	query_session_get_valid,
-	session_touch_fire_and_forget
-} from '$lib/auth/session_queries.ts';
+import { query_session_get_valid } from '$lib/auth/session_queries.ts';
 import {
 	query_account_by_id,
 	query_actor_by_id,
 	query_active_actors_by_account
 } from '$lib/auth/account_queries.ts';
 import { query_role_grant_find_active_for_actor } from '$lib/auth/role_grant_queries.ts';
-
-const log = new Logger('test', { level: 'off' });
 
 const mock_deps: QueryDeps = { db: {} as any };
 
@@ -57,8 +50,7 @@ vi.mock('$lib/auth/session_queries.js', async (import_original) => {
 		...original,
 		// Keep hash_session_token real (pure function)
 		hash_session_token: original.hash_session_token,
-		query_session_get_valid: vi.fn(),
-		session_touch_fire_and_forget: vi.fn()
+		query_session_get_valid: vi.fn()
 	};
 });
 
@@ -494,7 +486,6 @@ describe('create_request_context_middleware', () => {
 		vi.mocked(query_session_get_valid).mockImplementation(async () =>
 			'session' in overrides ? overrides.session : ({ account_id: account.id } as any)
 		);
-		vi.mocked(session_touch_fire_and_forget).mockImplementation(async () => {});
 		vi.mocked(query_account_by_id).mockImplementation(async () =>
 			'account' in overrides ? overrides.account : account
 		);
@@ -523,7 +514,7 @@ describe('create_request_context_middleware', () => {
 			}
 			await next();
 		});
-		app.use('/*', create_request_context_middleware(mock_deps, log));
+		app.use('/*', create_request_context_middleware(mock_deps));
 		app.get('/test', (c) => {
 			const account_id = c.get(ACCOUNT_ID_KEY);
 			const credential_type = c.get(CREDENTIAL_TYPE_KEY);
@@ -583,7 +574,7 @@ describe('create_request_context_middleware', () => {
 
 		let downstream_called = false;
 		const app = new Hono();
-		app.use('/*', create_request_context_middleware(mock_deps, log));
+		app.use('/*', create_request_context_middleware(mock_deps));
 		app.get('/test', () => {
 			downstream_called = true;
 			return new Response('ok');
@@ -591,51 +582,5 @@ describe('create_request_context_middleware', () => {
 
 		await app.request('/test');
 		assert.strictEqual(downstream_called, true);
-	});
-
-	test('touch failure logs error without blocking the request', async () => {
-		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
-		const error_log = new Logger('session_touch', { level: 'error' });
-		configure_mocks();
-		// Simulate the real session_touch_fire_and_forget behavior:
-		// it catches the DB error internally and logs it
-		vi.mocked(session_touch_fire_and_forget).mockImplementation(
-			async (_deps, _token_hash, _pending_effects, mock_log) => {
-				try {
-					throw new Error('simulated DB failure');
-				} catch (err) {
-					mock_log.error('Session touch failed:', err);
-				}
-			}
-		);
-
-		// Use a dedicated app with error-level logging so console.error spy triggers
-		const app = new Hono();
-		app.use('/*', async (c, next) => {
-			c.set('auth_session_id', 'test-token');
-			await next();
-		});
-		app.use('/*', create_request_context_middleware(mock_deps, error_log));
-		app.get('/test', (c) => {
-			const account_id = c.get(ACCOUNT_ID_KEY);
-			const credential_type = c.get(CREDENTIAL_TYPE_KEY);
-			return c.json({ account_id: account_id ?? null, credential_type: credential_type ?? null });
-		});
-
-		const res = await app.request('/test');
-		assert.strictEqual(res.status, 200, 'request should succeed despite touch failure');
-
-		const body = await res.json();
-		assert.strictEqual(body.account_id, 'acct-1', 'account_id should still be set');
-
-		// wait for the fire-and-forget promise to settle
-		await wait();
-
-		assert.ok(spy_error.mock.calls.length > 0, 'console.error should have been called');
-		const first_call = spy_error.mock.calls[0]!;
-		assert.ok(
-			String(first_call[0]).includes('[session_touch]'),
-			'should log with [session_touch] prefix'
-		);
 	});
 });

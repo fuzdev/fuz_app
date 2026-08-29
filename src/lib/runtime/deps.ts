@@ -86,6 +86,41 @@ export interface ReadTextFromOffsetResult {
 }
 
 /**
+ * Options for `FsWriteDeps.write_text_file`.
+ */
+export interface WriteFileOptions {
+	/**
+	 * POSIX mode applied at creation (e.g. `0o600`). Creation-time only — an
+	 * existing file keeps its mode (pair with `exclusive` when the mode must
+	 * hold). No-op where modes don't apply (mock runtime, Windows).
+	 */
+	mode?: number;
+	/**
+	 * Fail if the path already exists (`O_EXCL`). Load-bearing for secret
+	 * files: without it a crash-leftover temp file is reopened `O_TRUNC` and
+	 * keeps its old (possibly permissive) mode, since `mode` only applies at
+	 * creation.
+	 */
+	exclusive?: boolean;
+}
+
+/**
+ * Hardened read for secret files (bootstrap tokens, keys) — the TS twin of
+ * the Rust spine's `fuz_sys::secure_file::load_secure_file`.
+ */
+export interface FsSecureReadDeps {
+	/**
+	 * Read a small secret file with fail-loud checks: rejects symlinks, any
+	 * group/other-accessible mode (must be `0600`/`0400`; skipped where POSIX
+	 * modes don't apply), and files over a 4 KiB cap. Permission checks run on
+	 * the open descriptor where the platform allows, so the file can't be
+	 * swapped between check and read. Throws on any refusal — a refused secret
+	 * must never degrade to an empty read.
+	 */
+	read_secure_file: (path: string) => Promise<Uint8Array>;
+}
+
+/**
  * File system read operations.
  */
 export interface FsReadDeps {
@@ -111,10 +146,10 @@ export interface FsReadDeps {
  * File system write operations.
  */
 export interface FsWriteDeps {
-	/** Create a directory. */
-	mkdir: (path: string, options?: { recursive?: boolean }) => Promise<void>;
-	/** Write text to a file. */
-	write_text_file: (path: string, content: string) => Promise<void>;
+	/** Create a directory. `mode` applies at creation (no-op where modes don't apply). */
+	mkdir: (path: string, options?: { recursive?: boolean; mode?: number }) => Promise<void>;
+	/** Write text to a file. See `WriteFileOptions` for `mode` / `exclusive`. */
+	write_text_file: (path: string, content: string, options?: WriteFileOptions) => Promise<void>;
 	/** Write bytes to a file. */
 	write_file: (path: string, data: Uint8Array) => Promise<void>;
 	/** Rename (move) a file. */
@@ -232,6 +267,7 @@ export interface RuntimeDeps
 	extends
 		EnvDeps,
 		FsReadDeps,
+		FsSecureReadDeps,
 		FsWriteDeps,
 		FsStreamDeps,
 		FsRemoveDeps,

@@ -64,7 +64,7 @@ export const create_auth_middleware_specs = async (
 	]);
 
 	const session_middleware = create_session_middleware(keyring, session_options);
-	const request_context_middleware = create_request_context_middleware(query_deps, deps.log);
+	const request_context_middleware = create_request_context_middleware(query_deps);
 	const bearer_auth_middleware = create_bearer_auth_middleware(query_deps, deps.log);
 
 	const specs: Array<MiddlewareSpec> = [

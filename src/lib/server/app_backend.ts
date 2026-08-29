@@ -18,7 +18,6 @@ import { create_audit_emitter, type AuditEmitter } from '../auth/audit_emitter.t
 import type { DbType, Db } from '../db/db.ts';
 import type { Keyring } from '../auth/keyring.ts';
 import type { PasswordHashDeps } from '../auth/password.ts';
-import type { StatResult } from '../runtime/deps.ts';
 import { run_migrations, type MigrationNamespace, type MigrationResult } from '../db/migrate.ts';
 import { auth_migration_ns, reserved_migration_namespaces } from '../auth/migrations.ts';
 import { create_db } from '../db/create_db.ts';
@@ -89,10 +88,12 @@ export const default_audit_factory: AuditFactory = ({ db, log }) =>
  * (e.g., tx uses `runtime.exit(1)` on invalid keys).
  */
 export interface CreateAppBackendOptions {
-	/** Get file/directory stats, or null if path doesn't exist. */
-	stat: (path: string) => Promise<StatResult | null>;
-	/** Read a file as text. */
-	read_text_file: (path: string) => Promise<string>;
+	/**
+	 * Hardened secret-file read for the bootstrap token — pass the runtime's
+	 * `read_secure_file` (see `FsSecureReadDeps`). Rejects symlinks,
+	 * group/other-accessible modes, and oversized files.
+	 */
+	read_secure_file: (path: string) => Promise<Uint8Array>;
 	/** Delete a file. */
 	delete_file: (path: string) => Promise<void>;
 	/** Database connection URL (`postgres://`, `file://`, or `memory://`). */
@@ -149,8 +150,7 @@ export interface CreateAppBackendOptions {
  * @throws Error if `migration_namespaces` contains a namespace in `reserved_migration_namespaces`
  */
 export const create_app_backend = async (options: CreateAppBackendOptions): Promise<AppBackend> => {
-	const { database_url, keyring, password, stat, read_text_file, delete_file, audit_factory } =
-		options;
+	const { database_url, keyring, password, read_secure_file, delete_file, audit_factory } = options;
 	const log = options.log ?? new Logger('server');
 	const { db, close, db_type, db_name } = await create_db(database_url);
 	// Everything after `create_db` can throw — reserved-namespace check,
@@ -184,8 +184,7 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 				keyring,
 				password,
 				db,
-				stat,
-				read_text_file,
+				read_secure_file,
 				delete_file,
 				log,
 				audit

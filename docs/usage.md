@@ -159,6 +159,9 @@ import { create_app_backend } from '@fuzdev/fuz_app/server/app_backend.ts';
 import { create_app_server } from '@fuzdev/fuz_app/server/app_server.ts';
 import { validate_server_env } from '@fuzdev/fuz_app/server/env.ts';
 import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
+import { create_deno_runtime } from '@fuzdev/fuz_app/runtime/deno.ts';
+
+const runtime = create_deno_runtime([]);
 
 // 1. Load env, validate (caller handles errors)
 const env = load_env(app_env_schema, (key) => Deno.env.get(key));
@@ -188,16 +191,9 @@ const backend = await create_app_backend({
 	keyring,
 	password: argon2_password_deps,
 	database_url: env.DATABASE_URL,
-	stat: async (p) => {
-		try {
-			const s = await Deno.stat(p);
-			return { is_file: s.isFile, is_directory: s.isDirectory };
-		} catch {
-			return null;
-		}
-	},
-	read_text_file: (p) => Deno.readTextFile(p),
-	delete_file: (p) => Deno.remove(p),
+	// hardened bootstrap-token read (`FsSecureReadDeps`)
+	read_secure_file: runtime.read_secure_file,
+	delete_file: runtime.remove,
 	// audit_factory runs after create_db + migrations; the consumer owns
 	// subscriber-chain composition and AuditLogConfig selection.
 	audit_factory: ({ db, log }) => create_audit_emitter({ db, log, audit_log_config })

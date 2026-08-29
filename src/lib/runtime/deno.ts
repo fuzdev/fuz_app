@@ -11,6 +11,7 @@
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
 import type { RuntimeDeps, StatResult, CommandResult } from './deps.ts';
+import { assert_secure_mode, assert_secure_size, read_secure_bounded } from './secure_file.ts';
 
 // Deno API declarations — this module is only imported by Deno consumers.
 // Module-scoped declarations don't pollute the global type namespace.
@@ -25,7 +26,8 @@ declare const Deno: {
 	stat: (
 		path: string
 	) => Promise<{ isFile: boolean; isDirectory: boolean; size: number; mtime: Date | null }>;
-	mkdir: (path: string, options?: { recursive?: boolean }) => Promise<void>;
+	lstat: (path: string) => Promise<{ isSymlink: boolean }>;
+	mkdir: (path: string, options?: { recursive?: boolean; mode?: number }) => Promise<void>;
 	readTextFile: (path: string) => Promise<string>;
 	readFile: (path: string) => Promise<Uint8Array>;
 	readDir: (path: string) => AsyncIterable<{ name: string }>;
@@ -36,12 +38,17 @@ declare const Deno: {
 		read: (buf: Uint8Array) => Promise<number | null>;
 		seek: (offset: number, whence: number) => Promise<number>;
 		sync: () => Promise<void>;
+		stat: () => Promise<{ size: number; mode: number | null }>;
 		close: () => void;
 		readable: ReadableStream<Uint8Array>;
 		writable: WritableStream<Uint8Array>;
 	}>;
 	SeekMode: { Start: number };
-	writeTextFile: (path: string, content: string) => Promise<void>;
+	writeTextFile: (
+		path: string,
+		content: string,
+		options?: { mode?: number; createNew?: boolean }
+	) => Promise<void>;
 	writeFile: (path: string, data: Uint8Array) => Promise<void>;
 	rename: (oldPath: string, newPath: string) => Promise<void>;
 	remove: (path: string, options?: { recursive?: boolean }) => Promise<void>;
@@ -108,6 +115,25 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 	mkdir: (path, options) => Deno.mkdir(path, options),
 	read_text_file: (path) => Deno.readTextFile(path),
 	read_file: (path) => Deno.readFile(path),
+	read_secure_file: async (path) => {
+		// Deno exposes no O_NOFOLLOW, so the symlink check is a pre-open lstat
+		// (a TOCTOU window the Node impl doesn't have — the mode check below
+		// still runs on the open descriptor, so a post-open swap can't defeat
+		// it). The checks themselves are the shared `runtime/secure_file.ts`
+		// helpers, same as `load_secure_file_node`.
+		const l = await Deno.lstat(path);
+		if (l.isSymlink) throw new Error(`secure file is a symlink: ${path}`);
+		const file = await Deno.open(path, { read: true });
+		try {
+			const s = await file.stat();
+			// `mode` is null where POSIX modes don't apply (Windows).
+			if (s.mode !== null) assert_secure_mode(path, s.mode);
+			assert_secure_size(path, s.size);
+			return await read_secure_bounded(path, (target) => file.read(target));
+		} finally {
+			file.close();
+		}
+	},
 	read_file_stream: async (path) => (await Deno.open(path, { read: true })).readable,
 	write_file_stream: async (path, data) => {
 		const file = await Deno.open(path, { write: true, create: true, truncate: true });
@@ -139,7 +165,11 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 		for await (const entry of Deno.readDir(path)) names.push(entry.name);
 		return names;
 	},
-	write_text_file: (path, content) => Deno.writeTextFile(path, content),
+	write_text_file: (path, content, options) =>
+		Deno.writeTextFile(path, content, {
+			mode: options?.mode,
+			createNew: options?.exclusive
+		}),
 	write_file: (path, data) => Deno.writeFile(path, data),
 	rename: (old_path, new_path) => Deno.rename(old_path, new_path),
 	fsync: async (path) => {

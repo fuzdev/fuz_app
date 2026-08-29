@@ -60,7 +60,6 @@ describe('parse_session', () => {
 		const result = await parse_session(signed, keyring, test_session_options, now + 1);
 		assert.ok(result);
 		assert.strictEqual(result.identity, TEST_IDENTITY);
-		assert.strictEqual(result.should_refresh_signature, false);
 		assert.strictEqual(result.key_index, 0);
 	});
 
@@ -133,7 +132,6 @@ describe('parse_session', () => {
 		const result = await parse_session(signed, rotated_keyring, test_session_options, now + 1);
 		assert.ok(result);
 		assert.strictEqual(result.identity, TEST_IDENTITY);
-		assert.strictEqual(result.should_refresh_signature, true);
 		assert.strictEqual(result.key_index, 1);
 	});
 
@@ -247,13 +245,12 @@ describe('parse_session', () => {
 	});
 });
 
-describe('parse_session — should_refresh_expiration', () => {
-	// The cookie layer's mirror of `query_session_touch`'s 1-day extension
-	// threshold — the parse layer surfaces the signal, the process layer
-	// acts on it. Without this, a continuously-active user gets bumped to
-	// login at the 30-day cookie expiry while their DB session is still alive.
-
-	test('false when far from expiry', async () => {
+describe('parse_session — absolute expiry', () => {
+	test('a cookie parses identically at any age — no refresh signal exists', async () => {
+		// The sliding-renewal signal (`should_refresh_expiration`) is gone:
+		// the embedded expiry is absolute, set once at mint, so a near-expiry
+		// parse carries no instruction to re-sign. One second past it the
+		// cookie is simply invalid.
 		const keyring = create_test_keyring();
 		const now = 1000;
 		const signed = await create_session_cookie_value(
@@ -262,52 +259,22 @@ describe('parse_session — should_refresh_expiration', () => {
 			test_session_options,
 			now
 		);
-		const result = await parse_session(signed, keyring, test_session_options, now + 10);
-		assert.ok(result);
-		assert.strictEqual(result.should_refresh_expiration, false);
-	});
-
-	test('true when within default threshold (1 day before expiry)', async () => {
-		const keyring = create_test_keyring();
-		const now = 1000;
-		const signed = await create_session_cookie_value(
+		const near_expiry = await parse_session(
+			signed,
 			keyring,
-			TEST_IDENTITY,
 			test_session_options,
-			now
+			now + SESSION_AGE_MAX - 1
 		);
-		// Parse at expires_at - 1 hour: well within the 1-day default window.
-		const within = now + SESSION_AGE_MAX - 60 * 60;
-		const result = await parse_session(signed, keyring, test_session_options, within);
-		assert.ok(result);
-		assert.strictEqual(result.should_refresh_expiration, true);
-	});
+		assert.ok(near_expiry);
+		assert.deepStrictEqual(near_expiry, { identity: TEST_IDENTITY, key_index: 0 });
 
-	test('refresh_threshold_seconds = 0 disables expiration-based refresh', async () => {
-		const opts: SessionOptions<string> = { ...test_session_options, refresh_threshold_seconds: 0 };
-		const keyring = create_test_keyring();
-		const now = 1000;
-		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, opts, now);
-		// Parse 1s before expiry — no refresh signal.
-		const result = await parse_session(signed, keyring, opts, now + SESSION_AGE_MAX - 1);
-		assert.ok(result);
-		assert.strictEqual(result.should_refresh_expiration, false);
-	});
-
-	test('respects custom refresh_threshold_seconds', async () => {
-		// 60s threshold; 100s remaining → outside; 30s remaining → inside.
-		const opts: SessionOptions<string> = { ...test_session_options, refresh_threshold_seconds: 60 };
-		const keyring = create_test_keyring();
-		const now = 1000;
-		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, opts, now);
-
-		const outside = await parse_session(signed, keyring, opts, now + SESSION_AGE_MAX - 100);
-		assert.ok(outside);
-		assert.strictEqual(outside.should_refresh_expiration, false);
-
-		const inside = await parse_session(signed, keyring, opts, now + SESSION_AGE_MAX - 30);
-		assert.ok(inside);
-		assert.strictEqual(inside.should_refresh_expiration, true);
+		const past_expiry = await parse_session(
+			signed,
+			keyring,
+			test_session_options,
+			now + SESSION_AGE_MAX
+		);
+		assert.strictEqual(past_expiry, null);
 	});
 });
 

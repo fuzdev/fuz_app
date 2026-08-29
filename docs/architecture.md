@@ -233,8 +233,12 @@ that row is what authorizes the insert. An earlier belt-and-suspenders
 "no accounts exist" query was deliberately removed so the lock is the single
 signal; see the repo-root `CLAUDE.md` § Test/prod write-semantics parity.
 
-Filesystem access (`stat`, `read_text_file`, `delete_file`) flows through `AppDeps` —
-provided at `create_app_backend` time.
+Filesystem access (`read_secure_file` — the hardened bootstrap-token read —
+and `delete_file`) flows through `AppDeps`, provided at `create_app_backend`
+time. Both the boot-time availability probe and the request-time token read go
+through the same `read_secure_file`, so the probe can never report a window
+the read would refuse (a `0644` or symlinked token file reads as
+bootstrap-unavailable, with the reason logged).
 
 The `on_bootstrap` callback on `BootstrapRouteOptions` runs after account + session
 creation — use for app-specific post-bootstrap work (e.g., generating an API
@@ -426,10 +430,9 @@ patterns:
   listeners and the optional `AuditLogConfig` so handlers cannot
   silently fall back to the builtin config or a stale callback. Action
   factories take `ActionFactoryDeps` (`{log, audit}`) directly.
-- `session_touch_fire_and_forget(deps, token_hash, pending_effects, log)` and
-  `query_validate_api_token(deps, raw_token, ip, pending_effects)` keep their
-  `pending_effects: Array<Promise<void>> | undefined` shape — they run from
-  middleware (no `RouteContext` / `ActionContext` in scope) and don't need
+- `query_validate_api_token(deps, raw_token, ip, pending_effects)` keeps its
+  `pending_effects: Array<Promise<void>> | undefined` shape — it runs from
+  middleware (no `RouteContext` / `ActionContext` in scope) and doesn't need
   the audit-emit envelope.
 
 When `audit_log_sse` is set on `create_app_server`, the factory registers

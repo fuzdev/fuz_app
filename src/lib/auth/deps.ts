@@ -14,7 +14,6 @@ import type { FactStore } from '@fuzdev/fuz_util/fact_store.ts';
 import type { Keyring } from './keyring.ts';
 import type { PasswordHashDeps } from './password.ts';
 import type { Db } from '../db/db.ts';
-import type { StatResult } from '../runtime/deps.ts';
 import type { AuditEmitter } from './audit_emitter.ts';
 
 /**
@@ -24,10 +23,15 @@ import type { AuditEmitter } from './audit_emitter.ts';
  * Does not contain config (static values) or runtime state (mutable refs).
  */
 export interface AppDeps {
-	/** Get file/directory stats, or null if path doesn't exist. */
-	stat: (path: string) => Promise<StatResult | null>;
-	/** Read a file as text. */
-	read_text_file: (path: string) => Promise<string>;
+	/**
+	 * Hardened secret-file read — used for the bootstrap token (the file that
+	 * mints the keeper account). Production wiring passes the runtime's
+	 * `read_secure_file` (`FsSecureReadDeps`), which rejects symlinks,
+	 * group/other-accessible modes, and oversized files; both the boot-time
+	 * availability probe and the request-time read go through this one
+	 * capability so the probe can never be laxer than the read it gates.
+	 */
+	read_secure_file: (path: string) => Promise<Uint8Array>;
 	/** Delete a file. */
 	delete_file: (path: string) => Promise<void>;
 	/** HMAC-SHA256 cookie signing keyring. */

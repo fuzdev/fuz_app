@@ -16,7 +16,7 @@ documents the cross-cutting invariants that don't fit on any single symbol.
 
 ## AppDeps split
 
-- **Capabilities** — `AppDeps` — stateless, injectable per env: `stat`, `read_text_file`, `delete_file`, `keyring`, `password`, `db`, `log`, `audit`.
+- **Capabilities** — `AppDeps` — stateless, injectable per env: `read_secure_file` (hardened bootstrap-token read), `delete_file`, `keyring`, `password`, `db`, `log`, `audit`.
 - **Route caps** — `RouteFactoryDeps` — `Omit<AppDeps, 'db'>`; handlers get `db` via `RouteContext`.
 - **Action caps** — `ActionFactoryDeps` (`auth/deps.ts`) — the `{log, audit}` shape action factories take; `RouteFactoryDeps`/`AppDeps` satisfy it structurally (role-grant-offer adds `notification_sender?`). The two pure-read actor factories (`actor_lookup`/`actor_search`) take only `{log: Logger}`.
 - **Parameters** — `*Options` — static startup values, per-factory.
@@ -32,7 +32,7 @@ over the pool so rows persist when request transactions roll back. See root
 ### Crypto primitives (pure, I/O-free)
 
 - `auth/keyring.ts` — `Keyring`, `create_keyring`, `validate_keyring`, `create_validated_keyring`.
-- `auth/session_cookie.ts` — `SessionOptions<T>`, `parse_session`, `process_session_cookie`, `create_session_config`, `fuz_session_config`, `SESSION_AGE_MAX`, `SESSION_REFRESH_THRESHOLD_S`.
+- `auth/session_cookie.ts` — `SessionOptions<T>`, `parse_session`, `process_session_cookie` (`'none' | 'clear'` — no refresh action; the 30-day lifetime is an absolute cap signed once at mint), `create_session_config`, `fuz_session_config`, `SESSION_AGE_MAX`.
 - `auth/password.ts` — `Password`, `PasswordProvided`, `PasswordHashDeps`, `PASSWORD_LENGTH_MIN` (12, OWASP), `PASSWORD_LENGTH_MAX` (300).
 - `auth/password_argon2.ts` — `hash_password`, `verify_password`, `verify_dummy`, `argon2_password_deps`.
 - `auth/api_token.ts` — `API_TOKEN_PREFIX` (`secret_fuz_token_`), `hash_api_token`, `generate_api_token`.
@@ -61,6 +61,7 @@ Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
 - `auth/scope_kind_schema.ts` — `ScopeKindName`, `create_scope_kind_schema` (open registry, no builtins).
 - `auth/credential_type_schema.ts` — `CredentialTypeName`, `CREDENTIAL_TYPE_SESSION` / `_API_TOKEN` / `_DAEMON_TOKEN`, `create_credential_type_schema`.
 - `auth/grant_path_schema.ts` — `GrantPathName`, `GRANT_PATH_ADMIN` / `_SELF_SERVICE` / `_SYSTEM` / `_BOOTSTRAP`, `create_grant_path_schema`.
+- `auth/token_lifetime.ts` — the temporal axis of a minted token: `TokenLifetimeInput` (required union on `account_token_create` — `{kind:'eternal'}` or `{kind:'ttl', days}`), `token_lifetime_to_expires_at`, `TOKEN_TTL_DAYS_MAX`. No default — `expires_at IS NULL` always means "deliberately eternal".
 - `auth/token_scope.ts` — per-credential authority narrowing stored on `api_token.scope`: `TokenScope` / `TokenScopeInput` + constructors, `parse_stored_token_scope` (fail-closed), `token_scope_admits_method` / `_non_rpc`, and the `<section>:<id>` capability vocabulary `RouteAuth.required_scope` is written in (`parse_token_scope_capability`, `token_scope_admits_capability`, `token_scope_denied_body`, `TOKEN_SURFACES`). Not an open registry — see ../../../docs/security.md §Token scoping for why the identifier half is deliberately unregistered.
 - `auth/auth_ddl.ts` — `CREATE TABLE` / index / seed strings for the core identity tables.
 - `auth/audit_log_schema.ts` — `AUDIT_EVENT_TYPES` (27 builtins), `AuditEventType` / `AuditEventTypeName`, `audit_metadata_schemas`, `AuditLogEvent`, `AuditLogInput`, `AuditLogConfig`, `create_audit_log_config`.
@@ -80,7 +81,7 @@ All take `deps: QueryDeps = {db}` first; `query_validate_api_token` adds `log`.
 - `auth/actor_search_queries.ts` — case-insensitive prefix search on `actor.name`, scope-filtered when not admin.
 - `auth/role_grant_queries.ts` — idempotent create, IDOR-guarded revoke (with in-tx supersede), scope-aware lookup, role/account predicates, `query_role_grant_revoke_for_scope` parent-scope cascade.
 - `auth/role_grant_offer_queries.ts` — offer create/decline/retract/list/history/sweep, atomic `query_accept_offer` with sibling supersede; error classes `RoleGrantOfferSelfTargetError` / `_AlreadyTerminalError` / `_ExpiredError` / `_NotFoundError` / `_ActorAccountMismatchError` / `_ActorMismatchError`.
-- `auth/session_queries.ts` — server-side sessions (blake3-hashed), `query_session_revoke_by_hash_unscoped` (logout only), `query_session_enforce_limit` (transaction-required).
+- `auth/session_queries.ts` — server-side sessions (blake3-hashed), `query_session_revoke_by_hash_unscoped` (logout only), `query_session_enforce_limit` (transaction-required). No touch/renewal query — `expires_at` is an absolute cap set at mint (`AUTH_SESSION_LIFETIME_MS`), and `last_seen_at` is decorative pending its own removal migration.
 - `auth/api_token_queries.ts` — token validation with fire-and-forget usage tracking, IDOR-guarded revoke, `query_api_token_enforce_limit` (transaction-required).
 - `auth/invite_queries.ts` — invite create/find/claim/list/delete; `query_invite_claim_unscoped` (scoping enforced upstream by `_find_unclaimed_match_for_update`, which runs inside the signup tx with `FOR UPDATE` so find + claim are atomic).
 - `auth/app_settings_queries.ts` — load/update for the single-row settings table.
@@ -162,7 +163,7 @@ Everything else listed under §RPC action surfaces.
 - `auth/request_context.ts` — `RequestContext`, `resolve_acting_actor`, `build_request_context`, predicates (`has_role`, `has_scoped_role`, `has_any_scoped_role`), guards (`require_auth`, `require_role`, `require_credential_types`, `require_token_scope`), `token_scope_surface_denial` (the direct-call form, for surfaces that aren't route specs), `refresh_role_grants`.
 - `auth/session_middleware.ts` — `process_session_cookie` integration, `create_session_and_set_cookie` (shared by login / signup / bootstrap).
 - `auth/bearer_auth.ts` — soft-fail bearer middleware; rejects when `Origin` or `Referer` present (browser context).
-- `auth/daemon_token_middleware.ts` — `start_daemon_token_rotation` + `create_daemon_token_middleware(state, deps, log)` (atomic file write, soft-fail validation, keeper account resolution). Soft-fails — discards the credential (pass-through, no own 401/503) on **every** non-success path: browser context (`Origin`/`Referer` present), malformed/invalid token, and valid-token-but-no-keeper all `next()` through to the dispatcher's `credential_type_required` (403) gate, mirroring the bearer guard and the Rust spine's `resolve.rs`. Daemon tokens are loopback-only, so browser context never arises in practice — the discard is defense-in-depth.
+- `auth/daemon_token_middleware.ts` — `create_daemon_token_middleware(state, deps, log)` — the credential **consumer** only (soft-fail validation, keeper account resolution). The producer (`write_daemon_token` / `start_daemon_token_rotation`) lives in `testing/daemon_token_rotation.ts` behind the dev-env guard — no production assembly mints daemon tokens, mirroring the Rust spine's `fuz_testing`-confined producer. Soft-fails — discards the credential (pass-through, no own 401/503) on **every** non-success path: browser context (`Origin`/`Referer` present), malformed/invalid token, and valid-token-but-no-keeper all `next()` through to the dispatcher's `credential_type_required` (403) gate, mirroring the bearer guard and the Rust spine's `resolve.rs`. Daemon tokens are loopback-only, so browser context never arises in practice — the discard is defense-in-depth.
 
 See root ../../../CLAUDE.md §Middleware Ordering for canonical assembly
 order. The auth-specific invariants are described below in §Cross-cutting
@@ -638,7 +639,7 @@ Options: `roles?: RoleSchemaResult` (drives admin-grant-path lookup),
 - `account_session_list_action_spec` — read; input `z.void()`; output `{sessions}`.
 - `account_session_revoke_action_spec` — mutation; input `{session_id}`; output `{ok, revoked}`.
 - `account_session_revoke_all_action_spec` — mutation; input `z.void()`; output `{ok, count}`.
-- `account_token_create_action_spec` — mutation; input `{name?}`; output `{ok, token, id, name}`.
+- `account_token_create_action_spec` — mutation; input `{name?, scope, lifetime}` (both `scope` and `lifetime` required — default-deny at mint on both axes); output `{ok, token, id, name, expires_at}`.
 - `account_token_list_action_spec` — read; input `z.void()`; output `{tokens}`.
 - `account_token_revoke_action_spec` — mutation; input `{token_id}`; output `{ok, revoked}`.
 

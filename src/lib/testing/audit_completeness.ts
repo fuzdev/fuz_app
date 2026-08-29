@@ -288,7 +288,11 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 					app: { request: fixture.transport },
 					path: rpc_path,
 					spec: account_token_create_action_spec,
-					params: { name: 'audit-test', scope: { kind: 'full' as const } },
+					params: {
+						name: 'audit-test',
+						scope: { kind: 'full' as const },
+						lifetime: { kind: 'eternal' as const }
+					},
 					headers: fixture.create_session_headers()
 				});
 				assert.ok(

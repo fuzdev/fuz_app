@@ -34,7 +34,6 @@
 	const columns: Array<DatatableColumn<AuthSessionJson>> = [
 		{ key: 'id', label: 'session', width: 140 },
 		{ key: 'created_at', label: 'created', width: 120 },
-		{ key: 'last_seen_at', label: 'last seen', width: 120 },
 		{ key: 'expires_at', label: 'expires', width: 120 },
 		{ key: 'account_id', label: '', width: 100 }
 	];
@@ -70,10 +69,6 @@
 				{:else if column.key === 'created_at'}
 					<span title={format_datetime_local(row.created_at)}>
 						{format_relative_time(row.created_at)}
-					</span>
-				{:else if column.key === 'last_seen_at'}
-					<span title={format_datetime_local(row.last_seen_at)}>
-						{format_relative_time(row.last_seen_at)}
 					</span>
 				{:else if column.key === 'expires_at'}
 					<span title={format_datetime_local(row.expires_at)}>

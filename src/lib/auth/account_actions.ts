@@ -42,6 +42,7 @@ import {
 	token_scope_from_input,
 	token_scope_label
 } from './token_scope.ts';
+import { token_lifetime_to_expires_at } from './token_lifetime.ts';
 import { generate_api_token } from './api_token.ts';
 import { DEFAULT_MAX_TOKENS } from './account_route_schema.ts';
 import type { ActionFactoryDeps } from './deps.ts';
@@ -187,7 +188,18 @@ export const create_account_actions = (
 		// There is deliberately no permissive fallback here: an omitted scope is
 		// a validation error upstream, not a full-authority token.
 		const scope = token_scope_from_input(input.scope);
-		await query_create_api_token(ctx, id, ctx.auth.account.id, input.name, token_hash, scope);
+		// `input.lifetime` is required for the same reason — an omitted lifetime
+		// is a validation error, never an eternal token.
+		const expires_at = token_lifetime_to_expires_at(input.lifetime);
+		await query_create_api_token(
+			ctx,
+			id,
+			ctx.auth.account.id,
+			input.name,
+			token_hash,
+			scope,
+			expires_at
+		);
 		if (max_tokens != null) {
 			await query_api_token_enforce_limit(ctx, ctx.auth.account.id, max_tokens);
 		}
@@ -201,7 +213,7 @@ export const create_account_actions = (
 				credential_type: ctx.credential_type ?? undefined
 			}
 		});
-		return { ok: true, token, id, name: input.name };
+		return { ok: true, token, id, name: input.name, expires_at: expires_at?.toISOString() ?? null };
 	};
 
 	const token_list_handler = async (

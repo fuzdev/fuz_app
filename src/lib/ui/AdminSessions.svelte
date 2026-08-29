@@ -26,7 +26,6 @@
 		{ key: 'username', label: 'user', width: 120 },
 		{ key: 'id', label: 'session', width: 130 },
 		{ key: 'created_at', label: 'created', width: 100 },
-		{ key: 'last_seen_at', label: 'last seen', width: 100 },
 		{ key: 'expires_at', label: 'expires', width: 100 },
 		{ key: 'account_id', label: '', width: 220 }
 	];
@@ -52,10 +51,6 @@
 				{:else if column.key === 'created_at'}
 					<span title={format_datetime_local(row.created_at)}>
 						{format_relative_time(row.created_at)}
-					</span>
-				{:else if column.key === 'last_seen_at'}
-					<span title={format_datetime_local(row.last_seen_at)}>
-						{format_relative_time(row.last_seen_at)}
 					</span>
 				{:else if column.key === 'expires_at'}
 					<span title={format_datetime_local(row.expires_at)}>

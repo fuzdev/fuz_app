@@ -166,8 +166,7 @@ export const create_stub_audit_sse = (): AuditLogSse => {
 
 /** Stub `AppDeps` for auth surface tests — throws on any method access. */
 export const stub_app_deps: AppDeps = {
-	stat: create_throwing_stub('stat'),
-	read_text_file: create_throwing_stub('read_text_file'),
+	read_secure_file: create_throwing_stub('read_secure_file'),
 	delete_file: create_throwing_stub('delete_file'),
 	keyring: create_throwing_stub('keyring'),
 	password: create_throwing_stub('password'),
@@ -180,8 +179,9 @@ export const stub_app_deps: AppDeps = {
  * Create no-op `AppDeps` for auth surface testing.
  */
 export const create_stub_app_deps = (): AppDeps => ({
-	stat: async () => null,
-	read_text_file: async () => '',
+	read_secure_file: async (path: string) => {
+		throw new Error(`ENOENT: no such file or directory: ${path}`);
+	},
 	delete_file: async (_path: string) => {},
 	keyring: create_noop_stub('keyring'),
 	password: create_noop_stub('password'),

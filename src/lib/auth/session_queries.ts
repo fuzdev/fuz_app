@@ -8,17 +8,20 @@
  */
 
 import { hash_blake3 } from '@fuzdev/fuz_util/hash_blake3.ts';
-import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { generate_random_base64url } from '../crypto.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import type { AuthSession, SessionId } from './account_schema.ts';
 
-/** Session lifetime in milliseconds (30 days). */
+/**
+ * Session lifetime in milliseconds (30 days).
+ *
+ * An **absolute** cap: `expires_at` is set once at mint and never extended —
+ * there is deliberately no touch/renewal query on either spine (a sliding
+ * window renews a leaked cookie forever; see `docs/security.md` §Session
+ * Security). The cookie's `SESSION_AGE_MAX` mirrors this value.
+ */
 export const AUTH_SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
-
-/** Extend session when it has less than this remaining (1 day in ms). */
-export const AUTH_SESSION_EXTEND_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Hash a session token to its storage key using blake3.
@@ -77,29 +80,6 @@ export const query_session_get_valid = async (
 	return deps.db.query_one<AuthSession>(
 		`SELECT * FROM auth_session WHERE id = $1 AND expires_at > NOW()`,
 		[token_hash]
-	);
-};
-
-/**
- * Update `last_seen_at` and optionally extend expiry for a session.
- *
- * Extends if less than `AUTH_SESSION_EXTEND_THRESHOLD_MS` remaining.
- *
- * @param deps - query dependencies
- * @param token_hash - blake3 hash of the session token
- * @mutates `auth_session` row - updates `last_seen_at` and conditionally `expires_at`
- */
-export const query_session_touch = async (deps: QueryDeps, token_hash: string): Promise<void> => {
-	const new_expires = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-	await deps.db.query(
-		`UPDATE auth_session
-		 SET last_seen_at = NOW(),
-		     expires_at = CASE
-		       WHEN expires_at - NOW() < INTERVAL '1 day' THEN $2::timestamptz
-		       ELSE expires_at
-		     END
-		 WHERE id = $1`,
-		[token_hash, new_expires.toISOString()]
 	);
 };
 
@@ -238,9 +218,14 @@ export const query_session_enforce_limit = async (
 /**
  * List all active sessions across all accounts with usernames.
  *
+ * Ordered by `created_at DESC` (newest session first), matching the
+ * per-account listing. `last_seen_at` is still selected for the wire shape
+ * but is decorative — nothing updates it post-mint (it always equals
+ * `created_at`); it is slated for removal on its own twin migration.
+ *
  * @param deps - query dependencies
  * @param limit - maximum entries to return
- * @returns active sessions joined with account usernames, newest activity first
+ * @returns active sessions joined with account usernames, newest first
  */
 export const query_session_list_all_active = async (
 	deps: QueryDeps,
@@ -251,7 +236,7 @@ export const query_session_list_all_active = async (
 		 FROM auth_session s
 		 JOIN account a ON a.id = s.account_id
 		 WHERE s.expires_at > NOW()
-		 ORDER BY s.last_seen_at DESC LIMIT $1`,
+		 ORDER BY s.created_at DESC, s.id DESC LIMIT $1`,
 		[limit]
 	);
 };
@@ -267,31 +252,4 @@ export const query_session_cleanup_expired = async (deps: QueryDeps): Promise<nu
 		`DELETE FROM auth_session WHERE expires_at <= NOW() RETURNING id`
 	);
 	return rows.length;
-};
-
-/**
- * Touch a session without blocking the caller.
- *
- * Errors are logged to console — session touching never breaks request flows.
- * Pass `pending_effects` (from `c.var.pending_effects`) to register
- * the promise for test flushing.
- *
- * @param deps - query dependencies
- * @param token_hash - blake3 hash of the session token
- * @param pending_effects - optional array to register the effect for later awaiting
- * @param log - the logger instance
- * @returns the settled promise (callers may ignore it — fire-and-forget semantics preserved)
- * @mutates `pending_effects` - pushes the in-flight settled promise when provided
- */
-export const session_touch_fire_and_forget = (
-	deps: QueryDeps,
-	token_hash: string,
-	pending_effects: Array<Promise<void>> | undefined,
-	log: Logger
-): Promise<void> => {
-	const p = query_session_touch(deps, token_hash).catch((err) => {
-		log.error('Session touch failed:', err);
-	});
-	pending_effects?.push(p);
-	return p;
 };

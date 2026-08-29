@@ -91,8 +91,11 @@ describe('create_session_middleware', () => {
 		);
 	});
 
-	test('key rotation triggers cookie refresh', async () => {
-		// Sign with old key, then verify with keyring that has new key first
+	test('key rotation authenticates the old-key cookie without re-signing it', async () => {
+		// The hard-cap invariant at the middleware layer: a rotated-key cookie
+		// keeps working as-is — a re-sign would extend the absolute lifetime
+		// past the DB row's fixed expiry. Sign with the old key, verify with a
+		// keyring that has the new key first.
 		const old_keyring = create_test_keyring(OLD_KEY);
 		const options = create_config();
 		const cookie_value = await create_session_cookie_value(old_keyring, 'user-42', options);
@@ -109,36 +112,8 @@ describe('create_session_middleware', () => {
 		const body = await res.json();
 		assert.strictEqual(body.identity, 'user-42');
 
-		// Should have a Set-Cookie header with the refreshed cookie
 		const set_cookie = res.headers.get('set-cookie');
-		assert.ok(set_cookie, 'should refresh cookie on key rotation');
-		assert.ok(
-			set_cookie.includes(options.cookie_name),
-			'refresh cookie should reference the cookie name'
-		);
-	});
-
-	test('refreshed cookie includes security attributes', async () => {
-		const old_keyring = create_test_keyring(OLD_KEY);
-		const options = create_config();
-		const cookie_value = await create_session_cookie_value(old_keyring, 'user-42', options);
-
-		const rotated_keyring = create_keyring(`${TEST_KEY}__${OLD_KEY}`);
-		const app = create_test_app(rotated_keyring, options);
-
-		const res = await app.request('/test', {
-			headers: { Cookie: `${options.cookie_name}=${cookie_value}` }
-		});
-
-		const set_cookie = res.headers.get('set-cookie')!;
-		assert.ok(set_cookie.includes('HttpOnly'), 'refreshed cookie must have HttpOnly');
-		assert.ok(set_cookie.includes('Secure'), 'refreshed cookie must have Secure');
-		assert.ok(
-			set_cookie.toLowerCase().includes('samesite=strict'),
-			'refreshed cookie must have SameSite=Strict'
-		);
-		assert.ok(set_cookie.includes('Path=/'), 'refreshed cookie must have Path=/');
-		assert.ok(set_cookie.includes('Max-Age='), 'refreshed cookie must have Max-Age');
+		assert.strictEqual(set_cookie, null, 'a valid cookie is never re-signed');
 	});
 
 	test('cleared cookie sets Max-Age=0', async () => {

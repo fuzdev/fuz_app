@@ -181,8 +181,7 @@ const create_login_app = (
 				verify_password: mock_verify_password,
 				verify_dummy: mock_verify_dummy
 			},
-			stat: noop,
-			read_text_file: noop,
+			read_secure_file: noop,
 			delete_file: noop,
 			audit: create_test_audit_emitter()
 		},
@@ -1042,8 +1041,7 @@ const create_signup_app = (
 				verify_password: vi.fn(),
 				verify_dummy: vi.fn()
 			},
-			stat: noop,
-			read_text_file: noop,
+			read_secure_file: noop,
 			delete_file: noop,
 			audit: create_test_audit_emitter()
 		},

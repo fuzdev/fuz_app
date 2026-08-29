@@ -157,7 +157,7 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 			// Well-formed, so this row isolates the *credential* denial. Its
 			// bearer sibling below sends `params: {}` to pin the gate ordering
 			// instead.
-			params: { scope: { kind: 'full' } }
+			params: { scope: { kind: 'full' }, lifetime: { kind: 'eternal' } }
 		},
 		expect: {
 			status: 403,
@@ -273,7 +273,7 @@ const token_scope_cases: ReadonlyArray<ConformanceCase> = [
 		request: {
 			method: 'account_token_create',
 			as: 'scoped_token',
-			params: { scope: { kind: 'full' } }
+			params: { scope: { kind: 'full' }, lifetime: { kind: 'eternal' } }
 		},
 		expect: {
 			status: 403,

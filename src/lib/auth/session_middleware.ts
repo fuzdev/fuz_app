@@ -77,7 +77,7 @@ export const clear_session_cookie = <T>(c: Context, options: SessionOptions<T>):
  *
  * @param keyring - key ring for cookie verification
  * @param options - session configuration
- * @mutates Hono context - sets `options.context_key` and may refresh or clear the session cookie
+ * @mutates Hono context - sets `options.context_key` and may clear the session cookie
  */
 export const create_session_middleware = <TIdentity>(
 	keyring: Keyring,
@@ -92,8 +92,6 @@ export const create_session_middleware = <TIdentity>(
 
 		if (result.action === 'clear') {
 			clear_session_cookie(c, options);
-		} else if (result.action === 'refresh' && result.new_signed_value) {
-			set_session_cookie(c, result.new_signed_value, options);
 		}
 
 		await next();

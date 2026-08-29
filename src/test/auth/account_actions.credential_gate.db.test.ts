@@ -100,7 +100,11 @@ describe_db('credential_channel_gate', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_token_create_action_spec,
-				params: { name: 'bearer-attempt', scope: { kind: 'full' as const } },
+				params: {
+					name: 'bearer-attempt',
+					scope: { kind: 'full' as const },
+					lifetime: { kind: 'eternal' as const }
+				},
 				headers: test_app.create_bearer_headers(),
 				suppress_default_origin: true
 			});
@@ -238,7 +242,11 @@ describe_db('credential_channel_gate', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_token_create_action_spec,
-				params: { name: 'anonymous', scope: { kind: 'full' as const } }
+				params: {
+					name: 'anonymous',
+					scope: { kind: 'full' as const },
+					lifetime: { kind: 'eternal' as const }
+				}
 			});
 			assert.strictEqual(
 				res.ok,
@@ -320,7 +328,11 @@ describe_db('credential_channel_gate', (get_db) => {
 					app: test_app.app,
 					path: RPC_PATH,
 					spec: account_token_create_action_spec,
-					params: { name: 'bearer-attempt', scope: { kind: 'full' as const } },
+					params: {
+						name: 'bearer-attempt',
+						scope: { kind: 'full' as const },
+						lifetime: { kind: 'eternal' as const }
+					},
 					headers: test_app.create_bearer_headers(),
 					suppress_default_origin: true
 				}),
@@ -387,7 +399,11 @@ describe_db('credential_channel_gate', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_token_create_action_spec,
-				params: { name: 'session-allowed', scope: { kind: 'full' as const } },
+				params: {
+					name: 'session-allowed',
+					scope: { kind: 'full' as const },
+					lifetime: { kind: 'eternal' as const }
+				},
 				headers: test_app.create_session_headers()
 			});
 			assert.ok(res.ok, `account_token_create should succeed via session: ${JSON.stringify(res)}`);

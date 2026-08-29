@@ -20,7 +20,6 @@ import { get_route_input, type RouteSpec } from '../http/route_spec.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { rate_limit_exceeded_response, type RateLimiter } from '../rate_limiter.ts';
 import type { RouteFactoryDeps } from './deps.ts';
-import type { StatResult } from '../runtime/deps.ts';
 import { ERROR_ALREADY_BOOTSTRAPPED, ERROR_TOKEN_FILE_MISSING } from '../http/error_schemas.ts';
 
 /**
@@ -64,8 +63,10 @@ export interface BootstrapRouteOptions {
  * Dependencies for checking bootstrap status at startup.
  */
 export interface CheckBootstrapStatusDeps {
-	stat: (path: string) => Promise<StatResult | null>;
-	db: Db;
+	/** Hardened secret-file read — the same capability the request-time read uses. */
+	read_secure_file: (path: string) => Promise<Uint8Array>;
+	/** Only the single-row `bootstrap_lock` read — narrower than the full `Db`. */
+	db: Pick<Db, 'query_one'>;
 	log: Logger;
 }
 
@@ -74,8 +75,15 @@ export interface CheckBootstrapStatusDeps {
  *
  * Bootstrap is available when:
  * 1. A token path is configured
- * 2. The token file exists on disk
+ * 2. The token file passes the secure read (exists, not a symlink, mode
+ *    `0600`/`0400`, within the size cap)
  * 3. The `bootstrap_lock` table shows `bootstrapped = false`
+ *
+ * The probe **reads through the same `read_secure_file` the request-time
+ * read uses**, so "bootstrap is available" and "the token file can actually
+ * be read" can't drift apart — an availability check laxer than the read it
+ * gates is the misconfiguration that reports green at boot and fails at
+ * request time. Twin of the Rust spine's `is_bootstrap_available`.
  *
  * @param deps - filesystem and database access for the check
  * @param options - static configuration including `token_path`
@@ -85,16 +93,17 @@ export const check_bootstrap_status = async (
 	deps: CheckBootstrapStatusDeps,
 	options: { token_path: string | null }
 ): Promise<BootstrapStatus> => {
-	const { stat, db, log } = deps;
+	const { read_secure_file, db, log } = deps;
 	const { token_path } = options;
 
 	if (!token_path) {
 		return { available: false, token_path: null };
 	}
 
-	const token_stat = await stat(token_path);
-	if (token_stat === null) {
-		log.info('Bootstrap unavailable: token file not found');
+	try {
+		await read_secure_file(token_path);
+	} catch (err) {
+		log.info(`Bootstrap unavailable: ${to_error_message(err)}`);
 		return { available: false, token_path };
 	}
 
@@ -154,7 +163,7 @@ export const create_bootstrap_route_specs = (
 					{
 						db: route.db,
 						token_path,
-						read_text_file: deps.read_text_file,
+						read_secure_file: deps.read_secure_file,
 						delete_file: deps.delete_file,
 						password: deps.password,
 						log: deps.log

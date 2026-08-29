@@ -222,8 +222,7 @@ describe('account route audit logging', () => {
 					verify_password,
 					verify_dummy: vi.fn(() => Promise.resolve(false))
 				} as any,
-				stat: noop,
-				read_text_file: noop,
+				read_secure_file: noop,
 				delete_file: noop,
 				audit: audit_log_capture.emitter
 			},
@@ -390,8 +389,7 @@ describe('account route audit logging', () => {
 					verify_password: vi.fn(() => Promise.resolve(true)),
 					verify_dummy: vi.fn(() => Promise.resolve(false))
 				} as any,
-				stat: noop,
-				read_text_file: noop,
+				read_secure_file: noop,
 				delete_file: noop,
 				audit: audit_log_capture.emitter
 			},

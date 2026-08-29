@@ -37,6 +37,9 @@ import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
 import { BaseServerEnv } from '@fuzdev/fuz_app/server/env.ts';
 import { create_health_route_spec } from '@fuzdev/fuz_app/http/common_routes.ts';
 import { prefix_route_specs } from '@fuzdev/fuz_app/http/route_spec.ts';
+import { create_deno_runtime } from '@fuzdev/fuz_app/runtime/deno.ts';
+
+const runtime = create_deno_runtime([]);
 
 // 1. Init backend — PGlite file-based DB, auth migrations run automatically
 const keyring_result = create_validated_keyring(cookie_secret);
@@ -47,11 +50,8 @@ const backend = await create_app_backend({
 	keyring: keyring_result.keyring,
 	password: argon2_password_deps,
 	database_url: `file://${db_dir}`,
-	stat: async (p) => {
-		/* ... */
-	},
-	read_text_file: (p) => Deno.readTextFile(p),
-	delete_file: (p) => Deno.remove(p),
+	read_secure_file: runtime.read_secure_file, // hardened bootstrap-token read
+	delete_file: runtime.remove,
 	audit_factory: ({ db, log }) => create_audit_emitter({ db, log })
 });
 

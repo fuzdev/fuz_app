@@ -6,46 +6,77 @@
 
 import { describe, assert, test } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
+import process from 'node:process';
 
 import { write_file_atomic } from '$lib/runtime/fs.ts';
+import type { WriteFileOptions } from '$lib/runtime/deps.ts';
+
+interface RecordedWrite {
+	path: string;
+	content: string;
+	options: WriteFileOptions | undefined;
+}
+
+const create_recording_deps = (): {
+	writes: Array<RecordedWrite>;
+	renames: Array<[string, string]>;
+	removed: Array<string>;
+	deps: Parameters<typeof write_file_atomic>[0];
+} => {
+	const writes: Array<RecordedWrite> = [];
+	const renames: Array<[string, string]> = [];
+	const removed: Array<string> = [];
+	return {
+		writes,
+		renames,
+		removed,
+		deps: {
+			write_text_file: async (path, content, options) => {
+				writes.push({ path, content, options });
+			},
+			rename: async (old_path, new_path) => {
+				renames.push([old_path, new_path]);
+			},
+			remove: async (path) => {
+				removed.push(path);
+			}
+		}
+	};
+};
 
 describe('write_file_atomic', () => {
-	test('writes content via temp file then renames', async () => {
-		const calls: Array<{ method: string; args: Array<unknown> }> = [];
-
-		const deps = {
-			write_text_file: async (path: string, content: string) => {
-				calls.push({ method: 'write_text_file', args: [path, content] });
-			},
-			rename: async (old_path: string, new_path: string) => {
-				calls.push({ method: 'rename', args: [old_path, new_path] });
-			}
-		};
+	test('writes content via unique exclusive temp file then renames', async () => {
+		const { writes, renames, deps } = create_recording_deps();
 
 		await write_file_atomic(deps, '/data/config.json', '{"key":"value"}');
 
-		assert.strictEqual(calls.length, 2);
-		assert.strictEqual(calls[0]!.method, 'write_text_file');
-		assert.deepStrictEqual(calls[0]!.args, ['/data/config.json.tmp', '{"key":"value"}']);
-		assert.strictEqual(calls[1]!.method, 'rename');
-		assert.deepStrictEqual(calls[1]!.args, ['/data/config.json.tmp', '/data/config.json']);
+		assert.strictEqual(writes.length, 1);
+		const write = writes[0]!;
+		// unique name: `.{name}.tmp.{pid}.{counter}` in the same directory
+		assert.match(write.path, new RegExp(`^/data/\\.config\\.json\\.tmp\\.${process.pid}\\.\\d+$`));
+		assert.strictEqual(write.content, '{"key":"value"}');
+		// exclusive create is load-bearing: a fixed reused temp would be opened
+		// O_TRUNC and keep a stale (possibly permissive) mode
+		assert.strictEqual(write.options?.exclusive, true);
+		assert.deepStrictEqual(renames, [[write.path, '/data/config.json']]);
 	});
 
-	test('write_text_file is called before rename', async () => {
-		const order: Array<string> = [];
+	test('two writes to the same path use distinct temp names', async () => {
+		const { writes, deps } = create_recording_deps();
 
-		const deps = {
-			write_text_file: async () => {
-				order.push('write');
-			},
-			rename: async () => {
-				order.push('rename');
-			}
-		};
+		await write_file_atomic(deps, '/tmp/test', 'a');
+		await write_file_atomic(deps, '/tmp/test', 'b');
 
-		await write_file_atomic(deps, '/tmp/test', 'data');
+		assert.strictEqual(writes.length, 2);
+		assert.notStrictEqual(writes[0]!.path, writes[1]!.path);
+	});
 
-		assert.deepStrictEqual(order, ['write', 'rename']);
+	test('threads mode through to the temp-file creation', async () => {
+		const { writes, deps } = create_recording_deps();
+
+		await write_file_atomic(deps, '/tmp/secret', 'k', { mode: 0o600 });
+
+		assert.strictEqual(writes[0]!.options?.mode, 0o600);
 	});
 
 	test('does not rename if write_text_file fails', async () => {
@@ -65,29 +96,37 @@ describe('write_file_atomic', () => {
 		assert.strictEqual(renamed, false);
 	});
 
-	test('propagates rename errors', async () => {
-		const deps = {
-			write_text_file: async () => {},
-			rename: async () => {
-				throw new Error('permission denied');
-			}
-		};
-
-		await assert_rejects(() => write_file_atomic(deps, '/tmp/test', 'data'), /permission denied/);
-	});
-
-	test('uses .tmp suffix for temp path', async () => {
+	test('propagates rename errors and removes the stranded temp', async () => {
+		const removed: Array<string> = [];
 		let written_path = '';
-
 		const deps = {
 			write_text_file: async (path: string) => {
 				written_path = path;
 			},
-			rename: async () => {}
+			rename: async () => {
+				throw new Error('permission denied');
+			},
+			remove: async (path: string) => {
+				removed.push(path);
+			}
 		};
 
-		await write_file_atomic(deps, '/some/path/file.txt', 'content');
+		await assert_rejects(() => write_file_atomic(deps, '/tmp/test', 'data'), /permission denied/);
 
-		assert.strictEqual(written_path, '/some/path/file.txt.tmp');
+		assert.deepStrictEqual(removed, [written_path]);
+	});
+
+	test('cleanup is best-effort — a failing remove does not mask the write error', async () => {
+		const deps = {
+			write_text_file: async () => {
+				throw new Error('disk full');
+			},
+			rename: async () => {},
+			remove: async () => {
+				throw new Error('remove also failed');
+			}
+		};
+
+		await assert_rejects(() => write_file_atomic(deps, '/tmp/test', 'data'), /disk full/);
 	});
 });
