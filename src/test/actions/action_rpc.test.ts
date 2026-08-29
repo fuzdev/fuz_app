@@ -1004,6 +1004,38 @@ describe('GET dispatcher', () => {
 		const body = await res.json();
 		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params as number);
 	});
+
+	test('duplicated method and id query keys take the first occurrence, not the last', async () => {
+		const app = create_test_app([{ spec: create_get_spec(), handler: () => ({ items: [] }) }]);
+
+		// Hono's `c.req.query()` keeps the first value of a duplicated key.
+		// Pinned because the Rust twin's GET dispatch used to read the query
+		// into a HashMap whose insertion semantics kept the LAST occurrence —
+		// the same request dispatched a different method per backend.
+		const res = await app.request('/api/rpc?method=thing_list&method=thing_missing&id=1&id=2');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.id, 1);
+		assert.ok('result' in body, 'first-occurrence method should dispatch');
+	});
+
+	test('duplicated params query key takes the first occurrence', async () => {
+		const app = create_test_app([
+			{
+				spec: create_get_with_input_spec(),
+				handler: (input) => ({ results: [(input as { query: string }).query] })
+			}
+		]);
+
+		const first = encodeURIComponent(JSON.stringify({ query: 'first', limit: 1 }));
+		const second = encodeURIComponent(JSON.stringify({ query: 'second', limit: 1 }));
+		const res = await app.request(
+			`/api/rpc?method=thing_search&id=1&params=${first}&params=${second}`
+		);
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.deepStrictEqual(body.result.results, ['first']);
+	});
 });
 
 describe('RPC endpoint in app surface', () => {

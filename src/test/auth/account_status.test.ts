@@ -137,6 +137,38 @@ describe('account status unauthenticated', () => {
 	});
 });
 
+describe('account status query shape', () => {
+	// The status route declares NO query schema — the handler reads `acting`
+	// via Hono's `c.req.query()`, so unknown keys are invisible and a
+	// duplicated key reads as its first occurrence. Pinned because the Rust
+	// twin's derived-serde extractor used to answer a duplicated `acting`
+	// with axum's plain-text "duplicate field" 400 before auth ran — an
+	// anonymously observable backend fingerprint (this backend answers 401).
+	test('anonymous with a duplicated acting key → 401, never a query 400', async () => {
+		const spec = create_account_status_route_spec();
+		const app = create_test_app([spec]);
+		const res = await app.request('/status?acting=a&acting=b');
+		assert.strictEqual(res.status, 401);
+		const body = await res.json();
+		assert.strictEqual(body.error, 'authentication_required');
+	});
+
+	test('anonymous with unknown query keys → 401 (no strict schema, keys ignored)', async () => {
+		const spec = create_account_status_route_spec();
+		const app = create_test_app([spec]);
+		const res = await app.request('/status?foo=1&bar=2');
+		assert.strictEqual(res.status, 401);
+	});
+
+	test('authenticated with duplicated + unknown query keys → 200 (query never rejects)', async () => {
+		const spec = create_account_status_route_spec();
+		const ctx = create_test_ctx();
+		const app = create_test_app([spec], ctx);
+		const res = await app.request('/status?acting=a&acting=b&foo=1');
+		assert.strictEqual(res.status, 200);
+	});
+});
+
 describe('account status authenticated', () => {
 	test('returns account with client fields', async () => {
 		const spec = create_account_status_route_spec();

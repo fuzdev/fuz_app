@@ -209,7 +209,13 @@ idempotency, offer→accept-lands); seeds a `participant` (`grant_paths:
 in-process leg `conformance_participation.db.test.ts`), and
 `origin.cross.test.ts` (the imperative `describe_origin_cross_tests` — Origin
 allowlist: disallowed → 403 `forbidden_origin`, absent → pass; in-process leg
-`auth/origin_parity.db.test.ts`), and `ready.cross.test.ts` (the imperative
+`auth/origin_parity.db.test.ts`), and `query_shape.cross.test.ts` (the
+imperative `describe_query_shape_cross_tests` — duplicate-key / unknown-key /
+phase-order query semantics on the status route, the JSON-RPC GET endpoint,
+and the bare-hash fact route: first-occurrence-wins duplicates everywhere,
+strict-schema 400 `invalid_query_params` before the 401 guard on the fact
+route vs. ignored unknown keys on the schema-less status route; cross-only —
+the in-process TS pins live beside each module's own tests), and `ready.cross.test.ts` (the imperative
 `describe_ready_cross_tests` — the `/ready` schema-drift deploy gate: anonymous
 `GET /ready` → `200 {ready: true}` on a clean spine bootstrap, gated on
 `capabilities.ready`, both backends reading the same committed

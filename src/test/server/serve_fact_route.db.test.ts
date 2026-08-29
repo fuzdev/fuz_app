@@ -39,7 +39,7 @@ import { test, assert } from 'vitest';
 
 import { PgFactStore } from '$lib/db/fact_store.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
-import { ERROR_INVALID_ROUTE_PARAMS } from '$lib/http/error_schemas.ts';
+import { ERROR_INVALID_QUERY_PARAMS, ERROR_INVALID_ROUTE_PARAMS } from '$lib/http/error_schemas.ts';
 import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import type { TestApp } from '$lib/testing/app_server.ts';
 import { create_test_extra_actor, soft_delete_test_actor } from '$lib/testing/db_entities.ts';
@@ -210,6 +210,71 @@ describe_db('serve_fact_route', (get_db) => {
 		assert.strictEqual(as_admin.status, 200);
 		const back = new Uint8Array(await as_admin.arrayBuffer());
 		assert.deepEqual(back, bytes);
+	});
+
+	// Query-shape contract on the bare-hash route — its query schema is
+	// `z.strictObject({acting: ActingActor})`, validated in the pipeline's
+	// params → query → 401 → authz → 403 phase order over Hono's
+	// first-occurrence-wins `c.req.query()`. Pinned as the TS half of the
+	// cross-impl query-shape convergence (the Rust twin's derived-serde
+	// extractor used to silently ignore unknown keys and answer duplicated
+	// ones with axum's plain-text "duplicate field" 400).
+	test('bare-hash: unknown query key → 400 invalid_query_params, even anonymous', async () => {
+		const app = await create_cell_test_app(get_db);
+		const admin = await app.create_account({ username: 'qs_admin', roles: [ROLE_ADMIN] });
+		const hash = `blake3:${'a'.repeat(64)}`;
+
+		// Authenticated admin: the strict query schema refuses the unknown key.
+		const as_admin = await app.app.request(`/api/facts/${hash}?foo=1`, {
+			method: 'GET',
+			headers: { ...PUBLIC_HEADERS, ...admin.create_session_headers() }
+		});
+		assert.strictEqual(as_admin.status, 400);
+		const body = (await as_admin.json()) as { error?: string };
+		assert.strictEqual(body.error, ERROR_INVALID_QUERY_PARAMS);
+
+		// Anonymous: query validation precedes the 401 guard (phase order), so
+		// the same request without credentials is still a 400 — while a clean
+		// anonymous request is the 401 control.
+		const anon_bad = await app.app.request(`/api/facts/${hash}?foo=1`, {
+			method: 'GET',
+			headers: PUBLIC_HEADERS
+		});
+		assert.strictEqual(anon_bad.status, 400);
+		const anon_clean = await app.app.request(`/api/facts/${hash}`, {
+			method: 'GET',
+			headers: PUBLIC_HEADERS
+		});
+		assert.strictEqual(anon_clean.status, 401);
+	});
+
+	test('bare-hash: duplicated acting keys take the first occurrence, not a 400', async () => {
+		const app = await create_cell_test_app(get_db);
+		const admin = await app.create_account({ username: 'qs_dup_admin', roles: [ROLE_ADMIN] });
+		const bytes = encode('query-shape bytes');
+		const hash = await put_embedded(bytes, 'text/plain');
+
+		// First occurrence is the admin's real actor; the second is garbage.
+		// Hono keeps the first, so the request succeeds — last-wins (or a
+		// derived-serde duplicate-field reject) would 400 instead.
+		const res = await app.app.request(
+			`/api/facts/${hash}?acting=${admin.actor.id}&acting=not-a-uuid`,
+			{ method: 'GET', headers: { ...PUBLIC_HEADERS, ...admin.create_session_headers() } }
+		);
+		assert.strictEqual(res.status, 200);
+	});
+
+	test('bare-hash: malformed acting value → 400 invalid_query_params', async () => {
+		const app = await create_cell_test_app(get_db);
+		const admin = await app.create_account({ username: 'qs_bad_admin', roles: [ROLE_ADMIN] });
+		const hash = `blake3:${'a'.repeat(64)}`;
+		const res = await app.app.request(`/api/facts/${hash}?acting=not-a-uuid`, {
+			method: 'GET',
+			headers: { ...PUBLIC_HEADERS, ...admin.create_session_headers() }
+		});
+		assert.strictEqual(res.status, 400);
+		const body = (await res.json()) as { error?: string };
+		assert.strictEqual(body.error, ERROR_INVALID_QUERY_PARAMS);
 	});
 
 	// The headline security property: global content-dedup must not defeat A's

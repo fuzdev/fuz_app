@@ -1397,6 +1397,27 @@ in-process `auth/origin_parity.db.test.ts` + the cross-process
 Rust spine returned a plain-text body — now converged to the canonical TS
 `{error: "forbidden_origin"}` via `fuz_http::forbidden_origin_response()`.
 
+### Query-string shape parity — `cross_backend/query_shape.ts`
+
+`describe_query_shape_cross_tests({setup_test, capabilities, rpc_path?})` —
+the imperative duplicate-key / unknown-key / phase-order query-semantics
+suite over the three spine surfaces that read a query:
+`GET /api/account/status` (no query schema — duplicated `acting` first-wins,
+unknown keys ignored, anonymous junk query → 401 never a query 400), the
+JSON-RPC GET endpoint (`method` / `id` / `params` first-wins — a last-wins
+reader dispatches a different method per backend on the same request), and
+`GET /api/facts/:hash` (gated on `capabilities.fact_serving`; strict schema —
+unknown key / malformed `acting` → 400 `invalid_query_params` **before** the
+401 guard, duplicated `acting` first-wins). Imperative because duplicated
+query keys can't be expressed through the structured RPC helpers. Pinned
+after the Rust spine's derived-serde `Query` extractors were converged onto
+`fuz_http`'s `query_first` / `assert_known_query_keys` (a pre-handler
+"duplicate field" 400 is an anonymously observable backend fingerprint).
+Cross-process only — the per-surface in-process TS pins live beside each
+module's own tests (`account_status.test.ts`, `action_rpc.test.ts`,
+`serve_fact_route.db.test.ts`); fuz_app's own wiring is
+`cross_backend/query_shape.cross.test.ts`.
+
 ### Readiness probe parity — `cross_backend/ready.ts`
 
 `describe_ready_cross_tests({setup_test, capabilities, ready_path?})` — the

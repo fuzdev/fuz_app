@@ -217,7 +217,7 @@ ones. Matches the Rust spine, which validates handler-side.
 
 Shim responsibilities (per-request):
 
-1. Parse envelope (POST body / GET query string); parse errors → `parse_error` 400.
+1. Parse envelope (POST body / GET query string); parse errors → `parse_error` 400. GET reads `method` / `id` / `params` via Hono's `c.req.query()` — first occurrence wins on a duplicated key, unknown keys are ignored, and an empty value counts as missing. This is the cross-impl contract (the Rust GET dispatch mirrors it via `fuz_http`'s `query_first`, including the id numeric-vs-string normalization), pinned by the `query_shape` cross suite.
 2. Lookup method in the `compile_action_registry`-built map; unknown → `method_not_found`.
 3. GET read restriction — GET rejected for `side_effects: true` actions.
 4. Build `PerformActionInput` from `c.var` + `get_client_ip` + `c.req.raw.signal`. Test-preset escape hatch reads `TEST_CONTEXT_PRESET_KEY` + `REQUEST_CONTEXT_KEY`.
