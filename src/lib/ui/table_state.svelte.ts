@@ -45,10 +45,11 @@ import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import { AsyncSlot } from './async_slot.svelte.ts';
 import { parse_response_error, ui_fetch } from './ui_fetch.ts';
 import { format_value } from './ui_format.ts';
-import type { ColumnInfo } from '../http/db_routes.ts';
-
-/** Maximum number of rows that can be fetched in a single page. */
-export const TABLE_LIMIT_MAX = 1000;
+import {
+	DB_TABLE_ROWS_DEFAULT_LIMIT,
+	DB_TABLE_ROWS_LIMIT_MAX,
+	type ColumnInfo
+} from '../http/db_routes.ts';
 
 export class TableState {
 	readonly list = new AsyncSlot<void>();
@@ -58,7 +59,7 @@ export class TableState {
 	rows: Array<Record<string, unknown>> = $state.raw([]);
 	total = $state.raw(0);
 	offset = $state.raw(0);
-	limit = $state.raw(100);
+	limit = $state.raw(DB_TABLE_ROWS_DEFAULT_LIMIT);
 	primary_key: string | null = $state.raw(null);
 	/**
 	 * Whether the server will accept a row `DELETE` on this table. False for a
@@ -85,14 +86,16 @@ export class TableState {
 
 	/**
 	 * Fetch a page of rows for `table_name` from `GET /api/db/tables/{table_name}`.
-	 * `limit` is clamped to `[1, TABLE_LIMIT_MAX]`.
+	 * `limit` is clamped to `[1, DB_TABLE_ROWS_LIMIT_MAX]` — the same bounds
+	 * the route 400s on, single-sourced so the client guard can't drift into
+	 * sending a request the server refuses.
 	 *
 	 * @mutates `this`
 	 */
 	async fetch(table_name: string, offset = 0, limit = 100): Promise<void> {
 		this.table_name = table_name;
 		this.offset = offset;
-		this.limit = Math.max(1, Math.min(TABLE_LIMIT_MAX, limit));
+		this.limit = Math.max(1, Math.min(DB_TABLE_ROWS_LIMIT_MAX, limit));
 		await this.list.run(async () => {
 			const response = await ui_fetch(
 				`/api/db/tables/${table_name}?offset=${this.offset}&limit=${this.limit}`

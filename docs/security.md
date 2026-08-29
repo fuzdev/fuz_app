@@ -224,10 +224,11 @@ the bare-hash fact read (`GET /api/facts/:hash`), the audit SSE stream
 (`GET /audit/stream`), and the WebSocket upgrade. This is the load-bearing
 half of the design, and it is strictly more restrictive than naming each
 surface. A method-name allowlist alone would have been a false promise — the
-db-admin browser serves paginated rows of any `public` table (including
-`account.password_hash`, `auth_session`, `api_token`) plus row `DELETE`,
-gated on a global role a bearer satisfies, so a token whose UI badge read
-"scoped to `cell_get`" could still delete an account row.
+db-admin browser serves paginated rows of every browsable table plus row
+`DELETE` (the credential tables sit behind `NON_BROWSABLE_TABLES` now, but
+browsable rows can still carry secrets in data columns, and could be gated on
+a global role a bearer satisfies), so a token whose UI badge read "scoped to
+`cell_get`" could still bulk-read and delete browsable rows.
 
 Enforcement sits at two kinds of site, both ahead of the role gate:
 
@@ -277,8 +278,8 @@ second case is the sharper one, and `http/db_routes.ts` is the live example:
 the shipped table browser needs no surface gate because
 `credential_types: ['daemon_token']` already excludes every bearer, but a
 consumer that re-auths it to a role a bearer satisfies loses both controls at
-once and puts every `public` row — password hashes, sessions, tokens — behind
-a scoped credential.
+once and puts every browsable row — the credential tables are floored, but
+data columns still carry consumer secrets — behind a scoped credential.
 
 Declaring the capability is the whole of it — you get the refusal, in the right
 position (ahead of the role gate, so a narrowed token hears about its scope
@@ -1328,7 +1329,13 @@ single-column primary key, so the keeper-gated browser would otherwise delete a
 trail row and report success. It is the sharpest of the four excluded tables
 because it is both the trail and part of how revocation propagates — the SSE and
 WS auth guards close live streams by listening to audit events, so a raw row
-delete would be invisible to them. Direct DB access remains out of scope.
+delete would be invisible to them. The read side is gated the same way: the
+browser exposes only the consumer's declared `browsable_tables`, minus the
+`NON_BROWSABLE_TABLES` credential floor (`account`, `auth_session`,
+`api_token`, `bootstrap_lock`) — `account` matters most, since the browser
+would otherwise be the one surface returning the password-hash corpus in bulk.
+Unlisted tables answer exactly like nonexistent ones. Direct DB access remains
+out of scope.
 Each event records an `outcome` (`success` or `failure`), so login/bootstrap/password
 change failures are tracked without needing separate event types.
 

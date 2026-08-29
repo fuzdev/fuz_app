@@ -53,7 +53,7 @@ describe('flush_post_commit_effects', () => {
 		const { log, errors } = create_recording_logger();
 		const post_commit_effects: Array<() => void | Promise<void>> = [];
 		const boom = new Error('boom');
-		emit_after_commit({ log, post_commit_effects }, () => {
+		emit_after_commit({ post_commit_effects }, () => {
 			throw boom;
 		});
 		// `flush_post_commit_effects` is non-throwing — `await` directly
@@ -71,14 +71,14 @@ describe('flush_post_commit_effects', () => {
 		const post_commit_effects: Array<() => void | Promise<void>> = [];
 		const seen: Array<string> = [];
 
-		emit_after_commit({ log, post_commit_effects }, () => {
+		emit_after_commit({ post_commit_effects }, () => {
 			seen.push('first');
 			throw new Error('first failed');
 		});
-		emit_after_commit({ log, post_commit_effects }, () => {
+		emit_after_commit({ post_commit_effects }, () => {
 			seen.push('second');
 		});
-		emit_after_commit({ log, post_commit_effects }, () => {
+		emit_after_commit({ post_commit_effects }, () => {
 			seen.push('third');
 			throw new Error('third failed');
 		});
@@ -91,7 +91,7 @@ describe('flush_post_commit_effects', () => {
 		const { log, errors } = create_recording_logger();
 		const post_commit_effects: Array<() => void | Promise<void>> = [];
 		let ran = false;
-		emit_after_commit({ log, post_commit_effects }, () => {
+		emit_after_commit({ post_commit_effects }, () => {
 			ran = true;
 		});
 		await flush_post_commit_effects(post_commit_effects, log);
@@ -103,7 +103,7 @@ describe('flush_post_commit_effects', () => {
 		const { log, errors } = create_recording_logger();
 		const post_commit_effects: Array<() => void | Promise<void>> = [];
 		const boom = new Error('async boom');
-		emit_after_commit({ log, post_commit_effects }, async () => {
+		emit_after_commit({ post_commit_effects }, async () => {
 			throw boom;
 		});
 		await flush_post_commit_effects(post_commit_effects, log);
@@ -148,7 +148,7 @@ describe('emit_after_commit ordering', () => {
 		};
 
 		await fake_transaction(async () => {
-			emit_after_commit({ log, post_commit_effects }, () => {
+			emit_after_commit({ post_commit_effects }, () => {
 				events.push('fn_ran');
 			});
 			return { ok: true };
@@ -169,7 +169,6 @@ describe('emit_after_commit ordering', () => {
 
 describe('dispatch_with_post_commit_rollback', () => {
 	test('on throw, truncates to the pre-dispatch depth (pre-seeded survives) and re-throws the same error', async () => {
-		const { log } = create_recording_logger();
 		const pre_seeded = (): void => {};
 		const post_commit_effects: Array<() => void | Promise<void>> = [pre_seeded];
 		const boom = new Error('handler boom');
@@ -178,8 +177,8 @@ describe('dispatch_with_post_commit_rollback', () => {
 			() =>
 				dispatch_with_post_commit_rollback(post_commit_effects, () => {
 					// The "handler" queues two deferred effects, then rolls back.
-					emit_after_commit({ log, post_commit_effects }, () => {});
-					emit_after_commit({ log, post_commit_effects }, () => {});
+					emit_after_commit({ post_commit_effects }, () => {});
+					emit_after_commit({ post_commit_effects }, () => {});
 					throw boom;
 				}),
 			/handler boom/
@@ -194,12 +193,11 @@ describe('dispatch_with_post_commit_rollback', () => {
 	});
 
 	test('on success, returns the dispatch result and leaves queued effects for the flush to drain', async () => {
-		const { log } = create_recording_logger();
 		const post_commit_effects: Array<() => void | Promise<void>> = [];
 
 		const result = await dispatch_with_post_commit_rollback(post_commit_effects, () => {
-			emit_after_commit({ log, post_commit_effects }, () => {});
-			emit_after_commit({ log, post_commit_effects }, () => {});
+			emit_after_commit({ post_commit_effects }, () => {});
+			emit_after_commit({ post_commit_effects }, () => {});
 			return { ok: true } as const;
 		});
 

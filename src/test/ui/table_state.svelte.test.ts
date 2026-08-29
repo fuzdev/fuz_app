@@ -8,7 +8,8 @@
 
 import { describe, test, assert, vi, beforeEach, afterEach } from 'vitest';
 
-import { TableState, TABLE_LIMIT_MAX } from '$lib/ui/table_state.svelte.ts';
+import { TableState } from '$lib/ui/table_state.svelte.ts';
+import { DB_TABLE_ROWS_LIMIT_MAX } from '$lib/http/db_routes.ts';
 
 const json_response = (body: unknown, status = 200): Response =>
 	new Response(JSON.stringify(body), {
@@ -69,13 +70,13 @@ describe('TableState.fetch', () => {
 		assert.ok(url.includes('limit=25'));
 	});
 
-	test('clamps limit to TABLE_LIMIT_MAX', async () => {
+	test('clamps limit to DB_TABLE_ROWS_LIMIT_MAX', async () => {
 		fetch_mock.mockResolvedValueOnce(json_response({ columns: [], rows: [], total: 0 }));
 
 		const state = new TableState();
-		await state.fetch('accounts', 0, TABLE_LIMIT_MAX + 1000);
+		await state.fetch('accounts', 0, DB_TABLE_ROWS_LIMIT_MAX + 1000);
 
-		assert.strictEqual(state.limit, TABLE_LIMIT_MAX);
+		assert.strictEqual(state.limit, DB_TABLE_ROWS_LIMIT_MAX);
 	});
 
 	test('clamps limit minimum to 1', async () => {

@@ -55,14 +55,21 @@ Route spec factories for common patterns: `create_account_route_specs()`,
 `load_expected_schema()`), `create_server_status_route_spec()`,
 `create_account_status_route_spec()`, `create_db_route_specs()`.
 
-`create_db_route_specs(deps, {db_type, db_name, extra_stats?, log?, non_deletable_tables?})`
-mounts the generic keeper-only table browser (`deps` needs `audit` — `ctx.deps`
+`create_db_route_specs(deps, {db_type, db_name, browsable_tables, extra_stats?, log?, non_deletable_tables?})`
+mounts the keeper-only table browser (`deps` needs `audit` — `ctx.deps`
 satisfies it; every successful row delete emits a `db_admin_row_delete` audit
-event recording `{table, pk_column, id}`). `non_deletable_tables` names consumer
-tables whose rows the row-`DELETE` must refuse (`400 table_not_deletable`); it is
-unioned with the builtin `NON_DELETABLE_TABLES` (`audit_log`, `bootstrap_lock`,
-`app_settings`, `schema_version`) and never replaces it. Reach for it for any table
-whose invariants live in your domain layer rather than in a generic storage endpoint.
+event recording `{table, pk_column, id}`). `browsable_tables` is the required
+allowlist gating the whole surface — table list, detail, and row-`DELETE`; an
+unlisted table 404s exactly like one that doesn't exist, and the credential
+floor (`NON_BROWSABLE_TABLES`: `account`, `auth_session`, `api_token`,
+`bootstrap_lock`) is subtracted even when named. Reads are bounded — a
+`statement_timeout` (`DB_ADMIN_STATEMENT_TIMEOUT_MS`) wraps the browse/delete
+transactions, and bytea / bytea[] values come back as `<N bytes>` placeholders.
+`non_deletable_tables` names consumer tables whose rows the row-`DELETE` must
+refuse (`400 table_not_deletable`); it is unioned with the builtin
+`NON_DELETABLE_TABLES` (`audit_log`, `bootstrap_lock`, `app_settings`,
+`schema_version`) and never replaces it — reach for it for any table whose
+invariants live in your domain layer rather than in a generic storage endpoint.
 Admin account listing, session listing, session/token revoke-all,
 audit-log reads, invite CRUD, and app-settings get/update are RPC-only —
 pass them via `create_app_server`'s `rpc_endpoints` option (see "Server

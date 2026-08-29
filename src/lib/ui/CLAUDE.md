@@ -244,7 +244,8 @@ destructive actions.
 - `table_state.svelte.ts` — `TableState`. Paginated DB browser state.
   Holds one `AsyncSlot` (`list`) + payload fields (`table_name`,
   `columns`, `rows`, `total`, `offset`, `limit` capped by
-  `TABLE_LIMIT_MAX = 1000`, `primary_key`, `deletable`). Derived
+  `http/db_routes.ts`'s `DB_TABLE_ROWS_LIMIT_MAX`, `primary_key`,
+  `deletable`). Derived
   `showing_start`/`showing_end`/`has_prev`/`has_next`, plus
   `can_delete` (`deletable && primary_key !== null`) — gate the
   delete affordance on that, not on `primary_key`, or a
@@ -424,4 +425,5 @@ format_scope, global_label)` helper — `global_label = null` renders no
   - `format_value(value)` — table-cell stringifier (NULL / undefined /
     JSON / primitive).
   - `format_audit_metadata(event_type, metadata)` — event-type-
-    specific metadata summary (switch across every `AuditEventType`).
+    specific metadata summary (bespoke cases for the common event types,
+    JSON-stringified fallback for the rest).

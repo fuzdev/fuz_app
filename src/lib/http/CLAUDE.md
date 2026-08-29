@@ -29,7 +29,7 @@ effects, see ../../../docs/architecture.md.
 - `http/jsonrpc_errors.ts` — `ThrownJsonrpcError`, `jsonrpc_errors` throwers, HTTP-status mappings.
 - `http/jsonrpc_helpers.ts` — message builders, type guards, input/result normalizers.
 - `http/common_routes.ts` — health check + readiness probe (`/ready` schema-drift deploy gate) + authenticated server-status + surface route specs.
-- `http/db_routes.ts` — generic keeper-only table browser route specs (public schema).
+- `http/db_routes.ts` — allowlist-gated keeper-only table browser route specs (`public` schema, minus the `NON_BROWSABLE_TABLES` credential floor).
 - `http/pending_effects.ts` — `emit_after_commit` + `dispatch_with_post_commit_rollback` (the shared rollback-discard wrapper both dispatch sites use) + `flush_pending_effects` + `flush_post_commit_effects` + `EmitAfterCommitContext`.
 
 ## Route Spec System
@@ -485,24 +485,36 @@ auth-domain dependencies:
 Auth-aware variants (account status, bootstrap status) live in `auth/` —
 `http/common_routes.ts` stays generic.
 
-## DB Routes (Generic Browser)
+## DB Routes (Allowlisted Browser)
 
 `http/db_routes.ts` creates keeper-only route specs for administering the
 `public` schema via `information_schema`. Wired by consumers that want a
-generic table browser; the factory is domain-agnostic.
+table browser; the factory is domain-agnostic.
 
-`create_db_route_specs(deps, {db_type, db_name, extra_stats?, log?, non_deletable_tables?})` —
+`create_db_route_specs(deps, {db_type, db_name, browsable_tables, extra_stats?, log?, non_deletable_tables?})` —
 `deps` is `DbRouteDeps`, a structural `audit` slice of `AppDeps` declared in
 `http/db_routes.ts` so this directory stays auth-free (`ctx.deps` satisfies it):
 
-- `GET /health` — connected probe + table count + optional `extra_stats(db)`. Returns `{connected: false}` at 503 on failure
-- `GET /tables` — list public tables with row counts
-- `GET /tables/:name` — columns + rows (paginated via `?offset`/`?limit`, limit clamped to `[1, 1000]` with default 100) + total count + `primary_key` (the single PK column, or `null` when the table has none or a composite one) + `deletable` (whether the row-`DELETE` will accept this table at all — see below)
-- `DELETE /tables/:name/rows/:id` — delete by PK. Returns 400 if the table is excluded by policy (`ERROR_TABLE_NOT_DELETABLE`) or has no single-column PK (`ERROR_TABLE_NO_PRIMARY_KEY`), 404 if row missing (`ERROR_ROW_NOT_FOUND`) or table missing (`ERROR_TABLE_NOT_FOUND`), 409 on FK violation (pg error code `23503`)
+- `GET /health` — connected probe + table count (schema-wide by design — a did-migrations-run diagnostic) + optional `extra_stats(db)`. Returns `{connected: false}` at 503 on failure
+- `GET /tables` — list browsable tables with row counts
+- `GET /tables/:name` — columns + rows (paginated via `?offset`/`?limit`, limit validated to `[1, 1000]` with default 100; bytea values come back as `<N bytes>` placeholders, NULL stays NULL, column metadata untouched) + total count + `primary_key` (the single PK column, or `null` when the table has none or a composite one) + `deletable` (whether the row-`DELETE` will accept this table at all — see below)
+- `DELETE /tables/:name/rows/:id` — delete by PK, compared as `"<pk>"::text = $1` (twinning the Rust spine — a mistyped id is a clean 404, not a PG cast error). Returns 400 if the table is excluded by policy (`ERROR_TABLE_NOT_DELETABLE`) or has no single-column PK (`ERROR_TABLE_NO_PRIMARY_KEY`), 404 if row missing (`ERROR_ROW_NOT_FOUND`) or table missing/unbrowsable (`ERROR_TABLE_NOT_FOUND`), 409 on FK violation (pg error code `23503`)
+
+**The allowlist gates everything.** `DbRouteOptions.browsable_tables` is
+required with no "all" escape hatch — the table list shows only listed tables,
+and detail/`DELETE` on an unlisted table answer exactly like a table that
+doesn't exist (404 `ERROR_TABLE_NOT_FOUND`, byte-identical masking). The
+credential floor `NON_BROWSABLE_TABLES` (`account` — the argon2 hash corpus,
+`auth_session` / `api_token` — credential digests, `bootstrap_lock`) is
+subtracted from the allowlist even when a consumer names those tables. The
+browse/delete transactions run under `SET LOCAL statement_timeout`
+(`DB_ADMIN_STATEMENT_TIMEOUT_MS`) so no single statement outlives the bound
+(per statement, not per request — the table listing's per-table `COUNT(*)`
+loop can still take several in sequence).
 
 **Single-column primary keys only.** The `DELETE` filters on one column
-(`WHERE "<pk>" = $1`), which is correct only when the primary key _is_ that one
-column. `query_primary_key_columns` returns every PK column in
+(`WHERE "<pk>"::text = $1`), which is correct only when the primary key _is_
+that one column. `query_primary_key_columns` returns every PK column in
 `ordinal_position` order, and the route proceeds only at length exactly 1 — a
 composite key (a single-column filter would match every row sharing that
 column's value and silently over-delete) and an absent key both refuse with 400
@@ -531,11 +543,13 @@ instead of discovering the refusal — `ui/table_state.svelte.ts` gates on
 `can_delete`. `primary_key` stays a truthful report of the key shape; a policy
 exclusion must not masquerade as one.
 
-**Every successful row delete is audited.** The `DELETE` handler emits
-`db_admin_row_delete` through `deps.audit` (pool-routed, so the row survives a
-later rollback) — account-grain attribution (the browser's gate is
-account-grain, so no actor is claimed), metadata `{table, pk_column, id}`.
-Refusals emit nothing. The completeness gate covers the event via the
+**Every successful row delete is audited.** The `DELETE` handler defers a
+`deps.audit` emit through `emit_after_commit`, so the pool-routed row lands
+iff the delete's transaction commits — the success-only trail can't claim a
+delete that failed at COMMIT (the Rust twin commits before emitting for the
+same reason). Account-grain attribution (the browser's gate is account-grain,
+so no actor is claimed), metadata `{table, pk_column, id}`. Refusals emit
+nothing. The completeness gate covers the event via the
 `db_routes.db.test.ts` emission tests (excluded-with-justification in
 `testing/audit_completeness.ts`). Twinned by `fuz_db_admin`'s emission on the
 Rust spine.
@@ -545,18 +559,22 @@ Param schemas use `VALID_SQL_IDENTIFIER` regex, and every table name gets
 `assert_valid_sql_identifier()` before string-interpolating into SQL —
 the identifier validation is the only reason the interpolation is safe.
 
-**Do not widen the auth on these specs.** They serve paginated rows of any
-`public` table — `account.password_hash`, `auth_session`, `api_token` — plus
-row `DELETE`. `credential_types: ['daemon_token']` is what keeps every bearer
-credential out, and it's why the specs need no `auth.required_scope`: a daemon
-token resolves to `full` by construction, so no narrowed token can reach them
-(see ../../../docs/security.md §Token scoping). Re-auth them to a role a bearer
+**Do not widen the auth on these specs.** They serve paginated rows of every
+browsable table plus row `DELETE` — the credential tables sit behind the
+`NON_BROWSABLE_TABLES` floor, but browsable rows can still carry secrets in
+data columns (a consumer's `cell.data` is the live example).
+`credential_types: ['daemon_token']` is what keeps every bearer credential
+out, and it's why the specs need no `auth.required_scope`: a daemon token
+resolves to `full` by construction, so no narrowed token can reach them (see
+../../../docs/security.md §Token scoping). Re-auth them to a role a bearer
 satisfies and both controls are gone at once — the token's scope stops
 applying and the credential gate stops firing. A consumer that does this owns
 the surface census for it.
 
 Interfaces exported for consumer use: `TableInfo`, `TableWithCount`,
-`PrimaryKeyInfo`, `ColumnInfo`, `DbRouteOptions`, `NON_DELETABLE_TABLES`.
+`PrimaryKeyInfo`, `ColumnInfo`, `DbRouteDeps`, `DbRouteOptions`,
+`NON_DELETABLE_TABLES`, `NON_BROWSABLE_TABLES`, `DB_TABLE_ROWS_DEFAULT_LIMIT`,
+`DB_TABLE_ROWS_LIMIT_MAX`, `DB_ADMIN_STATEMENT_TIMEOUT_MS`.
 
 ## Cross-Module Notes
 

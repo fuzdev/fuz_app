@@ -43,12 +43,12 @@
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 /**
- * Minimal structural context required by `emit_after_commit`. Both
- * `RouteContext` and `ActionContext` satisfy this — they each carry
- * `log` and `post_commit_effects`.
+ * Minimal structural context required by `emit_after_commit` — just the
+ * deferred queue. Both `RouteContext` and `ActionContext` satisfy this.
+ * (No `log` here: the flush middleware owns the per-thunk `try/catch` +
+ * `log.error`, with a logger of its own.)
  */
 export interface EmitAfterCommitContext {
-	log: Logger;
 	post_commit_effects: Array<() => void | Promise<void>>;
 }
 
@@ -74,7 +74,7 @@ export interface EmitAfterCommitContext {
  * land even when the handler fails) belong on the eager `pending_effects` queue
  * instead.
  *
- * @param ctx - context carrying `log` and the `post_commit_effects` queue
+ * @param ctx - context carrying the `post_commit_effects` queue
  * @param fn - side effect to run after commit; may return `void` or `Promise<void>`
  * @mutates `ctx.post_commit_effects` - appends `fn` verbatim
  */

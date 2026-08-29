@@ -238,8 +238,8 @@ const NON_SURFACE_SITES: ReadonlyArray<string> = [
  * for the compile-time check.
  *
  * `db_admin` is `null`, but **not** because the spine ships no table browser —
- * `http/db_routes.ts` is exactly that, a generic browser over the `public`
- * schema with row `DELETE`. It needs no `required_scope` because its shipped
+ * `http/db_routes.ts` is exactly that, an allowlist-gated browser over the
+ * `public` schema with row `DELETE`. It needs no `required_scope` because its shipped
  * auth is `credential_types: ['daemon_token']`, and a daemon token resolves to
  * `full` by construction: no narrowed credential can reach it, and the
  * credential gate — which now runs ahead of the scope guard — answers first
@@ -250,8 +250,9 @@ const NON_SURFACE_SITES: ReadonlyArray<string> = [
  * **The hazard that reasoning rests on is the consumer's auth, not ours.** A
  * consumer mounting `create_db_route_specs` under a widened `auth` — dropping
  * the credential gate, or swapping keeper for an admin role a bearer
- * satisfies — puts every `public` row behind a credential this census no
- * longer describes. That exact rewrite is how the capability string came to
+ * satisfies — puts every browsable row (the credential tables are floored,
+ * but data columns still carry consumer secrets) behind a credential this
+ * census no longer describes. That exact rewrite is how the capability string came to
  * exist. A consumer carries its own census; the spine cannot see its surfaces,
  * and cannot see its own surfaces re-authed. See `docs/security.md`
  * §Token scoping.

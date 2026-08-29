@@ -23,7 +23,6 @@
 
 import { test, assert } from 'vitest';
 import { z } from 'zod';
-import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_session_config } from '$lib/auth/session_cookie.ts';
 import { create_test_app } from '$lib/testing/app_server.ts';
@@ -43,7 +42,6 @@ import type { AppServerContext } from '$lib/server/app_server_context.ts';
 import type { Db } from '$lib/db/db.ts';
 
 const session_options = create_session_config('test_session');
-const log = new Logger('rollback_probe_test', { level: 'off' });
 const RPC_PATH = '/api/rpc';
 const REST_PATH = '/test/rollback_probe';
 
@@ -113,7 +111,7 @@ const setup = async (get_db: () => Db) => {
 					})
 				);
 				// Deferred: post-commit thunk — must be discarded on rollback.
-				emit_after_commit({ log, post_commit_effects: route.post_commit_effects }, () => {
+				emit_after_commit({ post_commit_effects: route.post_commit_effects }, () => {
 					rest_sinks.deferred.push(token);
 				});
 				if (fail) throw new Error('intentional REST probe failure (rollback)');

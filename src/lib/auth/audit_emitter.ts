@@ -58,12 +58,16 @@ import {
  * `pending_effects` queue. The bound emitter carries its own `log`
  * reference inside the closure, so per-call contexts don't need one.
  *
- * Audit emits are eager-only by design: the bound emitter fires the
+ * Audit emits are eager by default: the bound emitter fires the
  * pool write immediately and pushes the in-flight `Promise<void>` here.
- * They never go through `emit_after_commit` — pool-routed audit writes
- * are already rollback-resilient because they run outside the request
- * transaction, so the post-commit timing the deferred queue provides
- * would only delay forensic visibility without any safety benefit.
+ * Attempt/failure audits never go through `emit_after_commit` —
+ * pool-routed writes are already rollback-resilient because they run
+ * outside the request transaction, so deferring them would only delay
+ * forensic visibility without any safety benefit. The exception is a
+ * **success-only** event paired with a state mutation (the
+ * `db_admin_row_delete` emit in `http/db_routes.ts`): there the caller
+ * wraps the emit in `emit_after_commit` so the trail can't claim a
+ * mutation whose transaction failed at COMMIT.
  *
  * Both `RouteContext` and `ActionContext` structurally satisfy this
  * shape (they each carry `pending_effects`), so handlers pass `route`

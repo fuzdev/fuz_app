@@ -444,8 +444,9 @@ returns — eliminates polling workarounds in tests. In production, the optional
 request context (`method`, `path`) — use for monitoring, metrics, or alerting.
 
 For work that must run **only after the transaction commits** (WS fan-out:
-role_grant offer / revoke notifications), use `emit_after_commit(ctx, fn)` from
-`http/pending_effects.js`. It pushes a deferred _thunk_ onto a separate
+role_grant offer / revoke notifications; the success-only `db_admin_row_delete`
+audit emit, which must never claim a delete that failed at COMMIT), use
+`emit_after_commit(ctx, fn)` from `http/pending_effects.ts`. It pushes a deferred _thunk_ onto a separate
 `post_commit_effects` queue (distinct from the eager `pending_effects` promise
 queue above). The contract is two-sided: the thunk runs at flush time (after
 the wrapping `db.transaction` resolves, never mid-transaction), **and it is
@@ -457,7 +458,7 @@ fires a notification for state that never committed. Reach for the eager
 `pending_effects` queue instead when a write must survive rollback (attempt
 audits). The flush wraps each thunk in a caught-and-logged `try`/`catch`, so one
 failing send can't starve siblings or corrupt the committed response. `ctx` is
-any `{log, post_commit_effects}` shape — shared by `ActionContext` (RPC + WS)
+any `{post_commit_effects}` shape — shared by `ActionContext` (RPC + WS)
 and `RouteContext` (HTTP) handlers. The Rust `fuz_actions` spine pins the same
 discard-on-rollback contract. Note that
 WS sends via `NotificationSender.send_to_account` are NOT

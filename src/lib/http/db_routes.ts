@@ -1,8 +1,10 @@
 /**
  * API route specs for database administration.
  *
- * Generic PostgreSQL table browser using `information_schema`.
- * Provides: list tables, view columns/rows (paginated), delete rows by PK
+ * Allowlist-gated PostgreSQL table browser using `information_schema` —
+ * consumers declare `browsable_tables` and the credential floor
+ * (`NON_BROWSABLE_TABLES`) is always subtracted. Provides: list tables, view
+ * columns/rows (paginated, bytea values placeholdered), delete rows by PK
  * (audited as `db_admin_row_delete`), health check.
  *
  * @module
@@ -27,6 +29,7 @@ import {
 } from './error_schemas.ts';
 import { assert_valid_sql_identifier, VALID_SQL_IDENTIFIER } from '../db/sql_identifier.ts';
 import { get_client_ip } from './client_ip.ts';
+import { emit_after_commit } from './pending_effects.ts';
 
 /**
  * Table metadata from `information_schema`.
@@ -65,6 +68,37 @@ export const DB_TABLE_ROWS_DEFAULT_LIMIT = 100;
 export const DB_TABLE_ROWS_LIMIT_MAX = 1000;
 
 /**
+ * Per-statement timeout applied (`SET LOCAL statement_timeout`) inside the
+ * table-list, table-detail, and row-`DELETE` transactions — no single
+ * statement outlives it. (Per statement, not per request: the table listing's
+ * one-`COUNT(*)`-per-table loop can still take several in sequence.)
+ * Milliseconds.
+ */
+export const DB_ADMIN_STATEMENT_TIMEOUT_MS = 5000;
+
+/**
+ * Tables the browser can never expose, whatever `browsable_tables` names —
+ * the credential floor, subtracted from the consumer's allowlist and not
+ * overridable:
+ *
+ * - `account` — the one surface that would return the argon2 password-hash
+ *   corpus in bulk (every other read path excludes the hash by projection).
+ * - `auth_session` / `api_token` — credential digests plus per-account
+ *   session/token metadata.
+ * - `bootstrap_lock` — the first-admin gate; its row is load-bearing state,
+ *   not content.
+ *
+ * A table on the floor answers exactly like one that doesn't exist (404
+ * `table_not_found`) so the browser doesn't confirm its presence.
+ */
+export const NON_BROWSABLE_TABLES: ReadonlyArray<string> = Object.freeze([
+	'account',
+	'auth_session',
+	'api_token',
+	'bootstrap_lock'
+]);
+
+/**
  * Tables this endpoint refuses to delete rows from, whatever their key shape.
  *
  * Two kinds, one rule — a generic storage endpoint has no business deleting a
@@ -101,8 +135,10 @@ export const NON_DELETABLE_TABLES: ReadonlyArray<string> = Object.freeze([
  */
 export interface DbRouteDeps {
 	/**
-	 * Pool-routed fire-and-forget audit emit — the row lands even when the
-	 * handler's transaction rolls back.
+	 * Pool-routed fire-and-forget audit emit. The row-`DELETE` handler defers
+	 * the call via `emit_after_commit`, so the success-only trail row can
+	 * never claim a delete whose transaction failed at COMMIT — the pool
+	 * routing means the write itself never rides the request transaction.
 	 */
 	audit: {
 		emit: (
@@ -123,6 +159,15 @@ export interface DbRouteDeps {
 export interface DbRouteOptions {
 	db_type: DbType;
 	db_name: string;
+	/**
+	 * The tables the browser exposes — an explicit allowlist gating the table
+	 * list, table detail, and row-`DELETE` alike. Required with no "all"
+	 * escape hatch, so a future secret-bearing table stays unlisted until a
+	 * consumer names it, and `NON_BROWSABLE_TABLES` is subtracted even when
+	 * named. An unlisted table 404s as `table_not_found` — the same answer as
+	 * a table that doesn't exist.
+	 */
+	browsable_tables: ReadonlyArray<string>;
 	/** Optional callback to provide app-specific stats in the health response. */
 	extra_stats?: (db: Db) => Promise<Record<string, unknown>>;
 	/** Optional logger for server-side diagnostics (e.g. FK violation details). */
@@ -182,12 +227,52 @@ export const create_db_route_specs = (
 	deps: DbRouteDeps,
 	options: DbRouteOptions
 ): Array<RouteSpec> => {
-	const { db_type, db_name, extra_stats, log, non_deletable_tables } = options;
+	const { db_type, db_name, browsable_tables, extra_stats, log, non_deletable_tables } = options;
 
 	const non_deletable: ReadonlySet<string> = new Set([
 		...NON_DELETABLE_TABLES,
 		...(non_deletable_tables ?? [])
 	]);
+
+	// The credential floor is subtracted, not merely documented — a consumer
+	// naming `account` in its allowlist still gets no `account` browsing.
+	const browsable: ReadonlySet<string> = new Set(
+		browsable_tables.filter((name) => !NON_BROWSABLE_TABLES.includes(name))
+	);
+
+	// `SET` can't be parameterized; the value is a module constant, never input.
+	const set_statement_timeout = async (db: Db): Promise<void> => {
+		await db.query(`SET LOCAL statement_timeout = ${DB_ADMIN_STATEMENT_TIMEOUT_MS}`);
+	};
+
+	/**
+	 * The shared masked gate prologue for the detail and row-`DELETE`
+	 * handlers: allowlist check (before any catalog read), then the statement
+	 * timeout, then existence — an unbrowsable table and a missing one get
+	 * the same 404 from the same place, so the masking invariant has one
+	 * home. Returns whether the table is browsable AND exists.
+	 */
+	const gate_browsable_table = async (db: Db, name: string): Promise<boolean> => {
+		if (!browsable.has(name)) return false;
+		await set_statement_timeout(db);
+		return query_table_exists(db, name);
+	};
+
+	/**
+	 * Strict integer query param — accepts exactly what the Rust twin's
+	 * `str::parse::<i64>` does (`[+-]?digits`), so the twins refuse the same
+	 * spellings (`z.coerce` alone admits `""`, `" 5"`, `"1e2"`, `"5.0"`).
+	 */
+	const query_int = (bounds: z.ZodNumber, fallback: number) =>
+		z.preprocess(
+			(v) =>
+				v === undefined
+					? undefined
+					: typeof v === 'string' && /^[+-]?\d+$/.test(v)
+						? Number(v)
+						: Number.NaN,
+			bounds.default(fallback)
+		);
 
 	return [
 		{
@@ -210,6 +295,9 @@ export const create_db_route_specs = (
 				try {
 					await route.db.query('SELECT 1');
 
+					// Deliberately schema-wide (not allowlist-filtered): the count
+					// is a did-migrations-run diagnostic, and a bare number leaks
+					// no table contents or names.
 					const table_result = await route.db.query<{ count: string }>(
 						`SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema = 'public'`
 					);
@@ -246,13 +334,17 @@ export const create_db_route_specs = (
 				roles: ['keeper'],
 				credential_types: ['daemon_token']
 			},
-			description: 'List public tables with row counts',
+			description: 'List browsable tables with row counts',
 			query: z.strictObject({ acting: ActingActor }),
 			input: z.null(),
 			output: z.looseObject({
 				tables: z.array(z.strictObject({ name: z.string(), row_count: z.number() }))
 			}),
+			transaction: true,
 			handler: async (c, route) => {
+				await set_statement_timeout(route.db);
+				// Existence still comes from `information_schema` — a listed table
+				// that hasn't migrated in yet is silently absent, not a 500.
 				const table_names = await route.db.query<TableInfo>(
 					`SELECT table_name FROM information_schema.tables
 					 WHERE table_schema = 'public'
@@ -261,6 +353,7 @@ export const create_db_route_specs = (
 
 				const tables: Array<TableWithCount> = [];
 				for (const { table_name } of table_names) {
+					if (!browsable.has(table_name)) continue;
 					const result = await route.db.query_one<{ count: string }>(
 						`SELECT COUNT(*) as count FROM "${assert_valid_sql_identifier(table_name)}"`
 					);
@@ -286,13 +379,11 @@ export const create_db_route_specs = (
 			params: z.strictObject({ name: z.string().regex(VALID_SQL_IDENTIFIER) }),
 			query: z.strictObject({
 				acting: ActingActor,
-				offset: z.coerce.number().int().min(0).default(0),
-				limit: z.coerce
-					.number()
-					.int()
-					.min(1)
-					.max(DB_TABLE_ROWS_LIMIT_MAX)
-					.default(DB_TABLE_ROWS_DEFAULT_LIMIT)
+				offset: query_int(z.number().int().min(0), 0),
+				limit: query_int(
+					z.number().int().min(1).max(DB_TABLE_ROWS_LIMIT_MAX),
+					DB_TABLE_ROWS_DEFAULT_LIMIT
+				)
 			}),
 			input: z.null(),
 			errors: {
@@ -314,20 +405,29 @@ export const create_db_route_specs = (
 				primary_key: z.string().nullable(),
 				deletable: z.boolean()
 			}),
+			transaction: true,
 			handler: async (c, route) => {
 				const { name } = get_route_params<{ name: string }>(c);
 				const { offset, limit } = get_route_query<{ offset: number; limit: number }>(c);
 
-				if (!(await query_table_exists(route.db, name))) {
+				// Allowlist gate, masked: an unlisted (or floor) table answers
+				// exactly like one that doesn't exist.
+				if (!(await gate_browsable_table(route.db, name))) {
 					return c.json({ error: ERROR_TABLE_NOT_FOUND }, 404);
 				}
 
-				const columns = await route.db.query<ColumnInfo>(
-					`SELECT column_name, data_type, is_nullable
+				// `udt_name` is internal (drives the byte-value placeholder;
+				// `data_type` reports only `ARRAY` for array columns) — it is
+				// stripped from the response so the wire shape twins Rust's.
+				const column_rows = await route.db.query<ColumnInfo & { udt_name: string }>(
+					`SELECT column_name, data_type, is_nullable, udt_name
 					 FROM information_schema.columns
 					 WHERE table_schema = 'public' AND table_name = $1
 					 ORDER BY ordinal_position`,
 					[name]
+				);
+				const columns: Array<ColumnInfo> = column_rows.map(
+					({ column_name, data_type, is_nullable }) => ({ column_name, data_type, is_nullable })
 				);
 
 				const count_result = await route.db.query_one<{ count: string }>(
@@ -346,8 +446,28 @@ export const create_db_route_specs = (
 				// exclusion must not masquerade as one.
 				const deletable = primary_key !== null && !non_deletable.has(name);
 
+				// byte values never leave the server — a full page of e.g.
+				// `fact.bytes` would otherwise materialize GiBs in one response.
+				// The column stays in the result with a `<N bytes>` placeholder
+				// per cell (NULL stays NULL); `columns` metadata is untouched.
+				// Keyed on `udt_name` so `bytea[]` (`data_type: 'ARRAY'`,
+				// `udt_name: '_bytea'`) is covered too — `octet_length` doesn't
+				// take arrays, so those report the stored `pg_column_size`.
+				const select_list =
+					column_rows.length === 0 // zero-column tables are legal PG
+						? '*'
+						: column_rows
+								.map(({ column_name, udt_name }) => {
+									const ident = assert_valid_sql_identifier(column_name);
+									if (udt_name === 'bytea')
+										return `('<' || octet_length("${ident}") || ' bytes>') AS "${ident}"`;
+									if (udt_name === '_bytea')
+										return `('<' || pg_column_size("${ident}") || ' bytes>') AS "${ident}"`;
+									return `"${ident}"`;
+								})
+								.join(', ');
 				const rows = await route.db.query(
-					`SELECT * FROM "${assert_valid_sql_identifier(name)}" LIMIT $1 OFFSET $2`,
+					`SELECT ${select_list} FROM "${assert_valid_sql_identifier(name)}" LIMIT $1 OFFSET $2`,
 					[limit, offset]
 				);
 
@@ -387,7 +507,9 @@ export const create_db_route_specs = (
 			handler: async (c, route) => {
 				const { name, id } = get_route_params<{ name: string; id: string }>(c);
 
-				if (!(await query_table_exists(route.db, name))) {
+				// Same allowlist gate and masking as the detail route — an
+				// unbrowsable table exposes no rows to delete either.
+				if (!(await gate_browsable_table(route.db, name))) {
 					return c.json({ error: ERROR_TABLE_NOT_FOUND }, 404);
 				}
 
@@ -416,10 +538,14 @@ export const create_db_route_specs = (
 				const pk_column = pk_columns[0]!;
 
 				try {
+					// `::text` compare, twinning the Rust spine: a mistyped id (a
+					// non-UUID against a uuid PK) is a clean 404, not a PG type
+					// error. `RETURNING 1` — only existence is read, so the deleted
+					// row's values (e.g. a bytea column) are never materialized.
 					const result = await route.db.query(
 						`DELETE FROM "${assert_valid_sql_identifier(
 							name
-						)}" WHERE "${assert_valid_sql_identifier(pk_column)}" = $1 RETURNING *`,
+						)}" WHERE "${assert_valid_sql_identifier(pk_column)}"::text = $1 RETURNING 1`,
 						[id]
 					);
 
@@ -428,14 +554,21 @@ export const create_db_route_specs = (
 					}
 
 					// The trail for the trail-adjacent surface: every successful row
-					// delete through this generic endpoint is audited. Account-grain
+					// delete through this endpoint is audited. Deferred via
+					// `emit_after_commit` so the pool-routed row can never claim a
+					// delete whose transaction failed at COMMIT — the Rust twin
+					// commits before emitting for the same reason. Account-grain
 					// attribution — the browser is a raw storage surface, so no actor
-					// is claimed; mirrors the Rust twin's emission in `fuz_db_admin`.
-					deps.audit.emit(route, {
-						event_type: 'db_admin_row_delete',
-						account_id: c.var.request_context?.account.id ?? null,
-						ip: get_client_ip(c),
-						metadata: { table: name, pk_column, id }
+					// is claimed.
+					const account_id = c.var.request_context?.account.id ?? null;
+					const ip = get_client_ip(c);
+					emit_after_commit(route, () => {
+						deps.audit.emit(route, {
+							event_type: 'db_admin_row_delete',
+							account_id,
+							ip,
+							metadata: { table: name, pk_column, id }
+						});
 					});
 
 					return c.json({ success: true });
