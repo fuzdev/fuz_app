@@ -1,5 +1,94 @@
 # @fuzdev/fuz_app
 
+## 0.110.0
+
+### Minor Changes
+
+- feat: absolute session lifetime — the 30-day cap is hard (breaking) ([8ce4286](https://github.com/fuzdev/fuz_app/commit/8ce4286))
+
+  Sessions no longer renew. The sliding window (DB `query_session_touch` +
+  both cookie-refresh branches in `process_session_cookie`) let a leaked
+  cookie live forever at one request per ~29 days, and the renewal never ran
+  on the Rust spine — production was already hard-capped. TS converges down:
+
+  - `query_session_touch` / `session_touch_fire_and_forget` /
+    `AUTH_SESSION_EXTEND_THRESHOLD_MS` are deleted; validation is a pure read.
+  - `process_session_cookie` collapses to `'none' | 'clear'` — no `refresh`
+    action, no `new_signed_value`. `SESSION_REFRESH_THRESHOLD_S` /
+    `SessionOptions.refresh_threshold_seconds` /
+    `ParsedSession.should_refresh_signature` / `.should_refresh_expiration`
+    are gone. A cookie signed by a retired keyring key keeps verifying as-is;
+    retired keys are safe to drop after `SESSION_AGE_MAX` (30 days), which
+    makes `docs/security.md`'s rotation-window guidance exact.
+  - `create_request_context_middleware(deps, session_context_key?)` drops its
+    unused `log` parameter.
+  - `last_seen_at` is decorative (always equals `created_at`) — the admin
+    session list re-sorts by `created_at DESC`, the session UI drops the
+    "last seen" column, and the column + wire field are slated for removal on
+    their own twin migration. The Rust spine deletes its dead
+    `query_session_touch` and re-sorts identically in the same change.
+
+  The only recovery from an aged-out session is a fresh login. This reverses
+  `docs/identity.md`'s original sliding-window direction — see
+  `docs/security.md` §Session Security.
+
+- feat: require a `lifetime` on `account_token_create` (breaking) ([8ce4286](https://github.com/fuzdev/fuz_app/commit/8ce4286))
+
+  `TokenCreateInput` gains a required `lifetime` field mirroring `scope` —
+  `{kind: 'eternal'}` for a never-expiring token, `{kind: 'ttl', days: N}` for a
+  bounded one (1 ≤ days ≤ `TOKEN_TTL_DAYS_MAX`, from the new
+  `auth/token_lifetime.ts`). There is deliberately no default: an omitted
+  lifetime is a 400, never an eternal token, so `expires_at IS NULL` always
+  means "deliberately eternal". The mint threads the expiry into the
+  already-enforced `api_token.expires_at` column (no migration —
+  `query_validate_api_token` has gated on it all along; the state was
+  enforced-but-unsettable). `TokenCreateOutput` gains `expires_at`
+  (ISO 8601 or `null`) so the minter learns the bound without a follow-up
+  list call.
+
+  Callers update mint sites from `{name, scope}` to
+  `{name, scope, lifetime: {kind: 'eternal'}}` (or a ttl). The Rust spine lands
+  the same change in lockstep — the new
+  `testing/cross_backend/token_lifetime.ts` suite pins the round-trip on both
+  backends (the action-manifest parity gate is blind to param schemas, so
+  without it a spine could silently drop the field and keep minting eternal
+  tokens).
+
+  A framework-level ceiling (`max_token_ttl_days`) is deferred until the `fuzf`
+  CLI grows an expiry story (an expiry-aware token read and a 401 hint).
+
+- feat: harden secret-file handling (breaking) ([8ce4286](https://github.com/fuzdev/fuz_app/commit/8ce4286))
+
+  Three related changes, all wire-invisible:
+
+  - **The bootstrap-token read is hardened** — the P1 twin of the Rust spine's
+    `fuz_sys::secure_file::load_secure_file`. `AppDeps` /
+    `CreateAppBackendOptions` replace `stat` + `read_text_file` (both existed
+    only for bootstrap) with one `read_secure_file` capability, implemented on
+    every runtime (`FsSecureReadDeps`): symlinks are refused (`O_NOFOLLOW` on
+    Node), any group/other-accessible mode is refused (must be `0600`/`0400`,
+    checked on the open descriptor), and a 4 KiB cap bounds the read. The
+    boot-time availability probe (`check_bootstrap_status`) now reads through
+    the same capability, so it can never report a window the request-time read
+    refuses. Operator-visible: a hand-placed `0644` token now reports
+    bootstrap unavailable with a logged reason (deployed hosts are already
+    `0600`).
+  - **The daemon-token producer moved to `testing/daemon_token_rotation.ts`**
+    (behind `assert_dev_env`). No production assembly mints daemon tokens —
+    the credential's only remaining role is the cross-process harness's keeper
+    channel — so `write_daemon_token` / `start_daemon_token_rotation` leave
+    `auth/daemon_token_middleware.ts`, which keeps only the credential
+    consumer. The optional `chmod` dep is gone: the token file is written
+    atomically at mode `0600`.
+  - **`write_file_atomic` uses a unique exclusive temp** —
+    `.{name}.tmp.{pid}.{counter}` with `O_EXCL` and an optional `{mode}`,
+    so a crash-leftover temp can never be reopened `O_TRUNC` with a stale
+    permissive mode and published by the rename. `FsWriteDeps.write_text_file`
+    gains `{mode?, exclusive?}` options and `mkdir` gains `mode`.
+    `dev/setup.ts` drops the `set_permissions?` callbacks — the `.env` and
+    bootstrap-token writes now create at `0600` (state dir `0700`) directly,
+    so consumers delete their `Deno.chmod` wrappers.
+
 ## 0.109.0
 
 ### Minor Changes
