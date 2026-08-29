@@ -498,7 +498,7 @@ table browser; the factory is domain-agnostic.
 - `GET /health` — connected probe + table count (schema-wide by design — a did-migrations-run diagnostic) + optional `extra_stats(db)`. Returns `{connected: false}` at 503 on failure
 - `GET /tables` — list browsable tables with row counts
 - `GET /tables/:name` — columns + rows (paginated via `?offset`/`?limit`, limit validated to `[1, 1000]` with default 100; bytea values come back as `<N bytes>` placeholders, NULL stays NULL, column metadata untouched) + total count + `primary_key` (the single PK column, or `null` when the table has none or a composite one) + `deletable` (whether the row-`DELETE` will accept this table at all — see below)
-- `DELETE /tables/:name/rows/:id` — delete by PK, compared as `"<pk>"::text = $1` (twinning the Rust spine — a mistyped id is a clean 404, not a PG cast error). Returns 400 if the table is excluded by policy (`ERROR_TABLE_NOT_DELETABLE`) or has no single-column PK (`ERROR_TABLE_NO_PRIMARY_KEY`), 404 if row missing (`ERROR_ROW_NOT_FOUND`) or table missing/unbrowsable (`ERROR_TABLE_NOT_FOUND`), 409 on FK violation (pg error code `23503`)
+- `DELETE /tables/:name/rows/:id` — delete by PK, compared typed as `"<pk>" = $1` (twinning the Rust spine — the untyped text-format param makes PG coerce the id with the PK type's input function, so the delete index-scans and follows the column type's semantics; an uncoercible id — 22P02/22003 — is the same clean 404 as a typed miss). `RETURNING "<pk>"::text` feeds the audit trail the row's canonical PK rendering. Returns 400 if the table is excluded by policy (`ERROR_TABLE_NOT_DELETABLE`) or has no single-column PK (`ERROR_TABLE_NO_PRIMARY_KEY`), 404 if row missing (`ERROR_ROW_NOT_FOUND`) or table missing/unbrowsable (`ERROR_TABLE_NOT_FOUND`), 409 on a referencing-row refusal (pg error `23503` foreign_key_violation, or `23001` restrict_violation — PG 18+ raises the latter for `ON DELETE RESTRICT`)
 
 **The allowlist gates everything.** `DbRouteOptions.browsable_tables` is
 required with no "all" escape hatch — the table list shows only listed tables,
@@ -513,7 +513,7 @@ browse/delete transactions run under `SET LOCAL statement_timeout`
 loop can still take several in sequence).
 
 **Single-column primary keys only.** The `DELETE` filters on one column
-(`WHERE "<pk>"::text = $1`), which is correct only when the primary key _is_
+(`WHERE "<pk>" = $1`), which is correct only when the primary key _is_
 that one column. `query_primary_key_columns` returns every PK column in
 `ordinal_position` order, and the route proceeds only at length exactly 1 — a
 composite key (a single-column filter would match every row sharing that

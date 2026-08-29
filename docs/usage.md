@@ -58,7 +58,11 @@ Route spec factories for common patterns: `create_account_route_specs()`,
 `create_db_route_specs(deps, {db_type, db_name, browsable_tables, extra_stats?, log?, non_deletable_tables?})`
 mounts the keeper-only table browser (`deps` needs `audit` — `ctx.deps`
 satisfies it; every successful row delete emits a `db_admin_row_delete` audit
-event recording `{table, pk_column, id}`). `browsable_tables` is the required
+event recording `{table, pk_column, id}`, `id` being the deleted row's
+canonical `::text` rendering rather than the URL spelling — the delete
+compares the id typed against the PK column, so any spelling PG coerces to
+the same value matches, and an uncoercible id is the same masked 404 as a
+typed miss). `browsable_tables` is the required
 allowlist gating the whole surface — table list, detail, and row-`DELETE`; an
 unlisted table 404s exactly like one that doesn't exist, and the credential
 floor (`NON_BROWSABLE_TABLES`: `account`, `auth_session`, `api_token`,

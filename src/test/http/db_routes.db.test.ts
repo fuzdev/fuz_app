@@ -63,7 +63,8 @@ const TEST_BROWSABLE: ReadonlyArray<string> = [
 	'composite_pk_test',
 	'consumer_ledger',
 	'fk_test_parent',
-	'fk_test_child'
+	'fk_test_child',
+	'int_pk_test'
 ];
 
 /** Create db route specs with the suite defaults, overridable per test. */
@@ -107,7 +108,9 @@ afterAll(async () => {
 beforeEach(async () => {
 	// clean up scratch tables from prior runs (isolate: false shares state)
 	await db.query('DROP TABLE IF EXISTS fk_test_child, fk_test_parent CASCADE');
-	await db.query('DROP TABLE IF EXISTS composite_pk_test, consumer_ledger, bytea_test CASCADE');
+	await db.query(
+		'DROP TABLE IF EXISTS composite_pk_test, consumer_ledger, bytea_test, int_pk_test CASCADE'
+	);
 	await db.query('DROP TABLE IF EXISTS browse_test CASCADE');
 	await db.query('TRUNCATE audit_log, api_token, auth_session, role_grant, actor, account CASCADE');
 	// the ordinary browse/delete target — a stand-in for a consumer content table
@@ -279,17 +282,20 @@ describe('GET /tables/:name handler', () => {
 	});
 
 	test('bytea and bytea[] values are placeholdered, other columns pass through', async () => {
+		await db.query(`DROP DOMAIN IF EXISTS blob_dom CASCADE`);
+		await db.query(`CREATE DOMAIN blob_dom AS BYTEA`);
 		await db.query(`CREATE TABLE bytea_test (
 			id TEXT PRIMARY KEY,
 			data BYTEA,
 			datas BYTEA[],
+			data_dom BLOB_DOM,
 			note TEXT NOT NULL
 		)`);
 		await db.query(
-			`INSERT INTO bytea_test (id, data, datas, note)
+			`INSERT INTO bytea_test (id, data, datas, data_dom, note)
 			 VALUES
-			   ('a', decode('deadbeef', 'hex'), ARRAY[decode('dead', 'hex'), decode('beef', 'hex')], 'x'),
-			   ('b', NULL, NULL, 'y')`
+			   ('a', decode('deadbeef', 'hex'), ARRAY[decode('dead', 'hex'), decode('beef', 'hex')], decode('cafebabe99', 'hex'), 'x'),
+			   ('b', NULL, NULL, NULL, 'y')`
 		);
 		const specs = create_specs();
 		const app = create_test_app(specs);
@@ -309,10 +315,16 @@ describe('GET /tables/:name handler', () => {
 		// bytea[] reports pg_column_size (storage size), not octet_length —
 		// the exact number is representation-dependent, the shape is the pin
 		assert.match(a.datas as string, /^<\d+ bytes>$/);
+		// a DOMAIN over bytea resolves to `udt_name: 'bytea'` in
+		// information_schema, so the placeholder holds — pinned so a
+		// consumer's domain-typed blob column can't silently reopen the
+		// bytea egress amplification
+		assert.strictEqual(a.data_dom, '<5 bytes>');
 		assert.strictEqual(a.note, 'x');
 		const b = by_id.get('b') as Record<string, unknown>;
 		assert.strictEqual(b.data, null);
 		assert.strictEqual(b.datas, null);
+		assert.strictEqual(b.data_dom, null);
 		assert.strictEqual(b.note, 'y');
 	});
 
@@ -337,6 +349,29 @@ describe('GET /tables/:name handler', () => {
 		// string URL-decodes to a space, which both twins refuse)
 		const ok = await app.request('/tables/browse_test?offset=%2B0&limit=1000');
 		assert.strictEqual(ok.status, 200);
+	});
+
+	test('duplicate query keys take the first occurrence, not a 400', async () => {
+		await db.query(`INSERT INTO browse_test (label) VALUES ('a'), ('b')`);
+		const specs = create_specs();
+		const app = create_test_app(specs);
+		// Hono's `c.req.query()` keeps the first value of a duplicated key —
+		// later occurrences are invisible to validation. Pinned because the
+		// Rust twin's derived-serde extractor used to answer this with axum's
+		// plain-text "duplicate field" 400; both backends now read `limit=1`.
+		const res = await app.request('/tables/browse_test?limit=1&limit=1001');
+		assert.strictEqual(res.status, 200);
+		const body = await res.json();
+		assert.strictEqual(body.limit, 1);
+		assert.strictEqual(body.rows.length, 1);
+	});
+
+	test('unknown query keys are refused — the query schema is strict', async () => {
+		const specs = create_specs();
+		const app = create_test_app(specs);
+		const res = await app.request('/tables/browse_test?foo=1');
+		assert.strictEqual(res.status, 400);
+		assert.strictEqual((await res.json()).error, 'invalid_query_params');
 	});
 
 	test('excluded table reports deletable false while primary_key stays truthful', async () => {
@@ -447,8 +482,9 @@ describe('SQL injection resistance', () => {
 		const specs = create_specs();
 		const app = create_test_app(specs);
 		// The id param is passed via parameterized query ($1), so injection
-		// attempts cannot execute arbitrary SQL — and the `::text` compare
-		// means a non-UUID string against the uuid PK is a clean no-match 404.
+		// attempts cannot execute arbitrary SQL — and the typed compare means
+		// a non-UUID string against the uuid PK fails coercion (22P02),
+		// mapped to a clean 404.
 		const res = await app.request(
 			`/tables/browse_test/rows/${encodeURIComponent("'; DROP TABLE browse_test; --")}`,
 			{ method: 'DELETE' }
@@ -484,14 +520,99 @@ describe('DELETE /tables/:name/rows/:id handler', () => {
 		await db.query(`INSERT INTO browse_test (label) VALUES ('kept')`);
 		const specs = create_specs();
 		const app = create_test_app(specs);
-		// `::text` compare (twinning the Rust spine): the non-UUID id simply
-		// matches nothing rather than throwing a PG cast error.
+		// typed compare (twinning the Rust spine): the non-UUID id fails
+		// coercion at bind (22P02), which the route maps to the same masked
+		// 404 as a typed miss rather than surfacing a PG cast error.
 		const res = await app.request('/tables/browse_test/rows/not-a-uuid', { method: 'DELETE' });
 		assert.strictEqual(res.status, 404);
+		const body = await res.json();
+		assert.strictEqual(body.error, 'row_not_found');
 		const remaining = await db.query<{ count: string }>(
 			`SELECT COUNT(*) as count FROM browse_test`
 		);
 		assert.strictEqual(parseInt(remaining[0]!.count, 10), 1);
+	});
+
+	test('any valid uuid spelling deletes the row — typed compare follows the column type', async () => {
+		const result = await db.query<{ id: string }>(
+			`INSERT INTO browse_test (label) VALUES ('cased') RETURNING id`
+		);
+		const canonical = result[0]!.id;
+		const specs = create_specs();
+		const app = create_test_app(specs);
+		// The `::text` compare this replaced would 404 here (uuid renders
+		// lowercase, so the uppercase spelling never text-matched); the typed
+		// compare coerces the spelling to the same uuid value.
+		const res = await app.request(`/tables/browse_test/rows/${canonical.toUpperCase()}`, {
+			method: 'DELETE'
+		});
+		assert.strictEqual(res.status, 200);
+		const remaining = await db.query<{ count: string }>(
+			`SELECT COUNT(*) as count FROM browse_test`
+		);
+		assert.strictEqual(parseInt(remaining[0]!.count, 10), 0);
+		// The trail records the canonical lowercase rendering, not the
+		// uppercase URL spelling (uuid twin of the bigint '007' case below).
+		assert.strictEqual(audit.calls.length, 1);
+		assert.deepStrictEqual(audit.calls[0]!.metadata, {
+			table: 'browse_test',
+			pk_column: 'id',
+			id: canonical
+		});
+	});
+
+	test('uncoercible ids against a bigint primary key are 404s, not type errors', async () => {
+		await db.query(`CREATE TABLE int_pk_test (id BIGINT PRIMARY KEY, label TEXT)`);
+		await db.query(`INSERT INTO int_pk_test (id, label) VALUES (7, 'kept')`);
+		const specs = create_specs();
+		const app = create_test_app(specs);
+		// 22P02 invalid_text_representation — not digits at all
+		let res = await app.request('/tables/int_pk_test/rows/not-a-number', { method: 'DELETE' });
+		assert.strictEqual(res.status, 404);
+		assert.strictEqual((await res.json()).error, 'row_not_found');
+		// 22003 numeric_value_out_of_range — digits beyond int8
+		res = await app.request('/tables/int_pk_test/rows/99999999999999999999', {
+			method: 'DELETE'
+		});
+		assert.strictEqual(res.status, 404);
+		assert.strictEqual((await res.json()).error, 'row_not_found');
+		const remaining = await db.query<{ count: string }>(
+			`SELECT COUNT(*) as count FROM int_pk_test`
+		);
+		assert.strictEqual(parseInt(remaining[0]!.count, 10), 1);
+	});
+
+	test('a NUL byte in the id is a 404, not a 500 — whatever the PK type', async () => {
+		await db.query(`INSERT INTO browse_test (label) VALUES ('kept')`);
+		const specs = create_specs();
+		const app = create_test_app(specs);
+		// 22021 character_not_in_repertoire — the server encoding rejects the
+		// NUL before any type coercion, so this fires even against a text PK;
+		// no stored id can contain one, so the masked 404 is the honest answer.
+		const res = await app.request('/tables/browse_test/rows/%00abc', { method: 'DELETE' });
+		assert.strictEqual(res.status, 404);
+		assert.strictEqual((await res.json()).error, 'row_not_found');
+		const remaining = await db.query<{ count: string }>(
+			`SELECT COUNT(*) as count FROM browse_test`
+		);
+		assert.strictEqual(parseInt(remaining[0]!.count, 10), 1);
+	});
+
+	test('a zero-padded integer id matches the canonical row — the decided typed-compare semantics', async () => {
+		await db.query(`CREATE TABLE int_pk_test (id BIGINT PRIMARY KEY, label TEXT)`);
+		await db.query(`INSERT INTO int_pk_test (id, label) VALUES (7, 'target')`);
+		const specs = create_specs();
+		const app = create_test_app(specs);
+		// '007' coerces to 7 and matches — the accepted cost of the typed
+		// compare (under `::text` it matched nothing). The audit trail records
+		// the canonical rendering, not the padded spelling (asserted in the
+		// audit emission suite).
+		const res = await app.request('/tables/int_pk_test/rows/007', { method: 'DELETE' });
+		assert.strictEqual(res.status, 200);
+		const remaining = await db.query<{ count: string }>(
+			`SELECT COUNT(*) as count FROM int_pk_test`
+		);
+		assert.strictEqual(parseInt(remaining[0]!.count, 10), 0);
 	});
 
 	test('unlisted and floor tables answer exactly like nonexistent ones', async () => {
@@ -512,13 +633,23 @@ describe('DELETE /tables/:name/rows/:id handler', () => {
 		});
 		assert.strictEqual(floored.status, 404);
 		assert.deepStrictEqual(await floored.json(), missing_body);
+		// on BOTH floors — `bootstrap_lock` is non-browsable AND
+		// non-deletable; the browsable mask must answer first (a 400
+		// `table_not_deletable` would confirm the credential table exists
+		// and is specially protected)
+		const double_floor = await app.request('/tables/bootstrap_lock/rows/x', { method: 'DELETE' });
+		assert.strictEqual(double_floor.status, 404);
+		assert.deepStrictEqual(await double_floor.json(), missing_body);
 		const remaining = await db.query<{ count: string }>(`SELECT COUNT(*) as count FROM account`);
 		assert.strictEqual(parseInt(remaining[0]!.count, 10), 1, 'the floor row must survive');
 	});
 
 	test('FK constraint returns 409 when child rows prevent deletion', async () => {
 		// Auth tables use CASCADE, so create a custom table with RESTRICT FK
-		// to exercise the 409 handler path
+		// to exercise the 409 handler path. PGlite (PG 17) raises 23503 here;
+		// PG 18+ raises 23001 restrict_violation for the same refusal — that
+		// arm is pinned against real PG by the Rust twin's
+		// `restricted_fk_delete_is_a_409_and_deletes_nothing`.
 		await db.query(`CREATE TABLE IF NOT EXISTS fk_test_parent (
 			id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
 			name TEXT NOT NULL
@@ -650,6 +781,24 @@ describe('DELETE audit emission', () => {
 		// validation, so bind the emitted shape to the builtin schema here — a
 		// schema key rename fails this parse instead of bumping a prod counter.
 		audit_metadata_schemas.db_admin_row_delete.parse(call.metadata);
+	});
+
+	test('the audited id is the canonical PK rendering, not the URL spelling', async () => {
+		await db.query(`CREATE TABLE int_pk_test (id BIGINT PRIMARY KEY, label TEXT)`);
+		await db.query(`INSERT INTO int_pk_test (id, label) VALUES (7, 'target')`);
+		const specs = create_specs();
+		const app = create_test_app(specs);
+		// The typed compare admits non-canonical spellings ('007' → 7), so the
+		// trail records what was actually deleted via `RETURNING "<pk>"::text`
+		// — the row's rendering, not the caller's.
+		const res = await app.request('/tables/int_pk_test/rows/007', { method: 'DELETE' });
+		assert.strictEqual(res.status, 200);
+		assert.strictEqual(audit.calls.length, 1);
+		assert.deepStrictEqual(audit.calls[0]!.metadata, {
+			table: 'int_pk_test',
+			pk_column: 'id',
+			id: '7'
+		});
 	});
 
 	test('refused and missed deletes emit nothing', async () => {

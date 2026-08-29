@@ -25,7 +25,7 @@ the code.
   `baseline`), `Migration` / `MigrationNamespace` / `MigrationError`.
 - `query_deps.ts` — `QueryDeps = {db}`, the first param to every `query_*`.
 - `assert_row.ts` — `assert_row(row, context)` for INSERT … RETURNING.
-- `pg_error.ts` — `is_pg_unique_violation` (Postgres `23505`).
+- `pg_error.ts` — `pg_error_code` (SQLSTATE extractor for `pg`/PGlite errors), `is_pg_unique_violation` (Postgres `23505`).
 - `sql_identifier.ts` — `assert_valid_sql_identifier`.
 - `status.ts` — CLI DB status utility.
 - `schema_ready.ts` — `/ready` deploy-gate core: `query_public_columns`

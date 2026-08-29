@@ -28,6 +28,7 @@ import {
 	ERROR_DATABASE_CONNECTION_FAILED
 } from './error_schemas.ts';
 import { assert_valid_sql_identifier, VALID_SQL_IDENTIFIER } from '../db/sql_identifier.ts';
+import { pg_error_code } from '../db/pg_error.ts';
 import { get_client_ip } from './client_ip.ts';
 import { emit_after_commit } from './pending_effects.ts';
 
@@ -538,20 +539,29 @@ export const create_db_route_specs = (
 				const pk_column = pk_columns[0]!;
 
 				try {
-					// `::text` compare, twinning the Rust spine: a mistyped id (a
-					// non-UUID against a uuid PK) is a clean 404, not a PG type
-					// error. `RETURNING 1` — only existence is read, so the deleted
-					// row's values (e.g. a bytea column) are never materialized.
-					const result = await route.db.query(
+					// Typed PK compare, twinning the Rust spine: `$1` travels as an
+					// untyped text-format parameter, so PG infers the PK column's
+					// type and coerces the id with that type's input function —
+					// index-scan deletes and canonical per-type semantics (citext
+					// case-insensitivity, char(n) padding, any valid uuid spelling).
+					// An id that cannot be a value of the PK type errors at bind
+					// (22P02/22003), mapped below to the same 404 as a typed miss.
+					// `RETURNING "<pk>"::text` reads back only the PK cell — the
+					// deleted row's other values (e.g. a bytea column) are never
+					// materialized — so the audit trail records the row's canonical
+					// PK rendering rather than whatever spelling the URL supplied.
+					const pk_ident = assert_valid_sql_identifier(pk_column);
+					const result = await route.db.query<{ pk_text: string }>(
 						`DELETE FROM "${assert_valid_sql_identifier(
 							name
-						)}" WHERE "${assert_valid_sql_identifier(pk_column)}"::text = $1 RETURNING 1`,
+						)}" WHERE "${pk_ident}" = $1 RETURNING "${pk_ident}"::text AS pk_text`,
 						[id]
 					);
 
 					if (result.length === 0) {
 						return c.json({ error: ERROR_ROW_NOT_FOUND }, 404);
 					}
+					const deleted_id = result[0]!.pk_text;
 
 					// The trail for the trail-adjacent surface: every successful row
 					// delete through this endpoint is audited. Deferred via
@@ -567,13 +577,27 @@ export const create_db_route_specs = (
 							event_type: 'db_admin_row_delete',
 							account_id,
 							ip,
-							metadata: { table: name, pk_column, id }
+							metadata: { table: name, pk_column, id: deleted_id }
 						});
 					});
 
 					return c.json({ success: true });
 				} catch (err) {
-					if (err instanceof Error && 'code' in err && err.code === '23503') {
+					const code = pg_error_code(err);
+					// 22P02 invalid_text_representation / 22003 numeric_value_out_of_range
+					// / 22021 character_not_in_repertoire: the id cannot be coerced
+					// to the PK column's type — or cannot even be a text value (a
+					// NUL byte, rejected by the server encoding whatever the PK
+					// type) — so no row can match; answer with the same masked 404
+					// as a typed miss.
+					if (code === '22P02' || code === '22003' || code === '22021') {
+						return c.json({ error: ERROR_ROW_NOT_FOUND }, 404);
+					}
+					// 23503 foreign_key_violation / 23001 restrict_violation — the
+					// same referencing-row refusal: PG 18+ raises 23001 for `ON
+					// DELETE RESTRICT` constraints where PG ≤17 (PGlite today)
+					// raises 23503 for both.
+					if (code === '23503' || code === '23001') {
 						const pg_err = err as Error & { detail?: string; constraint?: string };
 						log?.warn('Foreign key violation:', pg_err.detail, pg_err.constraint);
 						return c.json({ error: ERROR_FOREIGN_KEY_VIOLATION }, 409);

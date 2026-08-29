@@ -384,7 +384,8 @@ export const audit_metadata_schemas = Object.freeze({
 			description: 'Single primary-key column the `DELETE` filtered on.'
 		}),
 		id: z.string().meta({
-			description: 'Primary-key value of the deleted row, as the URL-supplied string.'
+			description:
+				"Primary-key value of the deleted row, as the row's canonical `::text` rendering."
 		})
 	})
 }) satisfies Record<AuditEventType, z.ZodType>;
