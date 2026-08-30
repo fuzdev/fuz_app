@@ -10,7 +10,7 @@
  * client-safe subset — rather than spelling a second column list, so the
  * drift guard on the base const (`assert_columns_match_live` in
  * `testing/db.ts`) covers every derived projection too. Twin of the Rust
- * spine's `*_COLUMNS` consts + `fuz_db::qualify_columns`.
+ * spine's `*_COLUMNS` consts + `fuz_db::qualify_columns` / `omit_columns`.
  *
  * Placement rule: a const lives in its table's query module. When two query
  * modules project the same table (the revoke cascades in

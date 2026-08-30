@@ -102,8 +102,13 @@ doesn't carry `id`). Module direction: `role_grant_offer_queries.ts` imports
 the revoke cascades in `role_grant_queries.ts` still _write_ offer rows, which
 is exactly why the offer const and the shared CTE tail live in the DDL module.
 Every const is pinned to the live schema by
-`src/test/db/column_projections.db.test.ts`. Mirrors the Rust spine, which
-names columns at every site.
+`src/test/db/column_projections.db.test.ts`. The Rust `fuz_auth` twin carries
+the same nine consts (names and order), projected through
+`fuz_db::qualify_columns` / `omit_columns`, decoded with compile-time
+name→index (`fuz_db::col!`), and pinned by its own
+`tests/columns.rs` registry; its narrow purpose rows (`AccountRow` is an
+`id, username` pair) keep private per-shape lists checked as subsets of the
+table const.
 
 `_unscoped` suffix on `query_session_revoke_by_hash_unscoped` and
 `query_invite_claim_unscoped` is the safety signal: SQL only checks row state,

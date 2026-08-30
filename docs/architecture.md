@@ -255,11 +255,17 @@ placement rule (a const lives in its table's query module, or in its `*_ddl.ts`
 when two query modules project the table) is documented on `db/sql_columns.ts`.
 fuz_app pins the whole set with one registry test,
 `src/test/db/column_projections.db.test.ts`, which also forces every public
-table to carry a const or a reasoned exemption. The cell consts twin the Rust
-`fuz_cell` `*_COLUMNS` consts column-for-column (that spine decodes the same
-list positionally); the `fuz_auth` twin names its columns at every site but
-reads narrower per-call projections, so there is no shared order to mirror
-there. Consumers adding their own tables should follow the same shape.
+table to carry a const or a reasoned exemption. Every const twins a Rust
+`*_COLUMNS` const name-for-name and in order (`fuz_auth`, `fuz_cell`,
+`fuz_fact`); that spine renders the same list through
+`fuz_db::qualify_columns` / `omit_columns`, decodes it positionally with each
+index resolved by column name at compile time (`fuz_db::col!`), and pins it
+with the same registry shape (`tests/columns.rs` over
+`fuz_db::column_projection_mismatches`). The one twin difference is that Rust
+also reads deliberately narrow purpose rows (an `id, username` identity pair
+rather than the full account) through private per-shape lists checked as
+subsets of the table const. Consumers adding their own tables should follow
+the same shape on whichever spine they run.
 
 ## Bootstrap
 

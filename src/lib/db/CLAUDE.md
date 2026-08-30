@@ -108,7 +108,7 @@ child_id`, fractional-index keyed): `query_cell_item_insert` (throws
 (the meta read derives `minus bytes`). The derived `grant_count` stays an
 appended expression in the exported `cell_row_projection(alias)` rather than a
 `CELL_COLUMNS` entry, so the const is exactly the table's column set. Column
-order twins the Rust `fuz_cell` `*_COLUMNS` consts. Every const is pinned to
+order twins the Rust `fuz_cell` / `fuz_fact` `*_COLUMNS` consts. Every const is pinned to
 the live schema — and every public table forced to carry a const or a named
 exemption — by `src/test/db/column_projections.db.test.ts`; the cell
 `*_queries.db.test.ts` files pin the aliased JOIN reads and `grant_count`.
