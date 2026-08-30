@@ -60,6 +60,7 @@ import {
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
 	audit_log_list_action_spec,
+	type AuditLogListInput,
 	audit_log_role_grant_history_action_spec
 } from '../auth/admin_action_specs.ts';
 import {
@@ -69,6 +70,16 @@ import {
 import type { AppSurfaceSpec } from '../http/surface.ts';
 import type { BackendCapabilities } from './cross_backend/capabilities.ts';
 import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
+
+/**
+ * How long a failure-audit read waits for the pool-routed row to land.
+ */
+const AUDIT_FAILURE_ROW_TIMEOUT = 2000;
+
+/**
+ * Gap between failure-audit read attempts.
+ */
+const AUDIT_FAILURE_ROW_POLL_INTERVAL = 20;
 
 /**
  * Configuration for `describe_standard_admin_integration_tests`.
@@ -204,6 +215,46 @@ export const describe_standard_admin_integration_tests = (
 			role: string;
 		}): Promise<{ offer_id: Uuid; role_grant_id: Uuid }> =>
 			role_grant_offer_and_accept({ ...args, rpc_path });
+
+		/**
+		 * Read `audit_log_list` for `event_type` until a failure-outcome row
+		 * appears, or the deadline passes.
+		 *
+		 * Failure audits are **pool-routed** on both spines — the write is
+		 * deliberately detached from the request transaction so the forensic row
+		 * survives the rollback that discards the attempted mutation. A single
+		 * read taken straight after the refusal therefore races that write. The
+		 * TS spine wins the race by construction (`create_test_app` sets
+		 * `await_pending_effects: true`, so the emit is awaited before the
+		 * response returns) and the first attempt succeeds; the Rust spine emits
+		 * from a detached task, so under load the row can land after the read —
+		 * observed as a load-dependent drop of the revoke-all failure-audit
+		 * cases in a busy cross-process run.
+		 *
+		 * The cross-backend conformance suites reach for the deterministic
+		 * `_testing_drain_effects` barrier instead. That action is test-binary
+		 * only, and this suite also runs against consumers' production RPC
+		 * surfaces where it isn't mounted — hence a bounded poll.
+		 */
+		const read_failure_audit_event = async (
+			fixture: TestFixture,
+			event_type: NonNullable<AuditLogListInput['event_type']>
+		) => {
+			const deadline = Date.now() + AUDIT_FAILURE_ROW_TIMEOUT;
+			for (;;) {
+				const audit_res = await rpc_call_for_spec({
+					app: { request: fixture.transport },
+					path: rpc_path,
+					spec: audit_log_list_action_spec,
+					params: { event_type },
+					headers: fixture.create_session_headers()
+				});
+				assert.ok(audit_res.ok, 'audit_log_list should succeed');
+				const failure = audit_res.result.events.find((e) => e.outcome === 'failure');
+				if (failure || Date.now() >= deadline) return failure;
+				await new Promise((resolve) => setTimeout(resolve, AUDIT_FAILURE_ROW_POLL_INTERVAL));
+			}
+		};
 
 		// --- 1. Admin account listing (RPC) ---
 
@@ -652,15 +703,7 @@ export const describe_standard_admin_integration_tests = (
 				// Failure audit row should be visible on the audit-log feed.
 				// `target_account_id` is null (FK prevents referencing a missing id)
 				// — the probed id is preserved under `metadata.attempted_account_id`.
-				const audit_res = await rpc_call_for_spec({
-					app: { request: fixture.transport },
-					path: rpc_path,
-					spec: audit_log_list_action_spec,
-					params: { event_type: 'session_revoke_all' },
-					headers: fixture.create_session_headers()
-				});
-				assert.ok(audit_res.ok, 'audit_log_list should succeed');
-				const failure = audit_res.result.events.find((e) => e.outcome === 'failure');
+				const failure = await read_failure_audit_event(fixture, 'session_revoke_all');
 				assert.ok(failure, 'Expected a failure-outcome session_revoke_all audit event');
 				assert.strictEqual(failure.target_account_id, null);
 				const failure_meta = failure.metadata as {
@@ -686,15 +729,7 @@ export const describe_standard_admin_integration_tests = (
 				assert.strictEqual(res.status, 404);
 				assert.strictEqual((res.error.data as { reason: string }).reason, 'account_not_found');
 
-				const audit_res = await rpc_call_for_spec({
-					app: { request: fixture.transport },
-					path: rpc_path,
-					spec: audit_log_list_action_spec,
-					params: { event_type: 'token_revoke_all' },
-					headers: fixture.create_session_headers()
-				});
-				assert.ok(audit_res.ok, 'audit_log_list should succeed');
-				const failure = audit_res.result.events.find((e) => e.outcome === 'failure');
+				const failure = await read_failure_audit_event(fixture, 'token_revoke_all');
 				assert.ok(failure, 'Expected a failure-outcome token_revoke_all audit event');
 				assert.strictEqual(failure.target_account_id, null);
 				const failure_meta = failure.metadata as {
