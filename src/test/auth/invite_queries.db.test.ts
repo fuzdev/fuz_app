@@ -8,6 +8,7 @@ import { describe, assert, test } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
+	INVITE_COLUMNS,
 	query_create_invite,
 	query_invite_find_unclaimed_by_email,
 	query_invite_find_unclaimed_by_username,
@@ -16,6 +17,7 @@ import {
 	query_invite_list_all,
 	query_invite_delete_unclaimed
 } from '$lib/auth/invite_queries.ts';
+import { query_public_columns } from '$lib/db/schema_ready.ts';
 import { query_create_account_with_actor } from '$lib/auth/account_queries.ts';
 import type { QueryDeps } from '$lib/db/query_deps.ts';
 import type { Invite } from '$lib/auth/invite_schema.ts';
@@ -37,6 +39,13 @@ const find_for_update = (
 	);
 
 describe_db('InviteQueries', (get_db) => {
+	test('INVITE_COLUMNS names every live `invite` column', async () => {
+		// The reverse of the fail-loud read: a column added to the table but not
+		// to the projection would silently vanish from every row read.
+		const live = await query_public_columns(get_db());
+		assert.deepEqual(INVITE_COLUMNS.split(', ').sort(), live.invite);
+	});
+
 	describe('create', () => {
 		test('creates invite with email only', async () => {
 			const deps = { db: get_db() };

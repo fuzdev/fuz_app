@@ -125,14 +125,13 @@ export const is_role_grant_active = (
 export const SessionId = Blake3Hash.brand('SessionId');
 export type SessionId = z.infer<typeof SessionId>;
 
-/** Server-side auth session, keyed by blake3 hash of session token. */
-export interface AuthSession {
-	id: SessionId;
-	account_id: Uuid;
-	created_at: string;
-	expires_at: string;
-	last_seen_at: string;
-}
+/**
+ * Server-side auth session row, keyed by blake3 hash of the session token.
+ * Structurally identical to the wire shape `AuthSessionJson` — kept as the
+ * DB-row name so query signatures keep saying which side of the boundary
+ * they read.
+ */
+export type AuthSession = AuthSessionJson;
 
 /** API token for CLI/programmatic access. */
 export interface ApiToken {
@@ -169,8 +168,7 @@ export const AuthSessionJson = z.strictObject({
 	id: SessionId,
 	account_id: Uuid,
 	created_at: z.string(),
-	expires_at: z.string(),
-	last_seen_at: z.string()
+	expires_at: z.string()
 });
 export type AuthSessionJson = z.infer<typeof AuthSessionJson>;
 

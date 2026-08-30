@@ -165,8 +165,7 @@ describe_db('auth schema', (get_db) => {
 			{ column_name: 'id', data_type: 'text', is_nullable: 'NO' },
 			{ column_name: 'account_id', data_type: 'uuid', is_nullable: 'NO' },
 			{ column_name: 'created_at', data_type: 'timestamp with time zone', is_nullable: 'NO' },
-			{ column_name: 'expires_at', data_type: 'timestamp with time zone', is_nullable: 'NO' },
-			{ column_name: 'last_seen_at', data_type: 'timestamp with time zone', is_nullable: 'NO' }
+			{ column_name: 'expires_at', data_type: 'timestamp with time zone', is_nullable: 'NO' }
 		]);
 	});
 
@@ -412,7 +411,6 @@ describe_db('auth schema', (get_db) => {
 			'actor.created_at',
 			'role_grant.created_at',
 			'auth_session.created_at',
-			'auth_session.last_seen_at',
 			'api_token.created_at',
 			'audit_log.created_at',
 			'role_grant_offer.created_at',

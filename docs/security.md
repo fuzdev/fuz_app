@@ -172,8 +172,7 @@ legitimate operator.
   there is deliberately no touch/renewal on either (a sliding window renews a
   leaked cookie forever at one request per window; both spines converged on
   the hard cap). The only recovery from an aged-out session is a fresh login.
-  `last_seen_at` is decorative (always equals `created_at`) and slated for
-  removal on its own twin migration
+  Sessions carry no activity signal — there is nothing to touch or renew
 - **Session limits**: Per-account cap (default 5, configurable). Oldest session
   evicted on login when limit is reached
 - **Password change**: Revokes all sessions and clears the session cookie.

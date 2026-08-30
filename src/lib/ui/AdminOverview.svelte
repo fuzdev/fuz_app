@@ -52,16 +52,11 @@
 
 	// sessions
 	const unique_users = $derived(new Set(sessions.sessions.map((s) => s.username)).size);
-	// newest session by mint time — sessions carry no activity signal
-	// (`last_seen_at` is decorative post-hard-cap; see `docs/security.md`
-	// §Session Security)
-	const most_recent = $derived(
-		sessions.sessions.length > 0
-			? sessions.sessions.reduce((a, b) =>
-					new Date(a.created_at) > new Date(b.created_at) ? a : b
-				)
-			: null
-	);
+	// newest session by mint time — the listing is server-ordered
+	// `created_at DESC` on both spines (a documented query contract, no
+	// client re-sort), and sessions carry no activity signal (the lifetime is
+	// a hard cap set at mint; see `docs/security.md` §Session Security)
+	const most_recent = $derived(sessions.sessions[0] ?? null);
 
 	// audit log
 	const recent_events = $derived(audit_log.events.slice(0, 8));

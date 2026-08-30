@@ -90,8 +90,8 @@ export interface ActionContext {
 	db: Db;
 	/**
 	 * Eager fire-and-forget queue — push the in-flight `Promise<void>` for
-	 * pool writes already running (audit emits, session touch, api-token
-	 * usage tracking). Drained via `flush_pending_effects` after the
+	 * pool writes already running (audit emits, api-token usage
+	 * tracking). Drained via `flush_pending_effects` after the
 	 * handler returns.
 	 */
 	pending_effects: Array<Promise<void>>;

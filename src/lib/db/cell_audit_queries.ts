@@ -14,6 +14,7 @@
  */
 
 import type { QueryDeps } from './query_deps.ts';
+import { AUDIT_LOG_COLUMNS } from '../auth/audit_log_queries.ts';
 import type { AuditLogEvent } from '../auth/audit_log_schema.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
@@ -70,7 +71,7 @@ export const query_audit_log_list_by_cell = async (
 	const limit_placeholder = `$${i++}`;
 	params.push(options.limit);
 	return deps.db.query<AuditLogEvent>(
-		`SELECT * FROM audit_log ${where} ORDER BY seq DESC LIMIT ${limit_placeholder}`,
+		`SELECT ${AUDIT_LOG_COLUMNS} FROM audit_log ${where} ORDER BY seq DESC LIMIT ${limit_placeholder}`,
 		params
 	);
 };

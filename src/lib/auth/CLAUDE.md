@@ -81,11 +81,22 @@ All take `deps: QueryDeps = {db}` first; `query_validate_api_token` adds `log`.
 - `auth/actor_search_queries.ts` — case-insensitive prefix search on `actor.name`, scope-filtered when not admin.
 - `auth/role_grant_queries.ts` — idempotent create, IDOR-guarded revoke (with in-tx supersede), scope-aware lookup, role/account predicates, `query_role_grant_revoke_for_scope` parent-scope cascade.
 - `auth/role_grant_offer_queries.ts` — offer create/decline/retract/list/history/sweep, atomic `query_accept_offer` with sibling supersede; error classes `RoleGrantOfferSelfTargetError` / `_AlreadyTerminalError` / `_ExpiredError` / `_NotFoundError` / `_ActorAccountMismatchError` / `_ActorMismatchError`.
-- `auth/session_queries.ts` — server-side sessions (blake3-hashed), `query_session_revoke_by_hash_unscoped` (logout only), `query_session_enforce_limit` (transaction-required). No touch/renewal query — `expires_at` is an absolute cap set at mint (`AUTH_SESSION_LIFETIME_MS`), and `last_seen_at` is decorative pending its own removal migration.
+- `auth/session_queries.ts` — server-side sessions (blake3-hashed), `query_session_revoke_by_hash_unscoped` (logout only), `query_session_enforce_limit` (transaction-required). No touch/renewal query — `expires_at` is an absolute cap set at mint (`AUTH_SESSION_LIFETIME_MS`).
 - `auth/api_token_queries.ts` — token validation with fire-and-forget usage tracking, IDOR-guarded revoke, `query_api_token_enforce_limit` (transaction-required).
 - `auth/invite_queries.ts` — invite create/find/claim/list/delete; `query_invite_claim_unscoped` (scoping enforced upstream by `_find_unclaimed_match_for_update`, which runs inside the signup tx with `FOR UPDATE` so find + claim are atomic).
 - `auth/app_settings_queries.ts` — load/update for the single-row settings table.
 - `auth/audit_log_queries.ts` — `query_audit_log` (in-tx insert), `_list` / `_list_with_usernames` / `_list_role_grant_history` / `_cleanup_before`, drift counters (`get_audit_metadata_validation_failures` / `get_audit_unknown_event_type_failures`).
+
+**Named projections.** Every auth-table read names its columns through a
+per-module const — `ACCOUNT_COLUMNS`, `AUTH_SESSION_COLUMNS`,
+`INVITE_COLUMNS`, `AUDIT_LOG_COLUMNS` (shared with
+`db/cell_audit_queries.ts`), `API_TOKEN_COLUMNS` (the client listing derives
+`minus token_hash` from it) — so a dropped or leftover column fails loud
+instead of silently reaching a strict wire shape; each const is
+drift-guarded against the live column set in its module's `.db.test.ts`.
+Mapper-fed reads (`to_*_json`, `to_admin_account`) keep `SELECT *` — the
+mapper is their boundary. Mirrors the Rust spine, which names columns at
+every site.
 
 `_unscoped` suffix on `query_session_revoke_by_hash_unscoped` and
 `query_invite_claim_unscoped` is the safety signal: SQL only checks row state,
@@ -414,9 +425,10 @@ in the HTTP RPC dispatcher (`actions/action_rpc.ts`), the WS dispatcher
 
 ### Migrations
 
-Schema migrations live in `auth/migrations.ts` — two migrations today (`full_auth_schema`,
-`role_grant_offer_and_scoped_role_grants`) under the single reserved namespace
-`AUTH_MIGRATION_NAMESPACE = 'fuz_auth'`. Consumer namespaces must avoid
+Schema migrations live in `auth/migrations.ts` — a frozen, append-only chain
+(`full_auth_schema` first, every later change its own appended entry) under
+the single reserved namespace `AUTH_MIGRATION_NAMESPACE = 'fuz_auth'`, each
+entry twinned byte-for-byte by name on the Rust spine. Consumer namespaces must avoid
 `reserved_migration_namespaces`. Runner contract, error vocabulary, and
 operator recipes (rename, mark applied, reset, baseline) are in
 ../../../docs/migrations.md.

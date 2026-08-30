@@ -47,7 +47,7 @@
 		"target_account_id",
 		"target_actor_id"
 	],
-	"auth_session": ["account_id", "created_at", "expires_at", "id", "last_seen_at"],
+	"auth_session": ["account_id", "created_at", "expires_at", "id"],
 	"bootstrap_lock": ["bootstrapped", "id"],
 	"invite": ["claimed_at", "claimed_by", "created_at", "created_by", "email", "id", "username"],
 	"role_grant": [

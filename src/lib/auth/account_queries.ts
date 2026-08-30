@@ -35,7 +35,7 @@ import { ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT } from './admin_action_specs.ts';
  * decodes them positionally. Keep in sync with `Account` and the `account`
  * DDL in `auth/auth_ddl.ts`.
  */
-const ACCOUNT_COLUMNS =
+export const ACCOUNT_COLUMNS =
 	'id, username, email, email_verified, password_hash, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by';
 
 /**

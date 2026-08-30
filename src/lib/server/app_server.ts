@@ -676,8 +676,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	const app = new Hono();
 
 	// Two-queue side-effect flush. `pending_effects` collects eager
-	// fire-and-forget promises (audit emits, session touch, api-token
-	// usage). `post_commit_effects` collects deferred thunks pushed via
+	// fire-and-forget promises (audit emits, api-token usage). `post_commit_effects` collects deferred thunks pushed via
 	// `emit_after_commit` (WS notifications, anything that must observe a
 	// committed transaction). Both queues drain here, after the handler
 	// (and any wrapping `db.transaction`) returns. In test mode both are

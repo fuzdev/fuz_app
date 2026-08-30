@@ -18,6 +18,24 @@ export interface ApiTokenQueryDeps extends QueryDeps {
 }
 
 /**
+ * The full `api_token` column set, named explicitly so a row read fails loud
+ * on schema drift (see `ACCOUNT_COLUMNS` in `auth/account_queries.ts` for the
+ * outage class; the Rust twin names columns at every token site). Keep in
+ * sync with `ApiToken` and the migration chain's end state.
+ */
+export const API_TOKEN_COLUMNS =
+	'id, account_id, name, token_hash, expires_at, last_used_at, last_used_ip, created_at, scope';
+
+/**
+ * `API_TOKEN_COLUMNS` minus `token_hash` — the client-safe listing
+ * projection, derived so a new column can't land on the wire un-reviewed
+ * while the hash stays off it by construction.
+ */
+const API_TOKEN_CLIENT_COLUMNS = API_TOKEN_COLUMNS.split(', ')
+	.filter((c) => c !== 'token_hash')
+	.join(', ');
+
+/**
  * Store a new API token (the hash, not the raw token).
  *
  * @param deps - query dependencies
@@ -41,7 +59,7 @@ export const query_create_api_token = async (
 	const row = await deps.db.query_one<ApiToken>(
 		`INSERT INTO api_token (id, account_id, name, token_hash, scope, expires_at)
 		 VALUES ($1, $2, $3, $4, $5::jsonb, $6)
-		 RETURNING *`,
+		 RETURNING ${API_TOKEN_COLUMNS}`,
 		[
 			id,
 			account_id,
@@ -77,7 +95,7 @@ export const query_validate_api_token = async (
 ): Promise<ApiToken | undefined> => {
 	const token_hash = hash_api_token(raw_token);
 	const row = await deps.db.query_one<ApiToken>(
-		`SELECT * FROM api_token
+		`SELECT ${API_TOKEN_COLUMNS} FROM api_token
 		 WHERE token_hash = $1
 		   AND (expires_at IS NULL OR expires_at > NOW())`,
 		[token_hash]
@@ -151,17 +169,15 @@ export const query_revoke_api_token_for_account = async (
 };
 
 /**
- * List all tokens for an account (does not include hashes).
- *
- * Columns are enumerated explicitly to exclude `token_hash`.
- * Must be updated if the `api_token` table gains new columns.
+ * List all tokens for an account, newest first — `API_TOKEN_CLIENT_COLUMNS`,
+ * so `token_hash` never rides the listing.
  */
 export const query_api_token_list_for_account = async (
 	deps: QueryDeps,
 	account_id: string
 ): Promise<Array<Omit<ApiToken, 'token_hash'>>> => {
 	return deps.db.query<Omit<ApiToken, 'token_hash'>>(
-		`SELECT id, account_id, name, expires_at, last_used_at, last_used_ip, created_at, scope
+		`SELECT ${API_TOKEN_CLIENT_COLUMNS}
 		 FROM api_token WHERE account_id = $1 ORDER BY created_at DESC`,
 		[account_id]
 	);

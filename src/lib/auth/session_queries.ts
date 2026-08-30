@@ -68,6 +68,18 @@ export const query_create_session = async (
 };
 
 /**
+ * The full `auth_session` column set, named explicitly so a row read fails
+ * loud on schema drift — `SELECT *` would silently carry a dropped or
+ * leftover column into the strict-validated wire shapes (see
+ * `ACCOUNT_COLUMNS` in `auth/account_queries.ts` for the outage class this
+ * discipline exists to prevent; the Rust twin already names columns at every
+ * session site). Keep in sync with `AuthSession` and the migration chain's
+ * end state — not the frozen v0 DDL in `auth/auth_ddl.ts`, which still
+ * creates `last_seen_at` for the appended drop migration to remove.
+ */
+export const AUTH_SESSION_COLUMNS = 'id, account_id, created_at, expires_at';
+
+/**
  * Get a session if it exists, is not expired, and has not been revoked.
  *
  * @param deps - query dependencies
@@ -78,7 +90,7 @@ export const query_session_get_valid = async (
 	token_hash: string
 ): Promise<AuthSession | undefined> => {
 	return deps.db.query_one<AuthSession>(
-		`SELECT * FROM auth_session WHERE id = $1 AND expires_at > NOW()`,
+		`SELECT ${AUTH_SESSION_COLUMNS} FROM auth_session WHERE id = $1 AND expires_at > NOW()`,
 		[token_hash]
 	);
 };
@@ -151,7 +163,7 @@ export const query_session_list_for_account = async (
 	limit = 50
 ): Promise<Array<AuthSession>> => {
 	return deps.db.query<AuthSession>(
-		`SELECT * FROM auth_session WHERE account_id = $1 ORDER BY created_at DESC LIMIT $2`,
+		`SELECT ${AUTH_SESSION_COLUMNS} FROM auth_session WHERE account_id = $1 ORDER BY created_at DESC LIMIT $2`,
 		[account_id, limit]
 	);
 };
@@ -219,9 +231,7 @@ export const query_session_enforce_limit = async (
  * List all active sessions across all accounts with usernames.
  *
  * Ordered by `created_at DESC` (newest session first), matching the
- * per-account listing. `last_seen_at` is still selected for the wire shape
- * but is decorative — nothing updates it post-mint (it always equals
- * `created_at`); it is slated for removal on its own twin migration.
+ * per-account listing.
  *
  * @param deps - query dependencies
  * @param limit - maximum entries to return
@@ -232,7 +242,7 @@ export const query_session_list_all_active = async (
 	limit = 200
 ): Promise<Array<AuthSession & { username: string }>> => {
 	return deps.db.query<AuthSession & { username: string }>(
-		`SELECT s.id, s.account_id, s.created_at, s.expires_at, s.last_seen_at, a.username
+		`SELECT s.id, s.account_id, s.created_at, s.expires_at, a.username
 		 FROM auth_session s
 		 JOIN account a ON a.id = s.account_id
 		 WHERE s.expires_at > NOW()

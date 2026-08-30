@@ -272,6 +272,16 @@ export const auth_migrations: Array<Migration> = [
 				'CREATE INDEX IF NOT EXISTS idx_audit_log_metadata ON audit_log USING gin (metadata jsonb_path_ops)'
 			);
 		}
+	},
+	// Drops `auth_session.last_seen_at`. The session lifetime is a hard cap
+	// set at mint — nothing updates the column post-mint on either spine, so
+	// it always equalled `created_at` (a decorative false signal the UIs
+	// stopped showing when the listings re-sorted by `created_at`).
+	{
+		name: 'drop_session_last_seen_at',
+		up: async (db: Db): Promise<void> => {
+			await db.query('ALTER TABLE auth_session DROP COLUMN IF EXISTS last_seen_at');
+		}
 	}
 ];
 

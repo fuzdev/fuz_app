@@ -107,6 +107,18 @@ describe_db('create_session_and_set_cookie', (get_db) => {
 			const token = await read_session_token(set_cookie, keyring);
 			assert.ok(token, `create #${i} must yield a verifiable token`);
 			tokens.push(token);
+			// Pin a distinct, strictly increasing `created_at` per create.
+			// `NOW()` is the transaction timestamp, so two fast creates can tie
+			// at microsecond resolution — and on a tie both the eviction's and
+			// the listing's `created_at DESC` fall to the arbitrary id
+			// tiebreak (see `query_session_enforce_limit`), turning "oldest"
+			// nondeterministic and flaking this assertion under load. Each new
+			// create's `NOW()` stays later than every stamped row, so the
+			// eviction ordering is exercised for real, just without ties.
+			await db.query(`UPDATE auth_session SET created_at = $2 WHERE id = $1`, [
+				hash_session_token(token),
+				new Date(Date.UTC(2026, 0, 1) + i * 1000).toISOString()
+			]);
 		}
 
 		const sessions = await query_session_list_for_account({ db }, account.id);

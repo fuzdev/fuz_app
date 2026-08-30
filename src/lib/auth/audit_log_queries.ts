@@ -26,6 +26,24 @@ import {
 } from './audit_log_schema.ts';
 
 /**
+ * The full `audit_log` column set, named explicitly so a row read fails loud
+ * on schema drift — audit rows ride the `audit_log_list` / role-grant-history
+ * RPC responses and the SSE broadcast raw, so a `SELECT *` would silently
+ * carry a dropped or leftover column into the strict-validated wire shapes
+ * (see `ACCOUNT_COLUMNS` in `auth/account_queries.ts` for the outage class;
+ * the Rust twin names columns at every audit site). Keep in sync with
+ * `AuditLogEvent` and the migration chain's end state. Exported for the
+ * per-cell timeline read in `db/cell_audit_queries.ts`.
+ */
+export const AUDIT_LOG_COLUMNS =
+	'id, seq, event_type, outcome, actor_id, account_id, target_account_id, target_actor_id, ip, created_at, metadata';
+
+/** `AUDIT_LOG_COLUMNS` qualified for the `al`-aliased JOIN reads. */
+const AUDIT_LOG_COLUMNS_AL = AUDIT_LOG_COLUMNS.split(', ')
+	.map((c) => `al.${c}`)
+	.join(', ');
+
+/**
  * Process-wide counter for audit metadata validation failures. `query_audit_log`
  * increments on `safeParse` mismatch and writes the row anyway (fail-open —
  * schema drift should not break auth flows). Independent of the
@@ -67,9 +85,10 @@ export const reset_audit_unknown_event_type_failures = (): void => {
 /**
  * Insert an audit log entry.
  *
- * `RETURNING *` so callers receive DB-assigned fields (`id`, `seq`,
- * `created_at`). Validates `metadata` against `config.metadata_schemas`;
- * unknown `event_type` and metadata mismatches log + bump their counters
+ * Returns the full row (`AUDIT_LOG_COLUMNS`) so callers receive DB-assigned
+ * fields (`id`, `seq`, `created_at`). Validates `metadata` against
+ * `config.metadata_schemas`; unknown `event_type` and metadata mismatches
+ * log + bump their counters
  * but write the row anyway. Consumers extend the recognized set via
  * `create_audit_log_config({extra_events})`.
  *
@@ -115,7 +134,7 @@ export const query_audit_log = async <T extends string>(
 	const rows = await deps.db.query<AuditLogEvent>(
 		`INSERT INTO audit_log (event_type, outcome, actor_id, account_id, target_account_id, target_actor_id, ip, metadata)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		 RETURNING *`,
+		 RETURNING ${AUDIT_LOG_COLUMNS}`,
 		[
 			input.event_type,
 			input.outcome ?? 'success',
@@ -177,7 +196,7 @@ export const query_audit_log_list = async (
 	const offset = options?.offset ?? 0;
 
 	return deps.db.query<AuditLogEvent>(
-		`SELECT * FROM audit_log ${where} ORDER BY seq DESC LIMIT $${param_index++} OFFSET $${
+		`SELECT ${AUDIT_LOG_COLUMNS} FROM audit_log ${where} ORDER BY seq DESC LIMIT $${param_index++} OFFSET $${
 			param_index
 		}`,
 		[...params, limit, offset]
@@ -237,7 +256,7 @@ export const query_audit_log_list_with_usernames = async (
 	// Under v1 1:1 the two branches resolve to the same username; the
 	// chain is forensic future-proofing for N:1 multi-actor.
 	return deps.db.query<AuditLogEventWithUsernamesJson>(
-		`SELECT al.*,
+		`SELECT ${AUDIT_LOG_COLUMNS_AL},
 			COALESCE(origin_act_acc.username, origin_acc.username) AS username,
 			COALESCE(target_act_acc.username, target_acc.username) AS target_username
 		 FROM audit_log al
@@ -269,7 +288,7 @@ export const query_audit_log_list_role_grant_history = async (
 	// see the comment there for rationale (forensic future-proofing for
 	// N:1 multi-actor; v1 1:1 picks the same username via either branch).
 	return deps.db.query<RoleGrantHistoryEventJson>(
-		`SELECT al.*,
+		`SELECT ${AUDIT_LOG_COLUMNS_AL},
 			COALESCE(origin_act_acc.username, origin_acc.username) AS username,
 			COALESCE(target_act_acc.username, target_acc.username) AS target_username
 		 FROM audit_log al

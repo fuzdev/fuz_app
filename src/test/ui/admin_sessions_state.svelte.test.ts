@@ -14,10 +14,10 @@ import { describe, test, assert, vi, afterEach } from 'vitest';
 
 import { AdminSessionsState } from '$lib/ui/admin_sessions_state.svelte.ts';
 import type { AdminAccountsRpc } from '$lib/ui/admin_accounts_state.svelte.ts';
-import type { AdminSessionJson } from '$lib/auth/audit_log_schema.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import { make_offer } from './role_grant_offer_fixtures.ts';
+import { make_admin_session as make_session } from './session_fixtures.ts';
 
 const acct_1 = 'acct-1' as Uuid;
 
@@ -37,23 +37,6 @@ const make_rpc = (overrides: Partial<AdminAccountsRpc> = {}): AdminAccountsRpc =
 	token_revoke_all: vi.fn().mockResolvedValue({ ok: true, count: 1 }),
 	...overrides
 });
-
-/**
- * `id` widens back to `string` so fixtures read as `'sess-1'` rather than 64
- * hex chars. These tests drive state against a mocked rpc, so nothing parses.
- */
-type AdminSessionOverrides = Omit<Partial<AdminSessionJson>, 'id'> & { id?: string };
-
-const make_session = (overrides: AdminSessionOverrides = {}): AdminSessionJson =>
-	({
-		id: 'sess-1',
-		account_id: 'acct-1',
-		username: 'alice',
-		created_at: '2026-01-01T00:00:00.000Z',
-		expires_at: '2026-02-01T00:00:00.000Z',
-		last_seen_at: '2026-01-02T00:00:00.000Z',
-		...overrides
-	}) as AdminSessionJson;
 
 describe('AdminSessionsState.fetch', () => {
 	test('populates sessions on success', async () => {

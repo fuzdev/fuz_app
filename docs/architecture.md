@@ -418,7 +418,7 @@ inside `actions/perform_action.ts` short-circuit to the unwrapped handler
 ## Fire-and-Forget Pending Effects
 
 Per-request `Array<Promise<void>>` on Hono's `ContextVariableMap` for tracking
-background effects (audit logging, session touch, token usage tracking). Two
+background effects (audit logging, token usage tracking). Two
 patterns:
 
 - **Audit fan-out** runs through the bound `AppDeps.audit` capability

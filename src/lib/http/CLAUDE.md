@@ -71,7 +71,7 @@ interface RouteContext {
 ```
 
 - **`route.db`** — handler's main DB work. Wrapped in a transaction when `transaction: true` (default for non-GET); routes that opt out (`transaction: false`, e.g. signup / bootstrap) get the pool here directly and may call `route.db.transaction(...)` for their own scope.
-- **`route.pending_effects`** — direct push for eager fire-and-forget pool writes (audit, session touch, api-token usage tracking).
+- **`route.pending_effects`** — direct push for eager fire-and-forget pool writes (audit, api-token usage tracking).
 - **`route.post_commit_effects`** — do not push directly; reach for `emit_after_commit` from `http/pending_effects.ts`. The helper pushes a thunk that the flush middleware invokes after the handler returns, closing the microtask-ordering window that an eager `Promise.resolve().then(fn)` leaves open inside the wrapping `db.transaction`.
 
 Pool-level fire-and-forget writes (audit logs, etc.) run through the bound

@@ -7,6 +7,12 @@
  * (audit table) and `auth/role_grant_offer_ddl.ts` (offer table) — DDL lives
  * in `*_ddl.ts`, Zod schemas in `*_schema.ts`.
  *
+ * These strings are the body of the frozen `full_auth_schema` migration —
+ * never edit them (see the `auth/migrations.ts` module doc for the
+ * silent-outage rationale). Schema changes ship as new appended migrations,
+ * so a column retired later still appears below (created by v0, dropped
+ * downstream in the chain).
+ *
  * @module
  */
 
@@ -71,6 +77,9 @@ export const ROLE_GRANT_INDEXES = [
     ON role_grant (actor_id, role) WHERE revoked_at IS NULL`
 ];
 
+// `last_seen_at` stays in this frozen v0 body — the appended
+// `drop_session_last_seen_at` migration removes it later in the chain, so a
+// fresh bootstrap and an old deployed DB converge on the same shape.
 export const AUTH_SESSION_SCHEMA = `
 CREATE TABLE IF NOT EXISTS auth_session (
   id TEXT PRIMARY KEY,

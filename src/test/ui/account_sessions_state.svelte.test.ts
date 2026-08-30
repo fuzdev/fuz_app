@@ -15,29 +15,15 @@ import {
 	AccountSessionsState,
 	type AccountSessionsRpc
 } from '$lib/ui/account_sessions_state.svelte.ts';
-import type { AuthSessionJson, SessionId } from '$lib/auth/account_schema.ts';
+import type { SessionId } from '$lib/auth/account_schema.ts';
+
+import { make_auth_session as make_session } from './session_fixtures.ts';
 
 afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-/**
- * `id` widens back to `string` so fixtures read as `'sess-1'` rather than 64
- * hex chars. These tests drive state against a mocked rpc, so nothing parses.
- */
-type SessionOverrides = Omit<Partial<AuthSessionJson>, 'id'> & { id?: string };
-
-const make_session = (overrides: SessionOverrides = {}): AuthSessionJson =>
-	({
-		id: 'sess-1',
-		account_id: 'acct-1',
-		created_at: '2026-01-01T00:00:00.000Z',
-		expires_at: '2026-02-01T00:00:00.000Z',
-		last_seen_at: '2026-01-02T00:00:00.000Z',
-		...overrides
-	}) as AuthSessionJson;
-
-/** The same widening for a bare id argument — a readable label, never parsed. */
+/** Widen a bare id argument — a readable label, never parsed. */
 const session_id = (id: string): SessionId => id as SessionId;
 
 const make_rpc = (overrides: Partial<AccountSessionsRpc> = {}): AccountSessionsRpc => ({
