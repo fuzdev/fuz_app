@@ -20,6 +20,7 @@
 import type { QueryDeps } from './query_deps.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import { assert_row } from './assert_row.ts';
+import { columns_sql, qualify_columns } from './sql_columns.ts';
 
 /** Row shape returned by `cell_field` SELECTs. */
 export interface CellFieldRow {
@@ -28,6 +29,19 @@ export interface CellFieldRow {
 	target_id: Uuid;
 	created_at: Date;
 }
+
+/**
+ * The full `cell_field` column set, named explicitly so a row read fails
+ * loud on schema drift (see `CELL_COLUMNS` in `db/cell_queries.ts`). Column
+ * order mirrors the Rust twin's `field_columns(alias)` (`fuz_cell`). Keep in
+ * sync with `CellFieldRow` and the `cell_field` DDL in `db/cell_ddl.ts`.
+ */
+export const CELL_FIELD_COLUMNS = [
+	'source_id',
+	'name',
+	'target_id',
+	'created_at'
+] as const satisfies ReadonlyArray<keyof CellFieldRow>;
 
 /** Input for `query_cell_field_set`. */
 export interface CellFieldSetQueryInput {
@@ -58,7 +72,7 @@ export const query_cell_field_set = async (
 		 VALUES ($1, $2, $3)
 		 ON CONFLICT (source_id, name)
 		 DO UPDATE SET target_id = EXCLUDED.target_id, created_at = NOW()
-		 RETURNING *`,
+		 RETURNING ${columns_sql(CELL_FIELD_COLUMNS)}`,
 		[input.source_id, input.name, input.target_id]
 	);
 	return assert_row(row, 'INSERT INTO cell_field');
@@ -82,7 +96,7 @@ export const query_cell_field_get = async (
 	name: string
 ): Promise<CellFieldRow | null> => {
 	const row = await deps.db.query_one<CellFieldRow>(
-		`SELECT * FROM cell_field WHERE source_id = $1 AND name = $2`,
+		`SELECT ${columns_sql(CELL_FIELD_COLUMNS)} FROM cell_field WHERE source_id = $1 AND name = $2`,
 		[source_id, name]
 	);
 	return row ?? null;
@@ -102,7 +116,8 @@ export const query_cell_field_delete = async (
 	name: string
 ): Promise<CellFieldRow | null> => {
 	const row = await deps.db.query_one<CellFieldRow>(
-		`DELETE FROM cell_field WHERE source_id = $1 AND name = $2 RETURNING *`,
+		`DELETE FROM cell_field WHERE source_id = $1 AND name = $2
+		 RETURNING ${columns_sql(CELL_FIELD_COLUMNS)}`,
 		[source_id, name]
 	);
 	return row ?? null;
@@ -117,7 +132,9 @@ export const query_cell_field_delete = async (
  *
  * @param deps - query deps
  * @param source_id - source cell id
- * @returns matching rows, oldest first by name (lex order)
+ * @param options - `limit` caps the row count; `name_after` resumes after a
+ *   name (keyset pagination)
+ * @returns matching rows in lex `name` order
  */
 export const query_cell_field_list_for_source = async (
 	deps: QueryDeps,
@@ -127,7 +144,7 @@ export const query_cell_field_list_for_source = async (
 	const limit = options?.limit ?? null;
 	const name_after = options?.name_after ?? null;
 	return deps.db.query<CellFieldRow>(
-		`SELECT f.* FROM cell_field f
+		`SELECT ${qualify_columns(CELL_FIELD_COLUMNS, 'f')} FROM cell_field f
 		 JOIN cell t ON t.id = f.target_id
 		 WHERE f.source_id = $1
 		   AND t.deleted_at IS NULL
@@ -153,7 +170,7 @@ export const query_cell_field_list_for_source = async (
  * @param deps - query deps
  * @param target_id - target cell id
  * @param options - `limit` caps the row count
- * @returns matching rows, oldest first by source created_at
+ * @returns matching rows, oldest field first (by the field row's `created_at`)
  */
 export const query_cell_field_list_for_target = async (
 	deps: QueryDeps,
@@ -161,7 +178,7 @@ export const query_cell_field_list_for_target = async (
 	options?: { limit?: number }
 ): Promise<Array<CellFieldRow>> =>
 	deps.db.query<CellFieldRow>(
-		`SELECT f.* FROM cell_field f
+		`SELECT ${qualify_columns(CELL_FIELD_COLUMNS, 'f')} FROM cell_field f
 		 JOIN cell s ON s.id = f.source_id
 		 WHERE f.target_id = $1
 		   AND s.deleted_at IS NULL

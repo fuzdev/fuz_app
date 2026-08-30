@@ -11,6 +11,7 @@ import { hash_blake3 } from '@fuzdev/fuz_util/hash_blake3.ts';
 
 import { generate_random_base64url } from '../crypto.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
+import { columns_sql, qualify_columns } from '../db/sql_columns.ts';
 import type { AuthSession, SessionId } from './account_schema.ts';
 
 /**
@@ -77,7 +78,12 @@ export const query_create_session = async (
  * end state — not the frozen v0 DDL in `auth/auth_ddl.ts`, which still
  * creates `last_seen_at` for the appended drop migration to remove.
  */
-export const AUTH_SESSION_COLUMNS = 'id, account_id, created_at, expires_at';
+export const AUTH_SESSION_COLUMNS = [
+	'id',
+	'account_id',
+	'created_at',
+	'expires_at'
+] as const satisfies ReadonlyArray<keyof AuthSession>;
 
 /**
  * Get a session if it exists, is not expired, and has not been revoked.
@@ -90,7 +96,7 @@ export const query_session_get_valid = async (
 	token_hash: string
 ): Promise<AuthSession | undefined> => {
 	return deps.db.query_one<AuthSession>(
-		`SELECT ${AUTH_SESSION_COLUMNS} FROM auth_session WHERE id = $1 AND expires_at > NOW()`,
+		`SELECT ${columns_sql(AUTH_SESSION_COLUMNS)} FROM auth_session WHERE id = $1 AND expires_at > NOW()`,
 		[token_hash]
 	);
 };
@@ -163,7 +169,7 @@ export const query_session_list_for_account = async (
 	limit = 50
 ): Promise<Array<AuthSession>> => {
 	return deps.db.query<AuthSession>(
-		`SELECT ${AUTH_SESSION_COLUMNS} FROM auth_session WHERE account_id = $1 ORDER BY created_at DESC LIMIT $2`,
+		`SELECT ${columns_sql(AUTH_SESSION_COLUMNS)} FROM auth_session WHERE account_id = $1 ORDER BY created_at DESC LIMIT $2`,
 		[account_id, limit]
 	);
 };
@@ -242,7 +248,7 @@ export const query_session_list_all_active = async (
 	limit = 200
 ): Promise<Array<AuthSession & { username: string }>> => {
 	return deps.db.query<AuthSession & { username: string }>(
-		`SELECT s.id, s.account_id, s.created_at, s.expires_at, a.username
+		`SELECT ${qualify_columns(AUTH_SESSION_COLUMNS, 's')}, a.username
 		 FROM auth_session s
 		 JOIN account a ON a.id = s.account_id
 		 WHERE s.expires_at > NOW()

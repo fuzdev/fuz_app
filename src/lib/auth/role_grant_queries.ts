@@ -12,11 +12,37 @@ import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import type { RoleGrant, CreateRoleGrantInput } from './account_schema.ts';
 import { assert_row } from '../db/assert_row.ts';
+import { columns_sql, qualify_columns } from '../db/sql_columns.ts';
 import {
+	ROLE_GRANT_OFFER_COLUMNS,
 	ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
-	ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID
+	ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID,
+	ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT
 } from './role_grant_offer_ddl.ts';
 import type { SupersededOffer } from './role_grant_offer_schema.ts';
+
+/**
+ * The full `role_grant` column set, named explicitly so a row read fails loud
+ * on schema drift (see `ACCOUNT_COLUMNS` in `auth/account_queries.ts` for the
+ * outage class). Column order follows `RoleGrant` — the frozen `fuz_auth` v0
+ * body plus the appended `scope_kind` / `scope_id` / `revoked_reason` /
+ * `source_offer_id` columns. Keep in sync with `RoleGrant` and the
+ * `role_grant` migration chain in `auth/auth_ddl.ts`.
+ */
+export const ROLE_GRANT_COLUMNS = [
+	'id',
+	'actor_id',
+	'role',
+	'scope_kind',
+	'scope_id',
+	'created_at',
+	'expires_at',
+	'revoked_at',
+	'revoked_by',
+	'revoked_reason',
+	'granted_by',
+	'source_offer_id'
+] as const satisfies ReadonlyArray<keyof RoleGrant>;
 
 /**
  * Grant a role_grant to an actor.
@@ -53,7 +79,7 @@ export const query_create_role_grant = async (
 		 )
 		   WHERE revoked_at IS NULL
 		 DO NOTHING
-		 RETURNING *`,
+		 RETURNING ${columns_sql(ROLE_GRANT_COLUMNS)}`,
 		[
 			input.actor_id,
 			input.role,
@@ -67,7 +93,7 @@ export const query_create_role_grant = async (
 	if (inserted) return inserted;
 	// Active role_grant already exists — return it (idempotent grant).
 	const existing = await deps.db.query_one<RoleGrant>(
-		`SELECT * FROM role_grant
+		`SELECT ${columns_sql(ROLE_GRANT_COLUMNS)} FROM role_grant
 		 WHERE actor_id = $1
 		   AND role = $2
 		   AND scope_kind IS NOT DISTINCT FROM $3
@@ -77,6 +103,23 @@ export const query_create_role_grant = async (
 	);
 	return assert_row(existing, 'idempotent role_grant grant');
 };
+
+/**
+ * Find a role_grant by id, regardless of revoked / expired state.
+ *
+ * Unscoped by design — the one caller is `query_accept_offer`'s race-loser
+ * path, which resolves an already-accepted offer's `resulting_role_grant_id`
+ * (a row the offer's own IDOR guard has already vouched for). Authority
+ * checks stay at the call site.
+ */
+export const query_role_grant_by_id = async (
+	deps: QueryDeps,
+	id: Uuid
+): Promise<RoleGrant | undefined> =>
+	deps.db.query_one<RoleGrant>(
+		`SELECT ${columns_sql(ROLE_GRANT_COLUMNS)} FROM role_grant WHERE id = $1`,
+		[id]
+	);
 
 /**
  * Look up the role of an active role_grant (constrained to a specific
@@ -195,11 +238,9 @@ export const query_revoke_role_grant = async (
 			  AND o.declined_at IS NULL
 			  AND o.retracted_at IS NULL
 			  AND o.superseded_at IS NULL
-			RETURNING o.*
+			RETURNING ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'o')}
 		)
-		SELECT u.*, grantor.account_id AS from_account_id
-		FROM updated u
-		JOIN actor grantor ON grantor.id = u.from_actor_id`,
+		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
 		[actor_id, revoked.role, revoked.scope_id]
 	);
 	return {
@@ -219,7 +260,7 @@ export const query_role_grant_find_active_for_actor = async (
 	actor_id: string
 ): Promise<Array<RoleGrant>> => {
 	return deps.db.query<RoleGrant>(
-		`SELECT * FROM role_grant
+		`SELECT ${columns_sql(ROLE_GRANT_COLUMNS)} FROM role_grant
 		 WHERE actor_id = $1
 		   AND revoked_at IS NULL
 		   AND (expires_at IS NULL OR expires_at > NOW())
@@ -389,7 +430,7 @@ export const query_role_grant_list_for_actor = async (
 	actor_id: string
 ): Promise<Array<RoleGrant>> => {
 	return deps.db.query<RoleGrant>(
-		`SELECT * FROM role_grant WHERE actor_id = $1 ORDER BY created_at DESC`,
+		`SELECT ${columns_sql(ROLE_GRANT_COLUMNS)} FROM role_grant WHERE actor_id = $1 ORDER BY created_at DESC`,
 		[actor_id]
 	);
 };
@@ -530,11 +571,9 @@ export const query_role_grant_revoke_for_scope = async (
 			  AND o.declined_at IS NULL
 			  AND o.retracted_at IS NULL
 			  AND o.superseded_at IS NULL
-			RETURNING o.*
+			RETURNING ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'o')}
 		)
-		SELECT u.*, grantor.account_id AS from_account_id
-		FROM updated u
-		JOIN actor grantor ON grantor.id = u.from_actor_id`,
+		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
 		[scope_id]
 	);
 	return { revoked, superseded_offers };
@@ -626,11 +665,9 @@ export const query_role_grant_revoke_role = async (
 			  AND o.declined_at IS NULL
 			  AND o.retracted_at IS NULL
 			  AND o.superseded_at IS NULL
-			RETURNING o.*
+			RETURNING ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'o')}
 		)
-		SELECT u.*, grantor.account_id AS from_account_id
-		FROM updated u
-		JOIN actor grantor ON grantor.id = u.from_actor_id`,
+		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
 		[actor_id, role]
 	);
 	return { revoked, superseded_offers };

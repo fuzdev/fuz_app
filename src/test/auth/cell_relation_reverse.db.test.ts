@@ -24,13 +24,8 @@ import { cell_grant_create_action_spec } from '$lib/auth/cell_grant_action_specs
 import { ERROR_CELL_NOT_FOUND } from '$lib/auth/cell_action_specs.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import type { TestApp, TestAccount } from '$lib/testing/app_server.ts';
-import {
-	describe_db,
-	create_cell_test_app,
-	create_cell,
-	call,
-	error_reason
-} from './cell_test_helpers.ts';
+import { create_cell_test_app, create_cell, call, error_reason } from './cell_test_helpers.ts';
+import { describe_db } from '../cell_db_fixture.ts';
 
 const grant_viewer = (app: TestApp, granter: TestAccount, cell_id: Uuid, actor_id: Uuid) =>
 	call(

@@ -1,6 +1,7 @@
 /**
- * Role grant offer DDL — `CREATE TABLE` + index statements and the index-side
- * sentinel constants the queries / migrations interpolate.
+ * Role grant offer DDL — `CREATE TABLE` + index statements, the index-side
+ * sentinel constants the queries / migrations interpolate, and the table's
+ * `ROLE_GRANT_OFFER_COLUMNS` projection const.
  *
  * Separated from `auth/role_grant_offer_schema.ts` so the schema module stays
  * Zod-only (paired with `auth/auth_ddl.ts` and `auth/audit_log_ddl.ts`).
@@ -14,6 +15,9 @@
  * @module
  */
 
+import { qualify_columns } from '../db/sql_columns.ts';
+import type { RoleGrantOffer } from './role_grant_offer_schema.ts';
+
 /** Sentinel UUID used inside the partial unique indexes to collapse `scope_id IS NULL` into a comparable value. */
 export const ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -24,6 +28,47 @@ export const ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID = '00000000-0000-0000-0000-000
  * `scope_kind = NULL` and `scope_id = NULL` together encode the global case.
  */
 export const ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN = 'GLOBAL';
+
+/**
+ * The full `role_grant_offer` column set, named explicitly so a row read
+ * fails loud on schema drift (see `ACCOUNT_COLUMNS` in
+ * `auth/account_queries.ts` for the outage class). Column order follows
+ * `RoleGrantOffer` and `ROLE_GRANT_OFFER_SCHEMA` below.
+ *
+ * Lives here rather than in `auth/role_grant_offer_queries.ts` because two
+ * query modules project this table — see the placement rule in
+ * `db/sql_columns.ts`.
+ */
+export const ROLE_GRANT_OFFER_COLUMNS = [
+	'id',
+	'from_actor_id',
+	'to_account_id',
+	'to_actor_id',
+	'role',
+	'scope_kind',
+	'scope_id',
+	'message',
+	'created_at',
+	'expires_at',
+	'accepted_at',
+	'declined_at',
+	'decline_reason',
+	'retracted_at',
+	'superseded_at',
+	'resulting_role_grant_id'
+] as const satisfies ReadonlyArray<keyof RoleGrantOffer>;
+
+/**
+ * Outer `SELECT` over an `updated` CTE of `role_grant_offer` rows, joining
+ * the grantor's `account_id` on as `from_account_id` — the `SupersededOffer` /
+ * `DeclinedOffer` shape every offer-superseding cascade returns (the revoke
+ * cascades in `auth/role_grant_queries.ts`, decline + accept-supersede in
+ * `auth/role_grant_offer_queries.ts`). The CTE must be named `updated` and
+ * `RETURNING` the full offer row.
+ */
+export const ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT = `SELECT ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'u')}, grantor.account_id AS from_account_id
+		FROM updated u
+		JOIN actor grantor ON grantor.id = u.from_actor_id`;
 
 export const ROLE_GRANT_OFFER_SCHEMA = `
 CREATE TABLE IF NOT EXISTS role_grant_offer (

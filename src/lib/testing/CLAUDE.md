@@ -128,6 +128,7 @@ factories accept any migration namespace set.
 - `drop_auth_schema(db)` — `DROP SCHEMA public CASCADE; CREATE SCHEMA public`; call at the top of `init_schema` on persistent pg databases that may hold stale DDL from previous fuz_app versions. Drift-proof full-schema reset (despite the name, not auth-scoped) — same mechanism as `reset_pglite`.
 - `create_describe_db(factories, truncate_tables)` — returns `describe_db(name, fn)` running `fn(get_db)` once per factory inside a `describe` with shared `beforeAll(create)` + `beforeEach(TRUNCATE)` + `afterAll(close)`. Skipped factories use `describe.skip`.
 - `log_db_factory_status(factories)` — console summary of enabled / skipped factories.
+- `assert_columns_match_live(db, table, columns)` — the named-projection drift guard: asserts a `*_COLUMNS` const (`ACCOUNT_COLUMNS`, `CELL_COLUMNS`, a consumer's own) names exactly the live `public`-schema columns of `table`, via `query_public_columns(db, {table})`. Per module, or iterated from a table → const registry (fuz_app's own: `src/test/db/column_projections.db.test.ts`).
 
 **PGlite WASM caching.** `create_pglite_factory` shares a single PGlite
 instance in a module-level ref (`module_db`) across all factories in the

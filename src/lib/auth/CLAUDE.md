@@ -69,7 +69,7 @@ Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
 - `auth/invite_schema.ts` — `Invite`, `CreateInviteInput`.
 - `auth/app_settings_schema.ts` — `AppSettings`, `UpdateAppSettingsInput` (single-row via `CHECK (id = 1)`).
 - `auth/role_grant_offer_schema.ts` — `RoleGrantOffer`, `RoleGrantOfferJson`, `to_role_grant_offer_json`, scope-sentinel constants.
-- `auth/role_grant_offer_ddl.ts` — `role_grant_offer` table + indexes + `ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID` / `_GLOBAL_TOKEN`.
+- `auth/role_grant_offer_ddl.ts` — `role_grant_offer` table + indexes + `ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID` / `_GLOBAL_TOKEN` + `ROLE_GRANT_OFFER_COLUMNS` and the shared `ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT` CTE tail (homed here per the placement rule in `db/sql_columns.ts`).
 - `auth/role_grant_offer_notifications.ts` — six WS notification specs for the consentful-grant lifecycle.
 
 ### Queries
@@ -87,16 +87,23 @@ All take `deps: QueryDeps = {db}` first; `query_validate_api_token` adds `log`.
 - `auth/app_settings_queries.ts` — load/update for the single-row settings table.
 - `auth/audit_log_queries.ts` — `query_audit_log` (in-tx insert), `_list` / `_list_with_usernames` / `_list_role_grant_history` / `_cleanup_before`, drift counters (`get_audit_metadata_validation_failures` / `get_audit_unknown_event_type_failures`).
 
-**Named projections.** Every auth-table read names its columns through a
-per-module const — `ACCOUNT_COLUMNS`, `AUTH_SESSION_COLUMNS`,
-`INVITE_COLUMNS`, `AUDIT_LOG_COLUMNS` (shared with
-`db/cell_audit_queries.ts`), `API_TOKEN_COLUMNS` (the client listing derives
-`minus token_hash` from it) — so a dropped or leftover column fails loud
-instead of silently reaching a strict wire shape; each const is
-drift-guarded against the live column set in its module's `.db.test.ts`.
-Mapper-fed reads (`to_*_json`, `to_admin_account`) keep `SELECT *` — the
-mapper is their boundary. Mirrors the Rust spine, which names columns at
-every site.
+**Named projections** (rationale + helpers: ../../../docs/architecture.md
+§Query Modules). The consts on this side: `ACCOUNT_COLUMNS` + `ACTOR_COLUMNS`
+(`account_queries.ts` owns both tables; its admin listing derives an
+active-grant subset from `ROLE_GRANT_COLUMNS`), `AUTH_SESSION_COLUMNS`,
+`INVITE_COLUMNS`, `AUDIT_LOG_COLUMNS` (shared with `db/cell_audit_queries.ts`),
+`API_TOKEN_COLUMNS` (the client listing derives `minus token_hash`),
+`ROLE_GRANT_COLUMNS`, `ROLE_GRANT_OFFER_COLUMNS` (in `role_grant_offer_ddl.ts`),
+`APP_SETTINGS_COLUMNS` (reads omit the constant singleton `id`; the one const
+without a `satisfies keyof Row` clause, since `AppSettings` deliberately
+doesn't carry `id`). Module direction: `role_grant_offer_queries.ts` imports
+`role_grant_queries.ts` (the accept path writes through
+`query_create_role_grant` / `query_role_grant_by_id`) and not the reverse —
+the revoke cascades in `role_grant_queries.ts` still _write_ offer rows, which
+is exactly why the offer const and the shared CTE tail live in the DDL module.
+Every const is pinned to the live schema by
+`src/test/db/column_projections.db.test.ts`. Mirrors the Rust spine, which
+names columns at every site.
 
 `_unscoped` suffix on `query_session_revoke_by_hash_unscoped` and
 `query_invite_claim_unscoped` is the safety signal: SQL only checks row state,

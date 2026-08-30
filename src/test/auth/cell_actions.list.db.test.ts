@@ -29,13 +29,8 @@ import {
 import { cell_grant_create_action_spec } from '$lib/auth/cell_grant_action_specs.ts';
 import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
-import {
-	describe_db,
-	create_cell_test_app,
-	create_cell,
-	call,
-	error_reason
-} from './cell_test_helpers.ts';
+import { create_cell_test_app, create_cell, call, error_reason } from './cell_test_helpers.ts';
+import { describe_db } from '../cell_db_fixture.ts';
 
 const FACT_HASH = `blake3:${'a'.repeat(64)}` as FactHash;
 

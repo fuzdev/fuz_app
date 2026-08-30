@@ -43,7 +43,8 @@ import { ERROR_INVALID_QUERY_PARAMS, ERROR_INVALID_ROUTE_PARAMS } from '$lib/htt
 import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import type { TestApp } from '$lib/testing/app_server.ts';
 import { create_test_extra_actor, soft_delete_test_actor } from '$lib/testing/db_entities.ts';
-import { describe_db, create_cell_test_app, create_cell } from '../auth/cell_test_helpers.ts';
+import { create_cell_test_app, create_cell } from '../auth/cell_test_helpers.ts';
+import { describe_db } from '../cell_db_fixture.ts';
 
 const PUBLIC_HEADERS = { host: 'localhost:5173', origin: 'http://localhost:5173' };
 

@@ -19,8 +19,9 @@ The remaining directories are:
 
 - `http/` — Generic HTTP framework infrastructure (route specs, error schemas,
   surface introspection, proxy, origin verification). Nothing auth-specific.
-- `db/` — Pure database infrastructure (driver adapters, migrations runner).
-  No domain logic.
+- `db/` — Database infrastructure (driver adapters, migrations runner, the
+  `*_COLUMNS` projection helpers) plus the domain-neutral content substrate —
+  the cell and fact tables and their queries (see §Data Substrate below).
 - `server/` — Application assembly (`create_app_backend`, `create_app_server`).
   Composes auth + http + db into a running server.
 - `runtime/` — Composable capability interfaces and runtime implementations.
@@ -219,6 +220,46 @@ Cells and facts are both TS + Rust twin-impl: the Rust `testing_spine_stub`
 migrates the `fuz_cell` and `fuz_facts` namespaces and serves facts, gated by
 the cross-backend schema-parity and `fact_serving` suites. Snapshot
 lifecycle, GC policy, and MemoStore are tracked deferrals.
+
+## Query Modules
+
+`auth/*_queries.ts` and `db/*_queries.ts` hold the raw SQL — every function
+takes `deps: QueryDeps` first and `INSERT … RETURNING` rows pass through
+`assert_row`. Most modules own one table; `auth/account_queries.ts` owns
+`account` + `actor`.
+
+**Named projections.** A table's reads project through an exported
+column-name const rather than `*`, so a dropped or leftover column fails loud
+as a Postgres `column "…" does not exist` instead of hydrating as `undefined`
+and misreading a `deleted_at === null` filter (the silent-outage class the
+`/ready` gate exists for, caught here at the read). The const is an `as const`
+array, rendered at each read site via `db/sql_columns.ts` — `columns_sql(COLS)`
+for a single-table read, `qualify_columns(COLS, 'c')` for a read that aliases
+the table, `omit_columns(COLS, 'token_hash')` for a client-safe listing — so
+the guard on the base const covers every derived projection. The guard itself
+is an equality against the live schema, via `testing/db.ts`:
+
+```ts
+await assert_columns_match_live(db, 'cell', CELL_COLUMNS);
+```
+
+The discipline is uniform — every table with a row-shaped read, wire-raw or
+mapper-fed. A mapper (`to_*_json`) keeps a leftover column off the wire, but
+it does nothing for the dropped-column direction — a `SELECT *` on `actor`
+would still hydrate a dropped `deleted_at` as `undefined` — which is why
+"mapper-fed" earns no exemption. Each const also carries
+`satisfies ReadonlyArray<keyof Row>`, so a column the row type doesn't know
+is a compile error. The per-subsystem inventories live in
+`src/lib/auth/CLAUDE.md` and `src/lib/db/CLAUDE.md` §Named projections; the
+placement rule (a const lives in its table's query module, or in its `*_ddl.ts`
+when two query modules project the table) is documented on `db/sql_columns.ts`.
+fuz_app pins the whole set with one registry test,
+`src/test/db/column_projections.db.test.ts`, which also forces every public
+table to carry a const or a reasoned exemption. The cell consts twin the Rust
+`fuz_cell` `*_COLUMNS` consts column-for-column (that spine decodes the same
+list positionally); the `fuz_auth` twin names its columns at every site but
+reads narrower per-call projections, so there is no shared order to mirror
+there. Consumers adding their own tables should follow the same shape.
 
 ## Bootstrap
 

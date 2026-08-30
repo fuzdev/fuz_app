@@ -8,7 +8,6 @@ import { describe, assert, test } from 'vitest';
 
 import { query_purge_account } from '$lib/auth/account_queries.ts';
 import {
-	AUTH_SESSION_COLUMNS,
 	query_create_session,
 	query_session_get_valid,
 	query_session_revoke_by_hash_unscoped,
@@ -22,7 +21,6 @@ import {
 	generate_session_token,
 	AUTH_SESSION_LIFETIME_MS
 } from '$lib/auth/session_queries.ts';
-import { query_public_columns } from '$lib/db/schema_ready.ts';
 import type { Db } from '$lib/db/db.ts';
 import { create_test_account_with_actor } from '$lib/testing/db_entities.ts';
 
@@ -96,13 +94,6 @@ describe('generate_session_token', () => {
 });
 
 describe_db('AuthSessionQueries', (get_db) => {
-	test('AUTH_SESSION_COLUMNS names every live `auth_session` column', async () => {
-		// The reverse of the fail-loud read: a column added to the table but not
-		// to the projection would silently vanish from every row read.
-		const live = await query_public_columns(get_db());
-		assert.deepEqual(AUTH_SESSION_COLUMNS.split(', ').sort(), live.auth_session);
-	});
-
 	test('create and get_valid returns the session', async () => {
 		const db = get_db();
 		const deps = { db };

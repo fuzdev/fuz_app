@@ -8,7 +8,6 @@ import { describe, assert, test } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
-	ACCOUNT_COLUMNS,
 	query_create_account,
 	query_account_by_id,
 	query_account_by_username,
@@ -25,18 +24,10 @@ import {
 	query_actor_by_id,
 	query_create_account_with_actor
 } from '$lib/auth/account_queries.ts';
-import { query_public_columns } from '$lib/db/schema_ready.ts';
 
 import { describe_db } from '../db_fixture.ts';
 
 describe_db('account queries', (get_db) => {
-	test('ACCOUNT_COLUMNS names every live `account` column', async () => {
-		// The reverse of the fail-loud read: a column added to the table but not
-		// to the projection would silently vanish from every row read.
-		const live = await query_public_columns(get_db());
-		assert.deepEqual(ACCOUNT_COLUMNS.split(', ').sort(), live.account);
-	});
-
 	describe('AccountQueries', () => {
 		test('create returns an account with generated uuid', async () => {
 			const db = get_db();

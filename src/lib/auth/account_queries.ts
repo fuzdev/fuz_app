@@ -11,6 +11,7 @@ import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import type { QueryDeps } from '../db/query_deps.ts';
 import { assert_row } from '../db/assert_row.ts';
+import { columns_sql, omit_columns } from '../db/sql_columns.ts';
 import {
 	to_admin_account,
 	type Account,
@@ -19,6 +20,7 @@ import {
 	type AdminAccountEntryJson
 } from './account_schema.ts';
 import { ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT } from './admin_action_specs.ts';
+import { ROLE_GRANT_COLUMNS } from './role_grant_queries.ts';
 
 /**
  * The full `account` column set, named explicitly so a row read fails loud
@@ -35,8 +37,35 @@ import { ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT } from './admin_action_specs.ts';
  * decodes them positionally. Keep in sync with `Account` and the `account`
  * DDL in `auth/auth_ddl.ts`.
  */
-export const ACCOUNT_COLUMNS =
-	'id, username, email, email_verified, password_hash, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by';
+export const ACCOUNT_COLUMNS = [
+	'id',
+	'username',
+	'email',
+	'email_verified',
+	'password_hash',
+	'created_at',
+	'created_by',
+	'updated_at',
+	'updated_by',
+	'deleted_at',
+	'deleted_by'
+] as const satisfies ReadonlyArray<keyof Account>;
+
+/**
+ * The full `actor` column set — the same fail-loud discipline as
+ * `ACCOUNT_COLUMNS` (this module owns both tables). Keep in sync with
+ * `Actor` and the `actor` DDL in `auth/auth_ddl.ts`.
+ */
+export const ACTOR_COLUMNS = [
+	'id',
+	'account_id',
+	'name',
+	'created_at',
+	'updated_at',
+	'updated_by',
+	'deleted_at',
+	'deleted_by'
+] as const satisfies ReadonlyArray<keyof Actor>;
 
 /**
  * Create a new account.
@@ -53,7 +82,7 @@ export const query_create_account = async (
 	const row = await deps.db.query_one<Account>(
 		`INSERT INTO account (username, password_hash, email)
 		 VALUES ($1, $2, $3)
-		 RETURNING *`,
+		 RETURNING ${columns_sql(ACCOUNT_COLUMNS)}`,
 		[input.username, input.password_hash, input.email ?? null]
 	);
 	return assert_row(row, 'INSERT INTO account');
@@ -73,7 +102,7 @@ export const query_account_by_id = async (
 	id: string
 ): Promise<Account | undefined> => {
 	return deps.db.query_one<Account>(
-		`SELECT ${ACCOUNT_COLUMNS} FROM account WHERE id = $1 AND deleted_at IS NULL`,
+		`SELECT ${columns_sql(ACCOUNT_COLUMNS)} FROM account WHERE id = $1 AND deleted_at IS NULL`,
 		[id]
 	);
 };
@@ -86,7 +115,7 @@ export const query_account_by_username = async (
 	username: string
 ): Promise<Account | undefined> => {
 	return deps.db.query_one<Account>(
-		`SELECT ${ACCOUNT_COLUMNS} FROM account WHERE LOWER(username) = LOWER($1)`,
+		`SELECT ${columns_sql(ACCOUNT_COLUMNS)} FROM account WHERE LOWER(username) = LOWER($1)`,
 		[username]
 	);
 };
@@ -99,7 +128,7 @@ export const query_account_by_email = async (
 	email: string
 ): Promise<Account | undefined> => {
 	return deps.db.query_one<Account>(
-		`SELECT ${ACCOUNT_COLUMNS} FROM account WHERE LOWER(email) = LOWER($1)`,
+		`SELECT ${columns_sql(ACCOUNT_COLUMNS)} FROM account WHERE LOWER(email) = LOWER($1)`,
 		[email]
 	);
 };
@@ -321,7 +350,7 @@ export const query_create_actor = async (
 	name: string
 ): Promise<Actor> => {
 	const row = await deps.db.query_one<Actor>(
-		`INSERT INTO actor (account_id, name) VALUES ($1, $2) RETURNING *`,
+		`INSERT INTO actor (account_id, name) VALUES ($1, $2) RETURNING ${columns_sql(ACTOR_COLUMNS)}`,
 		[account_id, name]
 	);
 	return assert_row(row, 'INSERT INTO actor');
@@ -343,7 +372,7 @@ export const query_actors_by_account = async (
 	account_id: string
 ): Promise<Array<Actor>> => {
 	return deps.db.query<Actor>(
-		`SELECT * FROM actor WHERE account_id = $1 ORDER BY created_at ASC, id ASC`,
+		`SELECT ${columns_sql(ACTOR_COLUMNS)} FROM actor WHERE account_id = $1 ORDER BY created_at ASC, id ASC`,
 		[account_id]
 	);
 };
@@ -364,7 +393,7 @@ export const query_active_actors_by_account = async (
 	account_id: string
 ): Promise<Array<Actor>> => {
 	return deps.db.query<Actor>(
-		`SELECT * FROM actor WHERE account_id = $1 AND deleted_at IS NULL ORDER BY created_at ASC, id ASC`,
+		`SELECT ${columns_sql(ACTOR_COLUMNS)} FROM actor WHERE account_id = $1 AND deleted_at IS NULL ORDER BY created_at ASC, id ASC`,
 		[account_id]
 	);
 };
@@ -376,7 +405,9 @@ export const query_actor_by_id = async (
 	deps: QueryDeps,
 	id: string
 ): Promise<Actor | undefined> => {
-	return deps.db.query_one<Actor>(`SELECT * FROM actor WHERE id = $1`, [id]);
+	return deps.db.query_one<Actor>(`SELECT ${columns_sql(ACTOR_COLUMNS)} FROM actor WHERE id = $1`, [
+		id
+	]);
 };
 
 /**
@@ -398,7 +429,19 @@ export const query_create_account_with_actor = async (
 	return { account, actor };
 };
 
-/** Row shape for the active role_grants batch query. */
+/**
+ * `ROLE_GRANT_COLUMNS` minus the revocation + provenance columns — the
+ * active-grant summary the admin listing projects (`RoleGrantWithActorId`).
+ */
+const ADMIN_ROLE_GRANT_COLUMNS = omit_columns(
+	ROLE_GRANT_COLUMNS,
+	'revoked_at',
+	'revoked_by',
+	'revoked_reason',
+	'source_offer_id'
+);
+
+/** Row shape for the active role_grants batch query — `ADMIN_ROLE_GRANT_COLUMNS`. */
 interface RoleGrantWithActorId {
 	id: Uuid;
 	actor_id: Uuid;
@@ -473,11 +516,12 @@ export const query_admin_account_list = async (
 	const where = options?.include_deleted ? '' : 'WHERE deleted_at IS NULL';
 	const account_query =
 		limit == null
-			? deps.db.query<Account>(`SELECT * FROM account ${where} ORDER BY created_at OFFSET $1`, [
-					offset
-				])
+			? deps.db.query<Account>(
+					`SELECT ${columns_sql(ACCOUNT_COLUMNS)} FROM account ${where} ORDER BY created_at OFFSET $1`,
+					[offset]
+				)
 			: deps.db.query<Account>(
-					`SELECT * FROM account ${where} ORDER BY created_at LIMIT $1 OFFSET $2`,
+					`SELECT ${columns_sql(ACCOUNT_COLUMNS)} FROM account ${where} ORDER BY created_at LIMIT $1 OFFSET $2`,
 					[limit, offset]
 				);
 	const accounts = await account_query;
@@ -486,9 +530,12 @@ export const query_admin_account_list = async (
 	const account_ids = accounts.map((a) => a.id);
 
 	const [actors, role_grants, pending_offers] = await Promise.all([
-		deps.db.query<Actor>(`SELECT * FROM actor WHERE account_id = ANY($1::uuid[])`, [account_ids]),
+		deps.db.query<Actor>(
+			`SELECT ${columns_sql(ACTOR_COLUMNS)} FROM actor WHERE account_id = ANY($1::uuid[])`,
+			[account_ids]
+		),
 		deps.db.query<RoleGrantWithActorId>(
-			`SELECT id, actor_id, role, scope_kind, scope_id, created_at, expires_at, granted_by
+			`SELECT ${columns_sql(ADMIN_ROLE_GRANT_COLUMNS)}
 			 FROM role_grant
 			 WHERE actor_id IN (SELECT id FROM actor WHERE account_id = ANY($1::uuid[]))
 			   AND revoked_at IS NULL

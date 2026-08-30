@@ -24,7 +24,7 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import { describe, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, beforeAll, beforeEach, afterAll, assert } from 'vitest';
 import type { Pool } from 'pg';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
@@ -32,6 +32,7 @@ import type { Db } from '../db/db.ts';
 import { create_pglite_db } from '../db/db_pglite.ts';
 import { assert_valid_sql_identifier } from '../db/sql_identifier.ts';
 import { create_pg_db, register_pg_type_parsers } from '../db/db_pg.ts';
+import { query_public_columns } from '../db/schema_ready.ts';
 
 /**
  * CI detection — `CI=true` is set automatically by GitHub Actions, GitLab CI, etc.
@@ -282,4 +283,31 @@ export const log_db_factory_status = (factories: Array<DbFactory>): void => {
 			skipped.length ? ` | skipped: ${skipped.join(', ')}` : ''
 		}`
 	);
+};
+
+/**
+ * Assert a `*_COLUMNS` projection const names exactly the live columns of
+ * `table` — the drift guard for an exported const (`ACCOUNT_COLUMNS`,
+ * `CELL_COLUMNS`, a consumer's own).
+ *
+ * This is the reverse of the fail-loud read: a named projection makes a
+ * *dropped* column fail loud at query time, but a column *added* to the table
+ * and not to the projection would silently vanish from every row read. Both
+ * directions are covered by the equality here. It guards one const; it can't
+ * see a table that has *no* const — for that, keep a table → const registry
+ * and assert its key set against `query_public_columns` (fuz_app's own is
+ * `src/test/db/column_projections.db.test.ts`).
+ *
+ * @param db - a bootstrapped test database
+ * @param table - the `public`-schema table the const projects
+ * @param columns - the projection const's column names
+ */
+export const assert_columns_match_live = async (
+	db: Db,
+	table: string,
+	columns: ReadonlyArray<string>
+): Promise<void> => {
+	const live = await query_public_columns(db, { table });
+	assert.ok(live[table], `table "${table}" is not in the live public schema`);
+	assert.deepEqual([...columns].sort(), live[table]);
 };

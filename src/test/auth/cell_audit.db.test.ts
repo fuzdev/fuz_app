@@ -52,13 +52,8 @@ import { query_audit_log_list } from '$lib/auth/audit_log_queries.ts';
 import { fractional_index_between } from '@fuzdev/fuz_util/fractional_index.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import {
-	describe_db,
-	create_cell_test_app,
-	create_cell,
-	call,
-	error_reason
-} from './cell_test_helpers.ts';
+import { create_cell_test_app, create_cell, call, error_reason } from './cell_test_helpers.ts';
+import { describe_db } from '../cell_db_fixture.ts';
 
 describe_db('cell audit', (get_db) => {
 	describe('emission + completeness', () => {

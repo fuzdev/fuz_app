@@ -55,13 +55,21 @@ interface ColumnRow {
  * never-migrated DB then correctly fails readiness instead of passing on an
  * empty expectation.
  *
+ * @param db - the database to introspect
+ * @param options - `table` narrows the scan to one relation (the drift guard's
+ *   one-table question); omitted, every `public` relation is returned
  * @returns relation name → sorted column names
  */
-export const query_public_columns = async (db: Db): Promise<Record<string, Array<string>>> => {
+export const query_public_columns = async (
+	db: Db,
+	options?: { table?: string }
+): Promise<Record<string, Array<string>>> => {
 	const rows = await db.query<ColumnRow>(
 		`SELECT table_name, column_name FROM information_schema.columns
 		 WHERE table_schema = 'public'
-		 ORDER BY table_name, column_name`
+		   AND ($1::text IS NULL OR table_name = $1)
+		 ORDER BY table_name, column_name`,
+		[options?.table ?? null]
 	);
 	const by_table: Record<string, Array<string>> = {};
 	for (const { table_name, column_name } of rows) {

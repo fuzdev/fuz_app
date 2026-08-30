@@ -20,6 +20,23 @@ Runs suites against PGlite (in-memory) and optionally PostgreSQL (when
 `TEST_DATABASE_URL` is set). Consumer projects create a `db_fixture.ts`
 that calls `create_describe_db` with their factories and truncate tables.
 
+fuz_app's own `create_db_fixture.ts` exports `create_db_fixture(namespaces,
+truncate_tables)`, which builds the four-driver set (pglite, pg, and the two
+pglet legs from `db_pglet_factory.ts` / `db_pglet_wasm_factory.ts`, with the
+whole-`public` reset the shared pg database needs) and binds `describe_db`
+over it. Three fixture modules call it once each, so importing one constructs
+only its own factories: `db_fixture.ts` (auth-only — what most suites use),
+`cell_db_fixture.ts` (full spine: auth + cell + fact + cell_history, for the
+cell suites), and `fact_db_fixture.ts` (facts alone, for the `PgFactStore`
+suites). Suites that need a bespoke `init_schema` (seeding, a single namespace
+under test) still call `create_pglite_factory` + `create_describe_db` directly.
+
+`db/column_projections.ts` + `db/column_projections.db.test.ts` is the
+named-projection registry: every `*_COLUMNS` const keyed by table, plus the
+reasoned exemptions (`schema_version`, `bootstrap_lock`, `cell_history`,
+`fact_ref`, `memo`), asserted against the live full-spine schema in one scan —
+so a new table fails the suite until it gets a const or an exemption entry.
+
 ### Integration Tests
 
 Named `.integration.test.ts`. Use `create_test_app()` from

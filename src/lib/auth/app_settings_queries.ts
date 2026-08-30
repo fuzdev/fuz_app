@@ -7,7 +7,20 @@
  */
 
 import type { QueryDeps } from '../db/query_deps.ts';
+import { columns_sql, omit_columns, qualify_columns } from '../db/sql_columns.ts';
 import type { AppSettings, AppSettingsWithUsernameJson } from './app_settings_schema.ts';
+
+/**
+ * The full `app_settings` column set — the singleton `id` (always `1`) plus
+ * the settings the row type carries — drift-guarded like every other
+ * `*_COLUMNS`. Reads project `APP_SETTINGS_ROW_COLUMNS`, which omits the
+ * constant `id` since `AppSettings` doesn't carry it. Keep in sync with
+ * `AppSettings` and the `app_settings` DDL in `auth/auth_ddl.ts`.
+ */
+export const APP_SETTINGS_COLUMNS = ['id', 'open_signup', 'updated_at', 'updated_by'] as const;
+
+/** `APP_SETTINGS_COLUMNS` minus the constant singleton `id` — the `AppSettings` row projection. */
+const APP_SETTINGS_ROW_COLUMNS = omit_columns(APP_SETTINGS_COLUMNS, 'id');
 
 /**
  * Load the current app settings.
@@ -18,7 +31,7 @@ import type { AppSettings, AppSettingsWithUsernameJson } from './app_settings_sc
  */
 export const query_app_settings_load = async (deps: QueryDeps): Promise<AppSettings> => {
 	const row = await deps.db.query_one<AppSettings>(
-		`SELECT open_signup, updated_at, updated_by FROM app_settings WHERE id = 1`
+		`SELECT ${columns_sql(APP_SETTINGS_ROW_COLUMNS)} FROM app_settings WHERE id = 1`
 	);
 	if (!row) {
 		throw new Error('app_settings row not found — migration may not have run');
@@ -37,7 +50,7 @@ export const query_app_settings_load_with_username = async (
 	deps: QueryDeps
 ): Promise<AppSettingsWithUsernameJson> => {
 	const row = await deps.db.query_one<AppSettingsWithUsernameJson>(
-		`SELECT s.open_signup, s.updated_at, s.updated_by, act.name AS updated_by_username
+		`SELECT ${qualify_columns(APP_SETTINGS_ROW_COLUMNS, 's')}, act.name AS updated_by_username
 		 FROM app_settings s
 		 LEFT JOIN actor act ON act.id = s.updated_by
 		 WHERE s.id = 1`
@@ -64,7 +77,7 @@ export const query_app_settings_update = async (
 	actor_id: string
 ): Promise<AppSettings> => {
 	const row = await deps.db.query_one<AppSettings>(
-		`UPDATE app_settings SET open_signup = $1, updated_at = NOW(), updated_by = $2 WHERE id = 1 RETURNING open_signup, updated_at, updated_by`,
+		`UPDATE app_settings SET open_signup = $1, updated_at = NOW(), updated_by = $2 WHERE id = 1 RETURNING ${columns_sql(APP_SETTINGS_ROW_COLUMNS)}`,
 		[open_signup, actor_id]
 	);
 	if (!row) {

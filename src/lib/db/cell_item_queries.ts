@@ -23,6 +23,7 @@
 import type { QueryDeps } from './query_deps.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import { assert_row } from './assert_row.ts';
+import { columns_sql, qualify_columns } from './sql_columns.ts';
 
 /** Row shape returned by `cell_item` SELECTs. */
 export interface CellItemRow {
@@ -31,6 +32,19 @@ export interface CellItemRow {
 	child_id: Uuid;
 	created_at: Date;
 }
+
+/**
+ * The full `cell_item` column set, named explicitly so a row read fails
+ * loud on schema drift (see `CELL_COLUMNS` in `db/cell_queries.ts`). Column
+ * order mirrors the Rust twin's `item_columns(alias)` (`fuz_cell`). Keep in
+ * sync with `CellItemRow` and the `cell_item` DDL in `db/cell_ddl.ts`.
+ */
+export const CELL_ITEM_COLUMNS = [
+	'parent_id',
+	'position',
+	'child_id',
+	'created_at'
+] as const satisfies ReadonlyArray<keyof CellItemRow>;
 
 /** Input for `query_cell_item_insert`. */
 export interface CellItemInsertQueryInput {
@@ -57,7 +71,7 @@ export const query_cell_item_insert = async (
 	const row = await deps.db.query_one<CellItemRow>(
 		`INSERT INTO cell_item (parent_id, position, child_id)
 		 VALUES ($1, $2, $3)
-		 RETURNING *`,
+		 RETURNING ${columns_sql(CELL_ITEM_COLUMNS)}`,
 		[input.parent_id, input.position, input.child_id]
 	);
 	return assert_row(row, 'INSERT INTO cell_item');
@@ -75,7 +89,7 @@ export const query_cell_item_get = async (
 	position: string
 ): Promise<CellItemRow | null> => {
 	const row = await deps.db.query_one<CellItemRow>(
-		`SELECT * FROM cell_item WHERE parent_id = $1 AND position = $2`,
+		`SELECT ${columns_sql(CELL_ITEM_COLUMNS)} FROM cell_item WHERE parent_id = $1 AND position = $2`,
 		[parent_id, position]
 	);
 	return row ?? null;
@@ -104,7 +118,7 @@ export const query_cell_item_move = async (
 		`UPDATE cell_item
 		 SET position = $3
 		 WHERE parent_id = $1 AND position = $2
-		 RETURNING *`,
+		 RETURNING ${columns_sql(CELL_ITEM_COLUMNS)}`,
 		[parent_id, position_old, position_new]
 	);
 	return row ?? null;
@@ -124,7 +138,8 @@ export const query_cell_item_delete = async (
 	position: string
 ): Promise<CellItemRow | null> => {
 	const row = await deps.db.query_one<CellItemRow>(
-		`DELETE FROM cell_item WHERE parent_id = $1 AND position = $2 RETURNING *`,
+		`DELETE FROM cell_item WHERE parent_id = $1 AND position = $2
+		 RETURNING ${columns_sql(CELL_ITEM_COLUMNS)}`,
 		[parent_id, position]
 	);
 	return row ?? null;
@@ -137,7 +152,11 @@ export const query_cell_item_delete = async (
  * cells don't surface; the parent filter is the caller's responsibility
  * (gated upstream by `can_view_cell(parent)`).
  *
- * @param limit - optional row cap (passes through to SQL `LIMIT`)
+ * @param deps - query deps
+ * @param parent_id - parent cell id
+ * @param options - `limit` caps the row count (passes through to SQL `LIMIT`);
+ *   `position_after` resumes after a position (keyset pagination)
+ * @returns matching rows in lex `position` order
  */
 export const query_cell_item_list_for_parent = async (
 	deps: QueryDeps,
@@ -147,7 +166,7 @@ export const query_cell_item_list_for_parent = async (
 	const limit = options?.limit ?? null;
 	const position_after = options?.position_after ?? null;
 	return deps.db.query<CellItemRow>(
-		`SELECT i.* FROM cell_item i
+		`SELECT ${qualify_columns(CELL_ITEM_COLUMNS, 'i')} FROM cell_item i
 		 JOIN cell c ON c.id = i.child_id
 		 WHERE i.parent_id = $1
 		   AND c.deleted_at IS NULL
@@ -176,7 +195,7 @@ export const query_cell_item_list_for_child = async (
 	options?: { limit?: number }
 ): Promise<Array<CellItemRow>> =>
 	deps.db.query<CellItemRow>(
-		`SELECT i.* FROM cell_item i
+		`SELECT ${qualify_columns(CELL_ITEM_COLUMNS, 'i')} FROM cell_item i
 		 JOIN cell p ON p.id = i.parent_id
 		 WHERE i.child_id = $1
 		   AND p.deleted_at IS NULL

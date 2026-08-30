@@ -32,13 +32,13 @@ import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import type { TestApp, TestAccount } from '$lib/testing/app_server.ts';
 import {
-	describe_db,
 	create_cell_test_app,
 	create_cell,
 	call,
 	error_reason,
 	ROLE_MEMBER
 } from './cell_test_helpers.ts';
+import { describe_db } from '../cell_db_fixture.ts';
 
 const grant_actor = (
 	app: TestApp,

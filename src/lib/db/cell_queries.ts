@@ -27,6 +27,7 @@ import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import { fact_hash_extract_refs } from '@fuzdev/fuz_util/fact_hash.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { assert_row } from './assert_row.ts';
+import { qualify_columns } from './sql_columns.ts';
 
 import type { CellData } from '../auth/cell_data_schema.ts';
 import type { CellVisibility } from '../auth/cell_action_specs.ts';
@@ -63,18 +64,51 @@ export interface CellRow {
 }
 
 /**
- * SQL fragment for the `grant_count` projection — correlated subquery
- * against `cell_grant`. Inlined in every cell-row SELECT / RETURNING so
- * `CellRow` carries the count uniformly. Pass the cell alias used in
- * the outer query (`'cell'` for table-name references, `'c'` for the
- * aliased form in `query_cell_list`).
- *
- * `::int` narrows from `bigint` to `int` so the JS row hydrates as a
- * `number` rather than a bigint primitive — counts on a single cell are
- * trivially within int32.
+ * The full `cell` column set, named explicitly so a row read fails loud on
+ * schema drift — a `SELECT *` silently omits a dropped column and the
+ * `deleted_at IS NULL`-shaped predicates on the hydrated row then misread
+ * `undefined` (see `ACCOUNT_COLUMNS` in `auth/account_queries.ts` for the
+ * outage class). Column order mirrors the Rust twin's `cell_columns(alias)`
+ * (`fuz_cell`), which decodes the same projection positionally. The derived
+ * `grant_count` is not a column — `cell_row_projection` appends it. Keep
+ * in sync with `CellRow` and the `cell` DDL in `db/cell_ddl.ts`.
  */
-const grant_count_projection = (cell_alias: string): string =>
-	`(SELECT COUNT(*)::int FROM cell_grant WHERE cell_id = ${cell_alias}.id) AS grant_count`;
+export const CELL_COLUMNS = [
+	'id',
+	'data',
+	'kind',
+	'visibility',
+	'path',
+	'refs',
+	'parent_id',
+	'root_id',
+	'moderation',
+	'created_at',
+	'updated_at',
+	'deleted_at',
+	'created_by',
+	'updated_by'
+] as const satisfies ReadonlyArray<Exclude<keyof CellRow, 'grant_count'>>;
+
+/**
+ * The full `CellRow` projection — `CELL_COLUMNS` qualified by `alias` plus
+ * the derived `grant_count` (a correlated subquery against `cell_grant`,
+ * served by `idx_cell_grant_cell`) — used by every cell-row SELECT /
+ * RETURNING. `alias` is the row qualifier: the table name (`'cell'`) for
+ * single-table reads + `RETURNING`, the query alias (`'c'`) for
+ * `query_cell_list`. Twin of `fuz_cell`'s `cell_columns(alias)`.
+ *
+ * `::int` narrows the count from `bigint` so the JS row hydrates a `number`
+ * rather than a bigint primitive — counts on a single cell are trivially
+ * within int32.
+ *
+ * Exported for consumers writing their own cell-row reads: `CELL_COLUMNS`
+ * alone hydrates a row without `grant_count`, which typechecks as a
+ * `CellRow` but fails at `to_cell_json` — this is the projection that
+ * actually produces one.
+ */
+export const cell_row_projection = (alias: string): string =>
+	`${qualify_columns(CELL_COLUMNS, alias)}, (SELECT COUNT(*)::int FROM cell_grant WHERE cell_id = ${alias}.id) AS grant_count`;
 
 /**
  * Input for `query_cell_create`. `refs` is derived from `data`. `kind` is
@@ -138,7 +172,7 @@ export const query_cell_create = async (
 		`INSERT INTO cell
 		   (data, kind, visibility, path, refs, parent_id, root_id, moderation, created_by)
 		 VALUES ($1::jsonb, $2, COALESCE($3::cell_visibility, 'private'::cell_visibility), $4, $5::text[], $6, $7, $8, $9)
-		 RETURNING *, ${grant_count_projection('cell')}`,
+		 RETURNING ${cell_row_projection('cell')}`,
 		[
 			JSON.stringify(input.data),
 			input.kind ?? null,
@@ -169,7 +203,7 @@ export const query_cell_get = async (
 ): Promise<CellRow | null> => {
 	const include_deleted = options?.include_deleted === true;
 	const row = await deps.db.query_one<CellRow>(
-		`SELECT *, ${grant_count_projection('cell')}
+		`SELECT ${cell_row_projection('cell')}
 		 FROM cell
 		 WHERE id = $1
 		   AND ($2::bool OR deleted_at IS NULL)`,
@@ -192,7 +226,7 @@ export const query_cell_get_by_path = async (
 	path: string
 ): Promise<CellRow | null> => {
 	const row = await deps.db.query_one<CellRow>(
-		`SELECT *, ${grant_count_projection('cell')}
+		`SELECT ${cell_row_projection('cell')}
 		 FROM cell
 		 WHERE path = $1 AND deleted_at IS NULL`,
 		[path]
@@ -217,10 +251,10 @@ export const query_cell_load_many = async (
 ): Promise<Array<CellRow>> => {
 	if (ids.length === 0) return [];
 	return deps.db.query<CellRow>(
-		`SELECT *, ${grant_count_projection('cell')}
+		`SELECT ${cell_row_projection('cell')}
 		 FROM cell
 		 WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
-		[ids as Array<Uuid>]
+		[ids]
 	);
 };
 
@@ -254,7 +288,7 @@ export const query_cell_update = async (
 		   visibility = CASE WHEN $9::bool THEN $10::cell_visibility ELSE visibility END,
 		   updated_at = NOW()
 		 WHERE id = $1 AND deleted_at IS NULL
-		 RETURNING *, ${grant_count_projection('cell')}`,
+		 RETURNING ${cell_row_projection('cell')}`,
 		[
 			id,
 			data_provided,
@@ -330,7 +364,7 @@ export const query_cell_set_moderation = async (
 		   updated_by = $4,
 		   updated_at = NOW()
 		 WHERE id = $1 AND deleted_at IS NULL
-		 RETURNING *, ${grant_count_projection('cell')}`,
+		 RETURNING ${cell_row_projection('cell')}`,
 		[id, moderation, options.set_visibility_public, options.updated_by ?? null]
 	);
 	return row ?? null;
@@ -351,7 +385,7 @@ export const query_cell_list_by_kind = async (
 	options?: Pick<CellListOptions, 'limit' | 'offset'>
 ): Promise<Array<CellRow>> =>
 	deps.db.query<CellRow>(
-		`SELECT *, ${grant_count_projection('cell')}
+		`SELECT ${cell_row_projection('cell')}
 		 FROM cell
 		 WHERE kind = $1
 		   AND deleted_at IS NULL
@@ -375,7 +409,7 @@ export const query_cell_list_by_creator = async (
 	options?: Pick<CellListOptions, 'limit' | 'offset'>
 ): Promise<Array<CellRow>> =>
 	deps.db.query<CellRow>(
-		`SELECT *, ${grant_count_projection('cell')}
+		`SELECT ${cell_row_projection('cell')}
 		 FROM cell
 		 WHERE created_by = $1 AND deleted_at IS NULL
 		 ORDER BY created_at DESC
@@ -529,7 +563,7 @@ const CALLER_ROLE_GRANTS_CTE = `WITH caller_role_grants AS (
 /** General `cell_list` SQL: cell-driven scan, full visibility predicate. */
 const build_general_sql = (order_column: string, order_direction: string): string =>
 	`${CALLER_ROLE_GRANTS_CTE}
-	 SELECT c.*, ${grant_count_projection('c')} FROM cell c
+	 SELECT ${cell_row_projection('c')} FROM cell c
 	 WHERE ($1::bool OR c.deleted_at IS NULL)
 	   AND ($2::text IS NULL OR c.kind = $2::text)
 	   AND ($14::cell_visibility IS NULL OR c.visibility = $14::cell_visibility)
@@ -569,7 +603,7 @@ const build_general_sql = (order_column: string, order_direction: string): strin
  */
 const build_shared_with_sql = (order_column: string, order_direction: string): string =>
 	`${CALLER_ROLE_GRANTS_CTE}
-	 SELECT c.*, ${grant_count_projection('c')} FROM cell c
+	 SELECT ${cell_row_projection('c')} FROM cell c
 	 WHERE ($1::bool OR c.deleted_at IS NULL)
 	   AND ($2::text IS NULL OR c.kind = $2::text)
 	   AND ($14::cell_visibility IS NULL OR c.visibility = $14::cell_visibility)
@@ -588,7 +622,7 @@ const build_shared_with_sql = (order_column: string, order_direction: string): s
 	   -- $6 (viewer_is_admin) intentionally not consulted: an admin
 	   -- asking "what's shared with me" wants their grant footprint, not
 	   -- every cell. Cast-only reference keeps the param's type known to
-	   -- the planner so the shared 14-param positional layout stays valid.
+	   -- the planner so the shared 16-param positional layout stays valid.
 	   AND $6::bool IS NOT NULL
 	 ORDER BY c.${order_column} ${order_direction} NULLS LAST
 	 LIMIT $8 OFFSET $9`;

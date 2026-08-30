@@ -34,7 +34,8 @@ import { cell_grant_create_action_spec } from '$lib/auth/cell_grant_action_specs
 import { fractional_indices_between } from '@fuzdev/fuz_util/fractional_index.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import type { TestApp, TestAccount } from '$lib/testing/app_server.ts';
-import { describe_db, create_cell_test_app, create_cell, call } from './cell_test_helpers.ts';
+import { create_cell_test_app, create_cell, call } from './cell_test_helpers.ts';
+import { describe_db } from '../cell_db_fixture.ts';
 
 /**
  * Wire `pub_child` + `priv_child` under `parent` as both ordered items and

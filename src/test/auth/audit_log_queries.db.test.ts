@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
-	AUDIT_LOG_COLUMNS,
 	query_audit_log,
 	query_audit_log_list,
 	query_audit_log_list_with_usernames,
@@ -14,7 +13,6 @@ import {
 	get_audit_unknown_event_type_failures,
 	reset_audit_unknown_event_type_failures
 } from '$lib/auth/audit_log_queries.ts';
-import { query_public_columns } from '$lib/db/schema_ready.ts';
 import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
 import { AuditLogEventJson, create_audit_log_config } from '$lib/auth/audit_log_schema.ts';
 import { query_create_account, query_create_actor } from '$lib/auth/account_queries.ts';
@@ -35,13 +33,6 @@ const create_test_account = async (
 };
 
 describe_db('AuditLogQueries', (get_db) => {
-	test('AUDIT_LOG_COLUMNS names every live `audit_log` column', async () => {
-		// The reverse of the fail-loud read: a column added to the table but not
-		// to the projection would silently vanish from every row read.
-		const live = await query_public_columns(get_db());
-		assert.deepEqual(AUDIT_LOG_COLUMNS.split(', ').sort(), live.audit_log);
-	});
-
 	let deps: QueryDeps;
 
 	beforeEach(() => {

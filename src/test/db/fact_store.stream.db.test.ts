@@ -32,46 +32,11 @@ import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { fact_hash_bytes } from '@fuzdev/fuz_util/fact_hash.ts';
 import { FACT_HASH_PREFIX } from '@fuzdev/fuz_util/hash_schemas.ts';
 
-import {
-	create_pglite_factory,
-	create_pg_factory,
-	create_describe_db,
-	drop_auth_schema,
-	log_db_factory_status
-} from '$lib/testing/db.ts';
-import { create_pglet_factory } from '../db_pglet_factory.ts';
-import { create_pglet_wasm_factory } from '../db_pglet_wasm_factory.ts';
-import { run_migrations } from '$lib/db/migrate.ts';
-import { FACT_MIGRATION_NS, FACT_DROP_TABLES } from '$lib/db/fact_ddl.ts';
 import { PgFactStore } from '$lib/db/fact_store.ts';
 import { sweep_orphan_temps, FACT_TMP_DIRNAME } from '$lib/db/fact_disk_storage.ts';
 import { PayloadTooLargeError } from '$lib/db/fact_store_errors.ts';
 import { create_node_runtime } from '$lib/runtime/node.ts';
-import type { Db } from '$lib/db/db.ts';
-
-const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [FACT_MIGRATION_NS]);
-};
-
-/**
- * `init_schema` with the whole-`public`-schema reset the pg factory needs — one
- * persistent database shared across every file under `isolate: false`, where
- * `create()` drops only `schema_version`. Same reason as `../db_fixture.ts`.
- */
-const init_schema_pg = async (db: Db): Promise<void> => {
-	await drop_auth_schema(db);
-	await init_schema(db);
-};
-
-const fact_factories = [
-	create_pglite_factory(init_schema),
-	create_pg_factory(init_schema_pg, process.env.TEST_DATABASE_URL),
-	create_pglet_factory(init_schema),
-	create_pglet_wasm_factory(init_schema)
-];
-log_db_factory_status(fact_factories);
-
-const describe_db = create_describe_db(fact_factories, [...FACT_DROP_TABLES]);
+import { describe_db } from '../fact_db_fixture.ts';
 
 const runtime = create_node_runtime();
 

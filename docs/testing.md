@@ -176,6 +176,27 @@ Each consumer configures its own `describe_db` because they have different
 tables to truncate between tests (app-specific tables beyond the auth schema)
 and different migration namespaces.
 
+If your query modules follow fuz_app's named-projection convention (an
+exported `MY_TABLE_COLUMNS` const every read projects through — see
+./architecture.md §Query Modules), guard each const against the live schema
+with `assert_columns_match_live` from `testing/db.ts` — per module as below,
+or (as fuz_app does for itself) from one table → const registry whose key set
+you also assert against `query_public_columns`, so a new table can't ship
+without a const:
+
+```typescript
+// classroom_queries.ts
+export const CLASSROOM_COLUMNS = ['id', 'school_id', 'name', 'created_at'] as const;
+// … every read: `SELECT ${columns_sql(CLASSROOM_COLUMNS)} FROM classroom …`
+
+// classroom_queries.db.test.ts
+describe_db('ClassroomQueries', (get_db) => {
+	test('CLASSROOM_COLUMNS names every live `classroom` column', async () => {
+		await assert_columns_match_live(get_db(), 'classroom', CLASSROOM_COLUMNS);
+	});
+});
+```
+
 ### `drop_auth_schema` for pg factories
 
 `create_pg_factory` drops only `schema_version` before running `init_schema`,

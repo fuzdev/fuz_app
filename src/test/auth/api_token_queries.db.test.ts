@@ -9,7 +9,6 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
-	API_TOKEN_COLUMNS,
 	query_create_api_token,
 	query_validate_api_token,
 	query_revoke_all_api_tokens_for_account,
@@ -17,7 +16,6 @@ import {
 	query_api_token_list_for_account,
 	query_api_token_enforce_limit
 } from '$lib/auth/api_token_queries.ts';
-import { query_public_columns } from '$lib/db/schema_ready.ts';
 import { generate_api_token } from '$lib/auth/api_token.ts';
 import { query_create_account, query_create_actor } from '$lib/auth/account_queries.ts';
 import { is_pg_unique_violation } from '$lib/db/pg_error.ts';
@@ -42,13 +40,6 @@ const setup_account = async (
 };
 
 describe_db('ApiTokenQueries', (get_db) => {
-	test('API_TOKEN_COLUMNS names every live `api_token` column', async () => {
-		// The reverse of the fail-loud read: a column added to the table but not
-		// to the projection would silently vanish from every row read.
-		const live = await query_public_columns(get_db());
-		assert.deepEqual(API_TOKEN_COLUMNS.split(', ').sort(), live.api_token);
-	});
-
 	describe('create', () => {
 		test('stores a token and returns the record', async () => {
 			const { account_id } = await setup_account(get_db);

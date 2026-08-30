@@ -27,6 +27,10 @@ the code.
 - `assert_row.ts` — `assert_row(row, context)` for INSERT … RETURNING.
 - `pg_error.ts` — `pg_error_code` (SQLSTATE extractor for `pg`/PGlite errors), `is_pg_unique_violation` (Postgres `23505`).
 - `sql_identifier.ts` — `assert_valid_sql_identifier`.
+- `sql_columns.ts` — `columns_sql` / `qualify_columns` / `omit_columns`,
+  the derivation helpers every `*_COLUMNS` projection const's variants
+  (alias-qualified JOIN reads, the client-safe `minus token_hash` listing)
+  are built from, so the drift guard on the base const covers them.
 - `status.ts` — CLI DB status utility.
 - `schema_ready.ts` — `/ready` deploy-gate core: `query_public_columns`
   (keeps `schema_version`, unlike `query_schema_snapshot`), pure
@@ -97,6 +101,17 @@ child_id`, fractional-index keyed): `query_cell_item_insert` (throws
   keys (`cell_id` / `source_id` / `new_id` / `parent_id` / `child_id` /
   `target_id`), bitmap-OR over `idx_audit_log_metadata` (the `jsonb_path_ops`
   GIN the `audit_log_metadata_gin_index` auth migration ships).
+
+**Named projections** (rationale + helpers: ../../../docs/architecture.md
+§Query Modules). The consts on this side: `CELL_COLUMNS`,
+`CELL_GRANT_COLUMNS`, `CELL_FIELD_COLUMNS`, `CELL_ITEM_COLUMNS`, `FACT_COLUMNS`
+(the meta read derives `minus bytes`). The derived `grant_count` stays an
+appended expression in the exported `cell_row_projection(alias)` rather than a
+`CELL_COLUMNS` entry, so the const is exactly the table's column set. Column
+order twins the Rust `fuz_cell` `*_COLUMNS` consts. Every const is pinned to
+the live schema — and every public table forced to carry a const or a named
+exemption — by `src/test/db/column_projections.db.test.ts`; the cell
+`*_queries.db.test.ts` files pin the aliased JOIN reads and `grant_count`.
 
 ## Fact layer
 

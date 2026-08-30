@@ -14,6 +14,7 @@
 
 import type { QueryDeps } from '../db/query_deps.ts';
 import { assert_row } from '../db/assert_row.ts';
+import { columns_sql, qualify_columns } from '../db/sql_columns.ts';
 import {
 	AUDIT_LOG_DEFAULT_LIMIT,
 	builtin_audit_log_config,
@@ -35,13 +36,19 @@ import {
  * `AuditLogEvent` and the migration chain's end state. Exported for the
  * per-cell timeline read in `db/cell_audit_queries.ts`.
  */
-export const AUDIT_LOG_COLUMNS =
-	'id, seq, event_type, outcome, actor_id, account_id, target_account_id, target_actor_id, ip, created_at, metadata';
-
-/** `AUDIT_LOG_COLUMNS` qualified for the `al`-aliased JOIN reads. */
-const AUDIT_LOG_COLUMNS_AL = AUDIT_LOG_COLUMNS.split(', ')
-	.map((c) => `al.${c}`)
-	.join(', ');
+export const AUDIT_LOG_COLUMNS = [
+	'id',
+	'seq',
+	'event_type',
+	'outcome',
+	'actor_id',
+	'account_id',
+	'target_account_id',
+	'target_actor_id',
+	'ip',
+	'created_at',
+	'metadata'
+] as const satisfies ReadonlyArray<keyof AuditLogEvent>;
 
 /**
  * Process-wide counter for audit metadata validation failures. `query_audit_log`
@@ -134,7 +141,7 @@ export const query_audit_log = async <T extends string>(
 	const rows = await deps.db.query<AuditLogEvent>(
 		`INSERT INTO audit_log (event_type, outcome, actor_id, account_id, target_account_id, target_actor_id, ip, metadata)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		 RETURNING ${AUDIT_LOG_COLUMNS}`,
+		 RETURNING ${columns_sql(AUDIT_LOG_COLUMNS)}`,
 		[
 			input.event_type,
 			input.outcome ?? 'success',
@@ -196,7 +203,7 @@ export const query_audit_log_list = async (
 	const offset = options?.offset ?? 0;
 
 	return deps.db.query<AuditLogEvent>(
-		`SELECT ${AUDIT_LOG_COLUMNS} FROM audit_log ${where} ORDER BY seq DESC LIMIT $${param_index++} OFFSET $${
+		`SELECT ${columns_sql(AUDIT_LOG_COLUMNS)} FROM audit_log ${where} ORDER BY seq DESC LIMIT $${param_index++} OFFSET $${
 			param_index
 		}`,
 		[...params, limit, offset]
@@ -256,7 +263,7 @@ export const query_audit_log_list_with_usernames = async (
 	// Under v1 1:1 the two branches resolve to the same username; the
 	// chain is forensic future-proofing for N:1 multi-actor.
 	return deps.db.query<AuditLogEventWithUsernamesJson>(
-		`SELECT ${AUDIT_LOG_COLUMNS_AL},
+		`SELECT ${qualify_columns(AUDIT_LOG_COLUMNS, 'al')},
 			COALESCE(origin_act_acc.username, origin_acc.username) AS username,
 			COALESCE(target_act_acc.username, target_acc.username) AS target_username
 		 FROM audit_log al
@@ -288,7 +295,7 @@ export const query_audit_log_list_role_grant_history = async (
 	// see the comment there for rationale (forensic future-proofing for
 	// N:1 multi-actor; v1 1:1 picks the same username via either branch).
 	return deps.db.query<RoleGrantHistoryEventJson>(
-		`SELECT ${AUDIT_LOG_COLUMNS_AL},
+		`SELECT ${qualify_columns(AUDIT_LOG_COLUMNS, 'al')},
 			COALESCE(origin_act_acc.username, origin_acc.username) AS username,
 			COALESCE(target_act_acc.username, target_acc.username) AS target_username
 		 FROM audit_log al

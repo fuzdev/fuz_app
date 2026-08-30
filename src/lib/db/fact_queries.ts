@@ -15,6 +15,7 @@
 import type { QueryDeps } from './query_deps.ts';
 
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
+import { columns_sql, omit_columns } from './sql_columns.ts';
 
 /** Row shape for `SELECT … FROM fact`. */
 export interface FactRow {
@@ -29,6 +30,24 @@ export interface FactRow {
 	size: number | string;
 	created_at: Date;
 }
+
+/**
+ * The full `fact` column set, named explicitly so a row read fails loud on
+ * schema drift (see `ACCOUNT_COLUMNS` in `auth/account_queries.ts` for the
+ * outage class). Keep in sync with `FactRow` and the `fact` DDL in
+ * `db/fact_ddl.ts`.
+ */
+export const FACT_COLUMNS = [
+	'hash',
+	'bytes',
+	'external_url',
+	'content_type',
+	'size',
+	'created_at'
+] as const satisfies ReadonlyArray<keyof FactRow>;
+
+/** `FACT_COLUMNS` minus the payload — the `FactMetaRow` projection. */
+const FACT_META_COLUMNS = omit_columns(FACT_COLUMNS, 'bytes');
 
 /** Subset returned by metadata-only queries (no `bytes` payload). */
 export interface FactMetaRow {
@@ -94,7 +113,7 @@ export const query_put_fact_refs = async (
  */
 export const query_get_fact = async (deps: QueryDeps, hash: FactHash): Promise<FactRow | null> => {
 	const row = await deps.db.query_one<FactRow>(
-		`SELECT hash, bytes, external_url, content_type, size, created_at
+		`SELECT ${columns_sql(FACT_COLUMNS)}
 		 FROM fact WHERE hash = $1`,
 		[hash]
 	);
@@ -109,7 +128,7 @@ export const query_get_fact_meta = async (
 	hash: FactHash
 ): Promise<FactMetaRow | null> => {
 	const row = await deps.db.query_one<FactMetaRow>(
-		`SELECT hash, external_url, content_type, size, created_at
+		`SELECT ${columns_sql(FACT_META_COLUMNS)}
 		 FROM fact WHERE hash = $1`,
 		[hash]
 	);

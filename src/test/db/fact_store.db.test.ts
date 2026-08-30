@@ -23,43 +23,8 @@ import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { fact_hash_bytes, fact_hash_verify } from '@fuzdev/fuz_util/fact_hash.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 
-import {
-	create_pglite_factory,
-	create_pg_factory,
-	create_describe_db,
-	drop_auth_schema,
-	log_db_factory_status
-} from '$lib/testing/db.ts';
-import { create_pglet_factory } from '../db_pglet_factory.ts';
-import { create_pglet_wasm_factory } from '../db_pglet_wasm_factory.ts';
-import { run_migrations } from '$lib/db/migrate.ts';
-import { FACT_MIGRATION_NS, FACT_DROP_TABLES } from '$lib/db/fact_ddl.ts';
 import { PgFactStore, type FactExternalFetcher } from '$lib/db/fact_store.ts';
-import type { Db } from '$lib/db/db.ts';
-
-const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [FACT_MIGRATION_NS]);
-};
-
-/**
- * `init_schema` with the whole-`public`-schema reset the pg factory needs — one
- * persistent database shared across every file under `isolate: false`, where
- * `create()` drops only `schema_version`. Same reason as `../db_fixture.ts`.
- */
-const init_schema_pg = async (db: Db): Promise<void> => {
-	await drop_auth_schema(db);
-	await init_schema(db);
-};
-
-const fact_factories = [
-	create_pglite_factory(init_schema),
-	create_pg_factory(init_schema_pg, process.env.TEST_DATABASE_URL),
-	create_pglet_factory(init_schema),
-	create_pglet_wasm_factory(init_schema)
-];
-log_db_factory_status(fact_factories);
-
-const describe_db = create_describe_db(fact_factories, [...FACT_DROP_TABLES]);
+import { describe_db } from '../fact_db_fixture.ts';
 
 const FAKE_BLAKE =
 	'blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262' as FactHash;

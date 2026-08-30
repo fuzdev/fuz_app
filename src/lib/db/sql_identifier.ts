@@ -1,10 +1,11 @@
 /**
- * SQL identifier validation for dynamic DDL queries.
+ * SQL identifier validation for the places an identifier must be
+ * interpolated rather than parameterized.
  *
- * PostgreSQL DDL operations (DROP TABLE, TRUNCATE, ALTER) do not support
- * parameterized table/column names — only values can be parameterized.
- * This validator ensures identifiers are safe for string interpolation
- * in those specific cases.
+ * PostgreSQL parameterizes values only — table and column names in DDL
+ * (DROP TABLE, TRUNCATE, ALTER) and the alias `qualify_columns` prefixes
+ * onto a projection (`db/sql_columns.ts`) have to be string-interpolated.
+ * This validator ensures such identifiers are safe to interpolate.
  *
  * @module
  */

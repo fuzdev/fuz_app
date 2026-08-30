@@ -1,12 +1,12 @@
 /**
  * Shared scaffolding for the `cell_*` RPC integration suites.
  *
- * Provides the PGlite factory + `describe_db` carrying the cell migration
- * namespaces, a `create_route_specs` that mounts the full cell RPC surface
+ * Provides a `create_route_specs` that mounts the full cell RPC surface
  * (cell / grant / field / item / audit) on `/api/rpc`, a `create_test_app`
  * wrapper that threads `cell_audit_events` through the audit factory so the
  * cell mutation events validate, and the three call-site primitives
- * (`call`, `error_reason`, `create_cell`).
+ * (`call`, `error_reason`, `create_cell`). The four-driver `describe_db`
+ * carrying the cell migration namespaces is ../cell_db_fixture.ts.
  *
  * Not itself a test file — no `.test.` infix, so vitest skips it. Mirrors
  * `./role_grant_offer_test_helpers.ts`.
@@ -25,21 +25,6 @@ import {
 	create_serve_fact_route_spec,
 	create_serve_cell_fact_route_spec
 } from '$lib/server/serve_fact_route.ts';
-import {
-	create_pglite_factory,
-	create_pg_factory,
-	create_describe_db,
-	drop_auth_schema,
-	auth_integration_truncate_tables,
-	log_db_factory_status
-} from '$lib/testing/db.ts';
-import { create_pglet_factory } from '../db_pglet_factory.ts';
-import { create_pglet_wasm_factory } from '../db_pglet_wasm_factory.ts';
-import { run_migrations } from '$lib/db/migrate.ts';
-import { auth_migration_ns } from '$lib/auth/migrations.ts';
-import { CELL_MIGRATION_NS, CELL_DROP_TABLES } from '$lib/db/cell_ddl.ts';
-import { FACT_MIGRATION_NS, FACT_DROP_TABLES } from '$lib/db/fact_ddl.ts';
-import { CELL_HISTORY_MIGRATION_NS } from '$lib/db/cell_history_ddl.ts';
 import { create_rpc_endpoint } from '$lib/actions/action_rpc.ts';
 import { create_role_schema, ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
 import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
@@ -82,49 +67,6 @@ export const cell_test_roles = create_role_schema([{ name: 'member' }]);
 
 /** Consumer role registered in `cell_test_roles`. */
 export const ROLE_MEMBER = 'member';
-
-const init_schema = async (db: Db): Promise<void> => {
-	await run_migrations(db, [
-		auth_migration_ns,
-		CELL_MIGRATION_NS,
-		FACT_MIGRATION_NS,
-		CELL_HISTORY_MIGRATION_NS
-	]);
-};
-
-/**
- * `init_schema` with the whole-`public`-schema reset the pg factory needs — one
- * persistent database shared across every file under `isolate: false`, where
- * `create()` drops only `schema_version`. Same reason as `../db_fixture.ts`.
- */
-const init_schema_pg = async (db: Db): Promise<void> => {
-	await drop_auth_schema(db);
-	await init_schema(db);
-};
-
-// All four drivers — pg auto-skips when `TEST_DATABASE_URL` is unset, and the
-// pglet legs (native + wasm) auto-skip when `PGLET_SERVER_BIN` / `PGLET_WASM_PKG`
-// are unset. The cell migration is idempotent (guarded `CREATE TYPE` + `CREATE
-// TABLE IF NOT EXISTS`), so re-running it is safe on any driver. Mirrors
-// `../db_fixture.ts`.
-const cell_factories = [
-	create_pglite_factory(init_schema),
-	create_pg_factory(init_schema_pg, process.env.TEST_DATABASE_URL),
-	create_pglet_factory(init_schema),
-	create_pglet_wasm_factory(init_schema)
-];
-log_db_factory_status(cell_factories);
-
-/**
- * `describe_db` bound to the cell factories. Truncates the cell tables
- * (children first) plus the auth integration tables (incl. `audit_log`)
- * between tests.
- */
-export const describe_db = create_describe_db(cell_factories, [
-	...CELL_DROP_TABLES,
-	...FACT_DROP_TABLES,
-	...auth_integration_truncate_tables
-]);
 
 /**
  * Per-suite-process temp facts directory. Embedded facts never touch it

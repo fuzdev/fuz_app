@@ -16,11 +16,15 @@ import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import type { QueryDeps } from '../db/query_deps.ts';
 import { assert_row } from '../db/assert_row.ts';
+import { columns_sql, qualify_columns } from '../db/sql_columns.ts';
 import type { RoleGrant } from './account_schema.ts';
 import {
+	ROLE_GRANT_OFFER_COLUMNS,
 	ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
-	ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID
+	ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID,
+	ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT
 } from './role_grant_offer_ddl.ts';
+import { query_create_role_grant, query_role_grant_by_id } from './role_grant_queries.ts';
 import type {
 	CreateRoleGrantOfferInput,
 	RoleGrantOffer,
@@ -183,7 +187,7 @@ export const query_role_grant_offer_create = async (
 			 to_actor_id = EXCLUDED.to_actor_id,
 			 message = EXCLUDED.message,
 			 expires_at = EXCLUDED.expires_at
-		 RETURNING *`,
+		 RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}`,
 		[
 			input.from_actor_id,
 			input.to_account_id,
@@ -242,11 +246,9 @@ export const query_role_grant_offer_decline = async (
 			  AND declined_at IS NULL
 			  AND retracted_at IS NULL
 			  AND superseded_at IS NULL
-			RETURNING *
+			RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}
 		)
-		SELECT u.*, grantor.account_id AS from_account_id
-		FROM updated u
-		JOIN actor grantor ON grantor.id = u.from_actor_id`,
+		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
 		[offer_id, to_account_id, reason ?? null]
 	);
 	if (updated) return updated;
@@ -278,7 +280,7 @@ export const query_role_grant_offer_retract = async (
 		   AND declined_at IS NULL
 		   AND retracted_at IS NULL
 		   AND superseded_at IS NULL
-		 RETURNING *`,
+		 RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}`,
 		[offer_id, from_actor_id]
 	);
 	if (updated) return updated;
@@ -303,7 +305,7 @@ const resolve_terminal_or_missing = async (
 		params.push(scope.from_actor_id);
 	}
 	const row = await deps.db.query_one<RoleGrantOffer>(
-		`SELECT * FROM role_grant_offer WHERE ${conditions.join(' AND ')}`,
+		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)} FROM role_grant_offer WHERE ${conditions.join(' AND ')}`,
 		params
 	);
 	if (!row) return null;
@@ -325,7 +327,7 @@ export const query_role_grant_offer_list = async (
 	to_account_id: string
 ): Promise<Array<RoleGrantOffer>> => {
 	return deps.db.query<RoleGrantOffer>(
-		`SELECT * FROM role_grant_offer
+		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)} FROM role_grant_offer
 		 WHERE to_account_id = $1
 		   AND accepted_at IS NULL
 		   AND declined_at IS NULL
@@ -349,7 +351,7 @@ export const query_role_grant_offer_history_for_account = async (
 	offset = 0
 ): Promise<Array<RoleGrantOffer>> => {
 	return deps.db.query<RoleGrantOffer>(
-		`SELECT o.* FROM role_grant_offer o
+		`SELECT ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'o')} FROM role_grant_offer o
 		 LEFT JOIN actor a ON a.id = o.from_actor_id
 		 WHERE o.to_account_id = $1 OR a.account_id = $1
 		 ORDER BY o.created_at DESC
@@ -367,7 +369,7 @@ export const query_role_grant_offer_find_pending = async (
 	offer_id: string
 ): Promise<RoleGrantOffer | null> => {
 	const row = await deps.db.query_one<RoleGrantOffer>(
-		`SELECT * FROM role_grant_offer
+		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)} FROM role_grant_offer
 		 WHERE id = $1
 		   AND accepted_at IS NULL
 		   AND declined_at IS NULL
@@ -391,7 +393,7 @@ export const query_role_grant_offer_sweep_expired = async (
 	deps: QueryDeps
 ): Promise<Array<RoleGrantOffer>> => {
 	return deps.db.query<RoleGrantOffer>(
-		`SELECT * FROM role_grant_offer
+		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)} FROM role_grant_offer
 		 WHERE accepted_at IS NULL
 		   AND declined_at IS NULL
 		   AND retracted_at IS NULL
@@ -484,7 +486,7 @@ export const query_accept_offer = async (
 	// `role_grant_offer_role_grant_iff_accepted` CHECK constraint demands both be set
 	// (or neither) at row-visibility time.
 	const locked = await deps.db.query_one<RoleGrantOffer>(
-		`SELECT * FROM role_grant_offer
+		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)} FROM role_grant_offer
 		 WHERE id = $1 AND to_account_id = $2
 		 FOR UPDATE`,
 		[offer_id, to_account_id]
@@ -498,9 +500,7 @@ export const query_accept_offer = async (
 		// Race winner already committed; return the pre-existing role_grant.
 		// `role_grant_offer_role_grant_iff_accepted` CHECK guarantees resulting_role_grant_id is non-null.
 		const role_grant = assert_row(
-			await deps.db.query_one<RoleGrant>(`SELECT * FROM role_grant WHERE id = $1`, [
-				locked.resulting_role_grant_id!
-			]),
+			await query_role_grant_by_id(deps, locked.resulting_role_grant_id!),
 			'resulting_role_grant lookup'
 		);
 		// Multi-actor guard: two actors on the same recipient account may
@@ -566,44 +566,24 @@ export const query_accept_offer = async (
 		);
 	}
 
-	// Insert the role_grant. Uses the normal grant idempotency — if another
-	// code path already granted the same (actor, role, scope_kind, scope), reuse it.
-	const granted_role_grant = await deps.db.query_one<RoleGrant>(
-		`INSERT INTO role_grant (actor_id, role, scope_kind, scope_id, granted_by, source_offer_id)
-		 VALUES ($1, $2, $3, $4, $5, $6)
-		 ON CONFLICT (
-		   actor_id,
-		   role,
-		   COALESCE(scope_kind, '${ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN}'),
-		   COALESCE(scope_id, '${ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID}'::uuid)
-		 )
-		   WHERE revoked_at IS NULL
-		 DO NOTHING
-		 RETURNING *`,
-		[actor_id, locked.role, locked.scope_kind, locked.scope_id, locked.from_actor_id, locked.id]
-	);
-	let role_grant: RoleGrant;
-	if (granted_role_grant) {
-		role_grant = granted_role_grant;
-	} else {
-		const existing = await deps.db.query_one<RoleGrant>(
-			`SELECT * FROM role_grant
-			 WHERE actor_id = $1
-			   AND role = $2
-			   AND scope_kind IS NOT DISTINCT FROM $3
-			   AND scope_id IS NOT DISTINCT FROM $4
-			   AND revoked_at IS NULL`,
-			[actor_id, locked.role, locked.scope_kind, locked.scope_id]
-		);
-		role_grant = assert_row(existing, 'query_accept_offer idempotent role_grant lookup');
-	}
+	// Insert the role_grant through the shared idempotent grant — if another
+	// code path already granted the same (actor, role, scope_kind, scope), it
+	// returns that row. Stamps the grantor and the source offer on the row.
+	const role_grant = await query_create_role_grant(deps, {
+		actor_id,
+		role: locked.role,
+		scope_kind: locked.scope_kind,
+		scope_id: locked.scope_id,
+		granted_by: locked.from_actor_id,
+		source_offer_id: locked.id
+	});
 
 	// Single UPDATE sets both sides of the CHECK constraint at once.
 	const offer_accepted = await deps.db.query_one<RoleGrantOffer>(
 		`UPDATE role_grant_offer
 		 SET accepted_at = NOW(), resulting_role_grant_id = $2
 		 WHERE id = $1
-		 RETURNING *`,
+		 RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}`,
 		[locked.id, role_grant.id]
 	);
 	const offer = assert_row(offer_accepted, 'mark offer accepted');
@@ -625,16 +605,14 @@ export const query_accept_offer = async (
 			  AND declined_at IS NULL
 			  AND retracted_at IS NULL
 			  AND superseded_at IS NULL
-			RETURNING *
+			RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}
 		)
-		SELECT u.*, grantor.account_id AS from_account_id
-		FROM updated u
-		JOIN actor grantor ON grantor.id = u.from_actor_id`,
+		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
 		[to_account_id, offer.role, offer.scope_id, offer.id]
 	);
 
 	// Emit audit events in-transaction (atomic with the role_grant insert).
-	// `RETURNING *` after the SET guarantees `offer.resulting_role_grant_id === role_grant.id`.
+	// The `RETURNING` after the SET guarantees `offer.resulting_role_grant_id === role_grant.id`.
 	// Accept binds the actor deterministically — populate both target
 	// columns to mirror `role_grant_create` (the in-tx pair) so forensic
 	// queries don't have to split between the two events.
