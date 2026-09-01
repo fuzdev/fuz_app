@@ -37,7 +37,7 @@ export const DEFAULT_PEER_REQUEST_TIMEOUT = 10_000;
 /**
  * Per-connection cap on concurrent in-flight server→client requests. A caller
  * past it gets `too_many_in_flight` instead of growing the pending map
- * unbounded. Twin of the Rust spine's `DEFAULT_MAX_IN_FLIGHT_PER_CONN`.
+ * unbounded. Twin of the Rust spine's `DEFAULT_MAX_OUTBOUND_PEER_REQUESTS_PER_CONN`.
  */
 export const MAX_IN_FLIGHT_PEER_REQUESTS_PER_CONNECTION = 256;
 
