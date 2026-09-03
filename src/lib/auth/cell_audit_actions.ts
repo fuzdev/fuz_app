@@ -42,8 +42,7 @@ const to_cell_audit_event_json = (row: AuditLogEvent): CellAuditEventJson => ({
 	event_type: row.event_type,
 	outcome: row.outcome,
 	actor_id: row.actor_id,
-	created_at:
-		typeof row.created_at === 'string' ? row.created_at : (row.created_at as Date).toISOString()
+	created_at: row.created_at
 });
 
 export const create_cell_audit_actions = (): Array<RpcAction> => {

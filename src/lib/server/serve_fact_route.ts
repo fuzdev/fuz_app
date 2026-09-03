@@ -168,11 +168,16 @@ const cell_fact_params_schema = z.strictObject({
 	hash: FactHashSchema
 });
 
-/** Shared error-schema entry: tighten the auto-derived 400 to the literal emitted by params validation. */
+/**
+ * Shared error-schema entry: tighten the auto-derived 400 to the literal
+ * emitted by params validation. `issues` is optional because the framework
+ * emits it through `dev_only` — a production body carries the `error`
+ * literal alone.
+ */
 const params_400_error = {
 	400: z.looseObject({
 		error: z.literal(ERROR_INVALID_ROUTE_PARAMS),
-		issues: z.array(z.unknown())
+		issues: z.array(z.unknown()).optional()
 	})
 } as const;
 

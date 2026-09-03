@@ -300,7 +300,7 @@ Account-only — never loads actor or role_grants, never populates
 `REQUEST_CONTEXT_KEY`.
 
 **Authorization runs before input validation**, matching the dispatcher's
-401 → authz → 403 → 400 phase order (see `http/CLAUDE.md` §Validation
+401 → authz → 403 → 400 phase order — the 429 is dispatcher-only (see `http/CLAUDE.md` §Validation
 pipeline). When the route's input declares `acting?: ActingActor` or its auth
 requires role_grants, the authorization phase calls `resolve_acting_actor` over
 the `acting` selector — the validated query value on GETs, read off the raw
@@ -324,6 +324,31 @@ path populates `REQUEST_CONTEXT_KEY`; it sets only `ACCOUNT_ID_KEY`,
 `AUTH_API_TOKEN_ID_KEY`. Test harnesses pre-populate `REQUEST_CONTEXT_KEY` +
 `TEST_CONTEXT_PRESET_KEY` to bypass DB-backed actor resolution; production
 code that reads `REQUEST_CONTEXT_KEY` is reading test escape-hatch state.
+
+### Wire timestamp shape
+
+Every timestamp on the wire is **second-precision UTC** —
+`YYYY-MM-DDTHH:MM:SSZ`, exactly 20 characters, the shape both spines emit.
+Timestamps read from a row get it from the SQL projection: each query module
+builds an `iso8601_timestamp_expr` override over its table const and passes
+it to `columns_sql` / `qualify_columns` (see `db/CLAUDE.md`), covering `account`, `actor`,
+`role_grant`, `role_grant_offer`, `auth_session`, `api_token`, `invite`,
+`app_settings`, `audit_log`, and the cell tables. Stamps minted in TS rather
+than read back — the `expires_at` on `account_token_create`'s output — use
+`to_iso8601_seconds` (`timestamp.ts`), so the mint and the later
+`account_token_list` read agree byte for byte.
+
+The `*Json` schemas type these as `z.string()`, which a millisecond stamp
+also satisfies — so the shape is pinned behaviorally by
+`assert_iso8601_seconds` (`testing/cross_backend/wire_shapes.ts`) inside the
+shared suites, on both backends.
+
+The alias costs one rule: **an `ORDER BY` in a projected SELECT qualifies
+its column** (`ORDER BY auth_session.created_at`) — bare, Postgres resolves
+it to the formatted output column, which ties rows written inside the same
+second and drops the btree index. Qualified, ordering stays exact and
+index-backed, matching the Rust twin (which aliases nothing, so its bare
+`ORDER BY created_at` already means the column).
 
 ### Open-registry composition
 
@@ -516,15 +541,15 @@ authenticate.
 - `account_delete_action_spec` — mutation (soft delete); self-or-admin (`{account, actor}`, handler elevates to admin when `account_id` ≠ self); input `{account_id?}`; output `{ok, deleted}`. Tombstones account + actor(s), revokes sessions/tokens, emits `account_delete` + per-actor `actor_delete`. Refuses a keeper-role target (`ERROR_CANNOT_DELETE_KEEPER`) or the sole active admin (`ERROR_CANNOT_DELETE_LAST_ADMIN`) — both fail-loud with a failure-audit row.
 - `account_purge_action_spec` — mutation (hard purge); keeper-only (`credential_types: ['daemon_token']` + `roles: ['keeper']`) + `confirm: true` + WARN; input `{account_id, confirm?}`; output `{ok, purged}`. Cascading delete; emits `account_purge` + per-actor `actor_purge` (identity snapshot survives in metadata since `audit_log` ids carry no FK). Refuses a keeper-role target (`ERROR_CANNOT_DELETE_KEEPER`) or the sole active admin (`ERROR_CANNOT_DELETE_LAST_ADMIN`).
 - `account_undelete_action_spec` — mutation (reactivation, inverse of soft delete); admin-only (`roles: ['admin']` — no self path, a tombstoned account can't authenticate); input `{account_id}`; output `{ok, undeleted}`. Clears the `deleted_at` tombstone on the account + its actor(s), emits `account_undelete` + per-actor `actor_undelete`. Does not restore revoked sessions/tokens.
-- `admin_session_list_action_spec` — read; input `z.void()`; output `{sessions}`.
+- `admin_session_list_action_spec` — read; input `{acting?}` (`.default({})`); output `{sessions}`.
 - `admin_session_revoke_all_action_spec` — mutation; input `{account_id}`; output `{ok, count}`.
 - `admin_token_revoke_all_action_spec` — mutation; input `{account_id}`; output `{ok, count}`.
-- `audit_log_list_action_spec` — read; input `{event_type?, account_id?, limit?, offset?, since_seq?}`; output `{events}`.
+- `audit_log_list_action_spec` — read; input `{event_type?, outcome?, account_id?, limit?, offset?, since_seq?}`; output `{events}`.
 - `audit_log_role_grant_history_action_spec` — read; input `{limit?, offset?}`; output `{events}`.
 - `invite_create_action_spec` — mutation; input `{email?, username?}`; output `{ok, invite}`.
-- `invite_list_action_spec` — read; input `z.void()`; output `{invites}`.
+- `invite_list_action_spec` — read; input `{acting?}` (`.default({})`); output `{invites}`.
 - `invite_delete_action_spec` — mutation; input `{invite_id}`; output `{ok}`.
-- `app_settings_get_action_spec` — read; input `z.void()`; output `{settings}`.
+- `app_settings_get_action_spec` — read; input `{acting?}` (`.default({})`); output `{settings}`.
 - `app_settings_update_action_spec` — mutation; input `{open_signup}`; output `{ok, settings}`.
 
 Constants: `AUDIT_LOG_LIST_LIMIT_MAX = 200`, `ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT = 50`,

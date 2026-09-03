@@ -49,7 +49,7 @@ import {
 } from '../../auth/cell_grant_action_specs.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
-import type { RpcPathCrossSuiteOptions } from './setup.ts';
+import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
 import { SPINE_CELL_EDITOR_ROLE, SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** App role the holder is seeded with; matches the spine's registered role. */
@@ -61,7 +61,9 @@ export const CELL_ROLE_HOLDER_USERNAME = 'cell_role_holder';
 /** A role string deliberately absent from the registry. */
 const UNREGISTERED_ROLE = 'not_a_registered_role';
 
-export const describe_cell_grant_role_cross_tests = (options: RpcPathCrossSuiteOptions): void => {
+export const describe_cell_grant_role_cross_tests = (
+	options: RpcPathCapabilityGatedCrossSuiteOptions
+): void => {
 	const { setup_test, capabilities } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 

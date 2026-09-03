@@ -35,7 +35,7 @@ import { describe_standard_integration_tests } from '$lib/testing/integration.ts
 import { auth_integration_truncate_tables } from '$lib/testing/db.ts';
 import { default_in_process_suite_options } from '$lib/testing/cross_backend/in_process_setup.ts';
 
-import { pglite_factory } from '../db_fixture.ts';
+import { default_db_factory } from '../db_fixture.ts';
 
 const RPC_PATH = '/api/rpc';
 const rpc_log = new Logger('integration-tests-rpc', { level: 'off' });
@@ -109,10 +109,10 @@ describe_standard_integration_tests(
 // --- Standalone tests for the helpers ---
 
 describe('create_test_app', () => {
-	let db: Awaited<ReturnType<typeof pglite_factory.create>>;
+	let db: Awaited<ReturnType<typeof default_db_factory.create>>;
 
 	beforeAll(async () => {
-		db = await pglite_factory.create();
+		db = await default_db_factory.create();
 	});
 
 	beforeEach(async () => {
@@ -122,7 +122,7 @@ describe('create_test_app', () => {
 	});
 
 	afterAll(async () => {
-		await pglite_factory.close(db);
+		await default_db_factory.close(db);
 	});
 
 	test('health route returns 200', async () => {
@@ -309,10 +309,10 @@ describe('find_auth_route', () => {
 });
 
 describe('assert_response_matches_spec', () => {
-	let db: Awaited<ReturnType<typeof pglite_factory.create>>;
+	let db: Awaited<ReturnType<typeof default_db_factory.create>>;
 
 	beforeAll(async () => {
-		db = await pglite_factory.create();
+		db = await default_db_factory.create();
 	});
 
 	beforeEach(async () => {
@@ -322,7 +322,7 @@ describe('assert_response_matches_spec', () => {
 	});
 
 	afterAll(async () => {
-		await pglite_factory.close(db);
+		await default_db_factory.close(db);
 	});
 
 	test('validates correct 200 response', async () => {

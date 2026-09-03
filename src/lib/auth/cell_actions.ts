@@ -196,11 +196,6 @@ export type CellActionDeps = ActionFactoryDeps & {
 	authorize_create?: CellCreateAuthorize;
 };
 
-const to_iso_nullable = (value: Date | string | null): string | null => {
-	if (value === null) return null;
-	return typeof value === 'string' ? value : value.toISOString();
-};
-
 /**
  * Translate the `idx_cell_path_unique` violation into a clean `conflict`
  * (409) reason. `path` is the only unique constraint a cell write can hit
@@ -240,9 +235,9 @@ export const to_cell_json = (row: CellRow): CellJson => ({
 	moderation: row.moderation,
 	created_by: row.created_by,
 	updated_by: row.updated_by,
-	created_at: typeof row.created_at === 'string' ? row.created_at : row.created_at.toISOString(),
-	updated_at: to_iso_nullable(row.updated_at),
-	deleted_at: to_iso_nullable(row.deleted_at),
+	created_at: row.created_at,
+	updated_at: row.updated_at,
+	deleted_at: row.deleted_at,
 	grant_count: row.grant_count
 });
 

@@ -17,11 +17,7 @@ import {
 	create_throwing_stub,
 	create_noop_stub
 } from '$lib/testing/stubs.ts';
-import {
-	create_test_request_context,
-	create_test_app_from_specs,
-	resolve_test_path
-} from '$lib/testing/auth_apps.ts';
+import { create_test_request_context, create_test_app_from_specs } from '$lib/testing/auth_apps.ts';
 import {
 	resolve_fixture_path,
 	assert_surface_matches_snapshot,
@@ -48,6 +44,7 @@ import {
 	fuz_app_stock_route_tightness_allowlist
 } from '$lib/testing/surface_invariants.ts';
 import { ActingActor } from '$lib/http/auth_shape.ts';
+import { FactHashSchema } from '@fuzdev/fuz_util/hash_schemas.ts';
 
 describe('stubs', () => {
 	test('stub throws on property access', () => {
@@ -124,23 +121,6 @@ describe('create_test_request_context', () => {
 		const ctx = create_test_request_context();
 		assert.ok(ctx.actor !== null);
 		assert.strictEqual(ctx.actor.account_id, ctx.account.id);
-	});
-});
-
-describe('resolve_test_path', () => {
-	test('replaces single param', () => {
-		assert.strictEqual(resolve_test_path('/api/users/:id'), '/api/users/test_id');
-	});
-
-	test('replaces multiple params', () => {
-		assert.strictEqual(
-			resolve_test_path('/api/users/:user_id/posts/:post_id'),
-			'/api/users/test_user_id/posts/test_post_id'
-		);
-	});
-
-	test('returns path unchanged when no params', () => {
-		assert.strictEqual(resolve_test_path('/api/health'), '/api/health');
 	});
 });
 
@@ -397,6 +377,22 @@ const adversarial_specs: Array<RouteSpec> = [
 		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
 		output: z.null()
+	},
+	{
+		// Regression guard for the params-schema-aware path synthesizer. The
+		// hash param carries a pattern (`^blake3:[0-9a-f]{64}$`), so a
+		// `test_hash` segment would 400 at params validation *before* the
+		// authority gates — the generated case would assert a 401 and see a
+		// 400. `resolve_valid_path` synthesizes a value the schema accepts,
+		// so the case reaches the gate it is about.
+		method: 'GET',
+		path: '/patterned-params/:hash',
+		auth: { account: 'required', actor: 'none' },
+		params: z.strictObject({ hash: FactHashSchema }),
+		handler: (c) => c.json({ ok: true }),
+		description: 'Protected route with a format-constrained path param',
+		input: z.null(),
+		output: z.null()
 	}
 ];
 
@@ -422,8 +418,14 @@ describe('resolve_valid_path', () => {
 		);
 	});
 
-	test('replaces non-uuid params with test_ prefix', () => {
+	test('synthesizes a schema-satisfying value for a non-uuid param', () => {
 		const params = z.strictObject({ name: z.string() });
+		const resolved = resolve_valid_path('/things/:name', params);
+		assert.ok(params.safeParse({ name: resolved.slice('/things/'.length) }).success);
+	});
+
+	test('falls back to the test_ prefix for a param the schema does not name', () => {
+		const params = z.strictObject({ other: z.string() });
 		assert.strictEqual(resolve_valid_path('/things/:name', params), '/things/test_name');
 	});
 

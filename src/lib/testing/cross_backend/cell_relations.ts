@@ -90,7 +90,7 @@ import { CellAuditListOutput } from '../../auth/cell_audit_action_specs.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
-import type { RpcPathCrossSuiteOptions } from './setup.ts';
+import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** Create a cell over the wire and return its id (the parity gate parses the output). */
@@ -176,7 +176,9 @@ const drain_effects = async (
 	assert.ok(drained.ok, `_testing_drain_effects failed: ${JSON.stringify(drained.error)}`);
 };
 
-export const describe_cell_relations_cross_tests = (options: RpcPathCrossSuiteOptions): void => {
+export const describe_cell_relations_cross_tests = (
+	options: RpcPathCapabilityGatedCrossSuiteOptions
+): void => {
 	const { setup_test, capabilities } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 

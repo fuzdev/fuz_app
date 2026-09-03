@@ -27,7 +27,7 @@ import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import { fact_hash_extract_refs } from '@fuzdev/fuz_util/fact_hash.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 import { assert_row } from './assert_row.ts';
-import { qualify_columns } from './sql_columns.ts';
+import { iso8601_timestamp_expr, qualify_columns } from './sql_columns.ts';
 
 import type { CellData } from '../auth/cell_data_schema.ts';
 import type { CellVisibility } from '../auth/cell_action_specs.ts';
@@ -55,9 +55,9 @@ export interface CellRow {
 	parent_id: Uuid | null;
 	root_id: Uuid | null;
 	moderation: string | null;
-	created_at: Date;
-	updated_at: Date | null;
-	deleted_at: Date | null;
+	created_at: string;
+	updated_at: string | null;
+	deleted_at: string | null;
 	created_by: Uuid | null;
 	updated_by: Uuid | null;
 	grant_count: number;
@@ -90,6 +90,9 @@ export const CELL_COLUMNS = [
 	'updated_by'
 ] as const satisfies ReadonlyArray<Exclude<keyof CellRow, 'grant_count'>>;
 
+/** The `cell` timestamp override, by row qualifier — the one `cell_row_projection` is given. */
+const cell_expr = iso8601_timestamp_expr(CELL_COLUMNS, ['created_at', 'updated_at', 'deleted_at']);
+
 /**
  * The full `CellRow` projection — `CELL_COLUMNS` qualified by `alias` plus
  * the derived `grant_count` (a correlated subquery against `cell_grant`,
@@ -108,7 +111,7 @@ export const CELL_COLUMNS = [
  * actually produces one.
  */
 export const cell_row_projection = (alias: string): string =>
-	`${qualify_columns(CELL_COLUMNS, alias)}, (SELECT COUNT(*)::int FROM cell_grant WHERE cell_id = ${alias}.id) AS grant_count`;
+	`${qualify_columns(CELL_COLUMNS, alias, cell_expr(alias))}, (SELECT COUNT(*)::int FROM cell_grant WHERE cell_id = ${alias}.id) AS grant_count`;
 
 /**
  * Input for `query_cell_create`. `refs` is derived from `data`. `kind` is
@@ -389,7 +392,7 @@ export const query_cell_list_by_kind = async (
 		 FROM cell
 		 WHERE kind = $1
 		   AND deleted_at IS NULL
-		 ORDER BY created_at DESC
+		 ORDER BY cell.created_at DESC
 		 LIMIT $2 OFFSET $3`,
 		[kind, options?.limit ?? null, options?.offset ?? 0]
 	);
@@ -412,7 +415,7 @@ export const query_cell_list_by_creator = async (
 		`SELECT ${cell_row_projection('cell')}
 		 FROM cell
 		 WHERE created_by = $1 AND deleted_at IS NULL
-		 ORDER BY created_at DESC
+		 ORDER BY cell.created_at DESC
 		 LIMIT $2 OFFSET $3`,
 		[actor_id, options?.limit ?? null, options?.offset ?? 0]
 	);

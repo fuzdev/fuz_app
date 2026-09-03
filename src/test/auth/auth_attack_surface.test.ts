@@ -44,6 +44,7 @@ import {
 } from '$lib/http/error_schemas.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import { create_stub_db } from '$lib/testing/stubs.ts';
+import { to_iso8601_seconds } from '$lib/timestamp.ts';
 
 const log = new Logger('test', { level: 'off' });
 const stub_db = create_stub_db();
@@ -54,8 +55,8 @@ const create_test_ctx_with_role_grants = (roles: ReadonlyArray<string>): Request
 		id: 'acc_1' as Uuid,
 		username: 'alice',
 		password_hash: 'hash',
-		created_at: new Date().toISOString(),
-		updated_at: new Date().toISOString(),
+		created_at: to_iso8601_seconds(new Date()),
+		updated_at: to_iso8601_seconds(new Date()),
 		created_by: null,
 		updated_by: null,
 		deleted_at: null,
@@ -67,7 +68,7 @@ const create_test_ctx_with_role_grants = (roles: ReadonlyArray<string>): Request
 		id: 'act_1' as Uuid,
 		account_id: 'acc_1' as Uuid,
 		name: 'alice',
-		created_at: new Date().toISOString(),
+		created_at: to_iso8601_seconds(new Date()),
 		updated_at: null,
 		updated_by: null,
 		deleted_at: null,
@@ -79,7 +80,7 @@ const create_test_ctx_with_role_grants = (roles: ReadonlyArray<string>): Request
 		role,
 		scope_kind: null,
 		scope_id: null,
-		created_at: new Date().toISOString(),
+		created_at: to_iso8601_seconds(new Date()),
 		expires_at: null,
 		revoked_at: null,
 		revoked_by: null,
@@ -354,8 +355,8 @@ describe('targeted adversarial tests', () => {
 				role: 'admin',
 				scope_kind: null,
 				scope_id: null,
-				created_at: new Date().toISOString(),
-				expires_at: new Date(Date.now() - 86400_000).toISOString(), // expired yesterday
+				created_at: to_iso8601_seconds(new Date()),
+				expires_at: to_iso8601_seconds(new Date(Date.now() - 86400_000)), // expired yesterday
 				revoked_at: null,
 				revoked_by: null,
 				revoked_reason: null,
@@ -377,9 +378,9 @@ describe('targeted adversarial tests', () => {
 				role: 'admin',
 				scope_kind: null,
 				scope_id: null,
-				created_at: new Date().toISOString(),
+				created_at: to_iso8601_seconds(new Date()),
 				expires_at: null,
-				revoked_at: new Date().toISOString(),
+				revoked_at: to_iso8601_seconds(new Date()),
 				revoked_by: 'someone' as Uuid,
 				revoked_reason: null,
 				granted_by: null,

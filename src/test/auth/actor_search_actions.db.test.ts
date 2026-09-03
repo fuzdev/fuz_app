@@ -174,6 +174,42 @@ describe_db('actor_search_actions', (get_db) => {
 		assert.ok(res.ok, JSON.stringify(res));
 	});
 
+	test('a soft-deleted granting actor does not unlock the global arm', async () => {
+		// The tombstone half of the account-grain case above, and its mutation
+		// check: identical setup, plus a soft-delete on the actor holding the
+		// grant. Soft-delete leaves the `role_grant` row intact (undelete
+		// restores it), so the tombstone-blind account-role query still reports
+		// admin here — the handler reads the active-only one instead.
+		//
+		// The caller's own primary actor stays live, so the session still
+		// resolves and the only thing that can refuse the call is the admin gate.
+		const db = get_db();
+		const test_app = await create_test_app({ session_options, create_route_specs, db });
+		const admin = await test_app.create_account({ username: 'admin_tombstoned' });
+		const second_actor = await db.query_one<{ id: Uuid }>(
+			`INSERT INTO actor (account_id, name) VALUES ($1, 'second') RETURNING id`,
+			[admin.account.id]
+		);
+		assert.ok(second_actor);
+		await query_create_role_grant(
+			{ db },
+			{ actor_id: second_actor.id, role: ROLE_ADMIN, granted_by: null }
+		);
+		await db.query(`UPDATE actor SET deleted_at = NOW() WHERE id = $1`, [second_actor.id]);
+
+		const res = await rpc_call_for_spec({
+			app: test_app.app,
+			path: RPC_PATH,
+			spec: actor_search_action_spec,
+			params: { query: 'a' },
+			headers: admin.create_session_headers()
+		});
+		assert.ok(!res.ok, JSON.stringify(res));
+		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_params);
+		const data = res.error.data as { reason?: string } | undefined;
+		assert.strictEqual(data?.reason, ERROR_ACTOR_SEARCH_SCOPE_REQUIRED);
+	});
+
 	test('display_name is omitted (not null) when actor.name trims to empty', async () => {
 		const db = get_db();
 		const test_app = await create_test_app({ session_options, create_route_specs, db });

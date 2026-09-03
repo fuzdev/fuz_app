@@ -3,7 +3,7 @@ import '../assert_dev_env.ts';
 /**
  * Cross-impl RPC **action-manifest** introspection — a normalized,
  * JSON-serializable dump of a backend's live RPC method set, one entry per
- * method carrying its auth shape + side-effect flag.
+ * method carrying its auth shape, side-effect flag, and rate-limit class.
  *
  * The sibling of `schema_introspect.ts`'s `SchemaSnapshot`: where that
  * captures the live *database* shape for the schema-parity gate, this
@@ -38,6 +38,7 @@ import '../assert_dev_env.ts';
 import { z } from 'zod';
 
 import { AuthAxisState, type RouteAuth } from '../../http/auth_shape.ts';
+import { RateLimitKey } from '../../http/error_schemas.ts';
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
 
 /**
@@ -45,7 +46,9 @@ import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
  * `roles` / `credential_types` are always present + sorted (an absent gate
  * and an empty list both serialize to `[]`) so the diff never trips on a
  * `undefined`-vs-`[]` or declaration-order difference between impls; the
- * auth axes reuse the canonical `AuthAxisState` enum.
+ * auth axes reuse the canonical `AuthAxisState` enum. `rate_limit` is
+ * nullable rather than optional for the same reason — an unthrottled action
+ * serializes an explicit `null`, so a missing key is drift, not a default.
  */
 export const ActionManifestEntry = z.strictObject({
 	/** RPC method name (`spec.method`). */
@@ -59,7 +62,9 @@ export const ActionManifestEntry = z.strictObject({
 	/** Required roles (any-of), sorted; `[]` when the action declares no role gate. */
 	roles: z.array(z.string()),
 	/** Permitted credential channels, sorted; `[]` when ungated (any credential). */
-	credential_types: z.array(z.string())
+	credential_types: z.array(z.string()),
+	/** Per-action rate-limit class, or `null` when the action declares none. */
+	rate_limit: RateLimitKey.nullable()
 });
 export type ActionManifestEntry = z.infer<typeof ActionManifestEntry>;
 
@@ -82,13 +87,15 @@ export const action_manifest_entry = (spec: {
 	readonly method: string;
 	readonly auth: RouteAuth;
 	readonly side_effects: boolean;
+	readonly rate_limit?: RateLimitKey;
 }): ActionManifestEntry => ({
 	method: spec.method,
 	side_effects: spec.side_effects,
 	account: spec.auth.account,
 	actor: spec.auth.actor,
 	roles: sorted_strings(spec.auth.roles),
-	credential_types: sorted_strings(spec.auth.credential_types)
+	credential_types: sorted_strings(spec.auth.credential_types),
+	rate_limit: spec.rate_limit ?? null
 });
 
 /** Deterministic byte-lexicographic method order — matches the Rust `str::cmp` the stub sorts by. */
@@ -103,7 +110,9 @@ const compare_method = (a: ActionManifestEntry, b: ActionManifestEntry): number 
  * `PROTOCOL_ACTION_SPECS` first) — see the module doc.
  */
 export const build_action_manifest = (
-	specs: ReadonlyArray<Pick<RequestResponseActionSpec, 'method' | 'auth' | 'side_effects'>>
+	specs: ReadonlyArray<
+		Pick<RequestResponseActionSpec, 'method' | 'auth' | 'side_effects' | 'rate_limit'>
+	>
 ): ActionManifest => ({
 	methods: specs.map(action_manifest_entry).sort(compare_method)
 });

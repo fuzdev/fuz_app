@@ -100,11 +100,15 @@ const create_test_app = (
 	{
 		auth_context,
 		credential_type,
-		token_scope
+		token_scope,
+		action_ip_rate_limiter,
+		action_account_rate_limiter
 	}: {
 		auth_context?: ReturnType<typeof create_test_request_context>;
 		credential_type?: CredentialType;
 		token_scope?: TokenScope;
+		action_ip_rate_limiter?: RateLimiter;
+		action_account_rate_limiter?: RateLimiter;
 	} = {}
 ): Hono => {
 	const app = new Hono();
@@ -122,7 +126,13 @@ const create_test_app = (
 			await next();
 		});
 	}
-	const route_specs = create_rpc_endpoint({ path: '/api/rpc', actions, log });
+	const route_specs = create_rpc_endpoint({
+		path: '/api/rpc',
+		actions,
+		log,
+		action_ip_rate_limiter,
+		action_account_rate_limiter
+	});
 	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
 	return app;
 };
@@ -254,6 +264,25 @@ describe('POST dispatcher', () => {
 		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number);
 	});
 
+	test('a non-object body is invalid_request with id: null', async () => {
+		// A scalar body carries no id to echo. Reading it as its own id would
+		// answer `id: 5` to `POST 5`; the Rust twin's `classify` answers
+		// `id: null` for any non-object body.
+		const app = create_test_app([{ spec: create_get_spec(), handler: () => ({ items: [] }) }]);
+
+		for (const raw of ['5', '"thing_list"', 'true']) {
+			const res = await app.request('/api/rpc', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: raw
+			});
+			assert.strictEqual(res.status, 400, raw);
+			const body = await res.json();
+			assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number, raw);
+			assert.strictEqual(body.id, null, raw);
+		}
+	});
+
 	test('returns method_not_found for unknown method', async () => {
 		const app = create_test_app([{ spec: create_get_spec(), handler: () => ({ items: [] }) }]);
 
@@ -308,7 +337,7 @@ describe('POST dispatcher', () => {
 
 	/**
 	 * The role gate is the *last* authority gate, so it is the one that pins
-	 * the whole 401 → authz → 403 → 400 order: if validation had stayed ahead
+	 * the whole 401 → authz → 403 → 429 → 400 order: if validation had stayed ahead
 	 * of it, malformed params would answer `invalid_params` here and describe
 	 * the method's input shape to a caller who may never call it. The
 	 * credential and scope gates are covered by their own siblings; this is
@@ -1275,21 +1304,10 @@ describe('rate limit', () => {
 	test('account limiter blocks once exhausted', async () => {
 		const limiter = make_limiter(2);
 		const auth_context = create_test_request_context();
-		const app = new Hono();
-		app.use('/*', async (c, next) => {
-			(c as any).set(ACCOUNT_ID_KEY, auth_context.account.id);
-			(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
-			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
-			(c as any).set(CREDENTIAL_TYPE_KEY, 'session' as CredentialType);
-			await next();
-		});
-		const route_specs = create_rpc_endpoint({
-			path: '/api/rpc',
-			actions: [{ spec: account_keyed_spec(), handler: () => ({ ok: true as const }) }],
-			log,
-			action_account_rate_limiter: limiter
-		});
-		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
+		const app = create_test_app(
+			[{ spec: account_keyed_spec(), handler: () => ({ ok: true as const }) }],
+			{ auth_context, credential_type: 'session', action_account_rate_limiter: limiter }
+		);
 
 		const send = () =>
 			app.request(
@@ -1324,24 +1342,12 @@ describe('rate limit', () => {
 			actor: create_test_actor({ id: 'act_2', account_id: 'acc_2' })
 		};
 
-		const make_app = (auth_context: ReturnType<typeof create_test_request_context>) => {
-			const app = new Hono();
-			app.use('/*', async (c, next) => {
-				(c as any).set(ACCOUNT_ID_KEY, auth_context.account.id);
-				(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
-				(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
-				(c as any).set(CREDENTIAL_TYPE_KEY, 'session' as CredentialType);
-				await next();
-			});
-			const route_specs = create_rpc_endpoint({
-				path: '/api/rpc',
-				actions: [{ spec: account_keyed_spec(), handler: () => ({ ok: true as const }) }],
-				log,
+		const make_app = (auth_context: ReturnType<typeof create_test_request_context>) =>
+			create_test_app([{ spec: account_keyed_spec(), handler: () => ({ ok: true as const }) }], {
+				auth_context,
+				credential_type: 'session',
 				action_account_rate_limiter: limiter
 			});
-			apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
-			return app;
-		};
 
 		const app_a = make_app(actor_a);
 		const app_b = make_app(actor_b);
@@ -1373,22 +1379,12 @@ describe('rate limit', () => {
 	test('action without rate_limit is unaffected', async () => {
 		const limiter = make_limiter(1);
 		const auth_context = create_test_request_context();
-		const app = new Hono();
-		app.use('/*', async (c, next) => {
-			(c as any).set(ACCOUNT_ID_KEY, auth_context.account.id);
-			(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
-			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
-			(c as any).set(CREDENTIAL_TYPE_KEY, 'session' as CredentialType);
-			await next();
-		});
 		// post_spec has no rate_limit set
-		const route_specs = create_rpc_endpoint({
-			path: '/api/rpc',
-			actions: [{ spec: create_post_spec(), handler: () => ({ id: 'x' }) }],
-			log,
+		const app = create_test_app([{ spec: create_post_spec(), handler: () => ({ id: 'x' }) }], {
+			auth_context,
+			credential_type: 'session',
 			action_account_rate_limiter: limiter
 		});
-		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
 
 		const send = () =>
 			app.request(
@@ -1406,21 +1402,14 @@ describe('rate limit', () => {
 
 	test('null limiter skips check (silent partial enforcement)', async () => {
 		const auth_context = create_test_request_context();
-		const app = new Hono();
-		app.use('/*', async (c, next) => {
-			(c as any).set(ACCOUNT_ID_KEY, auth_context.account.id);
-			(c as any).set(REQUEST_CONTEXT_KEY, auth_context);
-			(c as any).set(TEST_CONTEXT_PRESET_KEY, true);
-			(c as any).set(CREDENTIAL_TYPE_KEY, 'session' as CredentialType);
-			await next();
-		});
-		const route_specs = create_rpc_endpoint({
-			path: '/api/rpc',
-			actions: [{ spec: account_keyed_spec(), handler: () => ({ ok: true as const }) }],
-			log
-			// no limiter wired — declared `rate_limit: 'account'` is silently a no-op
-		});
-		apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
+		// no limiter wired — declared `rate_limit: 'account'` is silently a no-op
+		const app = create_test_app(
+			[{ spec: account_keyed_spec(), handler: () => ({ ok: true as const }) }],
+			{
+				auth_context,
+				credential_type: 'session'
+			}
+		);
 
 		const send = () =>
 			app.request(
@@ -1434,6 +1423,94 @@ describe('rate limit', () => {
 		// 100 calls all pass because no limiter is wired
 		for (let i = 0; i < 5; i++) {
 			assert.strictEqual((await (await send()).json()).result?.ok, true);
+		}
+	});
+
+	// The limiter runs ahead of param validation, matching the Rust
+	// dispatcher: a flood of malformed bodies must cost the sender its quota
+	// rather than slipping past on a cheap 400.
+	test('malformed params still charge the budget — third call is rate_limited', async () => {
+		const limiter = make_limiter(2);
+		const auth_context = create_test_request_context();
+		const app = create_test_app(
+			[{ spec: account_keyed_spec(), handler: () => ({ ok: true as const }) }],
+			{ auth_context, credential_type: 'session', action_account_rate_limiter: limiter }
+		);
+
+		// `name` must be a string — every call is malformed.
+		const send = () =>
+			app.request(
+				new Request('http://localhost/api/rpc', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: rpc_request('thing_throttled', { name: 42 })
+				})
+			);
+
+		const first = await (await send()).json();
+		assert.strictEqual(first.error?.code, JSONRPC_ERROR_CODES.invalid_params);
+		const second = await (await send()).json();
+		assert.strictEqual(second.error?.code, JSONRPC_ERROR_CODES.invalid_params);
+		const third_response = await send();
+		const third = await third_response.json();
+		assert.strictEqual(third_response.status, 429);
+		assert.strictEqual(third.error?.code, JSONRPC_ERROR_CODES.rate_limited);
+	});
+
+	test('malformed params on a non-limited spec are still invalid_params', async () => {
+		const limiter = make_limiter(1);
+		const auth_context = create_test_request_context();
+		const app = create_test_app([{ spec: create_post_spec(), handler: () => ({ id: 'x' }) }], {
+			auth_context,
+			credential_type: 'session',
+			action_account_rate_limiter: limiter
+		});
+
+		const send = () =>
+			app.request(
+				new Request('http://localhost/api/rpc', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: rpc_request('thing_create', { name: 42 })
+				})
+			);
+
+		for (let i = 0; i < 3; i++) {
+			const body = await (await send()).json();
+			assert.strictEqual(body.error?.code, JSONRPC_ERROR_CODES.invalid_params);
+		}
+	});
+
+	// The authority gates still precede the limiter: an anonymous caller on a
+	// public ip-keyed spec is answered by the 401 the spec's own auth demands,
+	// never by a 429, so the limiter can never mask an auth outcome.
+	test('an unauthenticated caller sees the 401 gate before the ip limiter', async () => {
+		const limiter = make_limiter(1);
+		const ip_keyed_spec: RequestResponseActionSpec = {
+			...account_keyed_spec(),
+			method: 'thing_ip_throttled',
+			auth: { account: 'required', actor: 'none' },
+			rate_limit: 'ip'
+		};
+		const app = create_test_app([{ spec: ip_keyed_spec, handler: () => ({ ok: true as const }) }], {
+			action_ip_rate_limiter: limiter
+		});
+
+		const send = () =>
+			app.request(
+				new Request('http://localhost/api/rpc', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: rpc_request('thing_ip_throttled', { name: 'a' })
+				})
+			);
+
+		// Budget is 1, but no call ever reaches the limiter: every one is 401.
+		for (let i = 0; i < 3; i++) {
+			const res = await send();
+			assert.strictEqual(res.status, 401);
+			const body = await res.json();
+			assert.strictEqual(body.error?.code, JSONRPC_ERROR_CODES.unauthenticated);
 		}
 	});
 

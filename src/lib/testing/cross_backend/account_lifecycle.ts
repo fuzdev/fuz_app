@@ -35,15 +35,17 @@ import {
 } from '../../http/error_schemas.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
-import type { RpcPathCrossSuiteOptions } from './setup.ts';
+import { assert_iso8601_seconds } from './wire_shapes.ts';
+import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /**
  * Options for the account-lifecycle parity suite. The standard
- * RPC-dispatched cross-suite shape (`setup_test` / `capabilities` /
- * `rpc_path`); aliases `RpcPathCrossSuiteOptions` rather than duplicating.
+ * capability-gating RPC-dispatched cross-suite shape (`setup_test` /
+ * `capabilities` / `rpc_path`); aliases
+ * `RpcPathCapabilityGatedCrossSuiteOptions` rather than duplicating.
  */
-export type AccountLifecycleCrossTestOptions = RpcPathCrossSuiteOptions;
+export type AccountLifecycleCrossTestOptions = RpcPathCapabilityGatedCrossSuiteOptions;
 
 export const describe_account_lifecycle_cross_tests = (
 	options: AccountLifecycleCrossTestOptions
@@ -255,6 +257,9 @@ export const describe_account_lifecycle_cross_tests = (
 					failure,
 					'keeper-removal guard must emit an account_delete outcome=failure audit row with reason cannot_delete_keeper'
 				);
+				// Byte-shape gate on the audit row's timestamp — `z.string()` in
+				// `AuditLogEventWithUsernamesJson` accepts a millisecond stamp too.
+				assert_iso8601_seconds(failure.created_at, 'audit_log_list.created_at');
 			}
 		);
 
@@ -363,6 +368,9 @@ export const describe_account_lifecycle_cross_tests = (
 					row.account.deleted_at !== null,
 					'tombstoned row carries a non-null deleted_at on both spines'
 				);
+				assert_iso8601_seconds(row.account.created_at, 'admin_account_list.created_at');
+				assert_iso8601_seconds(row.account.updated_at, 'admin_account_list.updated_at');
+				assert_iso8601_seconds(row.account.deleted_at, 'admin_account_list.deleted_at');
 			}
 		);
 	});

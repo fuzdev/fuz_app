@@ -251,16 +251,28 @@ export type SetupTest = () => Promise<TestFixture>;
  * Base options shared by every imperative cross-backend parity suite
  * (`origin` / `ready` / `body_size` / `cell_*` / `actor_*` /
  * `account_lifecycle` / `app_settings` / `testing_backdoor` / …). The
- * `{setup_test, capabilities}` core is identical across them; each suite
- * extends this with its own path field (`rpc_path` for RPC-dispatched
- * suites via `RpcPathCrossSuiteOptions`, `ready_path` for the readiness
- * probe, etc.). Lives here in the neutral fixture-types home rather than in
- * any one domain helper, so a non-cell suite no longer reaches into the
- * cell helpers for its option shape.
+ * `setup_test` core is identical across them; each suite extends this with
+ * its own path field (`rpc_path` for RPC-dispatched suites via
+ * `RpcPathCrossSuiteOptions`, `ready_path` for the readiness probe, etc.),
+ * and a suite that actually gates cases on a capability flag extends
+ * `CapabilityGatedCrossSuiteOptions` instead. Lives here in the neutral
+ * fixture-types home rather than in any one domain helper, so a non-cell
+ * suite never reaches into the cell helpers for its option shape.
  */
 export interface CrossSuiteOptions {
 	/** Per-test fixture-producing function (fresh keeper + db per call). */
 	readonly setup_test: SetupTest;
+}
+
+/**
+ * `CrossSuiteOptions` for a suite that reads capability flags — the ones
+ * whose cases are `test_if`-gated on a per-backend declaration. The field is
+ * on this variant rather than the base so a suite's option type states
+ * whether it consults capabilities: a caller cannot pass a flag bundle to a
+ * suite that ignores it, and a suite cannot quietly stop reading one while
+ * still demanding it.
+ */
+export interface CapabilityGatedCrossSuiteOptions extends CrossSuiteOptions {
 	/** Backend capability declarations — each suite gates on its own flag. */
 	readonly capabilities: BackendCapabilities;
 }
@@ -276,6 +288,16 @@ export interface RpcPathCrossSuiteOptions extends CrossSuiteOptions {
 	/** RPC endpoint path the methods are mounted on. Default `/api/rpc`. */
 	readonly rpc_path?: string;
 }
+
+/**
+ * The RPC-dispatched shape for a capability-gating suite — the intersection
+ * of `RpcPathCrossSuiteOptions` and `CapabilityGatedCrossSuiteOptions`, and
+ * the most common option shape among the imperative cross suites (every
+ * `cell_*` suite, `query_shape`, `token_scope_surface`, `fact_serving`,
+ * `account_lifecycle`).
+ */
+export interface RpcPathCapabilityGatedCrossSuiteOptions
+	extends RpcPathCrossSuiteOptions, CapabilityGatedCrossSuiteOptions {}
 
 /**
  * Cross-process backend handle enriched with the bootstrapped keeper's

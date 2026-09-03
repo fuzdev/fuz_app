@@ -40,15 +40,16 @@ import { describe, test, assert } from 'vitest';
 import { account_verify_action_spec } from '../../auth/account_action_specs.ts';
 import { ERROR_INVALID_QUERY_PARAMS } from '../../http/error_schemas.ts';
 import { test_if } from './capabilities.ts';
-import type { RpcPathCrossSuiteOptions } from './setup.ts';
+import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /**
- * Options for the query-shape parity suite. The standard RPC-dispatched
- * cross-suite shape (`setup_test` / `capabilities` / `rpc_path`); aliases the
- * shared `RpcPathCrossSuiteOptions` rather than minting a duplicate.
+ * Options for the query-shape parity suite. The standard capability-gating
+ * RPC-dispatched cross-suite shape (`setup_test` / `capabilities` /
+ * `rpc_path`); aliases the shared `RpcPathCapabilityGatedCrossSuiteOptions`
+ * rather than minting a duplicate.
  */
-export type QueryShapeCrossTestOptions = RpcPathCrossSuiteOptions;
+export type QueryShapeCrossTestOptions = RpcPathCapabilityGatedCrossSuiteOptions;
 
 /** The status route every spine serves (bundled into the account family). */
 const STATUS_PATH = '/api/account/status';

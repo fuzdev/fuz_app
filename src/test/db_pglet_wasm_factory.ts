@@ -26,10 +26,13 @@
  * The adapter also parses timestamps as UTC → `Date`, handles DATE and bytea, and recurses into
  * array elements — none of which the shim this replaced did.
  *
- * **Per-`create()` isolation via `fork()`.** The auth schema is migrated **once** into a
- * module-level base; each `create()` then `base.fork()`s a fresh copy-on-write branch instead of
- * re-running the migrations. A fork shares the base's pages until written (cheap — no row
- * deep-copy). The harness `beforeEach` TRUNCATE still gives per-test isolation within a suite.
+ * **Two exports, two isolation models.** `create_pglet_wasm_factory` is the matrix leg: the
+ * schema is migrated **once** into a module-level base and each `create()` `base.fork()`s a fresh
+ * copy-on-write branch instead of re-running the migrations (a fork shares the base's pages until
+ * written — cheap, no row deep-copy). `create_pglet_wasm_shared_factory` is the stand-in shape for
+ * `create_pglite_factory` (see `set_substitute_db_factory` in `testing/db.ts`): one instance for
+ * the whole process, no forks, `DROP SCHEMA public CASCADE` + `init_schema` per `create()`. The
+ * harness `beforeEach` TRUNCATE gives per-test isolation within a suite under either.
  *
  * @module
  */
@@ -38,7 +41,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { Db, no_nested_transaction, type DbDriverResult } from '$lib/db/db.ts';
-import type { DbFactory } from '$lib/testing/db.ts';
+import { reset_pglite, type DbFactory } from '$lib/testing/db.ts';
 
 const PGLET_WASM_PKG = process.env.PGLET_WASM_PKG;
 
@@ -136,6 +139,61 @@ export const create_pglet_wasm_factory = (init_schema: (db: Db) => Promise<void>
 			// Free the forked wasm instance for this suite; the base + module stay cached.
 			await current_close?.();
 			current_close = null;
+		}
+	};
+};
+
+// The one wasm instance every `create_pglet_wasm_shared_factory` factory hands
+// out, created on first use and kept for the run. A promise rather than a value
+// so two concurrent first `create()` calls build one instance, not two — the
+// rule `create_pglet_shared_factory`'s server memo states, rejection included:
+// a failed first load is the error every later `create()` reports.
+let shared_wasm_db: Promise<Db> | null = null;
+
+const resolve_shared_wasm_db = (pkg_dir: string): Promise<Db> => {
+	shared_wasm_db ??= (async () => {
+		const mod = await load_wasm_module(pkg_dir);
+		// fuz_app's int8 → Number convention, as `create_pglet_wasm_factory` uses
+		return create_pglet_wasm_db(mod.create_pglet_db({ coercion: { int8: 'number' } })).db;
+	})();
+	return shared_wasm_db;
+};
+
+/**
+ * Create a pglet-wasm (in-process) factory over one process-wide instance,
+ * resetting the whole `public` schema per `create()`.
+ *
+ * The in-process sibling of `create_pglet_shared_factory`, and the same
+ * stand-in shape for `create_pglite_factory` (see `set_substitute_db_factory`
+ * in `testing/db.ts`): one instance, `DROP SCHEMA public CASCADE` +
+ * `init_schema` per `create()`. `create_pglet_wasm_factory` above instead forks
+ * a branch per `create()`, which suits a fixture leg whose `create()`/`close()`
+ * calls are paired by `create_describe_db`; a suite that calls `create()` per
+ * test and never closes the factory would hold every fork of the run.
+ *
+ * Skipped unless `PGLET_WASM_PKG` is set.
+ *
+ * @param init_schema - callback to initialize the database schema
+ */
+export const create_pglet_wasm_shared_factory = (
+	init_schema: (db: Db) => Promise<void>
+): DbFactory => {
+	const skip = !PGLET_WASM_PKG;
+	return {
+		name: 'pglet-wasm',
+		skip,
+		skip_reason: skip ? 'PGLET_WASM_PKG not set' : undefined,
+		async create() {
+			if (!PGLET_WASM_PKG) {
+				throw new Error('PGLET_WASM_PKG required for pglet-wasm tests.');
+			}
+			const db = await resolve_shared_wasm_db(PGLET_WASM_PKG);
+			await reset_pglite(db);
+			await init_schema(db);
+			return db;
+		},
+		async close() {
+			// No-op: the shared instance lives for the whole run, as the PGlite one does.
 		}
 	};
 };

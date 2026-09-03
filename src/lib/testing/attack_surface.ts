@@ -35,9 +35,10 @@ import {
 	create_test_app_from_specs,
 	create_test_request_context,
 	create_auth_test_apps,
-	select_auth_app,
-	resolve_test_path
+	create_route_skip_filter,
+	select_auth_app
 } from './auth_apps.ts';
+import { resolve_valid_path } from './schema_generators.ts';
 import {
 	assert_surface_matches_snapshot,
 	assert_surface_deterministic,
@@ -86,12 +87,34 @@ const build_error_schema_lookup = (
 	return lookup;
 };
 
+/**
+ * Build a lookup from `"METHOD /path"` to the route's own `RouteSpec` — the
+ * companion of `build_error_schema_lookup`, so a generated request can reach
+ * the route's `params` schema and synthesize path segments the route will
+ * actually accept.
+ */
+const build_route_spec_lookup = (route_specs: Array<RouteSpec>): Map<string, RouteSpec> => {
+	const lookup: Map<string, RouteSpec> = new Map();
+	for (const spec of route_specs) {
+		lookup.set(`${spec.method} ${spec.path}`, spec);
+	}
+	return lookup;
+};
+
 /** Options for adversarial test runners (auth enforcement and input validation). */
 export interface AdversarialTestOptions {
 	/** Build the app surface bundle (surface + route specs + middleware specs). */
 	build: () => AppSurfaceSpec;
 	/** All roles in the app (e.g. `['admin', 'keeper']`). */
 	roles: Array<string>;
+	/**
+	 * Routes to skip, in `'METHOD /path'` form (the surface key) — the escape
+	 * hatch every sibling suite carries. Reach for it only when a route
+	 * cannot be driven generically at all (a handler needing real seeded
+	 * state, a path segment no schema can describe); a route whose params
+	 * merely have a format is handled by the synthesizer.
+	 */
+	skip_routes?: Array<string>;
 }
 
 /**
@@ -106,15 +129,24 @@ export interface AdversarialTestOptions {
 export const describe_adversarial_auth = (options: AdversarialTestOptions): void => {
 	const { build, roles } = options;
 	const { surface, route_specs, middleware_specs } = build();
-	const protected_routes = filter_protected_routes(surface);
+	const is_skipped = create_route_skip_filter(options.skip_routes);
+	const protected_routes = filter_protected_routes(surface).filter((r) => !is_skipped(r));
 
 	if (protected_routes.length === 0) return;
 
-	const role_routes = filter_role_routes(surface);
-	const keeper_routes = filter_keeper_routes(surface);
+	const role_routes = filter_role_routes(surface).filter((r) => !is_skipped(r));
+	const keeper_routes = filter_keeper_routes(surface).filter((r) => !is_skipped(r));
 
 	// merged error schemas (auto-derived + middleware + handler-specific) for response validation
 	const error_schema_lookup = build_error_schema_lookup(route_specs, middleware_specs);
+
+	// The route's own spec, so a path param with a declared format (a
+	// `blake3:…` fact hash, a `tok_…` id) is synthesized into a value params
+	// validation accepts. Otherwise the generated request 400s on the path
+	// before ever reaching the 401 / 403 gate the case is asserting.
+	const spec_lookup = build_route_spec_lookup(route_specs);
+	const test_path = (route: { method: string; path: string }): string =>
+		resolve_valid_path(route.path, spec_lookup.get(`${route.method} ${route.path}`)?.params);
 
 	const apps = create_auth_test_apps(route_specs, roles);
 
@@ -122,7 +154,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 		describe('unauthenticated → 401', () => {
 			for (const route of protected_routes) {
 				test(`${route.method} ${route.path}`, async () => {
-					const res = await apps.public.request(resolve_test_path(route.path), {
+					const res = await apps.public.request(test_path(route), {
 						method: route.method
 					});
 					assert.strictEqual(res.status, 401, `${route.method} ${route.path}`);
@@ -149,7 +181,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 						)})`, async () => {
 							const app = apps.by_role.get(wrong_role);
 							if (!app) throw new Error(`No test app for role '${wrong_role}'`);
-							const res = await app.request(resolve_test_path(route.path), {
+							const res = await app.request(test_path(route), {
 								method: route.method
 							});
 							assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
@@ -165,7 +197,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 			describe('authenticated without role → 403', () => {
 				for (const route of role_only_routes) {
 					test(`${route.method} ${route.path}`, async () => {
-						const res = await apps.authed.request(resolve_test_path(route.path), {
+						const res = await apps.authed.request(test_path(route), {
 							method: route.method
 						});
 						assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
@@ -188,7 +220,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 				);
 				for (const route of keeper_routes) {
 					test(`${route.method} ${route.path}`, async () => {
-						const res = await app_session_keeper.request(resolve_test_path(route.path), {
+						const res = await app_session_keeper.request(test_path(route), {
 							method: route.method
 						});
 						assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
@@ -207,10 +239,9 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 		describe('correct auth passes guard', () => {
 			for (const route of protected_routes) {
 				test(`${route.method} ${route.path}`, async () => {
-					const res = await select_auth_app(apps, route.auth).request(
-						resolve_test_path(route.path),
-						{ method: route.method }
-					);
+					const res = await select_auth_app(apps, route.auth).request(test_path(route), {
+						method: route.method
+					});
 					// handler may error (500) or return 404 (stub deps) — that's fine, we only verify auth passed
 					assert.notStrictEqual(res.status, 401, 'should not be 401 (auth rejected)');
 					assert.notStrictEqual(res.status, 403, 'should not be 403 (role rejected)');
@@ -292,6 +323,14 @@ export interface StandardAttackSurfaceOptions {
 	 * to skip the assertion and keep the audit log informational-only.
 	 */
 	error_schema_tightness?: ErrorSchemaTightnessOptions | null;
+	/**
+	 * Routes the three adversarial sub-suites skip, in `'METHOD /path'` form
+	 * — the escape hatch every sibling suite carries (`round_trip`,
+	 * `data_exposure`). Reach for it only when a route cannot be driven
+	 * generically at all; a route whose path params merely carry a format is
+	 * handled by the params-schema-aware synthesizer.
+	 */
+	skip_routes?: Array<string>;
 }
 
 /**
@@ -323,7 +362,8 @@ export const describe_standard_attack_surface_tests = (
 		expected_api_middleware,
 		roles,
 		api_path_prefix = '/api/',
-		security_policy
+		security_policy,
+		skip_routes
 	} = options;
 
 	const error_schema_tightness = resolve_standard_error_schema_tightness(
@@ -385,9 +425,9 @@ export const describe_standard_attack_surface_tests = (
 		});
 	});
 
-	describe_adversarial_auth({ build: () => built, roles });
+	describe_adversarial_auth({ build: () => built, roles, skip_routes });
 
-	describe_adversarial_input({ build: () => built, roles });
+	describe_adversarial_input({ build: () => built, roles, skip_routes });
 
-	describe_adversarial_404({ build: () => built, roles });
+	describe_adversarial_404({ build: () => built, roles, skip_routes });
 };

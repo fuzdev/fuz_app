@@ -7,6 +7,7 @@ import {
 	create_jsonrpc_error_response
 } from '$lib/http/jsonrpc_helpers.ts';
 import { jsonrpc_error_messages } from '$lib/http/jsonrpc_errors.ts';
+import { peer_ping_action_spec } from '$lib/actions/peer_ping.ts';
 import { create_fake_ws } from '$lib/testing/ws_round_trip.ts';
 
 // In-process coverage of the transport's server→client request path
@@ -87,5 +88,17 @@ describe('BackendWebsocketTransport server→client requests', () => {
 		const { ws } = create_fake_ws();
 		const conn = t.add_connection(ws, null, create_uuid());
 		assert.isFalse(t.resolve_peer_response(conn, create_jsonrpc_response('s999', { result: 1 })));
+	});
+});
+
+describe('peer_ping_action_spec', () => {
+	test('carries the IP rate-limit class', () => {
+		// The only throttle a public method can take — there is no account to
+		// key on — and the one that bounds an anonymous HTTP caller looping
+		// the no-transport refusal. Twin of the Rust spec's
+		// `RateLimitClass::Ip`; the two must move together or the backends
+		// throttle the same method differently.
+		assert.strictEqual(peer_ping_action_spec.rate_limit, 'ip');
+		assert.deepStrictEqual(peer_ping_action_spec.auth, { account: 'none', actor: 'none' });
 	});
 });

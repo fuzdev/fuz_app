@@ -25,8 +25,8 @@ export const make_auth_session = (overrides: SessionOverrides = {}): AuthSession
 	({
 		id: 'sess-1',
 		account_id: 'acct-1',
-		created_at: '2026-01-01T00:00:00.000Z',
-		expires_at: '2026-02-01T00:00:00.000Z',
+		created_at: '2026-01-01T00:00:00Z',
+		expires_at: '2026-02-01T00:00:00Z',
 		...overrides
 	}) as AuthSessionJson;
 

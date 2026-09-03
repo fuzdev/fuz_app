@@ -106,6 +106,13 @@ export type PingResponse = z.infer<typeof PingResponse>;
  * client→server invocation drives a server→client request); `auth: public`
  * (liveness is non-sensitive; the upgrade authenticated the socket);
  * `side_effects: false` (no state change — the handler only round-trips a ping).
+ *
+ * Public is not ungoverned: `rate_limit: 'ip'` is the one throttle an
+ * unauthenticated method can be given (there is no account to key on). It
+ * bounds anonymous fan-out and keeps the class at parity with the Rust spec's
+ * `RateLimitClass::Ip` — there the no-transport refusal costs two pool
+ * checkouts per call; here the public auth shape skips the authorization
+ * phase, so the refusal is free and the class is carried for the bound alone.
  */
 export const peer_ping_action_spec = {
 	method: PEER_PING_METHOD,
@@ -116,6 +123,7 @@ export const peer_ping_action_spec = {
 	input: PingActionInput,
 	output: PingResponse,
 	async: true,
+	rate_limit: 'ip',
 	description:
 		'Liveness round-trip — the handler pings the originating client back over its socket, ' +
 		'validates the echo, and returns it. Refused as no-transport over HTTP RPC.'

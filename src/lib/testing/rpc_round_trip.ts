@@ -36,7 +36,6 @@ import {
 	type RpcEndpointsSuiteOption
 } from './rpc_helpers.ts';
 import type { KeeperHeaderProvider } from './integration_helpers.ts';
-import type { BackendCapabilities } from './cross_backend/capabilities.ts';
 import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
 import type { SessionOptions } from '../auth/session_cookie.ts';
 
@@ -50,8 +49,6 @@ export interface RpcRoundTripTestOptions {
 	 * in-process and cross-process tests.
 	 */
 	surface_source: AppSurfaceSpec;
-	/** Backend capability declarations. */
-	capabilities: BackendCapabilities;
 	/**
 	 * Session config — only needed to resolve factory-form `rpc_endpoints`
 	 * against a stub `AppServerContext` at setup time (the actions' input
@@ -173,7 +170,6 @@ export const describe_rpc_round_trip_tests = (options: RpcRoundTripTestOptions):
 		options.session_options
 	);
 	const surface_rpc_endpoints = options.surface_source.surface.rpc_endpoints;
-	void options.capabilities;
 
 	describe('RPC round-trip validation', () => {
 		let fixture: TestFixture;

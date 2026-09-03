@@ -47,7 +47,7 @@ import type { FetchTransport } from '../transports/fetch_transport.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, expect_output } from './cell_cross_helpers.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
-import type { RpcPathCrossSuiteOptions, SetupTest } from './setup.ts';
+import type { RpcPathCapabilityGatedCrossSuiteOptions, SetupTest } from './setup.ts';
 
 /**
  * The fact suite adds one optional knob to the shared cell options: a setup
@@ -55,7 +55,7 @@ import type { RpcPathCrossSuiteOptions, SetupTest } from './setup.ts';
  * needs it; the rest of the suite runs single-actor, so wiring it is opt-in.
  * Omit it and the multi-actor case silently skips.
  */
-export interface FactServingCrossTestOptions extends RpcPathCrossSuiteOptions {
+export interface FactServingCrossTestOptions extends RpcPathCapabilityGatedCrossSuiteOptions {
 	readonly setup_test_multi_actor?: SetupTest;
 }
 

@@ -52,6 +52,10 @@ import { invite_create_action_spec } from '../auth/admin_action_specs.ts';
 import { LoginOutput, AccountStatusOutput } from '../auth/account_route_schema.ts';
 import type { AppSurfaceSpec } from '../http/surface.ts';
 import { test_if, type BackendCapabilities } from './cross_backend/capabilities.ts';
+import {
+	assert_iso8601_seconds,
+	assert_iso8601_seconds_nullable
+} from './cross_backend/wire_shapes.ts';
 import type { SetupTest } from './cross_backend/setup.ts';
 import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
 
@@ -514,6 +518,13 @@ export const describe_standard_integration_tests = (
 						parsed.role_grants.length > 0,
 						'single-actor keeper must have populated role_grants'
 					);
+					// Byte-shape gate: `z.string()` accepts a millisecond stamp too,
+					// so the schema parse above can't tell the two spines apart.
+					assert_iso8601_seconds(parsed.account.created_at, 'account.created_at');
+					for (const grant of parsed.role_grants) {
+						assert_iso8601_seconds(grant.created_at, 'role_grant.created_at');
+						assert_iso8601_seconds_nullable(grant.expires_at, 'role_grant.expires_at');
+					}
 				}
 			);
 		});
@@ -606,7 +617,12 @@ export const describe_standard_integration_tests = (
 				});
 				assert.ok(list_res.ok, 'account_session_list should succeed');
 				assert.ok(list_res.result.sessions.length >= 1);
-				const session_id = list_res.result.sessions[0]!.id;
+				const session = list_res.result.sessions[0]!;
+				// Byte-shape gate on the session timestamps — see the account-status
+				// case for why the output schema alone can't catch the divergence.
+				assert_iso8601_seconds(session.created_at, 'session.created_at');
+				assert_iso8601_seconds(session.expires_at, 'session.expires_at');
+				const session_id = session.id;
 
 				// Revoke that session by ID
 				const revoke_res = await rpc_call_for_spec({
@@ -922,7 +938,7 @@ export const describe_standard_integration_tests = (
 				// phase doesn't first demand an acting actor → `actor_required`)
 				// and input/param/query-free (params and query still validate ahead
 				// of the auth phase — only body validation moved behind the gates,
-				// per the 401 → authz → 403 → 400 order). Admin surfaces are
+				// per the 401 → authz → 403 → 429 → 400 order). Admin surfaces are
 				// RPC-first now; a consumer may expose no such REST route (fuz_app
 				// itself, zzz) — then this REST-era check is a no-op and RPC denial
 				// is covered by `describe_rpc_attack_surface_tests`.

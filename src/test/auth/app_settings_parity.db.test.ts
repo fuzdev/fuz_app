@@ -15,7 +15,6 @@
  */
 
 import { default_in_process_setup } from '$lib/testing/cross_backend/in_process_setup.ts';
-import { in_process_capabilities } from '$lib/testing/cross_backend/capabilities.ts';
 import { describe_app_settings_cross_tests } from '$lib/testing/cross_backend/app_settings.ts';
 import {
 	create_spine_route_specs,
@@ -35,6 +34,5 @@ const setup_test = default_in_process_setup({
 
 describe_app_settings_cross_tests({
 	setup_test,
-	capabilities: in_process_capabilities,
 	rpc_path: SPINE_RPC_PATH
 });

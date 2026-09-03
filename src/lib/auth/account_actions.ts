@@ -46,6 +46,7 @@ import { token_lifetime_to_expires_at } from './token_lifetime.ts';
 import { generate_api_token } from './api_token.ts';
 import { DEFAULT_MAX_TOKENS } from './account_route_schema.ts';
 import type { ActionFactoryDeps } from './deps.ts';
+import { to_iso8601_seconds } from '../timestamp.ts';
 import {
 	account_verify_action_spec,
 	account_session_list_action_spec,
@@ -213,7 +214,15 @@ export const create_account_actions = (
 				credential_type: ctx.credential_type ?? undefined
 			}
 		});
-		return { ok: true, token, id, name: input.name, expires_at: expires_at?.toISOString() ?? null };
+		return {
+			ok: true,
+			token,
+			id,
+			name: input.name,
+			// the canonical wire shape, matching what `token_list` reads back
+			// through `api_token`'s ISO-8601 projection
+			expires_at: expires_at === null ? null : to_iso8601_seconds(expires_at)
+		};
 	};
 
 	const token_list_handler = async (

@@ -31,6 +31,55 @@ cell suites), and `fact_db_fixture.ts` (facts alone, for the `PgFactStore`
 suites). Suites that need a bespoke `init_schema` (seeding, a single namespace
 under test) still call `create_pglite_factory` + `create_describe_db` directly.
 
+**Running the pglite-factory suites on another driver.** `db_substitute.ts` is
+the `db` project's `setupFiles` entry. Set `FUZ_TEST_DB_SUBSTITUTE` to `pglet`
+or `pglet-wasm` (with that leg's `PGLET_SERVER_BIN` / `PGLET_WASM_PKG`) and it
+installs a stand-in via `set_substitute_db_factory`: every
+`create_pglite_factory` call site that does not pass `{substitutable: false}`
+hands back that driver's factory instead. The reach is the call site, wherever
+it sits — a suite's own `const factory`, the two `auth/*_test_helpers.ts`
+`describe_db`s, `create_db_fixture.ts`'s `default_db_factory` (what the suites
+that take one database directly rather than through `describe_db` import),
+`$lib/testing/app_server.ts`'s no-`db` fallback, and the `db_factories`
+defaults in `$lib/testing/sse_round_trip.ts` and `$lib/testing/rate_limiting.ts`. The stand-ins share
+one instance for the run and `DROP SCHEMA public CASCADE` + re-migrate per
+`create()`, the lifecycle `create_pglite_factory` gives PGlite. With the
+selector unset nothing is installed, so every `create_pglite_factory` call site
+stays PGlite — including when the pglet env vars are set. Those vars decide a
+different thing: they un-skip the four-driver fixture's own pglet legs, so a run
+with them set and no selector is the four-driver matrix run, not a PGlite-only
+one — the pglet legs of every `describe_db` built by `create_db_fixture.ts` are
+live in it.
+
+```bash
+FUZ_TEST_DB_SUBSTITUTE=pglet PGLET_SERVER_BIN=/path/to/pglet_server npx vitest run --project db
+```
+
+Two files pin PGlite with `{substitutable: false}`: `create_db_fixture.ts`'s
+matrix leg (the pglet legs sit beside it in `db_factories`, so substituting this
+one would drop pglite from the matrix) and `testing/test_db.db.test.ts`, whose
+subject is the pglite factory. Three files never reach the seam at all — they
+build PGlite directly with `new PGlite()`: `db/create_db.db.test.ts` (the driver
+adapters and `create_db`'s URL routing are its subject),
+`db/schema_ready.db.test.ts` and `cross_backend/spine_expected_schema.db.test.ts`
+(committed column-map fixtures, where one engine is the reference by design).
+
+Which files still run PGlite is a measurement, not a reading of the describe
+titles — the fallback routes build no `describe_db`, so they carry no driver
+label. Point the selector at a binary that cannot exist and every file the
+substitute reaches fails:
+
+```bash
+FUZ_TEST_DB_SUBSTITUTE=pglet PGLET_SERVER_BIN=/nonexistent/pglet_server npx vitest run --project db
+```
+
+The files that pass are `testing/test_db.db.test.ts` plus those three — and,
+with `TEST_DATABASE_URL` unset, the two pg-only files whose every test skips
+(`auth/password_change.race.db.test.ts`,
+`auth/role_grant_offer_queries.concurrent.db.test.ts`). The
+`create_db_fixture.ts` pin shows up differently: its files fail on their pglet
+legs, with the `(pglite)` suite inside each still green.
+
 `db/column_projections.ts` + `db/column_projections.db.test.ts` is the
 named-projection registry: every `*_COLUMNS` const keyed by table, plus the
 reasoned exemptions (`schema_version`, `bootstrap_lock`, `cell_history`,
@@ -61,11 +110,12 @@ Key helpers:
 - `create_account({username?, password_value?, roles?})` — create additional accounts for multi-account tests
 - `assert_response_matches_spec(route_specs, method, path, response)` — validate response body against route spec error schemas
 
-**PGlite WASM caching**: All `create_pglite_factory` instances in the same
-vitest worker thread (test file) share a single PGlite WASM instance via
-a module-level cache in `db.ts`. Subsequent `factory.create()` calls
-reset the schema (`DROP SCHEMA public CASCADE`) instead of paying the
-~500-700ms WASM cold-start cost again. `create_test_app` and
+**PGlite WASM caching**: the `create_pglite_factory` instances built from
+one loaded copy of `db.ts` share a single PGlite WASM instance via its
+module-level cache — under the `db` project's `isolate: false` +
+`fileParallelism: false` that is every DB test file in the run. Subsequent
+`factory.create()` calls reset the schema (`DROP SCHEMA public CASCADE`)
+instead of paying the ~500-700ms WASM cold-start cost again. `create_test_app` and
 `create_test_app_server` use this cache internally when no `db` is provided.
 
 `create_test_app` builds a fresh Hono app each call — middleware closures

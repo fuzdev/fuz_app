@@ -68,7 +68,7 @@ export const to_field_json = (row: CellFieldRow): FieldJson => ({
 	source_id: row.source_id,
 	name: row.name,
 	target_id: row.target_id,
-	created_at: typeof row.created_at === 'string' ? row.created_at : row.created_at.toISOString()
+	created_at: row.created_at
 });
 
 /** Create the three `cell_field_*` RPC actions. */

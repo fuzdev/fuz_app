@@ -63,7 +63,7 @@ import { account_token_create_action_spec } from '../../auth/account_action_spec
 import { ERROR_TOKEN_SCOPE_REQUIRED } from '../../http/error_schemas.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call } from './cell_cross_helpers.ts';
-import type { RpcPathCrossSuiteOptions } from './setup.ts';
+import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
@@ -82,7 +82,7 @@ const ABSENT_FACT_HASH = `blake3:${'0'.repeat(64)}`;
 const ADMITTED_METHOD = 'account_verify';
 
 /** Options for the token-scope surface parity suite. */
-export interface TokenScopeSurfaceCrossTestOptions extends RpcPathCrossSuiteOptions {
+export interface TokenScopeSurfaceCrossTestOptions extends RpcPathCapabilityGatedCrossSuiteOptions {
 	/** Audit-log SSE path. Default `/api/admin/audit/stream`. */
 	readonly sse_path?: string;
 }

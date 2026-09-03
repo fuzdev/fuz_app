@@ -17,14 +17,14 @@ import { create_test_app, create_test_app_server } from '$lib/testing/app_server
 import { auth_truncate_tables } from '$lib/testing/db.ts';
 import { query_role_grant_find_active_for_actor } from '$lib/auth/role_grant_queries.ts';
 
-import { pglite_factory } from '../db_fixture.ts';
+import { default_db_factory } from '../db_fixture.ts';
 
 const session_options = create_session_config('test_session');
 
-let db: Awaited<ReturnType<typeof pglite_factory.create>>;
+let db: Awaited<ReturnType<typeof default_db_factory.create>>;
 
 beforeAll(async () => {
-	db = await pglite_factory.create();
+	db = await default_db_factory.create();
 });
 
 beforeEach(async () => {
@@ -34,7 +34,7 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
-	await pglite_factory.close(db);
+	await default_db_factory.close(db);
 });
 
 test('creates a bootstrapped auth server', async () => {

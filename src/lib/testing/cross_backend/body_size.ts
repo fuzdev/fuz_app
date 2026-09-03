@@ -40,7 +40,7 @@ import '../assert_dev_env.ts';
  * Like origin/payload rejection, this is middleware-level flat REST — not the
  * JSON-RPC envelope the conformance-table runner expects — so it's an
  * imperative suite, not a `conformance_table` row. Runs both legs via the
- * shared `{setup_test, capabilities}` protocol: the in-process leg
+ * shared `setup_test` protocol: the in-process leg
  * (`auth/body_size_parity.db.test.ts`, plain `gro test`) and the cross-process
  * leg (`cross_backend/body_size.cross.test.ts`, the TS spine binaries + Rust
  * `testing_spine_stub` over real HTTP). The body-size limit is on every spine,
@@ -64,8 +64,10 @@ import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /**
  * Options for the body-size parity suite — the standard RPC-dispatched
- * cross-suite shape (`setup_test` / `capabilities` / `rpc_path`); aliases the
- * shared `RpcPathCrossSuiteOptions` rather than minting a duplicate.
+ * cross-suite shape (`setup_test` / `rpc_path`); aliases the shared
+ * `RpcPathCrossSuiteOptions` rather than minting a duplicate. The limit is
+ * on every spine, so no case is capability-gated and the flag bundle is not
+ * on the shape.
  */
 export type BodySizeCrossTestOptions = RpcPathCrossSuiteOptions;
 

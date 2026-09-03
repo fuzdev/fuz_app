@@ -21,6 +21,7 @@ import {
 	is_jsonrpc_notification,
 	is_jsonrpc_response,
 	is_jsonrpc_error_response,
+	to_jsonrpc_envelope_id,
 	to_jsonrpc_message_id,
 	to_jsonrpc_params,
 	to_jsonrpc_result
@@ -302,5 +303,26 @@ describe('to_jsonrpc_result', () => {
 
 	test('wraps arrays in {value}', () => {
 		assert.deepStrictEqual(to_jsonrpc_result([1, 2]), { value: [1, 2] });
+	});
+});
+
+describe('to_jsonrpc_envelope_id', () => {
+	test('echoes a valid id off an object frame', () => {
+		assert.strictEqual(to_jsonrpc_envelope_id({ id: 42, method: 'x' }), 42);
+		assert.strictEqual(to_jsonrpc_envelope_id({ id: 'abc' }), 'abc');
+	});
+
+	test('answers null for an object without a usable id', () => {
+		assert.strictEqual(to_jsonrpc_envelope_id({}), null);
+		assert.strictEqual(to_jsonrpc_envelope_id({ id: true }), null);
+		assert.strictEqual(to_jsonrpc_envelope_id({ id: NaN }), null);
+		assert.strictEqual(to_jsonrpc_envelope_id(null), null);
+	});
+
+	test('never reads a scalar frame as its own id', () => {
+		// where `to_jsonrpc_message_id(5)` is `5`
+		assert.strictEqual(to_jsonrpc_envelope_id(5), null);
+		assert.strictEqual(to_jsonrpc_envelope_id('abc'), null);
+		assert.strictEqual(to_jsonrpc_envelope_id(undefined), null);
 	});
 });

@@ -32,10 +32,10 @@ import '../assert_dev_env.ts';
 import { describe, assert } from 'vitest';
 
 import { test_if } from './capabilities.ts';
-import type { CrossSuiteOptions } from './setup.ts';
+import type { CapabilityGatedCrossSuiteOptions } from './setup.ts';
 
 /** Options for the readiness-probe parity suite. */
-export interface ReadyCrossTestOptions extends CrossSuiteOptions {
+export interface ReadyCrossTestOptions extends CapabilityGatedCrossSuiteOptions {
 	/** Readiness probe path. Default `/ready`. */
 	readonly ready_path?: string;
 }

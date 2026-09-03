@@ -16,7 +16,7 @@ import '../assert_dev_env.ts';
  *   clients (curl, CLI, server-to-server) carry no `Origin` and must not be
  *   blocked; token auth is the control for those callers.
  *
- * Runs both legs via the shared `{setup_test, capabilities}` protocol: the
+ * Runs both legs via the shared `setup_test` protocol: the
  * in-process leg (`auth/origin_parity.db.test.ts`, plain `gro test`) and the
  * cross-process leg (`cross_backend/origin.cross.test.ts`, the TS spine
  * binaries + Rust `testing_spine_stub` over real HTTP). Origin middleware is
@@ -37,8 +37,10 @@ import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /**
  * Options for the origin parity suite. The standard RPC-dispatched
- * cross-suite shape (`setup_test` / `capabilities` / `rpc_path`); aliases
- * the shared `RpcPathCrossSuiteOptions` rather than minting a duplicate.
+ * cross-suite shape (`setup_test` / `rpc_path`); aliases the shared
+ * `RpcPathCrossSuiteOptions` rather than minting a duplicate. Origin
+ * middleware is on every spine, so no case is capability-gated and the flag
+ * bundle is not on the shape.
  */
 export type OriginCrossTestOptions = RpcPathCrossSuiteOptions;
 

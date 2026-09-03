@@ -23,14 +23,14 @@
 import type { QueryDeps } from './query_deps.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import { assert_row } from './assert_row.ts';
-import { columns_sql, qualify_columns } from './sql_columns.ts';
+import { columns_sql, iso8601_timestamp_expr, qualify_columns } from './sql_columns.ts';
 
 /** Row shape returned by `cell_item` SELECTs. */
 export interface CellItemRow {
 	parent_id: Uuid;
 	position: string;
 	child_id: Uuid;
-	created_at: Date;
+	created_at: string;
 }
 
 /**
@@ -45,6 +45,9 @@ export const CELL_ITEM_COLUMNS = [
 	'child_id',
 	'created_at'
 ] as const satisfies ReadonlyArray<keyof CellItemRow>;
+
+/** The `cell_item` timestamp override, by row qualifier (`''` bare, `i` for the cell-joined reads). */
+const cell_item_expr = iso8601_timestamp_expr(CELL_ITEM_COLUMNS, ['created_at']);
 
 /** Input for `query_cell_item_insert`. */
 export interface CellItemInsertQueryInput {
@@ -71,7 +74,7 @@ export const query_cell_item_insert = async (
 	const row = await deps.db.query_one<CellItemRow>(
 		`INSERT INTO cell_item (parent_id, position, child_id)
 		 VALUES ($1, $2, $3)
-		 RETURNING ${columns_sql(CELL_ITEM_COLUMNS)}`,
+		 RETURNING ${columns_sql(CELL_ITEM_COLUMNS, cell_item_expr(''))}`,
 		[input.parent_id, input.position, input.child_id]
 	);
 	return assert_row(row, 'INSERT INTO cell_item');
@@ -89,7 +92,7 @@ export const query_cell_item_get = async (
 	position: string
 ): Promise<CellItemRow | null> => {
 	const row = await deps.db.query_one<CellItemRow>(
-		`SELECT ${columns_sql(CELL_ITEM_COLUMNS)} FROM cell_item WHERE parent_id = $1 AND position = $2`,
+		`SELECT ${columns_sql(CELL_ITEM_COLUMNS, cell_item_expr(''))} FROM cell_item WHERE parent_id = $1 AND position = $2`,
 		[parent_id, position]
 	);
 	return row ?? null;
@@ -118,7 +121,7 @@ export const query_cell_item_move = async (
 		`UPDATE cell_item
 		 SET position = $3
 		 WHERE parent_id = $1 AND position = $2
-		 RETURNING ${columns_sql(CELL_ITEM_COLUMNS)}`,
+		 RETURNING ${columns_sql(CELL_ITEM_COLUMNS, cell_item_expr(''))}`,
 		[parent_id, position_old, position_new]
 	);
 	return row ?? null;
@@ -139,7 +142,7 @@ export const query_cell_item_delete = async (
 ): Promise<CellItemRow | null> => {
 	const row = await deps.db.query_one<CellItemRow>(
 		`DELETE FROM cell_item WHERE parent_id = $1 AND position = $2
-		 RETURNING ${columns_sql(CELL_ITEM_COLUMNS)}`,
+		 RETURNING ${columns_sql(CELL_ITEM_COLUMNS, cell_item_expr(''))}`,
 		[parent_id, position]
 	);
 	return row ?? null;
@@ -166,7 +169,7 @@ export const query_cell_item_list_for_parent = async (
 	const limit = options?.limit ?? null;
 	const position_after = options?.position_after ?? null;
 	return deps.db.query<CellItemRow>(
-		`SELECT ${qualify_columns(CELL_ITEM_COLUMNS, 'i')} FROM cell_item i
+		`SELECT ${qualify_columns(CELL_ITEM_COLUMNS, 'i', cell_item_expr('i'))} FROM cell_item i
 		 JOIN cell c ON c.id = i.child_id
 		 WHERE i.parent_id = $1
 		   AND c.deleted_at IS NULL
@@ -195,7 +198,7 @@ export const query_cell_item_list_for_child = async (
 	options?: { limit?: number }
 ): Promise<Array<CellItemRow>> =>
 	deps.db.query<CellItemRow>(
-		`SELECT ${qualify_columns(CELL_ITEM_COLUMNS, 'i')} FROM cell_item i
+		`SELECT ${qualify_columns(CELL_ITEM_COLUMNS, 'i', cell_item_expr('i'))} FROM cell_item i
 		 JOIN cell p ON p.id = i.parent_id
 		 WHERE i.child_id = $1
 		   AND p.deleted_at IS NULL

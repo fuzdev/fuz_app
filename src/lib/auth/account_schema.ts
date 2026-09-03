@@ -22,6 +22,7 @@ import { Uuid } from '@fuzdev/fuz_util/id.ts';
 import { Blake3Hash } from '@fuzdev/fuz_util/hash_schemas.ts';
 
 import { Username, Email } from '../primitive_schemas.ts';
+import { is_iso8601_seconds_live } from '../timestamp.ts';
 
 // Types
 
@@ -108,10 +109,31 @@ export interface RoleGrant {
 	source_offer_id: Uuid | null;
 }
 
+/**
+ * Whether a role grant is live, from its wire fields — not revoked, and not
+ * past `expires_at`.
+ *
+ * Server-side this is belt-and-suspenders: every `role_grant` a request
+ * context holds came through `query_role_grant_find_active_for_actor`, whose
+ * `revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())` is the
+ * authoritative gate on both spines (the Rust twin's in-memory
+ * `RoleGrantRow` carries no timestamps at all and re-checks nothing).
+ *
+ * `expires_at` arrives second-truncated, so the expiry check is
+ * `is_iso8601_seconds_live` (`timestamp.ts`): it admits through the end of
+ * the second the stamp names, so the predicate can never report a grant
+ * expired *before* the SQL gate would — a bare `expires_at > now` would deny
+ * an admitted grant for up to a second.
+ *
+ * @param p - the grant's revocation + expiry fields
+ * @param now - current time (defaults to `new Date()`, pass for testability and hot-path efficiency)
+ * @returns `true` when the grant is neither revoked nor expired
+ */
 export const is_role_grant_active = (
 	p: { revoked_at?: string | null; expires_at: string | null },
 	now: Date = new Date()
-): boolean => !p.revoked_at && (!p.expires_at || new Date(p.expires_at) > now);
+): boolean =>
+	!p.revoked_at && (!p.expires_at || is_iso8601_seconds_live(p.expires_at, now.getTime()));
 
 /**
  * A session's storage key — the blake3 hash of its raw token, branded so a

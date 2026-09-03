@@ -8,8 +8,8 @@ import '../assert_dev_env.ts';
  * fuz_app spine and the Rust `testing_spine_stub`) are each other's parity
  * reference. After both bootstrap, dump each one's live RPC method set, diff,
  * fail loudly on drift. The diff entries name the specific divergence (a
- * method only one impl mounts, a per-method auth-axis or side-effect
- * mismatch) so the error message points at the source.
+ * method only one impl mounts, a per-method auth-axis, side-effect, or
+ * rate-limit-class mismatch) so the error message points at the source.
  *
  * ```ts
  * const manifest_a = await capture_action_manifest(ts_handle);
@@ -18,7 +18,7 @@ import '../assert_dev_env.ts';
  * ```
  *
  * Non-coverage: the manifest captures `{method, side_effects, account, actor,
- * roles, credential_types}` — the wire-relevant auth shape. It does **not**
+ * roles, credential_types, rate_limit}` — the wire-relevant auth shape. It does **not**
  * capture input/output schemas (the declared-surface wire shape is gated by
  * `rpc_round_trip`) nor the protocol actions `heartbeat` / `cancel` (excluded
  * by construction — see `action_manifest.ts`).
@@ -26,6 +26,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
+import type { RateLimitKey } from '../../http/error_schemas.ts';
 import type { ActionManifest, ActionManifestEntry } from './action_manifest.ts';
 
 /** The auth axes compared as scalars (`'none' | 'optional' | 'required'`). */
@@ -45,6 +46,12 @@ export type ActionManifestDiff =
 			readonly method: string;
 			readonly a: boolean;
 			readonly b: boolean;
+	  }
+	| {
+			readonly kind: 'rate_limit_differs';
+			readonly method: string;
+			readonly a: RateLimitKey | null;
+			readonly b: RateLimitKey | null;
 	  }
 	| {
 			readonly kind: 'auth_field_differs';
@@ -85,6 +92,9 @@ export const diff_action_manifests = (
 		}
 		if (ea.side_effects !== eb.side_effects) {
 			diffs.push({ kind: 'side_effects_differ', method, a: ea.side_effects, b: eb.side_effects });
+		}
+		if (ea.rate_limit !== eb.rate_limit) {
+			diffs.push({ kind: 'rate_limit_differs', method, a: ea.rate_limit, b: eb.rate_limit });
 		}
 		for (const field of AUTH_SCALAR_FIELDS) {
 			if (ea[field] !== eb[field]) {
@@ -127,6 +137,13 @@ export const format_action_manifest_diffs = (
 				break;
 			case 'side_effects_differ':
 				lines.push(`  ${d.method} side_effects differs: ${label_a}=${d.a}, ${label_b}=${d.b}`);
+				break;
+			case 'rate_limit_differs':
+				lines.push(
+					`  ${d.method} rate_limit differs: ${label_a}=${JSON.stringify(d.a)}, ${
+						label_b
+					}=${JSON.stringify(d.b)}`
+				);
 				break;
 			case 'auth_field_differs':
 				lines.push(

@@ -46,17 +46,30 @@ export const detect_format = (field_schema: z.ZodType): string | null => {
 };
 
 /**
- * Extract a candidate value from a JSON Schema `pattern` when the shape is
- * a fixed-length hex character class — covers blake3 (64-char lowercase hex),
- * sha256, md5, and similar digest refinements. Returns `null` when the
- * pattern doesn't match the expected shape.
+ * Extract a candidate value from a JSON Schema `pattern` when the shape is a
+ * fixed-length hex character class, optionally behind a literal prefix —
+ * covers bare digests (blake3 64-char lowercase hex, sha256, md5) and the
+ * algorithm-tagged form the fact store addresses bytes by
+ * (`^blake3:[0-9a-f]{64}$` → `blake3:` + 64 zeros).
+ *
+ * Coverage today:
+ * - Optional prefix: alphanumeric, starting with a letter, ending in `:`
+ *   (`blake3:`, `sha256:`). A `_`-joined prefix over a base64url class is
+ *   the sibling shape — see `generate_prefix_slug_pattern_value`.
+ * - Character class must be exactly `[0-9a-f]` or `[0-9a-fA-F]` (Zod passes
+ *   the regex source through verbatim — no character-class reordering).
+ * - Fixed-length quantifier `{N}`.
+ *
+ * Returns `null` when the pattern doesn't match the expected shape; the
+ * caller then falls through to its other candidates.
  */
 const generate_hex_pattern_value = (pattern: string): string | null => {
-	const match = /^\^\[0-9a-f(?:A-F)?\]\{(\d+)\}\$$/.exec(pattern);
+	const match = /^\^(?:([A-Za-z][A-Za-z0-9]*):)?\[0-9a-f(?:A-F)?\]\{(\d+)\}\$$/.exec(pattern);
 	if (!match) return null;
-	const n = Number(match[1]);
+	const n = Number(match[2]);
 	if (!Number.isInteger(n) || n <= 0) return null;
-	return '0'.repeat(n);
+	const prefix = match[1] === undefined ? '' : `${match[1]}:`;
+	return prefix + '0'.repeat(n);
 };
 
 /**
@@ -82,8 +95,8 @@ const generate_hex_pattern_value = (pattern: string): string | null => {
  *   doesn't match the detection regex. `x`-fill would still satisfy the
  *   refinement if the detection were widened.
  * - No-prefix fixed-length slugs (e.g. `^[A-Za-z0-9_-]{43}$` — daemon
- *   token shape) are not matched here; see `generate_hex_pattern_value`
- *   for the hex variant.
+ *   token shape) are not matched here; `generate_hex_pattern_value` is the
+ *   hex sibling, and it covers both the bare and the `prefix:`-tagged form.
  * Widen the detection regex when a new branded shape surfaces.
  */
 const generate_prefix_slug_pattern_value = (pattern: string): string | null => {
@@ -247,19 +260,38 @@ export const generate_valid_value = (field: ZodFieldInfo, field_schema: z.ZodTyp
 /**
  * Resolve a route path with valid-ish param values so params validation passes.
  * Used when testing input on routes that also have params.
+ *
+ * Without a params schema (or for a param the schema doesn't name) each
+ * `:name` becomes `test_<name>` — fine for an unconstrained segment. With
+ * one, `test_<name>` is still preferred wherever the field schema accepts
+ * it, because the param name in the URL is what makes a failure message
+ * readable. Only a segment that refuses it falls through: a `uuid` param
+ * takes the nil UUID (the fast path — by far the most common shape), and
+ * anything else is synthesized by `generate_valid_string`, so a
+ * format-constrained segment (a `blake3:…` fact hash, a `tok_…` id)
+ * resolves to a value its schema accepts instead of a `test_<name>` that
+ * 400s before the route's real gates run.
+ *
+ * The synthesized value is percent-encoded, and a value containing `/` is
+ * refused (it would silently add a path segment and route elsewhere) —
+ * both fall back to `test_<name>`.
  */
 export const resolve_valid_path = (path: string, params_schema?: z.ZodObject): string => {
 	if (!params_schema) {
 		return path.replace(/:(\w+)/g, 'test_$1');
 	}
 	return path.replace(/:(\w+)/g, (_match, name) => {
+		const fallback = `test_${name}`;
 		const field_schema = params_schema.shape[name] as z.ZodType | undefined;
-		if (!field_schema) return `test_${name}`;
+		if (!field_schema) return fallback;
+		if (field_schema.safeParse(fallback).success) return fallback;
 		const base_type = zod_get_base_type(field_schema);
 		if (base_type === 'uuid') return '00000000-0000-0000-0000-000000000000';
 		const format = detect_format(field_schema);
 		if (format === 'uuid') return '00000000-0000-0000-0000-000000000000';
-		return `test_${name}`;
+		const generated = generate_valid_string(field_schema);
+		if (generated.includes('/')) return fallback;
+		return encodeURIComponent(generated);
 	});
 };
 

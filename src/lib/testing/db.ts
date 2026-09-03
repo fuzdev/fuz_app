@@ -51,10 +51,11 @@ export interface DbFactory {
 }
 
 /**
- * Reset a PGlite database to a clean state by dropping and recreating the public schema.
+ * Reset a test database to a clean state by dropping and recreating the public schema.
  *
  * Removes all tables, sequences, indexes, types, and functions.
- * The database instance remains usable after reset.
+ * The database instance remains usable after reset. Despite the name it issues
+ * plain SQL, so it also resets the other drivers the test factories hand out.
  *
  * @mutates db - drops the `public` schema and recreates it; all rows in all
  *   tables are gone after this returns.
@@ -64,40 +65,96 @@ export const reset_pglite = async (db: Db): Promise<void> => {
 	await db.query('CREATE SCHEMA public');
 };
 
-// Module-level PGlite cache — shared across all factories in the same vitest worker (one test file).
-// Each vitest file runs in its own worker thread, so no cross-file contamination.
+// Module-level PGlite cache — one instance shared by the PGlite factories this
+// module builds, for as long as the module is loaded. Under the `db` project's
+// `isolate: false` + `fileParallelism: false` that is the whole run; a project
+// that isolates its files gets one per worker instead.
 let module_db: Db | null = null;
+
+/**
+ * Builds a `DbFactory` from a schema initializer — `create_pglite_factory`'s own shape.
+ */
+export type DbFactoryBuilder = (init_schema: (db: Db) => Promise<void>) => DbFactory;
+
+/**
+ * Options for `create_pglite_factory`.
+ */
+export interface CreatePgliteFactoryOptions {
+	/**
+	 * Whether an installed substitute (`set_substitute_db_factory`) may stand in
+	 * for the PGlite factory at this call site. Defaults to `true`; pass `false`
+	 * where PGlite itself is the subject under test.
+	 */
+	substitutable?: boolean;
+}
+
+// The installed stand-in for `create_pglite_factory`, `null` when none is installed.
+let substitute_db_factory: DbFactoryBuilder | null = null;
+
+/**
+ * Install a builder that stands in for `create_pglite_factory`, so suites
+ * written against PGlite can run against another driver without being edited.
+ *
+ * Injected rather than selected here: the drivers a substitute wraps live in
+ * test-side code this shipped module cannot import. A call site that passes
+ * `{substitutable: false}` keeps PGlite regardless. Pass `null` to uninstall.
+ *
+ * The slot is read when a factory is built, not when it creates a database,
+ * so install before the first `create_pglite_factory` call — a vitest
+ * `setupFiles` entry, which runs ahead of every test file's imports, is the
+ * shape fuz_app's own `db` project uses. A factory built earlier (including
+ * the module-level fallback in `testing/app_server.ts`) keeps the driver it
+ * was built with, and uninstalling does not revert it.
+ *
+ * @param create_factory - the builder to install, or `null` to remove the installed one
+ */
+export const set_substitute_db_factory = (create_factory: DbFactoryBuilder | null): void => {
+	substitute_db_factory = create_factory;
+};
 
 /**
  * Create a pglite (in-memory) database factory for tests.
  *
  * Always enabled — no external dependencies required.
- * Shares a single PGlite WASM instance across all factories in the same
- * vitest worker thread (one test file). Subsequent `create()` calls reset
- * the schema via `DROP SCHEMA public CASCADE` instead of paying the WASM
- * cold-start cost again.
+ * Shares a single PGlite WASM instance across the PGlite factories this module builds.
+ * Subsequent `create()` calls reset the schema via `DROP SCHEMA public CASCADE`
+ * instead of paying the WASM cold-start cost again.
+ *
+ * Returns the installed substitute's factory instead when one is installed and
+ * `options.substitutable` is not `false` — see `set_substitute_db_factory`.
  *
  * @param init_schema - callback to initialize the database schema
+ * @param options - `substitutable: false` pins this call site to PGlite
  */
-export const create_pglite_factory = (init_schema: (db: Db) => Promise<void>): DbFactory => ({
-	name: 'pglite',
-	skip: false,
-	async create() {
-		if (module_db) {
-			await reset_pglite(module_db);
-		} else {
-			const { PGlite } = await import('@electric-sql/pglite');
-			const pglite = new PGlite();
-			module_db = create_pglite_db(pglite).db;
-		}
-		await init_schema(module_db);
-		return module_db;
-	},
-	async close() {
-		// No-op: shared instance lives for the worker thread's lifetime.
-		// PGlite is cleaned up when the vitest worker exits.
+export const create_pglite_factory = (
+	init_schema: (db: Db) => Promise<void>,
+	options?: CreatePgliteFactoryOptions
+): DbFactory => {
+	if (substitute_db_factory && options?.substitutable !== false) {
+		return substitute_db_factory(init_schema);
 	}
-});
+	return {
+		name: 'pglite',
+		skip: false,
+		async create() {
+			if (module_db) {
+				await reset_pglite(module_db);
+			} else {
+				const { PGlite } = await import('@electric-sql/pglite');
+				const pglite = new PGlite();
+				module_db = create_pglite_db(pglite).db;
+			}
+			await init_schema(module_db);
+			return module_db;
+		},
+		async close() {
+			// No-op: the instance is the module-level cache above, so it lives as long
+			// as this module stays loaded — under the `db` project's `isolate: false` +
+			// `fileParallelism: false` that is the whole run. Nothing frees the PGlite
+			// instance earlier.
+		}
+	};
+};
 
 /**
  * Create a pg (PostgreSQL) database factory for tests.

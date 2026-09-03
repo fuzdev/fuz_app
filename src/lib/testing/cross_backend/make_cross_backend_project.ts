@@ -34,6 +34,25 @@ const DEFAULT_INCLUDE: ReadonlyArray<string> = ['src/test/cross_backend/*.cross.
 /** vitest `sequence.groupOrder` for cross-backend projects — after unit (1) + db (2). */
 const DEFAULT_GROUP_ORDER = 3;
 
+/**
+ * Per-test timeout (ms). vitest's 5 s default is far too tight here: a
+ * cross-backend case talks to a spawned backend over a real socket and most
+ * begin with a full `_testing_reset` (truncate + reseed the auth tables,
+ * mint a session), which alone can outlast 5 s on a cold pool or a loaded
+ * machine. 30 s is the ecosystem's convention for backend-spawning suites —
+ * long enough that no honest case flakes, short enough that a hung socket
+ * still fails the run rather than stalling CI.
+ */
+const DEFAULT_TEST_TIMEOUT = 30_000;
+
+/**
+ * Per-hook timeout (ms). `beforeAll` / `afterAll` in these suites do the
+ * heaviest work in the project — bootstrap fixtures, seeded accounts, file
+ * uploads — so hooks get the same 30 s budget as tests rather than vitest's
+ * 10 s default.
+ */
+const DEFAULT_HOOK_TIMEOUT = 30_000;
+
 export interface CrossBackendProjectOptions {
 	/**
 	 * vitest project name. `create_cross_backend_global_setup` derives the
@@ -55,20 +74,35 @@ export interface CrossBackendProjectOptions {
 	readonly exclude?: ReadonlyArray<string>;
 	/** vitest `sequence.groupOrder`. Default: `3` (runs after unit + db). */
 	readonly group_order?: number;
+	/**
+	 * Per-test timeout in ms. Default: `30_000` — see `DEFAULT_TEST_TIMEOUT`
+	 * for why the 5 s vitest default does not fit a spawned-backend suite.
+	 * Always emitted, so a consumer's root `testTimeout` never leaks in.
+	 */
+	readonly test_timeout?: number;
+	/**
+	 * Per-hook timeout in ms for `beforeAll` / `afterAll` etc. Default:
+	 * `30_000`. Always emitted, so a consumer's root `hookTimeout` never
+	 * leaks in.
+	 */
+	readonly hook_timeout?: number;
 }
 
 /**
  * Build a single cross-backend vitest project config. Spread the results
  * into `test.projects` in the consumer's `vite.config.ts`. `isolate: false`
  * + `fileParallelism: false` because a project shares one spawned backend
- * across its files.
+ * across its files, and `testTimeout` / `hookTimeout` are always emitted so
+ * a spawned-backend case is never held to vitest's 5 s / 10 s defaults.
  */
 export const make_cross_backend_project = ({
 	name,
 	global_setup,
 	include = DEFAULT_INCLUDE,
 	exclude = [],
-	group_order = DEFAULT_GROUP_ORDER
+	group_order = DEFAULT_GROUP_ORDER,
+	test_timeout = DEFAULT_TEST_TIMEOUT,
+	hook_timeout = DEFAULT_HOOK_TIMEOUT
 }: CrossBackendProjectOptions): {
 	extends: true;
 	test: {
@@ -79,6 +113,8 @@ export const make_cross_backend_project = ({
 		isolate: false;
 		fileParallelism: false;
 		sequence: { groupOrder: number };
+		testTimeout: number;
+		hookTimeout: number;
 	};
 } => ({
 	extends: true,
@@ -89,6 +125,8 @@ export const make_cross_backend_project = ({
 		globalSetup: [global_setup],
 		isolate: false,
 		fileParallelism: false,
-		sequence: { groupOrder: group_order }
+		sequence: { groupOrder: group_order },
+		testTimeout: test_timeout,
+		hookTimeout: hook_timeout
 	}
 });

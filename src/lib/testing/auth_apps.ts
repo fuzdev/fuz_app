@@ -130,5 +130,14 @@ export const select_auth_app = (apps: AuthTestApps, auth: RouteAuth): Hono => {
 	return apps.authed;
 };
 
-/** Replace Hono route params (`:foo`) with dummy values for HTTP testing. */
-export const resolve_test_path = (path: string): string => path.replace(/:(\w+)/g, 'test_$1');
+/**
+ * Build the skip predicate an adversarial suite applies from its
+ * `skip_routes` option — routes named in `'METHOD /path'` form, the surface
+ * key. `undefined` skips nothing.
+ */
+export const create_route_skip_filter = (
+	skip_routes: Array<string> | undefined
+): ((route: { method: string; path: string }) => boolean) => {
+	const skip_set = new Set(skip_routes);
+	return (route) => skip_set.has(`${route.method} ${route.path}`);
+};

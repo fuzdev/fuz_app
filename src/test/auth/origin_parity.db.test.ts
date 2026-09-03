@@ -15,7 +15,6 @@
  */
 
 import { default_in_process_setup } from '$lib/testing/cross_backend/in_process_setup.ts';
-import { in_process_capabilities } from '$lib/testing/cross_backend/capabilities.ts';
 import { describe_origin_cross_tests } from '$lib/testing/cross_backend/origin.ts';
 import { create_session_config } from '$lib/auth/session_cookie.ts';
 import { create_standard_rpc_actions } from '$lib/auth/standard_rpc_actions.ts';
@@ -40,6 +39,5 @@ const setup_test = default_in_process_setup({
 
 describe_origin_cross_tests({
 	setup_test,
-	capabilities: in_process_capabilities,
 	rpc_path: RPC_PATH
 });

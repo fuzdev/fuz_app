@@ -23,6 +23,7 @@ import {
 	TEST_CONTEXT_PRESET_KEY
 } from '$lib/hono_context.ts';
 import type { Account, Actor, RoleGrant } from '$lib/auth/account_schema.ts';
+import { to_iso8601_seconds } from '$lib/timestamp.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS
@@ -90,13 +91,13 @@ describe('has_role', () => {
 	});
 
 	test('returns false for expired role_grant', () => {
-		const past = new Date(Date.now() - 60000).toISOString();
+		const past = to_iso8601_seconds(new Date(Date.now() - 60000));
 		const ctx = create_test_context([{ role: 'admin', expires_at: past }]);
 		assert.strictEqual(has_role(ctx, 'admin'), false);
 	});
 
 	test('returns true for non-expired role_grant', () => {
-		const future = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+		const future = to_iso8601_seconds(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000));
 		const ctx = create_test_context([{ role: 'admin', expires_at: future }]);
 		assert.strictEqual(has_role(ctx, 'admin'), true);
 	});
@@ -134,10 +135,13 @@ describe('has_role', () => {
 		vi.useFakeTimers();
 		try {
 			const now = Date.now();
-			const soon = new Date(now + 5000).toISOString();
+			const soon = to_iso8601_seconds(new Date(now + 5000));
 			const ctx = create_test_context([{ role: 'admin', expires_at: soon }]);
 			assert.strictEqual(has_role(ctx, 'admin'), true);
-			vi.advanceTimersByTime(6000);
+			// `is_role_grant_active` admits through the end of the second the
+			// (truncated) stamp names, so clear the window by more than that 1 s
+			// slack — advancing to exactly `expires_at` would still read active
+			vi.advanceTimersByTime(7000);
 			assert.strictEqual(has_role(ctx, 'admin'), false);
 		} finally {
 			vi.useRealTimers();
@@ -145,7 +149,7 @@ describe('has_role', () => {
 	});
 
 	test('rejects revoked role_grant even with future expires_at', () => {
-		const future = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+		const future = to_iso8601_seconds(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000));
 		const ctx = create_test_context([
 			{ role: 'admin', revoked_at: '2024-06-01T00:00:00Z', expires_at: future }
 		]);
@@ -166,7 +170,7 @@ describe('has_role', () => {
 	});
 
 	test('returns true when same role has one revoked and one active role_grant', () => {
-		const future = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+		const future = to_iso8601_seconds(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000));
 		const ctx = create_test_context([
 			{ role: 'admin', revoked_at: '2024-06-01T00:00:00Z', expires_at: future },
 			{ role: 'admin', revoked_at: null, expires_at: future }
@@ -215,7 +219,7 @@ describe('has_scoped_role', () => {
 	});
 
 	test('expired role_grant excluded', () => {
-		const past = new Date(Date.now() - 1000).toISOString();
+		const past = to_iso8601_seconds(new Date(Date.now() - 1000));
 		const ctx = create_test_context([
 			{ role: 'classroom_teacher', scope_id: 'scope-X', expires_at: past }
 		]);
@@ -282,7 +286,7 @@ describe('has_any_scoped_role', () => {
 	});
 
 	test('expired role_grant excluded', () => {
-		const past = new Date(Date.now() - 1000).toISOString();
+		const past = to_iso8601_seconds(new Date(Date.now() - 1000));
 		const ctx = create_test_context([
 			{ role: 'classroom_student', scope_id: 'scope-X', expires_at: past }
 		]);
@@ -391,7 +395,7 @@ describe('require_role', () => {
 	});
 
 	test('expired role_grant causes 403 even if role matches', async () => {
-		const past = new Date(Date.now() - 60000).toISOString();
+		const past = to_iso8601_seconds(new Date(Date.now() - 60000));
 		const ctx = create_test_context([{ role: 'admin', expires_at: past }]);
 		const app = new Hono();
 		app.use('/*', async (c, next) => {
@@ -452,7 +456,7 @@ describe('has_role — TOCTOU snapshot behavior', () => {
 		try {
 			const now = Date.now();
 			// role_grant expires in 2 seconds
-			const soon = new Date(now + 2000).toISOString();
+			const soon = to_iso8601_seconds(new Date(now + 2000));
 			const ctx = create_test_context([{ role: 'admin', expires_at: soon }]);
 
 			// middleware time: role_grant is active

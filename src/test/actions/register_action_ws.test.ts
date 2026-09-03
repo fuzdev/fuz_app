@@ -320,6 +320,53 @@ describe('register_action_ws', () => {
 		assert.strictEqual(h.fake.sends.length, 0);
 	});
 
+	// Envelope version — a frame that does not carry `jsonrpc: '2.0'` is
+	// answered, not dropped. The Rust twin's `classify` checks the version
+	// first (version → id → method → params), so a versionless or 1.0 frame
+	// that would otherwise read as a notification is `invalid_request` there.
+	test('a frame without jsonrpc: 2.0 returns invalid_request, not a silent drop', async () => {
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
+		await h.on_open();
+		await h.on_message({ method: 'echo', params: { value: 'x' } });
+		await h.on_message({ jsonrpc: '1.0', method: 'echo', params: { value: 'x' } });
+
+		assert.strictEqual(h.fake.sends.length, 2);
+		for (const sent of h.fake.sends) {
+			const res = parse_json(sent);
+			assert.strictEqual(res.id, null);
+			assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_request);
+		}
+	});
+
+	test('a versionless frame with a usable id echoes it', async () => {
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
+		await h.on_open();
+		await h.on_message({ jsonrpc: '1.0', id: 4, method: 'echo', params: { value: 'x' } });
+
+		const res = parse_json(h.fake.sends[0]!);
+		assert.strictEqual(res.id, 4);
+		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_request);
+	});
+
+	test('a non-object frame is invalid_request with id: null', async () => {
+		// A scalar frame carries no id to echo — reading it as its own id
+		// would answer `id: 5` to the frame `5`, where the Rust `classify`
+		// answers `id: null`.
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
+		await h.on_open();
+		await h.on_message(5);
+		// A raw string is passed through to the socket verbatim, so this is
+		// the JSON document `"echo"` — a string body, not a frame.
+		await h.on_message('"echo"');
+
+		assert.strictEqual(h.fake.sends.length, 2);
+		for (const sent of h.fake.sends) {
+			const res = parse_json(sent);
+			assert.strictEqual(res.id, null);
+			assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_request);
+		}
+	});
+
 	test('invalid envelope (not request, not notification) returns invalid_request', async () => {
 		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
 		await h.on_open();
@@ -327,6 +374,156 @@ describe('register_action_ws', () => {
 
 		const res = parse_json(h.fake.sends[0]!);
 		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_request);
+	});
+
+	// Peer-response demux shape — the twin's `classify` routes a frame to
+	// its response arm only in the no-`method` branch, and only for a
+	// string/number id carrying exactly one of `result` / `error`. A looser
+	// demux swallows these hybrids, answering nothing where Rust answers.
+	test('a frame with method + result dispatches — it is a request, not a peer response', async () => {
+		const h = await build_harness({
+			handlers: {
+				echo: (input) => ({ value: `hi ${(input as { value: string }).value}` })
+			}
+		});
+		await h.on_open();
+		await h.on_message({
+			jsonrpc: '2.0',
+			id: 1,
+			method: 'echo',
+			params: { value: 'world' },
+			result: {}
+		});
+
+		assert.strictEqual(h.fake.sends.length, 1);
+		const res = parse_json(h.fake.sends[0]!);
+		assert.deepStrictEqual(res, { jsonrpc: '2.0', id: 1, result: { value: 'hi world' } });
+	});
+
+	test('a frame carrying both result and error → invalid_request with the id echoed', async () => {
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: 1, result: 1, error: { code: -1, message: 'x' } });
+
+		assert.strictEqual(h.fake.sends.length, 1);
+		const res = parse_json(h.fake.sends[0]!);
+		assert.strictEqual(res.id, 1);
+		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_request);
+	});
+
+	test('a response-shaped frame with a boolean id → invalid_request with id: null', async () => {
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: true, result: 1 });
+
+		assert.strictEqual(h.fake.sends.length, 1);
+		const res = parse_json(h.fake.sends[0]!);
+		assert.strictEqual(res.id, null);
+		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_request);
+	});
+
+	// Non-string `method` — the twin reads `method` through
+	// `Value::as_str`, so a present-but-non-string `method` counts as
+	// absent and the frame takes the no-`method` branch of `classify`.
+	// The three cases below pin each arm of that branch.
+	test('a non-string method with a response shape demuxes as a peer response', async () => {
+		// Rust: `Classified::Response` → no pending request matches the id →
+		// dropped and audited, no frame. Reading `method: 123` as a request
+		// would answer `invalid_request` where the twin answers nothing.
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 123, result: {} });
+
+		assert.strictEqual(h.fake.sends.length, 0);
+	});
+
+	test('a null method with an error shape demuxes as a peer response', async () => {
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: null, error: { code: -1, message: 'x' } });
+
+		assert.strictEqual(h.fake.sends.length, 0);
+	});
+
+	test('a non-string method with no id → invalid_request, not a silent notification', async () => {
+		// No id and neither `result` nor `error`, so the twin's no-`method`
+		// branch falls to `Classified::Invalid` with `id: null`.
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', method: 123 });
+
+		assert.strictEqual(h.fake.sends.length, 1);
+		const res = parse_json(h.fake.sends[0]!);
+		assert.strictEqual(res.id, null);
+		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_request);
+	});
+
+	// Envelope validation — the WS path runs the same `JsonrpcRequest`
+	// schema the HTTP POST path does, so a malformed envelope answers
+	// `invalid_request` on both transports rather than reaching the
+	// dispatcher and surfacing as `invalid_params`.
+	test('params: null → invalid_request with the id echoed', async () => {
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: 7, method: 'echo', params: null });
+
+		const res = parse_json(h.fake.sends[0]!);
+		assert.strictEqual(res.id, 7);
+		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_request);
+	});
+
+	test('array params → invalid_request (not invalid_params)', async () => {
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: 8, method: 'echo', params: [1, 2] });
+
+		const res = parse_json(h.fake.sends[0]!);
+		assert.strictEqual(res.id, 8);
+		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_request);
+	});
+
+	test('a non-string, non-number id → invalid_request with id: null', async () => {
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: null, method: 'echo', params: { value: 'x' } });
+		await h.on_message({ jsonrpc: '2.0', id: true, method: 'echo', params: { value: 'x' } });
+
+		for (const sent of h.fake.sends) {
+			const res = parse_json(sent);
+			assert.strictEqual(res.id, null);
+			assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_request);
+		}
+		assert.strictEqual(h.fake.sends.length, 2);
+	});
+
+	test('absent params dispatches (the empty-body convention)', async () => {
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: 9, method: 'echo' });
+
+		const res = parse_json(h.fake.sends[0]!);
+		// Reaches the dispatcher — `echo` requires `value`, so it is the
+		// input schema (not the envelope) that answers.
+		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_params);
+	});
+
+	test('an empty params object dispatches', async () => {
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: 10, method: 'echo', params: {} });
+
+		const res = parse_json(h.fake.sends[0]!);
+		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_params);
+	});
+
+	test('a cancel notification with junk params silently no-ops', async () => {
+		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
+		await h.on_open();
+		// The notification / cancel block runs before envelope validation, so
+		// this is dropped rather than answered.
+		await h.on_message({ jsonrpc: '2.0', method: 'cancel', params: [1, 2] });
+		await h.on_message({ jsonrpc: '2.0', method: 'cancel', params: null });
+		assert.strictEqual(h.fake.sends.length, 0);
 	});
 
 	test('method_not_found for unknown method', async () => {
@@ -880,6 +1077,58 @@ describe('register_action_ws rate limit', () => {
 		assert.strictEqual(r2.result?.value, 'x');
 		assert.strictEqual(r3.error?.code, JSONRPC_ERROR_CODES.rate_limited);
 		assert.strictEqual(typeof r3.error?.data?.retry_after, 'number');
+	});
+
+	// The limiter runs ahead of param validation, matching the Rust
+	// dispatcher: malformed calls are charged too.
+	test('malformed params still charge the budget — third call is rate_limited', async () => {
+		const limiter = make_limiter(2);
+		const h = await build_harness({
+			handlers: {},
+			actions: [{ spec: account_keyed_spec, handler: (input) => input as { value: string } }],
+			action_account_rate_limiter: limiter
+		});
+		await h.on_open();
+
+		// `value` must be a string — every call is malformed.
+		const send = (id: number) =>
+			h.on_message({ jsonrpc: '2.0', method: 'throttled_echo', params: { value: 42 }, id });
+
+		await send(1);
+		await send(2);
+		await send(3);
+
+		assert.strictEqual(h.fake.sends.length, 3);
+		assert.strictEqual(
+			parse_json(h.fake.sends[0]!).error?.code,
+			JSONRPC_ERROR_CODES.invalid_params
+		);
+		assert.strictEqual(
+			parse_json(h.fake.sends[1]!).error?.code,
+			JSONRPC_ERROR_CODES.invalid_params
+		);
+		assert.strictEqual(parse_json(h.fake.sends[2]!).error?.code, JSONRPC_ERROR_CODES.rate_limited);
+	});
+
+	test('malformed params on a non-limited spec are still invalid_params', async () => {
+		const limiter = make_limiter(1);
+		const h = await build_harness({
+			handlers: { echo: (input) => input as { value: string } },
+			action_account_rate_limiter: limiter
+		});
+		await h.on_open();
+
+		const send = (id: number) =>
+			h.on_message({ jsonrpc: '2.0', method: 'echo', params: { value: 42 }, id });
+
+		await send(1);
+		await send(2);
+		await send(3);
+
+		assert.strictEqual(h.fake.sends.length, 3);
+		for (const sent of h.fake.sends) {
+			assert.strictEqual(parse_json(sent).error?.code, JSONRPC_ERROR_CODES.invalid_params);
+		}
 	});
 
 	test('action without rate_limit is unaffected', async () => {

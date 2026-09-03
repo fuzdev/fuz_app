@@ -4,8 +4,9 @@ import './assert_dev_env.ts';
  * Bootstrapped app server factory for integration tests.
  *
  * Creates a keeper account, API token, and signed session cookie on a
- * database. By default uses a cached in-memory PGlite (shared WASM instance
- * per vitest worker thread via `test_db.ts` module cache); pass `db` to use
+ * database. By default uses a cached in-memory PGlite (one shared WASM instance
+ * per loaded copy of `testing/db.ts` — once per run under the `db` project's
+ * `isolate: false` + `fileParallelism: false`); pass `db` to use
  * an existing database (any driver) instead.
  *
  * Also provides `create_test_app` — a combined helper that creates both
@@ -76,8 +77,8 @@ export const stub_password_deps: PasswordHashDeps = {
 export const TEST_COOKIE_SECRET = 'a'.repeat(64);
 
 // Module-level PGlite factory for create_test_app_server when no db is provided.
-// Shares the WASM instance cache from test_db.ts, avoiding redundant cold starts
-// within the same vitest worker thread. Schema is reset on each create() call.
+// Shares the WASM instance cache from `testing/db.ts`, avoiding redundant cold starts
+// within one loaded copy of that module. Schema is reset on each create() call.
 const fallback_pglite_factory = create_pglite_factory(async (db) => {
 	await run_migrations(db, [auth_migration_ns]);
 });
@@ -464,10 +465,16 @@ const _build_test_backend = async (
 			}
 		};
 	} else {
-		// In-memory PGlite via cached factory — reuses the WASM instance from test_db.ts
+		// In-memory PGlite via cached factory — reuses the WASM instance from `testing/db.ts`
 		// instead of creating a new PGlite each time. Schema is reset and migrations re-run
-		// on each call, but the expensive WASM cold start only happens once per worker thread.
+		// on each call, but the expensive WASM cold start only happens once per loaded
+		// copy of `testing/db.ts` — under the `db` project's `isolate: false` +
+		// `fileParallelism: false` that is once for the whole run.
 		// `migration_namespaces` selects an auth+extras factory; auth-only is the default.
+		// `db_type` below names PGlite unconditionally: a run that installs a substitute
+		// factory (`set_substitute_db_factory`) before this module loads gets that driver
+		// here, and no caller reads this field to pick behavior — it is reported, not
+		// dispatched on.
 		const db = await resolve_fallback_factory(migration_namespaces).create();
 		const audit = audit_factory({ db, log: test_log });
 		backend = {
@@ -630,7 +637,7 @@ export interface TestApp {
  *
  * A fresh Hono app is created each call — middleware closures bind to the
  * server's deps (db, keyring), so reuse across servers is unsafe.
- * The expensive resource (PGlite WASM) is cached separately in `test_db.ts`.
+ * The expensive resource (PGlite WASM) is cached separately in `testing/db.ts`.
  *
  * @param options - test app configuration
  * @returns a `TestApp` ready for HTTP testing

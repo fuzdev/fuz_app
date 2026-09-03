@@ -83,7 +83,7 @@ export const to_item_json = (row: CellItemRow): ItemJson => ({
 	// on ingress).
 	position: row.position as CellItemPosition,
 	child_id: row.child_id,
-	created_at: typeof row.created_at === 'string' ? row.created_at : row.created_at.toISOString()
+	created_at: row.created_at
 });
 
 const position_taken_error = (): ReturnType<typeof jsonrpc_errors.invalid_params> =>

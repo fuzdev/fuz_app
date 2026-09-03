@@ -172,7 +172,7 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 			method: 'account_token_create',
 			as: 'token',
 			// Deliberately malformed — `scope` is required. Both dispatchers run
-			// 401 → authz → 403 → 400, so the caller hears that this channel may
+			// 401 → authz → 403 → 429 → 400, so the caller hears that this channel may
 			// never mint a token and learns nothing about the shape of the request
 			// it would have to send. A 400 here would confirm the method exists
 			// and describe how to call it, to a channel that should have learned
@@ -410,7 +410,7 @@ const idor_and_enumeration_cases: ReadonlyArray<ConformanceCase> = [
 // must be refused at the auth phase (401) before input validation (400)
 // ever runs — otherwise a parse error leaks the route's input schema /
 // shape to an anonymous prober. The anonymous end of the dispatchers'
-// 401 → authz → 403 → 400 order on both impls; the 403 end is pinned by the
+// 401 → authz → 403 → 429 → 400 order on both impls; the 403 end is pinned by the
 // bearer `account_token_create` row in the credential-ceiling batch above.
 // The Rust dispatcher validates input handler-side today, so these rows also
 // guard that a future input-validation port can't reorder ahead of the auth
@@ -427,7 +427,7 @@ const phase_order_cases: ReadonlyArray<ConformanceCase> = [
 			params: { session_id: 12345 }
 		},
 		expect: { status: 401 },
-		note: 'security.md §Authorization "Phase ordering hides route shape from callers who lack the authority to call" — the 401 → authz → 403 → 400 dispatch order: pre-authorization auth fires before input validation, so an unauthenticated caller never learns route shape from a parse failure'
+		note: 'security.md §Authorization "Phase ordering hides route shape from callers who lack the authority to call" — the 401 → authz → 403 → 429 → 400 dispatch order: pre-authorization auth fires before input validation, so an unauthenticated caller never learns route shape from a parse failure'
 	},
 	{
 		// REST twin: `/password` is account + session gated; a malformed body

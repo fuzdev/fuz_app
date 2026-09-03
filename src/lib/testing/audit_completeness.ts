@@ -70,7 +70,6 @@ import {
 	account_token_revoke_action_spec
 } from '../auth/account_action_specs.ts';
 import type { AppSurfaceSpec } from '../http/surface.ts';
-import type { BackendCapabilities } from './cross_backend/capabilities.ts';
 import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
 
 /**
@@ -92,8 +91,6 @@ export interface AuditCompletenessTestOptions {
 	 * options uniformity.
 	 */
 	surface_source: AppSurfaceSpec;
-	/** Backend capability declarations. */
-	capabilities: BackendCapabilities;
 	/** Session config — needed for factory-form rpc_endpoints resolution. */
 	session_options: SessionOptions<string>;
 	/**
@@ -219,7 +216,6 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 		options.session_options
 	);
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
-	void options.capabilities;
 
 	describe('audit_log_completeness', () => {
 		// --- Account routes ---

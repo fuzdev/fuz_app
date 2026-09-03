@@ -57,10 +57,13 @@ import {
 } from '../../auth/cell_action_specs.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
-import type { RpcPathCrossSuiteOptions } from './setup.ts';
+import { assert_iso8601_seconds, assert_iso8601_seconds_nullable } from './wire_shapes.ts';
+import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
-export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions): void => {
+export const describe_cell_crud_cross_tests = (
+	options: RpcPathCapabilityGatedCrossSuiteOptions
+): void => {
 	const { setup_test, capabilities } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
@@ -89,6 +92,12 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 				assert.strictEqual(created.cell.created_by, owner.actor.id);
 				assert.strictEqual(created.cell.updated_by, null);
 				assert.strictEqual(created.cell.grant_count, 0);
+				// Byte-shape gate: `CellJson`'s `z.string()` accepts a millisecond
+				// stamp too, so `expect_output` alone can't tell the two spines
+				// apart on the timestamp columns.
+				assert_iso8601_seconds(created.cell.created_at, 'cell_create.created_at');
+				assert_iso8601_seconds_nullable(created.cell.updated_at, 'cell_create.updated_at');
+				assert_iso8601_seconds_nullable(created.cell.deleted_at, 'cell_create.deleted_at');
 				const cell_id = created.cell.id;
 
 				// get by id — full CellGetOutput envelope; relations empty in the first cut
@@ -103,6 +112,8 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 				assert.strictEqual(got.items_truncated, false);
 				assert.strictEqual(got.can_edit, true);
 				assert.strictEqual(got.can_grant, true); // owner is manage-tier
+				assert_iso8601_seconds(got.cell.created_at, 'cell_get.created_at');
+				assert_iso8601_seconds_nullable(got.cell.updated_at, 'cell_get.updated_at');
 
 				// update data + flip to public (owner is manage-tier, so visibility write is allowed)
 				const updated = expect_output(
@@ -117,6 +128,7 @@ export const describe_cell_crud_cross_tests = (options: RpcPathCrossSuiteOptions
 				);
 				assert.strictEqual(updated.cell.visibility, 'public');
 				assert.strictEqual(updated.cell.updated_by, owner.actor.id);
+				assert_iso8601_seconds(updated.cell.updated_at, 'cell_update.updated_at');
 
 				// list includes it
 				const listed = expect_output(

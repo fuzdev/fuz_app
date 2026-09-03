@@ -67,7 +67,11 @@ export interface StandardCrossProcessTestOptions {
 	 * in-process and cross-process tests.
 	 */
 	surface_source: AppSurfaceSpec;
-	/** Backend capability declarations. */
+	/**
+	 * Backend capability declarations. Forwarded to the one bundled suite
+	 * that gates on them (`describe_standard_integration_tests`); the other
+	 * suites in the bundle read no flags and take no capability field.
+	 */
 	capabilities: BackendCapabilities;
 	/** Session config — needed for cookie_name + factory-form rpc_endpoints resolution. */
 	session_options: SessionOptions<string>;
@@ -141,28 +145,24 @@ export const describe_standard_cross_process_tests = (
 	describe_round_trip_validation({
 		setup_test: options.setup_test,
 		surface_source: options.surface_source,
-		capabilities: options.capabilities,
 		skip_routes: options.round_trip_skip_routes,
 		success_fixtures: options.rest_success_fixtures
 	});
 	describe_rpc_round_trip_tests({
 		setup_test: options.setup_test,
 		surface_source: options.surface_source,
-		capabilities: options.capabilities,
 		session_options: options.session_options,
 		rpc_endpoints: options.rpc_endpoints,
 		success_fixtures: options.rpc_success_fixtures
 	});
 	describe_data_exposure_tests({
 		setup_test: options.setup_test,
-		surface_source: options.surface_source,
-		capabilities: options.capabilities
+		surface_source: options.surface_source
 	});
 	if (options.roles) {
 		describe_standard_admin_integration_tests({
 			setup_test: options.setup_test,
 			surface_source: options.surface_source,
-			capabilities: options.capabilities,
 			session_options: options.session_options,
 			roles: options.roles,
 			rpc_endpoints: options.rpc_endpoints,

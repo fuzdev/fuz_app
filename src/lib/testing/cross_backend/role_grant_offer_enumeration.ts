@@ -52,6 +52,7 @@ import {
 	ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH,
 	ERROR_ROLE_GRANT_OFFER_NOT_FOUND
 } from '../../auth/role_grant_offer_action_specs.ts';
+import { assert_iso8601_seconds } from './wire_shapes.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import type { SetupTest } from './setup.ts';
 
@@ -132,7 +133,16 @@ export const describe_role_grant_offer_enumeration_cross_tests = (
 				grantor.create_session_headers()
 			);
 			assert.ok(created.ok, `offer create must succeed: ${JSON.stringify(created)}`);
-			const offer_id = (created.result as { offer: { id: string } }).offer.id;
+			const offer = (
+				created.result as {
+					offer: { id: string; created_at: string; expires_at: string };
+				}
+			).offer;
+			// Byte-shape gate on the offer's server-minted timestamps — a
+			// millisecond stamp parses the same but is a wire divergence.
+			assert_iso8601_seconds(offer.created_at, 'offer.created_at');
+			assert_iso8601_seconds(offer.expires_at, 'offer.expires_at');
+			const offer_id = offer.id;
 
 			// Sibling actor B (same account) tries to accept A's offer → 403
 			// actor_mismatch. The offer stays pending (no mutation on the denial).

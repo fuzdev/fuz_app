@@ -30,8 +30,8 @@ const create_test_ctx = (): RequestContext => ({
 		email: 'alice@example.com',
 		email_verified: false,
 		password_hash: 'hash',
-		created_at: '2025-01-01T00:00:00.000Z',
-		updated_at: '2025-01-01T00:00:00.000Z',
+		created_at: '2025-01-01T00:00:00Z',
+		updated_at: '2025-01-01T00:00:00Z',
 		created_by: null,
 		updated_by: null,
 		deleted_at: null,
@@ -41,7 +41,7 @@ const create_test_ctx = (): RequestContext => ({
 		id: 'act_1' as Uuid,
 		account_id: 'acc_1' as Uuid,
 		name: 'alice',
-		created_at: '2025-01-01T00:00:00.000Z',
+		created_at: '2025-01-01T00:00:00Z',
 		updated_at: null,
 		updated_by: null,
 		deleted_at: null,
@@ -180,7 +180,7 @@ describe('account status authenticated', () => {
 		assert.strictEqual(body.account.id, 'acc_1');
 		assert.strictEqual(body.account.username, 'alice');
 		assert.strictEqual(body.account.email, 'alice@example.com');
-		assert.strictEqual(body.account.created_at, '2025-01-01T00:00:00.000Z');
+		assert.strictEqual(body.account.created_at, '2025-01-01T00:00:00Z');
 	});
 
 	test('strips sensitive fields', async () => {

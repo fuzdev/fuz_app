@@ -15,6 +15,7 @@
 	import Datatable from './Datatable.svelte';
 	import type { DatatableColumn } from './datatable.ts';
 	import { format_relative_time, format_datetime_local, truncate_uuid } from './ui_format.ts';
+	import { is_iso8601_seconds_live } from '../timestamp.ts';
 	import type { RoleGrantOfferJson } from '../auth/role_grant_offer_schema.ts';
 	import { format_scope_context, resolve_scope_label, type FormatScope } from './format_scope.ts';
 
@@ -47,7 +48,8 @@
 		if (offer.declined_at) return 'declined';
 		if (offer.retracted_at) return 'retracted';
 		if (offer.superseded_at) return 'superseded';
-		if (Date.parse(offer.expires_at) <= now) return 'expired';
+		// end-of-second comparison, see `RoleGrantOffersState.incoming`
+		if (!is_iso8601_seconds_live(offer.expires_at, now)) return 'expired';
 		return 'pending';
 	};
 

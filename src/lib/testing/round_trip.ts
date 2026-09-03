@@ -25,7 +25,6 @@ import { is_public_auth, needs_actor, input_schema_declares_acting } from '../ht
 import type { TestAccount } from './app_server.ts';
 import { assert_response_matches_spec, pick_auth_headers } from './integration_helpers.ts';
 import { resolve_valid_path, generate_valid_body } from './schema_generators.ts';
-import type { BackendCapabilities } from './cross_backend/capabilities.ts';
 import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
 import type { AppSurfaceSpec } from '../http/surface.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
@@ -44,8 +43,6 @@ export interface RoundTripTestOptions {
 	 * TS by the consumer; same shape for in-process and cross-process tests.
 	 */
 	surface_source: AppSurfaceSpec;
-	/** Backend capability declarations — see `cross_backend/capabilities.ts`. */
-	capabilities: BackendCapabilities;
 	/** Routes to skip, in `'METHOD /path'` format. */
 	skip_routes?: Array<string>;
 	/** Override generated bodies for specific routes (`'METHOD /path'` → body). */
@@ -85,10 +82,6 @@ export interface RoundTripTestOptions {
 export const describe_round_trip_validation = (options: RoundTripTestOptions): void => {
 	const describe_time_specs = options.surface_source.route_specs;
 	const skip_set = new Set(options.skip_routes);
-	// `capabilities` is currently unused by this suite (no in-process-only
-	// reads, no transport-gated cases) but stays on the options for
-	// uniformity with the other Tier 1 suites.
-	void options.capabilities;
 
 	describe('round-trip validation', () => {
 		let fixture: TestFixture;

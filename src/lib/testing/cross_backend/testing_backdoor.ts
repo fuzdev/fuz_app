@@ -31,7 +31,7 @@ import '../assert_dev_env.ts';
  *
  * Each method is sent with **valid** params so each case varies only the
  * credential. (Validation runs after the gates — the order is 401 → authz →
- * 403 → 400 — so the shapes are belt-and-suspenders here rather than load-
+ * 403 → 429 → 400 — so the shapes are belt-and-suspenders here rather than load-
  * bearing.) The handler never runs (the gate refuses first), so the writes
  * never execute.
  *

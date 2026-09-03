@@ -9,7 +9,7 @@
  * Positive controls assert (a) session-credential calls still reach the
  * handler on the same gated specs and (b) un-gated specs accept bearer.
  *
- * Dispatcher ordering note: the pipeline is **401 → authz → 403 → 400 →
+ * Dispatcher ordering note: the pipeline is **401 → authz → 403 → 429 → 400 →
  * handler**, so `credential_types` (403) fires *before* input validation
  * (400) and the fixtures below could be any shape. They stay well-formed
  * (`SessionId`-shaped session ids, `tok_`-prefixed token ids, valid
@@ -178,7 +178,7 @@ describe_db('credential_channel_gate', (get_db) => {
 	});
 
 	describe('authority gates precede input validation', () => {
-		// The dispatcher runs 401 → authz → 403 → 400, so a caller the authority
+		// The dispatcher runs 401 → authz → 403 → 429 → 400, so a caller the authority
 		// gates refuse is never told what the action's input looks like. A 400
 		// here would confirm the method exists and describe how to call it, to a
 		// channel that should have learned neither — the same disclosure argument

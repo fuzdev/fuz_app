@@ -30,7 +30,26 @@ the code.
 - `sql_columns.ts` — `columns_sql` / `qualify_columns` / `omit_columns`,
   the derivation helpers every `*_COLUMNS` projection const's variants
   (alias-qualified JOIN reads, the client-safe `minus token_hash` listing)
-  are built from, so the drift guard on the base const covers them.
+  are built from, so the drift guard on the base const covers them. Both
+  renderers take an optional `ColumnExpr` — a per-column expression
+  override, twin of the third argument to `fuz_db::qualify_columns` — and
+  alias an overridden column back to its own name (TS reads rows by name;
+  the Rust twin decodes positionally and needs no output name). The one
+  override in this repo is `iso8601_timestamp_column(alias, column)`, twin
+  of `fuz_db::iso8601_timestamp_column` down to the format literal
+  (`to_char(… AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`): every
+  timestamp that reaches the wire projects through it, so both spines
+  serialize the same instant to the same 20-character second-precision UTC
+  string. Each query module builds its override once with
+  `iso8601_timestamp_expr(TABLE_COLUMNS, [...timestamp columns])` — typed
+  against the const, checked at load — and passes `expr(alias)` at each
+  read. `timestamp.ts` (`to_iso8601_seconds` / `ISO8601_SECONDS`) is that
+  shape for stamps minted in TS rather than read from a row. A cascade's
+  inner `RETURNING` inside a `WITH updated AS (…)` stays raw — the outer
+  select formats, and `to_char` over already-formatted text would fail.
+  `fact`'s store rows are the deliberate exception: `PgFactStore` feeds
+  `FactMeta.created_at`, a `Date` in the `@fuzdev/fuz_util` `FactStore`
+  contract, and nothing serializes it.
 - `status.ts` — CLI DB status utility.
 - `schema_ready.ts` — `/ready` deploy-gate core: `query_public_columns`
   (keeps `schema_version`, unlike `query_schema_snapshot`), pure

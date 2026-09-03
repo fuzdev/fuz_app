@@ -47,7 +47,7 @@ import { describe, assert } from 'vitest';
 import { CellCreateOutput, CellModerateOutput } from '../../auth/cell_action_specs.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
-import type { RpcPathCrossSuiteOptions } from './setup.ts';
+import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 import { SPACE_CELL_KIND, PARTICIPATION_ROLE } from './test_cell_gated_create_authorize.ts';
 
@@ -65,7 +65,9 @@ const SPACE_POLICY = {
 	}
 };
 
-export const describe_cell_gated_create_cross_tests = (options: RpcPathCrossSuiteOptions): void => {
+export const describe_cell_gated_create_cross_tests = (
+	options: RpcPathCapabilityGatedCrossSuiteOptions
+): void => {
 	const { setup_test, capabilities } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
@@ -338,7 +340,9 @@ export const describe_cell_gated_create_cross_tests = (options: RpcPathCrossSuit
  *
  * `$lib`-free by contract (relative specifiers only).
  */
-export const describe_cell_moderate_cross_tests = (options: RpcPathCrossSuiteOptions): void => {
+export const describe_cell_moderate_cross_tests = (
+	options: RpcPathCapabilityGatedCrossSuiteOptions
+): void => {
 	const { setup_test, capabilities } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 

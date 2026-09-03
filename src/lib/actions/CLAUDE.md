@@ -52,8 +52,9 @@ Optional fields:
 - `rate_limit?: 'ip' | 'account' | 'both'` — opts the action into the
   dispatcher's per-action rate-limit hook. **Throttle-requests semantics**
   — every invocation records regardless of outcome (different from REST
-  login's throttle-failures). `'account'` rejected at registration when
-  paired with `auth.account !== 'required'`. Limiters configured via
+  login's throttle-failures), and the gate fires ahead of param validation
+  so malformed calls are charged too. `'account'` / `'both'` rejected at
+  registration when paired with `auth.account !== 'required'`. Limiters configured via
   `AppServerOptions.action_ip_rate_limiter` / `action_account_rate_limiter`
   and threaded into both dispatchers automatically.
 
@@ -210,10 +211,13 @@ The HTTP RPC dispatcher is a thin shim around `perform_action`
 parsing, GET vs POST split, `c.json` binding); the
 auth/validation/dispatch pipeline is shared with the WebSocket dispatcher.
 
-**Phase order: 401 → authz → 403 → 400 → handler.** Authorize first,
-validate after — a caller the authority gates refuse never learns the
-action's input shape, and the coarse authority facts settle before the fine
-ones. Matches the Rust spine, which validates handler-side.
+**Phase order: 401 → authz → 403 → 429 → 400 → handler.** Authorize first,
+throttle, validate after — a caller the authority gates refuse never learns
+the action's input shape, the coarse authority facts settle before the fine
+ones, and a malformed flood burns the budget it should. The Rust spine's
+dispatcher enforces the same order: it validates the `acting` selector at
+the dispatcher after the rate limit and leaves every other field to the
+handlers.
 
 Shim responsibilities (per-request):
 
@@ -286,13 +290,13 @@ The transport-agnostic post-parse pipeline. Each transport assembles a
 `perform_action(input, deps)`, and binds the discriminated
 `PerformActionResult` to its wire shape.
 
-Pipeline (401 → authz → 403 → 400 → handler):
+Pipeline (401 → authz → 403 → 429 → 400 → handler):
 
 1. Pre-authorization auth (401)
-2. Authorization phase — `apply_authorization_phase` against `account_id` + `read_acting(auth, raw_params)`, which takes the selector off the raw params (malformed reads as omitted) since validation now runs later. Test escape hatch via `preset.request_context`
+2. Authorization phase — `apply_authorization_phase` against `account_id` + `read_acting(auth, raw_params)`, which takes the selector off the raw params (malformed reads as omitted) since validation runs later. Test escape hatch via `preset.request_context`
 3. Post-authorization auth (403) — credential-type gate, then token scope, then role
-4. Validate params (400) — `spec.input.safeParse` with `z.void()` / `?? {}` rules
-5. Rate limit (429) — throttle-requests semantics
+4. Rate limit (429) — throttle-requests semantics, ahead of validation so malformed params charge the budget and a throttled caller pays no schema work
+5. Validate params (400) — `spec.input.safeParse` with `z.void()` / `?? {}` rules
 6. Dispatch + DEV output validation + error normalization — `spec.side_effects` picks transaction vs pool. `ThrownJsonrpcError` preserves code + data; generic throws become `internal_error`
 
 `PerformActionInput` carries `account_id`, `credential_type`, `client_ip`,
@@ -529,7 +533,7 @@ dispatcher without the origin/auth front-stack.
 Per-message dispatch delegates to `perform_action` — the shared core that
 HTTP RPC also calls. `register_action_ws` owns only WS-specific concerns:
 
-- **Wire envelope parsing** — JSON.parse → batch rejection → notification interception (cancel, silent drop) → per-message dispatch
+- **Wire envelope parsing** — JSON.parse → batch rejection → peer-response routing → envelope-version guard → notification interception (cancel, silent drop) → `JsonrpcRequest.safeParse` → per-message dispatch. The version guard is what makes `{method: 'x'}` and `{jsonrpc: '1.0', method: 'x'}` an `invalid_request` answer rather than a silently dropped notification, matching the first check the Rust `classify` runs. Peer-response routing is the twin's response shape exactly — no `method` key, a string/number `id`, exactly one of `result` / `error` — so a hybrid frame like `{method, id, result}` stays a dispatchable request instead of being demuxed and swallowed. The envelope schema is the same one the HTTP POST path runs, so `params: null`, an array `params`, or a non-string/number `id` answers `invalid_request` (-32600) on both transports rather than reaching the dispatcher as `invalid_params`. It runs **after** the notification/cancel block: notifications carry no id to echo and stay unvalidated, and `cancel` routing precedes it. The version guard echoes the id via `to_jsonrpc_envelope_id` (a scalar frame answers `id: null`), the later steps via `to_jsonrpc_message_id`.
 - **Cancel-notification interception** — `{request_id → AbortController}` map; aborts the matching pending controller before the cancel bubbles past the dispatcher
 - **Socket-scoped notify** — `(method, params) => ws.send(notification)`, threaded into `perform_action` as `notify`
 - **Composed abort signal** — `AbortSignal.any([socket_close, per_request_cancel])`, threaded as `signal`

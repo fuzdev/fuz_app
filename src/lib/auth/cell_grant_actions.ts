@@ -86,7 +86,7 @@ export const to_grant_json = (row: CellGrantRow): GrantJson => ({
 	role: row.role,
 	scope_id: row.scope_id,
 	granted_by: row.granted_by,
-	created_at: typeof row.created_at === 'string' ? row.created_at : row.created_at.toISOString()
+	created_at: row.created_at
 });
 
 /**

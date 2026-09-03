@@ -51,18 +51,23 @@ import { create_jsonrpc_request, is_jsonrpc_request } from '../../http/jsonrpc_h
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import type { SetupTest } from './setup.ts';
 
-/** JSON-RPC endpoint path — matches the spine's `/api/rpc` (and the forge's). */
-const RPC_PATH = '/api/rpc';
+// The wire literals below are deliberate independent copies of the
+// producers' constants (`actions/peer_ping.ts` on TS, `REASON_PEER_*` /
+// `PEER_PING_METHOD` on Rust) — parity by test, not codegen. The harness
+// asserts the bytes on the wire, so importing the producer would make a
+// renamed-value regression invisible on both sides at once. Names track the
+// producers'.
 
 /** Wire method (both directions). Mirrors the Rust `PEER_PING_METHOD`. */
 const PEER_PING_METHOD = 'peer/ping';
 
-// Stable `data.reason` discriminators — the cross-impl wire contract, kept
-// as an independent TS-side copy of the Rust `REASON_PEER_*` constants
-// (parity by test, not codegen).
+/** Stable `data.reason` discriminators — the cross-impl wire contract. */
 const REASON_PEER_TIMEOUT = 'peer_timeout';
-const REASON_PEER_INVALID_REPLY = 'peer_ping_invalid_reply';
+const REASON_PEER_PING_INVALID_REPLY = 'peer_ping_invalid_reply';
 const REASON_PEER_NO_TRANSPORT = 'peer_no_transport';
+
+/** JSON-RPC endpoint path — matches the spine's `/api/rpc` (and the forge's). */
+const RPC_PATH = '/api/rpc';
 
 /** A reply payload that satisfies the Rust `PingResponse` shape. */
 const valid_reply = (nonce: number) => ({ nonce, protocol_version: 1 });
@@ -190,7 +195,7 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 				try {
 					const frame = await ping_raw(ws, 3, { nonce: 1, timeout_ms: 2000 });
 					assert.ok('error' in frame, 'a malformed reply must error, not return garbage');
-					assert.strictEqual(error_reason(frame), REASON_PEER_INVALID_REPLY);
+					assert.strictEqual(error_reason(frame), REASON_PEER_PING_INVALID_REPLY);
 				} finally {
 					await ws.close();
 				}

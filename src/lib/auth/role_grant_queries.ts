@@ -12,7 +12,7 @@ import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import type { RoleGrant, CreateRoleGrantInput } from './account_schema.ts';
 import { assert_row } from '../db/assert_row.ts';
-import { columns_sql, qualify_columns } from '../db/sql_columns.ts';
+import { columns_sql, iso8601_timestamp_expr, qualify_columns } from '../db/sql_columns.ts';
 import {
 	ROLE_GRANT_OFFER_COLUMNS,
 	ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
@@ -43,6 +43,18 @@ export const ROLE_GRANT_COLUMNS = [
 	'granted_by',
 	'source_offer_id'
 ] as const satisfies ReadonlyArray<keyof RoleGrant>;
+
+/**
+ * The `role_grant` timestamp override; every read here is on the bare table.
+ * `created_at` / `expires_at` ride `RoleGrantSummaryJson` (twin of the
+ * spine's `role_grant_summary_columns`); `revoked_at` is what
+ * `is_role_grant_active` reads.
+ */
+const role_grant_expr = iso8601_timestamp_expr(ROLE_GRANT_COLUMNS, [
+	'created_at',
+	'expires_at',
+	'revoked_at'
+])('');
 
 /**
  * Grant a role_grant to an actor.
@@ -79,7 +91,7 @@ export const query_create_role_grant = async (
 		 )
 		   WHERE revoked_at IS NULL
 		 DO NOTHING
-		 RETURNING ${columns_sql(ROLE_GRANT_COLUMNS)}`,
+		 RETURNING ${columns_sql(ROLE_GRANT_COLUMNS, role_grant_expr)}`,
 		[
 			input.actor_id,
 			input.role,
@@ -93,7 +105,7 @@ export const query_create_role_grant = async (
 	if (inserted) return inserted;
 	// Active role_grant already exists — return it (idempotent grant).
 	const existing = await deps.db.query_one<RoleGrant>(
-		`SELECT ${columns_sql(ROLE_GRANT_COLUMNS)} FROM role_grant
+		`SELECT ${columns_sql(ROLE_GRANT_COLUMNS, role_grant_expr)} FROM role_grant
 		 WHERE actor_id = $1
 		   AND role = $2
 		   AND scope_kind IS NOT DISTINCT FROM $3
@@ -117,7 +129,7 @@ export const query_role_grant_by_id = async (
 	id: Uuid
 ): Promise<RoleGrant | undefined> =>
 	deps.db.query_one<RoleGrant>(
-		`SELECT ${columns_sql(ROLE_GRANT_COLUMNS)} FROM role_grant WHERE id = $1`,
+		`SELECT ${columns_sql(ROLE_GRANT_COLUMNS, role_grant_expr)} FROM role_grant WHERE id = $1`,
 		[id]
 	);
 
@@ -238,6 +250,7 @@ export const query_revoke_role_grant = async (
 			  AND o.declined_at IS NULL
 			  AND o.retracted_at IS NULL
 			  AND o.superseded_at IS NULL
+			-- raw columns; the outer grantor select formats them
 			RETURNING ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'o')}
 		)
 		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
@@ -260,11 +273,11 @@ export const query_role_grant_find_active_for_actor = async (
 	actor_id: string
 ): Promise<Array<RoleGrant>> => {
 	return deps.db.query<RoleGrant>(
-		`SELECT ${columns_sql(ROLE_GRANT_COLUMNS)} FROM role_grant
+		`SELECT ${columns_sql(ROLE_GRANT_COLUMNS, role_grant_expr)} FROM role_grant
 		 WHERE actor_id = $1
 		   AND revoked_at IS NULL
 		   AND (expires_at IS NULL OR expires_at > NOW())
-		 ORDER BY created_at`,
+		 ORDER BY role_grant.created_at`,
 		[actor_id]
 	);
 };
@@ -430,7 +443,7 @@ export const query_role_grant_list_for_actor = async (
 	actor_id: string
 ): Promise<Array<RoleGrant>> => {
 	return deps.db.query<RoleGrant>(
-		`SELECT ${columns_sql(ROLE_GRANT_COLUMNS)} FROM role_grant WHERE actor_id = $1 ORDER BY created_at DESC`,
+		`SELECT ${columns_sql(ROLE_GRANT_COLUMNS, role_grant_expr)} FROM role_grant WHERE actor_id = $1 ORDER BY role_grant.created_at DESC`,
 		[actor_id]
 	);
 };
@@ -571,6 +584,7 @@ export const query_role_grant_revoke_for_scope = async (
 			  AND o.declined_at IS NULL
 			  AND o.retracted_at IS NULL
 			  AND o.superseded_at IS NULL
+			-- raw columns; the outer grantor select formats them
 			RETURNING ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'o')}
 		)
 		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
@@ -665,6 +679,7 @@ export const query_role_grant_revoke_role = async (
 			  AND o.declined_at IS NULL
 			  AND o.retracted_at IS NULL
 			  AND o.superseded_at IS NULL
+			-- raw columns; the outer grantor select formats them
 			RETURNING ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'o')}
 		)
 		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,

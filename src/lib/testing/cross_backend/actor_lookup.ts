@@ -40,8 +40,9 @@ import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /**
  * Options for the actor-lookup parity suite. The standard RPC-dispatched
- * cross-suite shape (`setup_test` / `capabilities` / `rpc_path`); aliases
- * the shared `RpcPathCrossSuiteOptions` rather than minting a duplicate.
+ * cross-suite shape (`setup_test` / `rpc_path`); aliases the shared
+ * `RpcPathCrossSuiteOptions` rather than minting a duplicate. No case here
+ * is capability-gated, so the flag bundle is not on the shape.
  */
 export type ActorLookupCrossTestOptions = RpcPathCrossSuiteOptions;
 

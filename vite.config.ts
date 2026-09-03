@@ -113,6 +113,10 @@ export default defineConfig({
 				test: {
 					name: 'db',
 					include: ['src/test/**/*.db.test.ts'],
+					// Installs the optional stand-in driver for the pglite factory
+					// (`FUZ_TEST_DB_SUBSTITUTE`); a no-op when that is unset. Scoped to
+					// this project so the parallel-worker `unit` project keeps PGlite.
+					setupFiles: ['./src/test/db_substitute.ts'],
 					isolate: false,
 					fileParallelism: false,
 					sequence: { groupOrder: 2 }

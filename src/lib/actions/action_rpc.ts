@@ -48,6 +48,7 @@ import {
 	JSONRPC_ERROR_CODES,
 	dev_only
 } from '../http/jsonrpc_errors.ts';
+import { to_jsonrpc_envelope_id } from '../http/jsonrpc_helpers.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
 import { perform_action, perform_action_result_to_envelope } from './perform_action.ts';
 
@@ -114,7 +115,7 @@ export interface ActionContext {
 	/**
 	 * Credential channel the request arrived on (`'session'` | `'api_token'` |
 	 * `'daemon_token'`), or `null` for anonymous requests. Same value the
-	 * dispatcher's `credential_types` gate consumed at step 4 — exposed here
+	 * dispatcher's `credential_types` gate consumed at step 3 — exposed here
 	 * so handlers can record it in audit metadata (defense in depth: the
 	 * gate may be loosened or bypassed in a future refactor, but the audit
 	 * row preserves what actually authenticated the request).
@@ -482,14 +483,10 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 
 		const envelope = JsonrpcRequest.safeParse(body);
 		if (!envelope.success) {
-			// try to extract id even from an invalid envelope
-			const raw_id =
-				typeof body === 'object' && body !== null && 'id' in body
-					? (body as Record<string, unknown>).id
-					: null;
-			const id = typeof raw_id === 'string' || typeof raw_id === 'number' ? raw_id : null;
+			// echo the id when the body is an object carrying one — the same
+			// extraction the WS path runs; a scalar body answers `id: null`
 			const error = jsonrpc_error_envelope(
-				id,
+				to_jsonrpc_envelope_id(body),
 				jsonrpc_error_messages.invalid_request(dev_only({ issues: envelope.error.issues }))
 			);
 			return c.json(error, 400);

@@ -121,7 +121,8 @@ factories accept any migration namespace set.
 - `IS_CI` — `process.env.CI === 'true'`.
 - `DbFactory` — `{name, create, close, skip, skip_reason?}`.
 - `reset_pglite(db)` — `DROP SCHEMA public CASCADE` + recreate. Reuses a live PGlite instance.
-- `create_pglite_factory(init_schema)` — in-memory; no external deps; `skip: false`. See WASM caching below.
+- `create_pglite_factory(init_schema, options?)` — in-memory; no external deps; `skip: false`. `options.substitutable: false` pins the call site to PGlite when a substitute is installed. See WASM caching below.
+- `set_substitute_db_factory(create_factory | null)` — install a `DbFactoryBuilder` that stands in for `create_pglite_factory`, so a suite written against PGlite runs on another driver without being edited. Injected rather than selected here: the drivers a substitute wraps live in test-side code this shipped module can't import. fuz_app's own switch is `src/test/db_substitute.ts`.
 - `create_pg_factory(init_schema, test_url?)` — PostgreSQL; `skip: true` when `test_url` missing. Drops `schema_version` before `init_schema` so migrations re-evaluate against actual tables (prevents stale tracker rows from skipping migrations when DDL changes between sessions). Pool reused + cleaned up across `create()` calls.
 - `auth_truncate_tables` — `['invite', 'api_token', 'auth_session', 'role_grant', 'role_grant_offer', 'actor', 'account']` in FK-safe order. Excludes `audit_log` — unit DB tests don't need to truncate it.
 - `auth_integration_truncate_tables` — `auth_truncate_tables + ['audit_log']` for integration suites that exercise the audit path.
@@ -131,14 +132,13 @@ factories accept any migration namespace set.
 - `assert_columns_match_live(db, table, columns)` — the named-projection drift guard: asserts a `*_COLUMNS` const (`ACCOUNT_COLUMNS`, `CELL_COLUMNS`, a consumer's own) names exactly the live `public`-schema columns of `table`, via `query_public_columns(db, {table})`. Per module, or iterated from a table → const registry (fuz_app's own: `src/test/db/column_projections.db.test.ts`).
 
 **PGlite WASM caching.** `create_pglite_factory` shares a single PGlite
-instance in a module-level ref (`module_db`) across all factories in the
-same vitest worker thread. Subsequent `create()` calls
-`DROP SCHEMA public CASCADE` instead of paying the ~500–700ms WASM cold-start
-cost again. Each vitest file runs in its own worker, so no cross-file
-contamination — but inside a file, suites share state until the schema is
+instance in a module-level ref (`module_db`) across the PGlite factories it builds.
+Subsequent `create()` calls `DROP SCHEMA public CASCADE` instead of paying the
+~500–700ms WASM cold-start cost again, so suites share state until the next
 reset. The `db` vitest project (opted into by the `.db.test.ts` suffix) runs
 with `isolate: false` + `fileParallelism: false` to amortize WASM boot across
-every DB test file.
+every DB test file — which also makes that one instance the whole run's; a
+project that isolates its files gets one per worker instead.
 
 ## Test app assembly
 
@@ -207,7 +207,7 @@ test-only by construction.
 - `AuthTestApps` — `{public, authed, keeper, by_role: Map<string, Hono>}`.
 - `create_auth_test_apps(specs, roles)` — builds one app per auth level. Keeper app uses `credential_type: 'daemon_token'` so `require_credential_types(['daemon_token'])` passes.
 - `select_auth_app(apps, auth)` — map `RouteAuth` → matching Hono app. Throws for missing `role:*` entries.
-- `resolve_test_path(path)` — `:foo` → `test_foo`; adequate for routes without format-constrained params.
+- `create_route_skip_filter(skip_routes)` — the `'METHOD /path'` skip predicate the three adversarial sub-suites apply from their `skip_routes` option.
 
 ## Cross-impl schema parity
 
@@ -237,8 +237,10 @@ per-method auth shape.
 - `cross_backend/action_manifest.ts` — `ActionManifest` / `ActionManifestEntry`
   Zod schema (the `_testing_action_manifest` wire validator) + `build_action_manifest(specs)`,
   which normalizes each spec to `{method, side_effects, account, actor, roles,
-credential_types}` (auth axes pass through; `roles` / `credential_types` flatten
-  to sorted arrays). Twin of `schema_introspect.ts`. Excludes the protocol actions
+credential_types, rate_limit}` (auth axes pass through; `roles` /
+  `credential_types` flatten to sorted arrays; `rate_limit` is the declared
+  class or an explicit `null`, so a missing key reads as drift rather than a
+  default). Twin of `schema_introspect.ts`. Excludes the protocol actions
   (`heartbeat` / `cancel` / `peer/ping`) — `create_testing_action_manifest_action`
   filters them via the `protocol_action_specs` method set (Rust drops
   `PROTOCOL_ACTION_SPECS`); the two impls organize them differently (`peer/ping`
@@ -247,6 +249,8 @@ credential_types}` (auth axes pass through; `roles` / `credential_types` flatten
 - `cross_backend/action_manifest_parity.ts` — `diff_action_manifests` /
   `format_action_manifest_diffs` / `assert_action_manifests_equal` (twin of
   `schema_parity.ts`) — asserts exact method-set + per-method auth-shape parity.
+  `ActionManifestDiff` kinds: `method_only_in`, `side_effects_differ`,
+  `rate_limit_differs`, `auth_field_differs`, `auth_list_differs`.
 - `cross_backend/setup.ts` `capture_action_manifest(handle)` — dumps a backend's
   manifest over the daemon-token `_testing_action_manifest` channel (twin of
   `capture_schema_snapshot`).
@@ -255,9 +259,9 @@ It runs under the same dual-spawn `cross_backend_parity` project (one TS-spine +
 Rust-stub spawn serves both gates). It complements the in-repo
 `spine_method_coverage` reconciliation gate (which proves _mounted ⟹ covered_);
 this proves _TS-mount-set ≡ Rust-mount-set_. The gate asserts **exact** parity —
-every mounted method and its full auth shape (side-effects + the four auth axes)
-must match across the two impls, with no allowlisted divergences (see
-`action_manifest_parity.cross.test.ts`).
+every mounted method and its full auth shape (side-effects, the four auth axes,
+the rate-limit class) must match across the two impls, with no allowlisted
+divergences (see `action_manifest_parity.cross.test.ts`).
 
 **Cross-impl gate pattern** — a dual-impl consumer running two backends
 (a TS Hono server and a Rust spine server) against a shared schema, plus
@@ -367,7 +371,7 @@ Walks Zod schemas to generate valid values for adversarial/round-trip tests.
 
 - `detect_format(field_schema)` — reads `format` / `pattern` from the JSON Schema representation.
 - `generate_valid_value(field, field_schema)` — base-type switch producing a valid sample (UUIDs → nil UUID, strings → `'xxxxxxxxxx'`, numbers → `1`, objects → recurse, enums → first entry, etc.). For branded-string refinements, walks a fallback chain synthesized from the `pattern` string the JSON Schema representation exposes: fixed-length hex (`^[0-9a-f]{N}$` — blake3 / sha256 / md5 digests; `0`.repeat(N)), prefix-lengthed slug (`^<prefix>_[A-Za-z0-9_-]{N}$` — `ApiTokenId`-style ids; `<prefix>_` + `x`.repeat(N)), absolute path prefix, URL prefix. First candidate that `safeParse` accepts is used.
-- `resolve_valid_path(path, params_schema?)` — swaps `:param` for valid-format values (nil UUID for UUID params, `test_param` otherwise).
+- `resolve_valid_path(path, params_schema?)` — swaps `:param` for a value the params schema accepts. Prefers `test_<name>` wherever the field schema admits it (the param name keeps failure messages readable); otherwise a UUID param takes the nil UUID and anything else is synthesized from the schema, percent-encoded. A synthesized value containing `/` is refused (it would route elsewhere) and falls back to `test_<name>`.
 - `generate_valid_body(input_schema) => Record<string, unknown> | undefined` — builds a body satisfying the input schema. Throws with Zod `issues` if the generated body fails validation — surfaces broken generation logic with a descriptive error rather than a confusing 400 downstream.
 
 ### `integration_helpers.ts` — route lookup + body checks
@@ -398,7 +402,16 @@ case per route):
 4. **adversarial input validation** — delegated to `describe_adversarial_input`.
 5. **adversarial 404 response validation** — delegated to `describe_adversarial_404`.
 
-Options: `{build: () => AppSurfaceSpec, snapshot_path, expected_public_routes, expected_api_middleware, roles, api_path_prefix?, security_policy?, error_schema_tightness?}`.
+Options: `{build: () => AppSurfaceSpec, snapshot_path, expected_public_routes, expected_api_middleware, roles, api_path_prefix?, security_policy?, error_schema_tightness?, skip_routes?}`.
+
+`skip_routes` is a list of `'METHOD /path'` surface keys the three
+adversarial sub-suites drop, forwarded to each of them (it also sits on
+`AdversarialTestOptions` for the standalone `describe_adversarial_auth` /
+`describe_adversarial_input` / `describe_adversarial_404` calls). It is the
+escape hatch for a route that cannot be driven generically at all — a
+handler needing real seeded state, a path segment no schema describes. A
+route whose params merely carry a format needs no entry: `resolve_valid_path`
+synthesizes a segment the route accepts.
 
 Also exported: `describe_adversarial_auth(options)` (group 3 on its own) and
 `build_error_schema_lookup(specs, middleware_specs?)` (pre-built
@@ -480,7 +493,7 @@ For every route spec, fires a valid request with matching auth and validates
 the response against declared schemas. DB-backed via `create_test_app`.
 Per-route test (`test.each`) — one line per route in the vitest output.
 
-Options: `{setup_test, surface_source, capabilities, skip_routes?, input_overrides?}`.
+Options: `{setup_test, surface_source, skip_routes?, input_overrides?, success_fixtures?}`.
 `input_overrides` is a `Map<"METHOD /path", body>` — override generated
 bodies for routes whose input schema can't round-trip cleanly (e.g. fields
 that must reference DB state).
@@ -493,7 +506,7 @@ picks them up separately.
 DB-backed round-trip for RPC: one POST test for all methods, one GET test
 for `side_effects: false` methods. Successful responses validate against
 `action.spec.output`; error responses validate as well-formed JSON-RPC error
-envelopes. Options: `{setup_test, surface_source, capabilities, session_options, rpc_endpoints, skip_methods?, input_overrides?}`.
+envelopes. Options: `{setup_test, surface_source, session_options, rpc_endpoints, skip_methods?, input_overrides?, success_fixtures?}`.
 The admin RPC auth test picks a session-based identity (`authed` / `admin` /
 bootstrapped keeper) based on `method.auth`; keeper uses the daemon token.
 
@@ -568,7 +581,7 @@ Support functions: `collect_json_schema_property_names(schema)` (walks
 `assert_output_schemas_no_sensitive_fields(surface, fields?)`,
 `assert_non_admin_schemas_no_admin_fields(surface, fields?)`.
 
-Options: `{setup_test, surface_source, capabilities, sensitive_fields?, admin_only_fields?, skip_routes?}`.
+Options: `{setup_test, surface_source, sensitive_fields?, admin_only_fields?, skip_routes?}`.
 
 ### `rate_limiting.ts` — `describe_rate_limiting_tests`
 
@@ -626,7 +639,7 @@ Override with
 minimal route sets whose declared error codes outpace the suite's
 denial-path drivers).
 
-Options: `{setup_test, surface_source, capabilities, session_options, rpc_endpoints, error_coverage_min?}`.
+Options: `{setup_test, surface_source, session_options, rpc_endpoints, error_coverage_min?}`.
 
 ### `admin_integration.ts` — `describe_standard_admin_integration_tests`
 
@@ -646,7 +659,7 @@ header/account mismatch. Direct-grant fixtures (test focuses on revoke or
 isolation, not the consent path) go through `create_test_role_grant_direct`
 from `db_entities.ts`.
 
-Required options: `{setup_test, surface_source, capabilities, session_options, rpc_endpoints: RpcEndpointsSuiteOption, roles: RoleSchemaResult, admin_prefix?}`.
+Required options: `{setup_test, surface_source, session_options, rpc_endpoints: RpcEndpointsSuiteOption, roles: RoleSchemaResult, admin_prefix?}`.
 
 `rpc_endpoints` is `Array<RpcEndpointSpec> | ((ctx: AppServerContext) => Array<RpcEndpointSpec>)` —
 the same `RpcEndpointsSuiteOption` union every DB-backed suite accepts
@@ -1179,10 +1192,23 @@ never sees them). Both parse every success response against the verb's Zod
 **output** schema, so a TS↔Rust envelope drift fails the suite — not just a
 payload-field drift. Call-site primitives (`cross_rpc_call` / `error_reason` /
 `expect_output`) live in `cross_backend/cell_cross_helpers.ts`; the shared
-options shape is `RpcPathCrossSuiteOptions` from `cross_backend/setup.ts` (the
-neutral base every RPC-dispatched imperative cross suite aliases — origin,
-body-size, actor lookup/search, account lifecycle, app settings, testing
-backdoor, cell).
+options shape is `RpcPathCapabilityGatedCrossSuiteOptions` from
+`cross_backend/setup.ts`. `cross_backend/wire_shapes.ts` carries
+`assert_iso8601_seconds` / `assert_iso8601_seconds_nullable` — the byte-level
+gate on the canonical second-precision UTC timestamp shape, which a
+`z.string()` output schema can't catch (a millisecond stamp parses fine).
+The shared suites pin it on the account-status account + role grants, a
+session, a minted + listed API token, a cell's `created_at` / `updated_at`,
+an audit row, an admin account listing, and an offer's `created_at` /
+`expires_at`. `cross_backend/setup.ts` carries the four bases every
+imperative cross suite aliases: `CrossSuiteOptions` (`setup_test` alone),
+`CapabilityGatedCrossSuiteOptions` (+ `capabilities` — `ready`),
+`RpcPathCrossSuiteOptions` (+ `rpc_path?` — origin, body-size, actor
+lookup/search, app settings, testing backdoor), and the intersection
+`RpcPathCapabilityGatedCrossSuiteOptions` (every `cell_*` suite, query-shape,
+token-scope surface, fact-serving, account lifecycle). A suite takes the
+capability-carrying variant only when it actually gates cases on a flag, so
+the option type states whether the bundle is read.
 
 - **`describe_cell_crud_cross_tests`** (gates on `capabilities.cell_crud`) —
   the create → get → update → delete → list lifecycle threading the id, plus
@@ -1387,7 +1413,7 @@ censuses). Cross-process only; fuz_app's own wiring is
 
 ### Origin verification parity — `cross_backend/origin.ts`
 
-`describe_origin_cross_tests({setup_test, capabilities, rpc_path?})` — the
+`describe_origin_cross_tests({setup_test, rpc_path?})` — the
 imperative Origin-verification suite: disallowed `Origin` → 403 `forbidden_origin` (refused
 before dispatch), absent `Origin` → request passes (non-browser direct access).
 Imperative (not a conformance-table row) because origin rejection is
@@ -1461,7 +1487,7 @@ drift-guarded by `src/test/cross_backend/spine_expected_schema.db.test.ts`
 
 ### Testing-backdoor credential gate — `cross_backend/testing_backdoor.ts`
 
-`describe_testing_backdoor_cross_tests({setup_test, capabilities, rpc_path?})` —
+`describe_testing_backdoor_cross_tests({setup_test, rpc_path?})` —
 the negative-credential parity suite for the `_testing_*` backdoor actions.
 For each of `_testing_reset` / `_testing_mint_session` / `_testing_put_fact` /
 `_testing_schema_snapshot` (the three privileged writes plus the schema-dump
@@ -1471,7 +1497,7 @@ proving the daemon-token gate that fences each backdoor action holds end-to-end
 on the real dispatcher (the spec-derived `describe_rpc_attack_surface_tests`
 never enumerates them because they're off the declared surface). Each method is
 sent with **valid** params so each case varies only the credential (validation
-runs after the gates — order is 401 → authz → 403 → 400); the handler never
+runs after the gates — order is 401 → authz → 403 → 429 → 400); the handler never
 runs. Cited property: `docs/security.md`
 §Test Backdoor Actions. Cross-process only (the `_testing_*` actions are
 mounted on the spawned binary, not the in-process app — like the ws/sse

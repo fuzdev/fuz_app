@@ -107,7 +107,9 @@ wrapper). See `auth/signup_routes.ts`.
 
 **Ordering: 401 → authz → 403 → 400 → handler.** Mirrors the RPC dispatcher
 (`actions/action_rpc.ts`) so HTTP RPC and REST fail with the same priority, and
-matches the Rust spine, which validates handler-side. Body validation runs last
+matches the Rust spine, which validates handler-side — with the one difference
+that the dispatcher carries a per-action rate-limit phase (429) between 403 and
+400 that REST has no equivalent of. Body validation runs last
 so a caller the authority gates refuse learns nothing about the route's input
 shape — a 400 would confirm the route exists and describe how to call it.
 Params and query still validate first: they are part of addressing the route,

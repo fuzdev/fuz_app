@@ -11,21 +11,28 @@ import {
 	create_pglite_factory,
 	create_pg_factory,
 	log_db_factory_status,
-	type DbFactory
+	set_substitute_db_factory,
+	type DbFactory,
+	type DbFactoryBuilder
 } from '$lib/testing/db.ts';
 import { Db, no_nested_transaction } from '$lib/db/db.ts';
 
 const noop_init = async (_db: Db): Promise<void> => {};
 
+// This suite's subject is the PGlite factory itself — its `name`, its shared
+// instance, its `init_schema` call — so it opts out of the stand-in driver a
+// `db` run can install (`set_substitute_db_factory`, `src/test/db_substitute.ts`).
+const PGLITE_ONLY = { substitutable: false } as const;
+
 // Warm up PGlite WASM before tests so the cold-start cost is outside individual test timers.
 beforeAll(async () => {
-	const warmup = create_pglite_factory(noop_init);
+	const warmup = create_pglite_factory(noop_init, PGLITE_ONLY);
 	await warmup.create();
 });
 
 describe('create_pglite_factory', () => {
 	test('creates a factory that is never skipped', () => {
-		const factory = create_pglite_factory(noop_init);
+		const factory = create_pglite_factory(noop_init, PGLITE_ONLY);
 		assert.strictEqual(factory.name, 'pglite');
 		assert.strictEqual(factory.skip, false);
 	});
@@ -35,7 +42,7 @@ describe('create_pglite_factory', () => {
 		const factory = create_pglite_factory((db) => {
 			init_called.push(db);
 			return Promise.resolve();
-		});
+		}, PGLITE_ONLY);
 
 		const db = await factory.create();
 		assert.ok(db instanceof Db);
@@ -53,7 +60,7 @@ describe('create_pglite_factory', () => {
 	test('runs schema init on the created database', async () => {
 		const factory = create_pglite_factory(async (db) => {
 			await db.query('CREATE TABLE test_items (id SERIAL PRIMARY KEY, name TEXT NOT NULL)');
-		});
+		}, PGLITE_ONLY);
 
 		const db = await factory.create();
 		await db.query("INSERT INTO test_items (name) VALUES ('hello')");
@@ -62,6 +69,41 @@ describe('create_pglite_factory', () => {
 		assert.strictEqual(rows[0]!.name, 'hello');
 
 		await factory.close(db);
+	});
+});
+
+describe('set_substitute_db_factory', () => {
+	// The only automated check on the substitution seam. A run that installs no
+	// stand-in never takes the substituted branch, so without this a regression in
+	// either direction — the stand-in stops standing in, or `{substitutable: false}`
+	// stops pinning — passes every suite in the repo.
+	test('stands in at an unpinned call site and never at a pinned one', () => {
+		const sentinel: DbFactory = {
+			name: 'sentinel',
+			skip: false,
+			create: () => Promise.reject(new Error('the sentinel factory is never created')),
+			close: () => Promise.resolve()
+		};
+		const received: Array<(db: Db) => Promise<void>> = [];
+		const build_sentinel: DbFactoryBuilder = (init_schema) => {
+			received.push(init_schema);
+			return sentinel;
+		};
+		try {
+			set_substitute_db_factory(build_sentinel);
+			// unpinned: the builder is called with this call site's `init_schema`
+			assert.strictEqual(create_pglite_factory(noop_init), sentinel);
+			assert.deepEqual(received, [noop_init]);
+			// pinned: PGlite, and the builder is not called again
+			assert.strictEqual(create_pglite_factory(noop_init, PGLITE_ONLY).name, 'pglite');
+			assert.strictEqual(received.length, 1);
+		} finally {
+			// Uninstall rather than restore — nothing exposes the installed builder to
+			// put back. Safe because `db_substitute.ts` is a `setupFiles` entry and so
+			// re-installs the run's selected stand-in for every later file.
+			set_substitute_db_factory(null);
+		}
+		assert.strictEqual(create_pglite_factory(noop_init).name, 'pglite');
 	});
 });
 

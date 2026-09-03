@@ -68,7 +68,6 @@ import {
 	account_verify_action_spec
 } from '../auth/account_action_specs.ts';
 import type { AppSurfaceSpec } from '../http/surface.ts';
-import type { BackendCapabilities } from './cross_backend/capabilities.ts';
 import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
 
 /**
@@ -97,8 +96,6 @@ export interface StandardAdminIntegrationTestOptions {
 	 * shape for in-process and cross-process tests).
 	 */
 	surface_source: AppSurfaceSpec;
-	/** Backend capability declarations. */
-	capabilities: BackendCapabilities;
 	/** Session config — needed for cookie_name + factory-form rpc_endpoints resolution. */
 	session_options: SessionOptions<string>;
 	/** Role schema result from `create_role_schema()` — used to determine valid/invalid/web-grantable roles. */
@@ -157,7 +154,6 @@ export const describe_standard_admin_integration_tests = (
 		options.session_options
 	);
 	const rpc_path = require_rpc_endpoint_path(rpc_endpoints_for_setup);
-	void options.capabilities;
 
 	describe('standard_admin_integration', () => {
 		const { cookie_name } = options.session_options;

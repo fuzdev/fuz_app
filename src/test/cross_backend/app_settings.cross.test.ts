@@ -24,6 +24,6 @@ import './cross_test_types.ts';
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 // The keeper needs `ROLE_ADMIN` to call the admin-gated `app_settings_update`.
 const setup_test = default_cross_process_setup(handle, { extra_keeper_roles: [ROLE_ADMIN] });
-const { capabilities, rpc_path } = handle.config;
+const { rpc_path } = handle.config;
 
-describe_app_settings_cross_tests({ setup_test, capabilities, rpc_path });
+describe_app_settings_cross_tests({ setup_test, rpc_path });

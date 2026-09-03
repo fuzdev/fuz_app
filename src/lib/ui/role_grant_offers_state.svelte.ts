@@ -28,6 +28,7 @@
 import { create_context } from '@fuzdev/fuz_ui/context_helpers.ts';
 
 import { AsyncSlot } from './async_slot.svelte.ts';
+import { is_iso8601_seconds_live } from '../timestamp.ts';
 import type { RoleGrantOfferJson } from '../auth/role_grant_offer_schema.ts';
 import {
 	ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
@@ -124,7 +125,9 @@ export class RoleGrantOffersState {
 		for (const o of this.#offers.values()) {
 			if (o.to_account_id !== account_id) continue;
 			if (is_terminal(o)) continue;
-			if (Date.parse(o.expires_at) <= now) continue;
+			// end-of-second rule, so the inbox never hides an offer the server's
+			// raw-column `expires_at > NOW()` gate would still accept
+			if (!is_iso8601_seconds_live(o.expires_at, now)) continue;
 			rows.push(o);
 		}
 		rows.sort((a, b) => Date.parse(a.expires_at) - Date.parse(b.expires_at));
@@ -140,7 +143,8 @@ export class RoleGrantOffersState {
 		for (const o of this.#offers.values()) {
 			if (o.from_actor_id !== actor_id) continue;
 			if (is_terminal(o)) continue;
-			if (Date.parse(o.expires_at) <= now) continue;
+			// end-of-second comparison, see `incoming`
+			if (!is_iso8601_seconds_live(o.expires_at, now)) continue;
 			rows.push(o);
 		}
 		rows.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));

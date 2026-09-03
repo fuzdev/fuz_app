@@ -45,6 +45,7 @@ import {
 	TokenListOutput
 } from '../../auth/account_action_specs.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
+import { assert_iso8601_seconds } from './wire_shapes.ts';
 import type { SetupTest } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
@@ -97,6 +98,9 @@ export const describe_token_lifetime_cross_tests = (
 				created.expires_at !== null,
 				'a ttl mint must return a non-null expires_at — null means the spine dropped the field'
 			);
+			// Byte-shape gate: `z.string()` accepts a millisecond stamp too, so
+			// `expect_output` above can't tell the two spines apart.
+			assert_iso8601_seconds(created.expires_at, 'token_create.expires_at');
 			const expires_ms = Date.parse(created.expires_at);
 			assert.ok(
 				!Number.isNaN(expires_ms),
@@ -123,6 +127,8 @@ export const describe_token_lifetime_cross_tests = (
 				row.expires_at !== null,
 				'account_token_list must report the stored expiry, not null'
 			);
+			assert_iso8601_seconds(row.expires_at, 'token_list.expires_at');
+			assert_iso8601_seconds(row.created_at, 'token_list.created_at');
 		});
 
 		test('an eternal mint stores NULL expiry', async () => {

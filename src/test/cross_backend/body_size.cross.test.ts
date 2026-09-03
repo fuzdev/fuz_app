@@ -26,7 +26,7 @@ const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle);
 const { capabilities, rpc_path, base_url } = handle.config;
 
-describe_body_size_cross_tests({ setup_test, capabilities, rpc_path });
+describe_body_size_cross_tests({ setup_test, rpc_path });
 describe_body_size_smuggling_cross_tests({
 	base_url,
 	rpc_path,

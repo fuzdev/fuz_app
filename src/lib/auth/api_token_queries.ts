@@ -8,7 +8,7 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { QueryDeps } from '../db/query_deps.ts';
 import { assert_row } from '../db/assert_row.ts';
-import { columns_sql, omit_columns } from '../db/sql_columns.ts';
+import { columns_sql, iso8601_timestamp_expr, omit_columns } from '../db/sql_columns.ts';
 import type { ApiToken } from './account_schema.ts';
 import { hash_api_token } from './api_token.ts';
 import { type TokenScope, parse_stored_token_scope, serialize_token_scope } from './token_scope.ts';
@@ -43,6 +43,13 @@ export const API_TOKEN_COLUMNS = [
  */
 const API_TOKEN_CLIENT_COLUMNS = omit_columns(API_TOKEN_COLUMNS, 'token_hash');
 
+/** The `api_token` timestamp override; every read here is on the bare table. */
+const api_token_expr = iso8601_timestamp_expr(API_TOKEN_COLUMNS, [
+	'expires_at',
+	'last_used_at',
+	'created_at'
+])('');
+
 /**
  * Store a new API token (the hash, not the raw token).
  *
@@ -67,7 +74,7 @@ export const query_create_api_token = async (
 	const row = await deps.db.query_one<ApiToken>(
 		`INSERT INTO api_token (id, account_id, name, token_hash, scope, expires_at)
 		 VALUES ($1, $2, $3, $4, $5::jsonb, $6)
-		 RETURNING ${columns_sql(API_TOKEN_COLUMNS)}`,
+		 RETURNING ${columns_sql(API_TOKEN_COLUMNS, api_token_expr)}`,
 		[
 			id,
 			account_id,
@@ -103,7 +110,7 @@ export const query_validate_api_token = async (
 ): Promise<ApiToken | undefined> => {
 	const token_hash = hash_api_token(raw_token);
 	const row = await deps.db.query_one<ApiToken>(
-		`SELECT ${columns_sql(API_TOKEN_COLUMNS)} FROM api_token
+		`SELECT ${columns_sql(API_TOKEN_COLUMNS, api_token_expr)} FROM api_token
 		 WHERE token_hash = $1
 		   AND (expires_at IS NULL OR expires_at > NOW())`,
 		[token_hash]
@@ -185,8 +192,8 @@ export const query_api_token_list_for_account = async (
 	account_id: string
 ): Promise<Array<Omit<ApiToken, 'token_hash'>>> => {
 	return deps.db.query<Omit<ApiToken, 'token_hash'>>(
-		`SELECT ${columns_sql(API_TOKEN_CLIENT_COLUMNS)}
-		 FROM api_token WHERE account_id = $1 ORDER BY created_at DESC`,
+		`SELECT ${columns_sql(API_TOKEN_CLIENT_COLUMNS, api_token_expr)}
+		 FROM api_token WHERE account_id = $1 ORDER BY api_token.created_at DESC`,
 		[account_id]
 	);
 };

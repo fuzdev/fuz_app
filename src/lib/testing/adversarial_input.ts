@@ -32,7 +32,7 @@ import {
 	ERROR_INVALID_ROUTE_PARAMS,
 	ERROR_INVALID_QUERY_PARAMS
 } from '../http/error_schemas.ts';
-import { create_auth_test_apps, select_auth_app } from './auth_apps.ts';
+import { create_auth_test_apps, create_route_skip_filter, select_auth_app } from './auth_apps.ts';
 import type { AdversarialTestOptions } from './attack_surface.ts';
 import { detect_format, generate_valid_value, resolve_valid_path } from './schema_generators.ts';
 
@@ -437,10 +437,11 @@ const build_query_url = (path: string, query: Record<string, string>): string =>
 export const describe_adversarial_input = (options: AdversarialTestOptions): void => {
 	const { build, roles } = options;
 	const { surface, route_specs } = build();
+	const is_skipped = create_route_skip_filter(options.skip_routes);
 
-	const routes_with_input = filter_routes_with_input(surface);
-	const routes_with_params = filter_routes_with_params(surface);
-	const routes_with_query = filter_routes_with_query(surface);
+	const routes_with_input = filter_routes_with_input(surface).filter((r) => !is_skipped(r));
+	const routes_with_params = filter_routes_with_params(surface).filter((r) => !is_skipped(r));
+	const routes_with_query = filter_routes_with_query(surface).filter((r) => !is_skipped(r));
 
 	if (
 		routes_with_input.length === 0 &&

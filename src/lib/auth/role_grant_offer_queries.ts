@@ -20,6 +20,7 @@ import { columns_sql, qualify_columns } from '../db/sql_columns.ts';
 import type { RoleGrant } from './account_schema.ts';
 import {
 	ROLE_GRANT_OFFER_COLUMNS,
+	role_grant_offer_expr,
 	ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
 	ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID,
 	ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT
@@ -187,7 +188,7 @@ export const query_role_grant_offer_create = async (
 			 to_actor_id = EXCLUDED.to_actor_id,
 			 message = EXCLUDED.message,
 			 expires_at = EXCLUDED.expires_at
-		 RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}`,
+		 RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS, role_grant_offer_expr(''))}`,
 		[
 			input.from_actor_id,
 			input.to_account_id,
@@ -246,6 +247,7 @@ export const query_role_grant_offer_decline = async (
 			  AND declined_at IS NULL
 			  AND retracted_at IS NULL
 			  AND superseded_at IS NULL
+			-- raw columns; the outer grantor select formats them
 			RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}
 		)
 		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,
@@ -280,7 +282,7 @@ export const query_role_grant_offer_retract = async (
 		   AND declined_at IS NULL
 		   AND retracted_at IS NULL
 		   AND superseded_at IS NULL
-		 RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}`,
+		 RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS, role_grant_offer_expr(''))}`,
 		[offer_id, from_actor_id]
 	);
 	if (updated) return updated;
@@ -305,7 +307,7 @@ const resolve_terminal_or_missing = async (
 		params.push(scope.from_actor_id);
 	}
 	const row = await deps.db.query_one<RoleGrantOffer>(
-		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)} FROM role_grant_offer WHERE ${conditions.join(' AND ')}`,
+		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS, role_grant_offer_expr(''))} FROM role_grant_offer WHERE ${conditions.join(' AND ')}`,
 		params
 	);
 	if (!row) return null;
@@ -327,14 +329,14 @@ export const query_role_grant_offer_list = async (
 	to_account_id: string
 ): Promise<Array<RoleGrantOffer>> => {
 	return deps.db.query<RoleGrantOffer>(
-		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)} FROM role_grant_offer
+		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS, role_grant_offer_expr(''))} FROM role_grant_offer
 		 WHERE to_account_id = $1
 		   AND accepted_at IS NULL
 		   AND declined_at IS NULL
 		   AND retracted_at IS NULL
 		   AND superseded_at IS NULL
 		   AND expires_at > NOW()
-		 ORDER BY expires_at ASC`,
+		 ORDER BY role_grant_offer.expires_at ASC`,
 		[to_account_id]
 	);
 };
@@ -351,7 +353,7 @@ export const query_role_grant_offer_history_for_account = async (
 	offset = 0
 ): Promise<Array<RoleGrantOffer>> => {
 	return deps.db.query<RoleGrantOffer>(
-		`SELECT ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'o')} FROM role_grant_offer o
+		`SELECT ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'o', role_grant_offer_expr('o'))} FROM role_grant_offer o
 		 LEFT JOIN actor a ON a.id = o.from_actor_id
 		 WHERE o.to_account_id = $1 OR a.account_id = $1
 		 ORDER BY o.created_at DESC
@@ -369,7 +371,7 @@ export const query_role_grant_offer_find_pending = async (
 	offer_id: string
 ): Promise<RoleGrantOffer | null> => {
 	const row = await deps.db.query_one<RoleGrantOffer>(
-		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)} FROM role_grant_offer
+		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS, role_grant_offer_expr(''))} FROM role_grant_offer
 		 WHERE id = $1
 		   AND accepted_at IS NULL
 		   AND declined_at IS NULL
@@ -393,13 +395,13 @@ export const query_role_grant_offer_sweep_expired = async (
 	deps: QueryDeps
 ): Promise<Array<RoleGrantOffer>> => {
 	return deps.db.query<RoleGrantOffer>(
-		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)} FROM role_grant_offer
+		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS, role_grant_offer_expr(''))} FROM role_grant_offer
 		 WHERE accepted_at IS NULL
 		   AND declined_at IS NULL
 		   AND retracted_at IS NULL
 		   AND superseded_at IS NULL
 		   AND expires_at <= NOW()
-		 ORDER BY expires_at ASC`
+		 ORDER BY role_grant_offer.expires_at ASC`
 	);
 };
 
@@ -485,16 +487,28 @@ export const query_accept_offer = async (
 	// We defer writing `accepted_at` until the role_grant row exists — the
 	// `role_grant_offer_role_grant_iff_accepted` CHECK constraint demands both be set
 	// (or neither) at row-visibility time.
-	const locked = await deps.db.query_one<RoleGrantOffer>(
-		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)} FROM role_grant_offer
+	//
+	// Trailing `expires_at > NOW() AS still_valid` rides on the FOR UPDATE row
+	// so the expiry branch below compares the **raw** column on Postgres' clock
+	// — the projected `expires_at` is floored to the second, so comparing it in
+	// JS would report expiry up to a second early. Twin of the Rust
+	// `query_accept_offer`'s `o.expires_at > NOW() AS still_valid`.
+	const locked_row = await deps.db.query_one<RoleGrantOffer & { still_valid: boolean }>(
+		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS, role_grant_offer_expr(''))},
+		        role_grant_offer.expires_at > NOW() AS still_valid
+		 FROM role_grant_offer
 		 WHERE id = $1 AND to_account_id = $2
 		 FOR UPDATE`,
 		[offer_id, to_account_id]
 	);
 
-	if (!locked) {
+	if (!locked_row) {
 		throw new RoleGrantOfferNotFoundError(offer_id);
 	}
+
+	// `still_valid` is the comparison result, not a column of the offer — split
+	// it off so `locked` stays exactly `ROLE_GRANT_OFFER_COLUMNS`.
+	const { still_valid, ...locked } = locked_row;
 
 	if (locked.accepted_at) {
 		// Race winner already committed; return the pre-existing role_grant.
@@ -526,8 +540,9 @@ export const query_accept_offer = async (
 
 	// Expiry check AFTER the accepted-path: a validly-accepted offer past its
 	// expires_at still returns the role_grant idempotently. Only pending offers
-	// past expiry reach this branch.
-	if (new Date(locked.expires_at) <= new Date()) {
+	// past expiry reach this branch. `still_valid` rode on the FOR UPDATE row
+	// above, so the comparison stays on the raw column and Postgres' clock.
+	if (!still_valid) {
 		throw new RoleGrantOfferExpiredError(offer_id);
 	}
 
@@ -583,7 +598,7 @@ export const query_accept_offer = async (
 		`UPDATE role_grant_offer
 		 SET accepted_at = NOW(), resulting_role_grant_id = $2
 		 WHERE id = $1
-		 RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}`,
+		 RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS, role_grant_offer_expr(''))}`,
 		[locked.id, role_grant.id]
 	);
 	const offer = assert_row(offer_accepted, 'mark offer accepted');
@@ -605,6 +620,7 @@ export const query_accept_offer = async (
 			  AND declined_at IS NULL
 			  AND retracted_at IS NULL
 			  AND superseded_at IS NULL
+			-- raw columns; the outer grantor select formats them
 			RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}
 		)
 		${ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT}`,

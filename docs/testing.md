@@ -233,9 +233,12 @@ Pass `db_factories` to `describe_rate_limiting_tests` (or to consumer-side
 
 ## In-Process Wiring
 
-The standard suites take a unified `{setup_test, surface_source, capabilities}`
-shape plus the factory inputs (`session_options`, `create_route_specs`,
-`rpc_endpoints`). `default_in_process_suite_options` from
+The standard suites take a unified `{setup_test, surface_source}` shape plus
+the factory inputs (`session_options`, `create_route_specs`,
+`rpc_endpoints`); the bundlers
+(`describe_standard_tests` / `describe_standard_cross_process_tests`) and the
+suites that gate cases on a backend flag also take `capabilities`.
+`default_in_process_suite_options` from
 `@fuzdev/fuz_app/testing/cross_backend/in_process_setup.ts` emits the entire bag in
 one call — pass it directly when the suite has no extras, spread when
 the suite adds its own (`roles`, `skip_routes`, `input_overrides`,

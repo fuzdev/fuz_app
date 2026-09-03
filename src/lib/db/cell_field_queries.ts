@@ -20,14 +20,14 @@
 import type { QueryDeps } from './query_deps.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import { assert_row } from './assert_row.ts';
-import { columns_sql, qualify_columns } from './sql_columns.ts';
+import { columns_sql, iso8601_timestamp_expr, qualify_columns } from './sql_columns.ts';
 
 /** Row shape returned by `cell_field` SELECTs. */
 export interface CellFieldRow {
 	source_id: Uuid;
 	name: string;
 	target_id: Uuid;
-	created_at: Date;
+	created_at: string;
 }
 
 /**
@@ -42,6 +42,9 @@ export const CELL_FIELD_COLUMNS = [
 	'target_id',
 	'created_at'
 ] as const satisfies ReadonlyArray<keyof CellFieldRow>;
+
+/** The `cell_field` timestamp override, by row qualifier (`''` bare, `f` for the cell-joined reads). */
+const cell_field_expr = iso8601_timestamp_expr(CELL_FIELD_COLUMNS, ['created_at']);
 
 /** Input for `query_cell_field_set`. */
 export interface CellFieldSetQueryInput {
@@ -72,7 +75,7 @@ export const query_cell_field_set = async (
 		 VALUES ($1, $2, $3)
 		 ON CONFLICT (source_id, name)
 		 DO UPDATE SET target_id = EXCLUDED.target_id, created_at = NOW()
-		 RETURNING ${columns_sql(CELL_FIELD_COLUMNS)}`,
+		 RETURNING ${columns_sql(CELL_FIELD_COLUMNS, cell_field_expr(''))}`,
 		[input.source_id, input.name, input.target_id]
 	);
 	return assert_row(row, 'INSERT INTO cell_field');
@@ -96,7 +99,7 @@ export const query_cell_field_get = async (
 	name: string
 ): Promise<CellFieldRow | null> => {
 	const row = await deps.db.query_one<CellFieldRow>(
-		`SELECT ${columns_sql(CELL_FIELD_COLUMNS)} FROM cell_field WHERE source_id = $1 AND name = $2`,
+		`SELECT ${columns_sql(CELL_FIELD_COLUMNS, cell_field_expr(''))} FROM cell_field WHERE source_id = $1 AND name = $2`,
 		[source_id, name]
 	);
 	return row ?? null;
@@ -117,7 +120,7 @@ export const query_cell_field_delete = async (
 ): Promise<CellFieldRow | null> => {
 	const row = await deps.db.query_one<CellFieldRow>(
 		`DELETE FROM cell_field WHERE source_id = $1 AND name = $2
-		 RETURNING ${columns_sql(CELL_FIELD_COLUMNS)}`,
+		 RETURNING ${columns_sql(CELL_FIELD_COLUMNS, cell_field_expr(''))}`,
 		[source_id, name]
 	);
 	return row ?? null;
@@ -144,7 +147,7 @@ export const query_cell_field_list_for_source = async (
 	const limit = options?.limit ?? null;
 	const name_after = options?.name_after ?? null;
 	return deps.db.query<CellFieldRow>(
-		`SELECT ${qualify_columns(CELL_FIELD_COLUMNS, 'f')} FROM cell_field f
+		`SELECT ${qualify_columns(CELL_FIELD_COLUMNS, 'f', cell_field_expr('f'))} FROM cell_field f
 		 JOIN cell t ON t.id = f.target_id
 		 WHERE f.source_id = $1
 		   AND t.deleted_at IS NULL
@@ -178,7 +181,7 @@ export const query_cell_field_list_for_target = async (
 	options?: { limit?: number }
 ): Promise<Array<CellFieldRow>> =>
 	deps.db.query<CellFieldRow>(
-		`SELECT ${qualify_columns(CELL_FIELD_COLUMNS, 'f')} FROM cell_field f
+		`SELECT ${qualify_columns(CELL_FIELD_COLUMNS, 'f', cell_field_expr('f'))} FROM cell_field f
 		 JOIN cell s ON s.id = f.source_id
 		 WHERE f.target_id = $1
 		   AND s.deleted_at IS NULL

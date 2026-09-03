@@ -21,6 +21,6 @@ import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle);
-const { capabilities, rpc_path } = handle.config;
+const { rpc_path } = handle.config;
 
-describe_origin_cross_tests({ setup_test, capabilities, rpc_path });
+describe_origin_cross_tests({ setup_test, rpc_path });

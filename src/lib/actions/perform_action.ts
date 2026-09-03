@@ -18,7 +18,16 @@
  * 3. **Post-authorization auth (403)** — gates `auth.credential_types`,
  *    the credential's `token_scope`, and `auth.roles` against the resolved
  *    context.
- * 4. **Validate params (400)** — `spec.input.safeParse(raw_params)` with
+ * 4. **Rate limit (429)** — per-action IP / account throttling, throttle-
+ *    requests semantics (every invocation records, regardless of outcome).
+ *    Ahead of validation so the budget is charged for malformed params too
+ *    — a flood of garbage bodies must cost the sender its quota, not slip
+ *    past the limiter on a cheap 400 — and so a throttled caller never pays
+ *    for schema work. The account key is the credential's own account
+ *    (`request_context.account.id`), settled by authentication, so the gate
+ *    sits behind the authority gates by choice rather than necessity: a
+ *    caller those gates refuse is answered 403, not 429.
+ * 5. **Validate params (400)** — `spec.input.safeParse(raw_params)` with
  *    `z.void()` / `?? {}` rules. Runs **after** the authority gates: a
  *    400 describing the action's input shape to a caller those gates
  *    refuse would confirm the method exists and describe how to call it,
@@ -26,13 +35,11 @@
  *    facts before fine ones, and no shape disclosure before authority is
  *    settled — the same argument that puts the credential gate ahead of
  *    the scope gate. The cost: a malformed request from an *authenticated*
- *    caller now pays for the authorization phase's actor + role_grant reads
- *    before being rejected, where validation used to turn it away first.
- *    Not a new DoS lever — the same caller reaches that work anyway by
- *    sending well-formed params — but it does remove a cheap-rejection path
- *    that buggy clients used to hit.
- * 5. **Rate limit (429)** — per-action IP / account throttling, throttle-
- *    requests semantics (every invocation records, regardless of outcome).
+ *    caller pays for the authorization phase's actor + role_grant reads
+ *    before being rejected, rather than being turned away by validation
+ *    first. Not a new DoS lever — the same caller reaches that work anyway
+ *    by sending well-formed params — but there is no cheap-rejection path
+ *    for buggy clients.
  * 6. **Dispatch + DEV-only output validation + error normalization** —
  *    `spec.side_effects` picks transaction (`deps.db.transaction`) vs
  *    pool. Handler throws roll back the transaction; the catch sits
@@ -178,7 +185,7 @@ export type PerformActionResult =
  * transport calls into this with pre-parsed inputs and binds the result
  * to its wire shape.
  *
- * Phase order: 401 → authz → 403 → 400 → handler. On the test-preset path
+ * Phase order: 401 → authz → 403 → 429 → 400 → handler. On the test-preset path
  * the dispatcher skips the live authorization phase and uses the supplied
  * pre-baked context for post-authorization checks; the 401 still fires when
  * the harness omits `account_id`.
@@ -217,10 +224,10 @@ export const perform_action = async (
 	if (pre) return error_result(pre);
 
 	// step 2: authorization phase. `acting` reads off the raw params rather
-	// than a validated field, because validation now runs after the authority
+	// than a validated field, because validation runs after the authority
 	// gates. Per registry-time invariant 2,
 	// `auth.actor !== 'none' ⟺ input declares acting?: ActingActor` — so the
-	// selector is present on exactly the specs that need it, and step 4 is
+	// selector is present on exactly the specs that need it, and step 5 is
 	// what rejects a malformed one.
 	let request_context: RequestContext | null = null;
 	if (preset !== undefined) {
@@ -256,24 +263,11 @@ export const perform_action = async (
 	);
 	if (post) return error_result(post);
 
-	// step 4: validate params. JSON-RPC 2.0 §4.2 forbids `params: null`;
-	// registration sites reject `z.null()` inputs. Empty-body convention
-	// (`raw_params ?? {}`) lets all-optional-object methods omit `params`.
-	const params = is_void_schema(spec.input) ? raw_params : (raw_params ?? {});
-	const parse_result = spec.input.safeParse(params);
-	if (!parse_result.success) {
-		return error_result(
-			jsonrpc_error_messages.invalid_params(
-				'invalid params',
-				dev_only({ issues: parse_result.error.issues })
-			)
-		);
-	}
-	const validated_input = parse_result.data;
-
-	// step 5: rate limit — throttle-requests semantics (record on every
+	// step 4: rate limit — throttle-requests semantics (record on every
 	// invocation, no success-reset). Same limiters shared with the WS
 	// dispatcher so an attacker can't switch transports to bypass the budget.
+	// Runs ahead of validation so a flood of malformed params burns the
+	// budget it should, and so a throttled caller pays no schema work.
 	const rate_limit = spec.rate_limit;
 	if (rate_limit) {
 		const ip_check = action_ip_rate_limiter && (rate_limit === 'ip' || rate_limit === 'both');
@@ -296,6 +290,21 @@ export const perform_action = async (
 			action_account_rate_limiter!.record(account_keyed_context.account.id);
 		}
 	}
+
+	// step 5: validate params. JSON-RPC 2.0 §4.2 forbids `params: null`;
+	// registration sites reject `z.null()` inputs. Empty-body convention
+	// (`raw_params ?? {}`) lets all-optional-object methods omit `params`.
+	const params = is_void_schema(spec.input) ? raw_params : (raw_params ?? {});
+	const parse_result = spec.input.safeParse(params);
+	if (!parse_result.success) {
+		return error_result(
+			jsonrpc_error_messages.invalid_params(
+				'invalid params',
+				dev_only({ issues: parse_result.error.issues })
+			)
+		);
+	}
+	const validated_input = parse_result.data;
 
 	// step 6: dispatch — transaction for mutations, pool for reads.
 	const use_transaction = spec.side_effects;

@@ -172,6 +172,21 @@ export const to_jsonrpc_message_id = (message_or_id: unknown): JsonrpcRequestId 
 };
 
 /**
+ * The id an error response to a rejected envelope can echo: the frame's
+ * `id` when the frame is an object carrying a valid one, else `null`.
+ *
+ * Unlike `to_jsonrpc_message_id`, a scalar frame (`5`, `"x"`) is never read
+ * as its own id — a non-object body has no id to echo, which is the Rust
+ * twin's `classify` answer too. Both transports use this for the
+ * `invalid_request` reply.
+ *
+ * @param frame - the parsed body, of any shape
+ * @returns the echoable id, or `null`
+ */
+export const to_jsonrpc_envelope_id = (frame: unknown): JsonrpcRequestId | null =>
+	typeof frame === 'object' ? to_jsonrpc_message_id(frame) : null;
+
+/**
  * Normalizes input to JSON-RPC params format.
  * Returns `undefined` for null/undefined, wraps primitives in `{value}`.
  */

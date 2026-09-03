@@ -24,7 +24,12 @@ import { create_pglet_wasm_factory } from './db_pglet_wasm_factory.ts';
 
 /** The four-driver fixture `create_db_fixture` builds. */
 export interface DbFixture {
-	pglite_factory: DbFactory;
+	/**
+	 * This fixture's schema on the run's default driver — PGlite, or the
+	 * stand-in `db_substitute.ts` installs. For the suites that take one
+	 * database directly rather than through `describe_db`.
+	 */
+	default_db_factory: DbFactory;
 	pg_factory: DbFactory;
 	/** All four drivers — pglite, pg, pglet, pglet-wasm — in that order. */
 	db_factories: Array<DbFactory>;
@@ -54,7 +59,7 @@ export interface DbFixture {
  *
  * @param namespaces - migration namespaces to run, in order
  * @param truncate_tables - tables to truncate between tests (children first)
- * @returns the pglite + pg factories, the full four-driver list, and the bound `describe_db`
+ * @returns the default-driver + pg factories, the full four-driver list, and the bound `describe_db`
  */
 export const create_db_fixture = (
 	namespaces: Array<MigrationNamespace>,
@@ -67,7 +72,10 @@ export const create_db_fixture = (
 		await drop_auth_schema(db);
 		await init_schema(db);
 	};
-	const pglite_factory = create_pglite_factory(init_schema);
+	// `substitutable: false` — the matrix's own pglite leg must stay PGlite; the
+	// pglet legs beside it are separate entries in `db_factories` below, so
+	// substituting this one would drop pglite from the matrix.
+	const pglite_factory = create_pglite_factory(init_schema, { substitutable: false });
 	const pg_factory = create_pg_factory(init_schema_pg, process.env.TEST_DATABASE_URL);
 	const db_factories = [
 		pglite_factory,
@@ -77,7 +85,10 @@ export const create_db_fixture = (
 	];
 	log_db_factory_status(db_factories);
 	return {
-		pglite_factory,
+		// A second factory over the same schema, this one substitutable: the suites
+		// that take one database directly are not a leg of the matrix, so they
+		// follow the selected driver like every other `create_pglite_factory` site.
+		default_db_factory: create_pglite_factory(init_schema),
 		pg_factory,
 		db_factories,
 		describe_db: create_describe_db(db_factories, truncate_tables)

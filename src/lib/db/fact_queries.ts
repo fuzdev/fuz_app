@@ -15,7 +15,7 @@
 import type { QueryDeps } from './query_deps.ts';
 
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
-import { columns_sql, omit_columns } from './sql_columns.ts';
+import { columns_sql, iso8601_timestamp_column, omit_columns } from './sql_columns.ts';
 
 /** Row shape for `SELECT … FROM fact`. */
 export interface FactRow {
@@ -45,6 +45,13 @@ export const FACT_COLUMNS = [
 	'size',
 	'created_at'
 ] as const satisfies ReadonlyArray<keyof FactRow>;
+
+// `created_at` is deliberately *not* projected through
+// `iso8601_timestamp_column` here, unlike every other table: these rows feed
+// `PgFactStore`, whose `FactMeta.created_at` is a `Date` in the
+// `@fuzdev/fuz_util` `FactStore` contract, and nothing serializes them. The
+// one fact timestamp that does reach the wire — the orphan-sweep sample in
+// `query_orphan_facts_list` — projects the ISO-8601 wire string.
 
 /** `FACT_COLUMNS` minus the payload — the `FactMetaRow` projection. */
 const FACT_META_COLUMNS = omit_columns(FACT_COLUMNS, 'bytes');
@@ -247,10 +254,10 @@ export const query_orphan_facts_list = async (
 	const sample_rows = await deps.db.query<{
 		hash: FactHash;
 		size: number | string;
-		created_at: Date | string;
+		created_at: string;
 		external_url: string | null;
 	}>(
-		`SELECT hash, size, created_at, external_url
+		`SELECT hash, size, ${iso8601_timestamp_column('f', 'created_at')} AS created_at, external_url
 		 FROM fact f
 		 WHERE NOT EXISTS (
 		   SELECT 1 FROM cell c
@@ -268,7 +275,7 @@ export const query_orphan_facts_list = async (
 		sample: sample_rows.map((r) => ({
 			hash: r.hash,
 			size: Number(r.size),
-			created_at: typeof r.created_at === 'string' ? r.created_at : r.created_at.toISOString(),
+			created_at: r.created_at,
 			external_url: r.external_url
 		}))
 	};

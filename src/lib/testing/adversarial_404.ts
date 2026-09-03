@@ -17,7 +17,7 @@ import { z } from 'zod';
 
 import type { RouteSpec } from '../http/route_spec.ts';
 import { is_null_schema } from '../http/schema_helpers.ts';
-import { create_auth_test_apps, select_auth_app } from './auth_apps.ts';
+import { create_auth_test_apps, create_route_skip_filter, select_auth_app } from './auth_apps.ts';
 import type { AdversarialTestOptions } from './attack_surface.ts';
 import { resolve_valid_path, generate_valid_body } from './schema_generators.ts';
 
@@ -55,6 +55,7 @@ const extract_404_error_code = (schema: z.ZodType): string | null => {
 export const describe_adversarial_404 = (options: AdversarialTestOptions): void => {
 	const { build, roles } = options;
 	const { surface, route_specs } = build();
+	const is_skipped = create_route_skip_filter(options.skip_routes);
 
 	// Build spec lookup for Zod schema access
 	const spec_lookup: Map<string, RouteSpec> = new Map();
@@ -68,6 +69,7 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 		if (route.params_schema === null) continue;
 		if (!route.error_schemas || !('404' in route.error_schemas)) continue;
 
+		if (is_skipped(route)) continue;
 		const key = `${route.method} ${route.path}`;
 		const spec = spec_lookup.get(key);
 		if (!spec?.params || !spec.errors?.[404]) continue;
