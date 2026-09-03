@@ -411,8 +411,9 @@ export const testing_action_manifest_action_spec = {
 	output: ActionManifest,
 	async: true,
 	description:
-		'Test-binary only — dump the live RPC registry as a normalized {method, auth, side_effects} ' +
-		'manifest for cross-impl method-set + auth-shape parity diffing.'
+		'Test-binary only — dump the live RPC registry as a normalized ' +
+		'{method, auth, side_effects, rate_limit} manifest for cross-impl method-set + ' +
+		'auth-shape parity diffing.'
 } as const satisfies RequestResponseActionSpec;
 
 /**

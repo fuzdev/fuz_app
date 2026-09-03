@@ -11,7 +11,8 @@
  * required (no roles) and rely on `query_*` IDOR guards or in-handler
  * policy checks (e.g. `role_grant_offer_list`/`_history` elevate to admin only
  * when inspecting another account — an input-dependent check that can't be
- * expressed at the spec level). `role_grant_revoke` adds `roles: ['admin']` —
+ * expressed at the spec level). `role_grant_revoke` and `role_grant_assign` add
+ * `roles: ['admin']` —
  * the RPC dispatcher's per-spec post-authorization auth gate
  * (`check_action_auth_post_authorization`) rejects non-admin callers before
  * the handler runs even though the endpoint hosts non-admin methods
