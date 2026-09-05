@@ -264,11 +264,11 @@ the source specs, for tests that need to iterate over raw specs.
 No side effects, no state — filters and groupings over `AppSurface`:
 
 - `filter_protected_routes` / `filter_public_routes`
-- `filter_role_routes` / `filter_authenticated_routes` / `filter_keeper_routes` / `filter_routes_for_role(role)`
+- `filter_role_routes` / `filter_authenticated_routes` / `filter_keeper_routes` / `filter_credential_gated_routes` (any `auth.credential_types` gate — superset of keeper) / `filter_routes_for_role(role)`
 - `filter_routes_by_prefix(prefix)` / `filter_routes_with_input` / `filter_routes_with_params` / `filter_routes_with_query` / `filter_mutation_routes` / `filter_rate_limited_routes`
-- `routes_by_auth_type(surface)` — `Map<RouteAuthCategory, Array<AppSurfaceRoute>>` where `RouteAuthCategory = 'none' | 'authenticated' | 'optional' | 'keeper' | 'role:<name>' | 'other'`. Multi-role specs appear under each role bucket
+- `routes_by_auth_type(surface)` — `Map<RouteAuthCategory, Array<AppSurfaceRoute>>` where `RouteAuthCategory = 'none' | 'authenticated' | 'optional' | 'keeper' | 'role:<name>' | 'credential:<type>' | 'other'`. Multi-role / multi-channel specs appear under each bucket. Keeper is tested before the role bucket and the general credential bucket after it — keeper is an authority _level_ and names the route, a session gate is a _channel_ restriction over the authority the route already declares (so the audit SSE stream buckets as `role:admin`)
 - `format_route_key(route)` → `'METHOD /path'`
-- `surface_auth_summary(surface)` — counts per auth type, roles broken out by name
+- `surface_auth_summary(surface)` — counts per auth type, roles and credential channels broken out by name; buckets exactly as `routes_by_auth_type`
 
 The per-route auth predicates these filters compose over (`is_public_auth`,
 `is_role_auth`, `is_credential_gated_auth`, `is_keeper_auth`,

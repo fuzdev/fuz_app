@@ -39,9 +39,15 @@ export const AUDIT_LOG_CHANNEL = 'audit_log';
  * `session_revoke` closes only the stream tied to the specific revoked session
  * (matched by the blake3 session hash in `event.metadata.session_id`) — closing
  * all of a user's streams for a single-session revoke would be over-aggressive.
- * The single `token_revoke` the WS half handles is omitted: an SSE stream is
- * opened under a cookie session, never an API token, so no stream is keyed by a
- * single token id.
+ * The single `token_revoke` the WS half handles is omitted, and what makes that
+ * correct is a gate rather than an assumption: the audit route declares
+ * `credential_types: ['session']` (`auth/audit_log_route_schema.ts`), so a
+ * bearer is refused at the channel and no stream is ever keyed by a single
+ * token id. **A consumer that widens that gate must key its subscribers by
+ * api-token id and add `token_revoke` here** — otherwise a revoked token keeps
+ * receiving audit rows for the life of the connection. The Rust twin enforces
+ * the same pairing structurally, via the `RevocationScope` column on
+ * `AUDIT_EVENT_SPECS`.
  */
 export const disconnect_event_types: ReadonlySet<string> = new Set([
 	'role_grant_revoke', // role revoked — user lost access

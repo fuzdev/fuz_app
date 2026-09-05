@@ -13,6 +13,7 @@ import {
 	filter_role_routes,
 	filter_authenticated_routes,
 	filter_keeper_routes,
+	filter_credential_gated_routes,
 	filter_routes_for_role,
 	routes_by_auth_type,
 	filter_routes_by_prefix,
@@ -123,6 +124,19 @@ const test_specs: Array<RouteSpec> = [
 		input: z.strictObject({ username: z.string() }),
 		output: z.null(),
 		rate_limit: 'ip'
+	},
+	{
+		// A session-channel gate with no role — the shape `POST /logout` and
+		// `POST /password` carry. It answers to neither the keeper filter nor
+		// `is_plain_authenticated_auth`, so before the `credential:<type>`
+		// bucket it fell through to `'other'` and went uncounted.
+		method: 'POST',
+		path: '/api/account/token',
+		auth: { account: 'required', actor: 'none', credential_types: ['session'] },
+		handler: stub_handler,
+		description: 'Mint an api token',
+		input: z.null(),
+		output: z.null()
 	}
 ];
 
@@ -132,7 +146,7 @@ const build_surface = (): AppSurface =>
 describe('filter_protected_routes', () => {
 	test('excludes public routes', () => {
 		const result = filter_protected_routes(build_surface());
-		assert.strictEqual(result.length, 6);
+		assert.strictEqual(result.length, 7);
 		assert.ok(result.every((r) => !is_public_auth(r.auth)));
 	});
 });
@@ -202,7 +216,40 @@ describe('routes_by_auth_type', () => {
 		assert.strictEqual(groups.get('authenticated')!.length, 1);
 		assert.strictEqual(groups.get('role:admin')!.length, 4);
 		assert.strictEqual(groups.get('keeper')!.length, 1);
-		assert.strictEqual(groups.size, 4);
+		assert.strictEqual(groups.size, 5);
+	});
+
+	test('a role-less channel gate buckets as credential:<type>, not other', () => {
+		const groups = routes_by_auth_type(build_surface());
+		assert.deepStrictEqual(
+			groups.get('credential:session')!.map((r) => r.path),
+			['/api/account/token']
+		);
+		assert.strictEqual(groups.get('other'), undefined);
+	});
+
+	test('keeper names the route, a session gate does not — the audit stream shape', () => {
+		const surface = generate_app_surface({
+			middleware_specs: [],
+			route_specs: [
+				{
+					method: 'GET',
+					path: '/api/admin/audit/stream',
+					auth: {
+						account: 'required',
+						actor: 'required',
+						roles: ['admin'],
+						credential_types: ['session']
+					},
+					handler: stub_handler,
+					description: 'Audit stream',
+					input: z.null(),
+					output: z.null()
+				}
+			]
+		});
+		const groups = routes_by_auth_type(surface);
+		assert.deepStrictEqual([...groups.keys()], ['role:admin']);
 	});
 });
 
@@ -256,13 +303,32 @@ describe('format_route_key', () => {
 	});
 });
 
+describe('filter_credential_gated_routes', () => {
+	test('includes every channel gate, not just keeper', () => {
+		const result = filter_credential_gated_routes(build_surface());
+		assert.deepStrictEqual(result.map((r) => r.path).sort(), [
+			'/api/account/token',
+			'/api/keeper/sync'
+		]);
+	});
+
+	test('is a superset of filter_keeper_routes', () => {
+		const surface = build_surface();
+		const keeper_paths = new Set(filter_keeper_routes(surface).map((r) => r.path));
+		const gated_paths = new Set(filter_credential_gated_routes(surface).map((r) => r.path));
+		assert.ok([...keeper_paths].every((p) => gated_paths.has(p)));
+	});
+});
+
 describe('surface_auth_summary', () => {
 	test('counts all auth types', () => {
 		const summary = surface_auth_summary(build_surface());
 		assert.strictEqual(summary.none, 3);
 		assert.strictEqual(summary.authenticated, 1);
 		assert.strictEqual(summary.role.get('admin'), 4);
+		assert.strictEqual(summary.credential.get('session'), 1);
 		assert.strictEqual(summary.keeper, 1);
+		assert.strictEqual(summary.other, 0);
 	});
 
 	test('role map has correct entries', () => {

@@ -27,6 +27,15 @@ import '../assert_dev_env.ts';
  *   `required_scope` capability string, per surface. A spine that renamed a
  *   surface, dropped the `surface:` prefix, or emitted the JSON-RPC envelope
  *   from a REST route fails here.
+ * - **The audit stream's channel denial** — that surface is gated to
+ *   `credential_types: ['session']` on both spines, so a bearer never reaches
+ *   its scope gate and the observable is `credential_type_required` instead.
+ *   The case is kept here rather than moved: it is still the bearer-vs-surface
+ *   probe, and what it now pins is the coarser-gate-first ordering both spines
+ *   run (a spine that checked scope first would answer `token_scope_required`).
+ *   `surface:audit_stream`'s own capability string is consequently unreachable
+ *   on the default mount and has no cross-impl pin — each spine's census holds
+ *   its declaration, the way the WS upgrade's is held.
  * - **Scope outranks role** — a narrowed token whose account *also* lacks the
  *   gating role must hear `token_scope_required`, not
  *   `insufficient_permissions`. This is the observable the TS↔Rust ordering
@@ -38,16 +47,17 @@ import '../assert_dev_env.ts';
  * Two non-vacuity controls hold the negatives honest: the narrowed token must
  * still reach the RPC method it *does* name (otherwise a spine that rejected
  * the credential outright would pass every denial), and a **full** bearer must
- * reach the same surface (otherwise a route broken for all bearers would pass
- * too).
+ * reach `fact_bare` (otherwise a route broken for all bearers would pass too).
+ * The second has no audit-stream twin by construction — refusing every bearer
+ * is exactly what that route's channel gate is for.
  *
  * ## Why the WS upgrade isn't here
  *
  * Rule 3's third probeable surface is the WebSocket upgrade, and it is
  * deliberately omitted: `create_ws_transport` threads cookies, not bearer
  * headers, and a refused upgrade surfaces as a thrown connection error whose
- * body — the thing this suite exists to compare — isn't readable. The two HTTP
- * surfaces are where the denial body is observable, which is what the parity
+ * body — the thing this suite exists to compare — isn't readable. The HTTP
+ * surfaces are where a denial body is observable, which is what the parity
  * gate needs. The WS gate keeps its per-spine coverage (fuz_app's surface
  * census pins the call site; the Rust census pins its own).
  *
@@ -60,7 +70,10 @@ import '../assert_dev_env.ts';
 import { describe, assert } from 'vitest';
 
 import { account_token_create_action_spec } from '../../auth/account_action_specs.ts';
-import { ERROR_TOKEN_SCOPE_REQUIRED } from '../../http/error_schemas.ts';
+import {
+	ERROR_CREDENTIAL_TYPE_REQUIRED,
+	ERROR_TOKEN_SCOPE_REQUIRED
+} from '../../http/error_schemas.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call } from './cell_cross_helpers.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
@@ -144,6 +157,35 @@ const assert_surface_denied = async (
 	);
 };
 
+/**
+ * Assert a bearer GET is refused by the *channel* gate rather than the scope
+ * gate — the shape a surface takes once it declares
+ * `credential_types: ['session']`.
+ *
+ * Distinct from `assert_surface_denied` on purpose: a channel-gated surface
+ * refuses **every** bearer, narrow or full, so the denial cannot name a scope.
+ * A narrowed token is still the right probe — it proves the channel gate runs
+ * *first*, since a scope-gated route would have answered
+ * `token_scope_required` instead.
+ */
+const assert_channel_denied = async (
+	fresh_transport: (options?: { readonly origin?: string | null }) => FetchTransport,
+	path: string,
+	token: string,
+	credential_types: ReadonlyArray<string>
+): Promise<void> => {
+	const res = await fresh_transport({ origin: null })(path, {
+		headers: { authorization: `Bearer ${token}` }
+	});
+	assert.strictEqual(res.status, 403, `${path} must refuse a bearer with 403`);
+	const body: unknown = await res.json();
+	assert.deepStrictEqual(
+		body,
+		{ error: ERROR_CREDENTIAL_TYPE_REQUIRED, required_credential_types: credential_types },
+		`${path} must return the canonical flat credential-type denial`
+	);
+};
+
 export const describe_token_scope_surface_cross_tests = (
 	options: TokenScopeSurfaceCrossTestOptions
 ): void => {
@@ -176,7 +218,7 @@ export const describe_token_scope_surface_cross_tests = (
 
 		test_if(
 			capabilities.sse,
-			'a narrowed token is refused the audit stream (surface:audit_stream)',
+			'the audit stream refuses a bearer at the channel gate (credential_types)',
 			async () => {
 				const fixture = await setup_test();
 				const token = await mint_narrowed_token(
@@ -184,7 +226,7 @@ export const describe_token_scope_surface_cross_tests = (
 					rpc_path,
 					fixture.create_session_headers()
 				);
-				await assert_surface_denied(fixture.fresh_transport, sse_path, token, 'audit_stream');
+				await assert_channel_denied(fixture.fresh_transport, sse_path, token, ['session']);
 			}
 		);
 

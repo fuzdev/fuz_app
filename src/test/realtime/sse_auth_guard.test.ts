@@ -10,8 +10,11 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import {
 	create_sse_auth_guard,
 	create_audit_log_sse,
+	disconnect_event_types,
 	AUDIT_LOG_SSE_MAX_PER_SCOPE
 } from '$lib/realtime/sse_auth_guard.ts';
+import { create_audit_log_route_shape } from '$lib/auth/audit_log_route_schema.ts';
+import { CREDENTIAL_TYPE_SESSION } from '$lib/auth/credential_type_schema.ts';
 import { SubscriberRegistry } from '$lib/realtime/subscriber_registry.ts';
 import type { SseStream, SseNotification } from '$lib/realtime/sse.ts';
 import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
@@ -40,6 +43,52 @@ const create_mock_stream = <T>(): SseStream<T> & { sent: Array<T>; closed: boole
 };
 
 const create_audit_event = create_test_audit_event;
+
+describe('disconnect_event_types', () => {
+	test('includes every access-invalidation event a one-way feed cannot re-check', () => {
+		assert.ok(disconnect_event_types.has('role_grant_revoke'));
+		assert.ok(disconnect_event_types.has('session_revoke'));
+		assert.ok(disconnect_event_types.has('session_revoke_all'));
+		assert.ok(disconnect_event_types.has('token_revoke_all'));
+		assert.ok(disconnect_event_types.has('password_change'));
+		assert.ok(disconnect_event_types.has('logout'));
+	});
+
+	test('excludes non-disconnect events', () => {
+		assert.ok(!disconnect_event_types.has('login'));
+		assert.ok(!disconnect_event_types.has('bootstrap'));
+		assert.ok(!disconnect_event_types.has('token_create'));
+		assert.ok(!disconnect_event_types.has('role_grant_create'));
+	});
+
+	/**
+	 * The one event the WS half handles and this set omits, and the reason it
+	 * is safe to omit — a coupled invariant rather than two comments that
+	 * happen to agree.
+	 *
+	 * SSE subscribers are keyed by session hash, never by api-token id, so
+	 * `token_revoke` (which names a token id in its metadata) has nothing here
+	 * to match. That only holds while no bearer can open a stream, which is
+	 * what the audit route's channel gate enforces — rule 3 alone would not,
+	 * since it refuses a *narrowed* token and a full-scope bearer passes it.
+	 *
+	 * So the two must move together: widening the route's `credential_types`
+	 * without keying subscribers by api-token id and adding a `token_revoke`
+	 * arm leaves a revoked token receiving audit rows for the life of the
+	 * connection. Fail here rather than let one side drift.
+	 */
+	test('omits token_revoke, and the audit route gates the channel that makes that safe', () => {
+		assert.ok(
+			!disconnect_event_types.has('token_revoke'),
+			'a token_revoke arm here needs subscribers keyed by api-token id — see the SSE registry'
+		);
+		assert.deepStrictEqual(
+			create_audit_log_route_shape().auth.credential_types,
+			[CREDENTIAL_TYPE_SESSION],
+			'the audit stream must stay session-only while disconnect_event_types omits token_revoke'
+		);
+	});
+});
 
 describe('create_sse_auth_guard', () => {
 	test('closes stream when role_grant_revoke matches required role and target account', () => {

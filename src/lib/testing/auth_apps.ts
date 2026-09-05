@@ -14,6 +14,11 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { apply_route_specs, type RouteSpec } from '../http/route_spec.ts';
 import { is_public_auth, type RouteAuth } from '../http/auth_shape.ts';
+import {
+	CREDENTIAL_TYPE_DAEMON_TOKEN,
+	CREDENTIAL_TYPE_SESSION
+} from '../auth/credential_type_schema.ts';
+import { ROLE_KEEPER } from '../auth/role_schema.ts';
 import { fuz_auth_guard_resolver } from '../auth/auth_guard_resolver.ts';
 import {
 	REQUEST_CONTEXT_KEY,
@@ -22,6 +27,7 @@ import {
 } from '../auth/request_context.ts';
 import {
 	ACCOUNT_ID_KEY,
+	CREDENTIAL_TYPES,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
 	type CredentialType
@@ -58,7 +64,7 @@ export const create_test_app_from_specs = (
 		if (auth_ctx) {
 			c.set(ACCOUNT_ID_KEY, auth_ctx.account.id);
 			c.set(REQUEST_CONTEXT_KEY, auth_ctx);
-			c.set(CREDENTIAL_TYPE_KEY, credential_type ?? 'session');
+			c.set(CREDENTIAL_TYPE_KEY, credential_type ?? CREDENTIAL_TYPE_SESSION);
 			c.set(TEST_CONTEXT_PRESET_KEY, true);
 		}
 		await next();
@@ -79,6 +85,16 @@ export interface AuthTestApps {
 	public: Hono;
 	authed: Hono;
 	keeper: Hono;
+	/**
+	 * One authenticated app per builtin credential type, each holding the
+	 * keeper role — the channel axis, where `by_role` is the authority axis.
+	 *
+	 * A credential gate is pre-authorization, so probing it needs an app on a
+	 * channel the route refuses, and proving a gated route still works needs
+	 * one on a channel it admits. `keeper` is the `'daemon_token'` entry of
+	 * this map, not a second app.
+	 */
+	by_credential_type: Map<CredentialType, Hono>;
 	by_role: Map<string, Hono>;
 }
 
@@ -96,14 +112,21 @@ export const create_auth_test_apps = (
 	for (const role of roles) {
 		by_role.set(role, create_test_app_from_specs(route_specs, create_test_request_context(role)));
 	}
+	const by_credential_type = new Map<CredentialType, Hono>(
+		CREDENTIAL_TYPES.map((credential_type) => [
+			credential_type,
+			create_test_app_from_specs(
+				route_specs,
+				create_test_request_context(ROLE_KEEPER),
+				credential_type
+			)
+		])
+	);
 	return {
 		public: create_test_app_from_specs(route_specs),
 		authed: create_test_app_from_specs(route_specs, create_test_request_context()),
-		keeper: create_test_app_from_specs(
-			route_specs,
-			create_test_request_context('keeper'),
-			'daemon_token'
-		),
+		keeper: by_credential_type.get(CREDENTIAL_TYPE_DAEMON_TOKEN)!,
+		by_credential_type,
 		by_role
 	};
 };
@@ -111,13 +134,39 @@ export const create_auth_test_apps = (
 /**
  * Select the Hono test app with correct auth for a route.
  *
+ * The credential channel is decided first, because the channel gate is
+ * pre-authorization: an app whose credential the route refuses never reaches
+ * the role gate, so a role-correct app on the wrong channel answers
+ * `credential_type_required`, and a "correct auth passes guard" case reads it
+ * as a failure of the role gate that never ran.
+ *
+ * A gate admitting `'session'` falls through to the `by_role` /
+ * `authed` apps, which carry that channel. Any other gate leaves the
+ * `by_credential_type` app as the only candidate — those hold the keeper
+ * role, which is why a route pairing a non-session channel with some *other*
+ * role has no app and says so.
+ *
  * @throws Error if `auth.roles` names a role not present in `apps.by_role` —
  *   surfaces a missing entry in the `roles` array passed to
  *   `create_auth_test_apps`.
+ * @throws Error if the route pairs a non-session channel with a role the
+ *   channel apps don't hold. Silently handing back a session app would turn
+ *   every case on the route into a misattributed 403.
  */
 export const select_auth_app = (apps: AuthTestApps, auth: RouteAuth): Hono => {
 	if (is_public_auth(auth)) return apps.public;
-	if (auth.credential_types?.includes('daemon_token')) return apps.keeper;
+	const credential_types = auth.credential_types;
+	if (credential_types?.length && !credential_types.includes(CREDENTIAL_TYPE_SESSION)) {
+		const channel = CREDENTIAL_TYPES.find((t) => credential_types.includes(t));
+		const app = channel === undefined ? undefined : apps.by_credential_type.get(channel);
+		const roles = auth.roles;
+		if (app && (!roles?.length || roles.includes(ROLE_KEEPER))) return app;
+		throw new Error(
+			`No test app for credential types '${credential_types.join("', '")}'${
+				roles?.length ? ` with roles '${roles.join("', '")}'` : ''
+			} — the channel apps hold the '${ROLE_KEEPER}' role, and only the session channel has per-role apps`
+		);
+	}
 	if (auth.roles?.length) {
 		// Multi-role disjunction: any of the named roles admits the caller.
 		// Tests pick the first role's app; consumers wanting per-role coverage

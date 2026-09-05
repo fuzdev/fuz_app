@@ -243,6 +243,43 @@ describe('derive_error_schemas', () => {
 		assert.isTrue(role_denial.success, 'the post-authorization role denial must still parse');
 	});
 
+	/**
+	 * All three 403 gates on one route — the audit SSE stream's shape, and the
+	 * first in the spine to carry it. The pipeline picks whichever fires
+	 * first (channel, then scope, then role), so DEV-mode error-schema
+	 * validation has to accept all three or it flags the route's own denial
+	 * as a contract violation.
+	 *
+	 * The two-gate cases above each leave one shape out, so neither would
+	 * catch a derivation that unioned only a pair.
+	 */
+	test('all three 403 gates derive a union admitting each gate denial', () => {
+		const errors = derive_error_schemas({
+			auth: {
+				account: 'required',
+				actor: 'required',
+				roles: ['admin'],
+				credential_types: ['session'],
+				required_scope: 'surface:audit_stream'
+			},
+			has_query: true
+		});
+		assert.ok(errors[403]);
+		const parse = (body: unknown): boolean => (errors[403] as any).safeParse(body).success;
+		assert.isTrue(
+			parse({ error: ERROR_CREDENTIAL_TYPE_REQUIRED, required_credential_types: ['session'] }),
+			'the channel denial fires first and must parse'
+		);
+		assert.isTrue(
+			parse({ error: ERROR_TOKEN_SCOPE_REQUIRED, required_scope: 'surface:audit_stream' }),
+			'the scope denial must parse — it governs a consumer that widens the channel'
+		);
+		assert.isTrue(
+			parse({ error: ERROR_INSUFFICIENT_PERMISSIONS, required_roles: ['admin'] }),
+			'the role denial must parse'
+		);
+	});
+
 	test('does not auto-derive 429 without rate_limit', () => {
 		const errors = derive_error_schemas({
 			auth: { account: 'none', actor: 'none' },

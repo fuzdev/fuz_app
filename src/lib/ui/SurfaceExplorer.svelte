@@ -13,6 +13,7 @@
 	import type { AppSurface, AppSurfaceRoute, AppSurfaceDiagnostic } from '../http/surface.ts';
 	import { surface_auth_summary, format_route_key } from '../http/surface_query.ts';
 	import {
+		is_credential_gated_auth,
 		is_keeper_auth,
 		is_plain_authenticated_auth,
 		is_public_auth,
@@ -22,7 +23,7 @@
 
 	const { surface }: { surface: AppSurface } = $props();
 
-	const auth_types = ['all', 'none', 'authenticated', 'role', 'keeper'] as const;
+	const auth_types = ['all', 'none', 'authenticated', 'role', 'credential', 'keeper'] as const;
 
 	let auth_filter: (typeof auth_types)[number] = $state.raw('all');
 	let expanded_route: string | null = $state.raw(null);
@@ -49,6 +50,8 @@
 				return is_plain_authenticated_auth(auth);
 			case 'role':
 				return is_role_auth(auth);
+			case 'credential':
+				return is_credential_gated_auth(auth) && !is_keeper_auth(auth);
 			case 'keeper':
 				return is_keeper_auth(auth);
 		}
@@ -90,11 +93,15 @@
 		if (is_public_auth(auth)) return 'chip color_b';
 		if (is_keeper_auth(auth)) return 'chip color_c';
 		if (is_role_auth(auth)) return 'chip color_d';
+		if (is_credential_gated_auth(auth)) return 'chip color_e';
 		if (is_plain_authenticated_auth(auth)) return 'chip color_a';
 		return 'chip';
 	};
 
 	const role_count = $derived(Array.from(summary.role.values()).reduce((sum, n) => sum + n, 0));
+	const credential_count = $derived(
+		Array.from(summary.credential.values()).reduce((sum, n) => sum + n, 0)
+	);
 </script>
 
 <section>
@@ -105,6 +112,8 @@
 				>{summary.authenticated} authenticated</span
 			>{/if}
 		{#if role_count > 0}<span class="chip color_d">{role_count} role</span>{/if}
+		{#if credential_count > 0}<span class="chip color_e">{credential_count} credential-gated</span
+			>{/if}
 		{#if summary.keeper > 0}<span class="chip color_c">{summary.keeper} keeper</span>{/if}
 		<span class="chip">{surface.middleware.length} middleware</span>
 		{#if rpc_method_count > 0}<span class="chip">{rpc_method_count} rpc methods</span>{/if}

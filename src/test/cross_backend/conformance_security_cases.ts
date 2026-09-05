@@ -164,7 +164,7 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
 			fields: { required_credential_types: ['session'] }
 		},
-		note: 'security.md §Credential-channel gating on credential-minting actions — token minting requires a browser-context session, closing bearer/daemon-spawn-bearer persistence'
+		note: 'security.md §Credential-channel gating — token minting requires a browser-context session, closing bearer/daemon-spawn-bearer persistence'
 	},
 	{
 		name: 'api_token (bearer) → account_token_create with empty params → 403 credential_type_required (authority gates precede input validation)',
@@ -184,7 +184,7 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
 			fields: { required_credential_types: ['session'] }
 		},
-		note: 'security.md §Credential-channel gating on credential-minting actions — a leaked bearer cannot mint sibling tokens to outlive revocation; the empty params also pin that no input-shape detail precedes the credential denial'
+		note: 'security.md §Credential-channel gating — a leaked bearer cannot mint sibling tokens to outlive revocation; the empty params also pin that no input-shape detail precedes the credential denial'
 	},
 	{
 		name: 'api_token (bearer) → /logout → 403 credential_type_required',
@@ -194,7 +194,7 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
 			fields: { required_credential_types: ['session'] }
 		},
-		note: 'security.md §Credential-channel gating on credential-minting actions — logout is a session-bound operation; a bearer holds no session to end, so it is refused rather than returning a misleading 200 + a phantom logout audit row (gated for forensic fidelity, not lockout)'
+		note: 'security.md §Credential-channel gating — logout is a session-bound operation; a bearer holds no session to end, so it is refused rather than returning a misleading 200 + a phantom logout audit row (gated for forensic fidelity, not lockout)'
 	},
 	// Browser/CLI split (anti-replay): a VALID bearer token replayed from a
 	// browser context (Origin present) must be discarded, so an authed action
@@ -280,7 +280,7 @@ const token_scope_cases: ReadonlyArray<ConformanceCase> = [
 			error_reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
 			fields: { required_credential_types: ['session'] }
 		},
-		note: 'security.md §Credential-channel gating on credential-minting actions — the credential gate runs before the scope gate on both spines, so a bearer refused by channel is never told which scope it lacked'
+		note: 'security.md §Credential-channel gating — the credential gate runs before the scope gate on both spines, so a bearer refused by channel is never told which scope it lacked'
 	}
 ];
 

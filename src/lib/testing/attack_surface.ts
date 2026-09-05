@@ -31,13 +31,7 @@ import {
 } from './surface_invariants.ts';
 import { describe_adversarial_input } from './adversarial_input.ts';
 import { describe_adversarial_404 } from './adversarial_404.ts';
-import {
-	create_test_app_from_specs,
-	create_test_request_context,
-	create_auth_test_apps,
-	create_route_skip_filter,
-	select_auth_app
-} from './auth_apps.ts';
+import { create_auth_test_apps, create_route_skip_filter, select_auth_app } from './auth_apps.ts';
 import { resolve_valid_path } from './schema_generators.ts';
 import {
 	assert_surface_matches_snapshot,
@@ -53,8 +47,10 @@ import { collect_middleware_errors, type AppSurfaceSpec } from '../http/surface.
 import {
 	filter_protected_routes,
 	filter_role_routes,
-	filter_keeper_routes
+	filter_credential_gated_routes
 } from '../http/surface_query.ts';
+import { CREDENTIAL_TYPES } from '../hono_context.ts';
+import { CREDENTIAL_TYPE_SESSION } from '../auth/credential_type_schema.ts';
 import {
 	type RouteErrorSchemas,
 	ERROR_AUTHENTICATION_REQUIRED,
@@ -122,8 +118,11 @@ export interface AdversarialTestOptions {
  *
  * Describe blocks:
  * - unauthenticated → 401 — every protected route
- * - wrong role → 403 — every role route, tested with all non-matching roles
- * - authenticated without role → 403 — every role route, no-role context
+ * - wrong role → 403 — every role route the role apps' session credential
+ *   reaches, tested with all non-matching roles
+ * - authenticated without role → 403 — the same routes, no-role context
+ * - credential-gated routes reject a disallowed credential → 403 — every
+ *   route declaring `auth.credential_types`, probed on a channel it refuses
  * - correct auth passes guard — every protected route, assert not 401/403
  */
 export const describe_adversarial_auth = (options: AdversarialTestOptions): void => {
@@ -135,7 +134,9 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 	if (protected_routes.length === 0) return;
 
 	const role_routes = filter_role_routes(surface).filter((r) => !is_skipped(r));
-	const keeper_routes = filter_keeper_routes(surface).filter((r) => !is_skipped(r));
+	const credential_gated_routes = filter_credential_gated_routes(surface).filter(
+		(r) => !is_skipped(r)
+	);
 
 	// merged error schemas (auto-derived + middleware + handler-specific) for response validation
 	const error_schema_lookup = build_error_schema_lookup(route_specs, middleware_specs);
@@ -165,10 +166,20 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 			}
 		});
 
-		// Role-only routes (no credential gate). Keeper routes have a credential
-		// gate that fires before the role gate, so they get tested separately
-		// in the keeper block below.
-		const role_only_routes = role_routes.filter((r) => !(r.auth.credential_types?.length ?? 0));
+		// Role routes the role apps can actually reach. Those apps carry a
+		// session credential, so a route gated to another channel (keeper) is
+		// refused by the pre-authorization credential gate before its role gate
+		// ever runs — probing it here would assert `insufficient_permissions`
+		// and see `credential_type_required`. A route gated *to* the session
+		// channel (the audit SSE stream) stays in: its role gate is reachable,
+		// and dropping it would silently retire this coverage the day a route
+		// gained a session gate. Either way the credential block below probes
+		// the gate itself.
+		const role_only_routes = role_routes.filter(
+			(r) =>
+				!r.auth.credential_types?.length ||
+				r.auth.credential_types.includes(CREDENTIAL_TYPE_SESSION)
+		);
 
 		if (role_only_routes.length > 0) {
 			describe('wrong role → 403', () => {
@@ -210,26 +221,35 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 			});
 		}
 
-		if (keeper_routes.length > 0) {
-			describe('keeper routes reject session credential → 403', () => {
-				// keeper role via session cookie should fail (wrong credential type)
-				const app_session_keeper = create_test_app_from_specs(
-					route_specs,
-					create_test_request_context('keeper'),
-					'session'
-				);
-				for (const route of keeper_routes) {
-					test(`${route.method} ${route.path}`, async () => {
-						const res = await app_session_keeper.request(test_path(route), {
+		if (credential_gated_routes.length > 0) {
+			describe('credential-gated routes reject a disallowed credential → 403', () => {
+				// Each route is probed on the first channel its own allowlist
+				// omits, in `CREDENTIAL_TYPES` order: a session for keeper's
+				// `daemon_token` gate, an api token for the session-only routes —
+				// which is the bearer channel those gates exist to refuse. The
+				// channel apps hold the keeper role, so no route's role gate can
+				// be what answers; it could not be anyway, the credential gate
+				// being pre-authorization.
+				for (const route of credential_gated_routes) {
+					const admitted = route.auth.credential_types ?? [];
+					const refused = CREDENTIAL_TYPES.find((t) => !admitted.includes(t));
+					if (!refused) {
+						// A gate listing every builtin channel refuses none of them, so
+						// there is no probe to make. Reported as a skip rather than
+						// dropped silently: a route that reads as gated but is not is
+						// worth seeing in the run, and a `continue` here would hide
+						// exactly the shape this block exists to surface.
+						test.skip(`${route.method} ${route.path} (gate admits every builtin channel — nothing to refuse)`, () => {});
+						continue;
+					}
+					test(`${route.method} ${route.path} (${refused})`, async () => {
+						const res = await apps.by_credential_type.get(refused)!.request(test_path(route), {
 							method: route.method
 						});
 						assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
 						const body = await res.json();
 						assert.strictEqual(body.error, ERROR_CREDENTIAL_TYPE_REQUIRED);
-						assert.deepStrictEqual(
-							body.required_credential_types,
-							route.auth.credential_types ?? []
-						);
+						assert.deepStrictEqual(body.required_credential_types, admitted);
 						assert_error_schema_valid(error_schema_lookup, route, 403, body);
 					});
 				}

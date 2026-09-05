@@ -246,18 +246,31 @@ export const is_credential_gated_auth = (auth: RouteAuth): boolean =>
 	!!auth.credential_types?.length;
 
 /**
- * True iff the route is the keeper bucket — credential gate restricted
- * to `daemon_token`. Keeper is the only credential gate today; if more
- * land, this filter widens. Knows the `'daemon_token'` literal directly
- * (the keeper composition is fuz_app's only registered credential gate).
+ * True iff the route is the keeper bucket — a credential gate admitting
+ * `daemon_token`. Knows the literal directly, because keeper is a named
+ * authority level rather than one channel among many: it is the ceiling
+ * sessions and api tokens cannot reach.
+ *
+ * Narrower than `is_credential_gated_auth`, which is true of every channel
+ * gate — including the session-only gates pointing the other way (the
+ * credential-minting actions, `POST /logout` / `POST /password`, the audit
+ * SSE stream). Reach for the general predicate when the question is "does a
+ * channel gate answer here"; reach for this one only when the question is
+ * about keeper specifically.
  */
 export const is_keeper_auth = (auth: RouteAuth): boolean =>
 	auth.credential_types?.includes('daemon_token') ?? false;
 
 /**
  * True iff the route is plain authenticated — `account === 'required'`
- * with no role gate and no credential gate. Account-grain authenticated
- * routes (logout, password change, account self-service) fall here.
+ * with no role gate and no credential gate: any credential the auth
+ * middleware resolved gets in.
+ *
+ * A channel gate takes a route out of this bucket, which is why the
+ * account-grain routes one might expect here are not — `POST /logout`,
+ * `POST /password`, and the `account_*` credential-lifecycle actions all
+ * declare `credential_types: ['session']` and answer to
+ * `is_credential_gated_auth` instead.
  */
 export const is_plain_authenticated_auth = (auth: RouteAuth): boolean =>
 	auth.account === 'required' && !is_role_auth(auth) && !is_credential_gated_auth(auth);

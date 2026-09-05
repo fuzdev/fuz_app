@@ -379,6 +379,27 @@ const adversarial_specs: Array<RouteSpec> = [
 		output: z.null()
 	},
 	{
+		// The audit SSE stream's shape: a role gate *and* a session-channel
+		// gate. Both blocks must reach it — the role cases through the session
+		// credential the role apps carry, and the credential case on a channel
+		// the gate refuses. Bucketing it as "credential-gated, therefore skip
+		// the role cases" is how the coverage went quiet when the real route
+		// gained its gate.
+		method: 'GET',
+		path: '/session-only-role',
+		auth: {
+			account: 'required',
+			actor: 'required',
+			roles: ['admin'],
+			credential_types: ['session']
+		},
+		handler: (c) => c.json({ streamed: true }),
+		description: 'Session-channel-gated admin route',
+		query: z.strictObject({ acting: ActingActor }),
+		input: z.null(),
+		output: z.null()
+	},
+	{
 		// Regression guard for the params-schema-aware path synthesizer. The
 		// hash param carries a pattern (`^blake3:[0-9a-f]{64}$`), so a
 		// `test_hash` segment would 400 at params validation *before* the

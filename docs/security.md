@@ -60,25 +60,29 @@ Session cookies and API tokens can grant admin-level access. Only a daemon token
 — which requires local filesystem access — can reach keeper-level operations
 (role_grant management, audit, bootstrap recovery).
 
-### Credential-channel gating on credential-minting actions
+### Credential-channel gating
 
-Six endpoints declare `credential_types: ['session']` on their `auth`
+Nine endpoints declare `credential_types: ['session']` on their `auth`
 axis. The dispatcher rejects non-session credentials with 403
 `ERROR_CREDENTIAL_TYPE_REQUIRED` + `required_credential_types: ['session']`
-before the handler runs. Five close a credential-minting or lockout threat
-(list below); the sixth — `POST /logout` — is gated for forensic fidelity,
-not a threat (see the note after the list).
+before the handler runs. Seven close a credential-minting, lockout, or
+privilege-pivot threat (list below); the remaining two are gated for reasons
+that aren't a threat of their own — `POST /logout` for forensic fidelity, and
+`GET /audit/stream` because the channel decides whether the stream can be
+closed again (both noted after the list).
 
 - `account_token_create` — Bearer-spawn-bearer persistence — leaked API token mints siblings with innocuous names to outlive revocation.
 - `account_token_revoke` — Sibling disruption — leaked bearer revokes the legitimate sibling token to disrupt the user.
 - `account_session_revoke` — Lockout-by-composition — leaked bearer enumerates via `account_session_list` then revokes each session.
 - `account_session_revoke_all` — Lockout — leaked bearer revokes every session in one call.
 - `POST /password` (REST) — Lockout + credential reset — leaked bearer rotates the password to lock the legitimate user out.
+- `role_grant_offer_accept` — Privilege pivot — leaked bearer accepts a pending admin offer, and the resulting role grant outlives revoking the token. The sibling offer verbs stay ungated: `_create` is the offering side, `_decline` / `_retract` destroy a pending offer and confer nothing.
+- `self_service_role_set` — Privilege pivot — same shape, self-targeted: a leaked account-wide token grants itself an eligible role. The verb exists to serve a UI affordance, so the bearer channel buys nothing.
 
 Cookies are tied to a browser context (HttpOnly + SameSite=Strict + Secure)
 — the right trust bar for "mint a long-lived credential / rotate password
-/ revoke everything." Admin token/session revoke specs in
-`admin_action_specs.ts` deliberately stay unrestricted because admin
+/ revoke everything / move your own authority." Admin token/session revoke
+specs in `admin_action_specs.ts` deliberately stay unrestricted because admin
 scripting from CLI/bearer is legitimate operator workflow.
 
 **`POST /logout` — gated for forensic fidelity, not a threat.** Logout
@@ -88,6 +92,16 @@ misleading `200 {ok: true}` and emit a phantom `logout` audit row for an
 event that never happened; the session-credential gate refuses such a
 caller instead (403 `ERROR_CREDENTIAL_TYPE_REQUIRED`). Both spine impls
 converge on this shape.
+
+**`GET /audit/stream` — gated so the stream stays closable.** The SSE
+registry keys subscribers by session hash, and
+`realtime/sse_auth_guard.ts`'s `disconnect_event_types` carries no
+`token_revoke` arm — so a bearer that opened a stream could not be closed
+when its token was revoked, and would keep receiving audit rows for the life
+of the connection. Refusing the channel is what makes that omission correct
+rather than merely asserted. The route's `required_scope` is the separate
+rule-3 declaration and is unreachable behind this gate on the default mount;
+see §Token scoping for what a consumer that widens the channel owes.
 
 **Defense in depth — audit metadata.** Every gated event records the
 minting `credential_type` in audit metadata (`token_create`,
@@ -260,6 +274,24 @@ back, and it has two arms:
   whatever its method list says. `surface:audit_stream` and
   `surface:fact_bare` are the spine's; the WS upgrade and the db-admin browser
   round out the four the spine knows.
+
+  **Rule 3 alone is not enough for a long-lived stream, and `/audit/stream`
+  carries a channel gate as well.** A narrowed token is what rule 3 refuses; a
+  **full-scope** bearer passes it. That is safe for a bounded request like
+  `surface:fact_bare`, but not for a subscription: SSE subscribers are keyed by
+  session hash, not by api-token id, and `realtime/sse_auth_guard.ts`'s
+  `disconnect_event_types` carries no `token_revoke` arm — so a bearer that
+  opened a stream could not be closed when the token was revoked, and would
+  keep receiving audit rows for the life of the connection. The audit route
+  therefore also declares `credential_types: ['session']`, which refuses every
+  bearer at the channel, ahead of the scope gate. `required_scope` stays
+  declared beside it: it is the rule-3 statement the surface census matches on,
+  and it still governs a consumer that deliberately widens the channel.
+
+  **If you widen that gate, key your subscribers by api-token id and add
+  `token_revoke` to `disconnect_event_types`** — the two go together. The Rust
+  twin enforces the pairing structurally, via a `RevocationScope` column on
+  `AUDIT_EVENT_SPECS` that both revocation listeners match wildcard-free.
 - `rpc:<method>` — one action method, refused unless the token lists it. What
   `create_action_route_spec` puts on a bridged route (below), and what the
   dispatcher's per-method gate reports.

@@ -510,10 +510,15 @@ are excluded.
   declare `credential_types: ['session']`. `account_session_revoke` is
   gated alongside `_revoke_all` because a leaked bearer can otherwise
   compose `account_session_list` + N×revoke to reach the same lockout.
+  `role_grant_offer_accept` and `self_service_role_set` carry the gate for
+  the privilege-pivot shape — both move the caller's own authority, and the
+  resulting grant outlives revoking the token.
   REST `POST /logout` also declares `credential_types: ['session']`, but
   for forensic fidelity rather than a threat — a bearer / daemon token
   holds no session to end, so the gate refuses it instead of returning a
-  misleading 200 + a phantom `logout` audit row.
+  misleading 200 + a phantom `logout` audit row. `GET /audit/stream` carries
+  it so the stream stays closable (SSE subscribers are keyed by session
+  hash, so `token_revoke` could not close a bearer's stream).
   Admin token/session revoke specs deliberately stay unrestricted (admin
   scripting from CLI/bearer is legitimate operator workflow). See
   ../../../docs/security.md §Credential-channel gating.

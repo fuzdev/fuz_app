@@ -41,11 +41,22 @@ export const create_audit_log_route_shape = (
 		account: 'required',
 		actor: 'required',
 		roles: [required_role],
+		// The stream is a session channel. A bearer that opens one cannot be
+		// closed when it is revoked: `token_revoke` closes WS sockets keyed by
+		// token, and SSE subscribers are not keyed that way, so a revoked
+		// token would keep receiving audit rows for the life of the
+		// connection. Gating the channel is what makes
+		// `realtime/sse_auth_guard.ts`'s omission of `token_revoke` correct
+		// rather than merely asserted.
+		credential_types: ['session'],
 		// Rule 3 — a narrowed token holds no audit feed. Same reasoning as the
 		// WS upgrade: this is a long-lived server→client stream whose contents
 		// are decided by the account's role, not by any per-message scope
 		// check, so there is no point after open at which a narrowing could
-		// apply.
+		// apply. Unreachable behind the credential gate above on the default
+		// mount, and kept deliberately: it is the rule-3 declaration the
+		// surface census matches on, and it still governs a consumer that
+		// widens the channel gate.
 		required_scope: 'surface:audit_stream'
 	},
 	description: 'Subscribe to realtime audit log events',

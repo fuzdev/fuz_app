@@ -16,6 +16,7 @@
 
 import type { AppSurface, AppSurfaceRoute } from './surface.ts';
 import {
+	is_credential_gated_auth,
 	is_keeper_auth,
 	is_plain_authenticated_auth,
 	is_public_auth,
@@ -45,6 +46,19 @@ export const filter_authenticated_routes = (surface: AppSurface): Array<AppSurfa
 export const filter_keeper_routes = (surface: AppSurface): Array<AppSurfaceRoute> =>
 	surface.routes.filter((r) => is_keeper_auth(r.auth));
 
+/**
+ * Filter routes gated to a credential channel (any non-empty
+ * `auth.credential_types`), whichever channel that is.
+ *
+ * Superset of `filter_keeper_routes`: keeper is the `daemon_token` gate, and
+ * the same axis points the other way on the session-only routes (the
+ * credential-minting actions, `POST /logout` / `POST /password`, the audit
+ * SSE stream). Adversarial runners need the whole bucket, since every route
+ * in it answers `credential_type_required` to a channel it does not admit.
+ */
+export const filter_credential_gated_routes = (surface: AppSurface): Array<AppSurfaceRoute> =>
+	surface.routes.filter((r) => is_credential_gated_auth(r.auth));
+
 /** Filter routes whose `auth.roles` includes the named role. */
 export const filter_routes_for_role = (surface: AppSurface, role: string): Array<AppSurfaceRoute> =>
 	surface.routes.filter((r) => r.auth.roles?.includes(role) ?? false);
@@ -58,12 +72,29 @@ export const filter_routes_for_role = (surface: AppSurface, role: string): Array
  * - `'role:<name>'` for each role declared on `auth.roles` (multi-role specs
  *   are emitted multiple times; callers that need single-bucket grouping
  *   should pre-collapse)
+ * - `'credential:<type>'` for each channel a role-less route's
+ *   `credential_types` admits — the session-only gates (`POST /logout`,
+ *   `POST /password`, the `account_*` credential-lifecycle actions), plus any
+ *   channel a consumer registers
  * - `'authenticated'` for `account === 'required'` without role / credential gate
  * - `'optional'` when either axis is `'optional'` and no other bucket fits
  * - `'other'` as a last-resort bucket for shapes that don't match above
+ *
+ * Keeper is tested before the role bucket and the general credential bucket
+ * after it, which is not an inconsistency: keeper is an authority *level* — a
+ * ceiling no session or api token reaches — so it names the route, while a
+ * session gate is a *channel* restriction layered over whatever authority the
+ * route already declares. So the audit SSE stream, gated to the session
+ * channel and to the admin role, buckets as `role:admin`.
  */
 export type RouteAuthCategory =
-	'none' | 'authenticated' | 'optional' | 'keeper' | `role:${string}` | 'other';
+	| 'none'
+	| 'authenticated'
+	| 'optional'
+	| 'keeper'
+	| `role:${string}`
+	| `credential:${string}`
+	| 'other';
 
 /**
  * Group routes by auth category (see `RouteAuthCategory`). Multi-role specs
@@ -91,6 +122,11 @@ export const routes_by_auth_type = (surface: AppSurface): Map<string, Array<AppS
 		}
 		if (is_role_auth(auth)) {
 			for (const role of auth.roles!) push(`role:${role}`, r);
+			continue;
+		}
+		if (is_credential_gated_auth(auth)) {
+			for (const credential_type of auth.credential_types!)
+				push(`credential:${credential_type}`, r);
 			continue;
 		}
 		if (is_plain_authenticated_auth(auth)) {
@@ -138,10 +174,12 @@ export const format_route_key = (route: AppSurfaceRoute): string => `${route.met
 /**
  * Summarize route auth distribution across the surface.
  *
- * Categorical view over the flat auth record. Multi-role specs
- * contribute one count per role they admit.
+ * Categorical view over the flat auth record, bucketing exactly as
+ * `routes_by_auth_type`. Multi-role and multi-channel specs contribute one
+ * count per role / channel they admit.
  *
- * @returns counts by auth category, with role counts broken out by role name
+ * @returns counts by auth category, with role and channel counts broken out
+ *   by name
  */
 export const surface_auth_summary = (
 	surface: AppSurface
@@ -150,6 +188,7 @@ export const surface_auth_summary = (
 	authenticated: number;
 	optional: number;
 	role: Map<string, number>;
+	credential: Map<string, number>;
 	keeper: number;
 	other: number;
 } => {
@@ -157,6 +196,7 @@ export const surface_auth_summary = (
 	let authenticated = 0;
 	let optional = 0;
 	const role: Map<string, number> = new Map();
+	const credential: Map<string, number> = new Map();
 	let keeper = 0;
 	let other = 0;
 
@@ -176,6 +216,12 @@ export const surface_auth_summary = (
 			}
 			continue;
 		}
+		if (is_credential_gated_auth(auth)) {
+			for (const credential_type of auth.credential_types!) {
+				credential.set(credential_type, (credential.get(credential_type) ?? 0) + 1);
+			}
+			continue;
+		}
 		if (is_plain_authenticated_auth(auth)) {
 			authenticated++;
 			continue;
@@ -187,5 +233,5 @@ export const surface_auth_summary = (
 		other++;
 	}
 
-	return { none, authenticated, optional, role, keeper, other };
+	return { none, authenticated, optional, role, credential, keeper, other };
 };

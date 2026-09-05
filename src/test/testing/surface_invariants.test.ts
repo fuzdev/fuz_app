@@ -76,6 +76,15 @@ const build_valid_surface = (): AppSurface => {
 			description: 'Keeper sync',
 			input: z.null(),
 			output: z.null()
+		},
+		{
+			method: 'POST',
+			path: '/api/account/token',
+			auth: { account: 'required', actor: 'none', credential_types: ['session'] },
+			handler: stub_handler,
+			description: 'Mint an api token',
+			input: z.null(),
+			output: z.null()
 		}
 	];
 	return generate_app_surface({ middleware_specs: test_middleware, route_specs: specs });
@@ -114,6 +123,21 @@ describe('assert_role_routes_declare_403', () => {
 		const surface = build_valid_surface();
 		const route = surface.routes.find(
 			(r) => r.auth.credential_types?.includes('daemon_token') ?? false
+		)!;
+		route.error_schemas = { '401': {} };
+		assert.throws(() => assert_role_routes_declare_403(surface), /missing 403/);
+	});
+
+	/**
+	 * The keeper case above passes on a role-gate-only check too — that route
+	 * carries both. A session-gated route with no role is the case that
+	 * distinguishes them, and it is the shape the credential-minting actions
+	 * and the audit stream ship.
+	 */
+	test('fails when a role-less session-gated route lacks 403', () => {
+		const surface = build_valid_surface();
+		const route = surface.routes.find(
+			(r) => !r.auth.roles?.length && (r.auth.credential_types?.includes('session') ?? false)
 		)!;
 		route.error_schemas = { '401': {} };
 		assert.throws(() => assert_role_routes_declare_403(surface), /missing 403/);

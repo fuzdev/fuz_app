@@ -130,7 +130,7 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
 		file: 'auth/audit_log_route_schema.ts',
 		role: 'consults',
 		reason:
-			'declares `token_surface: audit_stream` on the route shape — a long-lived admin SSE feed with no point after open at which a narrowing could be applied'
+			'declares `token_surface: audit_stream` on the route shape — a long-lived admin SSE feed with no point after open at which a narrowing could be applied. Its sibling `credential_types` gate is the one that actually keeps a bearer off the stream (rule 3 refuses a *narrowed* token; a full-scope one passes it, and SSE subscribers are keyed by session hash, so `token_revoke` could not close it) — the scope declaration stays as the rule-3 statement, governing a consumer that widens the channel'
 	},
 	{
 		file: 'actions/perform_action.ts',
@@ -243,9 +243,18 @@ const NON_SURFACE_SITES: ReadonlyArray<string> = [
  * auth is `credential_types: ['daemon_token']`, and a daemon token resolves to
  * `full` by construction: no narrowed credential can reach it, and the
  * credential gate — which now runs ahead of the scope guard — answers first
- * with the coarser `credential_type_required`. Declaring the surface would
- * invert that and name a scope to a channel that may never call the route at
- * all.
+ * with the coarser `credential_type_required`.
+ *
+ * **A credential gate does not by itself retire the scope declaration**, which
+ * is why the audit stream carries both. The two routes differ in what the
+ * declaration would be *for*: `audit_stream` is a named `TokenSurface` this
+ * census requires a site for, so its `required_scope` is the rule-3 statement
+ * — dead on the default mount, live for a consumer that widens the channel to
+ * admit bearers. `db_admin` has no such consumer story worth pre-declaring: a
+ * consumer that re-auths `create_db_route_specs` off the keeper channel is
+ * rewriting the route's authority wholesale and owns its own census, so a
+ * scope string on the shipped spec would name a capability to a channel that
+ * may never call the route at all and pre-empt nothing.
  *
  * **The hazard that reasoning rests on is the consumer's auth, not ours.** A
  * consumer mounting `create_db_route_specs` under a widened `auth` — dropping

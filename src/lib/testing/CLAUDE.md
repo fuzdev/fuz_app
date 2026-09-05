@@ -398,7 +398,7 @@ case per route):
 
 1. **attack surface snapshot** — `matches committed snapshot`, `is deterministic`.
 2. **attack surface structure** — `only expected public routes`, `full middleware stack on API routes`, `surface invariants`, `rpc/ws surface invariants`, `security policy`, `error schema tightness` (logs counts and asserts against `default_error_schema_tightness` by default; pass an override config or `null` via `error_schema_tightness`).
-3. **adversarial HTTP auth enforcement** — `unauthenticated → 401`, `wrong role → 403` × roles, `authenticated without role → 403`, `keeper routes reject session credential → 403`, `correct auth passes guard`.
+3. **adversarial HTTP auth enforcement** — `unauthenticated → 401`, `wrong role → 403` × roles, `authenticated without role → 403`, `credential-gated routes reject a disallowed credential → 403`, `correct auth passes guard`. The role blocks cover role routes the session-credentialed role apps reach (a keeper route's channel gate answers first); the credential block probes every `auth.credential_types` route on the first builtin channel its allowlist omits, using `AuthTestApps.by_credential_type` (one keeper-role app per builtin channel; `keeper` is its `daemon_token` entry).
 4. **adversarial input validation** — delegated to `describe_adversarial_input`.
 5. **adversarial 404 response validation** — delegated to `describe_adversarial_404`.
 
