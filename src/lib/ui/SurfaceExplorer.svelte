@@ -108,23 +108,29 @@
 	<div class="row" style:gap="var(--space_md)" style:flex-wrap="wrap" style:align-items="center">
 		<span class="chip">{surface.routes.length} routes</span>
 		{#if summary.none > 0}<span class="chip color_b">{summary.none} public</span>{/if}
-		{#if summary.authenticated > 0}<span class="chip color_a"
-				>{summary.authenticated} authenticated</span
-			>{/if}
+		{#if summary.authenticated > 0}
+			<span class="chip color_a">{summary.authenticated} authenticated</span>
+		{/if}
 		{#if role_count > 0}<span class="chip color_d">{role_count} role</span>{/if}
-		{#if credential_count > 0}<span class="chip color_e">{credential_count} credential-gated</span
-			>{/if}
+		{#if credential_count > 0}
+			<span class="chip color_e">{credential_count} credential-gated</span>
+		{/if}
 		{#if summary.keeper > 0}<span class="chip color_c">{summary.keeper} keeper</span>{/if}
 		<span class="chip">{surface.middleware.length} middleware</span>
 		{#if rpc_method_count > 0}<span class="chip">{rpc_method_count} rpc methods</span>{/if}
 		{#if ws_method_count > 0}<span class="chip">{ws_method_count} ws methods</span>{/if}
 		{#if surface.env.length}<span class="chip">{surface.env.length} env</span>{/if}
 		{#if surface.events.length}<span class="chip">{surface.events.length} events</span>{/if}
-		{#if surface.diagnostics.length}{@const warnings = surface.diagnostics.filter(
+		{#if surface.diagnostics.length}
+			{@const warnings = surface.diagnostics.filter(
 				(d: AppSurfaceDiagnostic) => d.level === 'warning'
-			)}{#if warnings.length}<span class="chip color_e"
-					>{warnings.length} warning{warnings.length === 1 ? '' : 's'}</span
-				>{/if}{/if}
+			)}
+			{#if warnings.length}
+				<span class="chip color_e">
+					{warnings.length} warning{warnings.length === 1 ? '' : 's'}
+				</span>
+			{/if}
+		{/if}
 	</div>
 
 	<h3>routes</h3>
@@ -230,9 +236,9 @@
 						<tr>
 							<td><code>{mw.name}</code></td>
 							<td><code>{mw.path}</code></td>
-							<td class="text_50"
-								>{mw.error_schemas ? Object.keys(mw.error_schemas).join(', ') : '-'}</td
-							>
+							<td class="text_50">
+								{mw.error_schemas ? Object.keys(mw.error_schemas).join(', ') : '-'}
+							</td>
 						</tr>
 					{/each}
 				</tbody>
@@ -289,11 +295,11 @@
 							<td>
 								<!-- TODO fix the `as any` cast -->
 								{#if event.params_schema}
-									<code
-										>{Object.keys(
+									<code>
+										{Object.keys(
 											(event.params_schema as any).properties ?? event.params_schema
-										).join(', ')}</code
-									>
+										).join(', ')}
+									</code>
 								{:else}
 									<span class="text_50">none</span>
 								{/if}
@@ -466,8 +472,9 @@
 				<tbody>
 					{#each surface.diagnostics as d, i (i)}
 						<tr>
-							<td><span class={d.level === 'warning' ? 'chip color_e' : 'chip'}>{d.level}</span></td
-							>
+							<td>
+								<span class={d.level === 'warning' ? 'chip color_e' : 'chip'}>{d.level}</span>
+							</td>
 							<td><code>{d.category}</code></td>
 							<td>{d.message}</td>
 							<td class="text_50">{d.source ?? '-'}</td>

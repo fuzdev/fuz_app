@@ -48,7 +48,10 @@
 <section class="role-grant-offer-inbox">
 	<h2>pending offers</h2>
 
-	{#if role_grant_offers.list.error || role_grant_offers.accept.error || role_grant_offers.decline.error}
+	{#if role_grant_offers.list.error ||
+		role_grant_offers.accept.error ||
+		role_grant_offers.decline.error
+	}
 		<p class="color_c_50">
 			{role_grant_offers.list.error ??
 				role_grant_offers.accept.error ??

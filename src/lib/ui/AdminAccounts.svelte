@@ -44,9 +44,9 @@
 	<h1>accounts</h1>
 	{#if admin_accounts.account_count > 0}
 		<p>
-			<span class="chip color_a"
-				>{admin_accounts.account_count} account{admin_accounts.account_count === 1 ? '' : 's'}</span
-			>
+			<span class="chip color_a">
+				{admin_accounts.account_count} account{admin_accounts.account_count === 1 ? '' : 's'}
+			</span>
 		</p>
 	{/if}
 
@@ -158,7 +158,9 @@
 					{#each admin_accounts.grantable_roles as role (role)}
 						{@const key = grant_key(row.account.id, role)}
 						{@const grant_error = admin_accounts.grant.error(key)}
-						{#if !row.role_grants.some((p) => p.role === role) && !row.pending_offers.some((o) => o.role === role)}
+						{#if !row.role_grants.some((p) => p.role === role) &&
+							!row.pending_offers.some((o) => o.role === role)
+						}
 							<ConfirmButton
 								onconfirm={() => admin_accounts.submit_grant(row.account.id, role)}
 								title="offer {role}"

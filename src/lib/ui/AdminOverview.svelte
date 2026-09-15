@@ -146,9 +146,9 @@
 				<div class="baseline-row gap_xs font_size_sm mt_sm">
 					<span class="text_50">newest session:</span>
 					<strong>{most_recent.username}</strong>
-					<span class="text_50" title={format_datetime_local(most_recent.created_at)}
-						>{format_relative_time(most_recent.created_at)}</span
-					>
+					<span class="text_50" title={format_datetime_local(most_recent.created_at)}>
+						{format_relative_time(most_recent.created_at)}
+					</span>
 				</div>
 			{/if}
 		{/if}
@@ -214,9 +214,9 @@
 			<ul class="compact-list">
 				{#each recent_events as event (event.id)}
 					<li>
-						<span class="text_50 font_size_sm" title={format_datetime_local(event.created_at)}
-							>{format_relative_time(event.created_at)}</span
-						>
+						<span class="text_50 font_size_sm" title={format_datetime_local(event.created_at)}>
+							{format_relative_time(event.created_at)}
+						</span>
 						<code class="font_size_sm">{event.event_type}</code>
 						{#if event.outcome === 'failure'}
 							<span class="chip font_size_sm color_c">fail</span>
@@ -251,9 +251,9 @@
 				<ul class="compact-list">
 					{#each role_grant_changes.slice(0, 4) as event (event.id)}
 						<li class="font_size_sm">
-							<span class="text_50" title={format_datetime_local(event.created_at)}
-								>{format_relative_time(event.created_at)}</span
-							>
+							<span class="text_50" title={format_datetime_local(event.created_at)}>
+								{format_relative_time(event.created_at)}
+							</span>
 							<code>{event.event_type === 'role_grant_create' ? 'grant' : 'revoke'}</code>
 							{#if event.metadata?.role}
 								<span class="chip font_size_sm">{event.metadata.role}</span>
@@ -309,7 +309,7 @@
 					label="log out"
 				>
 					{#snippet popover_button_content()}
-						<span class="p_md"> log out </span>
+						<span class="p_md">log out</span>
 					{/snippet}
 				</ConfirmButton>
 			</div>

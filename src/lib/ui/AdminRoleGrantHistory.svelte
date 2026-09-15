@@ -74,14 +74,14 @@
 				{:else if column.key === 'username'}
 					<!-- Prefer actor-grain id in the truncated fallback; account is
 					     the second fallback for events with no actor binding. -->
-					<span class="text_50"
-						>{row.username ?? truncate_uuid(row.actor_id ?? row.account_id ?? '?')}</span
-					>
+					<span class="text_50">
+						{row.username ?? truncate_uuid(row.actor_id ?? row.account_id ?? '?')}
+					</span>
 				{:else if column.key === 'target_username'}
-					<span class="text_50"
-						>{row.target_username ??
-							truncate_uuid(row.target_actor_id ?? row.target_account_id ?? '?')}</span
-					>
+					<span class="text_50">
+						{row.target_username ??
+							truncate_uuid(row.target_actor_id ?? row.target_account_id ?? '?')}
+					</span>
 				{:else if column.key === 'created_at'}
 					<span title={format_datetime_local(row.created_at)}>
 						{format_relative_time(row.created_at)}

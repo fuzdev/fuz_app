@@ -21,11 +21,12 @@
 	<section class="panel p_lg width_atmost_sm">
 		<p>
 			fuz_app is a fullstack app library for TypeScript, Svelte, SvelteKit, Hono, and PostgreSQL
-			with PGlite for embedded targets. It's part of the <a href="https://www.fuz.dev/">Fuz stack</a
-			>, and this is a pre-alpha release, not yet ready for production. To learn more, see the
+			with PGlite for embedded targets. It's part of the
+			<a href="https://www.fuz.dev/">Fuz stack</a>, and this is a pre-alpha release, not yet ready
+			for production. To learn more, see the
 			<a href="https://github.com/fuzdev/fuz_app/discussions">discussions</a>,
-			<a href="https://github.com/fuzdev/fuz_app">repo</a>, and
-			<a href={resolve('/docs')}>docs</a> 🗝
+			<a href="https://github.com/fuzdev/fuz_app">repo</a>, and <a href={resolve('/docs')}>docs</a>
+			🗝
 		</p>
 	</section>
 	<EcosystemLinksPanel />

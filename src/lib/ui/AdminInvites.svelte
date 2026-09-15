@@ -59,9 +59,9 @@
 	</section>
 	{#if admin_invites.invite_count > 0}
 		<p>
-			<span class="chip color_a"
-				>{admin_invites.unclaimed_count} unclaimed / {admin_invites.invite_count} total</span
-			>
+			<span class="chip color_a">
+				{admin_invites.unclaimed_count} unclaimed / {admin_invites.invite_count} total
+			</span>
 		</p>
 	{/if}
 

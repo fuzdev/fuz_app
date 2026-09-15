@@ -17,8 +17,9 @@
 		</section>
 		<section class="column gap_lg">
 			<a href={resolve('/docs')} class="panel px_xl py_md font_size_xl2 text-align:center">docs</a>
-			<a href={resolve('/about')} class="panel px_xl py_md font_size_xl2 text-align:center">about</a
-			>
+			<a href={resolve('/about')} class="panel px_xl py_md font_size_xl2 text-align:center">
+				about
+			</a>
 		</section>
 		<section class="box" style:text-align="center">
 			<aside>⚠️ pre-alpha, do not use in production</aside>
