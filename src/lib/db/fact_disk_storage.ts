@@ -31,7 +31,7 @@
 import { createHash, type Hash } from 'node:crypto';
 import { join } from 'node:path';
 
-import { Blake3Hasher } from '@fuzdev/blake3_wasm';
+import { Blake3Hasher } from '@fuzdev/blake3-wasm';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import { blake3_ready } from '@fuzdev/fuz_util/hash_blake3.ts';
 import { to_hex } from '@fuzdev/fuz_util/hex.ts';
