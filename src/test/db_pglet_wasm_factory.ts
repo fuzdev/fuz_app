@@ -7,7 +7,7 @@
  * **embedded/local-first** context (no server, no socket) that mirrors how pglite is used.
  *
  * Consumes the ergonomic adapter's `create_pglet_db` — the SAME entry an `npm install`'d
- * consumer of `@fuzdev/pglet_wasm` uses — so this leg validates the *shipped* package (its
+ * consumer of `@fuzdev/pglet-wasm` uses — so this leg validates the *shipped* package (its
  * value-coercion contract, single-flight transaction guard, and `fork()`) against fuz_app's
  * real workload, rather than a hand-rolled shim that drifted from the engine.
  *
@@ -50,7 +50,7 @@ interface PgletTx {
 	query: <T = unknown>(sql: string, params?: Array<unknown>) => Promise<{ rows: Array<T> }>;
 }
 
-/** The ergonomic `@fuzdev/pglet_wasm` adapter surface the factory uses (`create_pglet_db`'s return). */
+/** The ergonomic `@fuzdev/pglet-wasm` adapter surface the factory uses (`create_pglet_db`'s return). */
 interface PgletDb {
 	query: <T = unknown>(sql: string, params?: Array<unknown>) => Promise<{ rows: Array<T> }>;
 	transaction: <T>(fn: (tx: PgletTx) => Promise<T>) => Promise<T>;
@@ -75,7 +75,7 @@ interface PgletWasmModule {
 // `index.js` runs `readFileSync` + `initSync` at import, so there's no manual wasm-init step.
 let wasm_module: PgletWasmModule | null = null;
 
-/** Import the built `@fuzdev/pglet_wasm` Node entry from `PGLET_WASM_PKG` (cached; auto-inits). */
+/** Import the built `@fuzdev/pglet-wasm` Node entry from `PGLET_WASM_PKG` (cached; auto-inits). */
 const load_wasm_module = async (pkg_dir: string): Promise<PgletWasmModule> => {
 	if (wasm_module) return wasm_module;
 	const module_url = pathToFileURL(join(pkg_dir, 'index.js')).href;
