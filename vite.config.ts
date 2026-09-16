@@ -92,7 +92,7 @@ const cross_backend_security_project = () => ({
 
 export default defineConfig({
 	plugins: [sveltekit(), svelte_docinfo(), vite_plugin_fuz_css(), vite_plugin_pkg_json()],
-	optimizeDeps: { exclude: ['@fuzdev/blake3_wasm'] },
+	optimizeDeps: { exclude: ['@fuzdev/blake3-wasm', '@fuzdev/blake3_wasm'] },
 	test: {
 		projects: [
 			{

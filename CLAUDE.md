@@ -158,7 +158,7 @@ Shared helpers accept small `*Deps` from `runtime/deps.ts` (not `Pick<GodType, .
 - `hono` (>=4), `zod` (^4), `svelte` (^5), `@sveltejs/kit` (^2)
 - `@fuzdev/fuz_util` (>=0.65.2)
 - `@node-rs/argon2` (>=2) — for `auth/password_argon2`
-- `@fuzdev/blake3_wasm` (>=0.1.0) — for `auth/session_queries`, `auth/bearer_auth`
+- `@fuzdev/blake3-wasm` (>=0.1.0) — for `auth/session_queries`, `auth/bearer_auth`
 - `pg` (>=8) or `@electric-sql/pglite` (>=0.4) — optional, for `db/create_db`
 - `@hono/node-server` (>=1), `@hono/node-ws` (>=1), `ws` (>=8) — optional, for the Node server adapter + WebSocket transport
 - `esm-env` (^1) — optional, for the DEV-only output-validation gate
