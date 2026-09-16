@@ -12,18 +12,18 @@
  * @module
  */
 
-import {inject} from 'vitest';
+import { inject } from 'vitest';
 
 import {
 	default_cross_process_setup,
-	reconstruct_bootstrapped_handle,
+	reconstruct_bootstrapped_handle
 } from '$lib/testing/cross_backend/setup.ts';
-import {describe_ready_cross_tests} from '$lib/testing/cross_backend/ready.ts';
+import { describe_ready_cross_tests } from '$lib/testing/cross_backend/ready.ts';
 
 import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle);
-const {capabilities} = handle.config;
+const { capabilities } = handle.config;
 
-describe_ready_cross_tests({setup_test, capabilities});
+describe_ready_cross_tests({ setup_test, capabilities });

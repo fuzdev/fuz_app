@@ -8,7 +8,7 @@
  * @module
  */
 
-import type {RuntimeDeps, StatResult, CommandResult, RunCommandOptions} from './deps.ts';
+import type { RuntimeDeps, StatResult, CommandResult, RunCommandOptions } from './deps.ts';
 
 /* eslint-disable @typescript-eslint/require-await */
 
@@ -27,9 +27,9 @@ export interface MockRuntime extends RuntimeDeps {
 	/** Exit calls recorded (exit codes). */
 	exit_calls: Array<number>;
 	/** Commands executed. Captures `options` when passed so tests can assert cwd/timeout/signal. */
-	command_calls: Array<{cmd: string; args: Array<string>; options?: RunCommandOptions}>;
+	command_calls: Array<{ cmd: string; args: Array<string>; options?: RunCommandOptions }>;
 	/** Commands executed with inherit. */
-	command_inherit_calls: Array<{cmd: string; args: Array<string>}>;
+	command_inherit_calls: Array<{ cmd: string; args: Array<string> }>;
 	/** Stdout writes recorded. */
 	stdout_writes: Array<string>;
 	/** Mock command results (cmd -> result). */
@@ -37,7 +37,7 @@ export interface MockRuntime extends RuntimeDeps {
 	/** Stdin buffer for input simulation. */
 	stdin_buffer: Uint8Array | null;
 	/** Fetch calls recorded. */
-	fetch_calls: Array<{input: string | URL | Request; init?: RequestInit}>;
+	fetch_calls: Array<{ input: string | URL | Request; init?: RequestInit }>;
 	/** Mock fetch responses (URL substring -> Response). */
 	mock_fetch_responses: Map<string, Response>;
 }
@@ -69,11 +69,12 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 	const mock_fs_bytes: Map<string, Uint8Array> = new Map();
 	const mock_dirs: Set<string> = new Set();
 	const exit_calls: Array<number> = [];
-	const command_calls: Array<{cmd: string; args: Array<string>; options?: RunCommandOptions}> = [];
-	const command_inherit_calls: Array<{cmd: string; args: Array<string>}> = [];
+	const command_calls: Array<{ cmd: string; args: Array<string>; options?: RunCommandOptions }> =
+		[];
+	const command_inherit_calls: Array<{ cmd: string; args: Array<string> }> = [];
 	const stdout_writes: Array<string> = [];
 	const mock_command_results: Map<string, CommandResult> = new Map();
-	const fetch_calls: Array<{input: string | URL | Request; init?: RequestInit}> = [];
+	const fetch_calls: Array<{ input: string | URL | Request; init?: RequestInit }> = [];
 	const mock_fetch_responses: Map<string, Response> = new Map();
 	let stdin_buffer: Uint8Array | null = null;
 
@@ -115,14 +116,14 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 		stat: async (path): Promise<StatResult | null> => {
 			const bytes = mock_fs_bytes.get(path);
 			if (bytes !== undefined) {
-				return {is_file: true, is_directory: false, size: bytes.length};
+				return { is_file: true, is_directory: false, size: bytes.length };
 			}
 			const text = mock_fs.get(path);
 			if (text !== undefined) {
-				return {is_file: true, is_directory: false, size: new TextEncoder().encode(text).length};
+				return { is_file: true, is_directory: false, size: new TextEncoder().encode(text).length };
 			}
 			if (mock_dirs.has(path)) {
-				return {is_file: false, is_directory: true, size: 0};
+				return { is_file: false, is_directory: true, size: 0 };
 			}
 			return null;
 		},
@@ -164,7 +165,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 			}
 			if (bytes === undefined) {
 				const error: NodeJS.ErrnoException = new Error(
-					`ENOENT: no such file or directory: ${path}`,
+					`ENOENT: no such file or directory: ${path}`
 				);
 				error.code = 'ENOENT';
 				throw error;
@@ -176,7 +177,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 				start(controller) {
 					controller.enqueue(data);
 					controller.close();
-				},
+				}
 			});
 		},
 		read_text_from_offset: async (path, offset) => {
@@ -188,7 +189,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 				const content = mock_fs.get(path);
 				if (content === undefined) {
 					const error: NodeJS.ErrnoException = new Error(
-						`ENOENT: no such file or directory: ${path}`,
+						`ENOENT: no such file or directory: ${path}`
 					);
 					error.code = 'ENOENT';
 					throw error;
@@ -197,12 +198,12 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 			}
 			const file_size = bytes.length;
 			const bytes_to_read = Math.max(0, file_size - offset);
-			if (bytes_to_read === 0) return {content: '', bytes_read: 0, file_size};
+			if (bytes_to_read === 0) return { content: '', bytes_read: 0, file_size };
 			const slice = bytes.subarray(offset, offset + bytes_to_read);
 			return {
 				content: new TextDecoder().decode(slice),
 				bytes_read: slice.length,
-				file_size,
+				file_size
 			};
 		},
 		readdir: async (path) => {
@@ -219,7 +220,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 			for (const key of mock_dirs) collect(key);
 			if (seen.size === 0 && !mock_dirs.has(path)) {
 				const error: NodeJS.ErrnoException = new Error(
-					`ENOENT: no such file or directory: ${path}`,
+					`ENOENT: no such file or directory: ${path}`
 				);
 				error.code = 'ENOENT';
 				throw error;
@@ -239,7 +240,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 			let total = 0;
 			const reader = data.getReader();
 			for (;;) {
-				const {done, value} = await reader.read();
+				const { done, value } = await reader.read();
 				if (done) break;
 				if (value) {
 					chunks.push(value);
@@ -289,7 +290,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 
 		// === HTTP ===
 		fetch: async (input, init) => {
-			fetch_calls.push({input: input as string | URL | Request, init});
+			fetch_calls.push({ input: input as string | URL | Request, init });
 			const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 			for (const [pattern, response] of mock_fetch_responses) {
 				if (url.includes(pattern)) return response.clone();
@@ -299,23 +300,23 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 
 		// === Local Commands ===
 		run_command: async (cmd, args, options) => {
-			command_calls.push(options ? {cmd, args, options} : {cmd, args});
+			command_calls.push(options ? { cmd, args, options } : { cmd, args });
 
 			const key = `${cmd} ${args.join(' ')}`;
 			const mocked = mock_command_results.get(key);
 			if (mocked) {
 				if (options?.timeout_ms !== undefined && mocked.timed_out === undefined) {
-					return {...mocked, timed_out: false};
+					return { ...mocked, timed_out: false };
 				}
 				return mocked;
 			}
 
-			const result: CommandResult = {success: true, code: 0, stdout: '', stderr: ''};
+			const result: CommandResult = { success: true, code: 0, stdout: '', stderr: '' };
 			if (options?.timeout_ms !== undefined) result.timed_out = false;
 			return result;
 		},
 		run_command_inherit: async (cmd, args) => {
-			command_inherit_calls.push({cmd, args});
+			command_inherit_calls.push({ cmd, args });
 
 			const key = `${cmd} ${args.join(' ')}`;
 			const mocked = mock_command_results.get(key);
@@ -338,7 +339,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 		},
 
 		// === Logging ===
-		warn: (..._args: Array<unknown>) => {},
+		warn: (..._args: Array<unknown>) => {}
 	};
 
 	return runtime;

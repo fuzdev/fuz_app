@@ -4,8 +4,8 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import {z} from 'zod';
+import { describe, assert, test } from 'vitest';
+import { z } from 'zod';
 
 import {
 	ActionKind,
@@ -16,7 +16,7 @@ import {
 	RemoteNotificationActionSpec,
 	LocalCallActionSpec,
 	ActionSpecUnion,
-	is_action_spec,
+	is_action_spec
 } from '$lib/actions/action_spec.ts';
 
 describe('ActionKind', () => {
@@ -58,12 +58,12 @@ const create_request_response_spec = () => ({
 	method: 'thing_create',
 	kind: 'request_response' as const,
 	initiator: 'frontend' as const,
-	auth: {account: 'required', actor: 'none'} as const,
+	auth: { account: 'required', actor: 'none' } as const,
 	side_effects: true as const,
-	input: z.strictObject({name: z.string()}),
-	output: z.strictObject({id: z.string()}),
+	input: z.strictObject({ name: z.string() }),
+	output: z.strictObject({ id: z.string() }),
 	async: true,
-	description: 'Create a thing',
+	description: 'Create a thing'
 });
 
 const create_remote_notification_spec = () => ({
@@ -72,10 +72,10 @@ const create_remote_notification_spec = () => ({
 	initiator: 'backend' as const,
 	auth: null,
 	side_effects: true as const,
-	input: z.strictObject({id: z.string()}),
+	input: z.strictObject({ id: z.string() }),
 	output: z.void(),
 	async: true,
-	description: 'A thing was created',
+	description: 'A thing was created'
 });
 
 const create_local_call_spec = () => ({
@@ -87,7 +87,7 @@ const create_local_call_spec = () => ({
 	input: z.null(),
 	output: z.null(),
 	async: false,
-	description: 'Toggle the menu',
+	description: 'Toggle the menu'
 });
 
 describe('ActionSpec', () => {
@@ -107,13 +107,13 @@ describe('ActionSpec', () => {
 	});
 
 	test('requires description', () => {
-		const {description: _, ...spec} = create_request_response_spec();
+		const { description: _, ...spec } = create_request_response_spec();
 		const result = ActionSpec.safeParse(spec);
 		assert.ok(!result.success);
 	});
 
 	test('rejects unknown keys (strict)', () => {
-		const spec = {...create_request_response_spec(), extra: 'field'};
+		const spec = { ...create_request_response_spec(), extra: 'field' };
 		const result = ActionSpec.safeParse(spec);
 		assert.ok(!result.success);
 	});
@@ -126,19 +126,19 @@ describe('RequestResponseActionSpec', () => {
 	});
 
 	test('requires non-null auth', () => {
-		const spec = {...create_request_response_spec(), auth: null};
+		const spec = { ...create_request_response_spec(), auth: null };
 		const result = RequestResponseActionSpec.safeParse(spec);
 		assert.ok(!result.success);
 	});
 
 	test('requires async true', () => {
-		const spec = {...create_request_response_spec(), async: false};
+		const spec = { ...create_request_response_spec(), async: false };
 		const result = RequestResponseActionSpec.safeParse(spec);
 		assert.ok(!result.success);
 	});
 
 	test('defaults kind to request_response', () => {
-		const {kind: _, ...spec} = create_request_response_spec();
+		const { kind: _, ...spec } = create_request_response_spec();
 		const result = RequestResponseActionSpec.safeParse(spec);
 		assert.ok(result.success);
 		assert.strictEqual(result.data.kind, 'request_response');
@@ -152,13 +152,16 @@ describe('RemoteNotificationActionSpec', () => {
 	});
 
 	test('requires void output', () => {
-		const spec = {...create_remote_notification_spec(), output: z.strictObject({id: z.string()})};
+		const spec = {
+			...create_remote_notification_spec(),
+			output: z.strictObject({ id: z.string() })
+		};
 		const result = RemoteNotificationActionSpec.safeParse(spec);
 		assert.ok(!result.success);
 	});
 
 	test('defaults auth to null', () => {
-		const {auth: _, ...spec} = create_remote_notification_spec();
+		const { auth: _, ...spec } = create_remote_notification_spec();
 		const result = RemoteNotificationActionSpec.safeParse(spec);
 		assert.ok(result.success);
 		assert.strictEqual(result.data.auth, null);
@@ -179,7 +182,7 @@ describe('LocalCallActionSpec', () => {
 	});
 
 	test('defaults auth to null', () => {
-		const {auth: _, ...spec} = create_local_call_spec();
+		const { auth: _, ...spec } = create_local_call_spec();
 		const result = LocalCallActionSpec.safeParse(spec);
 		assert.ok(result.success);
 		assert.strictEqual(result.data.auth, null);
@@ -211,10 +214,10 @@ describe('is_action_spec', () => {
 	});
 
 	test('returns false for objects without method', () => {
-		assert.ok(!is_action_spec({kind: 'request_response'}));
+		assert.ok(!is_action_spec({ kind: 'request_response' }));
 	});
 
 	test('returns false for objects with invalid kind', () => {
-		assert.ok(!is_action_spec({method: 'test', kind: 'invalid'}));
+		assert.ok(!is_action_spec({ method: 'test', kind: 'invalid' }));
 	});
 });

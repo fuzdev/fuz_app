@@ -11,17 +11,17 @@
  * @module
  */
 
-import {assert, describe, test} from 'vitest';
-import {z} from 'zod';
+import { assert, describe, test } from 'vitest';
+import { z } from 'zod';
 
-import {RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
+import { RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
 import {
 	CancelNotificationParams,
 	cancel_action,
 	cancel_action_spec,
-	cancel_handler,
+	cancel_handler
 } from '$lib/actions/cancel.ts';
-import {create_ws_test_harness} from '$lib/testing/ws_round_trip.ts';
+import { create_ws_test_harness } from '$lib/testing/ws_round_trip.ts';
 
 describe('cancel_action', () => {
 	test('spec has the expected method + shape', () => {
@@ -33,12 +33,12 @@ describe('cancel_action', () => {
 	});
 
 	test('CancelNotificationParams accepts numeric and string ids; rejects extras and missing', () => {
-		assert.strictEqual(CancelNotificationParams.safeParse({request_id: 1}).success, true);
-		assert.strictEqual(CancelNotificationParams.safeParse({request_id: 'abc'}).success, true);
+		assert.strictEqual(CancelNotificationParams.safeParse({ request_id: 1 }).success, true);
+		assert.strictEqual(CancelNotificationParams.safeParse({ request_id: 'abc' }).success, true);
 		assert.strictEqual(CancelNotificationParams.safeParse({}).success, false);
 		assert.strictEqual(
-			CancelNotificationParams.safeParse({request_id: 1, stray: 1}).success,
-			false,
+			CancelNotificationParams.safeParse({ request_id: 1, stray: 1 }).success,
+			false
 		);
 	});
 
@@ -63,12 +63,12 @@ const slow_spec = RequestResponseActionSpec.parse({
 	method: 'slow',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none'},
+	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
 	input: z.strictObject({}),
 	output: z.strictObject({}),
 	async: true,
-	description: 'test — waits until ctx.signal aborts, then throws',
+	description: 'test — waits until ctx.signal aborts, then throws'
 });
 
 const wait_for_abort = (signal: AbortSignal): Promise<void> =>
@@ -77,7 +77,7 @@ const wait_for_abort = (signal: AbortSignal): Promise<void> =>
 			resolve();
 			return;
 		}
-		signal.addEventListener('abort', () => resolve(), {once: true});
+		signal.addEventListener('abort', () => resolve(), { once: true });
 	});
 
 describe('cancel via register_action_ws', () => {
@@ -90,26 +90,26 @@ describe('cancel via register_action_ws', () => {
 					handler: async (_input, ctx) => {
 						await wait_for_abort(ctx.signal);
 						throw new Error('aborted mid-stream');
-					},
-				},
-			],
+					}
+				}
+			]
 		});
 		const client = await harness.connect();
 
-		void client.send({jsonrpc: '2.0', id: 42, method: 'slow', params: {}});
+		void client.send({ jsonrpc: '2.0', id: 42, method: 'slow', params: {} });
 		// Give the dispatcher a tick to register the pending controller.
 		await Promise.resolve();
 		await client.send({
 			jsonrpc: '2.0',
 			method: cancel_action_spec.method,
-			params: {request_id: 42},
+			params: { request_id: 42 }
 		});
 
 		// Response should be an error frame for id 42, triggered by the
 		// handler bailing on its ctx.signal aborting.
 		const frame = await client.wait_for(
-			(msg): msg is {jsonrpc: '2.0'; id: number; error: {code: number; message: string}} =>
-				typeof msg === 'object' && msg !== null && 'id' in msg && 'error' in msg,
+			(msg): msg is { jsonrpc: '2.0'; id: number; error: { code: number; message: string } } =>
+				typeof msg === 'object' && msg !== null && 'id' in msg && 'error' in msg
 		);
 		assert.strictEqual(frame.id, 42);
 		assert.match(frame.error.message, /aborted mid-stream/);
@@ -121,9 +121,9 @@ describe('cancel via register_action_ws', () => {
 				cancel_action,
 				{
 					spec: slow_spec,
-					handler: () => ({}),
-				},
-			],
+					handler: () => ({})
+				}
+			]
 		});
 		const client = await harness.connect();
 
@@ -132,7 +132,7 @@ describe('cancel via register_action_ws', () => {
 		await client.send({
 			jsonrpc: '2.0',
 			method: cancel_action_spec.method,
-			params: {request_id: 99999},
+			params: { request_id: 99999 }
 		});
 		// Send a real request to prove dispatch is still healthy.
 		const result = await client.request(1, 'slow', {});
@@ -141,24 +141,28 @@ describe('cancel via register_action_ws', () => {
 
 	test('cancel with invalid params is ignored (no error frame sent)', async () => {
 		const harness = create_ws_test_harness({
-			actions: [cancel_action, {spec: slow_spec, handler: () => ({})}],
+			actions: [cancel_action, { spec: slow_spec, handler: () => ({}) }]
 		});
 		const client = await harness.connect();
 
-		await client.send({jsonrpc: '2.0', method: cancel_action_spec.method, params: {wrong_key: 1}});
+		await client.send({
+			jsonrpc: '2.0',
+			method: cancel_action_spec.method,
+			params: { wrong_key: 1 }
+		});
 		// No error frame — the dispatcher only rejects malformed envelopes on
 		// the request path. Follow-up request still dispatches.
 		const result = await client.request(1, 'slow', {});
 		assert.deepStrictEqual(result, {});
 		// No error frame arrived for the bad cancel.
 		const error_frames = client.messages.filter(
-			(m) => typeof m === 'object' && m !== null && 'error' in m,
+			(m) => typeof m === 'object' && m !== null && 'error' in m
 		);
 		assert.strictEqual(error_frames.length, 0);
 	});
 
 	test('cancel on one socket does not abort a different socket’s pending request', async () => {
-		const saw_abort: {a: boolean; b: boolean} = {a: false, b: false};
+		const saw_abort: { a: boolean; b: boolean } = { a: false, b: false };
 		const harness = create_ws_test_harness({
 			actions: [
 				cancel_action,
@@ -169,15 +173,15 @@ describe('cancel via register_action_ws', () => {
 						await wait_for_abort(ctx.signal);
 						saw_abort[tag] = true;
 						throw new Error(`${tag} aborted`);
-					},
-				},
-			],
+					}
+				}
+			]
 		});
 		const client_a = await harness.connect();
 		const client_b = await harness.connect();
 
-		void client_a.send({jsonrpc: '2.0', id: 'a', method: 'slow', params: {}});
-		void client_b.send({jsonrpc: '2.0', id: 'b', method: 'slow', params: {}});
+		void client_a.send({ jsonrpc: '2.0', id: 'a', method: 'slow', params: {} });
+		void client_b.send({ jsonrpc: '2.0', id: 'b', method: 'slow', params: {} });
 		await Promise.resolve();
 
 		// Client A cancels using id 'b' — a different socket's id. Must not
@@ -185,7 +189,7 @@ describe('cancel via register_action_ws', () => {
 		await client_a.send({
 			jsonrpc: '2.0',
 			method: cancel_action_spec.method,
-			params: {request_id: 'b'},
+			params: { request_id: 'b' }
 		});
 
 		// Wait a tick to let any stray abort propagate.
@@ -197,11 +201,11 @@ describe('cancel via register_action_ws', () => {
 		await client_a.send({
 			jsonrpc: '2.0',
 			method: cancel_action_spec.method,
-			params: {request_id: 'a'},
+			params: { request_id: 'a' }
 		});
 		const frame = await client_a.wait_for(
-			(msg): msg is {id: string | number; error: {message: string}} =>
-				typeof msg === 'object' && msg !== null && 'error' in msg && 'id' in msg,
+			(msg): msg is { id: string | number; error: { message: string } } =>
+				typeof msg === 'object' && msg !== null && 'error' in msg && 'id' in msg
 		);
 		assert.strictEqual(frame.id, 'a');
 		assert.match(frame.error.message, /a aborted/);
@@ -223,13 +227,13 @@ describe('cancel via register_action_ws', () => {
 						signal_at_close = ctx.signal;
 						await wait_for_abort(ctx.signal);
 						throw new Error('aborted via close');
-					},
-				},
-			],
+					}
+				}
+			]
 		});
 		const client = await harness.connect();
 
-		void client.send({jsonrpc: '2.0', id: 7, method: 'slow', params: {}});
+		void client.send({ jsonrpc: '2.0', id: 7, method: 'slow', params: {} });
 		await Promise.resolve();
 		assert.ok(signal_at_close);
 		assert.strictEqual(signal_at_close.aborted, false);
@@ -249,28 +253,32 @@ describe('cancel via register_action_ws', () => {
 						signals.set(ctx.request_id as number, ctx.signal);
 						await wait_for_abort(ctx.signal);
 						throw new Error(`id=${String(ctx.request_id)} aborted`);
-					},
-				},
-			],
+					}
+				}
+			]
 		});
 		const client = await harness.connect();
 
-		void client.send({jsonrpc: '2.0', id: 1, method: 'slow', params: {}});
-		void client.send({jsonrpc: '2.0', id: 2, method: 'slow', params: {}});
+		void client.send({ jsonrpc: '2.0', id: 1, method: 'slow', params: {} });
+		void client.send({ jsonrpc: '2.0', id: 2, method: 'slow', params: {} });
 		await Promise.resolve();
 		await Promise.resolve();
 		assert.ok(signals.get(1));
 		assert.ok(signals.get(2));
 
-		await client.send({jsonrpc: '2.0', method: cancel_action_spec.method, params: {request_id: 1}});
+		await client.send({
+			jsonrpc: '2.0',
+			method: cancel_action_spec.method,
+			params: { request_id: 1 }
+		});
 
 		const frame = await client.wait_for(
-			(msg): msg is {id: number; error: {message: string}} =>
+			(msg): msg is { id: number; error: { message: string } } =>
 				typeof msg === 'object' &&
 				msg !== null &&
 				'error' in msg &&
 				'id' in msg &&
-				(msg as {id: unknown}).id === 1,
+				(msg as { id: unknown }).id === 1
 		);
 		assert.strictEqual(frame.id, 1);
 		assert.strictEqual(signals.get(1)!.aborted, true);

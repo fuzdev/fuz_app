@@ -8,13 +8,13 @@
  * @module
  */
 
-import type {z} from 'zod';
+import type { z } from 'zod';
 
-import type {ActionSpec, ActionSideEffects} from './action_spec.ts';
-import type {RouteSpec, RouteMethod, RouteHandler} from '../http/route_spec.ts';
-import type {RouteAuth} from '../http/auth_shape.ts';
-import type {EventSpec} from '../realtime/sse.ts';
-import type {RouteErrorSchemas} from '../http/error_schemas.ts';
+import type { ActionSpec, ActionSideEffects } from './action_spec.ts';
+import type { RouteSpec, RouteMethod, RouteHandler } from '../http/route_spec.ts';
+import type { RouteAuth } from '../http/auth_shape.ts';
+import type { EventSpec } from '../realtime/sse.ts';
+import type { RouteErrorSchemas } from '../http/error_schemas.ts';
 
 /** Options for deriving a `RouteSpec` from an `ActionSpec`. */
 export interface ActionRouteOptions {
@@ -65,13 +65,13 @@ export const derive_http_method = (side_effects: ActionSideEffects): RouteMethod
  */
 export const create_action_route_spec = (
 	spec: ActionSpec,
-	options: ActionRouteOptions,
+	options: ActionRouteOptions
 ): RouteSpec => {
 	if (spec.auth === null) {
 		throw new Error(
 			`Cannot derive route spec from action '${
 				spec.method
-			}': auth is null (only request_response actions with non-null auth can become routes)`,
+			}': auth is null (only request_response actions with non-null auth can become routes)`
 		);
 	}
 	return {
@@ -80,12 +80,12 @@ export const create_action_route_spec = (
 		auth: options.auth ?? spec.auth,
 		handler: options.handler,
 		description: spec.description,
-		...(options.params ? {params: options.params} : {}),
-		...(options.query ? {query: options.query} : {}),
+		...(options.params ? { params: options.params } : {}),
+		...(options.query ? { query: options.query } : {}),
 		input: spec.input,
 		output: spec.output,
-		...(options.errors ? {errors: options.errors} : {}),
-		transaction: spec.side_effects,
+		...(options.errors ? { errors: options.errors } : {}),
+		transaction: spec.side_effects
 	};
 };
 
@@ -101,19 +101,19 @@ export const create_action_route_spec = (
  */
 export const create_action_event_spec = (
 	spec: ActionSpec,
-	options?: ActionEventOptions,
+	options?: ActionEventOptions
 ): EventSpec => {
 	if (spec.kind !== 'remote_notification') {
 		throw new Error(
 			`Cannot derive event spec from action '${spec.method}': kind is '${
 				spec.kind
-			}' (must be 'remote_notification')`,
+			}' (must be 'remote_notification')`
 		);
 	}
 	return {
 		method: spec.method,
 		params: spec.input,
 		description: spec.description,
-		channel: options?.channel,
+		channel: options?.channel
 	};
 };

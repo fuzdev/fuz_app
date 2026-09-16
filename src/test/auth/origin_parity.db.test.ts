@@ -14,15 +14,15 @@
  * @module
  */
 
-import {default_in_process_setup} from '$lib/testing/cross_backend/in_process_setup.ts';
-import {in_process_capabilities} from '$lib/testing/cross_backend/capabilities.ts';
-import {describe_origin_cross_tests} from '$lib/testing/cross_backend/origin.ts';
-import {create_session_config} from '$lib/auth/session_cookie.ts';
-import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.ts';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
-import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
-import type {AppServerContext} from '$lib/server/app_server_context.ts';
-import type {RouteSpec} from '$lib/http/route_spec.ts';
+import { default_in_process_setup } from '$lib/testing/cross_backend/in_process_setup.ts';
+import { in_process_capabilities } from '$lib/testing/cross_backend/capabilities.ts';
+import { describe_origin_cross_tests } from '$lib/testing/cross_backend/origin.ts';
+import { create_session_config } from '$lib/auth/session_cookie.ts';
+import { create_standard_rpc_actions } from '$lib/auth/standard_rpc_actions.ts';
+import { create_rpc_endpoint } from '$lib/actions/action_rpc.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
+import type { AppServerContext } from '$lib/server/app_server_context.ts';
+import type { RouteSpec } from '$lib/http/route_spec.ts';
 
 const RPC_PATH = '/api/rpc';
 const session_options = create_session_config('test_session');
@@ -34,12 +34,12 @@ const setup_test = default_in_process_setup({
 		create_rpc_endpoint({
 			path: RPC_PATH,
 			actions: create_standard_rpc_actions(ctx.deps),
-			log: ctx.deps.log,
-		}),
+			log: ctx.deps.log
+		})
 });
 
 describe_origin_cross_tests({
 	setup_test,
 	capabilities: in_process_capabilities,
-	rpc_path: RPC_PATH,
+	rpc_path: RPC_PATH
 });

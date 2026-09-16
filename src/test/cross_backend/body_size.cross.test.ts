@@ -11,24 +11,24 @@
  * @module
  */
 
-import {inject} from 'vitest';
+import { inject } from 'vitest';
 
 import {
 	default_cross_process_setup,
-	reconstruct_bootstrapped_handle,
+	reconstruct_bootstrapped_handle
 } from '$lib/testing/cross_backend/setup.ts';
-import {describe_body_size_cross_tests} from '$lib/testing/cross_backend/body_size.ts';
-import {describe_body_size_smuggling_cross_tests} from '$lib/testing/cross_backend/body_size_smuggling.ts';
+import { describe_body_size_cross_tests } from '$lib/testing/cross_backend/body_size.ts';
+import { describe_body_size_smuggling_cross_tests } from '$lib/testing/cross_backend/body_size_smuggling.ts';
 
 import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle);
-const {capabilities, rpc_path, base_url} = handle.config;
+const { capabilities, rpc_path, base_url } = handle.config;
 
-describe_body_size_cross_tests({setup_test, capabilities, rpc_path});
+describe_body_size_cross_tests({ setup_test, capabilities, rpc_path });
 describe_body_size_smuggling_cross_tests({
 	base_url,
 	rpc_path,
-	closes_connection: capabilities.oversized_reject_closes_connection,
+	closes_connection: capabilities.oversized_reject_closes_connection
 });

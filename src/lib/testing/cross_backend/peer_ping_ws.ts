@@ -36,20 +36,20 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {assert, describe} from 'vitest';
+import { assert, describe } from 'vitest';
 
-import {rpc_call} from '../rpc_helpers.ts';
-import {create_ws_transport} from '../transports/ws_transport.ts';
+import { rpc_call } from '../rpc_helpers.ts';
+import { create_ws_transport } from '../transports/ws_transport.ts';
 import {
 	is_response_for,
 	type JsonrpcErrorResponseFrame,
 	type JsonrpcSuccessResponseFrame,
 	type WsClient,
-	type WsRequestResponder,
+	type WsRequestResponder
 } from '../transports/ws_client.ts';
-import {create_jsonrpc_request, is_jsonrpc_request} from '../../http/jsonrpc_helpers.ts';
-import {type BackendCapabilities, test_if} from './capabilities.ts';
-import type {SetupTest} from './setup.ts';
+import { create_jsonrpc_request, is_jsonrpc_request } from '../../http/jsonrpc_helpers.ts';
+import { type BackendCapabilities, test_if } from './capabilities.ts';
+import type { SetupTest } from './setup.ts';
 
 /** JSON-RPC endpoint path — matches the spine's `/api/rpc` (and the forge's). */
 const RPC_PATH = '/api/rpc';
@@ -65,7 +65,7 @@ const REASON_PEER_INVALID_REPLY = 'peer_ping_invalid_reply';
 const REASON_PEER_NO_TRANSPORT = 'peer_no_transport';
 
 /** A reply payload that satisfies the Rust `PingResponse` shape. */
-const valid_reply = (nonce: number) => ({nonce, protocol_version: 1});
+const valid_reply = (nonce: number) => ({ nonce, protocol_version: 1 });
 
 /** Configuration for {@link describe_peer_ping_ws_tests}. */
 export interface PeerPingWsTestOptions {
@@ -87,14 +87,14 @@ export interface PeerPingWsTestOptions {
  * the HTTP no-transport path). Gated on `capabilities.peer_request`.
  */
 export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): void => {
-	const {setup_test, capabilities, base_url, ws_path} = options;
+	const { setup_test, capabilities, base_url, ws_path } = options;
 
 	// -- shared helpers -------------------------------------------------------
 
 	/** Open a WS transport for a session cookie, with an optional responder. */
 	const open_ws = (
 		cookie: string | undefined,
-		on_request?: WsRequestResponder,
+		on_request?: WsRequestResponder
 	): Promise<WsClient> => {
 		assert.ok(cookie, 'expected a session cookie for the WS upgrade');
 		return create_ws_transport({
@@ -102,14 +102,14 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 			ws_path,
 			cookies: [cookie],
 			origin: base_url,
-			on_request,
+			on_request
 		});
 	};
 
 	/** A responder that echoes a valid `PingResponse` for every `peer/ping`. */
 	const echo_responder: WsRequestResponder = (req) => {
-		const nonce = (req.params as {nonce?: number} | undefined)?.nonce ?? 0;
-		return {result: valid_reply(nonce)};
+		const nonce = (req.params as { nonce?: number } | undefined)?.nonce ?? 0;
+		return { result: valid_reply(nonce) };
 	};
 
 	/**
@@ -121,19 +121,19 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 	const ping_raw = (
 		ws: WsClient,
 		id: number,
-		params: unknown,
+		params: unknown
 	): Promise<JsonrpcSuccessResponseFrame | JsonrpcErrorResponseFrame> =>
 		ws
 			.send(create_jsonrpc_request(PEER_PING_METHOD, params as never, id))
 			.then(() =>
 				ws.wait_for<JsonrpcSuccessResponseFrame | JsonrpcErrorResponseFrame>(
 					is_response_for(id),
-					8000,
-				),
+					8000
+				)
 			);
 
 	const error_reason = (frame: JsonrpcErrorResponseFrame): unknown =>
-		(frame.error.data as {reason?: unknown} | undefined)?.reason;
+		(frame.error.data as { reason?: unknown } | undefined)?.reason;
 
 	// -- tests ----------------------------------------------------------------
 
@@ -145,18 +145,18 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 				const fixture = await setup_test();
 				const ws = await open_ws(fixture.create_session_headers().cookie, echo_responder);
 				try {
-					const result = await ws.request<{nonce: number; protocol_version: number}>(
+					const result = await ws.request<{ nonce: number; protocol_version: number }>(
 						1,
 						PEER_PING_METHOD,
-						{nonce: 42},
-						8000,
+						{ nonce: 42 },
+						8000
 					);
 					assert.strictEqual(result.nonce, 42, 'the server echoes the issued nonce back');
 					assert.strictEqual(typeof result.protocol_version, 'number');
 				} finally {
 					await ws.close();
 				}
-			},
+			}
 		);
 
 		test_if(
@@ -168,13 +168,13 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 				const ws = await open_ws(fixture.create_session_headers().cookie, () => undefined);
 				try {
 					// Short server-side deadline so the negative runs fast.
-					const frame = await ping_raw(ws, 2, {nonce: 1, timeout_ms: 300});
+					const frame = await ping_raw(ws, 2, { nonce: 1, timeout_ms: 300 });
 					assert.ok('error' in frame, 'a swallowed ping must error, not succeed');
 					assert.strictEqual(error_reason(frame), REASON_PEER_TIMEOUT);
 				} finally {
 					await ws.close();
 				}
-			},
+			}
 		);
 
 		test_if(
@@ -185,16 +185,16 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 				// Reply that fails `PingResponse` validation (nonce wrong type,
 				// protocol_version missing).
 				const ws = await open_ws(fixture.create_session_headers().cookie, () => ({
-					result: {nonce: 'not-a-number'},
+					result: { nonce: 'not-a-number' }
 				}));
 				try {
-					const frame = await ping_raw(ws, 3, {nonce: 1, timeout_ms: 2000});
+					const frame = await ping_raw(ws, 3, { nonce: 1, timeout_ms: 2000 });
 					assert.ok('error' in frame, 'a malformed reply must error, not return garbage');
 					assert.strictEqual(error_reason(frame), REASON_PEER_INVALID_REPLY);
 				} finally {
 					await ws.close();
 				}
-			},
+			}
 		);
 
 		test_if(
@@ -203,17 +203,17 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 			async () => {
 				const fixture = await setup_test();
 				const ws = await open_ws(fixture.create_session_headers().cookie, () => ({
-					error: {code: -32603, message: 'client refused', data: {reason: 'client_says_no'}},
+					error: { code: -32603, message: 'client refused', data: { reason: 'client_says_no' } }
 				}));
 				try {
-					const frame = await ping_raw(ws, 4, {nonce: 1, timeout_ms: 2000});
+					const frame = await ping_raw(ws, 4, { nonce: 1, timeout_ms: 2000 });
 					assert.ok('error' in frame, 'a client error reply must surface as an error');
 					assert.strictEqual(frame.error.code, -32603);
 					assert.strictEqual(error_reason(frame), 'client_says_no');
 				} finally {
 					await ws.close();
 				}
-			},
+			}
 		);
 
 		test_if(
@@ -224,15 +224,20 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 				const ws = await open_ws(fixture.create_session_headers().cookie, echo_responder);
 				try {
 					// Inject a reply for an id the server never issued on this socket.
-					await ws.send({jsonrpc: '2.0', id: 's999999', result: valid_reply(7)});
+					await ws.send({ jsonrpc: '2.0', id: 's999999', result: valid_reply(7) });
 					// A legitimate round-trip still works → the junk frame neither
 					// crashed the read loop nor corrupted the pending registry.
-					const result = await ws.request<{nonce: number}>(5, PEER_PING_METHOD, {nonce: 99}, 8000);
+					const result = await ws.request<{ nonce: number }>(
+						5,
+						PEER_PING_METHOD,
+						{ nonce: 99 },
+						8000
+					);
 					assert.strictEqual(result.nonce, 99);
 				} finally {
 					await ws.close();
 				}
-			},
+			}
 		);
 
 		test_if(
@@ -248,13 +253,13 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 				try {
 					// A invokes peer/ping with a short server-side deadline; don't
 					// await yet — observe the server→client request first.
-					const ping_promise = ping_raw(ws_a, 6, {nonce: 1, timeout_ms: 1200});
+					const ping_promise = ping_raw(ws_a, 6, { nonce: 1, timeout_ms: 1200 });
 
 					// The server-initiated request A received (id "sN", nonce 1).
 					const inbound = await ws_a.wait_for(
-						(m): m is {id: number | string; params: {nonce: number}} =>
+						(m): m is { id: number | string; params: { nonce: number } } =>
 							is_jsonrpc_request(m) && m.method === PEER_PING_METHOD,
-						5000,
+						5000
 					);
 
 					// B replies for A's id — a cross-connection echo. Correct
@@ -262,7 +267,7 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 					await ws_b.send({
 						jsonrpc: '2.0',
 						id: inbound.id,
-						result: valid_reply(inbound.params.nonce),
+						result: valid_reply(inbound.params.nonce)
 					});
 
 					const frame = await ping_promise;
@@ -272,7 +277,7 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 					await ws_a.close();
 					await ws_b.close();
 				}
-			},
+			}
 		);
 
 		test_if(
@@ -284,17 +289,17 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 					app: fixture.transport,
 					path: RPC_PATH,
 					method: PEER_PING_METHOD,
-					params: {nonce: 1},
-					headers: fixture.create_session_headers(),
+					params: { nonce: 1 },
+					headers: fixture.create_session_headers()
 				});
 				assert.isFalse(res.ok, 'HTTP peer/ping has no socket to ping');
 				if (!res.ok) {
 					assert.strictEqual(
-						(res.error.data as {reason?: unknown} | undefined)?.reason,
-						REASON_PEER_NO_TRANSPORT,
+						(res.error.data as { reason?: unknown } | undefined)?.reason,
+						REASON_PEER_NO_TRANSPORT
 					);
 				}
-			},
+			}
 		);
 	});
 };

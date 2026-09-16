@@ -25,7 +25,7 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
 /**
  * Letter (lowercase a-z) start and end (or single letter), with letters
@@ -40,7 +40,7 @@ export const GrantPathName = z
 	.string()
 	.regex(
 		GRANT_PATH_NAME_REGEX,
-		'Grant-path names must be lowercase letters and underscores (a-z_), no leading/trailing underscore',
+		'Grant-path names must be lowercase letters and underscores (a-z_), no leading/trailing underscore'
 	);
 export type GrantPathName = z.infer<typeof GrantPathName>;
 
@@ -63,7 +63,7 @@ export const BUILTIN_GRANT_PATHS = [
 	GRANT_PATH_ADMIN,
 	GRANT_PATH_SELF_SERVICE,
 	GRANT_PATH_SYSTEM,
-	GRANT_PATH_BOOTSTRAP,
+	GRANT_PATH_BOOTSTRAP
 ] as const;
 
 /** Zod enum for builtin grant paths only. */
@@ -93,24 +93,24 @@ export const builtin_grant_path_meta: ReadonlyMap<string, GrantPathMeta> = new M
 		GRANT_PATH_ADMIN,
 		{
 			description:
-				'Admin-mediated grant — admin offers via `role_grant_offer_create` or direct grant.',
-		},
+				'Admin-mediated grant — admin offers via `role_grant_offer_create` or direct grant.'
+		}
 	],
 	[
 		GRANT_PATH_SELF_SERVICE,
 		{
 			description:
-				'Self-service grant — caller toggles their own role_grant via `self_service_role_set`.',
-		},
+				'Self-service grant — caller toggles their own role_grant via `self_service_role_set`.'
+		}
 	],
 	[
 		GRANT_PATH_SYSTEM,
-		{description: 'System-mediated grant — signup, automation, or internal service flows.'},
+		{ description: 'System-mediated grant — signup, automation, or internal service flows.' }
 	],
 	[
 		GRANT_PATH_BOOTSTRAP,
-		{description: 'Bootstrap grant — one-shot flow during the keep’s first-run bootstrap.'},
-	],
+		{ description: 'Bootstrap grant — one-shot flow during the keep’s first-run bootstrap.' }
+	]
 ]);
 
 /** The result of `create_grant_path_schema` — a Zod schema and metadata map. */
@@ -157,7 +157,7 @@ export interface GrantPathSchemaResult {
  * ```
  */
 export const create_grant_path_schema = (
-	consumer_paths: Record<string, GrantPathMeta> = {},
+	consumer_paths: Record<string, GrantPathMeta> = {}
 ): GrantPathSchemaResult => {
 	const consumer_names = Object.keys(consumer_paths);
 
@@ -184,5 +184,5 @@ export const create_grant_path_schema = (
 		grant_paths.set(name, consumer_paths[name]!);
 	}
 
-	return {GrantPath, grant_paths};
+	return { GrantPath, grant_paths };
 };

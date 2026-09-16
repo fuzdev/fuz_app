@@ -14,27 +14,27 @@
  * @module
  */
 
-import {inject} from 'vitest';
+import { inject } from 'vitest';
 
 import {
 	default_cross_process_setup,
-	reconstruct_bootstrapped_handle,
+	reconstruct_bootstrapped_handle
 } from '$lib/testing/cross_backend/setup.ts';
-import {describe_cell_crud_cross_tests} from '$lib/testing/cross_backend/cell_crud.ts';
-import {describe_cell_relations_cross_tests} from '$lib/testing/cross_backend/cell_relations.ts';
+import { describe_cell_crud_cross_tests } from '$lib/testing/cross_backend/cell_crud.ts';
+import { describe_cell_relations_cross_tests } from '$lib/testing/cross_backend/cell_relations.ts';
 import {
 	describe_cell_gated_create_cross_tests,
-	describe_cell_moderate_cross_tests,
+	describe_cell_moderate_cross_tests
 } from '$lib/testing/cross_backend/cell_gated_create.ts';
 
 import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle);
-const {capabilities} = handle.config;
-const {rpc_path} = handle.config;
+const { capabilities } = handle.config;
+const { rpc_path } = handle.config;
 
-describe_cell_crud_cross_tests({setup_test, capabilities, rpc_path});
-describe_cell_relations_cross_tests({setup_test, capabilities, rpc_path});
-describe_cell_gated_create_cross_tests({setup_test, capabilities, rpc_path});
-describe_cell_moderate_cross_tests({setup_test, capabilities, rpc_path});
+describe_cell_crud_cross_tests({ setup_test, capabilities, rpc_path });
+describe_cell_relations_cross_tests({ setup_test, capabilities, rpc_path });
+describe_cell_gated_create_cross_tests({ setup_test, capabilities, rpc_path });
+describe_cell_moderate_cross_tests({ setup_test, capabilities, rpc_path });

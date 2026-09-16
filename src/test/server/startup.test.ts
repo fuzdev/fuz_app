@@ -4,19 +4,19 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { describe, test, assert } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {log_startup_summary} from '$lib/server/startup.ts';
-import type {AppSurface} from '$lib/http/surface.ts';
+import { log_startup_summary } from '$lib/server/startup.ts';
+import type { AppSurface } from '$lib/http/surface.ts';
 
 const create_surface = (overrides?: Partial<AppSurface>): AppSurface => ({
-	middleware: [{name: 'origin', path: '/api/*', error_schemas: null}],
+	middleware: [{ name: 'origin', path: '/api/*', error_schemas: null }],
 	routes: [
 		{
 			method: 'GET',
 			path: '/health',
-			auth: {account: 'none', actor: 'none'},
+			auth: { account: 'none', actor: 'none' },
 			applicable_middleware: [],
 			description: 'Health check',
 			is_mutation: false,
@@ -27,12 +27,12 @@ const create_surface = (overrides?: Partial<AppSurface>): AppSurface => ({
 			query_schema: null,
 			input_schema: null,
 			output_schema: null,
-			error_schemas: null,
+			error_schemas: null
 		},
 		{
 			method: 'POST',
 			path: '/api/login',
-			auth: {account: 'none', actor: 'none'},
+			auth: { account: 'none', actor: 'none' },
 			applicable_middleware: ['origin'],
 			description: 'Login',
 			is_mutation: true,
@@ -43,15 +43,15 @@ const create_surface = (overrides?: Partial<AppSurface>): AppSurface => ({
 			query_schema: null,
 			input_schema: {},
 			output_schema: {},
-			error_schemas: null,
-		},
+			error_schemas: null
+		}
 	],
 	rpc_endpoints: [],
 	ws_endpoints: [],
 	env: [],
 	events: [],
 	diagnostics: [],
-	...overrides,
+	...overrides
 });
 
 const create_test_logger = (lines: Array<string>, label = 'server'): Logger =>
@@ -61,8 +61,8 @@ const create_test_logger = (lines: Array<string>, label = 'server'): Logger =>
 		console: {
 			log: (...args: Array<unknown>) => lines.push(args.map(String).join(' ')),
 			warn: (...args: Array<unknown>) => lines.push(args.map(String).join(' ')),
-			error: (...args: Array<unknown>) => lines.push(args.map(String).join(' ')),
-		},
+			error: (...args: Array<unknown>) => lines.push(args.map(String).join(' '))
+		}
 	});
 
 describe('log_startup_summary', () => {
@@ -80,15 +80,15 @@ describe('log_startup_summary', () => {
 		const log = create_test_logger(lines);
 		const surface = create_surface({
 			env: [
-				{name: 'PORT', description: 'Port', sensitivity: null, has_default: true, optional: true},
+				{ name: 'PORT', description: 'Port', sensitivity: null, has_default: true, optional: true },
 				{
 					name: 'SECRET',
 					description: 'Secret',
 					sensitivity: 'secret',
 					has_default: false,
-					optional: false,
-				},
-			],
+					optional: false
+				}
+			]
 		});
 		log_startup_summary(surface, log);
 		assert.strictEqual(lines.length, 2);
@@ -107,25 +107,25 @@ describe('log_startup_summary', () => {
 					methods: [
 						{
 							name: 'a',
-							auth: {account: 'none', actor: 'none'},
+							auth: { account: 'none', actor: 'none' },
 							input_schema: null,
 							output_schema: {},
 							side_effects: false,
 							description: '',
-							rate_limit_key: null,
+							rate_limit_key: null
 						},
 						{
 							name: 'b',
-							auth: {account: 'none', actor: 'none'},
+							auth: { account: 'none', actor: 'none' },
 							input_schema: null,
 							output_schema: {},
 							side_effects: true,
 							description: '',
-							rate_limit_key: null,
-						},
-					],
-				},
-			],
+							rate_limit_key: null
+						}
+					]
+				}
+			]
 		});
 		log_startup_summary(surface, log);
 		const rpc_line = lines.find((l) => l.includes('RPC:'));
@@ -147,16 +147,16 @@ describe('log_startup_summary', () => {
 						{
 							name: 'heartbeat',
 							kind: 'request_response',
-							auth: {account: 'required', actor: 'none'},
+							auth: { account: 'required', actor: 'none' },
 							input_schema: null,
 							output_schema: {},
 							description: '',
 							side_effects: false,
-							rate_limit_key: null,
-						},
-					],
-				},
-			],
+							rate_limit_key: null
+						}
+					]
+				}
+			]
 		});
 		log_startup_summary(surface, log);
 		const ws_line = lines.find((l) => l.includes('WS:'));
@@ -171,11 +171,11 @@ describe('log_startup_summary', () => {
 		log_startup_summary(create_surface(), log);
 		assert.isFalse(
 			lines.some((l) => l.includes('RPC:')),
-			'no RPC line when empty',
+			'no RPC line when empty'
 		);
 		assert.isFalse(
 			lines.some((l) => l.includes('WS:')),
-			'no WS line when empty',
+			'no WS line when empty'
 		);
 	});
 
@@ -184,10 +184,10 @@ describe('log_startup_summary', () => {
 		const log = create_test_logger(lines);
 		const surface = create_surface({
 			events: [
-				{method: 'run_created', description: 'Created', channel: 'runs', params_schema: null},
-				{method: 'run_updated', description: 'Updated', channel: 'runs', params_schema: null},
-				{method: 'log', description: 'Log', channel: 'logs', params_schema: null},
-			],
+				{ method: 'run_created', description: 'Created', channel: 'runs', params_schema: null },
+				{ method: 'run_updated', description: 'Updated', channel: 'runs', params_schema: null },
+				{ method: 'log', description: 'Log', channel: 'logs', params_schema: null }
+			]
 		});
 		log_startup_summary(surface, log);
 		assert.strictEqual(lines.length, 2);
@@ -200,17 +200,17 @@ describe('log_startup_summary', () => {
 		const log = create_test_logger(lines);
 		const surface = create_surface({
 			env: [
-				{name: 'PORT', description: 'Port', sensitivity: null, has_default: true, optional: true},
+				{ name: 'PORT', description: 'Port', sensitivity: null, has_default: true, optional: true },
 				{
 					name: 'SECRET',
 					description: 'Secret',
 					sensitivity: 'secret',
 					has_default: false,
-					optional: false,
-				},
-			],
+					optional: false
+				}
+			]
 		});
-		log_startup_summary(surface, log, {PORT: 4040, SECRET: 'hunter2'});
+		log_startup_summary(surface, log, { PORT: 4040, SECRET: 'hunter2' });
 		const port_line = lines.find((l) => l.includes('PORT='));
 		const secret_line = lines.find((l) => l.includes('SECRET='));
 		assert.ok(port_line);
@@ -243,30 +243,30 @@ describe('log_startup_summary', () => {
 					level: 'warning',
 					category: 'schema',
 					message: 'Input not strict',
-					source: 'POST /api/foo input',
+					source: 'POST /api/foo input'
 				},
-				{level: 'warning', category: 'security', message: 'Cookie secure=false'},
-				{level: 'info', category: 'config', message: 'Rate limiter disabled'},
-			],
+				{ level: 'warning', category: 'security', message: 'Cookie secure=false' },
+				{ level: 'info', category: 'config', message: 'Rate limiter disabled' }
+			]
 		});
 		log_startup_summary(surface, log);
 		const warning_lines = lines.filter((l) => l.includes('warning'));
 		assert.ok(warning_lines.length > 0, 'should log warnings');
 		assert.ok(
 			lines.some((l) => l.includes('2 warning(s)')),
-			'should show warning count',
+			'should show warning count'
 		);
 		assert.ok(
 			lines.some((l) => l.includes('[schema]')),
-			'should show category',
+			'should show category'
 		);
 		assert.ok(
 			lines.some((l) => l.includes('POST /api/foo input')),
-			'should show source',
+			'should show source'
 		);
 		assert.ok(
 			!lines.some((l) => l.includes('Rate limiter disabled')),
-			'should not log info-level diagnostics',
+			'should not log info-level diagnostics'
 		);
 	});
 
@@ -274,12 +274,12 @@ describe('log_startup_summary', () => {
 		const lines: Array<string> = [];
 		const log = create_test_logger(lines);
 		const surface = create_surface({
-			diagnostics: [{level: 'info', category: 'config', message: 'Something informational'}],
+			diagnostics: [{ level: 'info', category: 'config', message: 'Something informational' }]
 		});
 		log_startup_summary(surface, log);
 		assert.ok(
 			!lines.some((l) => l.includes('Diagnostics')),
-			'should not log diagnostics header for info-only',
+			'should not log diagnostics header for info-only'
 		);
 	});
 });

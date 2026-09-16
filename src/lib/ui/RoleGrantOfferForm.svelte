@@ -13,18 +13,18 @@
 
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
 
-	import {role_grant_offers_state_context} from './role_grant_offers_state.svelte.ts';
-	import {FormState} from './form_state.svelte.ts';
+	import { role_grant_offers_state_context } from './role_grant_offers_state.svelte.ts';
+	import { FormState } from './form_state.svelte.ts';
 	import {
 		ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX,
-		type RoleGrantOfferJson,
+		type RoleGrantOfferJson
 	} from '../auth/role_grant_offer_schema.ts';
 	import {
 		ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
 		ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH,
 		ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
 		ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE,
-		ERROR_ROLE_GRANT_OFFER_SELF_TARGET,
+		ERROR_ROLE_GRANT_OFFER_SELF_TARGET
 	} from '../auth/role_grant_offer_action_specs.ts';
 
 	const {
@@ -33,7 +33,7 @@
 		roles,
 		scope_id = null,
 		on_created,
-		format_role = (role: string) => role,
+		format_role = (role: string) => role
 	}: {
 		to_account_id: string;
 		/**
@@ -89,7 +89,7 @@
 			to_actor_id,
 			role: selected_role,
 			scope_id,
-			message: message.trim() || null,
+			message: message.trim() || null
 		});
 		if (offer) {
 			message = '';
@@ -99,9 +99,7 @@
 		}
 		// Structured error data carries the reason; fall back to raw error string.
 		const data = role_grant_offers.create.error_data as
-			| {data?: {reason?: string}; reason?: string}
-			| null
-			| undefined;
+			{ data?: { reason?: string }; reason?: string } | null | undefined;
 		const reason = data?.data?.reason ?? data?.reason ?? null;
 		local_error = surface_error(reason) ?? role_grant_offers.create.error;
 	};
@@ -136,8 +134,7 @@
 			bind:value={message}
 			maxlength={ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX}
 			placeholder="optional note for the recipient"
-			disabled={submitting}
-		></textarea>
+			disabled={submitting}></textarea>
 	</label>
 
 	<div class="row gap_sm">

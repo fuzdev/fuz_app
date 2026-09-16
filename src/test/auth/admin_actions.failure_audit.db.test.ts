@@ -11,22 +11,22 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
 import {
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec,
-	audit_log_list_action_spec,
+	audit_log_list_action_spec
 } from '$lib/auth/admin_action_specs.ts';
-import {create_test_app} from '$lib/testing/app_server.ts';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { create_test_app } from '$lib/testing/app_server.ts';
+import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import {
 	RPC_PATH,
 	create_admin_route_specs,
 	describe_db,
-	session_options,
+	session_options
 } from './admin_rpc_test_helpers.ts';
 
 // Valid v4 UUID that won't collide with bootstrap/test accounts. Must be
@@ -40,26 +40,26 @@ describe_db('admin_actions_failure_audit', (get_db) => {
 				session_options,
 				create_route_specs: create_admin_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: admin_session_revoke_all_action_spec,
-				params: {account_id: missing_account_id},
-				headers: test_app.create_session_headers(),
+				params: { account_id: missing_account_id },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(!res.ok, 'Expected 404 for missing account');
 			assert.strictEqual(res.status, 404);
-			assert.strictEqual((res.error.data as {reason: string}).reason, 'account_not_found');
+			assert.strictEqual((res.error.data as { reason: string }).reason, 'account_not_found');
 
 			const audit_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: audit_log_list_action_spec,
-				params: {event_type: 'session_revoke_all'},
-				headers: test_app.create_session_headers(),
+				params: { event_type: 'session_revoke_all' },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(audit_res.ok, 'audit_log_list should succeed');
 			const failure = audit_res.result.events.find((e) => e.outcome === 'failure');
@@ -70,7 +70,7 @@ describe_db('admin_actions_failure_audit', (get_db) => {
 			// emit it, and RPC admin handlers thread `ctx.client_ip` the same
 			// way so audit rows are transport-uniform.
 			assert.strictEqual(failure.ip, '127.0.0.1');
-			const metadata = failure.metadata as {reason?: string; attempted_account_id?: string};
+			const metadata = failure.metadata as { reason?: string; attempted_account_id?: string };
 			assert.strictEqual(metadata.reason, 'account_not_found');
 			assert.strictEqual(metadata.attempted_account_id, missing_account_id);
 		});
@@ -82,26 +82,26 @@ describe_db('admin_actions_failure_audit', (get_db) => {
 				session_options,
 				create_route_specs: create_admin_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: admin_token_revoke_all_action_spec,
-				params: {account_id: missing_account_id},
-				headers: test_app.create_session_headers(),
+				params: { account_id: missing_account_id },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(!res.ok, 'Expected 404 for missing account');
 			assert.strictEqual(res.status, 404);
-			assert.strictEqual((res.error.data as {reason: string}).reason, 'account_not_found');
+			assert.strictEqual((res.error.data as { reason: string }).reason, 'account_not_found');
 
 			const audit_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: audit_log_list_action_spec,
-				params: {event_type: 'token_revoke_all'},
-				headers: test_app.create_session_headers(),
+				params: { event_type: 'token_revoke_all' },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(audit_res.ok, 'audit_log_list should succeed');
 			const failure = audit_res.result.events.find((e) => e.outcome === 'failure');
@@ -109,7 +109,7 @@ describe_db('admin_actions_failure_audit', (get_db) => {
 			assert.strictEqual(failure.event_type, 'token_revoke_all');
 			assert.strictEqual(failure.target_account_id, null);
 			assert.strictEqual(failure.ip, '127.0.0.1');
-			const metadata = failure.metadata as {reason?: string; attempted_account_id?: string};
+			const metadata = failure.metadata as { reason?: string; attempted_account_id?: string };
 			assert.strictEqual(metadata.reason, 'account_not_found');
 			assert.strictEqual(metadata.attempted_account_id, missing_account_id);
 		});

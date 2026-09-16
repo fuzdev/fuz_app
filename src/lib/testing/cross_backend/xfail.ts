@@ -21,7 +21,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {test} from 'vitest';
+import { test } from 'vitest';
 
 /**
  * Register `fn` as an expected-failure test. Passes while `fn` throws /
@@ -39,7 +39,7 @@ export const xfail_until = (
 	tracking_id: string,
 	reason: string,
 	name: string,
-	fn: () => void | Promise<void>,
+	fn: () => void | Promise<void>
 ): void => {
 	test.fails(`${name} [xfail_until ${tracking_id}: ${reason}]`, fn);
 };

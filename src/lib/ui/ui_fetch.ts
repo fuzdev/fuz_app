@@ -12,7 +12,7 @@
  * Fetch with credentials included (sends cookies).
  */
 export const ui_fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
-	fetch(input, {...init, credentials: 'include'});
+	fetch(input, { ...init, credentials: 'include' });
 
 /**
  * Safely extract an error message from a non-ok response.
@@ -24,7 +24,7 @@ export const ui_fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<
  */
 export const parse_response_error = async (
 	response: Response,
-	fallback?: string,
+	fallback?: string
 ): Promise<string> => {
 	const default_message = fallback ?? `Error: ${response.status}`;
 	try {

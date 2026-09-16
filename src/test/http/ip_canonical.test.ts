@@ -9,12 +9,12 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
 import {
 	canonicalize_ip,
 	ipv6_bigint_to_canonical,
-	IP_LITERAL_CHARS,
+	IP_LITERAL_CHARS
 } from '$lib/http/ip_canonical.ts';
 
 // --- ipv6_bigint_to_canonical — pure helper ---
@@ -281,13 +281,13 @@ describe('canonicalize_ip', () => {
 				'::01',
 				'::0001',
 				'0:0:0:0:0:0:0:1',
-				'0000:0000:0000:0000:0000:0000:0000:0001',
+				'0000:0000:0000:0000:0000:0000:0000:0001'
 			];
 			for (const form of forms) {
 				assert.strictEqual(
 					canonicalize_ip(form),
 					'::1',
-					`form '${form}' did not canonicalize to ::1`,
+					`form '${form}' did not canonicalize to ::1`
 				);
 			}
 		});
@@ -298,7 +298,7 @@ describe('canonicalize_ip', () => {
 				assert.strictEqual(
 					canonicalize_ip(form),
 					'127.0.0.1',
-					`form '${form}' did not canonicalize to 127.0.0.1`,
+					`form '${form}' did not canonicalize to 127.0.0.1`
 				);
 			}
 		});
@@ -308,7 +308,7 @@ describe('canonicalize_ip', () => {
 			assert.strictEqual(canonicalize_ip('::1'), canonicalize_ip('0:0:0:0:0:0:0:1'));
 			assert.strictEqual(
 				canonicalize_ip('2001:db8::1'),
-				canonicalize_ip('2001:0db8:0000:0000:0000:0000:0000:0001'),
+				canonicalize_ip('2001:0db8:0000:0000:0000:0000:0000:0001')
 			);
 		});
 	});
@@ -327,7 +327,7 @@ describe('canonicalize_ip', () => {
 				'',
 				'::1\n',
 				'attacker:controlled',
-				'203.0.113.1:8080',
+				'203.0.113.1:8080'
 			];
 			for (const raw of inputs) {
 				const once = canonicalize_ip(raw);

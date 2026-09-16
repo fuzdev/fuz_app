@@ -11,12 +11,12 @@
  * @module
  */
 
-import {test, assert, describe} from 'vitest';
+import { test, assert, describe } from 'vitest';
 
 import {
 	create_x_accel_config,
 	validate_facts_internal_location,
-	XAccelConfigError,
+	XAccelConfigError
 } from '$lib/server/x_accel.ts';
 
 describe('validate_facts_internal_location', () => {

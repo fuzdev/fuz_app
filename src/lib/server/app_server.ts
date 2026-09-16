@@ -8,74 +8,74 @@
  * @module
  */
 
-import {Hono, type Context} from 'hono';
-import {logger} from 'hono/logger';
-import {bodyLimit} from 'hono/body-limit';
-import type {UpgradeWebSocket} from 'hono/ws';
-import {z} from 'zod';
+import { Hono, type Context } from 'hono';
+import { logger } from 'hono/logger';
+import { bodyLimit } from 'hono/body-limit';
+import type { UpgradeWebSocket } from 'hono/ws';
+import { z } from 'zod';
 
 import {
 	session_cookie_options,
 	type SessionOptions,
-	type SessionCookieOptions,
+	type SessionCookieOptions
 } from '../auth/session_cookie.ts';
-import type {BootstrapAccountSuccess} from '../auth/bootstrap_account.ts';
-import type {EventSpec} from '../realtime/sse.ts';
+import type { BootstrapAccountSuccess } from '../auth/bootstrap_account.ts';
+import type { EventSpec } from '../realtime/sse.ts';
 import {
 	create_audit_log_sse,
 	audit_log_event_specs,
-	type AuditLogSse,
+	type AuditLogSse
 } from '../realtime/sse_auth_guard.ts';
-import {BaseServerEnv} from './env.ts';
+import { BaseServerEnv } from './env.ts';
 import {
 	create_rate_limiter,
 	default_login_account_rate_limit,
 	default_action_account_rate_limit,
 	default_action_ip_rate_limit,
-	type RateLimiter,
+	type RateLimiter
 } from '../rate_limiter.ts';
-import type {DaemonTokenState} from '../auth/daemon_token.ts';
-import type {MigrationResult} from '../db/migrate.ts';
-import type {AppBackend} from './app_backend.ts';
-import type {AppServerContext} from './app_server_context.ts';
+import type { DaemonTokenState } from '../auth/daemon_token.ts';
+import type { MigrationResult } from '../db/migrate.ts';
+import type { AppBackend } from './app_backend.ts';
+import type { AppServerContext } from './app_server_context.ts';
 // Side-effect import: augments Hono's ContextVariableMap so consumers
 // that import app_server get type-safe c.get('auth_session_id') etc.
 import '../hono_context.ts';
-import {create_proxy_middleware_spec} from '../http/proxy.ts';
-import {create_static_middleware, type ServeStaticFactory} from './static.ts';
-import {log_startup_summary} from './startup.ts';
+import { create_proxy_middleware_spec } from '../http/proxy.ts';
+import { create_static_middleware, type ServeStaticFactory } from './static.ts';
+import { log_startup_summary } from './startup.ts';
 import {
 	create_app_surface_spec,
 	type AppSurfaceSpec,
 	type AppSurfaceDiagnostic,
-	type RpcEndpointSpec,
+	type RpcEndpointSpec
 } from '../http/surface.ts';
 import {
 	apply_middleware_specs,
 	apply_route_specs,
 	prefix_route_specs,
-	type RouteSpec,
+	type RouteSpec
 } from '../http/route_spec.ts';
-import type {MiddlewareSpec} from '../http/middleware_spec.ts';
+import type { MiddlewareSpec } from '../http/middleware_spec.ts';
 import {
 	check_bootstrap_status,
 	create_bootstrap_route_specs,
-	type BootstrapStatus,
+	type BootstrapStatus
 } from '../auth/bootstrap_routes.ts';
-import {create_surface_route_spec, type SurfaceRouteOptions} from '../http/common_routes.ts';
-import {flush_pending_effects, flush_post_commit_effects} from '../http/pending_effects.ts';
-import {create_auth_middleware_specs} from '../auth/middleware.ts';
-import {fuz_auth_guard_resolver} from '../auth/auth_guard_resolver.ts';
-import {create_fuz_authorization_handler} from '../auth/request_context.ts';
-import {ERROR_PAYLOAD_TOO_LARGE} from '../http/error_schemas.ts';
-import {create_rpc_endpoint} from '../actions/action_rpc.ts';
-import {register_ws_endpoint} from '../actions/register_ws_endpoint.ts';
-import type {WsEndpointSpec} from '../actions/ws_endpoint_spec.ts';
+import { create_surface_route_spec, type SurfaceRouteOptions } from '../http/common_routes.ts';
+import { flush_pending_effects, flush_post_commit_effects } from '../http/pending_effects.ts';
+import { create_auth_middleware_specs } from '../auth/middleware.ts';
+import { fuz_auth_guard_resolver } from '../auth/auth_guard_resolver.ts';
+import { create_fuz_authorization_handler } from '../auth/request_context.ts';
+import { ERROR_PAYLOAD_TOO_LARGE } from '../http/error_schemas.ts';
+import { create_rpc_endpoint } from '../actions/action_rpc.ts';
+import { register_ws_endpoint } from '../actions/register_ws_endpoint.ts';
+import type { WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
 import {
 	create_ws_auth_guard,
-	create_ws_logout_closer,
+	create_ws_logout_closer
 } from '../actions/transports_ws_auth_guard.ts';
-import {BackendWebsocketTransport} from '../actions/transports_ws_backend.ts';
+import { BackendWebsocketTransport } from '../actions/transports_ws_backend.ts';
 
 /**
  * Context passed to `on_effect_error` when a pending effect rejects.
@@ -108,9 +108,7 @@ export interface EffectErrorContext {
  *   reachable. `token_path` is required (non-nullable).
  */
 export type BootstrapServerOptions =
-	| BootstrapDisabledOptions
-	| BootstrapSurfaceOnlyOptions
-	| BootstrapLiveOptions;
+	BootstrapDisabledOptions | BootstrapSurfaceOnlyOptions | BootstrapLiveOptions;
 
 export interface BootstrapDisabledOptions {
 	mode: 'disabled';
@@ -243,7 +241,7 @@ export interface AppServerOptions {
 	 * Pass `true` for defaults (admin role), or `{role: 'custom'}` for a custom role.
 	 * Omit to wire audit SSE manually.
 	 */
-	audit_log_sse?: true | {role?: string};
+	audit_log_sse?: true | { role?: string };
 
 	/** SSE event specs for surface generation. Defaults to `[]` (no SSE events). */
 	event_specs?: Array<EventSpec>;
@@ -306,8 +304,7 @@ export interface AppServerOptions {
 	 * against the underlying transport once).
 	 */
 	ws_endpoints?:
-		| ReadonlyArray<WsEndpointSpec>
-		| ((context: AppServerContext) => ReadonlyArray<WsEndpointSpec>);
+		ReadonlyArray<WsEndpointSpec> | ((context: AppServerContext) => ReadonlyArray<WsEndpointSpec>);
 
 	/**
 	 * Env schema for surface generation. Defaults to `BaseServerEnv` —
@@ -400,10 +397,10 @@ export interface AppServer {
  * produces a downstream cannot-read-property crash if a consumer wires
  * the route without enabling the option.
  */
-export const require_audit_sse = (source: {audit_sse: AuditLogSse | null}): AuditLogSse => {
+export const require_audit_sse = (source: { audit_sse: AuditLogSse | null }): AuditLogSse => {
 	if (!source.audit_sse) {
 		throw new Error(
-			'audit_sse is null — pass `audit_log_sse: true` (or `{role}`) in `AppServerOptions`',
+			'audit_sse is null — pass `audit_log_sse: true` (or `{role}`) in `AppServerOptions`'
 		);
 	}
 	return source.audit_sse;
@@ -430,9 +427,9 @@ export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
  * @returns assembled Hono app, backend, surface build, and bootstrap status
  */
 export const create_app_server = async (options: AppServerOptions): Promise<AppServer> => {
-	const {backend} = options;
-	const {deps} = backend;
-	const {log} = deps;
+	const { backend } = options;
+	const { deps } = backend;
+	const { log } = deps;
 
 	// Rate limiter defaults (undefined = default, null = disable)
 	const ip_rate_limiter =
@@ -464,7 +461,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	const audit_sse: AuditLogSse | null = options.audit_log_sse
 		? create_audit_log_sse({
 				log,
-				role: typeof options.audit_log_sse === 'object' ? options.audit_log_sse.role : undefined,
+				role: typeof options.audit_log_sse === 'object' ? options.audit_log_sse.role : undefined
 			})
 		: null;
 	if (audit_sse) {
@@ -472,14 +469,14 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	}
 
 	// Proxy middleware
-	const proxy_spec = create_proxy_middleware_spec({...options.proxy, log});
+	const proxy_spec = create_proxy_middleware_spec({ ...options.proxy, log });
 
 	// Auth middleware
 	const auth_middleware = await create_auth_middleware_specs(deps, {
 		allowed_origins: options.allowed_origins,
 		session_options: options.session_options,
 		bearer_ip_rate_limiter,
-		daemon_token_state: options.daemon_token_state,
+		daemon_token_state: options.daemon_token_state
 	});
 	let middleware_specs: Array<MiddlewareSpec> = [proxy_spec, ...auth_middleware];
 	if (options.transform_middleware) {
@@ -492,8 +489,8 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	// - 'live': real disk + lock check via `check_bootstrap_status`.
 	const bootstrap_status: BootstrapStatus =
 		options.bootstrap?.mode === 'live'
-			? await check_bootstrap_status(deps, {token_path: options.bootstrap.token_path})
-			: {available: false, token_path: null};
+			? await check_bootstrap_status(deps, { token_path: options.bootstrap.token_path })
+			: { available: false, token_path: null };
 
 	// Surface route ref — factory manages the circular ref
 	const surface_ref: SurfaceRouteOptions = {
@@ -504,8 +501,8 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			ws_endpoints: [],
 			env: [],
 			events: [],
-			diagnostics: [],
-		},
+			diagnostics: []
+		}
 	};
 
 	// Route specs (consumer routes + factory-managed routes)
@@ -519,7 +516,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		signup_account_rate_limiter,
 		action_ip_rate_limiter,
 		action_account_rate_limiter,
-		audit_sse,
+		audit_sse
 	};
 	const consumer_routes = options.create_route_specs(context);
 
@@ -535,7 +532,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			session_options: options.session_options,
 			bootstrap_status,
 			on_bootstrap: options.bootstrap.mode === 'live' ? options.bootstrap.on_bootstrap : undefined,
-			ip_rate_limiter,
+			ip_rate_limiter
 		});
 		const prefix = options.bootstrap.route_prefix ?? '/api/account';
 		factory_routes.push(...prefix_route_specs(prefix, bootstrap_routes));
@@ -555,8 +552,8 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 					actions: endpoint.actions,
 					log,
 					action_ip_rate_limiter,
-					action_account_rate_limiter,
-				}),
+					action_account_rate_limiter
+				})
 			);
 		}
 	}
@@ -585,7 +582,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		: middleware_specs;
 	const all_event_specs = [
 		...(options.event_specs ?? []),
-		...(audit_sse ? audit_log_event_specs : []),
+		...(audit_sse ? audit_log_event_specs : [])
 	];
 	const surface_spec = create_app_surface_spec({
 		middleware_specs: surface_middleware,
@@ -593,7 +590,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		env_schema: options.env_schema ?? BaseServerEnv,
 		event_specs: all_event_specs,
 		rpc_endpoints: resolved_rpc_endpoints,
-		ws_endpoints: resolved_ws_endpoints,
+		ws_endpoints: resolved_ws_endpoints
 	});
 
 	// Config-level diagnostics (concatenated after spec-level from generate_app_surface)
@@ -605,7 +602,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			config_diagnostics.push({
 				level: 'warning',
 				category: 'security',
-				message: 'Session cookie secure=false — cookies sent over HTTP',
+				message: 'Session cookie secure=false — cookies sent over HTTP'
 			});
 		}
 		if (cookie_opts.sameSite && cookie_opts.sameSite !== session_cookie_options.sameSite) {
@@ -614,14 +611,14 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 				category: 'security',
 				message: `Session cookie sameSite='${cookie_opts.sameSite}' — weakened from default '${
 					session_cookie_options.sameSite
-				}'`,
+				}'`
 			});
 		}
 		if (cookie_opts.httpOnly === false) {
 			config_diagnostics.push({
 				level: 'warning',
 				category: 'security',
-				message: 'Session cookie httpOnly=false — cookie accessible to JS',
+				message: 'Session cookie httpOnly=false — cookie accessible to JS'
 			});
 		}
 	}
@@ -629,14 +626,14 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		config_diagnostics.push({
 			level: 'warning',
 			category: 'config',
-			message: 'IP rate limiter explicitly disabled (null)',
+			message: 'IP rate limiter explicitly disabled (null)'
 		});
 	}
 	if (bearer_ip_rate_limiter === null) {
 		config_diagnostics.push({
 			level: 'warning',
 			category: 'config',
-			message: 'Bearer IP rate limiter explicitly disabled (null)',
+			message: 'Bearer IP rate limiter explicitly disabled (null)'
 		});
 	}
 	if (config_diagnostics.length) {
@@ -671,12 +668,12 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 					await flush_pending_effects(eager, log);
 					await flush_post_commit_effects(deferred, log);
 				} else {
-					const error_ctx: EffectErrorContext = {method: c.req.method, path: c.req.path};
+					const error_ctx: EffectErrorContext = { method: c.req.method, path: c.req.path };
 					const callback = options.on_effect_error;
 					void flush_pending_effects(
 						eager,
 						log,
-						callback ? (reason) => callback(reason, error_ctx) : undefined,
+						callback ? (reason) => callback(reason, error_ctx) : undefined
 					);
 					// `flush_post_commit_effects` is non-throwing: per-thunk
 					// errors are routed through `log.error` inside the helper,
@@ -699,13 +696,13 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		app.use(
 			bodyLimit({
 				maxSize: max_size,
-				onError: (c) => c.json({error: ERROR_PAYLOAD_TOO_LARGE}, 413),
-			}),
+				onError: (c) => c.json({ error: ERROR_PAYLOAD_TOO_LARGE }, 413)
+			})
 		);
 	}
 
 	apply_middleware_specs(app, middleware_specs);
-	const authorize = create_fuz_authorization_handler({db: deps.db});
+	const authorize = create_fuz_authorization_handler({ db: deps.db });
 	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, deps.db, authorize);
 
 	// WS endpoint auto-mount — must run after `app` exists and
@@ -720,7 +717,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		if (options.upgradeWebSocket === undefined) {
 			throw new Error(
 				'create_app_server: ws_endpoints resolved non-empty but upgradeWebSocket is missing. ' +
-					"Pass the Hono adapter's upgradeWebSocket helper as a top-level option.",
+					"Pass the Hono adapter's upgradeWebSocket helper as a top-level option."
 			);
 		}
 		// Cross-surface collision: `register_ws_endpoint` mounts a `GET path`
@@ -747,7 +744,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			}
 			if (route_spec_get_paths.has(endpoint.path)) {
 				throw new Error(
-					`create_app_server: ws_endpoints path collides with a GET RouteSpec: ${endpoint.path}`,
+					`create_app_server: ws_endpoints path collides with a GET RouteSpec: ${endpoint.path}`
 				);
 			}
 			seen_paths.add(endpoint.path);
@@ -768,7 +765,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 				log,
 				required_roles: endpoint.required_roles,
 				action_ip_rate_limiter,
-				action_account_rate_limiter,
+				action_account_rate_limiter
 			});
 			mounted_ws_endpoints[endpoint.path] = endpoint_transport;
 
@@ -792,8 +789,8 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 
 	// Static file serving
 	if (options.static_serving) {
-		const {serve_static, root, spa_fallback, is_spa_route} = options.static_serving;
-		for (const mw of create_static_middleware(serve_static, {root, spa_fallback, is_spa_route})) {
+		const { serve_static, root, spa_fallback, is_spa_route } = options.static_serving;
+		for (const mw of create_static_middleware(serve_static, { root, spa_fallback, is_spa_route })) {
 			app.use('/*', mw);
 		}
 	}
@@ -805,6 +802,6 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		migration_results: backend.migration_results,
 		audit_sse,
 		ws_endpoints: mounted_ws_endpoints,
-		close: backend.close,
+		close: backend.close
 	};
 };

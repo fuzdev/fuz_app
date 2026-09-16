@@ -16,17 +16,17 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {assert} from 'vitest';
-import type {z} from 'zod';
+import { assert } from 'vitest';
+import type { z } from 'zod';
 
-import {create_rpc_post_init} from '../rpc_helpers.ts';
-import type {FetchTransport} from '../transports/fetch_transport.ts';
+import { create_rpc_post_init } from '../rpc_helpers.ts';
+import type { FetchTransport } from '../transports/fetch_transport.ts';
 
 /** Minimal JSON-RPC envelope shape the suites read off responses. */
 export interface RpcResult {
 	readonly ok: boolean;
 	readonly result?: unknown;
-	readonly error?: {readonly code: number; readonly message: string; readonly data?: unknown};
+	readonly error?: { readonly code: number; readonly message: string; readonly data?: unknown };
 }
 
 /**
@@ -40,13 +40,13 @@ export const cross_rpc_call = async (
 	path: string,
 	method: string,
 	params: unknown,
-	headers: Record<string, string>,
+	headers: Record<string, string>
 ): Promise<RpcResult> => {
 	const init = create_rpc_post_init(method, params);
 	Object.assign(init.headers as Record<string, string>, headers);
 	const res = await transport(path, init);
-	const body = (await res.json()) as {result?: unknown; error?: RpcResult['error']};
-	return {ok: res.ok, result: body.result, error: body.error};
+	const body = (await res.json()) as { result?: unknown; error?: RpcResult['error'] };
+	return { ok: res.ok, result: body.result, error: body.error };
 };
 
 /** Pull `error.data.reason` off an RPC error envelope (undefined if absent). */
@@ -66,7 +66,7 @@ export const expect_output = <T>(r: RpcResult, schema: z.ZodType<T>): T => {
 		parsed.success,
 		`result does not match output schema: ${
 			parsed.success ? '' : JSON.stringify(parsed.error.issues)
-		} (got ${JSON.stringify(r.result)})`,
+		} (got ${JSON.stringify(r.result)})`
 	);
 	return parsed.data;
 };

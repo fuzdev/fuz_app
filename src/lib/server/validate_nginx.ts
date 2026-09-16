@@ -62,7 +62,7 @@ const extract_location_blocks = (config: string): Array<LocationBlock> => {
 				}
 			}
 		}
-		blocks.push({modifier, path, content: config.slice(match.index, block_end)});
+		blocks.push({ modifier, path, content: config.slice(match.index, block_end) });
 	}
 	return blocks;
 };
@@ -138,18 +138,18 @@ export const validate_nginx_config = (config: string): NginxValidationResult => 
 		errors.push(
 			'No /api location block found — config must have an /api location block ' +
 				'with Authorization header stripping. If you intentionally route /api ' +
-				'through a different structure, skip this validator.',
+				'through a different structure, skip this validator.'
 		);
 	} else {
 		const has_auth_strip = api_blocks.some(
 			(block) =>
 				block.content.includes('proxy_set_header Authorization ""') ||
-				block.content.includes("proxy_set_header Authorization ''"),
+				block.content.includes("proxy_set_header Authorization ''")
 		);
 		if (!has_auth_strip) {
 			errors.push(
 				'Missing `proxy_set_header Authorization ""` in /api location block — ' +
-					'required for v1 cookie-only external auth posture',
+					'required for v1 cookie-only external auth posture'
 			);
 		}
 	}
@@ -183,7 +183,7 @@ export const validate_nginx_config = (config: string): NginxValidationResult => 
 	if (!config.includes('limit_req')) {
 		warnings.push(
 			'Missing limit_req — may be in a separate rate_limit.conf. ' +
-				'Consider adding nginx-level rate limiting',
+				'Consider adding nginx-level rate limiting'
 		);
 	}
 
@@ -191,7 +191,7 @@ export const validate_nginx_config = (config: string): NginxValidationResult => 
 	if (config.includes('$proxy_add_x_forwarded_for')) {
 		warnings.push(
 			'Using $proxy_add_x_forwarded_for — prefer $remote_addr for single-proxy setups ' +
-				'to avoid client-injected XFF headers',
+				'to avoid client-injected XFF headers'
 		);
 	}
 
@@ -210,7 +210,7 @@ export const validate_nginx_config = (config: string): NginxValidationResult => 
 			) {
 				warnings.push(
 					`Location ${block.path} has add_header but is missing Strict-Transport-Security — ` +
-						'nginx add_header in child blocks replaces (not extends) inherited headers',
+						'nginx add_header in child blocks replaces (not extends) inherited headers'
 				);
 			}
 		}
@@ -219,6 +219,6 @@ export const validate_nginx_config = (config: string): NginxValidationResult => 
 	return {
 		ok: errors.length === 0,
 		warnings,
-		errors,
+		errors
 	};
 };

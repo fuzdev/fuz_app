@@ -9,20 +9,20 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
 import {
 	assert_schema_snapshots_equal,
 	diff_schema_snapshots,
 	format_schema_diffs,
 	assert_migration_trackers_equal,
-	diff_migration_trackers,
+	diff_migration_trackers
 } from '$lib/testing/schema_parity.ts';
 import type {
 	ColumnSnapshot,
 	MigrationTracker,
 	SchemaSnapshot,
-	TableSnapshot,
+	TableSnapshot
 } from '$lib/testing/schema_introspect.ts';
 
 const create_column = (overrides: Partial<ColumnSnapshot> = {}): ColumnSnapshot => ({
@@ -31,21 +31,21 @@ const create_column = (overrides: Partial<ColumnSnapshot> = {}): ColumnSnapshot 
 	is_nullable: false,
 	column_default: null,
 	is_identity: false,
-	...overrides,
+	...overrides
 });
 
 const create_table = (overrides: Partial<TableSnapshot> = {}): TableSnapshot => ({
 	columns: {},
 	indexes: [],
 	constraints: [],
-	...overrides,
+	...overrides
 });
 
 const create_snapshot = (overrides: Partial<SchemaSnapshot> = {}): SchemaSnapshot => ({
 	tables: {},
 	sequences: {},
 	enums: {},
-	...overrides,
+	...overrides
 });
 
 describe('diff_schema_snapshots', () => {
@@ -56,8 +56,8 @@ describe('diff_schema_snapshots', () => {
 
 	test('matching snapshots produce no diff', () => {
 		const snap = create_snapshot({
-			tables: {foo: create_table({columns: {id: create_column()}})},
-			sequences: {foo_id_seq: {data_type: 'bigint'}},
+			tables: { foo: create_table({ columns: { id: create_column() } }) },
+			sequences: { foo_id_seq: { data_type: 'bigint' } }
 		});
 		const diffs = diff_schema_snapshots(snap, snap);
 		assert.deepStrictEqual(diffs, []);
@@ -65,23 +65,23 @@ describe('diff_schema_snapshots', () => {
 
 	test('table_only_in (both sides)', () => {
 		const diffs = diff_schema_snapshots(
-			create_snapshot({tables: {foo: create_table()}}),
-			create_snapshot({tables: {bar: create_table()}}),
+			create_snapshot({ tables: { foo: create_table() } }),
+			create_snapshot({ tables: { bar: create_table() } })
 		);
 		assert.deepStrictEqual(diffs, [
-			{kind: 'table_only_in', where: 'b', table: 'bar'},
-			{kind: 'table_only_in', where: 'a', table: 'foo'},
+			{ kind: 'table_only_in', where: 'b', table: 'bar' },
+			{ kind: 'table_only_in', where: 'a', table: 'foo' }
 		]);
 	});
 
 	test('column_only_in (both sides)', () => {
 		const diffs = diff_schema_snapshots(
-			create_snapshot({tables: {foo: create_table({columns: {a: create_column()}})}}),
-			create_snapshot({tables: {foo: create_table({columns: {b: create_column()}})}}),
+			create_snapshot({ tables: { foo: create_table({ columns: { a: create_column() } }) } }),
+			create_snapshot({ tables: { foo: create_table({ columns: { b: create_column() } }) } })
 		);
 		assert.deepStrictEqual(diffs, [
-			{kind: 'column_only_in', where: 'a', table: 'foo', column: 'a'},
-			{kind: 'column_only_in', where: 'b', table: 'foo', column: 'b'},
+			{ kind: 'column_only_in', where: 'a', table: 'foo', column: 'a' },
+			{ kind: 'column_only_in', where: 'b', table: 'foo', column: 'b' }
 		]);
 	});
 
@@ -91,11 +91,11 @@ describe('diff_schema_snapshots', () => {
 	test('column_field_differs: data_type', () => {
 		const diffs = diff_schema_snapshots(
 			create_snapshot({
-				tables: {t: create_table({columns: {c: create_column({data_type: 'integer'})}})},
+				tables: { t: create_table({ columns: { c: create_column({ data_type: 'integer' }) } }) }
 			}),
 			create_snapshot({
-				tables: {t: create_table({columns: {c: create_column({data_type: 'bigint'})}})},
-			}),
+				tables: { t: create_table({ columns: { c: create_column({ data_type: 'bigint' }) } }) }
+			})
 		);
 		assert.strictEqual(diffs.length, 1);
 		assert.deepStrictEqual(diffs[0], {
@@ -104,18 +104,18 @@ describe('diff_schema_snapshots', () => {
 			column: 'c',
 			field: 'data_type',
 			a: 'integer',
-			b: 'bigint',
+			b: 'bigint'
 		});
 	});
 
 	test('column_field_differs: udt_name (catches SERIAL vs BIGSERIAL)', () => {
 		const diffs = diff_schema_snapshots(
 			create_snapshot({
-				tables: {t: create_table({columns: {c: create_column({udt_name: 'int4'})}})},
+				tables: { t: create_table({ columns: { c: create_column({ udt_name: 'int4' }) } }) }
 			}),
 			create_snapshot({
-				tables: {t: create_table({columns: {c: create_column({udt_name: 'int8'})}})},
-			}),
+				tables: { t: create_table({ columns: { c: create_column({ udt_name: 'int8' }) } }) }
+			})
 		);
 		assert.strictEqual(diffs.length, 1);
 		assert.strictEqual(diffs[0]?.kind, 'column_field_differs');
@@ -125,11 +125,11 @@ describe('diff_schema_snapshots', () => {
 	test('column_field_differs: is_nullable', () => {
 		const diffs = diff_schema_snapshots(
 			create_snapshot({
-				tables: {t: create_table({columns: {c: create_column({is_nullable: true})}})},
+				tables: { t: create_table({ columns: { c: create_column({ is_nullable: true }) } }) }
 			}),
 			create_snapshot({
-				tables: {t: create_table({columns: {c: create_column({is_nullable: false})}})},
-			}),
+				tables: { t: create_table({ columns: { c: create_column({ is_nullable: false }) } }) }
+			})
 		);
 		assert.strictEqual(diffs.length, 1);
 		assert.strictEqual(diffs[0]?.kind, 'column_field_differs');
@@ -139,28 +139,28 @@ describe('diff_schema_snapshots', () => {
 	test('column_field_differs: column_default', () => {
 		const diffs = diff_schema_snapshots(
 			create_snapshot({
-				tables: {t: create_table({columns: {c: create_column({column_default: null})}})},
+				tables: { t: create_table({ columns: { c: create_column({ column_default: null }) } }) }
 			}),
 			create_snapshot({
-				tables: {t: create_table({columns: {c: create_column({column_default: 'NOW()'})}})},
-			}),
+				tables: { t: create_table({ columns: { c: create_column({ column_default: 'NOW()' }) } }) }
+			})
 		);
 		assert.strictEqual(diffs.length, 1);
 		assert.strictEqual(diffs[0]?.kind, 'column_field_differs');
 		assert.strictEqual(
 			diffs[0]!.kind === 'column_field_differs' && diffs[0].field,
-			'column_default',
+			'column_default'
 		);
 	});
 
 	test('column_field_differs: is_identity', () => {
 		const diffs = diff_schema_snapshots(
 			create_snapshot({
-				tables: {t: create_table({columns: {c: create_column({is_identity: false})}})},
+				tables: { t: create_table({ columns: { c: create_column({ is_identity: false }) } }) }
 			}),
 			create_snapshot({
-				tables: {t: create_table({columns: {c: create_column({is_identity: true})}})},
-			}),
+				tables: { t: create_table({ columns: { c: create_column({ is_identity: true }) } }) }
+			})
 		);
 		assert.strictEqual(diffs.length, 1);
 		assert.strictEqual(diffs[0]?.kind, 'column_field_differs');
@@ -168,15 +168,15 @@ describe('diff_schema_snapshots', () => {
 	});
 
 	test('index_only_in (both sides)', () => {
-		const a_only_idx = {name: 'idx_a', definition: 'CREATE INDEX idx_a ON t (x)'};
-		const b_only_idx = {name: 'idx_b', definition: 'CREATE INDEX idx_b ON t (y)'};
+		const a_only_idx = { name: 'idx_a', definition: 'CREATE INDEX idx_a ON t (x)' };
+		const b_only_idx = { name: 'idx_b', definition: 'CREATE INDEX idx_b ON t (y)' };
 		const diffs = diff_schema_snapshots(
-			create_snapshot({tables: {t: create_table({indexes: [a_only_idx]})}}),
-			create_snapshot({tables: {t: create_table({indexes: [b_only_idx]})}}),
+			create_snapshot({ tables: { t: create_table({ indexes: [a_only_idx] }) } }),
+			create_snapshot({ tables: { t: create_table({ indexes: [b_only_idx] }) } })
 		);
 		assert.deepStrictEqual(diffs, [
-			{kind: 'index_only_in', where: 'a', table: 't', index: 'idx_a'},
-			{kind: 'index_only_in', where: 'b', table: 't', index: 'idx_b'},
+			{ kind: 'index_only_in', where: 'a', table: 't', index: 'idx_a' },
+			{ kind: 'index_only_in', where: 'b', table: 't', index: 'idx_b' }
 		]);
 	});
 
@@ -184,14 +184,14 @@ describe('diff_schema_snapshots', () => {
 		const diffs = diff_schema_snapshots(
 			create_snapshot({
 				tables: {
-					t: create_table({indexes: [{name: 'idx', definition: 'CREATE INDEX idx ON t (x)'}]}),
-				},
+					t: create_table({ indexes: [{ name: 'idx', definition: 'CREATE INDEX idx ON t (x)' }] })
+				}
 			}),
 			create_snapshot({
 				tables: {
-					t: create_table({indexes: [{name: 'idx', definition: 'CREATE INDEX idx ON t (y)'}]}),
-				},
-			}),
+					t: create_table({ indexes: [{ name: 'idx', definition: 'CREATE INDEX idx ON t (y)' }] })
+				}
+			})
 		);
 		assert.deepStrictEqual(diffs, [
 			{
@@ -199,21 +199,21 @@ describe('diff_schema_snapshots', () => {
 				table: 't',
 				index: 'idx',
 				a: 'CREATE INDEX idx ON t (x)',
-				b: 'CREATE INDEX idx ON t (y)',
-			},
+				b: 'CREATE INDEX idx ON t (y)'
+			}
 		]);
 	});
 
 	test('constraint_only_in (both sides)', () => {
-		const a_only = {name: 'pk_a', type: 'PRIMARY KEY', definition: 'PRIMARY KEY (a)'};
-		const b_only = {name: 'pk_b', type: 'PRIMARY KEY', definition: 'PRIMARY KEY (b)'};
+		const a_only = { name: 'pk_a', type: 'PRIMARY KEY', definition: 'PRIMARY KEY (a)' };
+		const b_only = { name: 'pk_b', type: 'PRIMARY KEY', definition: 'PRIMARY KEY (b)' };
 		const diffs = diff_schema_snapshots(
-			create_snapshot({tables: {t: create_table({constraints: [a_only]})}}),
-			create_snapshot({tables: {t: create_table({constraints: [b_only]})}}),
+			create_snapshot({ tables: { t: create_table({ constraints: [a_only] }) } }),
+			create_snapshot({ tables: { t: create_table({ constraints: [b_only] }) } })
 		);
 		assert.deepStrictEqual(diffs, [
-			{kind: 'constraint_only_in', where: 'a', table: 't', constraint: 'pk_a'},
-			{kind: 'constraint_only_in', where: 'b', table: 't', constraint: 'pk_b'},
+			{ kind: 'constraint_only_in', where: 'a', table: 't', constraint: 'pk_a' },
+			{ kind: 'constraint_only_in', where: 'b', table: 't', constraint: 'pk_b' }
 		]);
 	});
 
@@ -222,15 +222,17 @@ describe('diff_schema_snapshots', () => {
 			create_snapshot({
 				tables: {
 					t: create_table({
-						constraints: [{name: 'c', type: 'PRIMARY KEY', definition: 'PRIMARY KEY (x)'}],
-					}),
-				},
+						constraints: [{ name: 'c', type: 'PRIMARY KEY', definition: 'PRIMARY KEY (x)' }]
+					})
+				}
 			}),
 			create_snapshot({
 				tables: {
-					t: create_table({constraints: [{name: 'c', type: 'UNIQUE', definition: 'UNIQUE (x)'}]}),
-				},
-			}),
+					t: create_table({
+						constraints: [{ name: 'c', type: 'UNIQUE', definition: 'UNIQUE (x)' }]
+					})
+				}
+			})
 		);
 		assert.strictEqual(diffs.length, 1);
 		assert.strictEqual(diffs[0]?.kind, 'constraint_differs');
@@ -240,16 +242,18 @@ describe('diff_schema_snapshots', () => {
 		const diffs = diff_schema_snapshots(
 			create_snapshot({
 				tables: {
-					t: create_table({constraints: [{name: 'c', type: 'CHECK', definition: 'CHECK (x > 0)'}]}),
-				},
+					t: create_table({
+						constraints: [{ name: 'c', type: 'CHECK', definition: 'CHECK (x > 0)' }]
+					})
+				}
 			}),
 			create_snapshot({
 				tables: {
 					t: create_table({
-						constraints: [{name: 'c', type: 'CHECK', definition: 'CHECK (x >= 0)'}],
-					}),
-				},
-			}),
+						constraints: [{ name: 'c', type: 'CHECK', definition: 'CHECK (x >= 0)' }]
+					})
+				}
+			})
 		);
 		assert.strictEqual(diffs.length, 1);
 		assert.strictEqual(diffs[0]?.kind, 'constraint_differs');
@@ -257,62 +261,64 @@ describe('diff_schema_snapshots', () => {
 
 	test('sequence_only_in (both sides)', () => {
 		const diffs = diff_schema_snapshots(
-			create_snapshot({sequences: {seq_a: {data_type: 'bigint'}}}),
-			create_snapshot({sequences: {seq_b: {data_type: 'bigint'}}}),
+			create_snapshot({ sequences: { seq_a: { data_type: 'bigint' } } }),
+			create_snapshot({ sequences: { seq_b: { data_type: 'bigint' } } })
 		);
 		assert.deepStrictEqual(diffs, [
-			{kind: 'sequence_only_in', where: 'a', sequence: 'seq_a'},
-			{kind: 'sequence_only_in', where: 'b', sequence: 'seq_b'},
+			{ kind: 'sequence_only_in', where: 'a', sequence: 'seq_a' },
+			{ kind: 'sequence_only_in', where: 'b', sequence: 'seq_b' }
 		]);
 	});
 
 	test('sequence_data_type_differs (catches SERIAL vs BIGSERIAL on the sequence)', () => {
 		const diffs = diff_schema_snapshots(
-			create_snapshot({sequences: {seq: {data_type: 'integer'}}}),
-			create_snapshot({sequences: {seq: {data_type: 'bigint'}}}),
+			create_snapshot({ sequences: { seq: { data_type: 'integer' } } }),
+			create_snapshot({ sequences: { seq: { data_type: 'bigint' } } })
 		);
 		assert.deepStrictEqual(diffs, [
-			{kind: 'sequence_data_type_differs', sequence: 'seq', a: 'integer', b: 'bigint'},
+			{ kind: 'sequence_data_type_differs', sequence: 'seq', a: 'integer', b: 'bigint' }
 		]);
 	});
 
 	test('enum_only_in (both sides)', () => {
 		const diffs = diff_schema_snapshots(
-			create_snapshot({enums: {enum_a: {labels: ['x']}}}),
-			create_snapshot({enums: {enum_b: {labels: ['y']}}}),
+			create_snapshot({ enums: { enum_a: { labels: ['x'] } } }),
+			create_snapshot({ enums: { enum_b: { labels: ['y'] } } })
 		);
 		assert.deepStrictEqual(diffs, [
-			{kind: 'enum_only_in', where: 'a', enum_name: 'enum_a'},
-			{kind: 'enum_only_in', where: 'b', enum_name: 'enum_b'},
+			{ kind: 'enum_only_in', where: 'a', enum_name: 'enum_a' },
+			{ kind: 'enum_only_in', where: 'b', enum_name: 'enum_b' }
 		]);
 	});
 
 	test('enum_labels_differ (added/removed label — catches cell_visibility drift)', () => {
 		const diffs = diff_schema_snapshots(
-			create_snapshot({enums: {cell_visibility: {labels: ['private', 'public']}}}),
-			create_snapshot({enums: {cell_visibility: {labels: ['private', 'public', 'restricted']}}}),
+			create_snapshot({ enums: { cell_visibility: { labels: ['private', 'public'] } } }),
+			create_snapshot({
+				enums: { cell_visibility: { labels: ['private', 'public', 'restricted'] } }
+			})
 		);
 		assert.deepStrictEqual(diffs, [
 			{
 				kind: 'enum_labels_differ',
 				enum_name: 'cell_visibility',
 				a: ['private', 'public'],
-				b: ['private', 'public', 'restricted'],
-			},
+				b: ['private', 'public', 'restricted']
+			}
 		]);
 	});
 
 	test('enum_labels_differ (reorder — label order is significant)', () => {
 		const diffs = diff_schema_snapshots(
-			create_snapshot({enums: {e: {labels: ['a', 'b']}}}),
-			create_snapshot({enums: {e: {labels: ['b', 'a']}}}),
+			create_snapshot({ enums: { e: { labels: ['a', 'b'] } } }),
+			create_snapshot({ enums: { e: { labels: ['b', 'a'] } } })
 		);
 		assert.strictEqual(diffs.length, 1);
 		assert.strictEqual(diffs[0]?.kind, 'enum_labels_differ');
 	});
 
 	test('matching enum labels produce no diff', () => {
-		const snap = create_snapshot({enums: {cell_visibility: {labels: ['private', 'public']}}});
+		const snap = create_snapshot({ enums: { cell_visibility: { labels: ['private', 'public'] } } });
 		assert.deepStrictEqual(diff_schema_snapshots(snap, snap), []);
 	});
 
@@ -325,11 +331,11 @@ describe('diff_schema_snapshots', () => {
 							c: create_column({
 								data_type: 'integer',
 								udt_name: 'int4',
-								is_nullable: false,
-							}),
-						},
-					}),
-				},
+								is_nullable: false
+							})
+						}
+					})
+				}
 			}),
 			create_snapshot({
 				tables: {
@@ -338,12 +344,12 @@ describe('diff_schema_snapshots', () => {
 							c: create_column({
 								data_type: 'bigint',
 								udt_name: 'int8',
-								is_nullable: true,
-							}),
-						},
-					}),
-				},
-			}),
+								is_nullable: true
+							})
+						}
+					})
+				}
+			})
 		);
 		assert.strictEqual(diffs.length, 3);
 		const fields = diffs
@@ -359,17 +365,17 @@ describe('diff_schema_snapshots', () => {
 		// sub-orderings (tables sorted, sub-diffs grouped per table).
 		const a = create_snapshot({
 			tables: {
-				zebra: create_table({columns: {id: create_column()}}),
-				alpha: create_table({columns: {x: create_column({data_type: 'text'})}}),
+				zebra: create_table({ columns: { id: create_column() } }),
+				alpha: create_table({ columns: { x: create_column({ data_type: 'text' }) } })
 			},
-			sequences: {seq_z: {data_type: 'bigint'}},
+			sequences: { seq_z: { data_type: 'bigint' } }
 		});
 		const b = create_snapshot({
 			tables: {
-				alpha: create_table({columns: {x: create_column({data_type: 'integer'})}}),
-				bravo: create_table({columns: {y: create_column()}}),
+				alpha: create_table({ columns: { x: create_column({ data_type: 'integer' }) } }),
+				bravo: create_table({ columns: { y: create_column() } })
 			},
-			sequences: {seq_a: {data_type: 'bigint'}},
+			sequences: { seq_a: { data_type: 'bigint' } }
 		});
 		const diff_kinds = diff_schema_snapshots(a, b).map((d) => d.kind);
 		// Tables in sorted order: alpha (column_field_differs), bravo (table_only_in),
@@ -389,8 +395,8 @@ describe('format_schema_diffs', () => {
 
 	test('default labels are a / b', () => {
 		const rendered = format_schema_diffs([
-			{kind: 'table_only_in', where: 'a', table: 'foo'},
-			{kind: 'table_only_in', where: 'b', table: 'bar'},
+			{ kind: 'table_only_in', where: 'a', table: 'foo' },
+			{ kind: 'table_only_in', where: 'b', table: 'bar' }
 		]);
 		assert.match(rendered, /only in a/);
 		assert.match(rendered, /only in b/);
@@ -398,8 +404,8 @@ describe('format_schema_diffs', () => {
 
 	test('custom labels flow through', () => {
 		const rendered = format_schema_diffs(
-			[{kind: 'sequence_data_type_differs', sequence: 'seq', a: 'integer', b: 'bigint'}],
-			{a: 'deno', b: 'rust'},
+			[{ kind: 'sequence_data_type_differs', sequence: 'seq', a: 'integer', b: 'bigint' }],
+			{ a: 'deno', b: 'rust' }
 		);
 		assert.match(rendered, /deno=integer/);
 		assert.match(rendered, /rust=bigint/);
@@ -408,24 +414,24 @@ describe('format_schema_diffs', () => {
 	test('renders a representative drift mix', () => {
 		const rendered = format_schema_diffs(
 			[
-				{kind: 'table_only_in', where: 'a', table: 'foo'},
+				{ kind: 'table_only_in', where: 'a', table: 'foo' },
 				{
 					kind: 'column_field_differs',
 					table: 't',
 					column: 'seq',
 					field: 'udt_name',
 					a: 'int4',
-					b: 'int8',
+					b: 'int8'
 				},
 				{
 					kind: 'index_definition_differs',
 					table: 't',
 					index: 'idx',
 					a: 'CREATE INDEX idx ON t (x)',
-					b: 'CREATE INDEX idx ON t (y)',
-				},
+					b: 'CREATE INDEX idx ON t (y)'
+				}
 			],
-			{a: 'deno', b: 'rust'},
+			{ a: 'deno', b: 'rust' }
 		);
 		assert.match(rendered, /table foo only in deno/);
 		assert.match(rendered, /t\.seq udt_name differs: deno="int4", rust="int8"/);
@@ -435,15 +441,15 @@ describe('format_schema_diffs', () => {
 	test('renders enum drift with both label sets', () => {
 		const rendered = format_schema_diffs(
 			[
-				{kind: 'enum_only_in', where: 'b', enum_name: 'mood'},
+				{ kind: 'enum_only_in', where: 'b', enum_name: 'mood' },
 				{
 					kind: 'enum_labels_differ',
 					enum_name: 'cell_visibility',
 					a: ['private', 'public'],
-					b: ['private', 'public', 'restricted'],
-				},
+					b: ['private', 'public', 'restricted']
+				}
 			],
-			{a: 'deno', b: 'rust'},
+			{ a: 'deno', b: 'rust' }
 		);
 		assert.match(rendered, /enum mood only in rust/);
 		assert.match(rendered, /enum cell_visibility labels differ/);
@@ -459,9 +465,9 @@ describe('assert_schema_snapshots_equal', () => {
 	test('throws with both labels and the diff count', () => {
 		try {
 			assert_schema_snapshots_equal(
-				create_snapshot({tables: {foo: create_table()}}),
+				create_snapshot({ tables: { foo: create_table() } }),
 				create_snapshot(),
-				{a: 'deno', b: 'rust'},
+				{ a: 'deno', b: 'rust' }
 			);
 			assert.fail('expected throw');
 		} catch (err) {
@@ -475,12 +481,12 @@ describe('assert_schema_snapshots_equal', () => {
 // The full spine tracker both twin spines must record byte-identically.
 const spine_tracker: MigrationTracker = {
 	entries: [
-		{namespace: 'fuz_auth', name: 'full_auth_schema', sequence: 0},
-		{namespace: 'fuz_auth', name: 'role_grant_offer_and_scoped_role_grants', sequence: 1},
-		{namespace: 'fuz_cell', name: 'full_cell_schema', sequence: 0},
-		{namespace: 'fuz_cell_history', name: 'full_cell_history_schema', sequence: 0},
-		{namespace: 'fuz_facts', name: 'full_fact_schema', sequence: 0},
-	],
+		{ namespace: 'fuz_auth', name: 'full_auth_schema', sequence: 0 },
+		{ namespace: 'fuz_auth', name: 'role_grant_offer_and_scoped_role_grants', sequence: 1 },
+		{ namespace: 'fuz_cell', name: 'full_cell_schema', sequence: 0 },
+		{ namespace: 'fuz_cell_history', name: 'full_cell_history_schema', sequence: 0 },
+		{ namespace: 'fuz_facts', name: 'full_fact_schema', sequence: 0 }
+	]
 };
 
 describe('diff_migration_trackers', () => {
@@ -489,7 +495,7 @@ describe('diff_migration_trackers', () => {
 	});
 
 	test('order-insensitive — keyed on (namespace, name), not array position', () => {
-		const reordered: MigrationTracker = {entries: [...spine_tracker.entries].reverse()};
+		const reordered: MigrationTracker = { entries: [...spine_tracker.entries].reverse() };
 		assert.deepStrictEqual(diff_migration_trackers(spine_tracker, reordered), []);
 	});
 
@@ -501,15 +507,15 @@ describe('diff_migration_trackers', () => {
 	test('a migration-name divergence surfaces as two row_only_in diffs', () => {
 		const renamed: MigrationTracker = {
 			entries: spine_tracker.entries.map((e) =>
-				e.namespace === 'fuz_cell' ? {...e, name: 'cell_v0'} : e,
-			),
+				e.namespace === 'fuz_cell' ? { ...e, name: 'cell_v0' } : e
+			)
 		};
 		// Sorted by (namespace, name): `cell_v0` (only in b) precedes
 		// `full_cell_schema` (only in a) lexically.
 		const diffs = diff_migration_trackers(spine_tracker, renamed);
 		assert.deepStrictEqual(diffs, [
-			{kind: 'tracker_row_only_in', where: 'b', namespace: 'fuz_cell', name: 'cell_v0'},
-			{kind: 'tracker_row_only_in', where: 'a', namespace: 'fuz_cell', name: 'full_cell_schema'},
+			{ kind: 'tracker_row_only_in', where: 'b', namespace: 'fuz_cell', name: 'cell_v0' },
+			{ kind: 'tracker_row_only_in', where: 'a', namespace: 'fuz_cell', name: 'full_cell_schema' }
 		]);
 	});
 
@@ -518,7 +524,7 @@ describe('diff_migration_trackers', () => {
 	// the bundling side lacks.
 	test('a missing namespace row surfaces as row_only_in', () => {
 		const bundled: MigrationTracker = {
-			entries: spine_tracker.entries.filter((e) => e.namespace !== 'fuz_cell_history'),
+			entries: spine_tracker.entries.filter((e) => e.namespace !== 'fuz_cell_history')
 		};
 		const diffs = diff_migration_trackers(spine_tracker, bundled);
 		assert.deepStrictEqual(diffs, [
@@ -526,8 +532,8 @@ describe('diff_migration_trackers', () => {
 				kind: 'tracker_row_only_in',
 				where: 'a',
 				namespace: 'fuz_cell_history',
-				name: 'full_cell_history_schema',
-			},
+				name: 'full_cell_history_schema'
+			}
 		]);
 	});
 
@@ -535,9 +541,9 @@ describe('diff_migration_trackers', () => {
 		const shifted: MigrationTracker = {
 			entries: spine_tracker.entries.map((e) =>
 				e.namespace === 'fuz_auth' && e.name === 'role_grant_offer_and_scoped_role_grants'
-					? {...e, sequence: 2}
-					: e,
-			),
+					? { ...e, sequence: 2 }
+					: e
+			)
 		};
 		const diffs = diff_migration_trackers(spine_tracker, shifted);
 		assert.deepStrictEqual(diffs, [
@@ -546,8 +552,8 @@ describe('diff_migration_trackers', () => {
 				namespace: 'fuz_auth',
 				name: 'role_grant_offer_and_scoped_role_grants',
 				a: 1,
-				b: 2,
-			},
+				b: 2
+			}
 		]);
 	});
 });
@@ -560,11 +566,11 @@ describe('assert_migration_trackers_equal', () => {
 	test('throws naming the divergent migration', () => {
 		const renamed: MigrationTracker = {
 			entries: spine_tracker.entries.map((e) =>
-				e.namespace === 'fuz_facts' ? {...e, name: 'facts_v0'} : e,
-			),
+				e.namespace === 'fuz_facts' ? { ...e, name: 'facts_v0' } : e
+			)
 		};
 		try {
-			assert_migration_trackers_equal(spine_tracker, renamed, {a: 'ts', b: 'rust'});
+			assert_migration_trackers_equal(spine_tracker, renamed, { a: 'ts', b: 'rust' });
 			assert.fail('expected throw');
 		} catch (err) {
 			assert.ok(err instanceof Error);

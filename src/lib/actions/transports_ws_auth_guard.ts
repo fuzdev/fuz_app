@@ -25,10 +25,10 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type {AuditLogEvent} from '../auth/audit_log_schema.ts';
-import type {BackendWebsocketTransport} from './transports_ws_backend.ts';
+import type { AuditLogEvent } from '../auth/audit_log_schema.ts';
+import type { BackendWebsocketTransport } from './transports_ws_backend.ts';
 
 /**
  * Audit-event callback shape — the function `CreateAuditEmitterOptions.on_audit_event`
@@ -59,7 +59,7 @@ export const ws_disconnect_event_types: ReadonlySet<string> = new Set([
 	'token_revoke',
 	'session_revoke_all',
 	'token_revoke_all',
-	'password_change',
+	'password_change'
 ]);
 
 /**
@@ -79,7 +79,7 @@ export const ws_disconnect_event_types: ReadonlySet<string> = new Set([
  */
 export const create_ws_auth_guard = (
 	transport: BackendWebsocketTransport,
-	log: Logger,
+	log: Logger
 ): AuditEventHandler => {
 	return (event: AuditLogEvent): void => {
 		if (!ws_disconnect_event_types.has(event.event_type)) return;
@@ -93,7 +93,7 @@ export const create_ws_auth_guard = (
 			const closed = transport.close_sockets_for_session(session_id);
 			if (closed > 0) {
 				log.info(
-					`WS auth guard: closed ${closed} socket(s) for session ${session_id} (session_revoke)`,
+					`WS auth guard: closed ${closed} socket(s) for session ${session_id} (session_revoke)`
 				);
 			}
 			return;
@@ -121,7 +121,7 @@ export const create_ws_auth_guard = (
 		const closed = transport.close_sockets_for_account(target);
 		if (closed > 0) {
 			log.info(
-				`WS auth guard: closed ${closed} socket(s) for account ${target} (${event.event_type})`,
+				`WS auth guard: closed ${closed} socket(s) for account ${target} (${event.event_type})`
 			);
 		}
 	};
@@ -159,7 +159,7 @@ export const create_ws_auth_guard = (
  */
 export const create_ws_logout_closer = (
 	transport: BackendWebsocketTransport,
-	log: Logger,
+	log: Logger
 ): AuditEventHandler => {
 	return (event: AuditLogEvent): void => {
 		if (event.event_type !== 'logout') return;

@@ -4,8 +4,8 @@
  * @module
  */
 
-import {readFile, writeFile} from 'node:fs/promises';
-import {resolve} from 'node:path';
+import { readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 /**
  * Options for updating environment variables in a .env file.
@@ -43,9 +43,9 @@ export interface UpdateEnvVariableOptions {
 export const update_env_variable = async (
 	key: string,
 	value: string,
-	options: UpdateEnvVariableOptions,
+	options: UpdateEnvVariableOptions
 ): Promise<void> => {
-	const {env_file_path, read_file = readFile, write_file = writeFile} = options;
+	const { env_file_path, read_file = readFile, write_file = writeFile } = options;
 
 	const file_path = resolve(env_file_path);
 	let content = '';

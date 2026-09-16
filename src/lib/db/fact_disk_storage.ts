@@ -28,26 +28,26 @@
  * @module
  */
 
-import {createHash, type Hash} from 'node:crypto';
-import {join} from 'node:path';
+import { createHash, type Hash } from 'node:crypto';
+import { join } from 'node:path';
 
-import {Blake3Hasher} from '@fuzdev/blake3_wasm';
-import {to_error_message} from '@fuzdev/fuz_util/error.ts';
-import {blake3_ready} from '@fuzdev/fuz_util/hash_blake3.ts';
-import {to_hex} from '@fuzdev/fuz_util/hex.ts';
-import {FACT_HASH_PREFIX, type FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import { Blake3Hasher } from '@fuzdev/blake3_wasm';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
+import { blake3_ready } from '@fuzdev/fuz_util/hash_blake3.ts';
+import { to_hex } from '@fuzdev/fuz_util/hex.ts';
+import { FACT_HASH_PREFIX, type FactHash } from '@fuzdev/fuz_util/fact_hash.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type {FsReadDeps, FsWriteDeps, FsStreamDeps, FsRemoveDeps} from '../runtime/deps.ts';
-import {generate_random_base64url} from '../crypto.ts';
+import type { FsReadDeps, FsWriteDeps, FsStreamDeps, FsRemoveDeps } from '../runtime/deps.ts';
+import { generate_random_base64url } from '../crypto.ts';
 import {
 	fact_disk_path,
 	mint_file_fact_url,
 	parse_file_fact_url,
-	type FileFactUrl,
+	type FileFactUrl
 } from './file_fact_url.ts';
-import type {FactExternalFetcher} from './fact_store.ts';
-import {is_enospc_error, PayloadTooLargeError, StorageFullError} from './fact_store_errors.ts';
+import type { FactExternalFetcher } from './fact_store.ts';
+import { is_enospc_error, PayloadTooLargeError, StorageFullError } from './fact_store_errors.ts';
 
 /** Subdirectory under `facts_dir` for in-flight atomic temp files. */
 export const FACT_TMP_DIRNAME = '.tmp';
@@ -72,8 +72,7 @@ export type FactDiskStorageDeps = Pick<FsReadDeps, 'stat' | 'readdir' | 'read_fi
  * `file:` URL.
  */
 export type StreamPlacement =
-	| {kind: 'embedded'; bytes: Uint8Array}
-	| {kind: 'disk'; external_url: FileFactUrl};
+	{ kind: 'embedded'; bytes: Uint8Array } | { kind: 'disk'; external_url: FileFactUrl };
 
 /**
  * Outcome of streaming an upload to storage: the `blake3:`-prefixed fact hash,
@@ -117,7 +116,7 @@ export const stream_fact_to_disk = async (
 	facts_dir: string | undefined,
 	source: ReadableStream<Uint8Array>,
 	max_bytes: number,
-	embedded_threshold: number,
+	embedded_threshold: number
 ): Promise<StreamFactToDiskResult> => {
 	await blake3_ready;
 	const blake3 = new Blake3Hasher();
@@ -142,7 +141,7 @@ export const stream_fact_to_disk = async (
 		// (not re-read) by the spill stream below.
 		let spill_needed = false;
 		for (;;) {
-			const {done, value} = await reader.read();
+			const { done, value } = await reader.read();
 			if (done) break;
 			if (!value || value.length === 0) continue;
 			hash_and_count(value);
@@ -160,7 +159,7 @@ export const stream_fact_to_disk = async (
 				hash,
 				sha256: sha256.digest('hex'),
 				size,
-				placement: {kind: 'embedded', bytes: concat_chunks(buffered, buffered_len)},
+				placement: { kind: 'embedded', bytes: concat_chunks(buffered, buffered_len) }
 			};
 		}
 
@@ -182,7 +181,7 @@ export const stream_fact_to_disk = async (
 					return;
 				}
 				for (;;) {
-					const {done, value} = await reader.read();
+					const { done, value } = await reader.read();
 					if (done) {
 						controller.close();
 						return;
@@ -198,12 +197,12 @@ export const stream_fact_to_disk = async (
 					return;
 				}
 			},
-			cancel: (reason) => reader.cancel(reason),
+			cancel: (reason) => reader.cancel(reason)
 		});
 
 		const tmp_dir = join(facts_dir, FACT_TMP_DIRNAME);
 		const tmp_path = join(tmp_dir, `${generate_random_base64url(16)}.tmp`);
-		await deps.mkdir(tmp_dir, {recursive: true});
+		await deps.mkdir(tmp_dir, { recursive: true });
 		try {
 			await deps.write_file_stream(tmp_path, combined);
 		} catch (err) {
@@ -213,12 +212,12 @@ export const stream_fact_to_disk = async (
 		}
 
 		const hash = (FACT_HASH_PREFIX + to_hex(blake3.finalize())) as FactHash;
-		const {shard, rest} = await commit_temp_to_cas(deps, tmp_path, facts_dir, hash);
+		const { shard, rest } = await commit_temp_to_cas(deps, tmp_path, facts_dir, hash);
 		return {
 			hash,
 			sha256: sha256.digest('hex'),
 			size,
-			placement: {kind: 'disk', external_url: mint_file_fact_url(shard, rest)},
+			placement: { kind: 'disk', external_url: mint_file_fact_url(shard, rest) }
 		};
 	} finally {
 		blake3.free();
@@ -243,11 +242,11 @@ export const write_fact_bytes_to_disk = async (
 	deps: Pick<FactDiskStorageDeps, 'mkdir' | 'rename' | 'remove' | 'write_file' | 'fsync' | 'stat'>,
 	facts_dir: string,
 	hash: FactHash,
-	bytes: Uint8Array,
+	bytes: Uint8Array
 ): Promise<FileFactUrl> => {
 	const tmp_dir = join(facts_dir, FACT_TMP_DIRNAME);
 	const tmp_path = join(tmp_dir, `${generate_random_base64url(16)}.tmp`);
-	await deps.mkdir(tmp_dir, {recursive: true});
+	await deps.mkdir(tmp_dir, { recursive: true });
 
 	// Write the temp first (mapping disk-full), then publish — the same
 	// write-then-commit shape as the streaming twin.
@@ -258,7 +257,7 @@ export const write_fact_bytes_to_disk = async (
 		if (is_enospc_error(err)) throw new StorageFullError(err);
 		throw err;
 	}
-	const {shard, rest} = await commit_temp_to_cas(deps, tmp_path, facts_dir, hash);
+	const { shard, rest } = await commit_temp_to_cas(deps, tmp_path, facts_dir, hash);
 	return mint_file_fact_url(shard, rest);
 };
 
@@ -274,7 +273,7 @@ export const write_fact_bytes_to_disk = async (
  */
 export const create_disk_fact_fetcher = (
 	deps: Pick<FactDiskStorageDeps, 'read_file' | 'read_file_stream'>,
-	facts_dir: string,
+	facts_dir: string
 ): FactExternalFetcher => {
 	const resolve_path = (url: string): string => {
 		const parsed = parse_file_fact_url(url);
@@ -284,7 +283,7 @@ export const create_disk_fact_fetcher = (
 	return {
 		fetch_bytes: (url) => deps.read_file(resolve_path(url)),
 		// `async` funnels a synchronous `resolve_path` throw into a rejection.
-		fetch_stream: async (url) => deps.read_file_stream(resolve_path(url)),
+		fetch_stream: async (url) => deps.read_file_stream(resolve_path(url))
 	};
 };
 
@@ -305,7 +304,7 @@ export const create_disk_fact_fetcher = (
 export const sweep_orphan_temps = async (
 	deps: Pick<FactDiskStorageDeps, 'readdir' | 'stat' | 'remove'>,
 	facts_dir: string,
-	options?: {max_age_ms?: number; log?: Pick<Logger, 'warn'>},
+	options?: { max_age_ms?: number; log?: Pick<Logger, 'warn'> }
 ): Promise<number> => {
 	const max_age_ms = options?.max_age_ms ?? FACT_TMP_ORPHAN_MAX_AGE_MS;
 	const tmp_dir = join(facts_dir, FACT_TMP_DIRNAME);
@@ -350,16 +349,16 @@ const commit_temp_to_cas = async (
 	deps: Pick<FactDiskStorageDeps, 'mkdir' | 'rename' | 'remove' | 'fsync' | 'stat'>,
 	tmp_path: string,
 	facts_dir: string,
-	hash: FactHash,
-): Promise<{shard: string; rest: string}> => {
-	const {shard, rest} = fact_disk_path(hash);
+	hash: FactHash
+): Promise<{ shard: string; rest: string }> => {
+	const { shard, rest } = fact_disk_path(hash);
 	const final_path = join(facts_dir, shard, rest);
 	try {
 		await deps.fsync(tmp_path);
 		if (await deps.stat(final_path)) {
 			await deps.remove(tmp_path).catch(() => undefined);
 		} else {
-			await deps.mkdir(join(facts_dir, shard), {recursive: true});
+			await deps.mkdir(join(facts_dir, shard), { recursive: true });
 			await deps.rename(tmp_path, final_path);
 		}
 	} catch (err) {
@@ -367,7 +366,7 @@ const commit_temp_to_cas = async (
 		if (is_enospc_error(err)) throw new StorageFullError(err);
 		throw err;
 	}
-	return {shard, rest};
+	return { shard, rest };
 };
 
 /** Concatenate buffered chunks into a single `Uint8Array` of `total` bytes. */

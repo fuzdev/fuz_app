@@ -8,27 +8,27 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
 import {
 	FrontendWebsocketTransport,
-	type WebsocketRpcConnection,
+	type WebsocketRpcConnection
 } from '$lib/actions/transports_ws.ts';
-import {JSONRPC_ERROR_CODES, ThrownJsonrpcError} from '$lib/http/jsonrpc_errors.ts';
-import type {JsonrpcRequest, JsonrpcNotification, JsonrpcRequestId} from '$lib/http/jsonrpc.ts';
-import {PEER_PING_METHOD, PEER_PROTOCOL_VERSION} from '$lib/actions/peer_ping.ts';
+import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '$lib/http/jsonrpc_errors.ts';
+import type { JsonrpcRequest, JsonrpcNotification, JsonrpcRequestId } from '$lib/http/jsonrpc.ts';
+import { PEER_PING_METHOD, PEER_PROTOCOL_VERSION } from '$lib/actions/peer_ping.ts';
 
 interface RequestCall {
 	method: string;
 	params: unknown;
-	options?: {signal?: AbortSignal; queue?: boolean; id?: JsonrpcRequestId};
+	options?: { signal?: AbortSignal; queue?: boolean; id?: JsonrpcRequestId };
 }
 
 const create_fake_connection = (
 	options: {
 		connected?: boolean;
 		request_impl?: (call: RequestCall) => Promise<unknown>;
-	} = {},
+	} = {}
 ) => {
 	const connected = options.connected ?? true;
 	const request_calls: Array<RequestCall> = [];
@@ -51,11 +51,11 @@ const create_fake_connection = (
 		},
 		add_error_handler: () => () => {},
 		request: async (method, params, request_options) => {
-			const call: RequestCall = {method, params, options: request_options};
+			const call: RequestCall = { method, params, options: request_options };
 			request_calls.push(call);
 			if (options.request_impl) return options.request_impl(call);
 			return null;
-		},
+		}
 	};
 
 	return {
@@ -63,15 +63,15 @@ const create_fake_connection = (
 		request_calls,
 		sent_messages,
 		fire_message: (data: unknown) => {
-			message_handler?.({data: JSON.stringify(data)} as MessageEvent);
-		},
+			message_handler?.({ data: JSON.stringify(data) } as MessageEvent);
+		}
 	};
 };
 
 describe('FrontendWebsocketTransport', () => {
 	test('request delegates to connection.request with peer id, signal, queue=false', async () => {
 		const fake = create_fake_connection({
-			request_impl: async () => ({pong: true}),
+			request_impl: async () => ({ pong: true })
 		});
 		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
 
@@ -80,14 +80,14 @@ describe('FrontendWebsocketTransport', () => {
 			jsonrpc: '2.0',
 			id: 'peer-uuid-123',
 			method: 'ping',
-			params: {x: 1},
+			params: { x: 1 }
 		};
-		const response = await transport.send(message, {signal: controller.signal});
+		const response = await transport.send(message, { signal: controller.signal });
 
 		assert.strictEqual(fake.request_calls.length, 1);
 		const call = fake.request_calls[0]!;
 		assert.strictEqual(call.method, 'ping');
-		assert.deepStrictEqual(call.params, {x: 1});
+		assert.deepStrictEqual(call.params, { x: 1 });
 		assert.strictEqual(call.options?.id, 'peer-uuid-123');
 		assert.strictEqual(call.options?.signal, controller.signal);
 		assert.strictEqual(call.options?.queue, false);
@@ -95,37 +95,37 @@ describe('FrontendWebsocketTransport', () => {
 		assert.deepStrictEqual(response, {
 			jsonrpc: '2.0',
 			id: 'peer-uuid-123',
-			result: {pong: true},
+			result: { pong: true }
 		});
 	});
 
 	test('queue=true forwards to connection.request and bypasses the disconnected fail-fast', async () => {
 		const fake = create_fake_connection({
 			connected: false,
-			request_impl: async () => ({pong: true}),
+			request_impl: async () => ({ pong: true })
 		});
 		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
 
-		const message: JsonrpcRequest = {jsonrpc: '2.0', id: 7, method: 'ping', params: {}};
-		const response = await transport.send(message, {queue: true});
+		const message: JsonrpcRequest = { jsonrpc: '2.0', id: 7, method: 'ping', params: {} };
+		const response = await transport.send(message, { queue: true });
 
 		assert.strictEqual(fake.request_calls.length, 1);
 		assert.strictEqual(fake.request_calls[0]!.options?.queue, true);
-		assert.deepStrictEqual(response, {jsonrpc: '2.0', id: 7, result: {pong: true}});
+		assert.deepStrictEqual(response, { jsonrpc: '2.0', id: 7, result: { pong: true } });
 	});
 
 	test('queue=true forwards through to connection.request while connected', async () => {
 		const fake = create_fake_connection({
-			request_impl: async () => ({pong: true}),
+			request_impl: async () => ({ pong: true })
 		});
 		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
 
-		const message: JsonrpcRequest = {jsonrpc: '2.0', id: 9, method: 'ping', params: {}};
-		const response = await transport.send(message, {queue: true});
+		const message: JsonrpcRequest = { jsonrpc: '2.0', id: 9, method: 'ping', params: {} };
+		const response = await transport.send(message, { queue: true });
 
 		assert.strictEqual(fake.request_calls.length, 1);
 		assert.strictEqual(fake.request_calls[0]!.options?.queue, true);
-		assert.deepStrictEqual(response, {jsonrpc: '2.0', id: 9, result: {pong: true}});
+		assert.deepStrictEqual(response, { jsonrpc: '2.0', id: 9, result: { pong: true } });
 	});
 
 	test('queue=false preserves service_unavailable thrown by connection.request', async () => {
@@ -139,17 +139,17 @@ describe('FrontendWebsocketTransport', () => {
 			request_impl: async () => {
 				throw new ThrownJsonrpcError(
 					JSONRPC_ERROR_CODES.service_unavailable,
-					'[socket] not connected (method=ping)',
+					'[socket] not connected (method=ping)'
 				);
-			},
+			}
 		});
 		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
 
-		const message: JsonrpcRequest = {jsonrpc: '2.0', id: 8, method: 'ping', params: {}};
-		const response = await transport.send(message, {queue: false});
+		const message: JsonrpcRequest = { jsonrpc: '2.0', id: 8, method: 'ping', params: {} };
+		const response = await transport.send(message, { queue: false });
 
 		assert.ok('error' in response);
-		const err = (response as {error: {code: number; message: string}}).error;
+		const err = (response as { error: { code: number; message: string } }).error;
 		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.service_unavailable);
 		assert.match(err.message, /not connected/i);
 		// Transport delegated to the connection — request_calls was incremented
@@ -160,18 +160,18 @@ describe('FrontendWebsocketTransport', () => {
 	test('request wraps ThrownJsonrpcError into JsonrpcErrorResponse envelope', async () => {
 		const fake = create_fake_connection({
 			request_impl: async () => {
-				throw new ThrownJsonrpcError(-32602, 'invalid params', {field: 'x'});
-			},
+				throw new ThrownJsonrpcError(-32602, 'invalid params', { field: 'x' });
+			}
 		});
 		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
 
-		const message: JsonrpcRequest = {jsonrpc: '2.0', id: 1, method: 'echo', params: {}};
+		const message: JsonrpcRequest = { jsonrpc: '2.0', id: 1, method: 'echo', params: {} };
 		const response = await transport.send(message);
 
 		assert.deepStrictEqual(response, {
 			jsonrpc: '2.0',
 			id: 1,
-			error: {code: -32602, message: 'invalid params', data: {field: 'x'}},
+			error: { code: -32602, message: 'invalid params', data: { field: 'x' } }
 		});
 	});
 
@@ -179,16 +179,16 @@ describe('FrontendWebsocketTransport', () => {
 		const fake = create_fake_connection({
 			request_impl: async () => {
 				throw new Error('boom');
-			},
+			}
 		});
 		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
 
-		const message: JsonrpcRequest = {jsonrpc: '2.0', id: 2, method: 'echo', params: {}};
+		const message: JsonrpcRequest = { jsonrpc: '2.0', id: 2, method: 'echo', params: {} };
 		const response = await transport.send(message);
 
 		assert.ok('error' in response, 'expected error envelope');
 		assert.strictEqual(response.id, 2);
-		assert.match((response as {error: {message: string}}).error.message, /boom/);
+		assert.match((response as { error: { message: string } }).error.message, /boom/);
 	});
 
 	test('default queue (false) preserves service_unavailable from connection.request', async () => {
@@ -197,17 +197,17 @@ describe('FrontendWebsocketTransport', () => {
 			request_impl: async () => {
 				throw new ThrownJsonrpcError(
 					JSONRPC_ERROR_CODES.service_unavailable,
-					'[socket] not connected (method=ping)',
+					'[socket] not connected (method=ping)'
 				);
-			},
+			}
 		});
 		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
 
-		const message: JsonrpcRequest = {jsonrpc: '2.0', id: 3, method: 'ping', params: {}};
+		const message: JsonrpcRequest = { jsonrpc: '2.0', id: 3, method: 'ping', params: {} };
 		const response = await transport.send(message);
 
 		assert.ok('error' in response, 'expected error envelope');
-		const err = (response as {error: {code: number; message: string}}).error;
+		const err = (response as { error: { code: number; message: string } }).error;
 		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.service_unavailable);
 		assert.match(err.message, /not connected/i);
 	});
@@ -222,17 +222,17 @@ describe('FrontendWebsocketTransport', () => {
 			request_impl: async () => {
 				throw new ThrownJsonrpcError(
 					JSONRPC_ERROR_CODES.queue_overflow,
-					'[socket] request queue overflow (method=ping, max=100)',
+					'[socket] request queue overflow (method=ping, max=100)'
 				);
-			},
+			}
 		});
 		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
 
-		const message: JsonrpcRequest = {jsonrpc: '2.0', id: 4, method: 'ping', params: {}};
-		const response = await transport.send(message, {queue: true});
+		const message: JsonrpcRequest = { jsonrpc: '2.0', id: 4, method: 'ping', params: {} };
+		const response = await transport.send(message, { queue: true });
 
 		assert.ok('error' in response);
-		const err = (response as {error: {code: number; message: string}}).error;
+		const err = (response as { error: { code: number; message: string } }).error;
 		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.queue_overflow);
 		assert.match(err.message, /queue overflow/);
 	});
@@ -245,24 +245,24 @@ describe('FrontendWebsocketTransport', () => {
 						reject(
 							new ThrownJsonrpcError(
 								JSONRPC_ERROR_CODES.request_cancelled,
-								'[socket] request aborted (method=long_running)',
-							),
+								'[socket] request aborted (method=long_running)'
+							)
 						);
 					});
-				}),
+				})
 		});
 		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
 
 		const controller = new AbortController();
-		const message: JsonrpcRequest = {jsonrpc: '2.0', id: 5, method: 'long_running', params: {}};
-		const send_promise = transport.send(message, {signal: controller.signal});
+		const message: JsonrpcRequest = { jsonrpc: '2.0', id: 5, method: 'long_running', params: {} };
+		const send_promise = transport.send(message, { signal: controller.signal });
 
 		await Promise.resolve();
 		controller.abort();
 
 		const response = await send_promise;
 		assert.ok('error' in response);
-		const err = (response as {error: {code: number; message: string}}).error;
+		const err = (response as { error: { code: number; message: string } }).error;
 		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.request_cancelled);
 		assert.match(err.message, /aborted/i);
 	});
@@ -274,13 +274,13 @@ describe('FrontendWebsocketTransport', () => {
 					call.options?.signal?.addEventListener('abort', () => {
 						reject(new Error('request aborted'));
 					});
-				}),
+				})
 		});
 		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
 
 		const controller = new AbortController();
-		const message: JsonrpcRequest = {jsonrpc: '2.0', id: 42, method: 'long_running', params: {}};
-		const send_promise = transport.send(message, {signal: controller.signal});
+		const message: JsonrpcRequest = { jsonrpc: '2.0', id: 42, method: 'long_running', params: {} };
+		const send_promise = transport.send(message, { signal: controller.signal });
 
 		// Let send() clear the is_ready guard and register the signal listener
 		// inside the fake's request_impl before we abort.
@@ -290,22 +290,22 @@ describe('FrontendWebsocketTransport', () => {
 		const response = await send_promise;
 		assert.ok('error' in response, 'expected error envelope');
 		assert.strictEqual(response.id, 42);
-		assert.match((response as {error: {message: string}}).error.message, /aborted/i);
+		assert.match((response as { error: { message: string } }).error.message, /aborted/i);
 	});
 
 	test('queue=true does not bypass fail-fast for notifications when disconnected', async () => {
-		const fake = create_fake_connection({connected: false});
+		const fake = create_fake_connection({ connected: false });
 		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
 
 		const notification: JsonrpcNotification = {
 			jsonrpc: '2.0',
 			method: 'progress',
-			params: {pct: 10},
+			params: { pct: 10 }
 		};
-		const response = await transport.send(notification, {queue: true});
+		const response = await transport.send(notification, { queue: true });
 
 		assert.ok(response && 'error' in response, 'expected service_unavailable envelope');
-		assert.match((response as {error: {message: string}}).error.message, /not connected/i);
+		assert.match((response as { error: { message: string } }).error.message, /not connected/i);
 		assert.strictEqual(fake.sent_messages.length, 0, 'notification must not be silently dropped');
 		assert.strictEqual(fake.request_calls.length, 0);
 	});
@@ -317,9 +317,9 @@ describe('FrontendWebsocketTransport', () => {
 		const notification: JsonrpcNotification = {
 			jsonrpc: '2.0',
 			method: 'progress',
-			params: {pct: 50},
+			params: { pct: 50 }
 		};
-		const response = await transport.send(notification, {queue: true});
+		const response = await transport.send(notification, { queue: true });
 
 		assert.isNull(response);
 		assert.strictEqual(fake.request_calls.length, 0, 'notifications never hit connection.request');
@@ -333,7 +333,7 @@ describe('FrontendWebsocketTransport', () => {
 		const notification: JsonrpcNotification = {
 			jsonrpc: '2.0',
 			method: 'cancel',
-			params: {request_id: 1},
+			params: { request_id: 1 }
 		};
 		const response = await transport.send(notification);
 
@@ -351,13 +351,13 @@ describe('FrontendWebsocketTransport', () => {
 		});
 
 		// Inbound notification — should be received.
-		fake.fire_message({jsonrpc: '2.0', method: 'progress', params: {pct: 50}});
+		fake.fire_message({ jsonrpc: '2.0', method: 'progress', params: { pct: 50 } });
 		// Inbound request — should be received.
-		fake.fire_message({jsonrpc: '2.0', id: 99, method: 'server_request', params: {}});
+		fake.fire_message({ jsonrpc: '2.0', id: 99, method: 'server_request', params: {} });
 		// Response to a request we sent — should be IGNORED (client owns it).
-		fake.fire_message({jsonrpc: '2.0', id: 1, result: {ok: true}});
+		fake.fire_message({ jsonrpc: '2.0', id: 1, result: { ok: true } });
 		// Error response — also ignored.
-		fake.fire_message({jsonrpc: '2.0', id: 2, error: {code: -32603, message: 'oops'}});
+		fake.fire_message({ jsonrpc: '2.0', id: 2, error: { code: -32603, message: 'oops' } });
 
 		// Microtask drain.
 		await Promise.resolve();
@@ -377,16 +377,21 @@ describe('FrontendWebsocketTransport server→client receive', () => {
 			return null;
 		});
 
-		fake.fire_message({jsonrpc: '2.0', id: 's1', method: PEER_PING_METHOD, params: {nonce: 42}});
+		fake.fire_message({
+			jsonrpc: '2.0',
+			id: 's1',
+			method: PEER_PING_METHOD,
+			params: { nonce: 42 }
+		});
 		await Promise.resolve();
 
 		assert.deepStrictEqual(fake.sent_messages, [
-			{jsonrpc: '2.0', id: 's1', result: {nonce: 42, protocol_version: PEER_PROTOCOL_VERSION}},
+			{ jsonrpc: '2.0', id: 's1', result: { nonce: 42, protocol_version: PEER_PROTOCOL_VERSION } }
 		]);
 		assert.strictEqual(
 			received.length,
 			0,
-			'peer/ping is answered directly, never routed to receive',
+			'peer/ping is answered directly, never routed to receive'
 		);
 		transport.dispose();
 	});
@@ -395,11 +400,11 @@ describe('FrontendWebsocketTransport server→client receive', () => {
 		const fake = create_fake_connection();
 		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
 
-		fake.fire_message({jsonrpc: '2.0', id: 's2', method: PEER_PING_METHOD, params: {}});
+		fake.fire_message({ jsonrpc: '2.0', id: 's2', method: PEER_PING_METHOD, params: {} });
 		await Promise.resolve();
 
 		assert.deepStrictEqual(fake.sent_messages, [
-			{jsonrpc: '2.0', id: 's2', result: {nonce: 0, protocol_version: PEER_PROTOCOL_VERSION}},
+			{ jsonrpc: '2.0', id: 's2', result: { nonce: 0, protocol_version: PEER_PROTOCOL_VERSION } }
 		]);
 		transport.dispose();
 	});
@@ -408,15 +413,17 @@ describe('FrontendWebsocketTransport server→client receive', () => {
 		const fake = create_fake_connection();
 		const transport = new FrontendWebsocketTransport(fake.connection, async (data) => {
 			// A consumer responder produces a response envelope for the inbound request.
-			const id = (data as {id: JsonrpcRequestId}).id;
-			return {jsonrpc: '2.0', id, result: {handled: true}};
+			const id = (data as { id: JsonrpcRequestId }).id;
+			return { jsonrpc: '2.0', id, result: { handled: true } };
 		});
 
-		fake.fire_message({jsonrpc: '2.0', id: 7, method: 'server_request', params: {}});
+		fake.fire_message({ jsonrpc: '2.0', id: 7, method: 'server_request', params: {} });
 		await Promise.resolve();
 		await Promise.resolve();
 
-		assert.deepStrictEqual(fake.sent_messages, [{jsonrpc: '2.0', id: 7, result: {handled: true}}]);
+		assert.deepStrictEqual(fake.sent_messages, [
+			{ jsonrpc: '2.0', id: 7, result: { handled: true } }
+		]);
 		transport.dispose();
 	});
 
@@ -424,7 +431,7 @@ describe('FrontendWebsocketTransport server→client receive', () => {
 		const fake = create_fake_connection();
 		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
 
-		fake.fire_message({jsonrpc: '2.0', id: 8, method: 'server_request', params: {}});
+		fake.fire_message({ jsonrpc: '2.0', id: 8, method: 'server_request', params: {} });
 		await Promise.resolve();
 		await Promise.resolve();
 

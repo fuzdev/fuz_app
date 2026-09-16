@@ -6,25 +6,25 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
-import {FactHashSchema} from '@fuzdev/fuz_util/fact_hash.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { FactHashSchema } from '@fuzdev/fuz_util/fact_hash.ts';
 
-import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
-import {ActingActor} from '../http/auth_shape.ts';
+import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
+import { ActingActor } from '../http/auth_shape.ts';
 import {
 	all_cell_grant_action_specs,
 	cell_grant_create_action_spec,
 	cell_grant_revoke_action_spec,
 	cell_grant_list_action_spec,
-	GrantJson,
+	GrantJson
 } from './cell_grant_action_specs.ts';
 import {
 	all_cell_field_action_specs,
 	cell_field_set_action_spec,
 	cell_field_delete_action_spec,
 	cell_field_list_action_spec,
-	FieldJson,
+	FieldJson
 } from './cell_field_action_specs.ts';
 import {
 	all_cell_item_action_specs,
@@ -32,13 +32,13 @@ import {
 	cell_item_move_action_spec,
 	cell_item_delete_action_spec,
 	cell_item_list_action_spec,
-	ItemJson,
+	ItemJson
 } from './cell_item_action_specs.ts';
 import {
 	all_cell_audit_action_specs,
-	cell_audit_list_action_spec,
+	cell_audit_list_action_spec
 } from './cell_audit_action_specs.ts';
-import {CellData} from './cell_data_schema.ts';
+import { CellData } from './cell_data_schema.ts';
 
 /**
  * Cell visibility — the coarse-grained access-control axis for a cell.
@@ -64,15 +64,19 @@ export type CellVisibility = z.infer<typeof CellVisibility>;
 // registry/aggregator module for the cell layer; the grant / field /
 // item specs live in their own files for source-file separation but
 // ride the same namespace.
-export {cell_grant_create_action_spec, cell_grant_revoke_action_spec, cell_grant_list_action_spec};
-export {cell_field_set_action_spec, cell_field_delete_action_spec, cell_field_list_action_spec};
+export {
+	cell_grant_create_action_spec,
+	cell_grant_revoke_action_spec,
+	cell_grant_list_action_spec
+};
+export { cell_field_set_action_spec, cell_field_delete_action_spec, cell_field_list_action_spec };
 export {
 	cell_item_insert_action_spec,
 	cell_item_move_action_spec,
 	cell_item_delete_action_spec,
-	cell_item_list_action_spec,
+	cell_item_list_action_spec
 };
-export {cell_audit_list_action_spec};
+export { cell_audit_list_action_spec };
 
 // -- Error reasons ----------------------------------------------------------
 
@@ -223,24 +227,24 @@ export const CellJson = z.strictObject({
 	data: CellData,
 	kind: z.string().nullable().meta({
 		description:
-			'Capability / identity tag — a write-once top-level column (peer to `visibility` / `path`), not a field inside `data`. `null` for a typeless cell. The discriminator a creation authorizer gates on; fixed at birth.',
+			'Capability / identity tag — a write-once top-level column (peer to `visibility` / `path`), not a field inside `data`. `null` for a typeless cell. The discriminator a creation authorizer gates on; fixed at birth.'
 	}),
 	visibility: CellVisibility.meta({
 		description:
-			"Access-control tag. `'public'` admits everyone (including unauthenticated visitors); `'private'` (default) admits admin / owner / `cell_grant`-admitted callers. Top-level column, not inside `data`.",
+			"Access-control tag. `'public'` admits everyone (including unauthenticated visitors); `'private'` (default) admits admin / owner / `cell_grant`-admitted callers. Top-level column, not inside `data`."
 	}),
 	refs: z.array(FactHashSchema).nullable(),
 	parent_id: Uuid.nullable().meta({
 		description:
-			'Immediate container in the directory tree (the directory this cell lives in). `null` = a root (parentless). Set once at create, immutable in v1.',
+			'Immediate container in the directory tree (the directory this cell lives in). `null` = a root (parentless). Set once at create, immutable in v1.'
 	}),
 	root_id: Uuid.nullable().meta({
 		description:
-			'Governing root of the directory subtree, denormalized for flat-subtree queries (`root_id = parent.root_id ?? parent.id`). `null` for a root. Set once at create, immutable in v1.',
+			'Governing root of the directory subtree, denormalized for flat-subtree queries (`root_id = parent.root_id ?? parent.id`). `null` for a root. Set once at create, immutable in v1.'
 	}),
 	moderation: z.string().nullable().meta({
 		description:
-			"Approval-lifecycle marker for a gated contribution (`'pending'` / `'approved'` / `'rejected'`); `null` = unmoderated. A control field with a non-author writer — peer to `visibility`, never inside `data` (set by the create authorizer's verdict, transitioned only by `cell_moderate`).",
+			"Approval-lifecycle marker for a gated contribution (`'pending'` / `'approved'` / `'rejected'`); `null` = unmoderated. A control field with a non-author writer — peer to `visibility`, never inside `data` (set by the create authorizer's verdict, transitioned only by `cell_moderate`)."
 	}),
 	created_by: Uuid.nullable(),
 	updated_by: Uuid.nullable(),
@@ -249,8 +253,8 @@ export const CellJson = z.strictObject({
 	deleted_at: z.string().nullable(),
 	grant_count: z.number().int().nonnegative().meta({
 		description:
-			'Number of `cell_grant` rows naming this cell. Non-leaky scalar (no actor/role identity); surfaces "Shared with N" badges. Derived in SQL via a correlated subquery on `idx_cell_grant_cell`.',
-	}),
+			'Number of `cell_grant` rows naming this cell. Non-leaky scalar (no actor/role identity); surfaces "Shared with N" badges. Derived in SQL via a correlated subquery on `idx_cell_grant_cell`.'
+	})
 });
 export type CellJson = z.infer<typeof CellJson>;
 
@@ -264,28 +268,28 @@ export type CellJson = z.infer<typeof CellJson>;
 export const CellCreateInput = z.strictObject({
 	data: CellData.meta({
 		description:
-			'Cell content. Base fields (label / summary) typed; extras loose. A `kind` key here is rejected (`ERROR_CELL_KIND_IN_DATA`) — kind is the top-level field. Per-kind shape is sub-API.',
+			'Cell content. Base fields (label / summary) typed; extras loose. A `kind` key here is rejected (`ERROR_CELL_KIND_IN_DATA`) — kind is the top-level field. Per-kind shape is sub-API.'
 	}),
 	kind: z.string().nullish().meta({
 		description:
-			'Capability / identity tag, written to the top-level `cell.kind` column (not `data`). Write-once — fixed at birth, not updatable. Non-empty when present (an empty string is rejected `ERROR_CELL_KIND_EMPTY`); omit / null for a typeless cell. A creation authorizer (if mounted) gates on this.',
+			'Capability / identity tag, written to the top-level `cell.kind` column (not `data`). Write-once — fixed at birth, not updatable. Non-empty when present (an empty string is rejected `ERROR_CELL_KIND_EMPTY`); omit / null for a typeless cell. A creation authorizer (if mounted) gates on this.'
 	}),
 	visibility: CellVisibility.optional().meta({
 		description:
-			"Access-control tag. Top-level column (not in `data`). Default `'private'` when omitted.",
+			"Access-control tag. Top-level column (not in `data`). Default `'private'` when omitted."
 	}),
 	path: CellPath.nullish().meta({
-		description: 'Admin-only named lookup alias. Globally unique on active rows.',
+		description: 'Admin-only named lookup alias. Globally unique on active rows.'
 	}),
 	parent_id: Uuid.nullish().meta({
 		description:
-			'Immediate container — the directory this cell is created in. Omit / null = a root (parentless). The handler resolves `root_id` from it and gates the create through the parent-aware authorizer; `root_id` / `moderation` are handler-derived, never wire input.',
+			'Immediate container — the directory this cell is created in. Omit / null = a root (parentless). The handler resolves `root_id` from it and gates the create through the parent-aware authorizer; `root_id` / `moderation` are handler-derived, never wire input.'
 	}),
-	acting: ActingActor,
+	acting: ActingActor
 });
 export type CellCreateInput = z.infer<typeof CellCreateInput>;
 
-export const CellCreateOutput = z.strictObject({cell: CellJson});
+export const CellCreateOutput = z.strictObject({ cell: CellJson });
 export type CellCreateOutput = z.infer<typeof CellCreateOutput>;
 
 // -- cell_get ---------------------------------------------------------------
@@ -300,10 +304,10 @@ export const CellGetInput = z
 	.strictObject({
 		id: Uuid.optional(),
 		path: CellPath.optional(),
-		acting: ActingActor,
+		acting: ActingActor
 	})
 	.refine((v) => v.id !== undefined || v.path !== undefined, {
-		message: ERROR_CELL_GET_REQUIRES_ID_OR_PATH,
+		message: ERROR_CELL_GET_REQUIRES_ID_OR_PATH
 	});
 export type CellGetInput = z.infer<typeof CellGetInput>;
 
@@ -323,7 +327,7 @@ export const CellGetOutput = z.strictObject({
 	items: z.array(ItemJson),
 	items_truncated: z.boolean(),
 	can_edit: z.boolean(),
-	can_grant: z.boolean(),
+	can_grant: z.boolean()
 });
 export type CellGetOutput = z.infer<typeof CellGetOutput>;
 
@@ -338,30 +342,30 @@ export type CellGetOutput = z.infer<typeof CellGetOutput>;
  * `data` cannot flip visibility (`ERROR_CELL_VISIBILITY_MANAGE_ONLY`).
  */
 export const CellUpdateInput = z.strictObject({
-	cell_id: Uuid.meta({description: 'Cell to update.'}),
+	cell_id: Uuid.meta({ description: 'Cell to update.' }),
 	data: CellData.optional(),
 	visibility: CellVisibility.optional().meta({
-		description: 'Access-control tag. Top-level column (not in `data`). Manage-tier write.',
+		description: 'Access-control tag. Top-level column (not in `data`). Manage-tier write.'
 	}),
-	path: CellPath.nullable().optional().meta({description: 'Admin-only path write.'}),
-	acting: ActingActor,
+	path: CellPath.nullable().optional().meta({ description: 'Admin-only path write.' }),
+	acting: ActingActor
 });
 export type CellUpdateInput = z.infer<typeof CellUpdateInput>;
 
-export const CellUpdateOutput = z.strictObject({cell: CellJson});
+export const CellUpdateOutput = z.strictObject({ cell: CellJson });
 export type CellUpdateOutput = z.infer<typeof CellUpdateOutput>;
 
 // -- cell_delete ------------------------------------------------------------
 
 export const CellDeleteInput = z.strictObject({
-	cell_id: Uuid.meta({description: 'Cell to soft-delete.'}),
-	acting: ActingActor,
+	cell_id: Uuid.meta({ description: 'Cell to soft-delete.' }),
+	acting: ActingActor
 });
 export type CellDeleteInput = z.infer<typeof CellDeleteInput>;
 
 export const CellDeleteOutput = z.strictObject({
 	ok: z.literal(true),
-	deleted: z.boolean(),
+	deleted: z.boolean()
 });
 export type CellDeleteOutput = z.infer<typeof CellDeleteOutput>;
 
@@ -393,44 +397,44 @@ export const CellListInput = z
 			.array(Uuid)
 			.max(CELL_LIST_LIMIT_MAX)
 			.optional()
-			.meta({description: 'Batch-fetch by id. Visibility predicate still applies.'}),
+			.meta({ description: 'Batch-fetch by id. Visibility predicate still applies.' }),
 		kind: z.string().optional().meta({
 			description:
-				'Match `cell.kind = ?`. An empty string matches nothing — no cell carries an empty kind.',
+				'Match `cell.kind = ?`. An empty string matches nothing — no cell carries an empty kind.'
 		}),
 		visibility: CellVisibility.optional().meta({
 			description:
-				"Match `cell.visibility = ?`. The SQL-side auth-narrow already filters to public-or-admitted; this is an additional narrowing filter (e.g. `visibility: 'public'` on the discovery feed so authed callers don't see their own private entries mixed in).",
+				"Match `cell.visibility = ?`. The SQL-side auth-narrow already filters to public-or-admitted; this is an additional narrowing filter (e.g. `visibility: 'public'` on the discovery feed so authed callers don't see their own private entries mixed in)."
 		}),
-		ref: FactHashSchema.optional().meta({description: 'Match cells referencing this fact hash.'}),
-		created_by: Uuid.optional().meta({description: 'Filter to a specific creator.'}),
+		ref: FactHashSchema.optional().meta({ description: 'Match cells referencing this fact hash.' }),
+		created_by: Uuid.optional().meta({ description: 'Filter to a specific creator.' }),
 		path_prefix: CellPath.optional().meta({
-			description: 'Match cells whose path starts with this.',
+			description: 'Match cells whose path starts with this.'
 		}),
 		root_id: Uuid.optional().meta({
 			description:
-				'Scope to a directory subtree by governing root (`cell.root_id = ?`) — the feed + mod-queue key.',
+				'Scope to a directory subtree by governing root (`cell.root_id = ?`) — the feed + mod-queue key.'
 		}),
 		moderation: z.string().optional().meta({
 			description:
-				"Filter by moderation lifecycle marker (`'pending'` drives the moderation queue).",
+				"Filter by moderation lifecycle marker (`'pending'` drives the moderation queue)."
 		}),
 		shared_with: z.literal('me').optional().meta({
 			description:
-				'Narrow to cells admitting the caller via `cell_grant`, excluding cells the caller owns. Self-only — a `Uuid` form would need cross-actor role_grant loading.',
+				'Narrow to cells admitting the caller via `cell_grant`, excluding cells the caller owns. Self-only — a `Uuid` form would need cross-actor role_grant loading.'
 		}),
 		order_by: z.enum(['created_at', 'updated_at']).optional(),
 		order_direction: z.enum(['asc', 'desc']).optional(),
 		limit: z.number().int().positive().max(CELL_LIST_LIMIT_MAX).optional(),
 		offset: z.number().int().nonnegative().optional(),
-		acting: ActingActor,
+		acting: ActingActor
 	})
 	.default({});
 export type CellListInput = z.infer<typeof CellListInput>;
 
 export const CellListOutput = z.strictObject({
 	cells: z.array(CellJson),
-	cell_grants: z.record(z.string(), z.array(GrantJson)).optional(),
+	cell_grants: z.record(z.string(), z.array(GrantJson)).optional()
 });
 export type CellListOutput = z.infer<typeof CellListOutput>;
 
@@ -444,9 +448,9 @@ export type CellListOutput = z.infer<typeof CellListOutput>;
  * fields are stamped into `data`.
  */
 export const CellCloneInput = z.strictObject({
-	source_id: Uuid.meta({description: 'Cell to clone.'}),
+	source_id: Uuid.meta({ description: 'Cell to clone.' }),
 	deep: z.boolean().optional().meta({
-		description: 'Recurse into `items[]` (depth=1 — clones direct children only). Default false.',
+		description: 'Recurse into `items[]` (depth=1 — clones direct children only). Default false.'
 	}),
 	// TODO: cap `with_data_patch` size/depth once a consumer measures the
 	// upper bound. `z.json()` is unbounded — a multi-MB patch is in scope
@@ -455,13 +459,13 @@ export const CellCloneInput = z.strictObject({
 	// without disturbing the patch-wins-last semantics.
 	with_data_patch: CellData.optional().meta({
 		description:
-			"Optional shallow patch merged into the new root cell's `data` (patch-last semantics).",
+			"Optional shallow patch merged into the new root cell's `data` (patch-last semantics)."
 	}),
-	acting: ActingActor,
+	acting: ActingActor
 });
 export type CellCloneInput = z.infer<typeof CellCloneInput>;
 
-export const CellCloneOutput = z.strictObject({cell: CellJson});
+export const CellCloneOutput = z.strictObject({ cell: CellJson });
 export type CellCloneOutput = z.infer<typeof CellCloneOutput>;
 
 // -- cell_moderate ----------------------------------------------------------
@@ -484,15 +488,15 @@ export type CellModerationDecision = z.infer<typeof CellModerationDecision>;
  * but the caller isn't a root manager (the author lands here).
  */
 export const CellModerateInput = z.strictObject({
-	cell_id: Uuid.meta({description: 'Contribution to moderate.'}),
+	cell_id: Uuid.meta({ description: 'Contribution to moderate.' }),
 	moderation: CellModerationDecision.meta({
-		description: 'Terminal decision: `approved` (publishes, visibility → public) or `rejected`.',
+		description: 'Terminal decision: `approved` (publishes, visibility → public) or `rejected`.'
 	}),
-	acting: ActingActor,
+	acting: ActingActor
 });
 export type CellModerateInput = z.infer<typeof CellModerateInput>;
 
-export const CellModerateOutput = z.strictObject({cell: CellJson});
+export const CellModerateOutput = z.strictObject({ cell: CellJson });
 export type CellModerateOutput = z.infer<typeof CellModerateOutput>;
 
 // -- Action specs -----------------------------------------------------------
@@ -501,95 +505,95 @@ export const cell_create_action_spec = {
 	method: 'cell_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: true,
 	input: CellCreateInput,
 	output: CellCreateOutput,
 	async: true,
 	rate_limit: 'account',
 	description:
-		'Create a cell. Handler stamps `created_by` from auth.actor.id; `path` writes are admin-only. Per-account rate-limited to bound write-spam.',
+		'Create a cell. Handler stamps `created_by` from auth.actor.id; `path` writes are admin-only. Per-account rate-limited to bound write-spam.'
 } satisfies RequestResponseActionSpec;
 
 export const cell_get_action_spec = {
 	method: 'cell_get',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'optional', actor: 'optional'},
+	auth: { account: 'optional', actor: 'optional' },
 	side_effects: false,
 	input: CellGetInput,
 	output: CellGetOutput,
 	async: true,
 	rate_limit: 'ip',
 	description:
-		'Fetch a cell by id or path. Per-row authz via `can_view_cell`; unauthed callers get only `cell.visibility === "public"` cells. 404 on miss or unauthorized — no existence leak. Bundled relations are filtered to viewable targets. Per-IP rate-limited as the defense-in-depth complement to `cell_list`: an id-walker that learns ids from a side channel can pivot from the enumeration entry point to per-row reads.',
+		'Fetch a cell by id or path. Per-row authz via `can_view_cell`; unauthed callers get only `cell.visibility === "public"` cells. 404 on miss or unauthorized — no existence leak. Bundled relations are filtered to viewable targets. Per-IP rate-limited as the defense-in-depth complement to `cell_list`: an id-walker that learns ids from a side channel can pivot from the enumeration entry point to per-row reads.'
 } satisfies RequestResponseActionSpec;
 
 export const cell_update_action_spec = {
 	method: 'cell_update',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: true,
 	input: CellUpdateInput,
 	output: CellUpdateOutput,
 	async: true,
 	description:
-		'Update a cell. Per-row `can_edit_cell` (admin / owner / editor-grant). `visibility` writes require the manage tier (admin / owner). `path` writes are admin-only. Stamps `updated_by`.',
+		'Update a cell. Per-row `can_edit_cell` (admin / owner / editor-grant). `visibility` writes require the manage tier (admin / owner). `path` writes are admin-only. Stamps `updated_by`.'
 } satisfies RequestResponseActionSpec;
 
 export const cell_delete_action_spec = {
 	method: 'cell_delete',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: true,
 	input: CellDeleteInput,
 	output: CellDeleteOutput,
 	async: true,
-	description: 'Soft-delete a cell. Per-row `can_edit_cell` (admin / owner / editor-grant).',
+	description: 'Soft-delete a cell. Per-row `can_edit_cell` (admin / owner / editor-grant).'
 } satisfies RequestResponseActionSpec;
 
 export const cell_list_action_spec = {
 	method: 'cell_list',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'optional', actor: 'optional'},
+	auth: { account: 'optional', actor: 'optional' },
 	side_effects: false,
 	input: CellListInput,
 	output: CellListOutput,
 	async: true,
 	rate_limit: 'ip',
 	description:
-		'List cells with optional filters. SQL-side visibility predicate: admin sees all; authed see owned + public + grant-admitted; null auth sees public-only. `created_by` filter is rejected for null auth (account-id enumeration guard). Per-IP rate-limited to bound the public-enumeration surface (paired with `actor_lookup` it would be a scrape primitive).',
+		'List cells with optional filters. SQL-side visibility predicate: admin sees all; authed see owned + public + grant-admitted; null auth sees public-only. `created_by` filter is rejected for null auth (account-id enumeration guard). Per-IP rate-limited to bound the public-enumeration surface (paired with `actor_lookup` it would be a scrape primitive).'
 } satisfies RequestResponseActionSpec;
 
 export const cell_clone_action_spec = {
 	method: 'cell_clone',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: true,
 	input: CellCloneInput,
 	output: CellCloneOutput,
 	async: true,
 	rate_limit: 'account',
 	description:
-		'Clone a cell (optionally deep). New owner is the caller; `path` is always nulled. Provenance recorded only in the `cell_clone` audit row. Per-account rate-limited — `deep: true` walks `cell_item` rows and fans out, so unbounded clone is a write-amplification vector.',
+		'Clone a cell (optionally deep). New owner is the caller; `path` is always nulled. Provenance recorded only in the `cell_clone` audit row. Per-account rate-limited — `deep: true` walks `cell_item` rows and fans out, so unbounded clone is a write-amplification vector.'
 } satisfies RequestResponseActionSpec;
 
 export const cell_moderate_action_spec = {
 	method: 'cell_moderate',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: true,
 	input: CellModerateInput,
 	output: CellModerateOutput,
 	async: true,
 	rate_limit: 'account',
 	description:
-		'Moderate a gated contribution (`pending → approved | rejected`). Gated on moderation authority over the governing root (admin / root owner), not the contribution — so the author cannot self-approve. Approval flips `moderation → approved` + `visibility → public`; rejection sets `moderation → rejected`. 404 on an unviewable target, 403 for a viewable target whose caller is not a root manager.',
+		'Moderate a gated contribution (`pending → approved | rejected`). Gated on moderation authority over the governing root (admin / root owner), not the contribution — so the author cannot self-approve. Approval flips `moderation → approved` + `visibility → public`; rejection sets `moderation → rejected`. 404 on an unviewable target, 403 for a viewable target whose caller is not a root manager.'
 } satisfies RequestResponseActionSpec;
 
 /**
@@ -610,5 +614,5 @@ export const all_cell_action_specs = [
 	...all_cell_grant_action_specs,
 	...all_cell_field_action_specs,
 	...all_cell_item_action_specs,
-	...all_cell_audit_action_specs,
+	...all_cell_audit_action_specs
 ] as const;

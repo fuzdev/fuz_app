@@ -1,9 +1,9 @@
-import {availableParallelism} from 'node:os';
-import {defineConfig} from 'vitest/config';
-import {sveltekit} from '@sveltejs/kit/vite';
-import {vite_plugin_fuz_css} from '@fuzdev/fuz_css/vite_plugin_fuz_css.ts';
+import { availableParallelism } from 'node:os';
+import { defineConfig } from 'vitest/config';
+import { sveltekit } from '@sveltejs/kit/vite';
+import { vite_plugin_fuz_css } from '@fuzdev/fuz_css/vite_plugin_fuz_css.ts';
 import svelte_docinfo from 'svelte-docinfo/vite.js';
-import {vite_plugin_pkg_json} from '@fuzdev/fuz_ui/vite_plugin_pkg_json.ts';
+import { vite_plugin_pkg_json } from '@fuzdev/fuz_ui/vite_plugin_pkg_json.ts';
 
 const max_threads = Math.max(1, Math.ceil(availableParallelism() / 2));
 
@@ -38,7 +38,7 @@ const cross_backend_enabled = process.env.FUZ_TEST_CROSS_BACKEND === '1';
 // parity (live DDL) and action-manifest parity (live RPC method set + auth).
 const PARITY_TESTS = [
 	'src/test/cross_backend/schema_parity.cross.test.ts',
-	'src/test/cross_backend/action_manifest_parity.cross.test.ts',
+	'src/test/cross_backend/action_manifest_parity.cross.test.ts'
 ];
 
 // The login-security gate spawns BOTH backends with the login limiters enabled
@@ -56,8 +56,8 @@ const cross_backend_project = (name: string, global_setup: string) => ({
 		globalSetup: [global_setup],
 		isolate: false,
 		fileParallelism: false,
-		sequence: {groupOrder: 3},
-	},
+		sequence: { groupOrder: 3 }
+	}
 });
 
 const cross_backend_parity_project = () => ({
@@ -68,8 +68,8 @@ const cross_backend_parity_project = () => ({
 		globalSetup: ['./src/test/cross_backend/global_setup_schema_parity.ts'],
 		isolate: false,
 		fileParallelism: false,
-		sequence: {groupOrder: 4},
-	},
+		sequence: { groupOrder: 4 }
+	}
 });
 
 // Dual-spawn login-security gate (TS spine + Rust stub, login limiters on).
@@ -86,13 +86,13 @@ const cross_backend_security_project = () => ({
 		globalSetup: ['./src/test/cross_backend/global_setup_login_security.ts'],
 		isolate: false,
 		fileParallelism: false,
-		sequence: {groupOrder: 5},
-	},
+		sequence: { groupOrder: 5 }
+	}
 });
 
 export default defineConfig({
 	plugins: [sveltekit(), svelte_docinfo(), vite_plugin_fuz_css(), vite_plugin_pkg_json()],
-	optimizeDeps: {exclude: ['@fuzdev/blake3_wasm']},
+	optimizeDeps: { exclude: ['@fuzdev/blake3_wasm'] },
 	test: {
 		projects: [
 			{
@@ -105,8 +105,8 @@ export default defineConfig({
 					// run under `db`.
 					exclude: ['src/test/**/*.db.test.ts', 'src/test/**/*.cross.test.ts'],
 					maxWorkers: max_threads,
-					sequence: {groupOrder: 1},
-				},
+					sequence: { groupOrder: 1 }
+				}
 			},
 			{
 				extends: true,
@@ -115,31 +115,31 @@ export default defineConfig({
 					include: ['src/test/**/*.db.test.ts'],
 					isolate: false,
 					fileParallelism: false,
-					sequence: {groupOrder: 2},
-				},
+					sequence: { groupOrder: 2 }
+				}
 			},
 			...(cross_backend_enabled
 				? [
 						cross_backend_project(
 							'cross_backend_rust_spine_stub',
-							'./src/test/cross_backend/global_setup.ts',
+							'./src/test/cross_backend/global_setup.ts'
 						),
 						cross_backend_project(
 							'cross_backend_ts_node',
-							'./src/test/cross_backend/global_setup_ts_node.ts',
+							'./src/test/cross_backend/global_setup_ts_node.ts'
 						),
 						cross_backend_project(
 							'cross_backend_ts_deno',
-							'./src/test/cross_backend/global_setup_ts_deno.ts',
+							'./src/test/cross_backend/global_setup_ts_deno.ts'
 						),
 						cross_backend_project(
 							'cross_backend_ts_bun',
-							'./src/test/cross_backend/global_setup_ts_bun.ts',
+							'./src/test/cross_backend/global_setup_ts_bun.ts'
 						),
 						cross_backend_parity_project(),
-						cross_backend_security_project(),
+						cross_backend_security_project()
 					]
-				: []),
-		],
-	},
+				: [])
+		]
+	}
 });

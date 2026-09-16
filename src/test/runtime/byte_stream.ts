@@ -12,7 +12,7 @@ export const collect_stream = async (stream: ReadableStream<Uint8Array>): Promis
 	let total = 0;
 	const reader = stream.getReader();
 	for (;;) {
-		const {done, value} = await reader.read();
+		const { done, value } = await reader.read();
 		if (done) break;
 		if (value) {
 			chunks.push(value);
@@ -34,5 +34,5 @@ export const stream_of = (chunks: Array<Uint8Array>): ReadableStream<Uint8Array>
 		start(controller) {
 			for (const chunk of chunks) controller.enqueue(chunk);
 			controller.close();
-		},
+		}
 	});

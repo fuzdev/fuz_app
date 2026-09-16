@@ -35,15 +35,15 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {fileURLToPath} from 'node:url';
+import { fileURLToPath } from 'node:url';
 
-import type {BackendConfig} from './backend_config.ts';
-import {build_test_backend_paths} from './build_test_backend_paths.ts';
-import {SPINE_EXPECTED_SCHEMA_URL} from './spine_surface_constants.ts';
+import type { BackendConfig } from './backend_config.ts';
+import { build_test_backend_paths } from './build_test_backend_paths.ts';
+import { SPINE_EXPECTED_SCHEMA_URL } from './spine_surface_constants.ts';
 import {
 	LOGIN_RATE_LIMIT_ENABLED_ENV,
 	make_default_rust_backend_config,
-	rust_default_capabilities,
+	rust_default_capabilities
 } from './default_backend_configs.ts';
 
 /** Env var naming the prebuilt `testing_spine_stub` binary. Required when `binary_path` is omitted. */
@@ -70,7 +70,7 @@ const rust_spine_stub_capabilities = Object.freeze({
 	...rust_default_capabilities,
 	sse: true,
 	ready: true,
-	cell_gated_create: true,
+	cell_gated_create: true
 });
 
 /** Default listening port — slots beside zzz's 1175/1176; matches the binary's `DEFAULT_PORT`. */
@@ -121,14 +121,14 @@ export interface SpineStubBackendConfigOptions {
  * @throws Error when no binary path is available.
  */
 export const rust_spine_stub_backend_config = (
-	options: SpineStubBackendConfigOptions = {},
+	options: SpineStubBackendConfigOptions = {}
 ): BackendConfig => {
 	const {
 		port = RUST_SPINE_STUB_DEFAULT_PORT,
 		database_url = RUST_SPINE_STUB_DEFAULT_DATABASE_URL,
 		binary_path = process.env[RUST_SPINE_STUB_BIN_ENV],
 		enable_login_rate_limit,
-		trusted_proxies,
+		trusted_proxies
 	} = options;
 	if (!binary_path) {
 		throw new Error(
@@ -136,7 +136,7 @@ export const rust_spine_stub_backend_config = (
 				RUST_SPINE_STUB_BIN_ENV
 			} to a prebuilt ` +
 				'`testing_spine_stub` binary (build it with `cargo build -p testing_spine_stub --release`) ' +
-				'or pass `binary_path`.',
+				'or pass `binary_path`.'
 		);
 	}
 	const name = 'spine_stub';
@@ -167,8 +167,8 @@ export const rust_spine_stub_backend_config = (
 			// Login-security project opt-ins (off by default): enable the login
 			// limiters + trust the loopback proxy so the limiter keys on the
 			// resolved `X-Forwarded-For` IP. The stub reads both directly.
-			...(enable_login_rate_limit ? {[LOGIN_RATE_LIMIT_ENABLED_ENV]: 'true'} : {}),
-			...(trusted_proxies !== undefined ? {FUZ_TRUSTED_PROXIES: trusted_proxies} : {}),
-		},
+			...(enable_login_rate_limit ? { [LOGIN_RATE_LIMIT_ENABLED_ENV]: 'true' } : {}),
+			...(trusted_proxies !== undefined ? { FUZ_TRUSTED_PROXIES: trusted_proxies } : {})
+		}
 	});
 };

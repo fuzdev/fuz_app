@@ -70,31 +70,31 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
-import {fact_hash_bytes, FactHashSchema} from '@fuzdev/fuz_util/fact_hash.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { fact_hash_bytes, FactHashSchema } from '@fuzdev/fuz_util/fact_hash.ts';
 
-import {rpc_action, type RpcAction} from '../../actions/action_rpc.ts';
-import {protocol_action_specs} from '../../actions/protocol.ts';
-import {query_put_fact} from '../../db/fact_queries.ts';
-import type {RequestResponseActionSpec} from '../../actions/action_spec.ts';
-import type {RouteAuth} from '../../http/auth_shape.ts';
-import type {AppDeps} from '../../auth/deps.ts';
-import type {SessionOptions} from '../../auth/session_cookie.ts';
-import type {DaemonTokenState} from '../../auth/daemon_token.ts';
-import type {Db} from '../../db/db.ts';
-import {ROLE_ADMIN, ROLE_KEEPER} from '../../auth/role_schema.ts';
-import {auth_integration_truncate_tables} from '../db.ts';
+import { rpc_action, type RpcAction } from '../../actions/action_rpc.ts';
+import { protocol_action_specs } from '../../actions/protocol.ts';
+import { query_put_fact } from '../../db/fact_queries.ts';
+import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
+import type { RouteAuth } from '../../http/auth_shape.ts';
+import type { AppDeps } from '../../auth/deps.ts';
+import type { SessionOptions } from '../../auth/session_cookie.ts';
+import type { DaemonTokenState } from '../../auth/daemon_token.ts';
+import type { Db } from '../../db/db.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '../../auth/role_schema.ts';
+import { auth_integration_truncate_tables } from '../db.ts';
 import {
 	query_schema_snapshot,
 	SchemaSnapshot,
 	query_migration_tracker,
-	MigrationTracker,
+	MigrationTracker
 } from '../schema_introspect.ts';
-import {ActionManifest, build_action_manifest} from './action_manifest.ts';
-import {query_create_actor} from '../../auth/account_queries.ts';
-import {create_test_account_with_credentials, mint_test_session} from '../app_server.ts';
-import {DEFAULT_TEST_PASSWORD} from '../test_credentials.ts';
+import { ActionManifest, build_action_manifest } from './action_manifest.ts';
+import { query_create_actor } from '../../auth/account_queries.ts';
+import { create_test_account_with_credentials, mint_test_session } from '../app_server.ts';
+import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 
 /**
  * Shared `auth` axis for every `_testing_*` action: keeper-only via the
@@ -108,15 +108,15 @@ import {DEFAULT_TEST_PASSWORD} from '../test_credentials.ts';
 const TESTING_ACTION_AUTH = {
 	account: 'required',
 	actor: 'none',
-	credential_types: ['daemon_token'],
+	credential_types: ['daemon_token']
 } as const satisfies RouteAuth;
 
 /** Output shape for an individual seeded account (keeper or extra). */
 const SeededAccountShape = z.strictObject({
-	account: z.strictObject({id: Uuid, username: z.string()}),
-	actor: z.strictObject({id: Uuid}),
+	account: z.strictObject({ id: Uuid, username: z.string() }),
+	actor: z.strictObject({ id: Uuid }),
 	api_token: z.string(),
-	session_cookie: z.string(),
+	session_cookie: z.string()
 });
 
 /**
@@ -157,8 +157,8 @@ export const testing_reset_action_spec = {
 				z.strictObject({
 					username: z.string(),
 					password_value: z.string().optional(),
-					roles: z.array(z.string()),
-				}),
+					roles: z.array(z.string())
+				})
 			)
 			.optional(),
 		/**
@@ -170,16 +170,16 @@ export const testing_reset_action_spec = {
 		 * production wire path adds a second. Bootstrap-cradle seeding, same
 		 * rationale as `extra_accounts`.
 		 */
-		extra_actors: z.array(z.string()).optional(),
+		extra_actors: z.array(z.string()).optional()
 	}),
 	output: SeededAccountShape.extend({
 		extra_accounts: z.array(SeededAccountShape),
 		/** The keeper's additional actors (from input `extra_actors`), in order. */
-		extra_actors: z.array(z.strictObject({id: Uuid, name: z.string()})),
+		extra_actors: z.array(z.strictObject({ id: Uuid, name: z.string() }))
 	}),
 	async: true,
 	description:
-		'Test-binary only — wipe auth tables, re-bootstrap a fresh keeper (+ optional extras), fire the domain-state reset.',
+		'Test-binary only — wipe auth tables, re-bootstrap a fresh keeper (+ optional extras), fire the domain-state reset.'
 } as const satisfies RequestResponseActionSpec;
 
 /**
@@ -205,10 +205,10 @@ export const testing_drain_effects_action_spec = {
 	auth: TESTING_ACTION_AUTH,
 	side_effects: false,
 	input: z.void(),
-	output: z.strictObject({ok: z.boolean()}),
+	output: z.strictObject({ ok: z.boolean() }),
 	async: true,
 	description:
-		'Test-binary only — await in-flight fire-and-forget audit writes so a following audit_log_list read is authoritative.',
+		'Test-binary only — await in-flight fire-and-forget audit writes so a following audit_log_list read is authoritative.'
 } as const satisfies RequestResponseActionSpec;
 
 /**
@@ -257,14 +257,14 @@ export const testing_mint_session_action_spec = {
 				description:
 					'Seconds to offset the session row from NOW(). Constrained negative so this ' +
 					'backdoor can ONLY mint an already-expired (backdated) row — never a usable ' +
-					'session for an arbitrary account. Its sole use is the expired-session gate.',
-			}),
+					'session for an arbitrary account. Its sole use is the expired-session gate.'
+			})
 	}),
-	output: z.strictObject({session_cookie: z.string()}),
+	output: z.strictObject({ session_cookie: z.string() }),
 	async: true,
 	description:
 		'Test-binary only — mint a backdated-expiry auth_session row for an account and return its ' +
-		'signed cookie value (exercises the authoritative server-side DB-row expiry gate).',
+		'signed cookie value (exercises the authoritative server-side DB-row expiry gate).'
 } as const satisfies RequestResponseActionSpec;
 
 /**
@@ -275,7 +275,7 @@ export const testing_mint_session_action_spec = {
  * `create_testing_actions`; in-process suites mount it directly).
  */
 export const create_testing_drain_effects_action = (): RpcAction =>
-	rpc_action(testing_drain_effects_action_spec, async () => ({ok: true}));
+	rpc_action(testing_drain_effects_action_spec, async () => ({ ok: true }));
 
 /**
  * `_testing_put_fact` — seed an **embedded** fact (`fact.bytes`) for the
@@ -299,13 +299,13 @@ export const testing_put_fact_action_spec = {
 	side_effects: true,
 	input: z.strictObject({
 		content: z.string(),
-		content_type: z.string().optional(),
+		content_type: z.string().optional()
 	}),
-	output: z.strictObject({hash: FactHashSchema}),
+	output: z.strictObject({ hash: FactHashSchema }),
 	async: true,
 	description:
 		'Test-binary only — seed an embedded fact (blake3 of the UTF-8 content) and return its hash, ' +
-		'so the cross-process fact-serving suite can store bytes without a DB handle.',
+		'so the cross-process fact-serving suite can store bytes without a DB handle.'
 } as const satisfies RequestResponseActionSpec;
 
 /**
@@ -324,11 +324,11 @@ export const testing_schema_snapshot_action_spec = {
 	initiator: 'frontend',
 	auth: TESTING_ACTION_AUTH,
 	side_effects: false,
-	input: z.strictObject({exclude_tables: z.array(z.string()).optional()}),
+	input: z.strictObject({ exclude_tables: z.array(z.string()).optional() }),
 	output: SchemaSnapshot,
 	async: true,
 	description:
-		'Test-binary only — introspect the live schema into a normalized snapshot for cross-impl parity diffing.',
+		'Test-binary only — introspect the live schema into a normalized snapshot for cross-impl parity diffing.'
 } as const satisfies RequestResponseActionSpec;
 
 /**
@@ -338,7 +338,7 @@ export const testing_schema_snapshot_action_spec = {
  */
 export const create_testing_schema_snapshot_action = (): RpcAction =>
 	rpc_action(testing_schema_snapshot_action_spec, async (input, ctx) =>
-		query_schema_snapshot(ctx.db, {exclude_tables: input.exclude_tables}),
+		query_schema_snapshot(ctx.db, { exclude_tables: input.exclude_tables })
 	);
 
 /**
@@ -366,7 +366,7 @@ export const testing_migration_tracker_action_spec = {
 	async: true,
 	description:
 		'Test-binary only — dump the schema_version tracker rows as a normalized {namespace, name, ' +
-		'sequence} list for cross-impl migration-identity parity diffing.',
+		'sequence} list for cross-impl migration-identity parity diffing.'
 } as const satisfies RequestResponseActionSpec;
 
 /**
@@ -376,7 +376,7 @@ export const testing_migration_tracker_action_spec = {
  */
 export const create_testing_migration_tracker_action = (): RpcAction =>
 	rpc_action(testing_migration_tracker_action_spec, async (_input, ctx) =>
-		query_migration_tracker(ctx.db),
+		query_migration_tracker(ctx.db)
 	);
 
 /**
@@ -411,7 +411,7 @@ export const testing_action_manifest_action_spec = {
 	async: true,
 	description:
 		'Test-binary only — dump the live RPC registry as a normalized {method, auth, side_effects} ' +
-		'manifest for cross-impl method-set + auth-shape parity diffing.',
+		'manifest for cross-impl method-set + auth-shape parity diffing.'
 } as const satisfies RequestResponseActionSpec;
 
 /**
@@ -434,15 +434,15 @@ export const testing_action_manifest_action_spec = {
  * heavyweight `action_codegen` module the spawned binary would otherwise pull in.
  */
 const PROTOCOL_METHODS: ReadonlySet<string> = new Set(
-	protocol_action_specs.map((spec) => spec.method),
+	protocol_action_specs.map((spec) => spec.method)
 );
 
 export const create_testing_action_manifest_action = (
-	mounted: ReadonlyArray<RpcAction>,
+	mounted: ReadonlyArray<RpcAction>
 ): RpcAction => {
 	const manifest = build_action_manifest([
 		...mounted.map((action) => action.spec).filter((spec) => !PROTOCOL_METHODS.has(spec.method)),
-		testing_action_manifest_action_spec,
+		testing_action_manifest_action_spec
 	]);
 	return rpc_action(testing_action_manifest_action_spec, async () => manifest);
 };
@@ -494,9 +494,9 @@ export interface CreateTestingActionsOptions {
  */
 export const create_testing_actions = (
 	deps: AppDeps,
-	options: CreateTestingActionsOptions,
+	options: CreateTestingActionsOptions
 ): Array<RpcAction> => {
-	const {session_options, daemon_token_state, reset_state} = options;
+	const { session_options, daemon_token_state, reset_state } = options;
 	const log = deps.log;
 	return [
 		rpc_action(testing_reset_action_spec, async (input, ctx) => {
@@ -526,7 +526,7 @@ export const create_testing_actions = (
 			//    revert.
 			await ctx.db.query(
 				'UPDATE app_settings SET open_signup = false, updated_at = NULL, updated_by = NULL ' +
-					'WHERE open_signup = true OR updated_at IS NOT NULL',
+					'WHERE open_signup = true OR updated_at IS NOT NULL'
 			);
 
 			// 3. Flip `bootstrap_lock` to its post-bootstrap shape. Production
@@ -553,7 +553,7 @@ export const create_testing_actions = (
 				session_options,
 				password: deps.password,
 				password_value: DEFAULT_TEST_PASSWORD,
-				roles: [ROLE_KEEPER, ROLE_ADMIN, ...(input.extra_keeper_roles ?? [])],
+				roles: [ROLE_KEEPER, ROLE_ADMIN, ...(input.extra_keeper_roles ?? [])]
 			});
 
 			// 5. Seed any caller-requested extras. These are bootstrap-time
@@ -568,7 +568,7 @@ export const create_testing_actions = (
 					password: deps.password,
 					username: spec.username,
 					password_value: spec.password_value ?? DEFAULT_TEST_PASSWORD,
-					roles: spec.roles,
+					roles: spec.roles
 				});
 				extras.push(seeded);
 			}
@@ -578,10 +578,10 @@ export const create_testing_actions = (
 			//    second actor, so the multi-actor `acting` branches need this
 			//    direct insert. Order-preserving so the fixture can address
 			//    them positionally.
-			const extra_actors: Array<{id: Uuid; name: string}> = [];
+			const extra_actors: Array<{ id: Uuid; name: string }> = [];
 			for (const name of input.extra_actors ?? []) {
-				const seeded_actor = await query_create_actor({db: ctx.db}, keeper.account.id, name);
-				extra_actors.push({id: seeded_actor.id, name: seeded_actor.name});
+				const seeded_actor = await query_create_actor({ db: ctx.db }, keeper.account.id, name);
+				extra_actors.push({ id: seeded_actor.id, name: seeded_actor.name });
 			}
 
 			// 6. Refresh the daemon-token cache so subsequent daemon-token
@@ -598,36 +598,36 @@ export const create_testing_actions = (
 			//    against this open transaction under PGlite.
 			if (reset_state) await reset_state(ctx.db);
 
-			return {...keeper, extra_accounts: extras, extra_actors};
+			return { ...keeper, extra_accounts: extras, extra_actors };
 		}),
 		rpc_action(testing_mint_session_action_spec, async (input, ctx) => {
-			const {session_cookie} = await mint_test_session({
+			const { session_cookie } = await mint_test_session({
 				db: ctx.db,
 				keyring: deps.keyring,
 				session_options,
 				account_id: input.account_id,
-				expires_in_seconds: input.expires_in_seconds,
+				expires_in_seconds: input.expires_in_seconds
 			});
-			return {session_cookie};
+			return { session_cookie };
 		}),
 		rpc_action(testing_put_fact_action_spec, async (input, ctx) => {
 			const bytes = new TextEncoder().encode(input.content);
 			const hash = fact_hash_bytes(bytes);
 			await query_put_fact(
-				{db: ctx.db},
+				{ db: ctx.db },
 				{
 					hash,
 					bytes,
 					external_url: null,
 					content_type: input.content_type ?? null,
-					size: bytes.length,
-				},
+					size: bytes.length
+				}
 			);
-			return {hash};
+			return { hash };
 		}),
 		create_testing_drain_effects_action(),
 		create_testing_schema_snapshot_action(),
-		create_testing_migration_tracker_action(),
+		create_testing_migration_tracker_action()
 	];
 };
 

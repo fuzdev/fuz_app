@@ -15,10 +15,10 @@
  * @module
  */
 
-import {test, assert, afterEach, vi} from 'vitest';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import { test, assert, afterEach, vi } from 'vitest';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type {QueryDeps} from '$lib/db/query_deps.ts';
+import type { QueryDeps } from '$lib/db/query_deps.ts';
 
 afterEach(() => {
 	vi.doUnmock('esm-env');
@@ -27,19 +27,19 @@ afterEach(() => {
 
 test('bearer browser-context discard omits the debug header in production (DEV=false)', async () => {
 	vi.resetModules();
-	vi.doMock('esm-env', () => ({DEV: false}));
-	const {Hono} = await import('hono');
-	const {create_bearer_auth_middleware} = await import('$lib/auth/bearer_auth.ts');
+	vi.doMock('esm-env', () => ({ DEV: false }));
+	const { Hono } = await import('hono');
+	const { create_bearer_auth_middleware } = await import('$lib/auth/bearer_auth.ts');
 
 	// The discard path runs before any DB or rate-limiter work, so stub deps suffice.
-	const log = {debug() {}} as unknown as Logger;
+	const log = { debug() {} } as unknown as Logger;
 	const app = new Hono();
 	app.use('/api/*', create_bearer_auth_middleware({} as QueryDeps, null, log));
 	app.get('/api/test', (c) => c.text('ok'));
 
 	// Authorization + Origin → browser-context discard branch.
 	const res = await app.request('/api/test', {
-		headers: {Authorization: 'Bearer secret_fuz_token_test', Origin: 'https://x.example'},
+		headers: { Authorization: 'Bearer secret_fuz_token_test', Origin: 'https://x.example' }
 	});
 	assert.strictEqual(res.status, 200);
 	assert.strictEqual(res.headers.get('X-Fuz-Auth-Debug'), null);

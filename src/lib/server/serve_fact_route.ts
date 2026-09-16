@@ -88,34 +88,34 @@
  * @module
  */
 
-import {createReadStream} from 'node:fs';
-import {Readable} from 'node:stream';
-import {join} from 'node:path';
-import type {Context} from 'hono';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
-import {FactHashSchema, type FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
-import {z} from 'zod';
+import { createReadStream } from 'node:fs';
+import { Readable } from 'node:stream';
+import { join } from 'node:path';
+import type { Context } from 'hono';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import { FactHashSchema, type FactHash } from '@fuzdev/fuz_util/fact_hash.ts';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
 
 import {
 	build_request_context,
 	get_request_context,
 	has_role,
-	type RequestContext,
+	type RequestContext
 } from '../auth/request_context.ts';
-import {ROLE_ADMIN} from '../auth/role_schema.ts';
-import {ActingActor} from '../http/auth_shape.ts';
-import {ACCOUNT_ID_KEY} from '../hono_context.ts';
-import {query_active_actors_by_account} from '../auth/account_queries.ts';
-import {get_route_params, type RouteContext, type RouteSpec} from '../http/route_spec.ts';
-import {ERROR_INVALID_ROUTE_PARAMS} from '../http/error_schemas.ts';
-import type {AppDeps} from '../auth/deps.ts';
-import {query_get_fact, query_get_fact_meta} from '../db/fact_queries.ts';
-import {query_cell_get} from '../db/cell_queries.ts';
-import {query_cell_grant_list_for_cell} from '../db/cell_grant_queries.ts';
-import {can_view_cell} from '../auth/cell_authorize.ts';
-import {parse_file_fact_url} from '../db/file_fact_url.ts';
-import type {XAccelConfig} from './x_accel.ts';
+import { ROLE_ADMIN } from '../auth/role_schema.ts';
+import { ActingActor } from '../http/auth_shape.ts';
+import { ACCOUNT_ID_KEY } from '../hono_context.ts';
+import { query_active_actors_by_account } from '../auth/account_queries.ts';
+import { get_route_params, type RouteContext, type RouteSpec } from '../http/route_spec.ts';
+import { ERROR_INVALID_ROUTE_PARAMS } from '../http/error_schemas.ts';
+import type { AppDeps } from '../auth/deps.ts';
+import { query_get_fact, query_get_fact_meta } from '../db/fact_queries.ts';
+import { query_cell_get } from '../db/cell_queries.ts';
+import { query_cell_grant_list_for_cell } from '../db/cell_grant_queries.ts';
+import { can_view_cell } from '../auth/cell_authorize.ts';
+import { parse_file_fact_url } from '../db/file_fact_url.ts';
+import type { XAccelConfig } from './x_accel.ts';
 
 /** `Cache-Control` for fact responses — 5 min revocation window. */
 const CACHE_CONTROL = 'private, max-age=300';
@@ -145,7 +145,7 @@ const CONTENT_SECURITY_POLICY = "default-src 'none'; sandbox";
  */
 const FACT_SECURITY_HEADERS = {
 	'X-Content-Type-Options': X_CONTENT_TYPE_OPTIONS,
-	'Content-Security-Policy': CONTENT_SECURITY_POLICY,
+	'Content-Security-Policy': CONTENT_SECURITY_POLICY
 } as const;
 
 /**
@@ -155,7 +155,7 @@ const FACT_SECURITY_HEADERS = {
  * which the round-trip validator expects.
  */
 const bare_hash_params_schema = z.strictObject({
-	hash: FactHashSchema,
+	hash: FactHashSchema
 });
 
 /**
@@ -165,15 +165,15 @@ const bare_hash_params_schema = z.strictObject({
  */
 const cell_fact_params_schema = z.strictObject({
 	cell_id: Uuid,
-	hash: FactHashSchema,
+	hash: FactHashSchema
 });
 
 /** Shared error-schema entry: tighten the auto-derived 400 to the literal emitted by params validation. */
 const params_400_error = {
 	400: z.looseObject({
 		error: z.literal(ERROR_INVALID_ROUTE_PARAMS),
-		issues: z.array(z.unknown()),
-	}),
+		issues: z.array(z.unknown())
+	})
 } as const;
 
 export interface CreateServeFactRouteSpecOptions {
@@ -222,11 +222,11 @@ const serve_fact_bytes = async (
 	c: Context,
 	route: RouteContext,
 	hash: FactHash,
-	config: ServeFactConfig,
+	config: ServeFactConfig
 ): Promise<Response> => {
-	const {facts_dir, x_accel, log} = config;
+	const { facts_dir, x_accel, log } = config;
 
-	const meta = await query_get_fact_meta({db: route.db}, hash);
+	const meta = await query_get_fact_meta({ db: route.db }, hash);
 	if (!meta) {
 		return c.body(null, 404);
 	}
@@ -236,13 +236,13 @@ const serve_fact_bytes = async (
 
 	if (meta.external_url === null) {
 		// Embedded — bytes live in the PG row.
-		const row = await query_get_fact({db: route.db}, hash);
+		const row = await query_get_fact({ db: route.db }, hash);
 		if (!row || row.bytes === null) {
 			// Race: meta said embedded but bytes vanished. Treat as not-found.
 			log.warn(
 				`serve_fact: embedded bytes missing for ${hash} (meta said embedded, row=${
 					row ? 'present' : 'null'
-				})`,
+				})`
 			);
 			return c.body(null, 404);
 		}
@@ -251,7 +251,7 @@ const serve_fact_bytes = async (
 			'Content-Type': content_type,
 			'Content-Length': size,
 			'Cache-Control': CACHE_CONTROL,
-			...FACT_SECURITY_HEADERS,
+			...FACT_SECURITY_HEADERS
 		});
 	}
 
@@ -262,7 +262,7 @@ const serve_fact_bytes = async (
 		log.error(`serve_fact: rejecting malformed external_url for ${hash}: ${meta.external_url}`);
 		return c.body(null, 404);
 	}
-	const {shard, rest} = parsed;
+	const { shard, rest } = parsed;
 
 	if (x_accel !== undefined) {
 		// Production: hand off to nginx via the validated `internal;` facts location.
@@ -271,7 +271,7 @@ const serve_fact_bytes = async (
 			'Content-Length': size,
 			'Cache-Control': CACHE_CONTROL,
 			'X-Accel-Redirect': `${x_accel.redirect_prefix}${shard}/${rest}`,
-			...FACT_SECURITY_HEADERS,
+			...FACT_SECURITY_HEADERS
 		});
 	}
 
@@ -284,7 +284,7 @@ const serve_fact_bytes = async (
 		'Content-Type': content_type,
 		'Content-Length': size,
 		'Cache-Control': CACHE_CONTROL,
-		...FACT_SECURITY_HEADERS,
+		...FACT_SECURITY_HEADERS
 	});
 };
 
@@ -300,13 +300,13 @@ const serve_fact_bytes = async (
  */
 const build_public_request_context = async (
 	c: Context,
-	route: RouteContext,
+	route: RouteContext
 ): Promise<RequestContext | null> => {
 	const account_id = c.get(ACCOUNT_ID_KEY);
 	if (!account_id) return null;
-	const actors = await query_active_actors_by_account({db: route.db}, account_id);
+	const actors = await query_active_actors_by_account({ db: route.db }, account_id);
 	if (actors.length !== 1) return null;
-	return build_request_context({db: route.db}, account_id, actors[0]!.id);
+	return build_request_context({ db: route.db }, account_id, actors[0]!.id);
 };
 
 /**
@@ -322,14 +322,14 @@ const build_public_request_context = async (
  * from `c.var.account_id` and enforces visibility per-reference.
  */
 export const create_serve_cell_fact_route_spec = (
-	options: CreateServeFactRouteSpecOptions,
+	options: CreateServeFactRouteSpecOptions
 ): RouteSpec => {
-	const {facts_dir, x_accel, log} = options;
-	const config: ServeFactConfig = {facts_dir, x_accel, log};
+	const { facts_dir, x_accel, log } = options;
+	const config: ServeFactConfig = { facts_dir, x_accel, log };
 	return {
 		method: 'GET',
 		path: '/api/cells/:cell_id/facts/:hash',
-		auth: {account: 'none', actor: 'none'},
+		auth: { account: 'none', actor: 'none' },
 		description:
 			'Serve content-addressed fact bytes through a named referencing cell. 404 unless the cell admits the caller via can_view_cell AND references the hash (per-reference, never union-of-referrers).',
 		params: cell_fact_params_schema,
@@ -338,10 +338,10 @@ export const create_serve_cell_fact_route_spec = (
 		output: z.null(),
 		errors: params_400_error,
 		handler: async (c, route) => {
-			const {cell_id, hash} = get_route_params<{cell_id: Uuid; hash: FactHash}>(c);
+			const { cell_id, hash } = get_route_params<{ cell_id: Uuid; hash: FactHash }>(c);
 
 			// Resolve the named cell. Missing / soft-deleted → 404 (masked).
-			const cell = await query_cell_get({db: route.db}, cell_id);
+			const cell = await query_cell_get({ db: route.db }, cell_id);
 			if (!cell) {
 				return c.body(null, 404);
 			}
@@ -360,14 +360,16 @@ export const create_serve_cell_fact_route_spec = (
 			// can admit a null req_ctx (the only admit path is the
 			// public-visibility branch in `can_view_cell`, which doesn't read
 			// grants).
-			const grants = req_ctx ? await query_cell_grant_list_for_cell({db: route.db}, cell.id) : null;
+			const grants = req_ctx
+				? await query_cell_grant_list_for_cell({ db: route.db }, cell.id)
+				: null;
 			if (!can_view_cell(req_ctx, cell, grants)) {
 				// 404 (not 403) so an unviewable cell→fact edge doesn't leak.
 				return c.body(null, 404);
 			}
 
 			return serve_fact_bytes(c, route, hash, config);
-		},
+		}
 	};
 };
 
@@ -388,14 +390,14 @@ export const create_serve_cell_fact_route_spec = (
  * hash to a non-admin.
  */
 export const create_serve_fact_route_spec = (
-	options: CreateServeFactRouteSpecOptions,
+	options: CreateServeFactRouteSpecOptions
 ): RouteSpec => {
-	const {facts_dir, x_accel, log} = options;
-	const config: ServeFactConfig = {facts_dir, x_accel, log};
+	const { facts_dir, x_accel, log } = options;
+	const config: ServeFactConfig = { facts_dir, x_accel, log };
 	return {
 		method: 'GET',
 		path: '/api/facts/:hash',
-		auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
+		auth: { account: 'required', actor: 'required', roles: [ROLE_ADMIN] },
 		description:
 			'Serve content-addressed fact bytes by bare hash — admin only. Non-admin reads go through GET /api/cells/:cell_id/facts/:hash (per-reference).',
 		params: bare_hash_params_schema,
@@ -403,13 +405,13 @@ export const create_serve_fact_route_spec = (
 		// authorization phase to resolve an acting actor — registry-time
 		// invariant 2 requires the `acting?` slot. On a GET it lives on
 		// `query` (a multi-actor admin disambiguates via `?acting=<actor>`).
-		query: z.strictObject({acting: ActingActor}),
+		query: z.strictObject({ acting: ActingActor }),
 		input: z.null(),
 		// The body is a binary stream; no JSON output schema applies.
 		output: z.null(),
 		errors: params_400_error,
 		handler: async (c, route) => {
-			const {hash} = get_route_params<{hash: FactHash}>(c);
+			const { hash } = get_route_params<{ hash: FactHash }>(c);
 
 			// Defense-in-depth: the auth phase already gated this on the admin
 			// role, but re-check the resolved context so a mounting/auth-shape
@@ -419,7 +421,7 @@ export const create_serve_fact_route_spec = (
 			}
 
 			return serve_fact_bytes(c, route, hash, config);
-		},
+		}
 	};
 };
 

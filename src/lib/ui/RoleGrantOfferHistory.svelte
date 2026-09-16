@@ -11,18 +11,18 @@
 	 * for display names.
 	 */
 
-	import {role_grant_offers_state_context} from './role_grant_offers_state.svelte.ts';
+	import { role_grant_offers_state_context } from './role_grant_offers_state.svelte.ts';
 	import Datatable from './Datatable.svelte';
-	import type {DatatableColumn} from './datatable.ts';
-	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.ts';
-	import type {RoleGrantOfferJson} from '../auth/role_grant_offer_schema.ts';
-	import {format_scope_context, resolve_scope_label, type FormatScope} from './format_scope.ts';
+	import type { DatatableColumn } from './datatable.ts';
+	import { format_relative_time, format_datetime_local, truncate_uuid } from './ui_format.ts';
+	import type { RoleGrantOfferJson } from '../auth/role_grant_offer_schema.ts';
+	import { format_scope_context, resolve_scope_label, type FormatScope } from './format_scope.ts';
 
 	const {
 		current_actor_id,
 		format_actor = truncate_uuid,
 		format_scope,
-		format_role = (role: string) => role,
+		format_role = (role: string) => role
 	}: {
 		/** Used to label a row as sent vs received. When `null`, direction shows as `-`. */
 		current_actor_id: string | null;
@@ -71,11 +71,11 @@
 		resolve_scope_label(scope_id, role, format_scope ?? format_scope_from_context, 'global');
 
 	const columns: Array<DatatableColumn<RoleGrantOfferJson>> = [
-		{key: 'from_actor_id', label: 'direction', width: 110},
-		{key: 'role', label: 'role', width: 140},
-		{key: 'scope_id', label: 'scope', width: 160},
-		{key: 'created_at', label: 'status', width: 120},
-		{key: 'expires_at', label: 'time', width: 110},
+		{ key: 'from_actor_id', label: 'direction', width: 110 },
+		{ key: 'role', label: 'role', width: 140 },
+		{ key: 'scope_id', label: 'scope', width: 160 },
+		{ key: 'created_at', label: 'status', width: 120 },
+		{ key: 'expires_at', label: 'time', width: 110 }
 	];
 </script>
 

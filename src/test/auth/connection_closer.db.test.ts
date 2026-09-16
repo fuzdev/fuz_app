@@ -37,51 +37,54 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {create_session_config} from '$lib/auth/session_cookie.ts';
-import {create_account_route_specs} from '$lib/auth/account_routes.ts';
-import {create_account_actions} from '$lib/auth/account_actions.ts';
-import {create_admin_actions} from '$lib/auth/admin_actions.ts';
-import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.ts';
+import { create_session_config } from '$lib/auth/session_cookie.ts';
+import { create_account_route_specs } from '$lib/auth/account_routes.ts';
+import { create_account_actions } from '$lib/auth/account_actions.ts';
+import { create_admin_actions } from '$lib/auth/admin_actions.ts';
+import { create_standard_rpc_actions } from '$lib/auth/standard_rpc_actions.ts';
 import {
 	account_session_revoke_action_spec,
 	account_session_revoke_all_action_spec,
-	account_token_revoke_action_spec,
+	account_token_revoke_action_spec
 } from '$lib/auth/account_action_specs.ts';
 import {
 	admin_session_revoke_all_action_spec,
-	admin_token_revoke_all_action_spec,
+	admin_token_revoke_all_action_spec
 } from '$lib/auth/admin_action_specs.ts';
-import {ERROR_CREDENTIAL_TYPE_REQUIRED, ERROR_ACCOUNT_NOT_FOUND} from '$lib/http/error_schemas.ts';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
-import type {ConnectionCloser} from '$lib/actions/connection_closer.ts';
-import {auth_migration_ns} from '$lib/auth/migrations.ts';
-import {create_test_app} from '$lib/testing/app_server.ts';
-import {DEFAULT_TEST_PASSWORD} from '$lib/testing/test_credentials.ts';
-import {create_test_account_with_actor} from '$lib/testing/db_entities.ts';
+import {
+	ERROR_CREDENTIAL_TYPE_REQUIRED,
+	ERROR_ACCOUNT_NOT_FOUND
+} from '$lib/http/error_schemas.ts';
+import { create_rpc_endpoint } from '$lib/actions/action_rpc.ts';
+import type { ConnectionCloser } from '$lib/actions/connection_closer.ts';
+import { auth_migration_ns } from '$lib/auth/migrations.ts';
+import { create_test_app } from '$lib/testing/app_server.ts';
+import { DEFAULT_TEST_PASSWORD } from '$lib/testing/test_credentials.ts';
+import { create_test_account_with_actor } from '$lib/testing/db_entities.ts';
 import {
 	auth_integration_truncate_tables,
 	create_describe_db,
-	create_pglite_factory,
+	create_pglite_factory
 } from '$lib/testing/db.ts';
-import {rpc_call_for_spec, rpc_call} from '$lib/testing/rpc_helpers.ts';
-import {find_auth_route} from '$lib/testing/integration_helpers.ts';
+import { rpc_call_for_spec, rpc_call } from '$lib/testing/rpc_helpers.ts';
+import { find_auth_route } from '$lib/testing/integration_helpers.ts';
 import {
 	install_audit_drift_guard,
-	create_emit_ordering_audit_factory,
+	create_emit_ordering_audit_factory
 } from '$lib/testing/audit_drift_guard.ts';
-import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
+import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
 import {
 	assert_close_call,
-	create_recording_closer,
+	create_recording_closer
 } from '$lib/testing/connection_closer_helpers.ts';
-import {run_migrations} from '$lib/db/migrate.ts';
-import type {Db} from '$lib/db/db.ts';
-import type {AppServerContext} from '$lib/server/app_server_context.ts';
-import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.ts';
-import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
-import type {AuditLogEvent} from '$lib/auth/audit_log_schema.ts';
+import { run_migrations } from '$lib/db/migrate.ts';
+import type { Db } from '$lib/db/db.ts';
+import type { AppServerContext } from '$lib/server/app_server_context.ts';
+import { prefix_route_specs, type RouteSpec } from '$lib/http/route_spec.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
+import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
@@ -102,17 +105,17 @@ const make_create_route_specs =
 				ip_rate_limiter: ctx.ip_rate_limiter,
 				login_account_rate_limiter: ctx.login_account_rate_limiter,
 				login_fail_floor_ms: 0,
-				connection_closer: closer,
-			}),
+				connection_closer: closer
+			})
 		),
 		...create_rpc_endpoint({
 			path: RPC_PATH,
 			actions: [
-				...create_account_actions(ctx.deps, {connection_closer: closer}),
-				...create_admin_actions(ctx.deps, {connection_closer: closer}),
+				...create_account_actions(ctx.deps, { connection_closer: closer }),
+				...create_admin_actions(ctx.deps, { connection_closer: closer })
 			],
-			log: ctx.deps.log,
-		}),
+			log: ctx.deps.log
+		})
 	];
 
 describe_db('connection_closer wiring', (get_db) => {
@@ -127,14 +130,14 @@ describe_db('connection_closer wiring', (get_db) => {
 
 	describe('account_actions (self-service)', () => {
 		test('account_session_revoke closes the session socket on success', async () => {
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
-					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
+					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
 
 			// Discover the active session's id (= blake3 hash) via the
@@ -146,12 +149,12 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				method: 'account_session_list',
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(list_res.ok, true);
 			const listed = list_res.ok
-				? (list_res.result as {sessions: Array<{id: string}>})
-				: {sessions: []};
+				? (list_res.result as { sessions: Array<{ id: string }> })
+				: { sessions: [] };
 			assert.strictEqual(listed.sessions.length, 1, 'exactly one bootstrap session expected');
 			const session_id = listed.sessions[0]!.id;
 
@@ -159,8 +162,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_session_revoke_action_spec,
-				params: {session_id: session_id as never},
-				headers: test_app.create_session_headers(),
+				params: { session_id: session_id as never },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 			assert.strictEqual(calls.length, 1, 'connection_closer called exactly once');
@@ -187,14 +190,14 @@ describe_db('connection_closer wiring', (get_db) => {
 		});
 
 		test('account_session_revoke does NOT close on failure (id mismatch)', async () => {
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
-					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
+					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
 			// blake3 hash format but not a real session
 			const bogus_hash = 'a'.repeat(64);
@@ -202,25 +205,25 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_session_revoke_action_spec,
-				params: {session_id: bogus_hash},
-				headers: test_app.create_session_headers(),
+				params: { session_id: bogus_hash },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 			if (res.ok) assert.strictEqual(res.result.revoked, false);
 			assert.strictEqual(
 				calls.length,
 				0,
-				'closer must NOT fire on failed revoke — attacker-guessable ids',
+				'closer must NOT fire on failed revoke — attacker-guessable ids'
 			);
 			// Pin the failure-outcome audit row — without it, a regression dropping
 			// BOTH the eager close AND the failure audit would slip past the close-
 			// only assertion above. The attacker-supplied `session_id` echoes back
 			// into metadata so forensics can spot enumeration attempts.
 			const failure_audits = audit_events.filter(
-				(e) => e.event_type === 'session_revoke' && e.outcome === 'failure',
+				(e) => e.event_type === 'session_revoke' && e.outcome === 'failure'
 			);
 			assert.strictEqual(failure_audits.length, 1);
-			const meta = failure_audits[0]!.metadata as {session_id?: string};
+			const meta = failure_audits[0]!.metadata as { session_id?: string };
 			assert.strictEqual(meta.session_id, bogus_hash);
 			await test_app.cleanup();
 		});
@@ -236,28 +239,28 @@ describe_db('connection_closer wiring', (get_db) => {
 			// missing-row case here (because the row was genuinely absent)
 			// but would now reveal a *real* session belonging to another
 			// account. Only the cross-account variant catches that.
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
-					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
+					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
-			const target = await test_app.create_account({username: 'crossaccttarget'});
+			const target = await test_app.create_account({ username: 'crossaccttarget' });
 			// Discover the target's session id via the list RPC against the
 			// target's own headers — same dance as the happy-path test above.
 			const list_res = await rpc_call({
 				app: test_app.app,
 				path: RPC_PATH,
 				method: 'account_session_list',
-				headers: target.create_session_headers(),
+				headers: target.create_session_headers()
 			});
 			assert.strictEqual(list_res.ok, true);
 			const listed = list_res.ok
-				? (list_res.result as {sessions: Array<{id: string}>})
-				: {sessions: []};
+				? (list_res.result as { sessions: Array<{ id: string }> })
+				: { sessions: [] };
 			assert.strictEqual(listed.sessions.length, 1, 'target has one session');
 			const target_session_id = listed.sessions[0]!.id;
 			// Reset call log — the list call doesn't close, but be defensive.
@@ -268,15 +271,15 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_session_revoke_action_spec,
-				params: {session_id: target_session_id as never},
-				headers: test_app.create_session_headers(),
+				params: { session_id: target_session_id as never },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 			if (res.ok) assert.strictEqual(res.result.revoked, false);
 			assert.strictEqual(
 				calls.length,
 				0,
-				'closer must NOT fire on cross-account revoke — IDOR via the closer would be a worse leak than the audit row',
+				'closer must NOT fire on cross-account revoke — IDOR via the closer would be a worse leak than the audit row'
 			);
 
 			// Target session is still alive — IDOR didn't bypass the guard at the SQL level either.
@@ -284,30 +287,30 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				method: 'account_session_list',
-				headers: target.create_session_headers(),
+				headers: target.create_session_headers()
 			});
 			assert.strictEqual(target_list_after.ok, true);
 			const target_listed_after = target_list_after.ok
-				? (target_list_after.result as {sessions: Array<{id: string}>})
-				: {sessions: []};
+				? (target_list_after.result as { sessions: Array<{ id: string }> })
+				: { sessions: [] };
 			assert.strictEqual(
 				target_listed_after.sessions.length,
 				1,
-				'target session still alive after cross-account revoke attempt',
+				'target session still alive after cross-account revoke attempt'
 			);
 
 			// Failure-outcome audit fires under the first account_id with the
 			// probed session_id in metadata — matches the id-mismatch shape.
 			const failure_audits = audit_events.filter(
-				(e) => e.event_type === 'session_revoke' && e.outcome === 'failure',
+				(e) => e.event_type === 'session_revoke' && e.outcome === 'failure'
 			);
 			assert.strictEqual(failure_audits.length, 1);
-			const meta = failure_audits[0]!.metadata as {session_id?: string};
+			const meta = failure_audits[0]!.metadata as { session_id?: string };
 			assert.strictEqual(meta.session_id, target_session_id);
 			assert.strictEqual(
 				failure_audits[0]!.account_id,
 				test_app.backend.account.id,
-				'audit pins the calling account, not the target',
+				'audit pins the calling account, not the target'
 			);
 			await test_app.cleanup();
 		});
@@ -318,18 +321,18 @@ describe_db('connection_closer wiring', (get_db) => {
 			// contract is admin-only (admin can target any account, including
 			// ones with no live sessions); the self-service surface can't
 			// reach the count-zero branch from the public API.
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
-				db: get_db(),
+				db: get_db()
 			});
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_session_revoke_all_action_spec,
 				params: undefined,
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 			if (res.ok)
@@ -340,11 +343,11 @@ describe_db('connection_closer wiring', (get_db) => {
 		});
 
 		test('account_token_revoke closes the token socket on success', async () => {
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
-				db: get_db(),
+				db: get_db()
 			});
 			// Create a fresh token via the RPC surface so we have its id —
 			// the test_app fixture's `api_token` is the raw token string only.
@@ -352,11 +355,11 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				method: 'account_token_create',
-				params: {name: 'closer_target'},
-				headers: test_app.create_session_headers(),
+				params: { name: 'closer_target' },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(create_res.ok, true);
-			const created = create_res.ok ? (create_res.result as {id: string}) : {id: ''};
+			const created = create_res.ok ? (create_res.result as { id: string }) : { id: '' };
 			const token_id = created.id;
 			// `account_token_create` must NOT fire the closer — it's a
 			// creation, not a revocation. Without this pin, a copy-paste
@@ -372,8 +375,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_token_revoke_action_spec,
-				params: {token_id: token_id as never},
-				headers: test_app.create_session_headers(),
+				params: { token_id: token_id as never },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 			// Pin `revoked: true` on the success path — without this, a
@@ -386,22 +389,22 @@ describe_db('connection_closer wiring', (get_db) => {
 		});
 
 		test('account_token_revoke does NOT close on failure (id mismatch)', async () => {
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
-					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
+					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
 			const bogus_token = 'tok_aaaaaaaaaaaa';
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_token_revoke_action_spec,
-				params: {token_id: bogus_token},
-				headers: test_app.create_session_headers(),
+				params: { token_id: bogus_token },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 			if (res.ok) assert.strictEqual(res.result.revoked, false);
@@ -410,10 +413,10 @@ describe_db('connection_closer wiring', (get_db) => {
 			// a regression that dropped close AND failure audit together would
 			// otherwise pass.
 			const failure_audits = audit_events.filter(
-				(e) => e.event_type === 'token_revoke' && e.outcome === 'failure',
+				(e) => e.event_type === 'token_revoke' && e.outcome === 'failure'
 			);
 			assert.strictEqual(failure_audits.length, 1);
-			const meta = failure_audits[0]!.metadata as {token_id?: string};
+			const meta = failure_audits[0]!.metadata as { token_id?: string };
 			assert.strictEqual(meta.token_id, bogus_token);
 			await test_app.cleanup();
 		});
@@ -426,26 +429,26 @@ describe_db('connection_closer wiring', (get_db) => {
 			// A regression that swapped `query_revoke_api_token_for_account`
 			// for an unscoped variant would still pass the missing-row case
 			// but would silently leak (and revoke) real other-account tokens.
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
-					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
+					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
-			const target = await test_app.create_account({username: 'crossaccttoken'});
+			const target = await test_app.create_account({ username: 'crossaccttoken' });
 			// Create a token on the target account so we have a real id to probe.
 			const create_res = await rpc_call({
 				app: test_app.app,
 				path: RPC_PATH,
 				method: 'account_token_create',
-				params: {name: 'target_owned'},
-				headers: target.create_session_headers(),
+				params: { name: 'target_owned' },
+				headers: target.create_session_headers()
 			});
 			assert.strictEqual(create_res.ok, true);
-			const created = create_res.ok ? (create_res.result as {id: string}) : {id: ''};
+			const created = create_res.ok ? (create_res.result as { id: string }) : { id: '' };
 			const target_token_id = created.id;
 			calls.length = 0;
 
@@ -454,8 +457,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_token_revoke_action_spec,
-				params: {token_id: target_token_id as never},
-				headers: test_app.create_session_headers(),
+				params: { token_id: target_token_id as never },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 			if (res.ok) assert.strictEqual(res.result.revoked, false);
@@ -466,27 +469,27 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				method: 'account_token_list',
-				headers: target.create_session_headers(),
+				headers: target.create_session_headers()
 			});
 			assert.strictEqual(target_list.ok, true);
 			const target_listed = target_list.ok
-				? (target_list.result as {tokens: Array<{id: string}>})
-				: {tokens: []};
+				? (target_list.result as { tokens: Array<{ id: string }> })
+				: { tokens: [] };
 			assert.ok(
 				target_listed.tokens.some((t) => t.id === target_token_id),
-				'target token still present after cross-account revoke attempt',
+				'target token still present after cross-account revoke attempt'
 			);
 
 			const failure_audits = audit_events.filter(
-				(e) => e.event_type === 'token_revoke' && e.outcome === 'failure',
+				(e) => e.event_type === 'token_revoke' && e.outcome === 'failure'
 			);
 			assert.strictEqual(failure_audits.length, 1);
-			const meta = failure_audits[0]!.metadata as {token_id?: string};
+			const meta = failure_audits[0]!.metadata as { token_id?: string };
 			assert.strictEqual(meta.token_id, target_token_id);
 			assert.strictEqual(
 				failure_audits[0]!.account_id,
 				test_app.backend.account.id,
-				'audit pins the calling account, not the target',
+				'audit pins the calling account, not the target'
 			);
 			await test_app.cleanup();
 		});
@@ -494,7 +497,7 @@ describe_db('connection_closer wiring', (get_db) => {
 
 	describe('admin_actions (revoke-all)', () => {
 		test('admin_session_revoke_all closes the target account', async () => {
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
 				session_options,
@@ -502,16 +505,16 @@ describe_db('connection_closer wiring', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_KEEPER, ROLE_ADMIN],
 				audit_factory: (params) =>
-					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
+					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
 			// Create a second account to revoke against
-			const target = await test_app.create_account({username: 'closertarget'});
+			const target = await test_app.create_account({ username: 'closertarget' });
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: admin_session_revoke_all_action_spec,
-				params: {account_id: target.account.id},
-				headers: test_app.create_session_headers(),
+				params: { account_id: target.account.id },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 			assert.strictEqual(calls.length, 1);
@@ -523,17 +526,17 @@ describe_db('connection_closer wiring', (get_db) => {
 			// either would surface.
 			assert_close_call(calls[0], 'account', target.account.id);
 			const success_audits = audit_events.filter(
-				(e) => e.event_type === 'session_revoke_all' && e.outcome === 'success',
+				(e) => e.event_type === 'session_revoke_all' && e.outcome === 'success'
 			);
 			assert.strictEqual(success_audits.length, 1);
 			assert.strictEqual(success_audits[0]!.target_account_id, target.account.id);
-			const success_meta = success_audits[0]!.metadata as {count?: number};
+			const success_meta = success_audits[0]!.metadata as { count?: number };
 			assert.strictEqual(typeof success_meta.count, 'number');
 			await test_app.cleanup();
 		});
 
 		test('admin_token_revoke_all closes the target account', async () => {
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
 				session_options,
@@ -541,15 +544,15 @@ describe_db('connection_closer wiring', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_KEEPER, ROLE_ADMIN],
 				audit_factory: (params) =>
-					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
+					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
-			const target = await test_app.create_account({username: 'closertarget2'});
+			const target = await test_app.create_account({ username: 'closertarget2' });
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: admin_token_revoke_all_action_spec,
-				params: {account_id: target.account.id},
-				headers: test_app.create_session_headers(),
+				params: { account_id: target.account.id },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 			assert.strictEqual(calls.length, 1);
@@ -557,7 +560,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			// Mirror the session-revoke-all success-shape assertions above —
 			// pin `target_account_id` populated and `metadata.count` set.
 			const success_audits = audit_events.filter(
-				(e) => e.event_type === 'token_revoke_all' && e.outcome === 'success',
+				(e) => e.event_type === 'token_revoke_all' && e.outcome === 'success'
 			);
 			assert.strictEqual(success_audits.length, 1);
 			assert.strictEqual(success_audits[0]!.target_account_id, target.account.id);
@@ -576,13 +579,13 @@ describe_db('connection_closer wiring', (get_db) => {
 			assert.strictEqual(
 				'credential_type' in success_meta,
 				false,
-				'admin token_revoke_all does not carry credential_type by design',
+				'admin token_revoke_all does not carry credential_type by design'
 			);
 			await test_app.cleanup();
 		});
 
 		test('admin_session_revoke_all does NOT close on account-not-found 404', async () => {
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
 				session_options,
@@ -590,22 +593,22 @@ describe_db('connection_closer wiring', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_KEEPER, ROLE_ADMIN],
 				audit_factory: (params) =>
-					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
+					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
 			const bogus_id = '00000000-0000-0000-0000-000000000000';
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: admin_session_revoke_all_action_spec,
-				params: {account_id: bogus_id as never},
-				headers: test_app.create_session_headers(),
+				params: { account_id: bogus_id as never },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, false);
 			assert.strictEqual(res.status, 404);
 			assert.strictEqual(
 				calls.length,
 				0,
-				'closer must not fire on the not-found path — closes attacker-guessable ids otherwise',
+				'closer must not fire on the not-found path — closes attacker-guessable ids otherwise'
 			);
 			// Forensics shape per `admin_actions.ts::session_revoke_all_handler`:
 			// `target_account_id` is null (FK forces it) and the probed id is
@@ -613,7 +616,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			// documented contract so a refactor that drops the metadata write
 			// (or accidentally writes the bogus id into the FK column) trips here.
 			const failure_audits = audit_events.filter(
-				(e) => e.event_type === 'session_revoke_all' && e.outcome === 'failure',
+				(e) => e.event_type === 'session_revoke_all' && e.outcome === 'failure'
 			);
 			assert.strictEqual(failure_audits.length, 1);
 			assert.strictEqual(failure_audits[0]!.target_account_id, null);
@@ -632,7 +635,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			// account-existence check, failure audit with null `target_account_id`,
 			// `attempted_account_id` metadata, then throw — so a regression on
 			// one would slip past the other's test without this companion case.
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
 				session_options,
@@ -640,21 +643,21 @@ describe_db('connection_closer wiring', (get_db) => {
 				db: get_db(),
 				roles: [ROLE_KEEPER, ROLE_ADMIN],
 				audit_factory: (params) =>
-					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
+					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
 			const bogus_id = '00000000-0000-0000-0000-000000000000';
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: admin_token_revoke_all_action_spec,
-				params: {account_id: bogus_id as never},
-				headers: test_app.create_session_headers(),
+				params: { account_id: bogus_id as never },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, false);
 			assert.strictEqual(res.status, 404);
 			assert.strictEqual(calls.length, 0);
 			const failure_audits = audit_events.filter(
-				(e) => e.event_type === 'token_revoke_all' && e.outcome === 'failure',
+				(e) => e.event_type === 'token_revoke_all' && e.outcome === 'failure'
 			);
 			assert.strictEqual(failure_audits.length, 1);
 			assert.strictEqual(failure_audits[0]!.target_account_id, null);
@@ -675,23 +678,23 @@ describe_db('connection_closer wiring', (get_db) => {
 			// close on `if (count > 0)` (a plausible micro-optimization) would
 			// pass every other admin test in this file (each of which seeds at
 			// least one session via the higher-level `create_account` helper).
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
-				roles: [ROLE_KEEPER, ROLE_ADMIN],
+				roles: [ROLE_KEEPER, ROLE_ADMIN]
 			});
 			// Bare DB account — no session, no token, no role_grant.
 			const target = await create_test_account_with_actor(get_db(), {
-				username: 'nolivesessions',
+				username: 'nolivesessions'
 			});
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: admin_session_revoke_all_action_spec,
-				params: {account_id: target.account.id},
-				headers: test_app.create_session_headers(),
+				params: { account_id: target.account.id },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 			if (res.ok) assert.strictEqual(res.result.count, 0);
@@ -702,22 +705,22 @@ describe_db('connection_closer wiring', (get_db) => {
 
 		test('admin_token_revoke_all closes the target account when count is zero', async () => {
 			// Symmetric to the `admin_session_revoke_all` zero-count test above.
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
-				roles: [ROLE_KEEPER, ROLE_ADMIN],
+				roles: [ROLE_KEEPER, ROLE_ADMIN]
 			});
 			const target = await create_test_account_with_actor(get_db(), {
-				username: 'nolivetokens',
+				username: 'nolivetokens'
 			});
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: admin_token_revoke_all_action_spec,
-				params: {account_id: target.account.id},
-				headers: test_app.create_session_headers(),
+				params: { account_id: target.account.id },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 			if (res.ok) assert.strictEqual(res.result.count, 0);
@@ -729,21 +732,21 @@ describe_db('connection_closer wiring', (get_db) => {
 
 	describe('REST routes (logout / password)', () => {
 		test('logout closes the account sockets (account-wide, matching Rust)', async () => {
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
-					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
+					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
 			const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
 			assert.ok(logout_route, 'logout route registered');
 			const res = await test_app.app.request(logout_route.path, {
 				method: 'POST',
 				headers: test_app.create_session_headers(),
-				body: null,
+				body: null
 			});
 			assert.strictEqual(res.status, 200);
 			assert.strictEqual(calls.length, 1, 'closer fired once');
@@ -767,20 +770,20 @@ describe_db('connection_closer wiring', (get_db) => {
 			assert.strictEqual(
 				stray_session_revoke.length,
 				0,
-				'logout must NOT emit a session_revoke event — see ws_disconnect_event_types',
+				'logout must NOT emit a session_revoke event — see ws_disconnect_event_types'
 			);
 			await test_app.cleanup();
 		});
 
 		test('password change closes all account sockets', async () => {
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
-					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
+					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
 			const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
 			assert.ok(password_route, 'password route registered');
@@ -788,12 +791,12 @@ describe_db('connection_closer wiring', (get_db) => {
 				method: 'POST',
 				headers: {
 					...test_app.create_session_headers(),
-					'Content-Type': 'application/json',
+					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify({
 					current_password: DEFAULT_TEST_PASSWORD,
-					new_password: 'new-test-password-xyz',
-				}),
+					new_password: 'new-test-password-xyz'
+				})
 			});
 			assert.strictEqual(res.status, 200);
 			assert.strictEqual(calls.length, 1, 'closer fired once for the account-wide revoke');
@@ -809,7 +812,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			// forensic visibility into which credential channel performed
 			// the password change.
 			const success_audits = audit_events.filter(
-				(e) => e.event_type === 'password_change' && e.outcome === 'success',
+				(e) => e.event_type === 'password_change' && e.outcome === 'success'
 			);
 			assert.strictEqual(success_audits.length, 1);
 			const meta = success_audits[0]!.metadata as {
@@ -841,18 +844,18 @@ describe_db('connection_closer wiring', (get_db) => {
 			// the handler runs — no socket close, no phantom `logout` audit row,
 			// no misleading 200. Pins that the closer never fires on a credential
 			// the gate rejects (it can't reach the close path at all).
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
-				db: get_db(),
+				db: get_db()
 			});
 			const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
 			assert.ok(logout_route, 'logout route registered');
 			const res = await test_app.app.request(logout_route.path, {
 				method: 'POST',
 				headers: test_app.create_bearer_headers(),
-				body: null,
+				body: null
 			});
 			assert.strictEqual(res.status, 403);
 			const body = (await res.json()) as {
@@ -864,20 +867,20 @@ describe_db('connection_closer wiring', (get_db) => {
 			assert.strictEqual(
 				calls.length,
 				0,
-				'closer must not fire when the credential gate refuses the caller',
+				'closer must not fire when the credential gate refuses the caller'
 			);
 			await test_app.cleanup();
 		});
 
 		test('password change does NOT close on wrong-password 401', async () => {
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const audit_events: Array<AuditLogEvent> = [];
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
 				audit_factory: (params) =>
-					create_audit_emitter({...params, on_audit_event: (e) => audit_events.push(e)}),
+					create_audit_emitter({ ...params, on_audit_event: (e) => audit_events.push(e) })
 			});
 			const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
 			assert.ok(password_route, 'password route registered');
@@ -885,12 +888,12 @@ describe_db('connection_closer wiring', (get_db) => {
 				method: 'POST',
 				headers: {
 					...test_app.create_session_headers(),
-					'Content-Type': 'application/json',
+					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify({
 					current_password: 'wrong-password-xx',
-					new_password: 'new-test-password-xyz',
-				}),
+					new_password: 'new-test-password-xyz'
+				})
 			});
 			assert.strictEqual(res.status, 401);
 			assert.strictEqual(calls.length, 0, 'closer must not fire on wrong-password failure');
@@ -899,10 +902,10 @@ describe_db('connection_closer wiring', (get_db) => {
 			// is the defense-in-depth field from `docs/security.md` §Credential-
 			// channel gating — present on every outcome of `password_change`.
 			const failure_audits = audit_events.filter(
-				(e) => e.event_type === 'password_change' && e.outcome === 'failure',
+				(e) => e.event_type === 'password_change' && e.outcome === 'failure'
 			);
 			assert.strictEqual(failure_audits.length, 1);
-			const meta = failure_audits[0]!.metadata as {credential_type?: string};
+			const meta = failure_audits[0]!.metadata as { credential_type?: string };
 			assert.strictEqual(meta.credential_type, 'session');
 			await test_app.cleanup();
 		});
@@ -920,7 +923,7 @@ describe_db('connection_closer wiring', (get_db) => {
 		// asymmetric regressions where only one of the two sub-factory
 		// option threads breaks.
 		test('account + admin handlers both fire the closer when wired via the bundle', async () => {
-			const {closer, calls} = create_recording_closer();
+			const { closer, calls } = create_recording_closer();
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: (ctx: AppServerContext): Array<RouteSpec> => [
@@ -931,17 +934,17 @@ describe_db('connection_closer wiring', (get_db) => {
 							ip_rate_limiter: ctx.ip_rate_limiter,
 							login_account_rate_limiter: ctx.login_account_rate_limiter,
 							login_fail_floor_ms: 0,
-							connection_closer: closer,
-						}),
+							connection_closer: closer
+						})
 					),
 					...create_rpc_endpoint({
 						path: RPC_PATH,
-						actions: create_standard_rpc_actions(ctx.deps, {connection_closer: closer}),
-						log: ctx.deps.log,
-					}),
+						actions: create_standard_rpc_actions(ctx.deps, { connection_closer: closer }),
+						log: ctx.deps.log
+					})
 				],
 				db: get_db(),
-				roles: [ROLE_KEEPER, ROLE_ADMIN],
+				roles: [ROLE_KEEPER, ROLE_ADMIN]
 			});
 
 			// admin-side first — exercises the admin sub-factory's option
@@ -949,19 +952,19 @@ describe_db('connection_closer wiring', (get_db) => {
 			// kills the bootstrap session this admin call authenticates with.
 			// Catches the asymmetric regression where the admin sub-factory
 			// drops `connection_closer` while the account side keeps it.
-			const target = await test_app.create_account({username: 'bundleadmintarget'});
+			const target = await test_app.create_account({ username: 'bundleadmintarget' });
 			const admin_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: admin_session_revoke_all_action_spec,
-				params: {account_id: target.account.id},
-				headers: test_app.create_session_headers(),
+				params: { account_id: target.account.id },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(admin_res.ok, true);
 			assert.strictEqual(
 				calls.length,
 				1,
-				'standard bundle wired closer into admin_session_revoke_all',
+				'standard bundle wired closer into admin_session_revoke_all'
 			);
 			assert_close_call(calls[0], 'account', target.account.id);
 
@@ -974,26 +977,26 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				method: 'account_session_list',
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(list_res.ok, true);
 			const listed = list_res.ok
-				? (list_res.result as {sessions: Array<{id: string}>})
-				: {sessions: []};
+				? (list_res.result as { sessions: Array<{ id: string }> })
+				: { sessions: [] };
 			const session_id = listed.sessions[0]!.id;
 
 			const account_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_session_revoke_action_spec,
-				params: {session_id: session_id as never},
-				headers: test_app.create_session_headers(),
+				params: { session_id: session_id as never },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(account_res.ok, true);
 			assert.strictEqual(
 				calls.length,
 				1,
-				'standard bundle wired closer into account_session_revoke',
+				'standard bundle wired closer into account_session_revoke'
 			);
 			assert_close_call(calls[0], 'session', session_id);
 
@@ -1014,13 +1017,13 @@ describe_db('connection_closer wiring', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(null),
-				db: get_db(),
+				db: get_db()
 			});
 			const res = await rpc_call({
 				app: test_app.app,
 				path: RPC_PATH,
 				method: 'account_session_revoke_all',
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 			await test_app.cleanup();
@@ -1030,7 +1033,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(null),
-				db: get_db(),
+				db: get_db()
 			});
 			// Same id-discovery dance as the closer-present test — see
 			// account_session_revoke happy-path comment above.
@@ -1038,19 +1041,19 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				method: 'account_session_list',
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(list_res.ok, true);
 			const listed = list_res.ok
-				? (list_res.result as {sessions: Array<{id: string}>})
-				: {sessions: []};
+				? (list_res.result as { sessions: Array<{ id: string }> })
+				: { sessions: [] };
 			const session_id = listed.sessions[0]!.id;
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_session_revoke_action_spec,
-				params: {session_id: session_id as never},
-				headers: test_app.create_session_headers(),
+				params: { session_id: session_id as never },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 			await test_app.cleanup();
@@ -1060,23 +1063,23 @@ describe_db('connection_closer wiring', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(null),
-				db: get_db(),
+				db: get_db()
 			});
 			const create_res = await rpc_call({
 				app: test_app.app,
 				path: RPC_PATH,
 				method: 'account_token_create',
-				params: {name: 'absent_closer_target'},
-				headers: test_app.create_session_headers(),
+				params: { name: 'absent_closer_target' },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(create_res.ok, true);
-			const created = create_res.ok ? (create_res.result as {id: string}) : {id: ''};
+			const created = create_res.ok ? (create_res.result as { id: string }) : { id: '' };
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_token_revoke_action_spec,
-				params: {token_id: created.id as never},
-				headers: test_app.create_session_headers(),
+				params: { token_id: created.id as never },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 			await test_app.cleanup();
@@ -1087,15 +1090,15 @@ describe_db('connection_closer wiring', (get_db) => {
 				session_options,
 				create_route_specs: make_create_route_specs(null),
 				db: get_db(),
-				roles: [ROLE_KEEPER, ROLE_ADMIN],
+				roles: [ROLE_KEEPER, ROLE_ADMIN]
 			});
-			const target = await test_app.create_account({username: 'absentcloser1'});
+			const target = await test_app.create_account({ username: 'absentcloser1' });
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: admin_session_revoke_all_action_spec,
-				params: {account_id: target.account.id},
-				headers: test_app.create_session_headers(),
+				params: { account_id: target.account.id },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 			await test_app.cleanup();
@@ -1106,15 +1109,15 @@ describe_db('connection_closer wiring', (get_db) => {
 				session_options,
 				create_route_specs: make_create_route_specs(null),
 				db: get_db(),
-				roles: [ROLE_KEEPER, ROLE_ADMIN],
+				roles: [ROLE_KEEPER, ROLE_ADMIN]
 			});
-			const target = await test_app.create_account({username: 'absentcloser2'});
+			const target = await test_app.create_account({ username: 'absentcloser2' });
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: admin_token_revoke_all_action_spec,
-				params: {account_id: target.account.id},
-				headers: test_app.create_session_headers(),
+				params: { account_id: target.account.id },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 			await test_app.cleanup();
@@ -1124,14 +1127,14 @@ describe_db('connection_closer wiring', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(null),
-				db: get_db(),
+				db: get_db()
 			});
 			const logout_route = find_auth_route(test_app.route_specs, '/logout', 'POST');
 			assert.ok(logout_route, 'logout route registered');
 			const res = await test_app.app.request(logout_route.path, {
 				method: 'POST',
 				headers: test_app.create_session_headers(),
-				body: null,
+				body: null
 			});
 			assert.strictEqual(res.status, 200);
 			await test_app.cleanup();
@@ -1141,7 +1144,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: make_create_route_specs(null),
-				db: get_db(),
+				db: get_db()
 			});
 			const password_route = find_auth_route(test_app.route_specs, '/password', 'POST');
 			assert.ok(password_route, 'password route registered');
@@ -1149,12 +1152,12 @@ describe_db('connection_closer wiring', (get_db) => {
 				method: 'POST',
 				headers: {
 					...test_app.create_session_headers(),
-					'Content-Type': 'application/json',
+					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify({
 					current_password: DEFAULT_TEST_PASSWORD,
-					new_password: 'new-test-password-xyz',
-				}),
+					new_password: 'new-test-password-xyz'
+				})
 			});
 			assert.strictEqual(res.status, 200);
 			await test_app.cleanup();
@@ -1189,8 +1192,8 @@ describe_db('connection_closer wiring', (get_db) => {
 		// (`does NOT close on failure`) which fire if the close moved past
 		// any conditional gate.
 		test('account_session_revoke closes BEFORE audit.emit at the source level', async () => {
-			const seq = {value: 0};
-			const events: Array<{kind: 'close' | 'emit'; at: number}> = [];
+			const seq = { value: 0 };
+			const events: Array<{ kind: 'close' | 'emit'; at: number }> = [];
 			// Bespoke session-only closer that pushes the `close` marker
 			// into the shared `events` array (rather than the
 			// `RecordedClose` shape `create_recording_closer` writes) so
@@ -1200,11 +1203,11 @@ describe_db('connection_closer wiring', (get_db) => {
 			// `create_recording_closer` + `assert_close_call`.
 			const closer: ConnectionCloser = {
 				close_sockets_for_session: () => {
-					events.push({kind: 'close', at: seq.value++});
+					events.push({ kind: 'close', at: seq.value++ });
 					return 1;
 				},
 				close_sockets_for_token: () => 0,
-				close_sockets_for_account: () => 0,
+				close_sockets_for_account: () => 0
 			};
 			// Decorate the real emitter at backend-build time via
 			// `audit_factory` — pushes `{kind: 'emit'}` markers into the
@@ -1219,7 +1222,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				session_options,
 				create_route_specs: make_create_route_specs(closer),
 				db: get_db(),
-				audit_factory: create_emit_ordering_audit_factory(seq, events),
+				audit_factory: create_emit_ordering_audit_factory(seq, events)
 			});
 
 			// Resolve the session id via the list RPC, then revoke it.
@@ -1229,12 +1232,12 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				method: 'account_session_list',
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(list_res.ok, true);
 			const listed = list_res.ok
-				? (list_res.result as {sessions: Array<{id: string}>})
-				: {sessions: []};
+				? (list_res.result as { sessions: Array<{ id: string }> })
+				: { sessions: [] };
 			const session_id = listed.sessions[0]!.id;
 			// Reset in case the list path ever gains an audit emit.
 			events.length = 0;
@@ -1244,16 +1247,16 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_session_revoke_action_spec,
-				params: {session_id: session_id as never},
-				headers: test_app.create_session_headers(),
+				params: { session_id: session_id as never },
+				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
 
 			// Exactly two events: one close, one emit.
 			assert.strictEqual(events.length, 2, `expected close + emit, got ${JSON.stringify(events)}`);
 			// Ordering claim: close (at: 0) before emit (at: 1).
-			assert.deepStrictEqual(events[0], {kind: 'close', at: 0});
-			assert.deepStrictEqual(events[1], {kind: 'emit', at: 1});
+			assert.deepStrictEqual(events[0], { kind: 'close', at: 0 });
+			assert.deepStrictEqual(events[1], { kind: 'emit', at: 1 });
 
 			await test_app.cleanup();
 		});

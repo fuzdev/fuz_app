@@ -20,10 +20,10 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {KeyedAsyncSlot} from '$lib/ui/keyed_async_slot.svelte.ts';
-import {make_deferred, signal_rejection} from './async_test_helpers.ts';
+import { KeyedAsyncSlot } from '$lib/ui/keyed_async_slot.svelte.ts';
+import { make_deferred, signal_rejection } from './async_test_helpers.ts';
 
 describe('KeyedAsyncSlot — empty state', () => {
 	test('size is 0; absent keys return safe defaults', () => {
@@ -126,7 +126,7 @@ describe('KeyedAsyncSlot — cross-key independence', () => {
 			keyed.run('a', async () => 1),
 			keyed.run('b', async () => {
 				throw new Error('b-failed');
-			}),
+			})
 		]);
 		assert.strictEqual(keyed.succeeded('a'), true);
 		assert.strictEqual(keyed.failed('b'), true);
@@ -283,23 +283,23 @@ describe('KeyedAsyncSlot — options propagation', () => {
 		const keyed = new KeyedAsyncSlot<string, number, RpcError>({
 			map_error: (e) => {
 				if (e && typeof e === 'object' && 'reason' in e) return e as RpcError;
-				return {reason: 'unknown'};
-			},
+				return { reason: 'unknown' };
+			}
 		});
 		await keyed.run('a', async () => {
 			// eslint-disable-next-line @typescript-eslint/only-throw-error -- structured throw
-			throw {reason: 'rate_limit'};
+			throw { reason: 'rate_limit' };
 		});
 		await keyed.run('b', async () => {
 			// eslint-disable-next-line @typescript-eslint/only-throw-error -- structured throw
-			throw {reason: 'forbidden'};
+			throw { reason: 'forbidden' };
 		});
-		assert.deepStrictEqual(keyed.error('a'), {reason: 'rate_limit'});
-		assert.deepStrictEqual(keyed.error('b'), {reason: 'forbidden'});
+		assert.deepStrictEqual(keyed.error('a'), { reason: 'rate_limit' });
+		assert.deepStrictEqual(keyed.error('b'), { reason: 'forbidden' });
 	});
 
 	test('preserve_error_on_retry applies to every child slot', async () => {
-		const keyed = new KeyedAsyncSlot<string, number>({preserve_error_on_retry: true});
+		const keyed = new KeyedAsyncSlot<string, number>({ preserve_error_on_retry: true });
 		await keyed.run('a', async () => {
 			throw new Error('first');
 		});
@@ -316,7 +316,7 @@ describe('KeyedAsyncSlot — options propagation', () => {
 
 describe('KeyedAsyncSlot — generic key types', () => {
 	test('works with branded-string keys (SameValueZero identity)', async () => {
-		type Uuid = string & {__brand: 'Uuid'};
+		type Uuid = string & { __brand: 'Uuid' };
 		const a = 'aaa' as Uuid;
 		const b = 'bbb' as Uuid;
 		const keyed = new KeyedAsyncSlot<Uuid, number>();

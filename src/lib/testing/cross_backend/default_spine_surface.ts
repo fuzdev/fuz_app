@@ -25,21 +25,21 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {create_account_route_specs} from '../../auth/account_routes.ts';
-import {create_audit_log_route_specs} from '../../auth/audit_log_routes.ts';
-import type {NotificationSender} from '../../auth/role_grant_offer_notifications.ts';
-import {create_role_schema, type RoleSchemaResult} from '../../auth/role_schema.ts';
-import {GRANT_PATH_ADMIN} from '../../auth/grant_path_schema.ts';
-import {create_session_config, type SessionOptions} from '../../auth/session_cookie.ts';
-import {create_signup_route_specs} from '../../auth/signup_routes.ts';
-import {create_standard_rpc_actions} from '../../auth/standard_rpc_actions.ts';
-import {create_ready_route_spec, load_expected_schema} from '../../http/common_routes.ts';
-import {prefix_route_specs, type RouteSpec} from '../../http/route_spec.ts';
-import type {AppSurfaceSpec, RpcEndpointSpec} from '../../http/surface.ts';
-import type {AppServerContext} from '../../server/app_server_context.ts';
-import {create_test_app_surface_spec} from '../stubs.ts';
+import { create_account_route_specs } from '../../auth/account_routes.ts';
+import { create_audit_log_route_specs } from '../../auth/audit_log_routes.ts';
+import type { NotificationSender } from '../../auth/role_grant_offer_notifications.ts';
+import { create_role_schema, type RoleSchemaResult } from '../../auth/role_schema.ts';
+import { GRANT_PATH_ADMIN } from '../../auth/grant_path_schema.ts';
+import { create_session_config, type SessionOptions } from '../../auth/session_cookie.ts';
+import { create_signup_route_specs } from '../../auth/signup_routes.ts';
+import { create_standard_rpc_actions } from '../../auth/standard_rpc_actions.ts';
+import { create_ready_route_spec, load_expected_schema } from '../../http/common_routes.ts';
+import { prefix_route_specs, type RouteSpec } from '../../http/route_spec.ts';
+import type { AppSurfaceSpec, RpcEndpointSpec } from '../../http/surface.ts';
+import type { AppServerContext } from '../../server/app_server_context.ts';
+import { create_test_app_surface_spec } from '../stubs.ts';
 
 // Pure path / role / fixture-URL constants live on the hono-free
 // `spine_surface_constants.ts` leaf so cross-process suite modules can import them
@@ -50,7 +50,7 @@ import {
 	SPINE_CELL_EDITOR_ROLE,
 	SPINE_EXPECTED_SCHEMA_URL,
 	SPINE_PARTICIPANT_ROLE,
-	SPINE_RPC_PATH,
+	SPINE_RPC_PATH
 } from './spine_surface_constants.ts';
 
 /**
@@ -71,8 +71,8 @@ export const spine_session_options: SessionOptions<string> = create_session_conf
  * (`admin_account_list.grantable_roles` carries it on both spines).
  */
 export const spine_roles: RoleSchemaResult = create_role_schema([
-	{name: SPINE_CELL_EDITOR_ROLE, grant_paths: []},
-	{name: SPINE_PARTICIPANT_ROLE, grant_paths: [GRANT_PATH_ADMIN]},
+	{ name: SPINE_CELL_EDITOR_ROLE, grant_paths: [] },
+	{ name: SPINE_PARTICIPANT_ROLE, grant_paths: [GRANT_PATH_ADMIN] }
 ]);
 
 /** Options for {@link spine_rpc_endpoints}. */
@@ -113,15 +113,15 @@ export interface SpineRpcEndpointsOptions {
  */
 export const spine_rpc_endpoints = (
 	ctx: AppServerContext,
-	options?: SpineRpcEndpointsOptions,
+	options?: SpineRpcEndpointsOptions
 ): Array<RpcEndpointSpec> => [
 	{
 		path: SPINE_RPC_PATH,
 		actions: create_standard_rpc_actions(
-			{...ctx.deps, notification_sender: options?.notification_sender ?? null},
-			{roles: spine_roles},
-		),
-	},
+			{ ...ctx.deps, notification_sender: options?.notification_sender ?? null },
+			{ roles: spine_roles }
+		)
+	}
 ];
 
 /**
@@ -149,7 +149,7 @@ export const create_spine_route_specs = (ctx: AppServerContext): Array<RouteSpec
 			ip_rate_limiter: ctx.ip_rate_limiter,
 			login_account_rate_limiter: ctx.login_account_rate_limiter,
 			login_fail_floor_ms: 0,
-			bootstrap_status: ctx.bootstrap_status,
+			bootstrap_status: ctx.bootstrap_status
 		}),
 		...create_signup_route_specs(ctx.deps, {
 			session_options: spine_session_options,
@@ -160,12 +160,12 @@ export const create_spine_route_specs = (ctx: AppServerContext): Array<RouteSpec
 			// don't each pay the 250ms timing floor. Mirrors `login_fail_floor_ms: 0`
 			// above — the floor is a production timing-oracle defense, not
 			// behavior any cross test asserts.
-			signup_fail_floor_ms: 0,
-		}),
+			signup_fail_floor_ms: 0
+		})
 	]),
 	...(ctx.audit_sse
-		? prefix_route_specs('/api/admin', create_audit_log_route_specs({stream: ctx.audit_sse}))
-		: []),
+		? prefix_route_specs('/api/admin', create_audit_log_route_specs({ stream: ctx.audit_sse }))
+		: [])
 ];
 
 /**
@@ -179,7 +179,7 @@ export const create_spine_route_specs = (ctx: AppServerContext): Array<RouteSpec
  * @param log - optional logger for server-side drift diagnostics
  */
 export const create_spine_ready_route_spec = (log?: Logger): RouteSpec =>
-	create_ready_route_spec({expected: load_expected_schema(SPINE_EXPECTED_SCHEMA_URL), log});
+	create_ready_route_spec({ expected: load_expected_schema(SPINE_EXPECTED_SCHEMA_URL), log });
 
 /**
  * The `AppSurfaceSpec` for the standard spine surface — the wire-shape
@@ -195,5 +195,5 @@ export const create_spine_surface_spec = (): AppSurfaceSpec =>
 		session_options: spine_session_options,
 		create_route_specs: create_spine_route_specs,
 		rpc_endpoints: spine_rpc_endpoints,
-		bootstrap: {mode: 'surface_only'},
+		bootstrap: { mode: 'surface_only' }
 	});

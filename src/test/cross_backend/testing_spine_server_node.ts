@@ -10,11 +10,11 @@
  */
 
 import process from 'node:process';
-import {join} from 'node:path';
+import { join } from 'node:path';
 
-import {start_testing_server} from '#lib/testing/cross_backend/testing_server_core.ts';
-import {create_node_testing_adapter} from '#lib/testing/cross_backend/testing_server_node.ts';
-import {build_spine_app, resolve_spine_server_config} from './testing_spine_server.ts';
+import { start_testing_server } from '#lib/testing/cross_backend/testing_server_core.ts';
+import { create_node_testing_adapter } from '#lib/testing/cross_backend/testing_server_node.ts';
+import { build_spine_app, resolve_spine_server_config } from './testing_spine_server.ts';
 
 /** Dir env var whose `{dir}/run/daemon_token` matches `BackendConfig.bootstrap.daemon_token_path`. */
 const TS_SPINE_DIR_ENV = 'FUZ_TESTING_TS_SPINE_DIR';
@@ -22,12 +22,12 @@ const DAEMON_NAME = 'fuz_app_ts_spine_node';
 
 const start = async (): Promise<void> => {
 	const adapter = create_node_testing_adapter();
-	const {host, port} = resolve_spine_server_config(adapter.runtime);
+	const { host, port } = resolve_spine_server_config(adapter.runtime);
 	const dir = adapter.runtime.env_get(TS_SPINE_DIR_ENV);
 	if (!dir) {
 		throw new Error(
 			`testing_spine_server_node: ${TS_SPINE_DIR_ENV} must point at the harness's backend root ` +
-				'(its `{dir}/run/daemon_token` is where the cross-process harness reads the keeper token).',
+				'(its `{dir}/run/daemon_token` is where the cross-process harness reads the keeper token).'
 		);
 	}
 	const daemon_token_path = join(dir, 'run', 'daemon_token');
@@ -40,8 +40,8 @@ const start = async (): Promise<void> => {
 			build_spine_app({
 				runtime: adapter.runtime,
 				get_connection_ip: adapter.get_connection_ip,
-				daemon_token_path,
-			}),
+				daemon_token_path
+			})
 	});
 };
 

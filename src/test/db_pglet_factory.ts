@@ -26,14 +26,14 @@
  * @module
  */
 
-import {spawn} from 'node:child_process';
-import {createServer} from 'node:net';
-import type {Pool} from 'pg';
-import {to_error_message} from '@fuzdev/fuz_util/error.ts';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
+import type { Pool } from 'pg';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
-import type {Db} from '$lib/db/db.ts';
-import {create_pg_db, register_pg_type_parsers} from '$lib/db/db_pg.ts';
-import type {DbFactory} from '$lib/testing/db.ts';
+import type { Db } from '$lib/db/db.ts';
+import { create_pg_db, register_pg_type_parsers } from '$lib/db/db_pg.ts';
+import type { DbFactory } from '$lib/testing/db.ts';
 
 const PGLET_SERVER_BIN = process.env.PGLET_SERVER_BIN;
 
@@ -105,7 +105,7 @@ const spawn_pglet_server = async (bin: string): Promise<PgletServer> => {
 	// real `BEGIN`/`COMMIT`/`ROLLBACK` — matching the pg / pglite / pglet-wasm legs.
 	// `detached` puts the server in its own process group so the whole group can be
 	// torn down together (no stray child outliving the test process).
-	const child = spawn(bin, ['--port', String(port)], {stdio: 'ignore', detached: true});
+	const child = spawn(bin, ['--port', String(port)], { stdio: 'ignore', detached: true });
 	const url = `postgres://postgres@127.0.0.1:${port}/postgres`;
 	const kill = (): void => {
 		try {
@@ -128,7 +128,7 @@ const spawn_pglet_server = async (bin: string): Promise<PgletServer> => {
 		spawn_error_message = `failed to spawn pglet server "${bin}": ${to_error_message(err)}`;
 	});
 
-	const {Client} = await import('pg');
+	const { Client } = await import('pg');
 	const deadline = Date.now() + READY_TIMEOUT_MS;
 	let last_error: unknown;
 	while (Date.now() < deadline) {
@@ -136,12 +136,12 @@ const spawn_pglet_server = async (bin: string): Promise<PgletServer> => {
 			kill();
 			throw new Error(spawn_error_message);
 		}
-		const client = new Client({connectionString: url, connectionTimeoutMillis: 1000});
+		const client = new Client({ connectionString: url, connectionTimeoutMillis: 1000 });
 		try {
 			await client.connect();
 			await client.query('SELECT 1');
 			await client.end();
-			return {url, kill};
+			return { url, kill };
 		} catch (err) {
 			last_error = err;
 			try {
@@ -154,7 +154,7 @@ const spawn_pglet_server = async (bin: string): Promise<PgletServer> => {
 	}
 	kill();
 	throw new Error(
-		`pglet server not ready after ${READY_TIMEOUT_MS}ms: ${to_error_message(last_error)}`,
+		`pglet server not ready after ${READY_TIMEOUT_MS}ms: ${to_error_message(last_error)}`
 	);
 };
 
@@ -194,8 +194,8 @@ export const create_pglet_factory = (init_schema: (db: Db) => Promise<void>): Db
 				// as numbers like PGlite does.
 				await register_pg_type_parsers();
 				server = await spawn_pglet_server(PGLET_SERVER_BIN);
-				const {Pool} = await import('pg');
-				pool = new Pool({connectionString: server.url});
+				const { Pool } = await import('pg');
+				pool = new Pool({ connectionString: server.url });
 				db = create_pg_db(pool).db;
 			}
 			// Drop the tracker so migrations re-evaluate against the actual tables
@@ -208,6 +208,6 @@ export const create_pglet_factory = (init_schema: (db: Db) => Promise<void>): Db
 			// No-op: this factory's server lives for the whole `db` run (it must
 			// outlive each suite's afterAll) and is killed by the process-exit /
 			// signal hooks registered in `spawn_pglet_server`.
-		},
+		}
 	};
 };

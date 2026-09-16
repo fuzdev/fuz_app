@@ -7,12 +7,12 @@
  * @module
  */
 
-import {z} from 'zod';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import { z } from 'zod';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type {Db, DbType} from '../db/db.ts';
-import {get_route_params, get_route_query, type RouteSpec} from './route_spec.ts';
-import {ActingActor} from './auth_shape.ts';
+import type { Db, DbType } from '../db/db.ts';
+import { get_route_params, get_route_query, type RouteSpec } from './route_spec.ts';
+import { ActingActor } from './auth_shape.ts';
 import {
 	ForeignKeyError,
 	ERROR_TABLE_NOT_FOUND,
@@ -20,9 +20,9 @@ import {
 	ERROR_ROW_NOT_FOUND,
 	ERROR_FOREIGN_KEY_VIOLATION,
 	ERROR_INVALID_ROUTE_PARAMS,
-	ERROR_DATABASE_CONNECTION_FAILED,
+	ERROR_DATABASE_CONNECTION_FAILED
 } from './error_schemas.ts';
-import {assert_valid_sql_identifier, VALID_SQL_IDENTIFIER} from '../db/sql_identifier.ts';
+import { assert_valid_sql_identifier, VALID_SQL_IDENTIFIER } from '../db/sql_identifier.ts';
 
 /**
  * Table metadata from `information_schema`.
@@ -76,7 +76,7 @@ export interface DbRouteOptions {
  * Create the db API route specs.
  */
 export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec> => {
-	const {db_type, db_name, extra_stats, log} = options;
+	const { db_type, db_name, extra_stats, log } = options;
 
 	return [
 		{
@@ -86,21 +86,21 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 				account: 'required',
 				actor: 'required',
 				roles: ['keeper'],
-				credential_types: ['daemon_token'],
+				credential_types: ['daemon_token']
 			},
 			description: 'Database health and stats',
-			query: z.strictObject({acting: ActingActor}),
+			query: z.strictObject({ acting: ActingActor }),
 			input: z.null(),
-			output: z.looseObject({connected: z.boolean()}),
+			output: z.looseObject({ connected: z.boolean() }),
 			errors: {
-				503: z.looseObject({error: z.literal(ERROR_DATABASE_CONNECTION_FAILED)}),
+				503: z.looseObject({ error: z.literal(ERROR_DATABASE_CONNECTION_FAILED) })
 			},
 			handler: async (c, route) => {
 				try {
 					await route.db.query('SELECT 1');
 
-					const table_result = await route.db.query<{count: string}>(
-						`SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema = 'public'`,
+					const table_result = await route.db.query<{ count: string }>(
+						`SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema = 'public'`
 					);
 					const table_count = table_result[0] ? parseInt(table_result[0].count, 10) : 0;
 
@@ -111,7 +111,7 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 						type: db_type,
 						name: db_name,
 						table_count,
-						...stats,
+						...stats
 					});
 				} catch (err) {
 					log?.error('Database health check failed:', err);
@@ -119,12 +119,12 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 						{
 							connected: false,
 							type: db_type,
-							error: ERROR_DATABASE_CONNECTION_FAILED,
+							error: ERROR_DATABASE_CONNECTION_FAILED
 						},
-						503,
+						503
 					);
 				}
-			},
+			}
 		},
 		{
 			method: 'GET',
@@ -133,34 +133,34 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 				account: 'required',
 				actor: 'required',
 				roles: ['keeper'],
-				credential_types: ['daemon_token'],
+				credential_types: ['daemon_token']
 			},
 			description: 'List public tables with row counts',
-			query: z.strictObject({acting: ActingActor}),
+			query: z.strictObject({ acting: ActingActor }),
 			input: z.null(),
 			output: z.looseObject({
-				tables: z.array(z.strictObject({name: z.string(), row_count: z.number()})),
+				tables: z.array(z.strictObject({ name: z.string(), row_count: z.number() }))
 			}),
 			handler: async (c, route) => {
 				const table_names = await route.db.query<TableInfo>(
 					`SELECT table_name FROM information_schema.tables
 					 WHERE table_schema = 'public'
-					 ORDER BY table_name`,
+					 ORDER BY table_name`
 				);
 
 				const tables: Array<TableWithCount> = [];
-				for (const {table_name} of table_names) {
-					const result = await route.db.query_one<{count: string}>(
-						`SELECT COUNT(*) as count FROM "${assert_valid_sql_identifier(table_name)}"`,
+				for (const { table_name } of table_names) {
+					const result = await route.db.query_one<{ count: string }>(
+						`SELECT COUNT(*) as count FROM "${assert_valid_sql_identifier(table_name)}"`
 					);
 					tables.push({
 						name: table_name,
-						row_count: result ? parseInt(result.count, 10) : 0,
+						row_count: result ? parseInt(result.count, 10) : 0
 					});
 				}
 
-				return c.json({tables});
-			},
+				return c.json({ tables });
+			}
 		},
 		{
 			method: 'GET',
@@ -169,10 +169,10 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 				account: 'required',
 				actor: 'required',
 				roles: ['keeper'],
-				credential_types: ['daemon_token'],
+				credential_types: ['daemon_token']
 			},
 			description: 'Get table columns and rows (paginated)',
-			params: z.strictObject({name: z.string().regex(VALID_SQL_IDENTIFIER)}),
+			params: z.strictObject({ name: z.string().regex(VALID_SQL_IDENTIFIER) }),
 			query: z.strictObject({
 				acting: ActingActor,
 				offset: z.coerce.number().int().min(0).default(0),
@@ -181,35 +181,39 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 					.int()
 					.min(1)
 					.max(DB_TABLE_ROWS_LIMIT_MAX)
-					.default(DB_TABLE_ROWS_DEFAULT_LIMIT),
+					.default(DB_TABLE_ROWS_DEFAULT_LIMIT)
 			}),
 			input: z.null(),
 			errors: {
-				400: z.looseObject({error: z.literal(ERROR_INVALID_ROUTE_PARAMS)}),
-				404: z.looseObject({error: z.literal(ERROR_TABLE_NOT_FOUND)}),
+				400: z.looseObject({ error: z.literal(ERROR_INVALID_ROUTE_PARAMS) }),
+				404: z.looseObject({ error: z.literal(ERROR_TABLE_NOT_FOUND) })
 			},
 			output: z.looseObject({
 				columns: z.array(
-					z.strictObject({column_name: z.string(), data_type: z.string(), is_nullable: z.string()}),
+					z.strictObject({
+						column_name: z.string(),
+						data_type: z.string(),
+						is_nullable: z.string()
+					})
 				),
 				rows: z.array(z.record(z.string(), z.unknown())),
 				total: z.number(),
 				offset: z.number(),
 				limit: z.number(),
-				primary_key: z.string().nullable(),
+				primary_key: z.string().nullable()
 			}),
 			handler: async (c, route) => {
-				const {name} = get_route_params<{name: string}>(c);
-				const {offset, limit} = get_route_query<{offset: number; limit: number}>(c);
+				const { name } = get_route_params<{ name: string }>(c);
+				const { offset, limit } = get_route_query<{ offset: number; limit: number }>(c);
 
 				const exists = await route.db.query_one<TableInfo>(
 					`SELECT table_name FROM information_schema.tables
 					 WHERE table_schema = 'public' AND table_name = $1`,
-					[name],
+					[name]
 				);
 
 				if (!exists) {
-					return c.json({error: ERROR_TABLE_NOT_FOUND}, 404);
+					return c.json({ error: ERROR_TABLE_NOT_FOUND }, 404);
 				}
 
 				const columns = await route.db.query<ColumnInfo>(
@@ -217,11 +221,11 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 					 FROM information_schema.columns
 					 WHERE table_schema = 'public' AND table_name = $1
 					 ORDER BY ordinal_position`,
-					[name],
+					[name]
 				);
 
-				const count_result = await route.db.query_one<{count: string}>(
-					`SELECT COUNT(*) as count FROM "${assert_valid_sql_identifier(name)}"`,
+				const count_result = await route.db.query_one<{ count: string }>(
+					`SELECT COUNT(*) as count FROM "${assert_valid_sql_identifier(name)}"`
 				);
 				const total = count_result ? parseInt(count_result.count, 10) : 0;
 
@@ -235,17 +239,17 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 					   AND tc.table_schema = 'public'
 					   AND tc.table_name = $1
 					 LIMIT 1`,
-					[name],
+					[name]
 				);
 				const primary_key = pk_info?.column_name ?? null;
 
 				const rows = await route.db.query(
 					`SELECT * FROM "${assert_valid_sql_identifier(name)}" LIMIT $1 OFFSET $2`,
-					[limit, offset],
+					[limit, offset]
 				);
 
-				return c.json({columns, rows, total, offset, limit, primary_key});
-			},
+				return c.json({ columns, rows, total, offset, limit, primary_key });
+			}
 		},
 		{
 			method: 'DELETE',
@@ -254,36 +258,36 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 				account: 'required',
 				actor: 'required',
 				roles: ['keeper'],
-				credential_types: ['daemon_token'],
+				credential_types: ['daemon_token']
 			},
 			description: 'Delete a row by primary key',
 			params: z.strictObject({
 				name: z.string().regex(VALID_SQL_IDENTIFIER),
-				id: z.string(),
+				id: z.string()
 			}),
-			query: z.strictObject({acting: ActingActor}),
+			query: z.strictObject({ acting: ActingActor }),
 			input: z.null(),
-			output: z.looseObject({success: z.boolean()}),
+			output: z.looseObject({ success: z.boolean() }),
 			errors: {
 				400: z.looseObject({
-					error: z.enum([ERROR_INVALID_ROUTE_PARAMS, ERROR_TABLE_NO_PRIMARY_KEY]),
+					error: z.enum([ERROR_INVALID_ROUTE_PARAMS, ERROR_TABLE_NO_PRIMARY_KEY])
 				}),
 				404: z.looseObject({
-					error: z.enum([ERROR_TABLE_NOT_FOUND, ERROR_ROW_NOT_FOUND]),
+					error: z.enum([ERROR_TABLE_NOT_FOUND, ERROR_ROW_NOT_FOUND])
 				}),
-				409: ForeignKeyError,
+				409: ForeignKeyError
 			},
 			handler: async (c, route) => {
-				const {name, id} = get_route_params<{name: string; id: string}>(c);
+				const { name, id } = get_route_params<{ name: string; id: string }>(c);
 
 				const exists = await route.db.query_one<TableInfo>(
 					`SELECT table_name FROM information_schema.tables
 					 WHERE table_schema = 'public' AND table_name = $1`,
-					[name],
+					[name]
 				);
 
 				if (!exists) {
-					return c.json({error: ERROR_TABLE_NOT_FOUND}, 404);
+					return c.json({ error: ERROR_TABLE_NOT_FOUND }, 404);
 				}
 
 				const pk_info = await route.db.query_one<PrimaryKeyInfo>(
@@ -296,35 +300,35 @@ export const create_db_route_specs = (options: DbRouteOptions): Array<RouteSpec>
 					   AND tc.table_schema = 'public'
 					   AND tc.table_name = $1
 					 LIMIT 1`,
-					[name],
+					[name]
 				);
 
 				if (!pk_info) {
-					return c.json({error: ERROR_TABLE_NO_PRIMARY_KEY}, 400);
+					return c.json({ error: ERROR_TABLE_NO_PRIMARY_KEY }, 400);
 				}
 
 				try {
 					const result = await route.db.query(
 						`DELETE FROM "${assert_valid_sql_identifier(
-							name,
+							name
 						)}" WHERE "${assert_valid_sql_identifier(pk_info.column_name)}" = $1 RETURNING *`,
-						[id],
+						[id]
 					);
 
 					if (result.length === 0) {
-						return c.json({error: ERROR_ROW_NOT_FOUND}, 404);
+						return c.json({ error: ERROR_ROW_NOT_FOUND }, 404);
 					}
 
-					return c.json({success: true});
+					return c.json({ success: true });
 				} catch (err) {
 					if (err instanceof Error && 'code' in err && err.code === '23503') {
-						const pg_err = err as Error & {detail?: string; constraint?: string};
+						const pg_err = err as Error & { detail?: string; constraint?: string };
 						log?.warn('Foreign key violation:', pg_err.detail, pg_err.constraint);
-						return c.json({error: ERROR_FOREIGN_KEY_VIOLATION}, 409);
+						return c.json({ error: ERROR_FOREIGN_KEY_VIOLATION }, 409);
 					}
 					throw err;
 				}
-			},
-		},
+			}
+		}
 	];
 };

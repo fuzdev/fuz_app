@@ -7,9 +7,9 @@
  * @module
  */
 
-import type {QueryDeps} from '../db/query_deps.ts';
-import {assert_row} from '../db/assert_row.ts';
-import type {Invite, CreateInviteInput, InviteWithUsernamesJson} from './invite_schema.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
+import { assert_row } from '../db/assert_row.ts';
+import type { Invite, CreateInviteInput, InviteWithUsernamesJson } from './invite_schema.ts';
 
 /**
  * Create a new invite.
@@ -21,13 +21,13 @@ import type {Invite, CreateInviteInput, InviteWithUsernamesJson} from './invite_
  */
 export const query_create_invite = async (
 	deps: QueryDeps,
-	input: CreateInviteInput,
+	input: CreateInviteInput
 ): Promise<Invite> => {
 	const row = await deps.db.query_one<Invite>(
 		`INSERT INTO invite (email, username, created_by)
 		 VALUES ($1, $2, $3)
 		 RETURNING *`,
-		[input.email ?? null, input.username ?? null, input.created_by],
+		[input.email ?? null, input.username ?? null, input.created_by]
 	);
 	return assert_row(row, 'INSERT INTO invite');
 };
@@ -37,11 +37,11 @@ export const query_create_invite = async (
  */
 export const query_invite_find_unclaimed_by_email = async (
 	deps: QueryDeps,
-	email: string,
+	email: string
 ): Promise<Invite | undefined> => {
 	return deps.db.query_one<Invite>(
 		`SELECT * FROM invite WHERE LOWER(email) = LOWER($1) AND claimed_at IS NULL`,
-		[email],
+		[email]
 	);
 };
 
@@ -50,11 +50,11 @@ export const query_invite_find_unclaimed_by_email = async (
  */
 export const query_invite_find_unclaimed_by_username = async (
 	deps: QueryDeps,
-	username: string,
+	username: string
 ): Promise<Invite | undefined> => {
 	return deps.db.query_one<Invite>(
 		`SELECT * FROM invite WHERE LOWER(username) = LOWER($1) AND claimed_at IS NULL`,
-		[username],
+		[username]
 	);
 };
 
@@ -83,7 +83,7 @@ export const query_invite_find_unclaimed_by_username = async (
 export const query_invite_find_unclaimed_match_for_update = async (
 	deps: QueryDeps,
 	email: string | null,
-	username: string,
+	username: string
 ): Promise<Invite | undefined> => {
 	return deps.db.query_one<Invite>(
 		`SELECT * FROM invite WHERE claimed_at IS NULL AND (
@@ -98,7 +98,7 @@ export const query_invite_find_unclaimed_match_for_update = async (
 			 AND LOWER(username) = LOWER($2))
 		) ORDER BY created_at ASC, id ASC LIMIT 1
 		FOR UPDATE`,
-		[email, username],
+		[email, username]
 	);
 };
 
@@ -125,13 +125,13 @@ export const query_invite_find_unclaimed_match_for_update = async (
 export const query_invite_claim_unscoped = async (
 	deps: QueryDeps,
 	invite_id: string,
-	account_id: string,
+	account_id: string
 ): Promise<boolean> => {
-	const rows = await deps.db.query<{id: string}>(
+	const rows = await deps.db.query<{ id: string }>(
 		`UPDATE invite SET claimed_by = $1, claimed_at = NOW()
 		 WHERE id = $2 AND claimed_at IS NULL
 		 RETURNING id`,
-		[account_id, invite_id],
+		[account_id, invite_id]
 	);
 	return rows.length > 0;
 };
@@ -150,7 +150,7 @@ export const query_invite_list_all = async (deps: QueryDeps): Promise<Array<Invi
  * @returns invites with `created_by_username` and `claimed_by_username`
  */
 export const query_invite_list_all_with_usernames = async (
-	deps: QueryDeps,
+	deps: QueryDeps
 ): Promise<Array<InviteWithUsernamesJson>> => {
 	return deps.db.query<InviteWithUsernamesJson>(
 		`SELECT i.*,
@@ -159,7 +159,7 @@ export const query_invite_list_all_with_usernames = async (
 		 FROM invite i
 		 LEFT JOIN actor act ON act.id = i.created_by
 		 LEFT JOIN account a ON a.id = i.claimed_by
-		 ORDER BY i.created_at DESC`,
+		 ORDER BY i.created_at DESC`
 	);
 };
 
@@ -173,11 +173,11 @@ export const query_invite_list_all_with_usernames = async (
  */
 export const query_invite_delete_unclaimed = async (
 	deps: QueryDeps,
-	id: string,
+	id: string
 ): Promise<boolean> => {
-	const rows = await deps.db.query<{id: string}>(
+	const rows = await deps.db.query<{ id: string }>(
 		`DELETE FROM invite WHERE id = $1 AND claimed_at IS NULL RETURNING id`,
-		[id],
+		[id]
 	);
 	return rows.length > 0;
 };

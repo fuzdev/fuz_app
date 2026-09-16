@@ -22,40 +22,40 @@
  * @module
  */
 
-import type {SessionOptions} from './session_cookie.ts';
-import {clear_session_cookie, create_session_and_set_cookie} from './session_middleware.ts';
-import {RoleGrantSummaryJson, to_session_account} from './account_schema.ts';
+import type { SessionOptions } from './session_cookie.ts';
+import { clear_session_cookie, create_session_and_set_cookie } from './session_middleware.ts';
+import { RoleGrantSummaryJson, to_session_account } from './account_schema.ts';
 import {
 	account_status_route_shape,
 	create_account_route_shapes,
 	DEFAULT_MAX_SESSIONS,
 	type LoginInput,
-	type PasswordChangeInput,
+	type PasswordChangeInput
 } from './account_route_schema.ts';
 import {
 	hash_session_token,
 	query_session_revoke_all_for_account,
-	query_session_revoke_by_hash_unscoped,
+	query_session_revoke_by_hash_unscoped
 } from './session_queries.ts';
 import {
 	query_account_by_username_or_email,
-	query_update_account_password,
+	query_update_account_password
 } from './account_queries.ts';
-import {query_revoke_all_api_tokens_for_account} from './api_token_queries.ts';
+import { query_revoke_all_api_tokens_for_account } from './api_token_queries.ts';
 import {
 	build_account_context,
 	build_request_context,
 	get_request_context,
 	require_request_context,
-	resolve_acting_actor,
+	resolve_acting_actor
 } from './request_context.ts';
-import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.ts';
-import {get_route_input, type RouteSpec} from '../http/route_spec.ts';
-import {get_client_ip} from '../http/client_ip.ts';
-import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.ts';
-import type {RouteFactoryDeps} from './deps.ts';
-import type {ConnectionCloser} from '../actions/connection_closer.ts';
-import {ERROR_AUTHENTICATION_REQUIRED, ERROR_INVALID_CREDENTIALS} from '../http/error_schemas.ts';
+import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY } from '../hono_context.ts';
+import { get_route_input, type RouteSpec } from '../http/route_spec.ts';
+import { get_client_ip } from '../http/client_ip.ts';
+import { rate_limit_exceeded_response, type RateLimiter } from '../rate_limiter.ts';
+import type { RouteFactoryDeps } from './deps.ts';
+import type { ConnectionCloser } from '../actions/connection_closer.ts';
+import { ERROR_AUTHENTICATION_REQUIRED, ERROR_INVALID_CREDENTIALS } from '../http/error_schemas.ts';
 
 /**
  * Create the account status route spec.
@@ -79,9 +79,9 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 			return c.json(
 				{
 					error: ERROR_AUTHENTICATION_REQUIRED,
-					...(options?.bootstrap_status?.available ? {bootstrap_available: true} : {}),
+					...(options?.bootstrap_status?.available ? { bootstrap_available: true } : {})
 				},
-				401,
+				401
 			);
 		}
 		// Honor a pre-populated request context. The dispatcher's authorization
@@ -97,12 +97,12 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 				scope_id: p.scope_id,
 				created_at: p.created_at,
 				expires_at: p.expires_at,
-				granted_by: p.granted_by,
+				granted_by: p.granted_by
 			}));
 			return c.json({
 				account: to_session_account(existing.account),
-				actor: existing.actor ? {id: existing.actor.id, name: existing.actor.name} : null,
-				role_grants,
+				actor: existing.actor ? { id: existing.actor.id, name: existing.actor.name } : null,
+				role_grants
 			});
 		}
 		// Resolve actor + role_grants when the caller is unambiguous (single-actor
@@ -121,12 +121,12 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 					scope_id: p.scope_id,
 					created_at: p.created_at,
 					expires_at: p.expires_at,
-					granted_by: p.granted_by,
+					granted_by: p.granted_by
 				}));
 				return c.json({
 					account: to_session_account(ctx.account),
-					actor: {id: ctx.actor.id, name: ctx.actor.name},
-					role_grants,
+					actor: { id: ctx.actor.id, name: ctx.actor.name },
+					role_grants
 				});
 			}
 		}
@@ -135,17 +135,17 @@ export const create_account_status_route_spec = (options?: AccountStatusOptions)
 			return c.json(
 				{
 					error: ERROR_AUTHENTICATION_REQUIRED,
-					...(options?.bootstrap_status?.available ? {bootstrap_available: true} : {}),
+					...(options?.bootstrap_status?.available ? { bootstrap_available: true } : {})
 				},
-				401,
+				401
 			);
 		}
 		return c.json({
 			account: to_session_account(account_ctx.account),
 			actor: null,
-			role_grants: [],
+			role_grants: []
 		});
-	},
+	}
 });
 
 /** Options for the account status route spec. */
@@ -153,7 +153,7 @@ export interface AccountStatusOptions {
 	/** Override the default path (`/api/account/status`). */
 	path?: string;
 	/** Runtime bootstrap status — when available, 401 responses include `bootstrap_available`. */
-	bootstrap_status?: {available: boolean};
+	bootstrap_status?: { available: boolean };
 }
 
 /**
@@ -231,7 +231,7 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
 	 * the one-shot bootstrap completing. Omit when no bootstrap flow is wired —
 	 * `/status` is still served, just without the flag.
 	 */
-	bootstrap_status?: {available: boolean};
+	bootstrap_status?: { available: boolean };
 }
 // `create_account_route_specs` spreads each shape and attaches the live
 // handler below.
@@ -252,9 +252,9 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
  */
 export const create_account_route_specs = (
 	deps: RouteFactoryDeps,
-	options: AccountRouteOptions,
+	options: AccountRouteOptions
 ): Array<RouteSpec> => {
-	const {keyring, password} = deps;
+	const { keyring, password } = deps;
 	const {
 		session_options,
 		ip_rate_limiter,
@@ -263,11 +263,11 @@ export const create_account_route_specs = (
 		login_fail_floor_ms = DEFAULT_LOGIN_FAIL_FLOOR_MS,
 		login_fail_jitter_ms = DEFAULT_LOGIN_FAIL_JITTER_MS,
 		connection_closer = null,
-		bootstrap_status,
+		bootstrap_status
 	} = options;
 
 	const [verify_shape, login_shape, logout_shape, password_shape] = create_account_route_shapes({
-		login_account_rate_limited: login_account_rate_limiter !== null,
+		login_account_rate_limited: login_account_rate_limiter !== null
 	});
 
 	return [
@@ -275,13 +275,13 @@ export const create_account_route_specs = (
 		// to `/api/account/status` by the caller) so every account surface serves
 		// it — matching the Rust `account_router`. The standalone
 		// `create_account_status_route_spec` stays the building block.
-		create_account_status_route_spec({bootstrap_status}),
+		create_account_status_route_spec({ bootstrap_status }),
 		{
 			...verify_shape,
 			handler: (c) => {
 				require_request_context(c);
 				return c.body(null, 200);
-			},
+			}
 		},
 		{
 			...login_shape,
@@ -300,7 +300,7 @@ export const create_account_route_specs = (
 				// `c.var.validated_input`, so the per-account rate-limit key,
 				// DB lookup, and audit metadata see one form. See
 				// `primitive_schemas.ts` for the schema-layer canonicalization.
-				const {username, password: pw} = get_route_input<LoginInput>(c);
+				const { username, password: pw } = get_route_input<LoginInput>(c);
 
 				// DB lookup first so we can key the per-account rate limit by a canonical value
 				// (account.id) rather than the submitted identifier. Otherwise an attacker could
@@ -331,10 +331,10 @@ export const create_account_route_specs = (
 						event_type: 'login',
 						outcome: 'failure',
 						ip: get_client_ip(c),
-						metadata: {username},
+						metadata: { username }
 					});
 					await delay;
-					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
+					return c.json({ error: ERROR_INVALID_CREDENTIALS }, 401);
 				}
 
 				const valid = await password.verify_password(pw, account.password_hash);
@@ -346,10 +346,10 @@ export const create_account_route_specs = (
 						outcome: 'failure',
 						account_id: account.id,
 						ip: get_client_ip(c),
-						metadata: {username},
+						metadata: { username }
 					});
 					await delay;
-					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
+					return c.json({ error: ERROR_INVALID_CREDENTIALS }, 401);
 				}
 
 				// Successful login — reset rate limits
@@ -362,15 +362,15 @@ export const create_account_route_specs = (
 					c,
 					account_id: account.id,
 					session_options,
-					max_sessions,
+					max_sessions
 				});
 				deps.audit.emit(route, {
 					event_type: 'login',
 					account_id: account.id,
-					ip: get_client_ip(c),
+					ip: get_client_ip(c)
 				});
-				return c.json({ok: true});
-			},
+				return c.json({ ok: true });
+			}
 		},
 		{
 			...logout_shape,
@@ -404,10 +404,10 @@ export const create_account_route_specs = (
 				deps.audit.emit(route, {
 					event_type: 'logout',
 					account_id: ctx.account.id,
-					ip: get_client_ip(c),
+					ip: get_client_ip(c)
 				});
-				return c.json({ok: true, username: ctx.account.username});
-			},
+				return c.json({ ok: true, username: ctx.account.username });
+			}
 		},
 		{
 			...password_shape,
@@ -422,7 +422,7 @@ export const create_account_route_specs = (
 				}
 
 				const ctx = require_request_context(c);
-				const {current_password, new_password} = get_route_input<PasswordChangeInput>(c);
+				const { current_password, new_password } = get_route_input<PasswordChangeInput>(c);
 				// Defense in depth — see `docs/security.md` §Credential-channel gating.
 				const credential_type = c.get(CREDENTIAL_TYPE_KEY) ?? undefined;
 
@@ -443,9 +443,9 @@ export const create_account_route_specs = (
 						outcome: 'failure',
 						account_id: ctx.account.id,
 						ip: get_client_ip(c),
-						metadata: {credential_type},
+						metadata: { credential_type }
 					});
-					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
+					return c.json({ error: ERROR_INVALID_CREDENTIALS }, 401);
 				}
 
 				// Verify succeeded — do the throw-y operations FIRST so a fault
@@ -463,7 +463,7 @@ export const create_account_route_specs = (
 					ctx.account.id,
 					new_hash,
 					null,
-					ctx.account.password_hash,
+					ctx.account.password_hash
 				);
 
 				// Verify-success contract — the caller proved knowledge, so wipe
@@ -493,9 +493,9 @@ export const create_account_route_specs = (
 						outcome: 'failure',
 						account_id: ctx.account.id,
 						ip: get_client_ip(c),
-						metadata: {reason: 'concurrent_change', credential_type},
+						metadata: { reason: 'concurrent_change', credential_type }
 					});
-					return c.json({error: ERROR_INVALID_CREDENTIALS}, 401);
+					return c.json({ error: ERROR_INVALID_CREDENTIALS }, 401);
 				}
 
 				// revoke all sessions and API tokens (force re-auth everywhere)
@@ -527,10 +527,10 @@ export const create_account_route_specs = (
 					event_type: 'password_change',
 					account_id: ctx.account.id,
 					ip: get_client_ip(c),
-					metadata: {sessions_revoked, tokens_revoked, credential_type},
+					metadata: { sessions_revoked, tokens_revoked, credential_type }
 				});
-				return c.json({ok: true, sessions_revoked, tokens_revoked});
-			},
-		},
+				return c.json({ ok: true, sessions_revoked, tokens_revoked });
+			}
+		}
 	];
 };

@@ -16,7 +16,7 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {test, assert, describe} from 'vitest';
+import { test, assert, describe } from 'vitest';
 
 import {
 	assert_surface_invariants,
@@ -27,38 +27,38 @@ import {
 	default_error_schema_tightness,
 	fuz_app_stock_route_tightness_allowlist,
 	type SurfaceSecurityPolicyOptions,
-	type ErrorSchemaTightnessOptions,
+	type ErrorSchemaTightnessOptions
 } from './surface_invariants.ts';
-import {describe_adversarial_input} from './adversarial_input.ts';
-import {describe_adversarial_404} from './adversarial_404.ts';
+import { describe_adversarial_input } from './adversarial_input.ts';
+import { describe_adversarial_404 } from './adversarial_404.ts';
 import {
 	create_test_app_from_specs,
 	create_test_request_context,
 	create_auth_test_apps,
 	select_auth_app,
-	resolve_test_path,
+	resolve_test_path
 } from './auth_apps.ts';
 import {
 	assert_surface_matches_snapshot,
 	assert_surface_deterministic,
 	assert_only_expected_public_routes,
 	assert_full_middleware_stack,
-	assert_error_schema_valid,
+	assert_error_schema_valid
 } from './assertions.ts';
-import type {MiddlewareSpec} from '../http/middleware_spec.ts';
-import type {RouteSpec} from '../http/route_spec.ts';
-import {merge_error_schemas} from '../http/schema_helpers.ts';
-import {collect_middleware_errors, type AppSurfaceSpec} from '../http/surface.ts';
+import type { MiddlewareSpec } from '../http/middleware_spec.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
+import { merge_error_schemas } from '../http/schema_helpers.ts';
+import { collect_middleware_errors, type AppSurfaceSpec } from '../http/surface.ts';
 import {
 	filter_protected_routes,
 	filter_role_routes,
-	filter_keeper_routes,
+	filter_keeper_routes
 } from '../http/surface_query.ts';
 import {
 	type RouteErrorSchemas,
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
-	ERROR_CREDENTIAL_TYPE_REQUIRED,
+	ERROR_CREDENTIAL_TYPE_REQUIRED
 } from '../http/error_schemas.ts';
 // --- Adversarial test runner ---
 
@@ -70,7 +70,7 @@ import {
  */
 const build_error_schema_lookup = (
 	route_specs: Array<RouteSpec>,
-	middleware_specs?: Array<MiddlewareSpec>,
+	middleware_specs?: Array<MiddlewareSpec>
 ): Map<string, RouteErrorSchemas> => {
 	const lookup: Map<string, RouteErrorSchemas> = new Map();
 	for (const spec of route_specs) {
@@ -104,8 +104,8 @@ export interface AdversarialTestOptions {
  * - correct auth passes guard — every protected route, assert not 401/403
  */
 export const describe_adversarial_auth = (options: AdversarialTestOptions): void => {
-	const {build, roles} = options;
-	const {surface, route_specs, middleware_specs} = build();
+	const { build, roles } = options;
+	const { surface, route_specs, middleware_specs } = build();
 	const protected_routes = filter_protected_routes(surface);
 
 	if (protected_routes.length === 0) return;
@@ -123,7 +123,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 			for (const route of protected_routes) {
 				test(`${route.method} ${route.path}`, async () => {
 					const res = await apps.public.request(resolve_test_path(route.path), {
-						method: route.method,
+						method: route.method
 					});
 					assert.strictEqual(res.status, 401, `${route.method} ${route.path}`);
 					const body = await res.json();
@@ -145,12 +145,12 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 					const wrong_roles = roles.filter((r) => !required_roles.includes(r));
 					for (const wrong_role of wrong_roles) {
 						test(`${route.method} ${route.path} (${wrong_role} instead of ${required_roles.join(
-							'|',
+							'|'
 						)})`, async () => {
 							const app = apps.by_role.get(wrong_role);
 							if (!app) throw new Error(`No test app for role '${wrong_role}'`);
 							const res = await app.request(resolve_test_path(route.path), {
-								method: route.method,
+								method: route.method
 							});
 							assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
 							const body = await res.json();
@@ -166,7 +166,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 				for (const route of role_only_routes) {
 					test(`${route.method} ${route.path}`, async () => {
 						const res = await apps.authed.request(resolve_test_path(route.path), {
-							method: route.method,
+							method: route.method
 						});
 						assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
 						const body = await res.json();
@@ -184,19 +184,19 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 				const app_session_keeper = create_test_app_from_specs(
 					route_specs,
 					create_test_request_context('keeper'),
-					'session',
+					'session'
 				);
 				for (const route of keeper_routes) {
 					test(`${route.method} ${route.path}`, async () => {
 						const res = await app_session_keeper.request(resolve_test_path(route.path), {
-							method: route.method,
+							method: route.method
 						});
 						assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
 						const body = await res.json();
 						assert.strictEqual(body.error, ERROR_CREDENTIAL_TYPE_REQUIRED);
 						assert.deepStrictEqual(
 							body.required_credential_types,
-							route.auth.credential_types ?? [],
+							route.auth.credential_types ?? []
 						);
 						assert_error_schema_valid(error_schema_lookup, route, 403, body);
 					});
@@ -209,7 +209,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 				test(`${route.method} ${route.path}`, async () => {
 					const res = await select_auth_app(apps, route.auth).request(
 						resolve_test_path(route.path),
-						{method: route.method},
+						{ method: route.method }
 					);
 					// handler may error (500) or return 404 (stub deps) — that's fine, we only verify auth passed
 					assert.notStrictEqual(res.status, 401, 'should not be 401 (auth rejected)');
@@ -249,7 +249,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
  * outside the standard suite but still wants the additive merge.
  */
 export const resolve_standard_error_schema_tightness = (
-	consumer: ErrorSchemaTightnessOptions | null | undefined,
+	consumer: ErrorSchemaTightnessOptions | null | undefined
 ): ErrorSchemaTightnessOptions | null => {
 	if (consumer === null) return null;
 	return {
@@ -258,8 +258,8 @@ export const resolve_standard_error_schema_tightness = (
 		allowlist: [...fuz_app_stock_route_tightness_allowlist, ...(consumer?.allowlist ?? [])],
 		ignore_statuses: [
 			...(default_error_schema_tightness.ignore_statuses ?? []),
-			...(consumer?.ignore_statuses ?? []),
-		],
+			...(consumer?.ignore_statuses ?? [])
+		]
 	};
 };
 
@@ -314,7 +314,7 @@ export interface StandardAttackSurfaceOptions {
  * any project-specific assertions in additional `describe` blocks.
  */
 export const describe_standard_attack_surface_tests = (
-	options: StandardAttackSurfaceOptions,
+	options: StandardAttackSurfaceOptions
 ): void => {
 	const {
 		build,
@@ -323,15 +323,15 @@ export const describe_standard_attack_surface_tests = (
 		expected_api_middleware,
 		roles,
 		api_path_prefix = '/api/',
-		security_policy,
+		security_policy
 	} = options;
 
 	const error_schema_tightness = resolve_standard_error_schema_tightness(
-		options.error_schema_tightness,
+		options.error_schema_tightness
 	);
 
 	const built = build();
-	const {surface} = built;
+	const { surface } = built;
 
 	describe('attack surface snapshot', () => {
 		test('matches committed snapshot', () => {
@@ -371,12 +371,12 @@ export const describe_standard_attack_surface_tests = (
 			const enumerated = entries.filter((e) => e.specificity === 'enum');
 			console.log(
 				`[error schema tightness] ${entries.length} total: ` +
-					`${literal.length} literal, ${enumerated.length} enum, ${generic.length} generic`,
+					`${literal.length} literal, ${enumerated.length} enum, ${generic.length} generic`
 			);
 			if (generic.length > 0) {
 				console.log(
 					`[error schema tightness] generic schemas:\n` +
-						generic.map((e) => `  ${e.method} ${e.route_path} → ${e.status}`).join('\n'),
+						generic.map((e) => `  ${e.method} ${e.route_path} → ${e.status}`).join('\n')
 				);
 			}
 			if (error_schema_tightness) {
@@ -385,9 +385,9 @@ export const describe_standard_attack_surface_tests = (
 		});
 	});
 
-	describe_adversarial_auth({build: () => built, roles});
+	describe_adversarial_auth({ build: () => built, roles });
 
-	describe_adversarial_input({build: () => built, roles});
+	describe_adversarial_input({ build: () => built, roles });
 
-	describe_adversarial_404({build: () => built, roles});
+	describe_adversarial_404({ build: () => built, roles });
 };

@@ -15,7 +15,7 @@
  * @module
  */
 
-import type {SerializableBootstrappedBackendHandle} from '$lib/testing/cross_backend/setup.ts';
+import type { SerializableBootstrappedBackendHandle } from '$lib/testing/cross_backend/setup.ts';
 
 declare module 'vitest' {
 	export interface ProvidedContext {

@@ -17,24 +17,24 @@
  * @module
  */
 
-import {test, assert} from 'vitest';
+import { test, assert } from 'vitest';
 
-import {cell_get_action_spec} from '$lib/auth/cell_action_specs.ts';
+import { cell_get_action_spec } from '$lib/auth/cell_action_specs.ts';
 import {
 	cell_item_insert_action_spec,
 	cell_item_list_action_spec,
-	type CellItemPosition,
+	type CellItemPosition
 } from '$lib/auth/cell_item_action_specs.ts';
 import {
 	cell_field_set_action_spec,
 	cell_field_list_action_spec,
-	type CellFieldName,
+	type CellFieldName
 } from '$lib/auth/cell_field_action_specs.ts';
-import {cell_grant_create_action_spec} from '$lib/auth/cell_grant_action_specs.ts';
-import {fractional_indices_between} from '@fuzdev/fuz_util/fractional_index.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
-import type {TestApp, TestAccount} from '$lib/testing/app_server.ts';
-import {describe_db, create_cell_test_app, create_cell, call} from './cell_test_helpers.ts';
+import { cell_grant_create_action_spec } from '$lib/auth/cell_grant_action_specs.ts';
+import { fractional_indices_between } from '@fuzdev/fuz_util/fractional_index.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { TestApp, TestAccount } from '$lib/testing/app_server.ts';
+import { describe_db, create_cell_test_app, create_cell, call } from './cell_test_helpers.ts';
 
 /**
  * Wire `pub_child` + `priv_child` under `parent` as both ordered items and
@@ -46,36 +46,36 @@ const wire_children = async (
 	owner: TestAccount,
 	parent_id: Uuid,
 	pub_child: Uuid,
-	priv_child: Uuid,
+	priv_child: Uuid
 ): Promise<void> => {
 	const headers = owner.create_session_headers();
 	const [p0, p1] = fractional_indices_between(null, null, 2);
 	const i0 = await call(
 		app,
 		cell_item_insert_action_spec,
-		{parent_id, child_id: pub_child, position: p0! as CellItemPosition},
-		headers,
+		{ parent_id, child_id: pub_child, position: p0! as CellItemPosition },
+		headers
 	);
 	assert.ok(i0.ok, JSON.stringify(i0));
 	const i1 = await call(
 		app,
 		cell_item_insert_action_spec,
-		{parent_id, child_id: priv_child, position: p1! as CellItemPosition},
-		headers,
+		{ parent_id, child_id: priv_child, position: p1! as CellItemPosition },
+		headers
 	);
 	assert.ok(i1.ok, JSON.stringify(i1));
 	const f0 = await call(
 		app,
 		cell_field_set_action_spec,
-		{source_id: parent_id, name: 'pub_link' as CellFieldName, target_id: pub_child},
-		headers,
+		{ source_id: parent_id, name: 'pub_link' as CellFieldName, target_id: pub_child },
+		headers
 	);
 	assert.ok(f0.ok, JSON.stringify(f0));
 	const f1 = await call(
 		app,
 		cell_field_set_action_spec,
-		{source_id: parent_id, name: 'priv_link' as CellFieldName, target_id: priv_child},
-		headers,
+		{ source_id: parent_id, name: 'priv_link' as CellFieldName, target_id: priv_child },
+		headers
 	);
 	assert.ok(f1.ok, JSON.stringify(f1));
 };
@@ -83,36 +83,36 @@ const wire_children = async (
 describe_db('cell relation visibility (D8)', (get_db) => {
 	test('public parent bundle hides the private child from an anonymous viewer', async () => {
 		const app = await create_cell_test_app(get_db);
-		const owner = await app.create_account({username: 'rel_owner'});
-		const {id: parent} = await create_cell(app, {
+		const owner = await app.create_account({ username: 'rel_owner' });
+		const { id: parent } = await create_cell(app, {
 			kind: 'collection',
 			data: {},
 			visibility: 'public',
-			headers: owner.create_session_headers(),
+			headers: owner.create_session_headers()
 		});
-		const {id: pub_child} = await create_cell(app, {
+		const { id: pub_child } = await create_cell(app, {
 			kind: 'note',
-			data: {label: 'pub'},
+			data: { label: 'pub' },
 			visibility: 'public',
-			headers: owner.create_session_headers(),
+			headers: owner.create_session_headers()
 		});
-		const {id: priv_child} = await create_cell(app, {
+		const { id: priv_child } = await create_cell(app, {
 			kind: 'note',
-			data: {label: 'secret'},
-			headers: owner.create_session_headers(),
+			data: { label: 'secret' },
+			headers: owner.create_session_headers()
 		});
 		await wire_children(app, owner, parent, pub_child, priv_child);
 
 		// Anonymous: only the public child surfaces.
-		const got = await call(app, cell_get_action_spec, {id: parent});
+		const got = await call(app, cell_get_action_spec, { id: parent });
 		assert.ok(got.ok, JSON.stringify(got));
 		assert.deepStrictEqual(
 			got.result.items.map((i) => i.child_id),
-			[pub_child],
+			[pub_child]
 		);
 		assert.deepStrictEqual(
 			got.result.fields.map((f) => f.target_id),
-			[pub_child],
+			[pub_child]
 		);
 		// Truncation flags reflect the raw (pre-filter) relation size: both
 		// relations had 2 rows, well under the bundle cap.
@@ -122,64 +122,69 @@ describe_db('cell relation visibility (D8)', (get_db) => {
 
 	test('forward item/field list filters the private child for an anonymous viewer', async () => {
 		const app = await create_cell_test_app(get_db);
-		const owner = await app.create_account({username: 'rel_owner_list'});
-		const {id: parent} = await create_cell(app, {
+		const owner = await app.create_account({ username: 'rel_owner_list' });
+		const { id: parent } = await create_cell(app, {
 			kind: 'collection',
 			data: {},
 			visibility: 'public',
-			headers: owner.create_session_headers(),
+			headers: owner.create_session_headers()
 		});
-		const {id: pub_child} = await create_cell(app, {
+		const { id: pub_child } = await create_cell(app, {
 			kind: 'note',
 			data: {},
 			visibility: 'public',
-			headers: owner.create_session_headers(),
+			headers: owner.create_session_headers()
 		});
-		const {id: priv_child} = await create_cell(app, {
+		const { id: priv_child } = await create_cell(app, {
 			kind: 'note',
 			data: {},
-			headers: owner.create_session_headers(),
+			headers: owner.create_session_headers()
 		});
 		await wire_children(app, owner, parent, pub_child, priv_child);
 
-		const items = await call(app, cell_item_list_action_spec, {parent_id: parent});
+		const items = await call(app, cell_item_list_action_spec, { parent_id: parent });
 		assert.ok(items.ok, JSON.stringify(items));
 		assert.deepStrictEqual(
 			items.result.items.map((i) => i.child_id),
-			[pub_child],
+			[pub_child]
 		);
 
-		const fields = await call(app, cell_field_list_action_spec, {source_id: parent});
+		const fields = await call(app, cell_field_list_action_spec, { source_id: parent });
 		assert.ok(fields.ok, JSON.stringify(fields));
 		assert.deepStrictEqual(
 			fields.result.fields.map((f) => f.target_id),
-			[pub_child],
+			[pub_child]
 		);
 	});
 
 	test('owner sees both children in their own bundle', async () => {
 		const app = await create_cell_test_app(get_db);
-		const owner = await app.create_account({username: 'rel_owner_self'});
-		const {id: parent} = await create_cell(app, {
+		const owner = await app.create_account({ username: 'rel_owner_self' });
+		const { id: parent } = await create_cell(app, {
 			kind: 'collection',
 			data: {},
 			visibility: 'public',
-			headers: owner.create_session_headers(),
+			headers: owner.create_session_headers()
 		});
-		const {id: pub_child} = await create_cell(app, {
+		const { id: pub_child } = await create_cell(app, {
 			kind: 'note',
 			data: {},
 			visibility: 'public',
-			headers: owner.create_session_headers(),
+			headers: owner.create_session_headers()
 		});
-		const {id: priv_child} = await create_cell(app, {
+		const { id: priv_child } = await create_cell(app, {
 			kind: 'note',
 			data: {},
-			headers: owner.create_session_headers(),
+			headers: owner.create_session_headers()
 		});
 		await wire_children(app, owner, parent, pub_child, priv_child);
 
-		const got = await call(app, cell_get_action_spec, {id: parent}, owner.create_session_headers());
+		const got = await call(
+			app,
+			cell_get_action_spec,
+			{ id: parent },
+			owner.create_session_headers()
+		);
 		assert.ok(got.ok, JSON.stringify(got));
 		assert.strictEqual(got.result.items.length, 2);
 		assert.strictEqual(got.result.fields.length, 2);
@@ -187,22 +192,22 @@ describe_db('cell relation visibility (D8)', (get_db) => {
 
 	test('viewer-grant on a private parent sees only independently-viewable children', async () => {
 		const app = await create_cell_test_app(get_db);
-		const owner = await app.create_account({username: 'rel_owner_grant'});
-		const viewer = await app.create_account({username: 'rel_viewer'});
-		const {id: parent} = await create_cell(app, {
+		const owner = await app.create_account({ username: 'rel_owner_grant' });
+		const viewer = await app.create_account({ username: 'rel_viewer' });
+		const { id: parent } = await create_cell(app, {
 			kind: 'collection',
 			data: {},
-			headers: owner.create_session_headers(),
+			headers: owner.create_session_headers()
 		});
-		const {id: shared_child} = await create_cell(app, {
+		const { id: shared_child } = await create_cell(app, {
 			kind: 'note',
 			data: {},
-			headers: owner.create_session_headers(),
+			headers: owner.create_session_headers()
 		});
-		const {id: priv_child} = await create_cell(app, {
+		const { id: priv_child } = await create_cell(app, {
 			kind: 'note',
 			data: {},
-			headers: owner.create_session_headers(),
+			headers: owner.create_session_headers()
 		});
 		await wire_children(app, owner, parent, shared_child, priv_child);
 
@@ -211,8 +216,8 @@ describe_db('cell relation visibility (D8)', (get_db) => {
 			const g = await call(
 				app,
 				cell_grant_create_action_spec,
-				{cell_id, level: 'viewer', principal: {kind: 'actor', actor_id: viewer.actor.id}},
-				owner.create_session_headers(),
+				{ cell_id, level: 'viewer', principal: { kind: 'actor', actor_id: viewer.actor.id } },
+				owner.create_session_headers()
 			);
 			assert.ok(g.ok, JSON.stringify(g));
 		}
@@ -220,17 +225,17 @@ describe_db('cell relation visibility (D8)', (get_db) => {
 		const got = await call(
 			app,
 			cell_get_action_spec,
-			{id: parent},
-			viewer.create_session_headers(),
+			{ id: parent },
+			viewer.create_session_headers()
 		);
 		assert.ok(got.ok, JSON.stringify(got));
 		assert.deepStrictEqual(
 			got.result.items.map((i) => i.child_id),
-			[shared_child],
+			[shared_child]
 		);
 		assert.deepStrictEqual(
 			got.result.fields.map((f) => f.target_id),
-			[shared_child],
+			[shared_child]
 		);
 	});
 });

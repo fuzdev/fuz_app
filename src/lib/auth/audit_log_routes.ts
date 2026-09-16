@@ -12,14 +12,14 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type {RouteSpec} from '../http/route_spec.ts';
-import {create_audit_log_route_shape} from './audit_log_route_schema.ts';
-import {create_sse_response, type SseStream, type SseNotification} from '../realtime/sse.ts';
-import type {SubscribeOptions} from '../realtime/subscriber_registry.ts';
-import {AUTH_SESSION_TOKEN_HASH_KEY, require_request_context} from './request_context.ts';
-import {AUDIT_LOG_CHANNEL} from '../realtime/sse_auth_guard.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
+import { create_audit_log_route_shape } from './audit_log_route_schema.ts';
+import { create_sse_response, type SseStream, type SseNotification } from '../realtime/sse.ts';
+import type { SubscribeOptions } from '../realtime/subscriber_registry.ts';
+import { AUTH_SESSION_TOKEN_HASH_KEY, require_request_context } from './request_context.ts';
+import { AUDIT_LOG_CHANNEL } from '../realtime/sse_auth_guard.ts';
 
 /** Options for audit log route specs. */
 export interface AuditLogRouteOptions {
@@ -48,7 +48,7 @@ export interface AuditLogRouteOptions {
 export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Array<RouteSpec> => {
 	if (!options?.stream) return [];
 
-	const {subscribe, log} = options.stream;
+	const { subscribe, log } = options.stream;
 	return [
 		{
 			...create_audit_log_route_shape(options.required_role),
@@ -59,15 +59,15 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 				// (uncapped → coarse close on role_grant_revoke / session_revoke_all
 				// / password_change).
 				const token_hash = c.get(AUTH_SESSION_TOKEN_HASH_KEY) ?? null;
-				const {response, stream} = create_sse_response<SseNotification>(c, log);
+				const { response, stream } = create_sse_response<SseNotification>(c, log);
 				const unsubscribe = subscribe(stream, {
 					channels: [AUDIT_LOG_CHANNEL],
 					scope: token_hash ?? undefined,
-					groups: [ctx.account.id],
+					groups: [ctx.account.id]
 				});
 				stream.on_close(unsubscribe);
 				return response;
-			},
-		},
+			}
+		}
 	];
 };

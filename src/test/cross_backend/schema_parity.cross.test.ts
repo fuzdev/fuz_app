@@ -32,16 +32,16 @@
  * @module
  */
 
-import {inject, describe, test} from 'vitest';
+import { inject, describe, test } from 'vitest';
 
 import {
 	capture_schema_snapshot,
 	capture_migration_tracker,
-	reconstruct_bootstrapped_handle,
+	reconstruct_bootstrapped_handle
 } from '$lib/testing/cross_backend/setup.ts';
 import {
 	assert_schema_snapshots_equal,
-	assert_migration_trackers_equal,
+	assert_migration_trackers_equal
 } from '$lib/testing/schema_parity.ts';
 
 import './cross_test_types.ts';
@@ -52,9 +52,9 @@ describe('cross-backend schema parity', () => {
 		const rust = reconstruct_bootstrapped_handle(inject('parity_handle_b'));
 		const [ts_snapshot, rust_snapshot] = await Promise.all([
 			capture_schema_snapshot(ts),
-			capture_schema_snapshot(rust),
+			capture_schema_snapshot(rust)
 		]);
-		assert_schema_snapshots_equal(ts_snapshot, rust_snapshot, {a: 'ts', b: 'rust'});
+		assert_schema_snapshots_equal(ts_snapshot, rust_snapshot, { a: 'ts', b: 'rust' });
 	});
 
 	// The migration-identity gate the schema snapshot is blind to: the two
@@ -71,8 +71,8 @@ describe('cross-backend schema parity', () => {
 		const rust = reconstruct_bootstrapped_handle(inject('parity_handle_b'));
 		const [ts_tracker, rust_tracker] = await Promise.all([
 			capture_migration_tracker(ts),
-			capture_migration_tracker(rust),
+			capture_migration_tracker(rust)
 		]);
-		assert_migration_trackers_equal(ts_tracker, rust_tracker, {a: 'ts', b: 'rust'});
+		assert_migration_trackers_equal(ts_tracker, rust_tracker, { a: 'ts', b: 'rust' });
 	});
 });

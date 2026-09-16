@@ -13,21 +13,21 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
-import {z} from 'zod';
+import { describe, test, assert } from 'vitest';
+import { z } from 'zod';
 
-import {generate_input_test_cases} from '$lib/testing/adversarial_input.ts';
-import {generate_valid_body} from '$lib/testing/schema_generators.ts';
+import { generate_input_test_cases } from '$lib/testing/adversarial_input.ts';
+import { generate_valid_body } from '$lib/testing/schema_generators.ts';
 
 describe('generate_input_test_cases — refine fallback', () => {
 	test('synthesizes a base body for a top-level .refine() over optional fields', () => {
 		const schema = z
 			.strictObject({
 				a: z.string().optional(),
-				b: z.string().optional(),
+				b: z.string().optional()
 			})
 			.refine((v) => v.a != null || v.b != null, {
-				message: 'at least one of a or b is required',
+				message: 'at least one of a or b is required'
 			});
 
 		const cases = generate_input_test_cases(schema);
@@ -38,7 +38,7 @@ describe('generate_input_test_cases — refine fallback', () => {
 		const schema = z
 			.strictObject({
 				email: z.string().optional(),
-				username: z.string().optional(),
+				username: z.string().optional()
 			})
 			.refine((v) => v.email != null || v.username != null);
 

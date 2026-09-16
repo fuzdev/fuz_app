@@ -4,38 +4,38 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import {z} from 'zod';
+import { describe, assert, test } from 'vitest';
+import { z } from 'zod';
 
 import {
 	derive_http_method,
 	create_action_route_spec,
-	create_action_event_spec,
+	create_action_event_spec
 } from '$lib/actions/action_bridge.ts';
-import type {ActionSpec} from '$lib/actions/action_spec.ts';
+import type { ActionSpec } from '$lib/actions/action_spec.ts';
 
 const create_request_response_spec = (): ActionSpec => ({
 	method: 'thing_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none'},
+	auth: { account: 'required', actor: 'none' },
 	side_effects: true,
-	input: z.strictObject({name: z.string()}),
-	output: z.strictObject({id: z.string()}),
+	input: z.strictObject({ name: z.string() }),
+	output: z.strictObject({ id: z.string() }),
 	async: true,
-	description: 'Create a thing',
+	description: 'Create a thing'
 });
 
 const create_public_get_spec = (): ActionSpec => ({
 	method: 'thing_list',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'none', actor: 'none'},
+	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
 	input: z.null(),
-	output: z.strictObject({items: z.array(z.string())}),
+	output: z.strictObject({ items: z.array(z.string()) }),
 	async: true,
-	description: 'List things',
+	description: 'List things'
 });
 
 const create_notification_spec = (): ActionSpec => ({
@@ -44,10 +44,10 @@ const create_notification_spec = (): ActionSpec => ({
 	initiator: 'backend',
 	auth: null,
 	side_effects: true,
-	input: z.strictObject({id: z.string(), name: z.string()}),
+	input: z.strictObject({ id: z.string(), name: z.string() }),
 	output: z.void(),
 	async: true,
-	description: 'A thing was created',
+	description: 'A thing was created'
 });
 
 const create_local_call_spec = (): ActionSpec => ({
@@ -59,7 +59,7 @@ const create_local_call_spec = (): ActionSpec => ({
 	input: z.null(),
 	output: z.null(),
 	async: false,
-	description: 'Toggle the menu',
+	description: 'Toggle the menu'
 });
 
 const noop_handler = (c: any) => c.json({});
@@ -79,12 +79,12 @@ describe('create_action_route_spec', () => {
 		const spec = create_request_response_spec();
 		const route = create_action_route_spec(spec, {
 			path: '/api/things',
-			handler: noop_handler,
+			handler: noop_handler
 		});
 
 		assert.strictEqual(route.method, 'POST');
 		assert.strictEqual(route.path, '/api/things');
-		assert.deepStrictEqual(route.auth, {account: 'required', actor: 'none'});
+		assert.deepStrictEqual(route.auth, { account: 'required', actor: 'none' });
 		assert.strictEqual(route.description, 'Create a thing');
 		assert.strictEqual(route.handler, noop_handler);
 		assert.strictEqual(route.input, spec.input);
@@ -95,11 +95,11 @@ describe('create_action_route_spec', () => {
 		const spec = create_public_get_spec();
 		const route = create_action_route_spec(spec, {
 			path: '/api/things',
-			handler: noop_handler,
+			handler: noop_handler
 		});
 
 		assert.strictEqual(route.method, 'GET');
-		assert.deepStrictEqual(route.auth, {account: 'none', actor: 'none'});
+		assert.deepStrictEqual(route.auth, { account: 'none', actor: 'none' });
 	});
 
 	test('allows http_method override', () => {
@@ -107,7 +107,7 @@ describe('create_action_route_spec', () => {
 		const route = create_action_route_spec(spec, {
 			path: '/api/things',
 			handler: noop_handler,
-			http_method: 'PUT',
+			http_method: 'PUT'
 		});
 
 		assert.strictEqual(route.method, 'PUT');
@@ -116,10 +116,14 @@ describe('create_action_route_spec', () => {
 	test('derives role auth from spec without options override', () => {
 		const spec: ActionSpec = {
 			...create_request_response_spec(),
-			auth: {account: 'required', actor: 'required', roles: ['admin']},
+			auth: { account: 'required', actor: 'required', roles: ['admin'] }
 		};
-		const route = create_action_route_spec(spec, {path: '/api/things', handler: noop_handler});
-		assert.deepStrictEqual(route.auth, {account: 'required', actor: 'required', roles: ['admin']});
+		const route = create_action_route_spec(spec, { path: '/api/things', handler: noop_handler });
+		assert.deepStrictEqual(route.auth, {
+			account: 'required',
+			actor: 'required',
+			roles: ['admin']
+		});
 	});
 
 	test('allows auth override', () => {
@@ -131,31 +135,31 @@ describe('create_action_route_spec', () => {
 				account: 'required',
 				actor: 'required',
 				roles: ['keeper'],
-				credential_types: ['daemon_token'],
-			},
+				credential_types: ['daemon_token']
+			}
 		});
 
 		assert.deepStrictEqual(route.auth, {
 			account: 'required',
 			actor: 'required',
 			roles: ['keeper'],
-			credential_types: ['daemon_token'],
+			credential_types: ['daemon_token']
 		});
 	});
 
 	test('throws for null auth', () => {
 		const spec = create_notification_spec();
 		assert.throws(
-			() => create_action_route_spec(spec, {path: '/api/x', handler: noop_handler}),
-			/auth is null/,
+			() => create_action_route_spec(spec, { path: '/api/x', handler: noop_handler }),
+			/auth is null/
 		);
 	});
 
 	test('throws for local_call with null auth', () => {
 		const spec = create_local_call_spec();
 		assert.throws(
-			() => create_action_route_spec(spec, {path: '/api/x', handler: noop_handler}),
-			/auth is null/,
+			() => create_action_route_spec(spec, { path: '/api/x', handler: noop_handler }),
+			/auth is null/
 		);
 	});
 
@@ -163,7 +167,7 @@ describe('create_action_route_spec', () => {
 		const spec = create_public_get_spec();
 		const route = create_action_route_spec(spec, {
 			path: '/api/things',
-			handler: noop_handler,
+			handler: noop_handler
 		});
 
 		assert.strictEqual(route.description, 'List things');
@@ -171,11 +175,11 @@ describe('create_action_route_spec', () => {
 
 	test('passes through errors from options', () => {
 		const spec = create_request_response_spec();
-		const errors = {404: z.looseObject({error: z.literal('not_found')})};
+		const errors = { 404: z.looseObject({ error: z.literal('not_found') }) };
 		const route = create_action_route_spec(spec, {
 			path: '/api/things',
 			handler: noop_handler,
-			errors,
+			errors
 		});
 
 		assert.strictEqual(route.errors, errors);
@@ -185,7 +189,7 @@ describe('create_action_route_spec', () => {
 		const spec = create_request_response_spec();
 		const route = create_action_route_spec(spec, {
 			path: '/api/things',
-			handler: noop_handler,
+			handler: noop_handler
 		});
 
 		assert.strictEqual(route.errors, undefined);
@@ -195,7 +199,7 @@ describe('create_action_route_spec', () => {
 		const spec = create_request_response_spec(); // side_effects: true
 		const route = create_action_route_spec(spec, {
 			path: '/api/things',
-			handler: noop_handler,
+			handler: noop_handler
 		});
 
 		assert.strictEqual(route.transaction, true);
@@ -205,7 +209,7 @@ describe('create_action_route_spec', () => {
 		const spec = create_public_get_spec(); // side_effects: false
 		const route = create_action_route_spec(spec, {
 			path: '/api/things',
-			handler: noop_handler,
+			handler: noop_handler
 		});
 
 		assert.strictEqual(route.transaction, false);
@@ -227,15 +231,15 @@ const consumer_spec_cases: Array<{
 			method: 'zap_plan',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: {account: 'required', actor: 'required', roles: ['admin']},
+			auth: { account: 'required', actor: 'required', roles: ['admin'] },
 			side_effects: false,
 			async: true,
-			input: z.strictObject({config: z.any()}),
-			output: z.looseObject({plan: z.any(), warnings: z.array(z.string())}),
-			description: 'Generate plan from options',
+			input: z.strictObject({ config: z.any() }),
+			output: z.looseObject({ plan: z.any(), warnings: z.array(z.string()) }),
+			description: 'Generate plan from options'
 		},
 		expected_method: 'GET',
-		expected_auth: {account: 'required', actor: 'required', roles: ['admin']},
+		expected_auth: { account: 'required', actor: 'required', roles: ['admin'] }
 	},
 	{
 		name: 'zap_apply (keeper auth, side_effects → POST)',
@@ -247,21 +251,21 @@ const consumer_spec_cases: Array<{
 				account: 'required',
 				actor: 'required',
 				roles: ['keeper'],
-				credential_types: ['daemon_token'],
+				credential_types: ['daemon_token']
 			},
 			side_effects: true,
 			async: true,
-			input: z.strictObject({run_id: z.string()}),
+			input: z.strictObject({ run_id: z.string() }),
 			output: z.null(),
-			description: 'Execute plan',
+			description: 'Execute plan'
 		},
 		expected_method: 'POST',
 		expected_auth: {
 			account: 'required',
 			actor: 'required',
 			roles: ['keeper'],
-			credential_types: ['daemon_token'],
-		},
+			credential_types: ['daemon_token']
+		}
 	},
 	{
 		name: 'zzz ping (public, no side_effects → GET)',
@@ -269,15 +273,15 @@ const consumer_spec_cases: Array<{
 			method: 'ping',
 			kind: 'request_response',
 			initiator: 'both',
-			auth: {account: 'none', actor: 'none'},
+			auth: { account: 'none', actor: 'none' },
 			side_effects: false,
 			async: true,
 			input: z.void().optional(),
-			output: z.strictObject({ping_id: z.number()}),
-			description: 'Health check',
+			output: z.strictObject({ ping_id: z.number() }),
+			description: 'Health check'
 		},
 		expected_method: 'GET',
-		expected_auth: {account: 'none', actor: 'none'},
+		expected_auth: { account: 'none', actor: 'none' }
 	},
 	{
 		name: 'zzz completion_create (public, side_effects → POST)',
@@ -285,15 +289,15 @@ const consumer_spec_cases: Array<{
 			method: 'completion_create',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: {account: 'none', actor: 'none'},
+			auth: { account: 'none', actor: 'none' },
 			side_effects: true,
 			async: true,
-			input: z.strictObject({prompt: z.string()}),
-			output: z.strictObject({response: z.string()}),
-			description: 'Start an AI completion request',
+			input: z.strictObject({ prompt: z.string() }),
+			output: z.strictObject({ response: z.string() }),
+			description: 'Start an AI completion request'
 		},
 		expected_method: 'POST',
-		expected_auth: {account: 'none', actor: 'none'},
+		expected_auth: { account: 'none', actor: 'none' }
 	},
 	{
 		name: 'authenticated action (authenticated, side_effects → POST)',
@@ -301,26 +305,26 @@ const consumer_spec_cases: Array<{
 			method: 'session_load',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: {account: 'required', actor: 'none'},
+			auth: { account: 'required', actor: 'none' },
 			side_effects: true,
 			async: true,
 			input: z.null(),
-			output: z.strictObject({data: z.any()}),
-			description: 'Load session data',
+			output: z.strictObject({ data: z.any() }),
+			description: 'Load session data'
 		},
 		expected_method: 'POST',
-		expected_auth: {account: 'required', actor: 'none'},
-	},
+		expected_auth: { account: 'required', actor: 'none' }
+	}
 ];
 
 describe('create_action_route_spec — consumer spec shapes', () => {
 	for (const tc of consumer_spec_cases) {
 		test(`${tc.name}: method=${tc.expected_method}, auth=${JSON.stringify(
-			tc.expected_auth,
+			tc.expected_auth
 		)}`, () => {
 			const route = create_action_route_spec(tc.spec, {
 				path: `/api/${tc.spec.method}`,
-				handler: noop_handler,
+				handler: noop_handler
 			});
 			assert.strictEqual(route.method, tc.expected_method);
 			assert.deepStrictEqual(route.auth, tc.expected_auth);
@@ -346,11 +350,11 @@ const notification_spec_cases: Array<{
 			auth: null,
 			side_effects: true,
 			async: true,
-			input: z.strictObject({run_id: z.string(), status: z.string()}),
+			input: z.strictObject({ run_id: z.string(), status: z.string() }),
 			output: z.void(),
-			description: 'A new run was created',
+			description: 'A new run was created'
 		},
-		channel: 'runs',
+		channel: 'runs'
 	},
 	{
 		name: 'zzz filer_change',
@@ -361,18 +365,18 @@ const notification_spec_cases: Array<{
 			auth: null,
 			side_effects: true,
 			async: true,
-			input: z.strictObject({change: z.string(), path: z.string()}),
+			input: z.strictObject({ change: z.string(), path: z.string() }),
 			output: z.void(),
-			description: 'File system change detected',
+			description: 'File system change detected'
 		},
-		channel: 'files',
-	},
+		channel: 'files'
+	}
 ];
 
 describe('create_action_event_spec — consumer spec shapes', () => {
 	for (const tc of notification_spec_cases) {
 		test(`${tc.name}: channel=${tc.channel}`, () => {
-			const event = create_action_event_spec(tc.spec, {channel: tc.channel});
+			const event = create_action_event_spec(tc.spec, { channel: tc.channel });
 			assert.strictEqual(event.method, tc.spec.method);
 			assert.strictEqual(event.description, tc.spec.description);
 			assert.strictEqual(event.channel, tc.channel);
@@ -384,7 +388,7 @@ describe('create_action_event_spec — consumer spec shapes', () => {
 describe('create_action_event_spec', () => {
 	test('produces a valid EventSpec from remote_notification action', () => {
 		const spec = create_notification_spec();
-		const event = create_action_event_spec(spec, {channel: 'things'});
+		const event = create_action_event_spec(spec, { channel: 'things' });
 
 		assert.strictEqual(event.method, 'thing_created');
 		assert.strictEqual(event.description, 'A thing was created');

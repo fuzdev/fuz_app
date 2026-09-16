@@ -9,16 +9,16 @@
 	 * @module
 	 */
 
-	import {onMount} from 'svelte';
-	import {resolve} from '$app/paths';
+	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 
-	import {auth_state_context} from './auth_state.svelte.ts';
-	import {AdminAccountsState, admin_accounts_rpc_context} from './admin_accounts_state.svelte.ts';
-	import {AdminSessionsState} from './admin_sessions_state.svelte.ts';
-	import {AdminInvitesState, admin_invites_rpc_context} from './admin_invites_state.svelte.ts';
-	import {AuditLogState, audit_log_rpc_context} from './audit_log_state.svelte.ts';
-	import {AppSettingsState, app_settings_rpc_context} from './app_settings_state.svelte.ts';
-	import {format_relative_time, format_datetime_local} from './ui_format.ts';
+	import { auth_state_context } from './auth_state.svelte.ts';
+	import { AdminAccountsState, admin_accounts_rpc_context } from './admin_accounts_state.svelte.ts';
+	import { AdminSessionsState } from './admin_sessions_state.svelte.ts';
+	import { AdminInvitesState, admin_invites_rpc_context } from './admin_invites_state.svelte.ts';
+	import { AuditLogState, audit_log_rpc_context } from './audit_log_state.svelte.ts';
+	import { AppSettingsState, app_settings_rpc_context } from './app_settings_state.svelte.ts';
+	import { format_relative_time, format_datetime_local } from './ui_format.ts';
 	import ConfirmButton from './ConfirmButton.svelte';
 
 	const auth_state = auth_state_context.get();
@@ -28,11 +28,11 @@
 	const get_audit_log_rpc = audit_log_rpc_context.get();
 	const get_app_settings_rpc = app_settings_rpc_context.get();
 
-	const accounts = new AdminAccountsState({get_rpc: get_accounts_rpc});
-	const sessions = new AdminSessionsState({get_rpc: get_accounts_rpc});
-	const invites = new AdminInvitesState({get_rpc: get_invites_rpc});
-	const audit_log = new AuditLogState({get_rpc: get_audit_log_rpc});
-	const app_settings = new AppSettingsState({get_rpc: get_app_settings_rpc});
+	const accounts = new AdminAccountsState({ get_rpc: get_accounts_rpc });
+	const sessions = new AdminSessionsState({ get_rpc: get_accounts_rpc });
+	const invites = new AdminInvitesState({ get_rpc: get_invites_rpc });
+	const audit_log = new AuditLogState({ get_rpc: get_audit_log_rpc });
+	const app_settings = new AppSettingsState({ get_rpc: get_app_settings_rpc });
 
 	// accounts - dynamic role breakdown
 	const role_counts = $derived.by(() => {
@@ -47,7 +47,7 @@
 		return Array.from(counts.entries());
 	});
 	const unroled_count = $derived(
-		accounts.accounts.filter((a) => a.role_grants.length === 0).length,
+		accounts.accounts.filter((a) => a.role_grants.length === 0).length
 	);
 
 	// sessions
@@ -55,20 +55,20 @@
 	const most_recent = $derived(
 		sessions.sessions.length > 0
 			? sessions.sessions.reduce((a, b) =>
-					new Date(a.last_seen_at) > new Date(b.last_seen_at) ? a : b,
+					new Date(a.last_seen_at) > new Date(b.last_seen_at) ? a : b
 				)
-			: null,
+			: null
 	);
 
 	// audit log
 	const recent_events = $derived(audit_log.events.slice(0, 8));
 	const failed_logins = $derived(
-		audit_log.events.filter((e) => e.event_type === 'login' && e.outcome === 'failure'),
+		audit_log.events.filter((e) => e.event_type === 'login' && e.outcome === 'failure')
 	);
 	const role_grant_changes = $derived(
 		audit_log.events.filter(
-			(e) => e.event_type === 'role_grant_create' || e.event_type === 'role_grant_revoke',
-		),
+			(e) => e.event_type === 'role_grant_create' || e.event_type === 'role_grant_revoke'
+		)
 	);
 
 	onMount(() => {
@@ -76,8 +76,8 @@
 			accounts.fetch(),
 			sessions.fetch(),
 			invites.fetch(),
-			audit_log.fetch({limit: 30}),
-			app_settings.fetch(),
+			audit_log.fetch({ limit: 30 }),
+			app_settings.fetch()
 		]);
 	});
 </script>
@@ -148,9 +148,9 @@
 				<div class="baseline-row gap_xs font_size_sm mt_sm">
 					<span class="text_50">last active:</span>
 					<strong>{most_recent.username}</strong>
-					<span class="text_50" title={format_datetime_local(most_recent.last_seen_at)}
-						>{format_relative_time(most_recent.last_seen_at)}</span
-					>
+					<span class="text_50" title={format_datetime_local(most_recent.last_seen_at)}>
+						{format_relative_time(most_recent.last_seen_at)}
+					</span>
 				</div>
 			{/if}
 		{/if}
@@ -216,9 +216,9 @@
 			<ul class="compact-list">
 				{#each recent_events as event (event.id)}
 					<li>
-						<span class="text_50 font_size_sm" title={format_datetime_local(event.created_at)}
-							>{format_relative_time(event.created_at)}</span
-						>
+						<span class="text_50 font_size_sm" title={format_datetime_local(event.created_at)}>
+							{format_relative_time(event.created_at)}
+						</span>
 						<code class="font_size_sm">{event.event_type}</code>
 						{#if event.outcome === 'failure'}
 							<span class="chip font_size_sm palette_c">fail</span>
@@ -253,9 +253,9 @@
 				<ul class="compact-list">
 					{#each role_grant_changes.slice(0, 4) as event (event.id)}
 						<li class="font_size_sm">
-							<span class="text_50" title={format_datetime_local(event.created_at)}
-								>{format_relative_time(event.created_at)}</span
-							>
+							<span class="text_50" title={format_datetime_local(event.created_at)}>
+								{format_relative_time(event.created_at)}
+							</span>
 							<code>{event.event_type === 'role_grant_create' ? 'grant' : 'revoke'}</code>
 							{#if event.metadata?.role}
 								<span class="chip font_size_sm">{event.metadata.role}</span>
@@ -311,7 +311,7 @@
 					label="log out"
 				>
 					{#snippet popover_button_content()}
-						<span class="p_md"> log out </span>
+						<span class="p_md">log out</span>
 					{/snippet}
 				</ConfirmButton>
 			</div>

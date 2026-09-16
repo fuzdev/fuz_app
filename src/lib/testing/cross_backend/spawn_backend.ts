@@ -28,11 +28,11 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {spawn, type ChildProcess} from 'node:child_process';
-import {readFile, writeFile, mkdir} from 'node:fs/promises';
-import {dirname} from 'node:path';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
 
-import type {BackendConfig} from './backend_config.ts';
+import type { BackendConfig } from './backend_config.ts';
 
 /* eslint-disable @typescript-eslint/no-base-to-string */
 
@@ -81,7 +81,7 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 const wait_for_health = async (
 	url: string,
 	timeout_ms: number,
-	is_alive: () => boolean,
+	is_alive: () => boolean
 ): Promise<void> => {
 	const deadline = Date.now() + timeout_ms;
 	let last_error: unknown;
@@ -92,7 +92,7 @@ const wait_for_health = async (
 					last_error
 						? ` (last probe error: ${(last_error as Error).message ?? String(last_error)})`
 						: ''
-				}`,
+				}`
 			);
 		}
 		try {
@@ -112,7 +112,7 @@ const wait_for_health = async (
 	throw new Error(
 		`health probe to ${url} timed out after ${timeout_ms}ms (last error: ${
 			last_error ? ((last_error as Error).message ?? String(last_error)) : 'none'
-		})`,
+		})`
 	);
 };
 
@@ -176,11 +176,11 @@ const read_daemon_token = async (path: string): Promise<string> => {
 					typeof parsed !== 'object' ||
 					parsed === null ||
 					!('token' in parsed) ||
-					typeof (parsed as {token: unknown}).token !== 'string'
+					typeof (parsed as { token: unknown }).token !== 'string'
 				) {
 					throw new Error(`expected {token: string}, got ${raw}`);
 				}
-				return (parsed as {token: string}).token;
+				return (parsed as { token: string }).token;
 			}
 		} catch (err) {
 			last_error = err;
@@ -190,7 +190,7 @@ const read_daemon_token = async (path: string): Promise<string> => {
 	throw new Error(
 		`daemon token file ${path} never became readable as {token: string} (last error: ${
 			last_error ? ((last_error as Error).message ?? String(last_error)) : 'none'
-		})`,
+		})`
 	);
 };
 
@@ -208,18 +208,18 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 
 	// Write the bootstrap token file before spawn so the binary reads it
 	// at boot.
-	await mkdir(dirname(config.bootstrap.token_path), {recursive: true});
-	await writeFile(config.bootstrap.token_path, config.bootstrap.token, {mode: 0o600});
+	await mkdir(dirname(config.bootstrap.token_path), { recursive: true });
+	await writeFile(config.bootstrap.token_path, config.bootstrap.token, { mode: 0o600 });
 
 	install_process_handlers();
 
 	const [command, ...args] = config.start_command;
 	const child = spawn(command!, args, {
-		env: {...process.env, ...config.env},
+		env: { ...process.env, ...config.env },
 		// Own process group so SIGTERM to the negative PID tears down the
 		// binary's descendants too — Hono workers, PTY children, etc.
 		detached: true,
-		stdio: ['ignore', 'pipe', 'pipe'],
+		stdio: ['ignore', 'pipe', 'pipe']
 	});
 
 	// Buffer stderr so a startup-time crash surfaces with context.
@@ -245,9 +245,9 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 	// long suite.
 	child.stdout?.on('data', () => {});
 
-	let exit_info: {code: number | null; signal: NodeJS.Signals | null} | null = null;
+	let exit_info: { code: number | null; signal: NodeJS.Signals | null } | null = null;
 	child.on('exit', (code, signal) => {
-		exit_info = {code, signal};
+		exit_info = { code, signal };
 	});
 
 	const is_alive = (): boolean => exit_info === null;
@@ -302,16 +302,16 @@ export const spawn_backend = async (config: BackendConfig): Promise<BackendHandl
 		await wait_for_health(
 			`${config.base_url}${config.health_path}`,
 			config.startup_timeout_ms,
-			is_alive,
+			is_alive
 		);
 		const daemon_token = await read_daemon_token(config.bootstrap.daemon_token_path);
-		return {config, child, daemon_token, teardown};
+		return { config, child, daemon_token, teardown };
 	} catch (err) {
 		await teardown();
 		const stderr_dump = Buffer.concat(stderr_chunks).toString('utf-8');
 		const stderr_tail = stderr_dump.length > 0 ? `\nstderr:\n${stderr_dump}` : '';
 		throw new Error(
-			`spawn_backend(${config.name}) failed: ${(err as Error).message}${stderr_tail}`,
+			`spawn_backend(${config.name}) failed: ${(err as Error).message}${stderr_tail}`
 		);
 	}
 };

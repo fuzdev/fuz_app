@@ -4,22 +4,22 @@
  * @module
  */
 
-import {describe, assert, test, vi} from 'vitest';
-import {Hono} from 'hono';
-import {z} from 'zod';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { describe, assert, test, vi } from 'vitest';
+import { Hono } from 'hono';
+import { z } from 'zod';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	create_sse_response,
 	create_validated_broadcaster,
 	type SseNotification,
 	type EventSpec,
-	type SseStream,
+	type SseStream
 } from '$lib/realtime/sse.ts';
-import {SSE_CONNECTED_COMMENT} from '$lib/realtime/sse_constants.ts';
-import {SubscriberRegistry} from '$lib/realtime/subscriber_registry.ts';
+import { SSE_CONNECTED_COMMENT } from '$lib/realtime/sse_constants.ts';
+import { SubscriberRegistry } from '$lib/realtime/subscriber_registry.ts';
 
-const log = new Logger('test', {level: 'off'});
+const log = new Logger('test', { level: 'off' });
 
 /** Helper — expected prefix for all SSE responses. */
 const C = SSE_CONNECTED_COMMENT;
@@ -29,7 +29,7 @@ describe('create_sse_response', () => {
 		const app = new Hono();
 
 		app.get('/sse', (c) => {
-			const {response} = create_sse_response(c, log);
+			const { response } = create_sse_response(c, log);
 			return response;
 		});
 
@@ -45,8 +45,8 @@ describe('create_sse_response', () => {
 		const app = new Hono();
 
 		app.get('/sse', (c) => {
-			const {response, stream} = create_sse_response<{msg: string}>(c, log);
-			stream.send({msg: 'hello'});
+			const { response, stream } = create_sse_response<{ msg: string }>(c, log);
+			stream.send({ msg: 'hello' });
 			stream.close();
 			return response;
 		});
@@ -60,7 +60,7 @@ describe('create_sse_response', () => {
 		const app = new Hono();
 
 		app.get('/sse', (c) => {
-			const {response, stream} = create_sse_response(c, log);
+			const { response, stream } = create_sse_response(c, log);
 			stream.comment('keep-alive');
 			stream.close();
 			return response;
@@ -75,7 +75,7 @@ describe('create_sse_response', () => {
 		const app = new Hono();
 
 		app.get('/sse', (c) => {
-			const {response, stream} = create_sse_response<string>(c, log);
+			const { response, stream } = create_sse_response<string>(c, log);
 			stream.send('before');
 			stream.close();
 			stream.send('after'); // should be ignored
@@ -91,7 +91,7 @@ describe('create_sse_response', () => {
 		const app = new Hono();
 
 		app.get('/sse', (c) => {
-			const {response, stream} = create_sse_response<number>(c, log);
+			const { response, stream } = create_sse_response<number>(c, log);
 			stream.send(1);
 			stream.send(2);
 			stream.send(3);
@@ -108,7 +108,7 @@ describe('create_sse_response', () => {
 		const app = new Hono();
 
 		app.get('/sse', (c) => {
-			const {response, stream} = create_sse_response(c, log);
+			const { response, stream } = create_sse_response(c, log);
 			stream.close();
 			stream.close(); // should not throw
 			return response;
@@ -124,7 +124,7 @@ describe('create_sse_response', () => {
 		const calls: Array<string> = [];
 
 		app.get('/sse', (c) => {
-			const {response, stream} = create_sse_response(c, log);
+			const { response, stream } = create_sse_response(c, log);
 			stream.on_close(() => calls.push('a'));
 			stream.on_close(() => calls.push('b'));
 			stream.close();
@@ -140,7 +140,7 @@ describe('create_sse_response', () => {
 		let call_count = 0;
 
 		app.get('/sse', (c) => {
-			const {response, stream} = create_sse_response(c, log);
+			const { response, stream } = create_sse_response(c, log);
 			stream.on_close(() => call_count++);
 			stream.close();
 			stream.close();
@@ -155,7 +155,7 @@ describe('create_sse_response', () => {
 		const app = new Hono();
 
 		app.get('/sse', (c) => {
-			const {response, stream} = create_sse_response(c, log);
+			const { response, stream } = create_sse_response(c, log);
 			stream.comment('before');
 			stream.close();
 			stream.comment('after'); // should be ignored
@@ -172,7 +172,7 @@ describe('create_sse_response', () => {
 		let called = false;
 
 		app.get('/sse', (c) => {
-			const {response, stream} = create_sse_response(c, log);
+			const { response, stream } = create_sse_response(c, log);
 			stream.close();
 			stream.on_close(() => {
 				called = true;
@@ -189,8 +189,8 @@ describe('create_sse_response', () => {
 		const registry = new SubscriberRegistry<string>();
 
 		app.get('/sse', (c) => {
-			const {response, stream} = create_sse_response<string>(c, log);
-			const unsubscribe = registry.subscribe(stream, {channels: ['ch']});
+			const { response, stream } = create_sse_response<string>(c, log);
+			const unsubscribe = registry.subscribe(stream, { channels: ['ch'] });
 			stream.on_close(unsubscribe);
 			stream.send('before');
 			assert.strictEqual(registry.count, 1);
@@ -209,7 +209,7 @@ describe('create_sse_response', () => {
 		let closed = false;
 
 		app.get('/sse', (c) => {
-			const {response, stream} = create_sse_response(c, log);
+			const { response, stream } = create_sse_response(c, log);
 			stream.on_close(() => {
 				closed = true;
 			});
@@ -228,7 +228,7 @@ describe('create_sse_response', () => {
 		const calls: Array<string> = [];
 
 		app.get('/sse', (c) => {
-			const {response, stream} = create_sse_response(c, log);
+			const { response, stream } = create_sse_response(c, log);
 			stream.on_close(() => calls.push('a'));
 			stream.on_close(() => {
 				throw new Error('boom');
@@ -247,8 +247,8 @@ describe('create_sse_response', () => {
 		const registry = new SubscriberRegistry<string>();
 
 		app.get('/sse', (c) => {
-			const {response, stream} = create_sse_response<string>(c, log);
-			const unsubscribe = registry.subscribe(stream, {channels: ['ch']});
+			const { response, stream } = create_sse_response<string>(c, log);
+			const unsubscribe = registry.subscribe(stream, { channels: ['ch'] });
 			stream.on_close(unsubscribe);
 			stream.close();
 			// broadcast to empty registry — should not throw
@@ -266,25 +266,28 @@ describe('create_validated_broadcaster', () => {
 	const test_specs: Array<EventSpec> = [
 		{
 			method: 'run_created',
-			params: z.strictObject({run_id: z.string(), status: z.string()}),
+			params: z.strictObject({ run_id: z.string(), status: z.string() }),
 			description: 'A run was created',
-			channel: 'runs',
+			channel: 'runs'
 		},
 		{
 			method: 'run_updated',
-			params: z.strictObject({run_id: z.string(), status: z.string()}),
-			description: 'A run was updated',
-		},
+			params: z.strictObject({ run_id: z.string(), status: z.string() }),
+			description: 'A run was updated'
+		}
 	];
 
 	test('passes valid data through to broadcaster', () => {
-		const calls: Array<{channel: string; data: SseNotification}> = [];
+		const calls: Array<{ channel: string; data: SseNotification }> = [];
 		const inner = {
-			broadcast: (channel: string, data: SseNotification) => calls.push({channel, data}),
+			broadcast: (channel: string, data: SseNotification) => calls.push({ channel, data })
 		};
 		const validated = create_validated_broadcaster(inner, test_specs, log);
 
-		validated.broadcast('runs', {method: 'run_created', params: {run_id: '1', status: 'running'}});
+		validated.broadcast('runs', {
+			method: 'run_created',
+			params: { run_id: '1', status: 'running' }
+		});
 		assert.strictEqual(calls.length, 1);
 		assert.strictEqual(calls[0]!.channel, 'runs');
 		assert.strictEqual(calls[0]!.data.method, 'run_created');
@@ -292,11 +295,11 @@ describe('create_validated_broadcaster', () => {
 
 	test('warns on unknown method', () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-		const inner = {broadcast: vi.fn()};
-		const warn_log = new Logger('test', {level: 'warn'});
+		const inner = { broadcast: vi.fn() };
+		const warn_log = new Logger('test', { level: 'warn' });
 		const validated = create_validated_broadcaster(inner, test_specs, warn_log);
 
-		validated.broadcast('runs', {method: 'unknown_method', params: {}});
+		validated.broadcast('runs', { method: 'unknown_method', params: {} });
 		assert.strictEqual(warn.mock.calls.length, 1);
 		assert.include(String(warn.mock.calls[0]![1]), 'unknown_method');
 		// still broadcasts
@@ -306,11 +309,11 @@ describe('create_validated_broadcaster', () => {
 
 	test('warns on invalid params', () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-		const inner = {broadcast: vi.fn()};
-		const warn_log = new Logger('test', {level: 'warn'});
+		const inner = { broadcast: vi.fn() };
+		const warn_log = new Logger('test', { level: 'warn' });
 		const validated = create_validated_broadcaster(inner, test_specs, warn_log);
 
-		validated.broadcast('runs', {method: 'run_created', params: {bad: true}});
+		validated.broadcast('runs', { method: 'run_created', params: { bad: true } });
 		assert.strictEqual(warn.mock.calls.length, 1);
 		assert.include(String(warn.mock.calls[0]![1]), 'run_created');
 		// still broadcasts even on validation failure
@@ -321,21 +324,21 @@ describe('create_validated_broadcaster', () => {
 	test('always broadcasts even on validation failure', () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		const calls: Array<SseNotification> = [];
-		const inner = {broadcast: (_ch: string, data: SseNotification) => calls.push(data)};
+		const inner = { broadcast: (_ch: string, data: SseNotification) => calls.push(data) };
 		const validated = create_validated_broadcaster(inner, test_specs, log);
 
-		validated.broadcast('runs', {method: 'unknown', params: {}});
+		validated.broadcast('runs', { method: 'unknown', params: {} });
 		assert.strictEqual(calls.length, 1);
 		warn.mockRestore();
 	});
 
 	test('empty event_specs list still works', () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-		const inner = {broadcast: vi.fn()};
-		const warn_log = new Logger('test', {level: 'warn'});
+		const inner = { broadcast: vi.fn() };
+		const warn_log = new Logger('test', { level: 'warn' });
 		const validated = create_validated_broadcaster(inner, [], warn_log);
 
-		validated.broadcast('ch', {method: 'anything', params: {}});
+		validated.broadcast('ch', { method: 'anything', params: {} });
 		// warns because no specs match
 		assert.strictEqual(warn.mock.calls.length, 1);
 		assert.strictEqual(inner.broadcast.mock.calls.length, 1);
@@ -353,15 +356,15 @@ describe('create_validated_broadcaster', () => {
 			send: (data) => bucket.push(data),
 			comment: () => {},
 			close: () => {},
-			on_close: () => {},
+			on_close: () => {}
 		});
-		const unsub_runs = registry.subscribe(make_stream(runs_received), {channels: ['runs']});
+		const unsub_runs = registry.subscribe(make_stream(runs_received), { channels: ['runs'] });
 		registry.subscribe(make_stream(all_received)); // no filter = all channels
 
 		// broadcast to 'runs' channel through validated broadcaster
 		const notification: SseNotification = {
 			method: 'run_created',
-			params: {run_id: '1', status: 'running'},
+			params: { run_id: '1', status: 'running' }
 		};
 		validated.broadcast('runs', notification);
 
@@ -372,7 +375,7 @@ describe('create_validated_broadcaster', () => {
 
 		// after unsubscribe, stream no longer receives
 		unsub_runs();
-		validated.broadcast('runs', {method: 'run_updated', params: {run_id: '1', status: 'done'}});
+		validated.broadcast('runs', { method: 'run_updated', params: { run_id: '1', status: 'done' } });
 		assert.strictEqual(runs_received.length, 1);
 		assert.strictEqual(all_received.length, 2);
 	});

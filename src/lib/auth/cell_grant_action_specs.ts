@@ -14,11 +14,11 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {ActingActor} from '../http/auth_shape.ts';
-import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
+import { ActingActor } from '../http/auth_shape.ts';
+import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 
 // -- Error reasons ----------------------------------------------------------
 
@@ -54,15 +54,15 @@ export type CellGrantLevel = z.infer<typeof CellGrantLevel>;
 export const CellGrantPrincipalInput = z.discriminatedUnion('kind', [
 	z.strictObject({
 		kind: z.literal('actor'),
-		actor_id: Uuid,
+		actor_id: Uuid
 	}),
 	z.strictObject({
 		kind: z.literal('role'),
 		role: z.string().min(1),
 		scope_id: Uuid.nullish().meta({
-			description: '`null` / omitted = any-scope grant (admits any matching-role role_grant).',
-		}),
-	}),
+			description: '`null` / omitted = any-scope grant (admits any matching-role role_grant).'
+		})
+	})
 ]);
 export type CellGrantPrincipalInput = z.infer<typeof CellGrantPrincipalInput>;
 
@@ -79,7 +79,7 @@ export const GrantJson = z.strictObject({
 	role: z.string().nullable(),
 	scope_id: Uuid.nullable(),
 	granted_by: Uuid.nullable(),
-	created_at: z.string(),
+	created_at: z.string()
 });
 export type GrantJson = z.infer<typeof GrantJson>;
 
@@ -91,23 +91,23 @@ export type GrantJson = z.infer<typeof GrantJson>;
  * `granted_by` rather than producing a duplicate row.
  */
 export const CellGrantCreateInput = z.strictObject({
-	cell_id: Uuid.meta({description: 'Cell to grant access on.'}),
-	level: CellGrantLevel.meta({description: 'Grant level: `viewer` or `editor`.'}),
+	cell_id: Uuid.meta({ description: 'Cell to grant access on.' }),
+	level: CellGrantLevel.meta({ description: 'Grant level: `viewer` or `editor`.' }),
 	principal: CellGrantPrincipalInput.meta({
-		description: 'Subject of the grant. Discriminated by `kind`.',
+		description: 'Subject of the grant. Discriminated by `kind`.'
 	}),
-	acting: ActingActor,
+	acting: ActingActor
 });
 export type CellGrantCreateInput = z.infer<typeof CellGrantCreateInput>;
 
-export const CellGrantCreateOutput = z.strictObject({grant: GrantJson});
+export const CellGrantCreateOutput = z.strictObject({ grant: GrantJson });
 export type CellGrantCreateOutput = z.infer<typeof CellGrantCreateOutput>;
 
 // -- cell_grant_revoke ------------------------------------------------------
 
 export const CellGrantRevokeInput = z.strictObject({
-	grant_id: Uuid.meta({description: 'Grant to revoke.'}),
-	acting: ActingActor,
+	grant_id: Uuid.meta({ description: 'Grant to revoke.' }),
+	acting: ActingActor
 });
 export type CellGrantRevokeInput = z.infer<typeof CellGrantRevokeInput>;
 
@@ -119,20 +119,20 @@ export type CellGrantRevokeInput = z.infer<typeof CellGrantRevokeInput>;
  */
 export const CellGrantRevokeOutput = z.strictObject({
 	ok: z.literal(true),
-	still_admitted: z.boolean(),
+	still_admitted: z.boolean()
 });
 export type CellGrantRevokeOutput = z.infer<typeof CellGrantRevokeOutput>;
 
 // -- cell_grant_list --------------------------------------------------------
 
 export const CellGrantListInput = z.strictObject({
-	cell_id: Uuid.meta({description: 'Cell whose grants to list.'}),
-	acting: ActingActor,
+	cell_id: Uuid.meta({ description: 'Cell whose grants to list.' }),
+	acting: ActingActor
 });
 export type CellGrantListInput = z.infer<typeof CellGrantListInput>;
 
 export const CellGrantListOutput = z.strictObject({
-	grants: z.array(GrantJson),
+	grants: z.array(GrantJson)
 });
 export type CellGrantListOutput = z.infer<typeof CellGrantListOutput>;
 
@@ -142,44 +142,44 @@ export const cell_grant_create_action_spec = {
 	method: 'cell_grant_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: true,
 	input: CellGrantCreateInput,
 	output: CellGrantCreateOutput,
 	async: true,
 	description:
-		'Grant view or edit access on a cell. Manage-tier only (admin / owner) — editor-grant holders cannot manage grants. Idempotent on `(cell_id, principal)`. Owner-as-principal rejected. Actor-shaped principals carry a pre-resolved `actor_id` (callers pick via `actor_search`); no name resolver on this verb.',
+		'Grant view or edit access on a cell. Manage-tier only (admin / owner) — editor-grant holders cannot manage grants. Idempotent on `(cell_id, principal)`. Owner-as-principal rejected. Actor-shaped principals carry a pre-resolved `actor_id` (callers pick via `actor_search`); no name resolver on this verb.'
 } satisfies RequestResponseActionSpec;
 
 export const cell_grant_revoke_action_spec = {
 	method: 'cell_grant_revoke',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: true,
 	input: CellGrantRevokeInput,
 	output: CellGrantRevokeOutput,
 	async: true,
 	description:
-		'Revoke a grant. Manage-tier only (admin / owner), plus self for actor-shaped grants ("leave shared cell"). Returns `still_admitted` so the UI can tell the recipient whether other admit paths remain.',
+		'Revoke a grant. Manage-tier only (admin / owner), plus self for actor-shaped grants ("leave shared cell"). Returns `still_admitted` so the UI can tell the recipient whether other admit paths remain.'
 } satisfies RequestResponseActionSpec;
 
 export const cell_grant_list_action_spec = {
 	method: 'cell_grant_list',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: false,
 	input: CellGrantListInput,
 	output: CellGrantListOutput,
 	async: true,
 	description:
-		"List grants on a cell. Manage-tier only (admin / owner); viewers and editors get IDOR-mask 404 (the share list is the manager's to curate).",
+		"List grants on a cell. Manage-tier only (admin / owner); viewers and editors get IDOR-mask 404 (the share list is the manager's to curate)."
 } satisfies RequestResponseActionSpec;
 
 /** All cell_grant action specs — composed into `all_cell_action_specs`. */
 export const all_cell_grant_action_specs = [
 	cell_grant_create_action_spec,
 	cell_grant_revoke_action_spec,
-	cell_grant_list_action_spec,
+	cell_grant_list_action_spec
 ] as const;

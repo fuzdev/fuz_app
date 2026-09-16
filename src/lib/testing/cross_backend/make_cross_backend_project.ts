@@ -68,7 +68,7 @@ export const make_cross_backend_project = ({
 	global_setup,
 	include = DEFAULT_INCLUDE,
 	exclude = [],
-	group_order = DEFAULT_GROUP_ORDER,
+	group_order = DEFAULT_GROUP_ORDER
 }: CrossBackendProjectOptions): {
 	extends: true;
 	test: {
@@ -78,7 +78,7 @@ export const make_cross_backend_project = ({
 		globalSetup: Array<string>;
 		isolate: false;
 		fileParallelism: false;
-		sequence: {groupOrder: number};
+		sequence: { groupOrder: number };
 	};
 } => ({
 	extends: true,
@@ -89,6 +89,6 @@ export const make_cross_backend_project = ({
 		globalSetup: [global_setup],
 		isolate: false,
 		fileParallelism: false,
-		sequence: {groupOrder: group_order},
-	},
+		sequence: { groupOrder: group_order }
+	}
 });

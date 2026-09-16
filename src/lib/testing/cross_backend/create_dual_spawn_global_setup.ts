@@ -36,11 +36,11 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type {TestProject} from 'vitest/node';
+import type { TestProject } from 'vitest/node';
 
-import type {BackendConfig} from './backend_config.ts';
-import {bootstrap_backend} from './bootstrap_backend.ts';
-import {serialize_bootstrapped_handle} from './setup.ts';
+import type { BackendConfig } from './backend_config.ts';
+import { bootstrap_backend } from './bootstrap_backend.ts';
+import { serialize_bootstrapped_handle } from './setup.ts';
 
 export interface DualSpawnGlobalSetupOptions {
 	/**
@@ -48,14 +48,14 @@ export interface DualSpawnGlobalSetupOptions {
 	 * its success `b` is spawned (with `a` torn down if `b` throws). Label
 	 * them in the consuming test (e.g. via `assert_schema_snapshots_equal`'s labels).
 	 */
-	readonly configs: {readonly a: () => BackendConfig; readonly b: () => BackendConfig};
+	readonly configs: { readonly a: () => BackendConfig; readonly b: () => BackendConfig };
 	/**
 	 * `project.provide` keys for the two serialized handles (read by
 	 * `inject` in the test). Default `parity_handle_a` / `parity_handle_b`
 	 * (the primary parity use); override for other dual-spawn gates. Augment
 	 * vitest's `ProvidedContext` for whichever keys you use.
 	 */
-	readonly provide_keys?: {readonly a: string; readonly b: string};
+	readonly provide_keys?: { readonly a: string; readonly b: string };
 }
 
 /**
@@ -63,7 +63,7 @@ export interface DualSpawnGlobalSetupOptions {
  */
 export const create_dual_spawn_global_setup = ({
 	configs,
-	provide_keys = {a: 'parity_handle_a', b: 'parity_handle_b'},
+	provide_keys = { a: 'parity_handle_a', b: 'parity_handle_b' }
 }: DualSpawnGlobalSetupOptions): ((project: TestProject) => Promise<() => Promise<void>>) => {
 	return async (project) => {
 		const a = await bootstrap_backend(configs.a());

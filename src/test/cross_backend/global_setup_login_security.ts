@@ -21,27 +21,27 @@
  * @module
  */
 
-import {create_dual_spawn_global_setup} from '$lib/testing/cross_backend/create_dual_spawn_global_setup.ts';
-import {ts_spine_node_backend_config} from '$lib/testing/cross_backend/ts_spine_backend_config.ts';
-import {rust_spine_stub_backend_config} from '$lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
-import type {TestProject} from 'vitest/node';
+import { create_dual_spawn_global_setup } from '$lib/testing/cross_backend/create_dual_spawn_global_setup.ts';
+import { ts_spine_node_backend_config } from '$lib/testing/cross_backend/ts_spine_backend_config.ts';
+import { rust_spine_stub_backend_config } from '$lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
+import type { TestProject } from 'vitest/node';
 
 import './cross_test_types.ts';
-import {prepare_rust_spine_backend} from './global_setup_helpers.ts';
+import { prepare_rust_spine_backend } from './global_setup_helpers.ts';
 
 // The generic "spawn two backends, provide two handles" maker. Both backends
 // enable the login limiters; the Rust side also opts into XFF resolution (the
 // TS binary wires `trusted_proxies` unconditionally).
 const dual_spawn = create_dual_spawn_global_setup({
 	configs: {
-		a: () => ts_spine_node_backend_config({enable_login_rate_limit: true}),
+		a: () => ts_spine_node_backend_config({ enable_login_rate_limit: true }),
 		b: () =>
 			rust_spine_stub_backend_config({
 				enable_login_rate_limit: true,
-				trusted_proxies: '127.0.0.1,::1',
-			}),
+				trusted_proxies: '127.0.0.1,::1'
+			})
 	},
-	provide_keys: {a: 'security_handle_a', b: 'security_handle_b'},
+	provide_keys: { a: 'security_handle_a', b: 'security_handle_b' }
 });
 
 const setup = (project: TestProject): Promise<() => Promise<void>> => {
@@ -50,7 +50,7 @@ const setup = (project: TestProject): Promise<() => Promise<void>> => {
 	// projects share the one DB.)
 	prepare_rust_spine_backend({
 		crate: 'testing_spine_stub',
-		database: 'fuz_app_test_rust_spine_stub',
+		database: 'fuz_app_test_rust_spine_stub'
 	});
 	return dual_spawn(project);
 };

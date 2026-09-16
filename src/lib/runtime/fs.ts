@@ -4,7 +4,7 @@
  * @module
  */
 
-import type {FsWriteDeps} from './deps.ts';
+import type { FsWriteDeps } from './deps.ts';
 
 /**
  * Write a file atomically via temp file + rename.
@@ -18,7 +18,7 @@ import type {FsWriteDeps} from './deps.ts';
 export const write_file_atomic = async (
 	deps: Pick<FsWriteDeps, 'write_text_file' | 'rename'>,
 	path: string,
-	content: string,
+	content: string
 ): Promise<void> => {
 	const temp_path = path + '.tmp';
 	await deps.write_text_file(temp_path, content);

@@ -12,9 +12,9 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
-import {needs_actor, type RouteAuth} from './auth_shape.ts';
+import { needs_actor, type RouteAuth } from './auth_shape.ts';
 
 // --- Core: Validation (auto-derived by route spec middleware) ---
 
@@ -171,7 +171,7 @@ export const ERROR_DATABASE_CONNECTION_FAILED = 'database_connection_failed' as 
 // Using z.looseObject — error responses may carry extra context fields.
 
 /** Base API error — all JSON error responses have at least `{error: string}`. */
-export const ApiError = z.looseObject({error: z.string()});
+export const ApiError = z.looseObject({ error: z.string() });
 export type ApiError = z.infer<typeof ApiError>;
 
 /**
@@ -192,17 +192,17 @@ export const ValidationError = z.looseObject({
 		ERROR_INVALID_REQUEST_BODY,
 		ERROR_INVALID_JSON_BODY,
 		ERROR_INVALID_ROUTE_PARAMS,
-		ERROR_INVALID_QUERY_PARAMS,
+		ERROR_INVALID_QUERY_PARAMS
 	]),
 	issues: z
 		.array(
 			z.looseObject({
 				code: z.string(),
 				message: z.string(),
-				path: z.array(z.union([z.string(), z.number()])),
-			}),
+				path: z.array(z.union([z.string(), z.number()]))
+			})
 		)
-		.optional(),
+		.optional()
 });
 export type ValidationError = z.infer<typeof ValidationError>;
 
@@ -218,7 +218,7 @@ export type ValidationError = z.infer<typeof ValidationError>;
  */
 export const PermissionError = z.looseObject({
 	error: z.literal(ERROR_INSUFFICIENT_PERMISSIONS),
-	required_roles: z.array(z.string()).readonly(),
+	required_roles: z.array(z.string()).readonly()
 });
 export type PermissionError = z.infer<typeof PermissionError>;
 
@@ -235,26 +235,26 @@ export type PermissionError = z.infer<typeof PermissionError>;
  */
 export const CredentialTypeRequiredError = z.looseObject({
 	error: z.literal(ERROR_CREDENTIAL_TYPE_REQUIRED),
-	required_credential_types: z.array(z.string()).readonly(),
+	required_credential_types: z.array(z.string()).readonly()
 });
 export type CredentialTypeRequiredError = z.infer<typeof CredentialTypeRequiredError>;
 
 /** Rate limit error — returned when a rate limiter rejects the request. */
 export const RateLimitError = z.looseObject({
 	error: z.literal(ERROR_RATE_LIMIT_EXCEEDED),
-	retry_after: z.number(),
+	retry_after: z.number()
 });
 export type RateLimitError = z.infer<typeof RateLimitError>;
 
 /** Payload too large error — returned when the request body exceeds the size limit. */
 export const PayloadTooLargeError = z.looseObject({
-	error: z.literal(ERROR_PAYLOAD_TOO_LARGE),
+	error: z.literal(ERROR_PAYLOAD_TOO_LARGE)
 });
 export type PayloadTooLargeError = z.infer<typeof PayloadTooLargeError>;
 
 /** Foreign key violation error — returned when a delete is blocked by references. */
 export const ForeignKeyError = z.looseObject({
-	error: z.literal(ERROR_FOREIGN_KEY_VIOLATION),
+	error: z.literal(ERROR_FOREIGN_KEY_VIOLATION)
 });
 export type ForeignKeyError = z.infer<typeof ForeignKeyError>;
 
@@ -278,22 +278,22 @@ export type ForeignKeyError = z.infer<typeof ForeignKeyError>;
  */
 export const ActorRequiredError = z.looseObject({
 	error: z.literal(ERROR_ACTOR_REQUIRED),
-	available: z.array(z.looseObject({id: z.string(), name: z.string()})),
+	available: z.array(z.looseObject({ id: z.string(), name: z.string() }))
 });
 export type ActorRequiredError = z.infer<typeof ActorRequiredError>;
 
 export const ActorNotOnAccountError = z.looseObject({
-	error: z.literal(ERROR_ACTOR_NOT_ON_ACCOUNT),
+	error: z.literal(ERROR_ACTOR_NOT_ON_ACCOUNT)
 });
 export type ActorNotOnAccountError = z.infer<typeof ActorNotOnAccountError>;
 
 export const NoActorsOnAccountError = z.looseObject({
-	error: z.literal(ERROR_NO_ACTORS_ON_ACCOUNT),
+	error: z.literal(ERROR_NO_ACTORS_ON_ACCOUNT)
 });
 export type NoActorsOnAccountError = z.infer<typeof NoActorsOnAccountError>;
 
 export const AccountVanishedError = z.looseObject({
-	error: z.literal(ERROR_ACCOUNT_VANISHED),
+	error: z.literal(ERROR_ACCOUNT_VANISHED)
 });
 export type AccountVanishedError = z.infer<typeof AccountVanishedError>;
 
@@ -352,7 +352,7 @@ export const derive_error_schemas = ({
 	has_input = false,
 	has_params = false,
 	has_query = false,
-	rate_limit,
+	rate_limit
 }: DeriveErrorSchemasOptions): RouteErrorSchemas => {
 	const errors: RouteErrorSchemas = {};
 

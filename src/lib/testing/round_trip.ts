@@ -18,17 +18,17 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, beforeAll, assert} from 'vitest';
+import { describe, test, beforeAll, assert } from 'vitest';
 
-import {ROLE_ADMIN} from '../auth/role_schema.ts';
-import {is_public_auth, needs_actor, input_schema_declares_acting} from '../http/auth_shape.ts';
-import type {TestAccount} from './app_server.ts';
-import {assert_response_matches_spec, pick_auth_headers} from './integration_helpers.ts';
-import {resolve_valid_path, generate_valid_body} from './schema_generators.ts';
-import type {BackendCapabilities} from './cross_backend/capabilities.ts';
-import type {SetupTest, TestFixture} from './cross_backend/setup.ts';
-import type {AppSurfaceSpec} from '../http/surface.ts';
-import type {RouteSpec} from '../http/route_spec.ts';
+import { ROLE_ADMIN } from '../auth/role_schema.ts';
+import { is_public_auth, needs_actor, input_schema_declares_acting } from '../http/auth_shape.ts';
+import type { TestAccount } from './app_server.ts';
+import { assert_response_matches_spec, pick_auth_headers } from './integration_helpers.ts';
+import { resolve_valid_path, generate_valid_body } from './schema_generators.ts';
+import type { BackendCapabilities } from './cross_backend/capabilities.ts';
+import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
+import type { AppSurfaceSpec } from '../http/surface.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
 
 /** Options for `describe_round_trip_validation`. */
 export interface RoundTripTestOptions {
@@ -66,7 +66,7 @@ export interface RoundTripTestOptions {
 	 */
 	success_fixtures?: Map<
 		string,
-		(fixture: TestFixture) => Promise<{url?: string; body?: Record<string, unknown>}>
+		(fixture: TestFixture) => Promise<{ url?: string; body?: Record<string, unknown> }>
 	>;
 }
 
@@ -99,11 +99,11 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 			fixture = await options.setup_test();
 			authed_account = await fixture.create_account({
 				username: 'round_trip_authed',
-				roles: [],
+				roles: []
 			});
 			admin_account = await fixture.create_account({
 				username: 'round_trip_admin',
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 		});
 
@@ -114,7 +114,7 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 		// single-actor resolution. Keeps such routes drivable without a
 		// consumer skip-list entry. Returns `null` for public routes.
 		const pick_acting_actor_id = (spec: RouteSpec): string | null => {
-			const {auth} = spec;
+			const { auth } = spec;
 			if (is_public_auth(auth)) return null;
 			if (auth.credential_types?.includes('daemon_token')) return fixture.actor.id;
 			if (auth.roles?.length) {
@@ -149,7 +149,7 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 				if (spec.query && input_schema_declares_acting(spec.query)) {
 					request_url = `${url}${url.includes('?') ? '&' : '?'}acting=${acting_id}`;
 				} else if (input_schema_declares_acting(spec.input) && body) {
-					body = {...body, acting: acting_id};
+					body = { ...body, acting: acting_id };
 				}
 			}
 
@@ -157,9 +157,9 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 				method: spec.method,
 				headers: {
 					...headers,
-					...(body ? {'content-type': 'application/json'} : {}),
+					...(body ? { 'content-type': 'application/json' } : {})
 				},
-				...(body ? {body: JSON.stringify(body)} : {}),
+				...(body ? { body: JSON.stringify(body) } : {})
 			};
 
 			const res = await fixture.transport(request_url, request_init);
@@ -175,7 +175,7 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 				throw new Error(
 					`Round-trip validation failed for ${route_key} (status ${res.status}): ${
 						(e as Error).message
-					}`,
+					}`
 				);
 			}
 		});
@@ -199,9 +199,9 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 					method: spec.method,
 					headers: {
 						...headers,
-						...(body ? {'content-type': 'application/json'} : {}),
+						...(body ? { 'content-type': 'application/json' } : {})
 					},
-					...(body ? {body: JSON.stringify(body)} : {}),
+					...(body ? { body: JSON.stringify(body) } : {})
 				});
 
 				try {
@@ -210,14 +210,14 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 						`success fixture expected a 2xx response, got status ${res.status}: ${await res
 							.clone()
 							.text()
-							.catch(() => '<unreadable>')}`,
+							.catch(() => '<unreadable>')}`
 					);
 					await assert_response_matches_spec(describe_time_specs, spec.method, url, res);
 				} catch (e) {
 					throw new Error(
 						`Round-trip success-fixture failed for ${route_key} (status ${res.status}): ${
 							(e as Error).message
-						}`,
+						}`
 					);
 				}
 			}

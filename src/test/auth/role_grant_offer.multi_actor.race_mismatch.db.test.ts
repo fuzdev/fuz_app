@@ -11,28 +11,28 @@
  * @module
  */
 
-import {assert, describe, test} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import { assert, describe, test } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import {create_test_app} from '$lib/testing/app_server.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
-import {role_grant_offer_create_action_spec} from '$lib/auth/role_grant_offer_action_specs.ts';
+import { create_test_app } from '$lib/testing/app_server.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import { role_grant_offer_create_action_spec } from '$lib/auth/role_grant_offer_action_specs.ts';
 import {
 	query_accept_offer,
-	RoleGrantOfferAlreadyTerminalError,
+	RoleGrantOfferAlreadyTerminalError
 } from '$lib/auth/role_grant_offer_queries.ts';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
+import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
 
 import {
 	RPC_PATH,
 	create_route_specs,
 	describe_db,
-	session_options,
+	session_options
 } from './role_grant_offer_test_helpers.ts';
-import {create_multi_actor_helpers} from './role_grant_offer.multi_actor.fixtures.ts';
+import { create_multi_actor_helpers } from './role_grant_offer.multi_actor.fixtures.ts';
 
 describe_db('role_grant_offer.multi_actor — race_mismatch', (get_db) => {
-	const {add_second_actor} = create_multi_actor_helpers(get_db);
+	const { add_second_actor } = create_multi_actor_helpers(get_db);
 
 	describe('account-grain accept race-loser actor mismatch', () => {
 		test("losing actor on the same account gets RoleGrantOfferAlreadyTerminalError, not someone else's role_grant", async () => {
@@ -47,31 +47,31 @@ describe_db('role_grant_offer.multi_actor — race_mismatch', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			const recipient = await test_app.create_account({username: 'race_loser_recipient'});
+			const recipient = await test_app.create_account({ username: 'race_loser_recipient' });
 			const second_actor_id = await add_second_actor(recipient.account.id, 'race_loser_b');
 
 			const create_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: role_grant_offer_create_action_spec,
-				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
-				headers: test_app.create_session_headers(),
+				params: { to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(create_res.ok);
 
 			// Actor A wins the race.
 			const winner = await get_db().transaction(async (tx) =>
 				query_accept_offer(
-					{db: tx},
+					{ db: tx },
 					{
 						offer_id: create_res.result.offer.id,
 						to_account_id: recipient.account.id,
 						actor_id: recipient.actor.id,
-						ip: null,
-					},
-				),
+						ip: null
+					}
+				)
 			);
 			assert.strictEqual(winner.role_grant.actor_id, recipient.actor.id);
 
@@ -81,19 +81,19 @@ describe_db('role_grant_offer.multi_actor — race_mismatch', (get_db) => {
 			const err = await assert_rejects(() =>
 				get_db().transaction(async (tx) =>
 					query_accept_offer(
-						{db: tx},
+						{ db: tx },
 						{
 							offer_id: create_res.result.offer.id,
 							to_account_id: recipient.account.id,
 							actor_id: second_actor_id,
-							ip: null,
-						},
-					),
-				),
+							ip: null
+						}
+					)
+				)
 			);
 			assert.ok(
 				err instanceof RoleGrantOfferAlreadyTerminalError,
-				`expected RoleGrantOfferAlreadyTerminalError, got ${err.constructor.name}: ${err.message}`,
+				`expected RoleGrantOfferAlreadyTerminalError, got ${err.constructor.name}: ${err.message}`
 			);
 		});
 
@@ -105,40 +105,40 @@ describe_db('role_grant_offer.multi_actor — race_mismatch', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			const recipient = await test_app.create_account({username: 'race_idempotent_retry'});
+			const recipient = await test_app.create_account({ username: 'race_idempotent_retry' });
 
 			const create_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: role_grant_offer_create_action_spec,
-				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
-				headers: test_app.create_session_headers(),
+				params: { to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(create_res.ok);
 
 			const first = await get_db().transaction(async (tx) =>
 				query_accept_offer(
-					{db: tx},
+					{ db: tx },
 					{
 						offer_id: create_res.result.offer.id,
 						to_account_id: recipient.account.id,
 						actor_id: recipient.actor.id,
-						ip: null,
-					},
-				),
+						ip: null
+					}
+				)
 			);
 			const second = await get_db().transaction(async (tx) =>
 				query_accept_offer(
-					{db: tx},
+					{ db: tx },
 					{
 						offer_id: create_res.result.offer.id,
 						to_account_id: recipient.account.id,
 						actor_id: recipient.actor.id,
-						ip: null,
-					},
-				),
+						ip: null
+					}
+				)
 			);
 			assert.strictEqual(first.created, true);
 			assert.strictEqual(second.created, false);

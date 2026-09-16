@@ -12,8 +12,8 @@
  * @module
  */
 
-import type {QueryDeps} from '../db/query_deps.ts';
-import {assert_row} from '../db/assert_row.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
+import { assert_row } from '../db/assert_row.ts';
 import {
 	AUDIT_LOG_DEFAULT_LIMIT,
 	builtin_audit_log_config,
@@ -22,7 +22,7 @@ import {
 	type AuditLogInput,
 	type AuditLogListOptions,
 	type AuditLogEventWithUsernamesJson,
-	type RoleGrantHistoryEventJson,
+	type RoleGrantHistoryEventJson
 } from './audit_log_schema.ts';
 
 /**
@@ -89,14 +89,14 @@ export const reset_audit_unknown_event_type_failures = (): void => {
 export const query_audit_log = async <T extends string>(
 	deps: QueryDeps,
 	input: AuditLogInput<T>,
-	config: AuditLogConfig = builtin_audit_log_config,
+	config: AuditLogConfig = builtin_audit_log_config
 ): Promise<AuditLogEvent> => {
 	if (!config.event_types.includes(input.event_type)) {
 		audit_unknown_event_type_failures++;
 		console.error(
 			`[audit_log] unknown event_type '${
 				input.event_type
-			}' — register via create_audit_log_config({extra_events})`,
+			}' — register via create_audit_log_config({extra_events})`
 		);
 	}
 	if (input.metadata != null) {
@@ -107,7 +107,7 @@ export const query_audit_log = async <T extends string>(
 				audit_metadata_validation_failures++;
 				console.error(
 					`[audit_log] metadata mismatch for '${input.event_type}':`,
-					result.error.issues,
+					result.error.issues
 				);
 			}
 		}
@@ -124,8 +124,8 @@ export const query_audit_log = async <T extends string>(
 			input.target_account_id ?? null,
 			input.target_actor_id ?? null,
 			input.ip ?? null,
-			input.metadata ? JSON.stringify(input.metadata) : null,
-		],
+			input.metadata ? JSON.stringify(input.metadata) : null
+		]
 	);
 	return assert_row(rows[0], 'INSERT INTO audit_log');
 };
@@ -139,7 +139,7 @@ export const query_audit_log = async <T extends string>(
  */
 export const query_audit_log_list = async (
 	deps: QueryDeps,
-	options?: AuditLogListOptions,
+	options?: AuditLogListOptions
 ): Promise<Array<AuditLogEvent>> => {
 	const conditions: Array<string> = [];
 	const params: Array<unknown> = [];
@@ -180,7 +180,7 @@ export const query_audit_log_list = async (
 		`SELECT * FROM audit_log ${where} ORDER BY seq DESC LIMIT $${param_index++} OFFSET $${
 			param_index
 		}`,
-		[...params, limit, offset],
+		[...params, limit, offset]
 	);
 };
 
@@ -193,7 +193,7 @@ export const query_audit_log_list = async (
  */
 export const query_audit_log_list_with_usernames = async (
 	deps: QueryDeps,
-	options?: AuditLogListOptions,
+	options?: AuditLogListOptions
 ): Promise<Array<AuditLogEventWithUsernamesJson>> => {
 	const conditions: Array<string> = [];
 	const params: Array<unknown> = [];
@@ -248,7 +248,7 @@ export const query_audit_log_list_with_usernames = async (
 		 LEFT JOIN account target_act_acc ON target_act_acc.id = target_act.account_id
 		 LEFT JOIN account target_acc ON target_acc.id = al.target_account_id
 		 ${where} ORDER BY al.seq DESC LIMIT $${param_index++} OFFSET $${param_index}`,
-		[...params, limit, offset],
+		[...params, limit, offset]
 	);
 };
 
@@ -263,7 +263,7 @@ export const query_audit_log_list_with_usernames = async (
 export const query_audit_log_list_role_grant_history = async (
 	deps: QueryDeps,
 	limit = AUDIT_LOG_DEFAULT_LIMIT,
-	offset = 0,
+	offset = 0
 ): Promise<Array<RoleGrantHistoryEventJson>> => {
 	// Same actor-chained JOIN as `query_audit_log_list_with_usernames` —
 	// see the comment there for rationale (forensic future-proofing for
@@ -281,7 +281,7 @@ export const query_audit_log_list_role_grant_history = async (
 		 LEFT JOIN account target_acc ON target_acc.id = al.target_account_id
 		 WHERE al.event_type IN ('role_grant_create', 'role_grant_revoke')
 		 ORDER BY al.seq DESC LIMIT $1 OFFSET $2`,
-		[limit, offset],
+		[limit, offset]
 	);
 };
 
@@ -295,11 +295,11 @@ export const query_audit_log_list_role_grant_history = async (
  */
 export const query_audit_log_cleanup_before = async (
 	deps: QueryDeps,
-	before: Date,
+	before: Date
 ): Promise<number> => {
-	const rows = await deps.db.query<{id: string}>(
+	const rows = await deps.db.query<{ id: string }>(
 		`DELETE FROM audit_log WHERE created_at < $1 RETURNING id`,
-		[before.toISOString()],
+		[before.toISOString()]
 	);
 	return rows.length;
 };

@@ -44,16 +44,16 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {rpc_call, type RpcCallResult} from '../rpc_helpers.ts';
-import {ROLE_ADMIN} from '../../auth/role_schema.ts';
+import { rpc_call, type RpcCallResult } from '../rpc_helpers.ts';
+import { ROLE_ADMIN } from '../../auth/role_schema.ts';
 import {
 	ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH,
-	ERROR_ROLE_GRANT_OFFER_NOT_FOUND,
+	ERROR_ROLE_GRANT_OFFER_NOT_FOUND
 } from '../../auth/role_grant_offer_action_specs.ts';
-import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
-import type {SetupTest} from './setup.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import type { SetupTest } from './setup.ts';
 
 /** A well-formed UUID that never names a real offer — exercises the not-found arm. */
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
@@ -86,20 +86,21 @@ export interface RoleGrantOfferEnumerationCrossTestOptions {
 const reason_of = (res: RpcCallResult): string | undefined =>
 	res.ok
 		? undefined
-		: ((res.error.data as {reason?: unknown} | undefined)?.reason as string | undefined);
+		: ((res.error.data as { reason?: unknown } | undefined)?.reason as string | undefined);
 
 export const describe_role_grant_offer_enumeration_cross_tests = (
-	options: RoleGrantOfferEnumerationCrossTestOptions,
+	options: RoleGrantOfferEnumerationCrossTestOptions
 ): void => {
-	const {setup_test} = options;
+	const { setup_test } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
 	const rpc = (
 		transport: Parameters<typeof rpc_call>[0]['app'],
 		method: string,
 		params: unknown,
-		headers: Record<string, string>,
-	): Promise<RpcCallResult> => rpc_call({app: transport, path: rpc_path, method, params, headers});
+		headers: Record<string, string>
+	): Promise<RpcCallResult> =>
+		rpc_call({ app: transport, path: rpc_path, method, params, headers });
 
 	describe('role_grant_offer accept enumeration (403 vs 404)', () => {
 		test('actor-targeted offer: sibling-actor accept → 403 actor_mismatch; targeted actor accepts the SAME offer → 200', async () => {
@@ -107,7 +108,7 @@ export const describe_role_grant_offer_enumeration_cross_tests = (
 			const sibling = fixture.extra_actors[0];
 			assert.ok(
 				sibling,
-				'suite requires the keeper seeded with an extra actor — pass extra_actors in the entrypoint',
+				'suite requires the keeper seeded with an extra actor — pass extra_actors in the entrypoint'
 			);
 			// Actor A (the keeper's bootstrap actor) is the offer target; actor B
 			// (the seeded sibling) is the one that must be rejected.
@@ -120,32 +121,32 @@ export const describe_role_grant_offer_enumeration_cross_tests = (
 			const grantor = fixture.extra_accounts[OFFER_GRANTOR_USERNAME];
 			assert.ok(
 				grantor,
-				`suite requires an admin grantor seeded via extra_accounts['${OFFER_GRANTOR_USERNAME}']`,
+				`suite requires an admin grantor seeded via extra_accounts['${OFFER_GRANTOR_USERNAME}']`
 			);
 
 			// Offer ROLE_ADMIN to the keeper's account, TARGETED at actor A.
 			const created = await rpc(
 				fixture.fresh_transport(),
 				'role_grant_offer_create',
-				{to_account_id: fixture.account.id, to_actor_id: target_actor.id, role: ROLE_ADMIN},
-				grantor.create_session_headers(),
+				{ to_account_id: fixture.account.id, to_actor_id: target_actor.id, role: ROLE_ADMIN },
+				grantor.create_session_headers()
 			);
 			assert.ok(created.ok, `offer create must succeed: ${JSON.stringify(created)}`);
-			const offer_id = (created.result as {offer: {id: string}}).offer.id;
+			const offer_id = (created.result as { offer: { id: string } }).offer.id;
 
 			// Sibling actor B (same account) tries to accept A's offer → 403
 			// actor_mismatch. The offer stays pending (no mutation on the denial).
 			const sibling_accept = await rpc(
 				fixture.transport,
 				'role_grant_offer_accept',
-				{offer_id, acting: sibling.id},
-				fixture.create_session_headers(),
+				{ offer_id, acting: sibling.id },
+				fixture.create_session_headers()
 			);
 			assert.strictEqual(sibling_accept.status, 403, 'sibling-actor accept must be 403');
 			assert.strictEqual(
 				reason_of(sibling_accept),
 				ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH,
-				'sibling-actor accept must carry the actor_mismatch reason (not a 404 mask)',
+				'sibling-actor accept must carry the actor_mismatch reason (not a 404 mask)'
 			);
 
 			// Control: the TARGETED actor A accepts the very same offer → 200. Proves
@@ -154,12 +155,12 @@ export const describe_role_grant_offer_enumeration_cross_tests = (
 			const target_accept = await rpc(
 				fixture.transport,
 				'role_grant_offer_accept',
-				{offer_id, acting: target_actor.id},
-				fixture.create_session_headers(),
+				{ offer_id, acting: target_actor.id },
+				fixture.create_session_headers()
 			);
 			assert.ok(
 				target_accept.ok && target_accept.status === 200,
-				`targeted-actor accept of the same offer must succeed: ${JSON.stringify(target_accept)}`,
+				`targeted-actor accept of the same offer must succeed: ${JSON.stringify(target_accept)}`
 			);
 		});
 
@@ -170,14 +171,14 @@ export const describe_role_grant_offer_enumeration_cross_tests = (
 			const res = await rpc(
 				fixture.transport,
 				'role_grant_offer_accept',
-				{offer_id: NIL_UUID, acting: fixture.actor.id},
-				fixture.create_session_headers(),
+				{ offer_id: NIL_UUID, acting: fixture.actor.id },
+				fixture.create_session_headers()
 			);
 			assert.strictEqual(res.status, 404, 'a nonexistent offer must be 404');
 			assert.strictEqual(
 				reason_of(res),
 				ERROR_ROLE_GRANT_OFFER_NOT_FOUND,
-				'a nonexistent offer must carry the not_found reason',
+				'a nonexistent offer must carry the not_found reason'
 			);
 		});
 	});

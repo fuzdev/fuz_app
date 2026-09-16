@@ -40,17 +40,17 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type {Db} from '../db/db.ts';
-import type {RequestActorContext} from './request_context.ts';
-import {query_audit_log} from './audit_log_queries.ts';
+import type { Db } from '../db/db.ts';
+import type { RequestActorContext } from './request_context.ts';
+import { query_audit_log } from './audit_log_queries.ts';
 import {
 	builtin_audit_log_config,
 	type AuditLogConfig,
 	type AuditLogEvent,
-	type AuditLogInput,
+	type AuditLogInput
 } from './audit_log_schema.ts';
 
 /**
@@ -124,7 +124,7 @@ export interface AuditEmitter {
 			target_actor_id: Uuid | null;
 			metadata: AuditLogInput<T>['metadata'];
 			outcome?: 'success' | 'failure';
-		},
+		}
 	): void;
 	/**
 	 * Awaitable pool write for code paths without a `pending_effects` queue.
@@ -174,7 +174,7 @@ export interface AuditEmitter {
  */
 export type AuditEmitFn = <T extends string>(
 	ctx: AuditEmitterContext,
-	input: AuditLogInput<T>,
+	input: AuditLogInput<T>
 ) => void;
 
 /**
@@ -231,7 +231,7 @@ export interface CreateAuditEmitterOptions {
  * @returns the bound emitter; closes over the pool + config + listener chain
  */
 export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditEmitter => {
-	const {db, log, audit_log_config = builtin_audit_log_config, emit_decorator} = options;
+	const { db, log, audit_log_config = builtin_audit_log_config, emit_decorator } = options;
 	// Closure-private listener list — no mutable array is exposed on the
 	// returned (frozen) emitter; registration goes through `add_listener`.
 	const listeners: Array<(event: AuditLogEvent) => void> = [];
@@ -253,7 +253,7 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 
 	const emit_pool = async <T extends string>(input: AuditLogInput<T>): Promise<void> => {
 		try {
-			const event = await query_audit_log({db}, input, audit_log_config);
+			const event = await query_audit_log({ db }, input, audit_log_config);
 			notify(event);
 		} catch (err) {
 			log.error('Audit log write failed:', err);
@@ -278,7 +278,7 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 			target_actor_id: Uuid | null;
 			metadata: AuditLogInput<T>['metadata'];
 			outcome?: 'success' | 'failure';
-		},
+		}
 	): void => {
 		emit<T>(ctx, {
 			event_type: input.event_type,
@@ -288,7 +288,7 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 			target_account_id: input.target_account_id,
 			target_actor_id: input.target_actor_id,
 			ip: ctx.client_ip,
-			metadata: input.metadata,
+			metadata: input.metadata
 		});
 	};
 
@@ -315,6 +315,6 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 		emit_pool,
 		notify,
 		add_listener,
-		listener_count,
+		listener_count
 	});
 };

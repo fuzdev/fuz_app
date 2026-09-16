@@ -7,7 +7,7 @@
  * @module
  */
 
-import type {Sensitivity} from './sensitivity.ts';
+import type { Sensitivity } from './sensitivity.ts';
 
 /** Zod `.meta()` shape for fuz_app schema metadata conventions. */
 export interface SchemaFieldMeta {

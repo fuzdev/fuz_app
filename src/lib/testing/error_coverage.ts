@@ -13,12 +13,12 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {z} from 'zod';
-import {assert} from 'vitest';
+import { z } from 'zod';
+import { assert } from 'vitest';
 
-import type {RouteSpec} from '../http/route_spec.ts';
-import {merge_error_schemas} from '../http/schema_helpers.ts';
-import {find_route_spec, assert_response_matches_spec} from './integration_helpers.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
+import { merge_error_schemas } from '../http/schema_helpers.ts';
+import { find_route_spec, assert_response_matches_spec } from './integration_helpers.ts';
 
 /**
  * Extract declared error code values from an error response schema.
@@ -81,7 +81,7 @@ interface CoverageEntry {
 const walk_coverage = (
 	collector: ErrorCoverageCollector,
 	route_specs: Array<RouteSpec>,
-	options?: CoverageFilterOptions,
+	options?: CoverageFilterOptions
 ): Array<CoverageEntry> => {
 	const ignore_routes = new Set(options?.ignore_routes);
 	const ignore_statuses = new Set(options?.ignore_statuses);
@@ -102,10 +102,10 @@ const walk_coverage = (
 			if (codes && codes.length > 0) {
 				for (const code of codes) {
 					const covered = status_observed || collector.observed.has(`${status_key}:${code}`);
-					entries.push({method: spec.method, path: spec.path, status, code, covered});
+					entries.push({ method: spec.method, path: spec.path, status, code, covered });
 				}
 			} else {
-				entries.push({method: spec.method, path: spec.path, status, covered: status_observed});
+				entries.push({ method: spec.method, path: spec.path, status, covered: status_observed });
 			}
 		}
 	}
@@ -155,7 +155,7 @@ export class ErrorCoverageCollector {
 		method: string,
 		path: string,
 		status: number,
-		code?: string,
+		code?: string
 	): void {
 		const spec = find_route_spec(route_specs, method, path);
 		const spec_path = spec ? spec.path : path;
@@ -188,15 +188,15 @@ export class ErrorCoverageCollector {
 		method: string,
 		path: string,
 		response: Response,
-		code?: string,
+		code?: string
 	): Promise<void> {
 		await assert_response_matches_spec(route_specs, method, path, response);
 		let resolved_code = code;
 		if (resolved_code === undefined && !response.ok && !response.bodyUsed) {
 			try {
 				const body = await response.clone().json();
-				if (body && typeof (body as {error?: unknown}).error === 'string') {
-					resolved_code = (body as {error: string}).error;
+				if (body && typeof (body as { error?: unknown }).error === 'string') {
+					resolved_code = (body as { error: string }).error;
 				}
 			} catch {
 				// non-JSON body — no code to extract
@@ -217,7 +217,7 @@ export class ErrorCoverageCollector {
 	uncovered(route_specs: Array<RouteSpec>, options?: CoverageFilterOptions): Array<UncoveredEntry> {
 		return walk_coverage(this, route_specs, options)
 			.filter((entry) => !entry.covered)
-			.map(({method, path, status, code}) => ({method, path, status, ...(code && {code})}));
+			.map(({ method, path, status, code }) => ({ method, path, status, ...(code && { code }) }));
 	}
 }
 
@@ -241,7 +241,7 @@ export interface ErrorCoverageOptions extends CoverageFilterOptions {
  * the route_key / status separator.
  */
 const format_uncovered = (
-	entry: Pick<CoverageEntry, 'method' | 'path' | 'status' | 'code'>,
+	entry: Pick<CoverageEntry, 'method' | 'path' | 'status' | 'code'>
 ): string =>
 	`${entry.method} ${entry.path} → ${entry.status}${entry.code ? ` (${entry.code})` : ''}`;
 
@@ -265,7 +265,7 @@ const format_uncovered = (
 export const assert_error_coverage = (
 	collector: ErrorCoverageCollector,
 	route_specs: Array<RouteSpec>,
-	options?: ErrorCoverageOptions,
+	options?: ErrorCoverageOptions
 ): void => {
 	const min_coverage = options?.min_coverage ?? 0;
 	const entries = walk_coverage(collector, route_specs, options);
@@ -277,15 +277,15 @@ export const assert_error_coverage = (
 	const ratio = total > 0 ? covered / total : 1;
 	console.log(
 		`[error coverage] ${covered}/${total} (${(ratio * 100).toFixed(1)}%)` +
-			(uncovered_lines.length > 0 ? `\n  uncovered:\n    ${uncovered_lines.join('\n    ')}` : ''),
+			(uncovered_lines.length > 0 ? `\n  uncovered:\n    ${uncovered_lines.join('\n    ')}` : '')
 	);
 
 	if (min_coverage > 0) {
 		assert.ok(
 			ratio >= min_coverage,
 			`Error coverage ${(ratio * 100).toFixed(1)}% below threshold ${(min_coverage * 100).toFixed(
-				1,
-			)}%` + `\n  uncovered:\n    ${uncovered_lines.join('\n    ')}`,
+				1
+			)}%` + `\n  uncovered:\n    ${uncovered_lines.join('\n    ')}`
 		);
 	}
 };

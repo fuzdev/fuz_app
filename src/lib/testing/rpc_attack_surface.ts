@@ -14,25 +14,34 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {test, assert, describe} from 'vitest';
+import { test, assert, describe } from 'vitest';
 
-import type {AppSurfaceRpcEndpoint, AppSurfaceRpcMethod, AppSurfaceSpec} from '../http/surface.ts';
-import {is_keeper_auth, is_public_auth, is_role_auth, type RouteAuth} from '../http/auth_shape.ts';
-import {JSONRPC_ERROR_CODES} from '../http/jsonrpc_errors.ts';
+import type {
+	AppSurfaceRpcEndpoint,
+	AppSurfaceRpcMethod,
+	AppSurfaceSpec
+} from '../http/surface.ts';
+import {
+	is_keeper_auth,
+	is_public_auth,
+	is_role_auth,
+	type RouteAuth
+} from '../http/auth_shape.ts';
+import { JSONRPC_ERROR_CODES } from '../http/jsonrpc_errors.ts';
 import {
 	create_auth_test_apps,
 	create_test_app_from_specs,
 	create_test_request_context,
-	select_auth_app,
+	select_auth_app
 } from './auth_apps.ts';
-import {generate_input_test_cases} from './adversarial_input.ts';
-import {generate_valid_body} from './schema_generators.ts';
-import {ERROR_INVALID_JSON_BODY} from '../http/error_schemas.ts';
-import type {RpcAction} from '../actions/action_rpc.ts';
+import { generate_input_test_cases } from './adversarial_input.ts';
+import { generate_valid_body } from './schema_generators.ts';
+import { ERROR_INVALID_JSON_BODY } from '../http/error_schemas.ts';
+import type { RpcAction } from '../actions/action_rpc.ts';
 import {
 	create_rpc_post_init,
 	create_rpc_get_url,
-	assert_jsonrpc_error_response,
+	assert_jsonrpc_error_response
 } from './rpc_helpers.ts';
 
 // --- Types ---
@@ -49,7 +58,7 @@ export interface RpcAttackSurfaceOptions {
 
 /** Filter RPC methods that require any form of authentication. */
 const filter_protected_rpc_methods = (
-	endpoint: AppSurfaceRpcEndpoint,
+	endpoint: AppSurfaceRpcEndpoint
 ): Array<AppSurfaceRpcMethod> => endpoint.methods.filter((m) => !is_public_auth(m.auth));
 
 /** Filter RPC methods that declare a role gate (`auth.roles?.length`). */
@@ -67,7 +76,7 @@ const filter_keeper_rpc_methods = (endpoint: AppSurfaceRpcEndpoint): Array<AppSu
 const find_rpc_action = (
 	rpc_endpoint_specs: AppSurfaceSpec['rpc_endpoints'],
 	endpoint_path: string,
-	method_name: string,
+	method_name: string
 ): RpcAction | undefined => {
 	const ep = rpc_endpoint_specs.find((e) => e.path === endpoint_path);
 	return ep?.actions.find((a) => a.spec.method === method_name);
@@ -90,8 +99,8 @@ const find_rpc_action = (
  * - correct auth passes — every protected method, assert not 401/403
  */
 const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
-	const {build, roles} = options;
-	const {surface, route_specs, rpc_endpoints: rpc_endpoint_specs} = build();
+	const { build, roles } = options;
+	const { surface, route_specs, rpc_endpoints: rpc_endpoint_specs } = build();
 
 	if (surface.rpc_endpoints.length === 0) return;
 
@@ -110,7 +119,7 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 						test(`${method.name} (${format_auth(method.auth)})`, async () => {
 							const res = await apps.public.request(
 								endpoint.path,
-								create_rpc_post_init(method.name),
+								create_rpc_post_init(method.name)
 							);
 							assert.strictEqual(res.status, 401, `${method.name} should return 401`);
 							const body = await res.json();
@@ -126,7 +135,7 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 							const wrong_roles = roles.filter((r) => !required_roles.includes(r));
 							for (const wrong_role of wrong_roles) {
 								test(`${method.name} (${wrong_role} instead of ${required_roles.join(
-									'|',
+									'|'
 								)})`, async () => {
 									const app = apps.by_role.get(wrong_role);
 									if (!app) throw new Error(`No test app for role '${wrong_role}'`);
@@ -136,7 +145,7 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 									const params = action ? generate_valid_body(action.spec.input) : undefined;
 									const res = await app.request(
 										endpoint.path,
-										create_rpc_post_init(method.name, params),
+										create_rpc_post_init(method.name, params)
 									);
 									assert.strictEqual(res.status, 403, `${method.name} should return 403`);
 									const body = await res.json();
@@ -155,7 +164,7 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 								const params = action ? generate_valid_body(action.spec.input) : undefined;
 								const res = await apps.authed.request(
 									endpoint.path,
-									create_rpc_post_init(method.name, params),
+									create_rpc_post_init(method.name, params)
 								);
 								assert.strictEqual(res.status, 403, `${method.name} should return 403`);
 								const body = await res.json();
@@ -171,12 +180,12 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 						const session_app = create_test_app_from_specs(
 							route_specs,
 							create_test_request_context('keeper'),
-							'session',
+							'session'
 						);
 						const api_token_app = create_test_app_from_specs(
 							route_specs,
 							create_test_request_context('keeper'),
-							'api_token',
+							'api_token'
 						);
 
 						for (const method of keeper_methods) {
@@ -185,12 +194,12 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 							test(`${method.name} rejects session credential`, async () => {
 								const res = await session_app.request(
 									endpoint.path,
-									create_rpc_post_init(method.name, valid_params),
+									create_rpc_post_init(method.name, valid_params)
 								);
 								assert.strictEqual(
 									res.status,
 									403,
-									`${method.name} should reject session credential`,
+									`${method.name} should reject session credential`
 								);
 								const body = await res.json();
 								assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.forbidden);
@@ -199,12 +208,12 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
 							test(`${method.name} rejects api_token credential`, async () => {
 								const res = await api_token_app.request(
 									endpoint.path,
-									create_rpc_post_init(method.name, valid_params),
+									create_rpc_post_init(method.name, valid_params)
 								);
 								assert.strictEqual(
 									res.status,
 									403,
-									`${method.name} should reject api_token credential`,
+									`${method.name} should reject api_token credential`
 								);
 								const body = await res.json();
 								assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.forbidden);
@@ -254,8 +263,8 @@ const describe_rpc_auth = (options: RpcAttackSurfaceOptions): void => {
  * envelope parsing (step 1) and method lookup (step 2).
  */
 const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): void => {
-	const {build, roles} = options;
-	const {surface, route_specs} = build();
+	const { build, roles } = options;
+	const { surface, route_specs } = build();
 
 	if (surface.rpc_endpoints.length === 0) return;
 
@@ -275,8 +284,8 @@ const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): v
 				test('non-JSON body → parse_error', async () => {
 					const res = await apps.public.request(endpoint.path, {
 						method: 'POST',
-						headers: {'Content-Type': 'application/json'},
-						body: 'not-json',
+						headers: { 'Content-Type': 'application/json' },
+						body: 'not-json'
 					});
 					assert.strictEqual(res.status, 400);
 					const body = await res.json();
@@ -286,12 +295,12 @@ const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): v
 				test('wrong jsonrpc version → invalid_request', async () => {
 					const res = await apps.public.request(endpoint.path, {
 						method: 'POST',
-						headers: {'Content-Type': 'application/json'},
+						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({
 							jsonrpc: '1.0',
 							id: 'test',
-							method: endpoint.methods[0]?.name ?? 'any',
-						}),
+							method: endpoint.methods[0]?.name ?? 'any'
+						})
 					});
 					assert.strictEqual(res.status, 400);
 					const body = await res.json();
@@ -301,11 +310,11 @@ const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): v
 				test('missing jsonrpc field → invalid_request', async () => {
 					const res = await apps.public.request(endpoint.path, {
 						method: 'POST',
-						headers: {'Content-Type': 'application/json'},
+						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({
 							id: 'test',
-							method: endpoint.methods[0]?.name ?? 'any',
-						}),
+							method: endpoint.methods[0]?.name ?? 'any'
+						})
 					});
 					assert.strictEqual(res.status, 400);
 					const body = await res.json();
@@ -315,8 +324,8 @@ const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): v
 				test('missing method field → invalid_request', async () => {
 					const res = await apps.public.request(endpoint.path, {
 						method: 'POST',
-						headers: {'Content-Type': 'application/json'},
-						body: JSON.stringify({jsonrpc: '2.0', id: 'test'}),
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ jsonrpc: '2.0', id: 'test' })
 					});
 					assert.strictEqual(res.status, 400);
 					const body = await res.json();
@@ -326,11 +335,11 @@ const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): v
 				test('missing id field → invalid_request', async () => {
 					const res = await apps.public.request(endpoint.path, {
 						method: 'POST',
-						headers: {'Content-Type': 'application/json'},
+						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({
 							jsonrpc: '2.0',
-							method: endpoint.methods[0]?.name ?? 'any',
-						}),
+							method: endpoint.methods[0]?.name ?? 'any'
+						})
 					});
 					assert.strictEqual(res.status, 400);
 					const body = await res.json();
@@ -340,10 +349,10 @@ const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): v
 				test('batch (array) body → invalid_request', async () => {
 					const res = await apps.public.request(endpoint.path, {
 						method: 'POST',
-						headers: {'Content-Type': 'application/json'},
+						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify([
-							{jsonrpc: '2.0', id: '1', method: endpoint.methods[0]?.name ?? 'any'},
-						]),
+							{ jsonrpc: '2.0', id: '1', method: endpoint.methods[0]?.name ?? 'any' }
+						])
 					});
 					assert.strictEqual(res.status, 400);
 					const body = await res.json();
@@ -354,7 +363,7 @@ const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): v
 				test('unknown method name → method_not_found', async () => {
 					const res = await apps.public.request(
 						endpoint.path,
-						create_rpc_post_init('__nonexistent_method__'),
+						create_rpc_post_init('__nonexistent_method__')
 					);
 					assert.strictEqual(res.status, 404);
 					const body = await res.json();
@@ -383,7 +392,7 @@ const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): v
 					// skip if no read methods exist
 					if (!read_method) return;
 					const res = await apps.public.request(
-						`${endpoint.path}?method=${read_method.name}&id=test&params=not-json`,
+						`${endpoint.path}?method=${read_method.name}&id=test&params=not-json`
 					);
 					assert.strictEqual(res.status, 400);
 					const body = await res.json();
@@ -396,12 +405,12 @@ const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): v
 					if (!read_method) return;
 					// valid JSON but not an object — hits dispatcher's params validation
 					const res = await apps.public.request(
-						`${endpoint.path}?method=${read_method.name}&id=test&params=42`,
+						`${endpoint.path}?method=${read_method.name}&id=test&params=42`
 					);
 					// should reject: either invalid_params (validation) or auth error
 					assert.ok(
 						res.status >= 400,
-						`expected error status for non-object params, got ${res.status}`,
+						`expected error status for non-object params, got ${res.status}`
 					);
 					const body = await res.json();
 					assert_jsonrpc_error_response(body);
@@ -434,8 +443,8 @@ const describe_rpc_adversarial_envelopes = (options: RpcAttackSurfaceOptions): v
  * `generate_input_test_cases` from `testing/adversarial_input.ts`.
  */
 const describe_rpc_adversarial_params = (options: RpcAttackSurfaceOptions): void => {
-	const {build, roles} = options;
-	const {surface, route_specs, rpc_endpoints: rpc_endpoint_specs} = build();
+	const { build, roles } = options;
+	const { surface, route_specs, rpc_endpoints: rpc_endpoint_specs } = build();
 
 	if (surface.rpc_endpoints.length === 0) return;
 
@@ -454,7 +463,7 @@ const describe_rpc_adversarial_params = (options: RpcAttackSurfaceOptions): void
 					if (!action) {
 						test(`${method.name} — missing RpcAction source spec`, () => {
 							assert.fail(
-								`surface has method '${method.name}' but no matching RpcAction in rpc_endpoints`,
+								`surface has method '${method.name}' but no matching RpcAction in rpc_endpoints`
 							);
 						});
 						continue;
@@ -464,7 +473,7 @@ const describe_rpc_adversarial_params = (options: RpcAttackSurfaceOptions): void
 					// envelope validation (invalid_request) not params validation (invalid_params).
 					// Envelope-level structural errors are covered by adversarial envelopes.
 					const test_cases = generate_input_test_cases(action.spec.input).filter(
-						(tc) => tc.expected_error !== ERROR_INVALID_JSON_BODY,
+						(tc) => tc.expected_error !== ERROR_INVALID_JSON_BODY
 					);
 					if (test_cases.length === 0) continue;
 					total_cases += test_cases.length;
@@ -476,12 +485,12 @@ const describe_rpc_adversarial_params = (options: RpcAttackSurfaceOptions): void
 							test(tc.label, async () => {
 								const res = await app.request(
 									endpoint.path,
-									create_rpc_post_init(method.name, tc.body),
+									create_rpc_post_init(method.name, tc.body)
 								);
 								assert.strictEqual(
 									res.status,
 									400,
-									`Expected 400 for ${method.name} [${tc.label}], got ${res.status}`,
+									`Expected 400 for ${method.name} [${tc.label}], got ${res.status}`
 								);
 								const body = await res.json();
 								assert_jsonrpc_error_response(body, JSONRPC_ERROR_CODES.invalid_params);
@@ -497,7 +506,7 @@ const describe_rpc_adversarial_params = (options: RpcAttackSurfaceOptions): void
 			if (surface.rpc_endpoints.some((ep) => ep.methods.some((m) => m.input_schema !== null))) {
 				assert.ok(
 					total_cases > 0,
-					'No RPC params test cases generated — schema walking may be broken',
+					'No RPC params test cases generated — schema walking may be broken'
 				);
 			}
 		});
@@ -530,7 +539,7 @@ const format_auth = (auth: RouteAuth): string => {
  * Skips silently when `surface.rpc_endpoints` is empty.
  */
 export const describe_rpc_attack_surface_tests = (options: RpcAttackSurfaceOptions): void => {
-	const {surface} = options.build();
+	const { surface } = options.build();
 	if (surface.rpc_endpoints.length === 0) return;
 
 	describe_rpc_auth(options);

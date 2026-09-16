@@ -26,29 +26,29 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {assert, describe, test} from 'vitest';
+import { assert, describe, test } from 'vitest';
 
-import type {AppSurfaceSpec} from '../../http/surface.ts';
-import type {RouteMethod} from '../../http/route_spec.ts';
-import type {SessionOptions} from '../../auth/session_cookie.ts';
-import {DAEMON_TOKEN_HEADER} from '../../auth/daemon_token.ts';
+import type { AppSurfaceSpec } from '../../http/surface.ts';
+import type { RouteMethod } from '../../http/route_spec.ts';
+import type { SessionOptions } from '../../auth/session_cookie.ts';
+import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
 import {
 	find_auth_route,
 	rest_auth_route_suffixes,
-	type RestAuthRouteSuffix,
+	type RestAuthRouteSuffix
 } from '../integration_helpers.ts';
 import {
 	find_rpc_action,
 	headers_to_record,
 	rpc_call,
 	resolve_rpc_endpoints_for_setup,
-	type RpcEndpointsSuiteOption,
+	type RpcEndpointsSuiteOption
 } from '../rpc_helpers.ts';
-import type {FetchTransport} from '../transports/fetch_transport.ts';
-import {type ConformanceCase, type ConformancePrincipal} from './conformance_case.ts';
-import type {BackendCapabilities} from './capabilities.ts';
-import type {SetupTest, TestFixture} from './setup.ts';
-import {xfail_until} from './xfail.ts';
+import type { FetchTransport } from '../transports/fetch_transport.ts';
+import { type ConformanceCase, type ConformancePrincipal } from './conformance_case.ts';
+import type { BackendCapabilities } from './capabilities.ts';
+import type { SetupTest, TestFixture } from './setup.ts';
+import { xfail_until } from './xfail.ts';
 
 /**
  * Names a seeded `extra_accounts` username for the `role_holder` /
@@ -117,20 +117,20 @@ const INVALID_DAEMON_TOKEN_VALUE = 'not-a-valid-daemon-token';
 const resolve_principal = async (
 	fixture: TestFixture,
 	as: ConformancePrincipal,
-	principals: ConformancePrincipalConfig | undefined,
+	principals: ConformancePrincipalConfig | undefined
 ): Promise<ResolvedPrincipal> => {
 	switch (as) {
 		case 'keeper':
 			// Keeper carries its session cookie via `create_session_headers`
 			// (in-process the transport is stateless; cross-process the jar
 			// also holds it — the explicit header is the same value).
-			return {transport: fixture.transport, headers: fixture.create_session_headers()};
+			return { transport: fixture.transport, headers: fixture.create_session_headers() };
 		case 'daemon':
 			// Daemon-token is a non-browser credential — empty jar + no Origin.
 			return {
-				transport: fixture.fresh_transport({origin: null}),
+				transport: fixture.fresh_transport({ origin: null }),
 				headers: fixture.create_daemon_token_headers(),
-				suppress_default_origin: true,
+				suppress_default_origin: true
 			};
 		case 'invalid_daemon':
 			// A malformed `X-Daemon-Token` carried ALONGSIDE the keeper's session
@@ -144,11 +144,11 @@ const resolve_principal = async (
 			// base credential this would 401 (anonymous) — the session is what makes
 			// the *credential-type* gate, not the auth gate, the refusing layer.
 			return {
-				transport: fixture.fresh_transport({origin: null}),
+				transport: fixture.fresh_transport({ origin: null }),
 				headers: fixture.create_session_headers({
-					[DAEMON_TOKEN_HEADER]: INVALID_DAEMON_TOKEN_VALUE,
+					[DAEMON_TOKEN_HEADER]: INVALID_DAEMON_TOKEN_VALUE
 				}),
-				suppress_default_origin: true,
+				suppress_default_origin: true
 			};
 		case 'daemon_browser':
 			// A VALID `X-Daemon-Token` carried in a browser context (default Origin
@@ -163,14 +163,14 @@ const resolve_principal = async (
 			// guard), the 403 here proves the valid token was discarded, not honored.
 			return {
 				transport: fixture.transport,
-				headers: fixture.create_session_headers(fixture.create_daemon_token_headers()),
+				headers: fixture.create_session_headers(fixture.create_daemon_token_headers())
 			};
 		case 'token':
 			// Bearer is discarded in a browser context — empty jar + no Origin.
 			return {
-				transport: fixture.fresh_transport({origin: null}),
+				transport: fixture.fresh_transport({ origin: null }),
 				headers: fixture.create_bearer_headers(),
-				suppress_default_origin: true,
+				suppress_default_origin: true
 			};
 		case 'bearer_browser':
 			// A VALID bearer api-token in a browser context (default Origin
@@ -184,14 +184,14 @@ const resolve_principal = async (
 			// honored (a non-discarding leg would authenticate → 200).
 			return {
 				transport: fixture.fresh_transport(),
-				headers: fixture.create_bearer_headers(),
+				headers: fixture.create_bearer_headers()
 			};
 		case 'anonymous':
 			// Fresh jar so the keeper cookie (cross-process) can't leak in.
-			return {transport: fixture.fresh_transport(), headers: {}};
+			return { transport: fixture.fresh_transport(), headers: {} };
 		case 'fresh_non_admin': {
 			const account = await fixture.create_account();
-			return {transport: fixture.fresh_transport(), headers: account.create_session_headers()};
+			return { transport: fixture.fresh_transport(), headers: account.create_session_headers() };
 		}
 		case 'expired_session': {
 			// The keeper presented via an expired server-side session — fresh
@@ -199,7 +199,7 @@ const resolve_principal = async (
 			// minted cookie payload is valid; the backdated `auth_session` row
 			// is what the DB-row expiry gate refuses.
 			const cookie = await fixture.mint_expired_session();
-			return {transport: fixture.fresh_transport(), headers: {cookie}};
+			return { transport: fixture.fresh_transport(), headers: { cookie } };
 		}
 		case 'role_holder':
 		case 'wrong_role': {
@@ -207,17 +207,17 @@ const resolve_principal = async (
 			if (!username) {
 				throw new Error(
 					`conformance: principal '${as}' requires options.principals.${as} naming a seeded ` +
-						`extra_accounts username (declare the account at setup via extra_accounts).`,
+						`extra_accounts username (declare the account at setup via extra_accounts).`
 				);
 			}
 			const extra = fixture.extra_accounts[username];
 			if (!extra) {
 				throw new Error(
 					`conformance: extra_accounts['${username}'] not seeded for principal '${as}' — ` +
-						`declare it in the suite's extra_accounts option.`,
+						`declare it in the suite's extra_accounts option.`
 				);
 			}
-			return {transport: fixture.fresh_transport(), headers: extra.create_session_headers()};
+			return { transport: fixture.fresh_transport(), headers: extra.create_session_headers() };
 		}
 	}
 };
@@ -226,7 +226,7 @@ const resolve_principal = async (
 const assert_fields = (actual: unknown, fields: Record<string, unknown>, label: string): void => {
 	assert.ok(
 		actual !== null && typeof actual === 'object',
-		`${label}: expected an object to read fields from, got ${JSON.stringify(actual)}`,
+		`${label}: expected an object to read fields from, got ${JSON.stringify(actual)}`
 	);
 	const record = actual as Record<string, unknown>;
 	for (const [key, expected] of Object.entries(fields)) {
@@ -253,13 +253,13 @@ const has_key_anywhere = (value: unknown, key: string): boolean => {
 const assert_absent_fields = (
 	body: unknown,
 	absent: ReadonlyArray<string>,
-	label: string,
+	label: string
 ): void => {
 	for (const key of absent) {
 		assert.ok(
 			!has_key_anywhere(body, key),
 			`${label}: response must not serialize the sensitive field '${key}' anywhere in its ` +
-				`body — a secret column leaked into the wire shape.`,
+				`body — a secret column leaked into the wire shape.`
 		);
 	}
 };
@@ -275,7 +275,7 @@ const assert_absent_fields = (
 export const FINGERPRINT_HEADERS: ReadonlyArray<string> = [
 	'server',
 	'x-powered-by',
-	'www-authenticate',
+	'www-authenticate'
 ];
 
 /**
@@ -284,13 +284,13 @@ export const FINGERPRINT_HEADERS: ReadonlyArray<string> = [
  */
 export const assert_no_fingerprint_headers = (
 	headers: Record<string, string>,
-	label: string,
+	label: string
 ): void => {
 	for (const name of FINGERPRINT_HEADERS) {
 		assert.ok(
 			!(name in headers),
 			`${label}: response leaked backend-fingerprinting header '${name}: ${headers[name]}' — ` +
-				`Server / X-Powered-By / WWW-Authenticate must stay absent on both spines.`,
+				`Server / X-Powered-By / WWW-Authenticate must stay absent on both spines.`
 		);
 	}
 };
@@ -304,14 +304,14 @@ export const assert_no_fingerprint_headers = (
 export const assert_expected_headers = (
 	headers: Record<string, string>,
 	expected: Record<string, string | null>,
-	label: string,
+	label: string
 ): void => {
 	for (const [name, value] of Object.entries(expected)) {
 		const key = name.toLowerCase();
 		if (value === null) {
 			assert.ok(
 				!(key in headers),
-				`${label}: header '${name}' expected absent but present as '${headers[key]}'`,
+				`${label}: header '${name}' expected absent but present as '${headers[key]}'`
 			);
 		} else {
 			assert.strictEqual(headers[key], value, `${label}: header '${name}'`);
@@ -351,13 +351,13 @@ interface NormalizedResponse {
 const run_case = async (
 	c: ConformanceCase,
 	options: ConformanceTableOptions,
-	resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup>,
+	resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup>
 ): Promise<NormalizedResponse> => {
 	const fixture = await options.setup_test();
-	const {transport, headers, suppress_default_origin} = await resolve_principal(
+	const { transport, headers, suppress_default_origin } = await resolve_principal(
 		fixture,
 		c.request.as,
-		options.principals,
+		options.principals
 	);
 
 	const normalized = c.request.method.startsWith('/')
@@ -379,13 +379,13 @@ const run_rpc_case = async (
 	transport: FetchTransport,
 	headers: Record<string, string>,
 	suppress_default_origin: boolean | undefined,
-	resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup>,
+	resolved_rpc_endpoints: ReturnType<typeof resolve_rpc_endpoints_for_setup>
 ): Promise<NormalizedResponse> => {
 	const found = find_rpc_action(resolved_rpc_endpoints, c.request.method);
 	if (!found) {
 		throw new Error(
 			`conformance: RPC method '${c.request.method}' not found on the surface — ` +
-				`check the method name or that the action is registered on rpc_endpoints.`,
+				`check the method name or that the action is registered on rpc_endpoints.`
 		);
 	}
 
@@ -395,8 +395,8 @@ const run_rpc_case = async (
 		method: c.request.method,
 		params: c.request.params,
 		headers,
-		...(c.request.verb && {verb: c.request.verb}),
-		...(suppress_default_origin && {suppress_default_origin: true}),
+		...(c.request.verb && { verb: c.request.verb }),
+		...(suppress_default_origin && { suppress_default_origin: true })
 	});
 
 	assert_response_headers(res.headers, c);
@@ -405,19 +405,19 @@ const run_rpc_case = async (
 		assert.ok(
 			res.ok,
 			`${c.name}: expected success (${c.expect.status}) but got error ${JSON.stringify(
-				res.ok ? undefined : res.error,
-			)}`,
+				res.ok ? undefined : res.error
+			)}`
 		);
 		assert.strictEqual(res.status, c.expect.status, `${c.name}: status`);
 		const parsed = found.action.spec.output.safeParse(res.result);
 		assert.ok(
 			parsed.success,
 			`${c.name}: result does not match spec.output: ${JSON.stringify(
-				parsed.success ? undefined : parsed.error.issues,
-			)}`,
+				parsed.success ? undefined : parsed.error.issues
+			)}`
 		);
 		if (c.expect.fields) assert_fields(res.result, c.expect.fields, c.name);
-		return {status: res.status, body: res.result};
+		return { status: res.status, body: res.result };
 	}
 
 	assert.ok(!res.ok, `${c.name}: expected error status ${c.expect.status} but got success`);
@@ -430,11 +430,11 @@ const run_rpc_case = async (
 		// IDOR-mask / privilege reason is exactly the distinguishing bit). Rows
 		// whose denial genuinely has no reason (the bare `unauthenticated()` 401)
 		// simply omit `error_reason` and are pinned by `status` above.
-		const reason = (res.error.data as {reason?: unknown} | undefined)?.reason;
+		const reason = (res.error.data as { reason?: unknown } | undefined)?.reason;
 		assert.strictEqual(reason, c.expect.error_reason, `${c.name}: error.data.reason`);
 	}
 	if (c.expect.fields) assert_fields(res.error.data, c.expect.fields, c.name);
-	return {status: res.status, body: res.error};
+	return { status: res.status, body: res.error };
 };
 
 /** Dispatch + assert a case targeting one of the 6 REST auth routes. */
@@ -442,13 +442,13 @@ const run_rest_case = async (
 	c: ConformanceCase,
 	options: ConformanceTableOptions,
 	transport: FetchTransport,
-	headers: Record<string, string>,
+	headers: Record<string, string>
 ): Promise<NormalizedResponse> => {
 	const suffix = c.request.method as RestAuthRouteSuffix;
 	if (!rest_auth_route_suffixes.includes(suffix)) {
 		throw new Error(
 			`conformance: REST method '${c.request.method}' is not a known auth-route suffix ` +
-				`(${rest_auth_route_suffixes.join(', ')}). Use an RPC method name for RPC actions.`,
+				`(${rest_auth_route_suffixes.join(', ')}). Use an RPC method name for RPC actions.`
 		);
 	}
 	const verb: RouteMethod = c.request.verb ?? 'POST';
@@ -459,9 +459,9 @@ const run_rest_case = async (
 
 	const init: RequestInit = {
 		method: verb,
-		headers: {'Content-Type': 'application/json', ...headers},
+		headers: { 'Content-Type': 'application/json', ...headers },
 		...(verb !== 'GET' &&
-			c.request.params !== undefined && {body: JSON.stringify(c.request.params)}),
+			c.request.params !== undefined && { body: JSON.stringify(c.request.params) })
 	};
 	const response = await transport(route.path, init);
 	assert_response_headers(headers_to_record(response.headers), c);
@@ -473,15 +473,15 @@ const run_rest_case = async (
 		assert.ok(
 			parsed.success,
 			`${c.name}: body does not match route output: ${JSON.stringify(
-				parsed.success ? undefined : parsed.error.issues,
-			)}`,
+				parsed.success ? undefined : parsed.error.issues
+			)}`
 		);
 	} else if (c.expect.error_reason !== undefined) {
-		const error = (body as {error?: unknown} | undefined)?.error;
+		const error = (body as { error?: unknown } | undefined)?.error;
 		assert.strictEqual(error, c.expect.error_reason, `${c.name}: body.error`);
 	}
 	if (c.expect.fields) assert_fields(body, c.expect.fields, c.name);
-	return {status: response.status, body};
+	return { status: response.status, body };
 };
 
 /**
@@ -493,7 +493,7 @@ const run_rest_case = async (
 export const describe_conformance_table_tests = (options: ConformanceTableOptions): void => {
 	const resolved_rpc_endpoints = resolve_rpc_endpoints_for_setup(
 		options.rpc_endpoints,
-		options.session_options,
+		options.session_options
 	);
 	// Per-group normalized responses, populated as the member case tests run
 	// and consulted by the per-group byte-identity assertions registered after
@@ -501,7 +501,7 @@ export const describe_conformance_table_tests = (options: ConformanceTableOption
 	// the group assertions execute last, after every member has recorded.
 	const equivalence_groups = new Map<
 		string,
-		Array<{name: string; normalized: NormalizedResponse}>
+		Array<{ name: string; normalized: NormalizedResponse }>
 	>();
 	const group_names = new Set<string>();
 	for (const c of options.cases) {
@@ -515,7 +515,7 @@ export const describe_conformance_table_tests = (options: ConformanceTableOption
 				const normalized = await run_case(c, options, resolved_rpc_endpoints);
 				if (group) {
 					const members = equivalence_groups.get(group) ?? [];
-					members.push({name: c.name, normalized});
+					members.push({ name: c.name, normalized });
 					equivalence_groups.set(group, members);
 				}
 			};
@@ -538,7 +538,7 @@ export const describe_conformance_table_tests = (options: ConformanceTableOption
 					members.length >= 2,
 					`equivalence group '${group}': expected >= 2 members to have recorded, got ` +
 						`${members.length} — a group pins indistinguishability between paths, so it ` +
-						`needs at least a pair (check the member cases ran and weren't all xfail).`,
+						`needs at least a pair (check the member cases ran and weren't all xfail).`
 				);
 				const [first, ...rest] = members;
 				// `members.length >= 2` guarantees `first` is defined; the explicit
@@ -550,7 +550,7 @@ export const describe_conformance_table_tests = (options: ConformanceTableOption
 						first.normalized,
 						`equivalence group '${group}': '${member.name}' is distinguishable from ` +
 							`'${first.name}' — a prober could tell these masked paths apart. The ` +
-							`normalized {status, body} must be byte-identical across all members.`,
+							`normalized {status, body} must be byte-identical across all members.`
 					);
 				}
 			});

@@ -4,29 +4,29 @@
  * @module
  */
 
-import {describe, test, assert, vi, beforeEach} from 'vitest';
-import {Hono} from 'hono';
+import { describe, test, assert, vi, beforeEach } from 'vitest';
+import { Hono } from 'hono';
 
 import {
 	generate_daemon_token,
 	validate_daemon_token,
 	DaemonToken,
 	DAEMON_TOKEN_HEADER,
-	type DaemonTokenState,
+	type DaemonTokenState
 } from '$lib/auth/daemon_token.ts';
 import {
 	create_daemon_token_middleware,
-	resolve_keeper_account_id,
+	resolve_keeper_account_id
 } from '$lib/auth/daemon_token_middleware.ts';
-import {ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY} from '$lib/hono_context.ts';
-import {ROLE_KEEPER} from '$lib/auth/role_schema.ts';
-import type {QueryDeps} from '$lib/db/query_deps.ts';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY } from '$lib/hono_context.ts';
+import { ROLE_KEEPER } from '$lib/auth/role_schema.ts';
+import type { QueryDeps } from '$lib/db/query_deps.ts';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import {
 	create_test_account,
 	create_test_actor,
-	create_test_role_grant,
+	create_test_role_grant
 } from '$lib/testing/entities.ts';
 
 // Mock module-level query functions used by daemon_token_middleware
@@ -35,24 +35,24 @@ const {
 	mock_query_actor_by_id,
 	mock_query_active_actors_by_account,
 	mock_query_role_grant_find_active_for_actor,
-	mock_query_role_grant_find_account_id_for_role,
+	mock_query_role_grant_find_account_id_for_role
 } = vi.hoisted(() => ({
 	mock_query_account_by_id: vi.fn(),
 	mock_query_actor_by_id: vi.fn(),
 	mock_query_active_actors_by_account: vi.fn(),
 	mock_query_role_grant_find_active_for_actor: vi.fn(),
-	mock_query_role_grant_find_account_id_for_role: vi.fn(),
+	mock_query_role_grant_find_account_id_for_role: vi.fn()
 }));
 
 vi.mock('$lib/auth/account_queries.js', () => ({
 	query_account_by_id: mock_query_account_by_id,
 	query_actor_by_id: mock_query_actor_by_id,
-	query_active_actors_by_account: mock_query_active_actors_by_account,
+	query_active_actors_by_account: mock_query_active_actors_by_account
 }));
 
 vi.mock('$lib/auth/role_grant_queries.js', () => ({
 	query_role_grant_find_active_for_actor: mock_query_role_grant_find_active_for_actor,
-	query_role_grant_find_account_id_for_role: mock_query_role_grant_find_account_id_for_role,
+	query_role_grant_find_account_id_for_role: mock_query_role_grant_find_account_id_for_role
 }));
 
 const create_state = (overrides: Partial<DaemonTokenState> = {}): DaemonTokenState => ({
@@ -60,26 +60,26 @@ const create_state = (overrides: Partial<DaemonTokenState> = {}): DaemonTokenSta
 	previous_token: null,
 	rotated_at: new Date(),
 	keeper_account_id: 'acct-keeper',
-	...overrides,
+	...overrides
 });
 
-const mock_deps = {db: {}} as unknown as QueryDeps;
+const mock_deps = { db: {} } as unknown as QueryDeps;
 
-const test_log = new Logger('test', {level: 'off'});
+const test_log = new Logger('test', { level: 'off' });
 
 const setup_default_mocks = () => {
-	const account = create_test_account({id: 'acct-keeper' as Uuid, username: 'keeper'});
+	const account = create_test_account({ id: 'acct-keeper' as Uuid, username: 'keeper' });
 	const actor = create_test_actor({
 		id: 'actor-keeper' as Uuid,
 		account_id: 'acct-keeper' as Uuid,
-		name: 'keeper',
+		name: 'keeper'
 	});
 	const role_grants = [
 		create_test_role_grant({
 			id: 'role_grant-keeper' as Uuid,
 			actor_id: 'actor-keeper' as Uuid,
-			role: 'keeper',
-		}),
+			role: 'keeper'
+		})
 	];
 	mock_query_account_by_id.mockImplementation(async () => account);
 	mock_query_actor_by_id.mockImplementation(async () => actor);
@@ -109,9 +109,9 @@ const create_daemon_app = (state: DaemonTokenState): Hono => {
 		const credential_type = c.get(CREDENTIAL_TYPE_KEY);
 		const api_token_id = c.get(AUTH_API_TOKEN_ID_KEY);
 		return c.json({
-			context: account_id ? {account_id, actor_id: null} : null,
+			context: account_id ? { account_id, actor_id: null } : null,
 			credential_type: credential_type ?? null,
-			api_token_id: api_token_id ?? null,
+			api_token_id: api_token_id ?? null
 		});
 	});
 	return app;
@@ -125,7 +125,7 @@ describe('generate_daemon_token', () => {
 	});
 
 	test('produces unique tokens', () => {
-		const tokens = new Set(Array.from({length: 10}, () => generate_daemon_token()));
+		const tokens = new Set(Array.from({ length: 10 }, () => generate_daemon_token()));
 		assert.strictEqual(tokens.size, 10);
 	});
 });
@@ -158,14 +158,14 @@ describe('resolve_keeper_account_id', () => {
 		mock_query_role_grant_find_account_id_for_role.mockImplementation(
 			async (_deps: any, role: string) => {
 				return role === ROLE_KEEPER ? 'acct-keeper' : null;
-			},
+			}
 		);
 
 		const result = await resolve_keeper_account_id(mock_deps);
 		assert.strictEqual(result, 'acct-keeper');
 		assert.strictEqual(
 			mock_query_role_grant_find_account_id_for_role.mock.calls[0]![1],
-			ROLE_KEEPER,
+			ROLE_KEEPER
 		);
 	});
 
@@ -185,7 +185,7 @@ describe('validate_daemon_token', () => {
 
 	test('accepts previous token', () => {
 		const previous = generate_daemon_token();
-		const state = create_state({previous_token: previous});
+		const state = create_state({ previous_token: previous });
 		assert.strictEqual(validate_daemon_token(previous, state), true);
 	});
 
@@ -196,7 +196,7 @@ describe('validate_daemon_token', () => {
 	});
 
 	test('rejects when previous_token is null and token does not match current', () => {
-		const state = create_state({previous_token: null});
+		const state = create_state({ previous_token: null });
 		const other = generate_daemon_token();
 		assert.strictEqual(validate_daemon_token(other, state), false);
 	});
@@ -224,7 +224,7 @@ describe('create_daemon_token_middleware', () => {
 		const app = create_daemon_app(state);
 
 		const res = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: ''},
+			headers: { [DAEMON_TOKEN_HEADER]: '' }
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -237,7 +237,7 @@ describe('create_daemon_token_middleware', () => {
 		const app = create_daemon_app(state);
 
 		const res = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: state.current_token},
+			headers: { [DAEMON_TOKEN_HEADER]: state.current_token }
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -252,11 +252,11 @@ describe('create_daemon_token_middleware', () => {
 
 	test('valid previous token sets account_id and credential_type', async () => {
 		const previous = generate_daemon_token();
-		const state = create_state({previous_token: previous});
+		const state = create_state({ previous_token: previous });
 		const app = create_daemon_app(state);
 
 		const res = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: previous},
+			headers: { [DAEMON_TOKEN_HEADER]: previous }
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -274,7 +274,7 @@ describe('create_daemon_token_middleware', () => {
 		const app = create_daemon_app(state);
 
 		const res = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: generate_daemon_token()},
+			headers: { [DAEMON_TOKEN_HEADER]: generate_daemon_token() }
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -289,7 +289,7 @@ describe('create_daemon_token_middleware', () => {
 		const app = create_daemon_app(state);
 
 		const res = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: 'not-a-valid-format'},
+			headers: { [DAEMON_TOKEN_HEADER]: 'not-a-valid-format' }
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -307,11 +307,11 @@ describe('create_daemon_token_middleware', () => {
 		// than via `vi.fn()`'s default undefined.
 		mock_query_role_grant_find_account_id_for_role.mockImplementation(async () => null);
 
-		const state = create_state({keeper_account_id: null});
+		const state = create_state({ keeper_account_id: null });
 		const app = create_daemon_app(state);
 
 		const res = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: state.current_token},
+			headers: { [DAEMON_TOKEN_HEADER]: state.current_token }
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -324,11 +324,11 @@ describe('create_daemon_token_middleware', () => {
 		// with `keeper_account_id: null`, then bootstrap landed the keeper. The
 		// middleware should self-heal on the first authenticated daemon-token
 		// request without an explicit `on_bootstrap` hook.
-		const state = create_state({keeper_account_id: null});
+		const state = create_state({ keeper_account_id: null });
 		const app = create_daemon_app(state);
 
 		const res = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: state.current_token},
+			headers: { [DAEMON_TOKEN_HEADER]: state.current_token }
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -347,11 +347,11 @@ describe('create_daemon_token_middleware', () => {
 		// 200 + keeper context. Re-queries every request until a keeper resolves.
 		mock_query_role_grant_find_account_id_for_role.mockImplementation(async () => null);
 
-		const state = create_state({keeper_account_id: null});
+		const state = create_state({ keeper_account_id: null });
 		const app = create_daemon_app(state);
 
 		const res1 = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: state.current_token},
+			headers: { [DAEMON_TOKEN_HEADER]: state.current_token }
 		});
 		assert.strictEqual(res1.status, 200);
 		const body1 = await res1.json();
@@ -363,7 +363,7 @@ describe('create_daemon_token_middleware', () => {
 		mock_query_role_grant_find_account_id_for_role.mockImplementation(async () => 'acct-keeper');
 
 		const res2 = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: state.current_token},
+			headers: { [DAEMON_TOKEN_HEADER]: state.current_token }
 		});
 		assert.strictEqual(res2.status, 200);
 		const body = await res2.json();
@@ -387,12 +387,12 @@ describe('create_daemon_token_middleware', () => {
 			const credential_type = c.get(CREDENTIAL_TYPE_KEY);
 			return c.json({
 				account_id: account_id ?? null,
-				credential_type: credential_type ?? null,
+				credential_type: credential_type ?? null
 			});
 		});
 
 		const res = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: state.current_token},
+			headers: { [DAEMON_TOKEN_HEADER]: state.current_token }
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -413,7 +413,7 @@ describe('browser-context discard', () => {
 		const app = create_daemon_app(state);
 
 		const res = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: state.current_token, Origin: 'https://x.example'},
+			headers: { [DAEMON_TOKEN_HEADER]: state.current_token, Origin: 'https://x.example' }
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -422,7 +422,7 @@ describe('browser-context discard', () => {
 		assert.strictEqual(body.credential_type, null);
 		assert.strictEqual(
 			res.headers.get('X-Fuz-Auth-Debug'),
-			'daemon_token_discarded_browser_context',
+			'daemon_token_discarded_browser_context'
 		);
 	});
 
@@ -431,7 +431,7 @@ describe('browser-context discard', () => {
 		const app = create_daemon_app(state);
 
 		const res = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: state.current_token, Referer: 'https://x.example/page'},
+			headers: { [DAEMON_TOKEN_HEADER]: state.current_token, Referer: 'https://x.example/page' }
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -439,7 +439,7 @@ describe('browser-context discard', () => {
 		assert.strictEqual(body.credential_type, null);
 		assert.strictEqual(
 			res.headers.get('X-Fuz-Auth-Debug'),
-			'daemon_token_discarded_browser_context',
+			'daemon_token_discarded_browser_context'
 		);
 	});
 
@@ -448,7 +448,7 @@ describe('browser-context discard', () => {
 		const app = create_daemon_app(state);
 
 		const res = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: state.current_token, Origin: ''},
+			headers: { [DAEMON_TOKEN_HEADER]: state.current_token, Origin: '' }
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -456,7 +456,7 @@ describe('browser-context discard', () => {
 		assert.strictEqual(body.credential_type, null);
 		assert.strictEqual(
 			res.headers.get('X-Fuz-Auth-Debug'),
-			'daemon_token_discarded_browser_context',
+			'daemon_token_discarded_browser_context'
 		);
 	});
 
@@ -465,7 +465,7 @@ describe('browser-context discard', () => {
 		const app = create_daemon_app(state);
 
 		const res = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: state.current_token},
+			headers: { [DAEMON_TOKEN_HEADER]: state.current_token }
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -484,7 +484,7 @@ describe('daemon token rotation lifecycle', () => {
 			current_token: initial_token,
 			previous_token: null,
 			rotated_at: new Date(),
-			keeper_account_id: 'acct-keeper',
+			keeper_account_id: 'acct-keeper'
 		};
 
 		// simulate one rotation
@@ -503,7 +503,7 @@ describe('daemon token rotation lifecycle', () => {
 			current_token: initial_token,
 			previous_token: null,
 			rotated_at: new Date(),
-			keeper_account_id: 'acct-keeper',
+			keeper_account_id: 'acct-keeper'
 		};
 
 		// first rotation
@@ -529,7 +529,7 @@ describe('daemon token rotation lifecycle', () => {
 			current_token: initial_token,
 			previous_token: null,
 			rotated_at: new Date(),
-			keeper_account_id: 'acct-keeper',
+			keeper_account_id: 'acct-keeper'
 		};
 
 		const new_token = generate_daemon_token();
@@ -556,7 +556,7 @@ describe('daemon token rotation lifecycle', () => {
 			current_token: initial,
 			previous_token: null,
 			rotated_at: new Date(),
-			keeper_account_id: 'acct-keeper',
+			keeper_account_id: 'acct-keeper'
 		};
 
 		// first rotation
@@ -569,14 +569,14 @@ describe('daemon token rotation lifecycle', () => {
 
 		// both tokens should work via middleware
 		const res_current = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: second},
+			headers: { [DAEMON_TOKEN_HEADER]: second }
 		});
 		assert.strictEqual(res_current.status, 200);
 		const body_current = await res_current.json();
 		assert.strictEqual(body_current.credential_type, 'daemon_token');
 
 		const res_previous = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: initial},
+			headers: { [DAEMON_TOKEN_HEADER]: initial }
 		});
 		assert.strictEqual(res_previous.status, 200);
 		const body_previous = await res_previous.json();
@@ -589,7 +589,7 @@ describe('daemon token rotation lifecycle', () => {
 			current_token: initial,
 			previous_token: null,
 			rotated_at: new Date(),
-			keeper_account_id: 'acct-keeper',
+			keeper_account_id: 'acct-keeper'
 		};
 
 		// first rotation
@@ -607,7 +607,7 @@ describe('daemon token rotation lifecycle', () => {
 		// initial (two-ago) should be discarded — soft-fail pass-through (no
 		// identity set), not a 401. The token no longer matches current/previous.
 		const res = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: initial},
+			headers: { [DAEMON_TOKEN_HEADER]: initial }
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -616,12 +616,12 @@ describe('daemon token rotation lifecycle', () => {
 
 		// second (previous) and third (current) should work
 		const res2 = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: second},
+			headers: { [DAEMON_TOKEN_HEADER]: second }
 		});
 		assert.strictEqual(res2.status, 200);
 
 		const res3 = await app.request('/test', {
-			headers: {[DAEMON_TOKEN_HEADER]: third},
+			headers: { [DAEMON_TOKEN_HEADER]: third }
 		});
 		assert.strictEqual(res3.status, 200);
 	});

@@ -11,15 +11,15 @@
  * @module
  */
 
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	AUDIT_EVENT_TYPES,
 	AuditLogEventJson,
-	type AuditLogEvent,
+	type AuditLogEvent
 } from '../auth/audit_log_schema.ts';
-import {SubscriberRegistry, type SubscribeOptions} from './subscriber_registry.ts';
-import type {SseStream, SseNotification, EventSpec} from './sse.ts';
+import { SubscriberRegistry, type SubscribeOptions } from './subscriber_registry.ts';
+import type { SseStream, SseNotification, EventSpec } from './sse.ts';
 
 /** SSE channel the audit-log stream route publishes on. */
 export const AUDIT_LOG_CHANNEL = 'audit_log';
@@ -49,7 +49,7 @@ export const disconnect_event_types: ReadonlySet<string> = new Set([
 	'session_revoke_all', // all sessions invalidated — user should be kicked
 	'token_revoke_all', // all API tokens invalidated — close the account's streams
 	'password_change', // password changed — all sessions revoked implicitly
-	'logout', // explicit logout — close the account's streams
+	'logout' // explicit logout — close the account's streams
 ]);
 
 /**
@@ -74,7 +74,7 @@ export const disconnect_event_types: ReadonlySet<string> = new Set([
 export const create_sse_auth_guard = <T>(
 	registry: SubscriberRegistry<T>,
 	required_role: string | null,
-	log: Logger,
+	log: Logger
 ): ((event: AuditLogEvent) => void) => {
 	return (event: AuditLogEvent): void => {
 		if (!disconnect_event_types.has(event.event_type)) return;
@@ -95,7 +95,7 @@ export const create_sse_auth_guard = <T>(
 			const closed = registry.close_by_identity(session_id);
 			if (closed > 0) {
 				log.info(
-					`SSE auth guard: closed ${closed} stream(s) for session ${session_id} (session_revoke)`,
+					`SSE auth guard: closed ${closed} stream(s) for session ${session_id} (session_revoke)`
 				);
 			}
 			return;
@@ -116,7 +116,7 @@ export const create_sse_auth_guard = <T>(
 		const closed = registry.close_by_identity(target);
 		if (closed > 0) {
 			log.info(
-				`SSE auth guard: closed ${closed} stream(s) for account ${target} (${event.event_type})`,
+				`SSE auth guard: closed ${closed} stream(s) for account ${target} (${event.event_type})`
 			);
 		}
 	};
@@ -150,8 +150,8 @@ export const audit_log_event_specs: Array<EventSpec> = AUDIT_EVENT_TYPES.map(
 		method: event_type,
 		params: AuditLogEventJson,
 		description: `Audit log: ${event_type.replaceAll('_', ' ')}`,
-		channel: AUDIT_LOG_CHANNEL,
-	}),
+		channel: AUDIT_LOG_CHANNEL
+	})
 );
 
 /**
@@ -216,16 +216,16 @@ export const create_audit_log_sse = (options: {
 	const role = options.role ?? 'admin';
 	const max_per_scope =
 		options.max_per_scope === undefined ? AUDIT_LOG_SSE_MAX_PER_SCOPE : options.max_per_scope;
-	const registry = new SubscriberRegistry<SseNotification>({max_per_scope});
+	const registry = new SubscriberRegistry<SseNotification>({ max_per_scope });
 	const guard = create_sse_auth_guard(registry, role, options.log);
 
 	return {
 		subscribe: registry.subscribe.bind(registry),
 		log: options.log,
 		on_audit_event: (event: AuditLogEvent): void => {
-			registry.broadcast(AUDIT_LOG_CHANNEL, {method: event.event_type, params: event});
+			registry.broadcast(AUDIT_LOG_CHANNEL, { method: event.event_type, params: event });
 			guard(event);
 		},
-		registry,
+		registry
 	};
 };

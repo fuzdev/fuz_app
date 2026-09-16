@@ -14,57 +14,57 @@
  * @module
  */
 
-import {assert} from 'vitest';
-import {z} from 'zod';
-import {mkdtempSync} from 'node:fs';
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import { assert } from 'vitest';
+import { z } from 'zod';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import {create_session_config} from '$lib/auth/session_cookie.ts';
+import { create_session_config } from '$lib/auth/session_cookie.ts';
 import {
 	create_serve_fact_route_spec,
-	create_serve_cell_fact_route_spec,
+	create_serve_cell_fact_route_spec
 } from '$lib/server/serve_fact_route.ts';
 import {
 	create_pglite_factory,
 	create_pg_factory,
 	create_describe_db,
 	auth_integration_truncate_tables,
-	log_db_factory_status,
+	log_db_factory_status
 } from '$lib/testing/db.ts';
-import {create_pglet_factory} from '../db_pglet_factory.ts';
-import {create_pglet_wasm_factory} from '../db_pglet_wasm_factory.ts';
-import {run_migrations} from '$lib/db/migrate.ts';
-import {auth_migration_ns} from '$lib/auth/migrations.ts';
-import {CELL_MIGRATION_NS, CELL_DROP_TABLES} from '$lib/db/cell_ddl.ts';
-import {FACT_MIGRATION_NS, FACT_DROP_TABLES} from '$lib/db/fact_ddl.ts';
-import {CELL_HISTORY_MIGRATION_NS} from '$lib/db/cell_history_ddl.ts';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
-import {create_role_schema, ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
-import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
-import {create_audit_log_config} from '$lib/auth/audit_log_schema.ts';
-import {create_all_cell_actions} from '$lib/auth/all_cell_actions.ts';
-import type {CellCreateAuthorize} from '$lib/auth/cell_actions.ts';
-import {cell_audit_events} from '$lib/auth/cell_audit_events.ts';
+import { create_pglet_factory } from '../db_pglet_factory.ts';
+import { create_pglet_wasm_factory } from '../db_pglet_wasm_factory.ts';
+import { run_migrations } from '$lib/db/migrate.ts';
+import { auth_migration_ns } from '$lib/auth/migrations.ts';
+import { CELL_MIGRATION_NS, CELL_DROP_TABLES } from '$lib/db/cell_ddl.ts';
+import { FACT_MIGRATION_NS, FACT_DROP_TABLES } from '$lib/db/fact_ddl.ts';
+import { CELL_HISTORY_MIGRATION_NS } from '$lib/db/cell_history_ddl.ts';
+import { create_rpc_endpoint } from '$lib/actions/action_rpc.ts';
+import { create_role_schema, ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
+import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
+import { create_audit_log_config } from '$lib/auth/audit_log_schema.ts';
+import { create_all_cell_actions } from '$lib/auth/all_cell_actions.ts';
+import type { CellCreateAuthorize } from '$lib/auth/cell_actions.ts';
+import { cell_audit_events } from '$lib/auth/cell_audit_events.ts';
 import {
 	cell_create_action_spec,
 	type CellCreateInput,
 	type CellPath,
-	type CellVisibility,
+	type CellVisibility
 } from '$lib/auth/cell_action_specs.ts';
 import {
 	cell_item_insert_action_spec,
-	type CellItemPosition,
+	type CellItemPosition
 } from '$lib/auth/cell_item_action_specs.ts';
-import {fractional_indices_between} from '@fuzdev/fuz_util/fractional_index.ts';
-import {create_test_app, type TestApp} from '$lib/testing/app_server.ts';
-import {rpc_call_for_spec, type RpcCallResultForSpec} from '$lib/testing/rpc_helpers.ts';
-import type {RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
-import type {AppServerContext} from '$lib/server/app_server_context.ts';
-import type {AuditFactory} from '$lib/server/app_backend.ts';
-import type {RouteSpec} from '$lib/http/route_spec.ts';
-import type {Db} from '$lib/db/db.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { fractional_indices_between } from '@fuzdev/fuz_util/fractional_index.ts';
+import { create_test_app, type TestApp } from '$lib/testing/app_server.ts';
+import { rpc_call_for_spec, type RpcCallResultForSpec } from '$lib/testing/rpc_helpers.ts';
+import type { RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
+import type { AppServerContext } from '$lib/server/app_server_context.ts';
+import type { AuditFactory } from '$lib/server/app_backend.ts';
+import type { RouteSpec } from '$lib/http/route_spec.ts';
+import type { Db } from '$lib/db/db.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 /** Shared cookie config for the cell integration suites. */
 export const session_options = create_session_config('test_session');
@@ -77,7 +77,7 @@ export const RPC_PATH = '/api/rpc';
  * so role-shaped `cell_grant` principals have a valid role to reference
  * (the unknown-role gate reads `roles.role_specs`).
  */
-export const cell_test_roles = create_role_schema([{name: 'member'}]);
+export const cell_test_roles = create_role_schema([{ name: 'member' }]);
 
 /** Consumer role registered in `cell_test_roles`. */
 export const ROLE_MEMBER = 'member';
@@ -87,7 +87,7 @@ const init_schema = async (db: Db): Promise<void> => {
 		auth_migration_ns,
 		CELL_MIGRATION_NS,
 		FACT_MIGRATION_NS,
-		CELL_HISTORY_MIGRATION_NS,
+		CELL_HISTORY_MIGRATION_NS
 	]);
 };
 
@@ -100,7 +100,7 @@ const cell_factories = [
 	create_pglite_factory(init_schema),
 	create_pg_factory(init_schema, process.env.TEST_DATABASE_URL),
 	create_pglet_factory(init_schema),
-	create_pglet_wasm_factory(init_schema),
+	create_pglet_wasm_factory(init_schema)
 ];
 log_db_factory_status(cell_factories);
 
@@ -112,7 +112,7 @@ log_db_factory_status(cell_factories);
 export const describe_db = create_describe_db(cell_factories, [
 	...CELL_DROP_TABLES,
 	...FACT_DROP_TABLES,
-	...auth_integration_truncate_tables,
+	...auth_integration_truncate_tables
 ]);
 
 /**
@@ -136,20 +136,20 @@ export const create_cell_route_specs =
 		...create_rpc_endpoint({
 			path: RPC_PATH,
 			actions: [
-				...create_all_cell_actions({...ctx.deps, authorize_create}, {roles: cell_test_roles}),
+				...create_all_cell_actions({ ...ctx.deps, authorize_create }, { roles: cell_test_roles })
 			],
-			log: ctx.deps.log,
+			log: ctx.deps.log
 		}),
 		create_serve_cell_fact_route_spec({
 			deps: ctx.deps,
 			facts_dir: cell_test_facts_dir,
-			log: ctx.deps.log,
+			log: ctx.deps.log
 		}),
 		create_serve_fact_route_spec({
 			deps: ctx.deps,
 			facts_dir: cell_test_facts_dir,
-			log: ctx.deps.log,
-		}),
+			log: ctx.deps.log
+		})
 	];
 
 /**
@@ -164,9 +164,9 @@ export const create_route_specs = create_cell_route_specs();
  * `deps.audit.emit(...)` calls validate against the extended config
  * instead of tripping the unknown-event drift counter.
  */
-const cell_audit_config = create_audit_log_config({extra_events: cell_audit_events});
-const cell_audit_factory: AuditFactory = ({db, log}) =>
-	create_audit_emitter({db, log, audit_log_config: cell_audit_config});
+const cell_audit_config = create_audit_log_config({ extra_events: cell_audit_events });
+const cell_audit_factory: AuditFactory = ({ db, log }) =>
+	create_audit_emitter({ db, log, audit_log_config: cell_audit_config });
 
 /**
  * Create a cell test app bound to `get_db`, with cell events registered.
@@ -176,7 +176,7 @@ const cell_audit_factory: AuditFactory = ({db, log}) =>
 export const create_cell_test_app = (
 	get_db: () => Db,
 	roles?: Array<string>,
-	authorize_create?: CellCreateAuthorize,
+	authorize_create?: CellCreateAuthorize
 ): Promise<TestApp> =>
 	create_test_app({
 		session_options,
@@ -185,7 +185,7 @@ export const create_cell_test_app = (
 			: create_route_specs,
 		audit_factory: cell_audit_factory,
 		db: get_db(),
-		roles: roles ?? [],
+		roles: roles ?? []
 	});
 
 /**
@@ -200,19 +200,19 @@ export const call = <TSpec extends RequestResponseActionSpec>(
 	test_app: TestApp,
 	spec: TSpec,
 	params: z.infer<TSpec['input']>,
-	headers?: Record<string, string>,
+	headers?: Record<string, string>
 ): Promise<RpcCallResultForSpec<TSpec>> =>
-	rpc_call_for_spec({app: test_app.app, path: RPC_PATH, spec, params, headers});
+	rpc_call_for_spec({ app: test_app.app, path: RPC_PATH, spec, params, headers });
 
 /**
  * Read the `reason` string off a JSON-RPC error response, past the
  * `data: unknown` cast.
  */
 export const error_reason = (
-	res: {ok: false; error: {data?: unknown}} | {ok: true},
+	res: { ok: false; error: { data?: unknown } } | { ok: true }
 ): string | undefined => {
 	if (res.ok) return undefined;
-	return (res.error.data as {reason?: string} | undefined)?.reason;
+	return (res.error.data as { reason?: string } | undefined)?.reason;
 };
 
 /**
@@ -229,14 +229,14 @@ export const create_cell = async (
 		items?: Array<Uuid>;
 		path?: CellPath;
 		headers?: Record<string, string>;
-	},
-): Promise<{id: Uuid}> => {
+	}
+): Promise<{ id: Uuid }> => {
 	const headers = params.headers ?? test_app.create_session_headers();
 	const res = await call(
 		test_app,
 		cell_create_action_spec,
-		{kind: params.kind, data: params.data, visibility: params.visibility, path: params.path},
-		headers,
+		{ kind: params.kind, data: params.data, visibility: params.visibility, path: params.path },
+		headers
 	);
 	assert.ok(res.ok, `cell_create failed: ${res.ok ? '' : JSON.stringify(res.error)}`);
 	const id = res.result.cell.id;
@@ -249,15 +249,15 @@ export const create_cell = async (
 				{
 					parent_id: id,
 					child_id: params.items[i]!,
-					position: positions[i]! as CellItemPosition,
+					position: positions[i]! as CellItemPosition
 				},
-				headers,
+				headers
 			);
 			assert.ok(
 				insert_res.ok,
-				`cell_item_insert failed: ${insert_res.ok ? '' : JSON.stringify(insert_res.error)}`,
+				`cell_item_insert failed: ${insert_res.ok ? '' : JSON.stringify(insert_res.error)}`
 			);
 		}
 	}
-	return {id};
+	return { id };
 };

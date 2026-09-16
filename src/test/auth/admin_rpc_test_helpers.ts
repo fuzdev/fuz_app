@@ -21,19 +21,19 @@
  * @module
  */
 
-import {create_session_config} from '$lib/auth/session_cookie.ts';
+import { create_session_config } from '$lib/auth/session_cookie.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
-	auth_integration_truncate_tables,
+	auth_integration_truncate_tables
 } from '$lib/testing/db.ts';
-import {run_migrations} from '$lib/db/migrate.ts';
-import {auth_migration_ns} from '$lib/auth/migrations.ts';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
-import {create_admin_actions} from '$lib/auth/admin_actions.ts';
-import type {Db} from '$lib/db/db.ts';
-import type {AppServerContext} from '$lib/server/app_server_context.ts';
-import type {RouteSpec} from '$lib/http/route_spec.ts';
+import { run_migrations } from '$lib/db/migrate.ts';
+import { auth_migration_ns } from '$lib/auth/migrations.ts';
+import { create_rpc_endpoint } from '$lib/actions/action_rpc.ts';
+import { create_admin_actions } from '$lib/auth/admin_actions.ts';
+import type { Db } from '$lib/db/db.ts';
+import type { AppServerContext } from '$lib/server/app_server_context.ts';
+import type { RouteSpec } from '$lib/http/route_spec.ts';
 
 /** Shared cookie name for the admin-RPC integration suites. */
 export const session_options = create_session_config('test_session');
@@ -61,8 +61,8 @@ export const create_admin_route_specs = (ctx: AppServerContext): Array<RouteSpec
 	...create_rpc_endpoint({
 		path: RPC_PATH,
 		actions: create_admin_actions(ctx.deps),
-		log: ctx.deps.log,
-	}),
+		log: ctx.deps.log
+	})
 ];
 
 /**
@@ -78,5 +78,5 @@ export const create_admin_route_specs_with =
 	(build_extra: (ctx: AppServerContext) => Array<RouteSpec>) =>
 	(ctx: AppServerContext): Array<RouteSpec> => [
 		...build_extra(ctx),
-		...create_admin_route_specs(ctx),
+		...create_admin_route_specs(ctx)
 	];

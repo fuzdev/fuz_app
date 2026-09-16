@@ -6,25 +6,25 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import {z} from 'zod';
+import { describe, assert, test } from 'vitest';
+import { z } from 'zod';
 
-import {create_action_event, create_action_event_from_json} from '$lib/actions/action_event.ts';
-import type {ActionEventEnvironment} from '$lib/actions/action_event_types.ts';
-import type {ActionSpecUnion} from '$lib/actions/action_spec.ts';
-import type {ActionEventDataUnion} from '$lib/actions/action_event_data.ts';
+import { create_action_event, create_action_event_from_json } from '$lib/actions/action_event.ts';
+import type { ActionEventEnvironment } from '$lib/actions/action_event_types.ts';
+import type { ActionSpecUnion } from '$lib/actions/action_spec.ts';
+import type { ActionEventDataUnion } from '$lib/actions/action_event_data.ts';
 
 // Inline test specs
 const ping_spec = {
 	method: 'ping',
 	kind: 'request_response',
 	initiator: 'both',
-	auth: {account: 'none', actor: 'none'},
+	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
 	input: z.null(),
-	output: z.strictObject({pong: z.literal(true)}),
+	output: z.strictObject({ pong: z.literal(true) }),
 	async: true,
-	description: 'Health check',
+	description: 'Health check'
 } satisfies ActionSpecUnion;
 
 const notify_spec = {
@@ -33,10 +33,10 @@ const notify_spec = {
 	initiator: 'backend',
 	auth: null,
 	side_effects: true,
-	input: z.strictObject({id: z.string()}),
+	input: z.strictObject({ id: z.string() }),
 	output: z.void(),
 	async: true,
-	description: 'Thing changed notification',
+	description: 'Thing changed notification'
 } satisfies ActionSpecUnion;
 
 const toggle_spec = {
@@ -48,7 +48,7 @@ const toggle_spec = {
 	input: z.null(),
 	output: z.null(),
 	async: false,
-	description: 'Toggle menu',
+	description: 'Toggle menu'
 } satisfies ActionSpecUnion;
 
 // Test environment
@@ -97,7 +97,7 @@ describe('ActionEvent creation', () => {
 	test('throws for wrong executor', () => {
 		const env = new TestEnvironment([notify_spec]);
 		// backend initiator, but executor is frontend
-		assert.throws(() => create_action_event(env, notify_spec, {id: 'test'}), /cannot initiate/);
+		assert.throws(() => create_action_event(env, notify_spec, { id: 'test' }), /cannot initiate/);
 	});
 
 	test('creates local_call event', () => {
@@ -121,7 +121,7 @@ describe('ActionEvent parse', () => {
 
 	test('parse fails with invalid input', () => {
 		const env = new TestEnvironment([ping_spec]);
-		const event = create_action_event(env, ping_spec, {invalid: true});
+		const event = create_action_event(env, ping_spec, { invalid: true });
 
 		event.parse();
 		assert.strictEqual(event.data.step, 'failed');
@@ -203,9 +203,9 @@ describe('ActionEvent observe', () => {
 		const env = new TestEnvironment([ping_spec]);
 		const event = create_action_event(env, ping_spec, null);
 
-		const observations: Array<{step: string}> = [];
+		const observations: Array<{ step: string }> = [];
 		event.observe((new_data) => {
-			observations.push({step: new_data.step});
+			observations.push({ step: new_data.step });
 		});
 
 		event.parse();
@@ -225,7 +225,7 @@ describe('ActionEvent observe', () => {
 
 		unsub();
 		// Trigger another change by manipulating data directly
-		event.set_data({...event.data, progress: 'test'} as ActionEventDataUnion);
+		event.set_data({ ...event.data, progress: 'test' } as ActionEventDataUnion);
 		assert.strictEqual(count, 1); // not incremented
 	});
 });
@@ -265,7 +265,7 @@ describe('create_action_event_from_json', () => {
 			progress: null,
 			request: null,
 			response: null,
-			notification: null,
+			notification: null
 		};
 
 		assert.throws(() => create_action_event_from_json(data, env), /no spec found/);
@@ -292,7 +292,7 @@ describe('ActionEvent is_complete', () => {
 	test('complete after failure', () => {
 		const env = new TestEnvironment([ping_spec]);
 		// Give invalid input to trigger failure
-		const event = create_action_event(env, ping_spec, {invalid: true});
+		const event = create_action_event(env, ping_spec, { invalid: true });
 		event.parse();
 		assert.ok(event.is_complete());
 	});

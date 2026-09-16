@@ -30,9 +30,9 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
-import {zod_unwrap_to_object} from '@fuzdev/fuz_util/zod.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { zod_unwrap_to_object } from '@fuzdev/fuz_util/zod.ts';
 
 /**
  * `acting` field shared by every input that needs the caller's acting actor.
@@ -56,7 +56,7 @@ import {zod_unwrap_to_object} from '@fuzdev/fuz_util/zod.ts';
  */
 export const ActingActor = Uuid.optional().meta({
 	description:
-		'Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.',
+		'Actor on the authenticated account that this request acts as. Omit on single-actor accounts; required on multi-actor.'
 });
 export type ActingActor = z.infer<typeof ActingActor>;
 
@@ -103,7 +103,7 @@ export const RouteAuth = z
 		account: AuthAxisState,
 		actor: AuthAxisState,
 		roles: z.array(z.string()).readonly().optional(),
-		credential_types: z.array(z.string()).readonly().optional(),
+		credential_types: z.array(z.string()).readonly().optional()
 	})
 	.superRefine((value, ctx) => {
 		// invariant 1: roles imply actor
@@ -112,7 +112,7 @@ export const RouteAuth = z
 				code: 'custom',
 				message:
 					"auth.roles requires auth.actor === 'required' (role checks read the actor's role_grants)",
-				path: ['roles'],
+				path: ['roles']
 			});
 		}
 		// invariant 3: no accountless actors yet
@@ -121,7 +121,7 @@ export const RouteAuth = z
 				code: 'custom',
 				message:
 					"auth.account === 'none' && auth.actor !== 'none' is not yet supported — accountless credentials (agent-token, group-actor) are out of scope for v1",
-				path: ['actor'],
+				path: ['actor']
 			});
 		}
 		// invariant 4: unrestricted is leaf
@@ -131,7 +131,7 @@ export const RouteAuth = z
 					code: 'custom',
 					message:
 						"unrestricted auth (account === 'none' && actor === 'none') cannot declare roles — nothing to gate",
-					path: ['roles'],
+					path: ['roles']
 				});
 			}
 			if (value.credential_types?.length) {
@@ -139,7 +139,7 @@ export const RouteAuth = z
 					code: 'custom',
 					message:
 						"unrestricted auth (account === 'none' && actor === 'none') cannot declare credential_types — nothing to gate",
-					path: ['credential_types'],
+					path: ['credential_types']
 				});
 			}
 		}
@@ -263,7 +263,7 @@ export interface ActingSlots {
 export const assert_route_auth_acting_biconditional = (
 	auth: RouteAuth,
 	slots: ActingSlots,
-	context: string,
+	context: string
 ): void => {
 	const wants_actor = needs_actor(auth);
 	const declares_acting =
@@ -275,12 +275,12 @@ export const assert_route_auth_acting_biconditional = (
 		throw new Error(
 			`${context}: auth.actor === '${auth.actor}' requires the ${
 				slot_phrase
-			} to declare 'acting?: ActingActor' (registry-time invariant 2)`,
+			} to declare 'acting?: ActingActor' (registry-time invariant 2)`
 		);
 	}
 	throw new Error(
 		`${context}: ${
 			slot_phrase
-		} declares 'acting?: ActingActor' but auth.actor === 'none' (registry-time invariant 2)`,
+		} declares 'acting?: ActingActor' but auth.actor === 'none' (registry-time invariant 2)`
 	);
 };

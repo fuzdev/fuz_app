@@ -17,21 +17,21 @@
  * @module
  */
 
-import {describe, test, assert, beforeAll, afterAll, beforeEach} from 'vitest';
+import { describe, test, assert, beforeAll, afterAll, beforeEach } from 'vitest';
 
-import {create_test_app, stub_password_deps, type TestApp} from '$lib/testing/app_server.ts';
-import {create_session_config} from '$lib/auth/session_cookie.ts';
-import {create_account_route_specs} from '$lib/auth/account_routes.ts';
-import {prefix_route_specs, type RouteSpec} from '$lib/http/route_spec.ts';
-import type {PasswordHashDeps} from '$lib/auth/password.ts';
-import type {AppServerContext} from '$lib/server/app_server_context.ts';
+import { create_test_app, stub_password_deps, type TestApp } from '$lib/testing/app_server.ts';
+import { create_session_config } from '$lib/auth/session_cookie.ts';
+import { create_account_route_specs } from '$lib/auth/account_routes.ts';
+import { prefix_route_specs, type RouteSpec } from '$lib/http/route_spec.ts';
+import type { PasswordHashDeps } from '$lib/auth/password.ts';
+import type { AppServerContext } from '$lib/server/app_server_context.ts';
 
 const session_options = create_session_config('test_session');
 
 const login_headers = {
 	'Content-Type': 'application/json',
 	host: 'localhost',
-	origin: 'http://localhost:5173',
+	origin: 'http://localhost:5173'
 };
 
 interface TrackingPasswordDeps {
@@ -42,7 +42,7 @@ interface TrackingPasswordDeps {
 }
 
 const create_tracking_password_deps = (): TrackingPasswordDeps => {
-	const state = {verify_password_count: 0, verify_dummy_count: 0};
+	const state = { verify_password_count: 0, verify_dummy_count: 0 };
 	const deps: PasswordHashDeps = {
 		hash_password: stub_password_deps.hash_password,
 		verify_password: async (p, h) => {
@@ -52,7 +52,7 @@ const create_tracking_password_deps = (): TrackingPasswordDeps => {
 		verify_dummy: async (p) => {
 			state.verify_dummy_count++;
 			return stub_password_deps.verify_dummy(p);
-		},
+		}
 	};
 	return {
 		deps,
@@ -65,7 +65,7 @@ const create_tracking_password_deps = (): TrackingPasswordDeps => {
 		reset() {
 			state.verify_password_count = 0;
 			state.verify_dummy_count = 0;
-		},
+		}
 	};
 };
 
@@ -87,9 +87,9 @@ describe('login verify_dummy behavior', () => {
 						// these tests assert the verify-branch, not timing — skip the
 						// ~250ms denial floor so they stay fast (the floor has its own
 						// describe block below)
-						login_fail_floor_ms: 0,
-					}),
-				),
+						login_fail_floor_ms: 0
+					})
+				)
 		});
 	});
 
@@ -105,7 +105,7 @@ describe('login verify_dummy behavior', () => {
 		const res = await test_app.app.request('/api/account/login', {
 			method: 'POST',
 			headers: login_headers,
-			body: JSON.stringify({username: 'nonexistent', password: 'any-password-1234'}),
+			body: JSON.stringify({ username: 'nonexistent', password: 'any-password-1234' })
 		});
 		assert.strictEqual(res.status, 401);
 		assert.strictEqual(tracking.verify_dummy_count, 1, 'verify_dummy should be called once');
@@ -116,7 +116,7 @@ describe('login verify_dummy behavior', () => {
 		const res = await test_app.app.request('/api/account/login', {
 			method: 'POST',
 			headers: login_headers,
-			body: JSON.stringify({username: 'keeper', password: 'wrong-password-1234'}),
+			body: JSON.stringify({ username: 'keeper', password: 'wrong-password-1234' })
 		});
 		assert.strictEqual(res.status, 401);
 		assert.strictEqual(tracking.verify_password_count, 1, 'verify_password should be called once');
@@ -144,20 +144,20 @@ describe('login denial timing floor', () => {
 				ip_rate_limiter: ctx.ip_rate_limiter,
 				login_account_rate_limiter: ctx.login_account_rate_limiter,
 				login_fail_floor_ms: FLOOR_MS,
-				login_fail_jitter_ms: 0,
-			}),
+				login_fail_jitter_ms: 0
+			})
 		);
 
 	test('non-existent username (401) takes at least the floor', async () => {
 		const test_app = await create_test_app({
 			session_options,
-			create_route_specs: create_route_specs_floored,
+			create_route_specs: create_route_specs_floored
 		});
 		const t0 = performance.now();
 		const res = await test_app.app.request('/api/account/login', {
 			method: 'POST',
 			headers: login_headers,
-			body: JSON.stringify({username: 'nonexistent-floor', password: 'any-password-1234'}),
+			body: JSON.stringify({ username: 'nonexistent-floor', password: 'any-password-1234' })
 		});
 		const elapsed = performance.now() - t0;
 		await test_app.cleanup();
@@ -166,14 +166,14 @@ describe('login denial timing floor', () => {
 		// platforms and `performance.now()` is bucketed.
 		assert.ok(
 			elapsed >= FLOOR_MS - 10,
-			`expected elapsed (${elapsed.toFixed(1)}ms) >= ${FLOOR_MS - 10}ms (floor=${FLOOR_MS})`,
+			`expected elapsed (${elapsed.toFixed(1)}ms) >= ${FLOOR_MS - 10}ms (floor=${FLOOR_MS})`
 		);
 	});
 
 	test('existing username with wrong password (401) takes at least the floor', async () => {
 		const test_app = await create_test_app({
 			session_options,
-			create_route_specs: create_route_specs_floored,
+			create_route_specs: create_route_specs_floored
 		});
 		const t0 = performance.now();
 		const res = await test_app.app.request('/api/account/login', {
@@ -181,15 +181,15 @@ describe('login denial timing floor', () => {
 			headers: login_headers,
 			body: JSON.stringify({
 				username: test_app.backend.account.username,
-				password: 'wrong-password-1234',
-			}),
+				password: 'wrong-password-1234'
+			})
 		});
 		const elapsed = performance.now() - t0;
 		await test_app.cleanup();
 		assert.strictEqual(res.status, 401);
 		assert.ok(
 			elapsed >= FLOOR_MS - 10,
-			`expected elapsed (${elapsed.toFixed(1)}ms) >= ${FLOOR_MS - 10}ms (floor=${FLOOR_MS})`,
+			`expected elapsed (${elapsed.toFixed(1)}ms) >= ${FLOOR_MS - 10}ms (floor=${FLOOR_MS})`
 		);
 	});
 });

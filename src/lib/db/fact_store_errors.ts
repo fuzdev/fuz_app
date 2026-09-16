@@ -35,7 +35,7 @@ export class PayloadTooLargeError extends Error {
  */
 export class StorageFullError extends Error {
 	constructor(cause?: unknown) {
-		super('storage_full', cause === undefined ? undefined : {cause});
+		super('storage_full', cause === undefined ? undefined : { cause });
 		this.name = 'StorageFullError';
 	}
 }
@@ -49,4 +49,4 @@ export const is_enospc_error = (err: unknown): boolean =>
 	typeof err === 'object' &&
 	err !== null &&
 	'code' in err &&
-	(err as {code?: unknown}).code === 'ENOSPC';
+	(err as { code?: unknown }).code === 'ENOSPC';

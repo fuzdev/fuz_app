@@ -4,9 +4,9 @@
  * @module
  */
 
-import {inspect} from 'node:util';
-import {describe, assert, test, vi} from 'vitest';
-import {Hono} from 'hono';
+import { inspect } from 'node:util';
+import { describe, assert, test, vi } from 'vitest';
+import { Hono } from 'hono';
 
 import {
 	RateLimiter,
@@ -14,16 +14,16 @@ import {
 	rate_limit_exceeded_response,
 	default_login_ip_rate_limit,
 	default_login_account_rate_limit,
-	DEFAULT_RATE_LIMITER_MAX_KEYS,
+	DEFAULT_RATE_LIMITER_MAX_KEYS
 } from '$lib/rate_limiter.ts';
-import {ERROR_RATE_LIMIT_EXCEEDED} from '$lib/http/error_schemas.ts';
-import {get_client_ip} from '$lib/http/client_ip.ts';
+import { ERROR_RATE_LIMIT_EXCEEDED } from '$lib/http/error_schemas.ts';
+import { get_client_ip } from '$lib/http/client_ip.ts';
 
 const WINDOW_MS = 60_000; // 1 minute
 const MAX_ATTEMPTS = 3;
 
 const create_test_limiter = (): RateLimiter =>
-	new RateLimiter({max_attempts: MAX_ATTEMPTS, window_ms: WINDOW_MS, cleanup_interval_ms: 0});
+	new RateLimiter({ max_attempts: MAX_ATTEMPTS, window_ms: WINDOW_MS, cleanup_interval_ms: 0 });
 
 describe('RateLimiter', () => {
 	describe('construction', () => {
@@ -36,14 +36,14 @@ describe('RateLimiter', () => {
 		});
 
 		test('create_rate_limiter uses defaults', () => {
-			const limiter = create_rate_limiter({cleanup_interval_ms: 0});
+			const limiter = create_rate_limiter({ cleanup_interval_ms: 0 });
 			assert.strictEqual(limiter.options.max_attempts, default_login_ip_rate_limit.max_attempts);
 			assert.strictEqual(limiter.options.window_ms, default_login_ip_rate_limit.window_ms);
 			limiter.dispose();
 		});
 
 		test('create_rate_limiter allows overrides', () => {
-			const limiter = create_rate_limiter({max_attempts: 10, cleanup_interval_ms: 0});
+			const limiter = create_rate_limiter({ max_attempts: 10, cleanup_interval_ms: 0 });
 			assert.strictEqual(limiter.options.max_attempts, 10);
 			assert.strictEqual(limiter.options.window_ms, default_login_ip_rate_limit.window_ms);
 			limiter.dispose();
@@ -59,7 +59,7 @@ describe('RateLimiter', () => {
 			const limiter = new RateLimiter({
 				max_attempts: 0,
 				window_ms: WINDOW_MS,
-				cleanup_interval_ms: 0,
+				cleanup_interval_ms: 0
 			});
 			// fresh key with no prior record is allowed (no timestamps to exceed limit)
 			const fresh = limiter.check('ip1');
@@ -87,7 +87,7 @@ describe('RateLimiter', () => {
 
 			// The custom inspect method takes precedence even with showHidden, so the
 			// sensitive key set stays out regardless of inspect depth/options.
-			const hidden = inspect(limiter, {showHidden: true, depth: null});
+			const hidden = inspect(limiter, { showHidden: true, depth: null });
 			assert.ok(!hidden.includes('secret-user@example.com'), 'showHidden must not leak keys');
 			assert.ok(!hidden.includes('10.1.2.3'), 'showHidden must not leak keys');
 
@@ -335,7 +335,7 @@ describe('RateLimiter', () => {
 			const limiter = new RateLimiter({
 				max_attempts: 1,
 				window_ms: WINDOW_MS,
-				cleanup_interval_ms: 0,
+				cleanup_interval_ms: 0
 			});
 			const now = 100_000;
 			const r1 = limiter.record('ip1', now);
@@ -460,7 +460,7 @@ describe('RateLimiter', () => {
 			const limiter = new RateLimiter({
 				max_attempts: 5,
 				window_ms: 60_000,
-				cleanup_interval_ms: 100,
+				cleanup_interval_ms: 100
 			});
 			limiter.dispose();
 			// No assertion needed — just verify it doesn't throw or leak
@@ -507,7 +507,7 @@ describe('rate_limit_exceeded_response', () => {
 		assert.strictEqual(res.headers.get('Retry-After'), '57');
 		assert.strictEqual(res.headers.get('Content-Type'), 'application/json');
 		const body = await res.json();
-		assert.deepStrictEqual(body, {error: ERROR_RATE_LIMIT_EXCEEDED, retry_after: 57});
+		assert.deepStrictEqual(body, { error: ERROR_RATE_LIMIT_EXCEEDED, retry_after: 57 });
 	});
 
 	test('Retry-After header rounds up fractional seconds', async () => {
@@ -535,7 +535,7 @@ describe('cleanup timer', () => {
 			const limiter = new RateLimiter({
 				max_attempts: 1,
 				window_ms: 1000,
-				cleanup_interval_ms: 500,
+				cleanup_interval_ms: 500
 			});
 			limiter.record('key', 0);
 			assert.strictEqual(limiter.size, 1);
@@ -554,7 +554,7 @@ describe('cleanup timer', () => {
 		const limiter = new RateLimiter({
 			max_attempts: 5,
 			window_ms: 1000,
-			cleanup_interval_ms: 0,
+			cleanup_interval_ms: 0
 		});
 		limiter.record('key', 0);
 		assert.strictEqual(limiter.size, 1);
@@ -572,12 +572,12 @@ describe('cleanup timer', () => {
 
 describe('retry_after boundary', () => {
 	const boundary_cases = [
-		{name: 'exactly at window expiry', offset: 0, expected_retry: 0},
-		{name: '1ms before expiry', offset: -1, expected_retry: 1},
-		{name: '999ms before expiry', offset: -999, expected_retry: 1},
-		{name: '1001ms before expiry', offset: -1001, expected_retry: 2},
-		{name: '1ms after expiry', offset: 1, expected_retry: 0},
-		{name: 'at half window before expiry', offset: -5000, expected_retry: 5},
+		{ name: 'exactly at window expiry', offset: 0, expected_retry: 0 },
+		{ name: '1ms before expiry', offset: -1, expected_retry: 1 },
+		{ name: '999ms before expiry', offset: -999, expected_retry: 1 },
+		{ name: '1001ms before expiry', offset: -1001, expected_retry: 2 },
+		{ name: '1ms after expiry', offset: 1, expected_retry: 0 },
+		{ name: 'at half window before expiry', offset: -5000, expected_retry: 5 }
 	];
 
 	for (const tc of boundary_cases) {
@@ -585,7 +585,7 @@ describe('retry_after boundary', () => {
 			const limiter = new RateLimiter({
 				max_attempts: 1,
 				window_ms: 10_000,
-				cleanup_interval_ms: 0,
+				cleanup_interval_ms: 0
 			});
 			limiter.record('k', 1000);
 			const result = limiter.check('k', 1000 + 10_000 + tc.offset);
@@ -600,14 +600,14 @@ describe('check-then-record race window', () => {
 		const limiter = new RateLimiter({
 			max_attempts: 2,
 			window_ms: 60_000,
-			cleanup_interval_ms: 0,
+			cleanup_interval_ms: 0
 		});
 
 		// simulate N concurrent checks before any records — all pass
-		const checks = Array.from({length: 5}, () => limiter.check('ip'));
+		const checks = Array.from({ length: 5 }, () => limiter.check('ip'));
 		assert.ok(
 			checks.every((c) => c.allowed),
-			'all concurrent checks should pass',
+			'all concurrent checks should pass'
 		);
 
 		// then all record — exceeds max_attempts
@@ -632,37 +632,41 @@ describe('state machine transitions', () => {
 			name: 'fresh → allowed on first record',
 			prior_records: 0,
 			expected_allowed: true,
-			expected_remaining: 2,
+			expected_remaining: 2
 		},
 		{
 			name: 'partial → allowed with decreasing remaining',
 			prior_records: 1,
 			expected_allowed: true,
-			expected_remaining: 1,
+			expected_remaining: 1
 		},
 		{
 			name: 'at limit → allowed on last attempt',
 			prior_records: 2,
 			expected_allowed: true,
-			expected_remaining: 0,
+			expected_remaining: 0
 		},
 		{
 			name: 'full → blocked on next attempt',
 			prior_records: 3,
 			expected_allowed: false,
-			expected_remaining: 0,
+			expected_remaining: 0
 		},
 		{
 			name: 'over limit → still blocked',
 			prior_records: 5,
 			expected_allowed: false,
-			expected_remaining: 0,
-		},
+			expected_remaining: 0
+		}
 	];
 
 	for (const tc of transitions) {
 		test(tc.name, () => {
-			const limiter = new RateLimiter({max_attempts: 3, window_ms: 60_000, cleanup_interval_ms: 0});
+			const limiter = new RateLimiter({
+				max_attempts: 3,
+				window_ms: 60_000,
+				cleanup_interval_ms: 0
+			});
 			const now = 100_000;
 			for (let i = 0; i < tc.prior_records; i++) {
 				limiter.record('ip', now + i * 100);
@@ -679,7 +683,7 @@ describe('state machine transitions', () => {
 
 describe('multi-key interactions', () => {
 	test('two IPs sharing the same limiter instance are independent', () => {
-		const limiter = new RateLimiter({max_attempts: 3, window_ms: 60_000, cleanup_interval_ms: 0});
+		const limiter = new RateLimiter({ max_attempts: 3, window_ms: 60_000, cleanup_interval_ms: 0 });
 		const now = 100_000;
 		// Fill up ip_a to the limit
 		limiter.record('ip_a', now);
@@ -696,8 +700,16 @@ describe('multi-key interactions', () => {
 	});
 
 	test('same IP in different limiters are independent', () => {
-		const limiter_a = new RateLimiter({max_attempts: 3, window_ms: 60_000, cleanup_interval_ms: 0});
-		const limiter_b = new RateLimiter({max_attempts: 3, window_ms: 60_000, cleanup_interval_ms: 0});
+		const limiter_a = new RateLimiter({
+			max_attempts: 3,
+			window_ms: 60_000,
+			cleanup_interval_ms: 0
+		});
+		const limiter_b = new RateLimiter({
+			max_attempts: 3,
+			window_ms: 60_000,
+			cleanup_interval_ms: 0
+		});
 		const now = 100_000;
 		// Fill up ip in limiter_a
 		limiter_a.record('ip', now);
@@ -715,7 +727,7 @@ describe('multi-key interactions', () => {
 	});
 
 	test('recording on one key does not affect size tracking of another', () => {
-		const limiter = new RateLimiter({max_attempts: 3, window_ms: 60_000, cleanup_interval_ms: 0});
+		const limiter = new RateLimiter({ max_attempts: 3, window_ms: 60_000, cleanup_interval_ms: 0 });
 		const now = 100_000;
 		limiter.record('key_a', now);
 		limiter.record('key_b', now + 100);
@@ -736,7 +748,7 @@ describe('max_keys cap', () => {
 			max_attempts: 3,
 			window_ms: 60_000,
 			cleanup_interval_ms: 0,
-			max_keys: 2,
+			max_keys: 2
 		});
 		const now = 100_000;
 		limiter.record('a', now); // LRU
@@ -759,7 +771,7 @@ describe('max_keys cap', () => {
 			max_attempts: 3,
 			window_ms: 60_000,
 			cleanup_interval_ms: 0,
-			max_keys: 2,
+			max_keys: 2
 		});
 		const now = 100_000;
 		limiter.record('a', now);
@@ -782,7 +794,7 @@ describe('max_keys cap', () => {
 			max_attempts: 3,
 			window_ms: 60_000,
 			cleanup_interval_ms: 0,
-			max_keys: 2,
+			max_keys: 2
 		});
 		const now = 100_000;
 		limiter.record('a', now);
@@ -806,7 +818,7 @@ describe('max_keys cap', () => {
 			max_attempts: 5,
 			window_ms: 60_000,
 			cleanup_interval_ms: 0,
-			max_keys,
+			max_keys
 		});
 		for (let i = 0; i < 100; i++) {
 			limiter.record(`ip_${i}`);
@@ -819,7 +831,7 @@ describe('max_keys cap', () => {
 		const limiter = new RateLimiter({
 			max_attempts: 3,
 			window_ms: 60_000,
-			cleanup_interval_ms: 0,
+			cleanup_interval_ms: 0
 		});
 		assert.strictEqual(limiter.options.max_keys, undefined);
 		// The cap is applied even when the option is left unset — recording
@@ -836,7 +848,7 @@ describe('max_keys cap', () => {
 			max_attempts: 5,
 			window_ms: 60_000,
 			cleanup_interval_ms: 0,
-			max_keys: null,
+			max_keys: null
 		});
 		// With the cap disabled, inserting many keys does not evict.
 		for (let i = 0; i < 100; i++) {
@@ -854,7 +866,7 @@ describe('max_keys cap', () => {
 			max_attempts: 3,
 			window_ms: 1000,
 			cleanup_interval_ms: 0,
-			max_keys: 10,
+			max_keys: 10
 		});
 		const now = 100_000;
 		limiter.record('old', now);
@@ -876,7 +888,7 @@ describe('max_keys cap', () => {
 			max_attempts: 3,
 			window_ms: 60_000,
 			cleanup_interval_ms: 0,
-			max_keys: 10,
+			max_keys: 10
 		});
 		limiter.record('a');
 		limiter.record('b');

@@ -8,7 +8,7 @@
  * @module
  */
 
-import {DEV} from 'esm-env';
+import { DEV } from 'esm-env';
 
 import {
 	type JsonrpcErrorResponse,
@@ -22,9 +22,9 @@ import {
 	type JsonrpcResult,
 	type JsonrpcMessage,
 	type JsonrpcErrorCode,
-	JSONRPC_VERSION,
+	JSONRPC_VERSION
 } from './jsonrpc.ts';
-import {ThrownJsonrpcError, JSONRPC_ERROR_CODES} from './jsonrpc_errors.ts';
+import { ThrownJsonrpcError, JSONRPC_ERROR_CODES } from './jsonrpc_errors.ts';
 
 // --- Message builders ---
 
@@ -32,12 +32,12 @@ import {ThrownJsonrpcError, JSONRPC_ERROR_CODES} from './jsonrpc_errors.ts';
 export const create_jsonrpc_request = (
 	method: JsonrpcMethod,
 	params: JsonrpcRequestParams | undefined,
-	id: JsonrpcRequestId,
+	id: JsonrpcRequestId
 ): JsonrpcRequest => {
 	const message: JsonrpcRequest = {
 		jsonrpc: JSONRPC_VERSION,
 		id,
-		method,
+		method
 	};
 	if (params !== undefined) {
 		message.params = params;
@@ -48,21 +48,21 @@ export const create_jsonrpc_request = (
 /** Creates a JSON-RPC success response message. */
 export const create_jsonrpc_response = (
 	id: JsonrpcRequestId,
-	result: JsonrpcResult,
+	result: JsonrpcResult
 ): JsonrpcResponse => ({
 	jsonrpc: JSONRPC_VERSION,
 	id,
-	result,
+	result
 });
 
 /** Creates a JSON-RPC notification message (no id, no response expected). */
 export const create_jsonrpc_notification = (
 	method: JsonrpcMethod,
-	params: JsonrpcNotificationParams | undefined,
+	params: JsonrpcNotificationParams | undefined
 ): JsonrpcNotification => {
 	const message: JsonrpcNotification = {
 		jsonrpc: JSONRPC_VERSION,
-		method,
+		method
 	};
 	if (params !== undefined) {
 		message.params = params;
@@ -73,11 +73,11 @@ export const create_jsonrpc_notification = (
 /** Creates a JSON-RPC error response message. */
 export const create_jsonrpc_error_response = (
 	id: JsonrpcErrorResponse['id'],
-	error: JsonrpcErrorResponse['error'],
+	error: JsonrpcErrorResponse['error']
 ): JsonrpcErrorResponse => ({
 	jsonrpc: JSONRPC_VERSION,
 	id,
-	error,
+	error
 });
 
 /**
@@ -87,7 +87,7 @@ export const create_jsonrpc_error_response = (
  */
 export const create_jsonrpc_error_response_from_thrown = (
 	id: JsonrpcRequestId | null,
-	error: unknown,
+	error: unknown
 ): JsonrpcErrorResponse => {
 	let code: JsonrpcErrorCode = JSONRPC_ERROR_CODES.internal_error;
 	let message = 'internal server error';
@@ -100,7 +100,7 @@ export const create_jsonrpc_error_response_from_thrown = (
 	} else if (error instanceof Error) {
 		if (DEV) {
 			message = error.message;
-			data = {stack: error.stack};
+			data = { stack: error.stack };
 		}
 	}
 
@@ -110,8 +110,8 @@ export const create_jsonrpc_error_response_from_thrown = (
 		error: {
 			code,
 			message,
-			data,
-		},
+			data
+		}
 	};
 };
 
@@ -124,7 +124,9 @@ export const is_jsonrpc_request_id = (id: unknown): id is JsonrpcRequestId => {
 };
 
 /** Checks if a value is a JSON-RPC object (has `jsonrpc: '2.0'`). */
-export const is_jsonrpc_object = (message: unknown): message is {jsonrpc: typeof JSONRPC_VERSION} =>
+export const is_jsonrpc_object = (
+	message: unknown
+): message is { jsonrpc: typeof JSONRPC_VERSION } =>
 	typeof message === 'object' &&
 	message !== null &&
 	!Array.isArray(message) &&
@@ -132,7 +134,7 @@ export const is_jsonrpc_object = (message: unknown): message is {jsonrpc: typeof
 
 /** Checks if a value is any valid JSON-RPC message or batch array. */
 export const is_jsonrpc_message = (
-	message: unknown,
+	message: unknown
 ): message is JsonrpcMessage | Array<JsonrpcMessage> =>
 	Array.isArray(message)
 		? message.length > 0 && message.every((m) => is_jsonrpc_object(m))
@@ -164,7 +166,7 @@ export const to_jsonrpc_message_id = (message_or_id: unknown): JsonrpcRequestId 
 	if (message_or_id == null) return null;
 
 	const maybe_id =
-		typeof message_or_id === 'object' ? (message_or_id as {id?: unknown}).id : message_or_id;
+		typeof message_or_id === 'object' ? (message_or_id as { id?: unknown }).id : message_or_id;
 
 	return is_jsonrpc_request_id(maybe_id) ? maybe_id : null;
 };
@@ -180,7 +182,7 @@ export const to_jsonrpc_params = (input: unknown): Record<string, any> | undefin
 	if (typeof input === 'object' && !Array.isArray(input)) {
 		return input as Record<string, any>;
 	}
-	return {value: input};
+	return { value: input };
 };
 
 /**
@@ -194,5 +196,5 @@ export const to_jsonrpc_result = (output: unknown): Record<string, any> => {
 	if (typeof output === 'object' && !Array.isArray(output)) {
 		return output as Record<string, any>;
 	}
-	return {value: output};
+	return { value: output };
 };

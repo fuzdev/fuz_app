@@ -8,7 +8,7 @@
 	 * @module
 	 */
 
-	import {auth_state_context} from './auth_state.svelte.ts';
+	import { auth_state_context } from './auth_state.svelte.ts';
 	import ConfirmButton from './ConfirmButton.svelte';
 	import OpenSignupToggle from './OpenSignupToggle.svelte';
 
@@ -33,7 +33,7 @@
 		label="log out"
 	>
 		{#snippet popover_button_content()}
-			<span class="p_md"> log out </span>
+			<span class="p_md">log out</span>
 		{/snippet}
 	</ConfirmButton>
 </section>

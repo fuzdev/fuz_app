@@ -20,18 +20,18 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
-import {ERROR_ROLE_GRANT_NOT_FOUND, ERROR_ROLE_NOT_WEB_GRANTABLE} from '../http/error_schemas.ts';
-import {RoleName} from './role_schema.ts';
+import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
+import { ERROR_ROLE_GRANT_NOT_FOUND, ERROR_ROLE_NOT_WEB_GRANTABLE } from '../http/error_schemas.ts';
+import { RoleName } from './role_schema.ts';
 import {
 	ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX,
-	RoleGrantOfferJson,
+	RoleGrantOfferJson
 } from './role_grant_offer_schema.ts';
-import {ROLE_GRANT_REVOKED_REASON_LENGTH_MAX} from './account_schema.ts';
-import {ActingActor} from '../http/auth_shape.ts';
+import { ROLE_GRANT_REVOKED_REASON_LENGTH_MAX } from './account_schema.ts';
+import { ActingActor } from '../http/auth_shape.ts';
 
 /** Error reason — caller tried to offer themselves a role_grant. */
 export const ERROR_ROLE_GRANT_OFFER_SELF_TARGET = 'role_grant_offer_self_target' as const;
@@ -66,51 +66,51 @@ export const ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH =
  * on `to_account_id` may accept.
  */
 export const RoleGrantOfferCreateInput = z.strictObject({
-	to_account_id: Uuid.meta({description: 'Account id of the recipient.'}),
+	to_account_id: Uuid.meta({ description: 'Account id of the recipient.' }),
 	to_actor_id: Uuid.nullish().meta({
 		description:
-			'Optional actor-grain target on the recipient account. When set, only this actor may accept and the audit envelope carries it on offer-shape events. Must belong to `to_account_id`.',
+			'Optional actor-grain target on the recipient account. When set, only this actor may accept and the audit envelope carries it on offer-shape events. Must belong to `to_account_id`.'
 	}),
-	role: RoleName.meta({description: 'Role being offered.'}),
+	role: RoleName.meta({ description: 'Role being offered.' }),
 	scope_kind: z.string().nullish().meta({
 		description:
-			'Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped). Required iff `scope_id` is set.',
+			'Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped). Required iff `scope_id` is set.'
 	}),
 	scope_id: Uuid.nullish().meta({
-		description: 'Scope id for resource-scoped grants (e.g. classroom id). `null` for global.',
+		description: 'Scope id for resource-scoped grants (e.g. classroom id). `null` for global.'
 	}),
 	message: z
 		.string()
 		.max(ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX)
 		.nullish()
-		.meta({description: 'Optional free-form note from the grantor.'}),
-	acting: ActingActor,
+		.meta({ description: 'Optional free-form note from the grantor.' }),
+	acting: ActingActor
 });
 export type RoleGrantOfferCreateInput = z.infer<typeof RoleGrantOfferCreateInput>;
 
 /** Input for `role_grant_offer_accept`. */
 export const RoleGrantOfferAcceptInput = z.strictObject({
-	offer_id: Uuid.meta({description: 'The offer to accept.'}),
-	acting: ActingActor,
+	offer_id: Uuid.meta({ description: 'The offer to accept.' }),
+	acting: ActingActor
 });
 export type RoleGrantOfferAcceptInput = z.infer<typeof RoleGrantOfferAcceptInput>;
 
 /** Input for `role_grant_offer_decline`. */
 export const RoleGrantOfferDeclineInput = z.strictObject({
-	offer_id: Uuid.meta({description: 'The offer to decline.'}),
+	offer_id: Uuid.meta({ description: 'The offer to decline.' }),
 	reason: z
 		.string()
 		.max(ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX)
 		.nullish()
-		.meta({description: 'Optional free-form reason given on decline.'}),
-	acting: ActingActor,
+		.meta({ description: 'Optional free-form reason given on decline.' }),
+	acting: ActingActor
 });
 export type RoleGrantOfferDeclineInput = z.infer<typeof RoleGrantOfferDeclineInput>;
 
 /** Input for `role_grant_offer_retract`. */
 export const RoleGrantOfferRetractInput = z.strictObject({
-	offer_id: Uuid.meta({description: 'The offer to retract.'}),
-	acting: ActingActor,
+	offer_id: Uuid.meta({ description: 'The offer to retract.' }),
+	acting: ActingActor
 });
 export type RoleGrantOfferRetractInput = z.infer<typeof RoleGrantOfferRetractInput>;
 
@@ -118,9 +118,9 @@ export type RoleGrantOfferRetractInput = z.infer<typeof RoleGrantOfferRetractInp
 export const RoleGrantOfferListInput = z
 	.strictObject({
 		account_id: Uuid.nullish().meta({
-			description: 'Admin-only — list offers for another account. Defaults to the caller.',
+			description: 'Admin-only — list offers for another account. Defaults to the caller.'
 		}),
-		acting: ActingActor,
+		acting: ActingActor
 	})
 	.default({});
 export type RoleGrantOfferListInput = z.infer<typeof RoleGrantOfferListInput>;
@@ -133,13 +133,13 @@ export type RoleGrantOfferListInput = z.infer<typeof RoleGrantOfferListInput>;
  * multi-actor accounts.
  */
 export const RoleGrantRevokeInput = z.strictObject({
-	actor_id: Uuid.meta({description: 'Actor whose role_grant to revoke.'}),
-	role_grant_id: Uuid.meta({description: 'The role_grant to revoke.'}),
+	actor_id: Uuid.meta({ description: 'Actor whose role_grant to revoke.' }),
+	role_grant_id: Uuid.meta({ description: 'The role_grant to revoke.' }),
 	reason: z.string().max(ROLE_GRANT_REVOKED_REASON_LENGTH_MAX).nullish().meta({
 		description:
-			'Optional free-form reason; stamped on `role_grant.revoked_reason` and surfaced on the revokee WS notification.',
+			'Optional free-form reason; stamped on `role_grant.revoked_reason` and surfaced on the revokee WS notification.'
 	}),
-	acting: ActingActor,
+	acting: ActingActor
 });
 export type RoleGrantRevokeInput = z.infer<typeof RoleGrantRevokeInput>;
 
@@ -151,22 +151,22 @@ export type RoleGrantRevokeInput = z.infer<typeof RoleGrantRevokeInput>;
 export const RoleGrantOfferHistoryInput = z
 	.strictObject({
 		account_id: Uuid.nullish().meta({
-			description: 'Admin-only — history for another account. Defaults to the caller.',
+			description: 'Admin-only — history for another account. Defaults to the caller.'
 		}),
 		limit: z.number().int().min(1).max(500).nullish().meta({
-			description: 'Max rows to return (default 100).',
+			description: 'Max rows to return (default 100).'
 		}),
 		offset: z.number().int().min(0).nullish().meta({
-			description: 'Pagination offset (default 0).',
+			description: 'Pagination offset (default 0).'
 		}),
-		acting: ActingActor,
+		acting: ActingActor
 	})
 	.default({});
 export type RoleGrantOfferHistoryInput = z.infer<typeof RoleGrantOfferHistoryInput>;
 
 /** Output for `role_grant_offer_create`. */
 export const RoleGrantOfferCreateOutput = z.strictObject({
-	offer: RoleGrantOfferJson,
+	offer: RoleGrantOfferJson
 });
 export type RoleGrantOfferCreateOutput = z.infer<typeof RoleGrantOfferCreateOutput>;
 
@@ -174,26 +174,26 @@ export type RoleGrantOfferCreateOutput = z.infer<typeof RoleGrantOfferCreateOutp
 export const RoleGrantOfferAcceptOutput = z.strictObject({
 	role_grant_id: Uuid,
 	offer: RoleGrantOfferJson,
-	superseded_offer_ids: z.array(Uuid),
+	superseded_offer_ids: z.array(Uuid)
 });
 export type RoleGrantOfferAcceptOutput = z.infer<typeof RoleGrantOfferAcceptOutput>;
 
 /** Output for `role_grant_offer_decline` / `role_grant_offer_retract`. */
-export const RoleGrantOfferOkOutput = z.strictObject({ok: z.literal(true)});
+export const RoleGrantOfferOkOutput = z.strictObject({ ok: z.literal(true) });
 export type RoleGrantOfferOkOutput = z.infer<typeof RoleGrantOfferOkOutput>;
 
 /** Output for `role_grant_offer_list`. */
-export const RoleGrantOfferListOutput = z.strictObject({offers: z.array(RoleGrantOfferJson)});
+export const RoleGrantOfferListOutput = z.strictObject({ offers: z.array(RoleGrantOfferJson) });
 export type RoleGrantOfferListOutput = z.infer<typeof RoleGrantOfferListOutput>;
 
 /** Output for `role_grant_offer_history`. */
-export const RoleGrantOfferHistoryOutput = z.strictObject({offers: z.array(RoleGrantOfferJson)});
+export const RoleGrantOfferHistoryOutput = z.strictObject({ offers: z.array(RoleGrantOfferJson) });
 export type RoleGrantOfferHistoryOutput = z.infer<typeof RoleGrantOfferHistoryOutput>;
 
 /** Output for `role_grant_revoke`. */
 export const RoleGrantRevokeOutput = z.strictObject({
 	ok: z.literal(true),
-	revoked: z.literal(true),
+	revoked: z.literal(true)
 });
 export type RoleGrantRevokeOutput = z.infer<typeof RoleGrantRevokeOutput>;
 
@@ -205,25 +205,25 @@ export type RoleGrantRevokeOutput = z.infer<typeof RoleGrantRevokeOutput>;
  * alone is the v1 scope discriminator — the grant row's `scope_kind` stays null).
  */
 export const RoleGrantAssignInput = z.strictObject({
-	to_account_id: Uuid.meta({description: 'Account id of the grantee.'}),
+	to_account_id: Uuid.meta({ description: 'Account id of the grantee.' }),
 	to_actor_id: Uuid.nullish().meta({
 		description:
-			"Optional actor-grain target on the grantee account. When set, must belong to `to_account_id`. Omit to resolve the account's sole active actor — a multi-actor account must name one.",
+			"Optional actor-grain target on the grantee account. When set, must belong to `to_account_id`. Omit to resolve the account's sole active actor — a multi-actor account must name one."
 	}),
 	role: RoleName.meta({
-		description: "Role to assign. Must be admin-grantable (its `grant_paths` includes `'admin'`).",
+		description: "Role to assign. Must be admin-grantable (its `grant_paths` includes `'admin'`)."
 	}),
 	scope_id: Uuid.nullish().meta({
-		description: 'Scope id for resource-scoped grants. `null` for a global role_grant.',
+		description: 'Scope id for resource-scoped grants. `null` for a global role_grant.'
 	}),
-	acting: ActingActor,
+	acting: ActingActor
 });
 export type RoleGrantAssignInput = z.infer<typeof RoleGrantAssignInput>;
 
 /** Output for `role_grant_assign`. */
 export const RoleGrantAssignOutput = z.strictObject({
 	ok: z.literal(true),
-	role_grant_id: Uuid,
+	role_grant_id: Uuid
 });
 export type RoleGrantAssignOutput = z.infer<typeof RoleGrantAssignOutput>;
 
@@ -243,7 +243,7 @@ export const role_grant_offer_create_action_spec = {
 	method: 'role_grant_offer_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: true,
 	input: RoleGrantOfferCreateInput,
 	output: RoleGrantOfferCreateOutput,
@@ -254,16 +254,16 @@ export const role_grant_offer_create_action_spec = {
 		ERROR_ROLE_GRANT_OFFER_SELF_TARGET,
 		ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE,
 		ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
-		ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
+		ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH
 	],
-	rate_limit: 'account',
+	rate_limit: 'account'
 } satisfies RequestResponseActionSpec;
 
 export const role_grant_offer_accept_action_spec = {
 	method: 'role_grant_offer_accept',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: true,
 	input: RoleGrantOfferAcceptInput,
 	output: RoleGrantOfferAcceptOutput,
@@ -274,60 +274,60 @@ export const role_grant_offer_accept_action_spec = {
 		ERROR_ROLE_GRANT_OFFER_NOT_FOUND,
 		ERROR_ROLE_GRANT_OFFER_TERMINAL,
 		ERROR_ROLE_GRANT_OFFER_EXPIRED,
-		ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH,
-	],
+		ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH
+	]
 } satisfies RequestResponseActionSpec;
 
 export const role_grant_offer_decline_action_spec = {
 	method: 'role_grant_offer_decline',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: true,
 	input: RoleGrantOfferDeclineInput,
 	output: RoleGrantOfferOkOutput,
 	async: true,
 	description: 'Decline an offer. Recipient-only.',
-	error_reasons: [ERROR_ROLE_GRANT_OFFER_NOT_FOUND, ERROR_ROLE_GRANT_OFFER_TERMINAL],
+	error_reasons: [ERROR_ROLE_GRANT_OFFER_NOT_FOUND, ERROR_ROLE_GRANT_OFFER_TERMINAL]
 } satisfies RequestResponseActionSpec;
 
 export const role_grant_offer_retract_action_spec = {
 	method: 'role_grant_offer_retract',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: true,
 	input: RoleGrantOfferRetractInput,
 	output: RoleGrantOfferOkOutput,
 	async: true,
 	description: 'Retract an offer. Grantor-only, pre-decision.',
-	error_reasons: [ERROR_ROLE_GRANT_OFFER_NOT_FOUND, ERROR_ROLE_GRANT_OFFER_TERMINAL],
+	error_reasons: [ERROR_ROLE_GRANT_OFFER_NOT_FOUND, ERROR_ROLE_GRANT_OFFER_TERMINAL]
 } satisfies RequestResponseActionSpec;
 
 export const role_grant_offer_list_action_spec = {
 	method: 'role_grant_offer_list',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: false,
 	input: RoleGrantOfferListInput,
 	output: RoleGrantOfferListOutput,
 	async: true,
 	description:
-		'List pending, non-expired offers for the caller. Admins may pass `account_id` to inspect another account.',
+		'List pending, non-expired offers for the caller. Admins may pass `account_id` to inspect another account.'
 } satisfies RequestResponseActionSpec;
 
 export const role_grant_offer_history_action_spec = {
 	method: 'role_grant_offer_history',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required'},
+	auth: { account: 'required', actor: 'required' },
 	side_effects: false,
 	input: RoleGrantOfferHistoryInput,
 	output: RoleGrantOfferHistoryOutput,
 	async: true,
 	description:
-		'List every offer involving the caller (either direction), including terminal rows, newest first. Admins may pass `account_id` to inspect another account.',
+		'List every offer involving the caller (either direction), including terminal rows, newest first. Admins may pass `account_id` to inspect another account.'
 } satisfies RequestResponseActionSpec;
 
 /**
@@ -340,7 +340,7 @@ export const role_grant_revoke_action_spec = {
 	method: 'role_grant_revoke',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required', roles: ['admin']},
+	auth: { account: 'required', actor: 'required', roles: ['admin'] },
 	side_effects: true,
 	input: RoleGrantRevokeInput,
 	output: RoleGrantRevokeOutput,
@@ -348,7 +348,7 @@ export const role_grant_revoke_action_spec = {
 	description:
 		'Revoke an active role_grant on a target actor. Admin-only. Supersedes any pending offers for the same (account, role, scope). Fires role_grant_revoke + role_grant_offer_supersede notifications.',
 	error_reasons: [ERROR_ROLE_GRANT_NOT_FOUND, ERROR_ROLE_NOT_WEB_GRANTABLE],
-	rate_limit: 'account',
+	rate_limit: 'account'
 } satisfies RequestResponseActionSpec;
 
 /**
@@ -360,7 +360,7 @@ export const role_grant_assign_action_spec = {
 	method: 'role_grant_assign',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'required', roles: ['admin']},
+	auth: { account: 'required', actor: 'required', roles: ['admin'] },
 	side_effects: true,
 	input: RoleGrantAssignInput,
 	output: RoleGrantAssignOutput,
@@ -368,7 +368,7 @@ export const role_grant_assign_action_spec = {
 	description:
 		"Immediately assign a role_grant to a target account — admin-only, no consent step (the capability-unlock UX). The role's `grant_paths` must include `'admin'`. Idempotent: re-assigning an active grant returns it. Emits a role_grant_create audit event.",
 	error_reasons: [ERROR_ROLE_NOT_WEB_GRANTABLE, ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH],
-	rate_limit: 'account',
+	rate_limit: 'account'
 } satisfies RequestResponseActionSpec;
 
 /**
@@ -384,5 +384,5 @@ export const all_role_grant_offer_action_specs: Array<RequestResponseActionSpec>
 	role_grant_offer_list_action_spec,
 	role_grant_offer_history_action_spec,
 	role_grant_revoke_action_spec,
-	role_grant_assign_action_spec,
+	role_grant_assign_action_spec
 ];

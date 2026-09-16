@@ -7,7 +7,7 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
 import type {
 	JsonrpcMessageFromClientToServer,
@@ -15,7 +15,7 @@ import type {
 	JsonrpcNotification,
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
-	JsonrpcErrorResponse,
+	JsonrpcErrorResponse
 } from '../http/jsonrpc.ts';
 
 /** WebSocket close code for session revocation. */
@@ -66,11 +66,11 @@ export interface Transport {
 	send(message: JsonrpcRequest, options?: TransportSendOptions): Promise<JsonrpcResponseOrError>;
 	send(
 		message: JsonrpcNotification,
-		options?: TransportSendOptions,
+		options?: TransportSendOptions
 	): Promise<JsonrpcErrorResponse | null>;
 	send(
 		message: JsonrpcMessageFromClientToServer,
-		options?: TransportSendOptions,
+		options?: TransportSendOptions
 	): Promise<JsonrpcMessageFromServerToClient | null>;
 	is_ready: () => boolean;
 	dispose?: () => void;

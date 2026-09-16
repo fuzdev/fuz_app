@@ -7,16 +7,16 @@
  * @module
  */
 
-import {Buffer} from 'node:buffer';
-import {spawn} from 'node:child_process';
-import {createReadStream, createWriteStream} from 'node:fs';
-import {stat, mkdir, readFile, readdir, writeFile, rename, rm, open} from 'node:fs/promises';
+import { Buffer } from 'node:buffer';
+import { spawn } from 'node:child_process';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { stat, mkdir, readFile, readdir, writeFile, rename, rm, open } from 'node:fs/promises';
 import process from 'node:process';
-import {Readable} from 'node:stream';
-import {pipeline} from 'node:stream/promises';
-import type {ReadableStream as NodeWebReadableStream} from 'node:stream/web';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import type { ReadableStream as NodeWebReadableStream } from 'node:stream/web';
 
-import type {RuntimeDeps, StatResult, CommandResult} from './deps.ts';
+import type { RuntimeDeps, StatResult, CommandResult } from './deps.ts';
 
 /**
  * Create a `RuntimeDeps` backed by Node.js APIs.
@@ -25,14 +25,14 @@ import type {RuntimeDeps, StatResult, CommandResult} from './deps.ts';
  * @returns `RuntimeDeps` implementation using Node.js runtime
  */
 export const create_node_runtime = (
-	args: ReadonlyArray<string> = process.argv.slice(2),
+	args: ReadonlyArray<string> = process.argv.slice(2)
 ): RuntimeDeps => ({
 	// === Environment ===
 	env_get: (name) => process.env[name],
 	env_set: (name, value) => {
 		process.env[name] = value;
 	},
-	env_all: () => ({...process.env}) as Record<string, string>,
+	env_all: () => ({ ...process.env }) as Record<string, string>,
 
 	// === Process ===
 	args,
@@ -47,7 +47,7 @@ export const create_node_runtime = (
 				is_file: s.isFile(),
 				is_directory: s.isDirectory(),
 				size: s.size,
-				mtime_ms: s.mtimeMs,
+				mtime_ms: s.mtimeMs
 			};
 		} catch {
 			return null;
@@ -71,22 +71,22 @@ export const create_node_runtime = (
 	write_file_stream: async (path, data) => {
 		await pipeline(
 			Readable.fromWeb(data as unknown as NodeWebReadableStream<Uint8Array>),
-			createWriteStream(path),
+			createWriteStream(path)
 		);
 	},
 	read_text_from_offset: async (path, offset) => {
 		const s = await stat(path);
 		const file_size = s.size;
 		const bytes_to_read = Math.max(0, file_size - offset);
-		if (bytes_to_read === 0) return {content: '', bytes_read: 0, file_size};
+		if (bytes_to_read === 0) return { content: '', bytes_read: 0, file_size };
 		const handle = await open(path, 'r');
 		try {
 			const buffer = Buffer.alloc(bytes_to_read);
-			const {bytesRead} = await handle.read(buffer, 0, bytes_to_read, offset);
+			const { bytesRead } = await handle.read(buffer, 0, bytes_to_read, offset);
 			return {
 				content: buffer.toString('utf-8', 0, bytesRead),
 				bytes_read: bytesRead,
-				file_size,
+				file_size
 			};
 		} finally {
 			await handle.close();
@@ -116,7 +116,7 @@ export const create_node_runtime = (
 		return new Promise((resolve) => {
 			const proc = spawn(cmd, args, {
 				stdio: ['ignore', 'pipe', 'pipe'],
-				cwd: options?.cwd,
+				cwd: options?.cwd
 			});
 
 			const stdout_chunks: Array<Buffer> = [];
@@ -146,7 +146,7 @@ export const create_node_runtime = (
 
 			if (options?.signal) {
 				if (options.signal.aborted) proc.kill();
-				else options.signal.addEventListener('abort', on_abort, {once: true});
+				else options.signal.addEventListener('abort', on_abort, { once: true });
 			}
 
 			proc.stdout.on('data', (chunk: Buffer) => stdout_chunks.push(chunk));
@@ -157,7 +157,7 @@ export const create_node_runtime = (
 					success: false,
 					code: 1,
 					stdout: '',
-					stderr: `Failed to execute command: ${error.message}`,
+					stderr: `Failed to execute command: ${error.message}`
 				});
 			});
 
@@ -166,7 +166,7 @@ export const create_node_runtime = (
 					success: code === 0 && !timed_out,
 					code: code ?? 1,
 					stdout: Buffer.concat(stdout_chunks).toString('utf-8').trim(),
-					stderr: Buffer.concat(stderr_chunks).toString('utf-8').trim(),
+					stderr: Buffer.concat(stderr_chunks).toString('utf-8').trim()
 				};
 				if (options?.timeout_ms !== undefined) result.timed_out = timed_out;
 				finish(result);
@@ -177,7 +177,7 @@ export const create_node_runtime = (
 	run_command_inherit: (cmd, args): Promise<number> => {
 		return new Promise((resolve) => {
 			const proc = spawn(cmd, args, {
-				stdio: 'inherit',
+				stdio: 'inherit'
 			});
 
 			proc.on('error', () => resolve(1));
@@ -219,5 +219,5 @@ export const create_node_runtime = (
 			process.stdin.once('data', onData);
 			process.stdin.once('end', onEnd);
 		});
-	},
+	}
 });

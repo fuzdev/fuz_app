@@ -8,10 +8,14 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
-import type {RouteAuth} from './auth_shape.ts';
-import {derive_error_schemas, type RateLimitKey, type RouteErrorSchemas} from './error_schemas.ts';
+import type { RouteAuth } from './auth_shape.ts';
+import {
+	derive_error_schemas,
+	type RateLimitKey,
+	type RouteErrorSchemas
+} from './error_schemas.ts';
 
 /**
  * Check if a schema is exactly `z.null()`.
@@ -111,15 +115,15 @@ export const merge_error_schemas = (
 		rate_limit?: RateLimitKey;
 		errors?: RouteErrorSchemas;
 	},
-	middleware_errors?: RouteErrorSchemas | null,
+	middleware_errors?: RouteErrorSchemas | null
 ): RouteErrorSchemas | null => {
 	const derived = derive_error_schemas({
 		auth: spec.auth,
 		has_input: !is_null_schema(spec.input),
 		has_params: !!spec.params,
 		has_query: !!spec.query,
-		rate_limit: spec.rate_limit,
+		rate_limit: spec.rate_limit
 	});
-	const merged = {...derived, ...middleware_errors, ...spec.errors};
+	const merged = { ...derived, ...middleware_errors, ...spec.errors };
 	return Object.keys(merged).length > 0 ? merged : null;
 };

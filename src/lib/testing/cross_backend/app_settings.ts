@@ -32,12 +32,12 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {app_settings_update_action_spec} from '../../auth/admin_action_specs.ts';
-import {ERROR_NO_MATCHING_INVITE} from '../../http/error_schemas.ts';
-import type {RpcPathCrossSuiteOptions} from './setup.ts';
-import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
+import { app_settings_update_action_spec } from '../../auth/admin_action_specs.ts';
+import { ERROR_NO_MATCHING_INVITE } from '../../http/error_schemas.ts';
+import type { RpcPathCrossSuiteOptions } from './setup.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** Options for the app-settings effect suite (the standard RPC-dispatched shape). */
 export type AppSettingsCrossTestOptions = RpcPathCrossSuiteOptions;
@@ -53,12 +53,12 @@ const update_envelope = (open_signup: boolean, id: string): string =>
 	JSON.stringify({
 		jsonrpc: '2.0',
 		method: app_settings_update_action_spec.method,
-		params: {open_signup},
-		id,
+		params: { open_signup },
+		id
 	});
 
 export const describe_app_settings_cross_tests = (options: AppSettingsCrossTestOptions): void => {
-	const {setup_test} = options;
+	const { setup_test } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
 	describe('app_settings open_signup effect', () => {
@@ -67,18 +67,18 @@ export const describe_app_settings_cross_tests = (options: AppSettingsCrossTestO
 
 			const enable = await fixture.transport(rpc_path, {
 				method: 'POST',
-				headers: {...fixture.create_session_headers(), 'content-type': 'application/json'},
-				body: update_envelope(true, 'enable-open-signup'),
+				headers: { ...fixture.create_session_headers(), 'content-type': 'application/json' },
+				body: update_envelope(true, 'enable-open-signup')
 			});
 			assert.strictEqual(enable.status, 200, 'admin app_settings_update must succeed');
 
 			const res = await fixture.fresh_transport()(SIGNUP_PATH, {
 				method: 'POST',
-				headers: {'content-type': 'application/json'},
-				body: JSON.stringify({username: 'open_signup_user', password: SIGNUP_PASSWORD}),
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ username: 'open_signup_user', password: SIGNUP_PASSWORD })
 			});
 			assert.strictEqual(res.status, 200, 'open signup must admit an anonymous account');
-			const body = (await res.json()) as {ok?: unknown};
+			const body = (await res.json()) as { ok?: unknown };
 			assert.strictEqual(body.ok, true, 'signup response reports success');
 		});
 
@@ -89,33 +89,33 @@ export const describe_app_settings_cross_tests = (options: AppSettingsCrossTestO
 			// effect, not merely the closed default.
 			const enable = await fixture.transport(rpc_path, {
 				method: 'POST',
-				headers: {...fixture.create_session_headers(), 'content-type': 'application/json'},
-				body: update_envelope(true, 'enable-before-disable'),
+				headers: { ...fixture.create_session_headers(), 'content-type': 'application/json' },
+				body: update_envelope(true, 'enable-before-disable')
 			});
 			assert.strictEqual(enable.status, 200, 'admin app_settings_update (enable) must succeed');
 
 			const disable = await fixture.transport(rpc_path, {
 				method: 'POST',
-				headers: {...fixture.create_session_headers(), 'content-type': 'application/json'},
-				body: update_envelope(false, 'disable-open-signup'),
+				headers: { ...fixture.create_session_headers(), 'content-type': 'application/json' },
+				body: update_envelope(false, 'disable-open-signup')
 			});
 			assert.strictEqual(disable.status, 200, 'admin app_settings_update (disable) must succeed');
 
 			const res = await fixture.fresh_transport()(SIGNUP_PATH, {
 				method: 'POST',
-				headers: {'content-type': 'application/json'},
-				body: JSON.stringify({username: 'closed_signup_user', password: SIGNUP_PASSWORD}),
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ username: 'closed_signup_user', password: SIGNUP_PASSWORD })
 			});
 			assert.strictEqual(
 				res.status,
 				403,
-				'closed signup must refuse a no-invite anonymous account',
+				'closed signup must refuse a no-invite anonymous account'
 			);
-			const body = (await res.json()) as {error?: unknown};
+			const body = (await res.json()) as { error?: unknown };
 			assert.strictEqual(
 				body.error,
 				ERROR_NO_MATCHING_INVITE,
-				'rejection carries the no-matching-invite reason',
+				'rejection carries the no-matching-invite reason'
 			);
 		});
 	});

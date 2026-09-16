@@ -29,24 +29,24 @@
  * @module
  */
 
-import {rpc_action, type ActionActorContext, type RpcAction} from '../actions/action_rpc.ts';
-import type {ConnectionCloser} from '../actions/connection_closer.ts';
-import {jsonrpc_errors} from '../http/jsonrpc_errors.ts';
+import { rpc_action, type ActionActorContext, type RpcAction } from '../actions/action_rpc.ts';
+import type { ConnectionCloser } from '../actions/connection_closer.ts';
+import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import {
 	builtin_role_specs_by_name,
 	list_roles_with_grant_path,
 	ROLE_ADMIN,
 	ROLE_KEEPER,
-	type RoleSchemaResult,
+	type RoleSchemaResult
 } from './role_schema.ts';
-import {has_role} from './request_context.ts';
+import { has_role } from './request_context.ts';
 import {
 	query_account_has_global_role,
 	query_account_has_active_global_role,
-	query_count_active_accounts_with_global_role,
+	query_count_active_accounts_with_global_role
 } from './role_grant_queries.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
-import {GRANT_PATH_ADMIN} from './grant_path_schema.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { GRANT_PATH_ADMIN } from './grant_path_schema.ts';
 import {
 	query_account_by_email,
 	query_account_by_id,
@@ -57,37 +57,37 @@ import {
 	query_actor_undelete,
 	query_actors_by_account,
 	query_admin_account_list,
-	query_purge_account,
+	query_purge_account
 } from './account_queries.ts';
 import {
 	query_session_list_all_active,
-	query_session_revoke_all_for_account,
+	query_session_revoke_all_for_account
 } from './session_queries.ts';
-import {query_revoke_all_api_tokens_for_account} from './api_token_queries.ts';
+import { query_revoke_all_api_tokens_for_account } from './api_token_queries.ts';
 import {
 	query_audit_log_list_role_grant_history,
-	query_audit_log_list_with_usernames,
+	query_audit_log_list_with_usernames
 } from './audit_log_queries.ts';
-import {AUDIT_LOG_DEFAULT_LIMIT} from './audit_log_schema.ts';
+import { AUDIT_LOG_DEFAULT_LIMIT } from './audit_log_schema.ts';
 import {
 	query_create_invite,
 	query_invite_delete_unclaimed,
-	query_invite_list_all_with_usernames,
+	query_invite_list_all_with_usernames
 } from './invite_queries.ts';
 import {
 	query_app_settings_load,
 	query_app_settings_load_with_username,
-	query_app_settings_update,
+	query_app_settings_update
 } from './app_settings_queries.ts';
-import type {ActionFactoryDeps} from './deps.ts';
-import {is_pg_unique_violation} from '../db/pg_error.ts';
+import type { ActionFactoryDeps } from './deps.ts';
+import { is_pg_unique_violation } from '../db/pg_error.ts';
 import {
 	ERROR_ACCOUNT_NOT_FOUND,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_INVITE_ACCOUNT_EXISTS_EMAIL,
 	ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
 	ERROR_INVITE_DUPLICATE,
-	ERROR_INVITE_NOT_FOUND,
+	ERROR_INVITE_NOT_FOUND
 } from '../http/error_schemas.ts';
 import {
 	admin_account_list_action_spec,
@@ -134,7 +134,7 @@ import {
 	type AppSettingsGetInput,
 	type AppSettingsGetOutput,
 	type AppSettingsUpdateInput,
-	type AppSettingsUpdateOutput,
+	type AppSettingsUpdateOutput
 } from './admin_action_specs.ts';
 
 /** Options for `create_admin_actions`. */
@@ -170,7 +170,7 @@ export interface AdminActionOptions {
  */
 export const create_admin_actions = (
 	deps: ActionFactoryDeps,
-	options: AdminActionOptions = {},
+	options: AdminActionOptions = {}
 ): Array<RpcAction> => {
 	const role_specs = options.roles?.role_specs ?? builtin_role_specs_by_name;
 	const grantable_roles = list_roles_with_grant_path(role_specs, GRANT_PATH_ADMIN);
@@ -178,27 +178,27 @@ export const create_admin_actions = (
 
 	const account_list_handler = async (
 		input: AdminAccountListInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<AdminAccountListOutput> => {
 		const accounts = await query_admin_account_list(ctx, {
 			limit: input.limit,
 			offset: input.offset,
-			include_deleted: input.include_deleted,
+			include_deleted: input.include_deleted
 		});
-		return {accounts, grantable_roles};
+		return { accounts, grantable_roles };
 	};
 
 	const session_list_handler = async (
 		_input: AdminSessionListInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<AdminSessionListOutput> => {
 		const sessions = await query_session_list_all_active(ctx);
-		return {sessions};
+		return { sessions };
 	};
 
 	const session_revoke_all_handler = async (
 		input: AdminSessionRevokeAllInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<AdminSessionRevokeAllOutput> => {
 		const auth = ctx.auth;
 		const account = await query_account_by_id(ctx, input.account_id);
@@ -214,10 +214,10 @@ export const create_admin_actions = (
 				ip: ctx.client_ip,
 				metadata: {
 					reason: ERROR_ACCOUNT_NOT_FOUND,
-					attempted_account_id: input.account_id,
-				},
+					attempted_account_id: input.account_id
+				}
 			});
-			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
+			throw jsonrpc_errors.not_found('account', { reason: ERROR_ACCOUNT_NOT_FOUND });
 		}
 		const count = await query_session_revoke_all_for_account(ctx, input.account_id);
 		// Handler-side belt+suspenders — close the target account's live WS
@@ -243,14 +243,14 @@ export const create_admin_actions = (
 			account_id: auth.account.id,
 			target_account_id: input.account_id,
 			ip: ctx.client_ip,
-			metadata: {count},
+			metadata: { count }
 		});
-		return {ok: true, count};
+		return { ok: true, count };
 	};
 
 	const token_revoke_all_handler = async (
 		input: AdminTokenRevokeAllInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<AdminTokenRevokeAllOutput> => {
 		const auth = ctx.auth;
 		const account = await query_account_by_id(ctx, input.account_id);
@@ -265,10 +265,10 @@ export const create_admin_actions = (
 				ip: ctx.client_ip,
 				metadata: {
 					reason: ERROR_ACCOUNT_NOT_FOUND,
-					attempted_account_id: input.account_id,
-				},
+					attempted_account_id: input.account_id
+				}
 			});
-			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
+			throw jsonrpc_errors.not_found('account', { reason: ERROR_ACCOUNT_NOT_FOUND });
 		}
 		const count = await query_revoke_all_api_tokens_for_account(ctx, input.account_id);
 		// Handler-side belt+suspenders — see `session_revoke_all_handler`.
@@ -283,14 +283,14 @@ export const create_admin_actions = (
 			account_id: auth.account.id,
 			target_account_id: input.account_id,
 			ip: ctx.client_ip,
-			metadata: {count},
+			metadata: { count }
 		});
-		return {ok: true, count};
+		return { ok: true, count };
 	};
 
 	const audit_log_list_handler = async (
 		input: AuditLogListInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<AuditLogListOutput> => {
 		const events = await query_audit_log_list_with_usernames(ctx, {
 			event_type: input.event_type ?? undefined,
@@ -298,26 +298,26 @@ export const create_admin_actions = (
 			account_id: input.account_id ?? undefined,
 			limit: input.limit ?? AUDIT_LOG_DEFAULT_LIMIT,
 			offset: input.offset ?? 0,
-			since_seq: input.since_seq ?? undefined,
+			since_seq: input.since_seq ?? undefined
 		});
-		return {events};
+		return { events };
 	};
 
 	const audit_log_role_grant_history_handler = async (
 		input: AuditLogRoleGrantHistoryInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<AuditLogRoleGrantHistoryOutput> => {
 		const events = await query_audit_log_list_role_grant_history(
 			ctx,
 			input.limit ?? AUDIT_LOG_DEFAULT_LIMIT,
-			input.offset ?? 0,
+			input.offset ?? 0
 		);
-		return {events};
+		return { events };
 	};
 
 	const invite_create_handler = async (
 		input: InviteCreateInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<InviteCreateOutput> => {
 		const auth = ctx.auth;
 		const email = input.email ?? null;
@@ -327,7 +327,7 @@ export const create_admin_actions = (
 			const existing = await query_account_by_username(ctx, username);
 			if (existing) {
 				throw jsonrpc_errors.conflict('an account already exists with that username', {
-					reason: ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
+					reason: ERROR_INVITE_ACCOUNT_EXISTS_USERNAME
 				});
 			}
 		}
@@ -335,7 +335,7 @@ export const create_admin_actions = (
 			const existing = await query_account_by_email(ctx, email);
 			if (existing) {
 				throw jsonrpc_errors.conflict('an account already exists with that email', {
-					reason: ERROR_INVITE_ACCOUNT_EXISTS_EMAIL,
+					reason: ERROR_INVITE_ACCOUNT_EXISTS_EMAIL
 				});
 			}
 		}
@@ -345,12 +345,12 @@ export const create_admin_actions = (
 			invite = await query_create_invite(ctx, {
 				email,
 				username,
-				created_by: auth.actor.id,
+				created_by: auth.actor.id
 			});
 		} catch (err: unknown) {
 			if (is_pg_unique_violation(err)) {
 				throw jsonrpc_errors.conflict('an unclaimed invite already exists', {
-					reason: ERROR_INVITE_DUPLICATE,
+					reason: ERROR_INVITE_DUPLICATE
 				});
 			}
 			throw err;
@@ -360,35 +360,35 @@ export const create_admin_actions = (
 			event_type: 'invite_create',
 			account_id: auth.account.id,
 			ip: ctx.client_ip,
-			metadata: {invite_id: invite.id, email, username},
+			metadata: { invite_id: invite.id, email, username }
 		});
-		return {ok: true, invite};
+		return { ok: true, invite };
 	};
 
 	const invite_list_handler = async (
 		_input: InviteListInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<InviteListOutput> => {
 		const invites = await query_invite_list_all_with_usernames(ctx);
-		return {invites};
+		return { invites };
 	};
 
 	const invite_delete_handler = async (
 		input: InviteDeleteInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<InviteDeleteOutput> => {
 		const auth = ctx.auth;
 		const deleted = await query_invite_delete_unclaimed(ctx, input.invite_id);
 		if (!deleted) {
-			throw jsonrpc_errors.not_found('invite', {reason: ERROR_INVITE_NOT_FOUND});
+			throw jsonrpc_errors.not_found('invite', { reason: ERROR_INVITE_NOT_FOUND });
 		}
 		deps.audit.emit(ctx, {
 			event_type: 'invite_delete',
 			account_id: auth.account.id,
 			ip: ctx.client_ip,
-			metadata: {invite_id: input.invite_id},
+			metadata: { invite_id: input.invite_id }
 		});
-		return {ok: true};
+		return { ok: true };
 	};
 
 	// Shared removability guard for `account_delete` / `account_purge`,
@@ -409,12 +409,12 @@ export const create_admin_actions = (
 	const assert_account_removable = async (
 		ctx: ActionActorContext,
 		target_account_id: Uuid,
-		event_type: 'account_delete' | 'account_purge',
+		event_type: 'account_delete' | 'account_purge'
 	): Promise<void> => {
 		const auth = ctx.auth;
 		const deny = (
 			reason: typeof ERROR_CANNOT_DELETE_KEEPER | typeof ERROR_CANNOT_DELETE_LAST_ADMIN,
-			message: string,
+			message: string
 		): never => {
 			deps.audit.emit(ctx, {
 				event_type,
@@ -423,9 +423,9 @@ export const create_admin_actions = (
 				account_id: auth.account.id,
 				target_account_id,
 				ip: ctx.client_ip,
-				metadata: {reason},
+				metadata: { reason }
 			});
-			throw jsonrpc_errors.forbidden(message, {reason});
+			throw jsonrpc_errors.forbidden(message, { reason });
 		};
 		const verb = event_type === 'account_purge' ? 'purge' : 'delete';
 		if (await query_account_has_global_role(ctx, target_account_id, ROLE_KEEPER)) {
@@ -451,14 +451,14 @@ export const create_admin_actions = (
 	// each carrying its identity snapshot. `delete` = soft.
 	const account_delete_handler = async (
 		input: AccountDeleteInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<AccountDeleteOutput> => {
 		const auth = ctx.auth;
 		const target_account_id = input.account_id ?? auth.account.id;
 		// Self-or-admin elevation: deleting someone else needs admin.
 		if (target_account_id !== auth.account.id && !has_role(auth, ROLE_ADMIN)) {
 			throw jsonrpc_errors.forbidden('cannot delete another account', {
-				reason: ERROR_INSUFFICIENT_PERMISSIONS,
+				reason: ERROR_INSUFFICIENT_PERMISSIONS
 			});
 		}
 		// Keeper + last-admin guards (fail-loud, before the tombstone).
@@ -474,9 +474,9 @@ export const create_admin_actions = (
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				ip: ctx.client_ip,
-				metadata: {reason: ERROR_ACCOUNT_NOT_FOUND, attempted_account_id: target_account_id},
+				metadata: { reason: ERROR_ACCOUNT_NOT_FOUND, attempted_account_id: target_account_id }
 			});
-			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
+			throw jsonrpc_errors.not_found('account', { reason: ERROR_ACCOUNT_NOT_FOUND });
 		}
 		const soft_deleted_actors = [];
 		for (const actor of actors) {
@@ -493,7 +493,7 @@ export const create_admin_actions = (
 			account_id: auth.account.id,
 			target_account_id,
 			ip: ctx.client_ip,
-			metadata: {username: snapshot.username, email: snapshot.email},
+			metadata: { username: snapshot.username, email: snapshot.email }
 		});
 		for (const actor of soft_deleted_actors) {
 			deps.audit.emit(ctx, {
@@ -503,10 +503,10 @@ export const create_admin_actions = (
 				target_account_id,
 				target_actor_id: actor.id,
 				ip: ctx.client_ip,
-				metadata: {name: actor.name},
+				metadata: { name: actor.name }
 			});
 		}
-		return {ok: true, deleted: true};
+		return { ok: true, deleted: true };
 	};
 
 	// Hard-purge an account (keeper-only, irreversible). Fail-loud:
@@ -516,13 +516,13 @@ export const create_admin_actions = (
 	// purged ids survive on historical rows and the snapshots name them.
 	const account_purge_handler = async (
 		input: AccountPurgeInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<AccountPurgeOutput> => {
 		const auth = ctx.auth;
 		// Fail-loud: refuse the irreversible purge without explicit confirm.
 		if (input.confirm !== true) {
 			throw jsonrpc_errors.invalid_params('purge requires confirm: true', {
-				reason: ERROR_PURGE_NOT_CONFIRMED,
+				reason: ERROR_PURGE_NOT_CONFIRMED
 			});
 		}
 		// Keeper + last-admin guards (fail-loud, before the cascade).
@@ -537,15 +537,15 @@ export const create_admin_actions = (
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				ip: ctx.client_ip,
-				metadata: {reason: ERROR_ACCOUNT_NOT_FOUND, attempted_account_id: input.account_id},
+				metadata: { reason: ERROR_ACCOUNT_NOT_FOUND, attempted_account_id: input.account_id }
 			});
-			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
+			throw jsonrpc_errors.not_found('account', { reason: ERROR_ACCOUNT_NOT_FOUND });
 		}
 		if (connection_closer) connection_closer.close_sockets_for_account(input.account_id);
 		deps.log.warn(
 			`account hard-purged (irreversible cascading delete): ${input.account_id} by actor ${
 				auth.actor.id
-			}`,
+			}`
 		);
 		deps.audit.emit(ctx, {
 			event_type: 'account_purge',
@@ -553,7 +553,7 @@ export const create_admin_actions = (
 			account_id: auth.account.id,
 			target_account_id: input.account_id,
 			ip: ctx.client_ip,
-			metadata: {username: snapshot.username, email: snapshot.email},
+			metadata: { username: snapshot.username, email: snapshot.email }
 		});
 		for (const actor of actors) {
 			deps.audit.emit(ctx, {
@@ -563,10 +563,10 @@ export const create_admin_actions = (
 				target_account_id: input.account_id,
 				target_actor_id: actor.id,
 				ip: ctx.client_ip,
-				metadata: {name: actor.name},
+				metadata: { name: actor.name }
 			});
 		}
-		return {ok: true, purged: true};
+		return { ok: true, purged: true };
 	};
 
 	// Reactivate a soft-deleted account (clears the tombstone). Admin-only —
@@ -576,7 +576,7 @@ export const create_admin_actions = (
 	// Does NOT restore revoked sessions/tokens. The inverse of `delete`.
 	const account_undelete_handler = async (
 		input: AccountUndeleteInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<AccountUndeleteOutput> => {
 		const auth = ctx.auth;
 		// Snapshot actors (the listing includes soft-deleted rows) before
@@ -591,9 +591,9 @@ export const create_admin_actions = (
 				actor_id: auth.actor.id,
 				account_id: auth.account.id,
 				ip: ctx.client_ip,
-				metadata: {reason: ERROR_ACCOUNT_NOT_FOUND, attempted_account_id: input.account_id},
+				metadata: { reason: ERROR_ACCOUNT_NOT_FOUND, attempted_account_id: input.account_id }
 			});
-			throw jsonrpc_errors.not_found('account', {reason: ERROR_ACCOUNT_NOT_FOUND});
+			throw jsonrpc_errors.not_found('account', { reason: ERROR_ACCOUNT_NOT_FOUND });
 		}
 		const undeleted_actors = [];
 		for (const actor of actors) {
@@ -607,7 +607,7 @@ export const create_admin_actions = (
 			account_id: auth.account.id,
 			target_account_id: input.account_id,
 			ip: ctx.client_ip,
-			metadata: {username: snapshot.username, email: snapshot.email},
+			metadata: { username: snapshot.username, email: snapshot.email }
 		});
 		for (const actor of undeleted_actors) {
 			deps.audit.emit(ctx, {
@@ -617,10 +617,10 @@ export const create_admin_actions = (
 				target_account_id: input.account_id,
 				target_actor_id: actor.id,
 				ip: ctx.client_ip,
-				metadata: {name: actor.name},
+				metadata: { name: actor.name }
 			});
 		}
-		return {ok: true, undeleted: true};
+		return { ok: true, undeleted: true };
 	};
 
 	const actions: Array<RpcAction> = [
@@ -635,24 +635,24 @@ export const create_admin_actions = (
 		rpc_action(audit_log_role_grant_history_action_spec, audit_log_role_grant_history_handler),
 		rpc_action(invite_create_action_spec, invite_create_handler),
 		rpc_action(invite_list_action_spec, invite_list_handler),
-		rpc_action(invite_delete_action_spec, invite_delete_handler),
+		rpc_action(invite_delete_action_spec, invite_delete_handler)
 	];
 
 	const app_settings_get_handler = async (
 		_input: AppSettingsGetInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<AppSettingsGetOutput> => {
 		const settings = await query_app_settings_load_with_username(ctx);
-		return {settings};
+		return { settings };
 	};
 
 	const app_settings_update_handler = async (
 		input: AppSettingsUpdateInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<AppSettingsUpdateOutput> => {
 		const auth = ctx.auth;
 		// Read the prior value for the audit row before writing the new one.
-		const {open_signup: old_value} = await query_app_settings_load(ctx);
+		const { open_signup: old_value } = await query_app_settings_load(ctx);
 		await query_app_settings_update(ctx, input.open_signup, auth.actor.id);
 
 		deps.audit.emit(ctx, {
@@ -662,16 +662,16 @@ export const create_admin_actions = (
 			metadata: {
 				setting: 'open_signup',
 				old_value,
-				new_value: input.open_signup,
-			},
+				new_value: input.open_signup
+			}
 		});
 		const settings = await query_app_settings_load_with_username(ctx);
-		return {ok: true, settings};
+		return { ok: true, settings };
 	};
 
 	actions.push(
 		rpc_action(app_settings_get_action_spec, app_settings_get_handler),
-		rpc_action(app_settings_update_action_spec, app_settings_update_handler),
+		rpc_action(app_settings_update_action_spec, app_settings_update_handler)
 	);
 
 	return actions;

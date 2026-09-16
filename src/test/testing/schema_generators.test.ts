@@ -4,13 +4,13 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
-import {z} from 'zod';
+import { describe, test, assert } from 'vitest';
+import { z } from 'zod';
 
-import {generate_valid_body} from '$lib/testing/schema_generators.ts';
+import { generate_valid_body } from '$lib/testing/schema_generators.ts';
 import {
 	account_session_revoke_action_spec,
-	account_token_revoke_action_spec,
+	account_token_revoke_action_spec
 } from '$lib/auth/account_action_specs.ts';
 
 describe('generate_valid_body — branded-string synthesis', () => {
@@ -29,7 +29,7 @@ describe('generate_valid_body — branded-string synthesis', () => {
 	});
 
 	test('satisfies a bare fixed-length hex pattern', () => {
-		const schema = z.strictObject({digest: z.string().regex(/^[0-9a-f]{64}$/)});
+		const schema = z.strictObject({ digest: z.string().regex(/^[0-9a-f]{64}$/) });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		const parsed = schema.safeParse(body);
@@ -37,7 +37,7 @@ describe('generate_valid_body — branded-string synthesis', () => {
 	});
 
 	test('satisfies a bare prefix-lengthed slug pattern', () => {
-		const schema = z.strictObject({id: z.string().regex(/^foo_[A-Za-z0-9_-]{8}$/)});
+		const schema = z.strictObject({ id: z.string().regex(/^foo_[A-Za-z0-9_-]{8}$/) });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		const parsed = schema.safeParse(body);
@@ -53,10 +53,10 @@ describe('generate_valid_body — union synthesis', () => {
 		const Remote = z.strictObject({
 			local: z.literal(false).optional(),
 			host: z.string().min(1),
-			user: z.string().min(1),
+			user: z.string().min(1)
 		});
-		const Local = z.strictObject({local: z.literal(true)});
-		const schema = z.strictObject({target: z.union([Remote, Local])});
+		const Local = z.strictObject({ local: z.literal(true) });
+		const schema = z.strictObject({ target: z.union([Remote, Local]) });
 
 		const body = generate_valid_body(schema);
 		assert.ok(body, 'expected a body');
@@ -65,7 +65,7 @@ describe('generate_valid_body — union synthesis', () => {
 	});
 
 	test('picks the first variant of a union of primitives', () => {
-		const schema = z.strictObject({val: z.union([z.string(), z.number()])});
+		const schema = z.strictObject({ val: z.union([z.string(), z.number()]) });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		const parsed = schema.safeParse(body);
@@ -75,11 +75,11 @@ describe('generate_valid_body — union synthesis', () => {
 	test('synthesizes a union nested inside another object field', () => {
 		const Inner = z.strictObject({
 			cfg: z.union([
-				z.strictObject({mode: z.literal('a').optional(), label: z.string().min(1)}),
-				z.strictObject({mode: z.literal('b').optional(), n: z.number()}),
-			]),
+				z.strictObject({ mode: z.literal('a').optional(), label: z.string().min(1) }),
+				z.strictObject({ mode: z.literal('b').optional(), n: z.number() })
+			])
 		});
-		const schema = z.strictObject({wrapper: Inner});
+		const schema = z.strictObject({ wrapper: Inner });
 
 		const body = generate_valid_body(schema);
 		assert.ok(body);
@@ -91,9 +91,9 @@ describe('generate_valid_body — union synthesis', () => {
 		// Optional unwrap happens before the union case is reached.
 		const schema = z.strictObject({
 			target: z.union([
-				z.strictObject({host: z.string().min(1)}),
-				z.strictObject({local: z.literal(true)}),
-			]),
+				z.strictObject({ host: z.string().min(1) }),
+				z.strictObject({ local: z.literal(true) })
+			])
 		});
 
 		const body = generate_valid_body(schema);
@@ -108,9 +108,9 @@ describe('generate_valid_body — union synthesis', () => {
 		// to `'test_value'`, which fails the literal check and breaks parse.
 		const schema = z.strictObject({
 			target: z.discriminatedUnion('kind', [
-				z.strictObject({kind: z.literal('local'), value: z.string().min(1)}),
-				z.strictObject({kind: z.literal('remote'), host: z.string().min(1)}),
-			]),
+				z.strictObject({ kind: z.literal('local'), value: z.string().min(1) }),
+				z.strictObject({ kind: z.literal('remote'), host: z.string().min(1) })
+			])
 		});
 
 		const body = generate_valid_body(schema);
@@ -120,11 +120,11 @@ describe('generate_valid_body — union synthesis', () => {
 	});
 
 	test('synthesizes a bare z.literal() field', () => {
-		const schema = z.strictObject({mode: z.literal('strict')});
+		const schema = z.strictObject({ mode: z.literal('strict') });
 		const body = generate_valid_body(schema);
 		assert.ok(body);
 		const parsed = schema.safeParse(body);
 		assert.ok(parsed.success, `body must round-trip: ${JSON.stringify(parsed)}`);
-		assert.strictEqual((parsed.data as {mode: string}).mode, 'strict');
+		assert.strictEqual((parsed.data as { mode: string }).mode, 'strict');
 	});
 });

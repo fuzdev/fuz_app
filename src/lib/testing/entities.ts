@@ -13,11 +13,11 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type {Account, Actor, RoleGrant} from '../auth/account_schema.ts';
-import type {AuditLogEvent} from '../auth/audit_log_schema.ts';
-import type {RequestContext} from '../auth/request_context.ts';
+import type { Account, Actor, RoleGrant } from '../auth/account_schema.ts';
+import type { AuditLogEvent } from '../auth/audit_log_schema.ts';
+import type { RequestContext } from '../auth/request_context.ts';
 
 /** Override type for `create_test_account` — id-like fields accept plain `string`. */
 export type TestAccountOverrides = Partial<Omit<Account, 'id' | 'created_by' | 'updated_by'>> & {
@@ -39,7 +39,7 @@ export const create_test_account = (overrides?: TestAccountOverrides): Account =
 	updated_by: null,
 	deleted_at: null,
 	deleted_by: null,
-	...(overrides as Partial<Account>),
+	...(overrides as Partial<Account>)
 });
 
 /** Override type for `create_test_actor` — id-like fields accept plain `string`. */
@@ -59,7 +59,7 @@ export const create_test_actor = (overrides?: TestActorOverrides): Actor => ({
 	updated_by: null,
 	deleted_at: null,
 	deleted_by: null,
-	...(overrides as Partial<Actor>),
+	...(overrides as Partial<Actor>)
 });
 
 /** Override type for `create_test_role_grant` — id-like fields accept plain `string`. */
@@ -92,18 +92,18 @@ export const create_test_role_grant = (overrides?: TestRoleGrantOverrides): Role
 		revoked_by: null,
 		revoked_reason: null,
 		granted_by: null,
-		source_offer_id: null,
+		source_offer_id: null
 	};
-	return overrides ? {...base, ...(overrides as Partial<RoleGrant>)} : base;
+	return overrides ? { ...base, ...(overrides as Partial<RoleGrant>) } : base;
 };
 
 /** Create a test `RequestContext` with role_grants from partial overrides. */
 export const create_test_context = (
-	role_grants: Array<TestRoleGrantOverrides> = [{}],
+	role_grants: Array<TestRoleGrantOverrides> = [{}]
 ): RequestContext => ({
 	account: create_test_account(),
 	actor: create_test_actor(),
-	role_grants: role_grants.map((p) => create_test_role_grant(p)),
+	role_grants: role_grants.map((p) => create_test_role_grant(p))
 });
 
 /** Override type for `create_test_audit_event` — id-like fields accept plain `string`. */
@@ -130,5 +130,5 @@ export const create_test_audit_event = (overrides?: TestAuditEventOverrides): Au
 	ip: '127.0.0.1',
 	created_at: '2024-01-01T00:00:00Z',
 	metadata: null,
-	...(overrides as Partial<AuditLogEvent>),
+	...(overrides as Partial<AuditLogEvent>)
 });

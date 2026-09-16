@@ -1,12 +1,12 @@
 <script lang="ts">
 	import DocsFooter from '@fuzdev/fuz_ui/DocsFooter.svelte';
-	import {site_context} from '@fuzdev/fuz_ui/site.svelte.ts';
-	import {FUZ_DEV_URL} from '@fuzdev/fuz_ui/constants.ts';
+	import { site_context } from '@fuzdev/fuz_ui/site.svelte.ts';
+	import { FUZ_DEV_URL } from '@fuzdev/fuz_ui/constants.ts';
 	import EcosystemLinksPanel from '@fuzdev/fuz_ui/EcosystemLinksPanel.svelte';
 	import Breadcrumb from '@fuzdev/fuz_ui/Breadcrumb.svelte';
 	import Svg from '@fuzdev/fuz_ui/Svg.svelte';
-	import {logo_fuz_app} from '@fuzdev/fuz_ui/logos.ts';
-	import {resolve} from '$app/paths';
+	import { logo_fuz_app } from '@fuzdev/fuz_ui/logos.ts';
+	import { resolve } from '$app/paths';
 
 	const site = site_context.get();
 </script>
@@ -21,11 +21,12 @@
 	<section class="panel p_lg width_atmost_sm">
 		<p>
 			fuz_app is a fullstack app library for TypeScript, Svelte, SvelteKit, Hono, and PostgreSQL
-			with PGlite for embedded targets. It's part of the <a href="https://www.fuz.dev/">Fuz stack</a
-			>, and this is a pre-alpha release, not yet ready for production. To learn more, see the
+			with PGlite for embedded targets. It's part of the
+			<a href="https://www.fuz.dev/">Fuz stack</a>, and this is a pre-alpha release, not yet ready
+			for production. To learn more, see the
 			<a href="https://github.com/fuzdev/fuz_app/discussions">discussions</a>,
-			<a href="https://github.com/fuzdev/fuz_app">repo</a>, and
-			<a href={resolve('/docs')}>docs</a> 🗝
+			<a href="https://github.com/fuzdev/fuz_app">repo</a>, and <a href={resolve('/docs')}>docs</a>
+			🗝
 		</p>
 	</section>
 	<EcosystemLinksPanel />

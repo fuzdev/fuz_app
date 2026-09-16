@@ -10,11 +10,11 @@
  * @module
  */
 
-import {describe, test, assert, vi, beforeEach, afterEach} from 'vitest';
+import { describe, test, assert, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('esm-env', () => ({BROWSER: true, DEV: true, NODE: true}));
+vi.mock('esm-env', () => ({ BROWSER: true, DEV: true, NODE: true }));
 
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	FrontendWebsocketClient,
@@ -25,15 +25,15 @@ import {
 	DEFAULT_HEARTBEAT_INTERVAL,
 	DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT,
 	DEFAULT_QUEUE_MAX_SIZE,
-	socket_status_to_async_status,
+	socket_status_to_async_status
 } from '$lib/actions/socket.svelte.ts';
 import {
 	WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT,
-	WS_CLOSE_SESSION_REVOKED,
+	WS_CLOSE_SESSION_REVOKED
 } from '$lib/actions/transports.ts';
-import {cancel_action_spec} from '$lib/actions/cancel.ts';
-import {heartbeat_action_spec} from '$lib/actions/heartbeat.ts';
-import {JSONRPC_ERROR_CODES, ThrownJsonrpcError} from '$lib/http/jsonrpc_errors.ts';
+import { cancel_action_spec } from '$lib/actions/cancel.ts';
+import { heartbeat_action_spec } from '$lib/actions/heartbeat.ts';
+import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '$lib/http/jsonrpc_errors.ts';
 
 // --- mock WebSocket ---
 
@@ -97,7 +97,7 @@ class MockWebSocket {
 	fire_close(code: number = DEFAULT_CLOSE_CODE, reason: string = ''): void {
 		this.readyState = MockWebSocket.CLOSED;
 		// CloseEvent isn't consistent across environments — pass a duck-typed object.
-		this.dispatch('close', {code, reason, wasClean: code === DEFAULT_CLOSE_CODE});
+		this.dispatch('close', { code, reason, wasClean: code === DEFAULT_CLOSE_CODE });
 	}
 
 	fire_error(): void {
@@ -105,7 +105,7 @@ class MockWebSocket {
 	}
 
 	fire_message(data: string): void {
-		this.dispatch('message', {data} as MessageEvent);
+		this.dispatch('message', { data } as MessageEvent);
 	}
 }
 
@@ -159,7 +159,7 @@ describe('constructor', () => {
 
 	test('reconnect: true uses defaults (same as omitting)', () => {
 		vi.useFakeTimers();
-		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: true});
+		const client = new FrontendWebsocketClient(TEST_URL, { reconnect: true });
 		client.connect();
 		last_ws().fire_close(1006);
 		assert.strictEqual(client.status, 'reconnecting');
@@ -220,8 +220,8 @@ describe('connect', () => {
 	test('constructor failure transitions to closed and schedules reconnect', () => {
 		vi.useFakeTimers();
 		MockWebSocket.throw_on_construct = true;
-		const log = {error: vi.fn()} as any;
-		const client = new FrontendWebsocketClient(TEST_URL, {log});
+		const log = { error: vi.fn() } as any;
+		const client = new FrontendWebsocketClient(TEST_URL, { log });
 
 		client.connect();
 
@@ -242,8 +242,8 @@ describe('connect', () => {
 	test('repeated construct failures grow the backoff', () => {
 		vi.useFakeTimers();
 		MockWebSocket.throw_on_construct = true;
-		const log = {error: vi.fn()} as any;
-		const client = new FrontendWebsocketClient(TEST_URL, {log});
+		const log = { error: vi.fn() } as any;
+		const client = new FrontendWebsocketClient(TEST_URL, { log });
 
 		// attempt 1
 		client.connect();
@@ -255,7 +255,7 @@ describe('connect', () => {
 		assert.strictEqual(client.reconnect_count, 2);
 		assert.strictEqual(
 			client.current_reconnect_delay,
-			Math.round(DEFAULT_RECONNECT_DELAY * DEFAULT_BACKOFF_FACTOR),
+			Math.round(DEFAULT_RECONNECT_DELAY * DEFAULT_BACKOFF_FACTOR)
 		);
 
 		// attempt 3 — advance by the current delay (not the base), count bumps again
@@ -263,7 +263,7 @@ describe('connect', () => {
 		assert.strictEqual(client.reconnect_count, 3);
 		assert.strictEqual(
 			client.current_reconnect_delay,
-			Math.round(DEFAULT_RECONNECT_DELAY * DEFAULT_BACKOFF_FACTOR ** 2),
+			Math.round(DEFAULT_RECONNECT_DELAY * DEFAULT_BACKOFF_FACTOR ** 2)
 		);
 
 		// still no sockets constructed (all throws)
@@ -352,8 +352,8 @@ describe('disconnect', () => {
 	});
 
 	test('logs and swallows errors thrown by underlying close()', () => {
-		const log = {error: vi.fn()} as any;
-		const client = new FrontendWebsocketClient(TEST_URL, {log});
+		const log = { error: vi.fn() } as any;
+		const client = new FrontendWebsocketClient(TEST_URL, { log });
 		client.connect();
 		last_ws().fire_open();
 		last_ws().close_throws = true;
@@ -367,10 +367,10 @@ describe('disconnect', () => {
 describe('send', () => {
 	test('returns false when not connected', () => {
 		const client = new FrontendWebsocketClient(TEST_URL);
-		assert.strictEqual(client.send({hello: 'world'}), false);
+		assert.strictEqual(client.send({ hello: 'world' }), false);
 
 		client.connect(); // status 'connecting', not 'connected'
-		assert.strictEqual(client.send({hello: 'world'}), false);
+		assert.strictEqual(client.send({ hello: 'world' }), false);
 	});
 
 	test('serializes and forwards payload when connected', () => {
@@ -378,14 +378,14 @@ describe('send', () => {
 		client.connect();
 		last_ws().fire_open();
 
-		const result = client.send({jsonrpc: '2.0', method: 'ping'});
+		const result = client.send({ jsonrpc: '2.0', method: 'ping' });
 		assert.strictEqual(result, true);
-		assert.deepStrictEqual(last_ws().sent, [JSON.stringify({jsonrpc: '2.0', method: 'ping'})]);
+		assert.deepStrictEqual(last_ws().sent, [JSON.stringify({ jsonrpc: '2.0', method: 'ping' })]);
 	});
 
 	test('returns false and logs when underlying send throws', () => {
-		const log = {error: vi.fn()} as any;
-		const client = new FrontendWebsocketClient(TEST_URL, {log});
+		const log = { error: vi.fn() } as any;
+		const client = new FrontendWebsocketClient(TEST_URL, { log });
 		client.connect();
 		last_ws().fire_open();
 
@@ -393,7 +393,7 @@ describe('send', () => {
 			throw new Error('boom');
 		});
 
-		const result = client.send({x: 1});
+		const result = client.send({ x: 1 });
 		assert.strictEqual(result, false);
 		assert.strictEqual(log.error.mock.calls.length, 1);
 		assert.instanceOf(client.last_send_error, Error);
@@ -406,7 +406,7 @@ describe('send', () => {
 		last_ws().fire_open();
 		client.disconnect();
 
-		assert.strictEqual(client.send({x: 1}), false);
+		assert.strictEqual(client.send({ x: 1 }), false);
 	});
 });
 
@@ -417,7 +417,7 @@ describe('last_send_error', () => {
 
 		client.connect();
 		last_ws().fire_open();
-		assert.strictEqual(client.send({x: 1}), true);
+		assert.strictEqual(client.send({ x: 1 }), true);
 		assert.isNull(client.last_send_error);
 	});
 
@@ -429,11 +429,11 @@ describe('last_send_error', () => {
 		const send_spy = vi.spyOn(last_ws(), 'send').mockImplementationOnce(() => {
 			throw new Error('transient');
 		});
-		assert.strictEqual(client.send({x: 1}), false);
+		assert.strictEqual(client.send({ x: 1 }), false);
 		assert.strictEqual(client.last_send_error?.message, 'transient');
 
 		// next call falls through to the unmocked impl, which succeeds
-		assert.strictEqual(client.send({x: 2}), true);
+		assert.strictEqual(client.send({ x: 2 }), true);
 		assert.isNull(client.last_send_error);
 		assert.strictEqual(send_spy.mock.calls.length, 2);
 	});
@@ -448,7 +448,7 @@ describe('last_send_error', () => {
 			throw 'plain string';
 		});
 
-		assert.strictEqual(client.send({x: 1}), false);
+		assert.strictEqual(client.send({ x: 1 }), false);
 		assert.instanceOf(client.last_send_error, Error);
 		assert.strictEqual(client.last_send_error.message, 'plain string');
 	});
@@ -461,12 +461,12 @@ describe('last_send_error', () => {
 		vi.spyOn(last_ws(), 'send').mockImplementation(() => {
 			throw new Error('boom');
 		});
-		assert.strictEqual(client.send({x: 1}), false);
+		assert.strictEqual(client.send({ x: 1 }), false);
 		assert.strictEqual(client.last_send_error?.message, 'boom');
 
 		// disconnect so send() short-circuits on !connected — field must stay.
 		client.disconnect();
-		assert.strictEqual(client.send({x: 2}), false);
+		assert.strictEqual(client.send({ x: 2 }), false);
 		assert.strictEqual(client.last_send_error?.message, 'boom');
 	});
 });
@@ -541,8 +541,8 @@ describe('error handlers', () => {
 	});
 
 	test('logs error when a logger is provided', () => {
-		const log = {error: vi.fn()} as any;
-		const client = new FrontendWebsocketClient(TEST_URL, {log});
+		const log = { error: vi.fn() } as any;
+		const client = new FrontendWebsocketClient(TEST_URL, { log });
 		client.connect();
 
 		last_ws().fire_error();
@@ -602,7 +602,7 @@ describe('auto-reconnect', () => {
 	test('caps at reconnect delay_max', () => {
 		vi.useFakeTimers();
 		const client = new FrontendWebsocketClient(TEST_URL, {
-			reconnect: {delay: 1000, delay_max: 3000, factor: 10},
+			reconnect: { delay: 1000, delay_max: 3000, factor: 10 }
 		});
 		client.connect();
 
@@ -632,7 +632,7 @@ describe('auto-reconnect', () => {
 
 	test('reconnect:false skips reconnect scheduling', () => {
 		vi.useFakeTimers();
-		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: false});
+		const client = new FrontendWebsocketClient(TEST_URL, { reconnect: false });
 		client.connect();
 		last_ws().fire_open();
 		last_ws().fire_close(1006);
@@ -644,7 +644,7 @@ describe('auto-reconnect', () => {
 
 	test('reconnect config overrides individual fields', () => {
 		vi.useFakeTimers();
-		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: {delay: 500}});
+		const client = new FrontendWebsocketClient(TEST_URL, { reconnect: { delay: 500 } });
 		client.connect();
 		last_ws().fire_close(1006);
 		assert.strictEqual(client.current_reconnect_delay, 500);
@@ -863,8 +863,8 @@ describe('counter resets', () => {
 
 describe('handler fault isolation', () => {
 	test('message handler throw does not block subsequent handlers', () => {
-		const log = {error: vi.fn()} as any;
-		const client = new FrontendWebsocketClient(TEST_URL, {log});
+		const log = { error: vi.fn() } as any;
+		const client = new FrontendWebsocketClient(TEST_URL, { log });
 		client.connect();
 
 		const second = vi.fn();
@@ -879,8 +879,8 @@ describe('handler fault isolation', () => {
 	});
 
 	test('error handler throw does not block subsequent handlers', () => {
-		const log = {error: vi.fn()} as any;
-		const client = new FrontendWebsocketClient(TEST_URL, {log});
+		const log = { error: vi.fn() } as any;
+		const client = new FrontendWebsocketClient(TEST_URL, { log });
 		client.connect();
 
 		const second = vi.fn();
@@ -899,14 +899,14 @@ describe('handler fault isolation', () => {
 describe('set_reconnect', () => {
 	test('shorter new delay cuts in-flight wait short', () => {
 		vi.useFakeTimers();
-		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: {delay: 5000}});
+		const client = new FrontendWebsocketClient(TEST_URL, { reconnect: { delay: 5000 } });
 		client.connect();
 		last_ws().fire_close(1006);
 		assert.strictEqual(client.current_reconnect_delay, 5000);
 
 		// 1 second in, user drops the policy to 500ms.
 		vi.advanceTimersByTime(1000);
-		client.set_reconnect({delay: 500});
+		client.set_reconnect({ delay: 500 });
 
 		// Displayed delay reflects the new target (monotonically shortened).
 		assert.strictEqual(client.current_reconnect_delay, 500);
@@ -918,13 +918,13 @@ describe('set_reconnect', () => {
 
 	test('longer new delay does not extend in-flight wait', () => {
 		vi.useFakeTimers();
-		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: {delay: 1000}});
+		const client = new FrontendWebsocketClient(TEST_URL, { reconnect: { delay: 1000 } });
 		client.connect();
 		last_ws().fire_close(1006);
 		assert.strictEqual(client.current_reconnect_delay, 1000);
 
 		// Raise the floor mid-wait — the in-flight timer stays on its original schedule.
-		client.set_reconnect({delay: 30000});
+		client.set_reconnect({ delay: 30000 });
 		assert.strictEqual(client.current_reconnect_delay, 1000);
 
 		vi.advanceTimersByTime(1000);
@@ -933,13 +933,13 @@ describe('set_reconnect', () => {
 
 	test('new target already past elapsed reconnects immediately', () => {
 		vi.useFakeTimers();
-		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: {delay: 10000}});
+		const client = new FrontendWebsocketClient(TEST_URL, { reconnect: { delay: 10000 } });
 		client.connect();
 		last_ws().fire_close(1006);
 
 		// 8s elapsed of a 10s wait; new policy would only wait 5s → already past due.
 		vi.advanceTimersByTime(8000);
-		client.set_reconnect({delay: 5000});
+		client.set_reconnect({ delay: 5000 });
 
 		// Reconnect fires on next tick.
 		vi.advanceTimersByTime(0);
@@ -952,7 +952,7 @@ describe('set_reconnect', () => {
 		client.connect();
 		last_ws().fire_open();
 
-		client.set_reconnect({delay: 250});
+		client.set_reconnect({ delay: 250 });
 
 		last_ws().fire_close(1006);
 		assert.strictEqual(client.status, 'reconnecting');
@@ -977,7 +977,7 @@ describe('set_reconnect', () => {
 
 	test('turning reconnect on after off does not synthesize a reconnect', () => {
 		vi.useFakeTimers();
-		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: false});
+		const client = new FrontendWebsocketClient(TEST_URL, { reconnect: false });
 		client.connect();
 		last_ws().fire_open();
 		last_ws().fire_close(1006);
@@ -992,7 +992,7 @@ describe('set_reconnect', () => {
 
 	test('null/true restore defaults (missing fields = defaults, not keep-current)', () => {
 		const client = new FrontendWebsocketClient(TEST_URL, {
-			reconnect: {delay: 500, delay_max: 2000, factor: 3},
+			reconnect: { delay: 500, delay_max: 2000, factor: 3 }
 		});
 		client.set_reconnect(null);
 
@@ -1008,7 +1008,7 @@ describe('set_reconnect', () => {
 		last_ws().fire_close(1006);
 		assert.strictEqual(client.current_reconnect_delay, DEFAULT_RECONNECT_DELAY);
 
-		client.set_reconnect({factor: 4});
+		client.set_reconnect({ factor: 4 });
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
 
 		last_ws().fire_close(1006);
@@ -1024,7 +1024,7 @@ describe('set_reconnect', () => {
 		assert.strictEqual(client.revoked, true);
 
 		// Should not re-enable reconnects or open new sockets.
-		client.set_reconnect({delay: 100});
+		client.set_reconnect({ delay: 100 });
 		vi.advanceTimersByTime(1000);
 		assert.strictEqual(MockWebSocket.instances.length, 1);
 	});
@@ -1033,10 +1033,10 @@ describe('set_reconnect', () => {
 // --- request() ---
 
 const make_response = (id: number, result: unknown): string =>
-	JSON.stringify({jsonrpc: '2.0', id, result});
+	JSON.stringify({ jsonrpc: '2.0', id, result });
 
 const make_error_response = (id: number, code: number, message: string, data?: unknown): string =>
-	JSON.stringify({jsonrpc: '2.0', id, error: {code, message, data}});
+	JSON.stringify({ jsonrpc: '2.0', id, error: { code, message, data } });
 
 describe('request()', () => {
 	test('sends a JSON-RPC request frame and resolves on matching response', async () => {
@@ -1044,17 +1044,17 @@ describe('request()', () => {
 		client.connect();
 		last_ws().fire_open();
 
-		const promise = client.request<{value: string}>('echo', {value: 'hi'});
+		const promise = client.request<{ value: string }>('echo', { value: 'hi' });
 
 		assert.strictEqual(last_ws().sent.length, 1);
 		const frame = JSON.parse(last_ws().sent[0]!);
 		assert.strictEqual(frame.jsonrpc, '2.0');
 		assert.strictEqual(frame.id, 1);
 		assert.strictEqual(frame.method, 'echo');
-		assert.deepStrictEqual(frame.params, {value: 'hi'});
+		assert.deepStrictEqual(frame.params, { value: 'hi' });
 
-		last_ws().fire_message(make_response(1, {value: 'echoed'}));
-		assert.deepStrictEqual(await promise, {value: 'echoed'});
+		last_ws().fire_message(make_response(1, { value: 'echoed' }));
+		assert.deepStrictEqual(await promise, { value: 'echoed' });
 	});
 
 	test('default params to {} when omitted', async () => {
@@ -1075,8 +1075,8 @@ describe('request()', () => {
 		client.connect();
 		last_ws().fire_open();
 
-		const promise = client.request('echo', {value: 'x'});
-		last_ws().fire_message(make_error_response(1, -32602, 'invalid params', {field: 'x'}));
+		const promise = client.request('echo', { value: 'x' });
+		last_ws().fire_message(make_error_response(1, -32602, 'invalid params', { field: 'x' }));
 
 		const err = await assert_rejects(() => promise, /invalid params/);
 		// The transport's catch block re-emits the code verbatim, so the wire
@@ -1085,7 +1085,7 @@ describe('request()', () => {
 		assert.instanceOf(err, ThrownJsonrpcError);
 		assert.strictEqual(err.code, -32602);
 		assert.strictEqual(err.message, 'invalid params');
-		assert.deepStrictEqual(err.data, {field: 'x'});
+		assert.deepStrictEqual(err.data, { field: 'x' });
 	});
 
 	test('malformed error frame (no code) falls back to internal_error', async () => {
@@ -1096,7 +1096,7 @@ describe('request()', () => {
 		const promise = client.request('echo', {});
 		// Intentionally malformed: non-numeric code, empty message.
 		last_ws().fire_message(
-			JSON.stringify({jsonrpc: '2.0', id: 1, error: {code: 'not-a-number', message: ''}}),
+			JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: 'not-a-number', message: '' } })
 		);
 
 		const err = await assert_rejects(() => promise, /unknown error/);
@@ -1126,7 +1126,7 @@ describe('request()', () => {
 		client.add_message_handler(handler);
 
 		void client.request('echo', {});
-		last_ws().fire_message(make_response(1, {ok: true}));
+		last_ws().fire_message(make_response(1, { ok: true }));
 
 		assert.strictEqual(handler.mock.calls.length, 0);
 	});
@@ -1139,7 +1139,9 @@ describe('request()', () => {
 		const handler = vi.fn();
 		client.add_message_handler(handler);
 
-		last_ws().fire_message(JSON.stringify({jsonrpc: '2.0', method: 'progress', params: {n: 1}}));
+		last_ws().fire_message(
+			JSON.stringify({ jsonrpc: '2.0', method: 'progress', params: { n: 1 } })
+		);
 		assert.strictEqual(handler.mock.calls.length, 1);
 	});
 
@@ -1152,7 +1154,7 @@ describe('request()', () => {
 		client.add_message_handler(handler);
 
 		// no pending request; response frame is not ours
-		last_ws().fire_message(make_response(999, {stray: true}));
+		last_ws().fire_message(make_response(999, { stray: true }));
 		assert.strictEqual(handler.mock.calls.length, 1);
 	});
 
@@ -1163,7 +1165,7 @@ describe('request()', () => {
 
 		const controller = new AbortController();
 		controller.abort();
-		const promise = client.request('echo', {}, {signal: controller.signal});
+		const promise = client.request('echo', {}, { signal: controller.signal });
 
 		await assert_rejects(() => promise, /aborted/);
 		assert.strictEqual(last_ws().sent.length, 0);
@@ -1175,7 +1177,7 @@ describe('request()', () => {
 		last_ws().fire_open();
 
 		const controller = new AbortController();
-		const promise = client.request('echo', {}, {signal: controller.signal});
+		const promise = client.request('echo', {}, { signal: controller.signal });
 		assert.strictEqual(last_ws().sent.length, 1);
 
 		controller.abort();
@@ -1190,7 +1192,7 @@ describe('request()', () => {
 	});
 
 	test('rejects pending on socket close (abnormal)', async () => {
-		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: false});
+		const client = new FrontendWebsocketClient(TEST_URL, { reconnect: false });
 		client.connect();
 		last_ws().fire_open();
 
@@ -1223,7 +1225,7 @@ describe('request()', () => {
 	test('queue: false rejects immediately when disconnected', async () => {
 		const client = new FrontendWebsocketClient(TEST_URL);
 		// never connected
-		await assert_rejects(() => client.request('echo', {}, {queue: false}), /not connected/);
+		await assert_rejects(() => client.request('echo', {}, { queue: false }), /not connected/);
 	});
 
 	test('rejects pending when user-initiated disconnect', async () => {
@@ -1265,7 +1267,7 @@ describe('request()', () => {
 			throw new Error('transient');
 		});
 
-		const p = client.request<string>('echo', {value: 'x'});
+		const p = client.request<string>('echo', { value: 'x' });
 
 		// first attempt failed; no frame landed on the wire yet
 		assert.strictEqual(send_spy.mock.calls.length, 1);
@@ -1283,7 +1285,7 @@ describe('request()', () => {
 	});
 
 	test('send failure mid-flight with queue: false — rejects immediately', async () => {
-		const client = new FrontendWebsocketClient(TEST_URL, {queue: false});
+		const client = new FrontendWebsocketClient(TEST_URL, { queue: false });
 		client.connect();
 		last_ws().fire_open();
 
@@ -1291,7 +1293,7 @@ describe('request()', () => {
 			throw new Error('transient');
 		});
 
-		await assert_rejects(() => client.request('echo', {}, {queue: false}), /send failed/);
+		await assert_rejects(() => client.request('echo', {}, { queue: false }), /send failed/);
 	});
 });
 
@@ -1304,7 +1306,7 @@ describe('request() signal → cancel notification', () => {
 		last_ws().fire_open();
 
 		const controller = new AbortController();
-		const promise = client.request('echo', {value: 'x'}, {signal: controller.signal});
+		const promise = client.request('echo', { value: 'x' }, { signal: controller.signal });
 		assert.strictEqual(last_ws().sent.length, 1);
 		const req_frame = JSON.parse(last_ws().sent[0]!);
 		assert.strictEqual(req_frame.method, 'echo');
@@ -1317,7 +1319,7 @@ describe('request() signal → cancel notification', () => {
 		const cancel_frame = JSON.parse(last_ws().sent[1]!);
 		assert.strictEqual(cancel_frame.jsonrpc, '2.0');
 		assert.strictEqual(cancel_frame.method, cancel_action_spec.method);
-		assert.deepStrictEqual(cancel_frame.params, {request_id: req_frame.id});
+		assert.deepStrictEqual(cancel_frame.params, { request_id: req_frame.id });
 		assert.strictEqual('id' in cancel_frame, false);
 	});
 
@@ -1328,7 +1330,10 @@ describe('request() signal → cancel notification', () => {
 
 		const controller = new AbortController();
 		controller.abort();
-		await assert_rejects(() => client.request('echo', {}, {signal: controller.signal}), /aborted/);
+		await assert_rejects(
+			() => client.request('echo', {}, { signal: controller.signal }),
+			/aborted/
+		);
 
 		// No frames — not the request, not a cancel.
 		assert.strictEqual(last_ws().sent.length, 0);
@@ -1338,7 +1343,7 @@ describe('request() signal → cancel notification', () => {
 		const client = new FrontendWebsocketClient(TEST_URL);
 		// Never connected → the request sits in the durable queue.
 		const controller = new AbortController();
-		const promise = client.request('echo', {}, {signal: controller.signal});
+		const promise = client.request('echo', {}, { signal: controller.signal });
 
 		controller.abort();
 		await assert_rejects(() => promise, /aborted/);
@@ -1355,12 +1360,12 @@ describe('request() signal → cancel notification', () => {
 		last_ws().fire_open();
 
 		const controller = new AbortController();
-		const promise = client.request('echo', {value: 'x'}, {signal: controller.signal});
+		const promise = client.request('echo', { value: 'x' }, { signal: controller.signal });
 		const req_frame = JSON.parse(last_ws().sent[0]!);
 
 		// Response arrives first — pending map cleared, signal listener detached.
-		last_ws().fire_message(make_response(req_frame.id, {value: 'echoed'}));
-		assert.deepStrictEqual(await promise, {value: 'echoed'});
+		last_ws().fire_message(make_response(req_frame.id, { value: 'echoed' }));
+		assert.deepStrictEqual(await promise, { value: 'echoed' });
 
 		// Late abort must not fire a cancel frame for a settled request.
 		controller.abort();
@@ -1368,12 +1373,12 @@ describe('request() signal → cancel notification', () => {
 	});
 
 	test('cancel is dropped when socket is disconnected (server cleans up on close)', async () => {
-		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: false});
+		const client = new FrontendWebsocketClient(TEST_URL, { reconnect: false });
 		client.connect();
 		last_ws().fire_open();
 
 		const controller = new AbortController();
-		const promise = client.request('echo', {}, {signal: controller.signal});
+		const promise = client.request('echo', {}, { signal: controller.signal });
 		assert.strictEqual(last_ws().sent.length, 1);
 
 		// Close the socket. `#handle_close` rejects the pending request with a
@@ -1393,7 +1398,7 @@ describe('request() signal → cancel notification', () => {
 		last_ws().fire_open();
 
 		const c1 = new AbortController();
-		const p1 = client.request('a', {}, {signal: c1.signal});
+		const p1 = client.request('a', {}, { signal: c1.signal });
 		void client.request('b', {});
 		void client.request('c', {});
 
@@ -1406,7 +1411,7 @@ describe('request() signal → cancel notification', () => {
 		assert.strictEqual(last_ws().sent.length, 4);
 		const cancel_frame = JSON.parse(last_ws().sent[3]!);
 		assert.strictEqual(cancel_frame.method, cancel_action_spec.method);
-		assert.deepStrictEqual(cancel_frame.params, {request_id: id_a});
+		assert.deepStrictEqual(cancel_frame.params, { request_id: id_a });
 	});
 });
 
@@ -1437,7 +1442,7 @@ describe('durable queue', () => {
 	});
 
 	test('overflow rejects the new call with a queue_overflow-shaped error', async () => {
-		const client = new FrontendWebsocketClient(TEST_URL, {queue: {max_size: 2}});
+		const client = new FrontendWebsocketClient(TEST_URL, { queue: { max_size: 2 } });
 		const p1 = client.request('a', {});
 		const p2 = client.request('b', {});
 		const p3 = client.request('c', {});
@@ -1468,7 +1473,7 @@ describe('durable queue', () => {
 	});
 
 	test('queue: false disables queuing — rejects rather than buffers', async () => {
-		const client = new FrontendWebsocketClient(TEST_URL, {queue: false});
+		const client = new FrontendWebsocketClient(TEST_URL, { queue: false });
 		await assert_rejects(() => client.request('a', {}), /not connected/);
 
 		client.connect();
@@ -1480,7 +1485,7 @@ describe('durable queue', () => {
 	test('aborted queued requests skip send on flush', async () => {
 		const client = new FrontendWebsocketClient(TEST_URL);
 		const controller = new AbortController();
-		const aborted_p = client.request('a', {}, {signal: controller.signal});
+		const aborted_p = client.request('a', {}, { signal: controller.signal });
 		const kept_p = client.request<string>('b', {});
 
 		controller.abort();
@@ -1519,7 +1524,7 @@ describe('durable queue', () => {
 	test('raw send() is never queued — drops on disconnect', () => {
 		const client = new FrontendWebsocketClient(TEST_URL);
 		// not connected
-		assert.strictEqual(client.send({hi: 'queue-me-please'}), false);
+		assert.strictEqual(client.send({ hi: 'queue-me-please' }), false);
 
 		client.connect();
 		last_ws().fire_open();
@@ -1577,7 +1582,7 @@ describe('client heartbeat', () => {
 	test('idle past interval emits a heartbeat request (queue: false)', () => {
 		vi.useFakeTimers();
 		const client = new FrontendWebsocketClient(TEST_URL, {
-			heartbeat: {interval: 100, receive_timeout: 10_000},
+			heartbeat: { interval: 100, receive_timeout: 10_000 }
 		});
 		client.connect();
 		last_ws().fire_open();
@@ -1595,19 +1600,19 @@ describe('client heartbeat', () => {
 	test('outgoing send resets the idle window — no heartbeat emitted', () => {
 		vi.useFakeTimers();
 		const client = new FrontendWebsocketClient(TEST_URL, {
-			heartbeat: {interval: 100, receive_timeout: 10_000},
+			heartbeat: { interval: 100, receive_timeout: 10_000 }
 		});
 		client.connect();
 		last_ws().fire_open();
 
 		// send chatter just before a tick; advance past the original interval
 		vi.advanceTimersByTime(40);
-		client.send({some: 'data'});
+		client.send({ some: 'data' });
 		vi.advanceTimersByTime(60); // total 100 — would have ticked without the send
 
 		// Only the chatter frame is on the wire — no heartbeat yet.
 		assert.strictEqual(last_ws().sent.length, 1);
-		assert.deepStrictEqual(JSON.parse(last_ws().sent[0]!), {some: 'data'});
+		assert.deepStrictEqual(JSON.parse(last_ws().sent[0]!), { some: 'data' });
 	});
 
 	test('incoming message resets the receive-silence timer', () => {
@@ -1617,7 +1622,7 @@ describe('client heartbeat', () => {
 		// receive_timeout=200 keeps the close threshold one tick wide so we
 		// can observe an activity reset between ticks.
 		const client = new FrontendWebsocketClient(TEST_URL, {
-			heartbeat: {interval: 400, receive_timeout: 200},
+			heartbeat: { interval: 400, receive_timeout: 200 }
 		});
 		client.connect();
 		last_ws().fire_open();
@@ -1639,8 +1644,8 @@ describe('client heartbeat', () => {
 		// interval=400 → tick=200; receive_timeout=200 means the first tick
 		// after open fires the close.
 		const client = new FrontendWebsocketClient(TEST_URL, {
-			heartbeat: {interval: 400, receive_timeout: 200},
-			reconnect: false,
+			heartbeat: { interval: 400, receive_timeout: 200 },
+			reconnect: false
 		});
 		client.connect();
 		last_ws().fire_open();
@@ -1653,7 +1658,7 @@ describe('client heartbeat', () => {
 
 	test('heartbeat: false disables the timer (no close, no ping)', () => {
 		vi.useFakeTimers();
-		const client = new FrontendWebsocketClient(TEST_URL, {heartbeat: false});
+		const client = new FrontendWebsocketClient(TEST_URL, { heartbeat: false });
 		client.connect();
 		last_ws().fire_open();
 
@@ -1666,7 +1671,7 @@ describe('client heartbeat', () => {
 	test('disconnect cancels the heartbeat timer', () => {
 		vi.useFakeTimers();
 		const client = new FrontendWebsocketClient(TEST_URL, {
-			heartbeat: {interval: 100, receive_timeout: 1000},
+			heartbeat: { interval: 100, receive_timeout: 1000 }
 		});
 		client.connect();
 		last_ws().fire_open();
@@ -1689,14 +1694,14 @@ describe('set_heartbeat', () => {
 	test('interval change takes effect mid-connection', () => {
 		vi.useFakeTimers();
 		const client = new FrontendWebsocketClient(TEST_URL, {
-			heartbeat: {interval: 10_000, receive_timeout: 30_000},
+			heartbeat: { interval: 10_000, receive_timeout: 30_000 }
 		});
 		client.connect();
 		last_ws().fire_open();
 
 		// Tighten interval mid-connection; the new timer fires well before the
 		// old 10s interval would have.
-		client.set_heartbeat({interval: 200, receive_timeout: 5000});
+		client.set_heartbeat({ interval: 200, receive_timeout: 5000 });
 		vi.advanceTimersByTime(250);
 
 		assert.strictEqual(last_ws().sent.length, 1);
@@ -1707,7 +1712,7 @@ describe('set_heartbeat', () => {
 	test('disable while connected stops the timer without closing', () => {
 		vi.useFakeTimers();
 		const client = new FrontendWebsocketClient(TEST_URL, {
-			heartbeat: {interval: 100, receive_timeout: 10_000},
+			heartbeat: { interval: 100, receive_timeout: 10_000 }
 		});
 		client.connect();
 		last_ws().fire_open();
@@ -1722,12 +1727,12 @@ describe('set_heartbeat', () => {
 
 	test('re-enable while connected restarts the timer', () => {
 		vi.useFakeTimers();
-		const client = new FrontendWebsocketClient(TEST_URL, {heartbeat: false});
+		const client = new FrontendWebsocketClient(TEST_URL, { heartbeat: false });
 		client.connect();
 		last_ws().fire_open();
 
 		// Previously off — turning on starts a live heartbeat now.
-		client.set_heartbeat({interval: 100, receive_timeout: 10_000});
+		client.set_heartbeat({ interval: 100, receive_timeout: 10_000 });
 		vi.advanceTimersByTime(150);
 
 		assert.strictEqual(last_ws().sent.length, 1);
@@ -1737,14 +1742,14 @@ describe('set_heartbeat', () => {
 	test('receive-silence uses the new receive_timeout', () => {
 		vi.useFakeTimers();
 		const client = new FrontendWebsocketClient(TEST_URL, {
-			heartbeat: {interval: 60_000, receive_timeout: 60_000},
-			reconnect: false,
+			heartbeat: { interval: 60_000, receive_timeout: 60_000 },
+			reconnect: false
 		});
 		client.connect();
 		last_ws().fire_open();
 
 		// Tighten to a window that fires on the next tick.
-		client.set_heartbeat({interval: 400, receive_timeout: 200});
+		client.set_heartbeat({ interval: 400, receive_timeout: 200 });
 		vi.advanceTimersByTime(250);
 
 		assert.strictEqual(last_ws().close_code, WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT);
@@ -1753,7 +1758,7 @@ describe('set_heartbeat', () => {
 	test('null/true restore defaults (missing fields = defaults, not keep-current)', () => {
 		vi.useFakeTimers();
 		const client = new FrontendWebsocketClient(TEST_URL, {
-			heartbeat: {interval: 100, receive_timeout: 1000},
+			heartbeat: { interval: 100, receive_timeout: 1000 }
 		});
 		client.connect();
 		last_ws().fire_open();
@@ -1766,9 +1771,9 @@ describe('set_heartbeat', () => {
 
 	test('change while disconnected just stashes policy for next connect', () => {
 		vi.useFakeTimers();
-		const client = new FrontendWebsocketClient(TEST_URL, {heartbeat: false});
+		const client = new FrontendWebsocketClient(TEST_URL, { heartbeat: false });
 
-		client.set_heartbeat({interval: 100, receive_timeout: 10_000});
+		client.set_heartbeat({ interval: 100, receive_timeout: 10_000 });
 
 		client.connect();
 		last_ws().fire_open();
@@ -1782,7 +1787,7 @@ describe('set_heartbeat', () => {
 describe('cancel_reconnect', () => {
 	test('cancels a pending reconnect and transitions to closed', () => {
 		vi.useFakeTimers();
-		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: {delay: 5000}});
+		const client = new FrontendWebsocketClient(TEST_URL, { reconnect: { delay: 5000 } });
 		client.connect();
 		last_ws().fire_close(1006);
 		assert.strictEqual(client.status, 'reconnecting');
@@ -1800,7 +1805,7 @@ describe('cancel_reconnect', () => {
 
 	test('does not disable auto-reconnect for future closes', () => {
 		vi.useFakeTimers();
-		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: {delay: 100}});
+		const client = new FrontendWebsocketClient(TEST_URL, { reconnect: { delay: 100 } });
 		client.connect();
 		last_ws().fire_close(1006);
 		client.cancel_reconnect();
@@ -1822,7 +1827,7 @@ describe('cancel_reconnect', () => {
 
 	test('preserves the durable queue for a later connect()', async () => {
 		vi.useFakeTimers();
-		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: {delay: 5000}});
+		const client = new FrontendWebsocketClient(TEST_URL, { reconnect: { delay: 5000 } });
 		client.connect();
 		last_ws().fire_close(1006);
 		assert.strictEqual(client.status, 'reconnecting');
@@ -1871,8 +1876,8 @@ describe('request() ThrownJsonrpcError codes', () => {
 		const controller = new AbortController();
 		controller.abort();
 		const err = await assert_rejects(
-			() => client.request('echo', {}, {signal: controller.signal}),
-			/aborted/,
+			() => client.request('echo', {}, { signal: controller.signal }),
+			/aborted/
 		);
 		assert.instanceOf(err, ThrownJsonrpcError);
 		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.request_cancelled);
@@ -1884,7 +1889,7 @@ describe('request() ThrownJsonrpcError codes', () => {
 		last_ws().fire_open();
 
 		const controller = new AbortController();
-		const promise = client.request('echo', {}, {signal: controller.signal});
+		const promise = client.request('echo', {}, { signal: controller.signal });
 		controller.abort();
 
 		const err = await assert_rejects(() => promise, /aborted/);
@@ -1896,15 +1901,15 @@ describe('request() ThrownJsonrpcError codes', () => {
 		const client = new FrontendWebsocketClient(TEST_URL);
 
 		const err = await assert_rejects(
-			() => client.request('echo', {}, {queue: false}),
-			/not connected/,
+			() => client.request('echo', {}, { queue: false }),
+			/not connected/
 		);
 		assert.instanceOf(err, ThrownJsonrpcError);
 		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.service_unavailable);
 	});
 
 	test('queue overflow → queue_overflow', async () => {
-		const client = new FrontendWebsocketClient(TEST_URL, {queue: {max_size: 1}});
+		const client = new FrontendWebsocketClient(TEST_URL, { queue: { max_size: 1 } });
 		const kept = client.request('a', {}).catch(() => undefined);
 
 		const err = await assert_rejects(() => client.request('b', {}), /queue overflow/);
@@ -1916,7 +1921,7 @@ describe('request() ThrownJsonrpcError codes', () => {
 	});
 
 	test('close while pending → service_unavailable', async () => {
-		const client = new FrontendWebsocketClient(TEST_URL, {reconnect: false});
+		const client = new FrontendWebsocketClient(TEST_URL, { reconnect: false });
 		client.connect();
 		last_ws().fire_open();
 
@@ -1955,7 +1960,7 @@ describe('request() ThrownJsonrpcError codes', () => {
 	});
 
 	test('inline send throws with queue=false → internal_error', async () => {
-		const client = new FrontendWebsocketClient(TEST_URL, {queue: false});
+		const client = new FrontendWebsocketClient(TEST_URL, { queue: false });
 		client.connect();
 		last_ws().fire_open();
 
@@ -1964,8 +1969,8 @@ describe('request() ThrownJsonrpcError codes', () => {
 		});
 
 		const err = await assert_rejects(
-			() => client.request('echo', {}, {queue: false}),
-			/send failed/,
+			() => client.request('echo', {}, { queue: false }),
+			/send failed/
 		);
 		assert.instanceOf(err, ThrownJsonrpcError);
 		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.internal_error);
@@ -1978,14 +1983,14 @@ describe('request() ThrownJsonrpcError codes', () => {
 
 		const promise = client.request('echo', {});
 		last_ws().fire_message(
-			make_error_response(1, JSONRPC_ERROR_CODES.forbidden, 'nope', {why: 'x'}),
+			make_error_response(1, JSONRPC_ERROR_CODES.forbidden, 'nope', { why: 'x' })
 		);
 
 		const err = await assert_rejects(() => promise, /nope/);
 		assert.instanceOf(err, ThrownJsonrpcError);
 		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.forbidden);
 		assert.strictEqual(err.message, 'nope');
-		assert.deepStrictEqual(err.data, {why: 'x'});
+		assert.deepStrictEqual(err.data, { why: 'x' });
 	});
 });
 
@@ -2021,7 +2026,7 @@ describe('full lifecycle', () => {
 		client.connect();
 		last_ws().fire_open();
 		assert.strictEqual(client.status, 'connected');
-		assert.strictEqual(client.send({hi: 1}), true);
+		assert.strictEqual(client.send({ hi: 1 }), true);
 
 		// message survives across the handler map
 		last_ws().fire_message('one');

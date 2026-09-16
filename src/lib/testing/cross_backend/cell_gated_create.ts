@@ -42,14 +42,14 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, assert} from 'vitest';
+import { describe, assert } from 'vitest';
 
-import {CellCreateOutput, CellModerateOutput} from '../../auth/cell_action_specs.ts';
-import {test_if} from './capabilities.ts';
-import {cross_rpc_call, error_reason, expect_output} from './cell_cross_helpers.ts';
-import type {RpcPathCrossSuiteOptions} from './setup.ts';
-import {SPINE_RPC_PATH} from './spine_surface_constants.ts';
-import {SPACE_CELL_KIND, PARTICIPATION_ROLE} from './test_cell_gated_create_authorize.ts';
+import { CellCreateOutput, CellModerateOutput } from '../../auth/cell_action_specs.ts';
+import { test_if } from './capabilities.ts';
+import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
+import type { RpcPathCrossSuiteOptions } from './setup.ts';
+import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
+import { SPACE_CELL_KIND, PARTICIPATION_ROLE } from './test_cell_gated_create_authorize.ts';
 
 /**
  * A space `data.policy` mirroring the test ladder: gated `post` (moderated) +
@@ -59,14 +59,14 @@ import {SPACE_CELL_KIND, PARTICIPATION_ROLE} from './test_cell_gated_create_auth
  */
 const SPACE_POLICY = {
 	policy: {
-		post: {min_role: PARTICIPATION_ROLE, moderation_required: true},
-		react: {min_role: PARTICIPATION_ROLE, moderation_required: false},
-		comment: {min_role: PARTICIPATION_ROLE, moderation_required: false},
-	},
+		post: { min_role: PARTICIPATION_ROLE, moderation_required: true },
+		react: { min_role: PARTICIPATION_ROLE, moderation_required: false },
+		comment: { min_role: PARTICIPATION_ROLE, moderation_required: false }
+	}
 };
 
 export const describe_cell_gated_create_cross_tests = (options: RpcPathCrossSuiteOptions): void => {
-	const {setup_test, capabilities} = options;
+	const { setup_test, capabilities } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
 	describe('cell_gated_create authorizer parity (directory model)', () => {
@@ -75,13 +75,13 @@ export const describe_cell_gated_create_cross_tests = (options: RpcPathCrossSuit
 			'a non-admin is denied a `space` root (admin-only), admin succeeds',
 			async () => {
 				const fixture = await setup_test();
-				const stranger = await fixture.create_account({username: 'space_stranger'});
+				const stranger = await fixture.create_account({ username: 'space_stranger' });
 				const denied = await cross_rpc_call(
 					fixture.transport,
 					rpc_path,
 					'cell_create',
-					{kind: SPACE_CELL_KIND, data: {}},
-					stranger.create_session_headers(),
+					{ kind: SPACE_CELL_KIND, data: {} },
+					stranger.create_session_headers()
 				);
 				assert.ok(!denied.ok, 'a non-admin must not create a space root');
 				assert.strictEqual(error_reason(denied), 'cell_create_forbidden');
@@ -91,10 +91,10 @@ export const describe_cell_gated_create_cross_tests = (options: RpcPathCrossSuit
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{kind: SPACE_CELL_KIND, data: SPACE_POLICY, visibility: 'public'},
-						fixture.create_session_headers(),
+						{ kind: SPACE_CELL_KIND, data: SPACE_POLICY, visibility: 'public' },
+						fixture.create_session_headers()
 					),
-					CellCreateOutput,
+					CellCreateOutput
 				);
 				assert.strictEqual(space.cell.kind, SPACE_CELL_KIND, 'admin creates the space root');
 				assert.strictEqual(space.cell.parent_id, null, 'a root is parentless');
@@ -102,9 +102,9 @@ export const describe_cell_gated_create_cross_tests = (options: RpcPathCrossSuit
 				assert.strictEqual(
 					space.cell.moderation,
 					null,
-					'a root carries no moderation marker even under a mounted authorizer (moderation is a contribution concept)',
+					'a root carries no moderation marker even under a mounted authorizer (moderation is a contribution concept)'
 				);
-			},
+			}
 		);
 
 		test_if(
@@ -117,20 +117,20 @@ export const describe_cell_gated_create_cross_tests = (options: RpcPathCrossSuit
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{kind: SPACE_CELL_KIND, data: SPACE_POLICY, visibility: 'public'},
-						fixture.create_session_headers(),
+						{ kind: SPACE_CELL_KIND, data: SPACE_POLICY, visibility: 'public' },
+						fixture.create_session_headers()
 					),
-					CellCreateOutput,
+					CellCreateOutput
 				);
 
 				// A non-participant sees the public space but can't contribute → 403.
-				const stranger = await fixture.create_account({username: 'post_stranger'});
+				const stranger = await fixture.create_account({ username: 'post_stranger' });
 				const forbidden = await cross_rpc_call(
 					fixture.transport,
 					rpc_path,
 					'cell_create',
-					{kind: 'post', data: {}, parent_id: space.cell.id},
-					stranger.create_session_headers(),
+					{ kind: 'post', data: {}, parent_id: space.cell.id },
+					stranger.create_session_headers()
 				);
 				assert.ok(!forbidden.ok, 'a non-participant must not post in the space');
 				assert.strictEqual(error_reason(forbidden), 'cell_create_forbidden');
@@ -138,21 +138,21 @@ export const describe_cell_gated_create_cross_tests = (options: RpcPathCrossSuit
 				// A participant may post; the contribution carries the directory edges.
 				const participant = await fixture.create_account({
 					username: 'post_participant',
-					roles: [PARTICIPATION_ROLE],
+					roles: [PARTICIPATION_ROLE]
 				});
 				const post = expect_output(
 					await cross_rpc_call(
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{kind: 'post', data: {}, parent_id: space.cell.id},
-						participant.create_session_headers(),
+						{ kind: 'post', data: {}, parent_id: space.cell.id },
+						participant.create_session_headers()
 					),
-					CellCreateOutput,
+					CellCreateOutput
 				);
 				assert.strictEqual(post.cell.parent_id, space.cell.id, 'parent edge set');
 				assert.strictEqual(post.cell.root_id, space.cell.id, 'root resolved to the space');
-			},
+			}
 		);
 
 		test_if(
@@ -165,14 +165,14 @@ export const describe_cell_gated_create_cross_tests = (options: RpcPathCrossSuit
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{kind: SPACE_CELL_KIND, data: SPACE_POLICY, visibility: 'public'},
-						fixture.create_session_headers(),
+						{ kind: SPACE_CELL_KIND, data: SPACE_POLICY, visibility: 'public' },
+						fixture.create_session_headers()
 					),
-					CellCreateOutput,
+					CellCreateOutput
 				);
 				const participant = await fixture.create_account({
 					username: 'mod_participant',
-					roles: [PARTICIPATION_ROLE],
+					roles: [PARTICIPATION_ROLE]
 				});
 
 				// `post` requires moderation → born pending + forced private.
@@ -181,16 +181,16 @@ export const describe_cell_gated_create_cross_tests = (options: RpcPathCrossSuit
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{kind: 'post', data: {}, parent_id: space.cell.id, visibility: 'public'},
-						participant.create_session_headers(),
+						{ kind: 'post', data: {}, parent_id: space.cell.id, visibility: 'public' },
+						participant.create_session_headers()
 					),
-					CellCreateOutput,
+					CellCreateOutput
 				);
 				assert.strictEqual(post.cell.moderation, 'pending', 'gated post is born pending');
 				assert.strictEqual(
 					post.cell.visibility,
 					'private',
-					'a pending contribution is forced private until approved',
+					'a pending contribution is forced private until approved'
 				);
 
 				// `react` does not require moderation → born approved at the author's visibility.
@@ -199,14 +199,14 @@ export const describe_cell_gated_create_cross_tests = (options: RpcPathCrossSuit
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{kind: 'react', data: {}, parent_id: space.cell.id, visibility: 'public'},
-						participant.create_session_headers(),
+						{ kind: 'react', data: {}, parent_id: space.cell.id, visibility: 'public' },
+						participant.create_session_headers()
 					),
-					CellCreateOutput,
+					CellCreateOutput
 				);
 				assert.strictEqual(react.cell.moderation, 'approved', 'unmoderated kind is born approved');
 				assert.strictEqual(react.cell.visibility, 'public', "the author's visibility is honored");
-			},
+			}
 		);
 
 		test_if(
@@ -220,26 +220,26 @@ export const describe_cell_gated_create_cross_tests = (options: RpcPathCrossSuit
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{kind: SPACE_CELL_KIND, data: SPACE_POLICY, visibility: 'private'},
-						fixture.create_session_headers(),
+						{ kind: SPACE_CELL_KIND, data: SPACE_POLICY, visibility: 'private' },
+						fixture.create_session_headers()
 					),
-					CellCreateOutput,
+					CellCreateOutput
 				);
-				const stranger = await fixture.create_account({username: 'hidden_stranger'});
+				const stranger = await fixture.create_account({ username: 'hidden_stranger' });
 				const masked = await cross_rpc_call(
 					fixture.transport,
 					rpc_path,
 					'cell_create',
-					{kind: 'post', data: {}, parent_id: space.cell.id},
-					stranger.create_session_headers(),
+					{ kind: 'post', data: {}, parent_id: space.cell.id },
+					stranger.create_session_headers()
 				);
 				assert.ok(!masked.ok, 'a stranger must not contribute under a hidden space');
 				assert.strictEqual(
 					error_reason(masked),
 					'cell_not_found',
-					'a hidden parent 404-masks the attempt (never reveals it exists)',
+					'a hidden parent 404-masks the attempt (never reveals it exists)'
 				);
-			},
+			}
 		);
 
 		test_if(
@@ -252,14 +252,14 @@ export const describe_cell_gated_create_cross_tests = (options: RpcPathCrossSuit
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{kind: SPACE_CELL_KIND, data: SPACE_POLICY, visibility: 'public'},
-						fixture.create_session_headers(),
+						{ kind: SPACE_CELL_KIND, data: SPACE_POLICY, visibility: 'public' },
+						fixture.create_session_headers()
 					),
-					CellCreateOutput,
+					CellCreateOutput
 				);
 				const participant = await fixture.create_account({
 					username: 'deep_participant',
-					roles: [PARTICIPATION_ROLE],
+					roles: [PARTICIPATION_ROLE]
 				});
 
 				// A post lives directly under the space — the shallow case
@@ -272,10 +272,10 @@ export const describe_cell_gated_create_cross_tests = (options: RpcPathCrossSuit
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{kind: 'post', data: {}, parent_id: space.cell.id},
-						participant.create_session_headers(),
+						{ kind: 'post', data: {}, parent_id: space.cell.id },
+						participant.create_session_headers()
 					),
-					CellCreateOutput,
+					CellCreateOutput
 				);
 				assert.strictEqual(post.cell.root_id, space.cell.id, 'a post roots at the space');
 
@@ -290,27 +290,27 @@ export const describe_cell_gated_create_cross_tests = (options: RpcPathCrossSuit
 						fixture.transport,
 						rpc_path,
 						'cell_create',
-						{kind: 'comment', data: {}, parent_id: post.cell.id},
-						participant.create_session_headers(),
+						{ kind: 'comment', data: {}, parent_id: post.cell.id },
+						participant.create_session_headers()
 					),
-					CellCreateOutput,
+					CellCreateOutput
 				);
 				assert.strictEqual(
 					comment.cell.parent_id,
 					post.cell.id,
-					'the immediate parent is the post',
+					'the immediate parent is the post'
 				);
 				assert.strictEqual(
 					comment.cell.root_id,
 					space.cell.id,
-					'the governing root resolves to the space (deep read through the post), not the post',
+					'the governing root resolves to the space (deep read through the post), not the post'
 				);
 				assert.strictEqual(
 					comment.cell.moderation,
 					'approved',
-					'the comment policy (moderation_required: false) resolved from the space, not the post',
+					'the comment policy (moderation_required: false) resolved from the space, not the post'
 				);
-			},
+			}
 		);
 	});
 };
@@ -339,7 +339,7 @@ export const describe_cell_gated_create_cross_tests = (options: RpcPathCrossSuit
  * `$lib`-free by contract (relative specifiers only).
  */
 export const describe_cell_moderate_cross_tests = (options: RpcPathCrossSuiteOptions): void => {
-	const {setup_test, capabilities} = options;
+	const { setup_test, capabilities } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
 	// Build an admin-owned public space (moderated `post` policy) + a
@@ -351,26 +351,26 @@ export const describe_cell_moderate_cross_tests = (options: RpcPathCrossSuiteOpt
 				fixture.transport,
 				rpc_path,
 				'cell_create',
-				{kind: SPACE_CELL_KIND, data: SPACE_POLICY, visibility: 'public'},
-				fixture.create_session_headers(),
+				{ kind: SPACE_CELL_KIND, data: SPACE_POLICY, visibility: 'public' },
+				fixture.create_session_headers()
 			),
-			CellCreateOutput,
+			CellCreateOutput
 		);
 		const author = await fixture.create_account({
 			username: 'moderate_author',
-			roles: [PARTICIPATION_ROLE],
+			roles: [PARTICIPATION_ROLE]
 		});
 		const post = expect_output(
 			await cross_rpc_call(
 				fixture.transport,
 				rpc_path,
 				'cell_create',
-				{kind: 'post', data: {}, parent_id: space.cell.id},
-				author.create_session_headers(),
+				{ kind: 'post', data: {}, parent_id: space.cell.id },
+				author.create_session_headers()
 			),
-			CellCreateOutput,
+			CellCreateOutput
 		);
-		return {fixture, author, post};
+		return { fixture, author, post };
 	};
 
 	describe('cell_moderate verb parity (root-authority-gated)', () => {
@@ -378,84 +378,84 @@ export const describe_cell_moderate_cross_tests = (options: RpcPathCrossSuiteOpt
 			capabilities.cell_gated_create,
 			'a root manager (admin) approves a pending post → approved + public',
 			async () => {
-				const {fixture, post} = await setup_pending_post();
+				const { fixture, post } = await setup_pending_post();
 				assert.strictEqual(post.cell.moderation, 'pending', 'the post is born pending');
 				const moderated = expect_output(
 					await cross_rpc_call(
 						fixture.transport,
 						rpc_path,
 						'cell_moderate',
-						{cell_id: post.cell.id, moderation: 'approved'},
-						fixture.create_session_headers(), // keeper = admin = root manager
+						{ cell_id: post.cell.id, moderation: 'approved' },
+						fixture.create_session_headers() // keeper = admin = root manager
 					),
-					CellModerateOutput,
+					CellModerateOutput
 				);
 				assert.strictEqual(moderated.cell.moderation, 'approved', 'approval sets the marker');
 				assert.strictEqual(moderated.cell.visibility, 'public', 'approval publishes the post');
-			},
+			}
 		);
 
 		test_if(
 			capabilities.cell_gated_create,
 			'the author (non-manager) cannot moderate their own pending post → 403',
 			async () => {
-				const {fixture, author, post} = await setup_pending_post();
+				const { fixture, author, post } = await setup_pending_post();
 				const denied = await cross_rpc_call(
 					fixture.transport,
 					rpc_path,
 					'cell_moderate',
-					{cell_id: post.cell.id, moderation: 'approved'},
-					author.create_session_headers(),
+					{ cell_id: post.cell.id, moderation: 'approved' },
+					author.create_session_headers()
 				);
 				assert.ok(!denied.ok, 'the author must not self-approve');
 				assert.strictEqual(error_reason(denied), 'cell_moderate_forbidden');
-			},
+			}
 		);
 
 		test_if(
 			capabilities.cell_gated_create,
 			'a non-viewer is 404-masked from moderating a pending post',
 			async () => {
-				const {fixture, post} = await setup_pending_post();
-				const stranger = await fixture.create_account({username: 'moderate_stranger'});
+				const { fixture, post } = await setup_pending_post();
+				const stranger = await fixture.create_account({ username: 'moderate_stranger' });
 				const masked = await cross_rpc_call(
 					fixture.transport,
 					rpc_path,
 					'cell_moderate',
-					{cell_id: post.cell.id, moderation: 'approved'},
-					stranger.create_session_headers(),
+					{ cell_id: post.cell.id, moderation: 'approved' },
+					stranger.create_session_headers()
 				);
 				assert.ok(!masked.ok, 'a non-viewer must not moderate');
 				assert.strictEqual(
 					error_reason(masked),
 					'cell_not_found',
-					'a non-viewer never learns the pending post exists',
+					'a non-viewer never learns the pending post exists'
 				);
-			},
+			}
 		);
 
 		test_if(
 			capabilities.cell_gated_create,
 			'a root manager rejects a pending post → rejected, stays private',
 			async () => {
-				const {fixture, post} = await setup_pending_post();
+				const { fixture, post } = await setup_pending_post();
 				const moderated = expect_output(
 					await cross_rpc_call(
 						fixture.transport,
 						rpc_path,
 						'cell_moderate',
-						{cell_id: post.cell.id, moderation: 'rejected'},
-						fixture.create_session_headers(),
+						{ cell_id: post.cell.id, moderation: 'rejected' },
+						fixture.create_session_headers()
 					),
-					CellModerateOutput,
+					CellModerateOutput
 				);
 				assert.strictEqual(moderated.cell.moderation, 'rejected', 'rejection sets the marker');
 				assert.strictEqual(
 					moderated.cell.visibility,
 					'private',
-					'rejection leaves the post private',
+					'rejection leaves the post private'
 				);
-			},
+			}
 		);
 	});
 };

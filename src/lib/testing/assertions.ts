@@ -9,15 +9,15 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {readFileSync} from 'node:fs';
-import {resolve, dirname} from 'node:path';
-import {fileURLToPath} from 'node:url';
-import {assert} from 'vitest';
-import type {z} from 'zod';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { assert } from 'vitest';
+import type { z } from 'zod';
 
-import type {AppSurface, AppSurfaceRoute} from '../http/surface.ts';
-import type {RouteErrorSchemas} from '../http/error_schemas.ts';
-import {is_public_auth} from '../http/auth_shape.ts';
+import type { AppSurface, AppSurfaceRoute } from '../http/surface.ts';
+import type { RouteErrorSchemas } from '../http/error_schemas.ts';
+import { is_public_auth } from '../http/auth_shape.ts';
 
 /**
  * Resolve an absolute path relative to the caller's module.
@@ -42,13 +42,13 @@ export const resolve_fixture_path = (filename: string, import_meta_url: string):
  */
 export const assert_surface_matches_snapshot = (
 	surface: AppSurface,
-	snapshot_path: string,
+	snapshot_path: string
 ): void => {
 	const committed = JSON.parse(readFileSync(snapshot_path, 'utf-8'));
 	assert.deepStrictEqual(
 		surface,
 		committed,
-		'Attack surface changed! Run `gro gen` to update the snapshot, then review the diff.',
+		'Attack surface changed! Run `gro gen` to update the snapshot, then review the diff.'
 	);
 };
 
@@ -70,7 +70,7 @@ export const assert_surface_deterministic = (build_surface: () => AppSurface): v
  */
 export const assert_only_expected_public_routes = (
 	surface: AppSurface,
-	expected_public: Array<string>,
+	expected_public: Array<string>
 ): void => {
 	const expected = new Set(expected_public);
 	const actual_public = surface.routes
@@ -96,7 +96,7 @@ export const assert_only_expected_public_routes = (
 export const get_route_error_schema = (
 	lookup: Map<string, RouteErrorSchemas>,
 	route: AppSurfaceRoute,
-	status: number,
+	status: number
 ): z.ZodType | undefined => {
 	const key = `${route.method} ${route.path}`;
 	return lookup.get(key)?.[status];
@@ -119,7 +119,7 @@ export const assert_error_schema_valid = (
 	lookup: Map<string, RouteErrorSchemas>,
 	route: AppSurfaceRoute,
 	status: number,
-	body: unknown,
+	body: unknown
 ): void => {
 	const schema = get_route_error_schema(lookup, route, status);
 	assert.ok(schema, `missing error schema for ${status} on ${route.method} ${route.path}`);
@@ -138,7 +138,7 @@ export const assert_error_schema_valid = (
 export const assert_full_middleware_stack = (
 	surface: AppSurface,
 	path_prefix: string,
-	expected_middleware: Array<string>,
+	expected_middleware: Array<string>
 ): void => {
 	const routes = surface.routes.filter((r) => r.path.startsWith(path_prefix));
 	assert.ok(routes.length > 0, `No routes found under ${path_prefix}`);
@@ -146,7 +146,7 @@ export const assert_full_middleware_stack = (
 		assert.deepStrictEqual(
 			route.applicable_middleware,
 			expected_middleware,
-			`${route.method} ${route.path} has wrong middleware stack`,
+			`${route.method} ${route.path} has wrong middleware stack`
 		);
 	}
 };

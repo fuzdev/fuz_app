@@ -46,11 +46,14 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {ERROR_RATE_LIMIT_EXCEEDED} from '../../http/error_schemas.ts';
-import {default_login_account_rate_limit, default_login_ip_rate_limit} from '../../rate_limiter.ts';
-import type {SetupTest} from './setup.ts';
+import { ERROR_RATE_LIMIT_EXCEEDED } from '../../http/error_schemas.ts';
+import {
+	default_login_account_rate_limit,
+	default_login_ip_rate_limit
+} from '../../rate_limiter.ts';
+import type { SetupTest } from './setup.ts';
 
 /** Options for the login-security parity suite. */
 export interface LoginSecurityCrossTestOptions {
@@ -84,9 +87,9 @@ interface LoginOutcome {
 }
 
 export const describe_login_security_cross_tests = (
-	options: LoginSecurityCrossTestOptions,
+	options: LoginSecurityCrossTestOptions
 ): void => {
-	const {setup_test} = options;
+	const { setup_test } = options;
 	const login_path = options.login_path ?? '/api/account/login';
 	/** Per-IP cap shared by both impls (TS `default_login_ip_rate_limit`, Rust `DEFAULT_LOGIN_IP_RATE_LIMIT`). */
 	const ip_limit = default_login_ip_rate_limit.max_attempts;
@@ -98,7 +101,7 @@ export const describe_login_security_cross_tests = (
 	// confusing 429-instead-of-401 mid-case.
 	assert(
 		default_login_account_rate_limit.max_attempts > ip_limit,
-		'login-security XFF segregation needs the per-account cap above the per-IP cap',
+		'login-security XFF segregation needs the per-account cap above the per-IP cap'
 	);
 
 	type Fixture = Awaited<ReturnType<typeof setup_test>>;
@@ -113,21 +116,20 @@ export const describe_login_security_cross_tests = (
 	const attempt = async (
 		fixture: Fixture,
 		forwarded_for: string,
-		username: string,
+		username: string
 	): Promise<LoginOutcome> => {
 		const res = await fixture.fresh_transport()(login_path, {
 			method: 'POST',
-			headers: {'content-type': 'application/json', 'x-forwarded-for': forwarded_for},
-			body: JSON.stringify({username, password: PROBE_PASSWORD}),
+			headers: { 'content-type': 'application/json', 'x-forwarded-for': forwarded_for },
+			body: JSON.stringify({ username, password: PROBE_PASSWORD })
 		});
 		const body = (await res.json().catch(() => undefined)) as
-			| {error?: unknown; retry_after?: unknown}
-			| undefined;
+			{ error?: unknown; retry_after?: unknown } | undefined;
 		return {
 			status: res.status,
 			error: typeof body?.error === 'string' ? body.error : undefined,
 			retry_after: typeof body?.retry_after === 'number' ? body.retry_after : undefined,
-			retry_after_header: res.headers.get('retry-after'),
+			retry_after_header: res.headers.get('retry-after')
 		};
 	};
 
@@ -143,7 +145,7 @@ export const describe_login_security_cross_tests = (
 				assert.strictEqual(
 					r.status,
 					401,
-					`attempt ${i + 1}/${ip_limit} must be a normal 401, not rate-limited`,
+					`attempt ${i + 1}/${ip_limit} must be a normal 401, not rate-limited`
 				);
 			}
 			// The next request from the SAME forwarded IP trips the per-IP bucket.
@@ -152,17 +154,17 @@ export const describe_login_security_cross_tests = (
 			assert.strictEqual(
 				limited.error,
 				ERROR_RATE_LIMIT_EXCEEDED,
-				'429 body must carry the canonical rate_limit_exceeded reason',
+				'429 body must carry the canonical rate_limit_exceeded reason'
 			);
 			assert(
 				limited.retry_after !== undefined && limited.retry_after > 0,
-				'429 body must carry a positive numeric retry_after',
+				'429 body must carry a positive numeric retry_after'
 			);
 			assert(limited.retry_after_header !== null, 'Retry-After header must be present on the 429');
 			assert.strictEqual(
 				Number(limited.retry_after_header),
 				Math.ceil(limited.retry_after),
-				'Retry-After header must equal ceil(retry_after)',
+				'Retry-After header must equal ceil(retry_after)'
 			);
 		});
 
@@ -183,7 +185,7 @@ export const describe_login_security_cross_tests = (
 			assert.strictEqual(
 				fresh.status,
 				401,
-				"a fresh forwarded IP must not inherit another IP's limit",
+				"a fresh forwarded IP must not inherit another IP's limit"
 			);
 		});
 	});

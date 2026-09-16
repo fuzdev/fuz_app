@@ -9,7 +9,7 @@
  * @module
  */
 
-import type {MiddlewareHandler} from 'hono';
+import type { MiddlewareHandler } from 'hono';
 
 /**
  * Options for `serve_static` factory functions (matches Hono's `serveStatic` signature).
@@ -40,19 +40,19 @@ const is_spa_route_default = (path: string): boolean => !path.startsWith('/api/'
  */
 export const create_static_middleware = (
 	serve_static: ServeStaticFactory,
-	options?: {root?: string; spa_fallback?: string; is_spa_route?: (path: string) => boolean},
+	options?: { root?: string; spa_fallback?: string; is_spa_route?: (path: string) => boolean }
 ): Array<MiddlewareHandler> => {
 	const root = options?.root ?? './build';
 	const handlers: Array<MiddlewareHandler> = [];
 
 	// Step 1: exact path match
-	handlers.push(serve_static({root}));
+	handlers.push(serve_static({ root }));
 
 	// Step 2: .html fallback for clean URLs (/about → /about.html)
 	handlers.push(async (c, next) => {
 		const path = c.req.path;
 		if (path === '/' || path.includes('.')) return next();
-		return serve_static({root, rewriteRequestPath: () => `${path}.html`})(c, next);
+		return serve_static({ root, rewriteRequestPath: () => `${path}.html` })(c, next);
 	});
 
 	// Step 3: optional SPA fallback for client-side routes
@@ -61,7 +61,7 @@ export const create_static_middleware = (
 		const is_spa_route = options.is_spa_route ?? is_spa_route_default;
 		handlers.push(async (c, next) => {
 			if (!is_spa_route(c.req.path)) return next();
-			return serve_static({root, rewriteRequestPath: () => fallback})(c, next);
+			return serve_static({ root, rewriteRequestPath: () => fallback })(c, next);
 		});
 	}
 

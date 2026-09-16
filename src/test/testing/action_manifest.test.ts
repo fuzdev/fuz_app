@@ -11,24 +11,28 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
 import {
 	action_manifest_entry,
-	build_action_manifest,
+	build_action_manifest
 } from '$lib/testing/cross_backend/action_manifest.ts';
-import type {RouteAuth} from '$lib/http/auth_shape.ts';
+import type { RouteAuth } from '$lib/http/auth_shape.ts';
 
 const spec = (
 	method: string,
 	auth: RouteAuth,
-	side_effects = false,
-): {method: string; auth: RouteAuth; side_effects: boolean} => ({method, auth, side_effects});
+	side_effects = false
+): { method: string; auth: RouteAuth; side_effects: boolean } => ({ method, auth, side_effects });
 
 describe('action_manifest_entry', () => {
 	test('passes the auth axes + side_effects through', () => {
 		const entry = action_manifest_entry(
-			spec('admin_account_list', {account: 'required', actor: 'required', roles: ['admin']}, false),
+			spec(
+				'admin_account_list',
+				{ account: 'required', actor: 'required', roles: ['admin'] },
+				false
+			)
 		);
 		assert.deepStrictEqual(entry, {
 			method: 'admin_account_list',
@@ -36,13 +40,13 @@ describe('action_manifest_entry', () => {
 			account: 'required',
 			actor: 'required',
 			roles: ['admin'],
-			credential_types: [],
+			credential_types: []
 		});
 	});
 
 	test('absent roles + credential_types normalize to empty arrays', () => {
 		const entry = action_manifest_entry(
-			spec('account_verify', {account: 'required', actor: 'none'}),
+			spec('account_verify', { account: 'required', actor: 'none' })
 		);
 		assert.deepStrictEqual(entry.roles, []);
 		assert.deepStrictEqual(entry.credential_types, []);
@@ -54,8 +58,8 @@ describe('action_manifest_entry', () => {
 				account: 'required',
 				actor: 'required',
 				roles: ['keeper', 'admin'],
-				credential_types: ['session', 'daemon_token'],
-			}),
+				credential_types: ['session', 'daemon_token']
+			})
 		);
 		assert.deepStrictEqual(entry.roles, ['admin', 'keeper']);
 		assert.deepStrictEqual(entry.credential_types, ['daemon_token', 'session']);
@@ -63,7 +67,7 @@ describe('action_manifest_entry', () => {
 
 	test('side_effects passes through for mutations', () => {
 		const entry = action_manifest_entry(
-			spec('account_token_create', {account: 'required', actor: 'none'}, true),
+			spec('account_token_create', { account: 'required', actor: 'none' }, true)
 		);
 		assert.strictEqual(entry.side_effects, true);
 	});
@@ -71,22 +75,22 @@ describe('action_manifest_entry', () => {
 
 describe('build_action_manifest', () => {
 	test('empty input produces an empty manifest', () => {
-		assert.deepStrictEqual(build_action_manifest([]), {methods: []});
+		assert.deepStrictEqual(build_action_manifest([]), { methods: [] });
 	});
 
 	test('entries are sorted by method (byte-lexicographic, matching the Rust stub)', () => {
 		const manifest = build_action_manifest([
-			spec('zebra', {account: 'none', actor: 'none'}),
-			spec('alpha', {account: 'none', actor: 'none'}),
+			spec('zebra', { account: 'none', actor: 'none' }),
+			spec('alpha', { account: 'none', actor: 'none' }),
 			spec('_testing_action_manifest', {
 				account: 'required',
 				actor: 'none',
-				credential_types: ['daemon_token'],
-			}),
+				credential_types: ['daemon_token']
+			})
 		]);
 		assert.deepStrictEqual(
 			manifest.methods.map((m) => m.method),
-			['_testing_action_manifest', 'alpha', 'zebra'],
+			['_testing_action_manifest', 'alpha', 'zebra']
 		);
 	});
 });

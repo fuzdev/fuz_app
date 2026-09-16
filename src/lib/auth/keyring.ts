@@ -39,7 +39,7 @@ export interface Keyring {
 	 * Tries all keys in order to support key rotation.
 	 * @returns object with value and key_index, or null if invalid
 	 */
-	verify: (signed_value: string) => Promise<{value: string; key_index: number} | null>;
+	verify: (signed_value: string) => Promise<{ value: string; key_index: number } | null>;
 }
 
 /**
@@ -81,17 +81,17 @@ export const create_keyring = (env_value: string | undefined): Keyring | null =>
 			return sign_with_crypto_key(value, key);
 		},
 
-		async verify(signed_value: string): Promise<{value: string; key_index: number} | null> {
+		async verify(signed_value: string): Promise<{ value: string; key_index: number } | null> {
 			for (let i = 0; i < secrets.length; i++) {
 				const key = await get_key(i);
 
 				const result = await verify_with_crypto_key(signed_value, key);
 				if (result !== false) {
-					return {value: result, key_index: i};
+					return { value: result, key_index: i };
 				}
 			}
 			return null;
-		},
+		}
 	};
 };
 
@@ -125,9 +125,9 @@ const create_hmac_key = (secret: string): Promise<CryptoKey> => {
 	return crypto.subtle.importKey(
 		'raw',
 		encoder.encode(secret),
-		{name: 'HMAC', hash: 'SHA-256'},
+		{ name: 'HMAC', hash: 'SHA-256' },
 		false,
-		['sign', 'verify'],
+		['sign', 'verify']
 	);
 };
 
@@ -139,7 +139,7 @@ const sign_with_crypto_key = async (value: string, key: CryptoKey): Promise<stri
 
 const verify_with_crypto_key = async (
 	signed_value: string,
-	key: CryptoKey,
+	key: CryptoKey
 ): Promise<string | false> => {
 	const dot_index = signed_value.lastIndexOf('.');
 	if (dot_index === -1) return false;
@@ -169,8 +169,7 @@ const verify_with_crypto_key = async (
  * Discriminated union — callers handle the error case their own way.
  */
 export type ValidatedKeyringResult =
-	| {ok: true; keyring: Keyring}
-	| {ok: false; errors: Array<string>};
+	{ ok: true; keyring: Keyring } | { ok: false; errors: Array<string> };
 
 /**
  * Validate and create a keyring in one step.
@@ -184,13 +183,13 @@ export type ValidatedKeyringResult =
 export const create_validated_keyring = (env_value: string | undefined): ValidatedKeyringResult => {
 	const errors = validate_keyring(env_value);
 	if (errors.length > 0) {
-		return {ok: false, errors};
+		return { ok: false, errors };
 	}
 	const keyring = create_keyring(env_value);
 	if (!keyring) {
-		return {ok: false, errors: ['SECRET_FUZ_COOKIE_KEYS is required']};
+		return { ok: false, errors: ['SECRET_FUZ_COOKIE_KEYS is required'] };
 	}
-	return {ok: true, keyring};
+	return { ok: true, keyring };
 };
 
 const parse_keys = (env_value: string | undefined): Array<string> => {

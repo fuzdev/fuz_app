@@ -10,9 +10,9 @@
  * @module
  */
 
-import type {Pool} from 'pg';
+import type { Pool } from 'pg';
 
-import {Db, no_nested_transaction, type DbDriverResult} from './db.ts';
+import { Db, no_nested_transaction, type DbDriverResult } from './db.ts';
 
 /**
  * Register the shared pg type-parser overrides on the module-global `pg.types`.
@@ -40,7 +40,7 @@ import {Db, no_nested_transaction, type DbDriverResult} from './db.ts';
  * @mutates `pg.types` - registers the int8 parser on the global pg type registry
  */
 export const register_pg_type_parsers = async (): Promise<void> => {
-	const {types} = await import('pg');
+	const { types } = await import('pg');
 	types.setTypeParser(20, (val) => Number(val));
 };
 
@@ -57,7 +57,7 @@ const create_pg_transaction =
 		const client = await pool.connect();
 		try {
 			await client.query('BEGIN');
-			const tx_db = new Db({client, transaction: no_nested_transaction});
+			const tx_db = new Db({ client, transaction: no_nested_transaction });
 			const result = await fn(tx_db);
 			await client.query('COMMIT');
 			return result;
@@ -79,6 +79,6 @@ const create_pg_transaction =
  * @returns the `Db` instance and a `close` callback bound to `pool.end()`
  */
 export const create_pg_db = (pool: Pool): DbDriverResult => ({
-	db: new Db({client: pool, transaction: create_pg_transaction(pool)}),
-	close: () => pool.end(),
+	db: new Db({ client: pool, transaction: create_pg_transaction(pool) }),
+	close: () => pool.end()
 });

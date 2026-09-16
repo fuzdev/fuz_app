@@ -11,25 +11,25 @@
  * @module
  */
 
-import type {Result} from '@fuzdev/fuz_util/result.ts';
+import type { Result } from '@fuzdev/fuz_util/result.ts';
 
 import type {
 	ActionSpecUnion,
 	LocalCallActionSpec,
 	RemoteNotificationActionSpec,
-	RequestResponseActionSpec,
+	RequestResponseActionSpec
 } from './action_spec.ts';
-import type {ActionEventEnvironment} from './action_event_types.ts';
-import {create_action_event, type ActionEvent} from './action_event.ts';
+import type { ActionEventEnvironment } from './action_event_types.ts';
+import { create_action_event, type ActionEvent } from './action_event.ts';
 import {
 	is_send_request,
 	is_notification_send,
-	extract_action_result,
+	extract_action_result
 } from './action_event_helpers.ts';
-import type {ActionDispatcher, ActionDispatcherSendOptions} from './action_dispatcher.ts';
-import type {TransportName} from './transports.ts';
-import {jsonrpc_error_messages} from '../http/jsonrpc_errors.ts';
-import type {JsonrpcErrorObject} from '../http/jsonrpc.ts';
+import type { ActionDispatcher, ActionDispatcherSendOptions } from './action_dispatcher.ts';
+import type { TransportName } from './transports.ts';
+import { jsonrpc_error_messages } from '../http/jsonrpc_errors.ts';
+import type { JsonrpcErrorObject } from '../http/jsonrpc.ts';
 
 /**
  * Optional per-method transport selector. Return the transport to use for a
@@ -92,9 +92,9 @@ export interface CreateRpcClientOptions<TApi extends object = object> {
  * @returns a Proxy typed as `TApi` that responds to any method name found in the environment's specs
  */
 export const create_rpc_client = <TApi extends object>(
-	options: CreateRpcClientOptions<TApi>,
+	options: CreateRpcClientOptions<TApi>
 ): TApi => {
-	const {peer, environment, on_action_event, transport_for_method} = options;
+	const { peer, environment, on_action_event, transport_for_method } = options;
 
 	// Internal factories construct broadly-typed `ActionEvent` instances; the
 	// public callback narrows `event.spec.method` to `keyof TApi & string`.
@@ -114,12 +114,12 @@ export const create_rpc_client = <TApi extends object>(
 				environment,
 				spec,
 				broad_on_action_event,
-				transport_for_method,
+				transport_for_method
 			);
 		},
 		has(_target, method: string) {
 			return environment.lookup_action_spec(method) !== undefined;
-		},
+		}
 	}) as unknown as TApi;
 };
 
@@ -128,7 +128,7 @@ const create_action_method = (
 	environment: ActionEventEnvironment,
 	spec: ActionSpecUnion,
 	on_action_event?: (event: ActionEvent) => void,
-	transport_for_method?: TransportForMethod,
+	transport_for_method?: TransportForMethod
 ) => {
 	switch (spec.kind) {
 		case 'local_call':
@@ -141,7 +141,7 @@ const create_action_method = (
 				environment,
 				spec,
 				on_action_event,
-				transport_for_method,
+				transport_for_method
 			);
 		case 'remote_notification':
 			return create_remote_notification_method(
@@ -149,7 +149,7 @@ const create_action_method = (
 				environment,
 				spec,
 				on_action_event,
-				transport_for_method,
+				transport_for_method
 			);
 	}
 };
@@ -158,7 +158,7 @@ const create_action_method = (
 const create_sync_local_call_method = (
 	environment: ActionEventEnvironment,
 	spec: LocalCallActionSpec,
-	on_action_event?: (event: ActionEvent) => void,
+	on_action_event?: (event: ActionEvent) => void
 ) => {
 	return (input?: unknown) => {
 		const event = create_action_event(environment, spec, input);
@@ -194,13 +194,13 @@ export interface RpcClientCallOptions extends ActionDispatcherSendOptions {}
 const create_async_local_call_method = (
 	environment: ActionEventEnvironment,
 	spec: LocalCallActionSpec,
-	on_action_event?: (event: ActionEvent) => void,
+	on_action_event?: (event: ActionEvent) => void
 ) => {
 	return async (input?: unknown, options?: RpcClientCallOptions) => {
 		if (options?.signal?.aborted) {
 			return {
 				ok: false as const,
-				error: jsonrpc_error_messages.internal_error(`${spec.method} aborted before execution`),
+				error: jsonrpc_error_messages.internal_error(`${spec.method} aborted before execution`)
 			};
 		}
 
@@ -218,7 +218,7 @@ const create_request_response_method = (
 	environment: ActionEventEnvironment,
 	spec: RequestResponseActionSpec,
 	on_action_event?: (event: ActionEvent) => void,
-	transport_for_method?: TransportForMethod,
+	transport_for_method?: TransportForMethod
 ) => {
 	return async (input?: unknown, options?: RpcClientCallOptions) => {
 		const event = create_action_event(environment, spec, input);
@@ -241,7 +241,7 @@ const create_request_response_method = (
 		const response = await peer.send(event.data.request, {
 			transport_name: options?.transport_name ?? transport_for_method?.(spec.method),
 			signal: options?.signal,
-			queue: options?.queue,
+			queue: options?.queue
 		});
 
 		event.transition('receive_response');
@@ -263,7 +263,7 @@ const create_remote_notification_method = (
 	environment: ActionEventEnvironment,
 	spec: RemoteNotificationActionSpec,
 	on_action_event?: (event: ActionEvent) => void,
-	transport_for_method?: TransportForMethod,
+	transport_for_method?: TransportForMethod
 ) => {
 	return async (input?: unknown, options?: RpcClientCallOptions) => {
 		const event = create_action_event(environment, spec, input);
@@ -277,14 +277,14 @@ const create_remote_notification_method = (
 			const send_result = await peer.send(event.data.notification, {
 				transport_name: options?.transport_name ?? transport_for_method?.(spec.method),
 				signal: options?.signal,
-				queue: options?.queue,
+				queue: options?.queue
 			});
 			// Check if notification failed to send
 			if (send_result !== null) {
 				environment.log?.error('notification send failed:', send_result.error);
-				return {ok: false, error: send_result.error};
+				return { ok: false, error: send_result.error };
 			}
-			return {ok: true, value: undefined};
+			return { ok: true, value: undefined };
 		}
 
 		return extract_action_result(event);
@@ -314,7 +314,7 @@ const create_remote_notification_method = (
 export type ThrowingApi<TApi> = {
 	[K in keyof TApi]: TApi[K] extends (
 		...args: infer TArgs
-	) => Promise<Result<{value: infer TValue}, {error: JsonrpcErrorObject}>>
+	) => Promise<Result<{ value: infer TValue }, { error: JsonrpcErrorObject }>>
 		? (...args: TArgs) => Promise<TValue>
 		: TApi[K];
 };
@@ -366,13 +366,13 @@ export const create_throwing_api = <TApi extends object>(api_result: TApi): Thro
 				return async (...args: Array<unknown>) => {
 					const result = await (fn as (...args: Array<unknown>) => unknown).apply(target, args);
 					if (result === null || typeof result !== 'object') return result;
-					const r = result as {ok?: unknown; value?: unknown; error?: unknown};
+					const r = result as { ok?: unknown; value?: unknown; error?: unknown };
 					if (r.ok === true) return r.value;
 					if (r.ok === false && r.error && typeof r.error === 'object') {
 						const e = r.error as JsonrpcErrorObject;
 						throw Object.assign(new Error(e.message), {
 							code: e.code,
-							data: e.data,
+							data: e.data
 						});
 					}
 					return result;
@@ -386,6 +386,6 @@ export const create_throwing_api = <TApi extends object>(api_result: TApi): Thro
 			return () => {
 				throw new Error(`rpc method not found: ${prop}`);
 			};
-		},
+		}
 	}) as unknown as ThrowingApi<TApi>;
 };

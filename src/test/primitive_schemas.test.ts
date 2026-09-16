@@ -12,7 +12,7 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
 import {
 	Username,
@@ -21,7 +21,7 @@ import {
 	EMAIL_LENGTH_MAX,
 	USERNAME_LENGTH_MIN,
 	USERNAME_LENGTH_MAX,
-	USERNAME_PROVIDED_LENGTH_MAX,
+	USERNAME_PROVIDED_LENGTH_MAX
 } from '$lib/primitive_schemas.ts';
 
 // --- Username (creation schema) ---
@@ -183,9 +183,7 @@ describe('Username/UsernameProvided cross-schema parity', () => {
 			assert.strictEqual(
 				via_creation,
 				via_login,
-				`schemas diverged for '${raw}': Username='${via_creation}', UsernameProvided='${
-					via_login
-				}'`,
+				`schemas diverged for '${raw}': Username='${via_creation}', UsernameProvided='${via_login}'`
 			);
 		}
 	});

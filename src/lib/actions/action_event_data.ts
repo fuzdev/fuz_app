@@ -8,16 +8,16 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
-import {ActionEventPhase, ActionKind} from './action_spec.ts';
+import { ActionEventPhase, ActionKind } from './action_spec.ts';
 import {
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
 	JsonrpcNotification,
-	JsonrpcErrorObject,
+	JsonrpcErrorObject
 } from '../http/jsonrpc.ts';
-import {ActionExecutor, ActionEventStep} from './action_event_types.ts';
+import { ActionExecutor, ActionEventStep } from './action_event_types.ts';
 
 // Base schema for all action event data
 export const ActionEventData = z.strictObject({
@@ -33,7 +33,7 @@ export const ActionEventData = z.strictObject({
 	// Fields for specific kinds - always present but may be null
 	request: JsonrpcRequest.nullable(),
 	response: JsonrpcResponseOrError.nullable(),
-	notification: JsonrpcNotification.nullable(),
+	notification: JsonrpcNotification.nullable()
 });
 export type ActionEventData = z.infer<typeof ActionEventData>;
 
@@ -41,7 +41,7 @@ export type ActionEventData = z.infer<typeof ActionEventData>;
 export type ActionEventRequestResponseData<
 	TMethod extends string = string,
 	TInput = unknown,
-	TOutput = unknown,
+	TOutput = unknown
 > =
 	| {
 			kind: 'request_response';
@@ -583,7 +583,7 @@ export type ActionEventRemoteNotificationData<TMethod extends string = string, T
 export type ActionEventLocalCallData<
 	TMethod extends string = string,
 	TInput = unknown,
-	TOutput = unknown,
+	TOutput = unknown
 > =
 	| {
 			kind: 'local_call';
@@ -660,7 +660,7 @@ export type ActionEventLocalCallData<
 export type ActionEventDataUnion<
 	TMethod extends string = string,
 	TInput = unknown,
-	TOutput = unknown,
+	TOutput = unknown
 > =
 	| ActionEventRequestResponseData<TMethod, TInput, TOutput>
 	| ActionEventRemoteNotificationData<TMethod, TInput>

@@ -23,18 +23,18 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {DAEMON_TOKEN_HEADER} from '../../auth/daemon_token.ts';
-import {USERNAME_LENGTH_MAX} from '../../primitive_schemas.ts';
-import {DEFAULT_TEST_PASSWORD} from '../test_credentials.ts';
-import type {TestAccount} from '../app_server.ts';
-import type {BackendCapabilities} from './capabilities.ts';
-import {create_fetch_transport, type FetchTransport} from '../transports/fetch_transport.ts';
-import {MigrationTracker, type SchemaSnapshot} from '../schema_introspect.ts';
-import {ActionManifest} from './action_manifest.ts';
-import type {BackendHandle} from './spawn_backend.ts';
+import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
+import { USERNAME_LENGTH_MAX } from '../../primitive_schemas.ts';
+import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
+import type { TestAccount } from '../app_server.ts';
+import type { BackendCapabilities } from './capabilities.ts';
+import { create_fetch_transport, type FetchTransport } from '../transports/fetch_transport.ts';
+import { MigrationTracker, type SchemaSnapshot } from '../schema_introspect.ts';
+import { ActionManifest } from './action_manifest.ts';
+import type { BackendHandle } from './spawn_backend.ts';
 
 /**
  * Options for `TestFixture.create_account` — mints an additional
@@ -87,8 +87,8 @@ export interface ExtraAccountSpec {
 
 /** Bootstrap-time-seeded secondary account exposed on the fixture. */
 export interface ExtraAccountFixture {
-	readonly account: {readonly id: Uuid; readonly username: string};
-	readonly actor: {readonly id: Uuid};
+	readonly account: { readonly id: Uuid; readonly username: string };
+	readonly actor: { readonly id: Uuid };
 	readonly api_token: string;
 	readonly session_cookie: string;
 	readonly create_session_headers: (extra?: Record<string, string>) => Record<string, string>;
@@ -108,12 +108,12 @@ export interface ExtraAccountFixture {
  */
 export const build_extra_account_fixture = (
 	seeded: {
-		account: {id: Uuid; username: string};
-		actor: {id: Uuid};
+		account: { id: Uuid; username: string };
+		actor: { id: Uuid };
 		api_token: string;
 		session_cookie: string;
 	},
-	cookie_name: string,
+	cookie_name: string
 ): ExtraAccountFixture => ({
 	account: seeded.account,
 	actor: seeded.actor,
@@ -121,12 +121,12 @@ export const build_extra_account_fixture = (
 	session_cookie: seeded.session_cookie,
 	create_session_headers: (extra?: Record<string, string>) => ({
 		cookie: `${cookie_name}=${seeded.session_cookie}`,
-		...extra,
+		...extra
 	}),
 	create_bearer_headers: (extra?: Record<string, string>) => ({
 		authorization: `Bearer ${seeded.api_token}`,
-		...extra,
-	}),
+		...extra
+	})
 });
 
 /**
@@ -176,11 +176,11 @@ export interface TestFixtureBase {
 	 * `cookies(): []` is a no-op already); cross-process the returned
 	 * transport starts with an empty jar at the same `base_url`.
 	 */
-	readonly fresh_transport: (options?: {readonly origin?: string | null}) => FetchTransport;
+	readonly fresh_transport: (options?: { readonly origin?: string | null }) => FetchTransport;
 	/** The freshly-bootstrapped keeper account. */
-	readonly account: {readonly id: Uuid; readonly username: string};
+	readonly account: { readonly id: Uuid; readonly username: string };
 	/** The actor linked to the keeper account. */
-	readonly actor: {readonly id: Uuid};
+	readonly actor: { readonly id: Uuid };
 	/** Build request headers with the keeper's session cookie. */
 	readonly create_session_headers: (extra?: Record<string, string>) => Record<string, string>;
 	/** Build request headers with the keeper's bearer token. */
@@ -210,7 +210,7 @@ export interface TestFixtureBase {
 	 * to `actor_required` with these ids in its `available[]` list. Each id is
 	 * a valid `acting` value the keeper can supply explicitly.
 	 */
-	readonly extra_actors: ReadonlyArray<{readonly id: Uuid; readonly name: string}>;
+	readonly extra_actors: ReadonlyArray<{ readonly id: Uuid; readonly name: string }>;
 	/**
 	 * Forge an *expired server-side session* for the keeper account and
 	 * return the ready-to-send `Cookie` header value (`name=value`). The
@@ -322,9 +322,9 @@ export interface BootstrappedBackendHandle extends BackendHandle {
 	 */
 	readonly keeper_daemon_transport: FetchTransport;
 	/** Keeper account JSON captured from `POST /bootstrap`. */
-	readonly keeper_account: {readonly id: Uuid; readonly username: string};
+	readonly keeper_account: { readonly id: Uuid; readonly username: string };
 	/** Keeper actor JSON captured from `POST /bootstrap`. */
-	readonly keeper_actor: {readonly id: Uuid};
+	readonly keeper_actor: { readonly id: Uuid };
 	/** Raw keeper `Set-Cookie` values — thread into `ws_transport` for keeper-authenticated WS upgrades. */
 	readonly keeper_cookies: ReadonlyArray<string>;
 }
@@ -369,13 +369,13 @@ export interface SerializableBootstrappedBackendHandle {
  * vitest's `project.provide`. Call in `globalSetup` before provide.
  */
 export const serialize_bootstrapped_handle = (
-	handle: BootstrappedBackendHandle,
+	handle: BootstrappedBackendHandle
 ): SerializableBootstrappedBackendHandle => ({
 	config: handle.config,
 	daemon_token: handle.daemon_token,
 	keeper_account: handle.keeper_account,
 	keeper_actor: handle.keeper_actor,
-	keeper_cookies: [...handle.keeper_cookies],
+	keeper_cookies: [...handle.keeper_cookies]
 });
 
 /**
@@ -387,7 +387,7 @@ export const serialize_bootstrapped_handle = (
  * have a serializable reference anyway.
  */
 export const reconstruct_bootstrapped_handle = (
-	serialized: SerializableBootstrappedBackendHandle,
+	serialized: SerializableBootstrappedBackendHandle
 ): ReconstructedBootstrappedBackendHandle => ({
 	config: serialized.config,
 	daemon_token: serialized.daemon_token,
@@ -396,7 +396,7 @@ export const reconstruct_bootstrapped_handle = (
 	keeper_cookies: serialized.keeper_cookies,
 	keeper_transport: create_fetch_transport({
 		base_url: serialized.config.base_url,
-		initial_cookies: serialized.keeper_cookies,
+		initial_cookies: serialized.keeper_cookies
 	}),
 	// Same cookie jar but Origin-free so the daemon-token middleware doesn't
 	// discard the credential as browser-context — used by the `_testing_*`
@@ -405,8 +405,8 @@ export const reconstruct_bootstrapped_handle = (
 	keeper_daemon_transport: create_fetch_transport({
 		base_url: serialized.config.base_url,
 		initial_cookies: serialized.keeper_cookies,
-		origin: null,
-	}),
+		origin: null
+	})
 });
 
 /** Options for `default_cross_process_setup`. */
@@ -456,14 +456,14 @@ export interface CrossProcessSetupOptions {
  */
 const SignupResponseShape = z.object({
 	ok: z.literal(true),
-	account: z.object({id: Uuid, username: z.string()}),
-	actor: z.object({id: Uuid}),
+	account: z.object({ id: Uuid, username: z.string() }),
+	actor: z.object({ id: Uuid })
 });
 
 /** Structural subset of `account_token_create`'s output. */
 const TokenCreateResponseShape = z.object({
 	token: z.string(),
-	id: z.string(),
+	id: z.string()
 });
 
 /**
@@ -509,22 +509,22 @@ const rpc_via_transport = async (
 	method: string,
 	params: Record<string, unknown>,
 	backend_name: string,
-	extra_headers?: Record<string, string>,
+	extra_headers?: Record<string, string>
 ): Promise<unknown> => {
 	const response = await transport(rpc_path, {
 		method: 'POST',
-		headers: {'Content-Type': 'application/json', ...extra_headers},
-		body: JSON.stringify({jsonrpc: '2.0', method, params, id: method}),
+		headers: { 'Content-Type': 'application/json', ...extra_headers },
+		body: JSON.stringify({ jsonrpc: '2.0', method, params, id: method })
 	});
 	if (!response.ok) {
 		const body = await response.text().catch(() => '<unreadable>');
 		throw new Error(
-			`${method}(${backend_name}) HTTP failed: status=${response.status} body=${body}`,
+			`${method}(${backend_name}) HTTP failed: status=${response.status} body=${body}`
 		);
 	}
 	const raw = (await response.json()) as {
 		result?: unknown;
-		error?: {message: string; data?: unknown};
+		error?: { message: string; data?: unknown };
 	};
 	if (raw.error) {
 		throw new Error(`${method}(${backend_name}) RPC error: ${JSON.stringify(raw.error)}`);
@@ -546,15 +546,15 @@ const rpc_via_transport = async (
  */
 export const capture_schema_snapshot = async (
 	handle: ReconstructedBootstrappedBackendHandle,
-	options: {exclude_tables?: ReadonlyArray<string>} = {},
+	options: { exclude_tables?: ReadonlyArray<string> } = {}
 ): Promise<SchemaSnapshot> => {
 	const raw = await rpc_via_transport(
 		handle.keeper_daemon_transport,
 		handle.config.rpc_path,
 		'_testing_schema_snapshot',
-		{exclude_tables: [...(options.exclude_tables ?? [])]},
+		{ exclude_tables: [...(options.exclude_tables ?? [])] },
 		handle.config.name,
-		{[DAEMON_TOKEN_HEADER]: handle.daemon_token},
+		{ [DAEMON_TOKEN_HEADER]: handle.daemon_token }
 	);
 	// TODO: cast, not parse — `SchemaSnapshot.parse(raw)` would validate the wire
 	// against the schema (the `capture_action_manifest` twin parses + uses a
@@ -578,7 +578,7 @@ export const capture_schema_snapshot = async (
 const capture_via_daemon = async <T>(
 	handle: ReconstructedBootstrappedBackendHandle,
 	method: string,
-	schema: z.ZodType<T>,
+	schema: z.ZodType<T>
 ): Promise<T> => {
 	const raw = await rpc_via_transport(
 		handle.keeper_daemon_transport,
@@ -586,7 +586,7 @@ const capture_via_daemon = async <T>(
 		method,
 		{},
 		handle.config.name,
-		{[DAEMON_TOKEN_HEADER]: handle.daemon_token},
+		{ [DAEMON_TOKEN_HEADER]: handle.daemon_token }
 	);
 	return schema.parse(raw);
 };
@@ -602,7 +602,7 @@ const capture_via_daemon = async <T>(
  * `fuz_testing` mirror); the normalized shapes match by design.
  */
 export const capture_action_manifest = async (
-	handle: ReconstructedBootstrappedBackendHandle,
+	handle: ReconstructedBootstrappedBackendHandle
 ): Promise<ActionManifest> =>
 	capture_via_daemon(handle, '_testing_action_manifest', ActionManifest);
 
@@ -618,7 +618,7 @@ export const capture_action_manifest = async (
  * gate is blind to.
  */
 export const capture_migration_tracker = async (
-	handle: ReconstructedBootstrappedBackendHandle,
+	handle: ReconstructedBootstrappedBackendHandle
 ): Promise<MigrationTracker> =>
 	capture_via_daemon(handle, '_testing_migration_tracker', MigrationTracker);
 
@@ -631,31 +631,31 @@ export const capture_migration_tracker = async (
 export const EXPIRED_SESSION_OFFSET_SECONDS = -60;
 
 /** Structural subset of `_testing_mint_session`'s output. */
-const MintSessionResponseShape = z.object({session_cookie: z.string()});
+const MintSessionResponseShape = z.object({ session_cookie: z.string() });
 
 /** Output shape of a `_testing_reset` seeded account (keeper or extra). */
 interface SeededAccountResponse {
-	readonly account: {readonly id: Uuid; readonly username: string};
-	readonly actor: {readonly id: Uuid};
+	readonly account: { readonly id: Uuid; readonly username: string };
+	readonly actor: { readonly id: Uuid };
 	readonly api_token: string;
 	readonly session_cookie: string;
 }
 
 /** Structural subset of `_testing_reset`'s output. */
 const TestingResetResponseShape = z.object({
-	account: z.object({id: Uuid, username: z.string()}),
-	actor: z.object({id: Uuid}),
+	account: z.object({ id: Uuid, username: z.string() }),
+	actor: z.object({ id: Uuid }),
 	api_token: z.string(),
 	session_cookie: z.string(),
 	extra_accounts: z.array(
 		z.object({
-			account: z.object({id: Uuid, username: z.string()}),
-			actor: z.object({id: Uuid}),
+			account: z.object({ id: Uuid, username: z.string() }),
+			actor: z.object({ id: Uuid }),
 			api_token: z.string(),
-			session_cookie: z.string(),
-		}),
+			session_cookie: z.string()
+		})
 	),
-	extra_actors: z.array(z.object({id: Uuid, name: z.string()})),
+	extra_actors: z.array(z.object({ id: Uuid, name: z.string() }))
 });
 
 /**
@@ -671,11 +671,11 @@ const fire_testing_reset = async (
 		extra_keeper_roles?: ReadonlyArray<string>;
 		extra_accounts?: ReadonlyArray<ExtraAccountSpec>;
 		extra_actors?: ReadonlyArray<string>;
-	},
+	}
 ): Promise<{
 	keeper: SeededAccountResponse;
 	extra_accounts: ReadonlyArray<SeededAccountResponse>;
-	extra_actors: ReadonlyArray<{id: Uuid; name: string}>;
+	extra_actors: ReadonlyArray<{ id: Uuid; name: string }>;
 }> => {
 	const raw = await rpc_via_transport(
 		handle.keeper_daemon_transport,
@@ -685,20 +685,20 @@ const fire_testing_reset = async (
 			extra_keeper_roles: options.extra_keeper_roles ?? [],
 			extra_accounts: (options.extra_accounts ?? []).map((spec) => ({
 				username: spec.username,
-				...(spec.password_value !== undefined && {password_value: spec.password_value}),
-				roles: [...spec.roles],
+				...(spec.password_value !== undefined && { password_value: spec.password_value }),
+				roles: [...spec.roles]
 			})),
-			extra_actors: [...(options.extra_actors ?? [])],
+			extra_actors: [...(options.extra_actors ?? [])]
 		},
 		handle.config.name,
-		{[DAEMON_TOKEN_HEADER]: handle.daemon_token},
+		{ [DAEMON_TOKEN_HEADER]: handle.daemon_token }
 	);
 	const parsed = TestingResetResponseShape.safeParse(raw);
 	if (!parsed.success) {
 		throw new Error(
 			`_testing_reset(${handle.config.name}) returned unexpected result: ${JSON.stringify(raw)} (${
 				parsed.error.message
-			})`,
+			})`
 		);
 	}
 	return {
@@ -706,10 +706,10 @@ const fire_testing_reset = async (
 			account: parsed.data.account,
 			actor: parsed.data.actor,
 			api_token: parsed.data.api_token,
-			session_cookie: parsed.data.session_cookie,
+			session_cookie: parsed.data.session_cookie
 		},
 		extra_accounts: parsed.data.extra_accounts,
-		extra_actors: parsed.data.extra_actors,
+		extra_actors: parsed.data.extra_actors
 	};
 };
 
@@ -722,7 +722,7 @@ const fire_testing_reset = async (
 const extract_cookie_value = (
 	transport: FetchTransport,
 	cookie_name: string,
-	backend_name: string,
+	backend_name: string
 ): string => {
 	for (const raw of transport.cookies()) {
 		const eq = raw.indexOf('=');
@@ -733,7 +733,7 @@ const extract_cookie_value = (
 	}
 	throw new Error(
 		`session cookie '${cookie_name}' missing from ${backend_name} transport jar after auth — ` +
-			`got ${JSON.stringify(transport.cookies())}`,
+			`got ${JSON.stringify(transport.cookies())}`
 	);
 };
 
@@ -757,15 +757,15 @@ const extract_cookie_value = (
  */
 const mint_account = async (
 	handle: ReconstructedBootstrappedBackendHandle,
-	options: {username?: string; password_value?: string; email?: string},
+	options: { username?: string; password_value?: string; email?: string }
 ): Promise<{
 	transport: FetchTransport;
-	account: {id: Uuid; username: string};
-	actor: {id: Uuid};
+	account: { id: Uuid; username: string };
+	actor: { id: Uuid };
 	session_cookie: string;
 	api_token: string;
 }> => {
-	const transport = create_fetch_transport({base_url: handle.config.base_url});
+	const transport = create_fetch_transport({ base_url: handle.config.base_url });
 	// Caller-supplied usernames pass through as-is — fresh-keeper-per-test
 	// wipes the DB between tests, so hardcoded names (e.g. `'eve_attacker'`,
 	// `'user_two'`) don't collide. Default to a unique generated name when
@@ -787,13 +787,13 @@ const mint_account = async (
 		handle.keeper_transport,
 		handle.config.rpc_path,
 		'invite_create',
-		{username},
-		handle.config.name,
-	)) as {ok?: true; invite?: {id?: string}} | undefined;
+		{ username },
+		handle.config.name
+	)) as { ok?: true; invite?: { id?: string } } | undefined;
 	if (!invite_result?.invite?.id) {
 		throw new Error(
 			`invite_create(${handle.config.name}, username=${username}) returned unexpected result: ` +
-				JSON.stringify(invite_result),
+				JSON.stringify(invite_result)
 		);
 	}
 
@@ -807,17 +807,17 @@ const mint_account = async (
 	// rather than the truthy form silently dropping an empty string.
 	const signup_response = await transport('/api/account/signup', {
 		method: 'POST',
-		headers: {'Content-Type': 'application/json'},
+		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
 			username,
 			password,
-			...(options.email !== undefined && {email: options.email}),
-		}),
+			...(options.email !== undefined && { email: options.email })
+		})
 	});
 	if (!signup_response.ok) {
 		const body = await signup_response.text().catch(() => '<unreadable>');
 		throw new Error(
-			`signup(${handle.config.name}) failed: status=${signup_response.status} body=${body}`,
+			`signup(${handle.config.name}) failed: status=${signup_response.status} body=${body}`
 		);
 	}
 	const signup_raw: unknown = await signup_response.json();
@@ -826,19 +826,19 @@ const mint_account = async (
 		throw new Error(
 			`signup(${handle.config.name}) returned unexpected body: ${JSON.stringify(signup_raw)} (${
 				parsed.error.message
-			})`,
+			})`
 		);
 	}
 
 	const login_response = await transport('/api/account/login', {
 		method: 'POST',
-		headers: {'Content-Type': 'application/json'},
-		body: JSON.stringify({username, password}),
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ username, password })
 	});
 	if (!login_response.ok) {
 		const body = await login_response.text().catch(() => '<unreadable>');
 		throw new Error(
-			`login(${handle.config.name}) failed: status=${login_response.status} body=${body}`,
+			`login(${handle.config.name}) failed: status=${login_response.status} body=${body}`
 		);
 	}
 	// Drain the body so the connection releases — Hono's login returns
@@ -850,14 +850,14 @@ const mint_account = async (
 		handle.config.rpc_path,
 		'account_token_create',
 		{},
-		handle.config.name,
+		handle.config.name
 	);
 	const token_parsed = TokenCreateResponseShape.safeParse(token_result);
 	if (!token_parsed.success) {
 		throw new Error(
 			`account_token_create(${handle.config.name}) returned unexpected result: ${JSON.stringify(
-				token_result,
-			)}`,
+				token_result
+			)}`
 		);
 	}
 
@@ -866,7 +866,7 @@ const mint_account = async (
 		account: parsed.data.account,
 		actor: parsed.data.actor,
 		session_cookie: extract_cookie_value(transport, handle.config.cookie_name, handle.config.name),
-		api_token: token_parsed.data.token,
+		api_token: token_parsed.data.token
 	};
 };
 
@@ -884,22 +884,22 @@ const mint_account = async (
  */
 const grant_roles_via_offer_accept = async (
 	handle: ReconstructedBootstrappedBackendHandle,
-	minted: {transport: FetchTransport; account: {id: Uuid}},
-	roles: ReadonlyArray<string>,
+	minted: { transport: FetchTransport; account: { id: Uuid } },
+	roles: ReadonlyArray<string>
 ): Promise<void> => {
 	for (const role of roles) {
 		const offer_result = (await rpc_via_transport(
 			handle.keeper_transport,
 			handle.config.rpc_path,
 			'role_grant_offer_create',
-			{to_account_id: minted.account.id, role},
-			`${handle.config.name}, role=${role}`,
-		)) as {offer?: {id?: string}} | undefined;
+			{ to_account_id: minted.account.id, role },
+			`${handle.config.name}, role=${role}`
+		)) as { offer?: { id?: string } } | undefined;
 		if (!offer_result?.offer?.id) {
 			throw new Error(
 				`role_grant_offer_create(${handle.config.name}, role=${
 					role
-				}) returned unexpected result: ` + JSON.stringify(offer_result),
+				}) returned unexpected result: ` + JSON.stringify(offer_result)
 			);
 		}
 		const offer_id = offer_result.offer.id;
@@ -908,14 +908,14 @@ const grant_roles_via_offer_accept = async (
 			minted.transport,
 			handle.config.rpc_path,
 			'role_grant_offer_accept',
-			{offer_id},
-			`${handle.config.name}, role=${role}`,
+			{ offer_id },
+			`${handle.config.name}, role=${role}`
 		);
 		if (!accept_result) {
 			throw new Error(
 				`role_grant_offer_accept(${handle.config.name}, role=${
 					role
-				}) returned unexpected result: ` + JSON.stringify(accept_result),
+				}) returned unexpected result: ` + JSON.stringify(accept_result)
 			);
 		}
 	}
@@ -931,11 +931,11 @@ const grant_roles_via_offer_accept = async (
 const create_keeper_transport = (
 	handle: ReconstructedBootstrappedBackendHandle,
 	cookie_name: string,
-	session_cookie: string,
+	session_cookie: string
 ): FetchTransport =>
 	create_fetch_transport({
 		base_url: handle.config.base_url,
-		initial_cookies: [`${cookie_name}=${session_cookie}`],
+		initial_cookies: [`${cookie_name}=${session_cookie}`]
 	});
 
 /**
@@ -947,12 +947,12 @@ const create_keeper_transport = (
 const create_keeper_daemon_transport = (
 	handle: ReconstructedBootstrappedBackendHandle,
 	cookie_name: string,
-	session_cookie: string,
+	session_cookie: string
 ): FetchTransport =>
 	create_fetch_transport({
 		base_url: handle.config.base_url,
 		initial_cookies: [`${cookie_name}=${session_cookie}`],
-		origin: null,
+		origin: null
 	});
 
 /**
@@ -980,21 +980,21 @@ const create_keeper_daemon_transport = (
  */
 export const default_cross_process_setup = (
 	handle: ReconstructedBootstrappedBackendHandle,
-	options?: CrossProcessSetupOptions,
+	options?: CrossProcessSetupOptions
 ): SetupTest => {
 	const extra_keeper_roles = options?.extra_keeper_roles ?? [];
 	const extra_account_specs = options?.extra_accounts ?? [];
 	const extra_actor_names = options?.extra_actors ?? [];
-	const {cookie_name} = handle.config;
+	const { cookie_name } = handle.config;
 	return async () => {
 		const {
 			keeper,
 			extra_accounts: seeded_extras,
-			extra_actors,
+			extra_actors
 		} = await fire_testing_reset(handle, {
 			extra_keeper_roles,
 			extra_accounts: extra_account_specs,
-			extra_actors: extra_actor_names,
+			extra_actors: extra_actor_names
 		});
 
 		// Rebuild the keeper transport with the new session cookie — the
@@ -1010,7 +1010,7 @@ export const default_cross_process_setup = (
 		const keeper_daemon_transport = create_keeper_daemon_transport(
 			handle,
 			cookie_name,
-			keeper.session_cookie,
+			keeper.session_cookie
 		);
 		const refreshed_handle: ReconstructedBootstrappedBackendHandle = {
 			...handle,
@@ -1018,35 +1018,35 @@ export const default_cross_process_setup = (
 			keeper_daemon_transport,
 			keeper_account: keeper.account,
 			keeper_actor: keeper.actor,
-			keeper_cookies: [`${cookie_name}=${keeper.session_cookie}`],
+			keeper_cookies: [`${cookie_name}=${keeper.session_cookie}`]
 		};
 
 		const create_session_headers = (extra?: Record<string, string>): Record<string, string> => ({
 			cookie: `${cookie_name}=${keeper.session_cookie}`,
-			...extra,
+			...extra
 		});
 
 		const create_bearer_headers = (extra?: Record<string, string>): Record<string, string> => ({
 			authorization: `Bearer ${keeper.api_token}`,
-			...extra,
+			...extra
 		});
 
 		const create_daemon_token_headers = (
-			extra?: Record<string, string>,
+			extra?: Record<string, string>
 		): Record<string, string> => ({
 			[DAEMON_TOKEN_HEADER]: handle.daemon_token,
-			...extra,
+			...extra
 		});
 
 		const create_account = async (
-			account_options?: CreateTestAccountOptions,
+			account_options?: CreateTestAccountOptions
 		): Promise<TestAccount> => {
 			const other = await mint_account(refreshed_handle, {
-				...(account_options?.username !== undefined && {username: account_options.username}),
+				...(account_options?.username !== undefined && { username: account_options.username }),
 				...(account_options?.password_value !== undefined && {
-					password_value: account_options.password_value,
+					password_value: account_options.password_value
 				}),
-				...(account_options?.email !== undefined && {email: account_options.email}),
+				...(account_options?.email !== undefined && { email: account_options.email })
 			});
 			if (account_options?.roles && account_options.roles.length > 0) {
 				await grant_roles_via_offer_accept(refreshed_handle, other, account_options.roles);
@@ -1058,12 +1058,12 @@ export const default_cross_process_setup = (
 				api_token: other.api_token,
 				create_session_headers: (extra?: Record<string, string>): Record<string, string> => ({
 					cookie: `${cookie_name}=${other.session_cookie}`,
-					...extra,
+					...extra
 				}),
 				create_bearer_headers: (extra?: Record<string, string>): Record<string, string> => ({
 					authorization: `Bearer ${other.api_token}`,
-					...extra,
-				}),
+					...extra
+				})
 			};
 		};
 
@@ -1082,7 +1082,7 @@ export const default_cross_process_setup = (
 		// secondary's transport via `fixture.create_account()`.
 		const transport = create_fetch_transport({
 			base_url: handle.config.base_url,
-			initial_cookies: [`${cookie_name}=${keeper.session_cookie}`],
+			initial_cookies: [`${cookie_name}=${keeper.session_cookie}`]
 		});
 
 		return {
@@ -1090,7 +1090,7 @@ export const default_cross_process_setup = (
 			fresh_transport: (fresh_options) =>
 				create_fetch_transport({
 					base_url: handle.config.base_url,
-					...(fresh_options?.origin !== undefined && {origin: fresh_options.origin}),
+					...(fresh_options?.origin !== undefined && { origin: fresh_options.origin })
 				}),
 			account: keeper.account,
 			actor: keeper.actor,
@@ -1108,19 +1108,19 @@ export const default_cross_process_setup = (
 					refreshed_handle.keeper_daemon_transport,
 					handle.config.rpc_path,
 					'_testing_mint_session',
-					{account_id: keeper.account.id, expires_in_seconds: EXPIRED_SESSION_OFFSET_SECONDS},
+					{ account_id: keeper.account.id, expires_in_seconds: EXPIRED_SESSION_OFFSET_SECONDS },
 					handle.config.name,
-					{[DAEMON_TOKEN_HEADER]: handle.daemon_token},
+					{ [DAEMON_TOKEN_HEADER]: handle.daemon_token }
 				);
 				const parsed = MintSessionResponseShape.safeParse(raw);
 				if (!parsed.success) {
 					throw new Error(
 						`_testing_mint_session(${handle.config.name}) returned unexpected result: ` +
-							`${JSON.stringify(raw)} (${parsed.error.message})`,
+							`${JSON.stringify(raw)} (${parsed.error.message})`
 					);
 				}
 				return `${cookie_name}=${parsed.data.session_cookie}`;
-			},
+			}
 		};
 	};
 };

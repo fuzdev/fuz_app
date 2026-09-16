@@ -15,16 +15,16 @@
  * @module
  */
 
-import {DEV} from 'esm-env';
-import type {MiddlewareHandler} from 'hono';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import { DEV } from 'esm-env';
+import type { MiddlewareHandler } from 'hono';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {AUTH_API_TOKEN_ID_KEY, ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY} from '../hono_context.ts';
-import {query_validate_api_token} from './api_token_queries.ts';
-import type {QueryDeps} from '../db/query_deps.ts';
-import {get_client_ip} from '../http/client_ip.ts';
-import {is_browser_context} from '../http/origin.ts';
-import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.ts';
+import { AUTH_API_TOKEN_ID_KEY, ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY } from '../hono_context.ts';
+import { query_validate_api_token } from './api_token_queries.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
+import { get_client_ip } from '../http/client_ip.ts';
+import { is_browser_context } from '../http/origin.ts';
+import { rate_limit_exceeded_response, type RateLimiter } from '../rate_limiter.ts';
 
 /**
  * Create middleware that authenticates via bearer token.
@@ -57,7 +57,7 @@ import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.ts
 export const create_bearer_auth_middleware = (
 	deps: QueryDeps,
 	ip_rate_limiter: RateLimiter | null,
-	log: Logger,
+	log: Logger
 ): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
 		// Skip if an account is already authenticated (e.g. by session middleware)
@@ -116,10 +116,10 @@ export const create_bearer_auth_middleware = (
 		}
 
 		const api_token = await query_validate_api_token(
-			{...deps, log},
+			{ ...deps, log },
 			raw_token,
 			ip,
-			c.var.pending_effects,
+			c.var.pending_effects
 		);
 		if (!api_token) {
 			// Invalid or expired token — soft-fail. Rate limit counter stays

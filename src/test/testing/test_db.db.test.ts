@@ -4,16 +4,16 @@
  * @module
  */
 
-import {describe, assert, test, beforeAll, afterAll, vi} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import { describe, assert, test, beforeAll, afterAll, vi } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
 	create_pglite_factory,
 	create_pg_factory,
 	log_db_factory_status,
-	type DbFactory,
+	type DbFactory
 } from '$lib/testing/db.ts';
-import {Db, no_nested_transaction} from '$lib/db/db.ts';
+import { Db, no_nested_transaction } from '$lib/db/db.ts';
 
 const noop_init = async (_db: Db): Promise<void> => {};
 
@@ -43,7 +43,7 @@ describe('create_pglite_factory', () => {
 		assert.strictEqual(init_called[0], db);
 
 		// verify db is functional
-		const rows = await db.query<{result: number}>('SELECT 1 as result');
+		const rows = await db.query<{ result: number }>('SELECT 1 as result');
 		assert.strictEqual(rows.length, 1);
 		assert.strictEqual(rows[0]!.result, 1);
 
@@ -57,7 +57,7 @@ describe('create_pglite_factory', () => {
 
 		const db = await factory.create();
 		await db.query("INSERT INTO test_items (name) VALUES ('hello')");
-		const rows = await db.query<{name: string}>('SELECT name FROM test_items');
+		const rows = await db.query<{ name: string }>('SELECT name FROM test_items');
 		assert.strictEqual(rows.length, 1);
 		assert.strictEqual(rows[0]!.name, 'hello');
 
@@ -96,23 +96,23 @@ describe('log_db_factory_status', () => {
 	test('logs enabled and skipped drivers', () => {
 		const mock_db = (): Db =>
 			new Db({
-				client: {query: () => Promise.resolve({rows: []})},
-				transaction: no_nested_transaction,
+				client: { query: () => Promise.resolve({ rows: [] }) },
+				transaction: no_nested_transaction
 			});
 		const factories: Array<DbFactory> = [
 			{
 				name: 'pglite',
 				skip: false,
 				create: () => Promise.resolve(mock_db()),
-				close: () => Promise.resolve(),
+				close: () => Promise.resolve()
 			},
 			{
 				name: 'pg',
 				skip: true,
 				skip_reason: 'Skipped in CI (no postgres)',
 				create: () => Promise.resolve(mock_db()),
-				close: () => Promise.resolve(),
-			},
+				close: () => Promise.resolve()
+			}
 		];
 
 		log_db_factory_status(factories);

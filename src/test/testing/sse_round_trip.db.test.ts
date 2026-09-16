@@ -12,39 +12,39 @@
  * @module
  */
 
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {create_session_config} from '$lib/auth/session_cookie.ts';
-import {create_account_route_specs} from '$lib/auth/account_routes.ts';
-import {create_audit_log_route_specs} from '$lib/auth/audit_log_routes.ts';
-import {prefix_route_specs} from '$lib/http/route_spec.ts';
-import type {AppServerContext} from '$lib/server/app_server_context.ts';
-import type {RpcEndpointSpec} from '$lib/http/surface.ts';
-import {describe_sse_route_tests} from '$lib/testing/sse_round_trip.ts';
-import {audit_log_event_specs} from '$lib/realtime/sse_auth_guard.ts';
-import {create_admin_actions} from '$lib/auth/admin_actions.ts';
-import {create_account_actions} from '$lib/auth/account_actions.ts';
-import {admin_session_revoke_all_action_spec} from '$lib/auth/admin_action_specs.ts';
-import {rpc_call} from '$lib/testing/rpc_helpers.ts';
+import { create_session_config } from '$lib/auth/session_cookie.ts';
+import { create_account_route_specs } from '$lib/auth/account_routes.ts';
+import { create_audit_log_route_specs } from '$lib/auth/audit_log_routes.ts';
+import { prefix_route_specs } from '$lib/http/route_spec.ts';
+import type { AppServerContext } from '$lib/server/app_server_context.ts';
+import type { RpcEndpointSpec } from '$lib/http/surface.ts';
+import { describe_sse_route_tests } from '$lib/testing/sse_round_trip.ts';
+import { audit_log_event_specs } from '$lib/realtime/sse_auth_guard.ts';
+import { create_admin_actions } from '$lib/auth/admin_actions.ts';
+import { create_account_actions } from '$lib/auth/account_actions.ts';
+import { admin_session_revoke_all_action_spec } from '$lib/auth/admin_action_specs.ts';
+import { rpc_call } from '$lib/testing/rpc_helpers.ts';
 
-import {db_factories} from '../db_fixture.ts';
+import { db_factories } from '../db_fixture.ts';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
-const rpc_log = new Logger('sse-round-trip-rpc', {level: 'off'});
+const rpc_log = new Logger('sse-round-trip-rpc', { level: 'off' });
 
 /** RPC endpoint factory — ctx-bound so the bound `audit` matches each test's real refs. */
 const test_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpec> => [
 	{
 		path: RPC_PATH,
 		actions: [
-			...create_admin_actions({log: rpc_log, audit: ctx.deps.audit}),
+			...create_admin_actions({ log: rpc_log, audit: ctx.deps.audit }),
 			...create_account_actions({
 				log: rpc_log,
-				audit: ctx.deps.audit,
-			}),
-		],
-	},
+				audit: ctx.deps.audit
+			})
+		]
+	}
 ];
 
 describe_sse_route_tests({
@@ -52,7 +52,7 @@ describe_sse_route_tests({
 	db_factories,
 	app_options: {
 		audit_log_sse: true,
-		event_specs: audit_log_event_specs,
+		event_specs: audit_log_event_specs
 	},
 	rpc_endpoints: test_rpc_endpoints,
 	create_route_specs: (ctx) => [
@@ -61,18 +61,18 @@ describe_sse_route_tests({
 				session_options,
 				ip_rate_limiter: null,
 				login_account_rate_limiter: null,
-				login_fail_floor_ms: 0,
-			}),
+				login_fail_floor_ms: 0
+			})
 		]),
 		...prefix_route_specs('/api/admin', [
-			...create_audit_log_route_specs({stream: ctx.audit_sse!}),
-		]),
+			...create_audit_log_route_specs({ stream: ctx.audit_sse! })
+		])
 	],
 	routes: [
 		{
 			path: '/api/admin/audit/stream',
 			event_specs: audit_log_event_specs,
-			trigger: async ({test_app, account}) => {
+			trigger: async ({ test_app, account }) => {
 				// Revoke all sessions for a fresh account. This fires a
 				// `session_revoke_all` audit event with
 				// target_account_id = the new account's id — does NOT close the
@@ -80,19 +80,19 @@ describe_sse_route_tests({
 				// not the subscriber.
 				const target = await test_app.create_account({
 					username: 'sse_revoke_target',
-					roles: [],
+					roles: []
 				});
 				const res = await rpc_call({
 					app: test_app.app,
 					path: RPC_PATH,
 					method: admin_session_revoke_all_action_spec.method,
-					params: {account_id: target.account.id},
-					headers: account.create_session_headers(),
+					params: { account_id: target.account.id },
+					headers: account.create_session_headers()
 				});
 				if (!res.ok) {
 					throw new Error(`admin_session_revoke_all trigger failed: ${JSON.stringify(res.error)}`);
 				}
-			},
-		},
-	],
+			}
+		}
+	]
 });

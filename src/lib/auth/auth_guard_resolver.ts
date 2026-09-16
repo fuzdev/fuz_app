@@ -26,8 +26,8 @@
  * @module
  */
 
-import {require_auth, require_credential_types, require_role} from './request_context.ts';
-import type {AuthGuardResolver} from '../http/route_spec.ts';
+import { require_auth, require_credential_types, require_role } from './request_context.ts';
+import type { AuthGuardResolver } from '../http/route_spec.ts';
 
 /**
  * Standard auth guard resolver for fuz_app.
@@ -57,5 +57,5 @@ export const fuz_auth_guard_resolver: AuthGuardResolver = (auth) => {
 		post_authorization.push(require_role(auth.roles));
 	}
 
-	return {pre_validation, post_authorization};
+	return { pre_validation, post_authorization };
 };

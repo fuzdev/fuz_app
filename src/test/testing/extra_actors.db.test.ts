@@ -10,15 +10,15 @@
  * @module
  */
 
-import {test, describe, assert} from 'vitest';
+import { test, describe, assert } from 'vitest';
 
-import {default_in_process_setup} from '$lib/testing/cross_backend/in_process_setup.ts';
-import {create_session_config} from '$lib/auth/session_cookie.ts';
-import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.ts';
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
-import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
-import type {AppServerContext} from '$lib/server/app_server_context.ts';
-import type {RouteSpec} from '$lib/http/route_spec.ts';
+import { default_in_process_setup } from '$lib/testing/cross_backend/in_process_setup.ts';
+import { create_session_config } from '$lib/auth/session_cookie.ts';
+import { create_standard_rpc_actions } from '$lib/auth/standard_rpc_actions.ts';
+import { create_rpc_endpoint } from '$lib/actions/action_rpc.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
+import type { AppServerContext } from '$lib/server/app_server_context.ts';
+import type { RouteSpec } from '$lib/http/route_spec.ts';
 
 const session_options = create_session_config('test_extra_actors');
 const RPC_PATH = '/api/rpc';
@@ -31,9 +31,9 @@ const make_setup = (extra_actors: Array<string>) =>
 			create_rpc_endpoint({
 				path: RPC_PATH,
 				actions: create_standard_rpc_actions(ctx.deps),
-				log: ctx.deps.log,
+				log: ctx.deps.log
 			}),
-		extra_actors,
+		extra_actors
 	});
 
 describe('extra_actors fixture knob', () => {
@@ -41,7 +41,7 @@ describe('extra_actors fixture knob', () => {
 		const fixture = await make_setup(['second_actor', 'third_actor'])();
 		assert.deepStrictEqual(
 			fixture.extra_actors.map((a) => a.name),
-			['second_actor', 'third_actor'],
+			['second_actor', 'third_actor']
 		);
 		// The keeper now holds 3 distinct actors (1 bootstrap + 2 seeded) — the
 		// state the `actor_required` branch needs.

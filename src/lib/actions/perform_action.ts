@@ -38,41 +38,41 @@
  * @module
  */
 
-import {DEV} from 'esm-env';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { DEV } from 'esm-env';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import {
 	apply_authorization_phase,
 	has_any_scoped_role,
-	type RequestContext,
+	type RequestContext
 } from '../auth/request_context.ts';
-import {type CredentialType} from '../hono_context.ts';
-import type {Db} from '../db/db.ts';
-import {is_void_schema} from '../http/schema_helpers.ts';
-import {dispatch_with_post_commit_rollback} from '../http/pending_effects.ts';
+import { type CredentialType } from '../hono_context.ts';
+import type { Db } from '../db/db.ts';
+import { is_void_schema } from '../http/schema_helpers.ts';
+import { dispatch_with_post_commit_rollback } from '../http/pending_effects.ts';
 import {
 	JSONRPC_VERSION,
 	type JsonrpcRequestId,
 	type JsonrpcErrorCode,
-	type JsonrpcErrorObject,
+	type JsonrpcErrorObject
 } from '../http/jsonrpc.ts';
 import {
 	jsonrpc_error_messages,
 	jsonrpc_error_code_to_http_status,
 	http_status_to_jsonrpc_error_code,
 	JSONRPC_ERROR_CODES,
-	dev_only,
+	dev_only
 } from '../http/jsonrpc_errors.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
-	ERROR_CREDENTIAL_TYPE_REQUIRED,
+	ERROR_CREDENTIAL_TYPE_REQUIRED
 } from '../http/error_schemas.ts';
-import type {RateLimiter} from '../rate_limiter.ts';
-import {is_public_auth, type RouteAuth} from '../http/auth_shape.ts';
-import type {ActionContext, ActionHandler, RpcAction} from './action_rpc.ts';
-import type {RequestClient} from './peer_request.ts';
+import type { RateLimiter } from '../rate_limiter.ts';
+import { is_public_auth, type RouteAuth } from '../http/auth_shape.ts';
+import type { ActionContext, ActionHandler, RpcAction } from './action_rpc.ts';
+import type { RequestClient } from './peer_request.ts';
 
 /**
  * Per-call inputs to `perform_action`. Each transport assembles this from
@@ -109,7 +109,7 @@ export interface PerformActionInput {
 	 * skipped and `request_context` is used directly for post-authorization
 	 * checks + handler dispatch. Production callers leave this `undefined`.
 	 */
-	preset?: {request_context: RequestContext | null};
+	preset?: { request_context: RequestContext | null };
 }
 
 /**
@@ -148,8 +148,7 @@ export interface PerformActionDeps {
  * returns via `c.json`; WS sends the response over the socket.
  */
 export type PerformActionResult =
-	| {kind: 'ok'; result: unknown}
-	| {kind: 'error'; error: JsonrpcErrorObject; status: number};
+	{ kind: 'ok'; result: unknown } | { kind: 'error'; error: JsonrpcErrorObject; status: number };
 
 /**
  * The shared dispatch core. Pure data — no Hono context, no socket. Each
@@ -163,7 +162,7 @@ export type PerformActionResult =
  */
 export const perform_action = async (
 	input: PerformActionInput,
-	deps: PerformActionDeps,
+	deps: PerformActionDeps
 ): Promise<PerformActionResult> => {
 	const {
 		action,
@@ -176,7 +175,7 @@ export const perform_action = async (
 		notify,
 		connection_id,
 		request_client,
-		preset,
+		preset
 	} = input;
 	const {
 		db,
@@ -184,9 +183,9 @@ export const perform_action = async (
 		post_commit_effects,
 		log,
 		action_ip_rate_limiter,
-		action_account_rate_limiter,
+		action_account_rate_limiter
 	} = deps;
-	const {spec, handler} = action;
+	const { spec, handler } = action;
 	const action_auth = spec.auth;
 
 	// step 1: pre-validation auth — 401 short-circuit before input validation.
@@ -202,8 +201,8 @@ export const perform_action = async (
 		return error_result(
 			jsonrpc_error_messages.invalid_params(
 				'invalid params',
-				dev_only({issues: parse_result.error.issues}),
-			),
+				dev_only({ issues: parse_result.error.issues })
+			)
 		);
 	}
 	const validated_input = parse_result.data;
@@ -216,19 +215,19 @@ export const perform_action = async (
 	if (preset !== undefined) {
 		request_context = preset.request_context;
 	} else if (!is_public_auth(action_auth)) {
-		const validated_with_acting = validated_input as {acting?: unknown} | undefined;
+		const validated_with_acting = validated_input as { acting?: unknown } | undefined;
 		const acting_value =
 			validated_with_acting && typeof validated_with_acting.acting === 'string'
 				? validated_with_acting.acting
 				: undefined;
-		const result = await apply_authorization_phase({db}, account_id, action_auth, acting_value);
+		const result = await apply_authorization_phase({ db }, account_id, action_auth, acting_value);
 		if (!result.ok) {
-			const {error: reason, ...rest} = result.body;
+			const { error: reason, ...rest } = result.body;
 			const code = http_status_to_jsonrpc_error_code(result.status);
 			return {
 				kind: 'error',
 				status: result.status,
-				error: {code, message: reason, data: {reason, ...rest}},
+				error: { code, message: reason, data: { reason, ...rest } }
 			};
 		}
 		// `request_context: null` covers public actions and the
@@ -282,7 +281,7 @@ export const perform_action = async (
 			credential_type,
 			log,
 			notify,
-			signal,
+			signal
 		};
 
 		const output = await (handler as ActionHandler)(validated_input, action_context);
@@ -295,7 +294,7 @@ export const perform_action = async (
 			}
 		}
 
-		return {kind: 'ok', result: output};
+		return { kind: 'ok', result: output };
 	};
 
 	// Dispatch — transaction for mutations, pool for reads. Wrapped so a thrown
@@ -306,19 +305,19 @@ export const perform_action = async (
 	// contract) and docs/security.md §"Post-commit WS fan-out".
 	try {
 		return await dispatch_with_post_commit_rollback(post_commit_effects, () =>
-			use_transaction ? db.transaction((tx) => execute(tx)) : execute(db),
+			use_transaction ? db.transaction((tx) => execute(tx)) : execute(db)
 		);
 	} catch (err) {
 		// Duck-type check: Error with numeric `code` signals a JSON-RPC error.
 		// Avoids cross-realm `instanceof` misses when consumers throw their own
 		// `ThrownJsonrpcError` (structurally identical, different class identity).
-		const error_like = err as {code?: unknown; data?: unknown};
+		const error_like = err as { code?: unknown; data?: unknown };
 		if (err instanceof Error && typeof error_like.code === 'number') {
 			const code = error_like.code as JsonrpcErrorCode;
 			const status = jsonrpc_error_code_to_http_status(code);
-			const error: JsonrpcErrorObject = {code, message: err.message};
+			const error: JsonrpcErrorObject = { code, message: err.message };
 			if (error_like.data !== undefined) error.data = error_like.data;
-			return {kind: 'error', status, error};
+			return { kind: 'error', status, error };
 		}
 		log.error(`unhandled action handler error: ${spec.method}`, err);
 		// Raw exception messages can leak internals (paths, SQL, secrets in a
@@ -326,8 +325,8 @@ export const perform_action = async (
 		// the generic `internal_error` default. Same gate as the Zod-issue redaction.
 		return error_result(
 			jsonrpc_error_messages.internal_error(
-				dev_only(err instanceof Error ? err.message : undefined),
-			),
+				dev_only(err instanceof Error ? err.message : undefined)
+			)
 		);
 	}
 };
@@ -335,15 +334,15 @@ export const perform_action = async (
 const error_result = (error: JsonrpcErrorObject): PerformActionResult => ({
 	kind: 'error',
 	error,
-	status: jsonrpc_error_code_to_http_status(error.code),
+	status: jsonrpc_error_code_to_http_status(error.code)
 });
 
 const rate_limited_result = (retry_after: number): PerformActionResult => {
-	const error = jsonrpc_error_messages.rate_limited('rate limited', {retry_after});
+	const error = jsonrpc_error_messages.rate_limited('rate limited', { retry_after });
 	return {
 		kind: 'error',
 		error,
-		status: jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.rate_limited),
+		status: jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.rate_limited)
 	};
 };
 
@@ -359,7 +358,7 @@ const rate_limited_result = (retry_after: number): PerformActionResult => {
  */
 const check_action_auth_pre_validation = (
 	auth: RouteAuth,
-	account_id: string | null,
+	account_id: string | null
 ): JsonrpcErrorObject | null => {
 	if (auth.account === 'required' || auth.actor === 'required') {
 		if (account_id == null) {
@@ -368,7 +367,7 @@ const check_action_auth_pre_validation = (
 			// just status. The reason is generic — it leaks nothing about
 			// whether a credential was present or what the route demanded.
 			return jsonrpc_error_messages.unauthenticated('unauthenticated', {
-				reason: ERROR_AUTHENTICATION_REQUIRED,
+				reason: ERROR_AUTHENTICATION_REQUIRED
 			});
 		}
 	}
@@ -393,13 +392,13 @@ const check_action_auth_pre_validation = (
 const check_action_auth_post_authorization = (
 	auth: RouteAuth,
 	request_context: RequestContext | null,
-	credential_type: CredentialType | null,
+	credential_type: CredentialType | null
 ): JsonrpcErrorObject | null => {
 	if (auth.credential_types?.length) {
 		if (!credential_type || !auth.credential_types.includes(credential_type)) {
 			return jsonrpc_error_messages.forbidden('forbidden', {
 				reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
-				required_credential_types: auth.credential_types,
+				required_credential_types: auth.credential_types
 			});
 		}
 	}
@@ -407,7 +406,7 @@ const check_action_auth_post_authorization = (
 		if (!has_any_scoped_role(request_context, auth.roles, null)) {
 			return jsonrpc_error_messages.forbidden(`requires role: ${auth.roles.join(' or ')}`, {
 				reason: ERROR_INSUFFICIENT_PERMISSIONS,
-				required_roles: auth.roles,
+				required_roles: auth.roles
 			});
 		}
 	}
@@ -420,10 +419,12 @@ const check_action_auth_post_authorization = (
  */
 export const perform_action_result_to_envelope = (
 	id: JsonrpcRequestId,
-	result: PerformActionResult,
-): {jsonrpc: string; id: JsonrpcRequestId} & ({result: unknown} | {error: JsonrpcErrorObject}) => {
+	result: PerformActionResult
+): { jsonrpc: string; id: JsonrpcRequestId } & (
+	{ result: unknown } | { error: JsonrpcErrorObject }
+) => {
 	if (result.kind === 'ok') {
-		return {jsonrpc: JSONRPC_VERSION, id, result: result.result};
+		return { jsonrpc: JSONRPC_VERSION, id, result: result.result };
 	}
-	return {jsonrpc: JSONRPC_VERSION, id, error: result.error};
+	return { jsonrpc: JSONRPC_VERSION, id, error: result.error };
 };

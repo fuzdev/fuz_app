@@ -11,9 +11,9 @@
  * @module
  */
 
-import type {QueryDeps} from './query_deps.ts';
-import type {AuditLogEvent} from '../auth/audit_log_schema.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type { QueryDeps } from './query_deps.ts';
+import type { AuditLogEvent } from '../auth/audit_log_schema.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 /**
  * Metadata-jsonb keys cell-domain events use to name the cell. This
@@ -30,7 +30,7 @@ const CELL_AUDIT_METADATA_KEYS: ReadonlyArray<string> = [
 	'new_id',
 	'parent_id',
 	'child_id',
-	'target_id',
+	'target_id'
 ];
 
 export interface CellAuditListOptions {
@@ -46,7 +46,7 @@ export interface CellAuditListOptions {
 export const query_audit_log_list_by_cell = async (
 	deps: QueryDeps,
 	cell_id: Uuid,
-	options: CellAuditListOptions,
+	options: CellAuditListOptions
 ): Promise<Array<AuditLogEvent>> => {
 	const params: Array<unknown> = [];
 	let i = 1;
@@ -57,7 +57,7 @@ export const query_audit_log_list_by_cell = async (
 	// fresh placeholder per clause — keeps the prepared statement plan
 	// stable and the param list small.
 	const containment_predicates = CELL_AUDIT_METADATA_KEYS.map(
-		(key) => `metadata @> jsonb_build_object('${key}', ${cell_id_placeholder}::text)`,
+		(key) => `metadata @> jsonb_build_object('${key}', ${cell_id_placeholder}::text)`
 	);
 	const conditions = [`(${containment_predicates.join(' OR ')})`];
 	if (options.before !== undefined) {
@@ -69,6 +69,6 @@ export const query_audit_log_list_by_cell = async (
 	params.push(options.limit);
 	return deps.db.query<AuditLogEvent>(
 		`SELECT * FROM audit_log ${where} ORDER BY seq DESC LIMIT ${limit_placeholder}`,
-		params,
+		params
 	);
 };

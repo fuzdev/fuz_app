@@ -40,17 +40,17 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type {SessionOptions} from '../../auth/session_cookie.ts';
-import type {RoleSchemaResult} from '../../auth/role_schema.ts';
-import type {AppSurfaceSpec} from '../../http/surface.ts';
-import {describe_standard_integration_tests} from '../integration.ts';
-import {describe_standard_admin_integration_tests} from '../admin_integration.ts';
-import {describe_round_trip_validation} from '../round_trip.ts';
-import {describe_rpc_round_trip_tests} from '../rpc_round_trip.ts';
-import {describe_data_exposure_tests} from '../data_exposure.ts';
-import type {RpcEndpointsSuiteOption} from '../rpc_helpers.ts';
-import type {BackendCapabilities} from './capabilities.ts';
-import type {SetupTest, TestFixture} from './setup.ts';
+import type { SessionOptions } from '../../auth/session_cookie.ts';
+import type { RoleSchemaResult } from '../../auth/role_schema.ts';
+import type { AppSurfaceSpec } from '../../http/surface.ts';
+import { describe_standard_integration_tests } from '../integration.ts';
+import { describe_standard_admin_integration_tests } from '../admin_integration.ts';
+import { describe_round_trip_validation } from '../round_trip.ts';
+import { describe_rpc_round_trip_tests } from '../rpc_round_trip.ts';
+import { describe_data_exposure_tests } from '../data_exposure.ts';
+import type { RpcEndpointsSuiteOption } from '../rpc_helpers.ts';
+import type { BackendCapabilities } from './capabilities.ts';
+import type { SetupTest, TestFixture } from './setup.ts';
 
 /**
  * Configuration for `describe_standard_cross_process_tests`.
@@ -118,7 +118,7 @@ export interface StandardCrossProcessTestOptions {
 	 */
 	rest_success_fixtures?: Map<
 		string,
-		(fixture: TestFixture) => Promise<{url?: string; body?: Record<string, unknown>}>
+		(fixture: TestFixture) => Promise<{ url?: string; body?: Record<string, unknown> }>
 	>;
 }
 
@@ -128,7 +128,7 @@ export interface StandardCrossProcessTestOptions {
  * module doc for the suites omitted from this bundle and why.
  */
 export const describe_standard_cross_process_tests = (
-	options: StandardCrossProcessTestOptions,
+	options: StandardCrossProcessTestOptions
 ): void => {
 	describe_standard_integration_tests({
 		setup_test: options.setup_test,
@@ -136,14 +136,14 @@ export const describe_standard_cross_process_tests = (
 		capabilities: options.capabilities,
 		session_options: options.session_options,
 		rpc_endpoints: options.rpc_endpoints,
-		error_coverage_min: options.error_coverage_min,
+		error_coverage_min: options.error_coverage_min
 	});
 	describe_round_trip_validation({
 		setup_test: options.setup_test,
 		surface_source: options.surface_source,
 		capabilities: options.capabilities,
 		skip_routes: options.round_trip_skip_routes,
-		success_fixtures: options.rest_success_fixtures,
+		success_fixtures: options.rest_success_fixtures
 	});
 	describe_rpc_round_trip_tests({
 		setup_test: options.setup_test,
@@ -151,12 +151,12 @@ export const describe_standard_cross_process_tests = (
 		capabilities: options.capabilities,
 		session_options: options.session_options,
 		rpc_endpoints: options.rpc_endpoints,
-		success_fixtures: options.rpc_success_fixtures,
+		success_fixtures: options.rpc_success_fixtures
 	});
 	describe_data_exposure_tests({
 		setup_test: options.setup_test,
 		surface_source: options.surface_source,
-		capabilities: options.capabilities,
+		capabilities: options.capabilities
 	});
 	if (options.roles) {
 		describe_standard_admin_integration_tests({
@@ -166,7 +166,7 @@ export const describe_standard_cross_process_tests = (
 			session_options: options.session_options,
 			roles: options.roles,
 			rpc_endpoints: options.rpc_endpoints,
-			admin_prefix: options.admin_prefix,
+			admin_prefix: options.admin_prefix
 		});
 	}
 };

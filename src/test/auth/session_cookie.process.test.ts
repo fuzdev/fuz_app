@@ -8,22 +8,22 @@
  * @module
  */
 
-import {assert, describe, test} from 'vitest';
+import { assert, describe, test } from 'vitest';
 
-import {create_keyring} from '$lib/auth/keyring.ts';
+import { create_keyring } from '$lib/auth/keyring.ts';
 import {
 	create_session_cookie_value,
 	parse_session,
 	process_session_cookie,
 	SESSION_AGE_MAX,
-	type SessionOptions,
+	type SessionOptions
 } from '$lib/auth/session_cookie.ts';
 import {
 	create_test_keyring,
 	OLD_KEY,
 	TEST_IDENTITY,
 	TEST_KEY,
-	test_session_options,
+	test_session_options
 } from './session_test_helpers.ts';
 
 describe('process_session_cookie', () => {
@@ -49,7 +49,7 @@ describe('process_session_cookie', () => {
 			keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 		const result = await process_session_cookie(signed, keyring, test_session_options, now + 1);
 		assert.strictEqual(result.valid, true);
@@ -64,13 +64,13 @@ describe('process_session_cookie', () => {
 			keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 		const result = await process_session_cookie(
 			signed,
 			keyring,
 			test_session_options,
-			now + SESSION_AGE_MAX + 1,
+			now + SESSION_AGE_MAX + 1
 		);
 		assert.strictEqual(result.valid, false);
 		assert.strictEqual(result.action, 'clear');
@@ -82,7 +82,7 @@ describe('process_session_cookie', () => {
 			'garbage.data',
 			keyring,
 			test_session_options,
-			1000,
+			1000
 		);
 		assert.strictEqual(result.valid, false);
 		assert.strictEqual(result.action, 'clear');
@@ -95,7 +95,7 @@ describe('process_session_cookie', () => {
 			old_keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 
 		const rotated_keyring = create_keyring(TEST_KEY + '__' + OLD_KEY)!;
@@ -103,7 +103,7 @@ describe('process_session_cookie', () => {
 			signed,
 			rotated_keyring,
 			test_session_options,
-			now + 1,
+			now + 1
 		);
 		assert.strictEqual(result.valid, true);
 		assert.strictEqual(result.action, 'refresh');
@@ -121,7 +121,7 @@ describe('process_session_cookie', () => {
 		const signed = await create_session_cookie_value(
 			old_keyring,
 			TEST_IDENTITY,
-			test_session_options,
+			test_session_options
 		);
 		const rotated_keyring = create_keyring(TEST_KEY + '__' + OLD_KEY)!;
 		const result = await process_session_cookie(signed, rotated_keyring, test_session_options);
@@ -131,7 +131,7 @@ describe('process_session_cookie', () => {
 		const verified = await process_session_cookie(
 			result.new_signed_value,
 			new_keyring,
-			test_session_options,
+			test_session_options
 		);
 		assert.strictEqual(verified.identity, TEST_IDENTITY);
 		assert.strictEqual(verified.action, 'none');
@@ -146,7 +146,7 @@ describe('process_session_cookie', () => {
 			old_keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			original_time,
+			original_time
 		);
 
 		const rotated_keyring = create_keyring(TEST_KEY + '__' + OLD_KEY)!;
@@ -154,7 +154,7 @@ describe('process_session_cookie', () => {
 			signed,
 			rotated_keyring,
 			test_session_options,
-			refresh_time,
+			refresh_time
 		);
 		assert.strictEqual(result.action, 'refresh');
 
@@ -165,7 +165,7 @@ describe('process_session_cookie', () => {
 			result.new_signed_value,
 			new_keyring,
 			test_session_options,
-			original_expiry,
+			original_expiry
 		);
 		assert.strictEqual(verified.identity, TEST_IDENTITY);
 	});
@@ -181,7 +181,7 @@ describe('process_session_cookie', () => {
 			keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 
 		// Parse at expires_at - 1 hour: within the 1-day default window.
@@ -197,7 +197,7 @@ describe('process_session_cookie', () => {
 		assert.ok(verify);
 		assert.ok(
 			verify.value.endsWith(`:${within + SESSION_AGE_MAX}`),
-			`expected refreshed expires_at = ${within + SESSION_AGE_MAX}, got ${verify.value}`,
+			`expected refreshed expires_at = ${within + SESSION_AGE_MAX}, got ${verify.value}`
 		);
 	});
 
@@ -208,7 +208,7 @@ describe('process_session_cookie', () => {
 			keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 		const result = await process_session_cookie(signed, keyring, test_session_options, now + 10);
 		assert.strictEqual(result.valid, true);
@@ -217,7 +217,7 @@ describe('process_session_cookie', () => {
 	});
 
 	test('refresh_threshold_seconds = 0 disables expiration-based refresh', async () => {
-		const opts: SessionOptions<string> = {...test_session_options, refresh_threshold_seconds: 0};
+		const opts: SessionOptions<string> = { ...test_session_options, refresh_threshold_seconds: 0 };
 		const keyring = create_test_keyring();
 		const now = 1000;
 		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, opts, now);
@@ -227,7 +227,7 @@ describe('process_session_cookie', () => {
 	});
 
 	test('respects custom refresh_threshold_seconds', async () => {
-		const opts: SessionOptions<string> = {...test_session_options, refresh_threshold_seconds: 60};
+		const opts: SessionOptions<string> = { ...test_session_options, refresh_threshold_seconds: 60 };
 		const keyring = create_test_keyring();
 		const now = 1000;
 		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, opts, now);
@@ -236,7 +236,7 @@ describe('process_session_cookie', () => {
 			signed,
 			keyring,
 			opts,
-			now + SESSION_AGE_MAX - 100,
+			now + SESSION_AGE_MAX - 100
 		);
 		assert.strictEqual(outside.action, 'none');
 
@@ -253,7 +253,7 @@ describe('process_session_cookie', () => {
 			old_keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 
 		const rotated_keyring = create_keyring(TEST_KEY + '__' + OLD_KEY)!;
@@ -262,7 +262,7 @@ describe('process_session_cookie', () => {
 			signed,
 			rotated_keyring,
 			test_session_options,
-			within,
+			within
 		);
 		assert.strictEqual(result.action, 'refresh');
 		assert.strictEqual(result.identity, TEST_IDENTITY);
@@ -287,7 +287,7 @@ describe('process_session_cookie', () => {
 			decode_identity: (payload) => {
 				const idx = payload.indexOf(':');
 				return idx !== -1 ? payload.slice(idx + 1) || null : null;
-			},
+			}
 		};
 		const old_keyring = create_keyring(OLD_KEY)!;
 		const now = 1000;
@@ -303,7 +303,7 @@ describe('process_session_cookie', () => {
 			result.new_signed_value,
 			rotated_keyring,
 			colon_config,
-			now + 2,
+			now + 2
 		);
 		assert.ok(reparsed);
 		assert.strictEqual(reparsed.identity, 'sess-abc');

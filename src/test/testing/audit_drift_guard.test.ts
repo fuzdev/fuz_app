@@ -10,27 +10,27 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { describe, test, assert } from 'vitest';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {create_recording_audit_emitter} from '$lib/testing/audit_drift_guard.ts';
-import type {AuditLogInput} from '$lib/auth/audit_log_schema.ts';
+import { create_recording_audit_emitter } from '$lib/testing/audit_drift_guard.ts';
+import type { AuditLogInput } from '$lib/auth/audit_log_schema.ts';
 
 const create_ctx = (
-	client_ip = '203.0.113.5',
-): {pending_effects: Array<Promise<void>>; client_ip: string} => ({
+	client_ip = '203.0.113.5'
+): { pending_effects: Array<Promise<void>>; client_ip: string } => ({
 	pending_effects: [],
-	client_ip,
+	client_ip
 });
 
-const create_auth = (): {account: {id: Uuid}; actor: {id: Uuid}} => ({
-	account: {id: 'acct-1' as Uuid},
-	actor: {id: 'actor-1' as Uuid},
+const create_auth = (): { account: { id: Uuid }; actor: { id: Uuid } } => ({
+	account: { id: 'acct-1' as Uuid },
+	actor: { id: 'actor-1' as Uuid }
 });
 
 describe('create_recording_audit_emitter — emit_role_grant_target', () => {
 	test('pushes one entry to calls per invocation', () => {
-		const {emitter, calls} = create_recording_audit_emitter();
+		const { emitter, calls } = create_recording_audit_emitter();
 		const ctx = create_ctx();
 		const auth = create_auth();
 
@@ -38,14 +38,14 @@ describe('create_recording_audit_emitter — emit_role_grant_target', () => {
 			event_type: 'role_grant_create',
 			target_account_id: 'tgt-acct' as Uuid,
 			target_actor_id: 'tgt-actor' as Uuid,
-			metadata: {role: 'admin', scope_id: null},
+			metadata: { role: 'admin', scope_id: null }
 		});
 
 		assert.strictEqual(calls.length, 1);
 	});
 
 	test('lifts actor_id / account_id / ip from auth + ctx into the pushed entry', () => {
-		const {emitter, calls} = create_recording_audit_emitter();
+		const { emitter, calls } = create_recording_audit_emitter();
 		const ctx = create_ctx('198.51.100.7');
 		const auth = create_auth();
 
@@ -53,8 +53,8 @@ describe('create_recording_audit_emitter — emit_role_grant_target', () => {
 			event_type: 'role_grant_revoke',
 			target_account_id: 'tgt-acct' as Uuid,
 			target_actor_id: 'tgt-actor' as Uuid,
-			metadata: {role: 'admin', role_grant_id: 'rg-1' as Uuid, scope_id: null},
-			outcome: 'success',
+			metadata: { role: 'admin', role_grant_id: 'rg-1' as Uuid, scope_id: null },
+			outcome: 'success'
 		});
 
 		const lifted = calls[0]!;
@@ -64,17 +64,17 @@ describe('create_recording_audit_emitter — emit_role_grant_target', () => {
 	});
 
 	test('forwards event_type / outcome / target_*_id / metadata unchanged', () => {
-		const {emitter, calls} = create_recording_audit_emitter();
+		const { emitter, calls } = create_recording_audit_emitter();
 		const ctx = create_ctx();
 		const auth = create_auth();
-		const metadata = {role: 'admin', scope_id: null, source_offer_id: 'offer-7' as Uuid};
+		const metadata = { role: 'admin', scope_id: null, source_offer_id: 'offer-7' as Uuid };
 
 		emitter.emit_role_grant_target(ctx, auth as never, {
 			event_type: 'role_grant_create',
 			target_account_id: 'tgt-acct' as Uuid,
 			target_actor_id: 'tgt-actor' as Uuid,
 			metadata,
-			outcome: 'failure',
+			outcome: 'failure'
 		});
 
 		const lifted = calls[0]!;
@@ -86,7 +86,7 @@ describe('create_recording_audit_emitter — emit_role_grant_target', () => {
 	});
 
 	test('null target_actor_id is preserved (account-grain offer shape)', () => {
-		const {emitter, calls} = create_recording_audit_emitter();
+		const { emitter, calls } = create_recording_audit_emitter();
 		const ctx = create_ctx();
 		const auth = create_auth();
 
@@ -97,24 +97,24 @@ describe('create_recording_audit_emitter — emit_role_grant_target', () => {
 			metadata: {
 				offer_id: 'offer-1' as Uuid,
 				role: 'admin',
-				to_account_id: 'tgt-acct' as Uuid,
-			},
+				to_account_id: 'tgt-acct' as Uuid
+			}
 		});
 
 		assert.strictEqual(calls[0]!.target_actor_id, null);
 	});
 
 	test('emit and emit_role_grant_target share the same calls array', () => {
-		const {emitter, calls} = create_recording_audit_emitter();
+		const { emitter, calls } = create_recording_audit_emitter();
 		const ctx = create_ctx();
 		const auth = create_auth();
 
-		emitter.emit(ctx, {event_type: 'login', outcome: 'success', account_id: auth.account.id});
+		emitter.emit(ctx, { event_type: 'login', outcome: 'success', account_id: auth.account.id });
 		emitter.emit_role_grant_target(ctx, auth as never, {
 			event_type: 'role_grant_create',
 			target_account_id: 'tgt-acct' as Uuid,
 			target_actor_id: 'tgt-actor' as Uuid,
-			metadata: {role: 'admin', scope_id: null},
+			metadata: { role: 'admin', scope_id: null }
 		});
 
 		assert.strictEqual(calls.length, 2);
@@ -124,7 +124,7 @@ describe('create_recording_audit_emitter — emit_role_grant_target', () => {
 
 	test('caller-owned calls array receives entries (calls_ref pass-through)', () => {
 		const calls_ref: Array<AuditLogInput> = [];
-		const {emitter, calls} = create_recording_audit_emitter(calls_ref);
+		const { emitter, calls } = create_recording_audit_emitter(calls_ref);
 		const ctx = create_ctx();
 		const auth = create_auth();
 
@@ -132,7 +132,7 @@ describe('create_recording_audit_emitter — emit_role_grant_target', () => {
 			event_type: 'role_grant_create',
 			target_account_id: 'tgt-acct' as Uuid,
 			target_actor_id: 'tgt-actor' as Uuid,
-			metadata: {role: 'admin', scope_id: null},
+			metadata: { role: 'admin', scope_id: null }
 		});
 
 		assert.strictEqual(calls_ref, calls);

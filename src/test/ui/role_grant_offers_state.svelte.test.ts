@@ -7,20 +7,20 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
 import {
 	RoleGrantOffersState,
-	type RoleGrantOffersRpc,
+	type RoleGrantOffersRpc
 } from '$lib/ui/role_grant_offers_state.svelte.ts';
-import type {RoleGrantOfferJson} from '$lib/auth/role_grant_offer_schema.ts';
+import type { RoleGrantOfferJson } from '$lib/auth/role_grant_offer_schema.ts';
 import {
 	ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_RETRACTED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
-	ROLE_GRANT_REVOKE_NOTIFICATION_METHOD,
+	ROLE_GRANT_REVOKE_NOTIFICATION_METHOD
 } from '$lib/auth/role_grant_offer_notifications.ts';
 
 const RECIPIENT_ID = '11111111-1111-1111-1111-111111111111';
@@ -52,36 +52,36 @@ const pending_offer = (overrides: Partial<RoleGrantOfferJson> = {}): RoleGrantOf
 		decline_reason: null,
 		retracted_at: null,
 		superseded_at: null,
-		resulting_role_grant_id: null,
+		resulting_role_grant_id: null
 	};
-	return {...base, ...overrides};
+	return { ...base, ...overrides };
 };
 
 const rpc_stub = (partial: Partial<RoleGrantOffersRpc> = {}): RoleGrantOffersRpc => ({
-	list: async () => ({offers: []}),
-	history: async () => ({offers: []}),
+	list: async () => ({ offers: [] }),
+	history: async () => ({ offers: [] }),
 	create: async () => {
 		throw new Error('rpc.create not stubbed');
 	},
 	accept: async () => {
 		throw new Error('rpc.accept not stubbed');
 	},
-	decline: async () => ({ok: true}),
-	retract: async () => ({ok: true}),
-	...partial,
+	decline: async () => ({ ok: true }),
+	retract: async () => ({ ok: true }),
+	...partial
 });
 
 const create_state = (partial: Partial<RoleGrantOffersRpc> = {}): RoleGrantOffersState =>
 	new RoleGrantOffersState({
 		rpc: rpc_stub(partial),
 		account_id: () => RECIPIENT_ID,
-		actor_id: () => GRANTOR_ACTOR_ID,
+		actor_id: () => GRANTOR_ACTOR_ID
 	});
 
 describe('RoleGrantOffersState — seed', () => {
 	test('fetch populates incoming from list', async () => {
 		const offer = pending_offer();
-		const state = create_state({list: async () => ({offers: [offer]})});
+		const state = create_state({ list: async () => ({ offers: [offer] }) });
 
 		await state.fetch();
 
@@ -92,13 +92,13 @@ describe('RoleGrantOffersState — seed', () => {
 
 	test('fetch_history merges both directions into the cache', async () => {
 		const incoming = pending_offer({
-			from_actor_id: OTHER_ACTOR_ID as RoleGrantOfferJson['from_actor_id'],
+			from_actor_id: OTHER_ACTOR_ID as RoleGrantOfferJson['from_actor_id']
 		});
 		const outgoing = pending_offer({
 			from_actor_id: GRANTOR_ACTOR_ID as RoleGrantOfferJson['from_actor_id'],
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id'],
+			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
 		});
-		const state = create_state({history: async () => ({offers: [incoming, outgoing]})});
+		const state = create_state({ history: async () => ({ offers: [incoming, outgoing] }) });
 
 		await state.fetch_history();
 
@@ -110,9 +110,9 @@ describe('RoleGrantOffersState — seed', () => {
 	});
 
 	test('incoming sorts by soonest-expiry first', async () => {
-		const later = pending_offer({expires_at: new Date(Date.now() + 10_000_000).toISOString()});
-		const sooner = pending_offer({expires_at: new Date(Date.now() + 1_000_000).toISOString()});
-		const state = create_state({list: async () => ({offers: [later, sooner]})});
+		const later = pending_offer({ expires_at: new Date(Date.now() + 10_000_000).toISOString() });
+		const sooner = pending_offer({ expires_at: new Date(Date.now() + 1_000_000).toISOString() });
+		const state = create_state({ list: async () => ({ offers: [later, sooner] }) });
 
 		await state.fetch();
 
@@ -121,8 +121,8 @@ describe('RoleGrantOffersState — seed', () => {
 	});
 
 	test('incoming filters out expired rows', async () => {
-		const expired = pending_offer({expires_at: new Date(Date.now() - 1000).toISOString()});
-		const state = create_state({list: async () => ({offers: [expired]})});
+		const expired = pending_offer({ expires_at: new Date(Date.now() - 1000).toISOString() });
+		const state = create_state({ list: async () => ({ offers: [expired] }) });
 
 		await state.fetch();
 
@@ -132,9 +132,9 @@ describe('RoleGrantOffersState — seed', () => {
 
 	test('incoming filters out offers addressed elsewhere', async () => {
 		const theirs = pending_offer({
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id'],
+			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
 		});
-		const state = create_state({list: async () => ({offers: [theirs]})});
+		const state = create_state({ list: async () => ({ offers: [theirs] }) });
 
 		await state.fetch();
 
@@ -145,7 +145,7 @@ describe('RoleGrantOffersState — seed', () => {
 		const state = create_state({
 			list: async () => {
 				throw new Error('boom');
-			},
+			}
 		});
 
 		await state.fetch();
@@ -161,7 +161,7 @@ describe('RoleGrantOffersState — reducer', () => {
 
 		state.apply_notification({
 			method: ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
-			params: {offer},
+			params: { offer }
 		});
 
 		assert.strictEqual(state.incoming.length, 1);
@@ -173,14 +173,14 @@ describe('RoleGrantOffersState — reducer', () => {
 		const offer = pending_offer();
 		state.apply_notification({
 			method: ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
-			params: {offer},
+			params: { offer }
 		});
 		assert.strictEqual(state.incoming.length, 1);
 
-		const retracted: RoleGrantOfferJson = {...offer, retracted_at: new Date().toISOString()};
+		const retracted: RoleGrantOfferJson = { ...offer, retracted_at: new Date().toISOString() };
 		state.apply_notification({
 			method: ROLE_GRANT_OFFER_RETRACTED_NOTIFICATION_METHOD,
-			params: {offer: retracted},
+			params: { offer: retracted }
 		});
 
 		assert.strictEqual(state.incoming.length, 0);
@@ -191,23 +191,23 @@ describe('RoleGrantOffersState — reducer', () => {
 	test('role_grant_offer_accepted terminates the outgoing offer', () => {
 		const state = create_state();
 		const outgoing = pending_offer({
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id'],
+			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
 		});
 		// seed as outgoing via history stub style — drop directly via notification:
 		state.apply_notification({
 			method: ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
-			params: {offer: outgoing},
+			params: { offer: outgoing }
 		});
 		assert.strictEqual(state.outgoing.length, 1);
 
 		const accepted: RoleGrantOfferJson = {
 			...outgoing,
 			accepted_at: new Date().toISOString(),
-			resulting_role_grant_id: next_uuid() as RoleGrantOfferJson['resulting_role_grant_id'],
+			resulting_role_grant_id: next_uuid() as RoleGrantOfferJson['resulting_role_grant_id']
 		};
 		state.apply_notification({
 			method: ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
-			params: {offer: accepted},
+			params: { offer: accepted }
 		});
 
 		assert.strictEqual(state.outgoing.length, 0);
@@ -216,21 +216,21 @@ describe('RoleGrantOffersState — reducer', () => {
 	test('role_grant_offer_declined terminates the outgoing offer and preserves decline_reason', () => {
 		const state = create_state();
 		const outgoing = pending_offer({
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id'],
+			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
 		});
 		state.apply_notification({
 			method: ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
-			params: {offer: outgoing},
+			params: { offer: outgoing }
 		});
 
 		const declined: RoleGrantOfferJson = {
 			...outgoing,
 			declined_at: new Date().toISOString(),
-			decline_reason: 'busy',
+			decline_reason: 'busy'
 		};
 		state.apply_notification({
 			method: ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD,
-			params: {offer: declined},
+			params: { offer: declined }
 		});
 
 		assert.strictEqual(state.outgoing.length, 0);
@@ -240,20 +240,20 @@ describe('RoleGrantOffersState — reducer', () => {
 	test('role_grant_offer_supersede stamps an outgoing offer terminal', () => {
 		const state = create_state();
 		const outgoing = pending_offer({
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id'],
+			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
 		});
 		state.apply_notification({
 			method: ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
-			params: {offer: outgoing},
+			params: { offer: outgoing }
 		});
 
 		const superseded: RoleGrantOfferJson = {
 			...outgoing,
-			superseded_at: new Date().toISOString(),
+			superseded_at: new Date().toISOString()
 		};
 		state.apply_notification({
 			method: ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
-			params: {offer: superseded, reason: 'sibling_accepted', cause_id: next_uuid()},
+			params: { offer: superseded, reason: 'sibling_accepted', cause_id: next_uuid() }
 		});
 
 		assert.strictEqual(state.outgoing.length, 0);
@@ -265,12 +265,12 @@ describe('RoleGrantOffersState — reducer', () => {
 		const offer = pending_offer();
 		state.apply_notification({
 			method: ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
-			params: {offer},
+			params: { offer }
 		});
 
 		state.apply_notification({
 			method: ROLE_GRANT_REVOKE_NOTIFICATION_METHOD,
-			params: {role_grant_id: next_uuid(), role: 'admin', scope_id: null, reason: null},
+			params: { role_grant_id: next_uuid(), role: 'admin', scope_id: null, reason: null }
 		});
 
 		assert.strictEqual(state.incoming.length, 1);
@@ -279,7 +279,7 @@ describe('RoleGrantOffersState — reducer', () => {
 
 	test('unknown methods are silently ignored', () => {
 		const state = create_state();
-		state.apply_notification({method: 'totally_unrelated', params: {}});
+		state.apply_notification({ method: 'totally_unrelated', params: {} });
 		assert.strictEqual(state.history.length, 0);
 	});
 
@@ -287,7 +287,7 @@ describe('RoleGrantOffersState — reducer', () => {
 		const state = create_state();
 		state.apply_notification({
 			method: ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
-			params: {offer: {id: 'not-a-full-offer'}},
+			params: { offer: { id: 'not-a-full-offer' } }
 		});
 		assert.strictEqual(state.history.length, 0);
 	});
@@ -297,8 +297,8 @@ describe('RoleGrantOffersState — subscribe', () => {
 	test('subscribe plumbs notifications through apply_notification', () => {
 		const state = create_state();
 		const offer = pending_offer();
-		const captured: {handler: ((n: {method: string; params: unknown}) => void) | null} = {
-			handler: null,
+		const captured: { handler: ((n: { method: string; params: unknown }) => void) | null } = {
+			handler: null
 		};
 		const unsubscribe = state.subscribe((handler) => {
 			captured.handler = handler;
@@ -308,7 +308,7 @@ describe('RoleGrantOffersState — subscribe', () => {
 		});
 
 		assert.ok(captured.handler);
-		captured.handler({method: ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD, params: {offer}});
+		captured.handler({ method: ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD, params: { offer } });
 		assert.strictEqual(state.incoming.length, 1);
 
 		unsubscribe();
@@ -319,11 +319,11 @@ describe('RoleGrantOffersState — subscribe', () => {
 describe('RoleGrantOffersState — mutations', () => {
 	test('create merges the returned offer into the cache', async () => {
 		const offer = pending_offer({
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id'],
+			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
 		});
-		const state = create_state({create: async () => ({offer})});
+		const state = create_state({ create: async () => ({ offer }) });
 
-		await state.submit_create({to_account_id: OTHER_RECIPIENT_ID, role: 'admin'});
+		await state.submit_create({ to_account_id: OTHER_RECIPIENT_ID, role: 'admin' });
 
 		assert.strictEqual(state.outgoing.length, 1);
 		assert.strictEqual(state.outgoing[0]!.id, offer.id);
@@ -331,23 +331,23 @@ describe('RoleGrantOffersState — mutations', () => {
 
 	test('submit_create returns the offer on success and undefined on failure', async () => {
 		const offer = pending_offer({
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id'],
+			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
 		});
-		const ok_state = create_state({create: async () => ({offer})});
+		const ok_state = create_state({ create: async () => ({ offer }) });
 		const ok_result = await ok_state.submit_create({
 			to_account_id: OTHER_RECIPIENT_ID,
-			role: 'admin',
+			role: 'admin'
 		});
 		assert.strictEqual(ok_result?.id, offer.id);
 
 		const failing_state = create_state({
 			create: async () => {
 				throw new Error('role_not_web_grantable');
-			},
+			}
 		});
 		const fail_result = await failing_state.submit_create({
 			to_account_id: OTHER_RECIPIENT_ID,
-			role: 'keeper',
+			role: 'keeper'
 		});
 		assert.strictEqual(fail_result, undefined);
 		assert.strictEqual(failing_state.create.error, 'role_not_web_grantable');
@@ -355,28 +355,30 @@ describe('RoleGrantOffersState — mutations', () => {
 
 	test('create forwards to_actor_id to the rpc and stamps the returned actor-grain offer', async () => {
 		const target_actor_id = next_uuid();
-		const captured: {params: Parameters<RoleGrantOffersRpc['create']>[0] | null} = {params: null};
+		const captured: { params: Parameters<RoleGrantOffersRpc['create']>[0] | null } = {
+			params: null
+		};
 		const offer = pending_offer({
 			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id'],
-			to_actor_id: target_actor_id as RoleGrantOfferJson['to_actor_id'],
+			to_actor_id: target_actor_id as RoleGrantOfferJson['to_actor_id']
 		});
 		const state = create_state({
 			create: async (params) => {
 				captured.params = params;
-				return {offer};
-			},
+				return { offer };
+			}
 		});
 
 		await state.submit_create({
 			to_account_id: OTHER_RECIPIENT_ID,
 			to_actor_id: target_actor_id,
-			role: 'admin',
+			role: 'admin'
 		});
 
 		assert.deepStrictEqual(captured.params, {
 			to_account_id: OTHER_RECIPIENT_ID,
 			to_actor_id: target_actor_id,
-			role: 'admin',
+			role: 'admin'
 		});
 		assert.strictEqual(state.outgoing.length, 1);
 		assert.strictEqual(state.outgoing[0]!.to_actor_id, target_actor_id);
@@ -386,16 +388,16 @@ describe('RoleGrantOffersState — mutations', () => {
 		const target = pending_offer();
 		const sibling = pending_offer();
 		const state = create_state({
-			list: async () => ({offers: [target, sibling]}),
+			list: async () => ({ offers: [target, sibling] }),
 			accept: async () => ({
 				role_grant_id: next_uuid(),
 				offer: {
 					...target,
 					accepted_at: new Date().toISOString(),
-					resulting_role_grant_id: next_uuid() as RoleGrantOfferJson['resulting_role_grant_id'],
+					resulting_role_grant_id: next_uuid() as RoleGrantOfferJson['resulting_role_grant_id']
 				},
-				superseded_offer_ids: [sibling.id],
-			}),
+				superseded_offer_ids: [sibling.id]
+			})
 		});
 
 		await state.fetch();
@@ -410,7 +412,7 @@ describe('RoleGrantOffersState — mutations', () => {
 
 	test('decline removes the offer from the cache', async () => {
 		const offer = pending_offer();
-		const state = create_state({list: async () => ({offers: [offer]})});
+		const state = create_state({ list: async () => ({ offers: [offer] }) });
 		await state.fetch();
 
 		await state.submit_decline(offer.id, 'no thanks');
@@ -420,9 +422,9 @@ describe('RoleGrantOffersState — mutations', () => {
 
 	test('retract removes the offer from the cache', async () => {
 		const outgoing = pending_offer({
-			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id'],
+			to_account_id: OTHER_RECIPIENT_ID as RoleGrantOfferJson['to_account_id']
 		});
-		const state = create_state({history: async () => ({offers: [outgoing]})});
+		const state = create_state({ history: async () => ({ offers: [outgoing] }) });
 		await state.fetch_history();
 
 		await state.submit_retract(outgoing.id);
@@ -434,7 +436,7 @@ describe('RoleGrantOffersState — mutations', () => {
 describe('RoleGrantOffersState — reset', () => {
 	test('reset clears the cache and every slot', async () => {
 		const offer = pending_offer();
-		const state = create_state({list: async () => ({offers: [offer]})});
+		const state = create_state({ list: async () => ({ offers: [offer] }) });
 		await state.fetch();
 		assert.strictEqual(state.history.length, 1);
 

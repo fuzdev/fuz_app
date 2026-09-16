@@ -8,21 +8,21 @@
  * @module
  */
 
-import {assert, describe, test} from 'vitest';
+import { assert, describe, test } from 'vitest';
 
-import {create_keyring} from '$lib/auth/keyring.ts';
+import { create_keyring } from '$lib/auth/keyring.ts';
 import {
 	create_session_cookie_value,
 	parse_session,
 	SESSION_AGE_MAX,
-	type SessionOptions,
+	type SessionOptions
 } from '$lib/auth/session_cookie.ts';
 import {
 	create_test_keyring,
 	OLD_KEY,
 	TEST_IDENTITY,
 	TEST_KEY,
-	test_session_options,
+	test_session_options
 } from './session_test_helpers.ts';
 
 describe('parse_session', () => {
@@ -43,7 +43,7 @@ describe('parse_session', () => {
 		const result = await parse_session(
 			'user-123:99999999999.invalidsig',
 			keyring,
-			test_session_options,
+			test_session_options
 		);
 		assert.strictEqual(result, null);
 	});
@@ -55,7 +55,7 @@ describe('parse_session', () => {
 			keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 		const result = await parse_session(signed, keyring, test_session_options, now + 1);
 		assert.ok(result);
@@ -71,13 +71,13 @@ describe('parse_session', () => {
 			keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 		const result = await parse_session(
 			signed,
 			keyring,
 			test_session_options,
-			now + SESSION_AGE_MAX + 1,
+			now + SESSION_AGE_MAX + 1
 		);
 		assert.strictEqual(result, null);
 	});
@@ -89,13 +89,13 @@ describe('parse_session', () => {
 			keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 		const result = await parse_session(
 			signed,
 			keyring,
 			test_session_options,
-			now + SESSION_AGE_MAX,
+			now + SESSION_AGE_MAX
 		);
 		assert.strictEqual(result, null);
 	});
@@ -107,13 +107,13 @@ describe('parse_session', () => {
 			keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 		const result = await parse_session(
 			signed,
 			keyring,
 			test_session_options,
-			now + SESSION_AGE_MAX - 1,
+			now + SESSION_AGE_MAX - 1
 		);
 		assert.ok(result);
 		assert.strictEqual(result.identity, TEST_IDENTITY);
@@ -126,7 +126,7 @@ describe('parse_session', () => {
 			old_keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 
 		const rotated_keyring = create_keyring(TEST_KEY + '__' + OLD_KEY)!;
@@ -144,7 +144,7 @@ describe('parse_session', () => {
 			other_keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 		const result = await parse_session(signed, create_test_keyring(), test_session_options, now);
 		assert.strictEqual(result, null);
@@ -164,7 +164,7 @@ describe('parse_session', () => {
 			cookie_name: 'test_session',
 			context_key: 'auth_session_id',
 			encode_identity: (id) => id,
-			decode_identity: () => null, // always rejects
+			decode_identity: () => null // always rejects
 		};
 		const now = 1000;
 		// create a valid signed cookie with the standard config
@@ -172,7 +172,7 @@ describe('parse_session', () => {
 			keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 		// parse with the rejecting config
 		const result = await parse_session(signed, keyring, rejecting_config, now + 1);
@@ -195,7 +195,7 @@ describe('parse_session', () => {
 			decode_identity: (payload) => {
 				const idx = payload.indexOf(':');
 				return idx !== -1 ? payload.slice(idx + 1) || null : null;
-			},
+			}
 		};
 		const now = 1000;
 		const signed = await create_session_cookie_value(keyring, 'sess-abc', colon_config, now);
@@ -221,7 +221,7 @@ describe('parse_session', () => {
 		['scientific notation', '1e10'],
 		['hex prefix', '0x10'],
 		['trailing alpha', '123abc'],
-		['empty', ''],
+		['empty', '']
 	])('rejects malformed expires_at: %s (%j)', async (_label, expires_at_str) => {
 		// Strict integer regex closes the `parseInt` permissiveness gap —
 		// `parseInt('123abc')` returns `123`, so without the regex a tampered
@@ -260,7 +260,7 @@ describe('parse_session — should_refresh_expiration', () => {
 			keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 		const result = await parse_session(signed, keyring, test_session_options, now + 10);
 		assert.ok(result);
@@ -274,7 +274,7 @@ describe('parse_session — should_refresh_expiration', () => {
 			keyring,
 			TEST_IDENTITY,
 			test_session_options,
-			now,
+			now
 		);
 		// Parse at expires_at - 1 hour: well within the 1-day default window.
 		const within = now + SESSION_AGE_MAX - 60 * 60;
@@ -284,7 +284,7 @@ describe('parse_session — should_refresh_expiration', () => {
 	});
 
 	test('refresh_threshold_seconds = 0 disables expiration-based refresh', async () => {
-		const opts: SessionOptions<string> = {...test_session_options, refresh_threshold_seconds: 0};
+		const opts: SessionOptions<string> = { ...test_session_options, refresh_threshold_seconds: 0 };
 		const keyring = create_test_keyring();
 		const now = 1000;
 		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, opts, now);
@@ -296,7 +296,7 @@ describe('parse_session — should_refresh_expiration', () => {
 
 	test('respects custom refresh_threshold_seconds', async () => {
 		// 60s threshold; 100s remaining → outside; 30s remaining → inside.
-		const opts: SessionOptions<string> = {...test_session_options, refresh_threshold_seconds: 60};
+		const opts: SessionOptions<string> = { ...test_session_options, refresh_threshold_seconds: 60 };
 		const keyring = create_test_keyring();
 		const now = 1000;
 		const signed = await create_session_cookie_value(keyring, TEST_IDENTITY, opts, now);
@@ -324,7 +324,7 @@ describe('parse_session — generic identity', () => {
 			decode_identity: (payload) => {
 				const n = parseInt(payload, 10);
 				return Number.isFinite(n) && n > 0 ? n : null;
-			},
+			}
 		};
 		const keyring = create_test_keyring();
 		const now = 1000;
@@ -347,7 +347,7 @@ describe('session round-trip', () => {
 				keyring,
 				identity,
 				test_session_options,
-				NOW,
+				NOW
 			);
 			const result = await parse_session(signed, keyring, test_session_options, NOW);
 			assert.ok(result);
@@ -379,21 +379,21 @@ describe('session round-trip', () => {
 			'user;with;semicolons',
 			'user=with=equals',
 			'user with spaces',
-			'user\twith\ttabs',
+			'user\twith\ttabs'
 		];
 		for (const identity of test_identities) {
 			const signed = await create_session_cookie_value(
 				keyring,
 				identity,
 				test_session_options,
-				NOW,
+				NOW
 			);
 			const result = await parse_session(signed, keyring, test_session_options, NOW);
 			assert.ok(result, `should parse identity: ${JSON.stringify(identity)}`);
 			assert.strictEqual(
 				result.identity,
 				identity,
-				`identity mismatch for ${JSON.stringify(identity)}`,
+				`identity mismatch for ${JSON.stringify(identity)}`
 			);
 		}
 	});

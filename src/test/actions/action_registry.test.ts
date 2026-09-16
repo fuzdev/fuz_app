@@ -4,22 +4,22 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import {z} from 'zod';
+import { describe, assert, test } from 'vitest';
+import { z } from 'zod';
 
-import {ActionRegistry} from '$lib/actions/action_registry.ts';
-import {is_public_auth} from '$lib/http/auth_shape.ts';
+import { ActionRegistry } from '$lib/actions/action_registry.ts';
+import { is_public_auth } from '$lib/http/auth_shape.ts';
 
 // Minimal spec factories — plain objects that satisfy ActionSpecUnion discriminants
 
 const rr = (
 	method: string,
 	initiator: 'frontend' | 'backend' | 'both' = 'frontend',
-	auth: {account: 'none' | 'required'; actor: 'none' | 'required'} = {
+	auth: { account: 'none' | 'required'; actor: 'none' | 'required' } = {
 		account: 'required',
-		actor: 'none',
+		actor: 'none'
 	},
-	streams?: string,
+	streams?: string
 ) =>
 	({
 		method,
@@ -31,7 +31,7 @@ const rr = (
 		output: z.null(),
 		async: true as const,
 		description: method,
-		...(streams ? {streams} : {}),
+		...(streams ? { streams } : {})
 	}) as const;
 
 const rn = (method: string, initiator: 'frontend' | 'backend' | 'both' = 'backend') =>
@@ -44,7 +44,7 @@ const rn = (method: string, initiator: 'frontend' | 'backend' | 'both' = 'backen
 		input: z.null(),
 		output: z.void(),
 		async: true as const,
-		description: method,
+		description: method
 	}) as const;
 
 const lc = (method: string) =>
@@ -57,7 +57,7 @@ const lc = (method: string) =>
 		input: z.null(),
 		output: z.null(),
 		async: false as const,
-		description: method,
+		description: method
 	}) as const;
 
 describe('ActionRegistry', () => {
@@ -121,7 +121,7 @@ describe('ActionRegistry', () => {
 			rr('be_initiates', 'backend'), // frontend handles
 			rr('both_sides', 'both'), // both sides handle
 			rn('notif', 'backend'), // not request_response → not in either
-			lc('local'), // not request_response → not in either
+			lc('local') // not request_response → not in either
 		];
 		const registry = new ActionRegistry(specs);
 
@@ -152,13 +152,13 @@ describe('ActionRegistry', () => {
 			rr(
 				'completion_create',
 				'frontend',
-				{account: 'required', actor: 'none'},
-				'completion_progress',
+				{ account: 'required', actor: 'none' },
+				'completion_progress'
 			),
 			rn('completion_progress', 'backend'), // streams target — excluded
 			rn('filer_change', 'backend'), // not a streams target — included
 			rn('terminal_data', 'backend'), // not a streams target — included
-			rn('user_typing', 'frontend'), // initiator = frontend → excluded
+			rn('user_typing', 'frontend') // initiator = frontend → excluded
 		];
 		const registry = new ActionRegistry(specs);
 
@@ -181,7 +181,7 @@ describe('ActionRegistry', () => {
 			// intentional, not a quiet regression.
 			assert.deepEqual(
 				registry.backend_initiated_methods.sort(),
-				registry.broadcast_methods.sort(),
+				registry.broadcast_methods.sort()
 			);
 		});
 	});
@@ -191,7 +191,7 @@ describe('ActionRegistry', () => {
 			rr('fe_only', 'frontend'),
 			rr('be_only', 'backend'),
 			rr('both_sides', 'both'),
-			rn('notif_be', 'backend'),
+			rn('notif_be', 'backend')
 		];
 		const registry = new ActionRegistry(specs);
 
@@ -221,11 +221,11 @@ describe('ActionRegistry', () => {
 
 	describe('auth filtering', () => {
 		const specs = [
-			rr('pub1', 'frontend', {account: 'none', actor: 'none'}),
-			rr('pub2', 'frontend', {account: 'none', actor: 'none'}),
-			rr('auth1', 'frontend', {account: 'required', actor: 'none'}),
+			rr('pub1', 'frontend', { account: 'none', actor: 'none' }),
+			rr('pub2', 'frontend', { account: 'none', actor: 'none' }),
+			rr('auth1', 'frontend', { account: 'required', actor: 'none' }),
 			rn('notif'), // auth: null
-			lc('local'), // auth: null
+			lc('local') // auth: null
 		];
 		const registry = new ActionRegistry(specs);
 
@@ -262,50 +262,50 @@ describe('ActionRegistry', () => {
 		test('request_response_methods mirrors request_response_specs methods', () => {
 			assert.deepEqual(
 				registry.request_response_methods,
-				registry.request_response_specs.map((s) => s.method),
+				registry.request_response_specs.map((s) => s.method)
 			);
 		});
 
 		test('remote_notification_methods mirrors remote_notification_specs methods', () => {
 			assert.deepEqual(
 				registry.remote_notification_methods,
-				registry.remote_notification_specs.map((s) => s.method),
+				registry.remote_notification_specs.map((s) => s.method)
 			);
 		});
 
 		test('local_call_methods mirrors local_call_specs methods', () => {
 			assert.deepEqual(
 				registry.local_call_methods,
-				registry.local_call_specs.map((s) => s.method),
+				registry.local_call_specs.map((s) => s.method)
 			);
 		});
 
 		test('public_methods mirrors public_specs methods', () => {
 			const r2 = new ActionRegistry([
-				rr('p', 'frontend', {account: 'none', actor: 'none'}),
-				rr('q', 'frontend', {account: 'required', actor: 'none'}),
+				rr('p', 'frontend', { account: 'none', actor: 'none' }),
+				rr('q', 'frontend', { account: 'required', actor: 'none' })
 			]);
 			assert.deepEqual(
 				r2.public_methods,
-				r2.public_specs.map((s) => s.method),
+				r2.public_specs.map((s) => s.method)
 			);
 		});
 
 		test('authenticated_methods mirrors authenticated_specs methods', () => {
 			const r2 = new ActionRegistry([
-				rr('p', 'frontend', {account: 'none', actor: 'none'}),
-				rr('q', 'frontend', {account: 'required', actor: 'none'}),
+				rr('p', 'frontend', { account: 'none', actor: 'none' }),
+				rr('q', 'frontend', { account: 'required', actor: 'none' })
 			]);
 			assert.deepEqual(
 				r2.authenticated_methods,
-				r2.authenticated_specs.map((s) => s.method),
+				r2.authenticated_specs.map((s) => s.method)
 			);
 		});
 
 		test('methods_relevant_to_backend mirrors specs_relevant_to_backend methods', () => {
 			assert.deepEqual(
 				registry.methods_relevant_to_backend,
-				registry.specs_relevant_to_backend.map((s) => s.method),
+				registry.specs_relevant_to_backend.map((s) => s.method)
 			);
 		});
 

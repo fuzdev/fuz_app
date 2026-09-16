@@ -18,14 +18,14 @@
  * @module
  */
 
-import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.ts';
+import { Logger, type Logger as LoggerType } from '@fuzdev/fuz_util/log.ts';
 
-import {create_jsonrpc_notification, to_jsonrpc_params} from '../http/jsonrpc_helpers.ts';
-import type {ActionDispatcher} from './action_dispatcher.ts';
-import type {ActionSpecUnion} from './action_spec.ts';
+import { create_jsonrpc_notification, to_jsonrpc_params } from '../http/jsonrpc_helpers.ts';
+import type { ActionDispatcher } from './action_dispatcher.ts';
+import type { ActionSpecUnion } from './action_spec.ts';
 import {
 	is_filterable_broadcast_transport,
-	type ConnectionIdentity,
+	type ConnectionIdentity
 } from './transports_ws_backend.ts';
 
 /**
@@ -40,7 +40,7 @@ import {
 export type ShouldDeliverFn = (
 	connection: ConnectionIdentity,
 	method: string,
-	input: unknown,
+	input: unknown
 ) => boolean;
 
 /** Options for `create_broadcast_api`. */
@@ -109,15 +109,15 @@ export type BroadcastApi = Record<string, (input: never) => Promise<void>>;
  * if the consumer already generates per-method type maps.
  */
 export const create_broadcast_api = <TApi extends object>(
-	options: CreateBroadcastApiOptions,
+	options: CreateBroadcastApiOptions
 ): TApi => {
-	const {peer, specs, should_deliver} = options;
+	const { peer, specs, should_deliver } = options;
 	const log = options.log === undefined ? new Logger('[broadcast]') : options.log;
 
 	const api: Record<string, (input: unknown) => Promise<void>> = {};
 
 	for (const spec of specs) {
-		const {method} = spec;
+		const { method } = spec;
 		api[method] = async (input: unknown): Promise<void> => {
 			const parsed = spec.input.safeParse(input);
 			if (!parsed.success) {
@@ -143,12 +143,12 @@ export const create_broadcast_api = <TApi extends object>(
 						log?.error(
 							`[${method}] should_deliver set but transport ${
 								transport.transport_name
-							} does not support per-connection filtering`,
+							} does not support per-connection filtering`
 						);
 						return;
 					}
 					transport.broadcast_filtered(notification, (identity) =>
-						should_deliver(identity, method, parsed.data),
+						should_deliver(identity, method, parsed.data)
 					);
 					return;
 				}

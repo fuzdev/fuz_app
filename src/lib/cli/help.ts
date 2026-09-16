@@ -8,14 +8,14 @@
  * @module
  */
 
-import type {z} from 'zod';
+import type { z } from 'zod';
 import {
 	zod_to_schema_properties,
 	zod_format_value,
-	type ZodSchemaProperty,
+	type ZodSchemaProperty
 } from '@fuzdev/fuz_util/zod.ts';
 
-import {colors} from './util.ts';
+import { colors } from './util.ts';
 
 /**
  * Command metadata for help generation.
@@ -108,12 +108,12 @@ export const format_arg_name = (prop: ZodSchemaProperty): string => {
  * @returns help generator with `generate_main_help`, `generate_command_help`, and `get_help_text`
  */
 export const create_help = <TCategory extends string>(
-	options: HelpOptions<TCategory>,
+	options: HelpOptions<TCategory>
 ): HelpGenerator => {
 	const use_colors = options.use_colors !== false;
 	const c = use_colors
 		? colors
-		: {green: '', yellow: '', blue: '', red: '', cyan: '', dim: '', bold: '', reset: ''};
+		: { green: '', yellow: '', blue: '', red: '', cyan: '', dim: '', bold: '', reset: '' };
 
 	const generate_global_options = (): Array<string> => {
 		const properties = zod_to_schema_properties(options.global_args_schema);
@@ -178,9 +178,9 @@ export const create_help = <TCategory extends string>(
 		lines.push('');
 
 		// categories with commands
-		for (const {key, title} of options.categories) {
+		for (const { key, title } of options.categories) {
 			const cat_commands = Object.entries(options.commands).filter(
-				([_, meta]) => meta.category === key,
+				([_, meta]) => meta.category === key
 			);
 			if (cat_commands.length === 0) continue;
 
@@ -224,5 +224,5 @@ export const create_help = <TCategory extends string>(
 		return generate_main_help();
 	};
 
-	return {generate_main_help, generate_command_help, get_help_text};
+	return { generate_main_help, generate_command_help, get_help_text };
 };

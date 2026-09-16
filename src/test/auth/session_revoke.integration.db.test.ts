@@ -7,38 +7,38 @@
  * @module
  */
 
-import {assert, describe, test} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
-import {Hono} from 'hono';
+import { assert, describe, test } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { Hono } from 'hono';
 
-import {query_create_account_with_actor} from '$lib/auth/account_queries.ts';
+import { query_create_account_with_actor } from '$lib/auth/account_queries.ts';
 import {
 	query_create_session,
 	query_session_revoke_by_hash_unscoped,
 	query_session_revoke_all_for_account,
 	generate_session_token,
 	hash_session_token,
-	AUTH_SESSION_LIFETIME_MS,
+	AUTH_SESSION_LIFETIME_MS
 } from '$lib/auth/session_queries.ts';
-import {query_create_role_grant} from '$lib/auth/role_grant_queries.ts';
-import {create_request_context_middleware, require_auth} from '$lib/auth/request_context.ts';
+import { query_create_role_grant } from '$lib/auth/role_grant_queries.ts';
+import { create_request_context_middleware, require_auth } from '$lib/auth/request_context.ts';
 
-import {ERROR_AUTHENTICATION_REQUIRED} from '$lib/http/error_schemas.ts';
-import {describe_db} from '../db_fixture.ts';
+import { ERROR_AUTHENTICATION_REQUIRED } from '$lib/http/error_schemas.ts';
+import { describe_db } from '../db_fixture.ts';
 
-const log = new Logger('test', {level: 'off'});
+const log = new Logger('test', { level: 'off' });
 
 describe_db('session revoke blocks access', (get_db) => {
 	test('valid session token gives access; after revoke the same token is rejected', async () => {
 		const db = get_db();
-		const deps = {db};
+		const deps = { db };
 
 		// set up account, actor, role_grant, and session
-		const {account, actor} = await query_create_account_with_actor(deps, {
+		const { account, actor } = await query_create_account_with_actor(deps, {
 			username: 'alice',
-			password_hash: 'hash',
+			password_hash: 'hash'
 		});
-		await query_create_role_grant(deps, {actor_id: actor.id, role: 'admin', granted_by: null});
+		await query_create_role_grant(deps, { actor_id: actor.id, role: 'admin', granted_by: null });
 
 		const token = generate_session_token();
 		const token_hash = hash_session_token(token);
@@ -54,7 +54,7 @@ describe_db('session revoke blocks access', (get_db) => {
 			});
 			app.use('/*', create_request_context_middleware(deps, log));
 			app.use('/*', require_auth);
-			app.get('/protected', (c) => c.json({ok: true}));
+			app.get('/protected', (c) => c.json({ ok: true }));
 			return app;
 		};
 
@@ -76,13 +76,13 @@ describe_db('session revoke blocks access', (get_db) => {
 	describe('multi-session isolation', () => {
 		test('revoking one session does not affect another session for the same account', async () => {
 			const db = get_db();
-			const deps = {db};
+			const deps = { db };
 
-			const {account, actor} = await query_create_account_with_actor(deps, {
+			const { account, actor } = await query_create_account_with_actor(deps, {
 				username: 'bob',
-				password_hash: 'hash',
+				password_hash: 'hash'
 			});
-			await query_create_role_grant(deps, {actor_id: actor.id, role: 'admin', granted_by: null});
+			await query_create_role_grant(deps, { actor_id: actor.id, role: 'admin', granted_by: null });
 
 			// Create two sessions for the same account
 			const token_a = generate_session_token();
@@ -102,7 +102,7 @@ describe_db('session revoke blocks access', (get_db) => {
 				});
 				app.use('/*', create_request_context_middleware(deps, log));
 				app.use('/*', require_auth);
-				app.get('/protected', (c) => c.json({ok: true}));
+				app.get('/protected', (c) => c.json({ ok: true }));
 				return app;
 			};
 
@@ -128,23 +128,23 @@ describe_db('session revoke blocks access', (get_db) => {
 	describe('revoke-all for account', () => {
 		test('revoking all sessions for an account rejects every session', async () => {
 			const db = get_db();
-			const deps = {db};
+			const deps = { db };
 
-			const {account, actor} = await query_create_account_with_actor(deps, {
+			const { account, actor } = await query_create_account_with_actor(deps, {
 				username: 'carol',
-				password_hash: 'hash',
+				password_hash: 'hash'
 			});
-			await query_create_role_grant(deps, {actor_id: actor.id, role: 'admin', granted_by: null});
+			await query_create_role_grant(deps, { actor_id: actor.id, role: 'admin', granted_by: null });
 
 			const expires = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-			const tokens: Array<{raw: string; hash: string}> = [];
+			const tokens: Array<{ raw: string; hash: string }> = [];
 
 			// Create three sessions
 			for (let i = 0; i < 3; i++) {
 				const raw = generate_session_token();
 				const hash = hash_session_token(raw);
 				await query_create_session(deps, hash, account.id, expires);
-				tokens.push({raw, hash});
+				tokens.push({ raw, hash });
 			}
 
 			const create_app = (session_token: string | null): Hono => {
@@ -155,7 +155,7 @@ describe_db('session revoke blocks access', (get_db) => {
 				});
 				app.use('/*', create_request_context_middleware(deps, log));
 				app.use('/*', require_auth);
-				app.get('/protected', (c) => c.json({ok: true}));
+				app.get('/protected', (c) => c.json({ ok: true }));
 				return app;
 			};
 

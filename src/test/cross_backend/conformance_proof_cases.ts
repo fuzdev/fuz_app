@@ -20,32 +20,32 @@
 
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
-	ERROR_INSUFFICIENT_PERMISSIONS,
+	ERROR_INSUFFICIENT_PERMISSIONS
 } from '$lib/http/error_schemas.ts';
-import type {ConformanceCase} from '$lib/testing/cross_backend/conformance_case.ts';
+import type { ConformanceCase } from '$lib/testing/cross_backend/conformance_case.ts';
 
 export const conformance_proof_cases: ReadonlyArray<ConformanceCase> = [
 	{
 		name: 'anonymous → admin_account_list → 401',
-		request: {method: 'admin_account_list', as: 'anonymous'},
+		request: { method: 'admin_account_list', as: 'anonymous' },
 		// The pre-validation 401 carries `data.reason = authentication_required`
 		// on both spines, so the runner asserts the reason, not just the status.
-		expect: {status: 401, error_reason: ERROR_AUTHENTICATION_REQUIRED},
-		note: 'protected RPC method rejects an unauthenticated caller',
+		expect: { status: 401, error_reason: ERROR_AUTHENTICATION_REQUIRED },
+		note: 'protected RPC method rejects an unauthenticated caller'
 	},
 	{
 		name: 'fresh non-admin → admin_account_list → 403',
-		request: {method: 'admin_account_list', as: 'fresh_non_admin'},
-		expect: {status: 403, error_reason: ERROR_INSUFFICIENT_PERMISSIONS},
-		note: 'admin-gated RPC method rejects an authenticated non-admin',
+		request: { method: 'admin_account_list', as: 'fresh_non_admin' },
+		expect: { status: 403, error_reason: ERROR_INSUFFICIENT_PERMISSIONS },
+		note: 'admin-gated RPC method rejects an authenticated non-admin'
 	},
 	{
 		name: 'keeper → admin_account_list → 200',
-		request: {method: 'admin_account_list', as: 'keeper'},
+		request: { method: 'admin_account_list', as: 'keeper' },
 		// The `headers` expectation exercises the runner's `expect.headers` axis
 		// (the absent branch); the always-on no-fingerprint floor runs on every
 		// case regardless. Absent is cross-impl-safe — every spine omits these.
-		expect: {status: 200, headers: {'x-powered-by': null}},
-		note: 'admin holder lists accounts; result validates against admin_account_list output; expect.headers pins X-Powered-By absent',
-	},
+		expect: { status: 200, headers: { 'x-powered-by': null } },
+		note: 'admin holder lists accounts; result validates against admin_account_list output; expect.headers pins X-Powered-By absent'
+	}
 ];

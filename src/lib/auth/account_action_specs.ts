@@ -8,12 +8,12 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Blake3Hash} from '@fuzdev/fuz_util/hash_blake3.ts';
+import { z } from 'zod';
+import { Blake3Hash } from '@fuzdev/fuz_util/hash_blake3.ts';
 
-import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
-import {AuthSessionJson, ClientApiTokenJson, SessionAccountJson} from './account_schema.ts';
-import {ApiTokenId} from './api_token.ts';
+import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
+import { AuthSessionJson, ClientApiTokenJson, SessionAccountJson } from './account_schema.ts';
+import { ApiTokenId } from './api_token.ts';
 
 // -- Input/output schemas ---------------------------------------------------
 
@@ -27,20 +27,20 @@ export type SessionListInput = z.infer<typeof SessionListInput>;
 
 /** Output for `account_session_list`. */
 export const SessionListOutput = z.strictObject({
-	sessions: z.array(AuthSessionJson),
+	sessions: z.array(AuthSessionJson)
 });
 export type SessionListOutput = z.infer<typeof SessionListOutput>;
 
 /** Input for `account_session_revoke`. `session_id` is the blake3 hash. */
 export const SessionRevokeInput = z.strictObject({
-	session_id: Blake3Hash.meta({description: 'Session id (blake3 hash) to revoke.'}),
+	session_id: Blake3Hash.meta({ description: 'Session id (blake3 hash) to revoke.' })
 });
 export type SessionRevokeInput = z.infer<typeof SessionRevokeInput>;
 
 /** Output for `account_session_revoke`. `revoked` is `false` for IDOR misses. */
 export const SessionRevokeOutput = z.strictObject({
 	ok: z.literal(true),
-	revoked: z.boolean(),
+	revoked: z.boolean()
 });
 export type SessionRevokeOutput = z.infer<typeof SessionRevokeOutput>;
 
@@ -51,7 +51,7 @@ export type SessionRevokeAllInput = z.infer<typeof SessionRevokeAllInput>;
 /** Output for `account_session_revoke_all`. */
 export const SessionRevokeAllOutput = z.strictObject({
 	ok: z.literal(true),
-	count: z.number(),
+	count: z.number()
 });
 export type SessionRevokeAllOutput = z.infer<typeof SessionRevokeAllOutput>;
 
@@ -61,7 +61,7 @@ export const TokenCreateInput = z
 		name: z
 			.string()
 			.default('CLI token')
-			.meta({description: 'Human-friendly label; shown in the token list.'}),
+			.meta({ description: 'Human-friendly label; shown in the token list.' })
 	})
 	.prefault({});
 export type TokenCreateInput = z.infer<typeof TokenCreateInput>;
@@ -69,9 +69,9 @@ export type TokenCreateInput = z.infer<typeof TokenCreateInput>;
 /** Output for `account_token_create`. `token` is returned exactly once. */
 export const TokenCreateOutput = z.strictObject({
 	ok: z.literal(true),
-	token: z.string().meta({description: 'Raw token — shown once, store securely.'}),
+	token: z.string().meta({ description: 'Raw token — shown once, store securely.' }),
 	id: ApiTokenId,
-	name: z.string(),
+	name: z.string()
 });
 export type TokenCreateOutput = z.infer<typeof TokenCreateOutput>;
 
@@ -81,20 +81,20 @@ export type TokenListInput = z.infer<typeof TokenListInput>;
 
 /** Output for `account_token_list`. Hashes are excluded. */
 export const TokenListOutput = z.strictObject({
-	tokens: z.array(ClientApiTokenJson),
+	tokens: z.array(ClientApiTokenJson)
 });
 export type TokenListOutput = z.infer<typeof TokenListOutput>;
 
 /** Input for `account_token_revoke`. */
 export const TokenRevokeInput = z.strictObject({
-	token_id: ApiTokenId.meta({description: 'Public API token id (e.g. `tok_<12 chars>`).'}),
+	token_id: ApiTokenId.meta({ description: 'Public API token id (e.g. `tok_<12 chars>`).' })
 });
 export type TokenRevokeInput = z.infer<typeof TokenRevokeInput>;
 
 /** Output for `account_token_revoke`. `revoked` is `false` for IDOR misses. */
 export const TokenRevokeOutput = z.strictObject({
 	ok: z.literal(true),
-	revoked: z.boolean(),
+	revoked: z.boolean()
 });
 export type TokenRevokeOutput = z.infer<typeof TokenRevokeOutput>;
 
@@ -104,24 +104,24 @@ export const account_verify_action_spec = {
 	method: 'account_verify',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none'},
+	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
 	input: VerifyInput,
 	output: SessionAccountJson,
 	async: true,
-	description: 'Verify the current session and echo the caller account.',
+	description: 'Verify the current session and echo the caller account.'
 } satisfies RequestResponseActionSpec;
 
 export const account_session_list_action_spec = {
 	method: 'account_session_list',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none'},
+	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
 	input: SessionListInput,
 	output: SessionListOutput,
 	async: true,
-	description: 'List auth sessions for the current account.',
+	description: 'List auth sessions for the current account.'
 } satisfies RequestResponseActionSpec;
 
 // `credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.
@@ -131,12 +131,12 @@ export const account_session_revoke_action_spec = {
 	method: 'account_session_revoke',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none', credential_types: ['session']},
+	auth: { account: 'required', actor: 'none', credential_types: ['session'] },
 	side_effects: true,
 	input: SessionRevokeInput,
 	output: SessionRevokeOutput,
 	async: true,
-	description: 'Revoke a single auth session for the current account (IDOR-guarded).',
+	description: 'Revoke a single auth session for the current account (IDOR-guarded).'
 } satisfies RequestResponseActionSpec;
 
 // `credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.
@@ -144,12 +144,12 @@ export const account_session_revoke_all_action_spec = {
 	method: 'account_session_revoke_all',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none', credential_types: ['session']},
+	auth: { account: 'required', actor: 'none', credential_types: ['session'] },
 	side_effects: true,
 	input: SessionRevokeAllInput,
 	output: SessionRevokeAllOutput,
 	async: true,
-	description: 'Revoke every auth session for the current account.',
+	description: 'Revoke every auth session for the current account.'
 } satisfies RequestResponseActionSpec;
 
 /**
@@ -166,25 +166,25 @@ export const account_token_create_action_spec = {
 	method: 'account_token_create',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none', credential_types: ['session']},
+	auth: { account: 'required', actor: 'none', credential_types: ['session'] },
 	side_effects: true,
 	input: TokenCreateInput,
 	output: TokenCreateOutput,
 	async: true,
 	description: 'Create an API token for the current account. Raw token is returned once.',
-	rate_limit: 'account',
+	rate_limit: 'account'
 } satisfies RequestResponseActionSpec;
 
 export const account_token_list_action_spec = {
 	method: 'account_token_list',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none'},
+	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
 	input: TokenListInput,
 	output: TokenListOutput,
 	async: true,
-	description: 'List API tokens for the current account. Hashes are never returned.',
+	description: 'List API tokens for the current account. Hashes are never returned.'
 } satisfies RequestResponseActionSpec;
 
 // `credential_types: ['session']` — see `docs/security.md` §Credential-channel gating.
@@ -192,12 +192,12 @@ export const account_token_revoke_action_spec = {
 	method: 'account_token_revoke',
 	kind: 'request_response',
 	initiator: 'frontend',
-	auth: {account: 'required', actor: 'none', credential_types: ['session']},
+	auth: { account: 'required', actor: 'none', credential_types: ['session'] },
 	side_effects: true,
 	input: TokenRevokeInput,
 	output: TokenRevokeOutput,
 	async: true,
-	description: 'Revoke an API token for the current account (IDOR-guarded).',
+	description: 'Revoke an API token for the current account (IDOR-guarded).'
 } satisfies RequestResponseActionSpec;
 
 /**
@@ -212,5 +212,5 @@ export const all_account_action_specs: Array<RequestResponseActionSpec> = [
 	account_session_revoke_all_action_spec,
 	account_token_create_action_spec,
 	account_token_list_action_spec,
-	account_token_revoke_action_spec,
+	account_token_revoke_action_spec
 ];

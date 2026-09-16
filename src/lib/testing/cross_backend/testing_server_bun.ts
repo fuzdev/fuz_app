@@ -24,10 +24,10 @@ import '../assert_dev_env.ts';
  */
 
 import process from 'node:process';
-import {getConnInfo, upgradeWebSocket, websocket} from 'hono/bun';
+import { getConnInfo, upgradeWebSocket, websocket } from 'hono/bun';
 
-import {create_node_runtime} from '../../runtime/node.ts';
-import type {ServeHandle, TestingServerAdapter} from './testing_server_core.ts';
+import { create_node_runtime } from '../../runtime/node.ts';
+import type { ServeHandle, TestingServerAdapter } from './testing_server_core.ts';
 
 // Minimal Bun API surface this adapter touches. This module is only ever
 // imported by a Bun-run test binary; the declaration keeps it typecheckable
@@ -39,7 +39,7 @@ declare const Bun: {
 		port: number;
 		hostname: string;
 		websocket?: unknown;
-	}) => {stop: (close_active_connections?: boolean) => Promise<void> | void};
+	}) => { stop: (close_active_connections?: boolean) => Promise<void> | void };
 };
 
 /** Build the Bun {@link TestingServerAdapter}. */
@@ -50,15 +50,15 @@ export const create_bun_testing_adapter = (): TestingServerAdapter => ({
 	// Bun's WS upgrade is module-level and stateless (like Deno) — no
 	// post-serve attach. The `websocket` handler is threaded into `serve`
 	// below, where `Bun.serve` wants it.
-	prepare_websocket: () => ({upgrade_websocket: upgradeWebSocket}),
-	serve: ({fetch, port, hostname}) => {
+	prepare_websocket: () => ({ upgrade_websocket: upgradeWebSocket }),
+	serve: ({ fetch, port, hostname }) => {
 		const server = Bun.serve({
 			fetch: fetch as (request: Request, server: unknown) => Response | Promise<Response>,
 			port,
 			hostname,
 			// Harmless for HTTP-only binaries — Bun only invokes it for sockets
 			// upgraded via `upgradeWebSocket`.
-			websocket,
+			websocket
 		});
 		const handle: ServeHandle = {
 			// Bun bug (1.3.14): after a *server-initiated* WebSocket close
@@ -91,7 +91,7 @@ export const create_bun_testing_adapter = (): TestingServerAdapter => ({
 				void Promise.resolve(server.stop(true)).catch(() => {});
 				return Promise.resolve();
 			},
-			native: server,
+			native: server
 		};
 		return handle;
 	},
@@ -100,5 +100,5 @@ export const create_bun_testing_adapter = (): TestingServerAdapter => ({
 		process.on('SIGINT', () => void handler());
 		process.on('SIGTERM', () => void handler());
 	},
-	exit: (code) => process.exit(code),
+	exit: (code) => process.exit(code)
 });

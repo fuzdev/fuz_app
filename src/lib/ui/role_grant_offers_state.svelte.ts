@@ -25,17 +25,17 @@
  * @module
  */
 
-import {create_context} from '@fuzdev/fuz_ui/context_helpers.ts';
+import { create_context } from '@fuzdev/fuz_ui/context_helpers.ts';
 
-import {AsyncSlot} from './async_slot.svelte.ts';
-import type {RoleGrantOfferJson} from '../auth/role_grant_offer_schema.ts';
+import { AsyncSlot } from './async_slot.svelte.ts';
+import type { RoleGrantOfferJson } from '../auth/role_grant_offer_schema.ts';
 import {
 	ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_RETRACTED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
-	ROLE_GRANT_REVOKE_NOTIFICATION_METHOD,
+	ROLE_GRANT_REVOKE_NOTIFICATION_METHOD
 } from '../auth/role_grant_offer_notifications.ts';
 
 /**
@@ -52,25 +52,25 @@ export const role_grant_offers_state_context = create_context<RoleGrantOffersSta
  * inject plain-function stubs.
  */
 export interface RoleGrantOffersRpc {
-	list: () => Promise<{offers: Array<RoleGrantOfferJson>}>;
+	list: () => Promise<{ offers: Array<RoleGrantOfferJson> }>;
 	history: (options?: {
 		limit?: number;
 		offset?: number;
-	}) => Promise<{offers: Array<RoleGrantOfferJson>}>;
+	}) => Promise<{ offers: Array<RoleGrantOfferJson> }>;
 	create: (params: {
 		to_account_id: string;
 		to_actor_id?: string | null;
 		role: string;
 		scope_id?: string | null;
 		message?: string | null;
-	}) => Promise<{offer: RoleGrantOfferJson}>;
+	}) => Promise<{ offer: RoleGrantOfferJson }>;
 	accept: (offer_id: string) => Promise<{
 		role_grant_id: string;
 		offer: RoleGrantOfferJson;
 		superseded_offer_ids: Array<string>;
 	}>;
-	decline: (offer_id: string, reason?: string | null) => Promise<{ok: true}>;
-	retract: (offer_id: string) => Promise<{ok: true}>;
+	decline: (offer_id: string, reason?: string | null) => Promise<{ ok: true }>;
+	retract: (offer_id: string) => Promise<{ ok: true }>;
 }
 
 /** Narrow WS notification envelope — method + params, matching `JsonrpcNotification`. */
@@ -81,7 +81,7 @@ export interface RoleGrantOfferNotification {
 
 /** Subscription primitive — consumer wires their WS receiver; returns a disposer. */
 export type RoleGrantOfferSubscribe = (
-	handler: (notification: RoleGrantOfferNotification) => void,
+	handler: (notification: RoleGrantOfferNotification) => void
 ) => () => void;
 
 export interface RoleGrantOffersStateOptions {
@@ -165,15 +165,15 @@ export class RoleGrantOffersState {
 	/** Seed the cache with the recipient-side pending inbox. */
 	async fetch(): Promise<void> {
 		await this.list.run(async () => {
-			const {offers} = await this.#rpc.list();
+			const { offers } = await this.#rpc.list();
 			this.#merge_offers(offers);
 		});
 	}
 
 	/** Seed both-directions history (includes terminal rows). */
-	async fetch_history(options?: {limit?: number; offset?: number}): Promise<void> {
+	async fetch_history(options?: { limit?: number; offset?: number }): Promise<void> {
 		await this.list_history.run(async () => {
-			const {offers} = await this.#rpc.history(options);
+			const { offers } = await this.#rpc.history(options);
 			this.#merge_offers(offers);
 		});
 	}
@@ -193,7 +193,7 @@ export class RoleGrantOffersState {
 		message?: string | null;
 	}): Promise<RoleGrantOfferJson | undefined> {
 		return this.create.run(async () => {
-			const {offer} = await this.#rpc.create(params);
+			const { offer } = await this.#rpc.create(params);
 			this.#merge_offers([offer]);
 			return offer;
 		});
@@ -253,7 +253,7 @@ export class RoleGrantOffersState {
 			case ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD: {
 				const params = notification.params;
 				if (!params || typeof params !== 'object' || !('offer' in params)) return;
-				const offer = (params as {offer: unknown}).offer;
+				const offer = (params as { offer: unknown }).offer;
 				if (!is_role_grant_offer_like(offer)) return;
 				this.#merge_offers([offer]);
 				return;

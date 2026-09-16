@@ -5,28 +5,28 @@
  * @module
  */
 
-import {describe, test, assert, vi, afterEach} from 'vitest';
-import {wait} from '@fuzdev/fuz_util/async.ts';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { describe, test, assert, vi, afterEach } from 'vitest';
+import { wait } from '@fuzdev/fuz_util/async.ts';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {z} from 'zod';
+import { z } from 'zod';
 
-import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
+import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
 import {
 	get_audit_metadata_validation_failures,
 	get_audit_unknown_event_type_failures,
 	reset_audit_metadata_validation_failures,
-	reset_audit_unknown_event_type_failures,
+	reset_audit_unknown_event_type_failures
 } from '$lib/auth/audit_log_queries.ts';
 import {
 	create_audit_log_config,
 	type AuditLogEvent,
-	type AuditLogInput,
+	type AuditLogInput
 } from '$lib/auth/audit_log_schema.ts';
-import type {Db} from '$lib/db/db.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type { Db } from '$lib/db/db.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-const log = new Logger('test', {level: 'error'});
+const log = new Logger('test', { level: 'error' });
 const noop = (): void => {};
 
 afterEach(() => {
@@ -36,7 +36,7 @@ afterEach(() => {
 const create_input = (): AuditLogInput => ({
 	event_type: 'login',
 	outcome: 'success',
-	account_id: 'acct-1' as Uuid,
+	account_id: 'acct-1' as Uuid
 });
 
 const FAKE_EVENT: AuditLogEvent = {
@@ -50,21 +50,21 @@ const FAKE_EVENT: AuditLogEvent = {
 	target_actor_id: null,
 	ip: null,
 	created_at: '2025-01-01T00:00:00.000Z',
-	metadata: null,
+	metadata: null
 };
 
 /** Stub `Db` whose `query` is a configurable mock. */
 const create_mock_db = (mock_query?: ReturnType<typeof vi.fn>): Db => {
 	const query = mock_query ?? vi.fn(() => Promise.resolve([FAKE_EVENT]));
-	return {query, query_one: vi.fn()} as any;
+	return { query, query_one: vi.fn() } as any;
 };
 
-const create_ctx = (): {pending_effects: Array<Promise<void>>} => ({pending_effects: []});
+const create_ctx = (): { pending_effects: Array<Promise<void>> } => ({ pending_effects: [] });
 
 describe('create_audit_emitter — emit', () => {
 	test('does not throw when query rejects', async () => {
 		const db = create_mock_db(vi.fn(() => Promise.reject(new Error('DB connection lost'))));
-		const audit = create_audit_emitter({db, log, on_audit_event: noop});
+		const audit = create_audit_emitter({ db, log, on_audit_event: noop });
 		const ctx = create_ctx();
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -84,7 +84,7 @@ describe('create_audit_emitter — emit', () => {
 		});
 		const mock_query = vi.fn(() => query_promise);
 		const db = create_mock_db(mock_query);
-		const audit = create_audit_emitter({db, log, on_audit_event: noop});
+		const audit = create_audit_emitter({ db, log, on_audit_event: noop });
 		const ctx = create_ctx();
 
 		audit.emit(ctx, create_input());
@@ -97,7 +97,7 @@ describe('create_audit_emitter — emit', () => {
 	test('forwards input to query_audit_log()', async () => {
 		const mock_query = vi.fn(() => Promise.resolve([]));
 		const db = create_mock_db(mock_query);
-		const audit = create_audit_emitter({db, log, on_audit_event: noop});
+		const audit = create_audit_emitter({ db, log, on_audit_event: noop });
 		const ctx = create_ctx();
 		const input = create_input();
 
@@ -115,7 +115,7 @@ describe('create_audit_emitter — emit', () => {
 	});
 
 	test('successful query produces no console.error', async () => {
-		const audit = create_audit_emitter({db: create_mock_db(), log, on_audit_event: noop});
+		const audit = create_audit_emitter({ db: create_mock_db(), log, on_audit_event: noop });
 		const ctx = create_ctx();
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -127,7 +127,7 @@ describe('create_audit_emitter — emit', () => {
 	});
 
 	test('pushes promise to pending_effects', () => {
-		const audit = create_audit_emitter({db: create_mock_db(), log, on_audit_event: noop});
+		const audit = create_audit_emitter({ db: create_mock_db(), log, on_audit_event: noop });
 		const ctx = create_ctx();
 
 		audit.emit(ctx, create_input());
@@ -142,7 +142,7 @@ describe('create_audit_emitter — emit', () => {
 			log,
 			on_audit_event: (event) => {
 				received.push(event);
-			},
+			}
 		});
 		const ctx = create_ctx();
 
@@ -162,7 +162,7 @@ describe('create_audit_emitter — emit', () => {
 			log,
 			on_audit_event: (event) => {
 				received.push(event);
-			},
+			}
 		});
 		const ctx = create_ctx();
 		vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -180,7 +180,7 @@ describe('create_audit_emitter — emit', () => {
 			log,
 			on_audit_event: () => {
 				throw new Error('callback boom');
-			},
+			}
 		});
 		const ctx = create_ctx();
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -195,7 +195,7 @@ describe('create_audit_emitter — emit', () => {
 		// error was logged with the correct message (not "write failed")
 		const error_calls = spy_error.mock.calls;
 		const has_callback_error = error_calls.some((call) =>
-			call.some((arg: unknown) => String(arg).includes('listener failed')),
+			call.some((arg: unknown) => String(arg).includes('listener failed'))
 		);
 		assert.ok(has_callback_error, 'should log listener error, not write error');
 	});
@@ -206,7 +206,7 @@ describe('create_audit_emitter — emit', () => {
 			log,
 			on_audit_event: () => {
 				throw new Error('callback boom');
-			},
+			}
 		});
 		const ctx = create_ctx();
 		const spy_error = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -218,7 +218,7 @@ describe('create_audit_emitter — emit', () => {
 		const all_args = spy_error.mock.calls.flat().map((arg: unknown) => String(arg));
 		assert.ok(
 			!all_args.some((msg) => msg.includes('write failed')),
-			'should not say "write failed" when the callback failed',
+			'should not say "write failed" when the callback failed'
 		);
 	});
 
@@ -227,7 +227,7 @@ describe('create_audit_emitter — emit', () => {
 		reset_audit_metadata_validation_failures();
 		try {
 			vi.spyOn(console, 'error').mockImplementation(() => {});
-			const audit = create_audit_emitter({db: create_mock_db(), log, on_audit_event: noop});
+			const audit = create_audit_emitter({ db: create_mock_db(), log, on_audit_event: noop });
 			const ctx = create_ctx();
 
 			audit.emit(ctx, create_input());
@@ -245,12 +245,12 @@ describe('create_audit_emitter — emit', () => {
 		reset_audit_unknown_event_type_failures();
 		try {
 			vi.spyOn(console, 'error').mockImplementation(() => {});
-			const audit = create_audit_emitter({db: create_mock_db(), log, on_audit_event: noop});
+			const audit = create_audit_emitter({ db: create_mock_db(), log, on_audit_event: noop });
 			const ctx = create_ctx();
 
 			audit.emit(ctx, {
 				event_type: 'classroom_create',
-				metadata: {ok: true},
+				metadata: { ok: true }
 			} as AuditLogInput<string>);
 			await wait();
 
@@ -265,19 +265,19 @@ describe('create_audit_emitter — emit', () => {
 		try {
 			vi.spyOn(console, 'error').mockImplementation(() => {});
 			const audit_log_config = create_audit_log_config({
-				extra_events: {classroom_create: null},
+				extra_events: { classroom_create: null }
 			});
 			const audit = create_audit_emitter({
 				db: create_mock_db(),
 				log,
 				on_audit_event: noop,
-				audit_log_config,
+				audit_log_config
 			});
 			const ctx = create_ctx();
 
 			audit.emit(ctx, {
 				event_type: 'classroom_create',
-				metadata: {ok: true},
+				metadata: { ok: true }
 			} as AuditLogInput<string>);
 			await wait();
 
@@ -293,20 +293,20 @@ describe('create_audit_emitter — emit', () => {
 			vi.spyOn(console, 'error').mockImplementation(() => {});
 			const audit_log_config = create_audit_log_config({
 				extra_events: {
-					classroom_create: z.looseObject({classroom_id: z.string(), name: z.string()}),
-				},
+					classroom_create: z.looseObject({ classroom_id: z.string(), name: z.string() })
+				}
 			});
 			const audit = create_audit_emitter({
 				db: create_mock_db(),
 				log,
 				on_audit_event: noop,
-				audit_log_config,
+				audit_log_config
 			});
 			const ctx = create_ctx();
 
 			audit.emit(ctx, {
 				event_type: 'classroom_create',
-				metadata: {classroom_id: 42, name: 'Period 3'},
+				metadata: { classroom_id: 42, name: 'Period 3' }
 			} as AuditLogInput<string>);
 			await wait();
 
@@ -324,7 +324,7 @@ describe('create_audit_emitter — add_listener', () => {
 		const audit = create_audit_emitter({
 			db: create_mock_db(),
 			log,
-			on_audit_event: (event) => initial.push(event),
+			on_audit_event: (event) => initial.push(event)
 		});
 		audit.add_listener((event) => appended.push(event));
 		const ctx = create_ctx();
@@ -340,7 +340,7 @@ describe('create_audit_emitter — add_listener', () => {
 		const audit = create_audit_emitter({
 			db: create_mock_db(),
 			log,
-			on_audit_event: () => {},
+			on_audit_event: () => {}
 		});
 		assert.strictEqual(audit.listener_count(), 1);
 		audit.add_listener(() => {});
@@ -356,7 +356,7 @@ describe('create_audit_emitter — add_listener', () => {
 			log,
 			on_audit_event: () => {
 				throw new Error('first listener boom');
-			},
+			}
 		});
 		audit.add_listener((event) => reached.push(event));
 		const ctx = create_ctx();
@@ -375,7 +375,7 @@ describe('create_audit_emitter — notify', () => {
 		const audit = create_audit_emitter({
 			db: create_mock_db(),
 			log,
-			on_audit_event: (event) => a.push(event),
+			on_audit_event: (event) => a.push(event)
 		});
 		audit.add_listener((event) => b.push(event));
 
@@ -394,18 +394,18 @@ describe('create_audit_emitter — frozen shape', () => {
 	// loud TypeError. The listener list is closure-private, so `add_listener`
 	// keeps working post-build without exposing a mutable array.
 	test('returned object is frozen', () => {
-		const audit = create_audit_emitter({db: create_mock_db(), log});
+		const audit = create_audit_emitter({ db: create_mock_db(), log });
 		assert.strictEqual(Object.isFrozen(audit), true);
 	});
 
 	test('assignment to emit slot throws in strict mode', () => {
-		const audit = create_audit_emitter({db: create_mock_db(), log});
+		const audit = create_audit_emitter({ db: create_mock_db(), log });
 		// `Object.freeze` is a runtime guard — the `emit` slot's interface
 		// shape happens to be method-compatible with the replacement, so
 		// TypeScript wouldn't flag the write. The freeze still throws at
 		// runtime under strict mode (ESM modules are always strict).
 		assert.throws(() => {
-			(audit as unknown as {emit: () => void}).emit = () => undefined;
+			(audit as unknown as { emit: () => void }).emit = () => undefined;
 		}, TypeError);
 	});
 
@@ -413,7 +413,7 @@ describe('create_audit_emitter — frozen shape', () => {
 		// `create_app_server` relies on this — freezing the emitter must not
 		// block post-assembly listener registration or the production SSE /
 		// WS guard composition breaks at server assembly.
-		const audit = create_audit_emitter({db: create_mock_db(), log});
+		const audit = create_audit_emitter({ db: create_mock_db(), log });
 		const received: Array<AuditLogEvent> = [];
 		audit.add_listener((event) => received.push(event));
 		audit.notify(FAKE_EVENT);
@@ -425,7 +425,7 @@ describe('create_audit_emitter — frozen shape', () => {
 		// have the newcomer fire for the in-flight event — `notify` iterates a
 		// snapshot copy (converges with the Rust twin's cloned vec). The
 		// newcomer picks up on the next `notify`.
-		const audit = create_audit_emitter({db: create_mock_db(), log});
+		const audit = create_audit_emitter({ db: create_mock_db(), log });
 		const late: Array<AuditLogEvent> = [];
 		audit.add_listener(() => {
 			audit.add_listener((event) => late.push(event));
@@ -451,24 +451,24 @@ describe('create_audit_emitter — emit_role_grant_target', () => {
 	// it now so a future change to the lift logic surfaces here instead
 	// of inside an integration suite.
 	const create_auth = (): {
-		account: {id: Uuid};
-		actor: {id: Uuid};
+		account: { id: Uuid };
+		actor: { id: Uuid };
 	} => ({
-		account: {id: 'acct-rg' as Uuid},
-		actor: {id: 'actor-rg' as Uuid},
+		account: { id: 'acct-rg' as Uuid },
+		actor: { id: 'actor-rg' as Uuid }
 	});
 
 	test('delegates to inner emit_pool and pushes onto pending_effects', async () => {
 		const db = create_mock_db();
-		const audit = create_audit_emitter({db, log});
-		const ctx = {pending_effects: [] as Array<Promise<void>>, client_ip: '203.0.113.1'};
+		const audit = create_audit_emitter({ db, log });
+		const ctx = { pending_effects: [] as Array<Promise<void>>, client_ip: '203.0.113.1' };
 		const auth = create_auth();
 
 		audit.emit_role_grant_target(ctx, auth as never, {
 			event_type: 'role_grant_create',
 			target_account_id: 'tgt-acct' as Uuid,
 			target_actor_id: 'tgt-actor' as Uuid,
-			metadata: {role: 'admin', scope_id: null},
+			metadata: { role: 'admin', scope_id: null }
 		});
 
 		assert.strictEqual(ctx.pending_effects.length, 1);
@@ -489,17 +489,17 @@ describe('create_audit_emitter — emit_role_grant_target', () => {
 			emit_decorator: (inner) => (ctx, input) => {
 				observed.push(input as AuditLogInput);
 				inner(ctx, input);
-			},
+			}
 		});
-		const ctx = {pending_effects: [] as Array<Promise<void>>, client_ip: '198.51.100.7'};
+		const ctx = { pending_effects: [] as Array<Promise<void>>, client_ip: '198.51.100.7' };
 		const auth = create_auth();
 
 		audit.emit_role_grant_target(ctx, auth as never, {
 			event_type: 'role_grant_revoke',
 			target_account_id: 'tgt-acct' as Uuid,
 			target_actor_id: 'tgt-actor' as Uuid,
-			metadata: {role: 'admin', role_grant_id: 'rg-1' as Uuid, scope_id: null},
-			outcome: 'success',
+			metadata: { role: 'admin', role_grant_id: 'rg-1' as Uuid, scope_id: null },
+			outcome: 'success'
 		});
 
 		assert.strictEqual(observed.length, 1);
@@ -521,14 +521,14 @@ describe('create_audit_emitter — emit_decorator', () => {
 	// route through it. These three tests are the executable record of
 	// that contract.
 	test('wraps emit so the wrapped function is what the slot exposes', () => {
-		const calls: Array<{ctx: unknown; input: AuditLogInput}> = [];
+		const calls: Array<{ ctx: unknown; input: AuditLogInput }> = [];
 		const audit = create_audit_emitter({
 			db: create_mock_db(),
 			log,
 			emit_decorator: (inner) => (ctx, input) => {
-				calls.push({ctx, input: input as AuditLogInput});
+				calls.push({ ctx, input: input as AuditLogInput });
 				inner(ctx, input);
-			},
+			}
 		});
 
 		const ctx = create_ctx();
@@ -553,19 +553,19 @@ describe('create_audit_emitter — emit_decorator', () => {
 			emit_decorator: (inner) => (ctx, input) => {
 				calls.push(input as AuditLogInput);
 				inner(ctx, input);
-			},
+			}
 		});
 
-		const ctx = {pending_effects: [] as Array<Promise<void>>, client_ip: '1.2.3.4'};
+		const ctx = { pending_effects: [] as Array<Promise<void>>, client_ip: '1.2.3.4' };
 		audit.emit_role_grant_target(
 			ctx,
-			{account: {id: 'a' as Uuid}, actor: {id: 'b' as Uuid}} as never,
+			{ account: { id: 'a' as Uuid }, actor: { id: 'b' as Uuid } } as never,
 			{
 				event_type: 'role_grant_create',
 				target_account_id: null,
 				target_actor_id: null,
-				metadata: {role: 'admin', scope_id: null},
-			},
+				metadata: { role: 'admin', scope_id: null }
+			}
 		);
 
 		assert.strictEqual(calls.length, 1);
@@ -573,7 +573,7 @@ describe('create_audit_emitter — emit_decorator', () => {
 	});
 
 	test('default (no decorator) leaves emit semantically unchanged', () => {
-		const audit = create_audit_emitter({db: create_mock_db(), log});
+		const audit = create_audit_emitter({ db: create_mock_db(), log });
 		const ctx = create_ctx();
 		audit.emit(ctx, create_input());
 		// One in-flight write queued — same shape the test suite has

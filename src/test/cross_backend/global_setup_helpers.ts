@@ -10,15 +10,15 @@
  * @module
  */
 
-import {execFileSync} from 'node:child_process';
-import {homedir} from 'node:os';
-import {join} from 'node:path';
-import type {TestProject} from 'vitest/node';
+import { execFileSync } from 'node:child_process';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import type { TestProject } from 'vitest/node';
 
-import type {BackendConfig} from '$lib/testing/cross_backend/backend_config.ts';
-import {bootstrap_backend} from '$lib/testing/cross_backend/bootstrap_backend.ts';
-import {serialize_bootstrapped_handle} from '$lib/testing/cross_backend/setup.ts';
-import {RUST_SPINE_STUB_BIN_ENV} from '$lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
+import type { BackendConfig } from '$lib/testing/cross_backend/backend_config.ts';
+import { bootstrap_backend } from '$lib/testing/cross_backend/bootstrap_backend.ts';
+import { serialize_bootstrapped_handle } from '$lib/testing/cross_backend/setup.ts';
+import { RUST_SPINE_STUB_BIN_ENV } from '$lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 
 import './cross_test_types.ts';
 
@@ -68,7 +68,7 @@ export const prepare_rust_spine_backend = (options: RustSpineGlobalSetupOptions)
 		// fails the project loudly (the point — never spawn a stale binary).
 		execFileSync('cargo', ['build', '-p', options.crate, '--release'], {
 			cwd: workspace_dir,
-			stdio: 'inherit',
+			stdio: 'inherit'
 		});
 	}
 
@@ -82,7 +82,7 @@ export const prepare_rust_spine_backend = (options: RustSpineGlobalSetupOptions)
 		// The harness never issues `CREATE DATABASE` itself (avoids forcing a
 		// `CREATEDB` grant on the test role); this is the runner doing it once.
 		try {
-			execFileSync('createdb', [options.database], {stdio: 'ignore'});
+			execFileSync('createdb', [options.database], { stdio: 'ignore' });
 		} catch {
 			// already exists (or no `createdb` on PATH) — let spawn surface a
 			// real connection error if the DB is genuinely missing.

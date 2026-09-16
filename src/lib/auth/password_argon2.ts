@@ -9,9 +9,9 @@
  * @module
  */
 
-import {hash, verify} from '@node-rs/argon2';
+import { hash, verify } from '@node-rs/argon2';
 
-import type {PasswordHashDeps} from './password.ts';
+import type { PasswordHashDeps } from './password.ts';
 
 /**
  * Argon2id options following OWASP recommendations.
@@ -25,7 +25,7 @@ const ARGON2_OPTIONS = {
 	algorithm: ARGON2ID,
 	memoryCost: 19456, // 19 MiB
 	timeCost: 2,
-	parallelism: 1,
+	parallelism: 1
 };
 
 /**
@@ -47,7 +47,7 @@ export const hash_password = async (password: string): Promise<string> => {
  */
 export const verify_password = async (
 	password: string,
-	password_hash: string,
+	password_hash: string
 ): Promise<boolean> => {
 	try {
 		return await verify(password_hash, password);
@@ -84,5 +84,5 @@ export const verify_dummy = async (password: string): Promise<boolean> => {
 export const argon2_password_deps: PasswordHashDeps = {
 	hash_password,
 	verify_password,
-	verify_dummy,
+	verify_dummy
 };

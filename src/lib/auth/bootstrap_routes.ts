@@ -7,21 +7,21 @@
  * @module
  */
 
-import type {Context} from 'hono';
-import {to_error_message} from '@fuzdev/fuz_util/error.ts';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { Context } from 'hono';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type {SessionOptions} from './session_cookie.ts';
-import {create_session_and_set_cookie} from './session_middleware.ts';
-import {bootstrap_account, type BootstrapAccountSuccess} from './bootstrap_account.ts';
-import {bootstrap_route_shape, type BootstrapInput} from './bootstrap_route_schema.ts';
-import type {Db} from '../db/db.ts';
-import {get_route_input, type RouteSpec} from '../http/route_spec.ts';
-import {get_client_ip} from '../http/client_ip.ts';
-import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.ts';
-import type {RouteFactoryDeps} from './deps.ts';
-import type {StatResult} from '../runtime/deps.ts';
-import {ERROR_ALREADY_BOOTSTRAPPED} from '../http/error_schemas.ts';
+import type { SessionOptions } from './session_cookie.ts';
+import { create_session_and_set_cookie } from './session_middleware.ts';
+import { bootstrap_account, type BootstrapAccountSuccess } from './bootstrap_account.ts';
+import { bootstrap_route_shape, type BootstrapInput } from './bootstrap_route_schema.ts';
+import type { Db } from '../db/db.ts';
+import { get_route_input, type RouteSpec } from '../http/route_spec.ts';
+import { get_client_ip } from '../http/client_ip.ts';
+import { rate_limit_exceeded_response, type RateLimiter } from '../rate_limiter.ts';
+import type { RouteFactoryDeps } from './deps.ts';
+import type { StatResult } from '../runtime/deps.ts';
+import { ERROR_ALREADY_BOOTSTRAPPED } from '../http/error_schemas.ts';
 
 /**
  * Bootstrap status — runtime state computed once at startup.
@@ -73,31 +73,31 @@ export interface CheckBootstrapStatusDeps {
  */
 export const check_bootstrap_status = async (
 	deps: CheckBootstrapStatusDeps,
-	options: {token_path: string | null},
+	options: { token_path: string | null }
 ): Promise<BootstrapStatus> => {
-	const {stat, db, log} = deps;
-	const {token_path} = options;
+	const { stat, db, log } = deps;
+	const { token_path } = options;
 
 	if (!token_path) {
-		return {available: false, token_path: null};
+		return { available: false, token_path: null };
 	}
 
 	const token_stat = await stat(token_path);
 	if (token_stat === null) {
 		log.info('Bootstrap unavailable: token file not found');
-		return {available: false, token_path};
+		return { available: false, token_path };
 	}
 
-	const lock_row = await db.query_one<{bootstrapped: boolean}>(
-		'SELECT bootstrapped FROM bootstrap_lock WHERE id = 1',
+	const lock_row = await db.query_one<{ bootstrapped: boolean }>(
+		'SELECT bootstrapped FROM bootstrap_lock WHERE id = 1'
 	);
 	if (lock_row?.bootstrapped) {
 		log.info('Bootstrap unavailable: already bootstrapped');
-		return {available: false, token_path};
+		return { available: false, token_path };
 	}
 
 	log.info(`Bootstrap token available: ${token_path}`);
-	return {available: true, token_path};
+	return { available: true, token_path };
 };
 
 /**
@@ -109,11 +109,11 @@ export const check_bootstrap_status = async (
  */
 export const create_bootstrap_route_specs = (
 	deps: RouteFactoryDeps,
-	options: BootstrapRouteOptions,
+	options: BootstrapRouteOptions
 ): Array<RouteSpec> => {
-	const {keyring} = deps;
-	const {session_options, bootstrap_status, on_bootstrap, ip_rate_limiter} = options;
-	const {token_path} = bootstrap_status;
+	const { keyring } = deps;
+	const { session_options, bootstrap_status, on_bootstrap, ip_rate_limiter } = options;
+	const { token_path } = bootstrap_status;
 
 	return [
 		{
@@ -124,7 +124,7 @@ export const create_bootstrap_route_specs = (
 				// `available === false`; in 'live' mode after success `available` flips
 				// to `false`. Either way the wire shape is 403 ALREADY_BOOTSTRAPPED.
 				if (!bootstrap_status.available || token_path === null) {
-					return c.json({error: ERROR_ALREADY_BOOTSTRAPPED}, 403);
+					return c.json({ error: ERROR_ALREADY_BOOTSTRAPPED }, 403);
 				}
 
 				// Per-IP rate limit check (before any token/DB work)
@@ -147,10 +147,10 @@ export const create_bootstrap_route_specs = (
 						read_text_file: deps.read_text_file,
 						delete_file: deps.delete_file,
 						password: deps.password,
-						log: deps.log,
+						log: deps.log
 					},
 					input.token,
-					input,
+					input
 				);
 				if (!result.ok) {
 					if (ip_rate_limiter && ip) ip_rate_limiter.record(ip);
@@ -158,9 +158,9 @@ export const create_bootstrap_route_specs = (
 						event_type: 'bootstrap',
 						outcome: 'failure',
 						ip: get_client_ip(c),
-						metadata: {error: result.error},
+						metadata: { error: result.error }
 					});
-					return c.json({error: result.error}, result.status);
+					return c.json({ error: result.error }, result.status);
 				}
 
 				// Successful bootstrap — update state immediately
@@ -169,10 +169,10 @@ export const create_bootstrap_route_specs = (
 
 				await create_session_and_set_cookie({
 					keyring,
-					deps: {db: route.db},
+					deps: { db: route.db },
 					c,
 					account_id: result.account.id,
-					session_options,
+					session_options
 				});
 
 				if (on_bootstrap) {
@@ -187,7 +187,7 @@ export const create_bootstrap_route_specs = (
 					event_type: 'bootstrap',
 					actor_id: result.actor.id,
 					account_id: result.account.id,
-					ip: get_client_ip(c),
+					ip: get_client_ip(c)
 				});
 
 				// CRITICAL: If token file deletion failed, throw to force operator attention.
@@ -197,16 +197,16 @@ export const create_bootstrap_route_specs = (
 					throw new Error(
 						`Bootstrap succeeded but token file was not deleted at ${
 							token_path
-						}. Delete it manually and log in.`,
+						}. Delete it manually and log in.`
 					);
 				}
 
 				return c.json({
 					ok: true,
-					account: {id: result.account.id, username: result.account.username},
-					actor: {id: result.actor.id},
+					account: { id: result.account.id, username: result.account.username },
+					actor: { id: result.actor.id }
 				});
-			},
-		},
+			}
+		}
 	];
 };

@@ -42,9 +42,9 @@
  * @module
  */
 
-import {SvelteMap} from 'svelte/reactivity';
+import { SvelteMap } from 'svelte/reactivity';
 
-import {AsyncSlot, type AsyncSlotOptions, type RunOptions} from './async_slot.svelte.ts';
+import { AsyncSlot, type AsyncSlotOptions, type RunOptions } from './async_slot.svelte.ts';
 
 /**
  * Constructor options for `KeyedAsyncSlot`. Propagated to every child
@@ -148,7 +148,7 @@ export class KeyedAsyncSlot<K, T = void, E = string> {
 	async run(
 		key: K,
 		fn: (signal: AbortSignal) => Promise<T>,
-		options?: RunOptions,
+		options?: RunOptions
 	): Promise<T | undefined> {
 		let slot = this.#slots.get(key);
 		if (!slot) {

@@ -24,13 +24,13 @@
  * @module
  */
 
-import {readFile} from 'node:fs/promises';
-import {createReadStream} from 'node:fs';
-import {Readable} from 'node:stream';
-import {join} from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { Readable } from 'node:stream';
+import { join } from 'node:path';
 
-import type {FactExternalFetcher} from '../db/fact_store.ts';
-import {parse_file_fact_url} from '../db/file_fact_url.ts';
+import type { FactExternalFetcher } from '../db/fact_store.ts';
+import { parse_file_fact_url } from '../db/file_fact_url.ts';
 
 /** Construction options. */
 export interface FileFactFetcherOptions {
@@ -48,7 +48,7 @@ export interface FileFactFetcherOptions {
  * round-trip on bad data.
  */
 export const create_file_fact_fetcher = (options: FileFactFetcherOptions): FactExternalFetcher => {
-	const {facts_dir} = options;
+	const { facts_dir } = options;
 
 	const resolve_path = (url: string): string => {
 		const parsed = parse_file_fact_url(url);
@@ -71,6 +71,6 @@ export const create_file_fact_fetcher = (options: FileFactFetcherOptions): FactE
 				const path = resolve_path(url);
 				const node_stream = createReadStream(path);
 				return Readable.toWeb(node_stream) as ReadableStream<Uint8Array>;
-			}),
+			})
 	};
 };

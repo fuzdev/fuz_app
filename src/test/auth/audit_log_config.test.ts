@@ -7,15 +7,15 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
-import {z} from 'zod';
+import { describe, test, assert } from 'vitest';
+import { z } from 'zod';
 
 import {
 	AUDIT_EVENT_TYPES,
 	audit_metadata_schemas,
 	AuditEventTypeName,
 	builtin_audit_log_config,
-	create_audit_log_config,
+	create_audit_log_config
 } from '$lib/auth/audit_log_schema.ts';
 
 describe('builtin_audit_log_config', () => {
@@ -39,13 +39,13 @@ describe('create_audit_log_config', () => {
 	});
 
 	test('with empty extra_events returns builtin_audit_log_config by reference', () => {
-		const config = create_audit_log_config({extra_events: {}});
+		const config = create_audit_log_config({ extra_events: {} });
 		assert.strictEqual(config, builtin_audit_log_config);
 	});
 
 	test('appends extra event keys after the builtins', () => {
 		const config = create_audit_log_config({
-			extra_events: {classroom_create: null, classroom_update: null},
+			extra_events: { classroom_create: null, classroom_update: null }
 		});
 		const types = [...config.event_types];
 		assert.strictEqual(types.length, AUDIT_EVENT_TYPES.length + 2);
@@ -59,19 +59,19 @@ describe('create_audit_log_config', () => {
 	});
 
 	test('returned config is deep-frozen', () => {
-		const config = create_audit_log_config({extra_events: {classroom_create: null}});
+		const config = create_audit_log_config({ extra_events: { classroom_create: null } });
 		assert.isTrue(Object.isFrozen(config));
 		assert.isTrue(Object.isFrozen(config.event_types));
 		assert.isTrue(Object.isFrozen(config.metadata_schemas));
 	});
 
 	test('schema entries populate metadata_schemas; null entries register the type only', () => {
-		const classroom_schema = z.looseObject({classroom_id: z.string()});
+		const classroom_schema = z.looseObject({ classroom_id: z.string() });
 		const config = create_audit_log_config({
 			extra_events: {
 				classroom_create: classroom_schema,
-				classroom_delete: null,
-			},
+				classroom_delete: null
+			}
 		});
 		// builtin entries still present
 		assert.strictEqual(config.metadata_schemas.login, audit_metadata_schemas.login);
@@ -84,12 +84,12 @@ describe('create_audit_log_config', () => {
 
 	test('rejects extra_events keys that collide with a builtin', () => {
 		assert.throws(
-			() => create_audit_log_config({extra_events: {login: null}}),
-			/collides with a builtin/,
+			() => create_audit_log_config({ extra_events: { login: null } }),
+			/collides with a builtin/
 		);
 		assert.throws(
-			() => create_audit_log_config({extra_events: {logout: z.object({foo: z.string()})}}),
-			/collides with a builtin/,
+			() => create_audit_log_config({ extra_events: { logout: z.object({ foo: z.string() }) } }),
+			/collides with a builtin/
 		);
 	});
 
@@ -99,8 +99,8 @@ describe('create_audit_log_config', () => {
 				'app.classroom.create': null,
 				'app/classroom/update': null,
 				'app-classroom-delete': null,
-				app_classroom_archive: null,
-			},
+				app_classroom_archive: null
+			}
 		});
 		assert.isTrue(config.event_types.includes('app.classroom.create'));
 		assert.isTrue(config.event_types.includes('app/classroom/update'));
@@ -110,26 +110,26 @@ describe('create_audit_log_config', () => {
 
 	test('rejects extra_events keys that fail format validation', () => {
 		// empty string
-		assert.throws(() => create_audit_log_config({extra_events: {'': null}}), /invalid format/);
+		assert.throws(() => create_audit_log_config({ extra_events: { '': null } }), /invalid format/);
 		// leading whitespace
 		assert.throws(
-			() => create_audit_log_config({extra_events: {' login_alt': null}}),
-			/invalid format/,
+			() => create_audit_log_config({ extra_events: { ' login_alt': null } }),
+			/invalid format/
 		);
 		// leading separator
 		assert.throws(
-			() => create_audit_log_config({extra_events: {'.classroom_create': null}}),
-			/invalid format/,
+			() => create_audit_log_config({ extra_events: { '.classroom_create': null } }),
+			/invalid format/
 		);
 		// disallowed character
 		assert.throws(
-			() => create_audit_log_config({extra_events: {'classroom create': null}}),
-			/invalid format/,
+			() => create_audit_log_config({ extra_events: { 'classroom create': null } }),
+			/invalid format/
 		);
 		// digit-leading
 		assert.throws(
-			() => create_audit_log_config({extra_events: {'1classroom_create': null}}),
-			/invalid format/,
+			() => create_audit_log_config({ extra_events: { '1classroom_create': null } }),
+			/invalid format/
 		);
 	});
 });

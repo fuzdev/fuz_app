@@ -1,7 +1,7 @@
-import {test, assert, describe} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { test, assert, describe } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {create_cli_logger} from '$lib/cli/logger.ts';
+import { create_cli_logger } from '$lib/cli/logger.ts';
 
 const create_mock_console = (): {
 	console: Pick<typeof console, 'error' | 'warn' | 'log'>;
@@ -16,17 +16,17 @@ const create_mock_console = (): {
 		console: {
 			log: (...args: Array<unknown>) => log_calls.push(args),
 			warn: (...args: Array<unknown>) => warn_calls.push(args),
-			error: (...args: Array<unknown>) => error_calls.push(args),
+			error: (...args: Array<unknown>) => error_calls.push(args)
 		},
 		log_calls,
 		warn_calls,
-		error_calls,
+		error_calls
 	};
 };
 
 describe('create_cli_logger', () => {
 	test('returns object with all expected methods', () => {
-		const logger = new Logger(undefined, {level: 'info', colors: false});
+		const logger = new Logger(undefined, { level: 'info', colors: false });
 		const cli = create_cli_logger(logger);
 
 		assert.strictEqual(typeof cli.error, 'function');
@@ -44,7 +44,7 @@ describe('create_cli_logger', () => {
 
 	test('error delegates to logger.error', () => {
 		const mock = create_mock_console();
-		const logger = new Logger(undefined, {level: 'error', console: mock.console, colors: false});
+		const logger = new Logger(undefined, { level: 'error', console: mock.console, colors: false });
 		const cli = create_cli_logger(logger);
 
 		cli.error('something broke');
@@ -55,7 +55,7 @@ describe('create_cli_logger', () => {
 
 	test('warn delegates to logger.warn', () => {
 		const mock = create_mock_console();
-		const logger = new Logger(undefined, {level: 'warn', console: mock.console, colors: false});
+		const logger = new Logger(undefined, { level: 'warn', console: mock.console, colors: false });
 		const cli = create_cli_logger(logger);
 
 		cli.warn('be careful');
@@ -66,7 +66,7 @@ describe('create_cli_logger', () => {
 
 	test('info delegates to logger.info', () => {
 		const mock = create_mock_console();
-		const logger = new Logger(undefined, {level: 'info', console: mock.console, colors: false});
+		const logger = new Logger(undefined, { level: 'info', console: mock.console, colors: false });
 		const cli = create_cli_logger(logger);
 
 		cli.info('hello');
@@ -77,7 +77,7 @@ describe('create_cli_logger', () => {
 
 	test('success calls logger.info with [done] prefix', () => {
 		const mock = create_mock_console();
-		const logger = new Logger(undefined, {level: 'info', console: mock.console, colors: false});
+		const logger = new Logger(undefined, { level: 'info', console: mock.console, colors: false });
 		const cli = create_cli_logger(logger);
 
 		cli.success('task complete');
@@ -90,7 +90,7 @@ describe('create_cli_logger', () => {
 
 	test('skip calls logger.info with [skip] prefix', () => {
 		const mock = create_mock_console();
-		const logger = new Logger(undefined, {level: 'info', console: mock.console, colors: false});
+		const logger = new Logger(undefined, { level: 'info', console: mock.console, colors: false });
 		const cli = create_cli_logger(logger);
 
 		cli.skip('already done');
@@ -103,7 +103,7 @@ describe('create_cli_logger', () => {
 
 	test('step calls logger.info with ==> prefix', () => {
 		const mock = create_mock_console();
-		const logger = new Logger(undefined, {level: 'info', console: mock.console, colors: false});
+		const logger = new Logger(undefined, { level: 'info', console: mock.console, colors: false });
 		const cli = create_cli_logger(logger);
 
 		cli.step('building');
@@ -116,7 +116,7 @@ describe('create_cli_logger', () => {
 
 	test('header calls logger.info with === decoration', () => {
 		const mock = create_mock_console();
-		const logger = new Logger(undefined, {level: 'info', console: mock.console, colors: false});
+		const logger = new Logger(undefined, { level: 'info', console: mock.console, colors: false });
 		const cli = create_cli_logger(logger);
 
 		cli.header('Deploy');
@@ -128,7 +128,7 @@ describe('create_cli_logger', () => {
 
 	test('dim calls logger.info', () => {
 		const mock = create_mock_console();
-		const logger = new Logger(undefined, {level: 'info', console: mock.console, colors: false});
+		const logger = new Logger(undefined, { level: 'info', console: mock.console, colors: false });
 		const cli = create_cli_logger(logger);
 
 		cli.dim('subtle note');
@@ -141,7 +141,7 @@ describe('create_cli_logger', () => {
 	test('raw outputs without prefix or level filtering', () => {
 		const mock = create_mock_console();
 		// Use 'off' level — raw should still output even when level suppresses everything
-		const logger = new Logger(undefined, {level: 'off', console: mock.console, colors: false});
+		const logger = new Logger(undefined, { level: 'off', console: mock.console, colors: false });
 		const cli = create_cli_logger(logger);
 
 		cli.raw('raw output');
@@ -154,7 +154,7 @@ describe('create_cli_logger', () => {
 describe('create_cli_logger > level filtering', () => {
 	test('semantic methods suppressed when level < info', () => {
 		const mock = create_mock_console();
-		const logger = new Logger(undefined, {level: 'warn', console: mock.console, colors: false});
+		const logger = new Logger(undefined, { level: 'warn', console: mock.console, colors: false });
 		const cli = create_cli_logger(logger);
 
 		cli.success('nope');
@@ -169,7 +169,7 @@ describe('create_cli_logger > level filtering', () => {
 
 	test('error and warn still work when level is warn', () => {
 		const mock = create_mock_console();
-		const logger = new Logger(undefined, {level: 'warn', console: mock.console, colors: false});
+		const logger = new Logger(undefined, { level: 'warn', console: mock.console, colors: false });
 		const cli = create_cli_logger(logger);
 
 		cli.warn('shown');
@@ -183,7 +183,7 @@ describe('create_cli_logger > level filtering', () => {
 describe('create_cli_logger > colors', () => {
 	test('no ANSI codes when colors disabled', () => {
 		const mock = create_mock_console();
-		const logger = new Logger(undefined, {level: 'info', console: mock.console, colors: false});
+		const logger = new Logger(undefined, { level: 'info', console: mock.console, colors: false });
 		const cli = create_cli_logger(logger);
 
 		cli.success('done');
@@ -200,7 +200,7 @@ describe('create_cli_logger > colors', () => {
 
 	test('ANSI codes present when colors enabled', () => {
 		const mock = create_mock_console();
-		const logger = new Logger(undefined, {level: 'info', console: mock.console, colors: true});
+		const logger = new Logger(undefined, { level: 'info', console: mock.console, colors: true });
 		const cli = create_cli_logger(logger);
 
 		cli.success('done');
@@ -213,7 +213,7 @@ describe('create_cli_logger > colors', () => {
 describe('create_cli_logger > labeled logger', () => {
 	test('logger label appears in delegated methods', () => {
 		const mock = create_mock_console();
-		const logger = new Logger('myapp', {level: 'info', console: mock.console, colors: false});
+		const logger = new Logger('myapp', { level: 'info', console: mock.console, colors: false });
 		const cli = create_cli_logger(logger);
 
 		cli.info('hello');
@@ -225,7 +225,7 @@ describe('create_cli_logger > labeled logger', () => {
 
 	test('logger label appears in semantic methods', () => {
 		const mock = create_mock_console();
-		const logger = new Logger('myapp', {level: 'info', console: mock.console, colors: false});
+		const logger = new Logger('myapp', { level: 'info', console: mock.console, colors: false });
 		const cli = create_cli_logger(logger);
 
 		cli.success('task complete');

@@ -8,9 +8,9 @@
  * @module
  */
 
-import type {PGlite} from '@electric-sql/pglite';
+import type { PGlite } from '@electric-sql/pglite';
 
-import {Db, no_nested_transaction, type DbDriverResult} from './db.ts';
+import { Db, no_nested_transaction, type DbDriverResult } from './db.ts';
 
 /**
  * Create a transaction implementation for PGlite.
@@ -20,7 +20,9 @@ import {Db, no_nested_transaction, type DbDriverResult} from './db.ts';
 const create_pglite_transaction =
 	(pglite: PGlite) =>
 	async <T>(fn: (tx_db: Db) => Promise<T>): Promise<T> =>
-		pglite.transaction(async (tx) => fn(new Db({client: tx, transaction: no_nested_transaction})));
+		pglite.transaction(async (tx) =>
+			fn(new Db({ client: tx, transaction: no_nested_transaction }))
+		);
 
 /**
  * Create a `Db` backed by a `PGlite` instance.
@@ -31,6 +33,6 @@ const create_pglite_transaction =
  * @returns the `Db` instance and a `close` callback bound to `pglite.close()`
  */
 export const create_pglite_db = (pglite: PGlite): DbDriverResult => ({
-	db: new Db({client: pglite, transaction: create_pglite_transaction(pglite)}),
-	close: () => pglite.close(),
+	db: new Db({ client: pglite, transaction: create_pglite_transaction(pglite) }),
+	close: () => pglite.close()
 });

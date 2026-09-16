@@ -16,14 +16,14 @@
  * @module
  */
 
-import {readFileSync} from 'node:fs';
-import {fileURLToPath} from 'node:url';
-import {test, assert} from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { test, assert } from 'vitest';
 
-import {auth_integration_truncate_tables} from '$lib/testing/db.ts';
+import { auth_integration_truncate_tables } from '$lib/testing/db.ts';
 
 const source_path = fileURLToPath(
-	new URL('../../lib/testing/cross_backend/testing_reset_actions.ts', import.meta.url),
+	new URL('../../lib/testing/cross_backend/testing_reset_actions.ts', import.meta.url)
 );
 
 test('DELETE FROM targets match auth_integration_truncate_tables', () => {
@@ -39,6 +39,6 @@ test('DELETE FROM targets match auth_integration_truncate_tables', () => {
 			}\n` +
 			`  only in canonical list: ${
 				[...canonical].filter((t) => !targets.has(t)).join(', ') || '(none)'
-			}`,
+			}`
 	);
 });

@@ -28,7 +28,7 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
 /**
  * Base cell-data shape. All fields optional; loose mode admits arbitrary
@@ -38,6 +38,6 @@ import {z} from 'zod';
  */
 export const CellData = z.looseObject({
 	label: z.string().optional(),
-	summary: z.string().optional(),
+	summary: z.string().optional()
 });
 export type CellData = z.infer<typeof CellData>;

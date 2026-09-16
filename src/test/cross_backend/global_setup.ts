@@ -13,12 +13,12 @@
  * @module
  */
 
-import {rust_spine_stub_backend_config} from '$lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
+import { rust_spine_stub_backend_config } from '$lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 
-import {make_rust_spine_global_setup} from './global_setup_helpers.ts';
+import { make_rust_spine_global_setup } from './global_setup_helpers.ts';
 
 export default make_rust_spine_global_setup(rust_spine_stub_backend_config, {
 	crate: 'testing_spine_stub',
 	// Matches `RUST_SPINE_STUB_DEFAULT_DATABASE_URL`'s database name.
-	database: 'fuz_app_test_rust_spine_stub',
+	database: 'fuz_app_test_rust_spine_stub'
 });

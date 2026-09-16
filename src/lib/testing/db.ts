@@ -24,14 +24,14 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {describe, beforeAll, beforeEach, afterAll} from 'vitest';
-import type {Pool} from 'pg';
-import {to_error_message} from '@fuzdev/fuz_util/error.ts';
+import { describe, beforeAll, beforeEach, afterAll } from 'vitest';
+import type { Pool } from 'pg';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
-import type {Db} from '../db/db.ts';
-import {create_pglite_db} from '../db/db_pglite.ts';
-import {assert_valid_sql_identifier} from '../db/sql_identifier.ts';
-import {create_pg_db, register_pg_type_parsers} from '../db/db_pg.ts';
+import type { Db } from '../db/db.ts';
+import { create_pglite_db } from '../db/db_pglite.ts';
+import { assert_valid_sql_identifier } from '../db/sql_identifier.ts';
+import { create_pg_db, register_pg_type_parsers } from '../db/db_pg.ts';
 
 /**
  * CI detection — `CI=true` is set automatically by GitHub Actions, GitLab CI, etc.
@@ -85,7 +85,7 @@ export const create_pglite_factory = (init_schema: (db: Db) => Promise<void>): D
 		if (module_db) {
 			await reset_pglite(module_db);
 		} else {
-			const {PGlite} = await import('@electric-sql/pglite');
+			const { PGlite } = await import('@electric-sql/pglite');
 			const pglite = new PGlite();
 			module_db = create_pglite_db(pglite).db;
 		}
@@ -95,7 +95,7 @@ export const create_pglite_factory = (init_schema: (db: Db) => Promise<void>): D
 	async close() {
 		// No-op: shared instance lives for the worker thread's lifetime.
 		// PGlite is cleaned up when the vitest worker exits.
-	},
+	}
 });
 
 /**
@@ -119,7 +119,7 @@ export const create_pglite_factory = (init_schema: (db: Db) => Promise<void>): D
  */
 export const create_pg_factory = (
 	init_schema: (db: Db) => Promise<void>,
-	test_url?: string,
+	test_url?: string
 ): DbFactory => {
 	const should_skip = !test_url;
 	const skip_reason = !test_url ? 'TEST_DATABASE_URL not set' : undefined;
@@ -144,15 +144,15 @@ export const create_pg_factory = (
 				}
 				pool_ref = null;
 			}
-			const {Pool} = await import('pg');
+			const { Pool } = await import('pg');
 			// Mirror production's int8→number coercion (`create_db`) so the
 			// test pg pool reads `BIGSERIAL` columns (e.g. `audit_log.seq`)
 			// as numbers like PGlite does — without this the pg leg of a
 			// `.db.test.ts` sees `seq` as a string and wire-schema parses fail.
 			await register_pg_type_parsers();
-			const pool = new Pool({connectionString: test_url});
+			const pool = new Pool({ connectionString: test_url });
 			pool_ref = pool;
-			const {db} = create_pg_db(pool);
+			const { db } = create_pg_db(pool);
 			try {
 				// Drop schema_version so migrations re-evaluate against the actual
 				// tables. Prevents stale tracker rows from skipping migrations
@@ -166,7 +166,7 @@ export const create_pg_factory = (
 				if (msg.includes('does not exist')) {
 					const db_name = test_url.split('/').pop()?.split('?')[0] ?? 'test_db';
 					throw new Error(
-						`Database "${db_name}" does not exist. Create it with: createdb ${db_name}`,
+						`Database "${db_name}" does not exist. Create it with: createdb ${db_name}`
 					);
 				}
 				throw error;
@@ -182,7 +182,7 @@ export const create_pg_factory = (
 				}
 				pool_ref = null;
 			}
-		},
+		}
 	};
 };
 
@@ -198,7 +198,7 @@ export const auth_truncate_tables = [
 	'role_grant',
 	'role_grant_offer',
 	'actor',
-	'account',
+	'account'
 ];
 
 /**
@@ -244,7 +244,7 @@ export const drop_auth_schema = async (db: Db): Promise<void> => {
  */
 export const create_describe_db = (
 	factories: DbFactory | Array<DbFactory>,
-	truncate_tables: Array<string>,
+	truncate_tables: Array<string>
 ): ((name: string, fn: (get_db: () => Db) => void) => void) => {
 	const factory_list = Array.isArray(factories) ? factories : [factories];
 	return (name, fn) => {
@@ -258,7 +258,7 @@ export const create_describe_db = (
 				beforeEach(async () => {
 					if (db && truncate_tables.length > 0) {
 						await db.query(
-							`TRUNCATE ${truncate_tables.map(assert_valid_sql_identifier).join(', ')} CASCADE`,
+							`TRUNCATE ${truncate_tables.map(assert_valid_sql_identifier).join(', ')} CASCADE`
 						);
 					}
 				});
@@ -280,6 +280,6 @@ export const log_db_factory_status = (factories: Array<DbFactory>): void => {
 	console.log(
 		`[db tests] drivers: ${enabled.join(', ')}${
 			skipped.length ? ` | skipped: ${skipped.join(', ')}` : ''
-		}`,
+		}`
 	);
 };

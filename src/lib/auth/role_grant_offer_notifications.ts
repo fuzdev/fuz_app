@@ -30,17 +30,17 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid as UuidSchema, type Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid as UuidSchema, type Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type {RemoteNotificationActionSpec} from '../actions/action_spec.ts';
-import {create_action_event_spec} from '../actions/action_bridge.ts';
-import type {EventSpec} from '../realtime/sse.ts';
-import type {JsonrpcNotification} from '../http/jsonrpc.ts';
-import {create_jsonrpc_notification} from '../http/jsonrpc_helpers.ts';
-import {RoleName} from './role_schema.ts';
-import {RoleGrantOfferJson} from './role_grant_offer_schema.ts';
-import {ROLE_GRANT_REVOKED_REASON_LENGTH_MAX} from './account_schema.ts';
+import type { RemoteNotificationActionSpec } from '../actions/action_spec.ts';
+import { create_action_event_spec } from '../actions/action_bridge.ts';
+import type { EventSpec } from '../realtime/sse.ts';
+import type { JsonrpcNotification } from '../http/jsonrpc.ts';
+import { create_jsonrpc_notification } from '../http/jsonrpc_helpers.ts';
+import { RoleName } from './role_schema.ts';
+import { RoleGrantOfferJson } from './role_grant_offer_schema.ts';
+import { ROLE_GRANT_REVOKED_REASON_LENGTH_MAX } from './account_schema.ts';
 
 /**
  * Narrow structural capability for sending a JSON-RPC notification to every
@@ -73,19 +73,19 @@ export const ROLE_GRANT_REVOKE_NOTIFICATION_METHOD = 'role_grant_revoke';
 
 /** Params for `role_grant_offer_received` — offer delivered to its recipient. */
 export const RoleGrantOfferReceivedParams = z.strictObject({
-	offer: RoleGrantOfferJson,
+	offer: RoleGrantOfferJson
 });
 export type RoleGrantOfferReceivedParams = z.infer<typeof RoleGrantOfferReceivedParams>;
 
 /** Params for `role_grant_offer_retracted` — grantor-side retraction. */
 export const RoleGrantOfferRetractedParams = z.strictObject({
-	offer: RoleGrantOfferJson,
+	offer: RoleGrantOfferJson
 });
 export type RoleGrantOfferRetractedParams = z.infer<typeof RoleGrantOfferRetractedParams>;
 
 /** Params for `role_grant_offer_accepted` — recipient accepted the offer. */
 export const RoleGrantOfferAcceptedParams = z.strictObject({
-	offer: RoleGrantOfferJson,
+	offer: RoleGrantOfferJson
 });
 export type RoleGrantOfferAcceptedParams = z.infer<typeof RoleGrantOfferAcceptedParams>;
 
@@ -95,7 +95,7 @@ export type RoleGrantOfferAcceptedParams = z.infer<typeof RoleGrantOfferAccepted
  * decline, so a sibling `reason` field would just duplicate it.
  */
 export const RoleGrantOfferDeclinedParams = z.strictObject({
-	offer: RoleGrantOfferJson,
+	offer: RoleGrantOfferJson
 });
 export type RoleGrantOfferDeclinedParams = z.infer<typeof RoleGrantOfferDeclinedParams>;
 
@@ -111,7 +111,7 @@ export type RoleGrantOfferDeclinedParams = z.infer<typeof RoleGrantOfferDeclined
 export const RoleGrantOfferSupersedeParams = z.strictObject({
 	offer: RoleGrantOfferJson,
 	reason: z.enum(['sibling_accepted', 'role_grant_revoked', 'scope_destroyed']),
-	cause_id: UuidSchema,
+	cause_id: UuidSchema
 });
 export type RoleGrantOfferSupersedeParams = z.infer<typeof RoleGrantOfferSupersedeParams>;
 
@@ -126,7 +126,7 @@ export const RoleGrantRevokeParams = z.strictObject({
 	role_grant_id: UuidSchema,
 	role: RoleName,
 	scope_id: UuidSchema.nullable(),
-	reason: z.string().max(ROLE_GRANT_REVOKED_REASON_LENGTH_MAX).nullable(),
+	reason: z.string().max(ROLE_GRANT_REVOKED_REASON_LENGTH_MAX).nullable()
 });
 export type RoleGrantRevokeParams = z.infer<typeof RoleGrantRevokeParams>;
 
@@ -141,7 +141,7 @@ export const role_grant_offer_received_notification_spec = {
 	input: RoleGrantOfferReceivedParams,
 	output: z.void(),
 	async: true,
-	description: 'A new role_grant offer arrived in the recipient’s inbox.',
+	description: 'A new role_grant offer arrived in the recipient’s inbox.'
 } satisfies RemoteNotificationActionSpec;
 
 export const role_grant_offer_retracted_notification_spec = {
@@ -153,7 +153,7 @@ export const role_grant_offer_retracted_notification_spec = {
 	input: RoleGrantOfferRetractedParams,
 	output: z.void(),
 	async: true,
-	description: 'A pending role_grant offer was retracted by its grantor.',
+	description: 'A pending role_grant offer was retracted by its grantor.'
 } satisfies RemoteNotificationActionSpec;
 
 export const role_grant_offer_accepted_notification_spec = {
@@ -165,7 +165,7 @@ export const role_grant_offer_accepted_notification_spec = {
 	input: RoleGrantOfferAcceptedParams,
 	output: z.void(),
 	async: true,
-	description: 'A pending role_grant offer was accepted by its recipient.',
+	description: 'A pending role_grant offer was accepted by its recipient.'
 } satisfies RemoteNotificationActionSpec;
 
 export const role_grant_offer_declined_notification_spec = {
@@ -177,7 +177,7 @@ export const role_grant_offer_declined_notification_spec = {
 	input: RoleGrantOfferDeclinedParams,
 	output: z.void(),
 	async: true,
-	description: 'A pending role_grant offer was declined by its recipient.',
+	description: 'A pending role_grant offer was declined by its recipient.'
 } satisfies RemoteNotificationActionSpec;
 
 export const role_grant_offer_supersede_notification_spec = {
@@ -190,7 +190,7 @@ export const role_grant_offer_supersede_notification_spec = {
 	output: z.void(),
 	async: true,
 	description:
-		'A grantor’s pending role_grant offer was obsoleted by a sibling accept, by revoke of the resulting role_grant, or by destruction of the parent scope row.',
+		'A grantor’s pending role_grant offer was obsoleted by a sibling accept, by revoke of the resulting role_grant, or by destruction of the parent scope row.'
 } satisfies RemoteNotificationActionSpec;
 
 export const role_grant_revoke_notification_spec = {
@@ -202,7 +202,7 @@ export const role_grant_revoke_notification_spec = {
 	input: RoleGrantRevokeParams,
 	output: z.void(),
 	async: true,
-	description: 'An active role_grant on the revokee’s account was revoked.',
+	description: 'An active role_grant on the revokee’s account was revoked.'
 } satisfies RemoteNotificationActionSpec;
 
 // -- EventSpec surface ------------------------------------------------------
@@ -219,37 +219,37 @@ export const role_grant_offer_notification_specs: Array<EventSpec> = [
 	create_action_event_spec(role_grant_offer_accepted_notification_spec),
 	create_action_event_spec(role_grant_offer_declined_notification_spec),
 	create_action_event_spec(role_grant_offer_supersede_notification_spec),
-	create_action_event_spec(role_grant_revoke_notification_spec),
+	create_action_event_spec(role_grant_revoke_notification_spec)
 ];
 
 // -- Notification builders --------------------------------------------------
 
 export const build_role_grant_offer_received_notification = (
-	params: RoleGrantOfferReceivedParams,
+	params: RoleGrantOfferReceivedParams
 ): JsonrpcNotification =>
 	create_jsonrpc_notification(ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD, params);
 
 export const build_role_grant_offer_retracted_notification = (
-	params: RoleGrantOfferRetractedParams,
+	params: RoleGrantOfferRetractedParams
 ): JsonrpcNotification =>
 	create_jsonrpc_notification(ROLE_GRANT_OFFER_RETRACTED_NOTIFICATION_METHOD, params);
 
 export const build_role_grant_offer_accepted_notification = (
-	params: RoleGrantOfferAcceptedParams,
+	params: RoleGrantOfferAcceptedParams
 ): JsonrpcNotification =>
 	create_jsonrpc_notification(ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD, params);
 
 export const build_role_grant_offer_declined_notification = (
-	params: RoleGrantOfferDeclinedParams,
+	params: RoleGrantOfferDeclinedParams
 ): JsonrpcNotification =>
 	create_jsonrpc_notification(ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD, params);
 
 export const build_role_grant_offer_supersede_notification = (
-	params: RoleGrantOfferSupersedeParams,
+	params: RoleGrantOfferSupersedeParams
 ): JsonrpcNotification =>
 	create_jsonrpc_notification(ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD, params);
 
 export const build_role_grant_revoke_notification = (
-	params: RoleGrantRevokeParams,
+	params: RoleGrantRevokeParams
 ): JsonrpcNotification =>
 	create_jsonrpc_notification(ROLE_GRANT_REVOKE_NOTIFICATION_METHOD, params);

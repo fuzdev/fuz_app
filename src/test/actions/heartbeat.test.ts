@@ -9,28 +9,28 @@
  * @module
  */
 
-import {assert, describe, test} from 'vitest';
-import {z} from 'zod';
+import { assert, describe, test } from 'vitest';
+import { z } from 'zod';
 
-import {RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
+import { RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
 import {
 	heartbeat_action,
 	heartbeat_action_spec,
-	heartbeat_handler,
+	heartbeat_handler
 } from '$lib/actions/heartbeat.ts';
-import {create_ws_test_harness} from '$lib/testing/ws_round_trip.ts';
+import { create_ws_test_harness } from '$lib/testing/ws_round_trip.ts';
 
 describe('heartbeat_action', () => {
 	test('spec has the expected method + shape', () => {
 		assert.strictEqual(heartbeat_action_spec.method, 'heartbeat');
 		assert.strictEqual(heartbeat_action_spec.kind, 'request_response');
-		assert.deepStrictEqual(heartbeat_action_spec.auth, {account: 'required', actor: 'none'});
+		assert.deepStrictEqual(heartbeat_action_spec.auth, { account: 'required', actor: 'none' });
 		assert.strictEqual(heartbeat_action_spec.side_effects, false);
 	});
 
 	test('input rejects extra keys (strictObject)', () => {
 		assert.strictEqual(heartbeat_action_spec.input.safeParse({}).success, true);
-		assert.strictEqual(heartbeat_action_spec.input.safeParse({stray: 1}).success, false);
+		assert.strictEqual(heartbeat_action_spec.input.safeParse({ stray: 1 }).success, false);
 	});
 
 	test('handler returns empty object', () => {
@@ -43,7 +43,7 @@ describe('heartbeat_action', () => {
 	});
 
 	test('round-trips through the harness with no additional wiring', async () => {
-		const harness = create_ws_test_harness({actions: [heartbeat_action]});
+		const harness = create_ws_test_harness({ actions: [heartbeat_action] });
 		const client = await harness.connect();
 
 		const result = await client.request(1, heartbeat_action_spec.method, {});
@@ -55,12 +55,12 @@ describe('heartbeat_action', () => {
 			method: 'consumer_echo',
 			kind: 'request_response',
 			initiator: 'frontend',
-			auth: {account: 'required', actor: 'none'},
+			auth: { account: 'required', actor: 'none' },
 			side_effects: false,
-			input: z.strictObject({value: z.string()}),
-			output: z.strictObject({value: z.string()}),
+			input: z.strictObject({ value: z.string() }),
+			output: z.strictObject({ value: z.string() }),
 			async: true,
-			description: 'test consumer echo',
+			description: 'test consumer echo'
 		});
 
 		const harness = create_ws_test_harness({
@@ -68,13 +68,15 @@ describe('heartbeat_action', () => {
 				heartbeat_action,
 				{
 					spec: consumer_echo_spec,
-					handler: (input) => input,
-				},
-			],
+					handler: (input) => input
+				}
+			]
 		});
 		const client = await harness.connect();
 
 		assert.deepStrictEqual(await client.request(1, heartbeat_action_spec.method, {}), {});
-		assert.deepStrictEqual(await client.request(2, 'consumer_echo', {value: 'ok'}), {value: 'ok'});
+		assert.deepStrictEqual(await client.request(2, 'consumer_echo', { value: 'ok' }), {
+			value: 'ok'
+		});
 	});
 });

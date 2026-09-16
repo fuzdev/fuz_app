@@ -17,25 +17,25 @@
  * @module
  */
 
-import type {z} from 'zod';
+import type { z } from 'zod';
 
 import {
 	CellAuditMetadata,
 	CellCloneAuditMetadata,
-	CellModerateAuditMetadata,
+	CellModerateAuditMetadata
 } from './cell_audit_metadata.ts';
 import {
 	CellGrantCreateAuditMetadata,
-	CellGrantRevokeAuditMetadata,
+	CellGrantRevokeAuditMetadata
 } from './cell_grant_audit_metadata.ts';
 import {
 	CellFieldSetAuditMetadata,
-	CellFieldDeleteAuditMetadata,
+	CellFieldDeleteAuditMetadata
 } from './cell_field_audit_metadata.ts';
 import {
 	CellItemInsertAuditMetadata,
 	CellItemMoveAuditMetadata,
-	CellItemDeleteAuditMetadata,
+	CellItemDeleteAuditMetadata
 } from './cell_item_audit_metadata.ts';
 
 /**
@@ -57,5 +57,5 @@ export const cell_audit_events: Readonly<Record<string, z.ZodType>> = {
 	cell_field_delete: CellFieldDeleteAuditMetadata,
 	cell_item_insert: CellItemInsertAuditMetadata,
 	cell_item_move: CellItemMoveAuditMetadata,
-	cell_item_delete: CellItemDeleteAuditMetadata,
+	cell_item_delete: CellItemDeleteAuditMetadata
 };

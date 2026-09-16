@@ -9,13 +9,13 @@
  * @module
  */
 
-import {create_rpc_endpoint} from '$lib/actions/action_rpc.ts';
-import {create_role_grant_offer_actions} from '$lib/auth/role_grant_offer_actions.ts';
-import {type NotificationSender} from '$lib/auth/role_grant_offer_notifications.ts';
-import type {AppServerContext} from '$lib/server/app_server_context.ts';
-import type {RouteSpec} from '$lib/http/route_spec.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
-import type {JsonrpcNotification} from '$lib/http/jsonrpc.ts';
+import { create_rpc_endpoint } from '$lib/actions/action_rpc.ts';
+import { create_role_grant_offer_actions } from '$lib/auth/role_grant_offer_actions.ts';
+import { type NotificationSender } from '$lib/auth/role_grant_offer_notifications.ts';
+import type { AppServerContext } from '$lib/server/app_server_context.ts';
+import type { RouteSpec } from '$lib/http/route_spec.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { JsonrpcNotification } from '$lib/http/jsonrpc.ts';
 
 /** The conventional RPC mount path in these tests. */
 export const NOTIFICATION_TEST_RPC_PATH = '/api/rpc';
@@ -33,19 +33,19 @@ export interface CapturedNotificationCall {
  * tests that build a single sender can null out the buffer between cases.
  */
 export const create_capture_sender = (
-	calls: Array<CapturedNotificationCall>,
-): NotificationSender & {reset: () => void} => ({
+	calls: Array<CapturedNotificationCall>
+): NotificationSender & { reset: () => void } => ({
 	send_to_account: (account_id: Uuid, message: JsonrpcNotification): number => {
 		calls.push({
 			account_id: account_id as string,
 			method: message.method,
-			params: message.params,
+			params: message.params
 		});
 		return 1;
 	},
 	reset: () => {
 		calls.length = 0;
-	},
+	}
 });
 
 /**
@@ -60,7 +60,7 @@ export const create_notification_route_specs_factory =
 	(ctx: AppServerContext): Array<RouteSpec> => [
 		...create_rpc_endpoint({
 			path: rpc_path,
-			actions: create_role_grant_offer_actions({...ctx.deps, notification_sender: sender}),
-			log: ctx.deps.log,
-		}),
+			actions: create_role_grant_offer_actions({ ...ctx.deps, notification_sender: sender }),
+			log: ctx.deps.log
+		})
 	];

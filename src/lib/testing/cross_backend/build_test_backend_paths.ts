@@ -16,8 +16,8 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 /**
  * Generic per-backend paths every cross-process test binary needs.
@@ -48,6 +48,6 @@ export const build_test_backend_paths = (prefix: string): TestBackendPaths => {
 		bootstrap_token_path: join(root, 'bootstrap_token'),
 		// `init_daemon_token` (Rust) and the TS server's daemon-token
 		// writer both land the token at `{root}/run/daemon_token`.
-		daemon_token_path: join(root, 'run', 'daemon_token'),
+		daemon_token_path: join(root, 'run', 'daemon_token')
 	};
 };

@@ -6,15 +6,15 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {assert} from 'vitest';
+import { assert } from 'vitest';
 
-import type {RouteSpec, RouteMethod} from '../http/route_spec.ts';
-import {is_null_schema, merge_error_schemas} from '../http/schema_helpers.ts';
-import {is_public_auth} from '../http/auth_shape.ts';
-import type {Keyring} from '../auth/keyring.ts';
-import {create_session_cookie_value, type SessionOptions} from '../auth/session_cookie.ts';
-import {ROLE_ADMIN} from '../auth/role_schema.ts';
-import type {TestAccount} from './app_server.ts';
+import type { RouteSpec, RouteMethod } from '../http/route_spec.ts';
+import { is_null_schema, merge_error_schemas } from '../http/schema_helpers.ts';
+import { is_public_auth } from '../http/auth_shape.ts';
+import type { Keyring } from '../auth/keyring.ts';
+import { create_session_cookie_value, type SessionOptions } from '../auth/session_cookie.ts';
+import { ROLE_ADMIN } from '../auth/role_schema.ts';
+import type { TestAccount } from './app_server.ts';
 
 /**
  * Find a route spec matching the given method and path.
@@ -26,7 +26,7 @@ import type {TestAccount} from './app_server.ts';
 export const find_route_spec = (
 	specs: Array<RouteSpec>,
 	method: string,
-	path: string,
+	path: string
 ): RouteSpec | undefined => {
 	// exact match first
 	const exact = specs.find((s) => s.method === method && s.path === path);
@@ -54,7 +54,7 @@ export const rest_auth_route_suffixes = [
 	'/password',
 	'/verify',
 	'/signup',
-	'/bootstrap',
+	'/bootstrap'
 ] as const;
 export type RestAuthRouteSuffix = (typeof rest_auth_route_suffixes)[number];
 
@@ -72,13 +72,13 @@ export type RestAuthRouteSuffix = (typeof rest_auth_route_suffixes)[number];
 export const find_auth_route = (
 	specs: Array<RouteSpec>,
 	suffix: RestAuthRouteSuffix,
-	method: RouteMethod,
+	method: RouteMethod
 ): RouteSpec | undefined => {
 	if (!rest_auth_route_suffixes.includes(suffix)) {
 		throw new Error(
 			`find_auth_route: unknown suffix ${JSON.stringify(
-				suffix,
-			)} — expected one of ${rest_auth_route_suffixes.join(', ')}. Use rpc_call for RPC methods.`,
+				suffix
+			)} — expected one of ${rest_auth_route_suffixes.join(', ')}. Use rpc_call for RPC methods.`
 		);
 	}
 	return specs.find((s) => s.method === method && s.path.endsWith(suffix));
@@ -98,7 +98,7 @@ export const assert_response_matches_spec = async (
 	route_specs: Array<RouteSpec>,
 	method: string,
 	path: string,
-	response: Response,
+	response: Response
 ): Promise<void> => {
 	const spec = find_route_spec(route_specs, method, path);
 	if (!spec) {
@@ -115,7 +115,7 @@ export const assert_response_matches_spec = async (
 		// getting non-JSON is a real bug.
 		if (response.ok && !is_null_schema(spec.output)) {
 			throw new Error(
-				`${method} ${path} (${response.status}) returned non-JSON but has output schema`,
+				`${method} ${path} (${response.status}) returned non-JSON but has output schema`
 			);
 		}
 		if (!response.ok) {
@@ -124,7 +124,7 @@ export const assert_response_matches_spec = async (
 				throw new Error(
 					`${method} ${path} (${
 						response.status
-					}) returned non-JSON but has error schema for status ${response.status}`,
+					}) returned non-JSON but has error schema for status ${response.status}`
 				);
 			}
 		}
@@ -136,8 +136,8 @@ export const assert_response_matches_spec = async (
 		if (!result.success) {
 			throw new Error(
 				`Output schema mismatch for ${method} ${path} (${response.status}): ${JSON.stringify(
-					result.error.issues,
-				)}`,
+					result.error.issues
+				)}`
 			);
 		}
 	} else {
@@ -149,8 +149,8 @@ export const assert_response_matches_spec = async (
 				if (!result.success) {
 					throw new Error(
 						`Error schema mismatch for ${method} ${path} (${response.status}): ${JSON.stringify(
-							result.error.issues,
-						)}`,
+							result.error.issues
+						)}`
 					);
 				}
 			}
@@ -163,7 +163,7 @@ export const assert_response_matches_spec = async (
  */
 export const create_expired_test_cookie = async (
 	keyring: Keyring,
-	session_options: SessionOptions<string>,
+	session_options: SessionOptions<string>
 ): Promise<string> => {
 	// now_seconds=1 puts the expiry at 1 + max_age seconds past epoch — still in 1970
 	return create_session_cookie_value(keyring, 'expired_test_token', session_options, 1);
@@ -183,7 +183,7 @@ const KNOWN_SAFE_ERROR_FIELDS = new Set([
 	'required_credential_types',
 	'retry_after',
 	'has_references',
-	'ok',
+	'ok'
 ]);
 
 /** Fields in error responses that indicate information leakage. */
@@ -196,7 +196,7 @@ const LEAKY_FIELD_PATTERNS = [
 	'password',
 	'hash',
 	'secret',
-	'token',
+	'token'
 ];
 
 /**
@@ -235,7 +235,7 @@ export const assert_no_error_info_leakage = (body: unknown, context: string): vo
 			for (const key of Object.keys(body)) {
 				assert.ok(
 					!key.toLowerCase().includes(pattern),
-					`${context}: error response field '${key}' matches leaky pattern '${pattern}'`,
+					`${context}: error response field '${key}' matches leaky pattern '${pattern}'`
 				);
 			}
 		}
@@ -243,7 +243,7 @@ export const assert_no_error_info_leakage = (body: unknown, context: string): vo
 	// check for stack traces and file paths in values
 	assert.ok(
 		!body_str.includes('node_modules'),
-		`${context}: error response contains node_modules path`,
+		`${context}: error response contains node_modules path`
 	);
 	assert.ok(!body_str.includes('at '), `${context}: error response contains stack trace`);
 	assert.ok(!/\.ts:\d+/.test(body_str), `${context}: error response contains .ts file reference`);
@@ -255,7 +255,7 @@ export const assert_no_error_info_leakage = (body: unknown, context: string): vo
  */
 export const assert_rate_limit_retry_after_header = (
 	response: Response,
-	body: {retry_after: number},
+	body: { retry_after: number }
 ): void => {
 	const header = response.headers.get('Retry-After');
 	assert.ok(header, 'Missing Retry-After header on 429 response');
@@ -265,8 +265,8 @@ export const assert_rate_limit_retry_after_header = (
 		header_value,
 		Math.ceil(body.retry_after),
 		`Retry-After header (${header_value}) should equal ceil(retry_after) (${Math.ceil(
-			body.retry_after,
-		)})`,
+			body.retry_after
+		)})`
 	);
 };
 
@@ -308,7 +308,7 @@ export const collect_json_keys_recursive = (value: unknown): Set<string> => {
 export const assert_no_sensitive_fields_in_json = (
 	body: unknown,
 	blocklist: ReadonlyArray<string>,
-	context: string,
+	context: string
 ): void => {
 	const keys = collect_json_keys_recursive(body);
 	for (const field of blocklist) {
@@ -341,11 +341,11 @@ export const pick_auth_headers = (
 	spec: RouteSpec,
 	keeper: KeeperHeaderProvider,
 	authed_account: TestAccount,
-	admin_account: TestAccount,
+	admin_account: TestAccount
 ): Record<string, string> => {
-	const {auth} = spec;
+	const { auth } = spec;
 	if (is_public_auth(auth)) {
-		return {host: 'localhost', origin: 'http://localhost:5173'};
+		return { host: 'localhost', origin: 'http://localhost:5173' };
 	}
 	if (auth.credential_types?.includes('daemon_token')) {
 		return keeper.create_daemon_token_headers();

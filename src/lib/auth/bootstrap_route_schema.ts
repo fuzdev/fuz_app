@@ -14,33 +14,33 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {Username} from '../primitive_schemas.ts';
-import {Password} from './password.ts';
-import type {RouteSpec} from '../http/route_spec.ts';
+import { Username } from '../primitive_schemas.ts';
+import { Password } from './password.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
 import {
 	ERROR_INVALID_TOKEN,
 	ERROR_ALREADY_BOOTSTRAPPED,
 	ERROR_TOKEN_FILE_MISSING,
 	ERROR_INVALID_JSON_BODY,
-	ERROR_INVALID_REQUEST_BODY,
+	ERROR_INVALID_REQUEST_BODY
 } from '../http/error_schemas.ts';
 
 /** Input for `POST /bootstrap`. `token` is the one-shot token file contents. */
 export const BootstrapInput = z.strictObject({
-	token: z.string().min(1).meta({sensitivity: 'secret'}),
+	token: z.string().min(1).meta({ sensitivity: 'secret' }),
 	username: Username,
-	password: Password,
+	password: Password
 });
 export type BootstrapInput = z.infer<typeof BootstrapInput>;
 
 /** Output for `POST /bootstrap`. Session cookie is the operative side effect. */
 export const BootstrapOutput = z.strictObject({
 	ok: z.literal(true),
-	account: z.strictObject({id: Uuid, username: Username}),
-	actor: z.strictObject({id: Uuid}),
+	account: z.strictObject({ id: Uuid, username: Username }),
+	actor: z.strictObject({ id: Uuid })
 });
 export type BootstrapOutput = z.infer<typeof BootstrapOutput>;
 
@@ -53,7 +53,7 @@ export type BootstrapOutput = z.infer<typeof BootstrapOutput>;
 export const bootstrap_route_shape = {
 	method: 'POST',
 	path: '/bootstrap',
-	auth: {account: 'none', actor: 'none'},
+	auth: { account: 'none', actor: 'none' },
 	description: 'Create initial keeper account (one-shot)',
 	transaction: false, // bootstrap_account manages its own transaction
 	input: BootstrapInput,
@@ -61,10 +61,10 @@ export const bootstrap_route_shape = {
 	rate_limit: 'ip',
 	errors: {
 		400: z.looseObject({
-			error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY]),
+			error: z.enum([ERROR_INVALID_JSON_BODY, ERROR_INVALID_REQUEST_BODY])
 		}),
-		401: z.looseObject({error: z.literal(ERROR_INVALID_TOKEN)}),
-		403: z.looseObject({error: z.literal(ERROR_ALREADY_BOOTSTRAPPED)}),
-		404: z.looseObject({error: z.literal(ERROR_TOKEN_FILE_MISSING)}),
-	},
+		401: z.looseObject({ error: z.literal(ERROR_INVALID_TOKEN) }),
+		403: z.looseObject({ error: z.literal(ERROR_ALREADY_BOOTSTRAPPED) }),
+		404: z.looseObject({ error: z.literal(ERROR_TOKEN_FILE_MISSING) })
+	}
 } satisfies Omit<RouteSpec, 'handler'>;

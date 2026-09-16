@@ -27,14 +27,14 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {has_role, type RequestActorContext} from '../../auth/request_context.ts';
-import {ROLE_ADMIN} from '../../auth/role_schema.ts';
+import { has_role, type RequestActorContext } from '../../auth/request_context.ts';
+import { ROLE_ADMIN } from '../../auth/role_schema.ts';
 import type {
 	CellCreateAuthorize,
 	CellCreateAuthorizeInput,
-	CellCreateVerdict,
+	CellCreateVerdict
 } from '../../auth/cell_actions.ts';
-import {SPINE_PARTICIPANT_ROLE} from './spine_surface_constants.ts';
+import { SPINE_PARTICIPANT_ROLE } from './spine_surface_constants.ts';
 
 /** The admin-only root kind the test policy gates (talk's `space` analog). */
 export const SPACE_CELL_KIND = 'space';
@@ -69,22 +69,22 @@ const get_contribution_rule = (data: unknown, kind: string): ContributionRule | 
  */
 export const test_cell_gated_create_authorize: CellCreateAuthorize = (
 	auth: RequestActorContext,
-	input: CellCreateAuthorizeInput,
+	input: CellCreateAuthorizeInput
 ): CellCreateVerdict => {
 	// Admin bypass — admins create roots + any kind, live immediately.
-	if (has_role(auth, ROLE_ADMIN)) return {allow: true, moderation_required: false};
+	if (has_role(auth, ROLE_ADMIN)) return { allow: true, moderation_required: false };
 	// Root creation (no governing root): `space` is admin-only; other parentless
 	// kinds stay open (the plain-create suites).
 	if (input.root_id === null) {
 		return input.kind === SPACE_CELL_KIND
-			? {allow: false}
-			: {allow: true, moderation_required: false};
+			? { allow: false }
+			: { allow: true, moderation_required: false };
 	}
 	// Contribution: resolve the governing root's per-kind policy.
 	const rule = get_contribution_rule(input.root_data, input.kind ?? '');
-	if (!rule) return {allow: false};
+	if (!rule) return { allow: false };
 	const admitted = rule.min_role === undefined || has_role(auth, rule.min_role);
 	return admitted
-		? {allow: true, moderation_required: rule.moderation_required ?? false}
-		: {allow: false};
+		? { allow: true, moderation_required: rule.moderation_required ?? false }
+		: { allow: false };
 };

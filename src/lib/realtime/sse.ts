@@ -7,13 +7,13 @@
  * @module
  */
 
-import type {Context} from 'hono';
-import {streamSSE} from 'hono/streaming';
-import {z} from 'zod';
-import {DEV} from 'esm-env';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { Context } from 'hono';
+import { streamSSE } from 'hono/streaming';
+import { z } from 'zod';
+import { DEV } from 'esm-env';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {SSE_CONNECTED_COMMENT} from './sse_constants.ts';
+import { SSE_CONNECTED_COMMENT } from './sse_constants.ts';
 
 /**
  * Generic SSE stream controller interface.
@@ -59,9 +59,9 @@ export interface SseNotification {
  */
 export const create_sse_response = <T = unknown>(
 	c: Context,
-	log: Logger,
-): {response: Response; stream: SseStream<T>} => {
-	const {promise, resolve} = Promise.withResolvers<void>();
+	log: Logger
+): { response: Response; stream: SseStream<T> } => {
+	const { promise, resolve } = Promise.withResolvers<void>();
 	const close_listeners: Array<() => void> = [];
 	let resolved = false;
 
@@ -99,7 +99,7 @@ export const create_sse_response = <T = unknown>(
 			close: do_close,
 			on_close(fn: () => void) {
 				close_listeners.push(fn);
-			},
+			}
 		};
 		hono_stream.onAbort(do_close);
 		// flush an SSE comment to push headers through proxies (Vite, nginx),
@@ -108,7 +108,7 @@ export const create_sse_response = <T = unknown>(
 		await promise;
 	});
 
-	return {response, stream: sse_stream};
+	return { response, stream: sse_stream };
 };
 
 /** Spec for a push event — declares params schema, description, and channel. */
@@ -135,10 +135,10 @@ export interface EventSpec {
  * @returns validated broadcaster wrapper (passthrough in production)
  */
 export const create_validated_broadcaster = <T extends SseNotification>(
-	broadcaster: {broadcast: (channel: string, data: T) => void},
+	broadcaster: { broadcast: (channel: string, data: T) => void },
 	event_specs: Array<EventSpec>,
-	log: Logger,
-): {broadcast: (channel: string, data: T) => void} => {
+	log: Logger
+): { broadcast: (channel: string, data: T) => void } => {
 	if (!DEV) {
 		return broadcaster;
 	}
@@ -155,6 +155,6 @@ export const create_validated_broadcaster = <T extends SseNotification>(
 				}
 			}
 			broadcaster.broadcast(channel, data);
-		},
+		}
 	};
 };

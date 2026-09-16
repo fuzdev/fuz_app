@@ -10,17 +10,21 @@
  * @module
  */
 
-import {assert, describe, test} from 'vitest';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { assert, describe, test } from 'vitest';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {create_test_app} from '$lib/testing/app_server.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import { create_test_app } from '$lib/testing/app_server.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import {
 	query_role_grant_revoke_for_scope,
-	query_create_role_grant,
+	query_create_role_grant
 } from '$lib/auth/role_grant_queries.ts';
 
-import {create_route_specs, describe_db, session_options} from './role_grant_offer_test_helpers.ts';
+import {
+	create_route_specs,
+	describe_db,
+	session_options
+} from './role_grant_offer_test_helpers.ts';
 
 describe_db('role_grant_offer.multi_actor — scope_revoke', (get_db) => {
 	describe('query_role_grant_revoke_for_scope returns actor + account per revoked role_grant', () => {
@@ -29,36 +33,36 @@ describe_db('role_grant_offer.multi_actor — scope_revoke', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			const a = await test_app.create_account({username: 'scope_revoke_a'});
-			const b = await test_app.create_account({username: 'scope_revoke_b'});
+			const a = await test_app.create_account({ username: 'scope_revoke_a' });
+			const b = await test_app.create_account({ username: 'scope_revoke_b' });
 
 			const scope: Uuid = '11111111-1111-4111-8111-111111111111' as Uuid;
 
 			await query_create_role_grant(
-				{db: get_db()},
+				{ db: get_db() },
 				{
 					actor_id: a.actor.id,
 					role: 'classroom_student',
 					scope_kind: 'classroom',
 					scope_id: scope,
-					granted_by: null,
-				},
+					granted_by: null
+				}
 			);
 			await query_create_role_grant(
-				{db: get_db()},
+				{ db: get_db() },
 				{
 					actor_id: b.actor.id,
 					role: 'classroom_student',
 					scope_kind: 'classroom',
 					scope_id: scope,
-					granted_by: null,
-				},
+					granted_by: null
+				}
 			);
 
 			const result = await get_db().transaction(async (tx) =>
-				query_role_grant_revoke_for_scope({db: tx}, scope, null, 'scope_destroyed'),
+				query_role_grant_revoke_for_scope({ db: tx }, scope, null, 'scope_destroyed')
 			);
 
 			assert.strictEqual(result.revoked.length, 2);

@@ -26,22 +26,22 @@
  * @module
  */
 
-import {ERROR_AUTHENTICATION_REQUIRED} from '$lib/http/error_schemas.ts';
-import type {ConformanceCase} from '$lib/testing/cross_backend/conformance_case.ts';
+import { ERROR_AUTHENTICATION_REQUIRED } from '$lib/http/error_schemas.ts';
+import type { ConformanceCase } from '$lib/testing/cross_backend/conformance_case.ts';
 
 export const conformance_expiry_cases: ReadonlyArray<ConformanceCase> = [
 	{
 		name: 'expired server-side session → account_verify → 401',
-		request: {method: 'account_verify', as: 'expired_session'},
-		expect: {status: 401, error_reason: ERROR_AUTHENTICATION_REQUIRED},
-		note: 'security.md §Session Security — sessions are server-side and DB-resident; an auth_session row past its expires_at is not authenticated, even when the signed cookie envelope itself is still valid',
+		request: { method: 'account_verify', as: 'expired_session' },
+		expect: { status: 401, error_reason: ERROR_AUTHENTICATION_REQUIRED },
+		note: 'security.md §Session Security — sessions are server-side and DB-resident; an auth_session row past its expires_at is not authenticated, even when the signed cookie envelope itself is still valid'
 	},
 	{
 		name: 'expired server-side session → POST /logout → 401',
-		request: {method: '/logout', as: 'expired_session'},
+		request: { method: '/logout', as: 'expired_session' },
 		// REST 401 — status pins the denial class (the in-process skip this
 		// replaces asserted status only).
-		expect: {status: 401},
-		note: 'security.md §Session Security — the DB-row expiry gate refuses an expired session on a mutation route too',
-	},
+		expect: { status: 401 },
+		note: 'security.md §Session Security — the DB-row expiry gate refuses an expired session on a mutation route too'
+	}
 ];

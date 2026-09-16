@@ -8,12 +8,12 @@
  * @module
  */
 
-import {describe, assert, test, beforeAll, beforeEach} from 'vitest';
+import { describe, assert, test, beforeAll, beforeEach } from 'vitest';
 
-import {Db, no_nested_transaction} from '$lib/db/db.ts';
-import {run_migrations, type Migration, type MigrationNamespace} from '$lib/db/migrate.ts';
-import {query_db_status, format_db_status} from '$lib/db/status.ts';
-import {create_pglite_factory, reset_pglite} from '$lib/testing/db.ts';
+import { Db, no_nested_transaction } from '$lib/db/db.ts';
+import { run_migrations, type Migration, type MigrationNamespace } from '$lib/db/migrate.ts';
+import { query_db_status, format_db_status } from '$lib/db/status.ts';
+import { create_pglite_factory, reset_pglite } from '$lib/testing/db.ts';
 
 const noop_init = async (_db: Db): Promise<void> => {};
 const factory = create_pglite_factory(noop_init);
@@ -28,20 +28,20 @@ beforeEach(async () => {
 	// `run_migrations` always creates the new-shape `schema_version` tracker
 	// before its namespace loop; an empty namespace creates the table with no
 	// rows so the tests below can seed divergent histories directly.
-	await run_migrations(db, [{namespace: '_init', migrations: []}]);
+	await run_migrations(db, [{ namespace: '_init', migrations: [] }]);
 });
 
-const named = (name: string): Migration => ({name, up: async () => {}});
+const named = (name: string): Migration => ({ name, up: async () => {} });
 
 const seed_applied_row = async (
 	namespace: string,
 	name: string,
-	sequence: number,
+	sequence: number
 ): Promise<void> => {
 	await db.query(`INSERT INTO schema_version (namespace, name, sequence) VALUES ($1, $2, $3)`, [
 		namespace,
 		name,
-		sequence,
+		sequence
 	]);
 };
 
@@ -52,7 +52,7 @@ describe('query_db_status name-divergence detection', () => {
 		await seed_applied_row('fuz_cell', 'cell_v0', 0);
 		const ns: MigrationNamespace = {
 			namespace: 'fuz_cell',
-			migrations: [named('full_cell_schema')],
+			migrations: [named('full_cell_schema')]
 		};
 
 		const status = await query_db_status(db, [ns]);
@@ -63,7 +63,7 @@ describe('query_db_status name-divergence detection', () => {
 			kind: 'name_mismatch',
 			position: 0,
 			applied: 'cell_v0',
-			expected: 'full_cell_schema',
+			expected: 'full_cell_schema'
 		});
 		assert.deepStrictEqual(m.pending_names, []);
 
@@ -82,7 +82,7 @@ describe('query_db_status name-divergence detection', () => {
 		await seed_applied_row('eq_ns', 'wrong_at_end', 1);
 		const ns: MigrationNamespace = {
 			namespace: 'eq_ns',
-			migrations: [named('m0'), named('m1')],
+			migrations: [named('m0'), named('m1')]
 		};
 
 		const status = await query_db_status(db, [ns]);
@@ -93,7 +93,7 @@ describe('query_db_status name-divergence detection', () => {
 			kind: 'name_mismatch',
 			position: 1,
 			applied: 'wrong_at_end',
-			expected: 'm1',
+			expected: 'm1'
 		});
 		assert.deepStrictEqual(m.pending_names, []);
 	});
@@ -104,14 +104,14 @@ describe('query_db_status name-divergence detection', () => {
 		await seed_applied_row('older_ns', 'm2_unknown', 2);
 		const ns: MigrationNamespace = {
 			namespace: 'older_ns',
-			migrations: [named('m0'), named('m1')],
+			migrations: [named('m0'), named('m1')]
 		};
 
 		const status = await query_db_status(db, [ns]);
 		const m = status.migrations.find((x) => x.namespace === 'older_ns')!;
 
 		assert.strictEqual(m.up_to_date, false);
-		assert.deepStrictEqual(m.divergence, {kind: 'binary_older', applied: 3, declared: 2});
+		assert.deepStrictEqual(m.divergence, { kind: 'binary_older', applied: 3, declared: 2 });
 		assert.deepStrictEqual(m.pending_names, []);
 
 		const formatted = format_db_status(status);
@@ -124,7 +124,7 @@ describe('query_db_status name-divergence detection', () => {
 		await seed_applied_row('clean_ns', 'm1', 1);
 		const ns: MigrationNamespace = {
 			namespace: 'clean_ns',
-			migrations: [named('m0'), named('m1')],
+			migrations: [named('m0'), named('m1')]
 		};
 
 		const status = await query_db_status(db, [ns]);
@@ -145,8 +145,8 @@ describe('query_db_status name-divergence detection', () => {
 		await seed_applied_row('clean_auth', 'full_auth_schema', 0);
 		await seed_applied_row('diverged_cell', 'cell_v0', 0);
 		const namespaces: Array<MigrationNamespace> = [
-			{namespace: 'clean_auth', migrations: [named('full_auth_schema')]},
-			{namespace: 'diverged_cell', migrations: [named('full_cell_schema')]},
+			{ namespace: 'clean_auth', migrations: [named('full_auth_schema')] },
+			{ namespace: 'diverged_cell', migrations: [named('full_cell_schema')] }
 		];
 
 		const status = await query_db_status(db, namespaces);
@@ -160,7 +160,7 @@ describe('query_db_status name-divergence detection', () => {
 			kind: 'name_mismatch',
 			position: 0,
 			applied: 'cell_v0',
-			expected: 'full_cell_schema',
+			expected: 'full_cell_schema'
 		});
 
 		const formatted = format_db_status(status);
@@ -172,7 +172,7 @@ describe('query_db_status name-divergence detection', () => {
 		await seed_applied_row('partial_ns', 'm0', 0);
 		const ns: MigrationNamespace = {
 			namespace: 'partial_ns',
-			migrations: [named('m0'), named('m1')],
+			migrations: [named('m0'), named('m1')]
 		};
 
 		const status = await query_db_status(db, [ns]);
@@ -196,9 +196,9 @@ describe('query_db_status connectivity and tables', () => {
 			client: {
 				query: () => {
 					throw new Error('connection refused');
-				},
+				}
 			},
-			transaction: no_nested_transaction,
+			transaction: no_nested_transaction
 		});
 
 		const status = await query_db_status(failing_db);
@@ -223,7 +223,7 @@ describe('query_db_status connectivity and tables', () => {
 		// the `schema_version` tracker (created in beforeEach) is listed too
 		assert.ok(
 			status.tables.some((t) => t.name === 'schema_version'),
-			'schema_version listed',
+			'schema_version listed'
 		);
 	});
 
@@ -236,7 +236,7 @@ describe('query_db_status connectivity and tables', () => {
 describe('query_db_status tracker shape', () => {
 	test('no schema_version table → namespaces report nothing applied yet', async () => {
 		await db.query('DROP TABLE schema_version');
-		const ns: MigrationNamespace = {namespace: 'fresh', migrations: [named('m0'), named('m1')]};
+		const ns: MigrationNamespace = { namespace: 'fresh', migrations: [named('m0'), named('m1')] };
 
 		const status = await query_db_status(db, [ns]);
 		const m = status.migrations.find((x) => x.namespace === 'fresh')!;
@@ -259,7 +259,7 @@ describe('query_db_status tracker shape', () => {
 		`);
 		const ns: MigrationNamespace = {
 			namespace: 'fuz_auth',
-			migrations: [named('full_auth_schema')],
+			migrations: [named('full_auth_schema')]
 		};
 
 		const status = await query_db_status(db, [ns]);
@@ -281,7 +281,7 @@ describe('format_db_status', () => {
 			error: 'connection refused',
 			table_count: 0,
 			tables: [],
-			migrations: [],
+			migrations: []
 		});
 		assert.ok(out.includes('Connection: FAILED'), out);
 		assert.ok(out.includes('connection refused'), out);
@@ -291,8 +291,8 @@ describe('format_db_status', () => {
 		const out = format_db_status({
 			connected: true,
 			table_count: 1,
-			tables: [{name: 'widget', row_count: 3}],
-			migrations: [],
+			tables: [{ name: 'widget', row_count: 3 }],
+			migrations: []
 		});
 		assert.ok(out.includes('Connection: OK'), out);
 		assert.ok(out.includes('Tables: 1'), out);
@@ -305,9 +305,9 @@ describe('format_db_status', () => {
 		const out = format_db_status({
 			connected: true,
 			table_count: 1,
-			tables: [{name: 'schema_version', row_count: 0}],
+			tables: [{ name: 'schema_version', row_count: 0 }],
 			migrations: [],
-			old_tracker_shape: true,
+			old_tracker_shape: true
 		});
 		assert.ok(out.includes('pre-0.42 schema_version shape'), out);
 	});

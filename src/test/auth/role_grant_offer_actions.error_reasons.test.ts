@@ -16,22 +16,22 @@
  * shared helper rather than copy-pasting.
  */
 
-import {readFileSync} from 'node:fs';
-import {dirname, resolve} from 'node:path';
-import {fileURLToPath} from 'node:url';
-import {assert, test} from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { assert, test } from 'vitest';
 
-import type {RequestResponseActionSpec} from '$lib/actions/action_spec.ts';
+import type { RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
 import * as role_grant_offer_specs from '$lib/auth/role_grant_offer_action_specs.ts';
 import * as error_schemas from '$lib/http/error_schemas.ts';
 
 const handler_source = readFileSync(
 	resolve(dirname(fileURLToPath(import.meta.url)), '../../lib/auth/role_grant_offer_actions.ts'),
-	'utf8',
+	'utf8'
 );
 
 const error_value_by_name: Record<string, string> = {};
-for (const [name, value] of Object.entries({...role_grant_offer_specs, ...error_schemas})) {
+for (const [name, value] of Object.entries({ ...role_grant_offer_specs, ...error_schemas })) {
 	if (name.startsWith('ERROR_') && typeof value === 'string') error_value_by_name[name] = value;
 }
 
@@ -39,7 +39,7 @@ for (const [name, value] of Object.entries({...role_grant_offer_specs, ...error_
 // actor / account / public narrow per spec literal at compile time;
 // the source-scan only cares about the spec → handler pairing.
 const spec_to_handler: ReadonlyArray<readonly [string, string]> = [
-	...handler_source.matchAll(/\brpc_action\((\w+_action_spec),\s*(\w+_handler)\)/g),
+	...handler_source.matchAll(/\brpc_action\((\w+_action_spec),\s*(\w+_handler)\)/g)
 ].map((m) => [m[1]!, m[2]!] as const);
 
 const get_handler_body = (handler_name: string): string => {
@@ -76,7 +76,7 @@ for (const [spec_const, handler_name] of spec_to_handler) {
 				declared.has(value),
 				`${handler_name} throws reason '${value}' but ${
 					spec_const
-				}.error_reasons doesn't declare it — add it to the spec or stop throwing it`,
+				}.error_reasons doesn't declare it — add it to the spec or stop throwing it`
 			);
 		}
 		for (const value of declared) {
@@ -84,7 +84,7 @@ for (const [spec_const, handler_name] of spec_to_handler) {
 				thrown.has(value),
 				`${spec_const}.error_reasons declares '${value}' but ${
 					handler_name
-				} doesn't throw it — remove from spec or wire the throw`,
+				} doesn't throw it — remove from spec or wire the throw`
 			);
 		}
 	});

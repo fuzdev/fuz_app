@@ -17,16 +17,16 @@
  * @module
  */
 
-import {to_error_message} from '@fuzdev/fuz_util/error.ts';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
-import {ThrownJsonrpcError, jsonrpc_error_messages} from '../http/jsonrpc_errors.ts';
+import { ThrownJsonrpcError, jsonrpc_error_messages } from '../http/jsonrpc_errors.ts';
 import {
 	is_jsonrpc_notification,
 	is_jsonrpc_request,
 	to_jsonrpc_message_id,
 	to_jsonrpc_result,
 	create_jsonrpc_response,
-	create_jsonrpc_error_response,
+	create_jsonrpc_error_response
 } from '../http/jsonrpc_helpers.ts';
 import type {
 	JsonrpcMessageFromClientToServer,
@@ -35,10 +35,10 @@ import type {
 	JsonrpcRequest,
 	JsonrpcRequestId,
 	JsonrpcResponseOrError,
-	JsonrpcErrorResponse,
+	JsonrpcErrorResponse
 } from '../http/jsonrpc.ts';
-import type {Transport, TransportSendOptions} from './transports.ts';
-import {PEER_PING_METHOD, peer_ping_responder} from './peer_ping.ts';
+import type { Transport, TransportSendOptions } from './transports.ts';
+import { PEER_PING_METHOD, peer_ping_responder } from './peer_ping.ts';
 
 // TODO logging - maybe add a getter to Cell that falls back to the app logger?
 
@@ -68,7 +68,7 @@ export interface WebsocketRpcConnection extends WebsocketConnection {
 	request: (
 		method: string,
 		params: unknown,
-		options?: {signal?: AbortSignal; queue?: boolean; id?: JsonrpcRequestId},
+		options?: { signal?: AbortSignal; queue?: boolean; id?: JsonrpcRequestId }
 	) => Promise<unknown>;
 }
 
@@ -108,7 +108,7 @@ export class FrontendWebsocketTransport implements Transport {
 					// against a real frontend.
 					if (data.method === PEER_PING_METHOD) {
 						this.#connection.send(
-							create_jsonrpc_response(data.id, peer_ping_responder(data.params)),
+							create_jsonrpc_response(data.id, peer_ping_responder(data.params))
 						);
 						return;
 					}
@@ -140,15 +140,15 @@ export class FrontendWebsocketTransport implements Transport {
 
 	async send(
 		message: JsonrpcRequest,
-		options?: TransportSendOptions,
+		options?: TransportSendOptions
 	): Promise<JsonrpcResponseOrError>;
 	async send(
 		message: JsonrpcNotification,
-		options?: TransportSendOptions,
+		options?: TransportSendOptions
 	): Promise<JsonrpcErrorResponse | null>;
 	async send(
 		message: JsonrpcMessageFromClientToServer,
-		options?: TransportSendOptions,
+		options?: TransportSendOptions
 	): Promise<JsonrpcMessageFromServerToClient | null> {
 		// Notifications fail-fast when disconnected regardless of `queue` —
 		// `connection.send()` is fire-and-forget with no queue semantic, so
@@ -165,7 +165,7 @@ export class FrontendWebsocketTransport implements Transport {
 		if (is_jsonrpc_notification(message) && !this.is_ready()) {
 			return create_jsonrpc_error_response(
 				to_jsonrpc_message_id(message),
-				jsonrpc_error_messages.service_unavailable('WebSocket not connected'),
+				jsonrpc_error_messages.service_unavailable('WebSocket not connected')
 			);
 		}
 
@@ -174,7 +174,7 @@ export class FrontendWebsocketTransport implements Transport {
 				const result = await this.#connection.request(message.method, message.params, {
 					id: message.id,
 					signal: options?.signal,
-					queue,
+					queue
 				});
 				return create_jsonrpc_response(message.id, to_jsonrpc_result(result));
 			} catch (error) {
@@ -182,12 +182,12 @@ export class FrontendWebsocketTransport implements Transport {
 					return create_jsonrpc_error_response(message.id, {
 						code: error.code,
 						message: error.message,
-						data: error.data,
+						data: error.data
 					});
 				}
 				return create_jsonrpc_error_response(
 					message.id,
-					jsonrpc_error_messages.internal_error(to_error_message(error)),
+					jsonrpc_error_messages.internal_error(to_error_message(error))
 				);
 			}
 		}
@@ -199,7 +199,7 @@ export class FrontendWebsocketTransport implements Transport {
 
 		return create_jsonrpc_error_response(
 			to_jsonrpc_message_id(message),
-			jsonrpc_error_messages.invalid_request(),
+			jsonrpc_error_messages.invalid_request()
 		);
 	}
 

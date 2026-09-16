@@ -39,21 +39,21 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
 import {
 	rpc_action,
 	type ActionActorContext,
 	type ActionContext,
-	type RpcAction,
+	type RpcAction
 } from '../actions/action_rpc.ts';
-import {jsonrpc_errors, dev_only} from '../http/jsonrpc_errors.ts';
-import {is_pg_unique_violation} from '../db/pg_error.ts';
-import {has_role, type RequestActorContext} from './request_context.ts';
-import {ROLE_ADMIN} from './role_schema.ts';
-import type {ActionFactoryDeps} from './deps.ts';
-import type {Json} from '@fuzdev/fuz_util/json.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { jsonrpc_errors, dev_only } from '../http/jsonrpc_errors.ts';
+import { is_pg_unique_violation } from '../db/pg_error.ts';
+import { has_role, type RequestActorContext } from './request_context.ts';
+import { ROLE_ADMIN } from './role_schema.ts';
+import type { ActionFactoryDeps } from './deps.ts';
+import type { Json } from '@fuzdev/fuz_util/json.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import {
 	cell_create_action_spec,
@@ -92,7 +92,7 @@ import {
 	type CellCloneInput,
 	type CellCloneOutput,
 	type CellJson,
-	type CellPath,
+	type CellPath
 } from './cell_action_specs.ts';
 import {
 	query_cell_create,
@@ -103,30 +103,33 @@ import {
 	query_cell_set_moderation,
 	query_cell_list,
 	query_cell_load_many,
-	type CellRow,
+	type CellRow
 } from '../db/cell_queries.ts';
 import {
 	query_cell_grant_list_for_cell,
-	query_cell_grants_for_caller_in_cells,
+	query_cell_grants_for_caller_in_cells
 } from '../db/cell_grant_queries.ts';
-import {query_cell_field_list_for_source, query_cell_field_set} from '../db/cell_field_queries.ts';
+import {
+	query_cell_field_list_for_source,
+	query_cell_field_set
+} from '../db/cell_field_queries.ts';
 import {
 	query_cell_item_insert,
 	query_cell_item_list_for_parent,
-	type CellItemRow,
+	type CellItemRow
 } from '../db/cell_item_queries.ts';
-import {can_view_cell, can_edit_cell, can_manage_cell} from './cell_authorize.ts';
-import {filter_visible_target_ids} from './cell_relation_visibility.ts';
-import {to_grant_json} from './cell_grant_actions.ts';
-import {to_field_json} from './cell_field_actions.ts';
-import {to_item_json} from './cell_item_actions.ts';
-import type {GrantJson} from './cell_grant_action_specs.ts';
+import { can_view_cell, can_edit_cell, can_manage_cell } from './cell_authorize.ts';
+import { filter_visible_target_ids } from './cell_relation_visibility.ts';
+import { to_grant_json } from './cell_grant_actions.ts';
+import { to_field_json } from './cell_field_actions.ts';
+import { to_item_json } from './cell_item_actions.ts';
+import type { GrantJson } from './cell_grant_action_specs.ts';
 import type {
 	CellAuditMetadata,
 	CellCloneAuditMetadata,
-	CellModerateAuditMetadata,
+	CellModerateAuditMetadata
 } from './cell_audit_metadata.ts';
-import type {CellData} from './cell_data_schema.ts';
+import type { CellData } from './cell_data_schema.ts';
 
 /**
  * Input to a `CellCreateAuthorize` callback — the TS twin of the Rust
@@ -157,7 +160,7 @@ export interface CellCreateAuthorizeInput {
  * moderation_required}` admits — `true` → born `pending` + private, `false` →
  * born `approved` at the author's visibility.
  */
-export type CellCreateVerdict = {allow: false} | {allow: true; moderation_required: boolean};
+export type CellCreateVerdict = { allow: false } | { allow: true; moderation_required: boolean };
 
 /**
  * Opt-in, parent-aware creation authorizer — the TS twin of the Rust
@@ -171,7 +174,7 @@ export type CellCreateVerdict = {allow: false} | {allow: true; moderation_requir
  */
 export type CellCreateAuthorize = (
 	auth: RequestActorContext,
-	input: CellCreateAuthorizeInput,
+	input: CellCreateAuthorizeInput
 ) => CellCreateVerdict | Promise<CellCreateVerdict>;
 
 /**
@@ -205,7 +208,7 @@ const to_iso_nullable = (value: Date | string | null): string | null => {
  * write is unambiguously a path collision.
  */
 const path_taken_error = (): ReturnType<typeof jsonrpc_errors.conflict> =>
-	jsonrpc_errors.conflict('cell.path is already taken', {reason: ERROR_CELL_PATH_TAKEN});
+	jsonrpc_errors.conflict('cell.path is already taken', { reason: ERROR_CELL_PATH_TAKEN });
 
 /**
  * Reject a `kind` key supplied inside `data`. `kind` is the top-level
@@ -219,8 +222,8 @@ const reject_kind_in_data = (data: CellData): void => {
 		throw jsonrpc_errors.invalid_params(
 			'cell.data must not contain `kind` (it is a top-level field)',
 			{
-				reason: ERROR_CELL_KIND_IN_DATA,
-			},
+				reason: ERROR_CELL_KIND_IN_DATA
+			}
 		);
 	}
 };
@@ -240,7 +243,7 @@ export const to_cell_json = (row: CellRow): CellJson => ({
 	created_at: typeof row.created_at === 'string' ? row.created_at : row.created_at.toISOString(),
 	updated_at: to_iso_nullable(row.updated_at),
 	deleted_at: to_iso_nullable(row.deleted_at),
-	grant_count: row.grant_count,
+	grant_count: row.grant_count
 });
 
 /**
@@ -253,7 +256,7 @@ const emit_cell_audit = (
 	event_type: 'cell_create' | 'cell_update' | 'cell_delete',
 	row: CellRow,
 	deps: CellActionDeps,
-	auth: RequestActorContext,
+	auth: RequestActorContext
 ): void => {
 	deps.audit.emit(ctx, {
 		event_type,
@@ -263,14 +266,14 @@ const emit_cell_audit = (
 		metadata: {
 			cell_id: row.id,
 			kind: row.kind ?? undefined,
-			path: row.path,
-		} satisfies CellAuditMetadata,
+			path: row.path
+		} satisfies CellAuditMetadata
 	});
 };
 
 /** Create the six generic cell RPC actions. */
 export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
-	const {validate_data, authorize_create} = deps;
+	const { validate_data, authorize_create } = deps;
 
 	/**
 	 * Run the optional `validate_data` deps callback and convert any thrown
@@ -287,7 +290,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			if (err instanceof z.ZodError) {
 				throw jsonrpc_errors.invalid_params(
 					'cell.data shape validation failed',
-					dev_only({issues: err.issues}),
+					dev_only({ issues: err.issues })
 				);
 			}
 			throw err;
@@ -296,14 +299,14 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 
 	const create_handler = async (
 		input: CellCreateInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<CellCreateOutput> => {
 		const auth = ctx.auth;
 		// Path writes are admin-only. Reject before the insert so the audit
 		// + DB are clean.
 		if (input.path !== undefined && input.path !== null && !has_role(auth, ROLE_ADMIN)) {
 			throw jsonrpc_errors.forbidden('cell.path is admin-only', {
-				reason: ERROR_CELL_PATH_ADMIN_ONLY,
+				reason: ERROR_CELL_PATH_ADMIN_ONLY
 			});
 		}
 		// `kind` is the top-level column — reject a stray copy inside `data`,
@@ -314,7 +317,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		if (input.kind === '') {
 			throw jsonrpc_errors.invalid_params(
 				'cell.kind must not be empty (use null for a typeless cell)',
-				{reason: ERROR_CELL_KIND_EMPTY},
+				{ reason: ERROR_CELL_KIND_EMPTY }
 			);
 		}
 		// Per-kind shape validation (sub-API). Unknown kinds pass through;
@@ -336,10 +339,10 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		let root_data: CellData | null = null;
 		if (parent_id !== null) {
 			const parent = await query_cell_get(ctx, parent_id);
-			if (!parent) throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+			if (!parent) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 			const parent_grants = await query_cell_grant_list_for_cell(ctx, parent.id);
 			if (!can_view_cell(auth, parent, parent_grants)) {
-				throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+				throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 			}
 			root_id = parent.root_id ?? parent.id;
 			if (authorize_create) {
@@ -367,11 +370,11 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				parent_id,
 				root_id,
 				root_data,
-				scope_id: null,
+				scope_id: null
 			});
 			if (!verdict.allow) {
 				throw jsonrpc_errors.forbidden('cell creation is not permitted here', {
-					reason: ERROR_CELL_CREATE_FORBIDDEN,
+					reason: ERROR_CELL_CREATE_FORBIDDEN
 				});
 			}
 			// Moderation is a *contribution* concept — only stamp it for a create
@@ -404,14 +407,14 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				parent_id,
 				root_id,
 				moderation,
-				created_by: auth.actor.id,
+				created_by: auth.actor.id
 			});
 		} catch (err) {
 			if (input.path != null && is_pg_unique_violation(err)) throw path_taken_error();
 			throw err;
 		}
 		emit_cell_audit(ctx, 'cell_create', row, deps, auth);
-		return {cell: to_cell_json(row)};
+		return { cell: to_cell_json(row) };
 	};
 
 	const get_handler = async (input: CellGetInput, ctx: ActionContext): Promise<CellGetOutput> => {
@@ -420,7 +423,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// bypass the wire schema get the same error shape.
 		if (input.id === undefined && input.path === undefined) {
 			throw jsonrpc_errors.invalid_params('cell_get requires id or path', {
-				reason: ERROR_CELL_GET_REQUIRES_ID_OR_PATH,
+				reason: ERROR_CELL_GET_REQUIRES_ID_OR_PATH
 			});
 		}
 		const auth = ctx.auth;
@@ -429,7 +432,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				? await query_cell_get(ctx, input.id)
 				: await query_cell_get_by_path(ctx, input.path!);
 		if (!row) {
-			throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		}
 		// Run the three post-cell fetches in parallel — they share only
 		// `row.id` and have no inter-dependency. Bundle fetches one over the
@@ -440,16 +443,16 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		const [grants, fields, items] = await Promise.all([
 			auth ? query_cell_grant_list_for_cell(ctx, row.id) : Promise.resolve(null),
 			query_cell_field_list_for_source(ctx, row.id, {
-				limit: CELL_RELATIONS_BUNDLE_LIMIT + 1,
+				limit: CELL_RELATIONS_BUNDLE_LIMIT + 1
 			}),
 			query_cell_item_list_for_parent(ctx, row.id, {
-				limit: CELL_RELATIONS_BUNDLE_LIMIT + 1,
-			}),
+				limit: CELL_RELATIONS_BUNDLE_LIMIT + 1
+			})
 		]);
 		// 404 covers both "no such cell" and "exists but caller can't view"
 		// — same response code so private-cell existence doesn't leak.
 		if (!can_view_cell(auth, row, grants)) {
-			throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		}
 		const can_edit = can_edit_cell(auth, row, grants);
 		// `can_grant` gates the share UI — managing grants is a manage-tier
@@ -467,7 +470,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// id-sets. `*_truncated` still reflects the raw relation size.
 		const visible_targets = await filter_visible_target_ids(ctx, auth, [
 			...fields_bundled.map((f) => f.target_id),
-			...items_bundled.map((i) => i.child_id),
+			...items_bundled.map((i) => i.child_id)
 		]);
 		const fields_visible = fields_bundled.filter((f) => visible_targets.has(f.target_id));
 		const items_visible = items_bundled.filter((i) => visible_targets.has(i.child_id));
@@ -478,13 +481,13 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			items: items_visible.map(to_item_json),
 			items_truncated,
 			can_edit,
-			can_grant,
+			can_grant
 		};
 	};
 
 	const update_handler = async (
 		input: CellUpdateInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<CellUpdateOutput> => {
 		const auth = ctx.auth;
 		const path_provided = Object.hasOwn(input, 'path');
@@ -492,17 +495,17 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// can't probe for cell existence by varying `path` shape.
 		if (path_provided && !has_role(auth, ROLE_ADMIN)) {
 			throw jsonrpc_errors.forbidden('cell.path is admin-only', {
-				reason: ERROR_CELL_PATH_ADMIN_ONLY,
+				reason: ERROR_CELL_PATH_ADMIN_ONLY
 			});
 		}
 		const existing = await query_cell_get(ctx, input.cell_id);
 		if (!existing) {
-			throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		}
 		const grants = await query_cell_grant_list_for_cell(ctx, existing.id);
 		if (!can_edit_cell(auth, existing, grants)) {
 			// IDOR mask: 404, not 403 — same shape as cell_get.
-			throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		}
 		// Visibility writes are manage-tier only (admin / owner). An
 		// editor-grant holder may edit `data` but cannot flip the cell's
@@ -515,7 +518,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			!can_manage_cell(auth, existing)
 		) {
 			throw jsonrpc_errors.forbidden('cell.visibility is manage-tier only', {
-				reason: ERROR_CELL_VISIBILITY_MANAGE_ONLY,
+				reason: ERROR_CELL_VISIBILITY_MANAGE_ONLY
 			});
 		}
 		// Per-kind shape validation when `data` is supplied. Patch-only —
@@ -534,7 +537,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				data: validated_data as unknown as Json | undefined,
 				visibility: input.visibility,
 				path: path_provided ? (input.path ?? null) : undefined,
-				updated_by: auth.actor.id,
+				updated_by: auth.actor.id
 			});
 		} catch (err) {
 			if (path_provided && input.path != null && is_pg_unique_violation(err)) {
@@ -544,74 +547,74 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		}
 		if (!updated) {
 			// Raced with a deleter between the visibility check and the UPDATE.
-			throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		}
 		emit_cell_audit(ctx, 'cell_update', updated, deps, auth);
-		return {cell: to_cell_json(updated)};
+		return { cell: to_cell_json(updated) };
 	};
 
 	const delete_handler = async (
 		input: CellDeleteInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<CellDeleteOutput> => {
 		const auth = ctx.auth;
 		// Fetch first so we can audit `kind` + `path` after the soft-delete
 		// flips `deleted_at`.
 		const existing = await query_cell_get(ctx, input.cell_id);
 		if (!existing) {
-			throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		}
 		const grants = await query_cell_grant_list_for_cell(ctx, existing.id);
 		if (!can_edit_cell(auth, existing, grants)) {
-			throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		}
-		const deleted = await query_cell_delete(ctx, input.cell_id, {deleted_by: auth.actor.id});
+		const deleted = await query_cell_delete(ctx, input.cell_id, { deleted_by: auth.actor.id });
 		if (!deleted) {
 			// Raced with another deleter.
-			throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		}
 		emit_cell_audit(ctx, 'cell_delete', existing, deps, auth);
-		return {ok: true, deleted: true};
+		return { ok: true, deleted: true };
 	};
 
 	const moderate_handler = async (
 		input: CellModerateInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<CellModerateOutput> => {
 		const auth = ctx.auth;
 		const existing = await query_cell_get(ctx, input.cell_id);
 		// 404 covers miss + unviewable so a pending (private) contribution
 		// doesn't leak existence to a non-viewer.
-		if (!existing) throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+		if (!existing) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		const grants = await query_cell_grant_list_for_cell(ctx, existing.id);
 		if (!can_view_cell(auth, existing, grants)) {
-			throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		}
 		// Only a contribution (with a governing root) is moderatable.
 		if (existing.root_id === null) {
 			throw jsonrpc_errors.invalid_params(
 				'cell is not a contribution (no governing root to moderate under)',
-				{reason: ERROR_CELL_NOT_A_CONTRIBUTION},
+				{ reason: ERROR_CELL_NOT_A_CONTRIBUTION }
 			);
 		}
 		// Authority is over the governing ROOT (admin / root owner), not the
 		// contribution — the author manages the contribution and could otherwise
 		// self-approve. A viewable-but-unauthorized caller (incl. the author) → 403.
 		const root = await query_cell_get(ctx, existing.root_id);
-		if (!root) throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+		if (!root) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		if (!can_manage_cell(auth, root)) {
 			throw jsonrpc_errors.forbidden(
 				'cell_moderate requires moderation authority over the governing root',
-				{reason: ERROR_CELL_MODERATE_FORBIDDEN},
+				{ reason: ERROR_CELL_MODERATE_FORBIDDEN }
 			);
 		}
 		const approved = input.moderation === 'approved';
 		const updated = await query_cell_set_moderation(ctx, input.cell_id, input.moderation, {
 			set_visibility_public: approved,
-			updated_by: auth.actor.id,
+			updated_by: auth.actor.id
 		});
 		// Raced with a deleter between the authz check and the UPDATE.
-		if (!updated) throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+		if (!updated) throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		deps.audit.emit(ctx, {
 			event_type: 'cell_moderate',
 			actor_id: auth.actor.id,
@@ -620,10 +623,10 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			metadata: {
 				cell_id: updated.id,
 				root_id: existing.root_id,
-				moderation: input.moderation,
-			} satisfies CellModerateAuditMetadata,
+				moderation: input.moderation
+			} satisfies CellModerateAuditMetadata
 		});
-		return {cell: to_cell_json(updated)};
+		return { cell: to_cell_json(updated) };
 	};
 
 	/**
@@ -642,7 +645,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		ctx: ActionContext | ActionActorContext,
 		source: CellRow,
 		auth: RequestActorContext,
-		options: {patch_data?: CellData},
+		options: { patch_data?: CellData }
 	): Promise<CellRow> => {
 		// A patch is wire-supplied `data` — reject a stray `kind` (kind is the
 		// immutable top-level column; the clone inherits `source.kind`).
@@ -650,7 +653,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// Both `source.data` and `options.patch_data` are CellData (loose
 		// objects). Patch-last shallow merge composes cleanly.
 		const merged_data: CellData =
-			options.patch_data !== undefined ? {...source.data, ...options.patch_data} : source.data;
+			options.patch_data !== undefined ? { ...source.data, ...options.patch_data } : source.data;
 		// Per-kind shape validation runs on the merged result (sub-API).
 		// Source rows are validated on their original create; the patch
 		// could violate the kind shape (e.g., remove a required field).
@@ -663,24 +666,24 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			kind: source.kind,
 			visibility: source.visibility,
 			path: null, // admin-only paths cannot auto-clone
-			created_by: auth.actor.id,
+			created_by: auth.actor.id
 		});
 	};
 
 	const clone_handler = async (
 		input: CellCloneInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<CellCloneOutput> => {
 		const auth = ctx.auth;
 		const source = await query_cell_get(ctx, input.source_id);
 		if (!source) {
-			throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		}
 		const source_grants = await query_cell_grant_list_for_cell(ctx, source.id);
 		// 404 covers both miss and unauthorized read — same shape as cell_get
 		// so the existence of private cells doesn't leak through clones.
 		if (!can_view_cell(auth, source, source_grants)) {
-			throw jsonrpc_errors.not_found('cell', {reason: ERROR_CELL_NOT_FOUND});
+			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
 		}
 
 		const deep = input.deep === true;
@@ -706,7 +709,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			const child_ids = source_items.map((i) => i.child_id);
 			const [child_rows, visible_children] = await Promise.all([
 				query_cell_load_many(ctx, child_ids),
-				filter_visible_target_ids(ctx, auth, child_ids),
+				filter_visible_target_ids(ctx, auth, child_ids)
 			]);
 			const child_by_id = new Map(child_rows.map((r) => [r.id, r]));
 			for (const item of source_items) {
@@ -726,7 +729,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// in that single transaction and rolls back together on any
 		// failure. No nested `ctx.db.transaction(...)` here.
 		const cloned_root = await clone_one_cell_row(ctx, source, auth, {
-			patch_data: input.with_data_patch,
+			patch_data: input.with_data_patch
 		});
 
 		// Copy outgoing fields shallowly: the clone points at the same
@@ -741,7 +744,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		const field_targets_visible = await filter_visible_target_ids(
 			ctx,
 			auth,
-			source_fields.map((f) => f.target_id),
+			source_fields.map((f) => f.target_id)
 		);
 		for (const f of source_fields) {
 			if (!field_targets_visible.has(f.target_id)) continue;
@@ -751,7 +754,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			await query_cell_field_set(ctx, {
 				source_id: cloned_root.id,
 				name: f.name,
-				target_id: f.target_id,
+				target_id: f.target_id
 			});
 		}
 
@@ -768,7 +771,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				await query_cell_item_insert(ctx, {
 					parent_id: cloned_root.id,
 					position: item.position,
-					child_id: cloned_child.id,
+					child_id: cloned_child.id
 				});
 			}
 		} else {
@@ -786,14 +789,14 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			const shallow_children_visible = await filter_visible_target_ids(
 				ctx,
 				auth,
-				shallow_items.map((i) => i.child_id),
+				shallow_items.map((i) => i.child_id)
 			);
 			for (const item of shallow_items) {
 				if (!shallow_children_visible.has(item.child_id)) continue;
 				await query_cell_item_insert(ctx, {
 					parent_id: cloned_root.id,
 					position: item.position,
-					child_id: item.child_id,
+					child_id: item.child_id
 				});
 			}
 		}
@@ -814,29 +817,29 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				new_id: cloned_root.id,
 				deep,
 				item_count: cloned_child_count,
-				...(source_kind !== undefined ? {kind: source_kind} : {}),
-			} satisfies CellCloneAuditMetadata,
+				...(source_kind !== undefined ? { kind: source_kind } : {})
+			} satisfies CellCloneAuditMetadata
 		});
-		return {cell: to_cell_json(cloned_root)};
+		return { cell: to_cell_json(cloned_root) };
 	};
 
 	const list_handler = async (
 		input: CellListInput,
-		ctx: ActionContext,
+		ctx: ActionContext
 	): Promise<CellListOutput> => {
 		const auth = ctx.auth;
 		// Null auth + `created_by` is a soft account-id enumeration probe
 		// ("does account X have any public cells?") — require auth to use it.
 		if (auth === null && input.created_by !== undefined) {
 			throw jsonrpc_errors.invalid_params('cell_list created_by requires authentication', {
-				reason: ERROR_CELL_LIST_CREATED_BY_REQUIRES_AUTH,
+				reason: ERROR_CELL_LIST_CREATED_BY_REQUIRES_AUTH
 			});
 		}
 		// `shared_with: 'me'` resolves to the caller's actor + role_grants;
 		// no auth means no caller, no admit path.
 		if (auth === null && input.shared_with !== undefined) {
 			throw jsonrpc_errors.invalid_params('cell_list shared_with requires authentication', {
-				reason: ERROR_CELL_LIST_SHARED_WITH_REQUIRES_AUTH,
+				reason: ERROR_CELL_LIST_SHARED_WITH_REQUIRES_AUTH
 			});
 		}
 		// Project the active role_grant set into parallel arrays for the
@@ -866,7 +869,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			// Apply the default cap when caller omits `limit`. Without this
 			// the SQL `LIMIT NULL` returns every matching row.
 			limit: input.limit ?? CELL_LIST_LIMIT_DEFAULT,
-			offset: input.offset,
+			offset: input.offset
 		});
 		let cell_grants: Record<string, Array<GrantJson>> | undefined;
 		if (input.shared_with === 'me' && rows.length > 0 && caller_actor_id !== null) {
@@ -875,14 +878,14 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 				rows.map((r) => r.id),
 				caller_actor_id,
 				role_grant_roles,
-				role_grant_scope_ids,
+				role_grant_scope_ids
 			);
 			cell_grants = {};
 			for (const g of grant_rows) {
 				(cell_grants[g.cell_id] ??= []).push(to_grant_json(g));
 			}
 		}
-		return {cells: rows.map(to_cell_json), cell_grants};
+		return { cells: rows.map(to_cell_json), cell_grants };
 	};
 
 	return [
@@ -892,6 +895,6 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		rpc_action(cell_delete_action_spec, delete_handler),
 		rpc_action(cell_list_action_spec, list_handler),
 		rpc_action(cell_clone_action_spec, clone_handler),
-		rpc_action(cell_moderate_action_spec, moderate_handler),
+		rpc_action(cell_moderate_action_spec, moderate_handler)
 	];
 };

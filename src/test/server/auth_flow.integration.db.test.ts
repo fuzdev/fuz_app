@@ -10,20 +10,24 @@
  * @module
  */
 
-import {describe, test, assert, beforeAll, afterAll} from 'vitest';
-import {z} from 'zod';
+import { describe, test, assert, beforeAll, afterAll } from 'vitest';
+import { z } from 'zod';
 
-import {create_session_config} from '$lib/auth/session_cookie.ts';
-import {create_health_route_spec} from '$lib/http/common_routes.ts';
-import {require_request_context} from '$lib/auth/request_context.ts';
-import {create_app_server, type AppServerOptions, type AppServer} from '$lib/server/app_server.ts';
-import {create_test_app_server, type TestAppServer} from '$lib/testing/app_server.ts';
-import type {RouteSpec} from '$lib/http/route_spec.ts';
-import {ROLE_KEEPER, ROLE_ADMIN} from '$lib/auth/role_schema.ts';
-import {ActingActor} from '$lib/http/auth_shape.ts';
+import { create_session_config } from '$lib/auth/session_cookie.ts';
+import { create_health_route_spec } from '$lib/http/common_routes.ts';
+import { require_request_context } from '$lib/auth/request_context.ts';
+import {
+	create_app_server,
+	type AppServerOptions,
+	type AppServer
+} from '$lib/server/app_server.ts';
+import { create_test_app_server, type TestAppServer } from '$lib/testing/app_server.ts';
+import type { RouteSpec } from '$lib/http/route_spec.ts';
+import { ROLE_KEEPER, ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import { ActingActor } from '$lib/http/auth_shape.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
-	ERROR_INSUFFICIENT_PERMISSIONS,
+	ERROR_INSUFFICIENT_PERMISSIONS
 } from '$lib/http/error_schemas.ts';
 
 const session_options = create_session_config('test_session');
@@ -32,38 +36,38 @@ const session_options = create_session_config('test_session');
 const create_authenticated_route_spec = (): RouteSpec => ({
 	method: 'GET',
 	path: '/api/me',
-	auth: {account: 'required', actor: 'none'},
+	auth: { account: 'required', actor: 'none' },
 	description: 'Return current account info',
 	input: z.null(),
-	output: z.looseObject({username: z.string(), actor_id: z.string()}),
+	output: z.looseObject({ username: z.string(), actor_id: z.string() }),
 	handler: (c) => {
 		const ctx = require_request_context(c);
-		return c.json({username: ctx.account.username, actor_id: ctx.actor?.id ?? null});
-	},
+		return c.json({ username: ctx.account.username, actor_id: ctx.actor?.id ?? null });
+	}
 });
 
 /** Route that requires the keeper role. */
 const create_keeper_route_spec = (): RouteSpec => ({
 	method: 'GET',
 	path: '/api/keeper-only',
-	auth: {account: 'required', actor: 'required', roles: [ROLE_KEEPER]},
+	auth: { account: 'required', actor: 'required', roles: [ROLE_KEEPER] },
 	description: 'Keeper-only endpoint',
-	query: z.strictObject({acting: ActingActor}),
+	query: z.strictObject({ acting: ActingActor }),
 	input: z.null(),
-	output: z.looseObject({ok: z.literal(true)}),
-	handler: (c) => c.json({ok: true as const}),
+	output: z.looseObject({ ok: z.literal(true) }),
+	handler: (c) => c.json({ ok: true as const })
 });
 
 /** Route that requires the admin role. */
 const create_admin_route_spec = (): RouteSpec => ({
 	method: 'GET',
 	path: '/api/admin-only',
-	auth: {account: 'required', actor: 'required', roles: [ROLE_ADMIN]},
+	auth: { account: 'required', actor: 'required', roles: [ROLE_ADMIN] },
 	description: 'Admin-only endpoint',
-	query: z.strictObject({acting: ActingActor}),
+	query: z.strictObject({ acting: ActingActor }),
 	input: z.null(),
-	output: z.looseObject({ok: z.literal(true)}),
-	handler: (c) => c.json({ok: true as const}),
+	output: z.looseObject({ ok: z.literal(true) }),
+	handler: (c) => c.json({ ok: true as const })
 });
 
 describe('auth flow integration', () => {
@@ -74,7 +78,7 @@ describe('auth flow integration', () => {
 		// Bootstrap a test server with keeper + admin roles
 		test_server = await create_test_app_server({
 			session_options,
-			roles: [ROLE_KEEPER, ROLE_ADMIN],
+			roles: [ROLE_KEEPER, ROLE_ADMIN]
 		});
 
 		const base_config = {
@@ -82,20 +86,20 @@ describe('auth flow integration', () => {
 			allowed_origins: [/^http:\/\/localhost/],
 			proxy: {
 				trusted_proxies: ['127.0.0.1'],
-				get_connection_ip: () => '127.0.0.1',
+				get_connection_ip: () => '127.0.0.1'
 			},
 			create_route_specs: () => [
 				create_health_route_spec(),
 				create_authenticated_route_spec(),
 				create_keeper_route_spec(),
-				create_admin_route_spec(),
-			],
+				create_admin_route_spec()
+			]
 		};
 
 		const options: AppServerOptions = {
 			backend: test_server,
 			...base_config,
-			env_schema: z.object({}),
+			env_schema: z.object({})
 		};
 
 		result = await create_app_server(options);
@@ -119,8 +123,8 @@ describe('auth flow integration', () => {
 	test('authenticated route with valid session cookie returns 200 with correct context', async () => {
 		const res = await result.app.request('/api/me', {
 			headers: {
-				Cookie: `test_session=${test_server.session_cookie}`,
-			},
+				Cookie: `test_session=${test_server.session_cookie}`
+			}
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -144,8 +148,8 @@ describe('auth flow integration', () => {
 	test('keeper route with keeper role returns 200', async () => {
 		const res = await result.app.request('/api/keeper-only', {
 			headers: {
-				Cookie: `test_session=${test_server.session_cookie}`,
-			},
+				Cookie: `test_session=${test_server.session_cookie}`
+			}
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -155,8 +159,8 @@ describe('auth flow integration', () => {
 	test('admin route with admin role returns 200', async () => {
 		const res = await result.app.request('/api/admin-only', {
 			headers: {
-				Cookie: `test_session=${test_server.session_cookie}`,
-			},
+				Cookie: `test_session=${test_server.session_cookie}`
+			}
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -175,7 +179,7 @@ describe('auth flow integration', () => {
 				session_options,
 				db: test_server.deps.db,
 				username: 'admin_only_user',
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 
 			const options: AppServerOptions = {
@@ -184,15 +188,15 @@ describe('auth flow integration', () => {
 				allowed_origins: [/^http:\/\/localhost/],
 				proxy: {
 					trusted_proxies: ['127.0.0.1'],
-					get_connection_ip: () => '127.0.0.1',
+					get_connection_ip: () => '127.0.0.1'
 				},
 				env_schema: z.object({}),
 				create_route_specs: () => [
 					create_health_route_spec(),
 					create_authenticated_route_spec(),
 					create_keeper_route_spec(),
-					create_admin_route_spec(),
-				],
+					create_admin_route_spec()
+				]
 			};
 
 			non_keeper_result = await create_app_server(options);
@@ -205,8 +209,8 @@ describe('auth flow integration', () => {
 		test('keeper route without keeper role returns 403', async () => {
 			const res = await non_keeper_result.app.request('/api/keeper-only', {
 				headers: {
-					Cookie: `test_session=${non_keeper_server.session_cookie}`,
-				},
+					Cookie: `test_session=${non_keeper_server.session_cookie}`
+				}
 			});
 			assert.strictEqual(res.status, 403);
 			const body = await res.json();
@@ -217,8 +221,8 @@ describe('auth flow integration', () => {
 		test('admin route with admin role still returns 200', async () => {
 			const res = await non_keeper_result.app.request('/api/admin-only', {
 				headers: {
-					Cookie: `test_session=${non_keeper_server.session_cookie}`,
-				},
+					Cookie: `test_session=${non_keeper_server.session_cookie}`
+				}
 			});
 			assert.strictEqual(res.status, 200);
 		});
@@ -229,8 +233,8 @@ describe('auth flow integration', () => {
 	test('authenticated route with valid bearer token returns 200', async () => {
 		const res = await result.app.request('/api/me', {
 			headers: {
-				Authorization: `Bearer ${test_server.api_token}`,
-			},
+				Authorization: `Bearer ${test_server.api_token}`
+			}
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -241,8 +245,8 @@ describe('auth flow integration', () => {
 	test('authenticated route with invalid bearer token returns 401', async () => {
 		const res = await result.app.request('/api/me', {
 			headers: {
-				Authorization: 'Bearer secret_fuz_token_invalid',
-			},
+				Authorization: 'Bearer secret_fuz_token_invalid'
+			}
 		});
 		assert.strictEqual(res.status, 401);
 	});
@@ -250,8 +254,8 @@ describe('auth flow integration', () => {
 	test('invalid session cookie returns 401', async () => {
 		const res = await result.app.request('/api/me', {
 			headers: {
-				Cookie: 'test_session=invalid-cookie-value',
-			},
+				Cookie: 'test_session=invalid-cookie-value'
+			}
 		});
 		assert.strictEqual(res.status, 401);
 		const body = await res.json();
@@ -270,8 +274,8 @@ describe('auth flow integration', () => {
 	test('Authorization: Bearer with no token value returns 401', async () => {
 		const res = await result.app.request('/api/me', {
 			headers: {
-				Authorization: 'Bearer ',
-			},
+				Authorization: 'Bearer '
+			}
 		});
 		assert.strictEqual(res.status, 401);
 	});
@@ -279,8 +283,8 @@ describe('auth flow integration', () => {
 	test('Authorization: Basic scheme returns 401', async () => {
 		const res = await result.app.request('/api/me', {
 			headers: {
-				Authorization: 'Basic abc123',
-			},
+				Authorization: 'Basic abc123'
+			}
 		});
 		assert.strictEqual(res.status, 401);
 		const body = await res.json();
@@ -290,8 +294,8 @@ describe('auth flow integration', () => {
 	test('Authorization without Bearer prefix returns 401', async () => {
 		const res = await result.app.request('/api/me', {
 			headers: {
-				Authorization: 'secret_fuz_token_abc',
-			},
+				Authorization: 'secret_fuz_token_abc'
+			}
 		});
 		assert.strictEqual(res.status, 401);
 		const body = await res.json();
@@ -304,8 +308,8 @@ describe('auth flow integration', () => {
 		const res = await result.app.request('/api/me', {
 			headers: {
 				Cookie: `test_session=${test_server.session_cookie}`,
-				Authorization: `Bearer ${test_server.api_token}`,
-			},
+				Authorization: `Bearer ${test_server.api_token}`
+			}
 		});
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
@@ -317,7 +321,7 @@ describe('auth flow integration', () => {
 
 	test('401 response does not leak stack traces or internal paths', async () => {
 		const res = await result.app.request('/api/me', {
-			headers: {Authorization: 'Bearer invalid_token_value'},
+			headers: { Authorization: 'Bearer invalid_token_value' }
 		});
 		assert.strictEqual(res.status, 401);
 		const text = await res.text();

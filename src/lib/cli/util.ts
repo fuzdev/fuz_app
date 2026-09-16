@@ -6,7 +6,7 @@
  * @module
  */
 
-import type {CommandDeps, CommandResult, TerminalDeps} from '../runtime/deps.ts';
+import type { CommandDeps, CommandResult, TerminalDeps } from '../runtime/deps.ts';
 
 // TODO: `colors` duplicates the NO_COLOR detection Logger does internally.
 // Long-term, converge with Logger's color system or expose a shared color helper.
@@ -22,7 +22,7 @@ export const colors = {
 	cyan: no_color ? '' : '\x1b[36m',
 	dim: no_color ? '' : '\x1b[2m',
 	bold: no_color ? '' : '\x1b[1m',
-	reset: no_color ? '' : '\x1b[0m',
+	reset: no_color ? '' : '\x1b[0m'
 } as const;
 
 /**
@@ -36,7 +36,7 @@ export const colors = {
 export const run_local = async (
 	runtime: CommandDeps,
 	command: string,
-	args: Array<string>,
+	args: Array<string>
 ): Promise<CommandResult> => {
 	return runtime.run_command(command, args);
 };

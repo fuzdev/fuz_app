@@ -43,27 +43,27 @@
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	rpc_action,
 	type ActionActorContext,
 	type ActionContext,
-	type RpcAction,
+	type RpcAction
 } from '../actions/action_rpc.ts';
-import {jsonrpc_errors} from '../http/jsonrpc_errors.ts';
-import {emit_after_commit} from '../http/pending_effects.ts';
+import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
+import { emit_after_commit } from '../http/pending_effects.ts';
 import {
 	builtin_role_specs_by_name,
 	ROLE_ADMIN,
 	role_has_grant_path,
-	type RoleSchemaResult,
+	type RoleSchemaResult
 } from './role_schema.ts';
-import {GRANT_PATH_ADMIN} from './grant_path_schema.ts';
+import { GRANT_PATH_ADMIN } from './grant_path_schema.ts';
 import {
 	ROLE_GRANT_OFFER_DEFAULT_TTL_MS,
-	to_role_grant_offer_json,
+	to_role_grant_offer_json
 } from './role_grant_offer_schema.ts';
 import {
 	query_role_grant_offer_create,
@@ -77,18 +77,22 @@ import {
 	RoleGrantOfferAlreadyTerminalError,
 	RoleGrantOfferExpiredError,
 	RoleGrantOfferNotFoundError,
-	RoleGrantOfferSelfTargetError,
+	RoleGrantOfferSelfTargetError
 } from './role_grant_offer_queries.ts';
 import {
 	query_create_role_grant,
 	query_role_grant_find_active_role_for_actor,
-	query_revoke_role_grant,
+	query_revoke_role_grant
 } from './role_grant_queries.ts';
-import {query_actor_by_id, query_active_actors_by_account} from './account_queries.ts';
-import type {AuditLogEvent} from './audit_log_schema.ts';
-import {has_scoped_role, type RequestActorContext, type RequestContext} from './request_context.ts';
-import type {ActionFactoryDeps} from './deps.ts';
-import type {AuditEmitter} from './audit_emitter.ts';
+import { query_actor_by_id, query_active_actors_by_account } from './account_queries.ts';
+import type { AuditLogEvent } from './audit_log_schema.ts';
+import {
+	has_scoped_role,
+	type RequestActorContext,
+	type RequestContext
+} from './request_context.ts';
+import type { ActionFactoryDeps } from './deps.ts';
+import type { AuditEmitter } from './audit_emitter.ts';
 import {
 	build_role_grant_offer_accepted_notification,
 	build_role_grant_offer_declined_notification,
@@ -96,9 +100,9 @@ import {
 	build_role_grant_offer_retracted_notification,
 	build_role_grant_offer_supersede_notification,
 	build_role_grant_revoke_notification,
-	type NotificationSender,
+	type NotificationSender
 } from './role_grant_offer_notifications.ts';
-import {ERROR_ROLE_GRANT_NOT_FOUND, ERROR_ROLE_NOT_WEB_GRANTABLE} from '../http/error_schemas.ts';
+import { ERROR_ROLE_GRANT_NOT_FOUND, ERROR_ROLE_NOT_WEB_GRANTABLE } from '../http/error_schemas.ts';
 import {
 	ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
 	ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH,
@@ -130,7 +134,7 @@ import {
 	type RoleGrantRevokeInput,
 	type RoleGrantRevokeOutput,
 	type RoleGrantAssignInput,
-	type RoleGrantAssignOutput,
+	type RoleGrantAssignOutput
 } from './role_grant_offer_action_specs.ts';
 
 /**
@@ -144,9 +148,9 @@ import {
  */
 export type RoleGrantOfferCreateAuthorize = (
 	auth: RequestContext,
-	input: {to_account_id: string; role: string; scope_id: string | null},
-	deps: {log: Logger},
-	ctx: ActionContext,
+	input: { to_account_id: string; role: string; scope_id: string | null },
+	deps: { log: Logger },
+	ctx: ActionContext
 ) => boolean | Promise<boolean>;
 
 /** Options for `create_role_grant_offer_actions`. */
@@ -211,9 +215,9 @@ export const create_role_grant_offer_actions = (
 	deps: ActionFactoryDeps & {
 		notification_sender?: NotificationSender | null;
 	},
-	options: RoleGrantOfferActionOptions = {},
+	options: RoleGrantOfferActionOptions = {}
 ): Array<RpcAction> => {
-	const {log, audit, notification_sender = null} = deps;
+	const { log, audit, notification_sender = null } = deps;
 	const role_specs = options.roles?.role_specs ?? builtin_role_specs_by_name;
 	const default_ttl_ms = options.default_ttl_ms ?? ROLE_GRANT_OFFER_DEFAULT_TTL_MS;
 	const authorize = options.authorize ?? default_authorize;
@@ -229,7 +233,7 @@ export const create_role_grant_offer_actions = (
 		input: Pick<
 			RoleGrantOfferCreateInput,
 			'to_account_id' | 'to_actor_id' | 'role' | 'scope_kind' | 'scope_id'
-		>,
+		>
 	): void => {
 		audit.emit_role_grant_target(ctx, auth, {
 			event_type: 'role_grant_offer_create',
@@ -239,8 +243,8 @@ export const create_role_grant_offer_actions = (
 			metadata: {
 				role: input.role,
 				scope_id: input.scope_id ?? null,
-				to_account_id: input.to_account_id,
-			},
+				to_account_id: input.to_account_id
+			}
 		});
 	};
 
@@ -251,7 +255,7 @@ export const create_role_grant_offer_actions = (
 	// test isn't about the consent path.
 	const create_handler = async (
 		input: RoleGrantOfferCreateInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<RoleGrantOfferCreateOutput> => {
 		const auth = ctx.auth;
 
@@ -259,7 +263,7 @@ export const create_role_grant_offer_actions = (
 		if (!role_has_grant_path(role_specs, input.role, GRANT_PATH_ADMIN)) {
 			emit_create_failure_audit(ctx, auth, input);
 			throw jsonrpc_errors.forbidden('role not grantable', {
-				reason: ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE,
+				reason: ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE
 			});
 		}
 
@@ -268,15 +272,15 @@ export const create_role_grant_offer_actions = (
 			{
 				to_account_id: input.to_account_id,
 				role: input.role,
-				scope_id: input.scope_id ?? null,
+				scope_id: input.scope_id ?? null
 			},
-			{log},
-			ctx,
+			{ log },
+			ctx
 		);
 		if (!authorized) {
 			emit_create_failure_audit(ctx, auth, input);
 			throw jsonrpc_errors.forbidden('not authorized to offer this role', {
-				reason: ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
+				reason: ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED
 			});
 		}
 
@@ -290,19 +294,19 @@ export const create_role_grant_offer_actions = (
 				scope_kind: input.scope_kind ?? null,
 				scope_id: input.scope_id ?? null,
 				message: input.message ?? null,
-				expires_at: new Date(Date.now() + default_ttl_ms),
+				expires_at: new Date(Date.now() + default_ttl_ms)
 			});
 		} catch (err) {
 			if (err instanceof RoleGrantOfferSelfTargetError) {
 				emit_create_failure_audit(ctx, auth, input);
 				throw jsonrpc_errors.invalid_params('cannot offer to self', {
-					reason: ERROR_ROLE_GRANT_OFFER_SELF_TARGET,
+					reason: ERROR_ROLE_GRANT_OFFER_SELF_TARGET
 				});
 			}
 			if (err instanceof RoleGrantOfferActorAccountMismatchError) {
 				emit_create_failure_audit(ctx, auth, input);
 				throw jsonrpc_errors.invalid_params('to_actor_id does not belong to to_account_id', {
-					reason: ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
+					reason: ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH
 				});
 			}
 			throw err;
@@ -320,8 +324,8 @@ export const create_role_grant_offer_actions = (
 				offer_id: offer.id,
 				role: offer.role,
 				scope_id: offer.scope_id,
-				to_account_id: offer.to_account_id,
-			},
+				to_account_id: offer.to_account_id
+			}
 		});
 
 		const offer_json = to_role_grant_offer_json(offer);
@@ -329,17 +333,17 @@ export const create_role_grant_offer_actions = (
 			emit_after_commit(ctx, () => {
 				notification_sender.send_to_account(
 					offer.to_account_id,
-					build_role_grant_offer_received_notification({offer: offer_json}),
+					build_role_grant_offer_received_notification({ offer: offer_json })
 				);
 			});
 		}
 
-		return {offer: offer_json};
+		return { offer: offer_json };
 	};
 
 	const accept_handler = async (
 		input: RoleGrantOfferAcceptInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<RoleGrantOfferAcceptOutput> => {
 		const auth = ctx.auth;
 		let result;
@@ -348,21 +352,21 @@ export const create_role_grant_offer_actions = (
 				offer_id: input.offer_id,
 				to_account_id: auth.account.id,
 				actor_id: auth.actor.id,
-				ip: ctx.client_ip,
+				ip: ctx.client_ip
 			});
 		} catch (err) {
 			if (err instanceof RoleGrantOfferNotFoundError) {
-				throw jsonrpc_errors.not_found('offer', {reason: ERROR_ROLE_GRANT_OFFER_NOT_FOUND});
+				throw jsonrpc_errors.not_found('offer', { reason: ERROR_ROLE_GRANT_OFFER_NOT_FOUND });
 			}
 			if (err instanceof RoleGrantOfferAlreadyTerminalError) {
-				throw jsonrpc_errors.invalid_request({reason: ERROR_ROLE_GRANT_OFFER_TERMINAL});
+				throw jsonrpc_errors.invalid_request({ reason: ERROR_ROLE_GRANT_OFFER_TERMINAL });
 			}
 			if (err instanceof RoleGrantOfferExpiredError) {
-				throw jsonrpc_errors.invalid_request({reason: ERROR_ROLE_GRANT_OFFER_EXPIRED});
+				throw jsonrpc_errors.invalid_request({ reason: ERROR_ROLE_GRANT_OFFER_EXPIRED });
 			}
 			if (err instanceof RoleGrantOfferActorMismatchError) {
 				throw jsonrpc_errors.forbidden('offer is targeted to a different actor', {
-					reason: ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH,
+					reason: ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH
 				});
 			}
 			throw err;
@@ -380,7 +384,7 @@ export const create_role_grant_offer_actions = (
 		const offer_json = to_role_grant_offer_json(result.offer);
 		const supersede_payloads = result.superseded_offers.map((sib) => ({
 			offer: to_role_grant_offer_json(sib),
-			from_account_id: sib.from_account_id,
+			from_account_id: sib.from_account_id
 		}));
 
 		// Audit events are written in-transaction by query_accept_offer; wire
@@ -394,7 +398,7 @@ export const create_role_grant_offer_actions = (
 			if (notification_sender && grantor_account_id) {
 				notification_sender.send_to_account(
 					grantor_account_id,
-					build_role_grant_offer_accepted_notification({offer: offer_json}),
+					build_role_grant_offer_accepted_notification({ offer: offer_json })
 				);
 			}
 			if (notification_sender) {
@@ -404,8 +408,8 @@ export const create_role_grant_offer_actions = (
 						build_role_grant_offer_supersede_notification({
 							offer: sib.offer,
 							reason: 'sibling_accepted',
-							cause_id: result.offer.id,
-						}),
+							cause_id: result.offer.id
+						})
 					);
 				}
 			}
@@ -414,13 +418,13 @@ export const create_role_grant_offer_actions = (
 		return {
 			role_grant_id: result.role_grant.id,
 			offer: offer_json,
-			superseded_offer_ids: result.superseded_offers.map((o) => o.id),
+			superseded_offer_ids: result.superseded_offers.map((o) => o.id)
 		};
 	};
 
 	const decline_handler = async (
 		input: RoleGrantOfferDeclineInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<RoleGrantOfferOkOutput> => {
 		const auth = ctx.auth;
 		let declined;
@@ -429,16 +433,16 @@ export const create_role_grant_offer_actions = (
 				ctx,
 				input.offer_id,
 				auth.account.id,
-				input.reason ?? null,
+				input.reason ?? null
 			);
 		} catch (err) {
 			if (err instanceof RoleGrantOfferAlreadyTerminalError) {
-				throw jsonrpc_errors.invalid_request({reason: ERROR_ROLE_GRANT_OFFER_TERMINAL});
+				throw jsonrpc_errors.invalid_request({ reason: ERROR_ROLE_GRANT_OFFER_TERMINAL });
 			}
 			throw err;
 		}
 		if (!declined) {
-			throw jsonrpc_errors.not_found('offer', {reason: ERROR_ROLE_GRANT_OFFER_NOT_FOUND});
+			throw jsonrpc_errors.not_found('offer', { reason: ERROR_ROLE_GRANT_OFFER_NOT_FOUND });
 		}
 
 		// `role_grant_offer_decline` is *to* the offering actor — populate both
@@ -454,8 +458,8 @@ export const create_role_grant_offer_actions = (
 				offer_id: declined.id,
 				role: declined.role,
 				scope_id: declined.scope_id,
-				reason: input.reason ?? undefined,
-			},
+				reason: input.reason ?? undefined
+			}
 		});
 
 		if (notification_sender) {
@@ -467,17 +471,17 @@ export const create_role_grant_offer_actions = (
 			emit_after_commit(ctx, () => {
 				notification_sender.send_to_account(
 					declined.from_account_id,
-					build_role_grant_offer_declined_notification({offer: offer_json}),
+					build_role_grant_offer_declined_notification({ offer: offer_json })
 				);
 			});
 		}
 
-		return {ok: true};
+		return { ok: true };
 	};
 
 	const retract_handler = async (
 		input: RoleGrantOfferRetractInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<RoleGrantOfferOkOutput> => {
 		const auth = ctx.auth;
 		let retracted;
@@ -485,12 +489,12 @@ export const create_role_grant_offer_actions = (
 			retracted = await query_role_grant_offer_retract(ctx, input.offer_id, auth.actor.id);
 		} catch (err) {
 			if (err instanceof RoleGrantOfferAlreadyTerminalError) {
-				throw jsonrpc_errors.invalid_request({reason: ERROR_ROLE_GRANT_OFFER_TERMINAL});
+				throw jsonrpc_errors.invalid_request({ reason: ERROR_ROLE_GRANT_OFFER_TERMINAL });
 			}
 			throw err;
 		}
 		if (!retracted) {
-			throw jsonrpc_errors.not_found('offer', {reason: ERROR_ROLE_GRANT_OFFER_NOT_FOUND});
+			throw jsonrpc_errors.not_found('offer', { reason: ERROR_ROLE_GRANT_OFFER_NOT_FOUND });
 		}
 
 		// `role_grant_offer_retract` is *from* the recipient inbox —
@@ -504,8 +508,8 @@ export const create_role_grant_offer_actions = (
 			metadata: {
 				offer_id: retracted.id,
 				role: retracted.role,
-				scope_id: retracted.scope_id,
-			},
+				scope_id: retracted.scope_id
+			}
 		});
 
 		if (notification_sender) {
@@ -513,17 +517,17 @@ export const create_role_grant_offer_actions = (
 			emit_after_commit(ctx, () => {
 				notification_sender.send_to_account(
 					retracted.to_account_id,
-					build_role_grant_offer_retracted_notification({offer: offer_json}),
+					build_role_grant_offer_retracted_notification({ offer: offer_json })
 				);
 			});
 		}
 
-		return {ok: true};
+		return { ok: true };
 	};
 
 	const list_handler = async (
 		input: RoleGrantOfferListInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<RoleGrantOfferListOutput> => {
 		const auth = ctx.auth;
 		const target = input.account_id ?? auth.account.id;
@@ -533,12 +537,12 @@ export const create_role_grant_offer_actions = (
 			throw jsonrpc_errors.forbidden('admin required to inspect another account');
 		}
 		const offers = await query_role_grant_offer_list(ctx, target);
-		return {offers: offers.map(to_role_grant_offer_json)};
+		return { offers: offers.map(to_role_grant_offer_json) };
 	};
 
 	const history_handler = async (
 		input: RoleGrantOfferHistoryInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<RoleGrantOfferHistoryOutput> => {
 		const auth = ctx.auth;
 		const target = input.account_id ?? auth.account.id;
@@ -549,14 +553,14 @@ export const create_role_grant_offer_actions = (
 			ctx,
 			target,
 			input.limit ?? undefined,
-			input.offset ?? undefined,
+			input.offset ?? undefined
 		);
-		return {offers: offers.map(to_role_grant_offer_json)};
+		return { offers: offers.map(to_role_grant_offer_json) };
 	};
 
 	const revoke_handler = async (
 		input: RoleGrantRevokeInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<RoleGrantRevokeOutput> => {
 		const auth = ctx.auth;
 
@@ -572,10 +576,10 @@ export const create_role_grant_offer_actions = (
 		const role_grant_row = await query_role_grant_find_active_role_for_actor(
 			ctx,
 			input.role_grant_id,
-			input.actor_id,
+			input.actor_id
 		);
 		if (!role_grant_row) {
-			throw jsonrpc_errors.not_found('role_grant', {reason: ERROR_ROLE_GRANT_NOT_FOUND});
+			throw jsonrpc_errors.not_found('role_grant', { reason: ERROR_ROLE_GRANT_NOT_FOUND });
 		}
 		const target_account_id = role_grant_row.account_id;
 		const target_actor_id = input.actor_id;
@@ -588,10 +592,10 @@ export const create_role_grant_offer_actions = (
 				outcome: 'failure',
 				target_account_id,
 				target_actor_id,
-				metadata: {role: role_grant_row.role, role_grant_id: input.role_grant_id},
+				metadata: { role: role_grant_row.role, role_grant_id: input.role_grant_id }
 			});
 			throw jsonrpc_errors.forbidden('role not web-grantable', {
-				reason: ERROR_ROLE_NOT_WEB_GRANTABLE,
+				reason: ERROR_ROLE_NOT_WEB_GRANTABLE
 			});
 		}
 
@@ -600,12 +604,12 @@ export const create_role_grant_offer_actions = (
 			input.role_grant_id,
 			input.actor_id,
 			auth.actor.id,
-			input.reason ?? null,
+			input.reason ?? null
 		);
 		if (!result) {
 			// Raced with another revoker or the role_grant was revoked between
 			// the IDOR check and the UPDATE.
-			throw jsonrpc_errors.not_found('role_grant', {reason: ERROR_ROLE_GRANT_NOT_FOUND});
+			throw jsonrpc_errors.not_found('role_grant', { reason: ERROR_ROLE_GRANT_NOT_FOUND });
 		}
 
 		audit.emit_role_grant_target(ctx, auth, {
@@ -616,8 +620,8 @@ export const create_role_grant_offer_actions = (
 				role: result.role,
 				role_grant_id: result.id,
 				scope_id: result.scope_id,
-				reason: input.reason ?? undefined,
-			},
+				reason: input.reason ?? undefined
+			}
 		});
 		// Supersede cascade — the recipient is known (`offer.to_account_id`),
 		// so populate `target_account_id` rather than leaving it null;
@@ -633,15 +637,15 @@ export const create_role_grant_offer_actions = (
 					role: offer.role,
 					scope_id: offer.scope_id,
 					reason: 'role_grant_revoked',
-					cause_id: result.id,
-				},
+					cause_id: result.id
+				}
 			});
 		}
 
 		if (notification_sender) {
 			const superseded = result.superseded_offers.map((o) => ({
 				offer: to_role_grant_offer_json(o),
-				from_account_id: o.from_account_id,
+				from_account_id: o.from_account_id
 			}));
 			const cause_id = result.id;
 			const reason = input.reason ?? null;
@@ -652,8 +656,8 @@ export const create_role_grant_offer_actions = (
 						role_grant_id: result.id,
 						role: result.role,
 						scope_id: result.scope_id,
-						reason,
-					}),
+						reason
+					})
 				);
 				for (const sib of superseded) {
 					notification_sender.send_to_account(
@@ -661,14 +665,14 @@ export const create_role_grant_offer_actions = (
 						build_role_grant_offer_supersede_notification({
 							offer: sib.offer,
 							reason: 'role_grant_revoked',
-							cause_id,
-						}),
+							cause_id
+						})
 					);
 				}
 			});
 		}
 
-		return {ok: true, revoked: true};
+		return { ok: true, revoked: true };
 	};
 
 	// The immediate admin-only conferral path — the consent-free sibling of
@@ -680,7 +684,7 @@ export const create_role_grant_offer_actions = (
 	// grantee picks the capability up on its next authenticated request).
 	const assign_handler = async (
 		input: RoleGrantAssignInput,
-		ctx: ActionActorContext,
+		ctx: ActionActorContext
 	): Promise<RoleGrantAssignOutput> => {
 		const auth = ctx.auth;
 
@@ -693,10 +697,10 @@ export const create_role_grant_offer_actions = (
 				outcome: 'failure',
 				target_account_id: input.to_account_id,
 				target_actor_id: input.to_actor_id ?? null,
-				metadata: {role: input.role, scope_id: input.scope_id ?? null},
+				metadata: { role: input.role, scope_id: input.scope_id ?? null }
 			});
 			throw jsonrpc_errors.forbidden('role not web-grantable', {
-				reason: ERROR_ROLE_NOT_WEB_GRANTABLE,
+				reason: ERROR_ROLE_NOT_WEB_GRANTABLE
 			});
 		}
 
@@ -711,7 +715,7 @@ export const create_role_grant_offer_actions = (
 		if (input.to_actor_id != null) {
 			if (!actors.some((a) => a.id === input.to_actor_id)) {
 				throw jsonrpc_errors.invalid_params('to_actor_id does not belong to to_account_id', {
-					reason: ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
+					reason: ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH
 				});
 			}
 			target_actor_id = input.to_actor_id;
@@ -731,7 +735,7 @@ export const create_role_grant_offer_actions = (
 			role: input.role,
 			scope_kind: null,
 			scope_id: input.scope_id ?? null,
-			granted_by: auth.actor.id,
+			granted_by: auth.actor.id
 		});
 
 		audit.emit_role_grant_target(ctx, auth, {
@@ -741,11 +745,11 @@ export const create_role_grant_offer_actions = (
 			metadata: {
 				role: grant.role,
 				role_grant_id: grant.id,
-				scope_id: grant.scope_id,
-			},
+				scope_id: grant.scope_id
+			}
 		});
 
-		return {ok: true, role_grant_id: grant.id};
+		return { ok: true, role_grant_id: grant.id };
 	};
 
 	return [
@@ -756,6 +760,6 @@ export const create_role_grant_offer_actions = (
 		rpc_action(role_grant_offer_list_action_spec, list_handler),
 		rpc_action(role_grant_offer_history_action_spec, history_handler),
 		rpc_action(role_grant_revoke_action_spec, revoke_handler),
-		rpc_action(role_grant_assign_action_spec, assign_handler),
+		rpc_action(role_grant_assign_action_spec, assign_handler)
 	];
 };

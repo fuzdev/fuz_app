@@ -31,11 +31,11 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type {TestProject} from 'vitest/node';
+import type { TestProject } from 'vitest/node';
 
-import type {BackendConfig} from './backend_config.ts';
-import {bootstrap_backend} from './bootstrap_backend.ts';
-import {serialize_bootstrapped_handle} from './setup.ts';
+import type { BackendConfig } from './backend_config.ts';
+import { bootstrap_backend } from './bootstrap_backend.ts';
+import { serialize_bootstrapped_handle } from './setup.ts';
 
 /**
  * Default project-name → backend-name reduction: strips the
@@ -71,7 +71,7 @@ export interface CrossBackendGlobalSetupOptions {
 export const create_cross_backend_global_setup = ({
 	configs,
 	derive_name = (project_name) => project_name.replace(DEFAULT_PROJECT_NAME_PREFIX, ''),
-	provide_key = 'backend_handle',
+	provide_key = 'backend_handle'
 }: CrossBackendGlobalSetupOptions): ((project: TestProject) => Promise<() => Promise<void>>) => {
 	return async (project) => {
 		const name = derive_name(project.name);
@@ -79,7 +79,7 @@ export const create_cross_backend_global_setup = ({
 		if (!factory) {
 			throw new Error(
 				`Could not derive backend config from vitest project '${project.name}' ` +
-					`(derived name '${name}') — expected one of: ${Object.keys(configs).join(', ')}`,
+					`(derived name '${name}') — expected one of: ${Object.keys(configs).join(', ')}`
 			);
 		}
 		const bootstrapped = await bootstrap_backend(factory());
@@ -87,7 +87,7 @@ export const create_cross_backend_global_setup = ({
 		// the generic key is a plain string, so cast past the keyof constraint.
 		(project.provide as (key: string, value: unknown) => void)(
 			provide_key,
-			serialize_bootstrapped_handle(bootstrapped),
+			serialize_bootstrapped_handle(bootstrapped)
 		);
 		return async () => {
 			await bootstrapped.teardown();

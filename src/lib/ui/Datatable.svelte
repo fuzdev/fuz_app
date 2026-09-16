@@ -9,15 +9,15 @@
 	 * @module
 	 */
 
-	import type {Snippet} from 'svelte';
-	import type {SvelteHTMLElements} from 'svelte/elements';
+	import type { Snippet } from 'svelte';
+	import type { SvelteHTMLElements } from 'svelte/elements';
 
 	import {
 		DATATABLE_COLUMN_WIDTH_DEFAULT,
 		DATATABLE_MIN_COLUMN_WIDTH,
-		type DatatableColumn,
+		type DatatableColumn
 	} from './datatable.ts';
-	import {format_value} from './ui_format.ts';
+	import { format_value } from './ui_format.ts';
 
 	const {
 		columns,
@@ -54,9 +54,9 @@
 			const base = c.width ?? DATATABLE_COLUMN_WIDTH_DEFAULT;
 			return Math.max(
 				c.min_width ?? DATATABLE_MIN_COLUMN_WIDTH,
-				base + (resize_deltas[c.key] ?? 0),
+				base + (resize_deltas[c.key] ?? 0)
 			);
-		}),
+		})
 	);
 
 	const grid_template_columns = $derived(column_widths.map((w) => `${w}px`).join(' '));

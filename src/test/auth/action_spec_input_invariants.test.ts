@@ -27,16 +27,16 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {all_fuz_auth_action_spec_registries} from '$lib/auth/all_action_spec_registries.ts';
-import {protocol_action_specs} from '$lib/actions/protocol.ts';
+import { all_fuz_auth_action_spec_registries } from '$lib/auth/all_action_spec_registries.ts';
+import { protocol_action_specs } from '$lib/actions/protocol.ts';
 
 describe('action spec input invariants', () => {
 	test('every spec input that accepts {} also accepts undefined', () => {
 		const all_specs = [
 			...all_fuz_auth_action_spec_registries.flatMap((r) => r.specs),
-			...protocol_action_specs,
+			...protocol_action_specs
 		];
 		for (const spec of all_specs) {
 			const accepts_empty = spec.input.safeParse({}).success;
@@ -46,7 +46,7 @@ describe('action spec input invariants', () => {
 				accepts_undefined,
 				`${
 					spec.method
-				}: input accepts {} but rejects undefined — apply .default({}) at the schema root (or .refine() if {} should be rejected too)`,
+				}: input accepts {} but rejects undefined — apply .default({}) at the schema root (or .refine() if {} should be rejected too)`
 			);
 		}
 	});

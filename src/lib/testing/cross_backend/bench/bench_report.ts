@@ -1,12 +1,12 @@
 import '../../assert_dev_env.ts';
 
-import {benchmark_format_markdown} from '@fuzdev/fuz_util/benchmark_format.ts';
+import { benchmark_format_markdown } from '@fuzdev/fuz_util/benchmark_format.ts';
 import {
 	benchmark_stats_compare,
-	type BenchmarkComparison,
+	type BenchmarkComparison
 } from '@fuzdev/fuz_util/benchmark_stats.ts';
 
-import type {CrossImplBenchResult} from './run_cross_impl_bench.ts';
+import type { CrossImplBenchResult } from './run_cross_impl_bench.ts';
 
 /**
  * Reporting adapters over a `CrossImplBenchResult` — all built on fuz_util's
@@ -47,14 +47,14 @@ export interface CompareCrossImplOptions {
  */
 export const compare_cross_impl = (
 	result: CrossImplBenchResult,
-	options?: CompareCrossImplOptions,
+	options?: CompareCrossImplOptions
 ): Array<CrossImplComparisonEntry> => {
 	const reference = options?.reference ?? result.backends[0];
 	if (reference === undefined) return [];
 	const out: Array<CrossImplComparisonEntry> = [];
 	for (const scenario of result.scenarios) {
 		const ref_entry = result.entries.find(
-			(e) => e.scenario === scenario && e.backend === reference,
+			(e) => e.scenario === scenario && e.backend === reference
 		);
 		if (!ref_entry) continue;
 		for (const e of result.entries) {
@@ -63,7 +63,7 @@ export const compare_cross_impl = (
 				scenario,
 				reference,
 				backend: e.backend,
-				comparison: benchmark_stats_compare(ref_entry.result.stats, e.result.stats),
+				comparison: benchmark_stats_compare(ref_entry.result.stats, e.result.stats)
 			});
 		}
 	}
@@ -77,7 +77,7 @@ export const compare_cross_impl = (
  * recommendation text — `compare_cross_impl` passes `(reference, backend)`.
  */
 export const format_cross_impl_comparison = (
-	entries: ReadonlyArray<CrossImplComparisonEntry>,
+	entries: ReadonlyArray<CrossImplComparisonEntry>
 ): string =>
 	entries
 		.map((e) => `${e.scenario}: ${e.reference} vs ${e.backend} — ${e.comparison.recommendation}`)
@@ -111,10 +111,10 @@ export const format_cross_impl_json = (result: CrossImplBenchResult): string =>
 					std_dev_ns: e.result.stats.std_dev_ns,
 					ops_per_second: e.result.stats.ops_per_second,
 					outlier_ratio: e.result.stats.outlier_ratio,
-					sample_size: e.result.stats.sample_size,
-				},
-			})),
+					sample_size: e.result.stats.sample_size
+				}
+			}))
 		},
 		null,
-		2,
+		2
 	);

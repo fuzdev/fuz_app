@@ -18,24 +18,24 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import type {SessionOptions} from '../auth/session_cookie.ts';
-import type {RoleSchemaResult} from '../auth/role_schema.ts';
-import type {BootstrapServerOptions} from '../server/app_server.ts';
-import type {AppServerContext} from '../server/app_server_context.ts';
-import type {RouteSpec} from '../http/route_spec.ts';
-import {describe_standard_integration_tests} from './integration.ts';
-import {describe_standard_admin_integration_tests} from './admin_integration.ts';
-import {describe_round_trip_validation} from './round_trip.ts';
-import {describe_data_exposure_tests} from './data_exposure.ts';
-import {describe_rpc_round_trip_tests} from './rpc_round_trip.ts';
-import {describe_audit_completeness_tests} from './audit_completeness.ts';
-import {describe_rate_limiting_tests} from './rate_limiting.ts';
-import {describe_bootstrap_success_tests} from './bootstrap_success.ts';
-import type {RpcEndpointsSuiteOption} from './rpc_helpers.ts';
-import type {BackendCapabilities} from './cross_backend/capabilities.ts';
-import type {SetupTest} from './cross_backend/setup.ts';
-import type {AppSurfaceSpec} from '../http/surface.ts';
-import type {SuiteAppOptions} from './app_server.ts';
+import type { SessionOptions } from '../auth/session_cookie.ts';
+import type { RoleSchemaResult } from '../auth/role_schema.ts';
+import type { BootstrapServerOptions } from '../server/app_server.ts';
+import type { AppServerContext } from '../server/app_server_context.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
+import { describe_standard_integration_tests } from './integration.ts';
+import { describe_standard_admin_integration_tests } from './admin_integration.ts';
+import { describe_round_trip_validation } from './round_trip.ts';
+import { describe_data_exposure_tests } from './data_exposure.ts';
+import { describe_rpc_round_trip_tests } from './rpc_round_trip.ts';
+import { describe_audit_completeness_tests } from './audit_completeness.ts';
+import { describe_rate_limiting_tests } from './rate_limiting.ts';
+import { describe_bootstrap_success_tests } from './bootstrap_success.ts';
+import type { RpcEndpointsSuiteOption } from './rpc_helpers.ts';
+import type { BackendCapabilities } from './cross_backend/capabilities.ts';
+import type { SetupTest } from './cross_backend/setup.ts';
+import type { AppSurfaceSpec } from '../http/surface.ts';
+import type { SuiteAppOptions } from './app_server.ts';
 
 /**
  * Configuration for `describe_standard_tests`.
@@ -107,30 +107,30 @@ export const describe_standard_tests = (options: StandardTestOptions): void => {
 		capabilities: options.capabilities,
 		session_options: options.session_options,
 		rpc_endpoints: options.rpc_endpoints,
-		error_coverage_min: options.error_coverage_min,
+		error_coverage_min: options.error_coverage_min
 	});
 	describe_round_trip_validation({
 		setup_test: options.setup_test,
 		surface_source: options.surface_source,
-		capabilities: options.capabilities,
+		capabilities: options.capabilities
 	});
 	describe_rpc_round_trip_tests({
 		setup_test: options.setup_test,
 		surface_source: options.surface_source,
 		capabilities: options.capabilities,
 		session_options: options.session_options,
-		rpc_endpoints: options.rpc_endpoints,
+		rpc_endpoints: options.rpc_endpoints
 	});
 	describe_data_exposure_tests({
 		setup_test: options.setup_test,
 		surface_source: options.surface_source,
-		capabilities: options.capabilities,
+		capabilities: options.capabilities
 	});
 	describe_rate_limiting_tests({
 		session_options: options.session_options,
 		create_route_specs: options.create_route_specs,
 		rpc_endpoints: options.rpc_endpoints,
-		app_options: options.rate_limiting_app_options,
+		app_options: options.rate_limiting_app_options
 	});
 	if (options.roles) {
 		describe_standard_admin_integration_tests({
@@ -140,14 +140,14 @@ export const describe_standard_tests = (options: StandardTestOptions): void => {
 			session_options: options.session_options,
 			roles: options.roles,
 			rpc_endpoints: options.rpc_endpoints,
-			admin_prefix: options.admin_prefix,
+			admin_prefix: options.admin_prefix
 		});
 		describe_audit_completeness_tests({
 			setup_test: options.setup_test,
 			surface_source: options.surface_source,
 			capabilities: options.capabilities,
 			session_options: options.session_options,
-			rpc_endpoints: options.rpc_endpoints,
+			rpc_endpoints: options.rpc_endpoints
 		});
 	}
 	if (options.bootstrap?.mode === 'live') {
@@ -156,7 +156,7 @@ export const describe_standard_tests = (options: StandardTestOptions): void => {
 			create_route_specs: options.create_route_specs,
 			rpc_endpoints: options.rpc_endpoints,
 			bootstrap: options.bootstrap,
-			bootstrap_token: options.bootstrap_token,
+			bootstrap_token: options.bootstrap_token
 		});
 	}
 };

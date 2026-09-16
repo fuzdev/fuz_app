@@ -42,15 +42,15 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {assert, describe} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import { assert, describe } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import {heartbeat_action_spec} from '../../actions/heartbeat.ts';
-import {account_session_revoke_all_action_spec} from '../../auth/account_action_specs.ts';
-import {create_ws_transport} from '../transports/ws_transport.ts';
-import {create_rpc_post_init} from '../rpc_helpers.ts';
-import {type BackendCapabilities, test_if} from './capabilities.ts';
-import type {SetupTest} from './setup.ts';
+import { heartbeat_action_spec } from '../../actions/heartbeat.ts';
+import { account_session_revoke_all_action_spec } from '../../auth/account_action_specs.ts';
+import { create_ws_transport } from '../transports/ws_transport.ts';
+import { create_rpc_post_init } from '../rpc_helpers.ts';
+import { type BackendCapabilities, test_if } from './capabilities.ts';
+import type { SetupTest } from './setup.ts';
 
 /** Origin guaranteed to fail the `http://localhost:*` allowlist the test backends run with. */
 const DISALLOWED_ORIGIN = 'http://disallowed.example';
@@ -87,7 +87,7 @@ export interface CrossProcessWsTestOptions {
  * session-revocation closing the live socket.
  */
 export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptions): void => {
-	const {setup_test, capabilities, base_url, ws_path, origin, rpc_path} = options;
+	const { setup_test, capabilities, base_url, ws_path, origin, rpc_path } = options;
 
 	describe('cross-process websocket', () => {
 		test_if(capabilities.ws, 'authenticated upgrade round-trips heartbeat', async () => {
@@ -96,7 +96,7 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 				base_url,
 				ws_path,
 				cookies: fixture.transport.cookies(),
-				origin,
+				origin
 			});
 			try {
 				const result = await client.request(1, heartbeat_action_spec.method, {});
@@ -109,13 +109,13 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 		// Per-connection auth fires at upgrade time (`require_auth`), so an
 		// anonymous socket never opens — the upgrade is refused outright.
 		test_if(capabilities.ws, 'anonymous upgrade is refused', async () => {
-			await assert_rejects(() => create_ws_transport({base_url, ws_path, cookies: [], origin}));
+			await assert_rejects(() => create_ws_transport({ base_url, ws_path, cookies: [], origin }));
 		});
 
 		// Origin is checked before auth, so cookies are irrelevant here.
 		test_if(capabilities.ws, 'disallowed-origin upgrade is refused', async () => {
 			await assert_rejects(() =>
-				create_ws_transport({base_url, ws_path, cookies: [], origin: DISALLOWED_ORIGIN}),
+				create_ws_transport({ base_url, ws_path, cookies: [], origin: DISALLOWED_ORIGIN })
 			);
 		});
 
@@ -133,7 +133,7 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 					base_url,
 					ws_path,
 					cookies: fixture.transport.cookies(),
-					origin,
+					origin
 				});
 				try {
 					// Confirm the socket dispatches before revoking, so a failed
@@ -141,19 +141,19 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 					await client.request(1, heartbeat_action_spec.method, {});
 					const res = await fixture.transport(
 						rpc_path!,
-						create_rpc_post_init(account_session_revoke_all_action_spec.method),
+						create_rpc_post_init(account_session_revoke_all_action_spec.method)
 					);
 					assert.strictEqual(
 						res.status,
 						200,
-						`account_session_revoke_all RPC failed (status=${res.status})`,
+						`account_session_revoke_all RPC failed (status=${res.status})`
 					);
 					const closed = await client.wait_for_close(2000);
 					assert.ok(closed, 'socket did not close within 2s after session_revoke_all');
 				} finally {
 					await client.close();
 				}
-			},
+			}
 		);
 	});
 };

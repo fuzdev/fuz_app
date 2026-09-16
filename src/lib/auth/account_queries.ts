@@ -7,18 +7,18 @@
  * @module
  */
 
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type {QueryDeps} from '../db/query_deps.ts';
-import {assert_row} from '../db/assert_row.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
+import { assert_row } from '../db/assert_row.ts';
 import {
 	to_admin_account,
 	type Account,
 	type Actor,
 	type CreateAccountInput,
-	type AdminAccountEntryJson,
+	type AdminAccountEntryJson
 } from './account_schema.ts';
-import {ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT} from './admin_action_specs.ts';
+import { ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT } from './admin_action_specs.ts';
 
 /**
  * The full `account` column set, named explicitly so a row read fails loud
@@ -48,13 +48,13 @@ const ACCOUNT_COLUMNS =
  */
 export const query_create_account = async (
 	deps: QueryDeps,
-	input: CreateAccountInput,
+	input: CreateAccountInput
 ): Promise<Account> => {
 	const row = await deps.db.query_one<Account>(
 		`INSERT INTO account (username, password_hash, email)
 		 VALUES ($1, $2, $3)
 		 RETURNING *`,
-		[input.username, input.password_hash, input.email ?? null],
+		[input.username, input.password_hash, input.email ?? null]
 	);
 	return assert_row(row, 'INSERT INTO account');
 };
@@ -70,11 +70,11 @@ export const query_create_account = async (
  */
 export const query_account_by_id = async (
 	deps: QueryDeps,
-	id: string,
+	id: string
 ): Promise<Account | undefined> => {
 	return deps.db.query_one<Account>(
 		`SELECT ${ACCOUNT_COLUMNS} FROM account WHERE id = $1 AND deleted_at IS NULL`,
-		[id],
+		[id]
 	);
 };
 
@@ -83,11 +83,11 @@ export const query_account_by_id = async (
  */
 export const query_account_by_username = async (
 	deps: QueryDeps,
-	username: string,
+	username: string
 ): Promise<Account | undefined> => {
 	return deps.db.query_one<Account>(
 		`SELECT ${ACCOUNT_COLUMNS} FROM account WHERE LOWER(username) = LOWER($1)`,
-		[username],
+		[username]
 	);
 };
 
@@ -96,11 +96,11 @@ export const query_account_by_username = async (
  */
 export const query_account_by_email = async (
 	deps: QueryDeps,
-	email: string,
+	email: string
 ): Promise<Account | undefined> => {
 	return deps.db.query_one<Account>(
 		`SELECT ${ACCOUNT_COLUMNS} FROM account WHERE LOWER(email) = LOWER($1)`,
-		[email],
+		[email]
 	);
 };
 
@@ -123,7 +123,7 @@ export const query_account_by_email = async (
  */
 export const query_account_by_username_or_email = async (
 	deps: QueryDeps,
-	input: string,
+	input: string
 ): Promise<Account | undefined> => {
 	const account = input.includes('@')
 		? ((await query_account_by_email(deps, input)) ??
@@ -160,13 +160,13 @@ export const query_update_account_password = async (
 	id: string,
 	password_hash: string,
 	updated_by: string | null,
-	expected_hash: string,
+	expected_hash: string
 ): Promise<boolean> => {
-	const rows = await deps.db.query<{id: string}>(
+	const rows = await deps.db.query<{ id: string }>(
 		`UPDATE account SET password_hash = $1, updated_at = NOW(), updated_by = $2
 		 WHERE id = $3 AND password_hash = $4
 		 RETURNING id`,
-		[password_hash, updated_by ?? null, id, expected_hash],
+		[password_hash, updated_by ?? null, id, expected_hash]
 	);
 	return rows.length > 0;
 };
@@ -198,13 +198,13 @@ export interface AccountIdentitySnapshot {
 export const query_account_soft_delete = async (
 	deps: QueryDeps,
 	id: string,
-	deleted_by: string | null,
+	deleted_by: string | null
 ): Promise<AccountIdentitySnapshot | undefined> => {
 	return deps.db.query_one<AccountIdentitySnapshot>(
 		`UPDATE account SET deleted_at = NOW(), deleted_by = $2
 		 WHERE id = $1 AND deleted_at IS NULL
 		 RETURNING username, email`,
-		[id, deleted_by],
+		[id, deleted_by]
 	);
 };
 
@@ -225,11 +225,11 @@ export const query_account_soft_delete = async (
  */
 export const query_purge_account = async (
 	deps: QueryDeps,
-	id: string,
+	id: string
 ): Promise<AccountIdentitySnapshot | undefined> => {
 	return deps.db.query_one<AccountIdentitySnapshot>(
 		`DELETE FROM account WHERE id = $1 RETURNING username, email`,
-		[id],
+		[id]
 	);
 };
 
@@ -243,13 +243,13 @@ export const query_purge_account = async (
 export const query_actor_soft_delete = async (
 	deps: QueryDeps,
 	id: string,
-	deleted_by: string | null,
+	deleted_by: string | null
 ): Promise<boolean> => {
-	const row = await deps.db.query_one<{id: string}>(
+	const row = await deps.db.query_one<{ id: string }>(
 		`UPDATE actor SET deleted_at = NOW(), deleted_by = $2
 		 WHERE id = $1 AND deleted_at IS NULL
 		 RETURNING id`,
-		[id, deleted_by],
+		[id, deleted_by]
 	);
 	return row !== undefined;
 };
@@ -269,13 +269,13 @@ export const query_actor_soft_delete = async (
  */
 export const query_account_undelete = async (
 	deps: QueryDeps,
-	id: string,
+	id: string
 ): Promise<AccountIdentitySnapshot | undefined> => {
 	return deps.db.query_one<AccountIdentitySnapshot>(
 		`UPDATE account SET deleted_at = NULL, deleted_by = NULL
 		 WHERE id = $1 AND deleted_at IS NOT NULL
 		 RETURNING username, email`,
-		[id],
+		[id]
 	);
 };
 
@@ -287,11 +287,11 @@ export const query_account_undelete = async (
  * @mutates `actor` row - clears `deleted_at` + `deleted_by` on one soft-deleted row
  */
 export const query_actor_undelete = async (deps: QueryDeps, id: string): Promise<boolean> => {
-	const row = await deps.db.query_one<{id: string}>(
+	const row = await deps.db.query_one<{ id: string }>(
 		`UPDATE actor SET deleted_at = NULL, deleted_by = NULL
 		 WHERE id = $1 AND deleted_at IS NOT NULL
 		 RETURNING id`,
-		[id],
+		[id]
 	);
 	return row !== undefined;
 };
@@ -300,8 +300,8 @@ export const query_actor_undelete = async (deps: QueryDeps, id: string): Promise
  * Check if any account exists.
  */
 export const query_account_has_any = async (deps: QueryDeps): Promise<boolean> => {
-	const row = await deps.db.query_one<{exists: boolean}>(
-		`SELECT EXISTS(SELECT 1 FROM account) AS exists`,
+	const row = await deps.db.query_one<{ exists: boolean }>(
+		`SELECT EXISTS(SELECT 1 FROM account) AS exists`
 	);
 	return row?.exists ?? false;
 };
@@ -318,11 +318,11 @@ export const query_account_has_any = async (deps: QueryDeps): Promise<boolean> =
 export const query_create_actor = async (
 	deps: QueryDeps,
 	account_id: string,
-	name: string,
+	name: string
 ): Promise<Actor> => {
 	const row = await deps.db.query_one<Actor>(
 		`INSERT INTO actor (account_id, name) VALUES ($1, $2) RETURNING *`,
-		[account_id, name],
+		[account_id, name]
 	);
 	return assert_row(row, 'INSERT INTO actor');
 };
@@ -340,11 +340,11 @@ export const query_create_actor = async (
  */
 export const query_actors_by_account = async (
 	deps: QueryDeps,
-	account_id: string,
+	account_id: string
 ): Promise<Array<Actor>> => {
 	return deps.db.query<Actor>(
 		`SELECT * FROM actor WHERE account_id = $1 ORDER BY created_at ASC, id ASC`,
-		[account_id],
+		[account_id]
 	);
 };
 
@@ -361,11 +361,11 @@ export const query_actors_by_account = async (
  */
 export const query_active_actors_by_account = async (
 	deps: QueryDeps,
-	account_id: string,
+	account_id: string
 ): Promise<Array<Actor>> => {
 	return deps.db.query<Actor>(
 		`SELECT * FROM actor WHERE account_id = $1 AND deleted_at IS NULL ORDER BY created_at ASC, id ASC`,
-		[account_id],
+		[account_id]
 	);
 };
 
@@ -374,7 +374,7 @@ export const query_active_actors_by_account = async (
  */
 export const query_actor_by_id = async (
 	deps: QueryDeps,
-	id: string,
+	id: string
 ): Promise<Actor | undefined> => {
 	return deps.db.query_one<Actor>(`SELECT * FROM actor WHERE id = $1`, [id]);
 };
@@ -391,11 +391,11 @@ export const query_actor_by_id = async (
  */
 export const query_create_account_with_actor = async (
 	deps: QueryDeps,
-	input: CreateAccountInput,
-): Promise<{account: Account; actor: Actor}> => {
+	input: CreateAccountInput
+): Promise<{ account: Account; actor: Actor }> => {
 	const account = await query_create_account(deps, input);
 	const actor = await query_create_actor(deps, account.id, input.username);
-	return {account, actor};
+	return { account, actor };
 };
 
 /** Row shape for the active role_grants batch query. */
@@ -463,7 +463,7 @@ export interface AdminAccountListOptions {
  */
 export const query_admin_account_list = async (
 	deps: QueryDeps,
-	options?: AdminAccountListOptions,
+	options?: AdminAccountListOptions
 ): Promise<Array<AdminAccountEntryJson>> => {
 	const limit =
 		options?.limit === null ? null : (options?.limit ?? ADMIN_ACCOUNT_LIST_DEFAULT_LIMIT);
@@ -474,11 +474,11 @@ export const query_admin_account_list = async (
 	const account_query =
 		limit == null
 			? deps.db.query<Account>(`SELECT * FROM account ${where} ORDER BY created_at OFFSET $1`, [
-					offset,
+					offset
 				])
 			: deps.db.query<Account>(
 					`SELECT * FROM account ${where} ORDER BY created_at LIMIT $1 OFFSET $2`,
-					[limit, offset],
+					[limit, offset]
 				);
 	const accounts = await account_query;
 	if (accounts.length === 0) return [];
@@ -493,7 +493,7 @@ export const query_admin_account_list = async (
 			 WHERE actor_id IN (SELECT id FROM actor WHERE account_id = ANY($1::uuid[]))
 			   AND revoked_at IS NULL
 			   AND (expires_at IS NULL OR expires_at > NOW())`,
-			[account_ids],
+			[account_ids]
 		),
 		deps.db.query<PendingOfferRow>(
 			`SELECT po.id, po.to_account_id, po.from_actor_id, po.role, po.scope_kind, po.scope_id,
@@ -508,8 +508,8 @@ export const query_admin_account_list = async (
 			   AND po.superseded_at IS NULL
 			   AND po.expires_at > NOW()
 			 ORDER BY po.expires_at ASC`,
-			[account_ids],
-		),
+			[account_ids]
+		)
 	]);
 
 	// Index actors by account_id. Multi-actor TODO: this Map keyed by
@@ -552,7 +552,7 @@ export const query_admin_account_list = async (
 		const account_offers = offers_by_account.get(account.id) ?? [];
 		return {
 			account: to_admin_account(account),
-			actor: actor ? {id: actor.id, name: actor.name} : null,
+			actor: actor ? { id: actor.id, name: actor.name } : null,
 			role_grants: actor_role_grants.map((p) => ({
 				id: p.id,
 				role: p.role,
@@ -560,7 +560,7 @@ export const query_admin_account_list = async (
 				scope_id: p.scope_id,
 				created_at: p.created_at,
 				expires_at: p.expires_at,
-				granted_by: p.granted_by,
+				granted_by: p.granted_by
 			})),
 			pending_offers: account_offers.map((o) => ({
 				id: o.id,
@@ -570,8 +570,8 @@ export const query_admin_account_list = async (
 				from_actor_id: o.from_actor_id,
 				from_username: o.from_username,
 				created_at: o.created_at,
-				expires_at: o.expires_at,
-			})),
+				expires_at: o.expires_at
+			}))
 		};
 	});
 };

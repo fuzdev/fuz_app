@@ -15,18 +15,18 @@
  * @module
  */
 
-import {in_process_capabilities} from '$lib/testing/cross_backend/capabilities.ts';
+import { in_process_capabilities } from '$lib/testing/cross_backend/capabilities.ts';
 import {
 	describe_cell_grant_role_cross_tests,
 	CELL_EDITOR_ROLE,
-	CELL_ROLE_HOLDER_USERNAME,
+	CELL_ROLE_HOLDER_USERNAME
 } from '$lib/testing/cross_backend/cell_grant_role.ts';
 
-import {create_cell_parity_setup} from './cell_parity_helpers.ts';
+import { create_cell_parity_setup } from './cell_parity_helpers.ts';
 
 describe_cell_grant_role_cross_tests({
 	setup_test: create_cell_parity_setup([
-		{username: CELL_ROLE_HOLDER_USERNAME, roles: [CELL_EDITOR_ROLE]},
+		{ username: CELL_ROLE_HOLDER_USERNAME, roles: [CELL_EDITOR_ROLE] }
 	]),
-	capabilities: in_process_capabilities,
+	capabilities: in_process_capabilities
 });

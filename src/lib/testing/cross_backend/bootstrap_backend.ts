@@ -25,11 +25,11 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type {BackendConfig} from './backend_config.ts';
-import {spawn_backend} from './spawn_backend.ts';
-import {bootstrap} from '../transports/bootstrap.ts';
-import {create_fetch_transport} from '../transports/fetch_transport.ts';
-import type {BootstrappedBackendHandle} from './setup.ts';
+import type { BackendConfig } from './backend_config.ts';
+import { spawn_backend } from './spawn_backend.ts';
+import { bootstrap } from '../transports/bootstrap.ts';
+import { create_fetch_transport } from '../transports/fetch_transport.ts';
+import type { BootstrappedBackendHandle } from './setup.ts';
 
 /**
  * Spawn the test binary described by `config`, bootstrap a keeper, and
@@ -44,12 +44,12 @@ import type {BootstrappedBackendHandle} from './setup.ts';
  * otherwise hand-roll in every consumer's `globalSetup`.
  */
 export const bootstrap_backend = async (
-	config: BackendConfig,
+	config: BackendConfig
 ): Promise<BootstrappedBackendHandle> => {
 	const handle = await spawn_backend(config);
 	try {
-		const keeper_transport = create_fetch_transport({base_url: config.base_url});
-		const keeper = await bootstrap({transport: keeper_transport, config});
+		const keeper_transport = create_fetch_transport({ base_url: config.base_url });
+		const keeper = await bootstrap({ transport: keeper_transport, config });
 		return {
 			...handle,
 			keeper_transport,
@@ -59,11 +59,11 @@ export const bootstrap_backend = async (
 			keeper_daemon_transport: create_fetch_transport({
 				base_url: config.base_url,
 				initial_cookies: keeper.cookies,
-				origin: null,
+				origin: null
 			}),
 			keeper_account: keeper.account,
 			keeper_actor: keeper.actor,
-			keeper_cookies: keeper.cookies,
+			keeper_cookies: keeper.cookies
 		};
 	} catch (err) {
 		await handle.teardown();

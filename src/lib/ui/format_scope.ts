@@ -9,9 +9,9 @@
  * @module
  */
 
-import {create_context} from '@fuzdev/fuz_ui/context_helpers.ts';
+import { create_context } from '@fuzdev/fuz_ui/context_helpers.ts';
 
-import {truncate_uuid} from './ui_format.ts';
+import { truncate_uuid } from './ui_format.ts';
 
 /**
  * Render a `{scope_id, role}` pair as a human label. Return `null` to fall
@@ -22,7 +22,7 @@ import {truncate_uuid} from './ui_format.ts';
  * the recommended pattern — components show the raw uuid rather than a
  * misleading blank.
  */
-export type FormatScope = (args: {scope_id: string | null; role: string}) => string | null;
+export type FormatScope = (args: { scope_id: string | null; role: string }) => string | null;
 
 /** Default `FormatScope` — always returns `null` so callers fall back to the raw uuid. */
 export const default_format_scope: FormatScope = () => null;
@@ -34,7 +34,7 @@ export const default_format_scope: FormatScope = () => null;
  * the raw uuid.
  */
 export const format_scope_context = create_context<() => FormatScope>(
-	() => () => default_format_scope,
+	() => () => default_format_scope
 );
 
 /**
@@ -49,8 +49,8 @@ export const resolve_scope_label = <G extends string | null>(
 	scope_id: string | null,
 	role: string,
 	format_scope: FormatScope,
-	global_label: G,
+	global_label: G
 ): string | G => {
 	if (scope_id === null) return global_label;
-	return format_scope({scope_id, role}) ?? truncate_uuid(scope_id);
+	return format_scope({ scope_id, role }) ?? truncate_uuid(scope_id);
 };

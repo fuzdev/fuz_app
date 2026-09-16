@@ -35,10 +35,10 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
-import {AuthAxisState, type RouteAuth} from '../../http/auth_shape.ts';
-import type {RequestResponseActionSpec} from '../../actions/action_spec.ts';
+import { AuthAxisState, type RouteAuth } from '../../http/auth_shape.ts';
+import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
 
 /**
  * One method's normalized RPC metadata — the cross-impl-comparable unit.
@@ -59,13 +59,13 @@ export const ActionManifestEntry = z.strictObject({
 	/** Required roles (any-of), sorted; `[]` when the action declares no role gate. */
 	roles: z.array(z.string()),
 	/** Permitted credential channels, sorted; `[]` when ungated (any credential). */
-	credential_types: z.array(z.string()),
+	credential_types: z.array(z.string())
 });
 export type ActionManifestEntry = z.infer<typeof ActionManifestEntry>;
 
 /** The full action manifest — every entry, sorted by `method`. */
 export const ActionManifest = z.strictObject({
-	methods: z.array(ActionManifestEntry),
+	methods: z.array(ActionManifestEntry)
 });
 export type ActionManifest = z.infer<typeof ActionManifest>;
 
@@ -88,7 +88,7 @@ export const action_manifest_entry = (spec: {
 	account: spec.auth.account,
 	actor: spec.auth.actor,
 	roles: sorted_strings(spec.auth.roles),
-	credential_types: sorted_strings(spec.auth.credential_types),
+	credential_types: sorted_strings(spec.auth.credential_types)
 });
 
 /** Deterministic byte-lexicographic method order — matches the Rust `str::cmp` the stub sorts by. */
@@ -103,7 +103,7 @@ const compare_method = (a: ActionManifestEntry, b: ActionManifestEntry): number 
  * `PROTOCOL_ACTION_SPECS` first) — see the module doc.
  */
 export const build_action_manifest = (
-	specs: ReadonlyArray<Pick<RequestResponseActionSpec, 'method' | 'auth' | 'side_effects'>>,
+	specs: ReadonlyArray<Pick<RequestResponseActionSpec, 'method' | 'auth' | 'side_effects'>>
 ): ActionManifest => ({
-	methods: specs.map(action_manifest_entry).sort(compare_method),
+	methods: specs.map(action_manifest_entry).sort(compare_method)
 });

@@ -27,7 +27,7 @@
  * @module
  */
 
-import type {EnvDeps} from '../runtime/deps.ts';
+import type { EnvDeps } from '../runtime/deps.ts';
 
 /**
  * Pattern matching `$$VAR$$`, `$$?VAR$$`, and their escaped forms
@@ -121,9 +121,9 @@ export const get_env_var_names = (value: string): Array<string> => {
  */
 export const resolve_env_vars_in_object = <T extends Record<string, unknown>>(
 	runtime: Pick<EnvDeps, 'env_get'>,
-	obj: T,
+	obj: T
 ): T => {
-	const result = {...obj} as Record<string, unknown>;
+	const result = { ...obj } as Record<string, unknown>;
 	for (const [key, value] of Object.entries(result)) {
 		if (typeof value === 'string') {
 			result[key] = resolve_env_vars(runtime, value);
@@ -148,7 +148,7 @@ export const resolve_env_vars_in_object = <T extends Record<string, unknown>>(
 export const resolve_env_vars_required = (
 	runtime: Pick<EnvDeps, 'env_get'>,
 	value: string,
-	context: string,
+	context: string
 ): string => {
 	const missing: Array<string> = [];
 
@@ -164,12 +164,12 @@ export const resolve_env_vars_required = (
 			if (modifier === '?') return '';
 			missing.push(name);
 			return match; // keep original for error message
-		},
+		}
 	);
 
 	if (missing.length > 0) {
 		throw new Error(
-			`Missing required environment variable(s) for ${context}: ${missing.join(', ')}`,
+			`Missing required environment variable(s) for ${context}: ${missing.join(', ')}`
 		);
 	}
 
@@ -220,7 +220,7 @@ const scan_recursive = (value: unknown, path: string, refs: Array<EnvVarRef>): v
 		let match;
 		while ((match = pattern.exec(value)) !== null) {
 			if (match[0].startsWith('\\')) continue; // escaped — literal text
-			refs.push({name: match[3]!, path, optional: match[2] === '?'});
+			refs.push({ name: match[3]!, path, optional: match[2] === '?' });
 		}
 	} else if (Array.isArray(value)) {
 		for (let i = 0; i < value.length; i++) {
@@ -243,8 +243,7 @@ const scan_recursive = (value: unknown, path: string, refs: Array<EnvVarRef>): v
  * - `ok: false, missing: EnvVarRef[]` — some vars missing
  */
 export type EnvValidationResult =
-	| {ok: true; missing: null}
-	| {ok: false; missing: Array<EnvVarRef>};
+	{ ok: true; missing: null } | { ok: false; missing: Array<EnvVarRef> };
 
 /**
  * Validate that all referenced env vars exist in the environment.
@@ -260,7 +259,7 @@ export type EnvValidationResult =
  */
 export const validate_env_vars = (
 	runtime: Pick<EnvDeps, 'env_get'>,
-	refs: Array<EnvVarRef>,
+	refs: Array<EnvVarRef>
 ): EnvValidationResult => {
 	let missing: Array<EnvVarRef> | null = null;
 
@@ -272,7 +271,7 @@ export const validate_env_vars = (
 		}
 	}
 
-	return missing === null ? {ok: true, missing: null} : {ok: false, missing};
+	return missing === null ? { ok: true, missing: null } : { ok: false, missing };
 };
 
 /**
@@ -297,7 +296,7 @@ export interface FormatMissingEnvVarsOptions {
  */
 export const format_missing_env_vars = (
 	missing: Array<EnvVarRef>,
-	options?: FormatMissingEnvVarsOptions,
+	options?: FormatMissingEnvVarsOptions
 ): string => {
 	const lines: Array<string> = ['Missing required environment variables:', ''];
 

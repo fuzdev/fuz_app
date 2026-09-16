@@ -14,12 +14,12 @@
  * @module
  */
 
-import type {AppSurface, AppSurfaceRoute} from './surface.ts';
+import type { AppSurface, AppSurfaceRoute } from './surface.ts';
 import {
 	is_keeper_auth,
 	is_plain_authenticated_auth,
 	is_public_auth,
-	is_role_auth,
+	is_role_auth
 } from './auth_shape.ts';
 
 /** Filter routes that require any form of authentication. */
@@ -63,12 +63,7 @@ export const filter_routes_for_role = (surface: AppSurface, role: string): Array
  * - `'other'` as a last-resort bucket for shapes that don't match above
  */
 export type RouteAuthCategory =
-	| 'none'
-	| 'authenticated'
-	| 'optional'
-	| 'keeper'
-	| `role:${string}`
-	| 'other';
+	'none' | 'authenticated' | 'optional' | 'keeper' | `role:${string}` | 'other';
 
 /**
  * Group routes by auth category (see `RouteAuthCategory`). Multi-role specs
@@ -114,7 +109,7 @@ export const routes_by_auth_type = (surface: AppSurface): Map<string, Array<AppS
 /** Filter routes whose path starts with `prefix`. */
 export const filter_routes_by_prefix = (
 	surface: AppSurface,
-	prefix: string,
+	prefix: string
 ): Array<AppSurfaceRoute> => surface.routes.filter((r) => r.path.startsWith(prefix));
 
 /** Filter routes that have a non-null input schema. */
@@ -149,7 +144,7 @@ export const format_route_key = (route: AppSurfaceRoute): string => `${route.met
  * @returns counts by auth category, with role counts broken out by role name
  */
 export const surface_auth_summary = (
-	surface: AppSurface,
+	surface: AppSurface
 ): {
 	none: number;
 	authenticated: number;
@@ -192,5 +187,5 @@ export const surface_auth_summary = (
 		other++;
 	}
 
-	return {none, authenticated, optional, role, keeper, other};
+	return { none, authenticated, optional, role, keeper, other };
 };

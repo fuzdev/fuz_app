@@ -14,16 +14,16 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {assert} from 'vitest';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { assert } from 'vitest';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import {
 	role_grant_offer_accept_action_spec,
-	role_grant_offer_create_action_spec,
+	role_grant_offer_create_action_spec
 } from '../auth/role_grant_offer_action_specs.ts';
-import type {TestAccount, TestApp} from './app_server.ts';
-import type {TestFixture} from './cross_backend/setup.ts';
-import {rpc_call_for_spec, type RpcCallArgs} from './rpc_helpers.ts';
+import type { TestAccount, TestApp } from './app_server.ts';
+import type { TestFixture } from './cross_backend/setup.ts';
+import { rpc_call_for_spec, type RpcCallArgs } from './rpc_helpers.ts';
 
 export interface RoleGrantOfferAndAcceptArgs {
 	app: RpcCallArgs['app'];
@@ -48,30 +48,30 @@ export interface RoleGrantOfferAndAcceptArgs {
  * caller-side header/account mismatch.
  */
 export const role_grant_offer_and_accept = async (
-	args: RoleGrantOfferAndAcceptArgs,
-): Promise<{offer_id: Uuid; role_grant_id: Uuid}> => {
+	args: RoleGrantOfferAndAcceptArgs
+): Promise<{ offer_id: Uuid; role_grant_id: Uuid }> => {
 	const create_res = await rpc_call_for_spec({
 		app: args.app,
 		path: args.rpc_path,
 		spec: role_grant_offer_create_action_spec,
-		params: {to_account_id: args.recipient.account.id, role: args.role},
-		headers: args.grantor.create_session_headers(),
+		params: { to_account_id: args.recipient.account.id, role: args.role },
+		headers: args.grantor.create_session_headers()
 	});
 	assert.ok(
 		create_res.ok,
-		`role_grant_offer_create failed: ${create_res.ok ? '' : JSON.stringify(create_res.error)}`,
+		`role_grant_offer_create failed: ${create_res.ok ? '' : JSON.stringify(create_res.error)}`
 	);
-	const {offer} = create_res.result;
+	const { offer } = create_res.result;
 	const accept_res = await rpc_call_for_spec({
 		app: args.app,
 		path: args.rpc_path,
 		spec: role_grant_offer_accept_action_spec,
-		params: {offer_id: offer.id},
-		headers: args.recipient.create_session_headers(),
+		params: { offer_id: offer.id },
+		headers: args.recipient.create_session_headers()
 	});
 	assert.ok(
 		accept_res.ok,
-		`role_grant_offer_accept failed: ${accept_res.ok ? '' : JSON.stringify(accept_res.error)}`,
+		`role_grant_offer_accept failed: ${accept_res.ok ? '' : JSON.stringify(accept_res.error)}`
 	);
-	return {offer_id: offer.id, role_grant_id: accept_res.result.role_grant_id};
+	return { offer_id: offer.id, role_grant_id: accept_res.result.role_grant_id };
 };

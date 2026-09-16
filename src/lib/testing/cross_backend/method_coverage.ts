@@ -29,9 +29,9 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import {assert} from 'vitest';
+import { assert } from 'vitest';
 
-import type {BackendCapabilities} from './capabilities.ts';
+import type { BackendCapabilities } from './capabilities.ts';
 
 /** How a live-mounted RPC method earns its cross-backend coverage. */
 export type MethodCoverageTier =
@@ -112,7 +112,7 @@ export const assert_rpc_method_coverage = (input: RpcMethodCoverageInput): void 
 	for (const entry of input.manifest) {
 		assert.ok(
 			!manifest_methods.has(entry.method),
-			`method coverage: duplicate manifest entry for '${entry.method}'`,
+			`method coverage: duplicate manifest entry for '${entry.method}'`
 		);
 		manifest_methods.add(entry.method);
 	}
@@ -122,8 +122,8 @@ export const assert_rpc_method_coverage = (input: RpcMethodCoverageInput): void 
 		unclaimed.length === 0,
 		`method coverage: ${unclaimed.length} live-mounted RPC method(s) absent from the coverage ` +
 			`manifest — add a {method, tier, suite} entry for each (or stop mounting it):\n  ${sorted(
-				unclaimed,
-			)}`,
+				unclaimed
+			)}`
 	);
 
 	const stale = [...manifest_methods].filter((m) => !live.has(m));
@@ -132,7 +132,7 @@ export const assert_rpc_method_coverage = (input: RpcMethodCoverageInput): void 
 		`method coverage: ${
 			stale.length
 		} manifest entr(y/ies) name a method the live mount no longer ` +
-			`exposes — remove the stale row(s):\n  ${sorted(stale)}`,
+			`exposes — remove the stale row(s):\n  ${sorted(stale)}`
 	);
 
 	const declared_not_live = [...declared].filter((m) => !live.has(m));
@@ -140,8 +140,8 @@ export const assert_rpc_method_coverage = (input: RpcMethodCoverageInput): void 
 		declared_not_live.length === 0,
 		`method coverage: ${declared_not_live.length} declared-surface method(s) not present in the ` +
 			`live mount — the full mount must be a superset of the declared surface:\n  ${sorted(
-				declared_not_live,
-			)}`,
+				declared_not_live
+			)}`
 	);
 
 	for (const entry of input.manifest) {
@@ -152,42 +152,42 @@ export const assert_rpc_method_coverage = (input: RpcMethodCoverageInput): void 
 				assert.ok(
 					is_declared,
 					`method coverage: '${entry.method}' is tagged 'declared' but is not on the declared ` +
-						`surface (create_*_surface_spec) — retag it 'off_surface' or 'backdoor'`,
+						`surface (create_*_surface_spec) — retag it 'off_surface' or 'backdoor'`
 				);
 				assert.ok(
 					!is_backdoor,
 					`method coverage: '${entry.method}' is tagged 'declared' but starts with '${prefix}' ` +
-						`(backdoors must never reach the declared surface) — retag it 'backdoor'`,
+						`(backdoors must never reach the declared surface) — retag it 'backdoor'`
 				);
 				break;
 			case 'backdoor':
 				assert.ok(
 					is_backdoor,
 					`method coverage: '${entry.method}' is tagged 'backdoor' but does not start with ` +
-						`'${prefix}'`,
+						`'${prefix}'`
 				);
 				assert.ok(
 					!is_declared,
 					`method coverage: '${entry.method}' is tagged 'backdoor' but appears on the declared ` +
-						`surface — a '${prefix}*' action must be live-mounted only`,
+						`surface — a '${prefix}*' action must be live-mounted only`
 				);
 				break;
 			case 'off_surface':
 				assert.ok(
 					!is_declared,
 					`method coverage: '${entry.method}' is tagged 'off_surface' but is on the declared ` +
-						`surface — retag it 'declared' (the spec-derived suites already enumerate it)`,
+						`surface — retag it 'declared' (the spec-derived suites already enumerate it)`
 				);
 				assert.ok(
 					!is_backdoor,
 					`method coverage: '${entry.method}' is tagged 'off_surface' but starts with '${
 						prefix
-					}' ` + `— retag it 'backdoor'`,
+					}' ` + `— retag it 'backdoor'`
 				);
 				assert.ok(
 					!!entry.suite,
 					`method coverage: off-surface method '${entry.method}' must name the cross-backend ` +
-						`'suite' that covers it — it gets no auto-enumeration`,
+						`'suite' that covers it — it gets no auto-enumeration`
 				);
 				break;
 		}

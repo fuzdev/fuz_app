@@ -43,7 +43,7 @@ export interface SseFrameReader {
  */
 export const create_sse_frame_reader = (
 	reader: ReadableStreamDefaultReader<Uint8Array>,
-	default_timeout_ms = SSE_FRAME_READ_TIMEOUT_MS,
+	default_timeout_ms = SSE_FRAME_READ_TIMEOUT_MS
 ): SseFrameReader => {
 	const decoder = new TextDecoder();
 	let buffer = '';
@@ -52,12 +52,11 @@ export const create_sse_frame_reader = (
 	// Race a single read against a timeout — vitest would otherwise hang on a
 	// stalled stream. Returns false when the stream ended.
 	const pump_once = async (timeout_ms: number): Promise<boolean> => {
-		const timeout = new Promise<{timed_out: true}>((resolve) => {
-			setTimeout(() => resolve({timed_out: true}), timeout_ms);
+		const timeout = new Promise<{ timed_out: true }>((resolve) => {
+			setTimeout(() => resolve({ timed_out: true }), timeout_ms);
 		});
 		const result = (await Promise.race([reader.read(), timeout])) as
-			| ReadableStreamReadResult<Uint8Array>
-			| {timed_out: true};
+			ReadableStreamReadResult<Uint8Array> | { timed_out: true };
 		if ('timed_out' in result) {
 			throw new Error(`SSE read timed out after ${timeout_ms}ms`);
 		}
@@ -65,7 +64,7 @@ export const create_sse_frame_reader = (
 			closed = true;
 			return false;
 		}
-		buffer += decoder.decode(result.value, {stream: true});
+		buffer += decoder.decode(result.value, { stream: true });
 		return true;
 	};
 
@@ -105,5 +104,5 @@ export const create_sse_frame_reader = (
 		}
 	};
 
-	return {read_frame, wait_for_close, cancel};
+	return { read_frame, wait_for_close, cancel };
 };

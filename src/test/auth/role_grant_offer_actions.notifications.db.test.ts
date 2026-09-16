@@ -13,39 +13,39 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {create_session_config} from '$lib/auth/session_cookie.ts';
-import {create_test_app} from '$lib/testing/app_server.ts';
+import { create_session_config } from '$lib/auth/session_cookie.ts';
+import { create_test_app } from '$lib/testing/app_server.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
-	auth_integration_truncate_tables,
+	auth_integration_truncate_tables
 } from '$lib/testing/db.ts';
-import {run_migrations} from '$lib/db/migrate.ts';
-import {auth_migration_ns} from '$lib/auth/migrations.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import { run_migrations } from '$lib/db/migrate.ts';
+import { auth_migration_ns } from '$lib/auth/migrations.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import {
 	role_grant_offer_create_action_spec,
 	role_grant_offer_accept_action_spec,
 	role_grant_offer_decline_action_spec,
-	role_grant_offer_retract_action_spec,
+	role_grant_offer_retract_action_spec
 } from '$lib/auth/role_grant_offer_action_specs.ts';
 import {
 	ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_RETRACTED_NOTIFICATION_METHOD,
-	ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
+	ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD
 } from '$lib/auth/role_grant_offer_notifications.ts';
-import {create_rpc_post_init} from '$lib/testing/rpc_helpers.ts';
-import type {Db} from '$lib/db/db.ts';
-import type {Hono} from 'hono';
+import { create_rpc_post_init } from '$lib/testing/rpc_helpers.ts';
+import type { Db } from '$lib/db/db.ts';
+import type { Hono } from 'hono';
 import {
 	NOTIFICATION_TEST_RPC_PATH,
 	create_capture_sender,
 	create_notification_route_specs_factory,
-	type CapturedNotificationCall,
+	type CapturedNotificationCall
 } from './notification_helpers.ts';
 
 const session_options = create_session_config('test_session');
@@ -62,7 +62,7 @@ const send_rpc = async (
 	path: string,
 	method: string,
 	params: unknown,
-	headers: Record<string, string>,
+	headers: Record<string, string>
 ): Promise<Response> => {
 	const init = create_rpc_post_init(method, params ?? null, 'test');
 	return app.request(path, {
@@ -71,8 +71,8 @@ const send_rpc = async (
 			'Content-Type': 'application/json',
 			host: 'localhost',
 			origin: 'http://localhost:5173',
-			...headers,
-		},
+			...headers
+		}
 	});
 };
 
@@ -85,25 +85,25 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 				session_options,
 				create_route_specs: create_notification_route_specs_factory(sender),
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			const recipient = await test_app.create_account({username: 'notif_create_recipient'});
+			const recipient = await test_app.create_account({ username: 'notif_create_recipient' });
 
 			const res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
 				role_grant_offer_create_action_spec.method,
-				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
-				test_app.create_session_headers(),
+				{ to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				test_app.create_session_headers()
 			);
 			assert.strictEqual(res.status, 200);
 
 			const matches = calls.filter(
-				(c) => c.method === ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
+				(c) => c.method === ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD
 			);
 			assert.strictEqual(matches.length, 1);
 			assert.strictEqual(matches[0]?.account_id, recipient.account.id);
-			const params = matches[0]?.params as {offer?: {role?: string; to_account_id?: string}};
+			const params = matches[0]?.params as { offer?: { role?: string; to_account_id?: string } };
 			assert.strictEqual(params.offer?.role, ROLE_ADMIN);
 			assert.strictEqual(params.offer?.to_account_id, recipient.account.id);
 		});
@@ -117,16 +117,16 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 				session_options,
 				create_route_specs: create_notification_route_specs_factory(sender),
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			const recipient = await test_app.create_account({username: 'notif_retract_recipient'});
+			const recipient = await test_app.create_account({ username: 'notif_retract_recipient' });
 
 			const create_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
 				role_grant_offer_create_action_spec.method,
-				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
-				test_app.create_session_headers(),
+				{ to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				test_app.create_session_headers()
 			);
 			const offer_id = (await create_res.json()).result.offer.id;
 			calls.length = 0;
@@ -135,17 +135,17 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 				test_app.app,
 				RPC_PATH,
 				role_grant_offer_retract_action_spec.method,
-				{offer_id},
-				test_app.create_session_headers(),
+				{ offer_id },
+				test_app.create_session_headers()
 			);
 			assert.strictEqual(retract_res.status, 200);
 
 			const matches = calls.filter(
-				(c) => c.method === ROLE_GRANT_OFFER_RETRACTED_NOTIFICATION_METHOD,
+				(c) => c.method === ROLE_GRANT_OFFER_RETRACTED_NOTIFICATION_METHOD
 			);
 			assert.strictEqual(matches.length, 1);
 			assert.strictEqual(matches[0]?.account_id, recipient.account.id);
-			const params = matches[0]?.params as {offer?: {id?: string}};
+			const params = matches[0]?.params as { offer?: { id?: string } };
 			assert.strictEqual(params.offer?.id, offer_id);
 		});
 	});
@@ -158,16 +158,16 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 				session_options,
 				create_route_specs: create_notification_route_specs_factory(sender),
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			const recipient = await test_app.create_account({username: 'notif_decline_recipient'});
+			const recipient = await test_app.create_account({ username: 'notif_decline_recipient' });
 
 			const create_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
 				role_grant_offer_create_action_spec.method,
-				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
-				test_app.create_session_headers(),
+				{ to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				test_app.create_session_headers()
 			);
 			const offer_id = (await create_res.json()).result.offer.id;
 			calls.length = 0;
@@ -176,18 +176,18 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 				test_app.app,
 				RPC_PATH,
 				role_grant_offer_decline_action_spec.method,
-				{offer_id, reason: 'no thanks'},
-				recipient.create_session_headers(),
+				{ offer_id, reason: 'no thanks' },
+				recipient.create_session_headers()
 			);
 			assert.strictEqual(decline_res.status, 200);
 
 			const matches = calls.filter(
-				(c) => c.method === ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD,
+				(c) => c.method === ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD
 			);
 			assert.strictEqual(matches.length, 1);
 			assert.strictEqual(matches[0]?.account_id, test_app.backend.account.id);
 			const params = matches[0]?.params as {
-				offer?: {id?: string; decline_reason?: string | null};
+				offer?: { id?: string; decline_reason?: string | null };
 			};
 			assert.strictEqual(params.offer?.id, offer_id);
 			assert.strictEqual(params.offer?.decline_reason, 'no thanks');
@@ -200,16 +200,16 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 				session_options,
 				create_route_specs: create_notification_route_specs_factory(sender),
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			const recipient = await test_app.create_account({username: 'notif_decline_no_reason'});
+			const recipient = await test_app.create_account({ username: 'notif_decline_no_reason' });
 
 			const create_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
 				role_grant_offer_create_action_spec.method,
-				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
-				test_app.create_session_headers(),
+				{ to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				test_app.create_session_headers()
 			);
 			const offer_id = (await create_res.json()).result.offer.id;
 			calls.length = 0;
@@ -218,12 +218,12 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 				test_app.app,
 				RPC_PATH,
 				role_grant_offer_decline_action_spec.method,
-				{offer_id},
-				recipient.create_session_headers(),
+				{ offer_id },
+				recipient.create_session_headers()
 			);
 			const match = calls.find((c) => c.method === ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD);
 			assert.ok(match);
-			const params = match.params as {offer?: {decline_reason?: string | null}};
+			const params = match.params as { offer?: { decline_reason?: string | null } };
 			assert.strictEqual(params.offer?.decline_reason, null);
 		});
 	});
@@ -236,28 +236,28 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 				session_options,
 				create_route_specs: create_notification_route_specs_factory(sender),
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const grantor_b = await test_app.create_account({
 				username: 'notif_accept_grantor_b',
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			const recipient = await test_app.create_account({username: 'notif_accept_recipient'});
+			const recipient = await test_app.create_account({ username: 'notif_accept_recipient' });
 
 			const offer_a_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
 				role_grant_offer_create_action_spec.method,
-				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
-				test_app.create_session_headers(),
+				{ to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				test_app.create_session_headers()
 			);
 			const offer_a_id = (await offer_a_res.json()).result.offer.id;
 			const offer_b_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
 				role_grant_offer_create_action_spec.method,
-				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
-				grantor_b.create_session_headers(),
+				{ to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				grantor_b.create_session_headers()
 			);
 			const offer_b_id = (await offer_b_res.json()).result.offer.id;
 			calls.length = 0;
@@ -266,26 +266,26 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 				test_app.app,
 				RPC_PATH,
 				role_grant_offer_accept_action_spec.method,
-				{offer_id: offer_a_id},
-				recipient.create_session_headers(),
+				{ offer_id: offer_a_id },
+				recipient.create_session_headers()
 			);
 			assert.strictEqual(accept_res.status, 200);
 
 			const accepted = calls.filter(
-				(c) => c.method === ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
+				(c) => c.method === ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD
 			);
 			assert.strictEqual(accepted.length, 1);
 			assert.strictEqual(accepted[0]?.account_id, test_app.backend.account.id);
-			const accepted_params = accepted[0]?.params as {offer?: {id?: string}};
+			const accepted_params = accepted[0]?.params as { offer?: { id?: string } };
 			assert.strictEqual(accepted_params.offer?.id, offer_a_id);
 
 			const supersedes = calls.filter(
-				(c) => c.method === ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
+				(c) => c.method === ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD
 			);
 			assert.strictEqual(supersedes.length, 1);
 			assert.strictEqual(supersedes[0]?.account_id, grantor_b.account.id);
 			const supersede_params = supersedes[0]?.params as {
-				offer?: {id?: string};
+				offer?: { id?: string };
 				reason?: string;
 				cause_id?: string;
 			};
@@ -301,16 +301,16 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 				session_options,
 				create_route_specs: create_notification_route_specs_factory(sender),
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			const recipient = await test_app.create_account({username: 'notif_solo_accept_recipient'});
+			const recipient = await test_app.create_account({ username: 'notif_solo_accept_recipient' });
 
 			const create_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
 				role_grant_offer_create_action_spec.method,
-				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
-				test_app.create_session_headers(),
+				{ to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				test_app.create_session_headers()
 			);
 			const offer_id = (await create_res.json()).result.offer.id;
 			calls.length = 0;
@@ -319,15 +319,15 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 				test_app.app,
 				RPC_PATH,
 				role_grant_offer_accept_action_spec.method,
-				{offer_id},
-				recipient.create_session_headers(),
+				{ offer_id },
+				recipient.create_session_headers()
 			);
 			const accepted = calls.filter(
-				(c) => c.method === ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
+				(c) => c.method === ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD
 			);
 			assert.strictEqual(accepted.length, 1);
 			const supersedes = calls.filter(
-				(c) => c.method === ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
+				(c) => c.method === ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD
 			);
 			assert.strictEqual(supersedes.length, 0);
 		});
@@ -340,17 +340,17 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 			const test_app = await create_test_app({
 				session_options,
 				create_route_specs: create_notification_route_specs_factory(sender),
-				db: get_db(),
+				db: get_db()
 			});
-			const recipient = await test_app.create_account({username: 'notif_fail_recipient'});
-			const caller = await test_app.create_account({username: 'notif_fail_caller'});
+			const recipient = await test_app.create_account({ username: 'notif_fail_recipient' });
+			const caller = await test_app.create_account({ username: 'notif_fail_caller' });
 
 			const res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
 				role_grant_offer_create_action_spec.method,
-				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
-				caller.create_session_headers(),
+				{ to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				caller.create_session_headers()
 			);
 			assert.strictEqual(res.status, 403);
 			assert.strictEqual(calls.length, 0);
@@ -363,24 +363,24 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 				session_options,
 				create_route_specs: create_notification_route_specs_factory(sender),
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			const recipient = await test_app.create_account({username: 'notif_terminal_recipient'});
+			const recipient = await test_app.create_account({ username: 'notif_terminal_recipient' });
 
 			const create_res = await send_rpc(
 				test_app.app,
 				RPC_PATH,
 				role_grant_offer_create_action_spec.method,
-				{to_account_id: recipient.account.id, role: ROLE_ADMIN},
-				test_app.create_session_headers(),
+				{ to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				test_app.create_session_headers()
 			);
 			const offer_id = (await create_res.json()).result.offer.id;
 			await send_rpc(
 				test_app.app,
 				RPC_PATH,
 				role_grant_offer_decline_action_spec.method,
-				{offer_id},
-				recipient.create_session_headers(),
+				{ offer_id },
+				recipient.create_session_headers()
 			);
 			calls.length = 0;
 
@@ -388,8 +388,8 @@ describe_db('role_grant_offer_actions notifications', (get_db) => {
 				test_app.app,
 				RPC_PATH,
 				role_grant_offer_decline_action_spec.method,
-				{offer_id},
-				recipient.create_session_headers(),
+				{ offer_id },
+				recipient.create_session_headers()
 			);
 			assert.strictEqual(retry.status, 400);
 			assert.strictEqual(calls.length, 0);

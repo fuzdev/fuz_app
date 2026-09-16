@@ -15,16 +15,16 @@ import type {
 	EnvDeps,
 	FsReadDeps,
 	FsRemoveDeps,
-	FsWriteDeps,
+	FsWriteDeps
 } from '../runtime/deps.ts';
-import type {QueryDeps} from '../db/query_deps.ts';
-import {load_env_file} from '../env/dotenv.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
+import { load_env_file } from '../env/dotenv.ts';
 import {
 	query_account_by_username,
 	query_actors_by_account,
-	query_create_account_with_actor,
+	query_create_account_with_actor
 } from '../auth/account_queries.ts';
-import {query_create_role_grant} from '../auth/role_grant_queries.ts';
+import { query_create_role_grant } from '../auth/role_grant_queries.ts';
 
 /**
  * Optional logger for setup helpers.
@@ -42,7 +42,7 @@ export interface SetupLogger {
 export const default_setup_logger: SetupLogger = {
 	ok: (msg) => console.log(`  [ok] ${msg}`),
 	skip: (msg) => console.log(`  [skip] ${msg}`),
-	error: (msg) => console.error(`  [error] ${msg}`),
+	error: (msg) => console.error(`  [error] ${msg}`)
 };
 
 /** Result of `setup_env_file`. */
@@ -159,7 +159,7 @@ export const generate_random_key = async (deps: CommandDeps): Promise<string> =>
 export const read_env_var = async (
 	deps: Pick<FsReadDeps, 'read_text_file'>,
 	env_path: string,
-	name: string,
+	name: string
 ): Promise<string | undefined> => {
 	const env = await load_env_file(deps, env_path);
 	return env?.[name];
@@ -184,7 +184,7 @@ export const setup_env_file = async (
 	deps: FsReadDeps & FsWriteDeps & CommandDeps,
 	env_path: string,
 	example_path: string,
-	options?: SetupEnvOptions,
+	options?: SetupEnvOptions
 ): Promise<SetupEnvResult> => {
 	const log = options?.log ?? default_setup_logger;
 	const set_permissions = options?.set_permissions;
@@ -192,7 +192,7 @@ export const setup_env_file = async (
 	// build the full replacement map (SECRET_FUZ_COOKIE_KEYS + extras)
 	const replacements: Record<string, () => Promise<string>> = {
 		SECRET_FUZ_COOKIE_KEYS: () => generate_random_key(deps),
-		...options?.replacements,
+		...options?.replacements
 	};
 
 	const stat = await deps.stat(env_path);
@@ -218,7 +218,7 @@ export const setup_env_file = async (
 			log.skip(`${env_path} already configured`);
 		}
 
-		return {created: false, updated: changed, path: env_path};
+		return { created: false, updated: changed, path: env_path };
 	}
 
 	// create from example
@@ -233,7 +233,7 @@ export const setup_env_file = async (
 	await deps.write_text_file(env_path, content);
 	if (set_permissions) await set_permissions(env_path, 0o600);
 	log.ok(`Created ${env_path} with generated secrets`);
-	return {created: true, updated: true, path: env_path};
+	return { created: true, updated: true, path: env_path };
 };
 
 /**
@@ -251,7 +251,7 @@ export const setup_env_file = async (
 export const setup_bootstrap_token = async (
 	deps: FsReadDeps & FsWriteDeps & CommandDeps & EnvDeps,
 	app_name: string,
-	options?: SetupBootstrapTokenOptions,
+	options?: SetupBootstrapTokenOptions
 ): Promise<SetupTokenResult> => {
 	const log = options?.log ?? default_setup_logger;
 	const set_permissions = options?.set_permissions;
@@ -259,7 +259,7 @@ export const setup_bootstrap_token = async (
 	const home = deps.env_get('HOME');
 	if (!home) {
 		log.skip('$HOME not set, skipping bootstrap token');
-		return {created: false, token_path: ''};
+		return { created: false, token_path: '' };
 	}
 
 	const state_dir = options?.state_dir ?? `${home}/.${app_name}`;
@@ -268,16 +268,16 @@ export const setup_bootstrap_token = async (
 	const stat = await deps.stat(token_path);
 	if (stat?.is_file) {
 		log.skip(`~/.${app_name}/secret_bootstrap_token already exists`);
-		return {created: false, token_path};
+		return { created: false, token_path };
 	}
 
-	await deps.mkdir(state_dir, {recursive: true});
+	await deps.mkdir(state_dir, { recursive: true });
 	if (set_permissions) await set_permissions(state_dir, 0o700);
 	const key = await generate_random_key(deps);
 	await deps.write_text_file(token_path, key + '\n');
 	if (set_permissions) await set_permissions(token_path, 0o600);
 	log.ok(`Created ~/.${app_name}/secret_bootstrap_token (one-shot, deleted after first use)`);
-	return {created: true, token_path};
+	return { created: true, token_path };
 };
 
 /**
@@ -292,7 +292,7 @@ export const setup_bootstrap_token = async (
 export const reset_bootstrap_token = async (
 	deps: FsReadDeps & FsWriteDeps & FsRemoveDeps & CommandDeps & EnvDeps,
 	app_name: string,
-	options?: SetupBootstrapTokenOptions,
+	options?: SetupBootstrapTokenOptions
 ): Promise<SetupTokenResult> => {
 	const log = options?.log ?? default_setup_logger;
 	const set_permissions = options?.set_permissions;
@@ -300,7 +300,7 @@ export const reset_bootstrap_token = async (
 	const home = deps.env_get('HOME');
 	if (!home) {
 		log.skip('$HOME not set');
-		return {created: false, token_path: ''};
+		return { created: false, token_path: '' };
 	}
 
 	const state_dir = options?.state_dir ?? `${home}/.${app_name}`;
@@ -312,7 +312,7 @@ export const reset_bootstrap_token = async (
 		log.ok('Removed existing bootstrap token');
 	}
 
-	return setup_bootstrap_token(deps, app_name, {state_dir, set_permissions, log});
+	return setup_bootstrap_token(deps, app_name, { state_dir, set_permissions, log });
 };
 
 // === Database helpers ===
@@ -332,7 +332,7 @@ export const reset_bootstrap_token = async (
 export const create_database = async (
 	deps: CommandDeps,
 	db_name: string,
-	options?: CreateDatabaseOptions,
+	options?: CreateDatabaseOptions
 ): Promise<CommandResult> => {
 	const log = options?.log ?? default_setup_logger;
 
@@ -368,14 +368,14 @@ export const create_database = async (
 export const reset_database = async (
 	deps: CommandDeps & FsReadDeps & FsRemoveDeps,
 	database_url: string,
-	options?: ResetDatabaseOptions,
+	options?: ResetDatabaseOptions
 ): Promise<ResetDbResult> => {
 	const log = options?.log ?? default_setup_logger;
 
 	// empty or missing
 	if (!database_url) {
 		log.skip('No DATABASE_URL, skipping database reset');
-		return {reset: false, skipped: true, db_type: 'none'};
+		return { reset: false, skipped: true, db_type: 'none' };
 	}
 
 	// pglite
@@ -384,37 +384,37 @@ export const reset_database = async (
 		if (pglite_dir) {
 			const stat = await deps.stat(pglite_dir);
 			if (stat?.is_directory) {
-				await deps.remove(pglite_dir, {recursive: true});
+				await deps.remove(pglite_dir, { recursive: true });
 				log.ok(`Removed pglite directory: ${pglite_dir}`);
-				return {reset: true, skipped: false, db_type: 'pglite'};
+				return { reset: true, skipped: false, db_type: 'pglite' };
 			}
 		}
 		log.skip('No pglite directory to remove');
-		return {reset: false, skipped: true, db_type: 'pglite'};
+		return { reset: false, skipped: true, db_type: 'pglite' };
 	}
 
 	// PostgreSQL
 	const db_name = parse_db_name(database_url);
 	if (!db_name) {
 		log.error('Could not parse database name from DATABASE_URL');
-		return {reset: false, skipped: true, db_type: 'postgres'};
+		return { reset: false, skipped: true, db_type: 'postgres' };
 	}
 
 	const drop = await deps.run_command('dropdb', ['--if-exists', db_name]);
 	if (!drop.success) {
 		log.error(`Failed to drop database: ${drop.stderr}`);
-		return {reset: false, skipped: false, db_type: 'postgres'};
+		return { reset: false, skipped: false, db_type: 'postgres' };
 	}
 	log.ok(`Dropped database: ${db_name}`);
 
 	const create = await deps.run_command('createdb', [db_name]);
 	if (!create.success) {
 		log.error(`Failed to create database: ${create.stderr}`);
-		return {reset: false, skipped: false, db_type: 'postgres'};
+		return { reset: false, skipped: false, db_type: 'postgres' };
 	}
 	log.ok(`Created database: ${db_name}`);
 
-	return {reset: true, skipped: false, db_type: 'postgres'};
+	return { reset: true, skipped: false, db_type: 'postgres' };
 };
 
 // === Dev account helpers ===
@@ -458,10 +458,10 @@ export interface SeedDevAccountDeps extends QueryDeps {
 export const seed_dev_account = async (
 	deps: SeedDevAccountDeps,
 	input: SeedDevAccountInput,
-	options?: {log?: SetupLogger},
+	options?: { log?: SetupLogger }
 ): Promise<SeedDevAccountResult> => {
 	const log = options?.log ?? default_setup_logger;
-	const query_deps: QueryDeps = {db: deps.db};
+	const query_deps: QueryDeps = { db: deps.db };
 
 	const existing = await query_account_by_username(query_deps, input.username);
 	if (existing) {
@@ -477,26 +477,26 @@ export const seed_dev_account = async (
 				actor_id: actor.id,
 				role,
 				granted_by: null,
-				expires_at: null,
+				expires_at: null
 			});
 		}
 		log.skip(`Dev account '${input.username}' already exists`);
-		return {account_id: existing.id, actor_id: actor.id, created: false};
+		return { account_id: existing.id, actor_id: actor.id, created: false };
 	}
 
 	const password_hash = await deps.hash_password(input.password);
-	const {account, actor} = await query_create_account_with_actor(query_deps, {
+	const { account, actor } = await query_create_account_with_actor(query_deps, {
 		username: input.username,
-		password_hash,
+		password_hash
 	});
 	for (const role of input.roles ?? []) {
 		await query_create_role_grant(query_deps, {
 			actor_id: actor.id,
 			role,
 			granted_by: null,
-			expires_at: null,
+			expires_at: null
 		});
 	}
 	log.ok(`Seeded dev account '${input.username}'`);
-	return {account_id: account.id, actor_id: actor.id, created: true};
+	return { account_id: account.id, actor_id: actor.id, created: true };
 };

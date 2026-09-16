@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS role_grant (
 export const ROLE_GRANT_INDEXES = [
 	`CREATE INDEX IF NOT EXISTS idx_role_grant_actor ON role_grant(actor_id)`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS role_grant_actor_role_active_unique
-    ON role_grant (actor_id, role) WHERE revoked_at IS NULL`,
+    ON role_grant (actor_id, role) WHERE revoked_at IS NULL`
 ];
 
 export const AUTH_SESSION_SCHEMA = `
@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS auth_session (
 
 export const AUTH_SESSION_INDEXES = [
 	`CREATE INDEX IF NOT EXISTS idx_auth_session_account ON auth_session(account_id)`,
-	`CREATE INDEX IF NOT EXISTS idx_auth_session_expires ON auth_session(expires_at)`,
+	`CREATE INDEX IF NOT EXISTS idx_auth_session_expires ON auth_session(expires_at)`
 ];
 
 export const API_TOKEN_SCHEMA = `
@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS invite (
 export const INVITE_INDEXES = [
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_invite_email_unclaimed ON invite (LOWER(email)) WHERE email IS NOT NULL AND claimed_at IS NULL`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_invite_username_unclaimed ON invite (LOWER(username)) WHERE username IS NOT NULL AND claimed_at IS NULL`,
-	`CREATE INDEX IF NOT EXISTS idx_invite_claimed ON invite (claimed_at)`,
+	`CREATE INDEX IF NOT EXISTS idx_invite_claimed ON invite (claimed_at)`
 ];
 
 export const APP_SETTINGS_SCHEMA = `

@@ -14,24 +14,24 @@
  * @module
  */
 
-import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
-import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.ts';
-import {create_all_cell_actions} from '$lib/auth/all_cell_actions.ts';
-import {create_testing_drain_effects_action} from '$lib/testing/cross_backend/testing_reset_actions.ts';
-import {cell_audit_events} from '$lib/auth/cell_audit_events.ts';
-import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
-import {create_audit_log_config} from '$lib/auth/audit_log_schema.ts';
-import {CELL_MIGRATION_NS} from '$lib/db/cell_ddl.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
+import { create_standard_rpc_actions } from '$lib/auth/standard_rpc_actions.ts';
+import { create_all_cell_actions } from '$lib/auth/all_cell_actions.ts';
+import { create_testing_drain_effects_action } from '$lib/testing/cross_backend/testing_reset_actions.ts';
+import { cell_audit_events } from '$lib/auth/cell_audit_events.ts';
+import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
+import { create_audit_log_config } from '$lib/auth/audit_log_schema.ts';
+import { CELL_MIGRATION_NS } from '$lib/db/cell_ddl.ts';
 import {
 	spine_roles,
-	spine_session_options,
+	spine_session_options
 } from '$lib/testing/cross_backend/default_spine_surface.ts';
-import {SPINE_RPC_PATH} from '$lib/testing/cross_backend/spine_surface_constants.ts';
-import {default_in_process_setup} from '$lib/testing/cross_backend/in_process_setup.ts';
-import type {ExtraAccountSpec, SetupTest} from '$lib/testing/cross_backend/setup.ts';
-import type {AppServerContext} from '$lib/server/app_server_context.ts';
-import type {AuditFactory} from '$lib/server/app_backend.ts';
-import type {RpcEndpointSpec} from '$lib/http/surface.ts';
+import { SPINE_RPC_PATH } from '$lib/testing/cross_backend/spine_surface_constants.ts';
+import { default_in_process_setup } from '$lib/testing/cross_backend/in_process_setup.ts';
+import type { ExtraAccountSpec, SetupTest } from '$lib/testing/cross_backend/setup.ts';
+import type { AppServerContext } from '$lib/server/app_server_context.ts';
+import type { AuditFactory } from '$lib/server/app_backend.ts';
+import type { RpcEndpointSpec } from '$lib/http/surface.ts';
 
 /**
  * The full cell RPC surface mounted on the spine RPC path, alongside the
@@ -47,22 +47,22 @@ export const cell_parity_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpo
 			// `spine_roles` carries the `cell_editor` app role so the
 			// role-shaped-grant parity suite's role-validity gate admits it and
 			// rejects unregistered roles — matching the spine binary + Rust stub.
-			...create_standard_rpc_actions(ctx.deps, {roles: spine_roles}),
-			...create_all_cell_actions(ctx.deps, {roles: spine_roles}),
+			...create_standard_rpc_actions(ctx.deps, { roles: spine_roles }),
+			...create_all_cell_actions(ctx.deps, { roles: spine_roles }),
 			// `_testing_drain_effects` so the shared suite can call the audit
 			// barrier in-process too (satisfied-by-construction here:
 			// `create_test_app` runs `await_pending_effects: true`).
-			create_testing_drain_effects_action(),
-		],
-	},
+			create_testing_drain_effects_action()
+		]
+	}
 ];
 
 /** Audit factory registering the cell event types so cell emits validate. */
-const cell_parity_audit_factory: AuditFactory = ({db, log}) =>
+const cell_parity_audit_factory: AuditFactory = ({ db, log }) =>
 	create_audit_emitter({
 		db,
 		log,
-		audit_log_config: create_audit_log_config({extra_events: cell_audit_events}),
+		audit_log_config: create_audit_log_config({ extra_events: cell_audit_events })
 	});
 
 /**
@@ -75,7 +75,7 @@ const cell_parity_audit_factory: AuditFactory = ({db, log}) =>
  * path and so can't be offered).
  */
 export const create_cell_parity_setup = (
-	extra_accounts: ReadonlyArray<ExtraAccountSpec> = [],
+	extra_accounts: ReadonlyArray<ExtraAccountSpec> = []
 ): SetupTest =>
 	default_in_process_setup({
 		session_options: spine_session_options,
@@ -84,5 +84,5 @@ export const create_cell_parity_setup = (
 		roles: [ROLE_KEEPER, ROLE_ADMIN],
 		migration_namespaces: [CELL_MIGRATION_NS],
 		audit_factory: cell_parity_audit_factory,
-		extra_accounts,
+		extra_accounts
 	});

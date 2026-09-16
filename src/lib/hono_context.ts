@@ -11,13 +11,13 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
-import type {RequestContext} from './auth/request_context.ts';
+import type { RequestContext } from './auth/request_context.ts';
 import {
 	CREDENTIAL_TYPE_API_TOKEN,
 	CREDENTIAL_TYPE_DAEMON_TOKEN,
-	CREDENTIAL_TYPE_SESSION,
+	CREDENTIAL_TYPE_SESSION
 } from './auth/credential_type_schema.ts';
 
 /**
@@ -31,7 +31,7 @@ import {
 export const CREDENTIAL_TYPES = [
 	CREDENTIAL_TYPE_SESSION,
 	CREDENTIAL_TYPE_API_TOKEN,
-	CREDENTIAL_TYPE_DAEMON_TOKEN,
+	CREDENTIAL_TYPE_DAEMON_TOKEN
 ] as const;
 
 /** Credential type — how a request was authenticated. */

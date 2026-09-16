@@ -14,4 +14,4 @@
  * @returns `true` if the error is a unique constraint violation
  */
 export const is_pg_unique_violation = (error: unknown): boolean =>
-	error instanceof Error && 'code' in error && (error as {code: unknown}).code === '23505';
+	error instanceof Error && 'code' in error && (error as { code: unknown }).code === '23505';

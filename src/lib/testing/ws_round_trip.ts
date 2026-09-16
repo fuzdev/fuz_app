@@ -39,36 +39,36 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import type {Context, Hono} from 'hono';
+import type { Context, Hono } from 'hono';
 import {
 	WSContext,
 	createWSMessageEvent,
 	type UpgradeWebSocket,
 	type WSContextInit,
-	type WSEvents,
+	type WSEvents
 } from 'hono/ws';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
-import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.ts';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type {ActionSpecUnion} from '../actions/action_spec.ts';
-import type {Action} from '../actions/action_types.ts';
-import {ActionDispatcher} from '../actions/action_dispatcher.ts';
-import type {ActionEventEnvironment} from '../actions/action_event_types.ts';
-import {create_broadcast_api} from '../actions/broadcast_api.ts';
-import {register_action_ws, type RegisterActionWsOptions} from '../actions/register_action_ws.ts';
-import {create_stub_db} from './stubs.ts';
-import {BackendWebsocketTransport} from '../actions/transports_ws_backend.ts';
-import {REQUEST_CONTEXT_KEY, type RequestContext} from '../auth/request_context.ts';
-import {ROLE_KEEPER} from '../auth/role_schema.ts';
+import type { ActionSpecUnion } from '../actions/action_spec.ts';
+import type { Action } from '../actions/action_types.ts';
+import { ActionDispatcher } from '../actions/action_dispatcher.ts';
+import type { ActionEventEnvironment } from '../actions/action_event_types.ts';
+import { create_broadcast_api } from '../actions/broadcast_api.ts';
+import { register_action_ws, type RegisterActionWsOptions } from '../actions/register_action_ws.ts';
+import { create_stub_db } from './stubs.ts';
+import { BackendWebsocketTransport } from '../actions/transports_ws_backend.ts';
+import { REQUEST_CONTEXT_KEY, type RequestContext } from '../auth/request_context.ts';
+import { ROLE_KEEPER } from '../auth/role_schema.ts';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
-	type CredentialType,
+	type CredentialType
 } from '../hono_context.ts';
-import {create_jsonrpc_request} from '../http/jsonrpc_helpers.ts';
-import {create_test_account, create_test_actor, create_test_role_grant} from './entities.ts';
+import { create_jsonrpc_request } from '../http/jsonrpc_helpers.ts';
+import { create_test_account, create_test_actor, create_test_role_grant } from './entities.ts';
 import {
 	WS_CLIENT_DEFAULT_TIMEOUT_MS,
 	deliver_inbound,
@@ -77,7 +77,7 @@ import {
 	type JsonrpcSuccessResponseFrame,
 	type WsClient,
 	type WsRequestResponder,
-	type WsWaiter,
+	type WsWaiter
 } from './transports/ws_client.ts';
 
 // ---------------------------------------------------------------------
@@ -91,7 +91,7 @@ import {
 export interface FakeWs {
 	ws: WSContext;
 	sends: Array<string>;
-	closes: Array<{code?: number; reason?: string}>;
+	closes: Array<{ code?: number; reason?: string }>;
 }
 
 /**
@@ -101,17 +101,17 @@ export interface FakeWs {
  */
 export const create_fake_ws = (): FakeWs => {
 	const sends: Array<string> = [];
-	const closes: Array<{code?: number; reason?: string}> = [];
+	const closes: Array<{ code?: number; reason?: string }> = [];
 	const init: WSContextInit = {
 		send: (data) => {
 			sends.push(typeof data === 'string' ? data : '<binary>');
 		},
 		close: (code, reason) => {
-			closes.push({code, reason});
+			closes.push({ code, reason });
 		},
-		readyState: 1,
+		readyState: 1
 	};
-	return {ws: new WSContext(init), sends, closes};
+	return { ws: new WSContext(init), sends, closes };
 };
 
 /** Options for `create_fake_hono_context`. */
@@ -141,10 +141,10 @@ export const create_fake_hono_context = (opts: FakeHonoContextOptions): Context 
 		[CREDENTIAL_TYPE_KEY]: opts.credential_type,
 		auth_session_id: opts.auth_session_id ?? (opts.credential_type === 'session' ? 's1' : null),
 		[AUTH_API_TOKEN_ID_KEY]: opts.api_token_id ?? null,
-		[TEST_CONTEXT_PRESET_KEY]: true,
+		[TEST_CONTEXT_PRESET_KEY]: true
 	};
 	return {
-		get: (key: string) => vars[key],
+		get: (key: string) => vars[key]
 	} as unknown as Context;
 };
 
@@ -170,7 +170,7 @@ export const create_stub_upgrade = (): StubUpgrade => {
 		get_create_events: () => {
 			if (!captured) throw new Error('upgradeWebSocket was not called');
 			return captured;
-		},
+		}
 	};
 };
 
@@ -201,7 +201,7 @@ export class MinimalActionEnvironment implements ActionEventEnvironment {
 export const dispatch_ws_message = async (
 	on_message: NonNullable<WSEvents['onMessage']>,
 	event: MessageEvent,
-	ws: WSContext,
+	ws: WSContext
 ): Promise<void> => {
 	// eslint-disable-next-line @typescript-eslint/no-confusing-void-expression
 	const result: unknown = on_message(event, ws);
@@ -285,7 +285,7 @@ export interface WsTestHarness {
  */
 const build_multi_role_request_context = (
 	account_id: Uuid,
-	roles: ReadonlyArray<string>,
+	roles: ReadonlyArray<string>
 ): RequestContext => {
 	const actor_id = create_uuid();
 	const now = new Date().toISOString();
@@ -301,7 +301,7 @@ const build_multi_role_request_context = (
 			updated_at: now,
 			updated_by: null,
 			deleted_at: null,
-			deleted_by: null,
+			deleted_by: null
 		},
 		actor: {
 			id: actor_id,
@@ -311,7 +311,7 @@ const build_multi_role_request_context = (
 			updated_at: null,
 			updated_by: null,
 			deleted_at: null,
-			deleted_by: null,
+			deleted_by: null
 		},
 		role_grants: roles.map((role) => ({
 			id: create_uuid(),
@@ -325,8 +325,8 @@ const build_multi_role_request_context = (
 			revoked_by: null,
 			revoked_reason: null,
 			granted_by: null,
-			source_offer_id: null,
-		})),
+			source_offer_id: null
+		}))
 	};
 };
 
@@ -336,9 +336,9 @@ const build_multi_role_request_context = (
  * `testing/auth_apps.ts`.
  */
 const build_simple_request_context = (role?: string): RequestContext => ({
-	account: create_test_account({id: 'acc_1', username: 'testuser'}),
-	actor: create_test_actor({id: 'act_1', account_id: 'acc_1', name: 'testuser'}),
-	role_grants: role ? [create_test_role_grant({id: 'perm_1', actor_id: 'act_1', role})] : [],
+	account: create_test_account({ id: 'acc_1', username: 'testuser' }),
+	actor: create_test_actor({ id: 'act_1', account_id: 'acc_1', name: 'testuser' }),
+	role_grants: role ? [create_test_role_grant({ id: 'perm_1', actor_id: 'act_1', role })] : []
 });
 
 /**
@@ -355,16 +355,16 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		actions,
 		transport = new BackendWebsocketTransport(),
 		heartbeat = false,
-		log = new Logger('[ws-test]', {level: 'off'}),
+		log = new Logger('[ws-test]', { level: 'off' }),
 		on_socket_open,
 		on_socket_close,
-		on_request,
+		on_request
 	} = options;
 
 	const stub = create_stub_upgrade();
 
 	// Minimal Hono stub — `register_action_ws` only needs `.get(path, handler)`.
-	const stub_app = {get: () => stub_app} as unknown as Hono;
+	const stub_app = { get: () => stub_app } as unknown as Hono;
 
 	// Stub DB — the harness pre-bakes `RequestContext` via the test-preset
 	// escape hatch so `perform_action` skips the live authorization phase.
@@ -383,7 +383,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		heartbeat,
 		log,
 		on_socket_open,
-		on_socket_close,
+		on_socket_close
 	});
 
 	const events_factory = stub.get_create_events();
@@ -401,10 +401,10 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 			[CREDENTIAL_TYPE_KEY, credential_type],
 			['auth_session_id', session_id],
 			[AUTH_API_TOKEN_ID_KEY, api_token_id],
-			[TEST_CONTEXT_PRESET_KEY, true],
+			[TEST_CONTEXT_PRESET_KEY, true]
 		]);
 		const fake_c = {
-			get: (key: string) => ctx_store.get(key),
+			get: (key: string) => ctx_store.get(key)
 		} as unknown as Context;
 
 		const received: Array<unknown> = [];
@@ -441,16 +441,16 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 				for (const resolve of close_waiters.splice(0)) resolve();
 				const close_event = new Event('close') as CloseEvent;
 				Object.defineProperties(close_event, {
-					code: {value: code ?? 1000, writable: false},
-					reason: {value: reason ?? '', writable: false},
-					wasClean: {value: true, writable: false},
+					code: { value: code ?? 1000, writable: false },
+					reason: { value: reason ?? '', writable: false },
+					wasClean: { value: true, writable: false }
 				});
 				close_pending = (async () => {
 					// onClose is typed as `void` by Hono but `register_action_ws`
 					// returns a promise when `on_socket_close` does async cleanup.
 					await (events.onClose?.(close_event, ws) as Promise<void> | void);
 				})();
-			},
+			}
 		});
 
 		// Resolve the (possibly async) events factory and fire onOpen
@@ -467,7 +467,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 
 		const wait_for_impl = <T>(
 			predicate: (msg: unknown) => boolean,
-			timeout_ms = WS_CLIENT_DEFAULT_TIMEOUT_MS,
+			timeout_ms = WS_CLIENT_DEFAULT_TIMEOUT_MS
 		): Promise<T> => {
 			for (const msg of received) {
 				if (predicate(msg)) return Promise.resolve(msg as T);
@@ -478,7 +478,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 					resolve: (msg: unknown) => {
 						clearTimeout(timer);
 						resolve(msg as T);
-					},
+					}
 				};
 				const timer = setTimeout(() => {
 					// Drop the waiter on timeout — without this, a later `send`
@@ -517,12 +517,12 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 				id: number | string,
 				method: string,
 				params: unknown,
-				timeout_ms?: number,
+				timeout_ms?: number
 			): Promise<R> {
 				await send_impl(create_jsonrpc_request(method, params as never, id));
 				const msg = await wait_for_impl<JsonrpcSuccessResponseFrame<R> | JsonrpcErrorResponseFrame>(
 					is_response_for(id),
-					timeout_ms,
+					timeout_ms
 				);
 				if ('error' in msg) {
 					const detail =
@@ -550,17 +550,17 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 					}, timeout_ms);
 					close_waiters.push(on_close);
 				});
-			},
+			}
 		};
 	};
 
-	return {transport, connect};
+	return { transport, connect };
 };
 
 /** Convenience: default identity for keeper-authenticated connections. */
 export const keeper_identity = (): WsConnectIdentity => ({
 	credential_type: 'daemon_token',
-	roles: [ROLE_KEEPER],
+	roles: [ROLE_KEEPER]
 });
 
 // ---------------------------------------------------------------------
@@ -572,7 +572,7 @@ export const keeper_identity = (): WsConnectIdentity => ({
 // ---------------------------------------------------------------------
 
 const make_peer = (): ActionDispatcher =>
-	new ActionDispatcher({environment: new MinimalActionEnvironment([])});
+	new ActionDispatcher({ environment: new MinimalActionEnvironment([]) });
 
 /**
  * Wire a typed broadcast API against the harness's transport, matching
@@ -597,5 +597,5 @@ export const build_broadcast_api = <TApi extends object>(options: {
 }): TApi => {
 	const peer = make_peer();
 	peer.transports.register_transport(options.harness.transport);
-	return create_broadcast_api<TApi>({peer, specs: options.specs});
+	return create_broadcast_api<TApi>({ peer, specs: options.specs });
 };

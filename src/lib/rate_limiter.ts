@@ -7,10 +7,10 @@
  * @module
  */
 
-import type {Context} from 'hono';
-import {LruMap} from '@fuzdev/fuz_util/lru_map.ts';
+import type { Context } from 'hono';
+import { LruMap } from '@fuzdev/fuz_util/lru_map.ts';
 
-import {ERROR_RATE_LIMIT_EXCEEDED} from './http/error_schemas.ts';
+import { ERROR_RATE_LIMIT_EXCEEDED } from './http/error_schemas.ts';
 
 /**
  * Default tracked-key cap: bounds worst-case memory under key-enumeration
@@ -54,7 +54,7 @@ export const default_login_ip_rate_limit: RateLimiterOptions = {
 	max_attempts: 5,
 	window_ms: 15 * 60_000,
 	cleanup_interval_ms: 5 * 60_000,
-	max_keys: DEFAULT_RATE_LIMITER_MAX_KEYS,
+	max_keys: DEFAULT_RATE_LIMITER_MAX_KEYS
 };
 
 /** Default options for per-account login rate limiting: 10 attempts per 30 minutes. */
@@ -62,7 +62,7 @@ export const default_login_account_rate_limit: RateLimiterOptions = {
 	max_attempts: 10,
 	window_ms: 30 * 60_000,
 	cleanup_interval_ms: 5 * 60_000,
-	max_keys: DEFAULT_RATE_LIMITER_MAX_KEYS,
+	max_keys: DEFAULT_RATE_LIMITER_MAX_KEYS
 };
 
 /**
@@ -76,7 +76,7 @@ export const default_action_ip_rate_limit: RateLimiterOptions = {
 	max_attempts: 600,
 	window_ms: 15 * 60_000,
 	cleanup_interval_ms: 5 * 60_000,
-	max_keys: DEFAULT_RATE_LIMITER_MAX_KEYS,
+	max_keys: DEFAULT_RATE_LIMITER_MAX_KEYS
 };
 
 /**
@@ -90,7 +90,7 @@ export const default_action_account_rate_limit: RateLimiterOptions = {
 	max_attempts: 1200,
 	window_ms: 15 * 60_000,
 	cleanup_interval_ms: 5 * 60_000,
-	max_keys: DEFAULT_RATE_LIMITER_MAX_KEYS,
+	max_keys: DEFAULT_RATE_LIMITER_MAX_KEYS
 };
 
 /**
@@ -157,8 +157,8 @@ export class RateLimiter {
 	 * keeps the boundary explicit against `inspect(…, {showHidden: true})`
 	 * and future field-visibility changes.
 	 */
-	[Symbol.for('nodejs.util.inspect.custom')](): {options: RateLimiterOptions; size: number} {
-		return {options: this.options, size: this.size};
+	[Symbol.for('nodejs.util.inspect.custom')](): { options: RateLimiterOptions; size: number } {
+		return { options: this.options, size: this.size };
 	}
 
 	/**
@@ -173,12 +173,12 @@ export class RateLimiter {
 	 * @mutates internal map - prunes expired timestamps for `key`
 	 */
 	check(key: string, now: number = Date.now()): RateLimitResult {
-		const {max_attempts, window_ms} = this.options;
+		const { max_attempts, window_ms } = this.options;
 		const cutoff = now - window_ms;
 		const timestamps = this.#attempts.get(key);
 
 		if (!timestamps) {
-			return {allowed: true, remaining: max_attempts, retry_after: 0};
+			return { allowed: true, remaining: max_attempts, retry_after: 0 };
 		}
 
 		const active = timestamps.filter((t) => t > cutoff);
@@ -191,12 +191,12 @@ export class RateLimiter {
 		}
 
 		if (active.length < max_attempts) {
-			return {allowed: true, remaining: max_attempts - active.length, retry_after: 0};
+			return { allowed: true, remaining: max_attempts - active.length, retry_after: 0 };
 		}
 
 		const oldest = active[0]!;
 		const retry_after = Math.ceil((oldest + window_ms - now) / 1000);
-		return {allowed: false, remaining: 0, retry_after};
+		return { allowed: false, remaining: 0, retry_after };
 	}
 
 	/**
@@ -207,7 +207,7 @@ export class RateLimiter {
 	 * @mutates internal map - appends `now` to the timestamp list for `key` (after pruning expired entries)
 	 */
 	record(key: string, now: number = Date.now()): RateLimitResult {
-		const {max_attempts, window_ms} = this.options;
+		const { max_attempts, window_ms } = this.options;
 		const cutoff = now - window_ms;
 
 		let timestamps = this.#attempts.get(key);
@@ -224,12 +224,12 @@ export class RateLimiter {
 
 		const count = timestamps.length;
 		if (count <= max_attempts) {
-			return {allowed: true, remaining: max_attempts - count, retry_after: 0};
+			return { allowed: true, remaining: max_attempts - count, retry_after: 0 };
 		}
 
 		const oldest = timestamps[0]!;
 		const retry_after = Math.ceil((oldest + window_ms - now) / 1000);
-		return {allowed: false, remaining: 0, retry_after};
+		return { allowed: false, remaining: 0, retry_after };
 	}
 
 	/**
@@ -282,7 +282,7 @@ export class RateLimiter {
  * @param options - override individual options; unset fields use `default_login_ip_rate_limit`
  */
 export const create_rate_limiter = (options?: Partial<RateLimiterOptions>): RateLimiter => {
-	return new RateLimiter({...default_login_ip_rate_limit, ...options});
+	return new RateLimiter({ ...default_login_ip_rate_limit, ...options });
 };
 
 /**
@@ -294,6 +294,6 @@ export const create_rate_limiter = (options?: Partial<RateLimiterOptions>): Rate
  */
 export const rate_limit_exceeded_response = (c: Context, retry_after: number): Response =>
 	c.json(
-		{error: ERROR_RATE_LIMIT_EXCEEDED, retry_after},
-		{status: 429, headers: {'Retry-After': String(Math.ceil(retry_after))}},
+		{ error: ERROR_RATE_LIMIT_EXCEEDED, retry_after },
+		{ status: 429, headers: { 'Retry-After': String(Math.ceil(retry_after)) } }
 	);

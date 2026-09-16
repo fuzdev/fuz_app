@@ -59,8 +59,8 @@
  * @module
  */
 
-import type {AsyncStatus} from '@fuzdev/fuz_util/async.ts';
-import {to_error_message} from '@fuzdev/fuz_util/error.ts';
+import type { AsyncStatus } from '@fuzdev/fuz_util/async.ts';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
 export interface AsyncSlotOptions<T, E = string> {
 	/**
@@ -167,7 +167,7 @@ export class AsyncSlot<T = void, E = string> {
 	 */
 	async run(
 		fn: (signal: AbortSignal) => Promise<T>,
-		options: RunOptions = {},
+		options: RunOptions = {}
 	): Promise<T | undefined> {
 		this.#controller?.abort();
 		const controller = new AbortController();
@@ -187,7 +187,7 @@ export class AsyncSlot<T = void, E = string> {
 			external_handler = () => {
 				if (this.#controller === controller) this.abort(external.reason);
 			};
-			external.addEventListener('abort', external_handler, {once: true});
+			external.addEventListener('abort', external_handler, { once: true });
 		}
 
 		this.status = 'pending';

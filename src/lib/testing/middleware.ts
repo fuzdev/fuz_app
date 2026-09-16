@@ -10,47 +10,47 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {vi, test, assert, describe} from 'vitest';
-import {Hono} from 'hono';
-import type {z} from 'zod';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { vi, test, assert, describe } from 'vitest';
+import { Hono } from 'hono';
+import type { z } from 'zod';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {create_bearer_auth_middleware} from '../auth/bearer_auth.ts';
-import {query_validate_api_token} from '../auth/api_token_queries.ts';
+import { create_bearer_auth_middleware } from '../auth/bearer_auth.ts';
+import { query_validate_api_token } from '../auth/api_token_queries.ts';
 import {
 	query_account_by_id,
 	query_actor_by_id,
-	query_active_actors_by_account,
+	query_active_actors_by_account
 } from '../auth/account_queries.ts';
-import {query_role_grant_find_active_for_actor} from '../auth/role_grant_queries.ts';
-import type {QueryDeps} from '../db/query_deps.ts';
-import {create_proxy_middleware} from '../http/proxy.ts';
-import {get_client_ip} from '../http/client_ip.ts';
-import {verify_request_source, parse_allowed_origins} from '../http/origin.ts';
-import type {RateLimiter} from '../rate_limiter.ts';
-import {REQUEST_CONTEXT_KEY, type RequestContext} from '../auth/request_context.ts';
+import { query_role_grant_find_active_for_actor } from '../auth/role_grant_queries.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
+import { create_proxy_middleware } from '../http/proxy.ts';
+import { get_client_ip } from '../http/client_ip.ts';
+import { verify_request_source, parse_allowed_origins } from '../http/origin.ts';
+import type { RateLimiter } from '../rate_limiter.ts';
+import { REQUEST_CONTEXT_KEY, type RequestContext } from '../auth/request_context.ts';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
-	TEST_CONTEXT_PRESET_KEY,
+	TEST_CONTEXT_PRESET_KEY
 } from '../hono_context.ts';
-import {ApiError} from '../http/error_schemas.ts';
+import { ApiError } from '../http/error_schemas.ts';
 
 // Mock the query modules so test cases can control return values.
 // vi.mock() is hoisted by vitest, so these run before any imports resolve.
 vi.mock('../auth/api_token_queries.js', () => ({
-	query_validate_api_token: vi.fn(),
+	query_validate_api_token: vi.fn()
 }));
 
 vi.mock('../auth/account_queries.js', () => ({
 	query_account_by_id: vi.fn(),
 	query_actor_by_id: vi.fn(),
-	query_active_actors_by_account: vi.fn(),
+	query_active_actors_by_account: vi.fn()
 }));
 
 vi.mock('../auth/role_grant_queries.js', () => ({
-	query_role_grant_find_active_for_actor: vi.fn(),
+	query_role_grant_find_active_for_actor: vi.fn()
 }));
 
 // --- Types ---
@@ -107,7 +107,7 @@ export interface BearerAuthMocks {
 }
 
 /** Stub `QueryDeps` for bearer auth tests (no real DB needed). */
-const STUB_DEPS: QueryDeps = {db: {} as any};
+const STUB_DEPS: QueryDeps = { db: {} as any };
 
 /**
  * Create mock dependencies for `create_bearer_auth_middleware`, configured per test case.
@@ -155,7 +155,7 @@ export const create_bearer_auth_mocks = (tc: BearerAuthTestOptions): BearerAuthM
 		mock_find_by_id,
 		mock_find_actor_by_id,
 		mock_find_actors_by_account,
-		mock_find_active_for_actor,
+		mock_find_active_for_actor
 	};
 };
 
@@ -170,14 +170,14 @@ export const TEST_CLIENT_IP = '127.0.0.1';
  */
 export const create_bearer_auth_test_app = (
 	tc: BearerAuthTestOptions,
-	ip_rate_limiter: RateLimiter | null = null,
-): {app: Hono; mocks: BearerAuthMocks} => {
+	ip_rate_limiter: RateLimiter | null = null
+): { app: Hono; mocks: BearerAuthMocks } => {
 	const mocks = create_bearer_auth_mocks(tc);
 
 	const bearer_middleware = create_bearer_auth_middleware(
 		STUB_DEPS,
 		ip_rate_limiter,
-		new Logger('test', {level: 'off'}),
+		new Logger('test', { level: 'off' })
 	);
 
 	const app = new Hono();
@@ -223,11 +223,11 @@ export const create_bearer_auth_test_app = (
 			account_id: account_id ?? null,
 			credential_type: cred ?? null,
 			api_token_id: api_token_id ?? null,
-			request_context_set: ctx != null,
+			request_context_set: ctx != null
 		});
 	});
 
-	return {app, mocks};
+	return { app, mocks };
 };
 
 // --- Table-driven test runner ---
@@ -240,16 +240,16 @@ export const create_bearer_auth_test_app = (
 export const describe_bearer_auth_cases = (
 	suite_name: string,
 	cases: Array<BearerAuthTestCase>,
-	ip_rate_limiter: RateLimiter | null = null,
+	ip_rate_limiter: RateLimiter | null = null
 ): void => {
 	describe(suite_name, () => {
 		for (const tc of cases) {
 			test(tc.name, async () => {
-				const {app, mocks} = create_bearer_auth_test_app(tc, ip_rate_limiter);
+				const { app, mocks } = create_bearer_auth_test_app(tc, ip_rate_limiter);
 
 				const res = await app.request('/api/test', {
 					method: 'GET',
-					headers: tc.headers,
+					headers: tc.headers
 				});
 
 				const body = await res.json();
@@ -269,7 +269,7 @@ export const describe_bearer_auth_cases = (
 					assert.strictEqual(
 						mocks.mock_validate.mock.calls.length,
 						0,
-						'validate should not have been called',
+						'validate should not have been called'
 					);
 				} else {
 					assert.ok(mocks.mock_validate.mock.calls.length > 0, 'validate should have been called');
@@ -281,13 +281,13 @@ export const describe_bearer_auth_cases = (
 						assert.strictEqual(
 							body.account_id,
 							tc.expected_account_id,
-							'ACCOUNT_ID_KEY should match the validated api_token.account_id',
+							'ACCOUNT_ID_KEY should match the validated api_token.account_id'
 						);
 					}
 					assert.strictEqual(
 						body.credential_type,
 						'api_token',
-						'CREDENTIAL_TYPE_KEY should be api_token',
+						'CREDENTIAL_TYPE_KEY should be api_token'
 					);
 				}
 
@@ -295,7 +295,7 @@ export const describe_bearer_auth_cases = (
 					assert.strictEqual(
 						body.api_token_id,
 						tc.expected_api_token_id,
-						'AUTH_API_TOKEN_ID_KEY should match the validated api_token.id',
+						'AUTH_API_TOKEN_ID_KEY should match the validated api_token.id'
 					);
 				}
 
@@ -304,7 +304,7 @@ export const describe_bearer_auth_cases = (
 					assert.strictEqual(
 						body.credential_type,
 						'session',
-						'credential type should remain session',
+						'credential type should remain session'
 					);
 				}
 
@@ -354,7 +354,7 @@ export interface TestMiddlewareStackApp {
  *   modules — each call resets the spies before wiring the stack.
  */
 export const create_test_middleware_stack_app = (
-	options?: TestMiddlewareStackOptions,
+	options?: TestMiddlewareStackOptions
 ): TestMiddlewareStackApp => {
 	const trusted_proxies = options?.trusted_proxies ?? ['10.0.0.1'];
 	const allowed_origins_str = options?.allowed_origins ?? 'https://app.example.com';
@@ -378,7 +378,7 @@ export const create_test_middleware_stack_app = (
 
 	const proxy_mw = create_proxy_middleware({
 		trusted_proxies,
-		get_connection_ip: get_connection_ip as any,
+		get_connection_ip: get_connection_ip as any
 	});
 
 	const allowed_patterns = parse_allowed_origins(allowed_origins_str);
@@ -387,7 +387,7 @@ export const create_test_middleware_stack_app = (
 	const bearer_mw = create_bearer_auth_middleware(
 		STUB_DEPS,
 		options?.ip_rate_limiter ?? null,
-		new Logger('test', {level: 'off'}),
+		new Logger('test', { level: 'off' })
 	);
 
 	const app = new Hono();
@@ -403,7 +403,7 @@ export const create_test_middleware_stack_app = (
 		return c.json({
 			ok: true,
 			client_ip: get_client_ip(c),
-			account_id: account_id ?? null,
+			account_id: account_id ?? null
 		});
 	});
 
@@ -413,6 +413,6 @@ export const create_test_middleware_stack_app = (
 		mock_find_by_id,
 		mock_find_actor_by_id,
 		mock_find_actors_by_account,
-		mock_find_active_for_actor,
+		mock_find_active_for_actor
 	};
 };

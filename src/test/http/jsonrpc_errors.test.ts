@@ -4,9 +4,9 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
+import { describe, assert, test } from 'vitest';
 
-import type {JsonrpcErrorCode, JsonrpcErrorObject} from '$lib/http/jsonrpc.ts';
+import type { JsonrpcErrorCode, JsonrpcErrorObject } from '$lib/http/jsonrpc.ts';
 import {
 	JSONRPC_ERROR_CODES,
 	ThrownJsonrpcError,
@@ -15,7 +15,7 @@ import {
 	jsonrpc_error_code_to_http_status,
 	JSONRPC_ERROR_CODE_TO_HTTP_STATUS,
 	HTTP_STATUS_TO_JSONRPC_ERROR_CODE,
-	http_status_to_jsonrpc_error_code,
+	http_status_to_jsonrpc_error_code
 } from '$lib/http/jsonrpc_errors.ts';
 
 describe('JSONRPC_ERROR_CODES', () => {
@@ -48,11 +48,11 @@ describe('JSONRPC_ERROR_CODES', () => {
 describe('ThrownJsonrpcError', () => {
 	test('carries code, message, and data', () => {
 		const err = new ThrownJsonrpcError(JSONRPC_ERROR_CODES.not_found, 'user not found', {
-			id: 42,
+			id: 42
 		});
 		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.not_found);
 		assert.strictEqual(err.message, 'user not found');
-		assert.deepStrictEqual(err.data, {id: 42});
+		assert.deepStrictEqual(err.data, { id: 42 });
 	});
 
 	test('extends Error', () => {
@@ -69,7 +69,7 @@ describe('ThrownJsonrpcError', () => {
 	test('supports ErrorOptions cause', () => {
 		const cause = new Error('root cause');
 		const err = new ThrownJsonrpcError(JSONRPC_ERROR_CODES.internal_error, 'wrapped', undefined, {
-			cause,
+			cause
 		});
 		assert.strictEqual(err.cause, cause);
 	});
@@ -124,10 +124,10 @@ describe('jsonrpc_errors named constructors', () => {
 	});
 
 	test('conflict with data', () => {
-		const err = jsonrpc_errors.conflict('duplicate', {field: 'username'});
+		const err = jsonrpc_errors.conflict('duplicate', { field: 'username' });
 		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.conflict);
 		assert.strictEqual(err.message, 'duplicate');
-		assert.deepStrictEqual(err.data, {field: 'username'});
+		assert.deepStrictEqual(err.data, { field: 'username' });
 	});
 
 	test('rate_limited default message', () => {
@@ -155,17 +155,17 @@ describe('jsonrpc_errors named constructors', () => {
 	});
 
 	test('parse_error with data', () => {
-		const err = jsonrpc_errors.parse_error({offset: 42});
+		const err = jsonrpc_errors.parse_error({ offset: 42 });
 		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.parse_error);
 		assert.strictEqual(err.message, 'parse error');
-		assert.deepStrictEqual(err.data, {offset: 42});
+		assert.deepStrictEqual(err.data, { offset: 42 });
 	});
 
 	test('invalid_request with data', () => {
-		const err = jsonrpc_errors.invalid_request({reason: 'missing jsonrpc field'});
+		const err = jsonrpc_errors.invalid_request({ reason: 'missing jsonrpc field' });
 		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.invalid_request);
 		assert.strictEqual(err.message, 'invalid request');
-		assert.deepStrictEqual(err.data, {reason: 'missing jsonrpc field'});
+		assert.deepStrictEqual(err.data, { reason: 'missing jsonrpc field' });
 	});
 });
 
@@ -178,10 +178,10 @@ describe('jsonrpc_error_messages', () => {
 	});
 
 	test('includes data when provided', () => {
-		const msg = jsonrpc_error_messages.internal_error('db error', {table: 'users'});
+		const msg = jsonrpc_error_messages.internal_error('db error', { table: 'users' });
 		assert.strictEqual(msg.code, JSONRPC_ERROR_CODES.internal_error);
 		assert.strictEqual(msg.message, 'db error');
-		assert.deepStrictEqual(msg.data, {table: 'users'});
+		assert.deepStrictEqual(msg.data, { table: 'users' });
 	});
 
 	test('all constructors return code and message', () => {
@@ -194,7 +194,7 @@ describe('jsonrpc_error_messages', () => {
 			assert.strictEqual(
 				result.code,
 				JSONRPC_ERROR_CODES[name],
-				`${name} code should match JSONRPC_ERROR_CODES`,
+				`${name} code should match JSONRPC_ERROR_CODES`
 			);
 		}
 	});
@@ -206,7 +206,7 @@ describe('jsonrpc_error_code_to_http_status', () => {
 		assert.strictEqual(jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.invalid_request), 400);
 		assert.strictEqual(
 			jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.method_not_found),
-			404,
+			404
 		);
 		assert.strictEqual(jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.invalid_params), 400);
 		assert.strictEqual(jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.internal_error), 500);
@@ -219,18 +219,18 @@ describe('jsonrpc_error_code_to_http_status', () => {
 		assert.strictEqual(jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.conflict), 409);
 		assert.strictEqual(
 			jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.validation_error),
-			422,
+			422
 		);
 		assert.strictEqual(jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.rate_limited), 429);
 		assert.strictEqual(
 			jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.service_unavailable),
-			503,
+			503
 		);
 		assert.strictEqual(jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.timeout), 504);
 		assert.strictEqual(jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.queue_overflow), 429);
 		assert.strictEqual(
 			jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.request_cancelled),
-			499,
+			499
 		);
 	});
 
@@ -252,7 +252,7 @@ describe('JSONRPC_ERROR_CODE_TO_HTTP_STATUS', () => {
 		for (const code of Object.values(JSONRPC_ERROR_CODES)) {
 			assert.ok(
 				(code as number) in JSONRPC_ERROR_CODE_TO_HTTP_STATUS,
-				`code ${code} should have a mapping`,
+				`code ${code} should have a mapping`
 			);
 		}
 	});
@@ -261,7 +261,7 @@ describe('JSONRPC_ERROR_CODE_TO_HTTP_STATUS', () => {
 		for (const code of Object.values(JSONRPC_ERROR_CODES)) {
 			assert.strictEqual(
 				JSONRPC_ERROR_CODE_TO_HTTP_STATUS[code as number],
-				jsonrpc_error_code_to_http_status(code),
+				jsonrpc_error_code_to_http_status(code)
 			);
 		}
 	});
@@ -274,12 +274,12 @@ describe('HTTP_STATUS_TO_JSONRPC_ERROR_CODE', () => {
 		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[409], JSONRPC_ERROR_CODES.conflict);
 		assert.strictEqual(
 			HTTP_STATUS_TO_JSONRPC_ERROR_CODE[422],
-			JSONRPC_ERROR_CODES.validation_error,
+			JSONRPC_ERROR_CODES.validation_error
 		);
 		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[500], JSONRPC_ERROR_CODES.internal_error);
 		assert.strictEqual(
 			HTTP_STATUS_TO_JSONRPC_ERROR_CODE[503],
-			JSONRPC_ERROR_CODES.service_unavailable,
+			JSONRPC_ERROR_CODES.service_unavailable
 		);
 		assert.strictEqual(HTTP_STATUS_TO_JSONRPC_ERROR_CODE[504], JSONRPC_ERROR_CODES.timeout);
 	});

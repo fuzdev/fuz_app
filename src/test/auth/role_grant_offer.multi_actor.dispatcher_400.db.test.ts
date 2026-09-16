@@ -11,24 +11,24 @@
  * @module
  */
 
-import {assert, describe, test} from 'vitest';
+import { assert, describe, test } from 'vitest';
 
-import {create_test_app} from '$lib/testing/app_server.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
-import {role_grant_offer_list_action_spec} from '$lib/auth/role_grant_offer_action_specs.ts';
-import {ERROR_ACTOR_REQUIRED} from '$lib/http/error_schemas.ts';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
+import { create_test_app } from '$lib/testing/app_server.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import { role_grant_offer_list_action_spec } from '$lib/auth/role_grant_offer_action_specs.ts';
+import { ERROR_ACTOR_REQUIRED } from '$lib/http/error_schemas.ts';
+import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
 
 import {
 	RPC_PATH,
 	create_route_specs,
 	describe_db,
-	session_options,
+	session_options
 } from './role_grant_offer_test_helpers.ts';
-import {create_multi_actor_helpers} from './role_grant_offer.multi_actor.fixtures.ts';
+import { create_multi_actor_helpers } from './role_grant_offer.multi_actor.fixtures.ts';
 
 describe_db('role_grant_offer.multi_actor — dispatcher_400', (get_db) => {
-	const {add_second_actor} = create_multi_actor_helpers(get_db);
+	const { add_second_actor } = create_multi_actor_helpers(get_db);
 
 	describe('dispatcher-level multi-actor 400', () => {
 		test('authenticated request with multi-actor account hits 400 actor_required envelope before the handler runs', async () => {
@@ -45,10 +45,10 @@ describe_db('role_grant_offer.multi_actor — dispatcher_400', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const recipient = await test_app.create_account({
-				username: 'multi_actor_middleware_400',
+				username: 'multi_actor_middleware_400'
 			});
 			await add_second_actor(recipient.account.id, 'middleware_second');
 
@@ -60,14 +60,13 @@ describe_db('role_grant_offer.multi_actor — dispatcher_400', (get_db) => {
 				path: RPC_PATH,
 				spec: role_grant_offer_list_action_spec,
 				params: {},
-				headers: recipient.create_session_headers(),
+				headers: recipient.create_session_headers()
 			});
 			assert.ok(!res.ok);
 			assert.strictEqual(res.status, 400);
 			assert.strictEqual(res.error.message, ERROR_ACTOR_REQUIRED);
 			const data = res.error.data as
-				| {reason?: string; available?: Array<{id: string; name: string}>}
-				| undefined;
+				{ reason?: string; available?: Array<{ id: string; name: string }> } | undefined;
 			assert.strictEqual(data?.reason, ERROR_ACTOR_REQUIRED);
 			assert.ok(Array.isArray(data?.available));
 			assert.strictEqual(data.available.length, 2);
@@ -82,10 +81,10 @@ describe_db('role_grant_offer.multi_actor — dispatcher_400', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const recipient = await test_app.create_account({
-				username: 'multi_actor_single_passes',
+				username: 'multi_actor_single_passes'
 			});
 
 			const list_res = await rpc_call_for_spec({
@@ -93,7 +92,7 @@ describe_db('role_grant_offer.multi_actor — dispatcher_400', (get_db) => {
 				path: RPC_PATH,
 				spec: role_grant_offer_list_action_spec,
 				params: {},
-				headers: recipient.create_session_headers(),
+				headers: recipient.create_session_headers()
 			});
 			assert.ok(list_res.ok);
 		});
@@ -111,10 +110,10 @@ describe_db('role_grant_offer.multi_actor — dispatcher_400', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 			const recipient = await test_app.create_account({
-				username: 'multi_actor_envelope_regression',
+				username: 'multi_actor_envelope_regression'
 			});
 			await add_second_actor(recipient.account.id, 'envelope_second');
 
@@ -124,14 +123,14 @@ describe_db('role_grant_offer.multi_actor — dispatcher_400', (get_db) => {
 					...recipient.create_session_headers(),
 					host: 'localhost',
 					origin: 'http://localhost:5173',
-					'Content-Type': 'application/json',
+					'Content-Type': 'application/json'
 				},
 				body: JSON.stringify({
 					jsonrpc: '2.0',
 					id: 'envelope_regression_id',
 					method: role_grant_offer_list_action_spec.method,
-					params: {},
-				}),
+					params: {}
+				})
 			};
 			const res = await test_app.app.request(RPC_PATH, post_init);
 			assert.strictEqual(res.status, 400);
@@ -141,7 +140,7 @@ describe_db('role_grant_offer.multi_actor — dispatcher_400', (get_db) => {
 				error?: {
 					code?: number;
 					message?: string;
-					data?: {reason?: string; available?: Array<{id: string; name: string}>};
+					data?: { reason?: string; available?: Array<{ id: string; name: string }> };
 				};
 			};
 			assert.strictEqual(body.jsonrpc, '2.0');

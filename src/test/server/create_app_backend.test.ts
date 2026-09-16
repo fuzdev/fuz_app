@@ -5,19 +5,19 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
-import {z} from 'zod';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import { describe, test, assert } from 'vitest';
+import { z } from 'zod';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import {create_keyring} from '$lib/auth/keyring.ts';
-import {create_session_config} from '$lib/auth/session_cookie.ts';
-import {create_health_route_spec} from '$lib/http/common_routes.ts';
-import {create_app_server, type AppServerOptions} from '$lib/server/app_server.ts';
-import {create_app_backend, type AppBackend, type AuditFactory} from '$lib/server/app_backend.ts';
-import {stub_password_deps} from '$lib/testing/app_server.ts';
-import {AUTH_MIGRATION_NAMESPACE} from '$lib/auth/migrations.ts';
-import type {MigrationNamespace} from '$lib/db/migrate.ts';
-import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
+import { create_keyring } from '$lib/auth/keyring.ts';
+import { create_session_config } from '$lib/auth/session_cookie.ts';
+import { create_health_route_spec } from '$lib/http/common_routes.ts';
+import { create_app_server, type AppServerOptions } from '$lib/server/app_server.ts';
+import { create_app_backend, type AppBackend, type AuditFactory } from '$lib/server/app_backend.ts';
+import { stub_password_deps } from '$lib/testing/app_server.ts';
+import { AUTH_MIGRATION_NAMESPACE } from '$lib/auth/migrations.ts';
+import type { MigrationNamespace } from '$lib/db/migrate.ts';
+import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
 
 // 32+ char key for keyring
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
@@ -27,11 +27,11 @@ const session_options = create_session_config('test_session');
 const fs_stubs = {
 	stat: async () => null,
 	read_text_file: async () => '',
-	delete_file: async (_path: string) => {},
+	delete_file: async (_path: string) => {}
 };
 
 /** Canonical default audit factory — every test uses this unless it cares about emitter wiring. */
-const test_audit_factory: AuditFactory = ({db, log}) => create_audit_emitter({db, log});
+const test_audit_factory: AuditFactory = ({ db, log }) => create_audit_emitter({ db, log });
 
 /** Shared option fields (everything except backend). */
 const base_config: Omit<AppServerOptions, 'backend'> = {
@@ -39,33 +39,33 @@ const base_config: Omit<AppServerOptions, 'backend'> = {
 	allowed_origins: [/^http:\/\/localhost/],
 	proxy: {
 		trusted_proxies: ['127.0.0.1'],
-		get_connection_ip: () => '127.0.0.1',
+		get_connection_ip: () => '127.0.0.1'
 	},
 	create_route_specs: () => [create_health_route_spec()],
-	env_schema: z.object({}),
+	env_schema: z.object({})
 };
 
 /** Create options with a pre-initialized backend. */
 const create_server_config = (
 	backend: AppBackend,
-	overrides?: Partial<AppServerOptions>,
+	overrides?: Partial<AppServerOptions>
 ): AppServerOptions => ({
 	backend,
 	...base_config,
-	...overrides,
+	...overrides
 });
 
 describe('create_app_backend', () => {
 	test(
 		'accepts pre-initialized backend (skips create_app_backend)',
-		{timeout: 15_000},
+		{ timeout: 15_000 },
 		async () => {
 			const external_backend = await create_app_backend({
 				database_url: 'memory://',
 				keyring,
 				password: stub_password_deps,
 				...fs_stubs,
-				audit_factory: test_audit_factory,
+				audit_factory: test_audit_factory
 			});
 
 			const result = await create_app_server(create_server_config(external_backend));
@@ -75,31 +75,31 @@ describe('create_app_backend', () => {
 			assert.strictEqual(res.status, 200);
 
 			await external_backend.close();
-		},
+		}
 	);
 
 	test(
 		'no migration_namespaces option runs only the auth namespace',
-		{timeout: 15_000},
+		{ timeout: 15_000 },
 		async () => {
 			const backend = await create_app_backend({
 				database_url: 'memory://',
 				keyring,
 				password: stub_password_deps,
 				...fs_stubs,
-				audit_factory: test_audit_factory,
+				audit_factory: test_audit_factory
 			});
 
 			const namespaces = backend.migration_results.map((r) => r.namespace);
 			assert.deepStrictEqual(namespaces, [AUTH_MIGRATION_NAMESPACE]);
 
 			await backend.close();
-		},
+		}
 	);
 
 	test(
 		'migration_namespaces option splices consumer migrations after auth',
-		{timeout: 15_000},
+		{ timeout: 15_000 },
 		async () => {
 			const ran: Array<string> = [];
 			const ns: MigrationNamespace = {
@@ -110,9 +110,9 @@ describe('create_app_backend', () => {
 						up: async (db) => {
 							ran.push('a_v0');
 							await db.query('CREATE TABLE test_ns_a_table (id SERIAL PRIMARY KEY)');
-						},
-					},
-				],
+						}
+					}
+				]
 			};
 
 			const backend = await create_app_backend({
@@ -121,7 +121,7 @@ describe('create_app_backend', () => {
 				password: stub_password_deps,
 				...fs_stubs,
 				audit_factory: test_audit_factory,
-				migration_namespaces: [ns],
+				migration_namespaces: [ns]
 			});
 
 			assert.deepStrictEqual(ran, ['a_v0']);
@@ -130,19 +130,19 @@ describe('create_app_backend', () => {
 			assert.deepStrictEqual(namespaces, [AUTH_MIGRATION_NAMESPACE, 'test_ns_a']);
 
 			// schema_version row should reflect the consumer namespace
-			const rows = await backend.deps.db.query<{namespace: string; name: string}>(
-				"SELECT namespace, name FROM schema_version WHERE namespace = 'test_ns_a' ORDER BY sequence",
+			const rows = await backend.deps.db.query<{ namespace: string; name: string }>(
+				"SELECT namespace, name FROM schema_version WHERE namespace = 'test_ns_a' ORDER BY sequence"
 			);
 			assert.strictEqual(rows.length, 1);
 			assert.strictEqual(rows[0]!.name, 'v0');
 
 			await backend.close();
-		},
+		}
 	);
 
 	test(
 		'migration_namespaces preserves order across multiple namespaces',
-		{timeout: 15_000},
+		{ timeout: 15_000 },
 		async () => {
 			const ran: Array<string> = [];
 			const ns_a: MigrationNamespace = {
@@ -152,9 +152,9 @@ describe('create_app_backend', () => {
 						name: 'a_v0',
 						up: async () => {
 							ran.push('a');
-						},
-					},
-				],
+						}
+					}
+				]
 			};
 			const ns_b: MigrationNamespace = {
 				namespace: 'order_b',
@@ -163,9 +163,9 @@ describe('create_app_backend', () => {
 						name: 'b_v0',
 						up: async () => {
 							ran.push('b');
-						},
-					},
-				],
+						}
+					}
+				]
 			};
 
 			const backend = await create_app_backend({
@@ -174,7 +174,7 @@ describe('create_app_backend', () => {
 				password: stub_password_deps,
 				...fs_stubs,
 				audit_factory: test_audit_factory,
-				migration_namespaces: [ns_a, ns_b],
+				migration_namespaces: [ns_a, ns_b]
 			});
 
 			assert.deepStrictEqual(ran, ['a', 'b']);
@@ -182,12 +182,12 @@ describe('create_app_backend', () => {
 			assert.deepStrictEqual(namespaces, [AUTH_MIGRATION_NAMESPACE, 'order_a', 'order_b']);
 
 			await backend.close();
-		},
+		}
 	);
 
 	test(
 		"migration_namespaces rejects the reserved 'fuz_auth' namespace",
-		{timeout: 15_000},
+		{ timeout: 15_000 },
 		async () => {
 			await assert_rejects(
 				() =>
@@ -197,11 +197,11 @@ describe('create_app_backend', () => {
 						password: stub_password_deps,
 						...fs_stubs,
 						audit_factory: test_audit_factory,
-						migration_namespaces: [{namespace: AUTH_MIGRATION_NAMESPACE, migrations: []}],
+						migration_namespaces: [{ namespace: AUTH_MIGRATION_NAMESPACE, migrations: [] }]
 					}),
-				/reserved by fuz_app/,
+				/reserved by fuz_app/
 			);
-		},
+		}
 	);
 
 	// --- audit_factory contract ---
@@ -213,18 +213,18 @@ describe('create_app_backend', () => {
 
 	test(
 		'audit_factory is called exactly once with {db, log} matching deps',
-		{timeout: 15_000},
+		{ timeout: 15_000 },
 		async () => {
-			const calls: Array<{db: object; log: object}> = [];
+			const calls: Array<{ db: object; log: object }> = [];
 			const backend = await create_app_backend({
 				database_url: 'memory://',
 				keyring,
 				password: stub_password_deps,
 				...fs_stubs,
-				audit_factory: ({db, log}) => {
-					calls.push({db, log});
-					return create_audit_emitter({db, log});
-				},
+				audit_factory: ({ db, log }) => {
+					calls.push({ db, log });
+					return create_audit_emitter({ db, log });
+				}
 			});
 
 			assert.strictEqual(calls.length, 1, 'audit_factory must run exactly once');
@@ -235,12 +235,12 @@ describe('create_app_backend', () => {
 			assert.strictEqual(calls[0]!.log, backend.deps.log);
 
 			await backend.close();
-		},
+		}
 	);
 
 	test(
 		'audit_factory return value lands on deps.audit (no shallow copy)',
-		{timeout: 15_000},
+		{ timeout: 15_000 },
 		async () => {
 			// Reference identity is the strongest contract — proves the factory
 			// output flows through to `AppDeps.audit` without being re-wrapped or
@@ -252,21 +252,21 @@ describe('create_app_backend', () => {
 				keyring,
 				password: stub_password_deps,
 				...fs_stubs,
-				audit_factory: ({db, log}) => {
-					returned = create_audit_emitter({db, log});
+				audit_factory: ({ db, log }) => {
+					returned = create_audit_emitter({ db, log });
 					return returned;
-				},
+				}
 			});
 
 			assert.strictEqual(backend.deps.audit, returned);
 
 			await backend.close();
-		},
+		}
 	);
 
 	test(
 		'audit_factory runs AFTER migrations — body can query migrated tables',
-		{timeout: 15_000},
+		{ timeout: 15_000 },
 		async () => {
 			// `audit_log` is created by the v0 migration; if the factory ran
 			// before migrations, this SELECT would fail with "relation does
@@ -274,27 +274,27 @@ describe('create_app_backend', () => {
 			// level so a refactor that hoisted factory-construction above
 			// `run_migrations` surfaces here instead of in some downstream
 			// consumer's runtime.
-			let migration_check!: Promise<Array<{n: number}>>;
+			let migration_check!: Promise<Array<{ n: number }>>;
 			const backend = await create_app_backend({
 				database_url: 'memory://',
 				keyring,
 				password: stub_password_deps,
 				...fs_stubs,
-				audit_factory: ({db, log}) => {
-					migration_check = db.query<{n: number}>('SELECT COUNT(*)::int AS n FROM audit_log');
-					return create_audit_emitter({db, log});
-				},
+				audit_factory: ({ db, log }) => {
+					migration_check = db.query<{ n: number }>('SELECT COUNT(*)::int AS n FROM audit_log');
+					return create_audit_emitter({ db, log });
+				}
 			});
 			const rows = await migration_check;
 			assert.strictEqual(rows[0]?.n, 0, 'audit_log must exist and be empty by factory time');
 
 			await backend.close();
-		},
+		}
 	);
 
 	test(
 		'audit_factory is NOT called when reserved-namespace check rejects',
-		{timeout: 15_000},
+		{ timeout: 15_000 },
 		async () => {
 			let called = false;
 			await assert_rejects(
@@ -304,21 +304,21 @@ describe('create_app_backend', () => {
 						keyring,
 						password: stub_password_deps,
 						...fs_stubs,
-						audit_factory: ({db, log}) => {
+						audit_factory: ({ db, log }) => {
 							called = true;
-							return create_audit_emitter({db, log});
+							return create_audit_emitter({ db, log });
 						},
-						migration_namespaces: [{namespace: AUTH_MIGRATION_NAMESPACE, migrations: []}],
+						migration_namespaces: [{ namespace: AUTH_MIGRATION_NAMESPACE, migrations: [] }]
 					}),
-				/reserved by fuz_app/,
+				/reserved by fuz_app/
 			);
 			assert.strictEqual(called, false, 'audit_factory must not run when validation rejects');
-		},
+		}
 	);
 
 	test(
 		'a throwing audit_factory propagates the original error and closes the db',
-		{timeout: 15_000},
+		{ timeout: 15_000 },
 		async () => {
 			// Pre-decorator-era `create_app_backend` would leak the pool on
 			// any post-`create_db` throw — `close` was only returned on the
@@ -343,13 +343,13 @@ describe('create_app_backend', () => {
 						...fs_stubs,
 						audit_factory: () => {
 							throw new Error('audit_factory threw on purpose');
-						},
+						}
 					}),
-				/audit_factory threw on purpose/,
+				/audit_factory threw on purpose/
 			);
 			// Belt + suspenders — confirm the cleanup `try/catch` didn't
 			// swallow the original cause and re-throw a teardown-shaped error.
 			assert.strictEqual(err.message, 'audit_factory threw on purpose');
-		},
+		}
 	);
 });

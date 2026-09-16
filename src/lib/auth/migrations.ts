@@ -58,18 +58,18 @@ import {
 	INVITE_SCHEMA,
 	INVITE_INDEXES,
 	APP_SETTINGS_SCHEMA,
-	APP_SETTINGS_SEED,
+	APP_SETTINGS_SEED
 } from './auth_ddl.ts';
-import {AUDIT_LOG_SCHEMA, AUDIT_LOG_INDEXES} from './audit_log_ddl.ts';
+import { AUDIT_LOG_SCHEMA, AUDIT_LOG_INDEXES } from './audit_log_ddl.ts';
 import {
 	ROLE_GRANT_OFFER_SCHEMA,
 	ROLE_GRANT_OFFER_PENDING_UNIQUE_INDEX,
 	ROLE_GRANT_OFFER_INBOX_INDEX,
 	ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID,
-	ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN,
+	ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN
 } from './role_grant_offer_ddl.ts';
-import type {Db} from '../db/db.ts';
-import type {Migration, MigrationNamespace} from '../db/migrate.ts';
+import type { Db } from '../db/db.ts';
+import type { Migration, MigrationNamespace } from '../db/migrate.ts';
 
 /** Namespace identifier for fuz_app auth migrations. */
 export const AUTH_MIGRATION_NAMESPACE = 'fuz_auth';
@@ -136,7 +136,7 @@ export const auth_migrations: Array<Migration> = [
 			}
 			await db.query(APP_SETTINGS_SCHEMA);
 			await db.query(APP_SETTINGS_SEED);
-		},
+		}
 	},
 	// v1: consentful role_grants — role_grant_offer table + scoped role_grants
 	{
@@ -148,7 +148,7 @@ export const auth_migrations: Array<Migration> = [
 			await db.query('ALTER TABLE role_grant ADD COLUMN IF NOT EXISTS scope_id UUID NULL');
 			await db.query('ALTER TABLE role_grant ADD COLUMN IF NOT EXISTS scope_kind TEXT NULL');
 			await db.query(
-				'ALTER TABLE role_grant ADD COLUMN IF NOT EXISTS source_offer_id UUID NULL REFERENCES role_grant_offer(id) ON DELETE SET NULL',
+				'ALTER TABLE role_grant ADD COLUMN IF NOT EXISTS source_offer_id UUID NULL REFERENCES role_grant_offer(id) ON DELETE SET NULL'
 			);
 			await db.query('ALTER TABLE role_grant ADD COLUMN IF NOT EXISTS revoked_reason TEXT NULL');
 			// Paired-null CHECK on `(scope_kind, scope_id)` — both null encodes
@@ -163,7 +163,7 @@ export const auth_migrations: Array<Migration> = [
 				`SELECT 1 FROM information_schema.table_constraints
 				 WHERE table_schema = 'public'
 				   AND table_name = 'role_grant'
-				   AND constraint_name = 'role_grant_scope_kind_paired'`,
+				   AND constraint_name = 'role_grant_scope_kind_paired'`
 			);
 			if (scope_pair_check.length === 0) {
 				await db.query(`ALTER TABLE role_grant
@@ -184,19 +184,19 @@ export const auth_migrations: Array<Migration> = [
 				     COALESCE(scope_kind, '${ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN}'),
 				     COALESCE(scope_id, '${ROLE_GRANT_OFFER_SCOPE_SENTINEL_UUID}'::uuid)
 				   )
-				   WHERE revoked_at IS NULL`,
+				   WHERE revoked_at IS NULL`
 			);
 			await db.query(
 				`CREATE INDEX IF NOT EXISTS role_grant_scope_active
 				   ON role_grant (actor_id, role, scope_id)
-				   WHERE revoked_at IS NULL`,
+				   WHERE revoked_at IS NULL`
 			);
-		},
-	},
+		}
+	}
 ];
 
 /** Pre-composed migration namespace for auth tables. */
 export const auth_migration_ns: MigrationNamespace = {
 	namespace: AUTH_MIGRATION_NAMESPACE,
-	migrations: auth_migrations,
+	migrations: auth_migrations
 };

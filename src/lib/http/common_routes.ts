@@ -7,18 +7,18 @@
  * @module
  */
 
-import {readFileSync} from 'node:fs';
+import { readFileSync } from 'node:fs';
 
-import {z} from 'zod';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import { z } from 'zod';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type {RouteSpec} from './route_spec.ts';
-import type {AppSurface} from './surface.ts';
+import type { RouteSpec } from './route_spec.ts';
+import type { AppSurface } from './surface.ts';
 import {
 	check_schema_drift,
 	format_schema_drift,
 	READY_ERROR,
-	type ExpectedSchema,
+	type ExpectedSchema
 } from '../db/schema_ready.ts';
 
 /**
@@ -30,11 +30,11 @@ import {
 export const create_health_route_spec = (): RouteSpec => ({
 	method: 'GET',
 	path: '/health',
-	auth: {account: 'none', actor: 'none'},
-	handler: (c) => c.json({status: 'ok'}),
+	auth: { account: 'none', actor: 'none' },
+	handler: (c) => c.json({ status: 'ok' }),
 	description: 'Health check',
 	input: z.null(),
-	output: z.strictObject({status: z.literal('ok')}),
+	output: z.strictObject({ status: z.literal('ok') })
 });
 
 /** Module-level cache of loaded expected-schema fixtures, keyed by URL. */
@@ -73,7 +73,7 @@ export const load_expected_schema = (url: URL | string): ExpectedSchema => {
 			throw new Error(
 				`load_expected_schema: ${key} parsed to an empty schema map — a readiness gate with ` +
 					`no expected tables passes for any live DB. Regenerate the fixture (see ` +
-					`testing/schema_ready_fixture.ts).`,
+					`testing/schema_ready_fixture.ts).`
 			);
 		}
 		expected_schema_cache.set(key, cached);
@@ -113,34 +113,34 @@ export const create_ready_route_spec = (options: ReadyRouteOptions): RouteSpec =
 	if (Object.keys(options.expected).length === 0) {
 		throw new Error(
 			'create_ready_route_spec: `expected` is empty — a readiness gate with no expected ' +
-				'tables passes for any live DB. Pass a non-empty expected column map.',
+				'tables passes for any live DB. Pass a non-empty expected column map.'
 		);
 	}
 	return {
 		method: 'GET',
 		path: '/ready',
-		auth: {account: 'none', actor: 'none'},
+		auth: { account: 'none', actor: 'none' },
 		description: 'Readiness probe — verifies the live DB schema matches the expected column map',
 		input: z.null(),
-		output: z.strictObject({ready: z.literal(true)}),
+		output: z.strictObject({ ready: z.literal(true) }),
 		errors: {
 			503: z.strictObject({
-				error: z.enum([READY_ERROR.schema_drift, READY_ERROR.db_unreachable]),
-			}),
+				error: z.enum([READY_ERROR.schema_drift, READY_ERROR.db_unreachable])
+			})
 		},
 		handler: async (c, route) => {
 			try {
 				const drift = await check_schema_drift(route.db, options.expected);
-				if (drift.ok) return c.json({ready: true});
+				if (drift.ok) return c.json({ ready: true });
 				// Detailed drift goes to the server log only — the public body stays a
 				// minimal error code so the endpoint doesn't leak schema structure.
 				options.log?.error(`[ready] schema drift detected:\n${format_schema_drift(drift)}`);
-				return c.json({error: READY_ERROR.schema_drift}, 503);
+				return c.json({ error: READY_ERROR.schema_drift }, 503);
 			} catch (err) {
 				options.log?.error('[ready] readiness check failed (db unreachable?):', err);
-				return c.json({error: READY_ERROR.db_unreachable}, 503);
+				return c.json({ error: READY_ERROR.db_unreachable }, 503);
 			}
-		},
+		}
 	};
 };
 
@@ -161,11 +161,11 @@ export interface ServerStatusOptions {
 export const create_server_status_route_spec = (options: ServerStatusOptions): RouteSpec => ({
 	method: 'GET',
 	path: '/api/server/status',
-	auth: {account: 'required', actor: 'none'},
-	handler: (c) => c.json({version: options.version, uptime_ms: options.get_uptime_ms()}),
+	auth: { account: 'required', actor: 'none' },
+	handler: (c) => c.json({ version: options.version, uptime_ms: options.get_uptime_ms() }),
 	description: 'Server version and uptime',
 	input: z.null(),
-	output: z.looseObject({version: z.string(), uptime_ms: z.number()}),
+	output: z.looseObject({ version: z.string(), uptime_ms: z.number() })
 });
 
 /** Options for the surface explorer route. */
@@ -183,12 +183,12 @@ export interface SurfaceRouteOptions {
 export const create_surface_route_spec = (options: SurfaceRouteOptions): RouteSpec => ({
 	method: 'GET',
 	path: '/api/surface',
-	auth: {account: 'required', actor: 'none'},
+	auth: { account: 'required', actor: 'none' },
 	handler: (c) => c.json(options.surface),
 	description: 'Application surface (routes, middleware, schemas)',
 	input: z.null(),
 	output: z.looseObject({
 		routes: z.array(z.looseObject({})),
-		middleware: z.array(z.looseObject({})),
-	}),
+		middleware: z.array(z.looseObject({}))
+	})
 });

@@ -5,32 +5,32 @@
  * @module
  */
 
-import type {Context, MiddlewareHandler} from 'hono';
-import {getCookie, setCookie, deleteCookie} from 'hono/cookie';
+import type { Context, MiddlewareHandler } from 'hono';
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 
-import type {Keyring} from './keyring.ts';
+import type { Keyring } from './keyring.ts';
 import {
 	type SessionOptions,
 	type SessionCookieOptions,
 	session_cookie_options,
 	process_session_cookie,
-	create_session_cookie_value,
+	create_session_cookie_value
 } from './session_cookie.ts';
 import {
 	generate_session_token,
 	hash_session_token,
 	AUTH_SESSION_LIFETIME_MS,
 	query_create_session,
-	query_session_enforce_limit,
+	query_session_enforce_limit
 } from './session_queries.ts';
-import type {QueryDeps} from '../db/query_deps.ts';
+import type { QueryDeps } from '../db/query_deps.ts';
 
 /**
  * Read the session cookie value from a request.
  */
 export const get_session_cookie = <T>(
 	c: Context,
-	options: SessionOptions<T>,
+	options: SessionOptions<T>
 ): string | undefined => {
 	return getCookie(c, options.cookie_name);
 };
@@ -48,12 +48,12 @@ export const get_session_cookie = <T>(
 export const set_session_cookie = <T>(
 	c: Context,
 	value: string,
-	options: SessionOptions<T>,
+	options: SessionOptions<T>
 ): void => {
 	const cookie_options: SessionCookieOptions = {
 		...session_cookie_options,
 		...options.cookie_options,
-		maxAge: options.max_age ?? session_cookie_options.maxAge,
+		maxAge: options.max_age ?? session_cookie_options.maxAge
 	};
 	setCookie(c, options.cookie_name, value, cookie_options);
 };
@@ -64,7 +64,7 @@ export const set_session_cookie = <T>(
 export const clear_session_cookie = <T>(c: Context, options: SessionOptions<T>): void => {
 	const cookie_options: SessionCookieOptions = {
 		...session_cookie_options,
-		...options.cookie_options,
+		...options.cookie_options
 	};
 	deleteCookie(c, options.cookie_name, cookie_options);
 };
@@ -81,7 +81,7 @@ export const clear_session_cookie = <T>(c: Context, options: SessionOptions<T>):
  */
 export const create_session_middleware = <TIdentity>(
 	keyring: Keyring,
-	options: SessionOptions<TIdentity>,
+	options: SessionOptions<TIdentity>
 ): MiddlewareHandler => {
 	return async (c, next) => {
 		const signed_value = get_session_cookie(c, options);
@@ -128,9 +128,9 @@ export interface CreateSessionAndSetCookieOptions {
  * @mutates `auth_session` table - inserts the new session row (and evicts older rows when `max_sessions` is set)
  */
 export const create_session_and_set_cookie = async (
-	options: CreateSessionAndSetCookieOptions,
+	options: CreateSessionAndSetCookieOptions
 ): Promise<void> => {
-	const {keyring, deps, c, account_id, session_options, max_sessions} = options;
+	const { keyring, deps, c, account_id, session_options, max_sessions } = options;
 	const session_token = generate_session_token();
 	const token_hash = hash_session_token(session_token);
 	const expires_at = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);

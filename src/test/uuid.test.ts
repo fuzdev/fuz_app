@@ -4,9 +4,9 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
+import { describe, assert, test } from 'vitest';
 
-import {create_uuid, Uuid, UuidWithDefault} from '@fuzdev/fuz_util/id.ts';
+import { create_uuid, Uuid, UuidWithDefault } from '@fuzdev/fuz_util/id.ts';
 
 describe('create_uuid', () => {
 	test('returns a valid UUID v4 string', () => {
@@ -15,7 +15,7 @@ describe('create_uuid', () => {
 	});
 
 	test('returns unique values on each call', () => {
-		const ids = new Set(Array.from({length: 100}, () => create_uuid()));
+		const ids = new Set(Array.from({ length: 100 }, () => create_uuid()));
 		assert.strictEqual(ids.size, 100);
 	});
 });

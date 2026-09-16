@@ -6,8 +6,8 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 /** App settings row from the database. */
 export interface AppSettings {
@@ -20,18 +20,18 @@ export interface AppSettings {
 export const AppSettingsJson = z.strictObject({
 	open_signup: z.boolean(),
 	updated_at: z.string().nullable(),
-	updated_by: Uuid.nullable(),
+	updated_by: Uuid.nullable()
 });
 export type AppSettingsJson = z.infer<typeof AppSettingsJson>;
 
 /** Zod schema for admin app settings with resolved updater username. */
 export const AppSettingsWithUsernameJson = AppSettingsJson.extend({
-	updated_by_username: z.string().nullable(),
+	updated_by_username: z.string().nullable()
 });
 export type AppSettingsWithUsernameJson = z.infer<typeof AppSettingsWithUsernameJson>;
 
 /** Zod schema for updating app settings. */
 export const UpdateAppSettingsInput = z.strictObject({
-	open_signup: z.boolean(),
+	open_signup: z.boolean()
 });
 export type UpdateAppSettingsInput = z.infer<typeof UpdateAppSettingsInput>;

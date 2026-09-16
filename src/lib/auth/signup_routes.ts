@@ -8,24 +8,24 @@
  * @module
  */
 
-import type {Account, Actor} from './account_schema.ts';
+import type { Account, Actor } from './account_schema.ts';
 
-import {create_session_and_set_cookie} from './session_middleware.ts';
-import {query_create_account_with_actor} from './account_queries.ts';
-import {query_app_settings_load} from './app_settings_queries.ts';
+import { create_session_and_set_cookie } from './session_middleware.ts';
+import { query_create_account_with_actor } from './account_queries.ts';
+import { query_app_settings_load } from './app_settings_queries.ts';
 import {
 	query_invite_find_unclaimed_match_for_update,
-	query_invite_claim_unscoped,
+	query_invite_claim_unscoped
 } from './invite_queries.ts';
-import type {Invite} from './invite_schema.ts';
-import {create_signup_route_shape, type SignupInput} from './signup_route_schema.ts';
-import {get_route_input, type RouteSpec} from '../http/route_spec.ts';
-import {get_client_ip} from '../http/client_ip.ts';
-import {rate_limit_exceeded_response, type RateLimiter} from '../rate_limiter.ts';
-import type {RouteFactoryDeps} from './deps.ts';
-import {ERROR_NO_MATCHING_INVITE, ERROR_SIGNUP_CONFLICT} from '../http/error_schemas.ts';
-import {is_pg_unique_violation} from '../db/pg_error.ts';
-import type {AuthSessionRouteOptions} from './account_routes.ts';
+import type { Invite } from './invite_schema.ts';
+import { create_signup_route_shape, type SignupInput } from './signup_route_schema.ts';
+import { get_route_input, type RouteSpec } from '../http/route_spec.ts';
+import { get_client_ip } from '../http/client_ip.ts';
+import { rate_limit_exceeded_response, type RateLimiter } from '../rate_limiter.ts';
+import type { RouteFactoryDeps } from './deps.ts';
+import { ERROR_NO_MATCHING_INVITE, ERROR_SIGNUP_CONFLICT } from '../http/error_schemas.ts';
+import { is_pg_unique_violation } from '../db/pg_error.ts';
+import type { AuthSessionRouteOptions } from './account_routes.ts';
 
 /**
  * Default minimum wall-clock time (ms) for a signup denial (403 / 409) response.
@@ -87,21 +87,21 @@ export interface SignupRouteOptions extends AuthSessionRouteOptions {
  */
 export const create_signup_route_specs = (
 	deps: RouteFactoryDeps,
-	options: SignupRouteOptions,
+	options: SignupRouteOptions
 ): Array<RouteSpec> => {
-	const {keyring, password} = deps;
+	const { keyring, password } = deps;
 	const {
 		session_options,
 		ip_rate_limiter,
 		signup_account_rate_limiter,
 		signup_fail_floor_ms = DEFAULT_SIGNUP_FAIL_FLOOR_MS,
-		signup_fail_jitter_ms = DEFAULT_SIGNUP_FAIL_JITTER_MS,
+		signup_fail_jitter_ms = DEFAULT_SIGNUP_FAIL_JITTER_MS
 	} = options;
 
 	return [
 		{
 			...create_signup_route_shape({
-				signup_account_rate_limited: signup_account_rate_limiter !== null,
+				signup_account_rate_limited: signup_account_rate_limiter !== null
 			}),
 			handler: async (c, route) => {
 				// Per-IP rate limit check (before any work). 429 stays fast.
@@ -113,7 +113,7 @@ export const create_signup_route_specs = (
 					}
 				}
 
-				const {username, password: pw, email} = get_route_input<SignupInput>(c);
+				const { username, password: pw, email } = get_route_input<SignupInput>(c);
 
 				// Per-account rate limit check (after input parsing, before DB work).
 				// 429 stays fast — same precedent as login.
@@ -129,7 +129,7 @@ export const create_signup_route_specs = (
 				// request — the authoritative source, so multiple server
 				// processes never serve a stale in-memory value. Bounded by
 				// the per-IP + per-account rate limiters above.
-				const {open_signup} = await query_app_settings_load(route);
+				const { open_signup } = await query_app_settings_load(route);
 
 				// Start the denial-time floor concurrently with failure work.
 				// Observed response time for 403 / 409 is `max(work, delay)`
@@ -152,7 +152,7 @@ export const create_signup_route_specs = (
 				let invite: Invite | undefined;
 
 				const emit_failure_audit = (
-					reason: 'no_match' | 'signup_conflict' | 'internal_error',
+					reason: 'no_match' | 'signup_conflict' | 'internal_error'
 				): void => {
 					deps.audit.emit(route, {
 						event_type: 'signup',
@@ -161,17 +161,17 @@ export const create_signup_route_specs = (
 						metadata: {
 							username,
 							reason,
-							...(invite && {invite_id: invite.id}),
-							...(email != null && {email}),
-							...(open_signup && {open_signup: true}),
-						},
+							...(invite && { invite_id: invite.id }),
+							...(email != null && { email }),
+							...(open_signup && { open_signup: true })
+						}
 					});
 				};
 
-				let result: {account: Account; actor: Actor};
+				let result: { account: Account; actor: Actor };
 				try {
 					result = await route.db.transaction(async (tx) => {
-						const tx_deps = {db: tx};
+						const tx_deps = { db: tx };
 
 						// Find + claim run inside the same transaction so the
 						// row lock makes them atomic. Concurrent signups for
@@ -184,17 +184,17 @@ export const create_signup_route_specs = (
 							invite = await query_invite_find_unclaimed_match_for_update(
 								tx_deps,
 								email ?? null,
-								username,
+								username
 							);
 							if (!invite) {
 								throw new NoMatchingInviteError();
 							}
 						}
 
-						const {account, actor} = await query_create_account_with_actor(tx_deps, {
+						const { account, actor } = await query_create_account_with_actor(tx_deps, {
 							username,
 							password_hash,
-							email,
+							email
 						});
 
 						if (invite) {
@@ -210,10 +210,10 @@ export const create_signup_route_specs = (
 							deps: tx_deps,
 							c,
 							account_id: account.id,
-							session_options,
+							session_options
 						});
 
-						return {account, actor};
+						return { account, actor };
 					});
 				} catch (e: unknown) {
 					if (e instanceof NoMatchingInviteError) {
@@ -221,7 +221,7 @@ export const create_signup_route_specs = (
 						if (signup_account_rate_limiter) signup_account_rate_limiter.record(account_key);
 						emit_failure_audit('no_match');
 						await delay;
-						return c.json({error: ERROR_NO_MATCHING_INVITE}, 403);
+						return c.json({ error: ERROR_NO_MATCHING_INVITE }, 403);
 					}
 					// Unique constraint violation: username or email already exists.
 					if (is_pg_unique_violation(e)) {
@@ -229,7 +229,7 @@ export const create_signup_route_specs = (
 						if (signup_account_rate_limiter) signup_account_rate_limiter.record(account_key);
 						emit_failure_audit('signup_conflict');
 						await delay;
-						return c.json({error: ERROR_SIGNUP_CONFLICT}, 409);
+						return c.json({ error: ERROR_SIGNUP_CONFLICT }, 409);
 					}
 					// Unclassified failure (e.g. session create error, Argon2
 					// fault on hash, DB outage mid-tx). Tx is rolled back so
@@ -250,15 +250,15 @@ export const create_signup_route_specs = (
 					event_type: 'signup',
 					account_id: result.account.id,
 					ip: get_client_ip(c),
-					metadata: invite ? {invite_id: invite.id, username} : {open_signup: true, username},
+					metadata: invite ? { invite_id: invite.id, username } : { open_signup: true, username }
 				});
 				return c.json({
 					ok: true,
-					account: {id: result.account.id, username: result.account.username},
-					actor: {id: result.actor.id},
+					account: { id: result.account.id, username: result.account.username },
+					actor: { id: result.actor.id }
 				});
-			},
-		},
+			}
+		}
 	];
 };
 

@@ -26,7 +26,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type {ActionManifest, ActionManifestEntry} from './action_manifest.ts';
+import type { ActionManifest, ActionManifestEntry } from './action_manifest.ts';
 
 /** The auth axes compared as scalars (`'none' | 'optional' | 'required'`). */
 const AUTH_SCALAR_FIELDS = ['account', 'actor'] as const satisfies ReadonlyArray<
@@ -39,7 +39,7 @@ const AUTH_LIST_FIELDS = ['roles', 'credential_types'] as const satisfies Readon
 
 /** Structured drift entry. `where` is the named source impl ('a' or 'b'). */
 export type ActionManifestDiff =
-	| {readonly kind: 'method_only_in'; readonly where: 'a' | 'b'; readonly method: string}
+	| { readonly kind: 'method_only_in'; readonly where: 'a' | 'b'; readonly method: string }
 	| {
 			readonly kind: 'side_effects_differ';
 			readonly method: string;
@@ -66,7 +66,7 @@ const string_lists_equal = (a: ReadonlyArray<string>, b: ReadonlyArray<string>):
  */
 export const diff_action_manifests = (
 	a: ActionManifest,
-	b: ActionManifest,
+	b: ActionManifest
 ): Array<ActionManifestDiff> => {
 	const diffs: Array<ActionManifestDiff> = [];
 	const a_by = new Map(a.methods.map((m) => [m.method, m]));
@@ -76,24 +76,24 @@ export const diff_action_manifests = (
 		const ea = a_by.get(method);
 		const eb = b_by.get(method);
 		if (!ea) {
-			diffs.push({kind: 'method_only_in', where: 'b', method});
+			diffs.push({ kind: 'method_only_in', where: 'b', method });
 			continue;
 		}
 		if (!eb) {
-			diffs.push({kind: 'method_only_in', where: 'a', method});
+			diffs.push({ kind: 'method_only_in', where: 'a', method });
 			continue;
 		}
 		if (ea.side_effects !== eb.side_effects) {
-			diffs.push({kind: 'side_effects_differ', method, a: ea.side_effects, b: eb.side_effects});
+			diffs.push({ kind: 'side_effects_differ', method, a: ea.side_effects, b: eb.side_effects });
 		}
 		for (const field of AUTH_SCALAR_FIELDS) {
 			if (ea[field] !== eb[field]) {
-				diffs.push({kind: 'auth_field_differs', method, field, a: ea[field], b: eb[field]});
+				diffs.push({ kind: 'auth_field_differs', method, field, a: ea[field], b: eb[field] });
 			}
 		}
 		for (const field of AUTH_LIST_FIELDS) {
 			if (!string_lists_equal(ea[field], eb[field])) {
-				diffs.push({kind: 'auth_field_differs', method, field, a: ea[field], b: eb[field]});
+				diffs.push({ kind: 'auth_field_differs', method, field, a: ea[field], b: eb[field] });
 			}
 		}
 	}
@@ -112,7 +112,7 @@ export interface ActionManifestDiffLabels {
  */
 export const format_action_manifest_diffs = (
 	diffs: ReadonlyArray<ActionManifestDiff>,
-	labels: ActionManifestDiffLabels = {},
+	labels: ActionManifestDiffLabels = {}
 ): string => {
 	if (diffs.length === 0) return '';
 	const label_a = labels.a ?? 'a';
@@ -132,7 +132,7 @@ export const format_action_manifest_diffs = (
 				lines.push(
 					`  ${d.method} auth.${d.field} differs: ${label_a}=${JSON.stringify(d.a)}, ${
 						label_b
-					}=${JSON.stringify(d.b)}`,
+					}=${JSON.stringify(d.b)}`
 				);
 				break;
 			default:
@@ -152,7 +152,7 @@ export const format_action_manifest_diffs = (
 export const assert_action_manifests_equal = (
 	a: ActionManifest,
 	b: ActionManifest,
-	labels: ActionManifestDiffLabels = {},
+	labels: ActionManifestDiffLabels = {}
 ): void => {
 	const diffs = diff_action_manifests(a, b);
 	if (diffs.length === 0) return;
@@ -161,6 +161,6 @@ export const assert_action_manifests_equal = (
 	throw new Error(
 		`Action-manifest parity failed: ${diffs.length} diff(s) between ${label_a} and ${
 			label_b
-		}\n${format_action_manifest_diffs(diffs, labels)}`,
+		}\n${format_action_manifest_diffs(diffs, labels)}`
 	);
 };

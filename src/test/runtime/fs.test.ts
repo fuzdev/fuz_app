@@ -4,22 +4,22 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import { describe, assert, test } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import {write_file_atomic} from '$lib/runtime/fs.ts';
+import { write_file_atomic } from '$lib/runtime/fs.ts';
 
 describe('write_file_atomic', () => {
 	test('writes content via temp file then renames', async () => {
-		const calls: Array<{method: string; args: Array<unknown>}> = [];
+		const calls: Array<{ method: string; args: Array<unknown> }> = [];
 
 		const deps = {
 			write_text_file: async (path: string, content: string) => {
-				calls.push({method: 'write_text_file', args: [path, content]});
+				calls.push({ method: 'write_text_file', args: [path, content] });
 			},
 			rename: async (old_path: string, new_path: string) => {
-				calls.push({method: 'rename', args: [old_path, new_path]});
-			},
+				calls.push({ method: 'rename', args: [old_path, new_path] });
+			}
 		};
 
 		await write_file_atomic(deps, '/data/config.json', '{"key":"value"}');
@@ -40,7 +40,7 @@ describe('write_file_atomic', () => {
 			},
 			rename: async () => {
 				order.push('rename');
-			},
+			}
 		};
 
 		await write_file_atomic(deps, '/tmp/test', 'data');
@@ -57,7 +57,7 @@ describe('write_file_atomic', () => {
 			},
 			rename: async () => {
 				renamed = true;
-			},
+			}
 		};
 
 		await assert_rejects(() => write_file_atomic(deps, '/tmp/test', 'data'), /disk full/);
@@ -70,7 +70,7 @@ describe('write_file_atomic', () => {
 			write_text_file: async () => {},
 			rename: async () => {
 				throw new Error('permission denied');
-			},
+			}
 		};
 
 		await assert_rejects(() => write_file_atomic(deps, '/tmp/test', 'data'), /permission denied/);
@@ -83,7 +83,7 @@ describe('write_file_atomic', () => {
 			write_text_file: async (path: string) => {
 				written_path = path;
 			},
-			rename: async () => {},
+			rename: async () => {}
 		};
 
 		await write_file_atomic(deps, '/some/path/file.txt', 'content');

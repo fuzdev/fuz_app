@@ -21,14 +21,14 @@
  * @module
  */
 
-import type {QueryDeps} from './query_deps.ts';
-import type {Json} from '@fuzdev/fuz_util/json.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
-import {fact_hash_extract_refs, type FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
-import {assert_row} from './assert_row.ts';
+import type { QueryDeps } from './query_deps.ts';
+import type { Json } from '@fuzdev/fuz_util/json.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { fact_hash_extract_refs, type FactHash } from '@fuzdev/fuz_util/fact_hash.ts';
+import { assert_row } from './assert_row.ts';
 
-import type {CellData} from '../auth/cell_data_schema.ts';
-import type {CellVisibility} from '../auth/cell_action_specs.ts';
+import type { CellData } from '../auth/cell_data_schema.ts';
+import type { CellVisibility } from '../auth/cell_action_specs.ts';
 
 /**
  * Row shape returned by `cell` SELECTs. `data` is typed as `CellData` —
@@ -130,7 +130,7 @@ export interface CellListOptions {
  */
 export const query_cell_create = async (
 	deps: QueryDeps,
-	input: CellCreateQueryInput,
+	input: CellCreateQueryInput
 ): Promise<CellRow> => {
 	const refs = derive_refs(input.data);
 	const row = await deps.db.query_one<CellRow>(
@@ -147,8 +147,8 @@ export const query_cell_create = async (
 			input.parent_id ?? null,
 			input.root_id ?? null,
 			input.moderation ?? null,
-			input.created_by ?? null,
-		],
+			input.created_by ?? null
+		]
 	);
 	return assert_row(row, 'INSERT INTO cell');
 };
@@ -164,7 +164,7 @@ export const query_cell_create = async (
 export const query_cell_get = async (
 	deps: QueryDeps,
 	id: Uuid,
-	options?: {include_deleted?: boolean},
+	options?: { include_deleted?: boolean }
 ): Promise<CellRow | null> => {
 	const include_deleted = options?.include_deleted === true;
 	const row = await deps.db.query_one<CellRow>(
@@ -172,7 +172,7 @@ export const query_cell_get = async (
 		 FROM cell
 		 WHERE id = $1
 		   AND ($2::bool OR deleted_at IS NULL)`,
-		[id, include_deleted],
+		[id, include_deleted]
 	);
 	return row ?? null;
 };
@@ -188,13 +188,13 @@ export const query_cell_get = async (
  */
 export const query_cell_get_by_path = async (
 	deps: QueryDeps,
-	path: string,
+	path: string
 ): Promise<CellRow | null> => {
 	const row = await deps.db.query_one<CellRow>(
 		`SELECT *, ${grant_count_projection('cell')}
 		 FROM cell
 		 WHERE path = $1 AND deleted_at IS NULL`,
-		[path],
+		[path]
 	);
 	return row ?? null;
 };
@@ -212,14 +212,14 @@ export const query_cell_get_by_path = async (
  */
 export const query_cell_load_many = async (
 	deps: QueryDeps,
-	ids: ReadonlyArray<Uuid>,
+	ids: ReadonlyArray<Uuid>
 ): Promise<Array<CellRow>> => {
 	if (ids.length === 0) return [];
 	return deps.db.query<CellRow>(
 		`SELECT *, ${grant_count_projection('cell')}
 		 FROM cell
 		 WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL`,
-		[ids as Array<Uuid>],
+		[ids as Array<Uuid>]
 	);
 };
 
@@ -239,7 +239,7 @@ export const query_cell_load_many = async (
 export const query_cell_update = async (
 	deps: QueryDeps,
 	id: Uuid,
-	patch: CellUpdatePatch,
+	patch: CellUpdatePatch
 ): Promise<CellRow | null> => {
 	const data_provided = patch.data !== undefined;
 	const refs = data_provided ? derive_refs(patch.data as Json) : null;
@@ -264,8 +264,8 @@ export const query_cell_update = async (
 			patch.updated_by !== undefined,
 			patch.updated_by ?? null,
 			visibility_provided,
-			patch.visibility ?? null,
-		],
+			patch.visibility ?? null
+		]
 	);
 	return row ?? null;
 };
@@ -284,16 +284,16 @@ export const query_cell_update = async (
 export const query_cell_delete = async (
 	deps: QueryDeps,
 	id: Uuid,
-	options?: {deleted_by?: Uuid | null},
+	options?: { deleted_by?: Uuid | null }
 ): Promise<boolean> => {
-	const row = await deps.db.query_one<{id: Uuid}>(
+	const row = await deps.db.query_one<{ id: Uuid }>(
 		`UPDATE cell
 		 SET deleted_at = NOW(),
 		     updated_at = NOW(),
 		     updated_by = $2
 		 WHERE id = $1 AND deleted_at IS NULL
 		 RETURNING id`,
-		[id, options?.deleted_by ?? null],
+		[id, options?.deleted_by ?? null]
 	);
 	return row !== undefined;
 };
@@ -320,7 +320,7 @@ export const query_cell_set_moderation = async (
 	deps: QueryDeps,
 	id: Uuid,
 	moderation: string,
-	options: {set_visibility_public: boolean; updated_by?: Uuid | null},
+	options: { set_visibility_public: boolean; updated_by?: Uuid | null }
 ): Promise<CellRow | null> => {
 	const row = await deps.db.query_one<CellRow>(
 		`UPDATE cell SET
@@ -330,7 +330,7 @@ export const query_cell_set_moderation = async (
 		   updated_at = NOW()
 		 WHERE id = $1 AND deleted_at IS NULL
 		 RETURNING *, ${grant_count_projection('cell')}`,
-		[id, moderation, options.set_visibility_public, options.updated_by ?? null],
+		[id, moderation, options.set_visibility_public, options.updated_by ?? null]
 	);
 	return row ?? null;
 };
@@ -347,7 +347,7 @@ export const query_cell_set_moderation = async (
 export const query_cell_list_by_kind = async (
 	deps: QueryDeps,
 	kind: string,
-	options?: Pick<CellListOptions, 'limit' | 'offset'>,
+	options?: Pick<CellListOptions, 'limit' | 'offset'>
 ): Promise<Array<CellRow>> =>
 	deps.db.query<CellRow>(
 		`SELECT *, ${grant_count_projection('cell')}
@@ -356,7 +356,7 @@ export const query_cell_list_by_kind = async (
 		   AND deleted_at IS NULL
 		 ORDER BY created_at DESC
 		 LIMIT $2 OFFSET $3`,
-		[kind, options?.limit ?? null, options?.offset ?? 0],
+		[kind, options?.limit ?? null, options?.offset ?? 0]
 	);
 
 /**
@@ -371,7 +371,7 @@ export const query_cell_list_by_kind = async (
 export const query_cell_list_by_creator = async (
 	deps: QueryDeps,
 	actor_id: Uuid,
-	options?: Pick<CellListOptions, 'limit' | 'offset'>,
+	options?: Pick<CellListOptions, 'limit' | 'offset'>
 ): Promise<Array<CellRow>> =>
 	deps.db.query<CellRow>(
 		`SELECT *, ${grant_count_projection('cell')}
@@ -379,7 +379,7 @@ export const query_cell_list_by_creator = async (
 		 WHERE created_by = $1 AND deleted_at IS NULL
 		 ORDER BY created_at DESC
 		 LIMIT $2 OFFSET $3`,
-		[actor_id, options?.limit ?? null, options?.offset ?? 0],
+		[actor_id, options?.limit ?? null, options?.offset ?? 0]
 	);
 
 /**
@@ -430,7 +430,7 @@ export const query_cell_list_by_creator = async (
  */
 export const query_cell_list = async (
 	deps: QueryDeps,
-	params: CellListParams,
+	params: CellListParams
 ): Promise<Array<CellRow>> => {
 	const order_column = params.order_by === 'updated_at' ? 'updated_at' : 'created_at';
 	const order_direction = params.order_direction === 'asc' ? 'ASC' : 'DESC';
@@ -449,7 +449,7 @@ export const query_cell_list = async (
 	if (role_grant_roles.length !== role_grant_scope_ids.length) {
 		throw new Error(
 			`query_cell_list: caller_role_grant_roles (len=${role_grant_roles.length}) and ` +
-				`caller_role_grant_scope_ids (len=${role_grant_scope_ids.length}) must be parallel arrays`,
+				`caller_role_grant_scope_ids (len=${role_grant_scope_ids.length}) must be parallel arrays`
 		);
 	}
 	const shared_with_caller_only = params.shared_with_caller_only === true;
@@ -489,7 +489,7 @@ export const query_cell_list = async (
 		role_grant_scope_ids,
 		params.visibility ?? null,
 		params.root_id ?? null,
-		params.moderation ?? null,
+		params.moderation ?? null
 	]);
 };
 

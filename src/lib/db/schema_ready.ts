@@ -33,7 +33,7 @@
  * @module
  */
 
-import type {Db} from './db.ts';
+import type { Db } from './db.ts';
 
 /** Expected schema: table name → sorted column names, from a fresh bootstrap. */
 export type ExpectedSchema = Record<string, ReadonlyArray<string>>;
@@ -61,10 +61,10 @@ export const query_public_columns = async (db: Db): Promise<Record<string, Array
 	const rows = await db.query<ColumnRow>(
 		`SELECT table_name, column_name FROM information_schema.columns
 		 WHERE table_schema = 'public'
-		 ORDER BY table_name, column_name`,
+		 ORDER BY table_name, column_name`
 	);
 	const by_table: Record<string, Array<string>> = {};
-	for (const {table_name, column_name} of rows) {
+	for (const { table_name, column_name } of rows) {
 		(by_table[table_name] ??= []).push(column_name);
 	}
 	return by_table;
@@ -96,7 +96,7 @@ export interface SchemaDriftResult {
  */
 export const check_schema_drift = async (
 	db: Db,
-	expected: ExpectedSchema,
+	expected: ExpectedSchema
 ): Promise<SchemaDriftResult> => {
 	const live = await query_public_columns(db);
 	const missing_tables: Array<string> = [];
@@ -109,12 +109,12 @@ export const check_schema_drift = async (
 		}
 		const live_set = new Set(live_columns);
 		const missing = columns.filter((column) => !live_set.has(column));
-		if (missing.length > 0) missing_columns.push({table, columns: missing});
+		if (missing.length > 0) missing_columns.push({ table, columns: missing });
 	}
 	return {
 		ok: missing_tables.length === 0 && missing_columns.length === 0,
 		missing_tables,
-		missing_columns,
+		missing_columns
 	};
 };
 
@@ -122,7 +122,7 @@ export const check_schema_drift = async (
 export const format_schema_drift = (drift: SchemaDriftResult): string => {
 	const lines: Array<string> = [];
 	for (const table of drift.missing_tables) lines.push(`  missing table: ${table}`);
-	for (const {table, columns} of drift.missing_columns) {
+	for (const { table, columns } of drift.missing_columns) {
 		lines.push(`  ${table} missing columns: ${columns.join(', ')}`);
 	}
 	return lines.join('\n');
@@ -131,5 +131,5 @@ export const format_schema_drift = (drift: SchemaDriftResult): string => {
 /** Error codes a readiness check returns at `503` (conforms to `{error: string}`). */
 export const READY_ERROR = {
 	schema_drift: 'schema_drift',
-	db_unreachable: 'db_unreachable',
+	db_unreachable: 'db_unreachable'
 } as const;

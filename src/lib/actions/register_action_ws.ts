@@ -27,23 +27,23 @@
  * @module
  */
 
-import type {Hono} from 'hono';
-import type {UpgradeWebSocket, WSContext} from 'hono/ws';
-import {wait} from '@fuzdev/fuz_util/async.ts';
-import {Logger, type Logger as LoggerType} from '@fuzdev/fuz_util/log.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type { Hono } from 'hono';
+import type { UpgradeWebSocket, WSContext } from 'hono/ws';
+import { wait } from '@fuzdev/fuz_util/async.ts';
+import { Logger, type Logger as LoggerType } from '@fuzdev/fuz_util/log.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import {
 	get_request_context,
 	require_request_context,
-	type RequestContext,
+	type RequestContext
 } from '../auth/request_context.ts';
-import {hash_session_token} from '../auth/session_queries.ts';
-import {get_client_ip} from '../http/client_ip.ts';
-import {flush_pending_effects, flush_post_commit_effects} from '../http/pending_effects.ts';
-import type {RateLimiter} from '../rate_limiter.ts';
-import type {JsonrpcRequestId} from '../http/jsonrpc.ts';
-import {jsonrpc_error_messages} from '../http/jsonrpc_errors.ts';
+import { hash_session_token } from '../auth/session_queries.ts';
+import { get_client_ip } from '../http/client_ip.ts';
+import { flush_pending_effects, flush_post_commit_effects } from '../http/pending_effects.ts';
+import type { RateLimiter } from '../rate_limiter.ts';
+import type { JsonrpcRequestId } from '../http/jsonrpc.ts';
+import { jsonrpc_error_messages } from '../http/jsonrpc_errors.ts';
 import {
 	create_jsonrpc_error_response,
 	create_jsonrpc_notification,
@@ -51,24 +51,24 @@ import {
 	to_jsonrpc_params,
 	is_jsonrpc_request,
 	is_jsonrpc_response,
-	is_jsonrpc_error_response,
+	is_jsonrpc_error_response
 } from '../http/jsonrpc_helpers.ts';
 import {
 	CREDENTIAL_TYPE_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	TEST_CONTEXT_PRESET_KEY,
-	type CredentialType,
+	type CredentialType
 } from '../hono_context.ts';
-import type {Db} from '../db/db.ts';
-import {type Action} from './action_types.ts';
-import {compile_action_registry} from './compile_action_registry.ts';
-import {cancel_action_spec, CancelNotificationParams} from './cancel.ts';
-import {WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT} from './transports.ts';
-import {BackendWebsocketTransport, type ConnectionIdentity} from './transports_ws_backend.ts';
-import {audit_unmatched_peer_response, type RequestClient} from './peer_request.ts';
-import {perform_action, perform_action_result_to_envelope} from './perform_action.ts';
+import type { Db } from '../db/db.ts';
+import { type Action } from './action_types.ts';
+import { compile_action_registry } from './compile_action_registry.ts';
+import { cancel_action_spec, CancelNotificationParams } from './cancel.ts';
+import { WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT } from './transports.ts';
+import { BackendWebsocketTransport, type ConnectionIdentity } from './transports_ws_backend.ts';
+import { audit_unmatched_peer_response, type RequestClient } from './peer_request.ts';
+import { perform_action, perform_action_result_to_envelope } from './perform_action.ts';
 
-export type {Action};
+export type { Action };
 
 /** Default inactivity window before the server closes a silent socket. */
 export const DEFAULT_SERVER_HEARTBEAT_TIMEOUT = 60_000;
@@ -244,7 +244,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		on_socket_open,
 		on_socket_close,
 		action_ip_rate_limiter = null,
-		action_account_rate_limiter = null,
+		action_account_rate_limiter = null
 	} = options;
 
 	// Build the dispatcher's per-method lookup. Only request_response
@@ -253,7 +253,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 	// Other kinds (`remote_notification` like `cancel`, `local_call`)
 	// are registry-only on WS; the cancel handler reads
 	// `cancel_action_spec.method` directly.
-	const {action_map} = compile_action_registry(actions, 'WS action');
+	const { action_map } = compile_action_registry(actions, 'WS action');
 
 	const heartbeat_enabled = heartbeat !== false;
 	const heartbeat_config = typeof heartbeat === 'object' ? heartbeat : {};
@@ -297,10 +297,10 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// Test escape hatch — captured once at upgrade. perform_action
 			// honors it per-message so harnesses with pre-baked
 			// `RequestContext` skip the live authorization phase.
-			const upgrade_preset: {request_context: RequestContext | null} | undefined = c.get(
-				TEST_CONTEXT_PRESET_KEY,
+			const upgrade_preset: { request_context: RequestContext | null } | undefined = c.get(
+				TEST_CONTEXT_PRESET_KEY
 			)
-				? {request_context: get_request_context(c)}
+				? { request_context: get_request_context(c) }
 				: undefined;
 
 			// Per-socket abort controller — fires on socket close, chained into
@@ -321,7 +321,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// still read it after the audit guard tears the transport record
 			// down; `BackendWebsocketTransport.#revoke_connection` clears the
 			// identity map before Hono fires onClose.
-			const identity: ConnectionIdentity = {token_hash, account_id, api_token_id};
+			const identity: ConnectionIdentity = { token_hash, account_id, api_token_id };
 			// Captured on open, consumed on close. Undefined before onOpen
 			// fires or when a consumer never opens (e.g. immediate disconnect).
 			let captured_connection_id: Uuid | undefined;
@@ -347,7 +347,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					try {
 						const notification = create_jsonrpc_notification(
 							notify_method,
-							to_jsonrpc_params(notify_params),
+							to_jsonrpc_params(notify_params)
 						);
 						ws.send(JSON.stringify(notification));
 					} catch (error) {
@@ -369,7 +369,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 								log.info(
 									`heartbeat timeout (${silence}ms) — closing ${WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT}`,
 									connection_id,
-									identity.account_id,
+									identity.account_id
 								);
 								stop_heartbeat_timer();
 								try {
@@ -387,15 +387,15 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 								connection_id,
 								identity,
 								notify: notify_socket(ws),
-								signal: socket_abort_controller.signal,
+								signal: socket_abort_controller.signal
 							});
 						} catch (error) {
 							log.error('on_socket_open failed — closing socket:', error);
 							try {
 								ws.send(
 									JSON.stringify(
-										create_jsonrpc_error_response(null, jsonrpc_error_messages.internal_error()),
-									),
+										create_jsonrpc_error_response(null, jsonrpc_error_messages.internal_error())
+									)
 								);
 							} catch {
 								// ignore — socket may already be dead
@@ -413,8 +413,8 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 						log.error('JSON parse error:', error);
 						ws.send(
 							JSON.stringify(
-								create_jsonrpc_error_response(null, jsonrpc_error_messages.parse_error()),
-							),
+								create_jsonrpc_error_response(null, jsonrpc_error_messages.parse_error())
+							)
 						);
 						return;
 					}
@@ -426,10 +426,10 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 								create_jsonrpc_error_response(
 									null,
 									jsonrpc_error_messages.invalid_request(
-										'batch JSON-RPC requests are not supported on WebSocket',
-									),
-								),
-							),
+										'batch JSON-RPC requests are not supported on WebSocket'
+									)
+								)
+							)
 						);
 						return;
 					}
@@ -455,9 +455,9 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					// are not a feature yet).
 					if (!is_jsonrpc_request(json)) {
 						if (typeof json === 'object' && json !== null && 'method' in json && !('id' in json)) {
-							if ((json as {method: string}).method === cancel_action_spec.method) {
+							if ((json as { method: string }).method === cancel_action_spec.method) {
 								const parsed = CancelNotificationParams.safeParse(
-									(json as {params?: unknown}).params,
+									(json as { params?: unknown }).params
 								);
 								if (!parsed.success) {
 									log.debug('cancel: invalid params, ignoring', parsed.error.issues);
@@ -476,14 +476,14 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 							JSON.stringify(
 								create_jsonrpc_error_response(
 									to_jsonrpc_message_id(json),
-									jsonrpc_error_messages.invalid_request(),
-								),
-							),
+									jsonrpc_error_messages.invalid_request()
+								)
+							)
 						);
 						return;
 					}
 
-					const {method, id, params} = json;
+					const { method, id, params } = json;
 
 					// Per-action method lookup — return method_not_found before
 					// we engage the dispatch machinery. Specs without a handler
@@ -493,8 +493,8 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					if (!action) {
 						ws.send(
 							JSON.stringify(
-								create_jsonrpc_error_response(id, jsonrpc_error_messages.method_not_found(method)),
-							),
+								create_jsonrpc_error_response(id, jsonrpc_error_messages.method_not_found(method))
+							)
 						);
 						return;
 					}
@@ -551,11 +551,11 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 										conn_id,
 										request_method,
 										request_params,
-										request_options,
+										request_options
 									);
 					const signal = AbortSignal.any([
 						socket_abort_controller.signal,
-						request_controller.signal,
+						request_controller.signal
 					]);
 
 					try {
@@ -571,7 +571,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 								notify,
 								connection_id: captured_connection_id,
 								request_client,
-								preset: upgrade_preset,
+								preset: upgrade_preset
 							},
 							{
 								db,
@@ -579,8 +579,8 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 								post_commit_effects,
 								log,
 								action_ip_rate_limiter,
-								action_account_rate_limiter,
-							},
+								action_account_rate_limiter
+							}
 						);
 						ws.send(JSON.stringify(perform_action_result_to_envelope(id, result)));
 					} finally {
@@ -597,18 +597,21 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 							await on_socket_close({
 								ws,
 								connection_id: captured_connection_id,
-								identity,
+								identity
 							});
 						} catch (error) {
 							log.error('on_socket_close failed:', error);
 						}
 					}
 					transport.remove_connection(ws);
-					log.debug('ws closed', captured_connection_id, {code: event.code, reason: event.reason});
-				},
+					log.debug('ws closed', captured_connection_id, {
+						code: event.code,
+						reason: event.reason
+					});
+				}
 			};
-		}),
+		})
 	);
 
-	return {transport};
+	return { transport };
 };

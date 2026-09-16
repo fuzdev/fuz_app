@@ -20,10 +20,10 @@
  * @module
  */
 
-import type {RequestResponseActionSpec} from '../actions/action_spec.ts';
-import {all_admin_action_specs} from './admin_action_specs.ts';
-import {all_role_grant_offer_action_specs} from './role_grant_offer_action_specs.ts';
-import {all_account_action_specs} from './account_action_specs.ts';
+import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
+import { all_admin_action_specs } from './admin_action_specs.ts';
+import { all_role_grant_offer_action_specs } from './role_grant_offer_action_specs.ts';
+import { all_account_action_specs } from './account_action_specs.ts';
 
 /**
  * Combined spec registry for the standard RPC surface (admin +
@@ -35,5 +35,5 @@ import {all_account_action_specs} from './account_action_specs.ts';
 export const all_standard_action_specs: ReadonlyArray<RequestResponseActionSpec> = [
 	...all_admin_action_specs,
 	...all_role_grant_offer_action_specs,
-	...all_account_action_specs,
+	...all_account_action_specs
 ];

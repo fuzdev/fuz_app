@@ -10,41 +10,41 @@
  * @module
  */
 
-import {assert, describe, test} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { assert, describe, test } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {create_test_app} from '$lib/testing/app_server.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import { create_test_app } from '$lib/testing/app_server.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import {
 	role_grant_offer_create_action_spec,
 	role_grant_offer_decline_action_spec,
-	role_grant_offer_retract_action_spec,
+	role_grant_offer_retract_action_spec
 } from '$lib/auth/role_grant_offer_action_specs.ts';
 import {
 	query_accept_offer,
-	query_role_grant_offer_create,
+	query_role_grant_offer_create
 } from '$lib/auth/role_grant_offer_queries.ts';
-import {cleanup_expired_role_grant_offers} from '$lib/auth/cleanup.ts';
-import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
-import type {AuditLogEvent} from '$lib/auth/audit_log_schema.ts';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
+import { cleanup_expired_role_grant_offers } from '$lib/auth/cleanup.ts';
+import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
+import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
+import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
 
 import {
 	RPC_PATH,
 	create_route_specs,
 	describe_db,
-	session_options,
+	session_options
 } from './role_grant_offer_test_helpers.ts';
-import {create_multi_actor_helpers} from './role_grant_offer.multi_actor.fixtures.ts';
+import { create_multi_actor_helpers } from './role_grant_offer.multi_actor.fixtures.ts';
 
 describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
-	const {build_app_with_audit} = create_multi_actor_helpers(get_db);
+	const { build_app_with_audit } = create_multi_actor_helpers(get_db);
 
 	describe('cascade inheritance', () => {
 		test('actor-targeted retract carries the actor on the audit envelope', async () => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await build_app_with_audit(events);
-			const recipient = await test_app.create_account({username: 'multi_actor_retract'});
+			const recipient = await test_app.create_account({ username: 'multi_actor_retract' });
 
 			const create_res = await rpc_call_for_spec({
 				app: test_app.app,
@@ -53,9 +53,9 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 				params: {
 					to_account_id: recipient.account.id,
 					to_actor_id: recipient.actor.id,
-					role: ROLE_ADMIN,
+					role: ROLE_ADMIN
 				},
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(create_res.ok);
 
@@ -64,8 +64,8 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: role_grant_offer_retract_action_spec,
-				params: {offer_id: create_res.result.offer.id},
-				headers: test_app.create_session_headers(),
+				params: { offer_id: create_res.result.offer.id },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(retract_res.ok);
 
@@ -78,7 +78,7 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 		test('actor-targeted decline still puts the grantor in both target columns', async () => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await build_app_with_audit(events);
-			const recipient = await test_app.create_account({username: 'multi_actor_decline'});
+			const recipient = await test_app.create_account({ username: 'multi_actor_decline' });
 
 			const create_res = await rpc_call_for_spec({
 				app: test_app.app,
@@ -87,9 +87,9 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 				params: {
 					to_account_id: recipient.account.id,
 					to_actor_id: recipient.actor.id,
-					role: ROLE_ADMIN,
+					role: ROLE_ADMIN
 				},
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(create_res.ok);
 
@@ -98,8 +98,8 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: role_grant_offer_decline_action_spec,
-				params: {offer_id: create_res.result.offer.id},
-				headers: recipient.create_session_headers(),
+				params: { offer_id: create_res.result.offer.id },
+				headers: recipient.create_session_headers()
 			});
 			assert.ok(decline_res.ok);
 
@@ -116,26 +116,26 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			const recipient = await test_app.create_account({username: 'multi_actor_expire'});
+			const recipient = await test_app.create_account({ username: 'multi_actor_expire' });
 
 			// Already-past actor-targeted offer — `query_role_grant_offer_create`
 			// doesn't reject past `expires_at` at the query layer, so we can
 			// shape the row without raw SQL.
-			const {id: offer_id} = await query_role_grant_offer_create(
-				{db: get_db()},
+			const { id: offer_id } = await query_role_grant_offer_create(
+				{ db: get_db() },
 				{
 					from_actor_id: test_app.backend.actor.id,
 					to_account_id: recipient.account.id,
 					to_actor_id: recipient.actor.id,
 					role: ROLE_ADMIN,
-					expires_at: new Date(Date.now() - 60 * 1000),
-				},
+					expires_at: new Date(Date.now() - 60 * 1000)
+				}
 			);
 
 			const captured: Array<AuditLogEvent> = [];
-			const cleanup_log = new Logger('test_expire', {level: 'off'});
+			const cleanup_log = new Logger('test_expire', { level: 'off' });
 			const count = await cleanup_expired_role_grant_offers({
 				db: get_db(),
 				log: cleanup_log,
@@ -144,14 +144,14 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 					log: cleanup_log,
 					on_audit_event: (event) => {
 						captured.push(event);
-					},
-				}),
+					}
+				})
 			});
 			assert.ok(count >= 1);
 			const expire_event = captured.find(
 				(e) =>
 					e.event_type === 'role_grant_offer_expire' &&
-					(e.metadata as {offer_id?: string}).offer_id === offer_id,
+					(e.metadata as { offer_id?: string }).offer_id === offer_id
 			);
 			assert.ok(expire_event);
 			assert.strictEqual(expire_event.target_account_id, recipient.account.id);
@@ -163,12 +163,12 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 				session_options,
 				create_route_specs,
 				db: get_db(),
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
-			const recipient = await test_app.create_account({username: 'multi_actor_supersede'});
+			const recipient = await test_app.create_account({ username: 'multi_actor_supersede' });
 			const grantor_b = await test_app.create_account({
 				username: 'multi_actor_supersede_b',
-				roles: [ROLE_ADMIN],
+				roles: [ROLE_ADMIN]
 			});
 
 			// Offer A — account-grain (no `to_actor_id`).
@@ -176,8 +176,8 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: role_grant_offer_create_action_spec,
-				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
-				headers: test_app.create_session_headers(),
+				params: { to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(offer_a_res.ok);
 			// Offer B — actor-targeted at the recipient's actor; from a
@@ -190,9 +190,9 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 				params: {
 					to_account_id: recipient.account.id,
 					to_actor_id: recipient.actor.id,
-					role: ROLE_ADMIN,
+					role: ROLE_ADMIN
 				},
-				headers: grantor_b.create_session_headers(),
+				headers: grantor_b.create_session_headers()
 			});
 			assert.ok(offer_b_res.ok);
 
@@ -200,18 +200,18 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 			// not via fire-and-forget; assert against the DB.
 			const accept_result = await get_db().transaction(async (tx) =>
 				query_accept_offer(
-					{db: tx},
+					{ db: tx },
 					{
 						offer_id: offer_a_res.result.offer.id,
 						to_account_id: recipient.account.id,
 						actor_id: recipient.actor.id,
-						ip: null,
-					},
-				),
+						ip: null
+					}
+				)
 			);
 			assert.strictEqual(accept_result.superseded_offers.length, 1);
 			const supersede_event = accept_result.audit_events.find(
-				(e) => e.event_type === 'role_grant_offer_supersede',
+				(e) => e.event_type === 'role_grant_offer_supersede'
 			);
 			assert.ok(supersede_event);
 			assert.strictEqual(supersede_event.target_account_id, recipient.account.id);

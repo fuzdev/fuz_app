@@ -12,10 +12,10 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {RoleName} from './role_schema.ts';
+import { RoleName } from './role_schema.ts';
 
 /** Maximum length of the optional message attached to an offer. */
 export const ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX = 500;
@@ -112,57 +112,57 @@ export interface CreateRoleGrantOfferInput {
 /** Zod schema for client-safe role_grant offer data. */
 export const RoleGrantOfferJson = z
 	.strictObject({
-		id: Uuid.meta({description: 'Offer id.'}),
-		from_actor_id: Uuid.meta({description: 'Actor that issued the offer.'}),
-		to_account_id: Uuid.meta({description: 'Account the offer is directed to.'}),
+		id: Uuid.meta({ description: 'Offer id.' }),
+		from_actor_id: Uuid.meta({ description: 'Actor that issued the offer.' }),
+		to_account_id: Uuid.meta({ description: 'Account the offer is directed to.' }),
 		to_actor_id: Uuid.nullable().meta({
 			description:
-				'Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept.',
+				'Optional actor-grain target on the recipient account. When set, only this actor may accept; when null any actor on `to_account_id` may accept.'
 		}),
-		role: RoleName.meta({description: 'Role being offered.'}),
+		role: RoleName.meta({ description: 'Role being offered.' }),
 		scope_kind: z.string().nullable().meta({
 			description:
-				'Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).',
+				'Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped).'
 		}),
 		scope_id: Uuid.nullable().meta({
 			description:
-				'Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants.',
+				'Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants.'
 		}),
 		message: z
 			.string()
 			.max(ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX)
 			.nullable()
-			.meta({description: 'Optional free-form note from the grantor.'}),
-		created_at: z.string().meta({description: 'ISO timestamp when the offer was created.'}),
+			.meta({ description: 'Optional free-form note from the grantor.' }),
+		created_at: z.string().meta({ description: 'ISO timestamp when the offer was created.' }),
 		expires_at: z
 			.string()
-			.meta({description: 'ISO timestamp after which the offer is no longer valid.'}),
+			.meta({ description: 'ISO timestamp after which the offer is no longer valid.' }),
 		accepted_at: z
 			.string()
 			.nullable()
-			.meta({description: 'ISO timestamp when the offer was accepted.'}),
+			.meta({ description: 'ISO timestamp when the offer was accepted.' }),
 		declined_at: z
 			.string()
 			.nullable()
-			.meta({description: 'ISO timestamp when the offer was declined.'}),
+			.meta({ description: 'ISO timestamp when the offer was declined.' }),
 		decline_reason: z
 			.string()
 			.max(ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX)
 			.nullable()
-			.meta({description: 'Optional reason given on decline.'}),
+			.meta({ description: 'Optional reason given on decline.' }),
 		retracted_at: z
 			.string()
 			.nullable()
-			.meta({description: 'ISO timestamp when the grantor retracted the offer.'}),
+			.meta({ description: 'ISO timestamp when the grantor retracted the offer.' }),
 		superseded_at: z.string().nullable().meta({
 			description:
-				'ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.',
+				'ISO timestamp when this offer was obsoleted by a sibling accept or by revoke of the resulting role_grant.'
 		}),
 		resulting_role_grant_id: Uuid.nullable().meta({
-			description: 'Role grant produced by accepting this offer. `null` until/unless accepted.',
-		}),
+			description: 'Role grant produced by accepting this offer. `null` until/unless accepted.'
+		})
 	})
-	.meta({description: 'A role_grant offer — a pending grant awaiting recipient consent.'});
+	.meta({ description: 'A role_grant offer — a pending grant awaiting recipient consent.' });
 export type RoleGrantOfferJson = z.infer<typeof RoleGrantOfferJson>;
 
 /** Convert a `RoleGrantOffer` row to its JSON payload shape. */
@@ -182,5 +182,5 @@ export const to_role_grant_offer_json = (offer: RoleGrantOffer): RoleGrantOfferJ
 	decline_reason: offer.decline_reason,
 	retracted_at: offer.retracted_at,
 	superseded_at: offer.superseded_at,
-	resulting_role_grant_id: offer.resulting_role_grant_id,
+	resulting_role_grant_id: offer.resulting_role_grant_id
 });

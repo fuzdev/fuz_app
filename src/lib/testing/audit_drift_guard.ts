@@ -1,20 +1,20 @@
 import './assert_dev_env.ts';
 
-import {assert, beforeEach, afterEach} from 'vitest';
+import { assert, beforeEach, afterEach } from 'vitest';
 
 import {
 	get_audit_metadata_validation_failures,
 	get_audit_unknown_event_type_failures,
 	reset_audit_metadata_validation_failures,
-	reset_audit_unknown_event_type_failures,
+	reset_audit_unknown_event_type_failures
 } from '../auth/audit_log_queries.ts';
 import {
 	create_audit_emitter,
 	type AuditEmitter,
-	type CreateAuditEmitterOptions,
+	type CreateAuditEmitterOptions
 } from '../auth/audit_emitter.ts';
-import type {AuditLogEvent, AuditLogInput} from '../auth/audit_log_schema.ts';
-import type {AuditFactory} from '../server/app_backend.ts';
+import type { AuditLogEvent, AuditLogInput } from '../auth/audit_log_schema.ts';
+import type { AuditFactory } from '../server/app_backend.ts';
 
 /**
  * Register per-test `beforeEach` + `afterEach` hooks that catch any audit
@@ -44,12 +44,12 @@ export const install_audit_drift_guard = (): void => {
 		assert.strictEqual(
 			get_audit_metadata_validation_failures(),
 			0,
-			'audit metadata failed schema validation — see audit_log_schema.audit_metadata_schemas',
+			'audit metadata failed schema validation — see audit_log_schema.audit_metadata_schemas'
 		);
 		assert.strictEqual(
 			get_audit_unknown_event_type_failures(),
 			0,
-			'audit emitted an unknown event_type — see AUDIT_EVENT_TYPES',
+			'audit emitted an unknown event_type — see AUDIT_EVENT_TYPES'
 		);
 	});
 };
@@ -112,7 +112,7 @@ export interface RecordingAuditEmitter {
  * so the freeze isn't load-bearing here.
  */
 export const create_recording_audit_emitter = (
-	calls_ref?: Array<AuditLogInput>,
+	calls_ref?: Array<AuditLogInput>
 ): RecordingAuditEmitter => {
 	const calls = calls_ref ?? [];
 	const listeners: Array<(event: AuditLogEvent) => void> = [];
@@ -129,7 +129,7 @@ export const create_recording_audit_emitter = (
 				target_account_id: input.target_account_id,
 				target_actor_id: input.target_actor_id,
 				ip: ctx.client_ip,
-				metadata: input.metadata,
+				metadata: input.metadata
 			} as AuditLogInput);
 		},
 		emit_pool: (input) => {
@@ -140,9 +140,9 @@ export const create_recording_audit_emitter = (
 		add_listener: (listener) => {
 			listeners.push(listener);
 		},
-		listener_count: () => listeners.length,
+		listener_count: () => listeners.length
 	};
-	return {emitter, calls};
+	return { emitter, calls };
 };
 
 /**
@@ -176,19 +176,19 @@ export const create_recording_audit_emitter = (
  * both ordering capture and a real SSE/WS guard wired into the same
  * emitter chain.
  */
-export const create_emit_ordering_audit_factory = <E extends {kind: string; at: number}>(
-	seq_ref: {value: number},
+export const create_emit_ordering_audit_factory = <E extends { kind: string; at: number }>(
+	seq_ref: { value: number },
 	events_ref: Array<AuditEmitMarker | E>,
-	extra_options?: Omit<CreateAuditEmitterOptions, 'db' | 'log' | 'emit_decorator'>,
+	extra_options?: Omit<CreateAuditEmitterOptions, 'db' | 'log' | 'emit_decorator'>
 ): AuditFactory => {
-	return ({db, log}) =>
+	return ({ db, log }) =>
 		create_audit_emitter({
 			...extra_options,
 			db,
 			log,
 			emit_decorator: (inner) => (ctx, input) => {
-				events_ref.push({kind: 'emit', at: seq_ref.value++});
+				events_ref.push({ kind: 'emit', at: seq_ref.value++ });
 				inner(ctx, input);
-			},
+			}
 		});
 };

@@ -10,10 +10,10 @@
  * @module
  */
 
-import {escape_regexp} from '@fuzdev/fuz_util/regexp.ts';
-import type {Context, Handler} from 'hono';
+import { escape_regexp } from '@fuzdev/fuz_util/regexp.ts';
+import type { Context, Handler } from 'hono';
 
-import {ERROR_FORBIDDEN_ORIGIN} from './error_schemas.ts';
+import { ERROR_FORBIDDEN_ORIGIN } from './error_schemas.ts';
 
 /**
  * True when the request looks like it originated from a browser context — it
@@ -69,7 +69,7 @@ export const parse_allowed_origins = (env_value: string | undefined): Array<RegE
  */
 export const should_allow_origin = (
 	origin: string,
-	allowed_patterns: ReadonlyArray<RegExp>,
+	allowed_patterns: ReadonlyArray<RegExp>
 ): boolean => allowed_patterns.some((p) => p.test(origin));
 
 /**
@@ -99,7 +99,7 @@ export const verify_request_source =
 		const origin = c.req.header('origin');
 		if (origin !== undefined) {
 			if (!should_allow_origin(origin, allowed_patterns)) {
-				return c.json({error: ERROR_FORBIDDEN_ORIGIN}, 403);
+				return c.json({ error: ERROR_FORBIDDEN_ORIGIN }, 403);
 			}
 			return next();
 		}
@@ -178,7 +178,7 @@ const origin_pattern_to_regexp = (pattern: string): RegExp => {
 		for (const label of hostname.split('.')) {
 			if (label.includes('*') && label !== '*') {
 				throw new Error(
-					`Wildcards must be complete labels (e.g., *.fuz.dev, not *fuz.dev): ${pattern}`,
+					`Wildcards must be complete labels (e.g., *.fuz.dev, not *fuz.dev): ${pattern}`
 				);
 			}
 		}

@@ -8,16 +8,16 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
+import { describe, assert, test } from 'vitest';
 
 import {
 	BackendWebsocketTransport,
-	type ConnectionIdentity,
+	type ConnectionIdentity
 } from '$lib/actions/transports_ws_backend.ts';
-import {WS_CLOSE_SESSION_REVOKED} from '$lib/actions/transports.ts';
-import type {JsonrpcNotification} from '$lib/http/jsonrpc.ts';
-import {create_fake_ws} from '$lib/testing/ws_round_trip.ts';
-import {create_uuid, type Uuid} from '@fuzdev/fuz_util/id.ts';
+import { WS_CLOSE_SESSION_REVOKED } from '$lib/actions/transports.ts';
+import type { JsonrpcNotification } from '$lib/http/jsonrpc.ts';
+import { create_fake_ws } from '$lib/testing/ws_round_trip.ts';
+import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
 
 const ACCOUNT_A = create_uuid();
 const ACCOUNT_B = create_uuid();
@@ -38,7 +38,7 @@ describe('BackendWebsocketTransport.add_connection', () => {
 
 	test('api_token_id defaults to null (backward-compatible 3-arg call)', () => {
 		const t = new BackendWebsocketTransport();
-		const {ws} = create_fake_ws();
+		const { ws } = create_fake_ws();
 		t.add_connection(ws, HASH_A, ACCOUNT_A);
 		// revoking by a made-up token id closes nothing
 		assert.strictEqual(t.close_sockets_for_token('nonexistent'), 0);
@@ -47,7 +47,7 @@ describe('BackendWebsocketTransport.add_connection', () => {
 	test('is_ready reflects connection count', () => {
 		const t = new BackendWebsocketTransport();
 		assert.strictEqual(t.is_ready(), false);
-		const {ws} = create_fake_ws();
+		const { ws } = create_fake_ws();
 		t.add_connection(ws, HASH_A, ACCOUNT_A);
 		assert.strictEqual(t.is_ready(), true);
 	});
@@ -78,7 +78,9 @@ describe('BackendWebsocketTransport.close_sockets_for_session', () => {
 
 		const count = t.close_sockets_for_session(HASH_A);
 		assert.strictEqual(count, 1);
-		assert.deepStrictEqual(a.closes, [{code: WS_CLOSE_SESSION_REVOKED, reason: 'Session revoked'}]);
+		assert.deepStrictEqual(a.closes, [
+			{ code: WS_CLOSE_SESSION_REVOKED, reason: 'Session revoked' }
+		]);
 		assert.deepStrictEqual(b.closes, []);
 	});
 
@@ -94,7 +96,7 @@ describe('BackendWebsocketTransport.close_sockets_for_session', () => {
 
 	test('returns 0 when no sockets match', () => {
 		const t = new BackendWebsocketTransport();
-		const {ws} = create_fake_ws();
+		const { ws } = create_fake_ws();
 		t.add_connection(ws, HASH_A, ACCOUNT_A);
 		assert.strictEqual(t.close_sockets_for_session('nope'), 0);
 	});
@@ -149,7 +151,7 @@ describe('BackendWebsocketTransport.close_sockets_for_token', () => {
 
 	test('returns 0 when no bearer connections match', () => {
 		const t = new BackendWebsocketTransport();
-		const {ws} = create_fake_ws();
+		const { ws } = create_fake_ws();
 		t.add_connection(ws, HASH_A, ACCOUNT_A);
 		assert.strictEqual(t.close_sockets_for_token(TOKEN_A), 0);
 	});
@@ -229,7 +231,7 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 	const notification: JsonrpcNotification = {
 		jsonrpc: '2.0',
 		method: 'thing_changed',
-		params: {id: 'abc'},
+		params: { id: 'abc' }
 	};
 
 	test('returns 0 and sends nothing when the predicate matches no connections', () => {
@@ -256,7 +258,7 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 
 		const count = t.broadcast_filtered(
 			notification,
-			(identity) => identity.account_id === ACCOUNT_A,
+			(identity) => identity.account_id === ACCOUNT_A
 		);
 		assert.strictEqual(count, 2);
 		assert.deepStrictEqual(a.sends, [JSON.stringify(notification)]);
@@ -281,7 +283,7 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 		const t = new BackendWebsocketTransport();
 		assert.strictEqual(
 			t.broadcast_filtered(notification, () => true),
-			0,
+			0
 		);
 	});
 
@@ -296,7 +298,7 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 
 		const seen: Array<ConnectionIdentity> = [];
 		const count = t.broadcast_filtered(notification, (identity) => {
-			seen.push({...identity});
+			seen.push({ ...identity });
 			return false;
 		});
 
@@ -304,15 +306,15 @@ describe('BackendWebsocketTransport.broadcast_filtered', () => {
 		assert.strictEqual(seen.length, 3);
 		assert.ok(
 			seen.some((i) => i.token_hash === HASH_A && i.api_token_id === null),
-			'session connection exposed',
+			'session connection exposed'
 		);
 		assert.ok(
 			seen.some((i) => i.token_hash === null && i.api_token_id === TOKEN_A),
-			'bearer connection exposed',
+			'bearer connection exposed'
 		);
 		assert.ok(
 			seen.some((i) => i.token_hash === null && i.api_token_id === null),
-			'daemon connection exposed',
+			'daemon connection exposed'
 		);
 	});
 
@@ -335,7 +337,7 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 	const notification: JsonrpcNotification = {
 		jsonrpc: '2.0',
 		method: 'thing_changed',
-		params: {id: 'abc'},
+		params: { id: 'abc' }
 	};
 
 	test('delivers to the single matching connection and returns 1', () => {
@@ -372,7 +374,7 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 
 	test('returns 0 when the account has no connections', () => {
 		const t = new BackendWebsocketTransport();
-		const {ws} = create_fake_ws();
+		const { ws } = create_fake_ws();
 		t.add_connection(ws, HASH_B, ACCOUNT_B);
 
 		const count = t.send_to_account(ACCOUNT_A, notification);
@@ -398,12 +400,12 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 		const first: JsonrpcNotification = {
 			jsonrpc: '2.0',
 			method: 'thing_changed',
-			params: {id: 'first'},
+			params: { id: 'first' }
 		};
 		const second: JsonrpcNotification = {
 			jsonrpc: '2.0',
 			method: 'thing_changed',
-			params: {id: 'second'},
+			params: { id: 'second' }
 		};
 
 		assert.strictEqual(t.send_to_account(ACCOUNT_A, first), 2);

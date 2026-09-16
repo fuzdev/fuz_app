@@ -25,47 +25,47 @@
  * @module
  */
 
-import {dirname, join} from 'node:path';
-import type {Context} from 'hono';
-import type {UpgradeWebSocket} from 'hono/ws';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { dirname, join } from 'node:path';
+import type { Context } from 'hono';
+import type { UpgradeWebSocket } from 'hono/ws';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {protocol_actions} from '#lib/actions/protocol.ts';
-import {register_ws_endpoint} from '#lib/actions/register_ws_endpoint.ts';
-import {BackendWebsocketTransport} from '#lib/actions/transports_ws_backend.ts';
+import { protocol_actions } from '#lib/actions/protocol.ts';
+import { register_ws_endpoint } from '#lib/actions/register_ws_endpoint.ts';
+import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
 import {
 	create_ws_auth_guard,
-	create_ws_logout_closer,
+	create_ws_logout_closer
 } from '#lib/actions/transports_ws_auth_guard.ts';
-import {start_daemon_token_rotation} from '#lib/auth/daemon_token_middleware.ts';
-import {load_env} from '#lib/env/load.ts';
-import type {RuntimeDeps} from '#lib/runtime/deps.ts';
-import {cell_audit_events} from '#lib/auth/cell_audit_events.ts';
-import {create_audit_emitter} from '#lib/auth/audit_emitter.ts';
-import {create_audit_log_config} from '#lib/auth/audit_log_schema.ts';
-import {CELL_MIGRATION_NS} from '#lib/db/cell_ddl.ts';
-import {CELL_HISTORY_MIGRATION_NS} from '#lib/db/cell_history_ddl.ts';
-import {FACT_MIGRATION_NS} from '#lib/db/fact_ddl.ts';
+import { start_daemon_token_rotation } from '#lib/auth/daemon_token_middleware.ts';
+import { load_env } from '#lib/env/load.ts';
+import type { RuntimeDeps } from '#lib/runtime/deps.ts';
+import { cell_audit_events } from '#lib/auth/cell_audit_events.ts';
+import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
+import { create_audit_log_config } from '#lib/auth/audit_log_schema.ts';
+import { CELL_MIGRATION_NS } from '#lib/db/cell_ddl.ts';
+import { CELL_HISTORY_MIGRATION_NS } from '#lib/db/cell_history_ddl.ts';
+import { FACT_MIGRATION_NS } from '#lib/db/fact_ddl.ts';
 import {
 	create_serve_cell_fact_route_spec,
-	create_serve_fact_route_spec,
+	create_serve_fact_route_spec
 } from '#lib/server/serve_fact_route.ts';
-import {create_app_backend, type AuditFactory} from '#lib/server/app_backend.ts';
-import {create_app_server} from '#lib/server/app_server.ts';
+import { create_app_backend, type AuditFactory } from '#lib/server/app_backend.ts';
+import { create_app_server } from '#lib/server/app_server.ts';
 import {
 	RateLimiter,
 	default_login_account_rate_limit,
-	default_login_ip_rate_limit,
+	default_login_ip_rate_limit
 } from '#lib/rate_limiter.ts';
-import {BaseServerEnv, validate_server_env} from '#lib/server/env.ts';
-import {stub_password_deps} from '#lib/testing/app_server.ts';
+import { BaseServerEnv, validate_server_env } from '#lib/server/env.ts';
+import { stub_password_deps } from '#lib/testing/app_server.ts';
 import {
 	create_spine_ready_route_spec,
 	create_spine_route_specs,
-	spine_session_options,
+	spine_session_options
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
-import {full_spine_rpc_endpoints} from '#lib/testing/cross_backend/full_spine_mount.ts';
-import type {BuiltTestingApp} from '#lib/testing/cross_backend/testing_server_core.ts';
+import { full_spine_rpc_endpoints } from '#lib/testing/cross_backend/full_spine_mount.ts';
+import type { BuiltTestingApp } from '#lib/testing/cross_backend/testing_server_core.ts';
 
 /** Resolved bind config the entry passes to `start_testing_server`. */
 export interface SpineServerConfig {
@@ -99,17 +99,17 @@ const HEALTH_PATH = '/health';
  * unknown-event drift counter. Models a real consumer that spreads
  * `cell_audit_events` into its `create_audit_log_config`.
  */
-const cell_audit_factory: AuditFactory = ({db, log}) =>
+const cell_audit_factory: AuditFactory = ({ db, log }) =>
 	create_audit_emitter({
 		db,
 		log,
-		audit_log_config: create_audit_log_config({extra_events: cell_audit_events}),
+		audit_log_config: create_audit_log_config({ extra_events: cell_audit_events })
 	});
 
 /** Resolve `{host, port}` from the runtime's env via `BaseServerEnv`. */
 export const resolve_spine_server_config = (runtime: RuntimeDeps): SpineServerConfig => {
 	const env = load_env(BaseServerEnv, runtime.env_get);
-	return {host: env.HOST, port: env.PORT};
+	return { host: env.HOST, port: env.PORT };
 };
 
 /**
@@ -122,7 +122,7 @@ export const resolve_spine_server_config = (runtime: RuntimeDeps): SpineServerCo
  * consumes it once in `globalSetup`).
  */
 export const build_spine_app = async (options: BuildSpineAppOptions): Promise<BuiltTestingApp> => {
-	const {runtime, get_connection_ip, daemon_token_path, ws_path = WS_PATH_DEFAULT} = options;
+	const { runtime, get_connection_ip, daemon_token_path, ws_path = WS_PATH_DEFAULT } = options;
 	const log = new Logger('[testing_spine_server]');
 
 	const env = load_env(BaseServerEnv, runtime.env_get);
@@ -130,10 +130,10 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	const env_config = validate_server_env(env);
 	if (!env_config.ok) {
 		throw new Error(
-			`testing_spine_server: invalid ${env_config.field}: ${env_config.errors.join('; ')}`,
+			`testing_spine_server: invalid ${env_config.field}: ${env_config.errors.join('; ')}`
 		);
 	}
-	const {keyring, allowed_origins, bootstrap_token_path} = env_config;
+	const { keyring, allowed_origins, bootstrap_token_path } = env_config;
 
 	const app_backend = await create_app_backend({
 		database_url: env.DATABASE_URL,
@@ -151,7 +151,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		// stages the dormant `cell_history` table (the Rust `fuz_cell` migration
 		// bundles it; TS isolates it in its own namespace) so the schema-parity
 		// gate sees the same full spine schema on both backends.
-		migration_namespaces: [CELL_MIGRATION_NS, CELL_HISTORY_MIGRATION_NS, FACT_MIGRATION_NS],
+		migration_namespaces: [CELL_MIGRATION_NS, CELL_HISTORY_MIGRATION_NS, FACT_MIGRATION_NS]
 	});
 
 	// Facts dir for the disk-stream / X-Accel serving paths. The cross suite
@@ -162,16 +162,16 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	// Ensure the daemon-token dir exists — `spawn_backend` creates the backend
 	// root (for the bootstrap token) but not the `run/` subdir the rotation
 	// writer lands the token in.
-	await runtime.mkdir(dirname(daemon_token_path), {recursive: true});
+	await runtime.mkdir(dirname(daemon_token_path), { recursive: true });
 
 	// Daemon-token rotation is required — `_testing_reset` gates on the
 	// daemon-token credential, and the harness reads the rotated token to
 	// authenticate the keeper channel.
 	const daemon_token_rotation = await start_daemon_token_rotation(
 		runtime,
-		{db: app_backend.deps.db},
-		{token_path: daemon_token_path},
-		log,
+		{ db: app_backend.deps.db },
+		{ token_path: daemon_token_path },
+		log
 	);
 
 	// Created up front so the audit-revocation guards AND the role-grant-offer
@@ -208,7 +208,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		backend: app_backend,
 		session_options: spine_session_options,
 		allowed_origins,
-		proxy: {trusted_proxies: ['127.0.0.1', '::1'], get_connection_ip},
+		proxy: { trusted_proxies: ['127.0.0.1', '::1'], get_connection_ip },
 		// Login limiters: null unless `FUZ_LOGIN_RATE_LIMIT_ENABLED` is set (above).
 		// `create_spine_route_specs` reads these off `AppServerContext` and wires
 		// them onto `POST /api/account/login`. Every other limiter stays disabled
@@ -221,8 +221,8 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		action_account_rate_limiter: null,
 		daemon_token_state: daemon_token_rotation.state,
 		bootstrap: bootstrap_token_path
-			? {mode: 'live', token_path: bootstrap_token_path}
-			: {mode: 'disabled'},
+			? { mode: 'live', token_path: bootstrap_token_path }
+			: { mode: 'disabled' },
 		// Auto-wires the SSE registry + auth guard + broadcaster and sets
 		// `ctx.audit_sse`, which `create_spine_route_specs` reads to mount
 		// `GET /api/admin/audit/stream` (`audit_log_event_specs` join the
@@ -242,8 +242,8 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 			// driven by the dedicated `describe_ready_cross_tests` suite, not the
 			// generic round-trip.
 			create_spine_ready_route_spec(log),
-			create_serve_cell_fact_route_spec({deps: ctx.deps, facts_dir, log}),
-			create_serve_fact_route_spec({deps: ctx.deps, facts_dir, log}),
+			create_serve_cell_fact_route_spec({ deps: ctx.deps, facts_dir, log }),
+			create_serve_fact_route_spec({ deps: ctx.deps, facts_dir, log })
 		],
 		// The full live RPC mount: the standard bundle plus the off-declared-surface
 		// families (`_testing_*` backdoors, the full cell verb set, the opt-in
@@ -259,7 +259,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		rpc_endpoints: (ctx) =>
 			full_spine_rpc_endpoints(ctx, {
 				notification_sender: ws_transport,
-				daemon_token_state: daemon_token_rotation.state,
+				daemon_token_state: daemon_token_rotation.state
 			}),
 		env_schema: BaseServerEnv,
 		env_values: env,
@@ -272,12 +272,12 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		await_pending_effects: true,
 		on_effect_error: (error, ctx) => {
 			log.error(`Pending effect failed (${ctx.method} ${ctx.path}):`, error);
-		},
+		}
 	});
 
 	// Health probe endpoint — the spawn harness polls this for readiness.
 	// `create_app_server` does not mount one.
-	app_server.app.get(HEALTH_PATH, (c) => c.json({status: 'ok'}));
+	app_server.app.get(HEALTH_PATH, (c) => c.json({ status: 'ok' }));
 
 	const close = async (): Promise<void> => {
 		await daemon_token_rotation.stop();
@@ -298,11 +298,11 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 			upgradeWebSocket: upgrade_websocket,
 			actions: protocol_actions,
 			transport: ws_transport,
-			log,
+			log
 		});
 		app_backend.deps.audit.add_listener(create_ws_auth_guard(ws_transport, log));
 		app_backend.deps.audit.add_listener(create_ws_logout_closer(ws_transport, log));
 	};
 
-	return {app: app_server.app, close, mount_websocket};
+	return { app: app_server.app, close, mount_websocket };
 };

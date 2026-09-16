@@ -41,10 +41,10 @@
  * @module
  */
 
-import type {Attachment} from 'svelte/attachments';
-import {DEV} from 'esm-env';
-import {on} from 'svelte/events';
-import {SvelteSet} from 'svelte/reactivity';
+import type { Attachment } from 'svelte/attachments';
+import { DEV } from 'esm-env';
+import { on } from 'svelte/events';
+import { SvelteSet } from 'svelte/reactivity';
 
 const FOCUSABLE_SELECTOR = 'input:not(:disabled), button:not(:disabled)';
 
@@ -94,7 +94,7 @@ export class FormState {
 					const name = (target as HTMLInputElement).name;
 					if (DEV && !name) {
 						throw new Error(
-							'FormState: input missing name attribute. All inputs in a FormState form must have a name.',
+							'FormState: input missing name attribute. All inputs in a FormState form must have a name.'
 						);
 					}
 					if (name) {
@@ -147,11 +147,11 @@ export class FormState {
 			console.warn(
 				`FormState: no element found with name="${
 					field
-				}". Check for typos in the name attribute or form_state.focus() call.`,
+				}". Check for typos in the name attribute or form_state.focus() call.`
 			);
 			return;
 		}
-		el?.focus({focusVisible: true} as FocusOptions);
+		el?.focus({ focusVisible: true } as FocusOptions);
 	}
 
 	/**

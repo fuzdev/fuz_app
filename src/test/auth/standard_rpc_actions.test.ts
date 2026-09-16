@@ -12,26 +12,26 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import { describe, test, assert } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.ts';
-import {all_admin_action_specs} from '$lib/auth/admin_action_specs.ts';
+import { create_standard_rpc_actions } from '$lib/auth/standard_rpc_actions.ts';
+import { all_admin_action_specs } from '$lib/auth/admin_action_specs.ts';
 import {
 	all_role_grant_offer_action_specs,
 	ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
-	role_grant_offer_create_action_spec,
+	role_grant_offer_create_action_spec
 } from '$lib/auth/role_grant_offer_action_specs.ts';
-import {all_account_action_specs} from '$lib/auth/account_action_specs.ts';
-import {create_stub_db, create_test_audit_emitter} from '$lib/testing/stubs.ts';
-import {create_test_context} from '$lib/testing/entities.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
-import type {ActionContext} from '$lib/actions/action_rpc.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { all_account_action_specs } from '$lib/auth/account_action_specs.ts';
+import { create_stub_db, create_test_audit_emitter } from '$lib/testing/stubs.ts';
+import { create_test_context } from '$lib/testing/entities.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import type { ActionContext } from '$lib/actions/action_rpc.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-const log = new Logger('test', {level: 'off'});
-const deps = {log, audit: create_test_audit_emitter()};
+const log = new Logger('test', { level: 'off' });
+const deps = { log, audit: create_test_audit_emitter() };
 
 /** Minimal ActionContext for invoking handlers directly. */
 const make_action_ctx = (auth_ctx: ReturnType<typeof create_test_context>): ActionContext => {
@@ -46,7 +46,7 @@ const make_action_ctx = (auth_ctx: ReturnType<typeof create_test_context>): Acti
 		credential_type: 'session',
 		log,
 		notify: () => {},
-		signal: new AbortController().signal,
+		signal: new AbortController().signal
 	};
 };
 
@@ -114,24 +114,24 @@ describe('create_standard_rpc_actions', () => {
 		// custom `authorize` that denies — proves the option threaded through
 		// to the role-grant-offer factory. Denying short-circuits before the DB
 		// path, so a stub db is sufficient.
-		const calls: Array<{actor_id: string; role: string; scope_id: string | null}> = [];
+		const calls: Array<{ actor_id: string; role: string; scope_id: string | null }> = [];
 		const actions = create_standard_rpc_actions(deps, {
 			authorize: async (auth, input) => {
-				calls.push({actor_id: auth.actor!.id, role: input.role, scope_id: input.scope_id});
+				calls.push({ actor_id: auth.actor!.id, role: input.role, scope_id: input.scope_id });
 				return false;
-			},
+			}
 		});
 		const create_action = actions.find(
-			(a) => a.spec.method === role_grant_offer_create_action_spec.method,
+			(a) => a.spec.method === role_grant_offer_create_action_spec.method
 		);
 		assert.ok(create_action, 'combined surface must expose role_grant_offer_create');
 
-		const auth_ctx = create_test_context([{role: ROLE_ADMIN}]);
+		const auth_ctx = create_test_context([{ role: ROLE_ADMIN }]);
 		const ctx = make_action_ctx(auth_ctx);
 
 		const caught = (await assert_rejects(() =>
-			create_action.handler({to_account_id: 'acct-target' as Uuid, role: ROLE_ADMIN}, ctx),
-		)) as Error & {data?: {reason?: string}};
+			create_action.handler({ to_account_id: 'acct-target' as Uuid, role: ROLE_ADMIN }, ctx)
+		)) as Error & { data?: { reason?: string } };
 
 		assert.strictEqual(calls.length, 1, 'authorize must be invoked exactly once');
 		assert.strictEqual(calls[0]!.role, ROLE_ADMIN);

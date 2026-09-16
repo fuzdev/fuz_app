@@ -11,13 +11,13 @@
  * @module
  */
 
-import {randomBytes} from 'node:crypto';
-import {writeFile, rename, mkdir, unlink} from 'node:fs/promises';
-import {join} from 'node:path';
+import { randomBytes } from 'node:crypto';
+import { writeFile, rename, mkdir, unlink } from 'node:fs/promises';
+import { join } from 'node:path';
 
-import {FACT_HASH_PREFIX, fact_hash_bytes, type FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
-import type {FactStore} from '@fuzdev/fuz_util/fact_store.ts';
-import {mint_file_fact_url} from '../db/file_fact_url.ts';
+import { FACT_HASH_PREFIX, fact_hash_bytes, type FactHash } from '@fuzdev/fuz_util/fact_hash.ts';
+import type { FactStore } from '@fuzdev/fuz_util/fact_store.ts';
+import { mint_file_fact_url } from '../db/file_fact_url.ts';
 
 export interface WriteFactOptions {
 	content_type: string;
@@ -41,7 +41,7 @@ export const write_fact = async (
 	embedded_threshold: number,
 	facts_dir: string,
 	bytes: Uint8Array,
-	options: WriteFactOptions,
+	options: WriteFactOptions
 ): Promise<FactHash> => {
 	if (bytes.length <= embedded_threshold) {
 		return fact_store.put(bytes, options);
@@ -56,7 +56,7 @@ export const write_fact = async (
 	const tmp_path = join(tmp_dir, `${randomBytes(16).toString('hex')}.tmp`);
 	const final_path = join(shard_dir, rest);
 
-	await Promise.all([mkdir(shard_dir, {recursive: true}), mkdir(tmp_dir, {recursive: true})]);
+	await Promise.all([mkdir(shard_dir, { recursive: true }), mkdir(tmp_dir, { recursive: true })]);
 
 	let renamed = false;
 	try {

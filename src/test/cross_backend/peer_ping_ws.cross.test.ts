@@ -20,23 +20,23 @@
  * @module
  */
 
-import {inject} from 'vitest';
+import { inject } from 'vitest';
 
 import {
 	default_cross_process_setup,
-	reconstruct_bootstrapped_handle,
+	reconstruct_bootstrapped_handle
 } from '$lib/testing/cross_backend/setup.ts';
-import {describe_peer_ping_ws_tests} from '$lib/testing/cross_backend/peer_ping_ws.ts';
+import { describe_peer_ping_ws_tests } from '$lib/testing/cross_backend/peer_ping_ws.ts';
 
 import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle);
-const {capabilities, base_url, ws_path} = handle.config;
+const { capabilities, base_url, ws_path } = handle.config;
 
 describe_peer_ping_ws_tests({
 	setup_test,
 	capabilities,
 	base_url,
-	ws_path,
+	ws_path
 });

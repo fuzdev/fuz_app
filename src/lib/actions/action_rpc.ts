@@ -12,43 +12,43 @@
  * @module
  */
 
-import type {Context} from 'hono';
-import {z} from 'zod';
-import {DEV} from 'esm-env';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import type { Context } from 'hono';
+import { z } from 'zod';
+import { DEV } from 'esm-env';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type {RequestResponseActionSpec} from './action_spec.ts';
-import {type RouteContext, type RouteSpec} from '../http/route_spec.ts';
-import {get_client_ip} from '../http/client_ip.ts';
+import type { RequestResponseActionSpec } from './action_spec.ts';
+import { type RouteContext, type RouteSpec } from '../http/route_spec.ts';
+import { get_client_ip } from '../http/client_ip.ts';
 import {
 	get_request_context,
 	type RequestActorContext,
-	type RequestContext,
+	type RequestContext
 } from '../auth/request_context.ts';
 import {
 	ACCOUNT_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
-	type CredentialType,
+	type CredentialType
 } from '../hono_context.ts';
-import type {Db} from '../db/db.ts';
-import type {RequestClient} from './peer_request.ts';
-import {compile_action_registry} from './compile_action_registry.ts';
+import type { Db } from '../db/db.ts';
+import type { RequestClient } from './peer_request.ts';
+import { compile_action_registry } from './compile_action_registry.ts';
 import {
 	JSONRPC_VERSION,
 	JsonrpcRequest,
 	type JsonrpcRequestId,
-	type JsonrpcErrorObject,
+	type JsonrpcErrorObject
 } from '../http/jsonrpc.ts';
 import {
 	jsonrpc_error_messages,
 	jsonrpc_error_code_to_http_status,
 	JSONRPC_ERROR_CODES,
-	dev_only,
+	dev_only
 } from '../http/jsonrpc_errors.ts';
-import type {RateLimiter} from '../rate_limiter.ts';
-import {perform_action, perform_action_result_to_envelope} from './perform_action.ts';
+import type { RateLimiter } from '../rate_limiter.ts';
+import { perform_action, perform_action_result_to_envelope } from './perform_action.ts';
 
 /**
  * Per-request context provided to action handlers across every transport
@@ -148,7 +148,7 @@ export interface ActionContext {
  */
 export type ActionHandler<TInput = any, TOutput = any> = (
 	input: TInput,
-	ctx: ActionContext,
+	ctx: ActionContext
 ) => TOutput | Promise<TOutput>;
 
 /**
@@ -172,7 +172,7 @@ export interface ActionAuthContext extends Omit<ActionContext, 'auth'> {
  */
 export type AuthActionHandler<TInput = any, TOutput = any> = (
 	input: TInput,
-	ctx: ActionAuthContext,
+	ctx: ActionAuthContext
 ) => TOutput | Promise<TOutput>;
 
 /**
@@ -195,7 +195,7 @@ export interface ActionActorContext extends Omit<ActionContext, 'auth'> {
  */
 export type ActorActionHandler<TInput = any, TOutput = any> = (
 	input: TInput,
-	ctx: ActionActorContext,
+	ctx: ActionActorContext
 ) => TOutput | Promise<TOutput>;
 
 /**
@@ -223,7 +223,7 @@ export interface RpcAction {
  * tier instead of collapsing to the narrowest.
  */
 export type HandlerForSpec<TSpec extends RequestResponseActionSpec> = [
-	TSpec['auth']['actor'],
+	TSpec['auth']['actor']
 ] extends ['required']
 	? ActorActionHandler<z.infer<TSpec['input']>, z.infer<TSpec['output']>>
 	: [TSpec['auth']['account']] extends ['required']
@@ -278,10 +278,10 @@ export type HandlerForSpec<TSpec extends RequestResponseActionSpec> = [
  */
 export const rpc_action = <TSpec extends RequestResponseActionSpec>(
 	spec: TSpec,
-	handler: HandlerForSpec<TSpec>,
+	handler: HandlerForSpec<TSpec>
 ): RpcAction => ({
 	spec,
-	handler: handler as ActionHandler,
+	handler: handler as ActionHandler
 });
 
 /** Options for `create_rpc_endpoint`. */
@@ -320,11 +320,11 @@ export interface CreateRpcEndpointOptions {
  */
 const jsonrpc_error_envelope = (
 	id: JsonrpcRequestId | null,
-	error: JsonrpcErrorObject,
-): {jsonrpc: string; id: JsonrpcRequestId | null; error: JsonrpcErrorObject} => ({
+	error: JsonrpcErrorObject
+): { jsonrpc: string; id: JsonrpcRequestId | null; error: JsonrpcErrorObject } => ({
 	jsonrpc: JSONRPC_VERSION,
 	id,
-	error,
+	error
 });
 
 /**
@@ -370,10 +370,10 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		actions,
 		log,
 		action_ip_rate_limiter = null,
-		action_account_rate_limiter = null,
+		action_account_rate_limiter = null
 	} = options;
 
-	const {action_map} = compile_action_registry(actions, 'RPC action');
+	const { action_map } = compile_action_registry(actions, 'RPC action');
 
 	/**
 	 * HTTP-shape dispatch shim — the GET/POST entry points share this:
@@ -392,13 +392,13 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		method_name: string,
 		raw_params: unknown,
 		id: JsonrpcRequestId,
-		restrict_to_reads: boolean,
+		restrict_to_reads: boolean
 	): Promise<Response> => {
 		const action = action_map.get(method_name);
 		if (!action) {
 			return c.json(
 				jsonrpc_error_envelope(id, jsonrpc_error_messages.method_not_found(method_name)),
-				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.method_not_found),
+				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.method_not_found)
 			);
 		}
 
@@ -407,10 +407,10 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				jsonrpc_error_envelope(
 					id,
 					jsonrpc_error_messages.invalid_request({
-						reason: `method '${method_name}' has side effects and must use POST`,
-					}),
+						reason: `method '${method_name}' has side effects and must use POST`
+					})
 				),
-				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.invalid_request),
+				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.invalid_request)
 			);
 		}
 
@@ -420,7 +420,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				log.warn(
 					`ctx.notify('${
 						notify_method
-					}') called on non-streaming transport; notification dropped (method=${method_name})`,
+					}') called on non-streaming transport; notification dropped (method=${method_name})`
 				);
 			}
 		};
@@ -430,7 +430,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		// sets the flag; the shim honors it and `perform_action` trusts the
 		// pre-baked context instead of running the live authorization phase.
 		const preset = c.get(TEST_CONTEXT_PRESET_KEY)
-			? {request_context: get_request_context(c)}
+			? { request_context: get_request_context(c) }
 			: undefined;
 
 		const result = await perform_action(
@@ -443,7 +443,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				client_ip: get_client_ip(c),
 				signal: c.req.raw.signal,
 				notify,
-				preset,
+				preset
 			},
 			{
 				db: route.db,
@@ -451,8 +451,8 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 				post_commit_effects: route.post_commit_effects,
 				log,
 				action_ip_rate_limiter,
-				action_account_rate_limiter,
-			},
+				action_account_rate_limiter
+			}
 		);
 
 		const envelope = perform_action_result_to_envelope(id, result);
@@ -487,7 +487,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			const id = typeof raw_id === 'string' || typeof raw_id === 'number' ? raw_id : null;
 			const error = jsonrpc_error_envelope(
 				id,
-				jsonrpc_error_messages.invalid_request(dev_only({issues: envelope.error.issues})),
+				jsonrpc_error_messages.invalid_request(dev_only({ issues: envelope.error.issues }))
 			);
 			return c.json(error, 400);
 		}
@@ -502,7 +502,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		if (!method_name) {
 			const error = jsonrpc_error_envelope(
 				null,
-				jsonrpc_error_messages.invalid_request({reason: 'missing method query parameter'}),
+				jsonrpc_error_messages.invalid_request({ reason: 'missing method query parameter' })
 			);
 			return c.json(error, 400);
 		}
@@ -511,7 +511,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		if (!id_raw) {
 			const error = jsonrpc_error_envelope(
 				null,
-				jsonrpc_error_messages.invalid_request({reason: 'missing id query parameter'}),
+				jsonrpc_error_messages.invalid_request({ reason: 'missing id query parameter' })
 			);
 			return c.json(error, 400);
 		}
@@ -531,7 +531,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			} catch {
 				const error = jsonrpc_error_envelope(
 					id,
-					jsonrpc_error_messages.invalid_params('params query parameter is not valid JSON'),
+					jsonrpc_error_messages.invalid_params('params query parameter is not valid JSON')
 				);
 				return c.json(error, 400);
 			}
@@ -544,26 +544,26 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		{
 			method: 'POST',
 			path: endpoint_path,
-			auth: {account: 'none', actor: 'none'}, // per-action auth inside dispatcher
+			auth: { account: 'none', actor: 'none' }, // per-action auth inside dispatcher
 			handler: post_handler,
 			description: `JSON-RPC 2.0 endpoint — ${actions.length} method${
 				actions.length === 1 ? '' : 's'
 			}`,
 			input: z.null(), // dispatcher owns body parsing; rpc_endpoints surface has the real schemas
 			output: z.any(), // varies by method
-			transaction: false, // per-action inside dispatcher
+			transaction: false // per-action inside dispatcher
 		},
 		{
 			method: 'GET',
 			path: endpoint_path,
-			auth: {account: 'none', actor: 'none'}, // per-action auth inside dispatcher
+			auth: { account: 'none', actor: 'none' }, // per-action auth inside dispatcher
 			handler: get_handler,
 			description: `JSON-RPC 2.0 endpoint (cacheable reads) — ${actions.length} method${
 				actions.length === 1 ? '' : 's'
 			}`,
 			input: z.null(), // params from query string, validated by dispatcher
 			output: z.any(), // varies by method
-			transaction: false, // per-action inside dispatcher
-		},
+			transaction: false // per-action inside dispatcher
+		}
 	];
 };

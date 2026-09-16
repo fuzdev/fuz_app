@@ -13,25 +13,25 @@
  * @module
  */
 
-import {inject} from 'vitest';
+import { inject } from 'vitest';
 
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import {
 	default_cross_process_setup,
-	reconstruct_bootstrapped_handle,
+	reconstruct_bootstrapped_handle
 } from '$lib/testing/cross_backend/setup.ts';
-import {describe_conformance_table_tests} from '$lib/testing/cross_backend/conformance_table.ts';
-import {describe_role_grant_participation_cross_tests} from '$lib/testing/cross_backend/role_grant_participation.ts';
+import { describe_conformance_table_tests } from '$lib/testing/cross_backend/conformance_table.ts';
+import { describe_role_grant_participation_cross_tests } from '$lib/testing/cross_backend/role_grant_participation.ts';
 import {
 	create_spine_surface_spec,
 	spine_rpc_endpoints,
-	spine_session_options,
+	spine_session_options
 } from '$lib/testing/cross_backend/default_spine_surface.ts';
-import {SPINE_PARTICIPANT_ROLE} from '$lib/testing/cross_backend/spine_surface_constants.ts';
+import { SPINE_PARTICIPANT_ROLE } from '$lib/testing/cross_backend/spine_surface_constants.ts';
 
 import {
 	conformance_participation_cases,
-	PARTICIPATION_HOLDER_USERNAME,
+	PARTICIPATION_HOLDER_USERNAME
 } from './conformance_participation_cases.ts';
 import './cross_test_types.ts';
 
@@ -42,9 +42,9 @@ const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 // at offer time, so the bootstrap-cradle seed is the only path).
 const setup_test = default_cross_process_setup(handle, {
 	extra_keeper_roles: [ROLE_ADMIN],
-	extra_accounts: [{username: PARTICIPATION_HOLDER_USERNAME, roles: [SPINE_PARTICIPANT_ROLE]}],
+	extra_accounts: [{ username: PARTICIPATION_HOLDER_USERNAME, roles: [SPINE_PARTICIPANT_ROLE] }]
 });
-const {capabilities, rpc_path} = handle.config;
+const { capabilities, rpc_path } = handle.config;
 
 describe_conformance_table_tests({
 	cases: conformance_participation_cases,
@@ -53,8 +53,8 @@ describe_conformance_table_tests({
 	capabilities,
 	rpc_endpoints: spine_rpc_endpoints,
 	session_options: spine_session_options,
-	principals: {role_holder: PARTICIPATION_HOLDER_USERNAME},
-	suite_name: 'role-gated participation conformance (cross-process)',
+	principals: { role_holder: PARTICIPATION_HOLDER_USERNAME },
+	suite_name: 'role-gated participation conformance (cross-process)'
 });
 
-describe_role_grant_participation_cross_tests({setup_test, rpc_path});
+describe_role_grant_participation_cross_tests({ setup_test, rpc_path });

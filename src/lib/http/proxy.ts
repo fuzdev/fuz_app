@@ -8,12 +8,12 @@
  * @module
  */
 
-import type {Context, MiddlewareHandler} from 'hono';
-import {convertIPv4ToBinary, convertIPv6ToBinary, distinctRemoteAddr} from 'hono/utils/ipaddr';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
+import type { Context, MiddlewareHandler } from 'hono';
+import { convertIPv4ToBinary, convertIPv6ToBinary, distinctRemoteAddr } from 'hono/utils/ipaddr';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type {MiddlewareSpec} from './middleware_spec.ts';
-import {canonicalize_ip, IP_LITERAL_CHARS} from './ip_canonical.ts';
+import type { MiddlewareSpec } from './middleware_spec.ts';
+import { canonicalize_ip, IP_LITERAL_CHARS } from './ip_canonical.ts';
 
 /**
  * Normalize an IP address for consistent matching and storage.
@@ -50,8 +50,8 @@ export interface ProxyOptions {
  * A parsed proxy entry — either an exact IP or a CIDR range.
  */
 export type ParsedProxy =
-	| {type: 'ip'; address: string}
-	| {type: 'cidr'; network: bigint; prefix: number; address_type: 'IPv4' | 'IPv6'};
+	| { type: 'ip'; address: string }
+	| { type: 'cidr'; network: bigint; prefix: number; address_type: 'IPv4' | 'IPv6' };
 
 /**
  * Parse a trusted proxy entry string into a structured form.
@@ -70,7 +70,7 @@ export const parse_proxy_entry = (entry: string): ParsedProxy => {
 		if (!distinctRemoteAddr(normalized)) {
 			throw new Error(`Invalid proxy IP: ${entry}`);
 		}
-		return {type: 'ip', address: normalized};
+		return { type: 'ip', address: normalized };
 	}
 	const network_str = entry.substring(0, slash_index);
 	const prefix_str = entry.substring(slash_index + 1);
@@ -94,7 +94,7 @@ export const parse_proxy_entry = (entry: string): ParsedProxy => {
 		if ((network & host_mask) !== 0n) {
 			throw new Error(`Non-network-aligned CIDR (host bits set): ${entry}`);
 		}
-		return {type: 'cidr', network, prefix, address_type};
+		return { type: 'cidr', network, prefix, address_type };
 	}
 	if (address_type === 'IPv6') {
 		if (prefix > 128) {
@@ -105,7 +105,7 @@ export const parse_proxy_entry = (entry: string): ParsedProxy => {
 		if ((network & host_mask) !== 0n) {
 			throw new Error(`Non-network-aligned CIDR (host bits set): ${entry}`);
 		}
-		return {type: 'cidr', network, prefix, address_type};
+		return { type: 'cidr', network, prefix, address_type };
 	}
 	throw new Error(`Invalid proxy CIDR: ${entry}`);
 };
@@ -119,7 +119,7 @@ const cidr_contains = (
 	ip_binary: bigint,
 	network: bigint,
 	prefix: number,
-	total_bits: number,
+	total_bits: number
 ): boolean => {
 	const shift = BigInt(total_bits - prefix);
 	return ip_binary >> shift === network >> shift;
@@ -226,7 +226,7 @@ export const is_trusted_ip = (ip: string, proxies: Array<ParsedProxy>): boolean 
  */
 export const resolve_client_ip = (
 	forwarded_for: string,
-	proxies: Array<ParsedProxy>,
+	proxies: Array<ParsedProxy>
 ): string | undefined => {
 	const entries: Array<string> = [];
 	for (const raw of forwarded_for.split(',')) {
@@ -274,7 +274,7 @@ export const resolve_client_ip = (
  */
 export const create_proxy_middleware = (options: ProxyOptions): MiddlewareHandler => {
 	const parsed_proxies = options.trusted_proxies.map(parse_proxy_entry);
-	const {log} = options;
+	const { log } = options;
 
 	return async (c, next) => {
 		const connection_ip = options.get_connection_ip(c);
@@ -325,5 +325,5 @@ export const create_proxy_middleware = (options: ProxyOptions): MiddlewareHandle
 export const create_proxy_middleware_spec = (options: ProxyOptions): MiddlewareSpec => ({
 	name: 'trusted_proxy',
 	path: '*',
-	handler: create_proxy_middleware(options),
+	handler: create_proxy_middleware(options)
 });

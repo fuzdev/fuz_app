@@ -55,9 +55,9 @@
  * @module
  */
 
-import {to_error_message} from '@fuzdev/fuz_util/error.ts';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
-import type {Db} from './db.ts';
+import type { Db } from './db.ts';
 
 /**
  * A single migration: a name + an `up` function applied inside a transaction.
@@ -122,7 +122,7 @@ export class MigrationError extends Error {
 	readonly unknown_names?: ReadonlyArray<string>;
 
 	constructor(kind: MigrationErrorKind, message: string, context?: MigrationErrorContext) {
-		super(message, context?.cause !== undefined ? {cause: context.cause} : undefined);
+		super(message, context?.cause !== undefined ? { cause: context.cause } : undefined);
 		this.name = 'MigrationError';
 		this.kind = kind;
 		this.namespace = context?.namespace;
@@ -148,13 +148,13 @@ CREATE TABLE IF NOT EXISTS schema_version (
  * per-namespace lock.
  */
 const detect_old_tracker = async (db: Db): Promise<boolean> => {
-	const row = await db.query_one<{exists: boolean}>(
+	const row = await db.query_one<{ exists: boolean }>(
 		`SELECT EXISTS (
 			SELECT 1 FROM information_schema.columns
 			WHERE table_schema = 'public'
 			  AND table_name = 'schema_version'
 			  AND column_name = 'version'
-		) as exists`,
+		) as exists`
 	);
 	return row?.exists ?? false;
 };
@@ -187,7 +187,7 @@ const namespace_lock_key = (namespace: string): number => {
 const with_namespace_lock = async <T>(
 	db: Db,
 	namespace: string,
-	fn: () => Promise<T>,
+	fn: () => Promise<T>
 ): Promise<T> => {
 	const lock_key = namespace_lock_key(namespace);
 	try {
@@ -241,7 +241,7 @@ const with_namespace_lock = async <T>(
  */
 export const run_migrations = async (
 	db: Db,
-	namespaces: Array<MigrationNamespace>,
+	namespaces: Array<MigrationNamespace>
 ): Promise<Array<MigrationResult>> => {
 	if (await detect_old_tracker(db)) {
 		throw new MigrationError('old-tracker-shape', OLD_TRACKER_HINT);
@@ -251,13 +251,13 @@ export const run_migrations = async (
 
 	const results: Array<MigrationResult> = [];
 
-	for (const {namespace, migrations} of namespaces) {
+	for (const { namespace, migrations } of namespaces) {
 		await with_namespace_lock(db, namespace, async () => {
-			const applied = await db.query<{name: string; sequence: number}>(
+			const applied = await db.query<{ name: string; sequence: number }>(
 				`SELECT name, sequence FROM schema_version
 				 WHERE namespace = $1
 				 ORDER BY sequence ASC`,
-				[namespace],
+				[namespace]
 			);
 
 			// Step 3: length check (short-circuits before name verify)
@@ -270,7 +270,7 @@ export const run_migrations = async (
 						`Unknown to this binary: ${unknown_names.map((n) => `"${n}"`).join(', ')}. ` +
 						`Hint: upgrade the code to a version that includes these migrations; ` +
 						`if you must downgrade, manually delete the unknown rows from schema_version.`,
-					{namespace, unknown_names},
+					{ namespace, unknown_names }
 				);
 			}
 
@@ -287,7 +287,7 @@ export const run_migrations = async (
 							`change), OR row ${i} or earlier was deleted from the tracker ` +
 							`(re-insert the missing row with a sequence value lower than the rows ` +
 							`that follow it, or delete from row ${i} onward to re-apply the tail).`,
-						{namespace, at_index: i},
+						{ namespace, at_index: i }
 					);
 				}
 			}
@@ -307,7 +307,7 @@ export const run_migrations = async (
 						await tx.query(
 							`INSERT INTO schema_version (namespace, name, sequence)
 							 VALUES ($1, $2, $3)`,
-							[namespace, m.name, next_sequence],
+							[namespace, m.name, next_sequence]
 						);
 						applied_names.push(m.name);
 						next_sequence++;
@@ -318,13 +318,13 @@ export const run_migrations = async (
 							`Migration ${namespace}["${m.name}"] failed: ` +
 								`${to_error_message(err)}. ` +
 								`Hint: fix the migration body and retry; the chain is left at the prior committed version.`,
-							{namespace, at_index: i, cause: err},
+							{ namespace, at_index: i, cause: err }
 						);
 					}
 				}
 			});
 
-			results.push({namespace, applied_names});
+			results.push({ namespace, applied_names });
 		});
 	}
 
@@ -370,10 +370,10 @@ export const run_migrations = async (
 export const baseline = async (
 	db: Db,
 	ns: MigrationNamespace,
-	names: ReadonlyArray<string>,
+	names: ReadonlyArray<string>
 ): Promise<void> => {
 	if (await detect_old_tracker(db)) {
-		throw new MigrationError('old-tracker-shape', OLD_TRACKER_HINT, {namespace: ns.namespace});
+		throw new MigrationError('old-tracker-shape', OLD_TRACKER_HINT, { namespace: ns.namespace });
 	}
 
 	await db.query(SCHEMA_VERSION_DDL);
@@ -389,7 +389,7 @@ export const baseline = async (
 				`baseline: name "${name}" is not in namespace "${ns.namespace}" migrations. ` +
 					`Hint: confirm the deployed fuz_app version matches what the cutover script ` +
 					`was written against — name drift between build and script is the most common cause.`,
-				{namespace: ns.namespace},
+				{ namespace: ns.namespace }
 			);
 		}
 	}
@@ -403,15 +403,15 @@ export const baseline = async (
 					`the code's migrations. At position ${i}: supplied "${names[i]}" but code ` +
 					`expects "${code_names[i]}". Hint: re-order the supplied names to match ` +
 					`the code's array order.`,
-				{namespace: ns.namespace, at_index: i},
+				{ namespace: ns.namespace, at_index: i }
 			);
 		}
 	}
 
 	await with_namespace_lock(db, ns.namespace, async () => {
-		const existing = await db.query<{name: string}>(
+		const existing = await db.query<{ name: string }>(
 			'SELECT name FROM schema_version WHERE namespace = $1 LIMIT 1',
-			[ns.namespace],
+			[ns.namespace]
 		);
 		if (existing.length > 0) {
 			throw new MigrationError(
@@ -420,7 +420,7 @@ export const baseline = async (
 					`Hint: per-namespace guard for partial-failure resume — completed namespaces ` +
 					`self-skip; if you need to re-baseline, manually ` +
 					`\`DELETE FROM schema_version WHERE namespace = '${ns.namespace}'\` first.`,
-				{namespace: ns.namespace},
+				{ namespace: ns.namespace }
 			);
 		}
 
@@ -429,7 +429,7 @@ export const baseline = async (
 				await tx.query(
 					`INSERT INTO schema_version (namespace, name, sequence)
 					 VALUES ($1, $2, $3)`,
-					[ns.namespace, names[i], i],
+					[ns.namespace, names[i], i]
 				);
 			}
 		});

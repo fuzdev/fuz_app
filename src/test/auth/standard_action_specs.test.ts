@@ -9,18 +9,18 @@
  * @module
  */
 
-import {describe, test, assert} from 'vitest';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { describe, test, assert } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import {all_standard_action_specs} from '$lib/auth/standard_action_specs.ts';
-import {all_admin_action_specs} from '$lib/auth/admin_action_specs.ts';
-import {all_role_grant_offer_action_specs} from '$lib/auth/role_grant_offer_action_specs.ts';
-import {all_account_action_specs} from '$lib/auth/account_action_specs.ts';
-import {create_standard_rpc_actions} from '$lib/auth/standard_rpc_actions.ts';
-import {create_test_audit_emitter} from '$lib/testing/stubs.ts';
+import { all_standard_action_specs } from '$lib/auth/standard_action_specs.ts';
+import { all_admin_action_specs } from '$lib/auth/admin_action_specs.ts';
+import { all_role_grant_offer_action_specs } from '$lib/auth/role_grant_offer_action_specs.ts';
+import { all_account_action_specs } from '$lib/auth/account_action_specs.ts';
+import { create_standard_rpc_actions } from '$lib/auth/standard_rpc_actions.ts';
+import { create_test_audit_emitter } from '$lib/testing/stubs.ts';
 
-const log = new Logger('test', {level: 'off'});
-const deps = {log, audit: create_test_audit_emitter()};
+const log = new Logger('test', { level: 'off' });
+const deps = { log, audit: create_test_audit_emitter() };
 
 describe('all_standard_action_specs', () => {
 	test('count equals the sum of the three sub-registries', () => {
@@ -28,7 +28,7 @@ describe('all_standard_action_specs', () => {
 			all_standard_action_specs.length,
 			all_admin_action_specs.length +
 				all_role_grant_offer_action_specs.length +
-				all_account_action_specs.length,
+				all_account_action_specs.length
 		);
 	});
 
@@ -77,7 +77,7 @@ describe('all_standard_action_specs', () => {
 		for (const spec of all_standard_action_specs) {
 			assert.isTrue(
 				handler_set.has(spec.method),
-				`registry has ${spec.method} but create_standard_rpc_actions doesn't mount it`,
+				`registry has ${spec.method} but create_standard_rpc_actions doesn't mount it`
 			);
 		}
 	});

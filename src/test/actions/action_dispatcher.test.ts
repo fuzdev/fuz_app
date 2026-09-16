@@ -4,24 +4,24 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import {z} from 'zod';
+import { describe, assert, test } from 'vitest';
+import { z } from 'zod';
 
-import {ActionDispatcher} from '$lib/actions/action_dispatcher.ts';
-import {Transports, type Transport} from '$lib/actions/transports.ts';
-import type {ActionEventEnvironment} from '$lib/actions/action_event_types.ts';
-import type {ActionSpecUnion} from '$lib/actions/action_spec.ts';
+import { ActionDispatcher } from '$lib/actions/action_dispatcher.ts';
+import { Transports, type Transport } from '$lib/actions/transports.ts';
+import type { ActionEventEnvironment } from '$lib/actions/action_event_types.ts';
+import type { ActionSpecUnion } from '$lib/actions/action_spec.ts';
 
 const ping_spec = {
 	method: 'ping',
 	kind: 'request_response',
 	initiator: 'both',
-	auth: {account: 'none', actor: 'none'},
+	auth: { account: 'none', actor: 'none' },
 	side_effects: false,
 	input: z.null(),
-	output: z.strictObject({pong: z.literal(true)}),
+	output: z.strictObject({ pong: z.literal(true) }),
 	async: true,
-	description: 'Health check',
+	description: 'Health check'
 } satisfies ActionSpecUnion;
 
 const notify_spec = {
@@ -30,10 +30,10 @@ const notify_spec = {
 	initiator: 'backend',
 	auth: null,
 	side_effects: true,
-	input: z.strictObject({id: z.string()}),
+	input: z.strictObject({ id: z.string() }),
 	output: z.void(),
 	async: true,
-	description: 'Notification',
+	description: 'Notification'
 } satisfies ActionSpecUnion;
 
 class TestEnvironment implements ActionEventEnvironment {
@@ -70,25 +70,25 @@ interface CapturedSend {
 
 const create_mock_transport = (
 	responses?: Map<string, any>,
-	captured?: Array<CapturedSend>,
+	captured?: Array<CapturedSend>
 ): Transport => ({
 	transport_name: 'mock',
 	send: (async (message: any, options?: any) => {
-		captured?.push({message, options});
+		captured?.push({ message, options });
 		if ('id' in message && responses?.has(message.method)) {
-			return {jsonrpc: '2.0', id: message.id, result: responses.get(message.method)};
+			return { jsonrpc: '2.0', id: message.id, result: responses.get(message.method) };
 		}
 		return null;
 	}) as Transport['send'],
-	is_ready: () => true,
+	is_ready: () => true
 });
 
 describe('ActionDispatcher', () => {
 	test('send returns error when no transport available', async () => {
 		const env = new TestEnvironment([ping_spec]);
-		const peer = new ActionDispatcher({environment: env});
+		const peer = new ActionDispatcher({ environment: env });
 
-		const result = await peer.send({jsonrpc: '2.0', method: 'ping', id: 1});
+		const result = await peer.send({ jsonrpc: '2.0', method: 'ping', id: 1 });
 		assert.ok('error' in result);
 		assert.ok((result as any).error.message.includes('no transport'));
 	});
@@ -96,24 +96,24 @@ describe('ActionDispatcher', () => {
 	test('send forwards request to transport', async () => {
 		const env = new TestEnvironment([ping_spec]);
 		const transports = new Transports();
-		const responses = new Map([['ping', {pong: true}]]);
+		const responses = new Map([['ping', { pong: true }]]);
 		transports.register_transport(create_mock_transport(responses));
 
-		const peer = new ActionDispatcher({environment: env, transports});
+		const peer = new ActionDispatcher({ environment: env, transports });
 
-		const result = await peer.send({jsonrpc: '2.0', method: 'ping', id: 1});
+		const result = await peer.send({ jsonrpc: '2.0', method: 'ping', id: 1 });
 		assert.ok('result' in result);
-		assert.deepStrictEqual(result.result, {pong: true});
+		assert.deepStrictEqual(result.result, { pong: true });
 	});
 
 	test('receive handles request and returns response', async () => {
 		const env = new TestEnvironment([ping_spec]);
 		// Handler on receive_request returns the output
-		env.add_handler('ping', 'receive_request', () => ({pong: true}));
+		env.add_handler('ping', 'receive_request', () => ({ pong: true }));
 
-		const peer = new ActionDispatcher({environment: env});
+		const peer = new ActionDispatcher({ environment: env });
 
-		const result = await peer.receive({jsonrpc: '2.0', method: 'ping', id: 42});
+		const result = await peer.receive({ jsonrpc: '2.0', method: 'ping', id: 42 });
 		assert.ok(result);
 		// The response is a JSON-RPC response — either result or error
 		assert.ok('result' in result || 'error' in result);
@@ -121,9 +121,9 @@ describe('ActionDispatcher', () => {
 
 	test('receive returns method_not_found for unknown method', async () => {
 		const env = new TestEnvironment([]); // no specs
-		const peer = new ActionDispatcher({environment: env});
+		const peer = new ActionDispatcher({ environment: env });
 
-		const result = await peer.receive({jsonrpc: '2.0', method: 'unknown', id: 1});
+		const result = await peer.receive({ jsonrpc: '2.0', method: 'unknown', id: 1 });
 		assert.ok(result);
 		assert.ok('error' in result);
 		assert.ok((result as any).error.message.includes('unknown'));
@@ -136,11 +136,11 @@ describe('ActionDispatcher', () => {
 			received = true;
 		});
 
-		const peer = new ActionDispatcher({environment: env});
+		const peer = new ActionDispatcher({ environment: env });
 		const result = await peer.receive({
 			jsonrpc: '2.0',
 			method: 'thing_changed',
-			params: {id: 'abc'},
+			params: { id: 'abc' }
 		});
 
 		assert.isNull(result);
@@ -149,9 +149,9 @@ describe('ActionDispatcher', () => {
 
 	test('receive returns invalid_request for non-jsonrpc message', async () => {
 		const env = new TestEnvironment([]);
-		const peer = new ActionDispatcher({environment: env});
+		const peer = new ActionDispatcher({ environment: env });
 
-		const result = await peer.receive({not: 'jsonrpc'});
+		const result = await peer.receive({ not: 'jsonrpc' });
 		assert.ok(result);
 		assert.ok('error' in result);
 	});
@@ -160,16 +160,16 @@ describe('ActionDispatcher', () => {
 		const env = new TestEnvironment([ping_spec]);
 		const transports = new Transports();
 		const captured: Array<CapturedSend> = [];
-		const responses = new Map([['ping', {pong: true}]]);
+		const responses = new Map([['ping', { pong: true }]]);
 		transports.register_transport(create_mock_transport(responses, captured));
 
 		const peer = new ActionDispatcher({
 			environment: env,
 			transports,
-			default_send_options: {queue: true},
+			default_send_options: { queue: true }
 		});
 
-		await peer.send({jsonrpc: '2.0', method: 'ping', id: 1});
+		await peer.send({ jsonrpc: '2.0', method: 'ping', id: 1 });
 		assert.strictEqual(captured.length, 1);
 		assert.strictEqual(captured[0]!.options?.queue, true);
 	});
@@ -178,16 +178,16 @@ describe('ActionDispatcher', () => {
 		const env = new TestEnvironment([ping_spec]);
 		const transports = new Transports();
 		const captured: Array<CapturedSend> = [];
-		const responses = new Map([['ping', {pong: true}]]);
+		const responses = new Map([['ping', { pong: true }]]);
 		transports.register_transport(create_mock_transport(responses, captured));
 
 		const peer = new ActionDispatcher({
 			environment: env,
 			transports,
-			default_send_options: {queue: true},
+			default_send_options: { queue: true }
 		});
 
-		await peer.send({jsonrpc: '2.0', method: 'ping', id: 2}, {queue: false});
+		await peer.send({ jsonrpc: '2.0', method: 'ping', id: 2 }, { queue: false });
 		assert.strictEqual(captured.length, 1);
 		assert.strictEqual(captured[0]!.options?.queue, false);
 	});

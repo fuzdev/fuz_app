@@ -22,30 +22,30 @@
  * @module
  */
 
-import {test, assert, afterEach} from 'vitest';
-import {createHash} from 'node:crypto';
-import {mkdtemp, rm, writeFile, mkdir, utimes, stat} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import { test, assert, afterEach } from 'vitest';
+import { createHash } from 'node:crypto';
+import { mkdtemp, rm, writeFile, mkdir, utimes, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
-import {fact_hash_bytes, FACT_HASH_PREFIX} from '@fuzdev/fuz_util/fact_hash.ts';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
+import { fact_hash_bytes, FACT_HASH_PREFIX } from '@fuzdev/fuz_util/fact_hash.ts';
 
 import {
 	create_pglite_factory,
 	create_pg_factory,
 	create_describe_db,
-	log_db_factory_status,
+	log_db_factory_status
 } from '$lib/testing/db.ts';
-import {create_pglet_factory} from '../db_pglet_factory.ts';
-import {create_pglet_wasm_factory} from '../db_pglet_wasm_factory.ts';
-import {run_migrations} from '$lib/db/migrate.ts';
-import {FACT_MIGRATION_NS, FACT_DROP_TABLES} from '$lib/db/fact_ddl.ts';
-import {PgFactStore} from '$lib/db/fact_store.ts';
-import {sweep_orphan_temps, FACT_TMP_DIRNAME} from '$lib/db/fact_disk_storage.ts';
-import {PayloadTooLargeError} from '$lib/db/fact_store_errors.ts';
-import {create_node_runtime} from '$lib/runtime/node.ts';
-import type {Db} from '$lib/db/db.ts';
+import { create_pglet_factory } from '../db_pglet_factory.ts';
+import { create_pglet_wasm_factory } from '../db_pglet_wasm_factory.ts';
+import { run_migrations } from '$lib/db/migrate.ts';
+import { FACT_MIGRATION_NS, FACT_DROP_TABLES } from '$lib/db/fact_ddl.ts';
+import { PgFactStore } from '$lib/db/fact_store.ts';
+import { sweep_orphan_temps, FACT_TMP_DIRNAME } from '$lib/db/fact_disk_storage.ts';
+import { PayloadTooLargeError } from '$lib/db/fact_store_errors.ts';
+import { create_node_runtime } from '$lib/runtime/node.ts';
+import type { Db } from '$lib/db/db.ts';
 
 const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [FACT_MIGRATION_NS]);
@@ -55,7 +55,7 @@ const fact_factories = [
 	create_pglite_factory(init_schema),
 	create_pg_factory(init_schema, process.env.TEST_DATABASE_URL),
 	create_pglet_factory(init_schema),
-	create_pglet_wasm_factory(init_schema),
+	create_pglet_wasm_factory(init_schema)
 ];
 log_db_factory_status(fact_factories);
 
@@ -72,7 +72,7 @@ const make_facts_dir = async (): Promise<string> => {
 };
 afterEach(async () => {
 	for (const dir of temp_dirs.splice(0)) {
-		await rm(dir, {recursive: true, force: true});
+		await rm(dir, { recursive: true, force: true });
 	}
 });
 
@@ -84,7 +84,7 @@ const stream_of = (bytes: Uint8Array): ReadableStream<Uint8Array> =>
 		start(controller) {
 			controller.enqueue(bytes);
 			controller.close();
-		},
+		}
 	});
 
 /** A multi-chunk stream — exercises the buffer→spill boundary. */
@@ -95,12 +95,17 @@ const stream_of_chunks = (bytes: Uint8Array, chunk_size: number): ReadableStream
 				controller.enqueue(bytes.slice(i, Math.min(i + chunk_size, bytes.length)));
 			}
 			controller.close();
-		},
+		}
 	});
 
 describe_db('pg_fact_store streaming', (get_db) => {
 	const make_store = (facts_dir: string, embedded_threshold: number): PgFactStore =>
-		new PgFactStore({deps: {db: get_db()}, disk_root: facts_dir, fs: runtime, embedded_threshold});
+		new PgFactStore({
+			deps: { db: get_db() },
+			disk_root: facts_dir,
+			fs: runtime,
+			embedded_threshold
+		});
 
 	test('put_stream of a sub-threshold body embeds in PG', async () => {
 		const facts_dir = await make_facts_dir();
@@ -108,7 +113,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 		const bytes = new TextEncoder().encode('small streamed body');
 
 		const outcome = await store.put_stream(stream_of(bytes), 1_000_000, {
-			content_type: 'text/plain',
+			content_type: 'text/plain'
 		});
 		assert.equal(outcome.hash, fact_hash_bytes(bytes));
 		assert.equal(outcome.sha256, sha256_hex(bytes));
@@ -130,7 +135,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 		for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 31) & 0xff;
 
 		const outcome = await store.put_stream(stream_of_chunks(bytes, 100), 1_000_000, {
-			content_type: 'application/octet-stream',
+			content_type: 'application/octet-stream'
 		});
 		assert.equal(outcome.hash, fact_hash_bytes(bytes));
 		assert.equal(outcome.sha256, sha256_hex(bytes));
@@ -158,7 +163,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 
 		const err = await assert_rejects(
 			() => store.put_stream(stream_of_chunks(bytes, 256), 512),
-			/payload too large/,
+			/payload too large/
 		);
 		assert(err instanceof PayloadTooLargeError);
 
@@ -171,7 +176,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 		const store = make_store(facts_dir, 16);
 		const bytes = new TextEncoder().encode('this content is well over sixteen bytes long');
 
-		const hash = await store.put(bytes, {content_type: 'text/plain'});
+		const hash = await store.put(bytes, { content_type: 'text/plain' });
 		assert.equal(hash, fact_hash_bytes(bytes));
 		const meta = await store.get_meta(hash);
 		assert(meta !== null);
@@ -194,19 +199,19 @@ describe_db('pg_fact_store streaming', (get_db) => {
 			rename: async (old_path: string, new_path: string) => {
 				events.push(`rename:${old_path}`);
 				await runtime.rename(old_path, new_path);
-			},
+			}
 		};
 		const store = new PgFactStore({
-			deps: {db: get_db()},
+			deps: { db: get_db() },
 			disk_root: facts_dir,
 			fs: instrumented,
-			embedded_threshold: 64,
+			embedded_threshold: 64
 		});
 		const bytes = new Uint8Array(4096);
 		for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 17) & 0xff;
 
 		await store.put_stream(stream_of_chunks(bytes, 256), 1_000_000, {
-			content_type: 'application/octet-stream',
+			content_type: 'application/octet-stream'
 		});
 
 		const fsync_i = events.findIndex((e) => e.startsWith('fsync:'));
@@ -225,10 +230,10 @@ describe_db('pg_fact_store streaming', (get_db) => {
 		for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 13) & 0xff;
 
 		const first = await store.put_stream(stream_of_chunks(bytes, 128), 1_000_000, {
-			content_type: 'application/octet-stream',
+			content_type: 'application/octet-stream'
 		});
 		const second = await store.put_stream(stream_of_chunks(bytes, 256), 1_000_000, {
-			content_type: 'application/octet-stream',
+			content_type: 'application/octet-stream'
 		});
 		assert.equal(first.hash, second.hash);
 
@@ -248,7 +253,7 @@ test('sweep_orphan_temps reaps stale .tmp files but spares fresh ones', async ()
 	const facts_dir = await mkdtemp(join(tmpdir(), 'fuz_fact_sweep_'));
 	try {
 		const tmp_dir = join(facts_dir, FACT_TMP_DIRNAME);
-		await mkdir(tmp_dir, {recursive: true});
+		await mkdir(tmp_dir, { recursive: true });
 		const stale = join(tmp_dir, 'stale.tmp');
 		const fresh = join(tmp_dir, 'fresh.tmp');
 		await writeFile(stale, 'old');
@@ -262,6 +267,6 @@ test('sweep_orphan_temps reaps stale .tmp files but spares fresh ones', async ()
 		assert.equal(await runtime.stat(stale), null); // reaped
 		assert(await runtime.stat(fresh)); // spared
 	} finally {
-		await rm(facts_dir, {recursive: true, force: true});
+		await rm(facts_dir, { recursive: true, force: true });
 	}
 });

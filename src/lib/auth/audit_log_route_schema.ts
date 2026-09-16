@@ -11,13 +11,13 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
-import type {RouteSpec} from '../http/route_spec.ts';
-import {ActingActor} from '../http/auth_shape.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
+import { ActingActor } from '../http/auth_shape.ts';
 
 /** Query schema for the audit-log SSE route — multi-actor admins pass `?acting=<uuid>`. */
-export const AuditStreamQuery = z.strictObject({acting: ActingActor});
+export const AuditStreamQuery = z.strictObject({ acting: ActingActor });
 export type AuditStreamQuery = z.infer<typeof AuditStreamQuery>;
 
 /** Default role required to access the audit-log SSE route. */
@@ -33,13 +33,13 @@ export const DEFAULT_AUDIT_STREAM_ROLE = 'admin';
  * @returns the SSE route shape minus its handler
  */
 export const create_audit_log_route_shape = (
-	required_role: string = DEFAULT_AUDIT_STREAM_ROLE,
+	required_role: string = DEFAULT_AUDIT_STREAM_ROLE
 ): Omit<RouteSpec, 'handler'> => ({
 	method: 'GET',
 	path: '/audit/stream',
-	auth: {account: 'required', actor: 'required', roles: [required_role]},
+	auth: { account: 'required', actor: 'required', roles: [required_role] },
 	description: 'Subscribe to realtime audit log events',
 	query: AuditStreamQuery,
 	input: z.null(),
-	output: z.null(), // SSE — no JSON response
+	output: z.null() // SSE — no JSON response
 });

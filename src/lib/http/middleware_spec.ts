@@ -7,9 +7,9 @@
  * @module
  */
 
-import type {MiddlewareHandler} from 'hono';
+import type { MiddlewareHandler } from 'hono';
 
-import type {RouteErrorSchemas} from './error_schemas.ts';
+import type { RouteErrorSchemas } from './error_schemas.ts';
 
 /** A named middleware layer. */
 export interface MiddlewareSpec {

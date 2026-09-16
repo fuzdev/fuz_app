@@ -9,24 +9,24 @@
  * @module
  */
 
-import {describe, test, assert, vi, afterEach} from 'vitest';
-import {Hono} from 'hono';
+import { describe, test, assert, vi, afterEach } from 'vitest';
+import { Hono } from 'hono';
 
-import {RateLimiter} from '$lib/rate_limiter.ts';
-import {create_proxy_middleware} from '$lib/http/proxy.ts';
-import {create_account_route_specs} from '$lib/auth/account_routes.ts';
-import {create_signup_route_specs} from '$lib/auth/signup_routes.ts';
-import {apply_route_specs} from '$lib/http/route_spec.ts';
-import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.ts';
-import {create_keyring} from '$lib/auth/keyring.ts';
-import {create_session_config} from '$lib/auth/session_cookie.ts';
-import {PASSWORD_LENGTH_MAX} from '$lib/auth/password.ts';
-import {create_bearer_auth_middleware} from '$lib/auth/bearer_auth.ts';
-import {ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS} from '$lib/http/error_schemas.ts';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
-import {create_stub_db, create_noop_stub, create_test_audit_emitter} from '$lib/testing/stubs.ts';
+import { RateLimiter } from '$lib/rate_limiter.ts';
+import { create_proxy_middleware } from '$lib/http/proxy.ts';
+import { create_account_route_specs } from '$lib/auth/account_routes.ts';
+import { create_signup_route_specs } from '$lib/auth/signup_routes.ts';
+import { apply_route_specs } from '$lib/http/route_spec.ts';
+import { fuz_auth_guard_resolver } from '$lib/auth/auth_guard_resolver.ts';
+import { create_keyring } from '$lib/auth/keyring.ts';
+import { create_session_config } from '$lib/auth/session_cookie.ts';
+import { PASSWORD_LENGTH_MAX } from '$lib/auth/password.ts';
+import { create_bearer_auth_middleware } from '$lib/auth/bearer_auth.ts';
+import { ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS } from '$lib/http/error_schemas.ts';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { create_stub_db, create_noop_stub, create_test_audit_emitter } from '$lib/testing/stubs.ts';
 
-const log = new Logger('test', {level: 'off'});
+const log = new Logger('test', { level: 'off' });
 
 // --- Mock wrappers for module-level query functions ---
 const {
@@ -39,7 +39,7 @@ const {
 	mock_role_grant_find_active,
 	mock_invite_find_unclaimed_match,
 	mock_invite_claim,
-	mock_create_account_with_actor,
+	mock_create_account_with_actor
 } = vi.hoisted(() => ({
 	mock_find_by_username_or_email: vi.fn((..._args: Array<any>) => Promise.resolve(null)),
 	mock_session_create: vi.fn((..._args: Array<any>) => Promise.resolve()),
@@ -48,14 +48,13 @@ const {
 	mock_account_by_id: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(null)),
 	mock_resolve_actor: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(null)),
 	mock_role_grant_find_active: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve([])),
-	mock_invite_find_unclaimed_match: vi.fn(
-		(..._args: Array<any>): Promise<any> => Promise.resolve(null),
+	mock_invite_find_unclaimed_match: vi.fn((..._args: Array<any>): Promise<any> =>
+		Promise.resolve(null)
 	),
 	mock_invite_claim: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(true)),
-	mock_create_account_with_actor: vi.fn(
-		(..._args: Array<any>): Promise<any> =>
-			Promise.resolve({account: {id: 'acc_new'}, actor: {id: 'act_new'}}),
-	),
+	mock_create_account_with_actor: vi.fn((..._args: Array<any>): Promise<any> =>
+		Promise.resolve({ account: { id: 'acc_new' }, actor: { id: 'act_new' } })
+	)
 }));
 
 vi.mock('$lib/auth/account_queries.js', () => ({
@@ -66,20 +65,20 @@ vi.mock('$lib/auth/account_queries.js', () => ({
 		const actor = await mock_resolve_actor(..._a);
 		return actor ? [actor] : [];
 	},
-	query_create_account_with_actor: (...a: Array<any>) => mock_create_account_with_actor(...a),
+	query_create_account_with_actor: (...a: Array<any>) => mock_create_account_with_actor(...a)
 }));
 
 vi.mock('$lib/auth/invite_queries.js', () => ({
 	query_invite_find_unclaimed_match_for_update: (...a: Array<any>) =>
 		mock_invite_find_unclaimed_match(...a),
-	query_invite_claim_unscoped: (...a: Array<any>) => mock_invite_claim(...a),
+	query_invite_claim_unscoped: (...a: Array<any>) => mock_invite_claim(...a)
 }));
 
 // The signup handler reads `open_signup` fresh on every request; these tests
 // run against mocked queries (no DB), so stub the load to the closed default.
 vi.mock('$lib/auth/app_settings_queries.js', () => ({
 	query_app_settings_load: (..._a: Array<any>) =>
-		Promise.resolve({open_signup: false, updated_at: null, updated_by: null}),
+		Promise.resolve({ open_signup: false, updated_at: null, updated_by: null })
 }));
 
 vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {
@@ -87,12 +86,12 @@ vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {
 	return {
 		...actual,
 		query_create_session: (...a: Array<any>) => mock_session_create(...a),
-		query_session_enforce_limit: (...a: Array<any>) => mock_session_enforce_limit(...a),
+		query_session_enforce_limit: (...a: Array<any>) => mock_session_enforce_limit(...a)
 	};
 });
 
 vi.mock('$lib/auth/api_token_queries.js', () => ({
-	query_validate_api_token: (...a: Array<any>) => mock_validate_api_token(...a),
+	query_validate_api_token: (...a: Array<any>) => mock_validate_api_token(...a)
 }));
 
 // Audit fan-out is mocked via the `audit` slot on the deps factory below
@@ -100,7 +99,7 @@ vi.mock('$lib/auth/api_token_queries.js', () => ({
 // single seam for fan-out.
 
 vi.mock('$lib/auth/role_grant_queries.js', () => ({
-	query_role_grant_find_active_for_actor: (...a: Array<any>) => mock_role_grant_find_active(...a),
+	query_role_grant_find_active_for_actor: (...a: Array<any>) => mock_role_grant_find_active(...a)
 }));
 
 // --- Shared fixtures ---
@@ -114,14 +113,14 @@ const TEST_CONNECTION_IP = '127.0.0.1';
  */
 const test_proxy_middleware = create_proxy_middleware({
 	trusted_proxies: [TEST_CONNECTION_IP],
-	get_connection_ip: () => TEST_CONNECTION_IP,
+	get_connection_ip: () => TEST_CONNECTION_IP
 });
 
 const WINDOW_MS = 60_000;
 const MAX_ATTEMPTS = 3;
 
 const create_test_limiter = (): RateLimiter =>
-	new RateLimiter({max_attempts: MAX_ATTEMPTS, window_ms: WINDOW_MS, cleanup_interval_ms: 0});
+	new RateLimiter({ max_attempts: MAX_ATTEMPTS, window_ms: WINDOW_MS, cleanup_interval_ms: 0 });
 
 const keyring = create_keyring('integration_test_key_a')!;
 const session_options = create_session_config('test_session');
@@ -138,7 +137,7 @@ const fake_account = {
 	created_at: '2025-01-01T00:00:00.000Z',
 	updated_at: '2025-01-01T00:00:00.000Z',
 	created_by: null,
-	updated_by: null,
+	updated_by: null
 };
 
 // --- Login helpers ---
@@ -153,7 +152,7 @@ interface LoginTestApp {
 
 const create_login_app = (
 	ip_rate_limiter: RateLimiter | null,
-	login_account_rate_limiter: RateLimiter | null = null,
+	login_account_rate_limiter: RateLimiter | null = null
 ): LoginTestApp => {
 	// Reset module-level mocks for login tests
 	mock_find_by_username_or_email.mockReset().mockImplementation(() => Promise.resolve(null));
@@ -166,7 +165,7 @@ const create_login_app = (
 	// override per-test.
 	mock_resolve_actor
 		.mockReset()
-		.mockImplementation(() => Promise.resolve({id: 'actor_login_test'}));
+		.mockImplementation(() => Promise.resolve({ id: 'actor_login_test' }));
 
 	const mock_verify_password = vi.fn(() => Promise.resolve(false));
 	const mock_verify_dummy = vi.fn(() => Promise.resolve(false));
@@ -178,12 +177,12 @@ const create_login_app = (
 			password: {
 				hash_password: vi.fn(),
 				verify_password: mock_verify_password,
-				verify_dummy: mock_verify_dummy,
+				verify_dummy: mock_verify_dummy
 			},
 			stat: noop,
 			read_text_file: noop,
 			delete_file: noop,
-			audit: create_test_audit_emitter(),
+			audit: create_test_audit_emitter()
 		},
 		{
 			session_options,
@@ -191,8 +190,8 @@ const create_login_app = (
 			login_account_rate_limiter,
 			// disable the 401 minimum-delay floor so failure tests don't wait
 			// ~250ms × N attempts
-			login_fail_floor_ms: 0,
-		},
+			login_fail_floor_ms: 0
+		}
 	);
 
 	const app = new Hono();
@@ -204,15 +203,15 @@ const create_login_app = (
 		find_by_username_or_email: mock_find_by_username_or_email,
 		session_create: mock_session_create,
 		mock_verify_password,
-		mock_verify_dummy,
+		mock_verify_dummy
 	};
 };
 
 const login_request = (app: Hono, headers?: Record<string, string>): Response | Promise<Response> =>
 	app.request('/login', {
 		method: 'POST',
-		headers: {'Content-Type': 'application/json', ...headers},
-		body: JSON.stringify({username: 'testuser', password: 'valid_password_123'}),
+		headers: { 'Content-Type': 'application/json', ...headers },
+		body: JSON.stringify({ username: 'testuser', password: 'valid_password_123' })
 	});
 
 // --- Bearer auth helpers ---
@@ -229,24 +228,24 @@ const create_bearer_app = (ip_rate_limiter: RateLimiter | null): BearerTestApp =
 	mock_resolve_actor.mockReset().mockImplementation(() => Promise.resolve(null));
 	mock_role_grant_find_active.mockReset().mockImplementation(() => Promise.resolve([]));
 
-	const bearer_middleware = create_bearer_auth_middleware({db}, ip_rate_limiter, log);
+	const bearer_middleware = create_bearer_auth_middleware({ db }, ip_rate_limiter, log);
 
 	const app = new Hono();
 	app.use('*', test_proxy_middleware);
 	app.use('/api/*', bearer_middleware);
-	app.get('/api/test', (c) => c.json({ok: true}));
+	app.get('/api/test', (c) => c.json({ ok: true }));
 
-	return {app, mock_validate};
+	return { app, mock_validate };
 };
 
 const bearer_request = (
 	app: Hono,
 	token = 'invalid_token',
-	headers?: Record<string, string>,
+	headers?: Record<string, string>
 ): Response | Promise<Response> =>
 	app.request('/api/test', {
 		method: 'GET',
-		headers: {Authorization: `Bearer ${token}`, ...headers},
+		headers: { Authorization: `Bearer ${token}`, ...headers }
 	});
 
 // --- Tests ---
@@ -258,7 +257,7 @@ afterEach(() => {
 describe('login handler rate limiting', () => {
 	test('returns 429 with rate_limit_exceeded when limit exhausted', async () => {
 		const limiter = create_test_limiter();
-		const {app} = create_login_app(limiter);
+		const { app } = create_login_app(limiter);
 
 		// Exhaust the limit with failed login attempts
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
@@ -279,7 +278,7 @@ describe('login handler rate limiting', () => {
 
 	test('429 response contains only error and retry_after (no sensitive data)', async () => {
 		const limiter = create_test_limiter();
-		const {app} = create_login_app(limiter);
+		const { app } = create_login_app(limiter);
 
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
 			await login_request(app);
@@ -298,7 +297,7 @@ describe('login handler rate limiting', () => {
 
 	test('blocked request skips auth queries and password verification', async () => {
 		const limiter = create_test_limiter();
-		const {app, find_by_username_or_email, mock_verify_password, mock_verify_dummy} =
+		const { app, find_by_username_or_email, mock_verify_password, mock_verify_dummy } =
 			create_login_app(limiter);
 
 		// Exhaust the limit
@@ -317,17 +316,17 @@ describe('login handler rate limiting', () => {
 		assert.strictEqual(
 			find_by_username_or_email.mock.calls.length,
 			db_calls,
-			'should not query DB when rate-limited',
+			'should not query DB when rate-limited'
 		);
 		assert.strictEqual(
 			mock_verify_password.mock.calls.length,
 			pw_calls,
-			'should not verify password when rate-limited',
+			'should not verify password when rate-limited'
 		);
 		assert.strictEqual(
 			mock_verify_dummy.mock.calls.length,
 			dummy_calls,
-			'should not call verify_dummy when rate-limited',
+			'should not call verify_dummy when rate-limited'
 		);
 
 		limiter.dispose();
@@ -335,7 +334,7 @@ describe('login handler rate limiting', () => {
 
 	test('failed login (account not found) records an attempt', async () => {
 		const limiter = create_test_limiter();
-		const {app} = create_login_app(limiter);
+		const { app } = create_login_app(limiter);
 
 		// find_by_username_or_email returns null by default (account not found)
 		const res = await login_request(app);
@@ -349,7 +348,7 @@ describe('login handler rate limiting', () => {
 
 	test('failed login (wrong password) records an attempt', async () => {
 		const limiter = create_test_limiter();
-		const {app, find_by_username_or_email} = create_login_app(limiter);
+		const { app, find_by_username_or_email } = create_login_app(limiter);
 
 		// Account exists but password verification fails (mock default is false)
 		find_by_username_or_email.mockResolvedValueOnce(fake_account);
@@ -364,7 +363,7 @@ describe('login handler rate limiting', () => {
 
 	test('successful login resets the rate limit counter', async () => {
 		const limiter = create_test_limiter();
-		const {app, find_by_username_or_email, mock_verify_password} = create_login_app(limiter);
+		const { app, find_by_username_or_email, mock_verify_password } = create_login_app(limiter);
 
 		// Accumulate failures
 		await login_request(app);
@@ -394,7 +393,7 @@ describe('login handler rate limiting', () => {
 	});
 
 	test('rate_limiter null allows unlimited failed attempts', async () => {
-		const {app} = create_login_app(null);
+		const { app } = create_login_app(null);
 
 		// Well beyond MAX_ATTEMPTS — should never see 429
 		for (let i = 0; i < MAX_ATTEMPTS + 5; i++) {
@@ -405,38 +404,38 @@ describe('login handler rate limiting', () => {
 
 	test('X-Forwarded-For determines rate limit bucket', async () => {
 		const limiter = create_test_limiter();
-		const {app} = create_login_app(limiter);
+		const { app } = create_login_app(limiter);
 
 		// Exhaust limit for 10.0.0.1
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
-			await login_request(app, {'X-Forwarded-For': '10.0.0.1'});
+			await login_request(app, { 'X-Forwarded-For': '10.0.0.1' });
 		}
 
 		// 10.0.0.1 blocked
-		assert.strictEqual((await login_request(app, {'X-Forwarded-For': '10.0.0.1'})).status, 429);
+		assert.strictEqual((await login_request(app, { 'X-Forwarded-For': '10.0.0.1' })).status, 429);
 
 		// 10.0.0.2 unaffected — different rate limit bucket
-		assert.strictEqual((await login_request(app, {'X-Forwarded-For': '10.0.0.2'})).status, 401);
+		assert.strictEqual((await login_request(app, { 'X-Forwarded-For': '10.0.0.2' })).status, 401);
 
 		limiter.dispose();
 	});
 
 	test('different IPs are rate-limited independently', async () => {
 		const limiter = create_test_limiter();
-		const {app} = create_login_app(limiter);
+		const { app } = create_login_app(limiter);
 
 		// Exhaust limit for two different IPs
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
-			await login_request(app, {'X-Forwarded-For': '10.0.0.1'});
-			await login_request(app, {'X-Forwarded-For': '10.0.0.2'});
+			await login_request(app, { 'X-Forwarded-For': '10.0.0.1' });
+			await login_request(app, { 'X-Forwarded-For': '10.0.0.2' });
 		}
 
 		// Both blocked
-		assert.strictEqual((await login_request(app, {'X-Forwarded-For': '10.0.0.1'})).status, 429);
-		assert.strictEqual((await login_request(app, {'X-Forwarded-For': '10.0.0.2'})).status, 429);
+		assert.strictEqual((await login_request(app, { 'X-Forwarded-For': '10.0.0.1' })).status, 429);
+		assert.strictEqual((await login_request(app, { 'X-Forwarded-For': '10.0.0.2' })).status, 429);
 
 		// Third IP unaffected
-		assert.strictEqual((await login_request(app, {'X-Forwarded-For': '10.0.0.3'})).status, 401);
+		assert.strictEqual((await login_request(app, { 'X-Forwarded-For': '10.0.0.3' })).status, 401);
 
 		limiter.dispose();
 	});
@@ -447,9 +446,9 @@ describe('login handler per-account rate limiting', () => {
 		const account_limiter = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS,
 			window_ms: WINDOW_MS,
-			cleanup_interval_ms: 0,
+			cleanup_interval_ms: 0
 		});
-		const {app} = create_login_app(null, account_limiter);
+		const { app } = create_login_app(null, account_limiter);
 
 		// Exhaust the per-account limit
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
@@ -472,9 +471,12 @@ describe('login handler per-account rate limiting', () => {
 		const account_limiter = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS,
 			window_ms: WINDOW_MS,
-			cleanup_interval_ms: 0,
+			cleanup_interval_ms: 0
 		});
-		const {app, mock_verify_password, mock_verify_dummy} = create_login_app(null, account_limiter);
+		const { app, mock_verify_password, mock_verify_dummy } = create_login_app(
+			null,
+			account_limiter
+		);
 
 		// Exhaust the limit
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
@@ -494,12 +496,12 @@ describe('login handler per-account rate limiting', () => {
 		assert.strictEqual(
 			mock_verify_password.mock.calls.length,
 			pw_calls,
-			'should not verify password when account rate-limited',
+			'should not verify password when account rate-limited'
 		);
 		assert.strictEqual(
 			mock_verify_dummy.mock.calls.length,
 			dummy_calls,
-			'should not call verify_dummy when account rate-limited',
+			'should not call verify_dummy when account rate-limited'
 		);
 
 		account_limiter.dispose();
@@ -509,9 +511,9 @@ describe('login handler per-account rate limiting', () => {
 		const account_limiter = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS,
 			window_ms: WINDOW_MS,
-			cleanup_interval_ms: 0,
+			cleanup_interval_ms: 0
 		});
-		const {app, find_by_username_or_email} = create_login_app(null, account_limiter);
+		const { app, find_by_username_or_email } = create_login_app(null, account_limiter);
 
 		// Path 1: account not found — keyed by normalized input 'testuser'
 		await login_request(app);
@@ -535,11 +537,11 @@ describe('login handler per-account rate limiting', () => {
 		const account_limiter = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS,
 			window_ms: WINDOW_MS,
-			cleanup_interval_ms: 0,
+			cleanup_interval_ms: 0
 		});
-		const {app, find_by_username_or_email, mock_verify_password} = create_login_app(
+		const { app, find_by_username_or_email, mock_verify_password } = create_login_app(
 			null,
-			account_limiter,
+			account_limiter
 		);
 
 		// Accumulate failures while the account exists — keyed by account.id.
@@ -563,7 +565,7 @@ describe('login handler per-account rate limiting', () => {
 	});
 
 	test('account_rate_limiter null allows unlimited attempts', async () => {
-		const {app} = create_login_app(null, null);
+		const { app } = create_login_app(null, null);
 
 		// Well beyond MAX_ATTEMPTS — should never see 429
 		for (let i = 0; i < MAX_ATTEMPTS + 5; i++) {
@@ -576,9 +578,9 @@ describe('login handler per-account rate limiting', () => {
 		const account_limiter = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS,
 			window_ms: WINDOW_MS,
-			cleanup_interval_ms: 0,
+			cleanup_interval_ms: 0
 		});
-		const {app} = create_login_app(null, account_limiter);
+		const { app } = create_login_app(null, account_limiter);
 
 		// Exhaust limit for 'testuser'
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
@@ -591,8 +593,8 @@ describe('login handler per-account rate limiting', () => {
 		// Different username is unaffected
 		const res = await app.request('/login', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({username: 'otheruser', password: 'valid_password_123'}),
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'otheruser', password: 'valid_password_123' })
 		});
 		assert.strictEqual(res.status, 401);
 
@@ -603,17 +605,17 @@ describe('login handler per-account rate limiting', () => {
 		const account_limiter = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS,
 			window_ms: WINDOW_MS,
-			cleanup_interval_ms: 0,
+			cleanup_interval_ms: 0
 		});
-		const {app} = create_login_app(null, account_limiter);
+		const { app } = create_login_app(null, account_limiter);
 
 		// Send requests with mixed-case usernames — all should count against the same bucket
 		const cases = ['TestUser', 'TESTUSER', 'testuser'];
 		for (const username of cases) {
 			await app.request('/login', {
 				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({username, password: 'valid_password_123'}),
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ username, password: 'valid_password_123' })
 			});
 		}
 
@@ -623,8 +625,8 @@ describe('login handler per-account rate limiting', () => {
 		// Next request with any case variant should be rate-limited
 		const res = await app.request('/login', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({username: 'TestUser', password: 'valid_password_123'}),
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'TestUser', password: 'valid_password_123' })
 		});
 		assert.strictEqual(res.status, 429);
 
@@ -635,20 +637,20 @@ describe('login handler per-account rate limiting', () => {
 		const account_limiter = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS,
 			window_ms: WINDOW_MS,
-			cleanup_interval_ms: 0,
+			cleanup_interval_ms: 0
 		});
-		const {app} = create_login_app(null, account_limiter);
+		const { app } = create_login_app(null, account_limiter);
 
 		// Email-format logins with different casing — all normalize to same key
 		await app.request('/login', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({username: 'Alice@Example.COM', password: 'valid_password_123'}),
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'Alice@Example.COM', password: 'valid_password_123' })
 		});
 		await app.request('/login', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({username: 'alice@example.com', password: 'valid_password_123'}),
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'alice@example.com', password: 'valid_password_123' })
 		});
 
 		// Both count against the same lowercased key
@@ -661,15 +663,15 @@ describe('login handler per-account rate limiting', () => {
 		const account_limiter = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS,
 			window_ms: WINDOW_MS,
-			cleanup_interval_ms: 0,
+			cleanup_interval_ms: 0
 		});
-		const {app} = create_login_app(null, account_limiter);
+		const { app } = create_login_app(null, account_limiter);
 
 		// Whitespace-padded username should trim then lowercase
 		await app.request('/login', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({username: '  TestUser  ', password: 'valid_password_123'}),
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: '  TestUser  ', password: 'valid_password_123' })
 		});
 
 		assert.strictEqual(account_limiter.check('testuser').remaining, MAX_ATTEMPTS - 1);
@@ -687,9 +689,9 @@ describe('login handler per-account rate limiting', () => {
 		const limiter_a = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS,
 			window_ms: WINDOW_MS,
-			cleanup_interval_ms: 0,
+			cleanup_interval_ms: 0
 		});
-		const {app: app_a, find_by_username_or_email: find_a} = create_login_app(null, limiter_a);
+		const { app: app_a, find_by_username_or_email: find_a } = create_login_app(null, limiter_a);
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
 			find_a.mockResolvedValueOnce(fake_account);
 			await login_request(app_a);
@@ -702,9 +704,9 @@ describe('login handler per-account rate limiting', () => {
 		const limiter_b = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS,
 			window_ms: WINDOW_MS,
-			cleanup_interval_ms: 0,
+			cleanup_interval_ms: 0
 		});
-		const {app: app_b} = create_login_app(null, limiter_b);
+		const { app: app_b } = create_login_app(null, limiter_b);
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
 			await login_request(app_b);
 		}
@@ -727,9 +729,9 @@ describe('login handler per-account rate limiting', () => {
 		const account_limiter = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS + 2,
 			window_ms: WINDOW_MS,
-			cleanup_interval_ms: 0,
+			cleanup_interval_ms: 0
 		});
-		const {app} = create_login_app(ip_limiter, account_limiter);
+		const { app } = create_login_app(ip_limiter, account_limiter);
 
 		// Exhaust IP limiter (3 attempts), account limiter still has capacity (5)
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
@@ -750,7 +752,7 @@ describe('login handler per-account rate limiting', () => {
 
 describe('login error response consistency (account enumeration prevention)', () => {
 	test('account-not-found and wrong-password produce identical responses', async () => {
-		const {app, find_by_username_or_email} = create_login_app(null);
+		const { app, find_by_username_or_email } = create_login_app(null);
 
 		// Path 1: account not found (find_by_username_or_email returns null by default)
 		const no_account = await login_request(app);
@@ -774,7 +776,7 @@ describe('login error response consistency (account enumeration prevention)', ()
 	});
 
 	test('error response contains only generic error field', async () => {
-		const {app} = create_login_app(null);
+		const { app } = create_login_app(null);
 
 		const res = await login_request(app);
 		const body = await res.json();
@@ -785,7 +787,7 @@ describe('login error response consistency (account enumeration prevention)', ()
 	});
 
 	test('account-not-found calls verify_dummy, wrong-password calls verify_password', async () => {
-		const {app, find_by_username_or_email, mock_verify_password, mock_verify_dummy} =
+		const { app, find_by_username_or_email, mock_verify_password, mock_verify_dummy } =
 			create_login_app(null);
 
 		// Path 1: account not found → verify_dummy called, verify_password not called
@@ -793,12 +795,12 @@ describe('login error response consistency (account enumeration prevention)', ()
 		assert.strictEqual(
 			mock_verify_dummy.mock.calls.length,
 			1,
-			'verify_dummy must be called when account not found (timing resistance)',
+			'verify_dummy must be called when account not found (timing resistance)'
 		);
 		assert.strictEqual(
 			mock_verify_password.mock.calls.length,
 			0,
-			'verify_password must not be called when account not found',
+			'verify_password must not be called when account not found'
 		);
 
 		// Path 2: account found, wrong password → verify_password called, verify_dummy not called again
@@ -807,17 +809,17 @@ describe('login error response consistency (account enumeration prevention)', ()
 		assert.strictEqual(
 			mock_verify_password.mock.calls.length,
 			1,
-			'verify_password must be called when account exists',
+			'verify_password must be called when account exists'
 		);
 		assert.strictEqual(
 			mock_verify_dummy.mock.calls.length,
 			1,
-			'verify_dummy must not be called again when account exists',
+			'verify_dummy must not be called again when account exists'
 		);
 	});
 
 	test('email-format and plain username produce identical 401 responses', async () => {
-		const {app} = create_login_app(null);
+		const { app } = create_login_app(null);
 
 		// Plain username (not found)
 		const plain_res = await login_request(app);
@@ -826,8 +828,8 @@ describe('login error response consistency (account enumeration prevention)', ()
 		// Email-format username (not found) — exercises the @-branch in find_by_username_or_email
 		const email_res = await app.request('/login', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({username: 'user@example.com', password: 'valid_password_123'}),
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'user@example.com', password: 'valid_password_123' })
 		});
 		const email_body = await email_res.json();
 
@@ -840,7 +842,7 @@ describe('login error response consistency (account enumeration prevention)', ()
 describe('bearer auth rate limiting', () => {
 	test('returns 429 when per-IP limit exhausted (invalid tokens)', async () => {
 		const limiter = create_test_limiter();
-		const {app} = create_bearer_app(limiter);
+		const { app } = create_bearer_app(limiter);
 
 		// Exhaust the limit with invalid token attempts (soft-fail 200, but record() fires)
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
@@ -861,7 +863,7 @@ describe('bearer auth rate limiting', () => {
 
 	test('blocked request skips token validation (no hash/DB work)', async () => {
 		const limiter = create_test_limiter();
-		const {app, mock_validate} = create_bearer_app(limiter);
+		const { app, mock_validate } = create_bearer_app(limiter);
 
 		// Exhaust the limit
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
@@ -876,7 +878,7 @@ describe('bearer auth rate limiting', () => {
 		assert.strictEqual(
 			mock_validate.mock.calls.length,
 			validate_calls,
-			'should not call validate when rate-limited',
+			'should not call validate when rate-limited'
 		);
 
 		limiter.dispose();
@@ -890,15 +892,15 @@ describe('bearer auth rate limiting', () => {
 		mock_account_by_id.mockReset().mockImplementation(mock_find_by_id);
 		mock_resolve_actor
 			.mockReset()
-			.mockImplementation(() => Promise.resolve({id: 'actor_1', account_id: 'acc_1'}));
+			.mockImplementation(() => Promise.resolve({ id: 'actor_1', account_id: 'acc_1' }));
 		mock_role_grant_find_active.mockReset().mockImplementation(() => Promise.resolve([]));
 
-		const bearer_middleware = create_bearer_auth_middleware({db}, limiter, log);
+		const bearer_middleware = create_bearer_auth_middleware({ db }, limiter, log);
 
 		const app = new Hono();
 		app.use('*', test_proxy_middleware);
 		app.use('/api/*', bearer_middleware);
-		app.get('/api/test', (c) => c.json({ok: true}));
+		app.get('/api/test', (c) => c.json({ ok: true }));
 
 		// Accumulate failures
 		await bearer_request(app);
@@ -906,8 +908,8 @@ describe('bearer auth rate limiting', () => {
 		assert.strictEqual(limiter.check(TEST_CONNECTION_IP).remaining, 1);
 
 		// Succeed: validate returns a token, account + actor found
-		mock_validate.mockResolvedValueOnce({id: 'tok_1', account_id: 'acc_1'});
-		mock_find_by_id.mockResolvedValueOnce({id: 'acc_1'});
+		mock_validate.mockResolvedValueOnce({ id: 'tok_1', account_id: 'acc_1' });
+		mock_find_by_id.mockResolvedValueOnce({ id: 'acc_1' });
 
 		const res = await bearer_request(app, 'valid_token');
 		assert.strictEqual(res.status, 200);
@@ -919,7 +921,7 @@ describe('bearer auth rate limiting', () => {
 	});
 
 	test('ip_rate_limiter null allows unlimited invalid attempts', async () => {
-		const {app} = create_bearer_app(null);
+		const { app } = create_bearer_app(null);
 
 		// Well beyond MAX_ATTEMPTS — should never see 429 (soft-fail 200 for each)
 		for (let i = 0; i < MAX_ATTEMPTS + 5; i++) {
@@ -930,23 +932,23 @@ describe('bearer auth rate limiting', () => {
 
 	test('different IPs rate-limited independently', async () => {
 		const limiter = create_test_limiter();
-		const {app} = create_bearer_app(limiter);
+		const { app } = create_bearer_app(limiter);
 
 		// Exhaust limit for 10.0.0.1
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
-			await bearer_request(app, 'bad', {'X-Forwarded-For': '10.0.0.1'});
+			await bearer_request(app, 'bad', { 'X-Forwarded-For': '10.0.0.1' });
 		}
 
 		// 10.0.0.1 blocked
 		assert.strictEqual(
-			(await bearer_request(app, 'bad', {'X-Forwarded-For': '10.0.0.1'})).status,
-			429,
+			(await bearer_request(app, 'bad', { 'X-Forwarded-For': '10.0.0.1' })).status,
+			429
 		);
 
 		// 10.0.0.2 unaffected (soft-fail 200, not rate-limited)
 		assert.strictEqual(
-			(await bearer_request(app, 'bad', {'X-Forwarded-For': '10.0.0.2'})).status,
-			200,
+			(await bearer_request(app, 'bad', { 'X-Forwarded-For': '10.0.0.2' })).status,
+			200
 		);
 
 		limiter.dispose();
@@ -954,7 +956,7 @@ describe('bearer auth rate limiting', () => {
 
 	test('429 response shape matches login rate limiting', async () => {
 		const limiter = create_test_limiter();
-		const {app} = create_bearer_app(limiter);
+		const { app } = create_bearer_app(limiter);
 
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
 			await bearer_request(app);
@@ -973,7 +975,7 @@ describe('bearer auth rate limiting', () => {
 
 describe('session cookie security attributes', () => {
 	test('successful login sets cookie with HttpOnly, Secure, SameSite=Strict, Path=/', async () => {
-		const {app, find_by_username_or_email, mock_verify_password} = create_login_app(null);
+		const { app, find_by_username_or_email, mock_verify_password } = create_login_app(null);
 		find_by_username_or_email.mockResolvedValueOnce(fake_account);
 		mock_verify_password.mockResolvedValueOnce(true);
 
@@ -989,7 +991,7 @@ describe('session cookie security attributes', () => {
 	});
 
 	test('failed login does not set session cookie', async () => {
-		const {app} = create_login_app(null);
+		const { app } = create_login_app(null);
 
 		const res = await login_request(app);
 		assert.strictEqual(res.status, 401);
@@ -1001,21 +1003,21 @@ describe('password max length validation', () => {
 	const oversized_password = 'a'.repeat(PASSWORD_LENGTH_MAX + 1);
 
 	test('login rejects password exceeding max length', async () => {
-		const {app} = create_login_app(null);
+		const { app } = create_login_app(null);
 		const res = await app.request('/login', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({username: 'testuser', password: oversized_password}),
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'testuser', password: oversized_password })
 		});
 		assert.strictEqual(res.status, 400);
 	});
 
 	test('login accepts password at max length', async () => {
-		const {app} = create_login_app(null);
+		const { app } = create_login_app(null);
 		const res = await app.request('/login', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({username: 'testuser', password: 'a'.repeat(PASSWORD_LENGTH_MAX)}),
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'testuser', password: 'a'.repeat(PASSWORD_LENGTH_MAX) })
 		});
 		// 401 (invalid credentials), not 400 — schema accepted it
 		assert.strictEqual(res.status, 401);
@@ -1026,14 +1028,16 @@ describe('password max length validation', () => {
 
 const create_signup_app = (
 	ip_rate_limiter: RateLimiter | null,
-	signup_account_rate_limiter: RateLimiter | null = null,
+	signup_account_rate_limiter: RateLimiter | null = null
 ): Hono => {
 	// Reset signup-related mocks
 	mock_invite_find_unclaimed_match.mockReset().mockImplementation(() => Promise.resolve(null));
 	mock_invite_claim.mockReset().mockImplementation(() => Promise.resolve(true));
 	mock_create_account_with_actor
 		.mockReset()
-		.mockImplementation(() => Promise.resolve({account: {id: 'acc_new'}, actor: {id: 'act_new'}}));
+		.mockImplementation(() =>
+			Promise.resolve({ account: { id: 'acc_new' }, actor: { id: 'act_new' } })
+		);
 	mock_session_create.mockReset().mockImplementation(() => Promise.resolve());
 	mock_session_enforce_limit.mockReset().mockImplementation(() => Promise.resolve(0));
 
@@ -1044,12 +1048,12 @@ const create_signup_app = (
 			password: {
 				hash_password: vi.fn().mockResolvedValue('hashed_pw'),
 				verify_password: vi.fn(),
-				verify_dummy: vi.fn(),
+				verify_dummy: vi.fn()
 			},
 			stat: noop,
 			read_text_file: noop,
 			delete_file: noop,
-			audit: create_test_audit_emitter(),
+			audit: create_test_audit_emitter()
 		},
 		{
 			session_options,
@@ -1057,8 +1061,8 @@ const create_signup_app = (
 			signup_account_rate_limiter,
 			// disable the denial-time floor so failure tests don't wait
 			// ~250ms × N attempts
-			signup_fail_floor_ms: 0,
-		},
+			signup_fail_floor_ms: 0
+		}
 	);
 
 	const app = new Hono();
@@ -1076,12 +1080,12 @@ const create_signup_app = (
 const signup_request = (
 	app: Hono,
 	username = 'newuser',
-	headers?: Record<string, string>,
+	headers?: Record<string, string>
 ): Response | Promise<Response> =>
 	app.request('/signup', {
 		method: 'POST',
-		headers: {'Content-Type': 'application/json', ...headers},
-		body: JSON.stringify({username, password: 'securepassword123'}),
+		headers: { 'Content-Type': 'application/json', ...headers },
+		body: JSON.stringify({ username, password: 'securepassword123' })
 	});
 
 describe('signup handler per-account rate limiting', () => {
@@ -1133,7 +1137,7 @@ describe('signup handler per-account rate limiting', () => {
 		assert.strictEqual(account_limiter.check('newuser').remaining, MAX_ATTEMPTS - 2);
 
 		// Make signup succeed: invite found + claim succeeds
-		mock_invite_find_unclaimed_match.mockResolvedValueOnce({id: 'inv_1'});
+		mock_invite_find_unclaimed_match.mockResolvedValueOnce({ id: 'inv_1' });
 		mock_invite_claim.mockResolvedValueOnce(true);
 
 		const res = await signup_request(app);
@@ -1169,7 +1173,7 @@ describe('signup handler per-account rate limiting', () => {
 		const account_limiter = new RateLimiter({
 			max_attempts: MAX_ATTEMPTS + 2,
 			window_ms: WINDOW_MS,
-			cleanup_interval_ms: 0,
+			cleanup_interval_ms: 0
 		});
 		const app = create_signup_app(ip_limiter, account_limiter);
 

@@ -7,8 +7,8 @@
  * @module
  */
 
-import {z} from 'zod';
-import {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { z } from 'zod';
+import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 /**
  * Shared metadata envelope for cell mutations. `kind` and `path` are
@@ -23,7 +23,7 @@ import {Uuid} from '@fuzdev/fuz_util/id.ts';
 export const CellAuditMetadata = z.looseObject({
 	cell_id: Uuid,
 	kind: z.string().optional(),
-	path: z.string().nullable().optional(),
+	path: z.string().nullable().optional()
 });
 export type CellAuditMetadata = z.infer<typeof CellAuditMetadata>;
 
@@ -46,7 +46,7 @@ export const CellCloneAuditMetadata = z.looseObject({
 	new_id: Uuid,
 	deep: z.boolean(),
 	item_count: z.number().int().nonnegative(),
-	kind: z.string().optional(),
+	kind: z.string().optional()
 });
 export type CellCloneAuditMetadata = z.infer<typeof CellCloneAuditMetadata>;
 
@@ -59,6 +59,6 @@ export type CellCloneAuditMetadata = z.infer<typeof CellCloneAuditMetadata>;
 export const CellModerateAuditMetadata = z.looseObject({
 	cell_id: Uuid,
 	root_id: Uuid,
-	moderation: z.enum(['approved', 'rejected']),
+	moderation: z.enum(['approved', 'rejected'])
 });
 export type CellModerateAuditMetadata = z.infer<typeof CellModerateAuditMetadata>;

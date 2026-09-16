@@ -4,18 +4,18 @@
  * @module
  */
 
-import {describe, test, assert, vi} from 'vitest';
-import {z} from 'zod';
+import { describe, test, assert, vi } from 'vitest';
+import { z } from 'zod';
 
-import {load_env, EnvValidationError, log_env_validation_error} from '$lib/env/load.ts';
-import {BaseServerEnv} from '$lib/server/env.ts';
+import { load_env, EnvValidationError, log_env_validation_error } from '$lib/env/load.ts';
+import { BaseServerEnv } from '$lib/server/env.ts';
 
 /** Minimal valid env for BaseServerEnv (only required fields, no defaults). */
 const VALID_ENV: Record<string, string> = {
 	NODE_ENV: 'development',
 	SECRET_FUZ_COOKIE_KEYS: 'a'.repeat(32),
 	FUZ_ALLOWED_ORIGINS: 'http://localhost:*',
-	DATABASE_URL: 'memory://',
+	DATABASE_URL: 'memory://'
 };
 
 /** Trigger an EnvValidationError from load_env and return it. */
@@ -44,9 +44,9 @@ describe('load_env', () => {
 	test('works with custom schemas', () => {
 		const schema = z.strictObject({
 			FOO: z.string(),
-			BAR: z.coerce.number(),
+			BAR: z.coerce.number()
 		});
-		const env: Record<string, string> = {FOO: 'hello', BAR: '42'};
+		const env: Record<string, string> = { FOO: 'hello', BAR: '42' };
 		const result = load_env(schema, (key) => env[key]);
 		assert.strictEqual(result.FOO, 'hello');
 		assert.strictEqual(result.BAR, 42);

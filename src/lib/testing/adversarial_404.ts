@@ -12,14 +12,14 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {test, assert, describe} from 'vitest';
-import {z} from 'zod';
+import { test, assert, describe } from 'vitest';
+import { z } from 'zod';
 
-import type {RouteSpec} from '../http/route_spec.ts';
-import {is_null_schema} from '../http/schema_helpers.ts';
-import {create_auth_test_apps, select_auth_app} from './auth_apps.ts';
-import type {AdversarialTestOptions} from './attack_surface.ts';
-import {resolve_valid_path, generate_valid_body} from './schema_generators.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
+import { is_null_schema } from '../http/schema_helpers.ts';
+import { create_auth_test_apps, select_auth_app } from './auth_apps.ts';
+import type { AdversarialTestOptions } from './attack_surface.ts';
+import { resolve_valid_path, generate_valid_body } from './schema_generators.ts';
 
 /**
  * Extract the error code from a 404 Zod schema for use in the stub handler.
@@ -53,8 +53,8 @@ const extract_404_error_code = (schema: z.ZodType): string | null => {
  * 4. Validates response body matches the declared 404 Zod schema
  */
 export const describe_adversarial_404 = (options: AdversarialTestOptions): void => {
-	const {build, roles} = options;
-	const {surface, route_specs} = build();
+	const { build, roles } = options;
+	const { surface, route_specs } = build();
 
 	// Build spec lookup for Zod schema access
 	const spec_lookup: Map<string, RouteSpec> = new Map();
@@ -63,7 +63,7 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 	}
 
 	// Find testable routes: params + 404 + extractable error code
-	const testable: Array<{key: string; error_code: string; spec: RouteSpec}> = [];
+	const testable: Array<{ key: string; error_code: string; spec: RouteSpec }> = [];
 	for (const route of surface.routes) {
 		if (route.params_schema === null) continue;
 		if (!route.error_schemas || !('404' in route.error_schemas)) continue;
@@ -75,7 +75,7 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 		const error_code = extract_404_error_code(spec.errors[404]);
 		if (!error_code) continue;
 
-		testable.push({key, error_code, spec});
+		testable.push({ key, error_code, spec });
 	}
 
 	if (testable.length === 0) return;
@@ -91,25 +91,25 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 			if (!error_code) return spec;
 			return {
 				...spec,
-				handler: (c) => c.json({error: error_code}, 404),
+				handler: (c) => c.json({ error: error_code }, 404)
 			};
 		});
 
 		const apps = create_auth_test_apps(stub_specs, roles);
 
-		for (const {key, error_code, spec} of testable) {
+		for (const { key, error_code, spec } of testable) {
 			test(key, async () => {
 				const route = surface.routes.find((r) => `${r.method} ${r.path}` === key)!;
 				const app = select_auth_app(apps, route.auth);
 				const url = resolve_valid_path(route.path, spec.params);
 
-				const request_init: RequestInit = {method: route.method};
+				const request_init: RequestInit = { method: route.method };
 
 				// Send valid body for routes with input
 				if (!is_null_schema(spec.input)) {
 					const body = generate_valid_body(spec.input);
 					if (body !== undefined) {
-						request_init.headers = {'Content-Type': 'application/json'};
+						request_init.headers = { 'Content-Type': 'application/json' };
 						request_init.body = JSON.stringify(body);
 					}
 				}
@@ -120,7 +120,7 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 				assert.strictEqual(
 					body.error,
 					error_code,
-					`Expected error '${error_code}' for ${key}, got: ${body.error}`,
+					`Expected error '${error_code}' for ${key}, got: ${body.error}`
 				);
 				// Validate against declared 404 Zod schema
 				spec.errors![404]!.parse(body);

@@ -7,7 +7,7 @@
  * @module
  */
 
-import type {FsReadDeps} from '../runtime/deps.ts';
+import type { FsReadDeps } from '../runtime/deps.ts';
 
 /**
  * Parse a dotenv-format string into a record.
@@ -150,7 +150,7 @@ const unescape_double_quoted = (s: string): string => {
  */
 export const load_env_file = async (
 	runtime: Pick<FsReadDeps, 'read_text_file'>,
-	path: string,
+	path: string
 ): Promise<Record<string, string> | null> => {
 	try {
 		const content = await runtime.read_text_file(path);

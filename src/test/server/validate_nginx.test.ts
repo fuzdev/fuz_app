@@ -1,6 +1,6 @@
-import {describe, test, assert} from 'vitest';
+import { describe, test, assert } from 'vitest';
 
-import {validate_nginx_config} from '$lib/server/validate_nginx.ts';
+import { validate_nginx_config } from '$lib/server/validate_nginx.ts';
 
 // --- Fixture configs ---
 
@@ -433,7 +433,7 @@ describe('validate_nginx_config', () => {
 			assert.strictEqual(result.ok, false);
 			assert.ok(
 				result.errors.some((e) => e.includes('No /api location block found')),
-				`expected missing-block error, got: ${result.errors.join(' | ')}`,
+				`expected missing-block error, got: ${result.errors.join(' | ')}`
 			);
 		});
 
@@ -482,7 +482,7 @@ describe('validate_nginx_config', () => {
 			assert.strictEqual(result.ok, false);
 			assert.ok(
 				result.errors.some((e) => e.includes('No /api location block found')),
-				`expected missing-block error, got: ${result.errors.join(' | ')}`,
+				`expected missing-block error, got: ${result.errors.join(' | ')}`
 			);
 		});
 
@@ -500,7 +500,7 @@ describe('validate_nginx_config', () => {
 			assert.strictEqual(result.ok, false);
 			assert.ok(
 				result.errors.some((e) => e.includes('No /api location block found')),
-				`expected missing-block error, got: ${result.errors.join(' | ')}`,
+				`expected missing-block error, got: ${result.errors.join(' | ')}`
 			);
 		});
 
@@ -527,7 +527,7 @@ describe('validate_nginx_config', () => {
 			assert.strictEqual(
 				result.ok,
 				true,
-				`visiones config should pass — errors: ${result.errors.join(', ')}`,
+				`visiones config should pass — errors: ${result.errors.join(', ')}`
 			);
 		});
 
@@ -536,7 +536,7 @@ describe('validate_nginx_config', () => {
 			assert.strictEqual(
 				result.ok,
 				true,
-				`zap config should pass — errors: ${result.errors.join(', ')}`,
+				`zap config should pass — errors: ${result.errors.join(', ')}`
 			);
 		});
 

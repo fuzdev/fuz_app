@@ -13,14 +13,14 @@
  * @module
  */
 
-import {default_in_process_setup} from '$lib/testing/cross_backend/in_process_setup.ts';
-import {describe_identity_parity_cross_tests} from '$lib/testing/cross_backend/identity_parity.ts';
+import { default_in_process_setup } from '$lib/testing/cross_backend/in_process_setup.ts';
+import { describe_identity_parity_cross_tests } from '$lib/testing/cross_backend/identity_parity.ts';
 import {
 	create_spine_route_specs,
 	spine_rpc_endpoints,
-	spine_session_options,
+	spine_session_options
 } from '$lib/testing/cross_backend/default_spine_surface.ts';
-import {ROLE_ADMIN, ROLE_KEEPER} from '$lib/auth/role_schema.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
 
 // The keeper needs `ROLE_ADMIN` so the fixture's `create_account` invite step
 // (`invite_create`, admin-gated) succeeds; `ROLE_KEEPER` alone isn't admin.
@@ -28,7 +28,7 @@ const setup_test = default_in_process_setup({
 	session_options: spine_session_options,
 	roles: [ROLE_KEEPER, ROLE_ADMIN],
 	create_route_specs: create_spine_route_specs,
-	rpc_endpoints: spine_rpc_endpoints,
+	rpc_endpoints: spine_rpc_endpoints
 });
 
-describe_identity_parity_cross_tests({setup_test});
+describe_identity_parity_cross_tests({ setup_test });

@@ -24,9 +24,9 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
-import type {Db} from '../db/db.ts';
+import type { Db } from '../db/db.ts';
 
 /**
  * Per-column structural metadata. The Zod schema is the canonical source
@@ -44,7 +44,7 @@ export const ColumnSnapshot = z.object({
 	/** Default-value expression as Postgres reports it, or `null` if none. */
 	column_default: z.string().nullable(),
 	/** `true` when the column was declared GENERATED ... AS IDENTITY. */
-	is_identity: z.boolean(),
+	is_identity: z.boolean()
 });
 export type ColumnSnapshot = z.infer<typeof ColumnSnapshot>;
 
@@ -53,15 +53,15 @@ export const TableSnapshot = z.object({
 	/** Column metadata keyed by column name (sorted on serialization). */
 	columns: z.record(z.string(), ColumnSnapshot),
 	/** Index definitions as Postgres renders them via `pg_indexes.indexdef`. */
-	indexes: z.array(z.object({name: z.string(), definition: z.string()})),
+	indexes: z.array(z.object({ name: z.string(), definition: z.string() })),
 	/** Constraint definitions as Postgres renders them via `pg_get_constraintdef`. */
-	constraints: z.array(z.object({name: z.string(), type: z.string(), definition: z.string()})),
+	constraints: z.array(z.object({ name: z.string(), type: z.string(), definition: z.string() }))
 });
 export type TableSnapshot = z.infer<typeof TableSnapshot>;
 
 /** Sequence metadata — `data_type` is `bigint` (BIGSERIAL) or `integer` (SERIAL). */
 export const SequenceSnapshot = z.object({
-	data_type: z.string(),
+	data_type: z.string()
 });
 export type SequenceSnapshot = z.infer<typeof SequenceSnapshot>;
 
@@ -73,7 +73,7 @@ export type SequenceSnapshot = z.infer<typeof SequenceSnapshot>;
  */
 export const EnumTypeSnapshot = z.object({
 	/** Enum labels in declared order. */
-	labels: z.array(z.string()),
+	labels: z.array(z.string())
 });
 export type EnumTypeSnapshot = z.infer<typeof EnumTypeSnapshot>;
 
@@ -92,7 +92,7 @@ export const SchemaSnapshot = z.object({
 	/** Sequences keyed by name. */
 	sequences: z.record(z.string(), SequenceSnapshot),
 	/** Enum types (`CREATE TYPE ... AS ENUM`) keyed by name; labels in declared order. */
-	enums: z.record(z.string(), EnumTypeSnapshot),
+	enums: z.record(z.string(), EnumTypeSnapshot)
 });
 export type SchemaSnapshot = z.infer<typeof SchemaSnapshot>;
 
@@ -113,7 +113,7 @@ export const MigrationTrackerEntry = z.object({
 	/** Migration name within the namespace (e.g. `full_cell_schema`). */
 	name: z.string(),
 	/** Per-namespace apply order, starting at 0. */
-	sequence: z.number().int(),
+	sequence: z.number().int()
 });
 export type MigrationTrackerEntry = z.infer<typeof MigrationTrackerEntry>;
 
@@ -123,7 +123,7 @@ export type MigrationTrackerEntry = z.infer<typeof MigrationTrackerEntry>;
  * Sorted by `(namespace, sequence)` on capture.
  */
 export const MigrationTracker = z.object({
-	entries: z.array(MigrationTrackerEntry),
+	entries: z.array(MigrationTrackerEntry)
 });
 export type MigrationTracker = z.infer<typeof MigrationTracker>;
 
@@ -136,17 +136,17 @@ export type MigrationTracker = z.infer<typeof MigrationTracker>;
  * byte-identical migration identity.
  */
 export const query_migration_tracker = async (db: Db): Promise<MigrationTracker> => {
-	const rows = await db.query<{namespace: string; name: string; sequence: number}>(
+	const rows = await db.query<{ namespace: string; name: string; sequence: number }>(
 		`SELECT namespace, name, sequence
 		 FROM schema_version
-		 ORDER BY namespace ASC, sequence ASC`,
+		 ORDER BY namespace ASC, sequence ASC`
 	);
 	return {
 		entries: rows.map((r) => ({
 			namespace: r.namespace,
 			name: r.name,
-			sequence: r.sequence,
-		})),
+			sequence: r.sequence
+		}))
 	};
 };
 
@@ -238,19 +238,19 @@ const contype_to_kind = (contype: string): string => {
  */
 export const query_schema_snapshot = async (
 	db: Db,
-	options: QuerySchemaSnapshotOptions = {},
+	options: QuerySchemaSnapshotOptions = {}
 ): Promise<SchemaSnapshot> => {
 	const schema = options.schema ?? 'public';
 	const exclude_tables = new Set(options.exclude_tables ?? []);
 	exclude_tables.add('schema_version');
 
 	// All tables in the target schema, minus the excludes.
-	const table_rows = await db.query<{table_name: string}>(
+	const table_rows = await db.query<{ table_name: string }>(
 		`SELECT table_name
 		 FROM information_schema.tables
 		 WHERE table_schema = $1 AND table_type = 'BASE TABLE'
 		 ORDER BY table_name ASC`,
-		[schema],
+		[schema]
 	);
 	const table_names = table_rows.map((r) => r.table_name).filter((n) => !exclude_tables.has(n));
 
@@ -262,7 +262,7 @@ export const query_schema_snapshot = async (
 		 FROM information_schema.columns
 		 WHERE table_schema = $1
 		 ORDER BY table_name ASC, ordinal_position ASC`,
-		[schema],
+		[schema]
 	);
 
 	// Indexes — pg_indexes.indexdef gives the canonical CREATE INDEX statement
@@ -272,7 +272,7 @@ export const query_schema_snapshot = async (
 		 FROM pg_indexes
 		 WHERE schemaname = $1
 		 ORDER BY tablename ASC, indexname ASC`,
-		[schema],
+		[schema]
 	);
 
 	// Constraints — pg_get_constraintdef produces a canonical text rendering.
@@ -292,7 +292,7 @@ export const query_schema_snapshot = async (
 		   AND c.conrelid != 0
 		   AND c.contype != 'n'
 		 ORDER BY table_name ASC, conname ASC`,
-		[schema],
+		[schema]
 	);
 
 	// Sequences — data_type distinguishes bigint (BIGSERIAL) from integer (SERIAL).
@@ -301,7 +301,7 @@ export const query_schema_snapshot = async (
 		 FROM information_schema.sequences
 		 WHERE sequence_schema = $1
 		 ORDER BY sequence_name ASC`,
-		[schema],
+		[schema]
 	);
 
 	// Enum types — one row per label, ordered by enumsortorder so labels
@@ -313,7 +313,7 @@ export const query_schema_snapshot = async (
 		 JOIN pg_namespace n ON n.oid = t.typnamespace
 		 WHERE n.nspname = $1
 		 ORDER BY t.typname ASC, e.enumsortorder ASC`,
-		[schema],
+		[schema]
 	);
 
 	const tables: Record<string, TableSnapshot> = {};
@@ -326,12 +326,12 @@ export const query_schema_snapshot = async (
 				udt_name: row.udt_name,
 				is_nullable: row.is_nullable === 'YES',
 				column_default: row.column_default,
-				is_identity: row.is_identity === 'YES',
+				is_identity: row.is_identity === 'YES'
 			};
 		}
 		const indexes = index_rows
 			.filter((r) => r.tablename === name)
-			.map((r) => ({name: r.indexname, definition: r.indexdef}));
+			.map((r) => ({ name: r.indexname, definition: r.indexdef }));
 		const constraints = constraint_rows
 			// `conrelid::regclass::text` returns either bare (`foo`) or schema-
 			// qualified (`public.foo`) depending on the connection's search_path,
@@ -340,24 +340,24 @@ export const query_schema_snapshot = async (
 			.map((r) => ({
 				name: r.conname,
 				type: contype_to_kind(r.contype),
-				definition: r.definition,
+				definition: r.definition
 			}));
-		tables[name] = {columns: sort_keys(columns), indexes, constraints};
+		tables[name] = { columns: sort_keys(columns), indexes, constraints };
 	}
 
 	const sequences: Record<string, SequenceSnapshot> = {};
 	for (const row of sequence_rows) {
-		sequences[row.sequence_name] = {data_type: row.data_type};
+		sequences[row.sequence_name] = { data_type: row.data_type };
 	}
 
 	const enums: Record<string, EnumTypeSnapshot> = {};
 	for (const row of enum_rows) {
-		(enums[row.enum_name] ??= {labels: []}).labels.push(row.label);
+		(enums[row.enum_name] ??= { labels: [] }).labels.push(row.label);
 	}
 
 	return {
 		tables: sort_keys(tables),
 		sequences: sort_keys(sequences),
-		enums: sort_keys(enums),
+		enums: sort_keys(enums)
 	};
 };

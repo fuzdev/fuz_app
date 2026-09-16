@@ -1,4 +1,4 @@
-import {test} from 'vitest';
+import { test } from 'vitest';
 
 import type {
 	RuntimeDeps,
@@ -10,7 +10,7 @@ import type {
 	CommandDeps,
 	LogDeps,
 	TerminalDeps,
-	ProcessDeps,
+	ProcessDeps
 } from '$lib/runtime/deps.ts';
 
 // Type-level assertions — compile error if RuntimeDeps doesn't satisfy *Deps.

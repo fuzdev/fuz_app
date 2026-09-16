@@ -47,13 +47,13 @@
  * @module
  */
 
-import type {Attachment} from 'svelte/attachments';
-import type {Snippet} from 'svelte';
-import {on} from 'svelte/events';
-import {swallow} from '@fuzdev/fuz_util/dom.ts';
-import type {TransitionConfig} from 'svelte/transition';
+import type { Attachment } from 'svelte/attachments';
+import type { Snippet } from 'svelte';
+import { on } from 'svelte/events';
+import { swallow } from '@fuzdev/fuz_util/dom.ts';
+import type { TransitionConfig } from 'svelte/transition';
 
-import {type Position, type Alignment, generate_position_styles} from './position_helpers.ts';
+import { type Position, type Alignment, generate_position_styles } from './position_helpers.ts';
 
 const create_client_id = (): string => Math.random().toString(36).substring(2);
 
@@ -93,7 +93,7 @@ export interface PopoverTriggerParameters extends PopoverParameters {
 /**
  * Support both Svelte transitions and custom transitions.
  */
-export type TransitionFunction = (node: HTMLElement) => TransitionConfig | {destroy?: () => void};
+export type TransitionFunction = (node: HTMLElement) => TransitionConfig | { destroy?: () => void };
 
 /**
  * Parameters for the popover content action.
@@ -364,7 +364,7 @@ export class Popover {
 					'transform',
 					'transform-origin',
 					'width',
-					'height',
+					'height'
 				];
 				for (const prop of position_props) {
 					node.style.removeProperty(prop);

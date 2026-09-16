@@ -8,14 +8,17 @@
  * @module
  */
 
-import {args_parse, type Args, type ParsedArgs, type ArgValue} from '@fuzdev/fuz_util/args.ts';
-import {z} from 'zod';
-import {zod_to_schema_properties, zod_to_schema_names_with_aliases} from '@fuzdev/fuz_util/zod.ts';
+import { args_parse, type Args, type ParsedArgs, type ArgValue } from '@fuzdev/fuz_util/args.ts';
+import { z } from 'zod';
+import {
+	zod_to_schema_properties,
+	zod_to_schema_names_with_aliases
+} from '@fuzdev/fuz_util/zod.ts';
 
 /**
  * Discriminated union result for CLI argument parsing.
  */
-export type ParseResult<T> = {success: true; data: T} | {success: false; error: string};
+export type ParseResult<T> = { success: true; data: T } | { success: false; error: string };
 
 /**
  * Parse command-specific args against a Zod schema.
@@ -29,13 +32,13 @@ export type ParseResult<T> = {success: true; data: T} | {success: false; error: 
  */
 export const parse_command_args = <T extends Record<string, unknown>>(
 	remaining: ParsedArgs,
-	schema: z.ZodType<T>,
+	schema: z.ZodType<T>
 ): ParseResult<T> => {
 	const parsed = args_parse(remaining as Args, schema as z.ZodType<T & Record<string, ArgValue>>);
 	if (!parsed.success) {
-		return {success: false, error: z.prettifyError(parsed.error)};
+		return { success: false, error: z.prettifyError(parsed.error) };
 	}
-	return {success: true, data: parsed.data as T};
+	return { success: true, data: parsed.data as T };
 };
 
 /**
@@ -51,9 +54,9 @@ export const parse_command_args = <T extends Record<string, unknown>>(
  */
 export const create_extract_global_flags = <T extends Record<string, unknown>>(
 	schema: z.ZodType<T>,
-	fallback: T,
-): ((unparsed: ParsedArgs) => {flags: T; remaining: ParsedArgs}) => {
-	return (unparsed: ParsedArgs): {flags: T; remaining: ParsedArgs} => {
+	fallback: T
+): ((unparsed: ParsedArgs) => { flags: T; remaining: ParsedArgs }) => {
+	return (unparsed: ParsedArgs): { flags: T; remaining: ParsedArgs } => {
 		// get all global flag names and aliases from schema
 		const global_names = zod_to_schema_names_with_aliases(schema);
 		const global_props = zod_to_schema_properties(schema);
@@ -77,18 +80,18 @@ export const create_extract_global_flags = <T extends Record<string, unknown>>(
 		// parse global flags
 		const global_parsed = args_parse(
 			flags_input as Args,
-			schema as z.ZodType<T & Record<string, ArgValue>>,
+			schema as z.ZodType<T & Record<string, ArgValue>>
 		);
 		const flags: T = global_parsed.success ? (global_parsed.data as T) : fallback;
 
 		// build remaining args without global flags
-		const remaining: ParsedArgs = {_: [...unparsed._]};
+		const remaining: ParsedArgs = { _: [...unparsed._] };
 		for (const [key, value] of Object.entries(unparsed)) {
 			if (key === '_') continue;
 			if (global_names.has(key)) continue;
 			remaining[key] = value;
 		}
 
-		return {flags, remaining};
+		return { flags, remaining };
 	};
 };

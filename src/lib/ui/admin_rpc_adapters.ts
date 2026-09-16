@@ -56,7 +56,7 @@ import type {
 	InviteListOutput,
 	AppSettingsGetOutput,
 	AppSettingsUpdateInput,
-	AppSettingsUpdateOutput,
+	AppSettingsUpdateOutput
 } from '../auth/admin_action_specs.ts';
 import type {
 	RoleGrantOfferCreateInput,
@@ -64,13 +64,16 @@ import type {
 	RoleGrantOfferRetractInput,
 	RoleGrantOfferOkOutput,
 	RoleGrantRevokeInput,
-	RoleGrantRevokeOutput,
+	RoleGrantRevokeOutput
 } from '../auth/role_grant_offer_action_specs.ts';
-import {admin_accounts_rpc_context, type AdminAccountsRpc} from './admin_accounts_state.svelte.ts';
-import {admin_invites_rpc_context, type AdminInvitesRpc} from './admin_invites_state.svelte.ts';
-import {audit_log_rpc_context, type AuditLogRpc} from './audit_log_state.svelte.ts';
-import {app_settings_rpc_context, type AppSettingsRpc} from './app_settings_state.svelte.ts';
-import {format_scope_context, type FormatScope} from './format_scope.ts';
+import {
+	admin_accounts_rpc_context,
+	type AdminAccountsRpc
+} from './admin_accounts_state.svelte.ts';
+import { admin_invites_rpc_context, type AdminInvitesRpc } from './admin_invites_state.svelte.ts';
+import { audit_log_rpc_context, type AuditLogRpc } from './audit_log_state.svelte.ts';
+import { app_settings_rpc_context, type AppSettingsRpc } from './app_settings_state.svelte.ts';
+import { format_scope_context, type FormatScope } from './format_scope.ts';
 
 /**
  * The wire-method surface this module needs from the typed throwing RPC
@@ -89,12 +92,12 @@ export interface AdminRpcApi {
 	account_undelete: (input: AccountUndeleteInput) => Promise<AccountUndeleteOutput>;
 	admin_session_list: () => Promise<AdminSessionListOutput>;
 	admin_session_revoke_all: (
-		input: AdminSessionRevokeAllInput,
+		input: AdminSessionRevokeAllInput
 	) => Promise<AdminSessionRevokeAllOutput>;
 	admin_token_revoke_all: (input: AdminTokenRevokeAllInput) => Promise<AdminTokenRevokeAllOutput>;
 	audit_log_list: (input: AuditLogListInput) => Promise<AuditLogListOutput>;
 	audit_log_role_grant_history: (
-		input: AuditLogRoleGrantHistoryInput,
+		input: AuditLogRoleGrantHistoryInput
 	) => Promise<AuditLogRoleGrantHistoryOutput>;
 	invite_list: () => Promise<InviteListOutput>;
 	invite_create: (input: InviteCreateInput) => Promise<InviteCreateOutput>;
@@ -102,7 +105,7 @@ export interface AdminRpcApi {
 	app_settings_get: () => Promise<AppSettingsGetOutput>;
 	app_settings_update: (input: AppSettingsUpdateInput) => Promise<AppSettingsUpdateOutput>;
 	role_grant_offer_create: (
-		input: RoleGrantOfferCreateInput,
+		input: RoleGrantOfferCreateInput
 	) => Promise<RoleGrantOfferCreateOutput>;
 	role_grant_offer_retract: (input: RoleGrantOfferRetractInput) => Promise<RoleGrantOfferOkOutput>;
 	role_grant_revoke: (input: RoleGrantRevokeInput) => Promise<RoleGrantRevokeOutput>;
@@ -146,29 +149,29 @@ export interface AdminRpcAdapters {
  */
 export const create_admin_rpc_adapters = (api: AdminRpcApi): AdminRpcAdapters => ({
 	admin_accounts: {
-		list_accounts: (include_deleted) => api.admin_account_list({include_deleted}),
-		delete_account: (account_id) => api.account_delete({account_id}),
-		undelete_account: (account_id) => api.account_undelete({account_id}),
+		list_accounts: (include_deleted) => api.admin_account_list({ include_deleted }),
+		delete_account: (account_id) => api.account_delete({ account_id }),
+		undelete_account: (account_id) => api.account_undelete({ account_id }),
 		list_sessions: () => api.admin_session_list(),
 		create_role_grant: (params) => api.role_grant_offer_create(params),
 		revoke_role_grant: (params) => api.role_grant_revoke(params),
-		retract_offer: (offer_id) => api.role_grant_offer_retract({offer_id}),
+		retract_offer: (offer_id) => api.role_grant_offer_retract({ offer_id }),
 		session_revoke_all: (params) => api.admin_session_revoke_all(params),
-		token_revoke_all: (params) => api.admin_token_revoke_all(params),
+		token_revoke_all: (params) => api.admin_token_revoke_all(params)
 	},
 	admin_invites: {
 		list: () => api.invite_list(),
 		create: (params) => api.invite_create(params),
-		delete: (params) => api.invite_delete(params),
+		delete: (params) => api.invite_delete(params)
 	},
 	audit_log: {
 		list: (options) => api.audit_log_list(options ?? {}),
-		role_grant_history: (params) => api.audit_log_role_grant_history(params ?? {}),
+		role_grant_history: (params) => api.audit_log_role_grant_history(params ?? {})
 	},
 	app_settings: {
 		get: () => api.app_settings_get(),
-		update: (params) => api.app_settings_update(params),
-	},
+		update: (params) => api.app_settings_update(params)
+	}
 });
 
 /** Optional knobs alongside the adapters when wiring admin contexts. */
@@ -200,14 +203,14 @@ export interface ProvideAdminRpcContextsOptions {
  */
 export const provide_admin_rpc_contexts = (
 	adapters: AdminRpcAdapters,
-	options?: ProvideAdminRpcContextsOptions,
+	options?: ProvideAdminRpcContextsOptions
 ): void => {
 	admin_accounts_rpc_context.set(() => adapters.admin_accounts);
 	admin_invites_rpc_context.set(() => adapters.admin_invites);
 	audit_log_rpc_context.set(() => adapters.audit_log);
 	app_settings_rpc_context.set(() => adapters.app_settings);
 	if (options?.format_scope) {
-		const {format_scope} = options;
+		const { format_scope } = options;
 		format_scope_context.set(() => format_scope);
 	}
 };

@@ -8,33 +8,33 @@
  * @module
  */
 
-import {assert, describe, test} from 'vitest';
+import { assert, describe, test } from 'vitest';
 
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
-import {role_grant_offer_create_action_spec} from '$lib/auth/role_grant_offer_action_specs.ts';
-import {query_accept_offer} from '$lib/auth/role_grant_offer_queries.ts';
-import type {AuditLogEvent} from '$lib/auth/audit_log_schema.ts';
-import {rpc_call_for_spec} from '$lib/testing/rpc_helpers.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import { role_grant_offer_create_action_spec } from '$lib/auth/role_grant_offer_action_specs.ts';
+import { query_accept_offer } from '$lib/auth/role_grant_offer_queries.ts';
+import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
+import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
 
-import {RPC_PATH, describe_db} from './role_grant_offer_test_helpers.ts';
-import {create_multi_actor_helpers} from './role_grant_offer.multi_actor.fixtures.ts';
+import { RPC_PATH, describe_db } from './role_grant_offer_test_helpers.ts';
+import { create_multi_actor_helpers } from './role_grant_offer.multi_actor.fixtures.ts';
 
 describe_db('role_grant_offer.multi_actor — account_grain', (get_db) => {
-	const {build_app_with_audit, add_second_actor} = create_multi_actor_helpers(get_db);
+	const { build_app_with_audit, add_second_actor } = create_multi_actor_helpers(get_db);
 
 	describe('account-grain offers (`to_actor_id` null)', () => {
 		test('any actor on the recipient account may accept', async () => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await build_app_with_audit(events);
-			const recipient = await test_app.create_account({username: 'multi_acct_recipient'});
+			const recipient = await test_app.create_account({ username: 'multi_acct_recipient' });
 			const second_actor_id = await add_second_actor(recipient.account.id, 'second');
 
 			const create_res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: role_grant_offer_create_action_spec,
-				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
-				headers: test_app.create_session_headers(),
+				params: { to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(create_res.ok);
 			assert.strictEqual(create_res.result.offer.to_actor_id, null);
@@ -43,14 +43,14 @@ describe_db('role_grant_offer.multi_actor — account_grain', (get_db) => {
 			// where any actor on `to_account_id` may accept.
 			const accepted = await get_db().transaction(async (tx) =>
 				query_accept_offer(
-					{db: tx},
+					{ db: tx },
 					{
 						offer_id: create_res.result.offer.id,
 						to_account_id: recipient.account.id,
 						actor_id: second_actor_id,
-						ip: null,
-					},
-				),
+						ip: null
+					}
+				)
 			);
 			assert.strictEqual(accepted.role_grant.actor_id, second_actor_id);
 		});
@@ -58,20 +58,20 @@ describe_db('role_grant_offer.multi_actor — account_grain', (get_db) => {
 		test('audit envelope leaves target_actor_id null on offer-shape events', async () => {
 			const events: Array<AuditLogEvent> = [];
 			const test_app = await build_app_with_audit(events);
-			const recipient = await test_app.create_account({username: 'multi_acct_envelope'});
+			const recipient = await test_app.create_account({ username: 'multi_acct_envelope' });
 
 			const res = await rpc_call_for_spec({
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: role_grant_offer_create_action_spec,
-				params: {to_account_id: recipient.account.id, role: ROLE_ADMIN},
-				headers: test_app.create_session_headers(),
+				params: { to_account_id: recipient.account.id, role: ROLE_ADMIN },
+				headers: test_app.create_session_headers()
 			});
 			assert.ok(res.ok);
 			const create_event = events.find(
 				(e) =>
 					e.event_type === 'role_grant_offer_create' &&
-					(e.metadata as {offer_id?: string}).offer_id === res.result.offer.id,
+					(e.metadata as { offer_id?: string }).offer_id === res.result.offer.id
 			);
 			assert.ok(create_event);
 			assert.strictEqual(create_event.target_account_id, recipient.account.id);

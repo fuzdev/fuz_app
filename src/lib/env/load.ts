@@ -7,7 +7,7 @@
  * @module
  */
 
-import {z} from 'zod';
+import { z } from 'zod';
 
 /**
  * Error thrown when environment validation fails.
@@ -71,7 +71,7 @@ export const log_env_validation_error = (error: EnvValidationError, label?: stri
  */
 export const load_env = <T extends z.ZodObject>(
 	schema: T,
-	get_env: (key: string) => string | undefined,
+	get_env: (key: string) => string | undefined
 ): z.infer<T> => {
 	const raw: Record<string, string | undefined> = {};
 	for (const key of Object.keys(schema.shape)) {

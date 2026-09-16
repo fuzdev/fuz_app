@@ -8,19 +8,19 @@
 	 * @module
 	 */
 
-	import {auth_state_context} from './auth_state.svelte.ts';
+	import { auth_state_context } from './auth_state.svelte.ts';
 	import {
 		AccountSessionsState,
-		account_sessions_rpc_context,
+		account_sessions_rpc_context
 	} from './account_sessions_state.svelte.ts';
-	import {format_relative_time, format_datetime_local, truncate_uuid} from './ui_format.ts';
+	import { format_relative_time, format_datetime_local, truncate_uuid } from './ui_format.ts';
 	import Datatable from './Datatable.svelte';
-	import type {DatatableColumn} from './datatable.ts';
-	import type {AuthSessionJson} from '../auth/account_schema.ts';
+	import type { DatatableColumn } from './datatable.ts';
+	import type { AuthSessionJson } from '../auth/account_schema.ts';
 
 	const auth_state = auth_state_context.get();
 	const get_rpc = account_sessions_rpc_context.get();
-	const account_sessions = new AccountSessionsState({get_rpc});
+	const account_sessions = new AccountSessionsState({ get_rpc });
 
 	void account_sessions.fetch();
 
@@ -32,11 +32,11 @@
 	};
 
 	const columns: Array<DatatableColumn<AuthSessionJson>> = [
-		{key: 'id', label: 'session', width: 140},
-		{key: 'created_at', label: 'created', width: 120},
-		{key: 'last_seen_at', label: 'last seen', width: 120},
-		{key: 'expires_at', label: 'expires', width: 120},
-		{key: 'account_id', label: '', width: 100},
+		{ key: 'id', label: 'session', width: 140 },
+		{ key: 'created_at', label: 'created', width: 120 },
+		{ key: 'last_seen_at', label: 'last seen', width: 120 },
+		{ key: 'expires_at', label: 'expires', width: 120 },
+		{ key: 'account_id', label: '', width: 100 }
 	];
 </script>
 

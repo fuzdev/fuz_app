@@ -15,15 +15,15 @@
  * @module
  */
 
-import {create_test_app} from '$lib/testing/app_server.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
-import {query_create_actor} from '$lib/auth/account_queries.ts';
-import {create_audit_emitter} from '$lib/auth/audit_emitter.ts';
-import type {AuditLogEvent} from '$lib/auth/audit_log_schema.ts';
-import type {Db} from '$lib/db/db.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
+import { create_test_app } from '$lib/testing/app_server.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import { query_create_actor } from '$lib/auth/account_queries.ts';
+import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
+import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
+import type { Db } from '$lib/db/db.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import {create_route_specs, session_options} from './role_grant_offer_test_helpers.ts';
+import { create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
 
 /**
  * Build the multi-actor scaffolding bound to a `describe_db` callback's
@@ -37,7 +37,7 @@ import {create_route_specs, session_options} from './role_grant_offer_test_helpe
  * @param get_db - the `describe_db` callback's `() => Db` accessor
  */
 export const create_multi_actor_helpers = (
-	get_db: () => Db,
+	get_db: () => Db
 ): {
 	build_app_with_audit: (events: Array<AuditLogEvent>) => ReturnType<typeof create_test_app>;
 	add_second_actor: (account_id: Uuid, name: string) => Promise<Uuid>;
@@ -53,11 +53,11 @@ export const create_multi_actor_helpers = (
 					...params,
 					on_audit_event: (event) => {
 						events.push(event);
-					},
-				}),
+					}
+				})
 		}),
 	add_second_actor: async (account_id, name) => {
-		const actor = await query_create_actor({db: get_db()}, account_id, name);
+		const actor = await query_create_actor({ db: get_db() }, account_id, name);
 		return actor.id;
-	},
+	}
 });

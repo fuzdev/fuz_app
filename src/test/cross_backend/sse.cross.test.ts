@@ -16,19 +16,19 @@
  * @module
  */
 
-import {inject} from 'vitest';
+import { inject } from 'vitest';
 
 import {
 	default_cross_process_setup,
-	reconstruct_bootstrapped_handle,
+	reconstruct_bootstrapped_handle
 } from '$lib/testing/cross_backend/setup.ts';
-import {describe_cross_process_sse_tests} from '$lib/testing/cross_backend/sse_round_trip.ts';
+import { describe_cross_process_sse_tests } from '$lib/testing/cross_backend/sse_round_trip.ts';
 
 import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle);
-const {capabilities} = handle.config;
+const { capabilities } = handle.config;
 const base_url = handle.config.base_url;
 
 describe_cross_process_sse_tests({
@@ -36,5 +36,5 @@ describe_cross_process_sse_tests({
 	capabilities,
 	base_url,
 	sse_path: handle.config.sse_path,
-	rpc_path: handle.config.rpc_path,
+	rpc_path: handle.config.rpc_path
 });

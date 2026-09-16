@@ -34,14 +34,14 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type {BackendBootstrapConfig, BackendConfig} from './backend_config.ts';
-import type {BackendCapabilities, BackendShapeNotes} from './capabilities.ts';
-import {build_test_backend_paths, type TestBackendPaths} from './build_test_backend_paths.ts';
+import type { BackendBootstrapConfig, BackendConfig } from './backend_config.ts';
+import type { BackendCapabilities, BackendShapeNotes } from './capabilities.ts';
+import { build_test_backend_paths, type TestBackendPaths } from './build_test_backend_paths.ts';
 import {
 	default_test_bootstrap_token,
 	default_test_cookie_keys,
 	default_test_keeper_password,
-	default_test_keeper_username,
+	default_test_keeper_username
 } from './default_secrets.ts';
 
 /**
@@ -88,7 +88,7 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	// Off by default — the `cell_gated_create` test policy is a fuz_app test
 	// fixture, mounted only on the spine binaries (`ts_spine_*`), not generic
 	// consumers.
-	cell_gated_create: false,
+	cell_gated_create: false
 });
 
 /**
@@ -117,7 +117,7 @@ export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 	peer_request: true,
 	// Off by default — the `testing_spine_stub` preset opts in (it mounts the
 	// `TestCellGatedCreateAuthorize` policy); a generic Rust consumer doesn't.
-	cell_gated_create: false,
+	cell_gated_create: false
 });
 
 /**
@@ -130,7 +130,7 @@ export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 export const ts_default_shape_notes: BackendShapeNotes = Object.freeze({
 	bearer_auth: true,
 	trusted_proxy: false,
-	login_rate_limit: false,
+	login_rate_limit: false
 });
 
 /**
@@ -143,20 +143,20 @@ export const ts_default_shape_notes: BackendShapeNotes = Object.freeze({
 export const rust_default_shape_notes: BackendShapeNotes = Object.freeze({
 	bearer_auth: true,
 	trusted_proxy: true,
-	login_rate_limit: true,
+	login_rate_limit: true
 });
 
 /** Bootstrap block built from the default secrets + supplied paths. */
 const build_default_bootstrap = (
 	paths: TestBackendPaths,
-	overrides?: Partial<BackendBootstrapConfig>,
+	overrides?: Partial<BackendBootstrapConfig>
 ): BackendBootstrapConfig => ({
 	token_path: paths.bootstrap_token_path,
 	token: default_test_bootstrap_token,
 	username: default_test_keeper_username,
 	password: default_test_keeper_password,
 	daemon_token_path: paths.daemon_token_path,
-	...overrides,
+	...overrides
 });
 
 export interface MakeDefaultTsBackendConfigOptions {
@@ -199,7 +199,7 @@ export interface MakeDefaultTsBackendConfigOptions {
  * genuinely differs.
  */
 export const make_default_ts_backend_config = (
-	opts: MakeDefaultTsBackendConfigOptions,
+	opts: MakeDefaultTsBackendConfigOptions
 ): BackendConfig => {
 	const {
 		name,
@@ -211,7 +211,7 @@ export const make_default_ts_backend_config = (
 		paths = build_test_backend_paths(name),
 		bootstrap_overrides,
 		port_env_var = 'PORT',
-		cookie_name = 'fuz_session',
+		cookie_name = 'fuz_session'
 	} = opts;
 	return {
 		name,
@@ -231,10 +231,10 @@ export const make_default_ts_backend_config = (
 			SECRET_FUZ_COOKIE_KEYS: default_test_cookie_keys,
 			FUZ_ALLOWED_ORIGINS: 'http://localhost:*',
 			FUZ_BOOTSTRAP_TOKEN_PATH: paths.bootstrap_token_path,
-			...extra_env,
+			...extra_env
 		},
 		bootstrap: build_default_bootstrap(paths, bootstrap_overrides),
-		capabilities,
+		capabilities
 	};
 };
 
@@ -285,7 +285,7 @@ export interface MakeDefaultRustBackendConfigOptions {
  * the 120s startup window for cargo's first-run build cost.
  */
 export const make_default_rust_backend_config = (
-	opts: MakeDefaultRustBackendConfigOptions,
+	opts: MakeDefaultRustBackendConfigOptions
 ): BackendConfig => {
 	const {
 		name,
@@ -298,7 +298,7 @@ export const make_default_rust_backend_config = (
 		bootstrap_overrides,
 		port_env_var = 'PORT',
 		rust_log = 'info',
-		cookie_name = 'fuz_session',
+		cookie_name = 'fuz_session'
 	} = opts;
 	return {
 		name,
@@ -325,9 +325,9 @@ export const make_default_rust_backend_config = (
 			// `fuz_db::run_migrations`. The `_testing_reset` RPC action
 			// (per-test reset) is orthogonal.
 			FUZ_TESTING_RESET_DB_ON_STARTUP: 'true',
-			...extra_env,
+			...extra_env
 		},
 		bootstrap: build_default_bootstrap(paths, bootstrap_overrides),
-		capabilities,
+		capabilities
 	};
 };

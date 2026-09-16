@@ -35,17 +35,17 @@
  * @module
  */
 
-import {test, assert} from 'vitest';
+import { test, assert } from 'vitest';
 
-import {PgFactStore} from '$lib/db/fact_store.ts';
-import type {FactHash} from '@fuzdev/fuz_util/fact_hash.ts';
-import {ERROR_INVALID_ROUTE_PARAMS} from '$lib/http/error_schemas.ts';
-import {ROLE_ADMIN} from '$lib/auth/role_schema.ts';
-import type {TestApp} from '$lib/testing/app_server.ts';
-import {create_test_extra_actor, soft_delete_test_actor} from '$lib/testing/db_entities.ts';
-import {describe_db, create_cell_test_app, create_cell} from '../auth/cell_test_helpers.ts';
+import { PgFactStore } from '$lib/db/fact_store.ts';
+import type { FactHash } from '@fuzdev/fuz_util/fact_hash.ts';
+import { ERROR_INVALID_ROUTE_PARAMS } from '$lib/http/error_schemas.ts';
+import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import type { TestApp } from '$lib/testing/app_server.ts';
+import { create_test_extra_actor, soft_delete_test_actor } from '$lib/testing/db_entities.ts';
+import { describe_db, create_cell_test_app, create_cell } from '../auth/cell_test_helpers.ts';
 
-const PUBLIC_HEADERS = {host: 'localhost:5173', origin: 'http://localhost:5173'};
+const PUBLIC_HEADERS = { host: 'localhost:5173', origin: 'http://localhost:5173' };
 
 const encode = (s: string): Uint8Array => new TextEncoder().encode(s);
 
@@ -54,31 +54,31 @@ const get_cell_fact = (
 	app: TestApp,
 	cell_id: string,
 	hash: string,
-	headers?: Record<string, string>,
+	headers?: Record<string, string>
 ) =>
 	app.app.request(`/api/cells/${cell_id}/facts/${hash}`, {
 		method: 'GET',
-		headers: {...PUBLIC_HEADERS, ...headers},
+		headers: { ...PUBLIC_HEADERS, ...headers }
 	});
 
 /** GET `/api/facts/:hash` — the bare-hash (admin-only) read. */
 const get_bare_fact = (app: TestApp, hash: string, headers?: Record<string, string>) =>
 	app.app.request(`/api/facts/${hash}`, {
 		method: 'GET',
-		headers: {...PUBLIC_HEADERS, ...headers},
+		headers: { ...PUBLIC_HEADERS, ...headers }
 	});
 
 describe_db('serve_fact_route', (get_db) => {
 	/** Store embedded bytes directly in the test DB and return the hash. */
 	const put_embedded = (bytes: Uint8Array, content_type: string): Promise<FactHash> =>
-		new PgFactStore({deps: {db: get_db()}}).put(bytes, {content_type});
+		new PgFactStore({ deps: { db: get_db() } }).put(bytes, { content_type });
 
 	test('malformed hash param → 400', async () => {
 		const app = await create_cell_test_app(get_db);
-		const cell = await create_cell(app, {kind: 'image', data: {}, visibility: 'public'});
+		const cell = await create_cell(app, { kind: 'image', data: {}, visibility: 'public' });
 		const res = await get_cell_fact(app, cell.id, 'not-a-blake3-hash');
 		assert.strictEqual(res.status, 400);
-		const body = (await res.json()) as {error?: string};
+		const body = (await res.json()) as { error?: string };
 		assert.strictEqual(body.error, ERROR_INVALID_ROUTE_PARAMS);
 	});
 
@@ -87,7 +87,7 @@ describe_db('serve_fact_route', (get_db) => {
 		const hash = `blake3:${'a'.repeat(64)}`;
 		const res = await get_cell_fact(app, 'not-a-uuid', hash);
 		assert.strictEqual(res.status, 400);
-		const body = (await res.json()) as {error?: string};
+		const body = (await res.json()) as { error?: string };
 		assert.strictEqual(body.error, ERROR_INVALID_ROUTE_PARAMS);
 	});
 
@@ -107,8 +107,8 @@ describe_db('serve_fact_route', (get_db) => {
 		const hash = await put_embedded(encode('unreferenced bytes'), 'text/plain');
 		const cell = await create_cell(app, {
 			kind: 'note',
-			data: {text: 'no refs'},
-			visibility: 'public',
+			data: { text: 'no refs' },
+			visibility: 'public'
 		});
 
 		const res = await get_cell_fact(app, cell.id, hash); // anonymous
@@ -117,14 +117,14 @@ describe_db('serve_fact_route', (get_db) => {
 
 	test('embedded fact via a viewable public cell → anonymous 200 + bytes', async () => {
 		const app = await create_cell_test_app(get_db);
-		const owner = await app.create_account({username: 'fact_pub_owner'});
+		const owner = await app.create_account({ username: 'fact_pub_owner' });
 		const bytes = encode('public cover bytes');
 		const hash = await put_embedded(bytes, 'text/plain');
 		const cell = await create_cell(app, {
 			kind: 'image',
-			data: {cover: hash},
+			data: { cover: hash },
 			visibility: 'public',
-			headers: owner.create_session_headers(),
+			headers: owner.create_session_headers()
 		});
 
 		const res = await get_cell_fact(app, cell.id, hash); // anonymous
@@ -146,8 +146,8 @@ describe_db('serve_fact_route', (get_db) => {
 		const hash = await put_embedded(encode('<script>alert(1)</script>'), 'text/html');
 		const cell = await create_cell(app, {
 			kind: 'image',
-			data: {cover: hash},
-			visibility: 'public',
+			data: { cover: hash },
+			visibility: 'public'
 		});
 
 		const res = await get_cell_fact(app, cell.id, hash); // anonymous
@@ -160,14 +160,14 @@ describe_db('serve_fact_route', (get_db) => {
 
 	test('embedded fact via a private cell → anon/non-owner 404, owner 200', async () => {
 		const app = await create_cell_test_app(get_db);
-		const owner = await app.create_account({username: 'fact_priv_owner'});
-		const other = await app.create_account({username: 'fact_priv_other'});
+		const owner = await app.create_account({ username: 'fact_priv_owner' });
+		const other = await app.create_account({ username: 'fact_priv_other' });
 		const bytes = encode('secret cover bytes');
 		const hash = await put_embedded(bytes, 'application/octet-stream');
 		const cell = await create_cell(app, {
 			kind: 'image',
-			data: {cover: hash}, // private (default visibility)
-			headers: owner.create_session_headers(),
+			data: { cover: hash }, // private (default visibility)
+			headers: owner.create_session_headers()
 		});
 
 		// Anonymous caller: the named private cell does not admit them.
@@ -187,13 +187,13 @@ describe_db('serve_fact_route', (get_db) => {
 
 	test('bare-hash endpoint is admin-only: anon → 403, non-admin → 403, admin → 200', async () => {
 		const app = await create_cell_test_app(get_db);
-		const member = await app.create_account({username: 'bare_member'});
-		const admin = await app.create_account({username: 'bare_admin', roles: [ROLE_ADMIN]});
+		const member = await app.create_account({ username: 'bare_member' });
+		const admin = await app.create_account({ username: 'bare_admin', roles: [ROLE_ADMIN] });
 		const bytes = encode('bare-hash admin bytes');
 		const hash = await put_embedded(bytes, 'text/plain');
 		// Reference it from a public cell so the only thing gating the bare-hash
 		// read is the admin auth, not reachability.
-		await create_cell(app, {kind: 'image', data: {cover: hash}, visibility: 'public'});
+		await create_cell(app, { kind: 'image', data: { cover: hash }, visibility: 'public' });
 
 		// Anonymous → 401 (auth required) at the pre-validation guard.
 		const anon = await get_bare_fact(app, hash);
@@ -220,9 +220,9 @@ describe_db('serve_fact_route', (get_db) => {
 	// non-admin via B's public cell.
 	test('cross-owner dedup does not leak A’s private reference', async () => {
 		const app = await create_cell_test_app(get_db);
-		const a = await app.create_account({username: 'dedup_owner_a'});
-		const b = await app.create_account({username: 'dedup_owner_b'});
-		const viewer = await app.create_account({username: 'dedup_viewer'});
+		const a = await app.create_account({ username: 'dedup_owner_a' });
+		const b = await app.create_account({ username: 'dedup_owner_b' });
+		const viewer = await app.create_account({ username: 'dedup_viewer' });
 
 		// Identical bytes. Content-dedup collapses them to ONE fact row.
 		const shared = encode('identical bytes from two owners');
@@ -234,15 +234,15 @@ describe_db('serve_fact_route', (get_db) => {
 		// A references it from a PRIVATE cell (A's stated intent: private).
 		const a_cell = await create_cell(app, {
 			kind: 'doc',
-			data: {cover: hash}, // private (default)
-			headers: a.create_session_headers(),
+			data: { cover: hash }, // private (default)
+			headers: a.create_session_headers()
 		});
 		// B references identical bytes from a PUBLIC cell (B's published copy).
 		const b_cell = await create_cell(app, {
 			kind: 'image',
-			data: {cover: hash},
+			data: { cover: hash },
 			visibility: 'public',
-			headers: b.create_session_headers(),
+			headers: b.create_session_headers()
 		});
 
 		// 1. The viewer reads the bytes via B's public cell — correct, B
@@ -282,13 +282,13 @@ describe_db('serve_fact_route', (get_db) => {
 		// Control for the two tombstone cases — same setup minus the tombstone, so
 		// the difference is attributable to the soft-delete and nothing else.
 		const app = await create_cell_test_app(get_db);
-		const owner = await app.create_account({username: 'tomb_control_owner'});
+		const owner = await app.create_account({ username: 'tomb_control_owner' });
 		const bytes = encode('control private bytes');
 		const hash = await put_embedded(bytes, 'text/plain');
 		const cell = await create_cell(app, {
 			kind: 'image',
-			data: {cover: hash}, // private (default)
-			headers: owner.create_session_headers(),
+			data: { cover: hash }, // private (default)
+			headers: owner.create_session_headers()
 		});
 
 		// Exactly one active actor → resolves the owner → admitted to their cell.
@@ -302,13 +302,13 @@ describe_db('serve_fact_route', (get_db) => {
 		// account. The tombstone must not push the active count to 2 and demote
 		// the owner to anonymous (denying them their own actor's view).
 		const app = await create_cell_test_app(get_db);
-		const owner = await app.create_account({username: 'tomb_extra_owner'});
+		const owner = await app.create_account({ username: 'tomb_extra_owner' });
 		const bytes = encode('extra-actor private bytes');
 		const hash = await put_embedded(bytes, 'text/plain');
 		const cell = await create_cell(app, {
 			kind: 'image',
-			data: {cover: hash}, // private (default)
-			headers: owner.create_session_headers(),
+			data: { cover: hash }, // private (default)
+			headers: owner.create_session_headers()
 		});
 
 		// Add a second actor and tombstone it → 1 active + 1 soft-deleted actor.
@@ -329,14 +329,14 @@ describe_db('serve_fact_route', (get_db) => {
 		// `role_grants` into the read — admitting the caller to their own private
 		// cell after the actor was deleted.
 		const app = await create_cell_test_app(get_db);
-		const ghost = await app.create_account({username: 'tomb_ghost_owner'});
+		const ghost = await app.create_account({ username: 'tomb_ghost_owner' });
 		const bytes = encode('ghost private bytes');
 		const hash = await put_embedded(bytes, 'text/plain');
 		// Create the private cell while the actor is still active (so it owns it).
 		const cell = await create_cell(app, {
 			kind: 'image',
-			data: {cover: hash}, // private (default)
-			headers: ghost.create_session_headers(),
+			data: { cover: hash }, // private (default)
+			headers: ghost.create_session_headers()
 		});
 
 		// Tombstone the account's only actor → zero active actors. The

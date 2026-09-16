@@ -11,18 +11,18 @@
  * @module
  */
 
-import {inject} from 'vitest';
+import { inject } from 'vitest';
 
-import {reconstruct_bootstrapped_handle} from '$lib/testing/cross_backend/setup.ts';
-import {describe_credential_header_robustness_cross_tests} from '$lib/testing/cross_backend/credential_header_robustness.ts';
+import { reconstruct_bootstrapped_handle } from '$lib/testing/cross_backend/setup.ts';
+import { describe_credential_header_robustness_cross_tests } from '$lib/testing/cross_backend/credential_header_robustness.ts';
 
 import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
-const {base_url, rpc_path} = handle.config;
+const { base_url, rpc_path } = handle.config;
 
 describe_credential_header_robustness_cross_tests({
 	base_url,
 	rpc_path,
-	daemon_token: handle.daemon_token,
+	daemon_token: handle.daemon_token
 });

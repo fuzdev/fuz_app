@@ -11,15 +11,15 @@
  * @module
  */
 
-import type {Action} from './action_types.ts';
-import type {RoleName} from '../auth/role_schema.ts';
-import type {BackendWebsocketTransport} from './transports_ws_backend.ts';
+import type { Action } from './action_types.ts';
+import type { RoleName } from '../auth/role_schema.ts';
+import type { BackendWebsocketTransport } from './transports_ws_backend.ts';
 import type {
 	ServerHeartbeatOptions,
 	SocketCloseContext,
-	SocketOpenContext,
+	SocketOpenContext
 } from './register_action_ws.ts';
-import type {AuditEventHandler} from './transports_ws_auth_guard.ts';
+import type { AuditEventHandler } from './transports_ws_auth_guard.ts';
 
 /**
  * Declarative description of a WebSocket endpoint to be auto-mounted by

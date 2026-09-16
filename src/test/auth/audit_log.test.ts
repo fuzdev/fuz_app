@@ -7,28 +7,28 @@
  * @module
  */
 
-import {describe, test, assert, vi, afterEach, beforeEach} from 'vitest';
-import {Hono} from 'hono';
+import { describe, test, assert, vi, afterEach, beforeEach } from 'vitest';
+import { Hono } from 'hono';
 
-import {REQUEST_CONTEXT_KEY, type RequestContext} from '$lib/auth/request_context.ts';
-import {ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY} from '$lib/hono_context.ts';
-import {create_account_route_specs} from '$lib/auth/account_routes.ts';
-import {apply_route_specs} from '$lib/http/route_spec.ts';
-import {fuz_auth_guard_resolver} from '$lib/auth/auth_guard_resolver.ts';
-import {create_keyring} from '$lib/auth/keyring.ts';
-import {create_session_config} from '$lib/auth/session_cookie.ts';
-import {RateLimiter} from '$lib/rate_limiter.ts';
-import {create_proxy_middleware} from '$lib/http/proxy.ts';
-import type {AuditLogInput} from '$lib/auth/audit_log_schema.ts';
-import type {Uuid} from '@fuzdev/fuz_util/id.ts';
-import {create_stub_db, create_noop_stub} from '$lib/testing/stubs.ts';
+import { REQUEST_CONTEXT_KEY, type RequestContext } from '$lib/auth/request_context.ts';
+import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY } from '$lib/hono_context.ts';
+import { create_account_route_specs } from '$lib/auth/account_routes.ts';
+import { apply_route_specs } from '$lib/http/route_spec.ts';
+import { fuz_auth_guard_resolver } from '$lib/auth/auth_guard_resolver.ts';
+import { create_keyring } from '$lib/auth/keyring.ts';
+import { create_session_config } from '$lib/auth/session_cookie.ts';
+import { RateLimiter } from '$lib/rate_limiter.ts';
+import { create_proxy_middleware } from '$lib/http/proxy.ts';
+import type { AuditLogInput } from '$lib/auth/audit_log_schema.ts';
+import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_stub_db, create_noop_stub } from '$lib/testing/stubs.ts';
 import {
 	create_recording_audit_emitter,
-	type RecordingAuditEmitter,
+	type RecordingAuditEmitter
 } from '$lib/testing/audit_drift_guard.ts';
-import {Logger} from '@fuzdev/fuz_util/log.ts';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-const log = new Logger('test', {level: 'off'});
+const log = new Logger('test', { level: 'off' });
 
 // --- Mock module-level query functions ---
 const {
@@ -48,10 +48,10 @@ const {
 	mock_audit_log,
 	mock_audit_log_list,
 	mock_audit_log_list_with_usernames,
-	mock_audit_log_list_role_grant_history,
+	mock_audit_log_list_role_grant_history
 } = vi.hoisted(() => ({
-	mock_find_by_username_or_email: vi.fn(
-		(..._args: Array<any>): Promise<any> => Promise.resolve(undefined),
+	mock_find_by_username_or_email: vi.fn((..._args: Array<any>): Promise<any> =>
+		Promise.resolve(undefined)
 	),
 	mock_update_password: vi.fn((..._args: Array<any>) => Promise.resolve(true)),
 	mock_session_create: vi.fn((..._args: Array<any>) => Promise.resolve()),
@@ -65,16 +65,16 @@ const {
 	mock_api_token_enforce_limit: vi.fn((..._args: Array<any>) => Promise.resolve()),
 	mock_api_token_revoke_for_account: vi.fn((..._args: Array<any>) => Promise.resolve(true)),
 	mock_api_token_list_for_account: vi.fn((..._args: Array<any>) =>
-		Promise.resolve([] as Array<any>),
+		Promise.resolve([] as Array<any>)
 	),
 	mock_audit_log: vi.fn((..._args: Array<any>) => Promise.resolve()),
 	mock_audit_log_list: vi.fn((..._args: Array<any>) => Promise.resolve([] as Array<any>)),
 	mock_audit_log_list_with_usernames: vi.fn((..._args: Array<any>) =>
-		Promise.resolve([] as Array<any>),
+		Promise.resolve([] as Array<any>)
 	),
 	mock_audit_log_list_role_grant_history: vi.fn((..._args: Array<any>) =>
-		Promise.resolve([] as Array<any>),
-	),
+		Promise.resolve([] as Array<any>)
+	)
 }));
 
 /**
@@ -90,7 +90,7 @@ let audit_log_calls: Array<AuditLogInput> = audit_log_capture.calls;
 vi.mock('$lib/auth/account_queries.js', () => ({
 	query_account_by_username_or_email: mock_find_by_username_or_email,
 	query_update_account_password: mock_update_password,
-	query_admin_account_list: vi.fn(() => Promise.resolve([])),
+	query_admin_account_list: vi.fn(() => Promise.resolve([]))
 }));
 
 vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {
@@ -103,7 +103,7 @@ vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {
 		query_session_revoke_all_for_account: mock_session_revoke_all,
 		query_session_revoke_for_account: mock_session_revoke_for_account,
 		query_session_list_for_account: mock_session_list_for_account,
-		query_session_list_all_active: mock_session_list_all_active,
+		query_session_list_all_active: mock_session_list_all_active
 	};
 });
 
@@ -113,7 +113,7 @@ vi.mock('$lib/auth/api_token_queries.js', () => ({
 	query_api_token_list_for_account: mock_api_token_list_for_account,
 	query_revoke_api_token_for_account: mock_api_token_revoke_for_account,
 	query_revoke_all_api_tokens_for_account: vi.fn(() => Promise.resolve(0)),
-	query_validate_api_token: vi.fn(() => Promise.resolve(undefined)),
+	query_validate_api_token: vi.fn(() => Promise.resolve(undefined))
 }));
 
 vi.mock('$lib/auth/audit_log_queries.js', async (importOriginal) => {
@@ -123,7 +123,7 @@ vi.mock('$lib/auth/audit_log_queries.js', async (importOriginal) => {
 		query_audit_log: mock_audit_log,
 		query_audit_log_list: mock_audit_log_list,
 		query_audit_log_list_with_usernames: mock_audit_log_list_with_usernames,
-		query_audit_log_list_role_grant_history: mock_audit_log_list_role_grant_history,
+		query_audit_log_list_role_grant_history: mock_audit_log_list_role_grant_history
 	};
 });
 
@@ -152,7 +152,7 @@ const fake_account = {
 	created_by: null,
 	updated_by: null,
 	deleted_at: null,
-	deleted_by: null,
+	deleted_by: null
 };
 
 const fake_actor = {
@@ -163,13 +163,13 @@ const fake_actor = {
 	updated_at: null,
 	updated_by: null,
 	deleted_at: null,
-	deleted_by: null,
+	deleted_by: null
 };
 
 const fake_ctx: RequestContext = {
 	account: fake_account,
 	actor: fake_actor,
-	role_grants: [],
+	role_grants: []
 };
 
 /**
@@ -178,7 +178,7 @@ const fake_ctx: RequestContext = {
  */
 const test_proxy_middleware = create_proxy_middleware({
 	trusted_proxies: [TEST_CONNECTION_IP],
-	get_connection_ip: () => TEST_CONNECTION_IP,
+	get_connection_ip: () => TEST_CONNECTION_IP
 });
 
 // --- Tests ---
@@ -220,19 +220,19 @@ describe('account route audit logging', () => {
 				password: {
 					hash_password: vi.fn(() => Promise.resolve('new_hash')),
 					verify_password,
-					verify_dummy: vi.fn(() => Promise.resolve(false)),
+					verify_dummy: vi.fn(() => Promise.resolve(false))
 				} as any,
 				stat: noop,
 				read_text_file: noop,
 				delete_file: noop,
-				audit: audit_log_capture.emitter,
+				audit: audit_log_capture.emitter
 			},
 			{
 				session_options,
 				ip_rate_limiter: options?.ip_rate_limiter ?? null,
 				login_account_rate_limiter: null,
-				login_fail_floor_ms: 0,
-			},
+				login_fail_floor_ms: 0
+			}
 		);
 
 		const app = new Hono();
@@ -254,8 +254,8 @@ describe('account route audit logging', () => {
 		const app = create_account_test_app();
 		const res = await app.request('/login', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({username: 'testuser', password: 'password123'}),
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'testuser', password: 'password123' })
 		});
 		assert.strictEqual(res.status, 200);
 
@@ -269,12 +269,12 @@ describe('account route audit logging', () => {
 
 	test('failed login (wrong password) creates failure audit entry with account_id', async () => {
 		const app = create_account_test_app({
-			verify_password: vi.fn(() => Promise.resolve(false)),
+			verify_password: vi.fn(() => Promise.resolve(false))
 		});
 		const res = await app.request('/login', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({username: 'testuser', password: 'wrongpw'}),
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'testuser', password: 'wrongpw' })
 		});
 		assert.strictEqual(res.status, 401);
 
@@ -289,12 +289,12 @@ describe('account route audit logging', () => {
 
 	test('failed login (nonexistent user) creates failure entry without account_id', async () => {
 		const app = create_account_test_app({
-			find_account: vi.fn(() => Promise.resolve(undefined)),
+			find_account: vi.fn(() => Promise.resolve(undefined))
 		});
 		const res = await app.request('/login', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({username: 'noone', password: 'password123'}),
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'noone', password: 'password123' })
 		});
 		assert.strictEqual(res.status, 401);
 
@@ -308,8 +308,8 @@ describe('account route audit logging', () => {
 	});
 
 	test('logout creates audit entry', async () => {
-		const app = create_account_test_app({inject_ctx: fake_ctx});
-		const res = await app.request('/logout', {method: 'POST'});
+		const app = create_account_test_app({ inject_ctx: fake_ctx });
+		const res = await app.request('/logout', { method: 'POST' });
 		assert.strictEqual(res.status, 200);
 
 		assert.strictEqual(audit_log_calls.length, 1);
@@ -329,12 +329,12 @@ describe('account route audit logging', () => {
 	test('password change success creates audit entry with sessions_revoked', async () => {
 		const app = create_account_test_app({
 			inject_ctx: fake_ctx,
-			verify_password: vi.fn(() => Promise.resolve(true)),
+			verify_password: vi.fn(() => Promise.resolve(true))
 		});
 		const res = await app.request('/password', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({current_password: 'oldpw12345678', new_password: 'newpw12345678'}),
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ current_password: 'oldpw12345678', new_password: 'newpw12345678' })
 		});
 		assert.strictEqual(res.status, 200);
 
@@ -352,12 +352,12 @@ describe('account route audit logging', () => {
 	test('password change failure creates failure audit entry', async () => {
 		const app = create_account_test_app({
 			inject_ctx: fake_ctx,
-			verify_password: vi.fn(() => Promise.resolve(false)),
+			verify_password: vi.fn(() => Promise.resolve(false))
 		});
 		const res = await app.request('/password', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({current_password: 'wrongpw12345678', new_password: 'newpw12345678'}),
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ current_password: 'wrongpw12345678', new_password: 'newpw12345678' })
 		});
 		assert.strictEqual(res.status, 401);
 
@@ -388,19 +388,19 @@ describe('account route audit logging', () => {
 				password: {
 					hash_password: vi.fn(() => Promise.resolve('h')),
 					verify_password: vi.fn(() => Promise.resolve(true)),
-					verify_dummy: vi.fn(() => Promise.resolve(false)),
+					verify_dummy: vi.fn(() => Promise.resolve(false))
 				} as any,
 				stat: noop,
 				read_text_file: noop,
 				delete_file: noop,
-				audit: audit_log_capture.emitter,
+				audit: audit_log_capture.emitter
 			},
 			{
 				session_options,
 				ip_rate_limiter: null,
 				login_account_rate_limiter: null,
-				login_fail_floor_ms: 0,
-			},
+				login_fail_floor_ms: 0
+			}
 		);
 
 		const app = new Hono();
@@ -409,8 +409,8 @@ describe('account route audit logging', () => {
 
 		const res = await app.request('/login', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({username: 'testuser', password: 'password123'}),
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'testuser', password: 'password123' })
 		});
 
 		// handler succeeds despite audit log failure
@@ -422,8 +422,8 @@ describe('account route audit logging', () => {
 		const app = create_account_test_app();
 		const res = await app.request('/login', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({}), // missing username and password
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({}) // missing username and password
 		});
 		assert.strictEqual(res.status, 400);
 
@@ -432,17 +432,17 @@ describe('account route audit logging', () => {
 	});
 
 	test('rate-limited request creates no audit entry', async () => {
-		const limiter = new RateLimiter({max_attempts: 1, window_ms: 60_000, cleanup_interval_ms: 0});
+		const limiter = new RateLimiter({ max_attempts: 1, window_ms: 60_000, cleanup_interval_ms: 0 });
 		const app = create_account_test_app({
 			verify_password: vi.fn(() => Promise.resolve(false)),
-			ip_rate_limiter: limiter,
+			ip_rate_limiter: limiter
 		});
 
 		// first request: 401 (wrong password), creates audit entry
 		const res1 = await app.request('/login', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({username: 'testuser', password: 'wrongpw'}),
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'testuser', password: 'wrongpw' })
 		});
 		assert.strictEqual(res1.status, 401);
 		assert.strictEqual(audit_log_calls.length, 1);
@@ -450,14 +450,14 @@ describe('account route audit logging', () => {
 		// second request: 429 (rate-limited), no additional audit entry
 		const res2 = await app.request('/login', {
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({username: 'testuser', password: 'wrongpw'}),
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ username: 'testuser', password: 'wrongpw' })
 		});
 		assert.strictEqual(res2.status, 429);
 		assert.strictEqual(
 			audit_log_calls.length,
 			1,
-			'rate-limited request should not create audit entry',
+			'rate-limited request should not create audit entry'
 		);
 
 		limiter.dispose();

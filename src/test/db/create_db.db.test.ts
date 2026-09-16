@@ -7,19 +7,19 @@
  * @module
  */
 
-import {describe, assert, test, beforeAll, afterAll} from 'vitest';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import { describe, assert, test, beforeAll, afterAll } from 'vitest';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import type {Db} from '$lib/db/db.ts';
-import {create_pglite_db} from '$lib/db/db_pglite.ts';
-import {create_db} from '$lib/db/create_db.ts';
+import type { Db } from '$lib/db/db.ts';
+import { create_pglite_db } from '$lib/db/db_pglite.ts';
+import { create_db } from '$lib/db/create_db.ts';
 
 describe('create_pglite_db', () => {
 	let db: Db;
 	let close_db: () => Promise<void>;
 
 	beforeAll(async () => {
-		const {PGlite} = await import('@electric-sql/pglite');
+		const { PGlite } = await import('@electric-sql/pglite');
 		const pglite = new PGlite();
 		const result = create_pglite_db(pglite);
 		db = result.db;
@@ -34,9 +34,9 @@ describe('create_pglite_db', () => {
 
 	test('query returns rows', async () => {
 		await db.query('INSERT INTO test_items (name) VALUES ($1)', ['alpha']);
-		const rows = await db.query<{id: number; name: string}>(
+		const rows = await db.query<{ id: number; name: string }>(
 			'SELECT name FROM test_items WHERE name = $1',
-			['alpha'],
+			['alpha']
 		);
 
 		assert.strictEqual(rows.length, 1);
@@ -44,9 +44,10 @@ describe('create_pglite_db', () => {
 	});
 
 	test('query_one returns first row', async () => {
-		const row = await db.query_one<{name: string}>('SELECT name FROM test_items WHERE name = $1', [
-			'alpha',
-		]);
+		const row = await db.query_one<{ name: string }>(
+			'SELECT name FROM test_items WHERE name = $1',
+			['alpha']
+		);
 
 		assert.ok(row);
 		assert.strictEqual(row.name, 'alpha');
@@ -63,8 +64,8 @@ describe('create_pglite_db', () => {
 			await tx.query('INSERT INTO test_items (name) VALUES ($1)', ['committed']);
 		});
 
-		const rows = await db.query<{name: string}>('SELECT name FROM test_items WHERE name = $1', [
-			'committed',
+		const rows = await db.query<{ name: string }>('SELECT name FROM test_items WHERE name = $1', [
+			'committed'
 		]);
 		assert.strictEqual(rows.length, 1);
 	});
@@ -76,20 +77,20 @@ describe('create_pglite_db', () => {
 					await tx.query('INSERT INTO test_items (name) VALUES ($1)', ['rolled_back']);
 					throw new Error('abort');
 				}),
-			/abort/,
+			/abort/
 		);
 
-		const rows = await db.query<{name: string}>('SELECT name FROM test_items WHERE name = $1', [
-			'rolled_back',
+		const rows = await db.query<{ name: string }>('SELECT name FROM test_items WHERE name = $1', [
+			'rolled_back'
 		]);
 		assert.strictEqual(rows.length, 0);
 	});
 
 	test('transaction returns callback value', async () => {
 		const result = await db.transaction(async (tx) => {
-			const rows = await tx.query<{id: number}>(
+			const rows = await tx.query<{ id: number }>(
 				'INSERT INTO test_items (name) VALUES ($1) RETURNING id',
-				['return_val'],
+				['return_val']
 			);
 			return rows[0]!.id;
 		});
@@ -103,7 +104,7 @@ describe('create_pglite_db', () => {
 				db.transaction(async (tx) => {
 					await tx.transaction(async () => {});
 				}),
-			/Nested transactions are not supported/,
+			/Nested transactions are not supported/
 		);
 	});
 });
@@ -128,7 +129,7 @@ describe('create_db', () => {
 	test('in-memory PGlite can execute queries', async () => {
 		await shared_result.db.query('CREATE TABLE init_test (id serial PRIMARY KEY)');
 		await shared_result.db.query('INSERT INTO init_test DEFAULT VALUES');
-		const rows = await shared_result.db.query<{id: number}>('SELECT id FROM init_test');
+		const rows = await shared_result.db.query<{ id: number }>('SELECT id FROM init_test');
 
 		assert.strictEqual(rows.length, 1);
 		assert.strictEqual(rows[0]!.id, 1);
@@ -143,7 +144,7 @@ describe('create_db', () => {
 			await tx.query("INSERT INTO tx_test (val) VALUES ('inside_tx')");
 		});
 
-		const rows = await shared_result.db.query<{val: string}>('SELECT val FROM tx_test');
+		const rows = await shared_result.db.query<{ val: string }>('SELECT val FROM tx_test');
 		assert.strictEqual(rows.length, 1);
 		assert.strictEqual(rows[0]!.val, 'inside_tx');
 
@@ -151,9 +152,9 @@ describe('create_db', () => {
 	});
 
 	test('file:// URL creates file-based PGlite', async () => {
-		const {mkdtemp} = await import('node:fs/promises');
-		const {tmpdir} = await import('node:os');
-		const {join} = await import('node:path');
+		const { mkdtemp } = await import('node:fs/promises');
+		const { tmpdir } = await import('node:os');
+		const { join } = await import('node:path');
 		const temp_dir = await mkdtemp(join(tmpdir(), 'fuz-test-'));
 
 		const result = await create_db(`file://${temp_dir}`);
@@ -164,8 +165,8 @@ describe('create_db', () => {
 		await result.close();
 
 		// Clean up
-		const {rm} = await import('node:fs/promises');
-		await rm(temp_dir, {recursive: true, force: true});
+		const { rm } = await import('node:fs/promises');
+		await rm(temp_dir, { recursive: true, force: true });
 	});
 
 	test('unsupported URL scheme throws', async () => {

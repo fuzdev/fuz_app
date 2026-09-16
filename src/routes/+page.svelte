@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Svg from '@fuzdev/fuz_ui/Svg.svelte';
-	import {logo_fuz_app} from '@fuzdev/fuz_ui/logos.ts';
-	import {resolve} from '$app/paths';
+	import { logo_fuz_app } from '@fuzdev/fuz_ui/logos.ts';
+	import { resolve } from '$app/paths';
 </script>
 
 <main class="column align-items:center mx_auto">
@@ -17,8 +17,9 @@
 		</section>
 		<section class="column gap_lg">
 			<a href={resolve('/docs')} class="panel px_xl py_md font_size_xl2 text-align:center">docs</a>
-			<a href={resolve('/about')} class="panel px_xl py_md font_size_xl2 text-align:center">about</a
-			>
+			<a href={resolve('/about')} class="panel px_xl py_md font_size_xl2 text-align:center">
+				about
+			</a>
 		</section>
 		<section class="box" style:text-align="center">
 			<aside>⚠️ pre-alpha, do not use in production</aside>

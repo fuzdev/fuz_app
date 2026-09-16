@@ -10,15 +10,15 @@
  * @module
  */
 
-import {assert, test} from 'vitest';
+import { assert, test } from 'vitest';
 
-import {query_accept_offer} from '$lib/auth/role_grant_offer_queries.ts';
-import {query_create_role_grant, query_revoke_role_grant} from '$lib/auth/role_grant_queries.ts';
-import type {Db} from '$lib/db/db.ts';
-import {create_describe_db, auth_integration_truncate_tables} from '$lib/testing/db.ts';
+import { query_accept_offer } from '$lib/auth/role_grant_offer_queries.ts';
+import { query_create_role_grant, query_revoke_role_grant } from '$lib/auth/role_grant_queries.ts';
+import type { Db } from '$lib/db/db.ts';
+import { create_describe_db, auth_integration_truncate_tables } from '$lib/testing/db.ts';
 
-import {pg_factory} from '../db_fixture.ts';
-import {make_account, create_pending_offer} from './role_grant_offer_queries.fixtures.ts';
+import { pg_factory } from '../db_fixture.ts';
+import { make_account, create_pending_offer } from './role_grant_offer_queries.fixtures.ts';
 
 /**
  * Run a transactional op, retrying once on Postgres deadlock_detected
@@ -31,16 +31,16 @@ import {make_account, create_pending_offer} from './role_grant_offer_queries.fix
  */
 const run_with_deadlock_retry = async <T>(
 	db: Db,
-	op: (tx: Db) => Promise<T>,
-): Promise<{status: 'fulfilled'; value: T} | {status: 'rejected'; reason: unknown}> => {
+	op: (tx: Db) => Promise<T>
+): Promise<{ status: 'fulfilled'; value: T } | { status: 'rejected'; reason: unknown }> => {
 	for (let attempt = 0; attempt < 3; attempt++) {
 		try {
 			const value = await db.transaction(op);
-			return {status: 'fulfilled', value};
+			return { status: 'fulfilled', value };
 		} catch (e) {
-			const code = (e as {code?: string} | null)?.code;
+			const code = (e as { code?: string } | null)?.code;
 			if (code === '40P01' && attempt < 2) continue;
-			return {status: 'rejected', reason: e};
+			return { status: 'rejected', reason: e };
 		}
 	}
 	throw new Error('unreachable');
@@ -63,16 +63,16 @@ describe_pg('role_grant_offer_queries.concurrent', (get_db) => {
 		const [first, second] = await Promise.all([
 			db.transaction((tx) =>
 				query_accept_offer(
-					{db: tx},
-					{offer_id: offer.id, to_account_id: recipient.account_id, actor_id: recipient.actor_id},
-				),
+					{ db: tx },
+					{ offer_id: offer.id, to_account_id: recipient.account_id, actor_id: recipient.actor_id }
+				)
 			),
 			db.transaction((tx) =>
 				query_accept_offer(
-					{db: tx},
-					{offer_id: offer.id, to_account_id: recipient.account_id, actor_id: recipient.actor_id},
-				),
-			),
+					{ db: tx },
+					{ offer_id: offer.id, to_account_id: recipient.account_id, actor_id: recipient.actor_id }
+				)
+			)
 		]);
 
 		// Exactly one side inserted the role_grant.
@@ -107,8 +107,8 @@ describe_pg('role_grant_offer_queries.concurrent', (get_db) => {
 		const recipient = await make_account(db, 'race_revoke_recipient');
 
 		const role_grant = await query_create_role_grant(
-			{db},
-			{actor_id: recipient.actor_id, role: 'teacher', granted_by: grantor.actor_id},
+			{ db },
+			{ actor_id: recipient.actor_id, role: 'teacher', granted_by: grantor.actor_id }
 		);
 		const offer = await create_pending_offer(db, grantor, recipient);
 
@@ -118,23 +118,23 @@ describe_pg('role_grant_offer_queries.concurrent', (get_db) => {
 		const [revoke_result, accept_result] = await Promise.all([
 			run_with_deadlock_retry(db, (tx) =>
 				query_revoke_role_grant(
-					{db: tx},
+					{ db: tx },
 					role_grant.id,
 					recipient.actor_id,
 					grantor.actor_id,
-					'race-test',
-				),
+					'race-test'
+				)
 			),
 			run_with_deadlock_retry(db, (tx) =>
 				query_accept_offer(
-					{db: tx},
+					{ db: tx },
 					{
 						offer_id: offer.id,
 						to_account_id: recipient.account_id,
-						actor_id: recipient.actor_id,
-					},
-				),
-			),
+						actor_id: recipient.actor_id
+					}
+				)
+			)
 		]);
 
 		// Contract: across every interleaving the user must NOT end with an
@@ -143,18 +143,18 @@ describe_pg('role_grant_offer_queries.concurrent', (get_db) => {
 		// path in one direction; `query_accept_offer`'s `INSERT ... ON CONFLICT`
 		// against the partial unique index forecloses it in the other (the
 		// only role_grant it can resolve at the tuple is the one being revoked).
-		const active_at_tuple = await db.query<{id: string}>(
+		const active_at_tuple = await db.query<{ id: string }>(
 			`SELECT id FROM role_grant
 			 WHERE actor_id = $1
 			   AND role = $2
 			   AND scope_id IS NULL
 			   AND revoked_at IS NULL`,
-			[recipient.actor_id, 'teacher'],
+			[recipient.actor_id, 'teacher']
 		);
 		assert.strictEqual(
 			active_at_tuple.length,
 			0,
-			'no active role_grant should remain at (recipient.actor, teacher, null)',
+			'no active role_grant should remain at (recipient.actor, teacher, null)'
 		);
 
 		// Revoke must eventually land — every interleaving on retry ends with
@@ -164,16 +164,16 @@ describe_pg('role_grant_offer_queries.concurrent', (get_db) => {
 		// Accept either succeeds (offer points to the now-revoked role_grant) or
 		// surfaces `RoleGrantOfferAlreadyTerminalError` (revoke's supersede won).
 		if (accept_result.status === 'rejected') {
-			const name = (accept_result.reason as {name?: string} | null)?.name;
+			const name = (accept_result.reason as { name?: string } | null)?.name;
 			assert.strictEqual(
 				name,
 				'RoleGrantOfferAlreadyTerminalError',
-				'accept failure must be the AlreadyTerminal supersede path',
+				'accept failure must be the AlreadyTerminal supersede path'
 			);
 			// Offer row should carry `superseded_at`.
-			const row = await db.query_one<{superseded_at: string | null}>(
+			const row = await db.query_one<{ superseded_at: string | null }>(
 				`SELECT superseded_at FROM role_grant_offer WHERE id = $1`,
-				[offer.id],
+				[offer.id]
 			);
 			assert.ok(row?.superseded_at, 'superseded_at should be stamped');
 		} else {
@@ -182,14 +182,14 @@ describe_pg('role_grant_offer_queries.concurrent', (get_db) => {
 			assert.strictEqual(
 				accept_result.value.role_grant.id,
 				role_grant.id,
-				'accept must resolve to the existing role_grant P (no fresh role_grant can land at the tuple)',
+				'accept must resolve to the existing role_grant P (no fresh role_grant can land at the tuple)'
 			);
 			// Offer is accepted, resulting_role_grant_id points to P.
 			const row = await db.query_one<{
 				accepted_at: string | null;
 				resulting_role_grant_id: string | null;
 			}>(`SELECT accepted_at, resulting_role_grant_id FROM role_grant_offer WHERE id = $1`, [
-				offer.id,
+				offer.id
 			]);
 			assert.ok(row, 'offer row should exist');
 			assert.ok(row.accepted_at, 'accepted_at should be stamped');

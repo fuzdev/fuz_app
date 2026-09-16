@@ -24,16 +24,16 @@
  * @module
  */
 
-import {BROWSER} from 'esm-env';
-import type {Logger} from '@fuzdev/fuz_util/log.ts';
-import type {AsyncStatus} from '@fuzdev/fuz_util/async.ts';
+import { BROWSER } from 'esm-env';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import type { AsyncStatus } from '@fuzdev/fuz_util/async.ts';
 
-import {JSONRPC_VERSION, type JsonrpcErrorCode, type JsonrpcRequestId} from '../http/jsonrpc.ts';
-import {JSONRPC_ERROR_CODES, ThrownJsonrpcError, jsonrpc_errors} from '../http/jsonrpc_errors.ts';
-import {WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT, WS_CLOSE_SESSION_REVOKED} from './transports.ts';
-import {cancel_action_spec} from './cancel.ts';
-import {heartbeat_action_spec} from './heartbeat.ts';
-import type {WebsocketConnection} from './transports_ws.ts';
+import { JSONRPC_VERSION, type JsonrpcErrorCode, type JsonrpcRequestId } from '../http/jsonrpc.ts';
+import { JSONRPC_ERROR_CODES, ThrownJsonrpcError, jsonrpc_errors } from '../http/jsonrpc_errors.ts';
+import { WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT, WS_CLOSE_SESSION_REVOKED } from './transports.ts';
+import { cancel_action_spec } from './cancel.ts';
+import { heartbeat_action_spec } from './heartbeat.ts';
+import type { WebsocketConnection } from './transports_ws.ts';
 
 /** Default WebSocket close code (normal closure). */
 export const DEFAULT_CLOSE_CODE = 1000;
@@ -134,7 +134,7 @@ interface PendingRequest {
 /** Internal — tracks a request whose frame hasn't been written to the socket yet. */
 interface QueuedRequest extends PendingRequest {
 	id: JsonrpcRequestId;
-	frame: {jsonrpc: string; id: JsonrpcRequestId; method: string; params: unknown};
+	frame: { jsonrpc: string; id: JsonrpcRequestId; method: string; params: unknown };
 }
 
 /**
@@ -280,8 +280,8 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		const new_target = Math.round(
 			Math.min(
 				this.#reconnect_delay_max,
-				this.#reconnect_delay * this.#backoff_factor ** Math.max(0, this.reconnect_count - 1),
-			),
+				this.#reconnect_delay * this.#backoff_factor ** Math.max(0, this.reconnect_count - 1)
+			)
 		);
 		const new_remaining = Math.max(0, new_target - elapsed);
 		if (new_remaining >= remaining) return;
@@ -476,7 +476,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	request<R = unknown>(
 		method: string,
 		params: unknown = {},
-		options: {signal?: AbortSignal; queue?: boolean; id?: JsonrpcRequestId} = {},
+		options: { signal?: AbortSignal; queue?: boolean; id?: JsonrpcRequestId } = {}
 	): Promise<R> {
 		return new Promise<R>((resolve, reject) => {
 			const resolve_typed = resolve as (result: unknown) => void;
@@ -487,14 +487,14 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 				return;
 			}
 
-			const {signal = null} = options;
+			const { signal = null } = options;
 			if (signal?.aborted) {
 				reject_typed(this.#build_abort_error(method));
 				return;
 			}
 
 			const id = options.id ?? ++this.#next_request_id;
-			const frame = {jsonrpc: JSONRPC_VERSION, id, method, params};
+			const frame = { jsonrpc: JSONRPC_VERSION, id, method, params };
 
 			// Bind the signal listener up-front so `#detach_signal` can find it by
 			// reference regardless of which settlement path runs (inline send,
@@ -521,7 +521,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 				: null;
 			if (signal && signal_handler) signal.addEventListener('abort', signal_handler);
 
-			pending = {method, resolve: resolve_typed, reject: reject_typed, signal, signal_handler};
+			pending = { method, resolve: resolve_typed, reject: reject_typed, signal, signal_handler };
 
 			const should_queue = options.queue !== false && this.#queue_enabled;
 
@@ -535,7 +535,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 				// the queue is on, otherwise reject — this socket is in an odd
 				// state but the caller asked for non-durable semantics.
 				if (should_queue) {
-					this.#enqueue({...pending, id, frame});
+					this.#enqueue({ ...pending, id, frame });
 					return;
 				}
 				this.#detach_signal(pending);
@@ -544,7 +544,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			}
 
 			if (should_queue) {
-				this.#enqueue({...pending, id, frame});
+				this.#enqueue({ ...pending, id, frame });
 				return;
 			}
 			this.#detach_signal(pending);
@@ -576,7 +576,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		this.send({
 			jsonrpc: JSONRPC_VERSION,
 			method: cancel_action_spec.method,
-			params: {request_id},
+			params: { request_id }
 		});
 	}
 
@@ -591,8 +591,8 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			this.#detach_signal(queued);
 			queued.reject(
 				jsonrpc_errors.queue_overflow(
-					`[socket] request queue overflow (method=${queued.method}, max=${this.#queue_max_size})`,
-				),
+					`[socket] request queue overflow (method=${queued.method}, max=${this.#queue_max_size})`
+				)
 			);
 			return;
 		}
@@ -621,12 +621,12 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 					resolve: q.resolve,
 					reject: q.reject,
 					signal: q.signal,
-					signal_handler: q.signal_handler,
+					signal_handler: q.signal_handler
 				});
 			} else {
 				this.#detach_signal(q);
 				q.reject(
-					jsonrpc_errors.internal_error(`[socket] queued request send failed (method=${q.method})`),
+					jsonrpc_errors.internal_error(`[socket] queued request send failed (method=${q.method})`)
 				);
 			}
 		}
@@ -687,7 +687,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			this.#log?.info(
 				`[socket] receive timeout (${now - last_receive}ms) — closing ${
 					WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT
-				}`,
+				}`
 			);
 			try {
 				this.ws.close(WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT, 'client heartbeat timeout');
@@ -702,7 +702,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			// receive-silence detection above will close the socket on the next
 			// tick. No queue — the heartbeat is the thing that tells us the
 			// queue needs flushing, it must not fight the queue for the slot.
-			void this.request(heartbeat_action_spec.method, {}, {queue: false}).catch((error) => {
+			void this.request(heartbeat_action_spec.method, {}, { queue: false }).catch((error) => {
 				this.#log?.debug('[socket] heartbeat request failed:', error);
 			});
 		}
@@ -729,7 +729,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			this.#record_close(close_code, '');
 			this.#reject_pending_only(
 				`socket torn down (code ${close_code})`,
-				jsonrpc_errors.service_unavailable,
+				jsonrpc_errors.service_unavailable
 			);
 		}
 		this.ws = null;
@@ -750,8 +750,8 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		this.current_reconnect_delay = Math.round(
 			Math.min(
 				this.#reconnect_delay_max,
-				this.#reconnect_delay * this.#backoff_factor ** (this.reconnect_count - 1),
-			),
+				this.#reconnect_delay * this.#backoff_factor ** (this.reconnect_count - 1)
+			)
 		);
 		this.status = 'reconnecting';
 
@@ -806,7 +806,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		// them. Queue stays so the flush on reopen replays unsent work.
 		this.#reject_pending_only(
 			`connection closed (code ${event.code})`,
-			jsonrpc_errors.service_unavailable,
+			jsonrpc_errors.service_unavailable
 		);
 		// Let `#schedule_reconnect` set `status: 'reconnecting'` directly to avoid
 		// a transient `'closed'` flicker; only set `'closed'` when reconnect is off.
@@ -816,7 +816,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			this.status = 'closed';
 			this.#reject_all(
 				'connection closed, auto-reconnect disabled',
-				jsonrpc_errors.service_unavailable,
+				jsonrpc_errors.service_unavailable
 			);
 		}
 	};
@@ -852,14 +852,15 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			'id' in json &&
 			('result' in json || 'error' in json)
 		) {
-			const id = (json as {id: JsonrpcRequestId | null}).id;
+			const id = (json as { id: JsonrpcRequestId | null }).id;
 			if (id !== null) {
 				const pending = this.#pending.get(id);
 				if (pending) {
 					this.#pending.delete(id);
 					this.#detach_signal(pending);
-					if ('error' in json && (json as {error: unknown}).error) {
-						const err = (json as {error: {code?: number; message?: string; data?: unknown}}).error;
+					if ('error' in json && (json as { error: unknown }).error) {
+						const err = (json as { error: { code?: number; message?: string; data?: unknown } })
+							.error;
 						// Preserve the server's wire code verbatim so the transport's
 						// catch block re-emits the same code in its envelope. Fall
 						// back to `internal_error` only when the frame is malformed.
@@ -873,7 +874,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 								: 'unknown error';
 						pending.reject(new ThrownJsonrpcError(wire_code, wire_message, err.data));
 					} else {
-						pending.resolve((json as {result: unknown}).result);
+						pending.resolve((json as { result: unknown }).result);
 					}
 					return;
 				}
@@ -903,7 +904,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
  */
 export const socket_status_to_async_status = (
 	status: SocketStatus,
-	revoked: boolean,
+	revoked: boolean
 ): AsyncStatus => {
 	switch (status) {
 		case 'initial':

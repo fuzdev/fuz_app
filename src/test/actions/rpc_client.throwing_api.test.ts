@@ -10,20 +10,20 @@
  * @module
  */
 
-import {describe, assert, test} from 'vitest';
-import type {Result} from '@fuzdev/fuz_util/result.ts';
-import {assert_rejects} from '@fuzdev/fuz_util/testing.ts';
+import { describe, assert, test } from 'vitest';
+import type { Result } from '@fuzdev/fuz_util/result.ts';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import {create_throwing_api, type ThrowingApi} from '$lib/actions/rpc_client.ts';
-import type {JsonrpcErrorObject} from '$lib/http/jsonrpc.ts';
+import { create_throwing_api, type ThrowingApi } from '$lib/actions/rpc_client.ts';
+import type { JsonrpcErrorObject } from '$lib/http/jsonrpc.ts';
 
 describe('create_throwing_api', () => {
 	test('unwraps {ok: true, value} to value via the typed Proxy', async () => {
 		const api_result = {
-			foo: async (_input?: unknown) => ({ok: true as const, value: {hello: 'world'}}),
+			foo: async (_input?: unknown) => ({ ok: true as const, value: { hello: 'world' } })
 		};
 		const api = create_throwing_api(api_result);
-		assert.deepStrictEqual(await api.foo(), {hello: 'world'});
+		assert.deepStrictEqual(await api.foo(), { hello: 'world' });
 	});
 
 	test('forwards input + options to the underlying method', async () => {
@@ -31,12 +31,12 @@ describe('create_throwing_api', () => {
 		const api_result = {
 			foo: async (input?: unknown, options?: unknown) => {
 				received.push([input, options]);
-				return {ok: true as const, value: 1};
-			},
+				return { ok: true as const, value: 1 };
+			}
 		};
 		const api = create_throwing_api(api_result);
-		await api.foo({a: 1}, {signal: undefined, transport_name: 'mock'});
-		assert.deepStrictEqual(received, [[{a: 1}, {signal: undefined, transport_name: 'mock'}]]);
+		await api.foo({ a: 1 }, { signal: undefined, transport_name: 'mock' });
+		assert.deepStrictEqual(received, [[{ a: 1 }, { signal: undefined, transport_name: 'mock' }]]);
 	});
 
 	test('throws Error with {code, data} spread + message from error.message on {ok: false}', async () => {
@@ -46,14 +46,14 @@ describe('create_throwing_api', () => {
 				error: {
 					code: -32002,
 					message: 'forbidden',
-					data: {reason: 'role_grant_offer_not_authorized'},
-				},
-			}),
+					data: { reason: 'role_grant_offer_not_authorized' }
+				}
+			})
 		};
 		const api = create_throwing_api(api_result);
 		const err = (await assert_rejects(() => api.foo())) as Error & {
 			code?: number;
-			data?: {reason?: string};
+			data?: { reason?: string };
 		};
 		assert.strictEqual(err.message, 'forbidden');
 		assert.strictEqual(err.code, -32002);
@@ -64,12 +64,12 @@ describe('create_throwing_api', () => {
 	test('optional chaining on err.data works when data is missing', async () => {
 		const api_result = {
 			// `jsonrpc_errors.forbidden()` with no `data` argument produces this shape.
-			foo: async () => ({ok: false as const, error: {code: -32002, message: 'forbidden'}}),
+			foo: async () => ({ ok: false as const, error: { code: -32002, message: 'forbidden' } })
 		};
 		const api = create_throwing_api(api_result);
 		const err = (await assert_rejects(() => api.foo())) as Error & {
 			code?: number;
-			data?: {reason?: string};
+			data?: { reason?: string };
 		};
 		assert.strictEqual(err.code, -32002);
 		assert.strictEqual(err.data?.reason, undefined);
@@ -84,12 +84,12 @@ describe('create_throwing_api', () => {
 				error: {
 					code: -32002,
 					message: 'forbidden',
-					data: {reason: 'role_grant_offer_not_authorized'},
+					data: { reason: 'role_grant_offer_not_authorized' },
 					stack: 'Error: not-a-real-stack\n    at fake.ts:1:1',
 					name: 'AttackerControlledName',
-					cause: 'synthetic',
-				},
-			}),
+					cause: 'synthetic'
+				}
+			})
 		};
 		const api = create_throwing_api(api_result);
 		const err = (await assert_rejects(() => api.foo())) as Error & {
@@ -99,12 +99,12 @@ describe('create_throwing_api', () => {
 		assert.strictEqual(err.name, 'Error', 'Error.name must not be overwritable');
 		assert.ok(
 			typeof err.stack === 'string' && !err.stack.includes('not-a-real-stack'),
-			'Error.stack must be the native JS stack, not the attacker payload',
+			'Error.stack must be the native JS stack, not the attacker payload'
 		);
 		assert.strictEqual(
 			err.cause,
 			undefined,
-			'Only {code, data} are spread; extras must not land on the Error',
+			'Only {code, data} are spread; extras must not land on the Error'
 		);
 		assert.strictEqual(err.message, 'forbidden');
 		assert.strictEqual(err.code, -32002);
@@ -116,13 +116,13 @@ describe('create_throwing_api', () => {
 		// at call-time. Non-object returns pass through; the await still
 		// wraps in a Promise so the runtime type widens to Promise<value>
 		// for sync local_calls — known minor type/runtime divergence.
-		const api_result = {sync_value: () => 42};
+		const api_result = { sync_value: () => 42 };
 		const api = create_throwing_api(api_result);
 		assert.strictEqual(await (api as any).sync_value(), 42);
 	});
 
 	test('non-function properties pass through', async () => {
-		const api_result = {meta: 'static-string', toggle: () => true};
+		const api_result = { meta: 'static-string', toggle: () => true };
 		const api = create_throwing_api(api_result);
 		assert.strictEqual((api as any).meta, 'static-string');
 		assert.strictEqual(await (api as any).toggle(), true);
@@ -136,8 +136,8 @@ describe('create_throwing_api', () => {
 			{},
 			{
 				get: (_t, prop: string) =>
-					prop === 'known' ? async () => ({ok: true, value: 'yes'}) : undefined,
-			},
+					prop === 'known' ? async () => ({ ok: true, value: 'yes' }) : undefined
+			}
 		) as Record<string, (input?: any) => Promise<any>>;
 		const api = create_throwing_api(inner);
 		assert.strictEqual(await (api as any).known(), 'yes');
@@ -180,16 +180,18 @@ describe('ThrowingApi<TApi> — type-only fixtures', () => {
 		interface SampleApi {
 			account_verify: (
 				input?: undefined,
-				options?: {signal?: AbortSignal},
-			) => Promise<Result<{value: {id: string}}, {error: JsonrpcErrorObject}>>;
+				options?: { signal?: AbortSignal }
+			) => Promise<Result<{ value: { id: string } }, { error: JsonrpcErrorObject }>>;
 			// Required-input shape — regression case. An earlier `(input?: infer
 			// TInput, options?: infer TOptions)` form silently failed to match
 			// required-input methods under `--strictFunctionTypes`, leaving them
 			// Result-shaped after the mapped-type pass. The rest-args form
 			// (`...args: infer TArgs`) preserves both required and optional
 			// parameters; this assertion fails to compile if it regresses.
-			revoke: (input: {id: string}) => Promise<Result<{value: void}, {error: JsonrpcErrorObject}>>;
-			notify: (input: {x: number}) => void;
+			revoke: (input: {
+				id: string;
+			}) => Promise<Result<{ value: void }, { error: JsonrpcErrorObject }>>;
+			notify: (input: { x: number }) => void;
 		}
 
 		type Throwing = ThrowingApi<SampleApi>;
@@ -197,17 +199,17 @@ describe('ThrowingApi<TApi> — type-only fixtures', () => {
 		// `account_verify`: return type unwrapped, params + options preserved.
 		const verify_check: Throwing['account_verify'] = async (
 			_input?: undefined,
-			_options?: {signal?: AbortSignal},
-		): Promise<{id: string}> => ({id: 'a'});
+			_options?: { signal?: AbortSignal }
+		): Promise<{ id: string }> => ({ id: 'a' });
 		void verify_check;
 
 		// `revoke`: required input preserved, return type unwrapped.
-		const revoke_check: Throwing['revoke'] = async (_input: {id: string}): Promise<void> =>
+		const revoke_check: Throwing['revoke'] = async (_input: { id: string }): Promise<void> =>
 			undefined;
 		void revoke_check;
 
 		// `notify`: pass-through arm — original signature preserved unchanged.
-		const notify_check: Throwing['notify'] = (_input: {x: number}): void => undefined;
+		const notify_check: Throwing['notify'] = (_input: { x: number }): void => undefined;
 		void notify_check;
 
 		assert.ok(true, 'type assertions above are the actual test');
