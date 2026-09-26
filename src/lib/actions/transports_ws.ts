@@ -19,7 +19,12 @@
 
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
-import { ThrownJsonrpcError, jsonrpc_error_messages } from '../http/jsonrpc_errors.ts';
+import {
+	JSONRPC_ERROR_CODES,
+	ThrownJsonrpcError,
+	jsonrpc_error_messages
+} from '../http/jsonrpc_errors.ts';
+import { ERROR_PAYLOAD_TOO_LARGE } from '../http/error_schemas.ts';
 import {
 	is_jsonrpc_notification,
 	is_jsonrpc_request,
@@ -34,6 +39,7 @@ import type {
 	JsonrpcRequest,
 	JsonrpcRequestId,
 	JsonrpcResponseOrError,
+	JsonrpcErrorObject,
 	JsonrpcErrorResponse,
 	JsonrpcResult
 } from '../http/jsonrpc.ts';
@@ -72,6 +78,33 @@ export interface WebsocketRpcConnection extends WebsocketConnection {
 	) => Promise<unknown>;
 }
 
+/** Options for `FrontendWebsocketTransport`. */
+export interface FrontendWebsocketTransportOptions {
+	/**
+	 * Largest outbound message, in UTF-8 bytes of its JSON encoding. A larger
+	 * request or notification is refused with an `invalid_request` error
+	 * (`data.reason` `payload_too_large`) without being sent — a server that
+	 * caps inbound WebSocket messages closes the socket on an oversized one
+	 * (failing every request in flight on it) rather than replying with an
+	 * error. Set it to the server's cap. Unset, messages aren't measured.
+	 */
+	max_message_bytes?: number;
+}
+
+/**
+ * The error `FrontendWebsocketTransport` answers an oversized message with —
+ * `invalid_request` (the whole message is refused) carrying
+ * `data.reason: 'payload_too_large'`, the REST 413's reason.
+ */
+export const create_message_too_large_error = (
+	size: number,
+	max_message_bytes: number
+): JsonrpcErrorObject => ({
+	code: JSONRPC_ERROR_CODES.invalid_request,
+	message: `message too large: ${size} bytes exceeds the ${max_message_bytes}-byte limit`,
+	data: { reason: ERROR_PAYLOAD_TOO_LARGE }
+});
+
 /**
  * Thin adapter over `WebsocketRpcConnection` (canonical implementation:
  * `FrontendWebsocketClient`). Routes inbound server-pushed requests and
@@ -79,6 +112,9 @@ export interface WebsocketRpcConnection extends WebsocketConnection {
  * response back over the socket; an inbound `peer/ping` is answered by the
  * built-in responder before `receive`. Responses to requests *we* sent are
  * owned by the connection's own `request()` pending map and are ignored here.
+ * With `max_message_bytes` set, an oversized outbound message fails with an
+ * error envelope instead of being sent (see
+ * `FrontendWebsocketTransportOptions`).
  */
 export class FrontendWebsocketTransport implements Transport {
 	readonly transport_name = 'frontend_websocket_rpc' as const;
@@ -87,10 +123,16 @@ export class FrontendWebsocketTransport implements Transport {
 	#receive: (data: unknown) => Promise<unknown>;
 	#remove_message_handler: (() => void) | null;
 	#remove_error_handler: (() => void) | null;
+	#max_message_bytes: number | undefined;
 
-	constructor(connection: WebsocketRpcConnection, receive: (data: unknown) => Promise<unknown>) {
+	constructor(
+		connection: WebsocketRpcConnection,
+		receive: (data: unknown) => Promise<unknown>,
+		options?: FrontendWebsocketTransportOptions
+	) {
 		this.#connection = connection;
 		this.#receive = receive;
+		this.#max_message_bytes = options?.max_message_bytes;
 
 		// Inbound dispatch — only server-pushed requests/notifications need
 		// routing here. Responses to requests we sent are correlated by the
@@ -162,6 +204,15 @@ export class FrontendWebsocketTransport implements Transport {
 		// error frames), and the catch block below preserves that code
 		// verbatim in the error envelope. Queuing is routed via `queue`.
 		const queue = options?.queue ?? false;
+		if (this.#max_message_bytes !== undefined) {
+			const size = new TextEncoder().encode(JSON.stringify(message)).byteLength;
+			if (size > this.#max_message_bytes) {
+				return create_jsonrpc_error_response(
+					to_jsonrpc_message_id(message),
+					create_message_too_large_error(size, this.#max_message_bytes)
+				);
+			}
+		}
 		if (is_jsonrpc_notification(message) && !this.is_ready()) {
 			return create_jsonrpc_error_response(
 				to_jsonrpc_message_id(message),

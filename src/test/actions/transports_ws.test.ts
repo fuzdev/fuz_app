@@ -13,6 +13,7 @@ import { z } from 'zod';
 
 import {
 	FrontendWebsocketTransport,
+	create_message_too_large_error,
 	type WebsocketRpcConnection
 } from '$lib/actions/transports_ws.ts';
 import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '$lib/http/jsonrpc_errors.ts';
@@ -70,6 +71,92 @@ const create_fake_connection = (
 		}
 	};
 };
+
+describe('FrontendWebsocketTransport max_message_bytes', () => {
+	const MAX = 256;
+
+	test('an oversized request is refused without reaching the connection', async () => {
+		const fake = create_fake_connection();
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null, {
+			max_message_bytes: MAX
+		});
+		const message: JsonrpcRequest = {
+			jsonrpc: '2.0',
+			id: 'big',
+			method: 'upload',
+			params: { content: 'x'.repeat(MAX) }
+		};
+		const size = new TextEncoder().encode(JSON.stringify(message)).byteLength;
+
+		const response = await transport.send(message);
+
+		assert.strictEqual(fake.request_calls.length, 0, 'never sent');
+		assert.deepStrictEqual(response, {
+			jsonrpc: '2.0',
+			id: 'big',
+			error: create_message_too_large_error(size, MAX)
+		});
+		const error = create_message_too_large_error(size, MAX);
+		assert.strictEqual(error.code, JSONRPC_ERROR_CODES.invalid_request);
+		assert.deepStrictEqual(error.data, { reason: 'payload_too_large' });
+	});
+
+	test('measures UTF-8 bytes, not string length', async () => {
+		const fake = create_fake_connection();
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null, {
+			max_message_bytes: MAX
+		});
+		// under MAX in characters, over it in bytes (3 bytes each)
+		const params = { content: '€'.repeat(MAX / 3) };
+		const response = await transport.send({ jsonrpc: '2.0', id: 1, method: 'm', params });
+		assert.strictEqual(fake.request_calls.length, 0);
+		assert.ok('error' in response);
+	});
+
+	test('a message within the limit is sent', async () => {
+		const fake = create_fake_connection({ request_impl: async () => 'ok' });
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null, {
+			max_message_bytes: MAX
+		});
+		const response = await transport.send({
+			jsonrpc: '2.0',
+			id: 2,
+			method: 'm',
+			params: { content: 'small' }
+		});
+		assert.strictEqual(fake.request_calls.length, 1);
+		assert.deepStrictEqual(response, { jsonrpc: '2.0', id: 2, result: 'ok' });
+	});
+
+	test('an oversized notification is refused without being sent', async () => {
+		const fake = create_fake_connection();
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null, {
+			max_message_bytes: MAX
+		});
+		const notification: JsonrpcNotification = {
+			jsonrpc: '2.0',
+			method: 'note',
+			params: { content: 'x'.repeat(MAX) }
+		};
+		const response = await transport.send(notification);
+		assert.strictEqual(fake.sent_messages.length, 0);
+		assert.ok(response && 'error' in response);
+		assert.strictEqual(response.id, null);
+		assert.deepStrictEqual(response.error.data, { reason: 'payload_too_large' });
+	});
+
+	test('without the option, messages are not measured', async () => {
+		const fake = create_fake_connection();
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
+		await transport.send({
+			jsonrpc: '2.0',
+			id: 3,
+			method: 'm',
+			params: { content: 'x'.repeat(MAX * 4) }
+		});
+		assert.strictEqual(fake.request_calls.length, 1);
+	});
+});
 
 describe('FrontendWebsocketTransport', () => {
 	test('request delegates to connection.request with peer id, signal, queue=false', async () => {

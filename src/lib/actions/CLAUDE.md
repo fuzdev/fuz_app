@@ -371,6 +371,15 @@ regardless of `queue` — `connection.send()` has no queue semantic, so
 buffering would masquerade as success at the rpc_client layer. Requests
 route via `queue`.
 
+`FrontendWebsocketTransport`'s optional third argument
+(`FrontendWebsocketTransportOptions`) takes `max_message_bytes`: an outbound
+request or notification whose JSON encoding exceeds it (in UTF-8 bytes) is
+answered locally with an `invalid_request` error carrying
+`data.reason: 'payload_too_large'` (`create_message_too_large_error`) and
+never sent. Set it to the server's inbound WebSocket cap — a server that caps
+messages closes the socket on an oversized one instead of replying, failing
+every request in flight on it. Unset, nothing is measured.
+
 ### `BackendWebsocketTransport` — server-side WS state
 
 Three aligned maps keyed by `connection_id` (branded `Uuid`):
