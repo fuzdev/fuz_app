@@ -5,8 +5,12 @@
  * `attempted` state (set on submit attempt). Errors show after a field is blurred or
  * after a submit attempt, avoiding premature validation while the user is still typing.
  *
- * The `FormState.form` attachment also handles Enter key advancing
- * between focusable elements.
+ * The `FormState.form` attachment also handles the Enter key: in an input
+ * followed by another input it advances focus, and in the last input it
+ * submits the form (`requestSubmit`) — so Enter in a login form's password
+ * field logs in, even when the form's button is `type="button"`, as
+ * `PendingButton` is. Hidden inputs don't count, and an Enter that commits
+ * IME composition is left alone.
  *
  * All trackable inputs must have a `name` attribute — an error is thrown in dev
  * if an input without `name` loses focus.
@@ -46,7 +50,7 @@ import { DEV } from 'esm-env';
 import { on } from 'svelte/events';
 import { SvelteSet } from 'svelte/reactivity';
 
-const FOCUSABLE_SELECTOR = 'input:not(:disabled), button:not(:disabled)';
+const FOCUSABLE_SELECTOR = 'input:not(:disabled):not([type=hidden]), button:not(:disabled)';
 
 const FORM_INPUT_SELECTOR = 'input, textarea, select';
 
@@ -63,8 +67,9 @@ export class FormState {
 	}
 
 	/**
-	 * Creates a form attachment that handles Enter key advancing between
-	 * focusable elements and tracks field touched state via delegated `focusout`.
+	 * Creates a form attachment that handles the Enter key (advance focus to
+	 * the next focusable element, or submit from the last input) and tracks
+	 * field touched state via delegated `focusout`.
 	 *
 	 * Fields are identified by their `name` attribute.
 	 *
@@ -79,6 +84,8 @@ export class FormState {
 			this.#form = form;
 			const keydown_cleanup = on(form, 'keydown', (e) => {
 				if (e.key !== 'Enter') return;
+				// an IME composing text commits it with Enter — not a submit
+				if (e.isComposing) return;
 				if (!(e.target instanceof HTMLInputElement)) return;
 
 				const elements = Array.from(form.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
@@ -86,7 +93,15 @@ export class FormState {
 				if (index < 0) return;
 
 				e.preventDefault();
-				elements[(index + 1) % elements.length]!.focus();
+				// the last input submits instead of moving focus to the button after it
+				const input_follows = elements
+					.slice(index + 1)
+					.some((el) => el instanceof HTMLInputElement);
+				if (input_follows) {
+					elements[index + 1]!.focus();
+				} else {
+					form.requestSubmit();
+				}
 			});
 			const focusout_cleanup = on(form, 'focusout', (e) => {
 				const target = e.target;
