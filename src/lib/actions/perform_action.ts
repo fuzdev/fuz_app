@@ -28,7 +28,7 @@
  *    sits behind the authority gates by choice rather than necessity: a
  *    caller those gates refuse is answered 403, not 429.
  * 5. **Validate params (400)** — `spec.input.safeParse(raw_params)` with
- *    `z.void()` (`to_void_params`) / `?? {}` rules. Runs **after** the authority gates: a
+ *    `z.void()` / `?? {}` rules (`to_input_params`). Runs **after** the authority gates: a
  *    400 describing the action's input shape to a caller those gates
  *    refuse would confirm the method exists and describe how to call it,
  *    to a channel that should have learned nothing. Coarse authority
@@ -66,7 +66,7 @@ import {
 } from '../auth/request_context.ts';
 import { type CredentialType } from '../hono_context.ts';
 import type { Db } from '../db/db.ts';
-import { is_void_schema, to_void_params } from '../http/schema_helpers.ts';
+import { to_input_params } from '../http/schema_helpers.ts';
 import { dispatch_with_post_commit_rollback } from '../http/pending_effects.ts';
 import {
 	JSONRPC_VERSION,
@@ -293,10 +293,10 @@ export const perform_action = async (
 
 	// step 5: validate params. JSON-RPC 2.0 §4.2 forbids `params: null`;
 	// registration sites reject `z.null()` inputs. Empty-body convention
-	// (`raw_params ?? {}`) lets all-optional-object methods omit `params`.
-	// A `z.void()` input reads every empty shape as the no-arg call — see
-	// `to_void_params`.
-	const params = is_void_schema(spec.input) ? to_void_params(raw_params) : (raw_params ?? {});
+	// (`raw_params ?? {}`) lets all-optional-object methods omit `params`;
+	// a `z.void()` input reads every empty shape as the no-arg call — see
+	// `to_input_params`.
+	const params = to_input_params(spec.input, raw_params);
 	const parse_result = spec.input.safeParse(params);
 	if (!parse_result.success) {
 		return error_result(

@@ -46,9 +46,8 @@ export const is_void_schema = (schema: z.ZodType): boolean => schema instanceof 
  * structure carries no parameters, so refusing `{}` would only break clients
  * that send it for a parameterless call. Arrays — `[]` included — are not
  * normalized: RPC params are by-name only. The Rust spine's
- * `require_void_params` accepts the same shapes. Used by both the server
- * dispatch (`perform_action`) and a peer receiving a request or notification
- * (`ActionDispatcher`), so every receiving end reads the same shapes.
+ * `require_void_params` accepts the same shapes. Receiving ends reach it
+ * through `to_input_params`.
  *
  * @param raw_params - the request's `params` as parsed off the wire
  * @returns `undefined` for an empty shape, else `raw_params` unchanged
@@ -64,6 +63,22 @@ export const to_void_params = (raw_params: unknown): unknown => {
 	}
 	return raw_params;
 };
+
+/**
+ * Normalize the raw `params` of an RPC call for `input` to validate: for a
+ * `z.void()` input, `to_void_params`; for any other input, an absent or
+ * `null` `params` reads as `{}`, so an all-optional object input accepts a
+ * call that omits them. Every receiving end — the server dispatch
+ * (`perform_action`) and a peer receiving a request or notification
+ * (`ActionDispatcher`) — reads params through this, so a peer is never
+ * stricter than the server.
+ *
+ * @param input - the action's input schema
+ * @param raw_params - the call's `params` as parsed off the wire
+ * @returns the value to run `input.safeParse` on
+ */
+export const to_input_params = (input: z.ZodType, raw_params: unknown): unknown =>
+	is_void_schema(input) ? to_void_params(raw_params) : (raw_params ?? {});
 
 /**
  * Check if a schema is a strict object (`z.strictObject()`).

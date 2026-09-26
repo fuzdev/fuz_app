@@ -18,14 +18,14 @@ import {
 	to_jsonrpc_message_id,
 	is_jsonrpc_error_response
 } from '../http/jsonrpc_helpers.ts';
-import type {
-	JsonrpcMessageFromClientToServer,
-	JsonrpcMessageFromServerToClient,
-	JsonrpcNotification,
-	JsonrpcRequest,
-	JsonrpcRequestId,
-	JsonrpcResponseOrError,
-	JsonrpcErrorResponse
+import {
+	JsonrpcErrorResponse,
+	type JsonrpcMessageFromClientToServer,
+	type JsonrpcMessageFromServerToClient,
+	type JsonrpcNotification,
+	type JsonrpcRequest,
+	type JsonrpcRequestId,
+	type JsonrpcResponseOrError
 } from '../http/jsonrpc.ts';
 import type { Transport, TransportSendOptions } from './transports.ts';
 
@@ -98,8 +98,8 @@ export class FrontendHttpTransport implements Transport {
 
 			if (!response.ok) {
 				const id = to_jsonrpc_message_id(message);
-				const body = await read_json_body(response);
-				if (is_error_response_for(body, id)) {
+				const body = to_error_response_for(await read_json_body(response), id);
+				if (body) {
 					// The code → status map is a function (the status → code direction is
 					// lossy), so drift is checked in that direction.
 					if (DEV) {
@@ -164,22 +164,18 @@ const read_json_body = async (response: Response): Promise<unknown> => {
 };
 
 /**
- * Whether `body` is a well-formed JSON-RPC error response answering the
- * request with `id` — echoing it, or `null` when the server couldn't read one.
+ * `body` as a well-formed JSON-RPC error response answering the request with
+ * `id` — echoing it, or `null` when the server couldn't read one — else `null`.
  * Ids compare as strings: the GET convention sends the id as a query param,
  * so a numeric id comes back as its string form.
  */
-const is_error_response_for = (
+const to_error_response_for = (
 	body: unknown,
 	id: JsonrpcRequestId | null
-): body is JsonrpcErrorResponse => {
-	if (!is_jsonrpc_error_response(body)) return false;
-	if (body.id !== null && String(body.id) !== String(id)) return false;
-	const error: unknown = body.error;
-	return (
-		typeof error === 'object' &&
-		error !== null &&
-		Number.isInteger((error as { code?: unknown }).code) &&
-		typeof (error as { message?: unknown }).message === 'string'
-	);
+): JsonrpcErrorResponse | null => {
+	const parsed = JsonrpcErrorResponse.safeParse(body);
+	if (!parsed.success) return null;
+	const response = parsed.data;
+	if (response.id !== null && String(response.id) !== String(id)) return null;
+	return response;
 };

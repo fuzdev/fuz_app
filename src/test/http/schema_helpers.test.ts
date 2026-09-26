@@ -12,6 +12,7 @@ import {
 	is_strict_object_schema,
 	is_void_schema,
 	to_void_params,
+	to_input_params,
 	schema_to_surface,
 	middleware_applies,
 	merge_error_schemas
@@ -72,6 +73,24 @@ describe('to_void_params', () => {
 		for (const params of [{ a: 1 }, [], [1], 0, '', false]) {
 			assert.strictEqual(to_void_params(params), params, JSON.stringify(params));
 		}
+	});
+});
+
+describe('to_input_params', () => {
+	test('applies to_void_params to a z.void() input', () => {
+		for (const params of [undefined, null, {}]) {
+			assert.strictEqual(to_input_params(z.void(), params), undefined, JSON.stringify(params));
+		}
+		const extra = { a: 1 };
+		assert.strictEqual(to_input_params(z.void(), extra), extra);
+	});
+
+	test('reads absent and null params of any other input as {}', () => {
+		const input = z.strictObject({ limit: z.number().optional() });
+		assert.deepStrictEqual(to_input_params(input, undefined), {});
+		assert.deepStrictEqual(to_input_params(input, null), {});
+		const params = { limit: 2 };
+		assert.strictEqual(to_input_params(input, params), params);
 	});
 });
 

@@ -7,8 +7,6 @@
  * @module
  */
 
-import type { z } from 'zod';
-
 import {
 	JsonrpcMessageFromClientToServer,
 	JsonrpcMessageFromServerToClient,
@@ -25,7 +23,7 @@ import {
 	is_jsonrpc_notification
 } from '../http/jsonrpc_helpers.ts';
 import { jsonrpc_error_messages } from '../http/jsonrpc_errors.ts';
-import { is_void_schema, to_void_params } from '../http/schema_helpers.ts';
+import { to_input_params } from '../http/schema_helpers.ts';
 import { create_action_event } from './action_event.ts';
 import { Transports, type TransportName, type TransportSendOptions } from './transports.ts';
 import {
@@ -197,7 +195,7 @@ export class ActionDispatcher {
 			const event = create_action_event(
 				this.environment,
 				spec,
-				to_received_input(spec.input, request.params),
+				to_input_params(spec.input, request.params),
 				'receive_request'
 			);
 			event.set_request(request);
@@ -259,7 +257,7 @@ export class ActionDispatcher {
 			const event = create_action_event(
 				this.environment,
 				spec,
-				to_received_input(spec.input, notification.params),
+				to_input_params(spec.input, notification.params),
 				'receive'
 			);
 			event.set_notification(notification);
@@ -279,14 +277,3 @@ export class ActionDispatcher {
 		}
 	}
 }
-
-/**
- * The input a received message's `params` carries, read as the server
- * dispatch core (`perform_action`) reads it: for a `z.void()` input, absent,
- * `null`, and `{}` are all the no-arg call (`to_void_params`); for any other
- * input, absent or `null` params are `{}`, so an all-optional object input
- * accepts a call that omits them. A peer stricter than the server would
- * break a remote that relies on either.
- */
-const to_received_input = (input: z.ZodType, params: unknown): unknown =>
-	is_void_schema(input) ? to_void_params(params) : (params ?? {});

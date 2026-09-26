@@ -17,7 +17,7 @@ effects, see ../../../docs/architecture.md.
 - `http/route_spec.ts` — `RouteSpec` + `apply_route_specs`, validation pipeline, transactions.
 - `http/auth_shape.ts` — canonical `RouteAuth` Zod schema + cross-axis invariants + predicates.
 - `http/error_schemas.ts` — `ERROR_*` constants, standard error shapes, `derive_error_schemas`.
-- `http/schema_helpers.ts` — shared Zod introspection (null/void/strict/surface/merge/middleware-applies) + `to_void_params`.
+- `http/schema_helpers.ts` — shared Zod introspection (null/void/strict/surface/merge/middleware-applies) + `to_void_params` / `to_input_params`.
 - `http/middleware_spec.ts` — `MiddlewareSpec` interface.
 - `http/surface.ts` — `AppSurface`, `AppSurfaceSpec`, `generate_app_surface`, diagnostics.
 - `http/surface_query.ts` — pure filters/groupings over `AppSurface`.
@@ -220,7 +220,7 @@ confirmation.
 — extracted to break a circular dependency between `http/route_spec.ts`
 (input validation) and `http/surface.ts` (surface generation).
 
-**Import `is_null_schema`, `is_void_schema`, `to_void_params`, `is_strict_object_schema`, `schema_to_surface`,
+**Import `is_null_schema`, `is_void_schema`, `to_void_params`, `to_input_params`, `is_strict_object_schema`, `schema_to_surface`,
 `middleware_applies`, and `merge_error_schemas` from `http/schema_helpers.ts`,
 not from `http/surface.ts`.** The helpers were moved; `http/surface.ts`
 only imports and re-uses them for generation logic.
@@ -229,7 +229,8 @@ Key helpers:
 
 - `is_null_schema(schema)` — `instanceof z.ZodNull` (not parse-null, to avoid false positives from `z.nullable(z.string())`)
 - `is_void_schema(schema)` — `instanceof z.ZodVoid`; a `z.void()` input declares a parameterless RPC method
-- `to_void_params(raw_params)` — reads absent, `null`, and `{}` params of a `z.void()` input as the no-arg call (`undefined`), passing any other shape through for `z.void()` to refuse; used by both the server dispatch core (`perform_action`) and the peer receive path (`ActionDispatcher`) — the twin of the Rust spine's `require_void_params`
+- `to_void_params(raw_params)` — reads absent, `null`, and `{}` params of a `z.void()` input as the no-arg call (`undefined`), passing any other shape through for `z.void()` to refuse — the twin of the Rust spine's `require_void_params`
+- `to_input_params(input, raw_params)` — the one params normalizer every receiving end runs before `input.safeParse`: `to_void_params` for a `z.void()` input, else absent/`null` → `{}`; used by both the server dispatch core (`perform_action`) and the peer receive path (`ActionDispatcher`)
 - `is_strict_object_schema(schema)` — detects `z.strictObject()` by checking `schema.def.catchall instanceof z.ZodNever`
 - `schema_to_surface(schema)` — Zod → JSON Schema, with `$schema` and `default` keys stripped recursively (defaults may be non-deterministic; `$schema` is snapshot noise)
 - `middleware_applies(mw_path, route_path)` — Hono pattern matching: `'*'`, exact, `'/api/*'` prefix (handles `prefix.slice(0, -1)` so `/api/*` also matches the bare `/api`)

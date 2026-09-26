@@ -78,6 +78,8 @@ export interface WebsocketRpcConnection extends WebsocketConnection {
 	) => Promise<unknown>;
 }
 
+const text_encoder = new TextEncoder();
+
 /** Options for `FrontendWebsocketTransport`. */
 export interface FrontendWebsocketTransportOptions {
 	/**
@@ -205,7 +207,7 @@ export class FrontendWebsocketTransport implements Transport {
 		// verbatim in the error envelope. Queuing is routed via `queue`.
 		const queue = options?.queue ?? false;
 		if (this.#max_message_bytes !== undefined) {
-			const size = new TextEncoder().encode(JSON.stringify(message)).byteLength;
+			const size = text_encoder.encode(JSON.stringify(message)).byteLength;
 			if (size > this.#max_message_bytes) {
 				return create_jsonrpc_error_response(
 					to_jsonrpc_message_id(message),
