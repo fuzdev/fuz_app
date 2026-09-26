@@ -462,6 +462,15 @@ Production behavior: `wrap_output_validation` and the `if (DEV)` block
 inside `actions/perform_action.ts` short-circuit to the unwrapped handler
 — zero runtime cost and no schema-parse work on the hot path.
 
+The receiving side is a different boundary. A client's `ActionEvent`
+validates a response's `result` against `spec.output` in every mode — to
+the caller, the server's output is external input. On success the handler
+and caller get the parsed value (brands, defaults, and transforms applied);
+on mismatch the event moves to `receive_error` with an `internal_error`
+naming the method, with `data.reason` `ERROR_RESPONSE_OUTPUT_INVALID` and
+the issues — distinct from the codes bad caller input gets — the same path
+an error response takes.
+
 ## Fire-and-Forget Pending Effects
 
 Per-request `Array<Promise<void>>` on Hono's `ContextVariableMap` for tracking

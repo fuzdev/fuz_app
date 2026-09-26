@@ -9,7 +9,13 @@
 import { describe, assert, test } from 'vitest';
 import { z } from 'zod';
 
-import { create_action_event, create_action_event_from_json } from '$lib/actions/action_event.ts';
+import {
+	create_action_event,
+	create_action_event_from_json,
+	ERROR_RESPONSE_OUTPUT_INVALID,
+	type ActionEvent
+} from '$lib/actions/action_event.ts';
+import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
 import type { ActionEventEnvironment } from '$lib/actions/action_event_types.ts';
 import type { ActionSpecUnion } from '$lib/actions/action_spec.ts';
 import type { ActionEventDataUnion } from '$lib/actions/action_event_data.ts';
@@ -175,6 +181,154 @@ describe('ActionEvent handle_async', () => {
 		assert.ok(request);
 		assert.strictEqual(request.method, 'ping');
 		assert.strictEqual(request.jsonrpc, '2.0');
+	});
+});
+
+/** Drive a `ping` request to `receive_response` with `result` as the wire result. */
+const receive_ping_result = async (env: TestEnvironment, result: unknown): Promise<ActionEvent> => {
+	const event = create_action_event(env, ping_spec, null);
+	event.parse();
+	await event.handle_async();
+	const request = event.data.request;
+	assert.ok(request);
+	event.transition('receive_response');
+	event.set_response({ jsonrpc: '2.0', id: request.id, result } as any);
+	event.parse();
+	return event;
+};
+
+describe('ActionEvent receive_response output validation', () => {
+	test('a result matching spec.output parses and reaches the handler', async () => {
+		const env = new TestEnvironment([ping_spec]);
+		let seen: unknown;
+		env.add_handler('ping', 'receive_response', (event) => {
+			seen = event.data.output;
+		});
+		const event = await receive_ping_result(env, { pong: true });
+		assert.strictEqual(event.data.step, 'parsed');
+		await event.handle_async();
+		assert.strictEqual(event.data.step, 'handled');
+		assert.deepEqual(seen, { pong: true });
+		assert.deepEqual(event.data.output, { pong: true });
+	});
+
+	test('the output is the parsed value, with defaults and transforms applied', async () => {
+		const spec = {
+			...ping_spec,
+			output: z.strictObject({ pong: z.literal(true), count: z.number().default(3) })
+		} satisfies ActionSpecUnion;
+		const env = new TestEnvironment([spec]);
+		const event = create_action_event(env, spec, null);
+		event.parse();
+		await event.handle_async();
+		event.transition('receive_response');
+		event.set_response({ jsonrpc: '2.0', id: event.data.request!.id, result: { pong: true } });
+		event.parse();
+		assert.deepEqual(event.data.output, { pong: true, count: 3 });
+	});
+
+	test('a result not matching spec.output moves to receive_error with a marked internal_error', async () => {
+		const env = new TestEnvironment([ping_spec]);
+		let received_error: unknown;
+		let response_handler_called = false;
+		env.add_handler('ping', 'receive_response', () => {
+			response_handler_called = true;
+		});
+		env.add_handler('ping', 'receive_error', (event) => {
+			received_error = event.data.error;
+		});
+		const event = await receive_ping_result(env, { pong: 'nope', extra: 1 });
+		assert.strictEqual(event.data.phase, 'receive_error');
+		assert.strictEqual(event.data.output, null);
+		const error = event.data.error;
+		assert.ok(error);
+		// distinguishable from the caller's own bad input (`invalid_params` / `validation_error`)
+		assert.strictEqual(error.code, JSONRPC_ERROR_CODES.internal_error);
+		assert.include(error.message, 'response failed output validation for ping');
+		const data = error.data as { reason: string; validation_errors: Array<unknown> };
+		assert.strictEqual(data.reason, ERROR_RESPONSE_OUTPUT_INVALID);
+		assert.ok(data.validation_errors.length > 0);
+		await event.handle_async();
+		assert.ok(!response_handler_called);
+		assert.strictEqual(received_error, error);
+	});
+
+	test('a response without a result fails validation', async () => {
+		const env = new TestEnvironment([ping_spec]);
+		const event = await receive_ping_result(env, undefined);
+		assert.strictEqual(event.data.phase, 'receive_error');
+		assert.strictEqual(
+			(event.data.error?.data as { reason?: string } | undefined)?.reason,
+			ERROR_RESPONSE_OUTPUT_INVALID
+		);
+	});
+});
+
+describe('ActionEvent send_response result', () => {
+	const run_receive_request = async (output_schema: z.ZodType, handler_output: unknown) => {
+		const spec = { ...ping_spec, output: output_schema } satisfies ActionSpecUnion;
+		const env = new TestEnvironment([spec]);
+		env.executor = 'backend';
+		env.add_handler('ping', 'receive_request', () => handler_output);
+		const event = create_action_event(env, spec, null, 'receive_request');
+		event.set_request({ jsonrpc: '2.0', id: 1, method: 'ping', params: null as any });
+		await event.parse().handle_async();
+		event.transition('send_response');
+		await event.parse().handle_async();
+		return event.data.response;
+	};
+
+	test('any JSON value goes out as the result unchanged', async () => {
+		assert.deepEqual(await run_receive_request(z.null(), null), {
+			jsonrpc: '2.0',
+			id: 1,
+			result: null
+		});
+		assert.deepEqual((await run_receive_request(z.number(), 7))?.result, 7);
+		assert.deepEqual((await run_receive_request(z.array(z.number()), [1]))?.result, [1]);
+	});
+
+	test('a handler returning nothing sends a null result', async () => {
+		assert.deepEqual(await run_receive_request(z.void(), undefined), {
+			jsonrpc: '2.0',
+			id: 1,
+			result: null
+		});
+	});
+});
+
+describe('ActionEvent handler errors', () => {
+	test('a plain throw keeps its message as internal_error', async () => {
+		const env = new TestEnvironment([ping_spec]);
+		env.add_handler('ping', 'receive_response', () => {
+			throw new Error('bad session payload');
+		});
+		const event = await receive_ping_result(env, { pong: true });
+		await event.handle_async();
+		assert.strictEqual(event.data.phase, 'receive_error');
+		assert.strictEqual(event.data.error?.code, JSONRPC_ERROR_CODES.internal_error);
+		assert.strictEqual(event.data.error?.message, 'bad session payload');
+	});
+
+	test('a non-Error throw is stringified', async () => {
+		const env = new TestEnvironment([toggle_spec]);
+		env.add_handler('toggle_menu', 'execute', () => {
+			throw 'plain string'; // eslint-disable-line @typescript-eslint/only-throw-error
+		});
+		const event = create_action_event(env, toggle_spec, null);
+		event.parse().handle_sync();
+		assert.strictEqual(event.data.step, 'failed');
+		assert.strictEqual(event.data.error?.message, 'plain string');
+	});
+
+	test('an empty message falls back to the unknown-error message', async () => {
+		const env = new TestEnvironment([toggle_spec]);
+		env.add_handler('toggle_menu', 'execute', () => {
+			throw new Error('');
+		});
+		const event = create_action_event(env, toggle_spec, null);
+		event.parse().handle_sync();
+		assert.strictEqual(event.data.error?.message, 'unknown error');
 	});
 });
 

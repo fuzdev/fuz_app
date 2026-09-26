@@ -178,6 +178,29 @@ describe('create_rpc_endpoint', () => {
 		);
 	});
 
+	test('throws on z.void() output spec (a response always carries a result)', () => {
+		const void_output_spec: RequestResponseActionSpec = {
+			method: 'thing_void_output',
+			kind: 'request_response',
+			initiator: 'frontend',
+			auth: { account: 'none', actor: 'none' },
+			side_effects: true,
+			input: z.void(),
+			output: z.void(),
+			async: true,
+			description: 'Void-output action'
+		};
+		assert.throws(
+			() =>
+				create_rpc_endpoint({
+					path: '/api/rpc',
+					actions: [{ spec: void_output_spec, handler: () => undefined }],
+					log
+				}),
+			/RPC action "thing_void_output".*z\.void\(\) for output.*z\.null\(\)/s
+		);
+	});
+
 	test('throws on z.null() input spec (JSON-RPC 2.0 forbids `params: null`)', () => {
 		const legacy_null_spec: RequestResponseActionSpec = {
 			method: 'thing_legacy_null',

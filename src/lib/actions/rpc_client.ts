@@ -19,7 +19,7 @@ import type {
 	RemoteNotificationActionSpec,
 	RequestResponseActionSpec
 } from './action_spec.ts';
-import type { ActionEventEnvironment } from './action_event_types.ts';
+import { resolve_action_log, type ActionEventEnvironment } from './action_event_types.ts';
 import { create_action_event, type ActionEvent } from './action_event.ts';
 import {
 	is_send_request,
@@ -281,7 +281,7 @@ const create_remote_notification_method = (
 			});
 			// Check if notification failed to send
 			if (send_result !== null) {
-				environment.log?.error('notification send failed:', send_result.error);
+				resolve_action_log(environment)?.error('notification send failed:', send_result.error);
 				return { ok: false, error: send_result.error };
 			}
 			return { ok: true, value: undefined };

@@ -9,6 +9,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
+import { z } from 'zod';
 
 import {
 	FrontendWebsocketTransport,
@@ -17,6 +18,8 @@ import {
 import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '$lib/http/jsonrpc_errors.ts';
 import type { JsonrpcRequest, JsonrpcNotification, JsonrpcRequestId } from '$lib/http/jsonrpc.ts';
 import { PEER_PING_METHOD, PEER_PROTOCOL_VERSION } from '$lib/actions/peer_ping.ts';
+import { create_frontend_rpc_client } from '$lib/actions/frontend_rpc_client.ts';
+import type { ActionSpecUnion } from '$lib/actions/action_spec.ts';
 
 interface RequestCall {
 	method: string;
@@ -437,5 +440,55 @@ describe('FrontendWebsocketTransport server→client receive', () => {
 
 		assert.strictEqual(fake.sent_messages.length, 0, 'no reply when the peer produced none');
 		transport.dispose();
+	});
+});
+
+describe('FrontendWebsocketTransport non-object results', () => {
+	test('null, primitive, and array results pass through as-is', async () => {
+		for (const result of [null, 0, 'text', false, [1, 2], []]) {
+			const fake = create_fake_connection({ request_impl: async () => result });
+			const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
+			const response = await transport.send({ jsonrpc: '2.0', id: 'r', method: 'm' });
+			assert.deepStrictEqual(response, { jsonrpc: '2.0', id: 'r', result }, JSON.stringify(result));
+		}
+	});
+
+	const make_spec = (method: string, output: z.ZodType) =>
+		({
+			method,
+			kind: 'request_response',
+			initiator: 'frontend',
+			auth: { account: 'none', actor: 'none' },
+			side_effects: true,
+			input: z.null(),
+			output,
+			async: true,
+			description: method
+		}) satisfies ActionSpecUnion;
+
+	const specs = [
+		make_spec('returns_null', z.null()),
+		make_spec('returns_number', z.number()),
+		make_spec('returns_array', z.array(z.string()))
+	];
+	const results: Record<string, unknown> = {
+		returns_null: null,
+		returns_number: 42,
+		returns_array: ['a', 'b']
+	};
+
+	test('create_rpc_client over the WS transport validates and returns them', async () => {
+		const fake = create_fake_connection({
+			request_impl: async (call) => results[call.method]
+		});
+		const { api_result } = create_frontend_rpc_client<Record<string, (input?: unknown) => any>>({
+			specs,
+			transports: [new FrontendWebsocketTransport(fake.connection, async () => null)]
+		});
+		for (const [method, expected] of Object.entries(results)) {
+			const result = await api_result[method]!(null);
+			assert.ok(result.ok, `${method}: ${JSON.stringify(result)}`);
+			assert.deepStrictEqual(result.value, expected, method);
+		}
 	});
 });

@@ -16,10 +16,11 @@
  *   to `DEFAULT_QUEUE_MAX_SIZE` requests and flush on reopen. Overflow
  *   rejects with `queue_overflow`. Raw `FrontendWebsocketClient.send`
  *   is drop-on-disconnect (fire-and-forget notifications want that).
- * - **Activity-aware heartbeat** — idles fire a shared `heartbeat` request;
- *   receive-silence past `DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT` closes
- *   with `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT` and lets auto-reconnect
- *   pick back up.
+ * - **Activity-aware heartbeat** — a shared `heartbeat` request fires when
+ *   either direction has been idle for the interval; receive-silence past
+ *   the receive timeout (`DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT`, never less
+ *   than `HEARTBEAT_RECEIVE_TIMEOUT_MIN_FACTOR` × the interval) closes with
+ *   `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT` and lets auto-reconnect pick back up.
  *
  * @module
  */
@@ -45,8 +46,35 @@ export const DEFAULT_RECONNECT_DELAY_MAX = 10000;
 export const DEFAULT_BACKOFF_FACTOR = 1.5;
 /** Idle interval before sending a heartbeat (ms). */
 export const DEFAULT_HEARTBEAT_INTERVAL = 30_000;
-/** Max receive silence before closing with `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT` (ms). */
+/**
+ * Max receive silence before closing with `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT`
+ * (ms), for intervals up to half of it — see `resolve_heartbeat_receive_timeout`.
+ */
 export const DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT = 60_000;
+/**
+ * Minimum ratio of the heartbeat receive timeout to the heartbeat interval.
+ *
+ * A heartbeat goes out once a direction has been idle for `interval`, and the
+ * check runs every `interval / 2`, so on an idle socket it can leave up to
+ * 1.5 × `interval` after the last receive — and its response needs a round
+ * trip on top. A receive timeout under 2 × `interval` can close a healthy
+ * idle socket before its heartbeat is answered, so it's clamped up to this.
+ */
+export const HEARTBEAT_RECEIVE_TIMEOUT_MIN_FACTOR = 2;
+
+/**
+ * Resolve the effective heartbeat receive timeout for `interval`: the given
+ * `receive_timeout` (or `DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT`), raised to at
+ * least `HEARTBEAT_RECEIVE_TIMEOUT_MIN_FACTOR` × `interval`.
+ *
+ * @param interval - heartbeat idle interval in ms
+ * @param receive_timeout - requested receive timeout in ms
+ * @returns the receive timeout in ms the client enforces
+ */
+export const resolve_heartbeat_receive_timeout = (
+	interval: number,
+	receive_timeout: number = DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT
+): number => Math.max(receive_timeout, interval * HEARTBEAT_RECEIVE_TIMEOUT_MIN_FACTOR);
 /** Default bound on buffered requests while disconnected. Overflow rejects. */
 export const DEFAULT_QUEUE_MAX_SIZE = 100;
 
@@ -76,16 +104,20 @@ export interface FrontendWebsocketReconnectOptions {
 
 export interface FrontendWebsocketHeartbeatOptions {
 	/**
-	 * Idle duration (ms) after which a heartbeat is sent. Reset by any send or
-	 * receive — chatty clients never emit extras. Defaults to
+	 * Idle duration (ms) after which a heartbeat is sent — when either nothing
+	 * has been sent or nothing has been received for this long, so both ends'
+	 * silence detectors stay fed. Traffic in both directions defers it, so
+	 * chatty connections never emit extras. Defaults to
 	 * `DEFAULT_HEARTBEAT_INTERVAL`.
 	 */
 	interval?: number;
 	/**
 	 * Receive-silence (ms) after which the client closes the socket with
 	 * `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT`, letting auto-reconnect kick
-	 * in. Should be a comfortable multiple of `interval`. Defaults to
-	 * `DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT`.
+	 * in. Defaults to `DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT`; either way it's
+	 * raised to at least `HEARTBEAT_RECEIVE_TIMEOUT_MIN_FACTOR` × `interval`
+	 * (see `resolve_heartbeat_receive_timeout`), so a long `interval` alone
+	 * is safe.
 	 */
 	receive_timeout?: number;
 }
@@ -169,10 +201,12 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	#queue: Array<QueuedRequest> = [];
 
 	#heartbeat_timer: ReturnType<typeof setInterval> | null = null;
-	/** Epoch ms of the last outgoing send — used by the heartbeat activity check. */
-	#last_send_time: number | null = null;
-	/** Epoch ms of the last incoming message — used by the heartbeat activity check. */
-	#last_receive_time: number | null = null;
+	/** Whether a heartbeat request is awaiting its response — at most one is outstanding. */
+	#heartbeat_in_flight = false;
+	/** Epoch ms of the last outgoing send, reset on open — the heartbeat activity baseline. */
+	#heartbeat_send_mark: number | null = null;
+	/** Epoch ms of the last incoming message, reset on open — the heartbeat activity baseline. */
+	#heartbeat_receive_mark: number | null = null;
 
 	ws: WebSocket | null = $state.raw(null);
 	status: SocketStatus = $state.raw('initial');
@@ -187,6 +221,17 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	last_close_code: number | null = $state.raw(null);
 	/** Reason string from the most recent close event (may be empty). */
 	last_close_reason: string | null = $state.raw(null);
+	/**
+	 * Epoch ms of the most recent frame written to the socket — requests,
+	 * notifications, heartbeats, and cancels alike. `null` until the first send.
+	 */
+	last_send_time: number | null = $state.raw(null);
+	/**
+	 * Epoch ms of the most recent frame received — responses (including ones
+	 * `request` consumes), notifications, and requests alike. `null` until the
+	 * first receive.
+	 */
+	last_receive_time: number | null = $state.raw(null);
 	/**
 	 * The error thrown by the most recent attempted `send()`, or `null` if the
 	 * most recent attempt succeeded or none has been attempted yet. Populated
@@ -220,8 +265,10 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		this.#heartbeat_enabled = heartbeat !== false;
 		const heartbeat_config = typeof heartbeat === 'object' && heartbeat !== null ? heartbeat : {};
 		this.#heartbeat_interval = heartbeat_config.interval ?? DEFAULT_HEARTBEAT_INTERVAL;
-		this.#heartbeat_receive_timeout =
-			heartbeat_config.receive_timeout ?? DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT;
+		this.#heartbeat_receive_timeout = resolve_heartbeat_receive_timeout(
+			this.#heartbeat_interval,
+			heartbeat_config.receive_timeout
+		);
 
 		const queue = options.queue;
 		this.#queue_enabled = queue !== false;
@@ -316,7 +363,10 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		this.#heartbeat_enabled = heartbeat !== false;
 		const config = typeof heartbeat === 'object' && heartbeat !== null ? heartbeat : {};
 		this.#heartbeat_interval = config.interval ?? DEFAULT_HEARTBEAT_INTERVAL;
-		this.#heartbeat_receive_timeout = config.receive_timeout ?? DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT;
+		this.#heartbeat_receive_timeout = resolve_heartbeat_receive_timeout(
+			this.#heartbeat_interval,
+			config.receive_timeout
+		);
 
 		if (this.connected) {
 			this.#start_heartbeat();
@@ -426,7 +476,9 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		try {
 			this.ws.send(JSON.stringify(data));
 			this.last_send_error = null;
-			this.#last_send_time = Date.now();
+			const now = Date.now();
+			this.#heartbeat_send_mark = now;
+			this.last_send_time = now;
 			return true;
 		} catch (error) {
 			this.#log?.error('[socket] send failed:', error);
@@ -462,7 +514,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 *
 	 * @mutates this - inserts the new pending entry into `#pending` (or
 	 *   buffers into `#queue` when disconnected) and may bump
-	 *   `#next_request_id`, `#last_send_time`, `last_send_error`
+	 *   `#next_request_id`, `last_send_time`, `last_send_error`
 	 * @throws ThrownJsonrpcError on the returned promise — never thrown
 	 *   synchronously. Rejection codes:
 	 *   - `unauthenticated` — session revoked (entry check or close code)
@@ -663,8 +715,8 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 		this.#cancel_heartbeat();
 		if (!this.#heartbeat_enabled) return;
 		const now = Date.now();
-		this.#last_send_time = now;
-		this.#last_receive_time = now;
+		this.#heartbeat_send_mark = now;
+		this.#heartbeat_receive_mark = now;
 		// Run the check at half the interval so any event-loop blockage pauses
 		// the timer itself; a dead-because-blocked socket is close enough to
 		// dead-because-unresponsive that closing is arguably correct.
@@ -682,7 +734,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	#heartbeat_tick(): void {
 		if (!this.connected || !this.ws) return;
 		const now = Date.now();
-		const last_receive = this.#last_receive_time ?? now;
+		const last_receive = this.#heartbeat_receive_mark ?? now;
 		if (now - last_receive >= this.#heartbeat_receive_timeout) {
 			this.#log?.info(
 				`[socket] receive timeout (${now - last_receive}ms) — closing ${
@@ -696,15 +748,28 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			}
 			return;
 		}
-		const last_activity = Math.max(this.#last_send_time ?? 0, last_receive);
-		if (now - last_activity >= this.#heartbeat_interval) {
+		// Heartbeat when either direction has gone quiet: receive-only silence
+		// would trip this client's receive timeout, send-only silence the
+		// server's. Traffic both ways keeps both fed.
+		// One outstanding heartbeat at a time — its response feeds the receive
+		// side, and if it never comes the receive timeout above closes the socket.
+		const last_send = this.#heartbeat_send_mark ?? now;
+		if (
+			!this.#heartbeat_in_flight &&
+			now - Math.min(last_send, last_receive) >= this.#heartbeat_interval
+		) {
 			// Fire-and-forget the heartbeat. If it fails (network, serialization),
 			// receive-silence detection above will close the socket on the next
 			// tick. No queue — the heartbeat is the thing that tells us the
 			// queue needs flushing, it must not fight the queue for the slot.
-			void this.request(heartbeat_action_spec.method, {}, { queue: false }).catch((error) => {
-				this.#log?.debug('[socket] heartbeat request failed:', error);
-			});
+			this.#heartbeat_in_flight = true;
+			void this.request(heartbeat_action_spec.method, {}, { queue: false })
+				.catch((error: unknown) => {
+					this.#log?.debug('[socket] heartbeat request failed:', error);
+				})
+				.finally(() => {
+					this.#heartbeat_in_flight = false;
+				});
 		}
 	}
 
@@ -834,7 +899,9 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	};
 
 	#handle_message = (event: MessageEvent): void => {
-		this.#last_receive_time = Date.now();
+		const now = Date.now();
+		this.#heartbeat_receive_mark = now;
+		this.last_receive_time = now;
 
 		// Intercept JSON-RPC responses for pending `request()` calls. Parse
 		// defensively — if the frame isn't valid JSON or isn't a response, fall

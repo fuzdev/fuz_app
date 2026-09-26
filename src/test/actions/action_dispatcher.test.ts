@@ -4,12 +4,16 @@
  * @module
  */
 
-import { describe, assert, test } from 'vitest';
+import { describe, assert, test, vi, afterEach } from 'vitest';
 import { z } from 'zod';
 
 import { ActionDispatcher } from '$lib/actions/action_dispatcher.ts';
 import { Transports, type Transport } from '$lib/actions/transports.ts';
-import type { ActionEventEnvironment } from '$lib/actions/action_event_types.ts';
+import {
+	console_action_log,
+	resolve_action_log,
+	type ActionEventEnvironment
+} from '$lib/actions/action_event_types.ts';
 import type { ActionSpecUnion } from '$lib/actions/action_spec.ts';
 
 const ping_spec = {
@@ -190,5 +194,52 @@ describe('ActionDispatcher', () => {
 		await peer.send({ jsonrpc: '2.0', method: 'ping', id: 2 }, { queue: false });
 		assert.strictEqual(captured.length, 1);
 		assert.strictEqual(captured[0]!.options?.queue, false);
+	});
+});
+
+describe('ActionDispatcher diagnostics log', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	test('resolve_action_log falls back to console only when log is unset', () => {
+		const env = new TestEnvironment();
+		assert.strictEqual(resolve_action_log(env), console_action_log);
+		assert.isNull(resolve_action_log(Object.assign(env, { log: null })));
+	});
+
+	test('an unset log reports a notification that fails to parse via console.error', async () => {
+		const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const peer = new ActionDispatcher({ environment: new TestEnvironment([notify_spec]) });
+		await peer.receive({ jsonrpc: '2.0', method: 'thing_changed', params: { id: 1, extra: true } });
+		assert.strictEqual(error.mock.calls.length, 1);
+		assert.include(String(error.mock.calls[0]![0]), 'receive notification failed');
+	});
+
+	test('an unset log reports a throwing notification handler via console.error', async () => {
+		const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const env = new TestEnvironment([notify_spec]);
+		env.add_handler('thing_changed', 'receive', () => {
+			throw new Error('boom');
+		});
+		const peer = new ActionDispatcher({ environment: env });
+		await peer.receive({ jsonrpc: '2.0', method: 'thing_changed', params: { id: 'a' } });
+		assert.strictEqual(error.mock.calls.length, 1);
+		assert.deepInclude(error.mock.calls[0]![2], { message: 'boom' });
+	});
+
+	test('an unset log reports an unknown notification method via console.warn', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const peer = new ActionDispatcher({ environment: new TestEnvironment() });
+		await peer.receive({ jsonrpc: '2.0', method: 'nope', params: {} });
+		assert.strictEqual(warn.mock.calls.length, 1);
+	});
+
+	test('log: null silences the diagnostics', async () => {
+		const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const env = Object.assign(new TestEnvironment([notify_spec]), { log: null });
+		const peer = new ActionDispatcher({ environment: env });
+		await peer.receive({ jsonrpc: '2.0', method: 'thing_changed', params: { id: 1 } });
+		assert.strictEqual(error.mock.calls.length, 0);
 	});
 });

@@ -9,6 +9,7 @@
 
 import { z } from 'zod';
 import { create_uuid } from '@fuzdev/fuz_util/id.ts';
+import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
 import type { ActionEventPhase, ActionKind, ActionSpecUnion } from './action_spec.ts';
 import {
@@ -17,15 +18,20 @@ import {
 	create_jsonrpc_error_response,
 	create_jsonrpc_notification,
 	to_jsonrpc_params,
-	to_jsonrpc_result,
 	is_jsonrpc_error_response
 } from '../http/jsonrpc_helpers.ts';
-import { jsonrpc_error_messages, ThrownJsonrpcError } from '../http/jsonrpc_errors.ts';
+import {
+	dev_only,
+	jsonrpc_error_messages,
+	ThrownJsonrpcError,
+	UNKNOWN_ERROR_MESSAGE
+} from '../http/jsonrpc_errors.ts';
 import type {
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
 	JsonrpcNotification,
-	JsonrpcErrorObject
+	JsonrpcErrorObject,
+	JsonrpcResult
 } from '../http/jsonrpc.ts';
 import type { ActionEventEnvironment, ActionEventStep } from './action_event_types.ts';
 import { ActionEventData, type ActionEventDataUnion } from './action_event_data.ts';
@@ -40,6 +46,13 @@ import {
 	is_send_request_with_parsed_input,
 	is_notification_send_with_parsed_input
 } from './action_event_helpers.ts';
+
+/**
+ * `error.data.reason` on the `internal_error` a client reports when a
+ * response's `result` fails `spec.output` — a remote bug, distinct from the
+ * `invalid_params` / `validation_error` a caller's own bad input produces.
+ */
+export const ERROR_RESPONSE_OUTPUT_INVALID = 'response_output_invalid' as const;
 
 // TODO maybe just use runes in this module and remove `observe`
 export type ActionEventChangeObserver<TMethod extends string = string> = (
@@ -117,7 +130,15 @@ export class ActionEvent<
 	}
 
 	/**
-	 * Parse input data according to the action's schema.
+	 * Parse the event's payload against the action's schemas — `spec.input`
+	 * for outgoing and incoming calls, `spec.output` for a received response.
+	 *
+	 * A received response's `result` is validated like any other inbound data:
+	 * on success `output` becomes the parsed value (brands, defaults, and
+	 * transforms applied); on mismatch the event moves to `receive_error` with
+	 * an `internal_error` whose `data.reason` is `ERROR_RESPONSE_OUTPUT_INVALID`
+	 * (the remote broke its contract — not the caller's input), the same path
+	 * an error response takes.
 	 *
 	 * @returns `this` for chaining with `handle_async` / `handle_sync`
 	 * @mutates this - transitions step from `initial` to `parsed` (or to
@@ -141,13 +162,31 @@ export class ActionEvent<
 			return this;
 		}
 
-		// Input already validated in predecessor phase — skip re-parsing
-		if (
-			this.#data.kind === 'request_response' &&
-			(this.#data.phase === 'receive_response' || this.#data.phase === 'send_response')
-		) {
-			this.#transition_step('parsed');
-			return this;
+		if (this.#data.kind === 'request_response') {
+			// The remote's result is untrusted — validate it like inbound input.
+			// Input was already validated in the predecessor phase.
+			if (this.#data.phase === 'receive_response') {
+				const parsed = this.spec.output.safeParse(this.#data.output);
+				if (parsed.success) {
+					this.#transition_step('parsed', { output: parsed.data });
+				} else {
+					this.#transition_to_error_phase(
+						'receive_error',
+						jsonrpc_error_messages.internal_error(
+							`response failed output validation for ${this.spec.method}: ${z.prettifyError(
+								parsed.error
+							)}`,
+							{ reason: ERROR_RESPONSE_OUTPUT_INVALID, validation_errors: parsed.error.issues }
+						)
+					);
+				}
+				return this;
+			}
+			// Output was validated when the handler completed in `receive_request`.
+			if (this.#data.phase === 'send_response') {
+				this.#transition_step('parsed');
+				return this;
+			}
 		}
 
 		const parsed = this.spec.input.safeParse(this.#data.input);
@@ -179,7 +218,7 @@ export class ActionEvent<
 	 * @throws Error if called from a step other than `parsed` (or `failed`,
 	 *   which no-ops). Handler-thrown `ThrownJsonrpcError` is caught and
 	 *   routed through error phases; other throws are wrapped as
-	 *   `internal_error`.
+	 *   `internal_error` carrying the thrown message (see `#to_handler_error`).
 	 */
 	// TODO add timeout support
 	// TODO add cancellation support
@@ -203,11 +242,7 @@ export class ActionEvent<
 			const result = await handler(this);
 			this.#complete_handling(result);
 		} catch (error) {
-			// Preserve ThrownJsonrpcError structure, wrap others as internal_error
-			const error_json =
-				error instanceof ThrownJsonrpcError
-					? { code: error.code, message: error.message, data: error.data }
-					: jsonrpc_error_messages.internal_error('unknown error');
+			const error_json = this.#to_handler_error(error);
 
 			// If we're already in an error phase, transition to failed
 			// Otherwise, transition to appropriate error phase
@@ -257,11 +292,7 @@ export class ActionEvent<
 			const result = handler(this);
 			this.#complete_handling(result);
 		} catch (error) {
-			// Preserve ThrownJsonrpcError structure, wrap others as internal_error
-			const error_json =
-				error instanceof ThrownJsonrpcError
-					? { code: error.code, message: error.message, data: error.data }
-					: jsonrpc_error_messages.internal_error('unknown error');
+			const error_json = this.#to_handler_error(error);
 
 			this.#fail(error_json);
 		}
@@ -341,6 +372,25 @@ export class ActionEvent<
 	// TODO usage of this in this module is silently swallowing errors, maybe log on the environment?
 	#fail(error: JsonrpcErrorObject): void {
 		this.#transition_step('failed', { error });
+	}
+
+	/**
+	 * Normalize a handler throw. `ThrownJsonrpcError` keeps its code, message,
+	 * and data; anything else becomes `internal_error` with the thrown message.
+	 * When the error answers a remote caller (`receive_request` /
+	 * `send_response`) the raw message is kept only in development — the same
+	 * `dev_only` gate the server dispatch uses, so paths or secrets in an
+	 * exception message never cross the wire in production.
+	 */
+	#to_handler_error(error: unknown): JsonrpcErrorObject {
+		if (error instanceof ThrownJsonrpcError) {
+			return { code: error.code, message: error.message, data: error.data };
+		}
+		const message = to_error_message(error) || UNKNOWN_ERROR_MESSAGE;
+		const answers_remote =
+			this.#data.kind === 'request_response' &&
+			(this.#data.phase === 'receive_request' || this.#data.phase === 'send_response');
+		return jsonrpc_error_messages.internal_error(answers_remote ? dev_only(message) : message);
 	}
 
 	/**
@@ -485,8 +535,12 @@ export class ActionEvent<
 			return create_jsonrpc_error_response(this.#data.request.id, this.#data.error);
 		}
 
-		const result = to_jsonrpc_result(this.#data.output);
-		return create_jsonrpc_response(this.#data.request.id, result);
+		// any JSON value is a valid result; `undefined` (a handler that returned
+		// nothing) has no JSON form, so it goes out as `null`
+		return create_jsonrpc_response(
+			this.#data.request.id,
+			(this.#data.output ?? null) as JsonrpcResult
+		);
 	}
 }
 

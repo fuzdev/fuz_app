@@ -24,7 +24,6 @@ import {
 	is_jsonrpc_notification,
 	is_jsonrpc_request,
 	to_jsonrpc_message_id,
-	to_jsonrpc_result,
 	create_jsonrpc_response,
 	create_jsonrpc_error_response
 } from '../http/jsonrpc_helpers.ts';
@@ -35,7 +34,8 @@ import type {
 	JsonrpcRequest,
 	JsonrpcRequestId,
 	JsonrpcResponseOrError,
-	JsonrpcErrorResponse
+	JsonrpcErrorResponse,
+	JsonrpcResult
 } from '../http/jsonrpc.ts';
 import type { Transport, TransportSendOptions } from './transports.ts';
 import { PEER_PING_METHOD, peer_ping_responder } from './peer_ping.ts';
@@ -176,7 +176,8 @@ export class FrontendWebsocketTransport implements Transport {
 					signal: options?.signal,
 					queue
 				});
-				return create_jsonrpc_response(message.id, to_jsonrpc_result(result));
+				// any JSON value is a valid result — `null`, primitives, and arrays pass through
+				return create_jsonrpc_response(message.id, result as JsonrpcResult);
 			} catch (error) {
 				if (error instanceof ThrownJsonrpcError) {
 					return create_jsonrpc_error_response(message.id, {

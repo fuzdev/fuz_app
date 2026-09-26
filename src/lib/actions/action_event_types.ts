@@ -65,5 +65,35 @@ export interface ActionEventEnvironment {
 		phase: ActionEventPhase
 	) => ((event: any) => any) | undefined;
 	lookup_action_spec: (method: string) => ActionSpecUnion | undefined;
+	/**
+	 * Where dispatch diagnostics go — failed sends, rejected or failing inbound
+	 * notifications and requests. Unset falls back to `console_action_log`;
+	 * `null` silences them.
+	 */
 	readonly log?: Logger | null;
 }
+
+/** The logging surface the action dispatch path uses. */
+export type ActionLog = Pick<Logger, 'error' | 'warn' | 'debug'>;
+
+/**
+ * Fallback log for environments that leave `log` unset: warnings and errors
+ * go to `console`, so a notification that fails to parse or a handler that
+ * throws is visible rather than silently dropped; per-message debug chatter
+ * is discarded. A plain `console` adapter rather than a `Logger` so it's safe
+ * in any runtime, the browser included.
+ */
+export const console_action_log: ActionLog = {
+	error: (...args) => console.error(...args),
+	warn: (...args) => console.warn(...args),
+	debug: () => {}
+};
+
+/**
+ * Resolve the log an environment's dispatch diagnostics go to.
+ *
+ * @returns the environment's `log`, `console_action_log` when it's unset, or
+ *   `null` when it's explicitly `null`
+ */
+export const resolve_action_log = (environment: ActionEventEnvironment): ActionLog | null =>
+	environment.log === undefined ? console_action_log : environment.log;

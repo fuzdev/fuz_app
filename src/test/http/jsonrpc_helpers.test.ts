@@ -23,8 +23,7 @@ import {
 	is_jsonrpc_error_response,
 	to_jsonrpc_envelope_id,
 	to_jsonrpc_message_id,
-	to_jsonrpc_params,
-	to_jsonrpc_result
+	to_jsonrpc_params
 } from '$lib/http/jsonrpc_helpers.ts';
 
 describe('create_jsonrpc_request', () => {
@@ -282,27 +281,6 @@ describe('to_jsonrpc_params', () => {
 
 	test('wraps arrays in {value}', () => {
 		assert.deepStrictEqual(to_jsonrpc_params([1, 2]), { value: [1, 2] });
-	});
-});
-
-describe('to_jsonrpc_result', () => {
-	test('passes through objects', () => {
-		const obj = { foo: 'bar' };
-		assert.strictEqual(to_jsonrpc_result(obj), obj);
-	});
-
-	test('returns empty object for null/undefined', () => {
-		assert.deepStrictEqual(to_jsonrpc_result(null), {});
-		assert.deepStrictEqual(to_jsonrpc_result(undefined), {});
-	});
-
-	test('wraps primitives in {value}', () => {
-		assert.deepStrictEqual(to_jsonrpc_result('hello'), { value: 'hello' });
-		assert.deepStrictEqual(to_jsonrpc_result(42), { value: 42 });
-	});
-
-	test('wraps arrays in {value}', () => {
-		assert.deepStrictEqual(to_jsonrpc_result([1, 2]), { value: [1, 2] });
 	});
 });
 

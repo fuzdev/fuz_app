@@ -82,7 +82,7 @@ order and returns the `Map<method, RpcAction>` the dispatchers use:
 - **Auth-shape biconditional** — `actor !== 'none' ⟺ input declares acting?: ActingActor` (via `assert_route_auth_acting_biconditional`).
 - **No `auth.required_scope`** — the slot is route-spec-only; nothing mounts a guard from it on an action, so declaring it would be a control that silently does nothing. Narrowed tokens are gated per method by the scope check in `perform_action`, which derives the `rpc:<method>` capability from `spec.method` rather than trusting a hand-written one.
 - **Rate-limit account axis** — `rate_limit: 'account' | 'both'` requires `auth.account === 'required'`.
-- **JSON-RPC §4.2 wire validity** — `request_response` specs with a handler may not use `z.null()` for input (use `z.void()` for nullary).
+- **JSON-RPC §4.2 wire validity** — `request_response` specs with a handler may not use `z.null()` for input (use `z.void()` for nullary), nor `z.void()` for output (a response always carries a `result`, which clients validate against `spec.output`; use `z.null()` when there's nothing to return).
 - **Unique method names** across the array.
 
 Only `request_response` specs with a handler reach the dispatch map;
@@ -349,7 +349,7 @@ and `allow_fallback: boolean` (default `true`). Explicit
 ### WS close codes (`actions/transports.ts`)
 
 - `WS_CLOSE_SESSION_REVOKED = 4001` — server revoked auth; client enters permanent `revoked` state, no reconnect.
-- `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002` — client observed receive-silence past `DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT`.
+- `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002` — client observed receive-silence past its receive timeout (`resolve_heartbeat_receive_timeout`).
 - `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003` — server observed receive-silence past `DEFAULT_SERVER_HEARTBEAT_TIMEOUT` (60s).
 
 ### Transport modules
@@ -358,9 +358,13 @@ and `allow_fallback: boolean` (default `true`). Explicit
 - `actions/transports_ws.ts` — `frontend_websocket_rpc`; thin adapter over `WebsocketRpcConnection` (default impl: `FrontendWebsocketClient`). Answers inbound server→client requests: a built-in `peer_ping_responder` for `peer/ping` (zero-wiring liveness), any other request routed through `peer.receive` with the response sent back over the socket (the frontend half of the ActionPeer receive loop).
 - `actions/transports_ws_backend.ts` — `backend_websocket_rpc`; server-side WS with session tracking; satisfies `FilterableBroadcastTransport`. Server→client requests via `request_connection` (correlation registry in `actions/peer_request.ts`).
 
-`FrontendHttpTransport` synthesizes a JSON-RPC error envelope via
-`http_status_to_jsonrpc_error_code` on non-OK HTTP; DEV warns on drift
-between JSON-RPC error code and declared HTTP status.
+`FrontendHttpTransport` on non-OK HTTP returns the body as-is when it's a
+JSON-RPC error response for the request (same `id` compared as strings since GET sends it as a query param, or `null`) — the
+status → code map is lossy (`queue_overflow` and `rate_limited` share 429), so
+the server's code, message, and data must survive. Any other body gets an
+envelope synthesized via `http_status_to_jsonrpc_error_code`. DEV warns when
+`jsonrpc_error_code_to_http_status(code)` disagrees with the status, or when an
+error envelope arrives with a 2xx.
 
 `FrontendWebsocketTransport` notification sends fail-fast when disconnected
 regardless of `queue` — `connection.send()` has no queue semantic, so
@@ -619,14 +623,19 @@ high-level shapes that span modules:
 - **39-variant discriminated union** — `ActionEventDataUnion<TMethod, TInput, TOutput>` across `kind` + `phase` + `step` (28 for `request_response`, 6 for `remote_notification`, 5 for `local_call`). Narrows `input` / `output` / `error` / `request` / `response` / `notification` / `progress` at each lifecycle point.
 - **Step transitions** — `initial → parsed | failed`, `parsed → handling | failed`, `handling → handled | failed`, `handled`/`failed` terminal. `validate_step_transition(from, to)` throws on illegal moves.
 - **Phase transitions** — chained: `send_request → receive_response`, `receive_request → send_response`; everything else terminal. `validate_phase_for_kind` + `validate_phase_transition` enforce.
-- **`ActionEvent.parse()`** — `initial → parsed` via `spec.input.safeParse`. Input validation failures **fail immediately** without routing through an error phase (client-side programming errors, not runtime conditions with handlers). Handler errors DO route through `send_error` / `receive_error`. On `receive_response` with error response, transitions to `receive_error` instead of failing.
+- **`ActionEvent.parse()`** — `initial → parsed` via `spec.input.safeParse`. Input validation failures **fail immediately** without routing through an error phase (client-side programming errors, not runtime conditions with handlers). Handler errors DO route through `send_error` / `receive_error`. On `receive_response` with error response, transitions to `receive_error` instead of failing; a success response's `result` is validated against `spec.output` (always, not DEV-only — it's inbound data) and `output` becomes the parsed value, or the event moves to `receive_error` with an `internal_error` carrying `data: {reason: ERROR_RESPONSE_OUTPUT_INVALID, validation_errors}` — a remote contract break, deliberately distinct from the `invalid_params` / `validation_error` of bad caller input.
+- **Handler throws** — `ThrownJsonrpcError` keeps code/message/data; any other throw becomes `internal_error` carrying the thrown message. When the error answers a remote caller (`receive_request` / `send_response`), the raw message goes through `dev_only` like the server dispatch core.
 - **Protocol message creation is automatic** — transitioning `parsed → handling` on `send_request` materializes the outgoing `JsonrpcRequest` with a fresh `create_uuid()` id; on `send` (notification) it materializes the `JsonrpcNotification`.
 
 `ActionDispatcher` (`actions/action_dispatcher.ts`) is symmetric send + receive
 over a `Transports` registry and `ActionEventEnvironment`. `default_send_options`
 excludes `signal` deliberately — a shared signal would abort every subsequent
 call after the first trip. `transport_name` and `queue` can be defaulted here
-once to flip the dispatcher into client-authoritative mode.
+once to flip the dispatcher into client-authoritative mode. Diagnostics (failed
+sends, inbound notifications that fail to parse or whose handler throws, unknown
+methods) go to `environment.log`; unset falls back to `console_action_log`
+(warn/error to `console`, debug dropped) so failures are never silent, and
+`log: null` opts out (`resolve_action_log`).
 
 **Naming.** `ActionDispatcher` is the (frontend) send/receive coordinator class.
 "ActionPeer" — unbackticked throughout the peer/ping + `request_client` docs — is
@@ -647,7 +656,11 @@ Ships three correctness primitives default-on:
 
 1. **Promise-based `request`** — auto-assigned monotonic id; pending map keyed by id; resolved via intercept on the message path. Rejects `ThrownJsonrpcError` with specific codes (`unauthenticated`, `request_cancelled`, `queue_overflow`, `service_unavailable`, `internal_error`, or the server's wire code verbatim). The transport catch block preserves `.code` exactly so `FrontendWebsocketTransport` never collapses to `internal_error`.
 2. **Durable queue** — `request()` calls while disconnected buffer up to `DEFAULT_QUEUE_MAX_SIZE = 100` and flush on reopen. Overflow rejects `queue_overflow`. Pass `{queue: false}` to reject immediately (used internally by the heartbeat — it must not fight the queue for the disconnect-detection slot). Raw `send(data)` is **drop-on-disconnect** by design (fire-and-forget notifications want that).
-3. **Activity-aware heartbeat** — idles past `DEFAULT_HEARTBEAT_INTERVAL = 30_000` fire the shared `heartbeat` request. Receive-silence past `DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT = 60_000` closes with `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT`. Tick runs at `interval / 2` so event-loop blockage pauses the timer itself.
+3. **Activity-aware heartbeat** — the shared `heartbeat` request fires when either direction has been idle past `DEFAULT_HEARTBEAT_INTERVAL = 30_000` (send-only silence would trip the server's detector, receive-only silence this client's). Receive-silence past the receive timeout closes with `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT`. Tick runs at `interval / 2` so event-loop blockage pauses the timer itself — so a heartbeat can leave up to 1.5 × `interval` after the last receive, and `resolve_heartbeat_receive_timeout` raises the receive timeout (`DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT = 60_000` unless given) to at least `HEARTBEAT_RECEIVE_TIMEOUT_MIN_FACTOR` (2) × `interval`. A long `interval` alone is therefore safe. At most one heartbeat is outstanding — an unanswered one is left to the receive timeout rather than repeated.
+
+`last_send_time` / `last_receive_time` are reactive epoch-ms stamps of the most
+recent frame each way — every frame, including heartbeats and the responses
+`request` consumes — for diagnostics UI.
 
 Reconnect policy (exponential backoff): `delay = DEFAULT_RECONNECT_DELAY * DEFAULT_BACKOFF_FACTOR ** (attempts-1)`,
 capped at `DEFAULT_RECONNECT_DELAY_MAX`. `WS_CLOSE_SESSION_REVOKED` is

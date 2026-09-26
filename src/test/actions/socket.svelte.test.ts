@@ -25,6 +25,8 @@ import {
 	DEFAULT_HEARTBEAT_INTERVAL,
 	DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT,
 	DEFAULT_QUEUE_MAX_SIZE,
+	HEARTBEAT_RECEIVE_TIMEOUT_MIN_FACTOR,
+	resolve_heartbeat_receive_timeout,
 	socket_status_to_async_status
 } from '$lib/actions/socket.svelte.ts';
 import {
@@ -1597,54 +1599,129 @@ describe('client heartbeat', () => {
 		assert.deepStrictEqual(frame.params, {});
 	});
 
-	test('outgoing send resets the idle window — no heartbeat emitted', () => {
+	test('traffic in both directions defers the heartbeat', () => {
 		vi.useFakeTimers();
 		const client = new FrontendWebsocketClient(TEST_URL, {
-			heartbeat: { interval: 100, receive_timeout: 10_000 }
+			heartbeat: { interval: 200, receive_timeout: 10_000 }
 		});
 		client.connect();
 		last_ws().fire_open();
 
-		// send chatter just before a tick; advance past the original interval
-		vi.advanceTimersByTime(40);
+		// send + receive chatter just before the tick at t=200
+		vi.advanceTimersByTime(150);
 		client.send({ some: 'data' });
-		vi.advanceTimersByTime(60); // total 100 — would have ticked without the send
+		last_ws().fire_message('{"jsonrpc":"2.0","method":"note","params":{}}');
+		vi.advanceTimersByTime(100); // tick at t=200 sees 50ms idle both ways
 
 		// Only the chatter frame is on the wire — no heartbeat yet.
 		assert.strictEqual(last_ws().sent.length, 1);
 		assert.deepStrictEqual(JSON.parse(last_ws().sent[0]!), { some: 'data' });
 	});
 
-	test('incoming message resets the receive-silence timer', () => {
+	test('send-only chatter still heartbeats so the receive side stays fed', () => {
 		vi.useFakeTimers();
-		// tick runs at max(100, interval/2). interval=400 → tick=200, which
-		// means the receive-silence check runs every 200ms. Setting
-		// receive_timeout=200 keeps the close threshold one tick wide so we
-		// can observe an activity reset between ticks.
 		const client = new FrontendWebsocketClient(TEST_URL, {
-			heartbeat: { interval: 400, receive_timeout: 200 }
+			heartbeat: { interval: 200, receive_timeout: 10_000 }
 		});
 		client.connect();
 		last_ws().fire_open();
 
-		// Just before the first tick at t=200, server sends something.
+		// fire-and-forget sends earn no responses — receive silence keeps growing
+		vi.advanceTimersByTime(150);
+		client.send({ some: 'data' });
+		vi.advanceTimersByTime(100); // tick at t=200: 200ms without a receive
+
+		const methods = last_ws().sent.map((f) => JSON.parse(f).method);
+		assert.include(methods, heartbeat_action_spec.method);
+	});
+
+	test('receive-only chatter still heartbeats so the server side stays fed', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {
+			heartbeat: { interval: 200, receive_timeout: 10_000 }
+		});
+		client.connect();
+		last_ws().fire_open();
+
+		// server pushes notifications; this client never writes
 		vi.advanceTimersByTime(150);
 		last_ws().fire_message('{"jsonrpc":"2.0","method":"note","params":{}}');
-		// First tick fires at t=200; with last_receive=150 silence=50 < 200.
+		vi.advanceTimersByTime(100); // tick at t=200: 200ms without a send
+
+		assert.strictEqual(last_ws().sent.length, 1);
+		assert.strictEqual(JSON.parse(last_ws().sent[0]!).method, heartbeat_action_spec.method);
+	});
+
+	test('no second heartbeat while one is unanswered', async () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {
+			heartbeat: { interval: 100, receive_timeout: 10_000 }
+		});
+		client.connect();
+		last_ws().fire_open();
+		const heartbeats = () =>
+			last_ws().sent
+				.map((f) => JSON.parse(f))
+				.filter((f) => f.method === heartbeat_action_spec.method);
+
+		// idle across many intervals with the first heartbeat unanswered
+		vi.advanceTimersByTime(1000);
+		assert.strictEqual(heartbeats().length, 1);
+
+		// answering it frees the slot — the next idle interval sends another
+		last_ws().fire_message(make_response(heartbeats()[0]!.id, {}));
+		await vi.advanceTimersByTimeAsync(50);
+		assert.strictEqual(heartbeats().length, 1);
+		await vi.advanceTimersByTimeAsync(100);
+		assert.strictEqual(heartbeats().length, 2);
+	});
+
+	test('an error response to the heartbeat also frees the slot', async () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL, {
+			heartbeat: { interval: 100, receive_timeout: 10_000 }
+		});
+		client.connect();
+		last_ws().fire_open();
+		vi.advanceTimersByTime(100);
+		const first = JSON.parse(last_ws().sent[0]!);
+		last_ws().fire_message(
+			JSON.stringify({ jsonrpc: '2.0', id: first.id, error: { code: -32603, message: 'x' } })
+		);
+		await vi.advanceTimersByTimeAsync(150);
+		const methods = last_ws().sent.map((f) => JSON.parse(f).method);
+		assert.strictEqual(methods.filter((m) => m === heartbeat_action_spec.method).length, 2);
+	});
+
+	test('incoming message resets the receive-silence timer', () => {
+		vi.useFakeTimers();
+		// tick runs at max(100, interval/2). interval=100 → tick=100, and
+		// receive_timeout=200 is the clamp floor (2 × interval), so the close
+		// fires on the tick at t=200 absent a receive.
+		const client = new FrontendWebsocketClient(TEST_URL, {
+			heartbeat: { interval: 100, receive_timeout: 200 }
+		});
+		client.connect();
+		last_ws().fire_open();
+
+		// Just before the tick at t=200, server sends something.
+		vi.advanceTimersByTime(150);
+		last_ws().fire_message('{"jsonrpc":"2.0","method":"note","params":{}}');
+		// Tick at t=200: last_receive=150 → silence=50 < 200.
 		vi.advanceTimersByTime(100);
 		assert.isNull(last_ws().close_code);
-		// Would have closed at t=200 without the reset — tick at t=200 would
-		// have seen silence=200. Advance another tick to confirm still no close.
+		// Tick at t=300: silence=150 < 200. Without the reset the tick at
+		// t=200 would have closed.
 		vi.advanceTimersByTime(100);
 		assert.isNull(last_ws().close_code);
 	});
 
 	test('receive silence past receive_timeout closes with 4002', () => {
 		vi.useFakeTimers();
-		// interval=400 → tick=200; receive_timeout=200 means the first tick
-		// after open fires the close.
+		// interval=100 → tick=100; receive_timeout=200 → the unanswered
+		// heartbeat at t=100 is followed by the close on the tick at t=200.
 		const client = new FrontendWebsocketClient(TEST_URL, {
-			heartbeat: { interval: 400, receive_timeout: 200 },
+			heartbeat: { interval: 100, receive_timeout: 200 },
 			reconnect: false
 		});
 		client.connect();
@@ -1654,6 +1731,49 @@ describe('client heartbeat', () => {
 		vi.advanceTimersByTime(250);
 
 		assert.strictEqual(ws.close_code, WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT);
+	});
+
+	test('receive_timeout below the floor is clamped up to 2 × interval', () => {
+		vi.useFakeTimers();
+		// interval=400 → tick=200. An unclamped 200ms timeout would close on
+		// the first tick; the clamp raises it to 800ms.
+		const client = new FrontendWebsocketClient(TEST_URL, {
+			heartbeat: { interval: 400, receive_timeout: 200 },
+			reconnect: false
+		});
+		client.connect();
+		last_ws().fire_open();
+		const ws = last_ws();
+
+		vi.advanceTimersByTime(700);
+		assert.isNull(ws.close_code);
+		vi.advanceTimersByTime(200); // tick at t=800
+		assert.strictEqual(ws.close_code, WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT);
+	});
+
+	test('a long interval alone keeps an idle socket open while heartbeats are answered', async () => {
+		vi.useFakeTimers();
+		// interval past the default receive timeout, no receive_timeout given —
+		// the default 60s would close the socket before the first heartbeat
+		const interval = 300_000;
+		const client = new FrontendWebsocketClient(TEST_URL, { heartbeat: { interval } });
+		client.connect();
+		last_ws().fire_open();
+		const ws = last_ws();
+
+		// answer every heartbeat as it goes out, across several intervals
+		for (let elapsed = 0; elapsed < interval * 4; elapsed += interval / 2) {
+			await vi.advanceTimersByTimeAsync(interval / 2);
+			const sent = ws.sent.length;
+			if (sent > 0) {
+				const frame = JSON.parse(ws.sent[sent - 1]!);
+				if (frame.method === heartbeat_action_spec.method) {
+					ws.fire_message(make_response(frame.id, {}));
+				}
+			}
+			assert.isNull(ws.close_code, `closed at ${elapsed + interval / 2}ms`);
+		}
+		assert.ok(ws.sent.length >= 3, 'heartbeats went out');
 	});
 
 	test('heartbeat: false disables the timer (no close, no ping)', () => {
@@ -1687,6 +1807,73 @@ describe('client heartbeat', () => {
 		// Smoke-test the defaults without running the whole interval.
 		assert.strictEqual(DEFAULT_HEARTBEAT_INTERVAL, 30_000);
 		assert.strictEqual(DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT, 60_000);
+		assert.isAtLeast(
+			DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT,
+			DEFAULT_HEARTBEAT_INTERVAL * HEARTBEAT_RECEIVE_TIMEOUT_MIN_FACTOR
+		);
+	});
+});
+
+describe('traffic timestamps', () => {
+	test('last_send_time and last_receive_time start null', () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		assert.isNull(client.last_send_time);
+		assert.isNull(client.last_receive_time);
+	});
+
+	test('request frames and the responses request consumes are both recorded', async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(1_000);
+		const client = new FrontendWebsocketClient(TEST_URL, { heartbeat: false });
+		client.connect();
+		last_ws().fire_open();
+		assert.isNull(client.last_send_time, 'open is not a send');
+
+		const p = client.request('echo', {});
+		assert.strictEqual(client.last_send_time, 1_000);
+		assert.isNull(client.last_receive_time);
+
+		vi.setSystemTime(2_000);
+		last_ws().fire_message(make_response(1, { ok: true }));
+		await p;
+		assert.strictEqual(client.last_receive_time, 2_000);
+		assert.strictEqual(client.last_send_time, 1_000);
+	});
+
+	test('heartbeat frames are recorded as sends', () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(10_000);
+		const client = new FrontendWebsocketClient(TEST_URL, {
+			heartbeat: { interval: 100, receive_timeout: 10_000 }
+		});
+		client.connect();
+		last_ws().fire_open();
+
+		vi.advanceTimersByTime(150);
+		assert.strictEqual(JSON.parse(last_ws().sent[0]!).method, heartbeat_action_spec.method);
+		assert.strictEqual(client.last_send_time, 10_100);
+	});
+});
+
+describe('resolve_heartbeat_receive_timeout', () => {
+	test('defaults to DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT for short intervals', () => {
+		assert.strictEqual(
+			resolve_heartbeat_receive_timeout(10_000),
+			DEFAULT_HEARTBEAT_RECEIVE_TIMEOUT
+		);
+	});
+
+	test('the default scales with a long interval', () => {
+		assert.strictEqual(resolve_heartbeat_receive_timeout(300_000), 600_000);
+	});
+
+	test('an explicit value at or above the floor is kept', () => {
+		assert.strictEqual(resolve_heartbeat_receive_timeout(1000, 5000), 5000);
+		assert.strictEqual(resolve_heartbeat_receive_timeout(1000, 2000), 2000);
+	});
+
+	test('an explicit value below the floor is raised to it', () => {
+		assert.strictEqual(resolve_heartbeat_receive_timeout(1000, 500), 2000);
 	});
 });
 
@@ -1748,8 +1935,8 @@ describe('set_heartbeat', () => {
 		client.connect();
 		last_ws().fire_open();
 
-		// Tighten to a window that fires on the next tick.
-		client.set_heartbeat({ interval: 400, receive_timeout: 200 });
+		// Tighten to a window that fires two ticks after the unanswered heartbeat.
+		client.set_heartbeat({ interval: 100, receive_timeout: 200 });
 		vi.advanceTimersByTime(250);
 
 		assert.strictEqual(last_ws().close_code, WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT);

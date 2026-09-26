@@ -10,6 +10,7 @@ import {
 	ThrownJsonrpcError,
 	jsonrpc_error_messages,
 	http_status_to_jsonrpc_error_code,
+	jsonrpc_error_code_to_http_status,
 	UNKNOWN_ERROR_MESSAGE
 } from '../http/jsonrpc_errors.ts';
 import {
@@ -22,6 +23,7 @@ import type {
 	JsonrpcMessageFromServerToClient,
 	JsonrpcNotification,
 	JsonrpcRequest,
+	JsonrpcRequestId,
 	JsonrpcResponseOrError,
 	JsonrpcErrorResponse
 } from '../http/jsonrpc.ts';
@@ -30,9 +32,14 @@ import type { Transport, TransportSendOptions } from './transports.ts';
 /**
  * Thin `fetch` adapter for the JSON-RPC endpoint. POST by default; GET when
  * the optional `has_side_effects(method)` callback returns `false` for the
- * method (matches `create_rpc_endpoint`'s GET convention). On non-OK HTTP
- * responses, synthesizes a JSON-RPC error envelope via
- * `http_status_to_jsonrpc_error_code`. Always reports ready.
+ * method (matches `create_rpc_endpoint`'s GET convention). Always reports ready.
+ *
+ * On non-OK HTTP responses, a body that is a JSON-RPC error response for this
+ * request (same `id`, or `null` when the server couldn't read one) is returned
+ * as-is, so the server's `code`, `message`, and `data` reach the caller — the
+ * status → code map is lossy (`queue_overflow` and `rate_limited` share 429).
+ * Any other body (HTML from a proxy, empty, malformed) gets a synthesized
+ * envelope whose code comes from `http_status_to_jsonrpc_error_code`.
  */
 export class FrontendHttpTransport implements Transport {
 	readonly transport_name = 'frontend_http_rpc' as const;
@@ -89,30 +96,39 @@ export class FrontendHttpTransport implements Transport {
 				});
 			}
 
-			const result = await response.json();
-
-			// For JSON-RPC, we always expect a 200 OK response.
-			// The actual error will be in the JSON-RPC error field.
 			if (!response.ok) {
-				return create_jsonrpc_error_response(to_jsonrpc_message_id(message), {
+				const id = to_jsonrpc_message_id(message);
+				const body = await read_json_body(response);
+				if (is_error_response_for(body, id)) {
+					// The code → status map is a function (the status → code direction is
+					// lossy), so drift is checked in that direction.
+					if (DEV) {
+						const expected_status = jsonrpc_error_code_to_http_status(body.error.code);
+						if (expected_status !== response.status) {
+							console.warn(
+								`[http_transport] JSON-RPC error code ${body.error.code} maps to HTTP ${
+									expected_status
+								} but the response status is ${response.status}`,
+								body
+							);
+						}
+					}
+					return body;
+				}
+				return create_jsonrpc_error_response(id, {
 					code: http_status_to_jsonrpc_error_code(response.status),
-					message: `HTTP error: ${response.status} ${response.statusText}`
+					message: `HTTP error: ${response.status} ${response.statusText}`.trimEnd()
 				});
 			}
 
-			// In development, check if we got a JSON-RPC error with HTTP 200
-			// and verify the error code matches the expected HTTP status.
+			const result = await response.json();
+
+			// JSON-RPC errors should carry a non-2xx status (see `jsonrpc_error_code_to_http_status`).
 			if (DEV && is_jsonrpc_error_response(result)) {
-				const expected_code = http_status_to_jsonrpc_error_code(response.status);
-				const actual_code = result.error.code;
-				if (actual_code !== expected_code) {
-					console.warn(
-						`[http_transport] JSON-RPC error code mismatch: got ${actual_code} but ${
-							response.status
-						} should map to ${expected_code}`,
-						result
-					);
-				}
+				console.warn(
+					`[http_transport] JSON-RPC error response with HTTP ${response.status}`,
+					result
+				);
 			}
 
 			return result;
@@ -137,3 +153,33 @@ export class FrontendHttpTransport implements Transport {
 		return true;
 	}
 }
+
+/** Read a response body as JSON, or `undefined` when it's empty or not JSON. */
+const read_json_body = async (response: Response): Promise<unknown> => {
+	try {
+		return JSON.parse(await response.text());
+	} catch {
+		return undefined;
+	}
+};
+
+/**
+ * Whether `body` is a well-formed JSON-RPC error response answering the
+ * request with `id` — echoing it, or `null` when the server couldn't read one.
+ * Ids compare as strings: the GET convention sends the id as a query param,
+ * so a numeric id comes back as its string form.
+ */
+const is_error_response_for = (
+	body: unknown,
+	id: JsonrpcRequestId | null
+): body is JsonrpcErrorResponse => {
+	if (!is_jsonrpc_error_response(body)) return false;
+	if (body.id !== null && String(body.id) !== String(id)) return false;
+	const error: unknown = body.error;
+	return (
+		typeof error === 'object' &&
+		error !== null &&
+		Number.isInteger((error as { code?: unknown }).code) &&
+		typeof (error as { message?: unknown }).message === 'string'
+	);
+};

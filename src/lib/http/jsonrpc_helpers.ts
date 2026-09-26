@@ -199,17 +199,3 @@ export const to_jsonrpc_params = (input: unknown): Record<string, any> | undefin
 	}
 	return { value: input };
 };
-
-/**
- * Normalizes output to JSON-RPC result format.
- * Returns empty object for null/undefined, wraps primitives in `{value}`.
- */
-export const to_jsonrpc_result = (output: unknown): Record<string, any> => {
-	if (output === null || output === undefined) {
-		return {};
-	}
-	if (typeof output === 'object' && !Array.isArray(output)) {
-		return output as Record<string, any>;
-	}
-	return { value: output };
-};

@@ -26,7 +26,9 @@
  * - **JSON-RPC §4.2 wire validity** — `request_response` specs whose
  *   handler will reach the dispatch map must not use `z.null()` for
  *   input (the wire format forbids `"params": null`; use `z.void()`
- *   for parameterless methods).
+ *   for parameterless methods), nor `z.void()` for output (a response
+ *   always carries a `result`, which clients validate against
+ *   `spec.output`; use `z.null()` for methods with nothing to return).
  * - **Duplicate method names** — JSON-RPC keys on `method`, so every
  *   spec in the array must declare a unique `method` regardless of
  *   kind / handler presence.
@@ -42,7 +44,7 @@
 import type { Action } from './action_types.ts';
 import type { RpcAction } from './action_rpc.ts';
 import { assert_route_auth_acting_biconditional } from '../http/auth_shape.ts';
-import { is_null_schema } from '../http/schema_helpers.ts';
+import { is_null_schema, is_void_schema } from '../http/schema_helpers.ts';
 
 /** Result returned by `compile_action_registry`. */
 export interface ActionRegistryCompileResult {
@@ -61,7 +63,7 @@ export interface ActionRegistryCompileResult {
  *
  * @param actions - polymorphic action array; HTTP RPC passes `RpcAction[]` (narrower), WebSocket passes `Action[]` (kind-polymorphic — handler-less notification specs are accepted)
  * @param ctx_label - per-spec error-message prefix, e.g. `'RPC action'` or `'WS action'`. Combined with the spec method as `${ctx_label} "${method}"`.
- * @throws Error on biconditional violation, rate-limit/account-axis mismatch, JSON-RPC null-input, or duplicate method.
+ * @throws Error on biconditional violation, rate-limit/account-axis mismatch, JSON-RPC null-input or void-output, or duplicate method.
  */
 export const compile_action_registry = (
 	actions: ReadonlyArray<Action>,
@@ -105,6 +107,13 @@ export const compile_action_registry = (
 					`${
 						ctx
 					} uses z.null() for input — JSON-RPC 2.0 §4.2 forbids "params": null on the wire. Use z.void() for parameterless methods.`
+				);
+			}
+			if (is_void_schema(spec.output)) {
+				throw new Error(
+					`${
+						ctx
+					} uses z.void() for output — a JSON-RPC response always carries a result, and clients validate it against spec.output, so no response could match. Use z.null() for methods with nothing to return.`
 				);
 			}
 			action_map.set(spec.method, { spec, handler: action.handler });
