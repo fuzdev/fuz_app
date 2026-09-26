@@ -11,6 +11,7 @@ import {
 	is_null_schema,
 	is_strict_object_schema,
 	is_void_schema,
+	to_void_params,
 	schema_to_surface,
 	middleware_applies,
 	merge_error_schemas
@@ -57,6 +58,20 @@ describe('is_void_schema', () => {
 
 	test('returns false for z.strictObject()', () => {
 		assert.strictEqual(is_void_schema(z.strictObject({ name: z.string() })), false);
+	});
+});
+
+describe('to_void_params', () => {
+	test('reads absent, null, and {} as the no-arg call', () => {
+		for (const params of [undefined, null, {}]) {
+			assert.strictEqual(to_void_params(params), undefined, JSON.stringify(params));
+		}
+	});
+
+	test('passes any other shape through for z.void() to refuse', () => {
+		for (const params of [{ a: 1 }, [], [1], 0, '', false]) {
+			assert.strictEqual(to_void_params(params), params, JSON.stringify(params));
+		}
 	});
 });
 

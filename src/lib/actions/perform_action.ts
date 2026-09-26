@@ -66,7 +66,7 @@ import {
 } from '../auth/request_context.ts';
 import { type CredentialType } from '../hono_context.ts';
 import type { Db } from '../db/db.ts';
-import { is_void_schema } from '../http/schema_helpers.ts';
+import { is_void_schema, to_void_params } from '../http/schema_helpers.ts';
 import { dispatch_with_post_commit_rollback } from '../http/pending_effects.ts';
 import {
 	JSONRPC_VERSION,
@@ -179,33 +179,6 @@ export interface PerformActionDeps {
  */
 export type PerformActionResult =
 	{ kind: 'ok'; result: unknown } | { kind: 'error'; error: JsonrpcErrorObject; status: number };
-
-/**
- * Normalize the raw `params` of a `z.void()` input: an absent `params`, an
- * empty object, and the `null` a GET `?params=null` parses to are all the
- * no-arg call (`undefined`); anything else passes through for `z.void()` to
- * refuse.
- *
- * JSON-RPC 2.0 lets a parameterless call omit `params`, and an empty by-name
- * structure carries no parameters, so refusing `{}` would only break clients
- * that send it for a parameterless call. Arrays — `[]` included — are not
- * normalized: RPC params are by-name only. The Rust spine's
- * `require_void_params` accepts the same shapes.
- *
- * @param raw_params - the request's `params` as parsed off the wire
- * @returns `undefined` for an empty shape, else `raw_params` unchanged
- */
-export const to_void_params = (raw_params: unknown): unknown => {
-	if (raw_params === undefined || raw_params === null) return undefined;
-	if (
-		typeof raw_params === 'object' &&
-		!Array.isArray(raw_params) &&
-		Object.keys(raw_params).length === 0
-	) {
-		return undefined;
-	}
-	return raw_params;
-};
 
 /**
  * The shared dispatch core. Pure data — no Hono context, no socket. Each

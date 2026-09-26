@@ -37,6 +37,35 @@ export const is_null_schema = (schema: z.ZodType): boolean => schema instanceof 
 export const is_void_schema = (schema: z.ZodType): boolean => schema instanceof z.ZodVoid;
 
 /**
+ * Normalize the raw `params` of a `z.void()` input: an absent `params`, an
+ * empty object, and the `null` a GET `?params=null` parses to are all the
+ * no-arg call (`undefined`); anything else passes through for `z.void()` to
+ * refuse.
+ *
+ * JSON-RPC 2.0 lets a parameterless call omit `params`, and an empty by-name
+ * structure carries no parameters, so refusing `{}` would only break clients
+ * that send it for a parameterless call. Arrays — `[]` included — are not
+ * normalized: RPC params are by-name only. The Rust spine's
+ * `require_void_params` accepts the same shapes. Used by both the server
+ * dispatch (`perform_action`) and a peer receiving a request or notification
+ * (`ActionDispatcher`), so every receiving end reads the same shapes.
+ *
+ * @param raw_params - the request's `params` as parsed off the wire
+ * @returns `undefined` for an empty shape, else `raw_params` unchanged
+ */
+export const to_void_params = (raw_params: unknown): unknown => {
+	if (raw_params === undefined || raw_params === null) return undefined;
+	if (
+		typeof raw_params === 'object' &&
+		!Array.isArray(raw_params) &&
+		Object.keys(raw_params).length === 0
+	) {
+		return undefined;
+	}
+	return raw_params;
+};
+
+/**
  * Check if a schema is a strict object (`z.strictObject()`).
  *
  * Strict objects set `catchall` to `ZodNever` to reject unknown keys.

@@ -84,8 +84,11 @@ export class FormState {
 			this.#form = form;
 			const keydown_cleanup = on(form, 'keydown', (e) => {
 				if (e.key !== 'Enter') return;
-				// an IME composing text commits it with Enter — not a submit
-				if (e.isComposing) return;
+				// an IME composing text commits it with Enter — not a submit; Safari
+				// reports that Enter with `isComposing` false but `keyCode` 229 — the
+				// deprecated field is the only signal there
+				// eslint-disable-next-line @typescript-eslint/no-deprecated
+				if (e.isComposing || e.keyCode === 229) return;
 				if (!(e.target instanceof HTMLInputElement)) return;
 
 				const elements = Array.from(form.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));

@@ -40,6 +40,42 @@ const notify_spec = {
 	description: 'Notification'
 } satisfies ActionSpecUnion;
 
+const void_request_spec = {
+	method: 'refresh',
+	kind: 'request_response',
+	initiator: 'backend',
+	auth: { account: 'none', actor: 'none' },
+	side_effects: false,
+	input: z.void(),
+	output: z.strictObject({ ok: z.literal(true) }),
+	async: true,
+	description: 'A parameterless backend-initiated request'
+} satisfies ActionSpecUnion;
+
+const void_notify_spec = {
+	method: 'things_reset',
+	kind: 'remote_notification',
+	initiator: 'backend',
+	auth: null,
+	side_effects: true,
+	input: z.void(),
+	output: z.void(),
+	async: true,
+	description: 'A parameterless notification'
+} satisfies ActionSpecUnion;
+
+const optional_input_spec = {
+	method: 'things_list',
+	kind: 'request_response',
+	initiator: 'backend',
+	auth: { account: 'none', actor: 'none' },
+	side_effects: false,
+	input: z.strictObject({ limit: z.number().optional() }),
+	output: z.strictObject({ ok: z.literal(true) }),
+	async: true,
+	description: 'A request whose input fields are all optional'
+} satisfies ActionSpecUnion;
+
 class TestEnvironment implements ActionEventEnvironment {
 	executor: 'frontend' | 'backend' = 'backend';
 	handlers: Map<string, Map<string, (event: any) => any>> = new Map();
@@ -149,6 +185,88 @@ describe('ActionDispatcher', () => {
 
 		assert.isNull(result);
 		assert.ok(received);
+	});
+
+	test('receive reads absent, null, and {} params of a void request as the no-arg call', async () => {
+		const env = new TestEnvironment([void_request_spec]);
+		const inputs: Array<unknown> = [];
+		env.add_handler('refresh', 'receive_request', (event) => {
+			inputs.push(event.data.input);
+			return { ok: true };
+		});
+		const peer = new ActionDispatcher({ environment: env });
+
+		const shapes: Array<[string, Record<string, unknown>]> = [
+			['absent', {}],
+			['null', { params: null }],
+			['{}', { params: {} }]
+		];
+		for (const [label, params] of shapes) {
+			const result = await peer.receive({ jsonrpc: '2.0', method: 'refresh', id: 1, ...params });
+			assert.ok(result && 'result' in result, `${label}: ${JSON.stringify(result)}`);
+			assert.deepStrictEqual(result.result, { ok: true }, label);
+		}
+		assert.deepStrictEqual(inputs, [undefined, undefined, undefined]);
+	});
+
+	test('receive refuses non-empty params of a void request', async () => {
+		const env = new TestEnvironment([void_request_spec]);
+		let handled = false;
+		env.add_handler('refresh', 'receive_request', () => {
+			handled = true;
+			return { ok: true };
+		});
+		const peer = new ActionDispatcher({ environment: env });
+
+		for (const params of [{ extra: 1 }, []]) {
+			const result = await peer.receive({ jsonrpc: '2.0', method: 'refresh', id: 1, params });
+			assert.ok(result && 'error' in result, JSON.stringify(params));
+		}
+		assert.ok(!handled);
+	});
+
+	test('receive reads absent and null params of an all-optional input as {}', async () => {
+		const env = new TestEnvironment([optional_input_spec]);
+		const inputs: Array<unknown> = [];
+		env.add_handler('things_list', 'receive_request', (event) => {
+			inputs.push(event.data.input);
+			return { ok: true };
+		});
+		const peer = new ActionDispatcher({ environment: env });
+
+		for (const params of [{}, { params: null }, { params: { limit: 2 } }]) {
+			const result = await peer.receive({
+				jsonrpc: '2.0',
+				method: 'things_list',
+				id: 1,
+				...params
+			});
+			assert.ok(result && 'result' in result, JSON.stringify(result));
+		}
+		assert.deepStrictEqual(inputs, [{}, {}, { limit: 2 }]);
+
+		const strict = await peer.receive({
+			jsonrpc: '2.0',
+			method: 'things_list',
+			id: 1,
+			params: { extra: true }
+		});
+		assert.ok(strict && 'error' in strict, 'unknown keys are still refused');
+	});
+
+	test('receive reads {} params of a void notification as the no-arg call', async () => {
+		const env = new TestEnvironment([void_notify_spec]);
+		const inputs: Array<unknown> = [];
+		env.add_handler('things_reset', 'receive', (event) => {
+			inputs.push(event.data.input);
+		});
+		const peer = new ActionDispatcher({ environment: env });
+
+		for (const params of [{}, { params: null }, { params: {} }]) {
+			const result = await peer.receive({ jsonrpc: '2.0', method: 'things_reset', ...params });
+			assert.isNull(result);
+		}
+		assert.deepStrictEqual(inputs, [undefined, undefined, undefined]);
 	});
 
 	test('receive returns invalid_request for non-jsonrpc message', async () => {

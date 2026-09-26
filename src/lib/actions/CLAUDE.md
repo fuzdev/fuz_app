@@ -296,7 +296,7 @@ Pipeline (401 → authz → 403 → 429 → 400 → handler):
 2. Authorization phase — `apply_authorization_phase` against `account_id` + `read_acting(auth, raw_params)`, which takes the selector off the raw params (malformed reads as omitted) since validation runs later. Test escape hatch via `preset.request_context`
 3. Post-authorization auth (403) — credential-type gate, then token scope, then role
 4. Rate limit (429) — throttle-requests semantics, ahead of validation so malformed params charge the budget and a throttled caller pays no schema work
-5. Validate params (400) — `spec.input.safeParse` with `z.void()` / `?? {}` rules; a `z.void()` input reads absent, `null` (GET `?params=null`), and `{}` alike as the no-arg call (`to_void_params`, the twin of the Rust `require_void_params`) and refuses any other shape
+5. Validate params (400) — `spec.input.safeParse` with `z.void()` / `?? {}` rules; a `z.void()` input reads absent, `null` (GET `?params=null`), and `{}` alike as the no-arg call (`to_void_params` in `http/schema_helpers.ts`, the twin of the Rust `require_void_params`; the peer receive path in `ActionDispatcher` applies it too) and refuses any other shape
 6. Dispatch + DEV output validation + error normalization — `spec.side_effects` picks transaction vs pool. `ThrownJsonrpcError` preserves code + data; generic throws become `internal_error`
 
 `PerformActionInput` carries `account_id`, `credential_type`, `client_ip`,
@@ -644,7 +644,11 @@ once to flip the dispatcher into client-authoritative mode. Diagnostics (failed
 sends, inbound notifications that fail to parse or whose handler throws, unknown
 methods) go to `environment.log`; unset falls back to `console_action_log`
 (warn/error to `console`, debug dropped) so failures are never silent, and
-`log: null` opts out (`resolve_action_log`).
+`log: null` opts out (`resolve_action_log`). An inbound request or notification
+reads its params as the server dispatch core does: for a `z.void()` input,
+absent, `null`, and `{}` alike are the no-arg call (`to_void_params`); for any
+other input, absent or `null` params are `{}` (so an all-optional object input
+accepts a call that omits them).
 
 **Naming.** `ActionDispatcher` is the (frontend) send/receive coordinator class.
 "ActionPeer" — unbackticked throughout the peer/ping + `request_client` docs — is

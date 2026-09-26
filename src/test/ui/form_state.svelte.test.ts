@@ -119,6 +119,28 @@ describe('FormState form attachment — Enter', () => {
 		detach();
 	});
 
+	test('Enter ending an IME composition in Safari (keyCode 229) is left alone', () => {
+		const { username, password, submits, detach } = create_login_form();
+		for (const input of [username, password]) {
+			input.focus();
+			// Safari fires the composition-ending Enter after `compositionend`
+			const event = new KeyboardEvent('keydown', {
+				key: 'Enter',
+				bubbles: true,
+				cancelable: true,
+				isComposing: false,
+				keyCode: 229
+			});
+			// eslint-disable-next-line @typescript-eslint/no-deprecated
+			assert.strictEqual(event.keyCode, 229, 'the environment sets keyCode');
+			input.dispatchEvent(event);
+			assert.ok(!event.defaultPrevented, input.name);
+			assert.strictEqual(document.activeElement, input, `${input.name} keeps focus`);
+		}
+		assert.strictEqual(submits(), 0);
+		detach();
+	});
+
 	test('Enter on a button is left alone', () => {
 		const { button, submits, detach } = create_login_form();
 		button.focus();
