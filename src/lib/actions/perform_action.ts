@@ -28,7 +28,7 @@
  *    sits behind the authority gates by choice rather than necessity: a
  *    caller those gates refuse is answered 403, not 429.
  * 5. **Validate params (400)** — `spec.input.safeParse(raw_params)` with
- *    `z.void()` / `?? {}` rules. Runs **after** the authority gates: a
+ *    `z.void()` (`to_void_params`) / `?? {}` rules. Runs **after** the authority gates: a
  *    400 describing the action's input shape to a caller those gates
  *    refuse would confirm the method exists and describe how to call it,
  *    to a channel that should have learned nothing. Coarse authority
@@ -181,6 +181,33 @@ export type PerformActionResult =
 	{ kind: 'ok'; result: unknown } | { kind: 'error'; error: JsonrpcErrorObject; status: number };
 
 /**
+ * Normalize the raw `params` of a `z.void()` input: an absent `params`, an
+ * empty object, and the `null` a GET `?params=null` parses to are all the
+ * no-arg call (`undefined`); anything else passes through for `z.void()` to
+ * refuse.
+ *
+ * JSON-RPC 2.0 lets a parameterless call omit `params`, and an empty by-name
+ * structure carries no parameters, so refusing `{}` would only break clients
+ * that send it for a parameterless call. Arrays — `[]` included — are not
+ * normalized: RPC params are by-name only. The Rust spine's
+ * `require_void_params` accepts the same shapes.
+ *
+ * @param raw_params - the request's `params` as parsed off the wire
+ * @returns `undefined` for an empty shape, else `raw_params` unchanged
+ */
+export const to_void_params = (raw_params: unknown): unknown => {
+	if (raw_params === undefined || raw_params === null) return undefined;
+	if (
+		typeof raw_params === 'object' &&
+		!Array.isArray(raw_params) &&
+		Object.keys(raw_params).length === 0
+	) {
+		return undefined;
+	}
+	return raw_params;
+};
+
+/**
  * The shared dispatch core. Pure data — no Hono context, no socket. Each
  * transport calls into this with pre-parsed inputs and binds the result
  * to its wire shape.
@@ -294,7 +321,9 @@ export const perform_action = async (
 	// step 5: validate params. JSON-RPC 2.0 §4.2 forbids `params: null`;
 	// registration sites reject `z.null()` inputs. Empty-body convention
 	// (`raw_params ?? {}`) lets all-optional-object methods omit `params`.
-	const params = is_void_schema(spec.input) ? raw_params : (raw_params ?? {});
+	// A `z.void()` input reads every empty shape as the no-arg call — see
+	// `to_void_params`.
+	const params = is_void_schema(spec.input) ? to_void_params(raw_params) : (raw_params ?? {});
 	const parse_result = spec.input.safeParse(params);
 	if (!parse_result.success) {
 		return error_result(

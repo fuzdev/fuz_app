@@ -494,13 +494,36 @@ describe('POST dispatcher', () => {
 		assert.strictEqual(received_input, undefined);
 	});
 
-	test('void input schemas reject params: {} with invalid_params', async () => {
-		const app = create_test_app([{ spec: create_get_spec(), handler: () => ({ items: [] }) }]);
+	test('void input schemas read params: {} as the no-arg call', async () => {
+		// an empty by-name structure carries no parameters, and published
+		// WebSocket clients send `{}` for a parameterless call
+		let received_input: unknown = 'sentinel';
+		const app = create_test_app([
+			{
+				spec: create_get_spec(),
+				handler: (input) => {
+					received_input = input;
+					return { items: [] };
+				}
+			}
+		]);
 
 		const res = await app.request('/api/rpc', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: rpc_request('thing_list', {})
+		});
+		assert.strictEqual(res.status, 200);
+		assert.strictEqual(received_input, undefined);
+	});
+
+	test('void input schemas reject a declared key with invalid_params', async () => {
+		const app = create_test_app([{ spec: create_get_spec(), handler: () => ({ items: [] }) }]);
+
+		const res = await app.request('/api/rpc', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: rpc_request('thing_list', { nope: 1 })
 		});
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
@@ -882,18 +905,45 @@ describe('GET dispatcher', () => {
 		assert.strictEqual(received_input, undefined);
 	});
 
-	test('void input schemas reject ?params={} with invalid_params', async () => {
-		// GET parity for the POST-side void-schema reject test — the GET path
-		// parses `params` out of the query string (separate code path from the
-		// POST body parse), so a void-input method must reject `?params={}`
-		// with the same `invalid_params` shape.
+	test('void input schemas read ?params={} and ?params=null as the no-arg call', async () => {
+		// GET parity for the POST-side void-schema test — the GET path parses
+		// `params` out of the query string (separate code path from the POST
+		// body parse, and no envelope refuses `null` there)
+		for (const raw of ['{}', 'null']) {
+			let received_input: unknown = 'sentinel';
+			const app = create_test_app([
+				{
+					spec: create_get_spec(),
+					handler: (input) => {
+						received_input = input;
+						return { items: [] };
+					}
+				}
+			]);
+
+			const res = await app.request(
+				`/api/rpc?method=thing_list&id=1&params=${encodeURIComponent(raw)}`
+			);
+			assert.strictEqual(res.status, 200, `?params=${raw}`);
+			assert.strictEqual(received_input, undefined, `?params=${raw}`);
+		}
+	});
+
+	test('void input schemas reject any other ?params= with invalid_params', async () => {
 		const app = create_test_app([{ spec: create_get_spec(), handler: () => ({ items: [] }) }]);
 
-		const params = encodeURIComponent(JSON.stringify({}));
-		const res = await app.request(`/api/rpc?method=thing_list&id=1&params=${params}`);
-		assert.strictEqual(res.status, 400);
-		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params as number);
+		for (const raw of ['{"nope":1}', '[]', '1', '"x"']) {
+			const res = await app.request(
+				`/api/rpc?method=thing_list&id=1&params=${encodeURIComponent(raw)}`
+			);
+			assert.strictEqual(res.status, 400, `?params=${raw}`);
+			const body = await res.json();
+			assert.strictEqual(
+				body.error.code,
+				JSONRPC_ERROR_CODES.invalid_params as number,
+				`?params=${raw}`
+			);
+		}
 	});
 
 	test('parses params from query string', async () => {

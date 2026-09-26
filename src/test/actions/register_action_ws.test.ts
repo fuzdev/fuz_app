@@ -516,6 +516,40 @@ describe('register_action_ws', () => {
 		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.invalid_params);
 	});
 
+	test('a void input answers absent params and {} alike, and refuses a declared key', async () => {
+		// the published socket client sends `{}` for a parameterless call — a
+		// `z.void()` method must read it as the no-arg call over WS too
+		const void_spec: RequestResponseActionSpec = {
+			...no_input_spec,
+			method: 'void_ping',
+			input: z.void(),
+			output: z.strictObject({ ok: z.literal(true) })
+		};
+		const received: Array<unknown> = [];
+		const h = await build_harness({
+			handlers: {},
+			actions: [
+				{
+					spec: void_spec,
+					handler: (input) => {
+						received.push(input);
+						return { ok: true };
+					}
+				}
+			]
+		});
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'void_ping' });
+		await h.on_message({ jsonrpc: '2.0', id: 2, method: 'void_ping', params: {} });
+		await h.on_message({ jsonrpc: '2.0', id: 3, method: 'void_ping', params: { nope: 1 } });
+
+		const [absent, empty, declared] = h.fake.sends.map(parse_json);
+		assert.deepStrictEqual(absent.result, { ok: true });
+		assert.deepStrictEqual(empty.result, { ok: true });
+		assert.strictEqual(declared.error.code, JSONRPC_ERROR_CODES.invalid_params);
+		assert.deepStrictEqual(received, [undefined, undefined]);
+	});
+
 	test('a cancel notification with junk params silently no-ops', async () => {
 		const h = await build_harness({ handlers: { echo: () => ({ value: 'x' }) } });
 		await h.on_open();

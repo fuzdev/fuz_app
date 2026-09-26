@@ -28,6 +28,7 @@ import { conformance_proof_cases } from './conformance_proof_cases.ts';
 import { conformance_security_cases } from './conformance_security_cases.ts';
 import { conformance_expiry_cases } from './conformance_expiry_cases.ts';
 import { conformance_app_settings_cases } from './conformance_app_settings_cases.ts';
+import { conformance_void_params_cases } from './conformance_void_params_cases.ts';
 import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
@@ -41,7 +42,8 @@ describe_conformance_table_tests({
 		...conformance_proof_cases,
 		...conformance_security_cases,
 		...conformance_expiry_cases,
-		...conformance_app_settings_cases
+		...conformance_app_settings_cases,
+		...conformance_void_params_cases
 	],
 	setup_test,
 	surface_source: create_spine_surface_spec(),

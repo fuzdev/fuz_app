@@ -35,6 +35,8 @@ import {
 } from '$lib/actions/transports.ts';
 import { cancel_action_spec } from '$lib/actions/cancel.ts';
 import { heartbeat_action_spec } from '$lib/actions/heartbeat.ts';
+import { FrontendWebsocketTransport } from '$lib/actions/transports_ws.ts';
+import { create_jsonrpc_request } from '$lib/http/jsonrpc_helpers.ts';
 import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '$lib/http/jsonrpc_errors.ts';
 
 // --- mock WebSocket ---
@@ -1059,14 +1061,57 @@ describe('request()', () => {
 		assert.deepStrictEqual(await promise, { value: 'echoed' });
 	});
 
-	test('default params to {} when omitted', async () => {
+	test('omits params from the frame when not given', async () => {
+		// the absent form is the one shape every server admits for a `z.void()`
+		// input, including servers that refuse `{}` with `invalid_params`
 		const client = new FrontendWebsocketClient(TEST_URL);
 		client.connect();
 		last_ws().fire_open();
 
-		const promise = client.request('ping');
+		const omitted = client.request('ping');
+		const explicit_undefined = client.request('ping', undefined);
+		for (const sent of last_ws().sent) {
+			assert.notProperty(JSON.parse(sent), 'params', `params must be omitted: ${sent}`);
+		}
+
+		last_ws().fire_message(make_response(1, null));
+		last_ws().fire_message(make_response(2, null));
+		await omitted;
+		await explicit_undefined;
+	});
+
+	test('a parameterless request through FrontendWebsocketTransport reaches the wire without params', async () => {
+		// the path a `z.void()` action takes from the frontend RPC client: the
+		// request message has no `params` key, the transport hands the
+		// connection `message.params` (`undefined`), and the frame must keep it
+		// absent rather than defaulting it
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+		const transport = new FrontendWebsocketTransport(client, async () => null);
+
+		const response = transport.send(create_jsonrpc_request('session_load', undefined, 'req_1'));
+		assert.strictEqual(last_ws().sent.length, 1);
 		const frame = JSON.parse(last_ws().sent[0]!);
-		assert.deepStrictEqual(frame.params, {});
+		assert.strictEqual(frame.method, 'session_load');
+		assert.strictEqual(frame.id, 'req_1');
+		assert.notProperty(frame, 'params');
+
+		last_ws().fire_message(JSON.stringify({ jsonrpc: '2.0', id: 'req_1', result: { ok: true } }));
+		assert.deepStrictEqual(await response, {
+			jsonrpc: '2.0',
+			id: 'req_1',
+			result: { ok: true }
+		});
+	});
+
+	test('sends an explicit empty params object as given', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		const promise = client.request('echo', {});
+		assert.deepStrictEqual(JSON.parse(last_ws().sent[0]!).params, {});
 
 		last_ws().fire_message(make_response(1, null));
 		await promise;
@@ -1441,6 +1486,22 @@ describe('durable queue', () => {
 		last_ws().fire_message(make_response(ids[1].id, 'B'));
 		assert.strictEqual(await p1, 'A');
 		assert.strictEqual(await p2, 'B');
+	});
+
+	test('a queued request without params flushes without params', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		const promise = client.request('ping');
+
+		client.connect();
+		last_ws().fire_open();
+
+		assert.strictEqual(last_ws().sent.length, 1);
+		const frame = JSON.parse(last_ws().sent[0]!);
+		assert.strictEqual(frame.method, 'ping');
+		assert.notProperty(frame, 'params');
+
+		last_ws().fire_message(make_response(frame.id, null));
+		await promise;
 	});
 
 	test('overflow rejects the new call with a queue_overflow-shaped error', async () => {

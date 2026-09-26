@@ -166,7 +166,7 @@ interface PendingRequest {
 /** Internal — tracks a request whose frame hasn't been written to the socket yet. */
 interface QueuedRequest extends PendingRequest {
 	id: JsonrpcRequestId;
-	frame: { jsonrpc: string; id: JsonrpcRequestId; method: string; params: unknown };
+	frame: { jsonrpc: string; id: JsonrpcRequestId; method: string; params?: unknown };
 }
 
 /**
@@ -494,6 +494,10 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 * own peer-minted UUID), tracks the pending promise, and resolves when the
 	 * server sends a matching response.
 	 *
+	 * An `undefined` `params` is omitted from the frame rather than sent as
+	 * `{}` — the absent form is the parameterless call every server admits
+	 * for a `z.void()` input, including servers that refuse `{}`.
+	 *
 	 * Callers supplying an explicit `options.id` are responsible for
 	 * uniqueness — the pending map is keyed by id, and a duplicate silently
 	 * overwrites the prior entry. Auto-minted ids are monotonic and never
@@ -527,7 +531,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 */
 	request<R = unknown>(
 		method: string,
-		params: unknown = {},
+		params?: unknown,
 		options: { signal?: AbortSignal; queue?: boolean; id?: JsonrpcRequestId } = {}
 	): Promise<R> {
 		return new Promise<R>((resolve, reject) => {
@@ -546,7 +550,14 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			}
 
 			const id = options.id ?? ++this.#next_request_id;
-			const frame = { jsonrpc: JSONRPC_VERSION, id, method, params };
+			// an `undefined` `params` is omitted, never defaulted to `{}` — the
+			// absent form is JSON-RPC 2.0 §4.2's parameterless call and the one
+			// shape every server admits for a `z.void()` input, including
+			// servers that refuse `{}`
+			const frame: QueuedRequest['frame'] =
+				params === undefined
+					? { jsonrpc: JSONRPC_VERSION, id, method }
+					: { jsonrpc: JSONRPC_VERSION, id, method, params };
 
 			// Bind the signal listener up-front so `#detach_signal` can find it by
 			// reference regardless of which settlement path runs (inline send,

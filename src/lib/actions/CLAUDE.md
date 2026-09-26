@@ -296,7 +296,7 @@ Pipeline (401 → authz → 403 → 429 → 400 → handler):
 2. Authorization phase — `apply_authorization_phase` against `account_id` + `read_acting(auth, raw_params)`, which takes the selector off the raw params (malformed reads as omitted) since validation runs later. Test escape hatch via `preset.request_context`
 3. Post-authorization auth (403) — credential-type gate, then token scope, then role
 4. Rate limit (429) — throttle-requests semantics, ahead of validation so malformed params charge the budget and a throttled caller pays no schema work
-5. Validate params (400) — `spec.input.safeParse` with `z.void()` / `?? {}` rules
+5. Validate params (400) — `spec.input.safeParse` with `z.void()` / `?? {}` rules; a `z.void()` input reads absent, `null` (GET `?params=null`), and `{}` alike as the no-arg call (`to_void_params`, the twin of the Rust `require_void_params`) and refuses any other shape
 6. Dispatch + DEV output validation + error normalization — `spec.side_effects` picks transaction vs pool. `ThrownJsonrpcError` preserves code + data; generic throws become `internal_error`
 
 `PerformActionInput` carries `account_id`, `credential_type`, `client_ip`,
