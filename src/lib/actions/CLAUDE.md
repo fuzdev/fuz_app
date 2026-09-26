@@ -661,14 +661,6 @@ fields fall back to defaults, not "keep current"): `set_reconnect`,
 `socket_status_to_async_status(status, revoked)` collapses to fuz_util's
 4-way `AsyncStatus`.
 
-### `RequestTracker` (`actions/request_tracker.svelte.ts`)
-
-Public utility — reactive pending-request state with timeouts.
-`SvelteMap` keyed by `JsonrpcRequestId`, default `request_timeout_ms = 120_000`.
-Used by transports that don't delegate pending correlation to a
-`WebsocketRpcConnection` (`FrontendWebsocketTransport` delegates to
-`FrontendWebsocketClient`'s own `#pending` map).
-
 ## RPC client (`actions/rpc_client.ts`)
 
 `create_rpc_client({peer, environment, actions?, transport_for_method?})` —
