@@ -70,6 +70,18 @@ describe('FormState form attachment — Enter', () => {
 		detach();
 	});
 
+	test('Enter skips a button between inputs to reach the next input', () => {
+		const { form, username, password, submits, detach } = create_login_form();
+		const toggle = document.createElement('button');
+		toggle.type = 'button';
+		form.insertBefore(toggle, password);
+		username.focus();
+		press_enter(username);
+		assert.strictEqual(document.activeElement, password);
+		assert.strictEqual(submits(), 0);
+		detach();
+	});
+
 	test('Enter in the last input submits the form instead of focusing the button', () => {
 		const { password, button, submits, detach } = create_login_form();
 		password.focus();

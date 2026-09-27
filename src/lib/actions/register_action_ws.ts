@@ -71,7 +71,12 @@ import type { Db } from '../db/db.ts';
 import { type Action } from './action_types.ts';
 import { compile_action_registry } from './compile_action_registry.ts';
 import { cancel_action_spec, CancelNotificationParams } from './cancel.ts';
-import { WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT } from './transports.ts';
+import {
+	DEFAULT_WS_MAX_MESSAGE_BYTES,
+	WS_CLOSE_MESSAGE_TOO_BIG,
+	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT,
+	utf8_length_over
+} from './transports.ts';
 import { BackendWebsocketTransport, type ConnectionIdentity } from './transports_ws_backend.ts';
 import { audit_unmatched_peer_response, type RequestClient } from './peer_request.ts';
 import { perform_action, perform_action_result_to_envelope } from './perform_action.ts';
@@ -211,6 +216,19 @@ export interface RegisterActionWsOptions {
 	heartbeat?: boolean | ServerHeartbeatOptions;
 	/** Optional per-message delay for testing loading states. Ignored when `0`. */
 	artificial_delay?: number;
+	/**
+	 * Cap on one inbound message, in bytes (UTF-8 for text frames). A larger
+	 * message closes the socket with `WS_CLOSE_MESSAGE_TOO_BIG` before it's
+	 * parsed — there's no per-message error reply, matching the Rust spine.
+	 * The cap is checked after the runtime adapter has buffered the message,
+	 * so it bounds dispatch work, not memory; bound the adapter's own frame
+	 * limit too (e.g. `ws`'s `maxPayload`) where memory matters. A consumer
+	 * that raises it passes the same value to the client's
+	 * `FrontendWebsocketTransportOptions.max_message_bytes`.
+	 *
+	 * @default DEFAULT_WS_MAX_MESSAGE_BYTES
+	 */
+	max_message_bytes?: number;
 	/** Optional logger; defaults to `[ws]` namespace. */
 	log?: LoggerType;
 	/**
@@ -284,6 +302,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		transport = new BackendWebsocketTransport(),
 		heartbeat = true,
 		artificial_delay = 0,
+		max_message_bytes = DEFAULT_WS_MAX_MESSAGE_BYTES,
 		log = new Logger('[ws]'),
 		on_socket_open,
 		on_socket_close,
@@ -468,6 +487,14 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				},
 				onMessage: async (event, ws) => {
 					last_receive_time = Date.now();
+					const size = ws_message_size_over(event.data, max_message_bytes);
+					if (size !== null) {
+						log.warn(
+							`closing socket: ${size}-byte message exceeds the ${max_message_bytes}-byte cap`
+						);
+						ws.close(WS_CLOSE_MESSAGE_TOO_BIG, 'message too big');
+						return;
+					}
 					let json;
 					try {
 						json = JSON.parse(String(event.data)); // eslint-disable-line @typescript-eslint/no-base-to-string
@@ -706,4 +733,17 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 	);
 
 	return { transport };
+};
+
+/**
+ * The byte size of an inbound WebSocket message when it exceeds `max_bytes`,
+ * else `null` — UTF-8 bytes for a text frame, the buffer or blob size for a
+ * binary one.
+ */
+const ws_message_size_over = (data: unknown, max_bytes: number): number | null => {
+	if (typeof data === 'string') return utf8_length_over(data, max_bytes);
+	let size: number | null = null;
+	if (data instanceof Blob) size = data.size;
+	else if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) size = data.byteLength;
+	return size !== null && size > max_bytes ? size : null;
 };

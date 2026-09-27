@@ -6,10 +6,10 @@
  * after a submit attempt, avoiding premature validation while the user is still typing.
  *
  * The `FormState.form` attachment also handles the Enter key: in an input
- * followed by another input it advances focus, and in the last input it
- * submits the form (`requestSubmit`) — so Enter in a login form's password
- * field logs in, even when the form's button is `type="button"`, as
- * `PendingButton` is. Hidden inputs don't count, and an Enter that commits
+ * followed by another input it moves focus to that input (past any button
+ * between), and in the last input it submits the form (`requestSubmit`) —
+ * so Enter in a login form's password field logs in, even when the form's
+ * button is `type="button"`, as `PendingButton` is. Hidden inputs don't count, and an Enter that commits
  * IME composition is left alone.
  *
  * All trackable inputs must have a `name` attribute — an error is thrown in dev
@@ -50,7 +50,8 @@ import { DEV } from 'esm-env';
 import { on } from 'svelte/events';
 import { SvelteSet } from 'svelte/reactivity';
 
-const FOCUSABLE_SELECTOR = 'input:not(:disabled):not([type=hidden]), button:not(:disabled)';
+/** Inputs Enter moves between — disabled and hidden ones are skipped. */
+const ENTER_INPUT_SELECTOR = 'input:not(:disabled):not([type=hidden])';
 
 const FORM_INPUT_SELECTOR = 'input, textarea, select';
 
@@ -68,8 +69,8 @@ export class FormState {
 
 	/**
 	 * Creates a form attachment that handles the Enter key (advance focus to
-	 * the next focusable element, or submit from the last input) and tracks
-	 * field touched state via delegated `focusout`.
+	 * the next input, or submit from the last one) and tracks field touched
+	 * state via delegated `focusout`.
 	 *
 	 * Fields are identified by their `name` attribute.
 	 *
@@ -91,17 +92,16 @@ export class FormState {
 				if (e.isComposing || e.keyCode === 229) return;
 				if (!(e.target instanceof HTMLInputElement)) return;
 
-				const elements = Array.from(form.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-				const index = elements.indexOf(e.target);
+				const inputs = Array.from(form.querySelectorAll<HTMLInputElement>(ENTER_INPUT_SELECTOR));
+				const index = inputs.indexOf(e.target);
 				if (index < 0) return;
 
 				e.preventDefault();
-				// the last input submits instead of moving focus to the button after it
-				const input_follows = elements
-					.slice(index + 1)
-					.some((el) => el instanceof HTMLInputElement);
-				if (input_follows) {
-					elements[index + 1]!.focus();
+				// advance to the next input, past any button between (a show-password
+				// toggle, say); the last input submits instead
+				const next_input = inputs[index + 1];
+				if (next_input) {
+					next_input.focus();
 				} else {
 					form.requestSubmit();
 				}

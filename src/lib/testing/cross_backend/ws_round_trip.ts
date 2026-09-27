@@ -25,7 +25,13 @@ import '../assert_dev_env.ts';
  * upgrade time (not per message), so the negative cases assert the upgrade
  * itself rejects rather than a per-message error frame.
  *
- * A fourth case (gated on `rpc_path`) covers server-initiated close: an
+ * Two spine-parity cases follow: `heartbeat` answers the parameterless shapes
+ * (absent, `{}`) and refuses a declared param with `invalid_params`, and a
+ * message over the backend's cap (`max_message_bytes`, default
+ * `DEFAULT_WS_MAX_MESSAGE_BYTES`) closes the socket with
+ * `WS_CLOSE_MESSAGE_TOO_BIG`.
+ *
+ * A final case (gated on `rpc_path`) covers server-initiated close: an
  * authenticated socket is dropped when the account's sessions are revoked
  * mid-connection. Per-message dispatch never re-checks credential validity,
  * so the live socket survives on the audit-fed `create_ws_auth_guard` seam —
@@ -46,7 +52,18 @@ import { assert, describe } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import { heartbeat_action_spec } from '../../actions/heartbeat.ts';
+import {
+	DEFAULT_WS_MAX_MESSAGE_BYTES,
+	WS_CLOSE_MESSAGE_TOO_BIG
+} from '../../actions/transports.ts';
 import { account_session_revoke_all_action_spec } from '../../auth/account_action_specs.ts';
+import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
+import {
+	is_response_for,
+	type JsonrpcErrorResponseFrame,
+	type JsonrpcSuccessResponseFrame,
+	type WsClient
+} from '../transports/ws_client.ts';
 import { create_ws_transport } from '../transports/ws_transport.ts';
 import { create_rpc_post_init } from '../rpc_helpers.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
@@ -78,26 +95,41 @@ export interface CrossProcessWsTestOptions {
 	 * actions being mounted on the RPC endpoint.
 	 */
 	readonly rpc_path?: string;
+	/**
+	 * The backend's inbound WebSocket message cap, in bytes — the
+	 * oversized-message case sends a message just past it. Defaults to
+	 * `DEFAULT_WS_MAX_MESSAGE_BYTES`; pass the consumer's value when it raises
+	 * the server cap.
+	 */
+	readonly max_message_bytes?: number;
 }
 
 /**
- * Register the cross-process WS round-trip suite. Up to four cases over a
- * real upgrade: authed `heartbeat` round-trip, anonymous-upgrade refusal,
- * disallowed-origin refusal, and — when `rpc_path` is supplied —
+ * Register the cross-process WS round-trip suite over a real upgrade: authed
+ * `heartbeat` round-trip, `heartbeat`'s parameterless-shape contract, an
+ * oversized message closing with `WS_CLOSE_MESSAGE_TOO_BIG`, anonymous-upgrade
+ * refusal, disallowed-origin refusal, and — when `rpc_path` is supplied —
  * session-revocation closing the live socket.
  */
 export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptions): void => {
-	const { setup_test, capabilities, base_url, ws_path, origin, rpc_path } = options;
+	const {
+		setup_test,
+		capabilities,
+		base_url,
+		ws_path,
+		origin,
+		rpc_path,
+		max_message_bytes = DEFAULT_WS_MAX_MESSAGE_BYTES
+	} = options;
+
+	const open_authed = async (): Promise<WsClient> => {
+		const fixture = await setup_test();
+		return create_ws_transport({ base_url, ws_path, cookies: fixture.transport.cookies(), origin });
+	};
 
 	describe('cross-process websocket', () => {
 		test_if(capabilities.ws, 'authenticated upgrade round-trips heartbeat', async () => {
-			const fixture = await setup_test();
-			const client = await create_ws_transport({
-				base_url,
-				ws_path,
-				cookies: fixture.transport.cookies(),
-				origin
-			});
+			const client = await open_authed();
 			try {
 				const result = await client.request(1, heartbeat_action_spec.method, {});
 				assert.deepStrictEqual(result, {}, 'heartbeat returns an empty result over the wire');
@@ -105,6 +137,65 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 				await client.close();
 			}
 		});
+
+		// `heartbeat` is parameterless on both spines (`z.void()` /
+		// `require_void_params`): the empty shapes are the no-arg call, and a
+		// declared param is `invalid_params`, not ignored.
+		test_if(capabilities.ws, 'heartbeat admits only the parameterless shapes', async () => {
+			const client = await open_authed();
+			try {
+				const cases: Array<[number, Record<string, unknown>, boolean]> = [
+					[1, {}, true],
+					[2, { params: {} }, true],
+					[3, { params: { stray: 1 } }, false]
+				];
+				for (const [id, params, ok] of cases) {
+					await client.send({
+						jsonrpc: '2.0',
+						id,
+						method: heartbeat_action_spec.method,
+						...params
+					});
+					const frame = await client.wait_for<
+						JsonrpcSuccessResponseFrame | JsonrpcErrorResponseFrame
+					>(is_response_for(id));
+					const label = JSON.stringify(params);
+					if (ok) {
+						assert.ok('result' in frame, `${label}: ${JSON.stringify(frame)}`);
+						assert.deepStrictEqual(frame.result, {}, label);
+					} else {
+						assert.ok('error' in frame, `${label}: ${JSON.stringify(frame)}`);
+						assert.strictEqual(frame.error.code, JSONRPC_ERROR_CODES.invalid_params, label);
+					}
+				}
+			} finally {
+				await client.close();
+			}
+		});
+
+		// Both spines cap an inbound message (`DEFAULT_WS_MAX_MESSAGE_BYTES` by
+		// default) and close the socket on a larger one rather than replying.
+		test_if(
+			capabilities.ws,
+			'an oversized message closes the socket with WS_CLOSE_MESSAGE_TOO_BIG',
+			async () => {
+				const client = await open_authed();
+				try {
+					await client.send({
+						jsonrpc: '2.0',
+						id: 1,
+						method: heartbeat_action_spec.method,
+						params: { pad: 'x'.repeat(max_message_bytes) }
+					});
+					const closed = await client.wait_for_close(5000);
+					assert.ok(closed, 'socket did not close within 5s of an oversized message');
+					assert.strictEqual(client.close_code, WS_CLOSE_MESSAGE_TOO_BIG);
+				} finally {
+					// the server may reset the connection under the unread tail
+					await client.close().catch(() => {});
+				}
+			}
+		);
 
 		// Per-connection auth fires at upgrade time (`require_auth`), so an
 		// anonymous socket never opens — the upgrade is refused outright.

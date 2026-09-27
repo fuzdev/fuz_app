@@ -43,7 +43,12 @@ import type {
 	JsonrpcErrorResponse,
 	JsonrpcResult
 } from '../http/jsonrpc.ts';
-import type { Transport, TransportSendOptions } from './transports.ts';
+import {
+	DEFAULT_WS_MAX_MESSAGE_BYTES,
+	utf8_length_over,
+	type Transport,
+	type TransportSendOptions
+} from './transports.ts';
 import { PEER_PING_METHOD, peer_ping_responder } from './peer_ping.ts';
 
 // TODO logging - maybe add a getter to Cell that falls back to the app logger?
@@ -78,19 +83,21 @@ export interface WebsocketRpcConnection extends WebsocketConnection {
 	) => Promise<unknown>;
 }
 
-const text_encoder = new TextEncoder();
-
 /** Options for `FrontendWebsocketTransport`. */
 export interface FrontendWebsocketTransportOptions {
 	/**
 	 * Largest outbound message, in UTF-8 bytes of its JSON encoding. A larger
 	 * request or notification is refused with an `invalid_request` error
-	 * (`data.reason` `payload_too_large`) without being sent — a server that
-	 * caps inbound WebSocket messages closes the socket on an oversized one
-	 * (failing every request in flight on it) rather than replying with an
-	 * error. Set it to the server's cap. Unset, messages aren't measured.
+	 * (`data.reason` `payload_too_large`) without being sent — the server
+	 * closes the socket on an oversized one (failing every request in flight
+	 * on it) rather than replying with an error. Defaults to
+	 * `DEFAULT_WS_MAX_MESSAGE_BYTES`, the server's default cap; a consumer
+	 * that raises the server's `max_message_bytes` passes the same value
+	 * here. `null` skips the measurement.
+	 *
+	 * @default DEFAULT_WS_MAX_MESSAGE_BYTES
 	 */
-	max_message_bytes?: number;
+	max_message_bytes?: number | null;
 }
 
 /**
@@ -114,8 +121,8 @@ export const create_message_too_large_error = (
  * response back over the socket; an inbound `peer/ping` is answered by the
  * built-in responder before `receive`. Responses to requests *we* sent are
  * owned by the connection's own `request()` pending map and are ignored here.
- * With `max_message_bytes` set, an oversized outbound message fails with an
- * error envelope instead of being sent (see
+ * An oversized outbound message (`max_message_bytes`) fails with an error
+ * envelope instead of being sent (see
  * `FrontendWebsocketTransportOptions`).
  */
 export class FrontendWebsocketTransport implements Transport {
@@ -125,7 +132,7 @@ export class FrontendWebsocketTransport implements Transport {
 	#receive: (data: unknown) => Promise<unknown>;
 	#remove_message_handler: (() => void) | null;
 	#remove_error_handler: (() => void) | null;
-	#max_message_bytes: number | undefined;
+	#max_message_bytes: number | null;
 
 	constructor(
 		connection: WebsocketRpcConnection,
@@ -134,7 +141,9 @@ export class FrontendWebsocketTransport implements Transport {
 	) {
 		this.#connection = connection;
 		this.#receive = receive;
-		this.#max_message_bytes = options?.max_message_bytes;
+		const max_message_bytes = options?.max_message_bytes;
+		this.#max_message_bytes =
+			max_message_bytes === undefined ? DEFAULT_WS_MAX_MESSAGE_BYTES : max_message_bytes;
 
 		// Inbound dispatch — only server-pushed requests/notifications need
 		// routing here. Responses to requests we sent are correlated by the
@@ -206,9 +215,12 @@ export class FrontendWebsocketTransport implements Transport {
 		// error frames), and the catch block below preserves that code
 		// verbatim in the error envelope. Queuing is routed via `queue`.
 		const queue = options?.queue ?? false;
-		if (this.#max_message_bytes !== undefined) {
-			const size = text_encoder.encode(JSON.stringify(message)).byteLength;
-			if (size > this.#max_message_bytes) {
+		if (this.#max_message_bytes !== null) {
+			// TODO measure where the frame is serialized (the connection's `send`)
+			// so a sent message isn't stringified twice — needs the size check on
+			// the `WebsocketRpcConnection` contract
+			const size = utf8_length_over(JSON.stringify(message), this.#max_message_bytes);
+			if (size !== null) {
 				return create_jsonrpc_error_response(
 					to_jsonrpc_message_id(message),
 					create_message_too_large_error(size, this.#max_message_bytes)

@@ -67,6 +67,13 @@ export interface WsEndpointSpec {
 	/** Optional per-message delay for testing loading states. */
 	artificial_delay?: number;
 	/**
+	 * Cap on one inbound message, in bytes. See
+	 * `RegisterActionWsOptions.max_message_bytes`.
+	 *
+	 * @default DEFAULT_WS_MAX_MESSAGE_BYTES
+	 */
+	max_message_bytes?: number;
+	/**
 	 * Called once per socket after `transport.add_connection` but before
 	 * the first message dispatches. See
 	 * `RegisterActionWsOptions.on_socket_open`.

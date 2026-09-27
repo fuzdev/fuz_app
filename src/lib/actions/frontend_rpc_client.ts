@@ -130,6 +130,12 @@ export interface CreateFrontendRpcClientOptions<TApi extends object = object> {
 	 *   surface server errors.
 	 */
 	lookup_action_handler?: ActionEventEnvironment['lookup_action_handler'];
+	/**
+	 * Where dispatch diagnostics go — pure pass-through to
+	 * `environment.log`. Unset falls back to `console_action_log`; `null`
+	 * silences them (see `resolve_action_log`).
+	 */
+	log?: ActionEventEnvironment['log'];
 }
 
 /** Bundle returned by `create_frontend_rpc_client`. */
@@ -161,7 +167,8 @@ export const create_frontend_rpc_client = <TApi extends object>(
 	const environment: ActionEventEnvironment = {
 		executor: 'frontend',
 		lookup_action_spec: (method) => registry.spec_by_method.get(method),
-		lookup_action_handler: options.lookup_action_handler ?? (() => undefined)
+		lookup_action_handler: options.lookup_action_handler ?? (() => undefined),
+		log: options.log
 	};
 	const transports = new Transports();
 	if (options.transports) {

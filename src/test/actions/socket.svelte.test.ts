@@ -1657,7 +1657,7 @@ describe('client heartbeat', () => {
 		assert.strictEqual(last_ws().sent.length, 1);
 		const frame = JSON.parse(last_ws().sent[0]!);
 		assert.strictEqual(frame.method, heartbeat_action_spec.method);
-		assert.deepStrictEqual(frame.params, {});
+		assert.notProperty(frame, 'params', 'parameterless — params omitted');
 	});
 
 	test('traffic in both directions defers the heartbeat', () => {

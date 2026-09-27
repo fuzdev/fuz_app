@@ -464,9 +464,12 @@ inside `actions/perform_action.ts` short-circuit to the unwrapped handler
 
 The receiving side is a different boundary. A client's `ActionEvent`
 validates a response's `result` against `spec.output` in every mode — to
-the caller, the server's output is external input. On success the handler
-and caller get the parsed value (brands, defaults, and transforms applied);
-on mismatch the event moves to `receive_error` with an `internal_error`
+the caller, the server's output is external input. Keys the schema doesn't
+declare are dropped rather than refused, so a client older than its server
+survives an added response field while the server's DEV check stays strict
+enough to catch a leaked one. On success the handler and caller get the
+parsed value (brands, defaults, and transforms applied); on any other
+mismatch the event moves to `receive_error` with an `internal_error`
 naming the method, with `data.reason` `ERROR_RESPONSE_OUTPUT_INVALID` and
 the issues — distinct from the codes bad caller input gets — the same path
 an error response takes.

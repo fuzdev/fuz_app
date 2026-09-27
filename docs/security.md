@@ -669,6 +669,16 @@ chunked upload buffer that much per request. A streaming handler avoids the
 buffer entirely, which is the other reason large uploads belong on their own
 streaming route rather than under a wider global cap.
 
+**WebSocket messages.** `bodyLimit` doesn't see WebSocket frames, so
+`register_action_ws` caps each inbound message separately at
+`DEFAULT_WS_MAX_MESSAGE_BYTES` (1 MiB, the same bound as the HTTP body cap;
+`max_message_bytes` on `WsEndpointSpec` to change it) and closes the socket
+with 1009 on a larger one — no per-message error reply, and the Rust spine
+likewise ends the connection. The check runs after the
+runtime adapter has assembled the message, so it bounds dispatch work, not
+what the adapter buffers — where memory matters, also set the adapter's own
+frame limit (e.g. the `ws` library's `maxPayload`, which defaults to 100 MiB).
+
 ## Authorization
 
 Roles are Zod-validated at I/O boundaries via `create_role_schema()` — not stored

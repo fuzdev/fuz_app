@@ -13,6 +13,7 @@ import {
 	is_void_schema,
 	to_void_params,
 	to_input_params,
+	safe_parse_dropping_unknown_keys,
 	schema_to_surface,
 	middleware_applies,
 	merge_error_schemas
@@ -91,6 +92,36 @@ describe('to_input_params', () => {
 		assert.deepStrictEqual(to_input_params(input, null), {});
 		const params = { limit: 2 };
 		assert.strictEqual(to_input_params(input, params), params);
+	});
+});
+
+describe('safe_parse_dropping_unknown_keys', () => {
+	const schema = z.strictObject({
+		a: z.number(),
+		nested: z.strictObject({ b: z.string() }).optional(),
+		list: z.array(z.strictObject({ c: z.boolean() })).optional()
+	});
+
+	test('passes a matching value through', () => {
+		const result = safe_parse_dropping_unknown_keys(schema, { a: 1 });
+		assert.ok(result.success);
+		assert.deepStrictEqual(result.data, { a: 1 });
+	});
+
+	test('drops undeclared keys at every depth without mutating the input', () => {
+		const value = { a: 1, x: 0, nested: { b: 'b', y: 0 }, list: [{ c: true, z: 0 }] };
+		const snapshot = structuredClone(value);
+		const result = safe_parse_dropping_unknown_keys(schema, value);
+		assert.ok(result.success);
+		assert.deepStrictEqual(result.data, { a: 1, nested: { b: 'b' }, list: [{ c: true }] });
+		assert.deepStrictEqual(value, snapshot);
+	});
+
+	test('still fails on any other issue, with the original issues', () => {
+		const result = safe_parse_dropping_unknown_keys(schema, { a: 'nope', x: 0 });
+		assert.ok(!result.success);
+		const codes = result.error.issues.map((issue) => issue.code).sort();
+		assert.deepStrictEqual(codes, ['invalid_type', 'unrecognized_keys']);
 	});
 });
 

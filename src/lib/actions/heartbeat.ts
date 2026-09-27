@@ -11,9 +11,13 @@
  * dispatcher tracks receive time, so incoming heartbeats keep the socket
  * alive without any handler-level state.
  *
- * Nullary input/output today. `{client_ts, server_ts}` fields can be added
- * later if clock-skew telemetry ever matters — the `Action` container
- * is open for additions without churning consumer call sites.
+ * Parameterless: the input is `z.void()`, so absent, `null`, and `{}` params
+ * are all the no-arg call (`to_void_params`) and anything else is refused —
+ * the same shapes the Rust spine's heartbeat admits via
+ * `require_void_params`. The output is an empty object. `{client_ts,
+ * server_ts}` fields can be added later if clock-skew telemetry ever
+ * matters — the `Action` container is open for additions without churning
+ * consumer call sites.
  *
  * @module
  */
@@ -35,7 +39,7 @@ export const heartbeat_action_spec = {
 	initiator: 'frontend',
 	auth: { account: 'required', actor: 'none' },
 	side_effects: false,
-	input: z.strictObject({}).default({}),
+	input: z.void(),
 	output: z.strictObject({}),
 	async: true,
 	description: 'Shared activity ping — keeps the socket alive and exercises the dispatch path.'

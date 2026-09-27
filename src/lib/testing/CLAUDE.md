@@ -544,16 +544,17 @@ Three layers:
 3. **Round-trip helpers** — predicates + wire-frame types live in `transports/ws_client.ts` (shared with the cross-process `ws_transport.ts` impl): `is_notification(method)`, `is_notification_with<P>(method, match)` (type-guard combinator — narrows `wait_for` return type), `is_response_for(id)`, `JsonrpcNotificationFrame<P>` / `JsonrpcSuccessResponseFrame<R>` / `JsonrpcErrorResponseFrame<D>` (typed wire-frame shapes distinct from the runtime Zod schemas in `http/jsonrpc.ts` — generic over `params` / `result` / `data` so tests narrow without casts). `build_broadcast_api<TApi>({harness, specs})` (in `ws_round_trip.ts`) wires a typed broadcast API against the harness transport.
 
 `WsClient` (in `transports/ws_client.ts`):
-`{send, request<R>, close, messages, wait_for, wait_for_close}`. The
-harness's `connect()` returns this shape; the cross-process
+`{send, request<R>, close, messages, wait_for, wait_for_close, close_code}`.
+The harness's `connect()` returns this shape; the cross-process
 `create_ws_transport` in `transports/ws_transport.ts` implements the same
 interface so assertion helpers and suite bodies work against either impl.
 `wait_for_close(timeout_ms?)` resolves `true` if the server closes the
 socket within the timeout, `false` on timeout (and `true` immediately when
 already closed) — the signal for server-initiated close (e.g. an auth-guard
 revocation), distinct from client-initiated `close()`. Mirrors the SSE frame
-reader's `wait_for_close`. `request` throws with
-code + message + data on error frames (so asserting `result.foo` on a
+reader's `wait_for_close`. `close_code` is the connection's close code once
+closed (`1006` for a drop without a close frame), `null` while open.
+`request` throws with code + message + data on error frames (so asserting `result.foo` on a
 failed request surfaces the real cause, not a `Cannot read property 'foo'
 of undefined`). `wait_for(predicate, timeout_ms?)` checks already-received
 messages first, then waits for new arrivals (default 1000ms); drops the
@@ -1079,10 +1080,13 @@ call (not folded into `describe_standard_cross_process_tests`) because it
 needs raw `base_url` / `ws_path` the standard bundle doesn't carry, mirroring
 how `describe_ws_round_trip_tests` sits beside `describe_standard_tests`
 in-process. `describe_cross_process_ws_tests({setup_test, capabilities,
-base_url, ws_path, origin?, rpc_path?})` opens a live `WebSocket` via
-`create_ws_transport` (the `ws` npm package) and asserts up to four cases
-against the upgrade stack `register_ws_endpoint` wires (origin →
+base_url, ws_path, origin?, rpc_path?, max_message_bytes?})` opens a live
+`WebSocket` via `create_ws_transport` (the `ws` npm package) and asserts
+cases against the upgrade stack `register_ws_endpoint` wires (origin →
 `require_auth` → dispatch): authed upgrade round-trips `heartbeat`,
+`heartbeat` admits only the parameterless shapes (a declared param →
+`invalid_params`), a message past `max_message_bytes` (default
+`DEFAULT_WS_MAX_MESSAGE_BYTES`) closes with `WS_CLOSE_MESSAGE_TOO_BIG`,
 anonymous upgrade refused, disallowed-origin upgrade refused, and — gated on
 `rpc_path` — a live socket drops when the account's sessions are revoked
 mid-connection (`account_session_revoke_all` over the keeper session channel
@@ -1144,11 +1148,12 @@ drives the whole round-trip and every outcome (success / `Timeout` / wrong-shape
 `on_request` responder **at construction** (the `create_ws_transport` seam) so
 the inbound server-initiated request is answered as soon as it arrives; the
 security negatives use the raw `WsClient.send` to inject unsolicited /
-cross-connection frames. Seven cases: the positive round-trip plus
+cross-connection frames. Cases: the positive round-trip plus
 unsolicited-response rejection, per-connection id isolation, never-reply
-`Timeout`, wrong-shape rejection, client-error forwarding, and the HTTP
-no-transport path. Gated on `capabilities.peer_request` — `true` on both the
-Rust spine and the TS spine (the `BackendWebsocketTransport.request_connection`
+`Timeout`, wrong-shape rejection, an undeclared reply key accepted and dropped
+(both spines read the reply forward-compatibly), client-error forwarding, and
+the HTTP no-transport path. Gated on `capabilities.peer_request` — `true` on
+both the Rust spine and the TS spine (the `BackendWebsocketTransport.request_connection`
 path + `register_action_ws` response correlation); `peer/ping` is a protocol
 action (manifest-excluded), so parity is behavioral here, not via the manifest
 gate. Cross-process only; fuz_app's own wiring is
@@ -1284,7 +1289,7 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   transport carries the keeper session cookie in its jar after this call
   resolves.
 - `testing/transports/ws_client.ts` — shared `WsClient` interface (`send` /
-  `request` / `close` / `messages` / `wait_for` / `wait_for_close`),
+  `request` / `close` / `messages` / `wait_for` / `wait_for_close` / `close_code`),
   wire-frame types, and
   predicates (`is_notification`, `is_response_for`, ...). Both in-process
   (`ws_round_trip.ts`) and cross-process (`ws_transport.ts`) impls satisfy

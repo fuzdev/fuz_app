@@ -787,6 +787,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 				transport: endpoint_transport,
 				heartbeat: endpoint.heartbeat,
 				artificial_delay: endpoint.artificial_delay,
+				max_message_bytes: endpoint.max_message_bytes,
 				on_socket_open: endpoint.on_socket_open,
 				on_socket_close: endpoint.on_socket_close,
 				log,

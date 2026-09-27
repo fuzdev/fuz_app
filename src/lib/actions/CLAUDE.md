@@ -351,6 +351,7 @@ and `allow_fallback: boolean` (default `true`). Explicit
 - `WS_CLOSE_SESSION_REVOKED = 4001` — server revoked auth; client enters permanent `revoked` state, no reconnect.
 - `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002` — client observed receive-silence past its receive timeout (`resolve_heartbeat_receive_timeout`).
 - `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003` — server observed receive-silence past `DEFAULT_SERVER_HEARTBEAT_TIMEOUT` (60s).
+- `WS_CLOSE_MESSAGE_TOO_BIG = 1009` — server received a message over its `max_message_bytes` cap (RFC 6455 "Message Too Big").
 
 ### Transport modules
 
@@ -371,14 +372,21 @@ regardless of `queue` — `connection.send()` has no queue semantic, so
 buffering would masquerade as success at the rpc_client layer. Requests
 route via `queue`.
 
+**WS message cap.** `DEFAULT_WS_MAX_MESSAGE_BYTES` (1 MiB, in
+`actions/transports.ts`, equal to `DEFAULT_MAX_BODY_SIZE` and the twin of the
+Rust spine's constant) bounds one message both ways. `register_action_ws`
+(`max_message_bytes`, also on `WsEndpointSpec`) closes the socket with
+`WS_CLOSE_MESSAGE_TOO_BIG` on a larger inbound message, before parsing — no
+per-message reply, like the Rust spine. The check runs after the runtime
+adapter has buffered the message, so it bounds dispatch work, not memory.
 `FrontendWebsocketTransport`'s optional third argument
-(`FrontendWebsocketTransportOptions`) takes `max_message_bytes`: an outbound
-request or notification whose JSON encoding exceeds it (in UTF-8 bytes) is
-answered locally with an `invalid_request` error carrying
-`data.reason: 'payload_too_large'` (`create_message_too_large_error`) and
-never sent. Set it to the server's inbound WebSocket cap — a server that caps
-messages closes the socket on an oversized one instead of replying, failing
-every request in flight on it. Unset, nothing is measured.
+(`FrontendWebsocketTransportOptions.max_message_bytes`, same default) answers
+an outbound request or notification whose JSON encoding exceeds it (in UTF-8
+bytes) locally with an `invalid_request` error carrying
+`data.reason: 'payload_too_large'` (`create_message_too_large_error`) and never
+sends it — otherwise the close would fail every request in flight on the
+socket. A consumer that raises the server cap passes the same value to the
+client; `null` skips the client-side measurement.
 
 ### `BackendWebsocketTransport` — server-side WS state
 
@@ -500,7 +508,7 @@ but `upgradeWebSocket` is missing. A factory returning `[]` does NOT trip
 the check, so feature-flag gated WS surfaces stay safe.
 
 `WsEndpointSpec` fields: `path`, `allowed_origins`, `actions`,
-`required_roles?`, `transport?`, `heartbeat?`, `artificial_delay?`,
+`required_roles?`, `transport?`, `heartbeat?`, `artificial_delay?`, `max_message_bytes?`,
 `on_socket_open?`, `on_socket_close?`, `auth_guard?` (default `true`,
 deduped by reference identity via `WeakSet<BackendWebsocketTransport>`),
 `extra_audit_handlers?`.
@@ -617,7 +625,7 @@ individual protocol actions without an opt-out flag.
 
 ### Individual actions
 
-- **`heartbeat_action`** — `request_response`, `initiator: 'frontend'`, `auth: 'authenticated'`, `side_effects: false`, nullary input/output (`z.strictObject({})`). Handler is a stateless no-op echo. Client's activity-aware heartbeat timer fires this whenever idle past `DEFAULT_HEARTBEAT_INTERVAL`; server's `register_action_ws` heartbeat tracker counts the incoming message as activity.
+- **`heartbeat_action`** — `request_response`, `initiator: 'frontend'`, `auth: 'authenticated'`, `side_effects: false`, parameterless `z.void()` input (absent / `null` / `{}` params — the Rust `require_void_params` shapes), empty-object output. Handler is a stateless no-op echo. Client's activity-aware heartbeat timer fires this whenever idle past `DEFAULT_HEARTBEAT_INTERVAL`; server's `register_action_ws` heartbeat tracker counts the incoming message as activity.
 - **`cancel_action`** — `remote_notification`, `initiator: 'frontend'`, `auth: null`, `side_effects: true`. Params: `CancelNotificationParams = z.strictObject({request_id: JsonrpcRequestId})`. **Handler is an empty stub** — cancel semantics are dispatcher-owned (`register_action_ws` has the `{request_id → AbortController}` map). Wire format is snake_case `cancel` + `{request_id}`, not MCP's `$/cancelRequest` + `{requestId}` — MCP adoption would happen at an MCP adapter's translation layer, not in the base transport.
 - **`peer_ping_action`** — `request_response`, `initiator: 'both'`, `auth: public`, `side_effects: false`. Input `PingActionInput = {nonce?, timeout_ms?}` (`.default({})`); output `PingResponse = {nonce, protocol_version}`. The client→server invocation drives the **server→client** direction: the handler calls `ctx.request_client('peer/ping', {nonce})`, awaits the echo, validates it against `PingResponse` + checks the nonce, and returns it. Over HTTP RPC (`ctx.request_client` absent) it refuses with `peer_no_transport`, so it's mounted on both the WS endpoint (via this bundle) and the HTTP RPC endpoint (the spine full mount). `timeout_ms` is clamped shorten-only. `data.reason` codes (`peer_timeout` / `peer_connection_gone` / `peer_no_transport` / `peer_too_many_in_flight` / `peer_ping_invalid_reply` / `peer_ping_nonce_mismatch`) + the `PingResponse` shape (whose `protocol_version` is `PEER_PROTOCOL_VERSION`) are the cross-impl wire contract (twins of the Rust `REASON_PEER_*`). The frontend half — `peer_ping_responder` (the echo a client sends back, wired into `FrontendWebsocketTransport`) — lives here too. `peer_ping_action` is a plain `RpcAction` literal (not `rpc_action(...)`), so the module stays free of the runtime `action_rpc.ts` import and `protocol_action_specs` doesn't drag the dispatch core into frontend bundles — same discipline as `heartbeat`/`cancel`. See `actions/peer_ping.ts`.
 
@@ -632,7 +640,7 @@ high-level shapes that span modules:
 - **39-variant discriminated union** — `ActionEventDataUnion<TMethod, TInput, TOutput>` across `kind` + `phase` + `step` (28 for `request_response`, 6 for `remote_notification`, 5 for `local_call`). Narrows `input` / `output` / `error` / `request` / `response` / `notification` / `progress` at each lifecycle point.
 - **Step transitions** — `initial → parsed | failed`, `parsed → handling | failed`, `handling → handled | failed`, `handled`/`failed` terminal. `validate_step_transition(from, to)` throws on illegal moves.
 - **Phase transitions** — chained: `send_request → receive_response`, `receive_request → send_response`; everything else terminal. `validate_phase_for_kind` + `validate_phase_transition` enforce.
-- **`ActionEvent.parse()`** — `initial → parsed` via `spec.input.safeParse`. Input validation failures **fail immediately** without routing through an error phase (client-side programming errors, not runtime conditions with handlers). Handler errors DO route through `send_error` / `receive_error`. On `receive_response` with error response, transitions to `receive_error` instead of failing; a success response's `result` is validated against `spec.output` (always, not DEV-only — it's inbound data) and `output` becomes the parsed value, or the event moves to `receive_error` with an `internal_error` carrying `data: {reason: ERROR_RESPONSE_OUTPUT_INVALID, validation_errors}` — a remote contract break, deliberately distinct from the `invalid_params` / `validation_error` of bad caller input.
+- **`ActionEvent.parse()`** — `initial → parsed` via `spec.input.safeParse`. Input validation failures **fail immediately** without routing through an error phase (client-side programming errors, not runtime conditions with handlers). Handler errors DO route through `send_error` / `receive_error`. On `receive_response` with error response, transitions to `receive_error` instead of failing; a success response's `result` is validated against `spec.output` (always, not DEV-only — it's inbound data; undeclared keys are dropped rather than refused, so an older client survives an added response field) and `output` becomes the parsed value, or the event moves to `receive_error` with an `internal_error` carrying `data: {reason: ERROR_RESPONSE_OUTPUT_INVALID, validation_errors}` — a remote contract break, deliberately distinct from the `invalid_params` / `validation_error` of bad caller input.
 - **Handler throws** — `ThrownJsonrpcError` keeps code/message/data; any other throw becomes `internal_error` carrying the thrown message. When the error answers a remote caller (`receive_request` / `send_response`), the raw message goes through `dev_only` like the server dispatch core.
 - **Protocol message creation is automatic** — transitioning `parsed → handling` on `send_request` materializes the outgoing `JsonrpcRequest` with a fresh `create_uuid()` id; on `send` (notification) it materializes the `JsonrpcNotification`.
 
@@ -733,7 +741,7 @@ doesn't get probed as a thenable by `await`.
 
 ### Frontend factory (`actions/frontend_rpc_client.ts`)
 
-`create_frontend_rpc_client<TApi>({specs, path?, transports?, transport_for_method?, on_action_event?})`
+`create_frontend_rpc_client<TApi>({specs, path?, transports?, transport_for_method?, on_action_event?, lookup_action_handler?, log?})`
 bundles `ActionRegistry + ActionEventEnvironment + Transports + ActionDispatcher +
 create_rpc_client + create_throwing_api` boilerplate every consumer
 repeats — plus the `lookup_action_handler: () => undefined` stub (frontend

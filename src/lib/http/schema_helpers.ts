@@ -81,6 +81,58 @@ export const to_input_params = (input: z.ZodType, raw_params: unknown): unknown 
 	is_void_schema(input) ? to_void_params(raw_params) : (raw_params ?? {});
 
 /**
+ * `schema.safeParse(value)`, except that keys the schema doesn't declare are
+ * dropped rather than refused — the forward-compatible read of a payload a
+ * remote authored.
+ *
+ * Output schemas are strict so the server's DEV output validation catches a
+ * handler leaking fields it shouldn't. The receiving side, though, is often
+ * older than the remote it talks to — a deploy lands before open tabs reload
+ * — and a remote that adds a field is making a compatible change. So when
+ * every issue is an unrecognized key, those keys are stripped from a copy of
+ * `value` and it's parsed again; any other issue (a wrong type, a missing
+ * field, `null` where a value is required) still fails. `value` itself is
+ * never mutated. This matches serde's default on the Rust spine, which
+ * ignores unknown fields. Keys nested in a `z.union` branch surface as a
+ * union issue and aren't stripped; a `z.discriminatedUnion` reports its
+ * matched branch's issues directly, so those are.
+ *
+ * Used for a response's `result` (`ActionEvent`) and for a peer's reply to a
+ * server-initiated request (`peer/ping`).
+ *
+ * @param schema - the declared shape
+ * @param value - the remote-authored payload
+ * @returns the parse result, with undeclared keys dropped on success
+ */
+export const safe_parse_dropping_unknown_keys = <T extends z.ZodType>(
+	schema: T,
+	value: unknown
+): z.ZodSafeParseResult<z.output<T>> => {
+	const parsed = schema.safeParse(value);
+	if (parsed.success) return parsed;
+	const { issues } = parsed.error;
+	if (!issues.every((issue) => issue.code === 'unrecognized_keys')) return parsed;
+	const stripped = structuredClone(value);
+	for (const issue of issues) {
+		const target = get_at_path(stripped, issue.path);
+		if (typeof target !== 'object' || target === null) return parsed;
+		for (const key of issue.keys) {
+			Reflect.deleteProperty(target, key);
+		}
+	}
+	return schema.safeParse(stripped);
+};
+
+const get_at_path = (value: unknown, path: ReadonlyArray<PropertyKey>): unknown => {
+	let current = value;
+	for (const segment of path) {
+		if (typeof current !== 'object' || current === null) return undefined;
+		current = (current as Record<PropertyKey, unknown>)[segment];
+	}
+	return current;
+};
+
+/**
  * Check if a schema is a strict object (`z.strictObject()`).
  *
  * Strict objects set `catchall` to `ZodNever` to reject unknown keys.

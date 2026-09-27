@@ -421,6 +421,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		// test closed the socket.
 		const close_waiters: Array<() => void> = [];
 		let is_closed = false;
+		let close_code: number | null = null;
 
 		// Captured in `ws.close` below; `client.close(...)` returns it so
 		// tests can await async `on_socket_close` cleanup.
@@ -438,6 +439,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 			close: (code, reason) => {
 				if (is_closed) return;
 				is_closed = true;
+				close_code = code ?? 1000;
 				for (const resolve of close_waiters.splice(0)) resolve();
 				const close_event = new Event('close') as CloseEvent;
 				Object.defineProperties(close_event, {
@@ -534,6 +536,9 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 			async close(code, reason) {
 				if (!is_closed) ws.close(code, reason);
 				if (close_pending) await close_pending;
+			},
+			get close_code() {
+				return close_code;
 			},
 			wait_for: wait_for_impl,
 			wait_for_close: (timeout_ms = WS_CLIENT_DEFAULT_TIMEOUT_MS): Promise<boolean> => {

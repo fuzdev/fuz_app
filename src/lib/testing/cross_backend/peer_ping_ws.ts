@@ -202,6 +202,28 @@ export const describe_peer_ping_ws_tests = (options: PeerPingWsTestOptions): voi
 			}
 		);
 
+		// A newer client may add reply fields: both spines read the reply
+		// forward-compatibly (serde's default / `safe_parse_dropping_unknown_keys`)
+		// and return only the declared shape.
+		test_if(
+			capabilities.peer_request,
+			'a reply with an undeclared key is accepted and the key is dropped',
+			async () => {
+				const fixture = await setup_test();
+				const ws = await open_ws(fixture.create_session_headers().cookie, (req) => {
+					const nonce = (req.params as { nonce?: number } | undefined)?.nonce ?? 0;
+					return { result: { ...valid_reply(nonce), added_later: true } };
+				});
+				try {
+					const frame = await ping_raw(ws, 6, { nonce: 5, timeout_ms: 2000 });
+					assert.ok('result' in frame, `expected success, got ${JSON.stringify(frame)}`);
+					assert.deepStrictEqual(frame.result, valid_reply(5));
+				} finally {
+					await ws.close();
+				}
+			}
+		);
+
 		test_if(
 			capabilities.peer_request,
 			'a client JSON-RPC error reply surfaces as the action error (ClientError forwarded)',

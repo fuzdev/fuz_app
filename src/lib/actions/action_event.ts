@@ -26,6 +26,7 @@ import {
 	ThrownJsonrpcError,
 	UNKNOWN_ERROR_MESSAGE
 } from '../http/jsonrpc_errors.ts';
+import { safe_parse_dropping_unknown_keys } from '../http/schema_helpers.ts';
 import type {
 	JsonrpcRequest,
 	JsonrpcResponseOrError,
@@ -133,10 +134,12 @@ export class ActionEvent<
 	 * Parse the event's payload against the action's schemas — `spec.input`
 	 * for outgoing and incoming calls, `spec.output` for a received response.
 	 *
-	 * A received response's `result` is validated like any other inbound data:
-	 * on success `output` becomes the parsed value (brands, defaults, and
-	 * transforms applied); on mismatch the event moves to `receive_error` with
-	 * an `internal_error` whose `data.reason` is `ERROR_RESPONSE_OUTPUT_INVALID`
+	 * A received response's `result` is validated like any other inbound data,
+	 * except that keys `spec.output` doesn't declare are dropped rather than
+	 * refused (`safe_parse_dropping_unknown_keys`). On success `output` becomes
+	 * the parsed value (brands, defaults, and transforms applied); on any
+	 * other mismatch the event moves to `receive_error` with an
+	 * `internal_error` whose `data.reason` is `ERROR_RESPONSE_OUTPUT_INVALID`
 	 * (the remote broke its contract — not the caller's input), the same path
 	 * an error response takes.
 	 *
@@ -163,10 +166,11 @@ export class ActionEvent<
 		}
 
 		if (this.#data.kind === 'request_response') {
-			// The remote's result is untrusted — validate it like inbound input.
+			// The remote's result is untrusted — validate it like inbound input,
+			// tolerating keys a newer remote added (`safe_parse_dropping_unknown_keys`).
 			// Input was already validated in the predecessor phase.
 			if (this.#data.phase === 'receive_response') {
-				const parsed = this.spec.output.safeParse(this.#data.output);
+				const parsed = safe_parse_dropping_unknown_keys(this.spec.output, this.#data.output);
 				if (parsed.success) {
 					this.#transition_step('parsed', { output: parsed.data });
 				} else {

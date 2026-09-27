@@ -131,3 +131,32 @@ describe('FrontendHttpTransport 2xx responses', () => {
 		assert.deepEqual(response.result, { ok: 1 });
 	});
 });
+
+describe('FrontendHttpTransport 2xx bodies', () => {
+	test('a JSON-RPC response passes through', async () => {
+		stub_fetch(JSON.stringify({ jsonrpc: '2.0', id: 'req-1', result: null }), 200);
+		const response = await new FrontendHttpTransport('/api/rpc').send(request);
+		assert.deepStrictEqual(response, { jsonrpc: '2.0', id: 'req-1', result: null });
+	});
+
+	test('a non-JSON body is an internal_error naming the status and content type', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+			new Response('<!doctype html><title>app</title>', {
+				status: 200,
+				headers: { 'content-type': 'text/html' }
+			})
+		);
+		const response = await new FrontendHttpTransport('/api/rpc').send(request);
+		assert.ok(is_jsonrpc_error_response(response));
+		assert.strictEqual(response.id, 'req-1');
+		assert.strictEqual(response.error.code, JSONRPC_ERROR_CODES.internal_error);
+		assert.strictEqual(response.error.message, 'response is not JSON-RPC: HTTP 200 text/html');
+	});
+
+	test('JSON that is not a JSON-RPC response is an internal_error', async () => {
+		stub_fetch(JSON.stringify({ ok: true }), 200);
+		const response = await new FrontendHttpTransport('/api/rpc').send(request);
+		assert.ok(is_jsonrpc_error_response(response));
+		assert.include(response.error.message, 'response is not JSON-RPC: HTTP 200');
+	});
+});

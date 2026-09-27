@@ -24,7 +24,11 @@ import {
 import type { ActionContext } from '$lib/actions/action_rpc.ts';
 import type { ActionSpecUnion, RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
 import { BackendWebsocketTransport } from '$lib/actions/transports_ws_backend.ts';
-import { WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT } from '$lib/actions/transports.ts';
+import {
+	DEFAULT_WS_MAX_MESSAGE_BYTES,
+	WS_CLOSE_MESSAGE_TOO_BIG,
+	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT
+} from '$lib/actions/transports.ts';
 import { type CredentialType } from '$lib/hono_context.ts';
 import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
 import { RateLimiter } from '$lib/rate_limiter.ts';
@@ -122,6 +126,7 @@ const build_harness = async (opts: {
 	}>;
 	action_ip_rate_limiter?: RateLimiter | null;
 	action_account_rate_limiter?: RateLimiter | null;
+	max_message_bytes?: number;
 }): Promise<Harness> => {
 	const stub = create_stub_upgrade();
 	const actions =
@@ -139,6 +144,7 @@ const build_harness = async (opts: {
 		heartbeat: opts.heartbeat ?? false,
 		action_ip_rate_limiter: opts.action_ip_rate_limiter,
 		action_account_rate_limiter: opts.action_account_rate_limiter,
+		max_message_bytes: opts.max_message_bytes,
 		log
 	});
 
@@ -733,6 +739,55 @@ describe('register_action_ws', () => {
 			log
 		});
 		assert.strictEqual(result.transport, supplied);
+	});
+});
+
+describe('register_action_ws max_message_bytes', () => {
+	test('an oversized message closes the socket with 1009 before dispatch', async () => {
+		let handled = false;
+		const h = await build_harness({
+			handlers: {
+				echo: () => {
+					handled = true;
+					return { value: 'x' };
+				}
+			},
+			max_message_bytes: 256
+		});
+		await h.on_open();
+		await h.on_message({
+			jsonrpc: '2.0',
+			id: 1,
+			method: 'echo',
+			params: { value: '€'.repeat(100) } // under 256 characters, over 256 bytes
+		});
+		assert.ok(!handled);
+		assert.strictEqual(h.fake.sends.length, 0, 'no per-message reply');
+		assert.strictEqual(h.fake.closes.length, 1);
+		assert.strictEqual(h.fake.closes[0]!.code, WS_CLOSE_MESSAGE_TOO_BIG);
+	});
+
+	test('a message within the cap dispatches', async () => {
+		const h = await build_harness({
+			handlers: { echo: (input) => input },
+			max_message_bytes: 256
+		});
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value: 'small' } });
+		assert.strictEqual(h.fake.closes.length, 0);
+		assert.strictEqual(h.fake.sends.length, 1);
+	});
+
+	test('defaults to DEFAULT_WS_MAX_MESSAGE_BYTES', async () => {
+		const h = await build_harness({ handlers: { echo: (input) => input } });
+		await h.on_open();
+		await h.on_message({
+			jsonrpc: '2.0',
+			id: 1,
+			method: 'echo',
+			params: { value: 'x'.repeat(DEFAULT_WS_MAX_MESSAGE_BYTES) }
+		});
+		assert.strictEqual(h.fake.closes[0]?.code, WS_CLOSE_MESSAGE_TOO_BIG);
 	});
 });
 

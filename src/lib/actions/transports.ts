@@ -24,6 +24,38 @@ export const WS_CLOSE_SESSION_REVOKED = 4001;
 export const WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002;
 /** WebSocket close code — server timed out with no incoming activity. */
 export const WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003;
+/**
+ * WebSocket close code — an inbound message exceeded the receiver's size cap
+ * (RFC 6455 §7.4.1 "Message Too Big").
+ */
+export const WS_CLOSE_MESSAGE_TOO_BIG = 1009;
+
+/**
+ * Default cap on one WebSocket message, in UTF-8 bytes — equal to the default
+ * HTTP body cap (`DEFAULT_MAX_BODY_SIZE`), so one JSON-RPC request is bounded
+ * the same on both transports. The server closes the socket on a larger
+ * inbound message with `WS_CLOSE_MESSAGE_TOO_BIG` (there's no per-message
+ * error reply), and `FrontendWebsocketTransport` refuses to send one. The
+ * twin of the Rust spine's `DEFAULT_WS_MAX_MESSAGE_BYTES`.
+ */
+export const DEFAULT_WS_MAX_MESSAGE_BYTES = 1024 * 1024;
+
+const text_encoder = new TextEncoder();
+
+/**
+ * The UTF-8 byte length of `text` when it exceeds `max_bytes`, else `null`.
+ * Skips encoding when the UTF-16 length alone rules it out — a code unit
+ * takes at most 3 UTF-8 bytes.
+ *
+ * @param text - the string to measure
+ * @param max_bytes - the byte cap
+ * @returns the UTF-8 byte length when it exceeds `max_bytes`, else `null`
+ */
+export const utf8_length_over = (text: string, max_bytes: number): number | null => {
+	if (text.length * 3 <= max_bytes) return null;
+	const size = text_encoder.encode(text).byteLength;
+	return size > max_bytes ? size : null;
+};
 
 // TODO figure out the symmetry of frontend and backend transports (none/partial/full?) --
 // we may also need orthogonal abstractions to clarify the transport role

@@ -253,6 +253,61 @@ describe('ActionEvent receive_response output validation', () => {
 		assert.strictEqual(received_error, error);
 	});
 
+	test('keys spec.output does not declare are dropped, not refused', async () => {
+		const env = new TestEnvironment([ping_spec]);
+		const result = { pong: true, added_later: 'x' };
+		const event = await receive_ping_result(env, result);
+		assert.strictEqual(event.data.step, 'parsed');
+		assert.deepEqual(event.data.output, { pong: true });
+		assert.deepEqual(result, { pong: true, added_later: 'x' }, 'the wire value is not mutated');
+	});
+
+	test('unknown keys are dropped at every depth, arrays included', async () => {
+		const spec = {
+			...ping_spec,
+			output: z.strictObject({
+				pong: z.literal(true),
+				items: z.array(z.strictObject({ id: z.number() })),
+				meta: z.discriminatedUnion('kind', [
+					z.strictObject({ kind: z.literal('a'), a: z.number() }),
+					z.strictObject({ kind: z.literal('b') })
+				])
+			})
+		} satisfies ActionSpecUnion;
+		const env = new TestEnvironment([spec]);
+		const event = create_action_event(env, spec, null);
+		event.parse();
+		await event.handle_async();
+		event.transition('receive_response');
+		event.set_response({
+			jsonrpc: '2.0',
+			id: event.data.request!.id,
+			result: {
+				pong: true,
+				new_top: 1,
+				items: [{ id: 1, new_item: true }, { id: 2 }],
+				meta: { kind: 'a', a: 3, new_meta: null }
+			}
+		});
+		event.parse();
+		assert.strictEqual(event.data.step, 'parsed');
+		assert.deepEqual(event.data.output, {
+			pong: true,
+			items: [{ id: 1 }, { id: 2 }],
+			meta: { kind: 'a', a: 3 }
+		});
+	});
+
+	test('an unknown key alongside a real mismatch still fails', async () => {
+		const env = new TestEnvironment([ping_spec]);
+		const event = await receive_ping_result(env, { pong: false, added_later: 'x' });
+		assert.strictEqual(event.data.phase, 'receive_error');
+		assert.strictEqual(
+			(event.data.error?.data as { reason?: string } | undefined)?.reason,
+			ERROR_RESPONSE_OUTPUT_INVALID
+		);
+	});
+
 	test('a response without a result fails validation', async () => {
 		const env = new TestEnvironment([ping_spec]);
 		const event = await receive_ping_result(env, undefined);

@@ -13,6 +13,7 @@
 
 import { describe, assert, test, vi } from 'vitest';
 import { z } from 'zod';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_frontend_rpc_client } from '$lib/actions/frontend_rpc_client.ts';
 import { ActionDispatcher } from '$lib/actions/action_dispatcher.ts';
@@ -125,6 +126,22 @@ describe('create_frontend_rpc_client', () => {
 		const { environment } = create_frontend_rpc_client<PingApi>({ specs: [ping_spec] });
 		assert.strictEqual(environment.lookup_action_handler('ping', 'send_request'), undefined);
 		assert.strictEqual(environment.lookup_action_handler('anything', 'execute'), undefined);
+	});
+
+	test('log passes through to the environment, null included', () => {
+		assert.strictEqual(
+			create_frontend_rpc_client<PingApi>({ specs: [ping_spec] }).environment.log,
+			undefined
+		);
+		assert.strictEqual(
+			create_frontend_rpc_client<PingApi>({ specs: [ping_spec], log: null }).environment.log,
+			null
+		);
+		const log = new Logger('[test]');
+		assert.strictEqual(
+			create_frontend_rpc_client<PingApi>({ specs: [ping_spec], log }).environment.log,
+			log
+		);
 	});
 
 	test('environment.lookup_action_spec resolves registered specs and returns undefined for unknown', () => {

@@ -19,6 +19,7 @@ import {
 import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '$lib/http/jsonrpc_errors.ts';
 import type { JsonrpcRequest, JsonrpcNotification, JsonrpcRequestId } from '$lib/http/jsonrpc.ts';
 import { PEER_PING_METHOD, PEER_PROTOCOL_VERSION } from '$lib/actions/peer_ping.ts';
+import { DEFAULT_WS_MAX_MESSAGE_BYTES } from '$lib/actions/transports.ts';
 import { create_frontend_rpc_client } from '$lib/actions/frontend_rpc_client.ts';
 import type { ActionSpecUnion } from '$lib/actions/action_spec.ts';
 
@@ -145,14 +146,29 @@ describe('FrontendWebsocketTransport max_message_bytes', () => {
 		assert.deepStrictEqual(response.error.data, { reason: 'payload_too_large' });
 	});
 
-	test('without the option, messages are not measured', async () => {
+	test('defaults to DEFAULT_WS_MAX_MESSAGE_BYTES', async () => {
 		const fake = create_fake_connection();
 		const transport = new FrontendWebsocketTransport(fake.connection, async () => null);
+		const response = await transport.send({
+			jsonrpc: '2.0',
+			id: 3,
+			method: 'm',
+			params: { content: 'x'.repeat(DEFAULT_WS_MAX_MESSAGE_BYTES) }
+		});
+		assert.strictEqual(fake.request_calls.length, 0);
+		assert.ok('error' in response);
+	});
+
+	test('null skips the measurement', async () => {
+		const fake = create_fake_connection();
+		const transport = new FrontendWebsocketTransport(fake.connection, async () => null, {
+			max_message_bytes: null
+		});
 		await transport.send({
 			jsonrpc: '2.0',
 			id: 3,
 			method: 'm',
-			params: { content: 'x'.repeat(MAX * 4) }
+			params: { content: 'x'.repeat(DEFAULT_WS_MAX_MESSAGE_BYTES) }
 		});
 		assert.strictEqual(fake.request_calls.length, 1);
 	});

@@ -6,7 +6,14 @@
 
 import { describe, assert, test } from 'vitest';
 
-import { Transports, WS_CLOSE_SESSION_REVOKED, type Transport } from '$lib/actions/transports.ts';
+import {
+	DEFAULT_WS_MAX_MESSAGE_BYTES,
+	Transports,
+	WS_CLOSE_SESSION_REVOKED,
+	utf8_length_over,
+	type Transport
+} from '$lib/actions/transports.ts';
+import { DEFAULT_MAX_BODY_SIZE } from '$lib/server/app_server.ts';
 
 const create_mock_transport = (name: string, ready = true): Transport => ({
 	transport_name: name,
@@ -112,5 +119,26 @@ describe('Transports', () => {
 		const t = transports.get_transport('ws');
 		assert.ok(t);
 		assert.strictEqual(t.transport_name, 'ws');
+	});
+});
+
+describe('DEFAULT_WS_MAX_MESSAGE_BYTES', () => {
+	test('equals the default HTTP body cap', () => {
+		assert.strictEqual(DEFAULT_WS_MAX_MESSAGE_BYTES, DEFAULT_MAX_BODY_SIZE);
+	});
+});
+
+describe('utf8_length_over', () => {
+	test('returns null within the cap and the byte length over it', () => {
+		assert.isNull(utf8_length_over('abc', 3));
+		assert.strictEqual(utf8_length_over('abcd', 3), 4);
+		assert.isNull(utf8_length_over('', 0));
+	});
+
+	test('measures UTF-8 bytes, not UTF-16 length', () => {
+		assert.isNull(utf8_length_over('€€', 6));
+		assert.strictEqual(utf8_length_over('€€', 5), 6);
+		assert.strictEqual(utf8_length_over('😀', 3), 4);
+		assert.isNull(utf8_length_over('😀', 4));
 	});
 });

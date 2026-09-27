@@ -16,7 +16,8 @@ import {
 import {
 	create_jsonrpc_error_response,
 	to_jsonrpc_message_id,
-	is_jsonrpc_error_response
+	is_jsonrpc_error_response,
+	is_jsonrpc_response
 } from '../http/jsonrpc_helpers.ts';
 import {
 	JsonrpcErrorResponse,
@@ -40,6 +41,8 @@ import type { Transport, TransportSendOptions } from './transports.ts';
  * status → code map is lossy (`queue_overflow` and `rate_limited` share 429).
  * Any other body (HTML from a proxy, empty, malformed) gets a synthesized
  * envelope whose code comes from `http_status_to_jsonrpc_error_code`.
+ * A 2xx whose body isn't a JSON-RPC response (an HTML fallback page, say)
+ * becomes an `internal_error` naming the status and content type.
  */
 export class FrontendHttpTransport implements Transport {
 	readonly transport_name = 'frontend_http_rpc' as const;
@@ -121,17 +124,28 @@ export class FrontendHttpTransport implements Transport {
 				});
 			}
 
-			const result = await response.json();
-
-			// JSON-RPC errors should carry a non-2xx status (see `jsonrpc_error_code_to_http_status`).
-			if (DEV && is_jsonrpc_error_response(result)) {
-				console.warn(
-					`[http_transport] JSON-RPC error response with HTTP ${response.status}`,
-					result
-				);
+			const body = await read_json_body(response);
+			if (is_jsonrpc_error_response(body)) {
+				// JSON-RPC errors should carry a non-2xx status (see `jsonrpc_error_code_to_http_status`).
+				if (DEV) {
+					console.warn(
+						`[http_transport] JSON-RPC error response with HTTP ${response.status}`,
+						body
+					);
+				}
+				return body;
 			}
-
-			return result;
+			if (is_jsonrpc_response(body)) return body;
+			// a 2xx that isn't JSON-RPC — e.g. an HTML page from a static
+			// fallback or proxy answering the RPC path
+			return create_jsonrpc_error_response(
+				to_jsonrpc_message_id(message),
+				jsonrpc_error_messages.internal_error(
+					`response is not JSON-RPC: HTTP ${response.status} ${
+						response.headers.get('content-type') ?? 'without a content type'
+					}`
+				)
+			);
 		} catch (error) {
 			if (error instanceof ThrownJsonrpcError) {
 				return create_jsonrpc_error_response(to_jsonrpc_message_id(message), {

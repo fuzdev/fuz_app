@@ -774,7 +774,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			// tick. No queue — the heartbeat is the thing that tells us the
 			// queue needs flushing, it must not fight the queue for the slot.
 			this.#heartbeat_in_flight = true;
-			void this.request(heartbeat_action_spec.method, {}, { queue: false })
+			void this.request(heartbeat_action_spec.method, undefined, { queue: false })
 				.catch((error: unknown) => {
 					this.#log?.debug('[socket] heartbeat request failed:', error);
 				})

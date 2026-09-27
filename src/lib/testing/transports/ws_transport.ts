@@ -120,7 +120,9 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 		});
 	});
 
-	socket.on('close', () => {
+	let close_code: number | null = null;
+	socket.on('close', (code: number) => {
+		close_code = code;
 		for (const resolve of close_resolvers) resolve();
 		close_resolvers = [];
 	});
@@ -194,6 +196,9 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 	return {
 		get messages() {
 			return received;
+		},
+		get close_code() {
+			return close_code;
 		},
 		send: send_impl,
 		async request<R = unknown>(

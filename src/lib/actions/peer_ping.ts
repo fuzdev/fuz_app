@@ -38,6 +38,7 @@
 import { z } from 'zod';
 
 import { ThrownJsonrpcError, JSONRPC_ERROR_CODES } from '../http/jsonrpc_errors.ts';
+import { safe_parse_dropping_unknown_keys } from '../http/schema_helpers.ts';
 import type { RequestResponseActionSpec } from './action_spec.ts';
 import type { ActionContext, RpcAction } from './action_rpc.ts';
 import { DEFAULT_PEER_REQUEST_TIMEOUT, type PeerRequestError } from './peer_request.ts';
@@ -191,7 +192,8 @@ export const peer_ping_handler = async (
 	const outcome = await ctx.request_client(PEER_PING_METHOD, request_params, { timeout_ms });
 	if (!outcome.ok) throw peer_request_error_to_jsonrpc(outcome.error);
 
-	const parsed = PingResponse.safeParse(outcome.value);
+	// the reply is remote-authored — a newer client may add fields
+	const parsed = safe_parse_dropping_unknown_keys(PingResponse, outcome.value);
 	if (!parsed.success) {
 		throw new ThrownJsonrpcError(
 			JSONRPC_ERROR_CODES.validation_error,

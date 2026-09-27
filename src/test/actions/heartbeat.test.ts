@@ -19,6 +19,7 @@ import {
 	heartbeat_handler
 } from '$lib/actions/heartbeat.ts';
 import { create_ws_test_harness } from '$lib/testing/ws_round_trip.ts';
+import { to_input_params } from '$lib/http/schema_helpers.ts';
 
 describe('heartbeat_action', () => {
 	test('spec has the expected method + shape', () => {
@@ -28,9 +29,14 @@ describe('heartbeat_action', () => {
 		assert.strictEqual(heartbeat_action_spec.side_effects, false);
 	});
 
-	test('input rejects extra keys (strictObject)', () => {
-		assert.strictEqual(heartbeat_action_spec.input.safeParse({}).success, true);
-		assert.strictEqual(heartbeat_action_spec.input.safeParse({ stray: 1 }).success, false);
+	test('input is parameterless: empty shapes are the no-arg call, anything else is refused', () => {
+		const { input } = heartbeat_action_spec;
+		for (const params of [undefined, null, {}]) {
+			assert.ok(input.safeParse(to_input_params(input, params)).success, JSON.stringify(params));
+		}
+		for (const params of [{ stray: 1 }, [], 0]) {
+			assert.ok(!input.safeParse(to_input_params(input, params)).success, JSON.stringify(params));
+		}
 	});
 
 	test('handler returns empty object', () => {
