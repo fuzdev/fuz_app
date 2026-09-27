@@ -4,8 +4,7 @@
 
 NOTE: AI-generated
 
-For coding conventions, see Skill(fuz-stack). Commit policy: see workspace
-CLAUDE.md (this repo is in `git_commit_deny`).
+For coding conventions, see Skill(fuz-stack).
 
 ## Cleanest architecture takes priority
 
@@ -349,8 +348,3 @@ assertions in `src/test/auth/*.test.ts`.
 - Full-stack web app — Auth, admin routes, route specs, SSE, db routes, CLI, env, static, create_db, UI components
 - Local daemon (PGlite) — Full auth stack + admin routes, bootstrap with `on_bootstrap`, CLI. See ./docs/local-daemon.md
 - Action-oriented app — Action specs, CLI (runtime, util, config, daemon, help)
-
-## Committing
-
-`git add` and `git commit` are denied by `.claude/settings.local.json` in
-this repo — make the edits and stop, the user commits.
