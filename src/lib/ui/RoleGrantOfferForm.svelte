@@ -9,6 +9,8 @@
 	 * the RPC surface the three distinct reason codes — self-target,
 	 * role-not-grantable, not-authorized — so consumers can render them
 	 * appropriately.
+	 *
+	 * @module
 	 */
 
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
@@ -51,7 +53,7 @@
 	} = $props();
 
 	const role_grant_offers = role_grant_offers_state_context.get();
-	const form_state = new FormState();
+	const form_state = new FormState<'role' | 'message'>();
 
 	let role: string | undefined = $state.raw();
 	const selected_role = $derived(role ?? roles[0] ?? '');
@@ -78,6 +80,9 @@
 	};
 
 	const handle_submit = async (): Promise<void> => {
+		// while submitting the textarea is `readonly` and the button `aria-disabled` —
+		// `disabled` would drop focus to `<body>` — so clicks still land here
+		if (submitting) return;
 		form_state.attempt();
 		local_error = null;
 		if (!selected_role) {
@@ -115,6 +120,8 @@
 >
 	<label>
 		<div class="title">role</div>
+		<!-- a select has no `readonly`, but disabling it can't drop focus: the only
+			submit is the button, which has focus when the select disables -->
 		<select
 			name="role"
 			value={selected_role}
@@ -134,13 +141,14 @@
 			bind:value={message}
 			maxlength={ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX}
 			placeholder="optional note for the recipient"
-			disabled={submitting}></textarea>
+			readonly={submitting}></textarea>
 	</label>
 
 	<div class="row gap_sm">
 		<PendingButton
 			pending={submitting}
-			disabled={submitting || !selected_role}
+			disabled={!selected_role}
+			aria-disabled={submitting}
 			onclick={handle_submit}
 		>
 			send offer

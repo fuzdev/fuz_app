@@ -16,7 +16,7 @@
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
 	import { autofocus } from '@fuzdev/fuz_ui/autofocus.svelte.ts';
 
-	import { Username } from '../primitive_schemas.ts';
+	import { Username, USERNAME_LENGTH_MAX, USERNAME_LENGTH_MIN } from '../primitive_schemas.ts';
 	import { PASSWORD_LENGTH_MIN } from '../auth/password.ts';
 	import { auth_state_context } from './auth_state.svelte.ts';
 	import { FormState } from './form_state.svelte.ts';
@@ -32,7 +32,7 @@
 	} = $props();
 
 	const auth_state = auth_state_context.get();
-	const form_state = new FormState();
+	const form_state = new FormState<'username' | 'email' | 'password' | 'password_confirm'>();
 
 	let username = $state.raw('');
 	let email = $state.raw('');
@@ -42,14 +42,13 @@
 	const username_valid = $derived(Username.safeParse(username).success);
 	const passwords_match = $derived(password === password_confirm);
 	const can_submit = $derived(
-		username.trim() &&
-			username_valid &&
-			password.length >= PASSWORD_LENGTH_MIN &&
-			passwords_match &&
-			!auth_state.verifying
+		username.trim() && username_valid && password.length >= PASSWORD_LENGTH_MIN && passwords_match
 	);
 
 	const handle_signup = async (): Promise<void> => {
+		// while verifying the fields are `readonly` and the button `aria-disabled` —
+		// `disabled` would drop focus to `<body>` — so Enter and clicks still land here
+		if (auth_state.verifying) return;
 		form_state.attempt();
 		if (!can_submit) {
 			if (!username.trim() || !username_valid) form_state.focus('username');
@@ -84,13 +83,14 @@
 			bind:value={username}
 			placeholder="username"
 			autocomplete="username"
-			disabled={auth_state.verifying}
+			readonly={auth_state.verifying}
 			{@attach autofocus()}
 		/>
 	</label>
 	{#if form_state.show('username') && username && !username_valid}
 		<p class="color_c_50 font_size_sm mt_0 mb_xs">
-			3-39 chars, starts with a letter, ends with letter/number, middle allows dash/underscore
+			{USERNAME_LENGTH_MIN}-{USERNAME_LENGTH_MAX} chars, starts with a letter, ends with
+			letter/number, middle allows dash/underscore
 		</p>
 	{/if}
 	<label>
@@ -101,7 +101,7 @@
 			bind:value={email}
 			placeholder="email"
 			autocomplete="email"
-			disabled={auth_state.verifying}
+			readonly={auth_state.verifying}
 		/>
 	</label>
 	<fieldset>
@@ -113,7 +113,7 @@
 				bind:value={password}
 				placeholder="password"
 				autocomplete="new-password"
-				disabled={auth_state.verifying}
+				readonly={auth_state.verifying}
 			/>
 		</label>
 		{#if form_state.show('password') && password && password.length < PASSWORD_LENGTH_MIN}
@@ -129,7 +129,7 @@
 				bind:value={password_confirm}
 				placeholder="confirm password"
 				autocomplete="new-password"
-				disabled={auth_state.verifying}
+				readonly={auth_state.verifying}
 			/>
 		</label>
 		{#if form_state.show('password_confirm') && password && password_confirm && !passwords_match}
@@ -139,7 +139,8 @@
 	<div class="row gap_sm">
 		<PendingButton
 			pending={auth_state.verifying}
-			disabled={auth_state.verifying}
+			disabled={false}
+			aria-disabled={auth_state.verifying}
 			onclick={handle_signup}
 			class={auth_state.verify_error ? 'color_c' : ''}
 		>

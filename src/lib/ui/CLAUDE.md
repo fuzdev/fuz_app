@@ -93,7 +93,12 @@ pattern rather than reintroducing prop-drilling.
 ## Auth forms
 
 All four consume `auth_state_context.get()`; all three form-driven ones
-attach a `FormState` for Enter-advance + blur-touched validation.
+attach a `FormState` for Enter-advance + blur-touched validation. While a
+submit is in flight their fields are `readonly` and the `PendingButton` is
+`aria-disabled` (with `disabled={false}` overriding its disable-while-pending
+default), never `disabled` — disabling the focused element drops focus to
+`<body>`. So the handler guards re-entry itself (`if (auth_state.verifying)
+return;`), since Enter and clicks still reach it.
 
 - `LoginForm.svelte` — props `username_label = 'username or email'`,
   `redirect_on_login`. Clears `auth_state.verify_error` on input.
@@ -174,9 +179,11 @@ destructive actions.
   reason codes with friendly copy: `ERROR_ROLE_GRANT_OFFER_SELF_TARGET`,
   `ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE`, `ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED`,
   `ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH`, `ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH`
-  — imported from `auth/role_grant_offer_action_specs.js` (see
+  — imported from `auth/role_grant_offer_action_specs.ts` (see
   `auth/CLAUDE.md` for `role_grant_offer_action_specs.ts` +
-  `role_grant_offer_actions.ts`).
+  `role_grant_offer_actions.ts`). Submits like the auth forms (`readonly`
+  textarea, `aria-disabled` button, re-entry guard); its select stays
+  `disabled`, having no `readonly` — safe, since the button has focus.
 - `RoleGrantOfferHistory.svelte` — both-directions history (recipient +
   grantor, including terminal). Props: `current_actor_id: string | null`
   (classifies row as "sent" vs "received"), `format_actor?`,
@@ -259,8 +266,10 @@ destructive actions.
   Methods: `form()` (returns a Svelte `Attachment` for the form
   element), `show(field)` (touched OR attempted), `is_touched(field)`,
   `touch(field)` (programmatic), `focus(field)` (queries by `name`),
-  `attempt()`, `reset()`. In DEV throws if an input loses focus
-  without a `name` attribute — all tracked inputs must be named.
+  `attempt()`, `reset()`. Generic over its field names —
+  `new FormState<'username' | 'password'>()` makes a misspelled field a
+  compile error (defaults to `string`). In DEV throws if an input loses
+  focus without a `name` attribute — all tracked inputs must be named.
 - `sidebar_state.svelte.ts` — see Shell + layout above.
 
 ## Per-domain state modules

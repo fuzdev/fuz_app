@@ -17,7 +17,7 @@
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
 	import { autofocus } from '@fuzdev/fuz_ui/autofocus.svelte.ts';
 
-	import { Username } from '../primitive_schemas.ts';
+	import { Username, USERNAME_LENGTH_MAX, USERNAME_LENGTH_MIN } from '../primitive_schemas.ts';
 	import { PASSWORD_LENGTH_MIN } from '../auth/password.ts';
 	import { auth_state_context } from './auth_state.svelte.ts';
 	import { FormState } from './form_state.svelte.ts';
@@ -33,7 +33,7 @@
 	} = $props();
 
 	const auth_state = auth_state_context.get();
-	const form_state = new FormState();
+	const form_state = new FormState<'token' | 'username' | 'password' | 'password_confirm'>();
 
 	let token = $state.raw('');
 	let username = $state.raw('');
@@ -47,11 +47,13 @@
 			username.trim() &&
 			username_valid &&
 			password.length >= PASSWORD_LENGTH_MIN &&
-			passwords_match &&
-			!auth_state.verifying
+			passwords_match
 	);
 
 	const handle_bootstrap = async (): Promise<void> => {
+		// while verifying the fields are `readonly` and the button `aria-disabled` —
+		// `disabled` would drop focus to `<body>` — so Enter and clicks still land here
+		if (auth_state.verifying) return;
 		form_state.attempt();
 		if (!can_submit) {
 			if (!token.trim()) form_state.focus('token');
@@ -86,7 +88,7 @@
 			type="password"
 			bind:value={token}
 			placeholder="paste token"
-			disabled={auth_state.verifying}
+			readonly={auth_state.verifying}
 			{@attach autofocus()}
 		/>
 	</label>
@@ -98,12 +100,13 @@
 			bind:value={username}
 			placeholder="admin"
 			autocomplete="username"
-			disabled={auth_state.verifying}
+			readonly={auth_state.verifying}
 		/>
 	</label>
 	{#if form_state.show('username') && username && !username_valid}
 		<p class="color_c_50 font_size_sm mt_0 mb_xs">
-			3-39 chars, starts with a letter, ends with letter/number, middle allows dash/underscore
+			{USERNAME_LENGTH_MIN}-{USERNAME_LENGTH_MAX} chars, starts with a letter, ends with
+			letter/number, middle allows dash/underscore
 		</p>
 	{/if}
 	<fieldset>
@@ -115,7 +118,7 @@
 				bind:value={password}
 				placeholder="password"
 				autocomplete="new-password"
-				disabled={auth_state.verifying}
+				readonly={auth_state.verifying}
 			/>
 		</label>
 		{#if form_state.show('password') && password && password.length < PASSWORD_LENGTH_MIN}
@@ -131,7 +134,7 @@
 				bind:value={password_confirm}
 				placeholder="confirm password"
 				autocomplete="new-password"
-				disabled={auth_state.verifying}
+				readonly={auth_state.verifying}
 			/>
 		</label>
 		{#if form_state.show('password_confirm') && password && password_confirm && !passwords_match}
@@ -141,7 +144,8 @@
 	<div class="row gap_sm">
 		<PendingButton
 			pending={auth_state.verifying}
-			disabled={auth_state.verifying}
+			disabled={false}
+			aria-disabled={auth_state.verifying}
 			onclick={handle_bootstrap}
 			class={auth_state.verify_error ? 'color_c' : ''}
 		>

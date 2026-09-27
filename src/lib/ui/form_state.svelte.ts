@@ -12,13 +12,21 @@
  * button is `type="button"`, as `PendingButton` is. Hidden inputs don't count, and an Enter that commits
  * IME composition is left alone.
  *
+ * While a submit is in flight, make the fields `readonly` rather than `disabled`
+ * (and the button `aria-disabled`, guarding the handler against re-entry) —
+ * disabling the focused element drops focus to `<body>`. Enter still advances
+ * through and submits from `readonly` inputs.
+ *
+ * The type parameter names the form's fields, so `focus`, `show`, `touch`,
+ * and `is_touched` reject a misspelled field at compile time.
+ *
  * All trackable inputs must have a `name` attribute — an error is thrown in dev
  * if an input without `name` loses focus.
  *
  * @example
  * ```svelte
- * <script>
- *   const form_state = new FormState();
+ * <script lang="ts">
+ *   const form_state = new FormState<'username'>();
  *   let username = $state.raw('');
  *   const username_valid = $derived(Username.safeParse(username).success);
  *   const can_submit = $derived(username.trim() && username_valid);
@@ -55,7 +63,7 @@ const ENTER_INPUT_SELECTOR = 'input:not(:disabled):not([type=hidden])';
 
 const FORM_INPUT_SELECTOR = 'input, textarea, select';
 
-export class FormState {
+export class FormState<TField extends string = string> {
 	readonly #touched: SvelteSet<string> = new SvelteSet();
 	#form: HTMLFormElement | null = null;
 	#attempted = $state.raw(false);
@@ -131,7 +139,7 @@ export class FormState {
 	/**
 	 * Whether a field has been blurred at least once.
 	 */
-	is_touched(field: string): boolean {
+	is_touched(field: TField): boolean {
 		return this.#touched.has(field);
 	}
 
@@ -139,7 +147,7 @@ export class FormState {
 	 * Whether to show validation errors for a field.
 	 * Returns `true` if the field has been blurred or a submit attempt was made.
 	 */
-	show(field: string): boolean {
+	show(field: TField): boolean {
 		return this.#touched.has(field) || this.#attempted;
 	}
 
@@ -148,14 +156,14 @@ export class FormState {
 	 *
 	 * @mutates `this`
 	 */
-	touch(field: string): void {
+	touch(field: TField): void {
 		this.#touched.add(field);
 	}
 
 	/**
 	 * Focuses the named input within the form.
 	 */
-	focus(field: string): void {
+	focus(field: TField): void {
 		if (DEV && !this.#form) {
 			console.warn('FormState: focus() called before form() attachment is active.');
 			return;

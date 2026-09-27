@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 
 /**
- * Tests for `FormState` — the Enter-key handling of its form attachment.
+ * Tests for `FormState` — the Enter-key handling of its form attachment,
+ * including over the `readonly` fields of an in-flight submit, and the
+ * type-checked field names.
  *
  * @module
  */
@@ -167,5 +169,38 @@ describe('FormState form attachment — Enter', () => {
 		detach();
 		press_enter(password);
 		assert.strictEqual(submits(), 0);
+	});
+});
+
+describe('FormState form attachment — readonly while submitting', () => {
+	test('Enter in a readonly input still advances focus', () => {
+		const { username, password, detach } = create_login_form();
+		username.readOnly = true;
+		password.readOnly = true;
+		username.focus();
+		press_enter(username);
+		assert.strictEqual(document.activeElement, password);
+		detach();
+	});
+
+	test('Enter in a readonly last input still submits, keeping focus', () => {
+		const { password, submits, detach } = create_login_form();
+		password.readOnly = true;
+		password.focus();
+		press_enter(password);
+		assert.strictEqual(submits(), 1);
+		assert.strictEqual(document.activeElement, password);
+		detach();
+	});
+});
+
+describe('FormState field names', () => {
+	test('methods take only the declared field names', () => {
+		const form_state = new FormState<'username' | 'password'>();
+		form_state.touch('username');
+		assert.isTrue(form_state.is_touched('username'));
+		assert.isFalse(form_state.show('password'));
+		// @ts-expect-error a misspelled field is a compile error
+		form_state.touch('pasword');
 	});
 });

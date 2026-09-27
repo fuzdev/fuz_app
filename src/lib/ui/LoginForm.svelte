@@ -34,12 +34,15 @@
 	} = $props();
 
 	const auth_state = auth_state_context.get();
-	const form_state = new FormState();
+	const form_state = new FormState<'username' | 'password'>();
 
 	let username = $state.raw('');
 	let password = $state.raw('');
 
 	const handle_login = async (): Promise<void> => {
+		// while verifying the fields are `readonly` and the button `aria-disabled` —
+		// `disabled` would drop focus to `<body>` — so Enter and clicks still land here
+		if (auth_state.verifying) return;
 		const u = username.trim();
 		const p = password;
 		if (!u) {
@@ -79,7 +82,7 @@
 			bind:value={username}
 			placeholder={username_label}
 			autocomplete="username"
-			disabled={auth_state.verifying}
+			readonly={auth_state.verifying}
 			{@attach autofocus()}
 		/>
 	</label>
@@ -91,13 +94,14 @@
 			bind:value={password}
 			placeholder="password"
 			autocomplete="current-password"
-			disabled={auth_state.verifying}
+			readonly={auth_state.verifying}
 		/>
 	</label>
 	<div class="row gap_sm">
 		<PendingButton
 			pending={auth_state.verifying}
-			disabled={auth_state.verifying}
+			disabled={false}
+			aria-disabled={auth_state.verifying}
 			onclick={handle_login}
 			class={auth_state.verify_error ? 'color_c' : ''}
 		>
