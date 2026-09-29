@@ -77,9 +77,83 @@ pattern rather than reintroducing prop-drilling.
 
 - `AppShell.svelte` — sidebar-and-main shell. Props: `children`,
   `sidebar` (Snippet), `sidebar_width = 180`, `sidebar_state?`,
-  `keyboard_shortcut?`, `show_toggle?`, `toggle_button?`.
-  Provisions `sidebar_state_context` internally (creates a fresh
-  `SidebarState` if `sidebar_state` prop is not supplied).
+  `keyboard_shortcut?`, `show_toggle?`, `toggle_button?` (receives
+  `{title, show_sidebar, toggle, sidebar_id}`). Provisions
+  `sidebar_state_context` internally (creates one `SidebarState` if the
+  `sidebar_state` prop is not supplied). Requires the SvelteKit runtime
+  (`afterNavigate` from `$app/navigation`). The toggle renders only while
+  `show_toggle && sidebar_state.enabled`, before the sidebar in the DOM;
+  the built-in one is a disclosure (`aria-expanded` + `aria-controls`
+  pointing at the sidebar's `$props.id()` id) with the static name
+  `aria-label="sidebar"`, a dynamic `title`, `aria-keyshortcuts` when
+  `keyboard_shortcut` is set, and a `←` glyph CSS mirrors when closed.
+  The shortcut acts only while the sidebar is enabled, on the current
+  mode's field (so it drives the overlay at narrow widths).
+  - **Custom toggles** (`toggle_button`): give the button
+    `class="app-shell-toggle"` — it renders as a direct child of the root,
+    where the head rule stacks it one above the sidebar; the z-index applies
+    only to a positioned button, so position it (e.g. `position: fixed`,
+    like the built-in one) — and `aria-controls={sidebar_id}`, which the
+    focus fallback looks up (the first match that takes focus wins).
+    `show_sidebar` is viewport-dependent (the server renders it as wide):
+    attributes are repaired on hydration, but visible content keyed on it
+    changes at narrow widths, so key visible content on CSS or the
+    viewport-free fields.
+  - **Two modes, split by `SidebarState.narrow_query`.** Wide: the sidebar
+    sits beside the content (padded by `--sidebar_width`) and follows
+    `show_sidebar_wide`. Narrow: it starts closed and opens as an overlay
+    (capped at `85vw`) over a scrim, following `show_sidebar_narrow`; the
+    content is `inert` while open. The overlay closes on navigation
+    (`afterNavigate` inside `AppShell` — consumers write nothing), Escape,
+    a scrim click, and widening out of narrow mode (a crossing `$effect`).
+    Not `role="dialog"` — the same element is the persistent sidebar at
+    wide, so no focus trap.
+  - **Escape** is a window `keydown` listener registered by an `$effect`
+    only while the overlay is open, so listeners registered earlier (a
+    contextmenu's, mounted with the page) see Escape first and can swallow
+    it. It never calls `preventDefault`, so the browser's close requests
+    (dialog `cancel`, `popover="auto"`) stay intact, and it bails while a
+    modal is open (`document.querySelector(':modal')` matches). An open
+    `popover="auto"` isn't `:modal`, so one Escape closes it and the overlay
+    together. Closing is `flushSync`ed so the content leaves `inert` before
+    focus returns. When focus was inside the sidebar or had fallen to `body`
+    (opening from the content makes it `inert`, which drops focus there), it
+    goes back to the opener if still connected and focusable, else to the
+    first `[aria-controls="<sidebar_id>"]` that takes focus (Safari doesn't
+    focus a clicked button, so the opener can be `null`). A narrow-mode
+    close from `keyboard_shortcut` goes through the same close-and-return
+    path; wide mode just toggles. The shortcut bails on an open modal too,
+    so pressing it inside a dialog opened from the overlay doesn't close the
+    overlay behind it.
+  - **No hydration flash.** The mode rules are two `<style>` elements in
+    `<svelte:head>`, the second with `media={narrow_query}` (Svelte
+    attribute-escapes it; the CSS text is constant). The root's state
+    classes read only the viewport-free fields, so the server render and
+    hydration agree and CSS picks the mode; `narrow` only drives `inert`,
+    ARIA, and input routing. The head rules are global (they match every
+    `.app-shell`), so shells mounted at the same time must share a
+    `narrow_query`. CSP: needs `style-src-elem 'unsafe-inline'` (fuz_ui's
+    CSP default allows it) or the styles' hashes.
+  - **Public class hooks**: `.app-shell` (state classes `.wide-open` /
+    `.narrow-open`), `.app-shell-content`, `.app-shell-sidebar`,
+    `.app-shell-scrim`, `.app-shell-toggle`, `.app-shell-toggle-glyph`.
+    Every head rule is specificity (0,2,0) with state classes in `:where()`
+    (the narrow block wins by document order). **Override at (0,3,0)** —
+    a client-mounted shell appends its head styles after the app's CSS, so
+    a (0,2,0) rule placed later in source isn't reliably later. The head
+    also carries the rules that must reach consumer markup: the toggle's
+    z-index (`.app-shell > .app-shell-toggle`) and
+    `.app-shell-sidebar :modal { visibility: visible }`, which keeps a
+    top-layer dialog opened from the sidebar shown while the sidebar hides.
+    Mode-independent rules on the shell's own elements stay in the scoped
+    style (including `overscroll-behavior: contain` on the sidebar) and
+    never set a property the head rules do.
+  - **CSS variables**: `--sidebar_width` (always the configured width, set
+    from the prop — not the effective offset; target the content's
+    `padding-left` under `.app-shell:where(.wide-open)` for that),
+    `--sidebar_bg` (default `--shade_05`), `--sidebar_z_index` (default
+    `200` in both modes; the scrim shares it, the toggle sits one above),
+    `--sidebar_scrim_bg` (default `--darken_40`).
 - `ColumnLayout.svelte` — fixed `aside` column + fluid `children`
   column; `column_width = '280px'`.
 - `MenuLink.svelte` — SvelteKit `<a>` with `selected` derived from
@@ -87,8 +161,20 @@ pattern rather than reintroducing prop-drilling.
   Exact matches additionally get `aria-current="page"`. Takes `path`
   (resolved via `resolve` from `$app/paths`). The `.highlighted` name is
   intentionally free for orthogonal emphasis (badges, recent activity).
-- `sidebar_state.svelte.ts` — `SidebarState` (with `activate()` cleanup
-  pattern, optional reactive `enabled` getter), `sidebar_state_context`.
+- `sidebar_state.svelte.ts` — `SidebarState`, `sidebar_state_context`,
+  `SIDEBAR_NARROW_QUERY_DEFAULT` (`'(max-width: 800px)'`). Options:
+  `enabled?` (reactive getter overriding the internal field) and
+  `narrow_query?` (`null` disables narrow mode; must contain parentheses
+  since it feeds both CSS `media` and `MediaQuery`, which would auto-wrap a
+  paren-less query while CSS wouldn't — throws in DEV). Visibility is two
+  viewport-free fields, `show_sidebar_wide` (default `true`, the desktop
+  preference narrow interactions never touch) and `show_sidebar_narrow`
+  (default `false`). `narrow` is the viewport match (`false` in SSR);
+  `show_sidebar` is the effective visibility for the current mode and its
+  setter writes that mode's field, as does `toggle_sidebar` (routed at call
+  time). `close_narrow()` closes the overlay. `activate()` enables and
+  shows wide; its disposer clears `enabled` and both fields — pair with
+  `$effect` for scoped activation.
 
 ## Auth forms
 
