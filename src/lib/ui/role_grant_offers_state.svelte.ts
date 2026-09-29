@@ -31,6 +31,10 @@ import { AsyncSlot } from './async_slot.svelte.ts';
 import { is_iso8601_seconds_live } from '../timestamp.ts';
 import type { RoleGrantOfferJson } from '../auth/role_grant_offer_schema.ts';
 import {
+	GRANT_SCOPE_PAIRED_MESSAGE,
+	is_grant_scope_paired
+} from '../auth/role_grant_offer_action_specs.ts';
+import {
 	ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
@@ -38,6 +42,23 @@ import {
 	ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD,
 	ROLE_GRANT_REVOKE_NOTIFICATION_METHOD
 } from '../auth/role_grant_offer_notifications.ts';
+
+/**
+ * The scope of an offer: global (both absent / `null`) or scoped (both set).
+ * `scope_kind` and `scope_id` are paired on the wire — a lone `scope_id` is an
+ * `invalid_params` refusal — so the pair is one union rather than two optional
+ * fields.
+ */
+export type RoleGrantOfferScope =
+	{ scope_kind?: null; scope_id?: null } | { scope_kind: string; scope_id: string };
+
+/** Params for creating an offer — `RoleGrantOffersRpc.create` and `submit_create`. */
+export type RoleGrantOfferCreateParams = {
+	to_account_id: string;
+	to_actor_id?: string | null;
+	role: string;
+	message?: string | null;
+} & RoleGrantOfferScope;
 
 /**
  * Svelte context for `RoleGrantOffersState`.
@@ -58,13 +79,7 @@ export interface RoleGrantOffersRpc {
 		limit?: number;
 		offset?: number;
 	}) => Promise<{ offers: Array<RoleGrantOfferJson> }>;
-	create: (params: {
-		to_account_id: string;
-		to_actor_id?: string | null;
-		role: string;
-		scope_id?: string | null;
-		message?: string | null;
-	}) => Promise<{ offer: RoleGrantOfferJson }>;
+	create: (params: RoleGrantOfferCreateParams) => Promise<{ offer: RoleGrantOfferJson }>;
 	accept: (offer_id: string) => Promise<{
 		role_grant_id: string;
 		offer: RoleGrantOfferJson;
@@ -187,16 +202,15 @@ export class RoleGrantOffersState {
 	 *
 	 * `to_actor_id` (optional) narrows the offer to a specific actor on
 	 * `to_account_id`; omit / null for the account-grain default (any actor
-	 * on the recipient account may accept).
+	 * on the recipient account may accept). A scoped offer passes `scope_kind`
+	 * and `scope_id` together; an unpaired scope (reachable from untyped
+	 * callers) fails with `GRANT_SCOPE_PAIRED_MESSAGE` without an RPC.
 	 */
-	async submit_create(params: {
-		to_account_id: string;
-		to_actor_id?: string | null;
-		role: string;
-		scope_id?: string | null;
-		message?: string | null;
-	}): Promise<RoleGrantOfferJson | undefined> {
+	async submit_create(params: RoleGrantOfferCreateParams): Promise<RoleGrantOfferJson | undefined> {
 		return this.create.run(async () => {
+			if (!is_grant_scope_paired(params)) {
+				throw new Error(GRANT_SCOPE_PAIRED_MESSAGE);
+			}
 			const { offer } = await this.#rpc.create(params);
 			this.#merge_offers([offer]);
 			return offer;

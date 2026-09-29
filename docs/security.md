@@ -878,6 +878,22 @@ Admin surface hardening on the offer flow:
   and emits a `role_grant_offer_create outcome=failure` audit event
   symmetric with the admin-grant-path and `authorize` denial paths, so
   self-grant probes leave a trail.
+- **Builtin roles are global-only, and every builtin gate reads the global
+  grant.** The dispatcher's role gate, the cell admin bypass, the bare-hash
+  fact read, cross-account `account_delete`, and the offer inbox reads all
+  check `has_scoped_role(_, 'admin', null)` — a scoped `admin` row confers
+  nothing. No grant path mints one: `role_grant_assign` and
+  `role_grant_offer_create` refuse a scoped `admin` (400
+  `role_grant_builtin_scoped`; `keeper`, scoped or not, stays 403 as never
+  web-grantable), offering a builtin needs a global-admin caller
+  whatever the consumer `authorize` callback says (403
+  `role_grant_offer_not_authorized`), and accept refuses a `keeper` offer, a
+  scoped `admin` offer, or a builtin offer whose grantor no longer holds an
+  active global `admin` — re-checked under `FOR SHARE` at mint time, the
+  refusal audited as a failed `role_grant_offer_accept` and the offer left
+  pending. `role_grant_assign` also re-checks the global admin grant in-handler
+  behind the dispatcher gate, so a scoped `admin` can't assign itself a global
+  one. Self-service eligibility refuses builtin roles at construction.
 - **Admin retract via RPC, grantor-scoped** — admins cancel offers they
   issued by calling `role_grant_offer_retract` through the RPC surface.
   The grantor IDOR guard (`from_actor_id = ctx.actor.id`) enforces

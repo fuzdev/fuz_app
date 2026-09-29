@@ -39,7 +39,7 @@ import {
 	ROLE_KEEPER,
 	type RoleSchemaResult
 } from './role_schema.ts';
-import { has_role } from './request_context.ts';
+import { has_scoped_role } from './request_context.ts';
 import {
 	query_account_has_global_role,
 	query_account_has_active_global_role,
@@ -455,8 +455,9 @@ export const create_admin_actions = (
 	): Promise<AccountDeleteOutput> => {
 		const auth = ctx.auth;
 		const target_account_id = input.account_id ?? auth.account.id;
-		// Self-or-admin elevation: deleting someone else needs admin.
-		if (target_account_id !== auth.account.id && !has_role(auth, ROLE_ADMIN)) {
+		// Self-or-admin elevation: deleting someone else needs the **global**
+		// admin grant — a scoped `admin` row confers no cross-account authority.
+		if (target_account_id !== auth.account.id && !has_scoped_role(auth, ROLE_ADMIN, null)) {
 			throw jsonrpc_errors.forbidden('cannot delete another account', {
 				reason: ERROR_INSUFFICIENT_PERMISSIONS
 			});

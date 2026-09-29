@@ -1036,6 +1036,7 @@ Inside a layout:
 <RoleGrantOfferForm
 	to_account_id={target.id}
 	roles={grantable_roles}
+	scope_kind="classroom"
 	scope_id={classroom.id}
 	on_created={(offer) => console.log('offered', offer.id)}
 />
@@ -1047,9 +1048,10 @@ Inside a layout:
 first); decline uses a `ConfirmButton` popover with an optional reason
 textarea bounded by `ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX`.
 `RoleGrantOfferForm` takes a `roles` array the caller has already filtered
-by admin-grant-path (`RoleSpec.grant_paths` includes `'admin'`) and
-surfaces the five RPC error reasons
-(`role_grant_offer_self_target`, `role_grant_offer_role_not_grantable`, `role_grant_offer_not_authorized`, `role_grant_offer_actor_account_mismatch`, `role_grant_offer_actor_mismatch`)
+by admin-grant-path (`RoleSpec.grant_paths` includes `'admin'`), takes a
+scope as the `scope_kind` + `scope_id` pair (or neither, for a global offer),
+and surfaces the RPC error reasons
+(`role_grant_offer_self_target`, `role_grant_offer_role_not_grantable`, `role_grant_offer_not_authorized`, `role_grant_builtin_scoped`, `role_grant_offer_actor_account_mismatch`, `role_grant_offer_actor_mismatch`)
 distinctly. `RoleGrantOfferHistory` is backed by the new
 `role_grant_offer_history` action and needs `fetch_history()` called on
 the state class.

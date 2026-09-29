@@ -23,6 +23,11 @@
  * - **(c) `role_grant_assign` is admin-only** — a non-admin holder / fresh
  *   non-admin is refused at the dispatcher → 403 `insufficient_permissions`;
  *   anonymous → 401.
+ * - **(d) builtin roles are global-only** — `scope_kind` + `scope_id` are
+ *   paired on both grant inputs (a half-scoped call → 400 `-32602`), a scoped
+ *   `admin` is refused on assign and offer create → 400
+ *   `role_grant_builtin_scoped`, and a builtin offer from a caller without a
+ *   global `admin` → 403 `role_grant_offer_not_authorized`.
  *
  * Derived from the participation-gates design (Decisions 6–7) — referenced
  * by intent, not embedded here.
@@ -36,11 +41,12 @@ import {
 	ERROR_ROLE_NOT_WEB_GRANTABLE
 } from '$lib/http/error_schemas.ts';
 import {
+	ERROR_ROLE_GRANT_BUILTIN_SCOPED,
 	ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
 	ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
 	ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE
 } from '$lib/auth/role_grant_offer_action_specs.ts';
-import { ROLE_KEEPER } from '$lib/auth/role_schema.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
 import { SPINE_PARTICIPANT_ROLE } from '$lib/testing/cross_backend/spine_surface_constants.ts';
 import type { ConformanceCase } from '$lib/testing/cross_backend/conformance_case.ts';
 
@@ -56,6 +62,9 @@ const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
 /** A distinct well-formed (v4-shaped) UUID for an actor that never belongs to `NIL_UUID`. */
 const STRANGER_ACTOR_UUID = '11111111-1111-4111-8111-111111111111';
+
+/** A well-formed scope id for the scoped-grant rows — never resolved, so any uuid serves. */
+const SCOPE_UUID = '22222222-2222-4222-8222-222222222222';
 
 /** A role string deliberately absent from the registry. */
 const UNREGISTERED_ROLE = 'not_a_registered_role';
@@ -189,5 +198,93 @@ export const conformance_participation_cases: ReadonlyArray<ConformanceCase> = [
 		},
 		expect: { status: 401, error_reason: ERROR_AUTHENTICATION_REQUIRED },
 		note: 'role_grant_assign rejects an unauthenticated caller on both spines'
+	},
+
+	// -- (d) builtin roles are global-only; the scope pair is paired ---------
+	{
+		name: 'assign with scope_id but no scope_kind is invalid params',
+		request: {
+			method: 'role_grant_assign',
+			as: 'keeper',
+			params: { to_account_id: NIL_UUID, role: SPINE_PARTICIPANT_ROLE, scope_id: SCOPE_UUID }
+		},
+		// The `role_grant_scope_kind_paired` CHECK surfaced as `-32602` at the
+		// input boundary, not a constraint-violation 500 at the write.
+		expect: { status: 400 },
+		note: 'scope_kind + scope_id are paired on role_grant_assign'
+	},
+	{
+		name: 'assign with scope_kind but no scope_id is invalid params',
+		request: {
+			method: 'role_grant_assign',
+			as: 'keeper',
+			params: { to_account_id: NIL_UUID, role: SPINE_PARTICIPANT_ROLE, scope_kind: 'space' }
+		},
+		expect: { status: 400 },
+		note: 'scope_kind + scope_id are paired on role_grant_assign'
+	},
+	{
+		name: 'offer create with scope_id but no scope_kind is invalid params',
+		request: {
+			method: 'role_grant_offer_create',
+			as: 'keeper',
+			params: { to_account_id: NIL_UUID, role: SPINE_PARTICIPANT_ROLE, scope_id: SCOPE_UUID }
+		},
+		expect: { status: 400 },
+		note: 'scope_kind + scope_id are paired on role_grant_offer_create'
+	},
+	{
+		name: 'admin assign of a scoped builtin (admin) is refused',
+		request: {
+			method: 'role_grant_assign',
+			as: 'keeper',
+			params: {
+				to_account_id: NIL_UUID,
+				role: ROLE_ADMIN,
+				scope_kind: 'space',
+				scope_id: SCOPE_UUID
+			}
+		},
+		// Refused before account resolution (contrast the participant 404): a
+		// builtin role is global-only on every grant path.
+		expect: { status: 400, error_reason: ERROR_ROLE_GRANT_BUILTIN_SCOPED },
+		note: 'builtin roles are global-only — no scoped admin via assign'
+	},
+	{
+		name: 'admin offer of a scoped builtin (admin) is refused',
+		request: {
+			method: 'role_grant_offer_create',
+			as: 'keeper',
+			params: {
+				to_account_id: NIL_UUID,
+				role: ROLE_ADMIN,
+				scope_kind: 'space',
+				scope_id: SCOPE_UUID
+			}
+		},
+		expect: { status: 400, error_reason: ERROR_ROLE_GRANT_BUILTIN_SCOPED },
+		note: 'builtin roles are global-only — no scoped admin via offer'
+	},
+	{
+		name: 'a non-admin holder cannot offer a builtin role',
+		request: {
+			method: 'role_grant_offer_create',
+			as: 'role_holder',
+			params: { to_account_id: NIL_UUID, role: ROLE_ADMIN }
+		},
+		// Offering a builtin is global-admin authority the spine decides ahead
+		// of any consumer authorizer.
+		expect: { status: 403, error_reason: ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED },
+		note: 'a builtin offer needs a global-admin caller on both spines'
+	},
+	{
+		name: 'a fresh non-admin cannot offer a builtin role',
+		request: {
+			method: 'role_grant_offer_create',
+			as: 'fresh_non_admin',
+			params: { to_account_id: NIL_UUID, role: ROLE_ADMIN }
+		},
+		expect: { status: 403, error_reason: ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED },
+		note: 'a builtin offer needs a global-admin caller on both spines'
 	}
 ];

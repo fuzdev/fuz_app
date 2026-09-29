@@ -4,8 +4,8 @@
  * Provides a `create_route_specs` that mounts the full cell RPC surface
  * (cell / grant / field / item / audit) on `/api/rpc`, a `create_test_app`
  * wrapper that threads `cell_audit_events` through the audit factory so the
- * cell mutation events validate, and the three call-site primitives
- * (`call`, `error_reason`, `create_cell`). The four-driver `describe_db`
+ * cell mutation events validate, and the call-site primitives (`call`,
+ * `create_cell`; `error_reason` is in ./rpc_test_helpers.ts). The four-driver `describe_db`
  * carrying the cell migration namespaces is ../cell_db_fixture.ts.
  *
  * Not itself a test file — no `.test.` infix, so vitest skips it. Mirrors
@@ -156,17 +156,6 @@ export const call = <TSpec extends RequestResponseActionSpec>(
 	headers?: Record<string, string>
 ): Promise<RpcCallResultForSpec<TSpec>> =>
 	rpc_call_for_spec({ app: test_app.app, path: RPC_PATH, spec, params, headers });
-
-/**
- * Read the `reason` string off a JSON-RPC error response, past the
- * `data: unknown` cast.
- */
-export const error_reason = (
-	res: { ok: false; error: { data?: unknown } } | { ok: true }
-): string | undefined => {
-	if (res.ok) return undefined;
-	return (res.error.data as { reason?: string } | undefined)?.reason;
-};
 
 /**
  * Create a cell via the public RPC and return its id. Asserts the create

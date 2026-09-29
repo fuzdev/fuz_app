@@ -26,10 +26,13 @@
  * role_grant). The grant's `level` (`viewer` / `editor`) gates which
  * predicate it satisfies.
  *
+ * The admin bypass on every tier is the **global** `admin` grant
+ * (`has_scoped_role(auth, ROLE_ADMIN, null)`), never a scoped one.
+ *
  * @module
  */
 
-import { has_role, type RequestContext } from './request_context.ts';
+import { has_scoped_role, type RequestContext } from './request_context.ts';
 import { is_role_grant_active } from './account_schema.ts';
 import { ROLE_ADMIN } from './role_schema.ts';
 
@@ -119,7 +122,7 @@ export const can_view_cell = (
 	cell: CellRow,
 	grants: ReadonlyArray<CellGrantRow> | null
 ): boolean => {
-	if (auth && has_role(auth, ROLE_ADMIN)) return true;
+	if (auth && has_scoped_role(auth, ROLE_ADMIN, null)) return true;
 	if (cell_is_public(cell)) return true;
 	if (auth && is_owner(auth, cell)) return true;
 	if (auth && grant_admits(auth, grants, 'viewer')) return true;
@@ -151,7 +154,7 @@ export const can_edit_cell = (
 	grants: ReadonlyArray<CellGrantRow> | null
 ): boolean => {
 	if (!auth) return false;
-	if (has_role(auth, ROLE_ADMIN)) return true;
+	if (has_scoped_role(auth, ROLE_ADMIN, null)) return true;
 	if (cell.created_by === null) return false; // explicit: NULL = admin-only
 	// Owner check requires a resolved acting actor — account-grain auth
 	// (`actor: null`) cannot match an actor-id `created_by`. Grant-admit
@@ -178,6 +181,6 @@ export const can_edit_cell = (
  */
 export const can_manage_cell = (auth: RequestContext | null, cell: CellRow): boolean => {
 	if (!auth) return false;
-	if (has_role(auth, ROLE_ADMIN)) return true;
+	if (has_scoped_role(auth, ROLE_ADMIN, null)) return true;
 	return is_owner(auth, cell);
 };

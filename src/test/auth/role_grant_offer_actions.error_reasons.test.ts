@@ -4,11 +4,14 @@
  *
  * Limits, since the check is regex over source rather than runtime
  * introspection:
- * - Throw sites must live inside the handler body. Extracting a throw into a
- *   helper (e.g. `assert_offer_terminal`) escapes the slab and silently
- *   passes drift detection.
+ * - Throw sites live inside the handler body or in a `const` helper of the
+ *   same module the body calls by name (`builtin_scoped_error()`,
+ *   `refuse_builtin_accept(...)`); helper reasons are followed transitively.
+ *   A helper declared in another module escapes the scan.
  * - Handler-body slabbing ends at `\n\s*const \w+_handler\b` or
  *   `\n\s*return \[`; restructuring the factory's return shape breaks it.
+ *   A helper's slab runs from its `const` line to its closing brace at its
+ *   own indent (or the next statement there).
  * - Matches `reason: ERROR_*` anywhere in the slab — comment and
  *   string-literal occurrences count as throws.
  *
@@ -61,6 +64,53 @@ const extract_thrown_reason_values = (body: string): Set<string> => {
 	return values;
 };
 
+/**
+ * A helper's slab: its `const` line through its closing brace, or through the
+ * line before the next statement indented no deeper.
+ */
+const get_helper_body = (start: number): string => {
+	const line_start = handler_source.lastIndexOf('\n', start) + 1;
+	const indent = /^\s*/.exec(handler_source.slice(line_start))![0].length;
+	const lines = handler_source.slice(line_start).split('\n');
+	let end = 1;
+	while (end < lines.length) {
+		const line = lines[end]!;
+		const trimmed = line.trim();
+		if (trimmed !== '' && /^\s*/.exec(line)![0].length <= indent) {
+			// a signature continuation (`): T => {`) stays inside; a closing
+			// brace ends the helper; anything else is the next statement
+			if (trimmed.startsWith(')')) {
+				end++;
+				continue;
+			}
+			if (trimmed.startsWith('}')) end++;
+			break;
+		}
+		end++;
+	}
+	return lines.slice(0, end).join('\n');
+};
+
+// Module-local `const` helpers that carry `reason: ERROR_*` throws, keyed by name.
+const helper_bodies: Map<string, string> = new Map();
+for (const m of handler_source.matchAll(/^[ \t]*const (\w+) = /gm)) {
+	const name = m[1]!;
+	if (name.endsWith('_handler')) continue;
+	const body = get_helper_body(m.index);
+	if (/\breason:\s*ERROR_/.test(body)) helper_bodies.set(name, body);
+}
+
+/** Every reason a body throws itself or through the module helpers it calls. */
+const collect_thrown_reason_values = (body: string, seen: Set<string> = new Set()): Set<string> => {
+	const values = extract_thrown_reason_values(body);
+	for (const [name, helper_body] of helper_bodies) {
+		if (seen.has(name) || !new RegExp(`\\b${name}\\(`).test(body)) continue;
+		seen.add(name);
+		for (const value of collect_thrown_reason_values(helper_body, seen)) values.add(value);
+	}
+	return values;
+};
+
 const all_specs = role_grant_offer_specs as Record<string, unknown>;
 
 assert(spec_to_handler.length > 0, 'no rpc_action() registrations parsed from handler source');
@@ -70,7 +120,7 @@ for (const [spec_const, handler_name] of spec_to_handler) {
 	test(`${spec?.method ?? spec_const}: declared error_reasons match handler throws`, () => {
 		assert(spec, `spec const ${spec_const} not exported from role_grant_offer_action_specs.js`);
 		const declared = new Set(spec.error_reasons ?? []);
-		const thrown = extract_thrown_reason_values(get_handler_body(handler_name));
+		const thrown = collect_thrown_reason_values(get_handler_body(handler_name));
 		for (const value of thrown) {
 			assert(
 				declared.has(value),

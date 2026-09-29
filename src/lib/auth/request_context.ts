@@ -160,13 +160,19 @@ export interface RequestActorContext extends RequestContext {
 }
 
 /**
- * Check if a request context has an active role_grant for a given role.
+ * Check if a request context has an active role_grant for a given role at
+ * **any** scope.
  *
  * Checks the role_grants already loaded in the context (no DB query).
  * Null-tolerant — `null` ctx (unauthenticated) returns `false`. Symmetric
  * with `has_scoped_role` / `has_any_scoped_role` so the three helpers
- * compose freely in the same predicate (e.g.
- * `has_role(auth, ADMIN) || has_scoped_role(auth, role, scope)`).
+ * compose freely in the same predicate.
+ *
+ * Scope-blind, so never the gate for a builtin role (`admin` / `keeper`) or
+ * for any capability that isn't itself scoped: a grant bound to one resource
+ * would pass it. Those gates read the global grant through
+ * `has_scoped_role(ctx, role, null)` (e.g.
+ * `has_scoped_role(auth, ROLE_ADMIN, null) || has_scoped_role(auth, role, scope)`).
  *
  * @param ctx - the request context, or `null` for unauthenticated callers
  * @param role - the role to check
@@ -198,6 +204,9 @@ export const has_role = (
  * (`{account: 'none', actor: 'none'}`) and account-grain
  * (`{account: 'required', actor: 'none'}`) handlers without a manual
  * narrow. See `cell_authorize` for the resource-side analog.
+ *
+ * `has_scoped_role(ctx, ROLE_ADMIN, null)` is the admin check everywhere admin
+ * confers authority (builtin roles are global-only, see `is_builtin_role`).
  *
  * `scope_id` semantics: in-memory `role_grant.scope_id` is `string | null`, so
  * JS `===` matches the SQL `IS NOT DISTINCT FROM` semantics exactly:

@@ -203,6 +203,10 @@ export const audit_metadata_schemas = Object.freeze({
 			description:
 				'Id of the resulting role_grant row. Omitted when the grant failed (e.g. admin-grant-path denial).'
 		}),
+		scope_kind: z.string().nullish().meta({
+			description:
+				'Kind tag paired with `scope_id` on a `role_grant_assign` row; null for a global grant.'
+		}),
 		scope_id: Uuid.nullish().meta({
 			description: 'Scope of the granted role_grant; null for global role_grants.'
 		}),
@@ -240,13 +244,21 @@ export const audit_metadata_schemas = Object.freeze({
 		to_account_id: Uuid.meta({ description: 'Account the offer is directed to.' })
 	}),
 	// `role_grant_create` is emitted alongside on accept — two events per accept by
-	// design: offer-lifecycle audit + role-grant-lifecycle audit.
+	// design: offer-lifecycle audit + role-grant-lifecycle audit. A refused
+	// accept (a builtin-role offer that must not mint) is an `outcome=failure`
+	// row with no `role_grant_id` (nothing was minted) and the wire `reason`.
 	role_grant_offer_accept: z.looseObject({
-		offer_id: Uuid.meta({ description: 'Id of the accepted offer.' }),
-		role_grant_id: Uuid.meta({ description: 'Id of the resulting role_grant row.' }),
+		offer_id: Uuid.meta({ description: 'Id of the accepted (or refused) offer.' }),
+		role_grant_id: Uuid.optional().meta({
+			description:
+				'Id of the resulting role_grant row. Omitted on `outcome=failure` because no grant was minted.'
+		}),
 		role: z.string().meta({ description: 'Role granted by the offer.' }),
 		scope_id: Uuid.nullish().meta({
 			description: 'Scope of the resulting role_grant; null for global role_grants.'
+		}),
+		reason: z.string().optional().meta({
+			description: 'Wire error reason of a refused accept. Set only on `outcome=failure`.'
 		})
 	}),
 	role_grant_offer_decline: z.looseObject({

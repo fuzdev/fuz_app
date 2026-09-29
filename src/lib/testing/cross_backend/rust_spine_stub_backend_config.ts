@@ -26,6 +26,9 @@ import '../assert_dev_env.ts';
  * createdb fuz_app_test_rust_spine_stub 2>/dev/null || true
  * ```
  *
+ * `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` points the stub at another
+ * server (e.g. a scratch cluster on a spare port).
+ *
  * The binary self-wipes the auth-namespace schema on every boot
  * (`FUZ_TESTING_RESET_DB_ON_STARTUP=true`, set by the Rust-family builder),
  * so no manual `DROP TABLE` between sessions is needed; per-test reset is
@@ -48,6 +51,15 @@ import {
 
 /** Env var naming the prebuilt `testing_spine_stub` binary. Required when `binary_path` is omitted. */
 export const RUST_SPINE_STUB_BIN_ENV = 'FUZ_TESTING_RUST_SPINE_STUB_BIN';
+
+/**
+ * Env var overriding the stub's Postgres URL when `database_url` is omitted —
+ * e.g. a scratch cluster on a spare port, keeping the run off the machine's
+ * default server. Pair it with the libpq `PGHOST` / `PGPORT` the runner's
+ * idempotent `createdb` reads, so the database it ensures is the one the URL
+ * names.
+ */
+export const RUST_SPINE_STUB_DATABASE_URL_ENV = 'FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL';
 
 /**
  * Env var the stub reads for the absolute path of the committed
@@ -83,7 +95,10 @@ export const RUST_SPINE_STUB_DEFAULT_DATABASE_URL =
 export interface SpineStubBackendConfigOptions {
 	/** Listening port. Default `RUST_SPINE_STUB_DEFAULT_PORT`. */
 	readonly port?: number;
-	/** Postgres connection URL. Default `RUST_SPINE_STUB_DEFAULT_DATABASE_URL`. */
+	/**
+	 * Postgres connection URL. Default `$FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL`,
+	 * then `RUST_SPINE_STUB_DEFAULT_DATABASE_URL`.
+	 */
 	readonly database_url?: string;
 	/**
 	 * Prebuilt binary path. Overrides the `FUZ_TESTING_RUST_SPINE_STUB_BIN` env
@@ -125,7 +140,8 @@ export const rust_spine_stub_backend_config = (
 ): BackendConfig => {
 	const {
 		port = RUST_SPINE_STUB_DEFAULT_PORT,
-		database_url = RUST_SPINE_STUB_DEFAULT_DATABASE_URL,
+		database_url = process.env[RUST_SPINE_STUB_DATABASE_URL_ENV] ||
+			RUST_SPINE_STUB_DEFAULT_DATABASE_URL,
 		binary_path = process.env[RUST_SPINE_STUB_BIN_ENV],
 		enable_login_rate_limit,
 		trusted_proxies

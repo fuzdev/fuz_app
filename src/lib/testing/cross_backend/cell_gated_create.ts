@@ -31,6 +31,9 @@ import '../assert_dev_env.ts';
  *   **private** space the caller can't view → **404** `cell_not_found` (the
  *   parent is masked); under a **public** space → **403** (you see it, you
  *   can't contribute).
+ * - **clone is no side door** — `cell_clone` runs the authorizer for every cell
+ *   it writes as a parentless create, so a non-admin clone of a viewable
+ *   `space` root → **403** `cell_create_forbidden`; admin → succeeds.
  *
  * Gated on `capabilities.cell_gated_create` — `true` only on the reference
  * spine binaries that mount the policy, so it skips for generic consumers and
@@ -44,7 +47,12 @@ import '../assert_dev_env.ts';
 
 import { describe, assert } from 'vitest';
 
-import { CellCreateOutput, CellModerateOutput } from '../../auth/cell_action_specs.ts';
+import {
+	CellCloneOutput,
+	CellCreateOutput,
+	CellModerateOutput
+} from '../../auth/cell_action_specs.ts';
+import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call, error_reason, expect_output } from './cell_cross_helpers.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
@@ -459,6 +467,55 @@ export const describe_cell_moderate_cross_tests = (
 					'private',
 					'rejection leaves the post private'
 				);
+			}
+		);
+	});
+
+	describe('cell_clone runs the creation authorizer (parity)', () => {
+		test_if(
+			capabilities.cell_gated_create,
+			'a non-admin clone of a viewable `space` root → 403, admin clone succeeds',
+			async () => {
+				const fixture = await setup_test();
+				const space = expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_create',
+						{ kind: SPACE_CELL_KIND, data: SPACE_POLICY, visibility: 'public' },
+						fixture.create_session_headers()
+					),
+					CellCreateOutput
+				);
+
+				// Every cell a clone writes is a parentless create of the source's
+				// kind, gated like `cell_create` — so a caller denied a `space` root
+				// can't clone one they can see into one they own.
+				const stranger = await fixture.create_account({ username: 'clone_stranger' });
+				const denied = await cross_rpc_call(
+					fixture.transport,
+					rpc_path,
+					'cell_clone',
+					{ source_id: space.cell.id },
+					stranger.create_session_headers()
+				);
+				assert.ok(!denied.ok, 'a non-admin must not clone a space root');
+				assert.strictEqual(denied.error?.code, JSONRPC_ERROR_CODES.forbidden, 'a 403');
+				assert.strictEqual(error_reason(denied), 'cell_create_forbidden');
+
+				const cloned = expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path,
+						'cell_clone',
+						{ source_id: space.cell.id },
+						fixture.create_session_headers()
+					),
+					CellCloneOutput
+				);
+				assert.strictEqual(cloned.cell.kind, SPACE_CELL_KIND, 'the admin clones the space');
+				assert.notStrictEqual(cloned.cell.id, space.cell.id);
+				assert.strictEqual(cloned.cell.moderation, null, 'a clone stamps no moderation');
 			}
 		);
 	});

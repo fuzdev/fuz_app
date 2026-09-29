@@ -1156,7 +1156,10 @@ That `globalSetup`:
 
 Point the build at the Cargo workspace with `FUZ_RUST_SPINE_STUB_WORKSPACE_DIR`
 (CI / non-default checkouts), or pin a prebuilt binary directly with
-`FUZ_TESTING_RUST_SPINE_STUB_BIN`. The rebuild lives in the consumer/runner
+`FUZ_TESTING_RUST_SPINE_STUB_BIN`. Point the stub at another Postgres server
+(e.g. a scratch cluster on a spare port) with
+`FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL`, setting libpq's `PGHOST` / `PGPORT`
+to match so step 2's `createdb` reaches the same server. The rebuild lives in the consumer/runner
 wiring — the exported `testing/` harness stays runtime-agnostic and knows
 nothing about Cargo.
 

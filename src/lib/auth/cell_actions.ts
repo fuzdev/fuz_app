@@ -49,7 +49,7 @@ import {
 } from '../actions/action_rpc.ts';
 import { jsonrpc_errors, dev_only } from '../http/jsonrpc_errors.ts';
 import { is_pg_unique_violation } from '../db/pg_error.ts';
-import { has_role, type RequestActorContext } from './request_context.ts';
+import { has_scoped_role, type RequestActorContext } from './request_context.ts';
 import { ROLE_ADMIN } from './role_schema.ts';
 import type { ActionFactoryDeps } from './deps.ts';
 import type { Json } from '@fuzdev/fuz_util/json.ts';
@@ -299,7 +299,11 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		const auth = ctx.auth;
 		// Path writes are admin-only. Reject before the insert so the audit
 		// + DB are clean.
-		if (input.path !== undefined && input.path !== null && !has_role(auth, ROLE_ADMIN)) {
+		if (
+			input.path !== undefined &&
+			input.path !== null &&
+			!has_scoped_role(auth, ROLE_ADMIN, null)
+		) {
 			throw jsonrpc_errors.forbidden('cell.path is admin-only', {
 				reason: ERROR_CELL_PATH_ADMIN_ONLY
 			});
@@ -488,7 +492,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		const path_provided = Object.hasOwn(input, 'path');
 		// `path` writes are admin-only. Check before fetching so non-admins
 		// can't probe for cell existence by varying `path` shape.
-		if (path_provided && !has_role(auth, ROLE_ADMIN)) {
+		if (path_provided && !has_scoped_role(auth, ROLE_ADMIN, null)) {
 			throw jsonrpc_errors.forbidden('cell.path is admin-only', {
 				reason: ERROR_CELL_PATH_ADMIN_ONLY
 			});
@@ -635,6 +639,14 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 	 * semantics in `clone_handler`. Provenance lives only in the
 	 * `cell_clone` audit row's `source_id`; `data` carries no
 	 * server-stamped provenance fields.
+	 *
+	 * Each cloned row is a creation — a fresh, unparented cell of the
+	 * source's kind — so a mounted `authorize_create` gates it exactly as it
+	 * gates a parentless `cell_create`: `{allow: false}` is the same 403
+	 * `cell_create_forbidden`, and an allow stamps no moderation (a root has
+	 * no container to be moderated under). So clone is no side door past the
+	 * creation policy: a caller denied a root `cell_create` of some kind can't
+	 * clone a viewable cell of that kind into one they own.
 	 */
 	const clone_one_cell_row = async (
 		ctx: ActionContext | ActionActorContext,
@@ -653,6 +665,25 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// Source rows are validated on their original create; the patch
 		// could violate the kind shape (e.g., remove a required field).
 		const validated_data = validate_data_or_throw(merged_data);
+		// Creation-capability gate, after the shape check (the `cell_create`
+		// order). The clone is parentless, so no `root_id` / `root_data`; the
+		// authorizer sees the merged (pre-normalization) data, as `cell_create`
+		// hands it the raw input.
+		if (authorize_create) {
+			const verdict = await authorize_create(auth, {
+				kind: source.kind,
+				data: merged_data,
+				parent_id: null,
+				root_id: null,
+				root_data: null,
+				scope_id: null
+			});
+			if (!verdict.allow) {
+				throw jsonrpc_errors.forbidden('cell creation is not permitted here', {
+					reason: ERROR_CELL_CREATE_FORBIDDEN
+				});
+			}
+		}
 		return query_cell_create(ctx, {
 			// Boundary cast (see `create_handler`).
 			data: validated_data as unknown as Json,
@@ -854,7 +885,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 			root_id: input.root_id,
 			moderation: input.moderation,
 			viewer_actor_id: caller_actor_id,
-			viewer_is_admin: auth ? has_role(auth, ROLE_ADMIN) : false,
+			viewer_is_admin: auth ? has_scoped_role(auth, ROLE_ADMIN, null) : false,
 			caller_actor_id,
 			caller_role_grant_roles: role_grant_roles,
 			caller_role_grant_scope_ids: role_grant_scope_ids,

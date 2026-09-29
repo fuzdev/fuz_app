@@ -175,9 +175,12 @@ destructive actions.
   to a specific actor on the recipient account; default account-grain),
   `roles: Array<string>` (pre-filtered upstream by admin-grant-path —
   `RoleSpec.grant_paths` includes `'admin'`),
-  `scope_id = null`, `on_created?`, `format_role?`. Surfaces five
-  reason codes with friendly copy: `ERROR_ROLE_GRANT_OFFER_SELF_TARGET`,
+  `scope_kind` + `scope_id` (`RoleGrantOfferScope` — together, or neither
+  for a global offer; the prop types refuse one alone), `on_created?`,
+  `format_role?`. Surfaces the RPC error reasons with friendly copy:
+  `ERROR_ROLE_GRANT_OFFER_SELF_TARGET`,
   `ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE`, `ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED`,
+  `ERROR_ROLE_GRANT_BUILTIN_SCOPED`,
   `ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH`, `ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH`
   — imported from `auth/role_grant_offer_action_specs.ts` (see
   `auth/CLAUDE.md` for `role_grant_offer_action_specs.ts` +

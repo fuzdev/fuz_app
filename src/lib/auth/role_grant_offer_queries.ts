@@ -33,6 +33,7 @@ import type {
 } from './role_grant_offer_schema.ts';
 import { query_audit_log } from './audit_log_queries.ts';
 import type { AuditLogEvent } from './audit_log_schema.ts';
+import { is_builtin_role, ROLE_ADMIN, ROLE_KEEPER } from './role_schema.ts';
 
 /**
  * Error thrown by offer-lifecycle queries when the offer is in a non-pending
@@ -101,6 +102,42 @@ export class RoleGrantOfferActorMismatchError extends Error {
 	constructor(offer_id: string) {
 		super(`Offer ${offer_id} is targeted to a different actor on this account`);
 		this.name = 'RoleGrantOfferActorMismatchError';
+	}
+}
+
+/**
+ * Why `query_accept_offer` refused to mint a builtin-role grant.
+ *
+ * Each is a row no current grant path creates but a database can still hold
+ * (a direct `query_role_grant_offer_create` call, or an offer made under a
+ * since-closed path), so accept — the chokepoint where an offer becomes a
+ * `role_grant` — checks them itself.
+ *
+ * - `bootstrap_only` — the offer is of `keeper`, which is bootstrap-only:
+ *   never conferred through an offer, whoever made it.
+ * - `scoped` — the offer binds a builtin role to a scope; builtin roles are
+ *   global-only.
+ * - `grantor_not_authorized` — the grantor no longer holds an active
+ *   **global** `admin` on an active actor of an active account. Conferring a
+ *   builtin role is global-admin authority, so it is re-checked when the
+ *   grant is minted, not only when the offer was made.
+ */
+export type BuiltinOfferRefusal = 'bootstrap_only' | 'scoped' | 'grantor_not_authorized';
+
+/**
+ * Error thrown by `query_accept_offer` when the offer confers a builtin role
+ * (`admin` / `keeper`) that this accept must not mint — `refusal` names the
+ * rule. Carries the locked (still pending, untouched) offer so the caller can
+ * audit the refusal with the offer's role and scope.
+ */
+export class RoleGrantOfferBuiltinRefusedError extends Error {
+	readonly offer: RoleGrantOffer;
+	readonly refusal: BuiltinOfferRefusal;
+	constructor(offer: RoleGrantOffer, refusal: BuiltinOfferRefusal) {
+		super(`Offer ${offer.id} is refused: ${refusal}`);
+		this.name = 'RoleGrantOfferBuiltinRefusedError';
+		this.offer = offer;
+		this.refusal = refusal;
 	}
 }
 
@@ -405,6 +442,42 @@ export const query_role_grant_offer_sweep_expired = async (
 	);
 };
 
+/**
+ * Whether `grantor_actor_id` holds an active **global** `admin` on an active
+ * actor of an active account — the authority a builtin-role offer needs at the
+ * moment its grant is minted.
+ *
+ * A locking read: `FOR SHARE OF rg` takes a share lock on the grant row that
+ * admits, so a concurrent revoke (an `UPDATE` of that row) is strictly ordered
+ * against this accept — it either commits first, and the recheck of the locked
+ * row sees `revoked_at` set and excludes it, or it waits for this transaction
+ * to commit the grant it authorized. A plain `EXISTS` could read the grant as
+ * active while a revoke commits in between. The actor and account tombstones
+ * are read but not locked — ordering a delete racing an accept isn't worth
+ * locking two more tables. Twin of the Rust `grantor_holds_global_admin`.
+ */
+const query_grantor_holds_global_admin = async (
+	deps: QueryDeps,
+	grantor_actor_id: Uuid
+): Promise<boolean> => {
+	const row = await deps.db.query_one<{ held: number }>(
+		`SELECT 1 AS held FROM role_grant rg
+		 JOIN actor act ON act.id = rg.actor_id
+		 JOIN account a ON a.id = act.account_id
+		 WHERE rg.actor_id = $1
+		   AND rg.role = $2
+		   AND rg.scope_id IS NULL
+		   AND rg.revoked_at IS NULL
+		   AND (rg.expires_at IS NULL OR rg.expires_at > NOW())
+		   AND act.deleted_at IS NULL
+		   AND a.deleted_at IS NULL
+		 LIMIT 1
+		 FOR SHARE OF rg`,
+		[grantor_actor_id, ROLE_ADMIN]
+	);
+	return row != null;
+};
+
 /** Input for `query_accept_offer`. */
 export interface AcceptOfferInput {
 	offer_id: Uuid;
@@ -461,6 +534,11 @@ export interface AcceptOfferResult {
  * - `RoleGrantOfferAlreadyTerminalError` — offer is declined, retracted, or
  *   superseded.
  * - `RoleGrantOfferExpiredError` — offer is pending but past `expires_at`.
+ * - `RoleGrantOfferActorMismatchError` — actor-targeted offer, different actor.
+ * - `RoleGrantOfferBuiltinRefusedError` — a builtin-role offer that must not
+ *   mint: `keeper` at all, a builtin bound to a scope, or one whose grantor no
+ *   longer holds an active global `admin` (read under `FOR SHARE`). The offer
+ *   stays pending.
  *
  * Sibling supersede is what closes the "accept a pre-revoke sibling offer
  * to bypass a revoke" path: once A is accepted, B/C/... can no longer be
@@ -473,6 +551,8 @@ export interface AcceptOfferResult {
  * @throws RoleGrantOfferNotFoundError if the offer is missing or belongs to another recipient
  * @throws RoleGrantOfferAlreadyTerminalError if the offer is declined, retracted, or superseded
  * @throws RoleGrantOfferExpiredError if the offer is pending but past `expires_at`
+ * @throws RoleGrantOfferActorMismatchError if the offer is actor-targeted to a different actor
+ * @throws RoleGrantOfferBuiltinRefusedError if a builtin-role offer must not mint (see `BuiltinOfferRefusal`)
  * @throws Error if the accepting `actor_id` does not belong to `to_account_id`, or invariant assertions fail
  */
 export const query_accept_offer = async (
@@ -564,6 +644,28 @@ export const query_accept_offer = async (
 	// under the FK invariant but stays as defense-in-depth).
 	if (locked.to_actor_id != null && locked.to_actor_id !== actor_id) {
 		throw new RoleGrantOfferActorMismatchError(offer_id);
+	}
+
+	// Builtin-role offers — checked here, the chokepoint where an offer turns
+	// into a `role_grant`, so a direct caller of this query can't skip them. No
+	// current grant path creates a refused shape, but a pending row can still
+	// carry one (a direct `query_role_grant_offer_create`, or an offer made under
+	// a since-closed path).
+	if (is_builtin_role(locked.role)) {
+		let refusal: BuiltinOfferRefusal | null = null;
+		if (locked.role === ROLE_KEEPER) {
+			// `keeper` is bootstrap-only — never conferred through an offer, even
+			// from a global admin.
+			refusal = 'bootstrap_only';
+		} else if (locked.scope_id !== null) {
+			// Builtin roles are global-only.
+			refusal = 'scoped';
+		} else if (!(await query_grantor_holds_global_admin(deps, locked.from_actor_id))) {
+			refusal = 'grantor_not_authorized';
+		}
+		if (refusal !== null) {
+			throw new RoleGrantOfferBuiltinRefusedError(locked, refusal);
+		}
 	}
 
 	// Verify the accepting actor belongs to the recipient account.

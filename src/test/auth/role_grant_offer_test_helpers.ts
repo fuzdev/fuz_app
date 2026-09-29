@@ -27,7 +27,12 @@ import {
 import { run_migrations } from '$lib/db/migrate.ts';
 import { auth_migration_ns } from '$lib/auth/migrations.ts';
 import { create_rpc_endpoint } from '$lib/actions/action_rpc.ts';
-import { create_role_grant_offer_actions } from '$lib/auth/role_grant_offer_actions.ts';
+import {
+	create_role_grant_offer_actions,
+	type RoleGrantOfferCreateAuthorize
+} from '$lib/auth/role_grant_offer_actions.ts';
+import { create_role_schema, type RoleSchemaResult } from '$lib/auth/role_schema.ts';
+import { GRANT_PATH_ADMIN } from '$lib/auth/grant_path_schema.ts';
 import type { Db } from '$lib/db/db.ts';
 import type { AppServerContext } from '$lib/server/app_server_context.ts';
 import type { RouteSpec } from '$lib/http/route_spec.ts';
@@ -62,3 +67,35 @@ export const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 		log: ctx.deps.log
 	})
 ];
+
+/** An admin-grantable app role — the shape a classroom- or space-scoped consumer declares. */
+export const TEST_APP_ROLE = 'teacher';
+
+/** A consumer registry with one admin-grantable app role (`TEST_APP_ROLE`). */
+export const app_roles: RoleSchemaResult = create_role_schema([
+	{ name: TEST_APP_ROLE, grant_paths: [GRANT_PATH_ADMIN] }
+]);
+
+/**
+ * An offer-create callback that admits everything — proves a refusal happens
+ * in the spine, ahead of any consumer callback (the shape of a consumer
+ * answering with a scope-blind `has_role`).
+ */
+export const admit_all_authorize: RoleGrantOfferCreateAuthorize = () => true;
+
+/**
+ * `create_route_specs` over the `app_roles` registry, optionally with a
+ * consumer `authorize` callback.
+ */
+export const create_app_role_route_specs =
+	(options: { authorize?: RoleGrantOfferCreateAuthorize } = {}) =>
+	(ctx: AppServerContext): Array<RouteSpec> => [
+		...create_rpc_endpoint({
+			path: RPC_PATH,
+			actions: create_role_grant_offer_actions(ctx.deps, {
+				roles: app_roles,
+				authorize: options.authorize
+			}),
+			log: ctx.deps.log
+		})
+	];

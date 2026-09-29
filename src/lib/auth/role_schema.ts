@@ -59,6 +59,20 @@ export const BuiltinRole = z.enum(BUILTIN_ROLES);
 export type BuiltinRole = z.infer<typeof BuiltinRole>;
 
 /**
+ * Whether `name` is a builtin role (`keeper` / `admin`).
+ *
+ * Builtin roles are **global-only**: no grant path binds one to a scope
+ * (`role_grant_assign`, `role_grant_offer_create`, and
+ * `role_grant_offer_accept` refuse it), and every gate that reads one checks
+ * the global grant, so a scoped builtin row confers nothing.
+ *
+ * @param name - the role name to check
+ * @returns `true` for `keeper` or `admin`
+ */
+export const is_builtin_role = (name: string): name is BuiltinRole =>
+	name === ROLE_KEEPER || name === ROLE_ADMIN;
+
+/**
  * Configuration for a role.
  *
  * Each role declares the credential types its holders must use, the

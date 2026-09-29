@@ -16,6 +16,9 @@ import '../assert_dev_env.ts';
  *   re-assigning the active grant is idempotent (same id).
  * - **consent flow** — `role_grant_offer_create` of `participant` (admin-only)
  *   → the recipient `role_grant_offer_accept`s → a role_grant lands.
+ * - **scoped assign** — `role_grant_assign` of `participant` with a paired
+ *   `scope_kind` + `scope_id` lands a scoped grant carrying both, read back
+ *   through `admin_account_list`, distinct from the global grant.
  *
  * The single-request gate/denial matrix (grantability refusal, admin-only
  * conferral, dispatcher admin gate, auth) lives in the declarative table
@@ -96,6 +99,68 @@ export const describe_role_grant_participation_cross_tests = (
 				assigned.role_grant_id,
 				're-assigning an active grant returns the existing role_grant id'
 			);
+		});
+
+		test('admin assigns a scoped participant grant that round-trips scope_kind', async () => {
+			const fixture = await setup_test();
+			const recipient = await fixture.create_account({ username: 'participation_scoped' });
+			const scope_id = '33333333-3333-4333-8333-333333333333';
+
+			const scoped = await rpc(
+				fixture.transport,
+				'role_grant_assign',
+				{
+					to_account_id: recipient.account.id,
+					role: SPINE_PARTICIPANT_ROLE,
+					scope_kind: 'space',
+					scope_id
+				},
+				fixture.create_session_headers()
+			);
+			assert.ok(scoped.ok, `scoped assign must succeed: ${JSON.stringify(scoped)}`);
+			const scoped_id = (scoped.result as { role_grant_id: string }).role_grant_id;
+
+			const global = await rpc(
+				fixture.transport,
+				'role_grant_assign',
+				{ to_account_id: recipient.account.id, role: SPINE_PARTICIPANT_ROLE },
+				fixture.create_session_headers()
+			);
+			assert.ok(global.ok, `global assign must succeed: ${JSON.stringify(global)}`);
+			const global_id = (global.result as { role_grant_id: string }).role_grant_id;
+			assert.notStrictEqual(global_id, scoped_id, 'the global grant is a distinct row');
+
+			const listed = await rpc(
+				fixture.transport,
+				'admin_account_list',
+				{},
+				fixture.create_session_headers()
+			);
+			assert.ok(listed.ok, `admin_account_list must succeed: ${JSON.stringify(listed)}`);
+			const entry = (
+				listed.result as {
+					accounts: Array<{
+						account: { id: string };
+						role_grants: Array<{
+							id: string;
+							role: string;
+							scope_kind: string | null;
+							scope_id: string | null;
+						}>;
+					}>;
+				}
+			).accounts.find((a) => a.account.id === recipient.account.id);
+			assert.ok(entry, 'the recipient is listed');
+			const by_id = new Map(entry.role_grants.map((g) => [g.id, g]));
+			const scoped_row = by_id.get(scoped_id);
+			assert.ok(scoped_row, 'the scoped grant is listed');
+			assert.strictEqual(scoped_row.role, SPINE_PARTICIPANT_ROLE);
+			assert.strictEqual(scoped_row.scope_kind, 'space', 'scope_kind round-trips');
+			assert.strictEqual(scoped_row.scope_id, scope_id, 'scope_id round-trips');
+			const global_row = by_id.get(global_id);
+			assert.ok(global_row, 'the global grant is listed');
+			assert.strictEqual(global_row.scope_kind, null);
+			assert.strictEqual(global_row.scope_id, null);
 		});
 
 		test('admin offers the participant app-role and the recipient accepts', async () => {

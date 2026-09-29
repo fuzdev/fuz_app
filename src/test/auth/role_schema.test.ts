@@ -10,6 +10,7 @@ import { describe, assert, test } from 'vitest';
 import {
 	builtin_role_specs_by_name,
 	create_role_schema,
+	is_builtin_role,
 	list_roles_with_grant_path,
 	role_has_grant_path,
 	ROLE_ADMIN,
@@ -233,5 +234,14 @@ describe('list_roles_with_grant_path', () => {
 			list_roles_with_grant_path(builtin_role_specs_by_name, 'self_service'),
 			[]
 		);
+	});
+});
+
+describe('is_builtin_role', () => {
+	test('names exactly admin and keeper', () => {
+		assert.isTrue(is_builtin_role(ROLE_ADMIN));
+		assert.isTrue(is_builtin_role(ROLE_KEEPER));
+		assert.isFalse(is_builtin_role('teacher'));
+		assert.isFalse(is_builtin_role(''));
 	});
 });

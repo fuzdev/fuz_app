@@ -57,7 +57,7 @@ Cross-cutting notes that don't live on any single symbol:
 Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
 
 - `auth/account_schema.ts` — `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes.
-- `auth/role_schema.ts` — `RoleName`, `RoleSpec`, `ROLE_KEEPER`, `ROLE_ADMIN`, `create_role_schema`, `builtin_role_specs_by_name`, `role_has_grant_path`, `list_roles_with_grant_path`.
+- `auth/role_schema.ts` — `RoleName`, `RoleSpec`, `ROLE_KEEPER`, `ROLE_ADMIN`, `is_builtin_role`, `create_role_schema`, `builtin_role_specs_by_name`, `role_has_grant_path`, `list_roles_with_grant_path`.
 - `auth/scope_kind_schema.ts` — `ScopeKindName`, `create_scope_kind_schema` (open registry, no builtins).
 - `auth/credential_type_schema.ts` — `CredentialTypeName`, `CREDENTIAL_TYPE_SESSION` / `_API_TOKEN` / `_DAEMON_TOKEN`, `create_credential_type_schema`.
 - `auth/grant_path_schema.ts` — `GrantPathName`, `GRANT_PATH_ADMIN` / `_SELF_SERVICE` / `_SYSTEM` / `_BOOTSTRAP`, `create_grant_path_schema`.
@@ -183,7 +183,7 @@ Everything else listed under §RPC action surfaces.
 ### Middleware
 
 - `auth/middleware.ts` — `create_auth_middleware_specs(deps, options)` assembles `[origin, session, request_context, bearer_auth]` + optional `daemon_token`.
-- `auth/request_context.ts` — `RequestContext`, `resolve_acting_actor`, `build_request_context`, predicates (`has_role`, `has_scoped_role`, `has_any_scoped_role`), guards (`require_auth`, `require_role`, `require_credential_types`, `require_token_scope`), `token_scope_surface_denial` (the direct-call form, for surfaces that aren't route specs), `refresh_role_grants`.
+- `auth/request_context.ts` — `RequestContext`, `resolve_acting_actor`, `build_request_context`, predicates (`has_role`, `has_scoped_role`, `has_any_scoped_role` — the dispatcher's role gate and every builtin-role check read the **global** grant via `has_scoped_role(_, role, null)` / `has_any_scoped_role(_, roles, null)`; scope-blind `has_role` is never the gate for a builtin role), guards (`require_auth`, `require_role`, `require_credential_types`, `require_token_scope`), `token_scope_surface_denial` (the direct-call form, for surfaces that aren't route specs), `refresh_role_grants`.
 - `auth/session_middleware.ts` — `process_session_cookie` integration, `create_session_and_set_cookie` (shared by login / signup / bootstrap).
 - `auth/bearer_auth.ts` — soft-fail bearer middleware; rejects when `Origin` or `Referer` present (browser context).
 - `auth/daemon_token_middleware.ts` — `create_daemon_token_middleware(state, deps, log)` — the credential **consumer** only (soft-fail validation, keeper account resolution). The producer (`write_daemon_token` / `start_daemon_token_rotation`) lives in `testing/daemon_token_rotation.ts` behind the dev-env guard — no production assembly mints daemon tokens, mirroring the Rust spine's `fuz_testing`-confined producer. Soft-fails — discards the credential (pass-through, no own 401/503) on **every** non-success path: browser context (`Origin`/`Referer` present), malformed/invalid token, and valid-token-but-no-keeper all `next()` through to the dispatcher's `credential_type_required` (403) gate, mirroring the bearer guard and the Rust spine's `resolve.rs`. Daemon tokens are loopback-only, so browser context never arises in practice — the discard is defense-in-depth.
@@ -227,7 +227,8 @@ delete / list / clone / moderate`), error reasons, and `all_cell_action_specs`
   delegable. Editor-grant holders edit content + relations but cannot
   manage grants or read the audit timeline. NULL
   `created_by` (system origin) is admin-only for edit/manage (explicit
-  defense-in-depth).
+  defense-in-depth). "Admin" on every tier is the **global** grant — a
+  scoped `admin` row bypasses nothing.
 - `auth/cell_relation_visibility.ts` — `filter_visible_target_ids(deps,
 auth, ids)`: batched strict relation-read filter. Every relation read —
   the `cell_get` bundle, **forward and reverse** `cell_field_list` /
@@ -247,7 +248,10 @@ auth, ids)`: batched strict relation-read filter. Every relation read —
   write-once-at-birth or control-gated, never on the update patch).
   `cell_get` bundles visibility-filtered `fields` + `items` (one over the cap
   for truncation detection). `cell_clone` deep-walks viewable children only
-  (each clone inherits its source's `kind`; clones are unparented). The optional
+  (each clone inherits its source's `kind`; clones are unparented), and runs
+  the mounted `authorize_create` for **every** cell it writes as a parentless
+  create — a denial is the same 403 `cell_create_forbidden`, so clone is no
+  side door past the creation policy. The optional
   parent-aware `authorize_create` dep (`CellCreateAuthorize` — wider input
   `{kind, data, parent_id, root_id, root_data, scope_id}` than `validate_data`,
   returning a `CellCreateVerdict` `{allow:false} | {allow:true, moderation_required}`)
@@ -611,14 +615,31 @@ event additionally records `credential_type` in metadata (defense in depth).
 > suite assume auto-accept and have to redesign their tests when they
 > discover otherwise.
 
-- `role_grant_offer_create_action_spec` — input `{to_account_id, to_actor_id?, role, scope_id?, message?}`; output `{offer}`.
-- `role_grant_offer_accept_action_spec` — input `{offer_id}`; output `{role_grant_id, offer, superseded_offer_ids}`.
+- `role_grant_offer_create_action_spec` — input `{to_account_id, to_actor_id?, role, scope_kind?, scope_id?, message?}` (`scope_kind` + `scope_id` paired — both or neither, else `invalid_params`); output `{offer}`.
+- `role_grant_offer_accept_action_spec` — input `{offer_id}`; output `{role_grant_id, offer, superseded_offer_ids}`. Refuses a builtin-role offer that must not mint (see below), leaving it pending.
 - `role_grant_offer_decline_action_spec` — input `{offer_id, reason?}`; output `{ok}`.
 - `role_grant_offer_retract_action_spec` — input `{offer_id}`; output `{ok}`.
 - `role_grant_offer_list_action_spec` — input `{account_id?}`; output `{offers}`.
 - `role_grant_offer_history_action_spec` — input `{account_id?, limit?, offset?}`; output `{offers}`.
 - `role_grant_revoke_action_spec` — input `{actor_id, role_grant_id, reason?}`; output `{ok, revoked}`.
-- `role_grant_assign_action_spec` — admin-only immediate conferral (no consent step); input `{to_account_id, to_actor_id?, role, scope_id?}`; output `{ok, role_grant_id}`. Runs the same admin-grant-path gate as offer-create, resolves the target actor (named `to_actor_id` ∈ the account's active actors, else its sole active actor — multi-actor → `invalid_params`, actorless → 404), writes via the idempotent `query_create_role_grant` (`scope_kind` stays null), and emits a `role_grant_create` audit row. No WS notification in v1. Reasons: `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH`.
+- `role_grant_assign_action_spec` — global-admin-only immediate conferral (no
+  consent step); input `{to_account_id, to_actor_id?, role, scope_kind?, scope_id?}`
+  (the pair as on offer-create); output `{ok, role_grant_id}`. The handler:
+  - re-checks the global admin grant behind the dispatcher gate;
+  - runs the same admin-grant-path gate as offer-create, and refuses a scoped
+    `admin` (`invalid_params` + `ERROR_ROLE_GRANT_BUILTIN_SCOPED`; a scoped
+    `keeper` stays 403 `ERROR_ROLE_NOT_WEB_GRANTABLE`, since `keeper` is never
+    web-grantable);
+  - resolves the target actor (named `to_actor_id` ∈ the account's active
+    actors, else its sole active actor — multi-actor → `invalid_params`,
+    actorless → 404);
+  - writes the `(scope_kind, scope_id)` pair via the idempotent
+    `query_create_role_grant`, and emits a `role_grant_create` audit row
+    (metadata carries `scope_kind`, success and failure).
+
+  No WS notification in v1. Reasons: `ERROR_INSUFFICIENT_PERMISSIONS`,
+  `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_ROLE_GRANT_BUILTIN_SCOPED`,
+  `ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH`.
 
 Every input carries `acting?: ActingActor` (registry-time invariant 2).
 `role_grant_revoke` keys on **`actor_id`**, not `account_id` — role_grants
@@ -635,6 +656,25 @@ escalating into global authority over the offer surface. A consumer needing
 scope-aware delegation (e.g. a classroom teacher offering within their own
 scope) supplies a custom `authorize` callback.
 
+**Builtin roles (`admin` / `keeper`) are global-only**, decided by the spine
+ahead of any callback. Offer-create refuses a scoped `admin`
+(`invalid_params` + `ERROR_ROLE_GRANT_BUILTIN_SCOPED`; `keeper`, scoped or not,
+stays 403 `ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE` at the grant-path gate)
+and a builtin offered by
+a caller without a global `admin` (`ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED`), so
+a consumer callback only ever sees app roles or a global admin's unscoped
+builtin offer. Accept (`query_accept_offer`, the chokepoint where an offer
+becomes a grant) refuses a `keeper` offer (`ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE`),
+a scoped `admin` offer (`invalid_request` + `ERROR_ROLE_GRANT_BUILTIN_SCOPED`), and a
+builtin offer whose grantor no longer holds an active global `admin` on an
+active actor of an active account (`ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED`,
+re-checked under `FOR SHARE` so a racing revoke is ordered against it) — via
+`RoleGrantOfferBuiltinRefusedError` (`refusal: BuiltinOfferRefusal`). Each
+refusal leaves the offer pending and is audited as a failed
+`role_grant_offer_accept` with `{offer_id, role, scope_id, reason}`. The
+grantor re-check is builtin-only: an app-role offer's authority was the
+callback's call at create time.
+
 Error reasons (`as const` literals):
 
 - `ERROR_ROLE_GRANT_OFFER_SELF_TARGET`
@@ -645,6 +685,7 @@ Error reasons (`as const` literals):
 - `ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED`
 - `ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH` (supplied `to_actor_id` doesn't belong to `to_account_id`)
 - `ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH` (actor-targeted offer accepted by wrong actor)
+- `ERROR_ROLE_GRANT_BUILTIN_SCOPED` (a grant path asked to bind `admin` / `keeper` to a scope)
 
 Plus re-uses from `http/error_schemas.ts`: `ERROR_ROLE_GRANT_NOT_FOUND`,
 `ERROR_ROLE_NOT_WEB_GRANTABLE`, `ERROR_INSUFFICIENT_PERMISSIONS`,
@@ -755,7 +796,10 @@ Audit metadata carries `self_service: true` so admin reviewers can
 distinguish self-toggled role_grants. Eligibility derives from
 `roles.role_specs` by selecting roles with `'self_service' ∈ grant_paths`;
 override via `eligible_roles`. Roles outside the eligible set are rejected
-with `ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE`.
+with `ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE`. The eligible set is validated at
+construction (`validate_self_service_eligible_roles`): a builtin role or a name
+outside the `RoleName` grammar throws — self-toggling a builtin would hand any
+account instance-wide authority.
 
 Method name is static (`role` lives in input, not method) — per-role
 parameterized methods would break the `satisfies RequestResponseActionSpec`

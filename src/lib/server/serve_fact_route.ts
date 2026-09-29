@@ -100,7 +100,7 @@ import { z } from 'zod';
 import {
 	build_request_context,
 	get_request_context,
-	has_role,
+	has_scoped_role,
 	type RequestContext
 } from '../auth/request_context.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
@@ -390,7 +390,9 @@ export const create_serve_cell_fact_route_spec = (
  * Auth is `{account: 'required', actor: 'required', roles: ['admin']}` —
  * the dispatcher's authorization phase resolves the acting actor and the
  * post-authorization guard enforces the admin role before the handler runs.
- * The handler re-checks `has_role(_, admin)` as defense-in-depth so a future
+ * The handler re-checks the **global** admin grant
+ * (`has_scoped_role(_, admin, null)`, the auth phase's own reading) as
+ * defense-in-depth so a future
  * mounting/auth-shape regression fails closed rather than serving by bare
  * hash to a non-admin.
  */
@@ -430,8 +432,9 @@ export const create_serve_fact_route_spec = (
 
 			// Defense-in-depth: the auth phase already gated this on the admin
 			// role, but re-check the resolved context so a mounting/auth-shape
-			// regression fails closed instead of serving by bare hash.
-			if (!has_role(get_request_context(c), ROLE_ADMIN)) {
+			// regression fails closed instead of serving by bare hash. Global
+			// grant only — a scoped `admin` row must not read every fact.
+			if (!has_scoped_role(get_request_context(c), ROLE_ADMIN, null)) {
 				return c.body(null, 404);
 			}
 

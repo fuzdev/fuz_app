@@ -579,7 +579,7 @@ export const cell_clone_action_spec = {
 	async: true,
 	rate_limit: 'account',
 	description:
-		'Clone a cell (optionally deep). New owner is the caller; `path` is always nulled. Provenance recorded only in the `cell_clone` audit row. Per-account rate-limited — `deep: true` walks `cell_item` rows and fans out, so unbounded clone is a write-amplification vector.'
+		'Clone a cell (optionally deep). New owner is the caller; `path` is always nulled. Provenance recorded only in the `cell_clone` audit row. Every cell a clone writes passes the mounted creation authorizer as a parentless create (a denial is 403 `cell_create_forbidden`). Per-account rate-limited — `deep: true` walks `cell_item` rows and fans out, so unbounded clone is a write-amplification vector.'
 } satisfies RequestResponseActionSpec;
 
 export const cell_moderate_action_spec = {

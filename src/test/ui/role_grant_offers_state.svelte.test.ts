@@ -11,8 +11,10 @@ import { describe, test, assert } from 'vitest';
 
 import {
 	RoleGrantOffersState,
+	type RoleGrantOfferCreateParams,
 	type RoleGrantOffersRpc
 } from '$lib/ui/role_grant_offers_state.svelte.ts';
+import { GRANT_SCOPE_PAIRED_MESSAGE } from '$lib/auth/role_grant_offer_action_specs.ts';
 import type { RoleGrantOfferJson } from '$lib/auth/role_grant_offer_schema.ts';
 import {
 	ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
@@ -27,6 +29,7 @@ const RECIPIENT_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_RECIPIENT_ID = '22222222-2222-2222-2222-222222222222';
 const GRANTOR_ACTOR_ID = '33333333-3333-3333-3333-333333333333';
 const OTHER_ACTOR_ID = '44444444-4444-4444-4444-444444444444';
+const SCOPE_ID = '55555555-5555-4555-8555-555555555555';
 
 let counter = 0;
 const next_uuid = (): string => {
@@ -382,6 +385,52 @@ describe('RoleGrantOffersState — mutations', () => {
 		});
 		assert.strictEqual(state.outgoing.length, 1);
 		assert.strictEqual(state.outgoing[0]!.to_actor_id, target_actor_id);
+	});
+
+	test('create forwards a scoped offer as the scope_kind + scope_id pair', async () => {
+		const captured: { params: Parameters<RoleGrantOffersRpc['create']>[0] | null } = {
+			params: null
+		};
+		const offer = pending_offer({
+			scope_kind: 'classroom',
+			scope_id: SCOPE_ID as RoleGrantOfferJson['scope_id']
+		});
+		const state = create_state({
+			create: async (params) => {
+				captured.params = params;
+				return { offer };
+			}
+		});
+
+		await state.submit_create({
+			to_account_id: OTHER_RECIPIENT_ID,
+			role: 'teacher',
+			scope_kind: 'classroom',
+			scope_id: SCOPE_ID
+		});
+
+		assert.deepStrictEqual(captured.params, {
+			to_account_id: OTHER_RECIPIENT_ID,
+			role: 'teacher',
+			scope_kind: 'classroom',
+			scope_id: SCOPE_ID
+		});
+	});
+
+	test('create refuses an unpaired scope without calling the rpc', async () => {
+		let called = false;
+		const state = create_state({
+			create: async () => {
+				called = true;
+				return { offer: pending_offer() };
+			}
+		});
+		// untyped callers can still hand a lone `scope_id`
+		const unpaired = { to_account_id: OTHER_RECIPIENT_ID, role: 'teacher', scope_id: SCOPE_ID };
+		const result = await state.submit_create(unpaired as unknown as RoleGrantOfferCreateParams);
+		assert.strictEqual(result, undefined);
+		assert.isFalse(called, 'no rpc for an unpaired scope');
+		assert.strictEqual(state.create.error, GRANT_SCOPE_PAIRED_MESSAGE);
 	});
 
 	test('accept eagerly drops superseded siblings', async () => {

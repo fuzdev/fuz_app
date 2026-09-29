@@ -2,7 +2,8 @@
  * Integration tests for scope-aware role_grant offer flows — cross-cutting
  * behavior spanning create and accept where the `scope_id` invariant
  * matters (scoped role_grant materialization; sibling offers in different
- * scopes don't supersede each other).
+ * scopes don't supersede each other). Over an admin-grantable app role, since
+ * builtin roles are global-only.
  *
  * @module
  */
@@ -19,10 +20,15 @@ import { create_uuid } from '@fuzdev/fuz_util/id.ts';
 import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
 import {
 	RPC_PATH,
-	create_route_specs,
+	TEST_APP_ROLE,
+	create_app_role_route_specs,
 	describe_db,
 	session_options
 } from './role_grant_offer_test_helpers.ts';
+
+// Scoped offers use an admin-grantable app role — builtin roles are
+// global-only, refused with a scope on every grant path.
+const create_route_specs = create_app_role_route_specs();
 
 describe_db('role_grant_offer_actions.scoped', (get_db) => {
 	describe('scoped offers', () => {
@@ -41,7 +47,7 @@ describe_db('role_grant_offer_actions.scoped', (get_db) => {
 				spec: role_grant_offer_create_action_spec,
 				params: {
 					to_account_id: recipient.account.id,
-					role: ROLE_ADMIN,
+					role: TEST_APP_ROLE,
 					scope_kind: 'classroom',
 					scope_id
 				},
@@ -80,7 +86,7 @@ describe_db('role_grant_offer_actions.scoped', (get_db) => {
 				spec: role_grant_offer_create_action_spec,
 				params: {
 					to_account_id: recipient.account.id,
-					role: ROLE_ADMIN,
+					role: TEST_APP_ROLE,
 					scope_kind: 'classroom',
 					scope_id: scope_a
 				},
@@ -94,7 +100,7 @@ describe_db('role_grant_offer_actions.scoped', (get_db) => {
 				spec: role_grant_offer_create_action_spec,
 				params: {
 					to_account_id: recipient.account.id,
-					role: ROLE_ADMIN,
+					role: TEST_APP_ROLE,
 					scope_kind: 'classroom',
 					scope_id: scope_b
 				},

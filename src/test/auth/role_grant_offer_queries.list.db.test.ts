@@ -46,8 +46,9 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 		const pending = await create_pending_offer(db, grantor, recipient);
 
 		// accepted — terminal
+		// An app role — accept refuses a scoped builtin (`admin` / `keeper`).
 		const acceptable = await create_pending_offer(db, grantor, recipient, {
-			role: 'admin',
+			role: 'classroom_student',
 			scope_id: create_uuid()
 		});
 		await db.transaction((tx) =>
@@ -105,8 +106,9 @@ describe_db('role_grant_offer_queries.list', (get_db) => {
 		assert.ok(await query_role_grant_offer_find_pending(deps, pending.id));
 
 		// accepted
+		// An app role — accept refuses a scoped builtin (`admin` / `keeper`).
 		const acceptable = await create_pending_offer(db, grantor, recipient, {
-			role: 'admin',
+			role: 'classroom_student',
 			scope_id: create_uuid()
 		});
 		await db.transaction((tx) =>

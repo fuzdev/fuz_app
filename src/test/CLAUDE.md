@@ -234,7 +234,9 @@ proofs (a non-admin `space` root → 403 `cell_create_forbidden`; a contribution
 gated by the root's `data.policy[kind]`; `moderation` set per the verdict
 (`pending`+private vs `approved`); **404** on a hidden parent vs **403** on a
 visible one; and the `cell_moderate` transition — admin approves → public,
-the author self-approve → 403, a non-viewer → 404, reject → private), gated on
+the author self-approve → 403, a non-viewer → 404, reject → private; and
+`cell_clone` running the authorizer for every cell it writes — a non-admin
+clone of a viewable `space` root → 403 `cell_create_forbidden`), gated on
 `capabilities.cell_gated_create` (cross-only, the test policy is a spine-binary
 fixture)), and `account_lifecycle.cross.test.ts`
 (`describe_account_lifecycle_cross_tests` — soft-delete → undelete round-trip,
@@ -269,9 +271,13 @@ server-side session → 401 on a read + a mutation route); the in-process leg is
 `conformance_participation_cases.ts` single-request matrix — grantability
 gate-pass-404 vs gate-403 on **both** `role_grant_assign` and
 `role_grant_offer_create`, admin-only conferral / no holder-propagation,
-dispatcher admin gate, anon-401, `to_actor_id`-mismatch — plus the imperative
+dispatcher admin gate, anon-401, `to_actor_id`-mismatch, and the global-only
+builtin rules (an unpaired `scope_kind` / `scope_id` → 400, a scoped `admin` →
+400 `role_grant_builtin_scoped` on assign + offer, a builtin offer from a
+non-global-admin → 403) — plus the imperative
 `describe_role_grant_participation_cross_tests` success paths (assign-lands +
-idempotency, offer→accept-lands); seeds a `participant` (`grant_paths:
+idempotency, a scoped assign round-tripping `scope_kind` through
+`admin_account_list`, offer→accept-lands); seeds a `participant` (`grant_paths:
 ['admin']`) app-role on both spines with the holder via `extra_accounts`;
 in-process leg `conformance_participation.db.test.ts`), and
 `origin.cross.test.ts` (the imperative `describe_origin_cross_tests` — Origin

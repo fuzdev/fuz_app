@@ -1237,8 +1237,11 @@ the option type states whether the bundle is read.
   (gate on `capabilities.cell_gated_create`, **cross-only**) — the parent-aware
   cell-creation authorizer (`CellCreateAuthorize`, **directory model**) +
   the `cell_moderate` verb parity proofs. Both spines mount the same
-  `test_cell_gated_create_authorize` policy: a `kind: 'space'` **root** is
-  admin-only (a non-admin → **403** `cell_create_forbidden`); a **contribution**
+  `test_cell_gated_create_authorize` policy (its admin bypass and `min_role`
+  read the **global** grant): a `kind: 'space'` **root** is
+  admin-only (a non-admin → **403** `cell_create_forbidden`, and the same for a
+  non-admin `cell_clone` of a viewable space — clone runs the authorizer for
+  every cell it writes); a **contribution**
   under a space is gated by the root's `data.policy[kind] = {min_role,
 moderation_required}`, with `moderation` set per the verdict (`pending`+private
   vs `approved`+author-visibility); a **hidden** parent **404**-masks vs a
@@ -1619,12 +1622,17 @@ non-admin _holder_ of `participant` (and a fresh non-admin) can't offer it (403
 `role_grant_assign` is admin-only** — non-admin holder / fresh → 403
 `insufficient_permissions` (dispatcher gate), anon → 401; plus the
 `to_actor_id`-must-belong-to-`to_account_id` resolution arm (400
-`role_grant_offer_actor_account_mismatch`).
+`role_grant_offer_actor_account_mismatch`); **(d) builtin roles are
+global-only** — an unpaired `scope_kind` / `scope_id` → 400 on assign + offer,
+a scoped `admin` → 400 `role_grant_builtin_scoped` on assign + offer, a builtin
+offer from a non-global-admin → 403 `role_grant_offer_not_authorized`.
 
 `describe_role_grant_participation_cross_tests` (this module) is the **imperative
 escape hatch** for the multi-step success paths a static row can't express (they
 need a real recipient): admin **assigns** `participant` to a fresh account
-(`{ok, role_grant_id}` + idempotent re-assign), and admin **offers**
+(`{ok, role_grant_id}` + idempotent re-assign), admin **assigns** a scoped
+`participant` whose `scope_kind` + `scope_id` round-trip through
+`admin_account_list` (distinct from the global grant), and admin **offers**
 `participant` → recipient **accepts** → a role_grant lands. The `role_holder`
 principal is seeded via `extra_accounts: [{username, roles: ['participant']}]`
 (bootstrap-cradle direct grant) and named through `principals.role_holder`.

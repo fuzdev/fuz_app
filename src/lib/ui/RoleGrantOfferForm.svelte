@@ -4,10 +4,11 @@
 	 *
 	 * Caller supplies `to_account_id`, the subset of roles the grantor may
 	 * offer (typically filtered by admin-grant-path — `RoleSpec.grant_paths`
-	 * includes `'admin'`), an optional `scope_id`,
-	 * and an optional `on_created` callback for post-submit UX. Errors from
-	 * the RPC surface the three distinct reason codes — self-target,
-	 * role-not-grantable, not-authorized — so consumers can render them
+	 * includes `'admin'`), an optional scope — `scope_kind` and `scope_id`
+	 * together, or neither for a global offer — and an optional `on_created`
+	 * callback for post-submit UX. Errors from the RPC surface their distinct
+	 * reason codes (self-target, role-not-grantable, not-authorized, a scoped
+	 * builtin role, actor mismatches) so consumers can render them
 	 * appropriately.
 	 *
 	 * @module
@@ -15,13 +16,17 @@
 
 	import PendingButton from '@fuzdev/fuz_ui/PendingButton.svelte';
 
-	import { role_grant_offers_state_context } from './role_grant_offers_state.svelte.ts';
+	import {
+		role_grant_offers_state_context,
+		type RoleGrantOfferScope
+	} from './role_grant_offers_state.svelte.ts';
 	import { FormState } from './form_state.svelte.ts';
 	import {
 		ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX,
 		type RoleGrantOfferJson
 	} from '../auth/role_grant_offer_schema.ts';
 	import {
+		ERROR_ROLE_GRANT_BUILTIN_SCOPED,
 		ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
 		ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH,
 		ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
@@ -29,13 +34,15 @@
 		ERROR_ROLE_GRANT_OFFER_SELF_TARGET
 	} from '../auth/role_grant_offer_action_specs.ts';
 
+	// `scope` is the offer's resource scope, `RoleGrantOfferScope`: `scope_kind`
+	// and `scope_id` together, or neither (the default) for a global offer
 	const {
 		to_account_id,
 		to_actor_id = null,
 		roles,
-		scope_id = null,
 		on_created,
-		format_role = (role: string) => role
+		format_role = (role: string) => role,
+		...scope
 	}: {
 		to_account_id: string;
 		/**
@@ -46,11 +53,9 @@
 		to_actor_id?: string | null;
 		/** Roles the caller may offer — caller filters upstream (default: admin-grant-path). */
 		roles: Array<string>;
-		/** Resource scope for the offer; `null` (default) yields a global offer. */
-		scope_id?: string | null;
 		on_created?: (offer: RoleGrantOfferJson) => void;
 		format_role?: (role: string) => string;
-	} = $props();
+	} & RoleGrantOfferScope = $props();
 
 	const role_grant_offers = role_grant_offers_state_context.get();
 	const form_state = new FormState<'role' | 'message'>();
@@ -70,6 +75,8 @@
 				return 'That role cannot be offered through this form.';
 			case ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED:
 				return 'You are not authorized to offer that role.';
+			case ERROR_ROLE_GRANT_BUILTIN_SCOPED:
+				return 'That role can only be offered globally, not within a scope.';
 			case ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH:
 				return 'That actor is not on the recipient account.';
 			case ERROR_ROLE_GRANT_OFFER_ACTOR_MISMATCH:
@@ -93,7 +100,7 @@
 			to_account_id,
 			to_actor_id,
 			role: selected_role,
-			scope_id,
+			...scope,
 			message: message.trim() || null
 		});
 		if (offer) {

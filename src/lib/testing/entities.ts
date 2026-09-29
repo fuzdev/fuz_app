@@ -17,7 +17,7 @@ import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import type { Account, Actor, RoleGrant } from '../auth/account_schema.ts';
 import type { AuditLogEvent } from '../auth/audit_log_schema.ts';
-import type { RequestContext } from '../auth/request_context.ts';
+import type { RequestActorContext } from '../auth/request_context.ts';
 
 /** Override type for `create_test_account` — id-like fields accept plain `string`. */
 export type TestAccountOverrides = Partial<Omit<Account, 'id' | 'created_by' | 'updated_by'>> & {
@@ -97,10 +97,13 @@ export const create_test_role_grant = (overrides?: TestRoleGrantOverrides): Role
 	return overrides ? { ...base, ...(overrides as Partial<RoleGrant>) } : base;
 };
 
-/** Create a test `RequestContext` with role_grants from partial overrides. */
+/**
+ * Create a test `RequestActorContext` (a `RequestContext` with a resolved
+ * actor) with role_grants from partial overrides.
+ */
 export const create_test_context = (
 	role_grants: Array<TestRoleGrantOverrides> = [{}]
-): RequestContext => ({
+): RequestActorContext => ({
 	account: create_test_account(),
 	actor: create_test_actor(),
 	role_grants: role_grants.map((p) => create_test_role_grant(p))
