@@ -8,7 +8,7 @@
 	 * the SvelteKit runtime — it closes the overlay from `afterNavigate`.
 	 *
 	 * Two modes, split by the state's `narrow_query`. Outside it the sidebar
-	 * sits beside the content, padded by `--sidebar_width`, following
+	 * sits beside the content, padded by `--sidebar_offset`, following
 	 * `show_sidebar_wide`. Inside it the sidebar starts closed and opens as an
 	 * overlay over a scrim, following `show_sidebar_narrow`; the content is
 	 * `inert` while it's open, and navigation, Escape, a scrim click, or
@@ -21,25 +21,42 @@
 	 * sidebar or had fallen to the body (as it does when the content goes
 	 * inert).
 	 *
-	 * The mode rules are emitted as two style elements in `svelte:head`, the
-	 * second carrying `media={narrow_query}`, so the server render paints
-	 * the right mode before hydration and the markup's classes never depend on
-	 * the viewport. The head rules are global — they match every
-	 * `.app-shell` on the page — so shells mounted at the same time must share
-	 * a `narrow_query`. Pages served under a strict CSP need
-	 * `style-src-elem 'unsafe-inline'` or the hashes of those constant styles.
+	 * The shell's rules sit in two cascade layers nested under `fuz_app`.
+	 * `fuz_app.app_shell_base`, in the scoped style, holds the base and state
+	 * rules, which apply in both modes; `fuz_app.app_shell_narrow` overrides
+	 * some of them from a style element in `svelte:head` carrying
+	 * `media={narrow_query}`, so the server render paints the right mode
+	 * before hydration and the markup's classes never depend on the viewport.
+	 * The narrow layer is ordered after the base layer, so it wins whatever
+	 * the selectors' specificity or the sheets' order. Its rules are global —
+	 * they match every `.app-shell` on the page — so shells mounted at the
+	 * same time must share a `narrow_query`. Pages served under a strict CSP
+	 * need `style-src-elem 'unsafe-inline'` or the hash of that constant style.
 	 *
 	 * Public class hooks: `.app-shell` (root, with state classes `.wide-open` /
 	 * `.narrow-open`), `.app-shell-content`, `.app-shell-sidebar`,
-	 * `.app-shell-scrim`, `.app-shell-toggle`, `.app-shell-toggle-glyph`. The
-	 * head rules are all specificity (0,2,0) with state classes inside
-	 * `:where()`; override them at (0,3,0) — a client-mounted shell appends
-	 * its head styles after the app's CSS, so a later (0,2,0) rule is not
-	 * reliably later. The wide offset is the content's `padding-left` under
-	 * `.app-shell:where(.wide-open)`, not `--sidebar_width` itself. CSS
-	 * variables: `--sidebar_bg`, `--sidebar_z_index` (default `200` in both
-	 * modes; the toggle sits one above), `--sidebar_scrim_bg`, and
-	 * `--sidebar_width` (set from the `sidebar_width` prop).
+	 * `.app-shell-scrim`, `.app-shell-toggle`, `.app-shell-toggle-glyph`. Any
+	 * unlayered rule beats both layers at any specificity, so overrides need
+	 * no specificity games; to layer them instead, order `fuz_app` first
+	 * (`@layer fuz_app, overrides;`) in a sheet that loads before the shell.
+	 * The same rule means an unlayered reset overrides the shell too — the
+	 * fuz_css reset zeroes `padding`, `margin`, and `border` on every element —
+	 * so the layers set none of those. The one they need, the content's
+	 * wide offset, goes through `--sidebar_offset`: the layers set it on
+	 * `.app-shell-content` (`--sidebar_width` while the wide sidebar is open,
+	 * else `0px`), and one unlayered rule at (0,0,1) reads it into the
+	 * content's `padding-left`. Descendants of the content can read it too.
+	 * Override the offset by setting `--sidebar_offset` on
+	 * `.app-shell-content` or with a `padding-left` rule there; a `padding`
+	 * shorthand there overrides it as well. Like any unlayered override,
+	 * these apply in both modes, open or closed; to change only the wide open
+	 * offset, target `.app-shell.wide-open > .app-shell-content` inside the
+	 * narrow query's negation — the state classes don't track the viewport,
+	 * so `.wide-open` stays set in narrow mode too. CSS variables:
+	 * `--sidebar_bg`, `--sidebar_z_index` (default `200` in both modes; the toggle sits one
+	 * above), `--sidebar_scrim_bg`, `--sidebar_width` (set from the
+	 * `sidebar_width` prop; always the configured width, not the offset), and
+	 * `--sidebar_offset`.
 	 *
 	 * @module
 	 */
@@ -178,71 +195,42 @@
 </script>
 
 <svelte:head>
-	<style>
-		.app-shell > .app-shell-content {
-			padding-left: 0;
-		}
-		.app-shell:where(.wide-open) > .app-shell-content {
-			padding-left: var(--sidebar_width);
-		}
-		.app-shell > .app-shell-sidebar {
-			width: var(--sidebar_width);
-			visibility: hidden;
-		}
-		.app-shell:where(.wide-open) > .app-shell-sidebar {
-			visibility: visible;
-		}
-		.app-shell > .app-shell-scrim {
-			display: none;
-		}
-		.app-shell > .app-shell-toggle {
-			z-index: calc(var(--sidebar_z_index, 200) + 1);
-		}
-		.app-shell .app-shell-toggle-glyph {
-			display: inline-block;
-			scale: -1 1;
-		}
-		.app-shell:where(.wide-open) .app-shell-toggle-glyph {
-			scale: none;
-		}
-		/* a modal in the sidebar is in the top layer but inherits its visibility */
-		.app-shell-sidebar :modal {
-			visibility: visible;
-		}
-	</style>
 	{#if sidebar_state.narrow_query !== null}
 		<style media={sidebar_state.narrow_query}>
-			.app-shell > .app-shell-content {
-				padding-left: 0;
-			}
-			.app-shell > .app-shell-sidebar {
-				visibility: hidden;
-				translate: -100% 0;
-				width: min(var(--sidebar_width), 85vw);
-			}
-			.app-shell:where(.narrow-open) > .app-shell-sidebar {
-				visibility: visible;
-				translate: none;
-			}
-			.app-shell:where(.narrow-open) > .app-shell-scrim {
-				display: block;
-			}
-			.app-shell .app-shell-toggle-glyph {
-				scale: -1 1;
-			}
-			.app-shell:where(.narrow-open) .app-shell-toggle-glyph {
-				scale: none;
-			}
-			@media (prefers-reduced-motion: no-preference) {
-				.app-shell > .app-shell-sidebar {
-					transition:
-						translate 150ms ease-out,
-						visibility 0s 150ms;
+			@layer fuz_app.app_shell_base, fuz_app.app_shell_narrow;
+			@layer fuz_app.app_shell_narrow {
+				.app-shell > .app-shell-content {
+					--sidebar_offset: 0px;
 				}
-				.app-shell:where(.narrow-open) > .app-shell-sidebar {
-					transition:
-						translate 150ms ease-out,
-						visibility 0s;
+				.app-shell > .app-shell-sidebar {
+					visibility: hidden;
+					translate: -100% 0;
+					width: min(var(--sidebar_width), 85vw);
+				}
+				.app-shell.narrow-open > .app-shell-sidebar {
+					visibility: visible;
+					translate: none;
+				}
+				.app-shell.narrow-open > .app-shell-scrim {
+					display: block;
+				}
+				.app-shell > .app-shell-toggle .app-shell-toggle-glyph {
+					scale: -1 1;
+				}
+				.app-shell.narrow-open > .app-shell-toggle .app-shell-toggle-glyph {
+					scale: none;
+				}
+				@media (prefers-reduced-motion: no-preference) {
+					.app-shell > .app-shell-sidebar {
+						transition:
+							translate 150ms ease-out,
+							visibility 0s 150ms;
+					}
+					.app-shell.narrow-open > .app-shell-sidebar {
+						transition:
+							translate 150ms ease-out,
+							visibility 0s;
+					}
 				}
 			}
 		</style>
@@ -313,29 +301,87 @@
 </div>
 
 <style>
-	/* mode-independent only; the mode rules live in the head styles above */
-	.app-shell-content {
-		display: flex;
-		flex-direction: column;
-		min-height: 100vh;
+	/*
+	 * The shell's rules sit in `fuz_app.app_shell_base`. The narrow overrides live
+	 * in the `media` style in `svelte:head`, in `fuz_app.app_shell_narrow`, which
+	 * this order statement puts after the base layer — so they win regardless of
+	 * specificity (these selectors carry the scope hash) or of which sheet loads
+	 * first. The head style opens with the same statement; repeating it here pins
+	 * the order whichever sheet the browser meets first.
+	 */
+	@layer fuz_app.app_shell_base, fuz_app.app_shell_narrow;
+
+	/*
+	 * Never put a property the fuz_css reset sets (`padding`, `margin`, `border`,
+	 * `box-sizing`, and their longhands) in a layer: the reset is unlayered, so it
+	 * beats every layered declaration and the layered value computes to the
+	 * reset's. Route such a value through a custom property the layers set, read
+	 * by an unlayered rule. The content offset is the one case: the layers set
+	 * `--sidebar_offset`, and this rule reads it. It's unscoped at (0,0,1) — above
+	 * the reset's (0,0,0), below any class selector — so a consumer rule on
+	 * `.app-shell-content` overrides it without matching specificity.
+	 */
+	:global(div:where(.app-shell > .app-shell-content)) {
+		padding-left: var(--sidebar_offset, 0px);
 	}
 
-	.app-shell-sidebar {
-		position: fixed;
-		top: 0;
-		left: 0;
-		height: 100%;
-		overflow: auto;
-		overscroll-behavior: contain;
-		scrollbar-width: thin;
-		background: var(--sidebar_bg, var(--shade_05));
-		z-index: var(--sidebar_z_index, 200);
-	}
+	@layer fuz_app.app_shell_base {
+		.app-shell-content {
+			--sidebar_offset: 0px;
+			display: flex;
+			flex-direction: column;
+			min-height: 100vh;
+		}
+		.app-shell.wide-open > .app-shell-content {
+			--sidebar_offset: var(--sidebar_width);
+		}
 
-	.app-shell-scrim {
-		position: fixed;
-		inset: 0;
-		z-index: var(--sidebar_z_index, 200);
-		background: var(--sidebar_scrim_bg, var(--darken_40));
+		.app-shell-sidebar {
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: var(--sidebar_width);
+			height: 100%;
+			overflow: auto;
+			overscroll-behavior: contain;
+			scrollbar-width: thin;
+			background: var(--sidebar_bg, var(--shade_05));
+			z-index: var(--sidebar_z_index, 200);
+			visibility: hidden;
+		}
+		.app-shell.wide-open > .app-shell-sidebar {
+			visibility: visible;
+		}
+
+		.app-shell-scrim {
+			display: none;
+			position: fixed;
+			inset: 0;
+			z-index: var(--sidebar_z_index, 200);
+			background: var(--sidebar_scrim_bg, var(--darken_40));
+		}
+
+		/*
+		 * The toggle and its glyph may be consumer markup from the `toggle_button`
+		 * snippet, which never carries this component's scope hash, so they're
+		 * matched by their public class names under the scoped root. The glyph
+		 * rules go through the root's own toggle so an outer shell's state never
+		 * reaches a nested shell's glyph.
+		 */
+		.app-shell > :global(.app-shell-toggle) {
+			z-index: calc(var(--sidebar_z_index, 200) + 1);
+		}
+		.app-shell > :global(.app-shell-toggle) :global(.app-shell-toggle-glyph) {
+			display: inline-block;
+			scale: -1 1;
+		}
+		.app-shell.wide-open > :global(.app-shell-toggle) :global(.app-shell-toggle-glyph) {
+			scale: none;
+		}
+
+		/* a modal in the sidebar is in the top layer but inherits its visibility */
+		.app-shell-sidebar :global(:modal) {
+			visibility: visible;
+		}
 	}
 </style>

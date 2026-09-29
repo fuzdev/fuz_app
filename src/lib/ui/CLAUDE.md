@@ -91,16 +91,17 @@ pattern rather than reintroducing prop-drilling.
   mode's field (so it drives the overlay at narrow widths).
   - **Custom toggles** (`toggle_button`): give the button
     `class="app-shell-toggle"` — it renders as a direct child of the root,
-    where the head rule stacks it one above the sidebar; the z-index applies
-    only to a positioned button, so position it (e.g. `position: fixed`,
-    like the built-in one) — and `aria-controls={sidebar_id}`, which the
+    where a `:global` rule (the snippet's markup carries no scope hash)
+    stacks it one above the sidebar; the z-index applies only to a
+    positioned button, so position it (e.g. `position: fixed`, like the
+    built-in one) — and `aria-controls={sidebar_id}`, which the
     focus fallback looks up (the first match that takes focus wins).
     `show_sidebar` is viewport-dependent (the server renders it as wide):
     attributes are repaired on hydration, but visible content keyed on it
     changes at narrow widths, so key visible content on CSS or the
     viewport-free fields.
   - **Two modes, split by `SidebarState.narrow_query`.** Wide: the sidebar
-    sits beside the content (padded by `--sidebar_width`) and follows
+    sits beside the content (padded by `--sidebar_offset`) and follows
     `show_sidebar_wide`. Narrow: it starts closed and opens as an overlay
     (capped at `85vw`) over a scrim, following `show_sidebar_narrow`; the
     content is `inert` while open. The overlay closes on navigation
@@ -125,35 +126,76 @@ pattern rather than reintroducing prop-drilling.
     path; wide mode just toggles. The shortcut bails on an open modal too,
     so pressing it inside a dialog opened from the overlay doesn't close the
     overlay behind it.
-  - **No hydration flash.** The mode rules are two `<style>` elements in
-    `<svelte:head>`, the second with `media={narrow_query}` (Svelte
-    attribute-escapes it; the CSS text is constant). The root's state
-    classes read only the viewport-free fields, so the server render and
-    hydration agree and CSS picks the mode; `narrow` only drives `inert`,
-    ARIA, and input routing. The head rules are global (they match every
-    `.app-shell`), so shells mounted at the same time must share a
-    `narrow_query`. CSP: needs `style-src-elem 'unsafe-inline'` (fuz_ui's
-    CSP default allows it) or the styles' hashes.
+  - **No hydration flash.** The mode rules sit in two cascade layers
+    nested under `fuz_app`. `@layer fuz_app.app_shell_base` in the scoped
+    `<style>` holds the base and state rules, which apply in both modes;
+    the narrow overrides are one `<style media={narrow_query}>` in
+    `<svelte:head>` (Svelte attribute-escapes the query; the CSS text is
+    constant), inside `@layer fuz_app.app_shell_narrow`, rendered only
+    while `narrow_query` isn't `null`. Both sheets open with
+    `@layer fuz_app.app_shell_base, fuz_app.app_shell_narrow;`, so the
+    narrow layer wins whatever the selectors' specificity (the scoped ones
+    carry the hash) and whichever sheet the browser meets first — a
+    client-mounted shell appending its head style late changes nothing.
+    The root's state classes read only the viewport-free fields, so the
+    server render and hydration agree and CSS picks the mode; `narrow` only
+    drives `inert`, ARIA, and input routing. The narrow rules are unscoped
+    (they match every `.app-shell` by plain class names), so shells mounted
+    at the same time must share a `narrow_query`. CSP: needs
+    `style-src-elem 'unsafe-inline'` (fuz_ui's CSP default allows it) or
+    the style's hash.
+  - **Layer names are namespaced** under one top-level `fuz_app` layer, so
+    they can't collide with a consumer's and a consumer that layers its own
+    CSS has one name to order against: `@layer fuz_app, overrides;` in a
+    sheet that loads before the shell puts `overrides` above it.
+  - **Never layer a property the reset sets.** fuz_css's reset
+    (`*, ::before, ::after, ::backdrop`) sets `box-sizing`, `border`,
+    `margin`, and `padding`, and it's unlayered, so it beats every layered
+    declaration of those at any specificity. The shell routes such a value
+    through a custom property the layers set and one unlayered rule reads.
+    The content offset is the one case: the layers set `--sidebar_offset`
+    on `.app-shell-content` (`--sidebar_width` under `.wide-open`, `0px`
+    otherwise and in the narrow layer), and
+    `:global(div:where(.app-shell > .app-shell-content)) { padding-left: var(--sidebar_offset, 0px) }`
+    reads it, unscoped at (0,0,1) — above the reset's (0,0,0), below any
+    class selector. The SSR test fails any layered `padding*`, `margin*`,
+    `border*`, or `box-sizing` declaration. No other layered declaration
+    overlaps the reset or fuz_css's element base rules (the sidebar, scrim,
+    and content are `div`s and the glyph a `span`, which fuz_css leaves
+    unstyled; the toggle's only layered property is `z-index`, which
+    `button`'s base rule doesn't set).
   - **Public class hooks**: `.app-shell` (state classes `.wide-open` /
     `.narrow-open`), `.app-shell-content`, `.app-shell-sidebar`,
     `.app-shell-scrim`, `.app-shell-toggle`, `.app-shell-toggle-glyph`.
-    Every head rule is specificity (0,2,0) with state classes in `:where()`
-    (the narrow block wins by document order). **Override at (0,3,0)** —
-    a client-mounted shell appends its head styles after the app's CSS, so
-    a (0,2,0) rule placed later in source isn't reliably later. The head
-    also carries the rules that must reach consumer markup: the toggle's
-    z-index (`.app-shell > .app-shell-toggle`) and
+    **Any unlayered rule overrides the shell**, at any specificity and in
+    any sheet order, so no specificity matching is needed. The flip side
+    is the reset case above: an unlayered rule that sets a property the
+    shell layers wins over it, which is why the shell keeps reset-owned
+    properties out of its layers. A consumer's own layered rules order
+    against `fuz_app` by first appearance in the document, so keep
+    overrides unlayered or order `fuz_app` first. The rules that must
+    reach consumer markup are `:global` under the scoped root: the toggle's
+    z-index (`.app-shell > .app-shell-toggle`), the glyph mirroring
+    (`.app-shell > .app-shell-toggle .app-shell-toggle-glyph`, so a custom
+    toggle can reuse `.app-shell-toggle-glyph` inside its
+    `.app-shell-toggle`; going through the root's own toggle keeps an outer
+    shell's state off a nested shell's glyph), and
     `.app-shell-sidebar :modal { visibility: visible }`, which keeps a
     top-layer dialog opened from the sidebar shown while the sidebar hides.
-    Mode-independent rules on the shell's own elements stay in the scoped
-    style (including `overscroll-behavior: contain` on the sidebar) and
-    never set a property the head rules do.
   - **CSS variables**: `--sidebar_width` (always the configured width, set
-    from the prop — not the effective offset; target the content's
-    `padding-left` under `.app-shell:where(.wide-open)` for that),
-    `--sidebar_bg` (default `--shade_05`), `--sidebar_z_index` (default
-    `200` in both modes; the scrim shares it, the toggle sits one above),
-    `--sidebar_scrim_bg` (default `--darken_40`).
+    from the prop — not the effective offset), `--sidebar_offset` (the
+    effective offset, set on `.app-shell-content`: `--sidebar_width` while
+    the wide sidebar is open, else `0px`; the content's descendants can
+    read it, e.g. to inset a fixed header), `--sidebar_bg` (default
+    `--shade_05`), `--sidebar_z_index` (default `200` in both modes; the
+    scrim shares it, the toggle sits one above), `--sidebar_scrim_bg`
+    (default `--darken_40`). Override the offset by setting
+    `--sidebar_offset` or writing a `padding-left` rule on
+    `.app-shell-content`; a consumer `padding` shorthand there overrides it
+    too. Either applies in both modes and open or closed, since the state
+    classes don't track the viewport — wrap it in the narrow query's negation
+    to keep narrow mode at `0px`. To change only the wide open offset, target
+    `.app-shell.wide-open > .app-shell-content`, also inside that negation.
 - `ColumnLayout.svelte` — fixed `aside` column + fluid `children`
   column; `column_width = '280px'`.
 - `MenuLink.svelte` — SvelteKit `<a>` with `selected` derived from

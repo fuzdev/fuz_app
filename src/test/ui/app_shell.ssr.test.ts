@@ -1,16 +1,22 @@
 /**
- * Server-render tests for `AppShell` — the head mode styles, the state
- * classes, and the toggle's ARIA wiring.
+ * Server-render tests for `AppShell` — the head narrow style, the scoped
+ * base layer and unlayered offset rule (from the compiler's CSS output,
+ * which `render` omits), the state classes, and the toggle's ARIA wiring.
  *
  * @module
  */
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, test, assert } from 'vitest';
 import { createRawSnippet } from 'svelte';
+import { compile } from 'svelte/compiler';
 import { render } from 'svelte/server';
 
 import AppShell from '$lib/ui/AppShell.svelte';
 import { SIDEBAR_NARROW_QUERY_DEFAULT, SidebarState } from '$lib/ui/sidebar_state.svelte.ts';
+
+const app_shell_path = fileURLToPath(new URL('../../lib/ui/AppShell.svelte', import.meta.url));
 
 const children = createRawSnippet(() => ({ render: () => '<p>content</p>' }));
 const sidebar = createRawSnippet(() => ({ render: () => '<nav>links</nav>' }));
@@ -37,13 +43,120 @@ const get_tag = (html: string, class_name: string): string => {
 const has_class = (tag: string, class_name: string): boolean =>
 	class_tag_pattern(class_name).test(tag);
 
+/** Extracts every `<style ...>...</style>` element from rendered HTML. */
+const get_styles = (html: string): Array<{ open_tag: string; content: string }> =>
+	Array.from(html.matchAll(/(<style[^>]*>)([\s\S]*?)<\/style>/g), (m) => ({
+		open_tag: m[1]!,
+		content: m[2]!
+	}));
+
+const LAYER_ORDER = '@layer fuz_app.app_shell_base, fuz_app.app_shell_narrow;';
+
+interface CssDeclaration {
+	/** The innermost enclosing rule's selector. */
+	selector: string;
+	property: string;
+	value: string;
+	/** The names of the enclosing `@layer` blocks, outermost first. */
+	layers: Array<string>;
+}
+
+/**
+ * Walks CSS text into its declarations with their selector and enclosing
+ * layer blocks. Enough for the shell's own CSS — no strings or escapes
+ * containing braces or semicolons.
+ */
+const parse_declarations = (css: string): Array<CssDeclaration> => {
+	const code = css.replace(/\/\*[\s\S]*?\*\//g, '');
+	const stack: Array<string> = [];
+	const declarations: Array<CssDeclaration> = [];
+	let buffer = '';
+	for (const char of code) {
+		if (char === '{') {
+			stack.push(buffer.trim());
+			buffer = '';
+		} else if (char === ';' || char === '}') {
+			const text = buffer.trim();
+			buffer = '';
+			const colon = text.indexOf(':');
+			const selector = stack.at(-1);
+			if (selector !== undefined && !selector.startsWith('@') && colon > 0) {
+				declarations.push({
+					selector,
+					property: text.slice(0, colon).trim(),
+					value: text.slice(colon + 1).trim(),
+					layers: stack
+						.filter((prelude) => prelude.startsWith('@layer '))
+						.map((prelude) => prelude.slice('@layer '.length).trim())
+				});
+			}
+			if (char === '}') stack.pop();
+		} else {
+			buffer += char;
+		}
+	}
+	return declarations;
+};
+
+/**
+ * Properties the fuz_css reset sets (`box-sizing`, `border`, `margin`,
+ * `padding`), longhands included. The reset is unlayered, so a layered
+ * declaration of one of these always loses to it.
+ */
+const RESET_PROPERTY_PATTERN = /^(padding|margin|border|box-sizing)(-|$)/;
+
+/** Asserts no layered declaration sets a property the reset owns. */
+const assert_no_layered_reset_properties = (declarations: Array<CssDeclaration>): void => {
+	const layered = declarations.filter((d) => d.layers.length > 0);
+	assert.isNotEmpty(layered);
+	const offending = layered.filter((d) => RESET_PROPERTY_PATTERN.test(d.property));
+	assert.deepEqual(
+		offending.map((d) => `${d.selector} { ${d.property} }`),
+		[],
+		'a layered declaration of a reset-owned property computes to the reset value'
+	);
+};
+
+/** Asserts every glyph selector goes through the root's own toggle. */
+const assert_glyph_selectors_scoped_to_own_toggle = (declarations: Array<CssDeclaration>): void => {
+	const glyph_selectors = declarations
+		.map((d) => d.selector)
+		.filter((selector) => selector.includes('.app-shell-toggle-glyph'));
+	assert.isNotEmpty(glyph_selectors);
+	for (const selector of glyph_selectors) {
+		assert.match(selector, /^\.app-shell[^ ]* > \.app-shell-toggle \.app-shell-toggle-glyph$/);
+	}
+};
+
 describe('AppShell head styles', () => {
-	test('default query emits a media style after the unconditional one', () => {
-		const { head } = render_shell();
-		const media_index = head.indexOf(`<style media="${SIDEBAR_NARROW_QUERY_DEFAULT}">`);
-		const plain_index = head.indexOf('<style>');
-		assert.isAtLeast(plain_index, 0);
-		assert.isAbove(media_index, plain_index);
+	test('default query emits exactly one style, the media one', () => {
+		const styles = get_styles(render_shell().head);
+		assert.strictEqual(styles.length, 1);
+		assert.strictEqual(styles[0]!.open_tag, `<style media="${SIDEBAR_NARROW_QUERY_DEFAULT}">`);
+	});
+
+	test('the media style opens with the layer order and holds only the narrow layer', () => {
+		const [style] = get_styles(render_shell().head);
+		assert.ok(style);
+		const content = style.content.trim();
+		assert.isTrue(content.startsWith(LAYER_ORDER));
+		const rest = content.slice(LAYER_ORDER.length).trim();
+		assert.isTrue(rest.startsWith('@layer fuz_app.app_shell_narrow {'));
+		assert.isTrue(rest.endsWith('}'));
+		assert.strictEqual(rest.match(/@layer/g)?.length, 1);
+		assert.isTrue(parse_declarations(style.content).every((d) => d.layers.length > 0));
+	});
+
+	test('no narrow declaration sets a property the reset owns', () => {
+		const [style] = get_styles(render_shell().head);
+		assert.ok(style);
+		assert_no_layered_reset_properties(parse_declarations(style.content));
+	});
+
+	test("the narrow glyph rules go through the root's own toggle", () => {
+		const [style] = get_styles(render_shell().head);
+		assert.ok(style);
+		assert_glyph_selectors_scoped_to_own_toggle(parse_declarations(style.content));
 	});
 
 	test('custom query appears in the media attribute', () => {
@@ -58,16 +171,71 @@ describe('AppShell head styles', () => {
 		assert.notInclude(head, '"><x');
 	});
 
-	test('the toggle z-index and top-layer visibility rules are unconditional', () => {
+	test('null query emits no style', () => {
 		const { head } = render_shell(new SidebarState({ narrow_query: null }));
-		assert.include(head, '.app-shell > .app-shell-toggle {');
-		assert.include(head, '.app-shell-sidebar :modal {');
+		assert.deepEqual(get_styles(head), []);
+	});
+});
+
+describe('AppShell scoped style', () => {
+	const { css } = compile(readFileSync(app_shell_path, 'utf-8'), {
+		filename: app_shell_path,
+		generate: 'server'
 	});
 
-	test('null query emits no media style', () => {
-		const { head } = render_shell(new SidebarState({ narrow_query: null }));
-		assert.include(head, '<style>');
-		assert.notInclude(head, '<style media');
+	test('declares the layer order and holds every layered rule in the base layer', () => {
+		assert.ok(css);
+		const code = css.code.replace(/\/\*[\s\S]*?\*\//g, '').trim();
+		assert.isTrue(code.startsWith(LAYER_ORDER));
+		const layer_blocks = Array.from(code.matchAll(/@layer ([^{;]+)\{/g), (m) => m[1]!.trim());
+		assert.deepEqual(layer_blocks, ['fuz_app.app_shell_base']);
+	});
+
+	test('no layered declaration sets a property the reset owns', () => {
+		assert.ok(css);
+		assert_no_layered_reset_properties(parse_declarations(css.code));
+	});
+
+	test('the only unlayered declaration reads the content offset into padding-left', () => {
+		assert.ok(css);
+		const unlayered = parse_declarations(css.code).filter((d) => d.layers.length === 0);
+		assert.deepEqual(unlayered, [
+			{
+				selector: 'div:where(.app-shell > .app-shell-content)',
+				property: 'padding-left',
+				value: 'var(--sidebar_offset, 0px)',
+				layers: []
+			}
+		]);
+	});
+
+	test('the layers set the offset custom property in both modes', () => {
+		assert.ok(css);
+		const [style] = get_styles(render_shell().head);
+		assert.ok(style);
+		const offsets = [...parse_declarations(css.code), ...parse_declarations(style.content)]
+			.filter((d) => d.property === '--sidebar_offset')
+			.map((d) => [d.layers.join(' '), d.value]);
+		assert.deepEqual(offsets, [
+			['fuz_app.app_shell_base', '0px'],
+			['fuz_app.app_shell_base', 'var(--sidebar_width)'],
+			['fuz_app.app_shell_narrow', '0px']
+		]);
+	});
+
+	test('rules reaching consumer markup are unscoped under the scoped root', () => {
+		assert.ok(css);
+		assert.match(css.code, /\.app-shell\.svelte-[a-z0-9]+ > \.app-shell-toggle \{/);
+		assert.match(
+			css.code,
+			/\.app-shell\.svelte-[a-z0-9]+ > \.app-shell-toggle \.app-shell-toggle-glyph \{/
+		);
+		assert.match(css.code, /\.app-shell-sidebar\.svelte-[a-z0-9]+ :modal \{/);
+	});
+
+	test("the base glyph rules go through the root's own toggle", () => {
+		assert.ok(css);
+		assert_glyph_selectors_scoped_to_own_toggle(parse_declarations(css.code));
 	});
 });
 
