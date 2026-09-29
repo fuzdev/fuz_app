@@ -45,8 +45,7 @@ let production code trust the lock as the single signal.
 
 ## Quick Reference
 
-Standard gro commands apply (see Skill(fuz-stack)). Never run `gro dev` —
-the user manages the dev server.
+Standard gro commands apply (see Skill(fuz-stack)).
 
 ### After Changing fuz_app Source
 
