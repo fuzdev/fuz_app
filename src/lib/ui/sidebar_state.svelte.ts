@@ -45,11 +45,23 @@ export interface SidebarStateOptions {
 	 * @default SIDEBAR_NARROW_QUERY_DEFAULT
 	 */
 	narrow_query?: string | null;
+	/**
+	 * The sidebar element's `id`. Set it when a toggle outside `AppShell` needs
+	 * `aria-controls` — the relationship closing the overlay also follows to
+	 * return focus when the opener didn't take it (Safari doesn't focus a
+	 * clicked button). Omitted, `AppShell` generates one, which only its own
+	 * toggle knows. Set, it assumes one shell per state: shells mounted at
+	 * the same time with this state would render the same id.
+	 */
+	sidebar_id?: string;
 }
 
 export class SidebarState {
 	/** The media query for narrow mode, or `null` when narrow mode is disabled. */
 	readonly narrow_query: string | null;
+
+	/** The sidebar element's `id`, or `null` to let `AppShell` generate one. */
+	readonly sidebar_id: string | null;
 
 	/**
 	 * Whether the sidebar shows beside the content outside narrow mode — the
@@ -67,7 +79,7 @@ export class SidebarState {
 	/**
 	 * Creates the state, subscribing to `narrow_query` unless it is `null`.
 	 *
-	 * @param options - enabled getter and narrow-mode query
+	 * @param options - enabled getter, narrow-mode query, and sidebar id
 	 * @throws Error in DEV when `narrow_query` has no parentheses — `MediaQuery`
 	 *   would auto-wrap it but CSS `media` would not, so they'd disagree
 	 */
@@ -81,6 +93,7 @@ export class SidebarState {
 			);
 		}
 		this.narrow_query = narrow_query;
+		this.sidebar_id = options?.sidebar_id ?? null;
 		this.#narrow_media = narrow_query === null ? null : new MediaQuery(narrow_query, false);
 	}
 

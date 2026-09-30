@@ -1,7 +1,8 @@
 /**
  * Server-render tests for `AppShell` — the head narrow style, the scoped
  * base layer and unlayered offset rule (from the compiler's CSS output,
- * which `render` omits), the state classes, and the toggle's ARIA wiring.
+ * which `render` omits), the state classes, and the toggle's and the
+ * closed sidebar's ARIA wiring.
  *
  * @module
  */
@@ -266,6 +267,20 @@ describe('AppShell markup', () => {
 		assert.ok(controls);
 		assert.strictEqual(controls, id);
 		assert.include(toggle, 'aria-expanded="true"');
+	});
+
+	test("the state's sidebar_id names the sidebar and the toggle's aria-controls", () => {
+		const { body } = render_shell(new SidebarState({ sidebar_id: 'site-menu' }));
+		assert.include(get_tag(body, 'app-shell-sidebar'), 'id="site-menu"');
+		assert.include(get_tag(body, 'app-shell-toggle'), 'aria-controls="site-menu"');
+	});
+
+	test('the closed sidebar is a plain element, no dialog and not focusable', () => {
+		const sidebar_tag = get_tag(render_shell().body, 'app-shell-sidebar');
+		assert.notInclude(sidebar_tag, 'role=');
+		assert.notInclude(sidebar_tag, 'aria-modal');
+		assert.notInclude(sidebar_tag, 'aria-label');
+		assert.notInclude(sidebar_tag, 'tabindex');
 	});
 
 	test('toggle has a static accessible name and a dynamic title', () => {

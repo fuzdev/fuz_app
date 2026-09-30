@@ -76,7 +76,8 @@ pattern rather than reintroducing prop-drilling.
 ## Shell + layout
 
 - `AppShell.svelte` — sidebar-and-main shell. Props: `children`,
-  `sidebar` (Snippet), `sidebar_width = 180`, `sidebar_state?`,
+  `sidebar` (Snippet), `sidebar_width = 180`, `sidebar_label = 'sidebar'`
+  (the open overlay's accessible name), `sidebar_state?`,
   `keyboard_shortcut?`, `show_toggle?`, `toggle_button?` (receives
   `{title, show_sidebar, toggle, sidebar_id}`). Provisions
   `sidebar_state_context` internally (creates one `SidebarState` if the
@@ -84,7 +85,8 @@ pattern rather than reintroducing prop-drilling.
   (`afterNavigate` from `$app/navigation`). The toggle renders only while
   `show_toggle && sidebar_state.enabled`, before the sidebar in the DOM;
   the built-in one is a disclosure (`aria-expanded` + `aria-controls`
-  pointing at the sidebar's `$props.id()` id) with the static name
+  pointing at the sidebar's id — `SidebarState.sidebar_id` when set, else
+  one from `$props.id()`) with the static name
   `aria-label="sidebar"`, a dynamic `title`, `aria-keyshortcuts` when
   `keyboard_shortcut` is set, and a `←` glyph CSS mirrors when closed.
   The shortcut acts only while the sidebar is enabled, on the current
@@ -100,6 +102,12 @@ pattern rather than reintroducing prop-drilling.
     attributes are repaired on hydration, but visible content keyed on it
     changes at narrow widths, so key visible content on CSS or the
     viewport-free fields.
+  - **Toggles outside the shell** (a top nav's hamburger) set
+    `SidebarState`'s `sidebar_id` option and carry
+    `aria-controls={sidebar_state.sidebar_id}`, so the focus fallback finds
+    them too. `aria-controls` is read as an id list. A set id assumes one
+    shell per state — shells sharing it at the same time would render the
+    same id.
   - **Two modes, split by `SidebarState.narrow_query`.** Wide: the sidebar
     sits beside the content (padded by `--sidebar_offset`) and follows
     `show_sidebar_wide`. Narrow: it starts closed and opens as an overlay
@@ -107,8 +115,24 @@ pattern rather than reintroducing prop-drilling.
     content is `inert` while open. The overlay closes on navigation
     (`afterNavigate` inside `AppShell` — consumers write nothing), Escape,
     a scrim click, and widening out of narrow mode (a crossing `$effect`).
-    Not `role="dialog"` — the same element is the persistent sidebar at
-    wide, so no focus trap.
+  - **The open overlay is a modal dialog.** While it's open the sidebar
+    carries `role="dialog"`, `aria-modal="true"`, and `aria-label` from
+    `sidebar_label`. They key on the open overlay (`overlay_open`), which
+    reads the viewport — that's what keeps the persistent wide sidebar (the
+    same element) from ever being a dialog — and the server render matches
+    hydration because the overlay always starts closed, as with `inert`.
+    Opening moves
+    focus into it — the content went `inert`, which dropped focus — to the
+    first control that takes focus (`tabIndex >= 0`, checked after each
+    `focus()`), else to the sidebar itself, `tabindex="-1"` while it's the
+    overlay (script-focusable, skipped by Tab; the wide sidebar has none, so
+    a click on its background leaves focus where it was). No focus trap:
+    `inert` already keeps Tab out of the content, and the built-in toggle
+    stays Tab-reachable as a close control. `aria-modal` lets assistive
+    tech hide everything outside the sidebar, the toggle included
+    (Chromium keeps it exposed; WebKit may not), so a sidebar whose
+    screen-reader users need a close control beyond Escape and navigation
+    renders its own.
   - **Escape** is a window `keydown` listener registered by an `$effect`
     only while the overlay is open, so listeners registered earlier (a
     contextmenu's, mounted with the page) see Escape first and can swallow
@@ -120,12 +144,12 @@ pattern rather than reintroducing prop-drilling.
     focus returns. When focus was inside the sidebar or had fallen to `body`
     (opening from the content makes it `inert`, which drops focus there), it
     goes back to the opener if still connected and focusable, else to the
-    first `[aria-controls="<sidebar_id>"]` that takes focus (Safari doesn't
-    focus a clicked button, so the opener can be `null`). A narrow-mode
-    close from `keyboard_shortcut` goes through the same close-and-return
-    path; wide mode just toggles. The shortcut bails on an open modal too,
-    so pressing it inside a dialog opened from the overlay doesn't close the
-    overlay behind it.
+    first `[aria-controls]` naming the sidebar's id that takes focus (Safari
+    doesn't focus a clicked button, so the opener can be `null`). A
+    narrow-mode close from `keyboard_shortcut` or a scrim click goes through
+    the same close-and-return path; wide mode just toggles. The shortcut
+    bails on an open modal too, so pressing it inside a dialog opened from
+    the overlay doesn't close the overlay behind it.
   - **No hydration flash.** The mode rules sit in two cascade layers
     nested under `fuz_app`. `@layer fuz_app.app_shell_base` in the scoped
     `<style>` holds the base and state rules, which apply in both modes;
@@ -208,7 +232,9 @@ pattern rather than reintroducing prop-drilling.
   `enabled?` (reactive getter overriding the internal field) and
   `narrow_query?` (`null` disables narrow mode; must contain parentheses
   since it feeds both CSS `media` and `MediaQuery`, which would auto-wrap a
-  paren-less query while CSS wouldn't — throws in DEV). Visibility is two
+  paren-less query while CSS wouldn't — throws in DEV), and `sidebar_id?`
+  (the sidebar element's id, read back as the readonly `sidebar_id`, `null`
+  when unset — for toggles outside `AppShell`). Visibility is two
   viewport-free fields, `show_sidebar_wide` (default `true`, the desktop
   preference narrow interactions never touch) and `show_sidebar_narrow`
   (default `false`). `narrow` is the viewport match (`false` in SSR);
@@ -509,7 +535,8 @@ format_scope, global_label)` helper — `global_label = null` renders no
   `format_scope?: FormatScope` prop — same shape as the context, prop
   wins when supplied.
 - `sidebar_state_context` — `() => SidebarState`. Provisioned by
-  `AppShell`.
+  `AppShell`. A toggle reading it for `aria-controls` needs the state's
+  `sidebar_id` option set (see Shell + layout).
 
 ## Popovers
 

@@ -2,10 +2,13 @@
 
 /**
  * Client-mount tests for `AppShell` — the narrow-mode overlay's Escape
- * handling, focus return, and keyboard shortcut. jsdom has no `showModal`,
- * never matches `:modal`, and ignores `inert` for focus, so the modal bail
- * stubs the `:modal` query and the inert ordering is asserted at the moment
- * focus returns rather than through a refused `focus()`.
+ * handling, dialog semantics, focus move and return, and keyboard shortcut.
+ * jsdom has no `showModal`, never matches `:modal`, and ignores `inert` for
+ * focus, so the modal bail stubs the `:modal` query and the inert ordering is
+ * asserted at the moment focus returns rather than through a refused
+ * `focus()`. jsdom also focuses elements CSS hides, so the focus move on open
+ * is checked here for its target, not for the sidebar being visible by then —
+ * that takes a real browser.
  *
  * @module
  */
@@ -81,14 +84,14 @@ const press = (key: string): KeyboardEvent => {
 	return event;
 };
 
-/** Opens the overlay with focus on `opener` (or nothing), then moves focus into the sidebar. */
+/** Opens the overlay with focus on `opener` (or nothing), which moves focus to the sidebar's link. */
 const open_overlay = (shell: MountedShell, opener: HTMLElement | null): void => {
 	if (opener) opener.focus();
 	else (document.activeElement as HTMLElement | null)?.blur();
 	shell.sidebar_state.toggle_sidebar(true);
 	flushSync();
 	assert.isTrue(shell.content.inert, 'overlay should be open');
-	shell.link.focus();
+	assert.strictEqual(document.activeElement, shell.link, 'opening should focus the link');
 };
 
 beforeEach(() => {
@@ -196,8 +199,8 @@ describe('AppShell focus return', () => {
 		shell.opener.focus();
 		shell.sidebar_state.toggle_sidebar(true);
 		flushSync();
-		// jsdom ignores `inert`, so drop focus to the body the way a browser does
-		shell.opener.blur();
+		// as when the control focus moved to is removed from the sidebar
+		(document.activeElement as HTMLElement).blur();
 		assert.strictEqual(document.activeElement, document.body);
 		press('Escape');
 		assert.isFalse(shell.sidebar_state.show_sidebar_narrow);
@@ -243,6 +246,46 @@ describe('AppShell focus return', () => {
 		assert.strictEqual(document.activeElement, shell.root.querySelector('.custom-toggle'));
 	});
 
+	test("falls back to a toggle outside the shell wired to the state's sidebar_id", () => {
+		const sidebar_state = new SidebarState({ sidebar_id: 'site-menu' });
+		const shell = mount_shell({ sidebar_state, show_toggle: false });
+		const outside = document.createElement('button');
+		// `aria-controls` is an id list
+		outside.setAttribute('aria-controls', 'other site-menu');
+		document.body.append(outside);
+		cleanups.push(() => outside.remove());
+		open_overlay(shell, null);
+		press('Escape');
+		assert.strictEqual(document.activeElement, outside);
+	});
+
+	test('a scrim click returns focus to the opener', () => {
+		const shell = mount_shell();
+		open_overlay(shell, shell.opener);
+		shell.root.querySelector<HTMLElement>('.app-shell-scrim')?.click();
+		assert.isFalse(shell.sidebar_state.show_sidebar_narrow);
+		assert.strictEqual(document.activeElement, shell.opener);
+	});
+
+	test('a scrim click falls back to the toggle without an opener', () => {
+		const shell = mount_shell();
+		open_overlay(shell, null);
+		shell.root.querySelector<HTMLElement>('.app-shell-scrim')?.click();
+		assert.isFalse(shell.sidebar_state.show_sidebar_narrow);
+		assert.strictEqual(document.activeElement, shell.root.querySelector('.app-shell-toggle'));
+	});
+
+	test('focus already in the sidebar at open stays put and is not the opener', () => {
+		const shell = mount_shell();
+		// jsdom ignores the closed sidebar's `visibility: hidden`, so its link takes focus
+		shell.link.focus();
+		shell.sidebar_state.toggle_sidebar(true);
+		flushSync();
+		assert.strictEqual(document.activeElement, shell.link);
+		press('Escape');
+		assert.strictEqual(document.activeElement, shell.root.querySelector('.app-shell-toggle'));
+	});
+
 	test('leaves focus alone when it was outside the sidebar', () => {
 		const shell = mount_shell();
 		open_overlay(shell, shell.opener);
@@ -253,6 +296,83 @@ describe('AppShell focus return', () => {
 		press('Escape');
 		assert.isFalse(shell.sidebar_state.show_sidebar_narrow);
 		assert.strictEqual(document.activeElement, outside);
+	});
+});
+
+describe('AppShell overlay dialog', () => {
+	/** Mounts a shell whose sidebar renders `html`, and opens the overlay from the content. */
+	const open_with_sidebar = (
+		html: string,
+		props?: Partial<ComponentProps<typeof AppShell>>
+	): MountedShell & { sidebar_el: HTMLElement } => {
+		const shell = mount_shell({
+			sidebar: createRawSnippet(() => ({
+				render: () => `<nav>${html}<a href="#here" class="link">here</a></nav>`
+			})),
+			...props
+		});
+		shell.opener.focus();
+		shell.sidebar_state.toggle_sidebar(true);
+		flushSync();
+		const sidebar_el = shell.root.querySelector<HTMLElement>('.app-shell-sidebar');
+		assert.ok(sidebar_el);
+		return { ...shell, sidebar_el };
+	};
+
+	test('opening moves focus to the first control in the sidebar', () => {
+		const shell = open_with_sidebar('');
+		assert.strictEqual(document.activeElement, shell.link);
+	});
+
+	test('skips a control that refuses focus and one only script can focus', () => {
+		const shell = open_with_sidebar(
+			'<button type="button" disabled>off</button><span tabindex="-1">script only</span>'
+		);
+		assert.strictEqual(document.activeElement, shell.link);
+	});
+
+	test('falls back to the sidebar itself when nothing in it takes focus', () => {
+		// an anchor without `href` takes no focus
+		const shell = mount_shell({
+			sidebar: createRawSnippet(() => ({ render: () => '<p><a class="link">no href</a></p>' }))
+		});
+		shell.opener.focus();
+		shell.sidebar_state.toggle_sidebar(true);
+		flushSync();
+		assert.strictEqual(document.activeElement, shell.root.querySelector('.app-shell-sidebar'));
+	});
+
+	test('the open overlay is a named modal dialog, and only while open', () => {
+		const shell = open_with_sidebar('', { sidebar_label: 'menu' });
+		assert.strictEqual(shell.sidebar_el.getAttribute('role'), 'dialog');
+		assert.strictEqual(shell.sidebar_el.getAttribute('aria-modal'), 'true');
+		assert.strictEqual(shell.sidebar_el.getAttribute('aria-label'), 'menu');
+		assert.strictEqual(shell.sidebar_el.getAttribute('tabindex'), '-1');
+		press('Escape');
+		flushSync();
+		assert.isNull(shell.sidebar_el.getAttribute('role'));
+		assert.isNull(shell.sidebar_el.getAttribute('aria-modal'));
+		assert.isNull(shell.sidebar_el.getAttribute('aria-label'));
+		assert.isNull(shell.sidebar_el.getAttribute('tabindex'));
+	});
+
+	test('the label defaults to the toggle name', () => {
+		const shell = open_with_sidebar('');
+		assert.strictEqual(shell.sidebar_el.getAttribute('aria-label'), 'sidebar');
+	});
+
+	test('the wide sidebar is a plain element and opening it leaves focus alone', () => {
+		media.set_matches(false);
+		const shell = mount_shell();
+		shell.sidebar_state.show_sidebar_wide = false;
+		flushSync();
+		shell.opener.focus();
+		shell.sidebar_state.toggle_sidebar(true);
+		flushSync();
+		assert.strictEqual(document.activeElement, shell.opener);
+		const sidebar_el = shell.root.querySelector('.app-shell-sidebar');
+		assert.isNull(sidebar_el?.getAttribute('role'));
+		assert.isNull(sidebar_el?.getAttribute('tabindex'));
 	});
 });
 

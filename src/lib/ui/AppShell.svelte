@@ -16,10 +16,26 @@
 	 * default, so the browser's close requests stay intact; it does nothing
 	 * while a modal (`:modal`) is open, or when a window `keydown` listener
 	 * registered before the overlay opened swallows it (a contextmenu, say).
-	 * Closing with Escape or the keyboard shortcut returns focus to what
-	 * opened the overlay, or else to the toggle, when focus was inside the
-	 * sidebar or had fallen to the body (as it does when the content goes
-	 * inert).
+	 *
+	 * The open overlay is a modal dialog: the sidebar takes `role="dialog"`,
+	 * `aria-modal`, `tabindex="-1"`, and `sidebar_label` as its name, and
+	 * focus moves into it, to its first control that takes focus, else to the
+	 * sidebar itself — the content went inert and dropped it. The attributes
+	 * key on the open overlay, which reads the viewport — that's what keeps
+	 * the wide sidebar from ever being a dialog — and the server render
+	 * matches hydration because the overlay always starts closed, as with the
+	 * content's `inert`. `aria-modal` lets assistive tech hide everything
+	 * outside the sidebar, the built-in toggle included, so a sidebar whose
+	 * screen-reader users need a close control beyond Escape and navigation
+	 * renders its own.
+	 *
+	 * Closing with Escape, the keyboard shortcut, or a scrim click returns
+	 * focus to what opened the overlay, or else to the first element whose
+	 * `aria-controls` names the sidebar's id and that takes it — when focus
+	 * was inside the sidebar or had fallen to the body. The id is the state's
+	 * `sidebar_id` when set, so a toggle outside the shell can carry
+	 * `aria-controls` too; Safari doesn't focus a clicked button, so without
+	 * it a mouse-opened overlay has no opener to return to.
 	 *
 	 * The shell's rules sit in two cascade layers nested under `fuz_app`.
 	 * `fuz_app.app_shell_base`, in the scoped style, holds the base and state
@@ -69,10 +85,15 @@
 
 	import { SidebarState, sidebar_state_context } from './sidebar_state.svelte.ts';
 
+	// what can take focus from the keyboard, narrowed further by `tabIndex`
+	const FOCUSABLE_SELECTOR =
+		'a[href], area[href], button, input, select, textarea, iframe, summary, [tabindex], [contenteditable]';
+
 	const {
 		children,
 		sidebar,
 		sidebar_width = 180,
+		sidebar_label = 'sidebar',
 		sidebar_state: sidebar_state_prop,
 		keyboard_shortcut = false,
 		show_toggle = true,
@@ -87,6 +108,12 @@
 		 * @default 180
 		 */
 		sidebar_width?: number;
+		/**
+		 * Accessible name for the sidebar while it's the narrow-mode overlay,
+		 * announced as a modal dialog.
+		 * @default 'sidebar'
+		 */
+		sidebar_label?: string;
 		/** Optional pre-built `SidebarState` for sharing visibility across shells. */
 		sidebar_state?: SidebarState;
 		/**
@@ -108,7 +135,7 @@
 		 * `class="app-shell-toggle"` so it stacks above the sidebar and scrim
 		 * (it renders as a direct child of the root) — the z-index applies only
 		 * to a positioned button, so position it (e.g. `position: fixed`) — and
-		 * `aria-controls={sidebar_id}` so Escape can return focus to it.
+		 * `aria-controls={sidebar_id}` so closing can return focus to it.
 		 * `show_sidebar` is viewport-dependent: the server renders it as in wide
 		 * mode, so rendering it as visible content changes on hydration at
 		 * narrow widths — attributes are repaired, but key visible content on
@@ -120,7 +147,6 @@
 	} = $props();
 
 	const uid = $props.id();
-	const sidebar_id = `${uid}-sidebar`;
 
 	let fallback_sidebar_state: SidebarState | undefined;
 	const get_sidebar_state = sidebar_state_context.set(
@@ -128,13 +154,13 @@
 	);
 	const sidebar_state = $derived(get_sidebar_state());
 
+	const sidebar_id = $derived(sidebar_state.sidebar_id ?? `${uid}-sidebar`);
+
 	// viewport-free, so the server and hydration renders agree
 	const wide_open = $derived(sidebar_state.enabled && sidebar_state.show_sidebar_wide);
 	const narrow_open = $derived(sidebar_state.enabled && sidebar_state.show_sidebar_narrow);
 	// viewport-dependent, only for `inert` and input handling (always `false` in SSR)
 	const overlay_open = $derived(sidebar_state.narrow && narrow_open);
-
-	const toggle_selector = `[aria-controls="${sidebar_id}"]`;
 
 	const button_title = $derived(
 		(sidebar_state.show_sidebar ? 'hide sidebar' : 'show sidebar') +
@@ -177,19 +203,43 @@
 			opener.focus();
 			if (document.activeElement === opener) return;
 		}
-		for (const toggle of document.querySelectorAll<HTMLElement>(toggle_selector)) {
+		for (const toggle of document.querySelectorAll<HTMLElement>('[aria-controls]')) {
+			// `aria-controls` is an id list
+			if (!toggle.getAttribute('aria-controls')!.split(/\s+/).includes(sidebar_id)) continue;
 			toggle.focus();
 			if (document.activeElement === toggle) return;
 		}
 	};
 
-	// while the overlay is open, remember what had focus (to return it on Escape)
-	// and listen for Escape — registered now, not at mount, so window listeners
-	// mounted earlier (a contextmenu's, say) see Escape first and can swallow it
+	// the first control in the sidebar that takes focus, else the sidebar itself
+	// (`tabindex="-1"` while it's the overlay); `tabIndex` screens out what only
+	// script can focus, and the check after each `focus()` what refuses it
+	const focus_sidebar = (): void => {
+		if (!sidebar_el) return;
+		for (const el of sidebar_el.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)) {
+			if (el.tabIndex < 0) continue;
+			el.focus();
+			if (document.activeElement === el) return;
+		}
+		sidebar_el.focus();
+	};
+
+	// while the overlay is open, remember what had focus (to return it on
+	// close), move focus into the sidebar — the content just went inert, which
+	// drops its focus — and listen for Escape, registered now, not at mount, so
+	// window listeners mounted earlier (a contextmenu's, say) see Escape first
+	// and can swallow it
 	$effect(() => {
 		if (!overlay_open) return;
 		const active = document.activeElement;
-		opener = active instanceof HTMLElement && active !== document.body ? active : null;
+		if (sidebar_el?.contains(active)) {
+			// not normally reachable — closed, the sidebar is `visibility: hidden` —
+			// but an opener inside it would hide along with it on close
+			opener = null;
+		} else {
+			opener = active instanceof HTMLElement && active !== document.body ? active : null;
+			focus_sidebar();
+		}
 		return on(window, 'keydown', on_escape);
 	});
 </script>
@@ -267,11 +317,7 @@
 		{@render children()}
 	</div>
 	<!-- pointer-only dismissal; Escape is the keyboard path -->
-	<div
-		class="app-shell-scrim"
-		aria-hidden="true"
-		onclick={() => sidebar_state.close_narrow()}
-	></div>
+	<div class="app-shell-scrim" aria-hidden="true" onclick={close_overlay}></div>
 	{#if show_toggle && sidebar_state.enabled}
 		{#if toggle_button}
 			{@render toggle_button({
@@ -295,7 +341,20 @@
 			</button>
 		{/if}
 	{/if}
-	<div class="app-shell-sidebar" id={sidebar_id} bind:this={sidebar_el}>
+	<!-- open, the overlay is a modal dialog whose `tabindex="-1"` makes it focus's
+		fallback target; the wide sidebar stays a plain element, so a click on its
+		background doesn't take focus. The a11y rule can't see the value is only
+		ever -1. -->
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+	<div
+		class="app-shell-sidebar"
+		id={sidebar_id}
+		role={overlay_open ? 'dialog' : undefined}
+		aria-modal={overlay_open ? 'true' : undefined}
+		aria-label={overlay_open ? sidebar_label : undefined}
+		tabindex={overlay_open ? -1 : undefined}
+		bind:this={sidebar_el}
+	>
 		{@render sidebar()}
 	</div>
 </div>
