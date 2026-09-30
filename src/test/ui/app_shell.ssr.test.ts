@@ -2,7 +2,7 @@
  * Server-render tests for `AppShell` — the head narrow style, the scoped
  * base layer and unlayered offset rule (from the compiler's CSS output,
  * which `render` omits), the state classes, and the toggle's and the
- * closed sidebar's ARIA wiring.
+ * sidebar's ARIA wiring.
  *
  * @module
  */
@@ -281,6 +281,35 @@ describe('AppShell markup', () => {
 		assert.notInclude(sidebar_tag, 'aria-modal');
 		assert.notInclude(sidebar_tag, 'aria-label');
 		assert.notInclude(sidebar_tag, 'tabindex');
+	});
+
+	test('an open narrow state still renders no dialog, which keys on the viewport', () => {
+		const sidebar_state = new SidebarState();
+		sidebar_state.show_sidebar_narrow = true;
+		const { body } = render(AppShell, {
+			props: { children, sidebar, sidebar_state, sidebar_label: 'menu' }
+		});
+		assert.isTrue(has_class(get_tag(body, 'app-shell'), 'narrow-open'));
+		const sidebar_tag = get_tag(body, 'app-shell-sidebar');
+		assert.notInclude(sidebar_tag, 'role=');
+		assert.notInclude(sidebar_tag, 'aria-modal');
+		assert.notInclude(sidebar_tag, 'aria-label');
+		assert.notInclude(sidebar_tag, 'tabindex');
+	});
+
+	test("a custom toggle receives the state's sidebar_id", () => {
+		const toggle_button = createRawSnippet<[{ sidebar_id: string }]>((args) => ({
+			render: () => `<button class="custom-toggle" aria-controls="${args().sidebar_id}">t</button>`
+		}));
+		const { body } = render(AppShell, {
+			props: {
+				children,
+				sidebar,
+				sidebar_state: new SidebarState({ sidebar_id: 'site-menu' }),
+				toggle_button
+			}
+		});
+		assert.include(get_tag(body, 'custom-toggle'), 'aria-controls="site-menu"');
 	});
 
 	test('toggle has a static accessible name and a dynamic title', () => {

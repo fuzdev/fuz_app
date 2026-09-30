@@ -43,6 +43,12 @@ describe('SidebarState defaults', () => {
 		assert.isFalse(state.show_sidebar_narrow);
 		assert.isFalse(state.narrow);
 		assert.isTrue(state.show_sidebar);
+		assert.isNull(state.sidebar_id);
+	});
+
+	test('custom sidebar_id is passed through', () => {
+		const state = new SidebarState({ sidebar_id: 'site-menu' });
+		assert.strictEqual(state.sidebar_id, 'site-menu');
 	});
 
 	test('narrow viewport starts closed', () => {

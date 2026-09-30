@@ -196,30 +196,31 @@
 		if (should_return_focus) return_focus();
 	};
 
+	// focuses `el`, returning whether it took focus — disabled, hidden, and
+	// inert elements refuse it
+	const try_focus = (el: HTMLElement): boolean => {
+		el.focus();
+		return document.activeElement === el;
+	};
+
 	// the opener if it's still there and takes focus, else the first toggle that
 	// does — Safari doesn't focus a clicked button, so the opener can be `null`
 	const return_focus = (): void => {
-		if (opener?.isConnected) {
-			opener.focus();
-			if (document.activeElement === opener) return;
-		}
+		if (opener?.isConnected && try_focus(opener)) return;
 		for (const toggle of document.querySelectorAll<HTMLElement>('[aria-controls]')) {
 			// `aria-controls` is an id list
-			if (!toggle.getAttribute('aria-controls')!.split(/\s+/).includes(sidebar_id)) continue;
-			toggle.focus();
-			if (document.activeElement === toggle) return;
+			const ids = toggle.getAttribute('aria-controls')!.split(/\s+/);
+			if (ids.includes(sidebar_id) && try_focus(toggle)) return;
 		}
 	};
 
 	// the first control in the sidebar that takes focus, else the sidebar itself
 	// (`tabindex="-1"` while it's the overlay); `tabIndex` screens out what only
-	// script can focus, and the check after each `focus()` what refuses it
+	// script can focus
 	const focus_sidebar = (): void => {
 		if (!sidebar_el) return;
 		for (const el of sidebar_el.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)) {
-			if (el.tabIndex < 0) continue;
-			el.focus();
-			if (document.activeElement === el) return;
+			if (el.tabIndex >= 0 && try_focus(el)) return;
 		}
 		sidebar_el.focus();
 	};
@@ -232,14 +233,12 @@
 	$effect(() => {
 		if (!overlay_open) return;
 		const active = document.activeElement;
-		if (sidebar_el?.contains(active)) {
-			// not normally reachable — closed, the sidebar is `visibility: hidden` —
-			// but an opener inside it would hide along with it on close
-			opener = null;
-		} else {
-			opener = active instanceof HTMLElement && active !== document.body ? active : null;
-			focus_sidebar();
-		}
+		// never an element in the sidebar, which hides again on close
+		opener =
+			active instanceof HTMLElement && active !== document.body && !sidebar_el?.contains(active)
+				? active
+				: null;
+		focus_sidebar();
 		return on(window, 'keydown', on_escape);
 	});
 </script>

@@ -15,6 +15,7 @@
 
 import { describe, test, assert, vi, beforeEach, afterEach } from 'vitest';
 import { createRawSnippet, flushSync, mount, unmount, type ComponentProps } from 'svelte';
+import { afterNavigate } from '$app/navigation';
 
 import AppShell from '$lib/ui/AppShell.svelte';
 import { SidebarState } from '$lib/ui/sidebar_state.svelte.ts';
@@ -259,6 +260,33 @@ describe('AppShell focus return', () => {
 		assert.strictEqual(document.activeElement, outside);
 	});
 
+	test('an aria-controls id that only contains the sidebar id is no match', () => {
+		const sidebar_state = new SidebarState({ sidebar_id: 'site-menu' });
+		const shell = mount_shell({ sidebar_state, show_toggle: false });
+		const decoy = document.createElement('button');
+		decoy.setAttribute('aria-controls', 'site-menu-extra');
+		const outside = document.createElement('button');
+		outside.setAttribute('aria-controls', 'site-menu');
+		document.body.append(decoy, outside);
+		cleanups.push(() => {
+			decoy.remove();
+			outside.remove();
+		});
+		open_overlay(shell, null);
+		press('Escape');
+		assert.strictEqual(document.activeElement, outside);
+	});
+
+	test('an element in the sidebar is never the opener', () => {
+		const shell = mount_shell();
+		// jsdom ignores the closed sidebar's `visibility: hidden`, so its link takes focus
+		shell.link.focus();
+		shell.sidebar_state.toggle_sidebar(true);
+		flushSync();
+		press('Escape');
+		assert.strictEqual(document.activeElement, shell.root.querySelector('.app-shell-toggle'));
+	});
+
 	test('a scrim click returns focus to the opener', () => {
 		const shell = mount_shell();
 		open_overlay(shell, shell.opener);
@@ -272,17 +300,6 @@ describe('AppShell focus return', () => {
 		open_overlay(shell, null);
 		shell.root.querySelector<HTMLElement>('.app-shell-scrim')?.click();
 		assert.isFalse(shell.sidebar_state.show_sidebar_narrow);
-		assert.strictEqual(document.activeElement, shell.root.querySelector('.app-shell-toggle'));
-	});
-
-	test('focus already in the sidebar at open stays put and is not the opener', () => {
-		const shell = mount_shell();
-		// jsdom ignores the closed sidebar's `visibility: hidden`, so its link takes focus
-		shell.link.focus();
-		shell.sidebar_state.toggle_sidebar(true);
-		flushSync();
-		assert.strictEqual(document.activeElement, shell.link);
-		press('Escape');
 		assert.strictEqual(document.activeElement, shell.root.querySelector('.app-shell-toggle'));
 	});
 
@@ -342,6 +359,17 @@ describe('AppShell overlay dialog', () => {
 		assert.strictEqual(document.activeElement, shell.root.querySelector('.app-shell-sidebar'));
 	});
 
+	test('Escape from the sidebar itself returns focus to the opener', () => {
+		const shell = mount_shell({
+			sidebar: createRawSnippet(() => ({ render: () => '<p><a class="link">no href</a></p>' }))
+		});
+		shell.opener.focus();
+		shell.sidebar_state.toggle_sidebar(true);
+		flushSync();
+		press('Escape');
+		assert.strictEqual(document.activeElement, shell.opener);
+	});
+
 	test('the open overlay is a named modal dialog, and only while open', () => {
 		const shell = open_with_sidebar('', { sidebar_label: 'menu' });
 		assert.strictEqual(shell.sidebar_el.getAttribute('role'), 'dialog');
@@ -386,6 +414,22 @@ describe('AppShell overlay dismissal', () => {
 		flushSync();
 		assert.isFalse(shell.sidebar_state.show_sidebar_narrow);
 		assert.isFalse(shell.sidebar_state.show_sidebar_wide);
+		assert.isFalse(shell.content.inert);
+		const sidebar_el = shell.root.querySelector('.app-shell-sidebar');
+		assert.isNull(sidebar_el?.getAttribute('role'));
+		assert.isNull(sidebar_el?.getAttribute('tabindex'));
+	});
+
+	test('navigation closes the overlay and leaves focus to the router', () => {
+		const shell = mount_shell();
+		open_overlay(shell, shell.opener);
+		const on_navigate = vi.mocked(afterNavigate).mock.lastCall?.[0];
+		assert.ok(on_navigate);
+		on_navigate({} as Parameters<typeof on_navigate>[0]);
+		flushSync();
+		assert.isFalse(shell.sidebar_state.show_sidebar_narrow);
+		// SvelteKit resets focus after navigation, so the shell doesn't return it
+		assert.strictEqual(document.activeElement, shell.link);
 	});
 
 	test('a scrim click closes the overlay', () => {
@@ -404,6 +448,16 @@ describe('AppShell keyboard shortcut', () => {
 		assert.isTrue(shell.sidebar_state.show_sidebar_narrow);
 		assert.isTrue(shell.sidebar_state.show_sidebar_wide);
 		assert.isTrue(event.defaultPrevented);
+	});
+
+	test('opening the overlay moves focus into the sidebar, and closing returns it', () => {
+		const shell = mount_shell({ keyboard_shortcut: 'b' });
+		shell.opener.focus();
+		press('b');
+		flushSync();
+		assert.strictEqual(document.activeElement, shell.link);
+		press('b');
+		assert.strictEqual(document.activeElement, shell.opener);
 	});
 
 	test('closing the overlay from inside the sidebar returns focus', () => {
