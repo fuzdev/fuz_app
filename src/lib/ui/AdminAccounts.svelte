@@ -41,7 +41,7 @@
 </script>
 
 <section>
-	<h1>accounts</h1>
+	<h1>Accounts</h1>
 	{#if admin_accounts.account_count > 0}
 		<p>
 			<span class="chip color_a">

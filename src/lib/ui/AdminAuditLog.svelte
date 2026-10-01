@@ -75,7 +75,7 @@
 </script>
 
 <section>
-	<h1>audit log</h1>
+	<h1>Audit Log</h1>
 
 	<div class="row mb_md gap_md" style:align-items="end">
 		<label class="mb_0">

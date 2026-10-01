@@ -39,7 +39,7 @@
 </script>
 
 <section>
-	<h1>surface</h1>
+	<h1>Surface</h1>
 	<p class="text_50">API routes, middleware, schemas, environment, and events.</p>
 
 	{#if loading}

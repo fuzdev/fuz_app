@@ -16,10 +16,10 @@
 </script>
 
 <section>
-	<h1>settings</h1>
-	<h2>signup</h2>
+	<h1>Settings</h1>
+	<h2>Signup</h2>
 	<OpenSignupToggle />
-	<h2>authentication</h2>
+	<h2>Authentication</h2>
 	{#if auth_state.account}
 		<p>Logged in as <strong>{auth_state.account.username}</strong>.</p>
 	{:else}

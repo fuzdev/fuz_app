@@ -53,10 +53,11 @@
 </script>
 
 <section>
-	<h1>invites</h1>
-	<section>
+	<h1>Invites</h1>
+	<fieldset>
+		<legend>Signup</legend>
 		<OpenSignupToggle />
-	</section>
+	</fieldset>
 	{#if admin_invites.invite_count > 0}
 		<p>
 			<span class="chip color_a">
@@ -73,7 +74,7 @@
 		}}
 	>
 		<fieldset class="row gap_sm">
-			<legend>invite target</legend>
+			<legend>Invite Target</legend>
 			<label class="grow">
 				<div class="title">email</div>
 				<input

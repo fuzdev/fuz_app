@@ -38,10 +38,10 @@
 </script>
 
 <section>
-	<h1>role_grant history</h1>
+	<h1>Role-Grant History</h1>
 
 	{#if audit_log.role_grant_history.loading}
-		<p class="text_50">loading role_grant history...</p>
+		<p class="text_50">loading role-grant history...</p>
 	{:else if audit_log.role_grant_history.error}
 		<p class="color_c_50">{audit_log.role_grant_history.error}</p>
 	{:else}

@@ -133,7 +133,7 @@
 		{/if}
 	</div>
 
-	<h3>routes</h3>
+	<h3>Routes</h3>
 	<div class="mb_sm">
 		<label>
 			<div class="title">auth filter</div>
@@ -218,7 +218,7 @@
 		</div>
 	{/if}
 
-	<h3>middleware</h3>
+	<h3>Middleware</h3>
 	{#if surface.middleware.length === 0}
 		<p class="text_50">no middleware</p>
 	{:else}
@@ -247,7 +247,7 @@
 	{/if}
 
 	{#if surface.env.length}
-		<h3>environment</h3>
+		<h3>Environment</h3>
 		<div style:overflow-x="auto">
 			<table>
 				<thead>
@@ -275,7 +275,7 @@
 	{/if}
 
 	{#if surface.events.length}
-		<h3>events</h3>
+		<h3>Events</h3>
 		<div style:overflow-x="auto">
 			<table>
 				<thead>
@@ -319,7 +319,7 @@
 	{/if}
 
 	{#if surface.rpc_endpoints.length}
-		<h3>rpc endpoints</h3>
+		<h3>RPC Endpoints</h3>
 		{#each surface.rpc_endpoints as endpoint (endpoint.path)}
 			<div class="row" style:gap="var(--space_sm)" style:align-items="center">
 				<code>{endpoint.path}</code>
@@ -380,7 +380,7 @@
 	{/if}
 
 	{#if surface.ws_endpoints.length}
-		<h3>websocket endpoints</h3>
+		<h3>WebSocket Endpoints</h3>
 		{#each surface.ws_endpoints as endpoint (endpoint.path)}
 			<div
 				class="row"
@@ -458,7 +458,7 @@
 	{/if}
 
 	{#if surface.diagnostics.length}
-		<h3>diagnostics</h3>
+		<h3>Diagnostics</h3>
 		<div style:overflow-x="auto">
 			<table>
 				<thead>

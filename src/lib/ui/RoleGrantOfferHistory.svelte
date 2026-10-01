@@ -82,7 +82,7 @@
 </script>
 
 <section>
-	<h2>offer history</h2>
+	<h2>Offer History</h2>
 
 	{#if role_grant_offers.list_history.loading}
 		<p class="text_50">loading history...</p>

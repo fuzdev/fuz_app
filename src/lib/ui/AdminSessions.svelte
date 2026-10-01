@@ -32,7 +32,7 @@
 </script>
 
 <section>
-	<h1>active sessions</h1>
+	<h1>Active Sessions</h1>
 	{#if admin_sessions.active_count > 0}
 		<p>
 			<span class="chip color_a">{admin_sessions.active_count} active</span>

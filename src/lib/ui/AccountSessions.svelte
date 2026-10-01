@@ -41,7 +41,7 @@
 
 <section>
 	<h2>
-		sessions
+		Sessions
 		{#if account_sessions.active_count > 0}
 			<span class="chip color_a">{account_sessions.active_count} active</span>
 		{/if}

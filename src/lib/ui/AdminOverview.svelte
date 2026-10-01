@@ -84,7 +84,7 @@
 <div class="overview">
 	<section>
 		<div class="panel-header">
-			<h3>accounts</h3>
+			<h3>Accounts</h3>
 			<a href={resolve('/admin/accounts' as any)} class="text_50 font_size_sm">view all &rarr;</a>
 		</div>
 		{#if accounts.list.loading}
@@ -126,7 +126,7 @@
 
 	<section>
 		<div class="panel-header">
-			<h3>sessions</h3>
+			<h3>Sessions</h3>
 			<a href={resolve('/admin/sessions' as any)} class="text_50 font_size_sm">view all &rarr;</a>
 		</div>
 		{#if sessions.list.loading}
@@ -156,7 +156,7 @@
 
 	<section>
 		<div class="panel-header">
-			<h3>invites</h3>
+			<h3>Invites</h3>
 			<a href={resolve('/admin/invites' as any)} class="text_50 font_size_sm">view all &rarr;</a>
 		</div>
 		{#if invites.list.loading}
@@ -201,7 +201,7 @@
 
 	<section>
 		<div class="panel-header">
-			<h3>recent activity</h3>
+			<h3>Recent Activity</h3>
 			<a href={resolve('/admin/audit-log' as any)} class="text_50 font_size_sm">view all &rarr;</a>
 		</div>
 		{#if audit_log.list.loading}
@@ -229,7 +229,7 @@
 
 	<section>
 		<div class="panel-header">
-			<h3>security</h3>
+			<h3>Security</h3>
 			<a href={resolve('/admin/audit-log' as any)} class="text_50 font_size_sm">audit log &rarr;</a>
 		</div>
 		{#if audit_log.list.loading}
@@ -267,7 +267,7 @@
 
 	<section>
 		<div class="panel-header">
-			<h3>system</h3>
+			<h3>System</h3>
 		</div>
 		{#if app_settings.list.loading}
 			<p class="text_50">loading...</p>

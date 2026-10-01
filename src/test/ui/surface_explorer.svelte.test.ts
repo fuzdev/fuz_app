@@ -195,7 +195,7 @@ test('renders event methods', () => {
 
 test('renders rpc endpoint section', () => {
 	const { body } = render(SurfaceExplorer, { props: { surface: test_surface } });
-	assert.ok(body.includes('rpc endpoints'), 'should show rpc section heading');
+	assert.ok(body.includes('RPC Endpoints'), 'should show rpc section heading');
 	assert.ok(body.includes('/api/rpc'), 'should show rpc endpoint path');
 	assert.ok(body.includes('account_verify'), 'should show rpc method name');
 	assert.ok(body.includes('invite_create'), 'should show second rpc method');
@@ -204,7 +204,7 @@ test('renders rpc endpoint section', () => {
 
 test('renders ws endpoint section with kind chip', () => {
 	const { body } = render(SurfaceExplorer, { props: { surface: test_surface } });
-	assert.ok(body.includes('websocket endpoints'), 'should show ws section heading');
+	assert.ok(body.includes('WebSocket Endpoints'), 'should show ws section heading');
 	assert.ok(body.includes('/api/ws'), 'should show ws endpoint path');
 	assert.ok(body.includes('heartbeat'), 'should show ws method name');
 	assert.ok(body.includes('role_grant_offer_received'), 'should show notification method name');
@@ -223,8 +223,8 @@ test('hides empty rpc/ws sections', () => {
 		ws_endpoints: []
 	};
 	const { body } = render(SurfaceExplorer, { props: { surface: surface_no_rpc_ws } });
-	assert.ok(!body.includes('rpc endpoints'), 'should not show rpc section');
-	assert.ok(!body.includes('websocket endpoints'), 'should not show ws section');
+	assert.ok(!body.includes('RPC Endpoints'), 'should not show rpc section');
+	assert.ok(!body.includes('WebSocket Endpoints'), 'should not show ws section');
 	assert.ok(!body.includes('rpc methods'), 'should not show rpc chip');
 	assert.ok(!body.includes('ws methods'), 'should not show ws chip');
 });
@@ -244,7 +244,7 @@ test('renders diagnostics warnings', () => {
 	};
 	const { body } = render(SurfaceExplorer, { props: { surface: surface_with_diagnostics } });
 	assert.ok(body.includes('1 warning'), 'should show warning count chip');
-	assert.ok(body.includes('diagnostics'), 'should show diagnostics section');
+	assert.ok(body.includes('Diagnostics'), 'should show diagnostics section');
 	assert.ok(body.includes('schema'), 'should show category');
 	assert.ok(body.includes('Input schema is not z.strictObject()'), 'should show warning message');
 	assert.ok(body.includes('Rate limiter disabled'), 'should show info message');
@@ -257,7 +257,7 @@ test('hides diagnostics warning chip when only info-level', () => {
 	};
 	const { body } = render(SurfaceExplorer, { props: { surface: surface_info_only } });
 	assert.ok(!body.includes('warning'), 'should not show warning chip');
-	assert.ok(body.includes('diagnostics'), 'should still show diagnostics section');
+	assert.ok(body.includes('Diagnostics'), 'should still show diagnostics section');
 });
 
 test('handles empty surface', () => {
@@ -274,6 +274,6 @@ test('handles empty surface', () => {
 	assert.ok(body.includes('0 routes'), 'should show zero routes');
 	assert.ok(body.includes('0 middleware'), 'should show zero middleware');
 	// env and events sections should not appear
-	assert.ok(!body.includes('environment'), 'should not show environment section');
-	assert.ok(!body.includes('events'), 'should not show events section');
+	assert.ok(!body.includes('Environment'), 'should not show environment section');
+	assert.ok(!body.includes('Events'), 'should not show events section');
 });

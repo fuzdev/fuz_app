@@ -46,7 +46,7 @@
 </script>
 
 <section class="role-grant-offer-inbox">
-	<h2>pending offers</h2>
+	<h2>Pending Offers</h2>
 
 	{#if role_grant_offers.list.error ||
 		role_grant_offers.accept.error ||
