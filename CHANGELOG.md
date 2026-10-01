@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.117.1
+
+### Patch Changes
+
+- feat: title case headings and legends in the admin and account UI, and a `Signup` legend over the open-signup toggle in `AdminInvites` ([fc469c9](https://github.com/fuzdev/fuz_app/commit/fc469c9))
+
 ## 0.117.0
 
 ### Minor Changes
