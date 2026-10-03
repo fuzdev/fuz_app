@@ -114,6 +114,8 @@ export const read_secure_bounded = async (
  * - `O_NONBLOCK` keeps the open from waiting on a FIFO that has no writer (it
  *   has no effect on a regular file); the regular-file check on the open
  *   descriptor then refuses it, a device node, or a directory
+ * - `O_NOCTTY` keeps a terminal device at the path from becoming the process's
+ *   controlling terminal in the moment before that check refuses it
  * - the permission check runs on the open descriptor, not the path, so the
  *   file can't be swapped between check and read — any group/other access
  *   (not `0600`/`0400`) is refused
@@ -127,7 +129,10 @@ export const read_secure_bounded = async (
 export const load_secure_file_node = async (path: string): Promise<Uint8Array> => {
 	let handle;
 	try {
-		handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+		handle = await open(
+			path,
+			constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK | constants.O_NOCTTY
+		);
 	} catch (err) {
 		// ELOOP means the path was a symlink (O_NOFOLLOW refused it).
 		if ((err as NodeJS.ErrnoException).code === 'ELOOP') {
