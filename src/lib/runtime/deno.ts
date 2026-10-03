@@ -11,7 +11,12 @@
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
 import type { RuntimeDeps, StatResult, CommandResult } from './deps.ts';
-import { assert_secure_mode, assert_secure_size, read_secure_bounded } from './secure_file.ts';
+import {
+	assert_secure_mode,
+	assert_secure_regular_file,
+	assert_secure_size,
+	read_secure_bounded
+} from './secure_file.ts';
 
 // Deno API declarations — this module is only imported by Deno consumers.
 // Module-scoped declarations don't pollute the global type namespace.
@@ -26,7 +31,7 @@ declare const Deno: {
 	stat: (
 		path: string
 	) => Promise<{ isFile: boolean; isDirectory: boolean; size: number; mtime: Date | null }>;
-	lstat: (path: string) => Promise<{ isSymlink: boolean }>;
+	lstat: (path: string) => Promise<{ isSymlink: boolean; isFile: boolean }>;
 	mkdir: (path: string, options?: { recursive?: boolean; mode?: number }) => Promise<void>;
 	readTextFile: (path: string) => Promise<string>;
 	readFile: (path: string) => Promise<Uint8Array>;
@@ -38,7 +43,7 @@ declare const Deno: {
 		read: (buf: Uint8Array) => Promise<number | null>;
 		seek: (offset: number, whence: number) => Promise<number>;
 		sync: () => Promise<void>;
-		stat: () => Promise<{ size: number; mode: number | null }>;
+		stat: () => Promise<{ isFile: boolean; size: number; mode: number | null }>;
 		close: () => void;
 		readable: ReadableStream<Uint8Array>;
 		writable: WritableStream<Uint8Array>;
@@ -116,16 +121,19 @@ export const create_deno_runtime = (args: ReadonlyArray<string>): RuntimeDeps =>
 	read_text_file: (path) => Deno.readTextFile(path),
 	read_file: (path) => Deno.readFile(path),
 	read_secure_file: async (path) => {
-		// Deno exposes no O_NOFOLLOW, so the symlink check is a pre-open lstat
-		// (a TOCTOU window the Node impl doesn't have — the mode check below
-		// still runs on the open descriptor, so a post-open swap can't defeat
-		// it). The checks themselves are the shared `runtime/secure_file.ts`
-		// helpers, same as `load_secure_file_node`.
+		// Deno exposes no O_NOFOLLOW or O_NONBLOCK, so the symlink and
+		// regular-file checks are a pre-open lstat (a TOCTOU window the Node
+		// impl doesn't have — a FIFO swapped in after it would block the open;
+		// the checks below still run on the open descriptor, so a post-open swap
+		// can't defeat them). The checks themselves are the shared
+		// `runtime/secure_file.ts` helpers, same as `load_secure_file_node`.
 		const l = await Deno.lstat(path);
 		if (l.isSymlink) throw new Error(`secure file is a symlink: ${path}`);
+		assert_secure_regular_file(path, l.isFile);
 		const file = await Deno.open(path, { read: true });
 		try {
 			const s = await file.stat();
+			assert_secure_regular_file(path, s.isFile);
 			// `mode` is null where POSIX modes don't apply (Windows).
 			if (s.mode !== null) assert_secure_mode(path, s.mode);
 			assert_secure_size(path, s.size);

@@ -3,7 +3,8 @@
  * plus the real-file crash-leftover pin on `write_file_atomic`.
  *
  * Twin of the Rust `fuz_sys::secure_file` test suite: owner-only reads
- * verbatim, group/world-readable refused, symlink refused, size cap held.
+ * verbatim, group/world-readable refused, symlink refused, FIFO / device /
+ * directory refused, size cap held.
  * Real files in a tmpdir — the mock can't exercise `O_NOFOLLOW` or fd-level
  * stat.
  *
@@ -12,6 +13,7 @@
 
 import { describe, assert, test, beforeEach, afterEach } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, chmodSync, symlinkSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -69,6 +71,19 @@ describe('load_secure_file_node', () => {
 		const link = join(dir, 'link');
 		symlinkSync(target, link);
 		await assert_rejects(() => load_secure_file_node(link), /symlink/);
+	});
+
+	test.runIf(posix)('refuses a FIFO without waiting for a writer', async () => {
+		// A blocking open of a FIFO with no writer never returns; `O_NONBLOCK`
+		// plus the descriptor's regular-file check turns it into a refusal.
+		const fifo = join(dir, 'fifo');
+		execFileSync('mkfifo', ['-m', '600', fifo]);
+		await assert_rejects(() => load_secure_file_node(fifo), /not a regular file/);
+	});
+
+	test.runIf(posix)('refuses a directory and a device node', async () => {
+		await assert_rejects(() => load_secure_file_node(dir), /not a regular file/);
+		await assert_rejects(() => load_secure_file_node('/dev/null'), /not a regular file/);
 	});
 
 	test('missing file is an error, not an empty read', async () => {

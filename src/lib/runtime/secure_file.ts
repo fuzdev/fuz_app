@@ -4,18 +4,20 @@
  *
  * The file this guards is typically the highest-value credential on the host
  * (the bootstrap token mints the keeper account), so the read fails loud
- * rather than degrading: a symlink, a group/other-accessible mode, or an
- * oversized file is refused, never returned. The deploy recipe places the
- * token at `0600`, so the check ratifies the shape zap produces; a
- * hand-placed `0644` file fails at boot instead of being read.
+ * rather than degrading: a symlink, a non-regular file (FIFO, device node,
+ * directory), a group/other-accessible mode, or an oversized file is refused,
+ * never returned. The deploy recipe places the token at `0600`, so the check
+ * ratifies the shape zap produces; a hand-placed `0644` file fails at boot
+ * instead of being read.
  *
  * The Node implementation lives here (`load_secure_file_node`, wired as
  * `create_node_runtime().read_secure_file`); the Deno runtime implements the
  * same contract over `Deno.open` in `runtime/deno.ts`, and the mock honors
- * the mode/size checks over its in-memory map. All three refuse through the
- * shared `assert_secure_mode` / `assert_secure_size` / `read_secure_bounded`
- * helpers so the checks — and their operator-facing messages — can't drift
- * between runtimes.
+ * the mode/size checks over its in-memory map (it has no file types). The real
+ * runtimes refuse through the shared `assert_secure_regular_file` /
+ * `assert_secure_mode` / `assert_secure_size` / `read_secure_bounded` helpers,
+ * and the mock through the mode and size ones, so the checks — and their
+ * operator-facing messages — can't drift between runtimes.
  *
  * @module
  */
@@ -38,6 +40,18 @@ export const MAX_SECURE_FILE_SIZE = 4096;
  * The mock runtime checks unconditionally — its modes are simulated.
  */
 const modes_apply = process.platform !== 'win32';
+
+/**
+ * Refuse anything but a regular file — a FIFO, device node, socket, or
+ * directory at the secret's path.
+ *
+ * @throws Error naming the path
+ */
+export const assert_secure_regular_file = (path: string, is_file: boolean): void => {
+	if (!is_file) {
+		throw new Error(`not a regular file: ${path}`);
+	}
+};
 
 /**
  * Refuse any group/other-accessible mode (only `0600`/`0400` pass).
@@ -97,6 +111,9 @@ export const read_secure_bounded = async (
  * Read a secret file with fail-loud checks (Node implementation).
  *
  * - `O_NOFOLLOW` atomically rejects symlinks during open (no TOCTOU window)
+ * - `O_NONBLOCK` keeps the open from waiting on a FIFO that has no writer (it
+ *   has no effect on a regular file); the regular-file check on the open
+ *   descriptor then refuses it, a device node, or a directory
  * - the permission check runs on the open descriptor, not the path, so the
  *   file can't be swapped between check and read — any group/other access
  *   (not `0600`/`0400`) is refused
@@ -105,12 +122,12 @@ export const read_secure_bounded = async (
  *
  * @param path - path to the secret file
  * @returns the file's bytes
- * @throws Error on a missing file, symlink, permissive mode, oversized file, or I/O failure
+ * @throws Error on a missing file, symlink, non-regular file, permissive mode, oversized file, or I/O failure
  */
 export const load_secure_file_node = async (path: string): Promise<Uint8Array> => {
 	let handle;
 	try {
-		handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+		handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
 	} catch (err) {
 		// ELOOP means the path was a symlink (O_NOFOLLOW refused it).
 		if ((err as NodeJS.ErrnoException).code === 'ELOOP') {
@@ -120,6 +137,7 @@ export const load_secure_file_node = async (path: string): Promise<Uint8Array> =
 	}
 	try {
 		const s = await handle.stat();
+		assert_secure_regular_file(path, s.isFile());
 		if (modes_apply) assert_secure_mode(path, s.mode);
 		assert_secure_size(path, s.size);
 		// `position: null` reads sequentially from the handle's own cursor.
