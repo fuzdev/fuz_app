@@ -54,10 +54,10 @@ interface PgletTx {
 interface PgletDb {
 	query: <T = unknown>(sql: string, params?: Array<unknown>) => Promise<{ rows: Array<T> }>;
 	transaction: <T>(fn: (tx: PgletTx) => Promise<T>) => Promise<T>;
-	/** Branch a fresh, isolated copy-on-write instance at this one's committed state. */
-	fork: () => PgletDb;
-	/** Free the underlying wasm instance; idempotent. */
-	close: () => void;
+	/** Branch a fresh, isolated copy-on-write instance at this one's committed state (queued). */
+	fork: () => Promise<PgletDb>;
+	/** Run what is queued, then free the underlying wasm instance; idempotent. */
+	close: () => Promise<void>;
 }
 
 /** Coercion knobs the adapter accepts; fuz_app only sets `int8: 'number'`. */
@@ -95,10 +95,7 @@ const create_pglet_transaction =
 /** Wrap a `PgletDb` as a fuz_app `Db` — it duck-types as a `DbClient` (`query(sql, params) → {rows}`). */
 const create_pglet_wasm_db = (pglet: PgletDb): DbDriverResult => ({
 	db: new Db({ client: pglet, transaction: create_pglet_transaction(pglet) }),
-	close: () => {
-		pglet.close();
-		return Promise.resolve();
-	}
+	close: () => pglet.close()
 });
 
 /**
@@ -131,7 +128,7 @@ export const create_pglet_wasm_factory = (init_schema: (db: Db) => Promise<void>
 				const { db: base_db } = create_pglet_wasm_db(base);
 				await init_schema(base_db);
 			}
-			const { db, close } = create_pglet_wasm_db(base.fork());
+			const { db, close } = create_pglet_wasm_db(await base.fork());
 			current_close = close;
 			return db;
 		},
