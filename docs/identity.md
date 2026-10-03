@@ -99,10 +99,11 @@ returns a generic error). Daemon tokens get the same guard for symmetry — they
 are loopback-only and never legitimately carry an `Origin`. The
 `secret_fuz_token_` prefix enables automatic secret scanner detection.
 
-**v1 deployment: cookie-only external auth.** External traffic uses cookie auth
-only — the nginx reverse proxy strips the `Authorization` header. Bearer tokens
-work only for local CLI access (bypassing nginx). See
-./security.md §v1 Deployment for deployment configuration.
+**External bearer auth is enabled.** No deployment strips the `Authorization`
+header at the reverse proxy, so bearer tokens are accepted from external
+traffic; the browser path is protected in-app by the `Origin`/`Referer`
+discard above. See ./security.md §External Bearer Auth Is Enabled for the
+posture, the replay exposure it leaves, and the compensating controls.
 
 **The daemon token is the only path to keeper.** Session cookies and API tokens
 have a privilege ceiling of admin even if the account holds a keeper role_grant. Both
