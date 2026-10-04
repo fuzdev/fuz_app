@@ -42,6 +42,7 @@ import {
 	type RoleGrantSummaryJson,
 	type SessionAccount
 } from '../auth/account_schema.ts';
+import { ROLE_ADMIN } from '../auth/role_schema.ts';
 
 /**
  * Svelte context for `AuthState`.
@@ -56,13 +57,42 @@ export class AuthState {
 	account: SessionAccount | null = $state.raw(null);
 	actor: ActorSummaryJson | null = $state.raw(null);
 	role_grants: Array<RoleGrantSummaryJson> = $state.raw([]);
+	/**
+	 * The live subset of `role_grants`, at every scope. Liveness is judged when
+	 * `role_grants` is assigned, so a grant that expires while the page stays
+	 * open reads as active until the next `check_session`.
+	 */
 	readonly active_role_grants: Array<RoleGrantSummaryJson> = $derived(
 		this.role_grants.filter((p) => is_role_grant_active(p))
 	);
-	readonly roles: Array<string> = $derived(this.active_role_grants.map((p) => p.role));
+	/**
+	 * The roles held globally — the role of each active grant whose `scope_id`
+	 * is `null`. A grant scoped to one resource is not in here: it confers its
+	 * role on that resource only, and a scoped grant of a builtin role confers
+	 * nothing, so a role gate reads the global grant. Scoped grants are read
+	 * from `active_role_grants`, by `scope_id`.
+	 *
+	 * Shapes the UI only — the server re-checks every request.
+	 */
+	readonly global_roles: ReadonlySet<string> = $derived(
+		new Set(this.active_role_grants.filter((p) => p.scope_id === null).map((p) => p.role))
+	);
+	/** True for an active global `admin` grant, the rule the server's admin gates apply. */
+	readonly is_admin: boolean = $derived(this.global_roles.has(ROLE_ADMIN));
 
 	/** True when bootstrap is available (no accounts exist yet). */
 	needs_bootstrap = $state.raw(false);
+
+	/**
+	 * Whether the account holds an active global grant of `role` — reactive
+	 * when read in a `$derived` or the template. A scoped grant doesn't count;
+	 * see `global_roles`.
+	 *
+	 * @param role - the role to check
+	 */
+	has_global_role(role: string): boolean {
+		return this.global_roles.has(role);
+	}
 
 	/**
 	 * Check auth state and bootstrap availability.

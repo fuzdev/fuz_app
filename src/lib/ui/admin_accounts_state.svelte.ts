@@ -18,7 +18,7 @@ import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import { AsyncSlot } from './async_slot.svelte.ts';
 import { KeyedAsyncSlot } from './keyed_async_slot.svelte.ts';
-import type { AdminAccountEntryJson } from '../auth/account_schema.ts';
+import { type AdminAccountEntryJson, has_global_role } from '../auth/account_schema.ts';
 import type { RoleName } from '../auth/role_schema.ts';
 import type { RoleGrantOfferJson } from '../auth/role_grant_offer_schema.ts';
 import type {
@@ -97,6 +97,27 @@ export interface AdminAccountsStateOptions {
  */
 export const grant_key = (account_id: Uuid, role: RoleName, to_actor_id?: Uuid | null): string =>
 	to_actor_id ? `${account_id}:${role}:${to_actor_id}` : `${account_id}:${role}`;
+
+/**
+ * Whether a listing row can be offered a global grant of `role` — the test
+ * behind `AdminAccounts`' `+ role` button, which `submit_grant` backs with an
+ * unscoped offer. Only what the offer would duplicate rules it out: a global
+ * grant of the role, or a pending global offer of it. A grant or offer scoped
+ * to one resource is a different grant, so it doesn't.
+ *
+ * @param entry - the account's listing row
+ * @param role - the role the button would offer
+ * @param now - current time for the grant-expiry check (defaults to `new Date()`,
+ *   pass for testability); pending offers are taken as listed — the listing
+ *   returns only unexpired ones
+ */
+export const can_offer_global_role = (
+	entry: Pick<AdminAccountEntryJson, 'role_grants' | 'pending_offers'>,
+	role: string,
+	now: Date = new Date()
+): boolean =>
+	!has_global_role(entry.role_grants, role, now) &&
+	!entry.pending_offers.some((o) => o.role === role && o.scope_id === null);
 
 export class AdminAccountsState {
 	readonly #get_rpc: () => AdminAccountsRpc;

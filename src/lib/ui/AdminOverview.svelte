@@ -34,7 +34,9 @@
 	const audit_log = new AuditLogState({ get_rpc: get_audit_log_rpc });
 	const app_settings = new AppSettingsState({ get_rpc: get_app_settings_rpc });
 
-	// accounts - dynamic role breakdown
+	// accounts - dynamic role breakdown; display only, and scope-blind on purpose:
+	// an account counts under each role it holds at any scope, so a count is not
+	// "who has this role globally" (that's `has_global_role` over the row's grants)
 	const role_counts = $derived.by(() => {
 		// eslint-disable-next-line svelte/prefer-svelte-reactivity
 		const counts = new Map<string, number>();

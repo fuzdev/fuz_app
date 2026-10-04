@@ -136,6 +136,39 @@ export const is_role_grant_active = (
 	!p.revoked_at && (!p.expires_at || is_iso8601_seconds_live(p.expires_at, now.getTime()));
 
 /**
+ * Whether `role_grants` holds a live global grant of `role` — `scope_id` is
+ * `null` and the grant passes `is_role_grant_active`.
+ *
+ * This is the question a role gate asks. A scoped grant confers its role on
+ * one resource only, and a scoped grant of a builtin role (`admin`, `keeper`)
+ * confers nothing, so matching on the role name alone would read a grant for
+ * one resource as authority everywhere. Server-side the same rule is
+ * `has_scoped_role(ctx, role, null)` over a request context and
+ * `query_account_has_global_role` in SQL; this is the form for a bare list of
+ * grants — `AuthState.role_grants`, an admin listing row.
+ *
+ * The scope match is `scope_id === null`, so a grant decoded without the
+ * field is not read as global. Client-side the answer shapes the UI and
+ * nothing else: the server re-checks every request.
+ *
+ * @param role_grants - the grants to search, e.g. `AuthState.role_grants`
+ * @param role - the role to check
+ * @param now - current time (defaults to `new Date()`, pass for testability)
+ * @returns `true` iff a live grant of `role` with no scope is present
+ */
+export const has_global_role = (
+	role_grants: ReadonlyArray<{
+		role: string;
+		scope_id: string | null;
+		revoked_at?: string | null;
+		expires_at: string | null;
+	}>,
+	role: string,
+	now: Date = new Date()
+): boolean =>
+	role_grants.some((p) => p.role === role && p.scope_id === null && is_role_grant_active(p, now));
+
+/**
  * A session's storage key — the blake3 hash of its raw token, branded so a
  * bare `string` can't stand in for one. `Blake3Hash` (`hash_schemas.ts`) is
  * the shape; this is the meaning. Mint only via `hash_session_token`, or

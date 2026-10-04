@@ -11,7 +11,11 @@
 
 import { describe, test, assert, vi, afterEach } from 'vitest';
 
-import { AdminAccountsState, type AdminAccountsRpc } from '$lib/ui/admin_accounts_state.svelte.ts';
+import {
+	AdminAccountsState,
+	can_offer_global_role,
+	type AdminAccountsRpc
+} from '$lib/ui/admin_accounts_state.svelte.ts';
 import type { AdminAccountEntryJson } from '$lib/auth/account_schema.ts';
 import type { RoleGrantOfferJson } from '$lib/auth/role_grant_offer_schema.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
@@ -353,5 +357,108 @@ describe('AdminAccountsState account lifecycle', () => {
 		// Idempotent: same value doesn't refetch.
 		await state.set_show_deleted(true);
 		assert.strictEqual(list.mock.calls.length, 1);
+	});
+});
+
+describe('can_offer_global_role', () => {
+	const NOW = new Date('2026-06-01T12:00:00Z');
+	const scope = '11111111-1111-4111-8111-111111111111' as Uuid;
+
+	const make_grant = (
+		role: string,
+		scope_id: Uuid | null,
+		expires_at: string | null = null
+	): AdminAccountEntryJson['role_grants'][number] => ({
+		id: role_grant_1,
+		role,
+		scope_kind: scope_id === null ? null : 'classroom',
+		scope_id,
+		created_at: '2026-01-01T00:00:00Z',
+		expires_at,
+		granted_by: null
+	});
+
+	const make_pending_offer = (
+		role: string,
+		scope_id: Uuid | null
+	): AdminAccountEntryJson['pending_offers'][number] => ({
+		id: offer_1,
+		role,
+		scope_kind: scope_id === null ? null : 'classroom',
+		scope_id,
+		from_actor_id: actor_42,
+		from_username: 'admin',
+		created_at: '2026-01-01T00:00:00Z',
+		expires_at: '2026-12-01T00:00:00Z'
+	});
+
+	test('offers a role the account has no grant or offer of', () => {
+		assert.strictEqual(
+			can_offer_global_role({ role_grants: [], pending_offers: [] }, 'teacher', NOW),
+			true
+		);
+		assert.strictEqual(
+			can_offer_global_role(
+				{ role_grants: [make_grant('admin', null)], pending_offers: [] },
+				'teacher',
+				NOW
+			),
+			true
+		);
+	});
+
+	test('a global grant of the role rules the offer out', () => {
+		assert.strictEqual(
+			can_offer_global_role(
+				{ role_grants: [make_grant('teacher', null)], pending_offers: [] },
+				'teacher',
+				NOW
+			),
+			false
+		);
+	});
+
+	test('a scoped grant of the role does not', () => {
+		assert.strictEqual(
+			can_offer_global_role(
+				{ role_grants: [make_grant('teacher', scope)], pending_offers: [] },
+				'teacher',
+				NOW
+			),
+			true
+		);
+	});
+
+	test('a pending global offer of the role rules the offer out', () => {
+		assert.strictEqual(
+			can_offer_global_role(
+				{ role_grants: [], pending_offers: [make_pending_offer('teacher', null)] },
+				'teacher',
+				NOW
+			),
+			false
+		);
+	});
+
+	test('a pending scoped offer of the role does not', () => {
+		assert.strictEqual(
+			can_offer_global_role(
+				{ role_grants: [], pending_offers: [make_pending_offer('teacher', scope)] },
+				'teacher',
+				NOW
+			),
+			true
+		);
+	});
+
+	test('an expired global grant does not rule the offer out', () => {
+		assert.strictEqual(
+			can_offer_global_role(
+				{ role_grants: [make_grant('teacher', null, '2026-05-01T00:00:00Z')], pending_offers: [] },
+				'teacher',
+				NOW
+			),
+			true
+		);
 	});
 });

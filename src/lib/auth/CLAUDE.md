@@ -56,7 +56,7 @@ Cross-cutting notes that don't live on any single symbol:
 
 Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
 
-- `auth/account_schema.ts` — `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes.
+- `auth/account_schema.ts` — `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes. Grant predicates over wire fields: `is_role_grant_active` (not revoked, not expired) and `has_global_role(role_grants, role, now?)` (an active grant of the role with `scope_id === null` — the bare-list form of `has_scoped_role(ctx, role, null)`, used client-side by `AuthState`).
 - `auth/role_schema.ts` — `RoleName`, `RoleSpec`, `ROLE_KEEPER`, `ROLE_ADMIN`, `is_builtin_role`, `create_role_schema`, `builtin_role_specs_by_name`, `role_has_grant_path`, `list_roles_with_grant_path`.
 - `auth/scope_kind_schema.ts` — `ScopeKindName`, `create_scope_kind_schema` (open registry, no builtins).
 - `auth/credential_type_schema.ts` — `CredentialTypeName`, `CREDENTIAL_TYPE_SESSION` / `_API_TOKEN` / `_DAEMON_TOKEN`, `create_credential_type_schema`.

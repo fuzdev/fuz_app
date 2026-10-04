@@ -5,6 +5,8 @@
 	 * and `format_scope_context` for label rendering. Per-row actions:
 	 * grant role (`role_grant_offer_create`), revoke role_grant (`role_grant_revoke`,
 	 * keyed by `actor_id`), retract pending offer (`role_grant_offer_retract`).
+	 * The grant button offers the role globally, so `can_offer_global_role`
+	 * hides it only for a global grant or pending global offer of that role.
 	 *
 	 * @module
 	 */
@@ -12,6 +14,7 @@
 	import {
 		AdminAccountsState,
 		admin_accounts_rpc_context,
+		can_offer_global_role,
 		grant_key
 	} from './admin_accounts_state.svelte.ts';
 	import ConfirmButton from './ConfirmButton.svelte';
@@ -158,9 +161,7 @@
 					{#each admin_accounts.grantable_roles as role (role)}
 						{@const key = grant_key(row.account.id, role)}
 						{@const grant_error = admin_accounts.grant.error(key)}
-						{#if !row.role_grants.some((p) => p.role === role) &&
-							!row.pending_offers.some((o) => o.role === role)
-						}
+						{#if can_offer_global_role(row, role)}
 							<ConfirmButton
 								onconfirm={() => admin_accounts.submit_grant(row.account.id, role)}
 								title="offer {role}"

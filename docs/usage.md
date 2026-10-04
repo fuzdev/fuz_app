@@ -1122,6 +1122,32 @@ the narrow interfaces.
 <AdminSessions />
 ```
 
+Gate the admin shell on `AuthState.is_admin`, and any other role-gated UI on
+`has_global_role`:
+
+```svelte
+<script lang="ts">
+	import {auth_state_context} from '@fuzdev/fuz_app/ui/auth_state.svelte.ts';
+
+	const auth = auth_state_context.get();
+</script>
+
+{#if auth.is_admin}
+	<AdminAccounts />
+{/if}
+{#if auth.has_global_role('educator')}
+	<a href="/classrooms/new">new classroom</a>
+{/if}
+```
+
+Both read the **global** grants (`AuthState.global_roles` — active grants
+whose `scope_id` is `null`), the rule the server's role gates apply. A grant
+scoped to one resource confers its role there only, and a scoped `admin`
+grant confers nothing, so matching a grant on its role name alone would show
+admin UI to an account the server refuses. For a scoped check, read
+`auth.active_role_grants` by `scope_id`. The gate shapes the UI; the admin
+actions stay role-gated server-side.
+
 The accessor pattern — context holds `() => Rpc | null`, not the rpc
 directly — lets the provisioner swap the adapter reactively (e.g. on
 auth-state change) without components resubscribing. Inside

@@ -281,8 +281,10 @@ destructive actions.
 - `AdminAccounts.svelte` — accounts + role_grants + pending offers.
   Consumes `admin_accounts_rpc_context`. Per-row actions: grant (+role
   chip with `ConfirmButton`), revoke (`actor_id` + `role_grant_id`),
-  retract pending offer. Reads per-row spinner + error state via
-  `state.grant.loading(key)` / `state.revoke.loading(role_grant_id)` /
+  retract pending offer. The grant button offers the role globally, so it
+  shows per `can_offer_global_role` — hidden by a global grant or pending
+  global offer of that role, not by a scoped one. Reads per-row spinner +
+  error state via `state.grant.loading(key)` / `state.revoke.loading(role_grant_id)` /
   `state.retract.loading(offer_id)` and their `.error(key)` siblings —
   per-row error displays inline next to the failing button (no
   top-level rollup).
@@ -297,7 +299,8 @@ destructive actions.
   invites / recent activity / security / system). Consumes all four
   RPC contexts plus `auth_state_context`; fetches in parallel on mount.
   Derives `role_counts`, `failed_logins`, `role_grant_changes` from
-  the audit log.
+  the audit log. `role_counts` is display-only and scope-blind — an account
+  counts under each role it holds at any scope.
 - `AdminRoleGrantHistory.svelte` — role-grant-create/revoke history table.
   Consumes `audit_log_rpc_context`, calls
   `audit_log.fetch_role_grant_history()` once on mount.
@@ -401,10 +404,21 @@ destructive actions.
   Fields: `verifying`, `verified`, `verify_error`, `account`, `actor`
   (the caller's own `ActorSummaryJson` — surfaced directly so consumers
   don't derive `actor_id` from the role_grant list), `role_grants`,
-  `active_role_grants` (derived via `is_role_grant_active`), `roles` (derived),
+  `active_role_grants` (derived via `is_role_grant_active`, every scope),
+  `global_roles` (derived `ReadonlySet` — the roles of active grants with
+  `scope_id === null`), `is_admin` (derived — a global `admin` grant),
   `needs_bootstrap`. Methods: `check_session()`
   (GET `/api/account/status`), `login`, `bootstrap`, `signup`,
-  `logout`. Handles 401/403/409/429 translations inline.
+  `logout`, `has_global_role(role)`. Handles 401/403/409/429 translations
+  inline.
+  **Role gates in the UI read the global view** — `is_admin` /
+  `has_global_role(role)`, the client form of the server's
+  `has_scoped_role(ctx, role, null)`. There is no scope-blind list of role
+  names: matching a grant on its role alone reads one scoped to a single
+  resource as global (and a scoped `admin` grant confers nothing). A scoped
+  check reads `active_role_grants` by `scope_id`; outside the class, the pure
+  `has_global_role(role_grants, role)` (`auth/account_schema.ts`) answers the
+  same question over any grant list.
 - `table_state.svelte.ts` — `TableState`. Paginated DB browser state.
   Holds one `AsyncSlot` (`list`) + payload fields (`table_name`,
   `columns`, `rows`, `total`, `offset`, `limit` capped by
@@ -470,7 +484,9 @@ the `submit_*` prefix where the verb collides with a slot name.
   (`KeyedAsyncSlot<Uuid, void>` keyed by `offer_id`). `submit_revoke`
   takes `actor_id` as the first arg (role_grants are actor-scoped —
   matches `row.actor.id` straight from the listing) with optional
-  `reason`.
+  `reason`. Also exports the pure `can_offer_global_role(entry, role)` —
+  whether a listing row has neither a global grant nor a pending global
+  offer of the role.
 - `admin_invites_state.svelte.ts` — `AdminInvitesState` +
   `admin_invites_rpc_context` + narrow `AdminInvitesRpc` (`list`,
   `create`, `delete`). Slots: `list`, `create` (both AsyncSlot),
