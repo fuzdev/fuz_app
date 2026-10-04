@@ -218,7 +218,8 @@ forwarding, HTTP no-transport); gated on `capabilities.peer_request`, now `true`
 on both the Rust `spine_stub` and the TS spines (the
 `BackendWebsocketTransport.request_connection` path)), `sse.cross.test.ts` (the real-streaming-`fetch`
 `describe_cross_process_sse_tests` suite — live audit-log SSE: connect,
-data frame, account-wide close-on-revoke, session-scoped close-on-revoke),
+data frame, account-wide close-on-revoke, session-scoped close-on-revoke,
+the per-session stream cap),
 `cell.cross.test.ts` (the cell parity suites:
 `describe_cell_crud_cross_tests` — the CRUD lifecycle + authz matrix — and
 `describe_cell_relations_cross_tests` — grant / field / item / clone / audit,

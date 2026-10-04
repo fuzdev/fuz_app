@@ -7,7 +7,7 @@
  * `cross_backend_*` project — the TS spines wire `audit_log_sse` and the Rust
  * `spine_stub` serves the same `/api/admin/audit/stream` from the spine
  * `fuz_realtime::SseRegistry`, so all advertise `capabilities.sse` and the
- * suite's three cases run on every backend.
+ * suite's cases run on every backend.
  *
  * The fresh-per-test keeper holds `ROLE_ADMIN` by default, so it can
  * subscribe to the admin-gated stream and drive the revoke RPCs the

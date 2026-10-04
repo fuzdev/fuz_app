@@ -12,7 +12,7 @@ import '../assert_dev_env.ts';
  * (`describe_standard_cross_process_tests`) omits SSE by design, so consumers
  * call this alongside it (paralleling `describe_cross_process_ws_tests`).
  *
- * Four cases, mirroring the in-process SSE self-test against fuz_app's
+ * Its cases follow the in-process SSE self-test against fuz_app's
  * standard audit-log stream:
  *
  * 1. **connects** — the stream opens and emits the `: connected` comment.
@@ -32,6 +32,9 @@ import '../assert_dev_env.ts';
  *    subscriber's *own* single session is revoked (`account_session_revoke`),
  *    so the `session_revoke` event drops the stream via the session-hash-scoped
  *    `close_for_session` path (the distinct primitive cases 2–3 don't reach).
+ * 5. **per-session cap** — one stream past `max_per_scope` on one session
+ *    closes the oldest (evict-oldest, no final frame) and leaves every other
+ *    stream open. Needs no RPC: the cap runs inside the subscribe itself.
  *
  * The close-on-revoke matrix is layered: cases 3–4 exercise the account-wide
  * and session-scoped paths cross-process; the remaining union events
@@ -57,9 +60,12 @@ import {
 	account_session_revoke_all_action_spec
 } from '../../auth/account_action_specs.ts';
 import { admin_session_revoke_all_action_spec } from '../../auth/admin_action_specs.ts';
-import { audit_log_event_specs } from '../../realtime/sse_auth_guard.ts';
+import {
+	AUDIT_LOG_SSE_MAX_PER_SCOPE,
+	audit_log_event_specs
+} from '../../realtime/sse_auth_guard.ts';
 import { SSE_CONNECTED_COMMENT } from '../../realtime/sse_constants.ts';
-import { create_sse_transport } from '../transports/sse_transport.ts';
+import { create_sse_transport, type SseTransport } from '../transports/sse_transport.ts';
 import { create_rpc_post_init } from '../rpc_helpers.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import type { SetupTest } from './setup.ts';
@@ -93,6 +99,13 @@ export interface CrossProcessSseTestOptions {
 	readonly rpc_path?: string;
 	/** Origin for the stream request. Defaults to `base_url`. */
 	readonly origin?: string;
+	/**
+	 * The backend's per-session audit-stream cap, which the cap case opens one
+	 * stream past. Defaults to `AUDIT_LOG_SSE_MAX_PER_SCOPE`, the cap both
+	 * spines apply unless overridden; `null` (a backend with the cap disabled)
+	 * skips the case.
+	 */
+	readonly max_per_scope?: number | null;
 }
 
 /**
@@ -120,13 +133,15 @@ const assert_audit_data_frame = (frame: string): void => {
 };
 
 /**
- * Register the cross-process SSE round-trip suite. Up to four cases over a
+ * Register the cross-process SSE round-trip suite. Its cases run over a
  * real streaming `fetch`: connected-comment, audit data frame, account-wide
- * close-on-revoke, and session-scoped close-on-revoke.
+ * close-on-revoke, session-scoped close-on-revoke, and the per-session cap.
  */
 export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOptions): void => {
 	const { setup_test, capabilities, base_url, rpc_path, origin } = options;
 	const sse_path = options.sse_path ?? DEFAULT_SSE_PATH;
+	const max_per_scope =
+		options.max_per_scope === undefined ? AUDIT_LOG_SSE_MAX_PER_SCOPE : options.max_per_scope;
 
 	describe('cross-process sse', () => {
 		test_if(capabilities.sse, 'connects and emits the connected comment', async () => {
@@ -288,6 +303,47 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 					assert.ok(closed, 'stream did not close within 2s after session_revoke');
 				} finally {
 					await sse.close();
+				}
+			}
+		);
+
+		// One stream past the cap on one session → the oldest closes, the newest
+		// stays open. Opened in sequence, each awaited to its connect comment, so
+		// the server registered them in order and "oldest" is stream 0 on both
+		// spines. The evicted stream ends with no final frame, so a browser
+		// `EventSource` would reconnect — this asserts the server side only.
+		test_if(
+			capabilities.sse && max_per_scope !== null,
+			'one stream past the per-session cap closes the oldest',
+			async () => {
+				const fixture = await setup_test();
+				const cookies = fixture.transport.cookies();
+				const streams: Array<SseTransport> = [];
+				try {
+					for (let i = 0; i <= max_per_scope!; i++) {
+						const sse = await create_sse_transport({ base_url, sse_path, cookies, origin });
+						streams.push(sse);
+						const first = await sse.read_frame();
+						assert.strictEqual(
+							first + '\n\n',
+							SSE_CONNECTED_COMMENT,
+							`stream ${i}: first frame must be the connected comment`
+						);
+					}
+					const [oldest, ...survivors] = streams;
+					const closed = await oldest!.wait_for_close(2000);
+					assert.ok(closed, 'the oldest stream did not close within 2s of the cap overflow');
+					// only the oldest — every later stream on the session stays open
+					const survivors_closed = await Promise.all(
+						survivors.map((sse) => sse.wait_for_close(200))
+					);
+					assert.deepStrictEqual(
+						survivors_closed,
+						survivors.map(() => false),
+						'only the oldest stream may close; the rest of the session stays open'
+					);
+				} finally {
+					await Promise.all(streams.map((sse) => sse.close()));
 				}
 			}
 		);

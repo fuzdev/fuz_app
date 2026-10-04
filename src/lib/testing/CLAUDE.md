@@ -1167,23 +1167,24 @@ endpoint via `create_sse_transport` (built-in `fetch` + `TextDecoder`, no
 dep), threading the fresh-per-test keeper's session cookie. Kept a separate
 call (not folded into `describe_standard_cross_process_tests`) for the same
 reason the WS suite is — it needs raw `base_url` / `sse_path` the standard
-bundle doesn't carry. Up to three cases, mirroring the in-process audit-log
-self-test: the stream emits the `: connected` comment; a minted secondary's
-sessions are revoked over the keeper's admin channel (`admin_session_revoke_all`),
+bundle doesn't carry. The cases mirror the in-process audit-log self-test:
+the stream emits the `: connected` comment; a minted secondary's sessions are
+revoked over the keeper's admin channel (`admin_session_revoke_all`),
 broadcasting one `session_revoke_all` audit `data:` frame **without** closing
 the keeper's stream (target ≠ subscriber — secondary minted before the stream
-opens so its `create_account` audit events stay off it); and the subscriber's
-_own_ sessions are revoked (`account_session_revoke_all`) so the audit guard
-drops the live stream (asserted via `SseTransport.wait_for_close`). The
-data-frame + close cases gate on `rpc_path` (they drive the standard
-account/admin actions); all cases gate on `capabilities.sse`. Cross-process
-only — wire from a `*.cross.test.ts`. fuz*app's own wiring is
-`src/test/cross_backend/sse.cross.test.ts`; only the TS spines advertise
-`sse` (they wire `audit_log_sse`), so the Rust `spine_stub` cases `.skip`.
-That file also registers one `xfail_until` (only when `sse: false`) asserting
-the stream \_can't* open on a spine without SSE — a self-cleaning tripwire for
-the spine that should grow it, distinct from the consumer-legit capability
-skip the shared suite emits.
+opens so its `create_account` audit events stay off it); the subscriber's
+_own_ sessions are revoked, all of them (`account_session_revoke_all`, the
+account-wide close) and then just the one (`account_session_revoke`, the
+session-scoped close), each dropping the live stream (asserted via
+`SseTransport.wait_for_close`); and one stream past the per-session cap
+(`max_per_scope`, default `AUDIT_LOG_SSE_MAX_PER_SCOPE`; `null` skips) on one
+session closes the oldest and leaves the rest open. The data-frame + close
+cases gate on `rpc_path` (they drive the standard account/admin actions); all
+cases gate on `capabilities.sse`. Cross-process only — wire from a
+`*.cross.test.ts`. fuz_app's own wiring is
+`src/test/cross_backend/sse.cross.test.ts`, which runs on every backend — the
+TS spines wire `audit_log_sse` and the Rust `spine_stub` serves the same
+stream.
 
 ### `cross_backend/cell_crud.ts` + `cell_relations.ts` + `cell_gated_create.ts` — cell parity suites
 
