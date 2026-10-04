@@ -1,5 +1,52 @@
 # @fuzdev/fuz_app
 
+## 0.118.0
+
+### Minor Changes
+
+- **breaking** chore: drop the pre-0.42 `schema_version` tracker-shape probe ([6cf9976](https://github.com/fuzdev/fuz_app/commit/6cf9976))
+
+  - `run_migrations` and `baseline` no longer check for the pre-0.42 `schema_version` shape (a `version` column), and the `'old-tracker-shape'` member of `MigrationErrorKind` is gone
+  - `DbStatus` drops `old_tracker_shape`; `query_db_status` and `format_db_status` no longer probe for or report the old shape
+  - a database still carrying the pre-0.42 tracker must be dropped and re-bootstrapped — against it, `run_migrations`, `baseline`, and `query_db_status` now fail on the missing `name` / `sequence` columns instead of naming the shape
+
+- fix: audit each role_grant offer expiry exactly once ([12c59b7](https://github.com/fuzdev/fuz_app/commit/12c59b7))
+
+  **New migration: `role_grant_offer_expire_audited_at`.** An expired pending offer
+  has no terminal state — expiry is computed from `expires_at`, never written — so
+  `cleanup_expired_role_grant_offers` re-audited every expired offer on every run,
+  and concurrent runs double-audited. The migration adds a nullable
+  `role_grant_offer.expire_audited_at` stamp plus the partial index
+  `role_grant_offer_expire_sweep` serving the sweep. No backfill: offers that expired
+  before the upgrade are audited once more on the first run after it, then never
+  again. The migration name, sequence, and resulting schema match the Rust twin, as the
+  migration-tracker and schema-snapshot parity gates require.
+
+  `query_role_grant_offer_sweep_expired` is now a claim — an `UPDATE … RETURNING`
+  that stamps `expire_audited_at` on the expired, not-yet-audited pending offers —
+  and must share a transaction with the caller's audit inserts.
+  `cleanup_expired_role_grant_offers` runs the claim and one
+  `role_grant_offer_expire` insert per claimed row in one `db.transaction`, then
+  fans each event out through `audit.notify` after the commit (the
+  `query_accept_offer` shape) instead of `audit.emit_pool`. Concurrent sweeps claim
+  disjoint rows. A failed audit insert now rolls back the stamps and **throws** (the
+  next run retries) where `emit_pool` used to log and swallow it, so a scheduler
+  calling the offer sweep directly sees the error, as `run_auth_cleanup` callers
+  already did — and because `cleanup_expired_role_grant_offers` now opens its own
+  `db.transaction`, a caller passing a transaction-bound `db` throws
+  (`no_nested_transaction`).
+
+  The create upsert's re-offer clears the stamp, so a refreshed offer's own expiry
+  is audited too. The stamp is not a lifecycle state (outside the
+  `role_grant_offer_single_terminal` CHECK and the pending predicate) and stays off
+  the wire: `RoleGrantOffer` gains `expire_audited_at`, `ROLE_GRANT_OFFER_COLUMNS`
+  appends it, and `to_role_grant_offer_json` drops it. No wire change.
+
+### Patch Changes
+
+- fix: open a secure file with `O_NOCTTY` so a terminal at its path can't become the controlling terminal ([2882589](https://github.com/fuzdev/fuz_app/commit/2882589))
+- fix: refuse a FIFO, device node, or directory at a secure-file path (`load_secure_file_node` opens with `O_NONBLOCK` and checks for a regular file; the Deno runtime checks before and after its open) ([81b8773](https://github.com/fuzdev/fuz_app/commit/81b8773))
+
 ## 0.117.1
 
 ### Patch Changes
