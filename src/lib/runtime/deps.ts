@@ -110,8 +110,9 @@ export interface WriteFileOptions {
  */
 export interface FsSecureReadDeps {
 	/**
-	 * Read a small secret file with fail-loud checks: rejects symlinks, any
-	 * group/other-accessible mode (must be `0600`/`0400`; skipped where POSIX
+	 * Read a small secret file with fail-loud checks: rejects symlinks,
+	 * non-regular files (FIFO, device, directory — real runtimes only; the mock
+	 * has no file types), any group/other-accessible mode (must be `0600`/`0400`; skipped where POSIX
 	 * modes don't apply), and files over a 4 KiB cap. Permission checks run on
 	 * the open descriptor where the platform allows, so the file can't be
 	 * swapped between check and read. Throws on any refusal — a refused secret

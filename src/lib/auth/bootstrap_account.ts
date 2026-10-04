@@ -57,8 +57,9 @@ export interface BootstrapAccountDeps {
 	token_path: string;
 	/**
 	 * Hardened secret-file read (see `FsSecureReadDeps.read_secure_file`) —
-	 * the token mints the keeper account, so a symlinked, group/other-readable,
-	 * or oversized file must refuse rather than be honored. Throws on refusal;
+	 * the token mints the keeper account, so a symlinked, non-regular,
+	 * group/other-readable, or oversized file must refuse rather than be
+	 * honored. Throws on refusal;
 	 * every throw reads as `TOKEN_FILE_MISSING` upstream.
 	 */
 	read_secure_file: (path: string) => Promise<Uint8Array>;
@@ -99,9 +100,9 @@ export const bootstrap_account = async (
 	const { db, token_path, read_secure_file, delete_file, password, log } = deps;
 
 	// 1. Read and verify token (non-destructive, before transaction). The
-	// secure read fails loud on a symlink / permissive mode / oversized file —
-	// every refusal masks as the same TOKEN_FILE_MISSING the wire always
-	// carried, with the specific reason logged for the operator.
+	// secure read fails loud on a symlink / non-regular file / permissive mode /
+	// oversized file — every refusal masks as the same TOKEN_FILE_MISSING the
+	// wire always carried, with the specific reason logged for the operator.
 	let expected_token: string;
 	try {
 		expected_token = new TextDecoder().decode(await read_secure_file(token_path)).trim();

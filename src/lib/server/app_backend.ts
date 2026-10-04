@@ -91,7 +91,7 @@ export interface CreateAppBackendOptions {
 	/**
 	 * Hardened secret-file read for the bootstrap token — pass the runtime's
 	 * `read_secure_file` (see `FsSecureReadDeps`). Rejects symlinks,
-	 * group/other-accessible modes, and oversized files.
+	 * non-regular files, group/other-accessible modes, and oversized files.
 	 */
 	read_secure_file: (path: string) => Promise<Uint8Array>;
 	/** Delete a file. */

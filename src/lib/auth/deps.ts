@@ -27,7 +27,7 @@ export interface AppDeps {
 	 * Hardened secret-file read — used for the bootstrap token (the file that
 	 * mints the keeper account). Production wiring passes the runtime's
 	 * `read_secure_file` (`FsSecureReadDeps`), which rejects symlinks,
-	 * group/other-accessible modes, and oversized files; both the boot-time
+	 * non-regular files, group/other-accessible modes, and oversized files; both the boot-time
 	 * availability probe and the request-time read go through this one
 	 * capability so the probe can never be laxer than the read it gates.
 	 */
