@@ -50,7 +50,13 @@ the code.
   `fact`'s store rows are the deliberate exception: `PgFactStore` feeds
   `FactMeta.created_at`, a `Date` in the `@fuzdev/fuz_util` `FactStore`
   contract, and nothing serializes it.
-- `status.ts` — CLI DB status utility.
+- `status.ts` — CLI DB status utility: `query_db_status` (read-only;
+  per-namespace applied/pending plus name-divergence, mirroring the
+  runner's boot check), `format_db_status` (the report body — the
+  `database status` / `url:` header is the calling script's, using
+  `display_db_url`, which renders the URL from its parse without the
+  password or query). The connected body is byte-identical with the Rust
+  `fuz_db` twin's; `src/test/db/status.test.ts` pins the shared fixture.
 - `schema_ready.ts` — `/ready` deploy-gate core: `query_public_columns`
   (keeps `schema_version`, unlike `query_schema_snapshot`), pure
   `check_schema_drift` / `format_schema_drift`, `READY_ERROR`. Column-presence

@@ -69,9 +69,14 @@ describe('query_db_status name-divergence detection', () => {
 
 		// `format_db_status` renders DIVERGED with the detail, not up-to-date
 		const formatted = format_db_status(status);
-		assert.ok(formatted.includes('DIVERGED'), formatted);
-		assert.ok(formatted.includes("database has 'cell_v0', code has 'full_cell_schema'"), formatted);
-		assert.ok(!formatted.includes('fuz_cell: up to date'), formatted);
+		assert.ok(formatted.includes('    fuz_cell  DIVERGED     1/1  latest: cell_v0\n'), formatted);
+		assert.ok(
+			formatted.includes(
+				'diverged: position 0: database has `cell_v0`, code has `full_cell_schema`'
+			),
+			formatted
+		);
+		assert.ok(!formatted.includes('up-to-date'), formatted);
 	});
 
 	test('name mismatch with applied.length === code.length (overlap-end) → DIVERGED', async () => {
@@ -114,8 +119,12 @@ describe('query_db_status name-divergence detection', () => {
 		assert.deepStrictEqual(m.divergence, { kind: 'binary_older', applied: 3, declared: 2 });
 		assert.deepStrictEqual(m.pending_names, []);
 
+		// the denominator is the declared count (2), not applied + pending (3)
 		const formatted = format_db_status(status);
-		assert.ok(formatted.includes('DIVERGED'), formatted);
+		assert.ok(
+			formatted.includes('    older_ns  DIVERGED     3/2  latest: m2_unknown\n'),
+			formatted
+		);
 		assert.ok(formatted.includes('binary older than database'), formatted);
 	});
 
@@ -135,7 +144,7 @@ describe('query_db_status name-divergence detection', () => {
 		assert.deepStrictEqual(m.pending_names, []);
 
 		const formatted = format_db_status(status);
-		assert.ok(formatted.includes('clean_ns: up to date'), formatted);
+		assert.ok(formatted.includes('    clean_ns  up-to-date   2/2  latest: m1\n'), formatted);
 	});
 
 	test('per-namespace independence: clean + diverged in one report', async () => {
@@ -164,8 +173,14 @@ describe('query_db_status name-divergence detection', () => {
 		});
 
 		const formatted = format_db_status(status);
-		assert.ok(formatted.includes('clean_auth: up to date'), formatted);
-		assert.ok(formatted.includes('diverged_cell: DIVERGED'), formatted);
+		assert.ok(
+			formatted.includes('    clean_auth     up-to-date   1/1  latest: full_auth_schema\n'),
+			formatted
+		);
+		assert.ok(
+			formatted.includes('    diverged_cell  DIVERGED     1/1  latest: cell_v0\n'),
+			formatted
+		);
 	});
 
 	test('non-diverging partial prefix → not up_to_date, pending tail, no divergence', async () => {
@@ -184,7 +199,10 @@ describe('query_db_status name-divergence detection', () => {
 		assert.deepStrictEqual(m.pending_names, ['m1']);
 
 		const formatted = format_db_status(status);
-		assert.ok(formatted.includes('partial_ns: applied 1/2 (pending: m1)'), formatted);
+		assert.strictEqual(
+			formatted.slice(formatted.indexOf('  migrations:\n')),
+			'  migrations:\n    partial_ns  PENDING 1    1/2  latest: m0\n                  pending: m1\n'
+		);
 	});
 });
 
@@ -245,33 +263,10 @@ describe('query_db_status tracker absence', () => {
 		assert.deepStrictEqual(m.pending_names, ['m0', 'm1']);
 		assert.strictEqual(m.up_to_date, false);
 		assert.strictEqual(m.divergence, undefined);
-	});
-});
-
-describe('format_db_status', () => {
-	test('not connected → renders Connection: FAILED with the error', () => {
-		const out = format_db_status({
-			connected: false,
-			error: 'connection refused',
-			table_count: 0,
-			tables: [],
-			migrations: []
-		});
-		assert.ok(out.includes('Connection: FAILED'), out);
-		assert.ok(out.includes('connection refused'), out);
-	});
-
-	test('connected → renders OK, table count, per-table rows, and no Migrations section when empty', () => {
-		const out = format_db_status({
-			connected: true,
-			table_count: 1,
-			tables: [{ name: 'widget', row_count: 3 }],
-			migrations: []
-		});
-		assert.ok(out.includes('Connection: OK'), out);
-		assert.ok(out.includes('Tables: 1'), out);
-		assert.ok(out.includes('widget'), out);
-		assert.ok(out.includes('3 rows'), out);
-		assert.ok(!out.includes('Migrations:'), out);
+		assert.ok(
+			format_db_status(status).endsWith(
+				'  migrations:\n    fresh  PENDING 2    0/2  latest: (none)\n             pending: m0, m1\n'
+			)
+		);
 	});
 });
