@@ -174,6 +174,7 @@ the test helpers' route list.
 ## Mocking
 
 - DI via small `*Deps` interfaces — `stub_app_deps()` for auth deps with safe defaults
+- `create_gated_db(db)` from `gated_db.ts` — a pass-through `Db` whose `stall(match, {skip?})` holds one chosen pool-level query in flight until the test releases or fails it. The stall seam for tests that need something to happen *between* two of a request's database reads (the admission suites hold an upgrade or a stream request at its credential re-read and land a revocation in the window); production takes no seam for it
 - `create_mock_runtime()` from `$lib/runtime/mock.ts` for CLI/runtime tests
 - `vi.spyOn()` for fetch mocking in UI tests
 
@@ -201,7 +202,8 @@ so the same files run under every `cross_backend_*` project; each project's
 `auth.cross.test.ts` (the `describe_standard_cross_process_tests` bundle —
 HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
 `describe_cross_process_ws_tests` suite — live WebSocket, including
-close-on-revoke), `ws_connection_cap.cross.test.ts` (the real-upgrade
+requests sent at open and frames sent with the handshake (answered once the
+connection is admitted, never dropped) and close-on-revoke), `ws_connection_cap.cross.test.ts` (the real-upgrade
 `describe_ws_connection_cap_cross_tests` suite — one socket past the
 per-account connection cap closes the oldest with `WS_CLOSE_CONNECTION_LIMIT`
 and nothing else, and a closed connection frees its slot),

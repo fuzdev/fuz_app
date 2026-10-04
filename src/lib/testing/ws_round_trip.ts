@@ -58,7 +58,12 @@ import { create_broadcast_api } from '../actions/broadcast_api.ts';
 import { register_action_ws, type RegisterActionWsOptions } from '../actions/register_action_ws.ts';
 import { create_stub_db } from './stubs.ts';
 import { BackendWebsocketTransport } from '../actions/transports_ws_backend.ts';
-import { REQUEST_CONTEXT_KEY, type RequestContext } from '../auth/request_context.ts';
+import {
+	AUTH_SESSION_TOKEN_HASH_KEY,
+	REQUEST_CONTEXT_KEY,
+	type RequestContext
+} from '../auth/request_context.ts';
+import { hash_session_token } from '../auth/session_queries.ts';
 import { ROLE_KEEPER } from '../auth/role_schema.ts';
 import {
 	ACCOUNT_ID_KEY,
@@ -130,16 +135,23 @@ export interface FakeHonoContextOptions {
 
 /**
  * Build a fake Hono `Context` exposing the auth keys the dispatcher
- * reads via `c.get(...)`. Only `.get()` is populated — no other Hono
- * context surface is simulated.
+ * reads via `c.get(...)` — the ones the production auth middleware sets,
+ * including the session token hash a session connection is registered under.
+ * Only `.get()` is populated — no other Hono context surface is simulated.
  */
 export const create_fake_hono_context = (opts: FakeHonoContextOptions): Context => {
 	const request_context = opts.request_context ?? build_simple_request_context(opts.role);
+	const auth_session_id =
+		opts.auth_session_id ?? (opts.credential_type === 'session' ? 's1' : null);
 	const vars: Record<string, unknown> = {
 		[ACCOUNT_ID_KEY]: request_context.account.id,
 		[REQUEST_CONTEXT_KEY]: request_context,
 		[CREDENTIAL_TYPE_KEY]: opts.credential_type,
-		auth_session_id: opts.auth_session_id ?? (opts.credential_type === 'session' ? 's1' : null),
+		auth_session_id,
+		// what `create_request_context_middleware` sets beside the account id —
+		// the key the dispatcher registers a session connection under
+		[AUTH_SESSION_TOKEN_HASH_KEY]:
+			auth_session_id === null ? null : hash_session_token(auth_session_id),
 		[AUTH_API_TOKEN_ID_KEY]: opts.api_token_id ?? null,
 		[TEST_CONTEXT_PRESET_KEY]: true
 	};
@@ -218,7 +230,11 @@ export interface WsConnectIdentity {
 	account_id?: Uuid;
 	/** Credential type. Defaults to `'session'`. Keeper actions require `'daemon_token'`. */
 	credential_type?: CredentialType;
-	/** Session id (any string). Defaults to a fresh uuid. Hashed by the dispatcher. */
+	/**
+	 * Session id (any string). Defaults to a fresh uuid. The connection is
+	 * registered under `hash_session_token(session_id)`, the hash the request
+	 * context middleware would have resolved.
+	 */
 	session_id?: string;
 	/** Api token id; set for bearer connections, null otherwise. */
 	api_token_id?: string | null;
@@ -400,6 +416,7 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 			[REQUEST_CONTEXT_KEY, build_multi_role_request_context(account_id, roles)],
 			[CREDENTIAL_TYPE_KEY, credential_type],
 			['auth_session_id', session_id],
+			[AUTH_SESSION_TOKEN_HASH_KEY, hash_session_token(session_id)],
 			[AUTH_API_TOKEN_ID_KEY, api_token_id],
 			[TEST_CONTEXT_PRESET_KEY, true]
 		]);

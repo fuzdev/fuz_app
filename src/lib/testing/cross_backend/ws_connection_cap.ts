@@ -27,9 +27,10 @@ import '../assert_dev_env.ts';
  *   the cap and closes the held socket, which is what this catches.
  *
  * Sockets open in sequence, each answering a `heartbeat` before the next
- * opens, so the backend registered them in that order and "oldest" names the
- * same socket on both spines (an upgrade answers its handshake before the
- * connection is registered, so the handshake alone doesn't order them).
+ * opens (`create_admitted_ws_transport`), so the backend registered them in
+ * that order and "oldest" names the same socket on both spines (an upgrade
+ * answers its handshake before the connection is registered and admitted, so
+ * the handshake alone doesn't order them).
  *
  * **Consumer-agnostic**, like `describe_cross_process_ws_tests`: it drives
  * only the `heartbeat` protocol action, present on every WS endpoint. Gated on
@@ -50,7 +51,7 @@ import { heartbeat_action_spec } from '../../actions/heartbeat.ts';
 import { WS_CLOSE_CONNECTION_LIMIT } from '../../actions/transports.ts';
 import { DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT } from '../../actions/transports_ws_backend.ts';
 import type { WsClient } from '../transports/ws_client.ts';
-import { create_ws_transport } from '../transports/ws_transport.ts';
+import { create_admitted_ws_transport } from '../transports/ws_transport.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import type { SetupTest } from './setup.ts';
 
@@ -99,19 +100,11 @@ export const describe_ws_connection_cap_cross_tests = (
 	const enabled = capabilities.ws && max !== null;
 
 	/**
-	 * Open a socket and round-trip `heartbeat` on it, so the backend has
-	 * registered the connection by the time this resolves.
+	 * Open a socket the backend has admitted (a `heartbeat` round trip), so
+	 * the connections are registered in the order they were opened.
 	 */
-	const open_registered = async (cookies: ReadonlyArray<string>): Promise<WsClient> => {
-		const client = await create_ws_transport({ base_url, ws_path, cookies, origin });
-		try {
-			await client.request('open', heartbeat_action_spec.method, {});
-		} catch (error) {
-			await client.close().catch(() => {});
-			throw error;
-		}
-		return client;
-	};
+	const open_registered = (cookies: ReadonlyArray<string>): Promise<WsClient> =>
+		create_admitted_ws_transport({ base_url, ws_path, cookies, origin });
 
 	const assert_superseded = async (client: WsClient, label: string): Promise<void> => {
 		const closed = await client.wait_for_close(2000);

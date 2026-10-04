@@ -24,6 +24,59 @@
  * runs inside `perform_action` on every message via the same gates HTTP
  * RPC uses.
  *
+ * ## Admission: the revocation race
+ *
+ * The auth middleware resolves the credential before the handshake, and the
+ * socket exists only once `onOpen` fires. Every revocation (session revoke,
+ * logout, password change, token revoke, account delete) closes the sockets
+ * *registered* under what it revoked, so one landing in that gap would close
+ * nothing, and the socket would then be admitted on the dead credential and
+ * keep it: per-message dispatch re-authorizes the *actor*, never the session
+ * or token — and its admission could evict a live socket of the same account
+ * past the cap.
+ *
+ * `onOpen` closes the gap in three steps: register the connection **pending**
+ * (`BackendWebsocketTransport.register_pending` — closeable by every
+ * revocation, inert otherwise), re-read the credential
+ * (`revalidate_resolved_auth`), then `BackendWebsocketTransport.admit`. A
+ * revocation whose close ran after the registration found the pending entry,
+ * so `admit` refuses; one that committed before the re-read is seen by it. The
+ * cap is enforced only by `admit`, so a refused upgrade evicts nothing, and
+ * pending registrations never count toward it.
+ *
+ * Not every revocation here closes after its commit yet, so one interleaving
+ * remains: see `docs/security.md` §Connection Admission, "Limits".
+ *
+ * A refused upgrade is closed with `WS_CLOSE_SESSION_REVOKED` (4001, the
+ * reason a revoked socket gets), or `WS_CLOSE_INTERNAL_ERROR` (1011) when the
+ * re-read itself failed — fail closed, never admitted unchecked. The handshake
+ * has already answered `101`, so a refusal can only be a close frame.
+ *
+ * Frames that arrive before admission are queued, not dispatched: nothing runs
+ * on a credential that has not been re-read. They dispatch in arrival order
+ * once the socket is admitted and `on_socket_open` has completed, and are
+ * dropped unread on a refusal. The queue holds at most
+ * `MAX_PRE_ADMISSION_FRAMES` frames and
+ * `PRE_ADMISSION_QUEUE_BYTES_FACTOR` × `max_message_bytes` bytes; past either
+ * the socket is closed.
+ *
+ * The upgrade's role gate is *not* re-read: a role revocation closes no
+ * WebSocket in the first place (per-message dispatch re-reads role grants).
+ *
+ * ## A server-closed socket dispatches nothing
+ *
+ * A runtime adapter can keep delivering inbound frames after the server calls
+ * `ws.close(…)`, until the close handshake completes (`@hono/node-ws` does —
+ * up to the `ws` close timeout when the client withholds its close frame).
+ * So every server-side close — revocation, cap eviction, heartbeat timeout,
+ * an oversized message, a refused admission — removes the connection from the
+ * transport and aborts the socket's signal *at close time*, and `onMessage`
+ * drops any frame on a socket that has ended. A connection the transport no
+ * longer holds though nothing closed its socket (a bare `remove_connection`)
+ * is ended on its next frame (`BackendWebsocketTransport.is_registered`), with
+ * `WS_CLOSE_INTERNAL_ERROR` — it must not linger as a socket that reads
+ * everything and answers nothing.
+ *
  * @module
  */
 
@@ -39,7 +92,7 @@ import {
 	token_scope_surface_denial,
 	type RequestContext
 } from '../auth/request_context.ts';
-import { hash_session_token } from '../auth/session_queries.ts';
+import { get_resolved_auth, revalidate_resolved_auth } from '../auth/resolved_auth.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { flush_pending_effects, flush_post_commit_effects } from '../http/pending_effects.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
@@ -60,21 +113,20 @@ import {
 	is_jsonrpc_request,
 	is_jsonrpc_request_id
 } from '../http/jsonrpc_helpers.ts';
-import {
-	CREDENTIAL_TYPE_KEY,
-	TOKEN_SCOPE_KEY,
-	AUTH_API_TOKEN_ID_KEY,
-	TEST_CONTEXT_PRESET_KEY,
-	type CredentialType
-} from '../hono_context.ts';
+import { TOKEN_SCOPE_KEY, TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
 import type { Db } from '../db/db.ts';
 import { type Action } from './action_types.ts';
 import { compile_action_registry } from './compile_action_registry.ts';
 import { cancel_action_spec, CancelNotificationParams } from './cancel.ts';
 import {
 	DEFAULT_WS_MAX_MESSAGE_BYTES,
+	WS_CLOSE_INTERNAL_ERROR,
 	WS_CLOSE_MESSAGE_TOO_BIG,
+	WS_CLOSE_POLICY_VIOLATION,
 	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT,
+	WS_CLOSE_SESSION_REVOKED,
+	WS_CLOSE_SESSION_REVOKED_REASON,
+	utf8_length,
 	utf8_length_over
 } from './transports.ts';
 import { BackendWebsocketTransport, type ConnectionIdentity } from './transports_ws_backend.ts';
@@ -85,6 +137,49 @@ export type { Action };
 
 /** Default inactivity window before the server closes a silent socket. */
 export const DEFAULT_SERVER_HEARTBEAT_TIMEOUT = 60_000;
+
+/**
+ * Max inbound frames one socket may have queued while it is still opening —
+ * between the handshake and the end of the credential re-check plus
+ * `on_socket_open`. One more closes the socket with
+ * `WS_CLOSE_POLICY_VIOLATION`.
+ *
+ * Frames sent before the socket is open wait rather than dispatch (nothing
+ * runs on a credential that has not been re-read), and a runtime adapter hands
+ * them over with no backpressure, so the wait needs a bound. This is the count
+ * half; `PRE_ADMISSION_QUEUE_BYTES_FACTOR` is the byte half.
+ *
+ * Sized so a client flushing its durable queue on reopen never meets it at the
+ * default `DEFAULT_QUEUE_MAX_SIZE` (`actions/socket.svelte.ts`). A consumer
+ * that raises the client's queue above this cap makes a full flush overflow
+ * it: the socket closes with `WS_CLOSE_POLICY_VIOLATION`, the flushed requests
+ * fail, and the client reconnects.
+ */
+export const MAX_PRE_ADMISSION_FRAMES = 256;
+
+/**
+ * The byte budget of one socket's pre-admission queue, as a multiple of the
+ * endpoint's `max_message_bytes`: the frames queued while the socket is still
+ * opening may total at most this many maximum-size messages. The frame that
+ * would pass it closes the socket with `WS_CLOSE_POLICY_VIOLATION`.
+ *
+ * The count cap alone (`MAX_PRE_ADMISSION_FRAMES`) would let each pending
+ * socket hold that many full-size messages, and pending sockets are not
+ * capped per account — a registration that is never admitted must not be able
+ * to pin that much memory. Small requests, which is what a client flushes on
+ * reopen, meet the count cap long before this one.
+ *
+ * A client whose queued requests total more than this budget and flushes
+ * them all on reopen overflows it: the socket closes, the flushed requests
+ * fail, and the client reconnects.
+ */
+export const PRE_ADMISSION_QUEUE_BYTES_FACTOR = 4;
+
+/**
+ * The close reason sent with `WS_CLOSE_POLICY_VIOLATION` when a socket
+ * overflows its pre-admission queue, by count or by bytes.
+ */
+export const WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON = 'too much sent before the socket opened';
 
 /** Send one JSON-RPC error response frame on `ws`. */
 const send_error_response = (
@@ -125,15 +220,17 @@ const is_peer_response = (json: unknown): json is JsonrpcResponse | JsonrpcError
 /**
  * Context passed to the `on_socket_open` hook.
  *
- * Fires after the transport has registered the new connection (so
- * `connection_id` is valid) but before any client message can dispatch.
- * Consumers use this to bootstrap per-socket domain state — e.g.
- * spawning a per-account unit and pushing an initial state snapshot.
+ * Fires once the connection is **admitted** — registered in the transport and
+ * its credential re-checked (so `connection_id` is valid, and broadcasts reach
+ * it) — and before any client message dispatches. A socket refused at
+ * admission never reaches it. Consumers use this to bootstrap per-socket
+ * domain state — e.g. spawning a per-account unit and pushing an initial state
+ * snapshot.
  */
 export interface SocketOpenContext {
 	/** The raw WebSocket context — exposed for edge cases; prefer `notify` for sends. */
 	ws: WSContext;
-	/** Connection id assigned by `BackendWebsocketTransport.add_connection`. */
+	/** Connection id assigned by `BackendWebsocketTransport.register_pending`. */
 	connection_id: Uuid;
 	/** Auth identity registered for this connection. */
 	identity: ConnectionIdentity;
@@ -142,7 +239,12 @@ export interface SocketOpenContext {
 	 * on per-message handler contexts — same socket-scoped semantics.
 	 */
 	notify: (method: string, params: unknown) => void;
-	/** Fires when this socket closes — threaded through to every handler's `ctx.signal`. */
+	/**
+	 * Fires when this socket ends — the client closed it, or the server did
+	 * (revocation, cap eviction, heartbeat timeout), at the moment the server
+	 * closes rather than when the close handshake lands. Threaded through to
+	 * every handler's `ctx.signal`.
+	 */
 	signal: AbortSignal;
 }
 
@@ -154,7 +256,9 @@ export interface SocketOpenContext {
  * from here, not from the transport. Fires for both client-initiated closes
  * (Hono onClose) and server-initiated closes — audit revocation and the
  * per-account connection cap's eviction both call `ws.close()`, which
- * triggers Hono's onClose.
+ * triggers Hono's onClose. Fires only for a socket that was admitted: one
+ * refused at admission never ran `on_socket_open`, so it has no close hook
+ * either.
  */
 export interface SocketCloseContext {
 	/**
@@ -248,19 +352,24 @@ export interface RegisterActionWsOptions {
 	/** Optional logger; defaults to `[ws]` namespace. */
 	log?: LoggerType;
 	/**
-	 * Called once per socket, after the transport registers the connection.
-	 * Awaited before any message is dispatched. Throwing logs an error and
-	 * closes the socket with an `internal_error` frame — a failing bootstrap
-	 * should not leave a partially-initialized socket alive.
+	 * Called once per socket, after the connection is admitted (module doc,
+	 * "Admission"). Awaited before any inbound frame is dispatched — every
+	 * frame the client sends meanwhile waits in arrival order, replies to
+	 * server-initiated requests included: a hook that awaits
+	 * `transport.request_connection` on its own connection gets no reply until
+	 * it returns, so start such a request without awaiting it. Throwing logs an
+	 * error and closes the socket with an `internal_error` frame and
+	 * `WS_CLOSE_INTERNAL_ERROR` — a failing bootstrap should not leave a
+	 * partially-initialized socket alive.
 	 */
 	on_socket_open?: (ctx: SocketOpenContext) => void | Promise<void>;
 	/**
-	 * Called once per socket on close, *after* the transport has removed the
-	 * connection — a slow hook never holds a dead entry that broadcasts still
-	 * target and the per-account cap still counts. Receives `connection_id` and
-	 * `identity` captured at open time, the same whether the close came from the
-	 * client, the audit guard, or a connection-cap eviction. Errors are logged
-	 * and swallowed.
+	 * Called once per admitted socket on close, *after* the transport has
+	 * removed the connection — a slow hook never holds a dead entry that
+	 * broadcasts still target and the per-account cap still counts. Receives
+	 * `connection_id` and `identity` captured at open time, the same whether the
+	 * close came from the client, the audit guard, or a connection-cap eviction.
+	 * Errors are logged and swallowed.
 	 */
 	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;
 	/**
@@ -303,12 +412,18 @@ export interface RegisterActionWsResult {
  *   connection lifetime are picked up on the next message without any
  *   in-place refresh. Authentication invalidation closes the socket via
  *   `create_ws_auth_guard`.
+ * - Admission re-reads the credential once, after the handshake: a socket
+ *   whose session or token was revoked while it was upgrading closes with
+ *   `WS_CLOSE_SESSION_REVOKED`, and one whose re-check failed with
+ *   `WS_CLOSE_INTERNAL_ERROR`. Frames sent before admission wait for it.
+ * - A socket the server has closed dispatches nothing more, whether or not
+ *   its client answers the close.
  *
  * @returns the transport (supplied or freshly created) — retain it to wire
  *   `create_ws_auth_guard` or broadcast on audit events.
  * @mutates options.app - registers a `GET path` route via `upgradeWebSocket`
- * @mutates options.transport - on every message, adds/removes connections
- *   in the transport's internal maps via `add_connection` / `remove_connection`
+ * @mutates options.transport - per socket, registers, admits, and removes a
+ *   connection via `register_pending` / `admit` / `remove_connection`
  * @throws Error when `max_connections_per_account` is passed alongside
  *   `transport`, or is neither `null` nor a positive integer
  */
@@ -351,6 +466,8 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 	// `cancel_action_spec.method` directly.
 	const { action_map } = compile_action_registry(actions, 'WS action');
 
+	const pre_admission_queue_max_bytes = PRE_ADMISSION_QUEUE_BYTES_FACTOR * max_message_bytes;
+
 	const heartbeat_enabled = heartbeat !== false;
 	const heartbeat_config = typeof heartbeat === 'object' ? heartbeat : {};
 	const heartbeat_timeout = heartbeat_config.timeout ?? DEFAULT_SERVER_HEARTBEAT_TIMEOUT;
@@ -386,17 +503,37 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// only used by the test-preset escape hatch (perform_action runs
 			// the authorization phase fresh on every message in production).
 			//
-			// Per-message dispatch reloads role_grants via the authorization
-			// phase but does NOT re-query session / token validity — those
-			// are checked once at upgrade. Revocation enforcement therefore
-			// lives outside this dispatcher, in the audit-driven WS auth
-			// guard (`transports_ws_auth_guard.ts`). Without that guard wired
-			// into the audit chain, `session_revoke` / `token_revoke` are
-			// no-ops for existing WS connections.
+			// Session / token validity is read here, by the auth middleware,
+			// and re-read once at admission (`onOpen` below) — never per
+			// message: per-message dispatch reloads role_grants via the
+			// authorization phase and nothing else. From admission on,
+			// revocation enforcement lives outside this dispatcher, in the
+			// audit-driven WS auth guard (`transports_ws_auth_guard.ts`) and
+			// the handlers' `ConnectionCloser` calls. Without one of them
+			// wired, `session_revoke` / `token_revoke` are no-ops for
+			// connections that are already open.
 			const upgrade_context = require_request_context(c);
 			const account_id: Uuid = upgrade_context.account.id;
 			const client_ip = get_client_ip(c);
-			const credential_type: CredentialType = c.get(CREDENTIAL_TYPE_KEY)!;
+			// The credential the auth middleware resolved — the one derivation
+			// both long-lived transports share (`get_resolved_auth`), read off
+			// the keys the middleware set rather than re-derived here, so a
+			// custom session context key or a daemon token riding beside a
+			// session cookie can't make this path disagree with the middleware.
+			// Fail closed: no credential, or one on another account than the
+			// request context's, never reaches the upgrade.
+			const resolved = get_resolved_auth(c);
+			if (resolved === null) {
+				throw new Error(
+					`register_action_ws: no resolved credential for the upgrade on ${path} — is the auth middleware wired?`
+				);
+			}
+			if (resolved.account_id !== account_id) {
+				throw new Error(
+					`register_action_ws: the credential and the request context name different accounts for the upgrade on ${path}`
+				);
+			}
+			const { credential_type } = resolved;
 			// Captured at upgrade and consulted per message. Rule 3 rejects a
 			// narrowed token at the boundary below, so in practice this is always
 			// `full` on a live socket — but the per-message gate runs regardless,
@@ -404,28 +541,34 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			const token_scope = c.get(TOKEN_SCOPE_KEY) ?? null;
 			// Session-based connections have a token hash for targeted revocation.
 			// Bearer/daemon connections pass null — still reachable via
-			// `close_sockets_for_account` / `close_sockets_for_token`.
-			const token_hash =
-				credential_type === 'session' ? hash_session_token(c.get('auth_session_id')!) : null;
+			// `close_sockets_for_account` / `close_sockets_for_token`. A session
+			// credential with no hash on the context is a shape the middleware
+			// never builds; the admission re-read refuses it.
+			const { token_hash } = resolved;
 			// `api_token.id` — set only for bearer connections; enables
 			// `close_sockets_for_token` to tear down just this socket on
 			// `token_revoke` without affecting the account's other sockets.
-			const api_token_id = c.get(AUTH_API_TOKEN_ID_KEY);
+			const { api_token_id } = resolved;
 
 			// Test escape hatch — captured once at upgrade. perform_action
 			// honors it per-message so harnesses with pre-baked
-			// `RequestContext` skip the live authorization phase.
+			// `RequestContext` skip the live authorization phase. It skips the
+			// admission re-read for the same reason: a pre-baked credential has
+			// no session, token, or account row to re-read.
 			const upgrade_preset: { request_context: RequestContext | null } | undefined = c.get(
 				TEST_CONTEXT_PRESET_KEY
 			)
 				? { request_context: get_request_context(c) }
 				: undefined;
 
-			// Per-socket abort controller — fires on socket close, chained into
-			// every in-flight handler's per-request controller via
+			// Per-socket abort controller — fires when the socket ends, chained
+			// into every in-flight handler's per-request controller via
 			// `AbortSignal.any`. Keeping both signals lets the client
 			// cancel-one-request-by-id (via the `cancel` notification) without
-			// tearing down the whole socket.
+			// tearing down the whole socket. Registered with the transport, which
+			// aborts it when it closes the connection (revocation, cap eviction),
+			// and aborted here on every other end (`end_socket`, `onClose`) — at
+			// close time, not when the close handshake lands.
 			const socket_abort_controller = new AbortController();
 			// Per-request controllers keyed by JSON-RPC request id — lets an
 			// incoming `cancel` notification abort just the matching handler.
@@ -444,7 +587,40 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// fires or when a consumer never opens (e.g. immediate disconnect).
 			let captured_connection_id: Uuid | undefined;
 
-			// Receive-silence watchdog. Seeded to open-time so the first window is
+			// Where the socket is in its life:
+			// - `opening` — from the handshake until admission and `on_socket_open`
+			//   have both completed. Inbound frames are queued.
+			// - `open` — admitted; inbound frames dispatch.
+			// - `ended` — the client closed it, the server closed it, or it was
+			//   refused at admission. Inbound frames are dropped: an adapter can
+			//   keep delivering them until the close handshake lands.
+			let phase: 'opening' | 'open' | 'ended' = 'opening';
+			// read through a function so a check after an `await` isn't narrowed
+			// to the value assigned before it
+			const phase_is = (expected: typeof phase): boolean => phase === expected;
+			// Whether the connection was ever admitted — gates `on_socket_close`,
+			// the counterpart of an `on_socket_open` a refused socket never ran.
+			let was_admitted = false;
+
+			// Frames received while `opening`, in arrival order — dispatched once
+			// the socket is open, dropped if it ends first. Each carries the
+			// settlers of the promise its `onMessage` call returned, so a caller
+			// awaiting that call (the test harnesses do) resumes when the frame
+			// has been dispatched or dropped.
+			const queued_frames: Array<{
+				data: unknown;
+				ws: WSContext;
+				resolve: () => void;
+				reject: (reason: unknown) => void;
+			}> = [];
+			// bytes queued so far, against `pre_admission_queue_max_bytes` — only
+			// read while the socket is opening, so never reset
+			let queued_bytes = 0;
+			const drop_queued_frames = (): void => {
+				for (const frame of queued_frames.splice(0)) frame.resolve();
+			};
+
+			// Receive-silence watchdog. Seeded at admission so the first window is
 			// exempt (cold-start grace — avoid killing mid-handshake sockets).
 			// Bumped by onMessage. Any incoming activity counts, not just
 			// heartbeats — chatty clients don't need to send extras.
@@ -455,6 +631,45 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					clearInterval(heartbeat_timer);
 					heartbeat_timer = null;
 				}
+			};
+
+			// The one place a socket's end is recorded, whoever ended it — the
+			// transport (revocation, cap eviction), `end_socket`, or `onClose` all
+			// abort this controller.
+			socket_abort_controller.signal.addEventListener(
+				'abort',
+				() => {
+					phase = 'ended';
+					stop_heartbeat_timer();
+					drop_queued_frames();
+				},
+				{ once: true }
+			);
+
+			// End the socket from the server side: unregister it and abort its
+			// signal *now* — so nothing more dispatches and in-flight handlers
+			// see `signal.aborted` while the close handshake is still in flight —
+			// then send the close frame.
+			const end_socket = (ws: WSContext, code: number, reason: string): void => {
+				if (captured_connection_id !== undefined) {
+					transport.remove_connection(captured_connection_id);
+				}
+				socket_abort_controller.abort();
+				try {
+					ws.close(code, reason);
+				} catch (error) {
+					log.error(`ws close ${code} failed:`, error);
+				}
+			};
+
+			// Refuse an upgrade at admission. A socket that already ended needs no
+			// close frame: either a revocation closed its pending registration (the
+			// transport sent the 4001) or the client went away.
+			const refuse_upgrade = (ws: WSContext, code: number, reason: string): void => {
+				if (captured_connection_id !== undefined) {
+					transport.remove_connection(captured_connection_id);
+				}
+				if (!socket_abort_controller.signal.aborted) end_socket(ws, code, reason);
 			};
 
 			// Socket-scoped notification helper — routes to this socket only,
@@ -473,275 +688,392 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					}
 				};
 
+			// Admit the upgraded socket: register it pending, re-check its
+			// credential, admit it (module doc, "Admission: the revocation
+			// race"). Returns the connection id once admitted, or `null` after
+			// refusing — the socket is then already closed.
+			const admit_upgrade = async (ws: WSContext): Promise<Uuid | null> => {
+				// Pending first, synchronously: from here every revocation finds it.
+				const connection_id = transport.register_pending(
+					ws,
+					token_hash,
+					account_id,
+					api_token_id,
+					socket_abort_controller
+				);
+				captured_connection_id = connection_id;
+
+				if (!upgrade_preset) {
+					let credential_is_live: boolean;
+					try {
+						// pool-level `db`: the statements must see every revocation
+						// committed before they start
+						credential_is_live = await revalidate_resolved_auth({ db }, resolved);
+					} catch (error) {
+						// fail closed — never admitted unchecked
+						log.error('ws upgrade admission: credential re-check failed', error);
+						refuse_upgrade(ws, WS_CLOSE_INTERNAL_ERROR, 'internal error');
+						return null;
+					}
+					if (!credential_is_live) {
+						log.info(
+							'ws upgrade admission: credential revoked during the upgrade',
+							connection_id,
+							account_id
+						);
+						refuse_upgrade(ws, WS_CLOSE_SESSION_REVOKED, WS_CLOSE_SESSION_REVOKED_REASON);
+						return null;
+					}
+				}
+
+				// The cap's eviction happens here, after every gate and the re-read,
+				// so a refused upgrade never closes someone else's socket.
+				if (!transport.admit(connection_id)) {
+					log.info(
+						'ws upgrade admission: closed by a revocation while pending',
+						connection_id,
+						account_id
+					);
+					refuse_upgrade(ws, WS_CLOSE_SESSION_REVOKED, WS_CLOSE_SESSION_REVOKED_REASON);
+					return null;
+				}
+				was_admitted = true;
+				return connection_id;
+			};
+
+			const open_socket = async (ws: WSContext): Promise<void> => {
+				const connection_id = await admit_upgrade(ws);
+				if (connection_id === null) return;
+				log.debug('ws opened', connection_id);
+				// Not on a socket that ended in the tick since `admit` (a revocation
+				// can land there): its abort listener has already run, so nothing
+				// would ever stop the timer.
+				if (heartbeat_enabled && !phase_is('ended')) {
+					last_receive_time = Date.now();
+					heartbeat_timer = setInterval(() => {
+						const now = Date.now();
+						const silence = now - last_receive_time;
+						if (silence >= heartbeat_timeout) {
+							log.info(
+								`heartbeat timeout (${silence}ms) — closing ${WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT}`,
+								connection_id,
+								identity.account_id
+							);
+							stop_heartbeat_timer();
+							end_socket(ws, WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT, 'server heartbeat timeout');
+						}
+					}, heartbeat_tick_interval);
+				}
+				if (on_socket_open) {
+					try {
+						await on_socket_open({
+							ws,
+							connection_id,
+							identity,
+							notify: notify_socket(ws),
+							signal: socket_abort_controller.signal
+						});
+					} catch (error) {
+						log.error('on_socket_open failed — closing socket:', error);
+						// an ended socket has no one to tell
+						if (phase_is('ended')) return;
+						try {
+							send_error_response(ws, null, jsonrpc_error_messages.internal_error());
+						} catch {
+							// ignore — socket may already be dead
+						}
+						end_socket(ws, WS_CLOSE_INTERNAL_ERROR, 'socket bootstrap failed');
+						return;
+					}
+				}
+				// Ended while the hook ran (a revocation, the client leaving) — the
+				// queue is already dropped.
+				if (!phase_is('opening')) return;
+				// Open: dispatch what arrived meanwhile, in arrival order and back
+				// to back, the way the adapter would have delivered it.
+				phase = 'open';
+				for (const frame of queued_frames.splice(0)) {
+					if (transport.is_registered(connection_id)) {
+						handle_frame(frame.data, frame.ws, connection_id).then(frame.resolve, frame.reject);
+					} else {
+						frame.resolve();
+					}
+				}
+			};
+
+			// Dispatch one inbound frame on an admitted, still-registered
+			// connection.
+			const handle_frame = async (
+				data: unknown,
+				ws: WSContext,
+				connection_id: Uuid
+			): Promise<void> => {
+				let json;
+				try {
+					json = JSON.parse(String(data));
+				} catch (error) {
+					log.error('JSON parse error:', error);
+					send_error_response(ws, null, jsonrpc_error_messages.parse_error());
+					return;
+				}
+
+				// Batch JSON-RPC is not supported on the WebSocket path.
+				if (Array.isArray(json)) {
+					send_error_response(
+						ws,
+						null,
+						jsonrpc_error_messages.invalid_request(
+							'batch JSON-RPC requests are not supported on WebSocket'
+						)
+					);
+					return;
+				}
+
+				// Inbound responses to server-initiated requests (`peer/ping`,
+				// etc.) — route to the pending-request registry scoped to THIS
+				// socket. A response carries a string/number `id`, exactly one
+				// of `result` / `error`, and no string `method`, so it precedes the
+				// request/notification split below. An unmatched id
+				// (unsolicited, cross-connection, or already settled) resolves
+				// nothing and is dropped, so the read loop survives a junk
+				// frame.
+				if (is_peer_response(json)) {
+					const matched = transport.resolve_peer_response(connection_id, json);
+					if (!matched) audit_unmatched_peer_response(log, connection_id, json.id);
+					return;
+				}
+
+				// Envelope version — the first thing the Rust twin's `classify`
+				// checks (version → id → method → params). A frame without
+				// `jsonrpc: '2.0'` is `invalid_request` on both transports
+				// rather than falling through to the notification branch,
+				// which would silently drop `{method: 'x'}` and
+				// `{jsonrpc: '1.0', method: 'x'}`. It also covers a
+				// non-object frame (a scalar has no id to echo — `id: null`).
+				// A genuine peer response carries the version and is matched
+				// above; a response-shaped frame that misses that shape check
+				// falls through here on purpose, so it is answered rather
+				// than swallowed.
+				if (!is_jsonrpc_object(json)) {
+					send_error_response(
+						ws,
+						to_jsonrpc_envelope_id(json),
+						jsonrpc_error_messages.invalid_request()
+					);
+					return;
+				}
+
+				// Notifications (string method + no id) — `cancel` is
+				// intercepted for request-scoped cancellation; other
+				// notifications are silenced per JSON-RPC spec (consumer
+				// notification handlers are not a feature yet). The method
+				// axis is string-typed like the twin's `classify`, so a
+				// non-string `method` is answered `invalid_request` below
+				// rather than silently dropped as a notification.
+				if (!is_jsonrpc_request(json)) {
+					const notification_method = (json as { method?: unknown }).method;
+					if (typeof notification_method === 'string' && !('id' in json)) {
+						if (notification_method === cancel_action_spec.method) {
+							const parsed = CancelNotificationParams.safeParse(
+								(json as { params?: unknown }).params
+							);
+							if (!parsed.success) {
+								log.debug('cancel: invalid params, ignoring', parsed.error.issues);
+								return;
+							}
+							const controller = pending_controllers.get(parsed.data.request_id);
+							if (controller) {
+								controller.abort();
+							} else {
+								log.debug('cancel: no pending request for id', parsed.data.request_id);
+							}
+						}
+						return;
+					}
+					send_error_response(
+						ws,
+						to_jsonrpc_message_id(json),
+						jsonrpc_error_messages.invalid_request()
+					);
+					return;
+				}
+
+				// Envelope validation — the same `JsonrpcRequest.safeParse` the
+				// HTTP POST path runs, so a malformed envelope (`params: null`,
+				// an array `params`, a boolean `id`) answers `invalid_request`
+				// on both transports instead of reaching the dispatcher and
+				// surfacing as `invalid_params`. It sits after the
+				// notification / cancel block so notifications stay
+				// unvalidated (they carry no id to echo) and `cancel` routing
+				// precedes it.
+				const envelope = JsonrpcRequest.safeParse(json);
+				if (!envelope.success) {
+					send_error_response(
+						ws,
+						to_jsonrpc_message_id(json),
+						jsonrpc_error_messages.invalid_request(dev_only({ issues: envelope.error.issues }))
+					);
+					return;
+				}
+
+				const { method, id, params } = envelope.data;
+
+				// Per-action method lookup — return method_not_found before
+				// we engage the dispatch machinery. Specs without a handler
+				// (client-only / dispatcher-handled) miss action_map and
+				// surface as method_not_found just like unknown methods.
+				const action = action_map.get(method);
+				if (!action) {
+					send_error_response(ws, id, jsonrpc_error_messages.method_not_found(method));
+					return;
+				}
+
+				if (artificial_delay > 0) {
+					log.debug(`throttling ${artificial_delay}ms`);
+					await wait(artificial_delay);
+				}
+
+				// Per-request controller — fires on explicit `cancel` or when the
+				// socket ends (via the socket_abort_controller chain below).
+				// Registered before dispatch so a cancel arriving mid-handler
+				// finds it; cleared in `finally` so late cancels for a
+				// completed id (or a future request that reuses the id) can't
+				// null-abort the wrong handler.
+				const request_controller = new AbortController();
+				pending_controllers.set(id, request_controller);
+
+				// Per-message side-effect queues. `pending_effects` collects
+				// eager fire-and-forget pool writes (audit emits, etc.);
+				// `post_commit_effects` collects deferred thunks pushed
+				// via `emit_after_commit` (WS notifications). Both flush
+				// in the `finally` so the next message sees a clean slate.
+				//
+				// Ordering invariant — reply-before-flush is load-bearing.
+				// Handlers that revoke their own credential
+				// (`session_revoke_all`, `token_revoke` of the calling
+				// bearer) audit-emit events whose listener chain — wired
+				// by the WS auth guard in `transports_ws_auth_guard.ts` —
+				// closes this socket when the audit row writes. The
+				// synchronous `ws.send` on the success path returns
+				// before any close can fire (the DB write that triggers
+				// the chain is async — even in production with
+				// `await_pending_effects: false`, the listener chain only
+				// runs after the row lands). Inverting the order —
+				// flushing the queues before the send — would silently
+				// strand the caller without a reply.
+				const pending_effects: Array<Promise<void>> = [];
+				const post_commit_effects: Array<() => void | Promise<void>> = [];
+
+				const notify = notify_socket(ws);
+				// Server→client request seam (ActionPeer) — closes over this
+				// socket's connection_id so a handler can initiate a request to
+				// the originating client and await the reply.
+				const request_client: RequestClient = (request_method, request_params, request_options) =>
+					transport.request_connection(
+						connection_id,
+						request_method,
+						request_params,
+						request_options
+					);
+				const signal = AbortSignal.any([socket_abort_controller.signal, request_controller.signal]);
+
+				try {
+					const result = await perform_action(
+						{
+							action,
+							raw_params: params,
+							request_id: id,
+							account_id,
+							credential_type,
+							token_scope,
+							client_ip,
+							signal,
+							notify,
+							connection_id,
+							request_client,
+							preset: upgrade_preset
+						},
+						{
+							db,
+							pending_effects,
+							post_commit_effects,
+							log,
+							action_ip_rate_limiter,
+							action_account_rate_limiter
+						}
+					);
+					ws.send(JSON.stringify(perform_action_result_to_envelope(id, result)));
+				} finally {
+					pending_controllers.delete(id);
+					await flush_pending_effects(pending_effects, log);
+					await flush_post_commit_effects(post_commit_effects, log);
+				}
+			};
+
 			return {
 				onOpen: async (_event, ws) => {
-					const connection_id = transport.add_connection(ws, token_hash, account_id, api_token_id);
-					captured_connection_id = connection_id;
-					log.debug('ws opened', connection_id);
-					if (heartbeat_enabled) {
-						last_receive_time = Date.now();
-						heartbeat_timer = setInterval(() => {
-							const now = Date.now();
-							const silence = now - last_receive_time;
-							if (silence >= heartbeat_timeout) {
-								log.info(
-									`heartbeat timeout (${silence}ms) — closing ${WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT}`,
-									connection_id,
-									identity.account_id
-								);
-								stop_heartbeat_timer();
-								try {
-									ws.close(WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT, 'server heartbeat timeout');
-								} catch (error) {
-									log.error('heartbeat timeout close failed:', error);
-								}
-							}
-						}, heartbeat_tick_interval);
-					}
-					if (on_socket_open) {
-						try {
-							await on_socket_open({
-								ws,
-								connection_id,
-								identity,
-								notify: notify_socket(ws),
-								signal: socket_abort_controller.signal
-							});
-						} catch (error) {
-							log.error('on_socket_open failed — closing socket:', error);
-							try {
-								send_error_response(ws, null, jsonrpc_error_messages.internal_error());
-							} catch {
-								// ignore — socket may already be dead
-							}
-							ws.close(1011, 'socket bootstrap failed');
-						}
+					// An adapter may not await this (`@hono/node-ws` doesn't), so it
+					// must never reject.
+					try {
+						await open_socket(ws);
+					} catch (error) {
+						log.error('ws open failed — closing socket:', error);
+						refuse_upgrade(ws, WS_CLOSE_INTERNAL_ERROR, 'internal error');
 					}
 				},
-				onMessage: async (event, ws) => {
-					last_receive_time = Date.now();
+				onMessage: (event, ws): void | Promise<void> => {
+					// A socket the server closed — or refused — dispatches nothing
+					// more, however long its client withholds the close frame.
+					if (phase_is('ended')) return;
 					const size = ws_message_size_over(event.data, max_message_bytes);
 					if (size !== null) {
 						log.warn(
 							`closing socket: ${size}-byte message exceeds the ${max_message_bytes}-byte cap`
 						);
-						ws.close(WS_CLOSE_MESSAGE_TOO_BIG, 'message too big');
+						end_socket(ws, WS_CLOSE_MESSAGE_TOO_BIG, 'message too big');
 						return;
 					}
-					let json;
-					try {
-						json = JSON.parse(String(event.data)); // eslint-disable-line @typescript-eslint/no-base-to-string
-					} catch (error) {
-						log.error('JSON parse error:', error);
-						send_error_response(ws, null, jsonrpc_error_messages.parse_error());
-						return;
-					}
-
-					// Batch JSON-RPC is not supported on the WebSocket path.
-					if (Array.isArray(json)) {
-						send_error_response(
-							ws,
-							null,
-							jsonrpc_error_messages.invalid_request(
-								'batch JSON-RPC requests are not supported on WebSocket'
-							)
-						);
-						return;
-					}
-
-					// Inbound responses to server-initiated requests (`peer/ping`,
-					// etc.) — route to the pending-request registry scoped to THIS
-					// socket. A response carries a string/number `id`, exactly one
-					// of `result` / `error`, and no string `method`, so it precedes the
-					// request/notification split below. An unmatched id
-					// (unsolicited, cross-connection, or already settled) resolves
-					// nothing and is dropped, so the read loop survives a junk
-					// frame.
-					if (is_peer_response(json)) {
-						if (captured_connection_id !== undefined) {
-							const matched = transport.resolve_peer_response(captured_connection_id, json);
-							if (!matched) audit_unmatched_peer_response(log, captured_connection_id, json.id);
-						}
-						return;
-					}
-
-					// Envelope version — the first thing the Rust twin's `classify`
-					// checks (version → id → method → params). A frame without
-					// `jsonrpc: '2.0'` is `invalid_request` on both transports
-					// rather than falling through to the notification branch,
-					// which would silently drop `{method: 'x'}` and
-					// `{jsonrpc: '1.0', method: 'x'}`. It also covers a
-					// non-object frame (a scalar has no id to echo — `id: null`).
-					// A genuine peer response carries the version and is matched
-					// above; a response-shaped frame that misses that shape check
-					// falls through here on purpose, so it is answered rather
-					// than swallowed.
-					if (!is_jsonrpc_object(json)) {
-						send_error_response(
-							ws,
-							to_jsonrpc_envelope_id(json),
-							jsonrpc_error_messages.invalid_request()
-						);
-						return;
-					}
-
-					// Notifications (string method + no id) — `cancel` is
-					// intercepted for request-scoped cancellation; other
-					// notifications are silenced per JSON-RPC spec (consumer
-					// notification handlers are not a feature yet). The method
-					// axis is string-typed like the twin's `classify`, so a
-					// non-string `method` is answered `invalid_request` below
-					// rather than silently dropped as a notification.
-					if (!is_jsonrpc_request(json)) {
-						const notification_method = (json as { method?: unknown }).method;
-						if (typeof notification_method === 'string' && !('id' in json)) {
-							if (notification_method === cancel_action_spec.method) {
-								const parsed = CancelNotificationParams.safeParse(
-									(json as { params?: unknown }).params
-								);
-								if (!parsed.success) {
-									log.debug('cancel: invalid params, ignoring', parsed.error.issues);
-									return;
-								}
-								const controller = pending_controllers.get(parsed.data.request_id);
-								if (controller) {
-									controller.abort();
-								} else {
-									log.debug('cancel: no pending request for id', parsed.data.request_id);
-								}
-							}
+					if (phase_is('opening')) {
+						// Not open yet: queue, never dispatch — nothing runs on a
+						// credential that has not been re-read. Bounded by count and
+						// by bytes, since the adapter applies no backpressure.
+						const bytes = ws_message_size(event.data);
+						if (
+							queued_frames.length >= MAX_PRE_ADMISSION_FRAMES ||
+							queued_bytes + bytes > pre_admission_queue_max_bytes
+						) {
+							log.warn(
+								`closing socket: pre-admission queue overflow (${queued_frames.length} frames, ${queued_bytes} + ${bytes} bytes)`
+							);
+							end_socket(ws, WS_CLOSE_POLICY_VIOLATION, WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON);
 							return;
 						}
-						send_error_response(
-							ws,
-							to_jsonrpc_message_id(json),
-							jsonrpc_error_messages.invalid_request()
-						);
+						queued_bytes += bytes;
+						last_receive_time = Date.now();
+						return new Promise<void>((resolve, reject) => {
+							queued_frames.push({ data: event.data, ws, resolve, reject });
+						});
+					}
+					// The transport is the authority on whether the connection is
+					// still live. A close it made (revocation, cap eviction) ended the
+					// socket above; a connection it no longer holds though nothing
+					// closed the socket — a bare `remove_connection` — is ended here,
+					// rather than left reading every frame and answering none, where
+					// a chatty client would also keep the heartbeat from reaping it.
+					const connection_id = captured_connection_id;
+					if (connection_id === undefined || !transport.is_registered(connection_id)) {
+						log.warn('closing socket: its connection is no longer registered', connection_id);
+						end_socket(ws, WS_CLOSE_INTERNAL_ERROR, 'connection unregistered');
 						return;
 					}
-
-					// Envelope validation — the same `JsonrpcRequest.safeParse` the
-					// HTTP POST path runs, so a malformed envelope (`params: null`,
-					// an array `params`, a boolean `id`) answers `invalid_request`
-					// on both transports instead of reaching the dispatcher and
-					// surfacing as `invalid_params`. It sits after the
-					// notification / cancel block so notifications stay
-					// unvalidated (they carry no id to echo) and `cancel` routing
-					// precedes it.
-					const envelope = JsonrpcRequest.safeParse(json);
-					if (!envelope.success) {
-						send_error_response(
-							ws,
-							to_jsonrpc_message_id(json),
-							jsonrpc_error_messages.invalid_request(dev_only({ issues: envelope.error.issues }))
-						);
-						return;
-					}
-
-					const { method, id, params } = envelope.data;
-
-					// Per-action method lookup — return method_not_found before
-					// we engage the dispatch machinery. Specs without a handler
-					// (client-only / dispatcher-handled) miss action_map and
-					// surface as method_not_found just like unknown methods.
-					const action = action_map.get(method);
-					if (!action) {
-						send_error_response(ws, id, jsonrpc_error_messages.method_not_found(method));
-						return;
-					}
-
-					if (artificial_delay > 0) {
-						log.debug(`throttling ${artificial_delay}ms`);
-						await wait(artificial_delay);
-					}
-
-					// Per-request controller — fires on explicit `cancel` or on
-					// socket close (via the socket_abort_controller chain below).
-					// Registered before dispatch so a cancel arriving mid-handler
-					// finds it; cleared in `finally` so late cancels for a
-					// completed id (or a future request that reuses the id) can't
-					// null-abort the wrong handler.
-					const request_controller = new AbortController();
-					pending_controllers.set(id, request_controller);
-
-					// Per-message side-effect queues. `pending_effects` collects
-					// eager fire-and-forget pool writes (audit emits, etc.);
-					// `post_commit_effects` collects deferred thunks pushed
-					// via `emit_after_commit` (WS notifications). Both flush
-					// in the `finally` so the next message sees a clean slate.
-					//
-					// Ordering invariant — reply-before-flush is load-bearing.
-					// Handlers that revoke their own credential
-					// (`session_revoke_all`, `token_revoke` of the calling
-					// bearer) audit-emit events whose listener chain — wired
-					// by the WS auth guard in `transports_ws_auth_guard.ts` —
-					// closes this socket when the audit row writes. The
-					// synchronous `ws.send` on the success path returns
-					// before any close can fire (the DB write that triggers
-					// the chain is async — even in production with
-					// `await_pending_effects: false`, the listener chain only
-					// runs after the row lands). Inverting the order —
-					// flushing the queues before the send — would silently
-					// strand the caller without a reply.
-					const pending_effects: Array<Promise<void>> = [];
-					const post_commit_effects: Array<() => void | Promise<void>> = [];
-
-					const notify = notify_socket(ws);
-					// Server→client request seam (ActionPeer) — closes over this
-					// socket's connection_id so a handler can initiate a request to
-					// the originating client and await the reply. `const` capture so
-					// the narrowed (non-undefined) type holds inside the closure;
-					// `undefined` only in the degenerate case where a message
-					// dispatches before onOpen assigned the id.
-					const conn_id = captured_connection_id;
-					const request_client: RequestClient | undefined =
-						conn_id === undefined
-							? undefined
-							: (request_method, request_params, request_options) =>
-									transport.request_connection(
-										conn_id,
-										request_method,
-										request_params,
-										request_options
-									);
-					const signal = AbortSignal.any([
-						socket_abort_controller.signal,
-						request_controller.signal
-					]);
-
-					try {
-						const result = await perform_action(
-							{
-								action,
-								raw_params: params,
-								request_id: id,
-								account_id,
-								credential_type,
-								token_scope,
-								client_ip,
-								signal,
-								notify,
-								connection_id: captured_connection_id,
-								request_client,
-								preset: upgrade_preset
-							},
-							{
-								db,
-								pending_effects,
-								post_commit_effects,
-								log,
-								action_ip_rate_limiter,
-								action_account_rate_limiter
-							}
-						);
-						ws.send(JSON.stringify(perform_action_result_to_envelope(id, result)));
-					} finally {
-						pending_controllers.delete(id);
-						await flush_pending_effects(pending_effects, log);
-						await flush_post_commit_effects(post_commit_effects, log);
-					}
+					// only a frame that is accepted counts as activity
+					last_receive_time = Date.now();
+					return handle_frame(event.data, ws, connection_id);
 				},
 				onClose: async (event, ws) => {
+					// belt and braces: the abort listener stops the timer and the
+					// start is skipped on an ended socket, so this matters only if
+					// one of those is ever broken
 					stop_heartbeat_timer();
 					socket_abort_controller.abort();
 					// Removed by the id captured on open — an adapter may hand each
@@ -751,7 +1083,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					// keep a dead entry that broadcasts still target and the
 					// per-account cap still counts.
 					if (captured_connection_id) transport.remove_connection(captured_connection_id);
-					if (on_socket_close && captured_connection_id) {
+					if (on_socket_close && captured_connection_id && was_admitted) {
 						try {
 							await on_socket_close({
 								ws,
@@ -775,14 +1107,24 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 };
 
 /**
+ * The byte size of an inbound WebSocket message — UTF-8 bytes for a text
+ * frame, the buffer or blob size for a binary one.
+ */
+const ws_message_size = (data: unknown): number => {
+	if (typeof data === 'string') return utf8_length(data);
+	if (data instanceof Blob) return data.size;
+	if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) return data.byteLength;
+	return 0;
+};
+
+/**
  * The byte size of an inbound WebSocket message when it exceeds `max_bytes`,
  * else `null` — UTF-8 bytes for a text frame, the buffer or blob size for a
- * binary one.
+ * binary one. A text frame that cannot exceed the cap is not encoded to be
+ * measured.
  */
 const ws_message_size_over = (data: unknown, max_bytes: number): number | null => {
 	if (typeof data === 'string') return utf8_length_over(data, max_bytes);
-	let size: number | null = null;
-	if (data instanceof Blob) size = data.size;
-	else if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) size = data.byteLength;
-	return size !== null && size > max_bytes ? size : null;
+	const size = ws_message_size(data);
+	return size > max_bytes ? size : null;
 };

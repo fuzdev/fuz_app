@@ -1,7 +1,48 @@
 /**
  * Backend WebSocket transport — manages server-side WebSocket connections
- * with session tracking, revocation support, and a per-account connection
- * cap.
+ * with session tracking, revocation support, a per-account connection cap,
+ * and two-phase registration.
+ *
+ * ## Two-phase registration
+ *
+ * An upgrade resolves its credential before the socket exists, and every
+ * revocation closes the connections *registered* under the revoked
+ * credential. A one-step registration therefore has a window: a revocation
+ * landing between the credential check and the insert closes nothing, and the
+ * upgrade is admitted on a dead credential — for the socket's lifetime, since
+ * per-message dispatch never re-reads the session or token.
+ *
+ * Registration is split to close it:
+ *
+ * 1. `BackendWebsocketTransport.register_pending` inserts the entry
+ *    **un-admitted**. It is closeable from that instant — `close_sockets_for_*`
+ *    match pending entries deliberately — and is otherwise inert: it evicts
+ *    nothing, the cap does not count it, no broadcast / `send_to_account` /
+ *    `request_connection` reaches it, and the count accessors and
+ *    `is_registered` do not see it (`get_pending_connection_count` does).
+ * 2. The caller re-checks the credential against the database
+ *    (`revalidate_resolved_auth` in `auth/resolved_auth.ts`).
+ * 3. `BackendWebsocketTransport.admit` flips the entry to admitted — or
+ *    refuses when a revocation closed it in the meantime, evicting nothing.
+ *    The cap's eviction happens here, so a connection that is never admitted
+ *    never closes a live one, and any number of pending registrations on one
+ *    account leave its admitted connections alone.
+ *
+ * A revocation whose close ran **after** step 1 finds the entry, pending or
+ * admitted, and closes it; one that **committed before** step 2 is seen by the
+ * re-read, which refuses. Nothing is delivered to a pending entry rather than
+ * queued for it, so a refusal never has to promise that a queue a revoked
+ * credential would have read is dropped unread, and a broadcast's returned
+ * count names only connections that can receive it. The cost is a slightly
+ * wider blind spot at connect: a server-initiated message sent between the
+ * handshake and admission — one credential re-check later — is not delivered,
+ * just as one sent before the handshake is not.
+ *
+ * `add_connection` stays as the one-step form (register and admit together)
+ * for a connection with no revocable credential behind it — tests and
+ * harnesses that register a socket directly. An upgrade that authenticated a session or token
+ * uses the two-phase form. The twin of the Rust `fuz_realtime`
+ * `ConnectionRegistry`.
  *
  * @module
  */
@@ -31,6 +72,7 @@ import {
 import {
 	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_SESSION_REVOKED,
+	WS_CLOSE_SESSION_REVOKED_REASON,
 	type Transport,
 	type TransportSendOptions
 } from './transports.ts';
@@ -123,6 +165,25 @@ export interface BackendWebsocketTransportOptions {
 	log?: Logger | null;
 }
 
+/** One registered connection — its socket, auth identity, and admission state. */
+interface ConnectionEntry {
+	ws: WSContext;
+	identity: ConnectionIdentity;
+	/**
+	 * `false` between `register_pending` and `admit`. An un-admitted entry
+	 * exists only so a revocation can find and close it: it receives nothing, is
+	 * not counted, and never weighs on the per-account cap.
+	 */
+	admitted: boolean;
+	/**
+	 * The socket-scoped controller the caller registered, aborted when the
+	 * transport closes the connection (revocation or cap eviction) so in-flight
+	 * handlers see `signal.aborted` at once rather than when the close handshake
+	 * lands.
+	 */
+	abort_controller: AbortController | null;
+}
+
 export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	readonly transport_name = 'backend_websocket_rpc' as const;
 
@@ -131,12 +192,11 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 
 	readonly #log: Logger | null;
 
-	// Map connection IDs to WebSocket contexts
-	#connections: Map<Uuid, WSContext> = new Map();
-
-	// Auth identity per connection. Adding a new identity scope (e.g.
-	// `device_id`) means adding a field here, not a new parallel map.
-	#connection_identities: Map<Uuid, ConnectionIdentity> = new Map();
+	// One entry per registered connection, pending or admitted, in
+	// registration order (Map iteration is insertion order — the cap's
+	// "oldest"). Adding a new identity scope (e.g. `device_id`) means adding a
+	// field to `ConnectionIdentity`, not a parallel map.
+	#connections: Map<Uuid, ConnectionEntry> = new Map();
 
 	// Server→client request correlation (ActionPeer). The transport owns the
 	// sockets + the send; the registry owns the pending map, id allocation,
@@ -162,7 +222,76 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	}
 
 	/**
-	 * Add a new WebSocket connection with auth info.
+	 * Register a connection **un-admitted** — phase one of the two-phase
+	 * registration an upgrade runs (module doc).
+	 *
+	 * The entry is closeable at once: a `close_sockets_for_*` matching
+	 * `token_hash` / `account_id` / `api_token_id` removes it, aborts
+	 * `abort_controller`, and closes `ws` with `WS_CLOSE_SESSION_REVOKED`; the
+	 * later `admit` then refuses. Until admitted it evicts nothing, is not
+	 * counted toward the per-account cap, and receives no message.
+	 *
+	 * The caller owns the entry until it is admitted: every refusal path calls
+	 * `remove_connection` with the returned id.
+	 *
+	 * @param ws - the socket to close on revocation
+	 * @param token_hash - blake3 session token hash, or `null` for non-session credentials
+	 * @param account_id - the authenticated account
+	 * @param api_token_id - `api_token.id` for bearer connections, else `null`
+	 * @param abort_controller - the socket-scoped controller to abort when the
+	 *   transport closes this connection (revocation or cap eviction)
+	 * @returns the freshly assigned `connection_id` (branded `Uuid`)
+	 * @mutates this - inserts an un-admitted entry into `#connections`
+	 */
+	register_pending(
+		ws: WSContext,
+		token_hash: string | null,
+		account_id: Uuid,
+		api_token_id: string | null = null,
+		abort_controller: AbortController | null = null
+	): Uuid {
+		return this.#insert(ws, token_hash, account_id, api_token_id, abort_controller, false);
+	}
+
+	/**
+	 * Admit a pending connection — phase two (module doc).
+	 *
+	 * If the entry is gone — a revocation closed it while it was pending, or it
+	 * was removed — nothing is evicted and the connection is refused. Otherwise
+	 * the per-account cap is enforced exactly as in `add_connection`, counting
+	 * only **admitted** connections, and the entry becomes admitted: it now
+	 * receives messages, is counted, and can itself be superseded. Admitting an
+	 * already-admitted connection is a no-op that answers `true`.
+	 *
+	 * @param connection_id - the id `register_pending` returned
+	 * @returns `false` when the connection is no longer registered — the caller
+	 *   closes the socket as revoked
+	 * @mutates this - marks the entry admitted; past the cap, first removes the
+	 *   account's oldest admitted connections and closes their `WSContext`
+	 */
+	admit(connection_id: Uuid): boolean {
+		const entry = this.#connections.get(connection_id);
+		if (!entry) return false;
+		if (entry.admitted) return true;
+		// the entry itself is un-admitted, so the eviction neither counts nor
+		// removes it
+		if (this.#max_connections_per_account !== null) {
+			this.#evict_oldest_for_account(entry.identity.account_id, this.#max_connections_per_account);
+		}
+		entry.admitted = true;
+		return true;
+	}
+
+	/**
+	 * Register a connection, admitted at once — the one-step form of
+	 * `register_pending` + `admit`.
+	 *
+	 * **Not for an upgrade that authenticated a revocable credential**: a
+	 * revocation landing between that upgrade's credential check and this call
+	 * closes nothing, and the connection would be admitted on a dead credential
+	 * (module doc, "Two-phase registration"). This is for a connection with
+	 * nothing to revoke behind it.
+	 *
 	 * Session connections pass a token hash for targeted revocation.
 	 * Bearer token connections (`api_token`) pass the `api_token.id` so the
 	 * socket can be closed when that specific token is revoked without
@@ -171,102 +300,127 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * `close_sockets_for_account`.
 	 *
 	 * Enforces the per-account cap (`max_connections_per_account`): when
-	 * `account_id` already holds the maximum, its oldest connections are removed
-	 * and sent a `WS_CLOSE_CONNECTION_LIMIT` close before the new one is
-	 * inserted. A removed connection gets no further broadcast or peer request
-	 * and stops counting toward the cap at once; its socket is closed when the
-	 * close handshake completes. The new connection is always admitted. Call
-	 * this only after every upgrade gate has passed, so a refused request can
-	 * never close someone else's socket.
+	 * `account_id` already holds the maximum, its oldest admitted connections are
+	 * removed and sent a `WS_CLOSE_CONNECTION_LIMIT` close before the new one is
+	 * inserted. A removed connection gets no further broadcast or peer request,
+	 * stops counting toward the cap at once, and has its `abort_controller`
+	 * aborted; its socket is closed when the close handshake completes. The new
+	 * connection is always admitted.
 	 *
 	 * @returns the freshly assigned `connection_id` (branded `Uuid`)
-	 * @mutates this - inserts into `#connections` and `#connection_identities`;
-	 *   past the cap, first removes the account's oldest connections from them
-	 *   and closes their `WSContext`
+	 * @mutates this - inserts an admitted entry into `#connections`; past the
+	 *   cap, first removes the account's oldest admitted connections and closes
+	 *   their `WSContext`
 	 */
 	add_connection(
 		ws: WSContext,
 		token_hash: string | null,
 		account_id: Uuid,
-		api_token_id: string | null = null
+		api_token_id: string | null = null,
+		abort_controller: AbortController | null = null
 	): Uuid {
 		if (this.#max_connections_per_account !== null) {
 			this.#evict_oldest_for_account(account_id, this.#max_connections_per_account);
 		}
+		return this.#insert(ws, token_hash, account_id, api_token_id, abort_controller, true);
+	}
+
+	#insert(
+		ws: WSContext,
+		token_hash: string | null,
+		account_id: Uuid,
+		api_token_id: string | null,
+		abort_controller: AbortController | null,
+		admitted: boolean
+	): Uuid {
 		const connection_id = create_uuid();
-		this.#connections.set(connection_id, ws);
-		this.#connection_identities.set(connection_id, { token_hash, account_id, api_token_id });
+		this.#connections.set(connection_id, {
+			ws,
+			identity: { token_hash, account_id, api_token_id },
+			admitted,
+			abort_controller
+		});
 		return connection_id;
 	}
 
 	/**
-	 * Remove a WebSocket connection and its auth tracking data, by the id
-	 * `add_connection` returned. Idempotent — safe to call after revocation or
-	 * a cap eviction has already cleaned up, and a no-op for an unknown id.
+	 * Remove a connection and its auth tracking data, pending or admitted, by
+	 * the id `register_pending` / `add_connection` returned. Idempotent — safe
+	 * to call after revocation or a cap eviction has already cleaned up, and a
+	 * no-op for an unknown id.
 	 *
 	 * Keyed by id rather than by `WSContext` because a runtime adapter may hand
 	 * each socket event its own context object (`hono/bun` does), so the one a
 	 * close event carries can't identify the connection.
 	 *
-	 * @mutates this - deletes the connection's entries from `#connections` and
-	 *   `#connection_identities`, and settles its pending peer requests as
-	 *   `connection_gone`
+	 * Removal only: the socket is not closed and the registered
+	 * `abort_controller` is not aborted — the caller that ends a socket does
+	 * both.
+	 *
+	 * @mutates this - deletes the connection's entry from `#connections` and
+	 *   settles its pending peer requests as `connection_gone`
 	 */
 	remove_connection(connection_id: Uuid): void {
 		this.#cleanup_connection(connection_id);
 	}
 
 	/**
-	 * Close every connection whose identity matches the predicate.
+	 * Close every connection whose identity matches the predicate — pending or
+	 * admitted. Never filter on admission here: reaching a registration in
+	 * flight is the point of the pending phase, and `admit` then refuses it.
 	 *
 	 * @returns the number of sockets closed
 	 */
 	#close_where(predicate: (identity: ConnectionIdentity) => boolean): number {
 		let count = 0;
-		for (const [connection_id, identity] of this.#connection_identities) {
-			if (predicate(identity)) {
-				const ws = this.#connections.get(connection_id);
-				if (ws) {
-					this.#revoke_connection(connection_id, ws);
-					count++;
-				}
+		// deleting the current entry during Map iteration is safe
+		for (const [connection_id, entry] of this.#connections) {
+			if (predicate(entry.identity)) {
+				this.#revoke_connection(connection_id, entry);
+				count++;
 			}
 		}
 		return count;
 	}
 
 	/**
-	 * Close all sockets associated with a specific session token hash.
+	 * Close all sockets associated with a specific session token hash,
+	 * including a registration still pending admission.
 	 *
 	 * @returns the number of sockets closed
-	 * @mutates this - removes matching connections from internal maps and
-	 *   closes their underlying `WSContext` with `WS_CLOSE_SESSION_REVOKED`
+	 * @mutates this - removes matching connections, aborts their registered
+	 *   controllers, and closes their underlying `WSContext` with
+	 *   `WS_CLOSE_SESSION_REVOKED`
 	 */
 	close_sockets_for_session(token_hash: string): number {
 		return this.#close_where((id) => id.token_hash === token_hash);
 	}
 
 	/**
-	 * Close all sockets associated with a specific account.
+	 * Close all sockets associated with a specific account, including a
+	 * registration still pending admission.
 	 *
 	 * @returns the number of sockets closed
-	 * @mutates this - removes matching connections from internal maps and
-	 *   closes their underlying `WSContext` with `WS_CLOSE_SESSION_REVOKED`
+	 * @mutates this - removes matching connections, aborts their registered
+	 *   controllers, and closes their underlying `WSContext` with
+	 *   `WS_CLOSE_SESSION_REVOKED`
 	 */
 	close_sockets_for_account(account_id: Uuid): number {
 		return this.#close_where((id) => id.account_id === account_id);
 	}
 
 	/**
-	 * Close all sockets associated with a specific API token.
+	 * Close all sockets associated with a specific API token, including a
+	 * registration still pending admission.
 	 *
 	 * Used on `token_revoke` audit events so revoking one token doesn't
 	 * tear down the account's session-authenticated sockets or other
 	 * tokens' sockets.
 	 *
 	 * @returns the number of sockets closed
-	 * @mutates this - removes matching connections from internal maps and
-	 *   closes their underlying `WSContext` with `WS_CLOSE_SESSION_REVOKED`
+	 * @mutates this - removes matching connections, aborts their registered
+	 *   controllers, and closes their underlying `WSContext` with
+	 *   `WS_CLOSE_SESSION_REVOKED`
 	 */
 	close_sockets_for_token(api_token_id: string): number {
 		return this.#close_where((id) => id.api_token_id === api_token_id);
@@ -274,42 +428,48 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 
 	#cleanup_connection(connection_id: Uuid): void {
 		this.#connections.delete(connection_id);
-		this.#connection_identities.delete(connection_id);
 		// Wake any handler still awaiting a reply on this socket — the peer is
 		// gone, so the request can never complete.
 		this.#pending.drain(connection_id);
 	}
 
-	#revoke_connection(connection_id: Uuid, ws: WSContext): void {
+	#revoke_connection(connection_id: Uuid, entry: ConnectionEntry): void {
 		this.#cleanup_connection(connection_id);
-		ws.close(WS_CLOSE_SESSION_REVOKED, 'Session revoked');
+		// abort before the close so a handler observing `ctx.signal` bails out
+		// without waiting for the close handshake
+		entry.abort_controller?.abort();
+		entry.ws.close(WS_CLOSE_SESSION_REVOKED, WS_CLOSE_SESSION_REVOKED_REASON);
 	}
 
 	/**
-	 * Make room for one more connection on `account_id`: when the account
-	 * already holds `max`, close its oldest so that `max - 1` remain.
+	 * Make room for one more admitted connection on `account_id`: when the
+	 * account already holds `max`, close its oldest so that `max - 1` remain.
+	 * Pending registrations are neither counted nor closed — a connection that
+	 * may yet be refused must not cost a live one its slot.
 	 */
 	#evict_oldest_for_account(account_id: Uuid, max: number): void {
 		// Map iteration is insertion order, so `owned` is oldest-first
-		const owned: Array<Uuid> = [];
-		for (const [connection_id, identity] of this.#connection_identities) {
-			if (identity.account_id === account_id) owned.push(connection_id);
+		const owned: Array<[Uuid, ConnectionEntry]> = [];
+		for (const [connection_id, entry] of this.#connections) {
+			if (entry.admitted && entry.identity.account_id === account_id) {
+				owned.push([connection_id, entry]);
+			}
 		}
 		const excess = owned.length + 1 - max;
 		if (excess <= 0) return;
 		for (let i = 0; i < excess; i++) {
-			const connection_id = owned[i]!;
-			const ws = this.#connections.get(connection_id);
-			if (ws) this.#supersede_connection(connection_id, ws);
+			const [connection_id, entry] = owned[i]!;
+			this.#supersede_connection(connection_id, entry);
 		}
 		// same line as the Rust spine's registry, so one grep finds either
 		this.#log?.info('ws: connection cap closed oldest', { account_id, closed: excess, max });
 	}
 
-	#supersede_connection(connection_id: Uuid, ws: WSContext): void {
+	#supersede_connection(connection_id: Uuid, entry: ConnectionEntry): void {
 		this.#cleanup_connection(connection_id);
 		try {
-			ws.close(WS_CLOSE_CONNECTION_LIMIT, 'connection limit');
+			entry.abort_controller?.abort();
+			entry.ws.close(WS_CLOSE_CONNECTION_LIMIT, 'connection limit');
 		} catch (error) {
 			// the evicted socket is another connection's — a failure closing it
 			// must not fail the connection being admitted
@@ -359,9 +519,11 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 
 	#broadcast(message: JsonrpcMessageFromServerToClient): Promise<void> {
 		const serialized = JSON.stringify(message);
-		for (const ws of this.#connections.values()) {
+		for (const entry of this.#connections.values()) {
+			// a registration pending admission is not a connection yet
+			if (!entry.admitted) continue;
 			try {
-				ws.send(serialized);
+				entry.ws.send(serialized);
 			} catch (error) {
 				this.#log?.error('error broadcasting to client:', error);
 			}
@@ -371,7 +533,8 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	}
 
 	/**
-	 * Broadcast to connections whose identity satisfies a predicate.
+	 * Broadcast to admitted connections whose identity satisfies a predicate. A
+	 * registration pending admission is skipped before the predicate runs.
 	 *
 	 * Used by the broadcast API when a consumer supplies a subscription ACL hook
 	 * (e.g. zap's `zap_run_created` only reaches the account that owns the run).
@@ -386,12 +549,10 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	): number {
 		const serialized = JSON.stringify(message);
 		let count = 0;
-		for (const [connection_id, identity] of this.#connection_identities) {
-			if (!predicate(identity)) continue;
-			const ws = this.#connections.get(connection_id);
-			if (!ws) continue;
+		for (const entry of this.#connections.values()) {
+			if (!entry.admitted || !predicate(entry.identity)) continue;
 			try {
-				ws.send(serialized);
+				entry.ws.send(serialized);
 				count++;
 			} catch (error) {
 				this.#log?.error('error broadcasting filtered to client:', error);
@@ -401,7 +562,7 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	}
 
 	/**
-	 * Send a message to every socket bound to a specific account.
+	 * Send a message to every admitted socket bound to a specific account.
 	 *
 	 * Targeted per-account fan-out for any flow where the delivery target
 	 * is a single known account. Prefer this over `broadcast_filtered` when
@@ -427,7 +588,9 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * connection. Resolves when the client's matching reply arrives (routed in
 	 * via `resolve_peer_response`), the deadline elapses (`timeout`), the
 	 * per-connection cap is hit (`too_many_in_flight`), or the socket closes
-	 * (`connection_gone`). Never throws — every failure is a `PeerRequestError`.
+	 * (`connection_gone`). A connection still pending admission answers
+	 * `connection_gone` like an unknown one. Never throws — every failure is a
+	 * `PeerRequestError`.
 	 *
 	 * Delegates correlation to `#pending` (id allocation, deadline, cap, drain);
 	 * this method owns only the socket lookup + the send. Server-issued ids are
@@ -443,8 +606,11 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		params: JsonrpcRequestParams | undefined,
 		options?: PeerRequestOptions
 	): Promise<PeerRequestOutcome> {
-		const ws = this.#connections.get(connection_id);
-		if (!ws) return Promise.resolve({ ok: false, error: { kind: 'connection_gone' } });
+		const entry = this.#connections.get(connection_id);
+		if (!entry?.admitted) {
+			return Promise.resolve({ ok: false, error: { kind: 'connection_gone' } });
+		}
+		const { ws } = entry;
 
 		const registered = this.#pending.register(connection_id, options?.timeout_ms);
 		if (!registered) return Promise.resolve({ ok: false, error: { kind: 'too_many_in_flight' } });
@@ -478,19 +644,52 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		return this.#pending.resolve(connection_id, response);
 	}
 
+	/**
+	 * Whether a connection is still registered — and admitted: a registration
+	 * pending admission answers `false`, like every other reader of the
+	 * transport.
+	 *
+	 * `register_action_ws` checks it before dispatching each inbound message, so
+	 * a socket the server has closed — revoked, superseded by the cap, or
+	 * refused at admission — dispatches nothing more while its close handshake
+	 * is still in flight. The twin of the Rust `ConnectionRegistry::is_registered`.
+	 */
+	is_registered(connection_id: Uuid): boolean {
+		return this.#connections.get(connection_id)?.admitted === true;
+	}
+
 	is_ready(): boolean {
-		return this.#connections.size > 0;
+		return this.get_connection_count() > 0;
 	}
 
 	/**
-	 * Number of currently tracked WebSocket connections.
+	 * Number of currently **admitted** WebSocket connections.
 	 *
-	 * Read-only counter intended for telemetry, logging, and tests.
-	 * Counts every entry in the connection map — including connections
-	 * that have been closed by the peer but not yet removed by the WS
-	 * adapter's `onClose` callback.
+	 * Read-only counter intended for telemetry, logging, and tests. A
+	 * registration still pending admission is not a connection yet and is
+	 * counted by `get_pending_connection_count` instead. Includes connections
+	 * that have been closed by the peer but not yet removed by the WS adapter's
+	 * `onClose` callback.
 	 */
 	get_connection_count(): number {
-		return this.#connections.size;
+		let count = 0;
+		for (const entry of this.#connections.values()) {
+			if (entry.admitted) count++;
+		}
+		return count;
+	}
+
+	/**
+	 * Number of registrations awaiting admission — between `register_pending`
+	 * and `admit` (or their refusal). Each lives for one credential re-check, so
+	 * a count that stays high means upgrades are stalling there. For telemetry
+	 * and tests.
+	 */
+	get_pending_connection_count(): number {
+		let count = 0;
+		for (const entry of this.#connections.values()) {
+			if (!entry.admitted) count++;
+		}
+		return count;
 	}
 }

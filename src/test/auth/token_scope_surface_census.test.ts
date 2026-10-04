@@ -155,7 +155,13 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
 		file: 'auth/audit_log_routes.ts',
 		role: 'exempt',
 		reason:
-			'the SSE handler behind the shape above; it reads the resolved context to key the subscription and adds no reach of its own, the rule-3 decision having been declared on the shape it spreads'
+			'the SSE handler behind the shape above; it reads the resolved context to key the subscription and to re-read the credential and role before admitting the stream, and adds no reach of its own, the rule-3 decision having been declared on the shape it spreads'
+	},
+	{
+		file: 'auth/resolved_auth.ts',
+		role: 'exempt',
+		reason:
+			'gathers the credential the middleware already resolved and re-reads whether it still authenticates, for a connection being admitted — it can only refuse, never admit: both callers (the WS upgrade, the audit stream) ran their rule-3 gate first, and the scope is not re-read because nothing rewrites it after the mint'
 	},
 	{
 		file: 'auth/account_routes.ts',

@@ -349,3 +349,148 @@ describe('SubscriberRegistry max_per_scope', () => {
 		assert.strictEqual(registry.count, 10);
 	});
 });
+
+describe('SubscriberRegistry two-phase registration', () => {
+	test('a pending subscription receives nothing until admitted', () => {
+		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const stream = create_mock_stream<string>();
+		const pending = registry.subscribe_pending({ channels: ['ch'], scope: 'session_a' });
+
+		assert.strictEqual(registry.count, 0, 'a pending registration is not an open stream');
+		assert.strictEqual(registry.pending_count, 1);
+		registry.broadcast('ch', 'before');
+		assert.deepStrictEqual(stream.sent, []);
+
+		assert.strictEqual(registry.admit(pending, stream), true);
+
+		assert.strictEqual(registry.count, 1);
+		assert.strictEqual(registry.pending_count, 0);
+		registry.broadcast('ch', 'after');
+		assert.deepStrictEqual(stream.sent, ['after'], 'nothing was queued for it while pending');
+	});
+
+	test('every close reaches a pending subscription', () => {
+		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const by_scope = registry.subscribe_pending({ scope: 'session_a', groups: ['account_a'] });
+		const by_group = registry.subscribe_pending({ scope: 'session_b', groups: ['account_b'] });
+		const untouched = registry.subscribe_pending({ scope: 'session_c', groups: ['account_c'] });
+
+		assert.strictEqual(registry.close_by_identity('session_a'), 1);
+		assert.strictEqual(registry.close_by_identity('account_b'), 1);
+		assert.strictEqual(registry.pending_count, 1);
+
+		assert.strictEqual(registry.admit(by_scope, create_mock_stream<string>()), false);
+		assert.strictEqual(registry.admit(by_group, create_mock_stream<string>()), false);
+		assert.strictEqual(registry.admit(untouched, create_mock_stream<string>()), true);
+		assert.strictEqual(registry.count, 1);
+	});
+
+	test('a subscription closed while pending is refused and evicts nothing', () => {
+		const registry: SubscriberRegistry<string> = new SubscriberRegistry({ max_per_scope: 1 });
+		const live = create_mock_stream<string>();
+		registry.subscribe(live, { scope: 'session_a', groups: ['account_a'] });
+		const pending = registry.subscribe_pending({ scope: 'session_a', groups: ['tab_b'] });
+
+		assert.strictEqual(registry.close_by_identity('tab_b'), 1);
+		const stream = create_mock_stream<string>();
+		assert.strictEqual(registry.admit(pending, stream), false);
+
+		assert.ok(!live.closed, 'a refused admission evicts nothing');
+		assert.strictEqual(registry.count, 1);
+		registry.broadcast('ch', 'x');
+		assert.deepStrictEqual(stream.sent, [], 'the refused stream was never attached');
+	});
+
+	test('the cap evicts at admission, not at registration', () => {
+		const registry: SubscriberRegistry<string> = new SubscriberRegistry({ max_per_scope: 1 });
+		const live = create_mock_stream<string>();
+		registry.subscribe(live, { scope: 'session_a' });
+
+		const pending = registry.subscribe_pending({ scope: 'session_a' });
+		assert.ok(!live.closed, 'registering pending closes nothing');
+
+		assert.strictEqual(registry.admit(pending, create_mock_stream<string>()), true);
+		assert.ok(live.closed);
+		assert.strictEqual(registry.count, 1);
+	});
+
+	test('pending subscriptions do not count toward the cap', () => {
+		const registry: SubscriberRegistry<string> = new SubscriberRegistry({ max_per_scope: 2 });
+		const live = create_mock_stream<string>();
+		registry.subscribe(live, { scope: 'session_a' });
+		for (let i = 0; i < 5; i++) registry.subscribe_pending({ scope: 'session_a' });
+
+		registry.subscribe(create_mock_stream<string>(), { scope: 'session_a' });
+
+		assert.ok(!live.closed, 'two admitted streams fit under a cap of two');
+		assert.strictEqual(registry.count, 2);
+		assert.strictEqual(registry.pending_count, 5);
+	});
+
+	test('the cap never evicts a pending subscription', () => {
+		const registry: SubscriberRegistry<string> = new SubscriberRegistry({ max_per_scope: 1 });
+		// registered first, so it is the scope's oldest entry
+		const pending = registry.subscribe_pending({ scope: 'session_a' });
+		const first = create_mock_stream<string>();
+		registry.subscribe(first, { scope: 'session_a' });
+		const second = create_mock_stream<string>();
+		registry.subscribe(second, { scope: 'session_a' });
+
+		assert.ok(first.closed);
+		assert.strictEqual(registry.pending_count, 1);
+
+		// and admitting it later supersedes the admitted one in turn
+		assert.strictEqual(registry.admit(pending, create_mock_stream<string>()), true);
+		assert.ok(second.closed);
+		assert.strictEqual(registry.count, 1);
+	});
+
+	test('unsubscribe removes a pending registration, and its admission is refused', () => {
+		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const pending = registry.subscribe_pending({ scope: 'session_a' });
+
+		pending.unsubscribe();
+
+		assert.strictEqual(registry.pending_count, 0);
+		assert.strictEqual(registry.admit(pending, create_mock_stream<string>()), false);
+		assert.strictEqual(registry.count, 0);
+	});
+
+	test('unsubscribe removes an admitted subscription', () => {
+		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const stream = create_mock_stream<string>();
+		const pending = registry.subscribe_pending({ channels: ['ch'] });
+		registry.admit(pending, stream);
+
+		pending.unsubscribe();
+
+		assert.strictEqual(registry.count, 0);
+		registry.broadcast('ch', 'x');
+		assert.deepStrictEqual(stream.sent, []);
+	});
+
+	test('admit refuses a pending subscription from another registry', () => {
+		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const other: SubscriberRegistry<string> = new SubscriberRegistry();
+		const pending = other.subscribe_pending({ scope: 'session_a' });
+
+		assert.strictEqual(registry.admit(pending, create_mock_stream<string>()), false);
+		assert.strictEqual(registry.count, 0);
+		assert.strictEqual(other.pending_count, 1, 'its own registration is untouched');
+	});
+
+	test('admit refuses a subscription that is already admitted', () => {
+		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const first = create_mock_stream<string>();
+		const second = create_mock_stream<string>();
+		const pending = registry.subscribe_pending({ channels: ['ch'] });
+
+		assert.strictEqual(registry.admit(pending, first), true);
+		assert.strictEqual(registry.admit(pending, second), false);
+
+		registry.broadcast('ch', 'x');
+		assert.deepStrictEqual(first.sent, ['x']);
+		assert.deepStrictEqual(second.sent, []);
+		assert.strictEqual(registry.count, 1);
+	});
+});

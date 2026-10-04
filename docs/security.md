@@ -439,19 +439,24 @@ a live credential.
 
 SSE (Server-Sent Events) streams are long-lived HTTP connections. Auth is
 checked at connection time via route-level guards (e.g., `require_role('admin')`
-for the audit log stream). Because the connection persists, permission changes
-during the connection lifetime require active enforcement:
+for the audit log stream), and re-read once the stream is registered (see
+[Connection Admission](#connection-admission)). Because the connection
+persists, permission changes during the connection lifetime require active
+enforcement:
 
-- **Identity slots**: `SubscriberRegistry.subscribe()` accepts a `scope`
+- **Identity slots**: a `SubscriberRegistry` subscription carries a `scope`
   (single, capped identity — typically the session hash) and `groups` (any
   number of uncapped identities — typically `[account_id]`).
   `close_by_identity()` matches either slot, so coarse close (account-wide)
-  and fine close (session-specific) share the same API.
+  and fine close (session-specific) share the same API. It reaches a
+  registration still pending admission as well as an open stream.
 - **Per-scope cap**: `max_per_scope` bounds concurrent streams sharing a
   single scope. Audit log SSE defaults to `AUDIT_LOG_SSE_MAX_PER_SCOPE = 10`
   (i.e., up to 10 tabs per session). Groups are never capped, so an
   account's total streams is bounded transitively by
-  `max_sessions × max_per_scope`. Overflow closes the oldest FIFO.
+  `max_sessions × max_per_scope`. Overflow closes the oldest FIFO. The cap
+  counts admitted streams and is applied at admission, so a request that is
+  refused never closes another stream.
 - **SSE auth guard**: `create_sse_auth_guard(registry, role, log)` returns an
   `on_audit_event` callback that closes streams on these event types:
   - `role_grant_revoke` — the required role is revoked for a subscriber
@@ -491,10 +496,12 @@ endpoints sharing one transport share one count.
   sockets lock a user out with their own dead connections, and would let a
   stolen credential fill every slot ahead of the real user. Revocation is the
   answer to a stolen credential, and evict-oldest never stands in its way.
-- **After every upgrade gate**: the cap is applied when the socket opens, once
-  the origin check, authentication, the token-scope gate, and any role gate
-  have passed — an unauthenticated or forbidden request can't close anyone's
-  socket.
+- **After every upgrade gate**: the cap is applied when the connection is
+  admitted, once the origin check, authentication, the token-scope gate, and
+  any role gate have passed and the credential has been re-read (see
+  [Connection Admission](#connection-admission)) — an unauthenticated,
+  forbidden, or just-revoked request can't close anyone's socket. A connection
+  still pending admission neither counts toward the cap nor is evicted by it.
 - **Its own close code**: the evicted socket closes with
   `WS_CLOSE_CONNECTION_LIMIT` (4004, reason `connection limit`), not the
   revocation code `WS_CLOSE_SESSION_REVOKED` (4001). The credential is still
@@ -504,6 +511,119 @@ endpoints sharing one transport share one count.
   closed with `superseded` set until the app calls `connect()`.
 
 The Rust spine applies the same cap, policy, close code, and reason.
+
+## Connection Admission
+
+A WebSocket and an SSE stream are authorized once, at open, and from then on
+only a revocation's _close_ ends them: per-message WebSocket dispatch re-reads
+role grants, never the session or token, and a one-way stream re-reads
+nothing. Closes reach connections by identity, so they reach only connections
+that are _registered_. That leaves the moment of opening: the credential is
+read by the auth middleware, and the connection is registered later — for a
+WebSocket, after the `101`, the upgrade, and the adapter's open event. A
+revocation landing in between (session revoke, logout, password change, token
+revoke, account delete) would close nothing, and the connection would then
+open on the dead credential and keep it. On a WebSocket it could also evict a
+live socket of the same account past the connection cap.
+
+Both transports close that window the same way, the twin of the Rust spine's
+admission:
+
+1. **Register pending.** The connection is registered first, un-admitted
+   (`BackendWebsocketTransport.register_pending`,
+   `SubscriberRegistry.subscribe_pending`). A pending registration is closeable
+   by every revocation from that instant, and is otherwise inert: no broadcast,
+   targeted notification, or server-initiated request is delivered to it,
+   nothing is queued for it, no count includes it, and the caps neither count
+   it nor evict for it.
+2. **Re-read.** The credential is read again
+   (`revalidate_resolved_auth`, `auth/resolved_auth.ts`): the session row or
+   API-token row still exists, is unexpired, and belongs to the same account,
+   and the account is not soft-deleted. A daemon token has no row and no
+   revocation event, so only its account is re-read. The re-read uses the
+   resolve path's own queries and liveness predicate, writes nothing, and does
+   not touch a token's `last_used_at` — re-checking a credential is not using
+   it. The audit stream also re-reads the acting actor's role grants, since a
+   role revocation closes streams too.
+3. **Admit.** `admit` refuses when the pending registration is gone — a
+   revocation closed it — and otherwise applies the cap and opens the
+   connection.
+
+A revocation whose close ran after step 1 found the registration; one that
+committed before step 2 is seen by the re-read.
+
+**What a refused connection sees.**
+
+- **WebSocket.** The handshake has already answered `101`, so a refusal is a
+  close frame: `WS_CLOSE_SESSION_REVOKED` (4001, reason `Session revoked`) for
+  a dead credential or a registration closed while pending — the same frame a
+  socket revoked a moment later gets, so the two are indistinguishable — and
+  `WS_CLOSE_INTERNAL_ERROR` (1011, reason `internal error`) when the re-read
+  itself failed. Admission **fails closed**: a credential that could not be
+  re-checked is not a valid one. Nothing else is written to a refused socket,
+  it evicts nothing, and its `on_socket_open` / `on_socket_close` hooks never
+  run.
+- **Audit SSE stream.** A dead credential answers `401
+  authentication_required` and a lost role `403 insufficient_permissions`,
+  the statuses the gates would have given a moment later; a failed re-read
+  answers `500`. A registration closed while pending answers `200` with a
+  body that is the connect comment and nothing else — to an `EventSource`, a
+  stream closed the instant it opened — and the client's reconnect is answered
+  by the gates.
+
+**Frames sent before admission.** A WebSocket client can send as soon as the
+handshake completes. Those frames are queued and dispatched in arrival order
+once the connection is admitted (and its `on_socket_open` hook has completed);
+they are dropped unread on a refusal. Nothing is dispatched on a credential
+that has not been re-read. The queue is bounded twice, since a runtime adapter
+applies no backpressure and pending sockets are not capped per account: at
+most `MAX_PRE_ADMISSION_FRAMES` frames, and at most
+`PRE_ADMISSION_QUEUE_BYTES_FACTOR` times the message-size cap in bytes. Past
+either, the socket closes with `WS_CLOSE_POLICY_VIOLATION` (1008). A client
+whose reopen flush can exceed either bound — a durable queue raised above the
+frame cap, or queued requests totalling more than the byte budget — meets that
+close.
+
+**What a client must not assume.** A server-initiated message sent between the
+handshake and admission is not delivered, just as one sent before the
+handshake is not. A client that needs to know its connection is live sends a
+request and waits for the answer.
+
+**A closed socket dispatches nothing.** A runtime adapter can keep delivering
+inbound frames after the server closes a socket, until the close handshake
+completes — on Node, for as long as the client withholds its close frame, up
+to the `ws` close timeout. So a server-side close (revocation, cap eviction,
+heartbeat timeout, oversized message, refused admission) removes the
+connection and aborts its handlers' signal at close time, and frames arriving
+afterward are dropped rather than dispatched: a revoked or evicted socket
+cannot keep running handlers by ignoring the close. A connection removed from
+the transport without a close is ended on its next frame
+(`WS_CLOSE_INTERNAL_ERROR`) rather than left open and unanswered.
+
+**Limits.** The re-read is one read at open, not a per-message check. And the
+guarantee above needs each revocation to close connections only _after_ its
+write has committed; the Rust spine's handlers do. Here they do not yet:
+
+- A handler's `ConnectionCloser` call runs inside the request transaction,
+  before the commit — and only when a `connection_closer` was wired, which is
+  optional.
+- The audit listeners (`create_ws_auth_guard`, `create_ws_logout_closer`,
+  `create_sse_auth_guard`) fire when the pool-routed audit row lands, which is
+  not ordered against that commit. An SSE stream has no other close.
+- `account_delete` and `account_purge` have no listener: only a wired
+  `connection_closer` closes their WebSockets, and nothing closes their SSE
+  streams.
+- A session evicted by the login session cap, and a token evicted by the token
+  cap, close nothing.
+
+So a revocation whose closes all ran before a connection registered, and whose
+transaction commits only after that connection's re-read has begun, is caught
+by neither: the connection opens and no further close is coming. The window is
+the gap between a revocation's last close and its commit, not the length of
+the upgrade. Where there is no close at all — an SSE stream on a deleted or
+purged account (and a WebSocket too, when no `connection_closer` is wired),
+either transport on a cap-evicted session or token — an open connection
+outlives the credential. Closing it means moving every close after the commit.
 
 ## Rate Limiting
 

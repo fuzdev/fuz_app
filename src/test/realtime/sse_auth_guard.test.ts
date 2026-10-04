@@ -576,17 +576,41 @@ describe('create_audit_log_sse', () => {
 		assert.ok(stream.closed);
 	});
 
-	test('subscribe function delegates to registry', () => {
+	test('a pending registration receives no audit row until it is admitted', () => {
 		const audit_sse = create_audit_log_sse({ log });
 		const stream = create_mock_stream<SseNotification>();
-
-		const unsubscribe = audit_sse.subscribe(stream, {
+		const pending = audit_sse.registry.subscribe_pending({
 			channels: ['audit_log'],
 			groups: ['account-a']
 		});
-		assert.strictEqual(audit_sse.registry.count, 1);
 
-		unsubscribe();
+		audit_sse.on_audit_event(create_audit_event({ event_type: 'login', account_id: 'account-b' }));
+		assert.strictEqual(stream.sent.length, 0);
+
+		assert.ok(audit_sse.registry.admit(pending, stream));
+		audit_sse.on_audit_event(create_audit_event({ event_type: 'login', account_id: 'account-b' }));
+		assert.strictEqual(stream.sent.length, 1);
+	});
+
+	test('on_audit_event closes a registration still pending admission', () => {
+		const audit_sse = create_audit_log_sse({ log });
+		const stream = create_mock_stream<SseNotification>();
+		const pending = audit_sse.registry.subscribe_pending({
+			channels: ['audit_log'],
+			scope: 'session-a',
+			groups: ['account-a']
+		});
+
+		audit_sse.on_audit_event(
+			create_audit_event({
+				event_type: 'session_revoke_all',
+				target_account_id: 'account-a',
+				metadata: { count: 1 }
+			})
+		);
+
+		assert.strictEqual(audit_sse.registry.pending_count, 0, 'the guard reached the pending entry');
+		assert.strictEqual(audit_sse.registry.admit(pending, stream), false);
 		assert.strictEqual(audit_sse.registry.count, 0);
 	});
 

@@ -25,7 +25,14 @@ import '../assert_dev_env.ts';
  * upgrade time (not per message), so the negative cases assert the upgrade
  * itself rejects rather than a per-message error frame.
  *
- * Two spine-parity cases follow: `heartbeat` answers the parameterless shapes
+ * Spine-parity cases follow. Both spines admit a connection only after
+ * re-reading its credential, and requests that arrive first wait for that
+ * rather than being dropped: requests sent the moment the socket opens are all
+ * answered, and — gated on `capabilities.ws_handshake_pipelining`, with the
+ * ordering forced — so are frames written in the same TCP write as the upgrade
+ * request (driven through `connect_raw_ws`, since a client library sends
+ * nothing before its `open` event). `heartbeat` answers the parameterless
+ * shapes
  * (absent, `{}`) and refuses a declared param with `invalid_params`, and a
  * message over the backend's cap (`max_message_bytes`, default
  * `DEFAULT_WS_MAX_MESSAGE_BYTES`) closes the socket with
@@ -65,6 +72,11 @@ import {
 	type WsClient
 } from '../transports/ws_client.ts';
 import { create_ws_transport } from '../transports/ws_transport.ts';
+import {
+	connect_raw_ws,
+	is_raw_ws_close,
+	RAW_WS_OPCODE_TEXT
+} from '../transports/ws_raw_client.ts';
 import { create_rpc_post_init } from '../rpc_helpers.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
 import type { SetupTest } from './setup.ts';
@@ -137,6 +149,84 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 				await client.close();
 			}
 		});
+
+		// Both spines answer the handshake before the connection is admitted
+		// (the credential is re-read in between) and dispatch nothing until it
+		// is. Requests that reach the backend first must wait for that
+		// admission — not be dropped by it, and not run ahead of it.
+		test_if(
+			capabilities.ws,
+			'requests sent the moment the socket opens are all answered',
+			async () => {
+				const client = await open_authed();
+				try {
+					const ids = [1, 2, 3];
+					// back to back, with no round trip first — these may reach the
+					// backend while the connection is still pending admission
+					await Promise.all(
+						ids.map((id) =>
+							client.send({ jsonrpc: '2.0', id, method: heartbeat_action_spec.method })
+						)
+					);
+					const frames = await Promise.all(
+						ids.map((id) =>
+							client.wait_for<JsonrpcSuccessResponseFrame | JsonrpcErrorResponseFrame>(
+								is_response_for(id)
+							)
+						)
+					);
+					for (const frame of frames) {
+						assert.ok('result' in frame, JSON.stringify(frame));
+						assert.deepStrictEqual(frame.result, {});
+					}
+					assert.strictEqual(client.close_code, null);
+				} finally {
+					await client.close();
+				}
+			}
+		);
+
+		// The same contract with the ordering forced: frames written in the same
+		// TCP write as the upgrade request are in the backend's hands before it
+		// can have admitted anything.
+		test_if(
+			capabilities.ws && capabilities.ws_handshake_pipelining,
+			'frames sent with the handshake are answered once the connection is admitted',
+			async () => {
+				const fixture = await setup_test();
+				const url = new URL(base_url);
+				const ids = [1, 2, 3];
+				const client = await connect_raw_ws({
+					hostname: url.hostname,
+					port: url.port ? Number(url.port) : 80,
+					path: ws_path,
+					headers: {
+						Cookie: fixture.transport.cookies().join('; '),
+						Origin: origin ?? base_url
+					},
+					pipelined: ids.map((id) =>
+						JSON.stringify({ jsonrpc: '2.0', id, method: heartbeat_action_spec.method })
+					)
+				});
+				try {
+					for (const id of ids) {
+						const frame = await client.wait_for(
+							(f) =>
+								f.opcode === RAW_WS_OPCODE_TEXT &&
+								(JSON.parse(f.payload.toString('utf-8')) as { id?: unknown }).id === id
+						);
+						assert.deepStrictEqual(JSON.parse(frame.payload.toString('utf-8')), {
+							jsonrpc: '2.0',
+							id,
+							result: {}
+						});
+					}
+					assert.ok(!client.frames.some(is_raw_ws_close), 'the socket stays open');
+				} finally {
+					client.destroy();
+				}
+			}
+		);
 
 		// `heartbeat` is parameterless on both spines (`z.void()` /
 		// `require_void_params`): the empty shapes are the no-arg call, and a

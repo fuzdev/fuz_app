@@ -34,7 +34,7 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `stub_app_deps` — frozen `AppDeps`, every capability throwing, `audit` a no-op `AuditEmitter` from `create_test_audit_emitter`.
 - `create_stub_app_deps()` — factory: fresh `AppDeps` with no-op keyring/password/`delete_file`, a `read_secure_file` that throws ENOENT (the no-token-file state), a `create_noop_stub` DB, silent `Logger`, no-op `audit`.
 - `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` no-op, `emit_pool` resolves immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0.
-- `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `subscribe` returns a no-op cleanup; `on_audit_event` no-op; `registry` is a fresh `SubscriberRegistry` (live `.size` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
+- `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `on_audit_event` no-op (nothing is broadcast); `registry` is a fresh `SubscriberRegistry` (live `.count` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
 - `create_stub_api_middleware({include_daemon_token?})` — stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin/session/request_context/bearer_auth, optional daemon_token) for surface generation without booting real auth. See `auth/CLAUDE.md` §Middleware for the real stack.
 - `create_stub_app_server_context(session_options)` — stub `AppServerContext`; rate limiters null, `bootstrap_status.available: false`, `app_settings.open_signup: false`.
 - `create_test_app_surface_spec(options)` — builds an `AppSurfaceSpec` mirroring `create_app_server`'s route assembly (consumer routes + stub middleware + surface generation). `CreateTestAppSurfaceSpecOptions`: `session_options`, `create_route_specs`, `env_schema?`, `event_specs?`, `rpc_endpoints?`, `ws_endpoints?`, `transform_middleware?`, `bootstrap?`. Bootstrap is opt-in (symmetric with `create_app_server` — omit to skip; pass the same value as prod to mount routes at `bootstrap.route_prefix ?? '/api/account'`). Single source of truth for attack-surface tests — track `create_app_server` wiring changes here.
@@ -539,8 +539,8 @@ skipped (the Node test runtime has no `@hono/node-ws` adapter).
 
 Three layers:
 
-1. **Primitives** — `create_fake_ws()`, `create_fake_hono_context(opts)`, `create_stub_upgrade()`, `MinimalActionEnvironment`, `dispatch_ws_message(on_message, event, ws)`.
-2. **Harness** — `create_ws_test_harness({actions, transport?, heartbeat?, log?, on_socket_open?, on_socket_close?})` → `WsTestHarness`. `connect(identity?)` is async and resolves after `on_socket_open` completes, so broadcasts sent immediately after `await harness.connect()` reach the client. The harness threads its own `create_stub_db()` into the dispatcher's `db` slot so handlers declaring `side_effects: true` execute under the same transaction wrap they would in production (the stub's `transaction(fn)` synchronously calls `fn(stub_db)`); domain deps reach handlers via factory closures, the same way HTTP RPC factories already wire them. Audit fan-out runs through whatever `audit` emitter the consumer supplied to its action factory closure (typically `create_test_audit_emitter()` for unit harnesses).
+1. **Primitives** — `create_fake_ws()`, `create_fake_hono_context(opts)`, `create_stub_upgrade()`, `MinimalActionEnvironment`, `dispatch_ws_message(on_message, event, ws)`. The fake context sets the keys the production auth middleware sets — `AUTH_SESSION_TOKEN_HASH_KEY` included, as `hash_session_token(auth_session_id)` — because the dispatcher reads the credential through `get_resolved_auth(c)`; a hand-built upgrade context must do the same.
+2. **Harness** — `create_ws_test_harness({actions, transport?, heartbeat?, log?, on_socket_open?, on_socket_close?})` → `WsTestHarness`. `connect(identity?)` is async and resolves after the connection is admitted and `on_socket_open` completes, so broadcasts sent immediately after `await harness.connect()` reach the client. The harness pre-bakes its `RequestContext` (`TEST_CONTEXT_PRESET_KEY`), which also skips the admission credential re-read — there are no session or token rows behind a harness identity — so tests of the re-read itself drive `register_action_ws` with a real database and no preset (`src/test/actions/register_action_ws.admission.db.test.ts`). The harness threads its own `create_stub_db()` into the dispatcher's `db` slot so handlers declaring `side_effects: true` execute under the same transaction wrap they would in production (the stub's `transaction(fn)` synchronously calls `fn(stub_db)`); domain deps reach handlers via factory closures, the same way HTTP RPC factories already wire them. Audit fan-out runs through whatever `audit` emitter the consumer supplied to its action factory closure (typically `create_test_audit_emitter()` for unit harnesses).
 3. **Round-trip helpers** — predicates + wire-frame types live in `transports/ws_client.ts` (shared with the cross-process `ws_transport.ts` impl): `is_notification(method)`, `is_notification_with<P>(method, match)` (type-guard combinator — narrows `wait_for` return type), `is_response_for(id)`, `JsonrpcNotificationFrame<P>` / `JsonrpcSuccessResponseFrame<R>` / `JsonrpcErrorResponseFrame<D>` (typed wire-frame shapes distinct from the runtime Zod schemas in `http/jsonrpc.ts` — generic over `params` / `result` / `data` so tests narrow without casts). `build_broadcast_api<TApi>({harness, specs})` (in `ws_round_trip.ts`) wires a typed broadcast API against the harness transport.
 
 `WsClient` (in `transports/ws_client.ts`):
@@ -917,7 +917,8 @@ source of truth for wire-shape conformance.
 - `testing/cross_backend/capabilities.ts` — `BackendCapabilities` vocabulary
   (the **gating** flags `ws` / `sse` / `cell_crud` / `cell_relations` /
   `cell_gated_create` / `account_lifecycle` / `fact_serving` / `ready` /
-  `account_status` / `oversized_reject_closes_connection` / `peer_request` —
+  `account_status` / `oversized_reject_closes_connection` / `peer_request` /
+  `ws_handshake_pipelining` —
   each has a `test_if`
   reader; `peer_request` (server-initiated requests — the ActionPeer
   `peer/ping` round-trip) is `true` for both the Rust spine and the TS spine
@@ -964,6 +965,11 @@ source of truth for wire-shape conformance.
   smuggling probe (`true` Node/Deno/Rust — they close on an oversized reject;
   `false` Bun — `Bun.serve` drains + keepalives but frames correctly, so the
   suite's no-desync half still runs).
+  `ws_handshake_pipelining` gates the WS round-trip suite's
+  frames-with-the-handshake case (`true` Node/Deno/Rust — frames written in the
+  same TCP write as the upgrade request reach the socket; `false` Bun, whose
+  HTTP parser answers such a request `400`, and `false` in-process, where there
+  is no socket to write raw bytes to).
 
 ### `cross_backend/standard.ts` — `describe_standard_cross_process_tests`
 
@@ -1086,6 +1092,12 @@ base_url, ws_path, origin?, rpc_path?, max_message_bytes?})` opens a live
 `WebSocket` via `create_ws_transport` (the `ws` npm package) and asserts
 cases against the upgrade stack `register_ws_endpoint` wires (origin →
 `require_auth` → dispatch): authed upgrade round-trips `heartbeat`,
+requests sent the moment the socket opens are all answered (both spines admit a
+connection only after re-reading its credential; frames that arrive first wait
+for that, they are not dropped) — and, gated on
+`capabilities.ws_handshake_pipelining`, the same with the ordering forced:
+frames written in the same TCP write as the upgrade request (`connect_raw_ws`)
+are all answered,
 `heartbeat` admits only the parameterless shapes (a declared param →
 `invalid_params`), a message past `max_message_bytes` (default
 `DEFAULT_WS_MAX_MESSAGE_BYTES`) closes with `WS_CLOSE_MESSAGE_TOO_BIG`,
@@ -1116,7 +1128,9 @@ the seven server-initiated notifications (`received` → recipient,
 superseded sibling's grantor on **both** the accept- and revoke-cascade paths).
 `describe_role_grant_offer_notification_ws_tests({setup_test, capabilities,
 base_url, ws_path})` opens the affected counterparty's socket
-(`create_ws_transport`), drives the lifecycle RPC over `fixture.transport`, then
+(`create_admitted_ws_transport` — a targeted notification reaches only an
+admitted connection, and the handshake alone doesn't say it is one), drives the
+lifecycle RPC over `fixture.transport`, then
 strict-parses the delivered frame against its canonical params schema from
 `auth/role_grant_offer_notifications.ts` (the guard against serialization drift —
 field / null / datetime / the flat revoke shape / the supersede `reason` +
@@ -1172,7 +1186,8 @@ this is the pin that runs on both.
 `describe_ws_connection_cap_cross_tests({setup_test, capabilities, base_url,
 ws_path, origin?, max_connections_per_account?})` opens every socket with the
 fresh-per-test keeper's session cookies (one account), each answering a
-`heartbeat` before the next opens so the backend registered them in order and
+`heartbeat` before the next opens (`create_admitted_ws_transport`) so the
+backend registered them in order and
 "oldest" names the same socket on both spines. Cases: one connection past the
 cap closes exactly the oldest with `WS_CLOSE_CONNECTION_LIMIT` + reason
 `connection limit` while every other socket, the newest included, keeps
@@ -1341,6 +1356,20 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   Threads the keeper cookie onto the upgrade so per-action auth succeeds on
   the first message. `on_request` (attached at construction, before the upgrade
   completes) answers server-initiated requests via the shared `deliver_inbound`.
+  An open socket is not yet an *admitted* connection — both spines answer the
+  handshake, then re-read the credential, then admit, and deliver no
+  server-initiated message until then. `create_admitted_ws_transport(options)`
+  opens and round-trips `heartbeat` (response id `WS_ADMISSION_PROBE_ID`) so the
+  connection is admitted when it resolves; suites that wait for a push, or need
+  connections registered in a known order, open through it.
+- `testing/transports/ws_raw_client.ts` — `connect_raw_ws({port, hostname?, path, headers?, pipelined?})`
+  → `RawWsClient` (`{frames, send_text, wait_for, destroy}`), a WebSocket client
+  over a raw `node:net` socket for the two things a client library can't do:
+  **withhold the close frame** (it never answers one) and put frames in the
+  server's hands **with the handshake** (`pipelined` — written in the same TCP
+  write as the upgrade request, so before the connection can have been
+  admitted). Small unfragmented text frames only. Helpers `is_raw_ws_close`,
+  `raw_ws_close_code`, `RAW_WS_OPCODE_TEXT` / `_CLOSE`.
 - `testing/transports/sse_frame_reader.ts` — `create_sse_frame_reader(reader, default_timeout_ms?)`,
   the transport-agnostic SSE framing core over a
   `ReadableStreamDefaultReader<Uint8Array>`: `\n\n` framing, per-read timeout,

@@ -19,7 +19,9 @@ import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { ActingActor } from '$lib/http/auth_shape.ts';
 
 import {
+	PRE_ADMISSION_QUEUE_BYTES_FACTOR,
 	register_action_ws,
+	WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON,
 	type SocketCloseContext,
 	type SocketOpenContext
 } from '$lib/actions/register_action_ws.ts';
@@ -32,8 +34,11 @@ import {
 import {
 	DEFAULT_WS_MAX_MESSAGE_BYTES,
 	WS_CLOSE_CONNECTION_LIMIT,
+	WS_CLOSE_INTERNAL_ERROR,
 	WS_CLOSE_MESSAGE_TOO_BIG,
-	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT
+	WS_CLOSE_POLICY_VIOLATION,
+	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT,
+	WS_CLOSE_SESSION_REVOKED
 } from '$lib/actions/transports.ts';
 import { type CredentialType } from '$lib/hono_context.ts';
 import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
@@ -868,8 +873,9 @@ describe('register_action_ws max_connections_per_account', () => {
 		]);
 		assert.deepStrictEqual(second.fake.closes, []);
 		assert.strictEqual(transport.get_connection_count(), 1);
-		// the evicted socket's handlers are cancelled when its close lands
-		assert.strictEqual(opened[0]!.signal.aborted, false);
+		// the evicted socket's handlers are cancelled at eviction, not when its
+		// close handshake lands
+		assert.strictEqual(opened[0]!.signal.aborted, true);
 
 		// the adapter fires onClose for the evicted socket: its hook still runs,
 		// with the identity captured at open, and the newer socket stays tracked
@@ -1249,6 +1255,438 @@ describe('register_action_ws socket lifecycle hooks', () => {
 	});
 });
 
+describe('register_action_ws a server-closed socket dispatches nothing', () => {
+	// A runtime adapter can keep delivering inbound frames after the server
+	// calls `ws.close(…)`, until the close handshake completes (`@hono/node-ws`
+	// does, up to the `ws` close timeout when the client withholds its close
+	// frame). The fake `WSContext` models exactly that client: it records the
+	// close and keeps accepting `on_message`.
+	const echo_request = { jsonrpc: '2.0', id: 1, method: 'echo', params: { value: 'x' } };
+
+	/** A harness whose `echo` handler counts its runs. */
+	const build_counting_harness = async (
+		opts: Partial<Parameters<typeof build_harness>[0]> = {}
+	): Promise<{ h: Harness; runs: () => number }> => {
+		let runs = 0;
+		const h = await build_harness({
+			...opts,
+			handlers: {
+				echo: (input) => {
+					runs++;
+					return input;
+				}
+			}
+		});
+		return { h, runs: () => runs };
+	};
+
+	test('after a revocation', async () => {
+		const { h, runs } = await build_counting_harness();
+		await h.on_open();
+		await h.on_message(echo_request);
+		assert.strictEqual(runs(), 1);
+		assert.strictEqual(h.fake.sends.length, 1);
+
+		assert.strictEqual(h.transport.close_sockets_for_account('acc_1' as never), 1);
+		assert.strictEqual(h.fake.closes[0]!.code, WS_CLOSE_SESSION_REVOKED);
+
+		// the client withholds its close frame and keeps sending
+		await h.on_message(echo_request);
+		await h.on_message({ jsonrpc: '2.0', id: 2, method: 'nope' });
+		await h.on_message('not json');
+
+		assert.strictEqual(runs(), 1, 'the revoked socket ran no further handler');
+		assert.strictEqual(h.fake.sends.length, 1, 'and got no further reply, error replies included');
+	});
+
+	test('an oversized frame on a revoked socket sends no second close', async () => {
+		const { h, runs } = await build_counting_harness({ max_message_bytes: 256 });
+		await h.on_open();
+		h.transport.close_sockets_for_account('acc_1' as never);
+		assert.strictEqual(h.fake.closes.length, 1);
+
+		await h.on_message({
+			jsonrpc: '2.0',
+			id: 1,
+			method: 'echo',
+			params: { value: 'x'.repeat(300) }
+		});
+
+		assert.strictEqual(runs(), 0);
+		assert.deepStrictEqual(
+			h.fake.closes.map((close) => close.code),
+			[WS_CLOSE_SESSION_REVOKED],
+			'the socket is already ended — nothing more is read from it, the size check included'
+		);
+	});
+
+	test('after a cap eviction', async () => {
+		const stub = create_stub_upgrade();
+		const runs: Array<string> = [];
+		register_action_ws({
+			path: '/ws',
+			app: new Hono(),
+			upgradeWebSocket: stub.upgradeWebSocket,
+			actions: [
+				{
+					spec: echo_spec,
+					handler: (input) => {
+						runs.push((input as { value: string }).value);
+						return input;
+					}
+				}
+			],
+			db: create_stub_db(),
+			max_connections_per_account: 1,
+			heartbeat: false,
+			log
+		});
+		const open = async (): Promise<{ fake: FakeWs; send: (value: string) => Promise<void> }> => {
+			const events = await stub.get_create_events()(
+				create_fake_hono_context({ credential_type: 'session' })
+			);
+			const fake = create_fake_ws();
+			await (events.onOpen?.(new Event('open'), fake.ws) as Promise<void> | void);
+			return {
+				fake,
+				send: async (value) => {
+					const event = new MessageEvent('message', {
+						data: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value } })
+					});
+					if (events.onMessage) await dispatch_ws_message(events.onMessage, event, fake.ws);
+				}
+			};
+		};
+
+		const oldest = await open();
+		const newest = await open();
+		assert.strictEqual(oldest.fake.closes[0]!.code, WS_CLOSE_CONNECTION_LIMIT);
+
+		await oldest.send('from the evicted socket');
+		await newest.send('from the live socket');
+
+		assert.deepStrictEqual(runs, ['from the live socket']);
+		assert.deepStrictEqual(oldest.fake.sends, []);
+	});
+
+	test('after a heartbeat timeout, which also unregisters the connection', async () => {
+		vi.useFakeTimers();
+		try {
+			const { h, runs } = await build_counting_harness({ heartbeat: { timeout: 200 } });
+			await h.on_open();
+			assert.strictEqual(h.transport.get_connection_count(), 1);
+
+			vi.advanceTimersByTime(250);
+			assert.strictEqual(h.fake.closes[0]!.code, WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT);
+			assert.strictEqual(
+				h.transport.get_connection_count(),
+				0,
+				'a socket the server closed is no longer a broadcast target'
+			);
+
+			await h.on_message(echo_request);
+			assert.strictEqual(runs(), 0);
+			assert.deepStrictEqual(h.fake.sends, []);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	test('after an oversized message', async () => {
+		const { h, runs } = await build_counting_harness({ max_message_bytes: 256 });
+		await h.on_open();
+		await h.on_message({
+			jsonrpc: '2.0',
+			id: 1,
+			method: 'echo',
+			params: { value: 'x'.repeat(300) }
+		});
+		assert.strictEqual(h.fake.closes[0]!.code, WS_CLOSE_MESSAGE_TOO_BIG);
+		assert.strictEqual(h.transport.get_connection_count(), 0);
+
+		await h.on_message(echo_request);
+		assert.strictEqual(runs(), 0);
+		assert.deepStrictEqual(h.fake.sends, []);
+	});
+
+	test('after a failed on_socket_open', async () => {
+		const { h, runs } = await build_counting_harness({
+			on_socket_open: () => {
+				throw new Error('bootstrap boom');
+			}
+		});
+		await h.on_open();
+		assert.strictEqual(h.fake.closes[0]!.code, WS_CLOSE_INTERNAL_ERROR);
+		assert.strictEqual(h.transport.get_connection_count(), 0);
+		const sends_at_close = h.fake.sends.length;
+
+		await h.on_message(echo_request);
+		assert.strictEqual(runs(), 0);
+		assert.strictEqual(h.fake.sends.length, sends_at_close);
+	});
+
+	test('a connection removed from the transport without a close is ended on its next frame', async () => {
+		const captured: { open: SocketOpenContext | null } = { open: null };
+		const { h, runs } = await build_counting_harness({
+			on_socket_open: (ctx) => {
+				captured.open = ctx;
+			}
+		});
+		await h.on_open();
+		assert.ok(captured.open);
+
+		// removal alone — no close frame, no abort: the transport is the
+		// authority, and the socket must not linger reading and never answering
+		h.transport.remove_connection(captured.open.connection_id);
+		assert.deepStrictEqual(h.fake.closes, []);
+		await h.on_message(echo_request);
+
+		assert.strictEqual(runs(), 0);
+		assert.deepStrictEqual(h.fake.sends, []);
+		assert.deepStrictEqual(h.fake.closes, [
+			{ code: WS_CLOSE_INTERNAL_ERROR, reason: 'connection unregistered' }
+		]);
+		assert.strictEqual(captured.open.signal.aborted, true);
+
+		// ended: later frames are dropped without a second close
+		await h.on_message(echo_request);
+		assert.strictEqual(h.fake.closes.length, 1);
+	});
+
+	test('an unregistered socket is ended even with the heartbeat off, however chatty', async () => {
+		vi.useFakeTimers();
+		try {
+			const captured: { open: SocketOpenContext | null } = { open: null };
+			const { h, runs } = await build_counting_harness({
+				heartbeat: false,
+				on_socket_open: (ctx) => {
+					captured.open = ctx;
+				}
+			});
+			await h.on_open();
+			h.transport.remove_connection(captured.open!.connection_id);
+
+			for (let i = 0; i < 5; i++) {
+				vi.advanceTimersByTime(1000);
+				await h.on_message(echo_request);
+			}
+
+			assert.strictEqual(runs(), 0);
+			assert.deepStrictEqual(
+				h.fake.closes.map((close) => close.code),
+				[WS_CLOSE_INTERNAL_ERROR],
+				'ended on the first frame, not left open for the client to keep feeding'
+			);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	test('an in-flight handler sees its signal abort at revocation, before the close lands', async () => {
+		const started = Promise.withResolvers<AbortSignal>();
+		const release = Promise.withResolvers<void>();
+		const h = await build_harness({
+			handlers: {
+				echo: async (input, ctx) => {
+					started.resolve(ctx.signal);
+					await release.promise;
+					return input;
+				}
+			}
+		});
+		await h.on_open();
+		const in_flight = h.on_message(echo_request);
+		const signal = await started.promise;
+		assert.strictEqual(signal.aborted, false);
+
+		h.transport.close_sockets_for_account('acc_1' as never);
+		// no `on_close` yet — the close handshake has not landed
+		assert.strictEqual(signal.aborted, true);
+
+		release.resolve();
+		await in_flight;
+	});
+
+	test('an in-flight handler sees its signal abort at a heartbeat timeout', async () => {
+		vi.useFakeTimers();
+		try {
+			const captured: { signal: AbortSignal | null } = { signal: null };
+			const h = await build_harness({
+				handlers: { echo: () => ({ value: 'x' }) },
+				heartbeat: { timeout: 200 },
+				on_socket_open: (ctx) => {
+					captured.signal = ctx.signal;
+				}
+			});
+			await h.on_open();
+			assert.ok(captured.signal);
+			assert.strictEqual(captured.signal.aborted, false);
+
+			vi.advanceTimersByTime(250);
+
+			assert.strictEqual(captured.signal.aborted, true);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
+
+describe('register_action_ws frames during on_socket_open', () => {
+	const PRE_OPEN_OVERFLOW_CLOSE = {
+		code: WS_CLOSE_POLICY_VIOLATION,
+		reason: WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON
+	};
+
+	/**
+	 * A harness whose `on_socket_open` holds the socket in its opening phase
+	 * until `release` — admitted, hook not yet returned, inbound frames queued.
+	 */
+	const build_opening_harness = async (
+		max_message_bytes: number
+	): Promise<{
+		h: Harness;
+		handled: Array<string>;
+		opening: Promise<void>;
+		release: () => void;
+	}> => {
+		const hook = Promise.withResolvers<void>();
+		const handled: Array<string> = [];
+		const h = await build_harness({
+			handlers: {
+				echo: (input) => {
+					handled.push((input as { value: string }).value);
+					return input;
+				}
+			},
+			max_message_bytes,
+			on_socket_open: () => hook.promise
+		});
+		const opening = h.on_open();
+		return { h, handled, opening, release: hook.resolve };
+	};
+
+	/** An `echo` request frame of exactly `bytes` UTF-8 bytes, its value mostly `fill`. */
+	const frame_of = (bytes: number, fill = 'x'): string => {
+		const encoder = new TextEncoder();
+		const build = (value: string): string =>
+			JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value } });
+		const room = bytes - encoder.encode(build('')).length;
+		const fill_bytes = encoder.encode(fill).length;
+		const frame = build(fill.repeat(Math.floor(room / fill_bytes)) + 'x'.repeat(room % fill_bytes));
+		assert.strictEqual(encoder.encode(frame).length, bytes);
+		return frame;
+	};
+
+	test('the queue admits frames up to the byte budget, and the frame past it closes the socket', async () => {
+		const max_message_bytes = 1000;
+		const { h, handled, opening, release } = await build_opening_harness(max_message_bytes);
+		const budget = PRE_ADMISSION_QUEUE_BYTES_FACTOR * max_message_bytes;
+
+		// four full-size frames fill the budget exactly — far below the frame cap
+		const queued: Array<Promise<void>> = [];
+		for (let i = 0; i < PRE_ADMISSION_QUEUE_BYTES_FACTOR; i++) {
+			queued.push(h.on_message(frame_of(max_message_bytes)));
+		}
+		assert.strictEqual(PRE_ADMISSION_QUEUE_BYTES_FACTOR * max_message_bytes, budget);
+		assert.deepStrictEqual(h.fake.closes, [], 'exactly the budget is admitted');
+
+		// one small frame more passes it
+		await h.on_message(frame_of(100));
+
+		assert.deepStrictEqual(h.fake.closes, [PRE_OPEN_OVERFLOW_CLOSE]);
+		assert.strictEqual(h.transport.get_connection_count(), 0);
+		release();
+		await opening;
+		await Promise.all(queued);
+		assert.deepStrictEqual(handled, [], 'the queued frames are dropped with the socket');
+	});
+
+	test('the byte budget counts UTF-8 bytes, not characters', async () => {
+		const max_message_bytes = 1000;
+		const { h, opening, release } = await build_opening_harness(max_message_bytes);
+
+		// each frame is under the message cap in bytes and well under it in
+		// characters: five of them fit a character count of the budget, not a
+		// byte count
+		const frame = frame_of(999, '€');
+		assert.ok(frame.length * 5 < PRE_ADMISSION_QUEUE_BYTES_FACTOR * max_message_bytes);
+		const queued: Array<Promise<void>> = [];
+		for (let i = 0; i < PRE_ADMISSION_QUEUE_BYTES_FACTOR; i++) queued.push(h.on_message(frame));
+		assert.deepStrictEqual(h.fake.closes, []);
+
+		await h.on_message(frame);
+
+		assert.deepStrictEqual(h.fake.closes, [PRE_OPEN_OVERFLOW_CLOSE]);
+		release();
+		await opening;
+		await Promise.all(queued);
+	});
+
+	test('frames within the budget dispatch once the hook returns, and no budget applies after', async () => {
+		const max_message_bytes = 1000;
+		const { h, handled, opening, release } = await build_opening_harness(max_message_bytes);
+
+		const queued = [h.on_message(frame_of(900)), h.on_message(frame_of(900))];
+		release();
+		await opening;
+		await Promise.all(queued);
+		assert.strictEqual(handled.length, 2);
+
+		// open now: frames dispatch directly and no queue budget applies
+		for (let i = 0; i < 6; i++) await h.on_message(frame_of(900));
+		assert.strictEqual(handled.length, 8);
+		assert.deepStrictEqual(h.fake.closes, []);
+	});
+
+	test('a reply to a request the hook awaits on its own connection waits for the hook', async () => {
+		const outcomes: { awaited: unknown; detached: Promise<unknown> | null } = {
+			awaited: null,
+			detached: null
+		};
+		const holder: { transport: BackendWebsocketTransport | null } = { transport: null };
+		const h = await build_harness({
+			handlers: { echo: (input) => input },
+			on_socket_open: async (ctx) => {
+				const transport = holder.transport!;
+				// started without awaiting — resolves once the hook has returned
+				outcomes.detached = transport.request_connection(ctx.connection_id, 'peer/ping', {
+					nonce: 1
+				});
+				// awaited — the client's reply is queued behind this very hook
+				outcomes.awaited = await transport.request_connection(
+					ctx.connection_id,
+					'peer/ping',
+					{ nonce: 2 },
+					{ timeout_ms: 60 }
+				);
+			}
+		});
+		holder.transport = h.transport;
+
+		const opening = h.on_open();
+		// let the hook run up to its await
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		// the client answers both server-initiated requests at once
+		const requests = h.fake.sends.map((frame) => parse_json(frame));
+		assert.deepStrictEqual(
+			requests.map((request) => request.method),
+			['peer/ping', 'peer/ping']
+		);
+		const replies = requests.map((request) =>
+			h.on_message({ jsonrpc: '2.0', id: request.id, result: { nonce: request.params.nonce } })
+		);
+		await opening;
+		await Promise.all(replies);
+
+		assert.deepStrictEqual(
+			outcomes.awaited,
+			{ ok: false, error: { kind: 'timeout' } },
+			'the awaited self-request never sees its reply'
+		);
+		assert.deepStrictEqual(await outcomes.detached, { ok: true, value: { nonce: 1 } });
+	});
+});
+
 describe('register_action_ws server heartbeat', () => {
 	afterEach(() => {
 		vi.useRealTimers();
@@ -1325,6 +1763,46 @@ describe('register_action_ws server heartbeat', () => {
 		vi.advanceTimersByTime(10_000);
 
 		assert.strictEqual(h.fake.closes.length, 0);
+	});
+
+	test('a socket revoked in the tick after admission starts no heartbeat timer', async () => {
+		vi.useFakeTimers();
+		const h = await build_harness({
+			handlers: { echo: () => ({ value: 'x' }) },
+			heartbeat: { timeout: 200 }
+		});
+		// `onOpen` admits synchronously here and resumes a microtask later; a
+		// revocation lands in between
+		const opening = h.on_open();
+		assert.strictEqual(h.transport.close_sockets_for_account('acc_1' as never), 1);
+		await opening;
+
+		vi.advanceTimersByTime(2000);
+
+		assert.deepStrictEqual(
+			h.fake.closes.map((close) => close.code),
+			[WS_CLOSE_SESSION_REVOKED],
+			'no heartbeat timeout fires on a socket that already ended'
+		);
+		assert.strictEqual(vi.getTimerCount(), 0, 'and no interval is left running');
+	});
+
+	test('onClose leaves no heartbeat timer behind on a socket that ended before it', async () => {
+		vi.useFakeTimers();
+		const h = await build_harness({
+			handlers: { echo: () => ({ value: 'x' }) },
+			heartbeat: { timeout: 200 }
+		});
+		const opening = h.on_open();
+		h.transport.close_sockets_for_account('acc_1' as never);
+		await opening;
+
+		await h.on_close();
+
+		assert.strictEqual(vi.getTimerCount(), 0);
+		const closes = h.fake.closes.length;
+		vi.advanceTimersByTime(2000);
+		assert.strictEqual(h.fake.closes.length, closes);
 	});
 
 	test('timer is stopped on close', async () => {

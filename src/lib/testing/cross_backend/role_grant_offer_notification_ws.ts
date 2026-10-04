@@ -39,7 +39,7 @@ import '../assert_dev_env.ts';
  * guard), and accept stays idempotent on the role_grant while still superseding
  * pending siblings. Gated on `capabilities.ws`.
  *
- * Cross-process only: `create_ws_transport` needs a real bound socket, so wire
+ * Cross-process only: `create_admitted_ws_transport` needs a real bound socket, so wire
  * it from a `*.cross.test.ts` file, never an in-process setup. Authed cookies
  * come from the per-account session minted by `fixture.create_account` /
  * `fixture.create_session_headers`.
@@ -50,7 +50,7 @@ import '../assert_dev_env.ts';
 import { assert, describe } from 'vitest';
 
 import { rpc_call } from '../rpc_helpers.ts';
-import { create_ws_transport } from '../transports/ws_transport.ts';
+import { create_admitted_ws_transport } from '../transports/ws_transport.ts';
 import { is_notification_with } from '../transports/ws_client.ts';
 import { ROLE_ADMIN } from '../../auth/role_schema.ts';
 import {
@@ -100,10 +100,19 @@ export const describe_role_grant_offer_notification_ws_tests = (
 
 	// -- shared helpers -------------------------------------------------------
 
-	/** Open a WS transport for a single session cookie (`<name>=<value>`). */
+	/**
+	 * Open a WS transport for a single session cookie (`<name>=<value>`),
+	 * admitted before it resolves: a targeted notification is delivered only to
+	 * an admitted connection, and the handshake alone doesn't say it is one.
+	 */
 	const open_ws = (cookie: string | undefined) => {
 		assert.ok(cookie, 'expected a session cookie for the WS upgrade');
-		return create_ws_transport({ base_url, ws_path, cookies: [cookie], origin: base_url });
+		return create_admitted_ws_transport({
+			base_url,
+			ws_path,
+			cookies: [cookie],
+			origin: base_url
+		});
 	};
 
 	/** Drive a JSON-RPC call over the fixture's HTTP transport. */

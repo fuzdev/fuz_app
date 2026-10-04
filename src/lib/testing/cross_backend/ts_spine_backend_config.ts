@@ -48,7 +48,8 @@ const ts_spine_capabilities = Object.freeze({
 
 /**
  * Capabilities for the **Bun** spine binary — `ts_spine_capabilities` with
- * `oversized_reject_closes_connection: false`. `Bun.serve` drains the declared
+ * `oversized_reject_closes_connection: false` and
+ * `ws_handshake_pipelining: false`. `Bun.serve` drains the declared
  * `Content-Length` of an oversized-body `413` reject and keeps the socket
  * alive (processing the correctly-framed pipelined request) even when the
  * response carries `Connection: close`, unlike `@hono/node-server` / Deno /
@@ -56,10 +57,15 @@ const ts_spine_capabilities = Object.freeze({
  * there is no desync — but the smuggling suite's strong "connection closes"
  * assertion doesn't hold; this flag routes Bun onto the suite's no-desync arm.
  * See `docs/security.md` §"Body Size Limiting".
+ *
+ * `Bun.serve` also answers `400` to an upgrade request that carries WebSocket
+ * frames in the same TCP write, before any handler runs, so the WS suite's
+ * frames-with-the-handshake case has nothing to drive there.
  */
 const ts_spine_bun_capabilities = Object.freeze({
 	...ts_spine_capabilities,
-	oversized_reject_closes_connection: false
+	oversized_reject_closes_connection: false,
+	ws_handshake_pipelining: false
 });
 
 /** Default port for the Node TS spine binary — slots beside the Rust `spine_stub` (1177). */

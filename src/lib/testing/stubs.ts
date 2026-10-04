@@ -146,7 +146,7 @@ export const create_test_audit_emitter = (): AuditEmitter => ({
  * Build a no-op `AuditLogSse` for tests that wire `audit_sse` into the
  * surface helper but don't assert on SSE fan-out or subscriber state.
  *
- * `subscribe` returns a no-op cleanup; `on_audit_event` is a no-op; the
+ * `on_audit_event` is a no-op, so nothing is broadcast; the
  * `registry` is a fresh `SubscriberRegistry` instance (call sites that
  * inspect `.size` or call `.close_*` see a real registry, so writes are
  * isolated per test). Tests that need real SSE plumbing build it via
@@ -157,7 +157,6 @@ export const create_stub_audit_sse = (): AuditLogSse => {
 		max_per_scope: AUDIT_LOG_SSE_MAX_PER_SCOPE
 	});
 	return {
-		subscribe: () => () => {},
 		log: new Logger('test:audit_sse', { level: 'off' }),
 		on_audit_event: () => {},
 		registry

@@ -18,8 +18,20 @@ import type {
 	JsonrpcErrorResponse
 } from '../http/jsonrpc.ts';
 
-/** WebSocket close code for session revocation. */
+/**
+ * WebSocket close code for session revocation.
+ *
+ * Also the close for an upgrade refused at admission because its credential
+ * was revoked while the upgrade was in flight (`register_action_ws`) — the
+ * same outcome, reached a moment earlier.
+ */
 export const WS_CLOSE_SESSION_REVOKED = 4001;
+/**
+ * The close reason sent with `WS_CLOSE_SESSION_REVOKED` — one definition, so a
+ * socket revoked mid-life and an upgrade refused at admission are
+ * indistinguishable on the wire. The Rust spine sends the same text.
+ */
+export const WS_CLOSE_SESSION_REVOKED_REASON = 'Session revoked';
 /** WebSocket close code — client timed out waiting for a response. */
 export const WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002;
 /** WebSocket close code — server timed out with no incoming activity. */
@@ -42,6 +54,26 @@ export const WS_CLOSE_CONNECTION_LIMIT = 4004;
  * (RFC 6455 §7.4.1 "Message Too Big").
  */
 export const WS_CLOSE_MESSAGE_TOO_BIG = 1009;
+/**
+ * WebSocket close code — the server closed a socket that sent too much while
+ * it was still opening: past `MAX_PRE_ADMISSION_FRAMES` frames or the
+ * `PRE_ADMISSION_QUEUE_BYTES_FACTOR` byte budget, before its admission and
+ * `on_socket_open` had completed (RFC 6455 §7.4.1 "Policy Violation"). Not a
+ * revocation: the client reconnects under its ordinary backoff.
+ */
+export const WS_CLOSE_POLICY_VIOLATION = 1008;
+/**
+ * WebSocket close code — the server hit an unexpected condition (RFC 6455
+ * §7.4.1 "Internal Error").
+ *
+ * Sent when an upgraded socket can't be admitted because its credential
+ * re-check itself failed (a database error), and when an `on_socket_open` hook
+ * throws. The handshake has already answered `101`, so an HTTP `500` is no
+ * longer available. Not a revocation: the client's credential may be fine, so
+ * it reconnects under its ordinary backoff rather than entering its `revoked`
+ * state. The twin of the Rust spine's `WS_CLOSE_INTERNAL_ERROR`.
+ */
+export const WS_CLOSE_INTERNAL_ERROR = 1011;
 
 /**
  * Default cap on one WebSocket message, in UTF-8 bytes — equal to the default
@@ -69,6 +101,14 @@ export const utf8_length_over = (text: string, max_bytes: number): number | null
 	const size = text_encoder.encode(text).byteLength;
 	return size > max_bytes ? size : null;
 };
+
+/**
+ * The UTF-8 byte length of `text`.
+ *
+ * @param text - the string to measure
+ * @returns its length in UTF-8 bytes
+ */
+export const utf8_length = (text: string): number => text_encoder.encode(text).byteLength;
 
 // TODO figure out the symmetry of frontend and backend transports (none/partial/full?) --
 // we may also need orthogonal abstractions to clarify the transport role

@@ -18,8 +18,8 @@ import {
 	AuditLogEventJson,
 	type AuditLogEvent
 } from '../auth/audit_log_schema.ts';
-import { SubscriberRegistry, type SubscribeOptions } from './subscriber_registry.ts';
-import type { SseStream, SseNotification, EventSpec } from './sse.ts';
+import { SubscriberRegistry } from './subscriber_registry.ts';
+import type { SseNotification, EventSpec } from './sse.ts';
 
 /** SSE channel the audit-log stream route publishes on. */
 export const AUDIT_LOG_CHANNEL = 'audit_log';
@@ -67,8 +67,9 @@ export const disconnect_event_types: ReadonlySet<string> = new Set([
  * - `session_revoke_all` / `token_revoke_all` / `password_change` / `logout`
  *   target a connected subscriber (account-wide)
  *
- * The registry must use `account_id` as the identity key when subscribing
- * (passed as the third argument to `registry.subscribe()`).
+ * The registry's subscribers must carry `account_id` as an identity key (in
+ * `SubscribeOptions.groups`), and the session hash as `scope` for the
+ * session-scoped `session_revoke` close.
  *
  * @param registry - the subscriber registry to guard
  * @param required_role - the role that grants access to the SSE endpoint,
@@ -135,14 +136,17 @@ export const create_sse_auth_guard = <T>(
  * `on_audit_event` callback (broadcast + guard).
  */
 export interface AuditLogSse {
-	/** Subscribe function — pass as part of `stream` option to `create_audit_log_route_specs`. */
-	subscribe: (stream: SseStream<SseNotification>, options?: SubscribeOptions) => () => void;
+	/**
+	 * The subscriber registry the audit stream route registers each stream on
+	 * (two-phase: `subscribe_pending` then `admit`) — pass as part of the
+	 * `stream` option to `create_audit_log_route_specs`. Also exposed for
+	 * subscriber count monitoring.
+	 */
+	registry: SubscriberRegistry<SseNotification>;
 	/** Logger — pass as part of `stream` option to `create_audit_log_route_specs`. */
 	log: Logger;
 	/** Combined broadcast + guard callback. Wired by `create_app_server`'s `audit_log_sse` option, or compose inside the consumer's `audit_factory` body. */
 	on_audit_event: (event: AuditLogEvent) => void;
-	/** The underlying registry — exposed for subscriber count monitoring. */
-	registry: SubscriberRegistry<SseNotification>;
 }
 
 /**
@@ -226,7 +230,6 @@ export const create_audit_log_sse = (options: {
 	const guard = create_sse_auth_guard(registry, role, options.log);
 
 	return {
-		subscribe: registry.subscribe.bind(registry),
 		log: options.log,
 		on_audit_event: (event: AuditLogEvent): void => {
 			registry.broadcast(AUDIT_LOG_CHANNEL, { method: event.event_type, params: event });

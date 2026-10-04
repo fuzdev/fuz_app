@@ -51,6 +51,19 @@ const api_token_expr = iso8601_timestamp_expr(API_TOKEN_COLUMNS, [
 ])('');
 
 /**
+ * The `WHERE` fragment that makes an `api_token` row **live**: not expired (an
+ * eternal token has no expiry).
+ *
+ * One definition for every query that decides whether a token authenticates —
+ * the resolve path's `query_validate_api_token` and the re-check's
+ * `query_api_token_live_account` — so a condition added to one is added to
+ * both, and the re-check can never admit a token resolution would refuse. A
+ * new liveness condition (a `revoked_at`, a `disabled` flag) goes here. The
+ * twin of the Rust spine's `API_TOKEN_IS_LIVE`.
+ */
+const API_TOKEN_IS_LIVE = '(expires_at IS NULL OR expires_at > NOW())';
+
+/**
  * Store a new API token (the hash, not the raw token).
  *
  * @param deps - query dependencies
@@ -112,7 +125,7 @@ export const query_validate_api_token = async (
 	const row = await deps.db.query_one<ApiToken>(
 		`SELECT ${columns_sql(API_TOKEN_COLUMNS, api_token_expr)} FROM api_token
 		 WHERE token_hash = $1
-		   AND (expires_at IS NULL OR expires_at > NOW())`,
+		   AND ${API_TOKEN_IS_LIVE}`,
 		[token_hash]
 	);
 	if (!row) return undefined;
@@ -139,6 +152,32 @@ export const query_validate_api_token = async (
 	pending_effects?.push(p);
 
 	return row;
+};
+
+/**
+ * Look up the owning account of a live API token — one that still exists and
+ * has not expired — by its public id.
+ *
+ * The by-id counterpart of `query_validate_api_token`, for re-checking a token
+ * that already authenticated (`revalidate_resolved_auth`): no hash, no scope
+ * decode, and no touch of `last_used_at` / `last_used_ip` — a re-check is not
+ * a use. "Live" is the same predicate in both (`API_TOKEN_IS_LIVE`). The scope
+ * document is not re-read: the resolved credential carries the scope it was
+ * admitted with, and nothing rewrites the column after the mint.
+ *
+ * @param deps - query dependencies
+ * @param id - the public token id (e.g. `tok_abc123`)
+ * @returns the owning account id, or `undefined` when the token is gone or expired
+ */
+export const query_api_token_live_account = async (
+	deps: QueryDeps,
+	id: string
+): Promise<string | undefined> => {
+	const row = await deps.db.query_one<{ account_id: string }>(
+		`SELECT account_id FROM api_token WHERE id = $1 AND ${API_TOKEN_IS_LIVE}`,
+		[id]
+	);
+	return row?.account_id;
 };
 
 /**

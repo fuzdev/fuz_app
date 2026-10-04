@@ -21,7 +21,8 @@ import '../assert_dev_env.ts';
  *   a capability is a compile error until each family declares it).
  * - `ts_spine_capabilities` / `ts_spine_bun_capabilities` — fuz_app's own TS
  *   spine presets, in `ts_spine_backend_config.ts` (deltas off the family
- *   default; Bun flips `oversized_reject_closes_connection`).
+ *   default; Bun flips `oversized_reject_closes_connection` and
+ *   `ws_handshake_pipelining`).
  * - `rust_spine_stub_capabilities` — fuz_app's Rust spine-stub preset, in
  *   `rust_spine_stub_backend_config.ts` (delta off the rust family default).
  *
@@ -202,6 +203,23 @@ export interface BackendCapabilities {
 	 */
 	readonly peer_request: boolean;
 	/**
+	 * The backend's HTTP server accepts WebSocket frames written in the same
+	 * TCP write as the upgrade request, handing them to the socket once the
+	 * handshake completes. Gates the `frames sent with the handshake` case in
+	 * `describe_cross_process_ws_tests` — the deterministic form of "frames
+	 * that arrive before the connection is admitted wait for admission", since
+	 * those frames are in the backend's hands before it can have admitted
+	 * anything.
+	 *
+	 * `true` for Node (`ws`), Deno, and the Rust spine (hyper hands the
+	 * leftover bytes to the upgraded stream); `false` for Bun, whose HTTP
+	 * parser answers such a request `400` before any handler runs. A backend
+	 * without it still runs the suite's client-library case (requests sent the
+	 * moment the socket opens), which pins the same contract without forcing
+	 * the ordering.
+	 */
+	readonly ws_handshake_pipelining: boolean;
+	/**
 	 * A test `CellCreateAuthorize` policy is live-mounted on the backend's cell
 	 * layer — creating a `kind: 'gated'` cell requires the `participant` role
 	 * or admin; every other kind (and a typeless cell) is open. Gates
@@ -220,12 +238,14 @@ export interface BackendCapabilities {
 /**
  * Capability declarations for the in-process Hono transport. Nearly every
  * flag is `true` because in-process testing exercises the full backend
- * with no missing optional behaviors. The one exception is `peer_request`:
- * `describe_peer_ping_ws_tests` is cross-process-only (it needs a real bound
- * socket with an `on_request` responder via `create_ws_transport`), so the
- * in-process driver never runs it — the transport itself supports
- * server-initiated requests. Cross-process consumers declare each flag
- * explicitly per backend.
+ * with no missing optional behaviors. The exceptions are the flags whose
+ * cases are cross-process-only: `peer_request` (`describe_peer_ping_ws_tests`
+ * needs a real bound socket with an `on_request` responder via
+ * `create_ws_transport`, so the in-process driver never runs it — the
+ * transport itself supports server-initiated requests),
+ * `ws_handshake_pipelining` (raw bytes on a real socket), and
+ * `cell_gated_create`. Cross-process consumers declare each flag explicitly
+ * per backend.
  */
 export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	ws: true,
@@ -238,6 +258,9 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	account_status: true,
 	oversized_reject_closes_connection: true,
 	peer_request: false,
+	// Cross-process-only, like `peer_request`: the case needs a real bound socket
+	// to write raw bytes to.
+	ws_handshake_pipelining: false,
 	// Cross-process-only: the test `CellCreateAuthorize` policy is mounted on the
 	// spine binaries' full mount + the Rust stub, not the in-process default app.
 	cell_gated_create: false

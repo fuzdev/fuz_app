@@ -85,6 +85,10 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	// the HTTP RPC endpoint (the no-transport case). The TS spine config opts in;
 	// a generic consumer enables it once it wires that mount.
 	peer_request: false,
+	// Node (`ws`) and Deno hand frames pipelined with the upgrade request to the
+	// socket. A Bun-served consumer overrides to `false` (see the bun spine
+	// config) — `Bun.serve` answers such a request `400`.
+	ws_handshake_pipelining: true,
 	// Off by default — the `cell_gated_create` test policy is a fuz_app test
 	// fixture, mounted only on the spine binaries (`ts_spine_*`), not generic
 	// consumers.
@@ -115,6 +119,9 @@ export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 	// Server-initiated requests landed Rust-first canonical — the Rust spine
 	// drives the `peer/ping` round-trip, so the family opts into the suite.
 	peer_request: true,
+	// hyper hands bytes pipelined after the upgrade request to the upgraded
+	// stream, where they wait for the read loop that starts at admission.
+	ws_handshake_pipelining: true,
 	// Off by default — the `testing_spine_stub` preset opts in (it mounts the
 	// `TestCellGatedCreateAuthorize` policy); a generic Rust consumer doesn't.
 	cell_gated_create: false

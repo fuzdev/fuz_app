@@ -1,6 +1,6 @@
 /**
- * Tests for BackendWebsocketTransport — connection tracking, revocation, and
- * the per-account connection cap.
+ * Tests for BackendWebsocketTransport — connection tracking, revocation, the
+ * per-account connection cap, and two-phase registration.
  *
  * Uses a fake `WSContextInit` to construct real `WSContext`
  * instances without a live WebSocket. Exercises the three revocation paths
@@ -18,7 +18,11 @@ import {
 	DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT,
 	type ConnectionIdentity
 } from '$lib/actions/transports_ws_backend.ts';
-import { WS_CLOSE_CONNECTION_LIMIT, WS_CLOSE_SESSION_REVOKED } from '$lib/actions/transports.ts';
+import {
+	WS_CLOSE_CONNECTION_LIMIT,
+	WS_CLOSE_SESSION_REVOKED,
+	WS_CLOSE_SESSION_REVOKED_REASON
+} from '$lib/actions/transports.ts';
 import type { JsonrpcNotification } from '$lib/http/jsonrpc.ts';
 import { create_fake_ws } from '$lib/testing/ws_round_trip.ts';
 import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
@@ -754,5 +758,274 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 		assert.deepStrictEqual(bearer_ws.sends, [JSON.stringify(notification)]);
 		assert.deepStrictEqual(daemon_ws.sends, [JSON.stringify(notification)]);
 		assert.deepStrictEqual(other_account_ws.sends, []);
+	});
+});
+
+describe('BackendWebsocketTransport two-phase registration', () => {
+	const REVOKED_CLOSE = { code: WS_CLOSE_SESSION_REVOKED, reason: WS_CLOSE_SESSION_REVOKED_REASON };
+	const CONNECTION_LIMIT_CLOSE = { code: WS_CLOSE_CONNECTION_LIMIT, reason: 'connection limit' };
+
+	const notification: JsonrpcNotification = {
+		jsonrpc: '2.0',
+		method: 'thing_changed',
+		params: { id: 'x' }
+	};
+
+	test('a pending connection is not a connection until admitted', () => {
+		const t = new BackendWebsocketTransport();
+		const { ws } = create_fake_ws();
+		const id = t.register_pending(ws, HASH_A, ACCOUNT_A);
+
+		assert.strictEqual(t.get_connection_count(), 0);
+		assert.strictEqual(t.get_pending_connection_count(), 1);
+		assert.strictEqual(t.is_ready(), false);
+		assert.strictEqual(t.is_registered(id), false);
+
+		assert.strictEqual(t.admit(id), true);
+
+		assert.strictEqual(t.get_connection_count(), 1);
+		assert.strictEqual(t.get_pending_connection_count(), 0);
+		assert.strictEqual(t.is_ready(), true);
+		assert.strictEqual(t.is_registered(id), true);
+	});
+
+	test('a pending connection receives nothing until admitted', async () => {
+		const t = new BackendWebsocketTransport();
+		const fake = create_fake_ws();
+		const id = t.register_pending(fake.ws, HASH_A, ACCOUNT_A);
+
+		// every delivery path skips it
+		assert.strictEqual(await t.send(notification), null);
+		assert.strictEqual(
+			t.broadcast_filtered(notification, () => true),
+			0
+		);
+		assert.strictEqual(t.send_to_account(ACCOUNT_A, notification), 0);
+		assert.deepStrictEqual(await t.request_connection(id, 'peer/ping', {}), {
+			ok: false,
+			error: { kind: 'connection_gone' }
+		});
+		assert.deepStrictEqual(fake.sends, []);
+
+		assert.strictEqual(t.admit(id), true);
+
+		assert.strictEqual(await t.send(notification), null);
+		assert.strictEqual(
+			t.broadcast_filtered(notification, () => true),
+			1
+		);
+		assert.strictEqual(t.send_to_account(ACCOUNT_A, notification), 1);
+		assert.strictEqual(fake.sends.length, 3);
+	});
+
+	test('a broadcast predicate never sees a pending connection', () => {
+		const t = new BackendWebsocketTransport();
+		t.register_pending(create_fake_ws().ws, HASH_A, ACCOUNT_A);
+		t.add_connection(create_fake_ws().ws, HASH_B, ACCOUNT_B);
+
+		const seen: Array<ConnectionIdentity> = [];
+		t.broadcast_filtered(notification, (identity) => {
+			seen.push(identity);
+			return true;
+		});
+
+		assert.deepStrictEqual(
+			seen.map((identity) => identity.account_id),
+			[ACCOUNT_B]
+		);
+	});
+
+	test('a session revoked while pending is refused and evicts nothing', () => {
+		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
+		const live = create_fake_ws();
+		t.add_connection(live.ws, HASH_A, ACCOUNT_A);
+		const pending = create_fake_ws();
+		const id = t.register_pending(pending.ws, HASH_B, ACCOUNT_A);
+
+		assert.strictEqual(t.close_sockets_for_session(HASH_B), 1, 'the close finds the pending entry');
+		assert.deepStrictEqual(pending.closes, [REVOKED_CLOSE]);
+		assert.strictEqual(t.get_pending_connection_count(), 0);
+
+		assert.strictEqual(t.admit(id), false, 'a registration closed while pending is refused');
+		assert.deepStrictEqual(live.closes, [], 'a refused admission evicts nothing');
+		assert.strictEqual(t.get_connection_count(), 1);
+		assert.strictEqual(t.is_registered(id), false);
+	});
+
+	test('an account close reaches a pending connection', () => {
+		const t = new BackendWebsocketTransport();
+		const pending = create_fake_ws();
+		const id = t.register_pending(pending.ws, null, ACCOUNT_A);
+		const other = create_fake_ws();
+		const other_id = t.register_pending(other.ws, null, ACCOUNT_B);
+
+		assert.strictEqual(t.close_sockets_for_account(ACCOUNT_A), 1);
+
+		assert.deepStrictEqual(pending.closes, [REVOKED_CLOSE]);
+		assert.strictEqual(t.admit(id), false);
+		assert.deepStrictEqual(other.closes, []);
+		assert.strictEqual(t.admit(other_id), true);
+	});
+
+	test('a token close reaches a pending connection', () => {
+		const t = new BackendWebsocketTransport();
+		const pending = create_fake_ws();
+		const id = t.register_pending(pending.ws, null, ACCOUNT_A, TOKEN_A);
+		const other = create_fake_ws();
+		const other_id = t.register_pending(other.ws, null, ACCOUNT_A, TOKEN_B);
+
+		assert.strictEqual(t.close_sockets_for_token(TOKEN_A), 1);
+
+		assert.deepStrictEqual(pending.closes, [REVOKED_CLOSE]);
+		assert.strictEqual(t.admit(id), false);
+		assert.deepStrictEqual(other.closes, []);
+		assert.strictEqual(t.admit(other_id), true);
+	});
+
+	test('the cap evicts at admission, not at registration', () => {
+		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
+		const live = create_fake_ws();
+		t.add_connection(live.ws, HASH_A, ACCOUNT_A);
+		const pending = create_fake_ws();
+
+		const id = t.register_pending(pending.ws, HASH_B, ACCOUNT_A);
+		assert.deepStrictEqual(live.closes, [], 'registering pending closes nothing');
+
+		assert.strictEqual(t.admit(id), true);
+		assert.deepStrictEqual(live.closes, [CONNECTION_LIMIT_CLOSE]);
+		assert.deepStrictEqual(pending.closes, []);
+		assert.strictEqual(t.get_connection_count(), 1);
+	});
+
+	test('pending connections do not count toward the cap', () => {
+		const t = new BackendWebsocketTransport({ max_connections_per_account: 2 });
+		const live = create_fake_ws();
+		t.add_connection(live.ws, HASH_A, ACCOUNT_A);
+		// any number of pending registrations leave the account's one admitted
+		// connection alone
+		for (let i = 0; i < 5; i++) t.register_pending(create_fake_ws().ws, HASH_B, ACCOUNT_A);
+
+		const admitted = create_fake_ws();
+		t.add_connection(admitted.ws, HASH_A, ACCOUNT_A);
+
+		assert.deepStrictEqual(live.closes, [], 'two admitted connections fit under a cap of two');
+		assert.strictEqual(t.get_connection_count(), 2);
+		assert.strictEqual(t.get_pending_connection_count(), 5);
+	});
+
+	test('the cap never evicts a pending connection', () => {
+		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
+		// registered first, so it is the account's oldest entry
+		const pending = create_fake_ws();
+		const pending_id = t.register_pending(pending.ws, HASH_A, ACCOUNT_A);
+		const first = create_fake_ws();
+		t.add_connection(first.ws, HASH_A, ACCOUNT_A);
+		const second = create_fake_ws();
+		t.add_connection(second.ws, HASH_A, ACCOUNT_A);
+
+		assert.deepStrictEqual(pending.closes, []);
+		assert.deepStrictEqual(first.closes, [CONNECTION_LIMIT_CLOSE]);
+		assert.strictEqual(t.get_pending_connection_count(), 1);
+
+		// and admitting it later supersedes the admitted one in turn
+		assert.strictEqual(t.admit(pending_id), true);
+		assert.deepStrictEqual(second.closes, [CONNECTION_LIMIT_CLOSE]);
+	});
+
+	test('removing a pending connection removes its entry, and its admission is refused', () => {
+		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
+		const live = create_fake_ws();
+		t.add_connection(live.ws, HASH_A, ACCOUNT_A);
+		const pending = create_fake_ws();
+		const id = t.register_pending(pending.ws, HASH_B, ACCOUNT_A);
+
+		t.remove_connection(id);
+
+		assert.strictEqual(t.get_pending_connection_count(), 0);
+		assert.strictEqual(t.admit(id), false);
+		assert.deepStrictEqual(live.closes, []);
+		// removal alone sends no close frame — the caller that refused it does
+		assert.deepStrictEqual(pending.closes, []);
+	});
+
+	test('admit refuses an id the transport never registered', () => {
+		const t = new BackendWebsocketTransport();
+		const other = new BackendWebsocketTransport();
+		const id = other.register_pending(create_fake_ws().ws, HASH_A, ACCOUNT_A);
+
+		assert.strictEqual(t.admit(id), false);
+		assert.strictEqual(t.admit(create_uuid()), false);
+		assert.strictEqual(t.get_connection_count(), 0);
+	});
+
+	test('admitting an admitted connection again evicts nothing', () => {
+		const t = new BackendWebsocketTransport({ max_connections_per_account: 2 });
+		const first = create_fake_ws();
+		t.add_connection(first.ws, HASH_A, ACCOUNT_A);
+		const second = create_fake_ws();
+		const id = t.register_pending(second.ws, HASH_A, ACCOUNT_A);
+
+		assert.strictEqual(t.admit(id), true);
+		assert.strictEqual(t.admit(id), true);
+
+		assert.deepStrictEqual(first.closes, []);
+		assert.strictEqual(t.get_connection_count(), 2);
+	});
+});
+
+describe('BackendWebsocketTransport server-side close', () => {
+	test('a revocation aborts the registered controller of a pending and an admitted connection', () => {
+		const t = new BackendWebsocketTransport();
+		const pending_abort = new AbortController();
+		const admitted_abort = new AbortController();
+		const other_abort = new AbortController();
+		t.register_pending(create_fake_ws().ws, HASH_A, ACCOUNT_A, null, pending_abort);
+		t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A, null, admitted_abort);
+		t.add_connection(create_fake_ws().ws, HASH_B, ACCOUNT_B, null, other_abort);
+
+		assert.strictEqual(t.close_sockets_for_account(ACCOUNT_A), 2);
+
+		assert.strictEqual(pending_abort.signal.aborted, true);
+		assert.strictEqual(admitted_abort.signal.aborted, true);
+		assert.strictEqual(other_abort.signal.aborted, false);
+	});
+
+	test('a cap eviction aborts the evicted connection controller, and only it', () => {
+		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
+		const oldest_abort = new AbortController();
+		const newest_abort = new AbortController();
+		t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A, null, oldest_abort);
+
+		t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A, null, newest_abort);
+
+		assert.strictEqual(oldest_abort.signal.aborted, true);
+		assert.strictEqual(newest_abort.signal.aborted, false);
+	});
+
+	test('remove_connection leaves the controller alone', () => {
+		const t = new BackendWebsocketTransport();
+		const abort = new AbortController();
+		const id = t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A, null, abort);
+
+		t.remove_connection(id);
+
+		assert.strictEqual(abort.signal.aborted, false);
+	});
+
+	test('is_registered is false once the connection is revoked, evicted, or removed', () => {
+		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
+		const revoked = t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A);
+		assert.strictEqual(t.is_registered(revoked), true);
+		t.close_sockets_for_session(HASH_A);
+		assert.strictEqual(t.is_registered(revoked), false);
+
+		const evicted = t.add_connection(create_fake_ws().ws, HASH_B, ACCOUNT_B);
+		const newest = t.add_connection(create_fake_ws().ws, HASH_B, ACCOUNT_B);
+		assert.strictEqual(t.is_registered(evicted), false);
+		assert.strictEqual(t.is_registered(newest), true);
+
+		t.remove_connection(newest);
+		assert.strictEqual(t.is_registered(newest), false);
+		assert.strictEqual(t.is_registered(create_uuid()), false);
 	});
 });

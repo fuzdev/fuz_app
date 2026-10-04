@@ -322,6 +322,14 @@ pass `max_body_size` to override or `null` to disable.
 ```typescript
 import { create_sse_response, type SseNotification } from '@fuzdev/fuz_app/realtime/sse.ts';
 import { SubscriberRegistry } from '@fuzdev/fuz_app/realtime/subscriber_registry.ts';
+import {
+	get_resolved_auth,
+	revalidate_resolved_auth
+} from '@fuzdev/fuz_app/auth/resolved_auth.ts';
+import {
+	AUTH_SESSION_TOKEN_HASH_KEY,
+	require_request_context
+} from '@fuzdev/fuz_app/auth/request_context.ts';
 
 const registry = new SubscriberRegistry<SseNotification>();
 
@@ -329,17 +337,36 @@ const registry = new SubscriberRegistry<SseNotification>();
 const subscribe_spec: RouteSpec = {
 	method: 'GET',
 	path: '/subscribe',
-	auth: { account: 'required', actor: 'required', roles: ['admin'] },
+	auth: { account: 'required', actor: 'none' },
 	description: 'Subscribe to events',
 	input: z.null(),
 	output: z.null(),
-	handler: (c) => {
-		const { response, stream } = create_sse_response<SseNotification>(c, log);
-		const unsubscribe = registry.subscribe(stream, { channels: ['things'] });
-		c.req.raw.signal.addEventListener('abort', () => {
-			unsubscribe();
-			stream.close();
+	handler: async (c, route) => {
+		// register first, so a revocation from here on finds the stream…
+		const pending = registry.subscribe_pending({
+			channels: ['things'],
+			scope: c.get(AUTH_SESSION_TOKEN_HASH_KEY) ?? undefined,
+			groups: [require_request_context(c).account.id]
 		});
+		// …then re-read the credential: one revoked while the request ran is refused
+		let live: boolean;
+		try {
+			const resolved = get_resolved_auth(c);
+			live = resolved !== null && (await revalidate_resolved_auth(route, resolved));
+		} catch (error) {
+			pending.unsubscribe();
+			throw error;
+		}
+		if (!live) {
+			pending.unsubscribe();
+			return c.json({ error: 'authentication_required' }, 401);
+		}
+		const { response, stream } = create_sse_response<SseNotification>(c, log);
+		if (registry.admit(pending, stream)) {
+			stream.on_close(pending.unsubscribe);
+		} else {
+			stream.close(); // a revocation closed it while it was pending
+		}
 		return response;
 	}
 };
@@ -348,12 +375,23 @@ const subscribe_spec: RouteSpec = {
 registry.broadcast('things', { method: 'thing_created', params: { id, name } });
 ```
 
-Channels filter broadcasts — `subscribe(stream, {channels: ['things']})` only
+Channels filter broadcasts — a subscription with `{channels: ['things']}` only
 receives broadcasts to the `'things'` channel. Omit `channels` (or pass `[]`)
-for all broadcasts. `subscribe` also accepts `scope` (a single capped identity,
-typically session hash) and `groups` (uncapped identities, typically
+for all broadcasts. A subscription also carries `scope` (a single capped
+identity, typically session hash) and `groups` (uncapped identities, typically
 `[account_id]`) — both are matched by `close_by_identity`, but only `scope` is
 subject to `max_per_scope`.
+
+A stream is authorized once, at open, and from then on only a revocation's
+close ends it — and a close reaches only streams that are registered. That is
+why the handler registers in two phases: `subscribe_pending` registers the
+stream before the re-read (closeable by every `close_by_identity`, receiving
+nothing, counting toward no cap), and `admit` opens it afterward, or refuses
+when a revocation closed the registration in between. A route that gates on a
+role re-reads the role there too (`refresh_role_grants`), as the audit-log
+stream does. `registry.subscribe(stream, options)` is the one-step form, for a
+stream with no revocable credential behind it. See ./security.md §Connection
+Admission.
 
 **Identity-keyed subscriptions** enable force-closing streams when permissions
 change. The simplest way to wire audit SSE is the factory-managed option on

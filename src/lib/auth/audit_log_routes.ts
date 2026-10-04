@@ -15,10 +15,24 @@
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { RouteSpec } from '../http/route_spec.ts';
-import { create_audit_log_route_shape } from './audit_log_route_schema.ts';
-import { create_sse_response, type SseStream, type SseNotification } from '../realtime/sse.ts';
-import type { SubscribeOptions } from '../realtime/subscriber_registry.ts';
-import { AUTH_SESSION_TOKEN_HASH_KEY, require_request_context } from './request_context.ts';
+import {
+	ERROR_AUTHENTICATION_REQUIRED,
+	ERROR_INSUFFICIENT_PERMISSIONS
+} from '../http/error_schemas.ts';
+import { TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
+import {
+	create_audit_log_route_shape,
+	DEFAULT_AUDIT_STREAM_ROLE
+} from './audit_log_route_schema.ts';
+import { create_sse_response, type SseNotification } from '../realtime/sse.ts';
+import type { SubscriberRegistry } from '../realtime/subscriber_registry.ts';
+import {
+	AUTH_SESSION_TOKEN_HASH_KEY,
+	has_scoped_role,
+	refresh_role_grants,
+	require_request_context
+} from './request_context.ts';
+import { get_resolved_auth, revalidate_resolved_auth } from './resolved_auth.ts';
 import { AUDIT_LOG_CHANNEL } from '../realtime/sse_auth_guard.ts';
 
 /** Options for audit log route specs. */
@@ -26,12 +40,14 @@ export interface AuditLogRouteOptions {
 	/** Role required to access audit routes. Default `'admin'`. */
 	required_role?: string;
 	/**
-	 * When provided, includes an SSE route at `/audit/stream` for realtime audit events.
-	 * The `subscribe` function receives the stream, channels, and the subscriber's `account_id`
-	 * as an identity key — enabling `close_by_identity()` for auth revocation.
+	 * When provided, includes an SSE route at `/audit/stream` for realtime audit
+	 * events. The route registers each stream on `registry` under the
+	 * subscriber's session hash (`scope`) and account id (`groups`) — the keys
+	 * `close_by_identity()` closes on for auth revocation. An `AuditLogSse`
+	 * (`create_audit_log_sse`, or `AppServerContext.audit_sse`) satisfies it.
 	 */
 	stream?: {
-		subscribe: (stream: SseStream<SseNotification>, options?: SubscribeOptions) => () => void;
+		registry: SubscriberRegistry<SseNotification>;
 		log: Logger;
 	};
 }
@@ -42,17 +58,40 @@ export interface AuditLogRouteOptions {
  * Returns an empty array when `options.stream` is not set — no REST routes
  * live here apart from the stream.
  *
+ * ## Admission
+ *
+ * A stream is authorized once, so the handler must not open one on a
+ * credential or role revoked while the request was in flight. The route's
+ * gates (401, credential channel, token scope, acting actor, role) run in the
+ * route-spec pipeline, before the handler and so before any stream is
+ * registered — a revocation landing after them would close nothing. So the
+ * handler registers the stream **pending**
+ * (`SubscriberRegistry.subscribe_pending`), then re-reads the credential
+ * (`revalidate_resolved_auth`) and the acting actor's role grants, and only
+ * then admits (`SubscriberRegistry.admit`). A revocation that committed before
+ * those reads is seen by them — `401 authentication_required` for a dead
+ * credential, `403 insufficient_permissions` for a lost role — and one whose
+ * close ran after the registration found the pending entry: admission then
+ * fails, and the response is a `200` whose body is the connect comment and
+ * nothing else — to an `EventSource`, a stream closed an instant after it
+ * opened (the client's reconnect is answered by the gates, with the precise
+ * status). A pending registration receives no audit row, counts toward no cap,
+ * and is removed when a re-read refuses the request. The twin of the Rust
+ * spine's `audit_stream_router`, which registers before its role read rather
+ * than repeating it.
+ *
  * @param options - optional stream wiring + role override
  * @returns the SSE route spec (when `options.stream` is provided) or an empty array
  */
 export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Array<RouteSpec> => {
 	if (!options?.stream) return [];
 
-	const { subscribe, log } = options.stream;
+	const { registry, log } = options.stream;
+	const required_role = options.required_role ?? DEFAULT_AUDIT_STREAM_ROLE;
 	return [
 		{
-			...create_audit_log_route_shape(options.required_role),
-			handler: (c) => {
+			...create_audit_log_route_shape(required_role),
+			handler: async (c, route) => {
 				// Rule 3 is declared on the route shape's `auth.required_scope`,
 				// so a narrowed token is refused ahead of the role gate rather
 				// than here.
@@ -62,14 +101,61 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 				// (uncapped → coarse close on role_grant_revoke / session_revoke_all
 				// / password_change).
 				const token_hash = c.get(AUTH_SESSION_TOKEN_HASH_KEY) ?? null;
-				const { response, stream } = create_sse_response<SseNotification>(c, log);
-				const unsubscribe = subscribe(stream, {
+
+				// Register pending first: from here every revocation finds the
+				// stream (TSDoc, "Admission").
+				const pending = registry.subscribe_pending({
 					channels: [AUDIT_LOG_CHANNEL],
 					scope: token_hash ?? undefined,
 					groups: [ctx.account.id]
 				});
-				stream.on_close(unsubscribe);
-				return response;
+				// The pending registration is released on every path that does not
+				// admit it — a refusal, a failed re-read, a throw while building the
+				// response — so none of them can leak an entry nothing delivers to.
+				let admitted = false;
+				try {
+					// Re-read what the gates read, now that the stream is registered:
+					// a revocation that closed before the registration is committed,
+					// so these see it. A throw here fails closed — no stream opens
+					// unchecked. Skipped under the test-preset escape hatch, whose
+					// pre-baked context has no rows behind it to re-read.
+					if (!c.get(TEST_CONTEXT_PRESET_KEY)) {
+						const resolved = get_resolved_auth(c);
+						const credential_is_live =
+							resolved !== null && (await revalidate_resolved_auth(route, resolved));
+						if (!credential_is_live) {
+							log.info('audit stream: credential revoked during the request', ctx.account.id);
+							return c.json({ error: ERROR_AUTHENTICATION_REQUIRED }, 401);
+						}
+						// Global grants only, like the `require_role` gate that ran in
+						// the pipeline — a scoped grant must not open the instance-wide
+						// stream.
+						if (!has_scoped_role(await refresh_role_grants(ctx, route), required_role, null)) {
+							log.info('audit stream: role revoked during the request', ctx.account.id);
+							return c.json(
+								{ error: ERROR_INSUFFICIENT_PERMISSIONS, required_roles: [required_role] },
+								403
+							);
+						}
+					}
+
+					// Admit — the cap's eviction happens here, after every gate. A
+					// registration a revocation closed while it was pending is not
+					// admitted: the stream is closed at once, so the body is the
+					// connect comment and nothing else, and the client reconnects
+					// into the gates.
+					const { response, stream } = create_sse_response<SseNotification>(c, log);
+					admitted = registry.admit(pending, stream);
+					if (admitted) {
+						stream.on_close(pending.unsubscribe);
+					} else {
+						log.info('audit stream: closed by a revocation before admission', ctx.account.id);
+						stream.close();
+					}
+					return response;
+				} finally {
+					if (!admitted) pending.unsubscribe();
+				}
 			}
 		}
 	];

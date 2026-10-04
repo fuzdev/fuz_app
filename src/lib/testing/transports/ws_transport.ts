@@ -32,6 +32,7 @@ import {
 	type WsWaiter
 } from './ws_client.ts';
 import { create_jsonrpc_request } from '../../http/jsonrpc_helpers.ts';
+import { heartbeat_action_spec } from '../../actions/heartbeat.ts';
 
 /** Construction options for `create_ws_transport`. */
 export interface WsTransportOptions {
@@ -77,6 +78,13 @@ export interface WsTransportOptions {
  * failure). Incoming messages are JSON-parsed and pushed onto the
  * `messages` array; `wait_for` checks already-received messages first
  * before waiting for new arrivals.
+ *
+ * An open socket is not yet an **admitted** connection: both spines answer
+ * the handshake first and admit the connection a credential re-check later,
+ * and deliver no server-initiated message to it until then. Requests sent
+ * meanwhile are queued and answered, so a suite that only round-trips can
+ * use this directly; one that waits for a push (a broadcast, a targeted
+ * notification) opens with `create_admitted_ws_transport` instead.
  *
  * @throws Error if the upgrade fails (status, network) — the rejection
  *   message carries the underlying error so the test surfaces the real
@@ -234,4 +242,38 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 		wait_for: wait_for_impl,
 		wait_for_close
 	};
+};
+
+/** The request id `create_admitted_ws_transport` round-trips `heartbeat` under. */
+export const WS_ADMISSION_PROBE_ID = 'admitted';
+
+/**
+ * Open a real-upgrade WS client and round-trip `heartbeat` on it, so the
+ * backend has **admitted** the connection by the time this resolves.
+ *
+ * Both spines answer the upgrade handshake before the connection is
+ * registered and admitted (the credential is re-read in between), and deliver
+ * no broadcast or targeted notification to a connection still pending
+ * admission. A request is answered only once the connection is admitted, so
+ * the round trip is the one signal a client has. Suites that open a socket and
+ * then wait for a server-initiated message, or that need connections
+ * registered in a known order, open through this.
+ *
+ * `heartbeat` is a protocol action, present on every WS endpoint. Its response
+ * frame (id `WS_ADMISSION_PROBE_ID`) stays in the client's `messages`.
+ *
+ * @throws Error if the upgrade fails, or the heartbeat is refused or times out
+ *   — the socket is closed first
+ */
+export const create_admitted_ws_transport = async (
+	options: WsTransportOptions
+): Promise<WsClient> => {
+	const client = await create_ws_transport(options);
+	try {
+		await client.request(WS_ADMISSION_PROBE_ID, heartbeat_action_spec.method, {});
+	} catch (error) {
+		await client.close().catch(() => {});
+		throw error;
+	}
+	return client;
 };
