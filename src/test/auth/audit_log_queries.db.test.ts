@@ -21,6 +21,7 @@ import type { Db } from '$lib/db/db.ts';
 import type { QueryDeps } from '$lib/db/query_deps.ts';
 
 import { describe_db } from '../db_fixture.ts';
+import { flush_pending_effects, flush_post_commit_effects } from '$lib/http/pending_effects.ts';
 
 const create_test_account = async (
 	db: Db,
@@ -630,6 +631,7 @@ describe_db('AuditLogQueries', (get_db) => {
 		});
 		const log = new Logger('test', { level: 'off' });
 		const pending_effects: Array<Promise<void>> = [];
+		const post_commit_effects: Array<() => void | Promise<void>> = [];
 		const seen: Array<string> = [];
 		const audit = create_audit_emitter({
 			db: get_db(),
@@ -640,13 +642,15 @@ describe_db('AuditLogQueries', (get_db) => {
 			audit_log_config
 		});
 		audit.emit(
-			{ pending_effects },
+			{ pending_effects, post_commit_effects },
 			{
 				event_type: 'classroom_create',
 				metadata: { classroom_id: 'cls-1', name: 'Period 3 English' }
 			}
 		);
-		await Promise.allSettled(pending_effects);
+		await flush_pending_effects(pending_effects, log);
+		// a success row reaches the listeners from the post-commit queue
+		await flush_post_commit_effects(post_commit_effects, log);
 		assert.deepStrictEqual(seen, ['classroom_create']);
 		const events = await query_audit_log_list(deps);
 		assert.strictEqual(events.length, 1);

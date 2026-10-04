@@ -25,9 +25,10 @@ import { PASSWORD_LENGTH_MIN, PASSWORD_LENGTH_MAX } from '$lib/auth/password.ts'
 import { ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS } from '$lib/http/error_schemas.ts';
 import { create_stub_db, create_noop_stub, create_test_audit_emitter } from '$lib/testing/stubs.ts';
 import { create_recording_audit_emitter } from '$lib/testing/audit_drift_guard.ts';
-import type { ConnectionCloser } from '$lib/actions/connection_closer.ts';
 import type { AuditLogInput } from '$lib/auth/audit_log_schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { create_realtime_closer, type ConnectionCloser } from '$lib/actions/connection_closer.ts';
+import { flush_pending_effects, flush_post_commit_effects } from '$lib/http/pending_effects.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -51,14 +52,14 @@ vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {
 	return {
 		...actual,
 		query_create_session: vi.fn(() => Promise.resolve()),
-		query_session_enforce_limit: vi.fn(() => Promise.resolve(0)),
+		query_session_enforce_limit: vi.fn(() => Promise.resolve([])),
 		query_session_revoke_all_for_account: mock_revoke_all
 	};
 });
 
 vi.mock('$lib/auth/api_token_queries.js', () => ({
 	query_create_api_token: vi.fn(() => Promise.resolve()),
-	query_api_token_enforce_limit: vi.fn(() => Promise.resolve()),
+	query_api_token_enforce_limit: vi.fn(() => Promise.resolve([])),
 	query_revoke_api_token_for_account: vi.fn(() => Promise.resolve(true)),
 	query_api_token_list_for_account: vi.fn(() => Promise.resolve([])),
 	query_revoke_all_api_tokens_for_account: mock_revoke_all_tokens,
@@ -162,6 +163,9 @@ const create_password_change_app = (
 		? create_recording_audit_emitter(audit_events).emitter
 		: create_test_audit_emitter();
 
+	const realtime_closer = create_realtime_closer();
+	if (connection_closer) realtime_closer.add(connection_closer);
+
 	const route_specs = create_account_route_specs(
 		{
 			log,
@@ -173,18 +177,30 @@ const create_password_change_app = (
 			},
 			read_secure_file: noop,
 			delete_file: noop,
-			audit
+			audit,
+			connection_closer: realtime_closer
 		},
 		{
 			session_options,
 			login_ip_rate_limiter,
 			login_account_rate_limiter,
-			login_fail_floor_ms: 0,
-			connection_closer
+			login_fail_floor_ms: 0
 		}
 	);
 
 	const app = new Hono();
+	// the request's two side-effect queues, flushed the way `create_app_server`
+	// flushes them — the handler queues its connection close post-commit
+	app.use('*', async (c, next) => {
+		c.set('pending_effects', []);
+		c.set('post_commit_effects', []);
+		try {
+			await next();
+		} finally {
+			await flush_pending_effects(c.var.pending_effects, log);
+			await flush_post_commit_effects(c.var.post_commit_effects, log);
+		}
+	});
 	app.use('*', test_proxy_middleware);
 
 	// inject authenticated request context before route guards
@@ -671,11 +687,10 @@ describe('password change connection_closer wiring', () => {
 	// between auth-load and update. Mocking the query at the module boundary
 	// is the simplest path.
 	//
-	// Safety/security framing: a refactor that lifted the eager close above
-	// the `if (!updated)` early-return would silently disconnect the caller's
-	// live WS sockets on every concurrent-change 401 (a flapping
-	// re-authentication path under contention), violating the listener-only
-	// invariant the failure-outcome guard is supposed to preserve.
+	// Safety/security framing: a refactor that lifted the close above
+	// the `if (!updated)` early-return would disconnect the caller's
+	// live connections on every concurrent-change 401 (a flapping
+	// re-authentication path under contention), though nothing was revoked.
 
 	test('does NOT close on concurrent-change 401 (update returned false)', async () => {
 		const calls: Array<{ method: string; id: string }> = [];
@@ -773,7 +788,7 @@ describe('password change connection_closer wiring', () => {
 
 	test('does NOT close on per-IP rate-limit 429', async () => {
 		// Pins the contract that the closer never fires when the request is
-		// rate-limited. A refactor that moved the eager close above the
+		// rate-limited. A refactor that moved the close above the
 		// rate-limit gate would silently disconnect the caller's live WS
 		// sockets on every blocked request — the opposite of what rate
 		// limiting is supposed to do (it would amplify churn under attack).
@@ -796,7 +811,7 @@ describe('password change connection_closer wiring', () => {
 		const { app } = create_password_change_app(limiter, null, closer);
 
 		// Exhaust the IP limit with wrong-password attempts. Each failure
-		// records against the limiter but must NOT fire the eager close
+		// records against the limiter but must NOT queue the close
 		// (those are 401, not the success path).
 		for (let i = 0; i < MAX_ATTEMPTS; i++) {
 			const res = await password_change_request(app);

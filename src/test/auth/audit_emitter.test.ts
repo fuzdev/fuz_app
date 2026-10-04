@@ -1,6 +1,8 @@
 /**
  * Tests for `create_audit_emitter` — resilience of the bound fire-and-forget
- * audit emitter.
+ * audit emitter, and when its listeners hear about a row: a failure row as
+ * soon as it is written, a success row only from the request's post-commit
+ * queue.
  *
  * @module
  */
@@ -11,7 +13,8 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { z } from 'zod';
 
-import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
+import { create_audit_emitter, type AuditEmitterContext } from '$lib/auth/audit_emitter.ts';
+import { flush_pending_effects, flush_post_commit_effects } from '$lib/http/pending_effects.ts';
 import {
 	get_audit_metadata_validation_failures,
 	get_audit_unknown_event_type_failures,
@@ -59,7 +62,16 @@ const create_mock_db = (mock_query?: ReturnType<typeof vi.fn>): Db => {
 	return { query, query_one: vi.fn() } as any;
 };
 
-const create_ctx = (): { pending_effects: Array<Promise<void>> } => ({ pending_effects: [] });
+const create_ctx = (): AuditEmitterContext => ({ pending_effects: [], post_commit_effects: [] });
+
+/**
+ * Drain both of `ctx`'s queues the way a dispatch site does once the handler
+ * has returned: the eager writes, then the post-commit thunks.
+ */
+const flush_ctx = async (ctx: AuditEmitterContext): Promise<void> => {
+	await flush_pending_effects(ctx.pending_effects, log);
+	await flush_post_commit_effects(ctx.post_commit_effects, log);
+};
 
 describe('create_audit_emitter — emit', () => {
 	test('does not throw when query rejects', async () => {
@@ -148,11 +160,127 @@ describe('create_audit_emitter — emit', () => {
 
 		audit.emit(ctx, create_input());
 
-		await wait();
+		await flush_ctx(ctx);
 
 		assert.strictEqual(received.length, 1);
 		assert.strictEqual(received[0]!.id, FAKE_EVENT.id);
 		assert.strictEqual(received[0]!.event_type, FAKE_EVENT.event_type);
+	});
+
+	test('a success row is announced only from the post-commit queue', async () => {
+		const received: Array<AuditLogEvent> = [];
+		const audit = create_audit_emitter({
+			db: create_mock_db(),
+			log,
+			on_audit_event: (event) => {
+				received.push(event);
+			}
+		});
+		const ctx = create_ctx();
+
+		audit.emit(ctx, create_input());
+
+		// the write is eager and has landed…
+		assert.strictEqual(ctx.pending_effects.length, 1);
+		await flush_pending_effects(ctx.pending_effects, log);
+		await wait();
+		// …but no listener has heard of it: the transaction has not committed
+		assert.strictEqual(received.length, 0);
+		assert.strictEqual(ctx.post_commit_effects.length, 1);
+
+		await flush_post_commit_effects(ctx.post_commit_effects, log);
+		assert.strictEqual(received.length, 1);
+	});
+
+	test('a success row with outcome omitted is post-commit too', async () => {
+		const received: Array<AuditLogEvent> = [];
+		const audit = create_audit_emitter({
+			db: create_mock_db(),
+			log,
+			on_audit_event: (event) => {
+				received.push(event);
+			}
+		});
+		const ctx = create_ctx();
+
+		audit.emit(ctx, { event_type: 'logout', account_id: 'acct-1' as Uuid });
+		await flush_pending_effects(ctx.pending_effects, log);
+		await wait();
+
+		assert.strictEqual(received.length, 0);
+		await flush_post_commit_effects(ctx.post_commit_effects, log);
+		assert.strictEqual(received.length, 1);
+	});
+
+	test('a success row is never announced when the post-commit queue is discarded', async () => {
+		// a thrown handler: the dispatch site truncates the queue, so the row
+		// (still written — the pool write survives the rollback) reaches no
+		// listener, and no connection closes for a revocation that rolled back
+		const mock_query = vi.fn(() => Promise.resolve([FAKE_EVENT]));
+		const received: Array<AuditLogEvent> = [];
+		const audit = create_audit_emitter({
+			db: create_mock_db(mock_query),
+			log,
+			on_audit_event: (event) => {
+				received.push(event);
+			}
+		});
+		const ctx = create_ctx();
+
+		audit.emit(ctx, create_input());
+		ctx.post_commit_effects.length = 0;
+		await flush_ctx(ctx);
+		await wait();
+
+		assert.strictEqual(mock_query.mock.calls.length, 1, 'the row is written regardless');
+		assert.strictEqual(received.length, 0);
+	});
+
+	test('a failure row is announced as soon as it is written, with no commit to wait for', async () => {
+		const received: Array<AuditLogEvent> = [];
+		const audit = create_audit_emitter({
+			db: create_mock_db(),
+			log,
+			on_audit_event: (event) => {
+				received.push(event);
+			}
+		});
+		const ctx = create_ctx();
+
+		audit.emit(ctx, { ...create_input(), outcome: 'failure' });
+
+		assert.strictEqual(ctx.post_commit_effects.length, 0, 'nothing is deferred');
+		await flush_pending_effects(ctx.pending_effects, log);
+		assert.strictEqual(received.length, 1);
+	});
+
+	test('the post-commit fan-out waits for a write still in flight', async () => {
+		let resolve_query: ((value: Array<AuditLogEvent>) => void) | undefined;
+		const mock_query = vi.fn(
+			() =>
+				new Promise<Array<AuditLogEvent>>((resolve) => {
+					resolve_query = resolve;
+				})
+		);
+		const received: Array<AuditLogEvent> = [];
+		const audit = create_audit_emitter({
+			db: create_mock_db(mock_query),
+			log,
+			on_audit_event: (event) => {
+				received.push(event);
+			}
+		});
+		const ctx = create_ctx();
+
+		audit.emit(ctx, create_input());
+		// the commit lands before the audit write does
+		const flushed = flush_post_commit_effects(ctx.post_commit_effects, log);
+		await wait();
+		assert.strictEqual(received.length, 0, 'no row to announce yet');
+
+		resolve_query!([FAKE_EVENT]);
+		await flushed;
+		assert.strictEqual(received.length, 1);
 	});
 
 	test('does not call listener when query rejects', async () => {
@@ -169,7 +297,7 @@ describe('create_audit_emitter — emit', () => {
 
 		audit.emit(ctx, create_input());
 
-		await wait();
+		await flush_ctx(ctx);
 
 		assert.strictEqual(received.length, 0);
 	});
@@ -187,11 +315,10 @@ describe('create_audit_emitter — emit', () => {
 
 		audit.emit(ctx, create_input());
 
-		await wait();
-
-		// the promise settled without rejecting (fire-and-forget is resilient)
+		// the write settled without rejecting (fire-and-forget is resilient),
+		// and the listener's throw is contained by `notify`
 		assert.strictEqual(ctx.pending_effects.length, 1);
-		await Promise.allSettled(ctx.pending_effects);
+		await flush_ctx(ctx);
 		// error was logged with the correct message (not "write failed")
 		const error_calls = spy_error.mock.calls;
 		const has_callback_error = error_calls.some((call) =>
@@ -213,9 +340,13 @@ describe('create_audit_emitter — emit', () => {
 
 		audit.emit(ctx, create_input());
 
-		await wait();
+		await flush_ctx(ctx);
 
 		const all_args = spy_error.mock.calls.flat().map((arg: unknown) => String(arg));
+		assert.ok(
+			all_args.some((msg) => msg.includes('listener failed')),
+			'the listener threw, so its error was logged'
+		);
 		assert.ok(
 			!all_args.some((msg) => msg.includes('write failed')),
 			'should not say "write failed" when the callback failed'
@@ -317,6 +448,39 @@ describe('create_audit_emitter — emit', () => {
 	});
 });
 
+describe('create_audit_emitter — emit_pool', () => {
+	test('writes then notifies, whatever the outcome — there is no transaction to wait for', async () => {
+		const received: Array<AuditLogEvent> = [];
+		const audit = create_audit_emitter({
+			db: create_mock_db(),
+			log,
+			on_audit_event: (event) => {
+				received.push(event);
+			}
+		});
+
+		await audit.emit_pool(create_input());
+		assert.strictEqual(received.length, 1);
+		await audit.emit_pool({ ...create_input(), outcome: 'failure' });
+		assert.strictEqual(received.length, 2);
+	});
+
+	test('resolves without notifying when the write fails', async () => {
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		const received: Array<AuditLogEvent> = [];
+		const audit = create_audit_emitter({
+			db: create_mock_db(vi.fn(() => Promise.reject(new Error('DB down')))),
+			log,
+			on_audit_event: (event) => {
+				received.push(event);
+			}
+		});
+
+		await audit.emit_pool(create_input());
+		assert.strictEqual(received.length, 0);
+	});
+});
+
 describe('create_audit_emitter — add_listener', () => {
 	test('registered listener fires alongside the initial subscriber', async () => {
 		const initial: Array<AuditLogEvent> = [];
@@ -330,7 +494,7 @@ describe('create_audit_emitter — add_listener', () => {
 		const ctx = create_ctx();
 
 		audit.emit(ctx, create_input());
-		await wait();
+		await flush_ctx(ctx);
 
 		assert.strictEqual(initial.length, 1);
 		assert.strictEqual(appended.length, 1);
@@ -362,7 +526,7 @@ describe('create_audit_emitter — add_listener', () => {
 		const ctx = create_ctx();
 
 		audit.emit(ctx, create_input());
-		await wait();
+		await flush_ctx(ctx);
 
 		assert.strictEqual(reached.length, 1);
 	});
@@ -461,7 +625,7 @@ describe('create_audit_emitter — emit_role_grant_target', () => {
 	test('delegates to inner emit_pool and pushes onto pending_effects', async () => {
 		const db = create_mock_db();
 		const audit = create_audit_emitter({ db, log });
-		const ctx = { pending_effects: [] as Array<Promise<void>>, client_ip: '203.0.113.1' };
+		const ctx = { ...create_ctx(), client_ip: '203.0.113.1' };
 		const auth = create_auth();
 
 		audit.emit_role_grant_target(ctx, auth as never, {
@@ -491,7 +655,7 @@ describe('create_audit_emitter — emit_role_grant_target', () => {
 				inner(ctx, input);
 			}
 		});
-		const ctx = { pending_effects: [] as Array<Promise<void>>, client_ip: '198.51.100.7' };
+		const ctx = { ...create_ctx(), client_ip: '198.51.100.7' };
 		const auth = create_auth();
 
 		audit.emit_role_grant_target(ctx, auth as never, {
@@ -543,9 +707,8 @@ describe('create_audit_emitter — emit_decorator', () => {
 		// inner closure captures the decorated `emit`, so role-grant-shape
 		// emissions land in the same capture array as bare `emit` calls.
 		// If this ever regresses (decorator stops being captured by the
-		// inner closure), the close-vs-emit ordering test in
-		// `connection_closer.db.test.ts` would silently skip role-grant
-		// markers.
+		// inner closure), instrumentation built on the decorator would
+		// silently skip role-grant-shape emissions.
 		const calls: Array<AuditLogInput> = [];
 		const audit = create_audit_emitter({
 			db: create_mock_db(),
@@ -556,7 +719,7 @@ describe('create_audit_emitter — emit_decorator', () => {
 			}
 		});
 
-		const ctx = { pending_effects: [] as Array<Promise<void>>, client_ip: '1.2.3.4' };
+		const ctx = { ...create_ctx(), client_ip: '1.2.3.4' };
 		audit.emit_role_grant_target(
 			ctx,
 			{ account: { id: 'a' as Uuid }, actor: { id: 'b' as Uuid } } as never,

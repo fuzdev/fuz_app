@@ -369,17 +369,33 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * admitted. Never filter on admission here: reaching a registration in
 	 * flight is the point of the pending phase, and `admit` then refuses it.
 	 *
+	 * A socket whose `close` throws does not stop the loop: every match is
+	 * removed and closed, and the first error is thrown afterward. The failing
+	 * socket's connection is already removed and its handlers aborted, so
+	 * nothing more is dispatched or delivered on it.
+	 *
 	 * @returns the number of sockets closed
+	 * @throws the first error a socket's `close` threw, after every match was attempted
 	 */
 	#close_where(predicate: (identity: ConnectionIdentity) => boolean): number {
 		let count = 0;
+		let failed = false;
+		let first_error: unknown;
 		// deleting the current entry during Map iteration is safe
 		for (const [connection_id, entry] of this.#connections) {
 			if (predicate(entry.identity)) {
-				this.#revoke_connection(connection_id, entry);
-				count++;
+				try {
+					this.#revoke_connection(connection_id, entry);
+					count++;
+				} catch (error) {
+					if (!failed) {
+						failed = true;
+						first_error = error;
+					}
+				}
 			}
 		}
+		if (failed) throw first_error;
 		return count;
 	}
 

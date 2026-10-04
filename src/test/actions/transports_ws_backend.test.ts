@@ -990,6 +990,44 @@ describe('BackendWebsocketTransport server-side close', () => {
 		assert.strictEqual(other_abort.signal.aborted, false);
 	});
 
+	test('a socket whose close throws does not spare the sockets after it', () => {
+		// One dead socket ahead of the others in the map would otherwise abort
+		// the loop and leave the rest open on a revoked credential.
+		const t = new BackendWebsocketTransport({ log: null });
+		const boom = new Error('already closed');
+		const failing_abort = new AbortController();
+		const failing = new WSContext({
+			send: () => {},
+			close: () => {
+				throw boom;
+			},
+			readyState: 1
+		});
+		const before = create_fake_ws();
+		const after = create_fake_ws();
+		const pending = create_fake_ws();
+		const bystander = create_fake_ws();
+		t.add_connection(before.ws, HASH_A, ACCOUNT_A);
+		const failing_id = t.add_connection(failing, HASH_A, ACCOUNT_A, null, failing_abort);
+		t.add_connection(after.ws, HASH_A, ACCOUNT_A);
+		t.register_pending(pending.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(bystander.ws, HASH_B, ACCOUNT_B);
+
+		assert.throws(() => t.close_sockets_for_account(ACCOUNT_A), boom);
+
+		const revoked = [{ code: WS_CLOSE_SESSION_REVOKED, reason: WS_CLOSE_SESSION_REVOKED_REASON }];
+		assert.deepStrictEqual(before.closes, revoked);
+		assert.deepStrictEqual(after.closes, revoked, 'the socket after the throw was closed');
+		assert.deepStrictEqual(pending.closes, revoked, 'and the pending registration');
+		assert.deepStrictEqual(bystander.closes, []);
+		// the failing socket's connection is gone and its handlers aborted
+		assert.strictEqual(t.is_registered(failing_id), false);
+		assert.strictEqual(failing_abort.signal.aborted, true);
+		assert.strictEqual(t.get_connection_count(), 1, 'only the bystander remains');
+		// nothing is left to close, so a repeat neither throws nor counts
+		assert.strictEqual(t.close_sockets_for_account(ACCOUNT_A), 0);
+	});
+
 	test('a cap eviction aborts the evicted connection controller, and only it', () => {
 		const t = new BackendWebsocketTransport({ max_connections_per_account: 1 });
 		const oldest_abort = new AbortController();

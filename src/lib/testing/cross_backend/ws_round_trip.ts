@@ -38,14 +38,24 @@ import '../assert_dev_env.ts';
  * `DEFAULT_WS_MAX_MESSAGE_BYTES`) closes the socket with
  * `WS_CLOSE_MESSAGE_TOO_BIG`.
  *
- * A final case (gated on `rpc_path`) covers server-initiated close: an
- * authenticated socket is dropped when the account's sessions are revoked
- * mid-connection. Per-message dispatch never re-checks credential validity,
- * so the live socket survives on the audit-fed `create_ws_auth_guard` seam —
- * firing `account_session_revoke_all` over the keeper's session channel
- * emits `session_revoke_all`, which closes the socket. Omit `rpc_path` to
- * skip it (consumers without the standard account actions on their RPC
- * endpoint).
+ * The final cases (gated on `rpc_path`) cover server-initiated close.
+ * Per-message dispatch never re-checks credential validity, so an open socket
+ * ends only when a revocation closes it — which every revocation does, once
+ * its transaction commits. An authenticated socket is dropped when the
+ * account's sessions are revoked over the keeper's session channel
+ * (`account_session_revoke_all`), and when its account is deleted
+ * (`account_delete`, also gated on `capabilities.account_lifecycle`). Omit
+ * `rpc_path` to skip them (consumers without the standard account and admin
+ * actions on their RPC endpoint).
+ *
+ * One more case is gated on `capabilities.ws_account_actions` — the backend's
+ * WS endpoint mounts the self-service account actions: a socket that revokes
+ * its own sessions *over that socket* is closed with
+ * `WS_CLOSE_SESSION_REVOKED`, and — on a backend declaring
+ * `capabilities.ws_self_revocation_reply` — reads the reply to its request
+ * first. The TS spine queues the close behind the commit and sends the reply
+ * ahead of it, so the caller is never left without an answer; the Rust spine
+ * does not answer yet, which that flag records.
  *
  * Gated on `capabilities.ws` — backends without an end-to-end WS transport
  * skip (the cases still surface as `.skip` in the report). Cross-process
@@ -61,9 +71,11 @@ import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { heartbeat_action_spec } from '../../actions/heartbeat.ts';
 import {
 	DEFAULT_WS_MAX_MESSAGE_BYTES,
-	WS_CLOSE_MESSAGE_TOO_BIG
+	WS_CLOSE_MESSAGE_TOO_BIG,
+	WS_CLOSE_SESSION_REVOKED
 } from '../../actions/transports.ts';
 import { account_session_revoke_all_action_spec } from '../../auth/account_action_specs.ts';
+import { account_delete_action_spec } from '../../auth/admin_action_specs.ts';
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
 import {
 	is_response_for,
@@ -121,7 +133,8 @@ export interface CrossProcessWsTestOptions {
  * `heartbeat` round-trip, `heartbeat`'s parameterless-shape contract, an
  * oversized message closing with `WS_CLOSE_MESSAGE_TOO_BIG`, anonymous-upgrade
  * refusal, disallowed-origin refusal, and — when `rpc_path` is supplied —
- * session-revocation closing the live socket.
+ * session revocation and account deletion closing the live socket, plus a
+ * self-revoking socket reading its reply before its close.
  */
 export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptions): void => {
 	const {
@@ -301,9 +314,9 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 		});
 
 		// Per-message dispatch never re-checks credential validity, so a live
-		// socket only drops via the audit-fed `create_ws_auth_guard`. Revoke the
-		// keeper's sessions over its own session channel → `session_revoke_all`
-		// closes the socket. Gated on `rpc_path` (depends on the standard
+		// socket drops only when a revocation closes it. Revoke the keeper's
+		// sessions over its own session channel → the handler's post-commit
+		// close ends the socket. Gated on `rpc_path` (depends on the standard
 		// account actions on the RPC endpoint).
 		test_if(
 			capabilities.ws && rpc_path !== undefined,
@@ -331,6 +344,79 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 					);
 					const closed = await client.wait_for_close(2000);
 					assert.ok(closed, 'socket did not close within 2s after session_revoke_all');
+				} finally {
+					await client.close();
+				}
+			}
+		);
+
+		// A soft-deleted account's credentials stop authenticating, and its open
+		// socket must end with them: the tombstone revokes every session and
+		// token, and the handler closes the account's connections once that has
+		// committed. The keeper deletes a second account whose socket is open.
+		test_if(
+			capabilities.ws && capabilities.account_lifecycle && rpc_path !== undefined,
+			'an account delete closes the live socket of the deleted account',
+			async () => {
+				const fixture = await setup_test();
+				const target = await fixture.create_account({ username: 'ws_delete_target', roles: [] });
+				const cookie = target.create_session_headers().cookie;
+				assert.ok(cookie, 'expected a session cookie for the target account');
+				const client = await create_ws_transport({ base_url, ws_path, cookies: [cookie], origin });
+				try {
+					// admitted and dispatching before the delete, so a failed close
+					// assertion can't be confused with a dead connection
+					await client.request(1, heartbeat_action_spec.method, {});
+					const res = await fixture.transport(
+						rpc_path!,
+						create_rpc_post_init(account_delete_action_spec.method, {
+							account_id: target.account.id
+						})
+					);
+					assert.strictEqual(res.status, 200, `account_delete RPC failed (status=${res.status})`);
+					const closed = await client.wait_for_close(2000);
+					assert.ok(closed, 'socket did not close within 2s after account_delete');
+					assert.strictEqual(client.close_code, WS_CLOSE_SESSION_REVOKED);
+				} finally {
+					await client.close();
+				}
+			}
+		);
+
+		// A socket that revokes the session it is running on. It must be closed;
+		// and where the backend declares `ws_self_revocation_reply`, the request
+		// is answered first, the close following from behind the revocation's
+		// commit. A caller left with only the close cannot tell a completed
+		// revocation from a dropped connection.
+		test_if(
+			capabilities.ws && capabilities.ws_account_actions,
+			capabilities.ws_self_revocation_reply
+				? 'a socket that revokes its own sessions reads the reply, then the revocation close'
+				: 'a socket that revokes its own sessions is closed with the revocation code',
+			async () => {
+				const client = await open_authed();
+				try {
+					await client.request(1, heartbeat_action_spec.method, {});
+					const revoke_id = 2;
+					await client.send({
+						jsonrpc: '2.0',
+						id: revoke_id,
+						method: account_session_revoke_all_action_spec.method
+					});
+					const closed = await client.wait_for_close(2000);
+					assert.ok(closed, 'socket did not close within 2s of revoking its own sessions');
+					assert.strictEqual(client.close_code, WS_CLOSE_SESSION_REVOKED);
+					if (capabilities.ws_self_revocation_reply) {
+						// frames arrive in wire order and nothing arrives after the
+						// close, so a reply in hand was written ahead of it
+						const reply = client.messages.find(is_response_for(revoke_id)) as
+							JsonrpcSuccessResponseFrame | JsonrpcErrorResponseFrame | undefined;
+						assert.ok(reply, 'the reply must reach the caller before the close');
+						assert.ok('result' in reply, JSON.stringify(reply));
+						const result = reply.result as { ok?: boolean; count?: number };
+						assert.strictEqual(result.ok, true);
+						assert.ok((result.count ?? 0) >= 1, "at least the socket's own session was revoked");
+					}
 				} finally {
 					await client.close();
 				}

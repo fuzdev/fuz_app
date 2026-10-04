@@ -44,7 +44,8 @@ describe('password change multi-session invalidation', () => {
 					path: RPC_PATH,
 					actions: create_account_actions({
 						log: ctx.deps.log,
-						audit: ctx.deps.audit
+						audit: ctx.deps.audit,
+						connection_closer: ctx.deps.connection_closer
 					}),
 					log: ctx.deps.log
 				})

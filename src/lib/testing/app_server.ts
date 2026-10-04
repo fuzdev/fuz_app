@@ -38,6 +38,7 @@ import { query_create_api_token } from '../auth/api_token_queries.ts';
 import { create_session_cookie_value, type SessionOptions } from '../auth/session_cookie.ts';
 import { run_migrations, type MigrationNamespace } from '../db/migrate.ts';
 import { auth_migration_ns } from '../auth/migrations.ts';
+import { create_realtime_closer } from '../actions/connection_closer.ts';
 import {
 	default_audit_factory,
 	type AppBackend,
@@ -342,7 +343,7 @@ export interface TestAppServerOptions {
 	 * needs:
 	 * - to capture audit events (compose `on_audit_event` inside the body)
 	 * - to register consumer event-type schemas (pass `audit_log_config`)
-	 * - to instrument `emit` ordering (`create_emit_ordering_audit_factory`)
+	 * - to instrument `emit` (`emit_decorator`)
 	 * - to wrap or replace the emitter for some other reason
 	 *
 	 * Matches the production shape — `create_app_backend` requires an
@@ -461,6 +462,7 @@ const _build_test_backend = async (
 				db: existing_db,
 				log: test_log,
 				audit,
+				connection_closer: create_realtime_closer(),
 				...fs_stubs
 			}
 		};
@@ -488,6 +490,7 @@ const _build_test_backend = async (
 				db,
 				log: test_log,
 				audit,
+				connection_closer: create_realtime_closer(),
 				...fs_stubs
 			}
 		};

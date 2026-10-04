@@ -19,7 +19,7 @@ import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS
 } from '../http/error_schemas.ts';
-import { TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
+import { AUTH_API_TOKEN_ID_KEY, TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
 import {
 	create_audit_log_route_shape,
 	DEFAULT_AUDIT_STREAM_ROLE
@@ -42,8 +42,9 @@ export interface AuditLogRouteOptions {
 	/**
 	 * When provided, includes an SSE route at `/audit/stream` for realtime audit
 	 * events. The route registers each stream on `registry` under the
-	 * subscriber's session hash (`scope`) and account id (`groups`) — the keys
-	 * `close_by_identity()` closes on for auth revocation. An `AuditLogSse`
+	 * subscriber's session hash (`scope`) and account id (`groups`, with the
+	 * API token id beside it for a bearer) — the keys `close_by_identity()`
+	 * closes on for auth revocation. An `AuditLogSse`
 	 * (`create_audit_log_sse`, or `AppServerContext.audit_sse`) satisfies it.
 	 */
 	stream?: {
@@ -99,15 +100,19 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 				// scope = session hash (capped → tabs-per-session limit and
 				// session-specific `session_revoke` close). groups = [account_id]
 				// (uncapped → coarse close on role_grant_revoke / session_revoke_all
-				// / password_change).
+				// / password_change / account delete). The route shape admits
+				// sessions only, so `api_token_id` is null here; it is registered
+				// when present so that a consumer widening the credential gate
+				// still has a revoked token's stream closed by `token_revoke`.
 				const token_hash = c.get(AUTH_SESSION_TOKEN_HASH_KEY) ?? null;
+				const api_token_id = c.get(AUTH_API_TOKEN_ID_KEY) ?? null;
 
 				// Register pending first: from here every revocation finds the
 				// stream (TSDoc, "Admission").
 				const pending = registry.subscribe_pending({
 					channels: [AUDIT_LOG_CHANNEL],
 					scope: token_hash ?? undefined,
-					groups: [ctx.account.id]
+					groups: api_token_id === null ? [ctx.account.id] : [ctx.account.id, api_token_id]
 				});
 				// The pending registration is released on every path that does not
 				// admit it — a refusal, a failed re-read, a throw while building the

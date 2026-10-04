@@ -15,6 +15,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import type { AppDeps } from '../auth/deps.ts';
 import { create_audit_emitter, type AuditEmitter } from '../auth/audit_emitter.ts';
+import { create_realtime_closer, type RealtimeCloser } from '../actions/connection_closer.ts';
 import type { DbType, Db } from '../db/db.ts';
 import type { Keyring } from '../auth/keyring.ts';
 import type { PasswordHashDeps } from '../auth/password.ts';
@@ -125,6 +126,15 @@ export interface CreateAppBackendOptions {
 	 */
 	audit_factory: AuditFactory;
 	/**
+	 * The closer to put on `AppDeps.connection_closer`. Omit for a fresh one
+	 * — the usual case, since `create_app_server` adds the transports it
+	 * mounts. Pass one built up front (`create_realtime_closer()`) when a
+	 * transport is constructed before the backend and has to be added to the
+	 * same closer the handlers will hold — e.g. an audit stream from
+	 * `create_audit_log_sse` whose listener `audit_factory` registers.
+	 */
+	connection_closer?: RealtimeCloser;
+	/**
 	 * Additional migration namespaces to run after the builtin auth namespace.
 	 * The shared `schema_version` table records one row per applied migration
 	 * (`namespace`, `name`, `sequence`); order is append-only so forward-only
@@ -143,7 +153,8 @@ export interface CreateAppBackendOptions {
  *
  * Calls `create_db` → `run_migrations` (auth namespace, then any
  * `migration_namespaces` from options in order) → `audit_factory({db, log})`
- * and bundles the result with the provided keyring and password deps.
+ * and bundles the result with the provided keyring and password deps and a
+ * `connection_closer` (empty until `create_app_server` adds its transports).
  *
  * @param options - keyring, password deps, `audit_factory`, optional database URL, and optional `migration_namespaces`
  * @returns app backend with deps, database metadata, and combined migration results
@@ -187,7 +198,8 @@ export const create_app_backend = async (options: CreateAppBackendOptions): Prom
 				read_secure_file,
 				delete_file,
 				log,
-				audit
+				audit,
+				connection_closer: options.connection_closer ?? create_realtime_closer()
 			}
 		};
 	} catch (err) {

@@ -298,9 +298,13 @@ export class SubscriberRegistry<T> {
 	 * admission here: reaching a registration in flight is the point of the
 	 * pending phase, and `admit` then refuses it.
 	 *
+	 * A stream whose `close` throws does not stop the loop: every match is
+	 * removed and closed, and the first error is thrown afterward.
+	 *
 	 * @param identity - the identity key to match (checked against `scope` and `groups`)
 	 * @returns the number of subscribers closed
 	 * @mutates registry - removes matching subscribers and closes their streams
+	 * @throws the first error a stream's `close` threw, after every match was attempted
 	 */
 	close_by_identity(identity: string): number {
 		// collect first, then close — avoids mutating the Set during iteration
@@ -311,10 +315,21 @@ export class SubscriberRegistry<T> {
 				to_close.push(subscriber);
 			}
 		}
+		let failed = false;
+		let first_error: unknown;
 		for (const subscriber of to_close) {
-			subscriber.stream?.close();
+			// removed first, so a stream whose close throws is unregistered too
 			this.#subscribers.delete(subscriber);
+			try {
+				subscriber.stream?.close();
+			} catch (error) {
+				if (!failed) {
+					failed = true;
+					first_error = error;
+				}
+			}
 		}
+		if (failed) throw first_error;
 		return to_close.length;
 	}
 

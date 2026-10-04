@@ -32,11 +32,15 @@ import '../assert_dev_env.ts';
  *    subscriber's *own* single session is revoked (`account_session_revoke`),
  *    so the `session_revoke` event drops the stream via the session-hash-scoped
  *    `close_for_session` path (the distinct primitive cases 2–3 don't reach).
- * 5. **per-session cap** — one stream past `max_per_scope` on one session
+ * 5. **close on account delete** (gated on `rpc_path` and
+ *    `capabilities.account_lifecycle`) — the keeper soft-deletes a second
+ *    admin whose stream is open; the delete revokes its credentials and
+ *    closes its stream.
+ * 6. **per-session cap** — one stream past `max_per_scope` on one session
  *    closes the oldest (evict-oldest, no final frame) and leaves every other
  *    stream open. Needs no RPC: the cap runs inside the subscribe itself.
  *
- * The close-on-revoke matrix is layered: cases 3–4 exercise the account-wide
+ * The close-on-revoke matrix is layered: cases 3–5 exercise the account-wide
  * and session-scoped paths cross-process; the remaining union events
  * (`token_revoke_all` / `logout` / `password_change`, all account-wide; and
  * `role_grant_revoke`, role-matched) are covered by the spine's `fuz_realtime`
@@ -59,7 +63,11 @@ import {
 	account_session_revoke_action_spec,
 	account_session_revoke_all_action_spec
 } from '../../auth/account_action_specs.ts';
-import { admin_session_revoke_all_action_spec } from '../../auth/admin_action_specs.ts';
+import {
+	account_delete_action_spec,
+	admin_session_revoke_all_action_spec
+} from '../../auth/admin_action_specs.ts';
+import { ROLE_ADMIN } from '../../auth/role_schema.ts';
 import {
 	AUDIT_LOG_SSE_MAX_PER_SCOPE,
 	audit_log_event_specs
@@ -135,7 +143,8 @@ const assert_audit_data_frame = (frame: string): void => {
 /**
  * Register the cross-process SSE round-trip suite. Its cases run over a
  * real streaming `fetch`: connected-comment, audit data frame, account-wide
- * close-on-revoke, session-scoped close-on-revoke, and the per-session cap.
+ * close-on-revoke, session-scoped close-on-revoke, close on account delete,
+ * and the per-session cap.
  */
 export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOptions): void => {
 	const { setup_test, capabilities, base_url, rpc_path, origin } = options;
@@ -301,6 +310,44 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 					);
 					const closed = await sse.wait_for_close(2000);
 					assert.ok(closed, 'stream did not close within 2s after session_revoke');
+				} finally {
+					await sse.close();
+				}
+			}
+		);
+
+		// A soft-deleted account's credentials stop authenticating, and a stream
+		// never rechecks its own — so the delete must close it. The keeper
+		// deletes a second admin whose stream is open; the keeper's own admin
+		// grant keeps the delete clear of the last-admin guard.
+		test_if(
+			capabilities.sse && capabilities.account_lifecycle && rpc_path !== undefined,
+			'stream closes when the subscriber account is deleted',
+			async () => {
+				const fixture = await setup_test();
+				const target = await fixture.create_account({
+					username: 'sse_delete_target',
+					roles: [ROLE_ADMIN]
+				});
+				const cookie = target.create_session_headers().cookie;
+				assert.ok(cookie, 'expected a session cookie for the target account');
+				const sse = await create_sse_transport({ base_url, sse_path, cookies: [cookie], origin });
+				try {
+					const first = await sse.read_frame();
+					assert.strictEqual(
+						first + '\n\n',
+						SSE_CONNECTED_COMMENT,
+						'first frame must be the connected comment'
+					);
+					const res = await fixture.transport(
+						rpc_path!,
+						create_rpc_post_init(account_delete_action_spec.method, {
+							account_id: target.account.id
+						})
+					);
+					assert.strictEqual(res.status, 200, `account_delete RPC failed (status=${res.status})`);
+					const closed = await sse.wait_for_close(2000);
+					assert.ok(closed, 'stream did not close within 2s after account_delete');
 				} finally {
 					await sse.close();
 				}

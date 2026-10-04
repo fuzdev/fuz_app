@@ -228,6 +228,40 @@ describe('SubscriberRegistry', () => {
 		assert.ok(!stream_without_id.closed);
 	});
 
+	test('a stream whose close throws does not spare the streams after it', () => {
+		// One broken stream ahead of the others would otherwise abort the loop
+		// and leave the rest open on a revoked credential.
+		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const boom = new Error('controller already closed');
+		const before = create_mock_stream<string>();
+		const failing: SseStream<string> = {
+			send() {},
+			comment() {},
+			close() {
+				throw boom;
+			},
+			on_close() {}
+		};
+		const after = create_mock_stream<string>();
+		const bystander = create_mock_stream<string>();
+		registry.subscribe(before, { scope: 'session_a' });
+		registry.subscribe(failing, { scope: 'session_a' });
+		registry.subscribe(after, { scope: 'session_a' });
+		const pending = registry.subscribe_pending({ scope: 'session_a' });
+		registry.subscribe(bystander, { scope: 'session_b' });
+
+		assert.throws(() => registry.close_by_identity('session_a'), boom);
+
+		assert.ok(before.closed);
+		assert.ok(after.closed, 'the stream after the throw was closed');
+		assert.ok(!bystander.closed);
+		// every match is unregistered, the failing one included
+		assert.strictEqual(registry.count, 1, 'only the bystander remains');
+		assert.strictEqual(registry.pending_count, 0);
+		assert.strictEqual(registry.admit(pending, create_mock_stream<string>()), false);
+		assert.strictEqual(registry.close_by_identity('session_a'), 0);
+	});
+
 	test('closed subscriber no longer receives broadcasts', () => {
 		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
 		const stream = create_mock_stream<string>();

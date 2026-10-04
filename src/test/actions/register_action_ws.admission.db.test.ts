@@ -213,6 +213,7 @@ const create_endpoint = (
 	const closed: Array<SocketCloseContext> = [];
 	const { transport } = register_action_ws({
 		path: '/ws',
+		connection_closer: null,
 		app: new Hono(),
 		upgradeWebSocket: stub.upgradeWebSocket,
 		actions: [echo_spec, mark_spec].map((spec) => ({

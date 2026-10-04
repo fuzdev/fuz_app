@@ -1,6 +1,8 @@
 /**
  * Tests for `create_ws_auth_guard` — audit event dispatch onto the
- * backend WebSocket transport's `close_sockets_for_*` methods.
+ * backend WebSocket transport's `close_sockets_for_*` methods, by the
+ * `RevocationScope` each event declares — and for that declaration,
+ * `audit_event_revocation_scopes`.
  *
  * Uses a real `BackendWebsocketTransport` with fake `WSContext` instances
  * so we verify the end-to-end close path rather than stubbing the transport.
@@ -13,12 +15,15 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { WSContext, type WSContextInit } from 'hono/ws';
 
 import { BackendWebsocketTransport } from '$lib/actions/transports_ws_backend.ts';
+import { create_ws_auth_guard } from '$lib/actions/transports_ws_auth_guard.ts';
+import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
 import {
-	create_ws_auth_guard,
-	create_ws_logout_closer,
-	ws_disconnect_event_types
-} from '$lib/actions/transports_ws_auth_guard.ts';
-import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
+	AUDIT_EVENT_TYPES,
+	audit_event_revocation_scopes,
+	to_revocation_scope,
+	type AuditLogEvent,
+	type RevocationScope
+} from '$lib/auth/audit_log_schema.ts';
 import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
 
 interface FakeWs {
@@ -62,27 +67,46 @@ const HASH_B = 'session_hash_b';
 const TOKEN_A = 'token_id_a';
 const TOKEN_B = 'token_id_b';
 
-describe('ws_disconnect_event_types', () => {
-	test('includes token_revoke and token_revoke_all (the new granular scopes)', () => {
-		assert.ok(ws_disconnect_event_types.has('token_revoke'));
-		assert.ok(ws_disconnect_event_types.has('token_revoke_all'));
+describe('audit_event_revocation_scopes', () => {
+	// The events whose success invalidates a live connection, and what each
+	// invalidates — the twin of the `revocation_scope` column of the Rust
+	// spine's `AUDIT_EVENT_SPECS`. Everything else is `none`.
+	const revoking: Record<string, RevocationScope> = {
+		logout: 'account',
+		password_change: 'account',
+		session_revoke_all: 'account',
+		token_revoke_all: 'account',
+		account_delete: 'account',
+		account_purge: 'account',
+		session_revoke: 'session',
+		token_revoke: 'token',
+		role_grant_revoke: 'role'
+	};
+
+	test('declares a scope for every builtin event type', () => {
+		assert.deepStrictEqual(
+			Object.keys(audit_event_revocation_scopes).sort(),
+			[...AUDIT_EVENT_TYPES].sort()
+		);
 	});
 
-	test('includes session_revoke, session_revoke_all, password_change', () => {
-		assert.ok(ws_disconnect_event_types.has('session_revoke'));
-		assert.ok(ws_disconnect_event_types.has('session_revoke_all'));
-		assert.ok(ws_disconnect_event_types.has('password_change'));
+	test('only the revoking events have a scope other than none', () => {
+		for (const event_type of AUDIT_EVENT_TYPES) {
+			assert.strictEqual(
+				audit_event_revocation_scopes[event_type],
+				revoking[event_type] ?? 'none',
+				event_type
+			);
+		}
 	});
 
-	test('excludes role_grant_revoke (role-scoped disconnection not tracked)', () => {
-		assert.ok(!ws_disconnect_event_types.has('role_grant_revoke'));
-	});
-
-	test('excludes non-disconnect events (login, logout, bootstrap, etc.)', () => {
-		assert.ok(!ws_disconnect_event_types.has('login'));
-		assert.ok(!ws_disconnect_event_types.has('logout'));
-		assert.ok(!ws_disconnect_event_types.has('bootstrap'));
-		assert.ok(!ws_disconnect_event_types.has('token_create'));
+	test('to_revocation_scope resolves an unknown event type to none', () => {
+		assert.strictEqual(to_revocation_scope('session_revoke'), 'session');
+		// a consumer's own event must not close connections
+		assert.strictEqual(to_revocation_scope('classroom_create'), 'none');
+		// nor may an inherited object key resolve to anything
+		assert.strictEqual(to_revocation_scope('constructor'), 'none');
+		assert.strictEqual(to_revocation_scope('toString'), 'none');
 	});
 });
 
@@ -172,7 +196,10 @@ describe('create_ws_auth_guard: account-scoped events', () => {
 	const account_scoped_events = [
 		'session_revoke_all',
 		'token_revoke_all',
-		'password_change'
+		'password_change',
+		'logout',
+		'account_delete',
+		'account_purge'
 	] as const;
 
 	for (const event_type of account_scoped_events) {
@@ -264,79 +291,91 @@ describe('create_ws_auth_guard: safety', () => {
 		assert.strictEqual(closes.length, 0);
 	});
 
-	test('ignores non-disconnect event types (login, token_create, role_grant_revoke, etc.)', () => {
+	test('ignores logout with outcome=failure', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_ws_auth_guard(transport, silent_log);
 		const { ws, closes } = create_fake_ws();
 		transport.add_connection(ws, HASH_A, ACCOUNT_A);
 
-		for (const event_type of ['login', 'logout', 'token_create', 'role_grant_revoke'] as const) {
-			guard(create_audit_event({ event_type, account_id: ACCOUNT_A }));
-		}
+		guard(create_audit_event({ event_type: 'logout', outcome: 'failure', account_id: ACCOUNT_A }));
 		assert.strictEqual(closes.length, 0);
 	});
-});
 
-describe('create_ws_logout_closer', () => {
-	test('closes every socket for the account on successful logout', () => {
+	test('ignores events that revoke nothing (login, token_create, account_undelete, …)', () => {
 		const transport = new BackendWebsocketTransport();
-		const closer = create_ws_logout_closer(transport, silent_log);
-
-		const a1 = create_fake_ws();
-		const a2 = create_fake_ws();
-		const b = create_fake_ws();
-		transport.add_connection(a1.ws, HASH_A, ACCOUNT_A);
-		transport.add_connection(a2.ws, 'session_hash_a2', ACCOUNT_A);
-		transport.add_connection(b.ws, HASH_B, ACCOUNT_B);
-
-		closer(create_audit_event({ event_type: 'logout', account_id: ACCOUNT_A }));
-
-		assert.strictEqual(a1.closes.length, 1);
-		assert.strictEqual(a2.closes.length, 1);
-		assert.strictEqual(b.closes.length, 0);
-	});
-
-	test('ignores non-logout events (session_revoke, login, etc.)', () => {
-		const transport = new BackendWebsocketTransport();
-		const closer = create_ws_logout_closer(transport, silent_log);
+		const guard = create_ws_auth_guard(transport, silent_log);
 		const { ws, closes } = create_fake_ws();
 		transport.add_connection(ws, HASH_A, ACCOUNT_A);
 
-		for (const event_type of [
-			'session_revoke',
-			'session_revoke_all',
-			'token_revoke',
-			'login',
-			'role_grant_revoke'
-		] as const) {
-			closer(create_audit_event({ event_type, account_id: ACCOUNT_A }));
+		for (const event_type of AUDIT_EVENT_TYPES) {
+			if (audit_event_revocation_scopes[event_type] !== 'none') continue;
+			guard(
+				create_audit_event({
+					event_type,
+					account_id: ACCOUNT_A,
+					target_account_id: ACCOUNT_A,
+					metadata: { session_id: HASH_A }
+				})
+			);
 		}
 		assert.strictEqual(closes.length, 0);
 	});
 
-	test('ignores logout with outcome=failure (avoids unauthenticated probe attacks)', () => {
+	test('does not close on role_grant_revoke — the next message is re-authorized instead', () => {
 		const transport = new BackendWebsocketTransport();
-		const closer = create_ws_logout_closer(transport, silent_log);
+		const guard = create_ws_auth_guard(transport, silent_log);
 		const { ws, closes } = create_fake_ws();
 		transport.add_connection(ws, HASH_A, ACCOUNT_A);
 
-		closer(
+		guard(
 			create_audit_event({
-				event_type: 'logout',
-				outcome: 'failure',
-				account_id: ACCOUNT_A
+				event_type: 'role_grant_revoke',
+				account_id: ACCOUNT_B,
+				target_account_id: ACCOUNT_A,
+				metadata: { role: 'admin' }
 			})
 		);
 		assert.strictEqual(closes.length, 0);
 	});
 
-	test('ignores logout without account_id', () => {
+	test('ignores an event type fuz_app does not define, whatever its metadata', () => {
 		const transport = new BackendWebsocketTransport();
-		const closer = create_ws_logout_closer(transport, silent_log);
+		const guard = create_ws_auth_guard(transport, silent_log);
 		const { ws, closes } = create_fake_ws();
 		transport.add_connection(ws, HASH_A, ACCOUNT_A);
 
-		closer(create_audit_event({ event_type: 'logout', account_id: null }));
+		guard(
+			create_audit_event({
+				event_type: 'consumer_session_revoke',
+				account_id: ACCOUNT_A,
+				target_account_id: ACCOUNT_A,
+				metadata: { session_id: HASH_A }
+			})
+		);
 		assert.strictEqual(closes.length, 0);
+	});
+});
+
+describe('create_ws_auth_guard: over a RealtimeCloser', () => {
+	test('one guard closes on every member transport', () => {
+		const first = new BackendWebsocketTransport();
+		const second = new BackendWebsocketTransport();
+		const closer = create_realtime_closer();
+		closer.add(first);
+		closer.add(second);
+		const guard = create_ws_auth_guard(closer, silent_log);
+
+		const on_first = create_fake_ws();
+		const on_second = create_fake_ws();
+		const other = create_fake_ws();
+		first.add_connection(on_first.ws, HASH_A, ACCOUNT_A);
+		second.add_connection(on_second.ws, 'session_hash_a2', ACCOUNT_A);
+		second.add_connection(other.ws, HASH_B, ACCOUNT_B);
+
+		guard(create_audit_event({ event_type: 'logout', account_id: ACCOUNT_A }));
+
+		assert.strictEqual(on_first.closes.length, 1);
+		assert.strictEqual(on_second.closes.length, 1);
+		assert.strictEqual(other.closes.length, 0);
 	});
 });

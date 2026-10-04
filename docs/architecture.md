@@ -487,8 +487,14 @@ patterns:
   captured inside the closure, so entries persist when the request
   transaction rolls back. The emitter also captures its registered
   listeners and the optional `AuditLogConfig` so handlers cannot
-  silently fall back to the builtin config or a stale callback. Action
-  factories take `ActionFactoryDeps` (`{log, audit}`) directly.
+  silently fall back to the builtin config or a stale callback. The write is
+  eager, but the listeners hear of a **success** row only after the request's
+  transaction commits (its fan-out rides the `post_commit_effects` queue and
+  awaits the write) and never when the handler throws; a **failure** row is
+  announced as soon as it is written. Action
+  factories take `ActionFactoryDeps` (`{log, audit}`) directly; the two whose
+  handlers end credentials (`create_account_actions`, `create_admin_actions`)
+  take `RevokingActionFactoryDeps`, which adds `connection_closer`.
 - `query_validate_api_token(deps, raw_token, ip, pending_effects)` keeps its
   `pending_effects: Array<Promise<void>> | undefined` shape — it runs from
   middleware (no `RouteContext` / `ActionContext` in scope) and doesn't need
@@ -506,7 +512,8 @@ returns — eliminates polling workarounds in tests. In production, the optional
 request context (`method`, `path`) — use for monitoring, metrics, or alerting.
 
 For work that must run **only after the transaction commits** (WS fan-out:
-role_grant offer / revoke notifications; the success-only `db_admin_row_delete`
+role_grant offer / revoke notifications; a revocation's connection closes, via
+`queue_connection_close`; the success-only `db_admin_row_delete`
 audit emit, which must never claim a delete that failed at COMMIT), use
 `emit_after_commit(ctx, fn)` from `http/pending_effects.ts`. It pushes a deferred _thunk_ onto a separate
 `post_commit_effects` queue (distinct from the eager `pending_effects` promise

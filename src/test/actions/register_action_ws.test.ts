@@ -12,6 +12,7 @@
 
 import { afterEach, describe, assert, test, vi } from 'vitest';
 import { Hono } from 'hono';
+import { WSContext } from 'hono/ws';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid } from '@fuzdev/fuz_util/id.ts';
@@ -44,6 +45,13 @@ import { type CredentialType } from '$lib/hono_context.ts';
 import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
 import { RateLimiter } from '$lib/rate_limiter.ts';
 import { create_stub_db } from '$lib/testing/stubs.ts';
+import { create_test_audit_event } from '$lib/testing/entities.ts';
+import { queue_connection_close } from '$lib/actions/connection_closer.ts';
+import { create_ws_auth_guard } from '$lib/actions/transports_ws_auth_guard.ts';
+import { SessionId } from '$lib/auth/account_schema.ts';
+import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
+import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
+import { hash_session_token } from '$lib/auth/session_queries.ts';
 import {
 	create_fake_hono_context,
 	create_fake_ws,
@@ -146,6 +154,7 @@ const build_harness = async (opts: {
 	const stub_db = create_stub_db();
 	const { transport } = register_action_ws({
 		path: '/ws',
+		connection_closer: null,
 		app: new Hono(),
 		upgradeWebSocket: stub.upgradeWebSocket,
 		actions,
@@ -313,6 +322,7 @@ describe('register_action_ws', () => {
 		const stub_db = create_stub_db();
 		register_action_ws({
 			path: '/ws',
+			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
@@ -329,6 +339,17 @@ describe('register_action_ws', () => {
 
 		const res = parse_json(fake.sends[0]!);
 		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.parse_error);
+	});
+
+	test('a result that cannot be serialized answers internal_error, and the dispatch does not reject', async () => {
+		// the adapter does not await `onMessage`, so a rejection here would be unhandled
+		const h = await build_harness({ handlers: { echo: () => ({ value: 1n }) } });
+		await h.on_open();
+		await h.on_message({ jsonrpc: '2.0', id: 7, method: 'echo', params: { value: 'x' } });
+		assert.strictEqual(h.fake.sends.length, 1);
+		const res = parse_json(h.fake.sends[0]!);
+		assert.strictEqual(res.id, 7);
+		assert.strictEqual(res.error.code, JSONRPC_ERROR_CODES.internal_error);
 	});
 
 	test('silently drops JSON-RPC notifications (method + no id)', async () => {
@@ -742,6 +763,7 @@ describe('register_action_ws', () => {
 		const stub = create_stub_upgrade();
 		const { transport } = register_action_ws({
 			path: '/ws',
+			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
@@ -765,6 +787,7 @@ describe('register_action_ws', () => {
 		const stub_db = create_stub_db();
 		const result = register_action_ws({
 			path: '/ws',
+			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
@@ -850,6 +873,7 @@ describe('register_action_ws max_connections_per_account', () => {
 		const opened: Array<SocketOpenContext> = [];
 		const { transport } = register_action_ws({
 			path: '/ws',
+			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
@@ -902,6 +926,7 @@ describe('register_action_ws max_connections_per_account', () => {
 		const stub = create_stub_upgrade();
 		register_action_ws({
 			path: '/ws',
+			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
@@ -949,6 +974,7 @@ describe('register_action_ws max_connections_per_account', () => {
 		const stub = create_stub_upgrade();
 		const { transport } = register_action_ws({
 			path: '/ws',
+			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
@@ -970,6 +996,7 @@ describe('register_action_ws max_connections_per_account', () => {
 		const stub = create_stub_upgrade();
 		const { transport } = register_action_ws({
 			path: '/ws',
+			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
@@ -996,6 +1023,7 @@ describe('register_action_ws max_connections_per_account', () => {
 				() =>
 					register_action_ws({
 						path: '/ws',
+						connection_closer: null,
 						app: new Hono(),
 						upgradeWebSocket: stub.upgradeWebSocket,
 						actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
@@ -1255,6 +1283,127 @@ describe('register_action_ws socket lifecycle hooks', () => {
 	});
 });
 
+describe('register_action_ws self-revocation', () => {
+	// A socket can revoke the credential it is running on —
+	// `account_session_revoke_all` over the session's own socket, say. The
+	// caller must read its reply before the socket is closed, so the reply is
+	// sent before the per-message queues flush: the handler's close is on the
+	// post-commit queue, and so is the audit listeners'.
+
+	const SESSION_ID = 's1'; // what `create_fake_hono_context` registers a session socket under
+
+	const revoke_self_spec: RequestResponseActionSpec = {
+		method: 'revoke_self',
+		kind: 'request_response',
+		initiator: 'frontend',
+		auth: { account: 'required', actor: 'none' },
+		side_effects: true,
+		input: z.void(),
+		output: z.strictObject({ revoked: z.boolean() }),
+		async: true,
+		description: 'revoke the session this socket is on'
+	};
+
+	/** Mount `revoke_self` and open one socket whose sends and closes land on one timeline. */
+	const open_self_revoking_socket = async (
+		handler: (ctx: ActionContext, transport: BackendWebsocketTransport) => void
+	): Promise<{ timeline: Array<string>; request: () => Promise<void> }> => {
+		const stub = create_stub_upgrade();
+		const { transport } = register_action_ws({
+			path: '/ws',
+			connection_closer: null,
+			app: new Hono(),
+			upgradeWebSocket: stub.upgradeWebSocket,
+			actions: [
+				{
+					spec: revoke_self_spec,
+					handler: (_input: unknown, ctx: ActionContext) => {
+						handler(ctx, transport);
+						return { revoked: true };
+					}
+				}
+			],
+			db: create_stub_db(),
+			heartbeat: false,
+			log
+		});
+		const events = await stub.get_create_events()(
+			create_fake_hono_context({ credential_type: 'session', auth_session_id: SESSION_ID })
+		);
+		const timeline: Array<string> = [];
+		const ws = new WSContext({
+			readyState: 1,
+			send: (data) => {
+				const message = JSON.parse(data as string) as { id?: unknown; result?: unknown };
+				timeline.push(`reply ${String(message.id)} ${JSON.stringify(message.result)}`);
+			},
+			close: (code) => {
+				timeline.push(`close ${code}`);
+			}
+		});
+		await (events.onOpen?.(new Event('open'), ws) as Promise<void> | void);
+		return {
+			timeline,
+			request: async () => {
+				const event = new MessageEvent('message', {
+					data: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'revoke_self' })
+				});
+				if (events.onMessage) await dispatch_ws_message(events.onMessage, event, ws);
+			}
+		};
+	};
+
+	test('a handler that closes its own socket post-commit is answered first', async () => {
+		const { timeline, request } = await open_self_revoking_socket((ctx, transport) => {
+			queue_connection_close(ctx, transport, {
+				kind: 'session',
+				session_token_hash: hash_session_token(SESSION_ID)
+			});
+		});
+
+		await request();
+
+		assert.deepStrictEqual(timeline, [
+			'reply 1 {"revoked":true}',
+			`close ${WS_CLOSE_SESSION_REVOKED}`
+		]);
+	});
+
+	test('an audit listener that closes the socket is behind the reply too', async () => {
+		// the listener-only wiring: nothing in the handler closes, the WS auth
+		// guard does when the `session_revoke` row is announced
+		const audit_event: AuditLogEvent = create_test_audit_event({
+			event_type: 'session_revoke',
+			metadata: { session_id: hash_session_token(SESSION_ID) }
+		});
+		const audit = create_audit_emitter({
+			db: {
+				query: () => Promise.resolve([audit_event]),
+				query_one: () => Promise.resolve()
+			} as any,
+			log
+		});
+		let guarded = false;
+		const { timeline, request } = await open_self_revoking_socket((ctx, transport) => {
+			if (!guarded) {
+				guarded = true;
+				audit.add_listener(create_ws_auth_guard(transport, log));
+			}
+			audit.emit(ctx, {
+				event_type: 'session_revoke',
+				metadata: { session_id: SessionId.parse(hash_session_token(SESSION_ID)) }
+			});
+		});
+
+		await request();
+
+		assert.deepStrictEqual(timeline, [
+			'reply 1 {"revoked":true}',
+			`close ${WS_CLOSE_SESSION_REVOKED}`
+		]);
+	});
+});
+
 describe('register_action_ws a server-closed socket dispatches nothing', () => {
 	// A runtime adapter can keep delivering inbound frames after the server
 	// calls `ws.close(…)`, until the close handshake completes (`@hono/node-ws`
@@ -1325,6 +1474,7 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 		const runs: Array<string> = [];
 		register_action_ws({
 			path: '/ws',
+			connection_closer: null,
 			app: new Hono(),
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [
@@ -1854,6 +2004,7 @@ describe('register_action_ws rate limit', () => {
 			() =>
 				register_action_ws({
 					path: '/ws',
+					connection_closer: null,
 					app: new Hono(),
 					upgradeWebSocket: stub.upgradeWebSocket,
 					actions: [{ spec: bad_spec, handler: () => ({ value: 'x' }) }],

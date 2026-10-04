@@ -386,6 +386,10 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 	 * 3. Hand off to `perform_action` for the post-parse pipeline.
 	 * 4. Bind the result to `c.json` — `'ok'` returns the result envelope,
 	 *    `'error'` returns the error envelope at the `result.status` HTTP code.
+	 *    A result that cannot be serialized answers `internal_error` rather
+	 *    than throwing: `perform_action` has already committed, and a throw
+	 *    here would have the route wrapper discard the post-commit effects
+	 *    the handler queued — a revocation's connection closes among them.
 	 *
 	 * @param restrict_to_reads - `true` for GET (rejects `side_effects: true` actions)
 	 */
@@ -467,7 +471,25 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			// is verified by `jsonrpc_error_code_to_http_status`).
 			return c.json(envelope, result.status as Parameters<typeof c.json>[1]);
 		}
-		return c.json(envelope);
+		try {
+			return c.json(envelope);
+		} catch (err) {
+			// The handler's output is not JSON (a `bigint`, a cycle). Its
+			// transaction has committed, so this must not propagate: the route
+			// wrapper reads a throw as a rollback and discards
+			// `post_commit_effects`, which would drop the closes of a
+			// revocation that did land.
+			log.error(`action result is not serializable: ${method_name}`, err);
+			return c.json(
+				jsonrpc_error_envelope(
+					id,
+					jsonrpc_error_messages.internal_error(
+						dev_only(err instanceof Error ? err.message : undefined)
+					)
+				),
+				jsonrpc_error_code_to_http_status(JSONRPC_ERROR_CODES.internal_error)
+			);
+		}
 	};
 
 	// POST handler — parse JSON-RPC envelope from body

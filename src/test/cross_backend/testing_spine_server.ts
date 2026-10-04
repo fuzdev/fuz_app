@@ -33,13 +33,11 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { protocol_actions } from '#lib/actions/protocol.ts';
 import { register_ws_endpoint } from '#lib/actions/register_ws_endpoint.ts';
 import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
-import {
-	create_ws_auth_guard,
-	create_ws_logout_closer
-} from '#lib/actions/transports_ws_auth_guard.ts';
+import { create_ws_auth_guard } from '#lib/actions/transports_ws_auth_guard.ts';
 import { start_daemon_token_rotation } from '#lib/testing/daemon_token_rotation.ts';
 import { load_env } from '#lib/env/load.ts';
 import type { RuntimeDeps } from '#lib/runtime/deps.ts';
+import { create_account_actions } from '#lib/auth/account_actions.ts';
 import { cell_audit_events } from '#lib/auth/cell_audit_events.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_audit_log_config } from '#lib/auth/audit_log_schema.ts';
@@ -173,11 +171,12 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		log
 	);
 
-	// Created up front so the audit-revocation guards AND the role-grant-offer
-	// `notification_sender` bind to the SAME transport the WS endpoint registers
-	// connections against (the transport is the connection registry — a separate
-	// instance would fan out to an empty registry and reach nobody). Threaded
-	// into `spine_rpc_endpoints({notification_sender})` below and into
+	// Created up front so the audit-revocation guard, the backend's connection
+	// closer, AND the role-grant-offer `notification_sender` bind to the SAME
+	// transport the WS endpoint registers connections against (the transport is
+	// the connection registry — a separate instance would fan out to an empty
+	// registry and reach nobody). Threaded into
+	// `spine_rpc_endpoints({notification_sender})` below and into
 	// `register_ws_endpoint` in `mount_websocket`.
 	const ws_transport = new BackendWebsocketTransport();
 
@@ -291,8 +290,11 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	};
 
 	// WS is mounted after the app exists (Node's `createNodeWebSocket` needs
-	// the app) — see `testing_server_core.ts`. Protocol actions only; the
-	// no-domain spine carries no domain WS surface.
+	// the app) — see `testing_server_core.ts`. The protocol actions plus the
+	// self-service account actions: the no-domain spine carries no domain WS
+	// surface, and the account actions are what lets a socket revoke the
+	// session it is running on (`capabilities.ws_account_actions`), as it can
+	// on the Rust stub, which serves one registry on RPC and WS.
 	const mount_websocket = (upgrade_websocket: UpgradeWebSocket): void => {
 		register_ws_endpoint({
 			app: app_server.app,
@@ -300,12 +302,15 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 			allowed_origins,
 			db: app_backend.deps.db,
 			upgradeWebSocket: upgrade_websocket,
-			actions: protocol_actions,
+			actions: [...protocol_actions, ...create_account_actions(app_backend.deps)],
 			transport: ws_transport,
+			// the revocation handlers on `/api/rpc` close this endpoint's sockets
+			// through the backend's closer, alongside the audit streams
+			// `create_app_server` added to it
+			connection_closer: app_backend.deps.connection_closer,
 			log
 		});
 		app_backend.deps.audit.add_listener(create_ws_auth_guard(ws_transport, log));
-		app_backend.deps.audit.add_listener(create_ws_logout_closer(ws_transport, log));
 	};
 
 	return { app: app_server.app, close, mount_websocket };

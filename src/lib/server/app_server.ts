@@ -71,10 +71,7 @@ import { ERROR_PAYLOAD_TOO_LARGE } from '../http/error_schemas.ts';
 import { create_rpc_endpoint } from '../actions/action_rpc.ts';
 import { register_ws_endpoint } from '../actions/register_ws_endpoint.ts';
 import type { WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
-import {
-	create_ws_auth_guard,
-	create_ws_logout_closer
-} from '../actions/transports_ws_auth_guard.ts';
+import { create_ws_auth_guard } from '../actions/transports_ws_auth_guard.ts';
 import type { BackendWebsocketTransport } from '../actions/transports_ws_backend.ts';
 
 /**
@@ -248,12 +245,13 @@ export interface AppServerOptions {
 	 *
 	 * When truthy, creates an `AuditLogSse` instance internally, registers the SSE
 	 * listener via `backend.deps.audit.add_listener` (composing with the
-	 * consumer's `on_audit_event` callback rather than rebuilding `AppDeps`), and
-	 * auto-includes `audit_log_event_specs` in the surface. The result is exposed
-	 * on `AppServerContext` (for route factories) and `AppServer` (for the caller),
-	 * always typed as `AuditLogSse | null` — when this option is set, the field
-	 * is non-null. Use `require_audit_sse(ctx)` to assert the invariant in
-	 * route factories that depend on it.
+	 * consumer's `on_audit_event` callback rather than rebuilding `AppDeps`),
+	 * adds its registry to `backend.deps.connection_closer` so revocations close
+	 * its streams, and auto-includes `audit_log_event_specs` in the surface. The
+	 * result is exposed on `AppServerContext` (for route factories) and
+	 * `AppServer` (for the caller), always typed as `AuditLogSse | null` — when
+	 * this option is set, the field is non-null. Use `require_audit_sse(ctx)` to
+	 * assert the invariant in route factories that depend on it.
 	 *
 	 * Pass `true` for defaults (admin role), or `{role: 'custom'}` for a custom role.
 	 * Omit to wire audit SSE manually.
@@ -310,13 +308,17 @@ export interface AppServerOptions {
 	 * Duplicate `path` values across two `WsEndpointSpec`s throw at
 	 * mount time (Hono would silently shadow them otherwise).
 	 *
+	 * Every mounted transport is added to `deps.connection_closer`, so
+	 * the revocation handlers' post-commit closes reach its sockets —
+	 * unconditionally, since those closes are what ends a revoked
+	 * credential's connections.
+	 *
 	 * Each spec's `auth_guard?` defaults to `true` — the factory
-	 * composes `create_ws_auth_guard` + `create_ws_logout_closer`
-	 * against the mounted transport and registers them via
-	 * `deps.audit.add_listener`. Wiring is deduped by transport
-	 * **reference identity** so two specs sharing one
-	 * `BackendWebsocketTransport` instance get a single pair of
-	 * listeners; wrapped / proxied transports dedupe as separate
+	 * registers `create_ws_auth_guard` against the mounted transport via
+	 * `deps.audit.add_listener`, repeating the close on the audit row.
+	 * Wiring is deduped by transport **reference identity** so two specs
+	 * sharing one `BackendWebsocketTransport` instance get a single
+	 * listener; wrapped / proxied transports dedupe as separate
 	 * entries (set `auth_guard: false` on duplicates and compose
 	 * against the underlying transport once).
 	 */
@@ -435,7 +437,10 @@ export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
  * pass `migration_namespaces` to `create_app_backend`.
  *
  * When `audit_log_sse` is set, the SSE registry's listener is registered via
- * `backend.deps.audit.add_listener` — no shallow-copy of `AppDeps`. The
+ * `backend.deps.audit.add_listener` — no shallow-copy of `AppDeps`. That
+ * registry and every WebSocket transport mounted from `ws_endpoints` are added
+ * to `backend.deps.connection_closer`, so the revocation handlers built from
+ * `ctx.deps` close their connections with no further wiring. The
  * `audit_sse` field on the returned `AppServer` (and the
  * `AppServerContext` passed to `create_route_specs`) is non-null in that
  * case; consumers can call `require_audit_sse(ctx)` / `require_audit_sse(server)`
@@ -482,11 +487,13 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 
 	// Factory-managed audit SSE — registers a listener on the bound emitter
 	// so SSE fan-out runs alongside the consumer's `on_audit_event`
-	// without rebuilding `AppDeps`.
+	// without rebuilding `AppDeps`, and adds the registry to the backend's
+	// closer so revocations close its streams.
 	const audit_sse: AuditLogSse | null = options.audit_log_sse
 		? create_audit_log_sse({
 				log,
-				role: typeof options.audit_log_sse === 'object' ? options.audit_log_sse.role : undefined
+				role: typeof options.audit_log_sse === 'object' ? options.audit_log_sse.role : undefined,
+				connection_closer: deps.connection_closer
 			})
 		: null;
 	if (audit_sse) {
@@ -681,7 +688,10 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	// committed transaction). Both queues drain here, after the handler
 	// (and any wrapping `db.transaction`) returns. In test mode both are
 	// awaited before the response returns; in production, eager-queue
-	// rejections are reported via `on_effect_error`.
+	// rejections are reported via `on_effect_error`. Either way the
+	// deferred thunks are invoked without waiting for the eager writes to
+	// settle — a revocation's connection close must not sit behind a slow
+	// audit INSERT.
 	app.use('*', async (c, next) => {
 		c.set('pending_effects', []);
 		c.set('post_commit_effects', []);
@@ -692,8 +702,11 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			const deferred = c.var.post_commit_effects;
 			if (eager.length || deferred.length) {
 				if (options.await_pending_effects) {
+					// run the deferred thunks before awaiting the eager writes,
+					// so neither mode holds them behind a write
+					const deferred_flush = flush_post_commit_effects(deferred, log);
 					await flush_pending_effects(eager, log);
-					await flush_post_commit_effects(deferred, log);
+					await deferred_flush;
 				} else {
 					const error_ctx: EffectErrorContext = { method: c.req.method, path: c.req.path };
 					const callback = options.on_effect_error;
@@ -757,7 +770,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		}
 		const seen_paths: Set<string> = new Set();
 		// Dedupe `auth_guard` wiring by transport reference — two specs
-		// sharing one transport instance get a single pair of listeners,
+		// sharing one transport instance get a single listener,
 		// otherwise revocation events would fire `close_sockets_for_*`
 		// twice per event (idempotent on the transport but log-spammy).
 		// Cross-spec OR-semantics: any spec with `auth_guard !== false`
@@ -784,6 +797,8 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 				db: deps.db,
 				actions: endpoint.actions,
 				transport: endpoint.transport,
+				// every revocation handler's close reaches this transport
+				connection_closer: deps.connection_closer,
 				max_connections_per_account: endpoint.max_connections_per_account,
 				heartbeat: endpoint.heartbeat,
 				artificial_delay: endpoint.artificial_delay,
@@ -800,7 +815,6 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			if (endpoint.auth_guard !== false && !guarded_transports.has(endpoint_transport)) {
 				guarded_transports.add(endpoint_transport);
 				deps.audit.add_listener(create_ws_auth_guard(endpoint_transport, log));
-				deps.audit.add_listener(create_ws_logout_closer(endpoint_transport, log));
 			}
 			if (endpoint.extra_audit_handlers?.length) {
 				for (const handler of endpoint.extra_audit_handlers) {

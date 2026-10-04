@@ -25,7 +25,7 @@ const log = new Logger('test', { level: 'off' });
 
 describe('audit log stream handler', () => {
 	test('a throw while building the response releases the pending registration', async () => {
-		const audit_sse = create_audit_log_sse({ log });
+		const audit_sse = create_audit_log_sse({ log, connection_closer: null });
 		const [spec] = create_audit_log_route_specs({ stream: audit_sse });
 		assert.ok(spec);
 		// A pre-baked context (so the re-reads are skipped) with nothing but

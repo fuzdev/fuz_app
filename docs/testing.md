@@ -762,8 +762,12 @@ describe_sse_route_tests({
 });
 ```
 
-The close-on-revoke assertion requires the consumer to wire a guard into
-`on_audit_event`, and to subscribe with `{scope: session_hash, groups: [account_id]}`
+The close-on-revoke assertion requires a revocation to reach the consumer's
+registry — a guard wired into `on_audit_event` as above, and in production also
+the registry added to the backend's closer
+(`ctx.deps.connection_closer.add(create_sse_connection_closer(registry))`) so
+the revocation handlers close its streams without depending on the audit write
+— and the route to subscribe with `{scope: session_hash, groups: [account_id]}`
 so `close_by_identity` can match. Pass `assert_closes_on_revoke: false` per-route
 to temporarily skip that assertion (leaves the gap visible).
 

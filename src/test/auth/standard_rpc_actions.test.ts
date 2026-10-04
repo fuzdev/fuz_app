@@ -30,9 +30,14 @@ import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import { create_test_action_context } from './rpc_test_helpers.ts';
+import { noop_connection_closer } from '$lib/actions/connection_closer.ts';
 
 const log = new Logger('test', { level: 'off' });
-const deps = { log, audit: create_test_audit_emitter() };
+const deps = {
+	log,
+	audit: create_test_audit_emitter(),
+	connection_closer: noop_connection_closer
+};
 
 describe('create_standard_rpc_actions', () => {
 	test('emits every admin + role-grant-offer + account method without duplicates', () => {

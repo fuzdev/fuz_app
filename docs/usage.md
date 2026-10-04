@@ -293,10 +293,12 @@ ws_endpoints['/api/ws'].send_to_account(account_id, notification);
 
 `ws_endpoints` mirrors `rpc_endpoints`: array or factory form, single
 source of truth for surface + dispatch, auto-mounted onto the assembled
-Hono app. Per-endpoint `auth_guard` defaults to `true` and composes
-`create_ws_auth_guard` + `create_ws_logout_closer` against the mounted
-transport — `session_revoke` / `token_revoke` / `password_change` close
-matching sockets without consumer wiring. Pass `required_roles:
+Hono app. Every mounted transport is added to `deps.connection_closer`, so
+a revocation handler closes its sockets once the revocation commits — a
+session or token revoke, a password change, a logout, an account delete, a
+cap eviction — without consumer wiring. Per-endpoint `auth_guard` defaults to
+`true` and registers `create_ws_auth_guard` against the mounted transport,
+which repeats the close when the audit row is announced. Pass `required_roles:
 [ROLE_ADMIN]` for an admin-only WS gate at upgrade time. `AppServer.ws_endpoints`
 returns the path-keyed `BackendWebsocketTransport` map for broadcast.
 
@@ -411,18 +413,25 @@ const { app, audit_sse } = await create_app_server({
 
 When `audit_log_sse` is set, `create_app_server` creates the SSE registry,
 broadcaster, and auth guard internally, registers `audit_sse.on_audit_event` via
-`backend.deps.audit.add_listener` (no shallow-copy of `AppDeps`), and
-auto-appends `audit_log_event_specs` to the event specs. The `audit_sse`
+`backend.deps.audit.add_listener` (no shallow-copy of `AppDeps`), adds the
+registry to `backend.deps.connection_closer` so revocations close its streams,
+and auto-appends `audit_log_event_specs` to the event specs. The `audit_sse`
 field on both `AppServerContext` and `AppServer` is `AuditLogSse | null`.
 
 For manual control, use `create_audit_log_sse()` directly:
 
 ```typescript
 import {create_audit_log_sse} from '@fuzdev/fuz_app/realtime/sse_auth_guard.ts';
+import {create_realtime_closer} from '@fuzdev/fuz_app/actions/connection_closer.ts';
 
-const audit_sse = create_audit_log_sse({log});
+// One closer for the backend: the audit stream joins it here, and the same
+// instance goes to create_app_backend so the handlers close through it.
+const connection_closer = create_realtime_closer();
+const audit_sse = create_audit_log_sse({log, connection_closer});
 
-// In create_app_backend options — compose inside the audit_factory body:
+// In create_app_backend options — the closer, and the listener composed
+// inside the audit_factory body:
+connection_closer,
 audit_factory: ({db, log}) =>
 	create_audit_emitter({db, log, on_audit_event: audit_sse.on_audit_event}),
 
@@ -433,13 +442,20 @@ create_audit_log_route_specs({stream: audit_sse});
 event_specs: audit_log_event_specs,
 ```
 
-The guard closes streams on `role_grant_revoke` (role match), `session_revoke`
-(session-scoped), `session_revoke_all`, and `password_change`. Events with
-`outcome='failure'` are ignored (they may carry attacker-submitted identifiers).
+Streams close two ways. The revocation handlers close them directly, once
+their transaction commits, through the `connection_closer` the registry joined
+— that close does not depend on the audit write. The guard repeats it when the
+audit row is announced: `role_grant_revoke` (role match — the guard is the only
+closer for this one), `session_revoke` (session-scoped), `token_revoke`
+(token-scoped), and the account-wide events (`session_revoke_all`,
+`token_revoke_all`, `password_change`, `logout`, `account_delete`,
+`account_purge`). Events with `outcome='failure'` are ignored (they may carry
+attacker-submitted identifiers).
 The audit log SSE route subscribes with `scope = session_hash` and
 `groups = [account_id]`, so `session_revoke` closes only the affected tab
 while the coarser events close every stream for the account. For lower-level
-control, use `create_sse_auth_guard()` directly with a `SubscriberRegistry`.
+control, use `create_sse_auth_guard()` and `create_sse_connection_closer()`
+directly with a `SubscriberRegistry`.
 
 `on_audit_event` is the first-listener slot on `CreateAuditEmitterOptions`
 (defaults to a noop) — the consumer threads it into the emitter inside
@@ -720,7 +736,8 @@ const { transport } = register_ws_endpoint({
 	allowed_origins, // from parse_allowed_origins(env.FUZ_ALLOWED_ORIGINS)
 	required_role: ROLE_ADMIN, // optional — omit for any authenticated account
 	actions: [...protocol_actions, ...my_actions],
-	db: backend.db, // pool-level — perform_action wraps in db.transaction for side_effects: true
+	db: backend.deps.db, // pool-level — perform_action wraps in db.transaction for side_effects: true
+	connection_closer: backend.deps.connection_closer, // required — revocations close this endpoint's sockets
 	log
 });
 ```
@@ -734,20 +751,19 @@ validated in DEV + production; output validated DEV-only, logging an error
 on mismatch without throwing. See ./architecture.md §DEV-only Output
 Validation.
 
-The returned `transport: BackendWebsocketTransport` is what you hand to `create_ws_auth_guard(transport, log)` and `create_ws_logout_closer(transport, log)` when wiring audit-event-driven socket closure on `AppBackend`:
+`connection_closer` is required: the endpoint adds its transport to it, and every revocation handler closes through it after its transaction commits (./security.md §Closing on Revocation). Left out of the closer, a transport's sockets would outlive a revoked credential whenever no audit row reaches a listener — a failed audit write, a session or token cap eviction. Pass `null` only for a transport no revocation has to reach.
+
+The returned `transport: BackendWebsocketTransport` is also what you hand to `create_ws_auth_guard(transport, log)` to repeat those closes from the audit chain — `create_app_server` registers it for endpoints mounted through `ws_endpoints`; wire it yourself when mounting by hand:
 
 ```typescript
 import {
 	create_ws_auth_guard,
-	create_ws_logout_closer,
 	type AuditEventHandler
 } from '@fuzdev/fuz_app/actions/transports_ws_auth_guard.ts';
 
 const ws_guard = create_ws_auth_guard(transport, log);
-const ws_logout_closer = create_ws_logout_closer(transport, log);
 const on_audit_event: AuditEventHandler = (event) => {
 	ws_guard(event);
-	ws_logout_closer(event);
 	// Add your own handlers (e.g. domain-specific cleanup) by appending more calls.
 };
 const backend = await create_app_backend({
@@ -756,14 +772,16 @@ const backend = await create_app_backend({
 });
 ```
 
-The two helpers are siblings, not one wrapper, because their event sets are
-disjoint: `create_ws_auth_guard` covers admin-initiated revocations
-(`session_revoke`, `token_revoke`, `session_revoke_all`, `token_revoke_all`,
-`password_change`) and `create_ws_logout_closer` covers user-initiated
-`logout`. Compose both unless you specifically want only one path. Both
-ignore `outcome === 'failure'` events to avoid acting on attacker-controlled
-identifiers — see `actions/transports_ws_auth_guard.ts` for the full
-rationale.
+The guard closes by the `RevocationScope` each audit event declares
+(`audit_event_revocation_scopes`): one session for `session_revoke`, one token
+for `token_revoke`, and the whole account for `session_revoke_all`,
+`token_revoke_all`, `password_change`, `logout`, `account_delete`, and
+`account_purge`. It ignores `outcome === 'failure'` events to avoid acting on
+attacker-controlled identifiers, and deliberately does not close on
+`role_grant_revoke` (the next message is re-authorized) — see
+`actions/transports_ws_auth_guard.ts` for the full rationale. It accepts any
+`ConnectionCloser`, so one guard over `backend.deps.connection_closer` covers
+every transport.
 
 An account holds at most `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT` (50) connections on a transport. One more is always admitted, and the account's oldest is closed with `WS_CLOSE_CONNECTION_LIMIT` to make room. Pass `max_connections_per_account` to change the cap (`null` disables it) — on `register_ws_endpoint` / `WsEndpointSpec` for the transport the mount creates, or on your own `new BackendWebsocketTransport({max_connections_per_account})`; passing both the option and a `transport` throws. On the client, `FrontendWebsocketClient` treats that close as closed-until-the-user-acts: it doesn't reconnect (that would close a newer socket in turn), it isn't `revoked`, and `superseded` turns `true` until the next `connect()`:
 

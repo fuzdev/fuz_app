@@ -15,11 +15,11 @@ import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import { create_recording_audit_emitter } from '$lib/testing/audit_drift_guard.ts';
 import type { AuditLogInput } from '$lib/auth/audit_log_schema.ts';
+import type { AuditEmitRoleGrantContext } from '$lib/auth/audit_emitter.ts';
 
-const create_ctx = (
-	client_ip = '203.0.113.5'
-): { pending_effects: Array<Promise<void>>; client_ip: string } => ({
+const create_ctx = (client_ip = '203.0.113.5'): AuditEmitRoleGrantContext => ({
 	pending_effects: [],
+	post_commit_effects: [],
 	client_ip
 });
 

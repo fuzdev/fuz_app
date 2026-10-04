@@ -7,6 +7,8 @@
  * - multi-endpoint with per-path `BackendWebsocketTransport`
  * - `max_connections_per_account` threading into the auto-created transport
  * - `auth_guard` default-on / disabled / dedupe-by-transport
+ * - every mounted transport, and the audit stream registry, joins
+ *   `deps.connection_closer` — whatever `auth_guard` says
  * - `extra_audit_handlers` always-append semantics
  * - rate limiter threading from `AppServerContext`
  * - standard actions over WS surface
@@ -17,7 +19,7 @@
  * - explicit `auth_guard: true` matches the default-on path
  * - mixed `auth_guard` config across specs sharing one transport
  *   (OR-semantics: any spec with `!== false` wires the guard)
- * - distinct transports across endpoints get distinct listener pairs
+ * - distinct transports across endpoints get distinct listeners
  *
  * Shares the same `create_pglite_factory` shared-WASM pattern as
  * `create_app_server.db.test.ts`. Uses `create_stub_upgrade` (from
@@ -72,6 +74,7 @@ import type { RouteSpec } from '$lib/http/route_spec.ts';
 import { create_rate_limiter } from '$lib/rate_limiter.ts';
 import { all_standard_action_specs } from '$lib/auth/standard_action_specs.ts';
 import { create_standard_rpc_actions } from '$lib/auth/standard_rpc_actions.ts';
+import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
 
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
 const keyring = create_keyring(TEST_KEY)!;
@@ -120,6 +123,7 @@ const create_test_setup = async (): Promise<{
 			password: stub_password_deps,
 			db,
 			audit,
+			connection_closer: create_realtime_closer(),
 			...fs_stubs
 		}
 	};
@@ -371,7 +375,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
 		// Listeners register append-only in mount order: the standard
-		// [auth_guard, logout_closer] land ahead of any extra handler. Prove
+		// auth guard lands ahead of any extra handler. Prove
 		// the ordering via the auth_guard's observable effect — it closes the
 		// socket — captured at the instant the extra handler fires. The extra
 		// handler seeing `closes.length === 1` means the standard guard
@@ -416,7 +420,7 @@ describe('create_app_server.ws_endpoints', () => {
 		assert.strictEqual(closes_seen_by_extra, 1);
 	});
 
-	test('auth_guard dedupes by transport reference: shared transport gets a single pair of listeners', async () => {
+	test('auth_guard dedupes by transport reference: shared transport gets a single listener', async () => {
 		// Two specs share one transport instance — wiring auth_guard twice
 		// would have the chain close sockets twice per revoke event.
 		const stub = create_stub_upgrade();
@@ -434,8 +438,8 @@ describe('create_app_server.ws_endpoints', () => {
 		assert.strictEqual(result.ws_endpoints['/api/ws_a'], shared_transport);
 		assert.strictEqual(result.ws_endpoints['/api/ws_b'], shared_transport);
 
-		// One (auth_guard, logout_closer) pair, not two.
-		assert.strictEqual(audit.listener_count(), 2);
+		// One auth guard, not two.
+		assert.strictEqual(audit.listener_count(), 1);
 	});
 
 	test('rate limiter threading: action limiters flow from AppServerContext into the WS mount', async () => {
@@ -496,10 +500,9 @@ describe('create_app_server.ws_endpoints', () => {
 		);
 	});
 
-	test('auth_guard default-on: logout event closes the affected socket via create_ws_logout_closer', async () => {
-		// Pairs with the session_revoke test — proves the auto-mount wires
-		// BOTH `create_ws_auth_guard` (revoke events) AND
-		// `create_ws_logout_closer` (the self-service logout branch).
+	test('auth_guard default-on: logout event closes the affected socket', async () => {
+		// Pairs with the session_revoke test — the one guard dispatches on
+		// each event's revocation scope, and `logout` is account-wide.
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
@@ -525,10 +528,9 @@ describe('create_app_server.ws_endpoints', () => {
 	});
 
 	test('audit_log_sse + ws_endpoints co-mount: both register listeners and the WS guard fires on session_revoke', async () => {
-		// `audit_log_sse: true` registers the SSE listener first (line ~461);
-		// the WS auto-mount registers the auth_guard pair later (line ~741-2).
-		// Both register on `deps.audit` — listener composition must
-		// not break either consumer.
+		// `audit_log_sse: true` registers the SSE listener first; the WS
+		// auto-mount registers the auth guard later. Both register on
+		// `deps.audit` — listener composition must not break either consumer.
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
@@ -547,8 +549,8 @@ describe('create_app_server.ws_endpoints', () => {
 		const fake_ws = create_fake_ws();
 		transport.add_connection(fake_ws.ws, session_hash, account_id);
 
-		// Chain length: 1 (audit_sse listener) + 2 (auth_guard + logout_closer).
-		assert.strictEqual(audit.listener_count(), 3);
+		// Chain length: 1 (audit_sse listener) + 1 (auth guard).
+		assert.strictEqual(audit.listener_count(), 2);
 
 		const event: AuditLogEvent = create_test_audit_event({
 			event_type: 'session_revoke',
@@ -766,7 +768,7 @@ describe('create_app_server.ws_endpoints', () => {
 		assert.isDefined(result.ws_endpoints['/api/ws']);
 	});
 
-	test('explicit auth_guard: true wires the listener pair (matches the default-on path)', async () => {
+	test('explicit auth_guard: true wires the listener (matches the default-on path)', async () => {
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
@@ -776,8 +778,8 @@ describe('create_app_server.ws_endpoints', () => {
 			ws_endpoints: [build_minimal_spec({ transport, auth_guard: true })]
 		});
 
-		// One (auth_guard, logout_closer) pair appended.
-		assert.strictEqual(audit.listener_count(), 2);
+		// One auth guard appended.
+		assert.strictEqual(audit.listener_count(), 1);
 
 		// Sanity: the wired guard actually fires.
 		const session_hash = 'session_hash_explicit_true';
@@ -794,10 +796,10 @@ describe('create_app_server.ws_endpoints', () => {
 		assert.strictEqual(fake_ws.closes.length, 1);
 	});
 
-	test('distinct transports across endpoints get distinct (auth_guard, logout_closer) pairs', async () => {
-		// Two endpoints, two transports — chain has one pair per transport
-		// (4 listeners total). Sibling to the shared-transport dedupe test;
-		// confirms dedupe is scoped to reference identity, not endpoint count.
+	test('distinct transports across endpoints get distinct auth guards', async () => {
+		// Two endpoints, two transports — chain has one guard per transport.
+		// Sibling to the shared-transport dedupe test; confirms dedupe is
+		// scoped to reference identity, not endpoint count.
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
 		const transport_a = new BackendWebsocketTransport();
@@ -811,7 +813,83 @@ describe('create_app_server.ws_endpoints', () => {
 			]
 		});
 
-		assert.strictEqual(audit.listener_count(), 4);
+		assert.strictEqual(audit.listener_count(), 2);
+	});
+
+	test('every mounted transport joins deps.connection_closer, auth_guard or not', async () => {
+		// The revocation handlers close through `deps.connection_closer`
+		// after their commit. A transport left out of it would keep a revoked
+		// credential's sockets open whenever no audit row reaches a listener
+		// — a failed audit write, a cap eviction — so the mount adds every
+		// transport, and `auth_guard: false` opts out of the listener only.
+		const stub = create_stub_upgrade();
+		const { config, audit } = await create_test_setup();
+		const supplied = new BackendWebsocketTransport();
+		const result = await create_app_server({
+			...config,
+			upgradeWebSocket: stub.upgradeWebSocket,
+			ws_endpoints: [
+				build_minimal_spec({ path: '/api/ws_a', transport: supplied, auth_guard: false }),
+				// no transport supplied — the mount creates one
+				build_minimal_spec({ path: '/api/ws_b', auth_guard: false })
+			]
+		});
+		assert.strictEqual(audit.listener_count(), 0, 'no auth guard was wired');
+		const created = result.ws_endpoints['/api/ws_b'];
+		assert.ok(created);
+		assert.notStrictEqual(created, supplied);
+
+		const account_id: Uuid = create_uuid();
+		const other_account_id: Uuid = create_uuid();
+		const on_supplied = create_fake_ws();
+		const on_created = create_fake_ws();
+		const bystander = create_fake_ws();
+		supplied.add_connection(on_supplied.ws, 'session_hash_supplied', account_id);
+		created.add_connection(on_created.ws, 'session_hash_created', account_id);
+		created.add_connection(bystander.ws, 'session_hash_bystander', other_account_id);
+
+		const { connection_closer } = config.backend.deps;
+		assert.strictEqual(connection_closer.close_sockets_for_account(account_id), 2);
+		assert.strictEqual(on_supplied.closes[0]?.code, WS_CLOSE_SESSION_REVOKED);
+		assert.strictEqual(on_created.closes[0]?.code, WS_CLOSE_SESSION_REVOKED);
+		assert.strictEqual(bystander.closes.length, 0);
+	});
+
+	test('audit_log_sse joins deps.connection_closer alongside the WS transports', async () => {
+		const stub = create_stub_upgrade();
+		const { config } = await create_test_setup();
+		const transport = new BackendWebsocketTransport();
+		const result = await create_app_server({
+			...config,
+			audit_log_sse: true,
+			upgradeWebSocket: stub.upgradeWebSocket,
+			ws_endpoints: [build_minimal_spec({ transport })]
+		});
+		assert.ok(result.audit_sse);
+
+		const account_id: Uuid = create_uuid();
+		const session_hash = 'session_hash_both_transports';
+		const fake_ws = create_fake_ws();
+		transport.add_connection(fake_ws.ws, session_hash, account_id);
+		let stream_closed = false;
+		result.audit_sse.registry.subscribe(
+			{
+				send: () => {},
+				comment: () => {},
+				close: () => {
+					stream_closed = true;
+				},
+				on_close: () => {}
+			},
+			{ scope: session_hash, groups: [account_id] }
+		);
+
+		// one close, both transports — the socket and the stream
+		const { connection_closer } = config.backend.deps;
+		assert.strictEqual(connection_closer.close_sockets_for_session(session_hash), 2);
+		assert.strictEqual(fake_ws.closes[0]?.code, WS_CLOSE_SESSION_REVOKED);
+		assert.ok(stream_closed);
+		assert.strictEqual(result.audit_sse.registry.count, 0);
 	});
 
 	test('shared transport with mixed auth_guard config: OR-semantics, any non-false wires the guard', async () => {
@@ -833,7 +911,7 @@ describe('create_app_server.ws_endpoints', () => {
 
 		// Guard wired exactly once (by the `true` spec); the `false` spec
 		// doesn't subtract.
-		assert.strictEqual(audit.listener_count(), 2);
+		assert.strictEqual(audit.listener_count(), 1);
 
 		// And it actually fires.
 		const session_hash = 'session_hash_mixed_or';

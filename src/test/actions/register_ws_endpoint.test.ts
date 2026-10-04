@@ -61,6 +61,7 @@ const build_app = (opts: BuildOptions = {}) => {
 	const stub_db = create_stub_db();
 	register_ws_endpoint({
 		path: '/api/ws',
+		connection_closer: null,
 		app,
 		upgradeWebSocket: stub.upgradeWebSocket,
 		actions: [heartbeat_action],
@@ -184,6 +185,7 @@ describe('composition', () => {
 		const stub_db = create_stub_db();
 		const result = register_ws_endpoint({
 			path: '/api/ws',
+			connection_closer: null,
 			app,
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [heartbeat_action],

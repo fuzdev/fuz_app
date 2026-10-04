@@ -30,6 +30,7 @@ import {
 	ERROR_TOKEN_FILE_MISSING
 } from '$lib/http/error_schemas.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -102,7 +103,8 @@ const create_bootstrap_app = async (
 			},
 			read_secure_file,
 			delete_file: extra?.delete_file ?? vi.fn(() => Promise.resolve(undefined)),
-			audit: create_test_audit_emitter()
+			audit: create_test_audit_emitter(),
+			connection_closer: create_realtime_closer()
 		},
 		{
 			session_options,

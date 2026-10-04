@@ -18,9 +18,14 @@ import { all_role_grant_offer_action_specs } from '$lib/auth/role_grant_offer_ac
 import { all_account_action_specs } from '$lib/auth/account_action_specs.ts';
 import { create_standard_rpc_actions } from '$lib/auth/standard_rpc_actions.ts';
 import { create_test_audit_emitter } from '$lib/testing/stubs.ts';
+import { noop_connection_closer } from '$lib/actions/connection_closer.ts';
 
 const log = new Logger('test', { level: 'off' });
-const deps = { log, audit: create_test_audit_emitter() };
+const deps = {
+	log,
+	audit: create_test_audit_emitter(),
+	connection_closer: noop_connection_closer
+};
 
 describe('all_standard_action_specs', () => {
 	test('count equals the sum of the three sub-registries', () => {

@@ -1,176 +1,142 @@
 /**
- * WebSocket auth guard — bridges audit events to `BackendWebsocketTransport`.
+ * WebSocket auth guard — the audit-event listener that closes live
+ * connections when a row reports a revocation.
  *
  * **Why this exists.** `register_action_ws` captures `account_id` and
  * `credential_type` at upgrade time and reuses them for every message.
  * `perform_action`'s per-message authorization phase reloads role_grants
  * from the DB, but session and token VALIDITY are not re-queried — that
  * trade-off keeps chatty WS connections fast. The cost: nothing in the
- * dispatch path notices when a session is revoked or a token is rotated.
- * This guard is the enforcement mechanism — it listens on the audit
- * chain and closes affected sockets when revocation events fire, so
- * revocation actually takes effect on existing connections. Without it,
- * `session_revoke` / `token_revoke` are no-ops for open WS connections.
+ * dispatch path notices when a session is revoked or a token is rotated, so a
+ * revocation reaches an open connection only when something closes it.
  *
- * Mirror of `realtime/sse_auth_guard.ts` for the backend WebSocket
- * transport. Dispatches audit events to the right `close_sockets_for_*`
- * method so consumers do not re-implement the switch themselves.
+ * Two things do. The revocation handlers close directly, after their
+ * transaction commits (`queue_connection_close` in
+ * `actions/connection_closer.ts`) — that close does not depend on the audit
+ * write. This guard repeats it when the audit row is announced, which covers
+ * a revocation emitted by code that holds no closer. Closing is idempotent, so
+ * the overlap is a repeat, not a conflict. A success row is announced only
+ * after its request's transaction commits (`auth/audit_emitter.ts`), so the
+ * guard's close is post-commit too.
+ *
+ * ## Which rows close
+ *
+ * The guard dispatches on the `RevocationScope` each audit event declares in
+ * `audit_event_revocation_scopes` (`auth/audit_log_schema.ts`), the table the
+ * SSE guard (`realtime/sse_auth_guard.ts`) reads too — one declaration, so the
+ * two cannot drift into closing a revoked token's socket while leaving its
+ * stream open.
+ *
+ * `role` is the one scope this guard deliberately does not act on:
+ * `perform_action` re-authorizes every message, so a socket whose account just
+ * lost the gating role is refused at its next message, and closing it would
+ * only change when the caller learns. A stream has no later check, so the SSE
+ * guard closes there.
  *
  * For standard WS endpoints mounted via `AppServerOptions.ws_endpoints`,
- * `create_app_server` composes the guard automatically per
+ * `create_app_server` registers the guard automatically per
  * `WsEndpointSpec.auth_guard`. For custom wiring, register the handler
  * inside the consumer's `audit_factory` body (or via
  * `audit.add_listener(...)` post-assembly).
+ *
+ * Twin of the Rust spine's `register_socket_revocation_listeners`.
  *
  * @module
  */
 
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 
-import type { AuditLogEvent } from '../auth/audit_log_schema.ts';
-import type { BackendWebsocketTransport } from './transports_ws_backend.ts';
+import { to_revocation_scope, type AuditLogEvent } from '../auth/audit_log_schema.ts';
+import type { ConnectionCloser } from './connection_closer.ts';
 
 /**
  * Audit-event callback shape — the function `CreateAuditEmitterOptions.on_audit_event`
- * accepts and that the helpers in this module return.
+ * accepts and that `create_ws_auth_guard` returns.
  *
  * Exported so consumers composing multiple handlers (typically
- * `create_ws_auth_guard` + `create_ws_logout_closer` + their own
- * pre-existing `on_audit_event`) can annotate their composed callback
- * without reaching for `Parameters<typeof create_ws_auth_guard>[0]`.
+ * `create_ws_auth_guard` + their own pre-existing `on_audit_event`) can
+ * annotate their composed callback without reaching for
+ * `Parameters<typeof create_ws_auth_guard>[0]`.
  */
 export type AuditEventHandler = (event: AuditLogEvent) => void;
 
 /**
- * Audit event types that trigger WebSocket socket closure.
+ * Create an audit event handler that closes connections on a successful
+ * revocation row, dispatching on the event's `RevocationScope`:
  *
- * - `session_revoke` — close only the socket tied to the revoked session hash.
- * - `token_revoke` — close only the socket(s) authenticated with the revoked `api_token.id`.
- * - `session_revoke_all` / `token_revoke_all` / `password_change` — close every socket
- *   for the affected account (all credentials invalidated).
- *
- * `role_grant_revoke` is intentionally omitted: the WS transport does not track
- * per-connection role requirements, so role-scoped disconnection would
- * require either closing all sockets (too aggressive) or new tracking
- * (out of scope). Consumers that need it compose their own callback.
- */
-export const ws_disconnect_event_types: ReadonlySet<string> = new Set([
-	'session_revoke',
-	'token_revoke',
-	'session_revoke_all',
-	'token_revoke_all',
-	'password_change'
-]);
-
-/**
- * Create an audit event handler that closes WebSocket connections on auth changes.
+ * - `session` → `close_sockets_for_session(metadata.session_id)`
+ * - `token` → `close_sockets_for_token(metadata.token_id)`
+ * - `account` → `close_sockets_for_account(target_account_id ?? account_id)`
+ *   — `logout`, `password_change`, `session_revoke_all`, `token_revoke_all`,
+ *   `account_delete`, `account_purge`
+ * - `role` → nothing, deliberately (module doc)
+ * - `none` → nothing — every other event, and any event type fuz_app does not
+ *   define
  *
  * Ignores `outcome === 'failure'` events — they carry attacker-controlled
  * identifiers (e.g. a `session_revoke` that the DB rejected still records
  * the submitted session_id), so reacting to them would let any authenticated
  * user close another user's socket by guessing a session hash or token id.
  *
+ * @param closer - what to close on — a `BackendWebsocketTransport`, or a
+ *   `RealtimeCloser` to reach every transport from one listener
  * @param log - logger for disconnect events (info level on non-zero closures)
  * @returns an `on_audit_event` callback suitable for `create_audit_emitter`'s
  *   `on_audit_event` slot, or for registering via
- *   `audit.add_listener` post-assembly. The returned callback mutates
- *   `transport` (closing matching sockets via
- *   `close_sockets_for_session` / `_token` / `_account`) on every relevant event.
+ *   `audit.add_listener` post-assembly. The returned callback closes matching
+ *   connections on `closer` on every relevant event.
  */
-export const create_ws_auth_guard = (
-	transport: BackendWebsocketTransport,
-	log: Logger
-): AuditEventHandler => {
+export const create_ws_auth_guard = (closer: ConnectionCloser, log: Logger): AuditEventHandler => {
 	return (event: AuditLogEvent): void => {
-		if (!ws_disconnect_event_types.has(event.event_type)) return;
-
 		// Failed mutations carry attacker-controlled metadata — never act on them.
 		if (event.outcome === 'failure') return;
 
-		if (event.event_type === 'session_revoke') {
-			const session_id = event.metadata?.session_id;
-			if (typeof session_id !== 'string' || session_id.length === 0) return;
-			const closed = transport.close_sockets_for_session(session_id);
-			if (closed > 0) {
-				log.info(
-					`WS auth guard: closed ${closed} socket(s) for session ${session_id} (session_revoke)`
-				);
+		const scope = to_revocation_scope(event.event_type);
+		switch (scope) {
+			case 'none':
+				return;
+			// A decision, not a fallthrough: per-message dispatch re-authorizes,
+			// so the next message is refused. The SSE guard closes on this scope.
+			case 'role':
+				return;
+			case 'session': {
+				const session_id = event.metadata?.session_id;
+				if (typeof session_id !== 'string' || session_id.length === 0) return;
+				const closed = closer.close_sockets_for_session(session_id);
+				if (closed > 0) {
+					log.info(
+						`WS auth guard: closed ${closed} socket(s) for session ${session_id} (${event.event_type})`
+					);
+				}
+				return;
 			}
-			return;
-		}
-
-		if (event.event_type === 'token_revoke') {
-			const token_id = event.metadata?.token_id;
-			if (typeof token_id !== 'string' || token_id.length === 0) return;
-			const closed = transport.close_sockets_for_token(token_id);
-			if (closed > 0) {
-				log.info(`WS auth guard: closed ${closed} socket(s) for token ${token_id} (token_revoke)`);
+			case 'token': {
+				const token_id = event.metadata?.token_id;
+				if (typeof token_id !== 'string' || token_id.length === 0) return;
+				const closed = closer.close_sockets_for_token(token_id);
+				if (closed > 0) {
+					log.info(
+						`WS auth guard: closed ${closed} socket(s) for token ${token_id} (${event.event_type})`
+					);
+				}
+				return;
 			}
-			return;
-		}
-
-		// session_revoke_all / token_revoke_all / password_change — all of the
-		// account's credentials are invalidated; close every socket on the account.
-		// Admin actions set `target_account_id`; self-service actions only set `account_id`.
-		const target = event.target_account_id ?? event.account_id;
-		if (!target) return;
-
-		// `target` is a DB account id (string); the transport's account map is
-		// keyed by the branded `Uuid` used elsewhere in fuz_app. Same value,
-		// differing type disciplines across the audit-log and transport layers.
-		const closed = transport.close_sockets_for_account(target);
-		if (closed > 0) {
-			log.info(
-				`WS auth guard: closed ${closed} socket(s) for account ${target} (${event.event_type})`
-			);
-		}
-	};
-};
-
-/**
- * Create an audit event handler that closes WebSocket connections on
- * user-initiated logout.
- *
- * Sibling helper to `create_ws_auth_guard` — kept separate because
- * `ws_disconnect_event_types` deliberately omits `logout` (admin-initiated
- * revocations use `session_revoke`, while `logout` is the user-initiated
- * case). Multiple consumers hand-rolled this same branch before extraction.
- *
- * Compose with `create_ws_auth_guard` to handle both kinds of disconnect:
- *
- * ```ts
- * const ws_guard = create_ws_auth_guard(transport, log);
- * const ws_logout_closer = create_ws_logout_closer(transport, log);
- * const on_audit_event = (event: AuditLogEvent): void => {
- *   ws_guard(event);
- *   ws_logout_closer(event);
- * };
- * ```
- *
- * Ignores `outcome === 'failure'` events — failed logouts carry
- * unauthenticated identifiers (no session to close anyway), and reacting
- * to them would let an unauthenticated probe close the targeted account's
- * sockets by submitting a logout for an arbitrary `account_id`.
- *
- * @param log - logger for disconnect events (info level on non-zero closures)
- * @returns an `on_audit_event` callback wireable alongside `create_ws_auth_guard`.
- *   The returned callback mutates `transport` via `close_sockets_for_account`
- *   on every successful `logout` event with a non-empty `account_id`.
- */
-export const create_ws_logout_closer = (
-	transport: BackendWebsocketTransport,
-	log: Logger
-): AuditEventHandler => {
-	return (event: AuditLogEvent): void => {
-		if (event.event_type !== 'logout') return;
-		if (event.outcome === 'failure') return;
-
-		const account_id = event.account_id;
-		if (!account_id) return;
-
-		const closed = transport.close_sockets_for_account(account_id);
-		if (closed > 0) {
-			log.info(`WS logout closer: closed ${closed} socket(s) for account ${account_id} (logout)`);
+			case 'account': {
+				// Admin actions set `target_account_id`; self-service actions only
+				// set `account_id`.
+				const target = event.target_account_id ?? event.account_id;
+				if (!target) return;
+				const closed = closer.close_sockets_for_account(target);
+				if (closed > 0) {
+					log.info(
+						`WS auth guard: closed ${closed} socket(s) for account ${target} (${event.event_type})`
+					);
+				}
+				return;
+			}
+			default:
+				throw new UnreachableError(scope);
 		}
 	};
 };

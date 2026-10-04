@@ -54,7 +54,7 @@ import { get_route_input, type RouteSpec } from '../http/route_spec.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { rate_limit_exceeded_response, type RateLimiter } from '../rate_limiter.ts';
 import type { RouteFactoryDeps } from './deps.ts';
-import type { ConnectionCloser } from '../actions/connection_closer.ts';
+import { queue_connection_close } from '../actions/connection_closer.ts';
 import { ERROR_AUTHENTICATION_REQUIRED, ERROR_INVALID_CREDENTIALS } from '../http/error_schemas.ts';
 
 /**
@@ -229,15 +229,6 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
 	 */
 	login_fail_jitter_ms?: number;
 	/**
-	 * Live-connection closer — when set, the `logout` and `password` handlers
-	 * eagerly close affected WebSocket sockets for the account BEFORE
-	 * emitting the corresponding audit event. Mirrors the self-service
-	 * action surface (see `AccountActionOptions.connection_closer`). When
-	 * absent, only the listener-based close (`transports_ws_auth_guard`
-	 * registered via `audit.add_listener`) runs.
-	 */
-	connection_closer?: ConnectionCloser | null;
-	/**
 	 * Runtime bootstrap status for the bundled `GET /status` route — when
 	 * `available`, its unauthenticated 401 carries `bootstrap_available: true`
 	 * so a fresh frontend can route to the bootstrap flow. Pass
@@ -260,7 +251,11 @@ export interface AccountRouteOptions extends AuthSessionRouteOptions {
  * every account surface serves it, matching the Rust `account_router`.
  * Self-service session/token management is on `auth/account_actions.ts`.
  *
- * @param deps - stateless capabilities (keyring, password, log)
+ * `/login` closes the connections of the sessions its cap evicts, and
+ * `/logout` and `/password` close the account's, each after the route's
+ * transaction commits (`queue_connection_close` on `deps.connection_closer`).
+ *
+ * @param deps - stateless capabilities (keyring, password, log, audit, connection_closer)
  * @param options - per-factory configuration (session_options, login_ip_rate_limiter, login_account_rate_limiter, bootstrap_status)
  * @returns route specs (not yet applied to Hono)
  */
@@ -268,7 +263,7 @@ export const create_account_route_specs = (
 	deps: RouteFactoryDeps,
 	options: AccountRouteOptions
 ): Array<RouteSpec> => {
-	const { keyring, password } = deps;
+	const { keyring, password, connection_closer } = deps;
 	const {
 		session_options,
 		login_ip_rate_limiter,
@@ -276,7 +271,6 @@ export const create_account_route_specs = (
 		max_sessions = DEFAULT_MAX_SESSIONS,
 		login_fail_floor_ms = DEFAULT_LOGIN_FAIL_FLOOR_MS,
 		login_fail_jitter_ms = DEFAULT_LOGIN_FAIL_JITTER_MS,
-		connection_closer = null,
 		bootstrap_status
 	} = options;
 
@@ -373,7 +367,7 @@ export const create_account_route_specs = (
 				// that address. See `RateLimiter.reset`.
 				if (login_account_rate_limiter) login_account_rate_limiter.reset(account_rate_key);
 
-				await create_session_and_set_cookie({
+				const evicted = await create_session_and_set_cookie({
 					keyring,
 					deps: route,
 					c,
@@ -381,6 +375,15 @@ export const create_account_route_specs = (
 					session_options,
 					max_sessions
 				});
+				// The sessions the cap evicted are gone from the table, but not
+				// from the connections they opened — a WebSocket keeps the
+				// authority it resolved at upgrade, and an SSE stream never
+				// rechecks. Close them once the eviction has committed. No audit
+				// row: there is no eviction event, and the `login` row records
+				// the cause.
+				for (const session_token_hash of evicted) {
+					queue_connection_close(route, connection_closer, { kind: 'session', session_token_hash });
+				}
 				deps.audit.emit(route, {
 					event_type: 'login',
 					account_id: account.id,
@@ -397,22 +400,18 @@ export const create_account_route_specs = (
 				if (session_token) {
 					const token_hash = hash_session_token(session_token);
 					await query_session_revoke_by_hash_unscoped(route, token_hash);
-					// Handler-side belt+suspenders: eagerly close this account's
-					// live WS connections BEFORE the audit emit so revocation
-					// lands even if the audit INSERT fails. Account-wide (not
-					// session-targeted) to match the Rust `account_logout` handler
-					// and the sibling `/password` handler — logout is a
-					// self-initiated account-grain operation, and the audit
-					// listener (`create_ws_logout_closer`) runs the same
-					// account-wide close on the logout event afterward, so both
-					// layers converge (idempotent). Same transaction-commit trade
-					// as `password` / RPC `session_revoke`: a throw between this
-					// close and the response rolls back the DB revoke while
-					// leaving sockets severed; benign (client reconnects), but
-					// don't introduce a throw here without acknowledging the trade.
-					if (connection_closer) {
-						connection_closer.close_sockets_for_account(ctx.account.id);
-					}
+					// Close this account's live connections once the revoke has
+					// committed — queued, so it never runs before the commit or on
+					// rollback, and it does not depend on the fail-open audit write
+					// below. Account-wide (not session-targeted) to match the Rust
+					// `account_logout` handler and the sibling `/password` handler
+					// — logout is a self-initiated account-grain operation. The
+					// audit listeners repeat the same close on the announced
+					// `logout` row; closing is idempotent.
+					queue_connection_close(route, connection_closer, {
+						kind: 'account',
+						account_id: ctx.account.id
+					});
 				}
 				clear_session_cookie(c, session_options);
 				// Account-grain operation — no `actor_id` (which actor was
@@ -521,22 +520,16 @@ export const create_account_route_specs = (
 				const sessions_revoked = await query_session_revoke_all_for_account(route, ctx.account.id);
 				const tokens_revoked = await query_revoke_all_api_tokens_for_account(route, ctx.account.id);
 
-				// Handler-side belt+suspenders — close every live WS socket on
-				// this account BEFORE the audit emit so the revoke-all cascade
-				// lands even if the audit INSERT fails. The real ordering
-				// invariant is "before the transaction commits": this route
-				// runs with the default `transaction: true`, so a throw between
-				// this close and the response would roll back the password
-				// update + session/token revokes while leaving sockets severed.
-				// Benign — affected clients reconnect with their still-valid
-				// session — but don't introduce a throw here without
-				// acknowledging the trade. Listener-based close
-				// (`transports_ws_auth_guard` on the `password_change` event)
-				// runs the same close afterward; idempotent on the second pass.
-				// Mirrors `zzz_server::account::password_inner`.
-				if (connection_closer) {
-					connection_closer.close_sockets_for_account(ctx.account.id);
-				}
+				// Close every live connection of this account once the password
+				// update and the revoke-all cascade have committed — this route
+				// runs with the default `transaction: true`, and the queued close
+				// never runs before that commit or on rollback. It does not
+				// depend on the fail-open audit write below; the audit listeners
+				// repeat it on the announced `password_change` row.
+				queue_connection_close(route, connection_closer, {
+					kind: 'account',
+					account_id: ctx.account.id
+				});
 				clear_session_cookie(c, session_options);
 				// Account-grain operation — no `actor_id`. The password is
 				// account-level state; which per-request actor was resolved

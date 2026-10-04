@@ -396,6 +396,9 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		actions,
 		db: stub_db,
 		transport,
+		// the harness drives the dispatcher against a stub db — no revocation
+		// handler runs here, so there is no closer to reach this transport
+		connection_closer: null,
 		heartbeat,
 		log,
 		on_socket_open,

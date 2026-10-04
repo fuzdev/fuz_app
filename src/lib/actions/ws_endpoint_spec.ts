@@ -93,12 +93,17 @@ export interface WsEndpointSpec {
 	 */
 	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;
 	/**
-	 * Default `true` — auto-composes `create_ws_auth_guard` +
-	 * `create_ws_logout_closer` against this endpoint's transport and
-	 * registers them via `deps.audit.add_listener`. Wiring is deduped by
+	 * Default `true` — registers `create_ws_auth_guard` against this
+	 * endpoint's transport via `deps.audit.add_listener`, so a revocation's
+	 * audit row closes its sockets. Wiring is deduped by
 	 * transport **reference identity** (`WeakSet<BackendWebsocketTransport>`),
 	 * so two `WsEndpointSpec`s sharing the exact same instance get a
-	 * single pair of listeners.
+	 * single listener.
+	 *
+	 * The guard repeats what the revocation handlers already do: the
+	 * transport is always in `deps.connection_closer`, whatever this flag
+	 * says, and the handlers close through it after their commit. Turning the
+	 * guard off leaves those closes in place.
 	 *
 	 * **Shared-transport OR-semantics.** When multiple `WsEndpointSpec`s
 	 * share one transport, the guard is wired iff **any** of those specs
@@ -110,11 +115,10 @@ export interface WsEndpointSpec {
 	 * Reference-identity dedupe means **wrapped or proxied transports
 	 * dedupe as separate entries** — a consumer threading every
 	 * transport through a tracing / DI / metrics shim will get a fresh
-	 * pair of listeners per shimmed reference, even when the underlying
+	 * listener per shimmed reference, even when the underlying
 	 * transport is the same. If you wrap or proxy, set `auth_guard:
 	 * false` on the duplicate `WsEndpointSpec`s and compose
-	 * `create_ws_auth_guard` / `create_ws_logout_closer` against the
-	 * underlying transport once.
+	 * `create_ws_auth_guard` against the underlying transport once.
 	 *
 	 * Set `false` when a consumer needs to compose their own callback
 	 * from scratch — or to opt out of the auto-wiring entirely.

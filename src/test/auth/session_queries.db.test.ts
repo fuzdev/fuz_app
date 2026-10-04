@@ -335,7 +335,7 @@ describe_db('AuthSessionQueries', (get_db) => {
 		await query_create_session(deps, hash_session_token('s2'), account_id, expires);
 
 		const evicted = await query_session_enforce_limit(deps, account_id, 5);
-		assert.strictEqual(evicted, 0);
+		assert.strictEqual(evicted.length, 0);
 
 		const list = await query_session_list_for_account(deps, account_id);
 		assert.strictEqual(list.length, 2);
@@ -361,7 +361,11 @@ describe_db('AuthSessionQueries', (get_db) => {
 		}
 
 		const evicted = await query_session_enforce_limit(deps, account_id, 2);
-		assert.strictEqual(evicted, 2);
+		// the evicted sessions' ids — what the caller closes connections by
+		assert.deepStrictEqual(
+			[...evicted].sort(),
+			[hash_session_token('oldest'), hash_session_token('old')].sort()
+		);
 
 		const list = await query_session_list_for_account(deps, account_id);
 		assert.strictEqual(list.length, 2);
@@ -389,7 +393,7 @@ describe_db('AuthSessionQueries', (get_db) => {
 		}
 
 		const evicted = await query_session_enforce_limit(deps, account_id, 1);
-		assert.strictEqual(evicted, 2);
+		assert.strictEqual(evicted.length, 2);
 
 		const list = await query_session_list_for_account(deps, account_id);
 		assert.strictEqual(list.length, 1);
@@ -440,7 +444,7 @@ describe_db('AuthSessionQueries', (get_db) => {
 			}
 
 			const evicted = await query_session_enforce_limit(deps, account_id, limit);
-			assert.strictEqual(evicted, expected_evictions);
+			assert.strictEqual(evicted.length, expected_evictions);
 
 			const remaining = await query_session_list_for_account(deps, account_id);
 			assert.strictEqual(remaining.length, session_count - expected_evictions);
@@ -500,7 +504,7 @@ describe_db('AuthSessionQueries', (get_db) => {
 
 		// max 3 — no eviction because expired sessions count toward the total
 		const evicted = await query_session_enforce_limit(deps, account_id, 3);
-		assert.strictEqual(evicted, 0);
+		assert.strictEqual(evicted.length, 0);
 
 		// all 3 still in the table (expired ones not cleaned up by enforce)
 		const all = await db.query<{ id: string }>(

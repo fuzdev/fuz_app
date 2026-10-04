@@ -22,21 +22,42 @@
  *   `actor_id` / `account_id` / `ip` boilerplate every role-grant-shape audit
  *   site repeated. Delegates to `emit`.
  * - `emit_pool(input)` — awaitable pool write for code paths without a
- *   `pending_effects` queue (ad-hoc maintenance scripts). Same
- *   write-then-notify semantics as `emit`, just synchronous-with-await.
+ *   request context (ad-hoc maintenance scripts). Writes, then notifies.
  * - `notify(event)` — fan out an already-written audit row (e.g. rows
  *   returned by `query_accept_offer` that were inserted in-transaction by
  *   the query layer, or the offer-expiry rows `auth/cleanup.ts` writes in
  *   its sweep transaction). Runs every registered listener; per-listener
  *   throws are isolated.
  *
+ * ## When listeners hear about a row
+ *
+ * `emit` writes the row at once, on the pool, whatever its outcome — the write
+ * is outside the request's transaction, so it survives a rollback. Listener
+ * fan-out is a separate step, and it depends on the outcome:
+ *
+ * - A **failure** row is announced as soon as it is written. It records an
+ *   attempt, which happened whether or not the request's transaction commits.
+ * - A **success** row is announced only after the request's transaction
+ *   commits, and never when the handler throws: the fan-out is queued on
+ *   `ctx.post_commit_effects` and awaits the write. A success row reports a
+ *   state change, and the listeners act on it — the revocation listeners close
+ *   connections, the audit stream broadcasts it. Announced before the commit,
+ *   a close could run while the revoked credential still reads as valid, and a
+ *   rolled-back revocation would close connections anyway.
+ *
+ * A success row emitted by a handler that later throws is still in the table —
+ * the write is outside the transaction — but is never announced.
+ *
+ * The Rust spine reaches the same order by writing a success row inside the
+ * transaction and queueing its fan-out behind the commit.
+ *
  * Listeners are a documented registration seam — `create_app_server`
  * registers additional listeners via `add_listener` after the backend is
- * built (the factory-managed audit-log SSE, per-endpoint WS auth guards and
- * logout closers, any `extra_audit_handlers` on a `WsEndpointSpec`) before
- * the first request runs. Consumers can also register listeners directly on
- * the emitter they return from `audit_factory` for setups that don't pass
- * through `create_app_server`.
+ * built (the factory-managed audit-log SSE, per-endpoint WS auth guards, any
+ * `extra_audit_handlers` on a `WsEndpointSpec`) before the first request
+ * runs. Consumers can also register listeners directly on the emitter they
+ * return from `audit_factory` for setups that don't pass through
+ * `create_app_server`.
  *
  * @module
  */
@@ -45,6 +66,7 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import type { Db } from '../db/db.ts';
+import { emit_after_commit, type EmitAfterCommitContext } from '../http/pending_effects.ts';
 import type { RequestActorContext } from './request_context.ts';
 import { query_audit_log } from './audit_log_queries.ts';
 import {
@@ -55,26 +77,25 @@ import {
 } from './audit_log_schema.ts';
 
 /**
- * Per-request context required by `AuditEmitter.emit` — just the eager
- * `pending_effects` queue. The bound emitter carries its own `log`
- * reference inside the closure, so per-call contexts don't need one.
+ * Per-request context required by `AuditEmitter.emit` — the request's two
+ * side-effect queues. The bound emitter carries its own `log` reference
+ * inside the closure, so per-call contexts don't need one.
  *
- * Audit emits are eager by default: the bound emitter fires the
- * pool write immediately and pushes the in-flight `Promise<void>` here.
- * Attempt/failure audits never go through `emit_after_commit` —
- * pool-routed writes are already rollback-resilient because they run
- * outside the request transaction, so deferring them would only delay
- * forensic visibility without any safety benefit. The exception is a
- * **success-only** event paired with a state mutation (the
- * `db_admin_row_delete` emit in `http/db_routes.ts`): there the caller
- * wraps the emit in `emit_after_commit` so the trail can't claim a
- * mutation whose transaction failed at COMMIT.
+ * The write is eager: the bound emitter fires the pool write immediately and
+ * pushes the in-flight `Promise<void>` onto `pending_effects`. Deferring it
+ * would only delay forensic visibility, since a pool-routed write is already
+ * rollback-resilient. A success row's listener fan-out goes on
+ * `post_commit_effects` instead (module doc, "When listeners hear about a
+ * row").
+ *
+ * One success-only event also defers its *write*: the `db_admin_row_delete`
+ * emit in `http/db_routes.ts` wraps the whole emit in `emit_after_commit`, so
+ * the trail can't claim a mutation whose transaction failed at COMMIT.
  *
  * Both `RouteContext` and `ActionContext` structurally satisfy this
- * shape (they each carry `pending_effects`), so handlers pass `route`
- * / `ctx` directly.
+ * shape, so handlers pass `route` / `ctx` directly.
  */
-export interface AuditEmitterContext {
+export interface AuditEmitterContext extends EmitAfterCommitContext {
 	pending_effects: Array<Promise<void>>;
 }
 
@@ -99,8 +120,10 @@ export interface AuditEmitter {
 	 *
 	 * The in-flight promise is pushed onto `ctx.pending_effects` so tests
 	 * with `await_pending_effects: true` can assert side effects inline.
-	 * Errors are logged, never thrown. Successful writes fan out to every
-	 * listener on the chain (`notify`).
+	 * Errors are logged, never thrown. A written row fans out to every
+	 * listener on the chain (`notify`): a failure row as soon as it is
+	 * written, a success row from `ctx.post_commit_effects` — after the
+	 * request's transaction commits, and never when the handler throws.
 	 *
 	 * Returns `void` deliberately — the in-flight promise is already on
 	 * `ctx.pending_effects`, and exposing it would tempt callers to `await`
@@ -110,6 +133,7 @@ export interface AuditEmitter {
 	 *
 	 * @mutates `audit_log` table - inserts the row via the captured pool
 	 * @mutates `ctx.pending_effects` - appends the in-flight settled promise
+	 * @mutates `ctx.post_commit_effects` - appends a success row's listener fan-out
 	 */
 	emit<T extends string>(ctx: AuditEmitterContext, input: AuditLogInput<T>): void;
 	/**
@@ -132,9 +156,10 @@ export interface AuditEmitter {
 		}
 	): void;
 	/**
-	 * Awaitable pool write for code paths without a `pending_effects` queue.
+	 * Awaitable pool write for code paths without a request context.
 	 *
-	 * Same write-then-notify semantics as `emit`. Errors are logged and
+	 * Writes, then notifies the listeners, whatever the outcome — there is no
+	 * request transaction to order the fan-out against. Errors are logged and
 	 * swallowed (resolved void), so callers can sequence writes with
 	 * `await audit.emit_pool(...)` without try/catch boilerplate.
 	 *
@@ -158,11 +183,11 @@ export interface AuditEmitter {
 	notify(event: AuditLogEvent): void;
 	/**
 	 * Register an audit-event listener. Append-only — listeners fire in
-	 * registration order on every successful `emit` / `emit_pool` and on
+	 * registration order for every row `emit` / `emit_pool` wrote and on
 	 * every `notify`.
 	 *
 	 * `create_app_server` registers the factory-managed audit-log SSE
-	 * listener and per-endpoint WS auth guards / logout closers here so
+	 * listener and per-endpoint WS auth guards here so
 	 * SSE + WS fan-out compose on top of the consumer's `on_audit_event`
 	 * callback without shallow-copying `AppDeps`. Consumers can also
 	 * register listeners directly for setups that don't run through
@@ -189,15 +214,13 @@ export type AuditEmitFn = <T extends string>(
 /**
  * Wrap the bound `emit` before it gets captured by `emit_role_grant_target`'s
  * closure and exposed on the returned `AuditEmitter`. Test instrumentation
- * uses this to record `emit` invocation ordering against external markers
- * (e.g. eager `ConnectionCloser` calls in `connection_closer.db.test.ts`)
- * without paying the freeze-breaking footgun the pre-decorator
- * `patch_audit_emit_capture` hot-patcher had.
+ * uses this to record `emit` invocations against external markers on a
+ * frozen emitter, whose slots can't be patched after construction.
  *
  * Because the inner closure captures the decorated function (not the
  * outer slot reference), `emit_role_grant_target` also routes through
- * the wrap — the close-vs-emit ordering helper sees role-grant-shape
- * emissions, not just bare `emit` calls. Production never sets this.
+ * the wrap — the decorator sees role-grant-shape emissions, not just bare
+ * `emit` calls. Production never sets this.
  */
 export type EmitDecorator = (inner: AuditEmitFn) => AuditEmitFn;
 
@@ -224,8 +247,7 @@ export interface CreateAuditEmitterOptions {
 	 * the function exposed on the returned `AuditEmitter`, so both call
 	 * shapes route through it — see `EmitDecorator` for the rationale.
 	 *
-	 * Leave unset in production. The intended caller is
-	 * `create_emit_ordering_audit_factory` in `testing/audit_drift_guard.ts`.
+	 * Leave unset in production — it is a test instrumentation seam.
 	 */
 	emit_decorator?: EmitDecorator;
 }
@@ -260,17 +282,39 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 		}
 	};
 
-	const emit_pool = async <T extends string>(input: AuditLogInput<T>): Promise<void> => {
+	// The pool write. Never rejects: a failed write is logged and resolves
+	// `null`, so there is no row to announce.
+	const write = async <T extends string>(
+		input: AuditLogInput<T>
+	): Promise<AuditLogEvent | null> => {
 		try {
-			const event = await query_audit_log({ db }, input, audit_log_config);
-			notify(event);
+			return await query_audit_log({ db }, input, audit_log_config);
 		} catch (err) {
 			log.error('Audit log write failed:', err);
+			return null;
 		}
 	};
 
+	const emit_pool = async <T extends string>(input: AuditLogInput<T>): Promise<void> => {
+		const event = await write(input);
+		if (event) notify(event);
+	};
+
 	const base_emit: AuditEmitFn = (ctx, input) => {
-		ctx.pending_effects.push(emit_pool(input));
+		if (input.outcome === 'failure') {
+			// an attempt happened whether or not the transaction commits
+			ctx.pending_effects.push(emit_pool(input));
+			return;
+		}
+		// A success row is written now and announced after the commit — and
+		// not at all on rollback, when the queue is discarded. See the module
+		// doc, "When listeners hear about a row".
+		const written = write(input);
+		ctx.pending_effects.push(written.then(() => undefined));
+		emit_after_commit(ctx, async () => {
+			const event = await written;
+			if (event) notify(event);
+		});
 	};
 	// The decorated `emit` is what `emit_role_grant_target` captures below
 	// and what gets exposed on the returned object — both call shapes
@@ -313,8 +357,7 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 	// `emit_role_grant_target` calls the closed-over inner `emit`, not
 	// `this.emit`, so the patch silently bypassed role-grant-shape emits.
 	// Tests that need instrumentation pass `emit_decorator` so the wrap
-	// is captured by the closure before the freeze (see
-	// `create_emit_ordering_audit_factory`). The listener list stays
+	// is captured by the closure before the freeze. The listener list stays
 	// closure-private; registration is append-only via `add_listener`
 	// (`create_app_server` registers its SSE + WS listeners post-assembly,
 	// by design).

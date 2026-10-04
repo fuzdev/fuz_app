@@ -140,10 +140,16 @@ export interface DbRouteDeps {
 	 * the call via `emit_after_commit`, so the success-only trail row can
 	 * never claim a delete whose transaction failed at COMMIT — the pool
 	 * routing means the write itself never rides the request transaction.
+	 * The context carries both of the request's side-effect queues: the write
+	 * goes on `pending_effects`, the row's listener fan-out on
+	 * `post_commit_effects`.
 	 */
 	audit: {
 		emit: (
-			ctx: { pending_effects: Array<Promise<void>> },
+			ctx: {
+				pending_effects: Array<Promise<void>>;
+				post_commit_effects: Array<() => void | Promise<void>>;
+			},
 			input: {
 				event_type: 'db_admin_row_delete';
 				account_id: Uuid | null;

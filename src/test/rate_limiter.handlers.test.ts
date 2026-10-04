@@ -27,6 +27,7 @@ import { create_bearer_auth_middleware } from '$lib/auth/bearer_auth.ts';
 import { ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS } from '$lib/http/error_schemas.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_stub_db, create_noop_stub, create_test_audit_emitter } from '$lib/testing/stubs.ts';
+import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -45,7 +46,7 @@ const {
 } = vi.hoisted(() => ({
 	mock_find_by_username_or_email: vi.fn((..._args: Array<any>) => Promise.resolve(null)),
 	mock_session_create: vi.fn((..._args: Array<any>) => Promise.resolve()),
-	mock_session_enforce_limit: vi.fn((..._args: Array<any>) => Promise.resolve(0)),
+	mock_session_enforce_limit: vi.fn((..._args: Array<any>) => Promise.resolve([])),
 	mock_validate_api_token: vi.fn((..._args: Array<any>) => Promise.resolve(undefined)),
 	mock_account_by_id: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(null)),
 	mock_resolve_actor: vi.fn((..._args: Array<any>): Promise<any> => Promise.resolve(null)),
@@ -159,7 +160,7 @@ const create_login_app = (
 	// Reset module-level mocks for login tests
 	mock_find_by_username_or_email.mockReset().mockImplementation(() => Promise.resolve(null));
 	mock_session_create.mockReset().mockImplementation(() => Promise.resolve());
-	mock_session_enforce_limit.mockReset().mockImplementation(() => Promise.resolve(0));
+	mock_session_enforce_limit.mockReset().mockImplementation(() => Promise.resolve([]));
 	// Login itself is account-only, but the request_context middleware that
 	// runs on any subsequent /api request resolves the acting actor on the
 	// authenticated account. Default to a valid actor so the post-login path
@@ -183,7 +184,8 @@ const create_login_app = (
 			},
 			read_secure_file: noop,
 			delete_file: noop,
-			audit: create_test_audit_emitter()
+			audit: create_test_audit_emitter(),
+			connection_closer: create_realtime_closer()
 		},
 		{
 			session_options,
@@ -1030,7 +1032,7 @@ const create_signup_app = (
 			Promise.resolve({ account: { id: 'acc_new' }, actor: { id: 'act_new' } })
 		);
 	mock_session_create.mockReset().mockImplementation(() => Promise.resolve());
-	mock_session_enforce_limit.mockReset().mockImplementation(() => Promise.resolve(0));
+	mock_session_enforce_limit.mockReset().mockImplementation(() => Promise.resolve([]));
 
 	const route_specs = create_signup_route_specs(
 		{
@@ -1043,7 +1045,8 @@ const create_signup_app = (
 			},
 			read_secure_file: noop,
 			delete_file: noop,
-			audit: create_test_audit_emitter()
+			audit: create_test_audit_emitter(),
+			connection_closer: create_realtime_closer()
 		},
 		{
 			session_options,

@@ -27,6 +27,7 @@ import {
 	type RecordingAuditEmitter
 } from '$lib/testing/audit_drift_guard.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -55,14 +56,14 @@ const {
 	),
 	mock_update_password: vi.fn((..._args: Array<any>) => Promise.resolve(true)),
 	mock_session_create: vi.fn((..._args: Array<any>) => Promise.resolve()),
-	mock_session_enforce_limit: vi.fn((..._args: Array<any>) => Promise.resolve(0)),
+	mock_session_enforce_limit: vi.fn((..._args: Array<any>) => Promise.resolve([])),
 	mock_session_revoke: vi.fn((..._args: Array<any>) => Promise.resolve()),
 	mock_session_revoke_all: vi.fn((..._args: Array<any>) => Promise.resolve(2)),
 	mock_session_revoke_for_account: vi.fn((..._args: Array<any>) => Promise.resolve(true)),
 	mock_session_list_for_account: vi.fn((..._args: Array<any>) => Promise.resolve([] as Array<any>)),
 	mock_session_list_all_active: vi.fn((..._args: Array<any>) => Promise.resolve([] as Array<any>)),
 	mock_api_token_create: vi.fn((..._args: Array<any>) => Promise.resolve()),
-	mock_api_token_enforce_limit: vi.fn((..._args: Array<any>) => Promise.resolve()),
+	mock_api_token_enforce_limit: vi.fn((..._args: Array<any>) => Promise.resolve([])),
 	mock_api_token_revoke_for_account: vi.fn((..._args: Array<any>) => Promise.resolve(true)),
 	mock_api_token_list_for_account: vi.fn((..._args: Array<any>) =>
 		Promise.resolve([] as Array<any>)
@@ -224,7 +225,8 @@ describe('account route audit logging', () => {
 				} as any,
 				read_secure_file: noop,
 				delete_file: noop,
-				audit: audit_log_capture.emitter
+				audit: audit_log_capture.emitter,
+				connection_closer: create_realtime_closer()
 			},
 			{
 				session_options,
@@ -235,6 +237,13 @@ describe('account route audit logging', () => {
 		);
 
 		const app = new Hono();
+		// the request's two side-effect queues — the handlers queue their
+		// connection closes on the post-commit one
+		app.use('*', async (c, next) => {
+			c.set('pending_effects', []);
+			c.set('post_commit_effects', []);
+			await next();
+		});
 		app.use('*', test_proxy_middleware);
 		if (options?.inject_ctx) {
 			app.use('/*', async (c, next) => {
@@ -391,7 +400,8 @@ describe('account route audit logging', () => {
 				} as any,
 				read_secure_file: noop,
 				delete_file: noop,
-				audit: audit_log_capture.emitter
+				audit: audit_log_capture.emitter,
+				connection_closer: create_realtime_closer()
 			},
 			{
 				session_options,

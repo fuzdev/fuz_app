@@ -255,17 +255,22 @@ export const query_api_token_list_for_account = async (
  * caveat, as `query_session_enforce_limit` — deterministic survivors under a
  * `created_at` tie, not a guarantee that the row just inserted survives.
  *
+ * Deleting a token row does not end the connections it opened, so the
+ * returned ids are what the caller closes once the transaction commits
+ * (`queue_connection_close` with a `token` target) — `account_token_create`
+ * does.
+ *
  * @param deps - query dependencies (must be transaction-scoped)
  * @param account_id - the account to enforce the limit for
  * @param max_tokens - maximum number of tokens to keep
- * @returns the number of tokens evicted
+ * @returns the evicted tokens' ids, empty when nothing was evicted
  * @mutates `api_token` table - deletes the oldest rows past the cap
  */
 export const query_api_token_enforce_limit = async (
 	deps: QueryDeps,
 	account_id: string,
 	max_tokens: number
-): Promise<number> => {
+): Promise<Array<string>> => {
 	const rows = await deps.db.query<{ id: string }>(
 		`DELETE FROM api_token
 		 WHERE id IN (
@@ -276,5 +281,5 @@ export const query_api_token_enforce_limit = async (
 		 ) RETURNING id`,
 		[account_id, max_tokens]
 	);
-	return rows.length;
+	return rows.map((row) => row.id);
 };

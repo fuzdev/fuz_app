@@ -38,10 +38,15 @@ const test_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpointSpec> => [
 	{
 		path: RPC_PATH,
 		actions: [
-			...create_admin_actions({ log: rpc_log, audit: ctx.deps.audit }),
+			...create_admin_actions({
+				log: rpc_log,
+				audit: ctx.deps.audit,
+				connection_closer: ctx.deps.connection_closer
+			}),
 			...create_account_actions({
 				log: rpc_log,
-				audit: ctx.deps.audit
+				audit: ctx.deps.audit,
+				connection_closer: ctx.deps.connection_closer
 			})
 		]
 	}

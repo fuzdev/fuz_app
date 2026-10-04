@@ -31,8 +31,8 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `create_stub_db()` — real `Db` whose `client.query` yields `{rows: []}` and `transaction(fn)` synchronously calls `fn(inner_stub_db)`. Safe for `apply_route_specs`'s declarative transaction wrapper.
 - `stub_handler()` — fresh `Response('stub')`.
 - `stub_mw` — pass-through middleware (`async (_c, next) => next()`).
-- `stub_app_deps` — frozen `AppDeps`, every capability throwing, `audit` a no-op `AuditEmitter` from `create_test_audit_emitter`.
-- `create_stub_app_deps()` — factory: fresh `AppDeps` with no-op keyring/password/`delete_file`, a `read_secure_file` that throws ENOENT (the no-token-file state), a `create_noop_stub` DB, silent `Logger`, no-op `audit`.
+- `stub_app_deps` — frozen `AppDeps`, every capability throwing, `audit` a no-op `AuditEmitter` from `create_test_audit_emitter`, `connection_closer` an empty `RealtimeCloser`.
+- `create_stub_app_deps()` — factory: fresh `AppDeps` with no-op keyring/password/`delete_file`, a `read_secure_file` that throws ENOENT (the no-token-file state), a `create_noop_stub` DB, silent `Logger`, no-op `audit`, an empty `connection_closer`.
 - `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` no-op, `emit_pool` resolves immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0.
 - `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `on_audit_event` no-op (nothing is broadcast); `registry` is a fresh `SubscriberRegistry` (live `.count` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
 - `create_stub_api_middleware({include_daemon_token?})` — stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin/session/request_context/bearer_auth, optional daemon_token) for surface generation without booting real auth. See `auth/CLAUDE.md` §Middleware for the real stack.
@@ -100,16 +100,14 @@ mismatch.
 ### `audit_drift_guard.ts` — audit-emission validation
 
 - `install_audit_drift_guard()` — `beforeEach` resets + `afterEach` zero-checks `audit_metadata_validation_failures` + `audit_unknown_event_type_failures` counters from `auth/audit_log_queries.ts`. Call once at the top of any `describe_db` block firing audit emits — production validation is fail-open, so without this any regression shipping a typo'd `event_type` or undeclared metadata field is silent. Pair with `await_pending_effects: true` (the `create_test_app` default) so fire-and-forget audit writes complete by response time.
-- `create_emit_ordering_audit_factory<E>(seq_ref, events_ref, build_inner)` — returns an `AuditFactory` wrapping `build_inner({db, log})` so every `emit` pushes `{kind: 'emit', at: seq.value++}` into a shared sequence + events array. Pass through `create_test_app({audit_factory: …})` — the test backend invokes it with its `{db, log}` and lands the wrapped emitter on `deps.audit`. Generic `E extends {kind: string; at: number}` so the events array typechecks against the caller's own `close` / custom marker shape. Pair with `create_recording_closer(seq_ref)` for close-vs-emit ordering tests. Scope is `emit` only — `emit_role_grant_target`, `emit_pool`, `notify` forward to the inner emitter unwrapped.
-- `AuditEmitMarker` — `{kind: 'emit'; at: number}`, the marker type pushed.
 - `create_recording_audit_emitter(calls_ref?)` — no-op `AuditEmitter` pushing every `emit` and `emit_pool` call into `calls`. Pass `calls_ref` to write into a caller-owned array; omit to let the helper allocate. Returns `{emitter, calls}` — destructure `emitter` as the `audit` dep and read `calls` to assert. Replaces per-file capturing emitters previously duplicated across `password_change.test.ts`, `audit_log.test.ts`, etc.
 - `RecordingAuditEmitter` — `{emitter: AuditEmitter; calls: Array<AuditLogInput>}`.
 
 ### `connection_closer_helpers.ts` — `ConnectionCloser` test doubles
 
-- `create_recording_closer(seq_ref?)` — `{closer, calls}`; every method on `closer` records `{method, id, at}` into `calls`. Pass `seq_ref` to share the sequence counter with `create_emit_ordering_audit_factory` so close + emit markers compose for ordering tests.
-- `assert_close_call(call, method, id)` — pins `{method, id}` on a recorded close call without baking in the `at: N` sequence number. Use at every "did the closer fire?" site; reserve `at: N` assertions for the dedicated ordering test paired with the capture helper.
-- `RecordedClose` — `{method: 'session' | 'token' | 'account', id, at}`.
+- `create_recording_closer()` — `{closer, calls}`; every method on `closer` records `{method, id}` into `calls` and closes nothing. To see a handler's closes, add it to the backend's closer (`ctx.deps.connection_closer.add(closer)`) or build the factory's deps with it. The closes are queued post-commit, so they have run by the time a `create_test_app` response is in hand (`await_pending_effects: true` flushes both queues).
+- `assert_close_call(call, method, id)` — pins `{method, id}` on a recorded close call; handles the missing-element case.
+- `RecordedClose` — `{method: 'session' | 'token' | 'account', id}`.
 - `RecordingCloser` — `{closer, calls}`.
 
 ## Database — `db.ts`
@@ -171,7 +169,7 @@ pre-keeper, lock unflipped), use `create_test_app_for_bootstrap` — pair with
 Types:
 
 - `TestAppServer extends AppBackend` — adds `account`, `actor`, `api_token`, `session_cookie`, `keyring`, `cleanup()`.
-- `TestAppServerOptions` — `session_options` (required), optional `db`, `db_type`, `migration_namespaces`, `password`, `username`, `password_value`, `roles`, `audit_factory`. `migration_namespaces` runs extra namespaces after auth in the auto-created PGlite (mirrors `create_app_backend`); mutually exclusive with `db` (caller-migrated) — passing both throws. The optional `audit_factory` defaults to `default_audit_factory` (no-listener `create_audit_emitter` over the test backend's `{db, log}`); pass a custom factory to compose `on_audit_event` / `audit_log_config`, wrap with `emit_decorator` (via `create_emit_ordering_audit_factory`), or otherwise replace the emitter. Mirrors `CreateAppBackendOptions` end-to-end — the previous `on_audit_event` / `audit_log_config` sugar was removed alongside the production rename.
+- `TestAppServerOptions` — `session_options` (required), optional `db`, `db_type`, `migration_namespaces`, `password`, `username`, `password_value`, `roles`, `audit_factory`. `migration_namespaces` runs extra namespaces after auth in the auto-created PGlite (mirrors `create_app_backend`); mutually exclusive with `db` (caller-migrated) — passing both throws. The optional `audit_factory` defaults to `default_audit_factory` (no-listener `create_audit_emitter` over the test backend's `{db, log}`); pass a custom factory to compose `on_audit_event` / `audit_log_config`, instrument `emit` with `emit_decorator`, or otherwise replace the emitter. Mirrors `CreateAppBackendOptions` end-to-end — the previous `on_audit_event` / `audit_log_config` sugar was removed alongside the production rename.
 - `CreateTestAppOptions extends TestAppServerOptions` — adds `create_route_specs` (required), `rpc_endpoints?: RpcEndpointsSuiteOption` (top-level only — single source of truth, symmetric with the suite-level option), `bootstrap?: BootstrapServerOptions` (top-level only — same precedent as `rpc_endpoints`), and `app_options?: SuiteAppOptions` (`Partial<AppServerOptions>` excluding the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`).
 - `TestAccount` — `{account, actor, session_cookie, api_token, create_session_headers, create_bearer_headers}`.
 - `TestApp` — `{app, backend, surface_spec, surface, route_specs, create_session_headers, create_bearer_headers, create_daemon_token_headers, create_account, cleanup}`.
@@ -918,9 +916,9 @@ source of truth for wire-shape conformance.
   (the **gating** flags `ws` / `sse` / `cell_crud` / `cell_relations` /
   `cell_gated_create` / `account_lifecycle` / `fact_serving` / `ready` /
   `account_status` / `oversized_reject_closes_connection` / `peer_request` /
-  `ws_handshake_pipelining` —
+  `ws_handshake_pipelining` / `ws_account_actions` / `ws_self_revocation_reply` —
   each has a `test_if`
-  reader; `peer_request` (server-initiated requests — the ActionPeer
+  reader (`ws_self_revocation_reply` forks one case's assertion instead); `peer_request` (server-initiated requests — the ActionPeer
   `peer/ping` round-trip) is `true` for both the Rust spine and the TS spine
   (`BackendWebsocketTransport.request_connection`); `ts_default_capabilities`
   keeps it `false` like sse/ready until a backend wires the `peer/ping` HTTP +
@@ -970,6 +968,12 @@ source of truth for wire-shape conformance.
   same TCP write as the upgrade request reach the socket; `false` Bun, whose
   HTTP parser answers such a request `400`, and `false` in-process, where there
   is no socket to write raw bytes to).
+  `ws_account_actions` gates the WS round-trip suite's self-revocation case
+  (the WS endpoint mounts the account actions — `true` on fuz_app's own spine
+  presets, `false` in the family defaults), and `ws_self_revocation_reply`
+  says what that case requires: the reply ahead of the close (`true`, the TS
+  family) or the close alone (`false`, the Rust family, whose socket loop
+  drops the response once the connection is closed — a recorded divergence).
 
 ### `cross_backend/standard.ts` — `describe_standard_cross_process_tests`
 
@@ -1103,15 +1107,21 @@ are all answered,
 `DEFAULT_WS_MAX_MESSAGE_BYTES`) closes with `WS_CLOSE_MESSAGE_TOO_BIG`,
 anonymous upgrade refused, disallowed-origin upgrade refused, and — gated on
 `rpc_path` — a live socket drops when the account's sessions are revoked
-mid-connection (`account_session_revoke_all` over the keeper session channel
-emits `session_revoke_all`, which `create_ws_auth_guard` closes on; asserted
-via `WsClient.wait_for_close`). Per-connection auth is enforced **at upgrade
+mid-connection (`account_session_revoke_all` over the keeper session channel;
+asserted via `WsClient.wait_for_close`) and when its account is deleted
+(`account_delete` by the keeper, also gated on
+`capabilities.account_lifecycle`; the close code is
+`WS_CLOSE_SESSION_REVOKED`). Per-connection auth is enforced **at upgrade
 time**, so the negative upgrade cases assert the upgrade itself rejects, not
-a per-message error; the close-on-revoke case proves the audit-fed guard is
-the revocation seam for an already-open socket, since per-message dispatch
-never re-checks credential validity. Omit `rpc_path` to skip the close case
-(consumers without the standard account actions on their RPC endpoint).
-**Consumer-agnostic** — it drives only the `heartbeat` protocol action
+a per-message error; the close cases prove a revocation closes an
+already-open socket, since per-message dispatch never re-checks credential
+validity. Omit `rpc_path` to skip the close cases (consumers without the
+standard account and admin actions on their RPC endpoint). One case is gated
+on `capabilities.ws_account_actions` (the WS endpoint mounts the account
+actions): a socket that revokes its own sessions over that socket is closed
+with `WS_CLOSE_SESSION_REVOKED`, and — where the backend declares
+`capabilities.ws_self_revocation_reply` — reads the reply first.
+Otherwise **consumer-agnostic** — it drives only the `heartbeat` protocol action
 (guaranteed on every WS endpoint by `assert_ws_endpoints_include_protocol_actions`),
 so it validates the transport without touching domain WS methods. Gated on
 `capabilities.ws`; cross-process only (needs a real bound socket — wire from
@@ -1221,7 +1231,9 @@ opens so its `create_account` audit events stay off it); the subscriber's
 _own_ sessions are revoked, all of them (`account_session_revoke_all`, the
 account-wide close) and then just the one (`account_session_revoke`, the
 session-scoped close), each dropping the live stream (asserted via
-`SseTransport.wait_for_close`); and one stream past the per-session cap
+`SseTransport.wait_for_close`); the keeper soft-deletes a second admin whose
+stream is open (`account_delete`, also gated on
+`capabilities.account_lifecycle`), dropping it; and one stream past the per-session cap
 (`max_per_scope`, default `AUDIT_LOG_SSE_MAX_PER_SCOPE`; `null` skips) on one
 session closes the oldest and leaves the rest open. The data-frame + close
 cases gate on `rpc_path` (they drive the standard account/admin actions); all

@@ -23,6 +23,7 @@ import { create_admin_actions } from '$lib/auth/admin_actions.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
 import type { AppServerContext } from '$lib/server/app_server_context.ts';
 import type { RouteSpec } from '$lib/http/route_spec.ts';
+import { noop_connection_closer } from '$lib/actions/connection_closer.ts';
 
 const log = new Logger('test', { level: 'off' });
 const session_options = create_session_config('test_admin_actions_rpc');
@@ -34,7 +35,11 @@ const create_route_specs = (_ctx: AppServerContext): Array<RouteSpec> => [];
 
 const rpc_endpoint_spec = {
 	path: RPC_PATH,
-	actions: create_admin_actions({ log, audit: create_test_audit_emitter() })
+	actions: create_admin_actions({
+		log,
+		audit: create_test_audit_emitter(),
+		connection_closer: noop_connection_closer
+	})
 };
 
 const build = () =>

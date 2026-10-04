@@ -8,13 +8,8 @@ import {
 	reset_audit_metadata_validation_failures,
 	reset_audit_unknown_event_type_failures
 } from '../auth/audit_log_queries.ts';
-import {
-	create_audit_emitter,
-	type AuditEmitter,
-	type CreateAuditEmitterOptions
-} from '../auth/audit_emitter.ts';
+import type { AuditEmitter } from '../auth/audit_emitter.ts';
 import type { AuditLogEvent, AuditLogInput } from '../auth/audit_log_schema.ts';
-import type { AuditFactory } from '../server/app_backend.ts';
 
 /**
  * Register per-test `beforeEach` + `afterEach` hooks that catch any audit
@@ -53,17 +48,6 @@ export const install_audit_drift_guard = (): void => {
 		);
 	});
 };
-
-/**
- * Marker pushed into a shared sequence array by an emit-recording
- * `audit_factory`. Pair with `RecordedClose` from
- * `testing/connection_closer_helpers.ts` to test close-vs-emit ordering at
- * handler call sites — see `create_emit_ordering_audit_factory` below.
- */
-export interface AuditEmitMarker {
-	kind: 'emit';
-	at: number;
-}
 
 /**
  * Pair returned by {@link create_recording_audit_emitter} — the
@@ -142,51 +126,4 @@ export const create_recording_audit_emitter = (
 		listener_count: () => listeners.length
 	};
 	return { emitter, calls };
-};
-
-/**
- * Build an `audit_factory` that produces a real `create_audit_emitter`
- * with its `emit` decorated to push a `{kind: 'emit', at: seq.value++}`
- * marker into a shared sequence + events array. Used by the close-vs-emit
- * ordering test to compose against a shared sequence counter (typically
- * `create_recording_closer(seq_ref)` capturing eager-close calls).
- *
- * Pass the returned factory through `create_test_app({audit_factory: …})`
- * — the test backend invokes it with its constructed `{db, log}` and
- * lands the decorated emitter on `backend.deps.audit`. Production
- * handlers dereference `deps.audit.emit` at call time, so the decorator
- * sees every subsequent handler invocation. The underlying `emit` still
- * runs — the decorator records the call, it does not suppress side
- * effects.
- *
- * **Scope — both `emit` and `emit_role_grant_target`.** The decorator
- * is captured by `emit_role_grant_target`'s closure inside
- * `create_audit_emitter` (and re-exposed as the outer `emit` slot), so
- * role-grant-shape emissions land in `events_ref` alongside bare `emit`
- * calls. `emit_pool` and `notify` are not decorated — they take
- * `AuditLogInput` / `AuditLogEvent` directly without going through
- * `emit`, so `emit_pool` writes skip capture. Close-firing handlers all reach for
- * `emit` or `emit_role_grant_target`, so the ordering test sees them
- * regardless of which entry point a future refactor picks.
- *
- * Optionally accept `extra_options` to thread `on_audit_event` /
- * `audit_log_config` into the inner emitter — useful when a test wants
- * both ordering capture and a real SSE/WS guard wired into the same
- * emitter chain.
- */
-export const create_emit_ordering_audit_factory = <E extends { kind: string; at: number }>(
-	seq_ref: { value: number },
-	events_ref: Array<AuditEmitMarker | E>,
-	extra_options?: Omit<CreateAuditEmitterOptions, 'db' | 'log' | 'emit_decorator'>
-): AuditFactory => {
-	return ({ db, log }) =>
-		create_audit_emitter({
-			...extra_options,
-			db,
-			log,
-			emit_decorator: (inner) => (ctx, input) => {
-				events_ref.push({ kind: 'emit', at: seq_ref.value++ });
-				inner(ctx, input);
-			}
-		});
 };

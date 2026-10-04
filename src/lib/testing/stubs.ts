@@ -18,6 +18,7 @@ import type { MiddlewareSpec } from '../http/middleware_spec.ts';
 import { ApiError, RateLimitError } from '../http/error_schemas.ts';
 import type { AppDeps } from '../auth/deps.ts';
 import type { AuditEmitter } from '../auth/audit_emitter.ts';
+import { create_realtime_closer } from '../actions/connection_closer.ts';
 import type { BootstrapServerOptions } from '../server/app_server.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
 import { Db } from '../db/db.ts';
@@ -171,7 +172,8 @@ export const stub_app_deps: AppDeps = {
 	password: create_throwing_stub('password'),
 	db: create_throwing_stub('db'),
 	log: create_throwing_stub('log'),
-	audit: create_test_audit_emitter()
+	audit: create_test_audit_emitter(),
+	connection_closer: create_realtime_closer()
 };
 
 /**
@@ -186,7 +188,8 @@ export const create_stub_app_deps = (): AppDeps => ({
 	password: create_noop_stub('password'),
 	db: stub_db,
 	log: new Logger('test', { level: 'off' }),
-	audit: create_test_audit_emitter()
+	audit: create_test_audit_emitter(),
+	connection_closer: create_realtime_closer()
 });
 
 /** Create the API middleware stub array matching `create_auth_middleware_specs` output. */

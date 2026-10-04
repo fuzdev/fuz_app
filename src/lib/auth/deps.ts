@@ -15,6 +15,7 @@ import type { Keyring } from './keyring.ts';
 import type { PasswordHashDeps } from './password.ts';
 import type { Db } from '../db/db.ts';
 import type { AuditEmitter } from './audit_emitter.ts';
+import type { ConnectionCloser, RealtimeCloser } from '../actions/connection_closer.ts';
 
 /**
  * Stateless capabilities bundle for fuz_app backends.
@@ -51,6 +52,16 @@ export interface AppDeps {
 	 */
 	audit: AuditEmitter;
 	/**
+	 * Closes live connections — WebSocket and SSE — when a credential is
+	 * revoked. Every revocation handler queues its close on this
+	 * (`queue_connection_close`), so it must reach every transport of the
+	 * backend: `create_app_backend` creates it empty, and `create_app_server`
+	 * adds each WebSocket transport it mounts and its audit stream registry. A
+	 * transport mounted by hand is added through the `connection_closer`
+	 * option of `register_ws_endpoint` / `create_audit_log_sse`.
+	 */
+	connection_closer: RealtimeCloser;
+	/**
 	 * Optional content-addressed byte store. Present only on backends that
 	 * serve binary content (facts) — minimal consumers leave it unset. The
 	 * consumer constructs a `PgFactStore` (`db/fact_store.ts`) wired to a
@@ -82,4 +93,22 @@ export interface ActionFactoryDeps {
 	log: Logger;
 	/** Bound audit emitter for fire-and-forget audit writes. */
 	audit: AuditEmitter;
+}
+
+/**
+ * Capabilities for the action factories whose handlers end credentials —
+ * `create_account_actions`, `create_admin_actions`, and the
+ * `create_standard_rpc_actions` bundle over them. `ActionFactoryDeps` plus
+ * the closer their revocations close live connections through. `AppDeps`
+ * and `RouteFactoryDeps` satisfy it structurally.
+ */
+export interface RevokingActionFactoryDeps extends ActionFactoryDeps {
+	/**
+	 * Closes the live connections of a revoked credential, after the
+	 * revocation commits. Required rather than optional: a revocation that
+	 * closes nothing leaves an open WebSocket or SSE stream running on a dead
+	 * credential. A backend with no live-connection surface passes
+	 * `noop_connection_closer`.
+	 */
+	connection_closer: ConnectionCloser;
 }

@@ -93,15 +93,14 @@ event that never happened; the session-credential gate refuses such a
 caller instead (403 `ERROR_CREDENTIAL_TYPE_REQUIRED`). Both spine impls
 converge on this shape.
 
-**`GET /audit/stream` — gated so the stream stays closable.** The SSE
-registry keys subscribers by session hash, and
-`realtime/sse_auth_guard.ts`'s `disconnect_event_types` carries no
-`token_revoke` arm — so a bearer that opened a stream could not be closed
-when its token was revoked, and would keep receiving audit rows for the life
-of the connection. Refusing the channel is what makes that omission correct
-rather than merely asserted. The route's `required_scope` is the separate
-rule-3 declaration and is unreachable behind this gate on the default mount;
-see §Token scoping for what a consumer that widens the channel owes.
+**`GET /audit/stream` — gated because it is a long-lived admin feed.** The
+stream carries every audit row on the instance for as long as it stays open,
+so it is not handed to a credential channel the deployment never chose: the
+route admits sessions only. The gate is not what keeps a stream closable — the
+handler registers a bearer's stream under its API token id and a token
+revocation closes by that id, so a consumer that widens the channel loses no
+close. The route's `required_scope` is the separate rule-3 declaration and is
+unreachable behind this gate on the default mount; see §Token scoping.
 
 **Defense in depth — audit metadata.** Every gated event records the
 minting `credential_type` in audit metadata (`token_create`,
@@ -275,23 +274,24 @@ back, and it has two arms:
   `surface:fact_bare` are the spine's; the WS upgrade and the db-admin browser
   round out the four the spine knows.
 
-  **Rule 3 alone is not enough for a long-lived stream, and `/audit/stream`
-  carries a channel gate as well.** A narrowed token is what rule 3 refuses; a
-  **full-scope** bearer passes it. That is safe for a bounded request like
-  `surface:fact_bare`, but not for a subscription: SSE subscribers are keyed by
-  session hash, not by api-token id, and `realtime/sse_auth_guard.ts`'s
-  `disconnect_event_types` carries no `token_revoke` arm — so a bearer that
-  opened a stream could not be closed when the token was revoked, and would
-  keep receiving audit rows for the life of the connection. The audit route
-  therefore also declares `credential_types: ['session']`, which refuses every
-  bearer at the channel, ahead of the scope gate. `required_scope` stays
-  declared beside it: it is the rule-3 statement the surface census matches on,
-  and it still governs a consumer that deliberately widens the channel.
+  **`/audit/stream` carries a channel gate as well as rule 3.** A narrowed
+  token is what rule 3 refuses; a **full-scope** bearer passes it. The audit
+  route also declares `credential_types: ['session']`, which refuses every
+  bearer at the channel, ahead of the scope gate: the stream is a long-lived,
+  instance-wide admin feed, and the default does not hand it to a channel the
+  deployment never chose. `required_scope` stays declared beside it: it is the
+  rule-3 statement the surface census matches on, and it still governs a
+  consumer that deliberately widens the channel.
 
-  **If you widen that gate, key your subscribers by api-token id and add
-  `token_revoke` to `disconnect_event_types`** — the two go together. The Rust
-  twin enforces the pairing structurally, via a `RevocationScope` column on
-  `AUDIT_EVENT_SPECS` that both revocation listeners match wildcard-free.
+  **Widening that gate loses no close.** The stream handler registers a
+  bearer's stream under its API token id as well as its account id, and a
+  token revocation closes by that id — the handler's own close through
+  `create_sse_connection_closer`, and the `token` scope `create_sse_auth_guard`
+  dispatches on. Which audit events close what is declared once, in
+  `audit_event_revocation_scopes`, and both revocation listeners read it; the
+  Rust twin does the same with the `RevocationScope` column on
+  `AUDIT_EVENT_SPECS`. A consumer route with its own `SubscriberRegistry`
+  registers the same identities to get the same closes.
 - `rpc:<method>` — one action method, refused unless the token lists it. What
   `create_action_route_spec` puts on a bridged route (below), and what the
   dispatcher's per-method gate reports.
@@ -457,29 +457,42 @@ enforcement:
   `max_sessions × max_per_scope`. Overflow closes the oldest FIFO. The cap
   counts admitted streams and is applied at admission, so a request that is
   refused never closes another stream.
+- **Handler close**: every revocation handler closes the connections of what
+  it revoked through `deps.connection_closer`, after its transaction commits
+  (see [Closing on Revocation](#closing-on-revocation)). A registry reaches
+  that closer through `create_sse_connection_closer(registry)` — one
+  `close_by_identity` per session hash, API token id, or account id.
 - **SSE auth guard**: `create_sse_auth_guard(registry, role, log)` returns an
-  `on_audit_event` callback that closes streams on these event types:
-  - `role_grant_revoke` — the required role is revoked for a subscriber
-  - `session_revoke` — a specific session revoked; closes only the stream
-    whose `scope` matches the revoked session's hash (session-scoped)
-  - `session_revoke_all` — all sessions invalidated for a subscriber
-  - `token_revoke_all` — all API tokens invalidated; closes the account's streams
-  - `password_change` — password change implicitly revokes all sessions and API tokens
-  - `logout` — explicit logout; closes the account's streams
+  `on_audit_event` callback that repeats those closes when the audit row is
+  announced, by the `RevocationScope` the event declares
+  (`audit_event_revocation_scopes`):
+  - `session` (`session_revoke`) — closes only the stream whose `scope`
+    matches the revoked session's hash
+  - `token` (`token_revoke`) — closes only the stream registered under the
+    revoked API token's id
+  - `account` (`session_revoke_all`, `token_revoke_all`, `password_change`,
+    `logout`, `account_delete`, `account_purge`) — closes the target
+    account's streams
+  - `role` (`role_grant_revoke`) — closes the target account's streams when
+    the revoked role is the one the stream requires. The guard is the only
+    closer for this one: no handler close exists for a role, because the
+    WebSocket half deliberately keeps its sockets (their next message is
+    re-authorized)
 - **Failure guard**: Events with `outcome='failure'` are ignored. Failed
   revoke attempts carry attacker-submitted identifiers (e.g. guessed session
   hashes) in metadata — acting on them would let any authenticated user close
   another user's SSE stream by guessing or leaking a hash.
-- **No polling**: Disconnection is reactive — triggered by the same audit event
-  that records the change. No periodic role_grant refresh is needed.
+- **No polling**: Disconnection is reactive — triggered by the revocation
+  itself. No periodic role_grant refresh is needed.
 - **Factory-managed**: `audit_log_sse: true` on `create_app_server` handles all
-  wiring (registry, guard, broadcaster, `on_audit_event` composition, event specs).
-  `create_audit_log_sse({log})` remains for manual control.
+  wiring (registry, guard, closer, broadcaster, `on_audit_event` composition,
+  event specs). `create_audit_log_sse({log, connection_closer})` remains for
+  manual control.
 
 The audit log SSE route (`/audit/stream`) subscribes with
 `scope = session_hash` and `groups = [account_id]`, so `session_revoke`
 closes only the affected tab, while `role_grant_revoke` / `session_revoke_all` /
-`password_change` close every stream for the account.
+`password_change` / an account delete close every stream for the account.
 
 ## WebSocket Connection Cap
 
@@ -550,7 +563,8 @@ admission:
    connection.
 
 A revocation whose close ran after step 1 found the registration; one that
-committed before step 2 is seen by the re-read.
+committed before step 2 is seen by the re-read. Every revocation closes only
+after it commits, so every revocation is one or the other.
 
 **What a refused connection sees.**
 
@@ -600,30 +614,136 @@ cannot keep running handlers by ignoring the close. A connection removed from
 the transport without a close is ended on its next frame
 (`WS_CLOSE_INTERNAL_ERROR`) rather than left open and unanswered.
 
-**Limits.** The re-read is one read at open, not a per-message check. And the
-guarantee above needs each revocation to close connections only _after_ its
-write has committed; the Rust spine's handlers do. Here they do not yet:
+**What the guarantee rests on.** The two halves above leave one schedule
+uncovered by themselves: a revocation whose close ran *before* the
+registration and which commits *after* the re-read. The close missed the
+connection and the re-read saw the credential alive. That schedule needs a
+close fired before its own commit, and no revocation fires one — see
+[Closing on Revocation](#closing-on-revocation). A close runs only after its
+revocation has committed, so a close that missed the registration belongs to a
+revocation the re-read sees.
 
-- A handler's `ConnectionCloser` call runs inside the request transaction,
-  before the commit — and only when a `connection_closer` was wired, which is
-  optional.
-- The audit listeners (`create_ws_auth_guard`, `create_ws_logout_closer`,
-  `create_sse_auth_guard`) fire when the pool-routed audit row lands, which is
-  not ordered against that commit. An SSE stream has no other close.
-- `account_delete` and `account_purge` have no listener: only a wired
-  `connection_closer` closes their WebSockets, and nothing closes their SSE
-  streams.
-- A session evicted by the login session cap, and a token evicted by the token
-  cap, close nothing.
+**What remains.**
 
-So a revocation whose closes all ran before a connection registered, and whose
-transaction commits only after that connection's re-read has begun, is caught
-by neither: the connection opens and no further close is coming. The window is
-the gap between a revocation's last close and its commit, not the length of
-the upgrade. Where there is no close at all — an SSE stream on a deleted or
-purged account (and a WebSocket too, when no `connection_closer` is wired),
-either transport on a cap-evicted session or token — an open connection
-outlives the credential. Closing it means moving every close after the commit.
+- The re-read is one read at open, not a per-message check. From admission on,
+  a connection ends only when a revocation closes it.
+- A close reaches only the connections registered in the process that ran the
+  revocation. The closer is in-memory (see
+  [Single-Process Architecture](#single-process-architecture)): a second
+  process serving the same database keeps its connections on a credential this
+  one revoked.
+- A commit whose outcome the server never learns closes nothing. The queued
+  closes are dropped whenever the transaction call throws, and a `COMMIT` that
+  landed but whose acknowledgement was lost throws like one that failed. The
+  request answers with an error; repeating an admin revoke-all closes the
+  connections (`account_session_revoke_all` first needs a new login, its
+  caller's session having gone with the commit), while repeating a single
+  session or token revoke, or an account delete, finds nothing left to revoke
+  and closes nothing — and the admin revoke-alls refuse an account that is no
+  longer active, so a deleted account's connections stay open until they
+  disconnect.
+- A role revocation closes an audit stream through the audit listener alone,
+  and the listener hears of a row only once its fail-open audit write lands. If
+  that write fails, the role is revoked, the request succeeds, and a stream
+  already open on that role stays open until it is closed some other way. The
+  Rust spine writes that row inside the revocation's transaction, so there the
+  two succeed or fail together.
+- A role that ends any other way closes nothing: a grant reaching its
+  `expires_at`, or a `role_grant` or `actor` row deleted through the db-admin
+  browser, whose `db_admin_row_delete` event declares no revocation scope. The
+  stream stays open until it reconnects; the role gate refuses it then.
+- A session or token that *expires* closes nothing. Expiry is not an event:
+  the re-read refuses an expired credential at open, and an open connection
+  outlives its credential's expiry until it reconnects or a revocation closes
+  it. The expired-session sweep (`run_auth_cleanup`) deletes those rows
+  without closing the connections they opened; the Rust spine's sweep closes
+  them.
+- Rotating the daemon token closes nothing: the token has no row and no
+  revocation event, so a connection opened on an earlier token keeps running.
+- A revocation made by code that neither queues a close nor emits an audit
+  event closes nothing — a consumer's own handler deleting a session row, or a
+  direct database write. A consumer handler that ends a credential closes its
+  connections with `queue_connection_close`.
+
+## Closing on Revocation
+
+A WebSocket and an SSE stream are authorized once, at open, so revoking the
+credential behind one does nothing to it unless something closes it. Every
+revocation handler in fuz_app does, and each close runs **after the
+revocation's transaction commits** — never before it, and never for a
+revocation that rolled back. What ends a credential without a handler —
+expiry, a raw row delete — is under
+[Connection Admission](#connection-admission), "What remains".
+
+**Two closers, one order.**
+
+- **The handler.** Every handler that ends a credential queues a close on the
+  request's post-commit queue: `queue_connection_close(ctx,
+  deps.connection_closer, target)`. The queue runs once the handler's
+  transaction has committed and is discarded when the handler throws. The
+  close does not depend on the audit write, which is pool-routed and
+  fail-open: a failed audit INSERT leaves the revocation in place and the
+  connections closed. Nor does it wait for that write — the queue runs before
+  the request's in-flight pool writes are awaited, so a slow audit INSERT does
+  not hold a revoked connection open.
+- **The audit listeners.** `create_ws_auth_guard` and `create_sse_auth_guard`
+  repeat the close when the audit row is announced. The emitter announces a
+  **success** row from the same post-commit queue, waiting for the write — so
+  a listener's close is post-commit too, and a rolled-back revocation is never
+  announced. A **failure** row is announced as soon as it is written; the
+  listeners ignore it. Closing is idempotent, so the overlap with the
+  handler's close is a repeat.
+
+**What closes.**
+
+| Revocation | Closes |
+| --- | --- |
+| `account_session_revoke` | the revoked session's connections |
+| `account_session_revoke_all`, `admin_session_revoke_all` | the account's connections |
+| `account_token_revoke` | the revoked token's connections |
+| `admin_token_revoke_all` | the account's connections |
+| `account_delete`, `account_purge` | the account's connections |
+| `POST /logout`, `POST /password` | the account's connections |
+| `POST /login`, when the session cap evicts | each evicted session's connections |
+| `account_token_create`, when the token cap evicts | each evicted token's connections |
+| `role_grant_revoke` | the account's audit streams gated on that role (listener only) |
+
+A cap eviction writes no audit row, so the handler's close is the only one it
+has. A failed revocation (`revoked: false` — the id was wrong, or another
+account's) closes nothing: it carries a caller-supplied id.
+
+**One closer for every transport.** `deps.connection_closer` is a
+`RealtimeCloser`: each close fans out to every transport added to it. A
+transport, socket, or stream that throws while closing does not stop the
+others — every match is attempted, then the first error is thrown and logged.
+`create_app_backend` creates it, and `create_app_server` adds each WebSocket
+transport it mounts (`ws_endpoints`) and its audit stream registry
+(`audit_log_sse`), so the standard assembly needs no wiring. Assembling by
+hand:
+
+- `register_ws_endpoint` / `register_action_ws` and `create_audit_log_sse`
+  take `connection_closer` as a **required** option and add their transport to
+  it. `null` is the explicit opt-out.
+- The action and route factories whose handlers revoke
+  (`create_account_actions`, `create_admin_actions`,
+  `create_standard_rpc_actions`, `create_account_route_specs`) read
+  `connection_closer` off their `deps`, where it is required. A backend with
+  no live-connection surface leaves its closer empty; hand-built deps for the
+  action factories can pass `noop_connection_closer`.
+- A consumer's own `SubscriberRegistry` joins with
+  `deps.connection_closer.add(create_sse_connection_closer(registry))`.
+
+**A socket that revokes itself is answered first.** When a WebSocket request
+revokes the credential its own socket runs on, the response is sent before the
+post-commit queue runs, so the caller reads its reply and then the
+`WS_CLOSE_SESSION_REVOKED` close.
+
+The Rust spine closes after commit at every site as well (`SocketRevoker`,
+`queue_socket_close`, `RealtimeRevoker`). It differs on the self-revoking
+socket: its dispatch runs the post-commit queue before the socket loop writes
+the response, so the caller gets the close without the reply. The revocation
+took effect either way; the cross-backend WebSocket suite records the
+difference as `capabilities.ws_self_revocation_reply`.
 
 ## Rate Limiting
 
@@ -1528,9 +1648,12 @@ All auth mutations _attempt_ a fire-and-forget audit write (never blocks or brea
 auth flows). Delivery is **best-effort, not durable**: a failed insert is caught
 and logged, not retried — the mutation still succeeds and no audit row exists for
 that event. Listeners (the audit SSE stream, the socket-revocation listeners) are
-notified only _after_ a successful insert, so an audit outage also suppresses the
-security reactions chained off it. Enforcement that must survive an audit failure
-cannot be built on the listener path alone.
+notified only _after_ a successful insert — a failure row as soon as it is
+written, a success row once the request's transaction has committed — so an audit
+outage also suppresses the security reactions chained off it. Enforcement that
+must survive an audit failure cannot be built on the listener path alone, which
+is why every revocation handler closes connections itself (see
+[Closing on Revocation](#closing-on-revocation)).
 The audit log's identity columns (`actor_id`, `account_id`, `target_account_id`,
 `target_actor_id`) carry **no foreign key** — they are plain `UUID`. An audit log
 is an append-only historical record, not a live relational entity: a soft-delete
@@ -1545,7 +1668,7 @@ with `400 table_not_deletable`, ahead of the key-shape check. `audit_log` has a
 single-column primary key, so the keeper-gated browser would otherwise delete a
 trail row and report success. It is the sharpest of the four excluded tables
 because it is both the trail and part of how revocation propagates — the SSE and
-WS auth guards close live streams by listening to audit events, so a raw row
+WS auth guards close live connections by listening to audit events, so a raw row
 delete would be invisible to them. The read side is gated the same way: the
 browser exposes only the consumer's declared `browsable_tables`, minus the
 `NON_BROWSABLE_TABLES` credential floor (`account`, `auth_session`,
@@ -1602,17 +1725,23 @@ realtime feeds.
 
 ### Single-Process Architecture
 
-The in-memory rate limiter and daemon token state are designed for **single-process
-deployments**:
+The in-memory rate limiter, the live-connection registries, and daemon token
+state are designed for **single-process deployments**:
 
 - Rate limit counters are not shared across processes. In a horizontally-scaled
   deployment, an attacker distributing requests across N instances can attempt
   N × max_attempts per window.
+- Live connections are registered in the process that accepted them. A
+  revocation closes the WebSockets and SSE streams of its own process only
+  (`deps.connection_closer` and the audit listeners are both in-memory), and
+  the per-account connection cap and per-session stream cap count per process.
 - Daemon token rotation is file-based. Multiple processes sharing the file may
   read stale state between token write and fsync.
 
 For multi-process deployments, rate limiters would need Redis or a shared DB table;
-daemon tokens would need a distributed lock or a different rotation strategy.
+revocation closes would need a cross-process channel (a shared pub/sub, or
+`LISTEN`/`NOTIFY`); daemon tokens would need a distributed lock or a different
+rotation strategy.
 
 ### Rate Limiter Restart Behavior
 

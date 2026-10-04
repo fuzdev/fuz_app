@@ -174,7 +174,7 @@ the test helpers' route list.
 ## Mocking
 
 - DI via small `*Deps` interfaces — `stub_app_deps()` for auth deps with safe defaults
-- `create_gated_db(db)` from `gated_db.ts` — a pass-through `Db` whose `stall(match, {skip?})` holds one chosen pool-level query in flight until the test releases or fails it. The stall seam for tests that need something to happen *between* two of a request's database reads (the admission suites hold an upgrade or a stream request at its credential re-read and land a revocation in the window); production takes no seam for it
+- `create_gated_db(db)` from `gated_db.ts` — a pass-through `Db` whose `stall(match, {skip?})` holds one chosen pool-level query in flight until the test releases or fails it, and whose `hold_commit()` holds the next transaction open after its callback returns, before it commits. The stall seams for tests that need something to happen *between* two of a request's database steps (the admission suites hold an upgrade or a stream request at its credential re-read and land a revocation in the window; `auth/connection_closer.admission.db.test.ts` holds a revocation uncommitted and opens a connection in the window — real Postgres only, since the connection's re-read needs a second database connection). `open_transactions()` counts the transactions open right now, which is how `auth/connection_closer.db.test.ts` asserts on any driver that a close ran after its commit; the same file stalls the audit INSERT to assert that a close does not wait for it. Production takes no seam for it
 - `create_mock_runtime()` from `$lib/runtime/mock.ts` for CLI/runtime tests
 - `vi.spyOn()` for fetch mocking in UI tests
 
@@ -203,7 +203,10 @@ so the same files run under every `cross_backend_*` project; each project's
 HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
 `describe_cross_process_ws_tests` suite — live WebSocket, including
 requests sent at open and frames sent with the handshake (answered once the
-connection is admitted, never dropped) and close-on-revoke), `ws_connection_cap.cross.test.ts` (the real-upgrade
+connection is admitted, never dropped), close-on-revoke and close on account
+delete, and a self-revoking socket closed after its reply), `session_cap.cross.test.ts` (the
+`describe_session_cap_cross_tests` suite — logging in past the per-account
+session cap evicts the oldest session, and closes the socket it had open), `ws_connection_cap.cross.test.ts` (the real-upgrade
 `describe_ws_connection_cap_cross_tests` suite — one socket past the
 per-account connection cap closes the oldest with `WS_CLOSE_CONNECTION_LIMIT`
 and nothing else, and a closed connection frees its slot),
@@ -225,7 +228,7 @@ on both the Rust `spine_stub` and the TS spines (the
 `BackendWebsocketTransport.request_connection` path)), `sse.cross.test.ts` (the real-streaming-`fetch`
 `describe_cross_process_sse_tests` suite — live audit-log SSE: connect,
 data frame, account-wide close-on-revoke, session-scoped close-on-revoke,
-the per-session stream cap),
+close on account delete, the per-session stream cap),
 `cell.cross.test.ts` (the cell parity suites:
 `describe_cell_crud_cross_tests` — the CRUD lifecycle + authz matrix — and
 `describe_cell_relations_cross_tests` — grant / field / item / clone / audit,

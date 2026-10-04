@@ -463,13 +463,17 @@ emit_after_commit(ctx, () => notification_sender.send_to_account(account_id, msg
 ```
 
 Used for WS sends (`NotificationSender.send_to_account` for
-role-grant-offer notifications — see `auth/CLAUDE.md` §WS notifications)
-and any side effect that must run only after the transaction commits.
+role-grant-offer notifications — see `auth/CLAUDE.md` §WS notifications),
+a revocation's connection closes (`queue_connection_close` — see
+`actions/CLAUDE.md` §Connection closer), the audit emitter's listener fan-out
+for a success row (`auth/CLAUDE.md` §Audit emitter), and any side effect that
+must run only after the transaction commits.
 
 ### Key properties
 
 - **The flush owns the safety net.** `flush_post_commit_effects` wraps every thunk in `try/catch` and routes errors through `ctx.log.error`, so one failing send cannot starve sibling effects in the same batch nor corrupt the already-committed response. Per-thunk `try/catch` inside `emit_after_commit` would skip directly-pushed thunks (e.g. tests); centralizing the wrap in the flush closes that gap.
 - **Test mode (`await_pending_effects: true`) flushes both queues.** Eager: `await flush_pending_effects(pending_effects, log)`. Deferred: `await flush_post_commit_effects(post_commit_effects, log)`. Both complete before the response returns. Production mode wraps the same helpers in `void ...` and threads `on_effect_error` into `flush_pending_effects`'s `on_rejection` callback for fan-out.
+- **The deferred thunks never wait on the eager writes.** Every flush site (both modes here, and the per-message WS flush) invokes the `post_commit_effects` thunks before it awaits `pending_effects`, so a revocation's connection close is not held behind a slow audit INSERT. A thunk that needs a write — the audit emitter's success-row fan-out — awaits that write itself.
 - **Drain at the outer flush; discard at the dispatch site.** The successful-path _drain_ of both queues stays at the outer flush middleware (`server/app_server.ts`) + the per-message WS flush — adjacent, one location, no per-wrapper drain timing. What the dispatch sites (route-spec wrapper / `perform_action`) own is the _rollback discard_, via the shared `dispatch_with_post_commit_rollback` helper: on a handler throw they truncate `post_commit_effects` before the outer flush ever sees it, so the flush only drains effects from a committed handler. The eager `pending_effects` queue is never truncated — it drains regardless (attempt audits survive rollback).
 - Structurally satisfied by both `RouteContext` (HTTP) and `ActionContext` (RPC + WS) — they share the `{log, post_commit_effects}` shape, which is why this helper lives in `http/` rather than `actions/` or `auth/`.
 

@@ -439,7 +439,7 @@ describe_db('ApiTokenQueries', (get_db) => {
 			}
 
 			const evicted = await query_api_token_enforce_limit(deps, account_id, limit);
-			assert.strictEqual(evicted, expected_evictions);
+			assert.strictEqual(evicted.length, expected_evictions);
 
 			const remaining = await query_api_token_list_for_account(deps, account_id);
 			assert.strictEqual(remaining.length, token_count - expected_evictions);

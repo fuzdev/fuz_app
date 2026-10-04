@@ -10,9 +10,9 @@
  * Option routing: shared `roles` flows to both admin and role-grant-offer;
  * `default_ttl_ms` and `authorize` go to role-grant-offer only; `max_tokens`
  * goes to account only;
- * shared `connection_closer` flows to admin + account (role-grant-offer ignores);
  * `notification_sender` reaches role-grant-offer transparently (admin + account
- * ignore it).
+ * ignore it). `deps.connection_closer` is read by admin + account, whose
+ * revocation handlers close live connections through it.
  *
  * Paired with `create_admin_rpc_adapters` on the UI side.
  *
@@ -25,7 +25,7 @@ import {
 	type RoleGrantOfferActionOptions
 } from './role_grant_offer_actions.ts';
 import { create_account_actions, type AccountActionOptions } from './account_actions.ts';
-import type { ActionFactoryDeps } from './deps.ts';
+import type { RevokingActionFactoryDeps } from './deps.ts';
 import type { NotificationSender } from './role_grant_offer_notifications.ts';
 import type { RpcAction } from '../actions/action_rpc.ts';
 
@@ -44,12 +44,12 @@ export interface StandardRpcActionsOptions
 /**
  * Dependencies for `create_standard_rpc_actions`.
  *
- * Stack-standard `ActionFactoryDeps` (`log`, `audit`) plus an optional
- * `notification_sender` consumed only by the role-grant-offer sub-factory
- * for WS fan-out. Admin and account sub-factories ignore
- * `notification_sender`.
+ * Stack-standard `RevokingActionFactoryDeps` (`log`, `audit`,
+ * `connection_closer`) plus an optional `notification_sender` consumed only by the
+ * role-grant-offer sub-factory for WS fan-out. Admin and account
+ * sub-factories ignore `notification_sender`.
  */
-export interface StandardRpcActionsDeps extends ActionFactoryDeps {
+export interface StandardRpcActionsDeps extends RevokingActionFactoryDeps {
 	notification_sender?: NotificationSender | null;
 }
 
@@ -61,7 +61,7 @@ export interface StandardRpcActionsDeps extends ActionFactoryDeps {
  * and `create_account_actions(deps, {max_tokens})`. The shared `roles`
  * option flows to admin + role-grant-offer.
  *
- * @param deps - `StandardRpcActionsDeps` (`log`, `audit` from `ActionFactoryDeps`; optional `notification_sender` for WS fan-out)
+ * @param deps - `StandardRpcActionsDeps` (`log`, `audit`, `connection_closer` from `RevokingActionFactoryDeps`; optional `notification_sender` for WS fan-out)
  * @param options - role schema, role-grant-offer config, account config
  * @returns RPC actions to pass as `rpc_endpoints` or spread into `create_rpc_endpoint`
  */

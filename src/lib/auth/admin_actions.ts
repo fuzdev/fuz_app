@@ -30,7 +30,7 @@
  */
 
 import { rpc_action, type ActionActorContext, type RpcAction } from '../actions/action_rpc.ts';
-import type { ConnectionCloser } from '../actions/connection_closer.ts';
+import { queue_connection_close } from '../actions/connection_closer.ts';
 import { jsonrpc_errors } from '../http/jsonrpc_errors.ts';
 import {
 	builtin_role_specs_by_name,
@@ -79,7 +79,7 @@ import {
 	query_app_settings_load_with_username,
 	query_app_settings_update
 } from './app_settings_queries.ts';
-import type { ActionFactoryDeps } from './deps.ts';
+import type { RevokingActionFactoryDeps } from './deps.ts';
 import { is_pg_unique_violation } from '../db/pg_error.ts';
 import {
 	ERROR_ACCOUNT_NOT_FOUND,
@@ -146,35 +146,27 @@ export interface AdminActionOptions {
 	 * `admin_account_list`.
 	 */
 	roles?: RoleSchemaResult;
-	/**
-	 * Live-connection closer — when set, `admin_session_revoke_all` and
-	 * `admin_token_revoke_all` handlers eagerly close affected WebSocket
-	 * sockets for the target account BEFORE emitting the corresponding
-	 * audit event. Mirrors the self-service surface (see
-	 * `AccountActionOptions.connection_closer`). `BackendWebsocketTransport`
-	 * satisfies this interface structurally. When absent, only the
-	 * listener-based close (`transports_ws_auth_guard`) runs.
-	 */
-	connection_closer?: ConnectionCloser | null;
 }
 
 /**
  * Create the admin-only RPC actions.
  *
- * @param deps - `ActionFactoryDeps` (`log`, `audit`). `log` drives RPC-
- *   internal error logging; `audit.emit` writes audit rows via the captured
- *   pool. The bound emitter encapsulates listener fan-out and the optional
- *   `AuditLogConfig`.
+ * @param deps - `RevokingActionFactoryDeps` (`log`, `audit`,
+ *   `connection_closer`). `log` drives RPC-internal error logging;
+ *   `audit.emit` writes audit rows via the captured pool. The bound emitter
+ *   encapsulates listener fan-out and the optional `AuditLogConfig`.
+ *   `connection_closer` closes the target account's live connections after a
+ *   revoke-all, delete, or purge commits.
  * @param options - role schema for `grantable_roles` derivation
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
 export const create_admin_actions = (
-	deps: ActionFactoryDeps,
+	deps: RevokingActionFactoryDeps,
 	options: AdminActionOptions = {}
 ): Array<RpcAction> => {
 	const role_specs = options.roles?.role_specs ?? builtin_role_specs_by_name;
 	const grantable_roles = list_roles_with_grant_path(role_specs, GRANT_PATH_ADMIN);
-	const connection_closer = options.connection_closer ?? null;
+	const { connection_closer } = deps;
 
 	const account_list_handler = async (
 		input: AdminAccountListInput,
@@ -220,15 +212,15 @@ export const create_admin_actions = (
 			throw jsonrpc_errors.not_found('account', { reason: ERROR_ACCOUNT_NOT_FOUND });
 		}
 		const count = await query_session_revoke_all_for_account(ctx, input.account_id);
-		// Handler-side belt+suspenders — close the target account's live WS
-		// sockets BEFORE the audit emit so revocation lands even if the audit
-		// INSERT fails. Listener-based close (`transports_ws_auth_guard`
-		// registered via `audit.add_listener`) stays as a fail-safe for
-		// out-of-band emit sites. Idempotent — see
+		// Close the target account's live connections once the revoke has
+		// committed — queued, so it never runs before the commit or on
+		// rollback, and it does not depend on the audit write below. Queued at
+		// every `count`, zero included. See
 		// `account_actions.ts::session_revoke_handler`.
-		if (connection_closer) {
-			connection_closer.close_sockets_for_account(input.account_id);
-		}
+		queue_connection_close(ctx, connection_closer, {
+			kind: 'account',
+			account_id: input.account_id
+		});
 		// TOCTOU window — admin B hard-deletes `input.account_id` between the
 		// pre-check above and this emit; the FK rejects the row, the audit
 		// emitter logs + swallows, and the operation goes unaudited. Bounded
@@ -271,10 +263,11 @@ export const create_admin_actions = (
 			throw jsonrpc_errors.not_found('account', { reason: ERROR_ACCOUNT_NOT_FOUND });
 		}
 		const count = await query_revoke_all_api_tokens_for_account(ctx, input.account_id);
-		// Handler-side belt+suspenders — see `session_revoke_all_handler`.
-		if (connection_closer) {
-			connection_closer.close_sockets_for_account(input.account_id);
-		}
+		// Post-commit close — see `session_revoke_all_handler`.
+		queue_connection_close(ctx, connection_closer, {
+			kind: 'account',
+			account_id: input.account_id
+		});
 		// TOCTOU window — see `session_revoke_all_handler` for the rationale on
 		// keeping `target_account_id` populated rather than switching to the
 		// failure-shape.
@@ -487,7 +480,12 @@ export const create_admin_actions = (
 		}
 		await query_session_revoke_all_for_account(ctx, target_account_id);
 		await query_revoke_all_api_tokens_for_account(ctx, target_account_id);
-		if (connection_closer) connection_closer.close_sockets_for_account(target_account_id);
+		// The tombstone ends every credential of the account; its connections
+		// close once that has committed.
+		queue_connection_close(ctx, connection_closer, {
+			kind: 'account',
+			account_id: target_account_id
+		});
 		deps.audit.emit(ctx, {
 			event_type: 'account_delete',
 			actor_id: auth.actor.id,
@@ -542,7 +540,12 @@ export const create_admin_actions = (
 			});
 			throw jsonrpc_errors.not_found('account', { reason: ERROR_ACCOUNT_NOT_FOUND });
 		}
-		if (connection_closer) connection_closer.close_sockets_for_account(input.account_id);
+		// The cascade removed every credential of the account; its connections
+		// close once that has committed.
+		queue_connection_close(ctx, connection_closer, {
+			kind: 'account',
+			account_id: input.account_id
+		});
 		deps.log.warn(
 			`account hard-purged (irreversible cascading delete): ${input.account_id} by actor ${
 				auth.actor.id

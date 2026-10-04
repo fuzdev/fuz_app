@@ -71,6 +71,90 @@ export const AuditEventType = z.enum(AUDIT_EVENT_TYPES);
 export type AuditEventType = z.infer<typeof AuditEventType>;
 
 /**
+ * What a **successful** audit row invalidates — the axis both revocation
+ * listeners (`create_ws_auth_guard`, `create_sse_auth_guard`) dispatch on.
+ *
+ * - `none` — the row invalidates no live connection.
+ * - `session` — one session: the connections whose session-token hash equals
+ *   the row's `metadata.session_id`.
+ * - `token` — one API token: the connections whose `api_token.id` equals the
+ *   row's `metadata.token_id`.
+ * - `account` — every connection of `target_account_id ?? account_id`.
+ * - `role` — the target account's connections gated on the row's
+ *   `metadata.role`.
+ *
+ * The scope says what the row invalidated, not what a transport must do about
+ * it. The two listeners differ on `role` on purpose: a WebSocket message is
+ * re-authorized per dispatch, so the socket stays open and its next message
+ * is refused, while a stream is authorized once at open and must be closed.
+ *
+ * Twin of the Rust spine's `RevocationScope`.
+ */
+export type RevocationScope = 'none' | 'session' | 'token' | 'account' | 'role';
+
+/**
+ * The `RevocationScope` of every builtin audit event — declared once, so the
+ * WebSocket and SSE revocation listeners read one answer instead of keeping a
+ * list each. Typed over `AuditEventType`, so a new event type does not compile
+ * until it declares its scope here.
+ *
+ * A scope other than `none` marks an event whose success invalidates a live
+ * connection's credential or access: `logout`, `password_change`,
+ * `session_revoke_all`, `token_revoke_all`, `account_delete`, and
+ * `account_purge` are account-wide, `session_revoke` and `token_revoke` name
+ * the one credential they ended, and `role_grant_revoke` names the lost role.
+ * Granting access revokes nothing, and neither does an event about a subject
+ * other than a connection's identity.
+ *
+ * Twin of the `revocation_scope` column of the Rust spine's
+ * `AUDIT_EVENT_SPECS`.
+ */
+export const audit_event_revocation_scopes: Readonly<Record<AuditEventType, RevocationScope>> =
+	Object.freeze({
+		login: 'none',
+		logout: 'account',
+		bootstrap: 'none',
+		signup: 'none',
+		password_change: 'account',
+		session_revoke: 'session',
+		session_revoke_all: 'account',
+		token_create: 'none',
+		token_revoke: 'token',
+		token_revoke_all: 'account',
+		role_grant_create: 'none',
+		role_grant_revoke: 'role',
+		role_grant_offer_create: 'none',
+		role_grant_offer_accept: 'none',
+		role_grant_offer_decline: 'none',
+		role_grant_offer_retract: 'none',
+		role_grant_offer_expire: 'none',
+		role_grant_offer_supersede: 'none',
+		invite_create: 'none',
+		invite_delete: 'none',
+		account_delete: 'account',
+		account_purge: 'account',
+		account_undelete: 'none',
+		actor_delete: 'none',
+		actor_purge: 'none',
+		actor_undelete: 'none',
+		app_settings_update: 'none',
+		db_admin_row_delete: 'none'
+	});
+
+/**
+ * The `RevocationScope` of an `audit_log.event_type` string.
+ *
+ * An event type with no builtin entry — a consumer's own event — resolves to
+ * `none`: an event fuz_app has never heard of must not close connections. A
+ * consumer whose own event revokes closes the connections from its handler,
+ * with `queue_connection_close`.
+ */
+export const to_revocation_scope = (event_type: string): RevocationScope =>
+	Object.hasOwn(audit_event_revocation_scopes, event_type)
+		? audit_event_revocation_scopes[event_type as AuditEventType]
+		: 'none';
+
+/**
  * Letter start, then letters, digits, `_`, `.`, `/`, `-`. Accepts snake_case,
  * dotted, and namespaced consumer conventions; rejects empty strings, leading
  * separators, whitespace, and control characters.

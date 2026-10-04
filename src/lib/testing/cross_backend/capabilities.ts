@@ -220,6 +220,38 @@ export interface BackendCapabilities {
 	 */
 	readonly ws_handshake_pipelining: boolean;
 	/**
+	 * The backend's WebSocket endpoint mounts the self-service account actions
+	 * (`account_session_revoke_all` among them), so a socket can revoke the
+	 * session it is running on. Gates the self-revocation case in
+	 * `describe_cross_process_ws_tests`: the socket reads the reply to its
+	 * request, then is closed with `WS_CLOSE_SESSION_REVOKED`.
+	 *
+	 * `true` on fuz_app's own spine presets — the TS spine binary mounts
+	 * `create_account_actions` on `/api/ws`, and the Rust `testing_spine_stub`
+	 * serves one action registry on RPC and WS. `false` in the family defaults:
+	 * a consumer's WS endpoint carries whatever its domain mounts, so it opts in
+	 * once the account actions are there.
+	 */
+	readonly ws_account_actions: boolean;
+	/**
+	 * A socket that revokes the credential it is running on reads the reply to
+	 * that request **before** the revocation's close. Read by the
+	 * self-revocation case in `describe_cross_process_ws_tests` (which
+	 * `ws_account_actions` gates): with it `true` the case requires the reply
+	 * frame ahead of the `WS_CLOSE_SESSION_REVOKED` close; with it `false` the
+	 * case requires the close alone.
+	 *
+	 * `true` for the TS family — `register_action_ws` sends the response and
+	 * only then flushes the request's post-commit queue, where the close is.
+	 * `false` for the Rust family: its dispatch runs the post-commit queue
+	 * before handing the response to the socket loop, and the loop, finding the
+	 * connection already closed, writes the close frame and drops the response.
+	 * The caller's revocation still took effect; it is not told so. The flag
+	 * records that divergence so the suite stays green on both spines without
+	 * hiding it — flip it once the Rust spine answers first.
+	 */
+	readonly ws_self_revocation_reply: boolean;
+	/**
 	 * A test `CellCreateAuthorize` policy is live-mounted on the backend's cell
 	 * layer — creating a `kind: 'gated'` cell requires the `participant` role
 	 * or admin; every other kind (and a typeless cell) is open. Gates
@@ -243,7 +275,8 @@ export interface BackendCapabilities {
  * needs a real bound socket with an `on_request` responder via
  * `create_ws_transport`, so the in-process driver never runs it — the
  * transport itself supports server-initiated requests),
- * `ws_handshake_pipelining` (raw bytes on a real socket), and
+ * `ws_handshake_pipelining` (raw bytes on a real socket),
+ * `ws_account_actions` (a real socket's reply-then-close ordering), and
  * `cell_gated_create`. Cross-process consumers declare each flag explicitly
  * per backend.
  */
@@ -261,6 +294,11 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	// Cross-process-only, like `peer_request`: the case needs a real bound socket
 	// to write raw bytes to.
 	ws_handshake_pipelining: false,
+	// Cross-process-only: the case reads a real socket's frames in wire order.
+	ws_account_actions: false,
+	// Read only by the case `ws_account_actions` gates; the in-process
+	// dispatcher does answer first.
+	ws_self_revocation_reply: true,
 	// Cross-process-only: the test `CellCreateAuthorize` policy is mounted on the
 	// spine binaries' full mount + the Rust stub, not the in-process default app.
 	cell_gated_create: false

@@ -234,6 +234,12 @@ e.g. when consumers like zzz throw their own `ThrownJsonrpcError`)
 preserves code + data verbatim. Generic throws become `internal_error` 500;
 message is the raw error under `DEV`, "internal server error" otherwise.
 
+A result `c.json` cannot serialize (a `bigint`, a cycle) answers the same
+`internal_error` 500 rather than throwing. By then `perform_action` has
+committed, and a throw would have the route wrapper
+(`dispatch_with_post_commit_rollback`) discard the handler's
+`post_commit_effects` — the connection closes of a revocation that did land.
+
 ### Per-request handler shape
 
 Unified across HTTP RPC + WS via `ActionContext`:
@@ -505,62 +511,98 @@ Return values are bookkeeping, not delivery receipts — `0` means no live
 sockets, non-zero means `ws.send` did not throw. Durable delivery requires
 persistence + rehydration by the consumer.
 
-## WS auth guard (`actions/transports_ws_auth_guard.ts`)
-
-Closes WS sockets on audit revoke events — per-message dispatch doesn't
-re-check session/token validity (admission re-reads it once, at open), so this
-guard is the revocation seam for open connections. Its closes reach a
-connection still pending admission too, which is what lets a revocation catch
-an upgrade in flight.
-
-`create_ws_auth_guard(transport, log)` returns an `on_audit_event` callback.
-For standard WS endpoints mounted via `AppServerOptions.ws_endpoints`,
-`create_app_server` registers this guard via `backend.deps.audit.add_listener`
-automatically (per `WsEndpointSpec.auth_guard`). For custom wiring, register
-inside the consumer's `audit_factory` body.
-
-`ws_disconnect_event_types` (ReadonlySet): `session_revoke`, `token_revoke`,
-`session_revoke_all`, `token_revoke_all`, `password_change`.
-`role_grant_revoke` is intentionally **omitted** — the WS transport doesn't
-track per-connection role requirements, so role-scoped disconnection would
-require either closing all sockets (too aggressive) or new per-connection
-role tracking (out of scope). Consumers that need it compose their own
-callback.
-
-`outcome === 'failure'` events are ignored — they carry attacker-controlled
-identifiers. Reacting to them would let an authenticated caller close
-another user's socket by guessing a session hash or token id.
-
-`create_ws_logout_closer(transport, log)` is the sibling helper for
-user-initiated `logout` events — kept separate because
-`ws_disconnect_event_types` deliberately omits `logout` (admin-initiated
-revocations use `session_revoke`, while `logout` is the user-initiated
-case). Closes via `close_sockets_for_account(event.account_id)`.
-
 ## Connection closer (`actions/connection_closer.ts`)
 
-Narrow structural capability for handler-side eager WS socket closure on
-revocation — belt+suspenders layer that complements the audit-listener
-guards above.
+A WebSocket and an SSE stream are authorized once, at open, so a revocation
+takes effect on an open connection only when something closes it.
+`ConnectionCloser` is that capability — the twin of the Rust spine's
+`SocketRevoker`:
 
 ```ts
 interface ConnectionCloser {
 	close_sockets_for_session: (session_token_hash: string) => number;
 	close_sockets_for_token: (api_token_id: string) => number;
-	close_sockets_for_account: (account_id: string) => number;
+	close_sockets_for_account: (account_id: Uuid) => number;
 }
 ```
 
-`BackendWebsocketTransport` satisfies this structurally — consumers pass
-the transport instance directly (same shape as `NotificationSender`). Wired
-into `AccountRouteOptions.connection_closer` (logout / password),
-`AccountActionOptions.connection_closer` (session/token revoke), and
-`AdminActionOptions.connection_closer` (admin revoke-all). Each handler
-calls the appropriate `close_sockets_for_*` synchronously **before** the
-audit emit so revocation lands even on audit INSERT failure. Failure
-outcomes (`revoked: false`, 404 not-found) skip the eager close — mirrors
-the listener's `outcome === 'failure'` guard so attacker-guessable ids can
-never target arbitrary sockets.
+`BackendWebsocketTransport` satisfies it structurally;
+`create_sse_connection_closer(registry)` (`realtime/sse_auth_guard.ts`) adapts
+a `SubscriberRegistry`. Closing is idempotent and synchronous.
+
+**Every revocation closes after its commit.** A handler never calls a closer
+inline: it calls `queue_connection_close(ctx, deps.connection_closer, target)`,
+which puts the close on the request's post-commit queue (`emit_after_commit`).
+The close runs once the handler's transaction has committed and is discarded
+when the handler throws — a rolled-back revocation closes nothing. `target` is
+a `ConnectionCloseTarget` (`{kind: 'session', session_token_hash}` /
+`{kind: 'token', api_token_id}` / `{kind: 'account', account_id}`);
+`close_connections(closer, target)` is the immediate form the queue runs. Twin
+of `queue_socket_close` / `SocketCloseTarget`.
+
+The order is load-bearing for admission: a connection registers, then re-reads
+its credential, so a close that missed the registration must belong to a
+revocation the re-read can see — true only if the close came after the commit
+(../../../docs/security.md §Closing on Revocation).
+
+The close does not depend on the audit write, which is pool-routed and
+fail-open. Failure outcomes (`revoked: false`, a 404) queue no close — they
+carry caller-supplied ids.
+
+**One closer for every transport.** `create_realtime_closer()` returns a
+`RealtimeCloser` — a `ConnectionCloser` plus `add(closer)` (idempotent by
+reference) — whose every close fans out to each member and returns the sum.
+`create_app_backend` puts one on `AppDeps.connection_closer`; `create_app_server`
+adds each mounted WS transport and the audit stream registry. Twin of
+`RealtimeRevoker`. A member that throws does not stop the fan-out — every
+member is called, then the first error is thrown for the caller to log;
+`BackendWebsocketTransport` and `SubscriberRegistry.close_by_identity` treat a
+throwing socket or stream the same way. `noop_connection_closer` is a `ConnectionCloser` that closes
+nothing, for hand-built action-factory deps on a backend with no
+live-connection surface.
+
+It is required where it is read, so it can't be forgotten:
+`RevokingActionFactoryDeps.connection_closer` (`create_account_actions`,
+`create_admin_actions`, `create_standard_rpc_actions`), `AppDeps` /
+`RouteFactoryDeps` (`create_account_route_specs`), and the
+`connection_closer: RealtimeCloser | null` option of `register_action_ws` /
+`register_ws_endpoint` / `create_audit_log_sse`, which add their transport to it
+(`null` is the explicit opt-out).
+
+## WS auth guard (`actions/transports_ws_auth_guard.ts`)
+
+The audit-listener half of revocation: `create_ws_auth_guard(closer, log)`
+returns an `on_audit_event` callback that repeats a revocation's close when its
+audit row is announced. It covers a revocation emitted by code that holds no
+closer; for the builtin handlers it is a repeat of the close they already
+queued. A success row is announced only after its request's transaction commits
+(`auth/CLAUDE.md` §Audit emitter), so the guard's close is post-commit too. Its
+closes reach a connection still pending admission.
+
+`closer` is any `ConnectionCloser` — a `BackendWebsocketTransport`, or a
+`RealtimeCloser` to cover every transport from one listener. For standard WS
+endpoints mounted via `AppServerOptions.ws_endpoints`, `create_app_server`
+registers the guard via `backend.deps.audit.add_listener` automatically (per
+`WsEndpointSpec.auth_guard`). For custom wiring, register inside the consumer's
+`audit_factory` body.
+
+It dispatches on the `RevocationScope` each event declares in
+`audit_event_revocation_scopes` (`auth/audit_log_schema.ts`), the table the SSE
+guard reads too — one declaration, so the two can't drift:
+
+- `session` (`session_revoke`) → `close_sockets_for_session(metadata.session_id)`
+- `token` (`token_revoke`) → `close_sockets_for_token(metadata.token_id)`
+- `account` (`session_revoke_all`, `token_revoke_all`, `password_change`,
+  `logout`, `account_delete`, `account_purge`) →
+  `close_sockets_for_account(target_account_id ?? account_id)`
+- `role` (`role_grant_revoke`) → nothing, deliberately: per-message dispatch
+  re-authorizes, so the next message is refused. The SSE guard closes here.
+- `none` → nothing — every other event, and any event type fuz_app doesn't
+  define
+
+`outcome === 'failure'` events are ignored — they carry attacker-controlled
+identifiers. Reacting to them would let an authenticated caller close
+another user's socket by guessing a session hash or token id.
 
 ## WebSocket dispatch — three layered entry points
 
@@ -585,7 +627,9 @@ the check, so feature-flag gated WS surfaces stay safe.
 `artificial_delay?`, `max_message_bytes?`,
 `on_socket_open?`, `on_socket_close?`, `auth_guard?` (default `true`,
 deduped by reference identity via `WeakSet<BackendWebsocketTransport>`),
-`extra_audit_handlers?`.
+`extra_audit_handlers?`. Every mounted transport is added to
+`deps.connection_closer`, whatever `auth_guard` says — the flag opts out of
+the audit listener, not of the handlers' closes.
 
 `max_connections_per_account` sets the per-account connection cap on the
 transport the mount creates (`RegisterActionWsOptions` carries the same field).
@@ -622,7 +666,8 @@ Composes the standard upgrade stack:
 5. Delegates to `register_action_ws`
 
 Extends `RegisterActionWsOptions` with `allowed_origins` and optional
-`required_roles`. Returns `{transport}`. Most consumers reach for
+`required_roles`, and inherits its required `connection_closer`. Returns
+`{transport}`. Most consumers reach for
 `ws_endpoints` above; this is the entry test harnesses use when they need
 the upgrade stack without `create_app_server`'s full assembly.
 
@@ -655,9 +700,15 @@ and runs neither lifecycle hook. An upgrade with no resolved credential on its
 context, or one on another account than its request context, throws before the
 socket exists. The test-preset escape hatch
 (`TEST_CONTEXT_PRESET_KEY`) skips the re-read — a pre-baked credential has no
-rows behind it — so `create_ws_test_harness` admits synchronously. Not every
-revocation closes after its commit yet, so one interleaving remains — see
-../../../docs/security.md §Connection Admission, "Limits".
+rows behind it — so `create_ws_test_harness` admits synchronously. Admission
+leaves no interleaving that admits a revoked credential, because every
+revocation closes only after its commit — see
+../../../docs/security.md §Connection Admission and §Closing on Revocation.
+
+`connection_closer: RealtimeCloser | null` is a required option: the endpoint's
+transport is added to it, so the revocation handlers' post-commit closes reach
+the sockets opened here. `null` is for a transport no revocation has to reach
+(a harness driving the dispatcher directly).
 
 Because `onOpen` awaits, an adapter can deliver `onMessage` before admission
 (`@hono/node-ws` doesn't await `onOpen` at all). Those frames are **queued, not
@@ -701,8 +752,10 @@ heartbeat activity.
 `apply_authorization_phase` per-message (HTTP and WS uniformly). Role grant
 changes during a connection lifetime are picked up on the next message —
 no in-place refresh, no socket-close on `role_grant_revoke`. Authentication
-invalidation (`session_revoke`, `password_change`, `token_revoke_all`)
-still closes the socket via `create_ws_auth_guard`.
+invalidation (a session or token revoke, `password_change`, a logout, an
+account delete, a cap eviction) still closes the socket — the revoking
+handler through `connection_closer`, `create_ws_auth_guard` again on the
+audit row.
 
 Per-message side-effect queues: `pending_effects` (eager) drains via
 `flush_pending_effects`; `post_commit_effects` (deferred — pushed by
@@ -710,9 +763,20 @@ handlers via `emit_after_commit`) drains via `flush_post_commit_effects`.
 Both flush in the same `try/finally` that releases the request controller,
 so fire-and-forget audit / notification effects pushed by the handler
 complete (or reject visibly) before the next message dispatches. The
+deferred thunks are invoked first and the eager writes awaited after, so a
+revocation's close never waits on a slow audit INSERT — held behind one, the
+socket would stay open on a credential already committed gone and dispatch its
+next frame. The
 deferred queue is **discarded on rollback** before it reaches that flush (a
 rolled-back message fires no post-commit effect). See `http/CLAUDE.md`
 §Pending Effects.
+
+**Reply before flush.** The response is sent before either queue flushes. A
+handler that revokes the credential its own socket runs on queues a close of
+that socket on `post_commit_effects`, so the caller reads its reply and then the
+`WS_CLOSE_SESSION_REVOKED` close — flushing first would strand it without an
+answer. (The Rust spine does flush first, and drops the response: a divergence
+the cross-backend WS suite records as `capabilities.ws_self_revocation_reply`.)
 
 **Lifecycle hooks.** `on_socket_open({ws, connection_id, identity, notify, signal})`
 fires once the connection is admitted and before the first message dispatches

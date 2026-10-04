@@ -41,13 +41,13 @@ export const create_audit_log_route_shape = (
 		account: 'required',
 		actor: 'required',
 		roles: [required_role],
-		// The stream is a session channel. A bearer that opens one cannot be
-		// closed when it is revoked: `token_revoke` closes WS sockets keyed by
-		// token, and SSE subscribers are not keyed that way, so a revoked
-		// token would keep receiving audit rows for the life of the
-		// connection. Gating the channel is what makes
-		// `realtime/sse_auth_guard.ts`'s omission of `token_revoke` correct
-		// rather than merely asserted.
+		// The stream is a session channel: a long-lived, instance-wide admin
+		// feed is not handed to a credential channel the deployment never
+		// chose. Widening the gate loses no close — the handler registers a
+		// bearer's stream under its API token id, and a token revocation closes
+		// by that id (`create_sse_connection_closer`, and the `token` scope in
+		// `create_sse_auth_guard`) — so widening is a consumer's explicit
+		// choice about the channel, not a hole in revocation.
 		credential_types: ['session'],
 		// Rule 3 — a narrowed token holds no audit feed. Same reasoning as the
 		// WS upgrade: this is a long-lived server→client stream whose contents

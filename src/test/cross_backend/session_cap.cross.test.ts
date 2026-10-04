@@ -4,7 +4,8 @@
  * cap against each spawned backend — the TS spine binaries + the Rust
  * `testing_spine_stub` — and asserts the oldest session is evicted while the
  * newest still resolves. Both spines enforce the cap (TS `DEFAULT_MAX_SESSIONS`,
- * Rust's `const` of the same name), so the suite is ungated.
+ * Rust's `const` of the same name), so the suite is ungated — except the case
+ * that an evicted session's socket is closed, which needs `capabilities.ws`.
  *
  * @module
  */
@@ -22,4 +23,9 @@ import './cross_test_types.ts';
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle);
 
-describe_session_cap_cross_tests({ setup_test });
+const { capabilities, base_url, ws_path } = handle.config;
+
+describe_session_cap_cross_tests({
+	setup_test,
+	ws: capabilities.ws ? { base_url, ws_path } : undefined
+});

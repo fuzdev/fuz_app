@@ -7,17 +7,22 @@
 import { describe, assert, test } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
+import { create_uuid } from '@fuzdev/fuz_util/id.ts';
+
 import {
 	create_sse_auth_guard,
+	create_sse_connection_closer,
 	create_audit_log_sse,
-	disconnect_event_types,
 	AUDIT_LOG_SSE_MAX_PER_SCOPE
 } from '$lib/realtime/sse_auth_guard.ts';
-import { create_audit_log_route_shape } from '$lib/auth/audit_log_route_schema.ts';
-import { CREDENTIAL_TYPE_SESSION } from '$lib/auth/credential_type_schema.ts';
+import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
 import { SubscriberRegistry } from '$lib/realtime/subscriber_registry.ts';
 import type { SseStream, SseNotification } from '$lib/realtime/sse.ts';
-import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
+import {
+	AUDIT_EVENT_TYPES,
+	audit_event_revocation_scopes,
+	type AuditLogEvent
+} from '$lib/auth/audit_log_schema.ts';
 import { create_test_audit_event } from '$lib/testing/entities.ts';
 
 const log = new Logger('test', { level: 'off' });
@@ -44,49 +49,37 @@ const create_mock_stream = <T>(): SseStream<T> & { sent: Array<T>; closed: boole
 
 const create_audit_event = create_test_audit_event;
 
-describe('disconnect_event_types', () => {
-	test('includes every access-invalidation event a one-way feed cannot re-check', () => {
-		assert.ok(disconnect_event_types.has('role_grant_revoke'));
-		assert.ok(disconnect_event_types.has('session_revoke'));
-		assert.ok(disconnect_event_types.has('session_revoke_all'));
-		assert.ok(disconnect_event_types.has('token_revoke_all'));
-		assert.ok(disconnect_event_types.has('password_change'));
-		assert.ok(disconnect_event_types.has('logout'));
-	});
+describe('create_sse_connection_closer', () => {
+	test('each close reaches the streams registered under that identity, pending included', () => {
+		const registry = new SubscriberRegistry<string>();
+		const closer = create_sse_connection_closer(registry);
+		const account_id = create_uuid();
+		const other_account_id = create_uuid();
 
-	test('excludes non-disconnect events', () => {
-		assert.ok(!disconnect_event_types.has('login'));
-		assert.ok(!disconnect_event_types.has('bootstrap'));
-		assert.ok(!disconnect_event_types.has('token_create'));
-		assert.ok(!disconnect_event_types.has('role_grant_create'));
-	});
+		const session_stream = create_mock_stream<string>();
+		registry.subscribe(session_stream, { scope: 'session-hash-1', groups: [account_id] });
+		const sibling_stream = create_mock_stream<string>();
+		registry.subscribe(sibling_stream, { scope: 'session-hash-2', groups: [account_id] });
+		const token_stream = create_mock_stream<string>();
+		registry.subscribe(token_stream, { scope: 'tok_abc', groups: [other_account_id] });
+		const pending = registry.subscribe_pending({ scope: 'session-hash-3', groups: [account_id] });
 
-	/**
-	 * The one event the WS half handles and this set omits, and the reason it
-	 * is safe to omit — a coupled invariant rather than two comments that
-	 * happen to agree.
-	 *
-	 * SSE subscribers are keyed by session hash, never by api-token id, so
-	 * `token_revoke` (which names a token id in its metadata) has nothing here
-	 * to match. That only holds while no bearer can open a stream, which is
-	 * what the audit route's channel gate enforces — rule 3 alone would not,
-	 * since it refuses a *narrowed* token and a full-scope bearer passes it.
-	 *
-	 * So the two must move together: widening the route's `credential_types`
-	 * without keying subscribers by api-token id and adding a `token_revoke`
-	 * arm leaves a revoked token receiving audit rows for the life of the
-	 * connection. Fail here rather than let one side drift.
-	 */
-	test('omits token_revoke, and the audit route gates the channel that makes that safe', () => {
-		assert.ok(
-			!disconnect_event_types.has('token_revoke'),
-			'a token_revoke arm here needs subscribers keyed by api-token id — see the SSE registry'
-		);
-		assert.deepStrictEqual(
-			create_audit_log_route_shape().auth.credential_types,
-			[CREDENTIAL_TYPE_SESSION],
-			'the audit stream must stay session-only while disconnect_event_types omits token_revoke'
-		);
+		assert.strictEqual(closer.close_sockets_for_session('session-hash-1'), 1);
+		assert.ok(session_stream.closed);
+		assert.ok(!sibling_stream.closed);
+
+		assert.strictEqual(closer.close_sockets_for_token('tok_abc'), 1);
+		assert.ok(token_stream.closed);
+
+		// account-wide: the remaining open stream and the pending registration
+		assert.strictEqual(closer.close_sockets_for_account(account_id), 2);
+		assert.ok(sibling_stream.closed);
+		assert.strictEqual(registry.admit(pending, create_mock_stream<string>()), false);
+
+		// idempotent — nothing left to close
+		assert.strictEqual(closer.close_sockets_for_account(account_id), 0);
+		assert.strictEqual(registry.count, 0);
+		assert.strictEqual(registry.pending_count, 0);
 	});
 });
 
@@ -148,23 +141,114 @@ describe('create_sse_auth_guard', () => {
 		assert.strictEqual(registry.count, 1);
 	});
 
-	test('ignores non-disconnect events', () => {
+	test('ignores every event that revokes nothing', () => {
 		const registry = new SubscriberRegistry<string>();
 		const stream = create_mock_stream<string>();
-		registry.subscribe(stream, { channels: ['audit_log'], groups: ['target-account-1'] });
+		registry.subscribe(stream, {
+			channels: ['audit_log'],
+			scope: 'session-hash-1',
+			groups: ['target-account-1']
+		});
 
 		const guard = create_sse_auth_guard(registry, 'admin', log);
 
+		for (const event_type of AUDIT_EVENT_TYPES) {
+			if (audit_event_revocation_scopes[event_type] !== 'none') continue;
+			guard(
+				create_audit_event({
+					event_type,
+					account_id: 'target-account-1',
+					target_account_id: 'target-account-1',
+					metadata: { role: 'admin', session_id: 'session-hash-1' }
+				})
+			);
+		}
+
+		assert.ok(!stream.closed);
+		assert.strictEqual(registry.count, 1);
+	});
+
+	test('ignores an event type fuz_app does not define', () => {
+		const registry = new SubscriberRegistry<string>();
+		const stream = create_mock_stream<string>();
+		registry.subscribe(stream, { scope: 'session-hash-1', groups: ['target-account-1'] });
+
+		const guard = create_sse_auth_guard(registry, 'admin', log);
 		guard(
 			create_audit_event({
-				event_type: 'role_grant_create',
+				event_type: 'consumer_session_revoke',
+				account_id: 'target-account-1',
 				target_account_id: 'target-account-1',
-				metadata: { role: 'admin', role_grant_id: 'p-1' }
+				metadata: { session_id: 'session-hash-1' }
 			})
 		);
 
 		assert.ok(!stream.closed);
-		assert.strictEqual(registry.count, 1);
+	});
+
+	for (const event_type of [
+		'account_delete',
+		'account_purge',
+		'logout',
+		'token_revoke_all'
+	] as const) {
+		test(`${event_type} closes the target account's streams and no other's`, () => {
+			const registry = new SubscriberRegistry<string>();
+			const target = create_mock_stream<string>();
+			registry.subscribe(target, { scope: 'session-hash-1', groups: ['target-account-1'] });
+			const actor = create_mock_stream<string>();
+			registry.subscribe(actor, { scope: 'session-hash-2', groups: ['admin-account-1'] });
+
+			const guard = create_sse_auth_guard(registry, 'admin', log);
+			guard(
+				create_audit_event({
+					event_type,
+					account_id: 'admin-account-1',
+					target_account_id: 'target-account-1'
+				})
+			);
+
+			assert.ok(target.closed);
+			assert.ok(!actor.closed, 'the acting account keeps its stream');
+		});
+	}
+
+	test('token_revoke closes the stream registered under the revoked token id', () => {
+		const registry = new SubscriberRegistry<string>();
+		const bearer = create_mock_stream<string>();
+		registry.subscribe(bearer, { scope: 'tok_revoked', groups: ['account-1'] });
+		const session = create_mock_stream<string>();
+		registry.subscribe(session, { scope: 'session-hash-1', groups: ['account-1'] });
+
+		const guard = create_sse_auth_guard(registry, 'admin', log);
+		guard(
+			create_audit_event({
+				event_type: 'token_revoke',
+				account_id: 'account-1',
+				metadata: { token_id: 'tok_revoked' }
+			})
+		);
+
+		assert.ok(bearer.closed);
+		assert.ok(!session.closed, "the account's session streams are left alone");
+	});
+
+	test('skips token_revoke with outcome=failure', () => {
+		const registry = new SubscriberRegistry<string>();
+		const bearer = create_mock_stream<string>();
+		registry.subscribe(bearer, { scope: 'tok_guessed', groups: ['account-1'] });
+
+		const guard = create_sse_auth_guard(registry, 'admin', log);
+		guard(
+			create_audit_event({
+				event_type: 'token_revoke',
+				outcome: 'failure',
+				account_id: 'attacker-account',
+				metadata: { token_id: 'tok_guessed' }
+			})
+		);
+
+		assert.ok(!bearer.closed);
 	});
 
 	test('ignores events with null target_account_id', () => {
@@ -526,8 +610,24 @@ describe('create_sse_auth_guard', () => {
 });
 
 describe('create_audit_log_sse', () => {
+	test('adds its registry to the connection closer', () => {
+		const connection_closer = create_realtime_closer();
+		const audit_sse = create_audit_log_sse({ log, connection_closer });
+		const account_id = create_uuid();
+		const stream = create_mock_stream<SseNotification>();
+		audit_sse.registry.subscribe(stream, {
+			channels: ['audit_log'],
+			scope: 'session-hash-1',
+			groups: [account_id]
+		});
+
+		assert.strictEqual(connection_closer.close_sockets_for_account(account_id), 1);
+		assert.ok(stream.closed);
+		assert.strictEqual(audit_sse.registry.count, 0);
+	});
+
 	test('on_audit_event broadcasts to registry', () => {
-		const audit_sse = create_audit_log_sse({ log });
+		const audit_sse = create_audit_log_sse({ log, connection_closer: null });
 		const stream = create_mock_stream<SseNotification>();
 		audit_sse.registry.subscribe(stream, { channels: ['audit_log'] });
 
@@ -543,7 +643,7 @@ describe('create_audit_log_sse', () => {
 	});
 
 	test('on_audit_event closes streams on role_grant_revoke', () => {
-		const audit_sse = create_audit_log_sse({ log });
+		const audit_sse = create_audit_log_sse({ log, connection_closer: null });
 		const stream = create_mock_stream<SseNotification>();
 		audit_sse.registry.subscribe(stream, { channels: ['audit_log'], groups: ['account-a'] });
 
@@ -561,7 +661,7 @@ describe('create_audit_log_sse', () => {
 	});
 
 	test('on_audit_event closes streams on session_revoke_all', () => {
-		const audit_sse = create_audit_log_sse({ log });
+		const audit_sse = create_audit_log_sse({ log, connection_closer: null });
 		const stream = create_mock_stream<SseNotification>();
 		audit_sse.registry.subscribe(stream, { channels: ['audit_log'], groups: ['account-a'] });
 
@@ -577,7 +677,7 @@ describe('create_audit_log_sse', () => {
 	});
 
 	test('a pending registration receives no audit row until it is admitted', () => {
-		const audit_sse = create_audit_log_sse({ log });
+		const audit_sse = create_audit_log_sse({ log, connection_closer: null });
 		const stream = create_mock_stream<SseNotification>();
 		const pending = audit_sse.registry.subscribe_pending({
 			channels: ['audit_log'],
@@ -593,7 +693,7 @@ describe('create_audit_log_sse', () => {
 	});
 
 	test('on_audit_event closes a registration still pending admission', () => {
-		const audit_sse = create_audit_log_sse({ log });
+		const audit_sse = create_audit_log_sse({ log, connection_closer: null });
 		const stream = create_mock_stream<SseNotification>();
 		const pending = audit_sse.registry.subscribe_pending({
 			channels: ['audit_log'],
@@ -615,7 +715,7 @@ describe('create_audit_log_sse', () => {
 	});
 
 	test('respects custom role option', () => {
-		const audit_sse = create_audit_log_sse({ role: 'steward', log });
+		const audit_sse = create_audit_log_sse({ role: 'steward', log, connection_closer: null });
 		const stream = create_mock_stream<SseNotification>();
 		audit_sse.registry.subscribe(stream, { channels: ['audit_log'], groups: ['account-a'] });
 
@@ -641,7 +741,7 @@ describe('create_audit_log_sse', () => {
 	});
 
 	test('broadcast happens before guard closes stream', () => {
-		const audit_sse = create_audit_log_sse({ log });
+		const audit_sse = create_audit_log_sse({ log, connection_closer: null });
 		const stream = create_mock_stream<SseNotification>();
 		audit_sse.registry.subscribe(stream, { channels: ['audit_log'], groups: ['account-a'] });
 
@@ -664,7 +764,7 @@ describe('create_audit_log_sse', () => {
 		// get the documented per-scope cap (10 tabs per session).
 		assert.strictEqual(AUDIT_LOG_SSE_MAX_PER_SCOPE, 10);
 
-		const audit_sse = create_audit_log_sse({ log });
+		const audit_sse = create_audit_log_sse({ log, connection_closer: null });
 		const streams: Array<ReturnType<typeof create_mock_stream<SseNotification>>> = [];
 
 		// Saturate one session scope; account id lives in groups (uncapped).
@@ -689,7 +789,7 @@ describe('create_audit_log_sse', () => {
 		// Many sessions under one account — each session has one tab. The cap
 		// applies per session scope, so the shared account_id in groups does
 		// not trigger eviction.
-		const audit_sse = create_audit_log_sse({ log });
+		const audit_sse = create_audit_log_sse({ log, connection_closer: null });
 		const streams: Array<ReturnType<typeof create_mock_stream<SseNotification>>> = [];
 
 		for (let i = 0; i < AUDIT_LOG_SSE_MAX_PER_SCOPE + 5; i++) {
@@ -707,7 +807,7 @@ describe('create_audit_log_sse', () => {
 	});
 
 	test('max_per_scope: null disables the cap', () => {
-		const audit_sse = create_audit_log_sse({ log, max_per_scope: null });
+		const audit_sse = create_audit_log_sse({ log, connection_closer: null, max_per_scope: null });
 
 		for (let i = 0; i < AUDIT_LOG_SSE_MAX_PER_SCOPE + 3; i++) {
 			audit_sse.registry.subscribe(create_mock_stream<SseNotification>(), {
@@ -720,7 +820,7 @@ describe('create_audit_log_sse', () => {
 	});
 
 	test('max_per_scope override is respected', () => {
-		const audit_sse = create_audit_log_sse({ log, max_per_scope: 2 });
+		const audit_sse = create_audit_log_sse({ log, connection_closer: null, max_per_scope: 2 });
 		const streams: Array<ReturnType<typeof create_mock_stream<SseNotification>>> = [];
 
 		for (let i = 0; i < 4; i++) {

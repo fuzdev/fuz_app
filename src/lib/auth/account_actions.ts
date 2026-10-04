@@ -17,6 +17,11 @@
  * so passing another account's session or token id returns `revoked: false`
  * rather than revealing whether the id exists.
  *
+ * Every handler that ends a credential closes the connections it opened,
+ * after the handler's transaction commits (`queue_connection_close` on
+ * `deps.connection_closer`): the two session revokes, the token revoke, and
+ * `account_token_create` for the tokens its cap evicts.
+ *
  * Counterpart to `auth/account_routes.ts`, which keeps the cookie-lifecycle flows
  * (`login`, `logout`, `password`, `signup`, `bootstrap`) on REST.
  *
@@ -24,7 +29,7 @@
  */
 
 import { rpc_action, type ActionAuthContext, type RpcAction } from '../actions/action_rpc.ts';
-import type { ConnectionCloser } from '../actions/connection_closer.ts';
+import { queue_connection_close } from '../actions/connection_closer.ts';
 import { to_session_account, type SessionAccountJson } from './account_schema.ts';
 import {
 	query_session_list_for_account,
@@ -45,7 +50,7 @@ import {
 import { token_lifetime_to_expires_at } from './token_lifetime.ts';
 import { generate_api_token } from './api_token.ts';
 import { DEFAULT_MAX_TOKENS } from './account_route_schema.ts';
-import type { ActionFactoryDeps } from './deps.ts';
+import type { RevokingActionFactoryDeps } from './deps.ts';
 import { to_iso8601_seconds } from '../timestamp.ts';
 import {
 	account_verify_action_spec,
@@ -79,34 +84,25 @@ export interface AccountActionOptions {
 	 * `DEFAULT_MAX_TOKENS`; pass `null` to disable the cap.
 	 */
 	max_tokens?: number | null;
-	/**
-	 * Live-connection closer — when set, `account_session_revoke` /
-	 * `_session_revoke_all` / `account_token_revoke` handlers eagerly close
-	 * affected WebSocket sockets BEFORE emitting the corresponding audit
-	 * event. Closes the audit-failure-leaks-WS surface: the listener-based
-	 * close (`transports_ws_auth_guard`) only fires after the audit INSERT
-	 * succeeds, so a DB error would leave live sockets stale. `BackendWebsocketTransport`
-	 * satisfies this interface structurally; consumers pass their transport
-	 * instance directly. When absent, only the listener-based close runs.
-	 * Mirrors `zzz_server`'s handler-side `close_sockets_for_*` calls.
-	 */
-	connection_closer?: ConnectionCloser | null;
 }
 
 /**
  * Create the self-service account RPC actions.
  *
- * @param deps - `ActionFactoryDeps` (`log`, `audit`). `audit.emit` writes
- *   audit rows via the captured pool; the bound emitter encapsulates
- *   `on_audit_event` fan-out and the optional `AuditLogConfig`.
+ * @param deps - `RevokingActionFactoryDeps` (`log`, `audit`,
+ *   `connection_closer`). `audit.emit` writes audit rows via the captured
+ *   pool; the bound emitter encapsulates `on_audit_event` fan-out and the
+ *   optional `AuditLogConfig`. `connection_closer` closes a revoked
+ *   credential's live connections after the revocation commits.
  * @param options - per-factory configuration
  * @returns the `RpcAction` array to spread into a `create_rpc_endpoint` call
  */
 export const create_account_actions = (
-	deps: ActionFactoryDeps,
+	deps: RevokingActionFactoryDeps,
 	options: AccountActionOptions = {}
 ): Array<RpcAction> => {
-	const { max_tokens = DEFAULT_MAX_TOKENS, connection_closer = null } = options;
+	const { max_tokens = DEFAULT_MAX_TOKENS } = options;
+	const { connection_closer } = deps;
 
 	const verify_handler = (_input: VerifyInput, ctx: ActionAuthContext): SessionAccountJson => {
 		return to_session_account(ctx.auth.account);
@@ -129,20 +125,18 @@ export const create_account_actions = (
 			input.session_id,
 			ctx.auth.account.id
 		);
-		// Handler-side belt+suspenders: close the live WS socket bound to this
-		// session BEFORE the audit emit, so revocation lands even if the audit
-		// INSERT fails. The real ordering invariant is "before the transaction
-		// commits": this handler runs inside the dispatcher's transaction
-		// (side_effects: true), so any throw between this close and the return
-		// would roll back the DB revoke while leaving the socket severed. That
-		// is benign — the session is still valid, the client reconnects — but
-		// don't introduce a throw here without acknowledging the trade.
-		// Only fire on success — failure carries an attacker-guessable
-		// session_id and the listener-based close already ignores failure
-		// outcomes for the same reason. Idempotent — the audit listener runs a
-		// second close on success but matches no sockets the second time.
-		if (revoked && connection_closer) {
-			connection_closer.close_sockets_for_session(input.session_id);
+		// Close the connections this session opened, once the revoke has
+		// committed — queued, so it never runs before the commit or for a
+		// revoke that rolled back, and it does not depend on the audit write
+		// below. Only on success: a failed revoke carries a caller-supplied
+		// session_id, and closing on it would let any account close another's
+		// connections by guessing a hash. The audit listener repeats the close
+		// on the announced row; closing is idempotent.
+		if (revoked) {
+			queue_connection_close(ctx, connection_closer, {
+				kind: 'session',
+				session_token_hash: input.session_id
+			});
 		}
 		deps.audit.emit(ctx, {
 			event_type: 'session_revoke',
@@ -160,17 +154,14 @@ export const create_account_actions = (
 		ctx: ActionAuthContext
 	): Promise<SessionRevokeAllOutput> => {
 		const count = await query_session_revoke_all_for_account(ctx, ctx.auth.account.id);
-		// Handler-side belt+suspenders — see session_revoke_handler comment.
-		// Close fires regardless of `count` (today `count >= 1` always — the
-		// caller is using the session they're revoking; future bearer / daemon-
-		// token-credentialed callers may hit `count: 0`). Symmetric with the
-		// admin revoke-all handlers in `admin_actions.ts`, where `count: 0` is
-		// a real outcome (target account had no live sessions/tokens) and the
-		// eager close still fires to scrub sockets that the audit listener
-		// would otherwise miss when the INSERT fails. Idempotent at all counts.
-		if (connection_closer) {
-			connection_closer.close_sockets_for_account(ctx.auth.account.id);
-		}
+		// Post-commit close — see session_revoke_handler. Queued regardless of
+		// `count` (today `count >= 1` always — the caller is using a session
+		// it is revoking), symmetric with the admin revoke-all handlers in
+		// `admin_actions.ts`, where `count: 0` is a real outcome.
+		queue_connection_close(ctx, connection_closer, {
+			kind: 'account',
+			account_id: ctx.auth.account.id
+		});
 		deps.audit.emit(ctx, {
 			event_type: 'session_revoke_all',
 			account_id: ctx.auth.account.id,
@@ -202,7 +193,14 @@ export const create_account_actions = (
 			expires_at
 		);
 		if (max_tokens != null) {
-			await query_api_token_enforce_limit(ctx, ctx.auth.account.id, max_tokens);
+			const evicted = await query_api_token_enforce_limit(ctx, ctx.auth.account.id, max_tokens);
+			// The cap deleted the evicted rows; the connections they opened end
+			// only when closed, and only after the commit — the same post-commit
+			// close the revocations use. No audit row: there is no eviction
+			// event, and `token_create` records the mint that caused it.
+			for (const api_token_id of evicted) {
+				queue_connection_close(ctx, connection_closer, { kind: 'token', api_token_id });
+			}
 		}
 		deps.audit.emit(ctx, {
 			event_type: 'token_create',
@@ -250,9 +248,12 @@ export const create_account_actions = (
 			input.token_id,
 			ctx.auth.account.id
 		);
-		// Handler-side belt+suspenders — see session_revoke_handler comment.
-		if (revoked && connection_closer) {
-			connection_closer.close_sockets_for_token(input.token_id);
+		// Post-commit close, on success only — see session_revoke_handler.
+		if (revoked) {
+			queue_connection_close(ctx, connection_closer, {
+				kind: 'token',
+				api_token_id: input.token_id
+			});
 		}
 		deps.audit.emit(ctx, {
 			event_type: 'token_revoke',

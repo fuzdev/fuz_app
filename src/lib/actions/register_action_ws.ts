@@ -44,8 +44,13 @@
  * cap is enforced only by `admit`, so a refused upgrade evicts nothing, and
  * pending registrations never count toward it.
  *
- * Not every revocation here closes after its commit yet, so one interleaving
- * remains: see `docs/security.md` §Connection Admission, "Limits".
+ * That argument needs every revocation to close only after its commit —
+ * otherwise a close could miss the registration while the re-read still sees
+ * the credential alive. Every one does: the revocation handlers queue their
+ * close behind the commit (`queue_connection_close`), and the audit emitter
+ * announces a success row to the listeners behind it too. So no interleaving
+ * admits a revoked credential; `docs/security.md` §Connection Admission says
+ * what that rests on.
  *
  * A refused upgrade is closed with `WS_CLOSE_SESSION_REVOKED` (4001, the
  * reason a revoked socket gets), or `WS_CLOSE_INTERNAL_ERROR` (1011) when the
@@ -117,6 +122,7 @@ import { TOKEN_SCOPE_KEY, TEST_CONTEXT_PRESET_KEY } from '../hono_context.ts';
 import type { Db } from '../db/db.ts';
 import { type Action } from './action_types.ts';
 import { compile_action_registry } from './compile_action_registry.ts';
+import type { RealtimeCloser } from './connection_closer.ts';
 import { cancel_action_spec, CancelNotificationParams } from './cancel.ts';
 import {
 	DEFAULT_WS_MAX_MESSAGE_BYTES,
@@ -318,6 +324,17 @@ export interface RegisterActionWsOptions {
 	 */
 	transport?: BackendWebsocketTransport;
 	/**
+	 * The backend's closer — `deps.connection_closer`. This endpoint's
+	 * transport is added to it, so every revocation handler's close reaches
+	 * the sockets opened here. Required so it can't be forgotten: left out of
+	 * the closer, a transport's sockets close only through the audit listener,
+	 * which a failed audit write or a session / token cap eviction never
+	 * reaches. Pass `null` only when no revocation has to reach this transport
+	 * (a harness driving the dispatcher directly), or when the transport was
+	 * added by hand.
+	 */
+	connection_closer: RealtimeCloser | null;
+	/**
 	 * Per-account connection cap for the transport this call creates — see
 	 * `BackendWebsocketTransportOptions.max_connections_per_account`
 	 * (evict-oldest, closing with `WS_CLOSE_CONNECTION_LIMIT`; `null`
@@ -410,8 +427,9 @@ export interface RegisterActionWsResult {
  *   wrap iff `spec.side_effects: true`) → DEV output validation.
  * - Authorization phase runs **per message** — role_grant changes during a
  *   connection lifetime are picked up on the next message without any
- *   in-place refresh. Authentication invalidation closes the socket via
- *   `create_ws_auth_guard`.
+ *   in-place refresh. Authentication invalidation closes the socket: the
+ *   revocation handlers through `connection_closer`, and `create_ws_auth_guard`
+ *   on the audit row.
  * - Admission re-reads the credential once, after the handshake: a socket
  *   whose session or token was revoked while it was upgrading closes with
  *   `WS_CLOSE_SESSION_REVOKED`, and one whose re-check failed with
@@ -424,6 +442,7 @@ export interface RegisterActionWsResult {
  * @mutates options.app - registers a `GET path` route via `upgradeWebSocket`
  * @mutates options.transport - per socket, registers, admits, and removes a
  *   connection via `register_pending` / `admit` / `remove_connection`
+ * @mutates options.connection_closer - adds the endpoint's transport
  * @throws Error when `max_connections_per_account` is passed alongside
  *   `transport`, or is neither `null` nor a positive integer
  */
@@ -457,6 +476,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			max_connections_per_account: options.max_connections_per_account,
 			log
 		});
+	options.connection_closer?.add(transport);
 
 	// Build the dispatcher's per-method lookup. Only request_response
 	// specs with a handler reach `action_map` — perform_action is the
@@ -507,11 +527,13 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// and re-read once at admission (`onOpen` below) — never per
 			// message: per-message dispatch reloads role_grants via the
 			// authorization phase and nothing else. From admission on,
-			// revocation enforcement lives outside this dispatcher, in the
-			// audit-driven WS auth guard (`transports_ws_auth_guard.ts`) and
-			// the handlers' `ConnectionCloser` calls. Without one of them
-			// wired, `session_revoke` / `token_revoke` are no-ops for
-			// connections that are already open.
+			// revocation enforcement lives outside this dispatcher: the
+			// revocation handlers close through `deps.connection_closer`
+			// (which holds this endpoint's transport — see the
+			// `connection_closer` option), and the audit-driven WS auth guard
+			// (`transports_ws_auth_guard.ts`) repeats the close. With neither
+			// reaching this transport, `session_revoke` / `token_revoke` are
+			// no-ops for connections that are already open.
 			const upgrade_context = require_request_context(c);
 			const account_id: Uuid = upgrade_context.account.id;
 			const client_ip = get_client_ip(c);
@@ -948,19 +970,25 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				// via `emit_after_commit` (WS notifications). Both flush
 				// in the `finally` so the next message sees a clean slate.
 				//
+				// Ordering invariant — the deferred queue starts first. Its
+				// thunks are invoked before the eager writes are awaited, so
+				// a revocation's close never waits on the audit INSERT: held
+				// behind a slow write, the socket would stay open on a
+				// credential already committed gone, and its next frame
+				// would be dispatched. The thunks that need a write (a
+				// success row's listener fan-out) await it themselves.
+				//
 				// Ordering invariant — reply-before-flush is load-bearing.
-				// Handlers that revoke their own credential
+				// A handler that revokes its own credential
 				// (`session_revoke_all`, `token_revoke` of the calling
-				// bearer) audit-emit events whose listener chain — wired
-				// by the WS auth guard in `transports_ws_auth_guard.ts` —
-				// closes this socket when the audit row writes. The
-				// synchronous `ws.send` on the success path returns
-				// before any close can fire (the DB write that triggers
-				// the chain is async — even in production with
-				// `await_pending_effects: false`, the listener chain only
-				// runs after the row lands). Inverting the order —
-				// flushing the queues before the send — would silently
-				// strand the caller without a reply.
+				// bearer) queues a close of this very socket on
+				// `post_commit_effects` (`queue_connection_close`), and
+				// the audit listeners repeat it from the same queue. The
+				// `ws.send` on the success path runs before the `finally`
+				// flushes that queue, so the caller reads its reply and
+				// then the 4001 close. Inverting the order — flushing the
+				// queues before the send — would strand the caller without
+				// a reply.
 				const pending_effects: Array<Promise<void>> = [];
 				const post_commit_effects: Array<() => void | Promise<void>> = [];
 
@@ -1002,11 +1030,31 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 							action_account_rate_limiter
 						}
 					);
-					ws.send(JSON.stringify(perform_action_result_to_envelope(id, result)));
+					let frame: string;
+					try {
+						frame = JSON.stringify(perform_action_result_to_envelope(id, result));
+					} catch (error) {
+						// The handler's output is not JSON (a `bigint`, a cycle). Answer
+						// `internal_error` rather than throwing: the adapter does not await
+						// this promise, so a rejection here is unhandled, and the caller
+						// would get no reply to a request that did run.
+						log.error(`action result is not serializable: ${method}`, error);
+						frame = JSON.stringify(
+							create_jsonrpc_error_response(
+								id,
+								jsonrpc_error_messages.internal_error(
+									dev_only(error instanceof Error ? error.message : undefined)
+								)
+							)
+						);
+					}
+					ws.send(frame);
 				} finally {
 					pending_controllers.delete(id);
+					// deferred first — see the ordering invariant above
+					const deferred = flush_post_commit_effects(post_commit_effects, log);
 					await flush_pending_effects(pending_effects, log);
-					await flush_post_commit_effects(post_commit_effects, log);
+					await deferred;
 				}
 			};
 

@@ -16,9 +16,9 @@ documents the cross-cutting invariants that don't fit on any single symbol.
 
 ## AppDeps split
 
-- **Capabilities** — `AppDeps` — stateless, injectable per env: `read_secure_file` (hardened bootstrap-token read), `delete_file`, `keyring`, `password`, `db`, `log`, `audit`.
+- **Capabilities** — `AppDeps` — stateless, injectable per env: `read_secure_file` (hardened bootstrap-token read), `delete_file`, `keyring`, `password`, `db`, `log`, `audit`, `connection_closer` (the `RealtimeCloser` every revocation handler closes live connections through — `actions/CLAUDE.md` §Connection closer).
 - **Route caps** — `RouteFactoryDeps` — `Omit<AppDeps, 'db'>`; handlers get `db` via `RouteContext`.
-- **Action caps** — `ActionFactoryDeps` (`auth/deps.ts`) — the `{log, audit}` shape action factories take; `RouteFactoryDeps`/`AppDeps` satisfy it structurally (role-grant-offer adds `notification_sender?`). The two pure-read actor factories (`actor_lookup`/`actor_search`) take only `{log: Logger}`.
+- **Action caps** — `ActionFactoryDeps` (`auth/deps.ts`) — the `{log, audit}` shape action factories take; `RouteFactoryDeps`/`AppDeps` satisfy it structurally (role-grant-offer adds `notification_sender?`). The factories whose handlers end credentials (`create_account_actions`, `create_admin_actions`, and the standard bundle) take `RevokingActionFactoryDeps` — `ActionFactoryDeps` plus a required `connection_closer`. The two pure-read actor factories (`actor_lookup`/`actor_search`) take only `{log: Logger}`.
 - **Parameters** — `*Options` — static startup values, per-factory.
 - **Runtime state** — inline ref — mutable values: `bootstrap_status`, `DaemonTokenState`. NOT in deps or options.
 
@@ -81,8 +81,8 @@ All take `deps: QueryDeps = {db}` first; `query_validate_api_token` adds `log`.
 - `auth/actor_search_queries.ts` — case-insensitive prefix search on `actor.name`, scope-filtered when not admin.
 - `auth/role_grant_queries.ts` — idempotent create, IDOR-guarded revoke (with in-tx supersede), scope-aware lookup, role/account predicates, `query_role_grant_revoke_for_scope` parent-scope cascade.
 - `auth/role_grant_offer_queries.ts` — offer create/decline/retract/list/history/sweep, atomic `query_accept_offer` with sibling supersede; error classes `RoleGrantOfferSelfTargetError` / `_AlreadyTerminalError` / `_ExpiredError` / `_NotFoundError` / `_ActorAccountMismatchError` / `_ActorMismatchError`.
-- `auth/session_queries.ts` — server-side sessions (blake3-hashed), `query_session_revoke_by_hash_unscoped` (logout only), `query_session_enforce_limit` (transaction-required). No touch/renewal query — `expires_at` is an absolute cap set at mint (`AUTH_SESSION_LIFETIME_MS`).
-- `auth/api_token_queries.ts` — token validation with fire-and-forget usage tracking, `query_api_token_live_account` (the by-id, no-touch re-check read; shares the `API_TOKEN_IS_LIVE` predicate with the validate query so the two can't drift), IDOR-guarded revoke, `query_api_token_enforce_limit` (transaction-required).
+- `auth/session_queries.ts` — server-side sessions (blake3-hashed), `query_session_revoke_by_hash_unscoped` (logout only), `query_session_enforce_limit` (transaction-required; returns the evicted sessions' ids — their token hashes — so the caller closes their connections after the commit). No touch/renewal query — `expires_at` is an absolute cap set at mint (`AUTH_SESSION_LIFETIME_MS`).
+- `auth/api_token_queries.ts` — token validation with fire-and-forget usage tracking, `query_api_token_live_account` (the by-id, no-touch re-check read; shares the `API_TOKEN_IS_LIVE` predicate with the validate query so the two can't drift), IDOR-guarded revoke, `query_api_token_enforce_limit` (transaction-required; returns the evicted tokens' ids for the same post-commit close).
 - `auth/invite_queries.ts` — invite create/find/claim/list/delete; `query_invite_claim_unscoped` (scoping enforced upstream by `_find_unclaimed_match_for_update`, which runs inside the signup tx with `FOR UPDATE` so find + claim are atomic).
 - `auth/app_settings_queries.ts` — load/update for the single-row settings table.
 - `auth/audit_log_queries.ts` — `query_audit_log` (in-tx insert), `_list` / `_list_with_usernames` / `_list_role_grant_history` / `_cleanup_before`, drift counters (`get_audit_metadata_validation_failures` / `get_audit_unknown_event_type_failures`).
@@ -123,19 +123,42 @@ upstream in `auth/signup_routes.ts` via `query_invite_find_unclaimed_match_for_u
 `audit_factory` callback over `create_audit_emitter`; closes over the pool +
 its registered listeners + optional `AuditLogConfig`. Six methods:
 
-- `emit(ctx, input)` — fire-and-forget pool write, pushes to `ctx.pending_effects`
+- `emit(ctx, input)` — fire-and-forget pool write, pushes to `ctx.pending_effects`; a success row's listener fan-out goes on `ctx.post_commit_effects`
 - `emit_role_grant_target(ctx, auth, input)` — lifts `actor_id` / `account_id` / `ip` boilerplate for role-grant-shape events
-- `emit_pool(input)` — awaitable pool write for code paths without `pending_effects` (ad-hoc maintenance scripts; not for success audits paired with a mutation — those write in-tx and `notify` post-commit)
+- `emit_pool(input)` — awaitable pool write for code paths without a request context (ad-hoc maintenance scripts; not for success audits paired with a mutation — those write in-tx and `notify` post-commit). Writes, then notifies, whatever the outcome
 - `notify(event)` — fan out an already-written row to listeners (used by in-tx audit batches like `query_accept_offer.audit_events`)
 - `add_listener(listener)` — append-only listener registration (twin of Rust `fuz_auth` `AuditEmitter::add_listener`)
 - `listener_count()` — registered-listener count, for tests / diagnostics
 
 Listeners are closure-private and append-only. `create_app_server` registers
-the audit-log SSE listener and per-endpoint WS auth guards / logout closers via
+the audit-log SSE listener and per-endpoint WS auth guards via
 `add_listener` so SSE + WS fan-out compose on top of the consumer's
 `on_audit_event` callback without shallow-copying `AppDeps`. `notify` iterates a
 snapshot so a listener registered mid-fan-out fires only on the next event
 (converges with the Rust twin's cloned vec).
+
+**When listeners hear about a row.** `emit` always writes at once, on the pool
+(the row survives a rollback). The fan-out depends on the outcome: a
+**failure** row is announced as soon as it is written — the attempt happened
+whatever the transaction does; a **success** row is announced only after the
+request's transaction commits (a thunk on `ctx.post_commit_effects` that awaits
+the write) and never when the handler throws. The listeners act on a success
+row — the revocation guards close connections, the audit stream broadcasts it
+— so announcing one before its commit would close while the revoked credential
+still reads as valid, and a rolled-back revocation would close anyway. The
+Rust spine gets the same order by writing a success row in the transaction and
+queueing its fan-out behind the commit. `AuditEmitterContext` is therefore
+`{pending_effects, post_commit_effects}` — `RouteContext` and `ActionContext`
+both satisfy it.
+
+**Revocation scopes** (`auth/audit_log_schema.ts`) —
+`audit_event_revocation_scopes` declares, per builtin event type, what a
+successful row invalidates (`RevocationScope`: `none` / `session` / `token` /
+`account` / `role`), and `to_revocation_scope(event_type)` reads it (an unknown
+event type is `none`). Typed over `AuditEventType`, so a new event type does not
+compile until it declares its scope. Both revocation listeners
+(`create_ws_auth_guard`, `create_sse_auth_guard`) dispatch on it. Twin of the
+`revocation_scope` column on the Rust `AUDIT_EVENT_SPECS`.
 
 **Drift counters** (`auth/audit_log_queries.ts`) — `audit_metadata_validation_failures`
 and `audit_unknown_event_type_failures` are process-wide, fail-open
@@ -176,6 +199,12 @@ tokens (force re-auth everywhere), then clears the session cookie. Declares
 `credential_types: ['session']` (see ../../../docs/security.md
 §Credential-channel gating).
 
+**The routes close what they revoke, after the commit.** `/logout` and
+`/password` queue an account-wide close, and `/login` queues a session close
+for each session its cap evicted (`queue_connection_close` on
+`deps.connection_closer`). The queue runs once the route's transaction has
+committed and is dropped if the handler throws.
+
 REST-only post RPC migration: `/login`, `/logout`, `/password`, `/signup`,
 `/bootstrap`, `/verify` (empty-body shim), optional `/audit/stream`.
 Everything else listed under §RPC action surfaces.
@@ -184,7 +213,7 @@ Everything else listed under §RPC action surfaces.
 
 - `auth/middleware.ts` — `create_auth_middleware_specs(deps, options)` assembles `[origin, session, request_context, bearer_auth]` + optional `daemon_token`.
 - `auth/request_context.ts` — `RequestContext`, `resolve_acting_actor`, `build_request_context`, predicates (`has_role`, `has_scoped_role`, `has_any_scoped_role` — the dispatcher's role gate and every builtin-role check read the **global** grant via `has_scoped_role(_, role, null)` / `has_any_scoped_role(_, roles, null)`; scope-blind `has_role` is never the gate for a builtin role), guards (`require_auth`, `require_role`, `require_credential_types`, `require_token_scope`), `token_scope_surface_denial` (the direct-call form, for surfaces that aren't route specs), `refresh_role_grants`.
-- `auth/session_middleware.ts` — `process_session_cookie` integration, `create_session_and_set_cookie` (shared by login / signup / bootstrap).
+- `auth/session_middleware.ts` — `process_session_cookie` integration, `create_session_and_set_cookie` (shared by login / signup / bootstrap; returns the token hashes of the sessions the cap evicted, which the caller closes after its commit — only login passes a cap).
 - `auth/resolved_auth.ts` — `ResolvedAuth` (the resolved credential as one value: `account_id`, `credential_type`, `token_hash`, `api_token_id`), `get_resolved_auth(c)` (gathers it from the context keys the auth middleware set), and `revalidate_resolved_auth(deps, resolved)`, the no-touch re-read a long-lived connection runs once it is registered: session row / token row (by id) still live and still on the account, account not soft-deleted; a daemon token re-reads its account only. Reuses the middleware's own queries and predicates. Called by the WS upgrade (`actions/register_action_ws.ts`) and the audit SSE route between registering a connection pending and admitting it. Twin of the Rust `revalidate_resolved_auth`.
 - `auth/bearer_auth.ts` — soft-fail bearer middleware; rejects when `Origin` or `Referer` present (browser context).
 - `auth/daemon_token_middleware.ts` — `create_daemon_token_middleware(state, deps, log)` — the credential **consumer** only (soft-fail validation, keeper account resolution). The producer (`write_daemon_token` / `start_daemon_token_rotation`) lives in `testing/daemon_token_rotation.ts` behind the dev-env guard — no production assembly mints daemon tokens, mirroring the Rust spine's `fuz_testing`-confined producer. Soft-fails — discards the credential (pass-through, no own 401/503) on **every** non-success path: browser context (`Origin`/`Referer` present), malformed/invalid token, and valid-token-but-no-keeper all `next()` through to the dispatcher's `credential_type_required` (403) gate, mirroring the bearer guard and the Rust spine's `resolve.rs`. Daemon tokens are loopback-only, so browser context never arises in practice — the discard is defense-in-depth.
@@ -587,11 +616,13 @@ Closure state:
   directly (`query_app_settings_load`/`query_app_settings_update`);
   `auth/signup_routes.ts` reads the current value fresh per request. There is no
   `options.app_settings` ref.
-- `options.connection_closer?` — handler-side eager WS close on
-  `admin_session_revoke_all` / `admin_token_revoke_all` BEFORE the audit
-  emit so revocation lands even on audit INSERT failure. Listener-based
-  close (`transports_ws_auth_guard`) stays as a fail-safe. Failure outcomes
-  skip the eager close.
+- `deps.connection_closer` (required, `RevokingActionFactoryDeps`) —
+  `admin_session_revoke_all` / `admin_token_revoke_all` / `account_delete` /
+  `account_purge` queue a close of the target account's live connections
+  (`queue_connection_close`), run after the handler's transaction commits and
+  dropped if it throws. The close does not depend on the audit write; the
+  audit listeners repeat it on the announced row. Failure outcomes queue no
+  close.
 
 Failure-outcome audit rows: `admin_session_revoke_all` and `_token_revoke_all`
 emit an `outcome: 'failure'` row on `ERROR_ACCOUNT_NOT_FOUND` for forensic
@@ -752,11 +783,14 @@ gated event also records `credential_type` in metadata (mirrors REST
 `password_change`).
 
 Options: `max_tokens?: number | null` (defaults to `DEFAULT_MAX_TOKENS`;
-`null` disables), `connection_closer?: ConnectionCloser | null`. Each handler
-fires `close_sockets_for_*` synchronously BEFORE the audit emit. Failure
-outcomes (`revoked: false`) skip the eager close — mirrors the listener's
+`null` disables). Deps: `RevokingActionFactoryDeps` — `log`, `audit`, and the
+required `connection_closer`. Each revoking handler queues its close
+(`queue_connection_close`: one session, one token, or the account), which runs
+after the handler's transaction commits and is dropped if it throws;
+`account_token_create` queues a token close for each token its cap evicts.
+Failure outcomes (`revoked: false`) queue no close — mirrors the listeners'
 `outcome === 'failure'` guard so attacker-guessable ids can't target
-arbitrary sockets.
+arbitrary connections.
 
 ### Standard RPC bundle
 
@@ -769,8 +803,8 @@ app-settings methods are always wired). Frontend mirror is
 
 Option routing — `roles` is shared between admin + role-grant-offer;
 `default_ttl_ms` + `authorize` → role-grant-offer
-only; `max_tokens` → account only; `connection_closer` → admin + account;
-`notification_sender` → role-grant-offer only.
+only; `max_tokens` → account only. On `deps`: `notification_sender` →
+role-grant-offer only; `connection_closer` (required) → admin + account.
 
 Pair with `create_app_server`'s `rpc_endpoints` factory form
 `(ctx) => Array<RpcEndpointSpec>` so the combined action list gets

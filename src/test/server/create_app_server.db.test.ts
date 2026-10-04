@@ -29,6 +29,7 @@ import { stub_password_deps } from '$lib/testing/app_server.ts';
 import { create_pglite_factory } from '$lib/testing/db.ts';
 import { run_migrations } from '$lib/db/migrate.ts';
 import { auth_migration_ns } from '$lib/auth/migrations.ts';
+import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
 
 // 32+ char key for keyring
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
@@ -80,6 +81,7 @@ const create_config = async (overrides?: Partial<AppServerOptions>): Promise<App
 			password: stub_password_deps,
 			db,
 			audit: create_audit_emitter({ db, log }),
+			connection_closer: create_realtime_closer(),
 			...fs_stubs
 		}
 	};

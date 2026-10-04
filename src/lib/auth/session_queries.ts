@@ -215,17 +215,23 @@ export const query_session_list_for_account = async (
  * Expired-but-unreaped rows count toward the cap (the predicate is `account_id`
  * alone). Matches the Rust twin `query_session_enforce_limit`.
  *
+ * Deleting a session row does not end the connections it opened: a WebSocket
+ * keeps the authority it resolved at upgrade and an SSE stream never rechecks.
+ * The returned ids are the token hashes those connections are registered
+ * under, so the caller closes them once the transaction commits
+ * (`queue_connection_close`) — `POST /login` does.
+ *
  * @param deps - query dependencies (must be transaction-scoped)
  * @param account_id - the account to enforce the limit for
  * @param max_sessions - maximum number of sessions to keep
- * @returns the number of sessions evicted
+ * @returns the evicted sessions' ids (their token hashes), empty when nothing was evicted
  * @mutates `auth_session` table - deletes the oldest rows past the cap
  */
 export const query_session_enforce_limit = async (
 	deps: QueryDeps,
 	account_id: string,
 	max_sessions: number
-): Promise<number> => {
+): Promise<Array<string>> => {
 	const rows = await deps.db.query<{ id: string }>(
 		`DELETE FROM auth_session
 		 WHERE id IN (
@@ -236,7 +242,7 @@ export const query_session_enforce_limit = async (
 		 ) RETURNING id`,
 		[account_id, max_sessions]
 	);
-	return rows.length;
+	return rows.map((row) => row.id);
 };
 
 /**

@@ -1,23 +1,35 @@
 /**
- * SSE auth guard and convenience factory for audit log SSE.
+ * SSE auth guard, connection closer, and convenience factory for audit log SSE.
  *
- * `create_sse_auth_guard` bridges audit events to `SubscriberRegistry.close_by_identity()`,
- * closing SSE streams when a subscriber's access is revoked (role revocation or
- * session invalidation).
+ * An SSE stream is authorized once, at open, and then only emits — nothing
+ * re-reads its credential or its role. Two things close it when its access is
+ * revoked:
+ *
+ * - `create_sse_connection_closer` adapts a `SubscriberRegistry` to
+ *   `ConnectionCloser`, so the revocation handlers close streams directly
+ *   after their transaction commits (`queue_connection_close`), whatever
+ *   happens to the audit write.
+ * - `create_sse_auth_guard` is the audit-event listener: it repeats those
+ *   closes when the row is announced, and it is the only closer for a role
+ *   revocation.
  *
  * `create_audit_log_sse` is a convenience factory that combines the registry,
- * guard, and broadcaster — making the secure path the easy path for consumers.
+ * guard, closer, and broadcaster — making the secure path the easy path for
+ * consumers.
  *
  * @module
  */
 
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
+import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 
 import {
 	AUDIT_EVENT_TYPES,
 	AuditLogEventJson,
+	to_revocation_scope,
 	type AuditLogEvent
 } from '../auth/audit_log_schema.ts';
+import type { ConnectionCloser, RealtimeCloser } from '../actions/connection_closer.ts';
 import { SubscriberRegistry } from './subscriber_registry.ts';
 import type { SseNotification, EventSpec } from './sse.ts';
 
@@ -25,51 +37,52 @@ import type { SseNotification, EventSpec } from './sse.ts';
 export const AUDIT_LOG_CHANNEL = 'audit_log';
 
 /**
- * Audit event types that trigger SSE stream disconnection — the union of
- * access-invalidation events. Over-closing a one-way admin feed is cheap (the
- * client reconnects if still authorized), so the SSE set is the full union.
+ * Adapt a `SubscriberRegistry` to `ConnectionCloser`, so a revocation handler's
+ * close reaches its streams.
  *
- * `role_grant_revoke` requires the revoked role to match the guard's `required_role`
- * (or is skipped entirely when `required_role` is `null` — useful for streams
- * not gated by any specific role_grant). The WS half deliberately omits this
- * event (per-message re-authorization picks role changes up there); a one-way
- * SSE stream has no per-message recheck, so it must close here.
- * `session_revoke_all` / `token_revoke_all` / `password_change` / `logout` close
- * every stream for the target account.
- * `session_revoke` closes only the stream tied to the specific revoked session
- * (matched by the blake3 session hash in `event.metadata.session_id`) — closing
- * all of a user's streams for a single-session revoke would be over-aggressive.
- * The single `token_revoke` the WS half handles is omitted, and what makes that
- * correct is a gate rather than an assumption: the audit route declares
- * `credential_types: ['session']` (`auth/audit_log_route_schema.ts`), so a
- * bearer is refused at the channel and no stream is ever keyed by a single
- * token id. **A consumer that widens that gate must key its subscribers by
- * api-token id and add `token_revoke` here** — otherwise a revoked token keeps
- * receiving audit rows for the life of the connection. The Rust twin enforces
- * the same pairing structurally, via the `RevocationScope` column on
- * `AUDIT_EVENT_SPECS`.
+ * Each method is `SubscriberRegistry.close_by_identity` on the id it is given,
+ * so it closes the streams registered under that id as their `scope` or in
+ * their `groups` — pending registrations included. The audit stream route
+ * registers `scope = session hash` and `groups = [account id]`; a route that
+ * admits bearer tokens registers the API token id too, and
+ * `close_sockets_for_token` then reaches it.
+ *
+ * Twin of the Rust spine's `SocketRevoker` impl on `SseRegistry`.
  */
-export const disconnect_event_types: ReadonlySet<string> = new Set([
-	'role_grant_revoke', // role revoked — user lost access
-	'session_revoke', // single session revoked — close only that stream
-	'session_revoke_all', // all sessions invalidated — user should be kicked
-	'token_revoke_all', // all API tokens invalidated — close the account's streams
-	'password_change', // password changed — all sessions revoked implicitly
-	'logout' // explicit logout — close the account's streams
-]);
+export const create_sse_connection_closer = <T>(
+	registry: SubscriberRegistry<T>
+): ConnectionCloser => ({
+	close_sockets_for_session: (session_token_hash) => registry.close_by_identity(session_token_hash),
+	close_sockets_for_token: (api_token_id) => registry.close_by_identity(api_token_id),
+	close_sockets_for_account: (account_id) => registry.close_by_identity(account_id)
+});
 
 /**
- * Create an audit event handler that closes SSE streams on auth changes.
+ * Create an audit event handler that closes SSE streams on a successful
+ * revocation row, dispatching on the event's `RevocationScope`
+ * (`audit_event_revocation_scopes`, the table `create_ws_auth_guard` reads
+ * too):
  *
- * Closes streams when:
- * - `role_grant_revoke` fires for the `required_role` targeting a connected subscriber
- * - `session_revoke` targets the specific revoked session (session-hash-scoped)
- * - `session_revoke_all` / `token_revoke_all` / `password_change` / `logout`
- *   target a connected subscriber (account-wide)
+ * - `session` → the stream registered under the revoked session's hash
+ *   (`metadata.session_id`). Closing all of an account's streams for a
+ *   single-session revoke would be over-aggressive.
+ * - `token` → the stream registered under the revoked API token's id
+ *   (`metadata.token_id`). The audit stream route admits sessions only, so no
+ *   stream of its own is keyed that way; a consumer route that admits bearers
+ *   registers the token id and is closed here.
+ * - `account` → every stream of `target_account_id ?? account_id`.
+ * - `role` → every stream of the target account, when the revoked role
+ *   (`metadata.role`) is `required_role`. The WebSocket guard does not act on
+ *   this scope — per-message dispatch re-authorizes there — but a one-way
+ *   stream has no later check, so it must close here.
+ * - `none` → nothing.
+ *
+ * Over-closing a one-way feed is cheap: the client reconnects if it is still
+ * authorized.
  *
  * The registry's subscribers must carry `account_id` as an identity key (in
  * `SubscribeOptions.groups`), and the session hash as `scope` for the
- * session-scoped `session_revoke` close.
+ * session-scoped close.
  *
  * @param registry - the subscriber registry to guard
  * @param required_role - the role that grants access to the SSE endpoint,
@@ -84,8 +97,6 @@ export const create_sse_auth_guard = <T>(
 	log: Logger
 ): ((event: AuditLogEvent) => void) => {
 	return (event: AuditLogEvent): void => {
-		if (!disconnect_event_types.has(event.event_type)) return;
-
 		// Only act on successful revocations. Failed attempts carry
 		// attacker-controlled identifiers (e.g., session_revoke with outcome=failure
 		// carries the submitted session_id even when the DB rejected the cross-account
@@ -93,30 +104,47 @@ export const create_sse_auth_guard = <T>(
 		// user's SSE stream by guessing or leaking a session hash.
 		if (event.outcome === 'failure') return;
 
-		// session_revoke is session-scoped, not account-scoped — close only the
-		// stream subscribed under the revoked session's hash. The hash is already
-		// in the event metadata (set by the `account_session_revoke` RPC handler).
-		if (event.event_type === 'session_revoke') {
-			const session_id = event.metadata?.session_id;
-			if (typeof session_id !== 'string' || session_id.length === 0) return;
-			const closed = registry.close_by_identity(session_id);
-			if (closed > 0) {
-				log.info(
-					`SSE auth guard: closed ${closed} stream(s) for session ${session_id} (session_revoke)`
-				);
+		const scope = to_revocation_scope(event.event_type);
+		switch (scope) {
+			case 'none':
+				return;
+			case 'session': {
+				const session_id = event.metadata?.session_id;
+				if (typeof session_id !== 'string' || session_id.length === 0) return;
+				const closed = registry.close_by_identity(session_id);
+				if (closed > 0) {
+					log.info(
+						`SSE auth guard: closed ${closed} stream(s) for session ${session_id} (${event.event_type})`
+					);
+				}
+				return;
 			}
-			return;
+			case 'token': {
+				const token_id = event.metadata?.token_id;
+				if (typeof token_id !== 'string' || token_id.length === 0) return;
+				const closed = registry.close_by_identity(token_id);
+				if (closed > 0) {
+					log.info(
+						`SSE auth guard: closed ${closed} stream(s) for token ${token_id} (${event.event_type})`
+					);
+				}
+				return;
+			}
+			case 'role':
+				// `null` means the stream isn't gated by a specific role_grant, so
+				// a role revocation closes nothing.
+				if (required_role === null) return;
+				if (event.metadata?.role !== required_role) return;
+				break;
+			case 'account':
+				break;
+			default:
+				throw new UnreachableError(scope);
 		}
 
-		// role_grant_revoke requires matching the specific role. `null` means the
-		// stream isn't gated by a specific role_grant, so role_grant_revoke is a no-op.
-		if (event.event_type === 'role_grant_revoke') {
-			if (required_role === null) return;
-			if (event.metadata?.role !== required_role) return;
-		}
-
-		// resolve the affected account — admin actions set target_account_id,
-		// self-service actions (password_change, own session_revoke_all) only set account_id
+		// `role` and `account` both close the affected account's streams —
+		// admin actions set target_account_id, self-service actions only set
+		// account_id
 		const target = event.target_account_id ?? event.account_id;
 		if (!target) return;
 
@@ -177,10 +205,12 @@ export const audit_log_event_specs: Array<EventSpec> = AUDIT_EVENT_TYPES.map(
 export const AUDIT_LOG_SSE_MAX_PER_SCOPE = 10;
 
 /**
- * Create a complete audit log SSE setup with broadcasting and auth guard.
+ * Create a complete audit log SSE setup with broadcasting, auth guard, and
+ * connection closer.
  *
  * Combines `SubscriberRegistry`, `create_sse_auth_guard`, and the broadcast
- * call into a single object. The result satisfies `AuditLogRouteOptions['stream']`
+ * call into a single object, and adds the registry to `connection_closer`.
+ * The result satisfies `AuditLogRouteOptions['stream']`
  * and provides the `on_audit_event` listener for the audit emitter.
  *
  * Most consumers pass `audit_log_sse: true` to `create_app_server` and never
@@ -196,9 +226,12 @@ export const AUDIT_LOG_SSE_MAX_PER_SCOPE = 10;
  *
  * @example
  * ```ts
- * const audit_sse = create_audit_log_sse({log});
+ * const connection_closer = create_realtime_closer();
+ * const audit_sse = create_audit_log_sse({log, connection_closer});
  *
- * // Inside the audit_factory body on CreateAppBackendOptions:
+ * // On CreateAppBackendOptions — the same closer, and the listener inside
+ * // the audit_factory body:
+ * connection_closer,
  * audit_factory: ({db, log}) => create_audit_emitter({
  *   db,
  *   log,
@@ -217,6 +250,15 @@ export const create_audit_log_sse = (options: {
 	role?: string;
 	log: Logger;
 	/**
+	 * The backend's closer — `deps.connection_closer`. The new registry is
+	 * added to it, so every revocation handler's close reaches these streams.
+	 * Required so it can't be forgotten: without it a revoked credential's
+	 * streams close only through the audit listener, which a failed audit write
+	 * or a cap eviction never reaches. Pass `null` only for a registry no
+	 * revocation has to reach (tests of the registry itself).
+	 */
+	connection_closer: RealtimeCloser | null;
+	/**
 	 * Max concurrent SSE subscribers per session scope. On overflow, the oldest
 	 * matching subscriber is closed. Default `AUDIT_LOG_SSE_MAX_PER_SCOPE`.
 	 * Pass `null` to disable the cap.
@@ -228,6 +270,7 @@ export const create_audit_log_sse = (options: {
 		options.max_per_scope === undefined ? AUDIT_LOG_SSE_MAX_PER_SCOPE : options.max_per_scope;
 	const registry = new SubscriberRegistry<SseNotification>({ max_per_scope });
 	const guard = create_sse_auth_guard(registry, role, options.log);
+	options.connection_closer?.add(create_sse_connection_closer(registry));
 
 	return {
 		log: options.log,
