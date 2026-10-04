@@ -252,6 +252,13 @@ export interface WsClient {
 	 * connection dropped without a close frame. `null` while open.
 	 */
 	readonly close_code: number | null;
+	/**
+	 * The close reason of the connection once it has closed — the text sent
+	 * with `close_code` (e.g. `'connection limit'` with
+	 * `WS_CLOSE_CONNECTION_LIMIT`), empty when the close carried none. `null`
+	 * while open.
+	 */
+	readonly close_reason: string | null;
 	/** Every message the server has sent, in arrival order. */
 	readonly messages: ReadonlyArray<unknown>;
 	/**

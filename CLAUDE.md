@@ -125,7 +125,7 @@ that subtree.
 
 - **auth/** — crypto (keyring, session, password, api/daemon tokens, bootstrap), schemas + DDL, `query_*` over `QueryDeps`, middleware, routes, RPC action registries (admin, role-grant-offer, account, self-service-role, actor-lookup, actor-search) + `standard_rpc_actions` bundle, cleanup. → `src/lib/auth/CLAUDE.md`
 - **http/** — generic framework: `RouteSpec` + declarative transactions, three-layer error schema merge, JSON-RPC 2.0 envelopes + errors, origin/proxy middleware, `AppSurface` generation, post-commit `emit_after_commit`. → `src/lib/http/CLAUDE.md`
-- **actions/** — SAES (Symmetric Action Event System): `ActionSpec` types, registry-compile invariants, shared `perform_action` core, RPC dispatcher, REST/WS bridges, transports (HTTP, WS frontend + backend, auth guard), `ActionDispatcher` + server→client peer requests (`peer/ping`), reactive `FrontendWebsocketClient`, typed RPC client. → `src/lib/actions/CLAUDE.md`
+- **actions/** — SAES (Symmetric Action Event System): `ActionSpec` types, registry-compile invariants, shared `perform_action` core, RPC dispatcher, REST/WS bridges, transports (HTTP, WS frontend + backend with its per-account connection cap, auth guard), `ActionDispatcher` + server→client peer requests (`peer/ping`), reactive `FrontendWebsocketClient`, typed RPC client. → `src/lib/actions/CLAUDE.md`
 - **ui/** — Svelte 5 components, runes-based `*_state.svelte.ts` modules, `*_rpc_context` DI pattern, auth/admin/role-grant-offer forms, datatable, popovers, layout shell. → `src/lib/ui/CLAUDE.md`
 - **testing/** — test utilities exported to consumers; every module starts with `import './assert_dev_env.js'`. → `src/lib/testing/CLAUDE.md`
 

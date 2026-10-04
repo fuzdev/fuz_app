@@ -1,12 +1,14 @@
 /**
  * Backend WebSocket transport — manages server-side WebSocket connections
- * with session tracking and revocation support.
+ * with session tracking, revocation support, and a per-account connection
+ * cap.
  *
  * @module
  */
 
 import type { WSContext } from 'hono/ws';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import type {
@@ -27,6 +29,7 @@ import {
 	is_jsonrpc_request
 } from '../http/jsonrpc_helpers.ts';
 import {
+	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_SESSION_REVOKED,
 	type Transport,
 	type TransportSendOptions
@@ -79,14 +82,57 @@ export const is_filterable_broadcast_transport = (
 	'broadcast_filtered' in transport &&
 	typeof (transport as FilterableBroadcastTransport).broadcast_filtered === 'function';
 
+/**
+ * Default per-account WebSocket connection cap, applied by
+ * `BackendWebsocketTransport` unless overridden via
+ * `BackendWebsocketTransportOptions.max_connections_per_account`.
+ *
+ * Matches the account-wide ceiling the audit SSE cap implies (the default
+ * session cap, `DEFAULT_MAX_SESSIONS`, times `AUDIT_LOG_SSE_MAX_PER_SCOPE`
+ * streams per session) — generous enough that a user's tabs and tools never
+ * meet it; only an abusive or leaking client does. The twin of the Rust
+ * spine's `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT`.
+ */
+export const DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT = 50;
+
+/** Options for `BackendWebsocketTransport`. */
+export interface BackendWebsocketTransportOptions {
+	/**
+	 * Max concurrent connections per `account_id`, across every credential
+	 * type (session, API token, daemon token — none exempt). The policy is
+	 * **evict-oldest**: a connection past the cap is always admitted, and the
+	 * account's oldest connections are closed with `WS_CLOSE_CONNECTION_LIMIT`
+	 * to make room. Refusing the new one instead would let half-open sockets
+	 * lock a user out with their own dead connections, and would let a stolen
+	 * credential fill the slots ahead of the real user — revocation is the fix
+	 * for a stolen credential, and evict-oldest never stands in its way.
+	 *
+	 * The cap is per transport: endpoints sharing one transport share one
+	 * count per account. `null` disables it.
+	 *
+	 * @default DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT
+	 */
+	max_connections_per_account?: number | null;
+	/**
+	 * Logger for cap evictions and failed sends or closes. A cap eviction logs
+	 * at info — the account, how many connections were closed, and the cap —
+	 * so an operator can see a client that keeps meeting it. Unset falls back
+	 * to a `[ws]` logger; `null` silences it. `register_action_ws` passes its
+	 * own logger to the transport it creates.
+	 */
+	log?: Logger | null;
+}
+
 export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	readonly transport_name = 'backend_websocket_rpc' as const;
 
+	// Per-account connection cap; `null` = uncapped.
+	readonly #max_connections_per_account: number | null;
+
+	readonly #log: Logger | null;
+
 	// Map connection IDs to WebSocket contexts
 	#connections: Map<Uuid, WSContext> = new Map();
-
-	// Reverse map to find connection ID by socket
-	#connection_ids: WeakMap<WSContext, Uuid> = new WeakMap();
 
 	// Auth identity per connection. Adding a new identity scope (e.g.
 	// `device_id`) means adding a field here, not a new parallel map.
@@ -98,6 +144,24 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	#pending: PendingPeerRequests = new PendingPeerRequests();
 
 	/**
+	 * @throws Error when `max_connections_per_account` is neither `null` nor a
+	 *   positive integer
+	 */
+	constructor(options?: BackendWebsocketTransportOptions) {
+		const max =
+			options?.max_connections_per_account === undefined
+				? DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT
+				: options.max_connections_per_account;
+		if (max !== null && (!Number.isInteger(max) || max < 1)) {
+			throw new Error(
+				`BackendWebsocketTransport: max_connections_per_account must be a positive integer or null, got ${max}`
+			);
+		}
+		this.#max_connections_per_account = max;
+		this.#log = options?.log === undefined ? new Logger('[ws]') : options.log;
+	}
+
+	/**
 	 * Add a new WebSocket connection with auth info.
 	 * Session connections pass a token hash for targeted revocation.
 	 * Bearer token connections (`api_token`) pass the `api_token.id` so the
@@ -106,9 +170,19 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * pass `null` for both — they're only reachable via
 	 * `close_sockets_for_account`.
 	 *
+	 * Enforces the per-account cap (`max_connections_per_account`): when
+	 * `account_id` already holds the maximum, its oldest connections are removed
+	 * and sent a `WS_CLOSE_CONNECTION_LIMIT` close before the new one is
+	 * inserted. A removed connection gets no further broadcast or peer request
+	 * and stops counting toward the cap at once; its socket is closed when the
+	 * close handshake completes. The new connection is always admitted. Call
+	 * this only after every upgrade gate has passed, so a refused request can
+	 * never close someone else's socket.
+	 *
 	 * @returns the freshly assigned `connection_id` (branded `Uuid`)
-	 * @mutates this - inserts into `#connections`, `#connection_ids`, and
-	 *   `#connection_identities`
+	 * @mutates this - inserts into `#connections` and `#connection_identities`;
+	 *   past the cap, first removes the account's oldest connections from them
+	 *   and closes their `WSContext`
 	 */
 	add_connection(
 		ws: WSContext,
@@ -116,25 +190,30 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		account_id: Uuid,
 		api_token_id: string | null = null
 	): Uuid {
+		if (this.#max_connections_per_account !== null) {
+			this.#evict_oldest_for_account(account_id, this.#max_connections_per_account);
+		}
 		const connection_id = create_uuid();
 		this.#connections.set(connection_id, ws);
-		this.#connection_ids.set(ws, connection_id);
 		this.#connection_identities.set(connection_id, { token_hash, account_id, api_token_id });
 		return connection_id;
 	}
 
 	/**
-	 * Remove a WebSocket connection and its auth tracking data.
-	 * Idempotent — safe to call after revocation has already cleaned up.
+	 * Remove a WebSocket connection and its auth tracking data, by the id
+	 * `add_connection` returned. Idempotent — safe to call after revocation or
+	 * a cap eviction has already cleaned up, and a no-op for an unknown id.
 	 *
-	 * @mutates this - deletes the connection's entries from `#connections`,
-	 *   `#connection_ids`, and `#connection_identities`
+	 * Keyed by id rather than by `WSContext` because a runtime adapter may hand
+	 * each socket event its own context object (`hono/bun` does), so the one a
+	 * close event carries can't identify the connection.
+	 *
+	 * @mutates this - deletes the connection's entries from `#connections` and
+	 *   `#connection_identities`, and settles its pending peer requests as
+	 *   `connection_gone`
 	 */
-	remove_connection(ws: WSContext): void {
-		const connection_id = this.#connection_ids.get(ws);
-		if (connection_id) {
-			this.#cleanup_connection(connection_id, ws);
-		}
+	remove_connection(connection_id: Uuid): void {
+		this.#cleanup_connection(connection_id);
 	}
 
 	/**
@@ -193,9 +272,8 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		return this.#close_where((id) => id.api_token_id === api_token_id);
 	}
 
-	#cleanup_connection(connection_id: Uuid, ws: WSContext): void {
+	#cleanup_connection(connection_id: Uuid): void {
 		this.#connections.delete(connection_id);
-		this.#connection_ids.delete(ws);
 		this.#connection_identities.delete(connection_id);
 		// Wake any handler still awaiting a reply on this socket — the peer is
 		// gone, so the request can never complete.
@@ -203,8 +281,40 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	}
 
 	#revoke_connection(connection_id: Uuid, ws: WSContext): void {
-		this.#cleanup_connection(connection_id, ws);
+		this.#cleanup_connection(connection_id);
 		ws.close(WS_CLOSE_SESSION_REVOKED, 'Session revoked');
+	}
+
+	/**
+	 * Make room for one more connection on `account_id`: when the account
+	 * already holds `max`, close its oldest so that `max - 1` remain.
+	 */
+	#evict_oldest_for_account(account_id: Uuid, max: number): void {
+		// Map iteration is insertion order, so `owned` is oldest-first
+		const owned: Array<Uuid> = [];
+		for (const [connection_id, identity] of this.#connection_identities) {
+			if (identity.account_id === account_id) owned.push(connection_id);
+		}
+		const excess = owned.length + 1 - max;
+		if (excess <= 0) return;
+		for (let i = 0; i < excess; i++) {
+			const connection_id = owned[i]!;
+			const ws = this.#connections.get(connection_id);
+			if (ws) this.#supersede_connection(connection_id, ws);
+		}
+		// same line as the Rust spine's registry, so one grep finds either
+		this.#log?.info('ws: connection cap closed oldest', { account_id, closed: excess, max });
+	}
+
+	#supersede_connection(connection_id: Uuid, ws: WSContext): void {
+		this.#cleanup_connection(connection_id);
+		try {
+			ws.close(WS_CLOSE_CONNECTION_LIMIT, 'connection limit');
+		} catch (error) {
+			// the evicted socket is another connection's — a failure closing it
+			// must not fail the connection being admitted
+			this.#log?.error('error closing superseded client:', error);
+		}
 	}
 
 	// `send` is the broadcast/notification surface: notifications fan out to
@@ -253,7 +363,7 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 			try {
 				ws.send(serialized);
 			} catch (error) {
-				console.error('[backend websocket transport] Error broadcasting to client:', error);
+				this.#log?.error('error broadcasting to client:', error);
 			}
 		}
 		// TODO hack - remove if not ever needed, I assume this will need to be async so let's hold that assumption
@@ -284,10 +394,7 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 				ws.send(serialized);
 				count++;
 			} catch (error) {
-				console.error(
-					'[backend websocket transport] Error broadcasting filtered to client:',
-					error
-				);
+				this.#log?.error('error broadcasting filtered to client:', error);
 			}
 		}
 		return count;

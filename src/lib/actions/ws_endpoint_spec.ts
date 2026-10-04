@@ -59,6 +59,14 @@ export interface WsEndpointSpec {
 	 */
 	transport?: BackendWebsocketTransport;
 	/**
+	 * Per-account connection cap for the auto-created transport. See
+	 * `RegisterActionWsOptions.max_connections_per_account` — rejected
+	 * alongside `transport`, which carries its own cap.
+	 *
+	 * @default DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT
+	 */
+	max_connections_per_account?: number | null;
+	/**
 	 * Server-side heartbeat policy. Default-on (60s receive-silence
 	 * timeout). Set `false` only when an upstream stack (TCP keepalive,
 	 * Cloudflare idle timeout) already owns disconnect detection.
@@ -80,7 +88,7 @@ export interface WsEndpointSpec {
 	 */
 	on_socket_open?: (ctx: SocketOpenContext) => void | Promise<void>;
 	/**
-	 * Called once per socket on close, before `transport.remove_connection`.
+	 * Called once per socket on close, after `transport.remove_connection`.
 	 * See `RegisterActionWsOptions.on_socket_close`.
 	 */
 	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;

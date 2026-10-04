@@ -201,7 +201,11 @@ so the same files run under every `cross_backend_*` project; each project's
 `auth.cross.test.ts` (the `describe_standard_cross_process_tests` bundle —
 HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
 `describe_cross_process_ws_tests` suite — live WebSocket, including
-close-on-revoke), `role_grant_offer_notification_ws.cross.test.ts` (the
+close-on-revoke), `ws_connection_cap.cross.test.ts` (the real-upgrade
+`describe_ws_connection_cap_cross_tests` suite — one socket past the
+per-account connection cap closes the oldest with `WS_CLOSE_CONNECTION_LIMIT`
+and nothing else, and a closed connection frees its slot),
+`role_grant_offer_notification_ws.cross.test.ts` (the
 real-upgrade `describe_role_grant_offer_notification_ws_tests` suite — the seven
 consentful-role-grants WS notifications: received / accepted / declined /
 retracted / flat revoke + supersede on both the accept and revoke cascades, each

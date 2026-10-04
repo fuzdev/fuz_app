@@ -82,8 +82,10 @@ export interface BackendShapeNotes {
 export interface BackendCapabilities {
 	/**
 	 * WebSocket transport is reachable end-to-end. Gates the cross-process
-	 * WS round-trip suite; the in-process `describe_ws_round_trip_tests`
-	 * runs against `register_action_ws` directly and ignores this flag.
+	 * WS round-trip suite and the per-account connection-cap suite
+	 * (`describe_ws_connection_cap_cross_tests`); the in-process
+	 * `describe_ws_round_trip_tests` runs against `register_action_ws`
+	 * directly and ignores this flag.
 	 */
 	readonly ws: boolean;
 	/**

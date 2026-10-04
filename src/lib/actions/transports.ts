@@ -25,6 +25,19 @@ export const WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002;
 /** WebSocket close code — server timed out with no incoming activity. */
 export const WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003;
 /**
+ * WebSocket close code — the server closed this socket to admit a newer
+ * connection on the same account, past the per-account connection cap
+ * (`BackendWebsocketTransport`'s `max_connections_per_account`, evict-oldest).
+ *
+ * Distinct from `WS_CLOSE_SESSION_REVOKED`: the credential is still good, so
+ * a client must not enter its `revoked` state — but it must not auto-reconnect
+ * either, since a reconnect would supersede a newer socket in turn and two
+ * tabs past the cap would close each other in a loop. `FrontendWebsocketClient`
+ * treats it as closed until the user acts (`superseded`). The twin of the Rust
+ * spine's `WS_CLOSE_CONNECTION_LIMIT`.
+ */
+export const WS_CLOSE_CONNECTION_LIMIT = 4004;
+/**
  * WebSocket close code — an inbound message exceeded the receiver's size cap
  * (RFC 6455 §7.4.1 "Message Too Big").
  */

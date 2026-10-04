@@ -727,6 +727,19 @@ ignore `outcome === 'failure'` events to avoid acting on attacker-controlled
 identifiers — see `actions/transports_ws_auth_guard.ts` for the full
 rationale.
 
+An account holds at most `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT` (50) connections on a transport. One more is always admitted, and the account's oldest is closed with `WS_CLOSE_CONNECTION_LIMIT` to make room. Pass `max_connections_per_account` to change the cap (`null` disables it) — on `register_ws_endpoint` / `WsEndpointSpec` for the transport the mount creates, or on your own `new BackendWebsocketTransport({max_connections_per_account})`; passing both the option and a `transport` throws. On the client, `FrontendWebsocketClient` treats that close as closed-until-the-user-acts: it doesn't reconnect (that would close a newer socket in turn), it isn't `revoked`, and `superseded` turns `true` until the next `connect()`:
+
+```svelte
+{#if socket.superseded}
+	<p>This connection was closed because the account has too many open.</p>
+	<button type="button" onclick={() => socket.connect()}>reconnect</button>
+{/if}
+```
+
+`socket_status_to_async_status` reads a superseded client as `initial`, the same as one that never connected. An app that connects on its own when its status reads `initial` — a wrapper that opens the socket on first send, say — must also check `superseded`, or it rebuilds the loop the close code exists to stop.
+
+See ./security.md §WebSocket Connection Cap.
+
 `register_action_ws` (the lower-level entry point this helper wraps) stays exported for tests that drive the dispatcher directly via `create_ws_test_harness`.
 
 ### Backend-initiated fan-out

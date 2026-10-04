@@ -31,6 +31,7 @@ import {
 } from '$lib/actions/socket.svelte.ts';
 import {
 	WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT,
+	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_SESSION_REVOKED
 } from '$lib/actions/transports.ts';
 import { cancel_action_spec } from '$lib/actions/cancel.ts';
@@ -732,6 +733,154 @@ describe('revoked getter', () => {
 
 		assert.strictEqual(client.status, 'closed');
 		assert.strictEqual(client.revoked, false);
+	});
+});
+
+describe('connection limit', () => {
+	test('WS_CLOSE_CONNECTION_LIMIT closes without reconnecting or revoking', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		assert.strictEqual(client.superseded, false);
+		client.connect();
+		last_ws().fire_open();
+
+		last_ws().fire_close(WS_CLOSE_CONNECTION_LIMIT, 'connection limit');
+		assert.strictEqual(client.status, 'closed');
+		assert.strictEqual(client.superseded, true);
+		assert.strictEqual(client.revoked, false);
+		assert.strictEqual(client.ws, null);
+		assert.strictEqual(client.last_close_code, WS_CLOSE_CONNECTION_LIMIT);
+		assert.strictEqual(client.last_close_reason, 'connection limit');
+		// closed and not trying — the same projection as a clean close
+		assert.strictEqual(socket_status_to_async_status(client.status, client.revoked), 'initial');
+
+		// reconnecting would supersede the newer socket in turn
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
+		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(client.status, 'closed');
+	});
+
+	test('an explicit connect() reopens and clears superseded', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+		last_ws().fire_close(WS_CLOSE_CONNECTION_LIMIT);
+		assert.strictEqual(client.superseded, true);
+
+		client.connect();
+		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(client.superseded, false);
+		assert.strictEqual(client.status, 'connecting');
+		last_ws().fire_open();
+		assert.strictEqual(client.status, 'connected');
+
+		// the reconnect policy is intact — an ordinary close retries again
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.status, 'reconnecting');
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
+		assert.strictEqual(MockWebSocket.instances.length, 3);
+	});
+
+	test('a connection-limit close during a reconnect loop cancels it', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+		last_ws().fire_close(1006);
+		assert.strictEqual(client.status, 'reconnecting');
+
+		// the retry's socket is the one the server supersedes — closed before it
+		// opens, so the backoff counters are still raised
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
+		assert.strictEqual(client.reconnect_count, 1);
+		last_ws().fire_close(WS_CLOSE_CONNECTION_LIMIT);
+		assert.strictEqual(client.status, 'closed');
+		assert.strictEqual(client.superseded, true);
+		assert.strictEqual(client.reconnect_count, 0);
+		assert.strictEqual(client.current_reconnect_delay, 0);
+
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
+		assert.strictEqual(MockWebSocket.instances.length, 2);
+	});
+
+	test('only the connection-limit close sets superseded', () => {
+		for (const code of [DEFAULT_CLOSE_CODE, 1006, WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT]) {
+			const client = new FrontendWebsocketClient(TEST_URL, { reconnect: false });
+			client.connect();
+			last_ws().fire_open();
+			last_ws().fire_close(code);
+			assert.strictEqual(client.superseded, false, `code ${code}`);
+		}
+
+		const revoked = new FrontendWebsocketClient(TEST_URL);
+		revoked.connect();
+		last_ws().fire_open();
+		last_ws().fire_close(WS_CLOSE_SESSION_REVOKED);
+		assert.strictEqual(revoked.superseded, false);
+
+		const disconnected = new FrontendWebsocketClient(TEST_URL);
+		disconnected.connect();
+		last_ws().fire_open();
+		disconnected.disconnect();
+		assert.strictEqual(disconnected.superseded, false);
+	});
+
+	test('rejects in-flight and queued requests with service_unavailable', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		// buffered before the socket opens, so still queued at the close
+		const queued = client.request('queued', {});
+		client.connect();
+		// closes before `open`, so the queue was never flushed
+		last_ws().fire_close(WS_CLOSE_CONNECTION_LIMIT);
+
+		const queued_err = await assert_rejects(() => queued, /connection superseded/);
+		assert.instanceOf(queued_err, ThrownJsonrpcError);
+		assert.strictEqual(queued_err.code, JSONRPC_ERROR_CODES.service_unavailable);
+
+		client.connect();
+		last_ws().fire_open();
+		const in_flight = client.request('in_flight', {});
+		last_ws().fire_close(WS_CLOSE_CONNECTION_LIMIT);
+
+		const in_flight_err = await assert_rejects(() => in_flight, /connection superseded/);
+		assert.instanceOf(in_flight_err, ThrownJsonrpcError);
+		assert.strictEqual(in_flight_err.code, JSONRPC_ERROR_CODES.service_unavailable);
+	});
+
+	test('disconnect() leaves superseded set — only connect() clears it', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+		last_ws().fire_close(WS_CLOSE_CONNECTION_LIMIT);
+		const queued = client.request('queued', {});
+
+		// the client is already closed, so this only drops what buffered since
+		client.disconnect();
+		assert.strictEqual(client.superseded, true);
+		assert.strictEqual(client.last_close_code, WS_CLOSE_CONNECTION_LIMIT);
+		const err = await assert_rejects(() => queued, /client disconnected/);
+		assert.instanceOf(err, ThrownJsonrpcError);
+		assert.strictEqual(err.code, JSONRPC_ERROR_CODES.service_unavailable);
+
+		client.connect();
+		assert.strictEqual(client.superseded, false);
+	});
+
+	test('requests made while superseded queue and flush on the explicit connect()', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+		last_ws().fire_close(WS_CLOSE_CONNECTION_LIMIT);
+
+		// not `unauthenticated` like a revoked client — the credential is good
+		const promise = client.request<string>('echo', { n: 1 });
+		client.connect();
+		last_ws().fire_open();
+		const frame = JSON.parse(last_ws().sent[0]!);
+		assert.strictEqual(frame.method, 'echo');
+		last_ws().fire_message(JSON.stringify({ jsonrpc: '2.0', id: frame.id, result: 'ok' }));
+		assert.strictEqual(await promise, 'ok');
 	});
 });
 

@@ -5,6 +5,7 @@
  * - happy-path mount + factory form + factory returning [] vs missing
  *   `upgradeWebSocket`
  * - multi-endpoint with per-path `BackendWebsocketTransport`
+ * - `max_connections_per_account` threading into the auto-created transport
  * - `auth_guard` default-on / disabled / dedupe-by-transport
  * - `extra_audit_handlers` always-append semantics
  * - rate limiter threading from `AppServerContext`
@@ -58,8 +59,11 @@ import { create_test_audit_event } from '$lib/testing/entities.ts';
 import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import { protocol_actions } from '$lib/actions/protocol.ts';
 import { parse_allowed_origins } from '$lib/http/origin.ts';
-import { BackendWebsocketTransport } from '$lib/actions/transports_ws_backend.ts';
-import { WS_CLOSE_SESSION_REVOKED } from '$lib/actions/transports.ts';
+import {
+	BackendWebsocketTransport,
+	DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT
+} from '$lib/actions/transports_ws_backend.ts';
+import { WS_CLOSE_CONNECTION_LIMIT, WS_CLOSE_SESSION_REVOKED } from '$lib/actions/transports.ts';
 import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
 import type { WsEndpointSpec } from '$lib/actions/ws_endpoint_spec.ts';
 import type { Action } from '$lib/actions/action_types.ts';
@@ -255,6 +259,57 @@ describe('create_app_server.ws_endpoints', () => {
 
 		assert.strictEqual(result.ws_endpoints['/api/ws_a'], transport_a);
 		assert.strictEqual(result.ws_endpoints['/api/ws_b'], transport_b);
+	});
+
+	test('max_connections_per_account configures the auto-created transport', async () => {
+		const stub = create_stub_upgrade();
+		const { config } = await create_test_setup();
+		const result = await create_app_server({
+			...config,
+			upgradeWebSocket: stub.upgradeWebSocket,
+			ws_endpoints: [
+				build_minimal_spec({ path: '/api/ws_capped', max_connections_per_account: 1 }),
+				build_minimal_spec({ path: '/api/ws_uncapped', max_connections_per_account: null })
+			]
+		});
+
+		const account_id: Uuid = create_uuid();
+		const capped = result.ws_endpoints['/api/ws_capped']!;
+		const first = create_fake_ws();
+		const second = create_fake_ws();
+		capped.add_connection(first.ws, 'session_hash_a', account_id);
+		capped.add_connection(second.ws, 'session_hash_a', account_id);
+		assert.deepStrictEqual(first.closes, [
+			{ code: WS_CLOSE_CONNECTION_LIMIT, reason: 'connection limit' }
+		]);
+		assert.deepStrictEqual(second.closes, []);
+
+		const uncapped = result.ws_endpoints['/api/ws_uncapped']!;
+		const sockets = Array.from({ length: DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT + 1 }, () => {
+			const fake = create_fake_ws();
+			uncapped.add_connection(fake.ws, 'session_hash_a', account_id);
+			return fake;
+		});
+		assert.ok(sockets.every((s) => s.closes.length === 0));
+	});
+
+	test('throws when max_connections_per_account is set alongside a supplied transport', async () => {
+		const stub = create_stub_upgrade();
+		const { config } = await create_test_setup();
+		await assert_rejects(
+			() =>
+				create_app_server({
+					...config,
+					upgradeWebSocket: stub.upgradeWebSocket,
+					ws_endpoints: [
+						build_minimal_spec({
+							transport: new BackendWebsocketTransport(),
+							max_connections_per_account: 5
+						})
+					]
+				}),
+			/max_connections_per_account configures the transport created for \/api\/ws/
+		);
 	});
 
 	test('auth_guard default-on: session_revoke event closes the affected socket', async () => {

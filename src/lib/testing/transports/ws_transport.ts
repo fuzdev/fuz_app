@@ -121,8 +121,10 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 	});
 
 	let close_code: number | null = null;
-	socket.on('close', (code: number) => {
+	let close_reason: string | null = null;
+	socket.on('close', (code: number, reason: Buffer) => {
 		close_code = code;
+		close_reason = reason.toString('utf-8');
 		for (const resolve of close_resolvers) resolve();
 		close_resolvers = [];
 	});
@@ -199,6 +201,9 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 		},
 		get close_code() {
 			return close_code;
+		},
+		get close_reason() {
+			return close_reason;
 		},
 		send: send_impl,
 		async request<R = unknown>(

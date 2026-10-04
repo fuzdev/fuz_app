@@ -1011,7 +1011,7 @@ consumer config.
 - `bearer_auth` — Backend honors bearer (API-token) credentials.
 - `trusted_proxy` — Backend resolves `X-Forwarded-For` behind a trusted proxy.
 - `login_rate_limit` — Backend enforces login/IP rate limits (production semantics, not test-fast).
-- `ws` — Backend serves the WebSocket endpoint.
+- `ws` — Backend serves the WebSocket endpoint (gates `describe_cross_process_ws_tests` and `describe_ws_connection_cap_cross_tests`).
 - `sse` — Backend serves an SSE stream.
 - `cell_crud` — Backend live-mounts the cell CRUD verbs (gates `describe_cell_crud_cross_tests`).
 - `cell_relations` — Backend live-mounts the cell relation / ACL / audit verbs (gates `describe_cell_relations_cross_tests`).

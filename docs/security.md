@@ -476,6 +476,35 @@ The audit log SSE route (`/audit/stream`) subscribes with
 closes only the affected tab, while `role_grant_revoke` / `session_revoke_all` /
 `password_change` close every stream for the account.
 
+## WebSocket Connection Cap
+
+`BackendWebsocketTransport` bounds concurrent WebSocket connections per
+account: `max_connections_per_account`, default
+`DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT = 50` (set it on the transport, or on
+`WsEndpointSpec` for the transport `create_app_server` creates; `null`
+disables). It counts an account's connections across every credential type —
+session, API token, and daemon token, none exempt — and is per transport, so
+endpoints sharing one transport share one count.
+
+- **Evict-oldest, never refuse**: a connection past the cap is always admitted
+  and the account's oldest is closed. Refusing the newcomer would let half-open
+  sockets lock a user out with their own dead connections, and would let a
+  stolen credential fill every slot ahead of the real user. Revocation is the
+  answer to a stolen credential, and evict-oldest never stands in its way.
+- **After every upgrade gate**: the cap is applied when the socket opens, once
+  the origin check, authentication, the token-scope gate, and any role gate
+  have passed — an unauthenticated or forbidden request can't close anyone's
+  socket.
+- **Its own close code**: the evicted socket closes with
+  `WS_CLOSE_CONNECTION_LIMIT` (4004, reason `connection limit`), not the
+  revocation code `WS_CLOSE_SESSION_REVOKED` (4001). The credential is still
+  good, so `FrontendWebsocketClient` doesn't enter its `revoked` state — but it
+  doesn't auto-reconnect either, since a reconnect would close a newer socket
+  in turn and clients past the cap would close each other in a loop. It stays
+  closed with `superseded` set until the app calls `connect()`.
+
+The Rust spine applies the same cap, policy, close code, and reason.
+
 ## Rate Limiting
 
 In-memory sliding window. Applied to login, bootstrap, password change, and

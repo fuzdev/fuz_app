@@ -74,7 +74,7 @@ describe('BackendWebsocketTransport server→client requests', () => {
 		const conn = t.add_connection(ws, null, create_uuid());
 
 		const outcome_promise = t.request_connection(conn, 'peer/ping', {});
-		t.remove_connection(ws);
+		t.remove_connection(conn);
 		assert.deepStrictEqual(await outcome_promise, {
 			ok: false,
 			error: { kind: 'connection_gone' }

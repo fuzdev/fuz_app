@@ -9,6 +9,7 @@ import { describe, assert, test } from 'vitest';
 import {
 	DEFAULT_WS_MAX_MESSAGE_BYTES,
 	Transports,
+	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_SESSION_REVOKED,
 	utf8_length_over,
 	type Transport
@@ -24,6 +25,13 @@ const create_mock_transport = (name: string, ready = true): Transport => ({
 describe('WS_CLOSE_SESSION_REVOKED', () => {
 	test('is 4001', () => {
 		assert.strictEqual(WS_CLOSE_SESSION_REVOKED, 4001);
+	});
+});
+
+describe('WS_CLOSE_CONNECTION_LIMIT', () => {
+	// the Rust spine's `WS_CLOSE_CONNECTION_LIMIT` — a client reads one code from either backend
+	test('is 4004', () => {
+		assert.strictEqual(WS_CLOSE_CONNECTION_LIMIT, 4004);
 	});
 });
 

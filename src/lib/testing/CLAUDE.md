@@ -544,7 +544,7 @@ Three layers:
 3. **Round-trip helpers** — predicates + wire-frame types live in `transports/ws_client.ts` (shared with the cross-process `ws_transport.ts` impl): `is_notification(method)`, `is_notification_with<P>(method, match)` (type-guard combinator — narrows `wait_for` return type), `is_response_for(id)`, `JsonrpcNotificationFrame<P>` / `JsonrpcSuccessResponseFrame<R>` / `JsonrpcErrorResponseFrame<D>` (typed wire-frame shapes distinct from the runtime Zod schemas in `http/jsonrpc.ts` — generic over `params` / `result` / `data` so tests narrow without casts). `build_broadcast_api<TApi>({harness, specs})` (in `ws_round_trip.ts`) wires a typed broadcast API against the harness transport.
 
 `WsClient` (in `transports/ws_client.ts`):
-`{send, request<R>, close, messages, wait_for, wait_for_close, close_code}`.
+`{send, request<R>, close, messages, wait_for, wait_for_close, close_code, close_reason}`.
 The harness's `connect()` returns this shape; the cross-process
 `create_ws_transport` in `transports/ws_transport.ts` implements the same
 interface so assertion helpers and suite bodies work against either impl.
@@ -553,7 +553,9 @@ socket within the timeout, `false` on timeout (and `true` immediately when
 already closed) — the signal for server-initiated close (e.g. an auth-guard
 revocation), distinct from client-initiated `close()`. Mirrors the SSE frame
 reader's `wait_for_close`. `close_code` is the connection's close code once
-closed (`1006` for a drop without a close frame), `null` while open.
+closed (`1006` for a drop without a close frame), `null` while open;
+`close_reason` is the text sent with it (empty when the close carried none),
+`null` while open.
 `request` throws with code + message + data on error frames (so asserting `result.foo` on a
 failed request surfaces the real cause, not a `Cannot read property 'foo'
 of undefined`). `wait_for(predicate, timeout_ms?)` checks already-received
@@ -1159,6 +1161,34 @@ action (manifest-excluded), so parity is behavioral here, not via the manifest
 gate. Cross-process only; fuz_app's own wiring is
 `src/test/cross_backend/peer_ping_ws.cross.test.ts`.
 
+### `cross_backend/ws_connection_cap.ts` — `describe_ws_connection_cap_cross_tests`
+
+Real-upgrade parity for the **per-account WebSocket connection cap** — the
+evict-oldest policy both spines apply (`BackendWebsocketTransport`'s
+`max_connections_per_account`, the Rust `fuz_realtime` `ConnectionRegistry`).
+The close code, its reason, and which socket closes are wire contract — a
+client reads `WS_CLOSE_CONNECTION_LIMIT` as "superseded, don't reconnect" — so
+this is the pin that runs on both.
+`describe_ws_connection_cap_cross_tests({setup_test, capabilities, base_url,
+ws_path, origin?, max_connections_per_account?})` opens every socket with the
+fresh-per-test keeper's session cookies (one account), each answering a
+`heartbeat` before the next opens so the backend registered them in order and
+"oldest" names the same socket on both spines. Cases: one connection past the
+cap closes exactly the oldest with `WS_CLOSE_CONNECTION_LIMIT` + reason
+`connection limit` while every other socket, the newest included, keeps
+dispatching — and the session then upgrades again (a revoked session couldn't),
+superseding the next-oldest; and a socket held open while a cap's worth of
+others open and close in sequence is never evicted (a backend that leaks closed
+connections in its registry counts them toward the cap, which is what this
+catches). `max_connections_per_account` defaults to
+`DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT`, the cap both spines apply unless
+overridden; pass the consumer's value when it sets one, `null` (cap disabled)
+to skip. **Consumer-agnostic** like the WS round-trip suite (`heartbeat` only).
+A separate call rather than more cases on that suite because each case opens
+more than a cap's worth of real sockets. Gated on `capabilities.ws`;
+cross-process only. fuz_app's own wiring is
+`src/test/cross_backend/ws_connection_cap.cross.test.ts`.
+
 ### `cross_backend/sse_round_trip.ts` — `describe_cross_process_sse_tests`
 
 Cross-process counterpart to the in-process `sse_round_trip.ts` harness —
@@ -1293,7 +1323,8 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   transport carries the keeper session cookie in its jar after this call
   resolves.
 - `testing/transports/ws_client.ts` — shared `WsClient` interface (`send` /
-  `request` / `close` / `messages` / `wait_for` / `wait_for_close` / `close_code`),
+  `request` / `close` / `messages` / `wait_for` / `wait_for_close` / `close_code` /
+  `close_reason`),
   wire-frame types, and
   predicates (`is_notification`, `is_response_for`, ...). Both in-process
   (`ws_round_trip.ts`) and cross-process (`ws_transport.ts`) impls satisfy

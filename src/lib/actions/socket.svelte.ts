@@ -5,8 +5,10 @@
  * Drop into any SvelteKit frontend as the underlying connection for
  * `FrontendWebsocketTransport`. Handles auto-reconnect with exponential
  * backoff, respects `WS_CLOSE_SESSION_REVOKED` (no reconnect loop after the
- * server revokes auth), exposes reactive status for UI indicators, and ships
- * three correctness primitives default-on:
+ * server revokes auth) and `WS_CLOSE_CONNECTION_LIMIT` (no reconnect after the
+ * server closes this socket to admit a newer one — closed until the user
+ * acts), exposes reactive status for UI indicators, and ships three
+ * correctness primitives default-on:
  *
  * - `FrontendWebsocketClient.request` — promise-based JSON-RPC with
  *   auto-assigned ids and a pending-id map. Intercepts responses on the
@@ -31,7 +33,11 @@ import type { AsyncStatus } from '@fuzdev/fuz_util/async.ts';
 
 import { JSONRPC_VERSION, type JsonrpcErrorCode, type JsonrpcRequestId } from '../http/jsonrpc.ts';
 import { JSONRPC_ERROR_CODES, ThrownJsonrpcError, jsonrpc_errors } from '../http/jsonrpc_errors.ts';
-import { WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT, WS_CLOSE_SESSION_REVOKED } from './transports.ts';
+import {
+	WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT,
+	WS_CLOSE_CONNECTION_LIMIT,
+	WS_CLOSE_SESSION_REVOKED
+} from './transports.ts';
 import { cancel_action_spec } from './cancel.ts';
 import { heartbeat_action_spec } from './heartbeat.ts';
 import type { WebsocketConnection } from './transports_ws.ts';
@@ -85,8 +91,9 @@ export const DEFAULT_QUEUE_MAX_SIZE = 100;
  * - `connecting` — WebSocket `readyState === CONNECTING`.
  * - `connected` — WebSocket `readyState === OPEN`.
  * - `reconnecting` — close fired; waiting out backoff before next attempt.
- * - `closed` — socket is not open. Terminal only when `revoked` is `true`
- *   or auto-reconnect is disabled; otherwise `connect()` reopens.
+ * - `closed` — socket is not open, and nothing is scheduled to reopen it.
+ *   Terminal only when `revoked` is `true`; otherwise `connect()` reopens,
+ *   including after a `superseded` close.
  */
 export type SocketStatus = 'initial' | 'connecting' | 'connected' | 'reconnecting' | 'closed';
 
@@ -179,6 +186,11 @@ interface QueuedRequest extends PendingRequest {
  *
  * Session-revocation close codes (`WS_CLOSE_SESSION_REVOKED`) put the client
  * in a permanently-closed state; reconnecting would just loop on 401.
+ *
+ * A connection-limit close (`WS_CLOSE_CONNECTION_LIMIT`) leaves the client
+ * closed with `superseded` set and no reconnect scheduled — the server closed
+ * this socket to admit a newer one on the same account, and reconnecting
+ * would close that one in turn. An explicit `connect()` reopens.
  */
 export class FrontendWebsocketClient implements WebsocketConnection, Disposable {
 	readonly #url: string;
@@ -246,6 +258,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	#reconnect_timeout: ReturnType<typeof setTimeout> | null = null;
 	#reconnect_scheduled_at: number | null = null;
 	#revoked: boolean = $state.raw(false);
+	#superseded: boolean = $state.raw(false);
 
 	#message_handlers: Set<SocketMessageHandler> = new Set();
 	#error_handlers: Set<SocketErrorHandler> = new Set();
@@ -412,19 +425,44 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	}
 
 	/**
+	 * Whether the server closed this client's socket to admit a newer
+	 * connection on the same account (`WS_CLOSE_CONNECTION_LIMIT`) and it
+	 * hasn't been reopened since. While `true` the client is `closed` and
+	 * schedules no reconnect — reconnecting on its own would supersede a newer
+	 * socket in turn, and clients past the cap would close each other in a loop.
+	 *
+	 * Unlike `revoked` this is not terminal: the credential is still good, and
+	 * the next `connect()` clears it and reopens — only `connect()` does;
+	 * `disconnect()` leaves it set. Requests in flight or queued at the close
+	 * reject with `service_unavailable`; ones made afterwards buffer in the
+	 * durable queue like any other call on a closed client. Reactive, so UI can
+	 * say why the connection is closed and offer the reconnect.
+	 *
+	 * `socket_status_to_async_status` reads a superseded client as `initial`,
+	 * the same as one that was never connected. An app that connects on its
+	 * own when its status reads `initial` must also check `superseded`, or it
+	 * rebuilds the loop.
+	 */
+	get superseded(): boolean {
+		return this.#superseded;
+	}
+
+	/**
 	 * Open the WebSocket. No-op on SSR, or if the session has been revoked.
 	 * Cancels any pending reconnect and tears down any existing connection first;
-	 * an open prior socket is closed with a normal-closure code.
+	 * an open prior socket is closed with a normal-closure code. Reopens after
+	 * a `superseded` close, clearing the flag.
 	 *
-	 * @mutates this - replaces `ws`, sets `status` to `connecting` (or
-	 *   `closed` on construction failure), and on construction failure may
-	 *   schedule a reconnect (mutating `reconnect_count` /
+	 * @mutates this - replaces `ws`, clears `superseded`, sets `status` to
+	 *   `connecting` (or `closed` on construction failure), and on construction
+	 *   failure may schedule a reconnect (mutating `reconnect_count` /
 	 *   `current_reconnect_delay`)
 	 */
 	connect(): void {
 		if (!BROWSER) return;
 		if (this.#revoked) return;
 
+		this.#superseded = false;
 		this.#cancel_reconnect();
 		this.#teardown(DEFAULT_CLOSE_CODE);
 
@@ -525,7 +563,7 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 *   - `request_cancelled` — caller's `AbortSignal` fired
 	 *   - `queue_overflow` — durable queue full
 	 *   - `service_unavailable` — socket not connected / closed / torn down
-	 *     mid-flight
+	 *     mid-flight, including a `superseded` close
 	 *   - `internal_error` — `ws.send` threw (serialization, buffer full)
 	 *   - server's wire code verbatim — JSON-RPC error frame from peer
 	 */
@@ -878,6 +916,20 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			this.#reject_all('session revoked', jsonrpc_errors.unauthenticated);
 			return;
 		}
+		// The server closed this socket to admit a newer one on the same account.
+		// Reconnecting would supersede that one in turn — two clients past the cap
+		// would close each other in a loop — so stay closed until `connect()` is
+		// called. Not a revocation: the credential is still good. Nothing will
+		// reopen the socket on its own, so the queue is rejected with the pending
+		// requests, as when auto-reconnect is off.
+		if (event.code === WS_CLOSE_CONNECTION_LIMIT) {
+			this.#superseded = true;
+			this.status = 'closed';
+			this.#cancel_reconnect();
+			this.#reset_reconnect_counters();
+			this.#reject_all('connection superseded', jsonrpc_errors.service_unavailable);
+			return;
+		}
 		// Pending in-flight requests can't be correlated post-reconnect; reject
 		// them. Queue stays so the flush on reopen replays unsent work.
 		this.#reject_pending_only(
@@ -976,6 +1028,11 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
  * `failure` (UI shows "lost, retrying") and splits `closed` by `revoked` so
  * a terminal session-revocation read as `failure` while a clean client-
  * initiated close reads as `initial` (the "not connected, not trying" state).
+ * A `superseded` close reads as `initial` too — the client is not trying and
+ * an explicit `connect()` reopens it; read `FrontendWebsocketClient.superseded`
+ * to tell the user why, and before connecting on an `initial` status without
+ * the user asking (connecting a superseded client on its own closes a newer
+ * socket in turn, which is the loop the close code exists to stop).
  *
  * @param revoked - whether the session has been permanently revoked
  *   (typically `FrontendWebsocketClient.revoked`)

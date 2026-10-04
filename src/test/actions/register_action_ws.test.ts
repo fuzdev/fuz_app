@@ -14,6 +14,8 @@ import { afterEach, describe, assert, test, vi } from 'vitest';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { create_uuid } from '@fuzdev/fuz_util/id.ts';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { ActingActor } from '$lib/http/auth_shape.ts';
 
 import {
@@ -23,9 +25,13 @@ import {
 } from '$lib/actions/register_action_ws.ts';
 import type { ActionContext } from '$lib/actions/action_rpc.ts';
 import type { ActionSpecUnion, RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
-import { BackendWebsocketTransport } from '$lib/actions/transports_ws_backend.ts';
+import {
+	BackendWebsocketTransport,
+	DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT
+} from '$lib/actions/transports_ws_backend.ts';
 import {
 	DEFAULT_WS_MAX_MESSAGE_BYTES,
+	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_MESSAGE_TOO_BIG,
 	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT
 } from '$lib/actions/transports.ts';
@@ -37,6 +43,7 @@ import {
 	create_fake_hono_context,
 	create_fake_ws,
 	create_stub_upgrade,
+	create_ws_test_harness,
 	dispatch_ws_message,
 	type FakeWs
 } from '$lib/testing/ws_round_trip.ts';
@@ -724,6 +731,29 @@ describe('register_action_ws', () => {
 		assert.strictEqual(h.transport.is_ready(), false);
 	});
 
+	test('close removes the connection when the adapter hands onClose its own WSContext', async () => {
+		// `hono/bun` builds a `WSContext` per event, so the one `onClose` gets is
+		// not the one `onOpen` registered
+		const stub = create_stub_upgrade();
+		const { transport } = register_action_ws({
+			path: '/ws',
+			app: new Hono(),
+			upgradeWebSocket: stub.upgradeWebSocket,
+			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
+			db: create_stub_db(),
+			heartbeat: false,
+			log
+		});
+		const events = await stub.get_create_events()(
+			create_fake_hono_context({ credential_type: 'session' })
+		);
+		await (events.onOpen?.(new Event('open'), create_fake_ws().ws) as Promise<void> | void);
+		assert.strictEqual(transport.get_connection_count(), 1);
+
+		await (events.onClose?.(new CloseEvent('close'), create_fake_ws().ws) as Promise<void> | void);
+		assert.strictEqual(transport.get_connection_count(), 0);
+	});
+
 	test('returns the supplied transport when provided', async () => {
 		const supplied = new BackendWebsocketTransport();
 		const stub = create_stub_upgrade();
@@ -788,6 +818,190 @@ describe('register_action_ws max_message_bytes', () => {
 			params: { value: 'x'.repeat(DEFAULT_WS_MAX_MESSAGE_BYTES) }
 		});
 		assert.strictEqual(h.fake.closes[0]?.code, WS_CLOSE_MESSAGE_TOO_BIG);
+	});
+});
+
+describe('register_action_ws max_connections_per_account', () => {
+	/** Open one socket on the endpoint for the stub account; returns its fake + close driver. */
+	const open_socket = async (
+		stub: ReturnType<typeof create_stub_upgrade>
+	): Promise<{ fake: FakeWs; on_close: () => Promise<void> }> => {
+		const events = await stub.get_create_events()(
+			create_fake_hono_context({ credential_type: 'session' })
+		);
+		const fake = create_fake_ws();
+		await (events.onOpen?.(new Event('open'), fake.ws) as Promise<void> | void);
+		return {
+			fake,
+			on_close: async () => {
+				await (events.onClose?.(new CloseEvent('close'), fake.ws) as Promise<void> | void);
+			}
+		};
+	};
+
+	test('configures the created transport — past it the oldest socket closes with 4004', async () => {
+		const stub = create_stub_upgrade();
+		const closed: Array<SocketCloseContext> = [];
+		const opened: Array<SocketOpenContext> = [];
+		const { transport } = register_action_ws({
+			path: '/ws',
+			app: new Hono(),
+			upgradeWebSocket: stub.upgradeWebSocket,
+			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
+			db: create_stub_db(),
+			max_connections_per_account: 1,
+			on_socket_open: (ctx) => {
+				opened.push(ctx);
+			},
+			on_socket_close: (ctx) => {
+				closed.push(ctx);
+			},
+			heartbeat: false,
+			log
+		});
+
+		const first = await open_socket(stub);
+		assert.deepStrictEqual(first.fake.closes, []);
+		const second = await open_socket(stub);
+		assert.deepStrictEqual(first.fake.closes, [
+			{ code: WS_CLOSE_CONNECTION_LIMIT, reason: 'connection limit' }
+		]);
+		assert.deepStrictEqual(second.fake.closes, []);
+		assert.strictEqual(transport.get_connection_count(), 1);
+		// the evicted socket's handlers are cancelled when its close lands
+		assert.strictEqual(opened[0]!.signal.aborted, false);
+
+		// the adapter fires onClose for the evicted socket: its hook still runs,
+		// with the identity captured at open, and the newer socket stays tracked
+		await first.on_close();
+		assert.strictEqual(closed.length, 1);
+		assert.strictEqual(closed[0]!.connection_id, opened[0]!.connection_id);
+		assert.strictEqual(closed[0]!.identity.account_id, 'acc_1');
+		assert.strictEqual(opened[0]!.signal.aborted, true);
+		assert.strictEqual(transport.get_connection_count(), 1);
+		assert.strictEqual(opened[1]!.signal.aborted, false);
+
+		await second.on_close();
+		assert.strictEqual(closed.length, 2);
+		assert.strictEqual(closed[1]!.connection_id, opened[1]!.connection_id);
+		assert.strictEqual(transport.get_connection_count(), 0);
+	});
+
+	test('passes its logger to the created transport, which logs the eviction', async () => {
+		const infos: Array<Array<unknown>> = [];
+		const spy_log = new Logger('test', { level: 'off' });
+		spy_log.info = (...args: Array<unknown>) => {
+			infos.push(args);
+		};
+		const stub = create_stub_upgrade();
+		register_action_ws({
+			path: '/ws',
+			app: new Hono(),
+			upgradeWebSocket: stub.upgradeWebSocket,
+			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
+			db: create_stub_db(),
+			max_connections_per_account: 1,
+			heartbeat: false,
+			log: spy_log
+		});
+
+		await open_socket(stub);
+		assert.deepStrictEqual(infos, []);
+		await open_socket(stub);
+		assert.deepStrictEqual(infos, [
+			['ws: connection cap closed oldest', { account_id: 'acc_1', closed: 1, max: 1 }]
+		]);
+	});
+
+	test('through the harness: the evicted client sees the close, the rest keep dispatching', async () => {
+		const harness = create_ws_test_harness({
+			actions: [{ spec: echo_spec, handler: (input) => input }],
+			transport: new BackendWebsocketTransport({ max_connections_per_account: 2 })
+		});
+		const account_id = create_uuid();
+		const first = await harness.connect({ account_id });
+		const second = await harness.connect({ account_id });
+		// another account's socket takes no slot
+		const other = await harness.connect();
+		assert.strictEqual(first.close_code, null);
+		assert.strictEqual(first.close_reason, null);
+
+		const third = await harness.connect({ account_id });
+		assert.ok(await first.wait_for_close());
+		assert.strictEqual(first.close_code, WS_CLOSE_CONNECTION_LIMIT);
+		assert.strictEqual(first.close_reason, 'connection limit');
+		await assert_rejects(() => first.send({ jsonrpc: '2.0', id: 1, method: 'echo' }));
+
+		for (const client of [second, third, other]) {
+			assert.strictEqual(client.close_code, null);
+			assert.deepStrictEqual(await client.request(1, 'echo', { value: 'hi' }), { value: 'hi' });
+		}
+		assert.strictEqual(harness.transport.get_connection_count(), 3);
+	});
+
+	test('null disables the cap on the created transport', async () => {
+		const stub = create_stub_upgrade();
+		const { transport } = register_action_ws({
+			path: '/ws',
+			app: new Hono(),
+			upgradeWebSocket: stub.upgradeWebSocket,
+			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
+			db: create_stub_db(),
+			max_connections_per_account: null,
+			heartbeat: false,
+			log
+		});
+
+		const sockets = [];
+		for (let i = 0; i < DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT + 1; i++) {
+			sockets.push(await open_socket(stub));
+		}
+		assert.ok(sockets.every((s) => s.fake.closes.length === 0));
+		assert.strictEqual(transport.get_connection_count(), DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT + 1);
+	});
+
+	test('defaults to DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT', async () => {
+		const stub = create_stub_upgrade();
+		const { transport } = register_action_ws({
+			path: '/ws',
+			app: new Hono(),
+			upgradeWebSocket: stub.upgradeWebSocket,
+			actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
+			db: create_stub_db(),
+			heartbeat: false,
+			log
+		});
+
+		const sockets = [];
+		for (let i = 0; i < DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT + 1; i++) {
+			sockets.push(await open_socket(stub));
+		}
+		assert.deepStrictEqual(sockets[0]!.fake.closes, [
+			{ code: WS_CLOSE_CONNECTION_LIMIT, reason: 'connection limit' }
+		]);
+		assert.ok(sockets.slice(1).every((s) => s.fake.closes.length === 0));
+		assert.strictEqual(transport.get_connection_count(), DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT);
+	});
+
+	test('throws alongside a supplied transport, which carries its own cap', () => {
+		const stub = create_stub_upgrade();
+		for (const max_connections_per_account of [1, null]) {
+			assert.throws(
+				() =>
+					register_action_ws({
+						path: '/ws',
+						app: new Hono(),
+						upgradeWebSocket: stub.upgradeWebSocket,
+						actions: [{ spec: echo_spec, handler: () => ({ value: 'x' }) }],
+						db: create_stub_db(),
+						transport: new BackendWebsocketTransport(),
+						max_connections_per_account,
+						heartbeat: false,
+						log
+					}),
+				/max_connections_per_account configures the transport created for \/ws/
+			);
+		}
 	});
 });
 
@@ -923,12 +1137,16 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		assert.strictEqual(h.fake.closes[0]!.code, 1011);
 	});
 
-	test('on_socket_close fires with connection_id + identity before transport.remove_connection', async () => {
+	test('on_socket_close fires with connection_id + identity after transport.remove_connection', async () => {
+		let open_seen_connection_id: string | null = null;
 		let close_seen_connection_id: string | null = null;
 		let close_seen_account_id: string | null = null;
 		let transport_ready_inside_close: boolean | null = null;
 		const h = await build_harness({
 			handlers: { echo: () => ({ value: 'x' }) },
+			on_socket_open: (ctx) => {
+				open_seen_connection_id = ctx.connection_id;
+			},
 			on_socket_close: (ctx) => {
 				close_seen_connection_id = ctx.connection_id;
 				close_seen_account_id = ctx.identity.account_id;
@@ -940,12 +1158,39 @@ describe('register_action_ws socket lifecycle hooks', () => {
 		assert.strictEqual(h.transport.is_ready(), true);
 		await h.on_close();
 
-		// the hook saw a valid connection_id and saw the transport while it still
-		// held the connection (remove_connection runs after the hook returns).
+		// the hook saw the open-time connection_id and identity, with the
+		// connection already gone from the transport
 		assert.strictEqual(typeof close_seen_connection_id, 'string');
+		assert.strictEqual(close_seen_connection_id, open_seen_connection_id);
 		assert.strictEqual(close_seen_account_id, 'acc_1');
-		assert.strictEqual(transport_ready_inside_close, true);
+		assert.strictEqual(transport_ready_inside_close, false);
 		assert.strictEqual(h.transport.is_ready(), false);
+	});
+
+	test('a slow on_socket_close never holds the closed connection in the transport', async () => {
+		// a dead entry would still be broadcast to and still count toward the
+		// per-account cap for as long as the hook runs
+		let release!: () => void;
+		const released = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let hook_started = false;
+		const h = await build_harness({
+			handlers: { echo: () => ({ value: 'x' }) },
+			on_socket_close: async () => {
+				hook_started = true;
+				await released;
+			}
+		});
+
+		await h.on_open();
+		const closing = h.on_close();
+		assert.strictEqual(hook_started, true);
+		assert.strictEqual(h.transport.get_connection_count(), 0);
+
+		release();
+		await closing;
+		assert.strictEqual(h.transport.get_connection_count(), 0);
 	});
 
 	test('on_socket_close identity stays readable after audit-revocation wipes transport state', async () => {

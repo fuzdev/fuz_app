@@ -75,7 +75,7 @@ import {
 	create_ws_auth_guard,
 	create_ws_logout_closer
 } from '../actions/transports_ws_auth_guard.ts';
-import { BackendWebsocketTransport } from '../actions/transports_ws_backend.ts';
+import type { BackendWebsocketTransport } from '../actions/transports_ws_backend.ts';
 
 /**
  * Context passed to `on_effect_error` when a pending effect rejects.
@@ -776,15 +776,15 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			}
 			seen_paths.add(endpoint.path);
 
-			const endpoint_transport = endpoint.transport ?? new BackendWebsocketTransport();
-			register_ws_endpoint({
+			const { transport: endpoint_transport } = register_ws_endpoint({
 				app,
 				path: endpoint.path,
 				upgradeWebSocket: options.upgradeWebSocket,
 				allowed_origins: endpoint.allowed_origins,
 				db: deps.db,
 				actions: endpoint.actions,
-				transport: endpoint_transport,
+				transport: endpoint.transport,
+				max_connections_per_account: endpoint.max_connections_per_account,
 				heartbeat: endpoint.heartbeat,
 				artificial_delay: endpoint.artificial_delay,
 				max_message_bytes: endpoint.max_message_bytes,

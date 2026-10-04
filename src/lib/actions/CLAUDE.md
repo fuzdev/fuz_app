@@ -351,6 +351,7 @@ and `allow_fallback: boolean` (default `true`). Explicit
 - `WS_CLOSE_SESSION_REVOKED = 4001` — server revoked auth; client enters permanent `revoked` state, no reconnect.
 - `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002` — client observed receive-silence past its receive timeout (`resolve_heartbeat_receive_timeout`).
 - `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003` — server observed receive-silence past `DEFAULT_SERVER_HEARTBEAT_TIMEOUT` (60s).
+- `WS_CLOSE_CONNECTION_LIMIT = 4004` — server closed this socket to admit a newer one on the same account, past the per-account connection cap (reason `connection limit`). Not a revocation: the client stays `closed` with `superseded` set and no reconnect, until `connect()` is called. Twin of the Rust spine's constant.
 - `WS_CLOSE_MESSAGE_TOO_BIG = 1009` — server received a message over its `max_message_bytes` cap (RFC 6455 "Message Too Big").
 
 ### Transport modules
@@ -390,11 +391,42 @@ client; `null` skips the client-side measurement.
 
 ### `BackendWebsocketTransport` — server-side WS state
 
-Three aligned maps keyed by `connection_id` (branded `Uuid`):
+Two aligned maps keyed by `connection_id` (branded `Uuid`):
 
 - `#connections: Map<Uuid, WSContext>` — id → socket
-- `#connection_ids: WeakMap<WSContext, Uuid>` — socket → id (reverse)
 - `#connection_identities: Map<Uuid, ConnectionIdentity>` — id → `{token_hash, account_id, api_token_id}` (session sets `token_hash`, bearer sets `api_token_id`, daemon-token sets both null)
+
+`add_connection` returns the id and `remove_connection(connection_id)` takes
+it — the id is the connection's only handle. There is no socket → id lookup:
+a runtime adapter may hand each socket event its own `WSContext` (`hono/bun`
+builds one per event), so the object a close event carries can't identify the
+connection. `register_action_ws` captures the id on open and removes by it.
+
+**Per-account connection cap.** `new BackendWebsocketTransport({max_connections_per_account})`
+— default `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT` (50), `null` disables, anything
+but a positive integer throws. The policy is **evict-oldest**: `add_connection`
+always admits the new connection, first closing the account's oldest (map
+insertion order) with `WS_CLOSE_CONNECTION_LIMIT` so the account never holds
+more than the cap. It keys on `account_id` across every credential type —
+session, bearer, and daemon-token connections all count, none exempt. Refusing
+the newcomer instead would let half-open sockets lock a user out with their
+own dead connections, and let a stolen credential hold every slot ahead of the
+real user. The check runs inside `add_connection`, which `register_action_ws`
+calls in `onOpen` — after every upgrade gate (origin, auth, token scope, role)
+— so a refused request never closes someone's socket. An evicted connection
+leaves the transport's maps at once — no broadcast or peer request reaches it,
+its pending peer requests drain as `connection_gone`, and it stops counting
+toward the cap — but the socket itself is only closed once the close handshake
+completes, and until then the dispatcher still runs the requests it sends. Its
+`on_socket_close` fires when the close lands, and the `remove_connection`
+before it is a no-op. An eviction logs `ws: connection cap closed oldest` at
+info with `{account_id, closed, max}` (the Rust spine's line) through the
+transport's `log` (a `[ws]` logger when unset, `null` silences;
+`register_action_ws` passes its own to the transport it creates). The cap is per transport:
+endpoints sharing one transport share one count per account. The twin of the
+Rust `fuz_realtime` `ConnectionRegistry`'s cap — same default, same policy,
+same close code and reason — pinned on both by the
+`describe_ws_connection_cap_cross_tests` suite.
 
 Targeted closure (all return socket count closed, use
 `WS_CLOSE_SESSION_REVOKED`):
@@ -508,10 +540,17 @@ but `upgradeWebSocket` is missing. A factory returning `[]` does NOT trip
 the check, so feature-flag gated WS surfaces stay safe.
 
 `WsEndpointSpec` fields: `path`, `allowed_origins`, `actions`,
-`required_roles?`, `transport?`, `heartbeat?`, `artificial_delay?`, `max_message_bytes?`,
+`required_roles?`, `transport?`, `max_connections_per_account?`, `heartbeat?`,
+`artificial_delay?`, `max_message_bytes?`,
 `on_socket_open?`, `on_socket_close?`, `auth_guard?` (default `true`,
 deduped by reference identity via `WeakSet<BackendWebsocketTransport>`),
 `extra_audit_handlers?`.
+
+`max_connections_per_account` sets the per-account connection cap on the
+transport the mount creates (`RegisterActionWsOptions` carries the same field).
+It throws alongside `transport` — a supplied transport carries its own cap, set
+where it was constructed, and an option that silently did nothing would read as
+enforced.
 
 Mounted transport reachable at `app_server.ws_endpoints[path]`
 (`Readonly<Record<string, BackendWebsocketTransport>>`). Duplicate paths
@@ -558,7 +597,7 @@ HTTP RPC also calls. `register_action_ws` owns only WS-specific concerns:
 - **Cancel-notification interception** — `{request_id → AbortController}` map; aborts the matching pending controller before the cancel bubbles past the dispatcher
 - **Socket-scoped notify** — `(method, params) => ws.send(notification)`, threaded into `perform_action` as `notify`
 - **Composed abort signal** — `AbortSignal.any([socket_close, per_request_cancel])`, threaded as `signal`
-- **Connection lifecycle** — `transport.add_connection` / `remove_connection`, `on_socket_open` / `_close` hooks, server heartbeat
+- **Connection lifecycle** — `transport.add_connection` (which enforces the per-account connection cap) / `remove_connection`, `on_socket_open` / `_close` hooks, server heartbeat
 
 **Per-message authorization phase.** `perform_action` calls
 `apply_authorization_phase` per-message (HTTP and WS uniformly). Role grant
@@ -580,9 +619,13 @@ rolled-back message fires no post-commit effect). See `http/CLAUDE.md`
 **Lifecycle hooks.** `on_socket_open({ws, connection_id, identity, notify, signal})`
 fires after `transport.add_connection` but before the first message;
 awaited; throws log + close with `1011 'socket bootstrap failed'`.
-`on_socket_close({ws, connection_id, identity})` fires before
-`transport.remove_connection` so `identity` is still readable. Errors
-logged and swallowed.
+`on_socket_close({ws, connection_id, identity})` fires after
+`transport.remove_connection(connection_id)` — a slow hook never holds a dead
+entry that broadcasts still target and the per-account cap still counts.
+`connection_id` and `identity` are the values captured at open, so the hook
+reads them the same way after a client close, a revocation, or a connection-cap
+eviction; its `ws` is the close event's context, which on some adapters is not
+the object `on_socket_open` received. Errors logged and swallowed.
 
 **Server-side heartbeat** (`heartbeat?: boolean | ServerHeartbeatOptions`):
 default-on, 60s silence timeout. Any inbound message resets
@@ -684,8 +727,21 @@ recent frame each way — every frame, including heartbeats and the responses
 `request` consumes — for diagnostics UI.
 
 Reconnect policy (exponential backoff): `delay = DEFAULT_RECONNECT_DELAY * DEFAULT_BACKOFF_FACTOR ** (attempts-1)`,
-capped at `DEFAULT_RECONNECT_DELAY_MAX`. `WS_CLOSE_SESSION_REVOKED` is
-**terminal** — sets `#revoked = true`, no reconnect loop on 401.
+capped at `DEFAULT_RECONNECT_DELAY_MAX`. Two close codes never reconnect:
+
+- `WS_CLOSE_SESSION_REVOKED` is **terminal** — sets `revoked`, no reconnect
+  loop on 401, and `connect()` becomes a no-op. Pending and queued requests
+  reject `unauthenticated`.
+- `WS_CLOSE_CONNECTION_LIMIT` is **closed until the user acts** — sets
+  `superseded` (reactive), status `closed`, no reconnect scheduled: the server
+  closed this socket to admit a newer one on the same account, and
+  reconnecting would close that one in turn, so clients past the cap would
+  close each other in a loop. The credential is still good, so `revoked` stays
+  `false` and an explicit `connect()` reopens and clears `superseded`. Pending
+  and queued requests reject `service_unavailable`; requests made while
+  superseded buffer in the durable queue like any call on a closed client. UI
+  reads `superseded` to say why the connection is closed and offer the
+  reconnect.
 
 Live policy swaps (behave like constructor — whole policy atomic, missing
 fields fall back to defaults, not "keep current"): `set_reconnect`,
@@ -693,7 +749,9 @@ fields fall back to defaults, not "keep current"): `set_reconnect`,
 
 `SocketStatus = 'initial' | 'connecting' | 'connected' | 'reconnecting' | 'closed'`.
 `socket_status_to_async_status(status, revoked)` collapses to fuz_util's
-4-way `AsyncStatus`.
+4-way `AsyncStatus`: `closed` reads `failure` when revoked and `initial`
+otherwise — a `superseded` close included, since the client is not trying and
+`connect()` reopens it.
 
 ## RPC client (`actions/rpc_client.ts`)
 

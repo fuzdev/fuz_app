@@ -149,17 +149,23 @@ export interface SocketOpenContext {
 /**
  * Context passed to the `on_socket_close` hook.
  *
- * Fires before `transport.remove_connection` runs, so consumer cleanup can
- * still read identity before it's torn down. Fires for both client-initiated
- * closes (Hono onClose) and server-initiated closes via audit revocation
- * (the audit guard calls `ws.close()`, which triggers Hono's onClose).
+ * Fires after the transport has removed the connection — `connection_id` and
+ * `identity` are the values captured at open, so consumer cleanup reads them
+ * from here, not from the transport. Fires for both client-initiated closes
+ * (Hono onClose) and server-initiated closes — audit revocation and the
+ * per-account connection cap's eviction both call `ws.close()`, which
+ * triggers Hono's onClose.
  */
 export interface SocketCloseContext {
-	/** The raw WebSocket context at close time. */
+	/**
+	 * The WebSocket context the close event carried. Not necessarily the object
+	 * `on_socket_open` received — an adapter may build one per event — so key
+	 * per-socket state on `connection_id`.
+	 */
 	ws: WSContext;
 	/** Connection id captured at open time. */
 	connection_id: Uuid;
-	/** Auth identity captured at open time — still valid even if the transport already cleaned up. */
+	/** Auth identity captured at open time — the transport no longer holds it. */
 	identity: ConnectionIdentity;
 }
 
@@ -208,6 +214,16 @@ export interface RegisterActionWsOptions {
 	 */
 	transport?: BackendWebsocketTransport;
 	/**
+	 * Per-account connection cap for the transport this call creates — see
+	 * `BackendWebsocketTransportOptions.max_connections_per_account`
+	 * (evict-oldest, closing with `WS_CLOSE_CONNECTION_LIMIT`; `null`
+	 * disables). Rejected alongside `transport`: a supplied transport carries
+	 * its own cap, set where it was constructed.
+	 *
+	 * @default DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT
+	 */
+	max_connections_per_account?: number | null;
+	/**
 	 * Server-side heartbeat policy. Default-on (receive-silence detection,
 	 * 60s timeout). `false` disables the timer entirely — only do this if
 	 * the upstream stack (TCP keepalive, Cloudflare idle timeout, etc.)
@@ -239,10 +255,12 @@ export interface RegisterActionWsOptions {
 	 */
 	on_socket_open?: (ctx: SocketOpenContext) => void | Promise<void>;
 	/**
-	 * Called once per socket on close, *before* the transport removes the
-	 * connection. Receives `connection_id` and `identity` captured at open
-	 * time, so it is safe to read even when the audit guard has already torn
-	 * down the transport's internal state. Errors are logged and swallowed.
+	 * Called once per socket on close, *after* the transport has removed the
+	 * connection — a slow hook never holds a dead entry that broadcasts still
+	 * target and the per-account cap still counts. Receives `connection_id` and
+	 * `identity` captured at open time, the same whether the close came from the
+	 * client, the audit guard, or a connection-cap eviction. Errors are logged
+	 * and swallowed.
 	 */
 	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;
 	/**
@@ -291,15 +309,23 @@ export interface RegisterActionWsResult {
  * @mutates options.app - registers a `GET path` route via `upgradeWebSocket`
  * @mutates options.transport - on every message, adds/removes connections
  *   in the transport's internal maps via `add_connection` / `remove_connection`
+ * @throws Error when `max_connections_per_account` is passed alongside
+ *   `transport`, or is neither `null` nor a positive integer
  */
 export const register_action_ws = (options: RegisterActionWsOptions): RegisterActionWsResult => {
+	if (options.transport && options.max_connections_per_account !== undefined) {
+		// a cap that silently did nothing would read as enforced
+		throw new Error(
+			`register_action_ws: max_connections_per_account configures the transport created for ${options.path}, ` +
+				'but a transport was supplied — set the cap on that BackendWebsocketTransport instead'
+		);
+	}
 	const {
 		path,
 		app,
 		upgradeWebSocket,
 		actions,
 		db,
-		transport = new BackendWebsocketTransport(),
 		heartbeat = true,
 		artificial_delay = 0,
 		max_message_bytes = DEFAULT_WS_MAX_MESSAGE_BYTES,
@@ -309,6 +335,13 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		action_ip_rate_limiter = null,
 		action_account_rate_limiter = null
 	} = options;
+
+	const transport =
+		options.transport ??
+		new BackendWebsocketTransport({
+			max_connections_per_account: options.max_connections_per_account,
+			log
+		});
 
 	// Build the dispatcher's per-method lookup. Only request_response
 	// specs with a handler reach `action_map` — perform_action is the
@@ -403,9 +436,9 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			const pending_controllers: Map<JsonrpcRequestId, AbortController> = new Map();
 
 			// Identity is assembled at upgrade time so `on_socket_close` can
-			// still read it after the audit guard tears the transport record
-			// down; `BackendWebsocketTransport.#revoke_connection` clears the
-			// identity map before Hono fires onClose.
+			// read it — by the time the hook runs the transport record is gone,
+			// removed in `onClose` or earlier by the audit guard or a
+			// connection-cap eviction.
 			const identity: ConnectionIdentity = { token_hash, account_id, api_token_id };
 			// Captured on open, consumed on close. Undefined before onOpen
 			// fires or when a consumer never opens (e.g. immediate disconnect).
@@ -711,6 +744,13 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				onClose: async (event, ws) => {
 					stop_heartbeat_timer();
 					socket_abort_controller.abort();
+					// Removed by the id captured on open — an adapter may hand each
+					// event its own `WSContext` (`hono/bun` does), so the one this
+					// event carries can't identify the connection. And removed before
+					// the hook is awaited: the socket is gone, so a slow hook must not
+					// keep a dead entry that broadcasts still target and the
+					// per-account cap still counts.
+					if (captured_connection_id) transport.remove_connection(captured_connection_id);
 					if (on_socket_close && captured_connection_id) {
 						try {
 							await on_socket_close({
@@ -722,7 +762,6 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 							log.error('on_socket_close failed:', error);
 						}
 					}
-					transport.remove_connection(ws);
 					log.debug('ws closed', captured_connection_id, {
 						code: event.code,
 						reason: event.reason
