@@ -9,7 +9,9 @@
  * something closes it. `ConnectionCloser` is that capability, and every
  * revocation handler holds one: the session and token revokes, the revoke-alls,
  * account delete and purge, `/logout`, `/password`, and the session and token
- * caps for what they evict.
+ * caps for what they evict. The auth cleanup holds one too
+ * (`AuthCleanupDeps.connection_closer`): its session sweep closes the
+ * connections of each expired session it deletes, after that delete commits.
  *
  * ## Closing after commit
  *

@@ -564,7 +564,10 @@ live-connection surface.
 It is required where it is read, so it can't be forgotten:
 `RevokingActionFactoryDeps.connection_closer` (`create_account_actions`,
 `create_admin_actions`, `create_standard_rpc_actions`), `AppDeps` /
-`RouteFactoryDeps` (`create_account_route_specs`), and the
+`RouteFactoryDeps` (`create_account_route_specs`),
+`AuthCleanupDeps.connection_closer` (the auth cleanup's session sweep closes
+the connections of each expired session it deletes — `auth/CLAUDE.md`
+§Cleanup), and the
 `connection_closer: RealtimeCloser | null` option of `register_action_ws` /
 `register_ws_endpoint` / `create_audit_log_sse`, which add their transport to it
 (`null` is the explicit opt-out).

@@ -242,21 +242,27 @@ describe_db('AuthSessionQueries', (get_db) => {
 		assert.deepEqual(again, before);
 	});
 
-	test('cleanup_expired removes expired sessions', async () => {
+	test('cleanup_expired removes expired sessions and returns their ids', async () => {
 		const db = get_db();
 		const deps = { db };
 		const { account_id } = await create_test_account(db, 'grace');
 		const past = new Date(Date.now() - 1000);
 		const future = new Date(Date.now() + AUTH_SESSION_LIFETIME_MS);
-		await query_create_session(deps, hash_session_token('expired1'), account_id, past);
-		await query_create_session(deps, hash_session_token('expired2'), account_id, past);
+		const expired_1 = hash_session_token('expired1');
+		const expired_2 = hash_session_token('expired2');
+		await query_create_session(deps, expired_1, account_id, past);
+		await query_create_session(deps, expired_2, account_id, past);
 		await query_create_session(deps, hash_session_token('active'), account_id, future);
 
-		const count = await query_session_cleanup_expired(deps);
-		assert.strictEqual(count, 2);
+		// the ids are the token hashes a caller closes connections by; the
+		// delete returns them in no order worth pinning
+		const swept = await query_session_cleanup_expired(deps);
+		assert.deepEqual([...swept].sort(), [expired_1, expired_2].sort());
 
 		const list = await query_session_list_for_account(deps, account_id);
 		assert.strictEqual(list.length, 1);
+
+		assert.deepEqual(await query_session_cleanup_expired(deps), []);
 	});
 
 	test('revoke_for_account succeeds for own session', async () => {

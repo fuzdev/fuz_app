@@ -10,9 +10,15 @@
  *   again under the same `offer_id`.
  * - A failed audit insert rolls the stamps back and the next run retries.
  * - `run_auth_cleanup` runs both session + offer sweeps and returns both
- *   counts in one pass.
+ *   counts in one pass, closing for the session it swept; a second pass
+ *   sweeps and closes nothing.
  * - An `on_audit_event` callback that throws on one row does not starve the
  *   rest — subsequent rows still land.
+ *
+ * The session sweep's own cases — what it closes, when, and on a failed
+ * commit — are `cleanup.sessions.db.test.ts`; the scheduler's are
+ * `cleanup.schedule.test.ts`. Twin of the Rust spine's `fuz_auth`
+ * `tests/auth_cleanup.rs`.
  *
  * @module
  */
@@ -33,6 +39,11 @@ import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
 import { create_audit_emitter, type AuditEmitter } from '$lib/auth/audit_emitter.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import { Db, no_nested_transaction } from '$lib/db/db.ts';
+import { noop_connection_closer } from '$lib/actions/connection_closer.ts';
+import {
+	assert_close_call,
+	create_recording_closer
+} from '$lib/testing/connection_closer_helpers.ts';
 
 import { describe_db } from '../db_fixture.ts';
 
@@ -132,6 +143,7 @@ describe_db('auth_cleanup', (get_db) => {
 		const deps: AuthCleanupDeps = {
 			db,
 			log,
+			connection_closer: noop_connection_closer,
 			audit: create_audit_with_listener(db, (event) => {
 				callback_events.push(event);
 			})
@@ -179,6 +191,7 @@ describe_db('auth_cleanup', (get_db) => {
 		const deps: AuthCleanupDeps = {
 			db,
 			log,
+			connection_closer: noop_connection_closer,
 			audit: create_audit_with_listener(db, (event) => {
 				callback_events.push(event);
 			})
@@ -231,6 +244,7 @@ describe_db('auth_cleanup', (get_db) => {
 		const count = await cleanup_expired_role_grant_offers({
 			db,
 			log,
+			connection_closer: noop_connection_closer,
 			audit: create_audit_with_listener(db, () => undefined)
 		});
 		assert.strictEqual(count, 0);
@@ -249,6 +263,7 @@ describe_db('auth_cleanup', (get_db) => {
 		const deps: AuthCleanupDeps = {
 			db,
 			log,
+			connection_closer: noop_connection_closer,
 			audit: create_audit_with_listener(db, () => undefined)
 		};
 
@@ -293,6 +308,7 @@ describe_db('auth_cleanup', (get_db) => {
 		const deps: AuthCleanupDeps = {
 			db,
 			log,
+			connection_closer: noop_connection_closer,
 			audit: create_audit_with_listener(db, (event) => {
 				callback_events.push(event);
 			})
@@ -348,6 +364,7 @@ describe_db('auth_cleanup', (get_db) => {
 		const deps: AuthCleanupDeps = {
 			db,
 			log,
+			connection_closer: noop_connection_closer,
 			audit: create_audit_with_listener(db, (event) => {
 				callback_events.push(event);
 			})
@@ -384,6 +401,7 @@ describe_db('auth_cleanup', (get_db) => {
 		const deps: AuthCleanupDeps = {
 			db,
 			log,
+			connection_closer: noop_connection_closer,
 			audit: create_audit_with_listener(db, () => {
 				call_count += 1;
 				if (call_count === 1) throw new Error('synthetic callback failure');
@@ -400,16 +418,24 @@ describe_db('auth_cleanup', (get_db) => {
 		assert.strictEqual(rows.length, 2);
 	});
 
-	test('run_auth_cleanup returns both session + offer counts', async () => {
+	test('run_auth_cleanup sweeps sessions and offers, and closes for the session it swept', async () => {
 		const db = get_db();
 		const accounts = await seed_accounts(db);
 
-		// One expired session.
+		// One expired session beside a live one of the same account.
+		const expired_session = hash_session_token('cleanup-expired');
+		const live_session = hash_session_token('cleanup-live');
 		await query_create_session(
 			{ db },
-			hash_session_token('cleanup-expired'),
+			expired_session,
 			accounts.recipient_account_id,
 			past(hour_ms)
+		);
+		await query_create_session(
+			{ db },
+			live_session,
+			accounts.recipient_account_id,
+			future(hour_ms)
 		);
 		// Two expired offers.
 		await insert_offer(
@@ -427,12 +453,24 @@ describe_db('auth_cleanup', (get_db) => {
 			'moderator'
 		);
 
-		const result = await run_auth_cleanup({
+		const { closer, calls } = create_recording_closer();
+		const deps: AuthCleanupDeps = {
 			db,
 			log,
+			connection_closer: closer,
 			audit: create_audit_with_listener(db, () => undefined)
-		});
-		assert.strictEqual(result.expired_sessions, 1);
-		assert.strictEqual(result.expired_offers, 2);
+		};
+		assert.deepEqual(await run_auth_cleanup(deps), { expired_sessions: 1, expired_offers: 2 });
+		const remaining = await db.query<{ id: string }>('SELECT id FROM auth_session');
+		assert.deepEqual(
+			remaining.map((r) => r.id),
+			[live_session]
+		);
+		assert.strictEqual(calls.length, 1, 'the pass closes for the session it swept, once');
+		assert_close_call(calls[0], 'session', expired_session);
+
+		// nothing left to sweep on a second pass, and nothing more to close
+		assert.deepEqual(await run_auth_cleanup(deps), { expired_sessions: 0, expired_offers: 0 });
+		assert.strictEqual(calls.length, 1);
 	});
 });

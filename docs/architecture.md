@@ -114,7 +114,9 @@ acquire a dedicated pool client; for PGlite, they delegate to native
 The `close` callback is typed per driver (`pool.end()` / `pglite.close()`) — `Db`
 itself has no `close()` method. `close` is threaded through `AppBackend` (from
 `create_app_backend`) and `AppServer` (from `create_app_server`) so callers
-can shut down the database without reaching into `deps.db`.
+can shut down the database without reaching into `deps.db`. `AppServer.close`
+first stops the auth cleanup schedule when `auth_cleanup` started one,
+waiting for a pass in progress, so the pool is never closed under a sweep.
 Consumers that create their own pool/pglite (CLI tools, test factories) import the
 adapters directly instead of duplicating transaction wiring.
 

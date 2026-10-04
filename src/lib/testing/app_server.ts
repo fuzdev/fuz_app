@@ -628,7 +628,7 @@ export interface TestApp {
 	create_daemon_token_headers: (extra?: Record<string, string>) => Record<string, string>;
 	/** Create an additional account with credentials. */
 	create_account: (options?: CreateTestAppAccountArgs) => Promise<TestAccount>;
-	/** Cleanup resources (delegates to TestAppServer.cleanup). */
+	/** Cleanup resources (`AppServer.close`: stops an opted-in auth cleanup schedule, then the backend's `close`). */
 	cleanup: () => Promise<void>;
 }
 
@@ -673,6 +673,9 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		daemon_token_state,
 		rpc_endpoints: options.rpc_endpoints,
 		bootstrap: options.bootstrap,
+		// `auth_cleanup` stays at its default, off: a background pass would
+		// delete rows and write audit rows mid-test. A suite that opts in
+		// through `app_options` has the schedule stopped by `cleanup`.
 		...options.app_options,
 		create_route_specs: options.create_route_specs
 	});
@@ -743,7 +746,9 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		create_bearer_headers,
 		create_daemon_token_headers,
 		create_account,
-		cleanup: () => test_server.cleanup()
+		// the server's `close`, not the backend's: it also stops an auth cleanup
+		// schedule a suite opted into
+		cleanup: () => result.close()
 	};
 };
 
@@ -883,6 +888,7 @@ export const create_test_app_for_bootstrap = async (
 		surface: result.surface_spec.surface,
 		route_specs: result.surface_spec.route_specs,
 		create_request_headers,
-		cleanup: () => backend.close()
+		// `AppServer.close`, so an opted-in auth cleanup schedule stops too
+		cleanup: () => result.close()
 	};
 };

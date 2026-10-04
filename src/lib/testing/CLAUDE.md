@@ -184,6 +184,11 @@ state (no rotation, keeper already set),
 the response returns so tests can assert on side effects inline), and silent
 logger. Override via `app_options`.
 
+`auth_cleanup` is left at its default, **off**, here and in
+`create_test_app_for_bootstrap`: a background pass would delete rows and
+write audit rows mid-test. A suite that opts in through `app_options` has the
+schedule stopped by `cleanup()`, which is the assembled server's `close`.
+
 A fresh Hono app is created on every call because middleware closures bind
 to the server's deps (db, keyring). Hono assembly is cheap (~10–50ms);
 PGlite WASM caching in `db.ts` is where the real savings are.
@@ -1731,7 +1736,7 @@ re-roll the serve / daemon-info / WS-attach / drain boilerplate:
 - `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` / `full_spine_rpc_endpoints(ctx, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). Single-sources what was an inline assembly in `testing_spine_server.ts`, so the binary and the `spine_method_coverage` reconciliation test build the same list. Also `$lib`-free.
 - `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_deno_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory PGlite, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
 
-fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` + `full_spine_rpc_endpoints` + a WS mount, reusing `default_spine_surface`. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic.
+fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` + `full_spine_rpc_endpoints` + a WS mount, reusing `default_spine_surface`. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it, as the Rust consumers' do — nothing a cross-process suite seeds is already expired; an in-process harness leaves it off.
 
 ### Live-method coverage reconciliation — `method_coverage.ts`
 

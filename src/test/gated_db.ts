@@ -43,6 +43,12 @@ export interface HeldCommit {
 	reached: Promise<void>;
 	/** Let the held transaction commit. */
 	release: () => void;
+	/**
+	 * Fail the held transaction with `error` instead of committing it: the
+	 * callback has returned, its writes roll back, and the transaction call
+	 * rejects — what its caller sees when a `COMMIT` fails.
+	 */
+	fail: (error: Error) => void;
 }
 
 /** A pass-through `Db` plus the controls to stall one query or one commit. */
@@ -143,8 +149,11 @@ export const create_gated_db = (inner: Db): GatedDb => {
 		hold_commit: () => {
 			const reached = Promise.withResolvers<void>();
 			const held = Promise.withResolvers<void>();
+			// a hold failed after its test stopped waiting must not surface as an
+			// unhandled rejection
+			held.promise.catch(() => {});
 			armed_commit = { reached: reached.resolve, held: held.promise };
-			return { reached: reached.promise, release: held.resolve };
+			return { reached: reached.promise, release: held.resolve, fail: held.reject };
 		},
 		open_transactions: () => open_transactions
 	};

@@ -73,6 +73,7 @@ import { register_ws_endpoint } from '../actions/register_ws_endpoint.ts';
 import type { WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
 import { create_ws_auth_guard } from '../actions/transports_ws_auth_guard.ts';
 import type { BackendWebsocketTransport } from '../actions/transports_ws_backend.ts';
+import { start_auth_cleanup, type AuthCleanupScheduleOptions } from '../auth/cleanup.ts';
 
 /**
  * Context passed to `on_effect_error` when a pending effect rejects.
@@ -258,6 +259,29 @@ export interface AppServerOptions {
 	 */
 	audit_log_sse?: true | { role?: string };
 
+	/**
+	 * Schedule the auth cleanup beside the server: `start_auth_cleanup` over
+	 * `backend.deps` — a pass as assembly finishes, then one per interval —
+	 * stopped by `AppServer.close`. Each pass deletes expired sessions and
+	 * closes the connections they opened through `deps.connection_closer`
+	 * (every WebSocket transport and audit stream this server mounts), and
+	 * audits each newly expired role_grant offer once.
+	 *
+	 * **Off by default; a production server should turn it on.** Without it
+	 * nothing sweeps: expired session rows accumulate, a WebSocket or audit
+	 * stream outlives the expiry of the session it opened on until it
+	 * disconnects, and an offer's expiry is never audited. With it, a
+	 * connection outlives its session's expiry by at most one interval. The
+	 * Rust spine's servers all schedule the twin (`spawn_auth_cleanup`).
+	 *
+	 * Pass `true` for the default interval
+	 * (`DEFAULT_AUTH_CLEANUP_INTERVAL_MS`), or `{interval_ms}` for another.
+	 * Leave it off in an in-process test harness — a background pass deletes
+	 * rows and writes audit rows mid-test — and in a process that runs
+	 * `run_auth_cleanup` on a schedule of its own.
+	 */
+	auth_cleanup?: boolean | AuthCleanupScheduleOptions;
+
 	/** SSE event specs for surface generation. Defaults to `[]` (no SSE events). */
 	event_specs?: Array<EventSpec>;
 
@@ -395,7 +419,12 @@ export interface AppServer {
 	 * Empty when no `ws_endpoints` were mounted.
 	 */
 	ws_endpoints: Readonly<Record<string, BackendWebsocketTransport>>;
-	/** Close the database connection. Propagated from `AppBackend`. */
+	/**
+	 * Shut the server's resources down: stop the auth cleanup schedule when
+	 * the `auth_cleanup` option started one — waiting for a pass in progress —
+	 * then close the database connection (`AppBackend.close`). That wait has
+	 * no bound of its own; a shutdown with a deadline races it.
+	 */
 	close: () => Promise<void>;
 }
 
@@ -445,6 +474,10 @@ export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
  * `AppServerContext` passed to `create_route_specs`) is non-null in that
  * case; consumers can call `require_audit_sse(ctx)` / `require_audit_sse(server)`
  * to assert the invariant.
+ *
+ * When `auth_cleanup` is set, the auth cleanup schedule starts as the last
+ * step of assembly — so an assembly that throws leaves no schedule running —
+ * and the returned `close` stops it before closing the database.
  *
  * @returns assembled Hono app, backend, surface build, and bootstrap status
  */
@@ -837,6 +870,13 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		}
 	}
 
+	// Auth cleanup — opt-in, and last: nothing after it can throw, so a failed
+	// assembly never leaves a schedule running. Its closes go through
+	// `deps.connection_closer`, which the mounts above have filled.
+	const auth_cleanup = options.auth_cleanup
+		? start_auth_cleanup(deps, options.auth_cleanup === true ? undefined : options.auth_cleanup)
+		: null;
+
 	return {
 		app,
 		surface_spec,
@@ -844,6 +884,12 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		migration_results: backend.migration_results,
 		audit_sse,
 		ws_endpoints: mounted_ws_endpoints,
-		close: backend.close
+		close: auth_cleanup
+			? async () => {
+					// the schedule first, so a pass in progress finishes on a live pool
+					await auth_cleanup.stop();
+					await backend.close();
+				}
+			: backend.close
 	};
 };

@@ -276,6 +276,10 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		on_effect_error: (error, ctx) => {
 			log.error(`Pending effect failed (${ctx.method} ${ctx.path}):`, error);
 		}
+		// `auth_cleanup` stays off (its default): a background pass would delete
+		// rows and write audit rows under a running suite. The Rust
+		// `testing_spine_stub` this binary is compared against leaves its twin
+		// unscheduled too.
 	});
 
 	// Health probe endpoint — the spawn harness polls this for readiness.

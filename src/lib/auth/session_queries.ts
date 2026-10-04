@@ -270,14 +270,33 @@ export const query_session_list_all_active = async (
 };
 
 /**
- * Delete expired sessions.
+ * Delete every expired session, returning the ids (token hashes) of the rows
+ * it deleted.
  *
- * @returns the number of sessions cleaned up
+ * The ids are the keys `ConnectionCloser.close_sockets_for_session` closes by.
+ * A row past `expires_at` already fails `query_session_get_valid`, but
+ * deleting it does not end the connections it opened: a WebSocket keeps the
+ * authority it resolved at upgrade and an SSE stream never rechecks. The row
+ * was also the only per-session handle on those connections —
+ * `account_session_revoke` closes only for a row it deleted — so the caller
+ * closes each returned session's connections once the delete has committed.
+ * `cleanup_expired_sessions` (`auth/cleanup.ts`) is that caller; reach for it
+ * rather than this query.
+ *
+ * One statement, so the returned ids are exactly the rows this call removed:
+ * a concurrent pass gets a disjoint set. Run it in a transaction, as the
+ * caller above does, so the ids are in hand before the delete commits — on a
+ * pool-level `Db` a connection lost on the response leaves the rows deleted
+ * and their ids unread. Served by `idx_auth_session_expires`. Twin of the
+ * Rust `query_session_cleanup_expired`.
+ *
+ * @param deps - query dependencies (transaction-scoped, see above)
+ * @returns the deleted sessions' ids (their token hashes), empty when nothing had expired
  * @mutates `auth_session` table - deletes every row past `expires_at`
  */
-export const query_session_cleanup_expired = async (deps: QueryDeps): Promise<number> => {
+export const query_session_cleanup_expired = async (deps: QueryDeps): Promise<Array<string>> => {
 	const rows = await deps.db.query<{ id: string }>(
 		`DELETE FROM auth_session WHERE expires_at <= NOW() RETURNING id`
 	);
-	return rows.length;
+	return rows.map((row) => row.id);
 };

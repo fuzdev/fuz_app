@@ -229,6 +229,7 @@ const { app, surface_spec, bootstrap_status, close } = await create_app_server({
 	],
 	// surface_route: false,  // disable auto-created GET /api/surface
 	audit_log_sse: true, // factory-managed audit SSE (auto-registers its listener via backend.deps.audit.add_listener + adds event specs)
+	auth_cleanup: true, // scheduled auth cleanup — off by default, on in production (see below)
 	env_schema: app_env_schema,
 	event_specs: my_event_specs, // audit_log_event_specs auto-appended when audit_log_sse is set
 	// rpc_endpoints: single source of truth for both surface generation and
@@ -304,7 +305,8 @@ returns the path-keyed `BackendWebsocketTransport` map for broadcast.
 
 The factory handles: consumer migrations -> proxy middleware -> auth middleware ->
 bootstrap status -> app settings load -> consumer route specs -> factory-managed
-routes (bootstrap, surface) -> surface generation -> Hono app assembly -> static serving.
+routes (bootstrap, surface) -> surface generation -> Hono app assembly -> static serving ->
+the auth cleanup schedule when `auth_cleanup` is set (§Auth cleanup below).
 Consumer migration namespaces must not appear in `reserved_migration_namespaces` (currently `['fuz_auth']`) — `create_app_backend` throws at startup if a consumer namespace collides.
 
 Consumer-specific code (env loading, error formatting/exit, custom
@@ -318,6 +320,76 @@ to override. The two `action_*` limiters back the per-action `rate_limit?`
 field on `ActionSpec` and are shared across the HTTP RPC and WebSocket
 dispatchers. Body size limiting defaults to 1 MiB (`DEFAULT_MAX_BODY_SIZE`);
 pass `max_body_size` to override or `null` to disable.
+
+### Auth cleanup
+
+Two things in the auth schema need upkeep, and nothing does it unless the
+server schedules it: expired session rows are deleted and the WebSockets and
+audit streams they opened are closed, and each expired role_grant offer gets
+its `role_grant_offer_expire` audit row. `auth_cleanup` on `create_app_server`
+schedules both — a pass as assembly finishes, then one per interval:
+
+```typescript
+const { app, close } = await create_app_server({
+	// …other options…
+	auth_cleanup: true // every DEFAULT_AUTH_CLEANUP_INTERVAL_MS (10 minutes)
+	// auth_cleanup: {interval_ms: 60_000}, // or your own interval
+});
+
+// on shutdown: stops the schedule (waiting for a pass in progress), then
+// closes the database. The wait has no bound of its own — a shutdown with a
+// deadline races it
+await close();
+```
+
+It is **off by default** — turn it on in production. Without it a connection
+outlives the expiry of the session it opened on until it disconnects; with it,
+by at most one interval (./security.md §Connection Admission, "What remains").
+The Rust spine's servers all schedule the twin. Leave it off in an in-process
+test harness: a background pass deletes rows and writes audit rows mid-test.
+A cross-process test binary may schedule it, as the Rust consumers' do —
+nothing a cross-process suite seeds is already expired.
+
+A failed pass (the database out of reach) is logged and retried on the next
+interval, passes never overlap, and the timer does not hold the process open.
+A server assembled by hand, or one that wants the passes on its own scheduler,
+uses `auth/cleanup.ts` directly:
+
+```typescript
+import { start_auth_cleanup, run_auth_cleanup } from '@fuzdev/fuz_app/auth/cleanup.ts';
+
+// the scheduler — `backend.deps` carries everything a pass needs
+const auth_cleanup = start_auth_cleanup(backend.deps, { interval_ms: 60_000 });
+// on shutdown, before the database closes
+await auth_cleanup.stop();
+
+// or one pass, from your own scheduler in the same process
+const { expired_sessions, expired_offers } = await run_auth_cleanup(backend.deps);
+```
+
+`AuthCleanupDeps` is `{db, log, audit, connection_closer}`. The closer is
+required: the session sweep closes through it, so it must be the one the
+app's transports were added to (`backend.deps.connection_closer`).
+Run the sweep in the process that holds the connections. A pass from another
+process — a cron script against a live server's database — deletes the
+expired rows and closes nothing, and the server's own pass then finds them
+gone, so those connections stay open until they disconnect.
+`noop_connection_closer` is for a database no server holds connections on:
+tests, or an offline maintenance run.
+
+The loop under `start_auth_cleanup` is `start_periodic`
+(`@fuzdev/fuz_app/periodic.ts`) — a pass at once, one per interval, no
+overlap, a failed pass logged and retried, `stop()` waiting for a pass in
+progress. Use it for your own sweeps rather than a bare `setInterval`, which
+overlaps a slow pass with the next:
+
+```typescript
+import { start_periodic } from '@fuzdev/fuz_app/periodic.ts';
+
+const temp_sweep = start_periodic('temp sweep', 60 * 60 * 1000, () => sweep_temps(root), log);
+// on shutdown
+await temp_sweep.stop();
+```
 
 ## SSE Endpoints
 

@@ -186,6 +186,12 @@ legitimate operator.
   leaked cookie forever at one request per window; both spines converged on
   the hard cap). The only recovery from an aged-out session is a fresh login.
   Sessions carry no activity signal — there is nothing to touch or renew
+- **Expiry and live connections**: an expired session is refused on every
+  request, but a WebSocket or SSE stream it opened does not read it again.
+  The auth cleanup deletes expired session rows and closes those connections
+  — within one cleanup interval of the expiry when it is scheduled
+  (`auth_cleanup` on `create_app_server`, off by default; see
+  [Connection Admission](#connection-admission), "What remains")
 - **Session limits**: Per-account cap (default 5, configurable). Oldest session
   evicted on login when limit is reached
 - **Password change**: Revokes all sessions and clears the session cookie.
@@ -641,7 +647,9 @@ revocation the re-read sees.
   session or token revoke, or an account delete, finds nothing left to revoke
   and closes nothing — and the admin revoke-alls refuse an account that is no
   longer active, so a deleted account's connections stay open until they
-  disconnect.
+  disconnect. The expired-session sweep is the exception: it closes for the
+  sessions its delete returned whatever became of its commit, since they are
+  expired either way, and the next pass deletes any row the commit left.
 - A role revocation closes an audit stream through the audit listener alone,
   and the listener hears of a row only once its fail-open audit write lands. If
   that write fails, the role is revoked, the request succeeds, and a stream
@@ -652,12 +660,26 @@ revocation the re-read sees.
   `expires_at`, or a `role_grant` or `actor` row deleted through the db-admin
   browser, whose `db_admin_row_delete` event declares no revocation scope. The
   stream stays open until it reconnects; the role gate refuses it then.
-- A session or token that *expires* closes nothing. Expiry is not an event:
-  the re-read refuses an expired credential at open, and an open connection
-  outlives its credential's expiry until it reconnects or a revocation closes
-  it. The expired-session sweep (`run_auth_cleanup`) deletes those rows
-  without closing the connections they opened; the Rust spine's sweep closes
-  them.
+- Expiry is not an event, so nothing closes a connection at the moment its
+  credential expires; the re-read refuses an expired credential at open. What
+  happens afterwards depends on the credential:
+  - A **session**'s connections are closed by the auth cleanup. Each pass
+    deletes the expired session rows and closes the connections they opened,
+    after the delete commits (`cleanup_expired_sessions`). With the cleanup
+    scheduled — `create_app_server`'s `auth_cleanup` option, or
+    `start_auth_cleanup` — a connection outlives its session's expiry by at
+    most one cleanup interval (`DEFAULT_AUTH_CLEANUP_INTERVAL_MS`, ten
+    minutes) plus the pass itself. The option is **off by default**: a server
+    that schedules no cleanup closes nothing on expiry, and the connection
+    runs until it disconnects or a revocation closes it. A pass that fails —
+    the database out of reach — is retried on the next interval.
+  - An expired **API token**'s connection is not closed either way. The
+    sweep does not touch token rows, so the connection stays open until it
+    disconnects or a revocation closes it — `account_token_revoke` still
+    finds the row to close for.
+
+  The Rust spine's sweep makes the same closes, and its servers all schedule
+  it.
 - Rotating the daemon token closes nothing: the token has no row and no
   revocation event, so a connection opened on an earlier token keeps running.
 - A revocation made by code that neither queues a close nor emits an audit
@@ -711,6 +733,16 @@ expiry, a raw row delete — is under
 A cap eviction writes no audit row, so the handler's close is the only one it
 has. A failed revocation (`revoked: false` — the id was wrong, or another
 account's) closes nothing: it carries a caller-supplied id.
+
+**Expired sessions.** One close is not a revocation. The auth cleanup's
+session sweep deletes expired session rows, and a deleted row can no longer be
+closed for by `account_session_revoke`, so the sweep closes the connections of
+each session it deletes — by session id, through the same
+`deps.connection_closer`, after its delete commits. It writes no audit row
+(nobody performed an expiry), so no listener repeats the close. It runs only
+where the cleanup is scheduled (`auth_cleanup` on `create_app_server`, off by
+default); the bound it gives is under
+[Connection Admission](#connection-admission), "What remains".
 
 **One closer for every transport.** `deps.connection_closer` is a
 `RealtimeCloser`: each close fans out to every transport added to it. A
@@ -1735,6 +1767,9 @@ state are designed for **single-process deployments**:
   revocation closes the WebSockets and SSE streams of its own process only
   (`deps.connection_closer` and the audit listeners are both in-memory), and
   the per-account connection cap and per-session stream cap count per process.
+  The expired-session sweep closes the same way: a second process keeps the
+  connections it holds on a session this one swept, and its own pass finds
+  the row already gone.
 - Daemon token rotation is file-based. Multiple processes sharing the file may
   read stale state between token write and fsync.
 

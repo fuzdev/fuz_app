@@ -81,7 +81,7 @@ All take `deps: QueryDeps = {db}` first; `query_validate_api_token` adds `log`.
 - `auth/actor_search_queries.ts` — case-insensitive prefix search on `actor.name`, scope-filtered when not admin.
 - `auth/role_grant_queries.ts` — idempotent create, IDOR-guarded revoke (with in-tx supersede), scope-aware lookup, role/account predicates, `query_role_grant_revoke_for_scope` parent-scope cascade.
 - `auth/role_grant_offer_queries.ts` — offer create/decline/retract/list/history/sweep, atomic `query_accept_offer` with sibling supersede; error classes `RoleGrantOfferSelfTargetError` / `_AlreadyTerminalError` / `_ExpiredError` / `_NotFoundError` / `_ActorAccountMismatchError` / `_ActorMismatchError`.
-- `auth/session_queries.ts` — server-side sessions (blake3-hashed), `query_session_revoke_by_hash_unscoped` (logout only), `query_session_enforce_limit` (transaction-required; returns the evicted sessions' ids — their token hashes — so the caller closes their connections after the commit). No touch/renewal query — `expires_at` is an absolute cap set at mint (`AUTH_SESSION_LIFETIME_MS`).
+- `auth/session_queries.ts` — server-side sessions (blake3-hashed), `query_session_revoke_by_hash_unscoped` (logout only), `query_session_enforce_limit` (transaction-required; returns the evicted sessions' ids — their token hashes — so the caller closes their connections after the commit), `query_session_cleanup_expired` (returns the swept sessions' ids for the same close — `cleanup_expired_sessions` is its caller). No touch/renewal query — `expires_at` is an absolute cap set at mint (`AUTH_SESSION_LIFETIME_MS`).
 - `auth/api_token_queries.ts` — token validation with fire-and-forget usage tracking, `query_api_token_live_account` (the by-id, no-touch re-check read; shares the `API_TOKEN_IS_LIVE` predicate with the validate query so the two can't drift), IDOR-guarded revoke, `query_api_token_enforce_limit` (transaction-required; returns the evicted tokens' ids for the same post-commit close).
 - `auth/invite_queries.ts` — invite create/find/claim/list/delete; `query_invite_claim_unscoped` (scoping enforced upstream by `_find_unclaimed_match_for_update`, which runs inside the signup tx with `FOR UPDATE` so find + claim are atomic).
 - `auth/app_settings_queries.ts` — load/update for the single-row settings table.
@@ -876,12 +876,62 @@ drops the hand-maintained method-name mappings:
 
 ## Cleanup
 
-`auth/cleanup.ts` — `run_auth_cleanup(deps)` runs every sweep (expired
-sessions + expired offers) and returns counts. Re-throws sweep errors so the
-caller's scheduler can log/alert. Expired offer rows are preserved (audit
-value for the history view).
+`auth/cleanup.ts` — twin of the Rust `fuz_auth::auth_cleanup` module.
 
-**Idempotency.** `cleanup_expired_role_grant_offers` runs one transaction:
+- `run_auth_cleanup(deps)` — one pass: `cleanup_expired_sessions`, then
+  `cleanup_expired_role_grant_offers`; returns `AuthCleanupResult`
+  (`{expired_sessions, expired_offers}`, the same shape on both spines).
+  Re-throws the first sweep's error. Expired offer rows are preserved (audit
+  value for the history view).
+- `start_auth_cleanup(deps, {interval_ms?})` → `{stop}` — the scheduler: a
+  pass at once, then one per interval (`DEFAULT_AUTH_CLEANUP_INTERVAL_MS`, ten
+  minutes), until `stop()`. `create_app_server`'s `auth_cleanup` option calls
+  it with `backend.deps` and chains `stop` into `AppServer.close`. **Off by
+  default** there; a production server turns it on, and an in-process test
+  harness leaves it off (a background pass deletes rows and writes audit rows
+  mid-test).
+
+`AuthCleanupDeps` is `{db, log, audit, connection_closer}`, all required —
+`AppDeps` satisfies it. Tests pass `create_test_audit_emitter()` from
+`testing/stubs.ts` and, where nothing is to be closed, `noop_connection_closer`.
+The sweep belongs in the process that holds the connections: run from another
+process against a live server's database, it deletes the rows that server's
+own pass would have closed for.
+
+**The session sweep closes what it sweeps.** A connection never re-reads its
+session, and once the sweep deletes an expired row `account_session_revoke`
+has nothing left to close for — so `cleanup_expired_sessions` closes each
+swept session's connections itself, by session id
+(`connection_closer.close_sockets_for_session`), which is why
+`query_session_cleanup_expired` returns the deleted ids. With the cleanup
+scheduled, a connection outlives its **session's** expiry by at most one
+interval. An expired API token's row is not swept and its connection is not
+closed (`account_token_revoke` still finds the row).
+
+- The delete runs in its own transaction and the closes follow the commit —
+  the rule every revocation close keeps (`actions/CLAUDE.md` §Connection
+  closer).
+- A transaction that fails once the delete has answered still closes: the
+  sessions are expired either way, the error is thrown after the closes, and
+  the next pass deletes the rows the commit left.
+- A closer that throws for one session is logged and the rest still close.
+- No audit row is written for a swept session, so no listener repeats the
+  close.
+
+**The schedule** is `start_periodic` (`periodic.ts`, twin of the Rust
+`fuz_sys::periodic::spawn_periodic`), which owns the loop's rules:
+`start_auth_cleanup` is that loop over `run_auth_cleanup` plus the swept-counts
+log. Passes never overlap, and a pass that overruns its interval delays the
+next one (which starts when the slow one ends, the one after a full interval
+later) rather than bursting. A failed pass is logged at `warn` with its error
+and retried on the next interval. The timer is unref'd. An interval that is
+not a positive finite number, or exceeds `PERIODIC_INTERVAL_MS_MAX` (the
+largest delay a timer honors), throws at the call. **Shutdown differs from
+Rust**: its task drops a pass in progress; `stop()` ends the schedule at once
+and its promise resolves when the pass in progress has finished — await it
+before closing the database. The wait has no bound of its own.
+
+**Offer idempotency.** `cleanup_expired_role_grant_offers` runs one transaction:
 `query_role_grant_offer_sweep_expired` claims the expired pending offers not
 yet audited by stamping `role_grant_offer.expire_audited_at` (`UPDATE …
 RETURNING`), and each claimed row's `role_grant_offer_expire` audit row is
@@ -894,8 +944,4 @@ is not a lifecycle state (outside the terminal CHECK and the pending
 predicate) and stays off the wire (`to_role_grant_offer_json` drops it); the
 create upsert's re-offer clears it, so a refreshed offer's own expiry is
 audited too. The `role_grant_offer_expire_sweep` partial index serves the
-claim. Twin of the Rust `fuz_auth::auth_cleanup` module.
-
-`AuthCleanupDeps` requires `audit: AuditEmitter` — production wiring always
-has a bound emitter; tests pass `create_test_audit_emitter()` from
-`testing/stubs.ts`.
+claim.

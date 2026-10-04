@@ -26,6 +26,7 @@ import {
 } from '$lib/auth/role_grant_offer_queries.ts';
 import { cleanup_expired_role_grant_offers } from '$lib/auth/cleanup.ts';
 import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
+import { noop_connection_closer } from '$lib/actions/connection_closer.ts';
 import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
 import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
 
@@ -139,6 +140,8 @@ describe_db('role_grant_offer.multi_actor — cascade', (get_db) => {
 			const count = await cleanup_expired_role_grant_offers({
 				db: get_db(),
 				log: cleanup_log,
+				// the offer sweep closes nothing
+				connection_closer: noop_connection_closer,
 				audit: create_audit_emitter({
 					db: get_db(),
 					log: cleanup_log,

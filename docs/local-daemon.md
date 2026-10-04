@@ -72,7 +72,10 @@ const { app, close } = await create_app_server({
 		create_health_route_spec(),
 		...prefix_route_specs('/api', my_routes(ctx))
 	],
-	env_schema: BaseServerEnv
+	env_schema: BaseServerEnv,
+	// sweep expired sessions (closing their live connections) and audit
+	// expired offers on a schedule — off by default; `close` stops it
+	auth_cleanup: true
 	// event_specs defaults to [] when omitted
 });
 ```
