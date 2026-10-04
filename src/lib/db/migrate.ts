@@ -96,7 +96,6 @@ export interface MigrationResult {
 export type MigrationErrorKind =
 	| 'binary-older-than-db'
 	| 'name-divergence-at-N'
-	| 'old-tracker-shape'
 	| 'migration-failed'
 	| 'baseline-name-not-in-code'
 	| 'baseline-name-out-of-order'
@@ -140,29 +139,6 @@ CREATE TABLE IF NOT EXISTS schema_version (
   PRIMARY KEY (namespace, name),
   UNIQUE (namespace, sequence)
 )`;
-
-/**
- * Detect the pre-0.42 `schema_version` shape (`namespace`, `version`,
- * `applied_at`). The new-shape DDL uses `IF NOT EXISTS` and would silently
- * no-op against the old table, so this probe runs before DDL and before any
- * per-namespace lock.
- */
-const detect_old_tracker = async (db: Db): Promise<boolean> => {
-	const row = await db.query_one<{ exists: boolean }>(
-		`SELECT EXISTS (
-			SELECT 1 FROM information_schema.columns
-			WHERE table_schema = 'public'
-			  AND table_name = 'schema_version'
-			  AND column_name = 'version'
-		) as exists`
-	);
-	return row?.exists ?? false;
-};
-
-const OLD_TRACKER_HINT =
-	'Detected fuz_app < 0.42 tracker shape (schema_version.version column exists). ' +
-	'Hint: `DROP TABLE schema_version` and re-run, or call `baseline()` first if ' +
-	'preserving an existing schema.';
 
 /**
  * Compute a stable int32 advisory lock key from a namespace string.
@@ -237,16 +213,12 @@ const with_namespace_lock = async <T>(
  *   namespaces are omitted)
  * @mutates schema_version - inserts one row per applied migration
  * @throws MigrationError with `kind` of `binary-older-than-db`,
- *   `name-divergence-at-N`, `old-tracker-shape`, or `migration-failed`
+ *   `name-divergence-at-N`, or `migration-failed`
  */
 export const run_migrations = async (
 	db: Db,
 	namespaces: Array<MigrationNamespace>
 ): Promise<Array<MigrationResult>> => {
-	if (await detect_old_tracker(db)) {
-		throw new MigrationError('old-tracker-shape', OLD_TRACKER_HINT);
-	}
-
 	await db.query(SCHEMA_VERSION_DDL);
 
 	const results: Array<MigrationResult> = [];
@@ -292,10 +264,10 @@ export const run_migrations = async (
 				}
 			}
 
-			// Step 5: up-to-date case
+			// up-to-date case
 			if (applied.length === migrations.length) return;
 
-			// Step 6: run pending tail in a single chain-tx
+			// Step 5: run pending tail in a single chain-tx
 			let next_sequence = applied.length > 0 ? applied[applied.length - 1]!.sequence + 1 : 0;
 			const applied_names: Array<string> = [];
 
@@ -335,19 +307,15 @@ export const run_migrations = async (
  * Insert tracker rows for the named migrations of a namespace **without
  * executing them**.
  *
- * Used to promote an existing schema (e.g. produced by a pre-0.42 build,
- * preserved through a tracker-shape upgrade) into the new identity tracker.
+ * Used to promote an existing schema (e.g. produced by an out-of-band
+ * bootstrap, or a hand-applied DDL set) into the identity tracker.
  * `baseline()` trusts the operator-supplied list — it does not verify that
  * the schema actually matches what the named migrations would have produced.
  * Pair with a schema-assertion script post-baseline before re-enabling traffic.
  *
  * Contract:
- * - Probes for the pre-0.42 tracker shape; throws `old-tracker-shape` if
- *   found (DDL with `IF NOT EXISTS` would otherwise no-op against the old
- *   table and the INSERT would fail with a confusing column-not-found).
- * - Creates the new-shape `schema_version` table if missing — cutover
- *   scripts that just dropped the old-shape table can call `baseline()`
- *   directly with no separate DDL step.
+ * - Creates the `schema_version` table if missing — a promotion script can
+ *   call `baseline()` against a fresh tracker with no separate DDL step.
  * - Acquires the same per-namespace advisory lock as `run_migrations` (with
  *   the same try/catch fallback for environments lacking `pg_advisory_lock`).
  * - Refuses if any tracker rows already exist *for this namespace* — lets
@@ -363,19 +331,14 @@ export const run_migrations = async (
  * @param names - prefix of `ns.migrations[].name` to record as already-applied
  * @mutates schema_version - inserts tracker rows for `names` without running
  *   the corresponding migration bodies
- * @throws MigrationError with `kind` of `old-tracker-shape`,
- *   `baseline-name-not-in-code`, `baseline-name-out-of-order`, or
- *   `baseline-namespace-already-populated`
+ * @throws MigrationError with `kind` of `baseline-name-not-in-code`,
+ *   `baseline-name-out-of-order`, or `baseline-namespace-already-populated`
  */
 export const baseline = async (
 	db: Db,
 	ns: MigrationNamespace,
 	names: ReadonlyArray<string>
 ): Promise<void> => {
-	if (await detect_old_tracker(db)) {
-		throw new MigrationError('old-tracker-shape', OLD_TRACKER_HINT, { namespace: ns.namespace });
-	}
-
 	await db.query(SCHEMA_VERSION_DDL);
 
 	const code_names = ns.migrations.map((m) => m.name);

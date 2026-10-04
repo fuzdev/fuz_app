@@ -161,16 +161,16 @@ the result array.
 **`MigrationError`** is the only error class thrown from
 `run_migrations` and `baseline`. Branch on `.kind`, never on message
 text. Kinds: `binary-older-than-db`, `name-divergence-at-N`,
-`old-tracker-shape`, `migration-failed`, `baseline-name-not-in-code`,
+`migration-failed`, `baseline-name-not-in-code`,
 `baseline-name-out-of-order`, `baseline-namespace-already-populated`.
 Structured context fields (`namespace`, `at_index`, `unknown_names`)
 accompany each kind.
 
 **`baseline(db, ns, names[])`** INSERTs tracker rows for a name-prefix of
 `ns.migrations` _without executing them_ — the only sanctioned
-non-execution path. Used to promote an existing schema (e.g. preserved
-through a tracker-shape upgrade) into the new tracker. Probes for the
-pre-0.42 tracker shape, creates the new-shape table if absent, acquires
+non-execution path. Used to promote an existing schema (e.g. one produced
+by an out-of-band bootstrap or a hand-applied DDL set) into the tracker.
+Creates the `schema_version` table if absent, acquires
 the same advisory lock as `run_migrations`, refuses if the namespace
 already has tracker rows (per-namespace partial-failure-resume guard),
 prefix-validates against `ns.migrations`, then writes sequences `0..N-1`

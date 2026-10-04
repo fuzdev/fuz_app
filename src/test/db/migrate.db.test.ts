@@ -33,16 +33,6 @@ beforeEach(async () => {
 
 const named = (name: string, up: Migration['up'] = async () => {}): Migration => ({ name, up });
 
-const create_old_tracker = async (): Promise<void> => {
-	await db.query(`
-		CREATE TABLE schema_version (
-		  namespace TEXT PRIMARY KEY,
-		  version INTEGER NOT NULL DEFAULT 0,
-		  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		)
-	`);
-};
-
 const seed_applied_row = async (
 	namespace: string,
 	name: string,
@@ -189,14 +179,6 @@ describe('run_migrations', () => {
 		const err = assert_migration_error(await assert_rejects(() => run_migrations(db, [ns])));
 		assert.strictEqual(err.kind, 'binary-older-than-db');
 		assert.deepStrictEqual([...(err.unknown_names ?? [])], ['m3_unknown']);
-	});
-
-	test('old-tracker-shape detected before any DDL or per-namespace work', async () => {
-		await create_old_tracker();
-		const ns: MigrationNamespace = { namespace: 'irrelevant', migrations: [named('m0')] };
-
-		const err = assert_migration_error(await assert_rejects(() => run_migrations(db, [ns])));
-		assert.strictEqual(err.kind, 'old-tracker-shape');
 	});
 
 	test('any failure rolls back the whole pending chain', async () => {
@@ -668,14 +650,6 @@ describe('baseline', () => {
 		]);
 		assert.strictEqual(rows_a.length, 1);
 		assert.strictEqual(rows_b.length, 1);
-	});
-
-	test('old-tracker-shape detected by baseline before any work', async () => {
-		await create_old_tracker();
-		const ns: MigrationNamespace = { namespace: 'irrelevant', migrations: [named('m0')] };
-
-		const err = assert_migration_error(await assert_rejects(() => baseline(db, ns, ['m0'])));
-		assert.strictEqual(err.kind, 'old-tracker-shape');
 	});
 
 	test('advisory-lock-unsupported path (PGlite) — baseline proceeds without serialization', async () => {

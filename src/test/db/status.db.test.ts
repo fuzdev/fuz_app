@@ -233,7 +233,7 @@ describe('query_db_status connectivity and tables', () => {
 	});
 });
 
-describe('query_db_status tracker shape', () => {
+describe('query_db_status tracker absence', () => {
 	test('no schema_version table → namespaces report nothing applied yet', async () => {
 		await db.query('DROP TABLE schema_version');
 		const ns: MigrationNamespace = { namespace: 'fresh', migrations: [named('m0'), named('m1')] };
@@ -241,34 +241,8 @@ describe('query_db_status tracker shape', () => {
 		const status = await query_db_status(db, [ns]);
 		const m = status.migrations.find((x) => x.namespace === 'fresh')!;
 
-		assert.strictEqual(status.old_tracker_shape, undefined);
 		assert.deepStrictEqual(m.applied_names, []);
 		assert.deepStrictEqual(m.pending_names, ['m0', 'm1']);
-		assert.strictEqual(m.up_to_date, false);
-		assert.strictEqual(m.divergence, undefined);
-	});
-
-	test('pre-0.42 tracker shape (version column) → old_tracker_shape flagged, nothing applied', async () => {
-		await db.query('DROP TABLE schema_version');
-		await db.query(`
-			CREATE TABLE schema_version (
-			  namespace TEXT PRIMARY KEY,
-			  version INTEGER NOT NULL DEFAULT 0,
-			  applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-			)
-		`);
-		const ns: MigrationNamespace = {
-			namespace: 'fuz_auth',
-			migrations: [named('full_auth_schema')]
-		};
-
-		const status = await query_db_status(db, [ns]);
-		const m = status.migrations.find((x) => x.namespace === 'fuz_auth')!;
-
-		assert.strictEqual(status.old_tracker_shape, true);
-		// the old shape is never name-read, so every namespace shows nothing-applied
-		assert.deepStrictEqual(m.applied_names, []);
-		assert.deepStrictEqual(m.pending_names, ['full_auth_schema']);
 		assert.strictEqual(m.up_to_date, false);
 		assert.strictEqual(m.divergence, undefined);
 	});
@@ -299,16 +273,5 @@ describe('format_db_status', () => {
 		assert.ok(out.includes('widget'), out);
 		assert.ok(out.includes('3 rows'), out);
 		assert.ok(!out.includes('Migrations:'), out);
-	});
-
-	test('old_tracker_shape → renders the pre-0.42 remediation hint', () => {
-		const out = format_db_status({
-			connected: true,
-			table_count: 1,
-			tables: [{ name: 'schema_version', row_count: 0 }],
-			migrations: [],
-			old_tracker_shape: true
-		});
-		assert.ok(out.includes('pre-0.42 schema_version shape'), out);
 	});
 });

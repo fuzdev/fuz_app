@@ -51,15 +51,16 @@ then enforces:
 
 `MigrationError` is the only error class thrown from `run_migrations` and
 `baseline`; branch on `.kind` (never on message text). Kinds:
-`binary-older-than-db`, `name-divergence-at-N`, `old-tracker-shape`,
-`migration-failed`, `baseline-name-not-in-code`, `baseline-name-out-of-order`,
+`binary-older-than-db`, `name-divergence-at-N`, `migration-failed`,
+`baseline-name-not-in-code`, `baseline-name-out-of-order`,
 `baseline-namespace-already-populated`.
 
 `baseline(db, ns, names)` is the only sanctioned non-execution path — INSERTs
 tracker rows for a name-prefix of `ns.migrations` without running their `up`
-functions. Used to promote an existing schema into the new tracker (e.g.
-after a tracker-shape upgrade). Per-namespace populated guard lets multi-call
-cutover scripts resume after partial failure. `baseline()` does **not**
+functions. Used to promote an existing schema (e.g. one produced by an
+out-of-band bootstrap or a hand-applied DDL set) into the tracker.
+Per-namespace populated guard lets multi-call cutover scripts resume after
+partial failure. `baseline()` does **not**
 verify the schema actually matches what the named migrations would have
 produced — pair with a schema-assertion script post-baseline.
 

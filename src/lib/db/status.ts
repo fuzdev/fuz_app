@@ -91,30 +91,7 @@ export interface DbStatus {
 	tables: Array<TableStatus>;
 	/** Per-namespace migration status. */
 	migrations: Array<MigrationStatus>;
-	/**
-	 * True if the pre-0.42 `schema_version` shape (with a `version` column)
-	 * was detected. The runner refuses to start in this state — operators
-	 * see this flag as their cue to drop the table or call `baseline()`.
-	 */
-	old_tracker_shape?: boolean;
 }
-
-const has_table_column = async (
-	db: Db,
-	table_name: string,
-	column_name: string
-): Promise<boolean> => {
-	const row = await db.query_one<{ exists: boolean }>(
-		`SELECT EXISTS (
-			SELECT 1 FROM information_schema.columns
-			WHERE table_schema = 'public'
-			  AND table_name = $1
-			  AND column_name = $2
-		) as exists`,
-		[table_name, column_name]
-	);
-	return row?.exists ?? false;
-};
 
 const has_table = async (db: Db, table_name: string): Promise<boolean> => {
 	const row = await db.query_one<{ exists: boolean }>(
@@ -177,14 +154,10 @@ export const query_db_status = async (
 
 	// check migration state
 	const migrations: Array<MigrationStatus> = [];
-	let old_tracker_shape: boolean | undefined;
 	if (namespaces?.length) {
 		const sv_exists = await has_table(db, 'schema_version');
-		// pre-0.42 shape carries a `version` column; new shape carries `name`
-		const old_shape = sv_exists ? await has_table_column(db, 'schema_version', 'version') : false;
-		if (old_shape) old_tracker_shape = true;
 
-		if (sv_exists && !old_shape) {
+		if (sv_exists) {
 			for (const { namespace, migrations: ns_migrations } of namespaces) {
 				const rows = await db.query<{ name: string }>(
 					`SELECT name FROM schema_version
@@ -229,7 +202,7 @@ export const query_db_status = async (
 				});
 			}
 		} else {
-			// no tracker, or pre-0.42 shape — every namespace shows as "nothing applied yet"
+			// no tracker — every namespace shows as "nothing applied yet"
 			for (const { namespace, migrations: ns_migrations } of namespaces) {
 				const code_names = ns_migrations.map((m) => m.name);
 				migrations.push({
@@ -246,8 +219,7 @@ export const query_db_status = async (
 		connected: true,
 		table_count: tables.length,
 		tables,
-		migrations,
-		...(old_tracker_shape ? { old_tracker_shape: true } : {})
+		migrations
 	};
 };
 
@@ -287,14 +259,6 @@ export const format_db_status = (status: DbStatus): string => {
 		for (const t of status.tables) {
 			lines.push(`    ${t.name.padEnd(max_name)}  ${t.row_count} rows`);
 		}
-	}
-
-	if (status.old_tracker_shape) {
-		lines.push('');
-		lines.push('  Migrations: pre-0.42 schema_version shape detected.');
-		lines.push(
-			'    Drop the table and re-run, or call `baseline()` first if preserving the schema.'
-		);
 	}
 
 	if (status.migrations.length > 0) {
