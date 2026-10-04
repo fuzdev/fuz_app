@@ -31,7 +31,8 @@ const EXPECTED_MIGRATION_NAMES = [
 	'api_token_scope',
 	'api_token_hash_unique_index',
 	'audit_log_metadata_gin_index',
-	'drop_session_last_seen_at'
+	'drop_session_last_seen_at',
+	'role_grant_offer_expire_audited_at'
 ];
 
 describe('auth_migrations', () => {

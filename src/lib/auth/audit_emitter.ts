@@ -22,12 +22,13 @@
  *   `actor_id` / `account_id` / `ip` boilerplate every role-grant-shape audit
  *   site repeated. Delegates to `emit`.
  * - `emit_pool(input)` — awaitable pool write for code paths without a
- *   `pending_effects` queue (cleanup sweeps, ad-hoc maintenance scripts).
- *   Same write-then-notify semantics as `emit`, just synchronous-with-await.
+ *   `pending_effects` queue (ad-hoc maintenance scripts). Same
+ *   write-then-notify semantics as `emit`, just synchronous-with-await.
  * - `notify(event)` — fan out an already-written audit row (e.g. rows
  *   returned by `query_accept_offer` that were inserted in-transaction by
- *   the query layer). Runs every registered listener; per-listener throws
- *   are isolated.
+ *   the query layer, or the offer-expiry rows `auth/cleanup.ts` writes in
+ *   its sweep transaction). Runs every registered listener; per-listener
+ *   throws are isolated.
  *
  * Listeners are a documented registration seam — `create_app_server`
  * registers additional listeners via `add_listener` after the backend is
@@ -134,10 +135,14 @@ export interface AuditEmitter {
 	 * Awaitable pool write for code paths without a `pending_effects` queue.
 	 *
 	 * Same write-then-notify semantics as `emit`. Errors are logged and
-	 * swallowed (resolved void), so callers can sequence sweeps with
-	 * `await audit.emit_pool(...)` without try/catch boilerplate. The
-	 * primary user is `auth/cleanup.ts` — sweeps have no per-request
-	 * `pending_effects` to attach to.
+	 * swallowed (resolved void), so callers can sequence writes with
+	 * `await audit.emit_pool(...)` without try/catch boilerplate.
+	 *
+	 * Not for a success audit paired with a state mutation: the pool write
+	 * can't roll back with the state, and a swallowed error leaves the
+	 * mutation unaudited. Write those in the mutation's transaction
+	 * (`query_audit_log` against the tx) and `notify` after the commit — the
+	 * shape `auth/cleanup.ts`'s offer sweep and `query_accept_offer` use.
 	 *
 	 * @mutates `audit_log` table - inserts the row via the captured pool
 	 */

@@ -94,9 +94,8 @@ export interface RecordingAuditEmitter {
  * `listener_count` reports (registered listeners never fire — this emitter
  * captures `emit` shapes, not fan-out).
  *
- * `emit` AND `emit_pool` both append to `calls` so cleanup-sweep tests
- * (which use `emit_pool` exclusively — see `auth/cleanup.ts`) can also
- * read assertions off the same array.
+ * `emit` AND `emit_pool` both append to `calls`, so a test reads either
+ * entry point's writes off the same array.
  *
  * Pass `calls_ref` to write into a caller-owned array (callers that
  * declared `const events: Array<AuditLogInput> = []` and want to keep
@@ -166,8 +165,7 @@ export const create_recording_audit_emitter = (
  * role-grant-shape emissions land in `events_ref` alongside bare `emit`
  * calls. `emit_pool` and `notify` are not decorated — they take
  * `AuditLogInput` / `AuditLogEvent` directly without going through
- * `emit`, so handler-side `emit_pool` writes (today only
- * `auth/cleanup.ts`) skip capture. Close-firing handlers all reach for
+ * `emit`, so `emit_pool` writes skip capture. Close-firing handlers all reach for
  * `emit` or `emit_role_grant_target`, so the ordering test sees them
  * regardless of which entry point a future refactor picks.
  *

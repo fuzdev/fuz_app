@@ -33,7 +33,9 @@ export const ROLE_GRANT_OFFER_SCOPE_KIND_GLOBAL_TOKEN = 'GLOBAL';
  * The full `role_grant_offer` column set, named explicitly so a row read
  * fails loud on schema drift (see `ACCOUNT_COLUMNS` in
  * `auth/account_queries.ts` for the outage class). Column order follows
- * `RoleGrantOffer` and `ROLE_GRANT_OFFER_SCHEMA` below.
+ * `RoleGrantOffer` and `ROLE_GRANT_OFFER_SCHEMA` below, with
+ * `expire_audited_at` last — the appended `role_grant_offer_expire_audited_at`
+ * migration adds it after the frozen `CREATE TABLE`.
  *
  * Lives here rather than in `auth/role_grant_offer_queries.ts` because two
  * query modules project this table — see the placement rule in
@@ -55,7 +57,8 @@ export const ROLE_GRANT_OFFER_COLUMNS = [
 	'decline_reason',
 	'retracted_at',
 	'superseded_at',
-	'resulting_role_grant_id'
+	'resulting_role_grant_id',
+	'expire_audited_at'
 ] as const satisfies ReadonlyArray<keyof RoleGrantOffer>;
 
 /**
@@ -74,7 +77,8 @@ export const role_grant_offer_expr = iso8601_timestamp_expr(ROLE_GRANT_OFFER_COL
 	'accepted_at',
 	'declined_at',
 	'retracted_at',
-	'superseded_at'
+	'superseded_at',
+	'expire_audited_at'
 ]);
 
 /**
@@ -93,6 +97,9 @@ export const ROLE_GRANT_OFFER_WITH_GRANTOR_SELECT = `SELECT ${qualify_columns(
 		FROM updated u
 		JOIN actor grantor ON grantor.id = u.from_actor_id`;
 
+// Frozen v1 body — `expire_audited_at` is added by the appended
+// `role_grant_offer_expire_audited_at` migration (with its partial sweep
+// index), so a fresh bootstrap and an old deployed DB converge on one shape.
 export const ROLE_GRANT_OFFER_SCHEMA = `
 CREATE TABLE IF NOT EXISTS role_grant_offer (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

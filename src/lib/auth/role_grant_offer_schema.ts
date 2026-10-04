@@ -66,6 +66,15 @@ export interface RoleGrantOffer {
 	 */
 	superseded_at: string | null;
 	resulting_role_grant_id: Uuid | null;
+	/**
+	 * When the expiry sweep audited this offer's `role_grant_offer_expire` —
+	 * the claim stamp `query_role_grant_offer_sweep_expired` sets in the same
+	 * transaction as the audit row, so each expiry is audited once. Not a
+	 * lifecycle state (an expired offer is still pending by the terminal
+	 * columns) and server-only: `to_role_grant_offer_json` drops it, and the
+	 * strict `RoleGrantOfferJson` would reject it. A re-offer clears it.
+	 */
+	expire_audited_at: string | null;
 }
 
 /**

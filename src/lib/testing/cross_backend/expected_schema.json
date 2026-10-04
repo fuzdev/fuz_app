@@ -101,6 +101,7 @@
 		"created_at",
 		"decline_reason",
 		"declined_at",
+		"expire_audited_at",
 		"expires_at",
 		"from_actor_id",
 		"id",

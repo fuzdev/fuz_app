@@ -162,7 +162,9 @@ export class RoleGrantOfferActorAccountMismatchError extends Error {
  * `(to_account, role, scope)` while pending upserts the existing row,
  * refreshing `message` and `expires_at` (and `to_actor_id` — supplying
  * a different `to_actor_id` on re-offer narrows the existing row to the
- * named actor; supplying null widens it back to account-grain). A
+ * named actor; supplying null widens it back to account-grain) and clearing
+ * `expire_audited_at`, so a re-offer of an expired, already-audited row gets
+ * its own `role_grant_offer_expire` when the refreshed expiry passes. A
  * different grantor offering the same `(to_account, role, scope)` creates
  * a distinct row — multiple pending grantors coexist. After a terminal
  * state, a re-offer is a fresh INSERT.
@@ -224,7 +226,8 @@ export const query_role_grant_offer_create = async (
 		 DO UPDATE SET
 			 to_actor_id = EXCLUDED.to_actor_id,
 			 message = EXCLUDED.message,
-			 expires_at = EXCLUDED.expires_at
+			 expires_at = EXCLUDED.expires_at,
+			 expire_audited_at = NULL
 		 RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS, role_grant_offer_expr(''))}`,
 		[
 			input.from_actor_id,
@@ -359,7 +362,7 @@ const resolve_terminal_or_missing = async (
  *
  * Expired offers are filtered server-side (`expires_at > NOW()`) so the
  * inbox never surfaces a row that can no longer be accepted. The periodic
- * sweep (`query_role_grant_offer_sweep_expired`) handles audit tombstoning.
+ * sweep (`query_role_grant_offer_sweep_expired`) audits each expiry once.
  */
 export const query_role_grant_offer_list = async (
 	deps: QueryDeps,
@@ -421,24 +424,39 @@ export const query_role_grant_offer_find_pending = async (
 };
 
 /**
- * Return pending offers whose `expires_at` has passed.
+ * Claim the pending offers whose `expires_at` has passed and whose expiry has
+ * not been audited yet, stamping `expire_audited_at` on each, and return them
+ * soonest-expiry first.
  *
- * Callers fire `role_grant_offer_expire` audit events for each row. The schema
- * does not tombstone the row, so callers are responsible for their own
- * idempotency (e.g. check whether a `role_grant_offer_expire` audit event
- * already exists for the offer id).
+ * The stamp is the sweep's idempotency: a claimed row never matches again, so
+ * each expiry is audited exactly once. It must share a transaction with the
+ * caller's `role_grant_offer_expire` audit inserts — committed together, or
+ * rolled back together so the next sweep retries. Concurrent sweeps claim
+ * disjoint rows: a row another sweep has stamped but not committed blocks on
+ * its row lock, then fails the re-checked `expire_audited_at IS NULL`.
+ * `cleanup_expired_role_grant_offers` is the caller.
+ *
+ * @mutates `role_grant_offer` rows - stamps `expire_audited_at` on each claimed row
  */
 export const query_role_grant_offer_sweep_expired = async (
 	deps: QueryDeps
 ): Promise<Array<RoleGrantOffer>> => {
 	return deps.db.query<RoleGrantOffer>(
-		`SELECT ${columns_sql(ROLE_GRANT_OFFER_COLUMNS, role_grant_offer_expr(''))} FROM role_grant_offer
-		 WHERE accepted_at IS NULL
-		   AND declined_at IS NULL
-		   AND retracted_at IS NULL
-		   AND superseded_at IS NULL
-		   AND expires_at <= NOW()
-		 ORDER BY role_grant_offer.expires_at ASC`
+		`WITH claimed AS (
+			UPDATE role_grant_offer
+			SET expire_audited_at = NOW()
+			WHERE accepted_at IS NULL
+			  AND declined_at IS NULL
+			  AND retracted_at IS NULL
+			  AND superseded_at IS NULL
+			  AND expires_at <= NOW()
+			  AND expire_audited_at IS NULL
+			-- raw columns; the outer select formats them
+			RETURNING ${columns_sql(ROLE_GRANT_OFFER_COLUMNS)}
+		)
+		SELECT ${qualify_columns(ROLE_GRANT_OFFER_COLUMNS, 'c', role_grant_offer_expr('c'))}
+		FROM claimed c
+		ORDER BY c.expires_at ASC, c.id ASC`
 	);
 };
 

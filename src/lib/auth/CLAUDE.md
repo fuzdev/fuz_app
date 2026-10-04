@@ -125,7 +125,7 @@ its registered listeners + optional `AuditLogConfig`. Six methods:
 
 - `emit(ctx, input)` — fire-and-forget pool write, pushes to `ctx.pending_effects`
 - `emit_role_grant_target(ctx, auth, input)` — lifts `actor_id` / `account_id` / `ip` boilerplate for role-grant-shape events
-- `emit_pool(input)` — awaitable pool write for code paths without `pending_effects` (cleanup sweeps)
+- `emit_pool(input)` — awaitable pool write for code paths without `pending_effects` (ad-hoc maintenance scripts; not for success audits paired with a mutation — those write in-tx and `notify` post-commit)
 - `notify(event)` — fan out an already-written row to listeners (used by in-tx audit batches like `query_accept_offer.audit_events`)
 - `add_listener(listener)` — append-only listener registration (twin of Rust `fuz_auth` `AuditEmitter::add_listener`)
 - `listener_count()` — registered-listener count, for tests / diagnostics
@@ -843,10 +843,23 @@ drops the hand-maintained method-name mappings:
 
 `auth/cleanup.ts` — `run_auth_cleanup(deps)` runs every sweep (expired
 sessions + expired offers) and returns counts. Re-throws sweep errors so the
-caller's scheduler can log/alert. Idempotency: audit log has no tombstone on
-`role_grant_offer_expire`, so concurrent runs double-audit — deploy a single
-scheduled invocation per instance. Expired offer rows are preserved (audit
+caller's scheduler can log/alert. Expired offer rows are preserved (audit
 value for the history view).
+
+**Idempotency.** `cleanup_expired_role_grant_offers` runs one transaction:
+`query_role_grant_offer_sweep_expired` claims the expired pending offers not
+yet audited by stamping `role_grant_offer.expire_audited_at` (`UPDATE …
+RETURNING`), and each claimed row's `role_grant_offer_expire` audit row is
+inserted in the same transaction; events fan out via `audit.notify` after the
+commit. Each expiry is audited exactly once — a second run finds nothing, and
+concurrent runs claim disjoint rows (a row another sweep holds blocks on its
+row lock, then fails the re-checked stamp). A failed audit insert rolls the
+stamps back and the next run retries, so the offer sweep can throw. The stamp
+is not a lifecycle state (outside the terminal CHECK and the pending
+predicate) and stays off the wire (`to_role_grant_offer_json` drops it); the
+create upsert's re-offer clears it, so a refreshed offer's own expiry is
+audited too. The `role_grant_offer_expire_sweep` partial index serves the
+claim. Twin of the Rust `fuz_auth::auth_cleanup` module.
 
 `AuthCleanupDeps` requires `audit: AuditEmitter` — production wiring always
 has a bound emitter; tests pass `create_test_audit_emitter()` from

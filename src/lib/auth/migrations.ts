@@ -282,6 +282,35 @@ export const auth_migrations: Array<Migration> = [
 		up: async (db: Db): Promise<void> => {
 			await db.query('ALTER TABLE auth_session DROP COLUMN IF EXISTS last_seen_at');
 		}
+	},
+	// The expiry-audit stamp that makes the offer sweep idempotent.
+	//
+	// An expired pending offer has no terminal state — expiry is computed from
+	// `expires_at`, never written — so without a stamp every
+	// `cleanup_expired_role_grant_offers` run re-audited every expired offer.
+	// The sweep now claims rows by setting `expire_audited_at` in the same
+	// transaction as their `role_grant_offer_expire` audit rows, so each expiry
+	// is audited exactly once and concurrent sweeps claim disjoint rows.
+	//
+	// Not a lifecycle state: the column stays out of the
+	// `role_grant_offer_single_terminal` CHECK and the pending predicate, and
+	// off the wire. A re-offer of a stamped row clears it (the create upsert),
+	// so the refreshed offer's own expiry is audited too. The partial index
+	// serves exactly the sweep's claim predicate.
+	{
+		name: 'role_grant_offer_expire_audited_at',
+		up: async (db: Db): Promise<void> => {
+			await db.query(
+				'ALTER TABLE role_grant_offer ADD COLUMN IF NOT EXISTS expire_audited_at TIMESTAMPTZ NULL'
+			);
+			await db.query(`CREATE INDEX IF NOT EXISTS role_grant_offer_expire_sweep
+  ON role_grant_offer (expires_at)
+  WHERE accepted_at IS NULL
+    AND declined_at IS NULL
+    AND retracted_at IS NULL
+    AND superseded_at IS NULL
+    AND expire_audited_at IS NULL`);
+		}
 	}
 ];
 
