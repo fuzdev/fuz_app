@@ -1,9 +1,9 @@
 /**
  * Canonical filesystem-fact URL shape + on-disk layout.
  *
- * `external_url` on the generic `fact` row is `string | null` because the
- * `FactStore` interface stays federation-friendly (future
- * `https://...` / `s3://...` shapes). Filesystem-minted URLs are exactly
+ * `external_url` on the `fact` row is free text (`string | null`), but the
+ * only shape `PgFactStore` writes, reads, or serves is the filesystem-minted
+ * one — any other reads as unavailable. Those URLs are exactly
  * `file:<shard>/<rest>` where `<shard>` is the first 2 hex chars of the
  * blake3 digest and `<rest>` the remaining 62 — files land at
  * `<facts_dir>/<shard>/<rest>` after the writer atomically temp+renames
@@ -11,9 +11,9 @@
  *
  * Centralizing the regex + the `fact_disk_path` split keeps the shape in one
  * place: `PgFactStore`'s disk CAS (`db/fact_disk_storage.ts`), the
- * `serve_fact_route` defense-in-depth check, and the `file_fact_fetcher`
- * resolver all derive the layout here, so the write path and the read path
- * can't drift. The TS twin of the Rust `fact_disk_path` (`fuz_fact`).
+ * `serve_fact_route` defense-in-depth check, and the disk read
+ * (`read_fact_bytes_from_disk`) all derive the layout here, so the write path
+ * and the read path can't drift. The TS twin of the Rust `fact_disk_path` (`fuz_fact`).
  *
  * Defense-in-depth: a `..` segment can't match (`.` isn't in `[0-9a-f]`),
  * neither can absolute paths, query strings, or any non-hex character.

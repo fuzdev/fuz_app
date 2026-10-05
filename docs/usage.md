@@ -1474,9 +1474,9 @@ cell's `data` is auto-extracted to `cell.refs`, which is how binary content
 (images, documents, snapshots) attaches to cells.
 
 The store interface lives in `@fuzdev/fuz_util/fact_store.ts` (`FactStore`:
-`put` / `put_ref` / `get` / `has` / `get_meta` / `get_refs`). fuz_app ships
-the Postgres implementation and the HTTP serving plumbing; facts are
-**opt-in** — a consumer wires them at backend assembly.
+`put` / `put_stream` / `get` / `has` / `get_meta` / `get_refs` / `delete`).
+fuz_app ships the Postgres implementation and the HTTP serving plumbing; facts
+are **opt-in** — a consumer wires them at backend assembly.
 
 ### Migration
 
@@ -1494,21 +1494,27 @@ and `memo`. Splice it into `migration_namespaces` like any other namespace.
 
 ```typescript
 import { PgFactStore } from '@fuzdev/fuz_app/db/fact_store.ts';
-import { create_file_fact_fetcher } from '@fuzdev/fuz_app/server/file_fact_fetcher.ts';
 
 const fact_store = new PgFactStore({
-	deps: query_deps, // QueryDeps (db + log)
-	embedded_threshold: 16 * 1024, // bytes at/under this go inline; larger → put_ref
-	fetcher: create_file_fact_fetcher({ facts_dir }) // resolves `file:<shard>/<rest>` URLs
+	deps: query_deps, // QueryDeps
+	embedded_threshold: 16 * 1024, // bytes at/under this go inline; larger → the disk CAS
+	disk_root: facts_dir, // large facts land at `<facts_dir>/<shard>/<rest>`
+	fs: runtime // FactDiskStorageDeps — a `RuntimeDeps` satisfies it
 });
 deps.fact_store = fact_store;
 ```
 
-`put(bytes)` is idempotent (same bytes → same hash → one row) and rejects
-content over `embedded_threshold` so the caller routes large payloads
-through `put_ref` explicitly — embed when small, else atomic temp-write +
-rename into the shard tree, then `put_ref`. Reads of external facts verify
-the hash and return `null` on mismatch.
+`put(bytes)` is idempotent (same bytes → same hash → one row) and routes by
+size: content at or under `embedded_threshold` is stored in Postgres; larger
+content is written to the disk CAS (a temp file, fsynced, then renamed into the
+shard tree) and its row records a `file:<shard>/<rest>` URL.
+`put_stream(stream, max_bytes)` does the same for an upload without buffering
+it, enforcing `max_bytes` as it reads. Without `disk_root` and `fs` the store
+has nowhere to put content it cannot embed, and an oversize write throws
+(`put_stream` needs `fs` for a body of any size). Reads
+of disk-backed facts verify the hash and return `null` on mismatch. The disk CAS
+is the only place the store reads external bytes from — it makes no network
+request, and a row it cannot read from disk reads as `null`.
 
 ### Serving facts
 
@@ -1546,8 +1552,7 @@ cell-visibility check. Env: `FUZ_FACTS_DIR`, `FUZ_FACTS_X_ACCEL_REDIRECT_PREFIX`
 The PG `FactStore`, `fact_ref`, serving, and cell integration are shipped.
 The `memo` table ships but **MemoStore** (computation caching) has no
 implementation yet, and orphan-fact GC has query helpers but no wired
-action. There is no Rust twin of the fact layer today (cells have one;
-facts are TS-only).
+action. The Rust spine twins the fact layer (`fuz_fact`, `fuz_fact_serving`).
 
 ## Testing with Database Factories
 

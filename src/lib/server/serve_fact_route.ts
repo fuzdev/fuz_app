@@ -13,9 +13,9 @@
  * Embedded facts stream from the `fact.bytes` PG column; external facts
  * (filesystem-backed `file:<shard>/<rest>` URLs) either return an
  * `X-Accel-Redirect` header pointing into nginx's internal facts location
- * (production) or stream from disk via the filesystem `FactExternalFetcher`
- * (dev / tests). The runtime mode is selected by the optional `x_accel`
- * factory option — a validated `XAccelConfig` (built via
+ * (production) or stream from disk (dev / tests). The runtime mode is
+ * selected by the optional `x_accel` factory option — a validated
+ * `XAccelConfig` (built via
  * `create_x_accel_config` in `server/x_accel.ts`) set in prod, unset in dev.
  * The handle can only be obtained by proving the facts nginx location is
  * `internal;`, so X-Accel serving can't be enabled against a public location.
@@ -80,10 +80,13 @@
  *
  * ## Defense-in-depth
  *
- * The `external_url` regex is re-validated before issuing
- * `X-Accel-Redirect` even though `PgFactStore.put_ref` only writes
- * `file:<shard>/<rest>`-shaped URLs. A future row-injection bug
- * upstream would otherwise hand nginx an attacker-controlled path.
+ * `external_url` is re-validated against the `file:<shard>/<rest>` shape
+ * before it addresses the filesystem or an `X-Accel-Redirect`. `PgFactStore`
+ * writes only that shape, but the column is free text and `query_put_fact`
+ * inserts what it is given, so a row written past the store — or a
+ * row-injection bug upstream — would otherwise hand nginx an
+ * attacker-controlled path. Any other shape is a logged 404, the same
+ * unavailable that `PgFactStore.get` reports for it as `null`.
  *
  * @module
  */
@@ -264,7 +267,9 @@ const serve_fact_bytes = async (
 	// to address the filesystem.
 	const parsed = parse_file_fact_url(meta.external_url);
 	if (!parsed) {
-		log.error(`serve_fact: rejecting malformed external_url for ${hash}: ${meta.external_url}`);
+		log.error(
+			`serve_fact: external_url for ${hash} is not a file:<shard>/<rest> URL; answering 404`
+		);
 		return c.body(null, 404);
 	}
 	const { shard, rest } = parsed;

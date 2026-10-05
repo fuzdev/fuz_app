@@ -156,11 +156,16 @@ DO NOTHING`), `_put_fact_refs`, `_get_fact` / `_get_fact_meta` / `_has_fact`
   / `_select_for_delete` (a fact is orphan when no active `cell.refs` names it).
 - **`fact_store.ts`** — `PgFactStore implements FactStore` (the interface lives
   in `@fuzdev/fuz_util/fact_store.ts`): size-routed writes (embedded ≤
-  `embedded_threshold` / disk CAS above it / `put_ref` for an externally-managed
-  URL), JSON ref auto-extract, idempotent put, verify-on-read for external
-  content via an injected `FactExternalFetcher`. With `disk_root` + `fs` (the
+  `embedded_threshold` / disk CAS above it), JSON ref auto-extract, idempotent
+  put, verify-on-read for disk-backed content. With `disk_root` + `fs` (the
   `runtime/*Deps`) configured, oversize `put` and the streaming `put_stream`
-  write to the `<shard>/<rest>` disk CAS and the default fetcher reads from it.
+  write to the `<shard>/<rest>` disk CAS and `get` reads from it; without them
+  an oversize write throws (`put_stream` needs `fs` for a body of any size).
+  The disk CAS is the only place `get` reads external bytes from; the store
+  makes no network request. A row whose `external_url` is not a
+  `file:<shard>/<rest>` URL (the store never writes one), and any external row
+  on a store with no disk CAS, reads as `null` with a warning; the serve route
+  404s the former.
 - **`file_fact_url.ts`** — the canonical `file:<shard>/<rest>` URL shape
   (`FileFactUrl` brand, `mint_file_fact_url` / `parse_file_fact_url` /
   `FILE_FACT_URL_PATTERN`) plus `fact_disk_path(hash) → {shard, rest}`, the
@@ -168,15 +173,15 @@ DO NOTHING`), `_put_fact_refs`, `_get_fact` / `_get_fact_meta` / `_has_fact`
 - **`fact_disk_storage.ts`** — the filesystem CAS over `runtime/{FsStream,FsWrite,FsRemove,FsRead}Deps`
   (not raw `node:fs`): `stream_fact_to_disk` (bounded-memory blake3+sha256 single
   pass, buffer→spill, fsync-then-atomic-rename, dedup-drop if the CAS path already
-  exists), `write_fact_bytes_to_disk` (buffering twin), `create_disk_fact_fetcher`,
+  exists), `write_fact_bytes_to_disk` (buffering twin), `read_fact_bytes_from_disk`,
   and `sweep_orphan_temps` (reaps stale `.tmp` spills by mtime). The temp is
   `fsync`ed before the rename publishes it (twins the Rust `fuz_fact` §fsync
   posture: data-sync before rename, parent-dir fsync waived) — the serve path
   streams the file without re-hashing, so write-time durability is the guard.
 - **`fact_store_errors.ts`** — `PayloadTooLargeError` / `StorageFullError` (+
   `is_enospc_error`) thrown by `put_stream`, for a consumer route's 413 / 507.
-- The read-side fetcher + write/serve plumbing also live under `server/`
-  (`file_fact_fetcher.ts`, `serve_fact_route.ts`).
+- The HTTP serving plumbing lives under `server/` (`serve_fact_route.ts`,
+  `x_accel.ts`).
 
 ### Migration namespace order
 

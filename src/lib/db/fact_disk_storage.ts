@@ -1,5 +1,5 @@
 /**
- * Filesystem CAS for externally-stored fact bytes — the disk half of
+ * Filesystem CAS for fact bytes stored outside Postgres — the disk half of
  * `PgFactStore`, threaded over the injectable `runtime/*Deps` rather than raw
  * `node:fs`, so it runs unchanged under Node, Deno, and a mock runtime.
  *
@@ -46,7 +46,6 @@ import {
 	parse_file_fact_url,
 	type FileFactUrl
 } from './file_fact_url.ts';
-import type { FactExternalFetcher } from './fact_store.ts';
 import { is_enospc_error, PayloadTooLargeError, StorageFullError } from './fact_store_errors.ts';
 
 /** Subdirectory under `facts_dir` for in-flight atomic temp files. */
@@ -62,7 +61,7 @@ export const FACT_TMP_ORPHAN_MAX_AGE_MS = 60 * 60 * 1000;
  */
 export type FactDiskStorageDeps = Pick<FsReadDeps, 'stat' | 'readdir' | 'read_file'> &
 	Pick<FsWriteDeps, 'mkdir' | 'rename' | 'write_file' | 'fsync'> &
-	Pick<FsStreamDeps, 'write_file_stream' | 'read_file_stream'> &
+	Pick<FsStreamDeps, 'write_file_stream'> &
 	Pick<FsRemoveDeps, 'remove'>;
 
 /**
@@ -262,29 +261,26 @@ export const write_fact_bytes_to_disk = async (
 };
 
 /**
- * `FactExternalFetcher` reading from the `<facts_dir>/<shard>/<rest>` layout the
- * writers above produce, over the injected `*Deps`. Does NOT verify hash content
- * — `PgFactStore.get` calls `fact_hash_verify(hash, bytes)` after the fetch and
- * returns `null` on mismatch.
+ * Read a disk-backed fact's bytes from the `<facts_dir>/<shard>/<rest>` layout
+ * the writers above produce, addressed by the row's `file:<shard>/<rest>`
+ * `external_url`. The only read of external bytes `PgFactStore.get` performs.
+ * Does NOT verify hash content — `PgFactStore.get` calls
+ * `fact_hash_verify(hash, bytes)` on the result and returns `null` on mismatch.
  *
  * Defense at the read seam is the `FILE_FACT_URL_PATTERN` regex (via
  * `parse_file_fact_url`) — `..` segments, foreign schemes, and non-hex chars
  * fail before any disk access.
+ *
+ * @throws Error when `url` is not a `file:<shard>/<rest>` URL, or when the read fails
  */
-export const create_disk_fact_fetcher = (
-	deps: Pick<FactDiskStorageDeps, 'read_file' | 'read_file_stream'>,
-	facts_dir: string
-): FactExternalFetcher => {
-	const resolve_path = (url: string): string => {
-		const parsed = parse_file_fact_url(url);
-		if (!parsed) throw new Error(`invalid file fact url: ${url}`);
-		return join(facts_dir, parsed.shard, parsed.rest);
-	};
-	return {
-		fetch_bytes: (url) => deps.read_file(resolve_path(url)),
-		// `async` funnels a synchronous `resolve_path` throw into a rejection.
-		fetch_stream: async (url) => deps.read_file_stream(resolve_path(url))
-	};
+export const read_fact_bytes_from_disk = async (
+	deps: Pick<FactDiskStorageDeps, 'read_file'>,
+	facts_dir: string,
+	url: string
+): Promise<Uint8Array> => {
+	const parsed = parse_file_fact_url(url);
+	if (!parsed) throw new Error('invalid file fact url');
+	return deps.read_file(join(facts_dir, parsed.shard, parsed.rest));
 };
 
 /**
