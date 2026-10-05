@@ -429,9 +429,9 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * Close all sockets associated with a specific API token, including a
 	 * registration still pending admission.
 	 *
-	 * Used on `token_revoke` audit events so revoking one token doesn't
-	 * tear down the account's session-authenticated sockets or other
-	 * tokens' sockets.
+	 * Closes just this token's sockets, so revoking one token — or evicting
+	 * one past the token cap — doesn't tear down the account's
+	 * session-authenticated sockets or other tokens' sockets.
 	 *
 	 * @returns the number of sockets closed
 	 * @mutates this - removes matching connections, aborts their registered

@@ -4,15 +4,11 @@ import '../assert_dev_env.ts';
  * Cross-backend parity suite for the **per-account concurrent-session cap**
  * over real HTTP.
  *
- * The cap is a shipped control on the TS spine (`query_session_enforce_limit`,
- * `DEFAULT_MAX_SESSIONS`) that the Rust spine went without — its session INSERT
- * carried no eviction, so every Rust-backed deployment served unlimited
- * concurrent sessions per account. That divergence survived because nothing crossed the
- * wire on it — the TS half is pinned by in-process tests
- * (`session_middleware.lifecycle.db.test.ts`, `session_token_limits.integration.db.test.ts`)
- * whose Rust counterparts simply didn't exist to fail. This suite is the pin
- * that runs on *both*, so the next spine to lose the cap fails here rather than
- * in production. Two properties:
+ * Both spines cap concurrent sessions per account (the TS
+ * `query_session_enforce_limit` / `DEFAULT_MAX_SESSIONS`, the Rust
+ * `create_capped_session`). Each spine's own tests pin its half in-process;
+ * nothing in them crosses the wire, so a spine that lost the cap would fail
+ * no shared test. This suite is the pin that runs on *both*. It pins:
  *
  * - **the cap bounds concurrent sessions, by eviction not refusal** — logging in
  *   `max_sessions + 1` times succeeds every time (a login is never denied for

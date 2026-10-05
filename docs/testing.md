@@ -39,7 +39,7 @@ run the same standard suites against it over real HTTP — a Rust spine
   binary. In-process stays — it's the fast feedback path and the only
   viable path for a few in-process-only assertions (the WS test harness
   drives the dispatcher against a fake upgrade, etc.). Cross-process plumbing
-  ships in `testing/transports/{fetch_transport,bootstrap,ws_client,ws_transport,sse_transport}.js`
+  ships in `testing/transports/{fetch_transport,bootstrap,ws_client,ws_transport,ws_raw_client,sse_transport}.js`
   and `testing/cross_backend/{backend_config,spawn_backend,testing_reset_actions,setup}.js`;
   `default_cross_process_setup` fires `_testing_reset` over the keeper's
   daemon-token channel on every per-test invocation — full auth-table
@@ -530,7 +530,7 @@ describe('app-specific integration', () => {
 - `create_account({username?, password_value?, roles?})` — create additional accounts with built-in header helpers
 - `surface` — the generated `AppSurface`
 - `route_specs` — the assembled route specs
-- `cleanup()` — release test resources (no-op when using cached PGlite)
+- `cleanup()` — the assembled server's `close`: stops an `auth_cleanup` schedule opted into through `app_options`, then releases the backend (a no-op when using cached PGlite)
 
 `create_account` returns a `TestAccount` with its own `create_session_headers()`
 and `create_bearer_headers()`, so multi-account tests don't need manual cookie
@@ -763,12 +763,12 @@ describe_sse_route_tests({
 ```
 
 The close-on-revoke assertion requires a revocation to reach the consumer's
-registry — a guard wired into `on_audit_event` as above, and in production also
-the registry added to the backend's closer
-(`ctx.deps.connection_closer.add(create_sse_connection_closer(registry))`) so
-the revocation handlers close its streams without depending on the audit write
-— and the route to subscribe with `{scope: session_hash, groups: [account_id]}`
-so `close_by_identity` can match. Pass `assert_closes_on_revoke: false` per-route
+registry: the route joins it to the backend's closer
+(`ctx.deps.connection_closer.add(create_sse_connection_closer(registry))`), so
+the revocation handlers close its streams without depending on the audit
+write, or a guard is wired into `on_audit_event` as above. Either way the
+route subscribes with `{scope: session_hash, groups: [account_id]}` so
+`close_by_identity` can match. Pass `assert_closes_on_revoke: false` per-route
 to temporarily skip that assertion (leaves the gap visible).
 
 ## Error Coverage Tracking
@@ -996,6 +996,8 @@ modes implement it:
 - `http_transport(app)` (`testing/rpc_helpers.ts`) — In-process — curries `app.request`. Fast feedback, no socket.
 - `create_fetch_transport(options)` (`testing/transports/fetch_transport.ts`) — Cross-process — curries global `fetch` against a base URL + cookie jar.
 - `create_ws_transport(options)` (`testing/transports/ws_transport.ts`) — WebSocket upgrade over the `ws` package (threads `Cookie` on upgrade).
+- `create_admitted_ws_transport(options)` (`testing/transports/ws_transport.ts`) — `create_ws_transport` plus a `heartbeat` round trip, so the connection is admitted when it resolves; for suites that wait for a server push or need connections registered in order.
+- `connect_raw_ws(options)` (`testing/transports/ws_raw_client.ts`) — Raw-socket WebSocket client that never answers a close frame and can write frames in the same TCP write as the upgrade request.
 - `create_sse_transport(options)` (`testing/transports/sse_transport.ts`) — SSE stream client for cross-process stream assertions.
 - `bootstrap(options)` (`testing/transports/bootstrap.ts`) — Fire the bootstrap envelope, capture `Set-Cookie`, return the keeper.
 
@@ -1012,9 +1014,6 @@ capabilities its backend supports, and the runner filters silently. Adding a
 capability is a one-line change in `capabilities.ts` plus a flag in each
 consumer config.
 
-- `bearer_auth` — Backend honors bearer (API-token) credentials.
-- `trusted_proxy` — Backend resolves `X-Forwarded-For` behind a trusted proxy.
-- `login_rate_limit` — Backend enforces login/IP rate limits (production semantics, not test-fast).
 - `ws` — Backend serves the WebSocket endpoint (gates `describe_cross_process_ws_tests` and `describe_ws_connection_cap_cross_tests`).
 - `sse` — Backend serves an SSE stream.
 - `cell_crud` — Backend live-mounts the cell CRUD verbs (gates `describe_cell_crud_cross_tests`).
@@ -1026,8 +1025,13 @@ consumer config.
 - `oversized_reject_closes_connection` — Backend closes the connection on an oversized-body 413 without reading the body (`true` for Node/Deno/Rust; `false` for Bun, which drains + keepalives). Gates the strong half of the body-size smuggling probe; the no-desync half runs on every backend.
 - `peer_request` — Backend can initiate a server→client request and await the typed reply (ActionPeer — `BackendWebsocketTransport.request_connection`). Gates `describe_peer_ping_ws_tests`. `true` on the Rust spine and the TS spine; `ts_default_capabilities` keeps it off until a backend wires the `peer/ping` HTTP + WS mount.
 - `ws_handshake_pipelining` — Backend's HTTP server accepts WebSocket frames written in the same TCP write as the upgrade request (`true` for Node/Deno/Rust; `false` for Bun, which answers such a request `400`). Gates the WS round-trip suite's frames-with-the-handshake case — the ordering-forced form of "frames that arrive before the connection is admitted wait for admission".
+- `ws_account_actions` — Backend's WebSocket endpoint mounts the self-service account actions, so a socket can revoke the session it runs on (`true` on fuz_app's own spine presets; `false` in the family defaults until a consumer's endpoint mounts them). Gates the WS round-trip suite's self-revocation case.
+- `ws_self_revocation_reply` — A socket that revokes its own credential reads the reply to that request before the close (`true` for the TS family; `false` for the Rust family, whose socket loop drops the response once the connection is closed). Read by the self-revocation case: the reply ahead of the `WS_CLOSE_SESSION_REVOKED` close, or the close alone.
+- `cell_gated_create` — Backend live-mounts a test `CellCreateAuthorize` policy on its cell layer (`true` only on the reference spine binaries that mount it). Gates `describe_cell_gated_create_cross_tests`.
 
-`in_process_capabilities` (every gating flag on except `peer_request`, `ws_handshake_pipelining`, and `cell_gated_create`, whose cases are cross-process-only) and the `ts_default_capabilities` /
+Wiring facts that gate nothing — `bearer_auth`, `trusted_proxy`, `login_rate_limit` — are not capabilities: they live in the parallel `BackendShapeNotes` record (`in_process_shape_notes`, `ts_default_shape_notes` / `rust_default_shape_notes`), which no suite reads.
+
+`in_process_capabilities` (every gating flag on except `peer_request`, `ws_handshake_pipelining`, `ws_account_actions`, and `cell_gated_create`, whose cases are cross-process-only) and the `ts_default_capabilities` /
 `rust_default_capabilities` presets in `default_backend_configs.ts` are the
 starting points consumers extend.
 

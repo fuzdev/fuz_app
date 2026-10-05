@@ -260,9 +260,9 @@ export interface SocketOpenContext {
  * Fires after the transport has removed the connection — `connection_id` and
  * `identity` are the values captured at open, so consumer cleanup reads them
  * from here, not from the transport. Fires for both client-initiated closes
- * (Hono onClose) and server-initiated closes — audit revocation and the
- * per-account connection cap's eviction both call `ws.close()`, which
- * triggers Hono's onClose. Fires only for a socket that was admitted: one
+ * (Hono onClose) and server-initiated closes — a revocation, the per-account
+ * connection cap's eviction, and a heartbeat timeout all call `ws.close()`,
+ * which triggers Hono's onClose. Fires only for a socket that was admitted: one
  * refused at admission never ran `on_socket_open`, so it has no close hook
  * either.
  */
@@ -385,7 +385,7 @@ export interface RegisterActionWsOptions {
 	 * removed the connection — a slow hook never holds a dead entry that
 	 * broadcasts still target and the per-account cap still counts. Receives
 	 * `connection_id` and `identity` captured at open time, the same whether the
-	 * close came from the client, the audit guard, or a connection-cap eviction.
+	 * close came from the client, a revocation, or a connection-cap eviction.
 	 * Errors are logged and swallowed.
 	 */
 	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;
@@ -602,8 +602,8 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 
 			// Identity is assembled at upgrade time so `on_socket_close` can
 			// read it — by the time the hook runs the transport record is gone,
-			// removed in `onClose` or earlier by the audit guard or a
-			// connection-cap eviction.
+			// removed in `onClose` or earlier by a revocation, a connection-cap
+			// eviction, or another server-side close.
 			const identity: ConnectionIdentity = { token_hash, account_id, api_token_id };
 			// Captured on open, consumed on close. Undefined before onOpen
 			// fires or when a consumer never opens (e.g. immediate disconnect).

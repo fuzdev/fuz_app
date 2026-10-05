@@ -5,8 +5,9 @@
  * **Why this exists.** `register_action_ws` captures `account_id` and
  * `credential_type` at upgrade time and reuses them for every message.
  * `perform_action`'s per-message authorization phase reloads role_grants
- * from the DB, but session and token VALIDITY are not re-queried — that
- * trade-off keeps chatty WS connections fast. The cost: nothing in the
+ * from the DB, but session and token VALIDITY are not re-queried per message
+ * — they are re-read once, at admission (`revalidate_resolved_auth`) — a
+ * trade-off that keeps chatty WS connections fast. The cost: nothing in the
  * dispatch path notices when a session is revoked or a token is rotated, so a
  * revocation reaches an open connection only when something closes it.
  *

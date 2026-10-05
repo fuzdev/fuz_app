@@ -82,14 +82,15 @@ export interface WsEndpointSpec {
 	 */
 	max_message_bytes?: number;
 	/**
-	 * Called once per socket after `transport.add_connection` but before
-	 * the first message dispatches. See
-	 * `RegisterActionWsOptions.on_socket_open`.
+	 * Called once per socket after the connection is admitted — registered
+	 * and its credential re-checked — and before the first message
+	 * dispatches. See `RegisterActionWsOptions.on_socket_open`.
 	 */
 	on_socket_open?: (ctx: SocketOpenContext) => void | Promise<void>;
 	/**
-	 * Called once per socket on close, after `transport.remove_connection`.
-	 * See `RegisterActionWsOptions.on_socket_close`.
+	 * Called once per admitted socket on close, after
+	 * `transport.remove_connection`. See
+	 * `RegisterActionWsOptions.on_socket_close`.
 	 */
 	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;
 	/**
@@ -133,7 +134,7 @@ export interface WsEndpointSpec {
 	/**
 	 * Extra audit-event handlers registered via `deps.audit.add_listener`
 	 * AFTER the standard `auth_guard` wiring (when enabled). By the time
-	 * these run, the standard guards may have already closed sockets. Use
+	 * these run, the standard guard may have already closed sockets. Use
 	 * for role-revoke disconnection, custom analytics, etc.
 	 *
 	 * Never deduped — consumer-owned; pass the same handler twice and it

@@ -11,7 +11,8 @@
  * transactional `db` (which would be rolled back with the parent on a
  * handler throw).
  *
- * Four methods cover every fan-out shape the auth domain needs:
+ * These methods cover every fan-out shape the auth domain needs
+ * (`add_listener` and `listener_count` manage the listener chain):
  *
  * - `emit(ctx, input)` — fire-and-forget pool write. Pushes the in-flight
  *   promise onto `ctx.pending_effects` for post-response flushing. Errors are

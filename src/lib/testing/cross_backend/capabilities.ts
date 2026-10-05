@@ -8,14 +8,16 @@ import '../assert_dev_env.ts';
  * implement. No `if (config.name === 'rust')` branches anywhere — name-
  * checking is a code smell that says capability vocabulary is missing.
  *
- * In-process Hono via `default_in_process_setup` declares every
- * capability `true` (see `in_process_capabilities`). Cross-process
- * backends opt in per-flag on their `BackendConfig`.
+ * In-process Hono via `default_in_process_setup` declares every capability
+ * its transport can exercise (see `in_process_capabilities` — the
+ * cross-process-only flags stay `false`). Cross-process backends opt in
+ * per-flag on their `BackendConfig`.
  *
  * **Where the per-backend declarations live** (this file owns only the
  * vocabulary + the in-process preset):
  *
- * - `in_process_capabilities` — here; every flag `true`.
+ * - `in_process_capabilities` — here; every flag `true` except the
+ *   cross-process-only ones.
  * - `ts_default_capabilities` / `rust_default_capabilities` — consumer-facing
  *   family defaults, in `default_backend_configs.ts` (full literals, so adding
  *   a capability is a compile error until each family declares it).
@@ -27,7 +29,8 @@ import '../assert_dev_env.ts';
  *   `rust_spine_stub_backend_config.ts` (delta off the rust family default).
  *
  * **Gating flags vs shape notes.** `BackendCapabilities` holds only flags a
- * suite actually gates on (each has a `test_if(capabilities.X, ...)` reader).
+ * suite actually gates on (each has a `test_if(capabilities.X, ...)` reader,
+ * or — `ws_self_revocation_reply` — forks one case's assertion).
  * Wiring facts that gate nothing — `bearer_auth` / `trusted_proxy` /
  * `login_rate_limit` — live in the parallel `BackendShapeNotes` record
  * (`in_process_shape_notes` here, `ts_default_shape_notes` /
@@ -42,9 +45,9 @@ import { test } from 'vitest';
 /**
  * Backend wiring facts recorded for documentation — **not** gating flags.
  *
- * The companion to `BackendCapabilities`: where each capability flag has a
- * `test_if(capabilities.X, ...)` reader that skips a suite the backend doesn't
- * implement, nothing reads these. They record middleware / limiter wiring that
+ * The companion to `BackendCapabilities`: where each capability flag is read
+ * by a suite (a `test_if(capabilities.X, ...)` gate, or a fork of one case's
+ * assertion), nothing reads these. They record middleware / limiter wiring that
  * differs between the TS and Rust families (a backend-shape record) but gates
  * no cross test today. They live in their own type precisely so
  * `BackendCapabilities` stops claiming gating power it doesn't have — fold a

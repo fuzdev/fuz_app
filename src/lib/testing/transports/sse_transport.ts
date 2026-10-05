@@ -54,7 +54,7 @@ export interface SseTransport {
 	/**
 	 * Drain until the server closes the stream. Resolves `true` if the
 	 * stream closes within `timeout_ms`, `false` on timeout. The signal for
-	 * an auth-guard revocation dropping a live stream — mirrors
+	 * a revocation dropping a live stream — mirrors
 	 * `WsClient.wait_for_close`.
 	 */
 	wait_for_close: (timeout_ms?: number) => Promise<boolean>;

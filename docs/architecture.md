@@ -493,10 +493,11 @@ patterns:
   eager, but the listeners hear of a **success** row only after the request's
   transaction commits (its fan-out rides the `post_commit_effects` queue and
   awaits the write) and never when the handler throws; a **failure** row is
-  announced as soon as it is written. Action
-  factories take `ActionFactoryDeps` (`{log, audit}`) directly; the two whose
-  handlers end credentials (`create_account_actions`, `create_admin_actions`)
-  take `RevokingActionFactoryDeps`, which adds `connection_closer`.
+  announced as soon as it is written. Action factories take
+  `ActionFactoryDeps` (`{log, audit}`) directly; those whose handlers end
+  credentials (`create_account_actions`, `create_admin_actions`, and the
+  `create_standard_rpc_actions` bundle over them) take
+  `RevokingActionFactoryDeps`, which adds `connection_closer`.
 - `query_validate_api_token(deps, raw_token, ip, pending_effects)` keeps its
   `pending_effects: Array<Promise<void>> | undefined` shape — it runs from
   middleware (no `RouteContext` / `ActionContext` in scope) and doesn't need

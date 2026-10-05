@@ -24,14 +24,14 @@ import '../assert_dev_env.ts';
  *    stream opens so `create_account`'s own audit events (invite / signup /
  *    login / token) don't land on it.
  * 3. **close-on-revoke, account-wide** (gated on `rpc_path`) — the subscriber's
- *    *own* sessions are revoked (`account_session_revoke_all`), so the
- *    `session_revoke_all` event targets the keeper and the audit guard drops
- *    the live stream via the account-wide `close_for_account` path. Asserted
- *    via `SseTransport.wait_for_close`.
+ *    *own* sessions are revoked (`account_session_revoke_all`), which closes
+ *    every stream of the account once the revoke commits (the handler's
+ *    close, repeated by the audit guard on the `session_revoke_all` row).
+ *    Asserted via `SseTransport.wait_for_close`.
  * 4. **close-on-revoke, session-scoped** (gated on `rpc_path`) — the
  *    subscriber's *own* single session is revoked (`account_session_revoke`),
- *    so the `session_revoke` event drops the stream via the session-hash-scoped
- *    `close_for_session` path (the distinct primitive cases 2–3 don't reach).
+ *    which closes only the stream registered under that session's hash (the
+ *    distinct close cases 2–3 don't reach).
  * 5. **close on account delete** (gated on `rpc_path` and
  *    `capabilities.account_lifecycle`) — the keeper soft-deletes a second
  *    admin whose stream is open; the delete revokes its credentials and
@@ -41,10 +41,11 @@ import '../assert_dev_env.ts';
  *    stream open. Needs no RPC: the cap runs inside the subscribe itself.
  *
  * The close-on-revoke matrix is layered: cases 3–5 exercise the account-wide
- * and session-scoped paths cross-process; the remaining union events
- * (`token_revoke_all` / `logout` / `password_change`, all account-wide; and
- * `role_grant_revoke`, role-matched) are covered by the spine's `fuz_realtime`
- * SSE-registry unit tests and the in-process guard self-test, so a cross-process
+ * and session-scoped paths cross-process; the remaining revocation events
+ * (`token_revoke_all` / `logout` / `password_change` / `account_purge`, all
+ * account-wide; `token_revoke`, token-scoped; and `role_grant_revoke`,
+ * role-matched) are covered by the spine's `fuz_realtime` SSE-registry unit
+ * tests and the in-process guard self-test, so a cross-process
  * `token_revoke_all`-with-zero-tokens case (which may emit no audit row) stays
  * out to keep the spawned-backend suite non-flaky.
  *
@@ -218,8 +219,9 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 			}
 		);
 
-		// Revoke the subscriber's OWN sessions → `session_revoke_all` targets the
-		// keeper, so the audit guard closes the live stream.
+		// Revoke the subscriber's OWN sessions → the handler closes the keeper's
+		// streams once the revoke commits (the audit guard repeats the close on
+		// the `session_revoke_all` row).
 		test_if(
 			capabilities.sse && rpc_path !== undefined,
 			'stream closes when the subscriber sessions are revoked',
@@ -256,14 +258,15 @@ export const describe_cross_process_sse_tests = (options: CrossProcessSseTestOpt
 		);
 
 		// Single `session_revoke` of the subscriber's OWN session → the
-		// session-hash-scoped close path (`close_for_session` / the TS guard's
-		// `close_by_identity(session_id)`). The keeper holds exactly one session,
-		// so revoking it by its blake3 hash drops the stream opened under it.
-		// This is the close-on-revoke path the account-wide cases above don't
-		// exercise; the remaining union events (`token_revoke_all` / `logout` /
-		// `password_change`) share the account-wide `close_for_account` path the
-		// `session_revoke_all` case already covers, and `role_grant_revoke`'s
-		// role-matched path is covered by `fuz_realtime`'s SSE registry unit tests.
+		// session-hash-scoped close (the Rust registry's `close_for_session`, the
+		// TS registry's `close_by_identity(session_hash)`). The keeper holds
+		// exactly one session, so revoking it by its blake3 hash drops the stream
+		// opened under it. This is the close-on-revoke path the account-wide case
+		// above doesn't exercise; the remaining account-wide events
+		// (`token_revoke_all` / `logout` / `password_change` / `account_purge`)
+		// share the close the `session_revoke_all` and account-delete cases cover,
+		// and `token_revoke`'s token-scoped and `role_grant_revoke`'s role-matched
+		// closes are covered by `fuz_realtime`'s SSE registry unit tests.
 		test_if(
 			capabilities.sse && rpc_path !== undefined,
 			'stream closes on a single session_revoke of the subscriber session',

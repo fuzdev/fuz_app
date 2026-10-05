@@ -270,10 +270,10 @@ registry table, per-method specs, option routing, error reasons, audit
 events, and WS notification fan-out see `src/lib/auth/CLAUDE.md` §RPC
 action surfaces.
 
-`CreateAppServerOptions.rpc_endpoints` is the single source of truth for
+`AppServerOptions.rpc_endpoints` is the single source of truth for
 RPC mounting — accepts an array or a factory `(ctx: AppServerContext) => Array<RpcEndpointSpec>`.
 `create_app_server` auto-mounts each via `create_rpc_endpoint`, so
-consumers no longer invoke `create_rpc_endpoint` themselves.
+consumers do not invoke `create_rpc_endpoint` themselves.
 
 `admin_rpc_adapters.ts` (in `ui/`) exposes `create_admin_rpc_adapters(api)` +
 `provide_admin_rpc_contexts(adapters)` for single-call wiring of the four

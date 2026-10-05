@@ -194,6 +194,8 @@ const backend = await create_app_backend({
 	// hardened bootstrap-token read (`FsSecureReadDeps`)
 	read_secure_file: runtime.read_secure_file,
 	delete_file: runtime.remove,
+	// consumer migrations, spliced after the builtin auth namespace
+	migration_namespaces: [{ namespace: 'my_app', migrations: MY_APP_MIGRATIONS }],
 	// audit_factory runs after create_db + migrations; the consumer owns
 	// subscriber-chain composition and AuditLogConfig selection.
 	audit_factory: ({ db, log }) => create_audit_emitter({ db, log, audit_log_config })
@@ -218,7 +220,6 @@ const { app, surface_spec, bootstrap_status, close } = await create_app_server({
 				// route_prefix: '/api/account',  // default
 			}
 		: { mode: 'disabled' },
-	migration_namespaces: [{ namespace: 'my_app', migrations: MY_APP_MIGRATIONS }],
 	create_route_specs: (ctx) => [
 		create_health_route_spec(),
 		create_ready_route_spec({
@@ -347,8 +348,11 @@ outlives the expiry of the session it opened on until it disconnects; with it,
 by at most one interval (./security.md §Connection Admission, "What remains").
 The Rust spine's servers all schedule the twin. Leave it off in an in-process
 test harness: a background pass deletes rows and writes audit rows mid-test.
-A cross-process test binary may schedule it, as the Rust consumers' do —
-nothing a cross-process suite seeds is already expired.
+A cross-process test binary may schedule it when nothing its suites seed is
+already expired. fuz_app's own spine test binary and the Rust
+`testing_spine_stub` leave it off: a background pass would delete rows and
+write audit rows under a running suite, and the conformance table's
+`expired_session` principal seeds a backdated session row.
 
 A failed pass (the database out of reach) is logged and retried on the next
 interval, passes never overlap, and the timer does not hold the process open.
@@ -806,7 +810,7 @@ const { transport } = register_ws_endpoint({
 	app,
 	upgradeWebSocket, // from the runtime adapter (e.g. @hono/deno-ws)
 	allowed_origins, // from parse_allowed_origins(env.FUZ_ALLOWED_ORIGINS)
-	required_role: ROLE_ADMIN, // optional — omit for any authenticated account
+	required_roles: [ROLE_ADMIN], // optional — omit for any authenticated account
 	actions: [...protocol_actions, ...my_actions],
 	db: backend.deps.db, // pool-level — perform_action wraps in db.transaction for side_effects: true
 	connection_closer: backend.deps.connection_closer, // required — revocations close this endpoint's sockets
@@ -855,6 +859,8 @@ attacker-controlled identifiers, and deliberately does not close on
 `ConnectionCloser`, so one guard over `backend.deps.connection_closer` covers
 every transport.
 
+A socket is admitted only after its credential is re-read once the handshake completes: frames sent meanwhile wait and dispatch in order, a credential revoked mid-upgrade closes with `WS_CLOSE_SESSION_REVOKED`, and nothing the server pushes reaches the socket until then (./security.md §Connection Admission).
+
 An account holds at most `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT` (50) connections on a transport. One more is always admitted, and the account's oldest is closed with `WS_CLOSE_CONNECTION_LIMIT` to make room. Pass `max_connections_per_account` to change the cap (`null` disables it) — on `register_ws_endpoint` / `WsEndpointSpec` for the transport the mount creates, or on your own `new BackendWebsocketTransport({max_connections_per_account})`; passing both the option and a `transport` throws. On the client, `FrontendWebsocketClient` treats that close as closed-until-the-user-acts: it doesn't reconnect (that would close a newer socket in turn), it isn't `revoked`, and `superseded` turns `true` until the next `connect()`:
 
 ```svelte
@@ -872,7 +878,7 @@ See ./security.md §WebSocket Connection Cap.
 
 ### Backend-initiated fan-out
 
-`BackendWebsocketTransport` exposes two primitives for pushing notifications from handlers or audit-event callbacks. `broadcast_filtered(message, predicate)` fans out to every connection whose `ConnectionIdentity` satisfies an arbitrary predicate — reach for it when the ACL is anything other than a single account (e.g. a subscription ACL hook that fans an event out to every account subscribed to the resource it concerns). `send_to_account(account_id, message)` is the targeted single-account wrapper: it delivers to every socket bound to one account (session, bearer, and daemon-token alike, mirroring `close_sockets_for_account`) and is the right primitive when the delivery target is a single known account. Both return the number of sockets the message was written to, but that's bookkeeping, not a delivery receipt — `0` means the recipient has no live sockets, and a non-zero count only says `ws.send` didn't throw. Flows that need durable delivery must persist the event and hydrate from storage on reconnection.
+`BackendWebsocketTransport` exposes two primitives for pushing notifications from handlers or audit-event callbacks. `broadcast_filtered(message, predicate)` fans out to every admitted connection whose `ConnectionIdentity` satisfies an arbitrary predicate — reach for it when the ACL is anything other than a single account (e.g. a subscription ACL hook that fans an event out to every account subscribed to the resource it concerns). `send_to_account(account_id, message)` is the targeted single-account wrapper: it delivers to every admitted socket bound to one account (session, bearer, and daemon-token alike, mirroring `close_sockets_for_account`) and is the right primitive when the delivery target is a single known account. Both return the number of sockets the message was written to, but that's bookkeeping, not a delivery receipt — `0` means the recipient has no live sockets, and a non-zero count only says `ws.send` didn't throw. Flows that need durable delivery must persist the event and hydrate from storage on reconnection. A connection still pending admission receives nothing — see ./security.md §Connection Admission.
 
 Handlers consume `send_to_account` through the narrow `NotificationSender` interface (`@fuzdev/fuz_app/auth/role_grant_offer_notifications.ts`). `create_role_grant_offer_actions` accepts an optional `notification_sender` on its `deps` — pass the `BackendWebsocketTransport` instance directly (it satisfies the interface structurally). Because admin role_grant grant/revoke now run through the `role_grant_offer_create` and `role_grant_revoke` RPC actions, wiring the sender on the action factory covers the full offer lifecycle _and_ admin revoke in one place. When wired, offer lifecycle transitions (create/retract/accept/decline) and role_grant revoke fan out `role_grant_offer_received` / `_retracted` / `_accepted` / `_declined` / `_supersede` / `role_grant_revoke` via the shared `emit_after_commit(ctx, fn)` helper from `@fuzdev/fuz_app/http/pending_effects.ts` — sends fire strictly post-commit **and are discarded if the handler's transaction rolls back** (see ./architecture.md §Fire-and-Forget Pending Effects); exceptions are caught + logged so one failed send can't corrupt the already-committed response or starve sibling sends in the same batch. `role_grant_offer_notification_specs` is the matching `EventSpec[]` for surface generation; append it to `event_specs` on `create_app_server` so the attack surface reflects the six methods and DEV-mode broadcast validation catches payload drift on SSE broadcasts (WS fan-out via `send_to_account` is not runtime-validated — the Zod `input` schemas on the action specs are contracts, not enforced at send time).
 
@@ -887,8 +893,11 @@ Beyond fire-and-forget fan-out, a WebSocket handler can **initiate a request to 
 Every handler receives `ctx.signal: AbortSignal`. The dispatcher composes
 two sources via `AbortSignal.any`:
 
-- **Socket close** — fires on WS disconnect (HTTP RPC handlers receive
-  `c.req.raw.signal`, i.e. the HTTP request's abort signal).
+- **Socket end** — fires when the socket ends: the client disconnects, or the
+  server closes it (a revocation, a connection-cap eviction, a heartbeat
+  timeout), at the moment of the close rather than when the close handshake
+  lands (HTTP RPC handlers receive `c.req.raw.signal`, i.e. the HTTP
+  request's abort signal).
 - **Per-request cancel** — fires when the client sends a `cancel`
   notification with the matching `request_id`. `FrontendWebsocketClient.request`
   automatically wires this when the caller supplies `{signal}` or when the

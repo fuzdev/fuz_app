@@ -63,8 +63,9 @@ export interface SseRouteTestSpec {
 	event_specs?: Array<EventSpec>;
 	/**
 	 * Whether to assert the stream closes after `session_revoke_all`.
-	 * Default `true`. Set `false` for endpoints that don't wire a close-on-revoke
-	 * guard (leaves a TODO to fix, rather than silently passing).
+	 * Default `true`. Set `false` for endpoints whose registry no revocation
+	 * reaches — neither joined to the backend's closer nor guarded (leaves a
+	 * TODO to fix, rather than silently passing).
 	 */
 	assert_closes_on_revoke?: boolean;
 }
@@ -82,8 +83,9 @@ export interface SseRouteTestOptions {
 	/**
 	 * Backend audit event callback — threaded to `create_test_app_server`.
 	 * Use to wire a close-on-revoke guard for consumer SSE registries
-	 * (e.g., via `create_sse_auth_guard`) so `session_revoke_all` actually
-	 * closes the tested streams.
+	 * (e.g., via `create_sse_auth_guard`) so `session_revoke_all` closes the
+	 * tested streams — not needed for a registry the route joined to
+	 * `ctx.deps.connection_closer`, which the revoking handler closes itself.
 	 */
 	on_audit_event?: (event: AuditLogEvent) => void;
 	/**

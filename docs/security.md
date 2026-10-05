@@ -68,8 +68,8 @@ axis. The dispatcher rejects non-session credentials with 403
 before the handler runs. Seven close a credential-minting, lockout, or
 privilege-pivot threat (list below); the remaining two are gated for reasons
 that aren't a threat of their own — `POST /logout` for forensic fidelity, and
-`GET /audit/stream` because the channel decides whether the stream can be
-closed again (both noted after the list).
+`GET /audit/stream` because a long-lived admin feed is not handed to a
+channel the deployment never chose (both noted after the list).
 
 - `account_token_create` — Bearer-spawn-bearer persistence — leaked API token mints siblings with innocuous names to outlive revocation.
 - `account_token_revoke` — Sibling disruption — leaked bearer revokes the legitimate sibling token to disrupt the user.
@@ -193,10 +193,12 @@ legitimate operator.
   (`auth_cleanup` on `create_app_server`, off by default; see
   [Connection Admission](#connection-admission), "What remains")
 - **Session limits**: Per-account cap (default 5, configurable). Oldest session
-  evicted on login when limit is reached
-- **Password change**: Revokes all sessions and clears the session cookie.
-  Prevents compromised sessions from persisting after credential rotation —
-  SSE auth guard also disconnects live streams on `password_change` events
+  evicted on login when limit is reached, and the connections it opened are
+  closed once the login commits
+- **Password change**: Revokes all sessions and API tokens and clears the
+  session cookie, so a compromised credential does not persist after
+  rotation. The handler closes the account's WebSockets and SSE streams once
+  the change commits (see [Closing on Revocation](#closing-on-revocation))
 
 ### Cookie Key Rotation
 
@@ -237,7 +239,8 @@ legitimate operator.
   `account_not_found`). The bearer middleware has no hard-fail at all — it
   never returns a status of its own
 - **Token limits**: Per-account cap (default 10, configurable). Oldest token
-  evicted on creation when limit is reached
+  evicted on creation when limit is reached, and the connections it opened
+  are closed once the creation commits
 
 ### Token scoping
 
@@ -495,10 +498,13 @@ enforcement:
   event specs). `create_audit_log_sse({log, connection_closer})` remains for
   manual control.
 
-The audit log SSE route (`/audit/stream`) subscribes with
-`scope = session_hash` and `groups = [account_id]`, so `session_revoke`
-closes only the affected tab, while `role_grant_revoke` / `session_revoke_all` /
-`password_change` / an account delete close every stream for the account.
+The audit log SSE route (`/audit/stream`) registers each stream with
+`scope = session_hash` and `groups = [account_id]` (plus the API token id for
+a bearer, on a route widened to admit one), so `session_revoke` closes only
+that session's streams, while a `role_grant_revoke` of the stream's role and
+the account-wide revocations (`session_revoke_all`, `token_revoke_all`,
+`password_change`, `logout`, an account delete or purge) close every stream
+for the account.
 
 ## WebSocket Connection Cap
 

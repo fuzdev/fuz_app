@@ -67,10 +67,12 @@ export const WS_CLOSE_POLICY_VIOLATION = 1008;
  * §7.4.1 "Internal Error").
  *
  * Sent when an upgraded socket can't be admitted because its credential
- * re-check itself failed (a database error), and when an `on_socket_open` hook
- * throws. The handshake has already answered `101`, so an HTTP `500` is no
- * longer available. Not a revocation: the client's credential may be fine, so
- * it reconnects under its ordinary backoff rather than entering its `revoked`
+ * re-check itself failed (a database error), when an `on_socket_open` hook
+ * throws, and when a frame arrives on a socket whose connection was removed
+ * from the transport without a close (a bare `remove_connection`). The
+ * handshake has already answered `101`, so an HTTP `500` is no longer
+ * available. Not a revocation: the client's credential may be fine, so it
+ * reconnects under its ordinary backoff rather than entering its `revoked`
  * state. The twin of the Rust spine's `WS_CLOSE_INTERNAL_ERROR`.
  */
 export const WS_CLOSE_INTERNAL_ERROR = 1011;

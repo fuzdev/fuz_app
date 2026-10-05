@@ -537,7 +537,7 @@ a request. Twin of the Rust spine's `fuz_db_admin` router.
 400 `ERROR_TABLE_NOT_DELETABLE` before the key-shape check, because a generic
 storage endpoint has no business deleting a row whose meaning lives in the
 domain layer. `audit_log` is the sharpest: it is both the trail and, since
-`realtime/sse_auth_guard.ts` and the WS auth guard close live streams by
+`realtime/sse_auth_guard.ts` and the WS auth guard close live connections by
 listening to audit events, part of how revocation propagates. The three
 singletons each fail differently on deletion — `bootstrap_lock` leaves
 `check_bootstrap_status` advertising a window `bootstrap_account.ts` then always

@@ -13,10 +13,12 @@ import '../assert_dev_env.ts';
  * cross-process bundle (`describe_standard_cross_process_tests`) omits WS
  * by design, so consumers call this alongside it.
  *
- * **Consumer-agnostic.** Every case drives the `heartbeat` protocol action,
- * which `assert_ws_endpoints_include_protocol_actions` guarantees is present
- * on every WS endpoint — so the suite needs no knowledge of a consumer's
- * domain WS methods. It validates the transport, not the domain.
+ * **Consumer-agnostic**, apart from the cases `rpc_path` and
+ * `capabilities.ws_account_actions` gate. Every other case drives the
+ * `heartbeat` protocol action, which
+ * `assert_ws_endpoints_include_protocol_actions` guarantees is present on
+ * every WS endpoint — so the suite needs no knowledge of a consumer's domain
+ * WS methods. It validates the transport, not the domain.
  *
  * The first three cases mirror the upgrade stack `register_ws_endpoint` wires
  * (origin check → `require_auth` → dispatch): an authenticated upgrade
@@ -32,8 +34,7 @@ import '../assert_dev_env.ts';
  * ordering forced — so are frames written in the same TCP write as the upgrade
  * request (driven through `connect_raw_ws`, since a client library sends
  * nothing before its `open` event). `heartbeat` answers the parameterless
- * shapes
- * (absent, `{}`) and refuses a declared param with `invalid_params`, and a
+ * shapes (absent, `{}`) and refuses a declared param with `invalid_params`, and a
  * message over the backend's cap (`max_message_bytes`, default
  * `DEFAULT_WS_MAX_MESSAGE_BYTES`) closes the socket with
  * `WS_CLOSE_MESSAGE_TOO_BIG`.

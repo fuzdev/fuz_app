@@ -106,8 +106,8 @@ export const NON_BROWSABLE_TABLES: ReadonlyArray<string> = Object.freeze([
  * row whose meaning lives in the domain layer:
  *
  * - `audit_log` — the trail and the tamper path would otherwise be the same
- *   surface. It is also how revocation propagates: `realtime/sse_auth_guard.ts`
- *   and the WS auth guard close live streams by listening to audit events, so a
+ *   surface. It is also part of how revocation propagates: `realtime/sse_auth_guard.ts`
+ *   and the WS auth guard close live connections by listening to audit events, so a
  *   raw row delete here is invisible to them.
  *   `bootstrap_lock` — deleting the singleton leaves `check_bootstrap_status`
  *   advertising an open bootstrap window on the next boot that

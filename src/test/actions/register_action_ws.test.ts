@@ -5,7 +5,11 @@
  * the `createEvents` callback, then feeds onOpen/onMessage/onClose with a fake
  * Hono context and a fake `WSContext`. Exercises: envelope parsing, batch
  * rejection, per-action auth, input validation, handler dispatch, DEV output
- * validation, socket-scoped notify, per-socket signal, transport bookkeeping.
+ * validation, socket-scoped notify, per-socket signal, transport bookkeeping,
+ * the message size cap, the per-account connection cap, the socket lifecycle
+ * hooks, self-revocation (reply before close), the drop of every frame on a
+ * socket the server closed, the frame queue while a socket is opening, the
+ * server heartbeat, and the per-action rate limit.
  *
  * @module
  */

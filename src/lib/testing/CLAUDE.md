@@ -518,13 +518,14 @@ bootstrapped keeper) based on `method.auth`; keeper uses the daemon token.
 Per SSE route: open stream with matching auth, assert the
 `SSE_CONNECTED_COMMENT` comment, fire a consumer-supplied `trigger()`,
 validate the next `data:` frame as `{method, params}` against declared
-`EventSpec`s, then (by default) fire `POST /api/account/sessions/revoke-all`
-and assert the stream closes within 2s.
+`EventSpec`s, then (by default) dispatch the `account_session_revoke_all` RPC
+method and assert the stream closes within 2s.
 
 `SseRouteTestSpec` per route: `{path, trigger, event_specs?, assert_closes_on_revoke?}`.
-Pass `on_audit_event` on the suite options to wire a close-on-revoke guard
-(e.g. via `create_sse_auth_guard`) for consumer SSE registries — without it,
-the revoke assertion hangs because the guard never fires.
+A consumer registry closes on the revoke when its route joined it to the
+backend's closer (`ctx.deps.connection_closer.add(create_sse_connection_closer(registry))`)
+or when the suite's `on_audit_event` option wires a guard (e.g. `create_sse_auth_guard`); with
+neither, the revoke assertion fails.
 
 Frame reading is delegated to the shared `create_sse_frame_reader`
 (`transports/sse_frame_reader.ts`) — `\n\n` framing, a 2s per-read timeout
@@ -1219,6 +1220,19 @@ more than a cap's worth of real sockets. Gated on `capabilities.ws`;
 cross-process only. fuz_app's own wiring is
 `src/test/cross_backend/ws_connection_cap.cross.test.ts`.
 
+### `cross_backend/session_cap.ts` — `describe_session_cap_cross_tests`
+
+Parity for the per-account session cap over real HTTP: logging in past
+`max_sessions` (default `DEFAULT_MAX_SESSIONS`) never refuses a login and
+evicts the oldest session.
+`describe_session_cap_cross_tests({setup_test, max_sessions?, login_path?,
+status_path?, ws?})` — pass `ws` (`{base_url, ws_path, origin?}`) to also
+assert that the evicted session's socket is closed with
+`WS_CLOSE_SESSION_REVOKED` once the evicting login commits; omitted, that case
+is skipped, so a caller passes it only for a backend with `capabilities.ws`.
+Cross-process only. fuz_app's own wiring is
+`src/test/cross_backend/session_cap.cross.test.ts`.
+
 ### `cross_backend/sse_round_trip.ts` — `describe_cross_process_sse_tests`
 
 Cross-process counterpart to the in-process `sse_round_trip.ts` harness —
@@ -1736,7 +1750,7 @@ re-roll the serve / daemon-info / WS-attach / drain boilerplate:
 - `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` / `full_spine_rpc_endpoints(ctx, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). Single-sources what was an inline assembly in `testing_spine_server.ts`, so the binary and the `spine_method_coverage` reconciliation test build the same list. Also `$lib`-free.
 - `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_deno_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory PGlite, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
 
-fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` + `full_spine_rpc_endpoints` + a WS mount, reusing `default_spine_surface`. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it, as the Rust consumers' do — nothing a cross-process suite seeds is already expired; an in-process harness leaves it off.
+fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` + `full_spine_rpc_endpoints` + a WS mount, reusing `default_spine_surface`. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it when nothing its suites seed is already expired (the conformance table's `expired_session` principal seeds a backdated session row); an in-process harness leaves it off.
 
 ### Live-method coverage reconciliation — `method_coverage.ts`
 
@@ -1765,8 +1779,8 @@ no-DB reconciliation test `spine_method_coverage.test.ts`, which enumerates
 The in-process `ws_round_trip` harness stays (it drives the dispatcher
 against a fake upgrade, no wire), but the real-upgrade coverage now lives in
 the cross-process `cross_backend/ws_round_trip.ts` suite below — including
-close-on-revoke (`WsClient.wait_for_close` asserts the audit-guard drops a
-live socket on `session_revoke_all`).
+close-on-revoke (`WsClient.wait_for_close` asserts a live socket is dropped
+once `account_session_revoke_all` commits).
 
 `audit_completeness` is in-process by design (FK-structural introspection
 beyond the `audit_log_list` RPC reads — structurally in-process).
