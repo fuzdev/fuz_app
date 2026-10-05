@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.121.0
+
+### Minor Changes
+
+- **breaking** deps: bump @fuzdev/fuz_util@0.70.0 ([c4287f3](https://github.com/fuzdev/fuz_app/commit/c4287f3))
+
 ## 0.120.0
 
 ### Minor Changes
