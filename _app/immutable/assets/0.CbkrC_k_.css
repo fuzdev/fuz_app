@@ -88,6 +88,7 @@
 	--hue_neutral: var(--hue_f);
 	--icon_size_lg: 80px;
 	--icon_size_md: 48px;
+	--icon_size_sm: 32px;
 	--icon_size_xl: 128px;
 	--icon_size_xl2: 192px;
 	--input_fill: var(--bg_80);
@@ -106,6 +107,7 @@
 	--link_color: var(--accent_60);
 	--link_color_selected: var(--text_color);
 	--negative_50: oklch(var(--palette_lightness_50) calc(var(--palette_chroma_50) * var(--chroma_scale, 1) * var(--negative_chroma_scale, 1)) var(--hue_negative));
+	--negative_60: oklch(var(--palette_lightness_60) calc(var(--palette_chroma_60) * var(--chroma_scale, 1) * var(--negative_chroma_scale, 1)) var(--hue_negative));
 	--negative_chroma_scale: 1;
 	--neutral_chroma: 0.024;
 	--outline_color: var(--accent_50);
@@ -225,6 +227,7 @@
 	--space_xs: calc(0.6rem * var(--space_scale));
 	--space_xs2: calc(0.4rem * var(--space_scale));
 	--space_xs3: calc(0.3rem * var(--space_scale));
+	--space_xs4: calc(0.2rem * var(--space_scale));
 	--text_00: oklch(var(--text_lightness_00) calc(var(--neutral_chroma) * var(--chroma_shape_00)) var(--hue_neutral));
 	--text_50: oklch(var(--text_lightness_50) calc(var(--neutral_chroma) * var(--chroma_shape_50)) var(--hue_neutral));
 	--text_70: oklch(var(--text_lightness_70) calc(var(--neutral_chroma) * var(--chroma_shape_70)) var(--hue_neutral));
@@ -1022,6 +1025,15 @@ body {
 .panel { border-radius: var(--border_radius, var(--border_radius_xs));
 			background-color: var(--fg_10);
 			box-shadow: var(--panel_shadow); }
+/* Smaller sizing, one step down from the default, cascading to children. Works on individual elements or containers. */
+.sized_sm { --font_size: var(--font_size_sm);
+			--input_height: var(--space_xl4);
+			--input_height_compact: var(--space_xl3);
+			--input_padding_x: var(--space_md);
+			--chip_padding_x: var(--space_xs2);
+			--icon_size: var(--icon_size_sm);
+			--menuitem_padding: var(--space_xs4) var(--space_xs2);
+			--flow_margin: var(--space_md); }
 /*
 TODO other button variants?
 TODO this is slightly strange that it doesn't use --icon_size.
@@ -1176,6 +1188,7 @@ These are used as modifiers to buttons.
 .color_h_50 { color: var(--palette_h_50); --text_color: var(--palette_h_50); }
 .color_i_50 { color: var(--palette_i_50); --text_color: var(--palette_i_50); }
 .color_j_50 { color: var(--palette_j_50); --text_color: var(--palette_j_50); }
+.negative_60 { color: var(--negative_60); --text_color: var(--negative_60); }
 .border_radius_sm { border-radius: var(--border_radius_sm); }
 .shadow_inset_xs { box-shadow: var(--shadow_inset_xs) color-mix(in oklab, var(--shadow_color, var(--shadow_color_umbra)) var(--shadow_alpha, var(--shadow_alpha_30)), transparent); }
 .width\:100\% { width: 100%; }
