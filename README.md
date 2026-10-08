@@ -14,6 +14,8 @@ fuz_app supports deploying with Deno, Node, and Bun,
 to servers, static websites, and local-first binaries, with more to come,
 eventually with compatible alternatives written in Rust.
 
+This library has no AI features by design, for that see [zzz](https://github.com/fuzdev/zzz).
+
 For more see the <a href="https://github.com/fuzdev/fuz_app/discussions">discussions</a>.
 fuz_app is part of the Fuz stack
 ([fuz.dev](https://www.fuz.dev/), [@fuzdev](https://github.com/fuzdev)).
