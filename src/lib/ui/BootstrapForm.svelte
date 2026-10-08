@@ -147,7 +147,7 @@
 			disabled={false}
 			aria-disabled={auth_state.verifying}
 			onclick={handle_bootstrap}
-			class={auth_state.verify_error ? 'color_c' : ''}
+			class={auth_state.verify_error ? 'palette_c' : ''}
 		>
 			create account
 		</PendingButton>

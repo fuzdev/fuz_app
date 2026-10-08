@@ -56,14 +56,14 @@
 	const status_chip_class = (status: string): string => {
 		switch (status) {
 			case 'accepted':
-				return 'chip color_b';
+				return 'chip palette_b';
 			case 'pending':
-				return 'chip color_a';
+				return 'chip palette_a';
 			case 'declined':
 			case 'retracted':
 			case 'superseded':
 			case 'expired':
-				return 'chip color_c';
+				return 'chip palette_c';
 			default:
 				return 'chip';
 		}

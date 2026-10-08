@@ -60,7 +60,7 @@
 	</fieldset>
 	{#if admin_invites.invite_count > 0}
 		<p>
-			<span class="chip color_a">
+			<span class="chip palette_a">
 				{admin_invites.unclaimed_count} unclaimed / {admin_invites.invite_count} total
 			</span>
 		</p>
@@ -75,7 +75,7 @@
 	>
 		<fieldset class="row gap_sm">
 			<legend>Invite Target</legend>
-			<label class="grow">
+			<label class="flex-grow:1">
 				<div class="title">email</div>
 				<input
 					type="email"
@@ -84,7 +84,7 @@
 					disabled={admin_invites.create.loading}
 				/>
 			</label>
-			<label class="grow">
+			<label class="flex-grow:1">
 				<div class="title">username</div>
 				<input
 					type="text"
@@ -114,7 +114,7 @@
 			{#snippet cell(column, row)}
 				{#if column.key === 'claimed_at'}
 					{#if row.claimed_at}
-						<span class="chip color_b">claimed</span>
+						<span class="chip palette_b">claimed</span>
 						<span class="text_50 font_size_sm" title={format_datetime_local(row.claimed_at)}>
 							{#if row.claimed_by_username}
 								by {row.claimed_by_username}
@@ -138,7 +138,7 @@
 						<ConfirmButton
 							onconfirm={() => admin_invites.submit_delete(row.id)}
 							title="delete invite"
-							class="sm"
+							class="sized_sm"
 							label="delete"
 							pending={admin_invites.remove.loading(row.id)}
 						/>

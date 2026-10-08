@@ -156,7 +156,7 @@
 		position: sticky;
 		top: 0;
 		z-index: 1;
-		background: var(--bg, Canvas);
+		background: var(--shade_00, Canvas);
 		border-bottom: var(--border_width, 1px) solid var(--border_color);
 	}
 
@@ -178,7 +178,7 @@
 	}
 
 	.datatable-resize-handle:hover {
-		background: var(--color_a_10);
+		background: var(--palette_a_10);
 	}
 
 	.datatable-row {

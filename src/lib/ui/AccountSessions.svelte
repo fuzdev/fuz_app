@@ -43,7 +43,7 @@
 	<h2>
 		Sessions
 		{#if account_sessions.active_count > 0}
-			<span class="chip color_a">{account_sessions.active_count} active</span>
+			<span class="chip palette_a">{account_sessions.active_count} active</span>
 		{/if}
 	</h2>
 
@@ -64,7 +64,7 @@
 		<Datatable {columns} rows={account_sessions.sessions} height="300px">
 			{#snippet cell(column, row)}
 				{#if column.key === 'id'}
-					<span class="chip color_b">active</span>
+					<span class="chip palette_b">active</span>
 					<code class="text_50">{truncate_uuid(row.id)}</code>
 				{:else if column.key === 'created_at'}
 					<span title={format_datetime_local(row.created_at)}>

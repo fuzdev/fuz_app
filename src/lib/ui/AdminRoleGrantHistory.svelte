@@ -50,8 +50,8 @@
 				{#if column.key === 'event_type'}
 					<span
 						class="chip"
-						class:color_b={row.event_type === 'role_grant_create'}
-						class:color_c={row.event_type === 'role_grant_revoke'}
+						class:palette_b={row.event_type === 'role_grant_create'}
+						class:palette_c={row.event_type === 'role_grant_revoke'}
 					>
 						{row.event_type === 'role_grant_create' ? 'grant' : 'revoke'}
 					</span>

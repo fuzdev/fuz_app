@@ -169,7 +169,7 @@
 			<div class="baseline-row gap_sm">
 				<span class="text_50">public signup</span>
 				{#if app_settings.settings?.open_signup}
-					<span class="chip color_b">open</span>
+					<span class="chip palette_b">open</span>
 				{:else}
 					<span class="chip">closed</span>
 				{/if}
@@ -187,7 +187,7 @@
 						<li>
 							<span>{invite.email || invite.username || '—'}</span>
 							{#if invite.claimed_at}
-								<span class="chip font_size_sm color_b">claimed</span>
+								<span class="chip font_size_sm palette_b">claimed</span>
 							{:else}
 								<span class="chip font_size_sm">unclaimed</span>
 							{/if}
@@ -221,7 +221,7 @@
 						</span>
 						<code class="font_size_sm">{event.event_type}</code>
 						{#if event.outcome === 'failure'}
-							<span class="chip font_size_sm color_c">fail</span>
+							<span class="chip font_size_sm palette_c">fail</span>
 						{/if}
 					</li>
 				{/each}
@@ -279,7 +279,7 @@
 			<div class="baseline-row gap_sm">
 				<span class="text_50">public signup</span>
 				{#if app_settings.settings?.open_signup}
-					<span class="chip color_b">open</span>
+					<span class="chip palette_b">open</span>
 				{:else}
 					<span class="chip">invite-only</span>
 				{/if}

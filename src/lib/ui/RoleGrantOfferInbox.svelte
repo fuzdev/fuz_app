@@ -65,8 +65,8 @@
 		<ul class="column gap_md">
 			{#each role_grant_offers.incoming as offer (offer.id)}
 				<li class="box p_md column gap_sm">
-					<div class="row gap_sm align_center">
-						<span class="chip color_a">{format_role(offer.role)}</span>
+					<div class="row gap_sm">
+						<span class="chip palette_a">{format_role(offer.role)}</span>
 						<span class="text_50 font_size_sm">{scope_label(offer.scope_id, offer.role)}</span>
 						<span class="text_50 font_size_sm">from {format_actor(offer.from_actor_id)}</span>
 						<span
@@ -86,7 +86,7 @@
 							pending={role_grant_offers.accept.loading}
 							disabled={role_grant_offers.accept.loading}
 							onclick={() => role_grant_offers.submit_accept(offer.id)}
-							class="color_b"
+							class="palette_b"
 						>
 							accept
 						</PendingButton>
@@ -117,7 +117,11 @@
 										></textarea>
 									</label>
 									<div class="row gap_sm">
-										<button type="button" class="color_c bg_100" onclick={confirm}>
+										<button
+											type="button"
+											class="palette_c background-color:var(--bg_100)"
+											onclick={confirm}
+										>
 											confirm decline
 										</button>
 										<button type="button" onclick={() => popover.hide()}>cancel</button>

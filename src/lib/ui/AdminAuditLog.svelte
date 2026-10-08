@@ -88,7 +88,7 @@
 			</select>
 		</label>
 		<button type="button" onclick={load}>refresh</button>
-		<button type="button" onclick={toggle_streaming} class:color_b={streaming}>
+		<button type="button" onclick={toggle_streaming} class:palette_b={streaming}>
 			{streaming ? 'stop' : 'stream'}
 		</button>
 		{#if streaming}
@@ -114,8 +114,8 @@
 				{:else if column.key === 'outcome'}
 					<span
 						class="chip"
-						class:color_b={row.outcome === 'success'}
-						class:color_c={row.outcome === 'failure'}
+						class:palette_b={row.outcome === 'success'}
+						class:palette_c={row.outcome === 'failure'}
 					>
 						{row.outcome}
 					</span>

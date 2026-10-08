@@ -103,7 +103,7 @@
 			disabled={false}
 			aria-disabled={auth_state.verifying}
 			onclick={handle_login}
-			class={auth_state.verify_error ? 'color_c' : ''}
+			class={auth_state.verify_error ? 'palette_c' : ''}
 		>
 			log in
 		</PendingButton>
