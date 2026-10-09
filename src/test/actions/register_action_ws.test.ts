@@ -762,7 +762,7 @@ describe('register_action_ws', () => {
 	});
 
 	test('close removes the connection when the adapter hands onClose its own WSContext', async () => {
-		// `hono/bun` builds a `WSContext` per event, so the one `onClose` gets is
+		// `@hono/bun` builds a `WSContext` per event, so the one `onClose` gets is
 		// not the one `onOpen` registered
 		const stub = create_stub_upgrade();
 		const { transport } = register_action_ws({

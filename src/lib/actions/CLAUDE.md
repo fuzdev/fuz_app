@@ -408,7 +408,7 @@ sets `api_token_id`, daemon-token sets both null).
 The id is the connection's only handle — `register_pending` / `add_connection`
 return it and `admit` / `remove_connection` / `is_registered` take it. There is
 no socket → id lookup: a runtime adapter may hand each socket event its own
-`WSContext` (`hono/bun` builds one per event), so the object a close event
+`WSContext` (`@hono/bun` builds one per event), so the object a close event
 carries can't identify the connection. `register_action_ws` captures the id on
 open and removes by it.
 

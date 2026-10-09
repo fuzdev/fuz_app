@@ -350,7 +350,7 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * no-op for an unknown id.
 	 *
 	 * Keyed by id rather than by `WSContext` because a runtime adapter may hand
-	 * each socket event its own context object (`hono/bun` does), so the one a
+	 * each socket event its own context object (`@hono/bun` does), so the one a
 	 * close event carries can't identify the connection.
 	 *
 	 * Removal only: the socket is not closed and the registered

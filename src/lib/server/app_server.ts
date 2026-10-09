@@ -307,7 +307,7 @@ export interface AppServerOptions {
 	 * `ws_endpoints` — one adapter per app.
 	 *
 	 * For Node, `import {upgradeWebSocket} from '@hono/node-ws'`. For
-	 * Deno, `import {upgradeWebSocket} from 'hono/deno'`. Test harnesses
+	 * Deno, `import {upgradeWebSocket} from '@hono/deno'`. Test harnesses
 	 * use `create_stub_upgrade` from `$lib/testing/ws_round_trip.ts`.
 	 */
 	upgradeWebSocket?: UpgradeWebSocket;

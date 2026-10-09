@@ -3,16 +3,16 @@ import '../assert_dev_env.ts';
 /**
  * Bun runtime adapter for spawnable cross-process test server binaries.
  *
- * Binds `Bun.serve` and `hono/bun`'s module-level `upgradeWebSocket` +
+ * Binds `Bun.serve` and `@hono/bun`'s module-level `upgradeWebSocket` +
  * `websocket` handler. The shared `testing/cross_backend/testing_server_core.ts` owns the rest.
  * Third sibling to `testing/cross_backend/testing_server_node.ts` / `testing/cross_backend/testing_server_deno.ts` —
  * together the three isolate the JS-runtime axis (Node V8 / Deno V8 / Bun
  * JSC) on identical TS surfaces, and the Rust spine binary covers the
  * cross-language axis.
  *
- * Needs **no extra deps**: `hono/bun` ships with the `hono` peer dep and
- * `Bun.serve` is built in (unlike Node, which pulls `@hono/node-server` +
- * `@hono/node-ws`). `RuntimeDeps` reuse `create_node_runtime` — Bun
+ * Needs the optional `@hono/bun` peer dep (the Bun counterpart to Node's
+ * `@hono/node-server` + `@hono/node-ws`); `Bun.serve` is built in.
+ * `RuntimeDeps` reuse `create_node_runtime` — Bun
  * implements the `node:fs` / `node:process` surface `RuntimeDeps` +
  * `cli/daemon` touch.
  *
@@ -24,7 +24,7 @@ import '../assert_dev_env.ts';
  */
 
 import process from 'node:process';
-import { getConnInfo, upgradeWebSocket, websocket } from 'hono/bun';
+import { getConnInfo, upgradeWebSocket, websocket } from '@hono/bun';
 
 import { create_node_runtime } from '../../runtime/node.ts';
 import type { ServeHandle, TestingServerAdapter } from './testing_server_core.ts';
@@ -62,7 +62,7 @@ export const create_bun_testing_adapter = (): TestingServerAdapter => ({
 		});
 		const handle: ServeHandle = {
 			// Bun bug (1.3.14): after a *server-initiated* WebSocket close
-			// (`ServerWebSocket.close()` / `hono/bun`'s `WSContext.close()`),
+			// (`ServerWebSocket.close()` / `@hono/bun`'s `WSContext.close()`),
 			// `server.stop()` never resolves — Bun doesn't decrement its
 			// active-connection count for a server-closed socket, so the stop
 			// waits forever for a connection it already closed. The trigger is

@@ -268,7 +268,7 @@ plus `create_standard_rpc_actions(ctx.deps, …)` into `create_app_server`'s
 `ws_endpoints` factory and supply `upgradeWebSocket` at the top level:
 
 ```typescript
-import { upgradeWebSocket } from '@hono/node-ws'; // or 'hono/deno'
+import { upgradeWebSocket } from '@hono/node-ws'; // or '@hono/deno'
 import { protocol_actions } from '@fuzdev/fuz_app/actions/protocol.ts';
 
 const { app, ws_endpoints } = await create_app_server({

@@ -146,7 +146,8 @@ export const ts_spine_node_backend_config = (
  * `BackendConfig` for the Bun TS spine binary — spawned via `bun run`. Bun
  * resolves the entry's relative `.js`→`.ts` source specifiers natively (no
  * flag needed — unlike Deno's `--sloppy-imports`, and like Gro's loader on
- * the Node path), and `Bun.serve` + `hono/bun` need no extra deps.
+ * the Node path). `Bun.serve` is built in; the WS upgrade comes from the
+ * optional `@hono/bun` peer dep.
  */
 export const ts_spine_bun_backend_config = (
 	options: TsSpineBackendConfigOptions = {}

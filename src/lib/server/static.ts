@@ -23,7 +23,7 @@ export interface ServeStaticOptions {
 /**
  * Factory function that creates a static file serving middleware.
  *
- * Matches the signature of `serveStatic` from `hono/deno` and `@hono/node-server/serve-static`.
+ * Matches the signature of `serveStatic` from `@hono/deno` and `@hono/node-server/serve-static`.
  */
 export type ServeStaticFactory = (options: ServeStaticOptions) => MiddlewareHandler;
 

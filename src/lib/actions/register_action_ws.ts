@@ -1125,7 +1125,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					stop_heartbeat_timer();
 					socket_abort_controller.abort();
 					// Removed by the id captured on open — an adapter may hand each
-					// event its own `WSContext` (`hono/bun` does), so the one this
+					// event its own `WSContext` (`@hono/bun` does), so the one this
 					// event carries can't identify the connection. And removed before
 					// the hook is awaited: the socket is gone, so a slow hook must not
 					// keep a dead entry that broadcasts still target and the

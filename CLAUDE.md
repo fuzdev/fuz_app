@@ -160,6 +160,7 @@ Shared helpers accept small `*Deps` from `runtime/deps.ts` (not `Pick<GodType, .
 - `@fuzdev/blake3-wasm` (>=0.1.0) — for `auth/session_queries`, `auth/bearer_auth`
 - `pg` (>=8) or `@electric-sql/pglite` (>=0.4) — optional, for `db/create_db`
 - `@hono/node-server` (>=1), `@hono/node-ws` (>=1), `ws` (>=8) — optional, for the Node server adapter + WebSocket transport
+- `@hono/bun` (>=1), `@hono/deno` (>=1) — optional, for the Bun and Deno cross-backend testing server adapters (`testing/cross_backend/testing_server_bun.ts`, `testing/cross_backend/testing_server_deno.ts`)
 - `esm-env` (^1) — optional, for the DEV-only output-validation gate
 
 ## Architecture

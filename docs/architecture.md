@@ -317,7 +317,7 @@ handlers for SvelteKit static builds:
 - **Step 3** (optional): SPA fallback for client-side routes (`spa_fallback: '/200.html'`)
 
 The `serve_static` parameter accepts any factory matching Hono's `serveStatic`
-signature (from `hono/deno` or `@hono/node-server`). `ServeStaticFactory` is exported
+signature (from `@hono/deno` or `@hono/node-server`). `ServeStaticFactory` is exported
 for consumer use.
 
 ## Extending BaseServerEnv
