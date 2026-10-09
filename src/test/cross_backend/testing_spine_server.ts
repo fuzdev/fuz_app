@@ -30,14 +30,12 @@ import type { Context } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { z } from 'zod';
 
-import { protocol_actions } from '#lib/actions/protocol.ts';
 import { DEFAULT_WS_MAX_MESSAGE_BYTES } from '#lib/actions/transports.ts';
 import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
 import type { AppSurface } from '#lib/http/surface.ts';
 import { start_daemon_token_rotation } from '#lib/testing/daemon_token_rotation.ts';
 import { load_env } from '#lib/env/load.ts';
 import type { RuntimeDeps } from '#lib/runtime/deps.ts';
-import { create_account_actions } from '#lib/auth/account_actions.ts';
 import { cell_audit_events } from '#lib/auth/cell_audit_events.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_audit_log_config } from '#lib/auth/audit_log_schema.ts';
@@ -65,7 +63,8 @@ import {
 	create_spine_route_specs,
 	spine_session_options
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
-import { full_spine_rpc_endpoints } from '#lib/testing/cross_backend/full_spine_mount.ts';
+import { build_full_spine_mount } from '#lib/testing/cross_backend/full_spine_mount.ts';
+import { SPINE_RPC_PATH } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 import type {
 	BuildTestingAppContext,
 	BuiltTestingApp
@@ -277,7 +276,7 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 	// SAME transport the WS endpoint registers connections against (the
 	// transport is the connection registry — a separate instance would fan out
 	// to an empty registry and reach nobody). Threaded into
-	// `spine_rpc_endpoints({notification_sender})` and the `ws_endpoints` spec
+	// `build_full_spine_mount({notification_sender})` and the `ws_endpoints` spec
 	// below; `create_app_server` adds it to the backend's connection closer and
 	// wires its audit-revocation guard.
 	const ws_transport = new BackendWebsocketTransport();
@@ -328,6 +327,19 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		? new RateLimiter(with_action_cap(default_action_account_rate_limit))
 		: null;
 
+	// The full live mount, built once for both endpoints: the RPC list and the
+	// WS list serving the same actions behind the protocol actions (see
+	// `build_full_spine_mount`). Single-sourced in `full_spine_mount.ts` so the
+	// binary, the in-process parity setup, and the `spine_method_coverage`
+	// reconciliation test all build the same list — a method can't be mounted
+	// here and forgotten elsewhere. The shared `ws_transport` is threaded as the
+	// role-grant-offer `notification_sender` so the spine emits the WS
+	// notification family — driving `describe_role_grant_offer_notification_ws_tests`.
+	const full_mount = build_full_spine_mount(app_backend.deps, {
+		notification_sender: ws_transport,
+		daemon_token_state: daemon_token_rotation.state
+	});
+
 	const app_server = await create_app_server({
 		backend: app_backend,
 		session_options: spine_session_options,
@@ -371,31 +383,22 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		],
 		// The full live RPC mount: the standard bundle plus the off-declared-surface
 		// families (`_testing_*` backdoors, the full cell verb set, the opt-in
-		// `actor_lookup` / `actor_search` resolvers). Single-sourced in
-		// `full_spine_mount.ts` so the binary, the in-process parity setup, and the
-		// `spine_method_coverage` reconciliation test all build the same list — a
-		// method can't be mounted here and forgotten elsewhere. Cells / actors stay
-		// off `create_spine_surface_spec`, so the standard cross suite's generic
+		// `actor_lookup` / `actor_search` resolvers). Cells / actors stay off
+		// `create_spine_surface_spec`, so the standard cross suite's generic
 		// round-trip never drives them (they're covered by the dedicated cell /
-		// actor cross suites). The shared `ws_transport` is threaded as the
-		// role-grant-offer `notification_sender` so the spine emits the WS
-		// notification family — driving `describe_role_grant_offer_notification_ws_tests`.
-		rpc_endpoints: (ctx) =>
-			full_spine_rpc_endpoints(ctx, {
-				notification_sender: ws_transport,
-				daemon_token_state: daemon_token_rotation.state
-			}),
-		// The WS endpoint: the protocol actions plus the self-service account
-		// actions. The no-domain spine carries no domain WS surface, and the
-		// account actions are what lets a socket revoke the session it is
-		// running on (`capabilities.ws_account_actions`), as it can on the Rust
-		// stub, which serves one registry on RPC and WS. No `required_roles` —
-		// the stub's WS state carries none either.
+		// actor cross suites).
+		rpc_endpoints: [{ path: SPINE_RPC_PATH, actions: full_mount.rpc_actions }],
+		// The WS endpoint serves the same actions behind the protocol actions,
+		// as the Rust stub serves one registry on RPC and WS — so a socket can
+		// revoke the session it is running on (`capabilities.ws_account_actions`)
+		// and the cell verbs' dispatcher-charged rate limit is reachable over WS
+		// on both spines (`describe_ws_action_rate_limit_cross_tests`). No
+		// `required_roles` — the stub's WS state carries none either.
 		create_upgrade_websocket: prepare_websocket({ max_message_bytes: WS_MAX_MESSAGE_BYTES }),
 		ws_endpoints: [
 			{
 				path: ws_path,
-				actions: [...protocol_actions, ...create_account_actions(app_backend.deps)],
+				actions: full_mount.ws_actions,
 				transport: ws_transport,
 				max_message_bytes: WS_MAX_MESSAGE_BYTES
 			}

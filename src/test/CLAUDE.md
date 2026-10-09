@@ -411,8 +411,10 @@ distributed-spray backstop (a success must not refund the per-IP budget). The
 second drives `describe_ws_action_rate_limit_cross_tests`: an account-limited
 action refused on the WS call past the cap, one account budget across HTTP RPC
 and WS, the per-IP axis keyed by the forwarded client IP on both
-transports, and the account axis at the RPC dispatcher (`cell_create`, which
-the Rust stub charges there rather than in-handler) — over a real socket, against limiters each binary builds from
+transports, and the account axis at the RPC and WS dispatchers (`cell_create`,
+which the Rust stub charges there rather than in-handler, and which both spines
+serve on WS — the TS spine mounts its full action set there, as the Rust stub
+serves one registry on both transports) — over a real socket, against limiters each binary builds from
 `FUZ_ACTION_RATE_LIMIT_ENABLED` + `FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS` and
 shares between its RPC and WS mounts (both binaries parse the flags as a
 stringbool and the cap as a `u32`, refusing garbage at boot). They need a dedicated project because the

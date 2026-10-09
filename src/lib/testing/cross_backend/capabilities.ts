@@ -229,9 +229,9 @@ export interface BackendCapabilities {
 	 * `describe_cross_process_ws_tests`: the socket reads the reply to its
 	 * request, then is closed with `WS_CLOSE_SESSION_REVOKED`.
 	 *
-	 * `true` on fuz_app's own spine presets — the TS spine binary mounts
-	 * `create_account_actions` on `/api/ws`, and the Rust `testing_spine_stub`
-	 * serves one action registry on RPC and WS. `false` in the family defaults:
+	 * `true` on fuz_app's own spine presets — the TS spine binary mounts its
+	 * full action set on `/api/ws`, and the Rust `testing_spine_stub` serves
+	 * one action registry on RPC and WS. `false` in the family defaults:
 	 * a consumer's WS endpoint carries whatever its domain mounts, so it opts in
 	 * once the account actions are there.
 	 */

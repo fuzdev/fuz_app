@@ -190,9 +190,12 @@ export const testing_reset_action_spec = {
  * asserting on audit rows.
  *
  * On the TS spine the barrier is **satisfied by construction**: the test
- * binary runs `await_pending_effects: true`, so every mutation's fire-and-
- * forget audit emits are awaited before its response returns — by the time
- * a later drain call runs, prior emits are already durable. The action still
+ * binary runs `await_pending_effects: true`, so every **HTTP** mutation's
+ * fire-and-forget audit emits are awaited before its response returns — by
+ * the time a later drain call runs, prior emits are already durable. A
+ * WS-dispatched mutation replies before its effects flush, so on TS this
+ * action is not a barrier for WS-originated emits; issue audit-asserting
+ * mutations over HTTP. The action still
  * exists so the cross-backend test body calls the same method on every
  * backend; the Rust spine (whose audit writes are detached tokio tasks)
  * does the real await in `AuditEmitter::drain_inflight`.

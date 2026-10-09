@@ -9,9 +9,11 @@
  * proof that fuz_app's WS upgrade + per-connection auth + dispatch work
  * over the wire on each runtime — the standard bundle omits WS by design.
  *
- * The spine mounts only `protocol_actions` on `/api/ws`, and the suite
- * drives `heartbeat` (present on every WS endpoint), so no domain layer is
- * involved.
+ * The spine serves its full action set on `/api/ws` (the protocol actions
+ * plus every RPC action, as the Rust stub serves one registry on both
+ * transports); the suite drives `heartbeat` (present on every WS endpoint)
+ * plus, for the `capabilities.ws_account_actions` case, a self-service
+ * account action over the socket, so no domain layer is involved.
  *
  * @module
  */

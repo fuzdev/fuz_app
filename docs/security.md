@@ -416,7 +416,9 @@ without a store handle. These live as seven `_testing_*` RPC actions
 `_testing_drain_effects`, `_testing_schema_snapshot`,
 `_testing_migration_tracker`, `_testing_action_manifest`)
 that a consumer's **test
-binary** appends to its RPC endpoint at assembly time. They are a deliberate
+binary** appends to its RPC endpoint at assembly time (fuz_app's own spine
+binary, like the Rust stub, also serves them on its WS endpoint, behind the
+same per-message gate). They are a deliberate
 backdoor, fenced on three independent axes:
 
 - **Daemon-token-gated.** Every `_testing_*` spec declares

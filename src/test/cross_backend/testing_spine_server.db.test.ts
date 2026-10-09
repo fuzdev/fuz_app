@@ -52,7 +52,7 @@ test('the Node-built spine surface lists /api/ws and passes the surface invarian
 		assert.deepStrictEqual(ws_paths, ['/api/ws']);
 		assert_surface_invariants(built.surface);
 		// the RPC/WS bundle minus `assert_no_testing_methods`: the binary
-		// live-mounts the `_testing_*` backdoors on its RPC endpoint by design
+		// live-mounts the `_testing_*` backdoors on its RPC and WS endpoints by design
 		assert_rpc_method_descriptions_present(built.surface);
 		assert_ws_method_descriptions_present(built.surface);
 		assert_ws_endpoints_include_protocol_actions(built.surface);

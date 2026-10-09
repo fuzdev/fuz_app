@@ -13,7 +13,8 @@ import '../assert_dev_env.ts';
  * info-leak of the set were the gate to break). Their only structural fence
  * is the **daemon-token** credential gate on
  * each spec's `auth` axis. A test binary live-mounts them on its RPC
- * endpoint but keeps them off the declared surface — so the spec-derived
+ * endpoint (and, on fuz_app's spine binary and the Rust stub, its WS
+ * endpoint) but keeps them off the declared surface — so the spec-derived
  * `describe_rpc_attack_surface_tests` never enumerates them, and nothing
  * else fires them with a non-daemon credential to prove the gate holds
  * end-to-end. This suite does, against each impl's real auth resolution.

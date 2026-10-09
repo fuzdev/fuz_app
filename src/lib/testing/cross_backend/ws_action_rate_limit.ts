@@ -25,19 +25,19 @@ import '../assert_dev_env.ts';
  *   over anonymous HTTP and over a WS whose upgrade carried the same header:
  *   the call past the cap is refused on both, while a second address keeps its
  *   own budget on both.
- * - **account axis at the RPC dispatcher** — `cell_create` (`rate_limit:
- *   'account'`, on both spines' RPC mount) with malformed params over HTTP: the
- *   call past the cap answers `429`, and a budget split between `cell_create`
- *   and `account_token_create` is one bucket.
+ * - **account axis at the dispatchers** — `cell_create` (`rate_limit:
+ *   'account'`, on both spines' RPC and WS mounts) with malformed params: the
+ *   call past the cap answers `429` over HTTP and `rate_limited` over WS, calls
+ *   split between the two transports exhaust one budget, and a budget split
+ *   between `cell_create` and `account_token_create` is one bucket.
  *
  * **Charge sites.** The TS spine charges every classed action in its
  * dispatcher. The Rust stub has two sites holding the same limiters: the auth
  * families (`account_token_create`) charge inside their handlers, and the
- * dispatcher states charge every other classed spec. So the account cases over
- * WS pin the Rust in-handler site, `peer/ping` pins the Rust WS dispatcher's IP
- * axis, and `cell_create` pins the Rust RPC dispatcher's account axis. The Rust
- * WS dispatcher's account axis is not pinned: the TS WS endpoint mounts no cell
- * verbs, so no dispatcher-charged account action is on WS on both spines.
+ * dispatcher states charge every other classed spec. So the
+ * `account_token_create` cases pin the Rust in-handler site, `peer/ping` pins
+ * the Rust WS dispatcher's IP axis, and `cell_create` pins the account axis of
+ * both Rust dispatchers, RPC and WS.
  *
  * **Isolation.** Limiter state is in-memory and `_testing_reset` wipes only
  * the database, so every case reads a bucket no other case touched: the
@@ -82,9 +82,9 @@ const ACCOUNT_LIMITED_METHOD = 'account_token_create';
 const ACCOUNT_LIMITED_BAD_PARAMS = { not_a_param: true };
 
 /**
- * An `account`-classed action the Rust stub charges at its dispatcher (not
- * in-handler, unlike `ACCOUNT_LIMITED_METHOD`), mounted on both spines' RPC.
- * Actor-grain, so the keeper's actor resolves before the throttle; the same
+ * An `account`-classed action the Rust stub charges at its dispatchers (not
+ * in-handler, unlike `ACCOUNT_LIMITED_METHOD`), mounted on both spines' RPC
+ * and WS. Actor-grain, so the keeper's actor resolves before the throttle; the same
  * unknown-key params are refused by both spines' strict decode, after it.
  */
 const DISPATCHER_ACCOUNT_LIMITED_METHOD = 'cell_create';
@@ -143,7 +143,7 @@ const outcome_from_frame = (
 /**
  * Register the action rate-limit suite: the account axis over WS, one account
  * bucket across HTTP RPC and WS, the per-IP axis keyed by `X-Forwarded-For`
- * across both transports, and the account axis at the RPC dispatcher.
+ * across both transports, and the account axis at the RPC and WS dispatchers.
  */
 export const describe_ws_action_rate_limit_cross_tests = (
 	options: WsActionRateLimitCrossTestOptions
@@ -295,6 +295,66 @@ export const describe_ws_action_rate_limit_cross_tests = (
 					session
 				),
 				`HTTP call ${max_attempts + 1}`
+			);
+		});
+
+		test('an account-limited action is refused at the WS dispatcher past the cap', async () => {
+			const fixture = await setup_test();
+			const ws = await open_ws(fixture);
+			try {
+				for (let i = 1; i <= max_attempts; i++) {
+					assert_charged_not_limited(
+						await call_ws(ws, DISPATCHER_ACCOUNT_LIMITED_METHOD, ACCOUNT_LIMITED_BAD_PARAMS),
+						`WS call ${i}`
+					);
+				}
+				assert_rate_limited(
+					await call_ws(ws, DISPATCHER_ACCOUNT_LIMITED_METHOD, ACCOUNT_LIMITED_BAD_PARAMS),
+					`WS call ${max_attempts + 1}`
+				);
+			} finally {
+				await ws.close();
+			}
+		});
+
+		test('the dispatchers draw one account budget across HTTP RPC and WS', async () => {
+			const fixture = await setup_test();
+			const session = fixture.create_session_headers();
+			const http_calls = Math.floor(max_attempts / 2);
+			for (let i = 1; i <= http_calls; i++) {
+				assert_charged_not_limited(
+					await call_http(
+						fixture,
+						DISPATCHER_ACCOUNT_LIMITED_METHOD,
+						ACCOUNT_LIMITED_BAD_PARAMS,
+						session
+					),
+					`HTTP call ${i}`
+				);
+			}
+			const ws = await open_ws(fixture);
+			try {
+				for (let i = http_calls + 1; i <= max_attempts; i++) {
+					assert_charged_not_limited(
+						await call_ws(ws, DISPATCHER_ACCOUNT_LIMITED_METHOD, ACCOUNT_LIMITED_BAD_PARAMS),
+						`WS call ${i}`
+					);
+				}
+				assert_rate_limited(
+					await call_ws(ws, DISPATCHER_ACCOUNT_LIMITED_METHOD, ACCOUNT_LIMITED_BAD_PARAMS),
+					'WS call past the shared cap'
+				);
+			} finally {
+				await ws.close();
+			}
+			assert_rate_limited(
+				await call_http(
+					fixture,
+					DISPATCHER_ACCOUNT_LIMITED_METHOD,
+					ACCOUNT_LIMITED_BAD_PARAMS,
+					session
+				),
+				'HTTP call past the shared cap'
 			);
 		});
 

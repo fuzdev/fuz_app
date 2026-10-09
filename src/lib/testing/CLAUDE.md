@@ -1718,10 +1718,11 @@ they were started with, at least 2):
   'ip'`, public) with malformed params from one `X-Forwarded-For` address, over
   anonymous HTTP and over a WS whose upgrade carried the header: refused past the
   cap on both transports, while a second address keeps its own bucket on both.
-- **account axis at the RPC dispatcher** — `cell_create` (`rate_limit:
-  'account'`, on both spines' RPC mount) with malformed params over HTTP:
-  refused (`429`) past the cap, and a budget split between `cell_create` and
-  `account_token_create` is one bucket.
+- **account axis at the dispatchers** — `cell_create` (`rate_limit:
+  'account'`, on both spines' RPC and WS mounts) with malformed params: refused
+  past the cap over HTTP (`429`) and over WS (`rate_limited`), calls split
+  between the two transports exhaust one budget, and a budget split between
+  `cell_create` and `account_token_create` is one bucket.
 
 Isolation without a limiter reset: each account case runs on the fresh keeper
 the per-test `_testing_reset` seeds (a new account id), and the IP case uses
@@ -1741,10 +1742,10 @@ spine charges every classed action in its dispatcher; the Rust stub charges
 `account_token_create` and the other auth-family specs inside their handlers
 and every other classed spec at its dispatcher states, the same limiter instances at both sites. So
 the `account_token_create` cases pin the Rust in-handler site, the IP case the
-Rust WS dispatcher's IP axis, and the `cell_create` cases the Rust RPC
-dispatcher's account axis. The Rust WS dispatcher's account axis stays
-unpinned: the TS WS endpoint mounts no cell verbs, so no dispatcher-charged
-account action is on WS on both spines. The IP case's addresses are fixed per
+Rust WS dispatcher's IP axis, and the `cell_create` cases the account axis of
+both Rust dispatchers, RPC and WS — reachable over WS on both spines because
+the TS spine serves its full action set on `/api/ws`, as the Rust stub serves
+one registry on both transports. The IP case's addresses are fixed per
 process and their bucket outlives `_testing_reset`, so a vitest retry of it
 would fail.
 Cross-process only; fuz_app's own wiring is
@@ -1804,10 +1805,10 @@ re-roll the serve / daemon-info / WS-attach / drain boilerplate:
 - `testing/cross_backend/testing_server_deno.ts` — `create_deno_testing_adapter()` (`Deno.serve` + `@hono/deno`, an optional peer dep; `Deno` declared locally so it typechecks under the Node toolchain). Spawn the entry with `--sloppy-imports` (Deno doesn't do `.js`→`.ts`; Gro's loader does, so the Node path needs no flag).
 - `testing/cross_backend/testing_server_bun.ts` — `create_bun_testing_adapter()` (`Bun.serve` + `@hono/bun`'s module-level `getConnInfo`, `upgradeWebSocket`, and `websocket`; `Bun.serve` declared locally so it typechecks under the Node toolchain). Needs the optional `@hono/bun` peer dep (the counterpart to Node's `@hono/node-server` + `@hono/node-ws`; `Bun.serve` is built in), and Bun resolves `.js`→`.ts` natively (no flag, unlike Deno). Reuses `create_node_runtime` (Bun implements the `node:fs`/`node:process` surface). WS is module-level + stateless (like Deno) — the `websocket` handler is threaded into `serve`, where `Bun.serve` wants it, so no post-serve attach.
 - `testing/cross_backend/default_spine_surface.ts` — the canonical no-domain spine surface (account/admin/audit/signup + bootstrap): `spine_session_options`, `spine_roles`, `create_spine_route_specs`, `spine_rpc_endpoints`, `create_spine_surface_spec`. This is the **declared** surface — the `create_standard_rpc_actions` bundle the spec-derived suites auto-enumerate. `$lib`-free (it's reached by the spawned binary under Gro's loader, which doesn't resolve `$lib`), so keep it on relative imports. Shared by the spine_stub cross test, the TS cross tests, and the binary.
-- `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` / `full_spine_rpc_endpoints(ctx, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). Single-sources what was an inline assembly in `testing_spine_server.ts`, so the binary and the `spine_method_coverage` reconciliation test build the same list. Also `$lib`-free.
+- `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). `build_full_spine_mount(deps, options)` builds it once for both of the binary's endpoints, returning `FullSpineMount` (`{rpc_actions, ws_actions}`): the WS list is `protocol_actions` plus every RPC action not already among them, twinning the Rust `testing_spine_stub`, which serves one registry on RPC and WS (the one difference is `cancel` — a registered protocol action on TS, owned by the read loop on Rust). Single-sources the mount so the binary and the `spine_method_coverage` reconciliation test build the same list. Also `$lib`-free.
 - `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_deno_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory PGlite, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
 
-fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` (`rate_limiters: 'disabled_for_testing'` plus whichever login / action limiters its env toggles built, `full_spine_rpc_endpoints`, and one `ws_endpoints` entry whose `transport` is also the role-grant-offer `notification_sender`), reusing `default_spine_surface`. `src/test/cross_backend/testing_spine_server.db.test.ts` builds it with the Node adapter in-process and asserts its surface lists `/api/ws` and passes the surface invariants. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it when nothing its suites seed is already expired (the conformance table's `expired_session` principal seeds a backdated session row); an in-process harness leaves it off.
+fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` (`rate_limiters: 'disabled_for_testing'` plus whichever login / action limiters its env toggles built, `build_full_spine_mount`'s two lists on one `rpc_endpoints` entry and one `ws_endpoints` entry, whose `transport` is also the role-grant-offer `notification_sender`), reusing `default_spine_surface`. `src/test/cross_backend/testing_spine_server.db.test.ts` builds it with the Node adapter in-process and asserts its surface lists `/api/ws` and passes the surface invariants. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it when nothing its suites seed is already expired (the conformance table's `expired_session` principal seeds a backdated session row); an in-process harness leaves it off.
 
 ### Live-method coverage reconciliation — `method_coverage.ts`
 
