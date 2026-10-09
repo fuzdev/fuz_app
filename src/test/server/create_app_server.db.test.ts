@@ -25,7 +25,7 @@ import {
 import { ERROR_PAYLOAD_TOO_LARGE, PayloadTooLargeError } from '$lib/http/error_schemas.ts';
 import type { AppBackend } from '$lib/server/app_backend.ts';
 import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
-import { stub_password_deps } from '$lib/testing/app_server.ts';
+import { create_loopback_app_server_options, stub_password_deps } from '$lib/testing/app_server.ts';
 import { create_pglite_factory } from '$lib/testing/db.ts';
 import { run_migrations } from '$lib/db/migrate.ts';
 import { auth_migration_ns } from '$lib/auth/migrations.ts';
@@ -53,13 +53,8 @@ const factory = create_pglite_factory(async () => {
 
 /** Shared option fields (everything except backend). */
 const base_config: Omit<AppServerOptions, 'backend'> = {
+	...create_loopback_app_server_options(),
 	session_options,
-	allowed_origins: [/^http:\/\/localhost/],
-	proxy: {
-		trusted_proxies: ['127.0.0.1'],
-		get_connection_ip: () => '127.0.0.1'
-	},
-	env_schema: z.object({}),
 	create_route_specs: () => [create_health_route_spec()]
 };
 

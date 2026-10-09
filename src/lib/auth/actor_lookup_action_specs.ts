@@ -12,7 +12,7 @@
  * Account-grain — only that the caller is signed in matters, not which
  * actor is calling, so resolution skips the actor phase. The auth gate
  * + per-account rate limit (default 1200/15min) + the
- * {@link ACTOR_LOOKUP_IDS_MAX | per-call cap} bound the batched
+ * per-call cap (`ACTOR_LOOKUP_IDS_MAX`) bound the batched
  * username-enumeration surface that the `cell_list` ↔ `actor_lookup`
  * pair would otherwise present.
  *
@@ -38,7 +38,7 @@
  * ids), bounded by:
  *
  * 1. rate-limit (per-account, see above),
- * 2. {@link ACTOR_LOOKUP_IDS_MAX} cap per call,
+ * 2. `ACTOR_LOOKUP_IDS_MAX` cap per call,
  * 3. actor-uuid intractability (122-bit random),
  * 4. hard-deleted actors are indistinguishable from never-existed (no
  *    tombstone oracle — see `auth/actor_lookup_queries.ts`).

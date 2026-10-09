@@ -114,6 +114,20 @@ export interface AuditEmitRoleGrantContext extends AuditEmitterContext {
 }
 
 /**
+ * Input to `AuditEmitter.emit_role_grant_target` — the event fields that
+ * vary per call site; `actor_id`, `account_id`, and `ip` are lifted from
+ * the auth and request contexts.
+ */
+export interface AuditEmitRoleGrantInput<T extends string> {
+	event_type: T;
+	target_account_id: Uuid | null;
+	target_actor_id: Uuid | null;
+	metadata: AuditLogInput<T>['metadata'];
+	/** Default `'success'`, as for `emit`. */
+	outcome?: 'success' | 'failure';
+}
+
+/**
  * Bound audit-emit capability. Built once at backend assembly via
  * `create_audit_emitter`; lives on `AppDeps.audit` so factories never see
  * the pool.
@@ -151,13 +165,7 @@ export interface AuditEmitter {
 	emit_role_grant_target<T extends string>(
 		ctx: AuditEmitRoleGrantContext,
 		auth: RequestActorContext,
-		input: {
-			event_type: T;
-			target_account_id: Uuid | null;
-			target_actor_id: Uuid | null;
-			metadata: AuditLogInput<T>['metadata'];
-			outcome?: 'success' | 'failure';
-		}
+		input: AuditEmitRoleGrantInput<T>
 	): void;
 	/**
 	 * Awaitable pool write for code paths without a request context.
@@ -408,13 +416,7 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 	const emit_role_grant_target = <T extends string>(
 		ctx: AuditEmitRoleGrantContext,
 		auth: RequestActorContext,
-		input: {
-			event_type: T;
-			target_account_id: Uuid | null;
-			target_actor_id: Uuid | null;
-			metadata: AuditLogInput<T>['metadata'];
-			outcome?: 'success' | 'failure';
-		}
+		input: AuditEmitRoleGrantInput<T>
 	): void => {
 		emit<T>(ctx, {
 			event_type: input.event_type,
@@ -439,16 +441,14 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 	const listener_count = (): number => listeners.length;
 
 	// Freeze the slot layout so consumers cannot hot-patch `emit` /
-	// `emit_role_grant_target` / `emit_pool` / `notify` after construction.
-	// The previous test helper `patch_audit_emit_capture` did exactly this
-	// and only happened to work because the four slots were writable —
+	// `emit_role_grant_target` / `emit_pool` / `notify` after construction —
+	// a patched `emit` would miss role-grant-shape emits anyway, since
 	// `emit_role_grant_target` calls the closed-over inner `emit`, not
-	// `this.emit`, so the patch silently bypassed role-grant-shape emits.
-	// Tests that need instrumentation pass `emit_decorator` so the wrap
-	// is captured by the closure before the freeze. The listener list stays
+	// `this.emit`. Tests that need instrumentation pass `emit_decorator` so the
+	// wrap is captured by the closure before the freeze. The listener list stays
 	// closure-private; it changes only through `add_listener` and the remover
-	// it returns (`create_app_server` registers its SSE + WS listeners
-	// post-assembly, by design, and removes them on close).
+	// it returns (`create_app_server` registers its SSE + WS listeners after
+	// the emitter is built, by design, and removes them on close).
 	return Object.freeze({
 		emit,
 		emit_role_grant_target,

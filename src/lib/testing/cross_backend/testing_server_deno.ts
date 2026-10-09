@@ -35,7 +35,7 @@ declare const Deno: {
 	addSignalListener: (signal: string, handler: () => void) => void;
 };
 
-/** Build the Deno {@link TestingServerAdapter}. */
+/** Build the Deno `TestingServerAdapter`. */
 export const create_deno_testing_adapter = (): TestingServerAdapter => ({
 	runtime_label: 'Deno',
 	runtime: create_deno_runtime([]),

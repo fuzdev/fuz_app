@@ -319,9 +319,7 @@ export interface WsTestHarness {
 	/**
 	 * Open a mock connection. Resolves after `on_socket_open` (and the
 	 * transport's `register_ws`) completes, so broadcasts issued
-	 * immediately after the `await` reach the connection. Earlier
-	 * revisions returned synchronously and required a `settle_open()`
-	 * microtask drain — no longer necessary.
+	 * immediately after the `await` reach the connection.
 	 *
 	 * Returns the shared `WsClient` interface — same surface the
 	 * cross-process driver in `transports/ws_transport.ts` implements,

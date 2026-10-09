@@ -211,7 +211,9 @@ export const AUDIT_LOG_SSE_MAX_PER_SCOPE = 10;
  * connection closer.
  *
  * Combines `SubscriberRegistry`, `create_sse_auth_guard`, and the broadcast
- * call into a single object, and adds the registry to `connection_closer`.
+ * call into a single object, and adds the registry to `connection_closer` for
+ * good — the remover `add` returns is dropped, so a caller that must take the
+ * registry out again passes `null` and adds it itself.
  * The result satisfies `AuditLogRouteOptions['stream']`
  * and provides the `on_audit_event` listener for the audit emitter.
  *

@@ -24,18 +24,20 @@
 import { afterEach, assert, describe, test, vi } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid } from '@fuzdev/fuz_util/id.ts';
-import { z } from 'zod';
 
 import { create_session_config } from '$lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '$lib/http/common_routes.ts';
 import {
+	APP_SERVER_RATE_LIMITER_KEYS,
 	create_app_server,
 	type AppServer,
-	type AppServerOptions
+	type AppServerOptions,
+	type AppServerRateLimiterKey
 } from '$lib/server/app_server.ts';
 import type { AppServerContext } from '$lib/server/app_server_context.ts';
 import type { AppBackend } from '$lib/server/app_backend.ts';
-import { create_stub_app_deps } from '$lib/testing/stubs.ts';
+import { create_stub_app_backend, create_stub_app_deps } from '$lib/testing/stubs.ts';
+import { create_loopback_app_server_options } from '$lib/testing/app_server.ts';
 import { create_recording_audit_emitter } from '$lib/testing/audit_drift_guard.ts';
 import { create_fake_ws, create_stub_upgrade } from '$lib/testing/ws_round_trip.ts';
 import { create_recording_closer } from '$lib/testing/connection_closer_helpers.ts';
@@ -48,17 +50,9 @@ import { RateLimiter, create_rate_limiter, type RateLimiterMode } from '$lib/rat
 
 const log = new Logger('test', { level: 'off' });
 
-/** The seven limiter options, and the `AppServerContext` field each resolves to. */
-const LIMITER_NAMES = [
-	'login_ip_rate_limiter',
-	'signup_ip_rate_limiter',
-	'bootstrap_ip_rate_limiter',
-	'login_account_rate_limiter',
-	'signup_account_rate_limiter',
-	'action_ip_rate_limiter',
-	'action_account_rate_limiter'
-] as const;
-type LimiterName = (typeof LIMITER_NAMES)[number];
+/** The limiter options, each also the `AppServerContext` field it resolves to. */
+const LIMITER_NAMES = APP_SERVER_RATE_LIMITER_KEYS;
+type LimiterName = AppServerRateLimiterKey;
 
 interface Harness {
 	backend: AppBackend;
@@ -72,19 +66,15 @@ const create_harness = (): Harness => {
 	const events: Array<string> = [];
 	let backend_closes = 0;
 	const deps = create_stub_app_deps();
-	deps.log = log;
 	// accepts the listeners `audit_log_sse` and the WS auth guard register
 	deps.audit = create_recording_audit_emitter().emitter;
-	const backend: AppBackend = {
-		db_type: 'pglite-memory',
-		db_name: '(stub)',
-		migration_results: [],
+	const backend = create_stub_app_backend({
+		deps,
 		close: async () => {
 			backend_closes++;
 			events.push('db');
-		},
-		deps
-	};
+		}
+	});
 	return { backend, events, backend_closes: () => backend_closes };
 };
 
@@ -94,11 +84,9 @@ const base_options = (
 	AppServerOptions,
 	'backend' | 'session_options' | 'allowed_origins' | 'proxy' | 'env_schema' | 'create_route_specs'
 > => ({
+	...create_loopback_app_server_options(),
 	backend,
 	session_options: create_session_config('test_session'),
-	allowed_origins: [/^http:\/\/localhost/],
-	proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
-	env_schema: z.object({}),
 	create_route_specs: () => [create_health_route_spec()]
 });
 

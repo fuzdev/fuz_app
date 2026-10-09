@@ -349,8 +349,7 @@ export interface TestAppServerOptions {
 	 *
 	 * Matches the production shape — `create_app_backend` requires an
 	 * `audit_factory` and `create_test_app_server` mirrors that contract
-	 * end-to-end. The earlier `on_audit_event` / `audit_log_config` sugar
-	 * fields were removed alongside the `CreateAppBackendOptions` rename.
+	 * end-to-end.
 	 */
 	audit_factory?: AuditFactory;
 }
@@ -358,26 +357,6 @@ export interface TestAppServerOptions {
 /** Silent logger for tests — suppresses all output. */
 const test_log = new Logger('test', { level: 'off' });
 
-/**
- * Create an app server with a bootstrapped account for testing.
- *
- * Sets up:
- * - Auth tables (via cached PGlite factory, or reuses existing `db`)
- * - A keeper account with hashed password
- * - Role role_grants for each role in `options.roles`
- * - An API token for Bearer auth
- * - A session with a signed cookie value
- *
- * Uses `stub_password_deps` by default — deterministic hashing that works
- * correctly for login/logout tests without Argon2 overhead.
- *
- * @param options - session options and optional overrides
- * @returns a `TestAppServer` ready for HTTP testing
- * @mutates the underlying database — when `db` is supplied, resets singleton
- *   state (`bootstrap_lock.bootstrapped`, `app_settings.open_signup`) before
- *   bootstrapping; in either branch inserts an account, actor, role role_grants,
- *   API token, and session row.
- */
 /**
  * Filesystem stubs for `AppDeps.{read_secure_file, delete_file}` in
  * test backends. The default secure read throws (no token file exists — the
@@ -445,28 +424,15 @@ const _build_test_backend = async (
 		throw new Error(`Test keyring failed: ${keyring_result.errors.join(', ')}`);
 	}
 
-	let backend: AppBackend;
+	let db: Db;
+	let db_name: string;
 	if (existing_db) {
 		// Reset singleton config row from a previous test (harmless on fresh pglite).
 		await existing_db.query(
 			'UPDATE app_settings SET open_signup = false, updated_at = NULL, updated_by = NULL WHERE open_signup = true OR updated_at IS NOT NULL'
 		);
-		const audit = audit_factory({ db: existing_db, log: test_log });
-		backend = {
-			db_type,
-			db_name: 'test',
-			migration_results: [], // migrations ran in the factory's init_schema
-			close: async () => {},
-			deps: {
-				keyring: keyring_result.keyring,
-				password,
-				db: existing_db,
-				log: test_log,
-				audit,
-				connection_closer: create_realtime_closer(),
-				...fs_stubs
-			}
-		};
+		db = existing_db;
+		db_name = 'test';
 	} else {
 		// In-memory PGlite via cached factory — reuses the WASM instance from `testing/db.ts`
 		// instead of creating a new PGlite each time. Schema is reset and migrations re-run
@@ -474,31 +440,53 @@ const _build_test_backend = async (
 		// copy of `testing/db.ts` — under the `db` project's `isolate: false` +
 		// `fileParallelism: false` that is once for the whole run.
 		// `migration_namespaces` selects an auth+extras factory; auth-only is the default.
-		// `db_type` below names PGlite unconditionally: a run that installs a substitute
-		// factory (`set_substitute_db_factory`) before this module loads gets that driver
-		// here, and no caller reads this field to pick behavior — it is reported, not
-		// dispatched on.
-		const db = await resolve_fallback_factory(migration_namespaces).create();
-		const audit = audit_factory({ db, log: test_log });
-		backend = {
-			db_type: 'pglite-memory',
-			db_name: '(memory)',
-			migration_results: [],
-			close: async () => {},
-			deps: {
-				keyring: keyring_result.keyring,
-				password,
-				db,
-				log: test_log,
-				audit,
-				connection_closer: create_realtime_closer(),
-				...fs_stubs
-			}
-		};
+		db = await resolve_fallback_factory(migration_namespaces).create();
+		db_name = '(memory)';
 	}
+	const backend: AppBackend = {
+		// a supplied `db` reports the caller's `db_type`; the auto-created one names
+		// PGlite unconditionally — a run that installs a substitute factory
+		// (`set_substitute_db_factory`) before this module loads gets that driver
+		// here, and no caller reads this field to pick behavior: it is reported,
+		// not dispatched on
+		db_type: existing_db ? db_type : 'pglite-memory',
+		db_name,
+		// the factory's init ran the migrations, for a supplied `db` and the auto-created one alike
+		migration_results: [],
+		close: async () => {},
+		deps: {
+			keyring: keyring_result.keyring,
+			password,
+			db,
+			log: test_log,
+			audit: audit_factory({ db, log: test_log }),
+			connection_closer: create_realtime_closer(),
+			...fs_stubs
+		}
+	};
 	return { backend, keyring: keyring_result.keyring };
 };
 
+/**
+ * Create an app server with a bootstrapped account for testing.
+ *
+ * Sets up:
+ * - Auth tables (via cached PGlite factory, or reuses existing `db`)
+ * - A keeper account with hashed password
+ * - Role role_grants for each role in `options.roles`
+ * - An API token for Bearer auth
+ * - A session with a signed cookie value
+ *
+ * Uses `stub_password_deps` by default — deterministic hashing that works
+ * correctly for login/logout tests without Argon2 overhead.
+ *
+ * @param options - session options and optional overrides
+ * @returns a `TestAppServer` ready for HTTP testing
+ * @mutates the underlying database — when `db` is supplied, first resets the
+ *   `app_settings` row (`open_signup`, `updated_at`, `updated_by`); in either
+ *   branch inserts an account, actor, role role_grants, API token, and session
+ *   row, and flips `bootstrap_lock.bootstrapped` (`bootstrap_test_keeper`).
+ */
 export const create_test_app_server = async (
 	options: TestAppServerOptions
 ): Promise<TestAppServer> => {
@@ -641,21 +629,53 @@ export interface TestApp {
 }
 
 /**
- * The `create_app_server` options both test-app builders share — a fresh
- * object per call, spread ahead of the per-builder options and `app_options`.
+ * The loopback `create_app_server` options an in-process test server takes:
+ * `localhost` origins allowed, the loopback proxy trusted (so
+ * `X-Forwarded-For` sets the client IP), and an empty env schema. A fresh
+ * object per call — spread it ahead of the options a test varies.
  */
-const test_app_server_base_options = (): Pick<
+export const create_loopback_app_server_options = (): Pick<
 	AppServerOptions,
-	'allowed_origins' | 'proxy' | 'env_schema' | 'rate_limiters' | 'await_pending_effects'
+	'allowed_origins' | 'proxy' | 'env_schema'
 > => ({
 	allowed_origins: [/^http:\/\/localhost/],
 	proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
-	env_schema: z.object({}),
+	env_schema: z.object({})
+});
+
+/**
+ * The `create_app_server` options both test-app builders share — a fresh
+ * object per call, spread ahead of the per-builder options and `app_options`.
+ */
+const test_app_options = (): Pick<
+	AppServerOptions,
+	'allowed_origins' | 'proxy' | 'env_schema' | 'rate_limiters' | 'await_pending_effects'
+> => ({
+	...create_loopback_app_server_options(),
 	// every limiter off unless `app_options` passes one — a rate-limit test
 	// enables just the limiter it pins
 	rate_limiters: 'disabled_for_testing',
 	await_pending_effects: true
 });
+
+/** Build request headers carrying `session_cookie` in the `cookie_name` cookie. */
+const create_session_headers_builder =
+	(cookie_name: string, session_cookie: string) =>
+	(extra?: Record<string, string>): Record<string, string> => ({
+		host: 'localhost',
+		origin: 'http://localhost:5173',
+		cookie: `${cookie_name}=${session_cookie}`,
+		...extra
+	});
+
+/** Build request headers carrying `api_token` as a Bearer token. */
+const create_bearer_headers_builder =
+	(api_token: string) =>
+	(extra?: Record<string, string>): Record<string, string> => ({
+		host: 'localhost',
+		authorization: `Bearer ${api_token}`,
+		...extra
+	});
 
 /**
  * Create a fully assembled test app with a Hono server, middleware, and routes.
@@ -686,7 +706,7 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 	};
 
 	const result = await create_app_server({
-		...test_app_server_base_options(),
+		...test_app_options(),
 		backend: test_server,
 		session_options: options.session_options,
 		daemon_token_state,
@@ -703,18 +723,11 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 	const { cookie_name } = options.session_options;
 	const { password = stub_password_deps } = options;
 
-	const create_session_headers = (extra?: Record<string, string>): Record<string, string> => ({
-		host: 'localhost',
-		origin: 'http://localhost:5173',
-		cookie: `${cookie_name}=${test_server.session_cookie}`,
-		...extra
-	});
-
-	const create_bearer_headers = (extra?: Record<string, string>): Record<string, string> => ({
-		host: 'localhost',
-		authorization: `Bearer ${test_server.api_token}`,
-		...extra
-	});
+	const create_session_headers = create_session_headers_builder(
+		cookie_name,
+		test_server.session_cookie
+	);
+	const create_bearer_headers = create_bearer_headers_builder(test_server.api_token);
 
 	const create_daemon_token_headers = (extra?: Record<string, string>): Record<string, string> => ({
 		host: 'localhost',
@@ -741,17 +754,11 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 
 		return {
 			...bootstrapped,
-			create_session_headers: (extra?: Record<string, string>): Record<string, string> => ({
-				host: 'localhost',
-				origin: 'http://localhost:5173',
-				cookie: `${cookie_name}=${bootstrapped.session_cookie}`,
-				...extra
-			}),
-			create_bearer_headers: (extra?: Record<string, string>): Record<string, string> => ({
-				host: 'localhost',
-				authorization: `Bearer ${bootstrapped.api_token}`,
-				...extra
-			})
+			create_session_headers: create_session_headers_builder(
+				cookie_name,
+				bootstrapped.session_cookie
+			),
+			create_bearer_headers: create_bearer_headers_builder(bootstrapped.api_token)
 		};
 	};
 
@@ -813,7 +820,7 @@ export interface TestAppForBootstrap {
 	route_specs: Array<RouteSpec>;
 	/** Build host/origin request headers for the anonymous bootstrap POST. */
 	create_request_headers: (extra?: Record<string, string>) => Record<string, string>;
-	/** Release test resources (no-op when DB is injected or factory-cached). */
+	/** Cleanup resources — `AppServer.close`, as on `TestApp`; the backend's own `close` leaves the injected or factory-cached database open. Idempotent. */
 	cleanup: () => Promise<void>;
 }
 
@@ -870,8 +877,9 @@ export const create_test_app_for_bootstrap = async (
 
 	const { backend } = await _build_test_backend({ ...options, fs_stubs });
 
-	// Daemon token state isn't reachable pre-bootstrap (no keeper account)
-	// but the field is required by AppServerOptions; pass a placeholder.
+	// No keeper account exists pre-bootstrap, so no daemon token can authenticate
+	// — a placeholder, passed so the daemon-token middleware mounts as it does
+	// under `create_test_app` and the two surfaces match.
 	const daemon_token_state: DaemonTokenState = {
 		current_token: generate_daemon_token(),
 		previous_token: null,
@@ -880,7 +888,7 @@ export const create_test_app_for_bootstrap = async (
 	};
 
 	const result = await create_app_server({
-		...test_app_server_base_options(),
+		...test_app_options(),
 		backend,
 		session_options,
 		daemon_token_state,

@@ -75,7 +75,7 @@ export const spine_roles: RoleSchemaResult = create_role_schema([
 	{ name: SPINE_PARTICIPANT_ROLE, grant_paths: [GRANT_PATH_ADMIN] }
 ]);
 
-/** Options for {@link spine_rpc_endpoints}. */
+/** Options for `spine_rpc_endpoints`. */
 export interface SpineRpcEndpointsOptions {
 	/**
 	 * WS notification sender threaded into the role-grant-offer sub-factory for
@@ -171,7 +171,7 @@ export const create_spine_route_specs = (ctx: AppServerContext): Array<RouteSpec
 
 /**
  * The spine's `/ready` route spec — the column-presence schema-drift deploy
- * gate, reading {@link SPINE_EXPECTED_SCHEMA_URL}. Mounted **live** by the TS
+ * gate, reading `SPINE_EXPECTED_SCHEMA_URL`. Mounted **live** by the TS
  * spine binary (in `build_spine_app`) and the in-process readiness parity leg,
  * but kept **off** the declared surface (`create_spine_surface_spec`) like the
  * fact-serving / ws / sse behaviors — `describe_ready_cross_tests` (gated on

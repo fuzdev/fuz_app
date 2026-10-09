@@ -50,7 +50,7 @@ export const install_audit_drift_guard = (): void => {
 };
 
 /**
- * Pair returned by {@link create_recording_audit_emitter} — the
+ * Pair returned by `create_recording_audit_emitter` — the
  * `AuditEmitter` to inject as `deps.audit`, plus the shared `calls`
  * array that records every captured emission. Both fields are live —
  * callers read `calls` after exercising the handler to assert on the

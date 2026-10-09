@@ -35,7 +35,7 @@ const node_serve_handle = (server: ServerType): ServeHandle => ({
 	native: server
 });
 
-/** Build the Node {@link TestingServerAdapter}. */
+/** Build the Node `TestingServerAdapter`. */
 export const create_node_testing_adapter = (): TestingServerAdapter => ({
 	runtime_label: 'Node',
 	runtime: create_node_runtime(),
@@ -55,7 +55,7 @@ export const create_node_testing_adapter = (): TestingServerAdapter => ({
 			},
 			attach_to_server: (handle) => {
 				// `handle.native` is the `ServerType` from `serve()` —
-				// type-erased at the {@link ServeHandle} seam, so it downcasts here.
+				// type-erased at the `ServeHandle` seam, so it downcasts here.
 				node_ws?.injectWebSocket(handle.native as ServerType);
 			}
 		};

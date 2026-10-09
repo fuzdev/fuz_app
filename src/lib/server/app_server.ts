@@ -571,6 +571,174 @@ export const require_audit_sse = (source: { audit_sse: AuditLogSse | null }): Au
 export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
 
 /**
+ * Each `AppServerOptions` rate-limiter field, with the defaults an omitted one
+ * is built from under `rate_limiters: 'enforced'` and the name its
+ * explicitly-null diagnostic uses. Insertion order is the order limiters are
+ * built and their diagnostics are listed.
+ */
+const rate_limiter_slots = {
+	login_ip_rate_limiter: { label: 'login IP', defaults: default_login_ip_rate_limit },
+	signup_ip_rate_limiter: { label: 'signup IP', defaults: default_login_ip_rate_limit },
+	bootstrap_ip_rate_limiter: { label: 'bootstrap IP', defaults: default_login_ip_rate_limit },
+	login_account_rate_limiter: {
+		label: 'login account',
+		defaults: default_login_account_rate_limit
+	},
+	signup_account_rate_limiter: {
+		label: 'signup account',
+		defaults: default_login_account_rate_limit
+	},
+	action_ip_rate_limiter: { label: 'action IP', defaults: default_action_ip_rate_limit },
+	action_account_rate_limiter: {
+		label: 'action account',
+		defaults: default_action_account_rate_limit
+	}
+} as const satisfies Record<string, { label: string; defaults: RateLimiterOptions }>;
+
+/**
+ * Name of an `AppServerOptions` rate-limiter field — also the
+ * `AppServerContext` field its resolved limiter lands on.
+ *
+ * @internal
+ */
+export type AppServerRateLimiterKey = keyof typeof rate_limiter_slots;
+
+/**
+ * Every `AppServerOptions` rate-limiter field, in build order.
+ *
+ * @internal
+ */
+export const APP_SERVER_RATE_LIMITER_KEYS = Object.keys(
+	rate_limiter_slots
+) as ReadonlyArray<AppServerRateLimiterKey>;
+
+/**
+ * The rate limiters `create_app_server` resolved from its options.
+ *
+ * @internal
+ */
+export interface ResolvedRateLimiters {
+	/** The `rate_limiters` mode, defaulted to `'enforced'`. */
+	mode: RateLimiterMode;
+	/** Each limiter by option name — `null` when off. */
+	limiters: Record<AppServerRateLimiterKey, RateLimiter | null>;
+	/**
+	 * The limiters built here for omitted options, in build order — the
+	 * server's to dispose. Never one passed in, which its caller owns.
+	 */
+	built: Array<RateLimiter>;
+}
+
+/**
+ * Resolve each rate-limiter option: an explicit option (instance or `null`)
+ * wins; an omitted one is a default instance under `'enforced'` and `null`
+ * under `'disabled_for_testing'`, which also announces the mode on stderr
+ * (`announce_rate_limiters_disabled`). One instance per surface — see
+ * `AppServerOptions.login_ip_rate_limiter` for why these are not a single
+ * shared bucket.
+ *
+ * @param options - the rate-limiter fields and `rate_limiters` mode of `AppServerOptions`
+ * @internal
+ */
+export const resolve_rate_limiters = (
+	options: Pick<AppServerOptions, AppServerRateLimiterKey | 'rate_limiters'>
+): ResolvedRateLimiters => {
+	const mode: RateLimiterMode = options.rate_limiters ?? 'enforced';
+	const limiters = {} as Record<AppServerRateLimiterKey, RateLimiter | null>;
+	const built: Array<RateLimiter> = [];
+	for (const key of APP_SERVER_RATE_LIMITER_KEYS) {
+		const option = options[key];
+		if (option !== undefined) {
+			limiters[key] = option;
+		} else if (mode === 'disabled_for_testing') {
+			announce_rate_limiters_disabled();
+			limiters[key] = null;
+		} else {
+			const limiter = new RateLimiter({ ...rate_limiter_slots[key].defaults });
+			built.push(limiter);
+			limiters[key] = limiter;
+		}
+	}
+	return { mode, limiters, built };
+};
+
+/**
+ * Inputs to `collect_config_diagnostics`.
+ *
+ * @internal
+ */
+export interface ConfigDiagnosticsInput {
+	/** The session cookie overrides, from `AppServerOptions.session_options`. */
+	cookie_options: Partial<SessionCookieOptions> | undefined;
+	/** The `rate_limiters` mode, defaulted. */
+	rate_limiter_mode: RateLimiterMode;
+	/** The resolved limiters, from `resolve_rate_limiters`. */
+	rate_limiters: Record<AppServerRateLimiterKey, RateLimiter | null>;
+}
+
+/**
+ * The config-level diagnostics `create_app_server` appends to the surface's
+ * spec-level ones: a weakened session cookie, and an open rate-limited
+ * surface — one warning for `'disabled_for_testing'`, otherwise one per
+ * explicitly-null limiter, so a deployment that disables login's limiter but
+ * keeps signup's reads differently from one that disables both.
+ *
+ * @internal
+ */
+export const collect_config_diagnostics = (
+	input: ConfigDiagnosticsInput
+): Array<AppSurfaceDiagnostic> => {
+	const diagnostics: Array<AppSurfaceDiagnostic> = [];
+	const { cookie_options } = input;
+	if (cookie_options) {
+		if (cookie_options.secure === false) {
+			diagnostics.push({
+				level: 'warning',
+				category: 'security',
+				message: 'Session cookie secure=false — cookies sent over HTTP'
+			});
+		}
+		if (cookie_options.sameSite && cookie_options.sameSite !== session_cookie_options.sameSite) {
+			diagnostics.push({
+				level: 'warning',
+				category: 'security',
+				message: `Session cookie sameSite='${cookie_options.sameSite}' — weakened from default '${
+					session_cookie_options.sameSite
+				}'`
+			});
+		}
+		if (cookie_options.httpOnly === false) {
+			diagnostics.push({
+				level: 'warning',
+				category: 'security',
+				message: 'Session cookie httpOnly=false — cookie accessible to JS'
+			});
+		}
+	}
+	if (input.rate_limiter_mode === 'disabled_for_testing') {
+		// one warning for the mode rather than one per limiter it nulled
+		diagnostics.push({
+			level: 'warning',
+			category: 'security',
+			message:
+				"rate limiters disabled for testing (rate_limiters: 'disabled_for_testing') — " +
+				'every limiter not passed explicitly is off; never use in production'
+		});
+	} else {
+		for (const key of APP_SERVER_RATE_LIMITER_KEYS) {
+			if (input.rate_limiters[key] === null) {
+				diagnostics.push({
+					level: 'warning',
+					category: 'security',
+					message: `${rate_limiter_slots[key].label} rate limiter explicitly disabled (null)`
+				});
+			}
+		}
+	}
+	return diagnostics;
+};
+
+/**
  * Create a fully assembled Hono app with auth, middleware, and routes.
  *
  * Handles the assembly lifecycle: rate limiters → audit SSE → proxy
@@ -604,7 +772,8 @@ export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
  * live connection on the backend's closer, runs the same releases, and
  * closes the database (`AppServer.close`).
  *
- * @returns assembled Hono app, backend, surface build, and bootstrap status
+ * @returns the assembled Hono app with its surface, bootstrap status, migration results,
+ *   audit SSE, mounted WS transports, and `close`
  * @throws Error from any assembly step, after releasing what assembly acquired
  */
 export const create_app_server = async (options: AppServerOptions): Promise<AppServer> => {
@@ -644,54 +813,18 @@ const assemble_app_server = async (
 	const { deps } = backend;
 	const { log } = deps;
 
-	// Rate limiters: an explicit option (instance or `null`) wins; an omitted
-	// one is a default instance under 'enforced', `null` under
-	// 'disabled_for_testing'. One instance per surface — see
-	// `AppServerOptions.login_ip_rate_limiter` for why these are not a single
-	// shared bucket. The ones built here are the server's to dispose — on
-	// close, or when assembly fails.
-	const rate_limiter_mode: RateLimiterMode = options.rate_limiters ?? 'enforced';
-	const resolve_rate_limiter = (
-		option: RateLimiter | null | undefined,
-		defaults: RateLimiterOptions
-	): RateLimiter | null => {
-		if (option !== undefined) return option;
-		if (rate_limiter_mode === 'disabled_for_testing') {
-			announce_rate_limiters_disabled();
-			return null;
-		}
-		const limiter = new RateLimiter({ ...defaults });
+	// Rate limiters — the ones built here are the server's to dispose, on
+	// close or when assembly fails.
+	const {
+		mode: rate_limiter_mode,
+		limiters: rate_limiters,
+		built: built_rate_limiters
+	} = resolve_rate_limiters(options);
+	for (const limiter of built_rate_limiters) {
 		releases.push(() => limiter.dispose());
-		return limiter;
-	};
-	const login_ip_rate_limiter = resolve_rate_limiter(
-		options.login_ip_rate_limiter,
-		default_login_ip_rate_limit
-	);
-	const signup_ip_rate_limiter = resolve_rate_limiter(
-		options.signup_ip_rate_limiter,
-		default_login_ip_rate_limit
-	);
-	const bootstrap_ip_rate_limiter = resolve_rate_limiter(
-		options.bootstrap_ip_rate_limiter,
-		default_login_ip_rate_limit
-	);
-	const login_account_rate_limiter = resolve_rate_limiter(
-		options.login_account_rate_limiter,
-		default_login_account_rate_limit
-	);
-	const signup_account_rate_limiter = resolve_rate_limiter(
-		options.signup_account_rate_limiter,
-		default_login_account_rate_limit
-	);
-	const action_ip_rate_limiter = resolve_rate_limiter(
-		options.action_ip_rate_limiter,
-		default_action_ip_rate_limit
-	);
-	const action_account_rate_limiter = resolve_rate_limiter(
-		options.action_account_rate_limiter,
-		default_action_account_rate_limit
-	);
+	}
+	const { bootstrap_ip_rate_limiter, action_ip_rate_limiter, action_account_rate_limiter } =
+		rate_limiters;
 
 	// Factory-managed audit SSE — registers a listener on the bound emitter
 	// so SSE fan-out runs alongside the consumer's `on_audit_event`
@@ -757,13 +890,7 @@ const assemble_app_server = async (
 		backend,
 		bootstrap_status,
 		session_options: options.session_options,
-		login_ip_rate_limiter,
-		signup_ip_rate_limiter,
-		bootstrap_ip_rate_limiter,
-		login_account_rate_limiter,
-		signup_account_rate_limiter,
-		action_ip_rate_limiter,
-		action_account_rate_limiter,
+		...rate_limiters,
 		audit_sse
 	};
 	const consumer_routes = options.create_route_specs(context);
@@ -888,65 +1015,11 @@ const assemble_app_server = async (
 	});
 
 	// Config-level diagnostics (concatenated after spec-level from generate_app_surface)
-	const config_diagnostics: Array<AppSurfaceDiagnostic> = [];
-	const cookie_opts: Partial<SessionCookieOptions> | undefined =
-		options.session_options.cookie_options;
-	if (cookie_opts) {
-		if (cookie_opts.secure === false) {
-			config_diagnostics.push({
-				level: 'warning',
-				category: 'security',
-				message: 'Session cookie secure=false — cookies sent over HTTP'
-			});
-		}
-		if (cookie_opts.sameSite && cookie_opts.sameSite !== session_cookie_options.sameSite) {
-			config_diagnostics.push({
-				level: 'warning',
-				category: 'security',
-				message: `Session cookie sameSite='${cookie_opts.sameSite}' — weakened from default '${
-					session_cookie_options.sameSite
-				}'`
-			});
-		}
-		if (cookie_opts.httpOnly === false) {
-			config_diagnostics.push({
-				level: 'warning',
-				category: 'security',
-				message: 'Session cookie httpOnly=false — cookie accessible to JS'
-			});
-		}
-	}
-	if (rate_limiter_mode === 'disabled_for_testing') {
-		// one warning for the mode rather than one per limiter it nulled
-		config_diagnostics.push({
-			level: 'warning',
-			category: 'security',
-			message:
-				"rate limiters disabled for testing (rate_limiters: 'disabled_for_testing') — " +
-				'every limiter not passed explicitly is off; never use in production'
-		});
-	} else {
-		// One diagnostic per explicitly-null limiter — a deployment that disables
-		// login's limiter but keeps signup's is a different posture than one that
-		// disables both, and a single collapsed warning hid which surface was open.
-		for (const [name, limiter] of [
-			['login IP', login_ip_rate_limiter],
-			['signup IP', signup_ip_rate_limiter],
-			['bootstrap IP', bootstrap_ip_rate_limiter],
-			['login account', login_account_rate_limiter],
-			['signup account', signup_account_rate_limiter],
-			['action IP', action_ip_rate_limiter],
-			['action account', action_account_rate_limiter]
-		] as const) {
-			if (limiter === null) {
-				config_diagnostics.push({
-					level: 'warning',
-					category: 'security',
-					message: `${name} rate limiter explicitly disabled (null)`
-				});
-			}
-		}
-	}
+	const config_diagnostics = collect_config_diagnostics({
+		cookie_options: options.session_options.cookie_options,
+		rate_limiter_mode,
+		rate_limiters
+	});
 	if (config_diagnostics.length) {
 		surface_spec.surface.diagnostics = [...surface_spec.surface.diagnostics, ...config_diagnostics];
 	}

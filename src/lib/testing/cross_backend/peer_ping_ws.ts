@@ -72,7 +72,7 @@ const RPC_PATH = '/api/rpc';
 /** A reply payload that satisfies the Rust `PingResponse` shape. */
 const valid_reply = (nonce: number) => ({ nonce, protocol_version: 1 });
 
-/** Configuration for {@link describe_peer_ping_ws_tests}. */
+/** Configuration for `describe_peer_ping_ws_tests`. */
 export interface PeerPingWsTestOptions {
 	/** Per-test fixture producer (`default_cross_process_setup(handle, ...)`). */
 	readonly setup_test: SetupTest;

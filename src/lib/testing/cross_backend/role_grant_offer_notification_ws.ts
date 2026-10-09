@@ -73,7 +73,7 @@ import type { SetupTest, TestAccountFixture, TestFixture } from './setup.ts';
 /** JSON-RPC endpoint path — matches the spine's `/api/rpc` (and the forge's). */
 const RPC_PATH = '/api/rpc';
 
-/** Configuration for {@link describe_role_grant_offer_notification_ws_tests}. */
+/** Configuration for `describe_role_grant_offer_notification_ws_tests`. */
 export interface RoleGrantOfferNotificationWsTestOptions {
 	/** Per-test fixture producer (`default_cross_process_setup(handle, ...)`). */
 	readonly setup_test: SetupTest;

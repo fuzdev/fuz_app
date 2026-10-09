@@ -20,14 +20,15 @@ import '../assert_dev_env.ts';
  * every WS endpoint — so the suite needs no knowledge of a consumer's domain
  * WS methods. It validates the transport, not the domain.
  *
- * The first three cases mirror the upgrade stack `register_ws_endpoint` wires
- * (origin check → `require_auth` → dispatch): an authenticated upgrade
- * round-trips `heartbeat`; an anonymous upgrade is refused; a
- * disallowed-origin upgrade is refused. Per-connection auth is enforced at
- * upgrade time (not per message), so the negative cases assert the upgrade
- * itself rejects rather than a per-message error frame.
+ * Three cases mirror the upgrade stack `register_ws_endpoint` wires (origin
+ * check → `require_auth` → dispatch): an authenticated upgrade round-trips
+ * `heartbeat` (the first case), and an anonymous upgrade and a
+ * disallowed-origin upgrade are refused (after the spine-parity cases).
+ * Per-connection auth is enforced at upgrade time (not per message), so the
+ * negative cases assert the upgrade itself rejects rather than a per-message
+ * error frame.
  *
- * Spine-parity cases follow. Both spines admit a connection only after
+ * Spine-parity cases follow the first. Both spines admit a connection only after
  * re-reading its credential, and requests that arrive first wait for that
  * rather than being dropped: requests sent the moment the socket opens are all
  * answered, and — gated on `capabilities.ws_handshake_pipelining`, with the
@@ -39,7 +40,8 @@ import '../assert_dev_env.ts';
  * `DEFAULT_WS_MAX_MESSAGE_BYTES`) closes the socket with
  * `WS_CLOSE_MESSAGE_TOO_BIG`.
  *
- * The final cases (gated on `rpc_path`) cover server-initiated close.
+ * The cases after the refused upgrades (gated on `rpc_path`) cover
+ * server-initiated close.
  * Per-message dispatch never re-checks credential validity, so an open socket
  * ends only when a revocation closes it — which every revocation does, once
  * its transaction commits. An authenticated socket is dropped when the
@@ -49,7 +51,7 @@ import '../assert_dev_env.ts';
  * `rpc_path` to skip them (consumers without the standard account and admin
  * actions on their RPC endpoint).
  *
- * One more case is gated on `capabilities.ws_account_actions` — the backend's
+ * The last cases are gated on `capabilities.ws_account_actions` — the backend's
  * WS endpoint mounts the self-service account actions: a socket that revokes
  * its own sessions *over that socket* is closed with
  * `WS_CLOSE_SESSION_REVOKED`, and — on a backend declaring
@@ -109,7 +111,7 @@ import type { SetupTest } from './setup.ts';
 /** Origin guaranteed to fail the `http://localhost:*` allowlist the test backends run with. */
 const DISALLOWED_ORIGIN = 'http://disallowed.example';
 
-/** Configuration for {@link describe_cross_process_ws_tests}. */
+/** Configuration for `describe_cross_process_ws_tests`. */
 export interface CrossProcessWsTestOptions {
 	/**
 	 * Per-test fixture producer (`default_cross_process_setup(handle)`).

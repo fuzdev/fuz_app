@@ -6,7 +6,6 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { z } from 'zod';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import { create_keyring } from '$lib/auth/keyring.ts';
@@ -14,7 +13,7 @@ import { create_session_config } from '$lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '$lib/http/common_routes.ts';
 import { create_app_server, type AppServerOptions } from '$lib/server/app_server.ts';
 import { create_app_backend, type AppBackend, type AuditFactory } from '$lib/server/app_backend.ts';
-import { stub_password_deps } from '$lib/testing/app_server.ts';
+import { create_loopback_app_server_options, stub_password_deps } from '$lib/testing/app_server.ts';
 import { AUTH_MIGRATION_NAMESPACE } from '$lib/auth/migrations.ts';
 import type { MigrationNamespace } from '$lib/db/migrate.ts';
 import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
@@ -36,14 +35,9 @@ const test_audit_factory: AuditFactory = ({ db, log }) => create_audit_emitter({
 
 /** Shared option fields (everything except backend). */
 const base_config: Omit<AppServerOptions, 'backend'> = {
+	...create_loopback_app_server_options(),
 	session_options,
-	allowed_origins: [/^http:\/\/localhost/],
-	proxy: {
-		trusted_proxies: ['127.0.0.1'],
-		get_connection_ip: () => '127.0.0.1'
-	},
-	create_route_specs: () => [create_health_route_spec()],
-	env_schema: z.object({})
+	create_route_specs: () => [create_health_route_spec()]
 };
 
 /** Create options with a pre-initialized backend. */

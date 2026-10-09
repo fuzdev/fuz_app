@@ -16,7 +16,8 @@ import { create_app_server } from '$lib/server/app_server.ts';
 import {
 	create_test_app,
 	create_test_app_for_bootstrap,
-	create_test_app_server
+	create_test_app_server,
+	create_loopback_app_server_options
 } from '$lib/testing/app_server.ts';
 import { create_test_app_surface_spec } from '$lib/testing/stubs.ts';
 import type { AppSurface } from '$lib/http/surface.ts';
@@ -81,15 +82,10 @@ test('works with create_app_server', async () => {
 	const test_server = await create_test_app_server({ session_options, db });
 
 	const { app } = await create_app_server({
+		...create_loopback_app_server_options(),
 		backend: test_server,
 		session_options,
-		allowed_origins: [/^http:\/\/localhost/],
-		proxy: {
-			trusted_proxies: ['127.0.0.1'],
-			get_connection_ip: () => '127.0.0.1'
-		},
-		create_route_specs: () => [create_health_route_spec()],
-		env_schema: z.object({})
+		create_route_specs: () => [create_health_route_spec()]
 	});
 
 	const res = await app.request('/health');

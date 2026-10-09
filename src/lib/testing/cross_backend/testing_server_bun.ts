@@ -53,7 +53,7 @@ declare const Bun: {
  */
 const BUN_WS_MAX_PAYLOAD_MULTIPLIER = 2;
 
-/** Build the Bun {@link TestingServerAdapter}. */
+/** Build the Bun `TestingServerAdapter`. */
 export const create_bun_testing_adapter = (): TestingServerAdapter => {
 	// set by `prepare_websocket`, read by `serve` — the core prepares before it serves
 	let max_message_bytes = DEFAULT_WS_MAX_MESSAGE_BYTES;

@@ -17,17 +17,18 @@
 
 import { afterEach, assert, describe, test, vi } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { z } from 'zod';
 
 import { create_session_config } from '$lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '$lib/http/common_routes.ts';
 import {
+	APP_SERVER_RATE_LIMITER_KEYS,
 	create_app_server,
 	type AppServer,
 	type AppServerOptions
 } from '$lib/server/app_server.ts';
 import type { AppBackend } from '$lib/server/app_backend.ts';
-import { create_stub_app_deps } from '$lib/testing/stubs.ts';
+import { create_stub_app_backend, create_stub_app_deps } from '$lib/testing/stubs.ts';
+import { create_loopback_app_server_options } from '$lib/testing/app_server.ts';
 import { create_recording_audit_emitter } from '$lib/testing/audit_drift_guard.ts';
 import { create_stub_upgrade } from '$lib/testing/ws_round_trip.ts';
 import { create_recording_closer } from '$lib/testing/connection_closer_helpers.ts';
@@ -38,8 +39,8 @@ import { RateLimiter } from '$lib/rate_limiter.ts';
 
 const log = new Logger('test', { level: 'off' });
 
-/** How many limiters `rate_limiters: 'enforced'` builds when none is passed. */
-const BUILT_LIMITER_COUNT = 7;
+/** How many limiters `rate_limiters: 'enforced'` builds when none is passed — one per option. */
+const BUILT_LIMITER_COUNT = APP_SERVER_RATE_LIMITER_KEYS.length;
 
 interface Harness {
 	backend: AppBackend;
@@ -63,13 +64,7 @@ const create_harness = (): Harness => {
 	deps.audit = create_recording_audit_emitter().emitter;
 	deps.audit.add_listener(() => {});
 	deps.connection_closer.add(create_recording_closer().closer);
-	const backend: AppBackend = {
-		db_type: 'pglite-memory',
-		db_name: '(stub)',
-		migration_results: [],
-		close: async () => {},
-		deps
-	};
+	const backend = create_stub_app_backend({ deps });
 	return {
 		backend,
 		errors,
@@ -82,11 +77,9 @@ const create_harness = (): Harness => {
 
 /** One acquisition of each kind: audit SSE, built limiters, a WS endpoint with a guard and an extra handler. */
 const acquiring_options = (backend: AppBackend): AppServerOptions => ({
+	...create_loopback_app_server_options(),
 	backend,
 	session_options: create_session_config('test_session'),
-	allowed_origins: [/^http:\/\/localhost/],
-	proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
-	env_schema: z.object({}),
 	create_route_specs: () => [create_health_route_spec()],
 	rate_limiters: 'enforced',
 	audit_log_sse: true,

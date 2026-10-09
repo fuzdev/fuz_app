@@ -21,6 +21,7 @@ import type { AuditEmitter } from '../auth/audit_emitter.ts';
 import { create_realtime_closer } from '../actions/connection_closer.ts';
 import type { BootstrapServerOptions } from '../server/app_server.ts';
 import type { AppServerContext } from '../server/app_server_context.ts';
+import type { AppBackend } from '../server/app_backend.ts';
 import { Db } from '../db/db.ts';
 import { prefix_route_specs, type RouteSpec } from '../http/route_spec.ts';
 import { bootstrap_route_shape } from '../auth/bootstrap_route_schema.ts';
@@ -192,6 +193,30 @@ export const create_stub_app_deps = (): AppDeps => ({
 	connection_closer: create_realtime_closer()
 });
 
+/** Options for `create_stub_app_backend`. */
+export interface CreateStubAppBackendOptions {
+	/** The backend's deps. Default a fresh `create_stub_app_deps()`. */
+	deps?: AppDeps;
+	/** The backend's `close`. Default one that does nothing. */
+	close?: () => Promise<void>;
+}
+
+/**
+ * Create a stub `AppBackend` with no database behind it — no migration
+ * results, and a `close` that does nothing unless one is passed. For
+ * assembling a server (`create_app_server`) in tests that never reach the
+ * database; one whose `close` does nothing can host server after server.
+ *
+ * @param options - the deps and `close` to use in place of the defaults
+ */
+export const create_stub_app_backend = (options?: CreateStubAppBackendOptions): AppBackend => ({
+	db_type: 'pglite-memory',
+	db_name: 'test',
+	migration_results: [],
+	close: options?.close ?? (async () => {}),
+	deps: options?.deps ?? create_stub_app_deps()
+});
+
 /** A fresh pass-through middleware — a distinct handler per call, unlike the shared `stub_mw`. */
 const create_stub_mw = (): MiddlewareSpec['handler'] => async (_c, next) => next();
 
@@ -245,16 +270,10 @@ export const create_stub_api_middleware = (options?: {
 export const create_stub_app_server_context = (
 	session_options: SessionOptions<string>
 ): AppServerContext => {
-	const deps = create_stub_app_deps();
+	const backend = create_stub_app_backend();
 	return {
-		deps,
-		backend: {
-			deps,
-			db_type: 'pglite-memory' as any,
-			db_name: 'test',
-			migration_results: [],
-			close: async () => {}
-		},
+		deps: backend.deps,
+		backend,
 		bootstrap_status: { available: false, token_path: null },
 		session_options,
 		login_ip_rate_limiter: null,

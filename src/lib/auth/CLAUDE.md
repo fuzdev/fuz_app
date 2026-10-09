@@ -124,7 +124,7 @@ upstream in `auth/signup_routes.ts` via `query_invite_find_unclaimed_match_for_u
 its registered listeners + optional `AuditLogConfig`. Its methods:
 
 - `emit(ctx, input)` — fire-and-forget pool write, pushes to `ctx.pending_effects`; a success row's listener fan-out goes on `ctx.post_commit_effects`
-- `emit_role_grant_target(ctx, auth, input)` — lifts `actor_id` / `account_id` / `ip` boilerplate for role-grant-shape events
+- `emit_role_grant_target(ctx, auth, input)` — lifts `actor_id` / `account_id` / `ip` boilerplate for role-grant-shape events; `input` is an `AuditEmitRoleGrantInput`
 - `emit_pool(input)` — awaitable pool write for code paths without a request context (ad-hoc maintenance scripts; not for success audits paired with a mutation — those write in-tx and `notify` post-commit). Writes, then notifies, whatever the outcome
 - `notify(event)` — fan out an already-written row to listeners (used by in-tx audit batches like `query_accept_offer.audit_events`)
 - `add_listener(listener)` — listener registration, returning a remover for that registration (idempotent; the same function registered twice is two registrations, each with its own remover). Twin of Rust `fuz_auth` `AuditEmitter::add_listener` in firing order and snapshot-at-notify

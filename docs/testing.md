@@ -941,7 +941,9 @@ impls actually boot.
 - `create_test_app_server` (`testing/app_server.ts`) — DB + deps only (no Hono app)
 - `create_test_app_surface_spec` (`testing/stubs.ts`) — Attack surface spec mirroring `create_app_server`
 - `create_stub_app_deps` (`testing/stubs.ts`) — No-op `AppDeps` (safe to call through)
+- `create_stub_app_backend` (`testing/stubs.ts`) — Stub `AppBackend` with no database, for assembling a server
 - `create_stub_app_server_context` (`testing/stubs.ts`) — Stub `AppServerContext` from session config
+- `create_loopback_app_server_options` (`testing/app_server.ts`) — The loopback `create_app_server` options for an in-process test server
 - `create_stub_api_middleware` (`testing/stubs.ts`) — Stub middleware array matching production stack
 - `create_test_request_context` (`testing/auth_apps.ts`) — Mock `RequestContext` with optional role
 - `create_auth_test_apps` (`testing/auth_apps.ts`) — One Hono app per auth level

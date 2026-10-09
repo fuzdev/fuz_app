@@ -26,7 +26,6 @@ import { wait } from '@fuzdev/fuz_util/async.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
-import { z } from 'zod';
 
 import { create_keyring } from '$lib/auth/keyring.ts';
 import { create_session_config } from '$lib/auth/session_cookie.ts';
@@ -41,7 +40,11 @@ import { query_role_grant_offer_create } from '$lib/auth/role_grant_offer_querie
 import { hash_session_token, query_create_session } from '$lib/auth/session_queries.ts';
 import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
 import type { Db } from '$lib/db/db.ts';
-import { create_test_app, stub_password_deps } from '$lib/testing/app_server.ts';
+import {
+	create_test_app,
+	create_loopback_app_server_options,
+	stub_password_deps
+} from '$lib/testing/app_server.ts';
 import {
 	assert_close_call,
 	create_recording_closer,
@@ -106,11 +109,9 @@ const create_harness = (db: Db, overrides?: Partial<AppServerOptions>): Harness 
 	};
 	return {
 		options: {
+			...create_loopback_app_server_options(),
 			backend,
 			session_options: create_session_config('test_session'),
-			allowed_origins: [/^http:\/\/localhost/],
-			proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
-			env_schema: z.object({}),
 			create_route_specs: () => [create_health_route_spec()],
 			...overrides
 		},

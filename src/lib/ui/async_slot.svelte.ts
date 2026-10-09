@@ -28,7 +28,7 @@
  *   would otherwise need to compensate for.
  * - **`AbortSignal` threaded to the callback** — RPC clients that accept
  *   a signal (or `fetch`) get cancellation for free; callers can also
- *   pass an external `signal` via {@link RunOptions} to bind the slot's
+ *   pass an external `signal` via `RunOptions` to bind the slot's
  *   lifetime to a component / page.
  * - **`preserve_error_on_retry`** — opt-in to keeping the previous error
  *   visible while a retry is pending (default clears at the start of
@@ -71,7 +71,7 @@ export interface AsyncSlotOptions<T, E = string> {
 	initial?: T;
 	/**
 	 * Convert a caught throw into the error value stored in
-	 * {@link AsyncSlot.error}. Default extracts `Error.message` (falling
+	 * `AsyncSlot.error`. Default extracts `Error.message` (falling
 	 * back to `'Request failed'` for non-Error throws). Pass
 	 * `to_rpc_error_message` to unwrap JSON-RPC `data.reason` codes.
 	 */
@@ -91,7 +91,7 @@ export interface RunOptions {
 	/**
 	 * External signal chained into the slot's internal controller. Aborts
 	 * the in-flight run when fired (alongside automatic supersession by
-	 * the next `run()` and manual {@link AsyncSlot.abort} calls).
+	 * the next `run()` and manual `AsyncSlot.abort` calls).
 	 */
 	signal?: AbortSignal;
 }
@@ -101,7 +101,7 @@ export interface RunOptions {
  *
  * @typeParam T - The success payload type. Use `void` for write-only
  *   actions whose response isn't worth retaining.
- * @typeParam E - The shape of {@link AsyncSlot.error}. Defaults to
+ * @typeParam E - The shape of `AsyncSlot.error`. Defaults to
  *   `string` (set by the default `map_error`). Narrow to a structured
  *   type by providing a `map_error` that returns it.
  */
@@ -124,7 +124,7 @@ export class AsyncSlot<T = void, E = string> {
 	#controller: AbortController | null = null;
 	/**
 	 * Tracks whether any `run()` or `set()` has ever produced a success
-	 * result. Used by {@link abort} to revert to `'success'` (vs `'initial'`)
+	 * result. Used by `abort` to revert to `'success'` (vs `'initial'`)
 	 * — explicit flag instead of inspecting `data` so the discriminator
 	 * stays correct for `T = void` (where success-`data` is `undefined`)
 	 * and for nullable `T`s where `null` is a legitimate success value.
@@ -223,7 +223,7 @@ export class AsyncSlot<T = void, E = string> {
 
 	/**
 	 * Abort the in-flight run (if any) and null out the controller field.
-	 * Shared by {@link abort}, {@link set}, and {@link reset}.
+	 * Shared by `abort`, `set`, and `reset`.
 	 */
 	#clear_controller(reason?: unknown): void {
 		this.#controller?.abort(reason);

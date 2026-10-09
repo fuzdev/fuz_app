@@ -365,7 +365,7 @@ export type ReconstructedBootstrappedBackendHandle = Omit<
 >;
 
 /**
- * Serializable subset of {@link BootstrappedBackendHandle} suitable for
+ * Serializable subset of `BootstrappedBackendHandle` suitable for
  * vitest's `project.provide()` — vitest 4 hard-rejects non-serializable
  * values, so the live `child: ChildProcess` + `teardown: () => Promise<void>`
  * + `keeper_transport: FetchTransport` (closure) must stay in the
@@ -373,8 +373,8 @@ export type ReconstructedBootstrappedBackendHandle = Omit<
  * (`config`, `daemon_token`, `keeper_account`, `keeper_actor`,
  * `keeper_cookies`) round-trip through structured clone fine.
  *
- * `globalSetup` calls {@link serialize_bootstrapped_handle} before
- * `project.provide`; test files call {@link reconstruct_bootstrapped_handle}
+ * `globalSetup` calls `serialize_bootstrapped_handle` before
+ * `project.provide`; test files call `reconstruct_bootstrapped_handle`
  * on the injected value to rebuild a usable handle (without `child` /
  * `teardown` — lifecycle stays with `globalSetup`).
  */
@@ -402,7 +402,7 @@ export const serialize_bootstrapped_handle = (
 
 /**
  * Rebuild a usable handle from the serialized subset. Synthesizes a
- * fresh {@link FetchTransport} primed with the keeper's `Set-Cookie`
+ * fresh `FetchTransport` primed with the keeper's `Set-Cookie`
  * values so `_testing_reset` and other keeper-authenticated calls work.
  * The returned shape omits `child` and `teardown` — lifecycle stays
  * with `globalSetup`; tests that try to teardown themselves wouldn't

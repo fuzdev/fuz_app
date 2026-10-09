@@ -53,6 +53,7 @@ import {
 import { create_testing_drain_effects_action } from '$lib/testing/cross_backend/testing_reset_actions.ts';
 import {
 	create_test_account_with_credentials,
+	create_loopback_app_server_options,
 	stub_password_deps
 } from '$lib/testing/app_server.ts';
 import { create_pglite_factory } from '$lib/testing/db.ts';
@@ -151,12 +152,10 @@ const create_test_server = async (
 	};
 	const stub = create_stub_upgrade();
 	const server = await create_app_server({
+		// the loopback proxy is trusted, so `X-Forwarded-For` sets the client IP
+		...create_loopback_app_server_options(),
 		backend,
 		session_options,
-		allowed_origins: [/^http:\/\/localhost/],
-		// the loopback proxy is trusted, so `X-Forwarded-For` sets the client IP
-		proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
-		env_schema: z.object({}),
 		create_route_specs: () => [create_health_route_spec()],
 		create_upgrade_websocket: () => stub.upgradeWebSocket,
 		ws_endpoints: [

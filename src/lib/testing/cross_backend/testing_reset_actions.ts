@@ -3,7 +3,7 @@ import '../assert_dev_env.ts';
 /**
  * Test-binary RPC actions for cross-process integration tests.
  *
- * Six daemon-token-authed actions, bundled by `create_testing_actions`:
+ * The daemon-token-authed actions bundled by `create_testing_actions`:
  * **`_testing_reset`** (DB wipe + keeper re-seed), **`_testing_drain_effects`**
  * (audit barrier), **`_testing_mint_session`** (forge an
  * expired-by-construction server-side session for the expiry conformance
@@ -32,11 +32,11 @@ import '../assert_dev_env.ts';
  * new keeper + secondary credentials return as the action output so
  * the per-test fixture closes over them.
  *
- * The redesign converges in-process and cross-process keeper
- * lifetimes: both modes now run against a freshly bootstrapped keeper
- * per test. Mutation-cascade tests (password change, revoke-all,
- * hardcoded-username signup uniqueness) and direct keeper-vs-admin
- * probes work uniformly cross-process.
+ * In-process and cross-process keeper lifetimes match: both modes run
+ * against a freshly bootstrapped keeper per test, so mutation-cascade
+ * tests (password change, revoke-all, hardcoded-username signup
+ * uniqueness) and direct keeper-vs-admin probes work uniformly
+ * cross-process.
  *
  * **Keeper ≠ admin.** The `keeper` and `admin` roles are independent.
  * Keeper authorizes daemon-token / bootstrap paths; admin authorizes
@@ -48,9 +48,8 @@ import '../assert_dev_env.ts';
  * via `extra_accounts: [{username, roles: [ROLE_KEEPER]}]` so the
  * account is seeded at this same bootstrap-equivalent step.
  *
- * **No free-form runtime bypass.** Earlier drafts considered a separate
- * `_testing_seed_role_grant` action for arbitrary direct grants; that
- * was rejected because a runtime bypass would let tests skip the
+ * **No free-form runtime bypass.** There is no action for arbitrary
+ * direct role grants: a runtime bypass would let tests skip the
  * production consent flow's side-effects (audit emit, WS fan-out) and
  * silently mask bugs in those paths. The bypass that does exist —
  * `extra_accounts` — is framed as bootstrap-time seeding, the same
@@ -102,8 +101,8 @@ import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
  * Shared `auth` axis for every `_testing_*` action: keeper-only via the
  * daemon-token credential, no acting actor. This is the entire structural
  * fence on the backdoor surface (these actions run direct DB writes the
- * production wire never exposes), so all five specs reference this one const
- * rather than re-declaring it — a single source of truth the gate test
+ * production wire never exposes), so every `_testing_*` spec references this
+ * one const rather than re-declaring it — a single source of truth the gate test
  * (`testing_actions_auth.test.ts`) pins. Mirrors the Rust `DAEMON_TOKEN_ONLY`
  * / shared `AuthSpec` in `fuz_testing`.
  */
@@ -431,28 +430,33 @@ export const testing_action_manifest_action_spec = {
 } as const satisfies RequestResponseActionSpec;
 
 /**
- * Build the `_testing_action_manifest` action over a backend's full live RPC
- * mount. The handler closes over a manifest computed once at assembly time
- * from every `mounted` spec **plus this action's own spec** — the manifest
- * action is itself a live method, so it must appear in the dump it serves.
- * `mounted` excludes it (it's appended to the mount *after* the rest is
- * assembled, in `build_full_spine_rpc_actions`), so its static spec is folded
- * in here; the Rust mirror folds in its own descriptor the same way.
- *
- * Protocol actions (`heartbeat` / `cancel` / `peer/ping`) are filtered out of
- * the manifest here so the cross-impl diff stays apples-to-apples: the two
- * impls organize them differently (`peer/ping` is on the TS spine's WS **and**
- * HTTP-RPC endpoints; heartbeat/cancel WS-only; the Rust stub compiles one
- * shared registry serving both transports), so including them would be a
- * spurious divergence (see `action_manifest.ts` §Scope). The exclusion set is
- * the live `protocol_action_specs` bundle — kept in lockstep with the static
- * `PROTOCOL_ACTION_METHODS` by a drift-guard test — so this stays off the
- * heavyweight `action_codegen` module the spawned binary would otherwise pull in.
+ * The protocol methods (`heartbeat` / `cancel` / `peer/ping`) the
+ * `_testing_action_manifest` dump leaves out, so the cross-impl diff stays
+ * apples-to-apples: the two impls organize them differently (`peer/ping` is
+ * on the TS spine's WS **and** HTTP-RPC endpoints; heartbeat/cancel WS-only;
+ * the Rust stub compiles one shared registry serving both transports), so
+ * including them would be a spurious divergence (see `action_manifest.ts`
+ * §Scope). The exclusion set is the live `protocol_action_specs` bundle —
+ * kept in lockstep with the static `PROTOCOL_ACTION_METHODS` by a drift-guard
+ * test — so this stays off the heavyweight `action_codegen` module the spawned
+ * binary would otherwise pull in.
  */
 const PROTOCOL_METHODS: ReadonlySet<string> = new Set(
 	protocol_action_specs.map((spec) => spec.method)
 );
 
+/**
+ * Build the `_testing_action_manifest` action over a backend's full live RPC
+ * mount. The handler closes over a manifest computed once at assembly time
+ * from every `mounted` spec except the protocol methods (`PROTOCOL_METHODS`)
+ * **plus this action's own spec** — the manifest action is itself a live
+ * method, so it must appear in the dump it serves. `mounted` excludes it
+ * (it's appended to the mount *after* the rest is assembled, in
+ * `build_full_spine_rpc_actions`), so its static spec is folded in here; the
+ * Rust mirror folds in its own descriptor the same way.
+ *
+ * @param mounted - every other action on the backend's live RPC mount
+ */
 export const create_testing_action_manifest_action = (
 	mounted: ReadonlyArray<RpcAction>
 ): RpcAction => {

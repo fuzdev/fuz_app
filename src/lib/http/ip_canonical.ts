@@ -12,7 +12,7 @@
  * IPv6 forms (`::ffff:127.0.0.1` vs `0:0:0:0:0:ffff:7f00:1` vs the
  * bare `127.0.0.1`) — three keys for one address.
  *
- * Canonicalization runs through {@link canonicalize_ip} which:
+ * Canonicalization runs through `canonicalize_ip` which:
  *
  * 1. Lowercases and char-set filters (`IP_LITERAL_CHARS`) — non-IP
  *    strings (`'unknown'`, `'attacker:controlled'`, `'::1\n'`) pass

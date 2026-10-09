@@ -42,8 +42,9 @@ import { is_browser_context } from '../http/origin.ts';
  * (`invalid_token`, `account_not_found`) that could aid enumeration attacks,
  * and ensures public actions are not blocked by bad credentials.
  *
- * Rejects bearer tokens when an `Origin` or `Referer` header is present —
- * browsers must use cookie auth to reduce attack surface.
+ * Discards bearer tokens when an `Origin` or `Referer` header is present —
+ * `next()` with no identity, as for a bad token — so browsers must use cookie
+ * auth, reducing attack surface.
  * Auth scheme matching is case-insensitive per RFC 7235.
  * On success, sets `c.var.auth_account_id`, `CREDENTIAL_TYPE_KEY = 'api_token'`,
  * and `AUTH_API_TOKEN_ID_KEY`. Skips when an account is already authenticated

@@ -8,7 +8,6 @@
  */
 
 import { test, assert, beforeAll, afterAll, beforeEach } from 'vitest';
-import { z } from 'zod';
 
 import {
 	DAEMON_TOKEN_HEADER,
@@ -17,7 +16,10 @@ import {
 } from '$lib/auth/daemon_token.ts';
 import { create_session_config } from '$lib/auth/session_cookie.ts';
 import { create_app_server } from '$lib/server/app_server.ts';
-import { create_test_app_server } from '$lib/testing/app_server.ts';
+import {
+	create_test_app_server,
+	create_loopback_app_server_options
+} from '$lib/testing/app_server.ts';
 import { create_testing_actions } from '$lib/testing/cross_backend/testing_reset_actions.ts';
 import { auth_truncate_tables } from '$lib/testing/db.ts';
 
@@ -54,11 +56,9 @@ test('a reset that rolls back leaves the cached keeper id unchanged', async () =
 	};
 	let fail_reset_state = true;
 	const server = await create_app_server({
+		...create_loopback_app_server_options(),
 		backend,
 		session_options,
-		allowed_origins: [/^http:\/\/localhost/],
-		proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
-		env_schema: z.object({}),
 		rate_limiters: 'disabled_for_testing',
 		await_pending_effects: true,
 		daemon_token_state,

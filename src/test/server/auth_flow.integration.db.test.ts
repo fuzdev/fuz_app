@@ -21,7 +21,11 @@ import {
 	type AppServerOptions,
 	type AppServer
 } from '$lib/server/app_server.ts';
-import { create_test_app_server, type TestAppServer } from '$lib/testing/app_server.ts';
+import {
+	type TestAppServer,
+	create_test_app_server,
+	create_loopback_app_server_options
+} from '$lib/testing/app_server.ts';
 import type { RouteSpec } from '$lib/http/route_spec.ts';
 import { ROLE_KEEPER, ROLE_ADMIN } from '$lib/auth/role_schema.ts';
 import { ActingActor } from '$lib/http/auth_shape.ts';
@@ -183,14 +187,9 @@ describe('auth flow integration', () => {
 			});
 
 			const options: AppServerOptions = {
+				...create_loopback_app_server_options(),
 				backend: non_keeper_server,
 				session_options,
-				allowed_origins: [/^http:\/\/localhost/],
-				proxy: {
-					trusted_proxies: ['127.0.0.1'],
-					get_connection_ip: () => '127.0.0.1'
-				},
-				env_schema: z.object({}),
 				create_route_specs: () => [
 					create_health_route_spec(),
 					create_authenticated_route_spec(),

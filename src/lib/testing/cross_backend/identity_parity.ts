@@ -345,7 +345,7 @@ export const describe_identity_parity_cross_tests = (
 
 	/**
 	 * Assert an attempt settled to `status` **and** carried the flat-REST error
-	 * reason that status implies on every spine (see {@link REASON_BY_STATUS}) —
+	 * reason that status implies on every spine (see `REASON_BY_STATUS`) —
 	 * a body-shape check, not just a status check, so a backend can't pass by
 	 * returning the right status with the wrong/leaky body.
 	 */

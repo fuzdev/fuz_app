@@ -50,7 +50,7 @@ import { AsyncSlot, type AsyncSlotOptions, type RunOptions } from './async_slot.
  * Constructor options for `KeyedAsyncSlot`. Propagated to every child
  * `AsyncSlot` at lazy creation time.
  *
- * `initial` from {@link AsyncSlotOptions} is deliberately omitted —
+ * `initial` from `AsyncSlotOptions` is deliberately omitted —
  * keyed slots have no per-key seed concept (the entries don't exist
  * until `run()` creates them).
  */
@@ -90,7 +90,7 @@ export class KeyedAsyncSlot<K, T = void, E = string> {
 	 * `undefined` if no `run()` has been issued for it yet. Reactive on
 	 * map population and on the slot's `$state.raw` fields.
 	 *
-	 * Prefer the sugar getters ({@link loading}, {@link error}) for
+	 * Prefer the sugar getters (`loading`, `error`) for
 	 * templates; reach for `get(key)` when you need `error_data`, `data`,
 	 * or to call `abort()` / `set()` / `reset()` on the underlying slot.
 	 */
@@ -161,7 +161,7 @@ export class KeyedAsyncSlot<K, T = void, E = string> {
 	/**
 	 * Abort the in-flight run for `key`, if any. No-op when the key has
 	 * no entry. The slot stays in the map at its prior resolved status —
-	 * call {@link delete} to remove the entry entirely.
+	 * call `delete` to remove the entry entirely.
 	 */
 	abort(key: K, reason?: unknown): void {
 		this.#slots.get(key)?.abort(reason);
@@ -169,7 +169,7 @@ export class KeyedAsyncSlot<K, T = void, E = string> {
 
 	/**
 	 * Abort every in-flight run. Resolved entries stay in the map —
-	 * call {@link reset} to clear them too.
+	 * call `reset` to clear them too.
 	 */
 	abort_all(reason?: unknown): void {
 		for (const slot of this.#slots.values()) {

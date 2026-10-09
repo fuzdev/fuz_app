@@ -82,7 +82,7 @@ import type { SetupTest } from './setup.ts';
 /** Default audit-log SSE stream path — the standard fuz_app `/api/admin/audit/stream`. */
 const DEFAULT_SSE_PATH = '/api/admin/audit/stream';
 
-/** Configuration for {@link describe_cross_process_sse_tests}. */
+/** Configuration for `describe_cross_process_sse_tests`. */
 export interface CrossProcessSseTestOptions {
 	/**
 	 * Per-test fixture producer (`default_cross_process_setup(handle)`). Each

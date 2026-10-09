@@ -13,8 +13,6 @@
  */
 
 import { describe, assert, test } from 'vitest';
-import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { z } from 'zod';
 
 import {
 	AUTH_MIDDLEWARE_PATH,
@@ -27,13 +25,14 @@ import { create_health_route_spec } from '$lib/http/common_routes.ts';
 import type { MiddlewareSpec } from '$lib/http/middleware_spec.ts';
 import { create_proxy_middleware_spec } from '$lib/http/proxy.ts';
 import { create_app_server, type AppServerOptions } from '$lib/server/app_server.ts';
-import type { AppBackend } from '$lib/server/app_backend.ts';
 import {
 	create_stub_api_middleware,
+	create_stub_app_backend,
 	create_stub_app_deps,
 	create_test_app_surface_spec,
 	stub_mw
 } from '$lib/testing/stubs.ts';
+import { create_loopback_app_server_options } from '$lib/testing/app_server.ts';
 
 type TransformMiddleware = (specs: Array<MiddlewareSpec>) => Array<MiddlewareSpec>;
 
@@ -430,21 +429,10 @@ const create_server_options = (
 	transform_middleware: TransformMiddleware,
 	daemon_token_state?: DaemonTokenState
 ): AppServerOptions => {
-	const deps = create_stub_app_deps();
-	deps.log = new Logger('test', { level: 'off' });
-	const backend: AppBackend = {
-		db_type: 'pglite-memory',
-		db_name: '(stub)',
-		migration_results: [],
-		close: async () => {},
-		deps
-	};
 	return {
-		backend,
+		...create_loopback_app_server_options(),
+		backend: create_stub_app_backend(),
 		session_options,
-		allowed_origins: [/^http:\/\/localhost/],
-		proxy: proxy_options,
-		env_schema: z.object({}),
 		create_route_specs: () => [create_health_route_spec()],
 		rate_limiters: 'disabled_for_testing',
 		daemon_token_state,

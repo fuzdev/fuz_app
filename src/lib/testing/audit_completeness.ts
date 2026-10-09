@@ -121,7 +121,7 @@ const create_admin_observer = (fixture: TestFixture): Promise<TestAccount> =>
  * future-proofs against tests with more emissions; per-test
  * `auth_integration_truncate_tables` keeps the table empty between cases.
  *
- * `observer` is a dedicated admin account (see {@link create_admin_observer})
+ * `observer` is a dedicated admin account (see `create_admin_observer`)
  * — its credentials are never the subject of the mutation under test, so the
  * read works uniformly across every flow including session-revoking ones.
  */

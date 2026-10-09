@@ -15,8 +15,8 @@ import '../assert_dev_env.ts';
  * actually claimed by a suite — so a newly mounted-but-untested method could
  * ship silently.
  *
- * {@link assert_rpc_method_coverage} closes that gap: it diffs the live method
- * set against a {@link MethodCoverageEntry} manifest (both directions — a
+ * `assert_rpc_method_coverage` closes that gap: it diffs the live method
+ * set against a `MethodCoverageEntry` manifest (both directions — a
  * mounted-but-unclaimed method *and* a stale manifest row both fail loud) and
  * checks each entry's tier is consistent with the declared surface + the
  * backdoor prefix. The manifest becomes the forcing function — a new method
@@ -76,7 +76,7 @@ export interface MethodCoverageEntry {
 	readonly note?: string;
 }
 
-/** Inputs for {@link assert_rpc_method_coverage}. */
+/** Inputs for `assert_rpc_method_coverage`. */
 export interface RpcMethodCoverageInput {
 	/** Every method the live RPC endpoint mounts (`action.spec.method`). */
 	readonly live_methods: ReadonlyArray<string>;
