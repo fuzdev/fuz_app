@@ -187,6 +187,42 @@ export const PRE_ADMISSION_QUEUE_BYTES_FACTOR = 4;
  */
 export const WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON = 'too much sent before the socket opened';
 
+/**
+ * Max requests one socket may have dispatching at once. A request that
+ * arrives past it is answered `queue_overflow` with its id
+ * (`WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE`) and not dispatched; the socket
+ * stays open, and the requests already running keep answering.
+ *
+ * A runtime adapter can hand frames over without awaiting the previous one's
+ * dispatch (`@hono/node-ws` does not await `onMessage`), so without a ceiling
+ * one socket could hold any number of handlers — and their pooled database
+ * work — at once. Shedding rather than queueing keeps the socket reading, so a
+ * reply to a server-initiated request still reaches the handler awaiting it.
+ * Generous, so ordinary pipelining never meets it. Same value as the Rust
+ * spine's `MAX_INBOUND_DISPATCHES_PER_CONN`.
+ *
+ * Counted are the requests that passed envelope validation and are not yet
+ * answered — the entries of the socket's cancellation map. Notifications,
+ * replies to server-initiated requests, and refused frames never count.
+ */
+export const MAX_INBOUND_DISPATCHES_PER_CONNECTION = 128;
+
+/**
+ * The `queue_overflow` message a request gets past
+ * `MAX_INBOUND_DISPATCHES_PER_CONNECTION`. Same text as the Rust spine's.
+ */
+export const WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE =
+	'too many concurrent requests on this connection';
+
+/**
+ * The `data.reason` of the `invalid_request` a WebSocket request gets when its
+ * id names a request still running on the same socket. The duplicate is not
+ * dispatched; the running request keeps its id, so its reply, and a `cancel`
+ * naming that id, stay its own. An id is free again once its request has been
+ * answered.
+ */
+export const ERROR_DUPLICATE_REQUEST_ID = 'duplicate_request_id';
+
 /** Send one JSON-RPC error response frame on `ws`. */
 const send_error_response = (
 	ws: WSContext,
@@ -430,6 +466,12 @@ export interface RegisterActionWsResult {
  * - Notifications (method + no id) are silently dropped per JSON-RPC spec.
  *   Exception: `cancel` notifications abort the matching pending request's
  *   `ctx.signal` before bubbling out.
+ * - A request whose id names a request still running on the socket is
+ *   answered `invalid_request` with `data.reason` `ERROR_DUPLICATE_REQUEST_ID`
+ *   and not dispatched.
+ * - At most `MAX_INBOUND_DISPATCHES_PER_CONNECTION` requests run at once per
+ *   socket; one more is answered `queue_overflow` and not dispatched, and the
+ *   socket stays open.
  * - Per-message dispatch goes through `perform_action`: pre-authorization
  *   auth (401) → authorization phase → post-authorization auth (403) →
  *   rate limit (429) → input validation (400) → handler (with transaction
@@ -607,7 +649,10 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// Populated on request dispatch, cleared in the handler's `finally`
 			// so a late-arriving cancel for a completed id (or a reused id)
 			// can't null-abort a freshly-arrived request. Idempotent: cancel
-			// for unknown ids no-ops.
+			// for unknown ids no-ops. One entry per running request — a
+			// request reusing a live id is refused before it gets one — so its
+			// size is the in-flight count `MAX_INBOUND_DISPATCHES_PER_CONNECTION`
+			// bounds.
 			const pending_controllers: Map<JsonrpcRequestId, AbortController> = new Map();
 
 			// Identity is assembled at upgrade time so `on_socket_close` can
@@ -950,6 +995,33 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 
 				const { method, id, params } = envelope.data;
 
+				// A request is live from here until its reply is sent. One reusing
+				// a live id is refused rather than dispatched: two requests under
+				// one id would share a cancel entry and a reply id, and the first to
+				// finish would clear the other's. Checked before the ceiling — a
+				// duplicate is the client's error whatever the load, and retrying it
+				// cannot succeed while the first runs. Neither refusal reaches
+				// `perform_action`, so neither charges the action rate limiters —
+				// the same on the Rust spine.
+				if (pending_controllers.has(id)) {
+					send_error_response(
+						ws,
+						id,
+						jsonrpc_error_messages.invalid_request({ reason: ERROR_DUPLICATE_REQUEST_ID })
+					);
+					return;
+				}
+				// The in-flight ceiling: shed, don't queue — see
+				// `MAX_INBOUND_DISPATCHES_PER_CONNECTION`.
+				if (pending_controllers.size >= MAX_INBOUND_DISPATCHES_PER_CONNECTION) {
+					send_error_response(
+						ws,
+						id,
+						jsonrpc_error_messages.queue_overflow(WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE)
+					);
+					return;
+				}
+
 				// Per-action method lookup — return method_not_found before
 				// we engage the dispatch machinery. Specs without a handler
 				// (client-only / dispatcher-handled) miss action_map and
@@ -960,17 +1032,14 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					return;
 				}
 
-				if (artificial_delay > 0) {
-					log.debug(`throttling ${artificial_delay}ms`);
-					await wait(artificial_delay);
-				}
-
 				// Per-request controller — fires on explicit `cancel` or when the
 				// socket ends (via the socket_abort_controller chain below).
-				// Registered before dispatch so a cancel arriving mid-handler
-				// finds it; cleared in `finally` so late cancels for a
-				// completed id (or a future request that reuses the id) can't
-				// null-abort the wrong handler.
+				// Registered before dispatch — ahead of `artificial_delay` too, so
+				// the request is live (counted, and its id taken) from the moment
+				// it is accepted — so a cancel arriving mid-handler finds it;
+				// cleared in `finally` so late cancels for a completed id (or a
+				// future request that reuses the id) can't null-abort the wrong
+				// handler.
 				const request_controller = new AbortController();
 				pending_controllers.set(id, request_controller);
 
@@ -1016,6 +1085,10 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				const signal = AbortSignal.any([socket_abort_controller.signal, request_controller.signal]);
 
 				try {
+					if (artificial_delay > 0) {
+						log.debug(`throttling ${artificial_delay}ms`);
+						await wait(artificial_delay);
+					}
 					const result = await perform_action(
 						{
 							action,

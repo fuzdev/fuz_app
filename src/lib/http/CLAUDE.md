@@ -383,7 +383,7 @@ own by casting `as JsonrpcErrorCode`):
 - `rate_limited` (-32006, HTTP 429) — server-side policy.
 - `service_unavailable` (-32007, HTTP 503) — upstream down / maintenance.
 - `timeout` (-32008, HTTP 504) — handler exceeded time budget.
-- `queue_overflow` (-32009, HTTP 429) — **client-side** backpressure (WS reconnect queue full).
+- `queue_overflow` (-32009, HTTP 429) — backpressure: a buffer refused a new request because it was full — client-side (the WS reconnect queue) or server-side (a socket past `MAX_INBOUND_DISPATCHES_PER_CONNECTION` in-flight requests).
 - `request_cancelled` (-32010, HTTP 499) — caller-initiated cancellation (nginx "client closed").
 
 **`invalid_params` vs `validation_error`** — use `invalid_params` (standard

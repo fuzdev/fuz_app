@@ -93,9 +93,11 @@ export const JSONRPC_ERROR_CODES = Object.freeze({
 	service_unavailable: -32007 as JsonrpcErrorCode,
 	timeout: -32008 as JsonrpcErrorCode,
 	/**
-	 * Client-side backpressure — an outbound buffer (e.g. `FrontendWebsocketClient`'s
-	 * disconnected request queue) refused a new request because it was full.
-	 * Distinct from `rate_limited`, which signals a server-side policy.
+	 * Backpressure — a buffer refused a new request because it was full: on the
+	 * client an outbound buffer (e.g. `FrontendWebsocketClient`'s disconnected
+	 * request queue), on the server a WebSocket already running
+	 * `MAX_INBOUND_DISPATCHES_PER_CONNECTION` requests. Distinct from
+	 * `rate_limited`, which signals a server-side policy over time.
 	 */
 	queue_overflow: -32009 as JsonrpcErrorCode,
 	/**
@@ -309,8 +311,8 @@ export const JSONRPC_ERROR_CODE_TO_HTTP_STATUS: Record<number, number> = {
 	[-32004]: 409, // conflict
 	[-32005]: 422, // validation_error
 	// queue_overflow shares 429 with rate_limited — listed first so reverse
-	// map wins with rate_limited (server-side) rather than client-side overflow.
-	[-32009]: 429, // queue_overflow (client-side backpressure)
+	// map wins with rate_limited (a policy) rather than a full buffer.
+	[-32009]: 429, // queue_overflow (backpressure)
 	[-32006]: 429, // rate_limited
 	[-32007]: 503, // service_unavailable
 	[-32008]: 504, // timeout

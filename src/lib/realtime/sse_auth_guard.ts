@@ -274,7 +274,7 @@ export const create_audit_log_sse = (options: {
 	const role = options.role ?? 'admin';
 	const max_per_scope =
 		options.max_per_scope === undefined ? AUDIT_LOG_SSE_MAX_PER_SCOPE : options.max_per_scope;
-	const registry = new SubscriberRegistry<SseNotification>({ max_per_scope });
+	const registry = new SubscriberRegistry<SseNotification>({ max_per_scope, log: options.log });
 	const guard = create_sse_auth_guard(registry, role, options.log);
 	options.connection_closer?.add(create_sse_connection_closer(registry));
 

@@ -1202,6 +1202,22 @@ action (manifest-excluded), so parity is behavioral here, not via the manifest
 gate. Cross-process only; fuz_app's own wiring is
 `src/test/cross_backend/peer_ping_ws.cross.test.ts`.
 
+### `cross_backend/ws_inbound_dispatch.ts` — `describe_ws_inbound_dispatch_cross_tests`
+
+Real-upgrade parity for the two refusals a WebSocket request meets ahead of
+dispatch: a request whose id names a request still running on the socket →
+`invalid_request` with `data.reason: 'duplicate_request_id'`, not dispatched
+(the running request answers under its id as usual, and the id frees once it
+has); and past the per-socket in-flight ceiling (128 on both spines) a new
+request → `queue_overflow` with its id, not dispatched, the socket left open,
+the duplicate check first. Requests are held in flight with `peer/ping` — the
+client's responder withholds the server's ping echo until the test releases
+it — so the suite gates on `capabilities.peer_request`.
+`describe_ws_inbound_dispatch_cross_tests({setup_test, capabilities, base_url,
+ws_path})`. The wire literals are independent copies of the producers'
+constants, so a value changed on one spine fails here. Cross-process only;
+fuz_app's own wiring is `src/test/cross_backend/ws_inbound_dispatch.cross.test.ts`.
+
 ### `cross_backend/ws_connection_cap.ts` — `describe_ws_connection_cap_cross_tests`
 
 Real-upgrade parity for the **per-account WebSocket connection cap** — the

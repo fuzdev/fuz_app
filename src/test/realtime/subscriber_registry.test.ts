@@ -4,7 +4,8 @@
  * @module
  */
 
-import { describe, assert, test } from 'vitest';
+import { describe, assert, test, vi } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { SubscriberRegistry } from '$lib/realtime/subscriber_registry.ts';
 import type { SseStream } from '$lib/realtime/sse.ts';
@@ -415,6 +416,39 @@ describe('SubscriberRegistry max_per_scope', () => {
 			registry.subscribe(create_mock_stream<string>(), { channels: ['ch'], scope: 'session_a' });
 		}
 		assert.strictEqual(registry.count, 20);
+	});
+
+	test('an evicted stream whose close throws is still removed, and the admission stands', () => {
+		const log = new Logger('test', { level: 'off' });
+		const log_error = vi.spyOn(log, 'error');
+		const registry: SubscriberRegistry<string> = new SubscriberRegistry({ max_per_scope: 1, log });
+		const boom = new Error('controller already closed');
+		let throwing_sends = 0;
+		registry.subscribe(
+			{
+				send() {
+					throwing_sends++;
+				},
+				comment() {},
+				close() {
+					throw boom;
+				},
+				on_close() {}
+			},
+			{ channels: ['ch'], scope: 'session_a' }
+		);
+		const newcomer = create_mock_stream<string>();
+
+		const pending = registry.subscribe_pending({ channels: ['ch'], scope: 'session_a' });
+		assert.strictEqual(registry.admit(pending, newcomer), true, 'admitted despite the throw');
+
+		assert.strictEqual(registry.count, 1, 'the evicted stream is gone');
+		registry.broadcast('ch', 'after');
+		assert.strictEqual(throwing_sends, 0, 'the evicted stream receives nothing more');
+		assert.deepStrictEqual(newcomer.sent, ['after']);
+		assert.strictEqual(log_error.mock.calls.length, 1);
+		assert.strictEqual(log_error.mock.calls[0]![1], boom);
+		assert.strictEqual(registry.close_by_identity('session_a'), 1, 'only the newcomer is left');
 	});
 
 	test('subscribers without a scope are not subject to the cap', () => {

@@ -24,8 +24,11 @@ import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { ActingActor } from '$lib/http/auth_shape.ts';
 
 import {
+	ERROR_DUPLICATE_REQUEST_ID,
+	MAX_INBOUND_DISPATCHES_PER_CONNECTION,
 	PRE_ADMISSION_QUEUE_BYTES_FACTOR,
 	register_action_ws,
+	WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE,
 	WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON,
 	type SocketCloseContext,
 	type SocketOpenContext
@@ -1772,10 +1775,14 @@ describe('register_action_ws frames during on_socket_open', () => {
 	};
 
 	/** An `echo` request frame of exactly `bytes` UTF-8 bytes, its value mostly `fill`. */
+	// each frame takes a fresh id — frames queued together run concurrently
+	// once dispatched, and a request reusing a live id is refused
+	let next_frame_id = 0;
 	const frame_of = (bytes: number, fill = 'x'): string => {
 		const encoder = new TextEncoder();
+		const id = ++next_frame_id;
 		const build = (value: string): string =>
-			JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'echo', params: { value } });
+			JSON.stringify({ jsonrpc: '2.0', id, method: 'echo', params: { value } });
 		const room = bytes - encoder.encode(build('')).length;
 		const fill_bytes = encoder.encode(fill).length;
 		const frame = build(fill.repeat(Math.floor(room / fill_bytes)) + 'x'.repeat(room % fill_bytes));
@@ -2169,5 +2176,236 @@ describe('register_action_ws rate limit', () => {
 		assert.strictEqual(h.fake.sends.length, 2);
 		assert.strictEqual(parse_json(h.fake.sends[0]!).result?.value, 'x');
 		assert.strictEqual(parse_json(h.fake.sends[1]!).result?.value, 'x');
+	});
+});
+
+describe('register_action_ws inbound dispatch', () => {
+	// `hold` runs until its signal aborts (answering 'cancelled') or the test
+	// releases every held request (answering 'released'); `quick` answers at
+	// once. So "in flight" is a state the test controls, not a race.
+	const hold_spec: RequestResponseActionSpec = {
+		method: 'hold',
+		kind: 'request_response',
+		initiator: 'frontend',
+		auth: { account: 'required', actor: 'none' },
+		side_effects: false,
+		input: z.void(),
+		output: z.string(),
+		async: true,
+		description: 'held until cancelled or released'
+	};
+	const quick_spec: RequestResponseActionSpec = {
+		...hold_spec,
+		method: 'quick',
+		description: 'answers at once'
+	};
+
+	const build_inbound_harness = async (
+		opts: { action_account_rate_limiter?: RateLimiter; rate_limited?: boolean } = {}
+	) => {
+		let release_all!: () => void;
+		const released = new Promise<void>((resolve) => {
+			release_all = resolve;
+		});
+		const hold_handler = (_input: unknown, ctx: ActionContext): Promise<string> =>
+			new Promise<string>((resolve) => {
+				ctx.signal.addEventListener('abort', () => resolve('cancelled'), { once: true });
+				void released.then(() => resolve('released'));
+			});
+		const rate_limit = opts.rate_limited ? ({ rate_limit: 'account' } as const) : {};
+		const h = await build_harness({
+			handlers: {},
+			actions: [
+				{ spec: { ...hold_spec, ...rate_limit }, handler: hold_handler },
+				{ spec: { ...quick_spec, ...rate_limit }, handler: () => 'quick' }
+			],
+			action_account_rate_limiter: opts.action_account_rate_limiter
+		});
+		await h.on_open();
+		const request = (method: 'hold' | 'quick', id: string | number): Promise<void> =>
+			h.on_message({ jsonrpc: '2.0', id, method });
+		const cancel = (id: string | number): Promise<void> =>
+			h.on_message({ jsonrpc: '2.0', method: 'cancel', params: { request_id: id } });
+		const frames_for = (id: string | number): Array<any> =>
+			h.fake.sends.map(parse_json).filter((frame) => frame.id === id);
+		return { h, request, cancel, frames_for, release_all };
+	};
+
+	const assert_duplicate_refusal = (frame: any, id: string | number): void => {
+		assert.strictEqual(frame.id, id);
+		assert.deepStrictEqual(frame.error, {
+			code: JSONRPC_ERROR_CODES.invalid_request,
+			message: 'invalid request',
+			data: { reason: ERROR_DUPLICATE_REQUEST_ID }
+		});
+	};
+
+	test('a request reusing a live id is refused with that id and not dispatched', async () => {
+		const { request, cancel, frames_for } = await build_inbound_harness();
+
+		const first = request('hold', 7);
+		await request('quick', 7);
+		const refused = frames_for(7);
+		assert.strictEqual(refused.length, 1, 'the duplicate is answered once, by the refusal');
+		assert_duplicate_refusal(refused[0], 7);
+
+		// the string '7' is another id (SameValueZero), so it dispatches
+		await request('quick', '7');
+		assert.strictEqual(frames_for('7')[0]?.result, 'quick');
+
+		// the first request kept its cancel entry: a cancel for 7 reaches it
+		await cancel(7);
+		await first;
+		const answered = frames_for(7);
+		assert.strictEqual(answered.length, 2);
+		assert.strictEqual(answered[1].result, 'cancelled');
+
+		// answered, the id is free again
+		await request('quick', 7);
+		assert.strictEqual(frames_for(7)[2]?.result, 'quick');
+	});
+
+	test('a request answered with an error frees its id', async () => {
+		const { h, frames_for } = await build_inbound_harness();
+		// `hold` takes no input, so these params fail validation inside `perform_action`
+		await h.on_message({ jsonrpc: '2.0', id: 9, method: 'hold', params: { unexpected: true } });
+		const refused = frames_for(9);
+		assert.strictEqual(refused.length, 1);
+		assert.ok(refused[0].error, 'answered with an error');
+		assert.notStrictEqual(refused[0].error.data?.reason, ERROR_DUPLICATE_REQUEST_ID);
+
+		// answered, the id is free again — an error answer releases it like a result
+		await h.on_message({ jsonrpc: '2.0', id: 9, method: 'quick' });
+		assert.strictEqual(frames_for(9)[1]?.result, 'quick');
+	});
+
+	test('a duplicate during artificial_delay is refused — the request is live from acceptance', async () => {
+		vi.useFakeTimers();
+		try {
+			const stub = create_stub_upgrade();
+			register_action_ws({
+				path: '/ws',
+				connection_closer: null,
+				app: new Hono(),
+				upgradeWebSocket: stub.upgradeWebSocket,
+				actions: [{ spec: quick_spec, handler: () => 'quick' }],
+				db: create_stub_db(),
+				artificial_delay: 100,
+				heartbeat: false,
+				action_ip_rate_limiter: null,
+				action_account_rate_limiter: null,
+				log
+			});
+			const events = await stub.get_create_events()(
+				create_fake_hono_context({ credential_type: 'session' })
+			);
+			const fake = create_fake_ws();
+			await (events.onOpen?.(new Event('open'), fake.ws) as Promise<void> | void);
+			const send = (id: number) =>
+				dispatch_ws_message(
+					events.onMessage!,
+					new MessageEvent('message', {
+						data: JSON.stringify({ jsonrpc: '2.0', id, method: 'quick' })
+					}),
+					fake.ws
+				);
+			const first = send(1);
+			await send(1);
+			assert.strictEqual(fake.sends.length, 1);
+			assert_duplicate_refusal(parse_json(fake.sends[0]!), 1);
+			await vi.advanceTimersByTimeAsync(100);
+			await first;
+			assert.strictEqual(parse_json(fake.sends[1]!).result, 'quick');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	test('past the ceiling a request is shed with queue_overflow and the socket keeps serving', async () => {
+		const { h, request, cancel, frames_for, release_all } = await build_inbound_harness();
+		const held: Array<Promise<void>> = [];
+		for (let n = 0; n < MAX_INBOUND_DISPATCHES_PER_CONNECTION; n++) {
+			held.push(request('hold', n));
+		}
+
+		// a duplicate at the ceiling is refused as a duplicate — that check is first
+		await request('hold', 0);
+		assert_duplicate_refusal(frames_for(0)[0], 0);
+
+		await request('quick', 'over');
+		assert.deepStrictEqual(frames_for('over'), [
+			{
+				jsonrpc: '2.0',
+				id: 'over',
+				error: {
+					code: JSONRPC_ERROR_CODES.queue_overflow,
+					message: WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE
+				}
+			}
+		]);
+		assert.strictEqual(
+			WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE,
+			'too many concurrent requests on this connection',
+			'the Rust twin literal'
+		);
+		assert.strictEqual(h.fake.closes.length, 0, 'shedding never closes the socket');
+
+		// one completion frees one slot
+		await cancel(0);
+		await held[0];
+		assert.strictEqual(frames_for(0)[1]?.result, 'cancelled');
+		await request('quick', 'over');
+		assert.strictEqual(frames_for('over')[1]?.result, 'quick');
+
+		release_all();
+		await Promise.all(held);
+		for (let n = 1; n < MAX_INBOUND_DISPATCHES_PER_CONNECTION; n++) {
+			assert.strictEqual(frames_for(n)[0]?.result, 'released', `request ${n}`);
+		}
+	});
+
+	test('the ceiling admits exactly its value', async () => {
+		const { request, frames_for } = await build_inbound_harness();
+		for (let n = 0; n < MAX_INBOUND_DISPATCHES_PER_CONNECTION - 1; n++) {
+			void request('hold', n);
+		}
+		// the last slot dispatches
+		await request('quick', 'last');
+		assert.strictEqual(frames_for('last')[0]?.result, 'quick');
+		// filled, the next is shed
+		void request('hold', 'held');
+		await request('quick', 'shed');
+		assert.strictEqual(frames_for('shed')[0]?.error?.code, JSONRPC_ERROR_CODES.queue_overflow);
+	});
+
+	test('neither refusal charges the action rate limiter', async () => {
+		const limiter = new RateLimiter({
+			max_attempts: MAX_INBOUND_DISPATCHES_PER_CONNECTION + 1,
+			window_ms: 60_000,
+			cleanup_interval_ms: 0,
+			max_keys: null
+		});
+		const { request, cancel, frames_for, release_all } = await build_inbound_harness({
+			action_account_rate_limiter: limiter,
+			rate_limited: true
+		});
+		const held: Array<Promise<void>> = [];
+		for (let n = 0; n < MAX_INBOUND_DISPATCHES_PER_CONNECTION; n++) {
+			held.push(request('hold', n));
+		}
+		// refused, uncharged: a duplicate and an overflow
+		await request('hold', 0);
+		await request('quick', 'over');
+		assert_duplicate_refusal(frames_for(0)[0], 0);
+		assert.strictEqual(frames_for('over')[0]?.error?.code, JSONRPC_ERROR_CODES.queue_overflow);
+
+		await cancel(0);
+		await held[0];
+		// the budget's last attempt — rate_limited had either refusal been charged
+		await request('quick', 'last');
+		assert.strictEqual(frames_for('last')[0]?.result, 'quick');
+
+		release_all();
+		await Promise.all(held);
 	});
 });

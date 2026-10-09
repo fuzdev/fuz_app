@@ -226,7 +226,12 @@ plus the security negatives (unsolicited-response rejection, per-connection id
 isolation, never-reply `Timeout`, wrong-shape rejection, client-error
 forwarding, HTTP no-transport); gated on `capabilities.peer_request`, now `true`
 on both the Rust `spine_stub` and the TS spines (the
-`BackendWebsocketTransport.request_connection` path)), `sse.cross.test.ts` (the real-streaming-`fetch`
+`BackendWebsocketTransport.request_connection` path)),
+`ws_inbound_dispatch.cross.test.ts` (the real-upgrade
+`describe_ws_inbound_dispatch_cross_tests` suite — a request reusing a live id
+refused `invalid_request` / `duplicate_request_id`, and one past the per-socket
+in-flight ceiling shed `queue_overflow` with the socket left open; requests held
+with `peer/ping`, so gated on `capabilities.peer_request`), `sse.cross.test.ts` (the real-streaming-`fetch`
 `describe_cross_process_sse_tests` suite — live audit-log SSE: connect,
 data frame, account-wide close-on-revoke, session-scoped close-on-revoke,
 close on account delete, the per-session stream cap),

@@ -167,21 +167,67 @@ describe('create_sse_response', () => {
 		assert.strictEqual(text, `${C}: before\n`);
 	});
 
-	test('on_close registered after close does not fire', async () => {
+	test('on_close registered after close runs at once, and only that once', async () => {
 		const app = new Hono();
-		let called = false;
+		let calls = 0;
 
 		app.get('/sse', (c) => {
 			const { response, stream } = create_sse_response(c, log);
 			stream.close();
 			stream.on_close(() => {
-				called = true;
+				calls++;
 			});
+			assert.strictEqual(calls, 1, 'a late listener runs when it is registered');
+			stream.close();
 			return response;
 		});
 
 		await app.request('/sse');
-		assert.strictEqual(called, false);
+		assert.strictEqual(calls, 1);
+	});
+
+	test('a request whose client aborts closes the stream without the body being read', async () => {
+		const app = new Hono();
+		const registry = new SubscriberRegistry<unknown>();
+		const controller = new AbortController();
+
+		app.get('/sse', (c) => {
+			const { response, stream } = create_sse_response(c, log);
+			stream.on_close(registry.subscribe(stream));
+			return response;
+		});
+
+		const response = await app.request(
+			new Request('http://localhost/sse', { signal: controller.signal })
+		);
+		assert.strictEqual(registry.count, 1);
+		controller.abort();
+		assert.strictEqual(registry.count, 0, 'the abort closed and unsubscribed the stream');
+		await response.body?.cancel();
+	});
+
+	test('a request already aborted yields a closed stream, and a late on_close cleans up', async () => {
+		const app = new Hono();
+		const registry = new SubscriberRegistry<string>();
+		const controller = new AbortController();
+		controller.abort();
+		let sent_after_close = false;
+
+		app.get('/sse', (c) => {
+			const { response, stream } = create_sse_response<string>(c, log);
+			const unsubscribe = registry.subscribe(stream);
+			stream.on_close(unsubscribe);
+			stream.send('dropped');
+			sent_after_close = true;
+			return response;
+		});
+
+		const response = await app.request(
+			new Request('http://localhost/sse', { signal: controller.signal })
+		);
+		assert.ok(sent_after_close);
+		assert.strictEqual(registry.count, 0);
+		assert.strictEqual(await response.text(), C, 'nothing follows the connect comment');
 	});
 
 	test('on_close unsubscribes from SubscriberRegistry on close', async () => {

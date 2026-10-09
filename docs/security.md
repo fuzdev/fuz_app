@@ -497,6 +497,16 @@ enforcement:
   another user's SSE stream by guessing or leaking a hash.
 - **No polling**: Disconnection is reactive — triggered by the revocation
   itself. No periodic role_grant refresh is needed.
+- **Client disconnect**: `create_sse_response` closes its stream when the
+  client disconnects, including one that leaves before the handler returns —
+  a runtime cancels only a body it has started sending, so that case would
+  otherwise leave a registered stream nothing delivers to. On
+  `@hono/node-server` the request's `signal` misses such a disconnect (it is
+  created on first read and aborted only if it existed when the connection
+  closed), so the Node stream behind the response is watched there — the
+  response object over HTTP/1, its `Http2Stream` over HTTP/2. The audit route
+  registers the stream's close listener before admitting it, so a client gone
+  by then takes no slot and evicts no other stream.
 - **Factory-managed**: `audit_log_sse: true` on `create_app_server` handles all
   wiring (registry, guard, closer, broadcaster, `on_audit_event` composition,
   event specs). `create_audit_log_sse({log, connection_closer})` remains for
@@ -540,6 +550,37 @@ endpoints sharing one transport share one count.
   closed with `superseded` set until the app calls `connect()`.
 
 The Rust spine applies the same cap, policy, close code, and reason.
+
+## WebSocket Request Bounds
+
+Requests on one socket dispatch concurrently — `@hono/node-ws` does not await
+`onMessage`, so nothing in the adapter serializes them. `register_action_ws`
+bounds them itself, the same way the Rust spine does:
+
+- **In-flight ceiling**: at most `MAX_INBOUND_DISPATCHES_PER_CONNECTION` (128)
+  requests run at once per socket. One more is answered `queue_overflow` with
+  its id and not dispatched. The socket stays open and keeps reading, so the
+  requests already running still answer, and a reply to a server-initiated
+  request still reaches the handler awaiting it — blocking reads at the cap
+  would deadlock that handler.
+- **One live request per id**: a request whose id names a request still
+  running on the socket is answered `invalid_request` with `data.reason:
+  'duplicate_request_id'` and not dispatched. Two requests under one id would
+  share a `cancel` entry and a reply id, and the first to finish would clear
+  the other's; the running request keeps both. The id is free again once its
+  request has been answered.
+
+The duplicate check runs first, so a duplicate is refused as one whatever the
+load. Neither refusal reaches the dispatcher, so neither charges the action
+rate limiters — the per-socket ceiling is what bounds a flood of them, and
+each costs a parse and an error frame. Both spines refuse the same ids (a
+string and a number with the same digits are different ids; `7` and `7.0`
+are the same one), with the same codes, messages, and data. The one
+divergence is a request for an unknown method: Rust looks the method up inside
+the dispatch, so the request holds its id until its `method_not_found` reply
+is written, while TypeScript answers it before the id is taken — a client that
+reuses the id in the very next pipelined frame can be refused as a duplicate on
+Rust and dispatched on TypeScript.
 
 ## Connection Admission
 

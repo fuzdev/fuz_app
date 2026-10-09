@@ -29,7 +29,11 @@ import {
 	ERROR_INSUFFICIENT_PERMISSIONS
 } from '$lib/http/error_schemas.ts';
 import { prefix_route_specs } from '$lib/http/route_spec.ts';
-import { AUDIT_LOG_CHANNEL, type AuditLogSse } from '$lib/realtime/sse_auth_guard.ts';
+import {
+	AUDIT_LOG_CHANNEL,
+	AUDIT_LOG_SSE_MAX_PER_SCOPE,
+	type AuditLogSse
+} from '$lib/realtime/sse_auth_guard.ts';
 import { SSE_CONNECTED_COMMENT } from '$lib/realtime/sse_constants.ts';
 import { require_audit_sse } from '$lib/server/app_server.ts';
 import { create_test_app, type TestAccount, type TestApp } from '$lib/testing/app_server.ts';
@@ -235,5 +239,58 @@ describe_db('audit log stream admission', (get_db) => {
 
 		assert.strictEqual(res.status, 401);
 		assert.strictEqual(h.audit_sse.registry.count, 0);
+	});
+
+	test('a client that leaves during the request opens no stream and evicts none', async () => {
+		const db = get_db();
+		const h = await create_harness(db);
+
+		// the session at its stream cap: one more admission would evict the oldest
+		const open_streams: Array<Response> = [];
+		for (let i = 0; i < AUDIT_LOG_SSE_MAX_PER_SCOPE; i++) {
+			open_streams.push(
+				await h.test_app.app.request(STREAM_PATH, { headers: h.admin.create_session_headers() })
+			);
+		}
+		assert.strictEqual(h.audit_sse.registry.count, AUDIT_LOG_SSE_MAX_PER_SCOPE);
+		const oldest = create_sse_frame_reader(open_streams[0]!.body!.getReader());
+
+		const stalled = h.stall();
+		const client = new AbortController();
+		const response = Promise.resolve(
+			h.test_app.app.request(STREAM_PATH, {
+				headers: h.admin.create_session_headers(),
+				signal: client.signal
+			})
+		);
+		await stalled.reached;
+		client.abort();
+		stalled.release();
+		const res = await response;
+
+		assert.strictEqual(res.status, 200);
+		assert.strictEqual(
+			await res.text(),
+			SSE_CONNECTED_COMMENT,
+			'the departed client gets a stream that is already over'
+		);
+		assert.strictEqual(h.audit_sse.registry.pending_count, 0, 'nothing left pending');
+		assert.strictEqual(
+			h.audit_sse.registry.count,
+			AUDIT_LOG_SSE_MAX_PER_SCOPE,
+			'the departed client holds no slot, and took none'
+		);
+		try {
+			assert.strictEqual((await oldest.read_frame()) + '\n\n', SSE_CONNECTED_COMMENT);
+			h.audit_sse.registry.broadcast(AUDIT_LOG_CHANNEL, { method: 'still_open', params: {} });
+			assert.deepStrictEqual(
+				JSON.parse((await oldest.read_frame()).slice('data: '.length)),
+				{ method: 'still_open', params: {} },
+				'the oldest stream was not evicted for it'
+			);
+		} finally {
+			await oldest.cancel();
+			for (const stream of open_streams.slice(1)) await stream.body?.cancel();
+		}
 	});
 });

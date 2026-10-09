@@ -148,13 +148,15 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 					// registration a revocation closed while it was pending is not
 					// admitted: the stream is closed at once, so the body is the
 					// connect comment and nothing else, and the client reconnects
-					// into the gates.
+					// into the gates. The close listener goes on first: a client that
+					// left during the re-reads gets a stream that is already closed,
+					// whose listener runs at once and removes the registration, so
+					// `admit` refuses it rather than evicting a live stream for it.
 					const { response, stream } = create_sse_response<SseNotification>(c, log);
+					stream.on_close(pending.unsubscribe);
 					admitted = registry.admit(pending, stream);
-					if (admitted) {
-						stream.on_close(pending.unsubscribe);
-					} else {
-						log.info('audit stream: closed by a revocation before admission', ctx.account.id);
+					if (!admitted) {
+						log.info('audit stream: closed before admission', ctx.account.id);
 						stream.close();
 					}
 					return response;

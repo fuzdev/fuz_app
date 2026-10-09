@@ -23,6 +23,8 @@
  * @module
  */
 
+import { Logger } from '@fuzdev/fuz_util/log.ts';
+
 import type { SseStream } from './sse.ts';
 
 /** One admitted subscriber, as `SubscriberRegistry.broadcast` sees it. */
@@ -52,6 +54,13 @@ export interface SubscriberRegistryOptions {
 	 * `null` (default) disables the cap. `groups` identities are never capped.
 	 */
 	max_per_scope?: number | null;
+	/**
+	 * Logger for a stream whose `close` throws while the cap evicts it — the
+	 * evicted stream is another subscriber's, so its failure is logged rather
+	 * than failing the admission that evicted it. Unset falls back to an
+	 * `[sse]` logger; `null` silences it.
+	 */
+	log?: Logger | null;
 }
 
 /** Options for `SubscriberRegistry.subscribe` and `subscribe_pending`. */
@@ -157,8 +166,10 @@ export interface PendingSubscription {
  *   return unauthorized();
  * }
  * const {response, stream} = create_sse_response(c, log);
- * if (registry.admit(pending, stream)) stream.on_close(pending.unsubscribe);
- * else stream.close(); // closed while pending — the body is the connect comment alone
+ * // first: a client that already left closes the stream, its listener runs at
+ * // once, and `admit` then refuses the removed registration
+ * stream.on_close(pending.unsubscribe);
+ * if (!registry.admit(pending, stream)) stream.close(); // the body is the connect comment alone
  * return response;
  * ```
  */
@@ -169,9 +180,11 @@ export class SubscriberRegistry<T> {
 	// another registry names nothing here
 	readonly #pending: WeakMap<PendingSubscription, SubscriberEntry<T>> = new WeakMap();
 	readonly #max_per_scope: number | null;
+	readonly #log: Logger | null;
 
 	constructor(options?: SubscriberRegistryOptions) {
 		this.#max_per_scope = options?.max_per_scope ?? null;
+		this.#log = options?.log === undefined ? new Logger('[sse]') : options.log;
 	}
 
 	/**
@@ -379,6 +392,11 @@ export class SubscriberRegistry<T> {
 	 * Close `scope`'s oldest **admitted** subscribers until one more fits under
 	 * `max`. Pending registrations are neither counted nor closed — a
 	 * subscription that may yet be refused must not cost a live one its slot.
+	 *
+	 * Every victim is removed, then closed in its own `try`: a stream whose
+	 * `close` throws is still unregistered, the rest are still closed, and the
+	 * error is logged — it belongs to another subscriber, so it must not fail
+	 * the admission that evicted it.
 	 */
 	#enforce_scope_limit(scope: string, max: number): void {
 		// admitted subscribers with this scope, in registration order (the
@@ -393,8 +411,13 @@ export class SubscriberRegistry<T> {
 		const overflow = matching.length - (max - 1);
 		for (let i = 0; i < overflow; i++) {
 			const [victim, stream] = matching[i]!;
-			stream.close();
+			// removed first, so a stream whose close throws is unregistered too
 			this.#subscribers.delete(victim);
+			try {
+				stream.close();
+			} catch (error) {
+				this.#log?.error('error closing a stream evicted by the cap:', error);
+			}
 		}
 	}
 }
