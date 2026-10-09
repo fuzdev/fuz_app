@@ -204,10 +204,29 @@ export interface GenerateAppSurfaceOptions {
 	 * Mounted WS endpoints (the same array `create_app_server.ws_endpoints`
 	 * auto-mounts). Each entry's actions surface into
 	 * `AppSurface.ws_endpoints[i].methods` for attack-surface tests +
-	 * startup logging.
+	 * startup logging. Each must carry its effective `allowed_origins` —
+	 * `create_app_server` fills in the server's list where a spec omits it —
+	 * and generation throws on one that doesn't.
 	 */
 	ws_endpoints?: ReadonlyArray<WsEndpointSpec>;
 }
+
+/**
+ * Stringify a WS endpoint's origin allowlist for the surface. Throws when
+ * the spec carries none: the surface records the exact patterns the
+ * upgrade gate matches, and an omitted list means the caller never
+ * resolved the server default, not any-origin.
+ */
+const to_surface_allowed_origins = (ep: WsEndpointSpec): Array<string> => {
+	if (!ep.allowed_origins) {
+		throw new Error(
+			`generate_app_surface: ws endpoint ${ep.path} has no allowed_origins — ` +
+				"resolve the server's allowed_origins into the spec before surface generation " +
+				"(resolve_ws_endpoints, or create_test_app_surface_spec's allowed_origins option)"
+		);
+	}
+	return ep.allowed_origins.map((re) => re.toString());
+};
 
 // --- Surface generation ---
 
@@ -358,7 +377,7 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 		ws_endpoints: ws_endpoints?.length
 			? ws_endpoints.map((ep) => ({
 					path: ep.path,
-					allowed_origins: ep.allowed_origins.map((re) => re.toString()),
+					allowed_origins: to_surface_allowed_origins(ep),
 					required_roles: ep.required_roles ?? [],
 					// `local_call` specs are frontend-side helpers — registry-only
 					// on the backend, never dispatched over WS. Drop them from the

@@ -296,21 +296,23 @@ export interface CreateRpcEndpointOptions {
 	log: Logger;
 	/**
 	 * Per-IP rate limiter consulted for actions whose spec declares
-	 * `rate_limit: 'ip'` or `'both'`. `null` disables the IP check.
-	 * Per-action gate via `action.spec.rate_limit`. Same limiter is
-	 * shared with the WebSocket action dispatcher — one budget per
-	 * action, not per transport.
+	 * `rate_limit: 'ip'` or `'both'`. Required, with no default: pass
+	 * `null` to turn the IP check off, so an unthrottled endpoint is a
+	 * choice the call site states rather than an option it forgot.
+	 * `create_app_server` passes its own (a default limiter unless
+	 * configured). Share one instance with the WebSocket action dispatcher —
+	 * one budget per action, not per transport.
 	 */
-	action_ip_rate_limiter?: RateLimiter | null;
+	action_ip_rate_limiter: RateLimiter | null;
 	/**
 	 * Per-account rate limiter consulted for actions whose spec declares
 	 * `rate_limit: 'account'` or `'both'`. Keyed on
 	 * `request_context.account.id` (account-grain — billed to the
 	 * authenticated account regardless of which actor was resolved).
-	 * `null` disables the account check. Same limiter is shared with the
-	 * WebSocket action dispatcher.
+	 * Required, with no default: pass `null` to turn the account check off.
+	 * Share one instance with the WebSocket action dispatcher.
 	 */
-	action_account_rate_limiter?: RateLimiter | null;
+	action_account_rate_limiter: RateLimiter | null;
 }
 
 /**
@@ -360,7 +362,7 @@ const jsonrpc_error_envelope = (
  * inside the dispatcher, and `transaction: false` because transaction scope
  * is per-action (mutations get a transaction, reads get pool).
  *
- * @param options - endpoint path, actions, and logger
+ * @param options - endpoint path, actions, logger, and the two action rate limiters
  * @returns route specs (GET + POST) ready for `apply_route_specs`
  * @throws Error if two actions share the same `spec.method` (registration-time
  *   duplicate detection); also throws if any action's `spec.input` is
@@ -372,8 +374,8 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 		path: endpoint_path,
 		actions,
 		log,
-		action_ip_rate_limiter = null,
-		action_account_rate_limiter = null
+		action_ip_rate_limiter,
+		action_account_rate_limiter
 	} = options;
 
 	const { action_map } = compile_action_registry(actions, 'RPC action');

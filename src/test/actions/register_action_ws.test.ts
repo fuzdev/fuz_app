@@ -167,8 +167,8 @@ const build_harness = async (opts: {
 		on_socket_open: opts.on_socket_open,
 		on_socket_close: opts.on_socket_close,
 		heartbeat: opts.heartbeat ?? false,
-		action_ip_rate_limiter: opts.action_ip_rate_limiter,
-		action_account_rate_limiter: opts.action_account_rate_limiter,
+		action_ip_rate_limiter: opts.action_ip_rate_limiter ?? null,
+		action_account_rate_limiter: opts.action_account_rate_limiter ?? null,
 		max_message_bytes: opts.max_message_bytes,
 		log
 	});
@@ -325,6 +325,8 @@ describe('register_action_ws', () => {
 		const stub = create_stub_upgrade();
 		const stub_db = create_stub_db();
 		register_action_ws({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
 			app: new Hono(),
@@ -766,6 +768,8 @@ describe('register_action_ws', () => {
 		// not the one `onOpen` registered
 		const stub = create_stub_upgrade();
 		const { transport } = register_action_ws({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
 			app: new Hono(),
@@ -790,6 +794,8 @@ describe('register_action_ws', () => {
 		const stub = create_stub_upgrade();
 		const stub_db = create_stub_db();
 		const result = register_action_ws({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
 			app: new Hono(),
@@ -876,6 +882,8 @@ describe('register_action_ws max_connections_per_account', () => {
 		const closed: Array<SocketCloseContext> = [];
 		const opened: Array<SocketOpenContext> = [];
 		const { transport } = register_action_ws({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
 			app: new Hono(),
@@ -929,6 +937,8 @@ describe('register_action_ws max_connections_per_account', () => {
 		};
 		const stub = create_stub_upgrade();
 		register_action_ws({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
 			app: new Hono(),
@@ -977,6 +987,8 @@ describe('register_action_ws max_connections_per_account', () => {
 	test('null disables the cap on the created transport', async () => {
 		const stub = create_stub_upgrade();
 		const { transport } = register_action_ws({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
 			app: new Hono(),
@@ -999,6 +1011,8 @@ describe('register_action_ws max_connections_per_account', () => {
 	test('defaults to DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT', async () => {
 		const stub = create_stub_upgrade();
 		const { transport } = register_action_ws({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
 			app: new Hono(),
@@ -1026,6 +1040,8 @@ describe('register_action_ws max_connections_per_account', () => {
 			assert.throws(
 				() =>
 					register_action_ws({
+						action_ip_rate_limiter: null,
+						action_account_rate_limiter: null,
 						path: '/ws',
 						connection_closer: null,
 						app: new Hono(),
@@ -1314,6 +1330,8 @@ describe('register_action_ws self-revocation', () => {
 	): Promise<{ timeline: Array<string>; request: () => Promise<void> }> => {
 		const stub = create_stub_upgrade();
 		const { transport } = register_action_ws({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
 			app: new Hono(),
@@ -1477,6 +1495,8 @@ describe('register_action_ws a server-closed socket dispatches nothing', () => {
 		const stub = create_stub_upgrade();
 		const runs: Array<string> = [];
 		register_action_ws({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: '/ws',
 			connection_closer: null,
 			app: new Hono(),
@@ -2007,6 +2027,8 @@ describe('register_action_ws rate limit', () => {
 		assert.throws(
 			() =>
 				register_action_ws({
+					action_ip_rate_limiter: null,
+					action_account_rate_limiter: null,
 					path: '/ws',
 					connection_closer: null,
 					app: new Hono(),

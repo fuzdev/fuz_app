@@ -31,6 +31,8 @@ const setup_test = default_in_process_setup({
 	roles: [ROLE_KEEPER, ROLE_ADMIN],
 	create_route_specs: (ctx: AppServerContext): Array<RouteSpec> =>
 		create_rpc_endpoint({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: RPC_PATH,
 			actions: create_standard_rpc_actions(ctx.deps),
 			log: ctx.deps.log

@@ -30,11 +30,12 @@ import {
 	type AppSurfaceSpec,
 	type RpcEndpointSpec
 } from '../http/surface.ts';
-import type { WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
+import { resolve_ws_endpoints, type WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
 import type { EventSpec, SseNotification } from '../realtime/sse.ts';
 import { AUDIT_LOG_SSE_MAX_PER_SCOPE, type AuditLogSse } from '../realtime/sse_auth_guard.ts';
 import { SubscriberRegistry } from '../realtime/subscriber_registry.ts';
 import { BaseServerEnv } from '../server/env.ts';
+import { AUTH_MIDDLEWARE_PATH, assert_endpoint_in_auth_scope } from '../auth/middleware.ts';
 
 /**
  * Create a Proxy that throws descriptive errors on any property access or method call.
@@ -198,12 +199,12 @@ export const create_stub_api_middleware = (options?: {
 	include_daemon_token?: boolean;
 }): Array<MiddlewareSpec> => {
 	const specs: Array<MiddlewareSpec> = [
-		{ name: 'origin', path: '/api/*', handler: stub_mw, errors: { 403: ApiError } },
-		{ name: 'session', path: '/api/*', handler: stub_mw },
-		{ name: 'request_context', path: '/api/*', handler: stub_mw },
+		{ name: 'origin', path: AUTH_MIDDLEWARE_PATH, handler: stub_mw, errors: { 403: ApiError } },
+		{ name: 'session', path: AUTH_MIDDLEWARE_PATH, handler: stub_mw },
+		{ name: 'request_context', path: AUTH_MIDDLEWARE_PATH, handler: stub_mw },
 		{
 			name: 'bearer_auth',
-			path: '/api/*',
+			path: AUTH_MIDDLEWARE_PATH,
 			handler: stub_mw,
 			errors: { 401: ApiError, 403: ApiError, 429: RateLimitError }
 		}
@@ -211,7 +212,7 @@ export const create_stub_api_middleware = (options?: {
 	if (options?.include_daemon_token) {
 		specs.push({
 			name: 'daemon_token',
-			path: '/api/*',
+			path: AUTH_MIDDLEWARE_PATH,
 			handler: stub_mw,
 			errors: { 401: ApiError, 500: ApiError, 503: ApiError }
 		});
@@ -279,11 +280,18 @@ export interface CreateTestAppSurfaceSpecOptions {
 	 * to both entry points so the attack surface tests see the same WS
 	 * endpoints production auto-mounts. The factory runs once against
 	 * the stub `AppServerContext` this helper already builds. No
-	 * `upgradeWebSocket` needed — this helper produces an `AppSurfaceSpec`
-	 * only, never mounts.
+	 * `create_upgrade_websocket` needed — this helper produces an
+	 * `AppSurfaceSpec` only, never mounts.
 	 */
 	ws_endpoints?:
 		ReadonlyArray<WsEndpointSpec> | ((ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>);
+	/**
+	 * The server's origin allowlist — `AppServerOptions.allowed_origins`.
+	 * Read only as the default for a `ws_endpoints` spec that declares no
+	 * `allowed_origins`, as `create_app_server` does; required when any spec
+	 * omits its own, since surface generation throws on an unresolved one.
+	 */
+	allowed_origins?: ReadonlyArray<RegExp>;
 	/** Transform middleware array (e.g., zap's `extend_middleware_for_zap_binary`). */
 	transform_middleware?: (specs: Array<MiddlewareSpec>) => Array<MiddlewareSpec>;
 	/**
@@ -309,12 +317,15 @@ export interface CreateTestAppSurfaceSpecOptions {
  * file.
  *
  * Mirrors `create_app_server`'s route assembly: consumer routes +
- * factory-managed bootstrap routes + surface generation. If
+ * factory-managed bootstrap routes + surface generation — including its
+ * refusal of an `rpc_endpoints` or `ws_endpoints` path outside the auth
+ * middleware's scope (`assert_endpoint_in_auth_scope`). If
  * `create_app_server` changes how it wires routes, update this helper
  * to stay in sync (single source of truth for all consumers).
  *
  * @param options - surface spec options
  * @returns the surface spec for the standard suites
+ * @throws Error when an endpoint path is outside `AUTH_MIDDLEWARE_PATH`
  */
 export const create_test_app_surface_spec = (
 	options: CreateTestAppSurfaceSpecOptions
@@ -329,17 +340,28 @@ export const create_test_app_surface_spec = (
 			? options.rpc_endpoints(ctx)
 			: options.rpc_endpoints;
 	const rpc_route_specs: Array<RouteSpec> =
-		resolved_rpc_endpoints?.flatMap((endpoint) =>
-			create_rpc_endpoint({
+		resolved_rpc_endpoints?.flatMap((endpoint) => {
+			assert_endpoint_in_auth_scope('rpc_endpoints', endpoint.path);
+			return create_rpc_endpoint({
 				path: endpoint.path,
 				actions: endpoint.actions,
-				log: ctx.deps.log
-			})
-		) ?? [];
+				log: ctx.deps.log,
+				action_ip_rate_limiter: ctx.action_ip_rate_limiter,
+				action_account_rate_limiter: ctx.action_account_rate_limiter
+			});
+		}) ?? [];
 	// Resolve ws endpoints (mirrors create_app_server). Surface-only —
-	// no `register_ws_endpoint` call here, so no `upgradeWebSocket` needed.
-	const resolved_ws_endpoints =
+	// no `register_ws_endpoint` call here, so no `create_upgrade_websocket` needed.
+	const declared_ws_endpoints =
 		typeof options.ws_endpoints === 'function' ? options.ws_endpoints(ctx) : options.ws_endpoints;
+	// without the server's list, an origin-less spec reaches surface
+	// generation unresolved and throws there
+	const resolved_ws_endpoints = options.allowed_origins
+		? resolve_ws_endpoints(declared_ws_endpoints, options.allowed_origins)
+		: declared_ws_endpoints;
+	for (const endpoint of resolved_ws_endpoints ?? []) {
+		assert_endpoint_in_auth_scope('ws_endpoints', endpoint.path);
+	}
 	// Bootstrap routes mirror `create_app_server`: mounted for `surface_only`
 	// and `live` modes; omitted for `disabled` / undefined. Surface generation
 	// uses an `available: false` placeholder regardless of mode — the handler

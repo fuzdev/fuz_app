@@ -13,6 +13,7 @@ import { z } from 'zod';
 import type { RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
 import type { RpcAction } from '$lib/actions/action_rpc.ts';
 import { create_test_app_surface_spec } from '$lib/testing/stubs.ts';
+import { AUTH_MIDDLEWARE_PATH } from '$lib/auth/middleware.ts';
 import { create_session_config } from '$lib/auth/session_cookie.ts';
 import { ActingActor } from '$lib/http/auth_shape.ts';
 import { describe_rpc_attack_surface_tests } from '$lib/testing/rpc_attack_surface.ts';
@@ -322,5 +323,62 @@ describe('create_test_app_surface_spec — ws_endpoints', () => {
 		});
 		assert.strictEqual(spec.surface.ws_endpoints.length, 0);
 		assert.strictEqual(spec.ws_endpoints.length, 0);
+	});
+});
+
+// --- auth-scope check ---
+//
+// `create_test_app_surface_spec` runs the same `assert_endpoint_in_auth_scope`
+// `create_app_server` does, so a surface snapshot never records an endpoint
+// the real server refuses to start with.
+
+describe('create_test_app_surface_spec — auth scope', () => {
+	test('throws for an rpc_endpoints path outside AUTH_MIDDLEWARE_PATH', () => {
+		assert.throws(
+			() =>
+				create_test_app_surface_spec({
+					session_options,
+					create_route_specs: () => [],
+					rpc_endpoints: [{ path: '/rpc', actions: fixture_actions }]
+				}),
+			`rpc_endpoints path /rpc is outside the auth middleware's scope (${AUTH_MIDDLEWARE_PATH})`
+		);
+	});
+
+	test('throws for a ws_endpoints path outside AUTH_MIDDLEWARE_PATH', () => {
+		for (const path of ['/ws', '/apiws']) {
+			assert.throws(
+				() =>
+					create_test_app_surface_spec({
+						session_options,
+						create_route_specs: () => [],
+						ws_endpoints: [{ path, allowed_origins: [], actions: fixture_actions }]
+					}),
+				`ws_endpoints path ${path} is outside the auth middleware's scope (${AUTH_MIDDLEWARE_PATH})`
+			);
+		}
+	});
+
+	test('accepts the bare scope prefix /api, as Hono matches it', () => {
+		const spec = create_test_app_surface_spec({
+			session_options,
+			create_route_specs: () => [],
+			rpc_endpoints: [{ path: '/api', actions: fixture_actions }],
+			ws_endpoints: [{ path: '/api', allowed_origins: [], actions: fixture_actions }]
+		});
+		assert.strictEqual(spec.surface.rpc_endpoints[0]!.path, '/api');
+		assert.strictEqual(spec.surface.ws_endpoints[0]!.path, '/api');
+	});
+
+	test('an origin-less ws spec without allowed_origins names the fix', () => {
+		assert.throws(
+			() =>
+				create_test_app_surface_spec({
+					session_options,
+					create_route_specs: () => [],
+					ws_endpoints: [{ path: '/api/ws', actions: fixture_actions }]
+				}),
+			"create_test_app_surface_spec's allowed_origins option"
+		);
 	});
 });

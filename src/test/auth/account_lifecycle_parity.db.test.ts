@@ -36,6 +36,8 @@ const setup_test = default_in_process_setup({
 	roles: [ROLE_KEEPER, ROLE_ADMIN],
 	create_route_specs: (ctx: AppServerContext): Array<RouteSpec> =>
 		create_rpc_endpoint({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: RPC_PATH,
 			// `_testing_drain_effects` so the shared suite body can call the
 			// barrier in-process too (satisfied-by-construction: `create_test_app`

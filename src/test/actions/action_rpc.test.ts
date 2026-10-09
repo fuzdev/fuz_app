@@ -130,8 +130,8 @@ const create_test_app = (
 		path: '/api/rpc',
 		actions,
 		log,
-		action_ip_rate_limiter,
-		action_account_rate_limiter
+		action_ip_rate_limiter: action_ip_rate_limiter ?? null,
+		action_account_rate_limiter: action_account_rate_limiter ?? null
 	});
 	apply_route_specs(app, route_specs, fuz_auth_guard_resolver, log, db);
 	return app;
@@ -140,6 +140,8 @@ const create_test_app = (
 describe('create_rpc_endpoint', () => {
 	test('returns two route specs (POST + GET) on same path', () => {
 		const specs = create_rpc_endpoint({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: '/api/rpc',
 			actions: [{ spec: create_post_spec(), handler: () => ({}) }],
 			log
@@ -153,6 +155,8 @@ describe('create_rpc_endpoint', () => {
 
 	test('both specs have auth none and transaction false', () => {
 		const specs = create_rpc_endpoint({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: '/api/rpc',
 			actions: [{ spec: create_post_spec(), handler: () => ({}) }],
 			log
@@ -167,6 +171,8 @@ describe('create_rpc_endpoint', () => {
 		assert.throws(
 			() =>
 				create_rpc_endpoint({
+					action_ip_rate_limiter: null,
+					action_account_rate_limiter: null,
 					path: '/api/rpc',
 					actions: [
 						{ spec: create_post_spec(), handler: () => ({}) },
@@ -193,6 +199,8 @@ describe('create_rpc_endpoint', () => {
 		assert.throws(
 			() =>
 				create_rpc_endpoint({
+					action_ip_rate_limiter: null,
+					action_account_rate_limiter: null,
 					path: '/api/rpc',
 					actions: [{ spec: void_output_spec, handler: () => undefined }],
 					log
@@ -216,6 +224,8 @@ describe('create_rpc_endpoint', () => {
 		assert.throws(
 			() =>
 				create_rpc_endpoint({
+					action_ip_rate_limiter: null,
+					action_account_rate_limiter: null,
 					path: '/api/rpc',
 					actions: [{ spec: legacy_null_spec, handler: () => ({ ok: true as const }) }],
 					log
@@ -226,6 +236,8 @@ describe('create_rpc_endpoint', () => {
 
 	test('description includes method count', () => {
 		const specs = create_rpc_endpoint({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: '/api/rpc',
 			actions: [
 				{ spec: create_post_spec(), handler: () => ({}) },
@@ -1143,6 +1155,8 @@ describe('GET dispatcher', () => {
 describe('RPC endpoint in app surface', () => {
 	test('endpoint route specs appear in surface.routes', () => {
 		const route_specs = create_rpc_endpoint({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: '/api/rpc',
 			actions: [
 				{ spec: create_post_spec(), handler: () => ({}) },
@@ -1166,7 +1180,13 @@ describe('RPC endpoint in app surface', () => {
 			{ spec: create_post_spec(), handler: () => ({}) },
 			{ spec: create_get_spec(), handler: () => ({}) }
 		];
-		const route_specs = create_rpc_endpoint({ path: '/api/rpc', actions, log });
+		const route_specs = create_rpc_endpoint({
+			path: '/api/rpc',
+			actions,
+			log,
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null
+		});
 
 		const surface = generate_app_surface({
 			middleware_specs: [],
@@ -1311,6 +1331,8 @@ describe('rate limit', () => {
 		assert.throws(
 			() =>
 				create_rpc_endpoint({
+					action_ip_rate_limiter: null,
+					action_account_rate_limiter: null,
 					path: '/api/rpc',
 					actions: [{ spec: bad_spec, handler: () => ({ ok: true as const }) }],
 					log
@@ -1328,6 +1350,8 @@ describe('rate limit', () => {
 		assert.throws(
 			() =>
 				create_rpc_endpoint({
+					action_ip_rate_limiter: null,
+					action_account_rate_limiter: null,
 					path: '/api/rpc',
 					actions: [{ spec: bad_spec, handler: () => ({ ok: true as const }) }],
 					log
@@ -1351,6 +1375,8 @@ describe('rate limit', () => {
 		assert.throws(
 			() =>
 				create_rpc_endpoint({
+					action_ip_rate_limiter: null,
+					action_account_rate_limiter: null,
 					path: '/api/rpc',
 					actions: [{ spec: bad_spec, handler: () => ({ ok: true as const }) }],
 					log
@@ -1367,6 +1393,8 @@ describe('rate limit', () => {
 		};
 		assert.doesNotThrow(() =>
 			create_rpc_endpoint({
+				action_ip_rate_limiter: null,
+				action_account_rate_limiter: null,
 				path: '/api/rpc',
 				actions: [{ spec: ok_spec, handler: () => ({ ok: true as const }) }],
 				log
@@ -1589,7 +1617,13 @@ describe('rate limit', () => {
 
 	test('surface exposes rate_limit_key on RPC method', () => {
 		const actions = [{ spec: account_keyed_spec(), handler: () => ({ ok: true as const }) }];
-		const route_specs = create_rpc_endpoint({ path: '/api/rpc', actions, log });
+		const route_specs = create_rpc_endpoint({
+			path: '/api/rpc',
+			actions,
+			log,
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null
+		});
 		const surface = generate_app_surface({
 			middleware_specs: [],
 			route_specs,

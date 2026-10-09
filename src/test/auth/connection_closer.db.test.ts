@@ -154,6 +154,8 @@ const make_create_route_specs =
 				})
 			),
 			...create_rpc_endpoint({
+				action_ip_rate_limiter: null,
+				action_account_rate_limiter: null,
 				path: RPC_PATH,
 				actions: [
 					...create_account_actions(ctx.deps, { max_tokens: options.max_tokens }),
@@ -976,6 +978,8 @@ describe_db('connection_closer wiring', (get_db) => {
 							})
 						),
 						...create_rpc_endpoint({
+							action_ip_rate_limiter: null,
+							action_account_rate_limiter: null,
 							path: RPC_PATH,
 							actions: create_standard_rpc_actions(ctx.deps),
 							log: ctx.deps.log
@@ -1615,6 +1619,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				// the account actions over a real dispatcher, on the keeper's session
 				const stub = create_stub_upgrade();
 				register_action_ws({
+					action_ip_rate_limiter: null,
+					action_account_rate_limiter: null,
 					path: '/ws',
 					app: new Hono(),
 					upgradeWebSocket: stub.upgradeWebSocket,
@@ -1705,6 +1711,8 @@ describe_db('connection_closer wiring', (get_db) => {
 				create_route_specs: (ctx) => {
 					ctx.deps.connection_closer.add(closer);
 					return create_rpc_endpoint({
+						action_ip_rate_limiter: null,
+						action_account_rate_limiter: null,
 						path: RPC_PATH,
 						actions: [
 							rpc_action(revoke_unserializable_spec, async (_input, action_ctx) => {

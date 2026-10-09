@@ -121,6 +121,8 @@ const create_ws_endpoint = (
 	const { deps } = h.test_app.backend;
 	const stub = create_stub_upgrade();
 	const { transport } = register_action_ws({
+		action_ip_rate_limiter: null,
+		action_account_rate_limiter: null,
 		path: '/ws',
 		app: new Hono(),
 		upgradeWebSocket: stub.upgradeWebSocket,

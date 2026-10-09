@@ -201,9 +201,13 @@ nothing). fuz_app mounts no bridged routes itself; this is consumer-facing.
 
 ## Single JSON-RPC 2.0 endpoint (`actions/action_rpc.ts`)
 
-`create_rpc_endpoint({path, actions, log}): RouteSpec[]` produces **two**
-route specs on the same path (GET + POST) that share one internal
-dispatcher. Per-action auth lives inside the dispatcher; the outer routes
+`create_rpc_endpoint({path, actions, log, action_ip_rate_limiter, action_account_rate_limiter}): RouteSpec[]`
+produces **two** route specs on the same path (GET + POST) that share one
+internal dispatcher. The two limiters are required `RateLimiter | null` with
+no default — `null` is the explicit off switch — and the same holds on
+`register_action_ws` / `register_ws_endpoint`, so a hand mount can't run
+unthrottled by omission. `create_app_server` passes its own (live defaults
+unless configured) to every endpoint it mounts. Per-action auth lives inside the dispatcher; the outer routes
 use `auth: {account: 'none', actor: 'none'}` and `transaction: false`.
 
 The HTTP RPC dispatcher is a thin shim around `perform_action`
@@ -620,12 +624,30 @@ runs after server context is assembled so action lists can depend on
 `ctx.deps` / `ctx.action_*_rate_limiter`. Each entry is auto-mounted via
 `register_ws_endpoint` against the assembled Hono app.
 
-`upgradeWebSocket` (the Hono adapter helper) is supplied once at the top
-level — `create_app_server` throws when `ws_endpoints` resolves non-empty
-but `upgradeWebSocket` is missing. A factory returning `[]` does NOT trip
-the check, so feature-flag gated WS surfaces stay safe.
+`create_upgrade_websocket: (app: Hono) => UpgradeWebSocket` returns the
+Hono adapter helper. It is a factory because Node's `createNodeWebSocket({app})`
+needs the app `create_app_server` builds: it is called once, with that app
+(the same instance as `AppServer.app`), after the app exists and before the
+mount — and only when `ws_endpoints` resolves non-empty. Deno and Bun pass
+`() => upgradeWebSocket`. `create_app_server` throws when `ws_endpoints`
+resolves non-empty but the factory is missing; a factory returning `[]` does
+NOT trip the check, so feature-flag gated WS surfaces stay safe.
 
-`WsEndpointSpec` fields: `path`, `allowed_origins`, `actions`,
+What every auto-mount gets, so no hand mount has to remember it: the
+`action_ip_rate_limiter` / `action_account_rate_limiter` instances the RPC
+endpoints charge (one budget per action across transports), the server's
+`allowed_origins` when the spec sets none (`resolve_ws_endpoints`, read by
+both the mount and the surface), registration ahead of
+`post_route_middleware` and `static_serving`, the surface entry, and the
+guards below. A `ws_endpoints` or `rpc_endpoints` path outside the auth
+middleware's scope (`AUTH_MIDDLEWARE_PATH`, `'/api/*'`, from
+`auth/middleware.ts` — matched with `middleware_applies`, so `/api` itself is
+inside) throws at assembly (`assert_endpoint_in_auth_scope`, which
+`create_test_app_surface_spec` also runs): there no session or bearer is
+parsed and every caller would be unauthenticated.
+
+`WsEndpointSpec` fields: `path`, `allowed_origins?` (default: the server's),
+`actions`,
 `required_roles?`, `transport?`, `max_connections_per_account?`, `heartbeat?`,
 `artificial_delay?`, `max_message_bytes?`,
 `on_socket_open?`, `on_socket_close?`, `auth_guard?` (default `true`,
@@ -668,8 +690,9 @@ Composes the standard upgrade stack:
 4. Optional `require_role(required_roles)` — any-of disjunction (coarse upgrade-time gate; per-action `auth` in each spec still applies at dispatch time)
 5. Delegates to `register_action_ws`
 
-Extends `RegisterActionWsOptions` with `allowed_origins` and optional
-`required_roles`, and inherits its required `connection_closer`. Returns
+Extends `RegisterActionWsOptions` with `allowed_origins` (required here —
+there is no server list to default from) and optional `required_roles`, and
+inherits its required `connection_closer` and action limiters. Returns
 `{transport}`. Most consumers reach for
 `ws_endpoints` above; this is the entry test harnesses use when they need
 the upgrade stack without `create_app_server`'s full assembly.

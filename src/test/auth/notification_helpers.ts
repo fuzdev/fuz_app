@@ -59,6 +59,8 @@ export const create_notification_route_specs_factory =
 	(sender: NotificationSender, rpc_path: string = NOTIFICATION_TEST_RPC_PATH) =>
 	(ctx: AppServerContext): Array<RouteSpec> => [
 		...create_rpc_endpoint({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: rpc_path,
 			actions: create_role_grant_offer_actions({ ...ctx.deps, notification_sender: sender }),
 			log: ctx.deps.log

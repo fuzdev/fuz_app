@@ -212,6 +212,8 @@ const create_endpoint = (
 	const opened: Array<SocketOpenContext> = [];
 	const closed: Array<SocketCloseContext> = [];
 	const { transport } = register_action_ws({
+		action_ip_rate_limiter: null,
+		action_account_rate_limiter: null,
 		path: '/ws',
 		connection_closer: null,
 		app: new Hono(),

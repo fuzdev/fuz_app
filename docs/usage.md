@@ -160,6 +160,7 @@ import { create_app_server } from '@fuzdev/fuz_app/server/app_server.ts';
 import { validate_server_env } from '@fuzdev/fuz_app/server/env.ts';
 import { create_audit_emitter } from '@fuzdev/fuz_app/auth/audit_emitter.ts';
 import { create_deno_runtime } from '@fuzdev/fuz_app/runtime/deno.ts';
+import { BackendWebsocketTransport } from '@fuzdev/fuz_app/actions/transports_ws_backend.ts';
 
 const runtime = create_deno_runtime([]);
 
@@ -202,6 +203,12 @@ const backend = await create_app_backend({
 });
 
 // 3. Assemble Hono app
+//
+// One WebSocket transport, created up front so the RPC actions can send
+// role-grant-offer notifications through it; the WS endpoint registers its
+// connections on it via `WsEndpointSpec.transport` (see the WebSocket example
+// below). Omit both when the app has no WebSocket endpoint.
+const ws_transport = new BackendWebsocketTransport();
 const { app, surface_spec, bootstrap_status, close } = await create_app_server({
 	backend,
 	session_options: create_session_config('my_session'),
@@ -237,16 +244,14 @@ const { app, surface_spec, bootstrap_status, close } = await create_app_server({
 	// live dispatch — create_app_server mounts each entry via
 	// create_rpc_endpoint internally. Accepts an array or a factory
 	// (ctx) => Array<RpcEndpointSpec>. Use the factory form when the action
-	// list depends on ctx.deps / ctx.app_settings:
+	// list depends on ctx.deps:
 	rpc_endpoints: (ctx) => [
 		{
 			path: '/api/rpc',
 			actions: [
 				...my_app_rpc_actions(ctx.deps),
-				...create_standard_rpc_actions(ctx.deps, {
-					app_settings: ctx.app_settings,
-					notification_sender: ws_transport // optional; for role-grant-offer WS fan-out
-				})
+				// `notification_sender` is an optional dep, for role-grant-offer WS fan-out
+				...create_standard_rpc_actions({ ...ctx.deps, notification_sender: ws_transport })
 			]
 		}
 	],
@@ -265,7 +270,9 @@ To expose the same surface over WebSocket as well — so reactive frontends
 can call `account_*` / `admin_*` over the live connection and pick up
 revocation events without a polling delay — spread `protocol_actions`
 plus `create_standard_rpc_actions(ctx.deps, …)` into `create_app_server`'s
-`ws_endpoints` factory and supply `upgradeWebSocket` at the top level:
+`ws_endpoints` factory and supply `create_upgrade_websocket`, which returns
+the runtime adapter's `upgradeWebSocket` helper. On Deno and Bun the helper
+is module-level, so the factory ignores the app it's handed:
 
 ```typescript
 import { upgradeWebSocket } from '@hono/deno'; // or '@hono/bun', whose `websocket` also goes to `Bun.serve`
@@ -273,16 +280,14 @@ import { protocol_actions } from '@fuzdev/fuz_app/actions/protocol.ts';
 
 const { app, ws_endpoints } = await create_app_server({
 	// …other options…
-	upgradeWebSocket,
+	create_upgrade_websocket: () => upgradeWebSocket,
 	ws_endpoints: (ctx) => [
 		{
 			path: '/api/ws',
-			allowed_origins,
+			transport: ws_transport, // the one the RPC actions' notification_sender sends through
 			actions: [
 				...protocol_actions,
-				...create_standard_rpc_actions(ctx.deps, {
-					app_settings: ctx.app_settings
-				}),
+				...create_standard_rpc_actions({ ...ctx.deps, notification_sender: ws_transport }),
 				...my_app_ws_actions(ctx.deps)
 			]
 		}
@@ -293,57 +298,37 @@ const { app, ws_endpoints } = await create_app_server({
 ws_endpoints['/api/ws'].send_to_account(account_id, notification);
 ```
 
-On Node, `@hono/node-ws` has no module-level helper: `createNodeWebSocket({app})`
-needs the app that `create_app_server` builds, so `upgradeWebSocket` can't be
-passed in. Leave out `upgradeWebSocket` and `ws_endpoints`, mount the endpoint
-on the returned app with `register_ws_endpoint`, and attach to the server after
-`serve()`:
+On Node, `@hono/node-ws` has no module-level helper — `createNodeWebSocket({app})`
+needs the app, which is why the option is a factory: `create_app_server` calls
+it once with the app it builds, before mounting. Keep the adapter so it can
+attach to the server after `serve()`:
 
 ```typescript
 import { serve } from '@hono/node-server';
-import { createNodeWebSocket } from '@hono/node-ws';
-import { register_ws_endpoint } from '@fuzdev/fuz_app/actions/register_ws_endpoint.ts';
-import { create_ws_auth_guard } from '@fuzdev/fuz_app/actions/transports_ws_auth_guard.ts';
-import {
-	create_rate_limiter,
-	default_action_account_rate_limit,
-	default_action_ip_rate_limit
-} from '@fuzdev/fuz_app/rate_limiter.ts';
+import { createNodeWebSocket, type NodeWebSocket } from '@hono/node-ws';
 
-// shared so an action's `rate_limit` draws one bucket across RPC and WS -
-// a hand mount gets no limiters from `create_app_server` and would run unthrottled
-const action_ip_rate_limiter = create_rate_limiter(default_action_ip_rate_limit);
-const action_account_rate_limiter = create_rate_limiter(default_action_account_rate_limit);
-
+let node_ws: NodeWebSocket | undefined;
 const { app } = await create_app_server({
-	backend,
-	// …other options, no ws ones…
-	action_ip_rate_limiter,
-	action_account_rate_limiter
+	// …other options…
+	create_upgrade_websocket: (app) => (node_ws = createNodeWebSocket({ app })).upgradeWebSocket,
+	ws_endpoints: (ctx) => [
+		{ path: '/api/ws', actions: [...protocol_actions, ...my_app_ws_actions(ctx.deps)] }
+	]
 });
-const { upgradeWebSocket, injectWebSocket } = createNodeWebSocket({ app });
-const { transport } = register_ws_endpoint({
-	app,
-	path: '/api/ws',
-	allowed_origins,
-	db: backend.deps.db,
-	upgradeWebSocket,
-	actions: [...protocol_actions, ...my_app_ws_actions(backend.deps)],
-	connection_closer: backend.deps.connection_closer,
-	action_ip_rate_limiter,
-	action_account_rate_limiter
-});
-backend.deps.audit.add_listener(create_ws_auth_guard(transport, log));
-injectWebSocket(serve({ fetch: app.fetch, port }));
+// set whenever `ws_endpoints` resolved non-empty
+node_ws?.injectWebSocket(serve({ fetch: app.fetch, port }));
 ```
-
-A hand-mounted endpoint registers after any `post_route_middleware` and
-`static_serving` middleware (the default SPA fallback skips `/api/` paths) and
-is absent from `surface_spec`.
 
 `ws_endpoints` mirrors `rpc_endpoints`: array or factory form, single
 source of truth for surface + dispatch, auto-mounted onto the assembled
-Hono app. Every mounted transport is added to `deps.connection_closer`, so
+Hono app. Each endpoint charges the same `action_ip_rate_limiter` /
+`action_account_rate_limiter` instances as the RPC endpoints — one budget per
+action across both transports, live defaults unless configured — checks the
+server's `allowed_origins` unless the spec sets a narrower list, and
+registers ahead of `post_route_middleware` and `static_serving`. Its path,
+like an RPC endpoint's, must sit inside `AUTH_MIDDLEWARE_PATH` (`/api/*`, which
+also matches `/api` itself — where the auth middleware runs) — assembly throws
+otherwise, and so does `create_test_app_surface_spec`. Every mounted transport is added to `deps.connection_closer`, so
 a revocation handler closes its sockets once the revocation commits — a
 session or token revoke, a password change, a logout, an account delete, a
 cap eviction — without consumer wiring. Per-endpoint `auth_guard` defaults to
@@ -792,7 +777,14 @@ const actions: Array<RpcAction> = [
 
 // Compose with other route specs
 const route_specs = [
-	...create_rpc_endpoint({ path: '/api/rpc', actions, log }),
+	...create_rpc_endpoint({
+		path: '/api/rpc',
+		actions,
+		log,
+		// required: the per-action `rate_limit` budgets, `null` to turn one off
+		action_ip_rate_limiter,
+		action_account_rate_limiter
+	}),
 	...other_hand_written_specs
 ];
 ```
@@ -846,7 +838,7 @@ The attack surface suite runs 3 test groups: per-method auth enforcement (JSON-R
 
 ### WebSocket Endpoint
 
-`register_ws_endpoint` mounts a JSON-RPC 2.0 WebSocket endpoint with the standard upgrade stack (origin check + auth + optional role) and per-message dispatch. The canonical consumer shape:
+`register_ws_endpoint` mounts a JSON-RPC 2.0 WebSocket endpoint with the standard upgrade stack (origin check + auth + optional role) and per-message dispatch. It is the primitive `create_app_server`'s `ws_endpoints` mounts each endpoint with — an app built by `create_app_server` declares its endpoints there instead (§Server Assembly above), which also supplies the limiters, the origin default, the surface entry, and the audit guard. Called directly:
 
 ```typescript
 import { register_ws_endpoint } from '@fuzdev/fuz_app/actions/register_ws_endpoint.ts';
@@ -857,11 +849,14 @@ const { transport } = register_ws_endpoint({
 	path: '/api/ws',
 	app,
 	upgradeWebSocket, // from the runtime adapter (`@hono/deno`, or `createNodeWebSocket({app})` on Node)
-	allowed_origins, // from parse_allowed_origins(env.FUZ_ALLOWED_ORIGINS)
+	allowed_origins, // required here — from parse_allowed_origins(env.FUZ_ALLOWED_ORIGINS)
 	required_roles: [ROLE_ADMIN], // optional — omit for any authenticated account
 	actions: [...protocol_actions, ...my_actions],
 	db: backend.deps.db, // pool-level — perform_action wraps in db.transaction for side_effects: true
 	connection_closer: backend.deps.connection_closer, // required — revocations close this endpoint's sockets
+	// required — share the RPC endpoint's instances; `null` turns one off
+	action_ip_rate_limiter,
+	action_account_rate_limiter,
 	log
 });
 ```

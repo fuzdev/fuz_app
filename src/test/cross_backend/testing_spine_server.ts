@@ -312,7 +312,10 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 			// through the backend's closer, alongside the audit streams
 			// `create_app_server` added to it
 			connection_closer: app_backend.deps.connection_closer,
-			log
+			log,
+			// off, like the RPC endpoints' (`create_app_server` above)
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null
 		});
 		app_backend.deps.audit.add_listener(create_ws_auth_guard(ws_transport, log));
 	};

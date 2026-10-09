@@ -64,13 +64,13 @@ import {
 } from '../auth/bootstrap_routes.ts';
 import { create_surface_route_spec, type SurfaceRouteOptions } from '../http/common_routes.ts';
 import { flush_pending_effects, flush_post_commit_effects } from '../http/pending_effects.ts';
-import { create_auth_middleware_specs } from '../auth/middleware.ts';
+import { assert_endpoint_in_auth_scope, create_auth_middleware_specs } from '../auth/middleware.ts';
 import { fuz_auth_guard_resolver } from '../auth/auth_guard_resolver.ts';
 import { create_fuz_authorization_handler } from '../auth/request_context.ts';
 import { ERROR_PAYLOAD_TOO_LARGE } from '../http/error_schemas.ts';
 import { create_rpc_endpoint } from '../actions/action_rpc.ts';
 import { register_ws_endpoint } from '../actions/register_ws_endpoint.ts';
-import type { WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
+import { resolve_ws_endpoints, type WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
 import { create_ws_auth_guard } from '../actions/transports_ws_auth_guard.ts';
 import type { BackendWebsocketTransport } from '../actions/transports_ws_backend.ts';
 import { start_auth_cleanup, type AuthCleanupScheduleOptions } from '../auth/cleanup.ts';
@@ -200,8 +200,8 @@ export interface AppServerOptions {
 	 * Same limiter applies across transports — one budget per action.
 	 * Omit or `undefined` to use a default limiter (600 attempts per
 	 * 15 minutes — permissive). Pass `null` to explicitly disable.
-	 * Also available on `AppServerContext` for consumers wiring
-	 * `register_action_ws`.
+	 * Threaded into every endpoint mounted from `rpc_endpoints` and
+	 * `ws_endpoints`; also available on `AppServerContext`.
 	 */
 	action_ip_rate_limiter?: RateLimiter | null;
 	/**
@@ -210,8 +210,8 @@ export interface AppServerOptions {
 	 * `'both'`. Keyed on `request_context.actor.id` (post-auth).
 	 * Omit or `undefined` to use a default limiter (1200 attempts per
 	 * 15 minutes — permissive). Pass `null` to explicitly disable.
-	 * Also available on `AppServerContext` for consumers wiring
-	 * `register_action_ws`.
+	 * Threaded into every endpoint mounted from `rpc_endpoints` and
+	 * `ws_endpoints`; also available on `AppServerContext`.
 	 */
 	action_account_rate_limiter?: RateLimiter | null;
 	/**
@@ -238,7 +238,13 @@ export interface AppServerOptions {
 	 */
 	create_route_specs: (context: AppServerContext) => Array<RouteSpec>;
 
-	/** Optional: transform middleware specs before applying. */
+	/**
+	 * Optional: transform middleware specs before applying.
+	 *
+	 * The endpoint auth-scope check (`assert_endpoint_in_auth_scope`) reads
+	 * `AUTH_MIDDLEWARE_PATH`, not the transformed specs — a transform that
+	 * moves or drops the auth middleware is not followed by it.
+	 */
 	transform_middleware?: (specs: Array<MiddlewareSpec>) => Array<MiddlewareSpec>;
 
 	/**
@@ -295,26 +301,47 @@ export interface AppServerOptions {
 	 * `(ctx: AppServerContext) => Array<RpcEndpointSpec>` (evaluated after the
 	 * server context is assembled). Use the factory form when action lists
 	 * depend on `ctx.deps` — e.g. `create_standard_rpc_actions(ctx.deps)`.
+	 *
+	 * Each path must sit inside the auth middleware's scope
+	 * (`AUTH_MIDDLEWARE_PATH`, `'/api/*'`) — assembly throws otherwise, since
+	 * an endpoint outside it would see every caller as unauthenticated.
 	 */
 	rpc_endpoints?: Array<RpcEndpointSpec> | ((context: AppServerContext) => Array<RpcEndpointSpec>);
 
 	/**
-	 * Hono adapter's `upgradeWebSocket` helper. Required whenever
-	 * `ws_endpoints` resolves to a non-empty array — `create_app_server`
-	 * throws at assembly otherwise. Omit (along with `ws_endpoints`)
-	 * when the consumer doesn't mount any WS endpoints. The same
-	 * adapter helper services every `WsEndpointSpec` mounted from
-	 * `ws_endpoints` — one adapter per app.
+	 * Returns the Hono runtime adapter's `upgradeWebSocket` helper for the
+	 * assembled app. `create_app_server` calls it once, with the app it
+	 * builds (the same instance as `AppServer.app`), after creating the app
+	 * and before mounting `ws_endpoints` — and only when `ws_endpoints`
+	 * resolves non-empty, so it is never called for a server with no
+	 * WebSocket endpoints. Required in that case: assembly throws without it.
+	 * One helper services every mounted endpoint.
 	 *
-	 * For Deno or Bun, `import {upgradeWebSocket} from '@hono/deno'` (or
-	 * `'@hono/bun'`). Node's `@hono/node-ws` has no module-level helper -
-	 * `createNodeWebSocket({app})` needs the app this function builds - so
-	 * on Node omit this and `ws_endpoints`, then mount on the returned
-	 * `app` with `register_ws_endpoint` and call `injectWebSocket(server)`
-	 * after `serve()`. Test harnesses use `create_stub_upgrade` from
-	 * `$lib/testing/ws_round_trip.ts`.
+	 * A factory rather than the helper itself because Node's adapter needs
+	 * the app: `@hono/node-ws` has no module-level helper, only
+	 * `createNodeWebSocket({app})`, and `create_app_server` is what builds
+	 * the app. Deno and Bun ignore the argument:
+	 *
+	 * ```ts
+	 * import {upgradeWebSocket} from '@hono/deno'; // or '@hono/bun'
+	 * create_upgrade_websocket: () => upgradeWebSocket,
+	 * ```
+	 *
+	 * Node keeps the adapter so it can attach to the server after `serve()`:
+	 *
+	 * ```ts
+	 * let node_ws: NodeWebSocket | undefined;
+	 * const server = await create_app_server({
+	 *   ...,
+	 *   create_upgrade_websocket: (app) => (node_ws = createNodeWebSocket({app})).upgradeWebSocket,
+	 * });
+	 * node_ws?.injectWebSocket(serve({fetch: server.app.fetch, port}));
+	 * ```
+	 *
+	 * Test harnesses pass `() => stub.upgradeWebSocket` with
+	 * `create_stub_upgrade` from `testing/ws_round_trip.ts`.
 	 */
-	upgradeWebSocket?: UpgradeWebSocket;
+	create_upgrade_websocket?: (app: Hono) => UpgradeWebSocket;
 
 	/**
 	 * WebSocket endpoint specs — single source of truth for both surface
@@ -325,13 +352,21 @@ export interface AppServerOptions {
 	 * Accepts either an array (evaluated eagerly) or a factory
 	 * `(ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>`
 	 * (evaluated after the server context is assembled). Use the factory
-	 * form when action lists depend on `ctx.deps` /
-	 * `ctx.action_*_rate_limiter` — e.g. when spreading
+	 * form when action lists depend on `ctx.deps` — e.g. when spreading
 	 * `create_standard_rpc_actions(ctx.deps, ...)` over WS.
 	 *
-	 * When non-empty, `upgradeWebSocket` must be supplied (throws
+	 * When non-empty, `create_upgrade_websocket` must be supplied (throws
 	 * otherwise). A factory returning `[]` does NOT trip the check —
 	 * feature-flag gated WS surfaces stay safe.
+	 *
+	 * Every mount gets what the HTTP surface gets: the auth middleware (a
+	 * path outside `AUTH_MIDDLEWARE_PATH` throws at assembly, like
+	 * `rpc_endpoints`), the server's `allowed_origins` unless the spec
+	 * narrows them, and the same `action_ip_rate_limiter` /
+	 * `action_account_rate_limiter` instances the RPC endpoints charge — one
+	 * budget per action across both transports. The upgrade routes register
+	 * after the route specs and before `post_route_middleware` and
+	 * `static_serving`, so neither runs ahead of an upgrade.
 	 *
 	 * Duplicate `path` values across two `WsEndpointSpec`s throw at
 	 * mount time (Hono would silently shadow them otherwise).
@@ -616,6 +651,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			: options.rpc_endpoints;
 	if (resolved_rpc_endpoints) {
 		for (const endpoint of resolved_rpc_endpoints) {
+			assert_endpoint_in_auth_scope('rpc_endpoints', endpoint.path);
 			factory_routes.push(
 				...create_rpc_endpoint({
 					path: endpoint.path,
@@ -634,10 +670,26 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	// live Hono `app` (origin / auth / role / authorization middleware +
 	// the `app.get(path, ...)` upgrade route), and `app` does not exist
 	// until the assembly phase below.
-	const resolved_ws_endpoints: ReadonlyArray<WsEndpointSpec> | undefined =
+	// A spec without `allowed_origins` takes the server's list — resolved here,
+	// once, so the mount and the surface read the same patterns.
+	const resolved_ws_endpoints = resolve_ws_endpoints(
 		typeof options.ws_endpoints === 'function'
 			? options.ws_endpoints(context)
-			: options.ws_endpoints;
+			: options.ws_endpoints,
+		options.allowed_origins
+	);
+	const create_upgrade_websocket = options.create_upgrade_websocket;
+	if (resolved_ws_endpoints?.length) {
+		if (create_upgrade_websocket === undefined) {
+			throw new Error(
+				'create_app_server: ws_endpoints resolved non-empty but create_upgrade_websocket is missing. ' +
+					"Pass a factory returning the Hono adapter's upgradeWebSocket helper."
+			);
+		}
+		for (const endpoint of resolved_ws_endpoints) {
+			assert_endpoint_in_auth_scope('ws_endpoints', endpoint.path);
+		}
+	}
 
 	// Surface route (default: enabled)
 	if (options.surface_route !== false) {
@@ -719,6 +771,14 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	// Hono app assembly
 	const app = new Hono();
 
+	// The adapter helper for the WS mount below — built from this app, which
+	// Node's `createNodeWebSocket({app})` needs, and only when there is
+	// something to mount.
+	const upgrade_websocket: UpgradeWebSocket | null =
+		resolved_ws_endpoints?.length && create_upgrade_websocket
+			? create_upgrade_websocket(app)
+			: null;
+
 	// Two-queue side-effect flush. `pending_effects` collects eager
 	// fire-and-forget promises (audit emits, api-token usage). `post_commit_effects` collects deferred thunks pushed via
 	// `emit_after_commit` (WS notifications, anything that must observe a
@@ -790,13 +850,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	// adjacent to the consumer routes and ahead of the static fallback —
 	// matches the "WS mount is route registration" mental model.
 	const mounted_ws_endpoints: Record<string, BackendWebsocketTransport> = {};
-	if (resolved_ws_endpoints?.length) {
-		if (options.upgradeWebSocket === undefined) {
-			throw new Error(
-				'create_app_server: ws_endpoints resolved non-empty but upgradeWebSocket is missing. ' +
-					"Pass the Hono adapter's upgradeWebSocket helper as a top-level option."
-			);
-		}
+	if (resolved_ws_endpoints?.length && upgrade_websocket) {
 		// Cross-surface collision: `register_ws_endpoint` mounts a `GET path`
 		// upgrade route. If a `RouteSpec` already registered `GET path`,
 		// Hono's last-wins semantics would silently shadow the consumer's
@@ -829,7 +883,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			const { transport: endpoint_transport } = register_ws_endpoint({
 				app,
 				path: endpoint.path,
-				upgradeWebSocket: options.upgradeWebSocket,
+				upgradeWebSocket: upgrade_websocket,
 				allowed_origins: endpoint.allowed_origins,
 				db: deps.db,
 				actions: endpoint.actions,

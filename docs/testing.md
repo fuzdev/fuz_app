@@ -96,11 +96,8 @@ Factory signatures take narrowed deps: `create_account_route_specs(deps: RouteFa
 `ctx.deps` (`AppDeps`) structurally satisfies all narrowed types. Admin
 account listing, session/token revoke-all, audit-log reads, invite CRUD,
 and app-settings get/update are all RPC-only — mount
-`create_admin_actions(ctx.deps, {app_settings: ctx.app_settings})` via
-`create_rpc_endpoint` instead. Passing `app_settings` is what wires the
-two app-settings handlers (mutating the same mutable ref that signup
-middleware reads); omit it to expose only the admin methods that don't
-need the ref.
+`create_admin_actions(ctx.deps)` via `rpc_endpoints` instead (the two
+app-settings handlers are always wired).
 
 If the route factory needs app-specific deps beyond `AppServerContext`,
 accept them as additional parameters and wrap in a closure for the
@@ -395,9 +392,8 @@ describe_standard_admin_integration_tests({
 `rpc_endpoints` accepts either an `Array<RpcEndpointSpec>` (eager) or
 `(ctx: AppServerContext) => Array<RpcEndpointSpec>` (factory) — the same
 shape `create_app_server` takes. Prefer the factory form: action handlers
-that close over the per-test `ctx.deps` / `ctx.app_settings` (e.g.
-`create_standard_rpc_actions(ctx.deps, {app_settings: ctx.app_settings})`)
-need it. The factory must return the same endpoint `path` regardless of
+that close over the per-test `ctx.deps` (e.g.
+`create_standard_rpc_actions(ctx.deps)`) need it. The factory must return the same endpoint `path` regardless of
 ctx — it is invoked once at setup with a stub ctx for path lookup and
 again per-test by `create_app_server` for live dispatch.
 

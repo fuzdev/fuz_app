@@ -108,6 +108,8 @@ const start_server = async (max_connections_per_account?: number): Promise<TestS
 	const { upgradeWebSocket, injectWebSocket } = createNodeWebSocket({ app });
 	const recorded: Array<string> = [];
 	const { transport } = register_action_ws({
+		action_ip_rate_limiter: null,
+		action_account_rate_limiter: null,
 		path: '/ws',
 		connection_closer: null,
 		app,

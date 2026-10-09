@@ -49,6 +49,8 @@ const test_roles = create_role_schema([{ name: 'teacher', grant_paths: ['self_se
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...create_rpc_endpoint({
+		action_ip_rate_limiter: null,
+		action_account_rate_limiter: null,
 		path: RPC_PATH,
 		actions: create_self_service_role_actions(ctx.deps, {
 			eligible_roles: ['teacher'],

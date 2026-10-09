@@ -60,6 +60,8 @@ const build_app = (opts: BuildOptions = {}) => {
 
 	const stub_db = create_stub_db();
 	register_ws_endpoint({
+		action_ip_rate_limiter: null,
+		action_account_rate_limiter: null,
 		path: '/api/ws',
 		connection_closer: null,
 		app,
@@ -87,13 +89,15 @@ describe('origin verification', () => {
 
 	test('missing-origin passes through (direct access — curl/CLI)', async () => {
 		const { app, stub } = build_app();
-		const res = await app.fetch(new Request('http://localhost:3000/api/ws'));
+		const res = await app.fetch(
+			new Request('http://localhost:3000/api/ws', { headers: { Upgrade: 'websocket' } })
+		);
 		// verify_request_source is permissive for no-origin requests (token
 		// auth is the primary control there); downstream require_auth still
 		// ran and accepted our injected session context.
 		assert.notStrictEqual(res.status, 401);
 		assert.notStrictEqual(res.status, 403);
-		assert.strictEqual(typeof stub.get_create_events(), 'function');
+		assert.strictEqual(stub.upgrades.length, 1);
 	});
 });
 
@@ -102,7 +106,7 @@ describe('authentication', () => {
 		const { app } = build_app({ authenticated: false });
 		const res = await app.fetch(
 			new Request('http://localhost:3000/api/ws', {
-				headers: { Origin: ALLOWED_ORIGIN }
+				headers: { Origin: ALLOWED_ORIGIN, Upgrade: 'websocket' }
 			})
 		);
 		assert.strictEqual(res.status, 401);
@@ -114,7 +118,7 @@ describe('required_roles', () => {
 		const { app } = build_app({ required_roles: [ROLE_ADMIN] });
 		const res = await app.fetch(
 			new Request('http://localhost:3000/api/ws', {
-				headers: { Origin: ALLOWED_ORIGIN }
+				headers: { Origin: ALLOWED_ORIGIN, Upgrade: 'websocket' }
 			})
 		);
 		assert.strictEqual(res.status, 403);
@@ -124,29 +128,27 @@ describe('required_roles', () => {
 		const { app, stub } = build_app({ required_roles: [ROLE_ADMIN], role: ROLE_ADMIN });
 		const res = await app.fetch(
 			new Request('http://localhost:3000/api/ws', {
-				headers: { Origin: ALLOWED_ORIGIN }
+				headers: { Origin: ALLOWED_ORIGIN, Upgrade: 'websocket' }
 			})
 		);
 
-		// Pre-upgrade chain passed — stub `upgradeWebSocket` factory ran.
-		// The stub returns an inert middleware that falls through to a 404
-		// since it can't perform the actual upgrade in Node.
+		// Pre-upgrade chain passed — the stub recorded the upgrade.
 		assert.notStrictEqual(res.status, 401);
 		assert.notStrictEqual(res.status, 403);
-		assert.strictEqual(typeof stub.get_create_events(), 'function');
+		assert.strictEqual(stub.upgrades.length, 1);
 	});
 
 	test('omitting required_roles only gates on authentication', async () => {
 		const { app, stub } = build_app();
 		const res = await app.fetch(
 			new Request('http://localhost:3000/api/ws', {
-				headers: { Origin: ALLOWED_ORIGIN }
+				headers: { Origin: ALLOWED_ORIGIN, Upgrade: 'websocket' }
 			})
 		);
 
 		assert.notStrictEqual(res.status, 401);
 		assert.notStrictEqual(res.status, 403);
-		assert.strictEqual(typeof stub.get_create_events(), 'function');
+		assert.strictEqual(stub.upgrades.length, 1);
 	});
 
 	test('empty required_roles array skips the role gate', async () => {
@@ -155,13 +157,13 @@ describe('required_roles', () => {
 		const { app, stub } = build_app({ required_roles: [] });
 		const res = await app.fetch(
 			new Request('http://localhost:3000/api/ws', {
-				headers: { Origin: ALLOWED_ORIGIN }
+				headers: { Origin: ALLOWED_ORIGIN, Upgrade: 'websocket' }
 			})
 		);
 
 		assert.notStrictEqual(res.status, 401);
 		assert.notStrictEqual(res.status, 403);
-		assert.strictEqual(typeof stub.get_create_events(), 'function');
+		assert.strictEqual(stub.upgrades.length, 1);
 	});
 });
 
@@ -184,6 +186,8 @@ describe('composition', () => {
 
 		const stub_db = create_stub_db();
 		const result = register_ws_endpoint({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: '/api/ws',
 			connection_closer: null,
 			app,

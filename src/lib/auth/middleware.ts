@@ -12,6 +12,47 @@ import type { AppDeps } from './deps.ts';
 import type { DaemonTokenState } from './daemon_token.ts';
 import type { MiddlewareSpec } from '../http/middleware_spec.ts';
 import { ApiError } from '../http/error_schemas.ts';
+import { middleware_applies } from '../http/schema_helpers.ts';
+
+/**
+ * The Hono path pattern the auth middleware stack mounts on by default —
+ * origin verification, session parsing, request context, bearer and daemon
+ * token auth all run for the paths it matches, and no others.
+ *
+ * `create_app_server` mounts the stack here, and refuses at assembly (via
+ * `assert_endpoint_in_auth_scope`, which `create_test_app_surface_spec` also
+ * runs) an `rpc_endpoints` or `ws_endpoints` path the pattern does not match (tested
+ * with `middleware_applies`, which follows Hono: `'/api/*'` matches `/api`
+ * and everything under `/api/`): an endpoint outside it would get no
+ * session parsing, so every call or upgrade would be unauthenticated.
+ */
+export const AUTH_MIDDLEWARE_PATH = '/api/*';
+
+/**
+ * Throw when an endpoint path sits outside the auth middleware's scope
+ * (`AUTH_MIDDLEWARE_PATH`) — there it would get no session or bearer
+ * parsing, so every call or upgrade would be unauthenticated.
+ * `middleware_applies` matches the way Hono matches the middleware's pattern.
+ *
+ * `create_app_server` calls it for every `rpc_endpoints` and `ws_endpoints`
+ * path at assembly, and `create_test_app_surface_spec` does the same, so a
+ * surface snapshot never records an endpoint the real server refuses.
+ *
+ * @param option - the option the path came from, named in the error
+ * @param path - the endpoint path to check
+ * @throws Error when `path` is outside `AUTH_MIDDLEWARE_PATH`
+ */
+export const assert_endpoint_in_auth_scope = (
+	option: 'rpc_endpoints' | 'ws_endpoints',
+	path: string
+): void => {
+	if (!middleware_applies(AUTH_MIDDLEWARE_PATH, path)) {
+		throw new Error(
+			`${option} path ${path} is outside the auth middleware's scope ` +
+				`(${AUTH_MIDDLEWARE_PATH}) — it would see every caller as unauthenticated — mount it under /api/`
+		);
+	}
+};
 
 /**
  * Per-factory configuration for the standard auth middleware stack.
@@ -19,7 +60,7 @@ import { ApiError } from '../http/error_schemas.ts';
 export interface AuthMiddlewareOptions {
 	allowed_origins: Array<RegExp>;
 	session_options: SessionOptions<string>;
-	/** Path pattern for middleware (default: `'/api/*'`). */
+	/** Path pattern for middleware (default: `AUTH_MIDDLEWARE_PATH`, `'/api/*'`). */
 	path?: string;
 	/** Daemon token state for keeper auth. Omit to disable daemon token middleware. */
 	daemon_token_state?: DaemonTokenState;
@@ -42,7 +83,12 @@ export const create_auth_middleware_specs = async (
 	options: AuthMiddlewareOptions
 ): Promise<Array<MiddlewareSpec>> => {
 	const { keyring, db } = deps;
-	const { allowed_origins, session_options, path = '/api/*', daemon_token_state } = options;
+	const {
+		allowed_origins,
+		session_options,
+		path = AUTH_MIDDLEWARE_PATH,
+		daemon_token_state
+	} = options;
 
 	const query_deps = { db };
 

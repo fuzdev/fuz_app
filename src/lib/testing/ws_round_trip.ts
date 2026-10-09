@@ -160,29 +160,69 @@ export const create_fake_hono_context = (opts: FakeHonoContextOptions): Context 
 	} as unknown as Context;
 };
 
-/** The return of `create_stub_upgrade` — fake `upgradeWebSocket` + factory capture. */
+/** One upgrade that reached a `create_stub_upgrade` route. */
+export interface StubUpgradeRecord {
+	/**
+	 * The real Hono `Context` the request carried through the app's
+	 * middleware chain — session, request context, client IP, and every
+	 * other value the middleware set.
+	 */
+	c: Context;
+	/** The events factory of the endpoint the upgrade reached. */
+	create_events: (c: Context) => WSEvents | Promise<WSEvents>;
+}
+
+/** The return of `create_stub_upgrade` — fake `upgradeWebSocket` + factory and upgrade capture. */
 export interface StubUpgrade {
 	upgradeWebSocket: UpgradeWebSocket;
+	/**
+	 * The events factory of the most recently mounted endpoint, for tests
+	 * that build events from a hand-made context. Throws when no endpoint
+	 * was mounted.
+	 */
 	get_create_events: () => (c: Context) => WSEvents | Promise<WSEvents>;
+	/**
+	 * Every upgrade request that reached a stub route, in arrival order —
+	 * what `app.request(path, {headers: {upgrade: 'websocket', ...}})`
+	 * leaves behind once the app's middleware passed it. Build the socket's
+	 * events with `record.create_events(record.c)`.
+	 */
+	upgrades: ReadonlyArray<StubUpgradeRecord>;
 }
 
 /**
- * Build a fake `upgradeWebSocket` that captures the `createEvents`
- * callback. The returned middleware is inert — tests drive
- * `createEvents` directly.
+ * Build a fake `upgradeWebSocket` that stands in for a runtime adapter's.
+ *
+ * Like the real adapters, the middleware it returns passes a request
+ * without an `Upgrade: websocket` header to `next()`. An upgrade request
+ * is recorded in `upgrades` — its real `Context` and the endpoint's events
+ * factory — and answered `200` with no body (a `Response` cannot carry the
+ * `101` an adapter answers). No socket is opened: tests drive the recorded
+ * factory, so an upgrade sent through `app.request` exercises the app's
+ * whole middleware chain — origin, session or bearer, client IP — before
+ * the dispatcher sees it.
  */
 export const create_stub_upgrade = (): StubUpgrade => {
 	let captured: ((c: Context) => WSEvents | Promise<WSEvents>) | null = null;
-	const upgradeWebSocket = ((createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => {
-		captured = createEvents;
-		return async (_c: Context, next: () => Promise<void>) => next();
+	const upgrades: Array<StubUpgradeRecord> = [];
+	const upgradeWebSocket = ((create_events: (c: Context) => WSEvents | Promise<WSEvents>) => {
+		captured = create_events;
+		return async (c: Context, next: () => Promise<void>) => {
+			if (c.req.header('upgrade')?.toLowerCase() !== 'websocket') {
+				await next();
+				return;
+			}
+			upgrades.push({ c, create_events });
+			return new Response(null, { status: 200 });
+		};
 	}) as unknown as UpgradeWebSocket;
 	return {
 		upgradeWebSocket,
 		get_create_events: () => {
 			if (!captured) throw new Error('upgradeWebSocket was not called');
 			return captured;
-		}
+		},
+		upgrades
 	};
 };
 
@@ -402,7 +442,11 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 		heartbeat,
 		log,
 		on_socket_open,
-		on_socket_close
+		on_socket_close,
+		// the harness drives per-message dispatch, not throttling — the
+		// assembled-app tests cover the limiters `create_app_server` threads
+		action_ip_rate_limiter: null,
+		action_account_rate_limiter: null
 	});
 
 	const events_factory = stub.get_create_events();

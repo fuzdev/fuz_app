@@ -41,6 +41,8 @@ describe('password change multi-session invalidation', () => {
 					})
 				),
 				...create_rpc_endpoint({
+					action_ip_rate_limiter: null,
+					action_account_rate_limiter: null,
 					path: RPC_PATH,
 					actions: create_account_actions({
 						log: ctx.deps.log,

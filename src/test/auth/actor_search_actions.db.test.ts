@@ -49,6 +49,8 @@ const describe_db = create_describe_db(factory, auth_integration_truncate_tables
 
 const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...create_rpc_endpoint({
+		action_ip_rate_limiter: null,
+		action_account_rate_limiter: null,
 		path: RPC_PATH,
 		actions: create_actor_search_actions({ log: ctx.deps.log }),
 		log: ctx.deps.log

@@ -3,6 +3,8 @@
  * by `create_app_server`'s `ws_endpoints` option (mirror of `RpcEndpointSpec`
  * for HTTP RPC).
  *
+ * Also `resolve_ws_endpoints`, which fills in the server's `allowed_origins`.
+ *
  * Lives in its own module so both `server/app_server.ts` (which mounts
  * endpoints from these specs) and `http/surface.ts` (which threads the
  * resolved spec list into surface generation) can import it without a
@@ -34,10 +36,14 @@ export interface WsEndpointSpec {
 	/** Hono mount path (e.g. `/api/ws`). */
 	path: string;
 	/**
-	 * Origin allowlist regexes — typically parsed via `parse_allowed_origins`.
-	 * Passed straight to `verify_request_source` on upgrade.
+	 * Origin allowlist regexes for the upgrade — passed straight to
+	 * `verify_request_source`. Defaults to the server's
+	 * `AppServerOptions.allowed_origins`, the list the HTTP routes check.
+	 * Set it only to narrow one endpoint: the auth middleware's origin check
+	 * runs on the upgrade too, so a request reaches the endpoint only when
+	 * its origin passes both lists.
 	 */
-	allowed_origins: ReadonlyArray<RegExp>;
+	allowed_origins?: ReadonlyArray<RegExp>;
 	/**
 	 * The actions registered on this endpoint. Spread `protocol_actions`
 	 * from `actions/protocol.ts` first to complete the
@@ -142,3 +148,24 @@ export interface WsEndpointSpec {
 	 */
 	extra_audit_handlers?: ReadonlyArray<AuditEventHandler>;
 }
+
+/** A `WsEndpointSpec` whose `allowed_origins` is resolved — its own, or the server's. */
+export type ResolvedWsEndpointSpec = WsEndpointSpec & { allowed_origins: ReadonlyArray<RegExp> };
+
+/**
+ * Fill in the server's `allowed_origins` on each WS endpoint spec that omits
+ * its own, so every consumer of the resolved list — the mount, the surface —
+ * reads the effective patterns.
+ *
+ * @param ws_endpoints - the resolved `ws_endpoints` option
+ * @param allowed_origins - the server's allowlist, the default
+ * @returns the specs, each with `allowed_origins` set
+ */
+export const resolve_ws_endpoints = (
+	ws_endpoints: ReadonlyArray<WsEndpointSpec> | undefined,
+	allowed_origins: ReadonlyArray<RegExp>
+): Array<ResolvedWsEndpointSpec> | undefined =>
+	ws_endpoints?.map((endpoint) => ({
+		...endpoint,
+		allowed_origins: endpoint.allowed_origins ?? allowed_origins
+	}));

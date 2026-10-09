@@ -79,6 +79,8 @@ const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 		})
 	]),
 	...create_rpc_endpoint({
+		action_ip_rate_limiter: null,
+		action_account_rate_limiter: null,
 		path: RPC_PATH,
 		actions: [...create_admin_actions(ctx.deps), ...create_account_actions(ctx.deps)],
 		log: ctx.deps.log
@@ -1253,6 +1255,8 @@ describe_db('invite + signup integration', (get_db) => {
 				})
 			]),
 			...create_rpc_endpoint({
+				action_ip_rate_limiter: null,
+				action_account_rate_limiter: null,
 				path: RPC_PATH,
 				actions: [...create_admin_actions(ctx.deps), ...create_account_actions(ctx.deps)],
 				log: ctx.deps.log

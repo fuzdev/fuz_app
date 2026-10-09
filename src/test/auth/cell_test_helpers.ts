@@ -87,6 +87,8 @@ export const create_cell_route_specs =
 	(authorize_create?: CellCreateAuthorize) =>
 	(ctx: AppServerContext): Array<RouteSpec> => [
 		...create_rpc_endpoint({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: RPC_PATH,
 			actions: [
 				...create_all_cell_actions({ ...ctx.deps, authorize_create }, { roles: cell_test_roles })

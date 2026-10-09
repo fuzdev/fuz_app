@@ -391,19 +391,22 @@ export interface RegisterActionWsOptions {
 	on_socket_close?: (ctx: SocketCloseContext) => void | Promise<void>;
 	/**
 	 * Per-IP rate limiter consulted for actions whose spec declares
-	 * `rate_limit: 'ip'` or `'both'`. `null` (or omitted) disables the
-	 * IP check. Same limiter is shared with the HTTP RPC dispatcher so
-	 * one budget covers both transports per action. Resolved at upgrade
-	 * time and reused for every message on the socket.
+	 * `rate_limit: 'ip'` or `'both'`, keyed on the client IP read at upgrade
+	 * time. Required, with no default: pass `null` to turn the IP check off,
+	 * so an unthrottled socket is a choice the call site states rather than
+	 * an option it forgot. Share one instance with the HTTP RPC dispatcher so
+	 * one budget covers both transports per action — `create_app_server`
+	 * does, for the endpoints it mounts from `ws_endpoints`.
 	 */
-	action_ip_rate_limiter?: RateLimiter | null;
+	action_ip_rate_limiter: RateLimiter | null;
 	/**
 	 * Per-account rate limiter consulted for actions whose spec declares
 	 * `rate_limit: 'account'` or `'both'`. Keyed on
-	 * `request_context.account.id`. `null` (or omitted) disables the
-	 * account check. Same limiter is shared with the HTTP RPC dispatcher.
+	 * `request_context.account.id`. Required, with no default: pass `null`
+	 * to turn the account check off. Share one instance with the HTTP RPC
+	 * dispatcher.
 	 */
-	action_account_rate_limiter?: RateLimiter | null;
+	action_account_rate_limiter: RateLimiter | null;
 }
 
 /** Result of `register_action_ws`. */
@@ -466,8 +469,8 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		log = new Logger('[ws]'),
 		on_socket_open,
 		on_socket_close,
-		action_ip_rate_limiter = null,
-		action_account_rate_limiter = null
+		action_ip_rate_limiter,
+		action_account_rate_limiter
 	} = options;
 
 	const transport =

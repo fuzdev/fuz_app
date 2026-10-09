@@ -59,6 +59,8 @@ const create_standard_route_specs =
 	(authorize?: RoleGrantOfferCreateAuthorize) =>
 	(ctx: AppServerContext): Array<RouteSpec> => [
 		...create_rpc_endpoint({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: RPC_PATH,
 			actions: create_standard_rpc_actions(ctx.deps, { roles: app_roles, authorize }),
 			log: ctx.deps.log

@@ -62,6 +62,8 @@ export const describe_db = create_describe_db(factory, auth_integration_truncate
  */
 export const create_route_specs = (ctx: AppServerContext): Array<RouteSpec> => [
 	...create_rpc_endpoint({
+		action_ip_rate_limiter: null,
+		action_account_rate_limiter: null,
 		path: RPC_PATH,
 		actions: create_role_grant_offer_actions(ctx.deps),
 		log: ctx.deps.log
@@ -91,6 +93,8 @@ export const create_app_role_route_specs =
 	(options: { authorize?: RoleGrantOfferCreateAuthorize } = {}) =>
 	(ctx: AppServerContext): Array<RouteSpec> => [
 		...create_rpc_endpoint({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
 			path: RPC_PATH,
 			actions: create_role_grant_offer_actions(ctx.deps, {
 				roles: app_roles,
