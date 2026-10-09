@@ -268,7 +268,7 @@ plus `create_standard_rpc_actions(ctx.deps, …)` into `create_app_server`'s
 `ws_endpoints` factory and supply `upgradeWebSocket` at the top level:
 
 ```typescript
-import { upgradeWebSocket } from '@hono/node-ws'; // or '@hono/deno'
+import { upgradeWebSocket } from '@hono/deno'; // or '@hono/bun', whose `websocket` also goes to `Bun.serve`
 import { protocol_actions } from '@fuzdev/fuz_app/actions/protocol.ts';
 
 const { app, ws_endpoints } = await create_app_server({
@@ -292,6 +292,54 @@ const { app, ws_endpoints } = await create_app_server({
 // Retain the transport for broadcasts / fan-out:
 ws_endpoints['/api/ws'].send_to_account(account_id, notification);
 ```
+
+On Node, `@hono/node-ws` has no module-level helper: `createNodeWebSocket({app})`
+needs the app that `create_app_server` builds, so `upgradeWebSocket` can't be
+passed in. Leave out `upgradeWebSocket` and `ws_endpoints`, mount the endpoint
+on the returned app with `register_ws_endpoint`, and attach to the server after
+`serve()`:
+
+```typescript
+import { serve } from '@hono/node-server';
+import { createNodeWebSocket } from '@hono/node-ws';
+import { register_ws_endpoint } from '@fuzdev/fuz_app/actions/register_ws_endpoint.ts';
+import { create_ws_auth_guard } from '@fuzdev/fuz_app/actions/transports_ws_auth_guard.ts';
+import {
+	create_rate_limiter,
+	default_action_account_rate_limit,
+	default_action_ip_rate_limit
+} from '@fuzdev/fuz_app/rate_limiter.ts';
+
+// shared so an action's `rate_limit` draws one bucket across RPC and WS -
+// a hand mount gets no limiters from `create_app_server` and would run unthrottled
+const action_ip_rate_limiter = create_rate_limiter(default_action_ip_rate_limit);
+const action_account_rate_limiter = create_rate_limiter(default_action_account_rate_limit);
+
+const { app } = await create_app_server({
+	backend,
+	// …other options, no ws ones…
+	action_ip_rate_limiter,
+	action_account_rate_limiter
+});
+const { upgradeWebSocket, injectWebSocket } = createNodeWebSocket({ app });
+const { transport } = register_ws_endpoint({
+	app,
+	path: '/api/ws',
+	allowed_origins,
+	db: backend.deps.db,
+	upgradeWebSocket,
+	actions: [...protocol_actions, ...my_app_ws_actions(backend.deps)],
+	connection_closer: backend.deps.connection_closer,
+	action_ip_rate_limiter,
+	action_account_rate_limiter
+});
+backend.deps.audit.add_listener(create_ws_auth_guard(transport, log));
+injectWebSocket(serve({ fetch: app.fetch, port }));
+```
+
+A hand-mounted endpoint registers after any `post_route_middleware` and
+`static_serving` middleware (the default SPA fallback skips `/api/` paths) and
+is absent from `surface_spec`.
 
 `ws_endpoints` mirrors `rpc_endpoints`: array or factory form, single
 source of truth for surface + dispatch, auto-mounted onto the assembled
@@ -808,7 +856,7 @@ import { ROLE_ADMIN } from '@fuzdev/fuz_app/auth/role_schema.ts';
 const { transport } = register_ws_endpoint({
 	path: '/api/ws',
 	app,
-	upgradeWebSocket, // from the runtime adapter (e.g. @hono/deno-ws)
+	upgradeWebSocket, // from the runtime adapter (`@hono/deno`, or `createNodeWebSocket({app})` on Node)
 	allowed_origins, // from parse_allowed_origins(env.FUZ_ALLOWED_ORIGINS)
 	required_roles: [ROLE_ADMIN], // optional — omit for any authenticated account
 	actions: [...protocol_actions, ...my_actions],

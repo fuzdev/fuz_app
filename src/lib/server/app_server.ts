@@ -306,9 +306,13 @@ export interface AppServerOptions {
 	 * adapter helper services every `WsEndpointSpec` mounted from
 	 * `ws_endpoints` — one adapter per app.
 	 *
-	 * For Node, `import {upgradeWebSocket} from '@hono/node-ws'`. For
-	 * Deno, `import {upgradeWebSocket} from '@hono/deno'`. Test harnesses
-	 * use `create_stub_upgrade` from `$lib/testing/ws_round_trip.ts`.
+	 * For Deno or Bun, `import {upgradeWebSocket} from '@hono/deno'` (or
+	 * `'@hono/bun'`). Node's `@hono/node-ws` has no module-level helper -
+	 * `createNodeWebSocket({app})` needs the app this function builds - so
+	 * on Node omit this and `ws_endpoints`, then mount on the returned
+	 * `app` with `register_ws_endpoint` and call `injectWebSocket(server)`
+	 * after `serve()`. Test harnesses use `create_stub_upgrade` from
+	 * `$lib/testing/ws_round_trip.ts`.
 	 */
 	upgradeWebSocket?: UpgradeWebSocket;
 

@@ -4,7 +4,7 @@ import '../assert_dev_env.ts';
  * Node runtime adapter for spawnable cross-process test server binaries.
  *
  * Binds `@hono/node-server`'s `serve()` and `@hono/node-ws`'s two-phase
- * `createNodeWebSocket(app)` / `injectWebSocket(server)`. The shared
+ * `createNodeWebSocket({app})` / `injectWebSocket(server)`. The shared
  * `testing/cross_backend/testing_server_core.ts` owns the rest. A test binary builds this adapter
  * and hands it to `start_testing_server` alongside its `build_app` seam.
  *
