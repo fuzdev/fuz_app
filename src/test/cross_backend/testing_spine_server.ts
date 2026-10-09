@@ -5,7 +5,7 @@
  * The TS analog of the Rust `testing_spine_stub`: mounts ONLY the standard
  * fuz_app spine surface (auth / account / admin / audit + signup +
  * bootstrap) over a real HTTP socket, with `_testing_reset` and a WS
- * endpoint, and no consumer domain layer. It exists so the
+ * endpoint (auto-mounted from `ws_endpoints`), and no consumer domain layer. It exists so the
  * `describe_standard_cross_process_tests` bundle can run against fuz_app's
  * own TS impl over the wire — making drift in fuz_app's real HTTP path a
  * fuz_app failure rather than only surfacing through a downstream consumer.
@@ -27,13 +27,13 @@
 
 import { dirname, join } from 'node:path';
 import type { Context } from 'hono';
-import type { UpgradeWebSocket } from 'hono/ws';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { z } from 'zod';
 
 import { protocol_actions } from '#lib/actions/protocol.ts';
-import { register_ws_endpoint } from '#lib/actions/register_ws_endpoint.ts';
+import { DEFAULT_WS_MAX_MESSAGE_BYTES } from '#lib/actions/transports.ts';
 import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
-import { create_ws_auth_guard } from '#lib/actions/transports_ws_auth_guard.ts';
+import type { AppSurface } from '#lib/http/surface.ts';
 import { start_daemon_token_rotation } from '#lib/testing/daemon_token_rotation.ts';
 import { load_env } from '#lib/env/load.ts';
 import type { RuntimeDeps } from '#lib/runtime/deps.ts';
@@ -52,8 +52,11 @@ import { create_app_backend, type AuditFactory } from '#lib/server/app_backend.t
 import { create_app_server } from '#lib/server/app_server.ts';
 import {
 	RateLimiter,
+	default_action_account_rate_limit,
+	default_action_ip_rate_limit,
 	default_login_account_rate_limit,
-	default_login_ip_rate_limit
+	default_login_ip_rate_limit,
+	type RateLimiterOptions
 } from '#lib/rate_limiter.ts';
 import { BaseServerEnv, validate_server_env } from '#lib/server/env.ts';
 import { stub_password_deps } from '#lib/testing/app_server.ts';
@@ -63,7 +66,10 @@ import {
 	spine_session_options
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 import { full_spine_rpc_endpoints } from '#lib/testing/cross_backend/full_spine_mount.ts';
-import type { BuiltTestingApp } from '#lib/testing/cross_backend/testing_server_core.ts';
+import type {
+	BuildTestingAppContext,
+	BuiltTestingApp
+} from '#lib/testing/cross_backend/testing_server_core.ts';
 
 /** Resolved bind config the entry passes to `start_testing_server`. */
 export interface SpineServerConfig {
@@ -83,12 +89,100 @@ export interface BuildSpineAppOptions {
 	 * `BackendConfig.bootstrap.daemon_token_path` (`{root}/run/daemon_token`).
 	 */
 	readonly daemon_token_path: string;
+	/**
+	 * The core's WS preparation (`BuildTestingAppContext.prepare_websocket`) —
+	 * its factory becomes `create_app_server`'s `create_upgrade_websocket`.
+	 */
+	readonly prepare_websocket: BuildTestingAppContext['prepare_websocket'];
 	/** WS mount path. Default `/api/ws`. */
 	readonly ws_path?: string;
 }
 
+/** The spine app plus its generated surface (for the surface-invariant test). */
+export interface BuiltSpineApp extends BuiltTestingApp {
+	readonly surface: AppSurface;
+}
+
 const WS_PATH_DEFAULT = '/api/ws';
 const HEALTH_PATH = '/health';
+
+/**
+ * The WS endpoint's inbound message cap — passed to both the endpoint spec and
+ * the adapter's preparation, so Node's `ws` frame cap matches it.
+ */
+const WS_MAX_MESSAGE_BYTES = DEFAULT_WS_MAX_MESSAGE_BYTES;
+
+// Test-binary-only toggles, read raw (not part of the production
+// `BaseServerEnv` schema). The literals are the canonical `*_ENV` constants in
+// `default_backend_configs.ts`, where the backend configs set them for both
+// impls; they're re-declared here because that module transitively pulls
+// `vitest` and can't be imported into the spawned binary — the same
+// local-redeclare `testing_spine_server_node.ts` does for `TS_SPINE_DIR_ENV`.
+const LOGIN_RATE_LIMIT_ENABLED_ENV = 'FUZ_LOGIN_RATE_LIMIT_ENABLED';
+const ACTION_RATE_LIMIT_ENABLED_ENV = 'FUZ_ACTION_RATE_LIMIT_ENABLED';
+const ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV = 'FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS';
+
+/** Zod's `stringbool` — the env boolean contract the Rust stub's `parse_stringbool` mirrors. */
+const EnvStringbool = z.stringbool();
+
+/**
+ * Parse an optional boolean env toggle the way the Rust stub's
+ * `parse_stringbool_env` does: unset is `false`; otherwise a case-insensitive
+ * `true`/`1`/`yes`/`on`/`y`/`enabled` or `false`/`0`/`no`/`off`/`n`/`disabled`,
+ * untrimmed. Anything else (the empty string included) throws, so a typo
+ * can't silently leave a limiter off while a suite asserts its throttle.
+ *
+ * @param name - the env var, for the error
+ * @param raw - its value, `undefined` when unset
+ * @throws Error on a value outside the recognized set
+ */
+export const parse_stringbool_env = (name: string, raw: string | undefined): boolean => {
+	if (raw === undefined) return false;
+	const parsed = EnvStringbool.safeParse(raw);
+	if (!parsed.success) {
+		throw new Error(
+			`testing_spine_server: ${name}: expected a boolean string (true/false, 1/0, yes/no, on/off, y/n, enabled/disabled), got ${JSON.stringify(raw)}`
+		);
+	}
+	return parsed.data;
+};
+
+/** `u32::MAX` — the largest cap the Rust stub's `u32` parse accepts. */
+const U32_MAX = 0xffff_ffff;
+
+/**
+ * Parse `FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS` against the enable flag — a
+ * positive integer, refused when set without `FUZ_ACTION_RATE_LIMIT_ENABLED`
+ * (a cap that silently does nothing would leave a suite asserting a throttle
+ * the binary never built). Mirrors the Rust stub's
+ * `parse_action_rate_limit_max_attempts` (`raw.trim().parse::<u32>()`, then
+ * `> 0`): surrounding Unicode whitespace is trimmed, one leading `+` and leading zeros
+ * are accepted, and a value above `u32::MAX` is refused.
+ *
+ * @param raw - the env value, `undefined` when unset
+ * @param enabled - the parsed enable flag
+ * @returns the cap, or `undefined` when unset
+ * @throws Error on a malformed or out-of-range cap, or a cap without the flag
+ */
+export const parse_action_rate_limit_max_attempts = (
+	raw: string | undefined,
+	enabled: boolean
+): number | undefined => {
+	if (raw === undefined) return undefined;
+	const trimmed = raw.trim();
+	const max_attempts = /^\+?[0-9]+$/.test(trimmed) ? Number(trimmed) : NaN;
+	if (!(max_attempts > 0 && max_attempts <= U32_MAX)) {
+		throw new Error(
+			`testing_spine_server: ${ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV}: expected a positive integer, got ${JSON.stringify(raw)}`
+		);
+	}
+	if (!enabled) {
+		throw new Error(
+			`testing_spine_server: ${ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV} is set but ${ACTION_RATE_LIMIT_ENABLED_ENV} is not`
+		);
+	}
+	return max_attempts;
+};
 
 /**
  * Audit factory registering the cell event types so the live-mounted cell
@@ -111,16 +205,24 @@ export const resolve_spine_server_config = (runtime: RuntimeDeps): SpineServerCo
 };
 
 /**
- * Build the no-domain spine Hono app + close + WS mount hook.
+ * Build the no-domain spine Hono app + close.
  *
  * Uses `stub_password_deps` (fast deterministic hasher), in-memory PGlite
- * by default (`DATABASE_URL=memory://`), every rate limiter disabled, and
+ * by default (`DATABASE_URL=memory://`), every rate limiter disabled
+ * (`rate_limiters: 'disabled_for_testing'`) unless an env toggle opts the
+ * login or action limiters in, and
  * appends `_testing_reset` to the standard RPC endpoint so the cross-process
  * fixture protocol can reset per test. Bootstrap runs live (the harness
  * consumes it once in `globalSetup`).
  */
-export const build_spine_app = async (options: BuildSpineAppOptions): Promise<BuiltTestingApp> => {
-	const { runtime, get_connection_ip, daemon_token_path, ws_path = WS_PATH_DEFAULT } = options;
+export const build_spine_app = async (options: BuildSpineAppOptions): Promise<BuiltSpineApp> => {
+	const {
+		runtime,
+		get_connection_ip,
+		daemon_token_path,
+		prepare_websocket,
+		ws_path = WS_PATH_DEFAULT
+	} = options;
 	const log = new Logger('[testing_spine_server]');
 
 	const env = load_env(BaseServerEnv, runtime.env_get);
@@ -171,30 +273,28 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		log
 	);
 
-	// Created up front so the audit-revocation guard, the backend's connection
-	// closer, AND the role-grant-offer `notification_sender` bind to the SAME
-	// transport the WS endpoint registers connections against (the transport is
-	// the connection registry — a separate instance would fan out to an empty
-	// registry and reach nobody). Threaded into
-	// `spine_rpc_endpoints({notification_sender})` below and into
-	// `register_ws_endpoint` in `mount_websocket`.
+	// Created up front so the role-grant-offer `notification_sender` binds to the
+	// SAME transport the WS endpoint registers connections against (the
+	// transport is the connection registry — a separate instance would fan out
+	// to an empty registry and reach nobody). Threaded into
+	// `spine_rpc_endpoints({notification_sender})` and the `ws_endpoints` spec
+	// below; `create_app_server` adds it to the backend's connection closer and
+	// wires its audit-revocation guard.
 	const ws_transport = new BackendWebsocketTransport();
 
 	// Login rate limiting is OFF by default — the standard cross suites fire
 	// many login/signup round-trips per backend lifetime from one host (loopback),
-	// which a live limiter would 429. The dedicated login-security cross project
-	// spawns a backend with `FUZ_LOGIN_RATE_LIMIT_ENABLED=true` to exercise the
+	// which a live limiter would 429. The dedicated security cross project
+	// spawns a backend with `FUZ_LOGIN_RATE_LIMIT_ENABLED=true` (any stringbool
+	// truthy value; garbage refuses to boot) to exercise the
 	// 429 + `Retry-After` path and XFF-keyed bucketing over the wire (see
 	// `testing/cross_backend/login_security.ts`). `trusted_proxies` is always
 	// wired below, so the resolved client IP keys the limiter; the security suite
 	// spoofs per-case `X-Forwarded-For` IPs so each case is its own fresh bucket.
-	// Read the raw flag directly — it's a test-binary-only toggle, not part of the
-	// production `BaseServerEnv` schema. The literal is the canonical
-	// `LOGIN_RATE_LIMIT_ENABLED_ENV` (in `default_backend_configs.ts`, where the
-	// backend configs set it for both impls), re-declared here because that module
-	// transitively pulls `vitest` and can't be imported into the spawned binary —
-	// the same local-redeclare `testing_spine_server_node.ts` does for `TS_SPINE_DIR_ENV`.
-	const login_rate_limit_enabled = runtime.env_get('FUZ_LOGIN_RATE_LIMIT_ENABLED') === 'true';
+	const login_rate_limit_enabled = parse_stringbool_env(
+		LOGIN_RATE_LIMIT_ENABLED_ENV,
+		runtime.env_get(LOGIN_RATE_LIMIT_ENABLED_ENV)
+	);
 	const login_ip_rate_limiter = login_rate_limit_enabled
 		? new RateLimiter(default_login_ip_rate_limit)
 		: null;
@@ -202,26 +302,47 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		? new RateLimiter(default_login_account_rate_limit)
 		: null;
 
+	// Action rate limiting is OFF by default for the same reason. The security
+	// project's `FUZ_ACTION_RATE_LIMIT_ENABLED=true` builds one IP + one account
+	// limiter (the action defaults' windows, `FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS`
+	// replacing both caps) that `create_app_server` threads to the RPC endpoint
+	// and the WS endpoint alike — one budget per axis across both transports,
+	// which `testing/cross_backend/ws_action_rate_limit.ts` drives. The Rust stub
+	// reads the same two env vars.
+	const action_rate_limit_enabled = parse_stringbool_env(
+		ACTION_RATE_LIMIT_ENABLED_ENV,
+		runtime.env_get(ACTION_RATE_LIMIT_ENABLED_ENV)
+	);
+	const action_rate_limit_max_attempts = parse_action_rate_limit_max_attempts(
+		runtime.env_get(ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV),
+		action_rate_limit_enabled
+	);
+	const with_action_cap = (defaults: RateLimiterOptions): RateLimiterOptions => ({
+		...defaults,
+		max_attempts: action_rate_limit_max_attempts ?? defaults.max_attempts
+	});
+	const action_ip_rate_limiter = action_rate_limit_enabled
+		? new RateLimiter(with_action_cap(default_action_ip_rate_limit))
+		: null;
+	const action_account_rate_limiter = action_rate_limit_enabled
+		? new RateLimiter(with_action_cap(default_action_account_rate_limit))
+		: null;
+
 	const app_server = await create_app_server({
 		backend: app_backend,
 		session_options: spine_session_options,
 		allowed_origins,
 		proxy: { trusted_proxies: ['127.0.0.1', '::1'], get_connection_ip },
-		// Login limiters: null unless `FUZ_LOGIN_RATE_LIMIT_ENABLED` is set (above).
-		// `create_spine_route_specs` reads these off `AppServerContext` and wires
-		// them onto `POST /api/account/login`. Every other limiter stays disabled
-		// for the same many-round-trips-from-one-host reason — including the
-		// sibling per-surface IP limiters, which now default to live instances
-		// (`create_app_server` builds one per surface when the field is omitted),
-		// so an omission here would 429 the bootstrap + signup round trips the
-		// standard cross suites fire from loopback.
+		// Every limiter not passed below stays off. The explicit ones win over
+		// the mode: each is null unless its env toggle (above) built it.
+		// `create_spine_route_specs` reads the login pair off `AppServerContext`
+		// and wires them onto `POST /api/account/login`; the action pair is
+		// threaded to the RPC + WS endpoints.
+		rate_limiters: 'disabled_for_testing',
 		login_ip_rate_limiter,
-		signup_ip_rate_limiter: null,
-		bootstrap_ip_rate_limiter: null,
 		login_account_rate_limiter,
-		signup_account_rate_limiter: null,
-		action_ip_rate_limiter: null,
-		action_account_rate_limiter: null,
+		action_ip_rate_limiter,
+		action_account_rate_limiter,
 		daemon_token_state: daemon_token_rotation.state,
 		bootstrap: bootstrap_token_path
 			? { mode: 'live', token_path: bootstrap_token_path }
@@ -264,6 +385,21 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 				notification_sender: ws_transport,
 				daemon_token_state: daemon_token_rotation.state
 			}),
+		// The WS endpoint: the protocol actions plus the self-service account
+		// actions. The no-domain spine carries no domain WS surface, and the
+		// account actions are what lets a socket revoke the session it is
+		// running on (`capabilities.ws_account_actions`), as it can on the Rust
+		// stub, which serves one registry on RPC and WS. No `required_roles` —
+		// the stub's WS state carries none either.
+		create_upgrade_websocket: prepare_websocket({ max_message_bytes: WS_MAX_MESSAGE_BYTES }),
+		ws_endpoints: [
+			{
+				path: ws_path,
+				actions: [...protocol_actions, ...create_account_actions(app_backend.deps)],
+				transport: ws_transport,
+				max_message_bytes: WS_MAX_MESSAGE_BYTES
+			}
+		],
 		env_schema: BaseServerEnv,
 		env_values: env,
 		// Await fire-and-forget effects before each response returns, so a
@@ -288,37 +424,14 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 
 	const close = async (): Promise<void> => {
 		await daemon_token_rotation.stop();
+		// closes the WS + SSE connections, then the DB
+		await app_server.close();
+		// caller-injected limiters are the caller's to dispose
 		login_ip_rate_limiter?.dispose();
 		login_account_rate_limiter?.dispose();
-		await app_server.close();
+		action_ip_rate_limiter?.dispose();
+		action_account_rate_limiter?.dispose();
 	};
 
-	// WS is mounted after the app exists (Node's `createNodeWebSocket` needs
-	// the app) — see `testing_server_core.ts`. The protocol actions plus the
-	// self-service account actions: the no-domain spine carries no domain WS
-	// surface, and the account actions are what lets a socket revoke the
-	// session it is running on (`capabilities.ws_account_actions`), as it can
-	// on the Rust stub, which serves one registry on RPC and WS.
-	const mount_websocket = (upgrade_websocket: UpgradeWebSocket): void => {
-		register_ws_endpoint({
-			app: app_server.app,
-			path: ws_path,
-			allowed_origins,
-			db: app_backend.deps.db,
-			upgradeWebSocket: upgrade_websocket,
-			actions: [...protocol_actions, ...create_account_actions(app_backend.deps)],
-			transport: ws_transport,
-			// the revocation handlers on `/api/rpc` close this endpoint's sockets
-			// through the backend's closer, alongside the audit streams
-			// `create_app_server` added to it
-			connection_closer: app_backend.deps.connection_closer,
-			log,
-			// off, like the RPC endpoints' (`create_app_server` above)
-			action_ip_rate_limiter: null,
-			action_account_rate_limiter: null
-		});
-		app_backend.deps.audit.add_listener(create_ws_auth_guard(ws_transport, log));
-	};
-
-	return { app: app_server.app, close, mount_websocket };
+	return { app: app_server.app, close, surface: app_server.surface_spec.surface };
 };

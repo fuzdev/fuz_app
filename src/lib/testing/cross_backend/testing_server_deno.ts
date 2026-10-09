@@ -42,7 +42,7 @@ export const create_deno_testing_adapter = (): TestingServerAdapter => ({
 	get_connection_ip: (c) =>
 		(c.env as { remoteAddr?: { hostname?: string } } | undefined)?.remoteAddr?.hostname,
 	// Deno's WS upgrade is module-level and stateless — no post-serve attach.
-	prepare_websocket: () => ({ upgrade_websocket: upgradeWebSocket }),
+	prepare_websocket: () => ({ create_upgrade_websocket: () => upgradeWebSocket }),
 	serve: ({ fetch, port, hostname }) => {
 		const server = Deno.serve({ port, hostname }, fetch as Parameters<typeof Deno.serve>[1]);
 		const handle: ServeHandle = { shutdown: () => server.shutdown(), native: server };

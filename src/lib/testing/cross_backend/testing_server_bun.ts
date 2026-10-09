@@ -50,7 +50,11 @@ export const create_bun_testing_adapter = (): TestingServerAdapter => ({
 	// Bun's WS upgrade is module-level and stateless (like Deno) — no
 	// post-serve attach. The `websocket` handler is threaded into `serve`
 	// below, where `Bun.serve` wants it.
-	prepare_websocket: () => ({ upgrade_websocket: upgradeWebSocket }),
+	// TODO: `Bun.serve({websocket: {maxPayloadLength}})` (default 16 MiB) could
+	// carry the endpoint's `max_message_bytes` as a frame cap, like Node's
+	// `maxPayload`; until then the per-message check in `register_ws_endpoint`
+	// closes an oversized message with `WS_CLOSE_MESSAGE_TOO_BIG` (1009).
+	prepare_websocket: () => ({ create_upgrade_websocket: () => upgradeWebSocket }),
 	serve: ({ fetch, port, hostname }) => {
 		const server = Bun.serve({
 			fetch: fetch as (request: Request, server: unknown) => Response | Promise<Response>,

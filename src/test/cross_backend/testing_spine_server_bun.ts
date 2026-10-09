@@ -38,11 +38,12 @@ const start = async (): Promise<void> => {
 		daemon_name: DAEMON_NAME,
 		host,
 		port,
-		build_app: () =>
+		build_app: ({ prepare_websocket }) =>
 			build_spine_app({
 				runtime: adapter.runtime,
 				get_connection_ip: adapter.get_connection_ip,
-				daemon_token_path
+				daemon_token_path,
+				prepare_websocket
 			})
 	});
 };

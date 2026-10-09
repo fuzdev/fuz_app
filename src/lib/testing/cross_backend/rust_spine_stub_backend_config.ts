@@ -45,6 +45,7 @@ import { build_test_backend_paths } from './build_test_backend_paths.ts';
 import { SPINE_EXPECTED_SCHEMA_URL } from './spine_surface_constants.ts';
 import {
 	LOGIN_RATE_LIMIT_ENABLED_ENV,
+	action_rate_limit_env,
 	make_default_rust_backend_config,
 	rust_default_capabilities
 } from './default_backend_configs.ts';
@@ -125,6 +126,21 @@ export interface SpineStubBackendConfigOptions {
 	 * TS spine binary wires the equivalent set unconditionally.
 	 */
 	readonly trusted_proxies?: string;
+	/**
+	 * Enable the action rate limiters (`FUZ_ACTION_RATE_LIMIT_ENABLED=true`) —
+	 * one per-IP and one per-account limiter shared by the RPC and WS
+	 * endpoints. Off by default, like `enable_login_rate_limit`; set only for
+	 * the dedicated security cross project, which drives them through
+	 * `ws_action_rate_limit.ts`. Mirrors `TsSpineBackendConfigOptions.enable_action_rate_limit`.
+	 */
+	readonly enable_action_rate_limit?: boolean;
+	/**
+	 * Replace both action limiters' `max_attempts`
+	 * (`FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS`) so a suite reaches the cap in a few
+	 * calls. Requires `enable_action_rate_limit` — the binary refuses to boot
+	 * otherwise. Mirrors `TsSpineBackendConfigOptions.action_rate_limit_max_attempts`.
+	 */
+	readonly action_rate_limit_max_attempts?: number;
 }
 
 /**
@@ -187,7 +203,8 @@ export const rust_spine_stub_backend_config = (
 			// limiters + trust the loopback proxy so the limiter keys on the
 			// resolved `X-Forwarded-For` IP. The stub reads both directly.
 			...(enable_login_rate_limit ? { [LOGIN_RATE_LIMIT_ENABLED_ENV]: 'true' } : {}),
-			...(trusted_proxies !== undefined ? { FUZ_TRUSTED_PROXIES: trusted_proxies } : {})
+			...(trusted_proxies !== undefined ? { FUZ_TRUSTED_PROXIES: trusted_proxies } : {}),
+			...action_rate_limit_env(options)
 		}
 	});
 };

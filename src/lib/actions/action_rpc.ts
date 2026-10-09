@@ -350,8 +350,9 @@ const jsonrpc_error_envelope = (
  *    a UUID and treats anything else as omitted.
  * 5. **Post-authorization auth** — enforce role / keeper requirements
  *    against the request context.
- * 6. **Validate params** — parse input against the action's `input` schema.
- * 7. **Rate limit** — per-action IP / account throttling.
+ * 6. **Rate limit** — per-action IP / account throttling, ahead of params
+ *    validation so a malformed call still charges.
+ * 7. **Validate params** — parse input against the action's `input` schema.
  * 8. **Dispatch** — acquire DB handle (transaction for mutations, pool for reads),
  *    construct `ActionContext`, call handler, return JSON-RPC response.
  *

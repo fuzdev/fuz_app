@@ -58,6 +58,48 @@ import {
 export const LOGIN_RATE_LIMIT_ENABLED_ENV = 'FUZ_LOGIN_RATE_LIMIT_ENABLED';
 
 /**
+ * Env var both spine binaries read to enable their action rate limiters
+ * (`'true'` on / unset off) — one per-IP and one per-account limiter, shared by
+ * the RPC and WS endpoints (and, on the Rust stub, the auth-family handlers
+ * that charge in-handler). The cross-language contract for the action
+ * rate-limit cross suite (`ws_action_rate_limit.ts`); same delivery as
+ * `LOGIN_RATE_LIMIT_ENABLED_ENV`. Off, the TS spine builds no action limiter
+ * and the Rust stub keeps its default posture (only its auth families charge,
+ * against an always-on per-account limiter at the production cap).
+ */
+export const ACTION_RATE_LIMIT_ENABLED_ENV = 'FUZ_ACTION_RATE_LIMIT_ENABLED';
+
+/**
+ * Env var replacing both action limiters' `max_attempts` (a positive integer;
+ * the windows stay `default_action_ip_rate_limit`'s /
+ * `default_action_account_rate_limit`'s). Both spine binaries refuse to boot
+ * when it is set without `ACTION_RATE_LIMIT_ENABLED_ENV` or is not a positive
+ * integer, so a suite never asserts a throttle the backend didn't build.
+ */
+export const ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV = 'FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS';
+
+/** Options for {@link action_rate_limit_env}. */
+export interface ActionRateLimitEnvOptions {
+	readonly enable_action_rate_limit?: boolean;
+	readonly action_rate_limit_max_attempts?: number;
+}
+
+/**
+ * The `extra_env` entries carrying the action rate-limit toggles, shared by the
+ * TS and Rust backend configs so one option pair drives both impls.
+ * `action_rate_limit_max_attempts` is passed through even without the enable
+ * flag, so the binary refuses the combination instead of the harness hiding it.
+ */
+export const action_rate_limit_env = (
+	options: ActionRateLimitEnvOptions
+): Record<string, string> => ({
+	...(options.enable_action_rate_limit ? { [ACTION_RATE_LIMIT_ENABLED_ENV]: 'true' } : {}),
+	...(options.action_rate_limit_max_attempts !== undefined
+		? { [ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV]: String(options.action_rate_limit_max_attempts) }
+		: {})
+});
+
+/**
  * Capabilities shared by TS-family backends — same canonical implementation,
  * same feature set. The non-gating wiring facts (`bearer_auth` /
  * `trusted_proxy` / `login_rate_limit`) live in `ts_default_shape_notes`.

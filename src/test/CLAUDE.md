@@ -398,19 +398,30 @@ diffs the two backends' live RPC method set + per-method auth shape via
 `_testing_action_manifest` + `assert_action_manifests_equal` (exact parity —
 method set + every auth axis) — all under `npm run test:cross:parity`.
 
-A third out-of-the-seventeen file, `login_security.cross.test.ts`, runs under
-its own dual-spawn `cross_backend_security` project
-(`global_setup_login_security.ts` brings up the TS spine + `testing_spine_stub`
-with the login limiters enabled + the loopback proxy trusted, providing
-`security_handle_a`/`_b`) and drives `describe_login_security_cross_tests`
-against each impl: the per-IP login `429` + `Retry-After` shape, the
-`X-Forwarded-For` bucket keying, and the distributed-spray backstop (a success
-must not refund the per-IP budget). It needs a dedicated project because the
+Two more files, `login_security.cross.test.ts` and
+`ws_action_rate_limit.cross.test.ts`, run under their own dual-spawn
+`cross_backend_security` project (`global_setup_login_security.ts` brings up
+the TS spine + `testing_spine_stub` with the login limiters and the action
+limiters enabled + the loopback proxy trusted, providing
+`security_handle_a`/`_b` and the action limiters' cap as
+`security_action_rate_limit_max_attempts`). The first drives
+`describe_login_security_cross_tests` against each impl: the per-IP login
+`429` and `Retry-After` shape, the `X-Forwarded-For` bucket keying, and the
+distributed-spray backstop (a success must not refund the per-IP budget). The
+second drives `describe_ws_action_rate_limit_cross_tests`: an account-limited
+action refused on the WS call past the cap, one account budget across HTTP RPC
+and WS, the per-IP axis keyed by the forwarded client IP on both
+transports, and the account axis at the RPC dispatcher (`cell_create`, which
+the Rust stub charges there rather than in-handler) — over a real socket, against limiters each binary builds from
+`FUZ_ACTION_RATE_LIMIT_ENABLED` + `FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS` and
+shares between its RPC and WS mounts (both binaries parse the flags as a
+stringbool and the cap as a `u32`, refusing garbage at boot). They need a dedicated project because the
 limiters can only be enabled on a backend nothing else shares — the standard
-suites fire many loopback logins a live limiter would `429` — so the standard
-backends keep every limiter null. `npm run test:cross:security`; cross-process
-only (the in-process limiter + proxy paths already have `describe_rate_limiting_tests`
-and the `http/proxy` middleware tests).
+suites fire many loopback logins and actions a live limiter would throttle — so
+the standard backends keep every limiter null. `npm run test:cross:security`;
+cross-process only (the in-process limiter + proxy paths already have
+`describe_rate_limiting_tests`, the `http/proxy` middleware tests, and the
+assembled-app WS dispatch tests in `server/create_app_server_ws_endpoints.dispatch.db.test.ts`).
 
 Every backend now advertises `capabilities.sse` and serves
 `/api/admin/audit/stream`: the TS spines wire `audit_log_sse`, and the Rust
@@ -432,7 +443,11 @@ backends:
   over real HTTP, in-memory PGlite, no external infra (the `ts_deno` / `ts_bun`
   ones need `deno` / `bun` on PATH). This is the in-repo cross-process coverage
   of the TS impl's real HTTP path across all three JS runtimes — the in-process
-  suites (default `gro test`) never cross a process boundary.
+  suites (default `gro test`) never cross a process boundary. All three mount
+  their WebSocket endpoint through `create_app_server`'s `ws_endpoints`;
+  `testing_spine_server.db.test.ts` (plain `gro test`) builds the Node app
+  in-process and pins its surface — `/api/ws` listed, the surface invariants
+  passing.
 - `cross_backend_rust_spine_stub` — the Rust `testing_spine_stub`. Its
   `globalSetup` rebuilds the crate and creates its Postgres DB by default
   (see ../../docs/testing.md §Rebuild-by-default workflow), so the common
@@ -454,7 +469,7 @@ npm run test:cross:rust-spine-stub
 FUZ_TESTING_NO_REBUILD=1 npm run test:cross:rust-spine-stub
 # the dual-spawn parity gates (schema + action-manifest):
 npm run test:cross:parity
-# the dual-spawn login rate-limit + XFF gate (limiters enabled on both spines):
+# the dual-spawn login + action rate-limit gates (limiters enabled on both spines):
 npm run test:cross:security
 ```
 

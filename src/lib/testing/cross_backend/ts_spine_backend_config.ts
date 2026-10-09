@@ -22,6 +22,7 @@ import type { BackendConfig } from './backend_config.ts';
 import { build_test_backend_paths } from './build_test_backend_paths.ts';
 import {
 	LOGIN_RATE_LIMIT_ENABLED_ENV,
+	action_rate_limit_env,
 	make_default_ts_backend_config,
 	ts_default_capabilities
 } from './default_backend_configs.ts';
@@ -104,6 +105,21 @@ export interface TsSpineBackendConfigOptions {
 	 * client IP. Mirrors `SpineStubBackendConfigOptions.enable_login_rate_limit`.
 	 */
 	readonly enable_login_rate_limit?: boolean;
+	/**
+	 * Enable the action rate limiters (`FUZ_ACTION_RATE_LIMIT_ENABLED=true`) —
+	 * one per-IP and one per-account limiter shared by the RPC and WS
+	 * endpoints. Off by default, like `enable_login_rate_limit`; set only for
+	 * the dedicated security cross project, which drives them through
+	 * `ws_action_rate_limit.ts`. Mirrors `SpineStubBackendConfigOptions.enable_action_rate_limit`.
+	 */
+	readonly enable_action_rate_limit?: boolean;
+	/**
+	 * Replace both action limiters' `max_attempts`
+	 * (`FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS`) so a suite reaches the cap in a few
+	 * calls. Requires `enable_action_rate_limit` — the binary refuses to boot
+	 * otherwise. Mirrors `SpineStubBackendConfigOptions.action_rate_limit_max_attempts`.
+	 */
+	readonly action_rate_limit_max_attempts?: number;
 }
 
 /**
@@ -134,7 +150,8 @@ export const ts_spine_node_backend_config = (
 			paths,
 			extra_env: {
 				[TS_SPINE_DIR_ENV]: paths.root,
-				...login_rate_limit_env(enable_login_rate_limit)
+				...login_rate_limit_env(enable_login_rate_limit),
+				...action_rate_limit_env(options)
 			},
 			capabilities: ts_spine_capabilities
 		}),
@@ -164,7 +181,8 @@ export const ts_spine_bun_backend_config = (
 			paths,
 			extra_env: {
 				[TS_SPINE_DIR_ENV]: paths.root,
-				...login_rate_limit_env(enable_login_rate_limit)
+				...login_rate_limit_env(enable_login_rate_limit),
+				...action_rate_limit_env(options)
 			},
 			capabilities: ts_spine_bun_capabilities
 		}),
@@ -211,7 +229,8 @@ export const ts_spine_deno_backend_config = (
 			paths,
 			extra_env: {
 				[TS_SPINE_DIR_ENV]: paths.root,
-				...login_rate_limit_env(enable_login_rate_limit)
+				...login_rate_limit_env(enable_login_rate_limit),
+				...action_rate_limit_env(options)
 			},
 			capabilities: ts_spine_capabilities
 		}),

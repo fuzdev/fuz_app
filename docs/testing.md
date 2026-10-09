@@ -1116,8 +1116,28 @@ the same code:
 
 Each adapter pairs with the runtime-neutral `start_testing_server`
 (`testing_server_core.ts`), which owns serve + daemon-info + WS attach +
-graceful drain. The consumer writes a ~40-line spawn entry per runtime that
-wires its own app build onto the adapter + core. The Bun teardown handles
+graceful shutdown. The consumer writes a ~40-line spawn entry per runtime that
+wires its own app build onto the adapter + core. WebSocket endpoints mount
+through `create_app_server`'s `ws_endpoints` on every runtime: `build_app`
+receives `{prepare_websocket}` and passes its result as
+`create_upgrade_websocket`, and the core attaches it to the server after
+`serve` (Node's `injectWebSocket`):
+
+```ts
+build_app: async ({prepare_websocket}) => {
+	const server = await create_app_server({
+		...,
+		create_upgrade_websocket: prepare_websocket({max_message_bytes}),
+		ws_endpoints: [{path: '/api/ws', actions, max_message_bytes}],
+	});
+	return {app: server.app, close: server.close};
+},
+```
+
+Pass the endpoint's `max_message_bytes` (omitted, both default to
+`DEFAULT_WS_MAX_MESSAGE_BYTES`) so Node's `ws` frame cap matches it. On
+shutdown the core stops accepting connections, runs `close` (which must end
+live WebSockets, as `AppServer.close` does), then awaits the drain. The Bun teardown handles
 Bun's never-resolving `server.stop()` by fire-and-forgetting it; the shared
 `spawn_backend` cleanup SIGKILLs after a grace window so a Bun run exits
 cleanly.

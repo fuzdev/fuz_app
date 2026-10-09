@@ -1385,12 +1385,14 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   request (`{result}` / `{error}` / `undefined` to swallow), the path
   `describe_peer_ping_ws_tests` drives. With no `on_request` the seam is inert
   (a server-initiated request flows to `messages` as before).
-- `testing/transports/ws_transport.ts` — `create_ws_transport({base_url, ws_path, cookies, origin?, on_request?})`
+- `testing/transports/ws_transport.ts` — `create_ws_transport({base_url, ws_path, cookies, origin?, on_request?, headers?})`
   builds a real-upgrade WS client using the `ws` npm package (optional
   peerDep; consumers wiring cross-process tests `npm install --save-dev ws`).
   Threads the keeper cookie onto the upgrade so per-action auth succeeds on
   the first message. `on_request` (attached at construction, before the upgrade
-  completes) answers server-initiated requests via the shared `deliver_inbound`.
+  completes) answers server-initiated requests via the shared `deliver_inbound`. `headers`
+  adds upgrade headers — e.g. an `X-Forwarded-For`, which a backend trusting the
+  loopback proxy resolves as the connection's client IP for every message.
   An open socket is not yet an *admitted* connection — both spines answer the
   handshake, then re-read the credential, then admit, and deliver no
   server-initiated message until then. `create_admitted_ws_transport(options)`
@@ -1697,6 +1699,56 @@ The in-process counterparts already exist (`describe_rate_limiting_tests` plus t
 proxy middleware tests), so there's no in-process leg. `npm run test:cross:security`.
 Cited property: `docs/security.md` §"Rate Limiting" + §"Trusted Proxy / Client IP".
 
+### Action rate-limit parity over WS — `cross_backend/ws_action_rate_limit.ts`
+
+`describe_ws_action_rate_limit_cross_tests({setup_test, base_url, ws_path,
+rpc_path?, max_attempts})` — the imperative suite pinning **action rate
+limiting over a real WebSocket**, and its budget shared with HTTP RPC, on
+backends started with small shared action limiters (`max_attempts` is the cap
+they were started with, at least 2):
+
+- **account axis over WS** — `account_token_create` (`rate_limit: 'account'`
+  on both spines) with malformed params: `max_attempts` calls answer
+  `invalid_params` (the throttle runs before params validation, so they charge),
+  the next answers `rate_limited` with a positive `data.retry_after`.
+- **one account bucket across transports** — calls split between HTTP RPC and
+  WS exhaust one budget; the call past it is refused on WS and on HTTP (`429`).
+- **IP axis keyed by the forwarded client IP** — `peer/ping` (`rate_limit:
+  'ip'`, public) with malformed params from one `X-Forwarded-For` address, over
+  anonymous HTTP and over a WS whose upgrade carried the header: refused past the
+  cap on both transports, while a second address keeps its own bucket on both.
+- **account axis at the RPC dispatcher** — `cell_create` (`rate_limit:
+  'account'`, on both spines' RPC mount) with malformed params over HTTP:
+  refused (`429`) past the cap, and a budget split between `cell_create` and
+  `account_token_create` is one bucket.
+
+Isolation without a limiter reset: each account case runs on the fresh keeper
+the per-test `_testing_reset` seeds (a new account id), and the IP case uses
+TEST-NET-2 addresses nothing else sends. The backends are started by the
+`enable_action_rate_limit` + `action_rate_limit_max_attempts` options on both
+backend configs (`ts_spine_*_backend_config`, `rust_spine_stub_backend_config`),
+which set `ACTION_RATE_LIMIT_ENABLED_ENV` (`FUZ_ACTION_RATE_LIMIT_ENABLED`) and
+`ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV` (`FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS`) from
+`default_backend_configs.ts` — both spine binaries build one IP + one account
+limiter (the action defaults' windows, the cap replacing both
+`max_attempts`) shared by RPC and WS, and refuse to boot on a cap without the
+flag. Off, the TS spine builds no action limiter, and the Rust stub keeps its
+default posture: its auth families charge an always-on per-account limiter at
+the production cap, its dispatchers none. Runs under the
+`cross_backend_security` dual-spawn beside the login-security suite. The TS
+spine charges every classed action in its dispatcher; the Rust stub charges
+`account_token_create` and the other auth-family specs inside their handlers
+and every other classed spec at its dispatcher states, the same limiter instances at both sites. So
+the `account_token_create` cases pin the Rust in-handler site, the IP case the
+Rust WS dispatcher's IP axis, and the `cell_create` cases the Rust RPC
+dispatcher's account axis. The Rust WS dispatcher's account axis stays
+unpinned: the TS WS endpoint mounts no cell verbs, so no dispatcher-charged
+account action is on WS on both spines. The IP case's addresses are fixed per
+process and their bucket outlives `_testing_reset`, so a vitest retry of it
+would fail.
+Cross-process only; fuz_app's own wiring is
+`src/test/cross_backend/ws_action_rate_limit.cross.test.ts`.
+
 ### Role-gated participation parity — `cross_backend/role_grant_participation.ts`
 
 The role-gated-participation capstone — TS↔Rust agreement that an **app-defined
@@ -1746,15 +1798,15 @@ The reusable shape for standing up a **spawnable TS** cross-process test
 binary (the TS analog of the Rust `testing_spine_stub`), so consumers don't
 re-roll the serve / daemon-info / WS-attach / drain boilerplate:
 
-- `testing/cross_backend/testing_server_core.ts` — `start_testing_server({adapter, daemon_name, host, port, app_version?, build_app})`. Owns the runtime-neutral orchestration: open-host refusal, stale-daemon check, daemon-info write, `serve`, post-serve WS attach, graceful drain. Domain-free — the app is the caller's `build_app(): Promise<BuiltTestingApp>` seam (`{app, close, mount_websocket?}`). `mount_websocket(upgrade)` is invoked after the app exists + the adapter prepared WS (the mount-after-app order Node's `@hono/node-ws` forces — `create_app_server`'s `ws_endpoints` auto-mount can't be used on Node). Exports the `TestingServerAdapter` / `ServeHandle` / `PreparedWebsocket` interfaces.
-- `testing/cross_backend/testing_server_node.ts` — `create_node_testing_adapter()` (`@hono/node-server` + `@hono/node-ws`). Optional peer deps (like `ws`); only test binaries import them.
+- `testing/cross_backend/testing_server_core.ts` — `start_testing_server({adapter, daemon_name, host, port, app_version?, build_app})`. Owns the runtime-neutral orchestration: open-host refusal, stale-daemon check, daemon-info write, `serve`, post-serve WS attach, graceful shutdown. Domain-free — the app is the caller's `build_app(context: BuildTestingAppContext): Promise<BuiltTestingApp>` seam (`{app, close}`). WebSocket endpoints mount through `create_app_server`'s `ws_endpoints` on every runtime: the build calls `context.prepare_websocket({max_message_bytes?})`, which asks the adapter for a `PreparedWebsocket` (`{create_upgrade_websocket: (app) => UpgradeWebSocket, attach_to_server?}`) and returns its factory, to pass as `create_upgrade_websocket`; the core runs each `attach_to_server` once `serve` returns (Node's `injectWebSocket`). Shutdown starts the listener's `shutdown` (stop accepting), runs `close` — which must end live WebSockets, as `AppServer.close` does — then awaits the drain, since open sockets would otherwise hold it. Exports the `TestingServerAdapter` (`prepare_websocket: (options?: PrepareWebsocketOptions) => PreparedWebsocket`) / `ServeHandle` / `PreparedWebsocket` / `PrepareWebsocketOptions` / `BuildTestingAppContext` interfaces.
+- `testing/cross_backend/testing_server_node.ts` — `create_node_testing_adapter()` (`@hono/node-server` + `@hono/node-ws`). Optional peer deps (like `ws`); only test binaries import them. Its factory sets the `ws` server's `maxPayload` to `max_message_bytes` (default `DEFAULT_WS_MAX_MESSAGE_BYTES`) — `@hono/node-ws` takes no option for it, and `ws`'s own default is 100 MiB — so an oversized message is refused at the frame layer (still `WS_CLOSE_MESSAGE_TOO_BIG`) before it is buffered whole. Deno and Bun ignore the option and keep the per-message check alone.
 - `testing/cross_backend/testing_server_deno.ts` — `create_deno_testing_adapter()` (`Deno.serve` + `@hono/deno`, an optional peer dep; `Deno` declared locally so it typechecks under the Node toolchain). Spawn the entry with `--sloppy-imports` (Deno doesn't do `.js`→`.ts`; Gro's loader does, so the Node path needs no flag).
 - `testing/cross_backend/testing_server_bun.ts` — `create_bun_testing_adapter()` (`Bun.serve` + `@hono/bun`'s module-level `getConnInfo`, `upgradeWebSocket`, and `websocket`; `Bun.serve` declared locally so it typechecks under the Node toolchain). Needs the optional `@hono/bun` peer dep (the counterpart to Node's `@hono/node-server` + `@hono/node-ws`; `Bun.serve` is built in), and Bun resolves `.js`→`.ts` natively (no flag, unlike Deno). Reuses `create_node_runtime` (Bun implements the `node:fs`/`node:process` surface). WS is module-level + stateless (like Deno) — the `websocket` handler is threaded into `serve`, where `Bun.serve` wants it, so no post-serve attach.
 - `testing/cross_backend/default_spine_surface.ts` — the canonical no-domain spine surface (account/admin/audit/signup + bootstrap): `spine_session_options`, `spine_roles`, `create_spine_route_specs`, `spine_rpc_endpoints`, `create_spine_surface_spec`. This is the **declared** surface — the `create_standard_rpc_actions` bundle the spec-derived suites auto-enumerate. `$lib`-free (it's reached by the spawned binary under Gro's loader, which doesn't resolve `$lib`), so keep it on relative imports. Shared by the spine_stub cross test, the TS cross tests, and the binary.
 - `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` / `full_spine_rpc_endpoints(ctx, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). Single-sources what was an inline assembly in `testing_spine_server.ts`, so the binary and the `spine_method_coverage` reconciliation test build the same list. Also `$lib`-free.
 - `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_deno_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory PGlite, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
 
-fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` + `full_spine_rpc_endpoints` + a WS mount, reusing `default_spine_surface`. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it when nothing its suites seed is already expired (the conformance table's `expired_session` principal seeds a backdated session row); an in-process harness leaves it off.
+fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` (`rate_limiters: 'disabled_for_testing'` plus whichever login / action limiters its env toggles built, `full_spine_rpc_endpoints`, and one `ws_endpoints` entry whose `transport` is also the role-grant-offer `notification_sender`), reusing `default_spine_surface`. `src/test/cross_backend/testing_spine_server.db.test.ts` builds it with the Node adapter in-process and asserts its surface lists `/api/ws` and passes the surface invariants. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it when nothing its suites seed is already expired (the conformance table's `expired_session` principal seeds a backdated session row); an in-process harness leaves it off.
 
 ### Live-method coverage reconciliation — `method_coverage.ts`
 

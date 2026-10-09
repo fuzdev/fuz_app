@@ -68,6 +68,13 @@ export interface WsTransportOptions {
 	 * behavior).
 	 */
 	readonly on_request?: WsRequestResponder;
+	/**
+	 * Extra headers for the upgrade request — e.g. an `X-Forwarded-For` that a
+	 * backend trusting the loopback proxy resolves as the connection's client
+	 * IP, which keys the per-IP action rate limiter for every message on the
+	 * socket. `cookies` and `origin` set their own headers.
+	 */
+	readonly headers?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -95,7 +102,7 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 	const default_timeout = default_timeout_ms ?? WS_CLIENT_DEFAULT_TIMEOUT_MS;
 
 	const ws_url = `${base_url.replace(/^http/i, 'ws')}${ws_path}`;
-	const headers: Record<string, string> = {};
+	const headers: Record<string, string> = { ...options.headers };
 	if (cookies.length > 0) headers.Cookie = cookies.join('; ');
 
 	const socket = new WebSocket(ws_url, {
