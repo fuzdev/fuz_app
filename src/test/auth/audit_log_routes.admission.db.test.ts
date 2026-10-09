@@ -11,7 +11,10 @@
  * cookie, real database) and holds the request **at the credential re-read**
  * (`create_gated_db` — the second `auth_session` read of the request, the
  * first being the session middleware's) so something can happen in the
- * window. The control case stalls the same way and touches nothing.
+ * window. The control case stalls the same way and touches nothing. Two cases
+ * close the server (`AppServer.close`): a stream requested after it is born
+ * closed and skips the re-read, and a shutdown landing in the re-read ends the
+ * stream after its connect comment even when the re-read then fails.
  *
  * @module
  */
@@ -217,6 +220,51 @@ describe_db('audit log stream admission', (get_db) => {
 		assert.strictEqual(res.status, 500);
 		assert.strictEqual(h.audit_sse.registry.count, 0, 'no stream opened unchecked');
 		assert.strictEqual(h.audit_sse.registry.pending_count, 0, 'the registration is removed');
+	});
+
+	test('a stream requested after the server closed ends after its connect comment, unread', async () => {
+		const db = get_db();
+		const h = await create_harness(db);
+		await h.test_app.cleanup();
+		assert.ok(h.audit_sse.registry.closing);
+
+		// would hold the handler's re-read, were there one
+		const stalled = h.stall();
+		try {
+			const response = Promise.resolve(
+				h.test_app.app.request(STREAM_PATH, { headers: h.admin.create_session_headers() })
+			);
+			const res = await Promise.race([response, stalled.reached.then(() => null)]);
+			assert.ok(res, 'a born-closed registration skips the re-read');
+
+			assert.strictEqual(res.status, 200);
+			assert.ok(res.headers.get('Content-Type')?.includes('text/event-stream'));
+			assert.strictEqual(h.audit_sse.registry.count, 0, 'never admitted');
+			assert.strictEqual(h.audit_sse.registry.pending_count, 0);
+			assert.strictEqual(
+				await res.text(),
+				SSE_CONNECTED_COMMENT,
+				'the connect comment, then the end'
+			);
+		} finally {
+			stalled.release();
+		}
+	});
+
+	test('a shutdown during the re-read ends the stream after its connect comment, even when the re-read fails', async () => {
+		const db = get_db();
+		const h = await create_harness(db);
+
+		const { response, stalled } = await open_stalled(h);
+		await h.test_app.cleanup();
+		assert.strictEqual(h.audit_sse.registry.pending_count, 0, 'the close-all closed it pending');
+		// the database closes under the re-read
+		stalled.fail(new Error('database closed'));
+		const res = await response;
+
+		assert.strictEqual(res.status, 200, "the shutdown's answer, not a 500");
+		assert.strictEqual(h.audit_sse.registry.count, 0, 'never admitted');
+		assert.strictEqual(await res.text(), SSE_CONNECTED_COMMENT);
 	});
 
 	test('a logout during the request opens no stream', async () => {

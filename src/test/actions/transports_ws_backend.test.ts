@@ -225,6 +225,67 @@ describe('BackendWebsocketTransport.close_all_sockets', () => {
 		assert.strictEqual(after.closes.length, 1, 'the socket after the throw was closed');
 		// the throwing socket's connection is removed too
 		assert.strictEqual(t.get_connection_count(), 0);
+		// closing even though a close threw: a later registration is born closed
+		assert.strictEqual(t.is_closing(), true);
+	});
+});
+
+describe('BackendWebsocketTransport born-closed registrations', () => {
+	const GOING_AWAY = { code: WS_CLOSE_GOING_AWAY, reason: WS_CLOSE_GOING_AWAY_REASON };
+
+	test('a pending registration after close_all is closed going-away and refused at admission', () => {
+		const t = new BackendWebsocketTransport();
+		assert.strictEqual(t.is_closing(), false);
+		t.close_all_sockets();
+		assert.strictEqual(t.is_closing(), true);
+
+		const late = create_fake_ws();
+		const controller = new AbortController();
+		const id = t.register_pending(late.ws, HASH_A, ACCOUNT_A, null, controller);
+		assert.deepStrictEqual(late.closes, [GOING_AWAY], 'closed before register_pending returns');
+		assert.strictEqual(controller.signal.aborted, true);
+		assert.strictEqual(t.get_pending_connection_count(), 0, 'never inserted');
+		assert.strictEqual(t.admit(id), false);
+		assert.strictEqual(t.get_connection_count(), 0);
+		// a revocation finds nothing to close
+		assert.strictEqual(t.close_sockets_for_session(HASH_A), 0);
+		assert.strictEqual(late.closes.length, 1);
+	});
+
+	test('a one-step add_connection after close_all is closed going-away, never admitted', () => {
+		const t = new BackendWebsocketTransport();
+		t.close_all_sockets();
+
+		const late = create_fake_ws();
+		const controller = new AbortController();
+		const id = t.add_connection(late.ws, null, ACCOUNT_A, TOKEN_A, controller);
+		assert.deepStrictEqual(late.closes, [GOING_AWAY]);
+		assert.strictEqual(controller.signal.aborted, true);
+		assert.strictEqual(t.is_registered(id), false);
+		assert.strictEqual(t.get_connection_count(), 0);
+		assert.strictEqual(t.send_to_account(ACCOUNT_A, { jsonrpc: '2.0', method: 'm' }), 0);
+	});
+
+	test('a socket whose close throws at birth is logged, not thrown', () => {
+		const errors: Array<Array<unknown>> = [];
+		const log = new Logger('test', { level: 'off' });
+		log.error = (...args: Array<unknown>) => {
+			errors.push(args);
+		};
+		const t = new BackendWebsocketTransport({ log });
+		t.close_all_sockets();
+		const controller = new AbortController();
+		const throwing = new WSContext({
+			send: () => {},
+			close: () => {
+				throw new Error('already closed');
+			},
+			readyState: 1
+		});
+		const id = t.register_pending(throwing, HASH_A, ACCOUNT_A, null, controller);
+		assert.strictEqual(controller.signal.aborted, true);
+		assert.strictEqual(t.admit(id), false);
+		assert.strictEqual(errors.length, 1);
 	});
 });
 

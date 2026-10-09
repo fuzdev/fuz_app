@@ -342,6 +342,39 @@ describe('SubscriberRegistry.close_all', () => {
 		assert.ok(before.closed);
 		assert.ok(after.closed, 'the stream after the throw was closed');
 		assert.strictEqual(registry.count, 0);
+		// closing even though a close threw: a later registration is born closed
+		assert.strictEqual(registry.closing, true);
+	});
+});
+
+describe('SubscriberRegistry born-closed registrations', () => {
+	test('a pending registration after close_all is never registered and is refused at admission', () => {
+		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		assert.strictEqual(registry.closing, false);
+		registry.close_all();
+		assert.strictEqual(registry.closing, true);
+
+		const pending = registry.subscribe_pending({ scope: 'session_a', groups: ['account_a'] });
+		assert.strictEqual(registry.pending_count, 0, 'never registered');
+		const stream = create_mock_stream<string>();
+		assert.strictEqual(registry.admit(pending, stream), false);
+		assert.strictEqual(registry.count, 0);
+		registry.broadcast('any', 'frame');
+		assert.deepStrictEqual(stream.sent, []);
+		pending.unsubscribe(); // still idempotent
+	});
+
+	test('a one-step subscribe after close_all closes its stream at once', () => {
+		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		registry.close_all();
+
+		const stream = create_mock_stream<string>();
+		const unsubscribe = registry.subscribe(stream, { scope: 'session_a' });
+		assert.ok(stream.closed, 'closed before subscribe returns');
+		assert.strictEqual(registry.count, 0);
+		registry.broadcast('any', 'frame');
+		assert.deepStrictEqual(stream.sent, []);
+		unsubscribe();
 	});
 });
 

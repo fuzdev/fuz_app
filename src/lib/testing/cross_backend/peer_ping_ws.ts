@@ -27,10 +27,10 @@ import '../assert_dev_env.ts';
  * non-sensitive — see the design doc); the WS upgrade itself still
  * authenticates, so the suite drives it over the keeper's session.
  *
- * Gated on `capabilities.peer_request` — `true` only for the Rust spine
- * (server-initiated requests landed Rust-first canonical); the TS family
- * skips until its server transport's request path lands (deferred twin-impl
- * convergence). Cross-process only: `create_ws_transport` needs a real bound
+ * Gated on `capabilities.peer_request`, which a backend declares once it
+ * mounts `peer/ping` on a WS endpoint and the HTTP RPC endpoint — the TS
+ * spine binaries (`BackendWebsocketTransport.request_connection`) and the
+ * Rust spine both do. Cross-process only: `create_ws_transport` needs a real bound
  * socket, so wire it from a `*.cross.test.ts`.
  *
  * @module

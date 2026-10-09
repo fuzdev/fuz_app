@@ -429,7 +429,14 @@ WebSocket with `WS_CLOSE_GOING_AWAY` (1001, so clients reconnect rather than
 treat their session as revoked), each audit stream, including transports passed
 through `WsEndpointSpec.transport` or added by hand (a close that throws is
 logged and the shutdown goes on) — then releases what assembly acquired and
-closes the database. The releases remove the audit listeners and closer members
+closes the database. The close-all leaves each transport and the audit stream
+registry closing: a WebSocket upgrade or stream still in flight when it runs —
+one the listener accepted before it stopped — is refused rather than outliving
+the server, a WebSocket closed with `WS_CLOSE_GOING_AWAY`, a stream ended after
+its connect comment; one that registers after it skips its credential re-read,
+so it never reads from a database that is closing. A closed transport hosts
+nothing more, so one passed through `WsEndpointSpec.transport` cannot be reused
+by another server. The releases remove the audit listeners and closer members
 `create_app_server` added to the backend's `deps.audit` and
 `deps.connection_closer` (each its own addition — a transport you also added
 stays a member) and dispose the rate limiters it built; a limiter you passed in

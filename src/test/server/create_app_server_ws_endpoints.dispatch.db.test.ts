@@ -14,7 +14,9 @@
  * - omitted limiter options still throttle WS — the defaults are threaded
  * - the upgrade route answers ahead of `post_route_middleware` and
  *   `static_serving`
- * - `AppServer.close` ends a socket opened through the upgrade path
+ * - `AppServer.close` ends a socket opened through the upgrade path; an
+ *   upgrade after it is born closed (going-away, no re-read), and one whose
+ *   re-read the shutdown lands in is closed going-away, never as revoked
  * - a WS reply arrives before its audit write lands, and
  *   `_testing_drain_effects` over a tracked emitter waits for it
  *
@@ -28,7 +30,7 @@
  * @module
  */
 
-import { afterEach, describe, test, assert } from 'vitest';
+import { afterEach, describe, test, assert, vi } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { z } from 'zod';
 
@@ -43,7 +45,7 @@ import {
 import type { AppServerContext } from '$lib/server/app_server_context.ts';
 import { wait } from '@fuzdev/fuz_util/async.ts';
 import type { Db } from '$lib/db/db.ts';
-import { create_gated_db, type GatedDb } from '../gated_db.ts';
+import { create_gated_db, is_session_read, type GatedDb } from '../gated_db.ts';
 import { create_audit_emitter, type AuditEmitter } from '$lib/auth/audit_emitter.ts';
 import {
 	default_audit_factory,
@@ -73,7 +75,7 @@ import type { MiddlewareSpec } from '$lib/http/middleware_spec.ts';
 import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
 import { create_rate_limiter, type RateLimiter } from '$lib/rate_limiter.ts';
 import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
-import { WS_CLOSE_GOING_AWAY } from '$lib/actions/transports.ts';
+import { WS_CLOSE_GOING_AWAY, WS_CLOSE_GOING_AWAY_REASON } from '$lib/actions/transports.ts';
 
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
 const keyring = create_keyring(TEST_KEY)!;
@@ -81,6 +83,7 @@ const session_options = create_session_config('test_session');
 const log = new Logger('test', { level: 'off' });
 
 const WS_PATH = '/api/ws';
+const GOING_AWAY_CLOSE = { code: WS_CLOSE_GOING_AWAY, reason: WS_CLOSE_GOING_AWAY_REASON };
 const RPC_PATH = '/api/rpc';
 const ORIGIN = 'http://localhost:5173';
 
@@ -124,12 +127,16 @@ interface TestServer {
 	}>;
 }
 
-/** Assemble a server over a fresh database, with the WS endpoint at `/api/ws`. */
+/**
+ * Assemble a server over a fresh database, with the WS endpoint at `/api/ws`.
+ * `wrap_db` replaces the backend's pool — a `create_gated_db` wrapper, say.
+ */
 const create_test_server = async (
 	options: Partial<Omit<AppServerOptions, 'backend' | 'create_upgrade_websocket'>> = {},
-	audit_factory: AuditFactory = default_audit_factory
+	audit_factory: AuditFactory = default_audit_factory,
+	wrap_db: (db: Db) => Db = (db) => db
 ): Promise<TestServer> => {
-	const db = await factory.create();
+	const db = wrap_db(await factory.create());
 	const migration_results = await run_migrations(db, [auth_migration_ns]);
 	const audit = audit_factory({ db, log });
 	const backend: AppBackend = {
@@ -187,6 +194,7 @@ const create_test_server = async (
 
 const servers: Array<AppServer> = [];
 afterEach(async () => {
+	vi.restoreAllMocks();
 	await Promise.all(servers.splice(0).map((s) => s.close()));
 });
 
@@ -471,6 +479,76 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 		// the afterEach close is a no-op on a closed server
 		await t.server.close();
 		assert.strictEqual(socket.closes.length, 1);
+	});
+
+	test('an upgrade after close is born closed: going-away, never admitted, no re-read', async () => {
+		const t = await create_test_server();
+		const alice = await t.create_account('alice');
+		await t.server.close();
+
+		// the request still reaches the app — a listener stops accepting, but
+		// one already accepted runs on
+		const res = await t.server.app.request(WS_PATH, {
+			headers: { host: 'localhost', upgrade: 'websocket', ...alice.session_headers }
+		});
+		assert.strictEqual(res.status, 200);
+		const { c, create_events } = t.stub.upgrades.at(-1)!;
+		const events = await create_events(c);
+		const fake = create_fake_ws();
+		const query = vi.spyOn(t.db, 'query');
+		await (events.onOpen?.(new Event('open'), fake.ws) as Promise<void> | void);
+
+		assert.deepStrictEqual(fake.closes, [GOING_AWAY_CLOSE]);
+		assert.strictEqual(
+			query.mock.calls.length,
+			0,
+			'no credential re-read for a born-closed upgrade'
+		);
+		const transport = t.server.ws_endpoints[WS_PATH]!;
+		assert.strictEqual(transport.get_connection_count(), 0);
+		assert.strictEqual(transport.get_pending_connection_count(), 0);
+	});
+
+	test('a shutdown during the admission re-read closes the upgrade going-away, never as revoked', async () => {
+		let gated: GatedDb | undefined;
+		const t = await create_test_server(
+			{},
+			default_audit_factory,
+			(db) => (gated = create_gated_db(db)).db
+		);
+		const alice = await t.create_account('alice');
+		const res = await t.server.app.request(WS_PATH, {
+			headers: { host: 'localhost', upgrade: 'websocket', ...alice.session_headers }
+		});
+		assert.strictEqual(res.status, 200);
+		const { c, create_events } = t.stub.upgrades.at(-1)!;
+		const events = await create_events(c);
+		const fake = create_fake_ws();
+		// the auth middleware's session read is behind us; the next is the re-read
+		const stalled = gated!.stall(is_session_read);
+		try {
+			// typed `void` by Hono; `register_action_ws` returns the admission promise
+			const opened = events.onOpen?.(new Event('open'), fake.ws) as unknown as Promise<void>;
+			await stalled.reached;
+			const transport = t.server.ws_endpoints[WS_PATH]!;
+			assert.strictEqual(transport.get_pending_connection_count(), 1);
+
+			await t.server.close();
+			assert.deepStrictEqual(fake.closes, [GOING_AWAY_CLOSE], 'the close-all closed it pending');
+			// the database closes under the re-read
+			stalled.fail(new Error('database closed'));
+			await opened;
+
+			assert.deepStrictEqual(
+				fake.closes,
+				[GOING_AWAY_CLOSE],
+				'the refusal after the failed re-read sent no 1011 or 4001'
+			);
+			assert.strictEqual(transport.get_connection_count(), 0);
+			assert.strictEqual(transport.get_pending_connection_count(), 0);
+		} finally {
+			stalled.release();
+		}
 	});
 
 	test('a WS reply precedes its audit write; the drain over a tracked emitter waits for it', async () => {

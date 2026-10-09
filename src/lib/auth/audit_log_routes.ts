@@ -77,9 +77,13 @@ export interface AuditLogRouteOptions {
  * nothing else — to an `EventSource`, a stream closed an instant after it
  * opened (the client's reconnect is answered by the gates, with the precise
  * status). A pending registration receives no audit row, counts toward no cap,
- * and is removed when a re-read refuses the request. The twin of the Rust
- * spine's `audit_stream_router`, which registers before its role read rather
- * than repeating it.
+ * and is removed when a re-read refuses the request. Once the server is
+ * shutting down (`SubscriberRegistry` class doc, "Shutdown") the registration
+ * is born closed, the re-reads are skipped, and the answer is that same
+ * connect comment alone — as it is when the shutdown closes a registration
+ * whose re-read is in flight, even if the re-read then fails. The twin of the
+ * Rust spine's `audit_stream_router`, which registers before its role read
+ * rather than repeating it.
  *
  * @param options - optional stream wiring + role override
  * @returns the SSE route spec (when `options.stream` is provided) or an empty array
@@ -123,30 +127,45 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 					// a revocation that closed before the registration is committed,
 					// so these see it. A throw here fails closed — no stream opens
 					// unchecked. Skipped under the test-preset escape hatch, whose
-					// pre-baked context has no rows behind it to re-read.
-					if (!c.get(TEST_CONTEXT_PRESET_KEY)) {
-						const resolved = get_resolved_auth(c);
-						const credential_is_live =
-							resolved !== null && (await revalidate_resolved_auth(route, resolved));
-						if (!credential_is_live) {
-							log.info('audit stream: credential revoked during the request', ctx.account.id);
-							return c.json({ error: ERROR_AUTHENTICATION_REQUIRED }, 401);
-						}
-						// Global grants only, like the `require_role` gate that ran in
-						// the pipeline — a scoped grant must not open the instance-wide
-						// stream.
-						if (!has_scoped_role(await refresh_role_grants(ctx, route), required_role, null)) {
-							log.info('audit stream: role revoked during the request', ctx.account.id);
-							return c.json(
-								{ error: ERROR_INSUFFICIENT_PERMISSIONS, required_roles: [required_role] },
-								403
-							);
-						}
+					// pre-baked context has no rows behind it to re-read, and for a
+					// registration born closed by the shutdown, which admission
+					// refuses whatever they answer.
+					if (!c.get(TEST_CONTEXT_PRESET_KEY) && !registry.closing) {
+						const reread = async (): Promise<Response | null> => {
+							const resolved = get_resolved_auth(c);
+							const credential_is_live =
+								resolved !== null && (await revalidate_resolved_auth(route, resolved));
+							if (!credential_is_live) {
+								log.info('audit stream: credential revoked during the request', ctx.account.id);
+								return c.json({ error: ERROR_AUTHENTICATION_REQUIRED }, 401);
+							}
+							// Global grants only, like the `require_role` gate that ran in
+							// the pipeline — a scoped grant must not open the instance-wide
+							// stream.
+							if (!has_scoped_role(await refresh_role_grants(ctx, route), required_role, null)) {
+								log.info('audit stream: role revoked during the request', ctx.account.id);
+								return c.json(
+									{ error: ERROR_INSUFFICIENT_PERMISSIONS, required_roles: [required_role] },
+									403
+								);
+							}
+							return null;
+						};
+						const refusal = await reread().catch((error: unknown) => {
+							// the shutdown closed the registration and then the database
+							// under the re-read: the answer is the shutdown's — admission
+							// below refuses, since a closing registry admits nothing —
+							// not a failure
+							if (registry.closing) return null;
+							throw error;
+						});
+						if (refusal) return refusal;
 					}
 
 					// Admit — the cap's eviction happens here, after every gate. A
-					// registration a revocation closed while it was pending is not
-					// admitted: the stream is closed at once, so the body is the
+					// registration a revocation or the shutdown closed while it was
+					// pending, or one born closed, is not admitted: the stream is
+					// closed at once, so the body is the
 					// connect comment and nothing else, and the client reconnects
 					// into the gates. The close listener goes on first: a client that
 					// left during the re-reads gets a stream that is already closed,

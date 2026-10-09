@@ -52,7 +52,8 @@ export const WS_CLOSE_CONNECTION_LIMIT = 4004;
 /**
  * WebSocket close code — the server is shutting down (RFC 6455 §7.4.1 "Going
  * Away"). Sent to every live socket by `close_all_sockets`, which
- * `AppServer.close` runs. Not a revocation: the credential is still good, so a
+ * `AppServer.close` runs, and to an upgrade the shutdown refuses — one
+ * pending at the close-all, or born closed after it. Not a revocation: the credential is still good, so a
  * client reconnects under its ordinary backoff once a server is back.
  */
 export const WS_CLOSE_GOING_AWAY = 1001;

@@ -44,6 +44,21 @@
  * uses the two-phase form. The twin of the Rust `fuz_realtime`
  * `ConnectionRegistry`.
  *
+ * ## Shutdown
+ *
+ * `close_all_sockets` — the close `AppServer.close` runs — closes every
+ * connection, pending or admitted, with `WS_CLOSE_GOING_AWAY`, and leaves the
+ * transport **closing**: from then on every registration is born closed. A
+ * `register_pending` or `add_connection` inserts nothing — it aborts the
+ * caller's controller and closes the socket with `WS_CLOSE_GOING_AWAY` at once
+ * — so an upgrade still in flight when the server shuts down is closed rather
+ * than outliving it. An upgrade registered before the close-all is closed by
+ * it; one registered after is born closed; none is admitted. The flag is set
+ * in the same synchronous step that closes the live connections, so an `admit`
+ * that finds its entry gone and reads `is_closing()` sees the shutdown, never
+ * a revocation. Closing is permanent: a closed transport hosts no further
+ * connections.
+ *
  * @module
  */
 
@@ -200,6 +215,10 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	// field to `ConnectionIdentity`, not a parallel map.
 	#connections: Map<Uuid, ConnectionEntry> = new Map();
 
+	// set once by `close_all_sockets`, never cleared — every later
+	// registration is born closed (module doc, "Shutdown")
+	#closing = false;
+
 	// Server→client request correlation (ActionPeer). The transport owns the
 	// sockets + the send; the registry owns the pending map, id allocation,
 	// deadlines, and the per-connection in-flight cap (see `peer_request.ts`).
@@ -236,6 +255,11 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * The caller owns the entry until it is admitted: every refusal path calls
 	 * `remove_connection` with the returned id.
 	 *
+	 * Once the transport is closing (`close_all_sockets`) the registration is
+	 * born closed: nothing is inserted, `abort_controller` is aborted, and `ws`
+	 * is closed with `WS_CLOSE_GOING_AWAY` before this returns. The id names
+	 * nothing, so `admit` refuses it (module doc, "Shutdown").
+	 *
 	 * @param ws - the socket to close on revocation
 	 * @param token_hash - blake3 session token hash, or `null` for non-session credentials
 	 * @param account_id - the authenticated account
@@ -243,7 +267,8 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * @param abort_controller - the socket-scoped controller to abort when the
 	 *   transport closes this connection (revocation or cap eviction)
 	 * @returns the freshly assigned `connection_id` (branded `Uuid`)
-	 * @mutates this - inserts an un-admitted entry into `#connections`
+	 * @mutates this - inserts an un-admitted entry into `#connections`, unless
+	 *   the transport is closing
 	 */
 	register_pending(
 		ws: WSContext,
@@ -252,6 +277,7 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		api_token_id: string | null = null,
 		abort_controller: AbortController | null = null
 	): Uuid {
+		if (this.#closing) return this.#close_born_closed(ws, abort_controller);
 		return this.#insert(ws, token_hash, account_id, api_token_id, abort_controller, false);
 	}
 
@@ -307,7 +333,8 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * inserted. A removed connection gets no further broadcast or peer request,
 	 * stops counting toward the cap at once, and has its `abort_controller`
 	 * aborted; its socket is closed when the close handshake completes. The new
-	 * connection is always admitted.
+	 * connection is always admitted — unless the transport is closing: then it
+	 * is born closed, as in `register_pending`, and evicts nothing.
 	 *
 	 * @returns the freshly assigned `connection_id` (branded `Uuid`)
 	 * @mutates this - inserts an admitted entry into `#connections`; past the
@@ -321,6 +348,7 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		api_token_id: string | null = null,
 		abort_controller: AbortController | null = null
 	): Uuid {
+		if (this.#closing) return this.#close_born_closed(ws, abort_controller);
 		if (this.#max_connections_per_account !== null) {
 			this.#evict_oldest_for_account(account_id, this.#max_connections_per_account);
 		}
@@ -460,13 +488,49 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * revocation does, so its heartbeat timer stops and nothing more dispatches
 	 * on it. A socket whose `close` throws does not stop the loop.
 	 *
+	 * Leaves the transport closing, for good: every later registration is born
+	 * closed (module doc, "Shutdown"). A second call closes nothing.
+	 *
 	 * @returns the number of sockets closed
-	 * @mutates this - removes every connection, aborts its registered
-	 *   controller, and closes its underlying `WSContext` with `WS_CLOSE_GOING_AWAY`
+	 * @mutates this - sets the transport closing, removes every connection,
+	 *   aborts its registered controller, and closes its underlying `WSContext`
+	 *   with `WS_CLOSE_GOING_AWAY`
 	 * @throws the first error a socket's `close` threw, after every connection was attempted
 	 */
 	close_all_sockets(): number {
+		// before any close, in the same synchronous step: an `admit` that finds
+		// its entry gone reads the shutdown, never a revocation — and set even
+		// when a socket's close throws
+		this.#closing = true;
 		return this.#close_where(() => true, WS_CLOSE_GOING_AWAY, WS_CLOSE_GOING_AWAY_REASON);
+	}
+
+	/**
+	 * Whether `close_all_sockets` has run — the transport is shutting down and
+	 * every registration from now on is born closed (module doc, "Shutdown").
+	 * For telemetry and logs: `register_action_ws` reads it to say why an
+	 * upgrade was refused.
+	 */
+	is_closing(): boolean {
+		return this.#closing;
+	}
+
+	/**
+	 * Close a registration that arrived after `close_all_sockets`, without
+	 * inserting it. A socket whose `close` throws is logged, not thrown: the
+	 * registration is refused either way, and its caller sees the aborted
+	 * controller.
+	 *
+	 * @returns a fresh id that names no entry
+	 */
+	#close_born_closed(ws: WSContext, abort_controller: AbortController | null): Uuid {
+		abort_controller?.abort();
+		try {
+			ws.close(WS_CLOSE_GOING_AWAY, WS_CLOSE_GOING_AWAY_REASON);
+		} catch (error) {
+			this.#log?.error('error closing a socket registered during shutdown:', error);
+		}
+		return create_uuid();
 	}
 
 	#cleanup_connection(connection_id: Uuid): void {

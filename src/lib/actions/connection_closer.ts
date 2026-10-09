@@ -78,7 +78,9 @@ export interface ConnectionCloser {
 	 * Close every connection, whoever opened it — the shutdown close
 	 * `AppServer.close` runs. Not a revocation: a WebSocket gets
 	 * `WS_CLOSE_GOING_AWAY`, so its client reconnects rather than treating
-	 * its credential as revoked.
+	 * its credential as revoked. The transport is left closing: a
+	 * registration that arrives afterward is born closed, refused at once
+	 * (`BackendWebsocketTransport` and `SubscriberRegistry` both do).
 	 */
 	close_all_sockets: () => number;
 }

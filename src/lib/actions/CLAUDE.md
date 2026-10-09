@@ -362,7 +362,7 @@ and `allow_fallback: boolean` (default `true`). Explicit
 - `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002` — client observed receive-silence past its receive timeout (`resolve_heartbeat_receive_timeout`).
 - `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003` — server observed receive-silence past `DEFAULT_SERVER_HEARTBEAT_TIMEOUT` (60s).
 - `WS_CLOSE_CONNECTION_LIMIT = 4004` — server closed this socket to admit a newer one on the same account, past the per-account connection cap (reason `connection limit`). Not a revocation: the client stays `closed` with `superseded` set and no reconnect, until `connect()` is called. Twin of the Rust spine's constant.
-- `WS_CLOSE_GOING_AWAY = 1001` — the server is shutting down (reason `WS_CLOSE_GOING_AWAY_REASON`, `Server shutting down`): `close_all_sockets`, which `AppServer.close` runs. Not a revocation: the client reconnects under its ordinary backoff.
+- `WS_CLOSE_GOING_AWAY = 1001` — the server is shutting down (reason `WS_CLOSE_GOING_AWAY_REASON`, `Server shutting down`): `close_all_sockets`, which `AppServer.close` runs. Also the close for an upgrade the shutdown refuses — pending at the close-all, or born closed after it. Not a revocation: the client reconnects under its ordinary backoff.
 - `WS_CLOSE_MESSAGE_TOO_BIG = 1009` — server received a message over its `max_message_bytes` cap (RFC 6455 "Message Too Big").
 - `WS_CLOSE_POLICY_VIOLATION = 1008` — a socket sent too much while it was still opening (before admission and `on_socket_open` completed): past `MAX_PRE_ADMISSION_FRAMES` frames or the `PRE_ADMISSION_QUEUE_BYTES_FACTOR` byte budget.
 - `WS_CLOSE_INTERNAL_ERROR = 1011` — the admission credential re-check itself failed (reason `internal error`), `on_socket_open` threw (reason `socket bootstrap failed`), or the socket's connection was removed from the transport without a close (reason `connection unregistered`). Not a revocation: the client reconnects under its ordinary backoff. Twin of the Rust spine's constant.
@@ -487,7 +487,15 @@ each closed connection's controller):
 
 `close_all_sockets()` closes every connection, pending and admitted, with
 `WS_CLOSE_GOING_AWAY` instead — the shutdown close, removing and aborting each
-the same way.
+the same way — and leaves the transport **closing** for good (`is_closing()`):
+every later registration is **born closed**. `register_pending` and
+`add_connection` then insert nothing, abort the caller's controller, and close
+the socket with `WS_CLOSE_GOING_AWAY` before returning an id that names
+nothing, so `admit` refuses it — an upgrade in flight when the server shuts
+down is closed rather than outliving it. The flag is set in the same
+synchronous step as the closes, so an admission that finds its entry gone
+during shutdown reads the shutdown, never a revocation. Twin of the Rust
+registry's closing flag.
 
 Fan-out, to admitted connections only: `send(notification)` broadcasts to every
 connection; `broadcast_filtered(message, predicate)` runs per-connection ACL
@@ -542,7 +550,10 @@ a `SubscriberRegistry` (`close_all_sockets` is `SubscriberRegistry.close_all`).
 Closing is idempotent and synchronous. `close_all_sockets` is the one method no
 revocation calls: `AppServer.close` runs it on `deps.connection_closer` to end
 every live connection of the backend at shutdown, and it has no
-`ConnectionCloseTarget` variant — nor a counterpart on the Rust
+`ConnectionCloseTarget` variant. It also leaves each member closing — the WS
+transport and `SubscriberRegistry` refuse every later registration (born
+closed) — so a closed transport or registry hosts nothing more. Its Rust
+counterpart is `ShutdownCloser::close_all_sockets`, a supertrait of
 `SocketRevoker`.
 
 **Every revocation closes after its commit.** A handler never calls a closer
@@ -743,8 +754,12 @@ audit stream shares, read off the keys the auth middleware set), then
 meanwhile, closes the socket with `WS_CLOSE_SESSION_REVOKED` and the reason a
 revoked socket gets; a re-check that throws closes it with
 `WS_CLOSE_INTERNAL_ERROR` (`internal error`) — fail closed, never admitted
-unchecked. A refused socket gets nothing else written to it, evicts nothing,
-and runs neither lifecycle hook. An upgrade with no resolved credential on its
+unchecked. During shutdown a refusal is the shutdown's instead: an upgrade
+pending at the close-all was closed by it with `WS_CLOSE_GOING_AWAY` and its
+controller aborted, so the refusal after the re-read — even one the closing
+database failed — writes nothing more; an upgrade that registers after it is
+born closed and skips the re-read. A refused socket gets nothing else written
+to it, evicts nothing, and runs neither lifecycle hook. An upgrade with no resolved credential on its
 context, or one on another account than its request context, throws before the
 socket exists. The test-preset escape hatch
 (`TEST_CONTEXT_PRESET_KEY`) skips the re-read — a pre-baked credential has no

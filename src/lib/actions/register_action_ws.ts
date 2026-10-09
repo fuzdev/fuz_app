@@ -59,6 +59,14 @@
  * re-read itself failed — fail closed, never admitted unchecked. The handshake
  * has already answered `101`, so a refusal can only be a close frame.
  *
+ * Once the server is shutting down (`AppServer.close` ran the transport's
+ * `close_all_sockets`) a refusal is `WS_CLOSE_GOING_AWAY` instead, so the
+ * client reconnects rather than treating its credential as revoked: an upgrade
+ * pending at the close-all is closed by it — and its abort makes the refusal
+ * that follows the re-read send nothing more, even when the database closed
+ * under that re-read — and one that registers after it is born closed and
+ * skips the re-read (`BackendWebsocketTransport` module doc, "Shutdown").
+ *
  * Frames that arrive before admission are queued, not dispatched: nothing runs
  * on a credential that has not been re-read. They dispatch in arrival order
  * once the socket is admitted and `on_socket_open` has completed, and are
@@ -740,8 +748,10 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			};
 
 			// Refuse an upgrade at admission. A socket that already ended needs no
-			// close frame: either a revocation closed its pending registration (the
-			// transport sent the 4001) or the client went away.
+			// close frame: a revocation closed its pending registration (the
+			// transport sent the 4001), the shutdown did (the 1001 — so a refusal
+			// during shutdown never sends a revocation's or a failure's code), or
+			// the client went away.
 			const refuse_upgrade = (ws: WSContext, code: number, reason: string): void => {
 				if (captured_connection_id !== undefined) {
 					transport.remove_connection(captured_connection_id);
@@ -780,6 +790,22 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				);
 				captured_connection_id = connection_id;
 
+				// Born closed — the server is shutting down, and the transport has
+				// already closed the socket with `WS_CLOSE_GOING_AWAY` — or ended
+				// otherwise before the re-read: nothing to re-read for. The removal
+				// is a no-op for a born-closed registration, which was never inserted.
+				if (socket_abort_controller.signal.aborted) {
+					transport.remove_connection(connection_id);
+					log.info(
+						transport.is_closing()
+							? 'ws upgrade admission: refused, the server is shutting down'
+							: 'ws upgrade admission: socket ended before the re-check',
+						connection_id,
+						account_id
+					);
+					return null;
+				}
+
 				if (!upgrade_preset) {
 					let credential_is_live: boolean;
 					try {
@@ -787,8 +813,14 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 						// committed before they start
 						credential_is_live = await revalidate_resolved_auth({ db }, resolved);
 					} catch (error) {
-						// fail closed — never admitted unchecked
-						log.error('ws upgrade admission: credential re-check failed', error);
+						// fail closed — never admitted unchecked. During shutdown the
+						// database may close under the re-read; that is the shutdown's
+						// refusal, not a failure.
+						if (transport.is_closing()) {
+							log.info('ws upgrade admission: re-check ended by the shutdown', error);
+						} else {
+							log.error('ws upgrade admission: credential re-check failed', error);
+						}
 						refuse_upgrade(ws, WS_CLOSE_INTERNAL_ERROR, 'internal error');
 						return null;
 					}
@@ -807,7 +839,9 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				// so a refused upgrade never closes someone else's socket.
 				if (!transport.admit(connection_id)) {
 					log.info(
-						'ws upgrade admission: closed by a revocation while pending',
+						transport.is_closing()
+							? 'ws upgrade admission: closed by the shutdown while pending'
+							: 'ws upgrade admission: closed by a revocation while pending',
 						connection_id,
 						account_id
 					);

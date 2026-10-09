@@ -517,7 +517,10 @@ export interface AppServer {
 	 *    audit stream — including transports supplied through
 	 *    `WsEndpointSpec.transport` or added by hand, since they are registered
 	 *    on the backend's closer and the backend is going away; a close that
-	 *    throws is logged and the shutdown goes on
+	 *    throws is logged and the shutdown goes on. Each transport and registry
+	 *    is left closing, so an upgrade or stream that registers afterward is
+	 *    born closed — refused at once rather than outliving the server — and
+	 *    a closed transport hosts no other server
 	 * 3. release what assembly acquired, last acquired first: remove the
 	 *    audit listeners `create_app_server` registered on `deps.audit` (the
 	 *    audit-log SSE listener, the WS auth guards, each

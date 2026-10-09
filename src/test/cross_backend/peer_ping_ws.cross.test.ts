@@ -11,11 +11,10 @@
  * per-connection id isolation, never-reply `Timeout`, wrong-shape rejection,
  * client-error forwarding, HTTP no-transport).
  *
- * Runs under every `cross_backend_*` project but gates each case on
- * `capabilities.peer_request` — `true` only for the Rust `testing_spine_stub`
- * (server-initiated requests are Rust-first canonical), `false` for the TS
- * spine binaries (the TS server's request transport is the deferred twin-impl
- * convergence item), so the TS projects register the cases as `.skip`.
+ * Runs under every `cross_backend_*` project and gates each case on
+ * `capabilities.peer_request`, which both spines declare — the TS spine
+ * binaries (`BackendWebsocketTransport.request_connection`) and the Rust
+ * `testing_spine_stub` alike — so the cases run against each.
  *
  * @module
  */

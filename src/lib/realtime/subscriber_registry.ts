@@ -127,6 +127,16 @@ export interface PendingSubscription {
  * behind it. The twin of the Rust `fuz_realtime` `SseRegistry`
  * (`subscribe_pending` / `admit` / `subscribe`).
  *
+ * ## Shutdown
+ *
+ * `close_all` — the close `AppServer.close` runs — closes every stream,
+ * pending or admitted, and leaves the registry **closing** for good: every
+ * later registration is born closed. `subscribe_pending` registers nothing,
+ * so `admit` refuses the handle and the route's stream ends after its connect
+ * comment; `subscribe` closes the stream it is given at once. A stream still
+ * opening when the server shuts down therefore ends rather than outliving it.
+ * The flag is set in the same synchronous step that closes the live streams.
+ *
  * @example
  * ```ts
  * const registry = new SubscriberRegistry<SseNotification>();
@@ -181,6 +191,9 @@ export class SubscriberRegistry<T> {
 	readonly #pending: WeakMap<PendingSubscription, SubscriberEntry<T>> = new WeakMap();
 	readonly #max_per_scope: number | null;
 	readonly #log: Logger | null;
+	// set once by `close_all`, never cleared — every later registration is born
+	// closed (class doc, "Shutdown")
+	#closing = false;
 
 	constructor(options?: SubscriberRegistryOptions) {
 		this.#max_per_scope = options?.max_per_scope ?? null;
@@ -212,6 +225,16 @@ export class SubscriberRegistry<T> {
 	}
 
 	/**
+	 * Whether `close_all` has run — the registry is shutting down and every
+	 * registration from now on is born closed (class doc, "Shutdown"). The
+	 * audit stream route reads it to skip the re-reads for a registration
+	 * admission will refuse anyway.
+	 */
+	get closing(): boolean {
+		return this.#closing;
+	}
+
+	/**
 	 * Add a subscriber, admitted at once — the one-step form of
 	 * `subscribe_pending` + `admit`.
 	 *
@@ -220,12 +243,20 @@ export class SubscriberRegistry<T> {
 	 * nothing, and the stream would open on a dead credential (class doc,
 	 * "Two-phase registration").
 	 *
+	 * Once the registry is closing, the subscriber is born closed: `stream` is
+	 * closed at once, nothing is registered, and the returned function is a
+	 * no-op.
+	 *
 	 * @param stream - SSE stream to send data to
 	 * @param options - channel filter and identity slots (`scope` + `groups`)
 	 * @returns unsubscribe function
 	 * @mutates registry - adds the new subscriber; closes oldest matching subscribers when `max_per_scope` is exceeded
 	 */
 	subscribe(stream: SseStream<T>, options?: SubscribeOptions): () => void {
+		if (this.#closing) {
+			stream.close();
+			return () => {};
+		}
 		const subscriber = this.#create_entry(options);
 		this.#admit_entry(subscriber, stream);
 		this.#subscribers.add(subscriber);
@@ -243,13 +274,16 @@ export class SubscriberRegistry<T> {
 	 * broadcast, is not counted, and evicts nothing. A caller that then refuses
 	 * the request calls the returned handle's `unsubscribe`.
 	 *
+	 * Once the registry is closing, the registration is born closed: nothing
+	 * is registered, and `admit` refuses the handle.
+	 *
 	 * @param options - channel filter and identity slots (`scope` + `groups`)
 	 * @returns the pending handle `admit` takes
-	 * @mutates registry - adds the un-admitted registration
+	 * @mutates registry - adds the un-admitted registration, unless the registry is closing
 	 */
 	subscribe_pending(options?: SubscribeOptions): PendingSubscription {
 		const subscriber = this.#create_entry(options);
-		this.#subscribers.add(subscriber);
+		if (!this.#closing) this.#subscribers.add(subscriber);
 		const pending: PendingSubscription = {
 			unsubscribe: () => {
 				this.#subscribers.delete(subscriber);
@@ -263,9 +297,9 @@ export class SubscriberRegistry<T> {
 	 * Admit a pending subscription, attaching the stream it delivers to — phase
 	 * two (class doc).
 	 *
-	 * If the registration is gone — a revocation closed it while it was
-	 * pending, or it was unsubscribed — nothing is evicted and the subscription
-	 * is refused. Otherwise the per-scope cap is enforced as in `subscribe`,
+	 * If the registration is gone — a revocation or the shutdown closed it
+	 * while it was pending, it was born closed, or it was unsubscribed —
+	 * nothing is evicted and the subscription is refused. Otherwise the per-scope cap is enforced as in `subscribe`,
 	 * counting only admitted subscribers, and the stream starts receiving
 	 * `broadcast` data. Admitting twice is refused the second time.
 	 *
@@ -327,16 +361,20 @@ export class SubscriberRegistry<T> {
 
 	/**
 	 * Force-close every subscriber, pending or admitted — the shutdown close
-	 * `AppServer.close` runs through the registry's `ConnectionCloser`.
+	 * `AppServer.close` runs through the registry's `ConnectionCloser` — and
+	 * leave the registry closing, for good: every later registration is born
+	 * closed (class doc, "Shutdown"). A second call closes nothing.
 	 *
 	 * A stream whose `close` throws does not stop the loop: every subscriber is
 	 * removed and closed, and the first error is thrown afterward.
 	 *
 	 * @returns the number of subscribers closed
-	 * @mutates registry - removes every subscriber and closes its stream
+	 * @mutates registry - sets the registry closing, removes every subscriber, and closes its stream
 	 * @throws the first error a stream's `close` threw, after every subscriber was attempted
 	 */
 	close_all(): number {
+		// before any close, so a registration a close listener triggers is born closed too
+		this.#closing = true;
 		return this.#close_where(() => true);
 	}
 
