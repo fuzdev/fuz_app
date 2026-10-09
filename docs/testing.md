@@ -335,7 +335,7 @@ describe_standard_attack_surface_tests({
 		'POST /api/account/login',
 		'POST /api/account/bootstrap'
 	],
-	expected_api_middleware: ['origin', 'session', 'request_context', 'bearer_auth'], // daemon_token is optional, added when daemon_token_state is provided
+	expected_api_middleware: ['trusted_proxy', 'origin', 'session', 'request_context', 'bearer_auth'], // daemon_token is optional, added when daemon_token_state is provided
 	roles: ['admin', 'keeper'], // roles your app uses
 	security_policy: {
 		public_mutation_allowlist: ['POST /api/account/login', 'POST /api/account/bootstrap']

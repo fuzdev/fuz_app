@@ -39,7 +39,11 @@ import type { EventSpec, SseNotification } from '../realtime/sse.ts';
 import { AUDIT_LOG_SSE_MAX_PER_SCOPE, type AuditLogSse } from '../realtime/sse_auth_guard.ts';
 import { SubscriberRegistry } from '../realtime/subscriber_registry.ts';
 import { BaseServerEnv } from '../server/env.ts';
-import { AUTH_MIDDLEWARE_PATH, assert_endpoint_in_auth_scope } from '../auth/middleware.ts';
+import {
+	AUTH_MIDDLEWARE_PATH,
+	assert_endpoint_in_auth_scope,
+	assert_middleware_stack_mounted
+} from '../auth/middleware.ts';
 
 /**
  * Create a Proxy that throws descriptive errors on any property access or method call.
@@ -199,19 +203,31 @@ export const create_stub_app_deps = (): AppDeps => ({
 	connection_closer: create_realtime_closer()
 });
 
-/** Create the API middleware stub array matching `create_auth_middleware_specs` output. */
+/** A fresh pass-through middleware — a distinct handler per call, unlike the shared `stub_mw`. */
+const create_stub_mw = (): MiddlewareSpec['handler'] => async (_c, next) => next();
+
+/**
+ * Create the API middleware stub array matching `create_auth_middleware_specs`
+ * output. Like the real factory's, each spec gets its own pass-through handler,
+ * so `assert_middleware_stack_mounted` can tell the layers apart by identity.
+ */
 export const create_stub_api_middleware = (options?: {
 	/** Include the daemon_token middleware layer. */
 	include_daemon_token?: boolean;
 }): Array<MiddlewareSpec> => {
 	const specs: Array<MiddlewareSpec> = [
-		{ name: 'origin', path: AUTH_MIDDLEWARE_PATH, handler: stub_mw, errors: { 403: ApiError } },
-		{ name: 'session', path: AUTH_MIDDLEWARE_PATH, handler: stub_mw },
-		{ name: 'request_context', path: AUTH_MIDDLEWARE_PATH, handler: stub_mw },
+		{
+			name: 'origin',
+			path: AUTH_MIDDLEWARE_PATH,
+			handler: create_stub_mw(),
+			errors: { 403: ApiError }
+		},
+		{ name: 'session', path: AUTH_MIDDLEWARE_PATH, handler: create_stub_mw() },
+		{ name: 'request_context', path: AUTH_MIDDLEWARE_PATH, handler: create_stub_mw() },
 		{
 			name: 'bearer_auth',
 			path: AUTH_MIDDLEWARE_PATH,
-			handler: stub_mw,
+			handler: create_stub_mw(),
 			errors: { 401: ApiError, 403: ApiError, 429: RateLimitError }
 		}
 	];
@@ -219,7 +235,7 @@ export const create_stub_api_middleware = (options?: {
 		specs.push({
 			name: 'daemon_token',
 			path: AUTH_MIDDLEWARE_PATH,
-			handler: stub_mw,
+			handler: create_stub_mw(),
 			errors: { 401: ApiError, 500: ApiError, 503: ApiError }
 		});
 	}
@@ -299,7 +315,15 @@ export interface CreateTestAppSurfaceSpecOptions {
 	 * the exact patterns the upgrade gate matches.
 	 */
 	allowed_origins?: ReadonlyArray<RegExp>;
-	/** Transform middleware array (e.g., zap's `extend_middleware_for_zap_binary`). */
+	/**
+	 * Transform middleware array — `AppServerOptions.transform_middleware`.
+	 * Receives shallow copies of a stub `trusted_proxy` spec (at `'*'`)
+	 * followed by the stub auth stack, in a fresh array, as
+	 * `create_app_server` passes the real ones. Throws, like
+	 * `create_app_server`, if the result doesn't keep each of those specs
+	 * mounted once at its original path in its original order
+	 * (`assert_middleware_stack_mounted`).
+	 */
 	transform_middleware?: (specs: Array<MiddlewareSpec>) => Array<MiddlewareSpec>;
 	/**
 	 * Bootstrap config — symmetric with `AppServerOptions.bootstrap`. Discriminated
@@ -344,15 +368,19 @@ const to_self_resolved_ws_endpoint = (endpoint: WsEndpointSpec): ResolvedWsEndpo
  * Mirrors `create_app_server`'s route assembly: consumer routes +
  * factory-managed bootstrap routes + surface generation — including its
  * refusal of an `rpc_endpoints` or `ws_endpoints` path outside the auth
- * middleware's scope (`assert_endpoint_in_auth_scope`). If
+ * middleware's scope (`assert_endpoint_in_auth_scope`) and of a
+ * `transform_middleware` that doesn't keep the proxy and auth stack mounted
+ * (`assert_middleware_stack_mounted`). The middleware list mirrors the real
+ * one: a stub `trusted_proxy` spec at `'*'`, then the stub auth stack. If
  * `create_app_server` changes how it wires routes, update this helper
  * to stay in sync (single source of truth for all consumers).
  *
  * @param options - surface spec options
  * @returns the surface spec for the standard suites
- * @throws Error when an endpoint path is outside `AUTH_MIDDLEWARE_PATH`, or a
+ * @throws Error when an endpoint path is outside `AUTH_MIDDLEWARE_PATH`, a
  *   `ws_endpoints` spec declares no `allowed_origins` and no `allowed_origins`
- *   option is given
+ *   option is given, or `transform_middleware` moves, drops, duplicates,
+ *   reorders, wraps, or replaces the stub proxy spec or a stub auth spec
  */
 export const create_test_app_surface_spec = (
 	options: CreateTestAppSurfaceSpecOptions
@@ -403,9 +431,17 @@ export const create_test_app_surface_spec = (
 			: [];
 	const route_specs = [...consumer_routes, ...rpc_route_specs, ...bootstrap_route_specs];
 
-	let middleware_specs = create_stub_api_middleware();
+	// mirrors `create_app_server`'s `[proxy_spec, ...auth_middleware]`
+	const stack_specs: Array<MiddlewareSpec> = [
+		{ name: 'trusted_proxy', path: '*', handler: create_stub_mw() },
+		...create_stub_api_middleware()
+	];
+	let middleware_specs = stack_specs;
 	if (options.transform_middleware) {
-		middleware_specs = options.transform_middleware(middleware_specs);
+		// the transform gets copies in a fresh array, so mutating what it was
+		// handed can't rewrite the originals the check matches against
+		middleware_specs = options.transform_middleware(stack_specs.map((spec) => ({ ...spec })));
+		assert_middleware_stack_mounted(stack_specs, middleware_specs);
 	}
 
 	return create_app_surface_spec({

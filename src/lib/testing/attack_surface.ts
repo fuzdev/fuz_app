@@ -322,7 +322,7 @@ export interface StandardAttackSurfaceOptions {
 	snapshot_path: string;
 	/** Expected public routes, e.g. `['GET /health', 'POST /api/account/login']`. */
 	expected_public_routes: Array<string>;
-	/** Expected middleware names for API routes, e.g. `['origin', 'session', 'request_context', 'bearer_auth']`. */
+	/** Expected middleware names for API routes, e.g. `['trusted_proxy', 'origin', 'session', 'request_context', 'bearer_auth']`. */
 	expected_api_middleware: Array<string>;
 	/** All roles in the app (e.g. `['admin', 'keeper']`). */
 	roles: Array<string>;

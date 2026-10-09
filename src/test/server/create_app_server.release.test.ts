@@ -248,6 +248,22 @@ describe('a failed assembly releases what it acquired', () => {
 		});
 	}
 
+	test('a transform_middleware that moves the auth middleware', async () => {
+		const harness = create_harness();
+		const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');
+		const thrown = await assemble_rejects({
+			...acquiring_options(harness.backend),
+			transform_middleware: (specs) =>
+				specs.map((spec) => (spec.name === 'session' ? { ...spec, path: '*' } : spec))
+		});
+		assert.instanceOf(thrown, Error);
+		assert.match(
+			thrown.message,
+			/transform_middleware must keep the middleware 'session' .*\(mounted at \*\)/
+		);
+		assert_released(harness, dispose);
+	});
+
 	test('a throwing serve_static, after every ws acquisition', async () => {
 		const harness = create_harness();
 		const dispose = vi.spyOn(RateLimiter.prototype, 'dispose');

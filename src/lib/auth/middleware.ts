@@ -55,6 +55,71 @@ export const assert_endpoint_in_auth_scope = (
 };
 
 /**
+ * Throw unless a middleware list still mounts every spec of the stack it was
+ * built from — the trusted-proxy spec and the auth middleware — exactly once,
+ * at its original path, in its original order.
+ *
+ * `create_app_server` and `create_test_app_surface_spec` run it on the list
+ * a `transform_middleware` option returns, against the stack they handed it
+ * (`[proxy, ...auth]`). The endpoint auth-scope check
+ * (`assert_endpoint_in_auth_scope`) assumes the auth stack is mounted at
+ * `AUTH_MIDDLEWARE_PATH`, and every IP-keyed rate limiter assumes the proxy
+ * spec ran first — without it `get_client_ip` answers `'unknown'` for every
+ * caller, collapsing each limiter into one shared bucket. So a transform that
+ * moves, drops, duplicates, reorders, wraps, or replaces a stack layer is
+ * refused. Other specs may sit anywhere, including before the proxy spec and
+ * between the auth layers. The check pins where the stack's layers sit, not
+ * what added layers do — a layer you add runs with full context access.
+ *
+ * Each stack spec is matched by its `handler` — the closure its factory built
+ * — not by `name`, which any spec can carry, so a same-named replacement or a
+ * wrapped handler counts as missing. A spread copy (`{...spec}`) keeps the
+ * handler and still matches. Its path is compared with the original's, so
+ * pass specs the transform could not reach: the assemblies hand the transform
+ * shallow copies in a fresh array and keep the originals here.
+ *
+ * @param stack_specs - the stack the transform was built from, in mount order
+ * @param middleware_specs - the middleware list the transform returned
+ * @throws Error when a stack spec is missing, mounted more than once, mounted
+ *   at another path, or out of order
+ */
+export const assert_middleware_stack_mounted = (
+	stack_specs: ReadonlyArray<MiddlewareSpec>,
+	middleware_specs: ReadonlyArray<MiddlewareSpec>
+): void => {
+	let previous_index = -1;
+	for (const stack_spec of stack_specs) {
+		let index = -1;
+		let count = 0;
+		for (let i = 0; i < middleware_specs.length; i++) {
+			if (middleware_specs[i]!.handler === stack_spec.handler) {
+				if (count === 0) index = i;
+				count++;
+			}
+		}
+		const found =
+			count === 0
+				? 'missing'
+				: count > 1
+					? `mounted ${count} times`
+					: middleware_specs[index]!.path !== stack_spec.path
+						? `mounted at ${middleware_specs[index]!.path}`
+						: index < previous_index
+							? 'out of order'
+							: null;
+		if (found) {
+			throw new Error(
+				`transform_middleware must keep the middleware '${stack_spec.name}' mounted once ` +
+					`at ${stack_spec.path} in its original order (${found}) — endpoint auth-scope checks ` +
+					'and client-IP rate limiting assume it; add layers around the stack, ' +
+					"don't move, drop, wrap, or replace it"
+			);
+		}
+		previous_index = index;
+	}
+};
+
+/**
  * Per-factory configuration for the standard auth middleware stack.
  */
 export interface AuthMiddlewareOptions {

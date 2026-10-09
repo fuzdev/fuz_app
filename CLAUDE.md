@@ -208,6 +208,19 @@ Individual factories take narrower deps: `create_account_route_specs(deps: Route
 12. **Post-route middleware** (optional) — `post_route_middleware`
 13. **Static serving** (optional) — SvelteKit static fallback
 
+`transform_middleware` receives shallow copies of the trusted-proxy spec (5)
+and the auth stack (6–9, and `daemon_token` when configured) and may add layers
+anywhere around them, but each of those specs — matched by `handler`, not
+`name` — must stay mounted once at its original path (`'*'` for the proxy,
+`AUTH_MIDDLEWARE_PATH` for auth) in its original order: the endpoint
+auth-scope check assumes the auth stack, and every IP-keyed rate limiter
+assumes the proxy ran first (without it `get_client_ip` answers `'unknown'`
+for every caller, one shared bucket). Assembly throws
+(`assert_middleware_stack_mounted`) on a transform that moves, drops,
+duplicates, reorders, wraps, or replaces one. The check pins where those
+layers sit, not what added layers do — a layer you add runs with full context
+access.
+
 Session parsing is separate from auth enforcement — login and bootstrap routes
 participate in cookie refresh without being blocked. Acting-actor resolution
 is separate from authentication — multi-actor accounts can hit account-grain

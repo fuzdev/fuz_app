@@ -69,7 +69,11 @@ import {
 } from '../auth/bootstrap_routes.ts';
 import { create_surface_route_spec, type SurfaceRouteOptions } from '../http/common_routes.ts';
 import { flush_pending_effects, flush_post_commit_effects } from '../http/pending_effects.ts';
-import { assert_endpoint_in_auth_scope, create_auth_middleware_specs } from '../auth/middleware.ts';
+import {
+	assert_endpoint_in_auth_scope,
+	assert_middleware_stack_mounted,
+	create_auth_middleware_specs
+} from '../auth/middleware.ts';
 import { fuz_auth_guard_resolver } from '../auth/auth_guard_resolver.ts';
 import { create_fuz_authorization_handler } from '../auth/request_context.ts';
 import { ERROR_PAYLOAD_TOO_LARGE } from '../http/error_schemas.ts';
@@ -266,9 +270,18 @@ export interface AppServerOptions {
 	/**
 	 * Optional: transform middleware specs before applying.
 	 *
-	 * The endpoint auth-scope check (`assert_endpoint_in_auth_scope`) reads
-	 * `AUTH_MIDDLEWARE_PATH`, not the transformed specs — a transform that
-	 * moves or drops the auth middleware is not followed by it.
+	 * Receives shallow copies of the trusted-proxy spec followed by the auth
+	 * stack, in a fresh array — mutating them leaves the originals untouched.
+	 * Add layers anywhere (before the proxy spec, between it and the auth
+	 * stack, between the auth layers, or after), but keep each of those specs
+	 * — its `handler`, not just its `name` — mounted once at its original path
+	 * (`'*'` for the proxy, `AUTH_MIDDLEWARE_PATH` for auth) in its original
+	 * order: the endpoint auth-scope check (`assert_endpoint_in_auth_scope`)
+	 * and client-IP rate limiting (`get_client_ip`) assume it, so assembly
+	 * throws (`assert_middleware_stack_mounted`) if the transform moves, drops,
+	 * duplicates, reorders, wraps, or replaces one. The check pins where those
+	 * layers sit, not what added layers do — a layer you add runs with full
+	 * context access.
 	 */
 	transform_middleware?: (specs: Array<MiddlewareSpec>) => Array<MiddlewareSpec>;
 
@@ -698,9 +711,13 @@ const assemble_app_server = async (
 		session_options: options.session_options,
 		daemon_token_state: options.daemon_token_state
 	});
-	let middleware_specs: Array<MiddlewareSpec> = [proxy_spec, ...auth_middleware];
+	const stack_specs: Array<MiddlewareSpec> = [proxy_spec, ...auth_middleware];
+	let middleware_specs = stack_specs;
 	if (options.transform_middleware) {
-		middleware_specs = options.transform_middleware(middleware_specs);
+		// the transform gets copies in a fresh array, so mutating what it was
+		// handed can't rewrite the originals the check matches against
+		middleware_specs = options.transform_middleware(stack_specs.map((spec) => ({ ...spec })));
+		assert_middleware_stack_mounted(stack_specs, middleware_specs);
 	}
 
 	// Bootstrap status

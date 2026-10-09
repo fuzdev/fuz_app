@@ -352,6 +352,30 @@ middleware) stays in the consumer. Body size limiting defaults to 1 MiB
 (`DEFAULT_MAX_BODY_SIZE`); pass `max_body_size` to override or `null` to
 disable.
 
+Custom middleware goes in through `transform_middleware`, which receives
+shallow copies of the trusted-proxy spec followed by the auth stack, in a fresh
+array, and returns the list to mount. Add layers anywhere — before the proxy,
+after the stack, between its layers — but leave each of those specs in place:
+assembly throws (`assert_middleware_stack_mounted`) unless every one, matched
+by its `handler` rather than its `name`, is still mounted exactly once at its
+original path (`'*'` for the proxy, `AUTH_MIDDLEWARE_PATH` for auth) in its
+original order. The endpoint auth-scope check assumes the auth stack is there,
+and the IP-keyed rate limiters assume the proxy ran first — without it
+`get_client_ip` answers `'unknown'` for every caller, so each limiter becomes
+one shared bucket. Moving, dropping, duplicating, reordering, wrapping, or
+replacing one of these layers is refused, with no opt-out; mutating the copies
+in place changes nothing the server mounts unless you return them. The check
+pins where those layers sit, not what added layers do — a layer you add runs
+with full context access.
+
+```ts
+transform_middleware: (specs) => [
+	{ name: 'body_cap', path: '*', handler: body_cap },
+	...specs,
+	{ name: 'token_policy', path: '/api/*', handler: token_policy }
+],
+```
+
 ### Rate limiters
 
 Each `*_rate_limiter` option takes a `RateLimiter` instance or `null` (off).
