@@ -1736,9 +1736,7 @@ which set `ACTION_RATE_LIMIT_ENABLED_ENV` (`FUZ_ACTION_RATE_LIMIT_ENABLED`) and
 `spine_surface_constants.ts` — both spine binaries build one IP + one account
 limiter (the action defaults' windows, the cap replacing both
 `max_attempts`) shared by RPC and WS, and refuse to boot on a cap without the
-flag. Off, the TS spine builds no action limiter, and the Rust stub keeps its
-default posture: its auth families charge an always-on per-account limiter at
-the production cap, its dispatchers none. Runs under the
+flag. Off, neither spine builds an action limiter. Runs under the
 `cross_backend_security` dual-spawn beside the login-security suite. The TS
 spine charges every classed action in its dispatcher; the Rust stub charges
 `account_token_create` and the other auth-family specs inside their handlers

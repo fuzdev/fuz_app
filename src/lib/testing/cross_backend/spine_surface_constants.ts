@@ -86,9 +86,8 @@ export const LOGIN_RATE_LIMIT_ENABLED_ENV = 'FUZ_LOGIN_RATE_LIMIT_ENABLED';
  * the RPC and WS endpoints (and, on the Rust stub, the auth-family handlers
  * that charge in-handler). The cross-language contract for the action
  * rate-limit cross suite (`ws_action_rate_limit.ts`); same delivery as
- * `LOGIN_RATE_LIMIT_ENABLED_ENV`. Off, the TS spine builds no action limiter
- * and the Rust stub keeps its default posture (only its auth families charge,
- * against an always-on per-account limiter at the production cap).
+ * `LOGIN_RATE_LIMIT_ENABLED_ENV`. Off, neither spine builds an action
+ * limiter.
  */
 export const ACTION_RATE_LIMIT_ENABLED_ENV = 'FUZ_ACTION_RATE_LIMIT_ENABLED';
 
