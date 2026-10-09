@@ -1,5 +1,30 @@
 # @fuzdev/fuz_app
 
+## 0.130.0
+
+### Minor Changes
+
+- fix: refuse WebSocket upgrades and SSE streams that register after `AppServer.close` closes live connections ([1f79b38](https://github.com/fuzdev/fuz_app/commit/1f79b38))
+
+  - actions: `BackendWebsocketTransport.close_all_sockets` leaves the transport closing for good (new `is_closing()`). A later `register_pending` or `add_connection` is born closed: nothing is inserted, the caller's controller is aborted, and the socket is closed with `WS_CLOSE_GOING_AWAY` + `WS_CLOSE_GOING_AWAY_REASON` at once, so `admit` refuses it. An upgrade in flight when the server shut down was admitted and outlived it
+  - actions: `register_action_ws` skips the credential re-read for a born-closed upgrade, and logs a refusal during shutdown as the shutdown's. An upgrade pending at the close-all is closed with `WS_CLOSE_GOING_AWAY`, never `WS_CLOSE_SESSION_REVOKED` or `WS_CLOSE_INTERNAL_ERROR`, even when the database closes under its re-read
+  - realtime: `SubscriberRegistry.close_all` leaves the registry closing for good (new `closing` getter). A later `subscribe_pending` registers nothing and `admit` refuses its handle; a later `subscribe` closes its stream at once
+  - auth: the audit-log stream route skips its re-reads for a registration born closed, and answers a re-read the shutdown interrupted — even one that then fails — with the connect comment alone (a stream that ends at once, so the client reconnects), not a `500`
+  - a transport or registry closed by `AppServer.close` hosts nothing more, so a transport passed through `WsEndpointSpec.transport` cannot be reused by another server
+  - the twin of the Rust spine's born-closed registrations
+
+- **breaking** fix: bound concurrent WebSocket requests per socket, refuse a duplicate live request id, and close an SSE stream whose client left before the handler returned ([ed20040](https://github.com/fuzdev/fuz_app/commit/ed20040))
+
+  - actions: `register_action_ws` runs at most `MAX_INBOUND_DISPATCHES_PER_CONNECTION` (128) requests at once per socket; one more is answered `queue_overflow` with its id (message `WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE`) and not dispatched, and the socket stays open. `@hono/node-ws` does not await `onMessage`, so nothing bounded the in-flight handlers before. Same cap, code, and message as the Rust spine
+  - actions: **breaking** a WebSocket request whose id names a request still running on the same socket is answered `invalid_request` with `data: {reason: 'duplicate_request_id'}` (`ERROR_DUPLICATE_REQUEST_ID`) and not dispatched. It was dispatched, and took over the first request's cancel entry, which the first of the two to finish then deleted. The id is free again once its request has been answered. A client that reuses ids only after their replies arrive (`FrontendWebsocketClient` assigns fresh ones) is unaffected. The duplicate check runs before the ceiling, and neither refusal charges the action rate limiters — the same as the Rust spine
+  - actions: a request is live, and its id taken, from the moment it is accepted — `artificial_delay` now runs after the request registers, so a `cancel` sent during the delay aborts it
+  - realtime: `create_sse_response` closes its stream when the client disconnects before the handler returns its response. `@hono/node-server` never reads the body of a response whose connection is already gone, so the stream was never cancelled and stayed registered — the audit-log stream route awaits a credential re-read before it builds its stream. On Node the stream behind the response is watched — the response object (`c.env.outgoing`) over HTTP/1, its `Http2Stream` over HTTP/2 — since the adapter's request `signal` misses a disconnect that happened before its first read; elsewhere the request's `signal` is the disconnect signal
+  - realtime: **breaking** `SseStream.on_close` runs a listener registered after the stream closed at once (it was dropped), so a cleanup registered through it always runs
+  - auth: the audit-log stream route registers the stream's close listener before admitting it, so a client gone by admission takes no slot under the per-session cap and evicts no other stream
+  - realtime: `SubscriberRegistry`'s cap eviction removes every evicted subscriber and closes each in its own `try`; a stream whose `close` throws no longer stays registered or fails the admission that evicted it. The error is logged through the new `SubscriberRegistryOptions.log` (default an `[sse]` logger, `null` silences); `create_audit_log_sse` passes its own
+  - http: `queue_overflow`'s docs cover the server-side use
+  - testing: new `describe_ws_inbound_dispatch_cross_tests` (`testing/cross_backend/ws_inbound_dispatch.ts`) pins both refusals over a real upgrade, holding requests in flight with `peer/ping`; gated on `capabilities.peer_request`
+
 ## 0.129.0
 
 ### Minor Changes
