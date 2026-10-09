@@ -14,6 +14,11 @@
  * - omitted limiter options still throttle WS — the defaults are threaded
  * - the upgrade route answers ahead of `post_route_middleware` and
  *   `static_serving`
+ * - `AppServer.close` ends a socket opened through the upgrade path
+ *
+ * Every server is closed after its test — that disposes the limiters it
+ * built. The database is the shared PGlite instance the factory hands out,
+ * which outlives the file, so the backend's `close` leaves it open.
  *
  * Mount-time behavior (guards, surface, audit wiring) is in
  * `create_app_server_ws_endpoints.db.test.ts`.
@@ -21,7 +26,7 @@
  * @module
  */
 
-import { describe, test, assert } from 'vitest';
+import { afterEach, describe, test, assert } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { z } from 'zod';
 
@@ -57,6 +62,7 @@ import type { MiddlewareSpec } from '$lib/http/middleware_spec.ts';
 import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
 import { create_rate_limiter, type RateLimiter } from '$lib/rate_limiter.ts';
 import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
+import { WS_CLOSE_GOING_AWAY } from '$lib/actions/transports.ts';
 
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
 const keyring = create_keyring(TEST_KEY)!;
@@ -142,6 +148,7 @@ const create_test_server = async (
 		],
 		...options
 	});
+	servers.push(server);
 	const create_account: TestServer['create_account'] = async (username) => {
 		const { account, session_cookie, api_token } = await create_test_account_with_credentials({
 			db,
@@ -163,9 +170,16 @@ const create_test_server = async (
 	return { server, stub, create_account };
 };
 
+const servers: Array<AppServer> = [];
+afterEach(async () => {
+	await Promise.all(servers.splice(0).map((s) => s.close()));
+});
+
 interface TestSocket {
 	/** Send one JSON-RPC request and return its response frame. */
 	request: (method: string, params?: unknown) => Promise<any>;
+	/** The close frames the server sent the socket. */
+	closes: Array<{ code?: number; reason?: string }>;
 }
 
 let next_request_id = 0;
@@ -191,6 +205,7 @@ const open_socket = async (
 	await (events.onOpen?.(new Event('open'), fake.ws) as Promise<void> | void);
 	assert.deepStrictEqual(fake.closes, [], 'socket closed at admission');
 	return {
+		closes: fake.closes,
 		request: async (method, params) => {
 			const id = ++next_request_id;
 			await dispatch_ws_message(
@@ -345,8 +360,7 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 			await socket.request(PEER_PING_METHOD, { nonce: 'x' }),
 			JSONRPC_ERROR_CODES.rate_limited
 		);
-		action_account_rate_limiter.dispose();
-		action_ip_rate_limiter.dispose();
+		// the defaults are the server's, disposed by its `close` after the test
 	});
 
 	test('the upgrade answers ahead of post_route_middleware and static_serving', async () => {
@@ -398,5 +412,22 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 			403
 		);
 		assert.strictEqual(t.stub.upgrades.length, 0);
+	});
+
+	test('close ends a socket opened through the upgrade path, and only once', async () => {
+		const t = await create_test_server();
+		const alice = await t.create_account('alice');
+		const socket = await open_socket(t, alice.session_headers);
+		assert_ok(await socket.request(counted_action_spec.method));
+
+		await t.server.close();
+		assert.deepStrictEqual(
+			socket.closes.map((c) => c.code),
+			[WS_CLOSE_GOING_AWAY]
+		);
+		assert.strictEqual(t.server.ws_endpoints[WS_PATH]!.get_connection_count(), 0);
+		// the afterEach close is a no-op on a closed server
+		await t.server.close();
+		assert.strictEqual(socket.closes.length, 1);
 	});
 });

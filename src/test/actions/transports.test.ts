@@ -10,6 +10,7 @@ import {
 	DEFAULT_WS_MAX_MESSAGE_BYTES,
 	Transports,
 	WS_CLOSE_CONNECTION_LIMIT,
+	WS_CLOSE_GOING_AWAY,
 	WS_CLOSE_SESSION_REVOKED,
 	utf8_length_over,
 	type Transport
@@ -32,6 +33,13 @@ describe('WS_CLOSE_CONNECTION_LIMIT', () => {
 	// the Rust spine's `WS_CLOSE_CONNECTION_LIMIT` — a client reads one code from either backend
 	test('is 4004', () => {
 		assert.strictEqual(WS_CLOSE_CONNECTION_LIMIT, 4004);
+	});
+});
+
+describe('WS_CLOSE_GOING_AWAY', () => {
+	// the frontend client reconnects on it; 4001 would leave it revoked
+	test('is 1001', () => {
+		assert.strictEqual(WS_CLOSE_GOING_AWAY, 1001);
 	});
 });
 

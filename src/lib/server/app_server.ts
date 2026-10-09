@@ -28,11 +28,13 @@ import {
 } from '../realtime/sse_auth_guard.ts';
 import { BaseServerEnv } from './env.ts';
 import {
-	create_rate_limiter,
+	RateLimiter,
+	default_login_ip_rate_limit,
 	default_login_account_rate_limit,
 	default_action_account_rate_limit,
 	default_action_ip_rate_limit,
-	type RateLimiter
+	type RateLimiterMode,
+	type RateLimiterOptions
 } from '../rate_limiter.ts';
 import type { DaemonTokenState } from '../auth/daemon_token.ts';
 import type { MigrationResult } from '../db/migrate.ts';
@@ -151,9 +153,19 @@ export interface AppServerOptions {
 	};
 
 	/**
+	 * What an omitted rate limiter becomes — `'enforced'` (the default) builds
+	 * a default instance for each `*_rate_limiter` option left out,
+	 * `'disabled_for_testing'` leaves each of them `null`. An explicit option
+	 * (an instance or `null`) always wins over the mode. The disabled mode adds
+	 * one surface warning. Never `'disabled_for_testing'` in production — see
+	 * `RateLimiterMode`.
+	 */
+	rate_limiters?: RateLimiterMode;
+	/**
 	 * Per-IP rate limiter for login + password change — the distributed-spray
 	 * backstop. Omit or `undefined` to use a default limiter (5 attempts per
-	 * 15 minutes). Pass `null` to explicitly disable rate limiting.
+	 * 15 minutes) under `rate_limiters: 'enforced'`, none under
+	 * `'disabled_for_testing'`. Pass `null` to explicitly disable rate limiting.
 	 * Also available on `AppServerContext` for route factory callbacks.
 	 *
 	 * One instance per auth surface, not one shared across all four. These
@@ -165,32 +177,34 @@ export interface AppServerOptions {
 	 */
 	login_ip_rate_limiter?: RateLimiter | null;
 	/**
-	 * Per-IP rate limiter for signup. Omit or `undefined` to use a default
-	 * limiter (5 attempts per 15 minutes). Pass `null` to explicitly disable.
+	 * Per-IP rate limiter for signup. Omit or `undefined` for the mode's
+	 * default (5 attempts per 15 minutes under `rate_limiters: 'enforced'`).
+	 * Pass `null` to explicitly disable.
 	 * Separate from `login_ip_rate_limiter` because an open-signup deployment
 	 * lets any unauthenticated caller spend it. Also available on
 	 * `AppServerContext` for route factory callbacks.
 	 */
 	signup_ip_rate_limiter?: RateLimiter | null;
 	/**
-	 * Per-IP rate limiter for bootstrap. Omit or `undefined` to use a default
-	 * limiter (5 attempts per 15 minutes). Pass `null` to explicitly disable.
+	 * Per-IP rate limiter for bootstrap. Omit or `undefined` for the mode's
+	 * default (5 attempts per 15 minutes under `rate_limiters: 'enforced'`).
+	 * Pass `null` to explicitly disable.
 	 * Separate from `login_ip_rate_limiter` so a fumbled bootstrap token can't
 	 * spend the operator's login budget. Wired directly into the factory-managed
 	 * bootstrap route; also on `AppServerContext` for symmetry.
 	 */
 	bootstrap_ip_rate_limiter?: RateLimiter | null;
 	/**
-	 * Per-account rate limiter for login attempts.
-	 * Omit or `undefined` to use a default limiter (10 attempts per 30 minutes).
-	 * Pass `null` to explicitly disable rate limiting.
+	 * Per-account rate limiter for login attempts. Omit or `undefined` for the
+	 * mode's default (10 attempts per 30 minutes under
+	 * `rate_limiters: 'enforced'`). Pass `null` to explicitly disable.
 	 * Also available on `AppServerContext` for route factory callbacks.
 	 */
 	login_account_rate_limiter?: RateLimiter | null;
 	/**
 	 * Per-account rate limiter for signup attempts, keyed by submitted username.
-	 * Omit or `undefined` to use a default limiter (10 attempts per 30 minutes).
-	 * Pass `null` to explicitly disable rate limiting.
+	 * Omit or `undefined` for the mode's default (10 attempts per 30 minutes
+	 * under `rate_limiters: 'enforced'`). Pass `null` to explicitly disable.
 	 * Also available on `AppServerContext` for route factory callbacks.
 	 */
 	signup_account_rate_limiter?: RateLimiter | null;
@@ -198,18 +212,21 @@ export interface AppServerOptions {
 	 * Per-IP rate limiter for the action dispatchers (HTTP RPC + WebSocket).
 	 * Consulted for actions whose spec declares `rate_limit: 'ip'` or `'both'`.
 	 * Same limiter applies across transports — one budget per action.
-	 * Omit or `undefined` to use a default limiter (600 attempts per
-	 * 15 minutes — permissive). Pass `null` to explicitly disable.
+	 * Omit or `undefined` for the mode's default (600 attempts per 15 minutes
+	 * — permissive — under `rate_limiters: 'enforced'`). Pass `null` to
+	 * explicitly disable.
 	 * Threaded into every endpoint mounted from `rpc_endpoints` and
 	 * `ws_endpoints`; also available on `AppServerContext`.
 	 */
 	action_ip_rate_limiter?: RateLimiter | null;
 	/**
-	 * Per-actor rate limiter for the action dispatchers (HTTP RPC + WebSocket).
-	 * Consulted for actions whose spec declares `rate_limit: 'account'` or
-	 * `'both'`. Keyed on `request_context.actor.id` (post-auth).
-	 * Omit or `undefined` to use a default limiter (1200 attempts per
-	 * 15 minutes — permissive). Pass `null` to explicitly disable.
+	 * Per-account rate limiter for the action dispatchers (HTTP RPC +
+	 * WebSocket). Consulted for actions whose spec declares
+	 * `rate_limit: 'account'` or `'both'`. Keyed on the authenticated account's
+	 * id, so every actor and credential of one account shares a budget.
+	 * Omit or `undefined` for the mode's default (1200 attempts per 15 minutes
+	 * — permissive — under `rate_limiters: 'enforced'`). Pass `null` to
+	 * explicitly disable.
 	 * Threaded into every endpoint mounted from `rpc_endpoints` and
 	 * `ws_endpoints`; also available on `AppServerContext`.
 	 */
@@ -459,10 +476,27 @@ export interface AppServer {
 	 */
 	ws_endpoints: Readonly<Record<string, BackendWebsocketTransport>>;
 	/**
-	 * Shut the server's resources down: stop the auth cleanup schedule when
-	 * the `auth_cleanup` option started one — waiting for a pass in progress —
-	 * then close the database connection (`AppBackend.close`). That wait has
-	 * no bound of its own; a shutdown with a deadline races it.
+	 * Shut the server's resources down, in order:
+	 *
+	 * 1. stop the auth cleanup schedule when the `auth_cleanup` option started
+	 *    one, waiting for a pass in progress — that wait has no bound of its
+	 *    own, so a shutdown with a deadline races it
+	 * 2. close every live connection on `deps.connection_closer`
+	 *    (`close_all_sockets`) — each WebSocket with `WS_CLOSE_GOING_AWAY`, each
+	 *    audit stream — including transports supplied through
+	 *    `WsEndpointSpec.transport` or added by hand, since they are registered
+	 *    on the backend's closer and the backend is going away; a close that
+	 *    throws is logged and the shutdown goes on
+	 * 3. `dispose` the rate limiters `create_app_server` built for omitted
+	 *    options — never one passed in, which its caller owns
+	 * 4. close the database connection (`AppBackend.close`)
+	 *
+	 * Idempotent: a second call settles with the first one's outcome (a failed
+	 * close is not retried), and concurrent calls share one shutdown.
+	 *
+	 * Stop accepting new HTTP connections first — without awaiting the
+	 * listener's full drain, since live WebSockets hold it open until `close`
+	 * ends them — so no new request reaches a closed database.
 	 */
 	close: () => Promise<void>;
 }
@@ -515,8 +549,11 @@ export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
  * to assert the invariant.
  *
  * When `auth_cleanup` is set, the auth cleanup schedule starts as the last
- * step of assembly — so an assembly that throws leaves no schedule running —
- * and the returned `close` stops it before closing the database.
+ * step of assembly — so an assembly that throws leaves no schedule running.
+ *
+ * The returned `close` owns shutdown: it stops that schedule, closes every
+ * live connection on the backend's closer, disposes the rate limiters built
+ * here, and closes the database (`AppServer.close`).
  *
  * @returns assembled Hono app, backend, surface build, and bootstrap status
  */
@@ -525,37 +562,51 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	const { deps } = backend;
 	const { log } = deps;
 
-	// Rate limiter defaults (undefined = default, null = disable)
-	// One instance per surface — see `AppServerOptions.login_ip_rate_limiter`
-	// for why these are not a single shared bucket.
-	const login_ip_rate_limiter =
-		options.login_ip_rate_limiter === undefined
-			? create_rate_limiter()
-			: options.login_ip_rate_limiter;
-	const signup_ip_rate_limiter =
-		options.signup_ip_rate_limiter === undefined
-			? create_rate_limiter()
-			: options.signup_ip_rate_limiter;
-	const bootstrap_ip_rate_limiter =
-		options.bootstrap_ip_rate_limiter === undefined
-			? create_rate_limiter()
-			: options.bootstrap_ip_rate_limiter;
-	const login_account_rate_limiter =
-		options.login_account_rate_limiter === undefined
-			? create_rate_limiter(default_login_account_rate_limit)
-			: options.login_account_rate_limiter;
-	const signup_account_rate_limiter =
-		options.signup_account_rate_limiter === undefined
-			? create_rate_limiter(default_login_account_rate_limit)
-			: options.signup_account_rate_limiter;
-	const action_ip_rate_limiter =
-		options.action_ip_rate_limiter === undefined
-			? create_rate_limiter(default_action_ip_rate_limit)
-			: options.action_ip_rate_limiter;
-	const action_account_rate_limiter =
-		options.action_account_rate_limiter === undefined
-			? create_rate_limiter(default_action_account_rate_limit)
-			: options.action_account_rate_limiter;
+	// Rate limiters: an explicit option (instance or `null`) wins; an omitted
+	// one is a default instance under 'enforced', `null` under
+	// 'disabled_for_testing'. One instance per surface — see
+	// `AppServerOptions.login_ip_rate_limiter` for why these are not a single
+	// shared bucket. The ones built here are the server's to dispose on close.
+	const rate_limiter_mode: RateLimiterMode = options.rate_limiters ?? 'enforced';
+	const built_rate_limiters: Array<RateLimiter> = [];
+	const resolve_rate_limiter = (
+		option: RateLimiter | null | undefined,
+		defaults: RateLimiterOptions
+	): RateLimiter | null => {
+		if (option !== undefined) return option;
+		if (rate_limiter_mode === 'disabled_for_testing') return null;
+		const limiter = new RateLimiter({ ...defaults });
+		built_rate_limiters.push(limiter);
+		return limiter;
+	};
+	const login_ip_rate_limiter = resolve_rate_limiter(
+		options.login_ip_rate_limiter,
+		default_login_ip_rate_limit
+	);
+	const signup_ip_rate_limiter = resolve_rate_limiter(
+		options.signup_ip_rate_limiter,
+		default_login_ip_rate_limit
+	);
+	const bootstrap_ip_rate_limiter = resolve_rate_limiter(
+		options.bootstrap_ip_rate_limiter,
+		default_login_ip_rate_limit
+	);
+	const login_account_rate_limiter = resolve_rate_limiter(
+		options.login_account_rate_limiter,
+		default_login_account_rate_limit
+	);
+	const signup_account_rate_limiter = resolve_rate_limiter(
+		options.signup_account_rate_limiter,
+		default_login_account_rate_limit
+	);
+	const action_ip_rate_limiter = resolve_rate_limiter(
+		options.action_ip_rate_limiter,
+		default_action_ip_rate_limit
+	);
+	const action_account_rate_limiter = resolve_rate_limiter(
+		options.action_account_rate_limiter,
+		default_action_account_rate_limit
+	);
 
 	// Factory-managed audit SSE — registers a listener on the bound emitter
 	// so SSE fan-out runs alongside the consumer's `on_audit_event`
@@ -744,20 +795,35 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			});
 		}
 	}
-	// One diagnostic per surface — a deployment that disables login's limiter
-	// but keeps signup's is a different posture than one that disables both,
-	// and a single collapsed warning hid which surface was open.
-	for (const [name, limiter] of [
-		['login', login_ip_rate_limiter],
-		['signup', signup_ip_rate_limiter],
-		['bootstrap', bootstrap_ip_rate_limiter]
-	] as const) {
-		if (limiter === null) {
-			config_diagnostics.push({
-				level: 'warning',
-				category: 'config',
-				message: `${name} IP rate limiter explicitly disabled (null)`
-			});
+	if (rate_limiter_mode === 'disabled_for_testing') {
+		// one warning for the mode rather than one per limiter it nulled
+		config_diagnostics.push({
+			level: 'warning',
+			category: 'security',
+			message:
+				"rate limiters disabled for testing (rate_limiters: 'disabled_for_testing') — " +
+				'every limiter not passed explicitly is off; never use in production'
+		});
+	} else {
+		// One diagnostic per explicitly-null limiter — a deployment that disables
+		// login's limiter but keeps signup's is a different posture than one that
+		// disables both, and a single collapsed warning hid which surface was open.
+		for (const [name, limiter] of [
+			['login IP', login_ip_rate_limiter],
+			['signup IP', signup_ip_rate_limiter],
+			['bootstrap IP', bootstrap_ip_rate_limiter],
+			['login account', login_account_rate_limiter],
+			['signup account', signup_account_rate_limiter],
+			['action IP', action_ip_rate_limiter],
+			['action account', action_account_rate_limiter]
+		] as const) {
+			if (limiter === null) {
+				config_diagnostics.push({
+					level: 'warning',
+					category: 'security',
+					message: `${name} rate limiter explicitly disabled (null)`
+				});
+			}
 		}
 	}
 	if (config_diagnostics.length) {
@@ -935,6 +1001,22 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		? start_auth_cleanup(deps, options.auth_cleanup === true ? undefined : options.auth_cleanup)
 		: null;
 
+	// One shutdown, shared by every call — see `AppServer.close` for the order.
+	let closing: Promise<void> | null = null;
+	const shutdown = async (): Promise<void> => {
+		// the schedule first, so a pass in progress finishes on a live pool
+		if (auth_cleanup) await auth_cleanup.stop();
+		// then the connections, so none outlives the server — a failure here
+		// must not keep the database open
+		try {
+			deps.connection_closer.close_all_sockets();
+		} catch (error) {
+			log.error('create_app_server: closing live connections on shutdown failed:', error);
+		}
+		for (const limiter of built_rate_limiters) limiter.dispose();
+		await backend.close();
+	};
+
 	return {
 		app,
 		surface_spec,
@@ -942,12 +1024,6 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		migration_results: backend.migration_results,
 		audit_sse,
 		ws_endpoints: mounted_ws_endpoints,
-		close: auth_cleanup
-			? async () => {
-					// the schedule first, so a pass in progress finishes on a live pool
-					await auth_cleanup.stop();
-					await backend.close();
-				}
-			: backend.close
+		close: () => (closing ??= shutdown())
 	};
 };

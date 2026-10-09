@@ -20,6 +20,8 @@ import {
 } from '$lib/actions/transports_ws_backend.ts';
 import {
 	WS_CLOSE_CONNECTION_LIMIT,
+	WS_CLOSE_GOING_AWAY,
+	WS_CLOSE_GOING_AWAY_REASON,
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON
 } from '$lib/actions/transports.ts';
@@ -162,6 +164,67 @@ describe('BackendWebsocketTransport.close_sockets_for_token', () => {
 		const { ws } = create_fake_ws();
 		t.add_connection(ws, HASH_A, ACCOUNT_A);
 		assert.strictEqual(t.close_sockets_for_token(TOKEN_A), 0);
+	});
+});
+
+describe('BackendWebsocketTransport.close_all_sockets', () => {
+	test('closes every connection, pending and admitted, with the going-away close', () => {
+		const t = new BackendWebsocketTransport();
+		const session = create_fake_ws();
+		const bearer = create_fake_ws();
+		const daemon = create_fake_ws();
+		const pending = create_fake_ws();
+		t.add_connection(session.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(bearer.ws, null, ACCOUNT_A, TOKEN_A);
+		t.add_connection(daemon.ws, null, ACCOUNT_B);
+		const pending_id = t.register_pending(pending.ws, HASH_B, ACCOUNT_B);
+
+		assert.strictEqual(t.close_all_sockets(), 4);
+		for (const fake of [session, bearer, daemon, pending]) {
+			assert.deepStrictEqual(fake.closes, [
+				{ code: WS_CLOSE_GOING_AWAY, reason: WS_CLOSE_GOING_AWAY_REASON }
+			]);
+		}
+		assert.strictEqual(t.get_connection_count(), 0);
+		assert.strictEqual(t.get_pending_connection_count(), 0);
+		// a pending registration closed at shutdown is refused at admission
+		assert.strictEqual(t.admit(pending_id), false);
+		// closing again closes nothing
+		assert.strictEqual(t.close_all_sockets(), 0);
+	});
+
+	test("aborts each closed connection's controller", () => {
+		const t = new BackendWebsocketTransport();
+		const controller = new AbortController();
+		t.add_connection(create_fake_ws().ws, HASH_A, ACCOUNT_A, null, controller);
+		t.close_all_sockets();
+		assert.strictEqual(controller.signal.aborted, true);
+	});
+
+	test('a socket whose close throws does not spare the rest', () => {
+		const t = new BackendWebsocketTransport();
+		const before = create_fake_ws();
+		const after = create_fake_ws();
+		const boom = new Error('already closed');
+		t.add_connection(before.ws, HASH_A, ACCOUNT_A);
+		t.add_connection(
+			new WSContext({
+				send: () => {},
+				close: () => {
+					throw boom;
+				},
+				readyState: 1
+			}),
+			HASH_B,
+			ACCOUNT_B
+		);
+		t.add_connection(after.ws, null, ACCOUNT_B);
+
+		assert.throws(() => t.close_all_sockets(), boom);
+		assert.strictEqual(before.closes.length, 1);
+		assert.strictEqual(after.closes.length, 1, 'the socket after the throw was closed');
+		// the throwing socket's connection is removed too
+		assert.strictEqual(t.get_connection_count(), 0);
 	});
 });
 

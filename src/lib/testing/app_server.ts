@@ -628,7 +628,7 @@ export interface TestApp {
 	create_daemon_token_headers: (extra?: Record<string, string>) => Record<string, string>;
 	/** Create an additional account with credentials. */
 	create_account: (options?: CreateTestAppAccountArgs) => Promise<TestAccount>;
-	/** Cleanup resources (`AppServer.close`: stops an opted-in auth cleanup schedule, then the backend's `close`). */
+	/** Cleanup resources — `AppServer.close`: stops an opted-in auth cleanup schedule, closes live connections, disposes the limiters the server built, then the backend's `close`. Idempotent. */
 	cleanup: () => Promise<void>;
 }
 
@@ -636,7 +636,9 @@ export interface TestApp {
  * Create a fully assembled test app with a Hono server, middleware, and routes.
  *
  * Combines `create_test_app_server` + `create_app_server` into a single call.
- * Disables rate limiters and logging by default (test-friendly).
+ * Disables every rate limiter (`rate_limiters: 'disabled_for_testing'`) and
+ * logging by default (test-friendly). A limiter passed through `app_options`
+ * wins over the mode, so a rate-limit test enables just the one it pins.
  *
  * A fresh Hono app is created each call — middleware closures bind to the
  * server's deps (db, keyring), so reuse across servers is unsafe.
@@ -664,11 +666,9 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 		allowed_origins: [/^http:\/\/localhost/],
 		proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
 		env_schema: z.object({}),
-		login_ip_rate_limiter: null,
-		signup_ip_rate_limiter: null,
-		bootstrap_ip_rate_limiter: null,
-		login_account_rate_limiter: null,
-		signup_account_rate_limiter: null,
+		// every limiter off unless `app_options` passes one — a rate-limit test
+		// enables just the limiter it pins
+		rate_limiters: 'disabled_for_testing',
 		await_pending_effects: true,
 		daemon_token_state,
 		rpc_endpoints: options.rpc_endpoints,
@@ -804,7 +804,8 @@ export interface TestAppForBootstrap {
  * accounts. The fs stubs return `options.bootstrap_token` when the
  * bootstrap handler reads `bootstrap.token_path`, so a `POST /bootstrap`
  * with `{token: bootstrap_token, username, password}` reaches the
- * success branch.
+ * success branch. Rate limiters are disabled the way `create_test_app`
+ * disables them — a limiter in `app_options` wins.
  *
  * Pair with `describe_bootstrap_success_tests` for the consumer-runnable
  * suite that drives the full happy path + adjacent assertions on
@@ -862,11 +863,9 @@ export const create_test_app_for_bootstrap = async (
 		allowed_origins: [/^http:\/\/localhost/],
 		proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
 		env_schema: z.object({}),
-		login_ip_rate_limiter: null,
-		signup_ip_rate_limiter: null,
-		bootstrap_ip_rate_limiter: null,
-		login_account_rate_limiter: null,
-		signup_account_rate_limiter: null,
+		// every limiter off unless `app_options` passes one — a rate-limit test
+		// enables just the limiter it pins
+		rate_limiters: 'disabled_for_testing',
 		await_pending_effects: true,
 		daemon_token_state,
 		rpc_endpoints: options.rpc_endpoints,

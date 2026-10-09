@@ -28,22 +28,30 @@ export interface AppServerContext {
 	bootstrap_status: BootstrapStatus;
 	session_options: SessionOptions<string>;
 	/**
-	 * Per-IP login + password-change rate limiter (from options). `null` when
-	 * not configured. One instance per auth surface — see
-	 * `AppServerOptions.login_ip_rate_limiter` for why these aren't shared.
+	 * Per-IP login + password-change rate limiter. One instance per auth
+	 * surface — see `AppServerOptions.login_ip_rate_limiter` for why these
+	 * aren't shared.
+	 *
+	 * Each limiter here is what `create_app_server` resolved: the instance
+	 * its option passed, else a default instance under
+	 * `rate_limiters: 'enforced'` (the default). `null` when disabled — the
+	 * option was an explicit `null`, or the mode is `'disabled_for_testing'`.
 	 */
 	login_ip_rate_limiter: RateLimiter | null;
-	/** Per-IP signup rate limiter (from options). `null` when not configured. */
+	/** Per-IP signup rate limiter. `null` when disabled. */
 	signup_ip_rate_limiter: RateLimiter | null;
-	/** Per-IP bootstrap rate limiter (from options). `null` when not configured. */
+	/** Per-IP bootstrap rate limiter. `null` when disabled. */
 	bootstrap_ip_rate_limiter: RateLimiter | null;
-	/** Per-account login rate limiter (from options). `null` when not configured. */
+	/** Per-account login rate limiter. `null` when disabled. */
 	login_account_rate_limiter: RateLimiter | null;
-	/** Per-account signup rate limiter (from options). `null` when not configured. */
+	/** Per-account signup rate limiter. `null` when disabled. */
 	signup_account_rate_limiter: RateLimiter | null;
-	/** Per-IP action-dispatcher rate limiter — shared across HTTP RPC + WS. `null` when not configured. */
+	/** Per-IP action-dispatcher rate limiter — shared across HTTP RPC + WS. `null` when disabled. */
 	action_ip_rate_limiter: RateLimiter | null;
-	/** Per-actor action-dispatcher rate limiter — shared across HTTP RPC + WS. `null` when not configured. */
+	/**
+	 * Per-account action-dispatcher rate limiter, keyed on the authenticated
+	 * account's id — shared across HTTP RPC + WS. `null` when disabled.
+	 */
 	action_account_rate_limiter: RateLimiter | null;
 	/**
 	 * Factory-managed audit log SSE. Non-null when the `audit_log_sse`

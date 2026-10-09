@@ -109,7 +109,8 @@ const create_harness = (): Harness => {
 					return 1;
 				},
 				close_sockets_for_token: sessions_only,
-				close_sockets_for_account: sessions_only
+				close_sockets_for_account: sessions_only,
+				close_all_sockets: sessions_only
 			}
 		},
 		starts,

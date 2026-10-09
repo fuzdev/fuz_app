@@ -1128,7 +1128,10 @@ describe_db('connection_closer wiring', (get_db) => {
 			const probe: ConnectionCloser = {
 				close_sockets_for_session: (id) => record('session', id),
 				close_sockets_for_token: (id) => record('token', id),
-				close_sockets_for_account: (id) => record('account', id)
+				close_sockets_for_account: (id) => record('account', id),
+				close_all_sockets: () => {
+					throw new Error('a revocation never closes every connection');
+				}
 			};
 			const transport = new BackendWebsocketTransport({ log });
 			let audit_sse: AuditLogSse | null = null;

@@ -20,12 +20,15 @@ import {
 	type ConnectionCloseTarget
 } from '$lib/actions/connection_closer.ts';
 import { flush_post_commit_effects } from '$lib/http/pending_effects.ts';
-import { create_recording_closer } from '$lib/testing/connection_closer_helpers.ts';
+import {
+	create_recording_closer,
+	type RecordedClose
+} from '$lib/testing/connection_closer_helpers.ts';
 
 const ACCOUNT = create_uuid();
 
 /** One target per `ConnectionCloser` method, and the call each one records. */
-const targets: Array<{ target: ConnectionCloseTarget; method: string; id: string }> = [
+const targets: Array<{ target: ConnectionCloseTarget } & RecordedClose> = [
 	{
 		target: { kind: 'session', session_token_hash: 'session_hash' },
 		method: 'session',
@@ -43,7 +46,8 @@ const create_throwing_closer = (error: unknown): ConnectionCloser => {
 	return {
 		close_sockets_for_session: fail,
 		close_sockets_for_token: fail,
-		close_sockets_for_account: fail
+		close_sockets_for_account: fail,
+		close_all_sockets: fail
 	};
 };
 
@@ -83,6 +87,33 @@ describe('create_realtime_closer', () => {
 			assert.deepStrictEqual(after.calls, [{ method, id }], 'the member after the throw ran');
 		});
 	}
+
+	test('close_all_sockets fans out to every member and returns the sum', () => {
+		const closer = create_realtime_closer();
+		const a = create_recording_closer();
+		const b = create_recording_closer();
+		closer.add(a.closer);
+		closer.add(b.closer);
+
+		assert.strictEqual(closer.close_all_sockets(), 2);
+		assert.deepStrictEqual(a.calls, [{ method: 'all', id: null }]);
+		assert.deepStrictEqual(b.calls, [{ method: 'all', id: null }]);
+	});
+
+	test('a member that throws does not stop the close_all_sockets fan-out', () => {
+		// at shutdown, a broken transport must not leave another's connections open
+		const closer = create_realtime_closer();
+		const before = create_recording_closer();
+		const after = create_recording_closer();
+		const boom = new Error('transport close failed');
+		closer.add(before.closer);
+		closer.add(create_throwing_closer(boom));
+		closer.add(after.closer);
+
+		assert.throws(() => closer.close_all_sockets(), boom);
+		assert.deepStrictEqual(before.calls, [{ method: 'all', id: null }]);
+		assert.deepStrictEqual(after.calls, [{ method: 'all', id: null }]);
+	});
 
 	test('the first error is the one thrown when several members fail', () => {
 		const closer = create_realtime_closer();

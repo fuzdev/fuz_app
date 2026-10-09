@@ -29,6 +29,7 @@ import type { AuditLogInput } from '$lib/auth/audit_log_schema.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_realtime_closer, type ConnectionCloser } from '$lib/actions/connection_closer.ts';
 import { flush_pending_effects, flush_post_commit_effects } from '$lib/http/pending_effects.ts';
+import { create_recording_closer } from '$lib/testing/connection_closer_helpers.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -693,21 +694,7 @@ describe('password change connection_closer wiring', () => {
 	// re-authentication path under contention), though nothing was revoked.
 
 	test('does NOT close on concurrent-change 401 (update returned false)', async () => {
-		const calls: Array<{ method: string; id: string }> = [];
-		const closer: ConnectionCloser = {
-			close_sockets_for_session: (id) => {
-				calls.push({ method: 'session', id });
-				return 1;
-			},
-			close_sockets_for_token: (id) => {
-				calls.push({ method: 'token', id });
-				return 1;
-			},
-			close_sockets_for_account: (id) => {
-				calls.push({ method: 'account', id });
-				return 1;
-			}
-		};
+		const { closer, calls } = create_recording_closer();
 		const audit_events: Array<AuditLogInput> = [];
 		const { app, mock_verify_password } = create_password_change_app(
 			null,
@@ -760,21 +747,7 @@ describe('password change connection_closer wiring', () => {
 		// for the no-close result above. Without this, a regression that
 		// dropped the success-path close entirely would also pass the
 		// concurrent-change test.
-		const calls: Array<{ method: string; id: string }> = [];
-		const closer: ConnectionCloser = {
-			close_sockets_for_session: (id) => {
-				calls.push({ method: 'session', id });
-				return 1;
-			},
-			close_sockets_for_token: (id) => {
-				calls.push({ method: 'token', id });
-				return 1;
-			},
-			close_sockets_for_account: (id) => {
-				calls.push({ method: 'account', id });
-				return 1;
-			}
-		};
+		const { closer, calls } = create_recording_closer();
 		const { app, mock_verify_password } = create_password_change_app(null, null, closer);
 		mock_verify_password.mockResolvedValueOnce(true);
 		// default mock_update_password resolution is `true` (success)
@@ -792,21 +765,7 @@ describe('password change connection_closer wiring', () => {
 		// rate-limit gate would silently disconnect the caller's live WS
 		// sockets on every blocked request — the opposite of what rate
 		// limiting is supposed to do (it would amplify churn under attack).
-		const calls: Array<{ method: string; id: string }> = [];
-		const closer: ConnectionCloser = {
-			close_sockets_for_session: (id) => {
-				calls.push({ method: 'session', id });
-				return 1;
-			},
-			close_sockets_for_token: (id) => {
-				calls.push({ method: 'token', id });
-				return 1;
-			},
-			close_sockets_for_account: (id) => {
-				calls.push({ method: 'account', id });
-				return 1;
-			}
-		};
+		const { closer, calls } = create_recording_closer();
 		const limiter = create_test_limiter();
 		const { app } = create_password_change_app(limiter, null, closer);
 
@@ -835,21 +794,7 @@ describe('password change connection_closer wiring', () => {
 		// Companion to the per-IP test above — the per-account limiter
 		// runs after request-context resolution, so it's a separate gate
 		// and a separate refactor target. Same contract on both gates.
-		const calls: Array<{ method: string; id: string }> = [];
-		const closer: ConnectionCloser = {
-			close_sockets_for_session: (id) => {
-				calls.push({ method: 'session', id });
-				return 1;
-			},
-			close_sockets_for_token: (id) => {
-				calls.push({ method: 'token', id });
-				return 1;
-			},
-			close_sockets_for_account: (id) => {
-				calls.push({ method: 'account', id });
-				return 1;
-			}
-		};
+		const { closer, calls } = create_recording_closer();
 		const account_limiter = create_test_limiter();
 		const { app } = create_password_change_app(null, account_limiter, closer);
 

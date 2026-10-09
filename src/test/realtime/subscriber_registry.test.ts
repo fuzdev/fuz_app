@@ -302,6 +302,48 @@ describe('SubscriberRegistry', () => {
 	});
 });
 
+describe('SubscriberRegistry.close_all', () => {
+	test('closes every subscriber, with or without an identity, pending ones included', () => {
+		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const scoped = create_mock_stream<string>();
+		const grouped = create_mock_stream<string>();
+		const anonymous = create_mock_stream<string>();
+		registry.subscribe(scoped, { scope: 'session_a' });
+		registry.subscribe(grouped, { groups: ['account_a'] });
+		registry.subscribe(anonymous);
+		const pending = registry.subscribe_pending({ scope: 'session_b' });
+
+		assert.strictEqual(registry.close_all(), 4);
+		assert.ok(scoped.closed && grouped.closed && anonymous.closed);
+		assert.strictEqual(registry.count, 0);
+		assert.strictEqual(registry.pending_count, 0);
+		assert.strictEqual(registry.admit(pending, create_mock_stream<string>()), false);
+		assert.strictEqual(registry.close_all(), 0);
+	});
+
+	test('a stream whose close throws does not spare the rest', () => {
+		const registry: SubscriberRegistry<string> = new SubscriberRegistry();
+		const boom = new Error('controller already closed');
+		const before = create_mock_stream<string>();
+		const after = create_mock_stream<string>();
+		registry.subscribe(before);
+		registry.subscribe({
+			send() {},
+			comment() {},
+			close() {
+				throw boom;
+			},
+			on_close() {}
+		});
+		registry.subscribe(after);
+
+		assert.throws(() => registry.close_all(), boom);
+		assert.ok(before.closed);
+		assert.ok(after.closed, 'the stream after the throw was closed');
+		assert.strictEqual(registry.count, 0);
+	});
+});
+
 describe('SubscriberRegistry max_per_scope', () => {
 	test('closes oldest subscriber when scope cap is reached', () => {
 		const registry: SubscriberRegistry<string> = new SubscriberRegistry({ max_per_scope: 5 });

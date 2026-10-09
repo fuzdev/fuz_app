@@ -105,9 +105,9 @@ mismatch.
 
 ### `connection_closer_helpers.ts` — `ConnectionCloser` test doubles
 
-- `create_recording_closer()` — `{closer, calls}`; every method on `closer` records `{method, id}` into `calls` and closes nothing. To see a handler's closes, add it to the backend's closer (`ctx.deps.connection_closer.add(closer)`) or build the factory's deps with it. The closes are queued post-commit, so they have run by the time a `create_test_app` response is in hand (`await_pending_effects: true` flushes both queues).
+- `create_recording_closer()` — `{closer, calls}`; every method on `closer` records `{method, id}` into `calls` and closes nothing (`close_all_sockets` records `{method: 'all', id: null}`). To see a handler's closes, add it to the backend's closer (`ctx.deps.connection_closer.add(closer)`) or build the factory's deps with it. The closes are queued post-commit, so they have run by the time a `create_test_app` response is in hand (`await_pending_effects: true` flushes both queues).
 - `assert_close_call(call, method, id)` — pins `{method, id}` on a recorded close call; handles the missing-element case.
-- `RecordedClose` — `{method: 'session' | 'token' | 'account', id}`.
+- `RecordedClose` — `{method: 'session' | 'token' | 'account', id: string} | {method: 'all', id: null}`.
 - `RecordingCloser` — `{closer, calls}`.
 
 ## Database — `db.ts`
@@ -178,11 +178,16 @@ Types:
 
 `create_test_app` hard-codes the test-friendly `AppServerOptions`:
 `allowed_origins: [/^http:\/\/localhost/]`, stub proxy pinned to `127.0.0.1`,
-`env_schema: z.object({})`, every rate limiter `null`, static daemon token
-state (no rotation, keeper already set),
+`env_schema: z.object({})`, `rate_limiters: 'disabled_for_testing'` (every
+rate limiter `null`, the action limiters included — a limiter passed through
+`app_options` wins over the mode, so a rate-limit test enables just the one it
+pins), static daemon token state (no rotation, keeper already set),
 **`await_pending_effects: true`** (fire-and-forget effects complete before
 the response returns so tests can assert on side effects inline), and silent
-logger. Override via `app_options`.
+logger. Override via `app_options`. `create_test_app_for_bootstrap` disables
+the limiters the same way. `cleanup()` is the assembled server's idempotent
+`close` — it also closes the server's live connections and disposes the
+limiters it built.
 
 `auth_cleanup` is left at its default, **off**, here and in
 `create_test_app_for_bootstrap`: a background pass would delete rows and

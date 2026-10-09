@@ -45,7 +45,8 @@ export const AUDIT_LOG_CHANNEL = 'audit_log';
  * their `groups` — pending registrations included. The audit stream route
  * registers `scope = session hash` and `groups = [account id]`; a route that
  * admits bearer tokens registers the API token id too, and
- * `close_sockets_for_token` then reaches it.
+ * `close_sockets_for_token` then reaches it. `close_all_sockets` is
+ * `SubscriberRegistry.close_all` — every stream, for shutdown.
  *
  * Twin of the Rust spine's `SocketRevoker` impl on `SseRegistry`.
  */
@@ -54,7 +55,8 @@ export const create_sse_connection_closer = <T>(
 ): ConnectionCloser => ({
 	close_sockets_for_session: (session_token_hash) => registry.close_by_identity(session_token_hash),
 	close_sockets_for_token: (api_token_id) => registry.close_by_identity(api_token_id),
-	close_sockets_for_account: (account_id) => registry.close_by_identity(account_id)
+	close_sockets_for_account: (account_id) => registry.close_by_identity(account_id),
+	close_all_sockets: () => registry.close_all()
 });
 
 /**

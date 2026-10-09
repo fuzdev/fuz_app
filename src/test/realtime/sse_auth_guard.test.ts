@@ -81,6 +81,21 @@ describe('create_sse_connection_closer', () => {
 		assert.strictEqual(registry.count, 0);
 		assert.strictEqual(registry.pending_count, 0);
 	});
+
+	test('close_all_sockets closes every stream of the registry', () => {
+		const registry = new SubscriberRegistry<string>();
+		const closer = create_sse_connection_closer(registry);
+		const scoped = create_mock_stream<string>();
+		registry.subscribe(scoped, { scope: 'session-hash-1', groups: [create_uuid()] });
+		const anonymous = create_mock_stream<string>();
+		registry.subscribe(anonymous);
+		registry.subscribe_pending({ scope: 'session-hash-2' });
+
+		assert.strictEqual(closer.close_all_sockets(), 3);
+		assert.ok(scoped.closed && anonymous.closed);
+		assert.strictEqual(registry.count, 0);
+		assert.strictEqual(registry.pending_count, 0);
+	});
 });
 
 describe('create_sse_auth_guard', () => {

@@ -352,8 +352,46 @@ middleware) stays in the consumer. Rate limiters default automatically
 1200/15min) — pass `null` to disable, or a custom `RateLimiter` instance
 to override. The two `action_*` limiters back the per-action `rate_limit?`
 field on `ActionSpec` and are shared across the HTTP RPC and WebSocket
-dispatchers. Body size limiting defaults to 1 MiB (`DEFAULT_MAX_BODY_SIZE`);
+dispatchers. Each disabled limiter is a warning in the surface's diagnostics,
+logged at startup. Body size limiting defaults to 1 MiB (`DEFAULT_MAX_BODY_SIZE`);
 pass `max_body_size` to override or `null` to disable.
+
+A test app or test binary turns every limiter off in one place with
+`rate_limiters: 'disabled_for_testing'` (`RateLimiterMode`, the twin of the
+Rust `fuz_auth::RateLimiterMode`) — an omitted limiter is then `null` rather
+than a default instance, and the surface carries one warning for the mode. A
+limiter passed explicitly still wins, so a rate-limit test enables just the
+one it pins:
+
+```typescript
+const server = await create_app_server({
+	// …other options…
+	rate_limiters: 'disabled_for_testing', // never in production
+	login_ip_rate_limiter: create_rate_limiter({ max_attempts: 2 }) // the one under test
+});
+```
+
+`create_test_app` sets the mode for you.
+
+### Shutdown
+
+`AppServer.close` owns shutdown. Stop accepting new HTTP connections first —
+without awaiting the listener's full drain, since live WebSockets hold it open
+until `close` ends them — so no new request reaches a closed database, then:
+
+```typescript
+await server.close();
+```
+
+It stops the auth cleanup schedule when one runs (waiting for a pass in
+progress), closes every live connection on `deps.connection_closer` — each
+WebSocket with `WS_CLOSE_GOING_AWAY` (1001, so clients reconnect rather than
+treat their session as revoked), each audit stream, including transports passed
+through `WsEndpointSpec.transport` or added by hand — then disposes the rate
+limiters `create_app_server` built and closes the database. A limiter you
+passed in is yours to dispose. `close` is idempotent: a second call settles
+with the first one's outcome (a failed close is not retried), and concurrent
+calls share one shutdown.
 
 ### Auth cleanup
 
@@ -370,9 +408,9 @@ const { app, close } = await create_app_server({
 	// auth_cleanup: {interval_ms: 60_000}, // or your own interval
 });
 
-// on shutdown: stops the schedule (waiting for a pass in progress), then
-// closes the database. The wait has no bound of its own — a shutdown with a
-// deadline races it
+// on shutdown: stops the schedule (waiting for a pass in progress) before
+// closing connections and the database (§Shutdown). The wait has no bound of
+// its own — a shutdown with a deadline races it
 await close();
 ```
 

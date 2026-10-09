@@ -50,6 +50,15 @@ export const WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003;
  */
 export const WS_CLOSE_CONNECTION_LIMIT = 4004;
 /**
+ * WebSocket close code — the server is shutting down (RFC 6455 §7.4.1 "Going
+ * Away"). Sent to every live socket by `close_all_sockets`, which
+ * `AppServer.close` runs. Not a revocation: the credential is still good, so a
+ * client reconnects under its ordinary backoff once a server is back.
+ */
+export const WS_CLOSE_GOING_AWAY = 1001;
+/** The close reason sent with `WS_CLOSE_GOING_AWAY`. */
+export const WS_CLOSE_GOING_AWAY_REASON = 'Server shutting down';
+/**
  * WebSocket close code — an inbound message exceeded the receiver's size cap
  * (RFC 6455 §7.4.1 "Message Too Big").
  */

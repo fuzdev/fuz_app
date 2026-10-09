@@ -105,6 +105,28 @@ export const default_action_account_rate_limit: RateLimiterOptions = {
 };
 
 /**
+ * Whether a server builds the rate limiters it is not handed —
+ * `AppServerOptions.rate_limiters`.
+ *
+ * - `'enforced'` — every limiter left out of the options is a default
+ *   instance. The only mode a production server uses, and the default.
+ * - `'disabled_for_testing'` — every limiter left out is `null`, so nothing
+ *   is throttled. For in-process test apps and test binaries: they drive many
+ *   round-trips from one address, and the IP buckets are monotone within their
+ *   window (a success never refunds them, see `RateLimiter.reset`), so a
+ *   suite's failures pile up until every later call is refused.
+ *
+ * A limiter passed explicitly — an instance or `null` — wins over the mode
+ * either way, so a rate-limit test enables just the limiter it pins. The
+ * disabled mode is loud: `create_app_server` adds a surface warning, which
+ * `log_startup_summary` logs at assembly.
+ *
+ * Twin of the Rust spine's `fuz_auth::RateLimiterMode` (`Enforced` /
+ * `DisabledForTesting`).
+ */
+export type RateLimiterMode = 'enforced' | 'disabled_for_testing';
+
+/**
  * Result of a rate limit check or record operation.
  */
 export interface RateLimitResult {
@@ -130,8 +152,9 @@ export interface RateLimitResult {
  * LRU trade-off described on `RateLimiterOptions.max_keys`.
  *
  * Parameters that accept `RateLimiter | null` (e.g. `login_ip_rate_limiter`,
- * `login_account_rate_limiter`) silently disable rate limiting when `null`
- * is passed — no checks are performed and all requests are allowed through.
+ * `login_account_rate_limiter`) disable rate limiting when `null` is passed —
+ * no checks are performed and all requests are allowed through.
+ * `create_app_server` surfaces each disabled limiter as a warning diagnostic.
  */
 export class RateLimiter {
 	readonly options: RateLimiterOptions;

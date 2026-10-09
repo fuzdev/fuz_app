@@ -307,13 +307,32 @@ export class SubscriberRegistry<T> {
 	 * @throws the first error a stream's `close` threw, after every match was attempted
 	 */
 	close_by_identity(identity: string): number {
+		return this.#close_where(
+			(subscriber) => subscriber.scope === identity || !!subscriber.groups?.has(identity)
+		);
+	}
+
+	/**
+	 * Force-close every subscriber, pending or admitted — the shutdown close
+	 * `AppServer.close` runs through the registry's `ConnectionCloser`.
+	 *
+	 * A stream whose `close` throws does not stop the loop: every subscriber is
+	 * removed and closed, and the first error is thrown afterward.
+	 *
+	 * @returns the number of subscribers closed
+	 * @mutates registry - removes every subscriber and closes its stream
+	 * @throws the first error a stream's `close` threw, after every subscriber was attempted
+	 */
+	close_all(): number {
+		return this.#close_where(() => true);
+	}
+
+	#close_where(predicate: (subscriber: SubscriberEntry<T>) => boolean): number {
 		// collect first, then close — avoids mutating the Set during iteration
 		// (stream.close() fires on_close listeners which may call unsubscribe)
 		const to_close: Array<SubscriberEntry<T>> = [];
 		for (const subscriber of this.#subscribers) {
-			if (subscriber.scope === identity || subscriber.groups?.has(identity)) {
-				to_close.push(subscriber);
-			}
+			if (predicate(subscriber)) to_close.push(subscriber);
 		}
 		let failed = false;
 		let first_error: unknown;

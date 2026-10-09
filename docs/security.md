@@ -822,6 +822,16 @@ same instance across both); signup and bootstrap each get their own. Consumers
 wanting the old single-budget posture pass the same `RateLimiter` to
 `login_ip_rate_limiter` / `signup_ip_rate_limiter` / `bootstrap_ip_rate_limiter`.
 
+**Turning a limiter off is loud.** An explicit `null` disables one limiter;
+`AppServerOptions.rate_limiters: 'disabled_for_testing'` makes every limiter not
+passed explicitly `null`, for test apps and test binaries that drive many
+round-trips from one address. Each explicit `null` is a warning in the surface's
+diagnostics, and the mode is one warning of its own; `log_startup_summary` logs
+them at startup. Nothing refuses the mode at runtime: the Rust spine keeps its
+twin out of production by construction (only its `testing_*` crates build
+`RateLimiterMode::DisabledForTesting`, and its release audit forbids linking
+them), while the TS side has only the warning.
+
 The 5-attempt cap was deliberately **not** widened when the buckets became
 monotone. Widening buys NAT'd-egress headroom by loosening the one bound that
 caps credential guessing from a single address; splitting the shared bucket buys

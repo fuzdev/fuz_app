@@ -49,7 +49,7 @@ import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 import { emit_after_commit, type EmitAfterCommitContext } from '../http/pending_effects.ts';
 
 /**
- * Close live connections by identity.
+ * Close live connections by identity, or all of them.
  *
  * Each method returns how many connections it closed. Closing is idempotent:
  * a connection already gone isn't counted, so a handler's close and an audit
@@ -74,11 +74,19 @@ export interface ConnectionCloser {
 	 * credentials.
 	 */
 	close_sockets_for_account: (account_id: Uuid) => number;
+	/**
+	 * Close every connection, whoever opened it — the shutdown close
+	 * `AppServer.close` runs. Not a revocation: a WebSocket gets
+	 * `WS_CLOSE_GOING_AWAY`, so its client reconnects rather than treating
+	 * its credential as revoked.
+	 */
+	close_all_sockets: () => number;
 }
 
 /**
  * Which connections a revocation closes — the argument of
- * `queue_connection_close`, one variant per `ConnectionCloser` method.
+ * `queue_connection_close`, one variant per credential close of
+ * `ConnectionCloser` (`close_all_sockets` is shutdown, never a revocation).
  */
 export type ConnectionCloseTarget =
 	| { kind: 'session'; session_token_hash: string }
@@ -142,7 +150,8 @@ export const queue_connection_close = (
 export const noop_connection_closer: ConnectionCloser = Object.freeze({
 	close_sockets_for_session: () => 0,
 	close_sockets_for_token: () => 0,
-	close_sockets_for_account: () => 0
+	close_sockets_for_account: () => 0,
+	close_all_sockets: () => 0
 });
 
 /**
@@ -150,7 +159,9 @@ export const noop_connection_closer: ConnectionCloser = Object.freeze({
  *
  * Each close fans out to every member and returns the sum of what each
  * closed. A revocation handler holds this rather than one transport, so its
- * close reaches the WebSocket transports and the SSE registries alike.
+ * close reaches the WebSocket transports and the SSE registries alike, and
+ * `AppServer.close` runs its `close_all_sockets` to end every live connection
+ * of the backend at shutdown.
  *
  * A member that throws does not stop the fan-out: every member is still
  * called, and the first error is thrown once they all have been — so the
@@ -178,7 +189,7 @@ export interface RealtimeCloser extends ConnectionCloser {
  */
 export const create_realtime_closer = (): RealtimeCloser => {
 	const members: Set<ConnectionCloser> = new Set();
-	const close_all = (close: (member: ConnectionCloser) => number): number => {
+	const fan_out = (close: (member: ConnectionCloser) => number): number => {
 		let count = 0;
 		let failed = false;
 		let first_error: unknown;
@@ -202,10 +213,11 @@ export const create_realtime_closer = (): RealtimeCloser => {
 			members.add(closer);
 		},
 		close_sockets_for_session: (session_token_hash: string): number =>
-			close_all((member) => member.close_sockets_for_session(session_token_hash)),
+			fan_out((member) => member.close_sockets_for_session(session_token_hash)),
 		close_sockets_for_token: (api_token_id: string): number =>
-			close_all((member) => member.close_sockets_for_token(api_token_id)),
+			fan_out((member) => member.close_sockets_for_token(api_token_id)),
 		close_sockets_for_account: (account_id: Uuid): number =>
-			close_all((member) => member.close_sockets_for_account(account_id))
+			fan_out((member) => member.close_sockets_for_account(account_id)),
+		close_all_sockets: (): number => fan_out((member) => member.close_all_sockets())
 	});
 };

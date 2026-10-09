@@ -526,7 +526,11 @@ describe('app-specific integration', () => {
 - `create_account({username?, password_value?, roles?})` — create additional accounts with built-in header helpers
 - `surface` — the generated `AppSurface`
 - `route_specs` — the assembled route specs
-- `cleanup()` — the assembled server's `close`: stops an `auth_cleanup` schedule opted into through `app_options`, then releases the backend (a no-op when using cached PGlite)
+- `cleanup()` — the assembled server's idempotent `close`: stops an `auth_cleanup` schedule opted into through `app_options`, closes the server's live connections, disposes the rate limiters it built, then releases the backend (a no-op when using cached PGlite)
+
+Every rate limiter is off (`rate_limiters: 'disabled_for_testing'`), the action
+limiters included; pass a limiter through `app_options` to enable just the one a
+test pins — an explicit limiter wins over the mode.
 
 `create_account` returns a `TestAccount` with its own `create_session_headers()`
 and `create_bearer_headers()`, so multi-account tests don't need manual cookie

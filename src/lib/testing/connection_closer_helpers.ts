@@ -4,11 +4,12 @@ import { assert } from 'vitest';
 
 import type { ConnectionCloser } from '../actions/connection_closer.ts';
 
-/** Record of a single `ConnectionCloser` method invocation. */
-export interface RecordedClose {
-	method: 'session' | 'token' | 'account';
-	id: string;
-}
+/**
+ * Record of a single `ConnectionCloser` method invocation — a credential
+ * close carries the id it was given, `close_all_sockets` (`'all'`) none.
+ */
+export type RecordedClose =
+	{ method: 'session' | 'token' | 'account'; id: string } | { method: 'all'; id: null };
 
 export interface RecordingCloser {
 	closer: ConnectionCloser;
@@ -39,6 +40,10 @@ export const create_recording_closer = (): RecordingCloser => {
 		close_sockets_for_account: (id) => {
 			calls.push({ method: 'account', id });
 			return 1;
+		},
+		close_all_sockets: () => {
+			calls.push({ method: 'all', id: null });
+			return 1;
 		}
 	};
 	return { closer, calls };
@@ -53,8 +58,8 @@ export const create_recording_closer = (): RecordingCloser => {
  */
 export const assert_close_call = (
 	call: RecordedClose | undefined,
-	method: 'session' | 'token' | 'account',
-	id: string
+	method: RecordedClose['method'],
+	id: string | null
 ): void => {
 	assert.ok(call, 'expected a recorded close call');
 	assert.strictEqual(call.method, method);

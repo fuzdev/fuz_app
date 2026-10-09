@@ -19,7 +19,8 @@ import { account_verify_action_spec } from '$lib/auth/account_action_specs.ts';
 import { prefix_route_specs, type RouteSpec } from '$lib/http/route_spec.ts';
 import type { AppServerContext } from '$lib/server/app_server_context.ts';
 import type { RpcEndpointSpec } from '$lib/http/surface.ts';
-import { create_test_app } from '$lib/testing/app_server.ts';
+import { create_test_app, create_test_app_for_bootstrap } from '$lib/testing/app_server.ts';
+import { create_rate_limiter } from '$lib/rate_limiter.ts';
 import {
 	find_route_spec,
 	find_auth_route,
@@ -239,6 +240,64 @@ describe('create_test_app', () => {
 			headers: { host: 'localhost', origin: 'http://localhost:5173' }
 		});
 		assert.strictEqual(res.status, 401);
+	});
+
+	/** The seven limiter fields of `AppServerContext`. */
+	const LIMITER_NAMES = [
+		'login_ip_rate_limiter',
+		'signup_ip_rate_limiter',
+		'bootstrap_ip_rate_limiter',
+		'login_account_rate_limiter',
+		'signup_account_rate_limiter',
+		'action_ip_rate_limiter',
+		'action_account_rate_limiter'
+	] as const;
+
+	test('disables every rate limiter, the action limiters included', async () => {
+		let ctx: AppServerContext | null = null;
+		const test_app = await create_test_app({
+			session_options: fuz_session_config,
+			create_route_specs: (context) => {
+				ctx = context;
+				return test_route_factory(context);
+			},
+			db
+		});
+		for (const name of LIMITER_NAMES) assert.strictEqual(ctx![name], null, name);
+		await test_app.cleanup();
+	});
+
+	test('a limiter passed through app_options wins over the disabled mode', async () => {
+		const action_account_rate_limiter = create_rate_limiter({ cleanup_interval_ms: 0 });
+		let ctx: AppServerContext | null = null;
+		const test_app = await create_test_app({
+			session_options: fuz_session_config,
+			create_route_specs: (context) => {
+				ctx = context;
+				return test_route_factory(context);
+			},
+			db,
+			app_options: { action_account_rate_limiter }
+		});
+		assert.strictEqual(ctx!.action_account_rate_limiter, action_account_rate_limiter);
+		assert.strictEqual(ctx!.action_ip_rate_limiter, null);
+		await test_app.cleanup();
+	});
+
+	test('create_test_app_for_bootstrap disables every rate limiter too', async () => {
+		let ctx: AppServerContext | null = null;
+		const test_app = await create_test_app_for_bootstrap({
+			session_options: fuz_session_config,
+			create_route_specs: (context) => {
+				ctx = context;
+				return test_route_factory(context);
+			},
+			bootstrap: { mode: 'live', token_path: '/nonexistent/bootstrap_token' },
+			bootstrap_token: 'bootstrap-token',
+			db
+		});
+		for (const name of LIMITER_NAMES) assert.strictEqual(ctx![name], null, name);
+		await test_app.cleanup();
 	});
 });
 

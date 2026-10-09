@@ -243,7 +243,10 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 			async () => !(await session_exists(db, later)),
 			'a later pass swept the newly expired session'
 		);
-		assert.deepEqual(h.closes.map((c) => c.id).sort(), [at_startup, later].sort());
+		assert.sameMembers(
+			h.closes.map((c) => c.id),
+			[at_startup, later]
+		);
 
 		await server.close();
 		assert.strictEqual(h.backend_closes(), 1);
@@ -252,7 +255,9 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 		const after_close = await seed_expired_session(db, 'server-after-close', seeded.account_id);
 		await wait(150);
 		assert.strictEqual(await session_exists(db, after_close), true, 'no pass after close');
-		assert.strictEqual(h.closes.length, 2);
+		// the two sweeps' closes, then the shutdown's close of every connection
+		assert.strictEqual(h.closes.length, 3);
+		assert_close_call(h.closes[2], 'all', null);
 	});
 
 	test('close waits for the pass in progress before closing the database', async () => {
@@ -285,8 +290,10 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 		assert.strictEqual(h.backend_closes(), 1);
 		// the pass finished on a live database: its delete landed and it closed
 		assert.strictEqual(await session_exists(db, expired), false);
-		assert.strictEqual(h.closes.length, 1);
+		// the held pass's close lands before the shutdown closes every connection
+		assert.strictEqual(h.closes.length, 2);
 		assert_close_call(h.closes[0], 'session', expired);
+		assert_close_call(h.closes[1], 'all', null);
 	});
 
 	test('create_test_app leaves it off, and its cleanup stops a schedule a suite opted into', async () => {

@@ -71,6 +71,8 @@ import {
 } from '../http/jsonrpc_helpers.ts';
 import {
 	WS_CLOSE_CONNECTION_LIMIT,
+	WS_CLOSE_GOING_AWAY,
+	WS_CLOSE_GOING_AWAY_REASON,
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON,
 	type Transport,
@@ -374,10 +376,17 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * socket's connection is already removed and its handlers aborted, so
 	 * nothing more is dispatched or delivered on it.
 	 *
+	 * @param predicate - which connections to close
+	 * @param code - the close code each socket gets
+	 * @param reason - the close reason each socket gets
 	 * @returns the number of sockets closed
 	 * @throws the first error a socket's `close` threw, after every match was attempted
 	 */
-	#close_where(predicate: (identity: ConnectionIdentity) => boolean): number {
+	#close_where(
+		predicate: (identity: ConnectionIdentity) => boolean,
+		code: number = WS_CLOSE_SESSION_REVOKED,
+		reason: string = WS_CLOSE_SESSION_REVOKED_REASON
+	): number {
 		let count = 0;
 		let failed = false;
 		let first_error: unknown;
@@ -385,7 +394,7 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		for (const [connection_id, entry] of this.#connections) {
 			if (predicate(entry.identity)) {
 				try {
-					this.#revoke_connection(connection_id, entry);
+					this.#end_connection(connection_id, entry, code, reason);
 					count++;
 				} catch (error) {
 					if (!failed) {
@@ -442,6 +451,24 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		return this.#close_where((id) => id.api_token_id === api_token_id);
 	}
 
+	/**
+	 * Close every connection, pending or admitted, with `WS_CLOSE_GOING_AWAY` —
+	 * the shutdown close `AppServer.close` runs. Not a revocation: the client
+	 * reconnects under its ordinary backoff.
+	 *
+	 * Each closed connection is removed and its controller aborted, as a
+	 * revocation does, so its heartbeat timer stops and nothing more dispatches
+	 * on it. A socket whose `close` throws does not stop the loop.
+	 *
+	 * @returns the number of sockets closed
+	 * @mutates this - removes every connection, aborts its registered
+	 *   controller, and closes its underlying `WSContext` with `WS_CLOSE_GOING_AWAY`
+	 * @throws the first error a socket's `close` threw, after every connection was attempted
+	 */
+	close_all_sockets(): number {
+		return this.#close_where(() => true, WS_CLOSE_GOING_AWAY, WS_CLOSE_GOING_AWAY_REASON);
+	}
+
 	#cleanup_connection(connection_id: Uuid): void {
 		this.#connections.delete(connection_id);
 		// Wake any handler still awaiting a reply on this socket — the peer is
@@ -449,12 +476,12 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		this.#pending.drain(connection_id);
 	}
 
-	#revoke_connection(connection_id: Uuid, entry: ConnectionEntry): void {
+	#end_connection(connection_id: Uuid, entry: ConnectionEntry, code: number, reason: string): void {
 		this.#cleanup_connection(connection_id);
 		// abort before the close so a handler observing `ctx.signal` bails out
 		// without waiting for the close handshake
 		entry.abort_controller?.abort();
-		entry.ws.close(WS_CLOSE_SESSION_REVOKED, WS_CLOSE_SESSION_REVOKED_REASON);
+		entry.ws.close(code, reason);
 	}
 
 	/**

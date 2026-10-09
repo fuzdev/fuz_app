@@ -55,7 +55,10 @@ import { create_audit_log_sse } from '$lib/realtime/sse_auth_guard.ts';
 import type { SseNotification, SseStream } from '$lib/realtime/sse.ts';
 import { Db, no_nested_transaction } from '$lib/db/db.ts';
 import { create_describe_db, auth_integration_truncate_tables } from '$lib/testing/db.ts';
-import { create_recording_closer } from '$lib/testing/connection_closer_helpers.ts';
+import {
+	create_recording_closer,
+	type RecordedClose
+} from '$lib/testing/connection_closer_helpers.ts';
 import { create_fake_ws } from '$lib/testing/ws_round_trip.ts';
 
 import { describe_db, pg_factory } from '../db_fixture.ts';
@@ -115,11 +118,14 @@ const create_deps = (db: Db, connection_closer: ConnectionCloser): AuthCleanupDe
 });
 
 /** The session ids a recording closer was asked to close, sorted — the delete returns ids in no order worth pinning. */
-const closed_sessions = (calls: Array<{ method: string; id: string }>): Array<string> => {
+const closed_sessions = (calls: Array<RecordedClose>): Array<string> => {
+	const ids: Array<string> = [];
 	for (const call of calls) {
-		assert.strictEqual(call.method, 'session', 'the sweep closes sessions only');
+		if (call.method !== 'session')
+			assert.fail(`the sweep closes sessions only, got ${call.method}`);
+		ids.push(call.id);
 	}
-	return calls.map((call) => call.id).sort();
+	return ids.sort();
 };
 
 const create_mock_stream = (): SseStream<SseNotification> & { closed: boolean } => {
@@ -230,6 +236,9 @@ describe_db('cleanup_expired_sessions', (get_db) => {
 				throw new Error('the sweep closes sessions only');
 			},
 			close_sockets_for_account: () => {
+				throw new Error('the sweep closes sessions only');
+			},
+			close_all_sockets: () => {
 				throw new Error('the sweep closes sessions only');
 			}
 		};
@@ -348,7 +357,8 @@ describe_db('cleanup_expired_sessions', (get_db) => {
 				return 0;
 			},
 			close_sockets_for_token: () => 0,
-			close_sockets_for_account: () => 0
+			close_sockets_for_account: () => 0,
+			close_all_sockets: () => 0
 		};
 
 		const swept = await cleanup_expired_sessions({

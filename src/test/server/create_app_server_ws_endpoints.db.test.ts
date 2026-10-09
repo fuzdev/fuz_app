@@ -25,7 +25,7 @@
  * - distinct transports across endpoints get distinct listeners
  *
  * Shares the same `create_pglite_factory` shared-WASM pattern as
- * `create_app_server.db.test.ts`. Uses `create_stub_upgrade` (from
+ * `create_app_server.db.test.ts`, and closes every server it assembles. Uses `create_stub_upgrade` (from
  * `$lib/testing/ws_round_trip.ts`) so the upgrade middleware exercises
  * without a real WS handshake. Dispatch through the assembled app — the
  * action rate limiters, middleware order — is in
@@ -39,7 +39,7 @@
  * @module
  */
 
-import { describe, test, assert } from 'vitest';
+import { afterEach, describe, test, assert } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { Hono } from 'hono';
@@ -50,7 +50,11 @@ import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
 import { create_keyring } from '$lib/auth/keyring.ts';
 import { create_session_config } from '$lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '$lib/http/common_routes.ts';
-import { create_app_server, type AppServerOptions } from '$lib/server/app_server.ts';
+import {
+	create_app_server,
+	type AppServer,
+	type AppServerOptions
+} from '$lib/server/app_server.ts';
 import type { AppBackend } from '$lib/server/app_backend.ts';
 import { create_audit_emitter, type AuditEmitter } from '$lib/auth/audit_emitter.ts';
 import { stub_password_deps } from '$lib/testing/app_server.ts';
@@ -136,6 +140,22 @@ const create_test_setup = async (): Promise<{
 	return { config: { backend, ...base_config }, audit };
 };
 
+// Every server a test assembles is closed after it — that disposes the
+// limiters it built and closes its connections. The database is the shared
+// PGlite instance the factory hands out, which outlives the file, so the
+// backend's `close` leaves it open.
+const servers: Array<AppServer> = [];
+afterEach(async () => {
+	await Promise.all(servers.splice(0).map((s) => s.close()));
+});
+
+/** `create_app_server`, with the server closed after the test. */
+const create_tracked_app_server = async (options: AppServerOptions): Promise<AppServer> => {
+	const server = await create_app_server(options);
+	servers.push(server);
+	return server;
+};
+
 const ALLOWED_ORIGINS: ReadonlyArray<RegExp> = parse_allowed_origins('http://localhost:3000');
 
 // Minimal WS endpoint spec carrying just the canonical `protocol_actions`
@@ -152,7 +172,7 @@ describe('create_app_server.ws_endpoints', () => {
 	test('array form auto-mounts: AppServer.ws_endpoints carries the transport, surface lists the actions', async () => {
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [build_minimal_spec()]
@@ -179,7 +199,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
 		let captured_keys: Array<string> = [];
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: (ctx) => {
@@ -203,7 +223,7 @@ describe('create_app_server.ws_endpoints', () => {
 		// no endpoints. The "create_upgrade_websocket required" check fires
 		// post-resolution so an empty array stays safe.
 		const { config } = await create_test_setup();
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			ws_endpoints: () => []
 		});
@@ -213,7 +233,7 @@ describe('create_app_server.ws_endpoints', () => {
 	test('throws when ws_endpoints resolves non-empty but create_upgrade_websocket is missing', async () => {
 		const { config } = await create_test_setup();
 		const err = await assert_rejects(() =>
-			create_app_server({
+			create_tracked_app_server({
 				...config,
 				ws_endpoints: [build_minimal_spec()]
 			})
@@ -231,7 +251,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
 		const calls: Array<Hono> = [];
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: (app) => {
 				calls.push(app);
@@ -253,9 +273,13 @@ describe('create_app_server.ws_endpoints', () => {
 			calls++;
 			return create_stub_upgrade().upgradeWebSocket;
 		};
-		await create_app_server({ ...config, create_upgrade_websocket });
-		await create_app_server({ ...config, create_upgrade_websocket, ws_endpoints: [] });
-		await create_app_server({ ...config, create_upgrade_websocket, ws_endpoints: () => [] });
+		await create_tracked_app_server({ ...config, create_upgrade_websocket });
+		await create_tracked_app_server({ ...config, create_upgrade_websocket, ws_endpoints: [] });
+		await create_tracked_app_server({
+			...config,
+			create_upgrade_websocket,
+			ws_endpoints: () => []
+		});
 		assert.strictEqual(calls, 0);
 	});
 
@@ -264,7 +288,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const { config } = await create_test_setup();
 		// the server admits any localhost port; `/api/ws_narrow` only :3000
 		const narrowed = [/^http:\/\/localhost:3000$/];
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
@@ -300,7 +324,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const { config } = await create_test_setup();
 		for (const path of ['/ws', '/apiws']) {
 			const err = await assert_rejects(() =>
-				create_app_server({
+				create_tracked_app_server({
 					...config,
 					create_upgrade_websocket: () => stub.upgradeWebSocket,
 					ws_endpoints: [build_minimal_spec({ path })]
@@ -316,7 +340,7 @@ describe('create_app_server.ws_endpoints', () => {
 	test('throws when an rpc_endpoints path is outside the auth middleware scope', async () => {
 		const { config } = await create_test_setup();
 		const err = await assert_rejects(() =>
-			create_app_server({
+			create_tracked_app_server({
 				...config,
 				rpc_endpoints: [{ path: '/rpc', actions: [] }]
 			})
@@ -330,7 +354,7 @@ describe('create_app_server.ws_endpoints', () => {
 	test('the bare scope prefix is inside it, as Hono matches it', async () => {
 		// `'/api/*'` matches `/api` itself, so `/api` mounts
 		const { config } = await create_test_setup();
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			rpc_endpoints: [{ path: '/api', actions: [] }]
 		});
@@ -344,7 +368,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
 		const err = await assert_rejects(() =>
-			create_app_server({
+			create_tracked_app_server({
 				...config,
 				create_upgrade_websocket: () => stub.upgradeWebSocket,
 				ws_endpoints: [build_minimal_spec(), build_minimal_spec()]
@@ -356,7 +380,7 @@ describe('create_app_server.ws_endpoints', () => {
 	test('multi-endpoint: separate paths get separate auto-created transports', async () => {
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
@@ -377,7 +401,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const { config } = await create_test_setup();
 		const transport_a = new BackendWebsocketTransport();
 		const transport_b = new BackendWebsocketTransport();
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
@@ -393,7 +417,7 @@ describe('create_app_server.ws_endpoints', () => {
 	test('max_connections_per_account configures the auto-created transport', async () => {
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
@@ -427,7 +451,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const { config } = await create_test_setup();
 		await assert_rejects(
 			() =>
-				create_app_server({
+				create_tracked_app_server({
 					...config,
 					create_upgrade_websocket: () => stub.upgradeWebSocket,
 					ws_endpoints: [
@@ -445,7 +469,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
-		await create_app_server({
+		await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [build_minimal_spec({ transport })]
@@ -473,7 +497,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
-		await create_app_server({
+		await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [build_minimal_spec({ transport, auth_guard: false })]
@@ -509,7 +533,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const received_events: Array<AuditLogEvent> = [];
 		let closes_seen_by_extra = -1;
 		const fake_ws = create_fake_ws();
-		await create_app_server({
+		await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
@@ -551,7 +575,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
 		const shared_transport = new BackendWebsocketTransport();
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
@@ -573,7 +597,7 @@ describe('create_app_server.ws_endpoints', () => {
 		// rest of the standard surface) are reachable over both transports.
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: (ctx) => {
@@ -608,7 +632,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
-		await create_app_server({
+		await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [build_minimal_spec({ transport })]
@@ -636,7 +660,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			audit_log_sse: true,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
@@ -676,7 +700,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const handler = (): void => {
 			call_count += 1;
 		};
-		await create_app_server({
+		await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
@@ -713,7 +737,7 @@ describe('create_app_server.ws_endpoints', () => {
 			async: true,
 			description: 'frontend-only helper that rides on the registry'
 		};
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
@@ -747,7 +771,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const { config } = await create_test_setup();
 		const open_events: Array<{ connection_id: Uuid }> = [];
 
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
@@ -800,7 +824,7 @@ describe('create_app_server.ws_endpoints', () => {
 	test('required_roles: ROLE_ADMIN appears on the surface and unauthenticated upgrade is rejected at the upgrade-time chain', async () => {
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [build_minimal_spec({ required_roles: [ROLE_ADMIN] })]
@@ -836,7 +860,7 @@ describe('create_app_server.ws_endpoints', () => {
 			output: z.strictObject({ hi: z.string() })
 		};
 		const err = await assert_rejects(() =>
-			create_app_server({
+			create_tracked_app_server({
 				...config,
 				create_upgrade_websocket: () => stub.upgradeWebSocket,
 				create_route_specs: () => [create_health_route_spec(), colliding_route_spec],
@@ -861,7 +885,7 @@ describe('create_app_server.ws_endpoints', () => {
 			input: z.strictObject({}),
 			output: z.strictObject({ hi: z.string() })
 		};
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			create_route_specs: () => [create_health_route_spec(), non_colliding_route_spec],
@@ -874,7 +898,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
-		await create_app_server({
+		await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [build_minimal_spec({ transport, auth_guard: true })]
@@ -906,7 +930,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const { config, audit } = await create_test_setup();
 		const transport_a = new BackendWebsocketTransport();
 		const transport_b = new BackendWebsocketTransport();
-		await create_app_server({
+		await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
@@ -927,7 +951,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
 		const supplied = new BackendWebsocketTransport();
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
@@ -961,7 +985,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			audit_log_sse: true,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
@@ -1002,7 +1026,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
 		const shared_transport = new BackendWebsocketTransport();
-		await create_app_server({
+		await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
@@ -1038,7 +1062,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
 		const err = await assert_rejects(() =>
-			create_app_server({
+			create_tracked_app_server({
 				...config,
 				create_upgrade_websocket: () => stub.upgradeWebSocket,
 				ws_endpoints: [build_minimal_spec({ path: '/api/surface' })]
@@ -1053,7 +1077,7 @@ describe('create_app_server.ws_endpoints', () => {
 		// this test confirms the array threads through unchanged.
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
-		const result = await create_app_server({
+		const result = await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [build_minimal_spec({ required_roles: [ROLE_ADMIN, 'keeper'] })]
@@ -1072,7 +1096,7 @@ describe('create_app_server.ws_endpoints', () => {
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
 		const shared_transport = new BackendWebsocketTransport();
-		await create_app_server({
+		await create_tracked_app_server({
 			...config,
 			create_upgrade_websocket: () => stub.upgradeWebSocket,
 			ws_endpoints: [
