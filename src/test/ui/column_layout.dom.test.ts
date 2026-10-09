@@ -49,7 +49,7 @@ const mount_layout = (): MountedLayout => {
 		assert.ok(el, `expected ${selector}`);
 		return el;
 	};
-	const aside_el = query<HTMLElement>('aside');
+	const aside_el = query<HTMLElement>('.column-fixed');
 	const scroll_into_view = vi.fn();
 	aside_el.scrollIntoView = scroll_into_view;
 	return {

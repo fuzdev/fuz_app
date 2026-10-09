@@ -234,6 +234,15 @@ describe('AppShell scoped style', () => {
 		assert.match(css.code, /\.app-shell-sidebar\.svelte-[a-z0-9]+ :modal \{/);
 	});
 
+	test('the content floor is the small viewport height', () => {
+		assert.ok(css);
+		const floors = parse_declarations(css.code).filter((d) => d.property === 'min-height');
+		assert.lengthOf(floors, 1);
+		const [floor] = floors;
+		assert.match(floor!.selector, /^\.app-shell-content\.svelte-[a-z0-9]+$/);
+		assert.strictEqual(floor!.value, '100svh');
+	});
+
 	test("the base glyph rules go through the root's own toggle", () => {
 		assert.ok(css);
 		assert_glyph_selectors_scoped_to_own_toggle(parse_declarations(css.code));

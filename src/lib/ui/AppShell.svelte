@@ -388,7 +388,9 @@
 			--sidebar_offset: 0px;
 			display: flex;
 			flex-direction: column;
-			min-height: 100vh;
+			/* the small viewport, so the floor alone never makes a mobile page
+			   scroll with the toolbar shown, nor relayouts as the toolbar moves */
+			min-height: 100svh;
 		}
 		.app-shell.wide-open > .app-shell-content {
 			--sidebar_offset: var(--sidebar_width);

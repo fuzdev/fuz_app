@@ -221,19 +221,20 @@ pattern rather than reintroducing prop-drilling.
     to keep narrow mode at `0px`. To change only the wide open offset, target
     `.app-shell.wide-open > .app-shell-content`, also inside that negation.
 - `ColumnLayout.svelte` — fixed `aside` column + fluid `children`
-  column; `column_width = '280px'`, `aside_label = 'menu'`. Below 64rem of
+  column; `column_width = '280px'`, `toggle_label = 'menu'`. Below 64rem of
   its own width (an `inline-size` container query named `column_layout`;
   64rem under fuz_css's 62.5% root is fuz_css's `sm` breakpoint, 640px at
   the default font size) the columns stack and the aside collapses behind a
   sticky `type="button"` toggle (`menuitem plain` with a `chevron`, text
-  `aside_label`, `aria-expanded`/`aria-controls`); opened, the aside sits in flow above the content (scrolled into view under the toggle when scroll anchoring would leave it above the view), and `afterNavigate` closes it. With a bounded height, the stacked layout
+  `toggle_label`, `aria-expanded`/`aria-controls`); opened, the aside sits in flow above the content (scrolled into view under the toggle when scroll anchoring would leave it above the view), and `afterNavigate` closes it. With a bounded height, the stacked layout
   scrolls as one column and the toggle sticks to its top; under a parent
   that grows with its content, the page scrolls and the toggle scrolls away
   with it. Above the threshold the toggle is `display: none`. The switch is
   CSS alone, so the server render shows the right form at any width and
   hydration changes nothing. The
-  `<aside>` takes `aria-label={aside_label}`; consumers wrap links in their
-  own `<nav>`. Hooks: `--column_width`, `--column_toggle_bg` (default
+  aside column is a plain `<div>` (the toggle's `aria-controls` target), not
+  a landmark, as with `AppShell`'s sidebar; consumers render the landmark
+  inside the snippet - a `<nav aria-label>` for links, or an `<aside aria-label>` for other content. Hooks: `--column_width`, `--column_toggle_bg` (default
   `--shade_00`). The container can't size from its content, so a
   shrink-to-fit placement collapses it to zero width.
 - `MenuLink.svelte` — SvelteKit `<a>` with `selected` derived from

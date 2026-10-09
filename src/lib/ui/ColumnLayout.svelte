@@ -5,7 +5,7 @@
 	 *
 	 * Below a threshold of the layout's own width - a container query, not a
 	 * media query, so a nested layout decides for itself - the columns stack:
-	 * the aside collapses behind a toggle button labelled `aside_label`, and
+	 * the aside collapses behind a toggle button labelled `toggle_label`, and
 	 * when opened it sits in flow above the content, pushing it down, until
 	 * the toggle closes it or a navigation does. Opening scrolls the aside
 	 * into view, under the toggle, when it would land above the view.
@@ -28,8 +28,10 @@
 	 * `afterNavigate`. Without JS the stacked aside can't be opened, since the
 	 * toggle is client state; above the threshold it's always shown.
 	 *
-	 * Renders a generic `<aside>` named by `aside_label`; wrap navigation
-	 * links in a `<nav>` inside the `aside` snippet.
+	 * The aside column is a plain `<div>`, not a landmark, as with `AppShell`'s
+	 * sidebar: render the landmark inside the `aside` snippet - a
+	 * `<nav aria-label>` for navigation links, or an `<aside aria-label>` for
+	 * other content.
 	 *
 	 * Styling hooks: `--column_width` (set from `column_width`) and
 	 * `--column_toggle_bg`, the stacked toggle bar's opaque background so
@@ -46,7 +48,7 @@
 		aside,
 		children,
 		column_width = '280px',
-		aside_label = 'menu',
+		toggle_label = 'menu',
 		class: class_name = '',
 		...rest
 	}: SvelteHTMLElements['div'] & {
@@ -58,10 +60,10 @@
 		 */
 		column_width?: string;
 		/**
-		 * The stacked toggle's text and the aside's accessible name.
+		 * The stacked toggle's text.
 		 * @default 'menu'
 		 */
-		aside_label?: string;
+		toggle_label?: string;
 	} = $props();
 
 	const uid = $props.id();
@@ -70,7 +72,7 @@
 	let aside_open = $state(false);
 
 	let toggle_bar_el: HTMLDivElement;
-	let aside_el: HTMLElement;
+	let aside_el: HTMLDivElement;
 
 	const toggle_aside = async (): Promise<void> => {
 		aside_open = !aside_open;
@@ -103,18 +105,13 @@
 				aria-controls={aside_id}
 				onclick={toggle_aside}
 			>
-				{aside_label}
+				{toggle_label}
 				<span class="chevron" aria-hidden="true"></span>
 			</button>
 		</div>
-		<aside
-			id={aside_id}
-			class="column-fixed unstyled"
-			aria-label={aside_label}
-			bind:this={aside_el}
-		>
+		<div id={aside_id} class="column-fixed" bind:this={aside_el}>
 			{@render aside()}
-		</aside>
+		</div>
 		<div class="column-fluid">
 			{@render children()}
 		</div>
