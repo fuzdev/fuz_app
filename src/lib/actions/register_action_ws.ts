@@ -141,8 +141,6 @@ import { BackendWebsocketTransport, type ConnectionIdentity } from './transports
 import { audit_unmatched_peer_response, type RequestClient } from './peer_request.ts';
 import { perform_action, perform_action_result_to_envelope } from './perform_action.ts';
 
-export type { Action };
-
 /** Default inactivity window before the server closes a silent socket. */
 export const DEFAULT_SERVER_HEARTBEAT_TIMEOUT = 60_000;
 

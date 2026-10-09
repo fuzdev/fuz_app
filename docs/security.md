@@ -255,7 +255,8 @@ an unreadable document refuses the credential rather than widening it.
 **A narrowed token is RPC-only.** `methods` denies every non-RPC spine
 surface outright, whatever its method list says: the db-admin table browser,
 the bare-hash fact read (`GET /api/facts/:hash`), the audit SSE stream
-(`GET /audit/stream`), and the WebSocket upgrade. This is the load-bearing
+(`GET /audit/stream`), the surface explorer (`GET /api/surface`, when
+mounted), and the WebSocket upgrade. This is the load-bearing
 half of the design, and it is strictly more restrictive than naming each
 surface. A method-name allowlist alone would have been a false promise — the
 db-admin browser serves paginated rows of every browsable table plus row
@@ -279,9 +280,10 @@ Enforcement sits at two kinds of site, both ahead of the role gate:
 back, and it has two arms:
 
 - `surface:<name>` — a non-RPC surface, refused to **every** narrowed token
-  whatever its method list says. `surface:audit_stream` and
-  `surface:fact_bare` are the spine's; the WS upgrade and the db-admin browser
-  round out the four the spine knows.
+  whatever its method list says. `surface:audit_stream`, `surface:fact_bare`,
+  and `surface:app_surface` (the opt-in, admin-only `GET /api/surface`
+  explorer — TS spine only) are the spine's route-spec surfaces; the WS
+  upgrade and the db-admin browser round out the set the spine knows.
 
   **`/audit/stream` carries a channel gate as well as rule 3.** A narrowed
   token is what rule 3 refuses; a **full-scope** bearer passes it. The audit

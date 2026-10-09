@@ -311,6 +311,9 @@ export const create_my_app_surface_spec = (): AppSurfaceSpec =>
 		// need the route shape (not actual token verification), pass
 		// `{mode: 'surface_only'}` — the suite asserts on the 403 wire shape.
 		bootstrap: { mode: 'surface_only' }
+		// `GET /api/surface` is off by default, as in `create_app_server` —
+		// pass `surface_route: true` here too if production opts in, and
+		// `daemon_token: true` if production passes a `daemon_token_state`
 	});
 
 /** Bind import.meta.url so callers don't need to pass it. */
@@ -937,7 +940,6 @@ impls actually boot.
 - `create_test_app` (`testing/app_server.ts`) — Full Hono app with test defaults
 - `create_test_app_server` (`testing/app_server.ts`) — DB + deps only (no Hono app)
 - `create_test_app_surface_spec` (`testing/stubs.ts`) — Attack surface spec mirroring `create_app_server`
-- `stub_app_deps` (`testing/stubs.ts`) — Stub `AppDeps` (throws on access)
 - `create_stub_app_deps` (`testing/stubs.ts`) — No-op `AppDeps` (safe to call through)
 - `create_stub_app_server_context` (`testing/stubs.ts`) — Stub `AppServerContext` from session config
 - `create_stub_api_middleware` (`testing/stubs.ts`) — Stub middleware array matching production stack
@@ -1137,7 +1139,10 @@ build_app: async ({prepare_websocket}) => {
 ```
 
 Pass the endpoint's `max_message_bytes` (omitted, both default to
-`DEFAULT_WS_MAX_MESSAGE_BYTES`) so Node's `ws` frame cap matches it. On
+`DEFAULT_WS_MAX_MESSAGE_BYTES`) so Node's `ws` frame cap matches it and
+Bun's sits at twice it (Bun drops a socket past its cap without a close
+frame, so the headroom leaves a message just over the limit to the
+per-message check's 1009); Deno's upgrade takes no frame cap. On
 shutdown the core stops accepting connections, runs `close` (which must end
 live WebSockets, as `AppServer.close` does), then awaits the drain. The Bun teardown handles
 Bun's never-resolving `server.stop()` by fire-and-forgetting it; the shared

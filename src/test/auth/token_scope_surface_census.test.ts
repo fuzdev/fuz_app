@@ -150,6 +150,12 @@ const CENSUS: ReadonlyArray<CensusEntry> = [
 		reason:
 			'declares `token_surface: fact_bare` — the admin-only bare-hash read serves any stored fact with no per-reference cell check; the sibling per-cell route is ungated because its authz is the `(cell, hash)` edge, which a narrowed token can already reach through the RPC methods it names'
 	},
+	{
+		file: 'server/surface_route.ts',
+		role: 'consults',
+		reason:
+			'declares `token_surface: app_surface` — the opt-in surface explorer serves a map of every route, its auth, and its schemas; it is not an RPC method, so a narrowed token gets none of it, ahead of the admin role gate'
+	},
 	// --- Exempt, with reasons ---
 	{
 		file: 'auth/audit_log_routes.ts',
@@ -284,6 +290,10 @@ const RULE_3_SURFACE_SITES: Record<TokenSurface, { file: string; source: string 
 	audit_stream: {
 		file: 'auth/audit_log_route_schema.ts',
 		source: "required_scope: 'surface:audit_stream'"
+	},
+	app_surface: {
+		file: 'server/surface_route.ts',
+		source: "required_scope: 'surface:app_surface'"
 	},
 	db_admin: null
 };
@@ -429,7 +439,8 @@ describe('token scope surface census', () => {
 			'actions/register_action_ws.ts',
 			'actions/register_ws_endpoint.ts',
 			'auth/audit_log_route_schema.ts',
-			'server/serve_fact_route.ts'
+			'server/serve_fact_route.ts',
+			'server/surface_route.ts'
 		]);
 	});
 

@@ -31,6 +31,7 @@ import {
 import { prefix_route_specs } from '$lib/http/route_spec.ts';
 import { AUDIT_LOG_CHANNEL, type AuditLogSse } from '$lib/realtime/sse_auth_guard.ts';
 import { SSE_CONNECTED_COMMENT } from '$lib/realtime/sse_constants.ts';
+import { require_audit_sse } from '$lib/server/app_server.ts';
 import { create_test_app, type TestAccount, type TestApp } from '$lib/testing/app_server.ts';
 import { install_audit_drift_guard } from '$lib/testing/audit_drift_guard.ts';
 import { create_sse_frame_reader } from '$lib/testing/transports/sse_frame_reader.ts';
@@ -52,29 +53,25 @@ let admin_counter = 0;
 /** The real audit stream route + the account routes, over a `Db` a test can stall. */
 const create_harness = async (db: Db): Promise<Harness & { stall: () => StalledQuery }> => {
 	const gated = create_gated_db(db);
-	let audit_sse: AuditLogSse | null = null;
 	const test_app = await create_test_app({
 		session_options,
 		db: gated.db,
 		app_options: { audit_log_sse: true },
-		create_route_specs: (ctx) => {
-			audit_sse = ctx.audit_sse;
-			return [
-				...prefix_route_specs('/api/account', [
-					...create_account_route_specs(ctx.deps, {
-						session_options,
-						login_ip_rate_limiter: null,
-						login_account_rate_limiter: null,
-						login_fail_floor_ms: 0
-					})
-				]),
-				...prefix_route_specs('/api/admin', [
-					...create_audit_log_route_specs({ stream: ctx.audit_sse! })
-				])
-			];
-		}
+		create_route_specs: (ctx) => [
+			...prefix_route_specs('/api/account', [
+				...create_account_route_specs(ctx.deps, {
+					session_options,
+					login_ip_rate_limiter: null,
+					login_account_rate_limiter: null,
+					login_fail_floor_ms: 0
+				})
+			]),
+			...prefix_route_specs('/api/admin', [
+				...create_audit_log_route_specs({ stream: ctx.audit_sse! })
+			])
+		]
 	});
-	assert.ok(audit_sse);
+	const audit_sse = require_audit_sse(test_app.server);
 	const admin = await test_app.create_account({
 		username: `stream_admin_${admin_counter++}`,
 		roles: [ROLE_ADMIN]

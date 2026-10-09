@@ -326,7 +326,9 @@ destructive actions.
 - `AdminSettings.svelte` — shell for `OpenSignupToggle` + the logged-in
   account line + logout `ConfirmButton`. No direct RPC calls.
 - `AdminSurface.svelte` — attack-surface viewer. Fetches
-  `/api/surface` (REST) and delegates to `SurfaceExplorer`.
+  `/api/surface` (REST) and delegates to `SurfaceExplorer`. The server must
+  opt in with `create_app_server({surface_route: true})`; the route is
+  admin-only and refused to a narrowed API token.
 - `OpenSignupToggle.svelte` — single checkbox bound to
   `AppSettingsState.settings.open_signup`. Consumes
   `app_settings_rpc_context`.

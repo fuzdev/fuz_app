@@ -15,7 +15,7 @@ import type { z } from 'zod';
 
 import type { SessionOptions } from '../auth/session_cookie.ts';
 import type { MiddlewareSpec } from '../http/middleware_spec.ts';
-import { ApiError, RateLimitError } from '../http/error_schemas.ts';
+import { ApiError } from '../http/error_schemas.ts';
 import type { AppDeps } from '../auth/deps.ts';
 import type { AuditEmitter } from '../auth/audit_emitter.ts';
 import { create_realtime_closer } from '../actions/connection_closer.ts';
@@ -25,6 +25,7 @@ import { Db } from '../db/db.ts';
 import { prefix_route_specs, type RouteSpec } from '../http/route_spec.ts';
 import { bootstrap_route_shape } from '../auth/bootstrap_route_schema.ts';
 import { create_rpc_endpoint } from '../actions/action_rpc.ts';
+import { create_surface_route_spec, type SurfaceRouteOptions } from '../server/surface_route.ts';
 import {
 	create_app_surface_spec,
 	type AppSurfaceSpec,
@@ -175,18 +176,6 @@ export const create_stub_audit_sse = (): AuditLogSse => {
 	};
 };
 
-/** Stub `AppDeps` for auth surface tests — throws on any method access. */
-export const stub_app_deps: AppDeps = {
-	read_secure_file: create_throwing_stub('read_secure_file'),
-	delete_file: create_throwing_stub('delete_file'),
-	keyring: create_throwing_stub('keyring'),
-	password: create_throwing_stub('password'),
-	db: create_throwing_stub('db'),
-	log: create_throwing_stub('log'),
-	audit: create_test_audit_emitter(),
-	connection_closer: create_realtime_closer()
-};
-
 /**
  * Create no-op `AppDeps` for auth surface testing.
  */
@@ -208,8 +197,11 @@ const create_stub_mw = (): MiddlewareSpec['handler'] => async (_c, next) => next
 
 /**
  * Create the API middleware stub array matching `create_auth_middleware_specs`
- * output. Like the real factory's, each spec gets its own pass-through handler,
- * so `assert_middleware_stack_mounted` can tell the layers apart by identity.
+ * output — the same names, paths, order, and declared `errors` (the surface
+ * merges middleware errors into every route under the path, so a stub that
+ * declared more than the real stack would widen the test surface). Like the
+ * real factory's, each spec gets its own pass-through handler, so
+ * `assert_middleware_stack_mounted` can tell the layers apart by identity.
  */
 export const create_stub_api_middleware = (options?: {
 	/** Include the daemon_token middleware layer. */
@@ -228,7 +220,7 @@ export const create_stub_api_middleware = (options?: {
 			name: 'bearer_auth',
 			path: AUTH_MIDDLEWARE_PATH,
 			handler: create_stub_mw(),
-			errors: { 401: ApiError, 403: ApiError, 429: RateLimitError }
+			errors: {}
 		}
 	];
 	if (options?.include_daemon_token) {
@@ -236,7 +228,7 @@ export const create_stub_api_middleware = (options?: {
 			name: 'daemon_token',
 			path: AUTH_MIDDLEWARE_PATH,
 			handler: create_stub_mw(),
-			errors: { 401: ApiError, 500: ApiError, 503: ApiError }
+			errors: {}
 		});
 	}
 	return specs;
@@ -335,6 +327,23 @@ export interface CreateTestAppSurfaceSpecOptions {
 	 * Surface assembly only reads `route_prefix` (default `'/api/account'`).
 	 */
 	bootstrap?: BootstrapServerOptions;
+	/**
+	 * Symmetric with `AppServerOptions.surface_route` — `true` lists the
+	 * admin-only `GET /api/surface`, which `create_app_server` mounts only when
+	 * opted in. Pass the same value to both entry points so the surface tests
+	 * probe the route exactly when the live server serves it.
+	 *
+	 * @default false
+	 */
+	surface_route?: boolean;
+	/**
+	 * List the `daemon_token` middleware layer, as `create_app_server` mounts
+	 * it when given a `daemon_token_state`. Pass `true` exactly when the live
+	 * server gets one — `create_test_app` always passes one.
+	 *
+	 * @default false
+	 */
+	daemon_token?: boolean;
 }
 
 /**
@@ -365,13 +374,16 @@ const to_self_resolved_ws_endpoint = (endpoint: WsEndpointSpec): ResolvedWsEndpo
  * suites consume the spec object this function returns, not the JSON
  * file.
  *
- * Mirrors `create_app_server`'s route assembly: consumer routes +
- * factory-managed bootstrap routes + surface generation — including its
+ * Mirrors `create_app_server`'s route assembly, in its order: consumer
+ * routes, then the factory-managed bootstrap routes, RPC endpoint routes, and
+ * `GET /api/surface` (with `surface_route: true`), then surface
+ * generation — including its
  * refusal of an `rpc_endpoints` or `ws_endpoints` path outside the auth
  * middleware's scope (`assert_endpoint_in_auth_scope`) and of a
  * `transform_middleware` that doesn't keep the proxy and auth stack mounted
  * (`assert_middleware_stack_mounted`). The middleware list mirrors the real
- * one: a stub `trusted_proxy` spec at `'*'`, then the stub auth stack. If
+ * one: a stub `trusted_proxy` spec at `'*'`, then the stub auth stack (with
+ * `daemon_token` when `options.daemon_token` is set). If
  * `create_app_server` changes how it wires routes, update this helper
  * to stay in sync (single source of truth for all consumers).
  *
@@ -429,12 +441,34 @@ export const create_test_app_surface_spec = (
 					{ ...bootstrap_route_shape, handler: stub_handler }
 				])
 			: [];
-	const route_specs = [...consumer_routes, ...rpc_route_specs, ...bootstrap_route_specs];
+	// the surface route mirrors `create_app_server`'s opt-in mount — its handler
+	// serves the surface generated below, backfilled into the same ref
+	const surface_ref: SurfaceRouteOptions = {
+		surface: {
+			middleware: [],
+			routes: [],
+			rpc_endpoints: [],
+			ws_endpoints: [],
+			env: [],
+			events: [],
+			diagnostics: []
+		}
+	};
+	const surface_route_specs: Array<RouteSpec> = options.surface_route
+		? [create_surface_route_spec(surface_ref)]
+		: [];
+	// `create_app_server`'s order: consumer routes, then the factory routes
+	const route_specs = [
+		...consumer_routes,
+		...bootstrap_route_specs,
+		...rpc_route_specs,
+		...surface_route_specs
+	];
 
 	// mirrors `create_app_server`'s `[proxy_spec, ...auth_middleware]`
 	const stack_specs: Array<MiddlewareSpec> = [
 		{ name: 'trusted_proxy', path: '*', handler: create_stub_mw() },
-		...create_stub_api_middleware()
+		...create_stub_api_middleware({ include_daemon_token: options.daemon_token })
 	];
 	let middleware_specs = stack_specs;
 	if (options.transform_middleware) {
@@ -444,7 +478,7 @@ export const create_test_app_surface_spec = (
 		assert_middleware_stack_mounted(stack_specs, middleware_specs);
 	}
 
-	return create_app_surface_spec({
+	const surface_spec = create_app_surface_spec({
 		middleware_specs,
 		route_specs,
 		env_schema: options.env_schema ?? BaseServerEnv,
@@ -452,4 +486,6 @@ export const create_test_app_surface_spec = (
 		rpc_endpoints: resolved_rpc_endpoints,
 		ws_endpoints: resolved_ws_endpoints
 	});
+	surface_ref.surface = surface_spec.surface;
+	return surface_spec;
 };

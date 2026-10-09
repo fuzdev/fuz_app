@@ -84,7 +84,9 @@ from `auth/standard_rpc_actions.ts` for the full fuz_app standard
 surface (admin + role-grant-offer + account in one call).
 `create_app_server` auto-mounts every
 `RpcEndpointSpec` you pass — you do not call `create_rpc_endpoint`
-yourself. Bootstrap routes and surface route are factory-managed by
+yourself. Bootstrap routes and the opt-in surface route
+(`surface_route: true` — `GET /api/surface`, admin-only and a
+`surface:app_surface` token surface) are factory-managed by
 `create_app_server`.
 
 ## `/ready` schema-drift deploy gate
@@ -235,7 +237,7 @@ const { app, surface_spec, bootstrap_status, close } = await create_app_server({
 		}),
 		...prefix_route_specs('/api', app_specific_routes(ctx))
 	],
-	// surface_route: false,  // disable auto-created GET /api/surface
+	// surface_route: true,  // opt in to GET /api/surface — admin-only, refused to narrowed tokens (for AdminSurface.svelte)
 	audit_log_sse: true, // factory-managed audit SSE (auto-registers its listener via backend.deps.audit.add_listener + adds event specs)
 	auth_cleanup: true, // scheduled auth cleanup — off by default, on in production (see below)
 	env_schema: app_env_schema,

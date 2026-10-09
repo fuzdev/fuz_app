@@ -297,7 +297,10 @@ export const default_in_process_suite_options = <const O extends DefaultInProces
 			// Mirror what `create_test_app` → `create_app_server` will mount.
 			// Both helpers read from the top-level `bootstrap` slot so surface
 			// and live app stay in sync by construction.
-			bootstrap: options.bootstrap
+			bootstrap: options.bootstrap,
+			surface_route: options.app_options?.surface_route,
+			// `create_test_app` always passes a `daemon_token_state`
+			daemon_token: true
 		}),
 	capabilities: in_process_capabilities,
 	session_options: options.session_options,

@@ -70,6 +70,7 @@ import {
 } from '$lib/hono_context.ts';
 import { prefix_route_specs } from '$lib/http/route_spec.ts';
 import type { AuditLogSse } from '$lib/realtime/sse_auth_guard.ts';
+import { require_audit_sse } from '$lib/server/app_server.ts';
 import { create_test_app, type TestAccount, type TestApp } from '$lib/testing/app_server.ts';
 import { install_audit_drift_guard } from '$lib/testing/audit_drift_guard.ts';
 import { auth_integration_truncate_tables, create_describe_db } from '$lib/testing/db.ts';
@@ -165,32 +166,25 @@ const create_harness = async (
 	options: { max_sessions?: number; max_tokens?: number } = {}
 ): Promise<Harness> => {
 	const gated = create_gated_db(db);
-	let audit_sse: AuditLogSse | null = null;
 	const test_app = await create_test_app({
 		session_options,
 		db: gated.db,
 		db_type: 'postgres',
 		roles: [ROLE_KEEPER, ROLE_ADMIN],
 		app_options: { audit_log_sse: true },
-		create_route_specs: (ctx) => {
-			audit_sse = ctx.audit_sse;
-			return [
-				...prefix_route_specs(
-					'/api/account',
-					create_account_route_specs(ctx.deps, {
-						session_options,
-						login_ip_rate_limiter: null,
-						login_account_rate_limiter: null,
-						login_fail_floor_ms: 0,
-						max_sessions: options.max_sessions
-					})
-				),
-				...prefix_route_specs(
-					'/api/admin',
-					create_audit_log_route_specs({ stream: ctx.audit_sse! })
-				)
-			];
-		},
+		create_route_specs: (ctx) => [
+			...prefix_route_specs(
+				'/api/account',
+				create_account_route_specs(ctx.deps, {
+					session_options,
+					login_ip_rate_limiter: null,
+					login_account_rate_limiter: null,
+					login_fail_floor_ms: 0,
+					max_sessions: options.max_sessions
+				})
+			),
+			...prefix_route_specs('/api/admin', create_audit_log_route_specs({ stream: ctx.audit_sse! }))
+		],
 		rpc_endpoints: (ctx) => [
 			{
 				path: RPC_PATH,
@@ -198,7 +192,7 @@ const create_harness = async (
 			}
 		]
 	});
-	assert.ok(audit_sse);
+	const audit_sse = require_audit_sse(test_app.server);
 	const base = { test_app, gated };
 	return {
 		...base,

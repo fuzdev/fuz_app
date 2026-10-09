@@ -397,7 +397,7 @@ const token_scope_denial = (c: Context, capability: TokenScopeCapability): Respo
  * across route-spec declarations and direct calls alike, and the twin of the
  * Rust signature. It needs no parse: the surface arm's identifier is pure label,
  * since rule 3 never asks *which* surface. And it is deliberately not narrowed
- * to the spine's four — the name decides nothing, so there is nothing for a
+ * to the spine's own — the name decides nothing, so there is nothing for a
  * closed set to protect, while a consumer surface would have nothing to pass.
  * fuz_app's own uses are pinned two ways by the surface census: the exact call
  * site, and the scan asserting every `'surface:<name>'` literal in `src/lib`

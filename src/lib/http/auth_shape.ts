@@ -143,8 +143,9 @@ export const RouteAuth = z
 		 *
 		 * - `surface:<name>` — a non-RPC surface, refused to every narrowed token
 		 *   whatever its method list says (token scoping's rule that a narrowed
-		 *   token is RPC-only). `surface:audit_stream` and `surface:fact_bare` are
-		 *   the spine's; a consumer names its own without registering it.
+		 *   token is RPC-only). `surface:audit_stream`, `surface:fact_bare`, and
+		 *   `surface:app_surface` are the spine's route-spec ones; a consumer names
+		 *   its own without registering it.
 		 * - `rpc:<method>` — one action method, refused unless the token lists it.
 		 *   What a route bridged from an `ActionSpec` declares: it carries the
 		 *   method's identity but never reaches the dispatcher's per-method gate.

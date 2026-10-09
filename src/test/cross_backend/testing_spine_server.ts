@@ -189,7 +189,7 @@ export const parse_action_rate_limit_max_attempts = (
  * WS mutation is answered before its audit write settles. The Rust stub
  * builds its emitter the same way (`new_with_inflight_tracking`).
  */
-const cell_audit_factory: AuditFactory = ({ db, log }) =>
+export const cell_audit_factory: AuditFactory = ({ db, log }) =>
 	create_audit_emitter({
 		db,
 		log,

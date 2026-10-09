@@ -67,7 +67,7 @@ import {
 	create_bootstrap_route_specs,
 	type BootstrapStatus
 } from '../auth/bootstrap_routes.ts';
-import { create_surface_route_spec, type SurfaceRouteOptions } from '../http/common_routes.ts';
+import { create_surface_route_spec, type SurfaceRouteOptions } from './surface_route.ts';
 import { flush_pending_effects, flush_post_commit_effects } from '../http/pending_effects.ts';
 import {
 	assert_endpoint_in_auth_scope,
@@ -256,10 +256,19 @@ export interface AppServerOptions {
 	bootstrap?: BootstrapServerOptions;
 
 	/**
-	 * Set to `false` to disable the auto-created surface route (`GET /api/surface`).
-	 * Default: auto-created (authenticated).
+	 * Mount `GET /api/surface`, which serves this server's generated
+	 * `AppSurface` (every route, its auth, and its schemas) to an admin UI such
+	 * as `AdminSurface.svelte`. Off by default — the Rust spine serves no such
+	 * route, and a map of the API is nothing to publish unasked.
+	 *
+	 * When mounted the route is admin-only (`roles: ['admin']`, so it takes the
+	 * `?acting=` selector) and a rule-3 token surface
+	 * (`required_scope: 'surface:app_surface'`): a narrowed API token is refused
+	 * it whatever its method list says. See `server/surface_route.ts`.
+	 *
+	 * @default false
 	 */
-	surface_route?: false;
+	surface_route?: boolean;
 
 	/**
 	 * Build route specs from the initialized backend.
@@ -831,8 +840,8 @@ const assemble_app_server = async (
 		ws_mount = { endpoints: resolved_ws_endpoints, create_upgrade_websocket };
 	}
 
-	// Surface route (default: enabled)
-	if (options.surface_route !== false) {
+	// Surface route (opt-in)
+	if (options.surface_route) {
 		factory_routes.push(create_surface_route_spec(surface_ref));
 	}
 

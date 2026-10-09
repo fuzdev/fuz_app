@@ -104,10 +104,9 @@ describe('create_app_server', () => {
 	});
 
 	test('surface contains correct route count', () => {
-		// health + auto-created surface route
-		assert.strictEqual(shared.surface_spec.surface.routes.length, 2);
+		// health only — the surface route is opt-in
+		assert.strictEqual(shared.surface_spec.surface.routes.length, 1);
 		assert.strictEqual(shared.surface_spec.surface.routes[0]!.path, '/health');
-		assert.strictEqual(shared.surface_spec.surface.routes[1]!.path, '/api/surface');
 	});
 
 	test('surface contains middleware specs', () => {
@@ -185,19 +184,27 @@ describe('create_app_server', () => {
 		assert.isDefined(port_entry);
 	});
 
-	test('surface route is auto-created by default', async () => {
+	test('surface route is not mounted by default', async () => {
 		const result = await create_app_server(await create_config());
 		const surface_route = result.surface_spec.surface.routes.find((r) => r.path === '/api/surface');
-		assert.isDefined(surface_route);
-		assert.strictEqual(surface_route.method, 'GET');
-		assert.deepEqual(surface_route.auth, { account: 'required', actor: 'none' });
+		assert.isUndefined(surface_route);
 	});
 
-	test('surface_route: false disables auto-created surface route', async () => {
-		const result = await create_app_server(await create_config({ surface_route: false }));
-		const surface_route = result.surface_spec.surface.routes.find((r) => r.path === '/api/surface');
-		assert.isUndefined(surface_route);
-		assert.strictEqual(result.surface_spec.surface.routes.length, 1); // health only
+	test('surface_route: true mounts the admin-gated surface route after the consumer routes', async () => {
+		const result = await create_app_server(await create_config({ surface_route: true }));
+		const { routes } = result.surface_spec.surface;
+		assert.deepStrictEqual(
+			routes.map((r) => r.path),
+			['/health', '/api/surface']
+		);
+		const surface_route = routes[1]!;
+		assert.strictEqual(surface_route.method, 'GET');
+		assert.deepEqual(surface_route.auth, {
+			account: 'required',
+			actor: 'required',
+			roles: ['admin'],
+			required_scope: 'surface:app_surface'
+		});
 	});
 
 	test('bootstrap routes created when live bootstrap options provided', async () => {

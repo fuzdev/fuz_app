@@ -263,6 +263,25 @@ describe('create_stub_api_middleware', () => {
 		assert.strictEqual(handlers.size, specs.length);
 		assert.ok(!handlers.has(stub_mw));
 	});
+
+	// the surface merges each middleware's `errors` into every route under its
+	// path, so a stub that declared more than the real stack would widen the test
+	// surface with statuses the live server never returns
+	for (const include_daemon_token of [false, true]) {
+		test(`names, paths, and errors match create_auth_middleware_specs (daemon_token: ${include_daemon_token})`, async () => {
+			const shape = (specs: Array<MiddlewareSpec>) =>
+				specs.map((s) => ({ name: s.name, path: s.path, errors: s.errors ?? null }));
+			const real = await create_auth_middleware_specs(create_stub_app_deps(), {
+				allowed_origins: [],
+				session_options,
+				daemon_token_state: include_daemon_token ? create_daemon_token_state() : undefined
+			});
+			assert.deepStrictEqual(
+				shape(create_stub_api_middleware({ include_daemon_token })),
+				shape(real)
+			);
+		});
+	}
 });
 
 const build_surface = (transform_middleware?: TransformMiddleware) =>

@@ -46,6 +46,7 @@ import {
 } from '../server/app_backend.ts';
 import {
 	create_app_server,
+	type AppServer,
 	type AppServerOptions,
 	type BootstrapServerOptions,
 	type BootstrapLiveOptions
@@ -617,6 +618,13 @@ export interface CreateTestAppAccountArgs {
 export interface TestApp {
 	app: Hono;
 	backend: TestAppServer;
+	/**
+	 * The assembled `AppServer` — reach for what `create_app_server` built
+	 * beyond the fields lifted onto `TestApp`: `audit_sse` (with
+	 * `audit_log_sse` in `app_options`), the `ws_endpoints` transports,
+	 * `bootstrap_status`, `migration_results`.
+	 */
+	server: AppServer;
 	surface_spec: AppSurfaceSpec;
 	surface: AppSurface;
 	route_specs: Array<RouteSpec>;
@@ -750,6 +758,7 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 	return {
 		app,
 		backend: test_server,
+		server: result,
 		surface_spec,
 		surface: surface_spec.surface,
 		route_specs: surface_spec.route_specs,
@@ -797,6 +806,8 @@ export interface CreateTestAppForBootstrapOptions {
 export interface TestAppForBootstrap {
 	app: Hono;
 	backend: AppBackend;
+	/** The assembled `AppServer`, as on `TestApp` — `bootstrap_status`, `audit_sse`, the `ws_endpoints` transports. */
+	server: AppServer;
 	surface_spec: AppSurfaceSpec;
 	surface: AppSurface;
 	route_specs: Array<RouteSpec>;
@@ -888,6 +899,7 @@ export const create_test_app_for_bootstrap = async (
 	return {
 		app: result.app,
 		backend,
+		server: result,
 		surface_spec: result.surface_spec,
 		surface: result.surface_spec.surface,
 		route_specs: result.surface_spec.route_specs,

@@ -127,7 +127,9 @@ export const token_scope_admits_non_rpc = (scope: TokenScope): boolean => scope.
 
 /**
  * The non-RPC surfaces the **spine itself** mounts (rule 3). Twin of the Rust
- * `TokenSurface` enum, name for name.
+ * `TokenSurface` enum, name for name, except `app_surface` — the opt-in
+ * `GET /api/surface` explorer (`server/surface_route.ts`), which only the TS
+ * spine serves.
  *
  * Not a registry a consumer registers into. `RouteAuth.required_scope` accepts
  * any well-formed `surface:<name>` (see `parse_token_scope_capability`), so a
@@ -141,7 +143,13 @@ export const token_scope_admits_non_rpc = (scope: TokenScope): boolean => scope.
  * refused, in the `required_scope` a denial reports. That is the same field
  * whose `rpc:<method>` arm has always carried arbitrary consumer method names.
  */
-export const TOKEN_SURFACES = ['db_admin', 'fact_bare', 'audit_stream', 'ws_upgrade'] as const;
+export const TOKEN_SURFACES = [
+	'db_admin',
+	'fact_bare',
+	'audit_stream',
+	'ws_upgrade',
+	'app_surface'
+] as const;
 export type TokenSurface = (typeof TOKEN_SURFACES)[number];
 
 /**

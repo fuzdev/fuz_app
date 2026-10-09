@@ -76,6 +76,7 @@ import { fact_hash_bytes } from '@fuzdev/fuz_util/fact_hash.ts';
 import { FactHashSchema } from '@fuzdev/fuz_util/hash_schemas.ts';
 
 import { rpc_action, type RpcAction } from '../../actions/action_rpc.ts';
+import { emit_after_commit } from '../../http/pending_effects.ts';
 import { protocol_action_specs } from '../../actions/protocol.ts';
 import { query_put_fact } from '../../db/fact_queries.ts';
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
@@ -86,7 +87,6 @@ import type { SessionOptions } from '../../auth/session_cookie.ts';
 import type { DaemonTokenState } from '../../auth/daemon_token.ts';
 import type { Db } from '../../db/db.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '../../auth/role_schema.ts';
-import { auth_integration_truncate_tables } from '../db.ts';
 import {
 	query_schema_snapshot,
 	SchemaSnapshot,
@@ -473,9 +473,10 @@ export interface CreateTestingActionsOptions {
 	 */
 	readonly session_options: SessionOptions<string>;
 	/**
-	 * Daemon-token runtime state — the reset action mutates
-	 * `state.keeper_account_id` to point at the freshly seeded keeper
-	 * after the old row is wiped. Pass the same `DaemonTokenState`
+	 * Daemon-token runtime state — the reset action points
+	 * `state.keeper_account_id` at the freshly seeded keeper once its
+	 * transaction commits (a post-commit effect, so a reset that rolls back
+	 * leaves the previous keeper cached). Pass the same `DaemonTokenState`
 	 * instance the daemon-token middleware reads.
 	 */
 	readonly daemon_token_state: DaemonTokenState;
@@ -604,9 +605,15 @@ export const create_testing_actions = (
 			// 6. Refresh the daemon-token cache so subsequent daemon-token
 			//    requests resolve to the freshly seeded keeper. The
 			//    middleware's lazy-refresh path only fires when the cached
-			//    id is null; setting it directly here avoids one round-trip
-			//    of stale-id-then-refresh on the next call.
-			daemon_token_state.keeper_account_id = keeper.account.id;
+			//    id is null, so the reset sets it — after the commit, so a
+			//    reset that rolls back (a throwing `reset_state`, a failed
+			//    COMMIT) leaves the cache on the keeper still in the database
+			//    rather than one that never landed, and the next reset can
+			//    still authenticate.
+			const keeper_account_id = keeper.account.id;
+			emit_after_commit(ctx, () => {
+				daemon_token_state.keeper_account_id = keeper_account_id;
+			});
 
 			// 7. Fire domain-state reset (zzz workspaces/terminals/scratch,
 			//    fuz_forge cell/fact/file truncation, or no-op for spine_stub).
@@ -647,6 +654,3 @@ export const create_testing_actions = (
 		create_testing_migration_tracker_action()
 	];
 };
-
-/** Set of auth-namespace tables `_testing_reset` wipes. Mirrored by the coverage test. */
-export const testing_reset_wiped_tables = auth_integration_truncate_tables;

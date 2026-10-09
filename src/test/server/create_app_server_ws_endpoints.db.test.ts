@@ -1053,16 +1053,17 @@ describe('create_app_server.ws_endpoints', () => {
 		assert.strictEqual(fake_ws.closes.length, 1);
 	});
 
-	test('factory-route collision: WS at /api/surface collides with the auto-mounted surface route', async () => {
+	test('factory-route collision: WS at /api/surface collides with the opted-in surface route', async () => {
 		// Factory routes (bootstrap, surface) get the same collision check as
-		// consumer routes — the surface route is `GET /api/surface` by
-		// default. This locks that in so a future refactor can't scope the
-		// check to consumer-only routes.
+		// consumer routes — the opted-in surface route is `GET /api/surface`.
+		// This locks that in so a future refactor can't scope the check to
+		// consumer-only routes.
 		const stub = create_stub_upgrade();
 		const { config } = await create_test_setup();
 		const err = await assert_rejects(() =>
 			create_tracked_app_server({
 				...config,
+				surface_route: true,
 				create_upgrade_websocket: () => stub.upgradeWebSocket,
 				ws_endpoints: [build_minimal_spec({ path: '/api/surface' })]
 			})

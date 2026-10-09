@@ -13,7 +13,13 @@ import { create_session_config } from '$lib/auth/session_cookie.ts';
 import { ROLE_KEEPER } from '$lib/auth/role_schema.ts';
 import { create_health_route_spec } from '$lib/http/common_routes.ts';
 import { create_app_server } from '$lib/server/app_server.ts';
-import { create_test_app, create_test_app_server } from '$lib/testing/app_server.ts';
+import {
+	create_test_app,
+	create_test_app_for_bootstrap,
+	create_test_app_server
+} from '$lib/testing/app_server.ts';
+import { create_test_app_surface_spec } from '$lib/testing/stubs.ts';
+import type { AppSurface } from '$lib/http/surface.ts';
 import { auth_truncate_tables } from '$lib/testing/db.ts';
 import { query_role_grant_find_active_for_actor } from '$lib/auth/role_grant_queries.ts';
 
@@ -120,10 +126,77 @@ test('create_test_app forwards top-level rpc_endpoints to create_app_server', as
 	try {
 		assert.strictEqual(test_app.surface.rpc_endpoints.length, 1);
 		assert.strictEqual(test_app.surface.rpc_endpoints[0]?.path, '/api/rpc');
+		// the assembled server rides along, its lifted fields the same objects
+		assert.strictEqual(test_app.server.app, test_app.app);
+		assert.strictEqual(test_app.server.surface_spec, test_app.surface_spec);
 	} finally {
 		await test_app.cleanup();
 	}
 });
+
+test('create_test_app_for_bootstrap exposes the assembled server', async () => {
+	const test_app = await create_test_app_for_bootstrap({
+		session_options,
+		db,
+		create_route_specs: () => [],
+		bootstrap: { mode: 'live', token_path: '/nonexistent/bootstrap_token' },
+		bootstrap_token: 'bootstrap-token'
+	});
+	try {
+		assert.strictEqual(test_app.server.app, test_app.app);
+		assert.strictEqual(test_app.server.surface_spec, test_app.surface_spec);
+		assert.isTrue(test_app.server.bootstrap_status.available);
+	} finally {
+		await test_app.cleanup();
+	}
+});
+
+// the stub surface is what the surface-derived suites probe, so it must list
+// the routes the live server mounts — same order, auth, and error schemas
+// (middleware errors merge into every route under their path)
+const route_shape = (surface: AppSurface) =>
+	surface.routes.map((r) => ({
+		method: r.method,
+		path: r.path,
+		auth: r.auth,
+		error_schemas: r.error_schemas,
+		applicable_middleware: r.applicable_middleware
+	}));
+
+for (const surface_route of [undefined, false, true] as const) {
+	test(`create_test_app_surface_spec routes match create_test_app's (surface_route: ${surface_route})`, async () => {
+		const shared = {
+			session_options,
+			create_route_specs: () => [create_health_route_spec()],
+			rpc_endpoints: [{ path: '/api/rpc', actions: widget_actions }],
+			bootstrap: { mode: 'surface_only' as const }
+		};
+		const test_app = await create_test_app({
+			...shared,
+			db,
+			app_options: surface_route === undefined ? undefined : { surface_route }
+		});
+		try {
+			const stub_surface = create_test_app_surface_spec({
+				...shared,
+				surface_route,
+				// `create_test_app` always passes a `daemon_token_state`
+				daemon_token: true
+			}).surface;
+			assert.deepStrictEqual(route_shape(stub_surface), route_shape(test_app.surface));
+			assert.deepStrictEqual(
+				stub_surface.middleware.map((m) => m.name),
+				test_app.surface.middleware.map((m) => m.name)
+			);
+			assert.strictEqual(
+				stub_surface.routes.some((r) => r.path === '/api/surface'),
+				surface_route === true
+			);
+		} finally {
+			await test_app.cleanup();
+		}
+	});
+}
 
 // `backend.deps.audit` closes over the threaded `audit_log_config`.
 // Emit-time validation behavior of the threaded config is covered by

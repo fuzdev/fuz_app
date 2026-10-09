@@ -81,6 +81,7 @@ import {
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON
 } from '$lib/actions/transports.ts';
+import { require_audit_sse } from '$lib/server/app_server.ts';
 import { create_test_app, type TestApp } from '$lib/testing/app_server.ts';
 import { DEFAULT_TEST_PASSWORD } from '$lib/testing/test_credentials.ts';
 import { create_test_account_with_actor } from '$lib/testing/db_entities.ts';
@@ -111,7 +112,6 @@ import type { AppServerContext } from '$lib/server/app_server_context.ts';
 import { prefix_route_specs, type RouteSpec } from '$lib/http/route_spec.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
 import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
-import type { AuditLogSse } from '$lib/realtime/sse_auth_guard.ts';
 import type { SseNotification, SseStream } from '$lib/realtime/sse.ts';
 
 import { describe_db } from '../db_fixture.ts';
@@ -1134,7 +1134,6 @@ describe_db('connection_closer wiring', (get_db) => {
 				}
 			};
 			const transport = new BackendWebsocketTransport({ log });
-			let audit_sse: AuditLogSse | null = null;
 			const test_app = await create_test_app({
 				session_options,
 				db: gated.db,
@@ -1144,7 +1143,6 @@ describe_db('connection_closer wiring', (get_db) => {
 				// a `ws_endpoints` mount adds its own
 				app_options: { audit_log_sse: true },
 				create_route_specs: (ctx) => {
-					audit_sse = ctx.audit_sse;
 					ctx.deps.connection_closer.add(transport);
 					return make_create_route_specs(probe, options)(ctx);
 				},
@@ -1170,8 +1168,7 @@ describe_db('connection_closer wiring', (get_db) => {
 						}
 					})
 			});
-			assert.ok(audit_sse);
-			const sse: AuditLogSse = audit_sse;
+			const sse = require_audit_sse(test_app.server);
 			return {
 				test_app,
 				db,

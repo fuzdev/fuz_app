@@ -3,7 +3,9 @@
 	 * Attack-surface viewer. Fetches `GET /api/surface` (REST — not RPC, since
 	 * the surface dump exists outside the action surface) and delegates
 	 * rendering to `SurfaceExplorer`. Surfaces a retry button on fetch
-	 * failures.
+	 * failures. The server must opt in to the route
+	 * (`create_app_server({surface_route: true})`), which is admin-only and
+	 * refused to a narrowed API token.
 	 *
 	 * @module
 	 */
