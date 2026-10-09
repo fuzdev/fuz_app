@@ -257,7 +257,9 @@ export const create_audit_log_sse = (options: {
 	 * Required so it can't be forgotten: without it a revoked credential's
 	 * streams close only through the audit listener, which a failed audit write
 	 * or a cap eviction never reaches. Pass `null` only for a registry no
-	 * revocation has to reach (tests of the registry itself).
+	 * revocation has to reach (tests of the registry itself), or when the
+	 * caller adds `create_sse_connection_closer(registry)` itself — as
+	 * `create_app_server` does, to hold the remover `add` returns.
 	 */
 	connection_closer: RealtimeCloser | null;
 	/**

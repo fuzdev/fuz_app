@@ -565,11 +565,17 @@ fail-open. Failure outcomes (`revoked: false`, a 404) queue no close — they
 carry caller-supplied ids.
 
 **One closer for every transport.** `create_realtime_closer()` returns a
-`RealtimeCloser` — a `ConnectionCloser` plus `add(closer)` (idempotent by
-reference) — whose every close fans out to each member and returns the sum.
+`RealtimeCloser` — a `ConnectionCloser` plus `add(closer)` and `member_count()`
+— whose every close fans out to each member and returns the sum. Membership is
+by reference: a closer added twice is one member, reached once. `add` returns a
+remover for that addition (idempotent); additions are counted, so the closer
+stays a member until every addition is removed — one owner releasing a shared
+transport leaves it reachable for the others.
 `create_app_backend` puts one on `AppDeps.connection_closer`; `create_app_server`
-adds each mounted WS transport and the audit stream registry, and its
-`AppServer.close` runs `close_all_sockets` across them all. Twin of
+adds each mounted WS transport and the audit stream registry itself (passing
+`connection_closer: null` to the mount functions so it holds the removers), and
+removes them when its assembly fails or `AppServer.close` runs — after
+`close_all_sockets` across them all. Twin of
 `RealtimeRevoker`. A member that throws does not stop the fan-out — every
 member is called, then the first error is thrown for the caller to log;
 `BackendWebsocketTransport` and `SubscriberRegistry.close_by_identity` treat a
@@ -586,7 +592,8 @@ the connections of each expired session it deletes — `auth/CLAUDE.md`
 §Cleanup), and the
 `connection_closer: RealtimeCloser | null` option of `register_action_ws` /
 `register_ws_endpoint` / `create_audit_log_sse`, which add their transport to it
-(`null` is the explicit opt-out).
+(`null` is the explicit opt-out, or for a caller that adds the transport itself
+to hold the remover, as `create_app_server` does).
 
 ## WS auth guard (`actions/transports_ws_auth_guard.ts`)
 
@@ -676,10 +683,10 @@ enforced.
 
 Mounted transport reachable at `app_server.ws_endpoints[path]`
 (`Readonly<Record<string, BackendWebsocketTransport>>`). Duplicate paths
-across `WsEndpointSpec`s throw at mount time. Cross-surface collisions
-(same `GET <path>` on both `RouteSpec` and `WsEndpointSpec`) throw with
-exact-string match. Pattern overlap (e.g. `GET /api/:resource` vs
-`/api/ws`) is not detected — Hono's specific-before-wildcard routing keeps
+across `WsEndpointSpec`s throw at assembly, before any endpoint mounts.
+Cross-surface collisions (same `GET <path>` on both `RouteSpec` and
+`WsEndpointSpec`) throw with exact-string match. Pattern overlap (e.g.
+`GET /api/:resource` vs `/api/ws`) is not detected — Hono's specific-before-wildcard routing keeps
 those working but avoid the overlap.
 
 `auth_guard: true` does NOT close sockets on `role_grant_revoke`
@@ -746,8 +753,13 @@ revocation closes only after its commit — see
 
 `connection_closer: RealtimeCloser | null` is a required option: the endpoint's
 transport is added to it, so the revocation handlers' post-commit closes reach
-the sockets opened here. `null` is for a transport no revocation has to reach
-(a harness driving the dispatcher directly).
+the sockets opened here. The add is the mount's last step, so a mount that
+throws (a registry that fails to compile) adds nothing; the addition is
+permanent, its remover not returned. `null` is for a transport no revocation
+has to reach (a harness driving the dispatcher directly), or one the caller
+adds itself to hold the remover — `create_app_server` passes `null` and adds
+the transport after the mount returns, releasing it when assembly fails or
+the server closes.
 
 Because `onOpen` awaits, an adapter can deliver `onMessage` before admission
 (`@hono/node-ws` doesn't await `onOpen` at all). Those frames are **queued, not

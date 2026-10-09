@@ -402,9 +402,16 @@ progress), closes every live connection on `deps.connection_closer` — each
 WebSocket with `WS_CLOSE_GOING_AWAY` (1001, so clients reconnect rather than
 treat their session as revoked), each audit stream, including transports passed
 through `WsEndpointSpec.transport` or added by hand (a close that throws is
-logged and the shutdown goes on) — then disposes the rate limiters
-`create_app_server` built and closes the database. A limiter you passed in is
-yours to dispose. `close` is idempotent: a second call settles
+logged and the shutdown goes on) — then releases what assembly acquired and
+closes the database. The releases remove the audit listeners and closer members
+`create_app_server` added to the backend's `deps.audit` and
+`deps.connection_closer` (each its own addition — a transport you also added
+stays a member) and dispose the rate limiters it built; a limiter you passed in
+is yours to dispose. The backend's emitter and closer end as they were before
+assembly, so a failed assembly can be retried on the same backend, and a backend
+whose `close` you own (a test harness) can host another server. A failed
+assembly runs the same releases before its error reaches you, so it leaves no
+listener, closer member, or limiter timer behind. `close` is idempotent: a second call settles
 with the first one's outcome (a failed close is not retried), and concurrent
 calls share one shutdown.
 
@@ -923,7 +930,7 @@ validated in DEV + production; output validated DEV-only, logging an error
 on mismatch without throwing. See ./architecture.md §DEV-only Output
 Validation.
 
-`connection_closer` is required: the endpoint adds its transport to it, and every revocation handler closes through it after its transaction commits (./security.md §Closing on Revocation). Left out of the closer, a transport's sockets would outlive a revoked credential whenever no audit row reaches a listener — a failed audit write, a session or token cap eviction. Pass `null` only for a transport no revocation has to reach.
+`connection_closer` is required: the endpoint adds its transport to it, and every revocation handler closes through it after its transaction commits (./security.md §Closing on Revocation). Left out of the closer, a transport's sockets would outlive a revoked credential whenever no audit row reaches a listener — a failed audit write, a session or token cap eviction. The add is the mount's last step, so a mount that throws adds nothing, and it is permanent — its remover is not returned. Pass `null` for a transport no revocation has to reach, or to add the transport yourself and hold the remover `RealtimeCloser.add` returns.
 
 The returned `transport: BackendWebsocketTransport` is also what you hand to `create_ws_auth_guard(transport, log)` to repeat those closes from the audit chain — `create_app_server` registers it for endpoints mounted through `ws_endpoints`; wire it yourself when mounting by hand:
 

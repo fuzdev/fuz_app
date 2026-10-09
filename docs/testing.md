@@ -526,7 +526,7 @@ describe('app-specific integration', () => {
 - `create_account({username?, password_value?, roles?})` — create additional accounts with built-in header helpers
 - `surface` — the generated `AppSurface`
 - `route_specs` — the assembled route specs
-- `cleanup()` — the assembled server's idempotent `close`: stops an `auth_cleanup` schedule opted into through `app_options`, closes the server's live connections, disposes the rate limiters it built, then releases the backend (a no-op when using cached PGlite)
+- `cleanup()` — the assembled server's idempotent `close`: stops an `auth_cleanup` schedule opted into through `app_options`, closes the server's live connections, disposes the rate limiters it built and removes the audit listeners and closer members it added, then releases the backend (a no-op when using cached PGlite)
 
 Every rate limiter is off (`rate_limiters: 'disabled_for_testing'`, ./usage.md
 §Rate limiters); pass a limiter through `app_options` to enable just the one a

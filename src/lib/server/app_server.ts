@@ -13,6 +13,7 @@ import { logger } from 'hono/logger';
 import { bodyLimit } from 'hono/body-limit';
 import type { UpgradeWebSocket } from 'hono/ws';
 import { z } from 'zod';
+import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import {
 	session_cookie_options,
@@ -23,6 +24,7 @@ import type { BootstrapAccountSuccess } from '../auth/bootstrap_account.ts';
 import type { EventSpec } from '../realtime/sse.ts';
 import {
 	create_audit_log_sse,
+	create_sse_connection_closer,
 	audit_log_event_specs,
 	type AuditLogSse
 } from '../realtime/sse_auth_guard.ts';
@@ -391,13 +393,14 @@ export interface AppServerOptions {
 	 * after the route specs and before `post_route_middleware` and
 	 * `static_serving`, so neither runs ahead of an upgrade.
 	 *
-	 * Duplicate `path` values across two `WsEndpointSpec`s throw at
-	 * mount time (Hono would silently shadow them otherwise).
+	 * Duplicate `path` values across two `WsEndpointSpec`s, and a `path` a
+	 * GET `RouteSpec` already claims, throw at assembly before any endpoint
+	 * mounts (Hono would silently shadow them otherwise).
 	 *
 	 * Every mounted transport is added to `deps.connection_closer`, so
 	 * the revocation handlers' post-commit closes reach its sockets —
 	 * unconditionally, since those closes are what ends a revoked
-	 * credential's connections.
+	 * credential's connections. `AppServer.close` removes it again.
 	 *
 	 * Each spec's `auth_guard?` defaults to `true` — the factory
 	 * registers `create_ws_auth_guard` against the mounted transport via
@@ -493,8 +496,17 @@ export interface AppServer {
 	 *    `WsEndpointSpec.transport` or added by hand, since they are registered
 	 *    on the backend's closer and the backend is going away; a close that
 	 *    throws is logged and the shutdown goes on
-	 * 3. `dispose` the rate limiters `create_app_server` built for omitted
-	 *    options — never one passed in, which its caller owns
+	 * 3. release what assembly acquired, last acquired first: remove the
+	 *    audit listeners `create_app_server` registered on `deps.audit` (the
+	 *    audit-log SSE listener, the WS auth guards, each
+	 *    `extra_audit_handlers` entry) and the closer members it added to
+	 *    `deps.connection_closer` (each mounted transport, the audit stream
+	 *    registry), and `dispose` the rate limiters it built for omitted
+	 *    options — never one passed in, which its caller owns. A release that
+	 *    throws is logged and the rest still run. The backend's emitter and
+	 *    closer are left as they were before assembly, so a failed assembly
+	 *    can be retried on the same backend, and a backend whose `close` you
+	 *    own (a test harness) can host another server
 	 * 4. close the database connection (`AppBackend.close`)
 	 *
 	 * Idempotent: a second call settles with the first one's outcome (a failed
@@ -556,16 +568,56 @@ export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
  * case; consumers can call `require_audit_sse(ctx)` / `require_audit_sse(server)`
  * to assert the invariant.
  *
- * When `auth_cleanup` is set, the auth cleanup schedule starts as the last
- * step of assembly — so an assembly that throws leaves no schedule running.
+ * Assembly acquires a few things that outlive it — the rate limiters it
+ * builds, the listeners it registers on `deps.audit`, the members it adds to
+ * `deps.connection_closer` — and records a release for each as it goes. When
+ * assembly throws, every release recorded so far runs, last acquired first
+ * (one that throws is logged and the rest still run), and the original error
+ * is rethrown: a failed assembly leaves the backend's emitter and closer as
+ * it found them and no limiter timer running. When `auth_cleanup` is set, the
+ * auth cleanup schedule starts as the last step of assembly — nothing after
+ * it can throw, so an assembly that throws leaves no schedule running.
  *
  * The returned `close` owns shutdown: it stops that schedule, closes every
- * live connection on the backend's closer, disposes the rate limiters built
- * here, and closes the database (`AppServer.close`).
+ * live connection on the backend's closer, runs the same releases, and
+ * closes the database (`AppServer.close`).
  *
  * @returns assembled Hono app, backend, surface build, and bootstrap status
+ * @throws Error from any assembly step, after releasing what assembly acquired
  */
 export const create_app_server = async (options: AppServerOptions): Promise<AppServer> => {
+	const releases: Array<() => void> = [];
+	try {
+		return await assemble_app_server(options, releases);
+	} catch (error) {
+		run_releases(releases, options.backend.deps.log, 'a failed assembly');
+		throw error;
+	}
+};
+
+/**
+ * Run `releases` last-first and empty it. Each runs in its own `try`, so one
+ * that throws is logged and the rest still run.
+ */
+const run_releases = (releases: Array<() => void>, log: Logger, during: string): void => {
+	for (const release of releases.splice(0).reverse()) {
+		try {
+			release();
+		} catch (error) {
+			log.error(`create_app_server: a release during ${during} failed:`, error);
+		}
+	}
+};
+
+/**
+ * The body of `create_app_server`. Every acquisition that outlives assembly
+ * pushes its release onto `releases` as it happens, so a throw at any later
+ * step unwinds exactly what was acquired.
+ */
+const assemble_app_server = async (
+	options: AppServerOptions,
+	releases: Array<() => void>
+): Promise<AppServer> => {
 	const { backend } = options;
 	const { deps } = backend;
 	const { log } = deps;
@@ -574,9 +626,9 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	// one is a default instance under 'enforced', `null` under
 	// 'disabled_for_testing'. One instance per surface — see
 	// `AppServerOptions.login_ip_rate_limiter` for why these are not a single
-	// shared bucket. The ones built here are the server's to dispose on close.
+	// shared bucket. The ones built here are the server's to dispose — on
+	// close, or when assembly fails.
 	const rate_limiter_mode: RateLimiterMode = options.rate_limiters ?? 'enforced';
-	const built_rate_limiters: Array<RateLimiter> = [];
 	const resolve_rate_limiter = (
 		option: RateLimiter | null | undefined,
 		defaults: RateLimiterOptions
@@ -587,7 +639,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			return null;
 		}
 		const limiter = new RateLimiter({ ...defaults });
-		built_rate_limiters.push(limiter);
+		releases.push(() => limiter.dispose());
 		return limiter;
 	};
 	const login_ip_rate_limiter = resolve_rate_limiter(
@@ -622,16 +674,19 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	// Factory-managed audit SSE — registers a listener on the bound emitter
 	// so SSE fan-out runs alongside the consumer's `on_audit_event`
 	// without rebuilding `AppDeps`, and adds the registry to the backend's
-	// closer so revocations close its streams.
+	// closer so revocations close its streams. The closer membership is added
+	// here rather than through `create_audit_log_sse`'s option, so its remover
+	// is the server's.
 	const audit_sse: AuditLogSse | null = options.audit_log_sse
 		? create_audit_log_sse({
 				log,
 				role: typeof options.audit_log_sse === 'object' ? options.audit_log_sse.role : undefined,
-				connection_closer: deps.connection_closer
+				connection_closer: null
 			})
 		: null;
 	if (audit_sse) {
-		deps.audit.add_listener(audit_sse.on_audit_event);
+		releases.push(deps.connection_closer.add(create_sse_connection_closer(audit_sse.registry)));
+		releases.push(deps.audit.add_listener(audit_sse.on_audit_event));
 	}
 
 	// Proxy middleware
@@ -765,6 +820,29 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	}
 
 	const route_specs = [...consumer_routes, ...factory_routes];
+
+	// WS path checks — pure data, so they run before anything mounts.
+	// `register_ws_endpoint` mounts a `GET path` upgrade route: a duplicate
+	// path, or one a `RouteSpec` already registered as `GET path`, would be
+	// silently shadowed by Hono's last-wins semantics — fail fast instead.
+	if (ws_mount) {
+		const route_spec_get_paths: Set<string> = new Set();
+		for (const r of route_specs) {
+			if (r.method === 'GET') route_spec_get_paths.add(r.path);
+		}
+		const seen_paths: Set<string> = new Set();
+		for (const endpoint of ws_mount.endpoints) {
+			if (seen_paths.has(endpoint.path)) {
+				throw new Error(`create_app_server: duplicate ws_endpoints path: ${endpoint.path}`);
+			}
+			if (route_spec_get_paths.has(endpoint.path)) {
+				throw new Error(
+					`create_app_server: ws_endpoints path collides with a GET RouteSpec: ${endpoint.path}`
+				);
+			}
+			seen_paths.add(endpoint.path);
+		}
+	}
 
 	// Surface + logging
 	const surface_middleware = options.post_route_middleware
@@ -929,15 +1007,6 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		// the adapter helper — built from this app, which Node's
 		// `createNodeWebSocket({app})` needs, and only when there is something to mount
 		const upgrade_websocket = ws_mount.create_upgrade_websocket(app);
-		// Cross-surface collision: `register_ws_endpoint` mounts a `GET path`
-		// upgrade route. If a `RouteSpec` already registered `GET path`,
-		// Hono's last-wins semantics would silently shadow the consumer's
-		// GET route — fail fast instead.
-		const route_spec_get_paths: Set<string> = new Set();
-		for (const r of route_specs) {
-			if (r.method === 'GET') route_spec_get_paths.add(r.path);
-		}
-		const seen_paths: Set<string> = new Set();
 		// Dedupe `auth_guard` wiring by transport reference — two specs
 		// sharing one transport instance get a single listener,
 		// otherwise revocation events would fire `close_sockets_for_*`
@@ -948,16 +1017,6 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		// disable, every spec sharing the transport must pass `auth_guard: false`.
 		const guarded_transports: WeakSet<BackendWebsocketTransport> = new WeakSet();
 		for (const endpoint of ws_mount.endpoints) {
-			if (seen_paths.has(endpoint.path)) {
-				throw new Error(`create_app_server: duplicate ws_endpoints path: ${endpoint.path}`);
-			}
-			if (route_spec_get_paths.has(endpoint.path)) {
-				throw new Error(
-					`create_app_server: ws_endpoints path collides with a GET RouteSpec: ${endpoint.path}`
-				);
-			}
-			seen_paths.add(endpoint.path);
-
 			const { transport: endpoint_transport } = register_ws_endpoint({
 				app,
 				path: endpoint.path,
@@ -966,8 +1025,8 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 				db: deps.db,
 				actions: endpoint.actions,
 				transport: endpoint.transport,
-				// every revocation handler's close reaches this transport
-				connection_closer: deps.connection_closer,
+				// added below instead, so the remover is the server's
+				connection_closer: null,
 				max_connections_per_account: endpoint.max_connections_per_account,
 				heartbeat: endpoint.heartbeat,
 				artificial_delay: endpoint.artificial_delay,
@@ -980,14 +1039,16 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 				action_account_rate_limiter
 			});
 			mounted_ws_endpoints[endpoint.path] = endpoint_transport;
+			// every revocation handler's close reaches this transport
+			releases.push(deps.connection_closer.add(endpoint_transport));
 
 			if (endpoint.auth_guard !== false && !guarded_transports.has(endpoint_transport)) {
 				guarded_transports.add(endpoint_transport);
-				deps.audit.add_listener(create_ws_auth_guard(endpoint_transport, log));
+				releases.push(deps.audit.add_listener(create_ws_auth_guard(endpoint_transport, log)));
 			}
 			if (endpoint.extra_audit_handlers?.length) {
 				for (const handler of endpoint.extra_audit_handlers) {
-					deps.audit.add_listener(handler);
+					releases.push(deps.audit.add_listener(handler));
 				}
 			}
 		}
@@ -1007,8 +1068,10 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	}
 
 	// Auth cleanup — opt-in, and last: nothing after it can throw, so a failed
-	// assembly never leaves a schedule running. Its closes go through
-	// `deps.connection_closer`, which the mounts above have filled.
+	// assembly never leaves a schedule running. Its own throw (an invalid
+	// `interval_ms`) comes before any pass starts, and unwinds `releases` like
+	// any other. Its closes go through `deps.connection_closer`, which the
+	// mounts above have filled.
 	const auth_cleanup = options.auth_cleanup
 		? start_auth_cleanup(deps, options.auth_cleanup === true ? undefined : options.auth_cleanup)
 		: null;
@@ -1025,7 +1088,9 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		} catch (error) {
 			log.error('create_app_server: closing live connections on shutdown failed:', error);
 		}
-		for (const limiter of built_rate_limiters) limiter.dispose();
+		// then what assembly acquired — the audit listeners and closer members
+		// this server added, and the limiters it built
+		run_releases(releases, log, 'shutdown');
 		await backend.close();
 	};
 

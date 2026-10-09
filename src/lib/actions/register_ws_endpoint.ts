@@ -128,7 +128,9 @@ const create_ws_authorization_middleware = (db: Db): MiddlewareHandler => {
  * @mutates options.app - applies origin/auth/scope/authorization/role middleware
  *   via `app.use`, then registers the `GET path` route via the inner
  *   `register_action_ws`
- * @mutates options.connection_closer - adds the endpoint's transport
+ * @mutates options.connection_closer - adds the endpoint's transport, once the
+ *   mount has succeeded, for good — pass `null` and add it yourself to hold the
+ *   remover
  */
 export const register_ws_endpoint = (
 	options: RegisterWsEndpointOptions

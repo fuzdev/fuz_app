@@ -58,9 +58,10 @@
  * registers additional listeners via `add_listener` after the backend is
  * built (the factory-managed audit-log SSE, per-endpoint WS auth guards, any
  * `extra_audit_handlers` on a `WsEndpointSpec`) before the first request
- * runs. Consumers can also register listeners directly on the emitter they
- * return from `audit_factory` for setups that don't pass through
- * `create_app_server`.
+ * runs, and removes each through the remover `add_listener` returns when its
+ * assembly fails or the server closes. Consumers can also register
+ * listeners directly on the emitter they return from `audit_factory` for
+ * setups that don't pass through `create_app_server`.
  *
  * @module
  */
@@ -185,21 +186,36 @@ export interface AuditEmitter {
 	 */
 	notify(event: AuditLogEvent): void;
 	/**
-	 * Register an audit-event listener. Append-only — listeners fire in
-	 * registration order for every row `emit` / `emit_pool` wrote and on
-	 * every `notify`.
+	 * Register an audit-event listener. Listeners fire in registration order
+	 * for every row `emit` / `emit_pool` wrote and on every `notify`.
+	 *
+	 * Returns a remover that unregisters this registration. Each call is its
+	 * own registration: the same function registered twice fires twice, and
+	 * each remover takes out only the registration it was returned for,
+	 * leaving the others in place and in order. Calling a remover again is a
+	 * no-op. A `notify` already in progress still runs a listener removed
+	 * during its fan-out — it iterates a snapshot — and the next one does not.
 	 *
 	 * `create_app_server` registers the factory-managed audit-log SSE
 	 * listener and per-endpoint WS auth guards here so
 	 * SSE + WS fan-out compose on top of the consumer's `on_audit_event`
-	 * callback without shallow-copying `AppDeps`. Consumers can also
-	 * register listeners directly for setups that don't run through
-	 * `create_app_server`.
+	 * callback without shallow-copying `AppDeps`, and removes them when its
+	 * assembly fails or the server closes. Consumers can also register
+	 * listeners directly for setups that don't run through
+	 * `create_app_server`. The `on_audit_event` passed at construction has
+	 * no remover — it lives as long as the emitter.
 	 *
-	 * Twin of the Rust `fuz_auth` `AuditEmitter::add_listener`.
+	 * Twin of the Rust `fuz_auth` `AuditEmitter::add_listener` in what
+	 * registration means — firing order, snapshot-at-notify.
+	 *
+	 * @param listener - called with each announced audit row
+	 * @returns a remover for this registration, idempotent
 	 */
-	add_listener(listener: (event: AuditLogEvent) => void): void;
-	/** Count of registered listeners — introspection for tests and diagnostics. */
+	add_listener(listener: (event: AuditLogEvent) => void): () => void;
+	/**
+	 * Count of registered listeners, the construction-time `on_audit_event`
+	 * included — introspection for tests and diagnostics.
+	 */
 	listener_count(): number;
 	/**
 	 * Await every fire-and-forget `emit` write in flight — the deterministic
@@ -303,15 +319,18 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 	} = options;
 	// Closure-private listener list — no mutable array is exposed on the
 	// returned (frozen) emitter; registration goes through `add_listener`.
-	const listeners: Array<(event: AuditLogEvent) => void> = [];
-	if (options.on_audit_event) listeners.push(options.on_audit_event);
+	// One entry object per registration, so a remover takes out its own
+	// registration even when the same function is registered twice.
+	const listeners: Array<{ listener: (event: AuditLogEvent) => void }> = [];
+	if (options.on_audit_event) listeners.push({ listener: options.on_audit_event });
 
 	const notify = (event: AuditLogEvent): void => {
 		// Snapshot-at-notify: iterate a copy so a listener that registers
 		// another listener mid-fan-out doesn't have the newcomer fire for the
-		// in-flight event (it fires on the next `notify`). Converges with the
-		// Rust twin, which clones the listener vec before iterating.
-		for (const listener of [...listeners]) {
+		// in-flight event (it fires on the next `notify`), and one removed
+		// mid-fan-out still hears the in-flight event. Converges with the Rust
+		// twin, which clones the listener vec before iterating.
+		for (const { listener } of [...listeners]) {
 			try {
 				listener(event);
 			} catch (err) {
@@ -409,8 +428,13 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 		});
 	};
 
-	const add_listener = (listener: (event: AuditLogEvent) => void): void => {
-		listeners.push(listener);
+	const add_listener = (listener: (event: AuditLogEvent) => void): (() => void) => {
+		const entry = { listener };
+		listeners.push(entry);
+		return () => {
+			const index = listeners.indexOf(entry);
+			if (index !== -1) listeners.splice(index, 1);
+		};
 	};
 	const listener_count = (): number => listeners.length;
 
@@ -422,9 +446,9 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 	// `this.emit`, so the patch silently bypassed role-grant-shape emits.
 	// Tests that need instrumentation pass `emit_decorator` so the wrap
 	// is captured by the closure before the freeze. The listener list stays
-	// closure-private; registration is append-only via `add_listener`
-	// (`create_app_server` registers its SSE + WS listeners post-assembly,
-	// by design).
+	// closure-private; it changes only through `add_listener` and the remover
+	// it returns (`create_app_server` registers its SSE + WS listeners
+	// post-assembly, by design, and removes them on close).
 	return Object.freeze({
 		emit,
 		emit_role_grant_target,

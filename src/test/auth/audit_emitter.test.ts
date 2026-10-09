@@ -516,6 +516,45 @@ describe('create_audit_emitter — add_listener', () => {
 		assert.strictEqual(audit.listener_count(), 3);
 	});
 
+	test('add_listener returns a remover for that registration, idempotent', () => {
+		const audit = create_audit_emitter({ db: create_mock_db(), log, on_audit_event: noop });
+		const heard: Array<string> = [];
+		const remove_a = audit.add_listener(() => heard.push('a'));
+		audit.add_listener(() => heard.push('b'));
+		assert.strictEqual(audit.listener_count(), 3);
+
+		remove_a();
+		assert.strictEqual(audit.listener_count(), 2);
+		audit.notify(FAKE_EVENT);
+		assert.deepStrictEqual(heard, ['b']);
+
+		// a second call is a no-op — it removes nothing else
+		remove_a();
+		assert.strictEqual(audit.listener_count(), 2);
+	});
+
+	test('the same function registered twice is two registrations, each with its own remover', () => {
+		const audit = create_audit_emitter({ db: create_mock_db(), log });
+		const heard: Array<string> = [];
+		const twice = (): void => {
+			heard.push('twice');
+		};
+		audit.add_listener(twice);
+		audit.add_listener(() => heard.push('between'));
+		const remove_second = audit.add_listener(twice);
+
+		audit.notify(FAKE_EVENT);
+		assert.deepStrictEqual(heard, ['twice', 'between', 'twice'], 'fires once per registration');
+
+		// the remover takes out its own registration — the later one — and
+		// leaves the earlier one in place and in order
+		remove_second();
+		heard.length = 0;
+		audit.notify(FAKE_EVENT);
+		assert.deepStrictEqual(heard, ['twice', 'between']);
+		assert.strictEqual(audit.listener_count(), 2);
+	});
+
 	test('listener throw in earlier slot does not skip later listeners', async () => {
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 		const reached: Array<AuditLogEvent> = [];
@@ -609,6 +648,24 @@ describe('create_audit_emitter — frozen shape', () => {
 		// registering a *third* listener, but that one likewise waits — so the
 		// late array grows by exactly one per `notify`.
 		assert.strictEqual(late.length, 1);
+	});
+});
+
+describe('create_audit_emitter — notify removal', () => {
+	test('a listener removed mid-fan-out still hears the in-flight event, and not the next', () => {
+		const audit = create_audit_emitter({ db: create_mock_db(), log });
+		const heard: Array<string> = [];
+		let remove_late: (() => void) | null = null;
+		audit.add_listener(() => {
+			heard.push('first');
+			remove_late?.();
+		});
+		remove_late = audit.add_listener(() => heard.push('late'));
+
+		audit.notify(FAKE_EVENT);
+		assert.deepStrictEqual(heard, ['first', 'late'], 'notify iterates a snapshot');
+		audit.notify(FAKE_EVENT);
+		assert.deepStrictEqual(heard, ['first', 'late', 'first']);
 	});
 });
 

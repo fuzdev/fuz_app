@@ -334,6 +334,12 @@ export interface RegisterActionWsOptions {
 	 * reaches. Pass `null` only when no revocation has to reach this transport
 	 * (a harness driving the dispatcher directly), or when the transport was
 	 * added by hand.
+	 *
+	 * The transport is added once the mount succeeds, so a mount that throws
+	 * adds nothing. The addition is permanent — its remover is not returned.
+	 * A caller that must release the membership (as `create_app_server` does
+	 * on close) passes `null` and adds the transport itself, holding the
+	 * remover `RealtimeCloser.add` returns.
 	 */
 	connection_closer: RealtimeCloser | null;
 	/**
@@ -447,9 +453,11 @@ export interface RegisterActionWsResult {
  * @mutates options.app - registers a `GET path` route via `upgradeWebSocket`
  * @mutates options.transport - per socket, registers, admits, and removes a
  *   connection via `register_pending` / `admit` / `remove_connection`
- * @mutates options.connection_closer - adds the endpoint's transport
+ * @mutates options.connection_closer - adds the endpoint's transport, once the
+ *   mount has succeeded
  * @throws Error when `max_connections_per_account` is passed alongside
- *   `transport`, or is neither `null` nor a positive integer
+ *   `transport`, or is neither `null` nor a positive integer, or when
+ *   `actions` fails to compile (`compile_action_registry`)
  */
 export const register_action_ws = (options: RegisterActionWsOptions): RegisterActionWsResult => {
 	if (options.transport && options.max_connections_per_account !== undefined) {
@@ -481,7 +489,6 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			max_connections_per_account: options.max_connections_per_account,
 			log
 		});
-	options.connection_closer?.add(transport);
 
 	// Build the dispatcher's per-method lookup. Only request_response
 	// specs with a handler reach `action_map` — perform_action is the
@@ -1156,6 +1163,8 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		})
 	);
 
+	// last, after everything that can throw, so a failed mount leaves no member
+	options.connection_closer?.add(transport);
 	return { transport };
 };
 

@@ -628,7 +628,7 @@ export interface TestApp {
 	create_daemon_token_headers: (extra?: Record<string, string>) => Record<string, string>;
 	/** Create an additional account with credentials. */
 	create_account: (options?: CreateTestAppAccountArgs) => Promise<TestAccount>;
-	/** Cleanup resources — `AppServer.close`: stops an opted-in auth cleanup schedule, closes live connections, disposes the limiters the server built, then the backend's `close`. Idempotent. */
+	/** Cleanup resources — `AppServer.close`: stops an opted-in auth cleanup schedule, closes live connections, disposes the limiters the server built and removes the audit listeners and closer members it added, then the backend's `close`. Idempotent. */
 	cleanup: () => Promise<void>;
 }
 

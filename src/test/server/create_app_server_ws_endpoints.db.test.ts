@@ -523,10 +523,9 @@ describe('create_app_server.ws_endpoints', () => {
 		const stub = create_stub_upgrade();
 		const { config, audit } = await create_test_setup();
 		const transport = new BackendWebsocketTransport();
-		// Listeners register append-only in mount order: the standard
-		// auth guard lands ahead of any extra handler. Prove
-		// the ordering via the auth_guard's observable effect — it closes the
-		// socket — captured at the instant the extra handler fires. The extra
+		// Listeners register in mount order: the standard auth guard lands
+		// ahead of any extra handler. Prove the ordering via the auth_guard's
+		// observable effect — it closes the socket — captured at the instant the extra handler fires. The extra
 		// handler seeing `closes.length === 1` means the standard guard
 		// already ran, anchoring the docstring's "AFTER the standard
 		// auth_guard wiring" promise without reaching into listener internals.

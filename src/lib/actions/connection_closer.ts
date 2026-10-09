@@ -169,13 +169,24 @@ export const noop_connection_closer: ConnectionCloser = Object.freeze({
  */
 export interface RealtimeCloser extends ConnectionCloser {
 	/**
-	 * Add a transport's closer. Idempotent by reference, so two endpoints
-	 * sharing one transport add it once.
+	 * Add a transport's closer, returning a remover for this addition.
+	 *
+	 * Membership is by reference: a closer added twice — two endpoints
+	 * sharing one transport — is one member, and every close reaches it
+	 * once. Each `add` is counted, and its remover releases only that count:
+	 * the closer stays a member until every addition is removed, so one
+	 * owner releasing a shared transport leaves it reachable for the others.
+	 * Calling a remover again is a no-op.
 	 *
 	 * Members must be the same instances connections are registered on — a
 	 * closer over a fresh registry closes nothing.
+	 *
+	 * @param closer - the transport's closer
+	 * @returns a remover for this addition, idempotent
 	 */
-	add: (closer: ConnectionCloser) => void;
+	add: (closer: ConnectionCloser) => () => void;
+	/** Count of distinct members — introspection for tests and diagnostics. */
+	member_count: () => number;
 }
 
 /**
@@ -183,17 +194,19 @@ export interface RealtimeCloser extends ConnectionCloser {
  *
  * `create_app_backend` creates the one on `AppDeps.connection_closer`, and
  * `create_app_server` adds each WebSocket transport it mounts and its audit
- * stream registry. A consumer that mounts a transport by hand adds it through
+ * stream registry, removing them when its assembly fails or the server
+ * closes. A consumer that mounts a transport by hand adds it through
  * the `connection_closer` option of `register_ws_endpoint` /
  * `create_audit_log_sse`, or with `add`.
  */
 export const create_realtime_closer = (): RealtimeCloser => {
-	const members: Set<ConnectionCloser> = new Set();
+	// member → how many additions hold it; iteration order is first addition
+	const members: Map<ConnectionCloser, number> = new Map();
 	const fan_out = (close: (member: ConnectionCloser) => number): number => {
 		let count = 0;
 		let failed = false;
 		let first_error: unknown;
-		for (const member of members) {
+		for (const member of members.keys()) {
 			try {
 				count += close(member);
 			} catch (error) {
@@ -209,9 +222,19 @@ export const create_realtime_closer = (): RealtimeCloser => {
 		return count;
 	};
 	return Object.freeze({
-		add: (closer: ConnectionCloser): void => {
-			members.add(closer);
+		add: (closer: ConnectionCloser): (() => void) => {
+			members.set(closer, (members.get(closer) ?? 0) + 1);
+			let removed = false;
+			return () => {
+				if (removed) return;
+				removed = true;
+				const count = members.get(closer);
+				if (count === undefined) return;
+				if (count <= 1) members.delete(closer);
+				else members.set(closer, count - 1);
+			};
 		},
+		member_count: (): number => members.size,
 		close_sockets_for_session: (session_token_hash: string): number =>
 			fan_out((member) => member.close_sockets_for_session(session_token_hash)),
 		close_sockets_for_token: (api_token_id: string): number =>

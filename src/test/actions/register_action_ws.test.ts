@@ -50,7 +50,7 @@ import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
 import { RateLimiter } from '$lib/rate_limiter.ts';
 import { create_stub_db } from '$lib/testing/stubs.ts';
 import { create_test_audit_event } from '$lib/testing/entities.ts';
-import { queue_connection_close } from '$lib/actions/connection_closer.ts';
+import { create_realtime_closer, queue_connection_close } from '$lib/actions/connection_closer.ts';
 import { create_ws_auth_guard } from '$lib/actions/transports_ws_auth_guard.ts';
 import { SessionId } from '$lib/auth/account_schema.ts';
 import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
@@ -1056,6 +1056,38 @@ describe('register_action_ws max_connections_per_account', () => {
 				/max_connections_per_account configures the transport created for \/ws/
 			);
 		}
+	});
+});
+
+describe('register_action_ws connection_closer', () => {
+	const mount = (
+		actions: Array<{ spec: ActionSpecUnion; handler?: () => unknown }>,
+		connection_closer: ReturnType<typeof create_realtime_closer>
+	) =>
+		register_action_ws({
+			action_ip_rate_limiter: null,
+			action_account_rate_limiter: null,
+			path: '/ws',
+			connection_closer,
+			app: new Hono(),
+			upgradeWebSocket: create_stub_upgrade().upgradeWebSocket,
+			actions,
+			db: create_stub_db(),
+			heartbeat: false,
+			log
+		});
+
+	test('a successful mount adds its transport', () => {
+		const closer = create_realtime_closer();
+		mount([{ spec: echo_spec, handler: () => ({ value: 'x' }) }], closer);
+		assert.strictEqual(closer.member_count(), 1);
+	});
+
+	test('a mount whose registry fails to compile adds nothing', () => {
+		const closer = create_realtime_closer();
+		const action = { spec: echo_spec, handler: () => ({ value: 'x' }) };
+		assert.throws(() => mount([action, action], closer), /Duplicate WS action method/);
+		assert.strictEqual(closer.member_count(), 0);
 	});
 });
 

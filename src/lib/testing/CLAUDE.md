@@ -100,7 +100,7 @@ mismatch.
 ### `audit_drift_guard.ts` — audit-emission validation
 
 - `install_audit_drift_guard()` — `beforeEach` resets + `afterEach` zero-checks `audit_metadata_validation_failures` + `audit_unknown_event_type_failures` counters from `auth/audit_log_queries.ts`. Call once at the top of any `describe_db` block firing audit emits — production validation is fail-open, so without this any regression shipping a typo'd `event_type` or undeclared metadata field is silent. Pair with `await_pending_effects: true` (the `create_test_app` default) so fire-and-forget audit writes complete by response time.
-- `create_recording_audit_emitter(calls_ref?)` — no-op `AuditEmitter` pushing every `emit` and `emit_pool` call into `calls`. Pass `calls_ref` to write into a caller-owned array; omit to let the helper allocate. Returns `{emitter, calls}` — destructure `emitter` as the `audit` dep and read `calls` to assert. Replaces per-file capturing emitters previously duplicated across `password_change.test.ts`, `audit_log.test.ts`, etc.
+- `create_recording_audit_emitter(calls_ref?)` — no-op `AuditEmitter` pushing every `emit` and `emit_pool` call into `calls`. Pass `calls_ref` to write into a caller-owned array; omit to let the helper allocate. Returns `{emitter, calls}` — destructure `emitter` as the `audit` dep and read `calls` to assert. `add_listener` records (never fires) and returns a remover with the production semantics, so `listener_count` tracks what a server registered and released. Replaces per-file capturing emitters previously duplicated across `password_change.test.ts`, `audit_log.test.ts`, etc.
 - `RecordingAuditEmitter` — `{emitter: AuditEmitter; calls: Array<AuditLogInput>}`.
 
 ### `connection_closer_helpers.ts` — `ConnectionCloser` test doubles
@@ -187,8 +187,9 @@ vitest project, once per run under `isolate: false`, ../../../docs/usage.md §Ra
 the response returns so tests can assert on side effects inline), and silent
 logger. Override via `app_options`. `create_test_app_for_bootstrap` disables
 the limiters the same way. `cleanup()` is the assembled server's idempotent
-`close` — it also closes the server's live connections and disposes the
-limiters it built.
+`close` — it also closes the server's live connections, disposes the
+limiters it built, and removes the audit listeners and closer members it
+added.
 
 `auth_cleanup` is left at its default, **off**, here and in
 `create_test_app_for_bootstrap`: a background pass would delete rows and

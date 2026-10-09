@@ -127,15 +127,18 @@ its registered listeners + optional `AuditLogConfig`. Its methods:
 - `emit_role_grant_target(ctx, auth, input)` — lifts `actor_id` / `account_id` / `ip` boilerplate for role-grant-shape events
 - `emit_pool(input)` — awaitable pool write for code paths without a request context (ad-hoc maintenance scripts; not for success audits paired with a mutation — those write in-tx and `notify` post-commit). Writes, then notifies, whatever the outcome
 - `notify(event)` — fan out an already-written row to listeners (used by in-tx audit batches like `query_accept_offer.audit_events`)
-- `add_listener(listener)` — append-only listener registration (twin of Rust `fuz_auth` `AuditEmitter::add_listener`)
+- `add_listener(listener)` — listener registration, returning a remover for that registration (idempotent; the same function registered twice is two registrations, each with its own remover). Twin of Rust `fuz_auth` `AuditEmitter::add_listener` in firing order and snapshot-at-notify
 - `listener_count()` — registered-listener count, for tests / diagnostics
 - `drain_inflight()` — test-binary barrier: waits until no `emit` write is in flight, writes started while waiting included. Only an emitter built with `track_inflight: true` tracks; otherwise it resolves at once (production never tracks). Backs `_testing_drain_effects` (twin of Rust `AuditEmitter::drain_inflight` / `new_with_inflight_tracking`)
 
-Listeners are closure-private and append-only. `create_app_server` registers
-the audit-log SSE listener and per-endpoint WS auth guards via
-`add_listener` so SSE + WS fan-out compose on top of the consumer's
-`on_audit_event` callback without shallow-copying `AppDeps`. `notify` iterates a
-snapshot so a listener registered mid-fan-out fires only on the next event
+Listeners are closure-private; they change only through `add_listener` and
+its removers. `create_app_server` registers the audit-log SSE listener,
+per-endpoint WS auth guards, and any `extra_audit_handlers` via `add_listener`
+so SSE + WS fan-out compose on top of the consumer's `on_audit_event` callback
+without shallow-copying `AppDeps`, and removes them when its assembly fails or
+`AppServer.close` runs — the emitter outlives any one server on its backend.
+`notify` iterates a snapshot so a listener registered mid-fan-out fires only on
+the next event, and one removed mid-fan-out still hears the in-flight event
 (converges with the Rust twin's cloned vec).
 
 **When listeners hear about a row.** `emit` always writes at once, on the pool

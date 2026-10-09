@@ -58,7 +58,7 @@ describe('create_realtime_closer', () => {
 		const b = create_recording_closer();
 		closer.add(a.closer);
 		closer.add(b.closer);
-		// idempotent by reference
+		// one member per reference, however many additions
 		closer.add(a.closer);
 
 		for (const { target, method, id } of targets) {
@@ -87,6 +87,45 @@ describe('create_realtime_closer', () => {
 			assert.deepStrictEqual(after.calls, [{ method, id }], 'the member after the throw ran');
 		});
 	}
+
+	test('add returns a remover that takes the member out of the fan-out, idempotently', () => {
+		const closer = create_realtime_closer();
+		const a = create_recording_closer();
+		const b = create_recording_closer();
+		const remove_a = closer.add(a.closer);
+		closer.add(b.closer);
+		assert.strictEqual(closer.member_count(), 2);
+
+		remove_a();
+		assert.strictEqual(closer.member_count(), 1);
+		assert.strictEqual(closer.close_all_sockets(), 1);
+		assert.deepStrictEqual(a.calls, [], 'a removed member is not reached');
+		assert.deepStrictEqual(b.calls, [{ method: 'all', id: null }]);
+
+		// a second call is a no-op — it does not release anyone else's addition
+		remove_a();
+		assert.strictEqual(closer.member_count(), 1);
+	});
+
+	test('a closer added twice stays a member until both additions are removed', () => {
+		// two endpoints sharing one transport: one owner releasing it must not
+		// leave the other's sockets out of the revocation fan-out
+		const closer = create_realtime_closer();
+		const shared = create_recording_closer();
+		const remove_first = closer.add(shared.closer);
+		const remove_second = closer.add(shared.closer);
+		assert.strictEqual(closer.member_count(), 1, 'one member, however many additions');
+
+		remove_first();
+		remove_first();
+		assert.strictEqual(closer.member_count(), 1, 'the second addition still holds it');
+		assert.strictEqual(closer.close_all_sockets(), 1);
+		assert.strictEqual(shared.calls.length, 1, 'reached once, not once per addition');
+
+		remove_second();
+		assert.strictEqual(closer.member_count(), 0);
+		assert.strictEqual(closer.close_all_sockets(), 0);
+	});
 
 	test('close_all_sockets fans out to every member and returns the sum', () => {
 		const closer = create_realtime_closer();

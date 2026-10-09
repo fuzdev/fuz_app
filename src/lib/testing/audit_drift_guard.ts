@@ -75,8 +75,9 @@ export interface RecordingAuditEmitter {
  * forward from the input envelope. Tests asserting on role-grant-shape
  * emissions read out of the same homogeneous `calls` array.
  * `notify` is a no-op; `add_listener` records into a local array that
- * `listener_count` reports (registered listeners never fire — this emitter
- * captures `emit` shapes, not fan-out). `drain_inflight` resolves at once:
+ * `listener_count` reports, and returns a remover with the production
+ * semantics (per registration, idempotent) — registered listeners never fire,
+ * since this emitter captures `emit` shapes, not fan-out. `drain_inflight` resolves at once:
  * a recorded call writes nothing, so nothing is ever in flight.
  *
  * `emit` AND `emit_pool` both append to `calls`, so a test reads either
@@ -99,7 +100,8 @@ export const create_recording_audit_emitter = (
 	calls_ref?: Array<AuditLogInput>
 ): RecordingAuditEmitter => {
 	const calls = calls_ref ?? [];
-	const listeners: Array<(event: AuditLogEvent) => void> = [];
+	// one entry per registration, as `create_audit_emitter` keeps them
+	const listeners: Array<{ listener: (event: AuditLogEvent) => void }> = [];
 	const emitter: AuditEmitter = {
 		emit: (_ctx, input) => {
 			calls.push(input as AuditLogInput);
@@ -122,7 +124,12 @@ export const create_recording_audit_emitter = (
 		},
 		notify: () => undefined,
 		add_listener: (listener) => {
-			listeners.push(listener);
+			const entry = { listener };
+			listeners.push(entry);
+			return () => {
+				const index = listeners.indexOf(entry);
+				if (index !== -1) listeners.splice(index, 1);
+			};
 		},
 		listener_count: () => listeners.length,
 		drain_inflight: () => Promise.resolve()
