@@ -1,5 +1,24 @@
 # @fuzdev/fuz_app
 
+## 0.127.0
+
+### Minor Changes
+
+- feat: announce `rate_limiters: 'disabled_for_testing'` on stderr ([3ab8e78](https://github.com/fuzdev/fuz_app/commit/3ab8e78))
+
+  - server: the first limiter `create_app_server` leaves `null` under `rate_limiters: 'disabled_for_testing'` prints `RATE_LIMITERS_DISABLED_BANNER` with `console.error`, once per module instance (once per spawned binary), so a silenced logger still shows it — the same line the Rust spine's `RateLimiterMode` prints. The surface warning stays
+  - rate_limiter: add `RATE_LIMITERS_DISABLED_BANNER` and `announce_rate_limiters_disabled`
+
+- **breaking** refactor: type surface generation on resolved WS endpoint specs ([3ab8e78](https://github.com/fuzdev/fuz_app/commit/3ab8e78))
+
+  - http: **breaking** `generate_app_surface` and `create_app_surface_spec` take `ws_endpoints: ReadonlyArray<ResolvedWsEndpointSpec>`, and `AppSurfaceSpec.ws_endpoints` is `Array<ResolvedWsEndpointSpec>` — a spec without `allowed_origins` is now a compile error instead of a runtime throw. Resolve the server's list into each spec first with `resolve_ws_endpoints` (`actions/ws_endpoint_spec.ts`), as `create_app_server` does
+  - testing: `create_test_app_surface_spec` still accepts unresolved `ws_endpoints`; without its `allowed_origins` option, a spec that declares none throws there, naming the fix
+
+- **breaking** chore: remove the unused `ws_round_trip.ts` helpers and move the spine env-var names to `spine_surface_constants.ts` ([11efffa](https://github.com/fuzdev/fuz_app/commit/11efffa))
+
+  - testing: **breaking** `keeper_identity` and `build_broadcast_api` are removed from `testing/ws_round_trip.ts`. For the identity, pass `{credential_type: 'daemon_token', roles: [ROLE_KEEPER]}` to `WsTestHarness.connect`; for the broadcast API, register the harness's `transport` on an `ActionDispatcher` and pass it to `create_broadcast_api` (`actions/broadcast_api.ts`)
+  - testing: **breaking** `LOGIN_RATE_LIMIT_ENABLED_ENV`, `ACTION_RATE_LIMIT_ENABLED_ENV`, and `ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV` move from `testing/cross_backend/default_backend_configs.ts`, and `TS_SPINE_DIR_ENV` from `testing/cross_backend/ts_spine_backend_config.ts`, to `testing/cross_backend/spine_surface_constants.ts`; the values are unchanged
+
 ## 0.126.0
 
 ### Minor Changes
