@@ -72,7 +72,11 @@ import { create_fuz_authorization_handler } from '../auth/request_context.ts';
 import { ERROR_PAYLOAD_TOO_LARGE } from '../http/error_schemas.ts';
 import { create_rpc_endpoint } from '../actions/action_rpc.ts';
 import { register_ws_endpoint } from '../actions/register_ws_endpoint.ts';
-import { resolve_ws_endpoints, type WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
+import {
+	resolve_ws_endpoints,
+	type ResolvedWsEndpointSpec,
+	type WsEndpointSpec
+} from '../actions/ws_endpoint_spec.ts';
 import { create_ws_auth_guard } from '../actions/transports_ws_auth_guard.ts';
 import type { BackendWebsocketTransport } from '../actions/transports_ws_backend.ts';
 import { start_auth_cleanup, type AuthCleanupScheduleOptions } from '../auth/cleanup.ts';
@@ -731,8 +735,13 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 			: options.ws_endpoints,
 		options.allowed_origins
 	);
-	const create_upgrade_websocket = options.create_upgrade_websocket;
+	// the endpoints to mount and the adapter factory they need — null when none resolve
+	let ws_mount: {
+		endpoints: Array<ResolvedWsEndpointSpec>;
+		create_upgrade_websocket: (app: Hono) => UpgradeWebSocket;
+	} | null = null;
 	if (resolved_ws_endpoints?.length) {
+		const create_upgrade_websocket = options.create_upgrade_websocket;
 		if (create_upgrade_websocket === undefined) {
 			throw new Error(
 				'create_app_server: ws_endpoints resolved non-empty but create_upgrade_websocket is missing. ' +
@@ -742,6 +751,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		for (const endpoint of resolved_ws_endpoints) {
 			assert_endpoint_in_auth_scope('ws_endpoints', endpoint.path);
 		}
+		ws_mount = { endpoints: resolved_ws_endpoints, create_upgrade_websocket };
 	}
 
 	// Surface route (default: enabled)
@@ -839,14 +849,6 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	// Hono app assembly
 	const app = new Hono();
 
-	// The adapter helper for the WS mount below — built from this app, which
-	// Node's `createNodeWebSocket({app})` needs, and only when there is
-	// something to mount.
-	const upgrade_websocket: UpgradeWebSocket | null =
-		resolved_ws_endpoints?.length && create_upgrade_websocket
-			? create_upgrade_websocket(app)
-			: null;
-
 	// Two-queue side-effect flush. `pending_effects` collects eager
 	// fire-and-forget promises (audit emits, api-token usage). `post_commit_effects` collects deferred thunks pushed via
 	// `emit_after_commit` (WS notifications, anything that must observe a
@@ -918,7 +920,10 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 	// adjacent to the consumer routes and ahead of the static fallback —
 	// matches the "WS mount is route registration" mental model.
 	const mounted_ws_endpoints: Record<string, BackendWebsocketTransport> = {};
-	if (resolved_ws_endpoints?.length && upgrade_websocket) {
+	if (ws_mount) {
+		// the adapter helper — built from this app, which Node's
+		// `createNodeWebSocket({app})` needs, and only when there is something to mount
+		const upgrade_websocket = ws_mount.create_upgrade_websocket(app);
 		// Cross-surface collision: `register_ws_endpoint` mounts a `GET path`
 		// upgrade route. If a `RouteSpec` already registered `GET path`,
 		// Hono's last-wins semantics would silently shadow the consumer's
@@ -937,7 +942,7 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		// (even with explicit `auth_guard: false`) cannot opt out. To
 		// disable, every spec sharing the transport must pass `auth_guard: false`.
 		const guarded_transports: WeakSet<BackendWebsocketTransport> = new WeakSet();
-		for (const endpoint of resolved_ws_endpoints) {
+		for (const endpoint of ws_mount.endpoints) {
 			if (seen_paths.has(endpoint.path)) {
 				throw new Error(`create_app_server: duplicate ws_endpoints path: ${endpoint.path}`);
 			}

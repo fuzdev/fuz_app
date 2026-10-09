@@ -551,7 +551,7 @@ Three layers:
 
 1. **Primitives** — `create_fake_ws()`, `create_fake_hono_context(opts)`, `create_stub_upgrade()`, `MinimalActionEnvironment`, `dispatch_ws_message(on_message, event, ws)`. The fake context sets the keys the production auth middleware sets — `AUTH_SESSION_TOKEN_HASH_KEY` included, as `hash_session_token(auth_session_id)` — because the dispatcher reads the credential through `get_resolved_auth(c)`; a hand-built upgrade context must do the same. `create_stub_upgrade()` stands in for a runtime adapter's `upgradeWebSocket`: it passes a request without `Upgrade: websocket` to `next()`, and records an upgrade request — its real `Context` and the endpoint's events factory — in `upgrades`, answering `200`. So a test can send `app.request('/api/ws', {headers: {upgrade: 'websocket', cookie | authorization, origin, 'x-forwarded-for'}})` through an assembled app's whole middleware chain and build the socket's events from the `Context` that chain produced (`src/test/server/create_app_server_ws_endpoints.dispatch.db.test.ts`); `get_create_events()` still returns the last mounted factory, for a hand-built context.
 2. **Harness** — `create_ws_test_harness({actions, transport?, heartbeat?, log?, on_socket_open?, on_socket_close?})` → `WsTestHarness`. `connect(identity?)` is async and resolves after the connection is admitted and `on_socket_open` completes, so broadcasts sent immediately after `await harness.connect()` reach the client. The harness pre-bakes its `RequestContext` (`TEST_CONTEXT_PRESET_KEY`), which also skips the admission credential re-read — there are no session or token rows behind a harness identity — so tests of the re-read itself drive `register_action_ws` with a real database and no preset (`src/test/actions/register_action_ws.admission.db.test.ts`). The harness threads its own `create_stub_db()` into the dispatcher's `db` slot so handlers declaring `side_effects: true` execute under the same transaction wrap they would in production (the stub's `transaction(fn)` synchronously calls `fn(stub_db)`); domain deps reach handlers via factory closures, the same way HTTP RPC factories already wire them. Audit fan-out runs through whatever `audit` emitter the consumer supplied to its action factory closure (typically `create_test_audit_emitter()` for unit harnesses).
-3. **Round-trip helpers** — predicates + wire-frame types live in `transports/ws_client.ts` (shared with the cross-process `ws_transport.ts` impl): `is_notification(method)`, `is_notification_with<P>(method, match)` (type-guard combinator — narrows `wait_for` return type), `is_response_for(id)`, `JsonrpcNotificationFrame<P>` / `JsonrpcSuccessResponseFrame<R>` / `JsonrpcErrorResponseFrame<D>` (typed wire-frame shapes distinct from the runtime Zod schemas in `http/jsonrpc.ts` — generic over `params` / `result` / `data` so tests narrow without casts). `build_broadcast_api<TApi>({harness, specs})` (in `ws_round_trip.ts`) wires a typed broadcast API against the harness transport.
+3. **Round-trip helpers** — predicates + wire-frame types live in `transports/ws_client.ts` (shared with the cross-process `ws_transport.ts` impl): `is_notification(method)`, `is_notification_with<P>(method, match)` (type-guard combinator — narrows `wait_for` return type), `is_response_for(id)`, `JsonrpcNotificationFrame<P>` / `JsonrpcSuccessResponseFrame<R>` / `JsonrpcErrorResponseFrame<D>` (typed wire-frame shapes distinct from the runtime Zod schemas in `http/jsonrpc.ts` — generic over `params` / `result` / `data` so tests narrow without casts).
 
 `WsClient` (in `transports/ws_client.ts`):
 `{send, request<R>, close, messages, wait_for, wait_for_close, close_code, close_reason}`.
@@ -571,8 +571,6 @@ failed request surfaces the real cause, not a `Cannot read property 'foo'
 of undefined`). `wait_for(predicate, timeout_ms?)` checks already-received
 messages first, then waits for new arrivals (default 1000ms); drops the
 waiter on timeout so the `waiters` array doesn't grow.
-
-`keeper_identity()` — convenience for `{credential_type: 'daemon_token', roles: [ROLE_KEEPER]}`.
 
 ## Data exposure + rate limiting
 
@@ -1731,7 +1729,7 @@ TEST-NET-2 addresses nothing else sends. The backends are started by the
 backend configs (`ts_spine_*_backend_config`, `rust_spine_stub_backend_config`),
 which set `ACTION_RATE_LIMIT_ENABLED_ENV` (`FUZ_ACTION_RATE_LIMIT_ENABLED`) and
 `ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV` (`FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS`) from
-`default_backend_configs.ts` — both spine binaries build one IP + one account
+`spine_surface_constants.ts` — both spine binaries build one IP + one account
 limiter (the action defaults' windows, the cap replacing both
 `max_attempts`) shared by RPC and WS, and refuse to boot on a cap without the
 flag. Off, the TS spine builds no action limiter, and the Rust stub keeps its

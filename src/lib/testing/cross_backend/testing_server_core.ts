@@ -10,13 +10,13 @@ import '../assert_dev_env.ts';
  * orchestration — stale-daemon check, daemon-info write, serve, post-serve
  * WS attach, graceful shutdown — and delegates the runtime-boundary
  * primitives (HTTP serve, WS upgrade construction, signals, pid, exit) to a
- * {@link TestingServerAdapter}. The shipped adapters are
+ * `TestingServerAdapter`. The shipped adapters are
  * `testing/cross_backend/testing_server_node.ts` (`@hono/node-server` + `@hono/node-ws`),
  * `testing/cross_backend/testing_server_deno.ts` (`Deno.serve` + `@hono/deno`), and
  * `testing/cross_backend/testing_server_bun.ts` (`Bun.serve` + `@hono/bun`).
  *
  * The app itself — routes, RPC, DB, `_testing_reset`, WS endpoints — is the
- * caller's {@link StartTestingServerOptions.build_app} seam, so this core
+ * caller's `StartTestingServerOptions.build_app` seam, so this core
  * stays domain-free. WebSocket endpoints mount through `create_app_server`'s
  * `ws_endpoints`: `build_app` asks its context to prepare the runtime's
  * upgrade helper and passes the resulting factory as
@@ -55,7 +55,7 @@ export interface ServeHandle {
 	native?: unknown;
 }
 
-/** Options for {@link TestingServerAdapter.prepare_websocket}. */
+/** Options for `TestingServerAdapter.prepare_websocket`. */
 export interface PrepareWebsocketOptions {
 	/**
 	 * Largest inbound WebSocket message, in bytes — pass the largest
@@ -77,7 +77,7 @@ export interface PrepareWebsocketOptions {
  *
  * `create_upgrade_websocket` is the factory a build passes to
  * `create_app_server` as `AppServerOptions.create_upgrade_websocket`.
- * `attach_to_server` runs after `serve()` returns a {@link ServeHandle} —
+ * `attach_to_server` runs after `serve()` returns a `ServeHandle` —
  * Node uses it for `injectWebSocket(server)`, and it does nothing when the
  * factory was never called (no `ws_endpoints`); Deno and Bun leave it
  * undefined.
@@ -91,7 +91,7 @@ export interface PreparedWebsocket {
  * Runtime adapter contract for the test-binary entry. Each adapter
  * (`testing/cross_backend/testing_server_node.ts`, `testing/cross_backend/testing_server_deno.ts`,
  * `testing/cross_backend/testing_server_bun.ts`) implements this and hands the shape to
- * {@link start_testing_server}.
+ * `start_testing_server`.
  */
 export interface TestingServerAdapter {
 	/** Human-readable runtime label for log output (e.g. `"Node"`, `"Deno"`). */
@@ -102,7 +102,7 @@ export interface TestingServerAdapter {
 	get_connection_ip: (c: Context) => string | undefined;
 	/** Prepare the runtime's WS upgrade helper and its post-serve attach step. */
 	prepare_websocket: (options?: PrepareWebsocketOptions) => PreparedWebsocket;
-	/** Bind `app.fetch` to `port` on `hostname`; return a {@link ServeHandle}. */
+	/** Bind `app.fetch` to `port` on `hostname`; return a `ServeHandle`. */
 	serve: (options: { fetch: Hono['fetch']; port: number; hostname: string }) => ServeHandle;
 	/** Current process pid (for `daemon.json`). */
 	pid: number;
@@ -112,7 +112,7 @@ export interface TestingServerAdapter {
 	exit: (code: number) => never;
 }
 
-/** What the core hands a {@link StartTestingServerOptions.build_app} seam. */
+/** What the core hands a `StartTestingServerOptions.build_app` seam. */
 export interface BuildTestingAppContext {
 	/**
 	 * Prepare the runtime adapter's WS upgrade helper and return the factory
@@ -126,7 +126,7 @@ export interface BuildTestingAppContext {
 	prepare_websocket: (options?: PrepareWebsocketOptions) => (app: Hono) => UpgradeWebSocket;
 }
 
-/** The assembled app a {@link StartTestingServerOptions.build_app} seam returns. */
+/** The assembled app a `StartTestingServerOptions.build_app` seam returns. */
 export interface BuiltTestingApp {
 	/** The assembled Hono app (HTTP routes, RPC, and WS endpoints already mounted). */
 	app: Hono;
@@ -138,7 +138,7 @@ export interface BuiltTestingApp {
 	close: () => Promise<void>;
 }
 
-/** Options for {@link start_testing_server}. */
+/** Options for `start_testing_server`. */
 export interface StartTestingServerOptions {
 	/** Runtime-boundary adapter (Node or Deno). */
 	adapter: TestingServerAdapter;
@@ -185,8 +185,8 @@ export const is_loopback_host = (host: string): boolean => {
  *
  * Mirrors a production `start_server` at the surface level — stale-daemon
  * check, daemon-info write, bind, graceful shutdown — but the app is the
- * caller's no-domain (or domain) {@link StartTestingServerOptions.build_app}
- * and the runtime boundary is the {@link TestingServerAdapter}. Refuses any
+ * caller's no-domain (or domain) `StartTestingServerOptions.build_app`
+ * and the runtime boundary is the `TestingServerAdapter`. Refuses any
  * non-loopback bind host (the test binary must stay on loopback — see
  * `is_loopback_host`).
  */

@@ -633,6 +633,23 @@ export interface TestApp {
 }
 
 /**
+ * The `create_app_server` options both test-app builders share — a fresh
+ * object per call, spread ahead of the per-builder options and `app_options`.
+ */
+const test_app_server_base_options = (): Pick<
+	AppServerOptions,
+	'allowed_origins' | 'proxy' | 'env_schema' | 'rate_limiters' | 'await_pending_effects'
+> => ({
+	allowed_origins: [/^http:\/\/localhost/],
+	proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
+	env_schema: z.object({}),
+	// every limiter off unless `app_options` passes one — a rate-limit test
+	// enables just the limiter it pins
+	rate_limiters: 'disabled_for_testing',
+	await_pending_effects: true
+});
+
+/**
  * Create a fully assembled test app with a Hono server, middleware, and routes.
  *
  * Combines `create_test_app_server` + `create_app_server` into a single call.
@@ -661,15 +678,9 @@ export const create_test_app = async (options: CreateTestAppOptions): Promise<Te
 	};
 
 	const result = await create_app_server({
+		...test_app_server_base_options(),
 		backend: test_server,
 		session_options: options.session_options,
-		allowed_origins: [/^http:\/\/localhost/],
-		proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
-		env_schema: z.object({}),
-		// every limiter off unless `app_options` passes one — a rate-limit test
-		// enables just the limiter it pins
-		rate_limiters: 'disabled_for_testing',
-		await_pending_effects: true,
 		daemon_token_state,
 		rpc_endpoints: options.rpc_endpoints,
 		bootstrap: options.bootstrap,
@@ -858,15 +869,9 @@ export const create_test_app_for_bootstrap = async (
 	};
 
 	const result = await create_app_server({
+		...test_app_server_base_options(),
 		backend,
 		session_options,
-		allowed_origins: [/^http:\/\/localhost/],
-		proxy: { trusted_proxies: ['127.0.0.1'], get_connection_ip: () => '127.0.0.1' },
-		env_schema: z.object({}),
-		// every limiter off unless `app_options` passes one — a rate-limit test
-		// enables just the limiter it pins
-		rate_limiters: 'disabled_for_testing',
-		await_pending_effects: true,
 		daemon_token_state,
 		rpc_endpoints: options.rpc_endpoints,
 		bootstrap,

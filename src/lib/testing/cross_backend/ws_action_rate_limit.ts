@@ -106,7 +106,7 @@ const XFF_IP_FRESH = '198.51.100.2';
 /** Generous per-response wait — the cases assert the server's answer, not a timeout. */
 const RESPONSE_TIMEOUT_MS = 5000;
 
-/** Options for {@link describe_ws_action_rate_limit_cross_tests}. */
+/** Options for `describe_ws_action_rate_limit_cross_tests`. */
 export interface WsActionRateLimitCrossTestOptions {
 	/** Per-test fixture producer (cross-process only — see the module doc). */
 	readonly setup_test: SetupTest;

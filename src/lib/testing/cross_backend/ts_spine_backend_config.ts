@@ -21,15 +21,15 @@ import '../assert_dev_env.ts';
 import type { BackendConfig } from './backend_config.ts';
 import { build_test_backend_paths } from './build_test_backend_paths.ts';
 import {
-	LOGIN_RATE_LIMIT_ENABLED_ENV,
 	action_rate_limit_env,
 	make_default_ts_backend_config,
 	ts_default_capabilities
 } from './default_backend_configs.ts';
-import { SPINE_SSE_PATH } from './spine_surface_constants.ts';
-
-/** Env var naming the backend root dir; `{dir}/run/daemon_token` must match `bootstrap.daemon_token_path`. */
-export const TS_SPINE_DIR_ENV = 'FUZ_TESTING_TS_SPINE_DIR';
+import {
+	LOGIN_RATE_LIMIT_ENABLED_ENV,
+	SPINE_SSE_PATH,
+	TS_SPINE_DIR_ENV
+} from './spine_surface_constants.ts';
 
 /**
  * Capabilities for the TS spine binary — `ts_default_capabilities` plus `sse`

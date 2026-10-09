@@ -42,9 +42,11 @@ import { fileURLToPath } from 'node:url';
 
 import type { BackendConfig } from './backend_config.ts';
 import { build_test_backend_paths } from './build_test_backend_paths.ts';
-import { SPINE_EXPECTED_SCHEMA_URL } from './spine_surface_constants.ts';
 import {
 	LOGIN_RATE_LIMIT_ENABLED_ENV,
+	SPINE_EXPECTED_SCHEMA_URL
+} from './spine_surface_constants.ts';
+import {
 	action_rate_limit_env,
 	make_default_rust_backend_config,
 	rust_default_capabilities
@@ -65,7 +67,7 @@ export const RUST_SPINE_STUB_DATABASE_URL_ENV = 'FUZ_TESTING_RUST_SPINE_STUB_DAT
 /**
  * Env var the stub reads for the absolute path of the committed
  * `expected_schema.json` its `/ready` gate introspects against. Pointed at the
- * **same** fixture the TS spine reads ({@link SPINE_EXPECTED_SCHEMA_URL}) —
+ * **same** fixture the TS spine reads (`SPINE_EXPECTED_SCHEMA_URL`) —
  * column-presence is engine-portable, so one file is the cross-impl contract.
  */
 export const RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH_ENV = 'FUZ_RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH';

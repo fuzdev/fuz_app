@@ -3,8 +3,8 @@ import '../assert_dev_env.ts';
 /**
  * Family-shared `BackendConfig` builders for cross-process test backends.
  *
- * Two consumer-facing factories — {@link make_default_ts_backend_config}
- * and {@link make_default_rust_backend_config} — own the common shape
+ * Two consumer-facing factories — `make_default_ts_backend_config`
+ * and `make_default_rust_backend_config` — own the common shape
  * for the JS-runtime (Deno/Node on V8) and Rust families respectively.
  * Per-backend factories in consumer projects compose a small
  * declaration against one of these and add consumer-specific env vars
@@ -43,42 +43,12 @@ import {
 	default_test_keeper_password,
 	default_test_keeper_username
 } from './default_secrets.ts';
+import {
+	ACTION_RATE_LIMIT_ENABLED_ENV,
+	ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV
+} from './spine_surface_constants.ts';
 
-/**
- * Env var both spine binaries read to enable their login rate limiters
- * (`'true'` on / unset off). The cross-language contract for the login-security
- * cross project: the TS binary reads it via `runtime.env_get` (a test-only flag,
- * not in `BaseServerEnv`); the Rust `testing_spine_stub` reads it via
- * `std::env::var` — so one backend-config option drives both impls. Shared home
- * here because both `ts_spine_backend_config` and `rust_spine_stub_backend_config`
- * already import this module. (The spawned TS binary re-declares the literal
- * locally — it can't import this module, which transitively pulls `vitest` —
- * mirroring how `testing_spine_server_node.ts` re-declares `TS_SPINE_DIR_ENV`.)
- */
-export const LOGIN_RATE_LIMIT_ENABLED_ENV = 'FUZ_LOGIN_RATE_LIMIT_ENABLED';
-
-/**
- * Env var both spine binaries read to enable their action rate limiters
- * (`'true'` on / unset off) — one per-IP and one per-account limiter, shared by
- * the RPC and WS endpoints (and, on the Rust stub, the auth-family handlers
- * that charge in-handler). The cross-language contract for the action
- * rate-limit cross suite (`ws_action_rate_limit.ts`); same delivery as
- * `LOGIN_RATE_LIMIT_ENABLED_ENV`. Off, the TS spine builds no action limiter
- * and the Rust stub keeps its default posture (only its auth families charge,
- * against an always-on per-account limiter at the production cap).
- */
-export const ACTION_RATE_LIMIT_ENABLED_ENV = 'FUZ_ACTION_RATE_LIMIT_ENABLED';
-
-/**
- * Env var replacing both action limiters' `max_attempts` (a positive integer;
- * the windows stay `default_action_ip_rate_limit`'s /
- * `default_action_account_rate_limit`'s). Both spine binaries refuse to boot
- * when it is set without `ACTION_RATE_LIMIT_ENABLED_ENV` or is not a positive
- * integer, so a suite never asserts a throttle the backend didn't build.
- */
-export const ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV = 'FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS';
-
-/** Options for {@link action_rate_limit_env}. */
+/** Options for `action_rate_limit_env`. */
 export interface ActionRateLimitEnvOptions {
 	readonly enable_action_rate_limit?: boolean;
 	readonly action_rate_limit_max_attempts?: number;

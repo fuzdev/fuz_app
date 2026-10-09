@@ -10,25 +10,24 @@ import './assert_dev_env.ts';
  * token id), and exposes a `connect()` factory returning a `WsClient`
  * per connection.
  *
- * Three layers are exported:
+ * Two layers are exported:
  *
  *   - **Primitives** (`create_fake_ws`, `create_fake_hono_context`,
  *     `create_stub_upgrade`, `MinimalActionEnvironment`,
  *     `dispatch_ws_message`) — used by fuz_app's own dispatcher tests
  *     and by consumers wiring tight one-off tests.
- *   - **Harness** (`create_ws_test_harness`, `keeper_identity`) — the
- *     high-level driver. Give it specs + handlers, get back
+ *   - **Harness** (`create_ws_test_harness`) — the high-level driver.
+ *     Give it specs + handlers, get back
  *     `{transport, connect()}`. `connect()` is async and resolves after
  *     `on_socket_open` completes, so broadcasts sent immediately after
  *     `await harness.connect()` reach the client. Returns a `WsClient`
  *     (shared interface — see `transports/ws_client.ts`); the same
  *     interface is implemented by `transports/ws_transport.ts` for
  *     cross-process tests.
- *   - **Broadcast wiring** — `build_broadcast_api` for wiring a typed
- *     broadcast API against the harness's transport. Wire-frame types
- *     + predicates (`is_notification`, `is_response_for`,
- *     `JsonrpcNotificationFrame`, ...) live in `transports/ws_client.ts`
- *     so both in-process and cross-process drivers reference one source.
+ *
+ * Wire-frame types + predicates (`is_notification`, `is_response_for`,
+ * `JsonrpcNotificationFrame`, ...) live in `transports/ws_client.ts` so
+ * both in-process and cross-process drivers reference one source.
  *
  * Hono's wire upgrade is skipped — there is no server, so no runtime
  * adapter — but the full dispatch path is exercised
@@ -52,9 +51,7 @@ import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import type { ActionSpecUnion } from '../actions/action_spec.ts';
 import type { Action } from '../actions/action_types.ts';
-import { ActionDispatcher } from '../actions/action_dispatcher.ts';
 import type { ActionEventEnvironment } from '../actions/action_event_types.ts';
-import { create_broadcast_api } from '../actions/broadcast_api.ts';
 import { register_action_ws, type RegisterActionWsOptions } from '../actions/register_action_ws.ts';
 import { create_stub_db } from './stubs.ts';
 import { BackendWebsocketTransport } from '../actions/transports_ws_backend.ts';
@@ -64,7 +61,6 @@ import {
 	type RequestContext
 } from '../auth/request_context.ts';
 import { hash_session_token } from '../auth/session_queries.ts';
-import { ROLE_KEEPER } from '../auth/role_schema.ts';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
@@ -629,47 +625,4 @@ export const create_ws_test_harness = (options: CreateWsTestHarnessOptions): WsT
 	};
 
 	return { transport, connect };
-};
-
-/** Convenience: default identity for keeper-authenticated connections. */
-export const keeper_identity = (): WsConnectIdentity => ({
-	credential_type: 'daemon_token',
-	roles: [ROLE_KEEPER]
-});
-
-// ---------------------------------------------------------------------
-// Broadcast wiring — for tests that assert on server-initiated
-// notification fan-out. `build_broadcast_api` mirrors how consumer
-// `backend_actions_api.ts` composes the real stack (peer + transport
-// registered + `create_broadcast_api`); the helper exists so each test
-// doesn't re-spell that boilerplate.
-// ---------------------------------------------------------------------
-
-const make_peer = (): ActionDispatcher =>
-	new ActionDispatcher({ environment: new MinimalActionEnvironment([]) });
-
-/**
- * Wire a typed broadcast API against the harness's transport, matching
- * how a consumer's real backend composes the stack. Returns the typed
- * API so tests can call `.zap_run_created(...)` / `.workspace_changed(...)`
- * etc. directly.
- *
- * ```ts
- * const harness = create_ws_test_harness({actions});
- * const broadcast = build_broadcast_api<MyBackendActionsApi>({
- *   harness,
- *   specs: my_broadcast_action_specs,
- * });
- * const client = await harness.connect(keeper_identity());
- * await broadcast.zap_run_created({run_id: '...', ...});
- * await client.wait_for(is_notification('zap_run_created'));
- * ```
- */
-export const build_broadcast_api = <TApi extends object>(options: {
-	harness: WsTestHarness;
-	specs: ReadonlyArray<ActionSpecUnion>;
-}): TApi => {
-	const peer = make_peer();
-	peer.transports.register_transport(options.harness.transport);
-	return create_broadcast_api<TApi>({ peer, specs: options.specs });
 };

@@ -64,7 +64,12 @@ import {
 	spine_session_options
 } from '#lib/testing/cross_backend/default_spine_surface.ts';
 import { build_full_spine_mount } from '#lib/testing/cross_backend/full_spine_mount.ts';
-import { SPINE_RPC_PATH } from '#lib/testing/cross_backend/spine_surface_constants.ts';
+import {
+	ACTION_RATE_LIMIT_ENABLED_ENV,
+	ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV,
+	LOGIN_RATE_LIMIT_ENABLED_ENV,
+	SPINE_RPC_PATH
+} from '#lib/testing/cross_backend/spine_surface_constants.ts';
 import type {
 	BuildTestingAppContext,
 	BuiltTestingApp
@@ -76,7 +81,7 @@ export interface SpineServerConfig {
 	readonly port: number;
 }
 
-/** Options for {@link build_spine_app}. */
+/** Options for `build_spine_app`. */
 export interface BuildSpineAppOptions {
 	/** `RuntimeDeps` from the runtime adapter (env + fs capabilities). */
 	readonly runtime: RuntimeDeps;
@@ -110,16 +115,6 @@ const HEALTH_PATH = '/health';
  * the adapter's preparation, so Node's `ws` frame cap matches it.
  */
 const WS_MAX_MESSAGE_BYTES = DEFAULT_WS_MAX_MESSAGE_BYTES;
-
-// Test-binary-only toggles, read raw (not part of the production
-// `BaseServerEnv` schema). The literals are the canonical `*_ENV` constants in
-// `default_backend_configs.ts`, where the backend configs set them for both
-// impls; they're re-declared here because that module transitively pulls
-// `vitest` and can't be imported into the spawned binary — the same
-// local-redeclare `testing_spine_server_node.ts` does for `TS_SPINE_DIR_ENV`.
-const LOGIN_RATE_LIMIT_ENABLED_ENV = 'FUZ_LOGIN_RATE_LIMIT_ENABLED';
-const ACTION_RATE_LIMIT_ENABLED_ENV = 'FUZ_ACTION_RATE_LIMIT_ENABLED';
-const ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV = 'FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS';
 
 /** Zod's `stringbool` — the env boolean contract the Rust stub's `parse_stringbool` mirrors. */
 const EnvStringbool = z.stringbool();

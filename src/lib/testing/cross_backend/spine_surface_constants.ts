@@ -1,8 +1,9 @@
 import '../assert_dev_env.ts';
 
 /**
- * Pure spine-surface path + role constants — the hono-free leaf split out of
- * `default_spine_surface.ts`.
+ * Pure spine-surface constants — wire paths, roles, the fixture URL, and the
+ * env-var names the backend configs set for the spawned spine binaries. A
+ * hono-free leaf split out of `default_spine_surface.ts`.
  *
  * Cross-process suite modules (which drive a separately-spawned backend binary
  * over HTTP) need only the wire path / role / fixture-URL, not the in-process
@@ -11,7 +12,13 @@ import '../assert_dev_env.ts';
  * `session_middleware` → `hono/cookie` — onto a backend-spawning consumer with
  * no `hono` peer installed (a Rust-only spine consumer). Keeping these constants
  * on this handler-free leaf lets such a consumer import the path without the
- * peer. `default_spine_surface.ts` re-exports them for in-process callers.
+ * peer. `default_spine_surface.ts` imports the ones it uses from here.
+ *
+ * The env-var names live here so both sides of each contract share one
+ * constant: the backend configs that set them (`default_backend_configs.ts`,
+ * `ts_spine_backend_config.ts`, `rust_spine_stub_backend_config.ts`) and the
+ * spawned TS spine binary that reads them, which imports this leaf rather than
+ * the config builders.
  *
  * @module
  */
@@ -62,3 +69,41 @@ export const SPINE_PARTICIPANT_ROLE = 'participant';
  * engine-portable, so one fixture is the cross-impl contract.
  */
 export const SPINE_EXPECTED_SCHEMA_URL: URL = new URL('./expected_schema.json', import.meta.url);
+
+/**
+ * Env var both spine binaries read to enable their login rate limiters
+ * (`'true'` on / unset off). The cross-language contract for the login-security
+ * cross project: the TS binary reads it via `runtime.env_get` (a test-only flag,
+ * not in `BaseServerEnv`); the Rust `testing_spine_stub` reads it via
+ * `std::env::var` — so one backend-config option drives both impls
+ * (`ts_spine_backend_config` and `rust_spine_stub_backend_config` set it).
+ */
+export const LOGIN_RATE_LIMIT_ENABLED_ENV = 'FUZ_LOGIN_RATE_LIMIT_ENABLED';
+
+/**
+ * Env var both spine binaries read to enable their action rate limiters
+ * (`'true'` on / unset off) — one per-IP and one per-account limiter, shared by
+ * the RPC and WS endpoints (and, on the Rust stub, the auth-family handlers
+ * that charge in-handler). The cross-language contract for the action
+ * rate-limit cross suite (`ws_action_rate_limit.ts`); same delivery as
+ * `LOGIN_RATE_LIMIT_ENABLED_ENV`. Off, the TS spine builds no action limiter
+ * and the Rust stub keeps its default posture (only its auth families charge,
+ * against an always-on per-account limiter at the production cap).
+ */
+export const ACTION_RATE_LIMIT_ENABLED_ENV = 'FUZ_ACTION_RATE_LIMIT_ENABLED';
+
+/**
+ * Env var replacing both action limiters' `max_attempts` (a positive integer;
+ * the windows stay `default_action_ip_rate_limit`'s /
+ * `default_action_account_rate_limit`'s). Both spine binaries refuse to boot
+ * when it is set without `ACTION_RATE_LIMIT_ENABLED_ENV` or is not a positive
+ * integer, so a suite never asserts a throttle the backend didn't build.
+ */
+export const ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV = 'FUZ_ACTION_RATE_LIMIT_MAX_ATTEMPTS';
+
+/**
+ * Env var naming the TS spine backend's root dir, set by
+ * `ts_spine_backend_config`; the spawned binary writes its daemon token to
+ * `{dir}/run/daemon_token`, which must match `bootstrap.daemon_token_path`.
+ */
+export const TS_SPINE_DIR_ENV = 'FUZ_TESTING_TS_SPINE_DIR';
