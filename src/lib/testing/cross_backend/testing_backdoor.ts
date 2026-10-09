@@ -30,6 +30,14 @@ import '../assert_dev_env.ts';
  *   `credential_type_required` — same ceiling; an api token cannot reach
  *   keeper operations.
  *
+ * Over WebSocket (when `ws` is supplied), the same methods sent on a socket
+ * opened with the keeper's **session** cookie answer the same `forbidden`
+ * error with `credential_type_required`: the upgrade admits a session, but
+ * each message runs the same per-action gates as HTTP RPC, so a socket is no
+ * way around the daemon-token channel. Anonymous and bearer have no WS case —
+ * an anonymous upgrade is refused before any message, and the upgrade client
+ * threads cookies.
+ *
  * Each method is sent with **valid** params so each case varies only the
  * credential. (Validation runs after the gates — the order is 401 → authz →
  * 403 → 429 → 400 — so the shapes are belt-and-suspenders here rather than load-
@@ -46,7 +54,9 @@ import '../assert_dev_env.ts';
  * binary, not the in-process app — like the ws/sse suites. Wire from a
  * `*.cross.test.ts`. Requires the standard `_testing_*` actions mounted (the
  * same precondition `default_cross_process_setup` already imposes for its
- * per-test `_testing_reset`); ungated, since every cross backend mounts them.
+ * per-test `_testing_reset`); the HTTP cases are ungated, since every cross
+ * backend mounts them, and the WS cases run when `ws` is passed — for a
+ * backend that also serves them on its WS endpoint.
  *
  * `$lib`-free by contract (relative specifiers only), like the sibling
  * cross-backend suites.
@@ -57,8 +67,12 @@ import '../assert_dev_env.ts';
 import { describe, test, assert } from 'vitest';
 
 import { ERROR_CREDENTIAL_TYPE_REQUIRED } from '../../http/error_schemas.ts';
+import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
 import { rpc_call } from '../rpc_helpers.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
+import { create_admitted_ws_transport } from '../transports/ws_transport.ts';
+import { is_response_for, type JsonrpcErrorResponseFrame } from '../transports/ws_client.ts';
+import { test_if } from './capabilities.ts';
 import type { RpcPathCrossSuiteOptions, TestFixture } from './setup.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
@@ -90,6 +104,8 @@ interface BackdoorPrincipal {
 	readonly name: string;
 	/** Expected HTTP status of the denial. */
 	readonly status: number;
+	/** Expected JSON-RPC `error.code`. */
+	readonly code: number;
 	/** Expected `error.data.reason`, when the denial class carries one (the 403s). */
 	readonly reason?: string;
 	/** Resolve the per-test transport + headers (mirrors the conformance runner). */
@@ -104,18 +120,21 @@ const principals: ReadonlyArray<BackdoorPrincipal> = [
 	{
 		name: 'anonymous',
 		status: 401,
+		code: JSONRPC_ERROR_CODES.unauthenticated,
 		// Fresh jar so the keeper cookie (cross-process) can't leak in.
 		resolve: (f) => ({ transport: f.fresh_transport(), headers: {} })
 	},
 	{
 		name: 'session',
 		status: 403,
+		code: JSONRPC_ERROR_CODES.forbidden,
 		reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
 		resolve: (f) => ({ transport: f.transport, headers: f.create_session_headers() })
 	},
 	{
 		name: 'bearer',
 		status: 403,
+		code: JSONRPC_ERROR_CODES.forbidden,
 		reason: ERROR_CREDENTIAL_TYPE_REQUIRED,
 		// Bearer is discarded in a browser context, so suppress Origin (empty
 		// jar + no Origin) — the credential must actually resolve so the refusal
@@ -129,12 +148,26 @@ const principals: ReadonlyArray<BackdoorPrincipal> = [
 ];
 
 /** Options for the testing-backdoor negative-credential suite. */
-export type TestingBackdoorCrossTestOptions = RpcPathCrossSuiteOptions;
+export interface TestingBackdoorCrossTestOptions extends RpcPathCrossSuiteOptions {
+	/**
+	 * Where the backend's WebSocket endpoint is, for the session-socket cases.
+	 * Pass it when the backend serves the `_testing_*` actions on its WS
+	 * endpoint too; omitted, those cases are skipped.
+	 */
+	readonly ws?: {
+		/** Base URL the backend is reachable at (e.g. `http://localhost:1178`). */
+		readonly base_url: string;
+		/** WebSocket endpoint path on the backend (e.g. `/api/ws`). */
+		readonly ws_path: string;
+		/** Origin for the upgrade. Defaults to `base_url`. */
+		readonly origin?: string;
+	};
+}
 
 export const describe_testing_backdoor_cross_tests = (
 	options: TestingBackdoorCrossTestOptions
 ): void => {
-	const { setup_test } = options;
+	const { setup_test, ws } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
 
 	describe('testing backdoor credential gate parity', () => {
@@ -158,12 +191,52 @@ export const describe_testing_backdoor_cross_tests = (
 					);
 					assert.strictEqual(res.status, principal.status, `${label}: status`);
 					// `!res.ok` narrows `res` to the error variant for `res.error`.
-					if (principal.reason !== undefined && !res.ok) {
-						const reason = (res.error.data as { reason?: unknown } | undefined)?.reason;
-						assert.strictEqual(reason, principal.reason, `${label}: error.data.reason`);
+					if (!res.ok) {
+						assert.strictEqual(res.error.code, principal.code, `${label}: error.code`);
+						if (principal.reason !== undefined) {
+							const reason = (res.error.data as { reason?: unknown } | undefined)?.reason;
+							assert.strictEqual(reason, principal.reason, `${label}: error.data.reason`);
+						}
 					}
 				});
 			}
+		}
+
+		for (const { method, params } of backdoor_methods) {
+			test_if(
+				ws !== undefined,
+				`${method} over a session socket → forbidden ${ERROR_CREDENTIAL_TYPE_REQUIRED}`,
+				async () => {
+					const fixture = await setup_test();
+					const client = await create_admitted_ws_transport({
+						base_url: ws!.base_url,
+						ws_path: ws!.ws_path,
+						cookies: fixture.transport.cookies(),
+						origin: ws!.origin
+					});
+					try {
+						const id = `backdoor_${method}`;
+						await client.send({ jsonrpc: '2.0', id, method, params });
+						const frame = await client.wait_for<Partial<JsonrpcErrorResponseFrame>>(
+							is_response_for(id)
+						);
+						const label = `${method} session socket`;
+						assert.ok(
+							frame.error,
+							`${label}: expected a credential_type_required error but the call succeeded`
+						);
+						assert.strictEqual(frame.error.code, JSONRPC_ERROR_CODES.forbidden, `${label}: code`);
+						const reason = (frame.error.data as { reason?: unknown } | undefined)?.reason;
+						assert.strictEqual(
+							reason,
+							ERROR_CREDENTIAL_TYPE_REQUIRED,
+							`${label}: error.data.reason`
+						);
+					} finally {
+						await client.close();
+					}
+				}
+			);
 		}
 	});
 };

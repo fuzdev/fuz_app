@@ -315,9 +315,9 @@ this one — no column for the schema gate, no method for the manifest gate, off
 the declared surface for the spec-derived suites), and
 `testing_backdoor.cross.test.ts` (the imperative
 `describe_testing_backdoor_cross_tests` — the `_testing_*` backdoor credential
-gate: `_testing_reset` / `_testing_mint_session` / `_testing_put_fact` /
-`_testing_schema_snapshot` fired as
-anonymous → 401, session → 403, bearer → 403, proving the daemon-token gate
+gate: every `_testing_*` action but `_testing_drain_effects` fired as
+anonymous → 401, session → 403, bearer → 403 over HTTP RPC, and on a session
+socket → `credential_type_required` over WS, proving the daemon-token gate
 holds on the off-surface actions every spine live-mounts; cross-process-only,
 no in-process leg since the actions aren't mounted in-process), and
 `actor_lookup.cross.test.ts` (the opt-in `actor_lookup` resolver — anonymous →

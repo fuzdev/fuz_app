@@ -246,12 +246,12 @@ policy invariants.
 
 ### Types
 
-- `AppSurface` — JSON-serializable output (`middleware`, `routes`, `rpc_endpoints`, `env`, `events`, `diagnostics`)
-- `AppSurfaceSpec` — the surface bundled with the **source specs** (`surface`, `route_specs`, `middleware_specs`, `rpc_endpoints`). Runtime-only — use for tests and introspection
+- `AppSurface` — JSON-serializable output (`middleware`, `routes`, `rpc_endpoints`, `ws_endpoints`, `env`, `events`, `diagnostics`)
+- `AppSurfaceSpec` — the surface bundled with the **source specs** (`surface`, `route_specs`, `middleware_specs`, `rpc_endpoints`, `ws_endpoints`). Runtime-only — use for tests and introspection
 - `AppSurfaceRoute`, `AppSurfaceMiddleware`, `AppSurfaceEnv`, `AppSurfaceEvent`, `AppSurfaceRpcEndpoint`, `AppSurfaceRpcMethod` — per-entity entries
 - `AppSurfaceDiagnostic` — `{level: 'warning' | 'info'; category; message; source?}`
 - `RpcEndpointSpec` — `{path, actions: Array<RpcAction>}`; fed into `generate_app_surface` so RPC endpoints appear in the surface without coupling to `create_rpc_endpoint`
-- `GenerateAppSurfaceOptions` — `{route_specs, middleware_specs, env_schema?, event_specs?, rpc_endpoints?}`
+- `GenerateAppSurfaceOptions` — `{route_specs, middleware_specs, env_schema?, event_specs?, rpc_endpoints?, ws_endpoints?}`; `ws_endpoints` takes `ResolvedWsEndpointSpec`s (`allowed_origins` filled in by `resolve_ws_endpoints`), so the surface records the patterns the upgrade gate matches
 
 `generate_app_surface(options)` emits a `warning` diagnostic for every
 input schema that's not strict (unknown keys silently strip under

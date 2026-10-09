@@ -348,22 +348,31 @@ below). Migrations run earlier, in `create_app_backend`.
 Consumer migration namespaces must not appear in `reserved_migration_namespaces` (currently `['fuz_auth']`) — `create_app_backend` throws at startup if a consumer namespace collides.
 
 Consumer-specific code (env loading, error formatting/exit, custom
-middleware) stays in the consumer. Rate limiters default automatically
-(`login_ip_rate_limiter` / `signup_ip_rate_limiter` / `bootstrap_ip_rate_limiter`:
-5/15min each — one bucket per auth surface, see docs/security.md
-§Rate Limiting; `login_account_rate_limiter`: 10/30min,
-`action_ip_rate_limiter`: 600/15min, `action_account_rate_limiter`:
-1200/15min) — pass `null` to disable, or a custom `RateLimiter` instance
-to override. The two `action_*` limiters back the per-action `rate_limit?`
-field on `ActionSpec` and are shared across the HTTP RPC and WebSocket
-dispatchers. Each disabled limiter is a warning in the surface's diagnostics,
-logged at startup. Body size limiting defaults to 1 MiB (`DEFAULT_MAX_BODY_SIZE`);
-pass `max_body_size` to override or `null` to disable.
+middleware) stays in the consumer. Body size limiting defaults to 1 MiB
+(`DEFAULT_MAX_BODY_SIZE`); pass `max_body_size` to override or `null` to
+disable.
+
+### Rate limiters
+
+Each `*_rate_limiter` option takes a `RateLimiter` instance or `null` (off).
+An omitted one is a default instance, one per surface:
+`login_ip_rate_limiter` / `signup_ip_rate_limiter` / `bootstrap_ip_rate_limiter`
+5/15min each (./security.md §Rate Limiting says why they are separate
+buckets), `login_account_rate_limiter` / `signup_account_rate_limiter`
+10/30min each, `action_ip_rate_limiter` 600/15min, and
+`action_account_rate_limiter` 1200/15min. The two `action_*` limiters back the
+per-action `rate_limit?` field on `ActionSpec` and are shared by the HTTP RPC
+and WebSocket dispatchers — one budget per action across transports. Under
+`'enforced'`, each explicitly-`null` limiter is a warning in the surface's diagnostics, logged at
+startup.
 
 A test app or test binary turns every limiter off in one place with
 `rate_limiters: 'disabled_for_testing'` (`RateLimiterMode`, the twin of the
-Rust `fuz_auth::RateLimiterMode`) — an omitted limiter is then `null` rather
-than a default instance, and the surface carries one warning for the mode. A
+Rust `fuz_auth::RateLimiterMode`; the default is `'enforced'`) — an omitted
+limiter is then `null` rather than a default instance. The surface carries one
+warning for the mode, in place of the per-limiter ones, and the first limiter it leaves `null` prints
+`RATE_LIMITERS_DISABLED_BANNER` with `console.error`, once per module instance, so a
+silenced logger still shows it — the Rust spine prints the same line. A
 limiter passed explicitly still wins, so a rate-limit test enables just the
 one it pins:
 
@@ -375,7 +384,8 @@ const server = await create_app_server({
 });
 ```
 
-`create_test_app` sets the mode for you.
+`create_test_app` sets the mode for you. `AppServer.close` disposes the
+limiters `create_app_server` built; one you passed in is yours to dispose.
 
 ### Shutdown
 
@@ -391,9 +401,10 @@ It stops the auth cleanup schedule when one runs (waiting for a pass in
 progress), closes every live connection on `deps.connection_closer` — each
 WebSocket with `WS_CLOSE_GOING_AWAY` (1001, so clients reconnect rather than
 treat their session as revoked), each audit stream, including transports passed
-through `WsEndpointSpec.transport` or added by hand — then disposes the rate
-limiters `create_app_server` built and closes the database. A limiter you
-passed in is yours to dispose. `close` is idempotent: a second call settles
+through `WsEndpointSpec.transport` or added by hand (a close that throws is
+logged and the shutdown goes on) — then disposes the rate limiters
+`create_app_server` built and closes the database. A limiter you passed in is
+yours to dispose. `close` is idempotent: a second call settles
 with the first one's outcome (a failed close is not retried), and concurrent
 calls share one shutdown.
 
@@ -1604,10 +1615,13 @@ request, and a row it cannot read from disk reads as `null`.
 ### Serving facts
 
 ```typescript
-import { create_serve_fact_route_spec } from '@fuzdev/fuz_app/server/serve_fact_route.ts';
+import {
+	create_serve_cell_fact_route_spec,
+	create_serve_fact_route_spec
+} from '@fuzdev/fuz_app/server/serve_fact_route.ts';
 import { create_x_accel_config } from '@fuzdev/fuz_app/server/x_accel.ts';
 
-create_serve_fact_route_spec({
+const serve_options = {
 	facts_dir,
 	// Production: a validated X-Accel handle. `create_x_accel_config` throws
 	// unless the facts `location` in `nginx_config` is `internal;`, so the
@@ -1617,14 +1631,19 @@ create_serve_fact_route_spec({
 		? create_x_accel_config(x_accel_redirect_prefix, nginx_config)
 		: undefined,
 	log
-});
+};
+create_serve_cell_fact_route_spec(serve_options); // GET /api/cells/:cell_id/facts/:hash
+create_serve_fact_route_spec(serve_options); // GET /api/facts/:hash — admin only
 ```
 
-`GET /api/facts/:hash` is **per-fact authorized through the cell graph**: it
-admits the caller only if at least one active cell that references the hash
-passes `can_view_cell` for them. A miss, an orphan fact, or a fact reachable
-only through cells the caller can't view all return the same `404` — fact
-existence never leaks. Embedded facts stream from Postgres; external facts
+`GET /api/cells/:cell_id/facts/:hash` is the **per-reference read**: it admits
+the caller only when they can view the named cell (`can_view_cell`) and that
+cell references the hash — authz sits on the `(cell, hash)` edge, never unioned
+across the fact's other referrers, so identical bytes another owner publishes
+never expose your private reference. A missing fact, a missing or unviewable
+cell, and a cell that doesn't reference the hash all return the same `404` —
+fact existence never leaks. The bare-hash `GET /api/facts/:hash` is admin-only:
+an admin can already view every cell. Embedded facts stream from Postgres; external facts
 return an `X-Accel-Redirect` header in production (nginx serves the bytes) or
 stream from disk in dev/test. The redirect prefix is wrapped in a validated
 `XAccelConfig` (built via `create_x_accel_config`), which fails loud at boot

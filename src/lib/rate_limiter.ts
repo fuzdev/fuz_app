@@ -119,12 +119,39 @@ export const default_action_account_rate_limit: RateLimiterOptions = {
  * A limiter passed explicitly — an instance or `null` — wins over the mode
  * either way, so a rate-limit test enables just the limiter it pins. The
  * disabled mode is loud: `create_app_server` adds a surface warning, which
- * `log_startup_summary` logs at assembly.
+ * `log_startup_summary` logs at assembly, and the first limiter it leaves
+ * `null` prints `RATE_LIMITERS_DISABLED_BANNER` to stderr once per module instance.
  *
  * Twin of the Rust spine's `fuz_auth::RateLimiterMode` (`Enforced` /
  * `DisabledForTesting`).
  */
 export type RateLimiterMode = 'enforced' | 'disabled_for_testing';
+
+/**
+ * The stderr line a process prints the first time `'disabled_for_testing'`
+ * leaves a limiter `null` — the same text as the Rust spine's.
+ */
+export const RATE_LIMITERS_DISABLED_BANNER =
+	'!!! RATE LIMITERS DISABLED — test-only mode. A production server must never print this.';
+
+let rate_limiters_disabled_announced = false;
+
+/**
+ * Print `RATE_LIMITERS_DISABLED_BANNER` with `console.error`, once per module instance.
+ *
+ * Deliberately on stderr as well as the surface warning, which goes through
+ * the server's logger: a deployment that reached this mode is unprotected on
+ * every password-bearing route, and that must show in its first lines of
+ * output even with the logger silenced. Once per module instance, so a module
+ * instance that assembles many in-process servers prints it once, while every spawned test
+ * binary prints it at startup — the twin of the Rust spine's
+ * `RateLimiterMode::limiter`.
+ */
+export const announce_rate_limiters_disabled = (): void => {
+	if (rate_limiters_disabled_announced) return;
+	rate_limiters_disabled_announced = true;
+	console.error(RATE_LIMITERS_DISABLED_BANNER);
+};
 
 /**
  * Result of a rate limit check or record operation.

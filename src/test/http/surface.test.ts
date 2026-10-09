@@ -21,6 +21,7 @@ import {
 import type { RouteSpec } from '$lib/http/route_spec.ts';
 import type { MiddlewareSpec } from '$lib/http/middleware_spec.ts';
 import type { EventSpec } from '$lib/realtime/sse.ts';
+import type { WsEndpointSpec } from '$lib/actions/ws_endpoint_spec.ts';
 
 const noop_handler = async (c: any) => c.json({ ok: true });
 const noop_middleware = async (_c: any, next: any) => next();
@@ -323,7 +324,7 @@ describe('generate_app_surface', () => {
 		]);
 	});
 
-	test('ws_endpoints empty allowed_origins surface as empty array (any-origin)', () => {
+	test('ws_endpoints empty allowed_origins surface as an empty array', () => {
 		const surface = generate_app_surface({
 			route_specs: [],
 			middleware_specs: [],
@@ -331,6 +332,18 @@ describe('generate_app_surface', () => {
 		});
 
 		assert.deepStrictEqual(surface.ws_endpoints[0]!.allowed_origins, []);
+	});
+
+	test('ws_endpoints must be resolved — an origin-less spec is a type error', () => {
+		const unresolved: WsEndpointSpec = { path: '/api/ws', actions: [] };
+		assert.throws(() =>
+			generate_app_surface({
+				route_specs: [],
+				middleware_specs: [],
+				// @ts-expect-error an unresolved spec has no `allowed_origins` to record
+				ws_endpoints: [unresolved]
+			})
+		);
 	});
 });
 

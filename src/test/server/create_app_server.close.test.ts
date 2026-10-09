@@ -373,3 +373,54 @@ describe('disabled rate limiter diagnostics', () => {
 		);
 	});
 });
+
+describe('disabled-mode stderr banner', () => {
+	/**
+	 * A fresh module graph, so the once-per-process flag starts unset whatever
+	 * earlier tests in this file assembled.
+	 */
+	const import_fresh = async () => {
+		vi.resetModules();
+		const { create_app_server: fresh_create_app_server } =
+			await import('$lib/server/app_server.ts');
+		const { RATE_LIMITERS_DISABLED_BANNER } = await import('$lib/rate_limiter.ts');
+		return { fresh_create_app_server, RATE_LIMITERS_DISABLED_BANNER };
+	};
+
+	const assemble_fresh = async (
+		create: typeof create_app_server,
+		options: Partial<AppServerOptions>
+	): Promise<void> => {
+		const harness = create_harness();
+		servers.push(await create({ ...base_options(harness.backend), ...options }));
+	};
+
+	test('prints once per process, past a silenced logger', async () => {
+		const { fresh_create_app_server, RATE_LIMITERS_DISABLED_BANNER } = await import_fresh();
+		const error_spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		// the harness logger is `level: 'off'`, so only the banner can reach stderr
+		await assemble_fresh(fresh_create_app_server, { rate_limiters: 'disabled_for_testing' });
+		await assemble_fresh(fresh_create_app_server, { rate_limiters: 'disabled_for_testing' });
+		assert.deepStrictEqual(error_spy.mock.calls, [[RATE_LIMITERS_DISABLED_BANNER]]);
+		assert.include(RATE_LIMITERS_DISABLED_BANNER, 'RATE LIMITERS DISABLED');
+	});
+
+	test('silent when the mode nulls no limiter', async () => {
+		const { fresh_create_app_server } = await import_fresh();
+		const error_spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const nulls: Partial<Record<LimiterName, null>> = {};
+		for (const name of LIMITER_NAMES) nulls[name] = null;
+		// enforced, with or without explicit nulls — the surface warnings cover those
+		await assemble_fresh(fresh_create_app_server, {});
+		await assemble_fresh(fresh_create_app_server, nulls);
+		// disabled, but every limiter passed explicitly
+		const explicit: Partial<Record<LimiterName, RateLimiter>> = {};
+		for (const name of LIMITER_NAMES)
+			explicit[name] = create_rate_limiter({ cleanup_interval_ms: 0 });
+		await assemble_fresh(fresh_create_app_server, {
+			rate_limiters: 'disabled_for_testing',
+			...explicit
+		});
+		assert.deepStrictEqual(error_spy.mock.calls, []);
+	});
+});

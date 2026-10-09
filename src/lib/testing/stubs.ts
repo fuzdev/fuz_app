@@ -30,7 +30,11 @@ import {
 	type AppSurfaceSpec,
 	type RpcEndpointSpec
 } from '../http/surface.ts';
-import { resolve_ws_endpoints, type WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
+import {
+	resolve_ws_endpoints,
+	type ResolvedWsEndpointSpec,
+	type WsEndpointSpec
+} from '../actions/ws_endpoint_spec.ts';
 import type { EventSpec, SseNotification } from '../realtime/sse.ts';
 import { AUDIT_LOG_SSE_MAX_PER_SCOPE, type AuditLogSse } from '../realtime/sse_auth_guard.ts';
 import { SubscriberRegistry } from '../realtime/subscriber_registry.ts';
@@ -289,7 +293,8 @@ export interface CreateTestAppSurfaceSpecOptions {
 	 * The server's origin allowlist — `AppServerOptions.allowed_origins`.
 	 * Read only as the default for a `ws_endpoints` spec that declares no
 	 * `allowed_origins`, as `create_app_server` does; required when any spec
-	 * omits its own, since surface generation throws on an unresolved one.
+	 * omits its own — without it, such a spec throws, since the surface records
+	 * the exact patterns the upgrade gate matches.
 	 */
 	allowed_origins?: ReadonlyArray<RegExp>;
 	/** Transform middleware array (e.g., zap's `extend_middleware_for_zap_binary`). */
@@ -305,6 +310,24 @@ export interface CreateTestAppSurfaceSpecOptions {
 	 */
 	bootstrap?: BootstrapServerOptions;
 }
+
+/**
+ * Narrow a WS endpoint spec that carries its own `allowed_origins` — the only
+ * way it resolves when no server list is given to default from.
+ *
+ * @throws Error when the spec declares no `allowed_origins`
+ */
+const to_self_resolved_ws_endpoint = (endpoint: WsEndpointSpec): ResolvedWsEndpointSpec => {
+	const { allowed_origins } = endpoint;
+	if (!allowed_origins) {
+		throw new Error(
+			`create_test_app_surface_spec: ws endpoint ${endpoint.path} has no allowed_origins — ` +
+				"pass the server's list as create_test_app_surface_spec's allowed_origins option, " +
+				'or set allowed_origins on the spec'
+		);
+	}
+	return { ...endpoint, allowed_origins };
+};
 
 /**
  * Create an `AppSurfaceSpec` for the standard testing suites.
@@ -325,7 +348,9 @@ export interface CreateTestAppSurfaceSpecOptions {
  *
  * @param options - surface spec options
  * @returns the surface spec for the standard suites
- * @throws Error when an endpoint path is outside `AUTH_MIDDLEWARE_PATH`
+ * @throws Error when an endpoint path is outside `AUTH_MIDDLEWARE_PATH`, or a
+ *   `ws_endpoints` spec declares no `allowed_origins` and no `allowed_origins`
+ *   option is given
  */
 export const create_test_app_surface_spec = (
 	options: CreateTestAppSurfaceSpecOptions
@@ -354,11 +379,9 @@ export const create_test_app_surface_spec = (
 	// no `register_ws_endpoint` call here, so no `create_upgrade_websocket` needed.
 	const declared_ws_endpoints =
 		typeof options.ws_endpoints === 'function' ? options.ws_endpoints(ctx) : options.ws_endpoints;
-	// without the server's list, an origin-less spec reaches surface
-	// generation unresolved and throws there
 	const resolved_ws_endpoints = options.allowed_origins
 		? resolve_ws_endpoints(declared_ws_endpoints, options.allowed_origins)
-		: declared_ws_endpoints;
+		: declared_ws_endpoints?.map(to_self_resolved_ws_endpoint);
 	for (const endpoint of resolved_ws_endpoints ?? []) {
 		assert_endpoint_in_auth_scope('ws_endpoints', endpoint.path);
 	}

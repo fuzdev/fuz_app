@@ -411,7 +411,7 @@ Rotating filesystem credential for keeper-level operations:
 Cross-process integration tests need a few privileged operations the production
 wire never exposes — wiping auth tables between tests, forging an expired
 session to exercise the DB-row expiry gate, seeding a content-addressed fact
-without a store handle. These live as seven `_testing_*` RPC actions
+without a store handle. These live as `_testing_*` RPC actions
 (`_testing_reset`, `_testing_mint_session`, `_testing_put_fact`,
 `_testing_drain_effects`, `_testing_schema_snapshot`,
 `_testing_migration_tracker`, `_testing_action_manifest`)
@@ -824,15 +824,16 @@ same instance across both); signup and bootstrap each get their own. Consumers
 wanting one budget across these surfaces pass the same `RateLimiter` to
 `login_ip_rate_limiter` / `signup_ip_rate_limiter` / `bootstrap_ip_rate_limiter`.
 
-**Turning a limiter off is loud.** An explicit `null` disables one limiter;
-`AppServerOptions.rate_limiters: 'disabled_for_testing'` makes every limiter not
-passed explicitly `null`, for test apps and test binaries that drive many
-round-trips from one address. Each explicit `null` is a warning in the surface's
-diagnostics, and the mode is one warning of its own; `log_startup_summary` logs
-them at startup. Nothing refuses the mode at runtime: the Rust spine keeps its
-twin out of production by construction (only its `testing_*` crates build
+**Turning a limiter off is loud.** An explicit `null` disables one limiter, and
+`rate_limiters: 'disabled_for_testing'` every one not passed explicitly — for
+test apps and test binaries that drive many round-trips from one address
+(./usage.md §Rate limiters). Each explicit `null` (under `'enforced'`) and the
+mode are startup-logged surface warnings, and the
+mode also prints a stderr banner a silenced logger can't hide. Nothing refuses
+the mode at runtime: the Rust spine keeps its twin out of production by
+construction (only its `testing_*` crates build
 `RateLimiterMode::DisabledForTesting`, and its release audit forbids linking
-them), while the TS side has only the warning.
+them), while the TS side has only the warning and the banner.
 
 The 5-attempt cap was deliberately **not** widened when the buckets became
 monotone. Widening buys NAT'd-egress headroom by loosening the one bound that

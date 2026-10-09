@@ -206,9 +206,8 @@ produces **two** route specs on the same path (GET + POST) that share one
 internal dispatcher. The two limiters are required `RateLimiter | null` with
 no default — `null` is the explicit off switch — and the same holds on
 `register_action_ws` / `register_ws_endpoint`, so a hand mount can't run
-unthrottled by omission. `create_app_server` passes its own (default
-instances unless passed in, or turned off by `rate_limiters:
-'disabled_for_testing'`) to every endpoint it mounts. Per-action auth lives inside the dispatcher; the outer routes
+unthrottled by omission. `create_app_server` passes its own to every endpoint
+it mounts (../../../docs/usage.md §Rate limiters). Per-action auth lives inside the dispatcher; the outer routes
 use `auth: {account: 'none', actor: 'none'}` and `transaction: false`.
 
 The HTTP RPC dispatcher is a thin shim around `perform_action`

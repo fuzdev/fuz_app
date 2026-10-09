@@ -115,11 +115,8 @@ The `close` callback is typed per driver (`pool.end()` / `pglite.close()`) — `
 itself has no `close()` method. `close` is threaded through `AppBackend` (from
 `create_app_backend`) and `AppServer` (from `create_app_server`) so callers
 can shut down the database without reaching into `deps.db`. `AppServer.close`
-closes it last: first it stops the auth cleanup schedule when `auth_cleanup`
-started one, waiting for a pass in progress, so the pool is never closed under
-a sweep; then it closes every live connection on `deps.connection_closer`
-(`close_all_sockets`) and disposes the rate limiters `create_app_server` built.
-It is idempotent — concurrent calls share one shutdown (./usage.md §Shutdown).
+closes it last, after the auth cleanup schedule and the live connections, so
+the pool is never closed under a sweep (./usage.md §Shutdown).
 Consumers that create their own pool/pglite (CLI tools, test factories) import the
 adapters directly instead of duplicating transaction wiring.
 
@@ -385,9 +382,8 @@ unlike `RouteSpec.rate_limit` (metadata only, with imperative limiter wiring
 in handlers), the action dispatchers (`create_rpc_endpoint` and
 `register_action_ws`) consult the field directly via the shared
 `action_ip_rate_limiter` / `action_account_rate_limiter` deps on
-`AppServerOptions`. One budget per action across both transports. As with
-every limiter option, an omitted one is a default instance unless
-`AppServerOptions.rate_limiters` is `'disabled_for_testing'`. Surface
+`AppServerOptions`. One budget per action across both transports
+(./usage.md §Rate limiters covers defaults and turning them off). Surface
 exposes `rate_limit_key` on `AppSurfaceRpcMethod` for introspection.
 
 `RouteSpec.query?: z.ZodObject` declares an optional query parameter schema. When

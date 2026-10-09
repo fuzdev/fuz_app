@@ -37,7 +37,7 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `on_audit_event` no-op (nothing is broadcast); `registry` is a fresh `SubscriberRegistry` (live `.count` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
 - `create_stub_api_middleware({include_daemon_token?})` — stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin/session/request_context/bearer_auth, optional daemon_token) for surface generation without booting real auth. See `auth/CLAUDE.md` §Middleware for the real stack.
 - `create_stub_app_server_context(session_options)` — stub `AppServerContext`; rate limiters null, `bootstrap_status.available: false`.
-- `create_test_app_surface_spec(options)` — builds an `AppSurfaceSpec` mirroring `create_app_server`'s route assembly (consumer routes + stub middleware + surface generation). `CreateTestAppSurfaceSpecOptions`: `session_options`, `create_route_specs`, `env_schema?`, `event_specs?`, `rpc_endpoints?`, `ws_endpoints?`, `allowed_origins?`, `transform_middleware?`, `bootstrap?`. Throws, like `create_app_server`, on an endpoint path outside `AUTH_MIDDLEWARE_PATH` (`assert_endpoint_in_auth_scope`). Bootstrap is opt-in (symmetric with `create_app_server` — omit to skip; pass the same value as prod to mount routes at `bootstrap.route_prefix ?? '/api/account'`). Single source of truth for attack-surface tests — track `create_app_server` wiring changes here.
+- `create_test_app_surface_spec(options)` — builds an `AppSurfaceSpec` mirroring `create_app_server`'s route assembly (consumer routes + stub middleware + surface generation). `CreateTestAppSurfaceSpecOptions`: `session_options`, `create_route_specs`, `env_schema?`, `event_specs?`, `rpc_endpoints?`, `ws_endpoints?`, `allowed_origins?`, `transform_middleware?`, `bootstrap?`. Throws, like `create_app_server`, on an endpoint path outside `AUTH_MIDDLEWARE_PATH` (`assert_endpoint_in_auth_scope`). Throws on a `ws_endpoints` spec with no `allowed_origins` of its own when no `allowed_origins` option is given (there is no server list to default from). Bootstrap is opt-in (symmetric with `create_app_server` — omit to skip; pass the same value as prod to mount routes at `bootstrap.route_prefix ?? '/api/account'`). Single source of truth for attack-surface tests — track `create_app_server` wiring changes here.
 
 Throwing stubs surface mock escape: a test that accidentally reaches into
 stub territory breaks immediately with a label-scoped error rather than
@@ -179,9 +179,10 @@ Types:
 `create_test_app` hard-codes the test-friendly `AppServerOptions`:
 `allowed_origins: [/^http:\/\/localhost/]`, stub proxy pinned to `127.0.0.1`,
 `env_schema: z.object({})`, `rate_limiters: 'disabled_for_testing'` (every
-rate limiter `null`, the action limiters included — a limiter passed through
-`app_options` wins over the mode, so a rate-limit test enables just the one it
-pins), static daemon token state (no rotation, keeper already set),
+rate limiter `null` — a limiter passed through `app_options` wins over the
+mode, so a rate-limit test enables just the one it pins; the mode's stderr
+banner prints once per module instance — once per test file in an isolated
+vitest project, once per run under `isolate: false`, ../../../docs/usage.md §Rate limiters), static daemon token state (no rotation, keeper already set),
 **`await_pending_effects: true`** (fire-and-forget effects complete before
 the response returns so tests can assert on side effects inline), and silent
 logger. Override via `app_options`. `create_test_app_for_bootstrap` disables
@@ -1592,12 +1593,15 @@ drift-guarded by `src/test/cross_backend/spine_expected_schema.db.test.ts`
 
 ### Testing-backdoor credential gate — `cross_backend/testing_backdoor.ts`
 
-`describe_testing_backdoor_cross_tests({setup_test, rpc_path?})` —
+`describe_testing_backdoor_cross_tests({setup_test, rpc_path?, ws?})` —
 the negative-credential parity suite for the `_testing_*` backdoor actions.
-For each of `_testing_reset` / `_testing_mint_session` / `_testing_put_fact` /
-`_testing_schema_snapshot` (the three privileged writes plus the schema-dump
-read) it fires three principals over real HTTP: **anonymous** → 401, **session** →
-403 `credential_type_required`, **bearer** → 403 `credential_type_required` —
+For each `_testing_*` action except `_testing_drain_effects` (the three
+privileged writes plus the three introspection reads) it fires three principals over real HTTP: **anonymous** →
+401 `unauthenticated`, **session** → 403 `forbidden` `credential_type_required`,
+**bearer** → 403 `forbidden` `credential_type_required` — and, when `ws`
+(`{base_url, ws_path, origin?}`) is passed, sends each on a socket opened with
+the keeper's session cookie, which answers the same `forbidden`
+`credential_type_required` (a socket is no way around the daemon-token channel) —
 proving the daemon-token gate that fences each backdoor action holds end-to-end
 on the real dispatcher (the spec-derived `describe_rpc_attack_surface_tests`
 never enumerates them because they're off the declared surface). Each method is

@@ -29,6 +29,7 @@ import {
 import { BaseServerEnv } from './env.ts';
 import {
 	RateLimiter,
+	announce_rate_limiters_disabled,
 	default_login_ip_rate_limit,
 	default_login_account_rate_limit,
 	default_action_account_rate_limit,
@@ -161,7 +162,8 @@ export interface AppServerOptions {
 	 * a default instance for each `*_rate_limiter` option left out,
 	 * `'disabled_for_testing'` leaves each of them `null`. An explicit option
 	 * (an instance or `null`) always wins over the mode. The disabled mode adds
-	 * one surface warning. Never `'disabled_for_testing'` in production — see
+	 * one surface warning, and prints a stderr banner once per module instance
+	 * (`announce_rate_limiters_disabled`). Never `'disabled_for_testing'` in production — see
 	 * `RateLimiterMode`.
 	 */
 	rate_limiters?: RateLimiterMode;
@@ -580,7 +582,10 @@ export const create_app_server = async (options: AppServerOptions): Promise<AppS
 		defaults: RateLimiterOptions
 	): RateLimiter | null => {
 		if (option !== undefined) return option;
-		if (rate_limiter_mode === 'disabled_for_testing') return null;
+		if (rate_limiter_mode === 'disabled_for_testing') {
+			announce_rate_limiters_disabled();
+			return null;
+		}
 		const limiter = new RateLimiter({ ...defaults });
 		built_rate_limiters.push(limiter);
 		return limiter;

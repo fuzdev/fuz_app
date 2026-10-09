@@ -528,9 +528,11 @@ describe('app-specific integration', () => {
 - `route_specs` — the assembled route specs
 - `cleanup()` — the assembled server's idempotent `close`: stops an `auth_cleanup` schedule opted into through `app_options`, closes the server's live connections, disposes the rate limiters it built, then releases the backend (a no-op when using cached PGlite)
 
-Every rate limiter is off (`rate_limiters: 'disabled_for_testing'`), the action
-limiters included; pass a limiter through `app_options` to enable just the one a
-test pins — an explicit limiter wins over the mode.
+Every rate limiter is off (`rate_limiters: 'disabled_for_testing'`, ./usage.md
+§Rate limiters); pass a limiter through `app_options` to enable just the one a
+test pins — an explicit limiter wins over the mode. The mode's stderr banner
+prints once per module instance — once per test file in an isolated vitest
+project, once per run under `isolate: false`.
 
 `create_account` returns a `TestAccount` with its own `create_session_headers()`
 and `create_bearer_headers()`, so multi-account tests don't need manual cookie

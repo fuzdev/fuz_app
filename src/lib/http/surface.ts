@@ -16,7 +16,7 @@ import type { RouteAuth } from './auth_shape.ts';
 import type { RateLimitKey, RouteErrorSchemas } from './error_schemas.ts';
 import type { RpcAction } from '../actions/action_rpc.ts';
 import type { ActionKind } from '../actions/action_spec.ts';
-import type { WsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
+import type { ResolvedWsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
 import {
 	schema_to_surface,
 	middleware_applies,
@@ -131,11 +131,12 @@ export interface AppSurfaceWsMethod {
 export interface AppSurfaceWsEndpoint {
 	path: string;
 	/**
-	 * Upgrade-time origin allowlist, one entry per `WsEndpointSpec.allowed_origins`
-	 * regex stringified via `RegExp.prototype.toString()` (`'/<source>/<flags>'`).
-	 * Empty array when no origins were declared (any-origin); reviewers read this
-	 * as the exact pattern matched at the upgrade gate, not a wildcard
-	 * approximation. Reconstruct via `new RegExp(source, flags)` if needed.
+	 * Upgrade-time origin allowlist — the spec's own `allowed_origins`, or the
+	 * server's when it declares none — one entry per regex, stringified via
+	 * `RegExp.prototype.toString()` (`'/<source>/<flags>'`). An empty array
+	 * refuses every request that carries an `Origin`. Reviewers read this as the
+	 * exact pattern matched at the upgrade gate, not a wildcard approximation.
+	 * Reconstruct via `new RegExp(source, flags)` if needed.
 	 */
 	allowed_origins: ReadonlyArray<string>;
 	/**
@@ -184,7 +185,7 @@ export interface AppSurfaceSpec {
 	route_specs: Array<RouteSpec>;
 	middleware_specs: Array<MiddlewareSpec>;
 	rpc_endpoints: Array<RpcEndpointSpec>;
-	ws_endpoints: Array<WsEndpointSpec>;
+	ws_endpoints: Array<ResolvedWsEndpointSpec>;
 }
 
 /** An RPC endpoint definition for surface generation. */
@@ -204,29 +205,12 @@ export interface GenerateAppSurfaceOptions {
 	 * Mounted WS endpoints (the same array `create_app_server.ws_endpoints`
 	 * auto-mounts). Each entry's actions surface into
 	 * `AppSurface.ws_endpoints[i].methods` for attack-surface tests +
-	 * startup logging. Each must carry its effective `allowed_origins` —
-	 * `create_app_server` fills in the server's list where a spec omits it —
-	 * and generation throws on one that doesn't.
+	 * startup logging. Each carries its effective `allowed_origins` —
+	 * `resolve_ws_endpoints` fills in the server's list where a spec omits
+	 * it — so the surface records the exact patterns the upgrade gate matches.
 	 */
-	ws_endpoints?: ReadonlyArray<WsEndpointSpec>;
+	ws_endpoints?: ReadonlyArray<ResolvedWsEndpointSpec>;
 }
-
-/**
- * Stringify a WS endpoint's origin allowlist for the surface. Throws when
- * the spec carries none: the surface records the exact patterns the
- * upgrade gate matches, and an omitted list means the caller never
- * resolved the server default, not any-origin.
- */
-const to_surface_allowed_origins = (ep: WsEndpointSpec): Array<string> => {
-	if (!ep.allowed_origins) {
-		throw new Error(
-			`generate_app_surface: ws endpoint ${ep.path} has no allowed_origins — ` +
-				"resolve the server's allowed_origins into the spec before surface generation " +
-				"(resolve_ws_endpoints, or create_test_app_surface_spec's allowed_origins option)"
-		);
-	}
-	return ep.allowed_origins.map((re) => re.toString());
-};
 
 // --- Surface generation ---
 
@@ -377,7 +361,7 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 		ws_endpoints: ws_endpoints?.length
 			? ws_endpoints.map((ep) => ({
 					path: ep.path,
-					allowed_origins: to_surface_allowed_origins(ep),
+					allowed_origins: ep.allowed_origins.map((re) => re.toString()),
 					required_roles: ep.required_roles ?? [],
 					// `local_call` specs are frontend-side helpers — registry-only
 					// on the backend, never dispatched over WS. Drop them from the
