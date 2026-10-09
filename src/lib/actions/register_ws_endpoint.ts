@@ -1,8 +1,11 @@
 /**
- * Composed WebSocket endpoint registration — the idiomatic consumer entry
- * point for mounting a fuz_app WS endpoint.
+ * Composed WebSocket endpoint registration — the primitive
+ * `create_app_server` mounts each `ws_endpoints` entry with. An app assembled
+ * by `create_app_server` declares its endpoints there rather than calling this,
+ * and gets the shared action rate limiters, the origin default, the surface
+ * entry, and the audit guard with them.
  *
- * Wraps the standard upgrade stack every consumer writes by hand:
+ * Wraps the standard upgrade stack:
  *
  * 1. `verify_request_source(allowed_origins)` — reject disallowed origins
  *    before the upgrade handshake runs.

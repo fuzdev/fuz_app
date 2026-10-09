@@ -91,7 +91,7 @@ export const default_action_ip_rate_limit: RateLimiterOptions = {
 };
 
 /**
- * Default options for per-actor action-dispatcher rate limiting: 1200
+ * Default options for per-account action-dispatcher rate limiting: 1200
  * attempts per 15 minutes. Shared by the HTTP RPC and WebSocket action
  * dispatchers. Permissive — sustained ~80/min is well above any human
  * admin workflow; an oracle probing 10k addresses still finishes in

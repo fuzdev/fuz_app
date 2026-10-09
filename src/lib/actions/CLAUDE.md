@@ -206,8 +206,9 @@ produces **two** route specs on the same path (GET + POST) that share one
 internal dispatcher. The two limiters are required `RateLimiter | null` with
 no default — `null` is the explicit off switch — and the same holds on
 `register_action_ws` / `register_ws_endpoint`, so a hand mount can't run
-unthrottled by omission. `create_app_server` passes its own (live defaults
-unless configured) to every endpoint it mounts. Per-action auth lives inside the dispatcher; the outer routes
+unthrottled by omission. `create_app_server` passes its own (default
+instances unless passed in, or turned off by `rate_limiters:
+'disabled_for_testing'`) to every endpoint it mounts. Per-action auth lives inside the dispatcher; the outer routes
 use `auth: {account: 'none', actor: 'none'}` and `transaction: false`.
 
 The HTTP RPC dispatcher is a thin shim around `perform_action`
@@ -460,7 +461,7 @@ the newcomer instead would let half-open sockets lock a user out with their
 own dead connections, and let a stolen credential hold every slot ahead of the
 real user. The check runs at **admission** (`admit`, or `add_connection`),
 which `register_action_ws` reaches in `onOpen` — after every upgrade gate
-(origin, auth, token scope, role) and the credential re-read — so a refused or
+(origin, auth, token scope, acting actor, role) and the credential re-read — so a refused or
 just-revoked request never closes someone's socket. An evicted connection
 leaves the transport's map at once — no broadcast or peer request reaches it,
 its pending peer requests drain as `connection_gone`, it stops counting toward
@@ -698,16 +699,17 @@ Composes the standard upgrade stack:
 
 1. `verify_request_source(allowed_origins)`
 2. `require_auth`
-3. Upgrade-time authorization phase — resolves the acting actor, seeds `REQUEST_CONTEXT_KEY` for the inner `register_action_ws`
-4. Optional `require_role(required_roles)` — any-of disjunction (coarse upgrade-time gate; per-action `auth` in each spec still applies at dispatch time)
-5. Delegates to `register_action_ws`
+3. `require_token_scope('surface:ws_upgrade')` — a narrowed token cannot hold a socket
+4. Upgrade-time authorization phase — resolves the acting actor, seeds `REQUEST_CONTEXT_KEY` for the inner `register_action_ws`
+5. Optional `require_role(required_roles)` — any-of disjunction (coarse upgrade-time gate; per-action `auth` in each spec still applies at dispatch time)
+6. Delegates to `register_action_ws`
 
 Extends `RegisterActionWsOptions` with `allowed_origins` (required here —
 there is no server list to default from) and optional `required_roles`, and
 inherits its required `connection_closer` and action limiters. Returns
 `{transport}`. Most consumers reach for
-`ws_endpoints` above; this is the entry test harnesses use when they need
-the upgrade stack without `create_app_server`'s full assembly.
+`ws_endpoints` above. Call it directly only to mount a WS endpoint outside
+`create_app_server`'s assembly.
 
 ### `register_action_ws` — lower-level dispatcher
 

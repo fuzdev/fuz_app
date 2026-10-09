@@ -269,7 +269,8 @@ construction.
 To expose the same surface over WebSocket as well — so reactive frontends
 can call `account_*` / `admin_*` over the live connection and pick up
 revocation events without a polling delay — spread `protocol_actions`
-plus `create_standard_rpc_actions(ctx.deps, …)` into `create_app_server`'s
+plus `create_standard_rpc_actions({...ctx.deps, notification_sender: ws_transport})`
+into `create_app_server`'s
 `ws_endpoints` factory and supply `create_upgrade_websocket`, which returns
 the runtime adapter's `upgradeWebSocket` helper. On Deno and Bun the helper
 is module-level, so the factory ignores the app it's handed:
@@ -321,9 +322,10 @@ node_ws?.injectWebSocket(serve({ fetch: app.fetch, port }));
 
 `ws_endpoints` mirrors `rpc_endpoints`: array or factory form, single
 source of truth for surface + dispatch, auto-mounted onto the assembled
-Hono app. Each endpoint charges the same `action_ip_rate_limiter` /
+Hono app on every runtime. Each endpoint charges the same `action_ip_rate_limiter` /
 `action_account_rate_limiter` instances as the RPC endpoints — one budget per
-action across both transports, live defaults unless configured — checks the
+action across both transports, default instances unless passed in or turned
+off (below) — checks the
 server's `allowed_origins` unless the spec sets a narrower list, and
 registers ahead of `post_route_middleware` and `static_serving`. Its path,
 like an RPC endpoint's, must sit inside `AUTH_MIDDLEWARE_PATH` (`/api/*`, which
@@ -337,10 +339,12 @@ which repeats the close when the audit row is announced. Pass `required_roles:
 [ROLE_ADMIN]` for an admin-only WS gate at upgrade time. `AppServer.ws_endpoints`
 returns the path-keyed `BackendWebsocketTransport` map for broadcast.
 
-The factory handles: consumer migrations -> proxy middleware -> auth middleware ->
-bootstrap status -> app settings load -> consumer route specs -> factory-managed
-routes (bootstrap, surface) -> surface generation -> Hono app assembly -> static serving ->
-the auth cleanup schedule when `auth_cleanup` is set (§Auth cleanup below).
+`create_app_server` handles: rate limiters -> audit SSE -> proxy middleware ->
+auth middleware -> bootstrap status -> consumer route specs -> factory-managed
+routes (bootstrap, RPC endpoints, surface) -> surface generation -> Hono app
+assembly (routes, then WS endpoints) -> `post_route_middleware` -> static
+serving -> the auth cleanup schedule when `auth_cleanup` is set (§Auth cleanup
+below). Migrations run earlier, in `create_app_backend`.
 Consumer migration namespaces must not appear in `reserved_migration_namespaces` (currently `['fuz_auth']`) — `create_app_backend` throws at startup if a consumer namespace collides.
 
 Consumer-specific code (env loading, error formatting/exit, custom
@@ -876,7 +880,7 @@ The attack surface suite runs 3 test groups: per-method auth enforcement (JSON-R
 
 ### WebSocket Endpoint
 
-`register_ws_endpoint` mounts a JSON-RPC 2.0 WebSocket endpoint with the standard upgrade stack (origin check + auth + optional role) and per-message dispatch. It is the primitive `create_app_server`'s `ws_endpoints` mounts each endpoint with — an app built by `create_app_server` declares its endpoints there instead (§Server Assembly above), which also supplies the limiters, the origin default, the surface entry, and the audit guard. Called directly:
+`register_ws_endpoint` mounts a JSON-RPC 2.0 WebSocket endpoint with the standard upgrade stack (origin check + auth + token scope + actor resolution + optional role) and per-message dispatch. It is the primitive `create_app_server`'s `ws_endpoints` mounts each endpoint with — an app built by `create_app_server` declares its endpoints there instead (§Server Assembly above), which also supplies the limiters, the origin default, the surface entry, and the audit guard. Called directly:
 
 ```typescript
 import { register_ws_endpoint } from '@fuzdev/fuz_app/actions/register_ws_endpoint.ts';

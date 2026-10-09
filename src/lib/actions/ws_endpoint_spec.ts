@@ -55,7 +55,7 @@ export interface WsEndpointSpec {
 	 * Roles permitted to upgrade — any-of disjunction. Omit (or pass `[]`)
 	 * to skip the upgrade-time role gate; per-action `auth` on each spec
 	 * still applies at dispatch time via `perform_action`. Pass
-	 * `[ROLE_ADMIN]` for a zap-style admin-only WS endpoint.
+	 * `[ROLE_ADMIN]` for an admin-only WS endpoint.
 	 */
 	required_roles?: ReadonlyArray<RoleName>;
 	/**

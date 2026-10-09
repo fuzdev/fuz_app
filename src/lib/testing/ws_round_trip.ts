@@ -30,8 +30,8 @@ import './assert_dev_env.ts';
  *     `JsonrpcNotificationFrame`, ...) live in `transports/ws_client.ts`
  *     so both in-process and cross-process drivers reference one source.
  *
- * Hono's wire upgrade is skipped — the Node test runtime has no
- * `@hono/node-ws` adapter — but the full dispatch path is exercised
+ * Hono's wire upgrade is skipped — there is no server, so no runtime
+ * adapter — but the full dispatch path is exercised
  * (per-action auth, input validation, `ctx.notify` back to the
  * originating socket, broadcast via `BackendWebsocketTransport`, and
  * close-on-revoke).

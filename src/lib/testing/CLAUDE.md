@@ -544,7 +544,8 @@ In-process test driver for `register_action_ws`. Consumers pass specs +
 handlers, receive `{transport, connect()}` back. The full dispatch path is
 exercised (per-action auth, input validation, `ctx.notify`, broadcast via
 `BackendWebsocketTransport`, close-on-revoke), but Hono's wire upgrade is
-skipped (the Node test runtime has no `@hono/node-ws` adapter).
+skipped — there is no server, so no runtime adapter; the cross-process suites
+cover real sockets.
 
 Three layers:
 

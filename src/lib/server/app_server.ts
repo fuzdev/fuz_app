@@ -310,8 +310,8 @@ export interface AppServerOptions {
 
 	/**
 	 * RPC endpoint specs — single source of truth for both surface generation
-	 * *and* live dispatch. Each entry is mounted via `create_rpc_endpoint`
-	 * against the assembled Hono app, so consumers no longer call
+	 * *and* live dispatch. Each entry becomes route specs via
+	 * `create_rpc_endpoint`, applied with the other routes, so consumers don't call
 	 * `create_rpc_endpoint` themselves inside `create_route_specs`.
 	 *
 	 * Accepts either an array (evaluated eagerly) or a factory
@@ -363,14 +363,14 @@ export interface AppServerOptions {
 	/**
 	 * WebSocket endpoint specs — single source of truth for both surface
 	 * generation *and* live dispatch. Each entry is auto-mounted via
-	 * `register_ws_endpoint` against the assembled Hono app, so
-	 * consumers no longer call `register_ws_endpoint` themselves.
+	 * `register_ws_endpoint` against the assembled Hono app on every
+	 * runtime, so consumers don't call `register_ws_endpoint` themselves.
 	 *
 	 * Accepts either an array (evaluated eagerly) or a factory
 	 * `(ctx: AppServerContext) => ReadonlyArray<WsEndpointSpec>`
 	 * (evaluated after the server context is assembled). Use the factory
 	 * form when action lists depend on `ctx.deps` — e.g. when spreading
-	 * `create_standard_rpc_actions(ctx.deps, ...)` over WS.
+	 * `create_standard_rpc_actions({...ctx.deps, notification_sender})` over WS.
 	 *
 	 * When non-empty, `create_upgrade_websocket` must be supplied (throws
 	 * otherwise). A factory returning `[]` does NOT trip the check —
@@ -533,9 +533,11 @@ export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
 /**
  * Create a fully assembled Hono app with auth, middleware, and routes.
  *
- * Handles the assembly lifecycle: proxy middleware → auth middleware →
- * bootstrap status → route specs → surface generation → Hono app assembly →
- * static serving. Database migrations belong to the backend lifecycle —
+ * Handles the assembly lifecycle: rate limiters → audit SSE → proxy
+ * middleware → auth middleware → bootstrap status → route specs (consumer,
+ * bootstrap, RPC endpoints, surface) → surface generation → Hono app assembly
+ * (routes, then WS endpoints) → post-route middleware → static serving → the
+ * auth cleanup schedule. Database migrations belong to the backend lifecycle —
  * pass `migration_namespaces` to `create_app_backend`.
  *
  * When `audit_log_sse` is set, the SSE registry's listener is registered via

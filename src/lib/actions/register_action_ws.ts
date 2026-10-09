@@ -1,11 +1,13 @@
 /**
  * WebSocket JSON-RPC dispatch — the low-level WS transport binding.
  *
- * Most consumers should mount WS endpoints via `register_ws_endpoint`
- * (`actions/register_ws_endpoint.ts`), which wraps this function with the
- * standard upgrade stack (origin check + auth + optional role). This
- * module stays exported as the lower-level entry point for tests that
- * drive the dispatcher directly via `create_ws_test_harness`.
+ * Consumers declare WS endpoints on `create_app_server`'s `ws_endpoints`,
+ * which mounts each through `register_ws_endpoint`
+ * (`actions/register_ws_endpoint.ts`) — this function wrapped in the
+ * standard upgrade stack (origin check + auth + token scope + actor
+ * resolution + optional role). This module stays exported as the
+ * lower-level entry point for tests that drive the dispatcher directly via
+ * `create_ws_test_harness`.
  *
  * Symmetric to `create_rpc_endpoint` (from `actions/action_rpc.ts`):
  * both transports parse their wire envelope, then call the shared

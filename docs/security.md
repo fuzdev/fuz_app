@@ -812,14 +812,14 @@ path, so with no reset each is a pure monotone-within-window failure counter tha
 only time clears.
 
 **One IP bucket per surface, not one shared across all four.** Because they are
-monotone, a shared instance meant a failure on any surface spent the budget that
+monotone, a shared instance would mean a failure on any surface spends the budget that
 bounds guessing on every other one — a fumbled bootstrap token could leave the
 operator's login budget nearly exhausted on a deployment where their new account
 is the only one that exists, and an open-signup bot could deny login to every
 user behind its egress. Login and password change still share (password change
 is password-bearing on the same account grain, and the Rust spine shares the
 same instance across both); signup and bootstrap each get their own. Consumers
-wanting the old single-budget posture pass the same `RateLimiter` to
+wanting one budget across these surfaces pass the same `RateLimiter` to
 `login_ip_rate_limiter` / `signup_ip_rate_limiter` / `bootstrap_ip_rate_limiter`.
 
 **Turning a limiter off is loud.** An explicit `null` disables one limiter;
