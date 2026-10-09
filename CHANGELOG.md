@@ -1,5 +1,16 @@
 # @fuzdev/fuz_app
 
+## 0.125.0
+
+### Minor Changes
+
+- **breaking** chore: the Bun and Deno testing server adapters import from `@hono/bun` and `@hono/deno`, now optional peer deps ([059dfc0](https://github.com/fuzdev/fuz_app/commit/059dfc0))
+
+  - **breaking** `testing/cross_backend/testing_server_bun.ts` and
+    `testing/cross_backend/testing_server_deno.ts` import from `@hono/bun` and
+    `@hono/deno` instead of the deprecated `hono/bun` and `hono/deno` - install
+    the one you use (both need `hono` >=4.13.9)
+
 ## 0.124.0
 
 ### Minor Changes
