@@ -107,7 +107,6 @@
 	--link_color: var(--accent_60);
 	--link_color_selected: var(--text_color);
 	--negative_50: oklch(var(--palette_lightness_50) calc(var(--palette_chroma_50) * var(--chroma_scale, 1) * var(--negative_chroma_scale, 1)) var(--hue_negative));
-	--negative_60: oklch(var(--palette_lightness_60) calc(var(--palette_chroma_60) * var(--chroma_scale, 1) * var(--negative_chroma_scale, 1)) var(--hue_negative));
 	--negative_chroma_scale: 1;
 	--neutral_chroma: 0.024;
 	--outline_color: var(--accent_50);
@@ -536,7 +535,7 @@ body {
 		margin: var(--space_xl7) 0;
 	}
 
-:where(input, textarea, select) {
+:where(button, input, textarea, select) {
 		font: inherit;
 	}
 
@@ -765,7 +764,6 @@ body {
 		flex-wrap: wrap;
 		align-items: center;
 		justify-content: center;
-		font: inherit;
 		font-size: var(--font_size, inherit);
 		font-weight: 700;
 		line-height: normal;
@@ -1112,7 +1110,7 @@ These are used as modifiers to buttons.
 			}
 .chip {
 				font-weight: 500;
-				font-size: var(--font_size, inherit);
+				font-size: var(--font_size, revert-layer); /* without a size context, the element's base size wins */
 				padding-left: var(--chip_padding_x, var(--space_xs));
 				padding-right: var(--chip_padding_x, var(--space_xs));
 				background-color: var(--fg_10);
@@ -1188,7 +1186,6 @@ These are used as modifiers to buttons.
 .color_h_50 { color: var(--palette_h_50); --text_color: var(--palette_h_50); }
 .color_i_50 { color: var(--palette_i_50); --text_color: var(--palette_i_50); }
 .color_j_50 { color: var(--palette_j_50); --text_color: var(--palette_j_50); }
-.negative_60 { color: var(--negative_60); --text_color: var(--negative_60); }
 .border_radius_sm { border-radius: var(--border_radius_sm); }
 .shadow_inset_xs { box-shadow: var(--shadow_inset_xs) color-mix(in oklab, var(--shadow_color, var(--shadow_color_umbra)) var(--shadow_alpha, var(--shadow_alpha_30)), transparent); }
 .width\:100\% { width: 100%; }
