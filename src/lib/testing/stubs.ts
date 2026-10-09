@@ -131,7 +131,8 @@ const stub_db = create_noop_stub('stub_db');
  * immediately; `notify` is a no-op; `add_listener` throws, so a test that
  * wires a listener fails loudly instead of silently never firing
  * (`create_recording_audit_emitter` accepts listeners); `listener_count`
- * returns 0. Tests asserting on real audit-row persistence (or on listener
+ * returns 0; `drain_inflight` resolves immediately, since nothing is ever
+ * written. Tests asserting on real audit-row persistence (or on listener
  * fan-out) build a real emitter via `create_audit_emitter` against a stub or
  * real DB — `create_test_app` already does this on the test backend.
  */
@@ -145,7 +146,8 @@ export const create_test_audit_emitter = (): AuditEmitter => ({
 			'create_test_audit_emitter accepts no listeners — use create_recording_audit_emitter'
 		);
 	},
-	listener_count: () => 0
+	listener_count: () => 0,
+	drain_inflight: async () => {}
 });
 
 /**

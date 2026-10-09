@@ -204,7 +204,8 @@ HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
 `describe_cross_process_ws_tests` suite — live WebSocket, including
 requests sent at open and frames sent with the handshake (answered once the
 connection is admitted, never dropped), close-on-revoke and close on account
-delete, and a self-revoking socket closed after its reply), `session_cap.cross.test.ts` (the
+delete, a self-revoking socket closed after its reply, and a WS mutation's
+audit row read back after `_testing_drain_effects`), `session_cap.cross.test.ts` (the
 `describe_session_cap_cross_tests` suite — logging in past the per-account
 session cap evicts the oldest session, and closes the socket it had open), `ws_connection_cap.cross.test.ts` (the real-upgrade
 `describe_ws_connection_cap_cross_tests` suite — one socket past the

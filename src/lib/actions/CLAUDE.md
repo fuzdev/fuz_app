@@ -800,13 +800,18 @@ Per-message side-effect queues: `pending_effects` (eager) drains via
 `flush_pending_effects`; `post_commit_effects` (deferred — pushed by
 handlers via `emit_after_commit`) drains via `flush_post_commit_effects`.
 Both flush in the same `try/finally` that releases the request controller,
-so fire-and-forget audit / notification effects pushed by the handler
-complete (or reject visibly) before the next message dispatches. The
-deferred thunks are invoked first and the eager writes awaited after, so a
-revocation's close never waits on a slow audit INSERT — held behind one, the
-socket would stay open on a credential already committed gone and dispatch its
-next frame. The
-deferred queue is **discarded on rollback** before it reaches that flush (a
+after the reply is sent, and every rejection is logged. Nothing orders that
+flush against other frames: frames on an admitted socket are not serialized
+(`handle_frame` calls aren't chained, and an adapter need not await
+`onMessage` — `@hono/node-ws` doesn't), so a message's effects can still be
+in flight when the caller reads its reply and when the next message
+dispatches. A test that reads the audit log after a WS reply awaits
+`_testing_drain_effects` first, over an emitter built with
+`track_inflight: true` (`src/lib/testing/CLAUDE.md`). The deferred thunks are
+invoked first and the eager writes awaited after, so a revocation's close never
+waits on a slow audit INSERT — held behind one, the socket would stay open on a
+credential already committed gone and dispatch its next frame. The deferred
+queue is **discarded on rollback** before it reaches that flush (a
 rolled-back message fires no post-commit effect). See `http/CLAUDE.md`
 §Pending Effects.
 

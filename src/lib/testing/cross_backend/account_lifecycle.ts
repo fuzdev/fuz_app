@@ -223,8 +223,7 @@ export const describe_account_lifecycle_cross_tests = (
 				assert.strictEqual(error_reason(del), ERROR_CANNOT_DELETE_KEEPER);
 
 				// Deterministic barrier before reading: await in-flight
-				// fire-and-forget audit writes (the real await on the Rust spine;
-				// satisfied-by-construction on the TS spine via await_pending_effects).
+				// fire-and-forget audit writes on either spine.
 				const td = fixture.fresh_transport({ origin: null });
 				const drained = await cross_rpc_call(
 					td,

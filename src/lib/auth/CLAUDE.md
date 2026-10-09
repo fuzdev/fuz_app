@@ -121,7 +121,7 @@ upstream in `auth/signup_routes.ts` via `query_invite_find_unclaimed_match_for_u
 `auth/audit_emitter.ts` defines the `AuditEmitter` capability that lives on
 `AppDeps.audit`. Built once at backend assembly via the consumer's
 `audit_factory` callback over `create_audit_emitter`; closes over the pool +
-its registered listeners + optional `AuditLogConfig`. Six methods:
+its registered listeners + optional `AuditLogConfig`. Its methods:
 
 - `emit(ctx, input)` — fire-and-forget pool write, pushes to `ctx.pending_effects`; a success row's listener fan-out goes on `ctx.post_commit_effects`
 - `emit_role_grant_target(ctx, auth, input)` — lifts `actor_id` / `account_id` / `ip` boilerplate for role-grant-shape events
@@ -129,6 +129,7 @@ its registered listeners + optional `AuditLogConfig`. Six methods:
 - `notify(event)` — fan out an already-written row to listeners (used by in-tx audit batches like `query_accept_offer.audit_events`)
 - `add_listener(listener)` — append-only listener registration (twin of Rust `fuz_auth` `AuditEmitter::add_listener`)
 - `listener_count()` — registered-listener count, for tests / diagnostics
+- `drain_inflight()` — test-binary barrier: waits until no `emit` write is in flight, writes started while waiting included. Only an emitter built with `track_inflight: true` tracks; otherwise it resolves at once (production never tracks). Backs `_testing_drain_effects` (twin of Rust `AuditEmitter::drain_inflight` / `new_with_inflight_tracking`)
 
 Listeners are closure-private and append-only. `create_app_server` registers
 the audit-log SSE listener and per-endpoint WS auth guards via

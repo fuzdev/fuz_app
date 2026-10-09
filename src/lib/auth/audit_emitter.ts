@@ -29,6 +29,8 @@
  *   the query layer, or the offer-expiry rows `auth/cleanup.ts` writes in
  *   its sweep transaction). Runs every registered listener; per-listener
  *   throws are isolated.
+ * - `drain_inflight()` — test-binary barrier: await every in-flight `emit`
+ *   write, on an emitter built with `track_inflight: true`.
  *
  * ## When listeners hear about a row
  *
@@ -199,6 +201,24 @@ export interface AuditEmitter {
 	add_listener(listener: (event: AuditLogEvent) => void): void;
 	/** Count of registered listeners — introspection for tests and diagnostics. */
 	listener_count(): number;
+	/**
+	 * Await every fire-and-forget `emit` write in flight — the deterministic
+	 * barrier behind the `_testing_drain_effects` test action.
+	 *
+	 * Waits until no tracked write is outstanding, so a write that starts
+	 * while the drain is waiting (an emit from a post-commit thunk) is awaited
+	 * too. Once it resolves, a following `audit_log_list` read sees every row
+	 * whose `emit` ran before the drain was called. A write that starts after
+	 * the drain resolves is not covered. A success row's listener fan-out runs
+	 * as a post-commit effect and is not tracked, so an SSE broadcast or an
+	 * auth-guard close driven by one isn't guaranteed done when the drain
+	 * resolves — the row itself is.
+	 *
+	 * Resolves at once unless the emitter was built with
+	 * `track_inflight: true` — production never tracks, so there is nothing
+	 * to wait for. Twin of the Rust `fuz_auth` `AuditEmitter::drain_inflight`.
+	 */
+	drain_inflight(): Promise<void>;
 }
 
 /**
@@ -251,6 +271,17 @@ export interface CreateAuditEmitterOptions {
 	 * Leave unset in production — it is a test instrumentation seam.
 	 */
 	emit_decorator?: EmitDecorator;
+	/**
+	 * Track every in-flight `emit` write so `drain_inflight` can await it.
+	 * Defaults to `false`, which makes `drain_inflight` resolve at once.
+	 *
+	 * Test binaries only. A transport can reply before a request's writes
+	 * settle — a WebSocket message is answered before its effects flush — so
+	 * a test reading the audit log after a reply needs this barrier. In
+	 * production the tracking is pure overhead and nothing drains it. Twin of
+	 * the Rust `fuz_auth` `AuditEmitter::new_with_inflight_tracking`.
+	 */
+	track_inflight?: boolean;
 }
 
 /**
@@ -263,7 +294,13 @@ export interface CreateAuditEmitterOptions {
  * @returns the bound emitter; closes over the pool + config + listener chain
  */
 export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditEmitter => {
-	const { db, log, audit_log_config = builtin_audit_log_config, emit_decorator } = options;
+	const {
+		db,
+		log,
+		audit_log_config = builtin_audit_log_config,
+		emit_decorator,
+		track_inflight = false
+	} = options;
 	// Closure-private listener list — no mutable array is exposed on the
 	// returned (frozen) emitter; registration goes through `add_listener`.
 	const listeners: Array<(event: AuditLogEvent) => void> = [];
@@ -301,16 +338,42 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 		if (event) notify(event);
 	};
 
+	// In-flight `emit` writes, when tracked — each removed as it settles, so
+	// the set is empty exactly when nothing is outstanding. Neither tracked
+	// promise rejects (`write` and `notify` log their failures).
+	const inflight: Set<Promise<unknown>> | null = track_inflight ? new Set() : null;
+	const track = <T>(promise: Promise<T>): Promise<T> => {
+		if (inflight) {
+			inflight.add(promise);
+			const remove = (): void => {
+				inflight.delete(promise);
+			};
+			void promise.then(remove, remove);
+		}
+		return promise;
+	};
+
+	const drain_inflight = async (): Promise<void> => {
+		if (!inflight) return;
+		// Wait for zero, not for a snapshot: a write started while waiting —
+		// an emit from a post-commit thunk — joins the set and is awaited on
+		// the next pass. The removal reactions were registered before these,
+		// so a settled write is gone from the set by the time a pass resumes.
+		while (inflight.size > 0) {
+			await Promise.allSettled(inflight);
+		}
+	};
+
 	const base_emit: AuditEmitFn = (ctx, input) => {
 		if (input.outcome === 'failure') {
 			// an attempt happened whether or not the transaction commits
-			ctx.pending_effects.push(emit_pool(input));
+			ctx.pending_effects.push(track(emit_pool(input)));
 			return;
 		}
 		// A success row is written now and announced after the commit — and
 		// not at all on rollback, when the queue is discarded. See the module
 		// doc, "When listeners hear about a row".
-		const written = write(input);
+		const written = track(write(input));
 		ctx.pending_effects.push(written.then(() => undefined));
 		emit_after_commit(ctx, async () => {
 			const event = await written;
@@ -368,6 +431,7 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 		emit_pool,
 		notify,
 		add_listener,
-		listener_count
+		listener_count,
+		drain_inflight
 	});
 };

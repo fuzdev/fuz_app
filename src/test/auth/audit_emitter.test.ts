@@ -8,12 +8,16 @@
  */
 
 import { describe, test, assert, vi, afterEach } from 'vitest';
-import { wait } from '@fuzdev/fuz_util/async.ts';
+import { create_deferred, wait, type Deferred } from '@fuzdev/fuz_util/async.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { z } from 'zod';
 
-import { create_audit_emitter, type AuditEmitterContext } from '$lib/auth/audit_emitter.ts';
+import {
+	create_audit_emitter,
+	type AuditEmitter,
+	type AuditEmitterContext
+} from '$lib/auth/audit_emitter.ts';
 import { flush_pending_effects, flush_post_commit_effects } from '$lib/http/pending_effects.ts';
 import {
 	get_audit_metadata_validation_failures,
@@ -742,5 +746,118 @@ describe('create_audit_emitter — emit_decorator', () => {
 		// One in-flight write queued — same shape the test suite has
 		// relied on since before the decorator existed.
 		assert.strictEqual(ctx.pending_effects.length, 1);
+	});
+});
+
+describe('create_audit_emitter — drain_inflight', () => {
+	/**
+	 * Mock `Db` whose audit INSERTs each wait on their own gate, opened by the
+	 * test — so a write stays in flight until the test says otherwise.
+	 */
+	const create_gated_db = (): { db: Db; gates: Array<Deferred<void>> } => {
+		const gates: Array<Deferred<void>> = [];
+		const query = vi.fn(async () => {
+			const gate = create_deferred<void>();
+			gates.push(gate);
+			await gate.promise;
+			return [FAKE_EVENT];
+		});
+		return { db: create_mock_db(query), gates };
+	};
+
+	/** Start a drain and report whether it has resolved. */
+	const start_drain = (audit: AuditEmitter): { promise: Promise<void>; done: () => boolean } => {
+		let done = false;
+		const promise = audit.drain_inflight().then(() => {
+			done = true;
+		});
+		return { promise, done: () => done };
+	};
+
+	test('waits for an in-flight success write', async () => {
+		const { db, gates } = create_gated_db();
+		const audit = create_audit_emitter({ db, log, track_inflight: true });
+		audit.emit(create_ctx(), create_input());
+		assert.strictEqual(gates.length, 1, 'the write starts at emit time');
+
+		const drain = start_drain(audit);
+		await wait();
+		assert.ok(!drain.done(), 'the drain resolved with the write still in flight');
+
+		gates[0]!.resolve();
+		await drain.promise;
+	});
+
+	test('waits for an in-flight failure write and its fan-out', async () => {
+		const { db, gates } = create_gated_db();
+		const heard: Array<AuditLogEvent> = [];
+		const audit = create_audit_emitter({
+			db,
+			log,
+			track_inflight: true,
+			on_audit_event: (event) => heard.push(event)
+		});
+		audit.emit(create_ctx(), { ...create_input(), outcome: 'failure' });
+
+		const drain = start_drain(audit);
+		await wait();
+		assert.ok(!drain.done());
+
+		gates[0]!.resolve();
+		await drain.promise;
+		// a failure row is announced as soon as it is written — before the drain resolves
+		assert.strictEqual(heard.length, 1);
+	});
+
+	test('resolves at once when nothing is in flight', async () => {
+		const { db, gates } = create_gated_db();
+		const audit = create_audit_emitter({ db, log, track_inflight: true });
+		const drain = start_drain(audit);
+		await wait();
+		assert.ok(drain.done(), 'an empty drain must resolve');
+
+		// and again once a write has settled
+		const ctx = create_ctx();
+		audit.emit(ctx, create_input());
+		gates[0]!.resolve();
+		await flush_ctx(ctx);
+		const again = start_drain(audit);
+		await wait();
+		assert.ok(again.done(), 'a settled write must not hold the drain');
+	});
+
+	test('waits for a write started while it is waiting', async () => {
+		const { db, gates } = create_gated_db();
+		const audit = create_audit_emitter({ db, log, track_inflight: true });
+		// The first row's fan-out emits a second — an emit that begins only
+		// after the drain started, as one from a post-commit thunk does. A drain
+		// awaiting a snapshot of the first pass would resolve without it.
+		let chained = false;
+		audit.add_listener(() => {
+			if (chained) return;
+			chained = true;
+			audit.emit(create_ctx(), create_input());
+		});
+		audit.emit(create_ctx(), { ...create_input(), outcome: 'failure' });
+
+		const drain = start_drain(audit);
+		gates[0]!.resolve();
+		await wait();
+		assert.strictEqual(gates.length, 2, 'the chained emit started its write');
+		assert.ok(!drain.done(), 'the drain resolved with the chained write in flight');
+
+		gates[1]!.resolve();
+		await drain.promise;
+	});
+
+	test('untracked: resolves at once with a write in flight', async () => {
+		const { db, gates } = create_gated_db();
+		const audit = create_audit_emitter({ db, log });
+		audit.emit(create_ctx(), create_input());
+
+		const drain = start_drain(audit);
+		await wait();
+		assert.ok(drain.done(), 'an untracked emitter has nothing to wait for');
+		gates[0]!.resolve();
 	});
 });

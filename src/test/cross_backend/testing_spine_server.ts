@@ -184,12 +184,17 @@ export const parse_action_rate_limit_max_attempts = (
  * (and `cell_audit_list` reads them back) instead of tripping the
  * unknown-event drift counter. Models a real consumer that spreads
  * `cell_audit_events` into its `create_audit_log_config`.
+ *
+ * Tracks in-flight writes so `_testing_drain_effects` is a real barrier — a
+ * WS mutation is answered before its audit write settles. The Rust stub
+ * builds its emitter the same way (`new_with_inflight_tracking`).
  */
 const cell_audit_factory: AuditFactory = ({ db, log }) =>
 	create_audit_emitter({
 		db,
 		log,
-		audit_log_config: create_audit_log_config({ extra_events: cell_audit_events })
+		audit_log_config: create_audit_log_config({ extra_events: cell_audit_events }),
+		track_inflight: true
 	});
 
 /** Resolve `{host, port}` from the runtime's env via `BaseServerEnv`. */
@@ -400,12 +405,11 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		],
 		env_schema: BaseServerEnv,
 		env_values: env,
-		// Await fire-and-forget effects before each response returns, so a
-		// mutation's audit emits are durable by response time. Makes the
-		// `_testing_drain_effects` barrier satisfied by construction on the TS
-		// spine (the Rust stub, whose audit writes are detached tasks, does the
-		// real await in `AuditEmitter::drain_inflight`). Matches the in-process
-		// `create_test_app` default.
+		// Await fire-and-forget effects before each HTTP response returns, so
+		// an HTTP mutation's audit emits are durable by response time. WS
+		// replies before its effects flush; `_testing_drain_effects` awaits
+		// the tracked emitter for those (`cell_audit_factory`). Matches the
+		// in-process `create_test_app` default.
 		await_pending_effects: true,
 		on_effect_error: (error, ctx) => {
 			log.error(`Pending effect failed (${ctx.method} ${ctx.path}):`, error);

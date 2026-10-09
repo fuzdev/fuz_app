@@ -50,19 +50,22 @@ export const cell_parity_rpc_endpoints = (ctx: AppServerContext): Array<RpcEndpo
 			...create_standard_rpc_actions(ctx.deps, { roles: spine_roles }),
 			...create_all_cell_actions(ctx.deps, { roles: spine_roles }),
 			// `_testing_drain_effects` so the shared suite can call the audit
-			// barrier in-process too (satisfied-by-construction here:
-			// `create_test_app` runs `await_pending_effects: true`).
-			create_testing_drain_effects_action()
+			// barrier in-process too — over the tracked emitter below
+			create_testing_drain_effects_action(ctx.deps.audit)
 		]
 	}
 ];
 
-/** Audit factory registering the cell event types so cell emits validate. */
+/**
+ * Audit factory registering the cell event types so cell emits validate, and
+ * tracking in-flight writes so `_testing_drain_effects` awaits them.
+ */
 const cell_parity_audit_factory: AuditFactory = ({ db, log }) =>
 	create_audit_emitter({
 		db,
 		log,
-		audit_log_config: create_audit_log_config({ extra_events: cell_audit_events })
+		audit_log_config: create_audit_log_config({ extra_events: cell_audit_events }),
+		track_inflight: true
 	});
 
 /**

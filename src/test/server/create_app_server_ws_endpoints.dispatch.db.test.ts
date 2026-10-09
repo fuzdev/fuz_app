@@ -15,6 +15,8 @@
  * - the upgrade route answers ahead of `post_route_middleware` and
  *   `static_serving`
  * - `AppServer.close` ends a socket opened through the upgrade path
+ * - a WS reply arrives before its audit write lands, and
+ *   `_testing_drain_effects` over a tracked emitter waits for it
  *
  * Every server is closed after its test — that disposes the limiters it
  * built. The database is the shared PGlite instance the factory hands out,
@@ -39,8 +41,16 @@ import {
 	type AppServerOptions
 } from '$lib/server/app_server.ts';
 import type { AppServerContext } from '$lib/server/app_server_context.ts';
-import type { AppBackend } from '$lib/server/app_backend.ts';
-import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
+import { wait } from '@fuzdev/fuz_util/async.ts';
+import type { Db } from '$lib/db/db.ts';
+import { create_gated_db, type GatedDb } from '../gated_db.ts';
+import { create_audit_emitter, type AuditEmitter } from '$lib/auth/audit_emitter.ts';
+import {
+	default_audit_factory,
+	type AppBackend,
+	type AuditFactory
+} from '$lib/server/app_backend.ts';
+import { create_testing_drain_effects_action } from '$lib/testing/cross_backend/testing_reset_actions.ts';
 import {
 	create_test_account_with_credentials,
 	stub_password_deps
@@ -101,6 +111,10 @@ const create_tiny_limiter = (): RateLimiter =>
 interface TestServer {
 	server: AppServer;
 	stub: StubUpgrade;
+	/** The backend's pool. */
+	db: Db;
+	/** The backend's emitter (`deps.audit`). */
+	audit: AuditEmitter;
 	/** Session cookie header for a fresh account. */
 	create_account: (username: string) => Promise<{
 		account_id: string;
@@ -111,10 +125,12 @@ interface TestServer {
 
 /** Assemble a server over a fresh database, with the WS endpoint at `/api/ws`. */
 const create_test_server = async (
-	options: Partial<Omit<AppServerOptions, 'backend' | 'create_upgrade_websocket'>> = {}
+	options: Partial<Omit<AppServerOptions, 'backend' | 'create_upgrade_websocket'>> = {},
+	audit_factory: AuditFactory = default_audit_factory
 ): Promise<TestServer> => {
 	const db = await factory.create();
 	const migration_results = await run_migrations(db, [auth_migration_ns]);
+	const audit = audit_factory({ db, log });
 	const backend: AppBackend = {
 		db_type: 'pglite-memory',
 		db_name: '(memory)',
@@ -125,7 +141,7 @@ const create_test_server = async (
 			keyring,
 			password: stub_password_deps,
 			db,
-			audit: create_audit_emitter({ db, log }),
+			audit,
 			connection_closer: create_realtime_closer(),
 			read_secure_file: async (path: string): Promise<Uint8Array> => {
 				throw new Error(`ENOENT: ${path}`);
@@ -167,7 +183,7 @@ const create_test_server = async (
 			bearer_headers: { authorization: `Bearer ${api_token}` }
 		};
 	};
-	return { server, stub, create_account };
+	return { server, stub, db, audit, create_account };
 };
 
 const servers: Array<AppServer> = [];
@@ -178,6 +194,15 @@ afterEach(async () => {
 interface TestSocket {
 	/** Send one JSON-RPC request and return its response frame. */
 	request: (method: string, params?: unknown) => Promise<any>;
+	/**
+	 * Send one JSON-RPC request and return its response frame as soon as it is
+	 * sent — before the message's effects flush. `dispatched` settles when the
+	 * dispatch, flush included, is done.
+	 */
+	request_reply: (
+		method: string,
+		params?: unknown
+	) => Promise<{ frame: any; dispatched: Promise<void> }>;
 	/** The close frames the server sent the socket. */
 	closes: Array<{ code?: number; reason?: string }>;
 }
@@ -218,6 +243,24 @@ const open_socket = async (
 			const frame = fake.sends.map((s) => JSON.parse(s)).find((f) => f.id === id);
 			assert.ok(frame, `no response to request ${id}`);
 			return frame;
+		},
+		request_reply: async (method, params) => {
+			const id = ++next_request_id;
+			const dispatched = dispatch_ws_message(
+				events.onMessage!,
+				new MessageEvent('message', {
+					data: JSON.stringify({ jsonrpc: '2.0', id, method, params })
+				}),
+				fake.ws
+			);
+			const find_frame = () => fake.sends.map((s) => JSON.parse(s)).find((f) => f.id === id);
+			// the reply is sent ahead of the flush, so it lands while `dispatched` is pending
+			const deadline = Date.now() + 2000;
+			while (!find_frame()) {
+				assert.ok(Date.now() < deadline, `no response to request ${id}`);
+				await wait();
+			}
+			return { frame: find_frame(), dispatched };
 		}
 	};
 };
@@ -430,4 +473,80 @@ describe('create_app_server.ws_endpoints dispatch through the assembled app', ()
 		await t.server.close();
 		assert.strictEqual(socket.closes.length, 1);
 	});
+
+	test('a WS reply precedes its audit write; the drain over a tracked emitter waits for it', async () => {
+		// Hold the audit INSERT (the shared stall seam), so the write is
+		// certainly in flight when the reply arrives. The pool's other queries
+		// pass straight through.
+		let gated: GatedDb | undefined;
+		const t = await create_test_server(
+			{
+				ws_endpoints: (ctx) => [
+					{
+						path: WS_PATH,
+						actions: [...protocol_actions, create_audited_action(ctx.deps.audit)],
+						heartbeat: false
+					}
+				]
+			},
+			({ db, log }) => {
+				gated = create_gated_db(db);
+				return create_audit_emitter({ db: gated.db, log, track_inflight: true });
+			}
+		);
+		const stalled = gated!.stall((sql) => sql.includes('INSERT INTO audit_log'));
+		const count_rows = async (): Promise<number> =>
+			(await t.db.query('SELECT id FROM audit_log WHERE event_type = $1', ['logout'])).length;
+		try {
+			const alice = await t.create_account('alice_drain');
+			const socket = await open_socket(t, alice.session_headers);
+
+			const { frame, dispatched } = await socket.request_reply(audited_action_spec.method);
+			assert_ok(frame);
+			await stalled.reached;
+			assert.strictEqual(await count_rows(), 0, 'the reply came before the audit row landed');
+
+			const drain = create_testing_drain_effects_action(t.audit);
+			let drained = false;
+			const draining = Promise.resolve(drain.handler(undefined, null as never)).then(() => {
+				drained = true;
+			});
+			await wait();
+			assert.ok(!drained, 'the drain resolved with the audit write in flight');
+
+			stalled.release();
+			await draining;
+			assert.strictEqual(await count_rows(), 1, 'the drained audit row is visible');
+			await dispatched;
+		} finally {
+			// a failed assertion must not leave the dispatch held on the stall
+			stalled.release();
+		}
+	});
+});
+
+/** A WS mutation that emits one success audit row through `audit`. */
+const audited_action_spec = {
+	method: 'audited',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: { account: 'required', actor: 'none' },
+	side_effects: true,
+	input: z.void(),
+	output: z.strictObject({ ok: z.literal(true) }),
+	async: true,
+	description: 'emits one audit row'
+} satisfies RequestResponseActionSpec;
+
+const create_audited_action = (audit: AuditEmitter): RpcAction => ({
+	spec: audited_action_spec,
+	handler: (_input, ctx) => {
+		audit.emit(ctx, {
+			event_type: 'logout',
+			outcome: 'success',
+			account_id: ctx.auth?.account.id ?? null,
+			metadata: null
+		});
+		return { ok: true };
+	}
 });

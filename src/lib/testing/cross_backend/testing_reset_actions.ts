@@ -81,6 +81,7 @@ import { query_put_fact } from '../../db/fact_queries.ts';
 import type { RequestResponseActionSpec } from '../../actions/action_spec.ts';
 import type { RouteAuth } from '../../http/auth_shape.ts';
 import type { AppDeps } from '../../auth/deps.ts';
+import type { AuditEmitter } from '../../auth/audit_emitter.ts';
 import type { SessionOptions } from '../../auth/session_cookie.ts';
 import type { DaemonTokenState } from '../../auth/daemon_token.ts';
 import type { Db } from '../../db/db.ts';
@@ -189,16 +190,21 @@ export const testing_reset_action_spec = {
  * the cross-backend conformance suite uses in place of a poll/sleep before
  * asserting on audit rows.
  *
- * On the TS spine the barrier is **satisfied by construction**: the test
- * binary runs `await_pending_effects: true`, so every **HTTP** mutation's
- * fire-and-forget audit emits are awaited before its response returns — by
- * the time a later drain call runs, prior emits are already durable. A
- * WS-dispatched mutation replies before its effects flush, so on TS this
- * action is not a barrier for WS-originated emits; issue audit-asserting
- * mutations over HTTP. The action still
- * exists so the cross-backend test body calls the same method on every
- * backend; the Rust spine (whose audit writes are detached tokio tasks)
- * does the real await in `AuditEmitter::drain_inflight`.
+ * The handler awaits `AuditEmitter.drain_inflight`, which waits until no
+ * tracked `emit` write is outstanding — so the binary's emitter must be built
+ * with `track_inflight: true`, or the drain resolves at once and is no barrier.
+ * Tracking is what makes it a barrier whatever the transport: an **HTTP**
+ * mutation on a binary running `await_pending_effects: true` has its writes
+ * settled by the time it responds, but a **WS** mutation is answered before
+ * its effects flush (reply-then-close for a self-revocation), so its audit
+ * write can still be in flight when the caller reads the reply. The Rust
+ * spine does the same await in `AuditEmitter::drain_inflight`, over an
+ * emitter built with `new_with_inflight_tracking`.
+ *
+ * Covered: every `emit` that ran before the drain was dispatched, and any
+ * started while it waits. A write that starts after the drain resolves is
+ * not — nor are eager writes outside `emit` (session touch, token usage),
+ * which only the dispatching transport's own flush awaits.
  *
  * `auth` gates on the daemon-token credential, matching `_testing_reset`.
  */
@@ -272,14 +278,19 @@ export const testing_mint_session_action_spec = {
 } as const satisfies RequestResponseActionSpec;
 
 /**
- * Build the standalone `_testing_drain_effects` action. No deps — on TS the
- * barrier is satisfied by `await_pending_effects` (see the spec doc), so the
- * handler just returns `{ok: true}`. Mount it on any test endpoint whose
- * suite asserts on audit rows (the spine binary bundles it via
+ * Build the standalone `_testing_drain_effects` action over `audit` — the
+ * emitter the backend's handlers emit through (`deps.audit`), built with
+ * `track_inflight: true` (see the spec doc). Mount it on any test endpoint
+ * whose suite asserts on audit rows (the spine binary bundles it via
  * `create_testing_actions`; in-process suites mount it directly).
+ *
+ * @param audit - the backend's emitter, whose in-flight writes the action awaits
  */
-export const create_testing_drain_effects_action = (): RpcAction =>
-	rpc_action(testing_drain_effects_action_spec, async () => ({ ok: true }));
+export const create_testing_drain_effects_action = (audit: AuditEmitter): RpcAction =>
+	rpc_action(testing_drain_effects_action_spec, async () => {
+		await audit.drain_inflight();
+		return { ok: true };
+	});
 
 /**
  * `_testing_put_fact` — seed an **embedded** fact (`fact.bytes`) for the
@@ -486,9 +497,10 @@ export interface CreateTestingActionsOptions {
 /**
  * Build the testing RPC actions for a test binary's registry.
  *
- * Returns `_testing_reset` — the single privileged action test binaries
- * register. The test binary calls this at server-assembly time and
- * registers the result on its dispatcher.
+ * Returns the bundled `_testing_*` actions (module doc). The test binary
+ * calls this at server-assembly time and registers the result on its
+ * dispatcher. `_testing_drain_effects` drains `deps.audit`, so the binary's
+ * `audit_factory` builds the emitter with `track_inflight: true`.
  *
  * The reset action's table-wipe list mirrors
  * `auth_integration_truncate_tables` from `testing/db.ts` — the
@@ -630,7 +642,7 @@ export const create_testing_actions = (
 			);
 			return { hash };
 		}),
-		create_testing_drain_effects_action(),
+		create_testing_drain_effects_action(deps.audit),
 		create_testing_schema_snapshot_action(),
 		create_testing_migration_tracker_action()
 	];

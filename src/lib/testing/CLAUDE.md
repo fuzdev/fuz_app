@@ -33,7 +33,7 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `stub_mw` — pass-through middleware (`async (_c, next) => next()`).
 - `stub_app_deps` — frozen `AppDeps`, every capability throwing, `audit` a no-op `AuditEmitter` from `create_test_audit_emitter`, `connection_closer` an empty `RealtimeCloser`.
 - `create_stub_app_deps()` — factory: fresh `AppDeps` with no-op keyring/password/`delete_file`, a `read_secure_file` that throws ENOENT (the no-token-file state), a `create_noop_stub` DB, silent `Logger`, no-op `audit`, an empty `connection_closer`.
-- `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` no-op, `emit_pool` resolves immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0.
+- `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` no-op, `emit_pool` resolves immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0, `drain_inflight` resolves immediately.
 - `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `on_audit_event` no-op (nothing is broadcast); `registry` is a fresh `SubscriberRegistry` (live `.count` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
 - `create_stub_api_middleware({include_daemon_token?})` — stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin/session/request_context/bearer_auth, optional daemon_token) for surface generation without booting real auth. See `auth/CLAUDE.md` §Middleware for the real stack.
 - `create_stub_app_server_context(session_options)` — stub `AppServerContext`; rate limiters null, `bootstrap_status.available: false`.
@@ -978,10 +978,11 @@ source of truth for wire-shape conformance.
   same TCP write as the upgrade request reach the socket; `false` Bun, whose
   HTTP parser answers such a request `400`, and `false` in-process, where there
   is no socket to write raw bytes to).
-  `ws_account_actions` gates the WS round-trip suite's self-revocation case
-  (the WS endpoint mounts the account actions — `true` on fuz_app's own spine
-  presets, `false` in the family defaults), and `ws_self_revocation_reply`
-  says what that case requires: the reply ahead of the close (`true`, the TS
+  `ws_account_actions` (the WS endpoint mounts the account actions — `true` on
+  fuz_app's own spine presets, `false` in the family defaults) gates the WS
+  round-trip suite's self-revocation case and, with `rpc_path`, its
+  WS-mutation audit case (which calls `_testing_drain_effects`);
+  `ws_self_revocation_reply` says what the self-revocation case requires: the reply ahead of the close (`true`, the TS
   family) or the close alone (`false`, the Rust family, whose socket loop
   drops the response once the connection is closed — a recorded divergence).
 
@@ -1126,11 +1127,15 @@ time**, so the negative upgrade cases assert the upgrade itself rejects, not
 a per-message error; the close cases prove a revocation closes an
 already-open socket, since per-message dispatch never re-checks credential
 validity. Omit `rpc_path` to skip the close cases (consumers without the
-standard account and admin actions on their RPC endpoint). One case is gated
+standard account and admin actions on their RPC endpoint). Two cases are gated
 on `capabilities.ws_account_actions` (the WS endpoint mounts the account
 actions): a socket that revokes its own sessions over that socket is closed
 with `WS_CLOSE_SESSION_REVOKED`, and — where the backend declares
-`capabilities.ws_self_revocation_reply` — reads the reply first.
+`capabilities.ws_self_revocation_reply` — reads the reply first; and (with
+`rpc_path`) a socket mints an API token over WS, and its `token_create` audit
+row is read back after `_testing_drain_effects` — a WS reply can precede its
+audit write, so the drain is the barrier (the binary mounts it via
+`create_testing_actions`).
 Otherwise **consumer-agnostic** — it drives only the `heartbeat` protocol action
 (guaranteed on every WS endpoint by `assert_ws_endpoints_include_protocol_actions`),
 so it validates the transport without touching domain WS methods. Gated on
@@ -1449,18 +1454,25 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   `testing_reset_actions.ts` TSDoc for the audit + WS fan-out rationale
   that rejected a `_testing_seed_role_grant` shape.
 
-  Same module also exports `create_testing_drain_effects_action()` — the
+  Same module also exports `create_testing_drain_effects_action(audit)` — the
   `_testing_drain_effects` RPC action (daemon-token-gated, like
-  `_testing_reset`). It awaits in-flight fire-and-forget audit writes so a
-  following `audit_log_list` is authoritative — the deterministic barrier a
-  cross-process audit assertion fires before reading (no poll/sleep). On the
-  TS spine it is **satisfied by construction** (the binary runs
-  `await_pending_effects: true`, so each mutation's emits land before its
-  response); the Rust spine does the real await in
-  `AuditEmitter::drain_inflight`. `create_testing_actions` bundles it
-  alongside `_testing_reset`; suites that mount their own endpoint (e.g. the
-  in-process `account_lifecycle_parity.db.test.ts`) add it directly so the
-  shared suite body can call the barrier on every backend uniformly.
+  `_testing_reset`). It awaits `audit.drain_inflight()` so a following
+  `audit_log_list` is authoritative — the deterministic barrier a
+  cross-process audit assertion fires before reading (no poll/sleep). The
+  emitter must be built with `create_audit_emitter({track_inflight: true})`
+  (the spine binary's `audit_factory` does), or the drain resolves at once.
+  The barrier is needed whatever the transport: HTTP on a binary running
+  `await_pending_effects: true` settles a mutation's writes before
+  responding, but WS replies before its effects flush, so a WS mutation's
+  audit write can still be in flight when its reply arrives. The drain waits
+  until no tracked `emit` write is outstanding — writes started while it
+  waits included — the same wait-for-zero as the Rust spine's
+  `AuditEmitter::drain_inflight` over `new_with_inflight_tracking`.
+  `create_testing_actions` bundles it over `deps.audit`; suites that mount
+  their own endpoint (e.g. the in-process
+  `account_lifecycle_parity.db.test.ts`) add it directly, over a tracked
+  emitter, so the shared suite body can call the barrier on every backend
+  uniformly.
 
   Also bundled: `_testing_mint_session` — mints a backdated-expiry
   `auth_session` row for an account (via `mint_test_session` in `app_server.ts`)

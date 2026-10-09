@@ -56,7 +56,11 @@ import '../assert_dev_env.ts';
  * `capabilities.ws_self_revocation_reply` — reads the reply to its request
  * first. The TS spine queues the close behind the commit and sends the reply
  * ahead of it, so the caller is never left without an answer; the Rust spine
- * does not answer yet, which that flag records.
+ * does not answer yet, which that flag records. Under the same gate (and
+ * `rpc_path`), a socket mints an API token over WS and the token's
+ * `token_create` audit row is read back after `_testing_drain_effects` — the
+ * barrier a WS mutation needs, since a WS reply can precede its audit write.
+ * The binary's `create_testing_actions` mount provides the drain.
  *
  * Gated on `capabilities.ws` — backends without an end-to-end WS transport
  * skip (the cases still surface as `.skip` in the report). Cross-process
@@ -75,8 +79,15 @@ import {
 	WS_CLOSE_MESSAGE_TOO_BIG,
 	WS_CLOSE_SESSION_REVOKED
 } from '../../actions/transports.ts';
-import { account_session_revoke_all_action_spec } from '../../auth/account_action_specs.ts';
-import { account_delete_action_spec } from '../../auth/admin_action_specs.ts';
+import {
+	account_session_revoke_all_action_spec,
+	account_token_create_action_spec
+} from '../../auth/account_action_specs.ts';
+import {
+	account_delete_action_spec,
+	audit_log_list_action_spec,
+	AuditLogListOutput
+} from '../../auth/admin_action_specs.ts';
 import { JSONRPC_ERROR_CODES } from '../../http/jsonrpc_errors.ts';
 import {
 	is_response_for,
@@ -92,6 +103,7 @@ import {
 } from '../transports/ws_raw_client.ts';
 import { create_rpc_post_init } from '../rpc_helpers.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
+import { cross_rpc_call, expect_output } from './cell_cross_helpers.ts';
 import type { SetupTest } from './setup.ts';
 
 /** Origin guaranteed to fail the `http://localhost:*` allowlist the test backends run with. */
@@ -135,7 +147,8 @@ export interface CrossProcessWsTestOptions {
  * oversized message closing with `WS_CLOSE_MESSAGE_TOO_BIG`, anonymous-upgrade
  * refusal, disallowed-origin refusal, and — when `rpc_path` is supplied —
  * session revocation and account deletion closing the live socket, plus a
- * self-revoking socket reading its reply before its close.
+ * self-revoking socket reading its reply before its close, and a WS mutation's
+ * audit row read back after `_testing_drain_effects`.
  */
 export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptions): void => {
 	const {
@@ -421,6 +434,57 @@ export const describe_cross_process_ws_tests = (options: CrossProcessWsTestOptio
 				} finally {
 					await client.close();
 				}
+			}
+		);
+
+		// A WS mutation is answered before its effects flush, so its audit row
+		// can land after the reply. `_testing_drain_effects` is the barrier: once
+		// it returns, the row is visible on either spine.
+		test_if(
+			capabilities.ws && capabilities.ws_account_actions && rpc_path !== undefined,
+			"a WS mutation's audit row is visible after _testing_drain_effects",
+			async () => {
+				const fixture = await setup_test();
+				const client = await create_ws_transport({
+					base_url,
+					ws_path,
+					cookies: fixture.transport.cookies(),
+					origin
+				});
+				try {
+					await client.request(1, account_token_create_action_spec.method, {
+						name: 'ws drain probe',
+						scope: { kind: 'full' },
+						lifetime: { kind: 'eternal' }
+					});
+				} finally {
+					await client.close();
+				}
+
+				const drained = await cross_rpc_call(
+					fixture.fresh_transport({ origin: null }),
+					rpc_path!,
+					'_testing_drain_effects',
+					undefined,
+					fixture.create_daemon_token_headers()
+				);
+				assert.ok(drained.ok, `_testing_drain_effects failed: ${JSON.stringify(drained.error)}`);
+
+				// `_testing_reset` wiped audit_log at setup, so the mint is the only
+				// token_create event
+				const listed = expect_output(
+					await cross_rpc_call(
+						fixture.transport,
+						rpc_path!,
+						audit_log_list_action_spec.method,
+						{ event_type: 'token_create' },
+						fixture.create_session_headers()
+					),
+					AuditLogListOutput
+				);
+				assert.strictEqual(listed.events.length, 1, JSON.stringify(listed.events));
+				assert.strictEqual(listed.events[0]!.outcome, 'success');
+				assert.strictEqual(listed.events[0]!.account_id, fixture.account.id);
 			}
 		);
 	});

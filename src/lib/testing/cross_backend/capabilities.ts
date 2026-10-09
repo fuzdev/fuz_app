@@ -227,7 +227,9 @@ export interface BackendCapabilities {
 	 * (`account_session_revoke_all` among them), so a socket can revoke the
 	 * session it is running on. Gates the self-revocation case in
 	 * `describe_cross_process_ws_tests`: the socket reads the reply to its
-	 * request, then is closed with `WS_CLOSE_SESSION_REVOKED`.
+	 * request, then is closed with `WS_CLOSE_SESSION_REVOKED`. Also gates that
+	 * suite's WS-mutation audit case (with `rpc_path`; it calls
+	 * `_testing_drain_effects`).
 	 *
 	 * `true` on fuz_app's own spine presets — the TS spine binary mounts its
 	 * full action set on `/api/ws`, and the Rust `testing_spine_stub` serves

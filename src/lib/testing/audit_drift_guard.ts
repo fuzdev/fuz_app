@@ -76,7 +76,8 @@ export interface RecordingAuditEmitter {
  * emissions read out of the same homogeneous `calls` array.
  * `notify` is a no-op; `add_listener` records into a local array that
  * `listener_count` reports (registered listeners never fire — this emitter
- * captures `emit` shapes, not fan-out).
+ * captures `emit` shapes, not fan-out). `drain_inflight` resolves at once:
+ * a recorded call writes nothing, so nothing is ever in flight.
  *
  * `emit` AND `emit_pool` both append to `calls`, so a test reads either
  * entry point's writes off the same array.
@@ -123,7 +124,8 @@ export const create_recording_audit_emitter = (
 		add_listener: (listener) => {
 			listeners.push(listener);
 		},
-		listener_count: () => listeners.length
+		listener_count: () => listeners.length,
+		drain_inflight: () => Promise.resolve()
 	};
 	return { emitter, calls };
 };
