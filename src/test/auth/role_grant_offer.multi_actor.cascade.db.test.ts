@@ -13,22 +13,22 @@
 import { assert, describe, test } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { create_test_app } from '$lib/testing/app_server.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import { create_test_app } from '#lib/testing/app_server.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {
 	role_grant_offer_create_action_spec,
 	role_grant_offer_decline_action_spec,
 	role_grant_offer_retract_action_spec
-} from '$lib/auth/role_grant_offer_action_specs.ts';
+} from '#lib/auth/role_grant_offer_action_specs.ts';
 import {
 	query_accept_offer,
 	query_role_grant_offer_create
-} from '$lib/auth/role_grant_offer_queries.ts';
-import { cleanup_expired_role_grant_offers } from '$lib/auth/cleanup.ts';
-import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
-import { noop_connection_closer } from '$lib/actions/connection_closer.ts';
-import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
-import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
+} from '#lib/auth/role_grant_offer_queries.ts';
+import { cleanup_expired_role_grant_offers } from '#lib/auth/cleanup.ts';
+import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
+import { noop_connection_closer } from '#lib/actions/connection_closer.ts';
+import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
+import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 
 import {
 	RPC_PATH,

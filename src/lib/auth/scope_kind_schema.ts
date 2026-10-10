@@ -121,9 +121,7 @@ export const create_scope_kind_schema = (
 	}
 
 	const ScopeKind: z.ZodType<string> =
-		names.length === 0
-			? (z.never() as unknown as z.ZodType<string>)
-			: z.enum(names as [string, ...Array<string>]);
+		names.length === 0 ? z.never() : z.enum(names as [string, ...Array<string>]);
 
 	const scope_kinds: Map<string, ScopeKindMeta> = new Map();
 	for (const name of names) {

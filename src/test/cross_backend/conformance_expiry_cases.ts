@@ -26,8 +26,8 @@
  * @module
  */
 
-import { ERROR_AUTHENTICATION_REQUIRED } from '$lib/http/error_schemas.ts';
-import type { ConformanceCase } from '$lib/testing/cross_backend/conformance_case.ts';
+import { ERROR_AUTHENTICATION_REQUIRED } from '#lib/http/error_schemas.ts';
+import type { ConformanceCase } from '#lib/testing/cross_backend/conformance_case.ts';
 
 export const conformance_expiry_cases: ReadonlyArray<ConformanceCase> = [
 	{

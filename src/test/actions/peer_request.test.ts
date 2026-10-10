@@ -2,12 +2,12 @@ import { describe, test, assert, vi } from 'vitest';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid } from '@fuzdev/fuz_util/id.ts';
 
-import { PendingPeerRequests, audit_unmatched_peer_response } from '$lib/actions/peer_request.ts';
+import { PendingPeerRequests, audit_unmatched_peer_response } from '#lib/actions/peer_request.ts';
 import {
 	create_jsonrpc_response,
 	create_jsonrpc_error_response
-} from '$lib/http/jsonrpc_helpers.ts';
-import { jsonrpc_error_messages } from '$lib/http/jsonrpc_errors.ts';
+} from '#lib/http/jsonrpc_helpers.ts';
+import { jsonrpc_error_messages } from '#lib/http/jsonrpc_errors.ts';
 
 describe('PendingPeerRequests', () => {
 	test('register allocates namespaced ids and resolve delivers the success value', async () => {

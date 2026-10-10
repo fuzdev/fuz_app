@@ -15,7 +15,7 @@ import { describe, test, assert, vi, afterEach } from 'vitest';
 import { createRawSnippet, flushSync, mount, unmount } from 'svelte';
 import { afterNavigate } from '$app/navigation';
 
-import ColumnLayout from '$lib/ui/ColumnLayout.svelte';
+import ColumnLayout from '#lib/ui/ColumnLayout.svelte';
 
 // vitest resolves the server builds, which can't mount - load the client builds
 vi.mock('svelte', async () =>

@@ -8,8 +8,8 @@
 
 import { describe, test, assert, vi, beforeEach, afterEach } from 'vitest';
 
-import { TableState } from '$lib/ui/table_state.svelte.ts';
-import { DB_TABLE_ROWS_LIMIT_MAX } from '$lib/http/db_routes.ts';
+import { TableState } from '#lib/ui/table_state.svelte.ts';
+import { DB_TABLE_ROWS_LIMIT_MAX } from '#lib/http/db_routes.ts';
 
 const json_response = (body: unknown, status = 200): Response =>
 	new Response(JSON.stringify(body), {

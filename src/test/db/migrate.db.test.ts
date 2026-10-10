@@ -9,15 +9,15 @@
 import { describe, assert, test, beforeAll, beforeEach } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import type { Db } from '$lib/db/db.ts';
+import type { Db } from '#lib/db/db.ts';
 import {
 	baseline,
 	run_migrations,
 	MigrationError,
 	type Migration,
 	type MigrationNamespace
-} from '$lib/db/migrate.ts';
-import { create_pglite_factory, reset_pglite } from '$lib/testing/db.ts';
+} from '#lib/db/migrate.ts';
+import { create_pglite_factory, reset_pglite } from '#lib/testing/db.ts';
 
 const noop_init = async (_db: Db): Promise<void> => {};
 const factory = create_pglite_factory(noop_init);

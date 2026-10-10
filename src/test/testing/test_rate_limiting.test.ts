@@ -9,15 +9,15 @@
 
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { fuz_session_config } from '$lib/auth/session_cookie.ts';
-import { create_health_route_spec } from '$lib/http/common_routes.ts';
-import { create_account_route_specs } from '$lib/auth/account_routes.ts';
-import { create_account_actions } from '$lib/auth/account_actions.ts';
-import { prefix_route_specs, type RouteSpec } from '$lib/http/route_spec.ts';
-import type { AppServerContext } from '$lib/server/app_server_context.ts';
-import type { RpcEndpointSpec } from '$lib/http/surface.ts';
-import { describe_rate_limiting_tests } from '$lib/testing/rate_limiting.ts';
-import { default_in_process_suite_options } from '$lib/testing/cross_backend/in_process_setup.ts';
+import { fuz_session_config } from '#lib/auth/session_cookie.ts';
+import { create_health_route_spec } from '#lib/http/common_routes.ts';
+import { create_account_route_specs } from '#lib/auth/account_routes.ts';
+import { create_account_actions } from '#lib/auth/account_actions.ts';
+import { prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
+import type { AppServerContext } from '#lib/server/app_server_context.ts';
+import type { RpcEndpointSpec } from '#lib/http/surface.ts';
+import { describe_rate_limiting_tests } from '#lib/testing/rate_limiting.ts';
+import { default_in_process_suite_options } from '#lib/testing/cross_backend/in_process_setup.ts';
 
 const RPC_PATH = '/api/rpc';
 const rpc_log = new Logger('rate-limiting-rpc', { level: 'off' });

@@ -154,7 +154,7 @@ Shared helpers accept small `*Deps` from `runtime/deps.ts` (not `Pick<GodType, .
 
 ### Peer Dependencies
 
-- `hono` (>=4), `zod` (^4), `svelte` (^5), `@sveltejs/kit` (^2)
+- `hono` (>=4), `zod` (^4), `svelte` (^5), `@sveltejs/kit` (^3)
 - `@fuzdev/fuz_util` (>=0.65.2)
 - `@node-rs/argon2` (>=2) — for `auth/password_argon2`
 - `@fuzdev/blake3-wasm` (>=0.1.0) — for `auth/session_queries`, `auth/bearer_auth`
@@ -309,7 +309,7 @@ suites must pass `rpc_endpoints` to `describe_standard_integration_tests` /
 
 See ./docs/testing.md for the consumer wiring guide. Skill(fuz-stack)
 covers shared conventions (`src/test/` layout, `.db.test.ts`, `assert`
-from vitest, `*Deps` over god-type mocks). Backend tests use `$lib/`
+from vitest, `*Deps` over god-type mocks). Backend tests use `#lib/`
 imports.
 
 **Cross-process self-tests** — fuz_app runs the standard suites against its

@@ -22,9 +22,6 @@ import '../assert_dev_env.ts';
  * binaries + Rust `testing_spine_stub` over real HTTP). Origin middleware is
  * on every spine, so the suite is ungated.
  *
- * `$lib`-free by contract (relative specifiers only), like the sibling
- * cross-backend suites.
- *
  * @module
  */
 

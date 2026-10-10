@@ -13,15 +13,15 @@ import {
 	DAEMON_TOKEN_HEADER,
 	generate_daemon_token,
 	type DaemonTokenState
-} from '$lib/auth/daemon_token.ts';
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_app_server } from '$lib/server/app_server.ts';
+} from '#lib/auth/daemon_token.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_app_server } from '#lib/server/app_server.ts';
 import {
 	create_test_app_server,
 	create_loopback_app_server_options
-} from '$lib/testing/app_server.ts';
-import { create_testing_actions } from '$lib/testing/cross_backend/testing_reset_actions.ts';
-import { auth_truncate_tables } from '$lib/testing/db.ts';
+} from '#lib/testing/app_server.ts';
+import { create_testing_actions } from '#lib/testing/cross_backend/testing_reset_actions.ts';
+import { auth_truncate_tables } from '#lib/testing/db.ts';
 
 import { default_db_factory } from '../db_fixture.ts';
 

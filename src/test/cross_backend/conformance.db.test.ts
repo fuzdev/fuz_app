@@ -10,14 +10,14 @@
  * @module
  */
 
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import { describe_conformance_table_tests } from '$lib/testing/cross_backend/conformance_table.ts';
-import { default_in_process_suite_options } from '$lib/testing/cross_backend/in_process_setup.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { describe_conformance_table_tests } from '#lib/testing/cross_backend/conformance_table.ts';
+import { default_in_process_suite_options } from '#lib/testing/cross_backend/in_process_setup.ts';
 import {
 	create_spine_route_specs,
 	spine_rpc_endpoints,
 	spine_session_options
-} from '$lib/testing/cross_backend/default_spine_surface.ts';
+} from '#lib/testing/cross_backend/default_spine_surface.ts';
 
 import { conformance_proof_cases } from './conformance_proof_cases.ts';
 import { conformance_security_cases } from './conformance_security_cases.ts';

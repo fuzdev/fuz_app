@@ -19,9 +19,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
 
-import { load_secure_file_node, MAX_SECURE_FILE_SIZE } from '$lib/runtime/secure_file.ts';
-import { write_file_atomic } from '$lib/runtime/fs.ts';
-import { create_node_runtime } from '$lib/runtime/node.ts';
+import { load_secure_file_node, MAX_SECURE_FILE_SIZE } from '#lib/runtime/secure_file.ts';
+import { write_file_atomic } from '#lib/runtime/fs.ts';
+import { create_node_runtime } from '#lib/runtime/node.ts';
 
 const posix = process.platform !== 'win32';
 

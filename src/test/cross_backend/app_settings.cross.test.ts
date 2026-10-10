@@ -12,12 +12,12 @@
 
 import { inject } from 'vitest';
 
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle
-} from '$lib/testing/cross_backend/setup.ts';
-import { describe_app_settings_cross_tests } from '$lib/testing/cross_backend/app_settings.ts';
+} from '#lib/testing/cross_backend/setup.ts';
+import { describe_app_settings_cross_tests } from '#lib/testing/cross_backend/app_settings.ts';
 
 import './cross_test_types.ts';
 

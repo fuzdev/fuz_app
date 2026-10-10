@@ -16,9 +16,9 @@
  * @module
  */
 
-import { create_dual_spawn_global_setup } from '$lib/testing/cross_backend/create_dual_spawn_global_setup.ts';
-import { ts_spine_node_backend_config } from '$lib/testing/cross_backend/ts_spine_backend_config.ts';
-import { rust_spine_stub_backend_config } from '$lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
+import { create_dual_spawn_global_setup } from '#lib/testing/cross_backend/create_dual_spawn_global_setup.ts';
+import { ts_spine_node_backend_config } from '#lib/testing/cross_backend/ts_spine_backend_config.ts';
+import { rust_spine_stub_backend_config } from '#lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 import type { TestProject } from 'vitest/node';
 
 import './cross_test_types.ts';

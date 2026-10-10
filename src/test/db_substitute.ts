@@ -31,7 +31,7 @@
  * @module
  */
 
-import { set_substitute_db_factory, type DbFactoryBuilder } from '$lib/testing/db.ts';
+import { set_substitute_db_factory, type DbFactoryBuilder } from '#lib/testing/db.ts';
 import { create_pglet_shared_factory } from './db_pglet_factory.ts';
 import { create_pglet_wasm_shared_factory } from './db_pglet_wasm_factory.ts';
 

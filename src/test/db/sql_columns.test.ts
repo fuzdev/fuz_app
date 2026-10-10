@@ -13,7 +13,7 @@ import {
 	qualify_columns,
 	omit_columns,
 	type ColumnExpr
-} from '$lib/db/sql_columns.ts';
+} from '#lib/db/sql_columns.ts';
 
 const COLUMNS = ['id', 'name', 'token_hash', 'created_at'] as const;
 

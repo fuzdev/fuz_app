@@ -20,19 +20,19 @@
 
 import { inject } from 'vitest';
 
-import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle
-} from '$lib/testing/cross_backend/setup.ts';
-import { describe_standard_cross_process_tests } from '$lib/testing/cross_backend/standard.ts';
+} from '#lib/testing/cross_backend/setup.ts';
+import { describe_standard_cross_process_tests } from '#lib/testing/cross_backend/standard.ts';
 
 import {
 	create_spine_surface_spec,
 	spine_rpc_endpoints,
 	spine_roles,
 	spine_session_options
-} from '$lib/testing/cross_backend/default_spine_surface.ts';
+} from '#lib/testing/cross_backend/default_spine_surface.ts';
 
 import './cross_test_types.ts';
 

@@ -21,12 +21,12 @@ import {
 	create_admin_rpc_adapters,
 	provide_admin_rpc_contexts,
 	type AdminRpcApi
-} from '$lib/ui/admin_rpc_adapters.ts';
-import { admin_accounts_rpc_context } from '$lib/ui/admin_accounts_state.svelte.ts';
-import { admin_invites_rpc_context } from '$lib/ui/admin_invites_state.svelte.ts';
-import { audit_log_rpc_context } from '$lib/ui/audit_log_state.svelte.ts';
-import { app_settings_rpc_context } from '$lib/ui/app_settings_state.svelte.ts';
-import { format_scope_context, type FormatScope } from '$lib/ui/format_scope.ts';
+} from '#lib/ui/admin_rpc_adapters.ts';
+import { admin_accounts_rpc_context } from '#lib/ui/admin_accounts_state.svelte.ts';
+import { admin_invites_rpc_context } from '#lib/ui/admin_invites_state.svelte.ts';
+import { audit_log_rpc_context } from '#lib/ui/audit_log_state.svelte.ts';
+import { app_settings_rpc_context } from '#lib/ui/app_settings_state.svelte.ts';
+import { format_scope_context, type FormatScope } from '#lib/ui/format_scope.ts';
 
 // Test fixtures — narrow `Admin*Rpc` interfaces require `Uuid`-branded ids
 // (matching the wire spec types). Real values would arrive pre-branded from
@@ -49,15 +49,18 @@ const make_admin_api = (
 	responses: Record<string, unknown> = {}
 ): { api: AdminRpcApi; calls: Array<{ method: string; input: unknown }> } => {
 	const calls: Array<{ method: string; input: unknown }> = [];
-	const api = new Proxy({} as Record<string, (input?: unknown) => Promise<unknown>>, {
-		get: (_t, method) => {
-			if (typeof method !== 'string') return undefined;
-			return async (input?: unknown) => {
-				calls.push({ method, input });
-				return responses[method];
-			};
+	const api = new Proxy(
+		{},
+		{
+			get: (_t, method) => {
+				if (typeof method !== 'string') return undefined;
+				return async (input?: unknown) => {
+					calls.push({ method, input });
+					return responses[method];
+				};
+			}
 		}
-	}) as unknown as AdminRpcApi;
+	) as unknown as AdminRpcApi;
 	return { api, calls };
 };
 
@@ -246,11 +249,14 @@ describe('create_admin_rpc_adapters — error propagation', () => {
 			code: -32002,
 			data: { reason: 'role_grant_offer_not_authorized' }
 		});
-		const api = new Proxy({} as Record<string, (input?: unknown) => Promise<unknown>>, {
-			get: () => async () => {
-				throw err;
+		const api = new Proxy(
+			{},
+			{
+				get: () => async () => {
+					throw err;
+				}
 			}
-		}) as unknown as AdminRpcApi;
+		) as unknown as AdminRpcApi;
 		const { admin_accounts } = create_admin_rpc_adapters(api);
 		const caught = await assert_rejects(() =>
 			admin_accounts.create_role_grant({ to_account_id: acct_id, role: 'admin' })

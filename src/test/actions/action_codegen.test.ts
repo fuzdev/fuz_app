@@ -31,9 +31,9 @@ import {
 	to_action_property_key,
 	PROTOCOL_ACTION_METHODS,
 	is_protocol_action_method
-} from '$lib/actions/action_codegen.ts';
-import type { ActionSpecUnion } from '$lib/actions/action_spec.ts';
-import { protocol_action_specs } from '$lib/actions/protocol.ts';
+} from '#lib/actions/action_codegen.ts';
+import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
+import { protocol_action_specs } from '#lib/actions/protocol.ts';
 
 // --- helpers ---
 
@@ -1751,7 +1751,7 @@ describe('create_namespace_qualifier', () => {
 			],
 			imports
 		);
-		const stranger = { ...create_rr('frontend'), method: 'unregistered' } as ActionSpecUnion;
+		const stranger = { ...create_rr('frontend'), method: 'unregistered' };
 		assert.throws(() => qualify_spec(stranger), /unknown action method passed to qualify_spec/);
 	});
 });

@@ -10,8 +10,8 @@
 
 import { describe, test, assert } from 'vitest';
 
-import { create_test_middleware_stack_app, TEST_MIDDLEWARE_PATH } from '$lib/testing/middleware.ts';
-import { describe_standard_adversarial_headers } from '$lib/testing/adversarial_headers.ts';
+import { create_test_middleware_stack_app, TEST_MIDDLEWARE_PATH } from '#lib/testing/middleware.ts';
+import { describe_standard_adversarial_headers } from '#lib/testing/adversarial_headers.ts';
 
 // --- Shared test fixtures ---
 

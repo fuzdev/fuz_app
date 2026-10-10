@@ -26,7 +26,7 @@
  *
  * Shares the same `create_pglite_factory` shared-WASM pattern as
  * `create_app_server.db.test.ts`, and closes every server it assembles. Uses `create_stub_upgrade` (from
- * `$lib/testing/ws_round_trip.ts`) so the upgrade middleware exercises
+ * `#lib/testing/ws_round_trip.ts`) so the upgrade middleware exercises
  * without a real WS handshake. Dispatch through the assembled app — the
  * action rate limiters, middleware order — is in
  * `create_app_server_ws_endpoints.dispatch.db.test.ts`.
@@ -47,44 +47,44 @@ import type { UpgradeWebSocket, WSEvents } from 'hono/ws';
 import { z } from 'zod';
 import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import { create_keyring } from '$lib/auth/keyring.ts';
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_health_route_spec } from '$lib/http/common_routes.ts';
+import { create_keyring } from '#lib/auth/keyring.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import {
 	create_app_server,
 	type AppServer,
 	type AppServerOptions
-} from '$lib/server/app_server.ts';
-import type { AppBackend } from '$lib/server/app_backend.ts';
-import { create_audit_emitter, type AuditEmitter } from '$lib/auth/audit_emitter.ts';
-import { create_loopback_app_server_options, stub_password_deps } from '$lib/testing/app_server.ts';
-import { create_pglite_factory } from '$lib/testing/db.ts';
-import { run_migrations } from '$lib/db/migrate.ts';
-import { auth_migration_ns } from '$lib/auth/migrations.ts';
+} from '#lib/server/app_server.ts';
+import type { AppBackend } from '#lib/server/app_backend.ts';
+import { create_audit_emitter, type AuditEmitter } from '#lib/auth/audit_emitter.ts';
+import { create_loopback_app_server_options, stub_password_deps } from '#lib/testing/app_server.ts';
+import { create_pglite_factory } from '#lib/testing/db.ts';
+import { run_migrations } from '#lib/db/migrate.ts';
+import { auth_migration_ns } from '#lib/auth/migrations.ts';
 import {
 	create_stub_upgrade,
 	create_fake_hono_context,
 	create_fake_ws,
 	dispatch_ws_message
-} from '$lib/testing/ws_round_trip.ts';
-import { create_test_audit_event } from '$lib/testing/entities.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import { protocol_actions } from '$lib/actions/protocol.ts';
-import { parse_allowed_origins } from '$lib/http/origin.ts';
+} from '#lib/testing/ws_round_trip.ts';
+import { create_test_audit_event } from '#lib/testing/entities.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { protocol_actions } from '#lib/actions/protocol.ts';
+import { parse_allowed_origins } from '#lib/http/origin.ts';
 import {
 	BackendWebsocketTransport,
 	DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT
-} from '$lib/actions/transports_ws_backend.ts';
-import { WS_CLOSE_CONNECTION_LIMIT, WS_CLOSE_SESSION_REVOKED } from '$lib/actions/transports.ts';
-import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
-import type { WsEndpointSpec } from '$lib/actions/ws_endpoint_spec.ts';
-import type { Action } from '$lib/actions/action_types.ts';
-import type { LocalCallActionSpec } from '$lib/actions/action_spec.ts';
-import type { RouteSpec } from '$lib/http/route_spec.ts';
-import { all_standard_action_specs } from '$lib/auth/standard_action_specs.ts';
-import { create_standard_rpc_actions } from '$lib/auth/standard_rpc_actions.ts';
-import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
-import { AUTH_MIDDLEWARE_PATH } from '$lib/auth/middleware.ts';
+} from '#lib/actions/transports_ws_backend.ts';
+import { WS_CLOSE_CONNECTION_LIMIT, WS_CLOSE_SESSION_REVOKED } from '#lib/actions/transports.ts';
+import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
+import type { WsEndpointSpec } from '#lib/actions/ws_endpoint_spec.ts';
+import type { Action } from '#lib/actions/action_types.ts';
+import type { LocalCallActionSpec } from '#lib/actions/action_spec.ts';
+import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { all_standard_action_specs } from '#lib/auth/standard_action_specs.ts';
+import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
+import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { AUTH_MIDDLEWARE_PATH } from '#lib/auth/middleware.ts';
 
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
 const keyring = create_keyring(TEST_KEY)!;

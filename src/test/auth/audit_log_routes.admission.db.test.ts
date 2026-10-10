@@ -22,27 +22,27 @@
 import { assert, test } from 'vitest';
 import { Logger, type LogConsole } from '@fuzdev/fuz_util/log.ts';
 
-import { create_account_route_specs } from '$lib/auth/account_routes.ts';
-import { create_audit_log_route_specs } from '$lib/auth/audit_log_routes.ts';
-import { query_role_grant_revoke_role } from '$lib/auth/role_grant_queries.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import type { Db } from '$lib/db/db.ts';
+import { create_account_route_specs } from '#lib/auth/account_routes.ts';
+import { create_audit_log_route_specs } from '#lib/auth/audit_log_routes.ts';
+import { query_role_grant_revoke_role } from '#lib/auth/role_grant_queries.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import type { Db } from '#lib/db/db.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS
-} from '$lib/http/error_schemas.ts';
-import { prefix_route_specs } from '$lib/http/route_spec.ts';
+} from '#lib/http/error_schemas.ts';
+import { prefix_route_specs } from '#lib/http/route_spec.ts';
 import {
 	AUDIT_LOG_CHANNEL,
 	AUDIT_LOG_SSE_MAX_PER_SCOPE,
 	type AuditLogSse
-} from '$lib/realtime/sse_auth_guard.ts';
-import { SSE_CONNECTED_COMMENT } from '$lib/realtime/sse_constants.ts';
-import { require_audit_sse } from '$lib/server/app_server.ts';
-import { create_test_app, type TestAccount, type TestApp } from '$lib/testing/app_server.ts';
-import { install_audit_drift_guard } from '$lib/testing/audit_drift_guard.ts';
-import { create_sse_frame_reader } from '$lib/testing/transports/sse_frame_reader.ts';
+} from '#lib/realtime/sse_auth_guard.ts';
+import { SSE_CONNECTED_COMMENT } from '#lib/realtime/sse_constants.ts';
+import { require_audit_sse } from '#lib/server/app_server.ts';
+import { create_test_app, type TestAccount, type TestApp } from '#lib/testing/app_server.ts';
+import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
+import { create_sse_frame_reader } from '#lib/testing/transports/sse_frame_reader.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import { create_gated_db, is_session_read, type StalledQuery } from '../gated_db.ts';

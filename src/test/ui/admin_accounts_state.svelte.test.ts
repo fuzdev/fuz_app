@@ -15,9 +15,9 @@ import {
 	AdminAccountsState,
 	can_offer_global_role,
 	type AdminAccountsRpc
-} from '$lib/ui/admin_accounts_state.svelte.ts';
-import type { AdminAccountEntryJson } from '$lib/auth/account_schema.ts';
-import type { RoleGrantOfferJson } from '$lib/auth/role_grant_offer_schema.ts';
+} from '#lib/ui/admin_accounts_state.svelte.ts';
+import type { AdminAccountEntryJson } from '#lib/auth/account_schema.ts';
+import type { RoleGrantOfferJson } from '#lib/auth/role_grant_offer_schema.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import { make_offer } from './role_grant_offer_fixtures.ts';

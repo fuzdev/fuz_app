@@ -1,6 +1,6 @@
 import { describe, assert, test } from 'vitest';
 
-import { pg_error_code, is_pg_unique_violation } from '$lib/db/pg_error.ts';
+import { pg_error_code, is_pg_unique_violation } from '#lib/db/pg_error.ts';
 
 /** Build an `Error` carrying a `code` property, the shape `pg`/PGlite throw. */
 const error_with_code = (code: unknown): Error => Object.assign(new Error('pg error'), { code });

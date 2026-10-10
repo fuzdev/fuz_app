@@ -10,9 +10,9 @@
 
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type { ActionContext } from '$lib/actions/action_rpc.ts';
-import type { RequestContext } from '$lib/auth/request_context.ts';
-import { create_stub_db } from '$lib/testing/stubs.ts';
+import type { ActionContext } from '#lib/actions/action_rpc.ts';
+import type { RequestContext } from '#lib/auth/request_context.ts';
+import { create_stub_db } from '#lib/testing/stubs.ts';
 
 /**
  * Read the `reason` string off a JSON-RPC error response, past the

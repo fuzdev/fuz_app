@@ -33,7 +33,7 @@ import {
 	dispatch_with_post_commit_rollback,
 	flush_pending_effects,
 	flush_post_commit_effects
-} from '$lib/http/pending_effects.ts';
+} from '#lib/http/pending_effects.ts';
 
 const create_recording_logger = (): { log: Logger; errors: Array<Array<unknown>> } => {
 	const errors: Array<Array<unknown>> = [];

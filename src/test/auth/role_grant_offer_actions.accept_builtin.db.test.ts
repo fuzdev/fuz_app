@@ -25,25 +25,25 @@ import { describe, test, assert } from 'vitest';
 import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import { create_test_app, type TestApp } from '$lib/testing/app_server.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
+import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import {
 	query_accept_offer,
 	query_role_grant_offer_create,
 	RoleGrantOfferBuiltinRefusedError
-} from '$lib/auth/role_grant_offer_queries.ts';
+} from '#lib/auth/role_grant_offer_queries.ts';
 import {
 	ERROR_ROLE_GRANT_BUILTIN_SCOPED,
 	ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
 	ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE,
 	role_grant_offer_accept_action_spec
-} from '$lib/auth/role_grant_offer_action_specs.ts';
-import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
-import { install_audit_drift_guard } from '$lib/testing/audit_drift_guard.ts';
-import { create_test_role_grant_direct } from '$lib/testing/db_entities.ts';
-import { query_audit_log_list } from '$lib/auth/audit_log_queries.ts';
-import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
-import type { Db } from '$lib/db/db.ts';
+} from '#lib/auth/role_grant_offer_action_specs.ts';
+import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
+import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
+import { create_test_role_grant_direct } from '#lib/testing/db_entities.ts';
+import { query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
+import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
+import type { Db } from '#lib/db/db.ts';
 import {
 	RPC_PATH,
 	TEST_APP_ROLE,

@@ -14,26 +14,26 @@
 import { test, assert } from 'vitest';
 import { create_uuid } from '@fuzdev/fuz_util/id.ts';
 
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_test_app } from '$lib/testing/app_server.ts';
-import { create_rpc_endpoint } from '$lib/actions/action_rpc.ts';
-import { create_actor_lookup_actions } from '$lib/auth/actor_lookup_actions.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
+import { create_actor_lookup_actions } from '#lib/auth/actor_lookup_actions.ts';
 import {
 	ACTOR_LOOKUP_IDS_MAX,
 	actor_lookup_action_spec
-} from '$lib/auth/actor_lookup_action_specs.ts';
-import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
-import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
+} from '#lib/auth/actor_lookup_action_specs.ts';
+import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
+import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
 	auth_integration_truncate_tables
-} from '$lib/testing/db.ts';
-import { run_migrations } from '$lib/db/migrate.ts';
-import { auth_migration_ns } from '$lib/auth/migrations.ts';
-import type { Db } from '$lib/db/db.ts';
-import type { AppServerContext } from '$lib/server/app_server_context.ts';
-import type { RouteSpec } from '$lib/http/route_spec.ts';
+} from '#lib/testing/db.ts';
+import { run_migrations } from '#lib/db/migrate.ts';
+import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import type { Db } from '#lib/db/db.ts';
+import type { AppServerContext } from '#lib/server/app_server_context.ts';
+import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 const session_options = create_session_config('test_actor_lookup');
 const RPC_PATH = '/api/rpc';
@@ -210,7 +210,7 @@ describe_db('actor_lookup_actions', (get_db) => {
 			path: RPC_PATH,
 			spec: actor_lookup_action_spec,
 			// Bypass the spec-input type check — we're testing the runtime guard.
-			params: { ids: [] } as never,
+			params: { ids: [] },
 			headers: caller.create_session_headers()
 		});
 		assert.ok(!res.ok);

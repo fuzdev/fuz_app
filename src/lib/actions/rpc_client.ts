@@ -102,25 +102,28 @@ export const create_rpc_client = <TApi extends object>(
 	// callback isn't directly assignable to the broad slot the helpers take.
 	const broad_on_action_event = on_action_event as ((event: ActionEvent) => void) | undefined;
 
-	return new Proxy({} as Record<string, (...args: Array<unknown>) => unknown>, {
-		get(_target, method: string) {
-			const spec = environment.lookup_action_spec(method);
-			if (!spec) {
-				return undefined;
-			}
+	return new Proxy(
+		{},
+		{
+			get(_target, method: string) {
+				const spec = environment.lookup_action_spec(method);
+				if (!spec) {
+					return undefined;
+				}
 
-			return create_action_method(
-				peer,
-				environment,
-				spec,
-				broad_on_action_event,
-				transport_for_method
-			);
-		},
-		has(_target, method: string) {
-			return environment.lookup_action_spec(method) !== undefined;
+				return create_action_method(
+					peer,
+					environment,
+					spec,
+					broad_on_action_event,
+					transport_for_method
+				);
+			},
+			has(_target, method: string) {
+				return environment.lookup_action_spec(method) !== undefined;
+			}
 		}
-	}) as unknown as TApi;
+	) as unknown as TApi;
 };
 
 const create_action_method = (

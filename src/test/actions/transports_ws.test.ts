@@ -15,13 +15,13 @@ import {
 	FrontendWebsocketTransport,
 	create_message_too_large_error,
 	type WebsocketRpcConnection
-} from '$lib/actions/transports_ws.ts';
-import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '$lib/http/jsonrpc_errors.ts';
-import type { JsonrpcRequest, JsonrpcNotification, JsonrpcRequestId } from '$lib/http/jsonrpc.ts';
-import { PEER_PING_METHOD, PEER_PROTOCOL_VERSION } from '$lib/actions/peer_ping.ts';
-import { DEFAULT_WS_MAX_MESSAGE_BYTES } from '$lib/actions/transports.ts';
-import { create_frontend_rpc_client } from '$lib/actions/frontend_rpc_client.ts';
-import type { ActionSpecUnion } from '$lib/actions/action_spec.ts';
+} from '#lib/actions/transports_ws.ts';
+import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '#lib/http/jsonrpc_errors.ts';
+import type { JsonrpcRequest, JsonrpcNotification, JsonrpcRequestId } from '#lib/http/jsonrpc.ts';
+import { PEER_PING_METHOD, PEER_PROTOCOL_VERSION } from '#lib/actions/peer_ping.ts';
+import { DEFAULT_WS_MAX_MESSAGE_BYTES } from '#lib/actions/transports.ts';
+import { create_frontend_rpc_client } from '#lib/actions/frontend_rpc_client.ts';
+import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
 
 interface RequestCall {
 	method: string;

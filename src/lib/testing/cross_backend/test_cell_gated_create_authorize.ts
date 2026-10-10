@@ -21,9 +21,6 @@ import '../assert_dev_env.ts';
  *   the predicate is **pure** — no DB read of its own (which also dodges the
  *   single-connection PGlite deadlock a separate handle would hit).
  *
- * **`$lib`-free by contract** — reached by the spawned TS spine binary under
- * Gro's loader (no `$lib` alias). Keep every import relative.
- *
  * @module
  */
 
@@ -59,7 +56,7 @@ const get_contribution_rule = (data: unknown, kind: string): ContributionRule | 
 	if (policy === null || typeof policy !== 'object') return undefined;
 	const rule = (policy as Record<string, unknown>)[kind];
 	if (rule === null || typeof rule !== 'object') return undefined;
-	return rule as ContributionRule;
+	return rule;
 };
 
 /**

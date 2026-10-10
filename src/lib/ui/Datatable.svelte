@@ -22,7 +22,7 @@
 	const {
 		columns,
 		rows,
-		row_key = 'id' as string & keyof T, // eslint-disable-line @typescript-eslint/no-duplicate-type-constituents
+		row_key = 'id',
 		height,
 		header,
 		cell,
@@ -131,7 +131,7 @@
 						{#if cell}
 							{@render cell(column, row, row[column.key])}
 						{:else if column.format}
-							{column.format(row[column.key], row as any)}
+							{column.format(row[column.key], row)}
 						{:else}
 							{format_value(row[column.key])}
 						{/if}

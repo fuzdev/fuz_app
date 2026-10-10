@@ -11,7 +11,7 @@ import type {
 	LogDeps,
 	TerminalDeps,
 	ProcessDeps
-} from '$lib/runtime/deps.ts';
+} from '#lib/runtime/deps.ts';
 
 // Type-level assertions — compile error if RuntimeDeps doesn't satisfy *Deps.
 // These tests exist for structural verification; create_deno_runtime itself
@@ -19,45 +19,45 @@ import type {
 
 test('RuntimeDeps satisfies EnvDeps', () => {
 	const _check: EnvDeps = {} as RuntimeDeps;
-	void _check;
+	_check;
 });
 
 test('RuntimeDeps satisfies FsReadDeps', () => {
 	const _check: FsReadDeps = {} as RuntimeDeps;
-	void _check;
+	_check;
 });
 
 test('RuntimeDeps satisfies FsWriteDeps', () => {
 	const _check: FsWriteDeps = {} as RuntimeDeps;
-	void _check;
+	_check;
 });
 
 test('RuntimeDeps satisfies FsRemoveDeps', () => {
 	const _check: FsRemoveDeps = {} as RuntimeDeps;
-	void _check;
+	_check;
 });
 
 test('RuntimeDeps satisfies CommandDeps', () => {
 	const _check: CommandDeps = {} as RuntimeDeps;
-	void _check;
+	_check;
 });
 
 test('RuntimeDeps satisfies TerminalDeps', () => {
 	const _check: TerminalDeps = {} as RuntimeDeps;
-	void _check;
+	_check;
 });
 
 test('RuntimeDeps satisfies ProcessDeps', () => {
 	const _check: ProcessDeps = {} as RuntimeDeps;
-	void _check;
+	_check;
 });
 
 test('RuntimeDeps satisfies FetchDeps', () => {
 	const _check: FetchDeps = {} as RuntimeDeps;
-	void _check;
+	_check;
 });
 
 test('RuntimeDeps satisfies LogDeps', () => {
 	const _check: LogDeps = {} as RuntimeDeps;
-	void _check;
+	_check;
 });

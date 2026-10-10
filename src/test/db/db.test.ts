@@ -10,7 +10,7 @@
 import { describe, assert, test } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import { Db, no_nested_transaction, type DbClient } from '$lib/db/db.ts';
+import { Db, no_nested_transaction, type DbClient } from '#lib/db/db.ts';
 
 /** Create a mock DbClient that returns the given rows. */
 const create_mock_client = (

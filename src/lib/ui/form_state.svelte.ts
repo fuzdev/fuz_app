@@ -177,7 +177,7 @@ export class FormState<TField extends string = string> {
 			);
 			return;
 		}
-		el?.focus({ focusVisible: true } as FocusOptions);
+		el?.focus({ focusVisible: true });
 	}
 
 	/**

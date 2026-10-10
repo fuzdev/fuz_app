@@ -27,8 +27,8 @@ import { Hono } from 'hono';
 import { serve, type ServerType } from '@hono/node-server';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { create_sse_response } from '$lib/realtime/sse.ts';
-import { SubscriberRegistry } from '$lib/realtime/subscriber_registry.ts';
+import { create_sse_response } from '#lib/realtime/sse.ts';
+import { SubscriberRegistry } from '#lib/realtime/subscriber_registry.ts';
 
 const log = new Logger('test', { level: 'off' });
 

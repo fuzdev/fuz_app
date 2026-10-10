@@ -24,11 +24,11 @@
 
 import { describe, test, assert } from 'vitest';
 
-import { admin_account_list_action_spec } from '$lib/auth/admin_action_specs.ts';
-import { create_test_app } from '$lib/testing/app_server.ts';
-import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
-import { query_create_role_grant } from '$lib/auth/role_grant_queries.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import { admin_account_list_action_spec } from '#lib/auth/admin_action_specs.ts';
+import { create_test_app } from '#lib/testing/app_server.ts';
+import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
+import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import {
 	RPC_PATH,

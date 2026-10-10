@@ -23,27 +23,27 @@
 import { describe, test, assert } from 'vitest';
 import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import { create_test_app, type TestApp } from '$lib/testing/app_server.ts';
-import { create_rpc_endpoint } from '$lib/actions/action_rpc.ts';
-import { create_standard_rpc_actions } from '$lib/auth/standard_rpc_actions.ts';
-import type { RoleGrantOfferCreateAuthorize } from '$lib/auth/role_grant_offer_actions.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
+import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
+import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
+import type { RoleGrantOfferCreateAuthorize } from '#lib/auth/role_grant_offer_actions.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import {
 	ERROR_ROLE_GRANT_BUILTIN_SCOPED,
 	ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED
-} from '$lib/auth/role_grant_offer_action_specs.ts';
+} from '#lib/auth/role_grant_offer_action_specs.ts';
 import {
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_ROLE_NOT_WEB_GRANTABLE
-} from '$lib/http/error_schemas.ts';
-import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
-import { install_audit_drift_guard } from '$lib/testing/audit_drift_guard.ts';
-import { create_test_role_grant_direct } from '$lib/testing/db_entities.ts';
-import { query_audit_log_list } from '$lib/auth/audit_log_queries.ts';
-import { rpc_call, type RpcCallResult } from '$lib/testing/rpc_helpers.ts';
-import type { AppServerContext } from '$lib/server/app_server_context.ts';
-import type { RouteSpec } from '$lib/http/route_spec.ts';
-import type { Db } from '$lib/db/db.ts';
+} from '#lib/http/error_schemas.ts';
+import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
+import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
+import { create_test_role_grant_direct } from '#lib/testing/db_entities.ts';
+import { query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
+import { rpc_call, type RpcCallResult } from '#lib/testing/rpc_helpers.ts';
+import type { AppServerContext } from '#lib/server/app_server_context.ts';
+import type { RouteSpec } from '#lib/http/route_spec.ts';
+import type { Db } from '#lib/db/db.ts';
 import {
 	RPC_PATH,
 	TEST_APP_ROLE,

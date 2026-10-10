@@ -23,7 +23,7 @@ import {
 	query_create_actor,
 	query_actor_by_id,
 	query_create_account_with_actor
-} from '$lib/auth/account_queries.ts';
+} from '#lib/auth/account_queries.ts';
 
 import { describe_db } from '../db_fixture.ts';
 

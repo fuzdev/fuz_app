@@ -32,10 +32,10 @@ import {
 	DEFAULT_AUTH_CLEANUP_INTERVAL_MS,
 	start_auth_cleanup,
 	type AuthCleanupDeps
-} from '$lib/auth/cleanup.ts';
-import { PERIODIC_INTERVAL_MS_MAX } from '$lib/periodic.ts';
-import { Db, no_nested_transaction } from '$lib/db/db.ts';
-import { create_test_audit_emitter } from '$lib/testing/stubs.ts';
+} from '#lib/auth/cleanup.ts';
+import { PERIODIC_INTERVAL_MS_MAX } from '#lib/periodic.ts';
+import { Db, no_nested_transaction } from '#lib/db/db.ts';
+import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
 
 const INTERVAL_MS = 10_000;
 

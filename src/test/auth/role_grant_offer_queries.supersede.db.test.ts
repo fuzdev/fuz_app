@@ -26,9 +26,9 @@ import {
 	query_accept_offer,
 	RoleGrantOfferAlreadyTerminalError,
 	RoleGrantOfferExpiredError
-} from '$lib/auth/role_grant_offer_queries.ts';
-import { query_revoke_role_grant } from '$lib/auth/role_grant_queries.ts';
-import { query_audit_log, query_audit_log_list } from '$lib/auth/audit_log_queries.ts';
+} from '#lib/auth/role_grant_offer_queries.ts';
+import { query_revoke_role_grant } from '#lib/auth/role_grant_queries.ts';
+import { query_audit_log, query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
 import { create_uuid } from '@fuzdev/fuz_util/id.ts';
 
 import { describe_db } from '../db_fixture.ts';

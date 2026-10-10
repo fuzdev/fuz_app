@@ -271,7 +271,7 @@ export class RoleGrantOffersState {
 			case ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD: {
 				const params = notification.params;
 				if (!params || typeof params !== 'object' || !('offer' in params)) return;
-				const offer = (params as { offer: unknown }).offer;
+				const offer = params.offer;
 				if (!is_role_grant_offer_like(offer)) return;
 				this.#merge_offers([offer]);
 				return;

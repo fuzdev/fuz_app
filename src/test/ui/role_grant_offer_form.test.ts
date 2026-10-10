@@ -12,7 +12,7 @@
 import { test, assert } from 'vitest';
 import type { ComponentProps } from 'svelte';
 
-import type RoleGrantOfferForm from '$lib/ui/RoleGrantOfferForm.svelte';
+import type RoleGrantOfferForm from '#lib/ui/RoleGrantOfferForm.svelte';
 
 type FormProps = ComponentProps<typeof RoleGrantOfferForm>;
 

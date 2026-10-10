@@ -19,8 +19,8 @@ import {
 	query_accept_offer,
 	RoleGrantOfferAlreadyTerminalError,
 	RoleGrantOfferNotFoundError
-} from '$lib/auth/role_grant_offer_queries.ts';
-import { query_role_grant_has_role } from '$lib/auth/role_grant_queries.ts';
+} from '#lib/auth/role_grant_offer_queries.ts';
+import { query_role_grant_has_role } from '#lib/auth/role_grant_queries.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import { make_account, create_pending_offer } from './role_grant_offer_queries.fixtures.ts';

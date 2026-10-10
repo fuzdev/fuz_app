@@ -6,7 +6,7 @@
  * only under `DEV` — production must never emit it, since it would leak that a
  * token was dropped and defeat the anti-enumeration silence (a stolen-token
  * probe is meant to get an indistinguishable 401). Vitest runs with `DEV=true`,
- * and the standard `$lib/testing` harness can't load under `DEV=false` (its
+ * and the standard `#lib/testing` harness can't load under `DEV=false` (its
  * `assert_dev_env` guard throws at import), so this builds a minimal inline
  * Hono app around `create_bearer_auth_middleware` imported fresh under a scoped
  * `esm-env` mock, then asserts the header is absent on the discard path.
@@ -18,7 +18,7 @@
 import { test, assert, afterEach, vi } from 'vitest';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import type { QueryDeps } from '$lib/db/query_deps.ts';
+import type { QueryDeps } from '#lib/db/query_deps.ts';
 
 afterEach(() => {
 	vi.doUnmock('esm-env');
@@ -29,7 +29,7 @@ test('bearer browser-context discard omits the debug header in production (DEV=f
 	vi.resetModules();
 	vi.doMock('esm-env', () => ({ DEV: false }));
 	const { Hono } = await import('hono');
-	const { create_bearer_auth_middleware } = await import('$lib/auth/bearer_auth.ts');
+	const { create_bearer_auth_middleware } = await import('#lib/auth/bearer_auth.ts');
 
 	// The discard path runs before any DB or rate-limiter work, so stub deps suffice.
 	const log = { debug() {} } as unknown as Logger;

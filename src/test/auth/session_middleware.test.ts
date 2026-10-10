@@ -10,14 +10,14 @@
 import { describe, test, assert } from 'vitest';
 import { Hono } from 'hono';
 
-import { create_keyring } from '$lib/auth/keyring.ts';
+import { create_keyring } from '#lib/auth/keyring.ts';
 import {
 	create_session_config,
 	create_session_cookie_value,
 	SESSION_AGE_MAX,
 	type SessionOptions
-} from '$lib/auth/session_cookie.ts';
-import { create_session_middleware } from '$lib/auth/session_middleware.ts';
+} from '#lib/auth/session_cookie.ts';
+import { create_session_middleware } from '#lib/auth/session_middleware.ts';
 
 import { OLD_KEY, TEST_KEY } from './session_test_helpers.ts';
 

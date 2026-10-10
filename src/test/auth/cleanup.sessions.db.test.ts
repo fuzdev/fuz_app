@@ -39,27 +39,27 @@ import { Logger, type LogConsole } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import { query_create_account_with_actor } from '$lib/auth/account_queries.ts';
-import { query_audit_log_list } from '$lib/auth/audit_log_queries.ts';
-import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
-import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
-import { cleanup_expired_sessions, type AuthCleanupDeps } from '$lib/auth/cleanup.ts';
-import { hash_session_token, query_create_session } from '$lib/auth/session_queries.ts';
-import { create_realtime_closer, type ConnectionCloser } from '$lib/actions/connection_closer.ts';
-import { BackendWebsocketTransport } from '$lib/actions/transports_ws_backend.ts';
+import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
+import { query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
+import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
+import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
+import { cleanup_expired_sessions, type AuthCleanupDeps } from '#lib/auth/cleanup.ts';
+import { hash_session_token, query_create_session } from '#lib/auth/session_queries.ts';
+import { create_realtime_closer, type ConnectionCloser } from '#lib/actions/connection_closer.ts';
+import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
 import {
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON
-} from '$lib/actions/transports.ts';
-import { create_audit_log_sse } from '$lib/realtime/sse_auth_guard.ts';
-import type { SseNotification, SseStream } from '$lib/realtime/sse.ts';
-import { Db, no_nested_transaction } from '$lib/db/db.ts';
-import { create_describe_db, auth_integration_truncate_tables } from '$lib/testing/db.ts';
+} from '#lib/actions/transports.ts';
+import { create_audit_log_sse } from '#lib/realtime/sse_auth_guard.ts';
+import type { SseNotification, SseStream } from '#lib/realtime/sse.ts';
+import { Db, no_nested_transaction } from '#lib/db/db.ts';
+import { create_describe_db, auth_integration_truncate_tables } from '#lib/testing/db.ts';
 import {
 	create_recording_closer,
 	type RecordedClose
-} from '$lib/testing/connection_closer_helpers.ts';
-import { create_fake_ws } from '$lib/testing/ws_round_trip.ts';
+} from '#lib/testing/connection_closer_helpers.ts';
+import { create_fake_ws } from '#lib/testing/ws_round_trip.ts';
 
 import { describe_db, pg_factory } from '../db_fixture.ts';
 import { create_gated_db } from '../gated_db.ts';

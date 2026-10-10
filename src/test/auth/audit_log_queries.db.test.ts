@@ -12,16 +12,16 @@ import {
 	reset_audit_metadata_validation_failures,
 	get_audit_unknown_event_type_failures,
 	reset_audit_unknown_event_type_failures
-} from '$lib/auth/audit_log_queries.ts';
-import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
-import { AuditLogEventJson, create_audit_log_config } from '$lib/auth/audit_log_schema.ts';
-import { query_create_account, query_create_actor } from '$lib/auth/account_queries.ts';
+} from '#lib/auth/audit_log_queries.ts';
+import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
+import { AuditLogEventJson, create_audit_log_config } from '#lib/auth/audit_log_schema.ts';
+import { query_create_account, query_create_actor } from '#lib/auth/account_queries.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
-import type { Db } from '$lib/db/db.ts';
-import type { QueryDeps } from '$lib/db/query_deps.ts';
+import type { Db } from '#lib/db/db.ts';
+import type { QueryDeps } from '#lib/db/query_deps.ts';
 
 import { describe_db } from '../db_fixture.ts';
-import { flush_pending_effects, flush_post_commit_effects } from '$lib/http/pending_effects.ts';
+import { flush_pending_effects, flush_post_commit_effects } from '#lib/http/pending_effects.ts';
 
 const create_test_account = async (
 	db: Db,

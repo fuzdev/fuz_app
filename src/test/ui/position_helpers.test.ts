@@ -10,7 +10,7 @@ import {
 	generate_position_styles,
 	type Position,
 	type Alignment
-} from '$lib/ui/position_helpers.ts';
+} from '#lib/ui/position_helpers.ts';
 
 const COMMON_STYLES = { position: 'absolute', 'z-index': '10' };
 
@@ -225,11 +225,11 @@ describe('generate_position_styles', () => {
 
 	// --- offsets ---
 
-	test.each([
-		{ position: 'left' as Position, prop: 'right' },
-		{ position: 'right' as Position, prop: 'left' },
-		{ position: 'top' as Position, prop: 'bottom' },
-		{ position: 'bottom' as Position, prop: 'top' }
+	test.each<{ position: Position; prop: string }>([
+		{ position: 'left', prop: 'right' },
+		{ position: 'right', prop: 'left' },
+		{ position: 'top', prop: 'bottom' },
+		{ position: 'bottom', prop: 'top' }
 	])('$position offset applies calc to $prop', ({ position, prop }) => {
 		const styles = generate_position_styles(position, 'start', '10px');
 		assert.strictEqual(styles[prop], 'calc(100% + 10px)');

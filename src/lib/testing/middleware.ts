@@ -360,11 +360,11 @@ export const create_test_middleware_stack_app = (
 	const mock_find_actors_by_account = vi.mocked(query_active_actors_by_account);
 	const mock_find_active_for_actor = vi.mocked(query_role_grant_find_active_for_actor);
 
-	mock_validate.mockReset().mockImplementation(() => Promise.resolve(undefined) as any);
-	mock_find_by_id.mockReset().mockImplementation(() => Promise.resolve(undefined) as any);
-	mock_find_actor_by_id.mockReset().mockImplementation(() => Promise.resolve(undefined) as any);
-	mock_find_actors_by_account.mockReset().mockImplementation(() => Promise.resolve([]) as any);
-	mock_find_active_for_actor.mockReset().mockImplementation(() => Promise.resolve([]) as any);
+	mock_validate.mockReset().mockImplementation(() => Promise.resolve(undefined));
+	mock_find_by_id.mockReset().mockImplementation(() => Promise.resolve(undefined));
+	mock_find_actor_by_id.mockReset().mockImplementation(() => Promise.resolve(undefined));
+	mock_find_actors_by_account.mockReset().mockImplementation(() => Promise.resolve([]));
+	mock_find_active_for_actor.mockReset().mockImplementation(() => Promise.resolve([]));
 
 	const get_connection_ip =
 		typeof options?.connection_ip === 'function'

@@ -14,8 +14,8 @@ import {
 	WS_CLOSE_SESSION_REVOKED,
 	utf8_length_over,
 	type Transport
-} from '$lib/actions/transports.ts';
-import { DEFAULT_MAX_BODY_SIZE } from '$lib/server/app_server.ts';
+} from '#lib/actions/transports.ts';
+import { DEFAULT_MAX_BODY_SIZE } from '#lib/server/app_server.ts';
 
 const create_mock_transport = (name: string, ready = true): Transport => ({
 	transport_name: name,

@@ -6,8 +6,8 @@
 
 import { describe, assert, test } from 'vitest';
 
-import { JSONRPC_VERSION } from '$lib/http/jsonrpc.ts';
-import { ThrownJsonrpcError, JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
+import { JSONRPC_VERSION } from '#lib/http/jsonrpc.ts';
+import { ThrownJsonrpcError, JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import {
 	create_jsonrpc_request,
 	create_jsonrpc_response,
@@ -24,7 +24,7 @@ import {
 	to_jsonrpc_envelope_id,
 	to_jsonrpc_message_id,
 	to_jsonrpc_params
-} from '$lib/http/jsonrpc_helpers.ts';
+} from '#lib/http/jsonrpc_helpers.ts';
 
 describe('create_jsonrpc_request', () => {
 	test('creates request with params', () => {

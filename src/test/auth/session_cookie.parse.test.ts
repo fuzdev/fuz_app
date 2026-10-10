@@ -10,13 +10,13 @@
 
 import { assert, describe, test } from 'vitest';
 
-import { create_keyring } from '$lib/auth/keyring.ts';
+import { create_keyring } from '#lib/auth/keyring.ts';
 import {
 	create_session_cookie_value,
 	parse_session,
 	SESSION_AGE_MAX,
 	type SessionOptions
-} from '$lib/auth/session_cookie.ts';
+} from '#lib/auth/session_cookie.ts';
 import {
 	create_test_keyring,
 	OLD_KEY,

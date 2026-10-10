@@ -11,8 +11,8 @@
  * @module
  */
 
-import type { AuthSessionJson } from '$lib/auth/account_schema.ts';
-import type { AdminSessionJson } from '$lib/auth/audit_log_schema.ts';
+import type { AuthSessionJson } from '#lib/auth/account_schema.ts';
+import type { AdminSessionJson } from '#lib/auth/audit_log_schema.ts';
 
 /**
  * `id` widens back to `string` so fixtures read as `'sess-1'` rather than 64

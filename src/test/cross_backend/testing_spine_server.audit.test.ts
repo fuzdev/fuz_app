@@ -13,8 +13,8 @@ import { create_deferred, wait, type Deferred } from '@fuzdev/fuz_util/async.ts'
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
-import type { Db } from '$lib/db/db.ts';
+import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
+import type { Db } from '#lib/db/db.ts';
 
 import { cell_audit_factory } from './testing_spine_server.ts';
 

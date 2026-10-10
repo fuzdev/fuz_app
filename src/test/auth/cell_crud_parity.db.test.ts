@@ -15,8 +15,8 @@
  * @module
  */
 
-import { in_process_capabilities } from '$lib/testing/cross_backend/capabilities.ts';
-import { describe_cell_crud_cross_tests } from '$lib/testing/cross_backend/cell_crud.ts';
+import { in_process_capabilities } from '#lib/testing/cross_backend/capabilities.ts';
+import { describe_cell_crud_cross_tests } from '#lib/testing/cross_backend/cell_crud.ts';
 
 import { create_cell_parity_setup } from './cell_parity_helpers.ts';
 

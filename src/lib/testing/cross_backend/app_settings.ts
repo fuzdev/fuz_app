@@ -27,8 +27,6 @@ import '../assert_dev_env.ts';
  * binaries + Rust `testing_spine_stub`). Mounted on every spine, so the
  * suite is ungated.
  *
- * `$lib`-free by contract (relative specifiers only).
- *
  * @module
  */
 

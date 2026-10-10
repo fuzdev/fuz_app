@@ -20,36 +20,36 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { create_session_config } from '$lib/auth/session_cookie.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
 import {
 	create_serve_fact_route_spec,
 	create_serve_cell_fact_route_spec
-} from '$lib/server/serve_fact_route.ts';
-import { create_rpc_endpoint } from '$lib/actions/action_rpc.ts';
-import { create_role_schema, ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
-import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
-import { create_audit_log_config } from '$lib/auth/audit_log_schema.ts';
-import { create_all_cell_actions } from '$lib/auth/all_cell_actions.ts';
-import type { CellCreateAuthorize } from '$lib/auth/cell_actions.ts';
-import { cell_audit_events } from '$lib/auth/cell_audit_events.ts';
+} from '#lib/server/serve_fact_route.ts';
+import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
+import { create_role_schema, ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
+import { create_audit_log_config } from '#lib/auth/audit_log_schema.ts';
+import { create_all_cell_actions } from '#lib/auth/all_cell_actions.ts';
+import type { CellCreateAuthorize } from '#lib/auth/cell_actions.ts';
+import { cell_audit_events } from '#lib/auth/cell_audit_events.ts';
 import {
 	cell_create_action_spec,
 	type CellCreateInput,
 	type CellPath,
 	type CellVisibility
-} from '$lib/auth/cell_action_specs.ts';
+} from '#lib/auth/cell_action_specs.ts';
 import {
 	cell_item_insert_action_spec,
 	type CellItemPosition
-} from '$lib/auth/cell_item_action_specs.ts';
+} from '#lib/auth/cell_item_action_specs.ts';
 import { fractional_indices_between } from '@fuzdev/fuz_util/fractional_index.ts';
-import { create_test_app, type TestApp } from '$lib/testing/app_server.ts';
-import { rpc_call_for_spec, type RpcCallResultForSpec } from '$lib/testing/rpc_helpers.ts';
-import type { RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
-import type { AppServerContext } from '$lib/server/app_server_context.ts';
-import type { AuditFactory } from '$lib/server/app_backend.ts';
-import type { RouteSpec } from '$lib/http/route_spec.ts';
-import type { Db } from '$lib/db/db.ts';
+import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { rpc_call_for_spec, type RpcCallResultForSpec } from '#lib/testing/rpc_helpers.ts';
+import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
+import type { AppServerContext } from '#lib/server/app_server_context.ts';
+import type { AuditFactory } from '#lib/server/app_backend.ts';
+import type { RouteSpec } from '#lib/http/route_spec.ts';
+import type { Db } from '#lib/db/db.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 /** Shared cookie config for the cell integration suites. */

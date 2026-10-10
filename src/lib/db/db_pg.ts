@@ -41,7 +41,7 @@ import { Db, no_nested_transaction, type DbDriverResult } from './db.ts';
  */
 export const register_pg_type_parsers = async (): Promise<void> => {
 	const { types } = await import('pg');
-	types.setTypeParser(20, (val) => Number(val));
+	types.setTypeParser(types.builtins.INT8, (val) => Number(val));
 };
 
 /**

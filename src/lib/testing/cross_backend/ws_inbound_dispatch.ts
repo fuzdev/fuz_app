@@ -159,10 +159,10 @@ export const describe_ws_inbound_dispatch_cross_tests = (
 	};
 
 	const send_ping = (ws: WsClient, id: number | string, nonce: number): Promise<void> =>
-		ws.send(create_jsonrpc_request(PEER_PING_METHOD, { nonce } as never, id));
+		ws.send(create_jsonrpc_request(PEER_PING_METHOD, { nonce }, id));
 
 	const send_heartbeat = (ws: WsClient, id: number | string): Promise<void> =>
-		ws.send(create_jsonrpc_request(HEARTBEAT_METHOD, undefined as never, id));
+		ws.send(create_jsonrpc_request(HEARTBEAT_METHOD, undefined, id));
 
 	const assert_duplicate_refusal = (frame: ResponseFrame, id: number | string): void => {
 		assert.ok('error' in frame, `expected the duplicate to be refused: ${JSON.stringify(frame)}`);

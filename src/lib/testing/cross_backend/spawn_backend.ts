@@ -176,7 +176,7 @@ const read_daemon_token = async (path: string): Promise<string> => {
 					typeof parsed !== 'object' ||
 					parsed === null ||
 					!('token' in parsed) ||
-					typeof (parsed as { token: unknown }).token !== 'string'
+					typeof parsed.token !== 'string'
 				) {
 					throw new Error(`expected {token: string}, got ${raw}`);
 				}

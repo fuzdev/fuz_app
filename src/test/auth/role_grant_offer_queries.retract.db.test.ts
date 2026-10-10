@@ -13,7 +13,7 @@ import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import {
 	query_role_grant_offer_retract,
 	RoleGrantOfferAlreadyTerminalError
-} from '$lib/auth/role_grant_offer_queries.ts';
+} from '#lib/auth/role_grant_offer_queries.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import { make_account, create_pending_offer } from './role_grant_offer_queries.fixtures.ts';

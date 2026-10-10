@@ -9,16 +9,16 @@
 import { assert, test } from 'vitest';
 import { Hono } from 'hono';
 
-import { create_session_and_set_cookie, get_session_cookie } from '$lib/auth/session_middleware.ts';
-import { create_keyring, type Keyring } from '$lib/auth/keyring.ts';
-import { create_session_config, parse_session } from '$lib/auth/session_cookie.ts';
+import { create_session_and_set_cookie, get_session_cookie } from '#lib/auth/session_middleware.ts';
+import { create_keyring, type Keyring } from '#lib/auth/keyring.ts';
+import { create_session_config, parse_session } from '#lib/auth/session_cookie.ts';
 import {
 	hash_session_token,
 	query_session_get_valid,
 	query_session_list_for_account
-} from '$lib/auth/session_queries.ts';
-import type { Db } from '$lib/db/db.ts';
-import { create_test_account_with_actor } from '$lib/testing/db_entities.ts';
+} from '#lib/auth/session_queries.ts';
+import type { Db } from '#lib/db/db.ts';
+import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import { TEST_KEY } from './session_test_helpers.ts';

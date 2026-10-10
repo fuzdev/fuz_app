@@ -20,8 +20,8 @@ import { inject, describe } from 'vitest';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle
-} from '$lib/testing/cross_backend/setup.ts';
-import { describe_ws_action_rate_limit_cross_tests } from '$lib/testing/cross_backend/ws_action_rate_limit.ts';
+} from '#lib/testing/cross_backend/setup.ts';
+import { describe_ws_action_rate_limit_cross_tests } from '#lib/testing/cross_backend/ws_action_rate_limit.ts';
 
 import './cross_test_types.ts';
 

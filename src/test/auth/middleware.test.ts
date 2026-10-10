@@ -6,8 +6,8 @@
 
 import { describe, assert, test } from 'vitest';
 
-import { create_auth_middleware_specs, type AuthMiddlewareOptions } from '$lib/auth/middleware.ts';
-import { create_stub_app_deps } from '$lib/testing/stubs.ts';
+import { create_auth_middleware_specs, type AuthMiddlewareOptions } from '#lib/auth/middleware.ts';
+import { create_stub_app_deps } from '#lib/testing/stubs.ts';
 
 const create_options = (overrides?: Partial<AuthMiddlewareOptions>): AuthMiddlewareOptions => ({
 	allowed_origins: [],

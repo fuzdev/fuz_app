@@ -29,9 +29,6 @@ import '../assert_dev_env.ts';
  * (`spine_roles` / the Rust stub's `RoleRegistry`), so the suite is ungated;
  * every spine mounts the standard RPC surface it drives.
  *
- * `$lib`-free by contract (relative specifiers only), like the sibling
- * cross-backend suites.
- *
  * @module
  */
 

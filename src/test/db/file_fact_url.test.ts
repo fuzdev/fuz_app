@@ -21,7 +21,7 @@ import {
 	is_file_fact_url,
 	mint_file_fact_url,
 	parse_file_fact_url
-} from '$lib/db/file_fact_url.ts';
+} from '#lib/db/file_fact_url.ts';
 
 const SHARD = 'af';
 const REST = '1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262';

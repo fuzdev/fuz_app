@@ -27,29 +27,29 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import { create_keyring } from '$lib/auth/keyring.ts';
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_health_route_spec } from '$lib/http/common_routes.ts';
-import { create_app_server, type AppServerOptions } from '$lib/server/app_server.ts';
-import type { AppBackend } from '$lib/server/app_backend.ts';
-import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
-import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
-import { DEFAULT_AUTH_CLEANUP_INTERVAL_MS } from '$lib/auth/cleanup.ts';
-import { query_create_account_with_actor } from '$lib/auth/account_queries.ts';
-import { query_role_grant_offer_create } from '$lib/auth/role_grant_offer_queries.ts';
-import { hash_session_token, query_create_session } from '$lib/auth/session_queries.ts';
-import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
-import type { Db } from '$lib/db/db.ts';
+import { create_keyring } from '#lib/auth/keyring.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_health_route_spec } from '#lib/http/common_routes.ts';
+import { create_app_server, type AppServerOptions } from '#lib/server/app_server.ts';
+import type { AppBackend } from '#lib/server/app_backend.ts';
+import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
+import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
+import { DEFAULT_AUTH_CLEANUP_INTERVAL_MS } from '#lib/auth/cleanup.ts';
+import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
+import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_queries.ts';
+import { hash_session_token, query_create_session } from '#lib/auth/session_queries.ts';
+import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import type { Db } from '#lib/db/db.ts';
 import {
 	create_test_app,
 	create_loopback_app_server_options,
 	stub_password_deps
-} from '$lib/testing/app_server.ts';
+} from '#lib/testing/app_server.ts';
 import {
 	assert_close_call,
 	create_recording_closer,
 	type RecordedClose
-} from '$lib/testing/connection_closer_helpers.ts';
+} from '#lib/testing/connection_closer_helpers.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import { create_gated_db } from '../gated_db.ts';

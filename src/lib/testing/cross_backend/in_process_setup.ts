@@ -59,7 +59,7 @@ import {
 const in_process_fetch_transport = (app: Parameters<typeof http_transport>[0]): FetchTransport => {
 	const call = http_transport(app);
 	const transport = ((url: string, init: RequestInit) => call(url, init)) as RpcTestTransport;
-	return Object.assign(transport, { cookies: (): ReadonlyArray<string> => [] }) as FetchTransport;
+	return Object.assign(transport, { cookies: (): ReadonlyArray<string> => [] });
 };
 
 /**

@@ -70,7 +70,7 @@ export const create_bun_testing_adapter = (): TestingServerAdapter => {
 		},
 		serve: ({ fetch, port, hostname }) => {
 			const server = Bun.serve({
-				fetch: fetch as (request: Request, server: unknown) => Response | Promise<Response>,
+				fetch,
 				port,
 				hostname,
 				// Harmless for HTTP-only binaries — Bun only invokes it for sockets

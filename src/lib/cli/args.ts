@@ -38,7 +38,7 @@ export const parse_command_args = <T extends Record<string, unknown>>(
 	if (!parsed.success) {
 		return { success: false, error: z.prettifyError(parsed.error) };
 	}
-	return { success: true, data: parsed.data as T };
+	return { success: true, data: parsed.data };
 };
 
 /**
@@ -82,7 +82,7 @@ export const create_extract_global_flags = <T extends Record<string, unknown>>(
 			flags_input as Args,
 			schema as z.ZodType<T & Record<string, ArgValue>>
 		);
-		const flags: T = global_parsed.success ? (global_parsed.data as T) : fallback;
+		const flags: T = global_parsed.success ? global_parsed.data : fallback;
 
 		// build remaining args without global flags
 		const remaining: ParsedArgs = { _: [...unparsed._] };

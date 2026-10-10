@@ -57,7 +57,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, assert, test } from 'vitest';
 
-import { is_token_surface, TOKEN_SURFACES, type TokenSurface } from '$lib/auth/token_scope.ts';
+import { is_token_surface, TOKEN_SURFACES, type TokenSurface } from '#lib/auth/token_scope.ts';
 
 /** How a reviewed site relates to the credential's `TokenScope`. */
 type CensusRole =

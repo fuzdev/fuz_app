@@ -32,9 +32,6 @@ import '../assert_dev_env.ts';
  * the TS spine binary and the Rust `testing_spine_stub` both mount the serve
  * routes + the seeder.
  *
- * `$lib`-free by contract (relative specifiers only) so it imports from the
- * spawnable cross-process test files.
- *
  * @module
  */
 

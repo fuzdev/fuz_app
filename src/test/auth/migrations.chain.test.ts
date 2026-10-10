@@ -22,7 +22,7 @@ import {
 	auth_migrations,
 	auth_migration_ns,
 	AUTH_MIGRATION_NAMESPACE
-} from '$lib/auth/migrations.ts';
+} from '#lib/auth/migrations.ts';
 
 /** The released chain, in order. Append only — never edit or reorder. */
 const EXPECTED_MIGRATION_NAMES = [

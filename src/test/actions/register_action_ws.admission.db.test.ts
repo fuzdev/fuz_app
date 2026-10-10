@@ -32,9 +32,9 @@ import {
 	WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON,
 	type SocketCloseContext,
 	type SocketOpenContext
-} from '$lib/actions/register_action_ws.ts';
-import type { RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
-import { BackendWebsocketTransport } from '$lib/actions/transports_ws_backend.ts';
+} from '#lib/actions/register_action_ws.ts';
+import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
+import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
 import {
 	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_INTERNAL_ERROR,
@@ -42,40 +42,40 @@ import {
 	WS_CLOSE_POLICY_VIOLATION,
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON
-} from '$lib/actions/transports.ts';
+} from '#lib/actions/transports.ts';
 import {
 	query_account_soft_delete,
 	query_create_account_with_actor
-} from '$lib/auth/account_queries.ts';
-import { generate_api_token } from '$lib/auth/api_token.ts';
+} from '#lib/auth/account_queries.ts';
+import { generate_api_token } from '#lib/auth/api_token.ts';
 import {
 	query_create_api_token,
 	query_revoke_all_api_tokens_for_account,
 	query_revoke_api_token_for_account
-} from '$lib/auth/api_token_queries.ts';
+} from '#lib/auth/api_token_queries.ts';
 import {
 	AUTH_SESSION_TOKEN_HASH_KEY,
 	build_account_context,
 	create_request_context_middleware,
 	REQUEST_CONTEXT_KEY
-} from '$lib/auth/request_context.ts';
+} from '#lib/auth/request_context.ts';
 import {
 	generate_session_token,
 	hash_session_token,
 	query_create_session,
 	query_session_revoke_all_for_account,
 	query_session_revoke_for_account
-} from '$lib/auth/session_queries.ts';
-import { token_scope_full } from '$lib/auth/token_scope.ts';
-import type { Db } from '$lib/db/db.ts';
+} from '#lib/auth/session_queries.ts';
+import { token_scope_full } from '#lib/auth/token_scope.ts';
+import type { Db } from '#lib/db/db.ts';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TOKEN_SCOPE_KEY
-} from '$lib/hono_context.ts';
-import type { JsonrpcNotification } from '$lib/http/jsonrpc.ts';
-import { create_fake_ws, create_stub_upgrade, type FakeWs } from '$lib/testing/ws_round_trip.ts';
+} from '#lib/hono_context.ts';
+import type { JsonrpcNotification } from '#lib/http/jsonrpc.ts';
+import { create_fake_ws, create_stub_upgrade, type FakeWs } from '#lib/testing/ws_round_trip.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import {

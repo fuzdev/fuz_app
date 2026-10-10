@@ -13,8 +13,8 @@ import {
 	default_format_scope,
 	resolve_scope_label,
 	type FormatScope
-} from '$lib/ui/format_scope.ts';
-import { truncate_uuid } from '$lib/ui/ui_format.ts';
+} from '#lib/ui/format_scope.ts';
+import { truncate_uuid } from '#lib/ui/ui_format.ts';
 
 describe('default_format_scope', () => {
 	test('returns null for any input — caller falls back to raw uuid', () => {

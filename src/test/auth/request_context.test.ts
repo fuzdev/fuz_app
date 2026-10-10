@@ -15,38 +15,38 @@ import {
 	require_role,
 	create_request_context_middleware,
 	REQUEST_CONTEXT_KEY
-} from '$lib/auth/request_context.ts';
+} from '#lib/auth/request_context.ts';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY
-} from '$lib/hono_context.ts';
-import type { Account, Actor, RoleGrant } from '$lib/auth/account_schema.ts';
-import { to_iso8601_seconds } from '$lib/timestamp.ts';
+} from '#lib/hono_context.ts';
+import type { Account, Actor, RoleGrant } from '#lib/auth/account_schema.ts';
+import { to_iso8601_seconds } from '#lib/timestamp.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS
-} from '$lib/http/error_schemas.ts';
+} from '#lib/http/error_schemas.ts';
 import {
 	create_test_account,
 	create_test_actor,
 	create_test_role_grant,
 	create_test_context
-} from '$lib/testing/entities.ts';
-import type { QueryDeps } from '$lib/db/query_deps.ts';
-import { query_session_get_valid } from '$lib/auth/session_queries.ts';
+} from '#lib/testing/entities.ts';
+import type { QueryDeps } from '#lib/db/query_deps.ts';
+import { query_session_get_valid } from '#lib/auth/session_queries.ts';
 import {
 	query_account_by_id,
 	query_actor_by_id,
 	query_active_actors_by_account
-} from '$lib/auth/account_queries.ts';
-import { query_role_grant_find_active_for_actor } from '$lib/auth/role_grant_queries.ts';
+} from '#lib/auth/account_queries.ts';
+import { query_role_grant_find_active_for_actor } from '#lib/auth/role_grant_queries.ts';
 
 const mock_deps: QueryDeps = { db: {} as any };
 
-vi.mock('$lib/auth/session_queries.js', async (import_original) => {
-	const original = await import_original<typeof import('$lib/auth/session_queries.ts')>();
+vi.mock('#lib/auth/session_queries.ts', async (import_original) => {
+	const original = await import_original<typeof import('#lib/auth/session_queries.ts')>();
 	return {
 		...original,
 		// Keep hash_session_token real (pure function)
@@ -55,13 +55,13 @@ vi.mock('$lib/auth/session_queries.js', async (import_original) => {
 	};
 });
 
-vi.mock('$lib/auth/account_queries.js', () => ({
+vi.mock('#lib/auth/account_queries.ts', () => ({
 	query_account_by_id: vi.fn(),
 	query_actor_by_id: vi.fn(),
 	query_active_actors_by_account: vi.fn()
 }));
 
-vi.mock('$lib/auth/role_grant_queries.js', () => ({
+vi.mock('#lib/auth/role_grant_queries.ts', () => ({
 	query_role_grant_find_active_for_actor: vi.fn()
 }));
 

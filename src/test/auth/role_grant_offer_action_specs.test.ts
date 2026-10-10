@@ -14,7 +14,7 @@ import {
 	is_grant_scope_paired,
 	RoleGrantAssignInput,
 	RoleGrantOfferCreateInput
-} from '$lib/auth/role_grant_offer_action_specs.ts';
+} from '#lib/auth/role_grant_offer_action_specs.ts';
 
 const SCOPE = '7c9e6679-7425-40de-944b-e07fc1f90ae7' as Uuid;
 const TO_ACCOUNT = '11111111-1111-4111-8111-111111111111' as Uuid;

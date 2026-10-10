@@ -11,8 +11,8 @@
 
 import { describe, test, assert, vi, beforeEach, afterEach } from 'vitest';
 
-import { AuthState } from '$lib/ui/auth_state.svelte.ts';
-import type { RoleGrantSummaryJson } from '$lib/auth/account_schema.ts';
+import { AuthState } from '#lib/ui/auth_state.svelte.ts';
+import type { RoleGrantSummaryJson } from '#lib/auth/account_schema.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 /** Create a mock Response with JSON body. */

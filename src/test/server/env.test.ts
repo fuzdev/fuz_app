@@ -7,9 +7,9 @@
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
 
-import { BaseServerEnv, validate_server_env } from '$lib/server/env.ts';
-import { env_schema_to_surface } from '$lib/http/surface.ts';
-import type { SchemaFieldMeta } from '$lib/schema_meta.ts';
+import { BaseServerEnv, validate_server_env } from '#lib/server/env.ts';
+import { env_schema_to_surface } from '#lib/http/surface.ts';
+import type { SchemaFieldMeta } from '#lib/schema_meta.ts';
 
 /** Minimal valid env for BaseServerEnv (only required fields, no defaults). */
 const VALID_ENV: Record<string, string> = {

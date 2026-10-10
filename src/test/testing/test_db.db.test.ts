@@ -14,8 +14,8 @@ import {
 	set_substitute_db_factory,
 	type DbFactory,
 	type DbFactoryBuilder
-} from '$lib/testing/db.ts';
-import { Db, no_nested_transaction } from '$lib/db/db.ts';
+} from '#lib/testing/db.ts';
+import { Db, no_nested_transaction } from '#lib/db/db.ts';
 
 const noop_init = async (_db: Db): Promise<void> => {};
 

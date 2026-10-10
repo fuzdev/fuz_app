@@ -61,9 +61,6 @@ import '../assert_dev_env.ts';
  * gate needs. The WS gate keeps its per-spine coverage (fuz_app's surface
  * census pins the call site; the Rust census pins its own).
  *
- * `$lib`-free by contract (relative specifiers only), like the sibling
- * cross-backend suites.
- *
  * @module
  */
 

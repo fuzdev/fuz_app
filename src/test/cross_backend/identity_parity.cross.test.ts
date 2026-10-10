@@ -16,8 +16,8 @@ import { inject } from 'vitest';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle
-} from '$lib/testing/cross_backend/setup.ts';
-import { describe_identity_parity_cross_tests } from '$lib/testing/cross_backend/identity_parity.ts';
+} from '#lib/testing/cross_backend/setup.ts';
+import { describe_identity_parity_cross_tests } from '#lib/testing/cross_backend/identity_parity.ts';
 
 import './cross_test_types.ts';
 

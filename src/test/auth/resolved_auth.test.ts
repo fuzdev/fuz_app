@@ -9,9 +9,9 @@
 import { assert, describe, test } from 'vitest';
 import type { Context } from 'hono';
 
-import { AUTH_SESSION_TOKEN_HASH_KEY } from '$lib/auth/request_context.ts';
-import { get_resolved_auth } from '$lib/auth/resolved_auth.ts';
-import { ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY } from '$lib/hono_context.ts';
+import { AUTH_SESSION_TOKEN_HASH_KEY } from '#lib/auth/request_context.ts';
+import { get_resolved_auth } from '#lib/auth/resolved_auth.ts';
+import { ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY } from '#lib/hono_context.ts';
 
 const create_context = (vars: Record<string, unknown>): Context =>
 	({ get: (key: string) => vars[key] }) as unknown as Context;

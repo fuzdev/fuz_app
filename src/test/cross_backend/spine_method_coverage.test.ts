@@ -1,10 +1,10 @@
 import { describe, test } from 'vitest';
 
-import { create_stub_app_deps } from '$lib/testing/stubs.ts';
-import { build_full_spine_rpc_actions } from '$lib/testing/cross_backend/full_spine_mount.ts';
-import { create_spine_surface_spec } from '$lib/testing/cross_backend/default_spine_surface.ts';
-import { assert_rpc_method_coverage } from '$lib/testing/cross_backend/method_coverage.ts';
-import type { DaemonTokenState } from '$lib/auth/daemon_token.ts';
+import { create_stub_app_deps } from '#lib/testing/stubs.ts';
+import { build_full_spine_rpc_actions } from '#lib/testing/cross_backend/full_spine_mount.ts';
+import { create_spine_surface_spec } from '#lib/testing/cross_backend/default_spine_surface.ts';
+import { assert_rpc_method_coverage } from '#lib/testing/cross_backend/method_coverage.ts';
+import type { DaemonTokenState } from '#lib/auth/daemon_token.ts';
 
 import { SPINE_METHOD_COVERAGE } from './spine_method_coverage.ts';
 

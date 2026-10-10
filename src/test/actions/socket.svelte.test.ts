@@ -28,19 +28,19 @@ import {
 	HEARTBEAT_RECEIVE_TIMEOUT_MIN_FACTOR,
 	resolve_heartbeat_receive_timeout,
 	socket_status_to_async_status
-} from '$lib/actions/socket.svelte.ts';
+} from '#lib/actions/socket.svelte.ts';
 import {
 	WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT,
 	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_GOING_AWAY,
 	WS_CLOSE_GOING_AWAY_REASON,
 	WS_CLOSE_SESSION_REVOKED
-} from '$lib/actions/transports.ts';
-import { cancel_action_spec } from '$lib/actions/cancel.ts';
-import { heartbeat_action_spec } from '$lib/actions/heartbeat.ts';
-import { FrontendWebsocketTransport } from '$lib/actions/transports_ws.ts';
-import { create_jsonrpc_request } from '$lib/http/jsonrpc_helpers.ts';
-import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '$lib/http/jsonrpc_errors.ts';
+} from '#lib/actions/transports.ts';
+import { cancel_action_spec } from '#lib/actions/cancel.ts';
+import { heartbeat_action_spec } from '#lib/actions/heartbeat.ts';
+import { FrontendWebsocketTransport } from '#lib/actions/transports_ws.ts';
+import { create_jsonrpc_request } from '#lib/http/jsonrpc_helpers.ts';
+import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '#lib/http/jsonrpc_errors.ts';
 
 // --- mock WebSocket ---
 

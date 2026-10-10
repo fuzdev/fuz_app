@@ -14,16 +14,16 @@
 
 import { describe, test, assert } from 'vitest';
 
-import { cell_item_list_action_spec } from '$lib/auth/cell_item_action_specs.ts';
+import { cell_item_list_action_spec } from '#lib/auth/cell_item_action_specs.ts';
 import {
 	cell_field_set_action_spec,
 	cell_field_list_action_spec,
 	type CellFieldName
-} from '$lib/auth/cell_field_action_specs.ts';
-import { cell_grant_create_action_spec } from '$lib/auth/cell_grant_action_specs.ts';
-import { ERROR_CELL_NOT_FOUND } from '$lib/auth/cell_action_specs.ts';
+} from '#lib/auth/cell_field_action_specs.ts';
+import { cell_grant_create_action_spec } from '#lib/auth/cell_grant_action_specs.ts';
+import { ERROR_CELL_NOT_FOUND } from '#lib/auth/cell_action_specs.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
-import type { TestApp, TestAccount } from '$lib/testing/app_server.ts';
+import type { TestApp, TestAccount } from '#lib/testing/app_server.ts';
 import { create_cell_test_app, create_cell, call } from './cell_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';
 import { describe_db } from '../cell_db_fixture.ts';

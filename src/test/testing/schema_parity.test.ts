@@ -17,13 +17,13 @@ import {
 	format_schema_diffs,
 	assert_migration_trackers_equal,
 	diff_migration_trackers
-} from '$lib/testing/schema_parity.ts';
+} from '#lib/testing/schema_parity.ts';
 import type {
 	ColumnSnapshot,
 	MigrationTracker,
 	SchemaSnapshot,
 	TableSnapshot
-} from '$lib/testing/schema_introspect.ts';
+} from '#lib/testing/schema_introspect.ts';
 
 const create_column = (overrides: Partial<ColumnSnapshot> = {}): ColumnSnapshot => ({
 	data_type: 'text',

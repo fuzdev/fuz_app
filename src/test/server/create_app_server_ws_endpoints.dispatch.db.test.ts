@@ -34,48 +34,48 @@ import { afterEach, describe, test, assert, vi } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { z } from 'zod';
 
-import { create_keyring } from '$lib/auth/keyring.ts';
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_health_route_spec } from '$lib/http/common_routes.ts';
+import { create_keyring } from '#lib/auth/keyring.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import {
 	create_app_server,
 	type AppServer,
 	type AppServerOptions
-} from '$lib/server/app_server.ts';
-import type { AppServerContext } from '$lib/server/app_server_context.ts';
+} from '#lib/server/app_server.ts';
+import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import { wait } from '@fuzdev/fuz_util/async.ts';
-import type { Db } from '$lib/db/db.ts';
+import type { Db } from '#lib/db/db.ts';
 import { create_gated_db, is_session_read, type GatedDb } from '../gated_db.ts';
-import { create_audit_emitter, type AuditEmitter } from '$lib/auth/audit_emitter.ts';
+import { create_audit_emitter, type AuditEmitter } from '#lib/auth/audit_emitter.ts';
 import {
 	default_audit_factory,
 	type AppBackend,
 	type AuditFactory
-} from '$lib/server/app_backend.ts';
-import { create_testing_drain_effects_action } from '$lib/testing/cross_backend/testing_reset_actions.ts';
+} from '#lib/server/app_backend.ts';
+import { create_testing_drain_effects_action } from '#lib/testing/cross_backend/testing_reset_actions.ts';
 import {
 	create_test_account_with_credentials,
 	create_loopback_app_server_options,
 	stub_password_deps
-} from '$lib/testing/app_server.ts';
-import { create_pglite_factory } from '$lib/testing/db.ts';
-import { run_migrations } from '$lib/db/migrate.ts';
-import { auth_migration_ns } from '$lib/auth/migrations.ts';
+} from '#lib/testing/app_server.ts';
+import { create_pglite_factory } from '#lib/testing/db.ts';
+import { run_migrations } from '#lib/db/migrate.ts';
+import { auth_migration_ns } from '#lib/auth/migrations.ts';
 import {
 	create_fake_ws,
 	create_stub_upgrade,
 	dispatch_ws_message,
 	type StubUpgrade
-} from '$lib/testing/ws_round_trip.ts';
-import { protocol_actions } from '$lib/actions/protocol.ts';
-import { PEER_PING_METHOD } from '$lib/actions/peer_ping.ts';
-import type { RpcAction } from '$lib/actions/action_rpc.ts';
-import type { RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
-import type { MiddlewareSpec } from '$lib/http/middleware_spec.ts';
-import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
-import { create_rate_limiter, type RateLimiter } from '$lib/rate_limiter.ts';
-import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
-import { WS_CLOSE_GOING_AWAY, WS_CLOSE_GOING_AWAY_REASON } from '$lib/actions/transports.ts';
+} from '#lib/testing/ws_round_trip.ts';
+import { protocol_actions } from '#lib/actions/protocol.ts';
+import { PEER_PING_METHOD } from '#lib/actions/peer_ping.ts';
+import type { RpcAction } from '#lib/actions/action_rpc.ts';
+import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
+import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
+import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
+import { create_rate_limiter, type RateLimiter } from '#lib/rate_limiter.ts';
+import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { WS_CLOSE_GOING_AWAY, WS_CLOSE_GOING_AWAY_REASON } from '#lib/actions/transports.ts';
 
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
 const keyring = create_keyring(TEST_KEY)!;

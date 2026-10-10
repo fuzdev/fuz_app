@@ -12,8 +12,8 @@
 
 import { describe, test, assert, vi, afterEach } from 'vitest';
 
-import { AdminSessionsState } from '$lib/ui/admin_sessions_state.svelte.ts';
-import type { AdminAccountsRpc } from '$lib/ui/admin_accounts_state.svelte.ts';
+import { AdminSessionsState } from '#lib/ui/admin_sessions_state.svelte.ts';
+import type { AdminAccountsRpc } from '#lib/ui/admin_accounts_state.svelte.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import { make_offer } from './role_grant_offer_fixtures.ts';

@@ -13,7 +13,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { create_node_runtime } from '$lib/runtime/node.ts';
+import { create_node_runtime } from '#lib/runtime/node.ts';
 
 import { collect_stream, stream_of } from './byte_stream.ts';
 

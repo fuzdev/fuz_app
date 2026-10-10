@@ -9,11 +9,11 @@
 import { describe, test, assert } from 'vitest';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import { can_edit_cell, can_manage_cell, can_view_cell } from '$lib/auth/cell_authorize.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import type { CellRow } from '$lib/db/cell_queries.ts';
-import type { CellVisibility } from '$lib/auth/cell_action_specs.ts';
-import { create_test_context } from '$lib/testing/entities.ts';
+import { can_edit_cell, can_manage_cell, can_view_cell } from '#lib/auth/cell_authorize.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import type { CellRow } from '#lib/db/cell_queries.ts';
+import type { CellVisibility } from '#lib/auth/cell_action_specs.ts';
+import { create_test_context } from '#lib/testing/entities.ts';
 
 const OWNER = '22222222-2222-4222-8222-222222222222' as Uuid;
 const CELL_ID = '33333333-3333-4333-8333-333333333333' as Uuid;

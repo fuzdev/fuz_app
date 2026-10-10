@@ -47,9 +47,6 @@ import '../assert_dev_env.ts';
  * (`describe_rate_limiting_tests` + the proxy middleware tests). Cited
  * property: `docs/security.md` §"Rate Limiting" + §"Trusted Proxy / Client IP".
  *
- * `$lib`-free by contract (relative specifiers only), like the sibling
- * cross-backend suites.
- *
  * @module
  */
 

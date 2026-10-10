@@ -12,29 +12,29 @@
 import { describe, test, assert } from 'vitest';
 import { create_uuid } from '@fuzdev/fuz_util/id.ts';
 
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_test_app } from '$lib/testing/app_server.ts';
-import { create_rpc_endpoint } from '$lib/actions/action_rpc.ts';
-import { create_role_schema, ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import { create_self_service_role_actions } from '$lib/auth/self_service_role_actions.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_test_app } from '#lib/testing/app_server.ts';
+import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
+import { create_role_schema, ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { create_self_service_role_actions } from '#lib/auth/self_service_role_actions.ts';
 import {
 	ERROR_ROLE_NOT_SELF_SERVICE_ELIGIBLE,
 	self_service_role_set_action_spec
-} from '$lib/auth/self_service_role_action_specs.ts';
-import { query_create_role_grant } from '$lib/auth/role_grant_queries.ts';
-import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
-import { rpc_call, rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
-import { create_test_audit_emitter } from '$lib/testing/stubs.ts';
+} from '#lib/auth/self_service_role_action_specs.ts';
+import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
+import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
+import { rpc_call, rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
+import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
 	auth_integration_truncate_tables
-} from '$lib/testing/db.ts';
-import { run_migrations } from '$lib/db/migrate.ts';
-import { auth_migration_ns } from '$lib/auth/migrations.ts';
-import type { Db } from '$lib/db/db.ts';
-import type { AppServerContext } from '$lib/server/app_server_context.ts';
-import type { RouteSpec } from '$lib/http/route_spec.ts';
+} from '#lib/testing/db.ts';
+import { run_migrations } from '#lib/db/migrate.ts';
+import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import type { Db } from '#lib/db/db.ts';
+import type { AppServerContext } from '#lib/server/app_server_context.ts';
+import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';

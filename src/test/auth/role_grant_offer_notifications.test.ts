@@ -30,10 +30,10 @@ import {
 	role_grant_offer_declined_notification_spec,
 	role_grant_offer_supersede_notification_spec,
 	role_grant_revoke_notification_spec
-} from '$lib/auth/role_grant_offer_notifications.ts';
-import { JSONRPC_VERSION } from '$lib/http/jsonrpc.ts';
+} from '#lib/auth/role_grant_offer_notifications.ts';
+import { JSONRPC_VERSION } from '#lib/http/jsonrpc.ts';
 import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
-import type { RoleGrantOfferJson } from '$lib/auth/role_grant_offer_schema.ts';
+import type { RoleGrantOfferJson } from '#lib/auth/role_grant_offer_schema.ts';
 
 const fake_offer = (): RoleGrantOfferJson => {
 	const now = new Date().toISOString();
@@ -42,7 +42,7 @@ const fake_offer = (): RoleGrantOfferJson => {
 		from_actor_id: create_uuid(),
 		to_account_id: create_uuid(),
 		to_actor_id: null,
-		role: 'admin' as RoleGrantOfferJson['role'],
+		role: 'admin',
 		scope_kind: null,
 		scope_id: null,
 		message: 'hi',

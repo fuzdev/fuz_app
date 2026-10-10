@@ -38,11 +38,11 @@ import {
 	capture_schema_snapshot,
 	capture_migration_tracker,
 	reconstruct_bootstrapped_handle
-} from '$lib/testing/cross_backend/setup.ts';
+} from '#lib/testing/cross_backend/setup.ts';
 import {
 	assert_schema_snapshots_equal,
 	assert_migration_trackers_equal
-} from '$lib/testing/schema_parity.ts';
+} from '#lib/testing/schema_parity.ts';
 
 import './cross_test_types.ts';
 

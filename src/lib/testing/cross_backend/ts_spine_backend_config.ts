@@ -134,7 +134,7 @@ const login_rate_limit_env = (enable: boolean | undefined): Record<string, strin
 
 /**
  * `BackendConfig` for the Node TS spine binary — spawned via `gro run`
- * (Gro's TS loader resolves the `$lib`-free entry's relative imports).
+ * (Gro's TS loader resolves the entry's relative imports).
  */
 export const ts_spine_node_backend_config = (
 	options: TsSpineBackendConfigOptions = {}

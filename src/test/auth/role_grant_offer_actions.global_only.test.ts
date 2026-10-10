@@ -26,19 +26,19 @@ import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import {
 	create_role_grant_offer_actions,
 	type RoleGrantOfferCreateAuthorize
-} from '$lib/auth/role_grant_offer_actions.ts';
+} from '#lib/auth/role_grant_offer_actions.ts';
 import {
 	ERROR_ROLE_GRANT_BUILTIN_SCOPED,
 	ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
 	role_grant_assign_action_spec,
 	role_grant_offer_create_action_spec
-} from '$lib/auth/role_grant_offer_action_specs.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import { ERROR_INSUFFICIENT_PERMISSIONS } from '$lib/http/error_schemas.ts';
-import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '$lib/http/jsonrpc_errors.ts';
-import { create_test_audit_emitter } from '$lib/testing/stubs.ts';
-import { create_test_context } from '$lib/testing/entities.ts';
-import type { RpcAction } from '$lib/actions/action_rpc.ts';
+} from '#lib/auth/role_grant_offer_action_specs.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { ERROR_INSUFFICIENT_PERMISSIONS } from '#lib/http/error_schemas.ts';
+import { JSONRPC_ERROR_CODES, ThrownJsonrpcError } from '#lib/http/jsonrpc_errors.ts';
+import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
+import { create_test_context } from '#lib/testing/entities.ts';
+import type { RpcAction } from '#lib/actions/action_rpc.ts';
 
 import { create_test_action_context } from './rpc_test_helpers.ts';
 

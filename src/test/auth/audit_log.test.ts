@@ -10,24 +10,24 @@
 import { describe, test, assert, vi, afterEach, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 
-import { REQUEST_CONTEXT_KEY, type RequestContext } from '$lib/auth/request_context.ts';
-import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY } from '$lib/hono_context.ts';
-import { create_account_route_specs } from '$lib/auth/account_routes.ts';
-import { apply_route_specs } from '$lib/http/route_spec.ts';
-import { fuz_auth_guard_resolver } from '$lib/auth/auth_guard_resolver.ts';
-import { create_keyring } from '$lib/auth/keyring.ts';
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { RateLimiter } from '$lib/rate_limiter.ts';
-import { create_proxy_middleware } from '$lib/http/proxy.ts';
-import type { AuditLogInput } from '$lib/auth/audit_log_schema.ts';
+import { REQUEST_CONTEXT_KEY, type RequestContext } from '#lib/auth/request_context.ts';
+import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import { create_account_route_specs } from '#lib/auth/account_routes.ts';
+import { apply_route_specs } from '#lib/http/route_spec.ts';
+import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
+import { create_keyring } from '#lib/auth/keyring.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { RateLimiter } from '#lib/rate_limiter.ts';
+import { create_proxy_middleware } from '#lib/http/proxy.ts';
+import type { AuditLogInput } from '#lib/auth/audit_log_schema.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
-import { create_stub_db, create_noop_stub } from '$lib/testing/stubs.ts';
+import { create_stub_db, create_noop_stub } from '#lib/testing/stubs.ts';
 import {
 	create_recording_audit_emitter,
 	type RecordingAuditEmitter
-} from '$lib/testing/audit_drift_guard.ts';
+} from '#lib/testing/audit_drift_guard.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
+import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -88,14 +88,14 @@ const {
 let audit_log_capture: RecordingAuditEmitter = create_recording_audit_emitter();
 let audit_log_calls: Array<AuditLogInput> = audit_log_capture.calls;
 
-vi.mock('$lib/auth/account_queries.js', () => ({
+vi.mock('#lib/auth/account_queries.ts', () => ({
 	query_account_by_username_or_email: mock_find_by_username_or_email,
 	query_update_account_password: mock_update_password,
 	query_admin_account_list: vi.fn(() => Promise.resolve([]))
 }));
 
-vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/auth/session_queries.ts')>();
+vi.mock('#lib/auth/session_queries.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/auth/session_queries.ts')>();
 	return {
 		...actual,
 		query_create_session: mock_session_create,
@@ -108,7 +108,7 @@ vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {
 	};
 });
 
-vi.mock('$lib/auth/api_token_queries.js', () => ({
+vi.mock('#lib/auth/api_token_queries.ts', () => ({
 	query_create_api_token: mock_api_token_create,
 	query_api_token_enforce_limit: mock_api_token_enforce_limit,
 	query_api_token_list_for_account: mock_api_token_list_for_account,
@@ -117,8 +117,8 @@ vi.mock('$lib/auth/api_token_queries.js', () => ({
 	query_validate_api_token: vi.fn(() => Promise.resolve(undefined))
 }));
 
-vi.mock('$lib/auth/audit_log_queries.js', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/auth/audit_log_queries.ts')>();
+vi.mock('#lib/auth/audit_log_queries.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/auth/audit_log_queries.ts')>();
 	return {
 		...actual,
 		query_audit_log: mock_audit_log,
@@ -397,7 +397,7 @@ describe('account route audit logging', () => {
 					hash_password: vi.fn(() => Promise.resolve('h')),
 					verify_password: vi.fn(() => Promise.resolve(true)),
 					verify_dummy: vi.fn(() => Promise.resolve(false))
-				} as any,
+				},
 				read_secure_file: noop,
 				delete_file: noop,
 				audit: audit_log_capture.emitter,

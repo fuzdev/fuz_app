@@ -10,7 +10,7 @@
 
 import { describe, test, assert, afterEach } from 'vitest';
 
-import { FormState } from '$lib/ui/form_state.svelte.ts';
+import { FormState } from '#lib/ui/form_state.svelte.ts';
 
 interface LoginFormElements {
 	form: HTMLFormElement;

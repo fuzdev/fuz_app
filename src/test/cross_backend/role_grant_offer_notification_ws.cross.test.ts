@@ -26,8 +26,8 @@ import { inject } from 'vitest';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle
-} from '$lib/testing/cross_backend/setup.ts';
-import { describe_role_grant_offer_notification_ws_tests } from '$lib/testing/cross_backend/role_grant_offer_notification_ws.ts';
+} from '#lib/testing/cross_backend/setup.ts';
+import { describe_role_grant_offer_notification_ws_tests } from '#lib/testing/cross_backend/role_grant_offer_notification_ws.ts';
 
 import './cross_test_types.ts';
 

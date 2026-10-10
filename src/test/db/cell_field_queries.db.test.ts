@@ -16,8 +16,8 @@ import {
 	CELL_FIELD_COLUMNS,
 	query_cell_field_set,
 	query_cell_field_list_for_source
-} from '$lib/db/cell_field_queries.ts';
-import { query_cell_create } from '$lib/db/cell_queries.ts';
+} from '#lib/db/cell_field_queries.ts';
+import { query_cell_create } from '#lib/db/cell_queries.ts';
 
 import { describe_db } from '../cell_db_fixture.ts';
 

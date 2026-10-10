@@ -28,10 +28,6 @@ import '../assert_dev_env.ts';
  *
  * Paired with `action_manifest_parity.ts` for the diff + assertion helpers.
  *
- * `$lib`-free by contract — reached by the spawned TS binary (via
- * `testing_reset_actions.ts` → `full_spine_mount.ts`), so every import is
- * relative.
- *
  * @module
  */
 

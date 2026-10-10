@@ -11,7 +11,7 @@
 
 import { assert, test } from 'vitest';
 
-import { CELL_COLUMNS, query_cell_create } from '$lib/db/cell_queries.ts';
+import { CELL_COLUMNS, query_cell_create } from '#lib/db/cell_queries.ts';
 
 import { describe_db } from '../cell_db_fixture.ts';
 

@@ -15,8 +15,8 @@ import {
 	CELL_GRANT_COLUMNS,
 	query_cell_grant_create,
 	query_cell_grants_for_caller_in_cells
-} from '$lib/db/cell_grant_queries.ts';
-import { query_cell_create } from '$lib/db/cell_queries.ts';
+} from '#lib/db/cell_grant_queries.ts';
+import { query_cell_create } from '#lib/db/cell_queries.ts';
 
 import { describe_db } from '../cell_db_fixture.ts';
 

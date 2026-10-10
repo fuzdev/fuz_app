@@ -16,16 +16,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { assert, test } from 'vitest';
 
-import { create_node_runtime } from '$lib/runtime/node.ts';
-import { default_test_cookie_keys } from '$lib/testing/cross_backend/default_secrets.ts';
-import { create_node_testing_adapter } from '$lib/testing/cross_backend/testing_server_node.ts';
+import { create_node_runtime } from '#lib/runtime/node.ts';
+import { default_test_cookie_keys } from '#lib/testing/cross_backend/default_secrets.ts';
+import { create_node_testing_adapter } from '#lib/testing/cross_backend/testing_server_node.ts';
 import {
 	assert_rpc_method_descriptions_present,
 	assert_surface_invariants,
 	assert_ws_endpoints_include_protocol_actions,
 	assert_ws_method_descriptions_present,
 	assert_ws_notifications_have_null_auth
-} from '$lib/testing/surface_invariants.ts';
+} from '#lib/testing/surface_invariants.ts';
 
 import { build_spine_app } from './testing_spine_server.ts';
 

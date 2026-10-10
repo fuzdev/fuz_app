@@ -24,22 +24,22 @@
 import { test, assert } from 'vitest';
 import { z } from 'zod';
 
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_test_app } from '$lib/testing/app_server.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_test_app } from '#lib/testing/app_server.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
 	auth_integration_truncate_tables
-} from '$lib/testing/db.ts';
-import { run_migrations } from '$lib/db/migrate.ts';
-import { auth_migration_ns } from '$lib/auth/migrations.ts';
-import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
-import { emit_after_commit } from '$lib/http/pending_effects.ts';
-import { get_route_input, type RouteSpec } from '$lib/http/route_spec.ts';
-import { rpc_action } from '$lib/actions/action_rpc.ts';
-import type { RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
-import type { AppServerContext } from '$lib/server/app_server_context.ts';
-import type { Db } from '$lib/db/db.ts';
+} from '#lib/testing/db.ts';
+import { run_migrations } from '#lib/db/migrate.ts';
+import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
+import { emit_after_commit } from '#lib/http/pending_effects.ts';
+import { get_route_input, type RouteSpec } from '#lib/http/route_spec.ts';
+import { rpc_action } from '#lib/actions/action_rpc.ts';
+import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
+import type { AppServerContext } from '#lib/server/app_server_context.ts';
+import type { Db } from '#lib/db/db.ts';
 
 const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';

@@ -8,8 +8,8 @@ import { describe, assert, test } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import process from 'node:process';
 
-import { write_file_atomic } from '$lib/runtime/fs.ts';
-import type { WriteFileOptions } from '$lib/runtime/deps.ts';
+import { write_file_atomic } from '#lib/runtime/fs.ts';
+import type { WriteFileOptions } from '#lib/runtime/deps.ts';
 
 interface RecordedWrite {
 	path: string;

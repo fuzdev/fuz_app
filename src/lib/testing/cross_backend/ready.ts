@@ -23,9 +23,6 @@ import '../assert_dev_env.ts';
  * the cross-process leg (`cross_backend/ready.cross.test.ts`, the TS spine
  * binaries + Rust `testing_spine_stub` over real HTTP).
  *
- * `$lib`-free by contract (relative specifiers only), like the sibling
- * cross-backend suites.
- *
  * @module
  */
 

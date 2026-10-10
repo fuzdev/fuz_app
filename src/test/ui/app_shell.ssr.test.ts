@@ -14,8 +14,8 @@ import { createRawSnippet } from 'svelte';
 import { compile } from 'svelte/compiler';
 import { render } from 'svelte/server';
 
-import AppShell from '$lib/ui/AppShell.svelte';
-import { SIDEBAR_NARROW_QUERY_DEFAULT, SidebarState } from '$lib/ui/sidebar_state.svelte.ts';
+import AppShell from '#lib/ui/AppShell.svelte';
+import { SIDEBAR_NARROW_QUERY_DEFAULT, SidebarState } from '#lib/ui/sidebar_state.svelte.ts';
 
 const app_shell_path = fileURLToPath(new URL('../../lib/ui/AppShell.svelte', import.meta.url));
 

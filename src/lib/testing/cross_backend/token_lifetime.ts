@@ -29,10 +29,6 @@ import '../assert_dev_env.ts';
  * - **Out-of-range days are refused** — `days: 0` 400s identically, so the
  *   two hand-rolled bounds checks can't drift.
  *
- * `$lib`-free by contract (relative specifiers only), like the sibling
- * cross-backend suites. Runs both legs — in-process (`gro test`) and
- * cross-process — through the shared `{setup_test}` protocol.
- *
  * @module
  */
 

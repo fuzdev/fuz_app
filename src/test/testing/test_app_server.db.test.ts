@@ -7,22 +7,22 @@
 import { test, assert, beforeAll, beforeEach, afterAll } from 'vitest';
 import { z } from 'zod';
 
-import type { RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
-import type { RpcAction } from '$lib/actions/action_rpc.ts';
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { ROLE_KEEPER } from '$lib/auth/role_schema.ts';
-import { create_health_route_spec } from '$lib/http/common_routes.ts';
-import { create_app_server } from '$lib/server/app_server.ts';
+import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
+import type { RpcAction } from '#lib/actions/action_rpc.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { create_health_route_spec } from '#lib/http/common_routes.ts';
+import { create_app_server } from '#lib/server/app_server.ts';
 import {
 	create_test_app,
 	create_test_app_for_bootstrap,
 	create_test_app_server,
 	create_loopback_app_server_options
-} from '$lib/testing/app_server.ts';
-import { create_test_app_surface_spec } from '$lib/testing/stubs.ts';
-import type { AppSurface } from '$lib/http/surface.ts';
-import { auth_truncate_tables } from '$lib/testing/db.ts';
-import { query_role_grant_find_active_for_actor } from '$lib/auth/role_grant_queries.ts';
+} from '#lib/testing/app_server.ts';
+import { create_test_app_surface_spec } from '#lib/testing/stubs.ts';
+import type { AppSurface } from '#lib/http/surface.ts';
+import { auth_truncate_tables } from '#lib/testing/db.ts';
+import { query_role_grant_find_active_for_actor } from '#lib/auth/role_grant_queries.ts';
 
 import { default_db_factory } from '../db_fixture.ts';
 

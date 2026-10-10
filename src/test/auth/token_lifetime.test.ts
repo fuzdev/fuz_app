@@ -18,7 +18,7 @@ import {
 	TOKEN_TTL_DAYS_MAX,
 	TokenLifetimeInput,
 	token_lifetime_to_expires_at
-} from '$lib/auth/token_lifetime.ts';
+} from '#lib/auth/token_lifetime.ts';
 
 describe('TokenLifetimeInput', () => {
 	test('parses the strict union', () => {

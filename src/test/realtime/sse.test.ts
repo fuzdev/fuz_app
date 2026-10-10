@@ -15,9 +15,9 @@ import {
 	type SseNotification,
 	type EventSpec,
 	type SseStream
-} from '$lib/realtime/sse.ts';
-import { SSE_CONNECTED_COMMENT } from '$lib/realtime/sse_constants.ts';
-import { SubscriberRegistry } from '$lib/realtime/subscriber_registry.ts';
+} from '#lib/realtime/sse.ts';
+import { SSE_CONNECTED_COMMENT } from '#lib/realtime/sse_constants.ts';
+import { SubscriberRegistry } from '#lib/realtime/subscriber_registry.ts';
 
 const log = new Logger('test', { level: 'off' });
 

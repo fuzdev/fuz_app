@@ -7,10 +7,10 @@
 import { describe, assert, test } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import { to_session_account, type Account } from '$lib/auth/account_schema.ts';
+import { to_session_account, type Account } from '#lib/auth/account_schema.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
-import { run_migrations } from '$lib/db/migrate.ts';
-import { auth_migration_ns } from '$lib/auth/migrations.ts';
+import { run_migrations } from '#lib/db/migrate.ts';
+import { auth_migration_ns } from '#lib/auth/migrations.ts';
 
 import { describe_db } from '../db_fixture.ts';
 

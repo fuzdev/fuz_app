@@ -40,8 +40,6 @@ import '../assert_dev_env.ts';
  * the in-process default app (the authorizer hook's in-process coverage is the
  * standalone `auth/cell_create_authorize.db.test.ts`).
  *
- * `$lib`-free by contract (relative specifiers only).
- *
  * @module
  */
 
@@ -345,8 +343,6 @@ export const describe_cell_gated_create_cross_tests = (
  *
  * Gated on `capabilities.cell_gated_create` — a `pending` contribution only
  * exists when the directory authorizer is mounted (reference spine binaries).
- *
- * `$lib`-free by contract (relative specifiers only).
  */
 export const describe_cell_moderate_cross_tests = (
 	options: RpcPathCapabilityGatedCrossSuiteOptions

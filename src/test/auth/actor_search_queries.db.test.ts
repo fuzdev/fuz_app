@@ -14,10 +14,10 @@
 import { describe, test, assert } from 'vitest';
 import { Uuid, create_uuid } from '@fuzdev/fuz_util/id.ts';
 
-import { query_actor_search } from '$lib/auth/actor_search_queries.ts';
-import { query_create_role_grant } from '$lib/auth/role_grant_queries.ts';
-import { create_test_account_with_actor } from '$lib/testing/db_entities.ts';
-import type { Db } from '$lib/db/db.ts';
+import { query_actor_search } from '#lib/auth/actor_search_queries.ts';
+import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
+import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
+import type { Db } from '#lib/db/db.ts';
 
 import { describe_db } from '../db_fixture.ts';
 

@@ -42,41 +42,41 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import { wait } from '@fuzdev/fuz_util/async.ts';
 
-import { heartbeat_action } from '$lib/actions/heartbeat.ts';
-import { register_action_ws } from '$lib/actions/register_action_ws.ts';
+import { heartbeat_action } from '#lib/actions/heartbeat.ts';
+import { register_action_ws } from '#lib/actions/register_action_ws.ts';
 import {
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON
-} from '$lib/actions/transports.ts';
-import { create_ws_auth_guard } from '$lib/actions/transports_ws_auth_guard.ts';
-import type { BackendWebsocketTransport } from '$lib/actions/transports_ws_backend.ts';
-import { create_account_route_specs } from '$lib/auth/account_routes.ts';
-import { create_audit_log_route_specs } from '$lib/auth/audit_log_routes.ts';
+} from '#lib/actions/transports.ts';
+import { create_ws_auth_guard } from '#lib/actions/transports_ws_auth_guard.ts';
+import type { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import { create_account_route_specs } from '#lib/auth/account_routes.ts';
+import { create_audit_log_route_specs } from '#lib/auth/audit_log_routes.ts';
 import {
 	AUTH_SESSION_TOKEN_HASH_KEY,
 	build_account_context,
 	REQUEST_CONTEXT_KEY
-} from '$lib/auth/request_context.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_standard_rpc_actions } from '$lib/auth/standard_rpc_actions.ts';
-import { token_scope_full } from '$lib/auth/token_scope.ts';
-import type { Db } from '$lib/db/db.ts';
+} from '#lib/auth/request_context.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
+import { token_scope_full } from '#lib/auth/token_scope.ts';
+import type { Db } from '#lib/db/db.ts';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TOKEN_SCOPE_KEY
-} from '$lib/hono_context.ts';
-import { prefix_route_specs } from '$lib/http/route_spec.ts';
-import type { AuditLogSse } from '$lib/realtime/sse_auth_guard.ts';
-import { require_audit_sse } from '$lib/server/app_server.ts';
-import { create_test_app, type TestAccount, type TestApp } from '$lib/testing/app_server.ts';
-import { install_audit_drift_guard } from '$lib/testing/audit_drift_guard.ts';
-import { auth_integration_truncate_tables, create_describe_db } from '$lib/testing/db.ts';
-import { rpc_call } from '$lib/testing/rpc_helpers.ts';
-import { DEFAULT_TEST_PASSWORD } from '$lib/testing/test_credentials.ts';
-import { create_fake_ws, create_stub_upgrade, type FakeWs } from '$lib/testing/ws_round_trip.ts';
+} from '#lib/hono_context.ts';
+import { prefix_route_specs } from '#lib/http/route_spec.ts';
+import type { AuditLogSse } from '#lib/realtime/sse_auth_guard.ts';
+import { require_audit_sse } from '#lib/server/app_server.ts';
+import { create_test_app, type TestAccount, type TestApp } from '#lib/testing/app_server.ts';
+import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
+import { auth_integration_truncate_tables, create_describe_db } from '#lib/testing/db.ts';
+import { rpc_call } from '#lib/testing/rpc_helpers.ts';
+import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
+import { create_fake_ws, create_stub_upgrade, type FakeWs } from '#lib/testing/ws_round_trip.ts';
 
 import { pg_factory } from '../db_fixture.ts';
 import { create_gated_db, type GatedDb } from '../gated_db.ts';

@@ -29,9 +29,6 @@ import '../assert_dev_env.ts';
  * `serve_fact_route.db.test.ts`); this suite is the cross-impl gate, so it is
  * cross-process only — like `login_security.ts` and `testing_backdoor.ts`.
  *
- * `$lib`-free by contract (relative specifiers only), like the sibling
- * cross-backend suites.
- *
  * @module
  */
 

@@ -8,8 +8,8 @@
  * @module
  */
 
-import { auth_migration_ns } from '$lib/auth/migrations.ts';
-import { auth_integration_truncate_tables } from '$lib/testing/db.ts';
+import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { auth_integration_truncate_tables } from '#lib/testing/db.ts';
 import { create_db_fixture } from './create_db_fixture.ts';
 
 export const { default_db_factory, pg_factory, db_factories, describe_db } = create_db_fixture(

@@ -14,7 +14,7 @@ import { assert, test } from 'vitest';
 import {
 	query_create_role_grant,
 	query_role_grant_has_role
-} from '$lib/auth/role_grant_queries.ts';
+} from '#lib/auth/role_grant_queries.ts';
 import { create_uuid } from '@fuzdev/fuz_util/id.ts';
 
 import { describe_db } from '../db_fixture.ts';

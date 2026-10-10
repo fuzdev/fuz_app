@@ -5,7 +5,7 @@
  * keeps the per-suite files focused on the assertions that actually differ.
  *
  * RPC calls go through `rpc_call_for_spec` from
- * `$lib/testing/rpc_helpers.ts` — `params` is typed against `spec.input`
+ * `#lib/testing/rpc_helpers.ts` — `params` is typed against `spec.input`
  * and the success `result` is validated against `spec.output`. Fall back
  * to the untyped `rpc_call` for adversarial tests that deliberately send
  * malformed params.
@@ -18,24 +18,24 @@
  * @module
  */
 
-import { create_session_config } from '$lib/auth/session_cookie.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
 	auth_integration_truncate_tables
-} from '$lib/testing/db.ts';
-import { run_migrations } from '$lib/db/migrate.ts';
-import { auth_migration_ns } from '$lib/auth/migrations.ts';
-import { create_rpc_endpoint } from '$lib/actions/action_rpc.ts';
+} from '#lib/testing/db.ts';
+import { run_migrations } from '#lib/db/migrate.ts';
+import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
 import {
 	create_role_grant_offer_actions,
 	type RoleGrantOfferCreateAuthorize
-} from '$lib/auth/role_grant_offer_actions.ts';
-import { create_role_schema, type RoleSchemaResult } from '$lib/auth/role_schema.ts';
-import { GRANT_PATH_ADMIN } from '$lib/auth/grant_path_schema.ts';
-import type { Db } from '$lib/db/db.ts';
-import type { AppServerContext } from '$lib/server/app_server_context.ts';
-import type { RouteSpec } from '$lib/http/route_spec.ts';
+} from '#lib/auth/role_grant_offer_actions.ts';
+import { create_role_schema, type RoleSchemaResult } from '#lib/auth/role_schema.ts';
+import { GRANT_PATH_ADMIN } from '#lib/auth/grant_path_schema.ts';
+import type { Db } from '#lib/db/db.ts';
+import type { AppServerContext } from '#lib/server/app_server_context.ts';
+import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 /** Shared cookie name for the role-grant-offer integration suites. */
 export const session_options = create_session_config('test_session');

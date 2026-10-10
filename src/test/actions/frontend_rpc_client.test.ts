@@ -15,13 +15,13 @@ import { describe, assert, test, vi } from 'vitest';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { create_frontend_rpc_client } from '$lib/actions/frontend_rpc_client.ts';
-import { ActionDispatcher } from '$lib/actions/action_dispatcher.ts';
-import { FrontendHttpTransport } from '$lib/actions/transports_http.ts';
-import type { Transport } from '$lib/actions/transports.ts';
-import type { ActionSpecUnion, RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
+import { create_frontend_rpc_client } from '#lib/actions/frontend_rpc_client.ts';
+import { ActionDispatcher } from '#lib/actions/action_dispatcher.ts';
+import { FrontendHttpTransport } from '#lib/actions/transports_http.ts';
+import type { Transport } from '#lib/actions/transports.ts';
+import type { ActionSpecUnion, RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { Result } from '@fuzdev/fuz_util/result.ts';
-import type { JsonrpcErrorObject } from '$lib/http/jsonrpc.ts';
+import type { JsonrpcErrorObject } from '#lib/http/jsonrpc.ts';
 
 const ping_spec = {
 	method: 'ping',
@@ -277,13 +277,13 @@ describe('create_frontend_rpc_client — type-only fixtures', () => {
 			const _ping_throwing_check: (input?: null) => Promise<{ pong: true }> = api.ping;
 			const _toggle_throwing_check: (input?: { on: boolean }) => Promise<void> = api.toggle;
 			const _peer_check: ActionDispatcher = peer;
-			void _ping_result_check;
-			void _toggle_result_check;
-			void _ping_throwing_check;
-			void _toggle_throwing_check;
-			void _peer_check;
+			_ping_result_check;
+			_toggle_result_check;
+			_ping_throwing_check;
+			_toggle_throwing_check;
+			_peer_check;
 		};
-		void _check;
+		_check;
 		assert.ok(true);
 	});
 
@@ -305,12 +305,12 @@ describe('create_frontend_rpc_client — type-only fixtures', () => {
 					// these literal-union assignments stop compiling.
 					const _spec_method_check: 'ping' | 'toggle' = event.spec.method;
 					const _data_method_check: 'ping' | 'toggle' = event.data.method;
-					void _spec_method_check;
-					void _data_method_check;
+					_spec_method_check;
+					_data_method_check;
 				}
 			});
 		};
-		void _check;
+		_check;
 		assert.ok(true);
 	});
 });

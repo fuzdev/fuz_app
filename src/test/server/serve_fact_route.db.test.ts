@@ -37,12 +37,12 @@
 
 import { test, assert } from 'vitest';
 
-import { PgFactStore } from '$lib/db/fact_store.ts';
+import { PgFactStore } from '#lib/db/fact_store.ts';
 import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
-import { ERROR_INVALID_QUERY_PARAMS, ERROR_INVALID_ROUTE_PARAMS } from '$lib/http/error_schemas.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import type { TestApp } from '$lib/testing/app_server.ts';
-import { create_test_extra_actor, soft_delete_test_actor } from '$lib/testing/db_entities.ts';
+import { ERROR_INVALID_QUERY_PARAMS, ERROR_INVALID_ROUTE_PARAMS } from '#lib/http/error_schemas.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import type { TestApp } from '#lib/testing/app_server.ts';
+import { create_test_extra_actor, soft_delete_test_actor } from '#lib/testing/db_entities.ts';
 import { create_cell_test_app, create_cell } from '../auth/cell_test_helpers.ts';
 import { describe_db } from '../cell_db_fixture.ts';
 

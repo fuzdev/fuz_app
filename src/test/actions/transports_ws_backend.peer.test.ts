@@ -1,14 +1,14 @@
 import { describe, test, assert } from 'vitest';
 import { create_uuid } from '@fuzdev/fuz_util/id.ts';
 
-import { BackendWebsocketTransport } from '$lib/actions/transports_ws_backend.ts';
+import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
 import {
 	create_jsonrpc_response,
 	create_jsonrpc_error_response
-} from '$lib/http/jsonrpc_helpers.ts';
-import { jsonrpc_error_messages } from '$lib/http/jsonrpc_errors.ts';
-import { peer_ping_action_spec } from '$lib/actions/peer_ping.ts';
-import { create_fake_ws } from '$lib/testing/ws_round_trip.ts';
+} from '#lib/http/jsonrpc_helpers.ts';
+import { jsonrpc_error_messages } from '#lib/http/jsonrpc_errors.ts';
+import { peer_ping_action_spec } from '#lib/actions/peer_ping.ts';
+import { create_fake_ws } from '#lib/testing/ws_round_trip.ts';
 
 // In-process coverage of the transport's server→client request path
 // (`request_connection` / `resolve_peer_response`) over a fake `WSContext` —

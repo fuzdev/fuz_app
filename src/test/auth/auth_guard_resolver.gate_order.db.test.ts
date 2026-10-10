@@ -24,22 +24,22 @@
 import { assert, describe, test } from 'vitest';
 import { z } from 'zod';
 
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_test_app } from '$lib/testing/app_server.ts';
-import { query_create_actor } from '$lib/auth/account_queries.ts';
-import { require_request_context } from '$lib/auth/request_context.ts';
-import { fuz_auth_guard_resolver } from '$lib/auth/auth_guard_resolver.ts';
-import { auth_migration_ns } from '$lib/auth/migrations.ts';
-import { run_migrations } from '$lib/db/migrate.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_test_app } from '#lib/testing/app_server.ts';
+import { query_create_actor } from '#lib/auth/account_queries.ts';
+import { require_request_context } from '#lib/auth/request_context.ts';
+import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
+import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { run_migrations } from '#lib/db/migrate.ts';
 import {
 	auth_integration_truncate_tables,
 	create_describe_db,
 	create_pglite_factory
-} from '$lib/testing/db.ts';
-import { ActingActor } from '$lib/http/auth_shape.ts';
-import { ERROR_ACTOR_REQUIRED, ERROR_CREDENTIAL_TYPE_REQUIRED } from '$lib/http/error_schemas.ts';
-import type { RouteSpec } from '$lib/http/route_spec.ts';
-import type { Db } from '$lib/db/db.ts';
+} from '#lib/testing/db.ts';
+import { ActingActor } from '#lib/http/auth_shape.ts';
+import { ERROR_ACTOR_REQUIRED, ERROR_CREDENTIAL_TYPE_REQUIRED } from '#lib/http/error_schemas.ts';
+import type { RouteSpec } from '#lib/http/route_spec.ts';
+import type { Db } from '#lib/db/db.ts';
 
 const session_options = create_session_config('test_session');
 const SESSION_ONLY_PATH = '/api/test_session_only';

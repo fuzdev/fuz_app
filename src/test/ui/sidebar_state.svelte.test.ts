@@ -12,7 +12,7 @@ import { describe, test, assert, vi, beforeEach, afterEach } from 'vitest';
 
 import { flushSync } from 'svelte';
 
-import { SIDEBAR_NARROW_QUERY_DEFAULT, SidebarState } from '$lib/ui/sidebar_state.svelte.ts';
+import { SIDEBAR_NARROW_QUERY_DEFAULT, SidebarState } from '#lib/ui/sidebar_state.svelte.ts';
 import { stub_match_media, type MatchMediaStub } from './svelte_client_test_helpers.ts';
 
 // vitest resolves the server builds, whose `MediaQuery` never calls

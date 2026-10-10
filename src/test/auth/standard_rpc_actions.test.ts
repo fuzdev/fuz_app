@@ -16,21 +16,21 @@ import { describe, test, assert } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import { create_standard_rpc_actions } from '$lib/auth/standard_rpc_actions.ts';
-import { all_admin_action_specs } from '$lib/auth/admin_action_specs.ts';
+import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
+import { all_admin_action_specs } from '#lib/auth/admin_action_specs.ts';
 import {
 	all_role_grant_offer_action_specs,
 	ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
 	role_grant_offer_create_action_spec
-} from '$lib/auth/role_grant_offer_action_specs.ts';
-import { all_account_action_specs } from '$lib/auth/account_action_specs.ts';
-import { create_test_audit_emitter } from '$lib/testing/stubs.ts';
-import { create_test_context } from '$lib/testing/entities.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+} from '#lib/auth/role_grant_offer_action_specs.ts';
+import { all_account_action_specs } from '#lib/auth/account_action_specs.ts';
+import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
+import { create_test_context } from '#lib/testing/entities.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import { create_test_action_context } from './rpc_test_helpers.ts';
-import { noop_connection_closer } from '$lib/actions/connection_closer.ts';
+import { noop_connection_closer } from '#lib/actions/connection_closer.ts';
 
 const log = new Logger('test', { level: 'off' });
 const deps = {

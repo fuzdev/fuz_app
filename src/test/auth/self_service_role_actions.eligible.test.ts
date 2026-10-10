@@ -13,9 +13,9 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import {
 	create_self_service_role_actions,
 	validate_self_service_eligible_roles
-} from '$lib/auth/self_service_role_actions.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
-import { create_test_audit_emitter } from '$lib/testing/stubs.ts';
+} from '#lib/auth/self_service_role_actions.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
 
 const deps = { log: new Logger('test', { level: 'off' }), audit: create_test_audit_emitter() };
 

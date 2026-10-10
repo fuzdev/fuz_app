@@ -10,9 +10,6 @@ import '../assert_dev_env.ts';
  * the wire-shape parity gate. A TS↔Rust envelope drift, not just a payload
  * field drift, fails the assertion.
  *
- * `$lib`-free by contract (relative specifiers only) so the suites can be
- * imported from the spawnable cross-process test files.
- *
  * @module
  */
 

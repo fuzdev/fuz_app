@@ -17,20 +17,20 @@ import {
 	create_audit_emitter,
 	type AuditEmitter,
 	type AuditEmitterContext
-} from '$lib/auth/audit_emitter.ts';
-import { flush_pending_effects, flush_post_commit_effects } from '$lib/http/pending_effects.ts';
+} from '#lib/auth/audit_emitter.ts';
+import { flush_pending_effects, flush_post_commit_effects } from '#lib/http/pending_effects.ts';
 import {
 	get_audit_metadata_validation_failures,
 	get_audit_unknown_event_type_failures,
 	reset_audit_metadata_validation_failures,
 	reset_audit_unknown_event_type_failures
-} from '$lib/auth/audit_log_queries.ts';
+} from '#lib/auth/audit_log_queries.ts';
 import {
 	create_audit_log_config,
 	type AuditLogEvent,
 	type AuditLogInput
-} from '$lib/auth/audit_log_schema.ts';
-import type { Db } from '$lib/db/db.ts';
+} from '#lib/auth/audit_log_schema.ts';
+import type { Db } from '#lib/db/db.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 const log = new Logger('test', { level: 'error' });
@@ -386,7 +386,7 @@ describe('create_audit_emitter — emit', () => {
 			audit.emit(ctx, {
 				event_type: 'classroom_create',
 				metadata: { ok: true }
-			} as AuditLogInput<string>);
+			});
 			await wait();
 
 			assert.strictEqual(get_audit_unknown_event_type_failures(), 1);
@@ -413,7 +413,7 @@ describe('create_audit_emitter — emit', () => {
 			audit.emit(ctx, {
 				event_type: 'classroom_create',
 				metadata: { ok: true }
-			} as AuditLogInput<string>);
+			});
 			await wait();
 
 			assert.strictEqual(get_audit_unknown_event_type_failures(), 0);
@@ -442,7 +442,7 @@ describe('create_audit_emitter — emit', () => {
 			audit.emit(ctx, {
 				event_type: 'classroom_create',
 				metadata: { classroom_id: 42, name: 'Period 3' }
-			} as AuditLogInput<string>);
+			});
 			await wait();
 
 			assert.strictEqual(get_audit_metadata_validation_failures(), 1);

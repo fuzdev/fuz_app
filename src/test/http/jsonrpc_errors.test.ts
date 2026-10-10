@@ -6,7 +6,7 @@
 
 import { describe, assert, test } from 'vitest';
 
-import type { JsonrpcErrorCode, JsonrpcErrorObject } from '$lib/http/jsonrpc.ts';
+import type { JsonrpcErrorCode, JsonrpcErrorObject } from '#lib/http/jsonrpc.ts';
 import {
 	JSONRPC_ERROR_CODES,
 	ThrownJsonrpcError,
@@ -16,28 +16,28 @@ import {
 	JSONRPC_ERROR_CODE_TO_HTTP_STATUS,
 	HTTP_STATUS_TO_JSONRPC_ERROR_CODE,
 	http_status_to_jsonrpc_error_code
-} from '$lib/http/jsonrpc_errors.ts';
+} from '#lib/http/jsonrpc_errors.ts';
 
 describe('JSONRPC_ERROR_CODES', () => {
 	test('standard codes have correct values', () => {
-		assert.strictEqual(JSONRPC_ERROR_CODES.parse_error as number, -32700);
-		assert.strictEqual(JSONRPC_ERROR_CODES.invalid_request as number, -32600);
-		assert.strictEqual(JSONRPC_ERROR_CODES.method_not_found as number, -32601);
-		assert.strictEqual(JSONRPC_ERROR_CODES.invalid_params as number, -32602);
-		assert.strictEqual(JSONRPC_ERROR_CODES.internal_error as number, -32603);
+		assert.strictEqual(JSONRPC_ERROR_CODES.parse_error, -32700);
+		assert.strictEqual(JSONRPC_ERROR_CODES.invalid_request, -32600);
+		assert.strictEqual(JSONRPC_ERROR_CODES.method_not_found, -32601);
+		assert.strictEqual(JSONRPC_ERROR_CODES.invalid_params, -32602);
+		assert.strictEqual(JSONRPC_ERROR_CODES.internal_error, -32603);
 	});
 
 	test('application codes have correct values', () => {
-		assert.strictEqual(JSONRPC_ERROR_CODES.unauthenticated as number, -32001);
-		assert.strictEqual(JSONRPC_ERROR_CODES.forbidden as number, -32002);
-		assert.strictEqual(JSONRPC_ERROR_CODES.not_found as number, -32003);
-		assert.strictEqual(JSONRPC_ERROR_CODES.conflict as number, -32004);
-		assert.strictEqual(JSONRPC_ERROR_CODES.validation_error as number, -32005);
-		assert.strictEqual(JSONRPC_ERROR_CODES.rate_limited as number, -32006);
-		assert.strictEqual(JSONRPC_ERROR_CODES.service_unavailable as number, -32007);
-		assert.strictEqual(JSONRPC_ERROR_CODES.timeout as number, -32008);
-		assert.strictEqual(JSONRPC_ERROR_CODES.queue_overflow as number, -32009);
-		assert.strictEqual(JSONRPC_ERROR_CODES.request_cancelled as number, -32010);
+		assert.strictEqual(JSONRPC_ERROR_CODES.unauthenticated, -32001);
+		assert.strictEqual(JSONRPC_ERROR_CODES.forbidden, -32002);
+		assert.strictEqual(JSONRPC_ERROR_CODES.not_found, -32003);
+		assert.strictEqual(JSONRPC_ERROR_CODES.conflict, -32004);
+		assert.strictEqual(JSONRPC_ERROR_CODES.validation_error, -32005);
+		assert.strictEqual(JSONRPC_ERROR_CODES.rate_limited, -32006);
+		assert.strictEqual(JSONRPC_ERROR_CODES.service_unavailable, -32007);
+		assert.strictEqual(JSONRPC_ERROR_CODES.timeout, -32008);
+		assert.strictEqual(JSONRPC_ERROR_CODES.queue_overflow, -32009);
+		assert.strictEqual(JSONRPC_ERROR_CODES.request_cancelled, -32010);
 	});
 
 	test('has 15 error codes total (5 standard + 10 application)', () => {

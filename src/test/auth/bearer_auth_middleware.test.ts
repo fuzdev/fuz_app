@@ -15,8 +15,8 @@ import {
 	create_bearer_auth_test_app,
 	TEST_CLIENT_IP,
 	type BearerAuthTestCase
-} from '$lib/testing/middleware.ts';
-import { create_test_request_context } from '$lib/testing/auth_apps.ts';
+} from '#lib/testing/middleware.ts';
+import { create_test_request_context } from '#lib/testing/auth_apps.ts';
 
 // --- Test data ---
 

@@ -14,14 +14,14 @@
 import { assert, describe, test } from 'vitest';
 import { z } from 'zod';
 
-import { RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
+import { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import {
 	CancelNotificationParams,
 	cancel_action,
 	cancel_action_spec,
 	cancel_handler
-} from '$lib/actions/cancel.ts';
-import { create_ws_test_harness } from '$lib/testing/ws_round_trip.ts';
+} from '#lib/actions/cancel.ts';
+import { create_ws_test_harness } from '#lib/testing/ws_round_trip.ts';
 
 describe('cancel_action', () => {
 	test('spec has the expected method + shape', () => {
@@ -217,14 +217,15 @@ describe('cancel via register_action_ws', () => {
 	});
 
 	test('socket close aborts in-flight handler via the socket_abort chain', async () => {
-		let signal_at_close: AbortSignal | null = null as any;
+		// a holder, so TS doesn't narrow a binding the handler assigns later to `null`
+		const captured: { signal: AbortSignal | null } = { signal: null };
 		const harness = create_ws_test_harness({
 			actions: [
 				cancel_action,
 				{
 					spec: slow_spec,
 					handler: async (_input, ctx) => {
-						signal_at_close = ctx.signal;
+						captured.signal = ctx.signal;
 						await wait_for_abort(ctx.signal);
 						throw new Error('aborted via close');
 					}
@@ -235,11 +236,11 @@ describe('cancel via register_action_ws', () => {
 
 		void client.send({ jsonrpc: '2.0', id: 7, method: 'slow', params: {} });
 		await Promise.resolve();
-		assert.ok(signal_at_close);
-		assert.strictEqual(signal_at_close.aborted, false);
+		assert.ok(captured.signal);
+		assert.strictEqual(captured.signal.aborted, false);
 
 		await client.close();
-		assert.strictEqual(signal_at_close.aborted, true);
+		assert.strictEqual(captured.signal.aborted, true);
 	});
 
 	test('per-request signals are isolated — cancel id=1 does not abort id=2', async () => {

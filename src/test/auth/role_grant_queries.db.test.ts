@@ -6,8 +6,8 @@
 
 import { assert, test } from 'vitest';
 
-import { ROLE_KEEPER, ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import { query_purge_account } from '$lib/auth/account_queries.ts';
+import { ROLE_KEEPER, ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { query_purge_account } from '#lib/auth/account_queries.ts';
 import {
 	query_create_role_grant,
 	query_revoke_role_grant,
@@ -20,15 +20,15 @@ import {
 	query_account_has_active_global_role,
 	query_count_active_accounts_with_global_role,
 	query_account_has_global_role
-} from '$lib/auth/role_grant_queries.ts';
-import { query_role_grant_offer_create } from '$lib/auth/role_grant_offer_queries.ts';
+} from '#lib/auth/role_grant_queries.ts';
+import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_queries.ts';
 import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
-import type { Db } from '$lib/db/db.ts';
+import type { Db } from '#lib/db/db.ts';
 import {
 	create_test_account_with_actor,
 	create_test_extra_actor,
 	soft_delete_test_actor
-} from '$lib/testing/db_entities.ts';
+} from '#lib/testing/db_entities.ts';
 
 import { describe_db } from '../db_fixture.ts';
 

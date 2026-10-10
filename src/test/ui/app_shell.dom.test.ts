@@ -17,8 +17,8 @@ import { describe, test, assert, vi, beforeEach, afterEach } from 'vitest';
 import { createRawSnippet, flushSync, mount, unmount, type ComponentProps } from 'svelte';
 import { afterNavigate } from '$app/navigation';
 
-import AppShell from '$lib/ui/AppShell.svelte';
-import { SidebarState } from '$lib/ui/sidebar_state.svelte.ts';
+import AppShell from '#lib/ui/AppShell.svelte';
+import { SidebarState } from '#lib/ui/sidebar_state.svelte.ts';
 import { stub_match_media, type MatchMediaStub } from './svelte_client_test_helpers.ts';
 
 // vitest resolves the server builds, which can't mount — load the client builds

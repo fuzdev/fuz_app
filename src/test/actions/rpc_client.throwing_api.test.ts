@@ -14,8 +14,8 @@ import { describe, assert, test } from 'vitest';
 import type { Result } from '@fuzdev/fuz_util/result.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import { create_throwing_api, type ThrowingApi } from '$lib/actions/rpc_client.ts';
-import type { JsonrpcErrorObject } from '$lib/http/jsonrpc.ts';
+import { create_throwing_api, type ThrowingApi } from '#lib/actions/rpc_client.ts';
+import type { JsonrpcErrorObject } from '#lib/http/jsonrpc.ts';
 
 describe('create_throwing_api', () => {
 	test('unwraps {ok: true, value} to value via the typed Proxy', async () => {
@@ -201,16 +201,16 @@ describe('ThrowingApi<TApi> — type-only fixtures', () => {
 			_input?: undefined,
 			_options?: { signal?: AbortSignal }
 		): Promise<{ id: string }> => ({ id: 'a' });
-		void verify_check;
+		verify_check;
 
 		// `revoke`: required input preserved, return type unwrapped.
 		const revoke_check: Throwing['revoke'] = async (_input: { id: string }): Promise<void> =>
 			undefined;
-		void revoke_check;
+		revoke_check;
 
 		// `notify`: pass-through arm — original signature preserved unchanged.
 		const notify_check: Throwing['notify'] = (_input: { x: number }): void => undefined;
-		void notify_check;
+		notify_check;
 
 		assert.ok(true, 'type assertions above are the actual test');
 	});

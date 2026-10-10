@@ -54,6 +54,6 @@ export const query_actors_by_ids = async (
 		 FROM actor act
 		 JOIN account a ON a.id = act.account_id
 		 WHERE act.id = ANY($1)`,
-		[ids as Array<Uuid>]
+		[ids]
 	);
 };

@@ -49,9 +49,6 @@ import '../assert_dev_env.ts';
  * (`create_app_server` threading one limiter pair to both mounts on TS; the
  * stub's dispatcher states plus its auth-family builders on Rust).
  *
- * `$lib`-free by contract (relative specifiers only), like the sibling
- * cross-backend suites.
- *
  * @module
  */
 
@@ -184,7 +181,7 @@ export const describe_ws_action_rate_limit_cross_tests = (
 			is_response_for(id),
 			RESPONSE_TIMEOUT_MS
 		);
-		return outcome_from_frame(null, frame as Partial<JsonrpcErrorResponseFrame>);
+		return outcome_from_frame(null, frame);
 	};
 
 	/** Open a socket on the keeper's session, optionally behind a forwarded IP. */

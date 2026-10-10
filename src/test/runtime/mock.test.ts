@@ -14,7 +14,7 @@ import {
 	reset_mock_runtime,
 	set_mock_stdin,
 	MockExitError
-} from '$lib/runtime/mock.ts';
+} from '#lib/runtime/mock.ts';
 
 import { collect_stream, stream_of } from './byte_stream.ts';
 

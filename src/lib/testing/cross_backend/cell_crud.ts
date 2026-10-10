@@ -40,9 +40,6 @@ import '../assert_dev_env.ts';
  * `describe_cell_relations_cross_tests` alongside the grant verbs rather than
  * here.
  *
- * `$lib`-free by contract (relative specifiers only) so the suite can be
- * imported from the spawnable cross-process test files.
- *
  * @module
  */
 

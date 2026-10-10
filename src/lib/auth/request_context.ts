@@ -120,7 +120,7 @@ export const AUTH_SESSION_TOKEN_HASH_KEY = 'auth_session_token_hash';
  * @returns the request context, or `null`
  */
 export const get_request_context = (c: Context): RequestContext | null => {
-	return (c.get(REQUEST_CONTEXT_KEY) as RequestContext | undefined) ?? null;
+	return c.get(REQUEST_CONTEXT_KEY) ?? null;
 };
 
 /**

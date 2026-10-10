@@ -18,9 +18,9 @@
 
 import { assert, test } from 'vitest';
 
-import { query_create_account } from '$lib/auth/account_queries.ts';
-import { query_session_list_for_account } from '$lib/auth/session_queries.ts';
-import { ISO8601_SECONDS } from '$lib/timestamp.ts';
+import { query_create_account } from '#lib/auth/account_queries.ts';
+import { query_session_list_for_account } from '#lib/auth/session_queries.ts';
+import { ISO8601_SECONDS } from '#lib/timestamp.ts';
 
 import { describe_db } from '../db_fixture.ts';
 

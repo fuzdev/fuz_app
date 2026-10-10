@@ -12,10 +12,10 @@
 import { describe, assert, test } from 'vitest';
 import { z } from 'zod';
 
-import { ActionDispatcher } from '$lib/actions/action_dispatcher.ts';
-import { create_broadcast_api, type ShouldDeliverFn } from '$lib/actions/broadcast_api.ts';
-import { BackendWebsocketTransport } from '$lib/actions/transports_ws_backend.ts';
-import { Transports, type Transport } from '$lib/actions/transports.ts';
+import { ActionDispatcher } from '#lib/actions/action_dispatcher.ts';
+import { create_broadcast_api, type ShouldDeliverFn } from '#lib/actions/broadcast_api.ts';
+import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import { Transports, type Transport } from '#lib/actions/transports.ts';
 import type {
 	JsonrpcErrorResponse,
 	JsonrpcMessageFromClientToServer,
@@ -23,9 +23,9 @@ import type {
 	JsonrpcNotification,
 	JsonrpcRequest,
 	JsonrpcResponseOrError
-} from '$lib/http/jsonrpc.ts';
-import type { ActionSpecUnion } from '$lib/actions/action_spec.ts';
-import { MinimalActionEnvironment, create_fake_ws } from '$lib/testing/ws_round_trip.ts';
+} from '#lib/http/jsonrpc.ts';
+import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
+import { MinimalActionEnvironment, create_fake_ws } from '#lib/testing/ws_round_trip.ts';
 import { create_uuid } from '@fuzdev/fuz_util/id.ts';
 
 const thing_changed_spec = {

@@ -44,7 +44,7 @@ export const create_deno_testing_adapter = (): TestingServerAdapter => ({
 	// Deno's WS upgrade is module-level and stateless — no post-serve attach.
 	prepare_websocket: () => ({ create_upgrade_websocket: () => upgradeWebSocket }),
 	serve: ({ fetch, port, hostname }) => {
-		const server = Deno.serve({ port, hostname }, fetch as Parameters<typeof Deno.serve>[1]);
+		const server = Deno.serve({ port, hostname }, fetch);
 		const handle: ServeHandle = { shutdown: () => server.shutdown(), native: server };
 		return handle;
 	},

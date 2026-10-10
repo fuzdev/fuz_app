@@ -26,20 +26,20 @@ import {
 	cell_get_action_spec,
 	ERROR_CELL_KIND_IN_DATA,
 	ERROR_CELL_NOT_FOUND
-} from '$lib/auth/cell_action_specs.ts';
+} from '#lib/auth/cell_action_specs.ts';
 import {
 	cell_item_insert_action_spec,
 	type CellItemPosition
-} from '$lib/auth/cell_item_action_specs.ts';
+} from '#lib/auth/cell_item_action_specs.ts';
 import {
 	cell_field_set_action_spec,
 	type CellFieldName
-} from '$lib/auth/cell_field_action_specs.ts';
-import { query_audit_log_list } from '$lib/auth/audit_log_queries.ts';
+} from '#lib/auth/cell_field_action_specs.ts';
+import { query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
 import { fractional_indices_between } from '@fuzdev/fuz_util/fractional_index.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
-import type { Db } from '$lib/db/db.ts';
-import type { TestApp, TestAccount } from '$lib/testing/app_server.ts';
+import type { Db } from '#lib/db/db.ts';
+import type { TestApp, TestAccount } from '#lib/testing/app_server.ts';
 import { create_cell_test_app, create_cell, call } from './cell_test_helpers.ts';
 import { describe_db } from '../cell_db_fixture.ts';
 

@@ -10,7 +10,7 @@
 
 import { afterAll, assert, beforeEach, test } from 'vitest';
 
-import { DEFAULT_WS_MAX_MESSAGE_BYTES } from '$lib/actions/transports.ts';
+import { DEFAULT_WS_MAX_MESSAGE_BYTES } from '#lib/actions/transports.ts';
 
 interface ServeOptions {
 	websocket?: { maxPayloadLength?: number };
@@ -26,7 +26,7 @@ let calls: Array<ServeOptions> = [];
 	}
 };
 const { create_bun_testing_adapter } =
-	await import('$lib/testing/cross_backend/testing_server_bun.ts');
+	await import('#lib/testing/cross_backend/testing_server_bun.ts');
 
 beforeEach(() => {
 	calls = [];

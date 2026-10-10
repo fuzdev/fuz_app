@@ -13,8 +13,8 @@ import { inject } from 'vitest';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle
-} from '$lib/testing/cross_backend/setup.ts';
-import { describe_query_shape_cross_tests } from '$lib/testing/cross_backend/query_shape.ts';
+} from '#lib/testing/cross_backend/setup.ts';
+import { describe_query_shape_cross_tests } from '#lib/testing/cross_backend/query_shape.ts';
 
 import './cross_test_types.ts';
 

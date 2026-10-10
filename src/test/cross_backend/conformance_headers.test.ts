@@ -4,8 +4,8 @@ import {
 	FINGERPRINT_HEADERS,
 	assert_expected_headers,
 	assert_no_fingerprint_headers
-} from '$lib/testing/cross_backend/conformance_table.ts';
-import { headers_to_record } from '$lib/testing/rpc_helpers.ts';
+} from '#lib/testing/cross_backend/conformance_table.ts';
+import { headers_to_record } from '#lib/testing/rpc_helpers.ts';
 
 /**
  * Pure-function coverage of the conformance runner's header invariants — the

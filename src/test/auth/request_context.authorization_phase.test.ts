@@ -32,35 +32,35 @@
 
 import { describe, test, assert, vi, afterEach } from 'vitest';
 
-import { apply_authorization_phase } from '$lib/auth/request_context.ts';
+import { apply_authorization_phase } from '#lib/auth/request_context.ts';
 import {
 	query_account_by_id,
 	query_actor_by_id,
 	query_active_actors_by_account
-} from '$lib/auth/account_queries.ts';
-import { query_role_grant_find_active_for_actor } from '$lib/auth/role_grant_queries.ts';
+} from '#lib/auth/account_queries.ts';
+import { query_role_grant_find_active_for_actor } from '#lib/auth/role_grant_queries.ts';
 import {
 	ERROR_ACTOR_REQUIRED,
 	ERROR_ACTOR_NOT_ON_ACCOUNT,
 	ERROR_NO_ACTORS_ON_ACCOUNT,
 	ERROR_ACCOUNT_VANISHED
-} from '$lib/http/error_schemas.ts';
+} from '#lib/http/error_schemas.ts';
 import {
 	create_test_account,
 	create_test_actor,
 	create_test_role_grant
-} from '$lib/testing/entities.ts';
-import type { QueryDeps } from '$lib/db/query_deps.ts';
+} from '#lib/testing/entities.ts';
+import type { QueryDeps } from '#lib/db/query_deps.ts';
 
 const mock_deps: QueryDeps = { db: {} as any };
 
-vi.mock('$lib/auth/account_queries.js', () => ({
+vi.mock('#lib/auth/account_queries.ts', () => ({
 	query_account_by_id: vi.fn(),
 	query_actor_by_id: vi.fn(),
 	query_active_actors_by_account: vi.fn()
 }));
 
-vi.mock('$lib/auth/role_grant_queries.js', () => ({
+vi.mock('#lib/auth/role_grant_queries.ts', () => ({
 	query_role_grant_find_active_for_actor: vi.fn()
 }));
 

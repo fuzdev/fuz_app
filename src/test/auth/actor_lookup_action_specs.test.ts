@@ -14,8 +14,8 @@
 import { describe, test, assert } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { all_actor_lookup_action_specs } from '$lib/auth/actor_lookup_action_specs.ts';
-import { create_actor_lookup_actions } from '$lib/auth/actor_lookup_actions.ts';
+import { all_actor_lookup_action_specs } from '#lib/auth/actor_lookup_action_specs.ts';
+import { create_actor_lookup_actions } from '#lib/auth/actor_lookup_actions.ts';
 
 const log = new Logger('test', { level: 'off' });
 

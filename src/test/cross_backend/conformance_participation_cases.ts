@@ -39,16 +39,16 @@ import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_ROLE_NOT_WEB_GRANTABLE
-} from '$lib/http/error_schemas.ts';
+} from '#lib/http/error_schemas.ts';
 import {
 	ERROR_ROLE_GRANT_BUILTIN_SCOPED,
 	ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH,
 	ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED,
 	ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE
-} from '$lib/auth/role_grant_offer_action_specs.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
-import { SPINE_PARTICIPANT_ROLE } from '$lib/testing/cross_backend/spine_surface_constants.ts';
-import type { ConformanceCase } from '$lib/testing/cross_backend/conformance_case.ts';
+} from '#lib/auth/role_grant_offer_action_specs.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { SPINE_PARTICIPANT_ROLE } from '#lib/testing/cross_backend/spine_surface_constants.ts';
+import type { ConformanceCase } from '#lib/testing/cross_backend/conformance_case.ts';
 
 /**
  * `extra_accounts` username the participation suite seeds holding

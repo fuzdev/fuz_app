@@ -24,11 +24,11 @@
 
 import { test, assert } from 'vitest';
 
-import { admin_session_revoke_all_action_spec } from '$lib/auth/admin_action_specs.ts';
-import { create_test_app } from '$lib/testing/app_server.ts';
-import { ERROR_NO_ACTORS_ON_ACCOUNT } from '$lib/http/error_schemas.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
+import { admin_session_revoke_all_action_spec } from '#lib/auth/admin_action_specs.ts';
+import { create_test_app } from '#lib/testing/app_server.ts';
+import { ERROR_NO_ACTORS_ON_ACCOUNT } from '#lib/http/error_schemas.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import {
 	RPC_PATH,
 	create_admin_route_specs,

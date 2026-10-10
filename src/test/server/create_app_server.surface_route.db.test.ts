@@ -8,14 +8,14 @@
 
 import { test, assert, beforeAll, beforeEach, afterAll, describe } from 'vitest';
 
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import { generate_api_token } from '$lib/auth/api_token.ts';
-import { query_create_api_token } from '$lib/auth/api_token_queries.ts';
-import { token_scope_methods } from '$lib/auth/token_scope.ts';
-import { create_health_route_spec } from '$lib/http/common_routes.ts';
-import { create_test_app, type TestApp } from '$lib/testing/app_server.ts';
-import { auth_truncate_tables } from '$lib/testing/db.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { generate_api_token } from '#lib/auth/api_token.ts';
+import { query_create_api_token } from '#lib/auth/api_token_queries.ts';
+import { token_scope_methods } from '#lib/auth/token_scope.ts';
+import { create_health_route_spec } from '#lib/http/common_routes.ts';
+import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { auth_truncate_tables } from '#lib/testing/db.ts';
 
 import { default_db_factory } from '../db_fixture.ts';
 

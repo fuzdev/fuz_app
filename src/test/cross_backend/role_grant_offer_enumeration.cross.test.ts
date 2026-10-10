@@ -15,12 +15,12 @@ import { inject } from 'vitest';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle
-} from '$lib/testing/cross_backend/setup.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+} from '#lib/testing/cross_backend/setup.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {
 	describe_role_grant_offer_enumeration_cross_tests,
 	OFFER_GRANTOR_USERNAME
-} from '$lib/testing/cross_backend/role_grant_offer_enumeration.ts';
+} from '#lib/testing/cross_backend/role_grant_offer_enumeration.ts';
 
 import './cross_test_types.ts';
 

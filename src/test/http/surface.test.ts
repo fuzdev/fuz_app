@@ -17,11 +17,11 @@ import {
 	collect_middleware_errors,
 	env_schema_to_surface,
 	events_to_surface
-} from '$lib/http/surface.ts';
-import type { RouteSpec } from '$lib/http/route_spec.ts';
-import type { MiddlewareSpec } from '$lib/http/middleware_spec.ts';
-import type { EventSpec } from '$lib/realtime/sse.ts';
-import type { WsEndpointSpec } from '$lib/actions/ws_endpoint_spec.ts';
+} from '#lib/http/surface.ts';
+import type { RouteSpec } from '#lib/http/route_spec.ts';
+import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
+import type { EventSpec } from '#lib/realtime/sse.ts';
+import type { WsEndpointSpec } from '#lib/actions/ws_endpoint_spec.ts';
 
 const noop_handler = async (c: any) => c.json({ ok: true });
 const noop_middleware = async (_c: any, next: any) => next();

@@ -10,10 +10,10 @@
 
 import { describe, assert, test, beforeAll, beforeEach } from 'vitest';
 
-import { Db, no_nested_transaction } from '$lib/db/db.ts';
-import { run_migrations, type Migration, type MigrationNamespace } from '$lib/db/migrate.ts';
-import { query_db_status, format_db_status } from '$lib/db/status.ts';
-import { create_pglite_factory, reset_pglite } from '$lib/testing/db.ts';
+import { Db, no_nested_transaction } from '#lib/db/db.ts';
+import { run_migrations, type Migration, type MigrationNamespace } from '#lib/db/migrate.ts';
+import { query_db_status, format_db_status } from '#lib/db/status.ts';
+import { create_pglite_factory, reset_pglite } from '#lib/testing/db.ts';
 
 const noop_init = async (_db: Db): Promise<void> => {};
 const factory = create_pglite_factory(noop_init);

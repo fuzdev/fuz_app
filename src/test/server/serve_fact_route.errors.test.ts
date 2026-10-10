@@ -17,9 +17,9 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import {
 	create_serve_fact_route_spec,
 	create_serve_cell_fact_route_spec
-} from '$lib/server/serve_fact_route.ts';
-import type { AppDeps } from '$lib/auth/deps.ts';
-import { ERROR_INVALID_ROUTE_PARAMS } from '$lib/http/error_schemas.ts';
+} from '#lib/server/serve_fact_route.ts';
+import type { AppDeps } from '#lib/auth/deps.ts';
+import { ERROR_INVALID_ROUTE_PARAMS } from '#lib/http/error_schemas.ts';
 
 // Neither factory reads `deps` at construction time (it exists on the
 // options for symmetry with sibling route factories), so a bare stub is

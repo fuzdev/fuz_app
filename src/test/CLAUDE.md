@@ -14,7 +14,7 @@ Tests live in `src/test/`, mirroring `src/lib/` structure
 
 ### Database Tests
 
-`create_describe_db(factories, truncate_tables)` from `$lib/testing/db.ts`
+`create_describe_db(factories, truncate_tables)` from `#lib/testing/db.ts`
 returns a `describe_db(name, fn)` function bound to the given factories.
 Runs suites against PGlite (in-memory) and optionally PostgreSQL (when
 `TEST_DATABASE_URL` is set). Consumer projects create a `db_fixture.ts`
@@ -40,8 +40,8 @@ hands back that driver's factory instead. The reach is the call site, wherever
 it sits — a suite's own `const factory`, the two `auth/*_test_helpers.ts`
 `describe_db`s, `create_db_fixture.ts`'s `default_db_factory` (what the suites
 that take one database directly rather than through `describe_db` import),
-`$lib/testing/app_server.ts`'s no-`db` fallback, and the `db_factories`
-defaults in `$lib/testing/sse_round_trip.ts` and `$lib/testing/rate_limiting.ts`. The stand-ins share
+`#lib/testing/app_server.ts`'s no-`db` fallback, and the `db_factories`
+defaults in `#lib/testing/sse_round_trip.ts` and `#lib/testing/rate_limiting.ts`. The stand-ins share
 one instance for the run and `DROP SCHEMA public CASCADE` + re-migrate per
 `create()`, the lifecycle `create_pglite_factory` gives PGlite. With the
 selector unset nothing is installed, so every `create_pglite_factory` call site
@@ -89,7 +89,7 @@ so a new table fails the suite until it gets a const or an exemption entry.
 ### Integration Tests
 
 Named `.integration.test.ts`. Use `create_test_app()` from
-`$lib/testing/app_server.ts` to spin up a full Hono app:
+`#lib/testing/app_server.ts` to spin up a full Hono app:
 
 ```ts
 const { app, create_session_headers, create_bearer_headers, create_account, cleanup } =
@@ -155,7 +155,7 @@ obligation above: it enumerates the spine binary's full live RPC mount
 (`build_full_spine_rpc_actions`, the single-sourced superset
 `testing_spine_server.ts` mounts) and reconciles it against the tagged
 `spine_method_coverage.ts` manifest via `assert_rpc_method_coverage`
-(`$lib/testing/cross_backend/method_coverage.ts`). Every method is tagged
+(`#lib/testing/cross_backend/method_coverage.ts`). Every method is tagged
 `declared` (auto-enumerated by the spec-derived suites), `off_surface` (names
 the covering `describe_*_cross_tests` suite), or `backdoor` (`_testing_*`).
 Mount a new method without a manifest row — or leave a stale row — and the test
@@ -175,7 +175,7 @@ the test helpers' route list.
 
 - DI via small `*Deps` interfaces — `create_stub_app_deps()` for auth deps with safe defaults
 - `create_gated_db(db)` from `gated_db.ts` — a pass-through `Db` whose `stall(match, {skip?})` holds one chosen pool-level query in flight until the test releases or fails it, and whose `hold_commit()` holds the next transaction open after its callback returns, before it commits — then `release()`s it, or `fail(error)`s it so the transaction rolls back and its call rejects, which is what a caller sees when a `COMMIT` fails (`auth/cleanup.sessions.db.test.ts` drives the session sweep's close-on-failed-commit branch with it on every driver, beside a deferred constraint trigger on real Postgres). The stall seams for tests that need something to happen *between* two of a request's database steps (the admission suites hold an upgrade or a stream request at its credential re-read and land a revocation in the window; `auth/connection_closer.admission.db.test.ts` holds a revocation uncommitted and opens a connection in the window — real Postgres only, since the connection's re-read needs a second database connection). `open_transactions()` counts the transactions open right now, which is how `auth/connection_closer.db.test.ts` asserts on any driver that a close ran after its commit; the same file stalls the audit INSERT to assert that a close does not wait for it. Production takes no seam for it
-- `create_mock_runtime()` from `$lib/runtime/mock.ts` for CLI/runtime tests
+- `create_mock_runtime()` from `#lib/runtime/mock.ts` for CLI/runtime tests
 - `vi.spyOn()` for fetch mocking in UI tests
 
 ## fuz_app-specific conventions
@@ -184,7 +184,7 @@ the test helpers' route list.
 - `await_pending_effects: true` is set by `create_test_app` — fire-and-forget
   effects complete before response returns, so tests can assert side effects directly
 - `.db.test.ts` files that exercise audit emits should call
-  `install_audit_drift_guard()` (from `$lib/testing/audit_drift_guard.ts`)
+  `install_audit_drift_guard()` (from `#lib/testing/audit_drift_guard.ts`)
   at the top of the `describe_db` block. Resets +
   asserts the `audit_metadata_validation_failures` and
   `audit_unknown_event_type_failures` counters per-test —

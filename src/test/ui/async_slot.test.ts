@@ -17,7 +17,7 @@
 
 import { describe, test, assert } from 'vitest';
 
-import { AsyncSlot } from '$lib/ui/async_slot.svelte.ts';
+import { AsyncSlot } from '#lib/ui/async_slot.svelte.ts';
 import { make_deferred, signal_rejection } from './async_test_helpers.ts';
 
 /** Resolves to a value after the next microtask; lets tests await between actions. */

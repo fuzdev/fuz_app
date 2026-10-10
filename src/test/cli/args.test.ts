@@ -6,7 +6,7 @@ import {
 	parse_command_args,
 	create_extract_global_flags,
 	type ParseResult
-} from '$lib/cli/args.ts';
+} from '#lib/cli/args.ts';
 
 describe('parse_command_args', () => {
 	// consumer schemas always include `_` for positional args
@@ -32,7 +32,7 @@ describe('parse_command_args', () => {
 	});
 
 	test('returns error for invalid types', () => {
-		const remaining: ParsedArgs = { _: [], name: 123 as unknown as string };
+		const remaining: ParsedArgs = { _: [], name: 123 };
 		const result: ParseResult<z.infer<typeof TestSchema>> = parse_command_args(
 			remaining,
 			TestSchema
@@ -103,7 +103,7 @@ describe('create_extract_global_flags', () => {
 
 	test('returns fallback on parse failure', () => {
 		// pass a non-boolean for verbose to trigger parse failure
-		const unparsed: ParsedArgs = { _: [], verbose: 'not-a-bool' as unknown as boolean };
+		const unparsed: ParsedArgs = { _: [], verbose: 'not-a-bool' };
 		const { flags } = extract(unparsed);
 		// should get fallback values
 		assert.strictEqual(flags.verbose, false);

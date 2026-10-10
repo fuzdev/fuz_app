@@ -8,8 +8,8 @@
 
 import { describe, assert, test } from 'vitest';
 
-import { has_global_role, is_role_grant_active } from '$lib/auth/account_schema.ts';
-import { ISO8601_SECOND_MS } from '$lib/timestamp.ts';
+import { has_global_role, is_role_grant_active } from '#lib/auth/account_schema.ts';
+import { ISO8601_SECOND_MS } from '#lib/timestamp.ts';
 
 // the second-truncated wire stamp the predicate compares against
 const EXPIRES_AT = '2026-06-01T12:00:00Z';

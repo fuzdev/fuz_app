@@ -18,12 +18,12 @@ import {
 	queue_connection_close,
 	type ConnectionCloser,
 	type ConnectionCloseTarget
-} from '$lib/actions/connection_closer.ts';
-import { flush_post_commit_effects } from '$lib/http/pending_effects.ts';
+} from '#lib/actions/connection_closer.ts';
+import { flush_post_commit_effects } from '#lib/http/pending_effects.ts';
 import {
 	create_recording_closer,
 	type RecordedClose
-} from '$lib/testing/connection_closer_helpers.ts';
+} from '#lib/testing/connection_closer_helpers.ts';
 
 const ACCOUNT = create_uuid();
 

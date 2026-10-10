@@ -14,8 +14,8 @@ import { describe, test, assert, vi, afterEach } from 'vitest';
 import {
 	AccountSessionsState,
 	type AccountSessionsRpc
-} from '$lib/ui/account_sessions_state.svelte.ts';
-import type { SessionId } from '$lib/auth/account_schema.ts';
+} from '#lib/ui/account_sessions_state.svelte.ts';
+import type { SessionId } from '#lib/auth/account_schema.ts';
 
 import { make_auth_session as make_session } from './session_fixtures.ts';
 

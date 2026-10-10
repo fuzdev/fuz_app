@@ -25,9 +25,9 @@ import {
 	ERROR_CELL_PATH_ADMIN_ONLY,
 	type CellPath,
 	type CellUpdateInput
-} from '$lib/auth/cell_action_specs.ts';
-import type { CellCreateAuthorize } from '$lib/auth/cell_actions.ts';
-import { install_audit_drift_guard } from '$lib/testing/audit_drift_guard.ts';
+} from '#lib/auth/cell_action_specs.ts';
+import type { CellCreateAuthorize } from '#lib/auth/cell_actions.ts';
+import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
 import { create_cell_test_app, create_cell, call } from './cell_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';
 import { describe_db } from '../cell_db_fixture.ts';

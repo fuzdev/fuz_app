@@ -35,9 +35,9 @@ import { createServer } from 'node:net';
 import type { Pool } from 'pg';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
-import type { Db } from '$lib/db/db.ts';
-import { create_pg_db, register_pg_type_parsers } from '$lib/db/db_pg.ts';
-import { reset_pglite, type DbFactory } from '$lib/testing/db.ts';
+import type { Db } from '#lib/db/db.ts';
+import { create_pg_db, register_pg_type_parsers } from '#lib/db/db_pg.ts';
+import { reset_pglite, type DbFactory } from '#lib/testing/db.ts';
 
 const PGLET_SERVER_BIN = process.env.PGLET_SERVER_BIN;
 

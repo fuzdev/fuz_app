@@ -7,14 +7,14 @@
 import { describe, assert, test, vi, afterEach } from 'vitest';
 import { z } from 'zod';
 
-import { ActionDispatcher } from '$lib/actions/action_dispatcher.ts';
-import { Transports, type Transport } from '$lib/actions/transports.ts';
+import { ActionDispatcher } from '#lib/actions/action_dispatcher.ts';
+import { Transports, type Transport } from '#lib/actions/transports.ts';
 import {
 	console_action_log,
 	resolve_action_log,
 	type ActionEventEnvironment
-} from '$lib/actions/action_event_types.ts';
-import type { ActionSpecUnion } from '$lib/actions/action_spec.ts';
+} from '#lib/actions/action_event_types.ts';
+import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
 
 const ping_spec = {
 	method: 'ping',

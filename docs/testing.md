@@ -298,7 +298,7 @@ Create a helper module and a test file:
 // src/test/server/auth_attack_surface_helpers.ts
 import { create_test_app_surface_spec } from '@fuzdev/fuz_app/testing/stubs.ts';
 import { resolve_fixture_path } from '@fuzdev/fuz_app/testing/assertions.ts';
-import { create_my_route_specs } from '$lib/server/my_route_specs.js';
+import { create_my_route_specs } from '#lib/server/my_route_specs.ts';
 
 export const create_my_app_surface_spec = (): AppSurfaceSpec =>
 	create_test_app_surface_spec({
@@ -327,7 +327,7 @@ import { describe_standard_attack_surface_tests } from '@fuzdev/fuz_app/testing/
 import {
 	create_my_app_surface_spec,
 	resolve_my_fixture_path
-} from './auth_attack_surface_helpers.js';
+} from './auth_attack_surface_helpers.ts';
 
 describe_standard_attack_surface_tests({
 	build: create_my_app_surface_spec,
@@ -366,8 +366,8 @@ import { describe_standard_integration_tests } from '@fuzdev/fuz_app/testing/int
 import { describe_standard_admin_integration_tests } from '@fuzdev/fuz_app/testing/admin_integration.ts';
 import { default_in_process_suite_options } from '@fuzdev/fuz_app/testing/cross_backend/in_process_setup.ts';
 import { ROLE_KEEPER, ROLE_ADMIN } from '@fuzdev/fuz_app/auth/role_schema.ts';
-import { create_my_route_specs } from '$lib/server/my_route_specs.js';
-import { build_rpc_endpoint_specs } from '$lib/server/my_rpc_endpoints.js';
+import { create_my_route_specs } from '#lib/server/my_route_specs.ts';
+import { build_rpc_endpoint_specs } from '#lib/server/my_rpc_endpoints.ts';
 
 describe_standard_integration_tests(
 	default_in_process_suite_options({
@@ -443,9 +443,9 @@ same as the other Tier 1 suites.
 // src/test/server/rate_limiting.db.test.ts
 import { describe_rate_limiting_tests } from '@fuzdev/fuz_app/testing/rate_limiting.ts';
 import { default_in_process_suite_options } from '@fuzdev/fuz_app/testing/cross_backend/in_process_setup.ts';
-import { create_my_route_specs } from '$lib/server/my_route_specs.js';
-import { build_rpc_endpoint_specs } from '$lib/server/my_rpc_endpoints.js';
-import { db_factories } from '../db_fixture.js';
+import { create_my_route_specs } from '#lib/server/my_route_specs.ts';
+import { build_rpc_endpoint_specs } from '#lib/server/my_rpc_endpoints.ts';
+import { db_factories } from '../db_fixture.ts';
 
 describe_rate_limiting_tests({
 	...default_in_process_suite_options({
@@ -1066,7 +1066,7 @@ per-test account via `default_cross_process_setup`.
 ```ts
 // global_setup.ts — one backend per vitest project
 import { spawn_backend } from '@fuzdev/fuz_app/testing/cross_backend/spawn_backend.ts';
-import { my_backend_config } from './my_backend_config.js';
+import { my_backend_config } from './my_backend_config.ts';
 
 export default async function () {
 	const handle = await spawn_backend(my_backend_config());

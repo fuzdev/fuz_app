@@ -36,9 +36,6 @@ import '../assert_dev_env.ts';
  * codec directly). Cited property: `docs/security.md` §"Session Security"
  * (the "Cookie attributes" bullet — `HttpOnly; Secure; SameSite=Strict; Path=/`).
  *
- * `$lib`-free by contract (relative specifiers only), like the sibling
- * cross-backend suites.
- *
  * @module
  */
 

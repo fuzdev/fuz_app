@@ -12,15 +12,15 @@
 
 import { describe, test, assert } from 'vitest';
 
-import { create_test_app } from '$lib/testing/app_server.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import { create_test_app } from '#lib/testing/app_server.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {
 	role_grant_offer_create_action_spec,
 	role_grant_offer_list_action_spec
-} from '$lib/auth/role_grant_offer_action_specs.ts';
-import { query_role_grant_offer_create } from '$lib/auth/role_grant_offer_queries.ts';
-import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
-import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
+} from '#lib/auth/role_grant_offer_action_specs.ts';
+import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_queries.ts';
+import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
+import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import {
 	RPC_PATH,
 	create_route_specs,

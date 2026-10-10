@@ -30,15 +30,15 @@ import {
 	ERROR_CELL_NOT_FOUND,
 	ERROR_CELL_PATH_ADMIN_ONLY,
 	type CellPath
-} from '$lib/auth/cell_action_specs.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
+} from '#lib/auth/cell_action_specs.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import {
 	SPACE_CELL_KIND,
 	test_cell_gated_create_authorize
-} from '$lib/testing/cross_backend/test_cell_gated_create_authorize.ts';
-import { install_audit_drift_guard } from '$lib/testing/audit_drift_guard.ts';
-import { create_test_role_grant_direct } from '$lib/testing/db_entities.ts';
-import type { Db } from '$lib/db/db.ts';
+} from '#lib/testing/cross_backend/test_cell_gated_create_authorize.ts';
+import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
+import { create_test_role_grant_direct } from '#lib/testing/db_entities.ts';
+import type { Db } from '#lib/db/db.ts';
 import {
 	create_cell,
 	create_cell_admin_test_app,

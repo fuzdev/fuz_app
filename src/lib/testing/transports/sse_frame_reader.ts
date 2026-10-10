@@ -55,8 +55,10 @@ export const create_sse_frame_reader = (
 		const timeout = new Promise<{ timed_out: true }>((resolve) => {
 			setTimeout(() => resolve({ timed_out: true }), timeout_ms);
 		});
-		const result = (await Promise.race([reader.read(), timeout])) as
-			ReadableStreamReadResult<Uint8Array> | { timed_out: true };
+		const result = await Promise.race<ReadableStreamReadResult<Uint8Array> | { timed_out: true }>([
+			reader.read(),
+			timeout
+		]);
 		if ('timed_out' in result) {
 			throw new Error(`SSE read timed out after ${timeout_ms}ms`);
 		}

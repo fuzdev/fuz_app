@@ -40,8 +40,8 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { Db, no_nested_transaction, type DbDriverResult } from '$lib/db/db.ts';
-import { reset_pglite, type DbFactory } from '$lib/testing/db.ts';
+import { Db, no_nested_transaction, type DbDriverResult } from '#lib/db/db.ts';
+import { reset_pglite, type DbFactory } from '#lib/testing/db.ts';
 
 const PGLET_WASM_PKG = process.env.PGLET_WASM_PKG;
 
@@ -79,8 +79,9 @@ let wasm_module: PgletWasmModule | null = null;
 const load_wasm_module = async (pkg_dir: string): Promise<PgletWasmModule> => {
 	if (wasm_module) return wasm_module;
 	const module_url = pathToFileURL(join(pkg_dir, 'index.js')).href;
-	wasm_module = (await import(/* @vite-ignore */ module_url)) as unknown as PgletWasmModule;
-	return wasm_module;
+	const loaded: PgletWasmModule = await import(/* @vite-ignore */ module_url);
+	wasm_module = loaded;
+	return loaded;
 };
 
 /**

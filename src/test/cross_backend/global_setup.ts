@@ -13,7 +13,7 @@
  * @module
  */
 
-import { rust_spine_stub_backend_config } from '$lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
+import { rust_spine_stub_backend_config } from '#lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 
 import { make_rust_spine_global_setup } from './global_setup_helpers.ts';
 

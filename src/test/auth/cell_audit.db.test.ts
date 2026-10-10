@@ -27,31 +27,31 @@ import {
 	cell_clone_action_spec,
 	cell_moderate_action_spec,
 	ERROR_CELL_NOT_FOUND
-} from '$lib/auth/cell_action_specs.ts';
+} from '#lib/auth/cell_action_specs.ts';
 import {
 	cell_grant_create_action_spec,
 	cell_grant_revoke_action_spec
-} from '$lib/auth/cell_grant_action_specs.ts';
+} from '#lib/auth/cell_grant_action_specs.ts';
 import {
 	cell_field_set_action_spec,
 	cell_field_delete_action_spec,
 	type CellFieldName
-} from '$lib/auth/cell_field_action_specs.ts';
+} from '#lib/auth/cell_field_action_specs.ts';
 import {
 	cell_item_insert_action_spec,
 	cell_item_move_action_spec,
 	cell_item_delete_action_spec,
 	type CellItemPosition
-} from '$lib/auth/cell_item_action_specs.ts';
+} from '#lib/auth/cell_item_action_specs.ts';
 import {
 	cell_audit_list_action_spec,
 	CellAuditEventJson
-} from '$lib/auth/cell_audit_action_specs.ts';
-import { cell_audit_events } from '$lib/auth/cell_audit_events.ts';
-import { query_audit_log_list } from '$lib/auth/audit_log_queries.ts';
+} from '#lib/auth/cell_audit_action_specs.ts';
+import { cell_audit_events } from '#lib/auth/cell_audit_events.ts';
+import { query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
 import { fractional_index_between } from '@fuzdev/fuz_util/fractional_index.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { create_cell_test_app, create_cell, call } from './cell_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';
 import { describe_db } from '../cell_db_fixture.ts';

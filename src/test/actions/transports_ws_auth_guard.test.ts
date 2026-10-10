@@ -14,16 +14,16 @@ import { describe, assert, test } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { WSContext, type WSContextInit } from 'hono/ws';
 
-import { BackendWebsocketTransport } from '$lib/actions/transports_ws_backend.ts';
-import { create_ws_auth_guard } from '$lib/actions/transports_ws_auth_guard.ts';
-import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
+import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import { create_ws_auth_guard } from '#lib/actions/transports_ws_auth_guard.ts';
+import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 import {
 	AUDIT_EVENT_TYPES,
 	audit_event_revocation_scopes,
 	to_revocation_scope,
 	type AuditLogEvent,
 	type RevocationScope
-} from '$lib/auth/audit_log_schema.ts';
+} from '#lib/auth/audit_log_schema.ts';
 import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
 
 interface FakeWs {

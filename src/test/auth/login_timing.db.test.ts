@@ -19,12 +19,12 @@
 
 import { describe, test, assert, beforeAll, afterAll, beforeEach } from 'vitest';
 
-import { create_test_app, stub_password_deps, type TestApp } from '$lib/testing/app_server.ts';
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_account_route_specs } from '$lib/auth/account_routes.ts';
-import { prefix_route_specs, type RouteSpec } from '$lib/http/route_spec.ts';
-import type { PasswordHashDeps } from '$lib/auth/password.ts';
-import type { AppServerContext } from '$lib/server/app_server_context.ts';
+import { create_test_app, stub_password_deps, type TestApp } from '#lib/testing/app_server.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_account_route_specs } from '#lib/auth/account_routes.ts';
+import { prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
+import type { PasswordHashDeps } from '#lib/auth/password.ts';
+import type { AppServerContext } from '#lib/server/app_server_context.ts';
 
 const session_options = create_session_config('test_session');
 

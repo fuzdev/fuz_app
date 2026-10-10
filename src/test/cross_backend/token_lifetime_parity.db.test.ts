@@ -11,14 +11,14 @@
  * @module
  */
 
-import { default_in_process_setup } from '$lib/testing/cross_backend/in_process_setup.ts';
-import { describe_token_lifetime_cross_tests } from '$lib/testing/cross_backend/token_lifetime.ts';
+import { default_in_process_setup } from '#lib/testing/cross_backend/in_process_setup.ts';
+import { describe_token_lifetime_cross_tests } from '#lib/testing/cross_backend/token_lifetime.ts';
 import {
 	create_spine_route_specs,
 	spine_rpc_endpoints,
 	spine_session_options
-} from '$lib/testing/cross_backend/default_spine_surface.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
+} from '#lib/testing/cross_backend/default_spine_surface.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 
 const setup_test = default_in_process_setup({
 	session_options: spine_session_options,

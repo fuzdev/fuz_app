@@ -15,13 +15,6 @@ import '../assert_dev_env.ts';
  *   `create_app_server`), and
  * - the `cross_backend_ts_*` self-test projects.
  *
- * **`$lib`-free by contract.** This module and everything it imports use
- * relative specifiers (no `$lib` SvelteKit alias) so the spawned TS test
- * binary — run under Gro's loader, which resolves `.js`→`.ts` and package
- * imports but **not** the `$lib` alias — can import it transitively. Keep
- * it that way: a `$lib` import anywhere in this graph breaks the binary
- * spawn while still typechecking under vitest.
- *
  * @module
  */
 

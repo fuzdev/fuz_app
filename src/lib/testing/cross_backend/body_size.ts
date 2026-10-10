@@ -48,9 +48,6 @@ import '../assert_dev_env.ts';
  *
  * Cited property: `docs/security.md` §"Body Size Limiting".
  *
- * `$lib`-free by contract (relative specifiers only), like the sibling
- * cross-backend suites.
- *
  * @module
  */
 

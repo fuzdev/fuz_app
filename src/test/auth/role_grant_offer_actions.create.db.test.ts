@@ -12,19 +12,19 @@
 
 import { describe, test, assert } from 'vitest';
 
-import { create_test_app } from '$lib/testing/app_server.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import { create_rpc_endpoint } from '$lib/actions/action_rpc.ts';
-import { create_role_grant_offer_actions } from '$lib/auth/role_grant_offer_actions.ts';
+import { create_test_app } from '#lib/testing/app_server.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
+import { create_role_grant_offer_actions } from '#lib/auth/role_grant_offer_actions.ts';
 import {
 	role_grant_offer_create_action_spec,
 	ERROR_ROLE_GRANT_OFFER_SELF_TARGET,
 	ERROR_ROLE_GRANT_OFFER_NOT_AUTHORIZED
-} from '$lib/auth/role_grant_offer_action_specs.ts';
-import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
-import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
-import type { AppServerContext } from '$lib/server/app_server_context.ts';
-import type { RouteSpec } from '$lib/http/route_spec.ts';
+} from '#lib/auth/role_grant_offer_action_specs.ts';
+import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
+import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
+import type { AppServerContext } from '#lib/server/app_server_context.ts';
+import type { RouteSpec } from '#lib/http/route_spec.ts';
 import {
 	RPC_PATH,
 	create_route_specs,

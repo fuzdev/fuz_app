@@ -20,8 +20,8 @@ import {
 	create_proxy_middleware,
 	create_proxy_middleware_spec,
 	type ParsedProxy
-} from '$lib/http/proxy.ts';
-import { get_client_ip } from '$lib/http/client_ip.ts';
+} from '#lib/http/proxy.ts';
+import { get_client_ip } from '#lib/http/client_ip.ts';
 
 // --- normalize_ip ---
 

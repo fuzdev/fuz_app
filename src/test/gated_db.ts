@@ -16,7 +16,7 @@
  * @module
  */
 
-import { Db } from '$lib/db/db.ts';
+import { Db } from '#lib/db/db.ts';
 
 /** One armed stall — see `GatedDb.stall`. */
 export interface StalledQuery {

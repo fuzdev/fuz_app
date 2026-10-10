@@ -336,7 +336,7 @@ export const create_mock_runtime = (args: Array<string> = []): MockRuntime => {
 
 		// === HTTP ===
 		fetch: async (input, init) => {
-			fetch_calls.push({ input: input as string | URL | Request, init });
+			fetch_calls.push({ input, init });
 			const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 			for (const [pattern, response] of mock_fetch_responses) {
 				if (url.includes(pattern)) return response.clone();

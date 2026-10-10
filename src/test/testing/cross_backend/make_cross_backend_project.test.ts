@@ -14,7 +14,7 @@
 
 import { describe, test, assert } from 'vitest';
 
-import { make_cross_backend_project } from '$lib/testing/cross_backend/make_cross_backend_project.ts';
+import { make_cross_backend_project } from '#lib/testing/cross_backend/make_cross_backend_project.ts';
 
 const GLOBAL_SETUP = './src/test/cross_backend/global_setup.ts';
 

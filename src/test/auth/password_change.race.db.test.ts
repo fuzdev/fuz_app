@@ -23,12 +23,12 @@
 
 import { assert, beforeEach, afterEach, test } from 'vitest';
 
-import { create_test_app, type TestApp } from '$lib/testing/app_server.ts';
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_account_route_specs } from '$lib/auth/account_routes.ts';
-import { prefix_route_specs } from '$lib/http/route_spec.ts';
-import { query_audit_log_list } from '$lib/auth/audit_log_queries.ts';
-import { create_describe_db, auth_integration_truncate_tables } from '$lib/testing/db.ts';
+import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_account_route_specs } from '#lib/auth/account_routes.ts';
+import { prefix_route_specs } from '#lib/http/route_spec.ts';
+import { query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
+import { create_describe_db, auth_integration_truncate_tables } from '#lib/testing/db.ts';
 
 import { pg_factory } from '../db_fixture.ts';
 

@@ -15,10 +15,10 @@ import {
 	query_invite_claim_unscoped,
 	query_invite_list_all,
 	query_invite_delete_unclaimed
-} from '$lib/auth/invite_queries.ts';
-import { query_create_account_with_actor } from '$lib/auth/account_queries.ts';
-import type { QueryDeps } from '$lib/db/query_deps.ts';
-import type { Invite } from '$lib/auth/invite_schema.ts';
+} from '#lib/auth/invite_queries.ts';
+import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
+import type { QueryDeps } from '#lib/db/query_deps.ts';
+import type { Invite } from '#lib/auth/invite_schema.ts';
 
 import { describe_db } from '../db_fixture.ts';
 

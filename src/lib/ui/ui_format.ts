@@ -96,7 +96,9 @@ export const format_value = (value: unknown): string => {
 	if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint')
 		return String(value);
 	if (typeof value === 'symbol') return value.toString();
-	return String(value as (...args: Array<unknown>) => unknown);
+	// only functions reach here, whose source text is the intended display
+	// eslint-disable-next-line @typescript-eslint/no-base-to-string
+	return String(value);
 };
 
 /**

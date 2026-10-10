@@ -156,7 +156,7 @@ export const assert_jsonrpc_error_response = (
 	if (expected_code !== undefined) {
 		assert.strictEqual(
 			result.data.error.code,
-			expected_code as number,
+			expected_code,
 			`expected error code ${expected_code}, got ${result.data.error.code}`
 		);
 	}

@@ -11,16 +11,16 @@
 
 import { describe, test, assert } from 'vitest';
 
-import { create_account_route_specs } from '$lib/auth/account_routes.ts';
+import { create_account_route_specs } from '#lib/auth/account_routes.ts';
 import {
 	app_settings_get_action_spec,
 	app_settings_update_action_spec
-} from '$lib/auth/admin_action_specs.ts';
-import { create_test_app } from '$lib/testing/app_server.ts';
-import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
-import { prefix_route_specs } from '$lib/http/route_spec.ts';
+} from '#lib/auth/admin_action_specs.ts';
+import { create_test_app } from '#lib/testing/app_server.ts';
+import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
+import { prefix_route_specs } from '#lib/http/route_spec.ts';
 import {
 	RPC_PATH,
 	create_admin_route_specs_with,

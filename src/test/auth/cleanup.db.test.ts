@@ -26,24 +26,24 @@
 import { assert, test } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { query_create_account_with_actor } from '$lib/auth/account_queries.ts';
-import { query_role_grant_offer_create } from '$lib/auth/role_grant_offer_queries.ts';
-import { query_audit_log_list } from '$lib/auth/audit_log_queries.ts';
+import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
+import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_queries.ts';
+import { query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
 import {
 	cleanup_expired_role_grant_offers,
 	run_auth_cleanup,
 	type AuthCleanupDeps
-} from '$lib/auth/cleanup.ts';
-import { hash_session_token, query_create_session } from '$lib/auth/session_queries.ts';
-import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
-import { create_audit_emitter, type AuditEmitter } from '$lib/auth/audit_emitter.ts';
+} from '#lib/auth/cleanup.ts';
+import { hash_session_token, query_create_session } from '#lib/auth/session_queries.ts';
+import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
+import { create_audit_emitter, type AuditEmitter } from '#lib/auth/audit_emitter.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
-import { Db, no_nested_transaction } from '$lib/db/db.ts';
-import { noop_connection_closer } from '$lib/actions/connection_closer.ts';
+import { Db, no_nested_transaction } from '#lib/db/db.ts';
+import { noop_connection_closer } from '#lib/actions/connection_closer.ts';
 import {
 	assert_close_call,
 	create_recording_closer
-} from '$lib/testing/connection_closer_helpers.ts';
+} from '#lib/testing/connection_closer_helpers.ts';
 
 import { describe_db } from '../db_fixture.ts';
 

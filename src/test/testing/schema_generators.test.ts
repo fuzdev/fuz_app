@@ -7,12 +7,12 @@
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
 
-import { generate_valid_body, resolve_valid_path } from '$lib/testing/schema_generators.ts';
+import { generate_valid_body, resolve_valid_path } from '#lib/testing/schema_generators.ts';
 import { FactHashSchema } from '@fuzdev/fuz_util/hash_schemas.ts';
 import {
 	account_session_revoke_action_spec,
 	account_token_revoke_action_spec
-} from '$lib/auth/account_action_specs.ts';
+} from '#lib/auth/account_action_specs.ts';
 
 describe('generate_valid_body — branded-string synthesis', () => {
 	test('satisfies blake3 session_id pattern (account_session_revoke)', () => {

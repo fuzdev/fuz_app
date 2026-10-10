@@ -15,10 +15,10 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { TestProject } from 'vitest/node';
 
-import type { BackendConfig } from '$lib/testing/cross_backend/backend_config.ts';
-import { bootstrap_backend } from '$lib/testing/cross_backend/bootstrap_backend.ts';
-import { serialize_bootstrapped_handle } from '$lib/testing/cross_backend/setup.ts';
-import { RUST_SPINE_STUB_BIN_ENV } from '$lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
+import type { BackendConfig } from '#lib/testing/cross_backend/backend_config.ts';
+import { bootstrap_backend } from '#lib/testing/cross_backend/bootstrap_backend.ts';
+import { serialize_bootstrapped_handle } from '#lib/testing/cross_backend/setup.ts';
+import { RUST_SPINE_STUB_BIN_ENV } from '#lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 
 import './cross_test_types.ts';
 
@@ -58,7 +58,7 @@ const resolve_workspace_dir = (override: string | undefined): string =>
  * to skip the rebuild for fast iteration on a known-current binary.
  *
  * Lives in the runner wiring (test-only, Rust-aware), not the shipped
- * `$lib` harness, which stays Rust-agnostic.
+ * `src/lib` harness, which stays Rust-agnostic.
  */
 export const prepare_rust_spine_backend = (options: RustSpineGlobalSetupOptions): void => {
 	const workspace_dir = resolve_workspace_dir(options.workspace_dir);

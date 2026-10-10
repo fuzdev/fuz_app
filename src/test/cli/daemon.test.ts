@@ -9,7 +9,7 @@ import {
 	is_daemon_running,
 	check_daemon_health,
 	stop_daemon
-} from '$lib/cli/daemon.ts';
+} from '#lib/cli/daemon.ts';
 
 const MOCK_INFO: DaemonInfo = {
 	version: 1,

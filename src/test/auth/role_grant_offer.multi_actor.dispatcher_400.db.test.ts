@@ -13,11 +13,11 @@
 
 import { assert, describe, test } from 'vitest';
 
-import { create_test_app } from '$lib/testing/app_server.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import { role_grant_offer_list_action_spec } from '$lib/auth/role_grant_offer_action_specs.ts';
-import { ERROR_ACTOR_REQUIRED } from '$lib/http/error_schemas.ts';
-import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
+import { create_test_app } from '#lib/testing/app_server.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { role_grant_offer_list_action_spec } from '#lib/auth/role_grant_offer_action_specs.ts';
+import { ERROR_ACTOR_REQUIRED } from '#lib/http/error_schemas.ts';
+import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 
 import {
 	RPC_PATH,

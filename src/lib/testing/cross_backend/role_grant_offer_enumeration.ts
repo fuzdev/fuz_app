@@ -38,9 +38,6 @@ import '../assert_dev_env.ts';
  * cross-principal leaks; an intra-account sibling-actor offer stays a 403
  * `role_grant_offer_actor_mismatch`).
  *
- * `$lib`-free by contract (relative specifiers only), like the sibling
- * cross-backend suites.
- *
  * @module
  */
 

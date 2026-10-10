@@ -16,7 +16,7 @@ import {
 	display_db_url,
 	type DbStatus,
 	type MigrationStatus
-} from '$lib/db/status.ts';
+} from '#lib/db/status.ts';
 
 const ns_status = (
 	namespace: string,

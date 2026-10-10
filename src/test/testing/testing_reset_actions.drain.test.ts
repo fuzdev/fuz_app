@@ -10,10 +10,10 @@
 import { test, assert, describe } from 'vitest';
 import { create_deferred, wait } from '@fuzdev/fuz_util/async.ts';
 
-import { create_testing_actions } from '$lib/testing/cross_backend/testing_reset_actions.ts';
-import { create_stub_app_deps, create_test_audit_emitter } from '$lib/testing/stubs.ts';
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import type { DaemonTokenState } from '$lib/auth/daemon_token.ts';
+import { create_testing_actions } from '#lib/testing/cross_backend/testing_reset_actions.ts';
+import { create_stub_app_deps, create_test_audit_emitter } from '#lib/testing/stubs.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import type { DaemonTokenState } from '#lib/auth/daemon_token.ts';
 
 describe('create_testing_actions — _testing_drain_effects', () => {
 	test('awaits deps.audit.drain_inflight', async () => {

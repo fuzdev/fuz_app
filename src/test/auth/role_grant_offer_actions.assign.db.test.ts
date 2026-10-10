@@ -16,23 +16,23 @@
 
 import { describe, test, assert } from 'vitest';
 
-import { create_test_app } from '$lib/testing/app_server.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
+import { create_test_app } from '#lib/testing/app_server.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
 import {
 	role_grant_assign_action_spec,
 	ERROR_ROLE_GRANT_OFFER_ACTOR_ACCOUNT_MISMATCH
-} from '$lib/auth/role_grant_offer_action_specs.ts';
-import { query_create_actor } from '$lib/auth/account_queries.ts';
+} from '#lib/auth/role_grant_offer_action_specs.ts';
+import { query_create_actor } from '#lib/auth/account_queries.ts';
 import {
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_ROLE_NOT_WEB_GRANTABLE
-} from '$lib/http/error_schemas.ts';
+} from '#lib/http/error_schemas.ts';
 import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
-import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
-import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
-import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
-import { install_audit_drift_guard } from '$lib/testing/audit_drift_guard.ts';
-import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
+import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
+import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
+import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
+import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
+import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import {
 	RPC_PATH,
 	create_route_specs,

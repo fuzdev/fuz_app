@@ -9,8 +9,8 @@
  * @module
  */
 
-import type { Db } from '$lib/db/db.ts';
-import { run_migrations, type MigrationNamespace } from '$lib/db/migrate.ts';
+import type { Db } from '#lib/db/db.ts';
+import { run_migrations, type MigrationNamespace } from '#lib/db/migrate.ts';
 import {
 	create_pglite_factory,
 	create_pg_factory,
@@ -18,7 +18,7 @@ import {
 	drop_auth_schema,
 	log_db_factory_status,
 	type DbFactory
-} from '$lib/testing/db.ts';
+} from '#lib/testing/db.ts';
 import { create_pglet_factory } from './db_pglet_factory.ts';
 import { create_pglet_wasm_factory } from './db_pglet_wasm_factory.ts';
 

@@ -13,9 +13,6 @@ import '../assert_dev_env.ts';
  * `result` is parsed against the verb's declared Zod **output** schema, so
  * a TS↔Rust envelope drift fails the assertion.
  *
- * `$lib`-free by contract (relative specifiers only) so it can be imported
- * from the spawnable cross-process test files.
- *
  * @module
  */
 

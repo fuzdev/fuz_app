@@ -17,17 +17,17 @@ import {
 	BackendWebsocketTransport,
 	DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT,
 	type ConnectionIdentity
-} from '$lib/actions/transports_ws_backend.ts';
+} from '#lib/actions/transports_ws_backend.ts';
 import {
 	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_GOING_AWAY,
 	WS_CLOSE_GOING_AWAY_REASON,
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON
-} from '$lib/actions/transports.ts';
-import type { JsonrpcNotification } from '$lib/http/jsonrpc.ts';
-import { create_fake_ws } from '$lib/testing/ws_round_trip.ts';
-import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
+} from '#lib/actions/transports.ts';
+import type { JsonrpcNotification } from '#lib/http/jsonrpc.ts';
+import { create_fake_ws } from '#lib/testing/ws_round_trip.ts';
+import { create_uuid } from '@fuzdev/fuz_util/id.ts';
 
 const ACCOUNT_A = create_uuid();
 const ACCOUNT_B = create_uuid();
@@ -664,7 +664,7 @@ describe('BackendWebsocketTransport revocation bookkeeping', () => {
 		const a = create_fake_ws();
 		const id1 = t.add_connection(a.ws, HASH_A, ACCOUNT_A);
 		const id2 = t.add_connection(a.ws, HASH_B, ACCOUNT_B);
-		assert.notStrictEqual(id1 as unknown as Uuid, id2 as unknown as Uuid);
+		assert.notStrictEqual(id1, id2);
 		// revocation still closes the socket, possibly more than once
 		t.close_sockets_for_account(ACCOUNT_A);
 		t.close_sockets_for_account(ACCOUNT_B);

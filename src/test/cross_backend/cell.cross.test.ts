@@ -19,13 +19,13 @@ import { inject } from 'vitest';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle
-} from '$lib/testing/cross_backend/setup.ts';
-import { describe_cell_crud_cross_tests } from '$lib/testing/cross_backend/cell_crud.ts';
-import { describe_cell_relations_cross_tests } from '$lib/testing/cross_backend/cell_relations.ts';
+} from '#lib/testing/cross_backend/setup.ts';
+import { describe_cell_crud_cross_tests } from '#lib/testing/cross_backend/cell_crud.ts';
+import { describe_cell_relations_cross_tests } from '#lib/testing/cross_backend/cell_relations.ts';
 import {
 	describe_cell_gated_create_cross_tests,
 	describe_cell_moderate_cross_tests
-} from '$lib/testing/cross_backend/cell_gated_create.ts';
+} from '#lib/testing/cross_backend/cell_gated_create.ts';
 
 import './cross_test_types.ts';
 

@@ -10,10 +10,10 @@
 
 import { assert, test } from 'vitest';
 
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_health_route_spec } from '$lib/http/common_routes.ts';
-import { default_in_process_suite_options } from '$lib/testing/cross_backend/in_process_setup.ts';
-import { create_spine_surface_spec } from '$lib/testing/cross_backend/default_spine_surface.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_health_route_spec } from '#lib/http/common_routes.ts';
+import { default_in_process_suite_options } from '#lib/testing/cross_backend/in_process_setup.ts';
+import { create_spine_surface_spec } from '#lib/testing/cross_backend/default_spine_surface.ts';
 
 const session_options = create_session_config('test_session');
 

@@ -18,21 +18,21 @@ import {
 	AUTH_MIDDLEWARE_PATH,
 	assert_middleware_stack_mounted,
 	create_auth_middleware_specs
-} from '$lib/auth/middleware.ts';
-import type { DaemonTokenState } from '$lib/auth/daemon_token.ts';
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_health_route_spec } from '$lib/http/common_routes.ts';
-import type { MiddlewareSpec } from '$lib/http/middleware_spec.ts';
-import { create_proxy_middleware_spec } from '$lib/http/proxy.ts';
-import { create_app_server, type AppServerOptions } from '$lib/server/app_server.ts';
+} from '#lib/auth/middleware.ts';
+import type { DaemonTokenState } from '#lib/auth/daemon_token.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_health_route_spec } from '#lib/http/common_routes.ts';
+import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
+import { create_proxy_middleware_spec } from '#lib/http/proxy.ts';
+import { create_app_server, type AppServerOptions } from '#lib/server/app_server.ts';
 import {
 	create_stub_api_middleware,
 	create_stub_app_backend,
 	create_stub_app_deps,
 	create_test_app_surface_spec,
 	stub_mw
-} from '$lib/testing/stubs.ts';
-import { create_loopback_app_server_options } from '$lib/testing/app_server.ts';
+} from '#lib/testing/stubs.ts';
+import { create_loopback_app_server_options } from '#lib/testing/app_server.ts';
 
 type TransformMiddleware = (specs: Array<MiddlewareSpec>) => Array<MiddlewareSpec>;
 

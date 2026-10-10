@@ -23,8 +23,8 @@ import { inject } from 'vitest';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle
-} from '$lib/testing/cross_backend/setup.ts';
-import { describe_cross_process_ws_tests } from '$lib/testing/cross_backend/ws_round_trip.ts';
+} from '#lib/testing/cross_backend/setup.ts';
+import { describe_cross_process_ws_tests } from '#lib/testing/cross_backend/ws_round_trip.ts';
 
 import './cross_test_types.ts';
 

@@ -31,11 +31,6 @@ import '../assert_dev_env.ts';
  * enumerates `build_full_spine_rpc_actions` with stub deps and asserts the live method set equals the tagged coverage
  * manifest; see `src/test/cross_backend/spine_method_coverage.ts`.
  *
- * **`$lib`-free by contract** — like `default_spine_surface.ts`, this module
- * is reached by the spawned TS binary under Gro's loader (which resolves
- * `.js`→`.ts` but not the `$lib` alias), so every import is relative. Keep
- * it that way.
- *
  * @module
  */
 

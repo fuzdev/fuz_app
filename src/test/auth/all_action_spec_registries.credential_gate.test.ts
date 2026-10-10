@@ -46,13 +46,13 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test, assert } from 'vitest';
 
-import { all_fuz_auth_action_spec_registries } from '$lib/auth/all_action_spec_registries.ts';
-import { create_account_route_shapes } from '$lib/auth/account_route_schema.ts';
-import { create_audit_log_route_shape } from '$lib/auth/audit_log_route_schema.ts';
+import { all_fuz_auth_action_spec_registries } from '#lib/auth/all_action_spec_registries.ts';
+import { create_account_route_shapes } from '#lib/auth/account_route_schema.ts';
+import { create_audit_log_route_shape } from '#lib/auth/audit_log_route_schema.ts';
 import {
 	CREDENTIAL_TYPE_DAEMON_TOKEN,
 	CREDENTIAL_TYPE_SESSION
-} from '$lib/auth/credential_type_schema.ts';
+} from '#lib/auth/credential_type_schema.ts';
 
 /**
  * Every gated method, the channels it admits, and why the channel is

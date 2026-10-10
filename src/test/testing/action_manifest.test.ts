@@ -18,9 +18,9 @@ import {
 	ActionManifestEntry,
 	action_manifest_entry,
 	build_action_manifest
-} from '$lib/testing/cross_backend/action_manifest.ts';
-import type { RouteAuth } from '$lib/http/auth_shape.ts';
-import type { RateLimitKey } from '$lib/http/error_schemas.ts';
+} from '#lib/testing/cross_backend/action_manifest.ts';
+import type { RouteAuth } from '#lib/http/auth_shape.ts';
+import type { RateLimitKey } from '#lib/http/error_schemas.ts';
 
 const spec = (
 	method: string,

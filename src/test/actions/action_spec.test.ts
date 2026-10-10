@@ -17,7 +17,7 @@ import {
 	LocalCallActionSpec,
 	ActionSpecUnion,
 	is_action_spec
-} from '$lib/actions/action_spec.ts';
+} from '#lib/actions/action_spec.ts';
 
 describe('ActionKind', () => {
 	test('accepts valid kinds', () => {

@@ -17,7 +17,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import {
 	check_bootstrap_status,
 	type CheckBootstrapStatusDeps
-} from '$lib/auth/bootstrap_routes.ts';
+} from '#lib/auth/bootstrap_routes.ts';
 
 const log = new Logger('test', { level: 'off' });
 

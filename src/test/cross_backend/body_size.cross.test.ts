@@ -16,9 +16,9 @@ import { inject } from 'vitest';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle
-} from '$lib/testing/cross_backend/setup.ts';
-import { describe_body_size_cross_tests } from '$lib/testing/cross_backend/body_size.ts';
-import { describe_body_size_smuggling_cross_tests } from '$lib/testing/cross_backend/body_size_smuggling.ts';
+} from '#lib/testing/cross_backend/setup.ts';
+import { describe_body_size_cross_tests } from '#lib/testing/cross_backend/body_size.ts';
+import { describe_body_size_smuggling_cross_tests } from '#lib/testing/cross_backend/body_size_smuggling.ts';
 
 import './cross_test_types.ts';
 

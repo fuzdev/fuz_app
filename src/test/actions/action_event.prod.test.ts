@@ -14,8 +14,8 @@
 import { test, assert, afterEach, vi } from 'vitest';
 import { z } from 'zod';
 
-import type { ActionEventEnvironment } from '$lib/actions/action_event_types.ts';
-import type { ActionSpecUnion } from '$lib/actions/action_spec.ts';
+import type { ActionEventEnvironment } from '#lib/actions/action_event_types.ts';
+import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
 
 afterEach(() => {
 	vi.doUnmock('esm-env');
@@ -45,10 +45,10 @@ const create_env = (phase: string): ActionEventEnvironment => ({
 			: undefined
 });
 
-const import_fresh = async (): Promise<typeof import('$lib/actions/action_event.ts')> => {
+const import_fresh = async (): Promise<typeof import('#lib/actions/action_event.ts')> => {
 	vi.resetModules();
 	vi.doMock('esm-env', () => ({ DEV: false, BROWSER: false }));
-	return import('$lib/actions/action_event.ts');
+	return import('#lib/actions/action_event.ts');
 };
 
 test('a throw answering a remote request is redacted in production', async () => {

@@ -14,8 +14,8 @@ import { inject } from 'vitest';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle
-} from '$lib/testing/cross_backend/setup.ts';
-import { describe_origin_cross_tests } from '$lib/testing/cross_backend/origin.ts';
+} from '#lib/testing/cross_backend/setup.ts';
+import { describe_origin_cross_tests } from '#lib/testing/cross_backend/origin.ts';
 
 import './cross_test_types.ts';
 

@@ -53,66 +53,66 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import { wait } from '@fuzdev/fuz_util/async.ts';
 
-import { SessionId } from '$lib/auth/account_schema.ts';
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_account_route_specs } from '$lib/auth/account_routes.ts';
-import { create_account_actions } from '$lib/auth/account_actions.ts';
-import { create_admin_actions } from '$lib/auth/admin_actions.ts';
-import { create_standard_rpc_actions } from '$lib/auth/standard_rpc_actions.ts';
+import { SessionId } from '#lib/auth/account_schema.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_account_route_specs } from '#lib/auth/account_routes.ts';
+import { create_account_actions } from '#lib/auth/account_actions.ts';
+import { create_admin_actions } from '#lib/auth/admin_actions.ts';
+import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import {
 	account_session_revoke_action_spec,
 	account_session_revoke_all_action_spec,
 	account_token_revoke_action_spec
-} from '$lib/auth/account_action_specs.ts';
+} from '#lib/auth/account_action_specs.ts';
 import {
 	admin_session_revoke_all_action_spec,
 	admin_token_revoke_all_action_spec
-} from '$lib/auth/admin_action_specs.ts';
+} from '#lib/auth/admin_action_specs.ts';
 import {
 	ERROR_CREDENTIAL_TYPE_REQUIRED,
 	ERROR_ACCOUNT_NOT_FOUND
-} from '$lib/http/error_schemas.ts';
-import { create_rpc_endpoint, rpc_action } from '$lib/actions/action_rpc.ts';
-import type { RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
-import { queue_connection_close, type ConnectionCloser } from '$lib/actions/connection_closer.ts';
-import { register_action_ws } from '$lib/actions/register_action_ws.ts';
-import { BackendWebsocketTransport } from '$lib/actions/transports_ws_backend.ts';
+} from '#lib/http/error_schemas.ts';
+import { create_rpc_endpoint, rpc_action } from '#lib/actions/action_rpc.ts';
+import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
+import { queue_connection_close, type ConnectionCloser } from '#lib/actions/connection_closer.ts';
+import { register_action_ws } from '#lib/actions/register_action_ws.ts';
+import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
 import {
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON
-} from '$lib/actions/transports.ts';
-import { require_audit_sse } from '$lib/server/app_server.ts';
-import { create_test_app, type TestApp } from '$lib/testing/app_server.ts';
-import { DEFAULT_TEST_PASSWORD } from '$lib/testing/test_credentials.ts';
-import { create_test_account_with_actor } from '$lib/testing/db_entities.ts';
-import { rpc_call_for_spec, rpc_call } from '$lib/testing/rpc_helpers.ts';
-import { find_auth_route } from '$lib/testing/integration_helpers.ts';
-import { install_audit_drift_guard } from '$lib/testing/audit_drift_guard.ts';
-import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
+} from '#lib/actions/transports.ts';
+import { require_audit_sse } from '#lib/server/app_server.ts';
+import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';
+import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
+import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
+import { rpc_call_for_spec, rpc_call } from '#lib/testing/rpc_helpers.ts';
+import { find_auth_route } from '#lib/testing/integration_helpers.ts';
+import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
+import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import {
 	assert_close_call,
 	create_recording_closer
-} from '$lib/testing/connection_closer_helpers.ts';
+} from '#lib/testing/connection_closer_helpers.ts';
 import {
 	create_fake_ws,
 	create_stub_upgrade,
 	dispatch_ws_message,
 	type FakeWs
-} from '$lib/testing/ws_round_trip.ts';
+} from '#lib/testing/ws_round_trip.ts';
 import {
 	AUTH_SESSION_TOKEN_HASH_KEY,
 	build_account_context,
 	REQUEST_CONTEXT_KEY
-} from '$lib/auth/request_context.ts';
-import { query_session_revoke_all_for_account } from '$lib/auth/session_queries.ts';
-import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY } from '$lib/hono_context.ts';
-import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
-import { Db } from '$lib/db/db.ts';
-import type { AppServerContext } from '$lib/server/app_server_context.ts';
-import { prefix_route_specs, type RouteSpec } from '$lib/http/route_spec.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
-import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
-import type { SseNotification, SseStream } from '$lib/realtime/sse.ts';
+} from '#lib/auth/request_context.ts';
+import { query_session_revoke_all_for_account } from '#lib/auth/session_queries.ts';
+import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY } from '#lib/hono_context.ts';
+import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
+import { Db } from '#lib/db/db.ts';
+import type { AppServerContext } from '#lib/server/app_server_context.ts';
+import { prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
+import type { SseNotification, SseStream } from '#lib/realtime/sse.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import { create_gated_db, type GatedDb } from '../gated_db.ts';
@@ -425,7 +425,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_token_revoke_action_spec,
-				params: { token_id: token_id as never },
+				params: { token_id },
 				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);
@@ -507,7 +507,7 @@ describe_db('connection_closer wiring', (get_db) => {
 				app: test_app.app,
 				path: RPC_PATH,
 				spec: account_token_revoke_action_spec,
-				params: { token_id: target_token_id as never },
+				params: { token_id: target_token_id },
 				headers: test_app.create_session_headers()
 			});
 			assert.strictEqual(res.ok, true);

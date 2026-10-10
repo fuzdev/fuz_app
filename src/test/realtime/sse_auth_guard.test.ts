@@ -14,16 +14,16 @@ import {
 	create_sse_connection_closer,
 	create_audit_log_sse,
 	AUDIT_LOG_SSE_MAX_PER_SCOPE
-} from '$lib/realtime/sse_auth_guard.ts';
-import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
-import { SubscriberRegistry } from '$lib/realtime/subscriber_registry.ts';
-import type { SseStream, SseNotification } from '$lib/realtime/sse.ts';
+} from '#lib/realtime/sse_auth_guard.ts';
+import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
+import { SubscriberRegistry } from '#lib/realtime/subscriber_registry.ts';
+import type { SseStream, SseNotification } from '#lib/realtime/sse.ts';
 import {
 	AUDIT_EVENT_TYPES,
 	audit_event_revocation_scopes,
 	type AuditLogEvent
-} from '$lib/auth/audit_log_schema.ts';
-import { create_test_audit_event } from '$lib/testing/entities.ts';
+} from '#lib/auth/audit_log_schema.ts';
+import { create_test_audit_event } from '#lib/testing/entities.ts';
 
 const log = new Logger('test', { level: 'off' });
 

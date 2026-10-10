@@ -30,8 +30,6 @@ import '../assert_dev_env.ts';
  * (`cross_backend/cell_grant_role.cross.test.ts`). Gated on
  * `capabilities.cell_relations` (true on every spine, so it never skips).
  *
- * `$lib`-free by contract (relative specifiers only).
- *
  * @module
  */
 

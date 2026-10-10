@@ -28,20 +28,20 @@ import { createNodeWebSocket } from '@hono/node-ws';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { register_action_ws } from '$lib/actions/register_action_ws.ts';
-import type { RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
-import type { BackendWebsocketTransport } from '$lib/actions/transports_ws_backend.ts';
-import { WS_CLOSE_CONNECTION_LIMIT, WS_CLOSE_SESSION_REVOKED } from '$lib/actions/transports.ts';
-import { AUTH_SESSION_TOKEN_HASH_KEY, REQUEST_CONTEXT_KEY } from '$lib/auth/request_context.ts';
-import { hash_session_token } from '$lib/auth/session_queries.ts';
+import { register_action_ws } from '#lib/actions/register_action_ws.ts';
+import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
+import type { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import { WS_CLOSE_CONNECTION_LIMIT, WS_CLOSE_SESSION_REVOKED } from '#lib/actions/transports.ts';
+import { AUTH_SESSION_TOKEN_HASH_KEY, REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
+import { hash_session_token } from '#lib/auth/session_queries.ts';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY
-} from '$lib/hono_context.ts';
-import { create_test_account } from '$lib/testing/entities.ts';
-import { create_stub_db } from '$lib/testing/stubs.ts';
+} from '#lib/hono_context.ts';
+import { create_test_account } from '#lib/testing/entities.ts';
+import { create_stub_db } from '#lib/testing/stubs.ts';
 import {
 	connect_raw_ws,
 	is_raw_ws_close,
@@ -49,7 +49,7 @@ import {
 	RAW_WS_OPCODE_TEXT,
 	type RawWsClient,
 	type RawWsFrame
-} from '$lib/testing/transports/ws_raw_client.ts';
+} from '#lib/testing/transports/ws_raw_client.ts';
 
 const log = new Logger('test', { level: 'off' });
 

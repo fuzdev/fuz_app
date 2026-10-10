@@ -53,9 +53,6 @@ import '../assert_dev_env.ts';
  * closed role registry the Rust spine deliberately lacks, so role-grant
  * parity is out of scope here (the TS impl covers it in-process).
  *
- * `$lib`-free by contract (relative specifiers only) so the suite can be
- * imported from the spawnable cross-process test files.
- *
  * @module
  */
 

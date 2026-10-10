@@ -10,13 +10,12 @@
  * own TS impl over the wire — making drift in fuz_app's real HTTP path a
  * fuz_app failure rather than only surfacing through a downstream consumer.
  *
- * **`#lib`, not `$lib`, by contract.** This module + the Node/Deno/Bun
- * entries that wrap it are spawned as raw processes (Gro's loader, `deno
- * run`, `bun run`) — none of which resolve the Vite-only `$lib` SvelteKit
- * alias. They reach `src/lib` through the `#lib/*` package.json subpath
- * import (`"imports": {"#lib/*": "./src/lib/*"}`), which Node, Bun, Deno,
- * and Gro's loader all resolve uniformly. A `$lib` import anywhere in this
- * spawn graph would still typecheck under vitest but break the spawn.
+ * **`#lib` by contract.** This module + the Node/Deno/Bun entries that wrap
+ * it are spawned as raw processes (Gro's loader, `deno run`, `bun run`), so
+ * they can't rely on anything Vite resolves. They reach `src/lib` through
+ * the `#lib/*` package.json subpath import
+ * (`"imports": {"#lib/*": "./src/lib/*"}`), which Node, Bun, Deno, and Gro's
+ * loader all resolve uniformly.
  *
  * **NEVER ships in a release.** Lives under `src/test/` (excluded from the
  * `dist` package build) and uses `stub_password_deps` — a deterministic

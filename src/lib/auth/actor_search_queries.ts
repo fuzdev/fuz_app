@@ -118,6 +118,6 @@ export const query_actor_search = async (
 		 WHERE LOWER(act.name) LIKE $1 || '%' ESCAPE '\\'
 		 ORDER BY display_name, id
 		 LIMIT $3`,
-		[escaped_prefix, scope_ids as Array<Uuid>, input.limit]
+		[escaped_prefix, scope_ids, input.limit]
 	);
 };

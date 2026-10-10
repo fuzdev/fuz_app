@@ -16,8 +16,8 @@
 
 import { test, assert } from 'vitest';
 
-import { query_schema_snapshot } from '$lib/testing/schema_introspect.ts';
-import { diff_schema_snapshots } from '$lib/testing/schema_parity.ts';
+import { query_schema_snapshot } from '#lib/testing/schema_introspect.ts';
+import { diff_schema_snapshots } from '#lib/testing/schema_parity.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import { describe_db as describe_cell_db } from '../cell_db_fixture.ts';

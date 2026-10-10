@@ -25,28 +25,28 @@ import { afterEach, assert, describe, test, vi } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid } from '@fuzdev/fuz_util/id.ts';
 
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_health_route_spec } from '$lib/http/common_routes.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import {
 	APP_SERVER_RATE_LIMITER_KEYS,
 	create_app_server,
 	type AppServer,
 	type AppServerOptions,
 	type AppServerRateLimiterKey
-} from '$lib/server/app_server.ts';
-import type { AppServerContext } from '$lib/server/app_server_context.ts';
-import type { AppBackend } from '$lib/server/app_backend.ts';
-import { create_stub_app_backend, create_stub_app_deps } from '$lib/testing/stubs.ts';
-import { create_loopback_app_server_options } from '$lib/testing/app_server.ts';
-import { create_recording_audit_emitter } from '$lib/testing/audit_drift_guard.ts';
-import { create_fake_ws, create_stub_upgrade } from '$lib/testing/ws_round_trip.ts';
-import { create_recording_closer } from '$lib/testing/connection_closer_helpers.ts';
-import { protocol_actions } from '$lib/actions/protocol.ts';
-import { BackendWebsocketTransport } from '$lib/actions/transports_ws_backend.ts';
-import { WS_CLOSE_GOING_AWAY } from '$lib/actions/transports.ts';
-import type { ConnectionCloser } from '$lib/actions/connection_closer.ts';
-import type { SseStream } from '$lib/realtime/sse.ts';
-import { RateLimiter, create_rate_limiter, type RateLimiterMode } from '$lib/rate_limiter.ts';
+} from '#lib/server/app_server.ts';
+import type { AppServerContext } from '#lib/server/app_server_context.ts';
+import type { AppBackend } from '#lib/server/app_backend.ts';
+import { create_stub_app_backend, create_stub_app_deps } from '#lib/testing/stubs.ts';
+import { create_loopback_app_server_options } from '#lib/testing/app_server.ts';
+import { create_recording_audit_emitter } from '#lib/testing/audit_drift_guard.ts';
+import { create_fake_ws, create_stub_upgrade } from '#lib/testing/ws_round_trip.ts';
+import { create_recording_closer } from '#lib/testing/connection_closer_helpers.ts';
+import { protocol_actions } from '#lib/actions/protocol.ts';
+import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import { WS_CLOSE_GOING_AWAY } from '#lib/actions/transports.ts';
+import type { ConnectionCloser } from '#lib/actions/connection_closer.ts';
+import type { SseStream } from '#lib/realtime/sse.ts';
+import { RateLimiter, create_rate_limiter, type RateLimiterMode } from '#lib/rate_limiter.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -370,8 +370,8 @@ describe('disabled-mode stderr banner', () => {
 	const import_fresh = async () => {
 		vi.resetModules();
 		const { create_app_server: fresh_create_app_server } =
-			await import('$lib/server/app_server.ts');
-		const { RATE_LIMITERS_DISABLED_BANNER } = await import('$lib/rate_limiter.ts');
+			await import('#lib/server/app_server.ts');
+		const { RATE_LIMITERS_DISABLED_BANNER } = await import('#lib/rate_limiter.ts');
 		return { fresh_create_app_server, RATE_LIMITERS_DISABLED_BANNER };
 	};
 

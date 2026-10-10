@@ -28,7 +28,7 @@
 import { afterEach, assert, beforeEach, describe, test, vi } from 'vitest';
 import { Logger, type LogConsole } from '@fuzdev/fuz_util/log.ts';
 
-import { PERIODIC_INTERVAL_MS_MAX, start_periodic, type PeriodicTask } from '$lib/periodic.ts';
+import { PERIODIC_INTERVAL_MS_MAX, start_periodic, type PeriodicTask } from '#lib/periodic.ts';
 
 const INTERVAL_MS = 10_000;
 

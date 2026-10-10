@@ -45,8 +45,6 @@ import '../assert_dev_env.ts';
  * Cited property: `docs/security.md` §"Body Size Limiting" (connection handling
  * on oversized reject).
  *
- * `$lib`-free by contract (relative + `node:` specifiers only).
- *
  * @module
  */
 

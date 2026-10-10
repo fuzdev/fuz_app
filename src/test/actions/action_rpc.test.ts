@@ -9,31 +9,31 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { create_rpc_endpoint, type RpcAction } from '$lib/actions/action_rpc.ts';
-import type { RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
-import { apply_route_specs } from '$lib/http/route_spec.ts';
-import { fuz_auth_guard_resolver } from '$lib/auth/auth_guard_resolver.ts';
-import { generate_app_surface } from '$lib/http/surface.ts';
-import { create_stub_db } from '$lib/testing/stubs.ts';
-import { REQUEST_CONTEXT_KEY } from '$lib/auth/request_context.ts';
+import { create_rpc_endpoint, type RpcAction } from '#lib/actions/action_rpc.ts';
+import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
+import { apply_route_specs } from '#lib/http/route_spec.ts';
+import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
+import { generate_app_surface } from '#lib/http/surface.ts';
+import { create_stub_db } from '#lib/testing/stubs.ts';
+import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
 import {
 	ACCOUNT_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
 	TOKEN_SCOPE_KEY,
 	type CredentialType
-} from '$lib/hono_context.ts';
-import { create_test_request_context } from '$lib/testing/auth_apps.ts';
-import { create_test_actor } from '$lib/testing/entities.ts';
-import { jsonrpc_errors, JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
-import { token_scope_methods, type TokenScope } from '$lib/auth/token_scope.ts';
+} from '#lib/hono_context.ts';
+import { create_test_request_context } from '#lib/testing/auth_apps.ts';
+import { create_test_actor } from '#lib/testing/entities.ts';
+import { jsonrpc_errors, JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
+import { token_scope_methods, type TokenScope } from '#lib/auth/token_scope.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS,
 	ERROR_TOKEN_SCOPE_REQUIRED
-} from '$lib/http/error_schemas.ts';
-import { RateLimiter } from '$lib/rate_limiter.ts';
-import { ActingActor } from '$lib/http/auth_shape.ts';
+} from '#lib/http/error_schemas.ts';
+import { RateLimiter } from '#lib/rate_limiter.ts';
+import { ActingActor } from '#lib/http/auth_shape.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 const log = new Logger('test', { level: 'off' });
@@ -283,7 +283,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.parse_error as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.parse_error);
 	});
 
 	test('returns invalid_request for malformed envelope', async () => {
@@ -296,7 +296,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request);
 	});
 
 	test('a non-object body is invalid_request with id: null', async () => {
@@ -313,7 +313,7 @@ describe('POST dispatcher', () => {
 			});
 			assert.strictEqual(res.status, 400, raw);
 			const body = await res.json();
-			assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number, raw);
+			assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request, raw);
 			assert.strictEqual(body.id, null, raw);
 		}
 	});
@@ -328,7 +328,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 404);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.method_not_found as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.method_not_found);
 		assert.ok(body.error.message.includes('nonexistent'));
 	});
 
@@ -342,7 +342,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 401);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.unauthenticated as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.unauthenticated);
 		// The pre-authorization 401 carries `data.reason` (symmetric with the 403
 		// gates) so callers can assert reason, not just status.
 		assert.strictEqual(body.error.data.reason, ERROR_AUTHENTICATION_REQUIRED);
@@ -367,7 +367,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden);
 	});
 
 	/**
@@ -397,7 +397,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden);
 		assert.strictEqual(body.error.data.reason, ERROR_INSUFFICIENT_PERMISSIONS);
 	});
 
@@ -421,7 +421,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden);
 		assert.strictEqual(body.error.data.reason, ERROR_TOKEN_SCOPE_REQUIRED);
 	});
 
@@ -437,7 +437,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params);
 		assert.ok(body.error.data.issues);
 	});
 
@@ -539,7 +539,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params);
 	});
 
 	test('void input schemas reject literal "params": null with invalid_request', async () => {
@@ -558,7 +558,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request);
 	});
 
 	test('object input schemas treat missing params as empty object', async () => {
@@ -615,7 +615,7 @@ describe('POST dispatcher', () => {
 		const body = await res.json();
 		assert.strictEqual(body.jsonrpc, '2.0');
 		assert.strictEqual(body.id, '1');
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.not_found as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.not_found);
 		assert.strictEqual(body.error.message, 'thing not found');
 	});
 
@@ -643,7 +643,7 @@ describe('POST dispatcher', () => {
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
 		assert.strictEqual(body.id, 'salvage-me');
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request);
 	});
 
 	test('rejects batch (array) requests', async () => {
@@ -656,7 +656,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request);
 		assert.strictEqual(body.id, null); // array has no extractable id
 	});
 
@@ -679,7 +679,7 @@ describe('POST dispatcher', () => {
 		const body = await res.json();
 		assert.strictEqual(body.jsonrpc, '2.0');
 		assert.strictEqual(body.id, '1');
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.internal_error as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.internal_error);
 	});
 
 	test('dispatches side_effects:false action via POST', async () => {
@@ -724,7 +724,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden);
 	});
 
 	test('succeeds for keeper action with daemon_token and keeper role', async () => {
@@ -778,7 +778,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden);
 	});
 
 	test('returns forbidden for keeper action with api_token credential', async () => {
@@ -805,7 +805,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden);
 	});
 
 	test('returns forbidden for keeper action with daemon_token but no keeper role', async () => {
@@ -832,7 +832,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 403);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.forbidden);
 	});
 
 	test('wrong-type _meta produces invalid_params not invalid_request', async () => {
@@ -849,7 +849,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params);
 	});
 
 	test('valid _meta passes through to handler', async () => {
@@ -890,7 +890,7 @@ describe('POST dispatcher', () => {
 		});
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params);
 		assert.strictEqual(body.error.data.field, 'name');
 		assert.strictEqual(body.error.data.expected, 'string');
 	});
@@ -950,11 +950,7 @@ describe('GET dispatcher', () => {
 			);
 			assert.strictEqual(res.status, 400, `?params=${raw}`);
 			const body = await res.json();
-			assert.strictEqual(
-				body.error.code,
-				JSONRPC_ERROR_CODES.invalid_params as number,
-				`?params=${raw}`
-			);
+			assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params, `?params=${raw}`);
 		}
 	});
 
@@ -984,7 +980,7 @@ describe('GET dispatcher', () => {
 		const res = await app.request('/api/rpc?method=thing_create&id=1');
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request);
 		assert.ok(body.error.data.reason.includes('side effects'));
 	});
 
@@ -994,7 +990,7 @@ describe('GET dispatcher', () => {
 		const res = await app.request('/api/rpc?id=1');
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request);
 	});
 
 	test('returns error for missing id query param', async () => {
@@ -1003,7 +999,7 @@ describe('GET dispatcher', () => {
 		const res = await app.request('/api/rpc?method=thing_list');
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_request);
 	});
 
 	test('parses integer id from query string', async () => {
@@ -1116,7 +1112,7 @@ describe('GET dispatcher', () => {
 		const res = await app.request('/api/rpc?method=thing_search&id=1&params=not-json');
 		assert.strictEqual(res.status, 400);
 		const body = await res.json();
-		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params as number);
+		assert.strictEqual(body.error.code, JSONRPC_ERROR_CODES.invalid_params);
 	});
 
 	test('duplicated method and id query keys take the first occurrence, not the last', async () => {

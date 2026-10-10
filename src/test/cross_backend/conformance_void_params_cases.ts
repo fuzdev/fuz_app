@@ -10,7 +10,7 @@
  * @module
  */
 
-import type { ConformanceCase } from '$lib/testing/cross_backend/conformance_case.ts';
+import type { ConformanceCase } from '#lib/testing/cross_backend/conformance_case.ts';
 
 export const conformance_void_params_cases: ReadonlyArray<ConformanceCase> = [
 	{

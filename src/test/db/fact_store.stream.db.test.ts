@@ -46,12 +46,12 @@ import { FACT_HASH_PREFIX, type FactHash } from '@fuzdev/fuz_util/hash_schemas.t
 
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { PgFactStore } from '$lib/db/fact_store.ts';
-import { query_put_fact } from '$lib/db/fact_queries.ts';
-import { fact_disk_path, mint_file_fact_url } from '$lib/db/file_fact_url.ts';
-import { sweep_orphan_temps, FACT_TMP_DIRNAME } from '$lib/db/fact_disk_storage.ts';
-import { PayloadTooLargeError } from '$lib/db/fact_store_errors.ts';
-import { create_node_runtime } from '$lib/runtime/node.ts';
+import { PgFactStore } from '#lib/db/fact_store.ts';
+import { query_put_fact } from '#lib/db/fact_queries.ts';
+import { fact_disk_path, mint_file_fact_url } from '#lib/db/file_fact_url.ts';
+import { sweep_orphan_temps, FACT_TMP_DIRNAME } from '#lib/db/fact_disk_storage.ts';
+import { PayloadTooLargeError } from '#lib/db/fact_store_errors.ts';
+import { create_node_runtime } from '#lib/runtime/node.ts';
 import { describe_db } from '../fact_db_fixture.ts';
 
 const runtime = create_node_runtime();
@@ -78,10 +78,10 @@ const sha256_hex = (bytes: Uint8Array): string => createHash('sha256').update(by
 const with_fetch_refused = async (fn: () => Promise<void>): Promise<Array<string>> => {
 	const fetched: Array<string> = [];
 	const original_fetch = globalThis.fetch;
-	globalThis.fetch = (async (input: RequestInfo | URL) => {
+	globalThis.fetch = async (input: RequestInfo | URL) => {
 		fetched.push(input instanceof Request ? input.url : String(input));
 		throw new Error('unexpected fetch');
-	}) as typeof fetch;
+	};
 	try {
 		await fn();
 	} finally {

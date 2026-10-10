@@ -6,17 +6,17 @@
 
 import { assert, test, beforeEach } from 'vitest';
 
-import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
-import { query_role_grant_has_role } from '$lib/auth/role_grant_queries.ts';
-import { bootstrap_account, type BootstrapAccountDeps } from '$lib/auth/bootstrap_account.ts';
-import { stub_password_deps } from '$lib/testing/app_server.ts';
-import { argon2_password_deps } from '$lib/auth/password_argon2.ts';
-import type { Db } from '$lib/db/db.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { query_role_grant_has_role } from '#lib/auth/role_grant_queries.ts';
+import { bootstrap_account, type BootstrapAccountDeps } from '#lib/auth/bootstrap_account.ts';
+import { stub_password_deps } from '#lib/testing/app_server.ts';
+import { argon2_password_deps } from '#lib/auth/password_argon2.ts';
+import type { Db } from '#lib/db/db.ts';
 import {
 	ERROR_INVALID_TOKEN,
 	ERROR_ALREADY_BOOTSTRAPPED,
 	ERROR_TOKEN_FILE_MISSING
-} from '$lib/http/error_schemas.ts';
+} from '#lib/http/error_schemas.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { describe_db } from '../db_fixture.ts';

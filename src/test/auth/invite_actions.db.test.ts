@@ -18,17 +18,17 @@ import { describe, test, assert } from 'vitest';
 import {
 	invite_create_action_spec,
 	invite_delete_action_spec
-} from '$lib/auth/admin_action_specs.ts';
+} from '#lib/auth/admin_action_specs.ts';
 import {
 	ERROR_INVITE_ACCOUNT_EXISTS_USERNAME,
 	ERROR_INVITE_ACCOUNT_EXISTS_EMAIL,
 	ERROR_INVITE_DUPLICATE,
 	ERROR_INVITE_NOT_FOUND
-} from '$lib/http/error_schemas.ts';
-import { query_create_account_with_actor } from '$lib/auth/account_queries.ts';
-import { create_test_app } from '$lib/testing/app_server.ts';
-import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+} from '#lib/http/error_schemas.ts';
+import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
+import { create_test_app } from '#lib/testing/app_server.ts';
+import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import {
 	RPC_PATH,

@@ -86,8 +86,6 @@ import '../assert_dev_env.ts';
  * cross-process leg (`cross_backend/identity_parity.cross.test.ts`, the TS spine
  * binaries + Rust `testing_spine_stub` over real HTTP).
  *
- * `$lib`-free by contract (relative specifiers only).
- *
  * @module
  */
 

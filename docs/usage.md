@@ -1087,7 +1087,7 @@ import {
 	to_action_spec_input_identifier,
 	to_action_spec_output_identifier
 } from '@fuzdev/fuz_app/actions/action_codegen.ts';
-import { all_my_action_specs } from './action_specs.js';
+import { all_my_action_specs } from './action_specs.ts';
 
 export const gen: Gen = ({ origin_path }) => {
 	const registry = new ActionRegistry(all_my_action_specs);
@@ -1130,7 +1130,7 @@ Wire the generated surface into `create_rpc_client`:
 ```typescript
 import { create_rpc_client } from '@fuzdev/fuz_app/actions/rpc_client.ts';
 import { ActionDispatcher } from '@fuzdev/fuz_app/actions/action_dispatcher.ts';
-import type { FrontendActionsApi } from './frontend_action_types.js';
+import type { FrontendActionsApi } from './frontend_action_types.ts';
 
 const peer = new ActionDispatcher({ environment, transports });
 const api_result = create_rpc_client<FrontendActionsApi>({ peer, environment });
@@ -1154,7 +1154,7 @@ transport so call sites pick per-site at zero construction cost:
 ```typescript
 import { create_frontend_rpc_client } from '@fuzdev/fuz_app/actions/frontend_rpc_client.ts';
 import { all_standard_action_specs } from '@fuzdev/fuz_app/auth/standard_action_specs.ts';
-import type { FrontendActionsApi } from './frontend_action_types.js';
+import type { FrontendActionsApi } from './frontend_action_types.ts';
 
 const { api, api_result } = create_frontend_rpc_client<FrontendActionsApi>({
 	specs: all_standard_action_specs

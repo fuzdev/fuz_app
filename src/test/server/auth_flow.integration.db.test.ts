@@ -13,26 +13,26 @@
 import { describe, test, assert, beforeAll, afterAll } from 'vitest';
 import { z } from 'zod';
 
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_health_route_spec } from '$lib/http/common_routes.ts';
-import { require_request_context } from '$lib/auth/request_context.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_health_route_spec } from '#lib/http/common_routes.ts';
+import { require_request_context } from '#lib/auth/request_context.ts';
 import {
 	create_app_server,
 	type AppServerOptions,
 	type AppServer
-} from '$lib/server/app_server.ts';
+} from '#lib/server/app_server.ts';
 import {
 	type TestAppServer,
 	create_test_app_server,
 	create_loopback_app_server_options
-} from '$lib/testing/app_server.ts';
-import type { RouteSpec } from '$lib/http/route_spec.ts';
-import { ROLE_KEEPER, ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import { ActingActor } from '$lib/http/auth_shape.ts';
+} from '#lib/testing/app_server.ts';
+import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { ROLE_KEEPER, ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { ActingActor } from '#lib/http/auth_shape.ts';
 import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS
-} from '$lib/http/error_schemas.ts';
+} from '#lib/http/error_schemas.ts';
 
 const session_options = create_session_config('test_session');
 

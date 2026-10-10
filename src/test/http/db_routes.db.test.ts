@@ -14,19 +14,19 @@ import {
 	create_db_route_specs,
 	type ColumnInfo,
 	type DbRouteOptions
-} from '$lib/http/db_routes.ts';
-import { create_recording_audit_emitter } from '$lib/testing/audit_drift_guard.ts';
-import { apply_route_specs, type RouteSpec } from '$lib/http/route_spec.ts';
-import { flush_post_commit_effects } from '$lib/http/pending_effects.ts';
-import { fuz_auth_guard_resolver } from '$lib/auth/auth_guard_resolver.ts';
-import { REQUEST_CONTEXT_KEY, type RequestContext } from '$lib/auth/request_context.ts';
-import { audit_metadata_schemas } from '$lib/auth/audit_log_schema.ts';
-import { create_test_context } from '$lib/testing/entities.ts';
-import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY } from '$lib/hono_context.ts';
-import type { Db } from '$lib/db/db.ts';
-import { run_migrations } from '$lib/db/migrate.ts';
-import { auth_migration_ns } from '$lib/auth/migrations.ts';
-import { create_pglite_factory } from '$lib/testing/db.ts';
+} from '#lib/http/db_routes.ts';
+import { create_recording_audit_emitter } from '#lib/testing/audit_drift_guard.ts';
+import { apply_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
+import { flush_post_commit_effects } from '#lib/http/pending_effects.ts';
+import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
+import { REQUEST_CONTEXT_KEY, type RequestContext } from '#lib/auth/request_context.ts';
+import { audit_metadata_schemas } from '#lib/auth/audit_log_schema.ts';
+import { create_test_context } from '#lib/testing/entities.ts';
+import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
+import type { Db } from '#lib/db/db.ts';
+import { run_migrations } from '#lib/db/migrate.ts';
+import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { create_pglite_factory } from '#lib/testing/db.ts';
 
 const log = new Logger('test', { level: 'off' });
 

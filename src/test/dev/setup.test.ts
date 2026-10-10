@@ -6,7 +6,7 @@
 
 import { test, describe, assert } from 'vitest';
 
-import { read_env_var } from '$lib/dev/setup.ts';
+import { read_env_var } from '#lib/dev/setup.ts';
 
 describe('read_env_var', () => {
 	test('reads a present variable', async () => {

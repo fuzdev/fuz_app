@@ -14,11 +14,11 @@ import {
 	create_action_event_from_json,
 	ERROR_RESPONSE_OUTPUT_INVALID,
 	type ActionEvent
-} from '$lib/actions/action_event.ts';
-import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
-import type { ActionEventEnvironment } from '$lib/actions/action_event_types.ts';
-import type { ActionSpecUnion } from '$lib/actions/action_spec.ts';
-import type { ActionEventDataUnion } from '$lib/actions/action_event_data.ts';
+} from '#lib/actions/action_event.ts';
+import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
+import type { ActionEventEnvironment } from '#lib/actions/action_event_types.ts';
+import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
+import type { ActionEventDataUnion } from '#lib/actions/action_event_data.ts';
 
 // Inline test specs
 const ping_spec = {

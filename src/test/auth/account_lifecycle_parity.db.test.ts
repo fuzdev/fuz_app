@@ -15,17 +15,17 @@
  * @module
  */
 
-import { default_in_process_setup } from '$lib/testing/cross_backend/in_process_setup.ts';
-import { in_process_capabilities } from '$lib/testing/cross_backend/capabilities.ts';
-import { describe_account_lifecycle_cross_tests } from '$lib/testing/cross_backend/account_lifecycle.ts';
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_standard_rpc_actions } from '$lib/auth/standard_rpc_actions.ts';
-import { create_testing_drain_effects_action } from '$lib/testing/cross_backend/testing_reset_actions.ts';
-import { create_rpc_endpoint } from '$lib/actions/action_rpc.ts';
-import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
-import { ROLE_ADMIN, ROLE_KEEPER } from '$lib/auth/role_schema.ts';
-import type { AppServerContext } from '$lib/server/app_server_context.ts';
-import type { RouteSpec } from '$lib/http/route_spec.ts';
+import { default_in_process_setup } from '#lib/testing/cross_backend/in_process_setup.ts';
+import { in_process_capabilities } from '#lib/testing/cross_backend/capabilities.ts';
+import { describe_account_lifecycle_cross_tests } from '#lib/testing/cross_backend/account_lifecycle.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
+import { create_testing_drain_effects_action } from '#lib/testing/cross_backend/testing_reset_actions.ts';
+import { create_rpc_endpoint } from '#lib/actions/action_rpc.ts';
+import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
+import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import type { AppServerContext } from '#lib/server/app_server_context.ts';
+import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 const RPC_PATH = '/api/rpc';
 const session_options = create_session_config('test_session');

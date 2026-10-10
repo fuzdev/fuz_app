@@ -7,10 +7,10 @@
 
 import { describe, assert, test, vi, afterEach } from 'vitest';
 
-import { FrontendHttpTransport } from '$lib/actions/transports_http.ts';
-import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
-import { is_jsonrpc_error_response } from '$lib/http/jsonrpc_helpers.ts';
-import type { JsonrpcRequest } from '$lib/http/jsonrpc.ts';
+import { FrontendHttpTransport } from '#lib/actions/transports_http.ts';
+import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
+import { is_jsonrpc_error_response } from '#lib/http/jsonrpc_helpers.ts';
+import type { JsonrpcRequest } from '#lib/http/jsonrpc.ts';
 
 afterEach(() => {
 	vi.restoreAllMocks();

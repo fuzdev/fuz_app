@@ -64,11 +64,11 @@ export type JsonrpcErrorName =
  */
 export const JSONRPC_ERROR_CODES = Object.freeze({
 	// Standard JSON-RPC errors — values from jsonrpc.ts
-	parse_error: JSONRPC_PARSE_ERROR as JsonrpcErrorCode,
-	invalid_request: JSONRPC_INVALID_REQUEST as JsonrpcErrorCode,
-	method_not_found: JSONRPC_METHOD_NOT_FOUND as JsonrpcErrorCode,
-	invalid_params: JSONRPC_INVALID_PARAMS as JsonrpcErrorCode,
-	internal_error: JSONRPC_INTERNAL_ERROR as JsonrpcErrorCode,
+	parse_error: JSONRPC_PARSE_ERROR,
+	invalid_request: JSONRPC_INVALID_REQUEST,
+	method_not_found: JSONRPC_METHOD_NOT_FOUND,
+	invalid_params: JSONRPC_INVALID_PARAMS,
+	internal_error: JSONRPC_INTERNAL_ERROR,
 
 	// General application errors (-32000 to -32099)
 	/**
@@ -332,7 +332,7 @@ export const HTTP_STATUS_TO_JSONRPC_ERROR_CODE: Record<number, JsonrpcErrorCode>
 			status,
 			Number(code) as JsonrpcErrorCode
 		])
-	) as Record<number, JsonrpcErrorCode>;
+	);
 
 /**
  * Map a JSON-RPC error code to an HTTP status code.

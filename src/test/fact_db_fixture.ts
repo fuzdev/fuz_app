@@ -8,7 +8,7 @@
  * @module
  */
 
-import { FACT_MIGRATION_NS, FACT_DROP_TABLES } from '$lib/db/fact_ddl.ts';
+import { FACT_MIGRATION_NS, FACT_DROP_TABLES } from '#lib/db/fact_ddl.ts';
 import { create_db_fixture } from './create_db_fixture.ts';
 
 export const { describe_db } = create_db_fixture([FACT_MIGRATION_NS], [...FACT_DROP_TABLES]);

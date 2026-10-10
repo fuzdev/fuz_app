@@ -10,14 +10,14 @@
 
 import { describe, test, assert } from 'vitest';
 
-import { create_test_app } from '$lib/testing/app_server.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import { create_test_app } from '#lib/testing/app_server.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {
 	role_grant_offer_create_action_spec,
 	role_grant_offer_accept_action_spec
-} from '$lib/auth/role_grant_offer_action_specs.ts';
+} from '#lib/auth/role_grant_offer_action_specs.ts';
 import { create_uuid } from '@fuzdev/fuz_util/id.ts';
-import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
+import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import {
 	RPC_PATH,
 	TEST_APP_ROLE,

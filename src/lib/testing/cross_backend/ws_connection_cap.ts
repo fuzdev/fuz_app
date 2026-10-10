@@ -39,9 +39,6 @@ import '../assert_dev_env.ts';
  * which is why it's a separate call rather than more cases on the WS
  * round-trip suite.
  *
- * `$lib`-free by contract (relative specifiers only), like the sibling
- * cross-backend suites.
- *
  * @module
  */
 

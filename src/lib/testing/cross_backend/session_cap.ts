@@ -44,9 +44,6 @@ import '../assert_dev_env.ts';
  * the cap — see `query_session_enforce_limit`'s race note. That needs a
  * barrier-based test against one backend, not a parity case.
  *
- * `$lib`-free by contract (relative specifiers only), like the sibling
- * cross-backend suites.
- *
  * @module
  */
 

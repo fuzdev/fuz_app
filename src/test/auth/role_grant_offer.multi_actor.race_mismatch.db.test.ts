@@ -14,14 +14,14 @@
 import { assert, describe, test } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import { create_test_app } from '$lib/testing/app_server.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import { role_grant_offer_create_action_spec } from '$lib/auth/role_grant_offer_action_specs.ts';
+import { create_test_app } from '#lib/testing/app_server.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { role_grant_offer_create_action_spec } from '#lib/auth/role_grant_offer_action_specs.ts';
 import {
 	query_accept_offer,
 	RoleGrantOfferAlreadyTerminalError
-} from '$lib/auth/role_grant_offer_queries.ts';
-import { rpc_call_for_spec } from '$lib/testing/rpc_helpers.ts';
+} from '#lib/auth/role_grant_offer_queries.ts';
+import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 
 import {
 	RPC_PATH,

@@ -15,31 +15,31 @@
 
 import { describe, test, assert } from 'vitest';
 
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { create_test_app } from '$lib/testing/app_server.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_test_app } from '#lib/testing/app_server.ts';
 import {
 	create_pglite_factory,
 	create_describe_db,
 	auth_integration_truncate_tables
-} from '$lib/testing/db.ts';
-import { run_migrations } from '$lib/db/migrate.ts';
-import { auth_migration_ns } from '$lib/auth/migrations.ts';
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+} from '#lib/testing/db.ts';
+import { run_migrations } from '#lib/db/migrate.ts';
+import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {
 	role_grant_offer_create_action_spec,
 	role_grant_offer_accept_action_spec,
 	role_grant_offer_decline_action_spec,
 	role_grant_offer_retract_action_spec
-} from '$lib/auth/role_grant_offer_action_specs.ts';
+} from '#lib/auth/role_grant_offer_action_specs.ts';
 import {
 	ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_DECLINED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_RETRACTED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_SUPERSEDE_NOTIFICATION_METHOD
-} from '$lib/auth/role_grant_offer_notifications.ts';
-import { create_rpc_post_init } from '$lib/testing/rpc_helpers.ts';
-import type { Db } from '$lib/db/db.ts';
+} from '#lib/auth/role_grant_offer_notifications.ts';
+import { create_rpc_post_init } from '#lib/testing/rpc_helpers.ts';
+import type { Db } from '#lib/db/db.ts';
 import type { Hono } from 'hono';
 import {
 	NOTIFICATION_TEST_RPC_PATH,

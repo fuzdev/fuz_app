@@ -19,9 +19,9 @@
 import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
 
-import { create_auth_test_apps, select_auth_app } from '$lib/testing/auth_apps.ts';
-import { ActingActor } from '$lib/http/auth_shape.ts';
-import type { RouteSpec } from '$lib/http/route_spec.ts';
+import { create_auth_test_apps, select_auth_app } from '#lib/testing/auth_apps.ts';
+import { ActingActor } from '#lib/http/auth_shape.ts';
+import type { RouteSpec } from '#lib/http/route_spec.ts';
 
 const specs: Array<RouteSpec> = [
 	{

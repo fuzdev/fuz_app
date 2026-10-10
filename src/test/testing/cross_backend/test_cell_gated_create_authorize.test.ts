@@ -9,9 +9,9 @@
 import { describe, test, assert } from 'vitest';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
-import { create_test_context } from '$lib/testing/entities.ts';
-import { test_cell_gated_create_authorize } from '$lib/testing/cross_backend/test_cell_gated_create_authorize.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { create_test_context } from '#lib/testing/entities.ts';
+import { test_cell_gated_create_authorize } from '#lib/testing/cross_backend/test_cell_gated_create_authorize.ts';
 
 const CELL_ID = '33333333-3333-4333-8333-333333333333' as Uuid;
 

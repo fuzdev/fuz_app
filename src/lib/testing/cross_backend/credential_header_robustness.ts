@@ -45,8 +45,6 @@ import '../assert_dev_env.ts';
  * §"Credential Type Hierarchy" (a leaked / conflicting credential header can't
  * escalate the credential ceiling) + §"API Token Security" (bearer handling).
  *
- * `$lib`-free by contract (relative + `node:` specifiers only).
- *
  * @module
  */
 

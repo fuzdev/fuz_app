@@ -10,7 +10,7 @@
 import { assert, describe, test } from 'vitest';
 import { Hono } from 'hono';
 
-import { query_create_account_with_actor } from '$lib/auth/account_queries.ts';
+import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
 import {
 	query_create_session,
 	query_session_revoke_by_hash_unscoped,
@@ -18,11 +18,11 @@ import {
 	generate_session_token,
 	hash_session_token,
 	AUTH_SESSION_LIFETIME_MS
-} from '$lib/auth/session_queries.ts';
-import { query_create_role_grant } from '$lib/auth/role_grant_queries.ts';
-import { create_request_context_middleware, require_auth } from '$lib/auth/request_context.ts';
+} from '#lib/auth/session_queries.ts';
+import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
+import { create_request_context_middleware, require_auth } from '#lib/auth/request_context.ts';
 
-import { ERROR_AUTHENTICATION_REQUIRED } from '$lib/http/error_schemas.ts';
+import { ERROR_AUTHENTICATION_REQUIRED } from '#lib/http/error_schemas.ts';
 import { describe_db } from '../db_fixture.ts';
 
 describe_db('session revoke blocks access', (get_db) => {

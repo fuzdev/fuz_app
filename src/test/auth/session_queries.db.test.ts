@@ -6,7 +6,7 @@
 
 import { describe, assert, test } from 'vitest';
 
-import { query_purge_account } from '$lib/auth/account_queries.ts';
+import { query_purge_account } from '#lib/auth/account_queries.ts';
 import {
 	query_create_session,
 	query_session_get_valid,
@@ -20,9 +20,9 @@ import {
 	hash_session_token,
 	generate_session_token,
 	AUTH_SESSION_LIFETIME_MS
-} from '$lib/auth/session_queries.ts';
-import type { Db } from '$lib/db/db.ts';
-import { create_test_account_with_actor } from '$lib/testing/db_entities.ts';
+} from '#lib/auth/session_queries.ts';
+import type { Db } from '#lib/db/db.ts';
+import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
 
 import { describe_db } from '../db_fixture.ts';
 

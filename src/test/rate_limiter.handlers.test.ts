@@ -14,20 +14,20 @@
 import { describe, test, assert, vi, afterEach } from 'vitest';
 import { Hono } from 'hono';
 
-import { RateLimiter } from '$lib/rate_limiter.ts';
-import { create_proxy_middleware } from '$lib/http/proxy.ts';
-import { create_account_route_specs } from '$lib/auth/account_routes.ts';
-import { create_signup_route_specs } from '$lib/auth/signup_routes.ts';
-import { apply_route_specs } from '$lib/http/route_spec.ts';
-import { fuz_auth_guard_resolver } from '$lib/auth/auth_guard_resolver.ts';
-import { create_keyring } from '$lib/auth/keyring.ts';
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { PASSWORD_LENGTH_MAX } from '$lib/auth/password.ts';
-import { create_bearer_auth_middleware } from '$lib/auth/bearer_auth.ts';
-import { ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS } from '$lib/http/error_schemas.ts';
+import { RateLimiter } from '#lib/rate_limiter.ts';
+import { create_proxy_middleware } from '#lib/http/proxy.ts';
+import { create_account_route_specs } from '#lib/auth/account_routes.ts';
+import { create_signup_route_specs } from '#lib/auth/signup_routes.ts';
+import { apply_route_specs } from '#lib/http/route_spec.ts';
+import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
+import { create_keyring } from '#lib/auth/keyring.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { PASSWORD_LENGTH_MAX } from '#lib/auth/password.ts';
+import { create_bearer_auth_middleware } from '#lib/auth/bearer_auth.ts';
+import { ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS } from '#lib/http/error_schemas.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { create_stub_db, create_noop_stub, create_test_audit_emitter } from '$lib/testing/stubs.ts';
-import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
+import { create_stub_db, create_noop_stub, create_test_audit_emitter } from '#lib/testing/stubs.ts';
+import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -60,7 +60,7 @@ const {
 	)
 }));
 
-vi.mock('$lib/auth/account_queries.js', () => ({
+vi.mock('#lib/auth/account_queries.ts', () => ({
 	query_account_by_username_or_email: (...a: Array<any>) => mock_find_by_username_or_email(...a),
 	query_account_by_id: (...a: Array<any>) => mock_account_by_id(...a),
 	query_actor_by_id: (...a: Array<any>) => mock_resolve_actor(...a),
@@ -71,7 +71,7 @@ vi.mock('$lib/auth/account_queries.js', () => ({
 	query_create_account_with_actor: (...a: Array<any>) => mock_create_account_with_actor(...a)
 }));
 
-vi.mock('$lib/auth/invite_queries.js', () => ({
+vi.mock('#lib/auth/invite_queries.ts', () => ({
 	query_invite_find_unclaimed_match_for_update: (...a: Array<any>) =>
 		mock_invite_find_unclaimed_match(...a),
 	query_invite_claim_unscoped: (...a: Array<any>) => mock_invite_claim(...a)
@@ -79,13 +79,13 @@ vi.mock('$lib/auth/invite_queries.js', () => ({
 
 // The signup handler reads `open_signup` fresh on every request; these tests
 // run against mocked queries (no DB), so stub the load to the closed default.
-vi.mock('$lib/auth/app_settings_queries.js', () => ({
+vi.mock('#lib/auth/app_settings_queries.ts', () => ({
 	query_app_settings_load: (..._a: Array<any>) =>
 		Promise.resolve({ open_signup: false, updated_at: null, updated_by: null })
 }));
 
-vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('$lib/auth/session_queries.ts')>();
+vi.mock('#lib/auth/session_queries.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#lib/auth/session_queries.ts')>();
 	return {
 		...actual,
 		query_create_session: (...a: Array<any>) => mock_session_create(...a),
@@ -93,7 +93,7 @@ vi.mock('$lib/auth/session_queries.js', async (importOriginal) => {
 	};
 });
 
-vi.mock('$lib/auth/api_token_queries.js', () => ({
+vi.mock('#lib/auth/api_token_queries.ts', () => ({
 	query_validate_api_token: (...a: Array<any>) => mock_validate_api_token(...a)
 }));
 
@@ -101,7 +101,7 @@ vi.mock('$lib/auth/api_token_queries.js', () => ({
 // (see `create_test_audit_emitter()`) — the bound `AuditEmitter` is the
 // single seam for fan-out.
 
-vi.mock('$lib/auth/role_grant_queries.js', () => ({
+vi.mock('#lib/auth/role_grant_queries.ts', () => ({
 	query_role_grant_find_active_for_actor: (...a: Array<any>) => mock_role_grant_find_active(...a)
 }));
 

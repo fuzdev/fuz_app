@@ -30,8 +30,6 @@ import '../assert_dev_env.ts';
  * (`cross_backend/actor_search.cross.test.ts`, TS spine binaries + Rust
  * `testing_spine_stub`). Mounted on every spine, so the suite is ungated.
  *
- * `$lib`-free by contract (relative specifiers only).
- *
  * @module
  */
 

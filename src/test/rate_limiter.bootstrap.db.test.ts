@@ -11,26 +11,26 @@
 import { describe, test, assert, vi, afterEach, beforeAll } from 'vitest';
 import { Hono } from 'hono';
 
-import { RateLimiter } from '$lib/rate_limiter.ts';
-import { create_proxy_middleware } from '$lib/http/proxy.ts';
-import { create_bootstrap_route_specs } from '$lib/auth/bootstrap_routes.ts';
-import { BootstrapOutput } from '$lib/auth/bootstrap_route_schema.ts';
-import { apply_route_specs } from '$lib/http/route_spec.ts';
-import { fuz_auth_guard_resolver } from '$lib/auth/auth_guard_resolver.ts';
-import { create_keyring } from '$lib/auth/keyring.ts';
-import { create_session_config } from '$lib/auth/session_cookie.ts';
-import { PASSWORD_LENGTH_MAX } from '$lib/auth/password.ts';
-import { run_migrations } from '$lib/db/migrate.ts';
-import { auth_migration_ns } from '$lib/auth/migrations.ts';
-import { create_pglite_factory } from '$lib/testing/db.ts';
-import { create_test_audit_emitter } from '$lib/testing/stubs.ts';
+import { RateLimiter } from '#lib/rate_limiter.ts';
+import { create_proxy_middleware } from '#lib/http/proxy.ts';
+import { create_bootstrap_route_specs } from '#lib/auth/bootstrap_routes.ts';
+import { BootstrapOutput } from '#lib/auth/bootstrap_route_schema.ts';
+import { apply_route_specs } from '#lib/http/route_spec.ts';
+import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
+import { create_keyring } from '#lib/auth/keyring.ts';
+import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { PASSWORD_LENGTH_MAX } from '#lib/auth/password.ts';
+import { run_migrations } from '#lib/db/migrate.ts';
+import { auth_migration_ns } from '#lib/auth/migrations.ts';
+import { create_pglite_factory } from '#lib/testing/db.ts';
+import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
 import {
 	ERROR_RATE_LIMIT_EXCEEDED,
 	ERROR_ALREADY_BOOTSTRAPPED,
 	ERROR_TOKEN_FILE_MISSING
-} from '$lib/http/error_schemas.ts';
+} from '#lib/http/error_schemas.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { create_realtime_closer } from '$lib/actions/connection_closer.ts';
+import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 
 const log = new Logger('test', { level: 'off' });
 

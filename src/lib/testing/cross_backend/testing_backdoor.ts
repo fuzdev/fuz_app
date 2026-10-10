@@ -58,9 +58,6 @@ import '../assert_dev_env.ts';
  * backend mounts them, and the WS cases run when `ws` is passed — for a
  * backend that also serves them on its WS endpoint.
  *
- * `$lib`-free by contract (relative specifiers only), like the sibling
- * cross-backend suites.
- *
  * @module
  */
 

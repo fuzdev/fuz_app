@@ -7,8 +7,8 @@
 import { describe, assert, test, vi } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { SubscriberRegistry } from '$lib/realtime/subscriber_registry.ts';
-import type { SseStream } from '$lib/realtime/sse.ts';
+import { SubscriberRegistry } from '#lib/realtime/subscriber_registry.ts';
+import type { SseStream } from '#lib/realtime/sse.ts';
 
 /** Create a mock SseStream that records sent data. */
 const create_mock_stream = <T>(): SseStream<T> & {

@@ -14,7 +14,7 @@ import { createRawSnippet } from 'svelte';
 import { compile } from 'svelte/compiler';
 import { render } from 'svelte/server';
 
-import ColumnLayout from '$lib/ui/ColumnLayout.svelte';
+import ColumnLayout from '#lib/ui/ColumnLayout.svelte';
 
 const column_layout_path = fileURLToPath(
 	new URL('../../lib/ui/ColumnLayout.svelte', import.meta.url)

@@ -17,24 +17,24 @@ import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import {
 	query_account_soft_delete,
 	query_create_account_with_actor
-} from '$lib/auth/account_queries.ts';
-import { generate_api_token } from '$lib/auth/api_token.ts';
+} from '#lib/auth/account_queries.ts';
+import { generate_api_token } from '#lib/auth/api_token.ts';
 import {
 	query_api_token_live_account,
 	query_create_api_token,
 	query_revoke_all_api_tokens_for_account,
 	query_revoke_api_token_for_account
-} from '$lib/auth/api_token_queries.ts';
-import { revalidate_resolved_auth, type ResolvedAuth } from '$lib/auth/resolved_auth.ts';
+} from '#lib/auth/api_token_queries.ts';
+import { revalidate_resolved_auth, type ResolvedAuth } from '#lib/auth/resolved_auth.ts';
 import {
 	generate_session_token,
 	hash_session_token,
 	query_create_session,
 	query_session_revoke_all_for_account,
 	query_session_revoke_for_account
-} from '$lib/auth/session_queries.ts';
-import { token_scope_full } from '$lib/auth/token_scope.ts';
-import { Db } from '$lib/db/db.ts';
+} from '#lib/auth/session_queries.ts';
+import { token_scope_full } from '#lib/auth/token_scope.ts';
+import { Db } from '#lib/db/db.ts';
 
 import { describe_db } from '../db_fixture.ts';
 

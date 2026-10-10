@@ -11,8 +11,8 @@ import {
 	ISO8601_SECOND_MS,
 	is_iso8601_seconds_live,
 	to_iso8601_seconds
-} from '$lib/timestamp.ts';
-import { iso8601_timestamp_column } from '$lib/db/sql_columns.ts';
+} from '#lib/timestamp.ts';
+import { iso8601_timestamp_column } from '#lib/db/sql_columns.ts';
 
 describe('is_iso8601_seconds_live', () => {
 	// the second-truncated wire stamp the predicate compares against

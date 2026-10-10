@@ -18,7 +18,7 @@ import {
 	resolve_rate_limiters,
 	type AppServerRateLimiterKey,
 	type ResolvedRateLimiters
-} from '$lib/server/app_server.ts';
+} from '#lib/server/app_server.ts';
 import {
 	RateLimiter,
 	create_rate_limiter,
@@ -27,7 +27,7 @@ import {
 	default_login_account_rate_limit,
 	default_login_ip_rate_limit,
 	type RateLimiterOptions
-} from '$lib/rate_limiter.ts';
+} from '#lib/rate_limiter.ts';
 
 // every built limiter is disposed, so no cleanup timer outlives a test
 const resolved: Array<ResolvedRateLimiters> = [];

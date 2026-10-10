@@ -12,17 +12,17 @@
 
 import { inject } from 'vitest';
 
-import { ROLE_ADMIN } from '$lib/auth/role_schema.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import {
 	default_cross_process_setup,
 	reconstruct_bootstrapped_handle
-} from '$lib/testing/cross_backend/setup.ts';
-import { describe_conformance_table_tests } from '$lib/testing/cross_backend/conformance_table.ts';
+} from '#lib/testing/cross_backend/setup.ts';
+import { describe_conformance_table_tests } from '#lib/testing/cross_backend/conformance_table.ts';
 import {
 	create_spine_surface_spec,
 	spine_rpc_endpoints,
 	spine_session_options
-} from '$lib/testing/cross_backend/default_spine_surface.ts';
+} from '#lib/testing/cross_backend/default_spine_surface.ts';
 
 import { conformance_proof_cases } from './conformance_proof_cases.ts';
 import { conformance_security_cases } from './conformance_security_cases.ts';

@@ -21,7 +21,7 @@ import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_uuid } from '@fuzdev/fuz_util/id.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
-import { ActingActor } from '$lib/http/auth_shape.ts';
+import { ActingActor } from '#lib/http/auth_shape.ts';
 
 import {
 	ERROR_DUPLICATE_REQUEST_ID,
@@ -32,13 +32,13 @@ import {
 	WS_CLOSE_PRE_ADMISSION_OVERFLOW_REASON,
 	type SocketCloseContext,
 	type SocketOpenContext
-} from '$lib/actions/register_action_ws.ts';
-import type { ActionContext } from '$lib/actions/action_rpc.ts';
-import type { ActionSpecUnion, RequestResponseActionSpec } from '$lib/actions/action_spec.ts';
+} from '#lib/actions/register_action_ws.ts';
+import type { ActionContext } from '#lib/actions/action_rpc.ts';
+import type { ActionSpecUnion, RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import {
 	BackendWebsocketTransport,
 	DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT
-} from '$lib/actions/transports_ws_backend.ts';
+} from '#lib/actions/transports_ws_backend.ts';
 import {
 	DEFAULT_WS_MAX_MESSAGE_BYTES,
 	WS_CLOSE_CONNECTION_LIMIT,
@@ -47,18 +47,18 @@ import {
 	WS_CLOSE_POLICY_VIOLATION,
 	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT,
 	WS_CLOSE_SESSION_REVOKED
-} from '$lib/actions/transports.ts';
-import { type CredentialType } from '$lib/hono_context.ts';
-import { JSONRPC_ERROR_CODES } from '$lib/http/jsonrpc_errors.ts';
-import { RateLimiter } from '$lib/rate_limiter.ts';
-import { create_stub_db } from '$lib/testing/stubs.ts';
-import { create_test_audit_event } from '$lib/testing/entities.ts';
-import { create_realtime_closer, queue_connection_close } from '$lib/actions/connection_closer.ts';
-import { create_ws_auth_guard } from '$lib/actions/transports_ws_auth_guard.ts';
-import { SessionId } from '$lib/auth/account_schema.ts';
-import { create_audit_emitter } from '$lib/auth/audit_emitter.ts';
-import type { AuditLogEvent } from '$lib/auth/audit_log_schema.ts';
-import { hash_session_token } from '$lib/auth/session_queries.ts';
+} from '#lib/actions/transports.ts';
+import { type CredentialType } from '#lib/hono_context.ts';
+import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
+import { RateLimiter } from '#lib/rate_limiter.ts';
+import { create_stub_db } from '#lib/testing/stubs.ts';
+import { create_test_audit_event } from '#lib/testing/entities.ts';
+import { create_realtime_closer, queue_connection_close } from '#lib/actions/connection_closer.ts';
+import { create_ws_auth_guard } from '#lib/actions/transports_ws_auth_guard.ts';
+import { SessionId } from '#lib/auth/account_schema.ts';
+import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
+import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
+import { hash_session_token } from '#lib/auth/session_queries.ts';
 import {
 	create_fake_hono_context,
 	create_fake_ws,
@@ -66,7 +66,7 @@ import {
 	create_ws_test_harness,
 	dispatch_ws_message,
 	type FakeWs
-} from '$lib/testing/ws_round_trip.ts';
+} from '#lib/testing/ws_round_trip.ts';
 
 const log = new Logger('test', { level: 'off' });
 
@@ -2085,7 +2085,7 @@ describe('register_action_ws rate limit', () => {
 		const limiter = make_limiter(2);
 		const h = await build_harness({
 			handlers: {},
-			actions: [{ spec: account_keyed_spec, handler: (input) => input as { value: string } }],
+			actions: [{ spec: account_keyed_spec, handler: (input) => input }],
 			action_account_rate_limiter: limiter
 		});
 		await h.on_open();
@@ -2113,7 +2113,7 @@ describe('register_action_ws rate limit', () => {
 		const limiter = make_limiter(2);
 		const h = await build_harness({
 			handlers: {},
-			actions: [{ spec: account_keyed_spec, handler: (input) => input as { value: string } }],
+			actions: [{ spec: account_keyed_spec, handler: (input) => input }],
 			action_account_rate_limiter: limiter
 		});
 		await h.on_open();
@@ -2141,7 +2141,7 @@ describe('register_action_ws rate limit', () => {
 	test('malformed params on a non-limited spec are still invalid_params', async () => {
 		const limiter = make_limiter(1);
 		const h = await build_harness({
-			handlers: { echo: (input) => input as { value: string } },
+			handlers: { echo: (input) => input },
 			action_account_rate_limiter: limiter
 		});
 		await h.on_open();
@@ -2162,7 +2162,7 @@ describe('register_action_ws rate limit', () => {
 	test('action without rate_limit is unaffected', async () => {
 		const limiter = make_limiter(1);
 		const h = await build_harness({
-			handlers: { echo: (input) => input as { value: string } },
+			handlers: { echo: (input) => input },
 			action_account_rate_limiter: limiter
 		});
 		await h.on_open();

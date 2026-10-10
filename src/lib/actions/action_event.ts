@@ -573,7 +573,7 @@ export const create_action_event = <TMethod extends string = string>(
 	const initial_data = create_initial_data(
 		spec.kind,
 		phase,
-		spec.method as TMethod,
+		spec.method,
 		environment.executor,
 		input
 	) as ActionEventDataUnion<TMethod>;
