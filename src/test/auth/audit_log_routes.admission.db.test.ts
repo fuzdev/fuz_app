@@ -20,6 +20,7 @@
  */
 
 import { assert, test } from 'vitest';
+import { Logger, type LogConsole } from '@fuzdev/fuz_util/log.ts';
 
 import { create_account_route_specs } from '$lib/auth/account_routes.ts';
 import { create_audit_log_route_specs } from '$lib/auth/audit_log_routes.ts';
@@ -53,6 +54,8 @@ interface Harness {
 	test_app: TestApp;
 	audit_sse: AuditLogSse;
 	admin: TestAccount;
+	/** The route's `log.info` calls, each as its arguments. */
+	infos: Array<Array<unknown>>;
 }
 
 let admin_counter = 0;
@@ -60,6 +63,17 @@ let admin_counter = 0;
 /** The real audit stream route + the account routes, over a `Db` a test can stall. */
 const create_harness = async (db: Db): Promise<Harness & { stall: () => StalledQuery }> => {
 	const gated = create_gated_db(db);
+	const infos: Array<Array<unknown>> = [];
+	const recording_console: LogConsole = {
+		error: () => {},
+		warn: () => {},
+		log: (...args: Array<unknown>) => {
+			infos.push(args);
+		}
+	};
+	// the route's own logger, recording at info; the label is left off so a
+	// recorded call is exactly the route's arguments
+	const log = new Logger(undefined, { level: 'info', console: recording_console });
 	const test_app = await create_test_app({
 		session_options,
 		db: gated.db,
@@ -74,7 +88,9 @@ const create_harness = async (db: Db): Promise<Harness & { stall: () => StalledQ
 				})
 			]),
 			...prefix_route_specs('/api/admin', [
-				...create_audit_log_route_specs({ stream: ctx.audit_sse! })
+				...create_audit_log_route_specs({
+					stream: { registry: ctx.audit_sse!.registry, log }
+				})
 			])
 		]
 	});
@@ -87,6 +103,7 @@ const create_harness = async (db: Db): Promise<Harness & { stall: () => StalledQ
 		test_app,
 		audit_sse,
 		admin,
+		infos,
 		// the request's first session read is the middleware's; the second is
 		// the handler's re-read
 		stall: () => gated.stall(is_session_read, { skip: 1 })
@@ -220,6 +237,10 @@ describe_db('audit log stream admission', (get_db) => {
 		assert.strictEqual(res.status, 500);
 		assert.strictEqual(h.audit_sse.registry.count, 0, 'no stream opened unchecked');
 		assert.strictEqual(h.audit_sse.registry.pending_count, 0, 'the registration is removed');
+		assert.ok(
+			!h.infos.some((args) => args[0] === 'audit stream: re-read ended by the shutdown'),
+			'a failure outside the shutdown is not logged as the shutdown'
+		);
 	});
 
 	test('a stream requested after the server closed ends after its connect comment, unread', async () => {
@@ -265,6 +286,13 @@ describe_db('audit log stream admission', (get_db) => {
 		assert.strictEqual(res.status, 200, "the shutdown's answer, not a 500");
 		assert.strictEqual(h.audit_sse.registry.count, 0, 'never admitted');
 		assert.strictEqual(await res.text(), SSE_CONNECTED_COMMENT);
+		const logged = h.infos.find(
+			(args) => args[0] === 'audit stream: re-read ended by the shutdown'
+		);
+		assert.ok(logged, 'the interrupted re-read is logged at info');
+		assert.strictEqual(logged[1], h.admin.account.id);
+		assert(logged[2] instanceof Error);
+		assert.strictEqual(logged[2].message, 'database closed');
 	});
 
 	test('a logout during the request opens no stream', async () => {

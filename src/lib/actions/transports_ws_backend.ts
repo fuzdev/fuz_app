@@ -55,9 +55,10 @@
  * than outliving it. An upgrade registered before the close-all is closed by
  * it; one registered after is born closed; none is admitted. The flag is set
  * in the same synchronous step that closes the live connections, so an `admit`
- * that finds its entry gone and reads `is_closing()` sees the shutdown, never
- * a revocation. Closing is permanent: a closed transport hosts no further
- * connections.
+ * that finds its entry gone and reads `is_closing()` sees the shutdown — a
+ * shutdown is never read as a revocation (a revocation the shutdown overtook
+ * reads as the shutdown). Closing is permanent: a closed transport hosts no
+ * further connections.
  *
  * @module
  */

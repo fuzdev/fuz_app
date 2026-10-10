@@ -156,7 +156,10 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 							// under the re-read: the answer is the shutdown's — admission
 							// below refuses, since a closing registry admits nothing —
 							// not a failure
-							if (registry.closing) return null;
+							if (registry.closing) {
+								log.info('audit stream: re-read ended by the shutdown', ctx.account.id, error);
+								return null;
+							}
 							throw error;
 						});
 						if (refusal) return refusal;

@@ -838,6 +838,9 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				// The cap's eviction happens here, after every gate and the re-read,
 				// so a refused upgrade never closes someone else's socket.
 				if (!transport.admit(connection_id)) {
+					// chosen from the transport's state now, not why the entry closed — the
+					// abort carries no per-entry reason, so an entry a revocation closed logs as
+					// closed by the shutdown when the shutdown began before this check
 					log.info(
 						transport.is_closing()
 							? 'ws upgrade admission: closed by the shutdown while pending'
