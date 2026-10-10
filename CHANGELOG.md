@@ -1,5 +1,15 @@
 # @fuzdev/fuz_app
 
+## 0.131.0
+
+### Minor Changes
+
+- **breaking** feat: support SvelteKit 3 (`@sveltejs/kit` peer `^3`); consumer docs use `#lib/*` subpath imports in place of `$lib/*` ([e07c7a2](https://github.com/fuzdev/fuz_app/commit/e07c7a2))
+
+### Patch Changes
+
+- fix: log the audit-log stream's credential re-read failure during shutdown at info, as the WebSocket upgrade does ([053d282](https://github.com/fuzdev/fuz_app/commit/053d282))
+
 ## 0.130.0
 
 ### Minor Changes
