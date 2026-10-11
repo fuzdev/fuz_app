@@ -24,7 +24,7 @@
  * oversize `put` throws. `put_stream` needs `fs` for a body of any size — with
  * none it throws before reading the stream — and `disk_root` for the
  * over-threshold spill: with none, a body that passes the threshold throws
- * `PayloadTooLargeError`.
+ * `FactPayloadTooLargeError`.
  *
  * Every `external_url` the store writes is a `file:<shard>/<rest>` URL into its
  * own disk CAS, and that CAS is the only place `get` reads external bytes from
@@ -89,7 +89,7 @@ export const FACT_EMBEDDED_THRESHOLD_DEFAULT = 1024 * 1024;
  * reads disk-backed facts from it. When either is unset the store writes
  * embedded rows only and `get` returns `null` for an external row: an oversize
  * `put` throws; `put_stream` throws for a body of any size when `fs` is unset,
- * and with `fs` but no `disk_root` throws `PayloadTooLargeError` for a body
+ * and with `fs` but no `disk_root` throws `FactPayloadTooLargeError` for a body
  * that passes the threshold. `log` is optional — its call sites are the
  * warnings on the paths where `get` returns `null` for an external row.
  */
@@ -165,8 +165,8 @@ export class PgFactStore implements FactStore {
 	 * BLAKE3 + SHA-256 in one pass, buffer to the embedded threshold, spill to the
 	 * disk CAS), then inserts the `fact` row by placement — embedded bytes go to
 	 * the PG `bytes` column, disk-spilled bytes record the `file:` `external_url`.
-	 * The cap is enforced mid-stream (`PayloadTooLargeError`); a disk-full mid-
-	 * stream throws `StorageFullError`.
+	 * The cap is enforced mid-stream (`FactPayloadTooLargeError`); a disk-full mid-
+	 * stream throws `FactStorageFullError`.
 	 *
 	 * Refs: explicit `options.refs` are recorded; JSON auto-extraction is NOT
 	 * attempted (it would need a buffered re-read, defeating the bounded-memory

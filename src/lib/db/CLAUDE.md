@@ -178,7 +178,7 @@ DO NOTHING`), `_put_fact_refs`, `_get_fact` / `_get_fact_meta` / `_has_fact`
   `fsync`ed before the rename publishes it (twins the Rust `fuz_fact` §fsync
   posture: data-sync before rename, parent-dir fsync waived) — the serve path
   streams the file without re-hashing, so write-time durability is the guard.
-- **`fact_store_errors.ts`** — `PayloadTooLargeError` / `StorageFullError` (+
+- **`fact_store_errors.ts`** — `FactPayloadTooLargeError` / `FactStorageFullError` (+
   `is_enospc_error`) thrown by `put_stream`, for a consumer route's 413 / 507.
 - The HTTP serving plumbing lives under `server/` (`serve_fact_route.ts`,
   `x_accel.ts`).
