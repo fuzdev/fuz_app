@@ -90,7 +90,7 @@
     "@fuzdev/fuz_css": "^0.66.1",
     "@fuzdev/fuz_ui": "^0.213.0",
     "@fuzdev/fuz_util": "^0.72.0",
-    "@fuzdev/gro": "^0.214.0",
+    "@fuzdev/gro": "^0.216.0",
     "@fuzdev/mdz": "^0.4.0",
     "@hono/bun": "^1.0.1",
     "@hono/deno": "^1.0.3",
