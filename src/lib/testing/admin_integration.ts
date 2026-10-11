@@ -788,7 +788,8 @@ export const describe_standard_admin_integration_tests = (
 						headers: {
 							host: 'localhost',
 							origin: 'http://localhost:5173',
-							cookie: `${cookie_name}=${user_two_cookie}`
+							cookie: `${cookie_name}=${user_two_cookie}`,
+							'content-type': 'application/json'
 						}
 					});
 				}

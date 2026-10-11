@@ -283,7 +283,11 @@ export class AuthState {
 	 */
 	async logout(): Promise<void> {
 		try {
-			await ui_fetch('/api/account/logout', { method: 'POST' });
+			// the content type is required of every API POST, body or not
+			await ui_fetch('/api/account/logout', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' }
+			});
 		} catch {
 			// Best-effort — clear local state regardless
 		}

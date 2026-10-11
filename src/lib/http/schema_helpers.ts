@@ -11,6 +11,7 @@
 import { z } from 'zod';
 
 import type { RouteAuth } from './auth_shape.ts';
+import type { RouteMethod } from './route_spec.ts';
 import {
 	derive_error_schemas,
 	type RateLimitKey,
@@ -198,12 +199,13 @@ export const middleware_applies = (mw_path: string, route_path: string): boolean
  * Merge order: derived -> middleware -> explicit route errors.
  * Later layers override earlier ones for the same status code.
  *
- * @param spec - the route spec (needs `auth`, `input`, `params`, `rate_limit`, `errors`)
+ * @param spec - the route spec (reads `method`, `auth`, `input`, `params`, `query`, `rate_limit`, `errors`)
  * @param middleware_errors - errors contributed by middleware whose path matches the route
  * @returns merged error schemas, or `null` if empty
  */
 export const merge_error_schemas = (
 	spec: {
+		method: RouteMethod;
 		auth: RouteAuth;
 		input: z.ZodType;
 		params?: z.ZodObject;
@@ -218,7 +220,8 @@ export const merge_error_schemas = (
 		has_input: !is_null_schema(spec.input),
 		has_params: !!spec.params,
 		has_query: !!spec.query,
-		rate_limit: spec.rate_limit
+		rate_limit: spec.rate_limit,
+		checks_content_type: spec.method === 'POST'
 	});
 	const merged = { ...derived, ...middleware_errors, ...spec.errors };
 	return Object.keys(merged).length > 0 ? merged : null;

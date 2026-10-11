@@ -1,6 +1,6 @@
 /**
  * Tests for `FrontendHttpTransport` — the `fetch` adapter's handling of
- * JSON-RPC error bodies on non-2xx responses.
+ * JSON-RPC error bodies on non-2xx responses, and the headers it sends.
  *
  * @module
  */
@@ -158,5 +158,29 @@ describe('FrontendHttpTransport 2xx bodies', () => {
 		const response = await new FrontendHttpTransport('/api/rpc').send(request);
 		assert.ok(is_jsonrpc_error_response(response));
 		assert.include(response.error.message, 'response is not JSON-RPC: HTTP 200');
+	});
+});
+
+describe('FrontendHttpTransport headers', () => {
+	const sent_headers = (): Record<string, string> =>
+		vi.mocked(globalThis.fetch).mock.calls[0]![1]!.headers as Record<string, string>;
+
+	test('extra headers keep the JSON content type', async () => {
+		stub_fetch(JSON.stringify({ jsonrpc: '2.0', id: 'req-1', result: null }), 200);
+		await new FrontendHttpTransport('/api/rpc', { Authorization: 'Bearer x' }).send(request);
+		assert.deepEqual(sent_headers(), {
+			'content-type': 'application/json',
+			accept: 'application/json',
+			authorization: 'Bearer x'
+		});
+	});
+
+	test('a caller header replaces a default whatever its case', async () => {
+		stub_fetch(JSON.stringify({ jsonrpc: '2.0', id: 'req-1', result: null }), 200);
+		await new FrontendHttpTransport('/api/rpc', {
+			'Content-Type': 'application/json; charset=utf-8'
+		}).send(request);
+		assert.strictEqual(sent_headers()['content-type'], 'application/json; charset=utf-8');
+		assert.notProperty(sent_headers(), 'Content-Type');
 	});
 });

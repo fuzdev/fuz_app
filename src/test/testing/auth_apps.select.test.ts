@@ -168,11 +168,15 @@ describe('create_auth_test_apps', () => {
 		// The keeper route admits only `daemon_token`; the admin route only
 		// `session`. Each app passing its own route and being refused by the
 		// other's channel gate is what makes the selector's choice meaningful.
-		const keeper_res = await apps.keeper.request(`/keeper-auth?${ACTING}`, { method: 'POST' });
+		const keeper_res = await apps.keeper.request(`/keeper-auth?${ACTING}`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' }
+		});
 		assert.notStrictEqual(keeper_res.status, 403);
-		const session_on_keeper = await apps.by_role
-			.get('keeper')!
-			.request(`/keeper-auth?${ACTING}`, { method: 'POST' });
+		const session_on_keeper = await apps.by_role.get('keeper')!.request(`/keeper-auth?${ACTING}`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' }
+		});
 		assert.strictEqual(session_on_keeper.status, 403);
 		const daemon_on_admin = await apps.keeper.request(`/session-only-role?${ACTING}`);
 		assert.strictEqual(daemon_on_admin.status, 403);

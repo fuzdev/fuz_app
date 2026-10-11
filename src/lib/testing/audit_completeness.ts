@@ -269,7 +269,7 @@ export const describe_audit_completeness_tests = (options: AuditCompletenessTest
 
 				const res = await fixture.transport(logout_route.path, {
 					method: 'POST',
-					headers: fixture.create_session_headers()
+					headers: fixture.create_session_headers({ 'content-type': 'application/json' })
 				});
 				assert.strictEqual(res.status, 200);
 

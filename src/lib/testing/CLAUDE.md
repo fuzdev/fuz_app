@@ -1564,6 +1564,22 @@ in-process `auth/origin_parity.db.test.ts` + the cross-process
 Rust spine returned a plain-text body — now converged to the canonical TS
 `{error: "forbidden_origin"}` via `fuz_http::forbidden_origin_response()`.
 
+### CORS simple-request parity — `cross_backend/simple_request.ts`
+
+`describe_simple_request_cross_tests({setup_test, rpc_path?, login_path?, logout_path?})`
+— a JSON route refuses any `POST` that isn't `application/json` with a flat
+415 `{error: 'unsupported_content_type'}` before reading a credential or the
+body: the CORS-safelisted types in any spelling (`text/plain`, `Text/Plain`,
+form-encoded, multipart) on RPC with a session, untyped RPC (a byte body, so
+`fetch` adds no type), `application/octet-stream` / `+json` / empty-typed RPC
+and login, form-encoded login, a forged `text/plain` logout with a session
+(which must leave the session valid), and an untyped logout with no session
+(415, not 401); a bodyless JSON logout reaches the auth check (401), and
+`application/json` with a charset is dispatched. The TS spine checks per route
+(`apply_route_specs`), the Rust spine in each JSON handler. Runs both legs:
+the in-process `auth/simple_request_parity.db.test.ts` and the cross-process
+`simple_request.cross.test.ts`.
+
 ### Query-string shape parity — `cross_backend/query_shape.ts`
 
 `describe_query_shape_cross_tests({setup_test, capabilities, rpc_path?})` —

@@ -30,6 +30,12 @@ import {
 } from '../http/jsonrpc.ts';
 import type { Transport, TransportSendOptions } from './transports.ts';
 
+/** Headers every request carries unless the caller's replace them. */
+const DEFAULT_HEADERS: Readonly<Record<string, string>> = {
+	'content-type': 'application/json',
+	accept: 'application/json'
+};
+
 /**
  * Thin `fetch` adapter for the JSON-RPC endpoint. POST by default; GET when
  * the optional `has_side_effects(method)` callback returns `false` for the
@@ -51,13 +57,25 @@ export class FrontendHttpTransport implements Transport {
 	#headers: Record<string, string>;
 	#has_side_effects: ((method: string) => boolean) | undefined;
 
+	/**
+	 * @param url - the JSON-RPC endpoint
+	 * @param headers - extra headers, merged over the JSON `content-type` and
+	 *   `accept` defaults case-insensitively — a POST without
+	 *   `application/json` is refused (415)
+	 * @param has_side_effects - when it returns `false` for a method, the call is a GET
+	 */
 	constructor(
 		url: string,
 		headers?: Record<string, string>,
 		has_side_effects?: (method: string) => boolean
 	) {
 		this.#url = url;
-		this.#headers = headers ?? { 'content-type': 'application/json', accept: 'application/json' };
+		this.#headers = { ...DEFAULT_HEADERS };
+		if (headers) {
+			for (const [name, value] of Object.entries(headers)) {
+				this.#headers[name.toLowerCase()] = value;
+			}
+		}
 		this.#has_side_effects = has_side_effects;
 	}
 

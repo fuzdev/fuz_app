@@ -10,6 +10,7 @@
 
 import { describe, test, assert, beforeAll } from 'vitest';
 import { wait } from '@fuzdev/fuz_util/async.ts';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { z } from 'zod';
 
@@ -233,6 +234,17 @@ describe('create_app_server', () => {
 		assert.isDefined(bootstrap_route);
 	});
 
+	test('a bootstrap route_prefix outside /api/ is refused at assembly', async () => {
+		const error = await assert_rejects(async () =>
+			create_app_server(
+				await create_config({
+					bootstrap: { mode: 'surface_only', route_prefix: '/auth' }
+				})
+			)
+		);
+		assert.include(error.message, 'bootstrap.route_prefix path /auth/bootstrap');
+	});
+
 	test('on_bootstrap callback wires through to bootstrap routes (live mode)', async () => {
 		let callback_registered = false;
 		await create_app_server(
@@ -277,7 +289,10 @@ describe('create_app_server', () => {
 			})
 		);
 
-		await result.app.request('/effect-test', { method: 'POST' });
+		await result.app.request('/effect-test', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' }
+		});
 
 		// Flush microtask queue — allSettled + .then chain settles in the next macrotask tick
 		await wait();

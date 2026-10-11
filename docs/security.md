@@ -1512,21 +1512,46 @@ default for new accounts; existing accounts keep their current setting.
 
 ## CSRF Protection
 
-**Primary defense**: `SameSite=Strict` session cookies — the browser won't send
-the session cookie on cross-origin requests.
+Three layers, because no one of them covers every page:
 
-**Defense-in-depth**: Origin verification middleware (`origin.ts`) — an
-allowlist that rejects requests from disallowed `Origin` headers before any
-handler runs. This primarily protects locally-running services from being
-called by untrusted websites as the user browses the web. Origin-only: the
-Fetch spec mandates `Origin` on every unsafe method, so the Referer-fallback
-arm was inert on modern browsers and was dropped to converge with the
-`zzz_server` Rust port. Non-browser clients (curl, CLI, server-to-server)
-without an `Origin` header pass through — token auth is the security
-control for those callers, which don't carry auto-attached cookies.
+**`SameSite=Strict` session cookies** — the browser won't send the session
+cookie on a **cross-site** request. Cross-site is not cross-origin: a site is
+the scheme plus the registrable domain, and the port doesn't count, so a page
+on `http://localhost:8000` is same-site with a server on
+`http://localhost:4460` and its requests carry that server's cookie. On most
+hosts, a page on a sibling subdomain is same-site too. For a locally-running
+server, that means every other local dev server, notebook, or
+`python -m http.server` page.
 
-The combination means a cross-origin request is blocked by middleware even if the
-cookie were somehow sent.
+**JSON-only `POST`s** (`http/simple_request.ts`) — every `POST` route that
+isn't `raw_body` requires `Content-Type: application/json`, bodyless or not
+(logout), and a `raw_body` route refuses a `POST` with no `Content-Type`, or
+a `text/plain`, form-encoded, or multipart one — 415
+`unsupported_content_type`, before reading a credential or the body. Those
+are the requests a browser sends cross-origin without a preflight, cookie
+attached. Any other type makes the browser send an `OPTIONS`
+preflight first, and fuz_app answers none with CORS headers, so the request
+is never sent — whatever the origin allowlist says. `PUT`, `PATCH`, and
+`DELETE` are always preflighted. A consumer that adds CORS middleware
+granting cross-origin requests reopens this. Every fuz_app client sends
+`application/json`. The Rust spine checks the same in each JSON handler.
+
+**Origin verification** (`origin.ts`) — an allowlist that rejects requests
+from disallowed `Origin` headers before any handler runs. It is what guards
+the WebSocket upgrade, which is never preflighted, so list exact origins: a
+port wildcard (`http://localhost:*`) admits every same-site local page to the
+socket, cookie included. It also protects locally-running services from
+being called by untrusted websites as the user browses the web. Origin-only:
+the Fetch spec mandates `Origin` on every unsafe method, so the
+Referer-fallback arm was inert on modern browsers and was dropped to
+converge with the `zzz_server` Rust port. Non-browser clients (curl, CLI,
+server-to-server) without an `Origin` header pass through — token auth is
+the security control for those callers, which don't carry auto-attached
+cookies.
+
+So a same-site page, which does get the cookie sent, still can't drive the
+server: its `POST`s are refused for their content type or never sent, and its
+socket upgrade for its origin.
 
 **Browser/CLI split**: Bearer and daemon tokens are silently discarded when
 `Origin` or `Referer` headers are present — browsers must use cookie auth. The
@@ -1790,8 +1815,8 @@ realtime feeds.
 
 ## Investigated and Ruled Out
 
-- **CSRF** — covered by `SameSite=Strict` + Origin verification. No additional
-  tokens needed.
+- **CSRF** — covered by `SameSite=Strict`, JSON-only `POST`s, and Origin
+  verification (see CSRF Protection). No additional tokens needed.
 - **Session fixation** — sessions are server-generated via `crypto.getRandomValues`,
   never accepted from client input.
 - **Session binding (IP/user-agent)** — not implemented. IP binding breaks mobile

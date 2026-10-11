@@ -51,6 +51,7 @@ import {
 import { invite_create_action_spec } from '../auth/admin_action_specs.ts';
 import { LoginOutput, AccountStatusOutput } from '../auth/account_route_schema.ts';
 import type { AppSurfaceSpec } from '../http/surface.ts';
+import type { RouteSpec } from '../http/route_spec.ts';
 import { test_if, type BackendCapabilities } from './cross_backend/capabilities.ts';
 import {
 	assert_iso8601_seconds,
@@ -166,6 +167,16 @@ export const describe_standard_integration_tests = (
 		// Error coverage tracking across test groups
 		const error_collector = new ErrorCoverageCollector();
 
+		// the auth routes this suite drives: login / logout / password, signup
+		// (when wired), and the shared RPC endpoint — admin-role routes belong to
+		// the admin suite
+		const is_suite_auth_route = (s: RouteSpec): boolean => {
+			if (s.auth.roles?.includes('admin') ?? false) return false;
+			const rest_suffixes = ['/login', '/logout', '/password', '/signup'];
+			if (rest_suffixes.some((suffix) => s.path.endsWith(suffix))) return true;
+			return s.path === rpc_path;
+		};
+
 		afterAll(() => {
 			// Scope coverage to auth routes this suite actually exercises:
 			// login / logout / password drivers + signup invite edge cases
@@ -177,12 +188,7 @@ export const describe_standard_integration_tests = (
 			// `create_test_app_for_bootstrap`. Consumer-specific
 			// routes would dilute the ratio; admin-role routes are scoped to
 			// the admin suite instead.
-			const auth_routes = route_specs.filter((s) => {
-				if (s.auth.roles?.includes('admin') ?? false) return false;
-				const rest_suffixes = ['/login', '/logout', '/password', '/signup'];
-				if (rest_suffixes.some((suffix) => s.path.endsWith(suffix))) return true;
-				return s.path === rpc_path;
-			});
+			const auth_routes = route_specs.filter(is_suite_auth_route);
 			assert_error_coverage(error_collector, auth_routes.length > 0 ? auth_routes : route_specs, {
 				min_coverage: options.error_coverage_min ?? DEFAULT_INTEGRATION_ERROR_COVERAGE,
 				// Authorization denials (403) on these scoped auth routes — the
@@ -363,7 +369,7 @@ export const describe_standard_integration_tests = (
 				// Logout
 				const logout_res = await fixture.transport(logout_route.path, {
 					method: 'POST',
-					headers: create_headers()
+					headers: { ...create_headers(), 'content-type': 'application/json' }
 				});
 				assert.strictEqual(logout_res.status, 200);
 				const logout_body = await logout_res.json();
@@ -858,7 +864,11 @@ export const describe_standard_integration_tests = (
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: { ...bearer_headers, origin: 'http://localhost:5173' }
+					headers: {
+						...bearer_headers,
+						origin: 'http://localhost:5173',
+						'content-type': 'application/json'
+					}
 				});
 				assert.strictEqual(res.status, 401);
 			});
@@ -1341,7 +1351,11 @@ export const describe_standard_integration_tests = (
 				});
 				const res = await fixture.fresh_transport()(logout_route.path, {
 					method: 'POST',
-					headers: { ...bearer_headers, origin: 'http://localhost:5173' }
+					headers: {
+						...bearer_headers,
+						origin: 'http://localhost:5173',
+						'content-type': 'application/json'
+					}
 				});
 				assert.strictEqual(
 					res.status,
@@ -1372,6 +1386,27 @@ export const describe_standard_integration_tests = (
 					'Bearer with Referer should be discarded → unauthenticated'
 				);
 				error_collector.record(route_specs, 'POST', password_route.path, 401);
+			});
+		});
+
+		// --- 12b. Content type: every JSON POST route refuses an untyped body ---
+
+		describe('JSON routes refuse an untyped POST', () => {
+			test('each scoped JSON POST route answers an untyped POST with 415', async () => {
+				const fixture = await options.setup_test();
+				const json_post_routes = route_specs.filter(
+					(s) => s.method === 'POST' && !s.raw_body && is_suite_auth_route(s)
+				);
+				assert.ok(json_post_routes.length > 0, 'Expected JSON POST routes');
+				for (const route of json_post_routes) {
+					// a byte body, so `fetch` adds no `Content-Type` of its own
+					const res = await fixture.fresh_transport()(route.path, {
+						method: 'POST',
+						body: new TextEncoder().encode('{}')
+					});
+					assert.strictEqual(res.status, 415, `untyped POST ${route.path}`);
+					await error_collector.assert_and_record(route_specs, 'POST', route.path, res);
+				}
 			});
 		});
 

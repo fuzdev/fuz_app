@@ -46,6 +46,9 @@ import {
 import { ActingActor } from '#lib/http/auth_shape.ts';
 import { FactHashSchema } from '@fuzdev/fuz_util/hash_schemas.ts';
 
+/** The content type every non-`raw_body` POST route requires. */
+const JSON_HEADERS = { 'content-type': 'application/json' };
+
 describe('stubs', () => {
 	test('stub throws on property access', () => {
 		assert.throws(() => stub.foo, /Throwing stub 'stub'/);
@@ -186,7 +189,7 @@ describe('create_test_app_from_specs', () => {
 	test('role app passes role guard', async () => {
 		const ctx = create_test_request_context('admin');
 		const app = create_test_app_from_specs(test_specs, ctx);
-		const res = await app.request('/admin', { method: 'POST' });
+		const res = await app.request('/admin', { method: 'POST', headers: JSON_HEADERS });
 		assert.strictEqual(res.status, 200);
 	});
 });

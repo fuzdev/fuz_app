@@ -460,6 +460,9 @@ export const create_test_app_surface_spec = (
 					{ ...bootstrap_route_shape, handler: stub_handler }
 				])
 			: [];
+	for (const route of bootstrap_route_specs) {
+		assert_endpoint_in_auth_scope('bootstrap.route_prefix', route.path);
+	}
 	// the surface route mirrors `create_app_server`'s opt-in mount — its handler
 	// serves the surface generated below, backfilled into the same ref
 	const surface_ref: SurfaceRouteOptions = {

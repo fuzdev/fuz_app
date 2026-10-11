@@ -298,7 +298,10 @@ idempotency, a scoped assign round-tripping `scope_kind` through
 in-process leg `conformance_participation.db.test.ts`), and
 `origin.cross.test.ts` (the imperative `describe_origin_cross_tests` — Origin
 allowlist: disallowed → 403 `forbidden_origin`, absent → pass; in-process leg
-`auth/origin_parity.db.test.ts`), and `query_shape.cross.test.ts` (the
+`auth/origin_parity.db.test.ts`), `simple_request.cross.test.ts` (the
+imperative `describe_simple_request_cross_tests` — untyped / CORS-safelisted /
+non-JSON `POST`s to JSON routes → 415 `unsupported_content_type`; in-process leg
+`auth/simple_request_parity.db.test.ts`), and `query_shape.cross.test.ts` (the
 imperative `describe_query_shape_cross_tests` — duplicate-key / unknown-key /
 phase-order query semantics on the status route, the JSON-RPC GET endpoint,
 and the bare-hash fact route: first-occurrence-wins duplicates everywhere,

@@ -167,12 +167,13 @@ Pair every schema with the `z.infer` type export.
 `merge_error_schemas(spec, middleware_errors?)` (in `http/schema_helpers.ts`)
 merges three layers, later overrides earlier at the same status code:
 
-1. **Derived** — from `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?})`:
+1. **Derived** — from `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?, checks_content_type?})`:
    - `has_input || has_params || has_query` → 400 `ValidationError`
    - `auth.account === 'required'` or `auth.actor === 'required'` → 401 `ApiError`
    - `auth.roles?.length` → 403 `PermissionError` (carries `required_roles`)
    - `auth.credential_types?.length` → 403 `CredentialTypeRequiredError` (carries `required_credential_types`; both gates set yields `z.union([PermissionError, CredentialTypeRequiredError])`)
    - `rate_limit` → 429 `RateLimitError`
+   - `checks_content_type` (every `POST`) → 415 `ApiError` (`unsupported_content_type`)
    - `auth.actor !== 'none'` → widens 400 to a union with `ActorRequiredError` / `ActorNotOnAccountError` and adds 500 union of `NoActorsOnAccountError` / `AccountVanishedError`. Mirrors what the dispatcher's authorization phase actually emits on routes whose input declares `acting?: ActingActor` (per registry-time invariant 2) — so DEV-mode error-schema validation doesn't reject the auth phase's body.
 2. **Middleware** — from `MiddlewareSpec.errors` that apply to the route's path (via `middleware_applies`)
 3. **Explicit** — `RouteSpec.errors` — always wins

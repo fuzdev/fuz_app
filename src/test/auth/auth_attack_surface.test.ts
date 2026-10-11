@@ -46,6 +46,9 @@ import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { to_iso8601_seconds } from '#lib/timestamp.ts';
 
+/** The content type every non-`raw_body` POST route requires. */
+const JSON_HEADERS = { 'content-type': 'application/json' };
+
 const log = new Logger('test', { level: 'off' });
 const stub_db = create_stub_db();
 
@@ -335,7 +338,7 @@ describe('auth matrix — credential × route', () => {
 				: undefined;
 			const credential_type = descriptor.credential_type ?? undefined;
 			const app = create_test_app(test_route_specs, auth_ctx, credential_type);
-			const res = await app.request(c.path, { method: c.method });
+			const res = await app.request(c.path, { method: c.method, headers: JSON_HEADERS });
 			assert.strictEqual(
 				res.status,
 				c.expected,
@@ -365,7 +368,7 @@ describe('targeted adversarial tests', () => {
 			}
 		];
 		const app = create_test_app(test_route_specs, ctx);
-		const res = await app.request('/admin', { method: 'POST' });
+		const res = await app.request('/admin', { method: 'POST', headers: JSON_HEADERS });
 		assert.strictEqual(res.status, 403);
 	});
 
@@ -388,19 +391,19 @@ describe('targeted adversarial tests', () => {
 			}
 		];
 		const app = create_test_app(test_route_specs, ctx);
-		const res = await app.request('/admin', { method: 'POST' });
+		const res = await app.request('/admin', { method: 'POST', headers: JSON_HEADERS });
 		assert.strictEqual(res.status, 403);
 	});
 
 	test('admin cannot access keeper routes', async () => {
 		const app = create_test_app(test_route_specs, create_test_ctx('admin'));
-		const res = await app.request('/keeper', { method: 'POST' });
+		const res = await app.request('/keeper', { method: 'POST', headers: JSON_HEADERS });
 		assert.strictEqual(res.status, 403);
 	});
 
 	test('keeper cannot access admin routes', async () => {
 		const app = create_test_app(test_route_specs, create_test_ctx('keeper'));
-		const res = await app.request('/admin', { method: 'POST' });
+		const res = await app.request('/admin', { method: 'POST', headers: JSON_HEADERS });
 		assert.strictEqual(res.status, 403);
 	});
 

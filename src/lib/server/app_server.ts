@@ -127,14 +127,14 @@ export interface BootstrapDisabledOptions {
 
 export interface BootstrapSurfaceOnlyOptions {
 	mode: 'surface_only';
-	/** Route prefix for surface generation. Default `'/api/account'`. */
+	/** Route prefix for surface generation. Default `'/api/account'`; must sit under `/api/`. */
 	route_prefix?: string;
 }
 
 export interface BootstrapLiveOptions {
 	mode: 'live';
 	token_path: string;
-	/** Route prefix for bootstrap routes. Default `'/api/account'`. */
+	/** Route prefix for bootstrap routes. Default `'/api/account'`; must sit under `/api/`. */
 	route_prefix?: string;
 	/**
 	 * Called after successful bootstrap (account + session created).
@@ -913,7 +913,11 @@ const assemble_app_server = async (
 			bootstrap_ip_rate_limiter
 		});
 		const prefix = options.bootstrap.route_prefix ?? '/api/account';
-		factory_routes.push(...prefix_route_specs(prefix, bootstrap_routes));
+		const prefixed = prefix_route_specs(prefix, bootstrap_routes);
+		for (const route of prefixed) {
+			assert_endpoint_in_auth_scope('bootstrap.route_prefix', route.path);
+		}
+		factory_routes.push(...prefixed);
 	}
 
 	// RPC endpoint auto-mount — resolve specs then append their routes so
