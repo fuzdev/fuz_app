@@ -359,6 +359,50 @@ describe('create_app_server', () => {
 		PayloadTooLargeError.parse(body);
 	});
 
+	test('an oversized Content-Length is refused without reading the request body', async () => {
+		const result = await create_app_server(
+			await create_config({
+				max_body_size: 100, // 100 bytes
+				create_route_specs: () => [
+					{
+						method: 'POST',
+						path: '/echo',
+						auth: { account: 'none', actor: 'none' },
+						description: 'Echo input',
+						input: z.looseObject({ data: z.string() }),
+						output: z.looseObject({ ok: z.boolean() }),
+						handler: async (c) => c.json({ ok: true })
+					}
+				]
+			})
+		);
+		// Reading `request.body` at all — even without consuming it — makes Deno
+		// drain the rest of the declared body after the response and keep the
+		// connection alive instead of closing it, so the over-cap reject must
+		// answer from the header alone (the cross-backend smuggling probe pins
+		// the connection close itself).
+		let body_read = false;
+		class BodySpyRequest extends Request {
+			override get body(): Request['body'] {
+				body_read = true;
+				return super.body;
+			}
+		}
+		const large_body = JSON.stringify({ data: 'x'.repeat(200) });
+		const res = await result.app.request(
+			new BodySpyRequest('http://localhost/echo', {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+					'content-length': String(new TextEncoder().encode(large_body).length)
+				},
+				body: large_body
+			})
+		);
+		assert.strictEqual(res.status, 413);
+		assert.strictEqual(body_read, false, 'the 413 must not read the request body');
+	});
+
 	test('body size limit rejects a streaming (no Content-Length) oversized body', async () => {
 		const result = await create_app_server(
 			await create_config({

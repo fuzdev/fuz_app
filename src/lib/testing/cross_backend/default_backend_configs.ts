@@ -87,10 +87,6 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	// `GET /api/account/status` is bundled into `create_account_route_specs`, so
 	// every TS backend mounting account routes serves it.
 	account_status: true,
-	// Node/Deno close the socket on an oversized-body reject (the default
-	// posture). A Bun-served consumer overrides to `false` (see the bun spine
-	// config) — fail-loud rather than silently skipping the smuggle detector.
-	oversized_reject_closes_connection: true,
 	// Off by default like `sse`/`ready`: the WS backend transport *can* initiate
 	// server→client requests (`BackendWebsocketTransport.request_connection`),
 	// but driving the full `peer/ping` suite also needs `peer/ping` mounted on
@@ -132,9 +128,6 @@ export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 	// The Rust `account_router` bundles `/status` into the account routes, so
 	// every Rust spine serving the account surface serves it.
 	account_status: true,
-	// hyper sends an RST on the oversized-body reject — the connection closes
-	// and the pipelined request is never reached.
-	oversized_reject_closes_connection: true,
 	// Server-initiated requests landed Rust-first canonical — the Rust spine
 	// drives the `peer/ping` round-trip, so the family opts into the suite.
 	peer_request: true,

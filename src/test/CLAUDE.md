@@ -363,17 +363,14 @@ and `body_size.cross.test.ts` (the 1 MiB request-body cap:
 at-limit exactly-the-cap → not size-rejected, under-limit → 200, all retry-once
 around the server-closed socket the 413 leaves — plus
 `describe_body_size_smuggling_cross_tests`, a raw-`node:net` probe that pipelines
-an oversized `POST` + a `GET`. Its assertion forks on the backend's
-`oversized_reject_closes_connection` capability: backends that close (Node/Deno/Rust)
-must return **at most one** response (`<= 1` — the pipelined GET is never reached,
-robust to graceful-close vs RST); Bun, which drains + keepalives, instead must
-return **at most two** (`<= 2` — the 413 plus a _correctly-framed_ reply to the
-GET, proving no desync: the body is delimited on `Content-Length`, never reparsed
-as request bytes). The 413-ness itself is pinned by the fetch parity cases; a
-positive control (two pipelined requests → `>= 2` responses) keeps both arms
-non-vacuous. The parity cases have an in-process leg
+an oversized `POST` + a `GET` and requires **at most one** response on every
+backend (`<= 1` — the reject closes the connection, so the pipelined GET is never
+reached; robust to graceful-close vs RST). The 413-ness itself is pinned by the
+fetch parity cases; a positive control (two pipelined requests → `>= 2`
+responses) keeps the assertion non-vacuous. The parity cases have an in-process leg
 `auth/body_size_parity.db.test.ts` (and the Content-Length vs streaming-branch
-rejects are covered in-process by `server/create_app_server.db.test.ts`); the
+rejects, plus the Content-Length reject never reading the request body, are
+covered in-process by `server/create_app_server.db.test.ts`); the
 smuggling probe is cross-only), and `identity_parity.cross.test.ts` (the
 imperative `describe_identity_parity_cross_tests` suite —
 `testing/cross_backend/identity_parity.ts` — pinning the `primitive_schemas`
