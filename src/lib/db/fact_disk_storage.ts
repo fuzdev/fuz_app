@@ -46,7 +46,11 @@ import {
 	parse_file_fact_url,
 	type FileFactUrl
 } from './file_fact_url.ts';
-import { is_enospc_error, PayloadTooLargeError, StorageFullError } from './fact_store_errors.ts';
+import {
+	is_enospc_error,
+	FactPayloadTooLargeError,
+	FactStorageFullError
+} from './fact_store_errors.ts';
 
 /** Subdirectory under `facts_dir` for in-flight atomic temp files. */
 export const FACT_TMP_DIRNAME = '.tmp';
@@ -98,12 +102,12 @@ export interface StreamFactToDiskResult {
  *   `facts_dir`), the buffer + remaining chunks spill to `<facts_dir>/.tmp/…`,
  *   then `rename` into `<facts_dir>/<shard>/<rest>` once the hash is known —
  *   `{kind: 'disk'}`. A body over the threshold with `facts_dir === undefined`
- *   throws `PayloadTooLargeError` (matches `PgFactStore.put`).
- * - **Cap enforcement.** Aborts with `PayloadTooLargeError` the moment the
+ *   throws `FactPayloadTooLargeError` (matches `PgFactStore.put`).
+ * - **Cap enforcement.** Aborts with `FactPayloadTooLargeError` the moment the
  *   running byte count passes `max_bytes` — the mid-stream backstop for a
  *   chunked or mis-declared `Content-Length`.
  * - **Disk-full.** An `ENOSPC` from the temp-file write surfaces as
- *   `StorageFullError`.
+ *   `FactStorageFullError`.
  *
  * @mutates `facts_dir` filesystem
  */
@@ -129,7 +133,7 @@ export const stream_fact_to_disk = async (
 
 	const hash_and_count = (chunk: Uint8Array): void => {
 		size += chunk.length;
-		if (size > max_bytes) throw new PayloadTooLargeError(size, max_bytes);
+		if (size > max_bytes) throw new FactPayloadTooLargeError(size, max_bytes);
 		blake3.update(chunk);
 		sha256.update(chunk);
 	};
@@ -165,7 +169,7 @@ export const stream_fact_to_disk = async (
 		if (facts_dir === undefined) {
 			// Over the embedded threshold with nowhere to spill — same shape as the
 			// `PgFactStore.put` oversize-without-disk_root reject.
-			throw new PayloadTooLargeError(size, embedded_threshold);
+			throw new FactPayloadTooLargeError(size, embedded_threshold);
 		}
 
 		// Phase 2: spill. A combined stream emits the already-hashed buffered
@@ -206,8 +210,8 @@ export const stream_fact_to_disk = async (
 			await deps.write_file_stream(tmp_path, combined);
 		} catch (err) {
 			await deps.remove(tmp_path).catch(() => undefined);
-			if (is_enospc_error(err)) throw new StorageFullError(err);
-			throw err; // includes a mid-stream PayloadTooLargeError surfaced via the stream
+			if (is_enospc_error(err)) throw new FactStorageFullError(err);
+			throw err; // includes a mid-stream FactPayloadTooLargeError surfaced via the stream
 		}
 
 		const hash = (FACT_HASH_PREFIX + to_hex(blake3.finalize())) as FactHash;
@@ -253,7 +257,7 @@ export const write_fact_bytes_to_disk = async (
 		await deps.write_file(tmp_path, bytes);
 	} catch (err) {
 		await deps.remove(tmp_path).catch(() => undefined);
-		if (is_enospc_error(err)) throw new StorageFullError(err);
+		if (is_enospc_error(err)) throw new FactStorageFullError(err);
 		throw err;
 	}
 	const { shard, rest } = await commit_temp_to_cas(deps, tmp_path, facts_dir, hash);
@@ -335,7 +339,7 @@ export const sweep_orphan_temps = async (
  * the file without re-hashing, so the bytes must be stable before they become
  * the canonical body), then either drop the temp (byte-identical content already
  * present — idempotent dedup) or atomically `rename` it into place. On any
- * failure the temp is unlinked and an `ENOSPC` is surfaced as `StorageFullError`.
+ * failure the temp is unlinked and an `ENOSPC` is surfaced as `FactStorageFullError`.
  * The single commit path shared by both writers above — twins the Rust `fuz_fact`
  * `SpillFile::rename_into_cas` (data-sync before rename; parent-dir fsync waived).
  *
@@ -359,7 +363,7 @@ const commit_temp_to_cas = async (
 		}
 	} catch (err) {
 		await deps.remove(tmp_path).catch(() => undefined);
-		if (is_enospc_error(err)) throw new StorageFullError(err);
+		if (is_enospc_error(err)) throw new FactStorageFullError(err);
 		throw err;
 	}
 	return { shard, rest };

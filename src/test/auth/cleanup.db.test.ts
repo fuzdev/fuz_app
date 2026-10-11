@@ -16,9 +16,10 @@
  *   rest — subsequent rows still land.
  *
  * The session sweep's own cases — what it closes, when, and on a failed
- * commit — are `cleanup.sessions.db.test.ts`; the scheduler's are
- * `cleanup.schedule.test.ts`. Twin of the Rust spine's `fuz_auth`
- * `tests/auth_cleanup.rs`.
+ * commit — are `cleanup.sessions.db.test.ts` and, for a `COMMIT` real
+ * Postgres refuses, `cleanup.sessions.refused_commit.db.test.ts`; the
+ * scheduler's are `cleanup.schedule.test.ts`. Twin of the Rust spine's
+ * `fuz_auth` `tests/auth_cleanup.rs`.
  *
  * @module
  */

@@ -22,7 +22,11 @@ import { describe, test, beforeAll, assert } from 'vitest';
 import type { AppSurface, AppSurfaceSpec } from '../http/surface.ts';
 import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import type { TestAccount } from './app_server.ts';
-import { resolve_valid_path, generate_valid_body } from './schema_generators.ts';
+import {
+	resolve_valid_path,
+	generate_valid_body,
+	to_route_content_type
+} from './schema_generators.ts';
 import { is_null_schema, is_strict_object_schema } from '../http/schema_helpers.ts';
 import { is_keeper_auth, is_public_auth } from '../http/auth_shape.ts';
 import {
@@ -203,7 +207,11 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 
 				const res = await fixture.transport(url, {
 					method: spec.method,
-					headers: { host: 'localhost', origin: 'http://localhost:5173' }
+					headers: {
+						host: 'localhost',
+						origin: 'http://localhost:5173',
+						'content-type': to_route_content_type(spec)
+					}
 				});
 
 				if (res.headers.get('Content-Type')?.includes('text/event-stream')) {
@@ -237,11 +245,12 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 				if (skip_set.has(route_key)) continue;
 
 				const url = resolve_valid_path(spec.path, spec.params);
-				const headers = authed_account.create_session_headers();
-
 				const res = await fixture.transport(url, {
 					method: spec.method,
-					headers
+					headers: {
+						...authed_account.create_session_headers(),
+						'content-type': to_route_content_type(spec)
+					}
 				});
 
 				assert.strictEqual(res.status, 403, `${route_key} should return 403 for non-admin user`);
@@ -283,10 +292,7 @@ export const describe_data_exposure_tests = (options: DataExposureTestOptions): 
 
 				const request_init: RequestInit = {
 					method: spec.method,
-					headers: {
-						...headers,
-						...(body ? { 'content-type': 'application/json' } : {})
-					},
+					headers: { ...headers, 'content-type': to_route_content_type(spec) },
 					...(body ? { body: JSON.stringify(body) } : {})
 				};
 

@@ -1,7 +1,7 @@
 /**
  * Tests for the migration runner in isolation.
  *
- * Uses `create_pglite_factory` (not `describe_db`) to test runner behavior directly.
+ * Uses `create_default_db_factory` (not `describe_db`) to test runner behavior directly.
  *
  * @module
  */
@@ -17,10 +17,10 @@ import {
 	type Migration,
 	type MigrationNamespace
 } from '#lib/db/migrate.ts';
-import { create_pglite_factory, reset_pglite } from '#lib/testing/db.ts';
+import { create_default_db_factory, reset_public_schema } from '#lib/testing/db.ts';
 
 const noop_init = async (_db: Db): Promise<void> => {};
-const factory = create_pglite_factory(noop_init);
+const factory = create_default_db_factory(noop_init);
 let db: Db;
 
 beforeAll(async () => {
@@ -28,7 +28,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-	await reset_pglite(db);
+	await reset_public_schema(db);
 });
 
 const named = (name: string, up: Migration['up'] = async () => {}): Migration => ({ name, up });
@@ -540,7 +540,7 @@ describe('baseline', () => {
 	});
 
 	test('happy path on a fresh DB creates the new-shape tracker table', async () => {
-		// reset_pglite already ran in beforeEach — schema_version doesn't exist
+		// reset_public_schema already ran in beforeEach — schema_version doesn't exist
 		const ns: MigrationNamespace = {
 			namespace: 'fresh_baseline_ns',
 			migrations: [named('a'), named('b')]

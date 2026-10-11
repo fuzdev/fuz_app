@@ -23,7 +23,7 @@ import { auth_migration_ns } from '#lib/auth/migrations.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
 import { DEFAULT_TEST_PASSWORD } from '#lib/testing/test_credentials.ts';
 import {
-	create_pglite_factory,
+	create_default_db_factory,
 	create_describe_db,
 	auth_integration_truncate_tables
 } from '#lib/testing/db.ts';
@@ -42,7 +42,7 @@ const RPC_PATH = '/api/rpc';
 const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [auth_migration_ns]);
 };
-const factory = create_pglite_factory(init_schema);
+const factory = create_default_db_factory(init_schema);
 const describe_db = create_describe_db(factory, auth_integration_truncate_tables);
 
 /**

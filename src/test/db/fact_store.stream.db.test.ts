@@ -10,7 +10,7 @@
  * - `put_stream` of an over-threshold (chunked) body spills to
  *   `<facts_dir>/<shard>/<rest>`, records a `file:` URL, round-trips via `get`,
  *   and reports the correct blake3 hash + SHA-256 + size
- * - `put_stream` aborts mid-stream with `PayloadTooLargeError` past `max_bytes`,
+ * - `put_stream` aborts mid-stream with `FactPayloadTooLargeError` past `max_bytes`,
  *   inserting no row
  * - oversize `put` (with `disk_root` + `fs`) routes to disk instead of throwing
  * - a disk-backed `get` verifies what it reads: tampered or missing bytes on
@@ -50,7 +50,7 @@ import { PgFactStore } from '#lib/db/fact_store.ts';
 import { query_put_fact } from '#lib/db/fact_queries.ts';
 import { fact_disk_path, mint_file_fact_url } from '#lib/db/file_fact_url.ts';
 import { sweep_orphan_temps, FACT_TMP_DIRNAME } from '#lib/db/fact_disk_storage.ts';
-import { PayloadTooLargeError } from '#lib/db/fact_store_errors.ts';
+import { FactPayloadTooLargeError } from '#lib/db/fact_store_errors.ts';
 import { create_node_runtime } from '#lib/runtime/node.ts';
 import { describe_db } from '../fact_db_fixture.ts';
 
@@ -179,7 +179,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 		assert.deepEqual(back, bytes);
 	});
 
-	test('put_stream aborts past max_bytes with PayloadTooLargeError, no row', async () => {
+	test('put_stream aborts past max_bytes with FactPayloadTooLargeError, no row', async () => {
 		const facts_dir = await make_facts_dir();
 		const store = make_store(facts_dir, 64);
 		const bytes = new Uint8Array(2048).fill(7);
@@ -188,7 +188,7 @@ describe_db('pg_fact_store streaming', (get_db) => {
 			() => store.put_stream(stream_of_chunks(bytes, 256), 512),
 			/payload too large/
 		);
-		assert(err instanceof PayloadTooLargeError);
+		assert(err instanceof FactPayloadTooLargeError);
 
 		// Nothing committed — the cap tripped before the insert.
 		assert.equal(await store.has(fact_hash_bytes(bytes)), false);

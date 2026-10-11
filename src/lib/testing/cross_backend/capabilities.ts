@@ -23,8 +23,7 @@ import '../assert_dev_env.ts';
  *   a capability is a compile error until each family declares it).
  * - `ts_spine_capabilities` / `ts_spine_bun_capabilities` — fuz_app's own TS
  *   spine presets, in `ts_spine_backend_config.ts` (deltas off the family
- *   default; Bun flips `oversized_reject_closes_connection` and
- *   `ws_handshake_pipelining`).
+ *   default; Bun flips `ws_handshake_pipelining`).
  * - `rust_spine_stub_capabilities` — fuz_app's Rust spine-stub preset, in
  *   `rust_spine_stub_backend_config.ts` (delta off the rust family default).
  *
@@ -167,25 +166,6 @@ export interface BackendCapabilities {
 	 */
 	readonly account_status: boolean;
 	/**
-	 * On an oversized-body `413` reject the backend **closes the connection
-	 * without reading the body** (the defense-in-depth posture), rather than
-	 * draining the declared `Content-Length` and keeping the socket alive.
-	 * Gates the strong half of `describe_body_size_smuggling_cross_tests`: when
-	 * `true`, the pipelined GET is never reached (at most one response); when
-	 * `false`, the suite instead asserts the weaker but still-load-bearing
-	 * no-desync property (the body is framed on `Content-Length`, not reparsed
-	 * as request bytes).
-	 *
-	 * `true` for the Node / Deno (`@hono/node-server` graceful close) and Rust
-	 * (hyper RST) backends; `false` for Bun — `Bun.serve` reads the full body
-	 * and processes the correctly-framed pipelined request even when the `413`
-	 * carries `Connection: close`. Bun is not insecure (no desync — it answers
-	 * the cleanly-delimited GET with a proper `400`); the flag records the
-	 * connection-handling divergence so the suite stays green without losing the
-	 * smuggle detector. See `docs/security.md` §"Body Size Limiting".
-	 */
-	readonly oversized_reject_closes_connection: boolean;
-	/**
 	 * The backend can **initiate** a JSON-RPC request to a connected client
 	 * and await its typed reply (the server→client request/response direction
 	 * ActionPeer adds). Gates `describe_peer_ping_ws_tests` — the on-demand
@@ -294,7 +274,6 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	fact_serving: true,
 	ready: true,
 	account_status: true,
-	oversized_reject_closes_connection: true,
 	peer_request: false,
 	// Cross-process-only, like `peer_request`: the case needs a real bound socket
 	// to write raw bytes to.

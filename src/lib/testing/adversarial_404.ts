@@ -19,7 +19,11 @@ import type { RouteSpec } from '../http/route_spec.ts';
 import { is_null_schema } from '../http/schema_helpers.ts';
 import { create_auth_test_apps, create_route_skip_filter, select_auth_app } from './auth_apps.ts';
 import type { AdversarialTestOptions } from './attack_surface.ts';
-import { resolve_valid_path, generate_valid_body } from './schema_generators.ts';
+import {
+	resolve_valid_path,
+	generate_valid_body,
+	to_route_content_type
+} from './schema_generators.ts';
 
 /**
  * Extract the error code from a 404 Zod schema for use in the stub handler.
@@ -105,13 +109,15 @@ export const describe_adversarial_404 = (options: AdversarialTestOptions): void 
 				const app = select_auth_app(apps, route.auth);
 				const url = resolve_valid_path(route.path, spec.params);
 
-				const request_init: RequestInit = { method: route.method };
+				const request_init: RequestInit = {
+					method: route.method,
+					headers: { 'content-type': to_route_content_type(spec) }
+				};
 
 				// Send valid body for routes with input
 				if (!is_null_schema(spec.input)) {
 					const body = generate_valid_body(spec.input);
 					if (body !== undefined) {
-						request_init.headers = { 'Content-Type': 'application/json' };
 						request_init.body = JSON.stringify(body);
 					}
 				}

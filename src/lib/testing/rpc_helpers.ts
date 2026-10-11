@@ -278,6 +278,24 @@ const RPC_CALL_DEFAULT_HEADERS_BASE: Readonly<Record<string, string>> = {
 	'Content-Type': 'application/json'
 };
 
+/**
+ * Merge header records case-insensitively, later sources replacing earlier
+ * ones — a plain spread would keep `Content-Type` and `content-type` as two
+ * keys, which `fetch` joins into one comma-separated value. Names come out
+ * lowercased; values pass through unvalidated, so a test can still send a
+ * malformed header to the server.
+ */
+const merge_header_records = (
+	...sources: Array<Readonly<Record<string, string>> | undefined>
+): Record<string, string> => {
+	const merged: Record<string, string> = {};
+	for (const source of sources) {
+		if (!source) continue;
+		for (const [name, value] of Object.entries(source)) merged[name.toLowerCase()] = value;
+	}
+	return merged;
+};
+
 /** Default headers merged into every `rpc_call` request. Includes `origin`. */
 const RPC_CALL_DEFAULT_HEADERS: Readonly<Record<string, string>> = {
 	...RPC_CALL_DEFAULT_HEADERS_BASE,
@@ -316,17 +334,13 @@ export const rpc_call = async (args: RpcCallArgs): Promise<RpcCallResult> => {
 	let init: RequestInit;
 	if (verb === 'GET') {
 		url = create_rpc_get_url(path, method, params, id);
-		init = { method: 'GET', headers: { ...defaults, ...headers } };
+		init = { method: 'GET', headers: merge_header_records(defaults, headers) };
 	} else {
 		url = path;
 		const post = create_rpc_post_init(method, params, id);
 		init = {
 			method: 'POST',
-			headers: {
-				...defaults,
-				...(post.headers as Record<string, string>),
-				...headers
-			},
+			headers: merge_header_records(defaults, post.headers as Record<string, string>, headers),
 			body: post.body
 		};
 	}

@@ -116,24 +116,23 @@ Factory builders for parameterized DB tests. Consumer projects pass their
 `init_schema` callback (which calls `run_migrations(db, [auth_migration_ns, ...app_migrations])`);
 factories accept any migration namespace set.
 
-- `IS_CI` — `process.env.CI === 'true'`.
 - `DbFactory` — `{name, create, close, skip, skip_reason?}`.
-- `reset_pglite(db)` — `DROP SCHEMA public CASCADE` + recreate. Reuses a live PGlite instance.
-- `create_pglite_factory(init_schema, options?)` — in-memory; no external deps; `skip: false`. `options.substitutable: false` pins the call site to PGlite when a substitute is installed. See WASM caching below.
-- `set_substitute_db_factory(create_factory | null)` — install a `DbFactoryBuilder` that stands in for `create_pglite_factory`, so a suite written against PGlite runs on another driver without being edited. Injected rather than selected here: the drivers a substitute wraps live in test-side code this shipped module can't import. fuz_app's own switch is `src/test/db_substitute.ts`.
-- `create_pg_factory(init_schema, test_url?)` — PostgreSQL; `skip: true` when `test_url` missing. Drops `schema_version` before `init_schema` so migrations re-evaluate against actual tables (prevents stale tracker rows from skipping migrations when DDL changes between sessions). Pool reused + cleaned up across `create()` calls.
+- `reset_public_schema(db)` — `DROP SCHEMA public CASCADE; CREATE SCHEMA public`, in plain SQL, so it resets every driver. Every factory calls it per `create()`, so `init_schema` only migrates. Drift-proof — no drop list to maintain.
+- `create_default_db_factory(init_schema)` — the default in-memory factory: pglet-wasm, or the builder `set_default_db_factory` installed before it was built. What fuz_app's own helpers fall back to (`create_test_app_server`, `describe_rate_limiting_tests`, `describe_sse_route_tests`).
+- `create_pglet_wasm_factory(init_schema)` / `create_pglite_factory(init_schema)` — pin pglet-wasm (`@fuzdev/pglet-wasm`, created with `PGLET_COERCION`) or PGlite; each needs its optional peer installed; `skip: false`. See WASM caching below.
+- `set_default_db_factory(create_factory | null)` — install a `DbFactoryBuilder` for `create_default_db_factory`, so suites written against the default run on another driver without being edited (`create_pglite_factory` to run them on PGlite); returns the builder it replaced, so a caller can put it back. Install from a `db`-project `setupFiles` entry, before any factory is built (../../../docs/testing.md §Switching the default driver). Injected rather than selected here: a driver it can wrap may live in test-side code this shipped module can't import (fuz_app's `pglet-server`). fuz_app's own switch is `src/test/db_default.ts` (`FUZ_TEST_DB_DEFAULT`).
+- `create_pg_factory(init_schema, test_url?)` — PostgreSQL; `skip: true` when `test_url` missing. Each `create()` opens a pool and resets the `public` schema before `init_schema`, like every other factory, so a persistent test database carries no stale DDL; a missing database (`3D000`) gets a `createdb` hint. Pool reused + cleaned up across `create()` calls.
 - `auth_truncate_tables` — `['invite', 'api_token', 'auth_session', 'role_grant', 'role_grant_offer', 'actor', 'account']` in FK-safe order. Excludes `audit_log` — unit DB tests don't need to truncate it.
 - `auth_integration_truncate_tables` — `auth_truncate_tables + ['audit_log']` for integration suites that exercise the audit path.
-- `drop_auth_schema(db)` — `DROP SCHEMA public CASCADE; CREATE SCHEMA public`; call at the top of `init_schema` on persistent pg databases that may hold stale DDL from previous fuz_app versions. Drift-proof full-schema reset (despite the name, not auth-scoped) — same mechanism as `reset_pglite`.
 - `create_describe_db(factories, truncate_tables)` — returns `describe_db(name, fn)` running `fn(get_db)` once per factory inside a `describe` with shared `beforeAll(create)` + `beforeEach(TRUNCATE)` + `afterAll(close)`. Skipped factories use `describe.skip`.
 - `log_db_factory_status(factories)` — console summary of enabled / skipped factories.
 - `assert_columns_match_live(db, table, columns)` — the named-projection drift guard: asserts a `*_COLUMNS` const (`ACCOUNT_COLUMNS`, `CELL_COLUMNS`, a consumer's own) names exactly the live `public`-schema columns of `table`, via `query_public_columns(db, {table})`. Per module, or iterated from a table → const registry (fuz_app's own: `src/test/db/column_projections.db.test.ts`).
 
-**PGlite WASM caching.** `create_pglite_factory` shares a single PGlite
-instance in a module-level ref (`module_db`) across the PGlite factories it builds.
-Subsequent `create()` calls `DROP SCHEMA public CASCADE` instead of paying the
-~500–700ms WASM cold-start cost again, so suites share state until the next
-reset. The `db` vitest project (opted into by the `.db.test.ts` suffix) runs
+**WASM caching.** `create_pglite_factory` and `create_pglet_wasm_factory` each
+share a single instance of their driver, held in a module-level promise, across the
+factories they build. Every `create()` calls `DROP SCHEMA public CASCADE` and
+re-runs its `init_schema` instead of paying the WASM cold start again, so suites
+share state until the next reset. The `db` vitest project (opted into by the `.db.test.ts` suffix) runs
 with `isolate: false` + `fileParallelism: false` to amortize WASM boot across
 every DB test file — which also makes that one instance the whole run's; a
 project that isolates its files gets one per worker instead.
@@ -152,7 +151,7 @@ Key module-scope values:
 - `stub_password_deps` — `PasswordHashDeps` hashing via `stub_hash_${password}` and verifying by equality. Deterministic, no Argon2 cost — use for every test not specifically exercising password hashing.
 - `create_loopback_app_server_options()` — the loopback `create_app_server` options an in-process test server takes (`localhost` origins, the loopback proxy trusted, an empty env schema), fresh per call; `create_test_app` and `create_test_app_for_bootstrap` spread it under their own defaults (`rate_limiters: 'disabled_for_testing'`, `await_pending_effects: true`).
 - `TEST_COOKIE_SECRET` — 64-hex-char deterministic cookie secret. Produces a valid `Keyring` via `create_validated_keyring`. Never used in production — the stub guard plus fixed value is the contract.
-- `fallback_pglite_factory` — module-level auth-only PGlite factory `create_test_app_server` uses when no `db` is passed. Reuses the WASM cache via `create_pglite_factory`. When `migration_namespaces` is supplied, a memoized sibling factory (keyed by namespace set) migrating `[auth_migration_ns, ...migration_namespaces]` is used instead — same shared WASM, extra tables.
+- `fallback_db_factory` — module-level auth-only default factory (`create_default_db_factory`) `create_test_app_server` uses when no `db` is passed, reusing its driver's WASM cache. When `migration_namespaces` is supplied, a memoized sibling factory (keyed by namespace set) migrating `[auth_migration_ns, ...migration_namespaces]` is used instead — same shared WASM, extra tables.
 
 Two helpers share the "insert account + actor + roles + API token + session +
 cookie" flow, split by intent:
@@ -170,7 +169,7 @@ pre-keeper, lock unflipped), use `create_test_app_for_bootstrap` — pair with
 Types:
 
 - `TestAppServer extends AppBackend` — adds `account`, `actor`, `api_token`, `session_cookie`, `keyring`, `cleanup()`.
-- `TestAppServerOptions` — `session_options` (required), optional `db`, `db_type`, `migration_namespaces`, `password`, `username`, `password_value`, `roles`, `audit_factory`. `migration_namespaces` runs extra namespaces after auth in the auto-created PGlite (mirrors `create_app_backend`); mutually exclusive with `db` (caller-migrated) — passing both throws. The optional `audit_factory` defaults to `default_audit_factory` (no-listener `create_audit_emitter` over the test backend's `{db, log}`); pass a custom factory to compose `on_audit_event` / `audit_log_config`, instrument `emit` with `emit_decorator`, or otherwise replace the emitter. Mirrors `CreateAppBackendOptions` end-to-end — the previous `on_audit_event` / `audit_log_config` sugar was removed alongside the production rename.
+- `TestAppServerOptions` — `session_options` (required), optional `db`, `db_type`, `migration_namespaces`, `password`, `username`, `password_value`, `roles`, `audit_factory`. `migration_namespaces` runs extra namespaces after auth in the auto-created in-memory database (mirrors `create_app_backend`); mutually exclusive with `db` (caller-migrated) — passing both throws. The optional `audit_factory` defaults to `default_audit_factory` (no-listener `create_audit_emitter` over the test backend's `{db, log}`); pass a custom factory to compose `on_audit_event` / `audit_log_config`, instrument `emit` with `emit_decorator`, or otherwise replace the emitter. Mirrors `CreateAppBackendOptions` end-to-end — the previous `on_audit_event` / `audit_log_config` sugar was removed alongside the production rename.
 - `CreateTestAppOptions extends TestAppServerOptions` — adds `create_route_specs` (required), `rpc_endpoints?: RpcEndpointsSuiteOption` (top-level only — single source of truth, symmetric with the suite-level option), `bootstrap?: BootstrapServerOptions` (top-level only — same precedent as `rpc_endpoints`), and `app_options?: SuiteAppOptions` (`Partial<AppServerOptions>` excluding the five fields the helper manages: `backend`, `session_options`, `create_route_specs`, `rpc_endpoints`, `bootstrap`).
 - `TestAccount` — `{account, actor, session_cookie, api_token, create_session_headers, create_bearer_headers}`.
 - `TestApp` — `{app, backend, server, surface_spec, surface, route_specs, create_session_headers, create_bearer_headers, create_daemon_token_headers, create_account, cleanup}`. `server` is the assembled `AppServer`, for what `create_app_server` built beyond the lifted fields — `require_audit_sse(test_app.server)` with `audit_log_sse` in `app_options`, `test_app.server.ws_endpoints[path]` — instead of capturing them from a `create_route_specs` closure.
@@ -199,7 +198,7 @@ schedule stopped by `cleanup()`, which is the assembled server's `close`.
 
 A fresh Hono app is created on every call because middleware closures bind
 to the server's deps (db, keyring). Hono assembly is cheap (~10–50ms);
-PGlite WASM caching in `db.ts` is where the real savings are.
+the WASM caching in `db.ts` is where the real savings are.
 
 ### `auth_apps.ts` — adversarial-auth app factories
 
@@ -383,6 +382,7 @@ Walks Zod schemas to generate valid values for adversarial/round-trip tests.
 - `detect_format(field_schema)` — reads `format` / `pattern` from the JSON Schema representation.
 - `generate_valid_value(field, field_schema)` — base-type switch producing a valid sample (UUIDs → nil UUID, strings → `'xxxxxxxxxx'`, numbers → `1`, objects → recurse, enums → first entry, etc.). For branded-string refinements, walks a fallback chain synthesized from the `pattern` string the JSON Schema representation exposes: fixed-length hex (`^[0-9a-f]{N}$` — blake3 / sha256 / md5 digests; `0`.repeat(N)), prefix-lengthed slug (`^<prefix>_[A-Za-z0-9_-]{N}$` — `ApiTokenId`-style ids; `<prefix>_` + `x`.repeat(N)), absolute path prefix, URL prefix. First candidate that `safeParse` accepts is used.
 - `resolve_valid_path(path, params_schema?)` — swaps `:param` for a value the params schema accepts. Prefers `test_<name>` wherever the field schema admits it (the param name keeps failure messages readable); otherwise a UUID param takes the nil UUID and anything else is synthesized from the schema, percent-encoded. A synthesized value containing `/` is refused (it would route elsewhere) and falls back to `test_<name>`.
+- `to_route_content_type(route)` — the `Content-Type` a well-formed request to the route sends: `application/json`, or `application/octet-stream` for a `raw_body` route. Every `POST` route refuses anything else with 415 before its other gates, so every probe in the harnesses (auth, params and query fuzz, 404, data exposure, round trip) sends it, body or not.
 - `generate_valid_body(input_schema) => Record<string, unknown> | undefined` — builds a body satisfying the input schema. Throws with Zod `issues` if the generated body fails validation — surfaces broken generation logic with a descriptive error rather than a confusing 400 downstream.
 
 ### `integration_helpers.ts` — route lookup + body checks
@@ -623,7 +623,7 @@ the spread are ignored by the suite.
 
 ### `integration.ts` — `describe_standard_integration_tests`
 
-Exercises the full stack against real PGlite + auth middleware + session
+Exercises the full stack against a real in-memory database + auth middleware + session
 cookies + bearer tokens. The suite has ~19 `describe` blocks grouped under
 these thematic areas:
 
@@ -927,7 +927,7 @@ source of truth for wire-shape conformance.
 - `testing/cross_backend/capabilities.ts` — `BackendCapabilities` vocabulary
   (the **gating** flags `ws` / `sse` / `cell_crud` / `cell_relations` /
   `cell_gated_create` / `account_lifecycle` / `fact_serving` / `ready` /
-  `account_status` / `oversized_reject_closes_connection` / `peer_request` /
+  `account_status` / `peer_request` /
   `ws_handshake_pipelining` / `ws_account_actions` / `ws_self_revocation_reply` —
   each has a `test_if`
   reader (`ws_self_revocation_reply` forks one case's assertion instead); `peer_request` (server-initiated requests — the ActionPeer
@@ -971,10 +971,6 @@ source of truth for wire-shape conformance.
   case — `GET /api/account/status` is bundled into `create_account_route_specs`,
   so every spine serves it (`true`); the gate fails loud if a declaring backend
   doesn't mount it (replacing the old runtime 404-sniff-skip).
-  `oversized_reject_closes_connection` gates the strong half of the body-size
-  smuggling probe (`true` Node/Deno/Rust — they close on an oversized reject;
-  `false` Bun — `Bun.serve` drains + keepalives but frames correctly, so the
-  suite's no-desync half still runs).
   `ws_handshake_pipelining` gates the WS round-trip suite's
   frames-with-the-handshake case (`true` Node/Deno/Rust — frames written in the
   same TCP write as the upgrade request reach the socket; `false` Bun, whose
@@ -1468,7 +1464,7 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   passed the **transactional** `Db` the auth wipe ran on, so DB-domain
   consumers (e.g. fuz_forge truncating its cell / fact / file tables) reset
   on the same connection rather than a separately-pooled one that would
-  deadlock against this open transaction under PGlite. Auth
+  deadlock against this open transaction under the in-memory drivers. Auth
   gates on `credential_types: ['daemon_token']` — effectively keeper-only
   without forcing the `actor: 'required'` ⟺ `acting?: ActingActor`
   biconditional. No free-form runtime grant action exists — see the
@@ -1563,6 +1559,22 @@ in-process `auth/origin_parity.db.test.ts` + the cross-process
 `origin.cross.test.ts`). The promotion surfaced a twin-impl divergence — the
 Rust spine returned a plain-text body — now converged to the canonical TS
 `{error: "forbidden_origin"}` via `fuz_http::forbidden_origin_response()`.
+
+### CORS simple-request parity — `cross_backend/simple_request.ts`
+
+`describe_simple_request_cross_tests({setup_test, rpc_path?, login_path?, logout_path?})`
+— a JSON route refuses any `POST` that isn't `application/json` with a flat
+415 `{error: 'unsupported_content_type'}` before reading a credential or the
+body: the CORS-safelisted types in any spelling (`text/plain`, `Text/Plain`,
+form-encoded, multipart) on RPC with a session, untyped RPC (a byte body, so
+`fetch` adds no type), `application/octet-stream` / `+json` / empty-typed RPC
+and login, form-encoded login, a forged `text/plain` logout with a session
+(which must leave the session valid), and an untyped logout with no session
+(415, not 401); a bodyless JSON logout reaches the auth check (401), and
+`application/json` with a charset is dispatched. The TS spine checks per route
+(`apply_route_specs`), the Rust spine in each JSON handler. Runs both legs:
+the in-process `auth/simple_request_parity.db.test.ts` and the cross-process
+`simple_request.cross.test.ts`.
 
 ### Query-string shape parity — `cross_backend/query_shape.ts`
 
@@ -1840,7 +1852,7 @@ re-roll the serve / daemon-info / WS-attach / drain boilerplate:
 - `testing/cross_backend/testing_server_bun.ts` — `create_bun_testing_adapter()` (`Bun.serve` + `@hono/bun`'s module-level `getConnInfo`, `upgradeWebSocket`, and `websocket`; `Bun.serve` declared locally so it typechecks under the Node toolchain). Needs the optional `@hono/bun` peer dep (the counterpart to Node's `@hono/node-server` + `@hono/node-ws`; `Bun.serve` is built in), and Bun resolves `.js`→`.ts` natively (no flag, unlike Deno). Reuses `create_node_runtime` (Bun implements the `node:fs`/`node:process` surface). WS is module-level + stateless (like Deno) — the `websocket` handler is threaded into `serve`, where `Bun.serve` wants it, so no post-serve attach. It carries `maxPayloadLength` at twice `max_message_bytes` rather than Bun's 16 MiB default: past its cap Bun drops the socket without a close frame (1006), so the headroom leaves a message just over the limit to the per-message check (`WS_CLOSE_MESSAGE_TOO_BIG`, as on Node), while a grossly oversized one is refused before Bun buffers it whole.
 - `testing/cross_backend/default_spine_surface.ts` — the canonical no-domain spine surface (account/admin/audit/signup + bootstrap): `spine_session_options`, `spine_roles`, `create_spine_route_specs`, `spine_rpc_endpoints`, `create_spine_surface_spec`. This is the **declared** surface — the `create_standard_rpc_actions` bundle the spec-derived suites auto-enumerate. It passes `daemon_token: true` (both spine binaries mount the daemon-token layer) and leaves `GET /api/surface` at its default, off — the TS spine binary does too, and the Rust `testing_spine_stub` serves none. Shared by the spine_stub cross test, the TS cross tests, and the binary.
 - `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). `build_full_spine_mount(deps, options)` builds it once for both of the binary's endpoints, returning `FullSpineMount` (`{rpc_actions, ws_actions}`): the WS list is `protocol_actions` plus every RPC action not already among them, twinning the Rust `testing_spine_stub`, which serves one registry on RPC and WS (the one difference is `cancel` — a registered protocol action on TS, owned by the read loop on Rust). Single-sources the mount so the binary and the `spine_method_coverage` reconciliation test build the same list.
-- `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_deno_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory PGlite, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
+- `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_deno_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory pglet, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
 
 fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` (`rate_limiters: 'disabled_for_testing'` plus whichever login / action limiters its env toggles built, `build_full_spine_mount`'s two lists on one `rpc_endpoints` entry and one `ws_endpoints` entry, whose `transport` is also the role-grant-offer `notification_sender`), reusing `default_spine_surface`. `src/test/cross_backend/testing_spine_server.db.test.ts` builds it with the Node adapter in-process and asserts its surface lists `/api/ws` and passes the surface invariants. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it when nothing its suites seed is already expired (the conformance table's `expired_session` principal seeds a backdated session row); an in-process harness leaves it off.
 
@@ -1908,7 +1920,7 @@ fuz_app also ships its **own** `npm run benchmark:cross-impl`
 (`src/benchmarks/cross_impl.bench.ts`) on the back of its TS spine binary —
 ts-node + ts-deno + ts-bun (+ the Rust `spine_stub` when `FUZ_TESTING_RUST_SPINE_STUB_BIN`
 is set). The three TS runtimes are apples-to-apples with each other (same
-PGlite driver); TS-vs-Rust carries the PGlite-vs-Postgres DB-layer caveat
+in-memory pglet driver); TS-vs-Rust carries the pglet-vs-Postgres DB-layer caveat
 (documented in the run). The artifact (`*.latest.json`) is gitignored.
 
 - `bench/scenario.ts` — `BenchScenario` (`{name, requires?, run}`) +

@@ -19,7 +19,7 @@ import '../assert_dev_env.ts';
  *   admits with the entry's `moderation_required` folded into the verdict. The
  *   root's `data` arrives in `input.root_data` (the handler read it in-tx), so
  *   the predicate is **pure** — no DB read of its own (which also dodges the
- *   single-connection PGlite deadlock a separate handle would hit).
+ *   single-connection in-memory deadlock a separate handle would hit — pglet, PGlite).
  *
  * @module
  */

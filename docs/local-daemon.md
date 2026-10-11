@@ -18,7 +18,7 @@ an embedded Postgres engine via WASM.
 
 ```
 create_db('file:///path/to/db/')  →  PGlite file-based
-create_db('memory://')            →  PGlite in-memory (tests)
+create_db('memory://')            →  pglet in-memory (tests)
 create_db('postgres://...')       →  pg Pool (production servers)
 ```
 
@@ -100,7 +100,8 @@ session creation. Use it for app-specific setup like generating CLI API tokens.
 
 ## Testing
 
-Use in-memory PGlite for tests (`database_url: 'memory://'`):
+Use the in-memory database for tests (`database_url: 'memory://'`, pglet via
+`@fuzdev/pglet-wasm`):
 
 ```ts
 import { create_test_app } from '@fuzdev/fuz_app/testing/app_server.ts';
@@ -110,7 +111,7 @@ const { app, create_session_headers, create_account, cleanup } = await create_te
 	create_route_specs: (ctx) => my_routes(ctx)
 });
 
-// create_test_app handles PGlite, migrations, and test defaults
+// create_test_app handles the in-memory database, migrations, and test defaults
 afterAll(() => cleanup());
 ```
 

@@ -96,7 +96,7 @@ silent fallback to in-memory):
 
 - `postgres://` or `postgresql://` → `pg` (PostgreSQL)
 - `file://` → `@electric-sql/pglite` (file-based)
-- `memory://` → `@electric-sql/pglite` (explicit in-memory)
+- `memory://` → `@fuzdev/pglet-wasm` (explicit in-memory)
 
 Returns `{db: Db, close, db_type: DbType, db_name: string}`. Drivers are
 dynamically imported — only the needed driver is loaded. Unsupported schemes
@@ -104,14 +104,16 @@ throw.
 
 `Db` provides `query()`, `query_one()`, and `transaction()`. Constructor takes
 only `DbDeps` (client + transaction callback). Driver adapters live in their own
-modules: `create_pg_db(pool)` in `db_pg.ts` and `create_pglite_db(pglite)` in
-`db_pglite.ts` — each returns `{db, close}` with driver-appropriate transaction
-wiring. `create_db` dynamically imports the appropriate adapter based on the URL. For pg, transactions
-acquire a dedicated pool client; for PGlite, they delegate to native
-`pglite.transaction()`. Transaction-scoped `Db` instances use `no_nested_transaction`
+modules: `create_pg_db(pool)` in `db_pg.ts`, `create_pglite_db(pglite)` in
+`db_pglite.ts` and `create_pglet_db_driver(pglet)` in `db_pglet.ts` — each returns
+`{db, close}` with driver-appropriate transaction wiring. `create_db` dynamically
+imports the appropriate driver package based on the URL. For pg, transactions
+acquire a dedicated pool client; for PGlite and pglet, they delegate to the
+driver's own `transaction()`. Transaction-scoped `Db` instances use `no_nested_transaction`
 (exported from `db.ts`) which throws immediately if called.
 
-The `close` callback is typed per driver (`pool.end()` / `pglite.close()`) — `Db`
+The `close` callback is typed per driver (`pool.end()` / `pglite.close()` /
+`pglet.close()`) — `Db`
 itself has no `close()` method. `close` is threaded through `AppBackend` (from
 `create_app_backend`) and `AppServer` (from `create_app_server`) so callers
 can shut down the database without reaching into `deps.db`. `AppServer.close`

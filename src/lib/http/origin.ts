@@ -2,10 +2,13 @@
  * Request source verification middleware for API protection.
  *
  * Verifies requests are coming from expected origins/referers.
- * CSRF protection is provided by `SameSite: strict` on session cookies
- * (see `auth/session_middleware.ts`). This module provides origin allowlisting
- * for locally-running services — preventing untrusted websites from
- * making requests as the user browses the web.
+ * CSRF protection is `SameSite: strict` on session cookies
+ * (see `auth/session_middleware.ts`) plus the CORS simple-request refusal
+ * (`http/simple_request.ts`) — `SameSite` alone admits same-site pages, which
+ * include every other port on the same host. This module provides origin
+ * allowlisting for locally-running services — preventing untrusted websites
+ * from making requests as the user browses the web — and is the only gate on
+ * the WebSocket upgrade, which is never preflighted.
  *
  * @module
  */
@@ -37,7 +40,7 @@ export const is_browser_context = (c: Context): boolean =>
 /**
  * Parses FUZ_ALLOWED_ORIGINS env var into regex matchers for request source verification.
  * Origin allowlisting for locally-running services — not the CSRF layer
- * (that's `SameSite: strict` on session cookies).
+ * (that's `SameSite: strict` on session cookies plus `http/simple_request.ts`).
  *
  * Accepts comma-separated patterns with limited wildcards:
  * - Exact origins: `https://api.fuz.dev`
@@ -75,7 +78,8 @@ export const should_allow_origin = (
 /**
  * Middleware that verifies the request source against an allowlist.
  *
- * Origin allowlisting (not the CSRF layer — that's `SameSite: strict` cookies):
+ * Origin allowlisting (not the CSRF layer — that's `SameSite: strict` cookies
+ * plus `http/simple_request.ts`):
  * - Checks the `Origin` header (if present) against the allowlist
  * - Allows requests without an `Origin` header (direct access, curl, etc.)
  *

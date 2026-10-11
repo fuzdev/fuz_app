@@ -58,7 +58,7 @@ import {
 	create_loopback_app_server_options,
 	stub_password_deps
 } from '#lib/testing/app_server.ts';
-import { create_pglite_factory } from '#lib/testing/db.ts';
+import { create_default_db_factory } from '#lib/testing/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { auth_migration_ns } from '#lib/auth/migrations.ts';
 import {
@@ -87,7 +87,7 @@ const GOING_AWAY_CLOSE = { code: WS_CLOSE_GOING_AWAY, reason: WS_CLOSE_GOING_AWA
 const RPC_PATH = '/api/rpc';
 const ORIGIN = 'http://localhost:5173';
 
-const factory = create_pglite_factory(async () => {});
+const factory = create_default_db_factory(async () => {});
 
 /** An account-keyed action — the shape `rate_limit: 'account'` requires. */
 const counted_action_spec = {
@@ -140,7 +140,7 @@ const create_test_server = async (
 	const migration_results = await run_migrations(db, [auth_migration_ns]);
 	const audit = audit_factory({ db, log });
 	const backend: AppBackend = {
-		db_type: 'pglite-memory',
+		db_type: 'pglet-memory',
 		db_name: '(memory)',
 		migration_results,
 		close: async () => {},

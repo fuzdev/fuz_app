@@ -317,7 +317,10 @@ describe('account route audit logging', () => {
 
 	test('logout creates audit entry', async () => {
 		const app = create_account_test_app({ inject_ctx: fake_ctx });
-		const res = await app.request('/logout', { method: 'POST' });
+		const res = await app.request('/logout', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' }
+		});
 		assert.strictEqual(res.status, 200);
 
 		assert.strictEqual(audit_log_calls.length, 1);

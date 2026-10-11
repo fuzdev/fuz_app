@@ -76,6 +76,13 @@ export const ERROR_PAYLOAD_TOO_LARGE = 'payload_too_large' as const;
 /** Request origin not in allowlist. */
 export const ERROR_FORBIDDEN_ORIGIN = 'forbidden_origin' as const;
 
+/**
+ * A `POST` whose `Content-Type` the route refuses: anything but
+ * `application/json` on a JSON route, a CORS-safelisted type or none on a
+ * `raw_body` one. See `http/simple_request.ts`.
+ */
+export const ERROR_UNSUPPORTED_CONTENT_TYPE = 'unsupported_content_type' as const;
+
 /** Bearer token failed validation (missing, malformed, or revoked). */
 export const ERROR_INVALID_TOKEN = 'invalid_token' as const;
 
@@ -297,6 +304,12 @@ export const PayloadTooLargeError = z.looseObject({
 });
 export type PayloadTooLargeError = z.infer<typeof PayloadTooLargeError>;
 
+/** Unsupported content type error — returned when a `POST` route refuses the request's `Content-Type`. */
+export const UnsupportedContentTypeError = z.looseObject({
+	error: z.literal(ERROR_UNSUPPORTED_CONTENT_TYPE)
+});
+export type UnsupportedContentTypeError = z.infer<typeof UnsupportedContentTypeError>;
+
 /** Foreign key violation error — returned when a delete is blocked by references. */
 export const ForeignKeyError = z.looseObject({
 	error: z.literal(ERROR_FOREIGN_KEY_VIOLATION)
@@ -387,6 +400,9 @@ export type RateLimitKey = z.infer<typeof RateLimitKey>;
  *   of `NoActorsOnAccountError` / `AccountVanishedError`. The dispatcher's
  *   authorization phase emits these whenever it tries to resolve an actor.
  * - **rate_limit**: 429 (`RateLimitError` with `retry_after`).
+ * - **checks_content_type**: 415 (`UnsupportedContentTypeError`) —
+ *   every `POST` route (see `is_post_content_type_refused` in
+ *   `http/simple_request.ts`).
  */
 export interface DeriveErrorSchemasOptions {
 	auth: RouteAuth;
@@ -394,6 +410,7 @@ export interface DeriveErrorSchemasOptions {
 	has_params?: boolean;
 	has_query?: boolean;
 	rate_limit?: RateLimitKey;
+	checks_content_type?: boolean;
 }
 
 export const derive_error_schemas = ({
@@ -401,7 +418,8 @@ export const derive_error_schemas = ({
 	has_input = false,
 	has_params = false,
 	has_query = false,
-	rate_limit
+	rate_limit,
+	checks_content_type = false
 }: DeriveErrorSchemasOptions): RouteErrorSchemas => {
 	const errors: RouteErrorSchemas = {};
 
@@ -441,6 +459,10 @@ export const derive_error_schemas = ({
 
 	if (rate_limit) {
 		errors[429] = RateLimitError;
+	}
+
+	if (checks_content_type) {
+		errors[415] = UnsupportedContentTypeError;
 	}
 
 	return errors;

@@ -25,8 +25,10 @@ import {
 	ERROR_INVALID_JSON_BODY,
 	ERROR_INVALID_REQUEST_BODY,
 	ERROR_INVALID_ROUTE_PARAMS,
-	ERROR_INVALID_QUERY_PARAMS
+	ERROR_INVALID_QUERY_PARAMS,
+	ERROR_UNSUPPORTED_CONTENT_TYPE
 } from './error_schemas.ts';
+import { is_post_content_type_refused } from './simple_request.ts';
 import {
 	ThrownJsonrpcError,
 	jsonrpc_error_code_to_http_status,
@@ -72,8 +74,9 @@ export type AuthGuardResolver = (auth: RouteAuth) => AuthGuards;
  * and before input validation; resolves the acting actor (when `auth.actor !==
  * 'none'`) from the `acting` selector — `c.var.validated_query.acting` on GETs,
  * read off the raw body on mutations — and sets the request context on the Hono
- * context. Per-route order in `apply_route_specs`: params → query →
- * pre-authorization auth (401 + rule-3 scope) → authorization phase →
+ * context. Per-route order in `apply_route_specs`: content type (415) →
+ * params → query → pre-authorization auth (401 + rule-3 scope) →
+ * authorization phase →
  * post-authorization auth (403) → input validation (400) → handler.
  *
  * Returns a `Response` to short-circuit (resolution failure → 400 / 500),
@@ -163,12 +166,15 @@ export interface RouteSpec {
 	 * overloaded `input: z.null()`, which otherwise can't distinguish "no
 	 * body" (`GET /health`) from "raw bytes" (a binary upload).
 	 *
-	 * Purely descriptive metadata — the dispatcher doesn't read it. Its one
-	 * consumer is the schema-driven round-trip test suite, which auto-skips
-	 * `raw_body` routes (it can neither synthesize a meaningful body nor
-	 * assert a JSON output shape), so consumers no longer hand-maintain a
-	 * `skip_routes` entry per binary route. Also surfaces in `AppSurfaceRoute`
-	 * so generated docs render "raw" instead of a misleading `null` body.
+	 * A `raw_body` `POST` takes any `Content-Type` a browser can't send
+	 * cross-origin without a preflight; every other `POST` route requires
+	 * `application/json`, bodyless or not (415 `unsupported_content_type`
+	 * otherwise — see `http/simple_request.ts`). The schema-driven round-trip
+	 * test suite auto-skips `raw_body` routes (it can neither synthesize a
+	 * meaningful body nor assert a JSON output shape), so consumers don't
+	 * hand-maintain a `skip_routes` entry per binary route. Also surfaces in
+	 * `AppSurfaceRoute` so generated docs render "raw" instead of a
+	 * misleading `null` body.
 	 */
 	raw_body?: boolean;
 	/**
@@ -249,6 +255,28 @@ export function get_route_query<T = unknown>(c: Context): T;
 export function get_route_query(c: Context, _schema?: z.ZodType): unknown {
 	return c.get('validated_query');
 }
+
+/**
+ * Create the content-type check for a route spec: a `POST` whose
+ * `Content-Type` the route refuses (`is_post_content_type_refused` — anything
+ * but JSON, or for a `raw_body` route anything a browser sends cross-origin
+ * without a preflight) gets 415 before anything else on the route runs. The
+ * Rust spine's JSON handlers check the same, first thing after the origin.
+ *
+ * Returns an empty array for other methods, which are never CORS-simple and
+ * so always preflighted.
+ */
+const create_content_type_check = (spec: RouteSpec): Array<MiddlewareHandler> => {
+	if (spec.method !== 'POST') return [];
+	const raw_body = spec.raw_body ?? false;
+	const check: MiddlewareHandler = async (c, next): Promise<Response | void> => {
+		if (is_post_content_type_refused(c.req.header('content-type'), raw_body)) {
+			return c.json({ error: ERROR_UNSUPPORTED_CONTENT_TYPE }, 415);
+		}
+		await next();
+	};
+	return [check];
+};
 
 /**
  * Create input validation middleware for a route spec.
@@ -509,10 +537,13 @@ const build_rest_error_body = (err: ThrownJsonrpcError): Record<string, unknown>
  * validation, wraps with error catch layer (catches `ThrownJsonrpcError`
  * and generic errors), and registers the route.
  *
- * Per-route middleware order: params → query → pre-authorization auth
- * guards (401 + rule-3 scope) → authorization phase →
- * post-authorization auth guards (403) → input validation (400) →
- * handler. Body validation runs behind every authority gate, so a caller
+ * Per-route middleware order: content type (415, `POST` only) → params →
+ * query → pre-authorization auth guards (401 + rule-3 scope) →
+ * authorization phase → post-authorization auth guards (403) → input
+ * validation (400) → handler. The content type goes first because it says
+ * almost nothing about the route, and a forged request should be refused
+ * before any credential is read. Body
+ * validation runs behind every authority gate, so a caller
  * any of them refuse never sees route-shape information from a parse
  * failure — a 400 there would confirm the route exists and describe how
  * to call it. Params and query still validate first (they address the
@@ -563,6 +594,7 @@ export const apply_route_specs = (
 			pre_authorization: pre_authorization_guards,
 			post_authorization: post_authorization_guards
 		} = resolve_auth_guards(spec.auth);
+		const content_type_check = create_content_type_check(spec);
 		const params_validation = create_params_validation(spec.params);
 		const query_validation = create_query_validation(spec.query);
 		const input_validation = create_input_validation(spec.input, spec.method);
@@ -603,6 +635,7 @@ export const apply_route_specs = (
 		app.on(
 			spec.method,
 			[spec.path],
+			...content_type_check,
 			...params_validation,
 			...query_validation,
 			...pre_authorization_guards,

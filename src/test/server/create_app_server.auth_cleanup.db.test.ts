@@ -52,11 +52,13 @@ import {
 } from '#lib/testing/connection_closer_helpers.ts';
 
 import { describe_db } from '../db_fixture.ts';
-import { create_gated_db } from '../gated_db.ts';
+import { create_gated_db, type GatedDb } from '../gated_db.ts';
 
 const keyring = create_keyring('test-key-that-is-at-least-32-chars-long!!')!;
 const log = new Logger('test', { level: 'off' });
 const hour_ms = 60 * 60 * 1000;
+/** The short interval of the tests that run a schedule and then stop it. */
+const interval_ms = 10;
 
 /** Poll until `predicate` holds, failing with `message` after two seconds. */
 const until = async (
@@ -88,7 +90,7 @@ const create_harness = (db: Db, overrides?: Partial<AppServerOptions>): Harness 
 	const audit_events: Array<AuditLogEvent> = [];
 	let backend_closes = 0;
 	const backend: AppBackend = {
-		db_type: 'pglite-memory',
+		db_type: 'pglet-memory',
 		db_name: '(test)',
 		migration_results: [],
 		close: async () => {
@@ -149,6 +151,34 @@ const seed_expired_session = async (db: Db, name: string, account_id: Uuid): Pro
 const session_exists = async (db: Db, id: string): Promise<boolean> =>
 	(await db.query('SELECT 1 FROM auth_session WHERE id = $1', [id])).length > 0;
 
+/**
+ * Assert that no cleanup pass has begun over `gated`, judged by the traces a
+ * pass leaves rather than by waiting: a pass works in transactions and its
+ * session sweep deletes every expired session, so one that began is either
+ * still open (`open_transactions`) or has committed its delete of the expired
+ * session `id`. The count is read first — it drops only once a commit has
+ * landed. It relies on a pass opening its transaction synchronously when it
+ * starts; the startup-pass test asserts that, so a change to it fails loudly
+ * rather than leaving this check vacuous.
+ */
+const assert_no_pass = async (
+	gated: GatedDb,
+	db: Db,
+	id: string,
+	message: string
+): Promise<void> => {
+	assert.strictEqual(gated.open_transactions(), 0, `${message}: no pass is running`);
+	assert.strictEqual(await session_exists(db, id), true, `${message}: nothing swept the session`);
+};
+
+/**
+ * Wait out every pass a schedule on `interval_ms` could still start. A timer
+ * left armed is due within one interval of the last pass's start, and timers
+ * fire in deadline order, so it fires before a wait of two intervals from now
+ * ends.
+ */
+const wait_past_schedule = (): Promise<void> => wait(2 * interval_ms);
+
 /** The delays of the `setTimeout` calls a spy saw. */
 const timer_delays = (spy: { mock: { calls: Array<Array<unknown>> } }): Array<unknown> =>
 	spy.mock.calls.map((call) => call[1]);
@@ -162,16 +192,17 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 		const db = get_db();
 		const seeded = await seed_accounts(db);
 		const expired = await seed_expired_session(db, 'server-expired', seeded.account_id);
-		const h = create_harness(db);
+		const gated = create_gated_db(db);
+		const h = create_harness(gated.db);
 
 		const set_timeout = vi.spyOn(globalThis, 'setTimeout');
 		const server = await create_app_server(h.options);
-		// long enough for a startup pass to have swept, had one started
-		await wait(50);
 		const delays = timer_delays(set_timeout);
 		set_timeout.mockRestore();
 
-		assert.strictEqual(await session_exists(db, expired), true, 'nothing swept the session');
+		// a startup pass begins before `create_app_server` returns, so one that
+		// started has left its trace by now
+		await assert_no_pass(gated, db, expired, 'no startup pass');
 		assert.deepEqual(h.closes, []);
 		assert.ok(
 			!delays.includes(DEFAULT_AUTH_CLEANUP_INTERVAL_MS),
@@ -197,10 +228,16 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 				expires_at: new Date(Date.now() - hour_ms)
 			}
 		);
-		const h = create_harness(db, { auth_cleanup: true });
+		const gated = create_gated_db(db);
+		const h = create_harness(gated.db, { auth_cleanup: true });
 
 		const set_timeout = vi.spyOn(globalThis, 'setTimeout');
 		const server = await create_app_server(h.options);
+		assert.strictEqual(
+			gated.open_transactions(),
+			1,
+			'the startup pass opened its transaction before create_app_server returned'
+		);
 		const cleanup_timers = set_timeout.mock.calls
 			.map((call, i) => ({ delay: call[1], timer: set_timeout.mock.results[i]!.value }))
 			.filter((t) => t.delay === DEFAULT_AUTH_CLEANUP_INTERVAL_MS);
@@ -231,7 +268,8 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 		const db = get_db();
 		const seeded = await seed_accounts(db);
 		const at_startup = await seed_expired_session(db, 'server-at-startup', seeded.account_id);
-		const h = create_harness(db, { auth_cleanup: { interval_ms: 20 } });
+		const gated = create_gated_db(db);
+		const h = create_harness(gated.db, { auth_cleanup: { interval_ms } });
 		const server = await create_app_server(h.options);
 
 		await until(
@@ -252,10 +290,10 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 		await server.close();
 		assert.strictEqual(h.backend_closes(), 1);
 
-		// several intervals on, nothing sweeps what expired after the close
+		// past the interval, nothing sweeps what expired after the close
 		const after_close = await seed_expired_session(db, 'server-after-close', seeded.account_id);
-		await wait(150);
-		assert.strictEqual(await session_exists(db, after_close), true, 'no pass after close');
+		await wait_past_schedule();
+		await assert_no_pass(gated, db, after_close, 'no pass after close');
 		// the two sweeps' closes, then the shutdown's close of every connection
 		assert.strictEqual(h.closes.length, 3);
 		assert_close_call(h.closes[2], 'all', null);
@@ -276,7 +314,10 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 		const closing = server.close().then(() => {
 			closed = true;
 		});
-		await wait(30);
+		// a macrotask: a close that did not wait on the pass resolves in
+		// microtasks, since nothing it does after the pass is I/O here (the
+		// harness backend's `close` and the recording closer are synchronous)
+		await wait(0);
 		const closed_while_held = closed;
 		const backend_closes_while_held = h.backend_closes();
 		// released before asserting, so a failure here leaves no transaction open
@@ -302,18 +343,22 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 		const session_options = create_session_config('test_session');
 		const create_route_specs = () => [create_health_route_spec()];
 
-		const off = await create_test_app({ session_options, create_route_specs, db });
-		const untouched = await seed_expired_session(db, 'harness-off', off.backend.account.id);
-		await wait(50);
-		assert.strictEqual(await session_exists(db, untouched), true, 'the harness schedules nothing');
+		// expired before the app exists, so a startup pass would sweep it
+		const seeded = await seed_accounts(db);
+		const untouched = await seed_expired_session(db, 'harness-off', seeded.account_id);
+		const gated_off = create_gated_db(db);
+		const off = await create_test_app({ session_options, create_route_specs, db: gated_off.db });
+		// `create_app_server` is its last step, and a startup pass begins inside it
+		await assert_no_pass(gated_off, db, untouched, 'the harness schedules nothing');
 		await off.cleanup();
 
+		const gated_on = create_gated_db(db);
 		const on = await create_test_app({
 			session_options,
 			create_route_specs,
-			db,
+			db: gated_on.db,
 			username: 'keeper_on',
-			app_options: { auth_cleanup: { interval_ms: 20 } }
+			app_options: { auth_cleanup: { interval_ms } }
 		});
 		await until(
 			async () => !(await session_exists(db, untouched)),
@@ -321,8 +366,8 @@ describe_db('create_app_server auth_cleanup', (get_db) => {
 		);
 		await on.cleanup();
 		const after_cleanup = await seed_expired_session(db, 'harness-after', on.backend.account.id);
-		await wait(150);
-		assert.strictEqual(await session_exists(db, after_cleanup), true, 'no pass after cleanup');
+		await wait_past_schedule();
+		await assert_no_pass(gated_on, db, after_cleanup, 'no pass after cleanup');
 	});
 
 	test('an invalid interval fails assembly', async () => {

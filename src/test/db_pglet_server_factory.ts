@@ -1,10 +1,12 @@
 /**
- * Dev-only `pglet` backend factory for the shared `*.db.test.ts` matrix.
+ * Dev-only native `pglet_server` factory for the `*.db.test.ts` suites.
  *
- * pglet is a small Postgres-compatible engine that speaks
- * the Postgres wire protocol, so it drops into the matrix as a third backend
- * alongside PGlite and server PG: this spawns a fresh in-memory `pglet_server`
- * and points node-postgres at it, reusing `create_pg_db` verbatim.
+ * pglet is a small Postgres-compatible engine that speaks the Postgres wire
+ * protocol, so it drops in beside PGlite, pglet-wasm and server PG: this spawns
+ * an in-memory `pglet_server` and points node-postgres at it, reusing
+ * `create_pg_db` verbatim. It is the `pglet-server` leg of the four-driver
+ * fixture (`create_db_fixture.ts`) and a `FUZ_TEST_DB_DEFAULT=pglet-server`
+ * default (`db_default.ts`).
  *
  * Opt-in and test-only — it lives in `src/test/` (never shipped in the package),
  * gated on `PGLET_SERVER_BIN` (the path to a built `pglet_server` binary), the
@@ -16,28 +18,16 @@
  *
  *   PGLET_SERVER_BIN=/path/to/pglet_server gro test
  *
- * Two exports, two server lifecycles. `create_pglet_factory` is the matrix leg,
- * mirroring the `pg` factory: one long-lived server per factory instance, kept for
- * the whole run (`isolate: false` + `fileParallelism: false`) rather than per-test,
- * with `DROP TABLE schema_version` + `init_schema` per `create()` and the harness
- * `beforeEach` TRUNCATE giving per-test isolation — a fresh in-memory server starts
- * empty, so it needs no schema reset. `create_pglet_shared_factory` is the stand-in
- * shape for `create_pglite_factory` (see `set_substitute_db_factory` in
- * `testing/db.ts`): one server for the whole process, with
- * `DROP SCHEMA public CASCADE` + `init_schema` per `create()` instead. Each
- * function's own TSDoc says why it takes the shape it does.
- *
  * @module
  */
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import type { Pool } from 'pg';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
 import type { Db } from '#lib/db/db.ts';
 import { create_pg_db, register_pg_type_parsers } from '#lib/db/db_pg.ts';
-import { reset_pglite, type DbFactory } from '#lib/testing/db.ts';
+import { reset_public_schema, type DbFactoryBuilder } from '#lib/testing/db.ts';
 
 const PGLET_SERVER_BIN = process.env.PGLET_SERVER_BIN;
 
@@ -119,7 +109,7 @@ const spawn_pglet_server = async (bin: string): Promise<PgletServer> => {
 			// already exited / group already gone
 		}
 	};
-	// The singleton server must outlive each describe block's afterAll, so tie its
+	// The server must outlive each describe block's afterAll, so tie its
 	// lifetime to the test *process*. `exit` alone misses vitest's signal-based
 	// worker teardown (which would strand the server), so cover SIGINT/SIGTERM too.
 	register_server_cleanup(kill);
@@ -162,114 +152,50 @@ const spawn_pglet_server = async (bin: string): Promise<PgletServer> => {
 	);
 };
 
-/**
- * Create a pglet (wire-server) database factory for tests.
- *
- * Skipped unless `PGLET_SERVER_BIN` is set. Spawns one in-memory `pglet_server`
- * lazily on first use and reuses it for the run; each `create()` drops
- * `schema_version` and re-runs `init_schema` (idempotent, mirroring the `pg`
- * factory) so migrations re-evaluate against the live tables.
- *
- * The spawned server is **per-factory-instance** (the state below lives in this
- * closure, not module scope): without a per-fixture reset, a server shared across
- * fixtures with *different* schemas would accumulate tables and leak them into
- * whole-database introspection (e.g. an auth FK-count test seeing fact tables).
- * pglet does implement `DROP SCHEMA public CASCADE; CREATE SCHEMA public`, and
- * `create_pglet_shared_factory` below is a server shared with exactly that reset;
- * one server per `create_pglet_factory` call is kept here because it keeps each
- * fixture's schema isolated with no reset step, and the per-server cost is sub-ms.
- * Within a fixture every suite shares the one server (same schema).
- *
- * @param init_schema - callback to initialize the database schema
- */
-export const create_pglet_factory = (init_schema: (db: Db) => Promise<void>): DbFactory => {
-	// Per-factory-instance server/pool/db, spawned lazily on first `create()`.
-	let server: PgletServer | null = null;
-	let pool: Pool | null = null;
-	let db: Db | null = null;
-	const skip = !PGLET_SERVER_BIN;
-	return {
-		name: 'pglet',
-		skip,
-		skip_reason: skip ? 'PGLET_SERVER_BIN not set' : undefined,
-		async create() {
-			if (!PGLET_SERVER_BIN) {
-				throw new Error('PGLET_SERVER_BIN required for pglet tests.');
-			}
-			if (!db) {
-				// Mirror the pg leg's int8→number coercion so BIGSERIAL columns read
-				// as numbers like PGlite does.
-				await register_pg_type_parsers();
-				server = await spawn_pglet_server(PGLET_SERVER_BIN);
-				const { Pool } = await import('pg');
-				pool = new Pool({ connectionString: server.url });
-				db = create_pg_db(pool).db;
-			}
-			// Drop the tracker so migrations re-evaluate against the actual tables
-			// (IF NOT EXISTS guards make re-running safe), as the pg factory does.
-			await db.query('DROP TABLE IF EXISTS schema_version');
-			await init_schema(db);
-			return db;
-		},
-		async close() {
-			// No-op: this factory's server lives for the whole `db` run (it must
-			// outlive each suite's afterAll) and is killed by the process-exit /
-			// signal hooks registered in `spawn_pglet_server`.
-		}
-	};
-};
+// The one server every factory here hands out, spawned on first use and kept
+// for the run. A promise rather than a value, so two concurrent first `create()`
+// calls spawn one server, and a failed first spawn is the error every later
+// `create()` reports.
+let server_db: Promise<Db> | null = null;
 
-// The one server/pool/db every `create_pglet_shared_factory` factory hands out,
-// spawned on first use and kept for the run. A promise rather than a value so
-// two concurrent first `create()` calls spawn one server, not two — which also
-// memoizes a *rejection*: a failed first spawn is the error every later
-// `create()` reports, where `create_pglet_factory`'s `if (!db)` respawns instead.
-let shared_db: Promise<Db> | null = null;
-
-const resolve_shared_db = (bin: string): Promise<Db> => {
-	shared_db ??= (async () => {
-		// Mirror the pg leg's int8→number coercion, as `create_pglet_factory` does.
+const resolve_server_db = (bin: string): Promise<Db> =>
+	(server_db ??= (async () => {
+		// mirror the pg leg's int8→number coercion so BIGSERIAL columns read as numbers
 		await register_pg_type_parsers();
 		const server = await spawn_pglet_server(bin);
 		const { Pool } = await import('pg');
 		return create_pg_db(new Pool({ connectionString: server.url })).db;
-	})();
-	return shared_db;
-};
+	})());
 
 /**
- * Create a pglet (wire-server) factory over one process-wide server, resetting
- * the whole `public` schema per `create()`.
+ * Create a native pglet (wire-server) database factory for tests.
  *
- * This is the stand-in shape for `create_pglite_factory` (see
- * `set_substitute_db_factory` in `testing/db.ts`): one instance for the run,
- * `DROP SCHEMA public CASCADE` + `init_schema` per `create()` — the lifecycle
- * `create_pglite_factory` gives PGlite, so a suite written against that factory
- * meets the same create/reset shape here. `create_pglet_factory` above instead keeps a
- * server per factory instance, which suits the fixture legs it serves: those
- * migrate different schemas and never share one database.
- *
- * Skipped unless `PGLET_SERVER_BIN` is set.
+ * Skipped unless `PGLET_SERVER_BIN` is set. Every factory shares one server for
+ * the run, and each `create()` resets the whole `public` schema and runs
+ * `init_schema` — the lifecycle the in-memory factories in `testing/db.ts` give
+ * their drivers, so fixtures migrating different schemas never see each
+ * other's tables, and a suite written against the default meets the same
+ * create/reset shape here.
  *
  * @param init_schema - callback to initialize the database schema
  */
-export const create_pglet_shared_factory = (init_schema: (db: Db) => Promise<void>): DbFactory => {
+export const create_pglet_server_factory: DbFactoryBuilder = (init_schema) => {
 	const skip = !PGLET_SERVER_BIN;
 	return {
-		name: 'pglet',
+		name: 'pglet-server',
 		skip,
 		skip_reason: skip ? 'PGLET_SERVER_BIN not set' : undefined,
 		async create() {
 			if (!PGLET_SERVER_BIN) {
-				throw new Error('PGLET_SERVER_BIN required for pglet tests.');
+				throw new Error('PGLET_SERVER_BIN required for pglet-server tests.');
 			}
-			const db = await resolve_shared_db(PGLET_SERVER_BIN);
-			await reset_pglite(db);
+			const db = await resolve_server_db(PGLET_SERVER_BIN);
+			await reset_public_schema(db);
 			await init_schema(db);
 			return db;
 		},
 		async close() {
-			// No-op: the shared server lives for the whole run and is killed by the
+			// No-op: the server lives for the whole run and is killed by the
 			// process-exit / signal hooks registered in `spawn_pglet_server`.
 		}
 	};

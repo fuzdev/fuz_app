@@ -1,6 +1,6 @@
 # db/
 
-> Database layer: the `Db` abstraction over pg + PGlite, the migration
+> Database layer: the `Db` abstraction over pg, PGlite and pglet, the migration
 > runner, and the cell content-primitive schema + queries.
 
 For server assembly, `QueryDeps`, and migration-runner contract see the
@@ -12,20 +12,23 @@ the code.
 
 ## Generic db infrastructure
 
-- `db.ts` — `Db` abstraction over pg + PGlite, `query` / `query_one` /
+- `db.ts` — `Db` abstraction over pg, PGlite and pglet, `query` / `query_one` /
   `transaction`, `no_nested_transaction` guard.
 - `create_db.ts` — URL-based driver auto-detection (`postgres` /
-  `pglite-file` / `pglite-memory`).
-- `db_pg.ts` / `db_pglite.ts` — driver adapters. `db_pg.ts` also exports
-  `register_pg_type_parsers`, the shared int8→number coercion (so
+  `pglite-file` for `file://` / `pglet-memory` for `memory://`, over
+  `@fuzdev/pglet-wasm`). An in-memory PGlite is `create_pglite_db(new PGlite())`.
+- `db_pg.ts` / `db_pglite.ts` / `db_pglet.ts` — driver adapters. `db_pg.ts` also
+  exports `register_pg_type_parsers`, the shared int8→number coercion (so
   `BIGSERIAL` columns read as JS numbers, matching PGlite) — called by both
   `create_db` and the test pg factory (`testing/db.ts`) so prod and tests
-  read the same wire shape from one registration site.
+  read the same wire shape from one registration site. `db_pglet.ts`'s
+  `PGLET_COERCION` is pglet's half of the same convention, which every pglet
+  instance fuz_app creates is given.
 - `migrate.ts` — advisory-lock migration runner (`run_migrations`,
   `baseline`), `Migration` / `MigrationNamespace` / `MigrationError`.
 - `query_deps.ts` — `QueryDeps = {db}`, the first param to every `query_*`.
 - `assert_row.ts` — `assert_row(row, context)` for INSERT … RETURNING.
-- `pg_error.ts` — `pg_error_code` (SQLSTATE extractor for `pg`/PGlite errors), `is_pg_unique_violation` (Postgres `23505`).
+- `pg_error.ts` — `pg_error_code` (SQLSTATE extractor for `pg`/PGlite/pglet errors), `is_pg_unique_violation` (Postgres `23505`).
 - `sql_identifier.ts` — `assert_valid_sql_identifier`.
 - `sql_columns.ts` — `columns_sql` / `qualify_columns` / `omit_columns`,
   the derivation helpers every `*_COLUMNS` projection const's variants
@@ -178,7 +181,7 @@ DO NOTHING`), `_put_fact_refs`, `_get_fact` / `_get_fact_meta` / `_has_fact`
   `fsync`ed before the rename publishes it (twins the Rust `fuz_fact` §fsync
   posture: data-sync before rename, parent-dir fsync waived) — the serve path
   streams the file without re-hashing, so write-time durability is the guard.
-- **`fact_store_errors.ts`** — `PayloadTooLargeError` / `StorageFullError` (+
+- **`fact_store_errors.ts`** — `FactPayloadTooLargeError` / `FactStorageFullError` (+
   `is_enospc_error`) thrown by `put_stream`, for a consumer route's 413 / 507.
 - The HTTP serving plumbing lives under `server/` (`serve_fact_route.ts`,
   `x_accel.ts`).

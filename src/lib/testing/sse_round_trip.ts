@@ -32,7 +32,7 @@ import {
 	type TestApp,
 	type TestAccount
 } from './app_server.ts';
-import { create_pglite_factory, type DbFactory } from './db.ts';
+import { create_default_db_factory, type DbFactory } from './db.ts';
 import { find_route_spec, pick_auth_headers } from './integration_helpers.ts';
 import {
 	rpc_call,
@@ -78,7 +78,7 @@ export interface SseRouteTestOptions {
 	create_route_specs: (ctx: AppServerContext) => Array<RouteSpec>;
 	/** Optional overrides for `AppServerOptions`. */
 	app_options?: SuiteAppOptions;
-	/** Database factories to run tests against. Default: pglite only. */
+	/** Database factories to run tests against. Default: the default factory (`create_default_db_factory`) only. */
 	db_factories?: Array<DbFactory>;
 	/**
 	 * Backend audit event callback — threaded to `create_test_app_server`.
@@ -180,7 +180,7 @@ export const describe_sse_route_tests = (options: SseRouteTestOptions): void => 
 	const init_schema = async (db: Db): Promise<void> => {
 		await run_migrations(db, [auth_migration_ns]);
 	};
-	const factories = options.db_factories ?? [create_pglite_factory(init_schema)];
+	const factories = options.db_factories ?? [create_default_db_factory(init_schema)];
 
 	for (const factory of factories) {
 		const describe_fn = factory.skip ? describe.skip : describe;

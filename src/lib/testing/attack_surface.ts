@@ -32,7 +32,7 @@ import {
 import { describe_adversarial_input } from './adversarial_input.ts';
 import { describe_adversarial_404 } from './adversarial_404.ts';
 import { create_auth_test_apps, create_route_skip_filter, select_auth_app } from './auth_apps.ts';
-import { resolve_valid_path } from './schema_generators.ts';
+import { resolve_valid_path, to_route_content_type } from './schema_generators.ts';
 import {
 	assert_surface_matches_snapshot,
 	assert_surface_deterministic,
@@ -150,14 +150,18 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 		resolve_valid_path(route.path, spec_lookup.get(`${route.method} ${route.path}`)?.params);
 
 	const apps = create_auth_test_apps(route_specs, roles);
+	// every probe carries the content type a real client sends, so the
+	// per-route content-type check (415) never answers ahead of the auth gate
+	const probe_init = (route: { method: string; raw_body?: boolean }): RequestInit => ({
+		method: route.method,
+		headers: { 'content-type': to_route_content_type(route) }
+	});
 
 	describe('adversarial HTTP auth enforcement', () => {
 		describe('unauthenticated → 401', () => {
 			for (const route of protected_routes) {
 				test(`${route.method} ${route.path}`, async () => {
-					const res = await apps.public.request(test_path(route), {
-						method: route.method
-					});
+					const res = await apps.public.request(test_path(route), probe_init(route));
 					assert.strictEqual(res.status, 401, `${route.method} ${route.path}`);
 					const body = await res.json();
 					assert.strictEqual(body.error, ERROR_AUTHENTICATION_REQUIRED);
@@ -192,9 +196,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 						)})`, async () => {
 							const app = apps.by_role.get(wrong_role);
 							if (!app) throw new Error(`No test app for role '${wrong_role}'`);
-							const res = await app.request(test_path(route), {
-								method: route.method
-							});
+							const res = await app.request(test_path(route), probe_init(route));
 							assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
 							const body = await res.json();
 							assert.strictEqual(body.error, ERROR_INSUFFICIENT_PERMISSIONS);
@@ -208,9 +210,7 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 			describe('authenticated without role → 403', () => {
 				for (const route of role_only_routes) {
 					test(`${route.method} ${route.path}`, async () => {
-						const res = await apps.authed.request(test_path(route), {
-							method: route.method
-						});
+						const res = await apps.authed.request(test_path(route), probe_init(route));
 						assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
 						const body = await res.json();
 						assert.strictEqual(body.error, ERROR_INSUFFICIENT_PERMISSIONS);
@@ -243,9 +243,9 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 						continue;
 					}
 					test(`${route.method} ${route.path} (${refused})`, async () => {
-						const res = await apps.by_credential_type.get(refused)!.request(test_path(route), {
-							method: route.method
-						});
+						const res = await apps.by_credential_type
+							.get(refused)!
+							.request(test_path(route), probe_init(route));
 						assert.strictEqual(res.status, 403, `${route.method} ${route.path}`);
 						const body = await res.json();
 						assert.strictEqual(body.error, ERROR_CREDENTIAL_TYPE_REQUIRED);
@@ -259,12 +259,14 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 		describe('correct auth passes guard', () => {
 			for (const route of protected_routes) {
 				test(`${route.method} ${route.path}`, async () => {
-					const res = await select_auth_app(apps, route.auth).request(test_path(route), {
-						method: route.method
-					});
+					const res = await select_auth_app(apps, route.auth).request(
+						test_path(route),
+						probe_init(route)
+					);
 					// handler may error (500) or return 404 (stub deps) — that's fine, we only verify auth passed
 					assert.notStrictEqual(res.status, 401, 'should not be 401 (auth rejected)');
 					assert.notStrictEqual(res.status, 403, 'should not be 403 (role rejected)');
+					assert.notStrictEqual(res.status, 415, 'should not be 415 (content type refused)');
 					// handler-level 404 (resource not found with stub deps) is fine —
 					// only reject router-level 404 (route not registered)
 					if (res.status === 404) {

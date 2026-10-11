@@ -13,10 +13,10 @@ import { describe, assert, test, beforeAll, beforeEach } from 'vitest';
 import { Db, no_nested_transaction } from '#lib/db/db.ts';
 import { run_migrations, type Migration, type MigrationNamespace } from '#lib/db/migrate.ts';
 import { query_db_status, format_db_status } from '#lib/db/status.ts';
-import { create_pglite_factory, reset_pglite } from '#lib/testing/db.ts';
+import { create_default_db_factory, reset_public_schema } from '#lib/testing/db.ts';
 
 const noop_init = async (_db: Db): Promise<void> => {};
-const factory = create_pglite_factory(noop_init);
+const factory = create_default_db_factory(noop_init);
 let db: Db;
 
 beforeAll(async () => {
@@ -24,7 +24,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-	await reset_pglite(db);
+	await reset_public_schema(db);
 	// `run_migrations` always creates the new-shape `schema_version` tracker
 	// before its namespace loop; an empty namespace creates the table with no
 	// rows so the tests below can seed divergent histories directly.

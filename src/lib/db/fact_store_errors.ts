@@ -15,13 +15,13 @@
  * mis-declared `Content-Length` that the cheap header pre-check can't catch.
  * A consumer route maps this to `413`.
  */
-export class PayloadTooLargeError extends Error {
+export class FactPayloadTooLargeError extends Error {
 	/** Bytes read before the cap tripped (may exceed `max_bytes` by one chunk). */
 	readonly bytes_read: number;
 	readonly max_bytes: number;
 	constructor(bytes_read: number, max_bytes: number) {
 		super(`payload too large: read ${bytes_read} bytes, exceeds ${max_bytes} byte limit`);
-		this.name = 'PayloadTooLargeError';
+		this.name = 'FactPayloadTooLargeError';
 		this.bytes_read = bytes_read;
 		this.max_bytes = max_bytes;
 	}
@@ -33,17 +33,17 @@ export class PayloadTooLargeError extends Error {
  * a best-effort free-space preflight can't promise (chunked uploads, TOCTOU
  * races). A consumer route maps this to `507`.
  */
-export class StorageFullError extends Error {
+export class FactStorageFullError extends Error {
 	constructor(cause?: unknown) {
 		super('storage_full', cause === undefined ? undefined : { cause });
-		this.name = 'StorageFullError';
+		this.name = 'FactStorageFullError';
 	}
 }
 
 /**
  * Whether a thrown value is a Node filesystem `ENOSPC` (no space left on
  * device). Used by the streaming disk write to translate the raw FS error
- * into a `StorageFullError`.
+ * into a `FactStorageFullError`.
  */
 export const is_enospc_error = (err: unknown): boolean =>
 	typeof err === 'object' &&

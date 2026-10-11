@@ -79,7 +79,10 @@ describe('apply_route_specs', () => {
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
-		const res = await app.request('/create', { method: 'POST' });
+		const res = await app.request('/create', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' }
+		});
 		assert.strictEqual(res.status, 200);
 	});
 
@@ -164,7 +167,10 @@ describe('apply_route_specs', () => {
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
-		const res = await app.request('/admin', { method: 'POST' });
+		const res = await app.request('/admin', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' }
+		});
 		assert.strictEqual(res.status, 401);
 	});
 
@@ -191,7 +197,10 @@ describe('apply_route_specs', () => {
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
-		const res = await app.request('/admin', { method: 'POST' });
+		const res = await app.request('/admin', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' }
+		});
 		assert.strictEqual(res.status, 403);
 	});
 
@@ -218,7 +227,10 @@ describe('apply_route_specs', () => {
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
-		const res = await app.request('/admin', { method: 'POST' });
+		const res = await app.request('/admin', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' }
+		});
 		assert.strictEqual(res.status, 200);
 	});
 });
@@ -1303,7 +1315,10 @@ describe('error catch layer', () => {
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
-		const res = await app.request('/test', { method: 'POST' });
+		const res = await app.request('/test', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' }
+		});
 		assert.strictEqual(res.status, 409);
 		const body = await res.json();
 		assert.strictEqual(body.error, 'conflict');
@@ -1363,7 +1378,10 @@ describe('error catch layer', () => {
 		];
 		apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
 
-		const res = await app.request('/test', { method: 'POST' });
+		const res = await app.request('/test', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' }
+		});
 		assert.strictEqual(res.status, 409);
 		const body = await res.json();
 		assert.strictEqual(body.error, 'role_grant_offer_terminal');
@@ -1461,5 +1479,104 @@ describe('error catch layer', () => {
 			const res = await app.request('/test');
 			assert.strictEqual(res.status, expected_status, `${name} should return ${expected_status}`);
 		}
+	});
+});
+
+describe('apply_route_specs content type', () => {
+	const post_route = (overrides: Partial<RouteSpec> = {}): RouteSpec => ({
+		method: 'POST',
+		path: '/test',
+		auth: { account: 'none', actor: 'none' },
+		handler: (c) => c.json({ ok: true }),
+		description: 'Test route',
+		input: z.null(),
+		output: z.strictObject({ ok: z.boolean() }),
+		...overrides
+	});
+
+	test('a POST requires application/json, bodyless or not', async () => {
+		const app = new Hono();
+		apply_route_specs(app, [post_route()], fuz_auth_guard_resolver, log, db);
+		const typed_or_not: Array<Record<string, string>> = [
+			{},
+			{ 'content-type': 'application/octet-stream' }
+		];
+		for (const headers of typed_or_not) {
+			const res = await app.request('/test', { method: 'POST', headers });
+			assert.strictEqual(res.status, 415);
+			assert.deepStrictEqual(await res.json(), { error: 'unsupported_content_type' });
+		}
+		const res = await app.request('/test', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json; charset=utf-8' }
+		});
+		assert.strictEqual(res.status, 200);
+	});
+
+	test('the content type is checked before auth', async () => {
+		const app = new Hono();
+		apply_route_specs(
+			app,
+			[post_route({ auth: { account: 'required', actor: 'none' } })],
+			fuz_auth_guard_resolver,
+			log,
+			db
+		);
+		const res = await app.request('/test', { method: 'POST' });
+		assert.strictEqual(res.status, 415);
+	});
+
+	test('a raw_body POST takes any type', async () => {
+		const app = new Hono();
+		apply_route_specs(app, [post_route({ raw_body: true })], fuz_auth_guard_resolver, log, db);
+		const res = await app.request('/test', {
+			method: 'POST',
+			headers: { 'content-type': 'application/octet-stream' },
+			body: new Uint8Array([1, 2, 3])
+		});
+		assert.strictEqual(res.status, 200);
+	});
+
+	test('a raw_body POST refuses what a browser sends without a preflight', async () => {
+		const app = new Hono();
+		apply_route_specs(app, [post_route({ raw_body: true })], fuz_auth_guard_resolver, log, db);
+		for (const content_type of [undefined, 'text/plain', 'multipart/form-data; boundary=x']) {
+			const res = await app.request('/test', {
+				method: 'POST',
+				headers: content_type ? { 'content-type': content_type } : {},
+				body: new Uint8Array([1, 2, 3])
+			});
+			assert.strictEqual(res.status, 415, String(content_type));
+		}
+	});
+
+	test('other methods are not checked', async () => {
+		const app = new Hono();
+		apply_route_specs(
+			app,
+			[post_route({ method: 'PUT' }), post_route({ method: 'DELETE' })],
+			fuz_auth_guard_resolver,
+			log,
+			db
+		);
+		for (const method of ['PUT', 'DELETE']) {
+			const res = await app.request('/test', { method });
+			assert.strictEqual(res.status, 200, method);
+		}
+	});
+
+	test('the derived error schemas declare 415 on POSTs only', () => {
+		const surface = generate_app_surface({
+			route_specs: [
+				post_route(),
+				post_route({ path: '/raw', raw_body: true }),
+				post_route({ method: 'PUT', path: '/put' })
+			],
+			middleware_specs: []
+		});
+		const errors_of = (path: string) => surface.routes.find((r) => r.path === path)?.error_schemas;
+		assert.property(errors_of('/test'), '415');
+		assert.property(errors_of('/raw'), '415');
+		assert.notProperty(errors_of('/put') ?? {}, '415');
 	});
 });

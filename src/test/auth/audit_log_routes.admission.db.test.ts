@@ -302,7 +302,7 @@ describe_db('audit log stream admission', (get_db) => {
 		const { response, stalled } = await open_stalled(h);
 		const logout = await h.test_app.app.request('/api/account/logout', {
 			method: 'POST',
-			headers: h.admin.create_session_headers()
+			headers: h.admin.create_session_headers({ 'content-type': 'application/json' })
 		});
 		assert.strictEqual(logout.status, 200);
 		assert.strictEqual(

@@ -1,7 +1,7 @@
 /**
  * Tests for `create_app_server` factory.
  *
- * Uses a single cached PGlite WASM instance (via `create_pglite_factory`) shared
+ * Uses a single cached WASM database instance (via `create_default_db_factory`) shared
  * across all tests. Schema is reset before each `create_config` call, avoiding
  * repeated WASM cold starts while keeping tests isolated.
  *
@@ -10,6 +10,7 @@
 
 import { describe, test, assert, beforeAll } from 'vitest';
 import { wait } from '@fuzdev/fuz_util/async.ts';
+import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { z } from 'zod';
 
@@ -26,7 +27,7 @@ import { ERROR_PAYLOAD_TOO_LARGE, PayloadTooLargeError } from '#lib/http/error_s
 import type { AppBackend } from '#lib/server/app_backend.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_loopback_app_server_options, stub_password_deps } from '#lib/testing/app_server.ts';
-import { create_pglite_factory } from '#lib/testing/db.ts';
+import { create_default_db_factory } from '#lib/testing/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { auth_migration_ns } from '#lib/auth/migrations.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
@@ -47,7 +48,7 @@ const fs_stubs = {
 
 // Shared PGlite WASM instance — schema is reset on each factory.create() call,
 // but the expensive WASM cold start only happens once per worker thread.
-const factory = create_pglite_factory(async () => {
+const factory = create_default_db_factory(async () => {
 	// No-op: create_config runs migrations manually to capture MigrationResult.
 });
 
@@ -66,7 +67,7 @@ const create_config = async (overrides?: Partial<AppServerOptions>): Promise<App
 	const db = await factory.create();
 	const migration_results = await run_migrations(db, [auth_migration_ns]);
 	const backend: AppBackend = {
-		db_type: 'pglite-memory',
+		db_type: 'pglet-memory',
 		db_name: '(memory)',
 		migration_results,
 		close: async () => {},
@@ -233,6 +234,17 @@ describe('create_app_server', () => {
 		assert.isDefined(bootstrap_route);
 	});
 
+	test('a bootstrap route_prefix outside /api/ is refused at assembly', async () => {
+		const error = await assert_rejects(async () =>
+			create_app_server(
+				await create_config({
+					bootstrap: { mode: 'surface_only', route_prefix: '/auth' }
+				})
+			)
+		);
+		assert.include(error.message, 'bootstrap.route_prefix path /auth/bootstrap');
+	});
+
 	test('on_bootstrap callback wires through to bootstrap routes (live mode)', async () => {
 		let callback_registered = false;
 		await create_app_server(
@@ -277,7 +289,10 @@ describe('create_app_server', () => {
 			})
 		);
 
-		await result.app.request('/effect-test', { method: 'POST' });
+		await result.app.request('/effect-test', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' }
+		});
 
 		// Flush microtask queue — allSettled + .then chain settles in the next macrotask tick
 		await wait();
@@ -342,6 +357,50 @@ describe('create_app_server', () => {
 		const body = await large_res.json();
 		assert.strictEqual(body.error, ERROR_PAYLOAD_TOO_LARGE);
 		PayloadTooLargeError.parse(body);
+	});
+
+	test('an oversized Content-Length is refused without reading the request body', async () => {
+		const result = await create_app_server(
+			await create_config({
+				max_body_size: 100, // 100 bytes
+				create_route_specs: () => [
+					{
+						method: 'POST',
+						path: '/echo',
+						auth: { account: 'none', actor: 'none' },
+						description: 'Echo input',
+						input: z.looseObject({ data: z.string() }),
+						output: z.looseObject({ ok: z.boolean() }),
+						handler: async (c) => c.json({ ok: true })
+					}
+				]
+			})
+		);
+		// Reading `request.body` at all — even without consuming it — makes Deno
+		// drain the rest of the declared body after the response and keep the
+		// connection alive instead of closing it, so the over-cap reject must
+		// answer from the header alone (the cross-backend smuggling probe pins
+		// the connection close itself).
+		let body_read = false;
+		class BodySpyRequest extends Request {
+			override get body(): Request['body'] {
+				body_read = true;
+				return super.body;
+			}
+		}
+		const large_body = JSON.stringify({ data: 'x'.repeat(200) });
+		const res = await result.app.request(
+			new BodySpyRequest('http://localhost/echo', {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+					'content-length': String(new TextEncoder().encode(large_body).length)
+				},
+				body: large_body
+			})
+		);
+		assert.strictEqual(res.status, 413);
+		assert.strictEqual(body_read, false, 'the 413 must not read the request body');
 	});
 
 	test('body size limit rejects a streaming (no Content-Length) oversized body', async () => {

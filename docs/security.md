@@ -988,33 +988,37 @@ For v1 single-process deployments, the in-memory limiter is sufficient.
 
 ## Body Size Limiting
 
-`create_app_server` applies Hono's `bodyLimit` middleware before auth and route
-handling. Default: 1 MiB (`DEFAULT_MAX_BODY_SIZE`). Oversized payloads are
-rejected with 413 and `{error: 'payload_too_large'}` (`PayloadTooLargeError`
-schema). Configure via `max_body_size` on `AppServerOptions`; pass `null` to
-disable.
+`create_app_server` applies a body size limit (`http/body_limit.ts`) before
+auth and route handling. Default: 1 MiB (`DEFAULT_MAX_BODY_SIZE`). Oversized
+payloads are rejected with 413 and `{error: 'payload_too_large'}`
+(`PayloadTooLargeError` schema). Configure via `max_body_size` on
+`AppServerOptions`; pass `null` to disable.
 
-**Rejection and the connection — runtime-dependent posture.** A request whose
-`Content-Length` exceeds the cap is rejected on the header, before the body is
-read. The defense-in-depth posture is then to **close the connection without
-reading the body**: an unread request body cannot safely share a keep-alive
-connection, because the leftover bytes could be parsed as the start of the next
-request (request smuggling). Node (`@hono/node-server`), Deno, and the Rust
-spine (hyper) take this posture — the client sees the connection drop after the
+**Rejection closes the connection.** A request whose `Content-Length` exceeds
+the cap is rejected on the header, before the body is read, and the 413 carries
+`Connection: close`. The defense-in-depth posture is to **close the connection
+without reading the body**: an unread request body cannot safely share a
+keep-alive connection, because the leftover bytes could be parsed as the start
+of the next request (request smuggling) — and a server that instead drains the
+body to reuse the connection reads up to the attacker-declared length off the
+socket. Every spine takes the close posture: Node, Deno and Bun on the TS side,
+hyper (RST) on the Rust side. The client sees the connection drop after the
 413, and a pipelined trailing request is never reached.
 
-Bun (`Bun.serve`) instead **drains the declared `Content-Length` and keeps the
-socket alive**, then answers a correctly-framed pipelined request. This is not a
-desync: Bun frames the next request on `Content-Length`, not on the unread body,
-so there is no smuggling window — only the defense-in-depth close is absent
-(and Bun reads the full oversized body off the socket before discarding it, so
-the cap bounds what the _application_ processes, not what the transport reads).
-The cross-backend suite gates the strong "connection closes" assertion behind
-the `oversized_reject_closes_connection` capability and holds every backend to
-the universal **no-desync** property
-(`testing/cross_backend/body_size_smuggling.ts`).
+The TS posture depends on the reject never touching the request body. Hono's
+own `bodyLimit` reads `c.req.raw.body` before it looks at the header, and on
+Deno merely reading that getter makes the runtime drain the declared body after
+the response and keep the socket alive, ignoring `Connection: close`;
+`@hono/node-server` drains an unread body unless the response closes; Bun
+drained behind Hono's `bodyLimit` too. So the limit checks `Content-Length`
+first and answers with `Connection: close`, falling through to `bodyLimit`'s
+streaming count only for a request with no usable `Content-Length`. The
+cross-backend suite holds every backend to the close
+(`testing/cross_backend/body_size_smuggling.ts`), and
+`server/create_app_server.db.test.ts` pins that the reject never reads the
+body.
 
-**The cap is global, not per-route.** `bodyLimit` is mounted once for the whole
+**The cap is global, not per-route.** The limit is mounted once for the whole
 app, so `max_body_size` (and `null`) apply to every route — there is no
 per-route override. A route that legitimately needs large bodies (e.g. content
 uploads) should **not** be served by raising or disabling the global cap: that
@@ -1032,7 +1036,7 @@ chunked upload buffer that much per request. A streaming handler avoids the
 buffer entirely, which is the other reason large uploads belong on their own
 streaming route rather than under a wider global cap.
 
-**WebSocket messages.** `bodyLimit` doesn't see WebSocket frames, so
+**WebSocket messages.** The body limit doesn't see WebSocket frames, so
 `register_action_ws` caps each inbound message separately at
 `DEFAULT_WS_MAX_MESSAGE_BYTES` (1 MiB, the same bound as the HTTP body cap;
 `max_message_bytes` on `WsEndpointSpec` to change it) and closes the socket
@@ -1512,21 +1516,46 @@ default for new accounts; existing accounts keep their current setting.
 
 ## CSRF Protection
 
-**Primary defense**: `SameSite=Strict` session cookies — the browser won't send
-the session cookie on cross-origin requests.
+Three layers, because no one of them covers every page:
 
-**Defense-in-depth**: Origin verification middleware (`origin.ts`) — an
-allowlist that rejects requests from disallowed `Origin` headers before any
-handler runs. This primarily protects locally-running services from being
-called by untrusted websites as the user browses the web. Origin-only: the
-Fetch spec mandates `Origin` on every unsafe method, so the Referer-fallback
-arm was inert on modern browsers and was dropped to converge with the
-`zzz_server` Rust port. Non-browser clients (curl, CLI, server-to-server)
-without an `Origin` header pass through — token auth is the security
-control for those callers, which don't carry auto-attached cookies.
+**`SameSite=Strict` session cookies** — the browser won't send the session
+cookie on a **cross-site** request. Cross-site is not cross-origin: a site is
+the scheme plus the registrable domain, and the port doesn't count, so a page
+on `http://localhost:8000` is same-site with a server on
+`http://localhost:4460` and its requests carry that server's cookie. On most
+hosts, a page on a sibling subdomain is same-site too. For a locally-running
+server, that means every other local dev server, notebook, or
+`python -m http.server` page.
 
-The combination means a cross-origin request is blocked by middleware even if the
-cookie were somehow sent.
+**JSON-only `POST`s** (`http/simple_request.ts`) — every `POST` route that
+isn't `raw_body` requires `Content-Type: application/json`, bodyless or not
+(logout), and a `raw_body` route refuses a `POST` with no `Content-Type`, or
+a `text/plain`, form-encoded, or multipart one — 415
+`unsupported_content_type`, before reading a credential or the body. Those
+are the requests a browser sends cross-origin without a preflight, cookie
+attached. Any other type makes the browser send an `OPTIONS`
+preflight first, and fuz_app answers none with CORS headers, so the request
+is never sent — whatever the origin allowlist says. `PUT`, `PATCH`, and
+`DELETE` are always preflighted. A consumer that adds CORS middleware
+granting cross-origin requests reopens this. Every fuz_app client sends
+`application/json`. The Rust spine checks the same in each JSON handler.
+
+**Origin verification** (`origin.ts`) — an allowlist that rejects requests
+from disallowed `Origin` headers before any handler runs. It is what guards
+the WebSocket upgrade, which is never preflighted, so list exact origins: a
+port wildcard (`http://localhost:*`) admits every same-site local page to the
+socket, cookie included. It also protects locally-running services from
+being called by untrusted websites as the user browses the web. Origin-only:
+the Fetch spec mandates `Origin` on every unsafe method, so the
+Referer-fallback arm was inert on modern browsers and was dropped to
+converge with the `zzz_server` Rust port. Non-browser clients (curl, CLI,
+server-to-server) without an `Origin` header pass through — token auth is
+the security control for those callers, which don't carry auto-attached
+cookies.
+
+So a same-site page, which does get the cookie sent, still can't drive the
+server: its `POST`s are refused for their content type or never sent, and its
+socket upgrade for its origin.
 
 **Browser/CLI split**: Bearer and daemon tokens are silently discarded when
 `Origin` or `Referer` headers are present — browsers must use cookie auth. The
@@ -1790,8 +1819,8 @@ realtime feeds.
 
 ## Investigated and Ruled Out
 
-- **CSRF** — covered by `SameSite=Strict` + Origin verification. No additional
-  tokens needed.
+- **CSRF** — covered by `SameSite=Strict`, JSON-only `POST`s, and Origin
+  verification (see CSRF Protection). No additional tokens needed.
 - **Session fixation** — sessions are server-generated via `crypto.getRandomValues`,
   never accepted from client input.
 - **Session binding (IP/user-agent)** — not implemented. IP binding breaks mobile

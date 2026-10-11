@@ -488,8 +488,8 @@ export interface CreateTestingActionsOptions {
 	 * Consumer-supplied callback invoked after the auth-table reset, passed
 	 * the same transactional `Db` the auth wipes ran on. DB-domain consumers
 	 * (e.g. fuz_forge truncating its cell / fact / file tables) MUST use this
-	 * `db` rather than a separately-pooled connection — under PGlite's single
-	 * connection a second connection deadlocks against this still-open
+	 * `db` rather than a separately-pooled connection — under the in-memory
+	 * drivers' single connection (pglet, PGlite) a second connection deadlocks against this still-open
 	 * transaction. `testing_zzz_server` clears in-memory workspace registry +
 	 * terminals + scoped-FS scratch (ignores `db`); `testing_spine_stub` has
 	 * no domain layer and omits the option. Runs inside the same RPC dispatch
@@ -623,7 +623,7 @@ export const create_testing_actions = (
 			//    fuz_forge cell/fact/file truncation, or no-op for spine_stub).
 			//    Pass the transactional `ctx.db` so DB-domain truncation runs
 			//    on the same connection — a separate pool connection deadlocks
-			//    against this open transaction under PGlite.
+			//    against this open transaction under the in-memory drivers.
 			if (reset_state) await reset_state(ctx.db);
 
 			return { ...keeper, extra_accounts: extras, extra_actors };

@@ -792,7 +792,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			assert.ok(logout_route, 'logout route registered');
 			const res = await test_app.app.request(logout_route.path, {
 				method: 'POST',
-				headers: test_app.create_session_headers(),
+				headers: test_app.create_session_headers({ 'content-type': 'application/json' }),
 				body: null
 			});
 			assert.strictEqual(res.status, 200);
@@ -894,7 +894,7 @@ describe_db('connection_closer wiring', (get_db) => {
 			assert.ok(logout_route, 'logout route registered');
 			const res = await test_app.app.request(logout_route.path, {
 				method: 'POST',
-				headers: test_app.create_bearer_headers(),
+				headers: test_app.create_bearer_headers({ 'content-type': 'application/json' }),
 				body: null
 			});
 			assert.strictEqual(res.status, 403);
@@ -1403,7 +1403,9 @@ describe_db('connection_closer wiring', (get_db) => {
 							(
 								await h.test_app.app.request('/api/account/logout', {
 									method: 'POST',
-									headers: h.test_app.create_session_headers(),
+									headers: h.test_app.create_session_headers({
+										'content-type': 'application/json'
+									}),
 									body: null
 								})
 							).ok

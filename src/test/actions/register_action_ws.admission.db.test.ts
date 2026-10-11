@@ -23,6 +23,7 @@ import { Hono, type Context } from 'hono';
 import type { WSEvents } from 'hono/ws';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { wait } from '@fuzdev/fuz_util/async.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
@@ -693,8 +694,9 @@ describe_db('register_action_ws admission', (get_db) => {
 				socket.send(mark_request(3, 'third')),
 				socket.send(echo_request(4, 'authenticated'))
 			];
-			// give a dispatch every chance to run on the unverified credential
-			await new Promise((resolve) => setTimeout(resolve, 20));
+			// a `mark` dispatch reads nothing, so one run on the unverified
+			// credential would have reached its handler by the next macrotask
+			await wait();
 			assert.deepStrictEqual(endpoint.handled, [], 'nothing dispatches before admission');
 			assert.deepStrictEqual(socket.fake.sends, []);
 
@@ -754,10 +756,12 @@ describe_db('register_action_ws admission', (get_db) => {
 			const account_id = await create_account(db);
 			const session = await create_session(db, account_id);
 			const order: Array<string> = [];
+			const hook_started = Promise.withResolvers<void>();
 			const hook = Promise.withResolvers<void>();
 			const endpoint = create_endpoint(db, {
 				on_socket_open: async (ctx) => {
 					order.push(`hook:start admitted=${endpoint.transport.is_registered(ctx.connection_id)}`);
+					hook_started.resolve();
 					await hook.promise;
 					order.push('hook:end');
 				}
@@ -768,10 +772,12 @@ describe_db('register_action_ws admission', (get_db) => {
 			assert.deepStrictEqual(order, [], 'the hook does not run on a pending connection');
 			stalled.release();
 			// admitted, the hook now holds the open
-			await new Promise((resolve) => setTimeout(resolve, 20));
-			const sent = socket.send(echo_request(1, 'during hook'));
-			await new Promise((resolve) => setTimeout(resolve, 20));
-			assert.deepStrictEqual(endpoint.handled, []);
+			await hook_started.promise;
+			// `mark`, which reads nothing: a dispatch that ran during the hook
+			// would have reached its handler by the next macrotask
+			const sent = socket.send(mark_request(1, 'during hook'));
+			await wait();
+			assert.deepStrictEqual(endpoint.handled, [], 'nothing dispatches while the hook runs');
 
 			hook.resolve();
 			await socket.opening;

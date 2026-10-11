@@ -107,6 +107,12 @@ export interface StandardCrossProcessTestOptions {
 	 */
 	round_trip_skip_routes?: Array<string>;
 	/**
+	 * Forwarded to `describe_data_exposure_tests` as `skip_routes`
+	 * (`'METHOD /path'` keys), as the in-process bundle's consumers pass it
+	 * directly.
+	 */
+	data_exposure_skip_routes?: Array<string>;
+	/**
 	 * Forwarded to `describe_rpc_round_trip_tests` as `success_fixtures`
 	 * (method name → async params factory). Drives a populated **success**
 	 * body for referential RPC reads (`*_get`, `*_log`) the nil-id round-trip
@@ -157,7 +163,8 @@ export const describe_standard_cross_process_tests = (
 	});
 	describe_data_exposure_tests({
 		setup_test: options.setup_test,
-		surface_source: options.surface_source
+		surface_source: options.surface_source,
+		skip_routes: options.data_exposure_skip_routes
 	});
 	if (options.roles) {
 		describe_standard_admin_integration_tests({

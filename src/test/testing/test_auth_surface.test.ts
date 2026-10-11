@@ -30,6 +30,7 @@ import {
 	resolve_standard_error_schema_tightness
 } from '#lib/testing/attack_surface.ts';
 import { describe_adversarial_404 } from '#lib/testing/adversarial_404.ts';
+import { describe_adversarial_input } from '#lib/testing/adversarial_input.ts';
 import { resolve_valid_path, generate_valid_body } from '#lib/testing/schema_generators.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
@@ -45,6 +46,9 @@ import {
 } from '#lib/testing/surface_invariants.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
 import { FactHashSchema } from '@fuzdev/fuz_util/hash_schemas.ts';
+
+/** The content type every non-`raw_body` POST route requires. */
+const JSON_HEADERS = { 'content-type': 'application/json' };
 
 describe('stubs', () => {
 	test('stub throws on property access', () => {
@@ -186,7 +190,7 @@ describe('create_test_app_from_specs', () => {
 	test('role app passes role guard', async () => {
 		const ctx = create_test_request_context('admin');
 		const app = create_test_app_from_specs(test_specs, ctx);
-		const res = await app.request('/admin', { method: 'POST' });
+		const res = await app.request('/admin', { method: 'POST', headers: JSON_HEADERS });
 		assert.strictEqual(res.status, 200);
 	});
 });
@@ -424,6 +428,31 @@ describe_adversarial_auth({
 		create_app_surface_spec({
 			middleware_specs: adversarial_middleware,
 			route_specs: adversarial_specs
+		}),
+	roles: ['admin', 'keeper']
+});
+
+// Regression guard for typed probes: a `raw_body` POST refuses an untyped
+// request with 415 before params or query validation, so the params and query
+// fuzz cases must send the route's content type to reach the 400 they assert.
+describe_adversarial_input({
+	build: () =>
+		create_app_surface_spec({
+			middleware_specs: adversarial_middleware,
+			route_specs: [
+				{
+					method: 'POST',
+					path: '/raw-upload/:id',
+					auth: { account: 'required', actor: 'none' },
+					params: z.strictObject({ id: z.uuid() }),
+					query: z.strictObject({ size: z.string().regex(/^\d+$/) }),
+					handler: (c) => c.json({ ok: true }),
+					description: 'Raw-byte upload with a uuid param and a numeric query',
+					input: z.null(),
+					output: z.null(),
+					raw_body: true
+				}
+			]
 		}),
 	roles: ['admin', 'keeper']
 });

@@ -34,7 +34,12 @@ import {
 } from '../http/error_schemas.ts';
 import { create_auth_test_apps, create_route_skip_filter, select_auth_app } from './auth_apps.ts';
 import type { AdversarialTestOptions } from './attack_surface.ts';
-import { detect_format, generate_valid_value, resolve_valid_path } from './schema_generators.ts';
+import {
+	detect_format,
+	generate_valid_value,
+	resolve_valid_path,
+	to_route_content_type
+} from './schema_generators.ts';
 
 // --- Payload generation ---
 
@@ -561,7 +566,10 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 						for (const tc of test_cases) {
 							test(tc.label, async () => {
 								const url = build_fuzz_url(route.path, tc.params);
-								const res = await app.request(url, { method: route.method });
+								const res = await app.request(url, {
+									method: route.method,
+									headers: { 'content-type': to_route_content_type(route) }
+								});
 								assert.strictEqual(
 									res.status,
 									400,
@@ -614,7 +622,10 @@ export const describe_adversarial_input = (options: AdversarialTestOptions): voi
 						for (const tc of test_cases) {
 							test(tc.label, async () => {
 								const url = build_query_url(base_url, tc.query);
-								const res = await app.request(url, { method: route.method });
+								const res = await app.request(url, {
+									method: route.method,
+									headers: { 'content-type': to_route_content_type(route) }
+								});
 								assert.strictEqual(
 									res.status,
 									400,

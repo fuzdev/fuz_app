@@ -19,8 +19,9 @@
  *   through the pool, its row gone.
  * - A sweep whose transaction fails once the delete has answered still closes,
  *   the delete rolls back, and the next pass deletes and closes again — on
- *   every driver through the gate, and on real Postgres with a deferred
- *   constraint trigger that refuses the `COMMIT` itself.
+ *   every driver, through the gate's stand-in for a failed `COMMIT`. The
+ *   `COMMIT` itself refused, on real Postgres, is
+ *   `cleanup.sessions.refused_commit.db.test.ts`.
  * - A sweep whose delete fails closes nothing.
  * - A closer that throws for one session does not spare the rest.
  * - The close reaches both transports: a real `BackendWebsocketTransport`
@@ -39,12 +40,10 @@ import { Logger, type LogConsole } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
 import { query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import { cleanup_expired_sessions, type AuthCleanupDeps } from '#lib/auth/cleanup.ts';
-import { hash_session_token, query_create_session } from '#lib/auth/session_queries.ts';
 import { create_realtime_closer, type ConnectionCloser } from '#lib/actions/connection_closer.ts';
 import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
 import {
@@ -54,79 +53,20 @@ import {
 import { create_audit_log_sse } from '#lib/realtime/sse_auth_guard.ts';
 import type { SseNotification, SseStream } from '#lib/realtime/sse.ts';
 import { Db, no_nested_transaction } from '#lib/db/db.ts';
-import { create_describe_db, auth_integration_truncate_tables } from '#lib/testing/db.ts';
-import {
-	create_recording_closer,
-	type RecordedClose
-} from '#lib/testing/connection_closer_helpers.ts';
+import { create_recording_closer } from '#lib/testing/connection_closer_helpers.ts';
 import { create_fake_ws } from '#lib/testing/ws_round_trip.ts';
 
-import { describe_db, pg_factory } from '../db_fixture.ts';
+import { describe_db } from '../db_fixture.ts';
 import { create_gated_db } from '../gated_db.ts';
+import {
+	closed_sessions,
+	create_deps,
+	remaining_sessions,
+	seed_accounts,
+	seed_session
+} from './cleanup.sessions.fixtures.ts';
 
 const log = new Logger('cleanup-sessions-test', { level: 'off' });
-const hour_ms = 60 * 60 * 1000;
-
-interface TestAccounts {
-	account_id: Uuid;
-	other_account_id: Uuid;
-}
-
-const seed_accounts = async (db: Db): Promise<TestAccounts> => {
-	const { account } = await query_create_account_with_actor(
-		{ db },
-		{ username: 'sweep_account', password_hash: 'hash' }
-	);
-	const { account: other } = await query_create_account_with_actor(
-		{ db },
-		{ username: 'sweep_other', password_hash: 'hash' }
-	);
-	return { account_id: account.id, other_account_id: other.id };
-};
-
-/**
- * Seed one `auth_session` row — an expired one an hour past its `expires_at`,
- * a live one an hour short of it — and return its id (the token hash
- * connections are registered under).
- */
-const seed_session = async (
-	db: Db,
-	name: string,
-	account_id: Uuid,
-	expired: boolean
-): Promise<string> => {
-	const id = hash_session_token(name);
-	await query_create_session(
-		{ db },
-		id,
-		account_id,
-		new Date(Date.now() + (expired ? -hour_ms : hour_ms))
-	);
-	return id;
-};
-
-/** The ids left in `auth_session`, sorted. */
-const remaining_sessions = async (db: Db): Promise<Array<string>> =>
-	(await db.query<{ id: string }>('SELECT id FROM auth_session')).map((r) => r.id).sort();
-
-/** Cleanup deps over `db` closing through `connection_closer`, with no audit listener. */
-const create_deps = (db: Db, connection_closer: ConnectionCloser): AuthCleanupDeps => ({
-	db,
-	log,
-	audit: create_audit_emitter({ db, log }),
-	connection_closer
-});
-
-/** The session ids a recording closer was asked to close, sorted — the delete returns ids in no order worth pinning. */
-const closed_sessions = (calls: Array<RecordedClose>): Array<string> => {
-	const ids: Array<string> = [];
-	for (const call of calls) {
-		if (call.method !== 'session')
-			assert.fail(`the sweep closes sessions only, got ${call.method}`);
-		ids.push(call.id);
-	}
-	return ids.sort();
-};
 
 const create_mock_stream = (): SseStream<SseNotification> & { closed: boolean } => {
 	let closed = false;
@@ -411,59 +351,5 @@ describe_db('cleanup_expired_sessions', (get_db) => {
 			assert.strictEqual(bystander.stream.closed, false);
 		}
 		assert.strictEqual(transport.get_connection_count(), 2);
-	});
-});
-
-const describe_pg = create_describe_db(pg_factory, auth_integration_truncate_tables);
-
-// Real Postgres only: the trigger refuses the `COMMIT` statement itself, which
-// the gate above can only stand in for (and pglet has no triggers). Skipped
-// when `TEST_DATABASE_URL` is unset.
-describe_pg('cleanup_expired_sessions with a refused COMMIT', (get_db) => {
-	test('a sweep whose commit fails still closes, and the next pass retries', async () => {
-		const db = get_db();
-		const a = await seed_accounts(db);
-		const expired = await seed_session(db, 'sweep-expired', a.account_id, true);
-		const live = await seed_session(db, 'sweep-live', a.account_id, false);
-		const { closer, calls } = create_recording_closer();
-		const deps = create_deps(db, closer);
-
-		// deferred, so the DELETE succeeds and the COMMIT is what fails
-		await db.query(
-			`CREATE FUNCTION cleanup_test_refuse_commit() RETURNS trigger AS $$
-			   BEGIN RAISE EXCEPTION 'synthetic commit failure'; END;
-			 $$ LANGUAGE plpgsql`
-		);
-		try {
-			await db.query(
-				`CREATE CONSTRAINT TRIGGER cleanup_test_refuse_commit
-				   AFTER DELETE ON auth_session DEFERRABLE INITIALLY DEFERRED
-				   FOR EACH ROW EXECUTE FUNCTION cleanup_test_refuse_commit()`
-			);
-			await assert_rejects(() => cleanup_expired_sessions(deps), /synthetic commit failure/);
-		} finally {
-			// the database outlives this file — leave no trigger behind
-			await db.query('DROP TRIGGER IF EXISTS cleanup_test_refuse_commit ON auth_session');
-			await db.query('DROP FUNCTION cleanup_test_refuse_commit()');
-		}
-
-		assert.deepEqual(
-			closed_sessions(calls),
-			[expired],
-			'the swept session is closed although its commit failed'
-		);
-		assert.deepEqual(
-			await remaining_sessions(db),
-			[expired, live].sort(),
-			'the failed commit rolled the delete back'
-		);
-
-		assert.strictEqual(await cleanup_expired_sessions(deps), 1);
-		assert.deepEqual(await remaining_sessions(db), [live]);
-		assert.deepEqual(
-			closed_sessions(calls),
-			[expired, expired],
-			'the next pass deletes the row and closes again, never the live session'
-		);
 	});
 });

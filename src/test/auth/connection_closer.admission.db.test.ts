@@ -414,7 +414,7 @@ const sites: Array<Site> = [
 						(
 							await h.test_app.app.request('/api/account/logout', {
 								method: 'POST',
-								headers: keeper_headers(h),
+								headers: { ...keeper_headers(h), 'content-type': 'application/json' },
 								body: null
 							})
 						).ok

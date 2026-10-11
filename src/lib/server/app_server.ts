@@ -10,7 +10,6 @@
 
 import { Hono, type Context } from 'hono';
 import { logger } from 'hono/logger';
-import { bodyLimit } from 'hono/body-limit';
 import type { UpgradeWebSocket } from 'hono/ws';
 import { z } from 'zod';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
@@ -76,7 +75,7 @@ import {
 } from '../auth/middleware.ts';
 import { fuz_auth_guard_resolver } from '../auth/auth_guard_resolver.ts';
 import { create_fuz_authorization_handler } from '../auth/request_context.ts';
-import { ERROR_PAYLOAD_TOO_LARGE } from '../http/error_schemas.ts';
+import { create_body_limit_middleware } from '../http/body_limit.ts';
 import { create_rpc_endpoint } from '../actions/action_rpc.ts';
 import { register_ws_endpoint } from '../actions/register_ws_endpoint.ts';
 import {
@@ -127,14 +126,14 @@ export interface BootstrapDisabledOptions {
 
 export interface BootstrapSurfaceOnlyOptions {
 	mode: 'surface_only';
-	/** Route prefix for surface generation. Default `'/api/account'`. */
+	/** Route prefix for surface generation. Default `'/api/account'`; must sit under `/api/`. */
 	route_prefix?: string;
 }
 
 export interface BootstrapLiveOptions {
 	mode: 'live';
 	token_path: string;
-	/** Route prefix for bootstrap routes. Default `'/api/account'`. */
+	/** Route prefix for bootstrap routes. Default `'/api/account'`; must sit under `/api/`. */
 	route_prefix?: string;
 	/**
 	 * Called after successful bootstrap (account + session created).
@@ -913,7 +912,11 @@ const assemble_app_server = async (
 			bootstrap_ip_rate_limiter
 		});
 		const prefix = options.bootstrap.route_prefix ?? '/api/account';
-		factory_routes.push(...prefix_route_specs(prefix, bootstrap_routes));
+		const prefixed = prefix_route_specs(prefix, bootstrap_routes);
+		for (const route of prefixed) {
+			assert_endpoint_in_auth_scope('bootstrap.route_prefix', route.path);
+		}
+		factory_routes.push(...prefixed);
 	}
 
 	// RPC endpoint auto-mount — resolve specs then append their routes so
@@ -1085,12 +1088,7 @@ const assemble_app_server = async (
 	// Default 1 MiB; pass null to disable.
 	if (options.max_body_size !== null) {
 		const max_size = options.max_body_size ?? DEFAULT_MAX_BODY_SIZE;
-		app.use(
-			bodyLimit({
-				maxSize: max_size,
-				onError: (c) => c.json({ error: ERROR_PAYLOAD_TOO_LARGE }, 413)
-			})
-		);
+		app.use(create_body_limit_middleware(max_size));
 	}
 
 	apply_middleware_specs(app, middleware_specs);

@@ -19,6 +19,7 @@ effects, see ../../../docs/architecture.md.
 - `http/error_schemas.ts` — `ERROR_*` constants, standard error shapes, `derive_error_schemas`.
 - `http/schema_helpers.ts` — shared Zod introspection (null/void/strict/surface/merge/middleware-applies) + `to_void_params` / `to_input_params` / `safe_parse_dropping_unknown_keys`.
 - `http/middleware_spec.ts` — `MiddlewareSpec` interface.
+- `http/body_limit.ts` — `create_body_limit_middleware(max_size)`: the `413` body cap `create_app_server` mounts. Refuses on `Content-Length` without reading `c.req.raw.body` (on Deno, reading that getter makes the runtime drain the body and keep the connection alive instead of closing), else falls through to Hono's streaming `bodyLimit`.
 - `http/surface.ts` — `AppSurface`, `AppSurfaceSpec`, `generate_app_surface`, diagnostics.
 - `http/surface_query.ts` — pure filters/groupings over `AppSurface`.
 - `http/proxy.ts` — trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution. Pulls `hono/utils/ipaddr` for CIDR matching.
@@ -151,7 +152,7 @@ WS); see ../../../docs/architecture.md §DEV-only Output Validation.
 `http/error_schemas.ts` is the **declarative** error surface:
 
 - `ERROR_*` `snake_case` string constants — single source of truth; use `.literal(ERROR_*)` in Zod schemas and inline checks in handlers
-- `ApiError`, `ValidationError`, `PermissionError`, `CredentialTypeRequiredError`, `RateLimitError`, `PayloadTooLargeError`, `ForeignKeyError` — standard shapes
+- `ApiError`, `ValidationError`, `PermissionError`, `CredentialTypeRequiredError`, `RateLimitError`, `PayloadTooLargeError`, `UnsupportedContentTypeError`, `ForeignKeyError` — standard shapes
 - `RouteErrorSchemas = Partial<Record<number, z.ZodType>>`
 - `RateLimitKey = 'ip' | 'account' | 'both'`
 
@@ -167,12 +168,13 @@ Pair every schema with the `z.infer` type export.
 `merge_error_schemas(spec, middleware_errors?)` (in `http/schema_helpers.ts`)
 merges three layers, later overrides earlier at the same status code:
 
-1. **Derived** — from `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?})`:
+1. **Derived** — from `derive_error_schemas({auth, has_input?, has_params?, has_query?, rate_limit?, checks_content_type?})`:
    - `has_input || has_params || has_query` → 400 `ValidationError`
    - `auth.account === 'required'` or `auth.actor === 'required'` → 401 `ApiError`
    - `auth.roles?.length` → 403 `PermissionError` (carries `required_roles`)
    - `auth.credential_types?.length` → 403 `CredentialTypeRequiredError` (carries `required_credential_types`; both gates set yields `z.union([PermissionError, CredentialTypeRequiredError])`)
    - `rate_limit` → 429 `RateLimitError`
+   - `checks_content_type` (every `POST`) → 415 `UnsupportedContentTypeError`
    - `auth.actor !== 'none'` → widens 400 to a union with `ActorRequiredError` / `ActorNotOnAccountError` and adds 500 union of `NoActorsOnAccountError` / `AccountVanishedError`. Mirrors what the dispatcher's authorization phase actually emits on routes whose input declares `acting?: ActingActor` (per registry-time invariant 2) — so DEV-mode error-schema validation doesn't reject the auth phase's body.
 2. **Middleware** — from `MiddlewareSpec.errors` that apply to the route's path (via `middleware_applies`)
 3. **Explicit** — `RouteSpec.errors` — always wins

@@ -53,7 +53,11 @@ describe('audit log rollback resilience', () => {
 	test('audit entry persists despite transaction rollback', async () => {
 		const res = await test_app.app.request('/api/poison', {
 			method: 'POST',
-			headers: { host: 'localhost', origin: 'http://localhost:5173' }
+			headers: {
+				host: 'localhost',
+				origin: 'http://localhost:5173',
+				'content-type': 'application/json'
+			}
 		});
 		assert.strictEqual(res.status, 500);
 

@@ -26,12 +26,13 @@ import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY } from '#l
 import type { Db } from '#lib/db/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { auth_migration_ns } from '#lib/auth/migrations.ts';
-import { create_pglite_factory } from '#lib/testing/db.ts';
+import { create_pglite_db } from '#lib/db/db_pglite.ts';
+import { create_default_db_factory } from '#lib/testing/db.ts';
 
 const log = new Logger('test', { level: 'off' });
 
-// Shared PGlite WASM instance via factory cache — avoids cold start overhead.
-const factory = create_pglite_factory(async (db) => {
+// Shared WASM database instance via factory cache — avoids cold start overhead.
+const factory = create_default_db_factory(async (db) => {
 	await run_migrations(db, [auth_migration_ns]);
 });
 
@@ -70,14 +71,14 @@ const TEST_BROWSABLE: ReadonlyArray<string> = [
 /** Create db route specs with the suite defaults, overridable per test. */
 const create_specs = (overrides?: Partial<DbRouteOptions>): Array<RouteSpec> =>
 	create_db_route_specs(deps, {
-		db_type: 'pglite-memory',
+		db_type: 'pglet-memory',
 		db_name: 'test',
 		browsable_tables: TEST_BROWSABLE,
 		...overrides
 	});
 
 /** Create a test Hono app with keeper auth (daemon_token credential) and db route specs. */
-const create_test_app = (specs: Array<RouteSpec>) => {
+const create_test_app = (specs: Array<RouteSpec>, app_db: Db = db) => {
 	const app = new Hono();
 	app.use('/*', async (c, next) => {
 		c.set(ACCOUNT_ID_KEY, keeper_ctx.account.id);
@@ -93,7 +94,7 @@ const create_test_app = (specs: Array<RouteSpec>) => {
 		await next();
 		await flush_post_commit_effects(c.var.post_commit_effects, log);
 	});
-	apply_route_specs(app, specs, fuz_auth_guard_resolver, log, db);
+	apply_route_specs(app, specs, fuz_auth_guard_resolver, log, app_db);
 	return app;
 };
 
@@ -181,7 +182,7 @@ describe('GET /health handler', () => {
 		assert.strictEqual(res.status, 200);
 		const body = await res.json();
 		assert.strictEqual(body.connected, true);
-		assert.strictEqual(body.type, 'pglite-memory');
+		assert.strictEqual(body.type, 'pglet-memory');
 		assert.strictEqual(body.name, 'test');
 		assert.ok(typeof body.table_count === 'number');
 		// schema-wide by design (did-migrations-run diagnostic), not allowlist-filtered
@@ -282,20 +283,17 @@ describe('GET /tables/:name handler', () => {
 	});
 
 	test('bytea and bytea[] values are placeholdered, other columns pass through', async () => {
-		await db.query(`DROP DOMAIN IF EXISTS blob_dom CASCADE`);
-		await db.query(`CREATE DOMAIN blob_dom AS BYTEA`);
 		await db.query(`CREATE TABLE bytea_test (
 			id TEXT PRIMARY KEY,
 			data BYTEA,
 			datas BYTEA[],
-			data_dom BLOB_DOM,
 			note TEXT NOT NULL
 		)`);
 		await db.query(
-			`INSERT INTO bytea_test (id, data, datas, data_dom, note)
+			`INSERT INTO bytea_test (id, data, datas, note)
 			 VALUES
-			   ('a', decode('deadbeef', 'hex'), ARRAY[decode('dead', 'hex'), decode('beef', 'hex')], decode('cafebabe99', 'hex'), 'x'),
-			   ('b', NULL, NULL, NULL, 'y')`
+			   ('a', '\\xdeadbeef'::bytea, ARRAY['\\xdead'::bytea, '\\xbeef'::bytea], 'x'),
+			   ('b', NULL, NULL, 'y')`
 		);
 		const specs = create_specs();
 		const app = create_test_app(specs);
@@ -315,17 +313,39 @@ describe('GET /tables/:name handler', () => {
 		// bytea[] reports pg_column_size (storage size), not octet_length —
 		// the exact number is representation-dependent, the shape is the pin
 		assert.match(a.datas as string, /^<\d+ bytes>$/);
-		// a DOMAIN over bytea resolves to `udt_name: 'bytea'` in
-		// information_schema, so the placeholder holds — pinned so a
-		// consumer's domain-typed blob column can't silently reopen the
-		// bytea egress amplification
-		assert.strictEqual(a.data_dom, '<5 bytes>');
 		assert.strictEqual(a.note, 'x');
 		const b = by_id.get('b') as Record<string, unknown>;
 		assert.strictEqual(b.data, null);
 		assert.strictEqual(b.datas, null);
-		assert.strictEqual(b.data_dom, null);
 		assert.strictEqual(b.note, 'y');
+	});
+
+	test('a DOMAIN over bytea is placeholdered like bytea (PGlite)', async () => {
+		// a DOMAIN over bytea resolves to `udt_name: 'bytea'` in
+		// information_schema, so the placeholder holds — pinned so a
+		// consumer's domain-typed blob column can't silently reopen the
+		// bytea egress amplification. pglet has no domains (`CREATE DOMAIN` is
+		// refused), so this case builds its own PGlite — not the shared factory
+		// instance, which can be the suite's own `db` when the default driver is PGlite
+		const { PGlite } = await import('@electric-sql/pglite');
+		const { db: pglite_db, close } = create_pglite_db(new PGlite());
+		try {
+			await run_migrations(pglite_db, [auth_migration_ns]);
+			await pglite_db.query(`CREATE DOMAIN blob_dom AS BYTEA`);
+			await pglite_db.query(`CREATE TABLE bytea_test (id TEXT PRIMARY KEY, data_dom BLOB_DOM)`);
+			await pglite_db.query(
+				`INSERT INTO bytea_test (id, data_dom) VALUES ('a', '\\xcafebabe99'::bytea), ('b', NULL)`
+			);
+			const app = create_test_app(create_specs(), pglite_db);
+			const res = await app.request('/tables/bytea_test');
+			assert.strictEqual(res.status, 200);
+			const body = await res.json();
+			const by_id = new Map(body.rows.map((r: Record<string, unknown>) => [r.id, r] as const));
+			assert.strictEqual((by_id.get('a') as Record<string, unknown>).data_dom, '<5 bytes>');
+			assert.strictEqual((by_id.get('b') as Record<string, unknown>).data_dom, null);
+		} finally {
+			await close();
+		}
 	});
 
 	test('out-of-range and malformed paging params are 400s on both twins', async () => {

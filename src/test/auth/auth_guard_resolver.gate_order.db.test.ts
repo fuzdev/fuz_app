@@ -34,7 +34,7 @@ import { run_migrations } from '#lib/db/migrate.ts';
 import {
 	auth_integration_truncate_tables,
 	create_describe_db,
-	create_pglite_factory
+	create_default_db_factory
 } from '#lib/testing/db.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
 import { ERROR_ACTOR_REQUIRED, ERROR_CREDENTIAL_TYPE_REQUIRED } from '#lib/http/error_schemas.ts';
@@ -47,7 +47,7 @@ const SESSION_ONLY_PATH = '/api/test_session_only';
 const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [auth_migration_ns]);
 };
-const factory = create_pglite_factory(init_schema);
+const factory = create_default_db_factory(init_schema);
 const describe_db = create_describe_db(factory, auth_integration_truncate_tables);
 
 /** Session-gated and actor-grain — the combination that makes the order observable. */

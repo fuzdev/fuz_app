@@ -26,7 +26,7 @@ import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';
 import { rpc_call, rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
 import {
-	create_pglite_factory,
+	create_default_db_factory,
 	create_describe_db,
 	auth_integration_truncate_tables
 } from '#lib/testing/db.ts';
@@ -42,7 +42,7 @@ const RPC_PATH = '/api/rpc';
 const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [auth_migration_ns]);
 };
-const factory = create_pglite_factory(init_schema);
+const factory = create_default_db_factory(init_schema);
 const describe_db = create_describe_db(factory, auth_integration_truncate_tables);
 
 const test_roles = create_role_schema([{ name: 'teacher', grant_paths: ['self_service'] }]);

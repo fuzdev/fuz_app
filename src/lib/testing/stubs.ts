@@ -210,7 +210,7 @@ export interface CreateStubAppBackendOptions {
  * @param options - the deps and `close` to use in place of the defaults
  */
 export const create_stub_app_backend = (options?: CreateStubAppBackendOptions): AppBackend => ({
-	db_type: 'pglite-memory',
+	db_type: 'pglet-memory',
 	db_name: 'test',
 	migration_results: [],
 	close: options?.close ?? (async () => {}),
@@ -460,6 +460,9 @@ export const create_test_app_surface_spec = (
 					{ ...bootstrap_route_shape, handler: stub_handler }
 				])
 			: [];
+	for (const route of bootstrap_route_specs) {
+		assert_endpoint_in_auth_scope('bootstrap.route_prefix', route.path);
+	}
 	// the surface route mirrors `create_app_server`'s opt-in mount — its handler
 	// serves the surface generated below, backfilled into the same ref
 	const surface_ref: SurfaceRouteOptions = {

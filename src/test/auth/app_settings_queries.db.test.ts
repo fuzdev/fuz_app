@@ -12,7 +12,7 @@ import {
 } from '#lib/auth/app_settings_queries.ts';
 import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
 import {
-	create_pglite_factory,
+	create_default_db_factory,
 	create_describe_db,
 	auth_truncate_tables
 } from '#lib/testing/db.ts';
@@ -23,7 +23,7 @@ import type { Db } from '#lib/db/db.ts';
 const init_schema = async (db: Db): Promise<void> => {
 	await run_migrations(db, [auth_migration_ns]);
 };
-const factory = create_pglite_factory(init_schema);
+const factory = create_default_db_factory(init_schema);
 const describe_db = create_describe_db(factory, auth_truncate_tables);
 
 describe_db('app_settings_queries', (get_db) => {

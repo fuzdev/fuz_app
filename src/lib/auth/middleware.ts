@@ -21,35 +21,39 @@ import { middleware_applies } from '../http/schema_helpers.ts';
  *
  * `create_app_server` mounts the stack here, and refuses at assembly (via
  * `assert_endpoint_in_auth_scope`, which `create_test_app_surface_spec` also
- * runs) an `rpc_endpoints` or `ws_endpoints` path the pattern does not match (tested
- * with `middleware_applies`, which follows Hono: `'/api/*'` matches `/api`
- * and everything under `/api/`): an endpoint outside it would get no
- * session parsing, so every call or upgrade would be unauthenticated.
+ * runs) an `rpc_endpoints`, `ws_endpoints`, or bootstrap path the pattern does
+ * not match (tested with `middleware_applies`, which follows Hono: `'/api/*'`
+ * matches `/api` and everything under `/api/`): an endpoint outside it would
+ * get no origin check or session parsing, so every call or upgrade would be
+ * unauthenticated and any page could send it.
  */
 export const AUTH_MIDDLEWARE_PATH = '/api/*';
 
 /**
  * Throw when an endpoint path sits outside the auth middleware's scope
- * (`AUTH_MIDDLEWARE_PATH`) — there it would get no session or bearer
- * parsing, so every call or upgrade would be unauthenticated.
+ * (`AUTH_MIDDLEWARE_PATH`) — there it would get no origin check and no
+ * session or bearer parsing, so every call or upgrade would be
+ * unauthenticated and any page could send it.
  * `middleware_applies` matches the way Hono matches the middleware's pattern.
  *
  * `create_app_server` calls it for every `rpc_endpoints` and `ws_endpoints`
- * path at assembly, and `create_test_app_surface_spec` does the same, so a
- * surface snapshot never records an endpoint the real server refuses.
+ * path and the bootstrap route at assembly, and `create_test_app_surface_spec`
+ * does the same, so a surface snapshot never records an endpoint the real
+ * server refuses.
  *
  * @param option - the option the path came from, named in the error
  * @param path - the endpoint path to check
  * @throws Error when `path` is outside `AUTH_MIDDLEWARE_PATH`
  */
 export const assert_endpoint_in_auth_scope = (
-	option: 'rpc_endpoints' | 'ws_endpoints',
+	option: 'rpc_endpoints' | 'ws_endpoints' | 'bootstrap.route_prefix',
 	path: string
 ): void => {
 	if (!middleware_applies(AUTH_MIDDLEWARE_PATH, path)) {
 		throw new Error(
 			`${option} path ${path} is outside the auth middleware's scope ` +
-				`(${AUTH_MIDDLEWARE_PATH}) — it would see every caller as unauthenticated — mount it under /api/`
+				`(${AUTH_MIDDLEWARE_PATH}) — it would skip the origin check and see every caller ` +
+				`as unauthenticated — mount it under /api/`
 		);
 	}
 };
@@ -136,7 +140,7 @@ export interface AuthMiddlewareOptions {
  *
  * Returns `[origin, session, request_context, bearer_auth]` middleware specs
  * for the given path pattern. When `daemon_token_state` is provided, appends
- * a 5th `daemon_token` layer. Apps can append extra entries for non-standard
+ * a `daemon_token` layer. Apps can append extra entries for non-standard
  * paths (e.g., tx's `/tx` binary endpoint).
  *
  * @param deps - stateless capabilities (keyring, db)
