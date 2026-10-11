@@ -32,7 +32,7 @@ import {
 import { describe_adversarial_input } from './adversarial_input.ts';
 import { describe_adversarial_404 } from './adversarial_404.ts';
 import { create_auth_test_apps, create_route_skip_filter, select_auth_app } from './auth_apps.ts';
-import { resolve_valid_path } from './schema_generators.ts';
+import { resolve_valid_path, to_route_content_type } from './schema_generators.ts';
 import {
 	assert_surface_matches_snapshot,
 	assert_surface_deterministic,
@@ -150,11 +150,11 @@ export const describe_adversarial_auth = (options: AdversarialTestOptions): void
 		resolve_valid_path(route.path, spec_lookup.get(`${route.method} ${route.path}`)?.params);
 
 	const apps = create_auth_test_apps(route_specs, roles);
-	// every route's request carries the JSON content type a real client sends, so
-	// the per-route content-type check (415) never answers ahead of the auth gate
-	const probe_init = (route: { method: string }): RequestInit => ({
+	// every probe carries the content type a real client sends, so the
+	// per-route content-type check (415) never answers ahead of the auth gate
+	const probe_init = (route: { method: string; raw_body?: boolean }): RequestInit => ({
 		method: route.method,
-		headers: { 'content-type': 'application/json' }
+		headers: { 'content-type': to_route_content_type(route) }
 	});
 
 	describe('adversarial HTTP auth enforcement', () => {

@@ -304,6 +304,12 @@ export const PayloadTooLargeError = z.looseObject({
 });
 export type PayloadTooLargeError = z.infer<typeof PayloadTooLargeError>;
 
+/** Unsupported content type error — returned when a `POST` route refuses the request's `Content-Type`. */
+export const UnsupportedContentTypeError = z.looseObject({
+	error: z.literal(ERROR_UNSUPPORTED_CONTENT_TYPE)
+});
+export type UnsupportedContentTypeError = z.infer<typeof UnsupportedContentTypeError>;
+
 /** Foreign key violation error — returned when a delete is blocked by references. */
 export const ForeignKeyError = z.looseObject({
 	error: z.literal(ERROR_FOREIGN_KEY_VIOLATION)
@@ -394,7 +400,7 @@ export type RateLimitKey = z.infer<typeof RateLimitKey>;
  *   of `NoActorsOnAccountError` / `AccountVanishedError`. The dispatcher's
  *   authorization phase emits these whenever it tries to resolve an actor.
  * - **rate_limit**: 429 (`RateLimitError` with `retry_after`).
- * - **checks_content_type**: 415 (`ApiError`, `unsupported_content_type`) —
+ * - **checks_content_type**: 415 (`UnsupportedContentTypeError`) —
  *   every `POST` route (see `is_post_content_type_refused` in
  *   `http/simple_request.ts`).
  */
@@ -456,7 +462,7 @@ export const derive_error_schemas = ({
 	}
 
 	if (checks_content_type) {
-		errors[415] = ApiError;
+		errors[415] = UnsupportedContentTypeError;
 	}
 
 	return errors;

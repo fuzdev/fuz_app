@@ -69,6 +69,7 @@ import {
 } from '../auth/account_action_specs.ts';
 import type { AppSurfaceSpec } from '../http/surface.ts';
 import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
+import { to_route_content_type } from './schema_generators.ts';
 
 /**
  * How long a failure-audit read waits for the pool-routed row to land.
@@ -1051,7 +1052,7 @@ export const describe_standard_admin_integration_tests = (
 				for (const route of admin_routes) {
 					const res = await fixture.transport(route.path, {
 						method: route.method,
-						headers: { host: 'localhost' }
+						headers: { host: 'localhost', 'content-type': to_route_content_type(route) }
 					});
 					if (res.status === 401 || res.status === 403) {
 						error_collector.record(route_specs, route.method, route.path, res.status);

@@ -24,7 +24,11 @@ import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import { is_public_auth, needs_actor, input_schema_declares_acting } from '../http/auth_shape.ts';
 import type { TestAccount } from './app_server.ts';
 import { assert_response_matches_spec, pick_auth_headers } from './integration_helpers.ts';
-import { resolve_valid_path, generate_valid_body } from './schema_generators.ts';
+import {
+	resolve_valid_path,
+	generate_valid_body,
+	to_route_content_type
+} from './schema_generators.ts';
 import type { SetupTest, TestFixture } from './cross_backend/setup.ts';
 import type { AppSurfaceSpec } from '../http/surface.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
@@ -148,10 +152,7 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 
 			const request_init: RequestInit = {
 				method: spec.method,
-				headers: {
-					...headers,
-					...(body ? { 'content-type': 'application/json' } : {})
-				},
+				headers: { ...headers, 'content-type': to_route_content_type(spec) },
 				...(body ? { body: JSON.stringify(body) } : {})
 			};
 
@@ -190,10 +191,7 @@ export const describe_round_trip_validation = (options: RoundTripTestOptions): v
 
 				const res = await fixture.transport(url, {
 					method: spec.method,
-					headers: {
-						...headers,
-						...(body ? { 'content-type': 'application/json' } : {})
-					},
+					headers: { ...headers, 'content-type': to_route_content_type(spec) },
 					...(body ? { body: JSON.stringify(body) } : {})
 				});
 

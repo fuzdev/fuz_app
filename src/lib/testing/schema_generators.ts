@@ -258,6 +258,18 @@ export const generate_valid_value = (field: ZodFieldInfo, field_schema: z.ZodTyp
 };
 
 /**
+ * The `Content-Type` a well-formed request to a route sends: `application/json`,
+ * or `application/octet-stream` for a `raw_body` route. Every `POST` route
+ * refuses anything else with 415 before its other gates run (see
+ * `http/simple_request.ts`), so a probe of those gates must send it, body or
+ * not. Other methods don't check it, so sending it there is harmless.
+ *
+ * @param route - the route spec or surface route (reads `raw_body`)
+ */
+export const to_route_content_type = (route: { raw_body?: boolean }): string =>
+	route.raw_body ? 'application/octet-stream' : 'application/json';
+
+/**
  * Resolve a route path with valid-ish param values so params validation passes.
  * Used when testing input on routes that also have params.
  *

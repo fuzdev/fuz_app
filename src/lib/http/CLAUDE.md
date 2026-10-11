@@ -151,7 +151,7 @@ WS); see ../../../docs/architecture.md §DEV-only Output Validation.
 `http/error_schemas.ts` is the **declarative** error surface:
 
 - `ERROR_*` `snake_case` string constants — single source of truth; use `.literal(ERROR_*)` in Zod schemas and inline checks in handlers
-- `ApiError`, `ValidationError`, `PermissionError`, `CredentialTypeRequiredError`, `RateLimitError`, `PayloadTooLargeError`, `ForeignKeyError` — standard shapes
+- `ApiError`, `ValidationError`, `PermissionError`, `CredentialTypeRequiredError`, `RateLimitError`, `PayloadTooLargeError`, `UnsupportedContentTypeError`, `ForeignKeyError` — standard shapes
 - `RouteErrorSchemas = Partial<Record<number, z.ZodType>>`
 - `RateLimitKey = 'ip' | 'account' | 'both'`
 
@@ -173,7 +173,7 @@ merges three layers, later overrides earlier at the same status code:
    - `auth.roles?.length` → 403 `PermissionError` (carries `required_roles`)
    - `auth.credential_types?.length` → 403 `CredentialTypeRequiredError` (carries `required_credential_types`; both gates set yields `z.union([PermissionError, CredentialTypeRequiredError])`)
    - `rate_limit` → 429 `RateLimitError`
-   - `checks_content_type` (every `POST`) → 415 `ApiError` (`unsupported_content_type`)
+   - `checks_content_type` (every `POST`) → 415 `UnsupportedContentTypeError`
    - `auth.actor !== 'none'` → widens 400 to a union with `ActorRequiredError` / `ActorNotOnAccountError` and adds 500 union of `NoActorsOnAccountError` / `AccountVanishedError`. Mirrors what the dispatcher's authorization phase actually emits on routes whose input declares `acting?: ActingActor` (per registry-time invariant 2) — so DEV-mode error-schema validation doesn't reject the auth phase's body.
 2. **Middleware** — from `MiddlewareSpec.errors` that apply to the route's path (via `middleware_applies`)
 3. **Explicit** — `RouteSpec.errors` — always wins
