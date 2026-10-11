@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.133.0
+
+### Minor Changes
+
+- **breaking:** rename the fact-store error classes `PayloadTooLargeError` → `FactPayloadTooLargeError` and `StorageFullError` → `FactStorageFullError`, so they no longer collide with the `PayloadTooLargeError` HTTP error schema ([86644ce](https://github.com/fuzdev/fuz_app/commit/86644ce))
+
 ## 0.132.1
 
 ### Patch Changes
