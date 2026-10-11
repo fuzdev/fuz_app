@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.6aeKIBIQ.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DCxIDJ-N.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.hkIn_M5h.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.CmAYAJtg.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdRKSg2Q.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/jxwJvYOV.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.BTJyhcXh.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/RsYRH8Ox.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.DNUdj-Yg.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/kn3lWLz2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -497,10 +497,10 @@ and <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-li
 for the JS-runtime (Deno/Node on V8) and Rust families respectively.
 Per-backend factories in consumer projects compose a small
 declaration against one of these and add consumer-specific env vars
-via <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->extra_env<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Defaults baked in by family:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->TS<!--]--><!--]--><!----></strong><!--]--><!--[2--> — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->'memory://'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> PGlite, 30s startup window. Its shape notes
+via <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->extra_env<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Defaults baked in by family:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->TS<!--]--><!--]--><!----></strong><!--]--><!--[2--> — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->'memory://'<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (in-memory pglet), 30s startup window. Its shape notes
 (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/default_backend_configs.ts#ts_default_shape_notes"><!--[0--><!--[-1-->ts_default_shape_notes<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) record <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->trusted_proxy: false<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> /
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->login_rate_limit: false<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — the TS canonical path leaves those limiters
-null in test mode.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Rust<!--]--><!--]--><!----></strong><!--]--><!--[2--> — caller-supplied real Postgres URL (PGlite isn't reachable
+null in test mode.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Rust<!--]--><!--]--><!----></strong><!--]--><!--[2--> — caller-supplied real Postgres URL (an in-process WASM database isn't reachable
 from <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->tokio-postgres<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), 120s startup window (cargo first-build cost), the
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->FUZ_TESTING_RESET_DB_ON_STARTUP=true<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> self-wipe gate, and shape notes
 (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/default_backend_configs.ts#rust_default_shape_notes"><!--[0--><!--[-1-->rust_default_shape_notes<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) recording <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->trusted_proxy: true<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> +
@@ -994,7 +994,7 @@ entry denies, a present <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-
 admits with the entry's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->moderation_required<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> folded into the verdict. The
 root's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->data<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> arrives in <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->input.root_data<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (the handler read it in-tx), so
 the predicate is <!--]--><!--[4--><strong><!--[--><!--[2-->pure<!--]--><!--]--><!----></strong><!--]--><!--[2--> — no DB read of its own (which also dodges the
-single-connection PGlite deadlock a separate handle would hit).<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/testing_backdoor.ts"><!--[-1-->testing/cross_backend/testing_backdoor.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Cross-backend negative-credential suite for the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->_testing_*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> backdoor
+single-connection in-memory deadlock a separate handle would hit — pglet, PGlite).<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/testing_backdoor.ts"><!--[-1-->testing/cross_backend/testing_backdoor.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Cross-backend negative-credential suite for the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->_testing_*<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> backdoor
 actions.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->_testing_reset<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->_testing_mint_session<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->_testing_put_fact<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> /
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->_testing_schema_snapshot<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->_testing_migration_tracker<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> /
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->_testing_action_manifest<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> are privileged test-binary actions the production
@@ -1189,7 +1189,7 @@ spine test binary (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->s
 these spawn fuz_app's own TS impl over real HTTP with no domain layer, so
 the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cross_backend_ts_node<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cross_backend_ts_deno<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cross_backend_ts_bun<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 self-test projects verify fuz_app's wire path in its own repo across all
-three JS runtimes. All run against in-memory PGlite (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->memory://<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) — no
+three JS runtimes. All run against in-memory pglet (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->memory://<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) — no
 external Postgres, unlike the Rust path.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The binary writes its daemon token to <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->{FUZ_TESTING_TS_SPINE_DIR}/run/daemon_token<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->;
 anchoring the dir to <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->paths.root<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> makes that equal <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->paths.daemon_token_path<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
 which <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/spawn_backend.ts#spawn_backend"><!--[0--><!--[-1-->spawn_backend<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> reads after the health probe.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/wire_shapes.ts"><!--[-1-->testing/cross_backend/wire_shapes.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Wire-shape assertions shared by the cross-backend suites.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A field can carry the right value on both backends and still be a parity
@@ -1335,16 +1335,16 @@ marker with a tracking id and a reason, nothing more.<!--]--><!--]--><!----></p>
 			
 			<script>
 				{
-					__sveltekit_1fu6dpt = {
+					__sveltekit_149frgo = {
 						base: "",
-						version: "86644ceecdc99fab64553861ad1153a9577d97ea"
+						version: "0c1b4f289f430e4556dc093957eea1c5a643b38c"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1fu6dpt);
-						const app = await import("/_app/immutable/entry/app.6aeKIBIQ.js");
+						kit.init(__sveltekit_149frgo);
+						const app = await import("/_app/immutable/entry/app.hkIn_M5h.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

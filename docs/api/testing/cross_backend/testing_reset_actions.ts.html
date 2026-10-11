@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.6aeKIBIQ.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DCxIDJ-N.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.hkIn_M5h.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.CmAYAJtg.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdRKSg2Q.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/jxwJvYOV.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.BTJyhcXh.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/RsYRH8Ox.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.DNUdj-Yg.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/kn3lWLz2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -141,8 +141,8 @@ leaves the previous keeper cached). Pass the same <!--]--><!--[3--><!--[0--><!--
 instance the daemon-token middleware reads.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--> <!--[0--><p class="row gap_md"><strong>type</strong> <!--[1--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/daemon_token.ts#DaemonTokenState"><!--[-1-->DaemonTokenState<!--]--></a><!--]--><!--]--><!----></p><!--]--> <!--[0--><div class="row gap_md flex-wrap:wrap"><!--[0--><!--[--><span class="chip">readonly</span><!--]--><!--]--> <!--[-1--><!--]--></div><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--><!----></section><section class="svelte-pitz0d"><h4><code>reset_state<!--[0--><strong>?</strong><!--]--></code></h4> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Consumer-supplied callback invoked after the auth-table reset, passed
 the same transactional <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/db/db.ts#Db"><!--[0--><!--[-1-->Db<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> the auth wipes ran on. DB-domain consumers
 (e.g. fuz_forge truncating its cell / fact / file tables) MUST use this
-<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->db<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> rather than a separately-pooled connection — under PGlite's single
-connection a second connection deadlocks against this still-open
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->db<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> rather than a separately-pooled connection — under the in-memory
+drivers' single connection (pglet, PGlite) a second connection deadlocks against this still-open
 transaction. <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->testing_zzz_server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> clears in-memory workspace registry +
 terminals + scoped-FS scratch (ignores <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->db<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->); <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->testing_spine_stub<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> has
 no domain layer and omits the option. Runs inside the same RPC dispatch
@@ -238,16 +238,16 @@ divergences from both sides before comparison.<!--]--><!--]--><!----></p><!--]--
 			
 			<script>
 				{
-					__sveltekit_1fu6dpt = {
+					__sveltekit_149frgo = {
 						base: "",
-						version: "86644ceecdc99fab64553861ad1153a9577d97ea"
+						version: "0c1b4f289f430e4556dc093957eea1c5a643b38c"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1fu6dpt);
-						const app = await import("/_app/immutable/entry/app.6aeKIBIQ.js");
+						kit.init(__sveltekit_149frgo);
+						const app = await import("/_app/immutable/entry/app.hkIn_M5h.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
