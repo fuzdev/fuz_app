@@ -99,8 +99,8 @@ export interface InProcessSetupOptions extends CreateTestAppOptions {
  * `_testing_reset` cradle so suite bodies read
  * `fixture.extra_accounts[username]` uniformly regardless of transport.
  *
- * The describe-level `auth_integration_truncate_tables` / pglite WASM
- * cache lifecycle stays in `create_pglite_factory` / `create_describe_db`
+ * The describe-level `auth_integration_truncate_tables` / WASM database
+ * cache lifecycle stays in `create_default_db_factory` / `create_describe_db`
  * (`testing/db.ts`) — `default_in_process_setup` doesn't manage db state
  * beyond what `create_test_app` already does.
  */
@@ -108,7 +108,7 @@ export const default_in_process_setup =
 	(options: InProcessSetupOptions): SetupTest =>
 	async () => {
 		// Per-test fresh db. When `options.migration_namespaces` is set,
-		// `create_test_app` provisions an auth+extras PGlite (e.g. the cell
+		// `create_test_app` provisions an auth+extras database (e.g. the cell
 		// layer); otherwise the auth-only default. Either way the factory
 		// resets + re-migrates on each `create`, so the per-test keeper
 		// bootstrap below lands on a clean DB.

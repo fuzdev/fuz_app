@@ -8,7 +8,7 @@ import '../assert_dev_env.ts';
  * these spawn fuz_app's own TS impl over real HTTP with no domain layer, so
  * the `cross_backend_ts_node` / `cross_backend_ts_deno` / `cross_backend_ts_bun`
  * self-test projects verify fuz_app's wire path in its own repo across all
- * three JS runtimes. All run against in-memory PGlite (`memory://`) — no
+ * three JS runtimes. All run against in-memory pglet (`memory://`) — no
  * external Postgres, unlike the Rust path.
  *
  * The binary writes its daemon token to `{FUZ_TESTING_TS_SPINE_DIR}/run/daemon_token`;
@@ -93,7 +93,7 @@ export const TS_SPINE_BUN_ENTRY = 'src/test/cross_backend/testing_spine_server_b
 export interface TsSpineBackendConfigOptions {
 	/** Listening port. Defaults per runtime (`1178` Node, `1179` Deno, `1180` Bun). */
 	readonly port?: number;
-	/** Database URL. Default `'memory://'` (in-memory PGlite). */
+	/** Database URL. Default `'memory://'` (in-memory pglet). */
 	readonly database_url?: string;
 	/**
 	 * Enable the per-IP + per-account login rate limiters on the spawned binary

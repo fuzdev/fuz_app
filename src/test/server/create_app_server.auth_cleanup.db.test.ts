@@ -90,7 +90,7 @@ const create_harness = (db: Db, overrides?: Partial<AppServerOptions>): Harness 
 	const audit_events: Array<AuditLogEvent> = [];
 	let backend_closes = 0;
 	const backend: AppBackend = {
-		db_type: 'pglite-memory',
+		db_type: 'pglet-memory',
 		db_name: '(test)',
 		migration_results: [],
 		close: async () => {

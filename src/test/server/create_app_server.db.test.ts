@@ -1,7 +1,7 @@
 /**
  * Tests for `create_app_server` factory.
  *
- * Uses a single cached PGlite WASM instance (via `create_pglite_factory`) shared
+ * Uses a single cached WASM database instance (via `create_default_db_factory`) shared
  * across all tests. Schema is reset before each `create_config` call, avoiding
  * repeated WASM cold starts while keeping tests isolated.
  *
@@ -27,7 +27,7 @@ import { ERROR_PAYLOAD_TOO_LARGE, PayloadTooLargeError } from '#lib/http/error_s
 import type { AppBackend } from '#lib/server/app_backend.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_loopback_app_server_options, stub_password_deps } from '#lib/testing/app_server.ts';
-import { create_pglite_factory } from '#lib/testing/db.ts';
+import { create_default_db_factory } from '#lib/testing/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { auth_migration_ns } from '#lib/auth/migrations.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
@@ -48,7 +48,7 @@ const fs_stubs = {
 
 // Shared PGlite WASM instance — schema is reset on each factory.create() call,
 // but the expensive WASM cold start only happens once per worker thread.
-const factory = create_pglite_factory(async () => {
+const factory = create_default_db_factory(async () => {
 	// No-op: create_config runs migrations manually to capture MigrationResult.
 });
 
@@ -67,7 +67,7 @@ const create_config = async (overrides?: Partial<AppServerOptions>): Promise<App
 	const db = await factory.create();
 	const migration_results = await run_migrations(db, [auth_migration_ns]);
 	const backend: AppBackend = {
-		db_type: 'pglite-memory',
+		db_type: 'pglet-memory',
 		db_name: '(memory)',
 		migration_results,
 		close: async () => {},

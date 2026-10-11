@@ -3,7 +3,7 @@
  * just the `fuz_facts` namespace migrated and the fact tables truncated
  * between tests. Sibling of the auth-only ./db_fixture.ts and the full-spine
  * ./cell_db_fixture.ts; shared by the `PgFactStore` suites so each run pays
- * one pglet spawn + one wasm base migration, not one per file.
+ * one wasm base migration, not one per file.
  *
  * @module
  */

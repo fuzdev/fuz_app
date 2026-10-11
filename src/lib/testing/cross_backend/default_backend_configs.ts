@@ -12,11 +12,11 @@ import '../assert_dev_env.ts';
  *
  * Defaults baked in by family:
  *
- * - **TS** — `'memory://'` PGlite, 30s startup window. Its shape notes
+ * - **TS** — `'memory://'` (in-memory pglet), 30s startup window. Its shape notes
  *   (`ts_default_shape_notes`) record `trusted_proxy: false` /
  *   `login_rate_limit: false` — the TS canonical path leaves those limiters
  *   null in test mode.
- * - **Rust** — caller-supplied real Postgres URL (PGlite isn't reachable
+ * - **Rust** — caller-supplied real Postgres URL (an in-process WASM database isn't reachable
  *   from `tokio-postgres`), 120s startup window (cargo first-build cost), the
  *   `FUZ_TESTING_RESET_DB_ON_STARTUP=true` self-wipe gate, and shape notes
  *   (`rust_default_shape_notes`) recording `trusted_proxy: true` +
@@ -199,7 +199,7 @@ export interface MakeDefaultTsBackendConfigOptions {
 	readonly port: number;
 	/** argv passed to the spawn (first entry is the binary). */
 	readonly start_command: ReadonlyArray<string>;
-	/** Defaults to `'memory://'` (in-memory PGlite). */
+	/** Defaults to `'memory://'` (in-memory pglet). */
 	readonly database_url?: string;
 	/** Merged on top of the generic env baseline; later keys win. */
 	readonly extra_env?: Readonly<Record<string, string>>;
@@ -227,7 +227,7 @@ export interface MakeDefaultTsBackendConfigOptions {
 
 /**
  * Shared builder for TS-family backends (Deno + Node). Owns the common
- * env baseline (NODE_ENV, HOST, PORT, in-memory PGlite, cookie keys,
+ * env baseline (NODE_ENV, HOST, PORT, in-memory pglet, cookie keys,
  * bootstrap token path) so per-backend factories only declare what
  * genuinely differs.
  */
@@ -279,7 +279,7 @@ export interface MakeDefaultRustBackendConfigOptions {
 	/** argv passed to the spawn (first entry is the binary). */
 	readonly start_command: ReadonlyArray<string>;
 	/**
-	 * Required — Rust needs real Postgres (PGlite isn't reachable from
+	 * Required — Rust needs real Postgres (an in-process WASM database isn't reachable from
 	 * `tokio-postgres`). Consumers typically supply
 	 * `'postgres://localhost/{repo}_test_{name}'`.
 	 */

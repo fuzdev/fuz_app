@@ -22,7 +22,8 @@ fuz_app provides composable test suites that cover auth security:
 - `describe_rpc_round_trip_tests` — Schema-driven round-trip validation for RPC methods (POST + GET), output schema validation
 
 Attack surface tests are fast (stub-based, no DB). Integration tests spin up
-a full Hono app with PGlite and make real HTTP requests. Consumers (zap,
+a full Hono app with an in-memory database (pglet by default) and make real
+HTTP requests. Consumers (zap,
 visiones, mageguild) wire the full set; the RPC suites skip silently when no
 RPC endpoints are declared.
 
@@ -106,10 +107,10 @@ standard test suites (which expect `(ctx: AppServerContext) => RouteSpec[]`).
 ## Vitest Projects and `.db.test.ts` Convention
 
 Test files that use a database (via `describe_db`, `create_test_app`,
-`create_pglite_factory`, or raw PGlite) should use the `.db.test.ts` suffix.
-This enables a vitest `projects` configuration that runs all DB files in a
-single worker with shared PGlite WASM, avoiding redundant ~500-700ms cold
-starts per file.
+`create_default_db_factory`, `create_pglite_factory`, or a raw driver) should use
+the `.db.test.ts` suffix. This enables a vitest `projects` configuration that runs
+all DB files in a single worker with one shared WASM instance per driver, avoiding
+a cold start per file.
 
 ```typescript
 // vite.config.ts
@@ -138,15 +139,13 @@ import type { Db } from '@fuzdev/fuz_app/db/db.ts';
 import { run_migrations } from '@fuzdev/fuz_app/db/migrate.ts';
 import { auth_migration_ns } from '@fuzdev/fuz_app/auth/migrations.ts';
 import {
-	create_pglite_factory,
+	create_default_db_factory,
 	create_pg_factory,
 	create_describe_db,
-	drop_auth_schema,
 	type DbFactory
 } from '@fuzdev/fuz_app/testing/db.ts';
 
 const init_schema = async (db: Db): Promise<void> => {
-	await drop_auth_schema(db); // recommended for pg — ensures clean slate after upstream schema changes
 	await run_migrations(db, [auth_migration_ns, MY_APP_MIGRATION_NS]);
 };
 
@@ -160,14 +159,18 @@ const TRUNCATE_TABLES = [
 	...app_tables
 ];
 
-export const pglite_factory = create_pglite_factory(init_schema);
+export const default_factory = create_default_db_factory(init_schema);
 const pg_factory = create_pg_factory(init_schema, process.env.TEST_DATABASE_URL);
-export const db_factories: Array<DbFactory> = [pglite_factory, pg_factory];
+export const db_factories: Array<DbFactory> = [default_factory, pg_factory];
 
 export const describe_db = create_describe_db(db_factories, TRUNCATE_TABLES);
 ```
 
-`pg_factory` auto-skips when `TEST_DATABASE_URL` is not set. PGlite always runs.
+`pg_factory` auto-skips when `TEST_DATABASE_URL` is not set. The default factory
+always runs: pglet-wasm (`@fuzdev/pglet-wasm`, an optional peer — install it as a
+devDependency), or the driver a `set_default_db_factory` call installed before it
+was built (see [Switching the default driver](#switching-the-default-driver)).
+`create_pglite_factory` and `create_pglet_wasm_factory` pin a driver.
 
 Each consumer configures its own `describe_db` because they have different
 tables to truncate between tests (app-specific tables beyond the auth schema)
@@ -194,20 +197,43 @@ describe_db('ClassroomQueries', (get_db) => {
 });
 ```
 
-### `drop_auth_schema` for pg factories
+### Every `create()` starts from an empty schema
 
-`create_pg_factory` drops only `schema_version` before running `init_schema`,
-so migrations re-evaluate. But if upstream fuz_app schema changes structurally
-(new tables, renamed columns), stale tables from a previous version can cause
-failures. `drop_auth_schema(db)` resets the whole `public` schema
-(`DROP SCHEMA public CASCADE; CREATE SCHEMA public`) for a true clean slate —
-it clears every table (auth and your own) regardless of namespace, so there's
-no per-table drop list to keep in sync as the schema grows.
+Every factory — in-memory or pg — resets the whole `public` schema
+(`reset_public_schema`: `DROP SCHEMA public CASCADE; CREATE SCHEMA public`)
+before running `init_schema`, so `init_schema` only migrates. On a persistent
+`TEST_DATABASE_URL` that means stale tables from an earlier fuz_app version,
+or another suite's schema, never survive into a run; point it at a database
+used only for tests.
 
-This is harmless for PGlite (fresh in-memory DB each time), but recommended
-for pg factories that use a persistent `TEST_DATABASE_URL`. Call it at the
-start of your `init_schema` callback before running migrations — your own
-tables get reset along with auth's, so no separate drop step is needed.
+### Switching the default driver
+
+`create_default_db_factory` — and every fuz_app helper that falls back to it
+(`create_test_app`, `describe_rate_limiting_tests`, `describe_sse_route_tests`)
+— builds pglet-wasm unless `set_default_db_factory` installed another builder
+first. To run a whole test run on PGlite (or on a driver of your own), install
+the builder from a vitest `setupFiles` entry on the `db` project:
+
+```typescript
+// src/test/db_default.ts
+import {create_pglite_factory, set_default_db_factory} from '@fuzdev/fuz_app/testing/db.ts';
+
+if (process.env.MY_TEST_DB === 'pglite') set_default_db_factory(create_pglite_factory);
+```
+
+```typescript
+// vite.config.ts — the `db` project
+{extends: true, test: {name: 'db', include: ['src/test/**/*.db.test.ts'], setupFiles: ['./src/test/db_default.ts'], isolate: false, fileParallelism: false}},
+```
+
+The builder is read when a factory is **built**, not when it creates a
+database, so it must be installed before any test module calls
+`create_default_db_factory` — `setupFiles` runs ahead of every test file's
+imports, which covers fixtures and fuz_app's own module-level fallback. Scope
+it to the `db` project: the `unit` project's parallel workers would each get
+their own instance. `set_default_db_factory` returns the builder it replaced,
+so a test that swaps it can put it back. To pin one call site regardless,
+call `create_pglite_factory` or `create_pglet_wasm_factory` directly.
 
 ### `db_factories` in standard test suites
 
@@ -219,13 +245,13 @@ suites (`describe_standard_integration_tests`,
 `describe_audit_completeness_tests`, `describe_round_trip_validation`,
 `describe_rpc_round_trip_tests`, `describe_data_exposure_tests`)
 build their per-test fixture via `default_in_process_setup`, which
-uses fuz_app's built-in pglite fallback internally — pass
+uses fuz_app's built-in default-driver fallback internally — pass
 `extra_keeper_roles` / `app_options` through the helper instead.
 
 Pass `db_factories` to `describe_rate_limiting_tests` (or to consumer-side
 `describe_db` blocks for app-specific tests) when you want:
 
-- **PostgreSQL coverage** — test against a real Postgres alongside PGlite
+- **PostgreSQL coverage** — test against a real Postgres alongside the in-memory default
 - **Custom schema init** — include app-specific migrations in the test DB
 
 ## In-Process Wiring
@@ -453,7 +479,7 @@ describe_rate_limiting_tests({
 		create_route_specs: create_my_route_specs,
 		rpc_endpoints: build_rpc_endpoint_specs // optional — both groups drive REST auth routes
 	}),
-	db_factories // optional — defaults to pglite-only
+	db_factories // optional — defaults to the default factory alone (pglet-wasm)
 });
 ```
 
@@ -529,7 +555,7 @@ describe('app-specific integration', () => {
 - `create_account({username?, password_value?, roles?})` — create additional accounts with built-in header helpers
 - `surface` — the generated `AppSurface`
 - `route_specs` — the assembled route specs
-- `cleanup()` — the assembled server's idempotent `close`: stops an `auth_cleanup` schedule opted into through `app_options`, closes the server's live connections, disposes the rate limiters it built and removes the audit listeners and closer members it added, then releases the backend (a no-op when using cached PGlite)
+- `cleanup()` — the assembled server's idempotent `close`: stops an `auth_cleanup` schedule opted into through `app_options`, closes the server's live connections, disposes the rate limiters it built and removes the audit listeners and closer members it added, then releases the backend (a no-op when using the cached in-memory database)
 
 Every rate limiter is off (`rate_limiters: 'disabled_for_testing'`, ./usage.md
 §Rate limiters); pass a limiter through `app_options` to enable just the one a
@@ -975,9 +1001,10 @@ impls actually boot.
 - `assert_jsonrpc_error_response` (`testing/rpc_helpers.ts`) — Assert valid JSON-RPC error response structure
 - `assert_jsonrpc_success_response` (`testing/rpc_helpers.ts`) — Assert valid JSON-RPC success response (optional output schema)
 - `create_mock_runtime` (`runtime/mock.ts`) — Mock runtime for command tests
-- `create_pglite_factory` (`testing/db.ts`) — PGlite DB factory (shared WASM cache)
+- `create_default_db_factory` (`testing/db.ts`) — the default in-memory DB factory: pglet-wasm, or the builder `set_default_db_factory` installed
+- `create_pglite_factory` / `create_pglet_wasm_factory` (`testing/db.ts`) — a PGlite / pglet-wasm DB factory (one shared WASM instance per driver)
 - `create_pg_factory` (`testing/db.ts`) — PostgreSQL DB factory (auto-skips when no URL)
-- `drop_auth_schema` (`testing/db.ts`) — Reset the `public` schema for clean-slate pg tests
+- `reset_public_schema` (`testing/db.ts`) — Reset the `public` schema (every factory calls it per `create()`)
 
 ## Cross-Backend Integration
 

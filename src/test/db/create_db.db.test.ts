@@ -1,8 +1,9 @@
 /**
  * Tests for database initialization and driver adapters.
  *
- * Uses real PGlite for adapter tests (transaction commit/rollback behavior).
- * URL routing tests verify `create_db` selects the correct driver.
+ * Runs the adapter suite (queries, transaction commit/rollback, nested
+ * refusal, int8 coercion) against real PGlite and pglet instances. URL routing
+ * tests verify `create_db` selects the correct driver.
  *
  * @module
  */
@@ -10,104 +11,127 @@
 import { describe, assert, test, beforeAll, afterAll } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
-import type { Db } from '#lib/db/db.ts';
+import type { Db, DbDriverResult } from '#lib/db/db.ts';
 import { create_pglite_db } from '#lib/db/db_pglite.ts';
+import { create_pglet_db_driver, create_pglet_instance } from '#lib/db/db_pglet.ts';
 import { create_db } from '#lib/db/create_db.ts';
 
-describe('create_pglite_db', () => {
-	let db: Db;
-	let close_db: () => Promise<void>;
+const ADAPTERS: Array<{ name: string; create: () => Promise<DbDriverResult> }> = [
+	{
+		name: 'create_pglite_db',
+		create: async () => {
+			const { PGlite } = await import('@electric-sql/pglite');
+			return create_pglite_db(new PGlite());
+		}
+	},
+	{
+		name: 'create_pglet_db_driver',
+		create: async () => create_pglet_db_driver(await create_pglet_instance())
+	}
+];
 
-	beforeAll(async () => {
-		const { PGlite } = await import('@electric-sql/pglite');
-		const pglite = new PGlite();
-		const result = create_pglite_db(pglite);
-		db = result.db;
-		close_db = result.close;
+for (const adapter of ADAPTERS) {
+	describe(adapter.name, () => {
+		let db: Db;
+		let close_db: () => Promise<void>;
 
-		await db.query('CREATE TABLE test_items (id serial PRIMARY KEY, name text NOT NULL)');
-	});
+		beforeAll(async () => {
+			const result = await adapter.create();
+			db = result.db;
+			close_db = result.close;
 
-	afterAll(async () => {
-		await close_db();
-	});
-
-	test('query returns rows', async () => {
-		await db.query('INSERT INTO test_items (name) VALUES ($1)', ['alpha']);
-		const rows = await db.query<{ id: number; name: string }>(
-			'SELECT name FROM test_items WHERE name = $1',
-			['alpha']
-		);
-
-		assert.strictEqual(rows.length, 1);
-		assert.strictEqual(rows[0]!.name, 'alpha');
-	});
-
-	test('query_one returns first row', async () => {
-		const row = await db.query_one<{ name: string }>(
-			'SELECT name FROM test_items WHERE name = $1',
-			['alpha']
-		);
-
-		assert.ok(row);
-		assert.strictEqual(row.name, 'alpha');
-	});
-
-	test('query_one returns undefined for no match', async () => {
-		const row = await db.query_one('SELECT * FROM test_items WHERE name = $1', ['nonexistent']);
-
-		assert.strictEqual(row, undefined);
-	});
-
-	test('transaction commits on success', async () => {
-		await db.transaction(async (tx) => {
-			await tx.query('INSERT INTO test_items (name) VALUES ($1)', ['committed']);
+			await db.query('CREATE TABLE test_items (id serial PRIMARY KEY, name text NOT NULL)');
 		});
 
-		const rows = await db.query<{ name: string }>('SELECT name FROM test_items WHERE name = $1', [
-			'committed'
-		]);
-		assert.strictEqual(rows.length, 1);
-	});
-
-	test('transaction rolls back on error', async () => {
-		await assert_rejects(
-			() =>
-				db.transaction(async (tx) => {
-					await tx.query('INSERT INTO test_items (name) VALUES ($1)', ['rolled_back']);
-					throw new Error('abort');
-				}),
-			/abort/
-		);
-
-		const rows = await db.query<{ name: string }>('SELECT name FROM test_items WHERE name = $1', [
-			'rolled_back'
-		]);
-		assert.strictEqual(rows.length, 0);
-	});
-
-	test('transaction returns callback value', async () => {
-		const result = await db.transaction(async (tx) => {
-			const rows = await tx.query<{ id: number }>(
-				'INSERT INTO test_items (name) VALUES ($1) RETURNING id',
-				['return_val']
+		test('int8 reads as a JS number, as on every driver', async () => {
+			const rows = await db.query<{ big: unknown; seq: unknown }>(
+				'SELECT 9007199254740991::int8 AS big, count(*) AS seq FROM test_items'
 			);
-			return rows[0]!.id;
+			assert.strictEqual(rows[0]!.big, Number.MAX_SAFE_INTEGER);
+			assert.strictEqual(typeof rows[0]!.seq, 'number');
 		});
 
-		assert.ok(typeof result === 'number');
-	});
+		afterAll(async () => {
+			await close_db();
+		});
 
-	test('transaction-scoped Db rejects nested transactions', async () => {
-		await assert_rejects(
-			() =>
-				db.transaction(async (tx) => {
-					await tx.transaction(async () => {});
-				}),
-			/Nested transactions are not supported/
-		);
+		test('query returns rows', async () => {
+			await db.query('INSERT INTO test_items (name) VALUES ($1)', ['alpha']);
+			const rows = await db.query<{ id: number; name: string }>(
+				'SELECT name FROM test_items WHERE name = $1',
+				['alpha']
+			);
+
+			assert.strictEqual(rows.length, 1);
+			assert.strictEqual(rows[0]!.name, 'alpha');
+		});
+
+		test('query_one returns first row', async () => {
+			const row = await db.query_one<{ name: string }>(
+				'SELECT name FROM test_items WHERE name = $1',
+				['alpha']
+			);
+
+			assert.ok(row);
+			assert.strictEqual(row.name, 'alpha');
+		});
+
+		test('query_one returns undefined for no match', async () => {
+			const row = await db.query_one('SELECT * FROM test_items WHERE name = $1', ['nonexistent']);
+
+			assert.strictEqual(row, undefined);
+		});
+
+		test('transaction commits on success', async () => {
+			await db.transaction(async (tx) => {
+				await tx.query('INSERT INTO test_items (name) VALUES ($1)', ['committed']);
+			});
+
+			const rows = await db.query<{ name: string }>('SELECT name FROM test_items WHERE name = $1', [
+				'committed'
+			]);
+			assert.strictEqual(rows.length, 1);
+		});
+
+		test('transaction rolls back on error', async () => {
+			await assert_rejects(
+				() =>
+					db.transaction(async (tx) => {
+						await tx.query('INSERT INTO test_items (name) VALUES ($1)', ['rolled_back']);
+						throw new Error('abort');
+					}),
+				/abort/
+			);
+
+			const rows = await db.query<{ name: string }>('SELECT name FROM test_items WHERE name = $1', [
+				'rolled_back'
+			]);
+			assert.strictEqual(rows.length, 0);
+		});
+
+		test('transaction returns callback value', async () => {
+			const result = await db.transaction(async (tx) => {
+				const rows = await tx.query<{ id: number }>(
+					'INSERT INTO test_items (name) VALUES ($1) RETURNING id',
+					['return_val']
+				);
+				return rows[0]!.id;
+			});
+
+			assert.ok(typeof result === 'number');
+		});
+
+		test('transaction-scoped Db rejects nested transactions', async () => {
+			await assert_rejects(
+				() =>
+					db.transaction(async (tx) => {
+						await tx.transaction(async () => {});
+					}),
+				/Nested transactions are not supported/
+			);
+		});
 	});
-});
+}
 
 describe('create_db', () => {
 	// Shared instance for query and transaction tests — avoids redundant WASM cold starts.
@@ -121,12 +145,12 @@ describe('create_db', () => {
 		await shared_result.close();
 	});
 
-	test('memory:// URL creates in-memory PGlite', () => {
-		assert.strictEqual(shared_result.db_type, 'pglite-memory');
+	test('memory:// URL creates in-memory pglet', () => {
+		assert.strictEqual(shared_result.db_type, 'pglet-memory');
 		assert.strictEqual(shared_result.db_name, '(memory)');
 	});
 
-	test('in-memory PGlite can execute queries', async () => {
+	test('in-memory pglet can execute queries', async () => {
 		await shared_result.db.query('CREATE TABLE init_test (id serial PRIMARY KEY)');
 		await shared_result.db.query('INSERT INTO init_test DEFAULT VALUES');
 		const rows = await shared_result.db.query<{ id: number }>('SELECT id FROM init_test');
@@ -137,7 +161,7 @@ describe('create_db', () => {
 		await shared_result.db.query('DROP TABLE init_test');
 	});
 
-	test('in-memory PGlite supports transactions', async () => {
+	test('in-memory pglet supports transactions', async () => {
 		await shared_result.db.query('CREATE TABLE tx_test (val text)');
 
 		await shared_result.db.transaction(async (tx) => {

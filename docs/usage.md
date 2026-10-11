@@ -1702,7 +1702,7 @@ action. The Rust spine twins the fact layer (`fuz_fact`, `fuz_fact_serving`).
 
 ```typescript
 import {
-	create_pglite_factory,
+	create_default_db_factory,
 	create_pg_factory,
 	type DbFactory
 } from '@fuzdev/fuz_app/testing/db.ts';
@@ -1713,13 +1713,13 @@ const init_schema = async (db: Db) => {
 	await run_migrations(db, [auth_migration_ns]);
 };
 const factories: Array<DbFactory> = [
-	create_pglite_factory(init_schema),
-	create_pg_factory(init_schema, process.env.DATABASE_URL)
+	create_default_db_factory(init_schema),
+	create_pg_factory(init_schema, process.env.TEST_DATABASE_URL)
 ];
 
 for (const factory of factories) {
 	describe(factory.name, () => {
-		if (factory.skip) return; // skips pg when DATABASE_URL not set
+		if (factory.skip) return; // skips pg when TEST_DATABASE_URL not set
 		let db: Db;
 		beforeEach(async () => {
 			db = await factory.create();

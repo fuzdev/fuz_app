@@ -27,7 +27,7 @@ import { z } from 'zod';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';
 import {
-	create_pglite_factory,
+	create_default_db_factory,
 	create_describe_db,
 	auth_integration_truncate_tables
 } from '#lib/testing/db.ts';
@@ -45,7 +45,7 @@ const session_options = create_session_config('test_session');
 const RPC_PATH = '/api/rpc';
 const REST_PATH = '/test/rollback_probe';
 
-const factory = create_pglite_factory(async (db) => {
+const factory = create_default_db_factory(async (db) => {
 	await run_migrations(db, [auth_migration_ns]);
 	await db.query('CREATE TABLE IF NOT EXISTS rollback_probe (token text primary key)');
 });

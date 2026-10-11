@@ -141,6 +141,9 @@ export default defineConfig({
 					// (they need a spawned backend via `globalSetup`); `*.db.test.ts`
 					// run under `db`.
 					exclude: ['src/test/**/*.db.test.ts', 'src/test/**/*.cross.test.ts'],
+					// refuses the default database factory, so a test that opens a
+					// database without the `.db.test.ts` suffix fails loudly
+					setupFiles: ['./src/test/unit_db_guard.ts'],
 					maxWorkers: max_threads,
 					sequence: { groupOrder: 1 }
 				}
@@ -150,10 +153,9 @@ export default defineConfig({
 				test: {
 					name: 'db',
 					include: ['src/test/**/*.db.test.ts'],
-					// Installs the optional stand-in driver for the pglite factory
-					// (`FUZ_TEST_DB_SUBSTITUTE`); a no-op when that is unset. Scoped to
-					// this project so the parallel-worker `unit` project keeps PGlite.
-					setupFiles: ['./src/test/db_substitute.ts'],
+					// installs the default driver `FUZ_TEST_DB_DEFAULT` selects (pglet-wasm
+					// when unset); the `unit` project refuses the default factory instead
+					setupFiles: ['./src/test/db_default.ts'],
 					isolate: false,
 					fileParallelism: false,
 					sequence: { groupOrder: 2 }

@@ -10,8 +10,8 @@
  *
  * Run: `gro run src/benchmarks/cross_impl.bench.ts` (or `npm run benchmark:cross-impl`).
  *
- * **DB-layer caveat.** The TS binaries run in-memory PGlite while the Rust
- * spine runs real Postgres (`tokio-postgres` can't reach PGlite) — so the
+ * **DB-layer caveat.** The TS binaries run in-memory pglet while the Rust
+ * spine runs real Postgres (`tokio-postgres` can't reach an in-process database) — so the
  * TS-vs-Rust columns are NOT apples-to-apples at the DB layer; the
  * TS-node-vs-TS-deno-vs-TS-bun comparison is (same driver). zzz's
  * `benchmark:cross-impl` carries the same caveat. The Rust column only appears when

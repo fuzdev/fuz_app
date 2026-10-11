@@ -8,10 +8,12 @@ import { describe, assert, test, beforeAll, afterAll, vi } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {
+	create_default_db_factory,
+	create_pglet_wasm_factory,
 	create_pglite_factory,
 	create_pg_factory,
 	log_db_factory_status,
-	set_substitute_db_factory,
+	set_default_db_factory,
 	type DbFactory,
 	type DbFactoryBuilder
 } from '#lib/testing/db.ts';
@@ -19,65 +21,87 @@ import { Db, no_nested_transaction } from '#lib/db/db.ts';
 
 const noop_init = async (_db: Db): Promise<void> => {};
 
-// This suite's subject is the PGlite factory itself — its `name`, its shared
-// instance, its `init_schema` call — so it opts out of the stand-in driver a
-// `db` run can install (`set_substitute_db_factory`, `src/test/db_substitute.ts`).
-const PGLITE_ONLY = { substitutable: false } as const;
+// The two in-memory builders share one shape: a module-level instance per driver,
+// reset and re-initialized on every `create()`.
+const IN_MEMORY_BUILDERS: Array<{ name: string; build: DbFactoryBuilder }> = [
+	{ name: 'pglite', build: create_pglite_factory },
+	{ name: 'pglet-wasm', build: create_pglet_wasm_factory }
+];
 
-// Warm up PGlite WASM before tests so the cold-start cost is outside individual test timers.
+// Warm up both WASM instances before tests so the cold-start cost is outside individual test timers.
 beforeAll(async () => {
-	const warmup = create_pglite_factory(noop_init, PGLITE_ONLY);
-	await warmup.create();
+	for (const { build } of IN_MEMORY_BUILDERS) await build(noop_init).create();
 });
 
-describe('create_pglite_factory', () => {
-	test('creates a factory that is never skipped', () => {
-		const factory = create_pglite_factory(noop_init, PGLITE_ONLY);
-		assert.strictEqual(factory.name, 'pglite');
-		assert.strictEqual(factory.skip, false);
+for (const { name, build } of IN_MEMORY_BUILDERS) {
+	describe(`the ${name} factory`, () => {
+		test('creates a factory that is never skipped', () => {
+			const factory = build(noop_init);
+			assert.strictEqual(factory.name, name);
+			assert.strictEqual(factory.skip, false);
+		});
+
+		test('creates a working in-memory database', async () => {
+			const init_called: Array<Db> = [];
+			const factory = build((db) => {
+				init_called.push(db);
+				return Promise.resolve();
+			});
+
+			const db = await factory.create();
+			assert.ok(db instanceof Db);
+			assert.strictEqual(init_called.length, 1);
+			assert.strictEqual(init_called[0], db);
+
+			// verify db is functional
+			const rows = await db.query<{ result: number }>('SELECT 1 as result');
+			assert.strictEqual(rows.length, 1);
+			assert.strictEqual(rows[0]!.result, 1);
+
+			await factory.close(db);
+		});
+
+		test('runs schema init on the created database', async () => {
+			const factory = build(async (db) => {
+				await db.query('CREATE TABLE test_items (id SERIAL PRIMARY KEY, name TEXT NOT NULL)');
+			});
+
+			const db = await factory.create();
+			await db.query("INSERT INTO test_items (name) VALUES ('hello')");
+			const rows = await db.query<{ name: string }>('SELECT name FROM test_items');
+			assert.strictEqual(rows.length, 1);
+			assert.strictEqual(rows[0]!.name, 'hello');
+
+			await factory.close(db);
+		});
+
+		test("a second factory's first create resets the shared instance", async () => {
+			const first = build(async (db) => {
+				await db.query('CREATE TABLE only_in_first (id INT)');
+			});
+			const db = await first.create();
+			const second = build(noop_init);
+			assert.strictEqual(await second.create(), db, 'the factories share one instance');
+			const rows = await db.query<{ table_name: string }>(
+				"SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+			);
+			assert.deepEqual(rows, []);
+		});
+
+		test('reads int8 as a number', async () => {
+			const db = await build(noop_init).create();
+			const rows = await db.query<{ big: unknown }>('SELECT 9007199254740991::int8 AS big');
+			assert.strictEqual(rows[0]!.big, 9007199254740991);
+		});
 	});
+}
 
-	test('creates a working in-memory database', async () => {
-		const init_called: Array<Db> = [];
-		const factory = create_pglite_factory((db) => {
-			init_called.push(db);
-			return Promise.resolve();
-		}, PGLITE_ONLY);
-
-		const db = await factory.create();
-		assert.ok(db instanceof Db);
-		assert.strictEqual(init_called.length, 1);
-		assert.strictEqual(init_called[0], db);
-
-		// verify db is functional
-		const rows = await db.query<{ result: number }>('SELECT 1 as result');
-		assert.strictEqual(rows.length, 1);
-		assert.strictEqual(rows[0]!.result, 1);
-
-		await factory.close(db);
-	});
-
-	test('runs schema init on the created database', async () => {
-		const factory = create_pglite_factory(async (db) => {
-			await db.query('CREATE TABLE test_items (id SERIAL PRIMARY KEY, name TEXT NOT NULL)');
-		}, PGLITE_ONLY);
-
-		const db = await factory.create();
-		await db.query("INSERT INTO test_items (name) VALUES ('hello')");
-		const rows = await db.query<{ name: string }>('SELECT name FROM test_items');
-		assert.strictEqual(rows.length, 1);
-		assert.strictEqual(rows[0]!.name, 'hello');
-
-		await factory.close(db);
-	});
-});
-
-describe('set_substitute_db_factory', () => {
-	// The only automated check on the substitution seam. A run that installs no
-	// stand-in never takes the substituted branch, so without this a regression in
-	// either direction — the stand-in stops standing in, or `{substitutable: false}`
-	// stops pinning — passes every suite in the repo.
-	test('stands in at an unpinned call site and never at a pinned one', () => {
+describe('set_default_db_factory', () => {
+	// The only automated check on the default-driver seam. A run that installs no
+	// override never takes the installed branch, so without this a regression in
+	// either direction — the override stops applying, or the explicit builders stop
+	// pinning their driver — passes every suite in the repo.
+	test('applies at a default call site and never at an explicit one', () => {
 		const sentinel: DbFactory = {
 			name: 'sentinel',
 			skip: false,
@@ -89,23 +113,32 @@ describe('set_substitute_db_factory', () => {
 			received.push(init_schema);
 			return sentinel;
 		};
+		const previous = set_default_db_factory(build_sentinel);
 		try {
-			set_substitute_db_factory(build_sentinel);
-			// unpinned: the builder is called with this call site's `init_schema`
-			assert.strictEqual(create_pglite_factory(noop_init), sentinel);
+			// default: the builder is called with this call site's `init_schema`
+			assert.strictEqual(create_default_db_factory(noop_init), sentinel);
 			assert.deepEqual(received, [noop_init]);
-			// pinned: PGlite, and the builder is not called again
-			assert.strictEqual(create_pglite_factory(noop_init, PGLITE_ONLY).name, 'pglite');
+			// explicit: their own driver, and the builder is not called again
+			assert.strictEqual(create_pglite_factory(noop_init).name, 'pglite');
+			assert.strictEqual(create_pglet_wasm_factory(noop_init).name, 'pglet-wasm');
 			assert.strictEqual(received.length, 1);
 		} finally {
-			// Uninstall rather than restore — nothing exposes the installed builder to
-			// put back. Safe because `db_substitute.ts` is a `setupFiles` entry and so
-			// re-installs the run's selected stand-in for every later file.
-			set_substitute_db_factory(null);
+			// put back the run's selected driver (`db_default.ts`) for the rest of the file
+			assert.strictEqual(set_default_db_factory(previous), build_sentinel);
 		}
-		assert.strictEqual(create_pglite_factory(noop_init).name, 'pglite');
+	});
+
+	test('`null` restores pglet-wasm', () => {
+		const previous = set_default_db_factory(null);
+		try {
+			assert.strictEqual(create_default_db_factory(noop_init).name, 'pglet-wasm');
+		} finally {
+			set_default_db_factory(previous);
+		}
 	});
 });
+
+const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 
 describe('create_pg_factory', () => {
 	test('skips when no test_url is provided', () => {
@@ -118,6 +151,40 @@ describe('create_pg_factory', () => {
 	test('throws when create is called without test_url', async () => {
 		const factory = create_pg_factory(noop_init);
 		await assert_rejects(() => factory.create(), /TEST_DATABASE_URL required/);
+	});
+
+	describe.skipIf(!TEST_DATABASE_URL)('against a live server', () => {
+		test('resets the public schema on every create()', async () => {
+			const factory = create_pg_factory(noop_init, TEST_DATABASE_URL);
+			const first = await factory.create();
+			await first.query('CREATE TABLE pg_factory_stale (id INT)');
+			await factory.close(first);
+			const db = await factory.create();
+			try {
+				const rows = await db.query(
+					`SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'pg_factory_stale'`
+				);
+				assert.strictEqual(rows.length, 0);
+			} finally {
+				await factory.close(db);
+			}
+		});
+
+		test('a missing database gets the createdb hint', async () => {
+			const url = new URL(TEST_DATABASE_URL!);
+			url.pathname = '/fuz_app_test_db_that_does_not_exist';
+			const factory = create_pg_factory(noop_init, url.href);
+			await assert_rejects(() => factory.create(), /does not exist\. Create it with: createdb/);
+		});
+
+		test('an init_schema "does not exist" error passes through unchanged', async () => {
+			const factory = create_pg_factory(async (db) => {
+				await db.query('SELECT * FROM pg_factory_missing_relation');
+			}, TEST_DATABASE_URL);
+			const error = await assert_rejects(() => factory.create());
+			assert.include(error.message, 'pg_factory_missing_relation');
+			assert.notInclude(error.message, 'createdb');
+		});
 	});
 });
 

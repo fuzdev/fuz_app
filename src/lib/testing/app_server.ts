@@ -4,7 +4,7 @@ import './assert_dev_env.ts';
  * Bootstrapped app server factory for integration tests.
  *
  * Creates a keeper account, API token, and signed session cookie on a
- * database. By default uses a cached in-memory PGlite (one shared WASM instance
+ * database. By default uses a cached in-memory pglet (one shared WASM instance
  * per loaded copy of `testing/db.ts` — once per run under the `db` project's
  * `isolate: false` + `fileParallelism: false`); pass `db` to use
  * an existing database (any driver) instead.
@@ -59,7 +59,7 @@ import {
 	DAEMON_TOKEN_HEADER,
 	type DaemonTokenState
 } from '../auth/daemon_token.ts';
-import { create_pglite_factory, type DbFactory } from './db.ts';
+import { create_default_db_factory, type DbFactory } from './db.ts';
 import type { RpcEndpointsSuiteOption } from './rpc_helpers.ts';
 import { token_scope_full } from '../auth/token_scope.ts';
 
@@ -78,14 +78,15 @@ export const stub_password_deps: PasswordHashDeps = {
 /** 64-hex-char test cookie secret — deterministic, never used in production. */
 export const TEST_COOKIE_SECRET = 'a'.repeat(64);
 
-// Module-level PGlite factory for create_test_app_server when no db is provided.
-// Shares the WASM instance cache from `testing/db.ts`, avoiding redundant cold starts
-// within one loaded copy of that module. Schema is reset on each create() call.
-const fallback_pglite_factory = create_pglite_factory(async (db) => {
+// Module-level default factory (pglet-wasm unless `set_default_db_factory` installed
+// another) for create_test_app_server when no db is provided. Shares the WASM instance
+// cache from `testing/db.ts`, avoiding redundant cold starts within one loaded copy of
+// that module. Schema is reset on each create() call.
+const fallback_db_factory = create_default_db_factory(async (db) => {
 	await run_migrations(db, [auth_migration_ns]);
 });
 
-// Auto-created PGlite factories keyed by extra-namespace identity. Suites
+// Auto-created default factories keyed by extra-namespace identity. Suites
 // whose backend needs tables beyond auth (e.g. the cell layer) share one
 // factory per distinct namespace set — and the worker-cached WASM instance —
 // rather than each hand-building its own. The cell parity suite is the first
@@ -93,8 +94,8 @@ const fallback_pglite_factory = create_pglite_factory(async (db) => {
 const fallback_factories_by_namespaces = new Map<string, DbFactory>();
 
 /**
- * Resolve the no-`db` PGlite factory for the requested extra migration
- * namespaces. Empty / omitted → the shared auth-only `fallback_pglite_factory`;
+ * Resolve the no-`db` default factory for the requested extra migration
+ * namespaces. Empty / omitted → the shared auth-only `fallback_db_factory`;
  * otherwise a memoized factory whose `init` runs
  * `[auth_migration_ns, ...migration_namespaces]` on each reset. The
  * reset-on-`create` gives the same fresh-db-per-test isolation as the
@@ -105,12 +106,12 @@ const resolve_fallback_factory = (
 	migration_namespaces?: ReadonlyArray<MigrationNamespace>
 ): DbFactory => {
 	if (!migration_namespaces || migration_namespaces.length === 0) {
-		return fallback_pglite_factory;
+		return fallback_db_factory;
 	}
 	const key = migration_namespaces.map((ns) => ns.namespace).join(',');
 	let factory = fallback_factories_by_namespaces.get(key);
 	if (!factory) {
-		factory = create_pglite_factory(async (db) => {
+		factory = create_default_db_factory(async (db) => {
 			await run_migrations(db, [auth_migration_ns, ...migration_namespaces]);
 		});
 		fallback_factories_by_namespaces.set(key, factory);
@@ -316,11 +317,11 @@ export interface TestAppServerOptions {
 	session_options: SessionOptions<string>;
 	/** Existing database — skips internal DB creation when provided. Caller owns the DB lifecycle. */
 	db?: Db;
-	/** Database driver type — only used when `db` is provided. Default: `'pglite-memory'`. */
+	/** Database driver type — only used when `db` is provided. Default: `'pglet-memory'`. */
 	db_type?: DbType;
 	/**
 	 * Extra migration namespaces run after the builtin auth namespace in the
-	 * auto-created in-memory PGlite, mirroring `create_app_backend`'s
+	 * auto-created in-memory database, mirroring `create_app_backend`'s
 	 * `migration_namespaces`. For suites whose backend needs tables beyond
 	 * auth — the cell parity suite passes `[CELL_MIGRATION_NS]`. The harness
 	 * builds + caches a fresh-per-test factory migrating
@@ -382,7 +383,7 @@ interface BuildTestBackendOptions {
 	db_type?: DbType;
 	password?: PasswordHashDeps;
 	audit_factory?: AuditFactory;
-	/** Extra migration namespaces for the auto-created PGlite; rejected when `db` is supplied. */
+	/** Extra migration namespaces for the auto-created database; rejected when `db` is supplied. */
 	migration_namespaces?: ReadonlyArray<MigrationNamespace>;
 	/** Override the default no-op fs stubs (token-aware fs for bootstrap success tests). */
 	fs_stubs?: TestFsStubs;
@@ -405,7 +406,7 @@ const _build_test_backend = async (
 ): Promise<{ backend: AppBackend; keyring: Keyring }> => {
 	const {
 		db: existing_db,
-		db_type = 'pglite-memory',
+		db_type = 'pglet-memory',
 		password = stub_password_deps,
 		audit_factory = default_audit_factory,
 		fs_stubs = default_test_fs_stubs,
@@ -427,15 +428,15 @@ const _build_test_backend = async (
 	let db: Db;
 	let db_name: string;
 	if (existing_db) {
-		// Reset singleton config row from a previous test (harmless on fresh pglite).
+		// Reset singleton config row from a previous test (harmless on a fresh database).
 		await existing_db.query(
 			'UPDATE app_settings SET open_signup = false, updated_at = NULL, updated_by = NULL WHERE open_signup = true OR updated_at IS NOT NULL'
 		);
 		db = existing_db;
 		db_name = 'test';
 	} else {
-		// In-memory PGlite via cached factory — reuses the WASM instance from `testing/db.ts`
-		// instead of creating a new PGlite each time. Schema is reset and migrations re-run
+		// In-memory default driver via cached factory — reuses the WASM instance from
+		// `testing/db.ts` instead of creating a new instance each time. Schema is reset and migrations re-run
 		// on each call, but the expensive WASM cold start only happens once per loaded
 		// copy of `testing/db.ts` — under the `db` project's `isolate: false` +
 		// `fileParallelism: false` that is once for the whole run.
@@ -445,11 +446,11 @@ const _build_test_backend = async (
 	}
 	const backend: AppBackend = {
 		// a supplied `db` reports the caller's `db_type`; the auto-created one names
-		// PGlite unconditionally — a run that installs a substitute factory
-		// (`set_substitute_db_factory`) before this module loads gets that driver
+		// pglet unconditionally — a run that installs another default factory
+		// (`set_default_db_factory`) before this module loads gets that driver
 		// here, and no caller reads this field to pick behavior: it is reported,
 		// not dispatched on
-		db_type: existing_db ? db_type : 'pglite-memory',
+		db_type: existing_db ? db_type : 'pglet-memory',
 		db_name,
 		// the factory's init ran the migrations, for a supplied `db` and the auto-created one alike
 		migration_results: [],
@@ -471,7 +472,7 @@ const _build_test_backend = async (
  * Create an app server with a bootstrapped account for testing.
  *
  * Sets up:
- * - Auth tables (via cached PGlite factory, or reuses existing `db`)
+ * - Auth tables (via the cached default factory, or reuses existing `db`)
  * - A keeper account with hashed password
  * - Role role_grants for each role in `options.roles`
  * - An API token for Bearer auth
@@ -687,7 +688,7 @@ const create_bearer_headers_builder =
  *
  * A fresh Hono app is created each call — middleware closures bind to the
  * server's deps (db, keyring), so reuse across servers is unsafe.
- * The expensive resource (PGlite WASM) is cached separately in `testing/db.ts`.
+ * The expensive resource (the WASM database) is cached separately in `testing/db.ts`.
  *
  * @param options - test app configuration
  * @returns a `TestApp` ready for HTTP testing
@@ -851,7 +852,7 @@ export const create_test_app_for_bootstrap = async (
 
 	// Caller-supplied DB may carry lock state from a prior test — reset to false
 	// before `_build_test_backend` runs (which doesn't touch the lock itself).
-	// Fresh pglite already starts at false (factory init).
+	// A fresh database already starts at false (factory init).
 	if (options.db) {
 		await options.db.query(
 			'UPDATE bootstrap_lock SET bootstrapped = false WHERE bootstrapped = true'

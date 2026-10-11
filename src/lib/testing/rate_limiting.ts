@@ -32,7 +32,7 @@ import { RateLimitError } from '../http/error_schemas.ts';
 import { auth_migration_ns } from '../auth/migrations.ts';
 import { create_test_app, type SuiteAppOptions } from './app_server.ts';
 import {
-	create_pglite_factory,
+	create_default_db_factory,
 	create_describe_db,
 	auth_integration_truncate_tables,
 	type DbFactory
@@ -53,7 +53,8 @@ export interface RateLimitingTestOptions {
 	/** Optional overrides for `AppServerOptions`. */
 	app_options?: SuiteAppOptions;
 	/**
-	 * Database factories to run tests against. Default: pglite only.
+	 * Database factories to run tests against. Default: the default factory
+	 * (`create_default_db_factory`) only.
 	 */
 	db_factories?: Array<DbFactory>;
 	/**
@@ -94,7 +95,7 @@ export const describe_rate_limiting_tests = (options: RateLimitingTestOptions): 
 	const init_schema = async (db: Db): Promise<void> => {
 		await run_migrations(db, [auth_migration_ns]);
 	};
-	const factories = options.db_factories ?? [create_pglite_factory(init_schema)];
+	const factories = options.db_factories ?? [create_default_db_factory(init_schema)];
 	const describe_db = create_describe_db(factories, auth_integration_truncate_tables);
 
 	/** Create a tight rate limiter for testing — low attempt count, long window. */

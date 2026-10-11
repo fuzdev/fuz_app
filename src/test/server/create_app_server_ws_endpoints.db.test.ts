@@ -24,7 +24,7 @@
  *   (OR-semantics: any spec with `!== false` wires the guard)
  * - distinct transports across endpoints get distinct listeners
  *
- * Shares the same `create_pglite_factory` shared-WASM pattern as
+ * Shares the same `create_default_db_factory` shared-WASM pattern as
  * `create_app_server.db.test.ts`, and closes every server it assembles. Uses `create_stub_upgrade` (from
  * `#lib/testing/ws_round_trip.ts`) so the upgrade middleware exercises
  * without a real WS handshake. Dispatch through the assembled app — the
@@ -58,7 +58,7 @@ import {
 import type { AppBackend } from '#lib/server/app_backend.ts';
 import { create_audit_emitter, type AuditEmitter } from '#lib/auth/audit_emitter.ts';
 import { create_loopback_app_server_options, stub_password_deps } from '#lib/testing/app_server.ts';
-import { create_pglite_factory } from '#lib/testing/db.ts';
+import { create_default_db_factory } from '#lib/testing/db.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { auth_migration_ns } from '#lib/auth/migrations.ts';
 import {
@@ -98,7 +98,7 @@ const fs_stubs = {
 	delete_file: async (_path: string) => {}
 };
 
-const factory = create_pglite_factory(async () => {});
+const factory = create_default_db_factory(async () => {});
 
 const base_config: Omit<AppServerOptions, 'backend'> = {
 	...create_loopback_app_server_options(),
@@ -118,7 +118,7 @@ const create_test_setup = async (): Promise<{
 	const migration_results = await run_migrations(db, [auth_migration_ns]);
 	const audit = create_audit_emitter({ db, log });
 	const backend: AppBackend = {
-		db_type: 'pglite-memory',
+		db_type: 'pglet-memory',
 		db_name: '(memory)',
 		migration_results,
 		close: async () => {},

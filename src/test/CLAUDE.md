@@ -16,71 +16,74 @@ Tests live in `src/test/`, mirroring `src/lib/` structure
 
 `create_describe_db(factories, truncate_tables)` from `#lib/testing/db.ts`
 returns a `describe_db(name, fn)` function bound to the given factories.
-Runs suites against PGlite (in-memory) and optionally PostgreSQL (when
-`TEST_DATABASE_URL` is set). Consumer projects create a `db_fixture.ts`
-that calls `create_describe_db` with their factories and truncate tables.
+Runs suites against the default in-memory driver (pglet-wasm) and optionally
+PostgreSQL (when `TEST_DATABASE_URL` is set). Consumer projects create a
+`db_fixture.ts` that calls `create_describe_db` with their factories and truncate
+tables.
 
-fuz_app's own `create_db_fixture.ts` exports `create_db_fixture(namespaces,
-truncate_tables)`, which builds the four-driver set (pglite, pg, and the two
-pglet legs from `db_pglet_factory.ts` / `db_pglet_wasm_factory.ts`, with the
-whole-`public` reset the shared pg database needs) and binds `describe_db`
-over it. Three fixture modules call it once each, so importing one constructs
-only its own factories: `db_fixture.ts` (auth-only — what most suites use),
-`cell_db_fixture.ts` (full spine: auth + cell + fact + cell_history, for the
-cell suites), and `fact_db_fixture.ts` (facts alone, for the `PgFactStore`
-suites). Suites that need a bespoke `init_schema` (seeding, a single namespace
-under test) still call `create_pglite_factory` + `create_describe_db` directly.
+fuz_app's own suites reach a database two ways:
 
-**Running the pglite-factory suites on another driver.** `db_substitute.ts` is
-the `db` project's `setupFiles` entry. Set `FUZ_TEST_DB_SUBSTITUTE` to `pglet`
-or `pglet-wasm` (with that leg's `PGLET_SERVER_BIN` / `PGLET_WASM_PKG`) and it
-installs a stand-in via `set_substitute_db_factory`: every
-`create_pglite_factory` call site that does not pass `{substitutable: false}`
-hands back that driver's factory instead. The reach is the call site, wherever
-it sits — a suite's own `const factory`, the two `auth/*_test_helpers.ts`
-`describe_db`s, `create_db_fixture.ts`'s `default_db_factory` (what the suites
-that take one database directly rather than through `describe_db` import),
-`#lib/testing/app_server.ts`'s no-`db` fallback, and the `db_factories`
-defaults in `#lib/testing/sse_round_trip.ts` and `#lib/testing/rate_limiting.ts`. The stand-ins share
-one instance for the run and `DROP SCHEMA public CASCADE` + re-migrate per
-`create()`, the lifecycle `create_pglite_factory` gives PGlite. With the
-selector unset nothing is installed, so every `create_pglite_factory` call site
-stays PGlite — including when the pglet env vars are set. Those vars decide a
-different thing: they un-skip the four-driver fixture's own pglet legs, so a run
-with them set and no selector is the four-driver matrix run, not a PGlite-only
-one — the pglet legs of every `describe_db` built by `create_db_fixture.ts` are
-live in it.
+- **The four-driver fixture.** `create_db_fixture.ts` exports
+  `create_db_fixture(namespaces, truncate_tables)`, which builds the four
+  drivers — pglite, pg, `pglet-server` (the native wire server,
+  `db_pglet_server_factory.ts`) and the forking pglet-wasm leg
+  (`db_pglet_wasm_factory.ts`) — and binds `describe_db` over them, so each suite
+  runs once per enabled driver. Three fixture modules call it once each, so
+  importing one constructs only its own factories: `db_fixture.ts` (auth-only —
+  what most suites use), `cell_db_fixture.ts` (full spine: auth + cell + fact +
+  cell_history, for the cell suites), and `fact_db_fixture.ts` (facts alone, for
+  the `PgFactStore` suites).
+- **The default factory.** Everything else runs on one driver through
+  `create_default_db_factory`: a suite's own `const factory` (bespoke
+  `init_schema` — seeding, a single namespace under test), the two
+  `auth/*_test_helpers.ts` `describe_db`s, `create_db_fixture.ts`'s
+  `default_db_factory` (for suites that take one database directly),
+  `#lib/testing/app_server.ts`'s no-`db` fallback, and the `db_factories`
+  defaults in `#lib/testing/sse_round_trip.ts` and `#lib/testing/rate_limiting.ts`.
 
-```bash
-FUZ_TEST_DB_SUBSTITUTE=pglet PGLET_SERVER_BIN=/path/to/pglet_server npx vitest run --project db
-```
+**Choosing drivers.** Three env vars, read once per run — the first picks the
+default factory's driver, the other two add legs to the four-driver set:
 
-Two files pin PGlite with `{substitutable: false}`: `create_db_fixture.ts`'s
-matrix leg (the pglet legs sit beside it in `db_factories`, so substituting this
-one would drop pglite from the matrix) and `testing/test_db.db.test.ts`, whose
-subject is the pglite factory. Three files never reach the seam at all — they
-build PGlite directly with `new PGlite()`: `db/create_db.db.test.ts` (the driver
-adapters and `create_db`'s URL routing are its subject),
-`db/schema_ready.db.test.ts` and `cross_backend/spine_expected_schema.db.test.ts`
-(committed column-map fixtures, where one engine is the reference by design).
+| env var               | effect                                                                                                     |
+| --------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `FUZ_TEST_DB_DEFAULT` | `pglet-wasm` (unset), `pglite`, or `pglet-server` (needs `PGLET_SERVER_BIN`); the four-driver set is unaffected |
+| `PGLET_SERVER_BIN`    | path to a built `pglet_server`; un-skips the `pglet-server` leg                                             |
+| `TEST_DATABASE_URL`   | a Postgres URL; un-skips the `pg` leg                                                                      |
 
-Which files still run PGlite is a measurement, not a reading of the describe
-titles — the fallback routes build no `describe_db`, so they carry no driver
-label. Point the selector at a binary that cannot exist and every file the
-substitute reaches fails:
+`FUZ_TEST_DB_DEFAULT` is applied by `db_default.ts`, the `db` project's
+`setupFiles` entry, through `set_default_db_factory`; the run prints
+`[db tests] default driver: …` once, and an unknown value or a missing binary
+throws. Every factory but the forking pglet-wasm leg resets the `public`
+schema + re-migrates per `create()`, and all but pg and that leg share one
+instance per driver for the run. The `unit` project's `setupFiles` entry,
+`unit_db_guard.ts`, installs a default factory whose `create()` throws, so a
+test that opens a database without the `.db.test.ts` suffix fails loudly
+rather than running on its own instance outside these switches.
 
 ```bash
-FUZ_TEST_DB_SUBSTITUTE=pglet PGLET_SERVER_BIN=/nonexistent/pglet_server npx vitest run --project db
+FUZ_TEST_DB_DEFAULT=pglite npx vitest run --project db
+FUZ_TEST_DB_DEFAULT=pglet-server PGLET_SERVER_BIN=/path/to/pglet_server npx vitest run --project db
 ```
 
-The files that pass are `testing/test_db.db.test.ts` plus those three — and,
-with `TEST_DATABASE_URL` unset, the pg-only files whose every test skips
-(`auth/password_change.race.db.test.ts`,
-`auth/role_grant_offer_queries.concurrent.db.test.ts`,
-`auth/connection_closer.admission.db.test.ts`,
-`auth/cleanup.sessions.refused_commit.db.test.ts`). The
-`create_db_fixture.ts` pin shows up differently: its files fail on their pglet
-legs, with the `(pglite)` suite inside each still green.
+The four-driver set's pglite leg and `testing/test_db.db.test.ts` (whose subject is the
+factories) pin PGlite with `create_pglite_factory`. A few files build their
+driver directly: `db/create_db.db.test.ts` (the PGlite and pglet adapters and
+`create_db`'s URL routing are its subject), `http/db_routes.db.test.ts`'s
+`DOMAIN` case (pglet has no domains, and the shared PGlite instance can be the
+suite's own `db` when the default is PGlite), and `db/schema_ready.db.test.ts`
+and `cross_backend/spine_expected_schema.db.test.ts` (committed column-map
+fixtures, where one engine is the reference by design).
+
+**Running an unreleased pglet.** Every pglet-wasm leg imports `@fuzdev/pglet-wasm`
+from `node_modules` — there is no path override. To run a local build, assemble
+its npm package and link it over the installed one; an `npm install` puts the
+published package back:
+
+```bash
+(cd ../pglet && deno task build:npm)
+rm -rf node_modules/@fuzdev/pglet-wasm
+ln -s ../../../pglet/crates/pglet_wasm/pkg-npm node_modules/@fuzdev/pglet-wasm
+```
 
 `db/column_projections.ts` + `db/column_projections.db.test.ts` is the
 named-projection registry: every `*_COLUMNS` const keyed by table, plus the
@@ -101,7 +104,7 @@ const { app, create_session_headers, create_bearer_headers, create_account, clea
 	});
 ```
 
-`create_test_app` handles PGlite, migrations, auth middleware, and test
+`create_test_app` handles the in-memory database, migrations, auth middleware, and test
 defaults (localhost origins, stub proxy, silent logger). `create_route_specs`
 is required — encourages full production routes.
 
@@ -112,17 +115,17 @@ Key helpers:
 - `create_account({username?, password_value?, roles?})` — create additional accounts for multi-account tests
 - `assert_response_matches_spec(route_specs, method, path, response)` — validate response body against route spec error schemas
 
-**PGlite WASM caching**: the `create_pglite_factory` instances built from
-one loaded copy of `db.ts` share a single PGlite WASM instance via its
+**WASM caching**: the in-memory factories built from one loaded copy of
+`db.ts` share a single WASM instance per driver (pglet-wasm, PGlite) via its
 module-level cache — under the `db` project's `isolate: false` +
-`fileParallelism: false` that is every DB test file in the run. Subsequent
-`factory.create()` calls reset the schema (`DROP SCHEMA public CASCADE`)
-instead of paying the ~500-700ms WASM cold-start cost again. `create_test_app` and
+`fileParallelism: false` that is every DB test file in the run. Every
+`factory.create()` resets the schema (`reset_public_schema`) instead of paying
+the WASM cold start again. `create_test_app` and
 `create_test_app_server` use this cache internally when no `db` is provided.
 
 `create_test_app` builds a fresh Hono app each call — middleware closures
 bind to the server's deps (db, keyring, etc.), so reuse across
-servers is unsafe. Hono assembly is cheap (~10-50ms); the PGlite WASM
+servers is unsafe. Hono assembly is cheap (~10-50ms); the WASM database
 cache is where the real savings are.
 
 ## Composable Test Suites
@@ -182,7 +185,7 @@ the test helpers' route list.
 
 ## fuz_app-specific conventions
 
-- DB tests use `describe_db` wrapper, not raw PGlite setup
+- DB tests use `describe_db` wrapper, not raw driver setup
 - `await_pending_effects: true` is set by `create_test_app` — fire-and-forget
   effects complete before response returns, so tests can assert side effects directly
 - `.db.test.ts` files that exercise audit emits should call
@@ -453,7 +456,7 @@ backends:
 
 - `cross_backend_ts_node` / `cross_backend_ts_deno` / `cross_backend_ts_bun` —
   `fuz_app`'s **own** TS spine binary (`testing_spine_server_{node,deno,bun}.ts`)
-  over real HTTP, in-memory PGlite, no external infra (the `ts_deno` / `ts_bun`
+  over real HTTP, in-memory pglet (`memory://`), no external infra (the `ts_deno` / `ts_bun`
   ones need `deno` / `bun` on PATH). This is the in-repo cross-process coverage
   of the TS impl's real HTTP path across all three JS runtimes — the in-process
   suites (default `gro test`) never cross a process boundary. All three mount
@@ -496,6 +499,6 @@ The TS binary + the reusable test-server core/adapters it's built on live in
 the TS spine binary on Node + Deno + Bun (+ the Rust `spine_stub` when
 `FUZ_TESTING_RUST_SPINE_STUB_BIN` is set), runs the shared `default_bench_scenarios`
 over real HTTP, and prints per-scenario tables + a Welch verdict. The three TS
-runtimes are apples-to-apples with each other (same PGlite driver); TS-vs-Rust
-carries the PGlite-vs-Postgres DB-layer caveat. The `*.latest.json` artifact is
+runtimes are apples-to-apples with each other (same in-memory pglet driver);
+TS-vs-Rust carries the pglet-vs-Postgres DB-layer caveat. The `*.latest.json` artifact is
 gitignored.

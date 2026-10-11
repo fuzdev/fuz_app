@@ -35,6 +35,7 @@
     "@fuzdev/blake3-wasm": ">=0.2.0",
     "@fuzdev/fuz_css": ">=0.65.0",
     "@fuzdev/fuz_util": ">=0.70.0",
+    "@fuzdev/pglet-wasm": ">=0.1.1",
     "@hono/bun": ">=1",
     "@hono/deno": ">=1",
     "@hono/node-server": ">=1",
@@ -53,6 +54,9 @@
       "optional": true
     },
     "@fuzdev/fuz_css": {
+      "optional": true
+    },
+    "@fuzdev/pglet-wasm": {
       "optional": true
     },
     "@hono/bun": {
@@ -92,6 +96,7 @@
     "@fuzdev/fuz_util": "^0.72.0",
     "@fuzdev/gro": "^0.216.0",
     "@fuzdev/mdz": "^0.4.0",
+    "@fuzdev/pglet-wasm": "^0.1.1",
     "@hono/bun": "^1.0.1",
     "@hono/deno": "^1.0.3",
     "@hono/node-server": "^1.19.14",

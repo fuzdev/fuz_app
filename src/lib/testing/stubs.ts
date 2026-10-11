@@ -210,7 +210,7 @@ export interface CreateStubAppBackendOptions {
  * @param options - the deps and `close` to use in place of the defaults
  */
 export const create_stub_app_backend = (options?: CreateStubAppBackendOptions): AppBackend => ({
-	db_type: 'pglite-memory',
+	db_type: 'pglet-memory',
 	db_name: 'test',
 	migration_results: [],
 	close: options?.close ?? (async () => {}),
