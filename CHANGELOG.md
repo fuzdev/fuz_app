@@ -1,5 +1,11 @@
 # @fuzdev/fuz_app
 
+## 0.132.1
+
+### Patch Changes
+
+- fix: the testing harnesses send each route's content type on every probe (`to_route_content_type`: JSON, or `application/octet-stream` for `raw_body`), so a bodyless `POST` reaches the gate a case asserts instead of the 415; the derived 415 is now `UnsupportedContentTypeError`; the cross-backend standard bundle forwards `data_exposure_skip_routes` ([9a73e32](https://github.com/fuzdev/fuz_app/commit/9a73e32))
+
 ## 0.132.0
 
 ### Minor Changes
