@@ -13,6 +13,9 @@ import '../assert_dev_env.ts';
  *
  * Everything is `latin1`-decoded, so a string's length is its byte length.
  *
+ * Plain TCP only: an `https:` URL is not spoken to over TLS, and the host must
+ * be a name or an IPv4 address — a bracketed IPv6 literal does not connect.
+ *
  * @module
  */
 
@@ -22,7 +25,11 @@ import { connect } from 'node:net';
 export interface RawHttpExchange {
 	/** Every byte the server sent, `latin1`-decoded. */
 	readonly received: string;
-	/** `true` when the server ended the connection before the exchange stopped reading. */
+	/**
+	 * `true` when the connection ended before the exchange stopped reading —
+	 * the server closed it, or it never opened (a refused or unresolvable
+	 * address reads as closed, with nothing received).
+	 */
 	readonly closed_by_server: boolean;
 }
 
@@ -35,6 +42,11 @@ export interface RawHttpExchangeOptions {
 	 * the connection; `'response'` stops as soon as one whole response has
 	 * arrived (`raw_http_parse_response`), for a server that answers and then
 	 * keeps the connection open. Either way the read timeout bounds it.
+	 *
+	 * `'response'` stops at the first response the bytes frame, so it is for a
+	 * final response carrying `Content-Length` or chunked framing: a `1xx`
+	 * interim response ends the read, and so does the head of a response
+	 * delimited by the connection closing, before its body.
 	 *
 	 * @default 'close'
 	 */

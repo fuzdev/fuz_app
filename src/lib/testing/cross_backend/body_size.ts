@@ -108,6 +108,11 @@ export interface BodySizeCrossTestOptions extends RpcPathCrossSuiteOptions {
 	 * over-cap cases write to the socket directly and send only the bytes the
 	 * refusal needs; with `null` they send whole bodies through the fixture's
 	 * transport.
+	 *
+	 * Pass the URL whenever the fixture's transport reaches a real socket.
+	 * `null` there uploads each whole over-cap body through `fetch`, where the
+	 * write races the close that follows the 413 and the case fails some of the
+	 * time.
 	 */
 	readonly base_url: string | null;
 }
