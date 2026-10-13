@@ -19,16 +19,25 @@
  * - A request whose `Content-Length` exceeds the cap is refused with `413`
  *   `{error: 'payload_too_large'}`, whatever its method. A digit run of any
  *   length compares as a number, so one too long to represent exactly is over
- *   the cap, never unreadable.
+ *   the cap, never unreadable — a branch only an in-process request reaches:
+ *   over a socket every runtime's parser refuses a length past what it can
+ *   hold with its own `400`.
  * - Both refusals answer on the header alone — without touching
  *   `c.req.raw.body` — and carry `Connection: close`.
  * - A request with a well-formed `Content-Length` beside `Transfer-Encoding`,
- *   or with no `Content-Length`, falls through to `bodyLimit`'s streaming
- *   count: with `Transfer-Encoding` the declared length does not frame the
- *   body, so the bytes that arrive are what is measured. That `413` is sent
- *   once more than the cap has been read and carries no `Connection: close`.
+ *   or with no `Content-Length`, falls through to `bodyLimit`, which measures
+ *   the bytes that arrive: with `Transfer-Encoding` the declared length does
+ *   not frame the body. `bodyLimit` reads the body into memory, up to the
+ *   cap, **before** the next middleware runs, so that `413` — sent once more
+ *   than the cap has been read, with no `Connection: close` — also comes
+ *   ahead of the origin check, auth and the handler. The Rust spine counts
+ *   such a body as its handler reads it instead, so there a refusal made on
+ *   the headers answers first; which status an over-cap body with no declared
+ *   length gets when another refusal also applies is implementation-defined
+ *   across the two (`docs/security.md` §"Body Size Limiting").
  *   The Node, Deno and Bun parsers refuse a request carrying both headers
- *   with their own `400`; hyper accepts one and frames its body as chunked.
+ *   with their own `400`; hyper accepts one, drops its `Content-Length`,
+ *   frames the body as chunked, and closes the connection after the response.
  * - A well-formed `Content-Length` within the cap is trusted to frame the
  *   body, as the runtime's HTTP parser enforces.
  *

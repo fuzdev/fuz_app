@@ -37,6 +37,16 @@ import '../assert_dev_env.ts';
  * server that never reuses connections — and that the counter isn't
  * undercounting.
  *
+ * **`Content-Length` beside `Transfer-Encoding`.** The second probe sends a
+ * request carrying both headers — the shape a request-smuggling attack hands a
+ * server and a proxy that disagree on which one frames the body — with a
+ * `GET` pipelined behind it. What the backends share is the outcome, not the
+ * status: the request is refused with `400` (the Node, Deno and Bun parsers)
+ * or answered as its chunked body reads (hyper, which drops the
+ * `Content-Length`), and either way the server **closes the connection** and
+ * the pipelined request is **never served**. The status of the one response
+ * is implementation-defined and not asserted.
+ *
  * Raw-socket by necessity (the `FetchTransport` can't pipeline two requests on
  * one connection), so — unlike `body_size.ts` — this is **cross-process only**
  * (no in-process leg; there is no socket in-process — the in-process pin is
@@ -72,6 +82,14 @@ const BODY_LIMIT_DEFAULT_BYTES = 1024 * 1024;
  */
 const RAW_READ_TIMEOUT_MS = 2000;
 
+/** What a raw exchange read back, and how it ended. */
+interface RawExchange {
+	/** Every byte the server sent, `latin1`-decoded. */
+	readonly received: string;
+	/** `true` when the server ended the connection; `false` when the read window ran out first. */
+	readonly closed_by_server: boolean;
+}
+
 /**
  * Open a raw TCP socket to `base_url`, write `request_bytes` once, and collect
  * everything the server sends back until it closes the connection or
@@ -80,33 +98,40 @@ const RAW_READ_TIMEOUT_MS = 2000;
  * `EPIPE`/`ECONNRESET` on our unfinished write, which is exactly the behavior
  * under test — what matters is what we *read back*.
  */
-const send_raw = (
+const exchange_raw = (
 	base_url: string,
 	request_bytes: string,
 	read_timeout_ms: number
-): Promise<string> =>
+): Promise<RawExchange> =>
 	new Promise((resolve) => {
 		const url = new URL(base_url);
 		const port = Number(url.port) || (url.protocol === 'https:' ? 443 : 80);
 		const socket = connect({ host: url.hostname, port });
 		let received = '';
 		let settled = false;
-		const finish = (): void => {
+		const finish = (closed_by_server: boolean): void => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timer);
 			socket.destroy();
-			resolve(received);
+			resolve({ received, closed_by_server });
 		};
-		const timer = setTimeout(finish, read_timeout_ms);
+		const timer = setTimeout(() => finish(false), read_timeout_ms);
 		socket.setEncoding('latin1');
 		socket.on('connect', () => socket.write(request_bytes));
 		socket.on('data', (chunk: string) => {
 			received += chunk;
 		});
 		socket.on('error', () => {}); // EPIPE/ECONNRESET on mid-write close is expected
-		socket.on('close', finish);
+		socket.on('close', () => finish(true));
 	});
+
+/** `exchange_raw`, for a caller that reads only the bytes. */
+const send_raw = async (
+	base_url: string,
+	request_bytes: string,
+	read_timeout_ms: number
+): Promise<string> => (await exchange_raw(base_url, request_bytes, read_timeout_ms)).received;
 
 /**
  * Count HTTP response status lines in a raw byte stream. Deliberately
@@ -174,5 +199,58 @@ export const describe_body_size_smuggling_cross_tests = (
 					`pipelined GET must not be reached). Saw ${n}. Raw head: ${response.slice(0, 120)}`
 			);
 		});
+
+		// A request carrying both `Content-Length` and `Transfer-Encoding`, with
+		// a GET pipelined behind it. The body is a small JSON-RPC envelope,
+		// chunked and terminated, so a backend that frames on
+		// `Transfer-Encoding` reads a whole request. `Content-Length` disagrees
+		// with the chunked length in both cases: framing on it instead would
+		// leave body bytes to be parsed as the next request.
+		const envelope = JSON.stringify({ jsonrpc: '2.0', id: 'cl-te', method: 'heartbeat' });
+		const chunked_envelope = `${envelope.length.toString(16)}\r\n${envelope}\r\n0\r\n\r\n`;
+		const framing_cases: ReadonlyArray<readonly [name: string, framing_headers: string]> = [
+			[
+				'Content-Length ahead of Transfer-Encoding',
+				`Content-Length: 5\r\nTransfer-Encoding: chunked\r\n`
+			],
+			[
+				'Transfer-Encoding ahead of Content-Length',
+				`Transfer-Encoding: chunked\r\nContent-Length: 5\r\n`
+			]
+		];
+		for (const [name, framing_headers] of framing_cases) {
+			test(`${name} + pipelined GET → connection closed, GET never served`, async () => {
+				const payload =
+					`POST ${rpc_path} HTTP/1.1\r\n` +
+					`Host: ${host}\r\n` +
+					`Content-Type: application/json\r\n` +
+					framing_headers +
+					`\r\n` +
+					chunked_envelope +
+					`GET ${rpc_path} HTTP/1.1\r\nHost: ${host}\r\n\r\n`;
+
+				const { received, closed_by_server } = await exchange_raw(
+					base_url,
+					payload,
+					RAW_READ_TIMEOUT_MS
+				);
+				const n = count_responses(received);
+				// Refused with 400 or answered — the status is the implementation's.
+				// A second response is the pipelined GET served on a connection the
+				// ambiguous request should have ended.
+				assert.ok(
+					n <= 1,
+					`expected at most one response to a request carrying both Content-Length ` +
+						`and Transfer-Encoding (the pipelined GET must not be served). Saw ${n}. ` +
+						`Raw head: ${received.slice(0, 120)}`
+				);
+				assert.ok(
+					closed_by_server,
+					`expected the server to close the connection after a request carrying both ` +
+						`Content-Length and Transfer-Encoding; it was still open after ` +
+						`${RAW_READ_TIMEOUT_MS}ms. Raw head: ${received.slice(0, 120)}`
+				);
+			});
+		}
 	});
 };

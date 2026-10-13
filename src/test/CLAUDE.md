@@ -375,14 +375,21 @@ role reaching `role_not_web_grantable` as the control; cross-only), and
 via `describe_fact_serving_cross_tests`, gated on `capabilities.fact_serving`),
 and `body_size.cross.test.ts` (the 1 MiB request-body cap:
 `describe_body_size_cross_tests` — over-limit cap+1 → 413 `payload_too_large`,
-at-limit exactly-the-cap → not size-rejected, under-limit → 200, all retry-once
-around the server-closed socket the 413 leaves — plus
+at-limit exactly-the-cap → not size-rejected, under-limit → 200, an over-limit
+declared length → 413 with a disallowed `Origin` (not 403, with the under-limit
+403 as its control) and with no credentials (not 401), and an authenticated
+over-limit chunked body → 413, every request re-sent when the transport throws
+on the socket the 413 closes — plus
 `describe_body_size_smuggling_cross_tests`, a raw-`node:net` probe that pipelines
 an oversized `POST` + a `GET`. Every backend must return **at most one**
 response (`<= 1` — the connection closes and the pipelined GET is never reached;
 robust to graceful-close vs RST). Bun 1.4.3 is the tested floor for the Bun leg:
 an older Bun kept the connection after the 413 and served the GET (correctly
-framed), which fails the probe. The 413-ness itself is pinned by the fetch parity
+framed), which fails the probe. A second probe sends a request carrying both
+`Content-Length` and `Transfer-Encoding`, in either order, with a `GET` behind
+it: whatever the status (the JS runtimes' parsers refuse it with 400, hyper
+answers it as chunked), the server must close the connection and never serve
+the `GET`. The 413-ness itself is pinned by the fetch parity
 cases; a positive control (two pipelined requests → `>= 2` responses) keeps the
 probe non-vacuous. The parity cases have an in-process leg
 `auth/body_size_parity.db.test.ts` (the limit's own branches — at and past the

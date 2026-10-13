@@ -1145,11 +1145,14 @@ Observed on Node 24.14.1, Deno 2.8.3 and Bun 1.4.3.
 A request carrying both `Transfer-Encoding` and a well-formed `Content-Length`
 is measured by the bytes that arrive, since the declared length does not frame
 a chunked body. The Node, Deno and Bun parsers refuse such a request with
-their own 400; hyper accepts it and frames the body as chunked. The Rust
-spine's limit layer counts the bytes that arrive; when `Content-Length` came
-ahead of `Transfer-Encoding` hyper leaves it on the request, and the layer
-also refuses a declared length over the cap and holds the body to the declared
-length.
+their own 400. hyper accepts it: it removes the `Content-Length`, whichever
+header came first, frames the body as chunked, and closes the connection after
+its response, so the Rust spine's limit layer sees no declared length and
+counts the bytes that arrive (hyper 1.11.1 or later — an older hyper left a
+`Content-Length` that preceded `Transfer-Encoding` on the request and kept the
+connection). The status differs by backend; the outcome does not — the
+connection closes and a request pipelined behind it is never served, which the
+cross-backend suite pins.
 
 **Rejection and the connection.** A request whose `Content-Length` exceeds the
 cap is rejected on the header, before the body is read, and the 413 carries
@@ -1178,18 +1181,40 @@ the runtimes differ:
   2.8.3; neither the `Connection: close` header nor anything the handler does
   with the request body changes it.
 
-No runtime serves a request behind an oversized one. What differs is who reads
-the body: on Deno the cap bounds what the application processes, not what the
+No runtime serves a request behind one refused on its declared length. What
+differs is who reads the body: on Deno the cap bounds what the application processes, not what the
 transport reads off the socket — it takes the declared body before it closes.
 A reverse proxy with its own request-body cap refuses an oversized request
 before it reaches the runtime.
 
 The limit checks `Content-Length` first and answers from the header alone,
-falling through to Hono's `bodyLimit` and its streaming count only for a
-request with no `Content-Length`, or with one beside `Transfer-Encoding`. The
-streaming 413 is sent once more than the cap has been read, and carries no
-`Connection: close` — what the connection does then is the runtime's default.
-`http/body_limit.test.ts` pins each branch. The cross-backend suite
+falling through to Hono's `bodyLimit` only for a request with no
+`Content-Length`, or with one beside `Transfer-Encoding`. `bodyLimit` measures
+the bytes that arrive: it reads the body into memory, up to the cap, before the
+next middleware runs. Its 413 is sent once more than the cap has been read,
+and carries no `Connection: close` — what the connection does then is the
+runtime's default. `http/body_limit.test.ts` pins each branch.
+
+**What the two spines share, and what each decides.** Pinned on every backend
+by `testing/cross_backend/body_size.ts`: a declared `Content-Length` over the
+cap answers 413 whatever the request's `Origin` or credentials, and an
+authenticated, allowed-origin request whose chunked body runs past the cap
+answers 413. Implementation-defined:
+
+- **An over-cap body with no declared length, when another refusal also
+  applies.** The TS spine has read the body up to the cap before any later
+  middleware runs, so its 413 comes ahead of the origin check, auth and the
+  handler. The Rust spine counts the body as the handler reads it: the origin
+  check answers its 403 on the headers; a handler that never reads the body
+  answers its own status, and hyper closes the connection rather than read
+  the rest; a handler that buffers the body answers 413. Nothing past the cap
+  reaches a handler on either.
+- **A repeated `Content-Length` with equal values.** The TS spine answers 400
+  `invalid_content_length` where the runtime hands the repeat to the
+  application (Deno, Bun; Node's parser refuses it first). hyper folds the
+  repeat into one value before any layer runs, and the request is accepted.
+
+The cross-backend suite
 (`testing/cross_backend/body_size_smuggling.ts`) pipelines a request behind an
 oversized one and requires at most one response from every backend — the
 connection closes and the pipelined request is never served — and
