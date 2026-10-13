@@ -23,8 +23,8 @@ fuz_app provides composable test suites that cover auth security:
 
 Attack surface tests are fast (stub-based, no DB). Integration tests spin up
 a full Hono app with an in-memory database (pglet by default) and make real
-HTTP requests. Consumers (zap,
-visiones, mageguild) wire the full set; the RPC suites skip silently when no
+HTTP requests. Consumers (fuz_forge,
+visiones) wire the full set; the RPC suites skip silently when no
 RPC endpoints are declared.
 
 **Cross-process integration** extends this layer to spawn a backend and

@@ -169,7 +169,7 @@ describe('route spec metadata', () => {
 		// drop or mistype here throws at registration and this test
 		// fails loudly inside fuz_app CI instead of surfacing as a
 		// confusing throw the first time a consumer
-		// (mageguild / zap) registers these routes.
+		// (fuz_forge) registers these routes.
 		const specs = create_specs();
 		assert.doesNotThrow(() => create_test_app(specs));
 	});

@@ -859,7 +859,7 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * registration pending admission is skipped before the predicate runs.
 	 *
 	 * Used by the broadcast API when a consumer supplies a subscription ACL hook
-	 * (e.g. zap's `zap_run_created` only reaches the account that owns the run).
+	 * (e.g. an event that only reaches the account that owns the resource it reports).
 	 * When no ACL is needed, callers should prefer `send(message)` / `#broadcast`
 	 * to skip the per-connection predicate overhead.
 	 *

@@ -1176,7 +1176,7 @@ the same transport and types.
 
 Pass `transports` for WS-first or mixed setups; pass `path` to override
 the default `/api/rpc`. Pass `transport_for_method` for per-method
-routing (e.g. action methods on WS, REST RPC on HTTP — a zap-style
+routing (e.g. action methods on WS, REST RPC on HTTP — a
 mixed split):
 
 ```typescript
