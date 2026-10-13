@@ -86,33 +86,83 @@ import {
 // ---------------------------------------------------------------------
 
 /**
+ * The runtime socket behind a `FakeWs` — what `WSContext.raw` exposes, shaped
+ * like Node's `ws`: a `bufferedAmount` the outbound writer reads for
+ * backpressure, and a `terminate` it cuts a stalled socket with.
+ */
+export interface FakeWsSocket {
+	/**
+	 * Bytes "handed to the socket and not yet written". Grows by each sent
+	 * frame's UTF-8 length while `stalled`; set it (e.g. to `0`) to model the
+	 * client reading.
+	 */
+	bufferedAmount: number;
+	/** While `true`, sent frames stay in `bufferedAmount` — a client that is not reading. */
+	stalled: boolean;
+	/** Whether `terminate` was called — the socket was cut with no close frame. */
+	terminated: boolean;
+	/** Cut the socket. Records `terminated` and empties `bufferedAmount`. */
+	terminate: () => void;
+}
+
+/**
  * A `WSContext` paired with capture arrays. Use `sends` to assert on
- * outgoing frames; use `closes` to assert on revocation / close.
+ * outgoing frames; use `closes` to assert on revocation / close; use
+ * `socket` to model a client that stopped reading and to assert on a cut.
  */
 export interface FakeWs {
 	ws: WSContext;
 	sends: Array<string>;
 	closes: Array<{ code?: number; reason?: string }>;
+	/** The fake runtime socket (`ws.raw`). */
+	socket: FakeWsSocket;
 }
+
+/** Options for `create_fake_ws`. */
+export interface CreateFakeWsOptions {
+	/** Start with the client not reading (`FakeWsSocket.stalled`). */
+	stalled?: boolean;
+}
+
+const fake_ws_text_encoder = new TextEncoder();
 
 /**
  * Build a real `WSContext` backed by in-memory `send`/`close` capture.
  * Parsing of outgoing frames is left to the caller — `sends` holds the
  * raw strings as the dispatcher wrote them.
+ *
+ * `readyState` reads `1` (open) until the socket is closed (`2`) or
+ * terminated (`3`).
  */
-export const create_fake_ws = (): FakeWs => {
+export const create_fake_ws = (options?: CreateFakeWsOptions): FakeWs => {
 	const sends: Array<string> = [];
 	const closes: Array<{ code?: number; reason?: string }> = [];
+	const socket: FakeWsSocket = {
+		bufferedAmount: 0,
+		stalled: options?.stalled ?? false,
+		terminated: false,
+		terminate: () => {
+			socket.terminated = true;
+			socket.bufferedAmount = 0;
+		}
+	};
 	const init: WSContextInit = {
 		send: (data) => {
-			sends.push(typeof data === 'string' ? data : '<binary>');
+			const text = typeof data === 'string' ? data : '<binary>';
+			sends.push(text);
+			if (socket.stalled) socket.bufferedAmount += fake_ws_text_encoder.encode(text).byteLength;
 		},
 		close: (code, reason) => {
 			closes.push({ code, reason });
+			// a close frame is a few bytes behind whatever is still unwritten
+			if (socket.stalled) socket.bufferedAmount += 2;
 		},
-		readyState: 1
+		raw: socket,
+		get readyState() {
+			return socket.terminated ? 3 : closes.length > 0 ? 2 : 1;
+		}
 	};
-	return { ws: new WSContext(init), sends, closes };
+	return { ws: new WSContext(init), sends, closes, socket };
 };
 
 /** Options for `create_fake_hono_context`. */

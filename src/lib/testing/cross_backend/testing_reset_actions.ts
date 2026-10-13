@@ -9,10 +9,12 @@ import '../assert_dev_env.ts';
  * expired-by-construction server-side session for the expiry conformance
  * cases), **`_testing_put_fact`** (seed an embedded fact for the fact-serving
  * suite), **`_testing_schema_snapshot`** (introspect the live schema for
- * cross-impl parity diffing against a Rust backend's `fuz_db` snapshot), and
+ * cross-impl parity diffing against a Rust backend's `fuz_db` snapshot),
  * **`_testing_migration_tracker`** (dump the `schema_version` tracker rows for
  * cross-impl migration-identity parity — the provenance half the snapshot gate
- * excludes by design).
+ * excludes by design), and **`_testing_flood_notifications`** (queue a burst
+ * of notifications onto the caller's own WebSocket connection, to push its
+ * outbound queue past its byte budget).
  *
  * A further daemon-token action, **`_testing_action_manifest`** (dump the live
  * RPC registry for cross-impl method-set + auth-shape parity), lives here too
@@ -75,6 +77,7 @@ import { fact_hash_bytes } from '@fuzdev/fuz_util/fact_hash.ts';
 import { FactHashSchema } from '@fuzdev/fuz_util/hash_schemas.ts';
 
 import { rpc_action, type RpcAction } from '../../actions/action_rpc.ts';
+import { jsonrpc_errors } from '../../http/jsonrpc_errors.ts';
 import { emit_after_commit } from '../../http/pending_effects.ts';
 import { protocol_action_specs } from '../../actions/protocol.ts';
 import { query_put_fact } from '../../db/fact_queries.ts';
@@ -321,6 +324,114 @@ export const testing_put_fact_action_spec = {
 		'Test-binary only — seed an embedded fact (blake3 of the UTF-8 content) and return its hash, ' +
 		'so the cross-process fact-serving suite can store bytes without a DB handle.'
 } as const satisfies RequestResponseActionSpec;
+
+/** The wire method of each notification `_testing_flood_notifications` queues. */
+export const TESTING_FLOOD_NOTIFICATION_METHOD = '_testing_flood';
+
+/**
+ * The most notifications one `_testing_flood_notifications` call queues.
+ * Empty ones at this count are charged more than
+ * `DEFAULT_WS_OUTBOUND_QUEUE_BYTES` between them — each frame's envelope and
+ * its overhead — so a burst of tiny frames can overflow a connection on a
+ * default transport too. Same value as the Rust spine's.
+ */
+export const TESTING_FLOOD_MAX_COUNT = 65_536;
+
+/** The largest `payload` one `_testing_flood_notifications` call builds, in bytes. */
+export const TESTING_FLOOD_MAX_SIZE = 16 * 1024 * 1024;
+
+/**
+ * The most payload bytes one `_testing_flood_notifications` call builds across
+ * all its notifications — the bound on `count` × `size`. The handler
+ * serializes each notification without yielding, so the product is how long
+ * one call holds the event loop.
+ */
+export const TESTING_FLOOD_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
+
+/** The `data.reason` of the refusal `_testing_flood_notifications` gives a call over HTTP. */
+export const ERROR_TESTING_FLOOD_NO_CONNECTION = 'no_connection';
+
+/**
+ * `_testing_flood_notifications` — queue a burst of notifications onto the
+ * **caller's own WebSocket connection**, all in one synchronous run, so a suite
+ * driving the server from outside can push a connection's outbound queue past
+ * its byte budget deterministically — without a second producer, and whether
+ * or not its client is reading: the connection's write pump gets no turn while
+ * the handler runs, so the burst waits at once. Past the budget the server
+ * closes the socket with `WS_CLOSE_OUTBOUND_OVERFLOW`.
+ *
+ * Each notification is
+ * `{"jsonrpc":"2.0","method":"_testing_flood","params":{"index":<i>,"payload":"<size × 'x'>"}}`
+ * with `index` counting from 0, so every frame is a little longer than `size`
+ * bytes and a client can tell which frames reached it.
+ *
+ * The result is `{queued: count}` — the number asked for, not the number that
+ * fit: when the burst overflows the queue the connection is closed and this
+ * response is never written. A burst that fits arrives in order, ahead of the
+ * response.
+ *
+ * A call past `TESTING_FLOOD_MAX_COUNT`, `TESTING_FLOOD_MAX_SIZE`, or
+ * `TESTING_FLOOD_MAX_TOTAL_BYTES` (`count` × `size`) is refused with
+ * `invalid_params` and queues nothing. Over HTTP there is no connection to
+ * queue onto, so the call is refused with `invalid_params`, reason
+ * `ERROR_TESTING_FLOOD_NO_CONNECTION`, rather than answering as though it had
+ * flooded something.
+ *
+ * `auth` gates on the daemon-token credential, matching `_testing_reset`. The
+ * Rust mirror is `fuz_testing::create_testing_flood_notifications_action_spec`.
+ */
+export const testing_flood_notifications_action_spec = {
+	method: '_testing_flood_notifications',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: TESTING_ACTION_AUTH,
+	side_effects: false,
+	input: z.strictObject({
+		count: z.number().int().min(0).max(TESTING_FLOOD_MAX_COUNT).meta({
+			description: 'How many notifications to queue.'
+		}),
+		size: z.number().int().min(0).max(TESTING_FLOOD_MAX_SIZE).meta({
+			description: "The byte length of each notification's `payload` string."
+		})
+	}),
+	output: z.strictObject({
+		queued: z.number().int().meta({
+			description: 'The number of notifications asked for — not the number that fit.'
+		})
+	}),
+	async: true,
+	error_reasons: [ERROR_TESTING_FLOOD_NO_CONNECTION],
+	description:
+		"Test-binary only — queue a burst of notifications onto the caller's own WebSocket " +
+		'connection in one synchronous run, to push its outbound queue past its byte budget.'
+} as const satisfies RequestResponseActionSpec;
+
+/**
+ * Build the standalone `_testing_flood_notifications` action (see the spec
+ * doc). The spine binary bundles it via `create_testing_actions`; mount it
+ * directly on an in-process WS endpoint whose suite drives an outbound
+ * overflow.
+ */
+export const create_testing_flood_notifications_action = (): RpcAction =>
+	// not `async`: the burst must be queued in one synchronous run
+	rpc_action(testing_flood_notifications_action_spec, ({ count, size }, ctx) => {
+		if (count * size > TESTING_FLOOD_MAX_TOTAL_BYTES) {
+			throw jsonrpc_errors.invalid_params(
+				`count * size must be at most ${TESTING_FLOOD_MAX_TOTAL_BYTES}`
+			);
+		}
+		if (ctx.connection_id === undefined) {
+			throw jsonrpc_errors.invalid_params(
+				'_testing_flood_notifications needs a WebSocket connection',
+				{ reason: ERROR_TESTING_FLOOD_NO_CONNECTION }
+			);
+		}
+		const payload = 'x'.repeat(size);
+		for (let index = 0; index < count; index++) {
+			ctx.notify(TESTING_FLOOD_NOTIFICATION_METHOD, { index, payload });
+		}
+		return { queued: count };
+	});
 
 /**
  * `_testing_schema_snapshot` — introspect the live database into a normalized
@@ -654,6 +765,7 @@ export const create_testing_actions = (
 			return { hash };
 		}),
 		create_testing_drain_effects_action(deps.audit),
+		create_testing_flood_notifications_action(),
 		create_testing_schema_snapshot_action(),
 		create_testing_migration_tracker_action()
 	];

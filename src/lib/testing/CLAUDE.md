@@ -552,7 +552,7 @@ cover real sockets.
 
 Three layers:
 
-1. **Primitives** — `create_fake_ws()`, `create_fake_hono_context(opts)`, `create_stub_upgrade()`, `MinimalActionEnvironment`, `dispatch_ws_message(on_message, event, ws)`. The fake context sets the keys the production auth middleware sets — `AUTH_SESSION_TOKEN_HASH_KEY` included, as `hash_session_token(auth_session_id)` — because the dispatcher reads the credential through `get_resolved_auth(c)`; a hand-built upgrade context must do the same. `create_stub_upgrade()` stands in for a runtime adapter's `upgradeWebSocket`: it passes a request without `Upgrade: websocket` to `next()`, and records an upgrade request — its real `Context` and the endpoint's events factory — in `upgrades`, answering `200`. So a test can send `app.request('/api/ws', {headers: {upgrade: 'websocket', cookie | authorization, origin, 'x-forwarded-for'}})` through an assembled app's whole middleware chain and build the socket's events from the `Context` that chain produced (`src/test/server/create_app_server_ws_endpoints.dispatch.db.test.ts`); `get_create_events()` still returns the last mounted factory, for a hand-built context.
+1. **Primitives** — `create_fake_ws(options?)` (a real `WSContext` over capture arrays `sends` / `closes`, plus `socket` — the fake runtime socket behind `ws.raw`, shaped like Node's `ws`: a `bufferedAmount` the transport's outbound writer reads for backpressure, `stalled` (start it with `{stalled: true}`) to model a client that stopped reading, and `terminate` / `terminated` for the frameless cut; `readyState` reads open until closed or terminated), `create_fake_hono_context(opts)`, `create_stub_upgrade()`, `MinimalActionEnvironment`, `dispatch_ws_message(on_message, event, ws)`. The fake context sets the keys the production auth middleware sets — `AUTH_SESSION_TOKEN_HASH_KEY` included, as `hash_session_token(auth_session_id)` — because the dispatcher reads the credential through `get_resolved_auth(c)`; a hand-built upgrade context must do the same. `create_stub_upgrade()` stands in for a runtime adapter's `upgradeWebSocket`: it passes a request without `Upgrade: websocket` to `next()`, and records an upgrade request — its real `Context` and the endpoint's events factory — in `upgrades`, answering `200`. So a test can send `app.request('/api/ws', {headers: {upgrade: 'websocket', cookie | authorization, origin, 'x-forwarded-for'}})` through an assembled app's whole middleware chain and build the socket's events from the `Context` that chain produced (`src/test/server/create_app_server_ws_endpoints.dispatch.db.test.ts`); `get_create_events()` still returns the last mounted factory, for a hand-built context.
 2. **Harness** — `create_ws_test_harness({actions, transport?, heartbeat?, log?, on_socket_open?, on_socket_close?})` → `WsTestHarness`. `connect(identity?)` is async and resolves after the connection is admitted and `on_socket_open` completes, so broadcasts sent immediately after `await harness.connect()` reach the client. The harness pre-bakes its `RequestContext` (`TEST_CONTEXT_PRESET_KEY`), which also skips the admission credential re-read — there are no session or token rows behind a harness identity — so tests of the re-read itself drive `register_action_ws` with a real database and no preset (`src/test/actions/register_action_ws.admission.db.test.ts`). The harness threads its own `create_stub_db()` into the dispatcher's `db` slot so handlers declaring `side_effects: true` execute under the same transaction wrap they would in production (the stub's `transaction(fn)` synchronously calls `fn(stub_db)`); domain deps reach handlers via factory closures, the same way HTTP RPC factories already wire them. Audit fan-out runs through whatever `audit` emitter the consumer supplied to its action factory closure (typically `create_test_audit_emitter()` for unit harnesses).
 3. **Round-trip helpers** — predicates + wire-frame types live in `transports/ws_client.ts` (shared with the cross-process `ws_transport.ts` impl): `is_notification(method)`, `is_notification_with<P>(method, match)` (type-guard combinator — narrows `wait_for` return type), `is_response_for(id)`, `JsonrpcNotificationFrame<P>` / `JsonrpcSuccessResponseFrame<R>` / `JsonrpcErrorResponseFrame<D>` (typed wire-frame shapes distinct from the runtime Zod schemas in `http/jsonrpc.ts` — generic over `params` / `result` / `data` so tests narrow without casts).
 
@@ -1214,6 +1214,35 @@ ws_path})`. The wire literals are independent copies of the producers'
 constants, so a value changed on one spine fails here. Cross-process only;
 fuz_app's own wiring is `src/test/cross_backend/ws_inbound_dispatch.cross.test.ts`.
 
+### `cross_backend/ws_outbound_overflow.ts` — `describe_ws_outbound_overflow_cross_tests`
+
+Real-upgrade parity for the **per-connection outbound bound** — the byte
+budget both spines hold a WebSocket's waiting frames to
+(`BackendWebsocketTransport`'s `outbound_queue_bytes`, the Rust `fuz_realtime`
+outbound queue; same default, same per-frame charge). The close code and its
+reason are wire contract — a client reads `WS_CLOSE_OUTBOUND_OVERFLOW` as "you
+fell behind, reconnect" — so this is the pin that runs on both.
+`describe_ws_outbound_overflow_cross_tests({setup_test, capabilities, base_url,
+ws_path, origin?, rpc_path?})` drives `_testing_flood_notifications`, which
+queues a burst onto the caller's own connection in one synchronous run, so the
+burst waits at once whether or not the client reads and the overflow is
+deterministic. Cases: a burst within the budget arrives whole and in order
+ahead of its response, the socket left open; a burst far past it closes the
+socket with the code and the exact reason, no response for the flooding request
+arrives, and any flood frames that did arrive are a contiguous prefix of the
+burst — while a second connection on the same account keeps dispatching; a
+burst past the action's own size limit is refused `invalid_params` with the
+socket left open; and, with `rpc_path`, the action over HTTP refuses
+`invalid_params` with reason `no_connection`. Not asserted, because each
+implementation decides them: how many frames accepted before the overflow
+reach the client, and the boundary a burst of tiny frames overflows at. The
+flood action is daemon-token-gated, so the flooding socket upgrades with the
+daemon token and no `Origin` (`create_ws_transport`'s `origin: null`). The wire
+literals are independent copies of the producers' constants. Gated on
+`capabilities.ws`; cross-process only, and only for a backend that mounts the
+flood action on its WS endpoint. fuz_app's own wiring is
+`src/test/cross_backend/ws_outbound_overflow.cross.test.ts`.
+
 ### `cross_backend/ws_connection_cap.ts` — `describe_ws_connection_cap_cross_tests`
 
 Real-upgrade parity for the **per-account WebSocket connection cap** — the
@@ -1404,7 +1433,7 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   request (`{result}` / `{error}` / `undefined` to swallow), the path
   `describe_peer_ping_ws_tests` drives. With no `on_request` the seam is inert
   (a server-initiated request flows to `messages` as before).
-- `testing/transports/ws_transport.ts` — `create_ws_transport({base_url, ws_path, cookies, origin?, on_request?, headers?})`
+- `testing/transports/ws_transport.ts` — `create_ws_transport({base_url, ws_path, cookies, origin?, on_request?, headers?})` (`origin: null` sends no `Origin`, which a daemon-token upgrade needs)
   builds a real-upgrade WS client using the `ws` npm package (optional
   peerDep; consumers wiring cross-process tests `npm install --save-dev ws`).
   Threads the keeper cookie onto the upgrade so per-action auth succeeds on
@@ -1491,6 +1520,17 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   `account_lifecycle_parity.db.test.ts`) add it directly, over a tracked
   emitter, so the shared suite body can call the barrier on every backend
   uniformly.
+
+  Also bundled: `_testing_flood_notifications`
+  (`create_testing_flood_notifications_action()`) — queues `count`
+  notifications of `size` payload bytes each (method `_testing_flood`, params
+  `{index, payload}`) onto the caller's own WebSocket connection in one
+  synchronous run and answers `{queued: count}`, so a suite can push a
+  connection's outbound queue past its byte budget from outside. Refused with
+  `invalid_params` past `TESTING_FLOOD_MAX_COUNT`, `TESTING_FLOOD_MAX_SIZE`, or
+  `TESTING_FLOOD_MAX_TOTAL_BYTES` (`count` × `size`), and over HTTP (reason
+  `no_connection` — there is no connection to queue onto). The Rust mirror is
+  `fuz_testing::create_testing_flood_notifications_action_spec`.
 
   Also bundled: `_testing_mint_session` — mints a backdated-expiry
   `auth_session` row for an account (via `mint_test_session` in `app_server.ts`)
@@ -1597,6 +1637,21 @@ module's own tests (`account_status.test.ts`, `action_rpc.test.ts`,
 `serve_fact_route.db.test.ts`); fuz_app's own wiring is
 `cross_backend/query_shape.cross.test.ts`.
 
+### Grant-verb role grammar parity — `cross_backend/role_grant_role_grammar.ts`
+
+`describe_role_grant_role_grammar_cross_tests({setup_test, rpc_path?})` — an
+off-grammar `role` (uppercase, hyphen, digit, leading or trailing underscore,
+space, empty) on `role_grant_assign` and `role_grant_offer_create` answers
+`invalid_params` with no `data.reason`, and after the refusals no
+`role_grant_create` / `role_grant_offer_create` audit row carries one of those
+strings. The control — an on-grammar role no registry holds, refused past
+validation with `role_not_web_grantable` — keeps the audit read from being
+vacuous. Exists because the action-manifest parity gate captures no param
+schemas while the Rust spine parses params by hand, and the grant verbs write
+the role they refuse into their failure rows. Ungated; cross-process only (it
+reads the audit log behind `_testing_drain_effects`). fuz_app's own wiring is
+`src/test/cross_backend/role_grant_role_grammar.cross.test.ts`.
+
 ### API-token lifetime parity — `cross_backend/token_lifetime.ts`
 
 `describe_token_lifetime_cross_tests({setup_test, rpc_path?})` — the
@@ -1641,8 +1696,8 @@ drift-guarded by `src/test/cross_backend/spine_expected_schema.db.test.ts`
 
 `describe_testing_backdoor_cross_tests({setup_test, rpc_path?, ws?})` —
 the negative-credential parity suite for the `_testing_*` backdoor actions.
-For each `_testing_*` action except `_testing_drain_effects` (the three
-privileged writes plus the three introspection reads) it fires three principals over real HTTP: **anonymous** →
+For each `_testing_*` action except `_testing_drain_effects` (the privileged
+writes, the connection flood, and the introspection reads) it fires three principals over real HTTP: **anonymous** →
 401 `unauthenticated`, **session** → 403 `forbidden` `credential_type_required`,
 **bearer** → 403 `forbidden` `credential_type_required` — and, when `ws`
 (`{base_url, ws_path, origin?}`) is passed, sends each on a socket opened with

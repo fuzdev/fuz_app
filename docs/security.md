@@ -413,10 +413,12 @@ Rotating filesystem credential for keeper-level operations:
 Cross-process integration tests need a few privileged operations the production
 wire never exposes — wiping auth tables between tests, forging an expired
 session to exercise the DB-row expiry gate, seeding a content-addressed fact
-without a store handle. These live as `_testing_*` RPC actions
+without a store handle, flooding a connection past its outbound budget. These
+live as `_testing_*` RPC actions
 (`_testing_reset`, `_testing_mint_session`, `_testing_put_fact`,
-`_testing_drain_effects`, `_testing_schema_snapshot`,
-`_testing_migration_tracker`, `_testing_action_manifest`)
+`_testing_drain_effects`, `_testing_flood_notifications`,
+`_testing_schema_snapshot`, `_testing_migration_tracker`,
+`_testing_action_manifest`)
 that a consumer's **test
 binary** appends to its RPC endpoint at assembly time (fuz_app's own spine
 binary, like the Rust stub, also serves them on its WS endpoint, behind the
@@ -448,6 +450,11 @@ a usable session for an arbitrary account. The constraint is a
 make-impossible-states floor under the gates above — even a misuse cannot forge
 a live credential.
 
+`_testing_flood_notifications` is bounded the same way: at most 65 536
+notifications of at most 16 MiB each, and 64 MiB between them, all onto the
+caller's own connection — so one call holds the event loop for a bounded
+burst and can overflow nothing but the socket that asked.
+
 ## SSE Connection Security
 
 SSE (Server-Sent Events) streams are long-lived HTTP connections. Auth is
@@ -470,6 +477,9 @@ enforcement:
   `max_sessions × max_per_scope`. Overflow closes the oldest FIFO. The cap
   counts admitted streams and is applied at admission, so a request that is
   refused never closes another stream.
+- **Outbound budget**: what one stream holds unread for its client is bounded
+  by `SSE_OUTBOUND_QUEUE_BYTES` (1 MiB) — see
+  [Outbound Bounds](#outbound-bounds). A frame past it ends the stream.
 - **Handler close**: every revocation handler closes the connections of what
   it revoked through `deps.connection_closer`, after its transaction commits
   (see [Closing on Revocation](#closing-on-revocation)). A registry reaches
@@ -581,6 +591,116 @@ the dispatch, so the request holds its id until its `method_not_found` reply
 is written, while TypeScript answers it before the id is taken — a client that
 reuses the id in the very next pipelined frame can be refused as a duplicate on
 Rust and dispatched on TypeScript.
+
+## Outbound Bounds
+
+A server never waits on a client to send to it: a broadcast is synchronous and
+called from anywhere, and a WebSocket's requests keep being answered whether or
+not their client reads the answers. So a client that stops reading — or reads
+slower than it is sent to, including by its own requests — makes the server
+hold what it has not taken. Both long-lived transports bound that, per
+connection, with one rule:
+
+- **The charge**: each frame waiting to be written is charged the UTF-8 length
+  of its text plus `OUTBOUND_FRAME_OVERHEAD_BYTES` (64). The fixed part keeps
+  empty and tiny frames from being free.
+- **The rule**: a frame is accepted when the charges waiting plus its own are
+  within the connection's budget — and always when nothing is waiting, so a
+  single message larger than the whole budget is still deliverable. Nothing
+  counts frames.
+
+**WebSocket.** The budget is `outbound_queue_bytes`, default
+`DEFAULT_WS_OUTBOUND_QUEUE_BYTES` (4 MiB) — a value of its own, not derived from
+the inbound message cap (set it on `BackendWebsocketTransport`, or on
+`WsEndpointSpec` for the transport `create_app_server` creates; zero or a
+non-positive value throws at assembly). Every frame fuz_app sends a
+connection goes through one path — responses, error frames, notifications,
+broadcasts, `send_to_account`, server-initiated requests.
+
+- **Overflow closes the connection**: a frame that does not fit is not
+  delivered, and the socket closes with `WS_CLOSE_OUTBOUND_OVERFLOW` (4005,
+  reason `outbound queue overflow`). The connection leaves the transport in the
+  same synchronous step — later sends miss it and the counts and the
+  per-account cap no longer see it — its in-flight handlers are cancelled, and
+  no frame follows the close frame, the response of the request whose handler
+  overflowed the connection included.
+- **Not a revocation**: the credential is still good and nothing took the
+  connection's place, so `FrontendWebsocketClient` reconnects under its
+  ordinary backoff. The close is the client's notice that it missed messages;
+  a consumer re-reads whatever state it tracks on reconnect.
+- **Write deadlines**: bytes a socket has not taken `WS_WRITE_STALL_TIMEOUT`
+  (10 s) after they were handed to it end the connection with no close frame —
+  the client sees an abnormal close (1006). A close frame gets
+  `WS_CLOSE_WRITE_TIMEOUT` (1 s), after which a socket still holding unwritten
+  bytes is cut the same way where the runtime can cut one, so a revoked or
+  overflowed connection whose client stopped reading does not keep its buffered
+  frames for the runtime's own close timeout.
+- **One log line, no audit row**: an overflow or a stall logs one warning
+  naming the connection, its account, and what was waiting. A client can
+  provoke either at will, so an audit write per event would amplify it.
+
+What the WebSocket bound leaves:
+
+- **The raw socket.** An `on_socket_open` hook receives the socket itself
+  (`SocketOpenContext.ws`). A frame a consumer sends on it directly goes around
+  the budget and the deadlines; `notify` on the same context goes through them.
+- **A socket the runtime does not report on.** The pump reads the runtime's
+  socket buffer (`bufferedAmount` on Node's `ws` and Deno, `getBufferedAmount()`
+  on Bun). An adapter whose socket exposes neither reads as never backed up:
+  its frames are budgeted while they wait for the pump, and no stall is
+  detected.
+- **A closed socket is not counted.** A connection the server closed or
+  dropped leaves the transport at once, so the per-account connection cap does
+  not count it while its socket is still closing. What the runtime holds for
+  such a socket is bounded instead: at a close the transport hands the socket
+  only the waiting frames its buffer has room for and discards the rest, so —
+  where the runtime reports its buffer — the buffer holds less than
+  `WS_WRITE_HIGH_WATER_BYTES` (64 KiB) plus one frame, and the close frame. On
+  Node's `ws` and Bun a socket still holding any of it at the close deadline
+  (1 s) is cut. Deno's standard `WebSocket` cannot be
+  cut: a closed socket whose client is not reading stays in the runtime,
+  holding that much, until the runtime or the client ends it, and the cap does
+  not limit how many such sockets one account leaves behind.
+- **One frame of any size.** A frame is accepted when nothing is waiting,
+  whatever its size, so "one frame" above is as large as the largest message
+  the server sends.
+
+**SSE.** `create_sse_response` holds what a stream has written and its client
+has not read to `SSE_OUTBOUND_QUEUE_BYTES` (1 MiB, fixed), with the same charge
+and the same rule. A frame that does not fit ends the stream: what was unread
+is dropped, the body ends with no final frame, and its registration is removed.
+A client that is reading reconnects and misses the rows in between — the audit
+log itself is the record. One warning names the account; no audit row is
+written, since each one would itself be fanned to every stream.
+
+The Rust spine applies the same budgets, charge, rule, close code, reason, and
+deadlines, pinned on both by the outbound-overflow cross-backend suite. What
+each implementation decides for itself:
+
+- **What "waiting" measures.** On the TS spine a frame sent to an idle
+  connection goes straight to the socket; the rest of a burst sent in one
+  synchronous run waits, as does anything sent while the runtime's own socket
+  buffer is backed up. The Rust spine queues every frame for its connection's
+  writer.
+- **Frames accepted before an overflow.** The Rust spine discards them all. The
+  TS spine discards what was still waiting; frames already handed to the socket
+  may reach the client ahead of the close frame.
+- **Frames waiting at any other close.** At a revocation, a cap eviction, the
+  shutdown, or `close_connection`, the TS spine hands its waiting frames to the
+  socket ahead of the close frame while the socket's buffer is below
+  `WS_WRITE_HIGH_WATER_BYTES`, and discards the rest. A reply sent to an
+  otherwise idle connection just before a self-revoking close still arrives; a
+  reply queued behind more than that mark of unwritten bytes is not delivered.
+  The Rust spine discards every waiting frame.
+- **Cutting a socket.** The cut needs the runtime to drop a socket without the
+  closing handshake: Node's `ws` and Bun do. Deno's standard `WebSocket` cannot,
+  so there a stalled connection is closed with `WS_CLOSE_OUTBOUND_OVERFLOW`
+  instead — removed from the transport and its handlers cancelled all the same —
+  and a stalled or closed socket whose client is not reading stays in the
+  runtime until the runtime or the client ends it.
+- **A stalled SSE stream.** The budget bounds memory, not the connection: a
+  stream whose client stopped reading stays open on its socket, holding nothing
+  more, until the client goes away or the server shuts down.
 
 ## Connection Admission
 
@@ -819,7 +939,12 @@ hand:
 **A socket that revokes itself is answered first.** When a WebSocket request
 revokes the credential its own socket runs on, the response is sent before the
 post-commit queue runs, so the caller reads its reply and then the
-`WS_CLOSE_SESSION_REVOKED` close.
+`WS_CLOSE_SESSION_REVOKED` close. The exception is a socket holding
+`WS_WRITE_HIGH_WATER_BYTES` or more unwritten at that instant — a client that
+stopped reading, or one just sent a large frame the runtime is still writing: a
+reply waiting behind it is discarded with the close, and the caller's request
+rejects on the `WS_CLOSE_SESSION_REVOKED` close as it does on the Rust spine
+([Outbound Bounds](#outbound-bounds)).
 
 The Rust spine closes after commit at every site as well (`SocketRevoker`,
 `queue_socket_close`, `RealtimeRevoker`). It differs on the self-revoking
@@ -1045,6 +1170,8 @@ likewise ends the connection. The check runs after the
 runtime adapter has assembled the message, so it bounds dispatch work, not
 what the adapter buffers — where memory matters, also set the adapter's own
 frame limit (e.g. the `ws` library's `maxPayload`, which defaults to 100 MiB).
+What the server sends a socket is bounded separately — see
+[Outbound Bounds](#outbound-bounds).
 
 ## Authorization
 

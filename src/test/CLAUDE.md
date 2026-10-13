@@ -216,6 +216,13 @@ session cap evicts the oldest session, and closes the socket it had open), `ws_c
 `describe_ws_connection_cap_cross_tests` suite — one socket past the
 per-account connection cap closes the oldest with `WS_CLOSE_CONNECTION_LIMIT`
 and nothing else, and a closed connection frees its slot),
+`ws_outbound_overflow.cross.test.ts` (the real-upgrade
+`describe_ws_outbound_overflow_cross_tests` suite — a daemon-token socket
+floods itself through `_testing_flood_notifications`: a burst within the
+outbound budget arrives whole and in order, one past it closes the socket with
+`WS_CLOSE_OUTBOUND_OVERFLOW` and no response while the account's other
+connection keeps dispatching, an oversized burst is refused, and the action
+over HTTP refuses for want of a connection),
 `role_grant_offer_notification_ws.cross.test.ts` (the
 real-upgrade `describe_role_grant_offer_notification_ws_tests` suite — the seven
 consentful-role-grants WS notifications: received / accepted / declined /
@@ -355,6 +362,11 @@ eternal → NULL control, omitted/out-of-range → 400 on both spines; the
 manifest parity gate is blind to param schemas, so this round-trip is what
 keeps a spine from silently dropping the field; in-process leg
 `token_lifetime_parity.db.test.ts`), and
+`role_grant_role_grammar.cross.test.ts` (the `RoleName` grammar on the grant
+verbs via `describe_role_grant_role_grammar_cross_tests` — an off-grammar
+`role` on `role_grant_assign` / `role_grant_offer_create` → `invalid_params`
+with no reason and no audit row carrying it, with an on-grammar unregistered
+role reaching `role_not_web_grantable` as the control; cross-only), and
 `fact_serving.cross.test.ts` (the cell-gated fact-serving routes
 `GET /api/cells/:cell_id/facts/:hash` + the admin-only `GET /api/facts/:hash`
 via `describe_fact_serving_cross_tests`, gated on `capabilities.fact_serving`),

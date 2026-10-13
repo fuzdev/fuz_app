@@ -44,6 +44,56 @@
  * uses the two-phase form. The twin of the Rust `fuz_realtime`
  * `ConnectionRegistry`.
  *
+ * ## Outbound bound
+ *
+ * Every frame the server sends a connection goes through one path —
+ * `send_to`, which responses, error frames and socket-scoped notifications
+ * use, and the fan-outs (`send`, `broadcast_filtered`, `send_to_account`,
+ * `request_connection`) — into the connection's `WsOutboundWriter`
+ * (`actions/ws_outbound_writer.ts`). A send never waits and never throws: one
+ * recipient that stopped reading must not slow a producer or another
+ * recipient.
+ *
+ * What waits for a socket is held to a byte budget, `outbound_queue_bytes`
+ * (`DEFAULT_WS_OUTBOUND_QUEUE_BYTES`): each waiting frame is charged its UTF-8
+ * length plus `OUTBOUND_FRAME_OVERHEAD_BYTES`, and a frame is always accepted
+ * when nothing is waiting. Nothing counts frames. A frame sent to an idle
+ * connection goes straight to the socket; the rest of a burst sent in one
+ * synchronous run waits, as does anything sent while the socket's own buffer
+ * is backed up.
+ *
+ * A frame that does not fit **closes the connection** rather than being
+ * dropped alone: the connection is removed in the same synchronous step — the
+ * overflowing send does not count it, later sends miss it, the count accessors
+ * and the cap no longer see it — its controller is aborted, what was waiting
+ * is discarded, and the socket is closed with `WS_CLOSE_OUTBOUND_OVERFLOW`.
+ * Frames already handed to the socket may still reach the client ahead of the
+ * close frame; nothing follows it, the response of the request whose handler
+ * overflowed the connection included. One `warn` line names the connection,
+ * its account, and what was waiting; no audit row is written — a client can
+ * provoke an overflow at will, and a write per overflow would amplify it.
+ *
+ * A socket that holds unwritten bytes past `WS_WRITE_STALL_TIMEOUT` is dropped
+ * with no close frame, and removed the same way, with one `warn` line. Every
+ * other close the transport makes (a revocation, the cap, the shutdown,
+ * `close_connection`) hands the frames still waiting to the socket ahead of
+ * its close frame while the socket's buffer is below
+ * `WS_WRITE_HIGH_WATER_BYTES`, discards the rest, and cuts the socket if the
+ * close frame is still unwritten after `WS_CLOSE_WRITE_TIMEOUT`. A reply sent
+ * to an otherwise idle connection just before such a close reaches the client;
+ * one queued behind a backed-up socket does not.
+ *
+ * A connection the transport closed or dropped is out of its map, so the
+ * per-account cap does not count it while its socket is still closing. What
+ * the runtime holds for such a socket is bounded by the writer
+ * (`actions/ws_outbound_writer.ts`, "Closing" and "Runtimes").
+ *
+ * The twin of the Rust `fuz_realtime` outbound queue — same budget, charge,
+ * close code and deadlines. Where they differ: the Rust spine discards every
+ * frame queued before any close, and queues every frame, where this transport
+ * writes the first frame of a run straight through and, at a close that is
+ * not an overflow, the waiting frames its socket has room for.
+ *
  * ## Shutdown
  *
  * `close_all_sockets` — the close `AppServer.close` runs — closes every
@@ -89,8 +139,11 @@ import {
 	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_GOING_AWAY,
 	WS_CLOSE_GOING_AWAY_REASON,
+	WS_CLOSE_OUTBOUND_OVERFLOW,
+	WS_CLOSE_OUTBOUND_OVERFLOW_REASON,
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON,
+	utf8_length,
 	type Transport,
 	type TransportSendOptions
 } from './transports.ts';
@@ -99,6 +152,12 @@ import {
 	type PeerRequestOptions,
 	type PeerRequestOutcome
 } from './peer_request.ts';
+import {
+	WsOutboundWriter,
+	type WsOutboundBacklog,
+	type WsOutboundStall
+} from './ws_outbound_writer.ts';
+import type { OutboundOverflow } from '../realtime/outbound_budget.ts';
 
 // TODO support a SSE backend transport
 
@@ -155,6 +214,19 @@ export const is_filterable_broadcast_transport = (
  */
 export const DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT = 50;
 
+/**
+ * Default byte budget of the frames waiting to be written to one connection,
+ * applied by `BackendWebsocketTransport` unless overridden via
+ * `BackendWebsocketTransportOptions.outbound_queue_bytes`.
+ *
+ * 4 MiB — four messages at `DEFAULT_WS_MAX_MESSAGE_BYTES` as it stands, and a
+ * value of its own: it does not move with the inbound message cap. A consumer
+ * whose server pushes more than this at a client in one burst — large frames,
+ * or long runs of them — sets its own. Same value as the Rust spine's
+ * `DEFAULT_WS_OUTBOUND_QUEUE_BYTES`.
+ */
+export const DEFAULT_WS_OUTBOUND_QUEUE_BYTES = 4 * 1024 * 1024;
+
 /** Options for `BackendWebsocketTransport`. */
 export interface BackendWebsocketTransportOptions {
 	/**
@@ -174,7 +246,21 @@ export interface BackendWebsocketTransportOptions {
 	 */
 	max_connections_per_account?: number | null;
 	/**
-	 * Logger for cap evictions and failed sends or closes. A cap eviction logs
+	 * Byte budget of the frames waiting to be written to one connection. Each
+	 * waiting frame is charged its UTF-8 length plus
+	 * `OUTBOUND_FRAME_OVERHEAD_BYTES`; a frame that does not fit closes the
+	 * connection with `WS_CLOSE_OUTBOUND_OVERFLOW`, and a frame is always
+	 * accepted when nothing is waiting, so one message larger than the whole
+	 * budget is still deliverable (module doc, "Outbound bound"). Not derived
+	 * from the inbound message cap.
+	 *
+	 * @default DEFAULT_WS_OUTBOUND_QUEUE_BYTES
+	 */
+	outbound_queue_bytes?: number;
+	/**
+	 * Logger for cap evictions, outbound overflows and stalls, and failed sends
+	 * or closes. An overflow or a stall logs one `warn` line — the connection,
+	 * its account, and what was waiting. A cap eviction logs
 	 * at info — the account, how many connections were closed, and the cap —
 	 * so an operator can see a client that keeps meeting it. Unset falls back
 	 * to a `[ws]` logger; `null` silences it. `register_action_ws` passes its
@@ -200,6 +286,8 @@ interface ConnectionEntry {
 	 * lands.
 	 */
 	abort_controller: AbortController | null;
+	/** The connection's outbound queue and write pump — every send goes through it. */
+	writer: WsOutboundWriter;
 }
 
 export class BackendWebsocketTransport implements FilterableBroadcastTransport {
@@ -208,6 +296,9 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	// Per-account connection cap; `null` = uncapped.
 	readonly #max_connections_per_account: number | null;
 
+	// Byte budget of each connection's waiting frames.
+	readonly #outbound_queue_bytes: number;
+
 	readonly #log: Logger | null;
 
 	// One entry per registered connection, pending or admitted, in
@@ -215,6 +306,11 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	// "oldest"). Adding a new identity scope (e.g. `device_id`) means adding a
 	// field to `ConnectionIdentity`, not a parallel map.
 	#connections: Map<Uuid, ConnectionEntry> = new Map();
+
+	// Writers of connections the transport has closed, until their socket's
+	// close arrives (`remove_connection`) or the close deadline passes — so the
+	// deadline timer is cleared when the socket goes.
+	#closing_writers: Map<Uuid, WsOutboundWriter> = new Map();
 
 	// set once by `close_all_sockets`, never cleared — every later
 	// registration is born closed (module doc, "Shutdown")
@@ -227,7 +323,7 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 
 	/**
 	 * @throws Error when `max_connections_per_account` is neither `null` nor a
-	 *   positive integer
+	 *   positive integer, or `outbound_queue_bytes` is not a positive integer
 	 */
 	constructor(options?: BackendWebsocketTransportOptions) {
 		const max =
@@ -240,6 +336,15 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 			);
 		}
 		this.#max_connections_per_account = max;
+		const outbound_queue_bytes = options?.outbound_queue_bytes ?? DEFAULT_WS_OUTBOUND_QUEUE_BYTES;
+		if (!Number.isSafeInteger(outbound_queue_bytes) || outbound_queue_bytes < 1) {
+			// zero would close a connection for the first frame queued behind one
+			// still waiting
+			throw new Error(
+				`BackendWebsocketTransport: outbound_queue_bytes must be a positive integer, got ${outbound_queue_bytes}`
+			);
+		}
+		this.#outbound_queue_bytes = outbound_queue_bytes;
 		this.#log = options?.log === undefined ? new Logger('[ws]') : options.log;
 	}
 
@@ -253,8 +358,9 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * later `admit` then refuses. Until admitted it evicts nothing, is not
 	 * counted toward the per-account cap, and receives no message.
 	 *
-	 * The caller owns the entry until it is admitted: every refusal path calls
-	 * `remove_connection` with the returned id.
+	 * The caller owns the entry until it is admitted: a refusal closes it with
+	 * `close_connection`, and `remove_connection` drops it once its socket has
+	 * closed.
 	 *
 	 * Once the transport is closing (`close_all_sockets`) the registration is
 	 * born closed: nothing is inserted, `abort_controller` is aborted, and `ws`
@@ -369,7 +475,13 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 			ws,
 			identity: { token_hash, account_id, api_token_id },
 			admitted,
-			abort_controller
+			abort_controller,
+			writer: new WsOutboundWriter({
+				ws,
+				max_bytes: this.#outbound_queue_bytes,
+				on_stall: (stall) => this.#drop_stalled(connection_id, stall),
+				log: this.#log
+			})
 		});
 		return connection_id;
 	}
@@ -386,13 +498,54 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 *
 	 * Removal only: the socket is not closed and the registered
 	 * `abort_controller` is not aborted — the caller that ends a socket does
-	 * both.
+	 * both. What was waiting to be written to it is dropped.
 	 *
-	 * @mutates this - deletes the connection's entry from `#connections` and
-	 *   settles its pending peer requests as `connection_gone`
+	 * For a socket that has closed (an adapter's close event): on a connection
+	 * the transport closed it also drops the close deadline, so calling it while
+	 * that socket is still closing leaves a client that is not reading uncut.
+	 *
+	 * @mutates this - deletes the connection's entry from `#connections`, drops
+	 *   its waiting frames and write deadlines, and settles its pending peer
+	 *   requests as `connection_gone`
 	 */
 	remove_connection(connection_id: Uuid): void {
+		this.#connections.get(connection_id)?.writer.dispose();
+		// a connection the transport closed: its socket is gone now
+		const closing = this.#closing_writers.get(connection_id);
+		if (closing) {
+			closing.dispose();
+			this.#closing_writers.delete(connection_id);
+		}
 		this.#cleanup_connection(connection_id);
+	}
+
+	/**
+	 * Close one connection, pending or admitted, with `code` and `reason` — the
+	 * close `register_action_ws` makes for a heartbeat timeout, an oversized
+	 * message, a failed `on_socket_open`, and a refused admission.
+	 *
+	 * The connection is removed and its controller aborted at once; frames still
+	 * waiting for the socket are handed to it ahead of the close frame while its
+	 * buffer has room and discarded otherwise, and the close frame is held to
+	 * `WS_CLOSE_WRITE_TIMEOUT` (module doc, "Outbound bound"). A socket whose
+	 * `close` throws is logged, not thrown.
+	 *
+	 * @param connection_id - the id `register_pending` / `add_connection` returned
+	 * @param code - the close code
+	 * @param reason - the close reason
+	 * @returns `false` when the connection is not registered — nothing was closed
+	 * @mutates this - removes the connection, aborts its registered controller,
+	 *   and closes its `WSContext`
+	 */
+	close_connection(connection_id: Uuid, code: number, reason: string): boolean {
+		const entry = this.#connections.get(connection_id);
+		if (!entry) return false;
+		try {
+			this.#end_connection(connection_id, entry, code, reason);
+		} catch (error) {
+			this.#log?.error(`error closing client with ${code}:`, error);
+		}
+		return true;
 	}
 
 	/**
@@ -541,12 +694,75 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		this.#pending.drain(connection_id);
 	}
 
-	#end_connection(connection_id: Uuid, entry: ConnectionEntry, code: number, reason: string): void {
+	#end_connection(
+		connection_id: Uuid,
+		entry: ConnectionEntry,
+		code: number,
+		reason: string,
+		backlog: WsOutboundBacklog = 'flush'
+	): void {
 		this.#cleanup_connection(connection_id);
 		// abort before the close so a handler observing `ctx.signal` bails out
 		// without waiting for the close handshake
 		entry.abort_controller?.abort();
-		entry.ws.close(code, reason);
+		this.#closing_writers.set(connection_id, entry.writer);
+		entry.writer.close(code, reason, backlog, () => {
+			this.#closing_writers.delete(connection_id);
+		});
+	}
+
+	/**
+	 * Hand one frame to a connection's writer. An overflow closes the
+	 * connection before this returns (module doc, "Outbound bound").
+	 *
+	 * @param bytes - the frame's UTF-8 length, when the caller measured it once
+	 *   for several recipients
+	 * @returns whether the frame was accepted
+	 */
+	#deliver(connection_id: Uuid, entry: ConnectionEntry, frame: string, bytes?: number): boolean {
+		const pushed = entry.writer.push(frame, bytes);
+		if (pushed.kind === 'accepted') return true;
+		if (pushed.kind === 'overflow') {
+			this.#close_overflowed(connection_id, entry, pushed.overflow);
+		}
+		return false;
+	}
+
+	#close_overflowed(connection_id: Uuid, entry: ConnectionEntry, overflow: OutboundOverflow): void {
+		// same line as the Rust spine's registry, so one grep finds either
+		this.#log?.warn('ws: outbound queue overflow, closing the connection', {
+			connection_id,
+			account_id: entry.identity.account_id,
+			...overflow
+		});
+		try {
+			this.#end_connection(
+				connection_id,
+				entry,
+				WS_CLOSE_OUTBOUND_OVERFLOW,
+				WS_CLOSE_OUTBOUND_OVERFLOW_REASON,
+				'discard'
+			);
+		} catch (error) {
+			// the producer that overflowed this connection must not fail for it
+			this.#log?.error('error closing overflowed client:', error);
+		}
+	}
+
+	/**
+	 * A connection's write deadline passed: remove it and abort its controller.
+	 * Its writer has discarded what was waiting and cuts the socket next.
+	 */
+	#drop_stalled(connection_id: Uuid, stall: WsOutboundStall): void {
+		const entry = this.#connections.get(connection_id);
+		if (!entry) return;
+		this.#cleanup_connection(connection_id);
+		this.#log?.warn('ws: write stalled, dropping the connection', {
+			connection_id,
+			account_id: entry.identity.account_id,
+			...stall
+		});
+		entry.abort_controller?.abort();
 	}
 
 	/**
@@ -574,10 +790,8 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	}
 
 	#supersede_connection(connection_id: Uuid, entry: ConnectionEntry): void {
-		this.#cleanup_connection(connection_id);
 		try {
-			entry.abort_controller?.abort();
-			entry.ws.close(WS_CLOSE_CONNECTION_LIMIT, 'connection limit');
+			this.#end_connection(connection_id, entry, WS_CLOSE_CONNECTION_LIMIT, 'connection limit');
 		} catch (error) {
 			// the evicted socket is another connection's — a failure closing it
 			// must not fail the connection being admitted
@@ -627,14 +841,14 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 
 	#broadcast(message: JsonrpcMessageFromServerToClient): Promise<void> {
 		const serialized = JSON.stringify(message);
-		for (const entry of this.#connections.values()) {
+		// measured once, not once per recipient that has to queue it
+		const bytes = utf8_length(serialized);
+		// deleting the current entry during Map iteration is safe — an overflow
+		// removes its connection
+		for (const [connection_id, entry] of this.#connections) {
 			// a registration pending admission is not a connection yet
 			if (!entry.admitted) continue;
-			try {
-				entry.ws.send(serialized);
-			} catch (error) {
-				this.#log?.error('error broadcasting to client:', error);
-			}
+			this.#deliver(connection_id, entry, serialized, bytes);
 		}
 		// TODO hack - remove if not ever needed, I assume this will need to be async so let's hold that assumption
 		return Promise.resolve();
@@ -649,22 +863,22 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * When no ACL is needed, callers should prefer `send(message)` / `#broadcast`
 	 * to skip the per-connection predicate overhead.
 	 *
-	 * @returns the number of sockets the message was sent to
+	 * A connection the message overflows is closed and not counted (module doc,
+	 * "Outbound bound").
+	 *
+	 * @returns the number of connections that accepted the message
 	 */
 	broadcast_filtered(
 		message: JsonrpcMessageFromServerToClient,
 		predicate: (identity: ConnectionIdentity) => boolean
 	): number {
 		const serialized = JSON.stringify(message);
+		// measured once, not once per recipient that has to queue it
+		const bytes = utf8_length(serialized);
 		let count = 0;
-		for (const entry of this.#connections.values()) {
+		for (const [connection_id, entry] of this.#connections) {
 			if (!entry.admitted || !predicate(entry.identity)) continue;
-			try {
-				entry.ws.send(serialized);
-				count++;
-			} catch (error) {
-				this.#log?.error('error broadcasting filtered to client:', error);
-			}
+			if (this.#deliver(connection_id, entry, serialized, bytes)) count++;
 		}
 		return count;
 	}
@@ -681,10 +895,34 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * for the account (session, bearer, and daemon-token) receives the
 	 * message.
 	 *
-	 * @returns the number of sockets the message was sent to
+	 * @returns the number of connections that accepted the message
 	 */
 	send_to_account(account_id: Uuid, message: JsonrpcMessageFromServerToClient): number {
 		return this.broadcast_filtered(message, (id) => id.account_id === account_id);
+	}
+
+	/**
+	 * Send one serialized frame to a single admitted connection — the path
+	 * `register_action_ws` sends every response, error frame, and socket-scoped
+	 * notification through.
+	 *
+	 * Never waits and never throws. A frame the connection's outbound budget
+	 * does not fit closes the connection with `WS_CLOSE_OUTBOUND_OVERFLOW` before
+	 * this returns (module doc, "Outbound bound").
+	 *
+	 * @param connection_id - the id `register_pending` / `add_connection` returned
+	 * @param frame - the frame's text, already serialized
+	 * @returns `false` when the frame was not accepted: the connection is not
+	 *   registered, is still pending admission, or was just closed for the
+	 *   overflow this frame caused
+	 * @mutates this - queues the frame on the connection's writer; on an
+	 *   overflow removes the connection, aborts its controller, and closes its
+	 *   `WSContext`
+	 */
+	send_to(connection_id: Uuid, frame: string): boolean {
+		const entry = this.#connections.get(connection_id);
+		if (!entry?.admitted) return false;
+		return this.#deliver(connection_id, entry, frame);
 	}
 
 	/**
@@ -718,17 +956,23 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		if (!entry?.admitted) {
 			return Promise.resolve({ ok: false, error: { kind: 'connection_gone' } });
 		}
-		const { ws } = entry;
 
 		const registered = this.#pending.register(connection_id, options?.timeout_ms);
 		if (!registered) return Promise.resolve({ ok: false, error: { kind: 'too_many_in_flight' } });
 		const { id, outcome } = registered;
 
+		let frame: string;
 		try {
-			ws.send(JSON.stringify(create_jsonrpc_request(method, params, id)));
+			frame = JSON.stringify(create_jsonrpc_request(method, params, id));
 		} catch {
-			// Send failed — the socket is gone; settle now so the caller isn't
-			// left awaiting until the deadline.
+			// params that are not JSON reach no client
+			this.#pending.settle(connection_id, id, { ok: false, error: { kind: 'connection_gone' } });
+			return outcome;
+		}
+		if (!this.#deliver(connection_id, entry, frame)) {
+			// Not accepted — the socket refused it, or the frame overflowed the
+			// connection and closed it; settle now so the caller isn't left
+			// awaiting until the deadline.
 			this.#pending.settle(connection_id, id, { ok: false, error: { kind: 'connection_gone' } });
 		}
 		return outcome;

@@ -34,6 +34,8 @@ import {
 	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_GOING_AWAY,
 	WS_CLOSE_GOING_AWAY_REASON,
+	WS_CLOSE_OUTBOUND_OVERFLOW,
+	WS_CLOSE_OUTBOUND_OVERFLOW_REASON,
 	WS_CLOSE_SESSION_REVOKED
 } from '#lib/actions/transports.ts';
 import { cancel_action_spec } from '#lib/actions/cancel.ts';
@@ -601,6 +603,27 @@ describe('auto-reconnect', () => {
 		assert.strictEqual(client.revoked, false);
 		assert.strictEqual(client.superseded, false);
 		assert.strictEqual(client.last_close_code, WS_CLOSE_GOING_AWAY);
+
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
+		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(client.status, 'connecting');
+	});
+
+	test('an outbound overflow close (WS_CLOSE_OUTBOUND_OVERFLOW) reconnects and is not terminal', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+		last_ws().fire_close(WS_CLOSE_OUTBOUND_OVERFLOW, WS_CLOSE_OUTBOUND_OVERFLOW_REASON);
+
+		// an ordinary reconnectable close: the credential is good and nothing
+		// took the connection's place
+		assert.strictEqual(client.status, 'reconnecting');
+		assert.strictEqual(client.reconnect_count, 1);
+		assert.strictEqual(client.current_reconnect_delay, DEFAULT_RECONNECT_DELAY);
+		assert.strictEqual(client.revoked, false);
+		assert.strictEqual(client.superseded, false);
+		assert.strictEqual(client.last_close_code, WS_CLOSE_OUTBOUND_OVERFLOW);
 
 		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
 		assert.strictEqual(MockWebSocket.instances.length, 2);

@@ -5,10 +5,11 @@ import '../assert_dev_env.ts';
  * actions.
  *
  * `_testing_reset` / `_testing_mint_session` / `_testing_put_fact` /
- * `_testing_schema_snapshot` / `_testing_migration_tracker` /
- * `_testing_action_manifest` are privileged test-binary actions the production
- * wire never exposes — three direct DB writes (full auth wipe, forged session
- * row, raw fact insert) plus three introspection reads (the live schema, the
+ * `_testing_flood_notifications` / `_testing_schema_snapshot` /
+ * `_testing_migration_tracker` / `_testing_action_manifest` are privileged
+ * test-binary actions the production wire never exposes — direct DB writes
+ * (full auth wipe, forged session row, raw fact insert), a flood of the
+ * caller's own connection, and introspection reads (the live schema, the
  * `schema_version` migration tracker, and the live RPC registry — the highest
  * info-leak of the set were the gate to break). Their only structural fence
  * is the **daemon-token** credential gate on
@@ -85,6 +86,9 @@ const backdoor_methods: ReadonlyArray<{ method: string; params: unknown }> = [
 	{ method: '_testing_reset', params: {} },
 	{ method: '_testing_mint_session', params: { account_id: NIL_UUID, expires_in_seconds: -60 } },
 	{ method: '_testing_put_fact', params: { content: 'backdoor-probe' } },
+	// An empty burst — valid input, so it clears the 400 phase; a refused
+	// caller never reaches the handler that would queue it.
+	{ method: '_testing_flood_notifications', params: { count: 0, size: 0 } },
 	// The schema-dump read — `exclude_tables` is optional, so `{}` is valid
 	// and clears the 400 phase like the writes above.
 	{ method: '_testing_schema_snapshot', params: {} },

@@ -216,6 +216,11 @@ export const SPINE_METHOD_COVERAGE: ReadonlyArray<MethodCoverageEntry> = [
 	},
 	{ method: '_testing_put_fact', tier: 'backdoor', suite: 'describe_testing_backdoor_cross_tests' },
 	{
+		method: '_testing_flood_notifications',
+		tier: 'backdoor',
+		suite: 'describe_testing_backdoor_cross_tests'
+	},
+	{
 		method: '_testing_schema_snapshot',
 		tier: 'backdoor',
 		suite: 'describe_testing_backdoor_cross_tests'

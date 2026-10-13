@@ -231,13 +231,17 @@ export const WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE =
  */
 export const ERROR_DUPLICATE_REQUEST_ID = 'duplicate_request_id';
 
-/** Send one JSON-RPC error response frame on `ws`. */
+/**
+ * Send one JSON-RPC error response frame to `connection_id` through the
+ * transport's outbound queue.
+ */
 const send_error_response = (
-	ws: WSContext,
+	transport: BackendWebsocketTransport,
+	connection_id: Uuid,
 	id: JsonrpcErrorResponse['id'],
 	error: JsonrpcErrorResponse['error']
 ): void => {
-	ws.send(JSON.stringify(create_jsonrpc_error_response(id, error)));
+	transport.send_to(connection_id, JSON.stringify(create_jsonrpc_error_response(id, error)));
 };
 
 /**
@@ -278,7 +282,11 @@ const is_peer_response = (json: unknown): json is JsonrpcResponse | JsonrpcError
  * snapshot.
  */
 export interface SocketOpenContext {
-	/** The raw WebSocket context — exposed for edge cases; prefer `notify` for sends. */
+	/**
+	 * The raw WebSocket context — exposed for edge cases; prefer `notify` for
+	 * sends. A frame sent on it directly bypasses the connection's outbound
+	 * budget and its ordering with queued frames.
+	 */
 	ws: WSContext;
 	/** Connection id assigned by `BackendWebsocketTransport.register_pending`. */
 	connection_id: Uuid;
@@ -395,6 +403,17 @@ export interface RegisterActionWsOptions {
 	 */
 	max_connections_per_account?: number | null;
 	/**
+	 * Byte budget of the frames waiting to be written to one connection, for
+	 * the transport this call creates — see
+	 * `BackendWebsocketTransportOptions.outbound_queue_bytes` (a frame that does
+	 * not fit closes the socket with `WS_CLOSE_OUTBOUND_OVERFLOW`). Not derived
+	 * from `max_message_bytes`. Rejected alongside `transport`: a supplied
+	 * transport carries its own budget, set where it was constructed.
+	 *
+	 * @default DEFAULT_WS_OUTBOUND_QUEUE_BYTES
+	 */
+	outbound_queue_bytes?: number;
+	/**
 	 * Server-side heartbeat policy. Default-on (receive-silence detection,
 	 * 60s timeout). `false` disables the timer entirely — only do this if
 	 * the upstream stack (TCP keepalive, Cloudflare idle timeout, etc.)
@@ -495,6 +514,10 @@ export interface RegisterActionWsResult {
  *   `WS_CLOSE_INTERNAL_ERROR`. Frames sent before admission wait for it.
  * - A socket the server has closed dispatches nothing more, whether or not
  *   its client answers the close.
+ * - Every frame sent — responses, error frames, notifications — goes through
+ *   the transport's outbound queue. A connection with more waiting than its
+ *   `outbound_queue_bytes` budget closes with `WS_CLOSE_OUTBOUND_OVERFLOW`, and
+ *   the response of the request whose handler overflowed it is not sent.
  *
  * @returns the transport (supplied or freshly created) — retain it to wire
  *   `create_ws_auth_guard` or broadcast on audit events.
@@ -503,8 +526,9 @@ export interface RegisterActionWsResult {
  *   connection via `register_pending` / `admit` / `remove_connection`
  * @mutates options.connection_closer - adds the endpoint's transport, once the
  *   mount has succeeded
- * @throws Error when `max_connections_per_account` is passed alongside
- *   `transport`, or is neither `null` nor a positive integer, or when
+ * @throws Error when `max_connections_per_account` or `outbound_queue_bytes`
+ *   is passed alongside `transport`, when the cap is neither `null` nor a
+ *   positive integer, when the budget is not a positive integer, or when
  *   `actions` fails to compile (`compile_action_registry`)
  */
 export const register_action_ws = (options: RegisterActionWsOptions): RegisterActionWsResult => {
@@ -513,6 +537,13 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		throw new Error(
 			`register_action_ws: max_connections_per_account configures the transport created for ${options.path}, ` +
 				'but a transport was supplied — set the cap on that BackendWebsocketTransport instead'
+		);
+	}
+	if (options.transport && options.outbound_queue_bytes !== undefined) {
+		// a budget that silently did nothing would read as enforced
+		throw new Error(
+			`register_action_ws: outbound_queue_bytes configures the transport created for ${options.path}, ` +
+				'but a transport was supplied — set the budget on that BackendWebsocketTransport instead'
 		);
 	}
 	const {
@@ -535,6 +566,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		options.transport ??
 		new BackendWebsocketTransport({
 			max_connections_per_account: options.max_connections_per_account,
+			outbound_queue_bytes: options.outbound_queue_bytes,
 			log
 		});
 
@@ -694,7 +726,6 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// has been dispatched or dropped.
 			const queued_frames: Array<{
 				data: unknown;
-				ws: WSContext;
 				resolve: () => void;
 				reject: (reason: unknown) => void;
 			}> = [];
@@ -734,12 +765,17 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// End the socket from the server side: unregister it and abort its
 			// signal *now* — so nothing more dispatches and in-flight handlers
 			// see `signal.aborted` while the close handshake is still in flight —
-			// then send the close frame.
+			// then send the close frame. The transport does all three for a
+			// connection it still holds, sending the close behind the waiting
+			// frames the socket has room for and under the close deadline; a socket
+			// whose connection is already gone has nothing waiting and is closed
+			// directly.
 			const end_socket = (ws: WSContext, code: number, reason: string): void => {
-				if (captured_connection_id !== undefined) {
-					transport.remove_connection(captured_connection_id);
-				}
+				const closed =
+					captured_connection_id !== undefined &&
+					transport.close_connection(captured_connection_id, code, reason);
 				socket_abort_controller.abort();
+				if (closed) return;
 				try {
 					ws.close(code, reason);
 				} catch (error) {
@@ -751,25 +787,27 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// close frame: a revocation closed its pending registration (the
 			// transport sent the 4001), the shutdown did (the 1001 — so a refusal
 			// during shutdown never sends a revocation's or a failure's code), or
-			// the client went away.
+			// the client went away. Its registration is gone too — the transport
+			// removed it with its close, `onClose` with the client's — and it is
+			// not removed again here: `remove_connection` is for a socket that has
+			// closed, and would drop the close deadline of one that has not.
 			const refuse_upgrade = (ws: WSContext, code: number, reason: string): void => {
-				if (captured_connection_id !== undefined) {
-					transport.remove_connection(captured_connection_id);
-				}
 				if (!socket_abort_controller.signal.aborted) end_socket(ws, code, reason);
 			};
 
 			// Socket-scoped notification helper — routes to this socket only,
 			// matches the `ctx.notify` semantics exposed to per-message handlers.
+			// Through the transport's outbound queue, like every other frame: a
+			// handler that notifies past the connection's budget closes it.
 			const notify_socket =
-				(ws: WSContext) =>
+				(connection_id: Uuid) =>
 				(notify_method: string, notify_params: unknown): void => {
 					try {
 						const notification = create_jsonrpc_notification(
 							notify_method,
 							to_jsonrpc_params(notify_params)
 						);
-						ws.send(JSON.stringify(notification));
+						transport.send_to(connection_id, JSON.stringify(notification));
 					} catch (error) {
 						log.error('notify send failed:', notify_method, error);
 					}
@@ -884,18 +922,19 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 							ws,
 							connection_id,
 							identity,
-							notify: notify_socket(ws),
+							notify: notify_socket(connection_id),
 							signal: socket_abort_controller.signal
 						});
 					} catch (error) {
 						log.error('on_socket_open failed — closing socket:', error);
 						// an ended socket has no one to tell
 						if (phase_is('ended')) return;
-						try {
-							send_error_response(ws, null, jsonrpc_error_messages.internal_error());
-						} catch {
-							// ignore — socket may already be dead
-						}
+						send_error_response(
+							transport,
+							connection_id,
+							null,
+							jsonrpc_error_messages.internal_error()
+						);
 						end_socket(ws, WS_CLOSE_INTERNAL_ERROR, 'socket bootstrap failed');
 						return;
 					}
@@ -908,7 +947,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				phase = 'open';
 				for (const frame of queued_frames.splice(0)) {
 					if (transport.is_registered(connection_id)) {
-						handle_frame(frame.data, frame.ws, connection_id).then(frame.resolve, frame.reject);
+						handle_frame(frame.data, connection_id).then(frame.resolve, frame.reject);
 					} else {
 						frame.resolve();
 					}
@@ -917,24 +956,23 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 
 			// Dispatch one inbound frame on an admitted, still-registered
 			// connection.
-			const handle_frame = async (
-				data: unknown,
-				ws: WSContext,
-				connection_id: Uuid
-			): Promise<void> => {
+			const handle_frame = async (data: unknown, connection_id: Uuid): Promise<void> => {
+				const send_error = (
+					id: JsonrpcErrorResponse['id'],
+					error: JsonrpcErrorResponse['error']
+				): void => send_error_response(transport, connection_id, id, error);
 				let json;
 				try {
 					json = JSON.parse(String(data));
 				} catch (error) {
 					log.error('JSON parse error:', error);
-					send_error_response(ws, null, jsonrpc_error_messages.parse_error());
+					send_error(null, jsonrpc_error_messages.parse_error());
 					return;
 				}
 
 				// Batch JSON-RPC is not supported on the WebSocket path.
 				if (Array.isArray(json)) {
-					send_error_response(
-						ws,
+					send_error(
 						null,
 						jsonrpc_error_messages.invalid_request(
 							'batch JSON-RPC requests are not supported on WebSocket'
@@ -969,11 +1007,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				// falls through here on purpose, so it is answered rather
 				// than swallowed.
 				if (!is_jsonrpc_object(json)) {
-					send_error_response(
-						ws,
-						to_jsonrpc_envelope_id(json),
-						jsonrpc_error_messages.invalid_request()
-					);
+					send_error(to_jsonrpc_envelope_id(json), jsonrpc_error_messages.invalid_request());
 					return;
 				}
 
@@ -1004,11 +1038,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 						}
 						return;
 					}
-					send_error_response(
-						ws,
-						to_jsonrpc_message_id(json),
-						jsonrpc_error_messages.invalid_request()
-					);
+					send_error(to_jsonrpc_message_id(json), jsonrpc_error_messages.invalid_request());
 					return;
 				}
 
@@ -1022,8 +1052,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				// precedes it.
 				const envelope = JsonrpcRequest.safeParse(json);
 				if (!envelope.success) {
-					send_error_response(
-						ws,
+					send_error(
 						to_jsonrpc_message_id(json),
 						jsonrpc_error_messages.invalid_request(dev_only({ issues: envelope.error.issues }))
 					);
@@ -1041,8 +1070,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				// `perform_action`, so neither charges the action rate limiters —
 				// the same on the Rust spine.
 				if (pending_controllers.has(id)) {
-					send_error_response(
-						ws,
+					send_error(
 						id,
 						jsonrpc_error_messages.invalid_request({ reason: ERROR_DUPLICATE_REQUEST_ID })
 					);
@@ -1051,8 +1079,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				// The in-flight ceiling: shed, don't queue — see
 				// `MAX_INBOUND_DISPATCHES_PER_CONNECTION`.
 				if (pending_controllers.size >= MAX_INBOUND_DISPATCHES_PER_CONNECTION) {
-					send_error_response(
-						ws,
+					send_error(
 						id,
 						jsonrpc_error_messages.queue_overflow(WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE)
 					);
@@ -1065,7 +1092,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				// surface as method_not_found just like unknown methods.
 				const action = action_map.get(method);
 				if (!action) {
-					send_error_response(ws, id, jsonrpc_error_messages.method_not_found(method));
+					send_error(id, jsonrpc_error_messages.method_not_found(method));
 					return;
 				}
 
@@ -1100,7 +1127,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				// bearer) queues a close of this very socket on
 				// `post_commit_effects` (`queue_connection_close`), and
 				// the audit listeners repeat it from the same queue. The
-				// `ws.send` on the success path runs before the `finally`
+				// send on the success path runs before the `finally`
 				// flushes that queue, so the caller reads its reply and
 				// then the 4001 close. Inverting the order — flushing the
 				// queues before the send — would strand the caller without
@@ -1108,7 +1135,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				const pending_effects: Array<Promise<void>> = [];
 				const post_commit_effects: Array<() => void | Promise<void>> = [];
 
-				const notify = notify_socket(ws);
+				const notify = notify_socket(connection_id);
 				// Server→client request seam (ActionPeer) — closes over this
 				// socket's connection_id so a handler can initiate a request to
 				// the originating client and await the reply.
@@ -1168,7 +1195,10 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 							)
 						);
 					}
-					ws.send(frame);
+					// Refused when the connection is gone — closed while the handler
+					// ran, or closed by the handler's own notifications overflowing
+					// its outbound budget — so nothing follows a close frame.
+					transport.send_to(connection_id, frame);
 				} finally {
 					pending_controllers.delete(id);
 					// deferred first — see the ordering invariant above
@@ -1219,7 +1249,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 						queued_bytes += bytes;
 						last_receive_time = Date.now();
 						return new Promise<void>((resolve, reject) => {
-							queued_frames.push({ data: event.data, ws, resolve, reject });
+							queued_frames.push({ data: event.data, resolve, reject });
 						});
 					}
 					// The transport is the authority on whether the connection is
@@ -1236,7 +1266,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					}
 					// only a frame that is accepted counts as activity
 					last_receive_time = Date.now();
-					return handle_frame(event.data, ws, connection_id);
+					return handle_frame(event.data, connection_id);
 				},
 				onClose: async (event, ws) => {
 					// belt and braces: the abort listener stops the timer and the

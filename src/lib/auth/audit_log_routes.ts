@@ -174,7 +174,9 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 					// left during the re-reads gets a stream that is already closed,
 					// whose listener runs at once and removes the registration, so
 					// `admit` refuses it rather than evicting a live stream for it.
-					const { response, stream } = create_sse_response<SseNotification>(c, log);
+					const { response, stream } = create_sse_response<SseNotification>(c, log, {
+						account_id: ctx.account.id
+					});
 					stream.on_close(pending.unsubscribe);
 					admitted = registry.admit(pending, stream);
 					if (!admitted) {

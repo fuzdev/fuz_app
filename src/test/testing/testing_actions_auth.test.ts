@@ -1,11 +1,12 @@
 /**
  * Spec-level gate check for the `_testing_*` backdoor actions.
  *
- * The seven test-binary actions (`_testing_reset`, `_testing_mint_session`,
- * `_testing_put_fact`, `_testing_drain_effects`, `_testing_schema_snapshot`,
- * `_testing_migration_tracker`, `_testing_action_manifest`) are privileged:
- * they run direct DB writes or
- * dump internal state the production wire never exposes. Their only structural
+ * The test-binary actions (`_testing_reset`, `_testing_mint_session`,
+ * `_testing_put_fact`, `_testing_drain_effects`, `_testing_flood_notifications`,
+ * `_testing_schema_snapshot`, `_testing_migration_tracker`,
+ * `_testing_action_manifest`) are privileged: they run direct DB writes, dump
+ * internal state, or drive a connection past its limits — nothing the
+ * production wire exposes. Their only structural
  * fence is the daemon-token credential gate
  * on every spec's `auth` axis. This test pins that wiring directly — the
  * dispatcher's *enforcement* of the gate is covered behaviorally
@@ -26,6 +27,7 @@ import {
 	testing_mint_session_action_spec,
 	testing_put_fact_action_spec,
 	testing_drain_effects_action_spec,
+	testing_flood_notifications_action_spec,
 	testing_schema_snapshot_action_spec,
 	testing_migration_tracker_action_spec,
 	testing_action_manifest_action_spec
@@ -37,6 +39,7 @@ const testing_action_specs: ReadonlyArray<{ name: string; spec: RequestResponseA
 	{ name: '_testing_mint_session', spec: testing_mint_session_action_spec },
 	{ name: '_testing_put_fact', spec: testing_put_fact_action_spec },
 	{ name: '_testing_drain_effects', spec: testing_drain_effects_action_spec },
+	{ name: '_testing_flood_notifications', spec: testing_flood_notifications_action_spec },
 	{ name: '_testing_schema_snapshot', spec: testing_schema_snapshot_action_spec },
 	{ name: '_testing_migration_tracker', spec: testing_migration_tracker_action_spec },
 	{ name: '_testing_action_manifest', spec: testing_action_manifest_action_spec }

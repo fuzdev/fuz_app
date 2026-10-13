@@ -1010,6 +1010,8 @@ An account holds at most `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT` (50) connections 
 
 See ./security.md §WebSocket Connection Cap.
 
+What the server has waiting to be written to one socket is held to a byte budget, `DEFAULT_WS_OUTBOUND_QUEUE_BYTES` (4 MiB): a connection sent more than its client takes closes with `WS_CLOSE_OUTBOUND_OVERFLOW` (4005, `outbound queue overflow`), and `FrontendWebsocketClient` reconnects under its ordinary backoff — re-read whatever state the client tracks when it does, since frames were lost. Pass `outbound_queue_bytes` to change the budget, in the same places as the connection cap; a handler that pushes a large burst at one client in a single synchronous run needs a budget that holds it (./security.md §Outbound Bounds).
+
 `register_action_ws` (the lower-level entry point this helper wraps) stays exported for tests that drive the dispatcher directly via `create_ws_test_harness`.
 
 ### Backend-initiated fan-out

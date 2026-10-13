@@ -1047,7 +1047,7 @@ capabilities its backend supports, and the runner filters silently. Adding a
 capability is a one-line change in `capabilities.ts` plus a flag in each
 consumer config.
 
-- `ws` — Backend serves the WebSocket endpoint (gates `describe_cross_process_ws_tests` and `describe_ws_connection_cap_cross_tests`).
+- `ws` — Backend serves the WebSocket endpoint (gates `describe_cross_process_ws_tests`, `describe_ws_connection_cap_cross_tests`, and `describe_ws_outbound_overflow_cross_tests`).
 - `sse` — Backend serves an SSE stream.
 - `cell_crud` — Backend live-mounts the cell CRUD verbs (gates `describe_cell_crud_cross_tests`).
 - `cell_relations` — Backend live-mounts the cell relation / ACL / audit verbs (gates `describe_cell_relations_cross_tests`).

@@ -362,6 +362,7 @@ and `allow_fallback: boolean` (default `true`). Explicit
 - `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002` — client observed receive-silence past its receive timeout (`resolve_heartbeat_receive_timeout`).
 - `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003` — server observed receive-silence past `DEFAULT_SERVER_HEARTBEAT_TIMEOUT` (60s).
 - `WS_CLOSE_CONNECTION_LIMIT = 4004` — server closed this socket to admit a newer one on the same account, past the per-account connection cap (reason `connection limit`). Not a revocation: the client stays `closed` with `superseded` set and no reconnect, until `connect()` is called. Twin of the Rust spine's constant.
+- `WS_CLOSE_OUTBOUND_OVERFLOW = 4005` — the server had more waiting to be written to this socket than its outbound budget holds (reason `WS_CLOSE_OUTBOUND_OVERFLOW_REASON`, `outbound queue overflow`); what was waiting is dropped. Not a revocation, and nothing took the connection's place: the client reconnects under its ordinary backoff. Twin of the Rust spine's constant.
 - `WS_CLOSE_GOING_AWAY = 1001` — the server is shutting down (reason `WS_CLOSE_GOING_AWAY_REASON`, `Server shutting down`): `close_all_sockets`, which `AppServer.close` runs. Also the close for an upgrade the shutdown refuses — pending at the close-all, or born closed after it. Not a revocation: the client reconnects under its ordinary backoff.
 - `WS_CLOSE_MESSAGE_TOO_BIG = 1009` — server received a message over its `max_message_bytes` cap (RFC 6455 "Message Too Big").
 - `WS_CLOSE_POLICY_VIOLATION = 1008` — a socket sent too much while it was still opening (before admission and `on_socket_open` completed): past `MAX_PRE_ADMISSION_FRAMES` frames or the `PRE_ADMISSION_QUEUE_BYTES_FACTOR` byte budget.
@@ -371,7 +372,8 @@ and `allow_fallback: boolean` (default `true`). Explicit
 
 - `actions/transports_http.ts` — `frontend_http_rpc`; thin `fetch` adapter, POST default, GET on `has_side_effects(method) === false`.
 - `actions/transports_ws.ts` — `frontend_websocket_rpc`; thin adapter over `WebsocketRpcConnection` (default impl: `FrontendWebsocketClient`). Answers inbound server→client requests: a built-in `peer_ping_responder` for `peer/ping` (zero-wiring liveness), any other request routed through `peer.receive` with the response sent back over the socket (the frontend half of the ActionPeer receive loop).
-- `actions/transports_ws_backend.ts` — `backend_websocket_rpc`; server-side WS with session tracking, two-phase registration (`register_pending` / `admit`), and the per-account cap; satisfies `FilterableBroadcastTransport`. Server→client requests via `request_connection` (correlation registry in `actions/peer_request.ts`).
+- `actions/transports_ws_backend.ts` — `backend_websocket_rpc`; server-side WS with session tracking, two-phase registration (`register_pending` / `admit`), the per-account cap, and the per-connection outbound budget; satisfies `FilterableBroadcastTransport`. Server→client requests via `request_connection` (correlation registry in `actions/peer_request.ts`).
+- `actions/ws_outbound_writer.ts` — `WsOutboundWriter`, the outbound queue and write pump of one connection, which every frame the transport sends goes through; `realtime/outbound_budget.ts` is the accounting it shares with SSE.
 
 `FrontendHttpTransport` on non-OK HTTP returns the body as-is when it's a
 JSON-RPC error response for the request (same `id` compared as strings since GET sends it as a query param, or `null`) — the
@@ -406,7 +408,7 @@ client; `null` skips the client-side measurement.
 
 One map keyed by `connection_id` (branded `Uuid`), in registration order:
 `#connections: Map<Uuid, ConnectionEntry>`, each entry `{ws, identity,
-admitted, abort_controller}`. `identity` is the `ConnectionIdentity`
+admitted, abort_controller, writer}`. `identity` is the `ConnectionIdentity`
 `{token_hash, account_id, api_token_id}` (session sets `token_hash`, bearer
 sets `api_token_id`, daemon-token sets both null).
 
@@ -477,6 +479,74 @@ Rust `fuz_realtime` `ConnectionRegistry`'s cap — same default, same policy,
 same close code and reason — pinned on both by the
 `describe_ws_connection_cap_cross_tests` suite.
 
+**Outbound bound.** Every frame the server sends a connection goes through
+its `WsOutboundWriter` (`actions/ws_outbound_writer.ts`), reached by one path:
+`send_to(connection_id, frame)` — which `register_action_ws` uses for every
+response, error frame, and socket-scoped notification — and the fan-outs
+(`send`, `broadcast_filtered`, `send_to_account`, `request_connection`). The
+one way around it is a consumer sending on the raw `SocketOpenContext.ws`,
+which bypasses the budget. A send never waits and never throws.
+
+- **What waits.** A frame sent to an idle connection — nothing waiting,
+  nothing unwritten in the runtime's socket buffer, no other frame sent in the
+  same synchronous run — goes straight to the socket. Everything else waits in
+  the writer's queue: the rest of a burst sent in one synchronous run (a loop
+  with no `await` gives the pump no turn), and anything sent while the socket's
+  buffer is at or over `WS_WRITE_HIGH_WATER_BYTES`. The pump hands waiting
+  frames over in order, on the microtask after a send and as the buffer drains.
+  So a second send in one synchronous run reaches the socket a microtask later.
+- **The budget.** What waits is held to `outbound_queue_bytes`
+  (`new BackendWebsocketTransport({outbound_queue_bytes})`, default
+  `DEFAULT_WS_OUTBOUND_QUEUE_BYTES`, 4 MiB — its own constant, not derived from
+  `max_message_bytes`; anything but a positive integer throws): each waiting
+  frame is charged its UTF-8 length plus `OUTBOUND_FRAME_OVERHEAD_BYTES` (64),
+  and a frame is always accepted when nothing is waiting. Nothing counts
+  frames (`OutboundBudget`, `realtime/outbound_budget.ts`).
+- **Overflow.** A frame that does not fit closes the connection with
+  `WS_CLOSE_OUTBOUND_OVERFLOW`: the entry leaves the map in the same
+  synchronous step (the overflowing send returns `false` / is not counted,
+  later sends miss it, the count accessors and the cap stop seeing it), its
+  pending peer requests drain as `connection_gone`, its controller is aborted,
+  and what was waiting is discarded. Frames already handed to the socket may
+  still reach the client ahead of the close frame; nothing follows it.
+- **Deadlines.** Bytes a socket still holds `WS_WRITE_STALL_TIMEOUT` (10 s)
+  after they were handed to it drop the connection with no close frame
+  (`terminate()` on Node's `ws` and Bun; the client sees 1006), removing it and
+  aborting its controller the same way. A close frame gets
+  `WS_CLOSE_WRITE_TIMEOUT` (1 s), after which a socket still holding unwritten
+  bytes is cut. Deno's standard `WebSocket` cannot be cut, so there a stalled
+  connection is closed with `WS_CLOSE_OUTBOUND_OVERFLOW` instead, the close
+  deadline cuts nothing, and the runtime keeps the socket until it or the
+  client ends it. The timers are unref'd and cleared when the socket's close
+  arrives (`remove_connection`, which is for a socket that has closed).
+- **Other closes.** A revocation, a cap eviction, the shutdown, and
+  `close_connection` run the pump's rule once more: the frames still waiting
+  are handed to the socket ahead of the close frame while its buffer is below
+  `WS_WRITE_HIGH_WATER_BYTES` (64 KiB), and the rest are discarded. A reply
+  sent to an otherwise idle connection just before a self-revoking close still
+  arrives; one queued behind a backed-up socket does not.
+- **After a close.** A closed or dropped connection is out of the map, so the
+  per-account cap does not count it while its socket is still closing. Where
+  the runtime reports its buffer, what it holds for that socket is less than
+  the high-water mark plus one frame, and the close frame — for the close deadline on Node and Bun, and on
+  Deno until the runtime or the client ends the socket.
+- **Logging.** One `warn` per overflow (`ws: outbound queue overflow, closing
+  the connection`, the Rust spine's line) or stall (`ws: write stalled,
+  dropping the connection`), with `{connection_id, account_id, queued_bytes,
+  queued_frames, …}`. No audit row: a client can provoke either at will.
+
+The twin of the Rust `fuz_realtime` outbound queue — same budget, charge,
+rule, close code, reason, and deadlines, pinned on both by
+`describe_ws_outbound_overflow_cross_tests`. Where they differ (the Rust spine
+queues every frame and discards the whole backlog at every close) is listed in
+../../../docs/security.md §Outbound Bounds.
+
+`close_connection(connection_id, code, reason)` closes one connection, pending
+or admitted — removal, abort, then the close through the writer — and answers
+`false` for an id that names nothing. `register_action_ws` makes its own closes
+with it (heartbeat timeout, oversized message, failed `on_socket_open`, refused
+admission).
+
 Targeted closure (all return socket count closed, use
 `WS_CLOSE_SESSION_REVOKED`, match pending and admitted entries alike, and abort
 each closed connection's controller):
@@ -525,7 +595,7 @@ no pending entry (unsolicited / cross-connection / late) is dropped + audited vi
 Rust `audit_unmatched_response`).
 
 Return values are bookkeeping, not delivery receipts — `0` means no live
-sockets, non-zero means `ws.send` did not throw. Durable delivery requires
+sockets, non-zero means the connection's outbound queue accepted the frame. Durable delivery requires
 persistence + rehydration by the consumer.
 
 ## Connection closer (`actions/connection_closer.ts`)
@@ -678,7 +748,8 @@ parsed and every caller would be unauthenticated.
 
 `WsEndpointSpec` fields: `path`, `allowed_origins?` (default: the server's),
 `actions`,
-`required_roles?`, `transport?`, `max_connections_per_account?`, `heartbeat?`,
+`required_roles?`, `transport?`, `max_connections_per_account?`,
+`outbound_queue_bytes?`, `heartbeat?`,
 `artificial_delay?`, `max_message_bytes?`,
 `on_socket_open?`, `on_socket_close?`, `auth_guard?` (default `true`,
 deduped by reference identity via `WeakSet<BackendWebsocketTransport>`),
@@ -690,7 +761,10 @@ the audit listener, not of the handlers' closes.
 transport the mount creates (`RegisterActionWsOptions` carries the same field).
 It throws alongside `transport` — a supplied transport carries its own cap, set
 where it was constructed, and an option that silently did nothing would read as
-enforced.
+enforced. `outbound_queue_bytes` sets the per-connection outbound budget on that
+transport the same way (default `DEFAULT_WS_OUTBOUND_QUEUE_BYTES`; zero or a
+non-positive value throws at assembly, as does passing it alongside
+`transport`).
 
 Mounted transport reachable at `app_server.ws_endpoints[path]`
 (`Readonly<Record<string, BackendWebsocketTransport>>`). Duplicate paths
@@ -740,7 +814,8 @@ HTTP RPC also calls. `register_action_ws` owns only WS-specific concerns:
 - **Cancel-notification interception** — `{request_id → AbortController}` map; aborts the matching pending controller before the cancel bubbles past the dispatcher
 - **Duplicate live ids refused** — a request whose id names a request still running on the socket is answered `invalid_request` with `data.reason` `ERROR_DUPLICATE_REQUEST_ID` and not dispatched; the running request keeps its controller, its cancel entry, and its reply id. An id is free again once its request is answered. Same refusal on the Rust spine
 - **In-flight ceiling** — at most `MAX_INBOUND_DISPATCHES_PER_CONNECTION` (128) requests run at once per socket (`@hono/node-ws` does not await `onMessage`, so nothing else bounds them); one more is answered `queue_overflow` (`WS_INBOUND_DISPATCH_OVERFLOW_MESSAGE`) and not dispatched, and the socket stays open and keeps reading — a reply to a server-initiated request still gets through. The duplicate check runs first; neither refusal reaches `perform_action`, so neither charges the action rate limiters. Same cap, message, and order as the Rust spine's `MAX_INBOUND_DISPATCHES_PER_CONN`
-- **Socket-scoped notify** — `(method, params) => ws.send(notification)`, threaded into `perform_action` as `notify`
+- **Socket-scoped notify** — `(method, params) => transport.send_to(connection_id, notification)`, threaded into `perform_action` as `notify`
+- **Every send through the transport** — responses, error frames, and notifications all go through `transport.send_to`, so they are held to the connection's outbound budget; a handler that sends past it closes its own socket with `WS_CLOSE_OUTBOUND_OVERFLOW` and gets no response written
 - **Composed abort signal** — `AbortSignal.any([socket_close, per_request_cancel])`, threaded as `signal`
 - **Connection lifecycle** — admission (`transport.register_pending` → credential re-read → `transport.admit`, which enforces the per-account connection cap) / `remove_connection`, `on_socket_open` / `_close` hooks, server heartbeat
 - **The inbound gate** — frames queue until the socket is admitted and `on_socket_open` has completed; frames on a socket the server closed are dropped
@@ -805,7 +880,8 @@ completes — `@hono/node-ws` does, for up to the `ws` close timeout when the
 client withholds its close frame. So every server-side close removes the
 connection from the transport and aborts the socket's controller **at close
 time**: the transport does both for a revocation or a cap eviction, and
-`register_action_ws`'s `end_socket` does both for a heartbeat timeout, an
+`register_action_ws`'s `end_socket` does both — through
+`transport.close_connection` — for a heartbeat timeout, an
 oversized message, a failed `on_socket_open`, and a refused admission.
 `onMessage` then drops any frame whose socket has ended — no dispatch, no
 error reply. A connection the transport no longer holds though nothing closed
@@ -848,7 +924,11 @@ rolled-back message fires no post-commit effect). See `http/CLAUDE.md`
 handler that revokes the credential its own socket runs on queues a close of
 that socket on `post_commit_effects`, so the caller reads its reply and then the
 `WS_CLOSE_SESSION_REVOKED` close — flushing first would strand it without an
-answer. (The Rust spine does flush first, and drops the response: a divergence
+answer. The close hands the frames still waiting in the connection's outbound
+queue to the socket ahead of the close frame while the socket's buffer is below
+`WS_WRITE_HIGH_WATER_BYTES`, so the reply arrives when it was queued behind
+another frame of the same run on a socket that is keeping up, and is discarded
+when the socket is backed up past that mark. (The Rust spine does flush first, and drops the response: a divergence
 the cross-backend WS suite records as `capabilities.ws_self_revocation_reply`.)
 
 **Lifecycle hooks.** `on_socket_open({ws, connection_id, identity, notify, signal})`
@@ -967,7 +1047,9 @@ recent frame each way — every frame, including heartbeats and the responses
 `request` consumes — for diagnostics UI.
 
 Reconnect policy (exponential backoff): `delay = DEFAULT_RECONNECT_DELAY * DEFAULT_BACKOFF_FACTOR ** (attempts-1)`,
-capped at `DEFAULT_RECONNECT_DELAY_MAX`. Two close codes never reconnect:
+capped at `DEFAULT_RECONNECT_DELAY_MAX`. Every other close reconnects —
+`WS_CLOSE_OUTBOUND_OVERFLOW` included, the server's notice that this client
+fell behind and missed messages. Two close codes never reconnect:
 
 - `WS_CLOSE_SESSION_REVOKED` is **terminal** — sets `revoked`, no reconnect
   loop on 401, and `connect()` becomes a no-op. Pending and queued requests

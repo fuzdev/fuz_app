@@ -1128,6 +1128,7 @@ const assemble_app_server = async (
 				// added below instead, so the remover is the server's
 				connection_closer: null,
 				max_connections_per_account: endpoint.max_connections_per_account,
+				outbound_queue_bytes: endpoint.outbound_queue_bytes,
 				heartbeat: endpoint.heartbeat,
 				artificial_delay: endpoint.artificial_delay,
 				max_message_bytes: endpoint.max_message_bytes,

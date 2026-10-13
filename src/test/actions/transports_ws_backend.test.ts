@@ -611,7 +611,7 @@ describe('BackendWebsocketTransport log', () => {
 		assert.strictEqual(ok.sends.length, 1);
 		assert.deepStrictEqual(
 			errors.map((args) => args[0]),
-			['error broadcasting to client:']
+			['error sending to client:']
 		);
 
 		// the filtered fan-out counts only the send that went through
@@ -622,7 +622,7 @@ describe('BackendWebsocketTransport log', () => {
 		assert.strictEqual(ok.sends.length, 2);
 		assert.deepStrictEqual(
 			errors.map((args) => args[0]),
-			['error broadcasting to client:', 'error broadcasting filtered to client:']
+			['error sending to client:', 'error sending to client:']
 		);
 	});
 });
@@ -831,7 +831,7 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 		assert.strictEqual(t.send_to_account(ACCOUNT_A, notification), 0);
 	});
 
-	test('two consecutive sends both deliver, each returns the full count', () => {
+	test('two consecutive sends both deliver, each returns the full count', async () => {
 		// Regression guard against any future per-invocation state
 		// (rate limit window, dedup, queue handoff) sneaking in — today
 		// `send_to_account` is stateless pass-through and both calls should
@@ -855,6 +855,8 @@ describe('BackendWebsocketTransport.send_to_account', () => {
 
 		assert.strictEqual(t.send_to_account(ACCOUNT_A, first), 2);
 		assert.strictEqual(t.send_to_account(ACCOUNT_A, second), 2);
+		// the second frame of one synchronous run waits for the write pump
+		await Promise.resolve();
 		assert.deepStrictEqual(a.sends, [JSON.stringify(first), JSON.stringify(second)]);
 		assert.deepStrictEqual(b.sends, [JSON.stringify(first), JSON.stringify(second)]);
 	});
@@ -939,6 +941,8 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 			1
 		);
 		assert.strictEqual(t.send_to_account(ACCOUNT_A, notification), 1);
+		// the frames after the first of one synchronous run wait for the write pump
+		await Promise.resolve();
 		assert.strictEqual(fake.sends.length, 3);
 	});
 

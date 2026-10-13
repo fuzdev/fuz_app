@@ -73,6 +73,15 @@ export interface WsEndpointSpec {
 	 */
 	max_connections_per_account?: number | null;
 	/**
+	 * Byte budget of the frames waiting to be written to one connection, for
+	 * the auto-created transport. See
+	 * `RegisterActionWsOptions.outbound_queue_bytes` — rejected alongside
+	 * `transport`, which carries its own budget.
+	 *
+	 * @default DEFAULT_WS_OUTBOUND_QUEUE_BYTES
+	 */
+	outbound_queue_bytes?: number;
+	/**
 	 * Server-side heartbeat policy. Default-on (60s receive-silence
 	 * timeout). Set `false` only when an upstream stack (TCP keepalive,
 	 * Cloudflare idle timeout) already owns disconnect detection.

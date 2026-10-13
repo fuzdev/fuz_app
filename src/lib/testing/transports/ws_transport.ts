@@ -51,9 +51,11 @@ export interface WsTransportOptions {
 	 * Origin header for the upgrade. Backends running with
 	 * `ALLOWED_ORIGINS=http://localhost:*` accept `http://localhost:<port>`.
 	 * Defaults to `base_url` — acceptable because cross-process tests
-	 * always run against `localhost`.
+	 * always run against `localhost`. `null` sends no `Origin` at all, which a
+	 * daemon-token upgrade needs: both spines discard a daemon token (and a
+	 * bearer token) presented in a browser context.
 	 */
-	readonly origin?: string;
+	readonly origin?: string | null;
 	/**
 	 * Optional per-call default for `wait_for` timeouts. Falls back to
 	 * `WS_CLIENT_DEFAULT_TIMEOUT_MS` if omitted.
@@ -107,7 +109,8 @@ export const create_ws_transport = async (options: WsTransportOptions): Promise<
 
 	const socket = new WebSocket(ws_url, {
 		headers,
-		origin: origin ?? base_url
+		// `ws` sends no `Origin` header when the option is undefined
+		origin: origin === null ? undefined : (origin ?? base_url)
 	});
 
 	const received: Array<unknown> = [];

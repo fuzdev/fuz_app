@@ -50,6 +50,29 @@ export const WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003;
  */
 export const WS_CLOSE_CONNECTION_LIMIT = 4004;
 /**
+ * WebSocket close code — the server had more waiting to be written to this
+ * socket than the connection's outbound budget holds
+ * (`BackendWebsocketTransport`'s `outbound_queue_bytes`), because the client
+ * is reading slower than the server is sending to it, or not at all. The
+ * frame that did not fit and everything still waiting are dropped, so the
+ * close is the client's notice that it missed messages.
+ *
+ * Distinct from `WS_CLOSE_SESSION_REVOKED`: the credential is still good, so a
+ * client must not enter its `revoked` state. Unlike
+ * `WS_CLOSE_CONNECTION_LIMIT`, nothing took the connection's place:
+ * `FrontendWebsocketClient` reconnects under its ordinary backoff, and the
+ * consumer re-reads whatever state it tracks. A client that reads nothing at
+ * all may never see the frame — a socket whose write makes no progress is
+ * dropped without one, which a browser reports as 1006. The twin of the Rust
+ * spine's `WS_CLOSE_OUTBOUND_OVERFLOW`.
+ */
+export const WS_CLOSE_OUTBOUND_OVERFLOW = 4005;
+/**
+ * The close reason sent with `WS_CLOSE_OUTBOUND_OVERFLOW`. The Rust spine
+ * sends the same text.
+ */
+export const WS_CLOSE_OUTBOUND_OVERFLOW_REASON = 'outbound queue overflow';
+/**
  * WebSocket close code — the server is shutting down (RFC 6455 §7.4.1 "Going
  * Away"). Sent to every live socket by `close_all_sockets`, which
  * `AppServer.close` runs, and to an upgrade the shutdown refuses — one

@@ -4,6 +4,22 @@
  * Provides generic helpers for creating SSE response streams
  * and a notification type aligned with JSON-RPC 2.0.
  *
+ * ## Outbound bound
+ *
+ * `SseStream.send` never waits on its client: each frame is written to the
+ * response stream, which holds it until the client reads. What a stream holds
+ * unread is kept within `SSE_OUTBOUND_QUEUE_BYTES` — each frame charged its
+ * bytes as written (`data: ` prefix and terminator included) plus
+ * `OUTBOUND_FRAME_OVERHEAD_BYTES`, and a frame always accepted when nothing is
+ * unread, so a single frame larger than the budget is still deliverable. A
+ * frame that does not fit **ends the stream**: it is not written, what was
+ * unread is dropped, the body ends with no final frame, and the stream's
+ * `on_close` listeners run. One `warn` line names the stream's account (when
+ * the caller passed it) and what was unread; no audit row is written, since each would itself be fanned to every
+ * stream. A client that is reading reconnects and misses the frames in
+ * between. The twin of the Rust spine's `fuz_realtime` SSE bound — the same
+ * budget and charge.
+ *
  * @module
  */
 
@@ -13,7 +29,9 @@ import { z } from 'zod';
 import { DEV } from 'esm-env';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 
-import { SSE_CONNECTED_COMMENT } from './sse_constants.ts';
+import { utf8_length } from '../actions/transports.ts';
+import { OutboundBudget } from './outbound_budget.ts';
+import { SSE_CONNECTED_COMMENT, SSE_OUTBOUND_QUEUE_BYTES } from './sse_constants.ts';
 
 /**
  * Generic SSE stream controller interface.
@@ -21,7 +39,11 @@ import { SSE_CONNECTED_COMMENT } from './sse_constants.ts';
  * Transport-agnostic — works with any serializable type.
  */
 export interface SseStream<T = unknown> {
-	/** Send data to the client as a JSON SSE event. */
+	/**
+	 * Send data to the client as a JSON SSE event. Never waits: a frame the
+	 * stream's outbound budget does not fit ends the stream instead (module doc,
+	 * "Outbound bound").
+	 */
 	send: (data: T) => void;
 	/** Send a comment (for keep-alive pings). */
 	comment: (text: string) => void;
@@ -46,6 +68,15 @@ export interface SseNotification {
 	method: string;
 	/** Method-specific payload. */
 	params: unknown;
+}
+
+/** Options for `create_sse_response`. */
+export interface SseResponseOptions {
+	/**
+	 * The account the stream belongs to, named in the warning logged when the
+	 * stream ends on its outbound budget.
+	 */
+	account_id?: string | null;
 }
 
 /**
@@ -127,12 +158,18 @@ const watch_client_disconnect = (c: Context, on_gone: () => void): void => {
  * Uses `hono_stream.write()` directly (not `writeSSE`) to avoid
  * Hono's HTML callback resolution — keeps the same `data: JSON\n\n` format.
  *
- * @param log - logger for serialization and `on_close` listener errors
+ * What the stream holds unread is bounded by `SSE_OUTBOUND_QUEUE_BYTES`; a
+ * frame past it ends the stream (module doc, "Outbound bound").
+ *
+ * @param log - logger for serialization and `on_close` listener errors, and
+ *   for the warning when the stream ends on its outbound budget
+ * @param options - what the overflow warning names
  * @returns object with the streaming `Response` and an `SseStream` controller
  */
 export const create_sse_response = <T = unknown>(
 	c: Context,
-	log: Logger
+	log: Logger,
+	options?: SseResponseOptions
 ): { response: Response; stream: SseStream<T> } => {
 	const { promise, resolve } = Promise.withResolvers<void>();
 	const close_listeners: Array<() => void> = [];
@@ -153,21 +190,50 @@ export const create_sse_response = <T = unknown>(
 
 	let sse_stream!: SseStream<T>;
 
+	// charges the frames written to the stream and not yet read from it
+	const budget = new OutboundBudget(SSE_OUTBOUND_QUEUE_BYTES);
+
 	const response = streamSSE(c, async (hono_stream) => {
+		// Write one frame within the budget, or end the stream. The write
+		// settles once the response body has taken the frame, which frees its
+		// charge.
+		const write = (frame: string): void => {
+			const bytes = utf8_length(frame);
+			if (!budget.admit(bytes)) {
+				// same line as the Rust spine's registry, so one grep finds either
+				log.warn('sse: outbound queue overflow, ending the stream', {
+					account_id: options?.account_id ?? null,
+					...budget.to_overflow(bytes)
+				});
+				budget.clear();
+				// drops what the stream still holds and ends the body; `do_close`
+				// runs as its abort listener
+				hono_stream.abort();
+				do_close();
+				return;
+			}
+			void hono_stream.write(frame).then(() => {
+				// a stream that ended has had its charges cleared
+				if (!resolved && !hono_stream.aborted) budget.release(bytes);
+			});
+		};
 		sse_stream = {
 			send(data: T) {
 				if (resolved || hono_stream.aborted) return;
+				let frame: string;
 				try {
 					// JSON.stringify (no space arg) never produces literal newlines,
 					// so single-line `data:` framing is safe per the SSE spec.
-					void hono_stream.write(`data: ${JSON.stringify(data)}\n\n`);
+					frame = `data: ${JSON.stringify(data)}\n\n`;
 				} catch (e) {
 					log.error('send failed to serialize data:', e);
+					return;
 				}
+				write(frame);
 			},
 			comment(text: string) {
 				if (resolved || hono_stream.aborted) return;
-				void hono_stream.write(`: ${text}\n`);
+				write(`: ${text}\n`);
 			},
 			close: do_close,
 			on_close(fn: () => void) {
@@ -185,7 +251,7 @@ export const create_sse_response = <T = unknown>(
 		hono_stream.onAbort(do_close);
 		// flush an SSE comment to push headers through proxies (Vite, nginx),
 		// ensuring EventSource fires onopen without waiting for the first data event
-		void hono_stream.write(SSE_CONNECTED_COMMENT);
+		write(SSE_CONNECTED_COMMENT);
 		await promise;
 	});
 	// after the callback above has built `sse_stream`, which runs synchronously
