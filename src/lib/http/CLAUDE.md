@@ -19,7 +19,7 @@ effects, see ../../../docs/architecture.md.
 - `http/error_schemas.ts` — `ERROR_*` constants, standard error shapes, `derive_error_schemas`.
 - `http/schema_helpers.ts` — shared Zod introspection (null/void/strict/surface/merge/middleware-applies) + `to_void_params` / `to_input_params` / `safe_parse_dropping_unknown_keys`.
 - `http/middleware_spec.ts` — `MiddlewareSpec` interface.
-- `http/body_limit.ts` — `create_body_limit_middleware(max_size)`: the `413` body cap `create_app_server` mounts. Refuses on `Content-Length` without reading `c.req.raw.body` and answers `Connection: close`, else falls through to Hono's streaming `bodyLimit`. After that `413` Node closes at once (the header is what makes `@hono/node-server` do so), Deno closes once the declared body has arrived, and Bun keeps the connection and serves the next request (../../../docs/security.md §Body Size Limiting).
+- `http/body_limit.ts` — `create_body_limit_middleware(max_size)`: the `413` body cap `create_app_server` mounts. Refuses on `Content-Length` without reading `c.req.raw.body` and answers `Connection: close` — `413` past the cap, `400` `ERROR_INVALID_CONTENT_LENGTH` when the value is not a plain run of ASCII digits (a length the cap cannot read, which Hono's `bodyLimit` would pass uncounted) — else falls through to Hono's streaming `bodyLimit` (no `Content-Length`, or one beside `Transfer-Encoding`; that `413` carries no `Connection: close`). Mounted with `app.use`, not as a `MiddlewareSpec`, so neither status appears in a route's merged error schemas. After the header `413` Node closes at once (the header is what makes `@hono/node-server` do so), Deno closes once the declared body has arrived, and Bun keeps the connection and serves the next request (../../../docs/security.md §Body Size Limiting).
 - `http/surface.ts` — `AppSurface`, `AppSurfaceSpec`, `generate_app_surface`, diagnostics.
 - `http/surface_query.ts` — pure filters/groupings over `AppSurface`.
 - `http/proxy.ts` — trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution. Pulls `hono/utils/ipaddr` for CIDR matching.
@@ -208,7 +208,7 @@ confirmation.
 ### `ERROR_*` constants by category
 
 - **Validation**: `ERROR_INVALID_REQUEST_BODY`, `ERROR_INVALID_JSON_BODY`, `ERROR_INVALID_ROUTE_PARAMS`, `ERROR_INVALID_QUERY_PARAMS`
-- **Auth**: `ERROR_AUTHENTICATION_REQUIRED`, `ERROR_INSUFFICIENT_PERMISSIONS`, `ERROR_CREDENTIAL_TYPE_REQUIRED`, `ERROR_RATE_LIMIT_EXCEEDED`, `ERROR_INVALID_CREDENTIALS`, `ERROR_PAYLOAD_TOO_LARGE`
+- **Auth**: `ERROR_AUTHENTICATION_REQUIRED`, `ERROR_INSUFFICIENT_PERMISSIONS`, `ERROR_CREDENTIAL_TYPE_REQUIRED`, `ERROR_RATE_LIMIT_EXCEEDED`, `ERROR_INVALID_CREDENTIALS`, `ERROR_PAYLOAD_TOO_LARGE`, `ERROR_INVALID_CONTENT_LENGTH`
 - **Origin + bearer**: `ERROR_FORBIDDEN_ORIGIN`, `ERROR_INVALID_TOKEN`, `ERROR_ACCOUNT_NOT_FOUND`
 - **Keeper/daemon**: `ERROR_KEEPER_ACCOUNT_NOT_FOUND`
 - **Bootstrap**: `ERROR_ALREADY_BOOTSTRAPPED`, `ERROR_TOKEN_FILE_MISSING`

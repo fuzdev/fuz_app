@@ -386,9 +386,12 @@ never parsed as request bytes (fewer than two fails too: a backend on that arm
 that closes must declare the capability). The 413-ness itself is pinned by the fetch parity
 cases; a positive control (two pipelined requests → `>= 2` responses) keeps both
 arms non-vacuous. The parity cases have an in-process leg
-`auth/body_size_parity.db.test.ts` (and the Content-Length vs streaming-branch
-rejects, plus the Content-Length reject never reading the request body, are
-covered in-process by `server/create_app_server.db.test.ts`); the
+`auth/body_size_parity.db.test.ts` (the limit's own branches — at and past the
+cap by `Content-Length` and by streamed bytes, `Transfer-Encoding` beside
+`Content-Length`, each malformed `Content-Length` form refused with 400, and
+neither refusal reading the request body — are pinned by
+`http/body_limit.test.ts`; `server/create_app_server.db.test.ts` pins both
+refusals through the assembled app, and the unread body for the 413); the
 smuggling probe is cross-only), and `identity_parity.cross.test.ts` (the
 imperative `describe_identity_parity_cross_tests` suite —
 `testing/cross_backend/identity_parity.ts` — pinning the `primitive_schemas`

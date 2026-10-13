@@ -23,7 +23,11 @@ import {
 	type AppServerOptions,
 	type AppServer
 } from '#lib/server/app_server.ts';
-import { ERROR_PAYLOAD_TOO_LARGE, PayloadTooLargeError } from '#lib/http/error_schemas.ts';
+import {
+	ERROR_INVALID_CONTENT_LENGTH,
+	ERROR_PAYLOAD_TOO_LARGE,
+	PayloadTooLargeError
+} from '#lib/http/error_schemas.ts';
 import type { AppBackend } from '#lib/server/app_backend.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { create_loopback_app_server_options, stub_password_deps } from '#lib/testing/app_server.ts';
@@ -448,15 +452,15 @@ describe('create_app_server', () => {
 		assert.strictEqual(DEFAULT_MAX_BODY_SIZE, 1024 * 1024);
 	});
 
-	test('conflicting Transfer-Encoding and Content-Length does not bypass body limit', async () => {
+	test('a malformed Content-Length is refused with 400 before auth and validation', async () => {
 		const result = await create_app_server(
 			await create_config({
 				max_body_size: 100, // 100 bytes
 				create_route_specs: () => [
 					{
 						method: 'POST',
-						path: '/echo',
-						auth: { account: 'none', actor: 'none' },
+						path: '/api/echo',
+						auth: { account: 'required', actor: 'none' },
 						description: 'Echo input',
 						input: z.looseObject({ data: z.string() }),
 						output: z.looseObject({ ok: z.boolean() }),
@@ -465,22 +469,24 @@ describe('create_app_server', () => {
 				]
 			})
 		);
+		const request = (content_length: string): Response | Promise<Response> =>
+			result.app.request('/api/echo', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'Content-Length': content_length },
+				body: JSON.stringify({ data: 'x'.repeat(200) })
+			});
 
-		// Node.js HTTP parser handles this at the transport layer —
-		// requests with conflicting headers are rejected or the body
-		// is parsed per the spec (Transfer-Encoding takes precedence).
-		// This test documents that the behavior is safe via Hono's test client.
-		const body_str = JSON.stringify({ unexpected: true });
-		const res = await result.app.request('/echo', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				'Content-Length': '2'
-			},
-			body: body_str
-		});
-		// Should get a normal validation response (400 or 200 or 413), not a crash or bypass
-		assert.ok(res.status < 500, `expected non-500 status, got ${res.status}`);
+		// the route alone answers this anonymous caller 401
+		const well_formed = await request('2');
+		assert.strictEqual(well_formed.status, 401);
+
+		// a length the cap cannot read is refused first, whoever is asking
+		for (const content_length of ['abc', '-1', '5, 500']) {
+			const res = await request(content_length);
+			assert.strictEqual(res.status, 400, content_length);
+			assert.deepEqual(await res.json(), { error: ERROR_INVALID_CONTENT_LENGTH });
+			assert.strictEqual(res.headers.get('connection'), 'close');
+		}
 	});
 
 	test('max_body_size: null disables body size limit', async () => {

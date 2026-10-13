@@ -1119,6 +1119,40 @@ payloads are rejected with 413 and `{error: 'payload_too_large'}`
 (`PayloadTooLargeError` schema). Configure via `max_body_size` on
 `AppServerOptions`; pass `null` to disable.
 
+**A `Content-Length` the cap cannot read.** A `Content-Length` that is not a
+plain run of ASCII digits — `abc`, `-1`, `+5`, `1e9`, `0x1F4`, an empty value,
+a combined `5, 500` — is refused with 400 `{error: 'invalid_content_length'}`
+and `Connection: close`, before auth and without reading the body. A length
+that does not parse cannot be compared to the cap, and Hono's `bodyLimit`
+passes such a request on without counting its body. A digit run of any length
+compares as a number, so one far past what a number holds exactly is over the
+cap (413). The runtimes' HTTP parsers answer their own bodiless 400 to most of
+these before the application runs, so the check is defense in depth where
+they do and the refusal where they do not:
+
+- **Node** refuses every form above, and a repeated `Content-Length` header
+  whether or not the values agree.
+- **Deno** refuses them too, except a repeated header with equal values, which
+  reaches the application as one combined value (`50, 50`) — refused here.
+- **Bun** hands the application an empty value and a repeated header, equal or
+  differing (`5, 50`), and frames the body on the first value — all refused
+  here.
+- **The Rust spine** (hyper) refuses a value that is not digits and a repeated
+  header with differing values at parse, and accepts a repeated header with
+  equal values as that value. It has no application-level check, and needs
+  none: no unparsed length reaches its limit layer.
+
+Observed on Node 24.14.1, Deno 2.8.3 and Bun 1.3.11.
+
+A request carrying both `Transfer-Encoding` and a well-formed `Content-Length`
+is measured by the bytes that arrive, since the declared length does not frame
+a chunked body. The Node, Deno and Bun parsers refuse such a request with
+their own 400; hyper accepts it and frames the body as chunked. The Rust
+spine's limit layer counts the bytes that arrive; when `Content-Length` came
+ahead of `Transfer-Encoding` hyper leaves it on the request, and the layer
+also refuses a declared length over the cap and holds the body to the declared
+length.
+
 **Rejection and the connection.** A request whose `Content-Length` exceeds the
 cap is rejected on the header, before the body is read, and the 413 carries
 `Connection: close`. The defense-in-depth posture is to **close the connection
@@ -1156,7 +1190,10 @@ request-body cap refuses an oversized request before it reaches the runtime.
 
 The limit checks `Content-Length` first and answers from the header alone,
 falling through to Hono's `bodyLimit` and its streaming count only for a
-request with no usable `Content-Length`. The cross-backend suite
+request with no `Content-Length`, or with one beside `Transfer-Encoding`. The
+streaming 413 is sent once more than the cap has been read, and carries no
+`Connection: close` — what the connection does then is the runtime's default.
+`http/body_limit.test.ts` pins each branch. The cross-backend suite
 (`testing/cross_backend/body_size_smuggling.ts`) pipelines a request behind an
 oversized one and holds each backend to its declared
 `oversized_reject_closes_connection` capability — at most one response where

@@ -34,6 +34,7 @@ import {
 	ERROR_ROLE_GRANT_NOT_FOUND,
 	ERROR_INVALID_EVENT_TYPE,
 	ERROR_PAYLOAD_TOO_LARGE,
+	ERROR_INVALID_CONTENT_LENGTH,
 	ERROR_FOREIGN_KEY_VIOLATION,
 	ERROR_TABLE_NOT_FOUND,
 	ERROR_TABLE_NO_PRIMARY_KEY,
@@ -352,6 +353,7 @@ describe('error code constants', () => {
 		assert.strictEqual(ERROR_ROLE_GRANT_NOT_FOUND, 'role_grant_not_found');
 		assert.strictEqual(ERROR_INVALID_EVENT_TYPE, 'invalid_event_type');
 		assert.strictEqual(ERROR_PAYLOAD_TOO_LARGE, 'payload_too_large');
+		assert.strictEqual(ERROR_INVALID_CONTENT_LENGTH, 'invalid_content_length');
 		assert.strictEqual(ERROR_FOREIGN_KEY_VIOLATION, 'foreign_key_violation');
 		assert.strictEqual(ERROR_TABLE_NOT_FOUND, 'table_not_found');
 		assert.strictEqual(ERROR_TABLE_NO_PRIMARY_KEY, 'table_no_primary_key');

@@ -71,6 +71,9 @@ export const ERROR_INVALID_CREDENTIALS = 'invalid_credentials' as const;
 /** Request body exceeds the maximum allowed size. */
 export const ERROR_PAYLOAD_TOO_LARGE = 'payload_too_large' as const;
 
+/** Request `Content-Length` header is not a plain run of ASCII digits. */
+export const ERROR_INVALID_CONTENT_LENGTH = 'invalid_content_length' as const;
+
 // --- Origin & bearer token verification ---
 
 /** Request origin not in allowlist. */
