@@ -1237,7 +1237,12 @@ What the server sends a socket is bounded separately — see
 Roles are Zod-validated at I/O boundaries via `create_role_schema()` — not stored
 in a DB table. Built-in roles: `keeper` (system-level) and `admin` (app-level).
 Consumer apps extend with app-defined roles at server init; unknown roles are hard
-rejections.
+rejections. A role name is lowercase letters and underscores with no leading or
+trailing underscore, at most 64 characters (`RoleName`, `ROLE_NAME_LENGTH_MAX`):
+a registered role outside that grammar throws at assembly, and a `role` param
+outside it is refused at input validation, before any gate that would record
+the caller's text in a failure audit row. The Rust spine holds the same grammar
+(`is_valid_role_name`).
 
 | Role        | Granted how                                    | Scope                                                |
 | ----------- | ---------------------------------------------- | ---------------------------------------------------- |

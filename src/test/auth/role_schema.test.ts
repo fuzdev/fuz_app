@@ -14,7 +14,9 @@ import {
 	list_roles_with_grant_path,
 	role_has_grant_path,
 	ROLE_ADMIN,
-	ROLE_KEEPER
+	ROLE_KEEPER,
+	ROLE_NAME_LENGTH_MAX,
+	RoleName
 } from '#lib/auth/role_schema.ts';
 import { create_credential_type_schema } from '#lib/auth/credential_type_schema.ts';
 import { create_grant_path_schema } from '#lib/auth/grant_path_schema.ts';
@@ -82,6 +84,26 @@ describe('create_role_schema', () => {
 		assert.ok(create_role_schema([{ name: 'teacher' }]));
 		assert.ok(create_role_schema([{ name: 'classroom_admin' }]));
 		assert.ok(create_role_schema([{ name: 'ab' }]));
+	});
+
+	test('a role name is capped at ROLE_NAME_LENGTH_MAX characters', () => {
+		assert.strictEqual(ROLE_NAME_LENGTH_MAX, 64);
+		const at_max = 'a'.repeat(ROLE_NAME_LENGTH_MAX);
+		const over_max = 'a'.repeat(ROLE_NAME_LENGTH_MAX + 1);
+		assert.ok(RoleName.safeParse(at_max).success);
+		assert.ok(!RoleName.safeParse(over_max).success);
+		// underscores count toward the length like any other character
+		const with_underscores = `a${'_'.repeat(ROLE_NAME_LENGTH_MAX - 2)}a`;
+		assert.ok(RoleName.safeParse(with_underscores).success);
+		assert.ok(!RoleName.safeParse(`${with_underscores}a`).success);
+
+		// the registry rides the grammar: a consumer role past the cap throws at assembly
+		const { Role } = create_role_schema([{ name: at_max }]);
+		assert.ok(Role.safeParse(at_max).success);
+		assert.throws(
+			() => create_role_schema([{ name: over_max }]),
+			`Invalid role name "${over_max}": Role names must be at most ${ROLE_NAME_LENGTH_MAX} characters`
+		);
 	});
 
 	describe('cross-axis registry validation', () => {

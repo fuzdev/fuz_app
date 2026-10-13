@@ -5,18 +5,21 @@ import '../assert_dev_env.ts';
  *
  * `role_grant_assign` and `role_grant_offer_create` declare `role` as
  * `RoleName` (lowercase letters and underscores, no leading or trailing
- * underscore). A role string outside that grammar is refused at input
+ * underscore, at most 64 characters). A role string outside that grammar is refused at input
  * validation — JSON-RPC `invalid_params`, with no `data.reason` — and writes
  * no audit row: a role is caller-chosen text until it passes the grammar, and
  * the grant verbs record the role they refuse in their failure rows.
  *
  * - **refused at validation** — each off-grammar role, on each verb, answers
  *   `invalid_params` with no reason, so the refusal is the input schema's and
- *   not a grant-path or authorizer one.
+ *   not a grant-path or authorizer one. One of them is all lowercase letters
+ *   and one character past the length cap: the cap is part of the grammar, so
+ *   a failure row never carries an arbitrarily long caller-chosen string.
  * - **no audit row** — after the refusals, no grant audit row carries an
  *   off-grammar role. The control keeps that read from being vacuous: an
  *   on-grammar role no registry holds is refused past validation with
- *   `role_not_web_grantable`, the refusal a failure row records.
+ *   `role_not_web_grantable`, the refusal a failure row records — as is one
+ *   exactly at the length cap, which pins the boundary.
  *
  * Exists because the action-manifest parity gate captures no param schemas
  * while the Rust spine parses params by hand — a spine that let an off-grammar
@@ -41,6 +44,18 @@ export type RoleGrantRoleGrammarCrossTestOptions = RpcPathCrossSuiteOptions;
 
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
+/**
+ * The longest role name the grammar admits — an independent copy of the
+ * producers' `ROLE_NAME_LENGTH_MAX`, so a cap moved on one spine fails here.
+ */
+const ROLE_NAME_LENGTH_MAX = 64;
+
+/** All lowercase letters, so only its length is off the grammar. */
+const OVER_LENGTH_ROLE = 'a'.repeat(ROLE_NAME_LENGTH_MAX + 1);
+
+/** On the grammar at exactly the length cap, held by no registry. */
+const AT_LENGTH_ROLE = 'a'.repeat(ROLE_NAME_LENGTH_MAX);
+
 /** Each breaks one rule of the `RoleName` grammar. */
 const OFF_GRAMMAR_ROLES: ReadonlyArray<string> = [
 	'Admin', // uppercase
@@ -49,7 +64,8 @@ const OFF_GRAMMAR_ROLES: ReadonlyArray<string> = [
 	'_role', // leading underscore
 	'role_', // trailing underscore
 	'role name', // space
-	'' // empty
+	'', // empty
+	OVER_LENGTH_ROLE // on the alphabet, one past the length cap
 ];
 
 /** On the grammar, held by no registry. */
@@ -118,6 +134,19 @@ export const describe_role_grant_role_grammar_cross_tests = (
 				session
 			);
 			assert.strictEqual(error_reason(control), ERROR_ROLE_NOT_WEB_GRANTABLE);
+			// and the length cap is inclusive: a role exactly at it is on the grammar
+			const at_length = await cross_rpc_call(
+				t,
+				rpc_path,
+				'role_grant_assign',
+				{ to_account_id: NIL_UUID, role: AT_LENGTH_ROLE },
+				session
+			);
+			assert.strictEqual(
+				error_reason(at_length),
+				ERROR_ROLE_NOT_WEB_GRANTABLE,
+				'a role at the length cap passes validation'
+			);
 
 			// a barrier before reading the log: both spines write audit rows off
 			// the request path
@@ -134,12 +163,17 @@ export const describe_role_grant_role_grammar_cross_tests = (
 				const listed = await cross_rpc_call(t, rpc_path, 'audit_log_list', { event_type }, session);
 				assert.ok(listed.ok, `audit_log_list failed: ${JSON.stringify(listed.error)}`);
 				const events = (listed.result as { events: Array<{ metadata: unknown }> }).events;
-				for (const event of events) {
-					const role = (event.metadata as { role?: unknown } | null)?.role;
+				const roles = events.map((event) => (event.metadata as { role?: unknown } | null)?.role);
+				for (const role of roles) {
 					assert.ok(
 						typeof role !== 'string' || !OFF_GRAMMAR_ROLES.includes(role),
 						`${event_type}: an audit row records the off-grammar role ${JSON.stringify(role)}`
 					);
+				}
+				if (event_type === 'role_grant_create') {
+					// the controls' failure rows are in the same read, so it is not vacuous
+					assert.ok(roles.includes(UNREGISTERED_ROLE), 'the control refusal wrote its failure row');
+					assert.ok(roles.includes(AT_LENGTH_ROLE), 'the at-cap refusal wrote its failure row');
 				}
 			}
 		});

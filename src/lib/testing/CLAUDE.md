@@ -1649,12 +1649,13 @@ module's own tests (`account_status.test.ts`, `action_rpc.test.ts`,
 
 `describe_role_grant_role_grammar_cross_tests({setup_test, rpc_path?})` — an
 off-grammar `role` (uppercase, hyphen, digit, leading or trailing underscore,
-space, empty) on `role_grant_assign` and `role_grant_offer_create` answers
+space, empty, or all lowercase and one character past the length cap) on `role_grant_assign` and `role_grant_offer_create` answers
 `invalid_params` with no `data.reason`, and after the refusals no
 `role_grant_create` / `role_grant_offer_create` audit row carries one of those
 strings. The control — an on-grammar role no registry holds, refused past
 validation with `role_not_web_grantable` — keeps the audit read from being
-vacuous. Exists because the action-manifest parity gate captures no param
+vacuous, and the same refusal for a role exactly at the length cap pins that
+boundary. Exists because the action-manifest parity gate captures no param
 schemas while the Rust spine parses params by hand, and the grant verbs write
 the role they refuse into their failure rows. Ungated; cross-process only (it
 reads the audit log behind `_testing_drain_effects`). fuz_app's own wiring is

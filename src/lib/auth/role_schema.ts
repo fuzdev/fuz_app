@@ -34,9 +34,21 @@ import {
 } from './grant_path_schema.ts';
 import type { ScopeKindSchemaResult } from './scope_kind_schema.ts';
 
-/** Valid role name: lowercase letters and underscores, no leading/trailing underscore. */
+/**
+ * The longest role name `RoleName` admits, in characters. A role string is
+ * caller-chosen text until it passes the grammar, and the grant verbs record
+ * the role they refuse in a failure audit row, so the grammar bounds its
+ * length too. Same value as the Rust spine's `ROLE_NAME_LENGTH_MAX`.
+ */
+export const ROLE_NAME_LENGTH_MAX = 64;
+
+/**
+ * Valid role name: lowercase letters and underscores, no leading/trailing
+ * underscore, at most `ROLE_NAME_LENGTH_MAX` characters.
+ */
 export const RoleName = z
 	.string()
+	.max(ROLE_NAME_LENGTH_MAX, `Role names must be at most ${ROLE_NAME_LENGTH_MAX} characters`)
 	.regex(
 		/^[a-z][a-z_]*[a-z]$|^[a-z]$/,
 		'Role names must be lowercase letters and underscores (a-z_), no leading/trailing underscore'
@@ -99,7 +111,7 @@ export const is_builtin_role = (name: string): name is BuiltinRole =>
  * `builtin_role_specs_by_name`.
  */
 export interface RoleSpec {
-	/** Unique role name. Must match `RoleName` regex; collisions with builtins throw. */
+	/** Unique role name. Must match `RoleName` — its regex and length cap; collisions with builtins throw. */
 	name: string;
 	/** Admin-UI-facing copy describing the role's intent. */
 	description?: string;
@@ -213,7 +225,8 @@ const validate_registry_membership = (
  *
  * Construction-time guards (all fire on misconfiguration):
  *
- * 1. Every `consumer_roles[i].name` matches `RoleName` regex.
+ * 1. Every `consumer_roles[i].name` matches `RoleName` — its regex and its
+ *    `ROLE_NAME_LENGTH_MAX` length cap.
  * 2. No two consumer roles share a name.
  * 3. No consumer role collides with a builtin (`keeper` / `admin`).
  * 4. When `options.credential_types` is supplied, every entry in
