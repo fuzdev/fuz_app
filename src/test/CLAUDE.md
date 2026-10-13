@@ -528,6 +528,14 @@ npm run test:cross:parity
 npm run test:cross:security
 ```
 
+**CI.** `.github/workflows/check.yml`'s `cross-ts` job runs
+`npm run test:cross:ts` on every push to `main` and every pull request, with
+Deno and Bun pinned in the job's `env` to the versions the suites are green
+on; a bump there is a deliberate re-measure. `.github/workflows/cross-canary.yml`
+runs the Deno and Bun legs weekly (and by hand) on the latest release of each
+and gates nothing. The Rust-backed projects (`cross_backend_rust_spine_stub`,
+`cross_backend_parity`, `cross_backend_security`) run locally only.
+
 The TS binary + the reusable test-server core/adapters it's built on live in
 `src/lib/testing/cross_backend/` — see `src/lib/testing/CLAUDE.md`
 §"Building a TS test-server binary".

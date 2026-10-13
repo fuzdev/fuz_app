@@ -62,3 +62,56 @@ jobs:
       - run: npx @fuzdev/gro check --workspace --build
         env:
           TEST_DATABASE_URL: postgres://fuz_test:fuz_test@localhost:5432/fuz_test
+
+  # The TS spine over real HTTP, WebSocket and SSE on each JS runtime — the
+  # `cross_backend_ts_node`, `cross_backend_ts_deno` and `cross_backend_ts_bun`
+  # vitest projects, which `gro check` leaves out (they exist only under
+  # `FUZ_TEST_CROSS_BACKEND=1`). Each spawns the spine test binary on an
+  # in-memory database, so the job needs no service.
+  #
+  # Not run in CI: `cross_backend_rust_spine_stub`, `cross_backend_parity` and
+  # `cross_backend_security`. They build and spawn the Rust spine's test binary
+  # from its Cargo workspace, which is not public yet, against Postgres.
+  cross-ts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # The versions the suites are green on. They pin runtime behavior the
+    # suites assert and the docs state (Bun 1.4.3 is the tested floor —
+    # docs/security.md §Body Size Limiting), so a bump is deliberate: change
+    # the version, re-run, re-read what the docs say was observed. The
+    # `cross-canary` workflow runs the same legs on the latest releases.
+    env:
+      CROSS_DENO_VERSION: 2.8.3
+      CROSS_BUN_VERSION: 1.4.3
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Use Node.js 24.14
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24.14'
+          cache: npm
+      - name: Install Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: ${{ env.CROSS_DENO_VERSION }}
+      - name: Install Bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash -s "bun-v$CROSS_BUN_VERSION"
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+      # Fail loud if a runtime is missing or is not the pinned version — the
+      # suites would otherwise run against whatever the installers fetched.
+      - name: Verify runtime versions
+        run: |
+          node --version
+          deno --version
+          bun --version
+          [ "$(deno --version | head -n 1 | cut -d ' ' -f 2)" = "$CROSS_DENO_VERSION" ]
+          [ "$(bun --version)" = "$CROSS_BUN_VERSION" ]
+      - run: npm ci
+      - run: npx svelte-kit sync
+      # `npm run` puts `node_modules/.bin` on PATH: the Node leg spawns `gro run`.
+      - run: npm run test:cross:ts
