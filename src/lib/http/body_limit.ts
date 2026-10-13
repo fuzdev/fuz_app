@@ -19,9 +19,12 @@
  * - A request whose `Content-Length` exceeds the cap is refused with `413`
  *   `{error: 'payload_too_large'}`, whatever its method. A digit run of any
  *   length compares as a number, so one too long to represent exactly is over
- *   the cap, never unreadable — a branch only an in-process request reaches:
- *   over a socket every runtime's parser refuses a length past what it can
- *   hold with its own `400`.
+ *   the cap, never unreadable. Over a socket that branch is reached on Node
+ *   and Deno, whose parsers hand over any length below 2^64 and refuse a
+ *   longer one with their own `400`. `Bun.serve` hands none over: with its
+ *   default options it answers a length past 128 MiB with its own `413`, and
+ *   one of 2^63 - 1 or more with its own `400` (observed on Node 24.14.1,
+ *   Deno 2.8.3, Bun 1.4.3).
  * - Both refusals answer on the header alone — without touching
  *   `c.req.raw.body` — and carry `Connection: close`.
  * - A request with a well-formed `Content-Length` beside `Transfer-Encoding`,

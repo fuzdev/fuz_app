@@ -34,7 +34,7 @@ import '../assert_dev_env.ts';
  * - **no connection** — over HTTP RPC the action refuses with `invalid_params`
  *   and reason `no_connection`, rather than answering as though it flooded.
  * - **the action's limits** — over HTTP RPC a call at each of the action's
- *   three limits (`count`, `size`, `count` × `size`) is refused for having no
+ *   limits (`count`, `size`, `count` × `size`) is refused for having no
  *   connection, and a call one past each is refused `invalid_params` with no
  *   reason. Both spines check the limits before they look for the connection
  *   and before they build a payload, so the boundaries are read off the
@@ -107,6 +107,12 @@ const FLOOD_MAX_SIZE = 16 * MIB;
 const FLOOD_MAX_TOTAL_BYTES = 64 * MIB;
 
 /**
+ * A `count` and `size`, each within its own limit, whose product is exactly
+ * one byte past `FLOOD_MAX_TOTAL_BYTES` (the factors of 2^26 + 1).
+ */
+const FLOOD_ONE_BYTE_PAST_TOTAL = { count: 265, size: 253_241 } as const;
+
+/**
  * Calls at and one past each of the flood action's limits. Each "past" call
  * holds the other axis at zero, or both axes within their own limit, so one
  * limit alone decides it.
@@ -133,6 +139,13 @@ const FLOOD_LIMIT_CASES: ReadonlyArray<{
 	{
 		name: 'count × size past its limit, each axis within its own',
 		params: { count: FLOOD_MAX_COUNT, size: FLOOD_MAX_TOTAL_BYTES / FLOOD_MAX_COUNT + 1 },
+		within: false
+	},
+	{
+		// the smallest step past the product limit: the row above overshoots it by
+		// `FLOOD_MAX_COUNT` bytes, so alone it admits a limit that many bytes loose
+		name: 'count × size one byte past its limit',
+		params: FLOOD_ONE_BYTE_PAST_TOTAL,
 		within: false
 	}
 ];
@@ -362,6 +375,11 @@ export const describe_ws_outbound_overflow_cross_tests = (
 			async () => {
 				const fixture = await setup_test();
 				const transport = fixture.fresh_transport({ origin: null });
+				// the hand-factored case is only "one byte past" for this limit
+				assert.strictEqual(
+					FLOOD_ONE_BYTE_PAST_TOTAL.count * FLOOD_ONE_BYTE_PAST_TOTAL.size,
+					FLOOD_MAX_TOTAL_BYTES + 1
+				);
 				for (const { name, params, within } of FLOOD_LIMIT_CASES) {
 					const res = await cross_rpc_call(
 						transport,

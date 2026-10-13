@@ -14,17 +14,19 @@
  * @module
  */
 
-import { describe, test, assert, vi } from 'vitest';
+import { beforeAll, describe, test, assert, vi } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
 import {
 	assert_no_audit_drift,
-	create_recording_audit_emitter
+	create_recording_audit_emitter,
+	install_audit_drift_guard
 } from '#lib/testing/audit_drift_guard.ts';
 import type { AuditLogInput } from '#lib/auth/audit_log_schema.ts';
 import {
 	create_audit_emitter,
+	get_audit_write_failures,
 	reset_audit_write_failures,
 	type AuditEmitRoleGrantContext
 } from '#lib/auth/audit_emitter.ts';
@@ -173,5 +175,28 @@ describe('assert_no_audit_drift', () => {
 			error_spy.mockRestore();
 		}
 		assert_no_audit_drift();
+	});
+});
+
+describe('install_audit_drift_guard', () => {
+	// a write lost before the guarded block's first test — by an earlier,
+	// unguarded test in the same worker — must not fail the tests it guards
+	beforeAll(async () => {
+		const refusing_db = {
+			query: () => Promise.reject(new Error('insert refused')),
+			query_one: () => Promise.reject(new Error('insert refused'))
+		} as unknown as Db;
+		const audit = create_audit_emitter({
+			db: refusing_db,
+			log: new Logger('test', { level: 'off' })
+		});
+		await audit.emit_pool({ event_type: 'login' });
+		assert.ok(get_audit_write_failures() > 0, 'the setup lost a write');
+	});
+
+	install_audit_drift_guard();
+
+	test('resets the write-failure counter before each test', () => {
+		assert.strictEqual(get_audit_write_failures(), 0);
 	});
 });

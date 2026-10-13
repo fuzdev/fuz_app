@@ -28,8 +28,11 @@ import {
 	type SchemaSnapshot
 } from '#lib/testing/schema_introspect.ts';
 import { diff_schema_snapshots } from '#lib/testing/schema_parity.ts';
+import { create_testing_schema_snapshot_action } from '#lib/testing/cross_backend/testing_reset_actions.ts';
+import { create_test_request_context } from '#lib/testing/auth_apps.ts';
 import type { Db } from '#lib/db/db.ts';
 
+import { create_test_action_context } from '../auth/rpc_test_helpers.ts';
 import { describe_db } from '../db_fixture.ts';
 import { describe_db as describe_cell_db } from '../cell_db_fixture.ts';
 
@@ -138,6 +141,27 @@ describe_db('query_schema_snapshot', (get_db) => {
 			Object.values(snap.tables).some((table) => table.indexes.length > 0),
 			'the auth schema has indexes, so this snapshot exercises the check'
 		);
+	});
+
+	// The action is how a cross-backend parity gate takes a backend's snapshot,
+	// so it must refuse where the function does — never opt in on the caller's
+	// behalf.
+	test('the _testing_schema_snapshot action refuses on pglet as the function does', async () => {
+		const db = get_db();
+		const { handler } = create_testing_schema_snapshot_action();
+		const result = await Promise.resolve(
+			handler({}, { ...create_test_action_context(create_test_request_context()), db })
+		).then(
+			(value: unknown) => ({ ok: true as const, value }),
+			(error: unknown) => ({ ok: false as const, error })
+		);
+		if (await is_pglet(db)) {
+			assert.ok(!result.ok, 'the action must refuse a pglet snapshot holding indexes');
+			assert.ok(result.error instanceof Error);
+			assert.match(result.error.message, /accept_pglet_index_definitions/);
+			return;
+		}
+		assert.ok(result.ok, 'the action answers on every other driver');
 	});
 
 	test('the opt-in takes the snapshot on every driver, indexes included', async () => {

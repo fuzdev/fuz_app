@@ -1182,10 +1182,10 @@ the runtimes differ:
   with the request body changes it.
 
 No runtime serves a request behind one refused on its declared length. What
-differs is who reads the body: on Deno the cap bounds what the application processes, not what the
-transport reads off the socket — it takes the declared body before it closes.
-A reverse proxy with its own request-body cap refuses an oversized request
-before it reaches the runtime.
+differs is who reads the body: on Deno the cap bounds what the application
+processes, not what the transport reads off the socket — it takes the declared
+body before it closes. A reverse proxy with its own request-body cap refuses
+an oversized request before it reaches the runtime.
 
 The limit checks `Content-Length` first and answers from the header alone,
 falling through to Hono's `bodyLimit` only for a request with no

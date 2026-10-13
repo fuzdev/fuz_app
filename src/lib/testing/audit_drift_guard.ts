@@ -49,7 +49,7 @@ export const install_audit_drift_guard = (): void => {
 };
 
 /**
- * Assert the three process-wide audit counters are zero — the check
+ * Assert the process-wide audit counters are zero — the check
  * `install_audit_drift_guard` runs after each test. Exported for a test that
  * manages the counters itself.
  *

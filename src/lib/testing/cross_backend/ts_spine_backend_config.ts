@@ -55,10 +55,12 @@ const ts_spine_capabilities = Object.freeze({
  * `ws_handshake_pipelining: false`.
  *
  * `Bun.serve` answers `400` to an upgrade request that carries WebSocket
- * frames in the same TCP write when the handler upgrades after awaiting
- * anything — as the spine's does, behind the auth middleware — so the WS
- * suite's frames-with-the-handshake case has nothing to drive there (observed
- * on Bun 1.4.3; an upgrade made synchronously in `fetch` takes the frames).
+ * frames in the same TCP write when the handler upgrades after an await that
+ * yields to the event loop — a timer, I/O; the spine's does, behind the auth
+ * middleware's database reads — so the WS suite's frames-with-the-handshake
+ * case has nothing to drive there (observed on Bun 1.4.3; an upgrade made
+ * synchronously in `fetch`, or after an await that settles in the same
+ * microtask run, takes the frames).
  */
 const ts_spine_bun_capabilities = Object.freeze({
 	...ts_spine_capabilities,

@@ -168,7 +168,7 @@ compile until it declares its scope. Both revocation listeners
 and `audit_unknown_event_type_failures` are process-wide, fail-open
 (write the row anyway). Independent in implementation; under the factory
 they track the same config. Sample via `get_*`; `reset_*` are test-only.
-A third counter lives with the emitter (`auth/audit_emitter.ts`,
+Another counter lives with the emitter (`auth/audit_emitter.ts`,
 `get_audit_write_failures` / `reset_audit_write_failures`): rows the bound
 emitter's pool write failed to insert. That write is fail-open too — logged,
 counted, the request proceeds — so the count is how a lost row is seen.
