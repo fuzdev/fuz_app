@@ -1707,8 +1707,8 @@ drift-guarded by `src/test/cross_backend/spine_expected_schema.db.test.ts`
 
 `describe_testing_backdoor_cross_tests({setup_test, rpc_path?, ws?})` —
 the negative-credential parity suite for the `_testing_*` backdoor actions.
-For each `_testing_*` action except `_testing_drain_effects` (the privileged
-writes, the connection flood, and the introspection reads) it fires three principals over real HTTP: **anonymous** →
+For each `_testing_*` action (the privileged writes, the audit barrier, the
+connection flood, and the introspection reads) it fires three principals over real HTTP: **anonymous** →
 401 `unauthenticated`, **session** → 403 `forbidden` `credential_type_required`,
 **bearer** → 403 `forbidden` `credential_type_required` — and, when `ws`
 (`{base_url, ws_path, origin?}`) is passed, sends each on a socket opened with

@@ -84,6 +84,8 @@ const NIL_UUID = '00000000-0000-0000-0000-000000000000';
  */
 const backdoor_methods: ReadonlyArray<{ method: string; params: unknown }> = [
 	{ method: '_testing_reset', params: {} },
+	// The audit barrier — its input is void, so the call carries no params.
+	{ method: '_testing_drain_effects', params: undefined },
 	{ method: '_testing_mint_session', params: { account_id: NIL_UUID, expires_in_seconds: -60 } },
 	{ method: '_testing_put_fact', params: { content: 'backdoor-probe' } },
 	// An empty burst — valid input, so it clears the 400 phase; a refused

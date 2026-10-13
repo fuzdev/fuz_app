@@ -600,9 +600,11 @@ export const create_db_route_specs = (
 						return c.json({ error: ERROR_ROW_NOT_FOUND }, 404);
 					}
 					// 23503 foreign_key_violation / 23001 restrict_violation — the
-					// same referencing-row refusal: PG 18+ raises 23001 for `ON
-					// DELETE RESTRICT` constraints where PG ≤17 raises 23503 for
-					// both.
+					// same referencing-row refusal. Which one depends on the
+					// constraint: `ON DELETE RESTRICT` raises 23001 on PG 18, PGlite
+					// and pglet (23503 on PG ≤17), and `NO ACTION` — the default,
+					// when the constraint names no action — raises 23503 on all of
+					// them.
 					if (code === '23503' || code === '23001') {
 						const pg_err = err as Error & { detail?: string; constraint?: string };
 						log?.warn('Foreign key violation:', pg_err.detail, pg_err.constraint);

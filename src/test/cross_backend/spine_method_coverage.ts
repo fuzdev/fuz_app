@@ -206,8 +206,7 @@ export const SPINE_METHOD_COVERAGE: ReadonlyArray<MethodCoverageEntry> = [
 	// --- Backdoor: `_testing_*` daemon-token actions ---
 	// Live-mounted on the test binary only, never on the declared surface
 	// (`assert_no_testing_methods` guards that). The negative-credential gate is
-	// `describe_testing_backdoor_cross_tests`; `_testing_drain_effects` is the
-	// audit barrier the suites call, not itself credential-probed.
+	// `describe_testing_backdoor_cross_tests`.
 	{ method: '_testing_reset', tier: 'backdoor', suite: 'describe_testing_backdoor_cross_tests' },
 	{
 		method: '_testing_mint_session',
@@ -238,6 +237,7 @@ export const SPINE_METHOD_COVERAGE: ReadonlyArray<MethodCoverageEntry> = [
 	{
 		method: '_testing_drain_effects',
 		tier: 'backdoor',
-		note: 'audit barrier; not credential-probed'
+		suite: 'describe_testing_backdoor_cross_tests',
+		note: 'the audit barrier the suites call'
 	}
 ];

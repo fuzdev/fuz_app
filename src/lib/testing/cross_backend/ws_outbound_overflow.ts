@@ -33,6 +33,13 @@ import '../assert_dev_env.ts';
  *   `invalid_params`, and the socket stays open.
  * - **no connection** — over HTTP RPC the action refuses with `invalid_params`
  *   and reason `no_connection`, rather than answering as though it flooded.
+ * - **the action's limits** — over HTTP RPC a call at each of the action's
+ *   three limits (`count`, `size`, `count` × `size`) is refused for having no
+ *   connection, and a call one past each is refused `invalid_params` with no
+ *   reason. Both spines check the limits before they look for the connection
+ *   and before they build a payload, so the boundaries are read off the
+ *   refusal and no burst is ever allocated — which pins the two spines'
+ *   limits equal.
  *
  * What the suite does **not** assert, because it is each implementation's own:
  * how many frames accepted before the overflow reach the client (the Rust
@@ -91,6 +98,44 @@ const LARGE_FITS = { count: 3, size: MIB } as const;
 const OVERFLOWS = { count: 32, size: MIB } as const;
 /** One mebibyte past the action's `count` × `size` limit. */
 const REFUSED = { count: 65, size: MIB } as const;
+
+/** The most notifications one flood call may ask for. */
+const FLOOD_MAX_COUNT = 65_536;
+/** The largest payload one flood call may ask for. */
+const FLOOD_MAX_SIZE = 16 * MIB;
+/** The most payload bytes (`count` × `size`) one flood call may ask for. */
+const FLOOD_MAX_TOTAL_BYTES = 64 * MIB;
+
+/**
+ * Calls at and one past each of the flood action's limits. Each "past" call
+ * holds the other axis at zero, or both axes within their own limit, so one
+ * limit alone decides it.
+ */
+const FLOOD_LIMIT_CASES: ReadonlyArray<{
+	readonly name: string;
+	readonly params: { readonly count: number; readonly size: number };
+	readonly within: boolean;
+}> = [
+	{ name: 'count at its limit', params: { count: FLOOD_MAX_COUNT, size: 1 }, within: true },
+	{ name: 'count past its limit', params: { count: FLOOD_MAX_COUNT + 1, size: 0 }, within: false },
+	{ name: 'size at its limit', params: { count: 1, size: FLOOD_MAX_SIZE }, within: true },
+	{ name: 'size past its limit', params: { count: 0, size: FLOOD_MAX_SIZE + 1 }, within: false },
+	{
+		name: 'count × size at its limit, both axes at theirs or under',
+		params: { count: FLOOD_MAX_TOTAL_BYTES / FLOOD_MAX_SIZE, size: FLOOD_MAX_SIZE },
+		within: true
+	},
+	{
+		name: 'count × size at its limit, count at its own',
+		params: { count: FLOOD_MAX_COUNT, size: FLOOD_MAX_TOTAL_BYTES / FLOOD_MAX_COUNT },
+		within: true
+	},
+	{
+		name: 'count × size past its limit, each axis within its own',
+		params: { count: FLOOD_MAX_COUNT, size: FLOOD_MAX_TOTAL_BYTES / FLOOD_MAX_COUNT + 1 },
+		within: false
+	}
+];
 
 /** How long the test waits for the megabyte burst and its response. */
 const LARGE_BURST_TIMEOUT_MS = 15_000;
@@ -308,6 +353,33 @@ export const describe_ws_outbound_overflow_cross_tests = (
 					(res.error?.data as { reason?: unknown } | undefined)?.reason,
 					REASON_NO_CONNECTION
 				);
+			}
+		);
+
+		test_if(
+			rpc_path !== undefined,
+			'over HTTP a flood call at each limit is refused for no connection, one past it for its params',
+			async () => {
+				const fixture = await setup_test();
+				const transport = fixture.fresh_transport({ origin: null });
+				for (const { name, params, within } of FLOOD_LIMIT_CASES) {
+					const res = await cross_rpc_call(
+						transport,
+						rpc_path!,
+						FLOOD_METHOD,
+						params,
+						fixture.create_daemon_token_headers()
+					);
+					assert.strictEqual(res.ok, false, `${name}: expected a refusal over HTTP`);
+					assert.strictEqual(res.error?.code, INVALID_PARAMS, name);
+					// within the limits the call gets as far as the connection check;
+					// past one it is refused before that, with no reason
+					assert.strictEqual(
+						(res.error?.data as { reason?: unknown } | undefined)?.reason,
+						within ? REASON_NO_CONNECTION : undefined,
+						`${name}: ${JSON.stringify(params)}`
+					);
+				}
 			}
 		);
 	});

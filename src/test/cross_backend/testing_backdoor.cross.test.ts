@@ -1,8 +1,7 @@
 /**
  * Cross-process negative-credential parity for the `_testing_*` backdoor
  * actions over real HTTP and WebSocket. Companion to `origin.cross.test.ts` /
- * `account_lifecycle.cross.test.ts`: fires every `_testing_*` action except
- * `_testing_drain_effects` as
+ * `account_lifecycle.cross.test.ts`: fires every `_testing_*` action as
  * anonymous / session / bearer over HTTP RPC, and on a session socket, against
  * each spawned backend (the TS spine binaries + the Rust `testing_spine_stub`)
  * and asserts the daemon-token gate refuses them. Every cross backend mounts

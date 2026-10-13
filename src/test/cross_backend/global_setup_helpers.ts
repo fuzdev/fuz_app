@@ -52,6 +52,9 @@ export interface RustSpineGlobalSetupOptions {
 	readonly workspace_dir?: string;
 }
 
+/** The URL protocols a Postgres connection string carries. */
+const POSTGRES_URL_PROTOCOLS: ReadonlySet<string> = new Set(['postgres:', 'postgresql:']);
+
 const resolve_workspace_dir = (override: string | undefined): string =>
 	override ?? process.env[RUST_WORKSPACE_DIR_ENV] ?? join(homedir(), 'dev', 'private_fuz');
 
@@ -60,14 +63,18 @@ const resolve_workspace_dir = (override: string | undefined): string =>
  * resolves it: `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` when set, else the
  * local default.
  *
- * @returns the URL, known to parse
- * @throws Error when the env var is set to something that is not a URL — named
- * by its variable, and without echoing a value that may hold a password
+ * @returns the URL, known to parse as a `postgres:` / `postgresql:` URL
+ * @throws Error when the env var is set to something that is not a Postgres
+ * URL — named by its variable, and without echoing a value that may hold a
+ * password
  */
 export const resolve_rust_spine_stub_database_url = (): string => {
 	const from_env = process.env[RUST_SPINE_STUB_DATABASE_URL_ENV];
 	if (!from_env) return RUST_SPINE_STUB_DEFAULT_DATABASE_URL;
-	if (!URL.canParse(from_env)) {
+	// `URL.canParse` alone admits a scheme-less `localhost:5432/db`, which it
+	// reads as protocol `localhost:` — the stub then refuses it as no
+	// connection string at all
+	if (!URL.canParse(from_env) || !POSTGRES_URL_PROTOCOLS.has(new URL(from_env).protocol)) {
 		throw new Error(
 			`${RUST_SPINE_STUB_DATABASE_URL_ENV} is not a valid URL — expected the form ` +
 				`postgres://user@host:port/database`

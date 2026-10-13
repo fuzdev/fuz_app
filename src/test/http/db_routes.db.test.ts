@@ -24,6 +24,7 @@ import { audit_metadata_schemas } from '#lib/auth/audit_log_schema.ts';
 import { create_test_context } from '#lib/testing/entities.ts';
 import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
 import type { Db } from '#lib/db/db.ts';
+import { pg_error_code } from '#lib/db/pg_error.ts';
 import { run_migrations } from '#lib/db/migrate.ts';
 import { auth_migration_ns } from '#lib/auth/migrations.ts';
 import { create_pglite_db } from '#lib/db/db_pglite.ts';
@@ -664,39 +665,59 @@ describe('DELETE /tables/:name/rows/:id handler', () => {
 		assert.strictEqual(parseInt(remaining[0]!.count, 10), 1, 'the floor row must survive');
 	});
 
-	test('FK constraint returns 409 when child rows prevent deletion', async () => {
-		// Auth tables use CASCADE, so create a custom table with RESTRICT FK
-		// to exercise the 409 handler path. PostgreSQL 18 raises 23001
-		// restrict_violation for this refusal, as do pglet and PGlite, so that
-		// is the arm this drives; an earlier server raises 23503. The Rust twin
-		// pins the same refusal against real PG in
-		// `restricted_fk_delete_is_a_409_and_deletes_nothing`.
-		await db.query(`CREATE TABLE IF NOT EXISTS fk_test_parent (
-			id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-			name TEXT NOT NULL
-		)`);
-		await db.query(`CREATE TABLE IF NOT EXISTS fk_test_child (
-			id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-			parent_id TEXT NOT NULL REFERENCES fk_test_parent(id) ON DELETE RESTRICT
-		)`);
-		const parent = await db.query<{ id: string }>(
-			`INSERT INTO fk_test_parent (name) VALUES ('parent') RETURNING id`
-		);
-		const parent_id = parent[0]!.id;
-		await db.query(`INSERT INTO fk_test_child (parent_id) VALUES ($1)`, [parent_id]);
+	// Two referencing-row refusals, one per SQLSTATE the handler maps to 409.
+	// `ON DELETE RESTRICT` raises 23001 `restrict_violation` on PostgreSQL 18,
+	// PGlite and pglet (an earlier PostgreSQL raises 23503); `NO ACTION` — what a
+	// constraint naming no action is — raises 23503 `foreign_key_violation` on
+	// every one of them. Auth tables use CASCADE, so each case builds its own
+	// child table. The Rust twin pins the same pair against real PG in
+	// `restricted_fk_delete_is_a_409_and_deletes_nothing` and
+	// `no_action_fk_delete_is_a_409_and_deletes_nothing`.
+	for (const { action, on_delete, sqlstate } of [
+		{ action: 'RESTRICT', on_delete: ' ON DELETE RESTRICT', sqlstate: '23001' },
+		{ action: 'NO ACTION', on_delete: '', sqlstate: '23503' }
+	]) {
+		test(`FK constraint (${action}) returns 409 when child rows prevent deletion`, async () => {
+			await db.query(`CREATE TABLE fk_test_parent (
+				id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+				name TEXT NOT NULL
+			)`);
+			await db.query(`CREATE TABLE fk_test_child (
+				id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+				parent_id TEXT NOT NULL REFERENCES fk_test_parent(id)${on_delete}
+			)`);
+			const parent = await db.query<{ id: string }>(
+				`INSERT INTO fk_test_parent (name) VALUES ('parent') RETURNING id`
+			);
+			const parent_id = parent[0]!.id;
+			await db.query(`INSERT INTO fk_test_child (parent_id) VALUES ($1)`, [parent_id]);
 
-		const specs = create_specs();
-		const app = create_test_app(specs);
-		const res = await app.request(`/tables/fk_test_parent/rows/${parent_id}`, {
-			method: 'DELETE'
+			// the engine raises the code this case is here for, so the case
+			// can't pass on the other arm
+			const raw = await db.query(`DELETE FROM fk_test_parent WHERE id = $1`, [parent_id]).then(
+				() => null,
+				(err: unknown) => err
+			);
+			assert.strictEqual(pg_error_code(raw), sqlstate, `a ${action} constraint raises ${sqlstate}`);
+
+			const specs = create_specs();
+			const app = create_test_app(specs);
+			const res = await app.request(`/tables/fk_test_parent/rows/${parent_id}`, {
+				method: 'DELETE'
+			});
+			assert.strictEqual(res.status, 409);
+			const body = await res.json();
+			assert.strictEqual(body.error, 'foreign_key_violation');
+			// Regression guard: PG detail/constraint must not leak to client
+			assert.strictEqual(body.detail, undefined, 'PG detail must not leak to client');
+			assert.strictEqual(body.constraint, undefined, 'PG constraint must not leak to client');
+			const remaining = await db.query<{ count: string }>(
+				`SELECT COUNT(*) as count FROM fk_test_parent WHERE id = $1`,
+				[parent_id]
+			);
+			assert.strictEqual(parseInt(remaining[0]!.count, 10), 1, 'the referenced parent survives');
 		});
-		assert.strictEqual(res.status, 409);
-		const body = await res.json();
-		assert.strictEqual(body.error, 'foreign_key_violation');
-		// Regression guard: PG detail/constraint must not leak to client
-		assert.strictEqual(body.detail, undefined, 'PG detail must not leak to client');
-		assert.strictEqual(body.constraint, undefined, 'PG constraint must not leak to client');
-	});
+	}
 
 	test('excluded table delete is refused and deletes nothing', async () => {
 		await db.query(
