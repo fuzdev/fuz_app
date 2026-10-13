@@ -52,13 +52,25 @@ const ts_spine_capabilities = Object.freeze({
 
 /**
  * Capabilities for the **Bun** spine binary — `ts_spine_capabilities` with
- * `ws_handshake_pipelining: false`: `Bun.serve` answers `400` to an upgrade
- * request that carries WebSocket frames in the same TCP write, before any
- * handler runs, so the WS suite's frames-with-the-handshake case has nothing
- * to drive there.
+ * `oversized_reject_closes_connection: false` and
+ * `ws_handshake_pipelining: false`.
+ *
+ * `Bun.serve` does not close the connection after an oversized-body `413`:
+ * the response carries `Connection: close`, and Bun keeps the socket open,
+ * skips the declared body, and serves the request that follows it (observed
+ * on Bun 1.3.11). The next request is framed on `Content-Length`, so nothing
+ * is desynchronized, but the smuggling suite's "the pipelined request is never
+ * served" assertion does not hold; the flag puts Bun on the suite's no-desync
+ * arm, which requires exactly the 413 and the reply to the pipelined request.
+ * See `docs/security.md` §"Body Size Limiting".
+ *
+ * `Bun.serve` also answers `400` to an upgrade request that carries WebSocket
+ * frames in the same TCP write, before any handler runs, so the WS suite's
+ * frames-with-the-handshake case has nothing to drive there.
  */
 const ts_spine_bun_capabilities = Object.freeze({
 	...ts_spine_capabilities,
+	oversized_reject_closes_connection: false,
 	ws_handshake_pipelining: false
 });
 

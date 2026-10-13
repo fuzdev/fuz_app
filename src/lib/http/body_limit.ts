@@ -3,16 +3,25 @@
  * and validation.
  *
  * Wraps Hono's `bodyLimit` with a header-first check: a request whose
- * `Content-Length` exceeds the cap is refused on the header alone, without
- * touching `c.req.raw.body`. Hono's `bodyLimit` reads that getter on every
- * request before it looks at the header, and on Deno merely reading it changes
- * how the connection ends — Deno then drains the rest of the declared body
- * after the response and keeps the socket alive (ignoring a `Connection:
- * close`), where an untouched body makes it close. Closing without reading the
- * body is the defense-in-depth posture against request smuggling
- * (`docs/security.md` §"Body Size Limiting"), so the header check keeps it on
- * every runtime that offers it. A request with no usable `Content-Length`
- * (chunked, or none) falls through to `bodyLimit`'s streaming count.
+ * `Content-Length` exceeds the cap is refused on the header alone — without
+ * touching `c.req.raw.body` — and the `413` carries `Connection: close`. A
+ * request with no usable `Content-Length` (chunked, or none) falls through to
+ * `bodyLimit`'s streaming count.
+ *
+ * What the connection does after that `413` is the runtime's
+ * (`docs/security.md` §"Body Size Limiting"):
+ *
+ * - **Node** (`@hono/node-server`) closes at once, the body unread. The
+ *   `Connection: close` header is what does it: without one the adapter
+ *   holds the connection for a drain window and then closes or, the body
+ *   untouched and arriving within the window, reads it off and serves the
+ *   next request.
+ * - **Deno** closes once the whole declared body has arrived and holds the
+ *   connection open while a client withholds it; a request pipelined behind
+ *   the body is not served. Neither the header nor what the handler does with
+ *   the body changes that (observed on Deno 2.8.3).
+ * - **Bun** keeps the connection, skips the declared body, and serves the
+ *   next request on it (observed on Bun 1.3.11).
  *
  * @module
  */
@@ -40,9 +49,9 @@ export const create_body_limit_middleware = (max_size: number): MiddlewareHandle
 			!c.req.header('transfer-encoding') &&
 			Number.parseInt(content_length, 10) > max_size
 		) {
-			// refused on the header alone — reading `c.req.raw.body` here would make
-			// Deno drain the body and keep the connection alive; `Connection: close`
-			// stops `@hono/node-server` from draining the unread body for reuse
+			// refused on the header alone, the body untouched; `Connection: close`
+			// makes `@hono/node-server` close at once instead of holding the
+			// connection or serving the request behind the body
 			return c.json({ error: ERROR_PAYLOAD_TOO_LARGE }, 413, { connection: 'close' });
 		}
 		return streaming_limit(c, next);

@@ -376,11 +376,10 @@ describe('create_app_server', () => {
 				]
 			})
 		);
-		// Reading `request.body` at all — even without consuming it — makes Deno
-		// drain the rest of the declared body after the response and keep the
-		// connection alive instead of closing it, so the over-cap reject must
-		// answer from the header alone (the cross-backend smuggling probe pins
-		// the connection close itself).
+		// The over-cap reject answers from the header alone: the spy fails the
+		// test if anything reads `request.body`, even without consuming it. What
+		// the connection does after the 413 is each runtime's, pinned by the
+		// cross-backend smuggling probe.
 		let body_read = false;
 		class BodySpyRequest extends Request {
 			override get body(): Request['body'] {
