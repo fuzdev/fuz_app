@@ -520,4 +520,33 @@ describe('BackendWebsocketTransport.close_connection', () => {
 		t.remove_connection(admitted_id);
 		t.remove_connection(pending_id);
 	});
+
+	test('a socket whose close throws is logged, never thrown at the caller', () => {
+		const errors: Array<Array<unknown>> = [];
+		const log = new Logger('test', { level: 'off' });
+		log.error = (...args: Array<unknown>) => {
+			errors.push(args);
+		};
+		const t = new BackendWebsocketTransport({ log });
+		const close_error = new Error('socket is gone');
+		const ws = new WSContext({
+			send: () => {},
+			close: () => {
+				throw close_error;
+			},
+			readyState: 1
+		});
+		const controller = new AbortController();
+		const connection_id = t.add_connection(ws, null, ACCOUNT_A, null, controller);
+
+		// called from a heartbeat timer, where a throw would be uncaught
+		assert.strictEqual(t.close_connection(connection_id, WS_CLOSE_INTERNAL_ERROR, 'why'), true);
+		assert.strictEqual(t.is_registered(connection_id), false);
+		assert.strictEqual(t.get_connection_count(), 0);
+		assert.strictEqual(controller.signal.aborted, true);
+		assert.deepStrictEqual(errors, [
+			[`error closing client with ${WS_CLOSE_INTERNAL_ERROR}:`, close_error]
+		]);
+		t.remove_connection(connection_id);
+	});
 });

@@ -369,6 +369,120 @@ describe('WsOutboundWriter write deadline', () => {
 		assert.strictEqual(fake.socket.terminated, true);
 	});
 
+	test('a busy connection whose client keeps reading is not dropped', async () => {
+		vi.useFakeTimers();
+		const fake = create_fake_ws({ stalled: true });
+		const { writer, stalls } = create_writer(fake, 1_000_000);
+		const frame = 'x'.repeat(1000);
+		writer.push(frame);
+		// the buffer never empties: each second one more frame is handed over and
+		// the client has taken everything before it, well past one deadline
+		const rounds = (WS_WRITE_STALL_TIMEOUT / 1000) * 3;
+		for (let round = 0; round < rounds; round++) {
+			assert.deepStrictEqual(writer.push(frame), ACCEPTED);
+			await flush_pump();
+			fake.socket.bufferedAmount = frame.length;
+			await vi.advanceTimersByTimeAsync(1000);
+		}
+		assert.deepStrictEqual(stalls, []);
+		assert.strictEqual(fake.socket.terminated, false);
+		assert.strictEqual(fake.sends.length, rounds + 1);
+		writer.dispose();
+	});
+
+	test('a client taking the buffered bytes too slowly is dropped at the deadline', async () => {
+		vi.useFakeTimers();
+		const fake = create_fake_ws({ stalled: true });
+		const { writer, stalls } = create_writer(fake, 1_000_000);
+		writer.push('x'.repeat(WS_WRITE_HIGH_WATER_BYTES));
+		// steady progress that does not finish: the deadline is not reset by it
+		const seconds = WS_WRITE_STALL_TIMEOUT / 1000;
+		for (let second = 1; second < seconds; second++) {
+			await vi.advanceTimersByTimeAsync(1000);
+			fake.socket.bufferedAmount = WS_WRITE_HIGH_WATER_BYTES - second * 1000;
+		}
+		assert.deepStrictEqual(stalls, []);
+		assert.strictEqual(fake.socket.terminated, false);
+		await vi.advanceTimersByTimeAsync(1000);
+		assert.deepStrictEqual(stalls, [
+			{
+				queued_bytes: 0,
+				queued_frames: 0,
+				buffered_bytes: WS_WRITE_HIGH_WATER_BYTES - (seconds - 1) * 1000
+			}
+		]);
+		assert.strictEqual(fake.socket.terminated, true);
+	});
+
+	test('a socket reporting its buffer through getBufferedAmount is held back and cut', async () => {
+		vi.useFakeTimers();
+		// Bun's `ServerWebSocket`: a method to read the buffer, and `terminate`
+		const sends: Array<string> = [];
+		let buffered = 0;
+		let terminated = false;
+		const ws = new WSContext({
+			send: (data) => {
+				const text = data as string;
+				sends.push(text);
+				buffered += text.length;
+			},
+			close: () => {},
+			raw: {
+				getBufferedAmount: () => buffered,
+				terminate: () => {
+					terminated = true;
+				}
+			},
+			readyState: 1
+		});
+		const stalls: Array<WsOutboundStall> = [];
+		const writer = new WsOutboundWriter({
+			ws,
+			max_bytes: 1_000_000,
+			on_stall: (stall) => stalls.push(stall),
+			log: null
+		});
+		const big = 'x'.repeat(WS_WRITE_HIGH_WATER_BYTES);
+		writer.push(big);
+		await flush_pump();
+		// a later run: the socket is at the high-water mark, so the frame waits
+		assert.deepStrictEqual(writer.push('bb'), ACCEPTED);
+		await flush_pump();
+		assert.deepStrictEqual(sends, [big]);
+		assert.strictEqual(writer.queued_frames, 1);
+
+		await vi.advanceTimersByTimeAsync(WS_WRITE_STALL_TIMEOUT);
+		assert.deepStrictEqual(stalls, [
+			{ queued_bytes: 2, queued_frames: 1, buffered_bytes: WS_WRITE_HIGH_WATER_BYTES }
+		]);
+		assert.strictEqual(terminated, true);
+		assert.deepStrictEqual(sends, [big]);
+	});
+
+	test('an on_stall that throws is logged, and the socket is still cut', async () => {
+		vi.useFakeTimers();
+		const fake = create_fake_ws({ stalled: true });
+		const errors: Array<unknown> = [];
+		const log = new Logger('test', { level: 'off' });
+		log.error = (...args: Array<unknown>) => {
+			errors.push(args[0]);
+		};
+		const writer = new WsOutboundWriter({
+			ws: fake.ws,
+			max_bytes: 1000,
+			on_stall: () => {
+				throw new Error('owner failed');
+			},
+			log
+		});
+		writer.push('x');
+		// the deadline runs on a timer: a throw here would be an uncaught exception
+		await vi.advanceTimersByTimeAsync(WS_WRITE_STALL_TIMEOUT);
+		assert.deepStrictEqual(errors, ['error reporting a stalled socket:']);
+		assert.strictEqual(fake.socket.terminated, true);
+		assert.deepStrictEqual(writer.push('y'), REFUSED);
+	});
+
 	test('a socket with no way to be cut is closed with the overflow code instead', async () => {
 		vi.useFakeTimers();
 		const fake = create_fake_ws({ stalled: true });

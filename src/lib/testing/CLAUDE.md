@@ -1234,7 +1234,8 @@ ws_path, origin?, rpc_path?})` drives `_testing_flood_notifications`, which
 queues a burst onto the caller's own connection in one synchronous run, so the
 burst waits at once whether or not the client reads and the overflow is
 deterministic. Cases: a burst within the budget arrives whole and in order
-ahead of its response, the socket left open; a burst far past it closes the
+ahead of its response, the socket left open — a small one, and one of a few
+mebibytes in megabyte frames, most of the default budget, which waits on the backend's write pump where megabyte frames outrun the socket's buffer (Deno; Node and Bun write the burst through); a burst far past it closes the
 socket with the code and the exact reason, no response for the flooding request
 arrives, and any flood frames that did arrive are a contiguous prefix of the
 burst — while a second connection on the same account keeps dispatching; a

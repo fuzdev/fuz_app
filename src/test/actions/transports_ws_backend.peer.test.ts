@@ -68,6 +68,25 @@ describe('BackendWebsocketTransport server→client requests', () => {
 		});
 	});
 
+	test('params that cannot be serialized settle connection_gone, never throw, and send nothing', async () => {
+		const t = new BackendWebsocketTransport();
+		const { ws, sends } = create_fake_ws();
+		const conn = t.add_connection(ws, null, create_uuid());
+
+		// a BigInt has no JSON form; a handler passing one must get an outcome
+		const outcome = await t.request_connection(conn, 'peer/ping', { count: 1n });
+		assert.deepStrictEqual(outcome, { ok: false, error: { kind: 'connection_gone' } });
+		assert.deepStrictEqual(sends, []);
+		// the connection is untouched and its next request goes out
+		assert.isTrue(t.is_registered(conn));
+		const next = t.request_connection(conn, 'peer/ping', {});
+		assert.strictEqual(sends.length, 1);
+		const frame = JSON.parse(sends[0]!);
+		assert.isTrue(t.resolve_peer_response(conn, create_jsonrpc_response(frame.id, {})));
+		assert.deepStrictEqual(await next, { ok: true, value: {} });
+		t.remove_connection(conn);
+	});
+
 	test('removing the connection drains its pending requests as connection_gone', async () => {
 		const t = new BackendWebsocketTransport();
 		const { ws } = create_fake_ws();

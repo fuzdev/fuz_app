@@ -66,7 +66,9 @@ FUZ_TEST_DB_DEFAULT=pglet-server PGLET_SERVER_BIN=/path/to/pglet_server npx vite
 ```
 
 The four-driver set's pglite leg and `testing/test_db.db.test.ts` (whose subject is the
-factories) pin PGlite with `create_pglite_factory`. A few files build their
+factories) pin PGlite with `create_pglite_factory`, as does
+`testing/schema_introspect.pglite.db.test.ts` (index modifiers in the schema
+snapshot, which pglet's `indexdef` leaves out). A few files build their
 driver directly: `db/create_db.db.test.ts` (the PGlite and pglet adapters and
 `create_db`'s URL routing are its subject), `http/db_routes.db.test.ts`'s
 `DOMAIN` case (pglet has no domains, and the shared PGlite instance can be the
@@ -219,7 +221,8 @@ and nothing else, and a closed connection frees its slot),
 `ws_outbound_overflow.cross.test.ts` (the real-upgrade
 `describe_ws_outbound_overflow_cross_tests` suite — a daemon-token socket
 floods itself through `_testing_flood_notifications`: a burst within the
-outbound budget arrives whole and in order, one past it closes the socket with
+outbound budget — a small one, and a multi-megabyte one — arrives whole and in
+order, one past it closes the socket with
 `WS_CLOSE_OUTBOUND_OVERFLOW` and no response while the account's other
 connection keeps dispatching, an oversized burst is refused, and the action
 over HTTP refuses for want of a connection),

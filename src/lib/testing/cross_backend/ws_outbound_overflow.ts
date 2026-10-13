@@ -20,6 +20,11 @@ import '../assert_dev_env.ts';
  *
  * - **within the budget** — a small burst arrives whole and in order, ahead of
  *   its response, and the socket stays open.
+ * - **large, within the budget** — a burst of a few mebibytes, most of the
+ *   default budget, arrives the same way: every frame whole, in order, the
+ *   response last. Megabyte frames can outrun a socket's buffer, and where
+ *   they do — the Deno TS spine, as observed; Node and Bun write the burst
+ *   through — the frames behind the first wait on the backend's write pump.
  * - **overflow** — a burst far past the budget closes the socket with the code
  *   and the exact reason; the response of the flooding request never arrives;
  *   any flood frames that did arrive form a contiguous prefix of the burst.
@@ -77,10 +82,18 @@ const MIB = 1024 * 1024;
 
 /** A burst within any budget. */
 const FITS = { count: 3, size: 8 } as const;
+/**
+ * A burst of 3 MiB in megabyte frames: charged a little over 3 MiB with its
+ * envelopes and overhead, inside the 4 MiB default budget.
+ */
+const LARGE_FITS = { count: 3, size: MIB } as const;
 /** A burst of 32 MiB — eight times the default budget. */
 const OVERFLOWS = { count: 32, size: MIB } as const;
 /** One mebibyte past the action's `count` × `size` limit. */
 const REFUSED = { count: 65, size: MIB } as const;
+
+/** How long the test waits for the megabyte burst and its response. */
+const LARGE_BURST_TIMEOUT_MS = 15_000;
 
 /** How long the test waits for the overflow close. */
 const CLOSE_TIMEOUT_MS = 15_000;
@@ -162,6 +175,42 @@ export const describe_ws_outbound_overflow_cross_tests = (
 					const last_flood_at = client.messages.lastIndexOf(frames.at(-1));
 					assert.ok(last_flood_at < response_at, 'the burst precedes its response');
 					await assert_open_and_answering(client, 'after_fits', 'the socket stays open');
+				} finally {
+					await client.close().catch(() => {});
+				}
+			}
+		);
+
+		test_if(
+			capabilities.ws,
+			'a multi-megabyte burst within the budget arrives whole and in order, the response last',
+			async () => {
+				const fixture = await setup_test();
+				const client = await open_flooder(fixture);
+				try {
+					const result = await client.request(
+						'large_fits',
+						FLOOD_METHOD,
+						LARGE_FITS,
+						LARGE_BURST_TIMEOUT_MS
+					);
+					assert.deepStrictEqual(result, { queued: LARGE_FITS.count });
+					assert.deepStrictEqual(flood_indices(client), [0, 1, 2]);
+					const frames = client.messages.filter(
+						is_notification(FLOOD_NOTIFICATION_METHOD)
+					) as Array<JsonrpcNotificationFrame<{ index: number; payload: string }>>;
+					const payload = 'x'.repeat(LARGE_FITS.size);
+					for (const frame of frames) {
+						// compared by length first: a mismatch would otherwise print a mebibyte
+						assert.strictEqual(frame.params.payload.length, LARGE_FITS.size);
+						assert.ok(frame.params.payload === payload, 'the payload arrived intact');
+					}
+					// nothing follows the response: the whole burst is ahead of it
+					const response_at = client.messages.findIndex(is_response_for('large_fits'));
+					const last_flood_at = client.messages.lastIndexOf(frames.at(-1));
+					assert.ok(last_flood_at < response_at, 'the burst precedes its response');
+					assert.strictEqual(client.close_code, null, 'a burst within the budget closes nothing');
+					await assert_open_and_answering(client, 'after_large_fits', 'the socket stays open');
 				} finally {
 					await client.close().catch(() => {});
 				}
