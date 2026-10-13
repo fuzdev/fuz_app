@@ -15,6 +15,8 @@ import { z } from 'zod';
 
 import {
 	create_audit_emitter,
+	get_audit_write_failures,
+	reset_audit_write_failures,
 	type AuditEmitter,
 	type AuditEmitterContext
 } from '#lib/auth/audit_emitter.ts';
@@ -91,6 +93,34 @@ describe('create_audit_emitter — emit', () => {
 		await wait();
 
 		assert.ok(spy_error.mock.calls.length > 0);
+	});
+
+	test('a rejected write is counted, on emit and on emit_pool', async () => {
+		reset_audit_write_failures();
+		const db = create_mock_db(vi.fn(() => Promise.reject(new Error('DB connection lost'))));
+		const audit = create_audit_emitter({ db, log, on_audit_event: noop });
+		const ctx = create_ctx();
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			audit.emit(ctx, create_input());
+			await flush_ctx(ctx);
+			assert.strictEqual(get_audit_write_failures(), 1);
+
+			await audit.emit_pool(create_input());
+			assert.strictEqual(get_audit_write_failures(), 2);
+		} finally {
+			reset_audit_write_failures();
+		}
+	});
+
+	test('a write that lands leaves the write-failure counter alone', async () => {
+		reset_audit_write_failures();
+		const audit = create_audit_emitter({ db: create_mock_db(), log, on_audit_event: noop });
+		const ctx = create_ctx();
+		audit.emit(ctx, create_input());
+		await flush_ctx(ctx);
+		await audit.emit_pool(create_input());
+		assert.strictEqual(get_audit_write_failures(), 0);
 	});
 
 	test('returns immediately without awaiting the query promise', () => {

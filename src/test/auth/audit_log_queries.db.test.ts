@@ -13,7 +13,12 @@ import {
 	get_audit_unknown_event_type_failures,
 	reset_audit_unknown_event_type_failures
 } from '#lib/auth/audit_log_queries.ts';
-import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
+import {
+	create_audit_emitter,
+	get_audit_write_failures,
+	reset_audit_write_failures
+} from '#lib/auth/audit_emitter.ts';
+import { assert_no_audit_drift } from '#lib/testing/audit_drift_guard.ts';
 import { AuditLogEventJson, create_audit_log_config } from '#lib/auth/audit_log_schema.ts';
 import { query_create_account, query_create_actor } from '#lib/auth/account_queries.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
@@ -655,5 +660,36 @@ describe_db('AuditLogQueries', (get_db) => {
 		const events = await query_audit_log_list(deps);
 		assert.strictEqual(events.length, 1);
 		assert.strictEqual(events[0]!.event_type, 'classroom_create');
+	});
+
+	// --- write failure (fail-open + counter) ----------------------------------
+
+	test('a write the database refuses is counted, announced to no listener, and trips the drift check', async () => {
+		reset_audit_write_failures();
+		const log = new Logger('test', { level: 'off' });
+		const seen: Array<string> = [];
+		const audit = create_audit_emitter({
+			db: get_db(),
+			log,
+			on_audit_event: (event) => {
+				seen.push(event.event_type);
+			}
+		});
+		try {
+			// `actor_id` is a UUID column: every driver refuses the insert
+			await audit.emit_pool({ event_type: 'login', actor_id: 'not-a-uuid' as Uuid });
+			assert.strictEqual(get_audit_write_failures(), 1, 'the lost row is counted');
+			assert.throws(assert_no_audit_drift, /failed to write/);
+			assert.deepStrictEqual(seen, [], 'there is no row to announce');
+			assert.strictEqual((await query_audit_log_list(deps)).length, 0);
+
+			// a write the database takes leaves the counter alone
+			await audit.emit_pool({ event_type: 'login' });
+			assert.strictEqual(get_audit_write_failures(), 1);
+			assert.strictEqual((await query_audit_log_list(deps)).length, 1);
+		} finally {
+			reset_audit_write_failures();
+		}
+		assert_no_audit_drift();
 	});
 });

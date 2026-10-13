@@ -1,21 +1,34 @@
 /**
- * Tests for `create_recording_audit_emitter` — pinning the lift contract
+ * Tests for `audit_drift_guard.ts`.
+ *
+ * `create_recording_audit_emitter` — pinning the lift contract
  * for `emit_role_grant_target` so role-grant-shape emissions land in the
  * same homogeneous `calls` array as `emit` / `emit_pool`.
- *
  * The lift logic mirrors `create_audit_emitter`'s in-closure lift
  * (`auth/audit_emitter.ts`); if either side changes shape, this file is
  * where the drift surfaces.
  *
+ * `assert_no_audit_drift` — the check `install_audit_drift_guard` runs after
+ * each test: a write an emitter lost fails it.
+ *
  * @module
  */
 
-import { describe, test, assert } from 'vitest';
+import { describe, test, assert, vi } from 'vitest';
+import { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { Uuid } from '@fuzdev/fuz_util/id.ts';
 
-import { create_recording_audit_emitter } from '#lib/testing/audit_drift_guard.ts';
+import {
+	assert_no_audit_drift,
+	create_recording_audit_emitter
+} from '#lib/testing/audit_drift_guard.ts';
 import type { AuditLogInput } from '#lib/auth/audit_log_schema.ts';
-import type { AuditEmitRoleGrantContext } from '#lib/auth/audit_emitter.ts';
+import {
+	create_audit_emitter,
+	reset_audit_write_failures,
+	type AuditEmitRoleGrantContext
+} from '#lib/auth/audit_emitter.ts';
+import type { Db } from '#lib/db/db.ts';
 
 const create_ctx = (client_ip = '203.0.113.5'): AuditEmitRoleGrantContext => ({
 	pending_effects: [],
@@ -137,5 +150,28 @@ describe('create_recording_audit_emitter — emit_role_grant_target', () => {
 
 		assert.strictEqual(calls_ref, calls);
 		assert.strictEqual(calls_ref.length, 1);
+	});
+});
+
+describe('assert_no_audit_drift', () => {
+	test('fails once an emitter loses a write, and passes again after the reset', async () => {
+		reset_audit_write_failures();
+		assert_no_audit_drift();
+		// a `Db` that refuses every statement — no driver involved
+		const refusing_db = {
+			query: () => Promise.reject(new Error('insert refused')),
+			query_one: () => Promise.reject(new Error('insert refused'))
+		} as unknown as Db;
+		const error_spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			const audit = create_audit_emitter({ db: refusing_db, log: new Logger('test') });
+			// fail-open: the emit itself resolves
+			await audit.emit_pool({ event_type: 'login' });
+			assert.throws(assert_no_audit_drift, /failed to write/);
+		} finally {
+			reset_audit_write_failures();
+			error_spy.mockRestore();
+		}
+		assert_no_audit_drift();
 	});
 });

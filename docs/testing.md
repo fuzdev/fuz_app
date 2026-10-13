@@ -172,6 +172,14 @@ devDependency), or the driver a `set_default_db_factory` call installed before i
 was built (see [Switching the default driver](#switching-the-default-driver)).
 `create_pglite_factory` and `create_pglet_wasm_factory` pin a driver.
 
+The default driver refuses a jsonb string or key longer than roughly 4 KB in a
+column under a GIN index — `audit_log.metadata` and `cell.data` in fuz_app's
+own schema — a pglet limit; PGlite and PostgreSQL take such a value. A test
+that writes one there sees the insert refused: a cell write fails, and an
+audit row is lost (the emitter is fail-open), which
+`install_audit_drift_guard` reports as a failed write. Keep such values
+shorter, or pin the test to `create_pglite_factory`.
+
 Each consumer configures its own `describe_db` because they have different
 tables to truncate between tests (app-specific tables beyond the auth schema)
 and different migration namespaces.
@@ -951,9 +959,13 @@ int4 / int8 / etc.), indexes (`pg_indexes.indexdef`), constraints
 (`pg_get_constraintdef`), and sequences. Index definitions are compared as
 the engine renders them, so take both snapshots on PostgreSQL: a TS backend
 config defaults to `memory://` (pglet), whose `indexdef` leaves out sort
-direction, `NULLS` placement, operator classes and `NULLS NOT DISTINCT`, and
-diffing that against a Postgres-backed impl reports every such index as
-drift. The `schema_version` migration
+direction, `NULLS` placement, operator classes and `NULLS NOT DISTINCT`. That
+misleads a comparison in both directions — a pglet snapshot diffed against a
+Postgres-backed impl reports every such index as drift, and two pglet
+snapshots agree when their schemas differ only in a modifier — so
+`query_schema_snapshot` throws on pglet when the snapshot holds an index (and
+the `_testing_schema_snapshot` action with it). A caller that compares no
+index definition passes `accept_pglet_index_definitions: true`. The `schema_version` migration
 tracker is always excluded — it's framework bookkeeping, not domain
 schema. That is the snapshot's scope, not a licence for the tracker to
 differ: twin impls keep identical migration namespaces, names and

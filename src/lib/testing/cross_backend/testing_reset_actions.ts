@@ -441,6 +441,11 @@ export const create_testing_flood_notifications_action = (): RpcAction =>
  * shapes match by design). Optional `exclude_tables` drops documented
  * divergences from both sides before comparison.
  *
+ * A backend running on pglet (a TS backend config's `memory://` default)
+ * answers with an error when its schema holds an index: the snapshot exists
+ * to be compared, and pglet's index definitions omit the modifiers a
+ * comparison needs (`query_schema_snapshot`). Run the backend on PostgreSQL.
+ *
  * `auth` gates on the daemon-token credential, matching `_testing_reset`.
  */
 export const testing_schema_snapshot_action_spec = {

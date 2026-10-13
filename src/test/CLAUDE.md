@@ -194,10 +194,14 @@ the test helpers' route list.
   `install_audit_drift_guard()` (from `#lib/testing/audit_drift_guard.ts`)
   at the top of the `describe_db` block. Resets +
   asserts the `audit_metadata_validation_failures` and
-  `audit_unknown_event_type_failures` counters per-test —
-  `query_audit_log`'s schema validation is fail-open in production, so
-  regressions that emit undeclared metadata fields or unknown event
-  types are silent without this guard.
+  `audit_unknown_event_type_failures` counters, and the emitter's
+  write-failure counter, per-test —
+  `query_audit_log`'s schema validation and the emitter's pool write are
+  fail-open in production, so regressions that emit undeclared metadata
+  fields or unknown event types, or lose a row the database refused, are
+  silent without this guard. A test that fails a write on purpose asserts
+  `get_audit_write_failures()` and calls `reset_audit_write_failures()`
+  (`#lib/auth/audit_emitter.ts`) before it ends.
 
 ## Cross-backend self-tests (`src/test/cross_backend/`)
 

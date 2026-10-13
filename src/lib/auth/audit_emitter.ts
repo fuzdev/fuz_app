@@ -309,6 +309,24 @@ export interface CreateAuditEmitterOptions {
 }
 
 /**
+ * Process-wide counter for audit rows an emitter failed to write. The pool
+ * write behind `emit` / `emit_pool` / `emit_role_grant_target` is fail-open —
+ * a refused `INSERT` is logged and the request proceeds — so a lost row is
+ * otherwise visible only in the log. Same posture and lifetime as the drift
+ * counters in `auth/audit_log_queries.ts`: in-process, resets on restart, and
+ * asserted zero per test by `install_audit_drift_guard`.
+ */
+let audit_write_failures = 0;
+
+/** Number of audit rows an emitter failed to write since process start. */
+export const get_audit_write_failures = (): number => audit_write_failures;
+
+/** Reset the counter — for tests only. */
+export const reset_audit_write_failures = (): void => {
+	audit_write_failures = 0;
+};
+
+/**
  * Build a bound `AuditEmitter`. Typical caller is the consumer's
  * `audit_factory` callback on `CreateAppBackendOptions` —
  * `create_app_backend` invokes that callback with its constructed
@@ -347,14 +365,15 @@ export const create_audit_emitter = (options: CreateAuditEmitterOptions): AuditE
 		}
 	};
 
-	// The pool write. Never rejects: a failed write is logged and resolves
-	// `null`, so there is no row to announce.
+	// The pool write. Never rejects: a failed write is logged, counted, and
+	// resolves `null`, so there is no row to announce.
 	const write = async <T extends string>(
 		input: AuditLogInput<T>
 	): Promise<AuditLogEvent | null> => {
 		try {
 			return await query_audit_log({ db }, input, audit_log_config);
 		} catch (err) {
+			audit_write_failures++;
 			log.error('Audit log write failed:', err);
 			return null;
 		}

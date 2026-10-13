@@ -8,23 +8,32 @@ import {
 	reset_audit_metadata_validation_failures,
 	reset_audit_unknown_event_type_failures
 } from '../auth/audit_log_queries.ts';
-import type { AuditEmitter } from '../auth/audit_emitter.ts';
+import {
+	get_audit_write_failures,
+	reset_audit_write_failures,
+	type AuditEmitter
+} from '../auth/audit_emitter.ts';
 import type { AuditLogEvent, AuditLogInput } from '../auth/audit_log_schema.ts';
 
 /**
  * Register per-test `beforeEach` + `afterEach` hooks that catch any audit
  * emission with a metadata shape that fails its `audit_metadata_schemas`
- * entry, or an `event_type` not present in the active `AuditLogConfig`.
+ * entry, an `event_type` not present in the active `AuditLogConfig`, or a
+ * row the emitter failed to write.
  *
  * The production validation in `query_audit_log` is fail-open — it bumps
  * process-wide counters and proceeds, so a regression that emits an
  * undeclared metadata field or a typo'd event-type lands a row that
- * passes downstream queries but breaks forensics. Tests that exercise
- * audit emits should fail loudly when this happens.
+ * passes downstream queries but breaks forensics. The emitter's pool write
+ * is fail-open too: a refused `INSERT` is logged and counted, the request
+ * succeeds, and the row is gone. Tests that exercise audit emits should fail
+ * loudly when either happens.
  *
  * Call at the top of every `describe` / `describe_db` block that fires
  * audit writes through `deps.audit.emit`. Resets counters before each
- * test and asserts zero on completion.
+ * test and asserts zero on completion. A test that makes a write fail on
+ * purpose calls `reset_audit_write_failures` (`auth/audit_emitter.ts`) once
+ * it has asserted the count.
  *
  * Pair with `await_pending_effects: true` (the default for
  * `create_test_app`) so fire-and-forget audit writes have completed by
@@ -34,19 +43,34 @@ export const install_audit_drift_guard = (): void => {
 	beforeEach(() => {
 		reset_audit_metadata_validation_failures();
 		reset_audit_unknown_event_type_failures();
+		reset_audit_write_failures();
 	});
-	afterEach(() => {
-		assert.strictEqual(
-			get_audit_metadata_validation_failures(),
-			0,
-			'audit metadata failed schema validation — see audit_log_schema.audit_metadata_schemas'
-		);
-		assert.strictEqual(
-			get_audit_unknown_event_type_failures(),
-			0,
-			'audit emitted an unknown event_type — see AUDIT_EVENT_TYPES'
-		);
-	});
+	afterEach(assert_no_audit_drift);
+};
+
+/**
+ * Assert the three process-wide audit counters are zero — the check
+ * `install_audit_drift_guard` runs after each test. Exported for a test that
+ * manages the counters itself.
+ *
+ * @throws AssertionError naming the first counter that is not zero
+ */
+export const assert_no_audit_drift = (): void => {
+	assert.strictEqual(
+		get_audit_metadata_validation_failures(),
+		0,
+		'audit metadata failed schema validation — see audit_log_schema.audit_metadata_schemas'
+	);
+	assert.strictEqual(
+		get_audit_unknown_event_type_failures(),
+		0,
+		'audit emitted an unknown event_type — see AUDIT_EVENT_TYPES'
+	);
+	assert.strictEqual(
+		get_audit_write_failures(),
+		0,
+		'an audit row failed to write and was lost — the emitter logged the database error'
+	);
 };
 
 /**

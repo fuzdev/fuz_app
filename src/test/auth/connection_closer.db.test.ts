@@ -88,7 +88,11 @@ import { create_test_account_with_actor } from '#lib/testing/db_entities.ts';
 import { rpc_call_for_spec, rpc_call } from '#lib/testing/rpc_helpers.ts';
 import { find_auth_route } from '#lib/testing/integration_helpers.ts';
 import { install_audit_drift_guard } from '#lib/testing/audit_drift_guard.ts';
-import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
+import {
+	create_audit_emitter,
+	get_audit_write_failures,
+	reset_audit_write_failures
+} from '#lib/auth/audit_emitter.ts';
 import {
 	assert_close_call,
 	create_recording_closer
@@ -1572,6 +1576,10 @@ describe_db('connection_closer wiring', (get_db) => {
 					h.failing.audit_write = true;
 					assert.strictEqual(await arranged.act(), true, 'the audit write is fail-open');
 					h.failing.audit_write = false;
+					// the lost row was counted; it was lost on purpose, so clear the
+					// count before the drift guard's after-each check reads it
+					assert.ok(get_audit_write_failures() > 0, 'the failed audit write was counted');
+					reset_audit_write_failures();
 
 					assert.strictEqual(await arranged.committed(h.db), true);
 					// no audit row was written, so no listener ran: the handler's own
