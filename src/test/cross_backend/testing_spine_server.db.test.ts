@@ -5,7 +5,7 @@
  * invariants.
  *
  * In-process: builds the same app `testing_spine_server_node.ts` serves (real
- * `@hono/node-ws` preparation, in-memory PGlite) without binding a port. The
+ * `@hono/node-ws` preparation, in-memory pglet) without binding a port. The
  * spawned binaries' WS behavior is covered by the cross-backend suites.
  *
  * @module

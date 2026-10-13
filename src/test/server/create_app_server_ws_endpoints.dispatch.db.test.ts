@@ -21,7 +21,7 @@
  *   `_testing_drain_effects` over a tracked emitter waits for it
  *
  * Every server is closed after its test — that disposes the limiters it
- * built. The database is the shared PGlite instance the factory hands out,
+ * built. The database is the shared instance the default factory hands out,
  * which outlives the file, so the backend's `close` leaves it open.
  *
  * Mount-time behavior (guards, surface, audit wiring) is in

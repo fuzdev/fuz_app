@@ -205,7 +205,7 @@ export const resolve_spine_server_config = (runtime: RuntimeDeps): SpineServerCo
 /**
  * Build the no-domain spine Hono app + close.
  *
- * Uses `stub_password_deps` (fast deterministic hasher), in-memory PGlite
+ * Uses `stub_password_deps` (fast deterministic hasher), in-memory pglet
  * by default (`DATABASE_URL=memory://`), every rate limiter disabled
  * (`rate_limiters: 'disabled_for_testing'`) unless an env toggle opts the
  * login or action limiters in, and

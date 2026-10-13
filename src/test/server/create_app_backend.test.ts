@@ -1,6 +1,6 @@
 /**
  * Tests for `create_app_backend` — isolated from `create_app_server.test.ts`
- * because each call creates an uncached PGlite instance (~1-2s cold start).
+ * because each call creates an uncached in-memory pglet instance.
  *
  * @module
  */
@@ -324,7 +324,7 @@ describe('create_app_backend', () => {
 			// Strongest signal we can grab without mocking `create_db`:
 			// the original error reaches the caller verbatim (the cleanup
 			// `try/catch` swallows close errors and re-throws the audit
-			// failure, not a teardown-shaped one). PGlite's `memory://`
+			// failure, not a teardown-shaped one). pglet's `memory://`
 			// driver has no observable resource state to assert against
 			// — verifying the close call itself would need a `vi.mock` of
 			// `create_db`, which conflicts with `.db.test.ts`'s

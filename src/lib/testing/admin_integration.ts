@@ -6,7 +6,7 @@ import './assert_dev_env.ts';
  * `describe_standard_admin_integration_tests` creates a composable test suite
  * that exercises admin account listing, role_grant grant/revoke (via the RPC
  * surface — see `role_grant_offer_create` / `role_grant_revoke`), session/token
- * management, and audit log routes against a real PGlite database.
+ * management, and audit log routes against a real database.
  *
  * Consumers call it with their route factory, session config, role schema,
  * and RPC endpoint specs — all admin route tests come for free.

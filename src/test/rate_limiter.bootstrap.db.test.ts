@@ -1,7 +1,7 @@
 /**
  * Integration tests for rate limiting through bootstrap HTTP handlers.
  *
- * Uses real in-memory PGlite so `bootstrap_account` runs fully.
+ * Uses a real in-memory database so `bootstrap_account` runs fully.
  * Focuses on verifying that the bootstrap handler correctly integrates
  * with the RateLimiter.
  *
@@ -65,13 +65,13 @@ interface BootstrapTestApp {
 	read_secure_file: ReturnType<typeof vi.fn>;
 }
 
-// Cached PGlite factory for bootstrap tests — single WASM init, reset between calls.
+// Cached default-driver factory for bootstrap tests — single WASM init, reset between calls.
 const bootstrap_factory = create_default_db_factory(async (db) => {
 	await run_migrations(db, [auth_migration_ns]);
 });
 
 /**
- * Create a bootstrap test app backed by a real in-memory PGlite.
+ * Create a bootstrap test app backed by a real in-memory database.
  *
  * Uses a cached WASM database instance (via `create_default_db_factory`) to avoid
  * repeated WASM cold-start overhead. The schema is reset between calls.
@@ -142,7 +142,7 @@ const bootstrap_request = (
 
 // --- Tests ---
 
-// Warm up PGlite WASM before tests so the cold-start cost is outside individual test timers.
+// Warm up the database WASM before tests so the cold-start cost is outside individual test timers.
 beforeAll(async () => {
 	await bootstrap_factory.create();
 });

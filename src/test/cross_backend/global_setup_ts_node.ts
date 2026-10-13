@@ -1,7 +1,7 @@
 /**
  * Vitest `globalSetup` for the `cross_backend_ts_node` project — spawns
  * fuz_app's own domain-free TS spine binary on Node (`gro run`), backed by
- * in-memory PGlite. No external Postgres or prebuilt binary needed.
+ * in-memory pglet. No external Postgres or prebuilt binary needed.
  *
  * @module
  */

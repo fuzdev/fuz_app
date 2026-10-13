@@ -1,7 +1,7 @@
 /**
  * Vitest `globalSetup` for the `cross_backend_ts_bun` project — spawns
  * fuz_app's own domain-free TS spine binary on Bun (`bun run`), backed by
- * in-memory PGlite. Requires `bun` on PATH; no external Postgres or prebuilt
+ * in-memory pglet. Requires `bun` on PATH; no external Postgres or prebuilt
  * binary needed.
  *
  * @module

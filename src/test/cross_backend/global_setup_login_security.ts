@@ -1,7 +1,7 @@
 /**
  * Vitest `globalSetup` for the `cross_backend_security` project — spawns +
  * bootstraps BOTH backends with the login limiters and the action limiters
- * enabled + the loopback proxy trusted (the TS spine on Node + PGlite as `a`,
+ * enabled + the loopback proxy trusted (the TS spine on Node + in-memory pglet as `a`,
  * the Rust `testing_spine_stub` over real Postgres as `b`) and provides both
  * serialized handles plus the action limiters' cap, so
  * `login_security.cross.test.ts` (login rate limit + XFF) and

@@ -1,7 +1,7 @@
 /**
  * Vitest `globalSetup` for the `cross_backend_ts_deno` project — spawns
  * fuz_app's own domain-free TS spine binary on Deno, backed by in-memory
- * PGlite. Requires `deno` on PATH; no external Postgres or prebuilt binary.
+ * pglet. Requires `deno` on PATH; no external Postgres or prebuilt binary.
  *
  * @module
  */

@@ -5,7 +5,7 @@
  * request context → role_grant check → handler → correct response.
  *
  * Uses a single `create_test_app_server` instance shared across
- * all read-only tests to avoid repeated PGlite cold starts.
+ * all read-only tests, so the schema reset and migrations run once.
  *
  * @module
  */

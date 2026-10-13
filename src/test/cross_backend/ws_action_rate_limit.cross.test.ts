@@ -2,7 +2,7 @@
  * Cross-backend action rate-limit gate for fuz_app's own spine.
  *
  * Runs `describe_ws_action_rate_limit_cross_tests` against BOTH impls — the TS
- * spine (Node + PGlite) and the Rust `testing_spine_stub` (real Postgres) —
+ * spine (Node + in-memory pglet) and the Rust `testing_spine_stub` (real Postgres) —
  * spawned by the dual-spawn `global_setup_login_security.ts` with the action
  * limiters enabled at a small cap. It proves an action's throttle reaches the
  * WebSocket endpoint, keys the per-IP axis on the forwarded client IP, and

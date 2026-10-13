@@ -77,17 +77,61 @@ export const prepare_rust_spine_backend = (options: RustSpineGlobalSetupOptions)
 		process.env[RUST_SPINE_STUB_BIN_ENV] = join(workspace_dir, 'target', 'release', options.crate);
 	}
 
-	if (options.database != null) {
-		// Idempotent: `createdb` errors when the DB already exists — ignore.
-		// The harness never issues `CREATE DATABASE` itself (avoids forcing a
-		// `CREATEDB` grant on the test role); this is the runner doing it once.
-		try {
-			execFileSync('createdb', [options.database], { stdio: 'ignore' });
-		} catch {
-			// already exists (or no `createdb` on PATH) — let spawn surface a
-			// real connection error if the DB is genuinely missing.
-		}
+	if (options.database != null) ensure_database(options.database);
+};
+
+/**
+ * Create a Postgres database when it is missing, with `createdb`.
+ *
+ * Which server it lands on depends on `server_url`. Given one, the database is
+ * created on the server that URL names: `createdb` connects through the URL
+ * with its database swapped for the `postgres` maintenance database, so host,
+ * port, role and query parameters all come from the URL. Without one,
+ * `createdb` reads the libpq environment (`PGHOST` / `PGPORT` / `PGUSER`), and
+ * the caller is responsible for that environment naming the server its URL
+ * does.
+ *
+ * Idempotent and silent: `createdb` errors when the database already exists,
+ * and that error is ignored along with every other (no `createdb` on PATH, no
+ * server, a role that may not create databases) — whatever connects next
+ * reports a database that is really missing. The shipped harness never issues
+ * `CREATE DATABASE` itself (avoids forcing a `CREATEDB` grant on the test
+ * role); this is the runner doing it once.
+ *
+ * @param database - the database name
+ * @param server_url - a `postgres://` URL on the server to create it on; its database name is ignored
+ */
+export const ensure_database = (database: string, server_url?: string): void => {
+	const args = [database];
+	const env = { ...process.env };
+	if (server_url !== undefined) {
+		const url = new URL(to_maintenance_database_url(server_url));
+		// a password goes to `createdb` in its environment, not its arguments,
+		// which any local user can read from the process list
+		const password = url.searchParams.get('password') ?? decodeURIComponent(url.password);
+		if (password) env.PGPASSWORD = password;
+		url.password = '';
+		url.searchParams.delete('password');
+		args.unshift(`--maintenance-db=${url.href}`);
 	}
+	try {
+		execFileSync('createdb', args, { stdio: 'ignore', env });
+	} catch {
+		// already exists, or it could not be created — see the doc above
+	}
+};
+
+/**
+ * The URL `createdb` connects through to create a database on the server
+ * `server_url` names — the same URL with its database replaced by `postgres`.
+ *
+ * @param server_url - a `postgres://` URL on the target server
+ * @returns the URL of that server's `postgres` maintenance database
+ */
+export const to_maintenance_database_url = (server_url: string): string => {
+	const url = new URL(server_url);
+	url.pathname = '/postgres';
+	return url.href;
 };
 
 /**

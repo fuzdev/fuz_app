@@ -417,7 +417,18 @@ Two more files — `schema_parity.cross.test.ts` and
 they run under the shared dual-spawn `cross_backend_parity` project
 (`global_setup_schema_parity.ts` brings up the TS spine + `testing_spine_stub`
 together and provides `parity_handle_a`/`_b`), so both are excluded from the
-single-backend projects' glob. `schema_parity.cross.test.ts` diffs the two
+single-backend projects' glob. **Both spines run on real Postgres here**, each
+over its own database on one server: the snapshot compares index definitions
+as the engine renders them, and pglet — the TS spine's `memory://` default
+everywhere else — leaves sort direction, `NULLS` placement, operator classes
+and `NULLS NOT DISTINCT` out of `indexdef`, so a pglet leg would report every
+such index as drift. The setup gives the TS spine
+`fuz_app_test_ts_spine_parity` on the server the stub's URL names
+(`FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` moves both), creates it when
+missing, and drops and recreates its `public` schema before every spawn (the
+TS binary does not wipe at startup, and bootstrap refuses a database that
+already has an account); an unreachable server fails the project, never skips
+it. `schema_parity.cross.test.ts` diffs the two
 backends' full DDL (auth + cell + cell_history + fact + the `cell_visibility`
 enum) via `query_schema_snapshot` + `assert_schema_snapshots_equal`, **and**
 their `schema_version` migration identity via `_testing_migration_tracker` +

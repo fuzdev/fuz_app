@@ -15,9 +15,17 @@ import './assert_dev_env.ts';
  *   so a label set / ordering drift (e.g. `cell_visibility`) is a gated fact,
  *   not invisible
  *
- * Designed for `pg_catalog` introspection — works against both PostgreSQL
- * and PGlite. The snapshot is fully deterministic: every collection sorts by
+ * Designed for `pg_catalog` introspection — it runs on PostgreSQL, PGlite and
+ * pglet. The snapshot is fully deterministic: every collection sorts by
  * a stable key and excludes time-varying fields like `applied_at`.
+ *
+ * Index and constraint definitions are compared as the engine renders them,
+ * so both sides of a parity comparison need engines that render alike. pglet
+ * leaves an index's modifiers out of `pg_indexes.indexdef` — per-key sort
+ * direction, `NULLS` placement, operator classes, `NULLS NOT DISTINCT` — so a
+ * pglet snapshot diffed against a PostgreSQL one reports every index that
+ * uses one, with identical DDL on both sides. Take both snapshots on
+ * PostgreSQL.
  *
  * Paired with `testing/schema_parity.ts` for comparison + assertion helpers.
  *
@@ -276,11 +284,11 @@ export const query_schema_snapshot = async (
 	);
 
 	// Constraints — pg_get_constraintdef produces a canonical text rendering.
-	// Skip NOT NULL constraints (`contype = 'n'`): PG17+ catalogs them as
-	// named `pg_constraint` rows while PGlite / older PG don't, and
-	// nullability is already captured per-column by `is_nullable` — including
-	// them would report a pure engine-cataloging artifact as cross-backend
-	// drift between a PGlite and a real-Postgres backend.
+	// Skip NOT NULL constraints (`contype = 'n'`): a named `pg_constraint` row
+	// per NOT NULL column is something an engine may or may not catalog
+	// (PostgreSQL 18, PGlite 0.5 and pglet 0.1 each do), and nullability is
+	// already captured per-column by `is_nullable` — including the rows would
+	// report an engine-cataloging difference as drift between two backends.
 	const constraint_rows = await db.query<ConstraintRow>(
 		`SELECT c.conrelid::regclass::text AS table_name,
 		        c.conname,

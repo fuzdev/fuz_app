@@ -2,7 +2,7 @@
  * In-process leg of the `/ready` readiness-probe parity suite.
  *
  * Runs `describe_ready_cross_tests` against the in-process Hono app (no process
- * boundary): a fresh PGlite migrated with the full spine namespace set (auth +
+ * boundary): a fresh in-memory database migrated with the full spine namespace set (auth +
  * cell + cell_history + fact) mounts `create_spine_ready_route_spec`, so an
  * anonymous `GET /ready` reports `200 {ready: true}` under a plain `gro test`.
  * The cross-process leg (`ready.cross.test.ts`) additionally drives the TS spine

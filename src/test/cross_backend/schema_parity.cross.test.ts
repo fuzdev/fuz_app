@@ -4,8 +4,9 @@
  * fuz_app ships the canonical TS spine and the Rust spine is its twin;
  * the cross-backend suites already prove their wire behavior converges. This
  * gate proves their **database schema** converges too: it spawns both the TS
- * spine (Node + PGlite) and the Rust `testing_spine_stub` (real Postgres) via
- * the dual-spawn `global_setup_schema_parity.ts`, captures each backend's live
+ * spine (Node) and the Rust `testing_spine_stub`, each over its own database
+ * on one real Postgres server, via the dual-spawn
+ * `global_setup_schema_parity.ts`, captures each backend's live
  * schema over the `_testing_schema_snapshot` RPC (TS introspects via
  * `query_schema_snapshot`, Rust via `fuz_db::query_schema_snapshot`), and
  * asserts **full** structural equality — failing loud with the specific drift.
@@ -25,9 +26,11 @@
  * Runs under the dual-spawn `cross_backend_parity` project, which it shares
  * with the action-manifest parity gate (`action_manifest_parity.cross.test.ts`)
  * — one TS-spine + Rust-stub spawn serves both. Opt-in (behind
- * `FUZ_TEST_CROSS_BACKEND=1`); the Rust side needs a Postgres the stub can
- * reach — `npm run test:cross:parity` rebuilds the stub + creates its DB by
- * default.
+ * `FUZ_TEST_CROSS_BACKEND=1`); both sides need a Postgres they can reach —
+ * index definitions are compared as the engine renders them, so the TS spine
+ * runs on Postgres here too, not on its in-memory default.
+ * `npm run test:cross:parity` rebuilds the stub, creates both databases, and
+ * empties the TS spine's before each run.
  *
  * @module
  */

@@ -5,7 +5,7 @@ import './assert_dev_env.ts';
  *
  * `describe_standard_integration_tests` creates a composable test suite that
  * exercises the full middleware stack (origin, session, bearer_auth, request_context)
- * against a real PGlite database. Consumers call it with their route factory and
+ * against a real database. Consumers call it with their route factory and
  * session config — all auth route tests come for free.
  *
  * Tests use `stub_password_deps` (deterministic hashing, no Argon2 overhead).

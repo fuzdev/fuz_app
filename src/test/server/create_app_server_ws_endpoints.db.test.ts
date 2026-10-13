@@ -137,7 +137,7 @@ const create_test_setup = async (): Promise<{
 
 // Every server a test assembles is closed after it — that disposes the
 // limiters it built and closes its connections. The database is the shared
-// PGlite instance the factory hands out, which outlives the file, so the
+// instance the default factory hands out, which outlives the file, so the
 // backend's `close` leaves it open.
 const servers: Array<AppServer> = [];
 afterEach(async () => {

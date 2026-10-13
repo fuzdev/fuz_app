@@ -198,7 +198,7 @@ const json_session_headers = (
  * Composable audit log completeness test suite.
  *
  * Verifies that every auth mutation route produces the correct audit log
- * event type. Exercises routes via HTTP requests against a real PGlite
+ * event type. Exercises routes via HTTP requests against a real
  * database, then reads events back through the `audit_log_list` RPC
  * (the production observation path the admin UI consumes).
  *

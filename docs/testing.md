@@ -948,7 +948,12 @@ assert_schema_snapshots_equal(snapshots.deno, snapshots.rust, { a: 'deno', b: 'r
 
 The snapshot covers tables, columns (with `udt_name` distinguishing
 int4 / int8 / etc.), indexes (`pg_indexes.indexdef`), constraints
-(`pg_get_constraintdef`), and sequences. The `schema_version` migration
+(`pg_get_constraintdef`), and sequences. Index definitions are compared as
+the engine renders them, so take both snapshots on PostgreSQL: a TS backend
+config defaults to `memory://` (pglet), whose `indexdef` leaves out sort
+direction, `NULLS` placement, operator classes and `NULLS NOT DISTINCT`, and
+diffing that against a Postgres-backed impl reports every such index as
+drift. The `schema_version` migration
 tracker is always excluded — it's framework bookkeeping, not domain
 schema, and impls organize migration namespaces differently. `SchemaDiff`
 is a tagged union — `table_only_in`, `column_field_differs`,

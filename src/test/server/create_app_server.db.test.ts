@@ -46,7 +46,7 @@ const fs_stubs = {
 	delete_file: async (_path: string) => {}
 };
 
-// Shared PGlite WASM instance — schema is reset on each factory.create() call,
+// Shared database WASM instance — schema is reset on each factory.create() call,
 // but the expensive WASM cold start only happens once per worker thread.
 const factory = create_default_db_factory(async () => {
 	// No-op: create_config runs migrations manually to capture MigrationResult.
@@ -60,7 +60,7 @@ const base_config: Omit<AppServerOptions, 'backend'> = {
 };
 
 /**
- * Create options from the cached PGlite. Resets schema and re-runs auth
+ * Create options from the cached database. Resets schema and re-runs auth
  * migrations on each call to keep tests isolated without WASM cold starts.
  */
 const create_config = async (overrides?: Partial<AppServerOptions>): Promise<AppServerOptions> => {
@@ -85,7 +85,7 @@ const create_config = async (overrides?: Partial<AppServerOptions>): Promise<App
 };
 
 describe('create_app_server', () => {
-	// Shared instance for read-only assertions (avoids repeated PGlite cold starts)
+	// Shared instance for read-only assertions (avoids repeated database cold starts)
 	let shared: AppServer;
 
 	beforeAll(async () => {
@@ -120,7 +120,7 @@ describe('create_app_server', () => {
 		assert.isFunction(shared.close);
 	});
 
-	// Tests below need custom options — each resets and reuses the cached PGlite.
+	// Tests below need custom options — each resets and reuses the cached database.
 
 	test('bootstrap_status is computed when bootstrap is in live mode', async () => {
 		const result = await create_app_server(

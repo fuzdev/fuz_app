@@ -235,7 +235,7 @@ test-only by construction.
 - `SchemaDiff` — tagged-union per drift kind: `table_only_in`, `column_only_in`, `column_field_differs`, `index_only_in`, `index_definition_differs`, `constraint_only_in`, `constraint_differs`, `sequence_only_in`, `sequence_data_type_differs`, `enum_only_in`, `enum_labels_differ` (enum labels compared positionally — declared order is significant).
 - `diff_migration_trackers(a, b)` / `format_migration_tracker_diffs(diffs, labels?)` / `assert_migration_trackers_equal(a, b, labels?)` — the migration-identity twins of the snapshot diff/format/assert, over two `MigrationTracker`s. `MigrationTrackerDiff` is keyed on `(namespace, name)` (the `schema_version` PK): `tracker_row_only_in` (a migration rename or namespace re-partition) and `tracker_sequence_differs` (a re-order).
 
-fuz_app's own spine gates this cross-process via the `cross_backend_parity` project (`schema_parity.cross.test.ts` + the dual-spawn `global_setup_schema_parity.ts`), diffing the TS spine ↔ `testing_spine_stub` full schema — `npm run test:cross:parity`. The forge has its own deno↔rust parity gate.
+fuz_app's own spine gates this cross-process via the `cross_backend_parity` project (`schema_parity.cross.test.ts` + the dual-spawn `global_setup_schema_parity.ts`), diffing the TS spine ↔ `testing_spine_stub` full schema — `npm run test:cross:parity`. Both legs run on PostgreSQL there: index definitions are compared as the engine renders them, and pglet (what `memory://` gives a TS backend) leaves sort direction, `NULLS` placement, operator classes and `NULLS NOT DISTINCT` out of `indexdef`, so a snapshot taken on it differs from a PostgreSQL one with identical DDL. The forge has its own deno↔rust parity gate.
 
 ## Cross-impl RPC-manifest parity
 
