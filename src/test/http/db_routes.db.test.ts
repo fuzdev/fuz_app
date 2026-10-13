@@ -1,7 +1,7 @@
 /**
  * Tests for backend_db_routes — allowlist-gated PostgreSQL table browser route specs.
  *
- * Uses pglite (in-memory) with auth tables for real schema/FK testing.
+ * Uses the default in-memory test database with auth tables for real schema/FK testing.
  *
  * @module
  */
@@ -666,9 +666,10 @@ describe('DELETE /tables/:name/rows/:id handler', () => {
 
 	test('FK constraint returns 409 when child rows prevent deletion', async () => {
 		// Auth tables use CASCADE, so create a custom table with RESTRICT FK
-		// to exercise the 409 handler path. PGlite (PG 17) raises 23503 here;
-		// PG 18+ raises 23001 restrict_violation for the same refusal — that
-		// arm is pinned against real PG by the Rust twin's
+		// to exercise the 409 handler path. PostgreSQL 18 raises 23001
+		// restrict_violation for this refusal, as do pglet and PGlite, so that
+		// is the arm this drives; an earlier server raises 23503. The Rust twin
+		// pins the same refusal against real PG in
 		// `restricted_fk_delete_is_a_409_and_deletes_nothing`.
 		await db.query(`CREATE TABLE IF NOT EXISTS fk_test_parent (
 			id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -692,7 +693,7 @@ describe('DELETE /tables/:name/rows/:id handler', () => {
 		assert.strictEqual(res.status, 409);
 		const body = await res.json();
 		assert.strictEqual(body.error, 'foreign_key_violation');
-		// Regression guard: PG detail/constraint must not leak to client (scrubbed 2026-03-19)
+		// Regression guard: PG detail/constraint must not leak to client
 		assert.strictEqual(body.detail, undefined, 'PG detail must not leak to client');
 		assert.strictEqual(body.constraint, undefined, 'PG constraint must not leak to client');
 	});

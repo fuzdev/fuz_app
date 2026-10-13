@@ -243,7 +243,7 @@ describe_db('role_grant_offer_queries.supersede', (get_db) => {
 		// `query_role_grant_offer_history_for_account` is documented as
 		// `ORDER BY created_at DESC`, so the second insert appears first.
 		const outgoing = await create_pending_offer(db, grantor, recipient);
-		// Defeat any same-clock-tick ordering ambiguity in PGlite by stamping
+		// Defeat any same-clock-tick ordering ambiguity by stamping
 		// a deterministic gap between the two `created_at` values.
 		await db.query(
 			`UPDATE role_grant_offer SET created_at = NOW() - INTERVAL '1 hour' WHERE id = $1`,

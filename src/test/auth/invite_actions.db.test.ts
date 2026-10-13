@@ -4,7 +4,7 @@
  * `error_schemas.test.ts` asserts the `ERROR_INVITE_*` constants are exported
  * with the right string values, but does not fire them through the dispatcher.
  * These tests round-trip each denial path through a real RPC call against a
- * PGlite-backed admin surface and assert `error.data.reason`.
+ * database-backed admin surface and assert `error.data.reason`.
  *
  * Unlike `admin_actions.failure_audit.db.test.ts`, the invite handlers do not
  * emit `outcome: 'failure'` audit rows on denial paths — so only the JSON-RPC

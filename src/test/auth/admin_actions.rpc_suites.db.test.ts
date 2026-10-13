@@ -2,7 +2,7 @@
  * Composable RPC suite coverage for the admin action set.
  *
  * Wires `describe_rpc_attack_surface_tests` (stub-deps, no DB) and
- * `describe_rpc_round_trip_tests` (PGlite) against the full admin action
+ * `describe_rpc_round_trip_tests` (the default test database) against the full admin action
  * set produced by `create_admin_actions` — account/session listings,
  * session + token revoke-all, audit-log list + role_grant-history, invite
  * CRUD, and app-settings get/update.

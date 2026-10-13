@@ -2,7 +2,7 @@
  * Composable RPC suite coverage for the `actor_lookup` action.
  *
  * Wires `describe_rpc_attack_surface_tests` (stub-deps, no DB) and
- * `describe_rpc_round_trip_tests` (PGlite) against the single action
+ * `describe_rpc_round_trip_tests` (the default test database) against the single action
  * produced by `create_actor_lookup_actions`. Auto-covers per-method auth
  * enforcement, adversarial envelopes, adversarial params, and output-
  * schema validation. Method-specific wire semantics

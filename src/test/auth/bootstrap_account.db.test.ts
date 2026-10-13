@@ -284,8 +284,9 @@ describe_db('bootstrap_account', (get_db) => {
 	// no longer reachable from normal code paths. DB tampering is out of
 	// scope for the production write contract.
 
-	// NOTE: concurrent bootstrap test requires multiple DB connections (real Postgres).
-	// PGlite is single-connection — concurrent transactions interleave on the same connection,
-	// breaking transaction boundaries. The sequential "fails when already bootstrapped" test
-	// validates the lock works. The atomic UPDATE guarantees correctness under true concurrency.
+	// NOTE: a concurrent bootstrap test requires multiple DB connections (real Postgres).
+	// The in-memory drivers (pglet, PGlite) have one connection and run one transaction at a
+	// time, so two bootstraps cannot overlap there. The sequential "fails when already
+	// bootstrapped" test validates the lock works. The atomic UPDATE guarantees correctness
+	// under true concurrency.
 });

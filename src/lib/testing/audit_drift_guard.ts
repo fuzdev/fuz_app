@@ -65,7 +65,7 @@ export interface RecordingAuditEmitter {
  * Build a no-op `AuditEmitter` that records every `emit`, `emit_pool`, and
  * `emit_role_grant_target` call into `calls` as an `AuditLogInput`. Use to
  * capture audit metadata shapes in unit tests (e.g. password change failure
- * outcome, role-grant create denial) without standing up the full PGlite +
+ * outcome, role-grant create denial) without standing up a database and the
  * `query_audit_log` pipeline.
  *
  * **Capture scope — all four production fan-out shapes.**

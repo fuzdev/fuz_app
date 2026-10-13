@@ -36,7 +36,6 @@ import { create_dual_spawn_global_setup } from '#lib/testing/cross_backend/creat
 import { ts_spine_node_backend_config } from '#lib/testing/cross_backend/ts_spine_backend_config.ts';
 import {
 	RUST_SPINE_STUB_DATABASE_URL_ENV,
-	RUST_SPINE_STUB_DEFAULT_DATABASE_URL,
 	rust_spine_stub_backend_config
 } from '#lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 import { reset_public_schema } from '#lib/testing/db.ts';
@@ -48,6 +47,7 @@ import './cross_test_types.ts';
 import {
 	ensure_database,
 	prepare_rust_spine_backend,
+	resolve_rust_spine_stub_database_url,
 	to_maintenance_database_url
 } from './global_setup_helpers.ts';
 
@@ -63,9 +63,7 @@ const TS_SPINE_PARITY_DATABASE = 'fuz_app_test_ts_spine_parity';
  * at the other's database.
  */
 const resolve_ts_spine_parity_database_url = (): string => {
-	const url = new URL(
-		process.env[RUST_SPINE_STUB_DATABASE_URL_ENV] || RUST_SPINE_STUB_DEFAULT_DATABASE_URL
-	);
+	const url = new URL(resolve_rust_spine_stub_database_url());
 	url.pathname = `/${TS_SPINE_PARITY_DATABASE}`;
 	return url.href;
 };
@@ -136,11 +134,8 @@ const empty_ts_spine_parity_database = async (database_url: string): Promise<voi
 
 const setup = async (project: TestProject): Promise<() => Promise<void>> => {
 	// Make the Rust stub binary current + ensure its DB before the dual spawn.
-	// (Matches `global_setup.ts`'s `database` so both projects share the DB.)
-	prepare_rust_spine_backend({
-		crate: 'testing_spine_stub',
-		database: 'fuz_app_test_rust_spine_stub'
-	});
+	// (The same URL `global_setup.ts` resolves, so both projects share the DB.)
+	prepare_rust_spine_backend({ crate: 'testing_spine_stub' });
 	const ts_database_url = resolve_ts_spine_parity_database_url();
 	// on the server the URL names — the wipe below connects through the URL
 	ensure_database(TS_SPINE_PARITY_DATABASE, ts_database_url);

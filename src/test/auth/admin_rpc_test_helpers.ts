@@ -48,7 +48,7 @@ const init_schema = async (db: Db): Promise<void> => {
 const factory = create_default_db_factory(init_schema);
 
 /**
- * `describe_db` bound to the suite's PGlite factory + auth truncate list.
+ * `describe_db` bound to the suite's default-driver factory + auth truncate list.
  * Use as the outer `describe_db(name, (get_db) => {...})` wrapper.
  */
 export const describe_db = create_describe_db(factory, auth_integration_truncate_tables);

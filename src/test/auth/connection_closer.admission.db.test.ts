@@ -29,9 +29,9 @@
  * dead credential for its lifetime.
  *
  * Real Postgres only: step 2 needs a second database connection reading
- * concurrently with an open transaction. PGlite has one connection — the
- * re-read would queue behind the held transaction and the case would
- * deadlock. Skipped when `TEST_DATABASE_URL` is unset.
+ * concurrently with an open transaction. The in-memory drivers (pglet,
+ * PGlite) have one connection — the re-read would queue behind the held
+ * transaction and the case would deadlock. Skipped when `TEST_DATABASE_URL` is unset.
  *
  * @module
  */

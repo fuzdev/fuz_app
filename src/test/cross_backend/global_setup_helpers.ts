@@ -18,7 +18,11 @@ import type { TestProject } from 'vitest/node';
 import type { BackendConfig } from '#lib/testing/cross_backend/backend_config.ts';
 import { bootstrap_backend } from '#lib/testing/cross_backend/bootstrap_backend.ts';
 import { serialize_bootstrapped_handle } from '#lib/testing/cross_backend/setup.ts';
-import { RUST_SPINE_STUB_BIN_ENV } from '#lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
+import {
+	RUST_SPINE_STUB_BIN_ENV,
+	RUST_SPINE_STUB_DATABASE_URL_ENV,
+	RUST_SPINE_STUB_DEFAULT_DATABASE_URL
+} from '#lib/testing/cross_backend/rust_spine_stub_backend_config.ts';
 
 import './cross_test_types.ts';
 
@@ -32,8 +36,13 @@ export const RUST_WORKSPACE_DIR_ENV = 'FUZ_RUST_SPINE_STUB_WORKSPACE_DIR';
 export interface RustSpineGlobalSetupOptions {
 	/** Cargo package to build; also the produced `target/release/<crate>` binary name. */
 	readonly crate: string;
-	/** Postgres database to ensure exists (idempotent `createdb`). Omit to skip DB setup. */
-	readonly database?: string;
+	/**
+	 * The Postgres URL the binary connects to. The database it names is created
+	 * when missing (idempotent `createdb`), on the server it names. Defaults to
+	 * `resolve_rust_spine_stub_database_url()` — the URL
+	 * `rust_spine_stub_backend_config` hands the stub. `null` skips database setup.
+	 */
+	readonly database_url?: string | null;
 	/**
 	 * Cargo workspace directory. Defaults to `$FUZ_RUST_SPINE_STUB_WORKSPACE_DIR`,
 	 * then `~/dev/private_fuz`. This file is test-only (never shipped in the
@@ -47,9 +56,34 @@ const resolve_workspace_dir = (override: string | undefined): string =>
 	override ?? process.env[RUST_WORKSPACE_DIR_ENV] ?? join(homedir(), 'dev', 'private_fuz');
 
 /**
+ * The Postgres URL the Rust stub connects to, as `rust_spine_stub_backend_config`
+ * resolves it: `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` when set, else the
+ * local default.
+ *
+ * @returns the URL, known to parse
+ * @throws Error when the env var is set to something that is not a URL — named
+ * by its variable, and without echoing a value that may hold a password
+ */
+export const resolve_rust_spine_stub_database_url = (): string => {
+	const from_env = process.env[RUST_SPINE_STUB_DATABASE_URL_ENV];
+	if (!from_env) return RUST_SPINE_STUB_DEFAULT_DATABASE_URL;
+	if (!URL.canParse(from_env)) {
+		throw new Error(
+			`${RUST_SPINE_STUB_DATABASE_URL_ENV} is not a valid URL — expected the form ` +
+				`postgres://user@host:port/database`
+		);
+	}
+	return from_env;
+};
+
+/**
  * Make the Rust spine binary current before it spawns — rebuild by
  * default, fold in `createdb`, and default the binary-path env so the
  * common path is one command (`npm run test:cross:rust-spine-stub`).
+ *
+ * The database created is the one the binary's URL names, on the server that
+ * URL names — so `FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL` alone moves the
+ * run to another server or another database.
  *
  * Rationale: a stale prebuilt binary fails every cell/RPC case with
  * `method not found` while auth cases pass, so a lagging build reads as a
@@ -77,7 +111,17 @@ export const prepare_rust_spine_backend = (options: RustSpineGlobalSetupOptions)
 		process.env[RUST_SPINE_STUB_BIN_ENV] = join(workspace_dir, 'target', 'release', options.crate);
 	}
 
-	if (options.database != null) ensure_database(options.database);
+	const database_url =
+		options.database_url === undefined
+			? resolve_rust_spine_stub_database_url()
+			: options.database_url;
+	if (database_url !== null) {
+		// the stub connects to the database its URL names, so that is the one to
+		// ensure; a URL naming none leaves the choice to the server, and nothing
+		// here knows what to create
+		const database = decodeURIComponent(new URL(database_url).pathname.slice(1));
+		if (database) ensure_database(database, database_url);
+	}
 };
 
 /**

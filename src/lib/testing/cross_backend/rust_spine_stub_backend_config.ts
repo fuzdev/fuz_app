@@ -58,9 +58,8 @@ export const RUST_SPINE_STUB_BIN_ENV = 'FUZ_TESTING_RUST_SPINE_STUB_BIN';
 /**
  * Env var overriding the stub's Postgres URL when `database_url` is omitted —
  * e.g. a scratch cluster on a spare port, keeping the run off the machine's
- * default server. Pair it with the libpq `PGHOST` / `PGPORT` the runner's
- * idempotent `createdb` reads, so the database it ensures is the one the URL
- * names.
+ * default server. A runner that creates the stub's database before the spawn
+ * must create the one this URL names, on the server it names.
  */
 export const RUST_SPINE_STUB_DATABASE_URL_ENV = 'FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL';
 

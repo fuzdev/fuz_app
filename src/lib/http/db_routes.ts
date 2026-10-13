@@ -601,8 +601,8 @@ export const create_db_route_specs = (
 					}
 					// 23503 foreign_key_violation / 23001 restrict_violation — the
 					// same referencing-row refusal: PG 18+ raises 23001 for `ON
-					// DELETE RESTRICT` constraints where PG ≤17 (PGlite today)
-					// raises 23503 for both.
+					// DELETE RESTRICT` constraints where PG ≤17 raises 23503 for
+					// both.
 					if (code === '23503' || code === '23001') {
 						const pg_err = err as Error & { detail?: string; constraint?: string };
 						log?.warn('Foreign key violation:', pg_err.detail, pg_err.constraint);

@@ -8,7 +8,7 @@
  * `pending_effects` queue is the opposite: its pool writes (attempt audits)
  * run outside the transaction and intentionally survive rollback.
  *
- * This pins both halves through a real PGlite transaction across both dispatch
+ * This pins both halves through a real database transaction across both dispatch
  * sites: the action dispatcher (`actions/perform_action.ts`, the RPC/WS path —
  * where every production `emit_after_commit` caller lives) and the REST route
  * wrapper (`http/route_spec.ts`). It also proves the underlying row rolled back.

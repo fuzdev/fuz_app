@@ -371,7 +371,7 @@ describe_db('auth schema', (get_db) => {
 	// Load-bearing column defaults — checked via regex/inclusion to tolerate
 	// minor cross-version rendering differences in `column_default` (e.g.
 	// `NOW()` vs `now()`, `'success'` vs `'success'::text`). Exact-string
-	// snapshots would surface as flaky on PGlite version bumps.
+	// snapshots would differ between engines and across their versions.
 	test('key column defaults match expected patterns', async () => {
 		const db = get_db();
 		const rows = await db.query<{

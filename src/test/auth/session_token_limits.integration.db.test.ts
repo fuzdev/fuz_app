@@ -2,7 +2,7 @@
  * Integration tests for session and token limit enforcement.
  *
  * Verifies that `max_sessions` evicts oldest sessions on login and
- * `max_tokens` evicts oldest tokens on creation, using a real PGlite
+ * `max_tokens` evicts oldest tokens on creation, using a real
  * database via `create_test_app`. Session verification and token creation
  * go through the RPC endpoint; `/login` remains REST.
  *

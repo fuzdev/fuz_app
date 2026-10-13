@@ -1,6 +1,6 @@
 /**
  * Shared scaffolding for the `role_grant_offer_actions.*.db.test.ts` suites.
- * Each suite needs the same PGlite factory + `describe_db` and the same
+ * Each suite needs the same database factory + `describe_db` and the same
  * `/api/rpc` mount with `create_role_grant_offer_actions`; extracting them
  * keeps the per-suite files focused on the assertions that actually differ.
  *
@@ -50,7 +50,7 @@ const init_schema = async (db: Db): Promise<void> => {
 const factory = create_default_db_factory(init_schema);
 
 /**
- * `describe_db` bound to the suite's PGlite factory + auth truncate list.
+ * `describe_db` bound to the suite's default-driver factory + auth truncate list.
  * Use as the outer `describe_db(name, (get_db) => {...})` wrapper.
  */
 export const describe_db = create_describe_db(factory, auth_integration_truncate_tables);

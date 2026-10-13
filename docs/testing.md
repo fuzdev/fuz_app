@@ -955,7 +955,12 @@ direction, `NULLS` placement, operator classes and `NULLS NOT DISTINCT`, and
 diffing that against a Postgres-backed impl reports every such index as
 drift. The `schema_version` migration
 tracker is always excluded — it's framework bookkeeping, not domain
-schema, and impls organize migration namespaces differently. `SchemaDiff`
+schema. That is the snapshot's scope, not a licence for the tracker to
+differ: twin impls keep identical migration namespaces, names and
+partitioning, so either can run over a database the other migrated, and
+that identity has its own gate — capture each impl's rows with
+`query_migration_tracker` and compare them with
+`assert_migration_trackers_equal`. `SchemaDiff`
 is a tagged union — `table_only_in`, `column_field_differs`,
 `index_definition_differs`, `sequence_data_type_differs`, etc. — so
 failure messages name the specific divergence.
@@ -1218,18 +1223,19 @@ That `globalSetup`:
 1. Runs `cargo build -p testing_spine_stub --release` (incremental — cheap
    when nothing changed). Skip it with `FUZ_TESTING_NO_REBUILD=1` when you
    know the binary is current.
-2. Folds in an idempotent `createdb` for the spine-stub's Postgres database
-   (the harness itself never issues `CREATE DATABASE`, to avoid forcing a
-   `CREATEDB` grant on the test role).
+2. Folds in an idempotent `createdb` for the Postgres database the
+   spine-stub's URL names, on the server that URL names (the harness itself
+   never issues `CREATE DATABASE`, to avoid forcing a `CREATEDB` grant on the
+   test role).
 3. Defaults `FUZ_TESTING_RUST_SPINE_STUB_BIN` to the conventional
    `target/release` location when it's unset.
 
 Point the build at the Cargo workspace with `FUZ_RUST_SPINE_STUB_WORKSPACE_DIR`
 (CI / non-default checkouts), or pin a prebuilt binary directly with
 `FUZ_TESTING_RUST_SPINE_STUB_BIN`. Point the stub at another Postgres server
-(e.g. a scratch cluster on a spare port) with
-`FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL`, setting libpq's `PGHOST` / `PGPORT`
-to match so step 2's `createdb` reaches the same server. The rebuild lives in the consumer/runner
+or database (e.g. a scratch cluster on a spare port) with
+`FUZ_TESTING_RUST_SPINE_STUB_DATABASE_URL`; step 2's `createdb` follows the
+URL, and a value that is not a URL fails the project naming the variable. The rebuild lives in the consumer/runner
 wiring — the exported `testing/` harness stays runtime-agnostic and knows
 nothing about Cargo.
 

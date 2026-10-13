@@ -296,7 +296,7 @@ auth, ids)`: batched strict relation-read filter. Every relation read —
   The authorizer is **pure** — the handler reads the governing root's `data`
   in-tx and hands it over as `root_data`, so a directory policy resolves
   `root.data.policy[kind]` without its own DB read (which also dodges the
-  single-connection PGlite deadlock). `None`/omitted = open create (the default;
+  single-connection deadlock of the in-memory drivers). `None`/omitted = open create (the default;
   mirrors `validate_data`). `cell_moderate` is the `pending → approved | rejected`
   transition, gated on `can_manage_cell` of the **governing root** (admin / root
   owner — the author lands a 403, the anti-self-approval guard); approve flips

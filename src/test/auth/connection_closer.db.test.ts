@@ -11,7 +11,7 @@
  *    `every revocation site` block drives each site over a `create_gated_db`
  *    and has its closer probe record two things at the moment it is called:
  *    how many transactions are open (zero), and what a read through the
- *    *pool* sees (the revocation, committed). On PGlite a pool read during an
+ *    *pool* sees (the revocation, committed). On the in-memory drivers a pool read during an
  *    open transaction would queue behind it, so the open-transaction count is
  *    what discriminates there; on real Postgres the pool read does too.
  * 3. A handler that throws closes nothing — its transaction rolled back, so

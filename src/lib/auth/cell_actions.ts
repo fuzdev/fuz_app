@@ -332,7 +332,7 @@ export const create_cell_actions = (deps: CellActionDeps): Array<RpcAction> => {
 		// **in-tx** (only when an authorizer is mounted), reusing the parent row
 		// when the parent *is* the root, else one read by `root_id` — so the
 		// authorizer stays pure + the read rides the handler's connection (no
-		// separate-handle deadlock on the single-connection PGlite).
+		// separate-handle deadlock on the single-connection in-memory drivers).
 		const parent_id = input.parent_id ?? null;
 		let root_id: Uuid | null = null;
 		let root_data: CellData | null = null;

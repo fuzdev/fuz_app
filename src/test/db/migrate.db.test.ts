@@ -369,8 +369,10 @@ describe('run_migrations', () => {
 		];
 		const ns: MigrationNamespace = { namespace: 'concurrent_ns', migrations };
 
-		// With advisory locks (real PG), one waits and finds version applied.
-		// Without (PGlite), both may apply (UNIQUE on name prevents duplicates).
+		// With advisory locks held on separate sessions (Postgres), one waits and
+		// finds the version applied. On PGlite both runs share one session, where
+		// the lock is re-entrant, and pglet has no advisory locks: there the
+		// (namespace, name) PK is what prevents duplicates.
 		const settled = await Promise.allSettled([run_migrations(db, [ns]), run_migrations(db, [ns])]);
 
 		// At least one must succeed; the other either succeeds or fails on the
@@ -391,11 +393,12 @@ describe('run_migrations', () => {
 		assert.strictEqual(tables.length, 1);
 	});
 
-	test('advisory-lock-unsupported path (PGlite) — runner proceeds without serialization', async () => {
-		// PGlite does not expose pg_advisory_lock. The runner's try/catch around
-		// the lock acquire/release calls swallows the error and proceeds. This
-		// test asserts the no-regression contract: a vanilla run_migrations
-		// against PGlite completes without throwing.
+	test('advisory-lock-unsupported path (pglet) — runner proceeds without serialization', async () => {
+		// pglet, the default test database, has no pg_advisory_lock. The
+		// runner's try/catch around the lock acquire/release calls swallows the
+		// error and proceeds. This test asserts the no-regression contract: a
+		// vanilla run_migrations completes without throwing — on pglet through
+		// that fallback, on a driver with advisory locks through the lock.
 		const migrations: Array<Migration> = [named('lk_0'), named('lk_1')];
 		const ns: MigrationNamespace = { namespace: 'lock_unsupported_ns', migrations };
 
@@ -652,7 +655,7 @@ describe('baseline', () => {
 		assert.strictEqual(rows_b.length, 1);
 	});
 
-	test('advisory-lock-unsupported path (PGlite) — baseline proceeds without serialization', async () => {
+	test('advisory-lock-unsupported path (pglet) — baseline proceeds without serialization', async () => {
 		const ns: MigrationNamespace = {
 			namespace: 'baseline_lock_unsupported_ns',
 			migrations: [named('a'), named('b')]

@@ -50,7 +50,7 @@
  * tx atomicity + the `(namespace, name)` PK on `schema_version`: the
  * loser's INSERT hits a PK violation, the chain-tx rolls back, and the
  * next boot reads the committed state and proceeds cleanly. Environments
- * without `pg_advisory_lock` (some PGlite versions) silently fall through.
+ * without `pg_advisory_lock` (pglet) silently fall through.
  *
  * @module
  */
@@ -157,7 +157,7 @@ const namespace_lock_key = (namespace: string): number => {
  * Run `fn` with the namespace's advisory lock held.
  *
  * Acquire / release are best-effort and silently fall through in
- * environments without `pg_advisory_lock` (some PGlite versions). The
+ * environments without `pg_advisory_lock` (pglet). The
  * `finally` ensures release on any throw from `fn`.
  */
 const with_namespace_lock = async <T>(

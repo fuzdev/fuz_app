@@ -209,7 +209,7 @@ describe('query_db_status name-divergence detection', () => {
 describe('query_db_status connectivity and tables', () => {
 	test('connectivity failure → connected false with the error message', async () => {
 		// The connectivity probe (`SELECT 1`) throwing is the not-connected signal;
-		// a throwing client stub drives it without tearing down the shared PGlite.
+		// a throwing client stub drives it without tearing down the shared database.
 		const failing_db = new Db({
 			client: {
 				query: () => {

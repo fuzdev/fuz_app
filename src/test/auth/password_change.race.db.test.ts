@@ -8,7 +8,7 @@
  * route must surface that as 401 rather than silently overwriting the
  * winner's change.
  *
- * Real `pg` only — PGlite serializes transactions tightly enough that the
+ * Real `pg` only — the in-memory drivers serialize transactions tightly enough that the
  * winner's `query_session_revoke_all_for_account` cascade deletes the
  * loser's session row before its middleware reads it, so the loser 401s
  * at session middleware (different mechanism, same status code, but

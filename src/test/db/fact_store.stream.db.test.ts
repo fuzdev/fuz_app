@@ -3,7 +3,7 @@
  *
  * Covers the bounded-memory `put_stream` path, the oversize `put` → disk
  * routing, and `sweep_orphan_temps` — all over a real `create_node_runtime`
- * filesystem rooted in an OS temp dir (the DB stays PGlite / pg).
+ * filesystem rooted in an OS temp dir (the DB is whichever driver the fixture leg runs).
  *
  * Coverage:
  * - `put_stream` of a sub-threshold body embeds (bytes in PG, `external = false`)

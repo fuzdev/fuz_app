@@ -69,10 +69,7 @@ const setup = (project: TestProject): Promise<() => Promise<void>> => {
 	// Make the Rust stub binary current + ensure its DB before the dual spawn.
 	// (Matches `global_setup.ts` / `global_setup_schema_parity.ts` so all the Rust
 	// projects share the one DB.)
-	prepare_rust_spine_backend({
-		crate: 'testing_spine_stub',
-		database: 'fuz_app_test_rust_spine_stub'
-	});
+	prepare_rust_spine_backend({ crate: 'testing_spine_stub' });
 	project.provide('security_action_rate_limit_max_attempts', ACTION_RATE_LIMIT_MAX_ATTEMPTS);
 	return dual_spawn(project);
 };
