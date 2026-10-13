@@ -48,11 +48,14 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import { connect } from 'node:net';
-
 import { describe, test, assert } from 'vitest';
 
 import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
+import {
+	raw_http_count_responses,
+	raw_http_exchange,
+	raw_http_first_status
+} from '../transports/raw_http.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** Options for the credential-header robustness probe — needs the raw URL + a valid daemon token. */
@@ -71,53 +74,13 @@ const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 /** A value that is never a real credential — used for the conflicting / garbage copies. */
 const GARBAGE_TOKEN = 'not-a-real-credential-value';
 
-/**
- * Open a raw TCP socket to `base_url`, write `request_bytes` once, and collect
- * everything the server sends back until it closes or `read_timeout_ms`
- * elapses. Write errors are swallowed (a server closing mid-write on a rejected
- * request is expected behavior); what matters is what we read back. Mirrors
- * `body_size_smuggling.ts`'s `send_raw`.
- */
-const send_raw = (
-	base_url: string,
-	request_bytes: string,
-	read_timeout_ms: number
-): Promise<string> =>
-	new Promise((resolve) => {
-		const url = new URL(base_url);
-		const port = Number(url.port) || (url.protocol === 'https:' ? 443 : 80);
-		const socket = connect({ host: url.hostname, port });
-		let received = '';
-		let settled = false;
-		const finish = (): void => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timer);
-			socket.destroy();
-			resolve(received);
-		};
-		const timer = setTimeout(finish, read_timeout_ms);
-		socket.setEncoding('latin1');
-		socket.on('connect', () => socket.write(request_bytes));
-		socket.on('data', (chunk: string) => {
-			received += chunk;
-		});
-		socket.on('error', () => {}); // EPIPE/ECONNRESET on mid-write close is expected
-		socket.on('close', finish);
-	});
+/** How long each raw exchange waits for the server to finish answering. */
+const RAW_READ_TIMEOUT_MS = 2000;
 
-/**
- * Count HTTP response status lines in a raw byte stream. Unanchored so a
- * second (smuggled) response concatenated after the first body — which carries
- * no trailing newline — is still counted; see `body_size_smuggling.ts`.
- */
-const count_responses = (raw: string): number => (raw.match(/HTTP\/1\.[01] \d{3}/g) ?? []).length;
-
-/** The status code of the first HTTP response in a raw stream, or `null` if none. */
-const first_status = (raw: string): number | null => {
-	const match = /HTTP\/1\.[01] (\d{3})/.exec(raw);
-	return match ? Number(match[1]) : null;
-};
+/** Write `request_bytes` to a fresh raw socket and read until the server closes. */
+const send_raw = async (base_url: string, request_bytes: string): Promise<string> =>
+	(await raw_http_exchange(base_url, request_bytes, { read_timeout_ms: RAW_READ_TIMEOUT_MS }))
+		.received;
 
 const is_success_status = (status: number): boolean => status >= 200 && status < 300;
 
@@ -166,16 +129,16 @@ export const describe_credential_header_robustness_cross_tests = (
 				[`${DAEMON_TOKEN_HEADER}: ${daemon_token}`, `${DAEMON_TOKEN_HEADER}: ${GARBAGE_TOKEN}`],
 				purge_body('dup-daemon')
 			);
-			const raw = await send_raw(base_url, req, 2000);
+			const raw = await send_raw(base_url, req);
 			assert.strictEqual(
-				count_responses(raw),
+				raw_http_count_responses(raw),
 				1,
 				`a duplicated X-Daemon-Token must yield exactly one response (no desync). Raw head: ${raw.slice(
 					0,
 					120
 				)}`
 			);
-			const status = first_status(raw);
+			const status = raw_http_first_status(raw);
 			assert.ok(status !== null, `expected an HTTP response. Raw head: ${raw.slice(0, 120)}`);
 			assert.ok(
 				!is_success_status(status),
@@ -191,16 +154,16 @@ export const describe_credential_header_robustness_cross_tests = (
 				[`Authorization: Bearer ${GARBAGE_TOKEN}`, `Authorization: Bearer ${GARBAGE_TOKEN}-2`],
 				purge_body('dup-bearer')
 			);
-			const raw = await send_raw(base_url, req, 2000);
+			const raw = await send_raw(base_url, req);
 			assert.strictEqual(
-				count_responses(raw),
+				raw_http_count_responses(raw),
 				1,
 				`duplicate Authorization headers must yield exactly one response (no desync). Raw head: ${raw.slice(
 					0,
 					120
 				)}`
 			);
-			const status = first_status(raw);
+			const status = raw_http_first_status(raw);
 			assert.ok(status !== null, `expected an HTTP response. Raw head: ${raw.slice(0, 120)}`);
 			assert.ok(
 				!is_success_status(status),
@@ -228,13 +191,13 @@ export const describe_credential_header_robustness_cross_tests = (
 					[`${DAEMON_TOKEN_HEADER}: ${value}`],
 					purge_body('ctrl-char')
 				);
-				const raw = await send_raw(base_url, req, 2000);
+				const raw = await send_raw(base_url, req);
 				assert.ok(
-					count_responses(raw) <= 1,
+					raw_http_count_responses(raw) <= 1,
 					`${label}: a control-char-injected credential header must not frame a second ` +
 						`request (no smuggle). Raw head: ${raw.slice(0, 120)}`
 				);
-				const status = first_status(raw);
+				const status = raw_http_first_status(raw);
 				assert.ok(
 					status === null || !is_success_status(status),
 					`${label}: a malformed credential header must never authenticate (got ${status})`
@@ -252,14 +215,14 @@ export const describe_credential_header_robustness_cross_tests = (
 				[`${DAEMON_TOKEN_HEADER}: ${oversized}`],
 				purge_body('oversized')
 			);
-			await send_raw(base_url, req, 2000);
+			await send_raw(base_url, req);
 
 			// The property: the server survives it. A normal request on a fresh
 			// connection must still get a response (no crash, no wedged accept loop).
 			const probe = `GET ${rpc_path} HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`;
-			const raw = await send_raw(base_url, probe, 2000);
+			const raw = await send_raw(base_url, probe);
 			assert.ok(
-				first_status(raw) !== null,
+				raw_http_first_status(raw) !== null,
 				`server must still respond after an oversized-header request (no crash / wedge). Raw head: ${raw.slice(
 					0,
 					120

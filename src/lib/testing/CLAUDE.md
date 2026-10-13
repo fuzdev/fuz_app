@@ -1345,7 +1345,7 @@ an audit row, an admin account listing, and an offer's `created_at` /
 `expires_at`. `cross_backend/setup.ts` carries the four bases every
 imperative cross suite aliases: `CrossSuiteOptions` (`setup_test` alone),
 `CapabilityGatedCrossSuiteOptions` (+ `capabilities` — `ready`),
-`RpcPathCrossSuiteOptions` (+ `rpc_path?` — origin, body-size, actor
+`RpcPathCrossSuiteOptions` (+ `rpc_path?` — origin, body-size (which adds `base_url`), actor
 lookup/search, app settings, testing backdoor), and the intersection
 `RpcPathCapabilityGatedCrossSuiteOptions` (every `cell_*` suite, query-shape,
 token-scope surface, fact-serving, account lifecycle). A suite takes the
@@ -1464,6 +1464,21 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   write as the upgrade request, so before the connection can have been
   admitted). Small unfragmented text frames only. Helpers `is_raw_ws_close`,
   `raw_ws_close_code`, `RAW_WS_OPCODE_TEXT` / `_CLOSE`.
+- `testing/transports/raw_http.ts` — `raw_http_exchange(base_url, request_bytes, {read_timeout_ms, until?})`
+  → `RawHttpExchange` (`{received, closed_by_server}`): writes caller-built
+  HTTP/1.1 bytes to a raw `node:net` socket once and reads what the server
+  sends until it closes (`until: 'close'`, the default), until one whole
+  response has arrived (`until: 'response'` — for a server that answers and
+  keeps the connection), or until the read timeout. For what `fetch` can't
+  send: two requests in one write, duplicate or malformed headers, a request
+  head whose body never follows, an unterminated chunked body. Write errors are
+  swallowed, and a write error ends the socket — so a caller that must read a
+  refusal reliably sends nothing the server will leave unread. Helpers
+  `raw_http_parse_response` (the first response, `null` until its head and
+  framed body are whole), `raw_http_count_responses` (unanchored status-line
+  count, so a response concatenated after a body is seen),
+  `raw_http_first_status`. Shared by the body-size, body-size smuggling, and
+  credential-header suites.
 - `testing/transports/sse_frame_reader.ts` — `create_sse_frame_reader(reader, default_timeout_ms?)`,
   the transport-agnostic SSE framing core over a
   `ReadableStreamDefaultReader<Uint8Array>`: `\n\n` framing, per-read timeout,

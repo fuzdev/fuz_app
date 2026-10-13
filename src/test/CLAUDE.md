@@ -382,8 +382,11 @@ and `body_size.cross.test.ts` (the 1 MiB request-body cap:
 at-limit exactly-the-cap → not size-rejected, under-limit → 200, an over-limit
 declared length → 413 with a disallowed `Origin` (not 403, with the under-limit
 403 as its control) and with no credentials (not 401), and an authenticated
-over-limit chunked body → 413, every request re-sent when the transport throws
-on the socket the 413 closes — plus
+over-limit chunked body → 413. Given the backend's `base_url`, the over-limit
+cases write to the socket themselves and send nothing the server will leave
+unread — the declared-length ones the request head alone, the chunked one a
+body that stops one byte past the cap — so no upload races the close that
+follows the 413, and each 413 must arrive without the rest of the body — plus
 `describe_body_size_smuggling_cross_tests`, a raw-`node:net` probe that pipelines
 an oversized `POST` + a `GET`. Every backend must return **at most one**
 response (`<= 1` — the connection closes and the pipelined GET is never reached;
@@ -393,7 +396,7 @@ framed), which fails the probe. A second probe sends a request carrying both
 `Content-Length` and `Transfer-Encoding`, in either order, with a `GET` behind
 it: whatever the status (the JS runtimes' parsers refuse it with 400, hyper
 answers it as chunked), the server must close the connection and never serve
-the `GET`. The 413-ness itself is pinned by the fetch parity
+the `GET`. The 413-ness itself is pinned by the parity
 cases; a positive control (two pipelined requests → `>= 2` responses) keeps the
 probe non-vacuous. The parity cases have an in-process leg
 `auth/body_size_parity.db.test.ts` (the limit's own branches — at and past the

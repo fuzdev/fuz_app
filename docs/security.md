@@ -1199,7 +1199,10 @@ runtime's default. `http/body_limit.test.ts` pins each branch.
 by `testing/cross_backend/body_size.ts`: a declared `Content-Length` over the
 cap answers 413 whatever the request's `Origin` or credentials, and an
 authenticated, allowed-origin request whose chunked body runs past the cap
-answers 413. Implementation-defined:
+answers 413. Neither refusal waits for the rest of the body: over a real
+socket the suite sends the declared-length request's head alone, and the
+chunked body only as far as one byte past the cap, and requires the 413.
+Implementation-defined:
 
 - **An over-cap body with no declared length, when another refusal also
   applies.** The TS spine has read the body up to the cap before any later

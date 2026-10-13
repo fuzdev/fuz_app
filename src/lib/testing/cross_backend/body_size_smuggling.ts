@@ -30,7 +30,8 @@ import '../assert_dev_env.ts';
  * - **hyper** (the Rust spine) closes at once.
  *
  * The oversized body is rejected *with* a 413 on every backend — pinned
- * reliably over `fetch` by `describe_body_size_cross_tests`; this test owns
+ * reliably by `describe_body_size_cross_tests`, which sends the over-cap
+ * request's head and no body, so no upload races the close; this test owns
  * only the connection-handling half. A **positive control** (two pipelined
  * requests → `>= 2` responses) proves a second response *would* be seen if a
  * trailing request were processed — without it `<= 1` would be vacuous on a
@@ -59,10 +60,9 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import { connect } from 'node:net';
-
 import { describe, test, assert } from 'vitest';
 
+import { raw_http_count_responses, raw_http_exchange } from '../transports/raw_http.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
 
 /** Options for the smuggling probe — needs the raw URL, not a transport. */
@@ -82,69 +82,6 @@ const BODY_LIMIT_DEFAULT_BYTES = 1024 * 1024;
  */
 const RAW_READ_TIMEOUT_MS = 2000;
 
-/** What a raw exchange read back, and how it ended. */
-interface RawExchange {
-	/** Every byte the server sent, `latin1`-decoded. */
-	readonly received: string;
-	/** `true` when the server ended the connection; `false` when the read window ran out first. */
-	readonly closed_by_server: boolean;
-}
-
-/**
- * Open a raw TCP socket to `base_url`, write `request_bytes` once, and collect
- * everything the server sends back until it closes the connection or
- * `read_timeout_ms` elapses. Write errors are swallowed: the server closing
- * mid-upload (the correct response to an oversized body) surfaces as
- * `EPIPE`/`ECONNRESET` on our unfinished write, which is exactly the behavior
- * under test — what matters is what we *read back*.
- */
-const exchange_raw = (
-	base_url: string,
-	request_bytes: string,
-	read_timeout_ms: number
-): Promise<RawExchange> =>
-	new Promise((resolve) => {
-		const url = new URL(base_url);
-		const port = Number(url.port) || (url.protocol === 'https:' ? 443 : 80);
-		const socket = connect({ host: url.hostname, port });
-		let received = '';
-		let settled = false;
-		const finish = (closed_by_server: boolean): void => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timer);
-			socket.destroy();
-			resolve({ received, closed_by_server });
-		};
-		const timer = setTimeout(() => finish(false), read_timeout_ms);
-		socket.setEncoding('latin1');
-		socket.on('connect', () => socket.write(request_bytes));
-		socket.on('data', (chunk: string) => {
-			received += chunk;
-		});
-		socket.on('error', () => {}); // EPIPE/ECONNRESET on mid-write close is expected
-		socket.on('close', () => finish(true));
-	});
-
-/** `exchange_raw`, for a caller that reads only the bytes. */
-const send_raw = async (
-	base_url: string,
-	request_bytes: string,
-	read_timeout_ms: number
-): Promise<string> => (await exchange_raw(base_url, request_bytes, read_timeout_ms)).received;
-
-/**
- * Count HTTP response status lines in a raw byte stream. Deliberately
- * **unanchored** (no `^`/`m`): a second pipelined response is concatenated
- * straight after the first response's body, which carries no trailing newline,
- * so a line-anchored match would miss it — and missing a smuggled second
- * response is a silent false negative. No response header or JSON error body
- * contains the literal `HTTP/1.x NNN`, so an unanchored match counts exactly
- * the status lines. The positive control below proves this counts 2 when the
- * server genuinely returns 2.
- */
-const count_responses = (raw: string): number => (raw.match(/HTTP\/1\.[01] \d{3}/g) ?? []).length;
-
 export const describe_body_size_smuggling_cross_tests = (
 	options: BodySizeSmugglingCrossTestOptions
 ): void => {
@@ -156,13 +93,15 @@ export const describe_body_size_smuggling_cross_tests = (
 		// Positive control: prove the server returns >1 response on a single
 		// connection. Without this the smuggling assertion below would be
 		// vacuously green on a server that simply never reuses connections — and
-		// it also validates `count_responses` actually counts a second response.
+		// it also validates `raw_http_count_responses` actually counts a second response.
 		test('control: two pipelined requests → ≥2 responses (connection reuse is real)', async () => {
 			const two_requests =
 				`GET ${rpc_path} HTTP/1.1\r\nHost: ${host}\r\n\r\n` +
 				`GET ${rpc_path} HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`;
-			const response = await send_raw(base_url, two_requests, RAW_READ_TIMEOUT_MS);
-			const n = count_responses(response);
+			const { received: response } = await raw_http_exchange(base_url, two_requests, {
+				read_timeout_ms: RAW_READ_TIMEOUT_MS
+			});
+			const n = raw_http_count_responses(response);
 			assert.ok(
 				n >= 2,
 				`expected ≥2 responses on one keep-alive connection (got ${n}); without ` +
@@ -185,8 +124,10 @@ export const describe_body_size_smuggling_cross_tests = (
 				'x'.repeat(oversized_len) +
 				pipelined_get;
 
-			const response = await send_raw(base_url, payload, RAW_READ_TIMEOUT_MS);
-			const n = count_responses(response);
+			const { received: response } = await raw_http_exchange(base_url, payload, {
+				read_timeout_ms: RAW_READ_TIMEOUT_MS
+			});
+			const n = raw_http_count_responses(response);
 
 			// The reject closes the connection, so the pipelined GET is never
 			// reached — **at most one** response comes back (the 413, or none if
@@ -229,12 +170,10 @@ export const describe_body_size_smuggling_cross_tests = (
 					chunked_envelope +
 					`GET ${rpc_path} HTTP/1.1\r\nHost: ${host}\r\n\r\n`;
 
-				const { received, closed_by_server } = await exchange_raw(
-					base_url,
-					payload,
-					RAW_READ_TIMEOUT_MS
-				);
-				const n = count_responses(received);
+				const { received, closed_by_server } = await raw_http_exchange(base_url, payload, {
+					read_timeout_ms: RAW_READ_TIMEOUT_MS
+				});
+				const n = raw_http_count_responses(received);
 				// Refused with 400 or answered — the status is the implementation's.
 				// A second response is the pipelined GET served on a connection the
 				// ambiguous request should have ended.

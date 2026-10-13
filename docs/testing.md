@@ -40,7 +40,7 @@ run the same standard suites against it over real HTTP — a Rust spine
   binary. In-process stays — it's the fast feedback path and the only
   viable path for a few in-process-only assertions (the WS test harness
   drives the dispatcher against a fake upgrade, etc.). Cross-process plumbing
-  ships in `testing/transports/{fetch_transport,bootstrap,ws_client,ws_transport,ws_raw_client,sse_transport}.js`
+  ships in `testing/transports/{fetch_transport,bootstrap,ws_client,ws_transport,ws_raw_client,raw_http,sse_transport}.js`
   and `testing/cross_backend/{backend_config,spawn_backend,testing_reset_actions,setup}.js`;
   `default_cross_process_setup` fires `_testing_reset` over the keeper's
   daemon-token channel on every per-test invocation — full auth-table
@@ -1053,6 +1053,7 @@ modes implement it:
 - `create_ws_transport(options)` (`testing/transports/ws_transport.ts`) — WebSocket upgrade over the `ws` package (threads `Cookie` on upgrade).
 - `create_admitted_ws_transport(options)` (`testing/transports/ws_transport.ts`) — `create_ws_transport` plus a `heartbeat` round trip, so the connection is admitted when it resolves; for suites that wait for a server push or need connections registered in order.
 - `connect_raw_ws(options)` (`testing/transports/ws_raw_client.ts`) — Raw-socket WebSocket client that never answers a close frame and can write frames in the same TCP write as the upgrade request.
+- `raw_http_exchange(base_url, request_bytes, options)` (`testing/transports/raw_http.ts`) — Writes caller-built HTTP/1.1 bytes to a raw socket and returns what the server sent, read until it closes or until one whole response has arrived; for pipelined requests, malformed headers, and request bodies deliberately left unsent.
 - `create_sse_transport(options)` (`testing/transports/sse_transport.ts`) — SSE stream client for cross-process stream assertions.
 - `bootstrap(options)` (`testing/transports/bootstrap.ts`) — Fire the bootstrap envelope, capture `Set-Cookie`, return the keeper.
 

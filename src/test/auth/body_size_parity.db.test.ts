@@ -41,5 +41,7 @@ const setup_test = default_in_process_setup({
 
 describe_body_size_cross_tests({
 	setup_test,
-	rpc_path: RPC_PATH
+	rpc_path: RPC_PATH,
+	// in-process: no socket
+	base_url: null
 });
