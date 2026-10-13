@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.hkIn_M5h.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.CmAYAJtg.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.plbivBls.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.Dn6AGurP.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdRKSg2Q.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/RsYRH8Ox.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.DNUdj-Yg.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/3tnpCvSr.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.BwmwJcAO.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/kn3lWLz2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -96,7 +96,7 @@ the lock on different sessions. The real serialization comes from chain-
 tx atomicity + the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->(namespace, name)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> PK on <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->schema_version<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->: the
 loser's INSERT hits a PK violation, the chain-tx rolls back, and the
 next boot reads the committed state and proceeds cleanly. Environments
-without <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->pg_advisory_lock<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (some PGlite versions) silently fall through.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!----></section><!--]--> <!--[0--><section><a href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/db/migrate.ts" class="chip" target="_blank" rel="noopener">view source</a></section><!--]--> <!--[0--><section><header><!----><h2 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[-1-->Declarations<!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#Declarations"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="Declarations" aria-hidden="true"></span><!----><!----></h2><!----></header><!----> <!--[0--><section><label class="display:block position:relative"><input type="search" placeholder="search declarations in this module..." value=""/> <!--[-1--><!--]--></label> <p><!--[1-->8 declarations<!--]--></p><!----></section><!--]--> <!--[-1--><!--[--><section><header><!----><h3 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[0--><div class="word-break:break-all">baseline</div><!----><!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#baseline"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="baseline" aria-hidden="true"></span><!----><!----></h3><!----></header><!----> <article id="baseline"><p class="row justify-content:space-between"><!--[0--><a class="module-link chip " href="/docs/api/db/migrate.ts"><!--[-1-->db/migrate.ts<!--]--></a><!--]--><!----> <!--[0--><a class="chip" href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/db/migrate.ts#L337" target="_blank" rel="noopener">view source</a><!--]--></p>  <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_punctuation">(</span>db<span class="token_operator">:</span> <span class="token_capitalized_identifier token_class_name">Db</span><span class="token_punctuation">,</span> ns<span class="token_operator">:</span> <span class="token_capitalized_identifier token_class_name">MigrationNamespace</span><span class="token_punctuation">,</span> names<span class="token_operator">:</span> <span class="token_keyword">readonly</span> <span class="token_builtin">string</span><span class="token_punctuation">[])</span><span class="token_operator">:</span> <span class="token_capitalized_identifier token_class_name">Promise</span><span class="token_operator">&lt;</span><span class="token_keyword">void</span><span class="token_operator">></span><!----><!--]--></code><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_special_keyword">import</span> <span class="token_punctuation">{</span>baseline<span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'@fuzdev/fuz_app/db/migrate.js'</span><span class="token_punctuation">;</span><!----><!--]--></code><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Insert tracker rows for the named migrations of a namespace <!--]--><!--[4--><strong><!--[--><!--[2-->without
+without <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->pg_advisory_lock<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (pglet) silently fall through.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!----></section><!--]--> <!--[0--><section><a href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/db/migrate.ts" class="chip" target="_blank" rel="noopener">view source</a></section><!--]--> <!--[0--><section><header><!----><h2 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[-1-->Declarations<!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#Declarations"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="Declarations" aria-hidden="true"></span><!----><!----></h2><!----></header><!----> <!--[0--><section><label class="display:block position:relative"><input type="search" placeholder="search declarations in this module..." value=""/> <!--[-1--><!--]--></label> <p><!--[1-->8 declarations<!--]--></p><!----></section><!--]--> <!--[-1--><!--[--><section><header><!----><h3 class="tome-section-header svelte-dz8ld7"><div class="flex:1"><!--[0--><div class="word-break:break-all">baseline</div><!----><!--]--></div> <a aria-label="hashlink" class="hashlink  svelte-1aeep1w" href="#baseline"><!--[-1-->#<!--]--></a> <span class="hashlink-scroll-target svelte-1aeep1w" id="baseline" aria-hidden="true"></span><!----><!----></h3><!----></header><!----> <article id="baseline"><p class="row justify-content:space-between"><!--[0--><a class="module-link chip " href="/docs/api/db/migrate.ts"><!--[-1-->db/migrate.ts<!--]--></a><!--]--><!----> <!--[0--><a class="chip" href="https://github.com/fuzdev/fuz_app/blob/main/src/lib/db/migrate.ts#L337" target="_blank" rel="noopener">view source</a><!--]--></p>  <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <!--[0--><code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_punctuation">(</span>db<span class="token_operator">:</span> <span class="token_capitalized_identifier token_class_name">Db</span><span class="token_punctuation">,</span> ns<span class="token_operator">:</span> <span class="token_capitalized_identifier token_class_name">MigrationNamespace</span><span class="token_punctuation">,</span> names<span class="token_operator">:</span> <span class="token_keyword">readonly</span> <span class="token_builtin">string</span><span class="token_punctuation">[])</span><span class="token_operator">:</span> <span class="token_capitalized_identifier token_class_name">Promise</span><span class="token_operator">&lt;</span><span class="token_keyword">void</span><span class="token_operator">></span><!----><!--]--></code><!--]--> <!--[-1--><!--]--> <!--[-1--><!--]--> <code data-lang="ts" class="svelte-jqsy8a"><!--[-1--><!----><span class="token_special_keyword">import</span> <span class="token_punctuation">{</span>baseline<span class="token_punctuation">}</span> <span class="token_special_keyword">from</span> <span class="token_string">'@fuzdev/fuz_app/db/migrate.js'</span><span class="token_punctuation">;</span><!----><!--]--></code><!----> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Insert tracker rows for the named migrations of a namespace <!--]--><!--[4--><strong><!--[--><!--[2-->without
 executing them<!--]--><!--]--><!----></strong><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Used to promote an existing schema (e.g. produced by an out-of-band
 bootstrap, or a hand-applied DDL set) into the identity tracker.
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->baseline()<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> trusts the operator-supplied list — it does not verify that
@@ -131,16 +131,16 @@ namespaces are omitted)<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----
 			
 			<script>
 				{
-					__sveltekit_149frgo = {
+					__sveltekit_1kbm0wy = {
 						base: "",
-						version: "0c1b4f289f430e4556dc093957eea1c5a643b38c"
+						version: "d63aec581efeb957277321860ac1b4ee9f8bd912"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_149frgo);
-						const app = await import("/_app/immutable/entry/app.hkIn_M5h.js");
+						kit.init(__sveltekit_1kbm0wy);
+						const app = await import("/_app/immutable/entry/app.plbivBls.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
