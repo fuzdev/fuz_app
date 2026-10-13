@@ -1357,7 +1357,8 @@ the option type states whether the bundle is read.
   edit/read/delete → 404 IDOR mask; admin reaches any; dup active `path` → 409;
   `path` write by non-admin → 403 on create + update; `cell_get` with no
   id/path → `invalid_params`; null-auth `cell_list` `created_by` →
-  `invalid_params`).
+  `invalid_params`; a `kind` at `CELL_KIND_LENGTH_MAX` stored whole, one
+  UTF-16 code unit past it → `invalid_params` on create and as a list filter).
 - **`describe_cell_relations_cross_tests`** (gates on
   `capabilities.cell_relations`) — the verbs beyond CRUD: grant lifecycle
   (actor-shaped editor grant enables edit, manage-tier `cell_grant_list`,
@@ -1666,8 +1667,9 @@ reads the audit log behind `_testing_drain_effects`). fuz_app's own wiring is
 imperative round-trip on `account_token_create`'s required `lifetime` union:
 a `{kind:'ttl', days}` mint returns and stores a bounded `expires_at`
 (create output + `account_token_list` read-back), `{kind:'eternal'}` stores
-NULL, and an omitted or out-of-range lifetime 400s identically on both
-spines. Exists because the action-manifest parity gate captures no param
+NULL, an omitted or out-of-range lifetime 400s identically on both
+spines, and a `name` at `API_TOKEN_NAME_LENGTH_MAX` mints and reads back whole
+while one UTF-16 code unit past it is `invalid_params`. Exists because the action-manifest parity gate captures no param
 schemas while the Rust spine hand-parses params — a spine that silently
 dropped the field would answer the same mint with a 200 and an eternal
 token; only the stored-state read-back catches it. Ungated (mint + list are

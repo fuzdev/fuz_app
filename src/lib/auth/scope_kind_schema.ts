@@ -40,9 +40,24 @@ import { z } from 'zod';
  */
 export const SCOPE_KIND_NAME_REGEX = /^[a-z][a-z_]*[a-z]$|^[a-z]$/;
 
+/**
+ * Maximum length of a `scope_kind`, in UTF-16 code units (what
+ * `String.length` and Zod's `.max()` measure). Bounds the tag where it enters
+ * — the grant inputs (`role_grant_offer_create`, `role_grant_assign`) copy it
+ * into the row and its audit metadata — and a registered name, so no
+ * registry declares a kind the grant inputs would refuse. Same value as
+ * `ROLE_NAME_LENGTH_MAX`, whose grammar the name mirrors, and as the Rust
+ * spine's `SCOPE_KIND_LENGTH_MAX`.
+ */
+export const SCOPE_KIND_LENGTH_MAX = 64;
+
 /** Zod schema for valid scope-kind name strings. */
 export const ScopeKindName = z
 	.string()
+	.max(
+		SCOPE_KIND_LENGTH_MAX,
+		`Scope-kind names must be at most ${SCOPE_KIND_LENGTH_MAX} characters`
+	)
 	.regex(
 		SCOPE_KIND_NAME_REGEX,
 		'Scope-kind names must be lowercase letters and underscores (a-z_), no leading/trailing underscore'

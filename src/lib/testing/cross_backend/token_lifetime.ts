@@ -28,6 +28,11 @@ import '../assert_dev_env.ts';
  *   pin on the silently-ignoring-unknown-shapes hazard.
  * - **Out-of-range days are refused** — `days: 0` 400s identically, so the
  *   two hand-rolled bounds checks can't drift.
+ * - **The `name` cap** — the same blind spot on another field of the same
+ *   mint: a name of exactly `API_TOKEN_NAME_LENGTH_MAX` UTF-16 code units
+ *   mints and reads back whole, and one unit past it is `invalid_params`,
+ *   with an astral-plane name at each side of the boundary so the two spines
+ *   count the same unit.
  *
  * @module
  */
@@ -37,6 +42,7 @@ import { describe, test, assert } from 'vitest';
 import {
 	account_token_create_action_spec,
 	account_token_list_action_spec,
+	API_TOKEN_NAME_LENGTH_MAX,
 	TokenCreateOutput,
 	TokenListOutput
 } from '../../auth/account_action_specs.ts';
@@ -186,6 +192,61 @@ export const describe_token_lifetime_cross_tests = (
 				-32602,
 				`expected invalid_params: ${JSON.stringify(res.error)}`
 			);
+		});
+
+		test('a name at the length cap mints and reads back; one past it is invalid_params', async () => {
+			const fixture = await setup_test();
+			const astral = '\u{1F600}';
+			// the cap is odd: whole astral characters, plus one unit to land on it
+			const astral_at_cap = astral.repeat((API_TOKEN_NAME_LENGTH_MAX - 1) / 2) + 'a';
+			const mint = (name: string): ReturnType<typeof cross_rpc_call> =>
+				cross_rpc_call(
+					fixture.transport,
+					rpc_path,
+					account_token_create_action_spec.method,
+					{ name, scope: { kind: 'full' }, lifetime: { kind: 'eternal' } },
+					fixture.create_session_headers()
+				);
+
+			const admitted = ['a'.repeat(API_TOKEN_NAME_LENGTH_MAX), astral_at_cap];
+			const minted_ids: Array<string> = [];
+			for (const name of admitted) {
+				assert.strictEqual(name.length, API_TOKEN_NAME_LENGTH_MAX);
+				minted_ids.push(expect_output(await mint(name), TokenCreateOutput).id);
+			}
+			const listed = expect_output(
+				await cross_rpc_call(
+					fixture.transport,
+					rpc_path,
+					account_token_list_action_spec.method,
+					undefined,
+					fixture.create_session_headers()
+				),
+				TokenListOutput
+			);
+			for (const [index, id] of minted_ids.entries()) {
+				assert.strictEqual(
+					listed.tokens.find((t) => t.id === id)?.name,
+					admitted[index],
+					'a name at the cap must be stored whole'
+				);
+			}
+
+			for (const name of [
+				'a'.repeat(API_TOKEN_NAME_LENGTH_MAX + 1),
+				// one astral character past the cap: two units over an even count
+				astral.repeat((API_TOKEN_NAME_LENGTH_MAX + 1) / 2),
+				astral_at_cap + 'a'
+			]) {
+				const res = await mint(name);
+				assert.ok(!res.ok, `a ${name.length}-unit name must be refused`);
+				assert.strictEqual(
+					res.error?.code,
+					-32602,
+					`expected invalid_params for a ${name.length}-unit name, got ${JSON.stringify(res.error)}`
+				);
+				assert.strictEqual(error_reason(res), undefined, 'a schema refusal carries no reason');
+			}
 		});
 	});
 };

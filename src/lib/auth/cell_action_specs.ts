@@ -190,6 +190,17 @@ export const CellPath = z.string().min(1).max(CELL_PATH_LENGTH_MAX).brand('CellP
 export type CellPath = z.infer<typeof CellPath>;
 
 /**
+ * Maximum length of a cell `kind` on the wire, in UTF-16 code units (what
+ * `String.length` and Zod's `.max()` measure) — on `cell_create`, and on the
+ * `cell_list` filter. The cell layer imposes no grammar on `kind`; the bound
+ * is there because the tag is copied into every audit row the cell's
+ * mutations write. The same bound a cell field name carries
+ * (`CELL_FIELD_NAME_REGEX`), the cell layer's other machine-readable tag,
+ * and the same value as the Rust spine's `CELL_KIND_LENGTH_MAX`.
+ */
+export const CELL_KIND_LENGTH_MAX = 64;
+
+/**
  * Soft cap on the size of a `cell.list` request page. Larger pages chew
  * memory both server- and client-side; combined with the visibility
  * predicate's filter cost, 200 is a safe ceiling.
@@ -270,10 +281,13 @@ export const CellCreateInput = z.strictObject({
 		description:
 			'Cell content. Base fields (label / summary) typed; extras loose. A `kind` key here is rejected (`ERROR_CELL_KIND_IN_DATA`) — kind is the top-level field. Per-kind shape is sub-API.'
 	}),
-	kind: z.string().nullish().meta({
-		description:
-			'Capability / identity tag, written to the top-level `cell.kind` column (not `data`). Write-once — fixed at birth, not updatable. Non-empty when present (an empty string is rejected `ERROR_CELL_KIND_EMPTY`); omit / null for a typeless cell. A creation authorizer (if mounted) gates on this.'
-	}),
+	kind: z
+		.string()
+		.max(CELL_KIND_LENGTH_MAX)
+		.nullish()
+		.meta({
+			description: `Capability / identity tag, written to the top-level \`cell.kind\` column (not \`data\`). Write-once — fixed at birth, not updatable. Non-empty when present (an empty string is rejected \`ERROR_CELL_KIND_EMPTY\`) and at most ${CELL_KIND_LENGTH_MAX} characters; omit / null for a typeless cell. A creation authorizer (if mounted) gates on this.`
+		}),
 	visibility: CellVisibility.optional().meta({
 		description:
 			"Access-control tag. Top-level column (not in `data`). Default `'private'` when omitted."
@@ -398,7 +412,7 @@ export const CellListInput = z
 			.max(CELL_LIST_LIMIT_MAX)
 			.optional()
 			.meta({ description: 'Batch-fetch by id. Visibility predicate still applies.' }),
-		kind: z.string().optional().meta({
+		kind: z.string().max(CELL_KIND_LENGTH_MAX).optional().meta({
 			description:
 				'Match `cell.kind = ?`. An empty string matches nothing — no cell carries an empty kind.'
 		}),

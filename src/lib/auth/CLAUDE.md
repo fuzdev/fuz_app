@@ -58,7 +58,7 @@ Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
 
 - `auth/account_schema.ts` — `Account`, `Actor`, `RoleGrant`, `AuthSession`, `ApiToken` + client-safe JSON shapes. Grant predicates over wire fields: `is_role_grant_active` (not revoked, not expired) and `has_global_role(role_grants, role, now?)` (an active grant of the role with `scope_id === null` — the bare-list form of `has_scoped_role(ctx, role, null)`, used client-side by `AuthState`).
 - `auth/role_schema.ts` — `RoleName` (lowercase letters and underscores, no leading or trailing underscore, at most `ROLE_NAME_LENGTH_MAX` = 64 characters — the grammar every `role` input and every registered role holds, twin of the Rust `is_valid_role_name`), `RoleSpec`, `ROLE_KEEPER`, `ROLE_ADMIN`, `is_builtin_role`, `create_role_schema`, `builtin_role_specs_by_name`, `role_has_grant_path`, `list_roles_with_grant_path`.
-- `auth/scope_kind_schema.ts` — `ScopeKindName`, `create_scope_kind_schema` (open registry, no builtins).
+- `auth/scope_kind_schema.ts` — `ScopeKindName`, `create_scope_kind_schema` (open registry, no builtins), `SCOPE_KIND_LENGTH_MAX` (64 — bounds a registered name and the `scope_kind` on `role_grant_offer_create` / `role_grant_assign`, which is copied into the row and its audit metadata).
 - `auth/credential_type_schema.ts` — `CredentialTypeName`, `CREDENTIAL_TYPE_SESSION` / `_API_TOKEN` / `_DAEMON_TOKEN`, `create_credential_type_schema`.
 - `auth/grant_path_schema.ts` — `GrantPathName`, `GRANT_PATH_ADMIN` / `_SELF_SERVICE` / `_SYSTEM` / `_BOOTSTRAP`, `create_grant_path_schema`.
 - `auth/token_lifetime.ts` — the temporal axis of a minted token: `TokenLifetimeInput` (required union on `account_token_create` — `{kind:'eternal'}` or `{kind:'ttl', days}`), `token_lifetime_to_expires_at`, `TOKEN_TTL_DAYS_MAX`. No default — `expires_at IS NULL` always means "deliberately eternal".
@@ -239,6 +239,8 @@ consumer's `validate_data` pass-through callback on `CellActionDeps`.
   `visibility` / `path`), the write-once capability/identity axis; a stray
   `kind` inside `data` is rejected fail-loud (`ERROR_CELL_KIND_IN_DATA`).
 - `auth/cell_action_specs.ts` — `CellVisibility` enum, `CellPath` brand,
+  `CELL_KIND_LENGTH_MAX` (64 — the wire `kind` on `cell_create` and the
+  `cell_list` filter; the tag is copied into the cell's audit rows),
   `CellJson`, the generic verb specs (`cell_create / get / update /
 delete / list / clone / moderate`), error reasons, and `all_cell_action_specs`
   (spreads in the grant / field / item / audit registries so codegen + UI
@@ -770,7 +772,7 @@ Options: `roles?: RoleSchemaResult` (drives admin-grant-path lookup),
 - `account_session_list_action_spec` — read; input `z.void()`; output `{sessions}`.
 - `account_session_revoke_action_spec` — mutation; input `{session_id}`; output `{ok, revoked}`.
 - `account_session_revoke_all_action_spec` — mutation; input `z.void()`; output `{ok, count}`.
-- `account_token_create_action_spec` — mutation; input `{name?, scope, lifetime}` (both `scope` and `lifetime` required — default-deny at mint on both axes); output `{ok, token, id, name, expires_at}`.
+- `account_token_create_action_spec` — mutation; input `{name?, scope, lifetime}` (both `scope` and `lifetime` required — default-deny at mint on both axes; `name` at most `API_TOKEN_NAME_LENGTH_MAX` = 255 characters, since it is copied into the audit row); output `{ok, token, id, name, expires_at}`.
 - `account_token_list_action_spec` — read; input `z.void()`; output `{tokens}`.
 - `account_token_revoke_action_spec` — mutation; input `{token_id}`; output `{ok, revoked}`.
 

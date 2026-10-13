@@ -24,7 +24,9 @@
  *   non-admin is refused at the dispatcher → 403 `insufficient_permissions`;
  *   anonymous → 401.
  * - **(d) builtin roles are global-only** — `scope_kind` + `scope_id` are
- *   paired on both grant inputs (a half-scoped call → 400 `-32602`), a scoped
+ *   paired on both grant inputs (a half-scoped call → 400 `-32602`), a
+ *   `scope_kind` past `SCOPE_KIND_LENGTH_MAX` is refused on both (400, with a
+ *   `scope_kind` exactly at the cap reaching the handler as the control), a scoped
  *   `admin` is refused on assign and offer create → 400
  *   `role_grant_builtin_scoped`, and a builtin offer from a caller without a
  *   global `admin` → 403 `role_grant_offer_not_authorized`.
@@ -47,6 +49,7 @@ import {
 	ERROR_ROLE_GRANT_OFFER_ROLE_NOT_GRANTABLE
 } from '#lib/auth/role_grant_offer_action_specs.ts';
 import { ROLE_ADMIN, ROLE_KEEPER } from '#lib/auth/role_schema.ts';
+import { SCOPE_KIND_LENGTH_MAX } from '#lib/auth/scope_kind_schema.ts';
 import { SPINE_PARTICIPANT_ROLE } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 import type { ConformanceCase } from '#lib/testing/cross_backend/conformance_case.ts';
 
@@ -232,6 +235,55 @@ export const conformance_participation_cases: ReadonlyArray<ConformanceCase> = [
 		},
 		expect: { status: 400 },
 		note: 'scope_kind + scope_id are paired on role_grant_offer_create'
+	},
+	{
+		name: 'assign with a scope_kind at the length cap passes validation (404 past it)',
+		request: {
+			method: 'role_grant_assign',
+			as: 'keeper',
+			params: {
+				to_account_id: NIL_UUID,
+				role: SPINE_PARTICIPANT_ROLE,
+				scope_kind: 'k'.repeat(SCOPE_KIND_LENGTH_MAX),
+				scope_id: SCOPE_UUID
+			}
+		},
+		// The control for the row below: the same input one unit shorter reaches
+		// target resolution and 404s on the nonexistent account.
+		expect: { status: 404 },
+		note: 'a scope_kind at the cap is admitted on role_grant_assign'
+	},
+	{
+		name: 'assign with a scope_kind past the length cap is invalid params',
+		request: {
+			method: 'role_grant_assign',
+			as: 'keeper',
+			params: {
+				to_account_id: NIL_UUID,
+				role: SPINE_PARTICIPANT_ROLE,
+				scope_kind: 'k'.repeat(SCOPE_KIND_LENGTH_MAX + 1),
+				scope_id: SCOPE_UUID
+			}
+		},
+		expect: { status: 400 },
+		note: 'scope_kind is capped at the input boundary on role_grant_assign'
+	},
+	{
+		name: 'offer create with a scope_kind past the length cap is invalid params',
+		request: {
+			method: 'role_grant_offer_create',
+			as: 'keeper',
+			params: {
+				to_account_id: NIL_UUID,
+				role: SPINE_PARTICIPANT_ROLE,
+				scope_kind: 'k'.repeat(SCOPE_KIND_LENGTH_MAX + 1),
+				scope_id: SCOPE_UUID
+			}
+		},
+		// Refused at the input boundary: the same offer with a `scope_kind` at
+		// the cap gets past validation to the write.
+		expect: { status: 400 },
+		note: 'scope_kind is capped at the input boundary on role_grant_offer_create'
 	},
 	{
 		name: 'admin assign of a scoped builtin (admin) is refused',

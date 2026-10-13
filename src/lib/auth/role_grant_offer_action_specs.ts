@@ -31,6 +31,7 @@ import {
 	ERROR_ROLE_NOT_WEB_GRANTABLE
 } from '../http/error_schemas.ts';
 import { RoleName } from './role_schema.ts';
+import { SCOPE_KIND_LENGTH_MAX } from './scope_kind_schema.ts';
 import {
 	ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX,
 	RoleGrantOfferJson
@@ -83,10 +84,13 @@ export const GRANT_SCOPE_PAIRED_MESSAGE =
 	"'scope_kind' and 'scope_id' must be given together (both for a scoped grant, neither for a global one)";
 
 /** The `scope_kind` field both grant inputs share, paired with `scope_id`. */
-const GrantScopeKind = z.string().nullish().meta({
-	description:
-		'Machine-readable kind tag for `scope_id` — paired-null with `scope_id` (both null for global, both non-null for scoped). Required iff `scope_id` is set.'
-});
+const GrantScopeKind = z
+	.string()
+	.max(SCOPE_KIND_LENGTH_MAX)
+	.nullish()
+	.meta({
+		description: `Machine-readable kind tag for \`scope_id\` — paired-null with \`scope_id\` (both null for global, both non-null for scoped). Required iff \`scope_id\` is set. At most ${SCOPE_KIND_LENGTH_MAX} characters.`
+	});
 
 // -- Input/output schemas ---------------------------------------------------
 

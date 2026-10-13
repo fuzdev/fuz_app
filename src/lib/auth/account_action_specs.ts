@@ -63,6 +63,14 @@ export const SessionRevokeAllOutput = z.strictObject({
 export type SessionRevokeAllOutput = z.infer<typeof SessionRevokeAllOutput>;
 
 /**
+ * Maximum length of an API token's `name`, in UTF-16 code units (what
+ * `String.length` and Zod's `.max()` measure). The name is copied into the
+ * `token_create` audit row, so it is bounded where it enters. Same value as
+ * the Rust spine's `API_TOKEN_NAME_LENGTH_MAX`.
+ */
+export const API_TOKEN_NAME_LENGTH_MAX = 255;
+
+/**
  * Input for `account_token_create`.
  *
  * `scope` is **required** — default-deny at mint. There is deliberately no
@@ -79,8 +87,11 @@ export type SessionRevokeAllOutput = z.infer<typeof SessionRevokeAllOutput>;
 export const TokenCreateInput = z.strictObject({
 	name: z
 		.string()
+		.max(API_TOKEN_NAME_LENGTH_MAX)
 		.default('CLI token')
-		.meta({ description: 'Human-friendly label; shown in the token list.' }),
+		.meta({
+			description: `Human-friendly label; shown in the token list. At most ${API_TOKEN_NAME_LENGTH_MAX} characters.`
+		}),
 	scope: TokenScopeInput.meta({
 		description:
 			"What the token may do. `{kind:'full'}` for full account authority, or " +

@@ -1263,6 +1263,14 @@ outside it is refused at input validation, before any gate that would record
 the caller's text in a failure audit row. The Rust spine holds the same grammar
 (`is_valid_role_name`).
 
+The other caller-supplied strings that reach audit metadata are length-capped
+at input validation too, on both spines, counted in UTF-16 code units: an API
+token's `name` (`API_TOKEN_NAME_LENGTH_MAX`, 255), a cell's `kind` on
+`cell_create` and as a `cell_list` filter (`CELL_KIND_LENGTH_MAX`, 64), and
+the `scope_kind` on `role_grant_offer_create` and `role_grant_assign`
+(`SCOPE_KIND_LENGTH_MAX`, 64). A longer value is refused `invalid_params`
+before any row is written.
+
 | Role        | Granted how                                    | Scope                                                |
 | ----------- | ---------------------------------------------- | ---------------------------------------------------- |
 | `keeper`    | Daemon token only (filesystem access required) | System-level: role_grants, audit, bootstrap recovery |

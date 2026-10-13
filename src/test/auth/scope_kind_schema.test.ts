@@ -6,7 +6,11 @@
 
 import { describe, assert, test } from 'vitest';
 
-import { create_scope_kind_schema, ScopeKindName } from '#lib/auth/scope_kind_schema.ts';
+import {
+	create_scope_kind_schema,
+	SCOPE_KIND_LENGTH_MAX,
+	ScopeKindName
+} from '#lib/auth/scope_kind_schema.ts';
 
 describe('ScopeKindName regex', () => {
 	test('accepts valid lowercase names', () => {
@@ -27,6 +31,11 @@ describe('ScopeKindName regex', () => {
 		assert.ok(!ScopeKindName.safeParse('has.dot').success);
 		assert.ok(!ScopeKindName.safeParse('has space').success);
 		assert.ok(!ScopeKindName.safeParse('123digit').success);
+	});
+
+	test('accepts a name at the length cap and rejects one past it', () => {
+		assert.ok(ScopeKindName.safeParse('a'.repeat(SCOPE_KIND_LENGTH_MAX)).success);
+		assert.ok(!ScopeKindName.safeParse('a'.repeat(SCOPE_KIND_LENGTH_MAX + 1)).success);
 	});
 });
 
@@ -49,6 +58,14 @@ describe('create_scope_kind_schema', () => {
 		assert.strictEqual(scope_kinds.size, 0);
 		assert.ok(!ScopeKind.safeParse('classroom').success);
 		assert.ok(!ScopeKind.safeParse('').success);
+	});
+
+	test('rejects a scope-kind name past the length cap at construction', () => {
+		assert.throws(
+			() => create_scope_kind_schema({ ['a'.repeat(SCOPE_KIND_LENGTH_MAX + 1)]: {} }),
+			/at most/
+		);
+		create_scope_kind_schema({ ['a'.repeat(SCOPE_KIND_LENGTH_MAX)]: {} });
 	});
 
 	test('rejects invalid scope-kind names at construction', () => {

@@ -33,7 +33,10 @@ import '../assert_dev_env.ts';
  *   `kind` inside `data` still gets the authz error (404 / 403), never the
  *   kind error — authz runs before the input-shape checks, on both spines;
  * - an empty-string `kind` is rejected on create (`cell_kind_empty`) and is
- *   accepted as a list filter that matches nothing.
+ *   accepted as a list filter that matches nothing;
+ * - a `kind` of exactly `CELL_KIND_LENGTH_MAX` UTF-16 code units is stored
+ *   whole, and one unit past it is `invalid_params` on create and as a list
+ *   filter.
  *
  * The visibility-manage-tier 403 (`cell_visibility_manage_only`) needs a
  * non-owner editor, which only a `cell_grant` can produce, so it lives in
@@ -46,6 +49,7 @@ import '../assert_dev_env.ts';
 import { describe, assert } from 'vitest';
 
 import {
+	CELL_KIND_LENGTH_MAX,
 	CellCreateOutput,
 	CellDeleteOutput,
 	CellGetOutput,
@@ -520,6 +524,52 @@ export const describe_cell_crud_cross_tests = (
 					!listed.cells.some((c) => c.id === note.id),
 					'empty-kind filter matched a non-empty-kind cell'
 				);
+			}
+		);
+
+		test_if(
+			capabilities.cell_crud,
+			'kind length cap: stored whole at the cap; one unit past it is invalid_params on create and list',
+			async () => {
+				const fixture = await setup_test();
+				const owner = await fixture.create_account({ username: 'cell_kind_cap' });
+				const t = fixture.fresh_transport();
+				const owner_headers = owner.create_session_headers();
+				// an astral character costs two UTF-16 code units on both spines
+				const astral_at_cap = '\u{1F600}'.repeat(CELL_KIND_LENGTH_MAX / 2);
+
+				for (const kind of ['k'.repeat(CELL_KIND_LENGTH_MAX), astral_at_cap]) {
+					assert.strictEqual(kind.length, CELL_KIND_LENGTH_MAX);
+					const created = expect_output(
+						await cross_rpc_call(t, rpc_path, 'cell_create', { kind, data: {} }, owner_headers),
+						CellCreateOutput
+					).cell;
+					assert.strictEqual(created.kind, kind, 'a kind at the cap must be stored whole');
+					const listed = expect_output(
+						await cross_rpc_call(t, rpc_path, 'cell_list', { kind }, owner_headers),
+						CellListOutput
+					);
+					assert.ok(
+						listed.cells.some((c) => c.id === created.id),
+						'a kind filter at the cap must match the cell that carries it'
+					);
+				}
+
+				for (const kind of ['k'.repeat(CELL_KIND_LENGTH_MAX + 1), astral_at_cap + 'k']) {
+					for (const [method, params] of [
+						['cell_create', { kind, data: {} }],
+						['cell_list', { kind }]
+					] as const) {
+						const refused = await cross_rpc_call(t, rpc_path, method, params, owner_headers);
+						assert.ok(!refused.ok, `${method} admitted a ${kind.length}-unit kind`);
+						assert.strictEqual(refused.error?.code, -32602);
+						assert.strictEqual(
+							error_reason(refused),
+							undefined,
+							'a schema refusal carries no reason'
+						);
+					}
+				}
 			}
 		);
 	});
