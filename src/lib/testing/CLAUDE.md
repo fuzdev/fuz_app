@@ -927,7 +927,7 @@ source of truth for wire-shape conformance.
 - `testing/cross_backend/capabilities.ts` — `BackendCapabilities` vocabulary
   (the **gating** flags `ws` / `sse` / `cell_crud` / `cell_relations` /
   `cell_gated_create` / `account_lifecycle` / `fact_serving` / `ready` /
-  `account_status` / `oversized_reject_closes_connection` / `peer_request` /
+  `account_status` / `peer_request` /
   `ws_handshake_pipelining` / `ws_account_actions` / `ws_self_revocation_reply` —
   each has a `test_if`
   reader (`ws_self_revocation_reply` forks one case's assertion instead); `peer_request` (server-initiated requests — the ActionPeer
@@ -971,18 +971,17 @@ source of truth for wire-shape conformance.
   case — `GET /api/account/status` is bundled into `create_account_route_specs`,
   so every spine serves it (`true`); the gate fails loud if a declaring backend
   doesn't mount it (replacing the old runtime 404-sniff-skip).
-  `oversized_reject_closes_connection` picks the arm of the body-size
-  smuggling probe (`true` Node/Deno/Rust — the connection closes after an
-  oversized-body 413, at once on Node and once the declared body has arrived
-  on Deno, so the pipelined request goes unanswered; `false` Bun —
-  `Bun.serve` keeps the connection and serves the next request, correctly
-  framed, so the suite requires no desync there instead: exactly the 413 and
-  the reply to the pipelined request, which a backend that closes fails).
+  No flag covers the body-size smuggling probe: every backend closes the
+  connection after an oversized-body 413 (at once on Node, Bun and the Rust
+  spine, once the declared body has arrived on Deno), so the pipelined request
+  goes unanswered. Bun 1.4.3 is the tested floor — an older Bun kept the
+  connection and served the next request, correctly framed, and fails the probe.
   `ws_handshake_pipelining` gates the WS round-trip suite's
   frames-with-the-handshake case (`true` Node/Deno/Rust — frames written in the
-  same TCP write as the upgrade request reach the socket; `false` Bun, whose
-  HTTP parser answers such a request `400`, and `false` in-process, where there
-  is no socket to write raw bytes to).
+  same TCP write as the upgrade request reach the socket; `false` Bun, which
+  answers such a request `400` when the upgrade follows an asynchronous check,
+  as it does behind auth, and `false` in-process, where there is no socket to
+  write raw bytes to).
   `ws_account_actions` (the WS endpoint mounts the account actions — `true` on
   fuz_app's own spine presets, `false` in the family defaults) gates the WS
   round-trip suite's self-revocation case and, with `rpc_path`, its

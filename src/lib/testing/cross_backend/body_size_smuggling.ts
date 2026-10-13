@@ -11,38 +11,31 @@ import '../assert_dev_env.ts';
  * body bytes would be parsed as the start of the next request — a classic
  * request-smuggling vector. This suite probes the boundary by **pipelining**:
  * it opens a raw TCP socket and sends, in one write, an oversized `POST`
- * immediately followed by a second `GET`. What it requires forks on the
- * backend's declared `oversized_reject_closes_connection` capability:
+ * immediately followed by a second `GET`. Every backend must close after the
+ * reject, so the pipelined GET goes unanswered and **at most one** response
+ * comes back. `<= 1` rather than "exactly the 413" because the impls close
+ * differently at the TCP level (a graceful close delivers the 413 first;
+ * hyper's RST can drop the in-flight 413 before the client reads it), so
+ * demanding a cleanly-read 413 would be flaky.
  *
- * - **Closes (Node / Deno / hyper)** — the pipelined GET goes unanswered, so
- *   **at most one** response comes back. `<= 1` rather than "exactly the 413"
- *   because the impls close differently at the TCP level (a graceful close
- *   delivers the 413 first; hyper's RST can drop the in-flight 413 before the
- *   client reads it), so demanding a cleanly-read 413 would be flaky. Node
- *   closes at once with the body unread — `create_app_server`'s body limit
- *   (`http/body_limit.ts`) refuses on the header and answers
- *   `Connection: close`, which is what makes `@hono/node-server` close. Deno
- *   closes once the whole declared body has arrived, which this probe's
- *   single write delivers; a client that withholds the body holds a Deno
- *   connection open, and no request behind the body is served either way.
- * - **Keeps the connection (Bun)** — `Bun.serve` sends that same 413, header
- *   included, then keeps the socket open, skips the declared body, and serves
- *   the GET. This is not a smuggle — the GET is delimited by the POST's
- *   `Content-Length`, not carved out of the body — so the property held here
- *   is **no desync**: the bytes read back are **exactly two** well-formed
- *   responses, the first the 413 and the second the same status and body the
- *   backend gives that GET on a connection of its own. Body bytes parsed as a
- *   request would show up as a different second response or as extra ones.
- *   Fewer than two fails too, with a message naming the capability: a backend
- *   on this arm that closes after the 413 belongs on the other one.
+ * - **Node** closes at once with the body unread — `create_app_server`'s body
+ *   limit (`http/body_limit.ts`) refuses on the header and answers
+ *   `Connection: close`, which is what makes `@hono/node-server` close.
+ * - **Bun** closes at once too, honouring that header. Bun 1.4.3 is the tested
+ *   floor: an older Bun kept the connection after the 413 and served the next
+ *   request (correctly framed), which fails this suite.
+ * - **Deno** closes once the whole declared body has arrived, which this
+ *   probe's single write delivers; a client that withholds the body holds a
+ *   Deno connection open, and no request behind the body is served either way.
+ * - **hyper** (the Rust spine) closes at once.
  *
  * The oversized body is rejected *with* a 413 on every backend — pinned
  * reliably over `fetch` by `describe_body_size_cross_tests`; this test owns
  * only the connection-handling half. A **positive control** (two pipelined
  * requests → `>= 2` responses) proves a second response *would* be seen if a
- * trailing request were processed — without it the close-posture `<= 1` would
- * be vacuous on a server that never reuses connections — and that the counter
- * isn't undercounting.
+ * trailing request were processed — without it `<= 1` would be vacuous on a
+ * server that never reuses connections — and that the counter isn't
+ * undercounting.
  *
  * Raw-socket by necessity (the `FetchTransport` can't pipeline two requests on
  * one connection), so — unlike `body_size.ts` — this is **cross-process only**
@@ -68,27 +61,14 @@ export interface BodySizeSmugglingCrossTestOptions {
 	readonly base_url: string;
 	/** RPC endpoint path to target. Default `/api/rpc`. */
 	readonly rpc_path?: string;
-	/**
-	 * Whether the backend closes the connection after an oversized-body `413`
-	 * (`capabilities.oversized_reject_closes_connection`). `true` (default)
-	 * requires that the pipelined GET goes unanswered — at most one response.
-	 * `false` (Bun) requires no desync instead: exactly two well-formed
-	 * responses, the 413 and one matching what the backend answers that GET
-	 * sent alone — so `rpc_path` must answer a bare `GET` with a stable status
-	 * and body, and a backend that closes after the 413 fails. Default `true`
-	 * so a consumer that leaves the flag out fails loud on a backend that
-	 * keeps the connection.
-	 */
-	readonly closes_connection?: boolean;
 }
 
 /** The shared 1 MiB cap (see `body_size.ts` for why it's a local constant). */
 const BODY_LIMIT_DEFAULT_BYTES = 1024 * 1024;
 
 /**
- * How long each raw exchange waits for the server to finish answering. A
- * backend that keeps the connection never closes it, so its exchange runs the
- * whole window.
+ * How long each raw exchange waits for the server to finish answering. An
+ * exchange the backend does not end by closing runs the whole window.
  */
 const RAW_READ_TIMEOUT_MS = 2000;
 
@@ -140,50 +120,11 @@ const send_raw = (
  */
 const count_responses = (raw: string): number => (raw.match(/HTTP\/1\.[01] \d{3}/g) ?? []).length;
 
-/** One response split out of a raw byte stream by `parse_responses`. */
-interface RawResponse {
-	readonly status: number;
-	readonly body: string;
-}
-
-/**
- * Split a raw byte stream into the HTTP responses it holds, each framed on
- * its own `Content-Length` (a response without one runs to the end of the
- * stream). The stream is `latin1`-decoded, so a character is a byte.
- *
- * @returns the responses in order, or `null` when the bytes are not a
- * sequence of whole responses — text where a status line belongs, a head
- * with no end, a body shorter than its declared length
- */
-const parse_responses = (raw: string): Array<RawResponse> | null => {
-	const responses: Array<RawResponse> = [];
-	let offset = 0;
-	while (offset < raw.length) {
-		const head_end = raw.indexOf('\r\n\r\n', offset);
-		if (head_end === -1) return null;
-		const [status_line, ...header_lines] = raw.slice(offset, head_end).split('\r\n');
-		const status_match = /^HTTP\/1\.[01] (\d{3})(?: |$)/.exec(status_line!);
-		if (!status_match) return null;
-		const body_start = head_end + 4;
-		const length_line = header_lines.find((line) => /^content-length:/i.test(line));
-		const body_end =
-			length_line === undefined
-				? raw.length
-				: body_start + Number.parseInt(length_line.slice(length_line.indexOf(':') + 1), 10);
-		// also false for a `NaN` length
-		if (!(body_end >= body_start && body_end <= raw.length)) return null;
-		responses.push({ status: Number(status_match[1]), body: raw.slice(body_start, body_end) });
-		offset = body_end;
-	}
-	return responses;
-};
-
 export const describe_body_size_smuggling_cross_tests = (
 	options: BodySizeSmugglingCrossTestOptions
 ): void => {
 	const { base_url } = options;
 	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
-	const closes_connection = options.closes_connection ?? true;
 	const host = new URL(base_url).host;
 
 	describe('body-size limit — request-smuggling resistance', () => {
@@ -222,67 +163,15 @@ export const describe_body_size_smuggling_cross_tests = (
 			const response = await send_raw(base_url, payload, RAW_READ_TIMEOUT_MS);
 			const n = count_responses(response);
 
-			if (closes_connection) {
-				// The reject closes the connection, so the pipelined GET is never
-				// reached — **at most one** response comes back (the 413, or none if
-				// the close raced the read). A *second* response means the connection
-				// was kept and the GET served. The control above proves a second
-				// response *would* be seen, so `<= 1` is a real signal.
-				assert.ok(
-					n <= 1,
-					`expected at most one response (oversized reject closes the connection; the ` +
-						`pipelined GET must not be reached). Saw ${n}. Raw head: ${response.slice(0, 120)}`
-				);
-				return;
-			}
-
-			// The backend keeps the connection (Bun): the 413, then its answer to
-			// the GET, and nothing else. Hold it to **no desync** — the body bytes
-			// were skipped as a body, never parsed as a request.
+			// The reject closes the connection, so the pipelined GET is never
+			// reached — **at most one** response comes back (the 413, or none if
+			// the close raced the read). A *second* response means the connection
+			// was kept and the GET served. The control above proves a second
+			// response *would* be seen, so `<= 1` is a real signal.
 			assert.ok(
-				n >= 2,
-				`expected two responses (the 413 + the reply to the pipelined GET) from a ` +
-					`backend declared to keep the connection after an oversized-body 413. Saw ` +
-					`${n} within ${RAW_READ_TIMEOUT_MS}ms. If this backend closes the connection ` +
-					`after the 413, declare \`oversized_reject_closes_connection: true\` for it ` +
-					`(this suite's \`closes_connection\`). Raw head: ${response.slice(0, 120)}`
-			);
-			assert.ok(
-				n <= 2,
-				`expected exactly two responses (the 413 + one reply to the pipelined GET); ` +
-					`more means the oversized body was parsed as requests (a desync). ` +
-					`Saw ${n}. Raw head: ${response.slice(0, 120)}`
-			);
-			const responses = parse_responses(response);
-			assert.ok(
-				responses !== null,
-				`expected the bytes read back to be whole HTTP responses, each framed on its ` +
-					`Content-Length. Raw head: ${response.slice(0, 240)}`
-			);
-			assert.strictEqual(
-				responses.length,
-				n,
-				`expected one status line per framed response; a difference means a status ` +
-					`line sits inside another response's body. Raw head: ${response.slice(0, 240)}`
-			);
-			const [first, second] = responses;
-			assert.strictEqual(first!.status, 413, 'the first response is the oversized reject');
-			// A request carved out of the body would not be this GET, so the reply
-			// must be the one the same GET gets on its own connection.
-			const alone = parse_responses(
-				await send_raw(
-					base_url,
-					`GET ${rpc_path} HTTP/1.1\r\nHost: ${host}\r\nConnection: close\r\n\r\n`,
-					RAW_READ_TIMEOUT_MS
-				)
-			);
-			assert.ok(alone?.length === 1, 'expected one response to the GET sent alone');
-			assert.deepStrictEqual(
-				second,
-				alone[0],
-				`expected the second response to be the backend's reply to the pipelined ` +
-					`GET (same status and body as that GET sent alone); anything else means ` +
-					`the bytes after the 413 were not framed as that request`
+				n <= 1,
+				`expected at most one response (oversized reject closes the connection; the ` +
+					`pipelined GET must not be reached). Saw ${n}. Raw head: ${response.slice(0, 120)}`
 			);
 		});
 	});

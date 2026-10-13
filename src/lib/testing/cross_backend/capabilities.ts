@@ -23,8 +23,7 @@ import '../assert_dev_env.ts';
  *   a capability is a compile error until each family declares it).
  * - `ts_spine_capabilities` / `ts_spine_bun_capabilities` — fuz_app's own TS
  *   spine presets, in `ts_spine_backend_config.ts` (deltas off the family
- *   default; Bun flips `oversized_reject_closes_connection` and
- *   `ws_handshake_pipelining`).
+ *   default; Bun flips `ws_handshake_pipelining`).
  * - `rust_spine_stub_capabilities` — fuz_app's Rust spine-stub preset, in
  *   `rust_spine_stub_backend_config.ts` (delta off the rust family default).
  *
@@ -167,28 +166,6 @@ export interface BackendCapabilities {
 	 */
 	readonly account_status: boolean;
 	/**
-	 * After an oversized-body `413` the backend **closes the connection**, so a
-	 * request that follows on the same connection is never served. Read by
-	 * `describe_body_size_smuggling_cross_tests`, which pipelines a `GET` behind
-	 * an oversized `POST`: with it `true` the `GET` must go unanswered (at most
-	 * one response); with it `false` the suite requires **exactly two**
-	 * responses — the 413, then the backend's own answer to that `GET`, which
-	 * shows the next request was framed on `Content-Length` and the body bytes
-	 * were not parsed as a request. Fewer than two fails as well: a backend
-	 * declared `false` that closes after the 413 fails the suite until the flag
-	 * is flipped to `true`.
-	 *
-	 * `true` for Node (closes at once, the body unread), Deno (closes once the
-	 * declared body has arrived — observed on Deno 2.8.3) and the Rust spine
-	 * (hyper closes at once); `false` for Bun. `Bun.serve` sends the 413
-	 * with its `Connection: close` header and then keeps the connection open,
-	 * skips the declared body, and serves the request after it — observed on
-	 * Bun 1.3.11, whatever the handler does with the request body. Requests
-	 * stay correctly framed there; what is missing is the close. See
-	 * `docs/security.md` §"Body Size Limiting".
-	 */
-	readonly oversized_reject_closes_connection: boolean;
-	/**
 	 * The backend can **initiate** a JSON-RPC request to a connected client
 	 * and await its typed reply (the server→client request/response direction
 	 * ActionPeer adds). Gates `describe_peer_ping_ws_tests` — the on-demand
@@ -218,8 +195,9 @@ export interface BackendCapabilities {
 	 * anything.
 	 *
 	 * `true` for Node (`ws`), Deno, and the Rust spine (hyper hands the
-	 * leftover bytes to the upgraded stream); `false` for Bun, whose HTTP
-	 * parser answers such a request `400` before any handler runs. A backend
+	 * leftover bytes to the upgraded stream); `false` for a Bun backend that
+	 * upgrades after an asynchronous check, as one behind auth does — `Bun.serve`
+	 * answers such a request `400` (observed on Bun 1.4.3). A backend
 	 * without it still runs the suite's client-library case (requests sent the
 	 * moment the socket opens), which pins the same contract without forcing
 	 * the ordering.
@@ -297,8 +275,6 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	fact_serving: true,
 	ready: true,
 	account_status: true,
-	// Nothing reads it in-process: the smuggling probe needs a real socket.
-	oversized_reject_closes_connection: true,
 	peer_request: false,
 	// Cross-process-only, like `peer_request`: the case needs a real bound socket
 	// to write raw bytes to.

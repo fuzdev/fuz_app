@@ -1132,17 +1132,15 @@ they do and the refusal where they do not:
 
 - **Node** refuses every form above, and a repeated `Content-Length` header
   whether or not the values agree.
-- **Deno** refuses them too, except a repeated header with equal values, which
-  reaches the application as one combined value (`50, 50`) — refused here.
-- **Bun** hands the application an empty value and a repeated header, equal or
-  differing (`5, 50`), and frames the body on the first value — all refused
-  here.
+- **Deno** and **Bun** refuse them too, except a repeated header with equal
+  values, which reaches the application as one combined value (`50, 50`) —
+  refused here.
 - **The Rust spine** (hyper) refuses a value that is not digits and a repeated
   header with differing values at parse, and accepts a repeated header with
   equal values as that value. It has no application-level check, and needs
   none: no unparsed length reaches its limit layer.
 
-Observed on Node 24.14.1, Deno 2.8.3 and Bun 1.3.11.
+Observed on Node 24.14.1, Deno 2.8.3 and Bun 1.4.3.
 
 A request carrying both `Transfer-Encoding` and a well-formed `Content-Length`
 is measured by the bytes that arrive, since the declared length does not frame
@@ -1168,25 +1166,23 @@ the runtimes differ:
   adapter holding the connection for a drain window, after which it closes —
   or, when nothing touched the request body and the rest of it arrives inside
   that window, reads it off and serves the next request.
+- **Bun** closes at once too, with the body unread, honouring the header.
+  **Bun 1.4.3 is the tested floor**: an older Bun kept the connection after
+  the 413 and served the next request (correctly framed), so run Bun
+  deployments, and the Bun leg of the cross-backend suites, at the floor or
+  later.
 - **The Rust spine** (hyper) closes at once, without waiting for the body.
 - **Deno** closes only once the whole declared body has arrived. The 413 goes
   out at once, a request pipelined behind the body is never served, and a
   client that withholds the body holds the connection open. Observed on Deno
   2.8.3; neither the `Connection: close` header nor anything the handler does
   with the request body changes it.
-- **Bun** does not close. `Bun.serve` sends the 413 — before auth and
-  validation, with the `Connection: close` header — then keeps the connection
-  open, skips the declared body, and serves the next request on it. Observed
-  on Bun 1.3.11; nothing the handler does with the request body changes it.
 
-None of these is a desync. Bun, the one runtime that serves a request after an
-oversized one, frames it on the declared `Content-Length`: the body bytes are
-never parsed as a request, and the following request is handled as the
-ordinary request it is, through every gate. What differs is who reads the
-body: on Deno and Bun the cap bounds what the application processes, not what
-the transport reads off the socket — Deno takes the declared body before it
-closes, Bun before it serves the next request. A reverse proxy with its own
-request-body cap refuses an oversized request before it reaches the runtime.
+No runtime serves a request behind an oversized one. What differs is who reads
+the body: on Deno the cap bounds what the application processes, not what the
+transport reads off the socket — it takes the declared body before it closes.
+A reverse proxy with its own request-body cap refuses an oversized request
+before it reaches the runtime.
 
 The limit checks `Content-Length` first and answers from the header alone,
 falling through to Hono's `bodyLimit` and its streaming count only for a
@@ -1195,10 +1191,8 @@ streaming 413 is sent once more than the cap has been read, and carries no
 `Connection: close` — what the connection does then is the runtime's default.
 `http/body_limit.test.ts` pins each branch. The cross-backend suite
 (`testing/cross_backend/body_size_smuggling.ts`) pipelines a request behind an
-oversized one and holds each backend to its declared
-`oversized_reject_closes_connection` capability — at most one response where
-the connection closes (Node, Deno, the Rust spine), exactly the 413 and the
-backend's own reply to the pipelined request where it is kept (Bun) — and
+oversized one and requires at most one response from every backend — the
+connection closes and the pipelined request is never served — and
 `server/create_app_server.db.test.ts` pins that the reject never reads the
 body.
 

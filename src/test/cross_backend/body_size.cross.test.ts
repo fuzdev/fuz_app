@@ -5,10 +5,9 @@
  * over real requests against each spawned backend — the TS spine binaries + the
  * Rust `testing_spine_stub`. Plus the raw-socket request-smuggling probe
  * (`describe_body_size_smuggling_cross_tests`), which pins what happens to the
- * connection after the 413: closed, on a backend that declares
- * `oversized_reject_closes_connection`; kept with the next request correctly
- * framed, on one that does not (Bun). The body-size limit is on every spine,
- * so the suite is ungated.
+ * connection after the 413: every backend closes it, so a request pipelined
+ * behind the oversized one is never served. The body-size limit is on every
+ * spine, so the suite is ungated.
  *
  * @module
  */
@@ -26,11 +25,7 @@ import './cross_test_types.ts';
 
 const handle = reconstruct_bootstrapped_handle(inject('backend_handle'));
 const setup_test = default_cross_process_setup(handle);
-const { capabilities, rpc_path, base_url } = handle.config;
+const { rpc_path, base_url } = handle.config;
 
 describe_body_size_cross_tests({ setup_test, rpc_path });
-describe_body_size_smuggling_cross_tests({
-	base_url,
-	rpc_path,
-	closes_connection: capabilities.oversized_reject_closes_connection
-});
+describe_body_size_smuggling_cross_tests({ base_url, rpc_path });

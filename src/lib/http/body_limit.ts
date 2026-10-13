@@ -11,12 +11,11 @@
  *   The runtimes' HTTP parsers answer their own bodiless `400` to most of
  *   these before the application sees them, so this branch is defense in
  *   depth where they do and the refusal where they do not: Node's refuses
- *   them all; Deno hands over a repeated equal header as one combined value
- *   (`50, 50`); Bun hands over an empty value and a repeated header, equal or
- *   differing (`5, 50`), framing the body on the first (observed on Node
- *   24.14.1, Deno 2.8.3, Bun 1.3.11). The Rust spine's parser (hyper) refuses
- *   a malformed value and differing repeats, and accepts an equal repeat as
- *   the one value.
+ *   them all; Deno and Bun hand over a repeated equal header as one combined
+ *   value (`50, 50`) and refuse the rest (observed on Node 24.14.1, Deno
+ *   2.8.3, Bun 1.4.3). The Rust spine's parser (hyper) refuses a malformed
+ *   value and differing repeats, and accepts an equal repeat as the one
+ *   value.
  * - A request whose `Content-Length` exceeds the cap is refused with `413`
  *   `{error: 'payload_too_large'}`, whatever its method. A digit run of any
  *   length compares as a number, so one too long to represent exactly is over
@@ -45,8 +44,10 @@
  *   connection open while a client withholds it; a request pipelined behind
  *   the body is not served. Neither the header nor what the handler does with
  *   the body changes that (observed on Deno 2.8.3).
- * - **Bun** keeps the connection, skips the declared body, and serves the
- *   next request on it (observed on Bun 1.3.11).
+ * - **Bun** closes at once, the body unread, honouring the header. Bun 1.4.3
+ *   is the tested floor: an older Bun kept the connection after the `413` and
+ *   served the next request (correctly framed), so run Bun at the floor or
+ *   later.
  *
  * @module
  */
@@ -82,8 +83,8 @@ export const create_body_limit_middleware = (max_size: number): MiddlewareHandle
 			// still a huge number (or `Infinity`), so it compares as over the cap
 			if (!c.req.header('transfer-encoding') && Number(content_length) > max_size) {
 				// refused on the header alone, the body untouched; `Connection: close`
-				// makes `@hono/node-server` close at once instead of holding the
-				// connection or serving the request behind the body
+				// makes `@hono/node-server` and Bun close at once instead of holding
+				// the connection or serving the request behind the body
 				return c.json({ error: ERROR_PAYLOAD_TOO_LARGE }, 413, { connection: 'close' });
 			}
 		}

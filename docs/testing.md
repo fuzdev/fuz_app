@@ -1065,9 +1065,8 @@ consumer config.
 - `fact_serving` — Backend live-mounts the cell-gated fact-serving routes + `_testing_put_fact` (gates `describe_fact_serving_cross_tests`).
 - `ready` — Backend live-mounts the public `/ready` schema-drift deploy gate (gates `describe_ready_cross_tests`).
 - `account_status` — Backend serves `GET /api/account/status` (bundled into `create_account_route_specs`; `true` for every spine). Gates the integration suite's status wire-shape case — fail-loud on a missing route rather than a silent skip.
-- `oversized_reject_closes_connection` — Backend closes the connection after an oversized-body 413, so a request pipelined behind it is never served (`true` for Node, which closes at once, Deno, which closes once the declared body has arrived, and Rust; `false` for Bun, which keeps the connection and serves the next request, correctly framed). Read by the body-size smuggling probe: `true` requires at most one response, `false` requires no desync — exactly two well-formed responses, the 413 and the backend's own reply to the pipelined `GET`. A backend declared `false` that closes after the 413 fails the probe until the flag is `true`.
 - `peer_request` — Backend can initiate a server→client request and await the typed reply (ActionPeer — `BackendWebsocketTransport.request_connection`). Gates `describe_peer_ping_ws_tests`. `true` on the Rust spine and the TS spine; `ts_default_capabilities` keeps it off until a backend wires the `peer/ping` HTTP + WS mount.
-- `ws_handshake_pipelining` — Backend's HTTP server accepts WebSocket frames written in the same TCP write as the upgrade request (`true` for Node/Deno/Rust; `false` for Bun, which answers such a request `400`). Gates the WS round-trip suite's frames-with-the-handshake case — the ordering-forced form of "frames that arrive before the connection is admitted wait for admission".
+- `ws_handshake_pipelining` — Backend's HTTP server accepts WebSocket frames written in the same TCP write as the upgrade request (`true` for Node/Deno/Rust; `false` for a Bun backend that upgrades after an asynchronous check, as one behind auth does — Bun answers such a request `400`). Gates the WS round-trip suite's frames-with-the-handshake case — the ordering-forced form of "frames that arrive before the connection is admitted wait for admission".
 - `ws_account_actions` — Backend's WebSocket endpoint mounts the self-service account actions, so a socket can revoke the session it runs on (`true` on fuz_app's own spine presets; `false` in the family defaults until a consumer's endpoint mounts them). Gates the WS round-trip suite's self-revocation case, and its WS-mutation audit case (which also calls `_testing_drain_effects`).
 - `ws_self_revocation_reply` — A socket that revokes its own credential reads the reply to that request before the close (`true` for the TS family; `false` for the Rust family, whose socket loop drops the response once the connection is closed). Read by the self-revocation case: the reply ahead of the `WS_CLOSE_SESSION_REVOKED` close, or the close alone.
 - `cell_gated_create` — Backend live-mounts a test `CellCreateAuthorize` policy on its cell layer (`true` only on the reference spine binaries that mount it). Gates `describe_cell_gated_create_cross_tests`.
@@ -1156,6 +1155,10 @@ the same code:
 - `create_node_testing_adapter` (`testing/cross_backend/testing_server_node.ts`) — Node V8
 - `create_deno_testing_adapter` (`testing/cross_backend/testing_server_deno.ts`) — Deno V8
 - `create_bun_testing_adapter` (`testing/cross_backend/testing_server_bun.ts`) — Bun JSC
+
+Bun 1.4.3 is the tested floor for the Bun leg: the body-size smuggling probe
+requires every backend to close the connection after an oversized-body 413, and
+an older Bun kept it and served the next request (correctly framed).
 
 Each adapter pairs with the runtime-neutral `start_testing_server`
 (`testing_server_core.ts`), which owns serve + daemon-info + WS attach +

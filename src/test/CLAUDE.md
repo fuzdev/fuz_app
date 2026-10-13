@@ -378,17 +378,13 @@ and `body_size.cross.test.ts` (the 1 MiB request-body cap:
 at-limit exactly-the-cap → not size-rejected, under-limit → 200, all retry-once
 around the server-closed socket the 413 leaves — plus
 `describe_body_size_smuggling_cross_tests`, a raw-`node:net` probe that pipelines
-an oversized `POST` + a `GET`. Its assertion forks on the backend's
-`oversized_reject_closes_connection` capability: a backend that closes
-(Node/Deno/Rust) must return **at most one** response (`<= 1` — the pipelined
-GET is never reached; robust to graceful-close vs RST); Bun, which keeps the
-connection after the 413 and serves the GET, is held to **no desync** instead —
-exactly two well-formed responses, the 413 first and the second equal in status
-and body to that GET sent alone, so the body was skipped on `Content-Length`,
-never parsed as request bytes (fewer than two fails too: a backend on that arm
-that closes must declare the capability). The 413-ness itself is pinned by the fetch parity
-cases; a positive control (two pipelined requests → `>= 2` responses) keeps both
-arms non-vacuous. The parity cases have an in-process leg
+an oversized `POST` + a `GET`. Every backend must return **at most one**
+response (`<= 1` — the connection closes and the pipelined GET is never reached;
+robust to graceful-close vs RST). Bun 1.4.3 is the tested floor for the Bun leg:
+an older Bun kept the connection after the 413 and served the GET (correctly
+framed), which fails the probe. The 413-ness itself is pinned by the fetch parity
+cases; a positive control (two pipelined requests → `>= 2` responses) keeps the
+probe non-vacuous. The parity cases have an in-process leg
 `auth/body_size_parity.db.test.ts` (the limit's own branches — at and past the
 cap by `Content-Length` and by streamed bytes, `Transfer-Encoding` beside
 `Content-Length`, each malformed `Content-Length` form refused with 400, and

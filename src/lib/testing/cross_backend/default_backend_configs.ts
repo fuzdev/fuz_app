@@ -87,10 +87,6 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	// `GET /api/account/status` is bundled into `create_account_route_specs`, so
 	// every TS backend mounting account routes serves it.
 	account_status: true,
-	// Node and Deno close the connection after an oversized-body `413`. A
-	// Bun-served consumer overrides to `false` (see the bun spine config) —
-	// `Bun.serve` keeps the connection and serves the next request.
-	oversized_reject_closes_connection: true,
 	// Off by default like `sse`/`ready`: the WS backend transport *can* initiate
 	// server→client requests (`BackendWebsocketTransport.request_connection`),
 	// but driving the full `peer/ping` suite also needs `peer/ping` mounted on
@@ -99,7 +95,8 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	peer_request: false,
 	// Node (`ws`) and Deno hand frames pipelined with the upgrade request to the
 	// socket. A Bun-served consumer overrides to `false` (see the bun spine
-	// config) — `Bun.serve` answers such a request `400`.
+	// config) — `Bun.serve` answers such a request `400` when the upgrade
+	// follows an asynchronous check.
 	ws_handshake_pipelining: true,
 	// Off by default: a consumer's WS endpoint mounts its own domain's actions.
 	// fuz_app's spine configs opt in (the spine binary mounts the account
@@ -132,9 +129,6 @@ export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 	// The Rust `account_router` bundles `/status` into the account routes, so
 	// every Rust spine serving the account surface serves it.
 	account_status: true,
-	// hyper closes the connection on the oversized-body reject, so a pipelined
-	// request is never reached.
-	oversized_reject_closes_connection: true,
 	// Server-initiated requests landed Rust-first canonical — the Rust spine
 	// drives the `peer/ping` round-trip, so the family opts into the suite.
 	peer_request: true,
