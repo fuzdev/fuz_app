@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.plbivBls.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.Dn6AGurP.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.nq99h2HY.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.CDzs6ykf.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdRKSg2Q.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/3tnpCvSr.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.BwmwJcAO.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Bbp4Dwqt.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.Bk5FvtP5.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/kn3lWLz2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -84,22 +84,33 @@ that does not parse, and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[
 The runtimes' HTTP parsers answer their own bodiless <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->400<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> to most of
 these before the application sees them, so this branch is defense in
 depth where they do and the refusal where they do not: Node's refuses
-them all; Deno hands over a repeated equal header as one combined value
-(<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->50, 50<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->); Bun hands over an empty value and a repeated header, equal or
-differing (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->5, 50<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), framing the body on the first (observed on Node
-24.14.1, Deno 2.8.3, Bun 1.3.11). The Rust spine's parser (hyper) refuses
-a malformed value and differing repeats, and accepts an equal repeat as
-the one value.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->A request whose <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> exceeds the cap is refused with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
+them all; Deno and Bun hand over a repeated equal header as one combined
+value (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->50, 50<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) and refuse the rest (observed on Node 24.14.1, Deno
+2.8.3, Bun 1.4.3). The Rust spine's parser (hyper) refuses a malformed
+value and differing repeats, and accepts an equal repeat as the one
+value.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->A request whose <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> exceeds the cap is refused with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->{error: 'payload_too_large'}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, whatever its method. A digit run of any
 length compares as a number, so one too long to represent exactly is over
-the cap, never unreadable.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Both refusals answer on the header alone — without touching
+the cap, never unreadable. Over a socket that branch is reached on Node
+and Deno, whose parsers hand over any length below 2^64 and refuse a
+longer one with their own <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->400<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Bun.serve<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> hands none over: with its
+default options it answers a length past 128 MiB with its own <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, and
+one of 2^63 - 1 or more with its own <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->400<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (observed on Node 24.14.1,
+Deno 2.8.3, Bun 1.4.3).<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Both refusals answer on the header alone — without touching
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->c.req.raw.body<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — and carry <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Connection: close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->A request with a well-formed <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> beside <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Transfer-Encoding<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
-or with no <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, falls through to <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->bodyLimit<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->'s streaming
-count: with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Transfer-Encoding<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> the declared length does not frame the
-body, so the bytes that arrive are what is measured. That <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is sent
-once more than the cap has been read and carries no <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Connection: close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.
+or with no <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, falls through to <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->bodyLimit<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, which measures
+the bytes that arrive: with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Transfer-Encoding<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> the declared length does
+not frame the body. <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->bodyLimit<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> reads the body into memory, up to the
+cap, <!--]--><!--[4--><strong><!--[--><!--[2-->before<!--]--><!--]--><!----></strong><!--]--><!--[2--> the next middleware runs, so that <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — sent once more
+than the cap has been read, with no <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Connection: close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — also comes
+ahead of the origin check, auth and the handler. The Rust spine counts
+such a body as its handler reads it instead, so there a refusal made on
+the headers answers first; which status an over-cap body with no declared
+length gets when another refusal also applies is implementation-defined
+across the two (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->docs/security.md<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> §"Body Size Limiting").
 The Node, Deno and Bun parsers refuse a request carrying both headers
-with their own <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->400<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->; hyper accepts one and frames its body as chunked.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->A well-formed <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> within the cap is trusted to frame the
+with their own <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->400<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->; hyper accepts one, drops its <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
+frames the body as chunked, and closes the connection after the response.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->A well-formed <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> within the cap is trusted to frame the
 body, as the runtime's HTTP parser enforces.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->What the connection does after the header <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is the runtime's
 (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->docs/security.md<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> §"Body Size Limiting"):<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Node<!--]--><!--]--><!----></strong><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@hono/node-server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) closes at once, the body unread. The
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Connection: close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> header is what does it: without one the adapter
@@ -108,8 +119,10 @@ untouched and arriving within the window, reads it off and serves the
 next request.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Deno<!--]--><!--]--><!----></strong><!--]--><!--[2--> closes once the whole declared body has arrived and holds the
 connection open while a client withholds it; a request pipelined behind
 the body is not served. Neither the header nor what the handler does with
-the body changes that (observed on Deno 2.8.3).<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Bun<!--]--><!--]--><!----></strong><!--]--><!--[2--> keeps the connection, skips the declared body, and serves the
-next request on it (observed on Bun 1.3.11).<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/http/client_ip.ts"><!--[-1-->http/client_ip.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Read the resolved client IP off the Hono context.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Split from <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->proxy.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (which pulls <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->hono/utils/ipaddr<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> for trusted-proxy
+the body changes that (observed on Deno 2.8.3).<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Bun<!--]--><!--]--><!----></strong><!--]--><!--[2--> closes at once, the body unread, honouring the header. Bun 1.4.3
+is the tested floor: an older Bun kept the connection after the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and
+served the next request (correctly framed), so run Bun at the floor or
+later.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/http/client_ip.ts"><!--[-1-->http/client_ip.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Read the resolved client IP off the Hono context.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Split from <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->proxy.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (which pulls <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->hono/utils/ipaddr<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> for trusted-proxy
 CIDR matching) so dispatch + route modules that only need to *read* the IP
 stay free of that value import — and the cross-process test surface that
 imports them stays free of the optional <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->hono<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> peer. The IP itself is set on
@@ -233,16 +246,16 @@ derived views over the authority axes (<!--]--><!--[3--><!--[0--><!--[--><!--[-1
 			
 			<script>
 				{
-					__sveltekit_1kbm0wy = {
+					__sveltekit_1n9o20u = {
 						base: "",
-						version: "d63aec581efeb957277321860ac1b4ee9f8bd912"
+						version: "af38ad954c6fbaabcfadc0df2153057573f940c6"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1kbm0wy);
-						const app = await import("/_app/immutable/entry/app.plbivBls.js");
+						kit.init(__sveltekit_1n9o20u);
+						const app = await import("/_app/immutable/entry/app.nq99h2HY.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],

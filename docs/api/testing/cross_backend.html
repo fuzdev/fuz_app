@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.plbivBls.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.Dn6AGurP.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.nq99h2HY.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.CDzs6ykf.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CdRKSg2Q.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/3tnpCvSr.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.BwmwJcAO.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/Bbp4Dwqt.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.Bk5FvtP5.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/kn3lWLz2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -175,33 +175,33 @@ a keep-alive connection whose request body wasn't consumed, because unread
 body bytes would be parsed as the start of the next request — a classic
 request-smuggling vector. This suite probes the boundary by <!--]--><!--[4--><strong><!--[--><!--[2-->pipelining<!--]--><!--]--><!----></strong><!--]--><!--[2-->:
 it opens a raw TCP socket and sends, in one write, an oversized <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->POST<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
-immediately followed by a second <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->GET<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. What it requires forks on the
-backend's declared <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->oversized_reject_closes_connection<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> capability:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Closes (Node / Deno / hyper)<!--]--><!--]--><!----></strong><!--]--><!--[2--> — the pipelined GET goes unanswered, so
-<!--]--><!--[4--><strong><!--[--><!--[2-->at most one<!--]--><!--]--><!----></strong><!--]--><!--[2--> response comes back. <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->&lt;= 1<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> rather than "exactly the 413"
-because the impls close differently at the TCP level (a graceful close
-delivers the 413 first; hyper's RST can drop the in-flight 413 before the
-client reads it), so demanding a cleanly-read 413 would be flaky. Node
-closes at once with the body unread — <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/app_server.ts#create_app_server"><!--[0--><!--[-1-->create_app_server<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->'s body limit
-(<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/http/body_limit.ts"><!--[0--><!--[-1-->http/body_limit.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) refuses on the header and answers
-<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Connection: close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, which is what makes <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@hono/node-server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> close. Deno
-closes once the whole declared body has arrived, which this probe's
-single write delivers; a client that withholds the body holds a Deno
-connection open, and no request behind the body is served either way.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Keeps the connection (Bun)<!--]--><!--]--><!----></strong><!--]--><!--[2--> — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Bun.serve<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> sends that same 413, header
-included, then keeps the socket open, skips the declared body, and serves
-the GET. This is not a smuggle — the GET is delimited by the POST's
-<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, not carved out of the body — so the property held here
-is <!--]--><!--[4--><strong><!--[--><!--[2-->no desync<!--]--><!--]--><!----></strong><!--]--><!--[2-->: the bytes read back are <!--]--><!--[4--><strong><!--[--><!--[2-->exactly two<!--]--><!--]--><!----></strong><!--]--><!--[2--> well-formed
-responses, the first the 413 and the second the same status and body the
-backend gives that GET on a connection of its own. Body bytes parsed as a
-request would show up as a different second response or as extra ones.
-Fewer than two fails too, with a message naming the capability: a backend
-on this arm that closes after the 413 belongs on the other one.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->The oversized body is rejected *with* a 413 on every backend — pinned
-reliably over <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fetch<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> by <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/body_size.ts#describe_body_size_cross_tests"><!--[0--><!--[-1-->describe_body_size_cross_tests<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->; this test owns
+immediately followed by a second <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->GET<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. Every backend must close after the
+reject, so the pipelined GET goes unanswered and <!--]--><!--[4--><strong><!--[--><!--[2-->at most one<!--]--><!--]--><!----></strong><!--]--><!--[2--> response
+comes back. <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->&lt;= 1<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> rather than "exactly the 413" because the impls close
+differently at the TCP level (a graceful close delivers the 413 first;
+hyper's RST can drop the in-flight 413 before the client reads it), so
+demanding a cleanly-read 413 would be flaky.<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Node<!--]--><!--]--><!----></strong><!--]--><!--[2--> closes at once with the body unread — <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/app_server.ts#create_app_server"><!--[0--><!--[-1-->create_app_server<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->'s body
+limit (<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/http/body_limit.ts"><!--[0--><!--[-1-->http/body_limit.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) refuses on the header and answers
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Connection: close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, which is what makes <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@hono/node-server<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> close.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Bun<!--]--><!--]--><!----></strong><!--]--><!--[2--> closes at once too, honouring that header. Bun 1.4.3 is the tested
+floor: an older Bun kept the connection after the 413 and served the next
+request (correctly framed), which fails this suite.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Deno<!--]--><!--]--><!----></strong><!--]--><!--[2--> closes once the whole declared body has arrived, which this
+probe's single write delivers; a client that withholds the body holds a
+Deno connection open, and no request behind the body is served either way.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->hyper<!--]--><!--]--><!----></strong><!--]--><!--[2--> (the Rust spine) closes at once.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->The oversized body is rejected *with* a 413 on every backend — pinned
+reliably by <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/body_size.ts#describe_body_size_cross_tests"><!--[0--><!--[-1-->describe_body_size_cross_tests<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, which sends the over-cap
+request's head and no body, so no upload races the close; this test owns
 only the connection-handling half. A <!--]--><!--[4--><strong><!--[--><!--[2-->positive control<!--]--><!--]--><!----></strong><!--]--><!--[2--> (two pipelined
 requests → <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->>= 2<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> responses) proves a second response *would* be seen if a
-trailing request were processed — without it the close-posture <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->&lt;= 1<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> would
-be vacuous on a server that never reuses connections — and that the counter
-isn't undercounting.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Raw-socket by necessity (the <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/transports/fetch_transport.ts#FetchTransport"><!--[0--><!--[-1-->FetchTransport<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> can't pipeline two requests on
+trailing request were processed — without it <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->&lt;= 1<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> would be vacuous on a
+server that never reuses connections — and that the counter isn't
+undercounting.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> beside <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Transfer-Encoding<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></strong><!--]--><!--[2--> The second probe sends a
+request carrying both headers — the shape a request-smuggling attack hands a
+server and a proxy that disagree on which one frames the body — with a
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->GET<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> pipelined behind it. What the backends share is the outcome, not the
+status: the request is refused with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->400<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (the Node, Deno and Bun parsers)
+or answered as its chunked body reads (hyper, which drops the
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), and either way the server <!--]--><!--[4--><strong><!--[--><!--[2-->closes the connection<!--]--><!--]--><!----></strong><!--]--><!--[2--> and
+the pipelined request is <!--]--><!--[4--><strong><!--[--><!--[2-->never served<!--]--><!--]--><!----></strong><!--]--><!--[2-->. The status of the one response
+is implementation-defined and not asserted.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Raw-socket by necessity (the <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/transports/fetch_transport.ts#FetchTransport"><!--[0--><!--[-1-->FetchTransport<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> can't pipeline two requests on
 one connection), so — unlike <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->body_size.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — this is <!--]--><!--[4--><strong><!--[--><!--[2-->cross-process only<!--]--><!--]--><!----></strong><!--]--><!--[2-->
 (no in-process leg; there is no socket in-process — the in-process pin is
 that the reject never reads the request body, in
@@ -209,11 +209,12 @@ that the reject never reads the request body, in
 on oversized reject).<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/body_size.ts"><!--[-1-->testing/cross_backend/body_size.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Cross-backend parity suite for the request body-size limit.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/app_server.ts#create_app_server"><!--[0--><!--[-1-->create_app_server<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (TS) and the Rust spine both cap the request body at a
 1 MiB default (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/app_server.ts#DEFAULT_MAX_BODY_SIZE"><!--[0--><!--[-1-->DEFAULT_MAX_BODY_SIZE<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fuz_http<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->'s
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->DEFAULT_BODY_LIMIT_BYTES<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) and reject oversized payloads with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->413<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and the
-canonical flat REST body <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->{error: 'payload_too_large'}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — *before* auth,
+canonical flat REST body <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->{error: 'payload_too_large'}<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. A declared
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> over the cap is refused on the header, *before* auth,
 origin, or dispatch run (middleware step 4). Each impl unit-tests this in
-isolation, but nothing fires an oversized POST over the wire, so the
-cross-impl agreement on the status + body shape (and on the exact <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->><!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> cap
-boundary, not an off-by-one divergence) was unpinned. Three cases:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->over-limit POST (cap + 1 byte) → 413<!--]--><!--]--><!----></strong><!--]--><!--[2--> <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->payload_too_large<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, refused
+isolation; this suite pins the cross-impl agreement on the status + body
+shape, on the exact <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->><!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> cap boundary (not an off-by-one divergence), and on
+the cap answering ahead of the origin check and of auth. The cases:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->over-limit POST (cap + 1 byte) → 413<!--]--><!--]--><!----></strong><!--]--><!--[2--> <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->payload_too_large<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, refused
 before any handler runs (the limit fires ahead of origin verification + the
 dispatcher, so an over-cap body is rejected regardless of how well-formed it
 is). Exactly one byte over — both impls reject on a strict <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->><!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, so this is
@@ -223,16 +224,38 @@ rejection threshold passes the size gate and reaches the dispatcher (the
 downstream status is irrelevant; only "not size-rejected" is asserted). The
 boundary sibling of the case above.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->under-limit POST (small) → 200<!--]--><!--]--><!----></strong><!--]--><!--[2--> — a small, well-formed authenticated
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->account_verify<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> envelope sails through to a successful handler response,
-the positive control that the route works for normal traffic.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[2-->Real-socket connection hazard (cross-process only).<!--]--><!--]--><!----></strong><!--]--><!--[2--> When the server caps
-the body it answers 413 and closes the connection *before* the client
-finishes uploading — correct HTTP, since an unread request body can't share a
-keep-alive socket. The client's pool can then hand that now-dead socket to
-the very next request (observed as <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->other side closed<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->). So every request
-here goes through <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fetch_retrying_once<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->: a request that inherits the poisoned
-socket retries onto a fresh connection, which both keeps the suite
-deterministic *and* evicts the dead socket so it can't strand a later cross
-suite in the same process. In-process (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->app.request<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) has no socket, so the
-hazard is cross-process-only and the retry never fires there.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Like origin/payload rejection, this is middleware-level flat REST — not the
+the positive control that the route works for normal traffic.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->over-limit POST with a disallowed <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Origin<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → 413<!--]--><!--]--><!----></strong><!--]--><!--[2-->, not the origin
+check's 403, and <!--]--><!--[4--><strong><!--[--><!--[2-->over-limit POST with no credentials → 413<!--]--><!--]--><!----></strong><!--]--><!--[2-->, not 401:
+the cap answers a declared length ahead of both. The control — the same
+disallowed <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Origin<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on an under-limit body → 403 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->forbidden_origin<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> —
+shows the origin check still runs.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->over-limit chunked POST (no <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), authenticated → 413<!--]--><!--]--><!----></strong><!--]--><!--[2--> —
+a body with no declared length is refused by the bytes that arrive.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[2-->Implementation-defined, not pinned here.<!--]--><!--]--><!----></strong><!--]--><!--[2--> Without a declared length the
+two spines measure at different points: the TS spine reads the body up to
+the cap before any later middleware runs, so its 413 comes ahead of the
+origin check and auth; the Rust spine counts as the handler reads, so a
+refusal made on the headers (a disallowed <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Origin<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) answers first and a
+handler that never reads the body answers its own status. Only the
+authenticated, allowed-origin chunked case — where nothing else refuses —
+has one answer on every backend. A repeated <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> with equal
+values is also the implementation's: the TS spine answers 400
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_content_length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> where its runtime's parser hands the repeat over,
+and hyper folds it into one value and accepts.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[2-->Over a real socket the over-cap cases send no byte the server won't
+read.<!--]--><!--]--><!----></strong><!--]--><!--[2--> A server that caps the body answers 413 and may close the
+connection with the rest of the upload unread — correct HTTP, since an
+unread request body can't share a keep-alive socket. A client still
+uploading then has its write fail (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->EPIPE<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) and can lose the 413 the server
+did send, so a whole over-cap body sent through <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->fetch<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> reads its answer
+only some of the time. Given a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->base_url<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, the suite speaks to the socket
+directly (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/transports/raw_http.ts#raw_http_exchange"><!--[0--><!--[-1-->raw_http_exchange<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) and holds back what the refusal doesn't need:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[2-->a <!--]--><!--[4--><strong><!--[--><!--[2-->declared<!--]--><!--]--><!----></strong><!--]--><!--[2--> over-cap length is sent as the request head alone —
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->Content-Length<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> one over the cap and not one body byte. The 413 must
+arrive within <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->RAW_READ_TIMEOUT_MS<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, which also pins that the refusal is
+made on the header: a backend that reads the body before refusing, or has
+no cap, waits for bytes that never come and fails the case.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->the <!--]--><!--[4--><strong><!--[--><!--[2-->chunked<!--]--><!--]--><!----></strong><!--]--><!--[2--> body is sent up to one byte past the cap and never
+terminated. The server has read every byte sent by the time it has counted
+past the cap, so nothing is left unread, and the 413 must arrive without
+the body's end.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->With <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->base_url: null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> there is no socket and no such race (the in-process
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->app.request<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), so the same cases send whole bodies through the fixture's
+transport. The under-cap cases go through the transport either way.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Like origin/payload rejection, this is middleware-level flat REST — not the
 JSON-RPC envelope the conformance-table runner expects — so it's an
 imperative suite, not a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->conformance_table<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> row. Runs both legs via the
 shared <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->setup_test<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> protocol: the in-process leg
@@ -268,8 +291,7 @@ cross-process-only ones.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[-
 family defaults, in <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->default_backend_configs.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (full literals, so adding
 a capability is a compile error until each family declares it).<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ts_spine_capabilities<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> / <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ts_spine_bun_capabilities<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — fuz_app's own TS
 spine presets, in <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ts_spine_backend_config.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (deltas off the family
-default; Bun flips <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->oversized_reject_closes_connection<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> and
-<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ws_handshake_pipelining<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->rust_spine_stub_capabilities<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — fuz_app's Rust spine-stub preset, in
+default; Bun flips <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ws_handshake_pipelining<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->rust_spine_stub_capabilities<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — fuz_app's Rust spine-stub preset, in
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->rust_spine_stub_backend_config.ts<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> (delta off the rust family default).<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[4--><strong><!--[--><!--[2-->Gating flags vs shape notes.<!--]--><!--]--><!----></strong><!--]--><!--[2--> <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/capabilities.ts#BackendCapabilities"><!--[0--><!--[-1-->BackendCapabilities<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> holds only flags a
 suite actually gates on (each has a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->test_if(capabilities.X, ...)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> reader,
 or — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ws_self_revocation_reply<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — forks one case's assertion).
@@ -299,7 +321,9 @@ gets 404 (IDOR mask), never 403;<!--]--><!--]--><!----></li><!--]--><!--[10--><l
 and update (even by the owner);<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell_get<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> with neither <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->id<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> nor <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->path<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->;<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->null-auth <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell_list<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->created_by<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> → <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->;<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->a denied caller (non-editor update / non-admin path create) carrying a
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->kind<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> inside <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->data<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> still gets the authz error (404 / 403), never the
 kind error — authz runs before the input-shape checks, on both spines;<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->an empty-string <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->kind<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is rejected on create (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell_kind_empty<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) and is
-accepted as a list filter that matches nothing.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->The visibility-manage-tier 403 (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell_visibility_manage_only<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) needs a
+accepted as a list filter that matches nothing;<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->kind<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> of exactly <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/cell_action_specs.ts#CELL_KIND_LENGTH_MAX"><!--[0--><!--[-1-->CELL_KIND_LENGTH_MAX<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> UTF-16 code units is stored
+whole, and one unit past it is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on create and as a list
+filter.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->The visibility-manage-tier 403 (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell_visibility_manage_only<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) needs a
 non-owner editor, which only a <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->cell_grant<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> can produce, so it lives in
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/testing/cross_backend/cell_relations.ts#describe_cell_relations_cross_tests"><!--[0--><!--[-1-->describe_cell_relations_cross_tests<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> alongside the grant verbs rather than
 here.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/cell_gated_create.ts"><!--[-1-->testing/cross_backend/cell_gated_create.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Cross-backend parity suite for the <!--]--><!--[4--><strong><!--[--><!--[2-->parent-aware cell-creation authorizer<!--]--><!--]--><!----></strong><!--]--><!--[2-->
@@ -1173,7 +1197,11 @@ state: mint with a TTL, then read <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><c
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->expires_at: null<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on both reads.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->An omitted lifetime is refused<!--]--><!--]--><!----></strong><!--]--><!--[2--> — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->lifetime<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is required; a mint
 without it must 400 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> on both spines. This is the direct
 pin on the silently-ignoring-unknown-shapes hazard.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Out-of-range days are refused<!--]--><!--]--><!----></strong><!--]--><!--[2--> — <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->days: 0<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> 400s identically, so the
-two hand-rolled bounds checks can't drift.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/token_scope_surface.ts"><!--[-1-->testing/cross_backend/token_scope_surface.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Cross-backend parity suite for <!--]--><!--[4--><strong><!--[--><!--[2-->token scoping's non-RPC surface rule<!--]--><!--]--><!----></strong><!--]--><!--[2--> —
+two hand-rolled bounds checks can't drift.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->The <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->name<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> cap<!--]--><!--]--><!----></strong><!--]--><!--[2--> — the same blind spot on another field of the same
+mint: a name of exactly <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/account_action_specs.ts#API_TOKEN_NAME_LENGTH_MAX"><!--[0--><!--[-1-->API_TOKEN_NAME_LENGTH_MAX<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> UTF-16 code units
+mints and reads back whole, and one unit past it is <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
+with an astral-plane name at each side of the boundary so the two spines
+count the same unit.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/testing/cross_backend/token_scope_surface.ts"><!--[-1-->testing/cross_backend/token_scope_surface.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Cross-backend parity suite for <!--]--><!--[4--><strong><!--[--><!--[2-->token scoping's non-RPC surface rule<!--]--><!--]--><!----></strong><!--]--><!--[2--> —
 *a narrowed api token is RPC-only*.<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="why-this-suite-exists"><!--[--><!--[2-->Why this suite exists<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[2-->Every existing cross-impl token-scope assertion is the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->rpc:&lt;method><!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> arm
 (the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->token_scope_cases<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> batch in the conformance security slate). The
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->surface:&lt;name><!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> arm had <!--]--><!--[4--><strong><!--[--><!--[2-->none<!--]--><!--]--><!----></strong><!--]--><!--[2--> — and it is the load-bearing half of the
@@ -1321,7 +1349,13 @@ and the exact reason; the response of the flooding request never arrives;
 any flood frames that did arrive form a contiguous prefix of the burst.
 A second connection on the same account keeps dispatching throughout.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->refusal<!--]--><!--]--><!----></strong><!--]--><!--[2--> — a burst past the action's own size limit is refused with
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, and the socket stays open.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->no connection<!--]--><!--]--><!----></strong><!--]--><!--[2--> — over HTTP RPC the action refuses with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
-and reason <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->no_connection<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, rather than answering as though it flooded.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->What the suite does <!--]--><!--[4--><strong><!--[--><!--[2-->not<!--]--><!--]--><!----></strong><!--]--><!--[2--> assert, because it is each implementation's own:
+and reason <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->no_connection<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, rather than answering as though it flooded.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->the action's limits<!--]--><!--]--><!----></strong><!--]--><!--[2--> — over HTTP RPC a call at each of the action's
+limits (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->count<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->size<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->count<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> × <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->size<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) is refused for having no
+connection, and a call one past each is refused <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->invalid_params<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> with no
+reason. Both spines check the limits before they look for the connection
+and before they build a payload, so the boundaries are read off the
+refusal and no burst is ever allocated — which pins the two spines'
+limits equal.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->What the suite does <!--]--><!--[4--><strong><!--[--><!--[2-->not<!--]--><!--]--><!----></strong><!--]--><!--[2--> assert, because it is each implementation's own:
 how many frames accepted before the overflow reach the client (the Rust
 spine discards them all; the TS spine may deliver the first), and the exact
 boundary a burst of tiny frames overflows at.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The wire literals are deliberate independent copies of the producers'
@@ -1394,16 +1428,16 @@ marker with a tracking id and a reason, nothing more.<!--]--><!--]--><!----></p>
 			
 			<script>
 				{
-					__sveltekit_1kbm0wy = {
+					__sveltekit_1n9o20u = {
 						base: "",
-						version: "d63aec581efeb957277321860ac1b4ee9f8bd912"
+						version: "af38ad954c6fbaabcfadc0df2153057573f940c6"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1kbm0wy);
-						const app = await import("/_app/immutable/entry/app.plbivBls.js");
+						kit.init(__sveltekit_1n9o20u);
+						const app = await import("/_app/immutable/entry/app.nq99h2HY.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
