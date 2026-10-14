@@ -15,9 +15,10 @@
 import { z } from 'zod';
 import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
+import { bounded_string } from '../primitive_schemas.ts';
 import { RoleName } from './role_schema.ts';
 
-/** Maximum length of the optional message attached to an offer. */
+/** Maximum length of the optional message attached to an offer, and of a decline reason, in UTF-16 code units. */
 export const ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX = 500;
 
 /** Default TTL for a newly created offer — 30 days. Matches GitHub org-invite expiry. */
@@ -137,9 +138,7 @@ export const RoleGrantOfferJson = z
 			description:
 				'Scope the offered role_grant applies to (e.g. a classroom id). `null` for global role_grants.'
 		}),
-		message: z
-			.string()
-			.max(ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX)
+		message: bounded_string({ max: ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX })
 			.nullable()
 			.meta({ description: 'Optional free-form note from the grantor.' }),
 		created_at: z.string().meta({ description: 'ISO timestamp when the offer was created.' }),
@@ -154,9 +153,7 @@ export const RoleGrantOfferJson = z
 			.string()
 			.nullable()
 			.meta({ description: 'ISO timestamp when the offer was declined.' }),
-		decline_reason: z
-			.string()
-			.max(ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX)
+		decline_reason: bounded_string({ max: ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX })
 			.nullable()
 			.meta({ description: 'Optional reason given on decline.' }),
 		retracted_at: z

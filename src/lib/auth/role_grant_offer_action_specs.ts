@@ -24,6 +24,7 @@
 import { z } from 'zod';
 import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
+import { bounded_string } from '../primitive_schemas.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import {
 	ERROR_INSUFFICIENT_PERMISSIONS,
@@ -84,9 +85,7 @@ export const GRANT_SCOPE_PAIRED_MESSAGE =
 	"'scope_kind' and 'scope_id' must be given together (both for a scoped grant, neither for a global one)";
 
 /** The `scope_kind` field both grant inputs share, paired with `scope_id`. */
-const GrantScopeKind = z
-	.string()
-	.max(SCOPE_KIND_LENGTH_MAX)
+const GrantScopeKind = bounded_string({ max: SCOPE_KIND_LENGTH_MAX })
 	.nullish()
 	.meta({
 		description: `Machine-readable kind tag for \`scope_id\` — paired-null with \`scope_id\` (both null for global, both non-null for scoped). Required iff \`scope_id\` is set. At most ${SCOPE_KIND_LENGTH_MAX} characters.`
@@ -117,9 +116,7 @@ export const RoleGrantOfferCreateInput = z
 		scope_id: Uuid.nullish().meta({
 			description: 'Scope id for resource-scoped grants (e.g. classroom id). `null` for global.'
 		}),
-		message: z
-			.string()
-			.max(ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX)
+		message: bounded_string({ max: ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX })
 			.nullish()
 			.meta({ description: 'Optional free-form note from the grantor.' }),
 		acting: ActingActor
@@ -137,9 +134,7 @@ export type RoleGrantOfferAcceptInput = z.infer<typeof RoleGrantOfferAcceptInput
 /** Input for `role_grant_offer_decline`. */
 export const RoleGrantOfferDeclineInput = z.strictObject({
 	offer_id: Uuid.meta({ description: 'The offer to decline.' }),
-	reason: z
-		.string()
-		.max(ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX)
+	reason: bounded_string({ max: ROLE_GRANT_OFFER_MESSAGE_LENGTH_MAX })
 		.nullish()
 		.meta({ description: 'Optional free-form reason given on decline.' }),
 	acting: ActingActor
@@ -174,7 +169,7 @@ export type RoleGrantOfferListInput = z.infer<typeof RoleGrantOfferListInput>;
 export const RoleGrantRevokeInput = z.strictObject({
 	actor_id: Uuid.meta({ description: 'Actor whose role_grant to revoke.' }),
 	role_grant_id: Uuid.meta({ description: 'The role_grant to revoke.' }),
-	reason: z.string().max(ROLE_GRANT_REVOKED_REASON_LENGTH_MAX).nullish().meta({
+	reason: bounded_string({ max: ROLE_GRANT_REVOKED_REASON_LENGTH_MAX }).nullish().meta({
 		description:
 			'Optional free-form reason; stamped on `role_grant.revoked_reason` and surfaced on the revokee WS notification.'
 	}),

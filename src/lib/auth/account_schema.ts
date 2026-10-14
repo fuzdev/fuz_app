@@ -80,6 +80,7 @@ export interface Actor {
  * revoked role_grant. Bounds the value at the schema layer so both the admin
  * input (when the route surfaces a reason field) and the revokee-facing
  * `role_grant_revoke` WS notification validate against the same ceiling.
+ * Counted in UTF-16 code units.
  */
 export const ROLE_GRANT_REVOKED_REASON_LENGTH_MAX = 500;
 

@@ -9,26 +9,25 @@
 
 import { z } from 'zod';
 
-/** Minimum password length (OWASP recommendation). */
+import { bounded_string } from '../primitive_schemas.ts';
+
+/** Minimum password length, in UTF-16 code units (OWASP recommendation). */
 export const PASSWORD_LENGTH_MIN = 12;
 
-/** Maximum password length. Caps hashing cost to prevent DoS via oversized passwords. */
+/** Maximum password length, in UTF-16 code units. Caps hashing cost to prevent DoS via oversized passwords. */
 export const PASSWORD_LENGTH_MAX = 300;
 
 /** Password for account creation or password change — enforces current length policy. Also usable for client-side UX validation. */
-export const Password = z
-	.string()
-	.min(PASSWORD_LENGTH_MIN)
-	.max(PASSWORD_LENGTH_MAX)
-	.meta({ sensitivity: 'secret' });
+export const Password = bounded_string({
+	min: PASSWORD_LENGTH_MIN,
+	max: PASSWORD_LENGTH_MAX
+}).meta({ sensitivity: 'secret' });
 export type Password = z.infer<typeof Password>;
 
 /** Password submitted for login or verification — minimal validation for forward-compatibility if length requirements change. */
-export const PasswordProvided = z
-	.string()
-	.min(1)
-	.max(PASSWORD_LENGTH_MAX)
-	.meta({ sensitivity: 'secret' });
+export const PasswordProvided = bounded_string({ min: 1, max: PASSWORD_LENGTH_MAX }).meta({
+	sensitivity: 'secret'
+});
 export type PasswordProvided = z.infer<typeof PasswordProvided>;
 
 /**

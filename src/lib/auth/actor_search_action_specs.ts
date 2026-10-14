@@ -75,6 +75,7 @@
 import { z } from 'zod';
 import { Uuid } from '@fuzdev/fuz_util/id.ts';
 
+import { bounded_string } from '../primitive_schemas.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import { ActorLookupEntryJson } from './actor_lookup_action_specs.ts';
 
@@ -89,7 +90,7 @@ export const ACTOR_SEARCH_LIMIT_MAX = 50;
 export const ACTOR_SEARCH_LIMIT_DEFAULT = 20;
 
 /**
- * Hard cap on the query string length. Long inputs offer no extra search
+ * Hard cap on the query string length, in UTF-16 code units. Long inputs offer no extra search
  * value once they exceed `actor.name` realistic lengths, and a low cap
  * keeps the per-request work bounded for pathological inputs.
  */
@@ -103,15 +104,11 @@ export const ACTOR_SEARCH_QUERY_LENGTH_MAX = 50;
 export const ERROR_ACTOR_SEARCH_SCOPE_REQUIRED = 'actor_search_scope_required' as const;
 
 export const ActorSearchInput = z.strictObject({
-	query: z
-		.string()
-		.min(1)
-		.max(ACTOR_SEARCH_QUERY_LENGTH_MAX)
-		.meta({
-			description: `Case-insensitive prefix match against \`actor.name\`. Length 1–${
-				ACTOR_SEARCH_QUERY_LENGTH_MAX
-			}.`
-		}),
+	query: bounded_string({ min: 1, max: ACTOR_SEARCH_QUERY_LENGTH_MAX }).meta({
+		description: `Case-insensitive prefix match against \`actor.name\`. Length 1–${
+			ACTOR_SEARCH_QUERY_LENGTH_MAX
+		}.`
+	}),
 	scope_ids: z.array(Uuid).optional().meta({
 		description:
 			'Restrict results to actors holding a role_grant on any of these scopes. Required (non-empty) for non-admin callers; admin callers may omit or pass empty for unbounded search. Caller is responsible for pre-filtering against their own authority — the SQL filter does not enforce it.'

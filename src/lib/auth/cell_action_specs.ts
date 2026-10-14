@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { Uuid } from '@fuzdev/fuz_util/id.ts';
 import { FactHashSchema } from '@fuzdev/fuz_util/hash_schemas.ts';
 
+import { bounded_string } from '../primitive_schemas.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import { ActingActor } from '../http/auth_shape.ts';
 import {
@@ -174,7 +175,7 @@ export const ERROR_CELL_LIST_SHARED_WITH_REQUIRES_AUTH =
  * At the spec level we only enforce that the value is a non-empty string
  * with a sane upper bound — the cell layer is generic and doesn't impose
  * a path grammar. App-side curation (well-known names like `/map/main`,
- * `/site/events`) is admin-driven.
+ * `/site/events`) is admin-driven. The bound is in UTF-16 code units.
  */
 export const CELL_PATH_LENGTH_MAX = 256;
 
@@ -186,13 +187,13 @@ export const CELL_PATH_LENGTH_MAX = 256;
  * point. Frontend callers handing a raw string to `api.cell_*` cast at the
  * callsite (`as CellPath`) — the runtime check still runs server-side.
  */
-export const CellPath = z.string().min(1).max(CELL_PATH_LENGTH_MAX).brand('CellPath');
+export const CellPath = bounded_string({ min: 1, max: CELL_PATH_LENGTH_MAX }).brand('CellPath');
 export type CellPath = z.infer<typeof CellPath>;
 
 /**
  * Maximum length of a cell `kind` on the wire, in UTF-16 code units (what
- * `String.length` and Zod's `.max()` measure) — on `cell_create`, and on the
- * `cell_list` filter. The cell layer imposes no grammar on `kind`; the bound
+ * `String.length` measures; enforced by `bounded_string`) — on `cell_create`,
+ * and on the `cell_list` filter. The cell layer imposes no grammar on `kind`; the bound
  * is there because the tag is copied into every audit row the cell's
  * mutations write. The same bound a cell field name carries
  * (`CELL_FIELD_NAME_REGEX`), the cell layer's other machine-readable tag,
@@ -281,9 +282,7 @@ export const CellCreateInput = z.strictObject({
 		description:
 			'Cell content. Base fields (label / summary) typed; extras loose. A `kind` key here is rejected (`ERROR_CELL_KIND_IN_DATA`) — kind is the top-level field. Per-kind shape is sub-API.'
 	}),
-	kind: z
-		.string()
-		.max(CELL_KIND_LENGTH_MAX)
+	kind: bounded_string({ max: CELL_KIND_LENGTH_MAX })
 		.nullish()
 		.meta({
 			description: `Capability / identity tag, written to the top-level \`cell.kind\` column (not \`data\`). Write-once — fixed at birth, not updatable. Non-empty when present (an empty string is rejected \`ERROR_CELL_KIND_EMPTY\`) and at most ${CELL_KIND_LENGTH_MAX} characters; omit / null for a typeless cell. A creation authorizer (if mounted) gates on this.`
@@ -412,7 +411,7 @@ export const CellListInput = z
 			.max(CELL_LIST_LIMIT_MAX)
 			.optional()
 			.meta({ description: 'Batch-fetch by id. Visibility predicate still applies.' }),
-		kind: z.string().max(CELL_KIND_LENGTH_MAX).optional().meta({
+		kind: bounded_string({ max: CELL_KIND_LENGTH_MAX }).optional().meta({
 			description:
 				'Match `cell.kind = ?`. An empty string matches nothing — no cell carries an empty kind.'
 		}),

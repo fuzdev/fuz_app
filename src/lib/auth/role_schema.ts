@@ -23,6 +23,7 @@
 
 import { z } from 'zod';
 
+import { bounded_string } from '../primitive_schemas.ts';
 import {
 	CREDENTIAL_TYPE_DAEMON_TOKEN,
 	type CredentialTypeSchemaResult
@@ -46,13 +47,13 @@ export const ROLE_NAME_LENGTH_MAX = 64;
  * Valid role name: lowercase letters and underscores, no leading/trailing
  * underscore, at most `ROLE_NAME_LENGTH_MAX` characters.
  */
-export const RoleName = z
-	.string()
-	.max(ROLE_NAME_LENGTH_MAX, `Role names must be at most ${ROLE_NAME_LENGTH_MAX} characters`)
-	.regex(
-		/^[a-z][a-z_]*[a-z]$|^[a-z]$/,
-		'Role names must be lowercase letters and underscores (a-z_), no leading/trailing underscore'
-	);
+export const RoleName = bounded_string({
+	max: ROLE_NAME_LENGTH_MAX,
+	max_message: `Role names must be at most ${ROLE_NAME_LENGTH_MAX} characters`
+}).regex(
+	/^[a-z][a-z_]*[a-z]$|^[a-z]$/,
+	'Role names must be lowercase letters and underscores (a-z_), no leading/trailing underscore'
+);
 export type RoleName = z.infer<typeof RoleName>;
 
 // Builtin roles — provided by fuz_app, always available.

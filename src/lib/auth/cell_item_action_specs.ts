@@ -17,6 +17,7 @@ import {
 	FRACTIONAL_INDEX_REGEX
 } from '@fuzdev/fuz_util/fractional_index.ts';
 
+import { bounded_string } from '../primitive_schemas.ts';
 import { ActingActor } from '../http/auth_shape.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 
@@ -48,10 +49,7 @@ export const ERROR_CELL_ITEM_POSITION_TAKEN = 'cell_item_position_taken' as cons
  * contract; the no-trailing-`'0'` invariant lives in the helper, not the
  * wire.
  */
-export const CellItemPosition = z
-	.string()
-	.min(1)
-	.max(FRACTIONAL_INDEX_LENGTH_MAX)
+export const CellItemPosition = bounded_string({ min: 1, max: FRACTIONAL_INDEX_LENGTH_MAX })
 	.regex(FRACTIONAL_INDEX_REGEX)
 	.brand('CellItemPosition');
 export type CellItemPosition = z.infer<typeof CellItemPosition>;

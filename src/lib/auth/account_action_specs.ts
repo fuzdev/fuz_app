@@ -10,6 +10,7 @@
 
 import { z } from 'zod';
 
+import { bounded_string } from '../primitive_schemas.ts';
 import { TokenScopeInput } from './token_scope.ts';
 import { TokenLifetimeInput } from './token_lifetime.ts';
 
@@ -64,7 +65,7 @@ export type SessionRevokeAllOutput = z.infer<typeof SessionRevokeAllOutput>;
 
 /**
  * Maximum length of an API token's `name`, in UTF-16 code units (what
- * `String.length` and Zod's `.max()` measure). The name is copied into the
+ * `String.length` measures; enforced by `bounded_string`). The name is copied into the
  * `token_create` audit row, so it is bounded where it enters. Same value as
  * the Rust spine's `API_TOKEN_NAME_LENGTH_MAX`.
  */
@@ -85,9 +86,7 @@ export const API_TOKEN_NAME_LENGTH_MAX = 255;
  * "deliberately eternal" (see `auth/token_lifetime.ts`).
  */
 export const TokenCreateInput = z.strictObject({
-	name: z
-		.string()
-		.max(API_TOKEN_NAME_LENGTH_MAX)
+	name: bounded_string({ max: API_TOKEN_NAME_LENGTH_MAX })
 		.default('CLI token')
 		.meta({
 			description: `Human-friendly label; shown in the token list. At most ${API_TOKEN_NAME_LENGTH_MAX} characters.`

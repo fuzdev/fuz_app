@@ -33,6 +33,7 @@
 import { z } from 'zod';
 import { Uuid as UuidSchema, type Uuid } from '@fuzdev/fuz_util/id.ts';
 
+import { bounded_string } from '../primitive_schemas.ts';
 import type { RemoteNotificationActionSpec } from '../actions/action_spec.ts';
 import { create_action_event_spec } from '../actions/action_bridge.ts';
 import type { EventSpec } from '../realtime/sse.ts';
@@ -126,7 +127,7 @@ export const RoleGrantRevokeParams = z.strictObject({
 	role_grant_id: UuidSchema,
 	role: RoleName,
 	scope_id: UuidSchema.nullable(),
-	reason: z.string().max(ROLE_GRANT_REVOKED_REASON_LENGTH_MAX).nullable()
+	reason: bounded_string({ max: ROLE_GRANT_REVOKED_REASON_LENGTH_MAX }).nullable()
 });
 export type RoleGrantRevokeParams = z.infer<typeof RoleGrantRevokeParams>;
 

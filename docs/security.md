@@ -1272,7 +1272,11 @@ token's `name` (`API_TOKEN_NAME_LENGTH_MAX`, 255), a cell's `kind` on
 `cell_create` and as a `cell_list` filter (`CELL_KIND_LENGTH_MAX`, 64), and
 the `scope_kind` on `role_grant_offer_create` and `role_grant_assign`
 (`SCOPE_KIND_LENGTH_MAX`, 64). A longer value is refused `invalid_params`
-before any row is written.
+before any row is written. Every `.min()` / `.max()` bound on a wire string,
+a bare `.min(1)` aside (it reads the same in either unit), is enforced on
+`String.length` by `bounded_string` (`primitive_schemas.ts`), not by Zod's
+`.max()` alone, whose unit depends on the installed Zod; `Email` is bounded in
+UTF-8 bytes by its own refinement.
 
 | Role        | Granted how                                    | Scope                                                |
 | ----------- | ---------------------------------------------- | ---------------------------------------------------- |
