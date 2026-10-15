@@ -1,20 +1,24 @@
 import { test, assert, describe } from 'vitest';
-import { z } from 'zod';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
 
-import { create_help, format_arg_name, to_max_length } from '#lib/cli/help.ts';
+import {
+	create_help,
+	format_arg_default,
+	format_arg_name,
+	to_help_arg_properties,
+	to_max_length
+} from '#lib/cli/help.ts';
 
-const GlobalArgs = z.strictObject({
-	help: z
-		.boolean()
-		.default(false)
-		.meta({ description: 'Show help', aliases: ['h'] }),
-	version: z.boolean().default(false).meta({ description: 'Show version' })
+const GlobalArgs = s.object({
+	help: meta(s.with_default(s.boolean, false), { description: 'Show help', aliases: ['h'] }),
+	version: meta(s.with_default(s.boolean, false), { description: 'Show version' })
 });
 
 const TestCommands = {
 	apply: {
-		schema: z.strictObject({
-			wetrun: z.boolean().default(false).meta({ description: 'Execute changes' })
+		schema: s.object({
+			wetrun: meta(s.with_default(s.boolean, false), { description: 'Execute changes' })
 		}),
 		summary: 'Apply resource changes',
 		usage: 'myapp apply [options]',
@@ -189,6 +193,64 @@ describe('use_colors: false', () => {
 		assert.ok(text.includes('myapp'));
 		assert.ok(text.includes('WORKFLOW'));
 		assert.ok(text.includes('Apply resource changes'));
+	});
+});
+
+describe('to_help_arg_properties', () => {
+	test('reads each entry', () => {
+		const Args = s.object({
+			_: meta(
+				s.with_default_fn(s.array(s.string), () => []),
+				{ description: 'names' }
+			),
+			target: s.with_default(
+				meta(s.one_of(['dev', 'prod']), { description: 'target env', aliases: ['t'] }),
+				'dev'
+			),
+			tags: s.with_default_fn(s.array(s.string), () => ['a']),
+			name: s.optional(s.string)
+		});
+		assert.deepStrictEqual(to_help_arg_properties(Args), [
+			{ name: '_', type: 'Array<string>', description: 'names', default: [], aliases: [] },
+			{
+				name: 'target',
+				type: '"dev" | "prod"',
+				description: 'target env',
+				default: 'dev',
+				aliases: ['t']
+			},
+			{ name: 'tags', type: 'Array<string>', description: '', default: ['a'], aliases: [] },
+			{ name: 'name', type: 'string | undefined', description: '', default: undefined, aliases: [] }
+		]);
+	});
+
+	test('shows a `no-` pair once, as its negation', () => {
+		const Args = s.object({
+			color: s.with_default(s.boolean, true),
+			'no-color': meta(s.with_default(s.boolean, false), { description: 'opt out of color' })
+		});
+		assert.deepStrictEqual(
+			to_help_arg_properties(Args).map((p) => p.name),
+			['no-color']
+		);
+	});
+
+	test('reads no args of a schema that is not an object', () => {
+		assert.deepStrictEqual(to_help_arg_properties(s.string), []);
+	});
+});
+
+describe('format_arg_default', () => {
+	test('formats each kind of value', () => {
+		assert.strictEqual(format_arg_default(undefined), '');
+		assert.strictEqual(format_arg_default(null), 'null');
+		assert.strictEqual(format_arg_default('dev'), '"dev"');
+		assert.strictEqual(format_arg_default(''), '""');
+		assert.strictEqual(format_arg_default(3), '3');
+		assert.strictEqual(format_arg_default(false), 'false');
+		assert.strictEqual(format_arg_default([]), '[]');
+		assert.strictEqual(format_arg_default(['a', 'b']), '["a","b"]');
+		assert.strictEqual(format_arg_default({ a: 1 }), '{"a":1}');
 	});
 });
 

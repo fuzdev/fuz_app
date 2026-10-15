@@ -5,15 +5,23 @@
  * once with `create_help` and get back `generate_main_help`,
  * `generate_command_help`, and `get_help_text`.
  *
+ * Schemas are `@fuzdev/fuz_schema` object schemas, the ones `parse_command_args`
+ * and `create_extract_global_flags` take, read with fuz_schema's `introspect.ts`:
+ * each entry's `description` and `aliases` metadata, its default, and its type
+ * as `format_schema_type` renders it.
+ *
  * @module
  */
 
-import type { z } from 'zod';
+import type { AnySchema, SchemaNode } from '@fuzdev/fuz_schema/schema.ts';
 import {
-	zod_to_schema_properties,
-	zod_format_value,
-	type ZodSchemaProperty
-} from '@fuzdev/fuz_util/zod.ts';
+	format_schema_type,
+	get_schema_fields,
+	get_schema_meta,
+	type SchemaField
+} from '@fuzdev/fuz_schema/introspect.ts';
+// declares the `aliases` key of `SchemaMeta`
+import type {} from '@fuzdev/fuz_util/args.ts';
 
 import { colors } from './util.ts';
 
@@ -21,7 +29,8 @@ import { colors } from './util.ts';
  * Command metadata for help generation.
  */
 export interface CommandMeta<TCategory extends string = string> {
-	schema?: z.ZodType;
+	/** fuz_schema object schema for the command's args. */
+	schema?: AnySchema;
 	summary: string;
 	usage: string;
 	category: TCategory;
@@ -51,8 +60,8 @@ export interface HelpOptions<TCategory extends string = string> {
 	categories: Array<HelpCategory<TCategory>>;
 	/** Example commands for main help. */
 	examples: Array<string>;
-	/** Zod schema for global arguments (shown in all help output). */
-	global_args_schema: z.ZodType;
+	/** fuz_schema object schema for global arguments (shown in all help output). */
+	global_args_schema: AnySchema;
 	/** Whether to use ANSI colors in output. Defaults to `true`. */
 	use_colors?: boolean;
 }
@@ -68,6 +77,91 @@ export interface HelpGenerator {
 	/** Get help text for a command or main help. */
 	get_help_text: (command?: string, subcommand?: string) => string;
 }
+
+/**
+ * One arg as help output shows it, read from an entry of an object schema.
+ */
+export interface HelpArgProperty {
+	/** The entry's key, `_` for positionals. */
+	name: string;
+	/** The type the entry accepts, as `format_schema_type` renders it. */
+	type: string;
+	/** The `description` metadata, or `''`. */
+	description: string;
+	/** The default, made by calling a `with_default_fn`'s function, or `undefined`. */
+	default: unknown;
+	/** The `aliases` metadata, or `[]`. */
+	aliases: Array<string>;
+}
+
+/**
+ * Read the args of an object schema for help output, in order.
+ *
+ * An entry whose `no-` negation is also an entry is left out, so a pair like
+ * `color` and `no-color` is shown once, as `--no-color`.
+ *
+ * @param schema - fuz_schema object schema
+ * @returns the args, none when `schema` is not an object schema
+ */
+export const to_help_arg_properties = (schema: AnySchema): Array<HelpArgProperty> => {
+	const fields = get_schema_fields(schema);
+	const names = new Set(fields.map((f) => f.name));
+	const properties: Array<HelpArgProperty> = [];
+	for (const field of fields) {
+		if (names.has('no-' + field.name)) continue;
+		properties.push({
+			name: field.name,
+			type: format_schema_type(field.schema),
+			description: field.description ?? '',
+			default: to_field_default(field),
+			aliases: get_schema_meta(field.schema, 'aliases') ?? []
+		});
+	}
+	return properties;
+};
+
+// the default a field's help shows: a `with_default_fn`'s is made by calling its `make`,
+// as each parse that fills the key in does, found by walking the layers `get_schema_fields`
+// reads, whose first `optional` or default it is when `default_computed`
+const to_field_default = (field: SchemaField): unknown => {
+	if (!field.default_computed) return field.default;
+	let layer: SchemaNode = field.schema;
+	for (;;) {
+		switch (layer.kind) {
+			case 'with_default_fn':
+				return layer.def.make();
+			case 'optional':
+			case 'nullable':
+			case 'with_default':
+				layer = layer.def.schema;
+				break;
+			case 'pipe':
+				layer = layer.def[0]!;
+				break;
+			case 'lazy':
+				layer = layer.def();
+				break;
+			default:
+				return undefined;
+		}
+	}
+};
+
+/**
+ * Format a default value for display, `''` for none.
+ *
+ * Strings and arrays are written as JSON, as the type column writes a string literal.
+ *
+ * @param value - the default
+ * @returns display text
+ */
+export const format_arg_default = (value: unknown): string => {
+	if (value === undefined) return '';
+	if (value === null) return 'null';
+	if (typeof value === 'string' || typeof value === 'object') return JSON.stringify(value);
+	if (typeof value === 'boolean' || typeof value === 'number') return String(value);
+	return '';
+};
 
 /**
  * Get maximum length from array.
@@ -88,7 +182,7 @@ export const to_max_length = <T>(items: Array<T>, to_string: (item: T) => string
  * @param prop - schema property
  * @returns formatted name string
  */
-export const format_arg_name = (prop: ZodSchemaProperty): string => {
+export const format_arg_name = (prop: HelpArgProperty): string => {
 	if (prop.name === '_') {
 		return '[...args]';
 	}
@@ -116,7 +210,7 @@ export const create_help = <TCategory extends string>(
 		: { green: '', yellow: '', blue: '', red: '', cyan: '', dim: '', bold: '', reset: '' };
 
 	const generate_global_options = (): Array<string> => {
-		const properties = zod_to_schema_properties(options.global_args_schema);
+		const properties = to_help_arg_properties(options.global_args_schema);
 		const max_width = to_max_length(properties, (p) => `  ${format_arg_name(p)}`);
 
 		return properties.map((prop) => {
@@ -135,7 +229,7 @@ export const create_help = <TCategory extends string>(
 		lines.push('');
 
 		if (meta.schema) {
-			const properties = zod_to_schema_properties(meta.schema);
+			const properties = to_help_arg_properties(meta.schema);
 			const flag_props = properties.filter((p) => p.name !== '_');
 			const positional_prop = properties.find((p) => p.name === '_');
 
@@ -153,7 +247,7 @@ export const create_help = <TCategory extends string>(
 				for (const prop of flag_props) {
 					const name = format_arg_name(prop).padEnd(longest_name);
 					const type = prop.type.padEnd(longest_type);
-					const def = zod_format_value(prop.default);
+					const def = format_arg_default(prop.default);
 					const desc = prop.description || '';
 					const default_str = def ? ` (default: ${def})` : '';
 					lines.push(`  ${name}  ${type}  ${desc}${default_str}`);

@@ -1,75 +1,104 @@
 import { test, assert, describe } from 'vitest';
-import { z } from 'zod';
+import * as s from '@fuzdev/fuz_schema/schema.ts';
+import { meta } from '@fuzdev/fuz_schema/meta.ts';
 import type { ParsedArgs } from '@fuzdev/fuz_util/args.ts';
 
 import {
 	parse_command_args,
 	create_extract_global_flags,
-	type ParseResult
+	type ParseCommandArgsResult
 } from '#lib/cli/args.ts';
 
 describe('parse_command_args', () => {
 	// consumer schemas always include `_` for positional args
-	const TestSchema = z.strictObject({
-		_: z.array(z.string()).default([]),
-		name: z.string(),
-		verbose: z.boolean().default(false)
+	const TestSchema = s.object({
+		_: s.with_default_fn(s.array(s.string), () => []),
+		name: meta(s.string, { aliases: ['n'] }),
+		verbose: s.with_default(s.boolean, false)
 	});
 
 	test('parses valid args', () => {
 		const remaining: ParsedArgs = { _: [], name: 'hello' };
 		const result = parse_command_args(remaining, TestSchema);
-		assert.ok(result.success);
-		assert.strictEqual(result.data.name, 'hello');
-		assert.strictEqual(result.data.verbose, false);
+		assert.ok(result.ok);
+		assert.strictEqual(result.value.name, 'hello');
+		assert.strictEqual(result.value.verbose, false);
 	});
 
 	test('returns error for missing required fields', () => {
 		const remaining: ParsedArgs = { _: [] };
 		const result = parse_command_args(remaining, TestSchema);
-		assert.ok(!result.success);
+		assert.ok(!result.ok);
 		assert.ok(result.error.length > 0);
 	});
 
 	test('returns error for invalid types', () => {
 		const remaining: ParsedArgs = { _: [], name: 123 };
-		const result: ParseResult<z.infer<typeof TestSchema>> = parse_command_args(
+		const result: ParseCommandArgsResult<s.Infer<typeof TestSchema>> = parse_command_args(
 			remaining,
 			TestSchema
 		);
-		assert.ok(!result.success);
+		assert.ok(!result.ok);
 		assert.ok(result.error.length > 0);
 	});
 
 	test('applies defaults', () => {
 		const remaining: ParsedArgs = { _: [], name: 'test' };
 		const result = parse_command_args(remaining, TestSchema);
-		assert.ok(result.success);
-		assert.strictEqual(result.data.verbose, false);
+		assert.ok(result.ok);
+		assert.strictEqual(result.value.verbose, false);
 	});
 
-	test('rejects extra keys with strictObject schemas', () => {
-		// consumer schemas use strictObject — unknown keys are rejected
+	test('rejects extra keys with object schemas', () => {
+		// consumer schemas use `s.object` — unknown keys are rejected
 		const remaining: ParsedArgs = { _: [], name: 'test', unknown_flag: true };
 		const result = parse_command_args(remaining, TestSchema);
-		assert.ok(!result.success);
+		assert.ok(!result.ok);
 		assert.ok(result.error.includes('unknown_flag'));
+	});
+
+	test('expands aliases', () => {
+		const remaining: ParsedArgs = { _: ['pos'], n: 'hello' };
+		const result = parse_command_args(remaining, TestSchema);
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { _: ['pos'], name: 'hello', verbose: false });
+	});
+
+	test('formats each issue on a line of its own', () => {
+		const remaining: ParsedArgs = { _: [], verbose: 'yes', other: 1 };
+		const result = parse_command_args(remaining, TestSchema);
+		assert.ok(!result.ok);
+		assert.strictEqual(
+			result.error,
+			[
+				'name: expected string, received undefined',
+				'verbose: expected boolean, received string',
+				'other: expected no unknown keys, received number'
+			].join('\n')
+		);
+	});
+
+	test('defaults `_` to a fresh array on every parse', () => {
+		// args without `_`, as a caller's own parser may give them
+		const a = parse_command_args({ name: 'a' } as unknown as ParsedArgs, TestSchema);
+		const b = parse_command_args({ name: 'b' } as unknown as ParsedArgs, TestSchema);
+		assert.ok(a.ok && b.ok);
+		assert.deepStrictEqual(a.value._, []);
+		assert.notStrictEqual(a.value._, b.value._);
 	});
 });
 
 describe('create_extract_global_flags', () => {
-	const GlobalSchema = z.strictObject({
-		verbose: z.boolean().meta({ description: 'show details' }).default(false),
-		help: z
-			.boolean()
-			.meta({ aliases: ['h'], description: 'show help' })
-			.default(false),
-		version: z
-			.boolean()
-			.meta({ aliases: ['v'], description: 'show version' })
-			.default(false)
+	const GlobalSchema = s.object({
+		verbose: s.with_default(meta(s.boolean, { description: 'show details' }), false),
+		help: s.with_default(meta(s.boolean, { aliases: ['h'], description: 'show help' }), false),
+		// aliases are read on any wrapper layer of the entry
+		version: meta(s.with_default(s.boolean, false), {
+			aliases: ['v'],
+			description: 'show version'
+		})
 	});
-	type GlobalFlags = z.infer<typeof GlobalSchema>;
+	type GlobalFlags = s.Infer<typeof GlobalSchema>;
 	const fallback: GlobalFlags = { verbose: false, help: false, version: false };
 
 	const extract = create_extract_global_flags(GlobalSchema, fallback);
@@ -124,6 +153,92 @@ describe('create_extract_global_flags', () => {
 		const unparsed: ParsedArgs = { _: [], help: true, h: false };
 		const { flags } = extract(unparsed);
 		assert.strictEqual(flags.help, true);
+	});
+
+	test('handles an alias given on the outer wrapper layer', () => {
+		const unparsed: ParsedArgs = { _: ['status'], v: true, target: 'prod' };
+		const { flags, remaining } = extract(unparsed);
+		assert.deepStrictEqual(flags, { verbose: false, help: false, version: true });
+		assert.deepStrictEqual(remaining, { _: ['status'], target: 'prod' });
+	});
+
+	test('returns fallback when an alias carries an invalid value', () => {
+		const unparsed: ParsedArgs = { _: [], h: 'yes', verbose: true };
+		const { flags, remaining } = extract(unparsed);
+		assert.strictEqual(flags, fallback);
+		// global flags are removed from remaining even when they fail to parse
+		assert.deepStrictEqual(remaining, { _: [] });
+	});
+
+	test('separates globals mixed with command args', () => {
+		const CommandSchema = s.object({
+			_: s.with_default_fn(s.array(s.string), () => []),
+			target: meta(s.string, { aliases: ['t'] }),
+			force: s.with_default(s.boolean, false)
+		});
+		const unparsed: ParsedArgs = { _: ['apply'], verbose: true, t: 'prod', h: true, force: true };
+		const { flags, remaining } = extract(unparsed);
+		assert.deepStrictEqual(flags, { verbose: true, help: true, version: false });
+		const result = parse_command_args(remaining, CommandSchema);
+		assert.ok(result.ok);
+		assert.deepStrictEqual(result.value, { _: ['apply'], target: 'prod', force: true });
+	});
+
+	test('copies `_` into remaining', () => {
+		const unparsed: ParsedArgs = { _: ['a', 'b'] };
+		const { remaining } = extract(unparsed);
+		assert.deepStrictEqual(remaining._, ['a', 'b']);
+		assert.notStrictEqual(remaining._, unparsed._);
+	});
+
+	test('treats both of a `no-` pair as global', () => {
+		const ColorSchema = s.object({
+			color: s.with_default(s.boolean, true),
+			'no-color': s.with_default(s.boolean, false)
+		});
+		const extract_color = create_extract_global_flags(ColorSchema, {
+			color: true,
+			'no-color': false
+		});
+		// `--no-color` parses to `color: false`
+		const negated = extract_color({ _: ['apply'], color: false, target: 'prod' });
+		assert.deepStrictEqual(negated.flags, { color: false, 'no-color': true });
+		assert.deepStrictEqual(negated.remaining, { _: ['apply'], target: 'prod' });
+		const both = extract_color({ _: [], color: true, 'no-color': false });
+		assert.deepStrictEqual(both.flags, { color: true, 'no-color': false });
+		assert.deepStrictEqual(both.remaining, { _: [] });
+	});
+
+	test('reads an alias of either entry of a `no-` pair', () => {
+		const ColorSchema = s.object({
+			color: s.with_default(meta(s.boolean, { aliases: ['c'] }), true),
+			'no-color': s.with_default(meta(s.boolean, { aliases: ['C'] }), false)
+		});
+		const extract_color = create_extract_global_flags(ColorSchema, {
+			color: true,
+			'no-color': false
+		});
+		// `--no-c` parses to `c: false`
+		const short = extract_color({ _: [], c: false, target: 'prod' });
+		assert.deepStrictEqual(short.flags, { color: false, 'no-color': true });
+		assert.deepStrictEqual(short.remaining, { _: [], target: 'prod' });
+		const negated = extract_color({ _: [], C: true });
+		assert.deepStrictEqual(negated.flags, { color: false, 'no-color': true });
+		assert.deepStrictEqual(negated.remaining, { _: [] });
+	});
+
+	test('falls back when either entry of a `no-` pair is invalid', () => {
+		const ColorSchema = s.object({
+			color: s.with_default(s.boolean, true),
+			'no-color': s.with_default(s.boolean, false),
+			jobs: s.with_default(s.number, 1)
+		});
+		const fallback_color = { color: true, 'no-color': false, jobs: 1 };
+		const extract_color = create_extract_global_flags(ColorSchema, fallback_color);
+		// `--color=maybe --jobs 7`
+		const { flags, remaining } = extract_color({ _: [], color: 'maybe', jobs: 7 });
+		assert.strictEqual(flags, fallback_color);
+		assert.deepStrictEqual(remaining, { _: [] });
 	});
 
 	test('works with empty args', () => {
