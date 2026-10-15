@@ -1,1 +1,0 @@
-export{t as component}from"../chunks/CKn2svXc.js";
