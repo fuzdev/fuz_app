@@ -19,7 +19,7 @@ import {
 	query_role_grant_offer_find_pending,
 	query_role_grant_offer_sweep_expired
 } from '#lib/auth/role_grant_offer_queries.ts';
-import { create_uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid } from '#lib/primitive_schemas.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import {

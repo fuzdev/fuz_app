@@ -12,7 +12,7 @@
 
 import { z } from 'zod';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 
 import type { Db, DbType } from '../db/db.ts';
 import { get_route_params, get_route_query, type RouteSpec } from './route_spec.ts';

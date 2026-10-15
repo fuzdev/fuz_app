@@ -16,7 +16,7 @@
 
 import { beforeAll, describe, test, assert, vi } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import {
 	assert_no_audit_drift,

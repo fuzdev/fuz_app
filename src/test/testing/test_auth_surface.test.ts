@@ -45,7 +45,7 @@ import {
 	fuz_app_stock_route_tightness_allowlist
 } from '#lib/testing/surface_invariants.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
-import { FactHashSchema } from '@fuzdev/fuz_util/hash_schemas.ts';
+import { FactHashSchema } from '#lib/primitive_schemas.ts';
 
 /** The content type every non-`raw_body` POST route requires. */
 const JSON_HEADERS = { 'content-type': 'application/json' };

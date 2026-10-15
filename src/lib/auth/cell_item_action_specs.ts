@@ -11,13 +11,12 @@
  */
 
 import { z } from 'zod';
-import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { Uuid, bounded_string } from '../primitive_schemas.ts';
 import {
 	FRACTIONAL_INDEX_LENGTH_MAX,
 	FRACTIONAL_INDEX_REGEX
 } from '@fuzdev/fuz_util/fractional_index.ts';
 
-import { bounded_string } from '../primitive_schemas.ts';
 import { ActingActor } from '../http/auth_shape.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 

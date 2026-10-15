@@ -72,9 +72,8 @@ import '../assert_dev_env.ts';
  */
 
 import { z } from 'zod';
-import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { Uuid, FactHashSchema } from '../../primitive_schemas.ts';
 import { fact_hash_bytes } from '@fuzdev/fuz_util/fact_hash.ts';
-import { FactHashSchema } from '@fuzdev/fuz_util/hash_schemas.ts';
 
 import { rpc_action, type RpcAction } from '../../actions/action_rpc.ts';
 import { jsonrpc_errors } from '../../http/jsonrpc_errors.ts';

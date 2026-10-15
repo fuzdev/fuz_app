@@ -116,7 +116,7 @@
 import type { WSContext } from 'hono/ws';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid, type Uuid } from '../primitive_schemas.ts';
 
 import type {
 	JsonrpcMessageFromClientToServer,

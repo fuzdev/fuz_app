@@ -13,9 +13,8 @@
  */
 
 import { z } from 'zod';
-import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { Uuid, bounded_string } from '../primitive_schemas.ts';
 
-import { bounded_string } from '../primitive_schemas.ts';
 import { RoleName } from './role_schema.ts';
 
 /** Maximum length of the optional message attached to an offer, and of a decline reason, in UTF-16 code units. */

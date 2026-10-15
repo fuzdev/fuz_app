@@ -27,7 +27,7 @@ import { all_account_action_specs } from '#lib/auth/account_action_specs.ts';
 import { create_test_audit_emitter } from '#lib/testing/stubs.ts';
 import { create_test_context } from '#lib/testing/entities.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import { create_test_action_context } from './rpc_test_helpers.ts';
 import { noop_connection_closer } from '#lib/actions/connection_closer.ts';

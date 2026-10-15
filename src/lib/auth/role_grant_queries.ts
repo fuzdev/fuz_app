@@ -7,7 +7,7 @@
  * @module
  */
 
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 
 import type { QueryDeps } from '../db/query_deps.ts';
 import type { RoleGrant, CreateRoleGrantInput } from './account_schema.ts';

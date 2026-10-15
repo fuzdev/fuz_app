@@ -1,5 +1,5 @@
 import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
-import { zod_get_base_type } from '@fuzdev/fuz_util/zod.ts';
+import { zod_get_base_type } from '../zod.ts';
 
 import type { ActionSpecUnion, ActionEventPhase } from './action_spec.ts';
 import { ActionRegistry } from './action_registry.ts';

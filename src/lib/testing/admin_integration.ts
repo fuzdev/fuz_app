@@ -28,7 +28,7 @@ import './assert_dev_env.ts';
  */
 
 import { describe, test, assert, afterAll } from 'vitest';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 
 import type { SessionOptions } from '../auth/session_cookie.ts';
 import { ROLE_ADMIN, type RoleSchemaResult } from '../auth/role_schema.ts';

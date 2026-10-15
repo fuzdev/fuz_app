@@ -31,9 +31,8 @@
  */
 
 import { z } from 'zod';
-import { Uuid as UuidSchema, type Uuid } from '@fuzdev/fuz_util/id.ts';
+import { Uuid as UuidSchema, type Uuid, bounded_string } from '../primitive_schemas.ts';
 
-import { bounded_string } from '../primitive_schemas.ts';
 import type { RemoteNotificationActionSpec } from '../actions/action_spec.ts';
 import { create_action_event_spec } from '../actions/action_bridge.ts';
 import type { EventSpec } from '../realtime/sse.ts';

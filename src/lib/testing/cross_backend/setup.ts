@@ -24,10 +24,9 @@ import '../assert_dev_env.ts';
  */
 
 import { z } from 'zod';
-import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { Uuid, USERNAME_LENGTH_MAX } from '../../primitive_schemas.ts';
 
 import { DAEMON_TOKEN_HEADER } from '../../auth/daemon_token.ts';
-import { USERNAME_LENGTH_MAX } from '../../primitive_schemas.ts';
 import { DEFAULT_TEST_PASSWORD } from '../test_credentials.ts';
 import type { TestAccount } from '../app_server.ts';
 import type { BackendCapabilities } from './capabilities.ts';

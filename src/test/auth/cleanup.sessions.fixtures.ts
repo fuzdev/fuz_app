@@ -16,7 +16,7 @@
 
 import { assert } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';

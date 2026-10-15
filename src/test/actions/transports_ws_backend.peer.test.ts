@@ -1,5 +1,5 @@
 import { describe, test, assert } from 'vitest';
-import { create_uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid } from '#lib/primitive_schemas.ts';
 
 import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
 import {

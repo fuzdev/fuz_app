@@ -15,7 +15,7 @@ import './assert_dev_env.ts';
  */
 
 import { assert } from 'vitest';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 
 import {
 	role_grant_offer_accept_action_spec,

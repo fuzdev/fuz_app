@@ -27,7 +27,7 @@ import {
 } from '#lib/actions/transports.ts';
 import type { JsonrpcNotification } from '#lib/http/jsonrpc.ts';
 import { create_fake_ws } from '#lib/testing/ws_round_trip.ts';
-import { create_uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid } from '#lib/primitive_schemas.ts';
 
 const ACCOUNT_A = create_uuid();
 const ACCOUNT_B = create_uuid();

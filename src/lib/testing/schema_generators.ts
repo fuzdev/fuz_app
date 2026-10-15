@@ -17,7 +17,7 @@ import {
 	zod_unwrap_to_object,
 	zod_extract_fields,
 	type ZodFieldInfo
-} from '@fuzdev/fuz_util/zod.ts';
+} from '../zod.ts';
 
 import { is_null_schema } from '../http/schema_helpers.ts';
 

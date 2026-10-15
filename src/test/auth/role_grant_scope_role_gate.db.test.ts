@@ -29,7 +29,7 @@ import { create_test_app } from '#lib/testing/app_server.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 import {
 	RPC_PATH,
 	create_admin_route_specs,

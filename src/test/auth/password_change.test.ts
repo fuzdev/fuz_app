@@ -13,7 +13,7 @@ import { Hono } from 'hono';
 
 import { RateLimiter } from '#lib/rate_limiter.ts';
 import { create_proxy_middleware } from '#lib/http/proxy.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '#lib/auth/request_context.ts';
 import { ACCOUNT_ID_KEY, CREDENTIAL_TYPE_KEY, TEST_CONTEXT_PRESET_KEY } from '#lib/hono_context.ts';
 import { create_account_route_specs } from '#lib/auth/account_routes.ts';

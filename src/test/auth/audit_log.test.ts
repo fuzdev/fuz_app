@@ -20,7 +20,7 @@ import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
 import { create_proxy_middleware } from '#lib/http/proxy.ts';
 import type { AuditLogInput } from '#lib/auth/audit_log_schema.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 import { create_stub_db, create_noop_stub } from '#lib/testing/stubs.ts';
 import {
 	create_recording_audit_emitter,

@@ -15,7 +15,7 @@
 
 import { describe, test, assert, vi, afterEach, beforeEach, type MockInstance } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import {
 	create_admin_rpc_adapters,

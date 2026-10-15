@@ -12,7 +12,7 @@
  * @module
  */
 
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 
 import type { QueryDeps } from '../db/query_deps.ts';
 import { assert_row } from '../db/assert_row.ts';

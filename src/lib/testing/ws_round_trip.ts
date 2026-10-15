@@ -47,7 +47,7 @@ import {
 	type WSEvents
 } from 'hono/ws';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid, type Uuid } from '../primitive_schemas.ts';
 
 import type { ActionSpecUnion } from '../actions/action_spec.ts';
 import type { Action } from '../actions/action_types.ts';

@@ -24,7 +24,7 @@ import {
 	type AuditLogEvent,
 	type RevocationScope
 } from '#lib/auth/audit_log_schema.ts';
-import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 
 interface FakeWs {
 	ws: WSContext;

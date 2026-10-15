@@ -7,7 +7,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { create_test_context } from '#lib/testing/entities.ts';

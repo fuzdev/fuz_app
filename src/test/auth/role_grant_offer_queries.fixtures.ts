@@ -19,7 +19,7 @@ import { query_create_account_with_actor } from '#lib/auth/account_queries.ts';
 import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_queries.ts';
 import type { RoleGrantOffer } from '#lib/auth/role_grant_offer_schema.ts';
 import type { Db } from '#lib/db/db.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 export interface TestAccount {
 	account_id: Uuid;

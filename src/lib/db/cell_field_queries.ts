@@ -18,7 +18,7 @@
  */
 
 import type { QueryDeps } from './query_deps.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 import { assert_row } from './assert_row.ts';
 import { columns_sql, iso8601_timestamp_expr, qualify_columns } from './sql_columns.ts';
 

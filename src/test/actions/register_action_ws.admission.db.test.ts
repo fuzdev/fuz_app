@@ -24,7 +24,7 @@ import type { WSEvents } from 'hono/ws';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { wait } from '@fuzdev/fuz_util/async.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import {

@@ -50,7 +50,7 @@ import {
 import { cell_audit_events } from '#lib/auth/cell_audit_events.ts';
 import { query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
 import { fractional_index_between } from '@fuzdev/fuz_util/fractional_index.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { create_cell_test_app, create_cell, call } from './cell_test_helpers.ts';
 import { error_reason } from './rpc_test_helpers.ts';

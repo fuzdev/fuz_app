@@ -18,7 +18,7 @@
  */
 
 import { z } from 'zod';
-import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { Uuid } from '../primitive_schemas.ts';
 
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import { ActingActor } from '../http/auth_shape.ts';

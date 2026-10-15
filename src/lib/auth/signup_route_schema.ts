@@ -13,9 +13,8 @@
  */
 
 import { z } from 'zod';
-import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { Uuid, Username, Email } from '../primitive_schemas.ts';
 
-import { Username, Email } from '../primitive_schemas.ts';
 import { Password } from './password.ts';
 import type { RouteSpec } from '../http/route_spec.ts';
 import {

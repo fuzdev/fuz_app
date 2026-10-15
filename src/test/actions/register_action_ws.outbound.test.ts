@@ -13,7 +13,7 @@ import { afterEach, describe, assert, test, vi } from 'vitest';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 
 import { register_action_ws } from '#lib/actions/register_action_ws.ts';
 import type { ActionContext } from '#lib/actions/action_rpc.ts';

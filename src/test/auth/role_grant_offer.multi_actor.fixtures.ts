@@ -21,7 +21,7 @@ import { query_create_actor } from '#lib/auth/account_queries.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import type { Db } from '#lib/db/db.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import { create_route_specs, session_options } from './role_grant_offer_test_helpers.ts';
 

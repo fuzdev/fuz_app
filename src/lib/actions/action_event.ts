@@ -8,7 +8,7 @@
  */
 
 import { z } from 'zod';
-import { create_uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid } from '../primitive_schemas.ts';
 import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
 import type { ActionEventPhase, ActionKind, ActionSpecUnion } from './action_spec.ts';

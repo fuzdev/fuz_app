@@ -14,7 +14,7 @@
  */
 
 import { create_context } from '@fuzdev/fuz_ui/context_helpers.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 
 import { AsyncSlot } from './async_slot.svelte.ts';
 import { KeyedAsyncSlot } from './keyed_async_slot.svelte.ts';

@@ -18,10 +18,8 @@
  */
 
 import { z } from 'zod';
-import { Uuid } from '@fuzdev/fuz_util/id.ts';
-import { Blake3Hash } from '@fuzdev/fuz_util/hash_schemas.ts';
+import { Uuid, Blake3Hash, Username, Email } from '../primitive_schemas.ts';
 
-import { Username, Email } from '../primitive_schemas.ts';
 import { is_iso8601_seconds_live } from '../timestamp.ts';
 
 // Types
@@ -171,7 +169,7 @@ export const has_global_role = (
 
 /**
  * A session's storage key — the blake3 hash of its raw token, branded so a
- * bare `string` can't stand in for one. `Blake3Hash` (`hash_schemas.ts`) is
+ * bare `string` can't stand in for one. `Blake3Hash` (`primitive_schemas.ts`) is
  * the shape; this is the meaning. Mint only via `hash_session_token`, or
  * `SessionId.parse` at an external boundary.
  *

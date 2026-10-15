@@ -18,7 +18,7 @@ import './assert_dev_env.ts';
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 
 import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
 import { ROLE_KEEPER } from '../auth/role_schema.ts';

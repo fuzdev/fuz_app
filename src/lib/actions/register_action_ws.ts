@@ -99,7 +99,7 @@ import type { Hono } from 'hono';
 import type { UpgradeWebSocket, WSContext } from 'hono/ws';
 import { wait } from '@fuzdev/fuz_util/async.ts';
 import { Logger, type Logger as LoggerType } from '@fuzdev/fuz_util/log.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 
 import {
 	get_request_context,

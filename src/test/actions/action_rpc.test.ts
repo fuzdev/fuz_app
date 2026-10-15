@@ -34,7 +34,7 @@ import {
 } from '#lib/http/error_schemas.ts';
 import { RateLimiter } from '#lib/rate_limiter.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 const log = new Logger('test', { level: 'off' });
 const db = create_stub_db();

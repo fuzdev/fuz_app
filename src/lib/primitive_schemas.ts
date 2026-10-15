@@ -1,10 +1,11 @@
 /**
  * Reusable validator-schema primitives — `bounded_string`, `Username`,
- * `UsernameProvided`, `Email`. Lives at the top level (not inside `auth/` or `http/`) because
- * these shapes don't depend on or imply any domain — accounts hold a
- * username and email, but invites, password resets, future cell-sharing,
- * and other surfaces all reach for the same primitives without going
- * through auth.
+ * `UsernameProvided`, `Email`, the branded `Uuid` and `Datetime` with their
+ * factories, and the hash schemas `Blake3Hash` and `FactHashSchema`. Lives at
+ * the top level (not inside `auth/` or `http/`) because these shapes don't
+ * depend on or imply any domain — accounts hold a username and email, but
+ * invites, password resets, cells, and other surfaces all reach for the same
+ * primitives without going through auth.
  *
  * Split out from `auth/account_schema.ts` so the auth module shrinks to
  * entity types + client-safe JSON shapes (its real responsibility) and
@@ -12,10 +13,14 @@
  * auth domain along. Future cross-domain primitives (phone, url, slug)
  * land here too.
  *
+ * Client-safe: nothing here imports `@fuzdev/blake3-wasm`, so wire schemas
+ * that validate a hash don't pull the WASM binary into a bundle.
+ *
  * @module
  */
 
 import { z } from 'zod';
+import { FACT_HASH_EXACT, type FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
 
 // TODO consider `.brand()` on Username and Email for compile-time safety
 
@@ -205,3 +210,50 @@ export const Email = z
 		}
 	);
 export type Email = z.infer<typeof Email>;
+
+/** Returns a new random (v4) `Uuid`. */
+export const create_uuid = (): Uuid => crypto.randomUUID() as Uuid;
+
+/** Branded UUID schema. */
+export const Uuid = z.uuid().brand('Uuid');
+export type Uuid = z.infer<typeof Uuid>;
+
+/** `Uuid` that defaults to a fresh `create_uuid()` when the input is `undefined`. */
+export const UuidWithDefault = Uuid.default(create_uuid);
+export type UuidWithDefault = z.infer<typeof UuidWithDefault>;
+
+/** Branded ISO 8601 datetime schema. */
+export const Datetime = z.iso.datetime().brand('Datetime');
+export type Datetime = z.infer<typeof Datetime>;
+
+/** Returns an ISO 8601 datetime string for the current time. */
+export const get_datetime_now = (): Datetime => new Date().toISOString() as Datetime;
+
+/** `Datetime` that defaults to `get_datetime_now()` when the input is `undefined`. */
+export const DatetimeNow = Datetime.default(get_datetime_now);
+export type DatetimeNow = z.infer<typeof DatetimeNow>;
+
+/** Zod schema for a BLAKE3 hex hash — 64 lowercase hex characters (256-bit output). */
+export const Blake3Hash = z
+	.string()
+	.regex(/^[0-9a-f]{64}$/, 'Expected a 64-character lowercase hex blake3 hash');
+export type Blake3Hash = z.infer<typeof Blake3Hash>;
+
+/**
+ * Wire-form schema for a `blake3:`-prefixed fact hash, whose output is
+ * `FactHash` from `@fuzdev/fuz_util/hash_schemas.ts` — the type
+ * `fact_hash_bytes`, `fact_hash_stream`, and `FactStore` use — so a parsed
+ * value passes straight to them. Client-side (cell payloads) and server-side
+ * (DB-row hashes) consumers reuse this same schema.
+ *
+ * The output type is a cast over a plain regex check: Zod's `.brand('FactHash')`
+ * would output Zod's own brand, which doesn't fit fuz_util's fuz_schema-branded
+ * `FactHash`, and a `.transform` or `z.custom` that produced the right type
+ * makes `z.toJSONSchema` throw, as neither can be represented in JSON Schema.
+ * The cast costs nothing at runtime and keeps the `ZodString` API and the
+ * `pattern` in the generated JSON Schema, so `.meta()`, `.nullable()`, and
+ * `z.array()` compose as before.
+ */
+export const FactHashSchema: z.ZodString & z.ZodType<FactHash, string> = z
+	.string()
+	.regex(FACT_HASH_EXACT) as z.ZodString & z.ZodType<FactHash, string>;

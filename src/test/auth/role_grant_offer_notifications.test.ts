@@ -32,7 +32,7 @@ import {
 	role_grant_revoke_notification_spec
 } from '#lib/auth/role_grant_offer_notifications.ts';
 import { JSONRPC_VERSION } from '#lib/http/jsonrpc.ts';
-import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 import type { RoleGrantOfferJson } from '#lib/auth/role_grant_offer_schema.ts';
 
 const fake_offer = (): RoleGrantOfferJson => {

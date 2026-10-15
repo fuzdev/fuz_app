@@ -21,7 +21,7 @@ import '../assert_dev_env.ts';
  */
 
 import { z } from 'zod';
-import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { Uuid } from '../../primitive_schemas.ts';
 
 import type { BackendConfig } from '../cross_backend/backend_config.ts';
 import type { FetchTransport } from './fetch_transport.ts';

@@ -11,7 +11,7 @@
  */
 
 import { test, assert } from 'vitest';
-import { Uuid, create_uuid } from '@fuzdev/fuz_util/id.ts';
+import { Uuid, create_uuid } from '#lib/primitive_schemas.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_test_app } from '#lib/testing/app_server.ts';

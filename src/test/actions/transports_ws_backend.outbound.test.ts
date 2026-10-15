@@ -14,7 +14,7 @@
 import { afterEach, describe, assert, test, vi } from 'vitest';
 import { WSContext } from 'hono/ws';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 
 import {
 	BackendWebsocketTransport,

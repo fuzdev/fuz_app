@@ -22,7 +22,7 @@ import {
 	query_account_has_global_role
 } from '#lib/auth/role_grant_queries.ts';
 import { query_role_grant_offer_create } from '#lib/auth/role_grant_offer_queries.ts';
-import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 import type { Db } from '#lib/db/db.ts';
 import {
 	create_test_account_with_actor,

@@ -22,7 +22,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
 
 import { create_test_app, type TestApp } from '#lib/testing/app_server.ts';

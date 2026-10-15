@@ -1,6 +1,6 @@
 import { describe, test, assert, vi } from 'vitest';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
-import { create_uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid } from '#lib/primitive_schemas.ts';
 
 import { PendingPeerRequests, audit_unmatched_peer_response } from '#lib/actions/peer_request.ts';
 import {

@@ -15,7 +15,7 @@ import {
 	query_create_role_grant,
 	query_role_grant_has_role
 } from '#lib/auth/role_grant_queries.ts';
-import { create_uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid } from '#lib/primitive_schemas.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import { make_account } from './role_grant_offer_queries.fixtures.ts';

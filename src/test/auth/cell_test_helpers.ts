@@ -50,7 +50,7 @@ import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { AuditFactory } from '#lib/server/app_backend.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
 import type { Db } from '#lib/db/db.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 /** Shared cookie config for the cell integration suites. */
 export const session_options = create_session_config('test_session');

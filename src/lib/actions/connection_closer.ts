@@ -43,7 +43,7 @@
  * @module
  */
 
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 
 import { emit_after_commit, type EmitAfterCommitContext } from '../http/pending_effects.ts';

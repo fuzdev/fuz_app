@@ -45,7 +45,7 @@ import {
 	query_account_has_active_global_role,
 	query_count_active_accounts_with_global_role
 } from './role_grant_queries.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 import { GRANT_PATH_ADMIN } from './grant_path_schema.ts';
 import {
 	query_account_by_email,

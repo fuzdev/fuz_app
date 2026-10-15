@@ -13,7 +13,7 @@ import './assert_dev_env.ts';
  * @module
  */
 
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 
 import type { Account, Actor, RoleGrant } from '../auth/account_schema.ts';
 import type { AuditLogEvent } from '../auth/audit_log_schema.ts';

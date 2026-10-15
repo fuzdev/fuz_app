@@ -12,7 +12,7 @@
  */
 
 import { z } from 'zod';
-import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { Uuid } from '../primitive_schemas.ts';
 
 /**
  * Principal columns as stored on `cell_grant`. Discriminated by which

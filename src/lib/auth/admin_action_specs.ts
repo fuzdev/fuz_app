@@ -17,13 +17,12 @@
  */
 
 import { z } from 'zod';
-import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { Uuid, Email, Username } from '../primitive_schemas.ts';
 
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import { ROLE_ADMIN, ROLE_KEEPER, RoleName } from './role_schema.ts';
 import { CREDENTIAL_TYPE_DAEMON_TOKEN } from './credential_type_schema.ts';
 import { AdminAccountEntryJson } from './account_schema.ts';
-import { Email, Username } from '../primitive_schemas.ts';
 import { ActingActor } from '../http/auth_shape.ts';
 import {
 	AdminSessionJson,

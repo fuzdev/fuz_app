@@ -22,9 +22,8 @@
  */
 
 import { z } from 'zod';
-import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { Uuid, bounded_string } from '../primitive_schemas.ts';
 
-import { bounded_string } from '../primitive_schemas.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import {
 	ERROR_INSUFFICIENT_PERMISSIONS,

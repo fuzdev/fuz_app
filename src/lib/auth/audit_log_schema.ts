@@ -10,10 +10,9 @@
  */
 
 import { z } from 'zod';
-import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import { Uuid, Email } from '../primitive_schemas.ts';
 
 import { AuthSessionJson, SessionId } from './account_schema.ts';
-import { Email } from '../primitive_schemas.ts';
 import { ApiTokenId } from './api_token.ts';
 import { BuiltinCredentialType } from './credential_type_schema.ts';
 

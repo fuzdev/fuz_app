@@ -12,7 +12,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { Uuid, create_uuid } from '@fuzdev/fuz_util/id.ts';
+import { Uuid, create_uuid } from '#lib/primitive_schemas.ts';
 
 import { query_actor_search } from '#lib/auth/actor_search_queries.ts';
 import { query_create_role_grant } from '#lib/auth/role_grant_queries.ts';

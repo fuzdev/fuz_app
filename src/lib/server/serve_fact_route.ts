@@ -96,8 +96,8 @@ import { Readable } from 'node:stream';
 import { join } from 'node:path';
 import type { Context } from 'hono';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
-import { FactHashSchema, type FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
-import { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { FactHash } from '@fuzdev/fuz_util/hash_schemas.ts';
+import { FactHashSchema, Uuid } from '../primitive_schemas.ts';
 import { z } from 'zod';
 
 import {

@@ -33,7 +33,7 @@ import {
 	type AuditLogInput
 } from '#lib/auth/audit_log_schema.ts';
 import type { Db } from '#lib/db/db.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 const log = new Logger('test', { level: 'error' });
 const noop = (): void => {};

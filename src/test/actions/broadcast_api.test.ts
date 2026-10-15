@@ -26,7 +26,7 @@ import type {
 } from '#lib/http/jsonrpc.ts';
 import type { ActionSpecUnion } from '#lib/actions/action_spec.ts';
 import { MinimalActionEnvironment, create_fake_ws } from '#lib/testing/ws_round_trip.ts';
-import { create_uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid } from '#lib/primitive_schemas.ts';
 
 const thing_changed_spec = {
 	method: 'thing_changed',

@@ -17,7 +17,7 @@ import type { QueryDeps } from './query_deps.ts';
 import { AUDIT_LOG_COLUMNS, audit_log_expr } from '../auth/audit_log_queries.ts';
 import { columns_sql } from './sql_columns.ts';
 import type { AuditLogEvent } from '../auth/audit_log_schema.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 
 /**
  * Metadata-jsonb keys cell-domain events use to name the cell. This

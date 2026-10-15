@@ -25,7 +25,7 @@ import { afterEach, assert, test, vi } from 'vitest';
 import { wait } from '@fuzdev/fuz_util/async.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import { create_keyring } from '#lib/auth/keyring.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';

@@ -39,7 +39,7 @@
 import { assert, describe, test } from 'vitest';
 import { Hono, type Context } from 'hono';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 import { wait } from '@fuzdev/fuz_util/async.ts';
 
 import { heartbeat_action } from '#lib/actions/heartbeat.ts';

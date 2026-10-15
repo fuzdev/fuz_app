@@ -53,7 +53,7 @@ import { has_scoped_role, type RequestActorContext } from './request_context.ts'
 import { ROLE_ADMIN } from './role_schema.ts';
 import type { ActionFactoryDeps } from './deps.ts';
 import type { Json } from '@fuzdev/fuz_util/json.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 
 import {
 	cell_create_action_spec,

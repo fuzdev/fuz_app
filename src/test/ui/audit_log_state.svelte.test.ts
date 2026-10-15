@@ -9,7 +9,7 @@
  */
 
 import { describe, test, assert, vi } from 'vitest';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import { AuditLogState, type AuditLogRpc } from '#lib/ui/audit_log_state.svelte.ts';
 import type {

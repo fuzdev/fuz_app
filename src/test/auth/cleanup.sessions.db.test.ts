@@ -38,7 +38,7 @@
 import { assert, test } from 'vitest';
 import { Logger, type LogConsole } from '@fuzdev/fuz_util/log.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import { query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';

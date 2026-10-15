@@ -16,7 +16,7 @@ import './assert_dev_env.ts';
 
 import { test, assert, describe } from 'vitest';
 import { z } from 'zod';
-import { zod_unwrap_to_object, zod_extract_fields } from '@fuzdev/fuz_util/zod.ts';
+import { zod_unwrap_to_object, zod_extract_fields } from '../zod.ts';
 
 import type { RouteSpec } from '../http/route_spec.ts';
 import { is_null_schema } from '../http/schema_helpers.ts';

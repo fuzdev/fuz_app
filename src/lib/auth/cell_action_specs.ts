@@ -7,10 +7,8 @@
  */
 
 import { z } from 'zod';
-import { Uuid } from '@fuzdev/fuz_util/id.ts';
-import { FactHashSchema } from '@fuzdev/fuz_util/hash_schemas.ts';
+import { Uuid, FactHashSchema, bounded_string } from '../primitive_schemas.ts';
 
-import { bounded_string } from '../primitive_schemas.ts';
 import type { RequestResponseActionSpec } from '../actions/action_spec.ts';
 import { ActingActor } from '../http/auth_shape.ts';
 import {

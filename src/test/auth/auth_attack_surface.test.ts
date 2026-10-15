@@ -42,7 +42,7 @@ import {
 	ERROR_AUTHENTICATION_REQUIRED,
 	ERROR_INSUFFICIENT_PERMISSIONS
 } from '#lib/http/error_schemas.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { to_iso8601_seconds } from '#lib/timestamp.ts';
 

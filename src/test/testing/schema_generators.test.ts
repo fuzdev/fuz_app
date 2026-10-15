@@ -8,7 +8,7 @@ import { describe, test, assert } from 'vitest';
 import { z } from 'zod';
 
 import { generate_valid_body, resolve_valid_path } from '#lib/testing/schema_generators.ts';
-import { FactHashSchema } from '@fuzdev/fuz_util/hash_schemas.ts';
+import { FactHashSchema } from '#lib/primitive_schemas.ts';
 import {
 	account_session_revoke_action_spec,
 	account_token_revoke_action_spec

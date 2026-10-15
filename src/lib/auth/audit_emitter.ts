@@ -67,7 +67,7 @@
  */
 
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 
 import type { Db } from '../db/db.ts';
 import { emit_after_commit, type EmitAfterCommitContext } from '../http/pending_effects.ts';

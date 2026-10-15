@@ -8,7 +8,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 
 import {
 	GRANT_SCOPE_PAIRED_MESSAGE,

@@ -23,7 +23,7 @@
 
 import { afterEach, assert, describe, test, vi } from 'vitest';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import { create_uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid } from '#lib/primitive_schemas.ts';
 
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';

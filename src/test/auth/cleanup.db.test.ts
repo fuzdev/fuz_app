@@ -38,7 +38,7 @@ import {
 import { hash_session_token, query_create_session } from '#lib/auth/session_queries.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import { create_audit_emitter, type AuditEmitter } from '#lib/auth/audit_emitter.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 import { Db, no_nested_transaction } from '#lib/db/db.ts';
 import { noop_connection_closer } from '#lib/actions/connection_closer.ts';
 import {

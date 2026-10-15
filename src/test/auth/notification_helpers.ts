@@ -14,7 +14,7 @@ import { create_role_grant_offer_actions } from '#lib/auth/role_grant_offer_acti
 import { type NotificationSender } from '#lib/auth/role_grant_offer_notifications.ts';
 import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 import type { JsonrpcNotification } from '#lib/http/jsonrpc.ts';
 
 /** The conventional RPC mount path in these tests. */

@@ -23,7 +23,7 @@ import {
 	ERROR_ROLE_GRANT_NOT_FOUND,
 	ERROR_ROLE_NOT_WEB_GRANTABLE
 } from '#lib/http/error_schemas.ts';
-import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 import type { AuditLogEvent } from '#lib/auth/audit_log_schema.ts';
 import { create_audit_emitter } from '#lib/auth/audit_emitter.ts';
 import { JSONRPC_ERROR_CODES } from '#lib/http/jsonrpc_errors.ts';

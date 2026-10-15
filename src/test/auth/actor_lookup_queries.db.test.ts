@@ -10,7 +10,7 @@
  */
 
 import { describe, test, assert } from 'vitest';
-import { create_uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid } from '#lib/primitive_schemas.ts';
 
 import { query_actors_by_ids } from '#lib/auth/actor_lookup_queries.ts';
 import { query_purge_account } from '#lib/auth/account_queries.ts';

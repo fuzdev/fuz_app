@@ -29,7 +29,7 @@ import {
 } from '#lib/auth/role_grant_offer_queries.ts';
 import { query_revoke_role_grant } from '#lib/auth/role_grant_queries.ts';
 import { query_audit_log, query_audit_log_list } from '#lib/auth/audit_log_queries.ts';
-import { create_uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid } from '#lib/primitive_schemas.ts';
 
 import { describe_db } from '../db_fixture.ts';
 import {

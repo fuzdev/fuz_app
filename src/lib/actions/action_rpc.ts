@@ -16,7 +16,7 @@ import type { Context } from 'hono';
 import { z } from 'zod';
 import { DEV } from 'esm-env';
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../primitive_schemas.ts';
 
 import type { RequestResponseActionSpec } from './action_spec.ts';
 import { type RouteContext, type RouteSpec } from '../http/route_spec.ts';

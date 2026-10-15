@@ -17,7 +17,7 @@ import '../assert_dev_env.ts';
  * @module
  */
 
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '../../primitive_schemas.ts';
 
 import type { RouteSpec } from '../../http/route_spec.ts';
 import type { AppSurfaceSpec } from '../../http/surface.ts';

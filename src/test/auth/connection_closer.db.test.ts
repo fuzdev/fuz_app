@@ -50,7 +50,7 @@ import { describe, test, assert } from 'vitest';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 import { wait } from '@fuzdev/fuz_util/async.ts';
 
 import { SessionId } from '#lib/auth/account_schema.ts';

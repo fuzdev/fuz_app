@@ -45,7 +45,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { Hono } from 'hono';
 import type { UpgradeWebSocket, WSEvents } from 'hono/ws';
 import { z } from 'zod';
-import { create_uuid, type Uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 
 import { create_keyring } from '#lib/auth/keyring.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';

@@ -16,7 +16,7 @@ import {
 	role_grant_offer_create_action_spec,
 	role_grant_offer_accept_action_spec
 } from '#lib/auth/role_grant_offer_action_specs.ts';
-import { create_uuid } from '@fuzdev/fuz_util/id.ts';
+import { create_uuid } from '#lib/primitive_schemas.ts';
 import { rpc_call_for_spec } from '#lib/testing/rpc_helpers.ts';
 import {
 	RPC_PATH,

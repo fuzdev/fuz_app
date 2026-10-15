@@ -21,7 +21,7 @@ import {
 import { assert_no_audit_drift } from '#lib/testing/audit_drift_guard.ts';
 import { AuditLogEventJson, create_audit_log_config } from '#lib/auth/audit_log_schema.ts';
 import { query_create_account, query_create_actor } from '#lib/auth/account_queries.ts';
-import type { Uuid } from '@fuzdev/fuz_util/id.ts';
+import type { Uuid } from '#lib/primitive_schemas.ts';
 import type { Db } from '#lib/db/db.ts';
 import type { QueryDeps } from '#lib/db/query_deps.ts';
 
