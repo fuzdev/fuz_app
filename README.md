@@ -53,4 +53,4 @@ See [CLAUDE.md](CLAUDE.md) for more usage patterns and the AI-generated docs.
 
 ## License
 
-[MIT](LICENSE)
+[0BSD](LICENSE)
