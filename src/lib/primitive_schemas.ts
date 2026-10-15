@@ -177,11 +177,9 @@ const EMAIL_REGEX = /^[^\s\u0085@]+@[^\s\u0085@]+\.[^\s\u0085@]+$/;
 const utf8_encoder = new TextEncoder();
 
 /**
- * Email validation. Lives here rather than `@fuzdev/fuz_util` because every
- * current consumer pairs it with `Username` (signup, invites, audit log) —
- * keeping the two together avoids a cross-package import for the
- * identity-primitive bundle. Promote to fuz_util if a non-identity consumer
- * surfaces.
+ * Email validation. Every current consumer pairs it with `Username` (signup,
+ * invites, audit log), so the two live together with the other Zod
+ * primitives.
  *
  * Deliberately permissive — a structural shape check (`EMAIL_REGEX` plus the
  * `EMAIL_LENGTH_MAX` byte bound), not RFC 5322 conformance or deliverability
