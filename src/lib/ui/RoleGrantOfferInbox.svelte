@@ -119,7 +119,7 @@
 									<div class="row gap_sm">
 										<button
 											type="button"
-											class="palette_c background-color:var(--bg_100)"
+											class="palette_c background-color:var(--paper_100)"
 											onclick={confirm}
 										>
 											confirm decline

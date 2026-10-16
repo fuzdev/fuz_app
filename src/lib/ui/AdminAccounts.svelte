@@ -172,7 +172,7 @@
 								{#snippet popover_content(_popover, do_confirm)}
 									<button
 										type="button"
-										class="palette_b background-color:var(--bg_100)"
+										class="palette_b background-color:var(--paper_100)"
 										onclick={() => do_confirm()}
 									>
 										<span class="py_sm">offer '{role}' to @{row.account.username}</span>
@@ -216,7 +216,7 @@
 							{#snippet popover_content(_popover, do_confirm)}
 								<button
 									type="button"
-									class="palette_c background-color:var(--bg_100)"
+									class="palette_c background-color:var(--paper_100)"
 									onclick={() => do_confirm()}
 								>
 									<span class="py_sm">soft-delete @{row.account.username} (reversible)</span>
