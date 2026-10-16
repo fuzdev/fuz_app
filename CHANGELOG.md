@@ -1,5 +1,17 @@
 # @fuzdev/fuz_app
 
+## 0.139.0
+
+### Minor Changes
+
+- **breaking** feat: `load_config` in `cli/config.ts` takes a `@fuzdev/fuz_schema` schema instead of a Zod schema; `DaemonInfo` in `cli/daemon.ts` is a fuz_schema schema, so `DaemonInfo.parse`/`safeParse` become `parse_or_throw(DaemonInfo, …)`/`parse(DaemonInfo, …)` from `@fuzdev/fuz_schema/schema.ts`; the invalid-file warnings list issues as `format_issue` writes them ([f92e161](https://github.com/fuzdev/fuz_app/commit/f92e161))
+- **breaking** fix: the confirm-button grounds in `ConfirmButton`, `AdminAccounts`, and `RoleGrantOfferInbox` read `--paper_100` instead of `--bg_100`; the peer floor of `@fuzdev/fuz_css` is `>=0.67.0` ([5c40c79](https://github.com/fuzdev/fuz_app/commit/5c40c79))
+- **breaking** chore: peer '@fuzdev/fuz_schema' `^0.4.0` and '@fuzdev/fuz_util' `>=0.76.0`, the first fuz_util on that fuz_schema ([1ccb008](https://github.com/fuzdev/fuz_app/commit/1ccb008))
+
+### Patch Changes
+
+- fix: `create_extract_global_flags` resolves a global `no-` pair given both ways (`--color -C`, `-C --color`) to the side given last, not the side declared last in the schema, with `@fuzdev/fuz_util` >=0.75.1; of two aliases of one global given without its canonical name, the one given first wins, not the one listed first in the schema; an arg named `__proto__` is an own key of `remaining`, and an entry named like an `Object.prototype` member reads as absent when not given ([adf7f0e](https://github.com/fuzdev/fuz_app/commit/adf7f0e))
+
 ## 0.138.0
 
 ### Minor Changes
