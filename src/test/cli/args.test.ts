@@ -1,7 +1,7 @@
 import { test, assert, describe } from 'vitest';
 import * as s from '@fuzdev/fuz_schema/schema.ts';
 import { meta } from '@fuzdev/fuz_schema/meta.ts';
-import type { ParsedArgs } from '@fuzdev/fuz_util/args.ts';
+import { argv_parse, type ParsedArgs } from '@fuzdev/fuz_util/args.ts';
 
 import {
 	parse_command_args,
@@ -227,6 +227,76 @@ describe('create_extract_global_flags', () => {
 		assert.deepStrictEqual(negated.remaining, { _: [] });
 	});
 
+	describe('a `no-` pair given both ways', () => {
+		const ColorSchema = s.object({
+			color: s.with_default(meta(s.boolean, { aliases: ['c'] }), true),
+			'no-color': s.with_default(meta(s.boolean, { aliases: ['C'] }), false),
+			verbose: s.with_default(s.boolean, false)
+		});
+		const extract_color = create_extract_global_flags(ColorSchema, {
+			color: true,
+			'no-color': false,
+			verbose: false
+		});
+
+		test('resolves to the side given last', () => {
+			// `apply --color -C`
+			const negated = extract_color(argv_parse(['apply', '--color', '-C']));
+			assert.deepStrictEqual(negated.flags, { color: false, 'no-color': true, verbose: false });
+			assert.deepStrictEqual(negated.remaining, { _: ['apply'] });
+			// `apply -C --color`
+			const colored = extract_color(argv_parse(['apply', '-C', '--color']));
+			assert.deepStrictEqual(colored.flags, { color: true, 'no-color': false, verbose: false });
+			assert.deepStrictEqual(colored.remaining, { _: ['apply'] });
+		});
+
+		test('resolves an alias of a side by where it was given', () => {
+			// `-c -C`
+			const negated = extract_color(argv_parse(['-c', '-C']));
+			assert.deepStrictEqual(negated.flags, { color: false, 'no-color': true, verbose: false });
+			assert.deepStrictEqual(negated.remaining, { _: [] });
+			// `-C -c`
+			const colored = extract_color(argv_parse(['-C', '-c']));
+			assert.deepStrictEqual(colored.flags, { color: true, 'no-color': false, verbose: false });
+			assert.deepStrictEqual(colored.remaining, { _: [] });
+		});
+
+		test('leaves a flag outside the pair unchanged', () => {
+			const before = extract_color(argv_parse(['--verbose', '-C', '--color', '--target', 'x']));
+			assert.deepStrictEqual(before.flags, { color: true, 'no-color': false, verbose: true });
+			assert.deepStrictEqual(before.remaining, { _: [], target: 'x' });
+			const after = extract_color(argv_parse(['--color', '-C', '--target', 'x', '--verbose']));
+			assert.deepStrictEqual(after.flags, { color: false, 'no-color': true, verbose: true });
+			assert.deepStrictEqual(after.remaining, { _: [], target: 'x' });
+		});
+	});
+
+	test('keeps a `__proto__` arg as an own key of `remaining`', () => {
+		const unparsed: ParsedArgs = { _: [], verbose: true };
+		Object.defineProperty(unparsed, '__proto__', {
+			value: 'x',
+			enumerable: true,
+			writable: true,
+			configurable: true
+		});
+		const { flags, remaining } = extract(unparsed);
+		assert.strictEqual(flags.verbose, true);
+		assert.ok(Object.hasOwn(remaining, '__proto__'));
+		assert.strictEqual(Object.getPrototypeOf(remaining), Object.prototype);
+		const result = parse_command_args(remaining, s.object({ _: s.array(s.string) }));
+		assert.ok(!result.ok);
+	});
+
+	test('reads no `Object.prototype` member as a given global flag', () => {
+		const ProtoSchema = s.object({
+			constructor: s.with_default(s.boolean, false)
+		});
+		// a fallback unlike the default, so a parse failure shows
+		const extract_proto = create_extract_global_flags(ProtoSchema, { constructor: true });
+		const { flags } = extract_proto({ _: [] });
+		assert.deepStrictEqual(flags, { constructor: false });
+	});
+
 	test('falls back when either entry of a `no-` pair is invalid', () => {
 		const ColorSchema = s.object({
 			color: s.with_default(s.boolean, true),
@@ -248,5 +318,17 @@ describe('create_extract_global_flags', () => {
 		assert.strictEqual(flags.help, false);
 		assert.strictEqual(flags.version, false);
 		assert.deepStrictEqual(remaining._, []);
+	});
+
+	test('of two aliases of one global, the one given first wins', () => {
+		const LevelSchema = s.object({
+			level: s.with_default(meta(s.string, { aliases: ['l', 'L'] }), 'info')
+		});
+		const extract_level = create_extract_global_flags(LevelSchema, { level: 'fallback' });
+		assert.deepStrictEqual(extract_level(argv_parse(['-L', 'b', '-l', 'a'])).flags, { level: 'b' });
+		assert.deepStrictEqual(extract_level(argv_parse(['-l', 'a', '-L', 'b'])).flags, { level: 'a' });
+		assert.deepStrictEqual(extract_level(argv_parse(['-L', 'b', '--level', 'z'])).flags, {
+			level: 'z'
+		});
 	});
 });

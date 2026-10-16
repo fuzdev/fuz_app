@@ -49,7 +49,8 @@ export const parse_command_args = <T extends Record<string, unknown>>(
  * read on any wrapper layer of the entry), and the fallback provides defaults
  * when parsing fails. Every entry is global, both of a `no-` pair like `color`
  * and `no-color` included, so `--no-color`, which `argv_parse` reads as
- * `color: false`, never lands in `remaining`.
+ * `color: false`, never lands in `remaining`. A `no-` pair and aliases resolve
+ * as `args_parse` resolves them.
  *
  * @param schema - fuz_schema object schema for global flags
  * @param fallback - default values when parsing fails
@@ -60,29 +61,25 @@ export const create_extract_global_flags = <T extends Record<string, unknown>>(
 	fallback: T
 ): ((unparsed: ParsedArgs) => { flags: T; remaining: ParsedArgs }) => {
 	return (unparsed: ParsedArgs): { flags: T; remaining: ParsedArgs } => {
-		// get all global flag names and aliases from schema
+		// get all global flag names and aliases from schema, `input_names` with
+		// those of a `_` entry, which is read but never stripped from `remaining`
 		const global_props = to_global_props(schema);
 		const global_names: Set<string> = new Set();
+		const input_names: Set<string> = new Set();
 		for (const prop of global_props) {
+			input_names.add(prop.name);
+			for (const alias of prop.aliases) input_names.add(alias);
 			if (prop.name === '_') continue;
 			global_names.add(prop.name);
 			for (const alias of prop.aliases) global_names.add(alias);
 		}
 
-		// extract global flag values, handling aliases
-		const flags_input: Record<string, unknown> = {};
-		for (const prop of global_props) {
-			// check canonical name first, then aliases
-			if (prop.name in unparsed) {
-				flags_input[prop.name] = unparsed[prop.name];
-			} else {
-				for (const alias of prop.aliases) {
-					if (alias in unparsed) {
-						flags_input[prop.name] = unparsed[alias];
-						break;
-					}
-				}
-			}
+		// copy the given global flags in the order they were given, aliases included,
+		// so `args_parse` expands aliases and resolves a `no-` pair given both ways
+		// to the side given last; a null prototype keeps every key an own key
+		const flags_input: Record<string, unknown> = Object.create(null);
+		for (const [key, value] of Object.entries(unparsed)) {
+			if (input_names.has(key)) flags_input[key] = value;
 		}
 
 		// parse global flags
@@ -92,13 +89,15 @@ export const create_extract_global_flags = <T extends Record<string, unknown>>(
 		);
 		const flags: T = global_parsed.ok ? global_parsed.value : fallback;
 
-		// build remaining args without global flags
-		const remaining: ParsedArgs = { _: [...unparsed._] };
+		// build remaining args without global flags, `__proto__` as an own key
+		const remaining: ParsedArgs = Object.create(null);
+		remaining._ = [...unparsed._];
 		for (const [key, value] of Object.entries(unparsed)) {
 			if (key === '_') continue;
 			if (global_names.has(key)) continue;
 			remaining[key] = value;
 		}
+		Object.setPrototypeOf(remaining, Object.prototype);
 
 		return { flags, remaining };
 	};
