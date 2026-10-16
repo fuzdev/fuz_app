@@ -1,5 +1,6 @@
 import { test, assert, describe } from 'vitest';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
+import { parse } from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	DaemonInfo,
@@ -21,18 +22,18 @@ const MOCK_INFO: DaemonInfo = {
 
 describe('DaemonInfo schema', () => {
 	test('validates correct data', () => {
-		const result = DaemonInfo.safeParse(MOCK_INFO);
-		assert.strictEqual(result.success, true);
+		const result = parse(DaemonInfo, MOCK_INFO);
+		assert.strictEqual(result.ok, true);
 	});
 
 	test('rejects missing fields', () => {
-		const result = DaemonInfo.safeParse({ version: 1, pid: 123 });
-		assert.strictEqual(result.success, false);
+		const result = parse(DaemonInfo, { version: 1, pid: 123 });
+		assert.strictEqual(result.ok, false);
 	});
 
 	test('rejects extra fields', () => {
-		const result = DaemonInfo.safeParse({ ...MOCK_INFO, extra: 'field' });
-		assert.strictEqual(result.success, false);
+		const result = parse(DaemonInfo, { ...MOCK_INFO, extra: 'field' });
+		assert.strictEqual(result.ok, false);
 	});
 });
 
@@ -135,6 +136,26 @@ describe('read_daemon_info', () => {
 
 		const result = await read_daemon_info(runtime, 'zzz');
 		assert.strictEqual(result, null);
+	});
+
+	test('returns null and warns for schema mismatch', async () => {
+		const warnings: Array<string> = [];
+		const runtime = {
+			env_get: (name: string) => (name === 'HOME' ? '/home/user' : undefined),
+			env_set: () => undefined,
+			stat: (_path: string) => Promise.resolve({ is_file: true, is_directory: false }),
+			read_text_file: (_path: string) =>
+				Promise.resolve(JSON.stringify({ ...MOCK_INFO, pid: '1' })),
+			warn: (...args: Array<unknown>) => {
+				warnings.push(args[0] as string);
+			}
+		};
+
+		const result = await read_daemon_info(runtime, 'zzz');
+		assert.strictEqual(result, null);
+		assert.strictEqual(warnings.length, 1);
+		assert.ok(warnings[0]!.startsWith('Invalid daemon.json: '));
+		assert.ok(warnings[0]!.includes('pid'));
 	});
 });
 

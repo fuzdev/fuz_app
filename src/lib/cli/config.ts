@@ -2,13 +2,13 @@
  * Generic CLI configuration loader.
  *
  * Manages CLI-specific configuration stored at `~/.{name}/config.json`.
- * Consumers keep their project-specific Zod schemas locally and use
- * these generic load/save functions.
+ * Consumers keep their project-specific `@fuzdev/fuz_schema` schemas locally
+ * and use these generic load/save functions.
  *
  * @module
  */
 
-import type { z } from 'zod';
+import { format_issue, parse, type Schema } from '@fuzdev/fuz_schema/schema.ts';
 
 import type { EnvDeps, FsReadDeps, FsWriteDeps, LogDeps } from '../runtime/deps.ts';
 
@@ -37,17 +37,17 @@ export const get_config_path = (runtime: Pick<EnvDeps, 'env_get'>, name: string)
 };
 
 /**
- * Load CLI configuration from a JSON file with Zod schema validation.
+ * Load CLI configuration from a JSON file validated by a `@fuzdev/fuz_schema` schema.
  *
  * @param runtime - runtime with file read capability
  * @param path - path to the config JSON file
- * @param schema - Zod schema to validate against
+ * @param schema - fuz_schema schema to validate against
  * @returns parsed config, or null if file doesn't exist or is invalid
  */
 export const load_config = async <T>(
 	runtime: Pick<FsReadDeps, 'stat' | 'read_text_file'> & LogDeps,
 	path: string,
-	schema: z.ZodType<T>
+	schema: Schema<T, any>
 ): Promise<T | null> => {
 	// check if file exists
 	const stat = await runtime.stat(path);
@@ -58,12 +58,12 @@ export const load_config = async <T>(
 	try {
 		const content = await runtime.read_text_file(path);
 		const parsed = JSON.parse(content);
-		const result = schema.safeParse(parsed);
-		if (!result.success) {
-			runtime.warn(`Invalid config.json: ${result.error.message}`);
+		const result = parse(schema, parsed);
+		if (!result.ok) {
+			runtime.warn(`Invalid config.json: ${result.issues.map(format_issue).join('; ')}`);
 			return null;
 		}
-		return result.data;
+		return result.value;
 	} catch (error) {
 		runtime.warn(`Failed to read config.json: ${(error as Error).message}`);
 		return null;

@@ -1,5 +1,5 @@
 import { test, assert, describe } from 'vitest';
-import { z } from 'zod';
+import { number, object, string } from '@fuzdev/fuz_schema/schema.ts';
 
 import { get_app_dir, get_config_path, load_config, save_config } from '#lib/cli/config.ts';
 
@@ -28,9 +28,9 @@ describe('get_config_path', () => {
 });
 
 describe('load_config', () => {
-	const TestSchema = z.strictObject({
-		name: z.string(),
-		port: z.number()
+	const TestSchema = object({
+		name: string,
+		port: number
 	});
 
 	test('loads and validates valid config', async () => {
@@ -82,6 +82,7 @@ describe('load_config', () => {
 		assert.strictEqual(result, null);
 		assert.strictEqual(warnings.length, 1);
 		assert.ok(warnings[0]!.includes('Invalid config.json'));
+		assert.ok(warnings[0]!.includes('name'));
 	});
 });
 

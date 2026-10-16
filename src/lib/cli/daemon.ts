@@ -8,7 +8,14 @@
  * @module
  */
 
-import { z } from 'zod';
+import {
+	format_issue,
+	number,
+	object,
+	parse,
+	string,
+	type Infer
+} from '@fuzdev/fuz_schema/schema.ts';
 
 import {
 	type CommandDeps,
@@ -23,21 +30,22 @@ import { write_file_atomic } from '../runtime/fs.ts';
 import { get_app_dir } from './config.ts';
 
 /**
- * Daemon info schema for `~/.{name}/run/daemon.json`.
+ * Daemon info schema for `~/.{name}/run/daemon.json`, a strict
+ * `@fuzdev/fuz_schema` object schema.
  */
-export const DaemonInfo = z.strictObject({
+export const DaemonInfo = object({
 	/** Schema version. */
-	version: z.number(),
+	version: number,
 	/** Server process ID. */
-	pid: z.number(),
+	pid: number,
 	/** Port the server is listening on. */
-	port: z.number(),
+	port: number,
 	/** ISO timestamp when server started. */
-	started: z.string(),
+	started: string,
 	/** Package version of the application. */
-	app_version: z.string()
+	app_version: string
 });
-export type DaemonInfo = z.infer<typeof DaemonInfo>;
+export type DaemonInfo = Infer<typeof DaemonInfo>;
 
 /**
  * Get the daemon info file path (`~/.{name}/run/daemon.json`).
@@ -104,12 +112,12 @@ export const read_daemon_info = async (
 	try {
 		const content = await runtime.read_text_file(daemon_path);
 		const parsed = JSON.parse(content);
-		const result = DaemonInfo.safeParse(parsed);
-		if (!result.success) {
-			runtime.warn(`Invalid daemon.json: ${result.error.message}`);
+		const result = parse(DaemonInfo, parsed);
+		if (!result.ok) {
+			runtime.warn(`Invalid daemon.json: ${result.issues.map(format_issue).join('; ')}`);
 			return null;
 		}
-		return result.data;
+		return result.value;
 	} catch {
 		runtime.warn('Failed to parse daemon.json');
 		return null;
