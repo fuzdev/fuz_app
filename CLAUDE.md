@@ -157,7 +157,7 @@ Shared helpers accept small `*Deps` from `runtime/deps.ts` (not `Pick<GodType, .
 
 - `hono` (>=4), `zod` (^4), `svelte` (^5), `@sveltejs/kit` (^3)
 - `@fuzdev/fuz_util` (>=0.75.0)
-- `@fuzdev/fuz_schema` (^0.3.0) — the schemas of `cli/args.ts` and `cli/help.ts`, which take fuz_schema object schemas where the rest of the package takes Zod's, and the `Branded` behind fuz_util's `FactHash` (one deduped copy, as `Branded` keys on a unique symbol)
+- `@fuzdev/fuz_schema` (^0.4.0) — the schemas of `cli/args.ts` and `cli/help.ts`, which take fuz_schema object schemas where the rest of the package takes Zod's, and the `Branded` behind fuz_util's `FactHash` (one deduped copy, as `Branded` keys on a unique symbol)
 - `@node-rs/argon2` (>=2) — for `auth/password_argon2`
 - `@fuzdev/blake3-wasm` (>=0.2.0) — for `auth/session_queries`, `auth/bearer_auth`
 - `pg` (>=8), `@electric-sql/pglite` (>=0.4) or `@fuzdev/pglet-wasm` (>=0.1.0) — optional, for `db/create_db` (`postgres://`, `file://` and `memory://` respectively); `@fuzdev/pglet-wasm` is also the default test database (`testing/db.ts`'s `create_default_db_factory`)
