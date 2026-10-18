@@ -119,7 +119,7 @@ describe('format_db_status', () => {
  */
 const SHARED_DISPLAY_CASES: Array<[string, string]> = [
 	['postgres://user:secret@db.example.com:5432/app', 'postgres://user@db.example.com:5432/app'],
-	['postgres://localhost/visiones', 'postgres://localhost:5432/visiones'],
+	['postgres://localhost/app', 'postgres://localhost:5432/app'],
 	['postgresql://user@localhost/app', 'postgres://user@localhost:5432/app'],
 	['postgres://u:pw@[::1]:6543/db', 'postgres://u@[::1]:6543/db'],
 	['postgres://[0:0::1]/db', 'postgres://[::1]:5432/db'],
