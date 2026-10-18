@@ -33,8 +33,10 @@ import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
 	CREDENTIAL_TYPE_KEY,
-	TEST_CONTEXT_PRESET_KEY
+	TEST_CONTEXT_PRESET_KEY,
+	TOKEN_SCOPE_KEY
 } from '../hono_context.ts';
+import type { TokenScope } from '../auth/token_scope.ts';
 import { ApiError } from '../http/error_schemas.ts';
 
 // Mock the query modules so test cases can control return values.
@@ -89,6 +91,8 @@ export interface BearerAuthTestCase extends BearerAuthTestOptions {
 	expected_account_id?: string;
 	/** If set, assert `AUTH_API_TOKEN_ID_KEY` was set to this value after a successful bearer auth. */
 	expected_api_token_id?: string;
+	/** If set, assert `TOKEN_SCOPE_KEY` was set to this scope after a successful bearer auth. */
+	expected_token_scope?: TokenScope;
 	/** If true, assert the pre-existing session `ACCOUNT_ID_KEY` and credential type are preserved. */
 	assert_context_preserved?: boolean;
 	/** Optional callback for custom spy assertions on the mocks bundle. */
@@ -208,19 +212,21 @@ export const create_bearer_auth_test_app = (
 
 	// route handler echoes the account-grain identity the middleware writes
 	// (bearer auth sets `ACCOUNT_ID_KEY` + `CREDENTIAL_TYPE_KEY` +
-	// `AUTH_API_TOKEN_ID_KEY`; it never builds the full request context —
+	// `AUTH_API_TOKEN_ID_KEY` + `TOKEN_SCOPE_KEY`; it never builds the full request context —
 	// that is the dispatcher's authorization phase). `request_context_set`
 	// is only true when a test pre-populates it via `pre_context`.
 	app.get('/api/test', (c) => {
 		const account_id = c.get(ACCOUNT_ID_KEY);
 		const cred = c.get(CREDENTIAL_TYPE_KEY);
 		const api_token_id = c.get(AUTH_API_TOKEN_ID_KEY);
+		const token_scope = c.get(TOKEN_SCOPE_KEY);
 		const ctx = c.get(REQUEST_CONTEXT_KEY);
 		return c.json({
 			ok: true,
 			account_id: account_id ?? null,
 			credential_type: cred ?? null,
 			api_token_id: api_token_id ?? null,
+			token_scope: token_scope ?? null,
 			request_context_set: ctx != null
 		});
 	});
@@ -293,6 +299,14 @@ export const describe_bearer_auth_cases = (
 						body.api_token_id,
 						tc.expected_api_token_id,
 						'AUTH_API_TOKEN_ID_KEY should match the validated api_token.id'
+					);
+				}
+
+				if (tc.expected_token_scope !== undefined) {
+					assert.deepStrictEqual(
+						body.token_scope,
+						tc.expected_token_scope,
+						'TOKEN_SCOPE_KEY should be the scope the validated api_token carries'
 					);
 				}
 

@@ -24,6 +24,10 @@ import { create_keyring } from '#lib/auth/keyring.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { PASSWORD_LENGTH_MAX } from '#lib/auth/password.ts';
 import { create_bearer_auth_middleware } from '#lib/auth/bearer_auth.ts';
+import {
+	create_test_raw_api_token,
+	create_test_validated_api_token
+} from '#lib/testing/entities.ts';
 import { ERROR_RATE_LIMIT_EXCEEDED, ERROR_INVALID_CREDENTIALS } from '#lib/http/error_schemas.ts';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { create_stub_db, create_noop_stub, create_test_audit_emitter } from '#lib/testing/stubs.ts';
@@ -243,7 +247,7 @@ const create_bearer_app = (): BearerTestApp => {
 
 const bearer_request = (
 	app: Hono,
-	token = 'invalid_token',
+	token = create_test_raw_api_token('invalid'),
 	headers?: Record<string, string>
 ): Response | Promise<Response> =>
 	app.request('/api/test', {
@@ -937,25 +941,29 @@ describe('bearer auth has no rate limiter', () => {
 	const BURST = MAX_ATTEMPTS * 4;
 
 	test('invalid tokens never 429, however many are tried', async () => {
-		const { app } = create_bearer_app();
+		const { app, mock_validate } = create_bearer_app();
 
 		for (let i = 0; i < BURST; i++) {
-			const res = await bearer_request(app, `invalid_token_${i}`);
+			// well-formed, so every attempt reaches the lookup rather than the shape precheck
+			const res = await bearer_request(app, create_test_raw_api_token(`invalid${i}`));
 			assert.strictEqual(res.status, 200, 'soft-fails to "no credential", never throttled');
 		}
+		assert.strictEqual(mock_validate.mock.calls.length, BURST, 'every attempt was looked up');
 	});
 
 	test('concurrent requests with a valid token all succeed', async () => {
 		const { app, mock_validate } = create_bearer_app();
 		mock_validate.mockImplementation(() =>
-			Promise.resolve({ id: 'tok_1', account_id: 'acc_1', scope: null })
+			Promise.resolve(create_test_validated_api_token({ id: 'tok_1', account_id: 'acc_1' }))
 		);
 
 		// `Array.from` fires every request before any is awaited, so they are all
 		// mid-flight together — the shape that used to trip the limiter.
 		// `Promise.resolve` normalizes `bearer_request`'s `Response | Promise<Response>`.
 		const results = await Promise.all(
-			Array.from({ length: BURST }, () => Promise.resolve(bearer_request(app, 'valid_token')))
+			Array.from({ length: BURST }, () =>
+				Promise.resolve(bearer_request(app, create_test_raw_api_token('valid')))
+			)
 		);
 
 		for (const res of results) {

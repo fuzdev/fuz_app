@@ -13,6 +13,14 @@ import type { ApiToken } from './account_schema.ts';
 import { hash_api_token } from './api_token.ts';
 import { type TokenScope, parse_stored_token_scope, serialize_token_scope } from './token_scope.ts';
 
+/**
+ * A live `api_token` row as `query_validate_api_token` returns it: the stored
+ * `scope` document already parsed, so a caller holds the narrowing the
+ * credential was minted with and never decides what an unreadable one means.
+ * The Rust twin's `ApiTokenRow` carries the parsed scope the same way.
+ */
+export type ValidatedApiToken = Omit<ApiToken, 'scope'> & { scope: TokenScope };
+
 /** Extended deps for `query_validate_api_token` which needs a logger. */
 export interface ApiTokenQueryDeps extends QueryDeps {
 	log: Logger;
@@ -101,17 +109,18 @@ export const query_create_api_token = async (
 };
 
 /**
- * Validate a raw API token and return the token record.
+ * Validate a raw API token and return the token record with its scope parsed.
  *
  * Hashes the token with blake3, looks up the hash, and checks
- * expiration. Updates `last_used_at` and `last_used_ip` on success
+ * expiration. A row whose stored scope is unreadable is refused like an
+ * unknown hash. Updates `last_used_at` and `last_used_ip` on success
  * (fire-and-forget — errors logged, never thrown).
  *
  * @param deps - query dependencies with logger
  * @param raw_token - the raw API token from the Authorization header
  * @param ip - the client IP address (for audit)
  * @param pending_effects - optional array to register the usage-tracking effect for later awaiting
- * @returns the token record if valid, or `undefined`
+ * @returns the token record with its parsed scope if valid, or `undefined`
  * @mutates `api_token` row - fire-and-forget UPDATE of `last_used_at` / `last_used_ip` on a valid token
  * @mutates `pending_effects` - pushes the in-flight tracking promise when provided
  */
@@ -120,7 +129,7 @@ export const query_validate_api_token = async (
 	raw_token: string,
 	ip: string | undefined,
 	pending_effects: Array<Promise<void>> | undefined
-): Promise<ApiToken | undefined> => {
+): Promise<ValidatedApiToken | undefined> => {
 	const token_hash = hash_api_token(raw_token);
 	const row = await deps.db.query_one<ApiToken>(
 		`SELECT ${columns_sql(API_TOKEN_COLUMNS, api_token_expr)} FROM api_token
@@ -134,7 +143,8 @@ export const query_validate_api_token = async (
 	// outcome as an unknown token hash. The scope *is* the gate here, so a parse
 	// failure must not fall through to full authority — that would hand a
 	// narrowed token everything precisely when something is already wrong.
-	if (parse_stored_token_scope(row.scope) === null) {
+	const scope = parse_stored_token_scope(row.scope);
+	if (scope === null) {
 		deps.log.warn(`api_token.scope is unreadable for ${row.id}; refusing the credential`);
 		return undefined;
 	}
@@ -151,7 +161,7 @@ export const query_validate_api_token = async (
 		});
 	pending_effects?.push(p);
 
-	return row;
+	return { ...row, scope };
 };
 
 /**

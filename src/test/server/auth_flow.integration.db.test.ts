@@ -27,6 +27,7 @@ import {
 	create_loopback_app_server_options
 } from '#lib/testing/app_server.ts';
 import type { RouteSpec } from '#lib/http/route_spec.ts';
+import { create_test_raw_api_token } from '#lib/testing/entities.ts';
 import { ROLE_KEEPER, ROLE_ADMIN } from '#lib/auth/role_schema.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
 import {
@@ -244,7 +245,8 @@ describe('auth flow integration', () => {
 	test('authenticated route with invalid bearer token returns 401', async () => {
 		const res = await result.app.request('/api/me', {
 			headers: {
-				Authorization: 'Bearer secret_fuz_token_invalid'
+				// well-formed, so the refusal is the lookup's, not the shape precheck's
+				Authorization: `Bearer ${create_test_raw_api_token('invalid')}`
 			}
 		});
 		assert.strictEqual(res.status, 401);

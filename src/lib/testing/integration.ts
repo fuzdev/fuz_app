@@ -59,6 +59,7 @@ import {
 } from './cross_backend/wire_shapes.ts';
 import type { SetupTest } from './cross_backend/setup.ts';
 import { DEFAULT_TEST_PASSWORD } from './test_credentials.ts';
+import { create_test_raw_api_token } from './entities.ts';
 
 /**
  * Configuration for `describe_standard_integration_tests`.
@@ -835,7 +836,8 @@ export const describe_standard_integration_tests = (
 					path: rpc_path,
 					spec: account_verify_action_spec,
 					params: undefined,
-					headers: { authorization: 'Bearer secret_fuz_token_invalid' },
+					// well-formed, so the refusal is the lookup's, not the shape precheck's
+					headers: { authorization: `Bearer ${create_test_raw_api_token('invalid')}` },
 					suppress_default_origin: true
 				});
 				assert.strictEqual(res.status, 401);

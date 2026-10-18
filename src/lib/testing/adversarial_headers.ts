@@ -18,6 +18,14 @@ import {
 	TEST_MIDDLEWARE_PATH,
 	type TestMiddlewareStackOptions
 } from './middleware.ts';
+import { create_test_raw_api_token } from './entities.ts';
+
+/**
+ * A well-formed bearer value — it passes the `is_api_token_shaped` precheck,
+ * so a `not_called` case proves an earlier layer short-circuited, not that the
+ * token's shape was refused.
+ */
+const ADVERSARIAL_BEARER_TOKEN = create_test_raw_api_token('adversarial');
 
 // --- Adversarial header attack types and runner ---
 
@@ -52,7 +60,7 @@ export const create_standard_adversarial_cases = (
 	{
 		name: 'bearer token with Origin header is rejected before token validation',
 		headers: {
-			Authorization: 'Bearer secret_fuz_token_test',
+			Authorization: `Bearer ${ADVERSARIAL_BEARER_TOKEN}`,
 			Origin: 'https://attacker.com'
 		},
 		expected_status: 403,
@@ -62,7 +70,7 @@ export const create_standard_adversarial_cases = (
 	{
 		name: 'bearer token with allowed Origin — bearer silently discarded (browser context)',
 		headers: {
-			Authorization: 'Bearer secret_fuz_token_test',
+			Authorization: `Bearer ${ADVERSARIAL_BEARER_TOKEN}`,
 			Origin: allowed_origin
 		},
 		expected_status: 200,
@@ -77,7 +85,7 @@ export const create_standard_adversarial_cases = (
 	{
 		name: 'empty Origin header is rejected by origin middleware before bearer auth (defense-in-depth)',
 		headers: {
-			Authorization: 'Bearer secret_fuz_token_test',
+			Authorization: `Bearer ${ADVERSARIAL_BEARER_TOKEN}`,
 			Origin: ''
 		},
 		expected_status: 403,
@@ -87,7 +95,7 @@ export const create_standard_adversarial_cases = (
 	{
 		name: 'lowercase bearer scheme is recognized (case-insensitive per RFC 7235), soft-fails',
 		headers: {
-			Authorization: 'bearer secret_fuz_token_test'
+			Authorization: `bearer ${ADVERSARIAL_BEARER_TOKEN}`
 		},
 		expected_status: 200,
 		validate_expectation: 'called'
@@ -98,7 +106,7 @@ export const create_standard_adversarial_cases = (
 		// treats Referer presence as a browser-context indicator and discards
 		// the token, so the request reaches the route as unauthenticated.
 		headers: {
-			Authorization: 'Bearer secret_fuz_token_test',
+			Authorization: `Bearer ${ADVERSARIAL_BEARER_TOKEN}`,
 			Referer: 'https://attacker.com/page'
 		},
 		expected_status: 200,
@@ -107,7 +115,7 @@ export const create_standard_adversarial_cases = (
 	{
 		name: 'bearer token with allowed Referer (no Origin) — bearer silently discarded (browser context)',
 		headers: {
-			Authorization: 'Bearer secret_fuz_token_test',
+			Authorization: `Bearer ${ADVERSARIAL_BEARER_TOKEN}`,
 			Referer: `${allowed_origin}/page`
 		},
 		expected_status: 200,

@@ -35,7 +35,7 @@ over the pool so rows persist when request transactions roll back. See root
 - `auth/session_cookie.ts` — `SessionOptions<T>`, `parse_session`, `process_session_cookie` (`'none' | 'clear'` — no refresh action; the 30-day lifetime is an absolute cap signed once at mint), `create_session_config`, `fuz_session_config`, `SESSION_AGE_MAX`.
 - `auth/password.ts` — `Password`, `PasswordProvided`, `PasswordHashDeps`, `PASSWORD_LENGTH_MIN` (12, OWASP), `PASSWORD_LENGTH_MAX` (300).
 - `auth/password_argon2.ts` — `hash_password`, `verify_password`, `verify_dummy`, `argon2_password_deps`.
-- `auth/api_token.ts` — `API_TOKEN_PREFIX` (`secret_fuz_token_`), `hash_api_token`, `generate_api_token`.
+- `auth/api_token.ts` — `API_TOKEN_PREFIX` (`secret_fuz_token_`), `hash_api_token`, `generate_api_token`, and the shape precheck `is_api_token_shaped` (`API_TOKEN_REGEX`: the prefix plus exactly `API_TOKEN_BODY_LENGTH` = 43 base64url chars).
 - `auth/daemon_token.ts` — `DaemonToken`, `DAEMON_TOKEN_HEADER` (`X-Daemon-Token`), `generate_daemon_token`, `validate_daemon_token`, `DaemonTokenState`.
 - `auth/bootstrap_account.ts` — `bootstrap_account` (one-shot, `bootstrap_lock`-protected).
 
@@ -74,7 +74,7 @@ Convention — `*_schema.ts` is Zod-only; `*_ddl.ts` holds DDL strings.
 
 ### Queries
 
-All take `deps: QueryDeps = {db}` first; `query_validate_api_token` adds `log`.
+All take `deps: QueryDeps = {db}` first; `query_validate_api_token` adds `log` and returns a `ValidatedApiToken` — the row with `scope` parsed, refusing (returning `undefined` for) a row whose stored scope is unreadable.
 
 - `auth/account_queries.ts` — account CRUD, actor resolution, password update with verify-write race guard, paged `query_admin_account_list`.
 - `auth/actor_lookup_queries.ts` — batched `actor` ⨝ `account` for the labels arc.
@@ -223,7 +223,7 @@ Everything else listed under §RPC action surfaces.
 - `auth/request_context.ts` — `RequestContext`, `resolve_acting_actor`, `build_request_context`, predicates (`has_role`, `has_scoped_role`, `has_any_scoped_role` — the dispatcher's role gate and every builtin-role check read the **global** grant via `has_scoped_role(_, role, null)` / `has_any_scoped_role(_, roles, null)`; scope-blind `has_role` is never the gate for a builtin role), guards (`require_auth`, `require_role`, `require_credential_types`, `require_token_scope`), `token_scope_surface_denial` (the direct-call form, for surfaces that aren't route specs), `refresh_role_grants`.
 - `auth/session_middleware.ts` — `process_session_cookie` integration, `create_session_and_set_cookie` (shared by login / signup / bootstrap; returns the token hashes of the sessions the cap evicted, which the caller closes after its commit — only login passes a cap).
 - `auth/resolved_auth.ts` — `ResolvedAuth` (the resolved credential as one value: `account_id`, `credential_type`, `token_hash`, `api_token_id`), `get_resolved_auth(c)` (gathers it from the context keys the auth middleware set), and `revalidate_resolved_auth(deps, resolved)`, the no-touch re-read a long-lived connection runs once it is registered: session row / token row (by id) still live and still on the account, account not soft-deleted; a daemon token re-reads its account only. Reuses the middleware's own queries and predicates. Called by the WS upgrade (`actions/register_action_ws.ts`) and the audit SSE route between registering a connection pending and admitting it. Twin of the Rust `revalidate_resolved_auth`.
-- `auth/bearer_auth.ts` — soft-fail bearer middleware; rejects when `Origin` or `Referer` present (browser context).
+- `auth/bearer_auth.ts` — soft-fail bearer middleware; rejects when `Origin` or `Referer` present (browser context), and soft-fails a value that is not `is_api_token_shaped` before any query. The scope it sets is the one the query parsed — there is no fallback.
 - `auth/daemon_token_middleware.ts` — `create_daemon_token_middleware(state, deps, log)` — the credential **consumer** only (soft-fail validation, keeper account resolution). The producer (`write_daemon_token` / `start_daemon_token_rotation`) lives in `testing/daemon_token_rotation.ts` behind the dev-env guard — no production assembly mints daemon tokens, mirroring the Rust spine's `fuz_testing`-confined producer. Soft-fails — discards the credential (pass-through, no own 401/503) on **every** non-success path: browser context (`Origin`/`Referer` present), malformed/invalid token, and valid-token-but-no-keeper all `next()` through to the dispatcher's `credential_type_required` (403) gate, mirroring the bearer guard and the Rust spine's `resolve.rs`. Daemon tokens are loopback-only, so browser context never arises in practice — the discard is defense-in-depth.
 
 See root ../../../CLAUDE.md §Middleware Ordering for canonical assembly

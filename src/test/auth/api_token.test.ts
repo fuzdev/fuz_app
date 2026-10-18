@@ -10,7 +10,14 @@
 
 import { describe, assert, test } from 'vitest';
 
-import { API_TOKEN_PREFIX, generate_api_token, hash_api_token } from '#lib/auth/api_token.ts';
+import {
+	API_TOKEN_BODY_LENGTH,
+	API_TOKEN_PREFIX,
+	generate_api_token,
+	hash_api_token,
+	is_api_token_shaped
+} from '#lib/auth/api_token.ts';
+import { create_test_raw_api_token } from '#lib/testing/entities.ts';
 
 describe('API_TOKEN_PREFIX', () => {
 	test('is the expected value', () => {
@@ -89,5 +96,61 @@ describe('hash_api_token', () => {
 		const b = hash_api_token('input_b');
 
 		assert.notStrictEqual(a, b);
+	});
+});
+
+describe('is_api_token_shaped', () => {
+	test('the token is the prefix plus a 43-char body — 60 chars', () => {
+		assert.strictEqual(API_TOKEN_BODY_LENGTH, 43);
+		assert.strictEqual(generate_api_token().token.length, 60);
+	});
+
+	test('accepts every generated token', () => {
+		for (let i = 0; i < 200; i++) {
+			const { token } = generate_api_token();
+			assert.ok(is_api_token_shaped(token), token);
+		}
+	});
+
+	test('accepts the test helper tokens', () => {
+		assert.ok(is_api_token_shaped(create_test_raw_api_token()));
+		assert.ok(is_api_token_shaped(create_test_raw_api_token('a-b_C9')));
+		assert.ok(is_api_token_shaped(create_test_raw_api_token('x'.repeat(API_TOKEN_BODY_LENGTH))));
+	});
+
+	const valid = create_test_raw_api_token('shape');
+	const body = valid.slice(API_TOKEN_PREFIX.length);
+	const refused: Array<[string, string]> = [
+		['empty', ''],
+		['prefix alone', API_TOKEN_PREFIX],
+		['body one char short', valid.slice(0, -1)],
+		['body one char long', `${valid}A`],
+		['no prefix', body],
+		['wrong prefix at the right length', `secret_fuz_tokem_${body}`],
+		['uppercased prefix', `${API_TOKEN_PREFIX.toUpperCase()}${body}`],
+		['padding char', `${valid.slice(0, -1)}=`],
+		['standard base64 char', `${valid.slice(0, -1)}+`],
+		['slash', `${valid.slice(0, -1)}/`],
+		['trailing whitespace', `${valid.slice(0, -1)} `],
+		['leading whitespace', ` ${valid.slice(1)}`],
+		['a char before a whole token', `x${valid}`],
+		['newline', `${valid}\n`],
+		['non-ASCII letter', `${valid.slice(0, -1)}é`]
+	];
+	for (const [name, value] of refused) {
+		test(`refuses: ${name}`, () => {
+			assert.ok(!is_api_token_shaped(value), JSON.stringify(value));
+		});
+	}
+});
+
+describe('create_test_raw_api_token', () => {
+	test('distinct labels give distinct tokens', () => {
+		assert.notStrictEqual(create_test_raw_api_token('a'), create_test_raw_api_token('b'));
+	});
+
+	test('throws on a label that cannot fit or is not base64url', () => {
+		assert.throws(() => create_test_raw_api_token('x'.repeat(API_TOKEN_BODY_LENGTH + 1)));
+		assert.throws(() => create_test_raw_api_token('not ok'));
 	});
 });

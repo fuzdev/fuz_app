@@ -69,6 +69,11 @@ import { z } from 'zod';
  *   be replayed from a browser — wire-indistinguishable from sending no
  *   credential (the `token` principal is the honored counterpart: it suppresses
  *   `Origin`, so the same token authenticates).
+ * - `malformed_bearer` — the keeper's bearer api-token with its last character
+ *   dropped, non-browser context, fresh jar. A value that cannot be a token
+ *   fails each spine's shape precheck and soft-fails before any database work,
+ *   so the request arrives anonymous — wire-indistinguishable from sending no
+ *   credential.
  * - `scoped_token` — the keeper authenticated via a bearer api-token minted
  *   with a **narrowed** `TokenScope` (`{kind: 'methods', methods:
  *   [SCOPED_TOKEN_ADMITTED_METHOD]}`), non-browser context. Minted through the
@@ -99,6 +104,7 @@ export const ConformancePrincipal = z.enum([
 	'daemon_browser',
 	'token',
 	'bearer_browser',
+	'malformed_bearer',
 	'scoped_token',
 	'anonymous',
 	'fresh_non_admin',

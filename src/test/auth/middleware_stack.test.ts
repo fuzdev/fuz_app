@@ -12,6 +12,10 @@ import { describe, test, assert } from 'vitest';
 
 import { create_test_middleware_stack_app, TEST_MIDDLEWARE_PATH } from '#lib/testing/middleware.ts';
 import { describe_standard_adversarial_headers } from '#lib/testing/adversarial_headers.ts';
+import {
+	create_test_raw_api_token,
+	create_test_validated_api_token
+} from '#lib/testing/entities.ts';
 
 // --- Shared test fixtures ---
 
@@ -80,16 +84,13 @@ describe('Host header spoofing', () => {
 		const { app, mock_validate } = create_test_middleware_stack_app({
 			connection_ip: TRUSTED_PROXY
 		});
-		mock_validate.mockResolvedValueOnce({
-			id: 'tok-1',
-			account_id: 'acct-1',
-			name: 'test',
-			token_hash: 'h'
-		});
+		mock_validate.mockResolvedValueOnce(
+			create_test_validated_api_token({ id: 'tok-1', account_id: 'acct-1' })
+		);
 		const res = await app.request(TEST_MIDDLEWARE_PATH, {
 			headers: {
 				Host: 'evil.attacker.com:666',
-				Authorization: 'Bearer secret_fuz_token_test_valid'
+				Authorization: `Bearer ${create_test_raw_api_token('valid')}`
 			}
 		});
 		assert.strictEqual(res.status, 200);

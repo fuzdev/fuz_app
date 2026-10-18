@@ -1080,6 +1080,12 @@ Rate limiting belongs on low-entropy credentials — passwords — and on boundi
 attacker-controlled writes. The Rust spine never had a bearer limiter; this is
 the converged shape on both.
 
+What the path does bound is the work a junk value costs. Both spines refuse a
+bearer that is not token-shaped (`is_api_token_shaped`: the prefix plus exactly
+43 base64url chars) before any pool checkout or query, so a flood of malformed
+bearers costs no database work. A well-formed unknown token still costs one
+indexed lookup. Either way the request soft-fails to "no credential".
+
 ### Rate Limiter Limitations
 
 - **Check-then-record race**: the login handler uses check-then-record —

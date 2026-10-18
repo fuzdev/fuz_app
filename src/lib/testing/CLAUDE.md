@@ -51,12 +51,15 @@ set only the fields the test cares about. `create_test_*` prefix avoids
 collisions with real `account_queries.ts` factories. Override types widen
 branded `Uuid` fields to `string` so tests pass literal ids without per-site
 casts — the factory brands internally. Exported as `TestAccountOverrides` /
-`TestActorOverrides` / `TestRoleGrantOverrides` / `TestAuditEventOverrides`.
+`TestActorOverrides` / `TestRoleGrantOverrides` / `TestAuditEventOverrides` /
+`TestValidatedApiTokenOverrides`.
 
 - `create_test_account(overrides?)` — `{id: 'acct-test', username: 'test_user', …}`
 - `create_test_actor(overrides?)` — `{id: 'actor-test', account_id: 'acct-test', …}`
 - `create_test_role_grant(overrides?)` — `{id: 'role-grant-test', actor_id: 'actor-test', role: 'admin', scope_id: null, …}`
 - `create_test_context(role_grants?)` — `{account, actor, role_grants}`; pass `[{role: 'keeper'}, {role: 'admin'}]` for multi-role.
+- `create_test_raw_api_token(label?)` — a well-formed raw bearer value (`secret_fuz_token_` + `label` padded with `A` to 43 chars) that passes `is_api_token_shaped`, so a mocked-lookup test reaches token validation; distinct labels give distinct tokens.
+- `create_test_validated_api_token(overrides?)` — a `ValidatedApiToken` (what `query_validate_api_token` returns) with a `full` scope; override `scope` to test a narrowed one.
 - `create_test_audit_event(overrides?)` — `{id: 'evt-test', event_type: 'login', outcome: 'success', …}`, for SSE guard / audit tests.
 
 ### `mock_fs.ts` — in-memory filesystem
@@ -1034,7 +1037,7 @@ error_reason?, fields?, headers?, equivalence_group?}, note?, xfail?}`. A case i
   resolves its `input`/`output` from the live registry (RPC) or `RouteSpec`
   (the 6 REST auth routes), so the case never carries a schema. `as` is the
   closed `ConformancePrincipal` enum (`keeper` / `daemon` / `invalid_daemon` /
-  `daemon_browser` / `token` / `bearer_browser` / `anonymous` /
+  `daemon_browser` / `token` / `bearer_browser` / `malformed_bearer` / `scoped_token` / `anonymous` /
   `fresh_non_admin` / `role_holder` / `wrong_role` / `expired_session`) —
   fixture accessors, never inline credential minting.
   `invalid_daemon` sends a malformed `X-Daemon-Token` alongside the keeper
@@ -1054,8 +1057,11 @@ error_reason?, fields?, headers?, equivalence_group?}, note?, xfail?}`. A case i
   `bearer_browser` is the bearer twin: a _valid_ bearer api-token in a browser
   context (default `Origin` present), fresh jar (no session) — the bearer
   middleware discards it, so an authed action 401s, wire-indistinguishable from
-  `anonymous` (pinned by the `browser_bearer_replay` equivalence group). The
+  `anonymous` (pinned by the `bearer_soft_fail` equivalence group). The
   `token` principal is the honored counterpart (suppresses `Origin`).
+  `malformed_bearer` is the keeper's token minus its last character over a
+  no-Origin, empty-jar transport — refused by the shape precheck before any
+  database work, so it joins `bearer_soft_fail` too.
   `expired_session` is the keeper behind an expired server-side session
   (`fixture.mint_expired_session()`: a backdated `auth_session` row behind a
   still-valid signed cookie, so the DB-row expiry gate is what refuses it).

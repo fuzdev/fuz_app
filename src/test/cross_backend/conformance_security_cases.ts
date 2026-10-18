@@ -199,9 +199,10 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 	// Browser/CLI split (anti-replay): a VALID bearer token replayed from a
 	// browser context (Origin present) must be discarded, so an authed action
 	// sees no credential and 401s — wire-INDISTINGUISHABLE from sending nothing.
-	// The `browser_bearer_replay` equivalence group pins that byte-identity on
-	// each spine: `bearer_browser` (token discarded) and `anonymous` (no token)
-	// produce the same 401. The `token` principal elsewhere is the honored
+	// The `bearer_soft_fail` equivalence group pins that byte-identity on
+	// each spine: `bearer_browser` (token discarded), `malformed_bearer` (a
+	// value that cannot be a token, refused before any database work) and
+	// `anonymous` (no token) produce the same 401. The `token` principal elsewhere is the honored
 	// counterpart (no Origin → same token authenticates), so a 401 here proves
 	// the discard fired rather than the token being invalid. account_verify is
 	// the minimal account-required read; it returns 200 to an honored bearer, so
@@ -209,14 +210,20 @@ const credential_ceiling_cases: ReadonlyArray<ConformanceCase> = [
 	{
 		name: 'bearer token + Origin → account_verify → 401 (browser-context discard, no replay)',
 		request: { method: 'account_verify', as: 'bearer_browser' },
-		expect: { status: 401, equivalence_group: 'browser_bearer_replay' },
+		expect: { status: 401, equivalence_group: 'bearer_soft_fail' },
 		note: 'security.md §Browser/CLI split — a stolen API token cannot be replayed from a browser context; the bearer is discarded when Origin/Referer is present, so the request is wire-indistinguishable from anonymous'
 	},
 	{
-		name: 'anonymous → account_verify → 401 (browser-replayed bearer equivalence baseline)',
+		name: 'malformed bearer → account_verify → 401 (shape precheck, indistinguishable from anonymous)',
+		request: { method: 'account_verify', as: 'malformed_bearer' },
+		expect: { status: 401, equivalence_group: 'bearer_soft_fail' },
+		note: 'a bearer value that cannot be a token soft-fails before any database work — no pool checkout, no query — and the refusal says nothing a prober can tell apart from sending no credential'
+	},
+	{
+		name: 'anonymous → account_verify → 401 (bearer soft-fail equivalence baseline)',
 		request: { method: 'account_verify', as: 'anonymous' },
-		expect: { status: 401, equivalence_group: 'browser_bearer_replay' },
-		note: 'security.md §Browser/CLI split — the no-credential baseline a browser-replayed bearer must be byte-identical to (the equivalence group asserts both 401s match)'
+		expect: { status: 401, equivalence_group: 'bearer_soft_fail' },
+		note: 'security.md §Browser/CLI split — the no-credential baseline a discarded or malformed bearer must be byte-identical to (the equivalence group asserts the 401s match)'
 	}
 ];
 

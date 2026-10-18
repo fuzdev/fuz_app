@@ -243,6 +243,19 @@ const resolve_principal = async (
 				transport: fixture.fresh_transport(),
 				headers: fixture.create_bearer_headers()
 			};
+		case 'malformed_bearer': {
+			// The keeper's valid token minus its last character — prefixed, one char
+			// short — over the same no-Origin, empty-jar transport as `token`, so the
+			// shape precheck (not the browser-context discard) is what refuses it.
+			const valid = fixture.create_bearer_headers().authorization;
+			if (!valid)
+				throw new Error(`conformance: principal 'malformed_bearer' found no bearer header`);
+			return {
+				transport: fixture.fresh_transport({ origin: null }),
+				headers: { authorization: valid.slice(0, -1) },
+				suppress_default_origin: true
+			};
+		}
 		case 'scoped_token': {
 			// A narrowed bearer, otherwise identical to `token` — empty jar + no
 			// Origin, so the credential is honored rather than browser-discarded
