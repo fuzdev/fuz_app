@@ -142,6 +142,36 @@ describe('create_sse_auth_guard', () => {
 		assert.strictEqual(registry.count, 0);
 	});
 
+	test('does not close stream on a scoped revoke of the required role', () => {
+		// the stream's role gate admits on global grants only
+		const registry = new SubscriberRegistry<string>();
+		const stream = create_mock_stream<string>();
+		registry.subscribe(stream, { channels: ['audit_log'], groups: ['target-account-1'] });
+
+		const guard = create_sse_auth_guard(registry, 'admin', log);
+
+		guard(
+			create_audit_event({
+				event_type: 'role_grant_revoke',
+				target_account_id: 'target-account-1',
+				metadata: { role: 'admin', role_grant_id: 'p-1', scope_id: 'scope-1' }
+			})
+		);
+
+		assert.ok(!stream.closed);
+		assert.strictEqual(registry.count, 1);
+
+		// the same role's global revoke closes it
+		guard(
+			create_audit_event({
+				event_type: 'role_grant_revoke',
+				target_account_id: 'target-account-1',
+				metadata: { role: 'admin', role_grant_id: 'p-2', scope_id: null }
+			})
+		);
+		assert.ok(stream.closed);
+	});
+
 	test('does not close stream when revoked role does not match required role', () => {
 		const registry = new SubscriberRegistry<string>();
 		const stream = create_mock_stream<string>();

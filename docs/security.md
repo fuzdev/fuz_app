@@ -498,7 +498,9 @@ enforcement:
     `logout`, `account_delete`, `account_purge`) — closes the target
     account's streams
   - `role` (`role_grant_revoke`) — closes the target account's streams when
-    the revoked role is the one the stream requires. The guard is the only
+    the revoked role is the one the stream requires and the revoked grant was
+    global (the stream's role gate admits on global grants only, so a scoped
+    revoke closes nothing). The guard is the only
     closer for this one: no handler closes for a role. The WebSocket guard
     closes the account's sockets gated on the role on the same rows
 - **Failure guard**: Events with `outcome='failure'` are ignored. Failed

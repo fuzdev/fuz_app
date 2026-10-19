@@ -26,6 +26,7 @@ import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 import {
 	AUDIT_EVENT_TYPES,
 	AuditLogEventJson,
+	to_global_role_revocation,
 	to_revocation_scope,
 	type AuditLogEvent
 } from '../auth/audit_log_schema.ts';
@@ -85,9 +86,12 @@ export const create_sse_connection_closer = <T>(
  *   registers the token id and is closed here.
  * - `account` → every stream of `target_account_id ?? account_id`.
  * - `role` → every stream of the target account, when the revoked role
- *   (`metadata.role`) is `required_role`. A stream is authorized once at open
- *   and has no later check; the WebSocket guard closes its role-gated sockets
- *   on the same rows.
+ *   (`metadata.role`) is `required_role` and the revoked grant was global
+ *   (`to_global_role_revocation`): the stream's role gate admits on global
+ *   grants only, so revoking a scoped grant of the same role takes away
+ *   nothing it admitted on. A stream is authorized once at open and has no
+ *   later check; the WebSocket guard closes its role-gated sockets on the
+ *   same rows.
  * - `none` → nothing.
  *
  * Over-closing a one-way feed is cheap: the client reconnects if it is still
@@ -143,19 +147,27 @@ export const create_sse_auth_guard = <T>(
 				}
 				return;
 			}
-			case 'role':
+			case 'role': {
 				// `null` means the stream isn't gated by a specific role_grant, so
 				// a role revocation closes nothing.
 				if (required_role === null) return;
-				if (event.metadata?.role !== required_role) return;
-				break;
+				// global grants only — the gate never admitted on a scoped one
+				const revoked = to_global_role_revocation(event);
+				if (!revoked || revoked.role !== required_role) return;
+				const closed = registry.close_by_identity(revoked.account_id);
+				if (closed > 0) {
+					log.info(
+						`SSE auth guard: closed ${closed} stream(s) for account ${revoked.account_id} (${event.event_type})`
+					);
+				}
+				return;
+			}
 			case 'account':
 				break;
 			default:
 				throw new UnreachableError(scope);
 		}
 
-		// `role` and `account` both close the affected account's streams —
 		// admin actions set target_account_id, self-service actions only set
 		// account_id
 		const target = event.target_account_id ?? event.account_id;
