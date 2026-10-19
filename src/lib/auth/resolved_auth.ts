@@ -6,8 +6,8 @@
  * credential and leaves it on the Hono context as separate keys.
  * `ResolvedAuth` is that credential gathered into one value
  * (`get_resolved_auth`), so the connections that outlive their request — a
- * WebSocket, an SSE stream — can carry it past the handshake and re-read it
- * with `revalidate_resolved_auth`.
+ * WebSocket, an SSE stream — can carry it past the handshake, re-read it with
+ * `revalidate_resolved_auth`, and close at its `credential_deadline`.
  *
  * @module
  */
@@ -18,6 +18,7 @@ import type { QueryDeps } from '../db/query_deps.ts';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
+	CREDENTIAL_DEADLINE_KEY,
 	CREDENTIAL_TYPE_KEY,
 	type CredentialType
 } from '../hono_context.ts';
@@ -43,6 +44,17 @@ export interface ResolvedAuth {
 	token_hash: string | null;
 	/** `api_token.id` for a bearer credential, else `null`. */
 	api_token_id: string | null;
+	/**
+	 * When the credential stops authenticating, as a monotonic
+	 * `performance.now()` timestamp — the moment a long-lived connection opened
+	 * on it is closed (`schedule_credential_deadline`), since expiry writes
+	 * nothing a revocation listener could hear. The earliest of what the
+	 * credential carries: a session's cookie and row expiry, an API token's row
+	 * expiry (`null` for an eternal one); `null` for the daemon token. A row's
+	 * expiry is read as time remaining on the database clock
+	 * (`auth/credential_deadline.ts`). The Rust twin's `credential_deadline`.
+	 */
+	credential_deadline: number | null;
 }
 
 /**
@@ -64,7 +76,9 @@ export const get_resolved_auth = (c: Context): ResolvedAuth | null => {
 		account_id,
 		credential_type,
 		token_hash: credential_type === 'session' ? (c.get(AUTH_SESSION_TOKEN_HASH_KEY) ?? null) : null,
-		api_token_id: credential_type === 'api_token' ? (c.get(AUTH_API_TOKEN_ID_KEY) ?? null) : null
+		api_token_id: credential_type === 'api_token' ? (c.get(AUTH_API_TOKEN_ID_KEY) ?? null) : null,
+		credential_deadline:
+			credential_type === 'daemon_token' ? null : (c.get(CREDENTIAL_DEADLINE_KEY) ?? null)
 	};
 };
 

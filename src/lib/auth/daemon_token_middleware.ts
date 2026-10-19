@@ -21,6 +21,7 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
+	CREDENTIAL_DEADLINE_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TOKEN_SCOPE_KEY
 } from '../hono_context.ts';
@@ -167,6 +168,9 @@ export const create_daemon_token_middleware = (
 		// narrowing could have been chosen.
 		c.set(TOKEN_SCOPE_KEY, token_scope_full());
 		c.set(AUTH_API_TOKEN_ID_KEY, null);
+		// No row, no expiry — and it overrides a session cookie sent beside it,
+		// whose deadline must not ride along.
+		c.set(CREDENTIAL_DEADLINE_KEY, null);
 
 		await next();
 	};

@@ -11,6 +11,7 @@ import { assert_row } from '../db/assert_row.ts';
 import { columns_sql, iso8601_timestamp_expr, omit_columns } from '../db/sql_columns.ts';
 import type { ApiToken } from './account_schema.ts';
 import { hash_api_token } from './api_token.ts';
+import { EXPIRES_IN_MS_SQL } from './credential_deadline.ts';
 import { type TokenScope, parse_stored_token_scope, serialize_token_scope } from './token_scope.ts';
 
 /**
@@ -19,7 +20,16 @@ import { type TokenScope, parse_stored_token_scope, serialize_token_scope } from
  * credential was minted with and never decides what an unreadable one means.
  * The Rust twin's `ApiTokenRow` carries the parsed scope the same way.
  */
-export type ValidatedApiToken = Omit<ApiToken, 'scope'> & { scope: TokenScope };
+export type ValidatedApiToken = Omit<ApiToken, 'scope'> & {
+	scope: TokenScope;
+	/**
+	 * Milliseconds until the token expires — `expires_at - NOW()`, measured on
+	 * the database clock in the statement that found it live
+	 * (`EXPIRES_IN_MS_SQL`); `null` for an eternal token. The Rust twin's
+	 * `ApiTokenRow.expires_in`.
+	 */
+	expires_in_ms: number | null;
+};
 
 /** Extended deps for `query_validate_api_token` which needs a logger. */
 export interface ApiTokenQueryDeps extends QueryDeps {
@@ -112,7 +122,8 @@ export const query_create_api_token = async (
  * Validate a raw API token and return the token record with its scope parsed.
  *
  * Hashes the token with blake3, looks up the hash, and checks
- * expiration. A row whose stored scope is unreadable is refused like an
+ * expiration, reading how long the token has left on the database clock in
+ * the same statement. A row whose stored scope is unreadable is refused like an
  * unknown hash. Updates `last_used_at` and `last_used_ip` on success
  * (fire-and-forget — errors logged, never thrown).
  *
@@ -131,8 +142,9 @@ export const query_validate_api_token = async (
 	pending_effects: Array<Promise<void>> | undefined
 ): Promise<ValidatedApiToken | undefined> => {
 	const token_hash = hash_api_token(raw_token);
-	const row = await deps.db.query_one<ApiToken>(
-		`SELECT ${columns_sql(API_TOKEN_COLUMNS, api_token_expr)} FROM api_token
+	const row = await deps.db.query_one<ApiToken & { expires_in_ms: number | null }>(
+		`SELECT ${columns_sql(API_TOKEN_COLUMNS, api_token_expr)}, ${EXPIRES_IN_MS_SQL} AS expires_in_ms
+		 FROM api_token
 		 WHERE token_hash = $1
 		   AND ${API_TOKEN_IS_LIVE}`,
 		[token_hash]

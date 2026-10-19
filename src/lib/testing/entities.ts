@@ -181,5 +181,6 @@ export const create_test_validated_api_token = (
 	last_used_ip: null,
 	created_at: '2024-01-01T00:00:00Z',
 	scope: token_scope_full(),
+	expires_in_ms: null,
 	...(overrides as Partial<ValidatedApiToken>)
 });

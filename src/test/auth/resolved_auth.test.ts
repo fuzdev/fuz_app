@@ -11,7 +11,12 @@ import type { Context } from 'hono';
 
 import { AUTH_SESSION_TOKEN_HASH_KEY } from '#lib/auth/request_context.ts';
 import { get_resolved_auth } from '#lib/auth/resolved_auth.ts';
-import { ACCOUNT_ID_KEY, AUTH_API_TOKEN_ID_KEY, CREDENTIAL_TYPE_KEY } from '#lib/hono_context.ts';
+import {
+	ACCOUNT_ID_KEY,
+	AUTH_API_TOKEN_ID_KEY,
+	CREDENTIAL_DEADLINE_KEY,
+	CREDENTIAL_TYPE_KEY
+} from '#lib/hono_context.ts';
 
 const create_context = (vars: Record<string, unknown>): Context =>
 	({ get: (key: string) => vars[key] }) as unknown as Context;
@@ -32,10 +37,17 @@ describe('get_resolved_auth', () => {
 					[ACCOUNT_ID_KEY]: 'acc_1',
 					[CREDENTIAL_TYPE_KEY]: 'session',
 					[AUTH_SESSION_TOKEN_HASH_KEY]: 'hash_1',
-					[AUTH_API_TOKEN_ID_KEY]: null
+					[AUTH_API_TOKEN_ID_KEY]: null,
+					[CREDENTIAL_DEADLINE_KEY]: 1234
 				})
 			),
-			{ account_id: 'acc_1', credential_type: 'session', token_hash: 'hash_1', api_token_id: null }
+			{
+				account_id: 'acc_1',
+				credential_type: 'session',
+				token_hash: 'hash_1',
+				api_token_id: null,
+				credential_deadline: 1234
+			}
 		);
 	});
 
@@ -46,14 +58,21 @@ describe('get_resolved_auth', () => {
 					[ACCOUNT_ID_KEY]: 'acc_1',
 					[CREDENTIAL_TYPE_KEY]: 'api_token',
 					[AUTH_SESSION_TOKEN_HASH_KEY]: null,
-					[AUTH_API_TOKEN_ID_KEY]: 'tok_1'
+					[AUTH_API_TOKEN_ID_KEY]: 'tok_1',
+					[CREDENTIAL_DEADLINE_KEY]: null
 				})
 			),
-			{ account_id: 'acc_1', credential_type: 'api_token', token_hash: null, api_token_id: 'tok_1' }
+			{
+				account_id: 'acc_1',
+				credential_type: 'api_token',
+				token_hash: null,
+				api_token_id: 'tok_1',
+				credential_deadline: null
+			}
 		);
 	});
 
-	test('a daemon token carries neither, even beside a session cookie it overrode', () => {
+	test('a daemon token carries neither, nor a deadline, even beside a session cookie it overrode', () => {
 		// the daemon-token middleware overrides the account and credential type
 		// without clearing the hash the session middleware set
 		assert.deepStrictEqual(
@@ -62,14 +81,16 @@ describe('get_resolved_auth', () => {
 					[ACCOUNT_ID_KEY]: 'keeper_1',
 					[CREDENTIAL_TYPE_KEY]: 'daemon_token',
 					[AUTH_SESSION_TOKEN_HASH_KEY]: 'hash_of_another_accounts_session',
-					[AUTH_API_TOKEN_ID_KEY]: null
+					[AUTH_API_TOKEN_ID_KEY]: null,
+					[CREDENTIAL_DEADLINE_KEY]: 1234
 				})
 			),
 			{
 				account_id: 'keeper_1',
 				credential_type: 'daemon_token',
 				token_hash: null,
-				api_token_id: null
+				api_token_id: null,
+				credential_deadline: null
 			}
 		);
 	});

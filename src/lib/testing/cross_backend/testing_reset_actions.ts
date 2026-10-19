@@ -16,15 +16,17 @@ import '../assert_dev_env.ts';
  * of notifications onto the caller's own WebSocket connection, to push its
  * outbound queue past its byte budget).
  *
- * Two further daemon-token actions live here but are **not** bundled by
+ * Three further daemon-token actions live here but are **not** bundled by
  * `create_testing_actions`, and are appended at the full-mount layer
  * (`build_full_spine_rpc_actions`) instead: **`_testing_action_manifest`**
  * (dump the live RPC registry for cross-impl method-set + auth-shape parity —
  * it must enumerate *every* mounted method, so it goes where the complete list
- * exists) and **`_testing_origin_check`** (answer the origin allowlist's parse
- * and request check for the cross-impl origin conformance table — kept out of
- * the bundle so a consumer whose Rust binary doesn't mount its mirror keeps a
- * green manifest gate).
+ * exists), **`_testing_origin_check`** (answer the origin allowlist's parse
+ * and request check for the cross-impl origin conformance table), and
+ * **`_testing_shorten_credential_expiry`** (pull an account's credential
+ * expiries in to seconds from now, shorten-only, for the credential-deadline
+ * cases) — the last two kept out of the bundle so a consumer whose Rust binary
+ * doesn't mount their mirrors keeps a green manifest gate.
  *
  * `_testing_reset` — full DB wipe + keeper re-seed + optional
  * secondary-account seeding. The
@@ -601,6 +603,93 @@ export const testing_origin_check_action_spec = {
 /** Build the standalone `_testing_origin_check` action (see the spec doc). */
 export const create_testing_origin_check_action = (): RpcAction =>
 	rpc_action(testing_origin_check_action_spec, async (input) => run_testing_origin_check(input));
+
+/** The shortest expiry `_testing_shorten_credential_expiry` sets, in seconds from now. */
+export const TESTING_SHORTEN_CREDENTIAL_EXPIRY_MIN_SECONDS = 1;
+
+/**
+ * The longest expiry `_testing_shorten_credential_expiry` sets, in seconds
+ * from now — a minute: the action exists to make a deadline arrive inside a
+ * test.
+ */
+export const TESTING_SHORTEN_CREDENTIAL_EXPIRY_MAX_SECONDS = 60;
+
+/**
+ * The new expiry: `$2` seconds from now, unless the row is due sooner. The
+ * `COALESCE` gives an eternal token (`NULL`) the near expiry too.
+ */
+const SHORTEN_EXPIRES_AT_SQL =
+	"LEAST(COALESCE(expires_at, 'infinity'::timestamptz), NOW() + ($2::int4 * INTERVAL '1 second'))";
+
+/**
+ * `_testing_shorten_credential_expiry` — pull the expiry of an account's
+ * stored credentials (every `auth_session` and `api_token` row it owns) in to
+ * `seconds` from now, so the cross-backend credential-deadline suite can open
+ * a WebSocket or audit stream on a credential that expires a moment later and
+ * watch it close at the deadline (`ResolvedAuth.credential_deadline`) without
+ * waiting out a real lifetime.
+ *
+ * Applied **before the open**: it rewrites the stored rows, and a connection
+ * reads its deadline when its credential resolves, so only one opened
+ * afterwards sees the near deadline.
+ *
+ * **Shorten-only.** The new expiry is `LEAST(expires_at, NOW() + seconds)` —
+ * an eternal token gains one, and nothing already due sooner moves later, so
+ * the action can neither extend a credential's life nor revive an expired one;
+ * `seconds` is an integer from `TESTING_SHORTEN_CREDENTIAL_EXPIRY_MIN_SECONDS`
+ * to `TESTING_SHORTEN_CREDENTIAL_EXPIRY_MAX_SECONDS`. The Rust mirror is
+ * `fuz_testing::create_testing_shorten_credential_expiry_action_spec`.
+ *
+ * Like `_testing_origin_check`, it is **not** bundled by
+ * `create_testing_actions`: a consumer whose Rust binary doesn't mount the
+ * mirror would fail its action-manifest parity gate. The spine test binary
+ * appends it at the full-mount layer (`build_full_spine_rpc_actions`).
+ *
+ * `auth` gates on the daemon-token credential, matching `_testing_reset`.
+ */
+export const testing_shorten_credential_expiry_action_spec = {
+	method: '_testing_shorten_credential_expiry',
+	kind: 'request_response',
+	initiator: 'frontend',
+	auth: TESTING_ACTION_AUTH,
+	side_effects: true,
+	input: z.strictObject({
+		account_id: Uuid,
+		seconds: z
+			.number()
+			.int()
+			.min(TESTING_SHORTEN_CREDENTIAL_EXPIRY_MIN_SECONDS)
+			.max(TESTING_SHORTEN_CREDENTIAL_EXPIRY_MAX_SECONDS)
+			.meta({
+				description:
+					'Seconds from now the credentials expire, unless already due sooner — this ' +
+					'backdoor can only shorten a credential, never extend it.'
+			})
+	}),
+	output: z.strictObject({
+		sessions: z.number().int().min(0),
+		api_tokens: z.number().int().min(0)
+	}),
+	async: true,
+	description:
+		"Test-binary only — pull an account's session and API token expiries in to seconds from " +
+		'now (shorten-only), for the cross-impl credential-deadline cases.'
+} as const satisfies RequestResponseActionSpec;
+
+/** Build the standalone `_testing_shorten_credential_expiry` action (see the spec doc). */
+export const create_testing_shorten_credential_expiry_action = (): RpcAction =>
+	rpc_action(testing_shorten_credential_expiry_action_spec, async (input, ctx) => {
+		const params = [input.account_id, input.seconds];
+		const sessions = await ctx.db.query<{ id: string }>(
+			`UPDATE auth_session SET expires_at = ${SHORTEN_EXPIRES_AT_SQL} WHERE account_id = $1 RETURNING id`,
+			params
+		);
+		const api_tokens = await ctx.db.query<{ id: string }>(
+			`UPDATE api_token SET expires_at = ${SHORTEN_EXPIRES_AT_SQL} WHERE account_id = $1 RETURNING id`,
+			params
+		);
+		return { sessions: sessions.length, api_tokens: api_tokens.length };
+	});
 
 /**
  * `_testing_action_manifest` — dump the backend's live RPC method set as a

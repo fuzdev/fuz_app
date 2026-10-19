@@ -122,6 +122,8 @@ export interface ParsedSession<TIdentity> {
 	identity: TIdentity;
 	/** Index of the key that verified the signature (0 = primary). */
 	key_index: number;
+	/** The signed expiry, in seconds since the Unix epoch — later than the parse. */
+	expires_at: number;
 }
 
 /**
@@ -170,7 +172,8 @@ export const parse_session = async <TIdentity>(
 
 	return {
 		identity,
-		key_index: result.key_index
+		key_index: result.key_index,
+		expires_at
 	};
 };
 
@@ -209,6 +212,8 @@ export interface ProcessSessionResult<TIdentity> {
 	action: 'none' | 'clear';
 	/** The decoded identity if the cookie was valid. */
 	identity?: TIdentity;
+	/** The cookie's signed expiry, epoch seconds, if the cookie was valid. */
+	expires_at?: number;
 }
 
 /**
@@ -270,5 +275,5 @@ export const process_session_cookie = async <TIdentity>(
 		return { valid: false, action: 'clear' };
 	}
 
-	return { valid: true, action: 'none', identity: parsed.identity };
+	return { valid: true, action: 'none', identity: parsed.identity, expires_at: parsed.expires_at };
 };

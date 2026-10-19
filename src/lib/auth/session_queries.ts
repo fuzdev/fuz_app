@@ -13,6 +13,7 @@ import { generate_random_base64url } from '../crypto.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
 import { columns_sql, iso8601_timestamp_expr, qualify_columns } from '../db/sql_columns.ts';
 import type { AuthSession, SessionId } from './account_schema.ts';
+import { EXPIRES_IN_MS_SQL } from './credential_deadline.ts';
 
 /**
  * Session lifetime in milliseconds (30 days).
@@ -92,7 +93,25 @@ const auth_session_expr = iso8601_timestamp_expr(AUTH_SESSION_COLUMNS, [
 ]);
 
 /**
- * Get a session if it exists, is not expired, and has not been revoked.
+ * A live `auth_session` row as `query_session_get_valid` returns it, with how
+ * long it has left.
+ */
+export interface ValidAuthSession extends AuthSession {
+	/**
+	 * Milliseconds until the session expires — `expires_at - NOW()`, measured on
+	 * the database clock in the statement that found it unexpired
+	 * (`EXPIRES_IN_MS_SQL`).
+	 */
+	expires_in_ms: number;
+}
+
+/**
+ * Get a session if it exists, is not expired, and has not been revoked, with
+ * how long it has left.
+ *
+ * The remaining lifetime is read in the same statement that checks the
+ * expiry, on the database clock, so it agrees with the check whatever the
+ * server's clock says (`auth/credential_deadline.ts`).
  *
  * @param deps - query dependencies
  * @param token_hash - blake3 hash of the session token
@@ -100,9 +119,9 @@ const auth_session_expr = iso8601_timestamp_expr(AUTH_SESSION_COLUMNS, [
 export const query_session_get_valid = async (
 	deps: QueryDeps,
 	token_hash: string
-): Promise<AuthSession | undefined> => {
-	return deps.db.query_one<AuthSession>(
-		`SELECT ${columns_sql(AUTH_SESSION_COLUMNS, auth_session_expr(''))} FROM auth_session WHERE id = $1 AND expires_at > NOW()`,
+): Promise<ValidAuthSession | undefined> => {
+	return deps.db.query_one<ValidAuthSession>(
+		`SELECT ${columns_sql(AUTH_SESSION_COLUMNS, auth_session_expr(''))}, ${EXPIRES_IN_MS_SQL} AS expires_in_ms FROM auth_session WHERE id = $1 AND expires_at > NOW()`,
 		[token_hash]
 	);
 };

@@ -216,7 +216,12 @@ HTTP + RPC), `ws.cross.test.ts` (the real-upgrade
 requests sent at open and frames sent with the handshake (answered once the
 connection is admitted, never dropped), close-on-revoke and close on account
 delete, a self-revoking socket closed after its reply, and a WS mutation's
-audit row read back after `_testing_drain_effects`), `session_cap.cross.test.ts` (the
+audit row read back after `_testing_drain_effects`), `credential_deadline.cross.test.ts` (the
+`describe_credential_deadline_cross_tests` suite — a socket on a session or an
+API token closes with `WS_CLOSE_SESSION_REVOKED` "Credential expired" at its
+credential's expiry, an audit stream on a session ends there, and the
+`_testing_shorten_credential_expiry` seam only shortens),
+`session_cap.cross.test.ts` (the
 `describe_session_cap_cross_tests` suite — logging in past the per-account
 session cap evicts the oldest session, and closes the socket it had open), `ws_connection_cap.cross.test.ts` (the real-upgrade
 `describe_ws_connection_cap_cross_tests` suite — one socket past the

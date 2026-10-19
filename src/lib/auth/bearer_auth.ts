@@ -22,9 +22,11 @@ import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import {
 	AUTH_API_TOKEN_ID_KEY,
 	ACCOUNT_ID_KEY,
+	CREDENTIAL_DEADLINE_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TOKEN_SCOPE_KEY
 } from '../hono_context.ts';
+import { credential_deadline_after } from './credential_deadline.ts';
 import { is_api_token_shaped } from './api_token.ts';
 import { query_validate_api_token } from './api_token_queries.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
@@ -64,7 +66,7 @@ import { is_browser_context } from '../http/origin.ts';
  *
  * @param deps - query dependencies (pool-level db for middleware)
  * @param log - the logger instance
- * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, and `AUTH_API_TOKEN_ID_KEY` on success
+ * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, `AUTH_API_TOKEN_ID_KEY`, and `CREDENTIAL_DEADLINE_KEY` on success
  */
 export const create_bearer_auth_middleware = (deps: QueryDeps, log: Logger): MiddlewareHandler => {
 	return async (c, next): Promise<Response | void> => {
@@ -141,6 +143,8 @@ export const create_bearer_auth_middleware = (deps: QueryDeps, log: Logger): Mid
 		// Parsed by the query, which refuses a token whose stored scope is
 		// unreadable — there is no default to fall back to.
 		c.set(TOKEN_SCOPE_KEY, api_token.scope);
+		// the row's expiry, read on the database clock; none for an eternal token
+		c.set(CREDENTIAL_DEADLINE_KEY, credential_deadline_after([api_token.expires_in_ms]));
 
 		await next();
 	};

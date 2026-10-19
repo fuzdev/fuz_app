@@ -179,7 +179,16 @@ export interface PendingSubscription {
  * // first: a client that already left closes the stream, its listener runs at
  * // once, and `admit` then refuses the removed registration
  * stream.on_close(pending.unsubscribe);
- * if (!registry.admit(pending, stream)) stream.close(); // the body is the connect comment alone
+ * if (!registry.admit(pending, stream)) {
+ *   stream.close(); // the body is the connect comment alone
+ * } else {
+ *   // expiry writes nothing a revocation closes on: end at the credential's deadline
+ *   stream.on_close(
+ *     schedule_credential_deadline(get_resolved_auth(c)?.credential_deadline ?? null, () =>
+ *       stream.close()
+ *     )
+ *   );
+ * }
  * return response;
  * ```
  */

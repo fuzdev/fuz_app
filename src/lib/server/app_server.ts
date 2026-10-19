@@ -334,11 +334,11 @@ export interface AppServerOptions {
 	 * audits each newly expired role_grant offer once.
 	 *
 	 * **Off by default; a production server should turn it on.** Without it
-	 * nothing sweeps: expired session rows accumulate, a WebSocket or audit
-	 * stream outlives the expiry of the session it opened on until it
-	 * disconnects, and an offer's expiry is never audited. With it, a
-	 * connection outlives its session's expiry by at most one interval. The
-	 * Rust spine's servers all schedule the twin (`spawn_auth_cleanup`).
+	 * nothing sweeps: expired session rows accumulate and an offer's expiry is
+	 * never audited. Connections do not depend on it — each closes at its
+	 * credential's deadline (`auth/credential_deadline.ts`), and the sweep's
+	 * close repeats that one. The Rust spine's servers all schedule the twin
+	 * (`spawn_auth_cleanup`).
 	 *
 	 * Pass `true` for the default interval
 	 * (`DEFAULT_AUTH_CLEANUP_INTERVAL_MS`), or `{interval_ms}` for another.

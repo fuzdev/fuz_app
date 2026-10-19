@@ -58,7 +58,13 @@ const resolve_session = async (
 ): Promise<ResolvedAuth & { token_hash: string }> => {
 	const token_hash = hash_session_token(generate_session_token());
 	await query_create_session({ db }, token_hash, account_id, expires_at);
-	return { account_id, credential_type: 'session', token_hash, api_token_id: null };
+	return {
+		account_id,
+		credential_type: 'session',
+		token_hash,
+		api_token_id: null,
+		credential_deadline: null
+	};
 };
 
 /** A live API token row on `account_id`, as the bearer middleware resolves it. */
@@ -77,14 +83,21 @@ const resolve_api_token = async (
 		token_scope_full(),
 		expires_at
 	);
-	return { account_id, credential_type: 'api_token', token_hash: null, api_token_id: id };
+	return {
+		account_id,
+		credential_type: 'api_token',
+		token_hash: null,
+		api_token_id: id,
+		credential_deadline: null
+	};
 };
 
 const resolve_daemon_token = (account_id: string): ResolvedAuth => ({
 	account_id,
 	credential_type: 'daemon_token',
 	token_hash: null,
-	api_token_id: null
+	api_token_id: null,
+	credential_deadline: null
 });
 
 describe_db('revalidate_resolved_auth', (get_db) => {
@@ -148,7 +161,13 @@ describe_db('revalidate_resolved_auth', (get_db) => {
 			assert.strictEqual(
 				await revalidate_resolved_auth(
 					{ db },
-					{ account_id, credential_type: 'session', token_hash: null, api_token_id: null }
+					{
+						account_id,
+						credential_type: 'session',
+						token_hash: null,
+						api_token_id: null,
+						credential_deadline: null
+					}
 				),
 				false
 			);
@@ -231,7 +250,13 @@ describe_db('revalidate_resolved_auth', (get_db) => {
 			assert.strictEqual(
 				await revalidate_resolved_auth(
 					{ db },
-					{ account_id, credential_type: 'api_token', token_hash: null, api_token_id: null }
+					{
+						account_id,
+						credential_type: 'api_token',
+						token_hash: null,
+						api_token_id: null,
+						credential_deadline: null
+					}
 				),
 				false
 			);

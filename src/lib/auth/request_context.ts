@@ -54,11 +54,14 @@ import type { QueryDeps } from '../db/query_deps.ts';
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
+	CREDENTIAL_DEADLINE_KEY,
 	CREDENTIAL_TYPE_KEY,
+	SESSION_COOKIE_EXPIRES_AT_KEY,
 	TOKEN_SCOPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
 	type CredentialType
 } from '../hono_context.ts';
+import { credential_deadline_after } from './credential_deadline.ts';
 import {
 	parse_token_scope_capability,
 	token_scope_admits_capability,
@@ -314,7 +317,9 @@ export const resolve_acting_actor = async (
  *
  * Reads the session identity (set by session middleware), looks up the
  * `auth_session`, and on a valid session sets `c.var.auth_account_id`,
- * `CREDENTIAL_TYPE_KEY = 'session'`, and `AUTH_SESSION_TOKEN_HASH_KEY`.
+ * `CREDENTIAL_TYPE_KEY = 'session'`, `AUTH_SESSION_TOKEN_HASH_KEY`, and
+ * `CREDENTIAL_DEADLINE_KEY` — the earlier of the cookie's signed expiry
+ * (`SESSION_COOKIE_EXPIRES_AT_KEY`) and the row's.
  * Touches the session (fire-and-forget). Does not load actor or role_grants;
  * `REQUEST_CONTEXT_KEY` is left null — the route-spec / RPC dispatcher
  * authorization phase resolves the acting actor and builds the full
@@ -325,7 +330,7 @@ export const resolve_acting_actor = async (
  *
  * @param deps - query dependencies (pool-level db for middleware)
  * @param session_context_key - the Hono context key where session middleware stored the session token
- * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, `AUTH_SESSION_TOKEN_HASH_KEY`, and `AUTH_API_TOKEN_ID_KEY`
+ * @mutates Hono context - sets `ACCOUNT_ID_KEY`, `CREDENTIAL_TYPE_KEY`, `AUTH_SESSION_TOKEN_HASH_KEY`, `AUTH_API_TOKEN_ID_KEY`, and `CREDENTIAL_DEADLINE_KEY`
  */
 export const create_request_context_middleware = (
 	deps: QueryDeps,
@@ -337,6 +342,7 @@ export const create_request_context_middleware = (
 		c.set(CREDENTIAL_TYPE_KEY, null);
 		c.set(AUTH_SESSION_TOKEN_HASH_KEY, null);
 		c.set(AUTH_API_TOKEN_ID_KEY, null);
+		c.set(CREDENTIAL_DEADLINE_KEY, null);
 
 		const session_token: string | null = c.get(session_context_key) ?? null;
 		if (!session_token) {
@@ -356,6 +362,16 @@ export const create_request_context_middleware = (
 		// A session is full account authority by construction.
 		c.set(TOKEN_SCOPE_KEY, token_scope_full());
 		c.set(AUTH_SESSION_TOKEN_HASH_KEY, token_hash);
+		// The earlier of the signed cookie's expiry (this server's wall clock,
+		// which signed it) and the row's (read on the database clock).
+		const cookie_expires_at = c.get(SESSION_COOKIE_EXPIRES_AT_KEY) ?? null;
+		c.set(
+			CREDENTIAL_DEADLINE_KEY,
+			credential_deadline_after([
+				cookie_expires_at === null ? null : cookie_expires_at * 1000 - Date.now(),
+				session.expires_in_ms
+			])
+		);
 
 		await next();
 	};

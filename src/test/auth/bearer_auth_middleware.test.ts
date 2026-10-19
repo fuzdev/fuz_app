@@ -207,6 +207,8 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 		expected_account_id: 'acc_1',
 		expected_api_token_id: 'tok_1',
 		expected_token_scope: MOCK_SCOPE,
+		// an eternal token has no deadline
+		expected_credential_deadline_ms: null,
 		assert_mocks: (mocks) => {
 			// validate called with (deps, raw_token, ip, pending_effects)
 			assert.strictEqual(mocks.mock_validate.mock.calls[0]![1], TOKEN_GOOD);
@@ -216,6 +218,15 @@ const bearer_auth_cases: Array<BearerAuthTestCase> = [
 			assert.strictEqual(mocks.mock_find_actor_by_id.mock.calls.length, 0);
 			assert.strictEqual(mocks.mock_find_active_for_actor.mock.calls.length, 0);
 		}
+	},
+	{
+		name: 'a token with an expiry sets the credential deadline to the row lifetime',
+		headers: { Authorization: `Bearer ${TOKEN_GOOD}` },
+		mock_validate_result: { ...MOCK_API_TOKEN, expires_in_ms: 5000 },
+		expected_status: 'next',
+		validate_expectation: 'called',
+		assert_account_set: true,
+		expected_credential_deadline_ms: 5000
 	}
 ];
 

@@ -73,6 +73,27 @@ export const TOKEN_SCOPE_KEY = 'token_scope';
 export const ACCOUNT_ID_KEY = 'auth_account_id';
 
 /**
+ * Hono context variable name for the credential's deadline — when it stops
+ * authenticating, as a monotonic `performance.now()` timestamp
+ * (`auth/credential_deadline.ts`), or `null` for one with no expiry (a daemon
+ * token, an eternal API token) and for an unauthenticated request.
+ *
+ * Set by every auth middleware that resolves a credential: session (the
+ * earlier of the signed cookie's expiry and the row's), bearer (the row's),
+ * daemon token (`null`). A long-lived connection opened on the credential
+ * closes at it (`ResolvedAuth.credential_deadline`).
+ */
+export const CREDENTIAL_DEADLINE_KEY = 'credential_deadline';
+
+/**
+ * Hono context variable name for the session cookie's signed expiry, in
+ * seconds since the Unix epoch — set by the session middleware on a cookie
+ * that verified and has not expired, `null` otherwise. The request-context
+ * middleware folds it into `CREDENTIAL_DEADLINE_KEY`.
+ */
+export const SESSION_COOKIE_EXPIRES_AT_KEY = 'auth_session_cookie_expires_at';
+
+/**
  * Hono context variable name for the test-harness pre-baked context flag.
  *
  * Test harnesses (`create_test_app_from_specs`, `create_fake_hono_context`,
@@ -128,6 +149,10 @@ declare module 'hono' {
 		 * up the token.
 		 */
 		auth_api_token_id: string | null;
+		/** The credential's deadline (`CREDENTIAL_DEADLINE_KEY`). */
+		credential_deadline: number | null;
+		/** The session cookie's signed expiry, epoch seconds (`SESSION_COOKIE_EXPIRES_AT_KEY`). */
+		auth_session_cookie_expires_at: number | null;
 		/**
 		 * Eager fire-and-forget pool writes for this request — audit emits,
 		 * session-touch UPDATE, api-token usage tracking. Producers push the

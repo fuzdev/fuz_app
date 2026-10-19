@@ -358,7 +358,7 @@ and `allow_fallback: boolean` (default `true`). Explicit
 
 ### WS close codes (`actions/transports.ts`)
 
-- `WS_CLOSE_SESSION_REVOKED = 4001` — server revoked auth (reason `WS_CLOSE_SESSION_REVOKED_REASON`, `Session revoked`); client enters permanent `revoked` state, no reconnect. Also the close for an upgrade refused at admission because its credential was revoked mid-upgrade — indistinguishable on the wire by design.
+- `WS_CLOSE_SESSION_REVOKED = 4001` — server revoked auth (reason `WS_CLOSE_SESSION_REVOKED_REASON`, `Session revoked`); client enters permanent `revoked` state, no reconnect. Also the close for an upgrade refused at admission because its credential was revoked mid-upgrade — indistinguishable on the wire by design — and for a socket whose credential expired while open, with reason `WS_CLOSE_CREDENTIAL_EXPIRED_REASON` (`Credential expired`), which the client treats as the same `revoked` state.
 - `WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002` — client observed receive-silence past its receive timeout (`resolve_heartbeat_receive_timeout`).
 - `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003` — server observed receive-silence past `DEFAULT_SERVER_HEARTBEAT_TIMEOUT` (60s).
 - `WS_CLOSE_CONNECTION_LIMIT = 4004` — server closed this socket to admit a newer one on the same account, past the per-account connection cap (reason `connection limit`). Not a revocation: the client stays `closed` with `superseded` set and no reconnect, until `connect()` is called. Twin of the Rust spine's constant.
@@ -906,8 +906,9 @@ client withholds its close frame. So every server-side close removes the
 connection from the transport and aborts the socket's controller **at close
 time**: the transport does both for a revocation or a cap eviction, and
 `register_action_ws`'s `end_socket` does both — through
-`transport.close_connection` — for a heartbeat timeout, an
-oversized message, a failed `on_socket_open`, and a refused admission.
+`transport.close_connection` — for a heartbeat timeout, a credential
+expiry, an oversized message, a failed `on_socket_open`, and a refused
+admission.
 `onMessage` then drops any frame whose socket has ended — no dispatch, no
 error reply. A connection the transport no longer holds though nothing closed
 its socket (a bare `transport.remove_connection`; `transport.is_registered` is
@@ -980,6 +981,17 @@ admission, and the first timeout window after it is exempt (cold-start grace).
 Tick interval is `timeout / 2`, so event-loop blockage pauses the timer itself.
 A timeout unregisters the connection and aborts its signal along with the
 `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT` close.
+
+**Credential deadline.** From admission, a timer closes the socket when the
+credential it upgraded on expires (`ResolvedAuth.credential_deadline` — the
+earlier of a session's cookie and row expiry, an API token's row; none for an
+eternal token or the daemon token): `WS_CLOSE_SESSION_REVOKED` with
+`WS_CLOSE_CREDENTIAL_EXPIRED_REASON`, through `end_socket`. Expiry writes
+nothing a revocation listener hears, so the socket watches its own deadline.
+The wait is `schedule_credential_deadline`'s chain of timers of at most an
+hour (a 30-day session is past `setTimeout`'s ceiling), each also checking the
+wall clock so a host suspend does not extend the deadline, cancelled when the
+socket ends. Twin of the Rust loop's `WsLoopOptions::credential_deadline`.
 
 Two abort signals composed via `AbortSignal.any`:
 

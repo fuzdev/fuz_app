@@ -84,6 +84,18 @@
  * `PRE_ADMISSION_QUEUE_BYTES_FACTOR` × `max_message_bytes` bytes; past either
  * the socket is closed.
  *
+ * ## Credential deadline
+ *
+ * Expiry writes nothing a revocation listener could hear, so the socket
+ * watches its own credential's expiry (`ResolvedAuth.credential_deadline`,
+ * the earlier of a session's cookie and row, an API token's row, none for a
+ * daemon token or an eternal token). From admission, a timer closes it at the
+ * deadline with `WS_CLOSE_SESSION_REVOKED` (4001) and
+ * `WS_CLOSE_CREDENTIAL_EXPIRED_REASON`. The wait is a chain of timers of at
+ * most an hour (`schedule_credential_deadline`), so a session's 30 days — past
+ * `setTimeout`'s ceiling — does not fire at once, and each wake-up checks the
+ * wall clock too, so a host suspend does not extend the deadline.
+ *
  * ## A server-closed socket dispatches nothing
  *
  * A runtime adapter can keep delivering inbound frames after the server calls
@@ -117,6 +129,7 @@ import {
 } from '../auth/request_context.ts';
 import type { RoleName } from '../auth/role_schema.ts';
 import { get_resolved_auth, revalidate_resolved_auth } from '../auth/resolved_auth.ts';
+import { schedule_credential_deadline } from '../auth/credential_deadline.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { flush_pending_effects, flush_post_commit_effects } from '../http/pending_effects.ts';
 import type { RateLimiter } from '../rate_limiter.ts';
@@ -151,6 +164,7 @@ import {
 	WS_CLOSE_PERMISSION_REVOKED,
 	WS_CLOSE_PERMISSION_REVOKED_REASON,
 	WS_CLOSE_POLICY_VIOLATION,
+	WS_CLOSE_CREDENTIAL_EXPIRED_REASON,
 	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT,
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON,
@@ -787,6 +801,15 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					heartbeat_timer = null;
 				}
 			};
+			// The credential deadline: the socket closes when the credential it
+			// upgraded on expires (4001, `WS_CLOSE_CREDENTIAL_EXPIRED_REASON`) —
+			// expiry writes nothing a revocation listener hears. Started at
+			// admission, cancelled when the socket ends.
+			let cancel_credential_deadline: (() => void) | null = null;
+			const stop_credential_deadline = (): void => {
+				cancel_credential_deadline?.();
+				cancel_credential_deadline = null;
+			};
 
 			// The one place a socket's end is recorded, whoever ended it — the
 			// transport (revocation, cap eviction), `end_socket`, or `onClose` all
@@ -796,6 +819,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				() => {
 					phase = 'ended';
 					stop_heartbeat_timer();
+					stop_credential_deadline();
 					drop_queued_frames();
 				},
 				{ once: true }
@@ -959,6 +983,22 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 				const connection_id = await admit_upgrade(ws);
 				if (connection_id === null) return;
 				log.debug('ws opened', connection_id);
+				// Not on a socket that ended in the tick since `admit`, for the same
+				// reason as the heartbeat timer below.
+				if (!phase_is('ended')) {
+					cancel_credential_deadline = schedule_credential_deadline(
+						resolved.credential_deadline,
+						() => {
+							log.info(
+								'ws credential expired — closing',
+								WS_CLOSE_SESSION_REVOKED,
+								connection_id,
+								identity.account_id
+							);
+							end_socket(ws, WS_CLOSE_SESSION_REVOKED, WS_CLOSE_CREDENTIAL_EXPIRED_REASON);
+						}
+					);
+				}
 				// Not on a socket that ended in the tick since `admit` (a revocation
 				// can land there): its abort listener has already run, so nothing
 				// would ever stop the timer.

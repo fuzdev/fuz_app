@@ -266,7 +266,11 @@ describe('parse_session — absolute expiry', () => {
 			now + SESSION_AGE_MAX - 1
 		);
 		assert.ok(near_expiry);
-		assert.deepStrictEqual(near_expiry, { identity: TEST_IDENTITY, key_index: 0 });
+		assert.deepStrictEqual(near_expiry, {
+			identity: TEST_IDENTITY,
+			key_index: 0,
+			expires_at: now + SESSION_AGE_MAX
+		});
 
 		const past_expiry = await parse_session(
 			signed,

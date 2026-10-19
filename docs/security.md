@@ -418,7 +418,8 @@ live as `_testing_*` RPC actions
 (`_testing_reset`, `_testing_mint_session`, `_testing_put_fact`,
 `_testing_drain_effects`, `_testing_flood_notifications`,
 `_testing_schema_snapshot`, `_testing_migration_tracker`,
-`_testing_action_manifest`)
+`_testing_action_manifest`, `_testing_origin_check`,
+`_testing_shorten_credential_expiry`)
 that a consumer's **test
 binary** appends to its RPC endpoint at assembly time (fuz_app's own spine
 binary, like the Rust stub, also serves them on its WS endpoint, behind the
@@ -449,6 +450,11 @@ required negative, so it can only mint an _already-expired_ session row, never
 a usable session for an arbitrary account. The constraint is a
 make-impossible-states floor under the gates above — even a misuse cannot forge
 a live credential.
+
+`_testing_shorten_credential_expiry` is constrained the same way: it sets an
+expiry of `LEAST(expires_at, NOW() + seconds)` with `seconds` from 1 to 60, so
+it can only bring an account's credentials closer to expiry — never extend
+one, never revive an expired one.
 
 `_testing_flood_notifications` is bounded the same way: at most 65 536
 notifications of at most 16 MiB each, and 64 MiB between them, all onto the
@@ -836,23 +842,33 @@ revocation the re-read sees.
   `expires_at`, or a `role_grant` or `actor` row deleted through the db-admin
   browser, whose `db_admin_row_delete` event declares no revocation scope. The
   stream stays open until it reconnects; the role gate refuses it then.
-- Expiry is not an event, so nothing closes a connection at the moment its
-  credential expires; the re-read refuses an expired credential at open. What
-  happens afterwards depends on the credential:
-  - A **session**'s connections are closed by the auth cleanup. Each pass
-    deletes the expired session rows and closes the connections they opened,
-    after the delete commits (`cleanup_expired_sessions`). With the cleanup
-    scheduled — `create_app_server`'s `auth_cleanup` option, or
-    `start_auth_cleanup` — a connection outlives its session's expiry by at
-    most one cleanup interval (`DEFAULT_AUTH_CLEANUP_INTERVAL_MS`, ten
-    minutes) plus the pass itself. The option is **off by default**: a server
-    that schedules no cleanup closes nothing on expiry, and the connection
-    runs until it disconnects or a revocation closes it. A pass that fails —
-    the database out of reach — is retried on the next interval.
-  - An expired **API token**'s connection is not closed either way. The
-    sweep does not touch token rows, so the connection stays open until it
-    disconnects or a revocation closes it — `account_token_revoke` still
-    finds the row to close for.
+- Expiry is not an event, so no revocation listener hears it. Instead each
+  connection carries its credential's **deadline**
+  (`ResolvedAuth.credential_deadline`) and closes there itself: a WebSocket
+  with `WS_CLOSE_SESSION_REVOKED` and reason `Credential expired`, an audit
+  stream by ending as a revoked one does. The deadline is the earliest of
+  what the credential carries — a session's signed cookie expiry and its
+  row's, an API token's row (none for an eternal token), none for the daemon
+  token — with each row's expiry read as the time left on the database clock,
+  so a skew between the server's and the database's clocks moves no
+  deadline. The wait is a chain of timers of at most an hour, so a deadline
+  past `setTimeout`'s ceiling (about 24.8 days; a session lives 30) does not
+  fire at once. The deadline sits on the monotonic clock, which stops while
+  the host is suspended, so each wake-up also checks the same deadline on the
+  wall clock and closes at whichever comes first: a suspend delays the close
+  by at most one timer (an hour) after the resume. A wall clock stepped
+  forward can close a connection early; its client reconnects through the
+  gates. The re-read refuses an already-expired credential at open. The Rust spine closes at the same deadline, with the same code and
+  reason.
+  - The auth cleanup repeats the close for a **session**: each pass deletes
+    the expired session rows and closes the connections they opened, after
+    the delete commits (`cleanup_expired_sessions`) — the close
+    `account_session_revoke` could no longer make once the row is gone. It is
+    scheduled by `create_app_server`'s `auth_cleanup` option (off by default)
+    or `start_auth_cleanup`; the deadline does not depend on it.
+  - An expired **API token**'s row is not swept; its connections close at
+    their deadline, and `account_token_revoke` still finds the row to close
+    for.
 
   The Rust spine's sweep makes the same closes, and its servers all schedule
   it.

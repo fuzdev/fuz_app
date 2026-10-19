@@ -22,12 +22,12 @@
  * stream ends). Otherwise a swept session's connections would be reachable
  * only by an account-wide revocation.
  *
- * The contract that follows: **a connection outlives its session's expiry by
- * at most one cleanup interval** (plus the pass itself). In a process that
- * does not schedule the sweep, expiry ends no connection at all. The contract
- * is for sessions only: an expired API token's row is not swept, so nothing
- * here closes a connection opened on one — and `account_token_revoke` still
- * finds the row to close for.
+ * The sweep's close is the second on expiry, not the first: every connection
+ * already closes at its credential's deadline (`auth/credential_deadline.ts`)
+ * in the process holding it, whether or not a sweep runs. The sweep is for
+ * sessions only: an expired API token's row is not swept — its connections
+ * close at their deadline, and `account_token_revoke` still finds the row to
+ * close for.
  *
  * The closes run after the delete's commit, which is the rule every
  * revocation close keeps (see `actions/connection_closer.ts`). An expired
@@ -125,9 +125,9 @@ import type { AuditLogEvent } from './audit_log_schema.ts';
  * `DEFAULT_AUTH_CLEANUP_INTERVAL`.
  *
  * An expired session or offer is already refused by every check that reads
- * it, so the interval bounds three things: how long a connection outlives
- * the expiry of the session it opened on, how late an offer expiry's audit
- * row lands, and how long dead rows linger.
+ * it, and a connection closes at its credential's deadline on its own, so the
+ * interval bounds two things: how late an offer expiry's audit row lands, and
+ * how long dead rows linger.
  */
 export const DEFAULT_AUTH_CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
 

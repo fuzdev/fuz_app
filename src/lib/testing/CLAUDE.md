@@ -486,7 +486,7 @@ file that imports from `middleware.ts` gets these mocks globally. Pair with
 - `BearerAuthTestOptions`, `BearerAuthTestCase` — test-case table shape for the bearer auth runner.
 - `create_bearer_auth_mocks(tc)` — configures the module-level mocks per test case; returns spy references.
 - `TEST_CLIENT_IP = '127.0.0.1'` — IP set by the proxy stub in `create_bearer_auth_test_app`.
-- `create_bearer_auth_test_app(tc)` — Hono app with bearer middleware + echo route at `/api/test` returning `{ok, account_id, credential_type, api_token_id, request_context_set}` — the account-grain identity bearer auth writes, plus a flag for tests that pre-populate `REQUEST_CONTEXT_KEY` via `pre_context`.
+- `create_bearer_auth_test_app(tc)` — Hono app with bearer middleware + echo route at `/api/test` returning `{ok, account_id, credential_type, api_token_id, token_scope, credential_deadline_in_ms, request_context_set}` (`credential_deadline_in_ms` — how far ahead `CREDENTIAL_DEADLINE_KEY` lies, `null` for none; `BearerAuthTestCase.expected_credential_deadline_ms` asserts it) — the account-grain identity bearer auth writes, plus a flag for tests that pre-populate `REQUEST_CONTEXT_KEY` via `pre_context`.
 - `describe_bearer_auth_cases(suite_name, cases)` — table-driven runner; one `test()` per case; asserts status, error, body fields, `api_token_id`, context preservation.
 - `TEST_MIDDLEWARE_PATH = '/api/test'` — path used by the echo route in the stack factory.
 - `create_test_middleware_stack_app(options?)` — real proxy + origin + bearer middleware for integration-shape testing. Echo route returns `{ok, client_ip, has_context}`.
@@ -1610,6 +1610,17 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   keeps an exact action-manifest gate; the spine binary appends it in
   `build_full_spine_rpc_actions`.
 
+  Also **not** bundled: `_testing_shorten_credential_expiry`
+  (`create_testing_shorten_credential_expiry_action()`) — pulls an account's
+  `auth_session` and `api_token` expiries in to `seconds` (1–60) from now,
+  shorten-only (`LEAST`, an eternal token gaining one), answering
+  `{sessions, api_tokens}` counts. Applied before a connection opens, since
+  the deadline is read when the credential resolves. Backs
+  `describe_credential_deadline_cross_tests`; appended in
+  `build_full_spine_rpc_actions` for the same manifest reason as
+  `_testing_origin_check`. The Rust mirror is
+  `fuz_testing::create_testing_shorten_credential_expiry_action_spec`.
+
   Also in the module — but **not** bundled by `create_testing_actions` —
   `_testing_action_manifest` (+ `create_testing_action_manifest_action(mounted)`):
   dumps the live RPC registry as a normalized `ActionManifest` for the
@@ -1689,6 +1700,22 @@ through the production `account_token_create` path and returns the raw bearer
 (throws when the mint is refused). Shared by the front-door table, the
 token-scope surface suite, and the conformance table's `scoped_token`
 principal.
+
+### Credential deadline parity — `cross_backend/credential_deadline.ts`
+
+`describe_credential_deadline_cross_tests({setup_test, capabilities, base_url,
+ws_path, sse_path?, rpc_path?})` — a connection closes when the credential it
+opened on expires: each case pulls a fresh account's credential expiries in to
+two seconds with `_testing_shorten_credential_expiry` before the open, then
+checks the connection still dispatches short of the deadline and closes at it.
+A WebSocket on a session and one on an API token (`capabilities.ws`) close with
+`WS_CLOSE_SESSION_REVOKED` and `WS_CLOSE_CREDENTIAL_EXPIRED_REASON`; an audit
+stream on a session (`capabilities.sse`) ends; and a second seam call asking
+for a later expiry moves nothing (the seam only shortens). API token × audit
+stream is not reachable over the wire — the stock stream is session-only — so
+the Rust spine pins it on a widened gate and the TS twin shares one deadline
+wait across both transports. Cross-process only; fuz_app's own wiring is
+`src/test/cross_backend/credential_deadline.cross.test.ts`.
 
 ### Origin check scope parity — `cross_backend/origin_scope.ts`
 

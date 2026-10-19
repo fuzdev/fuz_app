@@ -19,7 +19,8 @@ import type {
 } from '../http/jsonrpc.ts';
 
 /**
- * WebSocket close code for session revocation.
+ * WebSocket close code for session revocation — and for a credential that
+ * expired while the socket was open (`WS_CLOSE_CREDENTIAL_EXPIRED_REASON`).
  *
  * Also the close for an upgrade refused at admission because its credential
  * was revoked while the upgrade was in flight (`register_action_ws`) — the
@@ -32,6 +33,15 @@ export const WS_CLOSE_SESSION_REVOKED = 4001;
  * indistinguishable on the wire. The Rust spine sends the same text.
  */
 export const WS_CLOSE_SESSION_REVOKED_REASON = 'Session revoked';
+/**
+ * The close reason sent with `WS_CLOSE_SESSION_REVOKED` when the socket's
+ * credential expired while it was open — its session or API token passed its
+ * expiry (`ResolvedAuth.credential_deadline`). The code is the revocation's on
+ * purpose: the client cannot reconnect on the credential either way, so
+ * `FrontendWebsocketClient` enters the same `revoked` state. The Rust spine
+ * sends the same text.
+ */
+export const WS_CLOSE_CREDENTIAL_EXPIRED_REASON = 'Credential expired';
 /** WebSocket close code — client timed out waiting for a response. */
 export const WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT = 4002;
 /** WebSocket close code — server timed out with no incoming activity. */

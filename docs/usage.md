@@ -470,9 +470,10 @@ const { app, close } = await create_app_server({
 await close();
 ```
 
-It is **off by default** — turn it on in production. Without it a connection
-outlives the expiry of the session it opened on until it disconnects; with it,
-by at most one interval (./security.md §Connection Admission, "What remains").
+It is **off by default** — turn it on in production. Without it expired rows
+accumulate and an offer's expiry is never audited. Connections do not wait on
+it: each closes at its credential's deadline, and a pass repeats the close for
+the sessions it sweeps (./security.md §Connection Admission, "What remains").
 The Rust spine's servers all schedule the twin. Leave it off in an in-process
 test harness: a background pass deletes rows and writes audit rows mid-test.
 A cross-process test binary may schedule it when nothing its suites seed is
@@ -504,7 +505,9 @@ app's transports were added to (`backend.deps.connection_closer`).
 Run the sweep in the process that holds the connections. A pass from another
 process — a cron script against a live server's database — deletes the
 expired rows and closes nothing, and the server's own pass then finds them
-gone, so those connections stay open until they disconnect.
+gone. Those connections still close at their credential's deadline
+(`ResolvedAuth.credential_deadline`); only the sweep's repeat of that close
+is lost.
 `noop_connection_closer` is for a database no server holds connections on:
 tests, or an offline maintenance run.
 

@@ -7,12 +7,14 @@ import '../assert_dev_env.ts';
  * `_testing_reset` / `_testing_mint_session` / `_testing_put_fact` /
  * `_testing_flood_notifications` / `_testing_schema_snapshot` /
  * `_testing_migration_tracker` / `_testing_action_manifest` /
- * `_testing_origin_check` are privileged test-binary actions the production
+ * `_testing_origin_check` / `_testing_shorten_credential_expiry` are
+ * privileged test-binary actions the production
  * wire never exposes — direct DB writes (full auth wipe, forged session row,
  * raw fact insert), a flood of the caller's own connection, introspection
  * reads (the live schema, the `schema_version` migration tracker, and the live
- * RPC registry — the highest info-leak of the set were the gate to break), and
- * a probe of the origin allowlist parser. Their only structural fence
+ * RPC registry — the highest info-leak of the set were the gate to break), a
+ * probe of the origin allowlist parser, and a rewrite of an account's
+ * credential expiries. Their only structural fence
  * is the **daemon-token** credential gate on
  * each spec's `auth` axis. A test binary live-mounts them on its RPC
  * endpoint (and, on fuz_app's spine binary and the Rust stub, its WS
@@ -103,7 +105,14 @@ const backdoor_methods: ReadonlyArray<{ method: string; params: unknown }> = [
 	{ method: '_testing_action_manifest', params: {} },
 	// The origin conformance probe — a valid `{patterns, origin}` pair, so it
 	// clears the 400 phase like the rest.
-	{ method: '_testing_origin_check', params: { patterns: 'http://localhost:*', origin: null } }
+	{ method: '_testing_origin_check', params: { patterns: 'http://localhost:*', origin: null } },
+	// The credential-expiry rewrite — a valid `{account_id, seconds}` pair (a
+	// syntactically valid UUID; no row needs to match), so it clears the 400
+	// phase like the rest.
+	{
+		method: '_testing_shorten_credential_expiry',
+		params: { account_id: '00000000-0000-4000-8000-000000000000', seconds: 30 }
+	}
 ];
 
 /** A non-daemon principal + the denial it must hit on every backdoor method. */

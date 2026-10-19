@@ -240,6 +240,11 @@ export const SPINE_METHOD_COVERAGE: ReadonlyArray<MethodCoverageEntry> = [
 		suite: 'describe_testing_backdoor_cross_tests'
 	},
 	{
+		method: '_testing_shorten_credential_expiry',
+		tier: 'backdoor',
+		suite: 'describe_testing_backdoor_cross_tests'
+	},
+	{
 		method: '_testing_drain_effects',
 		tier: 'backdoor',
 		suite: 'describe_testing_backdoor_cross_tests',

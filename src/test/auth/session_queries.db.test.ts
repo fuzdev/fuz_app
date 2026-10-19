@@ -238,8 +238,12 @@ describe_db('AuthSessionQueries', (get_db) => {
 		assert.ok(before);
 		const again = await query_session_get_valid(deps, token_hash);
 		assert.ok(again);
-		// The whole row, so a future mutable column can't dodge the assertion.
-		assert.deepEqual(again, before);
+		// The whole row, so a future mutable column can't dodge the assertion —
+		// less the time left, which the read computes and which only shrinks.
+		const { expires_in_ms: before_left, ...before_row } = before;
+		const { expires_in_ms: again_left, ...again_row } = again;
+		assert.deepEqual(again_row, before_row);
+		assert.ok(again_left <= before_left, 'the time left never grows');
 	});
 
 	test('cleanup_expired removes expired sessions and returns their ids', async () => {

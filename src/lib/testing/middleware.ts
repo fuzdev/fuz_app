@@ -36,6 +36,7 @@ import { REQUEST_CONTEXT_KEY, type RequestContext } from '../auth/request_contex
 import {
 	ACCOUNT_ID_KEY,
 	AUTH_API_TOKEN_ID_KEY,
+	CREDENTIAL_DEADLINE_KEY,
 	CREDENTIAL_TYPE_KEY,
 	TEST_CONTEXT_PRESET_KEY,
 	TOKEN_SCOPE_KEY
@@ -97,6 +98,12 @@ export interface BearerAuthTestCase extends BearerAuthTestOptions {
 	expected_api_token_id?: string;
 	/** If set, assert `TOKEN_SCOPE_KEY` was set to this scope after a successful bearer auth. */
 	expected_token_scope?: TokenScope;
+	/**
+	 * If set, assert `CREDENTIAL_DEADLINE_KEY` after a successful bearer auth:
+	 * `null` for none (an eternal token), or the milliseconds it should lie
+	 * ahead, within a second.
+	 */
+	expected_credential_deadline_ms?: number | null;
 	/** If true, assert the pre-existing session `ACCOUNT_ID_KEY` and credential type are preserved. */
 	assert_context_preserved?: boolean;
 	/** Optional callback for custom spy assertions on the mocks bundle. */
@@ -224,6 +231,7 @@ export const create_bearer_auth_test_app = (
 		const cred = c.get(CREDENTIAL_TYPE_KEY);
 		const api_token_id = c.get(AUTH_API_TOKEN_ID_KEY);
 		const token_scope = c.get(TOKEN_SCOPE_KEY);
+		const credential_deadline = c.get(CREDENTIAL_DEADLINE_KEY) ?? null;
 		const ctx = c.get(REQUEST_CONTEXT_KEY);
 		return c.json({
 			ok: true,
@@ -231,6 +239,10 @@ export const create_bearer_auth_test_app = (
 			credential_type: cred ?? null,
 			api_token_id: api_token_id ?? null,
 			token_scope: token_scope ?? null,
+			// how far ahead the deadline lies, since the monotonic value itself
+			// means nothing outside this process
+			credential_deadline_in_ms:
+				credential_deadline === null ? null : credential_deadline - performance.now(),
 			request_context_set: ctx != null
 		});
 	});
@@ -312,6 +324,24 @@ export const describe_bearer_auth_cases = (
 						tc.expected_token_scope,
 						'TOKEN_SCOPE_KEY should be the scope the validated api_token carries'
 					);
+				}
+
+				if (tc.expected_credential_deadline_ms !== undefined) {
+					if (tc.expected_credential_deadline_ms === null) {
+						assert.strictEqual(
+							body.credential_deadline_in_ms,
+							null,
+							'CREDENTIAL_DEADLINE_KEY should be null for a token with no expiry'
+						);
+					} else {
+						const ahead: unknown = body.credential_deadline_in_ms;
+						assert.ok(
+							typeof ahead === 'number' &&
+								ahead <= tc.expected_credential_deadline_ms &&
+								ahead > tc.expected_credential_deadline_ms - 1000,
+							`CREDENTIAL_DEADLINE_KEY should lie ${tc.expected_credential_deadline_ms}ms ahead, got ${String(ahead)}`
+						);
+					}
 				}
 
 				if (tc.assert_context_preserved) {

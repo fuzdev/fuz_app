@@ -24,6 +24,7 @@ import {
 	query_session_enforce_limit
 } from './session_queries.ts';
 import type { QueryDeps } from '../db/query_deps.ts';
+import { SESSION_COOKIE_EXPIRES_AT_KEY } from '../hono_context.ts';
 
 /**
  * Read the session cookie value from a request.
@@ -77,7 +78,7 @@ export const clear_session_cookie = <T>(c: Context, options: SessionOptions<T>):
  *
  * @param keyring - key ring for cookie verification
  * @param options - session configuration
- * @mutates Hono context - sets `options.context_key` and may clear the session cookie
+ * @mutates Hono context - sets `options.context_key` and `SESSION_COOKIE_EXPIRES_AT_KEY`, and may clear the session cookie
  */
 export const create_session_middleware = <TIdentity>(
 	keyring: Keyring,
@@ -89,6 +90,8 @@ export const create_session_middleware = <TIdentity>(
 
 		// Always set identity (null when invalid/missing) for type-safe reads
 		c.set(options.context_key, result.identity ?? null);
+		// the signed expiry rides beside it, for the credential deadline
+		c.set(SESSION_COOKIE_EXPIRES_AT_KEY, result.expires_at ?? null);
 
 		if (result.action === 'clear') {
 			clear_session_cookie(c, options);

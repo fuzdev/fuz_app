@@ -33,6 +33,7 @@ import {
 	require_request_context
 } from './request_context.ts';
 import { get_resolved_auth, revalidate_resolved_auth } from './resolved_auth.ts';
+import { schedule_credential_deadline } from './credential_deadline.ts';
 import { AUDIT_LOG_CHANNEL } from '../realtime/sse_auth_guard.ts';
 
 /** Options for audit log route specs. */
@@ -84,6 +85,16 @@ export interface AuditLogRouteOptions {
  * whose re-read is in flight, even if the re-read then fails. The twin of the
  * Rust spine's `audit_stream_router`, which registers before its role read
  * rather than repeating it.
+ *
+ * ## Credential deadline
+ *
+ * Expiry writes nothing a revocation listener could hear, so an admitted
+ * stream watches its own credential's expiry
+ * (`ResolvedAuth.credential_deadline` — for the session-only stock route, the
+ * earlier of the cookie's and the row's) and is closed at it, as a revoked
+ * stream is: the body ends with no final frame, and the client's reconnect
+ * meets the gates. The wait is `schedule_credential_deadline`'s chain of
+ * bounded timers, cancelled when the stream closes.
  *
  * @param options - optional stream wiring + role override
  * @returns the SSE route spec (when `options.stream` is provided) or an empty array
@@ -182,6 +193,19 @@ export const create_audit_log_route_specs = (options?: AuditLogRouteOptions): Ar
 					if (!admitted) {
 						log.info('audit stream: closed before admission', ctx.account.id);
 						stream.close();
+					} else {
+						// The stream ends when the credential it opened on expires —
+						// closed as a revocation closes it (TSDoc, "Credential
+						// deadline").
+						stream.on_close(
+							schedule_credential_deadline(
+								get_resolved_auth(c)?.credential_deadline ?? null,
+								() => {
+									log.info('audit stream: credential expired', ctx.account.id);
+									stream.close();
+								}
+							)
+						);
 					}
 					return response;
 				} finally {
