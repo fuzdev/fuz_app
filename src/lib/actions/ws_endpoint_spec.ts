@@ -52,10 +52,12 @@ export interface WsEndpointSpec {
 	 */
 	actions: ReadonlyArray<Action>;
 	/**
-	 * Roles permitted to upgrade — any-of disjunction. Omit (or pass `[]`)
-	 * to skip the upgrade-time role gate; per-action `auth` on each spec
-	 * still applies at dispatch time via `perform_action`. Pass
-	 * `[ROLE_ADMIN]` for an admin-only WS endpoint.
+	 * Roles permitted to upgrade — any-of disjunction, global grants only.
+	 * Omit (or pass `[]`) to skip the upgrade-time role gate; per-action
+	 * `auth` on each spec still applies at dispatch time via
+	 * `perform_action`. Pass `[ROLE_ADMIN]` for an admin-only WS endpoint.
+	 * Held for the socket's life — see `register_ws_endpoint`'s
+	 * `required_roles`.
 	 */
 	required_roles?: ReadonlyArray<RoleName>;
 	/**
@@ -139,18 +141,17 @@ export interface WsEndpointSpec {
 	 * Set `false` when a consumer needs to compose their own callback
 	 * from scratch — or to opt out of the auto-wiring entirely.
 	 *
-	 * NOTE: does NOT close sockets on `role_grant_revoke` — that omission
-	 * is deliberate (per-connection role tracking is out of scope). A user
-	 * whose admin role is revoked keeps their socket open; the next message
-	 * gets `forbidden` from the per-message authorization phase. Consumers
-	 * wanting role-revoke disconnection use `extra_audit_handlers`.
+	 * The guard is also the one closer of a role revocation: a revoked
+	 * global grant of a role in `required_roles` closes the account's
+	 * sockets on this endpoint with `WS_CLOSE_PERMISSION_REVOKED`. With the
+	 * guard off for a transport, nothing closes them.
 	 */
 	auth_guard?: boolean;
 	/**
 	 * Extra audit-event handlers registered via `deps.audit.add_listener`
 	 * AFTER the standard `auth_guard` wiring (when enabled). By the time
 	 * these run, the standard guard may have already closed sockets. Use
-	 * for role-revoke disconnection, custom analytics, etc.
+	 * for custom analytics, a consumer's own revocation events, etc.
 	 *
 	 * Never deduped — consumer-owned; pass the same handler twice and it
 	 * fires twice.

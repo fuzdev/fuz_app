@@ -483,8 +483,9 @@ enforcement:
 - **Handler close**: every revocation handler closes the connections of what
   it revoked through `deps.connection_closer`, after its transaction commits
   (see [Closing on Revocation](#closing-on-revocation)). A registry reaches
-  that closer through `create_sse_connection_closer(registry)` — one
-  `close_by_identity` per session hash, API token id, or account id.
+  that closer through `create_sse_connection_closer(registry, role)` — one
+  `close_by_identity` per session hash, API token id, or account id, and the
+  account's streams for a revoked `role`.
 - **SSE auth guard**: `create_sse_auth_guard(registry, role, log)` returns an
   `on_audit_event` callback that repeats those closes when the audit row is
   announced, by the `RevocationScope` the event declares
@@ -498,9 +499,8 @@ enforcement:
     account's streams
   - `role` (`role_grant_revoke`) — closes the target account's streams when
     the revoked role is the one the stream requires. The guard is the only
-    closer for this one: no handler close exists for a role, because the
-    WebSocket half deliberately keeps its sockets (their next message is
-    re-authorized)
+    closer for this one: no handler closes for a role. The WebSocket guard
+    closes the account's sockets gated on the role on the same rows
 - **Failure guard**: Events with `outcome='failure'` are ignored. Failed
   revoke attempts carry attacker-submitted identifiers (e.g. guessed session
   hashes) in metadata — acting on them would let any authenticated user close
@@ -733,8 +733,10 @@ admission:
    revocation event, so only its account is re-read. The re-read uses the
    resolve path's own queries and liveness predicate, writes nothing, and does
    not touch a token's `last_used_at` — re-checking a credential is not using
-   it. The audit stream also re-reads the acting actor's role grants, since a
-   role revocation closes streams too.
+   it. The audit stream, and a WebSocket endpoint with `required_roles`, also
+   re-read the acting actor's role grants, since a role revocation closes
+   them too: a lost role refuses the stream with 403, and the socket with
+   `WS_CLOSE_PERMISSION_REVOKED`.
 3. **Admit.** `admit` refuses when the pending registration is gone — a
    revocation closed it — and otherwise applies the cap and opens the
    connection.
@@ -821,10 +823,11 @@ revocation the re-read sees.
   disconnect. The expired-session sweep is the exception: it closes for the
   sessions its delete returned whatever became of its commit, since they are
   expired either way, and the next pass deletes any row the commit left.
-- A role revocation closes an audit stream through the audit listener alone,
-  and the listener hears of a row only once its fail-open audit write lands. If
-  that write fails, the role is revoked, the request succeeds, and a stream
-  already open on that role stays open until it is closed some other way. The
+- A role revocation closes a role-gated WebSocket or audit stream through the
+  audit listeners alone, and a listener hears of a row only once its fail-open
+  audit write lands. If that write fails, the role is revoked, the request
+  succeeds, and a socket or stream already open on that role stays open until
+  it is closed some other way. The
   Rust spine writes that row inside the revocation's transaction, so there the
   two succeed or fail together.
 - A role that ends any other way closes nothing: a grant reaching its
@@ -899,10 +902,17 @@ expiry, a raw row delete — is under
 | `POST /logout`, `POST /password` | the account's connections |
 | `POST /login`, when the session cap evicts | each evicted session's connections |
 | `account_token_create`, when the token cap evicts | each evicted token's connections |
-| `role_grant_revoke` | the account's audit streams gated on that role (listener only) |
+| `role_grant_revoke` of a global grant | the account's WebSockets and audit streams gated on that role (listener only) |
 
 A cap eviction writes no audit row, so the handler's close is the only one it
-has. A failed revocation (`revoked: false` — the id was wrong, or another
+has. A role revocation closes a WebSocket with `WS_CLOSE_PERMISSION_REVOKED`
+(4006), not `WS_CLOSE_SESSION_REVOKED`: the credential is still good. It
+closes only connections an endpoint gated on the revoked role
+(`required_roles`), and only for a global grant — a role gate admits on global
+grants alone, so a scoped revoke closes nothing. An endpoint gated on several
+roles closes on the loss of any of them, whether or not the account still
+holds another; its client reconnects into the gate when it still qualifies.
+Nothing is sent on a socket after its close. A failed revocation (`revoked: false` — the id was wrong, or another
 account's) closes nothing: it carries a caller-supplied id.
 
 **Expired sessions.** One close is not a revocation. The auth cleanup's
@@ -934,7 +944,8 @@ hand:
   no live-connection surface leaves its closer empty; hand-built deps for the
   action factories can pass `noop_connection_closer`.
 - A consumer's own `SubscriberRegistry` joins with
-  `deps.connection_closer.add(create_sse_connection_closer(registry))`.
+  `deps.connection_closer.add(create_sse_connection_closer(registry, role))`,
+  `role` being the one its streams are gated on (or `null`).
 
 **A socket that revokes itself is answered first.** When a WebSocket request
 revokes the credential its own socket runs on, the response is sent before the

@@ -363,6 +363,7 @@ and `allow_fallback: boolean` (default `true`). Explicit
 - `WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT = 4003` — server observed receive-silence past `DEFAULT_SERVER_HEARTBEAT_TIMEOUT` (60s).
 - `WS_CLOSE_CONNECTION_LIMIT = 4004` — server closed this socket to admit a newer one on the same account, past the per-account connection cap (reason `connection limit`). Not a revocation: the client stays `closed` with `superseded` set and no reconnect, until `connect()` is called. Twin of the Rust spine's constant.
 - `WS_CLOSE_OUTBOUND_OVERFLOW = 4005` — the server had more waiting to be written to this socket than its outbound budget holds (reason `WS_CLOSE_OUTBOUND_OVERFLOW_REASON`, `outbound queue overflow`); what was waiting is dropped. Not a revocation, and nothing took the connection's place: the client reconnects under its ordinary backoff. Twin of the Rust spine's constant.
+- `WS_CLOSE_PERMISSION_REVOKED = 4006` — the socket's account lost a role its endpoint's `required_roles` lists: a revoked global grant (reason `WS_CLOSE_PERMISSION_REVOKED_REASON`, `Permission revoked`), mid-life or at admission. Nothing is sent after it. Not a revocation of the credential: the client stays `closed` until `connect()` is called, without setting `revoked` or `superseded`, and rejects pending and queued requests `forbidden`. Twin of the Rust spine's constant.
 - `WS_CLOSE_GOING_AWAY = 1001` — the server is shutting down (reason `WS_CLOSE_GOING_AWAY_REASON`, `Server shutting down`): `close_all_sockets`, which `AppServer.close` runs. Also the close for an upgrade the shutdown refuses — pending at the close-all, or born closed after it. Not a revocation: the client reconnects under its ordinary backoff.
 - `WS_CLOSE_MESSAGE_TOO_BIG = 1009` — server received a message over its `max_message_bytes` cap (RFC 6455 "Message Too Big").
 - `WS_CLOSE_POLICY_VIOLATION = 1008` — a socket sent too much while it was still opening (before admission and `on_socket_open` completed): past `MAX_PRE_ADMISSION_FRAMES` frames or the `PRE_ADMISSION_QUEUE_BYTES_FACTOR` byte budget.
@@ -409,8 +410,10 @@ client; `null` skips the client-side measurement.
 One map keyed by `connection_id` (branded `Uuid`), in registration order:
 `#connections: Map<Uuid, ConnectionEntry>`, each entry `{ws, identity,
 admitted, abort_controller, writer}`. `identity` is the `ConnectionIdentity`
-`{token_hash, account_id, api_token_id}` (session sets `token_hash`, bearer
-sets `api_token_id`, daemon-token sets both null).
+`{token_hash, account_id, api_token_id, required_roles}` (session sets
+`token_hash`, bearer sets `api_token_id`, daemon-token sets both null;
+`required_roles` is what the endpoint gated the upgrade on, per registration,
+since endpoints with different gates can share one transport).
 
 The id is the connection's only handle — `register_pending` / `add_connection`
 return it and `admit` / `remove_connection` / `is_registered` take it. There is
@@ -426,7 +429,7 @@ revocation closes nothing and the socket is then admitted on a dead credential.
 The transport splits registration to close it (the twin of the Rust
 `fuz_realtime` `ConnectionRegistry`, same method names):
 
-- `register_pending(ws, token_hash, account_id, api_token_id?, abort_controller?)`
+- `register_pending(ws, token_hash, account_id, api_token_id?, abort_controller?, required_roles?)`
   inserts the entry **un-admitted**. Every `close_sockets_for_*` matches it
   from that instant. Otherwise it is inert: no `send` broadcast,
   `broadcast_filtered` (the predicate never sees it), `send_to_account`, or
@@ -434,6 +437,9 @@ The transport splits registration to close it (the twin of the Rust
   `is_ready`, and `is_registered` don't see it
   (`get_pending_connection_count` does); the cap neither counts nor evicts it.
 - the caller re-reads the credential (`revalidate_resolved_auth`).
+- `take_pending_close_code(connection_id)` — after a refused `admit`, the
+  close code the transport closed the pending entry with (4001, 4006, 1001),
+  read once; what `register_action_ws` logs the refusal by.
 - `admit(connection_id)` returns `false` when the entry is gone — a revocation
   closed it while pending — and evicts nothing; otherwise it enforces the cap
   (counting admitted connections only) and marks the entry admitted.
@@ -555,6 +561,11 @@ each closed connection's controller):
 - `close_sockets_for_token(api_token_id)`
 - `close_sockets_for_account(account_id)` — coarse, covers session + bearer + daemon-token
 
+`close_sockets_for_role(account_id, role)` closes the account's connections
+whose `required_roles` include `role`, pending included, with
+`WS_CLOSE_PERMISSION_REVOKED` instead — over-closing an any-of gate (the loss
+of any listed role closes, whether or not the account still holds another).
+
 `close_all_sockets()` closes every connection, pending and admitted, with
 `WS_CLOSE_GOING_AWAY` instead — the shutdown close, removing and aborting each
 the same way — and leaves the transport **closing** for good (`is_closing()`):
@@ -610,13 +621,17 @@ interface ConnectionCloser {
 	close_sockets_for_session: (session_token_hash: string) => number;
 	close_sockets_for_token: (api_token_id: string) => number;
 	close_sockets_for_account: (account_id: Uuid) => number;
+	close_sockets_for_role: (account_id: Uuid, role: string) => number; // a revoked global grant
 	close_all_sockets: () => number; // shutdown, never a revocation
 }
 ```
 
 `BackendWebsocketTransport` satisfies it structurally;
-`create_sse_connection_closer(registry)` (`realtime/sse_auth_guard.ts`) adapts
-a `SubscriberRegistry` (`close_all_sockets` is `SubscriberRegistry.close_all`).
+`create_sse_connection_closer(registry, required_role)` (`realtime/sse_auth_guard.ts`) adapts
+a `SubscriberRegistry` (`close_all_sockets` is `SubscriberRegistry.close_all`;
+`close_sockets_for_role` closes the account's streams when `role` is the
+registry's gating role). No handler closes for a role: a role revocation's
+closes come from the audit listeners alone.
 Closing is idempotent and synchronous. `close_all_sockets` is the one method no
 revocation calls: `AppServer.close` runs it on `deps.connection_closer` to end
 every live connection of the backend at shutdown, and it has no
@@ -632,7 +647,8 @@ which puts the close on the request's post-commit queue (`emit_after_commit`).
 The close runs once the handler's transaction has committed and is discarded
 when the handler throws — a rolled-back revocation closes nothing. `target` is
 a `ConnectionCloseTarget` (`{kind: 'session', session_token_hash}` /
-`{kind: 'token', api_token_id}` / `{kind: 'account', account_id}`);
+`{kind: 'token', api_token_id}` / `{kind: 'account', account_id}` /
+`{kind: 'role', account_id, role}`);
 `close_connections(closer, target)` is the immediate form the queue runs. Twin
 of `queue_socket_close` / `SocketCloseTarget`.
 
@@ -702,8 +718,14 @@ guard reads too — one declaration, so the two can't drift:
 - `account` (`session_revoke_all`, `token_revoke_all`, `password_change`,
   `logout`, `account_delete`, `account_purge`) →
   `close_sockets_for_account(target_account_id ?? account_id)`
-- `role` (`role_grant_revoke`) → nothing, deliberately: per-message dispatch
-  re-authorizes, so the next message is refused. The SSE guard closes here.
+- `role` (`role_grant_revoke`) → `close_sockets_for_role(target_account_id ??
+  account_id, metadata.role)` when the revoked grant was global
+  (`to_global_role_revocation`); a scoped revoke closes nothing. Per-message
+  dispatch re-authorizes each request against its own action, but nothing
+  re-checks what a socket admitted by a role gate receives — every push its
+  endpoint sends — so the socket closes, with `WS_CLOSE_PERMISSION_REVOKED`.
+  The SSE guard closes its streams on the same rows. No handler closes for a
+  role, so this guard is the one closer.
 - `none` → nothing — every other event, and any event type fuz_app doesn't
   define
 
@@ -774,9 +796,8 @@ Cross-surface collisions (same `GET <path>` on both `RouteSpec` and
 `GET /api/:resource` vs `/api/ws`) is not detected — Hono's specific-before-wildcard routing keeps
 those working but avoid the overlap.
 
-`auth_guard: true` does NOT close sockets on `role_grant_revoke`
-(deliberate — per-connection role tracking out of scope). Compose via
-`extra_audit_handlers` when needed. When multiple specs share a transport,
+`auth_guard` is also the one closer of a role revocation: with it off for a
+transport, a revoked role closes none of its sockets. When multiple specs share a transport,
 **any** spec with `auth_guard !== false` wires the guard for that
 transport (OR-semantics).
 
@@ -829,7 +850,11 @@ audit stream shares, read off the keys the auth middleware set), then
 meanwhile, closes the socket with `WS_CLOSE_SESSION_REVOKED` and the reason a
 revoked socket gets; a re-check that throws closes it with
 `WS_CLOSE_INTERNAL_ERROR` (`internal error`) — fail closed, never admitted
-unchecked. During shutdown a refusal is the shutdown's instead: an upgrade
+unchecked. An endpoint with `required_roles` re-reads them beside the
+credential — the acting actor's grants afresh (`refresh_role_grants`), a global
+grant of any listed role admitting, as the gate in front did — and refuses a
+lost role with `WS_CLOSE_PERMISSION_REVOKED`; a failed role read is the same
+1011. During shutdown a refusal is the shutdown's instead: an upgrade
 pending at the close-all was closed by it with `WS_CLOSE_GOING_AWAY` and its
 controller aborted, so the refusal after the re-read — even one the closing
 database failed — writes nothing more; an upgrade that registers after it is
@@ -895,7 +920,10 @@ heartbeat activity.
 **Per-message authorization phase.** `perform_action` calls
 `apply_authorization_phase` per-message (HTTP and WS uniformly). Role grant
 changes during a connection lifetime are picked up on the next message —
-no in-place refresh, no socket-close on `role_grant_revoke`. Authentication
+no in-place refresh. A revoked global grant of a role the endpoint's
+`required_roles` lists closes the socket (`WS_CLOSE_PERMISSION_REVOKED`,
+through `create_ws_auth_guard`), since nothing else re-checks what it
+receives. Authentication
 invalidation (a session or token revoke, `password_change`, a logout, an
 account delete, a cap eviction) still closes the socket — the revoking
 handler through `connection_closer`, `create_ws_auth_guard` again on the
@@ -1049,11 +1077,16 @@ recent frame each way — every frame, including heartbeats and the responses
 Reconnect policy (exponential backoff): `delay = DEFAULT_RECONNECT_DELAY * DEFAULT_BACKOFF_FACTOR ** (attempts-1)`,
 capped at `DEFAULT_RECONNECT_DELAY_MAX`. Every other close reconnects —
 `WS_CLOSE_OUTBOUND_OVERFLOW` included, the server's notice that this client
-fell behind and missed messages. Two close codes never reconnect:
+fell behind and missed messages. Three close codes never reconnect:
 
 - `WS_CLOSE_SESSION_REVOKED` is **terminal** — sets `revoked`, no reconnect
   loop on 401, and `connect()` becomes a no-op. Pending and queued requests
   reject `unauthenticated`.
+- `WS_CLOSE_PERMISSION_REVOKED` is **closed until the user acts** too — status
+  `closed`, no reconnect scheduled (a reconnect would be refused at the role
+  gate), neither `revoked` nor `superseded` set (the credential is still
+  good), pending and queued requests reject `forbidden`. `last_close_code`
+  says why; `connect()` reopens.
 - `WS_CLOSE_CONNECTION_LIMIT` is **closed until the user acts** — sets
   `superseded` (reactive), status `closed`, no reconnect scheduled: the server
   closed this socket to admit a newer one on the same account, and

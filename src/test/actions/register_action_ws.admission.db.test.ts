@@ -22,7 +22,7 @@ import { assert, describe, test } from 'vitest';
 import { Hono, type Context } from 'hono';
 import type { WSEvents } from 'hono/ws';
 import { z } from 'zod';
-import { Logger } from '@fuzdev/fuz_util/log.ts';
+import { Logger, type LogConsole } from '@fuzdev/fuz_util/log.ts';
 import { wait } from '@fuzdev/fuz_util/async.ts';
 import type { Uuid } from '#lib/primitive_schemas.ts';
 import { assert_rejects } from '@fuzdev/fuz_util/testing.ts';
@@ -40,10 +40,14 @@ import {
 	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_INTERNAL_ERROR,
 	WS_CLOSE_MESSAGE_TOO_BIG,
+	WS_CLOSE_PERMISSION_REVOKED,
+	WS_CLOSE_PERMISSION_REVOKED_REASON,
 	WS_CLOSE_POLICY_VIOLATION,
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON
 } from '#lib/actions/transports.ts';
+import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
+import { query_create_role_grant, query_revoke_role_grant } from '#lib/auth/role_grant_queries.ts';
 import {
 	query_account_soft_delete,
 	query_create_account_with_actor
@@ -57,6 +61,7 @@ import {
 import {
 	AUTH_SESSION_TOKEN_HASH_KEY,
 	build_account_context,
+	build_request_context,
 	create_request_context_middleware,
 	REQUEST_CONTEXT_KEY
 } from '#lib/auth/request_context.ts';
@@ -90,6 +95,14 @@ import {
 const log = new Logger('test', { level: 'off' });
 
 const REVOKED_CLOSE = { code: WS_CLOSE_SESSION_REVOKED, reason: WS_CLOSE_SESSION_REVOKED_REASON };
+const PERMISSION_REVOKED_CLOSE = {
+	code: WS_CLOSE_PERMISSION_REVOKED,
+	reason: WS_CLOSE_PERMISSION_REVOKED_REASON
+};
+
+/** Matches the acting actor's role-grant read the admission role re-read runs. */
+const is_role_grant_read = (sql: string): boolean =>
+	sql.includes('FROM role_grant') && sql.includes('WHERE actor_id = $1');
 
 const echo_spec: RequestResponseActionSpec = {
 	method: 'echo',
@@ -124,12 +137,15 @@ const notification: JsonrpcNotification = {
 
 let account_counter = 0;
 
-const create_account = async (db: Db): Promise<Uuid> => {
-	const { account } = await query_create_account_with_actor(
+const create_account = async (db: Db): Promise<Uuid> =>
+	(await create_account_with_actor(db)).account_id;
+
+const create_account_with_actor = async (db: Db): Promise<{ account_id: Uuid; actor_id: Uuid }> => {
+	const { account, actor } = await query_create_account_with_actor(
 		{ db },
 		{ username: `ws_admission_${account_counter++}`, password_hash: 'hash' }
 	);
-	return account.id;
+	return { account_id: account.id, actor_id: actor.id };
 };
 
 /** A session row on `account_id`: the raw token the cookie carries, and its hash. */
@@ -205,6 +221,8 @@ const create_endpoint = (
 		max_connections_per_account?: number | null;
 		on_socket_open?: (ctx: SocketOpenContext) => void | Promise<void>;
 		max_message_bytes?: number;
+		required_roles?: ReadonlyArray<string>;
+		log?: Logger;
 	} = {}
 ): Endpoint => {
 	const gated = create_gated_db(db);
@@ -229,6 +247,7 @@ const create_endpoint = (
 		db: gated.db,
 		max_connections_per_account: options.max_connections_per_account,
 		max_message_bytes: options.max_message_bytes,
+		required_roles: options.required_roles,
 		on_socket_open: async (ctx) => {
 			opened.push(ctx);
 			await options.on_socket_open?.(ctx);
@@ -237,7 +256,7 @@ const create_endpoint = (
 			closed.push(ctx);
 		},
 		heartbeat: false,
-		log
+		log: options.log ?? log
 	});
 	return {
 		gated,
@@ -310,6 +329,27 @@ const mark_request = (id: number, value: string): unknown => ({
 	method: 'mark',
 	params: { value }
 });
+
+/**
+ * A logger recording the first argument of each `log.info` call — the
+ * message, since the label is left off.
+ */
+const create_recording_log = (): { log: Logger; infos: Array<unknown> } => {
+	const infos: Array<unknown> = [];
+	const recording_console: LogConsole = {
+		error: () => {},
+		warn: () => {},
+		log: (...args: Array<unknown>) => {
+			infos.push(args[0]);
+		}
+	};
+	return { log: new Logger(undefined, { level: 'info', console: recording_console }), infos };
+};
+
+const CREDENTIAL_REVOKED_WHILE_PENDING =
+	'ws upgrade admission: closed by a credential revocation while pending';
+const PERMISSION_REVOKED_WHILE_PENDING =
+	'ws upgrade admission: closed by a permission revocation while pending';
 
 const parse_frames = (fake: FakeWs): Array<Record<string, unknown>> =>
 	fake.sends.map((frame) => JSON.parse(frame));
@@ -572,6 +612,58 @@ describe_db('register_action_ws admission', (get_db) => {
 	});
 
 	describe('a close during the upgrade', () => {
+		test('an account close while pending logs a credential revocation', async () => {
+			const db = get_db();
+			const account_id = await create_account(db);
+			const session = await create_session(db, account_id);
+			const recording = create_recording_log();
+			const endpoint = create_endpoint(db, { log: recording.log });
+			const c = await create_upgrade_context(db, account_id, session);
+
+			const { socket, stalled } = await open_stalled(endpoint, c);
+			endpoint.transport.close_sockets_for_account(account_id);
+			stalled.release();
+			await socket.opening;
+
+			assert.include(recording.infos, CREDENTIAL_REVOKED_WHILE_PENDING);
+		});
+
+		test("the client's answer to a pending close keeps the refusal's reason", async () => {
+			const db = get_db();
+			const account_id = await create_account(db);
+			const session = await create_session(db, account_id);
+			const recording = create_recording_log();
+			const endpoint = create_endpoint(db, { log: recording.log });
+			const c = await create_upgrade_context(db, account_id, session);
+
+			const { socket, stalled } = await open_stalled(endpoint, c);
+			endpoint.transport.close_sockets_for_account(account_id);
+			// the client answers the close frame before the re-read returns, and
+			// its close event removes the registration
+			await socket.close();
+			stalled.release();
+			await socket.opening;
+
+			assert.include(recording.infos, CREDENTIAL_REVOKED_WHILE_PENDING);
+		});
+
+		test('a shutdown while pending logs the shutdown', async () => {
+			const db = get_db();
+			const account_id = await create_account(db);
+			const session = await create_session(db, account_id);
+			const recording = create_recording_log();
+			const endpoint = create_endpoint(db, { log: recording.log });
+			const c = await create_upgrade_context(db, account_id, session);
+
+			const { socket, stalled } = await open_stalled(endpoint, c);
+			endpoint.transport.close_all_sockets();
+			await socket.close();
+			stalled.release();
+			await socket.opening;
+
+			assert.include(recording.infos, 'ws upgrade admission: closed by the shutdown while pending');
+		});
+
 		test('a revocation close reaches the pending connection, which is then refused', async () => {
 			const db = get_db();
 			const account_id = await create_account(db);
@@ -834,6 +926,149 @@ describe_db('register_action_ws admission', (get_db) => {
 
 			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
 			assert.deepStrictEqual(endpoint.handled, []);
+		});
+	});
+
+	describe('the role re-read', () => {
+		/**
+		 * An account with an actor, a session, and a global admin grant, and the
+		 * upgrade context a role-gated endpoint sees: the acting actor's request
+		 * context, its grants read while the grant was active — what the gate in
+		 * front admitted on.
+		 */
+		const create_admin_upgrade = async (
+			db: Db,
+			grant: { scope_id?: Uuid } = {}
+		): Promise<{ account_id: Uuid; actor_id: Uuid; role_grant_id: Uuid; c: Context }> => {
+			const { account_id, actor_id } = await create_account_with_actor(db);
+			const session = await create_session(db, account_id);
+			const role_grant = await query_create_role_grant(
+				{ db },
+				{
+					actor_id,
+					role: ROLE_ADMIN,
+					scope_kind: grant.scope_id ? 'space' : null,
+					scope_id: grant.scope_id ?? null,
+					granted_by: null
+				}
+			);
+			const c = await create_upgrade_context(db, account_id, session);
+			const request_context = await build_request_context({ db }, account_id, actor_id);
+			assert.ok(request_context);
+			c.set(REQUEST_CONTEXT_KEY, request_context);
+			return { account_id, actor_id, role_grant_id: role_grant.id, c };
+		};
+
+		test('a held role is admitted, and the registration carries the endpoint roles', async () => {
+			const db = get_db();
+			const { account_id, c } = await create_admin_upgrade(db);
+			const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
+
+			const socket = await open_socket(endpoint, c);
+			await socket.opening;
+
+			assert.deepStrictEqual(socket.fake.closes, []);
+			assert.strictEqual(endpoint.transport.get_connection_count(), 1);
+			assert.deepStrictEqual(endpoint.opened[0]!.identity.required_roles, [ROLE_ADMIN]);
+			// the role close reaches it: the role was recorded on the registration
+			assert.strictEqual(endpoint.transport.close_sockets_for_role(account_id, ROLE_ADMIN), 1);
+			assert.deepStrictEqual(socket.fake.closes, [PERMISSION_REVOKED_CLOSE]);
+		});
+
+		test('a role revoked during the upgrade is closed with 4006 — the re-read alone', async () => {
+			const db = get_db();
+			const { actor_id, role_grant_id, c } = await create_admin_upgrade(db);
+			const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
+
+			const { socket, stalled } = await open_stalled(endpoint, c);
+			// the grant goes and *no* close is delivered — the shape of a role
+			// revocation whose close ran before the connection registered; the
+			// request context still lists the grant, as the gate saw it
+			assert.ok(await query_revoke_role_grant({ db }, role_grant_id, actor_id, null));
+			stalled.release();
+			await socket.opening;
+
+			assert.deepStrictEqual(socket.fake.closes, [PERMISSION_REVOKED_CLOSE]);
+			assert.deepStrictEqual(socket.fake.sends, [], 'nothing is written to a refused socket');
+			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
+			assert.deepStrictEqual(endpoint.opened, []);
+		});
+
+		test('a scoped grant of the role does not admit', async () => {
+			const db = get_db();
+			const { c } = await create_admin_upgrade(db, {
+				scope_id: '33333333-3333-4333-8333-333333333333' as Uuid
+			});
+			const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
+
+			const socket = await open_socket(endpoint, c);
+			await socket.opening;
+
+			assert.deepStrictEqual(socket.fake.closes, [PERMISSION_REVOKED_CLOSE]);
+			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+		});
+
+		test('a role close while pending refuses with 4006, not a revocation', async () => {
+			const db = get_db();
+			const { account_id, c } = await create_admin_upgrade(db);
+			const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
+
+			const { socket, stalled } = await open_stalled(endpoint, c);
+			assert.strictEqual(endpoint.transport.close_sockets_for_role(account_id, ROLE_ADMIN), 1);
+			stalled.release();
+			await socket.opening;
+
+			assert.deepStrictEqual(socket.fake.closes, [PERMISSION_REVOKED_CLOSE]);
+			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+			assert.strictEqual(endpoint.transport.get_pending_connection_count(), 0);
+			assert.deepStrictEqual(endpoint.opened, []);
+		});
+
+		test('a role close while pending logs a permission revocation', async () => {
+			const db = get_db();
+			const { account_id, c } = await create_admin_upgrade(db);
+			const recording = create_recording_log();
+			const endpoint = create_endpoint(db, {
+				required_roles: [ROLE_ADMIN],
+				log: recording.log
+			});
+
+			const { socket, stalled } = await open_stalled(endpoint, c);
+			endpoint.transport.close_sockets_for_role(account_id, ROLE_ADMIN);
+			stalled.release();
+			await socket.opening;
+
+			assert.include(recording.infos, PERMISSION_REVOKED_WHILE_PENDING);
+			assert.notInclude(recording.infos, CREDENTIAL_REVOKED_WHILE_PENDING);
+		});
+
+		test('a failing role re-read refuses with 1011', async () => {
+			const db = get_db();
+			const { c } = await create_admin_upgrade(db);
+			const endpoint = create_endpoint(db, { required_roles: [ROLE_ADMIN] });
+
+			const { socket, stalled } = await open_stalled(endpoint, c, is_role_grant_read);
+			stalled.fail(new Error('synthetic role read failure'));
+			await socket.opening;
+
+			assert.deepStrictEqual(socket.fake.closes, [
+				{ code: WS_CLOSE_INTERNAL_ERROR, reason: 'internal error' }
+			]);
+			assert.strictEqual(endpoint.transport.get_connection_count(), 0);
+		});
+
+		test('an ungated endpoint reads no role', async () => {
+			const db = get_db();
+			const { actor_id, role_grant_id, c } = await create_admin_upgrade(db);
+			assert.ok(await query_revoke_role_grant({ db }, role_grant_id, actor_id, null));
+			const endpoint = create_endpoint(db);
+
+			const socket = await open_socket(endpoint, c);
+			await socket.opening;
+
+			assert.deepStrictEqual(socket.fake.closes, []);
+			assert.deepStrictEqual(endpoint.opened[0]!.identity.required_roles, []);
 		});
 	});
 

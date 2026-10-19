@@ -110,6 +110,7 @@ const create_harness = (): Harness => {
 				},
 				close_sockets_for_token: sessions_only,
 				close_sockets_for_account: sessions_only,
+				close_sockets_for_role: sessions_only,
 				close_all_sockets: sessions_only
 			}
 		},

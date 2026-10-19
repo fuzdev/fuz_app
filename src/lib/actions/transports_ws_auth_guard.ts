@@ -28,11 +28,16 @@
  * two cannot drift into closing a revoked token's socket while leaving its
  * stream open.
  *
- * `role` is the one scope this guard deliberately does not act on:
- * `perform_action` re-authorizes every message, so a socket whose account just
- * lost the gating role is refused at its next message, and closing it would
- * only change when the caller learns. A stream has no later check, so the SSE
- * guard closes there.
+ * `role` closes the target account's sockets whose endpoint gated the upgrade
+ * on the revoked role (`close_sockets_for_role`), with
+ * `WS_CLOSE_PERMISSION_REVOKED`, when the revoked grant was global
+ * (`to_global_role_revocation` — a role gate admits on global grants only).
+ * `perform_action` re-authorizes every *request* against its own action, but
+ * the role gate is the only check on what the socket *receives*: broadcasts
+ * and notifications reach every admitted connection of the endpoint with no
+ * per-recipient filter, so a socket left open past the revocation would keep
+ * receiving what the gate exists to withhold. The role is the only revocation
+ * no handler closes for, so this guard is its one closer.
  *
  * For standard WS endpoints mounted via `AppServerOptions.ws_endpoints`,
  * `create_app_server` registers the guard automatically per
@@ -48,7 +53,11 @@
 import type { Logger } from '@fuzdev/fuz_util/log.ts';
 import { UnreachableError } from '@fuzdev/fuz_util/error.ts';
 
-import { to_revocation_scope, type AuditLogEvent } from '../auth/audit_log_schema.ts';
+import {
+	to_global_role_revocation,
+	to_revocation_scope,
+	type AuditLogEvent
+} from '../auth/audit_log_schema.ts';
 import type { ConnectionCloser } from './connection_closer.ts';
 
 /**
@@ -71,7 +80,9 @@ export type AuditEventHandler = (event: AuditLogEvent) => void;
  * - `account` → `close_sockets_for_account(target_account_id ?? account_id)`
  *   — `logout`, `password_change`, `session_revoke_all`, `token_revoke_all`,
  *   `account_delete`, `account_purge`
- * - `role` → nothing, deliberately (module doc)
+ * - `role` → `close_sockets_for_role(target_account_id ?? account_id,
+ *   metadata.role)` when the revoked grant was global; a scoped revoke closes
+ *   nothing (module doc)
  * - `none` → nothing — every other event, and any event type fuz_app does not
  *   define
  *
@@ -97,10 +108,18 @@ export const create_ws_auth_guard = (closer: ConnectionCloser, log: Logger): Aud
 		switch (scope) {
 			case 'none':
 				return;
-			// A decision, not a fallthrough: per-message dispatch re-authorizes,
-			// so the next message is refused. The SSE guard closes on this scope.
-			case 'role':
+			case 'role': {
+				// global grants only — a role gate never admitted on a scoped one
+				const revoked = to_global_role_revocation(event);
+				if (!revoked) return;
+				const closed = closer.close_sockets_for_role(revoked.account_id, revoked.role);
+				if (closed > 0) {
+					log.info(
+						`WS auth guard: closed ${closed} socket(s) gated on ${revoked.role} for account ${revoked.account_id} (${event.event_type})`
+					);
+				}
 				return;
+			}
 			case 'session': {
 				const session_id = event.metadata?.session_id;
 				if (typeof session_id !== 'string' || session_id.length === 0) return;

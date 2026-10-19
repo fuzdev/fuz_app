@@ -52,7 +52,7 @@ const create_audit_event = create_test_audit_event;
 describe('create_sse_connection_closer', () => {
 	test('each close reaches the streams registered under that identity, pending included', () => {
 		const registry = new SubscriberRegistry<string>();
-		const closer = create_sse_connection_closer(registry);
+		const closer = create_sse_connection_closer(registry, 'admin');
 		const account_id = create_uuid();
 		const other_account_id = create_uuid();
 
@@ -82,9 +82,33 @@ describe('create_sse_connection_closer', () => {
 		assert.strictEqual(registry.pending_count, 0);
 	});
 
+	test('close_sockets_for_role closes the account streams when the role is the gating one', () => {
+		const registry = new SubscriberRegistry<string>();
+		const closer = create_sse_connection_closer(registry, 'admin');
+		const account_id = create_uuid();
+		const stream = create_mock_stream<string>();
+		registry.subscribe(stream, { scope: 'session-hash-1', groups: [account_id] });
+		const other = create_mock_stream<string>();
+		registry.subscribe(other, { scope: 'session-hash-2', groups: [create_uuid()] });
+
+		assert.strictEqual(closer.close_sockets_for_role(account_id, 'keeper'), 0);
+		assert.ok(!stream.closed, 'a role the streams are not gated on closes nothing');
+		assert.strictEqual(closer.close_sockets_for_role(account_id, 'admin'), 1);
+		assert.ok(stream.closed);
+		assert.ok(!other.closed);
+
+		// a registry whose streams are not role-gated has nothing to close by role
+		const ungated_registry = new SubscriberRegistry<string>();
+		const ungated = create_mock_stream<string>();
+		ungated_registry.subscribe(ungated, { scope: 'session-hash-3', groups: [account_id] });
+		const ungated_closer = create_sse_connection_closer(ungated_registry, null);
+		assert.strictEqual(ungated_closer.close_sockets_for_role(account_id, 'admin'), 0);
+		assert.ok(!ungated.closed);
+	});
+
 	test('close_all_sockets closes every stream of the registry', () => {
 		const registry = new SubscriberRegistry<string>();
-		const closer = create_sse_connection_closer(registry);
+		const closer = create_sse_connection_closer(registry, 'admin');
 		const scoped = create_mock_stream<string>();
 		registry.subscribe(scoped, { scope: 'session-hash-1', groups: [create_uuid()] });
 		const anonymous = create_mock_stream<string>();

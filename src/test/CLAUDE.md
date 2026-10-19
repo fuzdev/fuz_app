@@ -246,6 +246,16 @@ isolation, never-reply `Timeout`, wrong-shape rejection, client-error
 forwarding, HTTP no-transport); gated on `capabilities.peer_request`, now `true`
 on both the Rust `spine_stub` and the TS spines (the
 `BackendWebsocketTransport.request_connection` path)),
+`ws_role_gated.cross.test.ts` (the real-upgrade
+`describe_ws_role_gated_cross_tests` suite — both spines mount a second,
+role-gated WS endpoint beside `/api/ws`; a revoked global grant of a gating role
+closes the account's gated socket with `WS_CLOSE_PERMISSION_REVOKED`, leaves its
+ungated socket open, refuses a re-upgrade with 403, and a scoped revoke closes
+nothing; gated on `capabilities.ws_role_gated`),
+`role_grant_offer_notification_ws_gated.cross.test.ts` (the role-grant-offer
+notification suite again, over the role-gated endpoint with
+`ws_required_roles` declared — the revoke case expects the close; gated on
+`capabilities.ws_role_gated`),
 `ws_inbound_dispatch.cross.test.ts` (the real-upgrade
 `describe_ws_inbound_dispatch_cross_tests` suite — a request reusing a live id
 refused `invalid_request` / `duplicate_request_id`, and one past the per-socket
@@ -504,7 +514,7 @@ backends:
   suites (default `gro test`) never cross a process boundary. All three mount
   their WebSocket endpoint through `create_app_server`'s `ws_endpoints`;
   `testing_spine_server.db.test.ts` (plain `gro test`) builds the Node app
-  in-process and pins its surface — `/api/ws` listed, the surface invariants
+  in-process and pins its surface — `/api/ws` and the role-gated `/api/gated/ws` listed, the surface invariants
   passing.
 - `cross_backend_rust_spine_stub` — the Rust `testing_spine_stub`. Its
   `globalSetup` rebuilds the crate and creates its Postgres DB by default

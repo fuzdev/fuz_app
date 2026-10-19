@@ -36,6 +36,8 @@ import {
 	WS_CLOSE_GOING_AWAY_REASON,
 	WS_CLOSE_OUTBOUND_OVERFLOW,
 	WS_CLOSE_OUTBOUND_OVERFLOW_REASON,
+	WS_CLOSE_PERMISSION_REVOKED,
+	WS_CLOSE_PERMISSION_REVOKED_REASON,
 	WS_CLOSE_SESSION_REVOKED
 } from '#lib/actions/transports.ts';
 import { cancel_action_spec } from '#lib/actions/cancel.ts';
@@ -777,6 +779,72 @@ describe('revoked getter', () => {
 
 		assert.strictEqual(client.status, 'closed');
 		assert.strictEqual(client.revoked, false);
+	});
+});
+
+describe('permission revoked', () => {
+	test('WS_CLOSE_PERMISSION_REVOKED closes without reconnecting, revoking, or superseding', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+
+		last_ws().fire_close(WS_CLOSE_PERMISSION_REVOKED, WS_CLOSE_PERMISSION_REVOKED_REASON);
+		assert.strictEqual(client.status, 'closed');
+		// the credential is still good — the session is not lost
+		assert.strictEqual(client.revoked, false);
+		assert.strictEqual(client.superseded, false);
+		assert.strictEqual(client.ws, null);
+		assert.strictEqual(client.last_close_code, WS_CLOSE_PERMISSION_REVOKED);
+		assert.strictEqual(client.last_close_reason, WS_CLOSE_PERMISSION_REVOKED_REASON);
+		assert.strictEqual(socket_status_to_async_status(client.status, client.revoked), 'initial');
+
+		// a reconnect would be refused at the role gate
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
+		assert.strictEqual(MockWebSocket.instances.length, 1);
+		assert.strictEqual(client.status, 'closed');
+
+		// an explicit connect() reopens — `connect` is not a no-op as after 4001
+		client.connect();
+		assert.strictEqual(MockWebSocket.instances.length, 2);
+		assert.strictEqual(client.status, 'connecting');
+	});
+
+	test('a permission-revoked close during a reconnect loop cancels it', () => {
+		vi.useFakeTimers();
+		const client = new FrontendWebsocketClient(TEST_URL);
+		client.connect();
+		last_ws().fire_open();
+		last_ws().fire_close(1006);
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY);
+		assert.strictEqual(client.reconnect_count, 1);
+
+		last_ws().fire_close(WS_CLOSE_PERMISSION_REVOKED);
+		assert.strictEqual(client.status, 'closed');
+		assert.strictEqual(client.reconnect_count, 0);
+		vi.advanceTimersByTime(DEFAULT_RECONNECT_DELAY_MAX * 2);
+		assert.strictEqual(MockWebSocket.instances.length, 2);
+	});
+
+	test('rejects in-flight and queued requests with forbidden', async () => {
+		const client = new FrontendWebsocketClient(TEST_URL);
+		const queued = client.request('queued', {});
+		client.connect();
+		last_ws().fire_close(WS_CLOSE_PERMISSION_REVOKED);
+
+		const queued_err = await assert_rejects(() => queued, /permission revoked/);
+		assert.instanceOf(queued_err, ThrownJsonrpcError);
+		assert.strictEqual(queued_err.code, JSONRPC_ERROR_CODES.forbidden);
+
+		client.connect();
+		last_ws().fire_open();
+		const in_flight = client.request('in_flight', {});
+		last_ws().fire_close(WS_CLOSE_PERMISSION_REVOKED);
+
+		const in_flight_err = await assert_rejects(() => in_flight, /permission revoked/);
+		assert.instanceOf(in_flight_err, ThrownJsonrpcError);
+		assert.strictEqual(in_flight_err.code, JSONRPC_ERROR_CODES.forbidden);
+		assert.strictEqual(client.revoked, false, 'requests after it are not refused as revoked');
 	});
 });
 

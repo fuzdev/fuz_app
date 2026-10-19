@@ -9,7 +9,10 @@
  * something closes it. `ConnectionCloser` is that capability, and every
  * revocation handler holds one: the session and token revokes, the revoke-alls,
  * account delete and purge, `/logout`, `/password`, and the session and token
- * caps for what they evict. The auth cleanup holds one too
+ * caps for what they evict. A role revocation is the exception: it closes
+ * only the connections an endpoint gated on that role, and only through the
+ * audit listeners (`create_ws_auth_guard`, `create_sse_auth_guard`) — no
+ * handler holds a closer for it. The auth cleanup holds one too
  * (`AuthCleanupDeps.connection_closer`): its session sweep closes the
  * connections of each expired session it deletes, after that delete commits.
  *
@@ -75,6 +78,20 @@ export interface ConnectionCloser {
 	 */
 	close_sockets_for_account: (account_id: Uuid) => number;
 	/**
+	 * Close the connections of `account_id` whose endpoint gated them on
+	 * `role` — the close for a revoked **global** grant of that role (a scoped
+	 * grant never admits at a role gate, so revoking one closes nothing; the
+	 * caller filters, `to_global_role_revocation`). A WebSocket gets
+	 * `WS_CLOSE_PERMISSION_REVOKED`, not a revocation's code: the credential is
+	 * still good.
+	 *
+	 * **Over-closes an any-of gate**: a connection whose endpoint listed
+	 * several roles closes on the loss of any of them, whether or not the
+	 * account still holds another. The client reconnects into the gate if it
+	 * still qualifies.
+	 */
+	close_sockets_for_role: (account_id: Uuid, role: string) => number;
+	/**
 	 * Close every connection, whoever opened it — the shutdown close
 	 * `AppServer.close` runs. Not a revocation: a WebSocket gets
 	 * `WS_CLOSE_GOING_AWAY`, so its client reconnects rather than treating
@@ -87,13 +104,16 @@ export interface ConnectionCloser {
 
 /**
  * Which connections a revocation closes — the argument of
- * `queue_connection_close`, one variant per credential close of
+ * `queue_connection_close`, one variant per revocation close of
  * `ConnectionCloser` (`close_all_sockets` is shutdown, never a revocation).
+ * No handler queues `role` today: the audit listeners are a role's only
+ * closer.
  */
 export type ConnectionCloseTarget =
 	| { kind: 'session'; session_token_hash: string }
 	| { kind: 'token'; api_token_id: string }
-	| { kind: 'account'; account_id: Uuid };
+	| { kind: 'account'; account_id: Uuid }
+	| { kind: 'role'; account_id: Uuid; role: string };
 
 /**
  * Close the connections `target` names, now.
@@ -114,6 +134,8 @@ export const close_connections = (
 			return closer.close_sockets_for_token(target.api_token_id);
 		case 'account':
 			return closer.close_sockets_for_account(target.account_id);
+		case 'role':
+			return closer.close_sockets_for_role(target.account_id, target.role);
 		default:
 			throw new UnreachableError(target);
 	}
@@ -153,6 +175,7 @@ export const noop_connection_closer: ConnectionCloser = Object.freeze({
 	close_sockets_for_session: () => 0,
 	close_sockets_for_token: () => 0,
 	close_sockets_for_account: () => 0,
+	close_sockets_for_role: () => 0,
 	close_all_sockets: () => 0
 });
 
@@ -243,6 +266,8 @@ export const create_realtime_closer = (): RealtimeCloser => {
 			fan_out((member) => member.close_sockets_for_token(api_token_id)),
 		close_sockets_for_account: (account_id: Uuid): number =>
 			fan_out((member) => member.close_sockets_for_account(account_id)),
+		close_sockets_for_role: (account_id: Uuid, role: string): number =>
+			fan_out((member) => member.close_sockets_for_role(account_id, role)),
 		close_all_sockets: (): number => fan_out((member) => member.close_all_sockets())
 	});
 };

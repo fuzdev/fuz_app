@@ -76,9 +76,10 @@ export const RUST_SPINE_STUB_EXPECTED_SCHEMA_PATH_ENV = 'FUZ_RUST_SPINE_STUB_EXP
  * plus `sse` (the stub serves `GET /api/admin/audit/stream` over the spine
  * `fuz_realtime::SseRegistry` + audit listener), `ready` (it live-mounts
  * `/ready` over the env-supplied fixture path), `ws_account_actions` (it
- * serves one action registry on `/api/rpc` and `/api/ws`), and
- * `cell_gated_create` (it
- * mounts the `TestCellGatedCreateAuthorize` policy on its cell layer). Named
+ * serves one action registry on `/api/rpc` and `/api/ws`), `cell_gated_create`
+ * (it mounts the `TestCellGatedCreateAuthorize` policy on its cell layer), and
+ * `ws_role_gated` (it mounts the role-gated WS endpoint at
+ * `SPINE_ROLE_GATED_WS_PATH`, sharing its connection registry). Named
  * (not inline) so every spine preset is greppable, mirroring
  * `ts_spine_capabilities`.
  */
@@ -87,7 +88,8 @@ const rust_spine_stub_capabilities = Object.freeze({
 	sse: true,
 	ready: true,
 	ws_account_actions: true,
-	cell_gated_create: true
+	cell_gated_create: true,
+	ws_role_gated: true
 });
 
 /** Default listening port — slots beside zzz's 1175/1176; matches the binary's `DEFAULT_PORT`. */

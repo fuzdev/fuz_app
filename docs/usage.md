@@ -647,8 +647,8 @@ event_specs: audit_log_event_specs,
 Streams close two ways. The revocation handlers close them directly, once
 their transaction commits, through the `connection_closer` the registry joined
 — that close does not depend on the audit write. The guard repeats it when the
-audit row is announced: `role_grant_revoke` (role match — the guard is the only
-closer for this one), `session_revoke` (session-scoped), `token_revoke`
+audit row is announced: `role_grant_revoke` of a global grant (role match —
+the guard is the only closer for this one), `session_revoke` (session-scoped), `token_revoke`
 (token-scoped), and the account-wide events (`session_revoke_all`,
 `token_revoke_all`, `password_change`, `logout`, `account_delete`,
 `account_purge`). Events with `outcome='failure'` are ignored (they may carry
@@ -988,14 +988,17 @@ The guard closes by the `RevocationScope` each audit event declares
 (`audit_event_revocation_scopes`): one session for `session_revoke`, one token
 for `token_revoke`, and the whole account for `session_revoke_all`,
 `token_revoke_all`, `password_change`, `logout`, `account_delete`, and
-`account_purge`. It ignores `outcome === 'failure'` events to avoid acting on
-attacker-controlled identifiers, and deliberately does not close on
-`role_grant_revoke` (the next message is re-authorized) — see
-`actions/transports_ws_auth_guard.ts` for the full rationale. It accepts any
+`account_purge`; and for `role_grant_revoke` of a global grant, the account's
+sockets on endpoints whose `required_roles` list the role, with
+`WS_CLOSE_PERMISSION_REVOKED` (a socket admitted by a role gate receives every
+push its endpoint sends, which no message dispatch re-checks). It ignores
+`outcome === 'failure'` events to avoid acting on attacker-controlled
+identifiers — see `actions/transports_ws_auth_guard.ts` for the full
+rationale. It accepts any
 `ConnectionCloser`, so one guard over `backend.deps.connection_closer` covers
 every transport.
 
-A socket is admitted only after its credential is re-read once the handshake completes: frames sent meanwhile wait and dispatch in order, a credential revoked mid-upgrade closes with `WS_CLOSE_SESSION_REVOKED`, and nothing the server pushes reaches the socket until then (./security.md §Connection Admission).
+A socket is admitted only after its credential is re-read once the handshake completes: frames sent meanwhile wait and dispatch in order, a credential revoked mid-upgrade closes with `WS_CLOSE_SESSION_REVOKED`, a role in `required_roles` revoked mid-upgrade with `WS_CLOSE_PERMISSION_REVOKED`, and nothing the server pushes reaches the socket until then (./security.md §Connection Admission). On the client, `FrontendWebsocketClient` stays closed after a `WS_CLOSE_PERMISSION_REVOKED` close until `connect()` is called — a reconnect would be refused at the role gate — without setting `revoked` or `superseded`, and rejects its pending and queued requests with `forbidden`; `last_close_code` says why.
 
 An account holds at most `DEFAULT_MAX_CONNECTIONS_PER_ACCOUNT` (50) connections on a transport. One more is always admitted, and the account's oldest is closed with `WS_CLOSE_CONNECTION_LIMIT` to make room. Pass `max_connections_per_account` to change the cap (`null` disables it) — on `register_ws_endpoint` / `WsEndpointSpec` for the transport the mount creates, or on your own `new BackendWebsocketTransport({max_connections_per_account})`; passing both the option and a `transport` throws. On the client, `FrontendWebsocketClient` treats that close as closed-until-the-user-acts: it doesn't reconnect (that would close a newer socket in turn), it isn't `revoked`, and `superseded` turns `true` until the next `connect()`:
 

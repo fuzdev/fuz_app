@@ -54,10 +54,19 @@
  * admits a revoked credential; `docs/security.md` §Connection Admission says
  * what that rests on.
  *
+ * An endpoint gated on `required_roles` re-reads them beside the credential:
+ * its upgrade passed the role gate before the socket registered, so a role
+ * revocation landing in between would close nothing (`close_sockets_for_role`
+ * matches registrations), and the socket would be admitted without the role
+ * for its lifetime. The re-read reads the acting actor's grants afresh and
+ * admits on a global grant of any listed role, as the gate did.
+ *
  * A refused upgrade is closed with `WS_CLOSE_SESSION_REVOKED` (4001, the
- * reason a revoked socket gets), or `WS_CLOSE_INTERNAL_ERROR` (1011) when the
- * re-read itself failed — fail closed, never admitted unchecked. The handshake
- * has already answered `101`, so a refusal can only be a close frame.
+ * reason a revoked socket gets) for a dead credential,
+ * `WS_CLOSE_PERMISSION_REVOKED` (4006) for a lost role, or
+ * `WS_CLOSE_INTERNAL_ERROR` (1011) when either re-read itself failed — fail
+ * closed, never admitted unchecked. The handshake has already answered `101`,
+ * so a refusal can only be a close frame.
  *
  * Once the server is shutting down (`AppServer.close` ran the transport's
  * `close_all_sockets`) a refusal is `WS_CLOSE_GOING_AWAY` instead, so the
@@ -74,9 +83,6 @@
  * `MAX_PRE_ADMISSION_FRAMES` frames and
  * `PRE_ADMISSION_QUEUE_BYTES_FACTOR` × `max_message_bytes` bytes; past either
  * the socket is closed.
- *
- * The upgrade's role gate is *not* re-read: a role revocation closes no
- * WebSocket in the first place (per-message dispatch re-reads role grants).
  *
  * ## A server-closed socket dispatches nothing
  *
@@ -103,10 +109,13 @@ import type { Uuid } from '../primitive_schemas.ts';
 
 import {
 	get_request_context,
+	has_any_scoped_role,
+	refresh_role_grants,
 	require_request_context,
 	token_scope_surface_denial,
 	type RequestContext
 } from '../auth/request_context.ts';
+import type { RoleName } from '../auth/role_schema.ts';
 import { get_resolved_auth, revalidate_resolved_auth } from '../auth/resolved_auth.ts';
 import { get_client_ip } from '../http/client_ip.ts';
 import { flush_pending_effects, flush_post_commit_effects } from '../http/pending_effects.ts';
@@ -136,8 +145,11 @@ import type { RealtimeCloser } from './connection_closer.ts';
 import { cancel_action_spec, CancelNotificationParams } from './cancel.ts';
 import {
 	DEFAULT_WS_MAX_MESSAGE_BYTES,
+	WS_CLOSE_GOING_AWAY,
 	WS_CLOSE_INTERNAL_ERROR,
 	WS_CLOSE_MESSAGE_TOO_BIG,
+	WS_CLOSE_PERMISSION_REVOKED,
+	WS_CLOSE_PERMISSION_REVOKED_REASON,
 	WS_CLOSE_POLICY_VIOLATION,
 	WS_CLOSE_SERVER_HEARTBEAT_TIMEOUT,
 	WS_CLOSE_SESSION_REVOKED,
@@ -370,6 +382,19 @@ export interface RegisterActionWsOptions {
 	 */
 	db: Db;
 	/**
+	 * The roles the endpoint's upgrade gate requires (any-of) — what
+	 * `register_ws_endpoint` mounts as `require_role(required_roles)` ahead of
+	 * this handler. Recorded on every registration
+	 * (`ConnectionIdentity.required_roles`), so a revoked global grant of a
+	 * listed role closes the socket (`close_sockets_for_role`), and re-read at
+	 * admission against the acting actor's grants, so a revocation that landed
+	 * between the gate and the registration refuses the upgrade with
+	 * `WS_CLOSE_PERMISSION_REVOKED`. This handler does not gate on it before
+	 * the upgrade; mount the 403 gate in front (`register_ws_endpoint` does).
+	 * Omit, or pass `[]`, for an ungated endpoint.
+	 */
+	required_roles?: ReadonlyArray<RoleName>;
+	/**
 	 * Existing transport to register connections with. When omitted, a fresh
 	 * one is created and returned in the result. Pass your own to keep a
 	 * handle for `create_ws_auth_guard` and `send_to`/`broadcast`.
@@ -510,8 +535,12 @@ export interface RegisterActionWsResult {
  *   on the audit row.
  * - Admission re-reads the credential once, after the handshake: a socket
  *   whose session or token was revoked while it was upgrading closes with
- *   `WS_CLOSE_SESSION_REVOKED`, and one whose re-check failed with
+ *   `WS_CLOSE_SESSION_REVOKED`, one that lost a role `required_roles` lists
+ *   with `WS_CLOSE_PERMISSION_REVOKED`, and one whose re-check failed with
  *   `WS_CLOSE_INTERNAL_ERROR`. Frames sent before admission wait for it.
+ * - A revoked global grant of a role `required_roles` lists closes the
+ *   account's sockets on this endpoint with `WS_CLOSE_PERMISSION_REVOKED`,
+ *   through `create_ws_auth_guard`; nothing more is sent on them.
  * - A socket the server has closed dispatches nothing more, whether or not
  *   its client answers the close.
  * - Every frame sent — responses, error frames, notifications — goes through
@@ -559,7 +588,8 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 		on_socket_open,
 		on_socket_close,
 		action_ip_rate_limiter,
-		action_account_rate_limiter
+		action_account_rate_limiter,
+		required_roles = []
 	} = options;
 
 	const transport =
@@ -699,7 +729,12 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// read it — by the time the hook runs the transport record is gone,
 			// removed in `onClose` or earlier by a revocation, a connection-cap
 			// eviction, or another server-side close.
-			const identity: ConnectionIdentity = { token_hash, account_id, api_token_id };
+			const identity: ConnectionIdentity = {
+				token_hash,
+				account_id,
+				api_token_id,
+				required_roles
+			};
 			// Captured on open, consumed on close. Undefined before onOpen
 			// fires or when a consumer never opens (e.g. immediate disconnect).
 			let captured_connection_id: Uuid | undefined;
@@ -718,6 +753,10 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 			// Whether the connection was ever admitted — gates `on_socket_close`,
 			// the counterpart of an `on_socket_open` a refused socket never ran.
 			let was_admitted = false;
+			// The code the transport closed the pending registration with, taken
+			// before `onClose` removes it: the client's answer to that close can
+			// arrive before the re-read returns.
+			let pending_close_code: number | null = null;
 
 			// Frames received while `opening`, in arrival order — dispatched once
 			// the socket is open, dropped if it ends first. Each carries the
@@ -824,7 +863,8 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					token_hash,
 					account_id,
 					api_token_id,
-					socket_abort_controller
+					socket_abort_controller,
+					required_roles
 				);
 				captured_connection_id = connection_id;
 
@@ -846,10 +886,20 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 
 				if (!upgrade_preset) {
 					let credential_is_live: boolean;
+					let role_is_held = true;
 					try {
 						// pool-level `db`: the statements must see every revocation
 						// committed before they start
 						credential_is_live = await revalidate_resolved_auth({ db }, resolved);
+						// Global grants only, like the gate in front: a scoped grant
+						// never admitted this socket.
+						if (credential_is_live && required_roles.length > 0) {
+							role_is_held = has_any_scoped_role(
+								await refresh_role_grants(upgrade_context, { db }),
+								required_roles,
+								null
+							);
+						}
 					} catch (error) {
 						// fail closed — never admitted unchecked. During shutdown the
 						// database may close under the re-read; that is the shutdown's
@@ -857,7 +907,7 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 						if (transport.is_closing()) {
 							log.info('ws upgrade admission: re-check ended by the shutdown', error);
 						} else {
-							log.error('ws upgrade admission: credential re-check failed', error);
+							log.error('ws upgrade admission: credential or role re-check failed', error);
 						}
 						refuse_upgrade(ws, WS_CLOSE_INTERNAL_ERROR, 'internal error');
 						return null;
@@ -871,18 +921,30 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 						refuse_upgrade(ws, WS_CLOSE_SESSION_REVOKED, WS_CLOSE_SESSION_REVOKED_REASON);
 						return null;
 					}
+					if (!role_is_held) {
+						log.info(
+							'ws upgrade admission: role revoked during the upgrade',
+							connection_id,
+							account_id
+						);
+						refuse_upgrade(ws, WS_CLOSE_PERMISSION_REVOKED, WS_CLOSE_PERMISSION_REVOKED_REASON);
+						return null;
+					}
 				}
 
 				// The cap's eviction happens here, after every gate and the re-read,
 				// so a refused upgrade never closes someone else's socket.
 				if (!transport.admit(connection_id)) {
-					// chosen from the transport's state now, not why the entry closed — the
-					// abort carries no per-entry reason, so an entry a revocation closed logs as
-					// closed by the shutdown when the shutdown began before this check
+					// why the entry closed, from the code the transport closed it with
+					const code = pending_close_code ?? transport.take_pending_close_code(connection_id);
 					log.info(
-						transport.is_closing()
-							? 'ws upgrade admission: closed by the shutdown while pending'
-							: 'ws upgrade admission: closed by a revocation while pending',
+						code === WS_CLOSE_PERMISSION_REVOKED
+							? 'ws upgrade admission: closed by a permission revocation while pending'
+							: code === WS_CLOSE_SESSION_REVOKED
+								? 'ws upgrade admission: closed by a credential revocation while pending'
+								: code === WS_CLOSE_GOING_AWAY || transport.is_closing()
+									? 'ws upgrade admission: closed by the shutdown while pending'
+									: 'ws upgrade admission: ended while pending',
 						connection_id,
 						account_id
 					);
@@ -1280,7 +1342,12 @@ export const register_action_ws = (options: RegisterActionWsOptions): RegisterAc
 					// the hook is awaited: the socket is gone, so a slow hook must not
 					// keep a dead entry that broadcasts still target and the
 					// per-account cap still counts.
-					if (captured_connection_id) transport.remove_connection(captured_connection_id);
+					if (captured_connection_id) {
+						if (!was_admitted) {
+							pending_close_code = transport.take_pending_close_code(captured_connection_id);
+						}
+						transport.remove_connection(captured_connection_id);
+					}
 					if (on_socket_close && captured_connection_id && was_admitted) {
 						try {
 							await on_socket_close({

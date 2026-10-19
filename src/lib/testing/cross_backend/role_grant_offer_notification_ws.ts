@@ -39,6 +39,12 @@ import '../assert_dev_env.ts';
  * guard), and accept stays idempotent on the role_grant while still superseding
  * pending siblings. Gated on `capabilities.ws`.
  *
+ * The revoke case revokes the revokee's only `ROLE_ADMIN` grant. On an endpoint
+ * gated on that role (`ws_required_roles`) the revokee's socket loses its
+ * access by the same revoke: it is closed with `WS_CLOSE_PERMISSION_REVOKED`,
+ * and the notification may or may not reach it first (nothing orders the two),
+ * so the case asserts the close there and the frame on an ungated endpoint.
+ *
  * Cross-process only: `create_admitted_ws_transport` needs a real bound socket, so wire
  * it from a `*.cross.test.ts` file, never an in-process setup. Authed cookies
  * come from the per-account session minted by `fixture.create_account` /
@@ -53,6 +59,7 @@ import { rpc_call } from '../rpc_helpers.ts';
 import { create_admitted_ws_transport } from '../transports/ws_transport.ts';
 import { is_notification_with } from '../transports/ws_client.ts';
 import { ROLE_ADMIN } from '../../auth/role_schema.ts';
+import { WS_CLOSE_PERMISSION_REVOKED } from '../../actions/transports.ts';
 import {
 	ROLE_GRANT_OFFER_RECEIVED_NOTIFICATION_METHOD,
 	ROLE_GRANT_OFFER_ACCEPTED_NOTIFICATION_METHOD,
@@ -68,7 +75,11 @@ import {
 	RoleGrantRevokeParams
 } from '../../auth/role_grant_offer_notifications.ts';
 import { type BackendCapabilities, test_if } from './capabilities.ts';
-import type { SetupTest, TestAccountFixture, TestFixture } from './setup.ts';
+import {
+	create_active_role_grant,
+	create_pending_role_grant_offer
+} from './role_grant_cross_helpers.ts';
+import type { SetupTest, TestFixture } from './setup.ts';
 
 /** JSON-RPC endpoint path — matches the spine's `/api/rpc` (and the forge's). */
 const RPC_PATH = '/api/rpc';
@@ -83,6 +94,14 @@ export interface RoleGrantOfferNotificationWsTestOptions {
 	readonly base_url: string;
 	/** WebSocket endpoint path on the backend (e.g. `/api/ws`). */
 	readonly ws_path: string;
+	/**
+	 * The roles `ws_path` gates its upgrade on (its `required_roles`), or
+	 * omitted / `[]` for an ungated endpoint. Declare them for a backend whose
+	 * socket is role-gated: revoking `ROLE_ADMIN` then closes the revokee's
+	 * socket with `WS_CLOSE_PERMISSION_REVOKED`, and the revoke case asserts
+	 * that close instead of the notification frame.
+	 */
+	readonly ws_required_roles?: ReadonlyArray<string>;
 }
 
 /**
@@ -96,7 +115,8 @@ export interface RoleGrantOfferNotificationWsTestOptions {
 export const describe_role_grant_offer_notification_ws_tests = (
 	options: RoleGrantOfferNotificationWsTestOptions
 ): void => {
-	const { setup_test, capabilities, base_url, ws_path } = options;
+	const { setup_test, capabilities, base_url, ws_path, ws_required_roles = [] } = options;
+	const revoke_closes_the_socket = ws_required_roles.includes(ROLE_ADMIN);
 
 	// -- shared helpers -------------------------------------------------------
 
@@ -123,45 +143,15 @@ export const describe_role_grant_offer_notification_ws_tests = (
 		headers: Record<string, string>
 	) => rpc_call({ app: fixture.transport, path: RPC_PATH, method, params, headers });
 
-	/**
-	 * Create a fresh pending `ROLE_ADMIN` offer from `grantor_headers` (defaults
-	 * to the keeper) to `to_account_id`, returning the created offer.
-	 */
-	const create_pending_offer = async (
+	/** A fresh pending `ROLE_ADMIN` offer, from the keeper unless a grantor is given. */
+	const create_pending_offer = (
 		fixture: TestFixture,
 		to_account_id: string,
-		grantor_headers: Record<string, string> = fixture.create_session_headers()
-	): Promise<{ id: string }> => {
-		const res = await rpc(
-			fixture,
-			'role_grant_offer_create',
-			{ to_account_id, role: ROLE_ADMIN },
-			grantor_headers
-		);
-		if (!res.ok) assert.fail(`offer create failed: ${JSON.stringify(res)}`);
-		return (res.result as { offer: { id: string } }).offer;
-	};
-
-	/**
-	 * Materialize an active `ROLE_ADMIN` role_grant on `recipient` via a fresh
-	 * keeper offer + recipient accept (idempotent on a grant the account already
-	 * holds), returning its `role_grant_id` — the handle `role_grant_revoke`
-	 * keys on.
-	 */
-	const create_active_role_grant = async (
-		fixture: TestFixture,
-		recipient: TestAccountFixture
-	): Promise<string> => {
-		const offer = await create_pending_offer(fixture, recipient.account.id);
-		const accepted = await rpc(
-			fixture,
-			'role_grant_offer_accept',
-			{ offer_id: offer.id },
-			recipient.create_session_headers()
-		);
-		if (!accepted.ok) assert.fail(`accept failed: ${JSON.stringify(accepted)}`);
-		return (accepted.result as { role_grant_id: string }).role_grant_id;
-	};
+		grantor_headers?: Record<string, string>
+	): Promise<{ id: string }> =>
+		create_pending_role_grant_offer(fixture, to_account_id, grantor_headers, {
+			rpc_path: RPC_PATH
+		});
 
 	// -- tests ----------------------------------------------------------------
 
@@ -319,12 +309,16 @@ export const describe_role_grant_offer_notification_ws_tests = (
 
 		test_if(
 			capabilities.ws,
-			'revoke delivers a flat role_grant_revoke to the revokee WS',
+			revoke_closes_the_socket
+				? 'revoke closes the revokee WS gated on the revoked role'
+				: 'revoke delivers a flat role_grant_revoke to the revokee WS',
 			async () => {
 				const fixture = await setup_test();
 				const revokee = await fixture.create_account({ roles: [ROLE_ADMIN] });
 
-				const role_grant_id = await create_active_role_grant(fixture, revokee);
+				const role_grant_id = await create_active_role_grant(fixture, revokee, {
+					rpc_path: RPC_PATH
+				});
 
 				const revokee_ws = await open_ws(revokee.create_session_headers().cookie);
 				try {
@@ -336,20 +330,33 @@ export const describe_role_grant_offer_notification_ws_tests = (
 					);
 					assert.isTrue(revoked.ok, `revoke failed: ${JSON.stringify(revoked)}`);
 
-					const frame = await revokee_ws.wait_for(
-						is_notification_with<{ role_grant_id: string }>(
-							ROLE_GRANT_REVOKE_NOTIFICATION_METHOD,
-							(p) => p.role_grant_id === role_grant_id
-						),
-						5000
+					const is_revoke_frame = is_notification_with<{ role_grant_id: string }>(
+						ROLE_GRANT_REVOKE_NOTIFICATION_METHOD,
+						(p) => p.role_grant_id === role_grant_id
 					);
 					// Flat params — guards the no-`offer`-wrapper, `revoked_by`-omitted
 					// shape against drift.
-					const params = RoleGrantRevokeParams.parse(frame.params);
-					assert.strictEqual(params.role_grant_id, role_grant_id);
-					assert.strictEqual(params.role, ROLE_ADMIN);
-					assert.strictEqual(params.reason, 'cleanup');
-					assert.notProperty(frame.params, 'revoked_by');
+					const assert_flat_revoke = (frame: { params?: unknown }): void => {
+						const params = RoleGrantRevokeParams.parse(frame.params);
+						assert.strictEqual(params.role_grant_id, role_grant_id);
+						assert.strictEqual(params.role, ROLE_ADMIN);
+						assert.strictEqual(params.reason, 'cleanup');
+						assert.notProperty(frame.params, 'revoked_by');
+					};
+
+					if (revoke_closes_the_socket) {
+						// the socket lost the role its endpoint requires; the revoke
+						// notification may land just ahead of the close or not at all,
+						// and is held to the same shape when it does
+						const closed = await revokee_ws.wait_for_close(5000);
+						assert.ok(closed, 'the gated socket did not close after the revoke');
+						assert.strictEqual(revokee_ws.close_code, WS_CLOSE_PERMISSION_REVOKED);
+						const early = revokee_ws.messages.find(is_revoke_frame);
+						if (early) assert_flat_revoke(early);
+						return;
+					}
+
+					assert_flat_revoke(await revokee_ws.wait_for(is_revoke_frame, 5000));
 				} finally {
 					await revokee_ws.close();
 				}
@@ -414,7 +421,9 @@ export const describe_role_grant_offer_notification_ws_tests = (
 				const grantor = await fixture.create_account({ roles: [ROLE_ADMIN] });
 				const revokee = await fixture.create_account({ roles: [ROLE_ADMIN] });
 
-				const role_grant_id = await create_active_role_grant(fixture, revokee);
+				const role_grant_id = await create_active_role_grant(fixture, revokee, {
+					rpc_path: RPC_PATH
+				});
 
 				// A *pending* sibling offer for the same (account, role) — this is what
 				// the revoke cascade supersedes.

@@ -26,6 +26,10 @@ import {
 	assert_ws_method_descriptions_present,
 	assert_ws_notifications_have_null_auth
 } from '#lib/testing/surface_invariants.ts';
+import {
+	SPINE_ROLE_GATED_WS_PATH,
+	SPINE_ROLE_GATED_WS_ROLES
+} from '#lib/testing/cross_backend/spine_surface_constants.ts';
 
 import { build_spine_app } from './testing_spine_server.ts';
 
@@ -37,7 +41,7 @@ const SPINE_ENV: Record<string, string> = {
 	FUZ_ALLOWED_ORIGINS: 'http://localhost:*'
 };
 
-test('the Node-built spine surface lists /api/ws and passes the surface invariants', async () => {
+test('the Node-built spine surface lists its WS endpoints and passes the surface invariants', async () => {
 	const dir = await mkdtemp(join(tmpdir(), 'fuz_app_spine_surface_'));
 	const runtime = { ...create_node_runtime([]), env_get: (name: string) => SPINE_ENV[name] };
 	const adapter = create_node_testing_adapter();
@@ -49,7 +53,10 @@ test('the Node-built spine surface lists /api/ws and passes the surface invarian
 	});
 	try {
 		const ws_paths = built.surface.ws_endpoints.map((endpoint) => endpoint.path);
-		assert.deepStrictEqual(ws_paths, ['/api/ws']);
+		assert.deepStrictEqual(ws_paths, ['/api/ws', SPINE_ROLE_GATED_WS_PATH]);
+		const gated = built.surface.ws_endpoints.find((e) => e.path === SPINE_ROLE_GATED_WS_PATH);
+		assert.ok(gated);
+		assert.deepStrictEqual(gated.required_roles, SPINE_ROLE_GATED_WS_ROLES);
 		assert_surface_invariants(built.surface);
 		// the RPC/WS bundle minus `assert_no_testing_methods`: the binary
 		// live-mounts the `_testing_*` backdoors on its RPC and WS endpoints by design

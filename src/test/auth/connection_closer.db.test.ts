@@ -1133,6 +1133,9 @@ describe_db('connection_closer wiring', (get_db) => {
 				close_sockets_for_session: (id) => record('session', id),
 				close_sockets_for_token: (id) => record('token', id),
 				close_sockets_for_account: (id) => record('account', id),
+				close_sockets_for_role: () => {
+					throw new Error('no revocation here closes by role');
+				},
 				close_all_sockets: () => {
 					throw new Error('a revocation never closes every connection');
 				}

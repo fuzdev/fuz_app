@@ -22,7 +22,10 @@
  *    Multi-actor accounts must supply `?acting` to pick a persona;
  *    single-actor accounts work without it.
  * 5. Optional `require_role(required_roles)` — for endpoints gated to a
- *    non-empty any-of set of roles.
+ *    non-empty any-of set of roles. `register_action_ws` records the roles on
+ *    each registration and re-reads them at admission, so the gate holds for
+ *    the socket's life (a revoked role closes it with
+ *    `WS_CLOSE_PERMISSION_REVOKED`).
  *
  * Then delegates to `register_action_ws` for per-message JSON-RPC
  * dispatch.
@@ -60,12 +63,18 @@ export interface RegisterWsEndpointOptions extends RegisterActionWsOptions {
 	allowed_origins: ReadonlyArray<RegExp>;
 	/**
 	 * Roles permitted to upgrade — any-of disjunction (matches the
-	 * underlying `require_role` semantics). Omit (or pass `[]`) for any
-	 * authenticated account (`require_auth` + actor resolution alone);
-	 * set to e.g. `[ROLE_ADMIN]` to gate the endpoint behind a single role
-	 * or `[ROLE_ADMIN, ROLE_KEEPER]` to permit either. The per-action
+	 * underlying `require_role` semantics, global grants only). Omit (or pass
+	 * `[]`) for any authenticated account (`require_auth` + actor resolution
+	 * alone); set to e.g. `[ROLE_ADMIN]` to gate the endpoint behind a single
+	 * role or `[ROLE_ADMIN, ROLE_KEEPER]` to permit either. The per-action
 	 * `auth` in each spec still applies at dispatch time — this is a coarse
-	 * upgrade-time gate.
+	 * upgrade-time gate on who may hold a socket, and so on who receives
+	 * the endpoint's server pushes.
+	 *
+	 * It holds for the socket's life: `register_action_ws` re-reads it at
+	 * admission, and a revoked global grant of a listed role closes the
+	 * account's sockets here with `WS_CLOSE_PERMISSION_REVOKED` (any listed
+	 * role — see `close_sockets_for_role` on the over-close).
 	 */
 	required_roles?: ReadonlyArray<RoleName>;
 }
@@ -153,5 +162,5 @@ export const register_ws_endpoint = (
 		app.use(path, require_role(required_roles));
 	}
 
-	return register_action_ws({ app, path, db, log, ...rest });
+	return register_action_ws({ app, path, db, log, required_roles, ...rest });
 };

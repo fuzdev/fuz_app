@@ -22,6 +22,7 @@ import {
 	WS_CLOSE_CONNECTION_LIMIT,
 	WS_CLOSE_GOING_AWAY,
 	WS_CLOSE_GOING_AWAY_REASON,
+	WS_CLOSE_PERMISSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON
 } from '#lib/actions/transports.ts';
@@ -978,6 +979,35 @@ describe('BackendWebsocketTransport two-phase registration', () => {
 		assert.deepStrictEqual(live.closes, [], 'a refused admission evicts nothing');
 		assert.strictEqual(t.get_connection_count(), 1);
 		assert.strictEqual(t.is_registered(id), false);
+	});
+
+	test('a refused admission reads why its pending entry was closed, once', () => {
+		const t = new BackendWebsocketTransport();
+		const by_role = t.register_pending(create_fake_ws().ws, HASH_A, ACCOUNT_A, null, null, [
+			'admin'
+		]);
+		const by_session = t.register_pending(create_fake_ws().ws, HASH_B, ACCOUNT_B);
+		const by_shutdown = t.register_pending(create_fake_ws().ws, null, ACCOUNT_B, TOKEN_A);
+		const admitted = t.add_connection(create_fake_ws().ws, null, ACCOUNT_B, TOKEN_A);
+
+		t.close_sockets_for_role(ACCOUNT_A, 'admin');
+		t.close_sockets_for_session(HASH_B);
+		t.close_all_sockets();
+
+		assert.strictEqual(t.admit(by_role), false);
+		assert.strictEqual(t.take_pending_close_code(by_role), WS_CLOSE_PERMISSION_REVOKED);
+		assert.strictEqual(t.take_pending_close_code(by_role), null, 'read once');
+		assert.strictEqual(t.take_pending_close_code(by_session), WS_CLOSE_SESSION_REVOKED);
+		assert.strictEqual(t.take_pending_close_code(by_shutdown), WS_CLOSE_GOING_AWAY);
+		// an admitted connection's close is not a refused admission's
+		assert.strictEqual(t.take_pending_close_code(admitted), null);
+
+		// and the socket's own close drops an unread record
+		const fresh = new BackendWebsocketTransport();
+		const left = fresh.register_pending(create_fake_ws().ws, null, ACCOUNT_A);
+		fresh.close_sockets_for_account(ACCOUNT_A);
+		fresh.remove_connection(left);
+		assert.strictEqual(fresh.take_pending_close_code(left), null);
 	});
 
 	test('an account close reaches a pending connection', () => {

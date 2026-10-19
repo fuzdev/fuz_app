@@ -67,6 +67,8 @@ import {
 	ACTION_RATE_LIMIT_ENABLED_ENV,
 	ACTION_RATE_LIMIT_MAX_ATTEMPTS_ENV,
 	LOGIN_RATE_LIMIT_ENABLED_ENV,
+	SPINE_ROLE_GATED_WS_PATH,
+	SPINE_ROLE_GATED_WS_ROLES,
 	SPINE_RPC_PATH
 } from '#lib/testing/cross_backend/spine_surface_constants.ts';
 import type {
@@ -393,6 +395,12 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 		// and the cell verbs' dispatcher-charged rate limit is reachable over WS
 		// on both spines (`describe_ws_action_rate_limit_cross_tests`). No
 		// `required_roles` — the stub's WS state carries none either.
+		//
+		// A second endpoint serves the same actions behind a role gate
+		// (`SPINE_ROLE_GATED_WS_ROLES`), sharing the transport — as the Rust
+		// stub's gated mount shares its connection registry — so a revoked role
+		// must close the gated registrations of one transport and leave the
+		// ungated ones open (`describe_ws_role_gated_cross_tests`).
 		create_upgrade_websocket: prepare_websocket({ max_message_bytes: WS_MAX_MESSAGE_BYTES }),
 		ws_endpoints: [
 			{
@@ -400,6 +408,13 @@ export const build_spine_app = async (options: BuildSpineAppOptions): Promise<Bu
 				actions: full_mount.ws_actions,
 				transport: ws_transport,
 				max_message_bytes: WS_MAX_MESSAGE_BYTES
+			},
+			{
+				path: SPINE_ROLE_GATED_WS_PATH,
+				actions: full_mount.ws_actions,
+				transport: ws_transport,
+				max_message_bytes: WS_MAX_MESSAGE_BYTES,
+				required_roles: SPINE_ROLE_GATED_WS_ROLES
 			}
 		],
 		env_schema: BaseServerEnv,

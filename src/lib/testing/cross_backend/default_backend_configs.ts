@@ -108,7 +108,10 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	// Off by default — the `cell_gated_create` test policy is a fuz_app test
 	// fixture, mounted only on the spine binaries (`ts_spine_*`), not generic
 	// consumers.
-	cell_gated_create: false
+	cell_gated_create: false,
+	// Off by default — the second, role-gated WS endpoint is a spine-binary
+	// mount (`SPINE_ROLE_GATED_WS_PATH`); fuz_app's spine configs opt in.
+	ws_role_gated: false
 });
 
 /**
@@ -144,7 +147,10 @@ export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 	ws_self_revocation_reply: false,
 	// Off by default — the `testing_spine_stub` preset opts in (it mounts the
 	// `TestCellGatedCreateAuthorize` policy); a generic Rust consumer doesn't.
-	cell_gated_create: false
+	cell_gated_create: false,
+	// Off by default — the `testing_spine_stub` preset opts in (it mounts the
+	// role-gated WS endpoint at `SPINE_ROLE_GATED_WS_PATH`).
+	ws_role_gated: false
 });
 
 /**

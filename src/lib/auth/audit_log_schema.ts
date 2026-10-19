@@ -80,12 +80,15 @@ export type AuditEventType = z.infer<typeof AuditEventType>;
  *   row's `metadata.token_id`.
  * - `account` — every connection of `target_account_id ?? account_id`.
  * - `role` — the target account's connections gated on the row's
- *   `metadata.role`.
+ *   `metadata.role`, when the revoked grant was global
+ *   (`to_global_role_revocation`).
  *
- * The scope says what the row invalidated, not what a transport must do about
- * it. The two listeners differ on `role` on purpose: a WebSocket message is
- * re-authorized per dispatch, so the socket stays open and its next message
- * is refused, while a stream is authorized once at open and must be closed.
+ * The scope says what the row invalidated; both listeners act on every scope
+ * alike. On `role` that matters for the WebSocket too: per-message dispatch
+ * re-authorizes each request against its own action, but a socket admitted by
+ * a role gate also receives every server push its endpoint sends, which no
+ * dispatch ever re-checks — so a socket that lost the gating role is closed,
+ * like a stream.
  *
  * Twin of the Rust spine's `RevocationScope`.
  */
@@ -152,6 +155,36 @@ export const to_revocation_scope = (event_type: string): RevocationScope =>
 	Object.hasOwn(audit_event_revocation_scopes, event_type)
 		? audit_event_revocation_scopes[event_type as AuditEventType]
 		: 'none';
+
+/**
+ * The account and role a successful `role`-scope row took away, when the
+ * revoked grant was **global** — `null` otherwise.
+ *
+ * A role gate (`register_ws_endpoint`'s `required_roles`, the audit stream's
+ * `require_role`) admits on global grants only, so revoking a scoped grant
+ * takes away nothing a gate admitted on and closes nothing. A row with no
+ * `metadata.scope_id` reads as global: when unsure, closing is the safe side.
+ * The target is `target_account_id ?? account_id`, as for the `account` scope.
+ * Both revocation listeners read it, so a socket and a stream gated on one
+ * role close on the same rows.
+ *
+ * Twin of the Rust spine's `global_role_revocation`.
+ *
+ * @param event - a row whose scope is `role` (the caller dispatched on it)
+ * @returns the account and role to close on, or `null` when the row names no
+ *   role or target, or revoked a scoped grant
+ */
+export const to_global_role_revocation = (
+	event: AuditLogEvent
+): { account_id: Uuid; role: string } | null => {
+	const role = event.metadata?.role;
+	if (typeof role !== 'string' || role.length === 0) return null;
+	const scope_id = event.metadata?.scope_id;
+	if (scope_id !== undefined && scope_id !== null) return null;
+	const account_id = event.target_account_id ?? event.account_id;
+	if (!account_id) return null;
+	return { account_id, role };
+};
 
 /**
  * Letter start, then letters, digits, `_`, `.`, `/`, `-`. Accepts snake_case,

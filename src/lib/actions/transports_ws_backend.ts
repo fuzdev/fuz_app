@@ -141,6 +141,8 @@ import {
 	WS_CLOSE_GOING_AWAY_REASON,
 	WS_CLOSE_OUTBOUND_OVERFLOW,
 	WS_CLOSE_OUTBOUND_OVERFLOW_REASON,
+	WS_CLOSE_PERMISSION_REVOKED,
+	WS_CLOSE_PERMISSION_REVOKED_REASON,
 	WS_CLOSE_SESSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED_REASON,
 	utf8_length,
@@ -167,7 +169,10 @@ import type { OutboundOverflow } from '../realtime/outbound_budget.ts';
  * One record per connection. `token_hash` is set for cookie-session
  * connections, `api_token_id` for bearer (`api_token`) connections, and
  * both are null for daemon-token connections (reachable only via
- * `BackendWebsocketTransport.close_sockets_for_account`).
+ * `BackendWebsocketTransport.close_sockets_for_account`). `required_roles`
+ * is what the connection's endpoint gated the upgrade on, kept per
+ * registration because endpoints with different gates can share one
+ * transport.
  */
 export interface ConnectionIdentity {
 	/** Blake3 session token hash, or null for non-session credentials. */
@@ -176,6 +181,11 @@ export interface ConnectionIdentity {
 	account_id: Uuid;
 	/** `api_token.id` for bearer-authenticated connections, else null. */
 	api_token_id: string | null;
+	/**
+	 * The roles the endpoint required at upgrade (any-of), or empty for an
+	 * ungated endpoint — what `close_sockets_for_role` matches on.
+	 */
+	required_roles: ReadonlyArray<string>;
 }
 
 /**
@@ -312,6 +322,11 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	// deadline timer is cleared when the socket goes.
 	#closing_writers: Map<Uuid, WsOutboundWriter> = new Map();
 
+	// The close code each registration the transport closed while it was still
+	// pending got, until `take_pending_close_code` or `remove_connection` drops
+	// it — so a refused admission can say why it was refused.
+	#pending_close_codes: Map<Uuid, number> = new Map();
+
 	// set once by `close_all_sockets`, never cleared — every later
 	// registration is born closed (module doc, "Shutdown")
 	#closing = false;
@@ -354,8 +369,9 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 *
 	 * The entry is closeable at once: a `close_sockets_for_*` matching
 	 * `token_hash` / `account_id` / `api_token_id` removes it, aborts
-	 * `abort_controller`, and closes `ws` with `WS_CLOSE_SESSION_REVOKED`; the
-	 * later `admit` then refuses. Until admitted it evicts nothing, is not
+	 * `abort_controller`, and closes `ws` with `WS_CLOSE_SESSION_REVOKED`
+	 * (`close_sockets_for_role`, matching `required_roles`, with
+	 * `WS_CLOSE_PERMISSION_REVOKED`); the later `admit` then refuses. Until admitted it evicts nothing, is not
 	 * counted toward the per-account cap, and receives no message.
 	 *
 	 * The caller owns the entry until it is admitted: a refusal closes it with
@@ -373,6 +389,8 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * @param api_token_id - `api_token.id` for bearer connections, else `null`
 	 * @param abort_controller - the socket-scoped controller to abort when the
 	 *   transport closes this connection (revocation or cap eviction)
+	 * @param required_roles - the roles the endpoint gated the upgrade on, for
+	 *   `close_sockets_for_role`; empty for an ungated endpoint
 	 * @returns the freshly assigned `connection_id` (branded `Uuid`)
 	 * @mutates this - inserts an un-admitted entry into `#connections`, unless
 	 *   the transport is closing
@@ -382,10 +400,36 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		token_hash: string | null,
 		account_id: Uuid,
 		api_token_id: string | null = null,
-		abort_controller: AbortController | null = null
+		abort_controller: AbortController | null = null,
+		required_roles: ReadonlyArray<string> = []
 	): Uuid {
 		if (this.#closing) return this.#close_born_closed(ws, abort_controller);
-		return this.#insert(ws, token_hash, account_id, api_token_id, abort_controller, false);
+		return this.#insert(
+			ws,
+			{ token_hash, account_id, api_token_id, required_roles },
+			abort_controller,
+			false
+		);
+	}
+
+	/**
+	 * The close code the transport closed a still-pending registration with —
+	 * `WS_CLOSE_SESSION_REVOKED` for a credential revocation,
+	 * `WS_CLOSE_PERMISSION_REVOKED` for a role close, `WS_CLOSE_GOING_AWAY`
+	 * for the shutdown — read once: the record is dropped by this call (and by
+	 * `remove_connection`). `null` when the transport did not close it while
+	 * pending. For a caller whose `admit` was refused, to say why; the twin of
+	 * the reason the Rust `ConnectionRegistry::admit` refuses with.
+	 *
+	 * @param connection_id - the id `register_pending` returned
+	 * @returns the close code, or `null`
+	 * @mutates this - drops the recorded code
+	 */
+	take_pending_close_code(connection_id: Uuid): number | null {
+		const code = this.#pending_close_codes.get(connection_id);
+		if (code === undefined) return null;
+		this.#pending_close_codes.delete(connection_id);
+		return code;
 	}
 
 	/**
@@ -443,6 +487,8 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 * connection is always admitted — unless the transport is closing: then it
 	 * is born closed, as in `register_pending`, and evicts nothing.
 	 *
+	 * @param required_roles - the roles the endpoint gated the connection on,
+	 *   for `close_sockets_for_role`; empty for an ungated one
 	 * @returns the freshly assigned `connection_id` (branded `Uuid`)
 	 * @mutates this - inserts an admitted entry into `#connections`; past the
 	 *   cap, first removes the account's oldest admitted connections and closes
@@ -453,27 +499,31 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		token_hash: string | null,
 		account_id: Uuid,
 		api_token_id: string | null = null,
-		abort_controller: AbortController | null = null
+		abort_controller: AbortController | null = null,
+		required_roles: ReadonlyArray<string> = []
 	): Uuid {
 		if (this.#closing) return this.#close_born_closed(ws, abort_controller);
 		if (this.#max_connections_per_account !== null) {
 			this.#evict_oldest_for_account(account_id, this.#max_connections_per_account);
 		}
-		return this.#insert(ws, token_hash, account_id, api_token_id, abort_controller, true);
+		return this.#insert(
+			ws,
+			{ token_hash, account_id, api_token_id, required_roles },
+			abort_controller,
+			true
+		);
 	}
 
 	#insert(
 		ws: WSContext,
-		token_hash: string | null,
-		account_id: Uuid,
-		api_token_id: string | null,
+		identity: ConnectionIdentity,
 		abort_controller: AbortController | null,
 		admitted: boolean
 	): Uuid {
 		const connection_id = create_uuid();
 		this.#connections.set(connection_id, {
 			ws,
-			identity: { token_hash, account_id, api_token_id },
+			identity,
 			admitted,
 			abort_controller,
 			writer: new WsOutboundWriter({
@@ -509,6 +559,7 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	 *   requests as `connection_gone`
 	 */
 	remove_connection(connection_id: Uuid): void {
+		this.#pending_close_codes.delete(connection_id);
 		this.#connections.get(connection_id)?.writer.dispose();
 		// a connection the transport closed: its socket is gone now
 		const closing = this.#closing_writers.get(connection_id);
@@ -634,6 +685,32 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 	}
 
 	/**
+	 * Close the sockets of `account_id` whose endpoint required `role`,
+	 * including a registration still pending admission — the close for a
+	 * revoked global grant of a role the upgrade gate admitted on. Each closes
+	 * with `WS_CLOSE_PERMISSION_REVOKED`, not a revocation's code: the
+	 * credential is still good.
+	 *
+	 * **Over-closes an any-of gate.** An endpoint gated on several roles admits
+	 * an account holding any one of them, but this closes on the loss of any
+	 * listed role, without checking whether the account still holds another.
+	 * The client can reconnect when it still qualifies. The account's sockets
+	 * on endpoints that did not list `role`, and on ungated ones, stay open.
+	 *
+	 * @returns the number of sockets closed
+	 * @mutates this - removes matching connections, aborts their registered
+	 *   controllers, and closes their underlying `WSContext` with
+	 *   `WS_CLOSE_PERMISSION_REVOKED`
+	 */
+	close_sockets_for_role(account_id: Uuid, role: string): number {
+		return this.#close_where(
+			(id) => id.account_id === account_id && id.required_roles.includes(role),
+			WS_CLOSE_PERMISSION_REVOKED,
+			WS_CLOSE_PERMISSION_REVOKED_REASON
+		);
+	}
+
+	/**
 	 * Close every connection, pending or admitted, with `WS_CLOSE_GOING_AWAY` —
 	 * the shutdown close `AppServer.close` runs. Not a revocation: the client
 	 * reconnects under its ordinary backoff.
@@ -702,6 +779,7 @@ export class BackendWebsocketTransport implements FilterableBroadcastTransport {
 		backlog: WsOutboundBacklog = 'flush'
 	): void {
 		this.#cleanup_connection(connection_id);
+		if (!entry.admitted) this.#pending_close_codes.set(connection_id, code);
 		// abort before the close so a handler observing `ctx.signal` bails out
 		// without waiting for the close handshake
 		entry.abort_controller?.abort();

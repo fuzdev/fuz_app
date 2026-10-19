@@ -58,6 +58,30 @@ export const SPINE_CELL_EDITOR_ROLE = 'cell_editor';
 export const SPINE_PARTICIPANT_ROLE = 'participant';
 
 /**
+ * Mount path of the spine binaries' second, role-gated WebSocket endpoint —
+ * the same actions as the ungated `/api/ws`, behind
+ * `SPINE_ROLE_GATED_WS_ROLES`. Both spines mount it (the TS binary sharing
+ * `/api/ws`'s transport, the Rust stub its connection registry), so one
+ * account can hold a gated and an ungated socket side by side. Driven by
+ * `describe_ws_role_gated_cross_tests`, behind `capabilities.ws_role_gated`.
+ * Must match the Rust `testing_spine_stub`'s gated mount — a cross-language
+ * test contract.
+ */
+export const SPINE_ROLE_GATED_WS_PATH = '/api/gated/ws';
+
+/**
+ * The roles `SPINE_ROLE_GATED_WS_PATH` requires, any-of: `admin`, the gate a
+ * privileged-broadcast socket uses, and `participant`, a role that can be
+ * granted scoped — so the suite can revoke a scoped grant of a listed role
+ * and see nothing close. Must match the Rust `testing_spine_stub`'s gated
+ * mount.
+ */
+export const SPINE_ROLE_GATED_WS_ROLES: ReadonlyArray<string> = Object.freeze([
+	'admin',
+	SPINE_PARTICIPANT_ROLE
+]);
+
+/**
  * Committed expected-schema fixture for the spine `/ready` deploy gate — the
  * column map a fresh full spine bootstrap (auth + cell + cell_history + fact)
  * produces. Resolved relative to this module so the spawned TS binary (which

@@ -251,6 +251,17 @@ export interface BackendCapabilities {
 	 * mount it.
 	 */
 	readonly cell_gated_create: boolean;
+	/**
+	 * The backend mounts a second, role-gated WebSocket endpoint at
+	 * `SPINE_ROLE_GATED_WS_PATH`, gated on `SPINE_ROLE_GATED_WS_ROLES`, beside
+	 * its ungated `ws_path`. Gates `describe_ws_role_gated_cross_tests`: a
+	 * revoked global grant of a listed role closes the account's gated socket
+	 * with `WS_CLOSE_PERMISSION_REVOKED`, its ungated socket stays open and
+	 * still receives the account's pushes, a re-upgrade is refused at the gate,
+	 * and a scoped revoke closes nothing. `true` only on the reference spine binaries that
+	 * mount that endpoint (the TS spine binary + the Rust `testing_spine_stub`).
+	 */
+	readonly ws_role_gated: boolean;
 }
 
 /**
@@ -262,8 +273,8 @@ export interface BackendCapabilities {
  * `create_ws_transport`, so the in-process driver never runs it — the
  * transport itself supports server-initiated requests),
  * `ws_handshake_pipelining` (raw bytes on a real socket),
- * `ws_account_actions` (a real socket's reply-then-close ordering), and
- * `cell_gated_create`. Cross-process consumers declare each flag explicitly
+ * `ws_account_actions` (a real socket's reply-then-close ordering),
+ * `cell_gated_create`, and `ws_role_gated`. Cross-process consumers declare each flag explicitly
  * per backend.
  */
 export const in_process_capabilities: BackendCapabilities = Object.freeze({
@@ -286,7 +297,10 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	ws_self_revocation_reply: true,
 	// Cross-process-only: the test `CellCreateAuthorize` policy is mounted on the
 	// spine binaries' full mount + the Rust stub, not the in-process default app.
-	cell_gated_create: false
+	cell_gated_create: false,
+	// Cross-process-only: the gated endpoint is a spine-binary mount, and the
+	// case reads a real socket's close.
+	ws_role_gated: false
 });
 
 /**

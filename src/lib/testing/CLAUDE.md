@@ -33,7 +33,7 @@ time (never runtime), where a throwing guard would break `vite build`.
 - `stub_mw` — pass-through middleware (`async (_c, next) => next()`).
 - `create_stub_app_deps()` — factory: fresh `AppDeps` with no-op keyring/password/`delete_file`, a `read_secure_file` that throws ENOENT (the no-token-file state), a `create_noop_stub` DB, silent `Logger`, no-op `audit`, an empty `connection_closer`.
 - `create_test_audit_emitter()` — no-op `AuditEmitter`; `emit` / `emit_role_grant_target` no-op, `emit_pool` resolves immediately, `notify` no-op, `add_listener` throws (use `create_recording_audit_emitter` for a listener-accepting emitter), `listener_count` returns 0, `drain_inflight` resolves immediately.
-- `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `on_audit_event` no-op (nothing is broadcast); `registry` is a fresh `SubscriberRegistry` (live `.count` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
+- `create_stub_audit_sse()` — no-op `AuditLogSse` for surface-test wiring without booting real SSE. `on_audit_event` no-op (nothing is broadcast); `required_role` is `admin`; `registry` is a fresh `SubscriberRegistry` (live `.count` / `.close_*` for registry-state tests, isolated per call). For real SSE plumbing build via `create_audit_log_sse` against `create_test_app`.
 - `create_stub_api_middleware({include_daemon_token?})` — stub `MiddlewareSpec[]` matching `create_auth_middleware_specs`'s output (origin/session/request_context/bearer_auth, optional daemon_token) for surface generation without booting real auth — the same names, paths, order, and declared `errors` (`origin` declares a 403; `bearer_auth` and `daemon_token` declare none, since both soft-fail through `next()`), pinned against the real factory by `auth/middleware.mounted.test.ts`. The surface merges middleware errors into every route under the path, so a stub declaring more would widen the test surface with statuses the live server never returns. Each spec gets its own pass-through handler (not the shared `stub_mw`), so `assert_middleware_stack_mounted` tells the layers apart. See `auth/CLAUDE.md` §Middleware for the real stack.
 - `create_stub_app_backend(options?)` — stub `AppBackend` with no database: `create_stub_app_deps()` (or `options.deps`), no migration results, a `close` that does nothing (or `options.close`). For assembling a server in tests that never reach the database.
 - `create_stub_app_server_context(session_options)` — stub `AppServerContext` over `create_stub_app_backend()`; rate limiters null, `bootstrap_status.available: false`.
@@ -109,9 +109,9 @@ mismatch.
 
 ### `connection_closer_helpers.ts` — `ConnectionCloser` test doubles
 
-- `create_recording_closer()` — `{closer, calls}`; every method on `closer` records `{method, id}` into `calls` and closes nothing (`close_all_sockets` records `{method: 'all', id: null}`). To see a handler's closes, add it to the backend's closer (`ctx.deps.connection_closer.add(closer)`) or build the factory's deps with it. The closes are queued post-commit, so they have run by the time a `create_test_app` response is in hand (`await_pending_effects: true` flushes both queues).
+- `create_recording_closer()` — `{closer, calls}`; every method on `closer` records `{method, id}` into `calls` and closes nothing (`close_sockets_for_role` records `{method: 'role', id, role}`, `close_all_sockets` `{method: 'all', id: null}`). To see a handler's closes, add it to the backend's closer (`ctx.deps.connection_closer.add(closer)`) or build the factory's deps with it. The closes are queued post-commit, so they have run by the time a `create_test_app` response is in hand (`await_pending_effects: true` flushes both queues).
 - `assert_close_call(call, method, id)` — pins `{method, id}` on a recorded close call; handles the missing-element case.
-- `RecordedClose` — `{method: 'session' | 'token' | 'account', id: string} | {method: 'all', id: null}`.
+- `RecordedClose` — `{method: 'session' | 'token' | 'account', id: string} | {method: 'role', id: string, role: string} | {method: 'all', id: null}`.
 - `RecordingCloser` — `{closer, calls}`.
 
 ## Database — `db.ts`
@@ -535,7 +535,7 @@ method and assert the stream closes within 2s.
 
 `SseRouteTestSpec` per route: `{path, trigger, event_specs?, assert_closes_on_revoke?}`.
 A consumer registry closes on the revoke when its route joined it to the
-backend's closer (`ctx.deps.connection_closer.add(create_sse_connection_closer(registry))`)
+backend's closer (`ctx.deps.connection_closer.add(create_sse_connection_closer(registry, role))`)
 or when the suite's `on_audit_event` option wires a guard (e.g. `create_sse_auth_guard`); with
 neither, the revoke assertion fails.
 
@@ -932,8 +932,8 @@ source of truth for wire-shape conformance.
   (the **gating** flags `ws` / `sse` / `cell_crud` / `cell_relations` /
   `cell_gated_create` / `account_lifecycle` / `fact_serving` / `ready` /
   `account_status` / `peer_request` /
-  `ws_handshake_pipelining` / `ws_account_actions` / `ws_self_revocation_reply` —
-  each has a `test_if`
+  `ws_handshake_pipelining` / `ws_account_actions` / `ws_self_revocation_reply` /
+  `ws_role_gated` — each has a `test_if`
   reader (`ws_self_revocation_reply` forks one case's assertion instead); `peer_request` (server-initiated requests — the ActionPeer
   `peer/ping` round-trip) is `true` for both the Rust spine and the TS spine
   (`BackendWebsocketTransport.request_connection`); `ts_default_capabilities`
@@ -1163,7 +1163,7 @@ the seven server-initiated notifications (`received` → recipient,
 `role_grant_revoke` → revokee, and `role_grant_offer_supersede` → each
 superseded sibling's grantor on **both** the accept- and revoke-cascade paths).
 `describe_role_grant_offer_notification_ws_tests({setup_test, capabilities,
-base_url, ws_path})` opens the affected counterparty's socket
+base_url, ws_path, ws_required_roles?})` opens the affected counterparty's socket
 (`create_admitted_ws_transport` — a targeted notification reaches only an
 admitted connection, and the handshake alone doesn't say it is one), drives the
 lifecycle RPC over `fixture.transport`, then
@@ -1183,8 +1183,36 @@ Sends queue on the post-commit drain, so `WsClient.wait_for` polls + waits
 (method + predicate filter ignores unrelated frames). Accounts are seeded with
 `ROLE_ADMIN` (the only admin-grantable role) so they can open an admin-gated WS
 where one exists (forge) and be offered the role; harmless on the auth-only
-spine. Gated on `capabilities.ws`; cross-process only. fuz_app's own wiring is
-`src/test/cross_backend/role_grant_offer_notification_ws.cross.test.ts`.
+spine. A backend whose `ws_path` is gated on `ROLE_ADMIN` declares it in
+`ws_required_roles`: the revoke case then revokes the revokee's only admin
+grant and expects its socket to close with `WS_CLOSE_PERMISSION_REVOKED` (the
+notification may or may not land first, and is held to the flat shape when it
+does), where an ungated socket expects the frame. The offer/accept fixtures are `create_pending_role_grant_offer` /
+`create_active_role_grant` (`cross_backend/role_grant_cross_helpers.ts`).
+Gated on `capabilities.ws`; cross-process only. fuz_app's own wiring is
+`src/test/cross_backend/role_grant_offer_notification_ws.cross.test.ts`, and
+`role_grant_offer_notification_ws_gated.cross.test.ts` runs it again over the
+spine binaries' role-gated endpoint with `ws_required_roles` declared.
+
+### `cross_backend/ws_role_gated.ts` — `describe_ws_role_gated_cross_tests`
+
+Real-upgrade parity for a **role-gated WebSocket losing its role**: a revoked
+global grant of a role an endpoint's `required_roles` lists closes the account's
+sockets on that endpoint with `WS_CLOSE_PERMISSION_REVOKED` (and its reason),
+while the account's ungated socket on the same transport stays open,
+dispatching, and receiving the account's pushes, and a re-upgrade is refused at
+the gate (403); a scoped revoke of a listed role closes nothing — the case
+first opens the gated socket on a global grant of `scoped_role` alone, which
+proves the endpoint lists it. That a closed registration is sent nothing more
+is beyond what a client sees once it has read the close frame; each spine's
+transport tests pin it.
+`describe_ws_role_gated_cross_tests({setup_test, capabilities, base_url,
+ws_path, gated_ws_path, gated_roles, scoped_role, rpc_path?})` — `gated_roles`
+must hold `ROLE_ADMIN` and `scoped_role` (a role an admin can grant scoped).
+fuz_app's spine binaries mount `SPINE_ROLE_GATED_WS_PATH` gated on
+`SPINE_ROLE_GATED_WS_ROLES` (`admin` + `participant`). Gated on
+`capabilities.ws` and `capabilities.ws_role_gated`; cross-process only.
+fuz_app's own wiring is `src/test/cross_backend/ws_role_gated.cross.test.ts`.
 
 ### `cross_backend/peer_ping_ws.ts` — `describe_peer_ping_ws_tests`
 
@@ -1941,7 +1969,7 @@ re-roll the serve / daemon-info / WS-attach / drain boilerplate:
 - `testing/cross_backend/full_spine_mount.ts` — `build_full_spine_rpc_actions(deps, options)` — the **full** live RPC mount: the declared bundle **plus** the off-declared-surface families the binary live-mounts (`_testing_*` backdoors, the cell verb set, the opt-in `actor_lookup` / `actor_search` resolvers). `build_full_spine_mount(deps, options)` builds it once for both of the binary's endpoints, returning `FullSpineMount` (`{rpc_actions, ws_actions}`): the WS list is `protocol_actions` plus every RPC action not already among them, twinning the Rust `testing_spine_stub`, which serves one registry on RPC and WS (the one difference is `cancel` — a registered protocol action on TS, owned by the read loop on Rust). Single-sources the mount so the binary and the `spine_method_coverage` reconciliation test build the same list.
 - `testing/cross_backend/ts_spine_backend_config.ts` — `ts_spine_node_backend_config()` / `ts_spine_deno_backend_config()` / `ts_spine_bun_backend_config()` presets (in-memory pglet, no external infra), the TS analog of `rust_spine_stub_backend_config()`.
 
-fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` (`rate_limiters: 'disabled_for_testing'` plus whichever login / action limiters its env toggles built, `build_full_spine_mount`'s two lists on one `rpc_endpoints` entry and one `ws_endpoints` entry, whose `transport` is also the role-grant-offer `notification_sender`), reusing `default_spine_surface`. `src/test/cross_backend/testing_spine_server.db.test.ts` builds it with the Node adapter in-process and asserts its surface lists `/api/ws` and passes the surface invariants. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it when nothing its suites seed is already expired (the conformance table's `expired_session` principal seeds a backdated session row); an in-process harness leaves it off.
+fuz_app's own binary wiring (`src/test/cross_backend/testing_spine_server{,_node,_deno,_bun}.ts`) is the worked example: ~one `build_app` over `create_app_backend` + `create_app_server` (`rate_limiters: 'disabled_for_testing'` plus whichever login / action limiters its env toggles built, `build_full_spine_mount`'s two lists on one `rpc_endpoints` entry and two `ws_endpoints` entries — `/api/ws` and the role-gated `SPINE_ROLE_GATED_WS_PATH` — sharing one `transport`, which is also the role-grant-offer `notification_sender`), reusing `default_spine_surface`. `src/test/cross_backend/testing_spine_server.db.test.ts` builds it with the Node adapter in-process and asserts its surface lists both WS endpoints (the gated one with its `required_roles`) and passes the surface invariants. The `_node`/`_deno`/`_bun` entries differ only in which adapter they wire — `build_spine_app` is runtime-agnostic. It leaves `create_app_server`'s `auth_cleanup` off, as the Rust `testing_spine_stub` leaves its twin unscheduled: a background pass would delete rows and write audit rows under a running suite. A consumer's cross-process test binary may schedule it when nothing its suites seed is already expired (the conformance table's `expired_session` principal seeds a backdated session row); an in-process harness leaves it off.
 
 ### Live-method coverage reconciliation — `method_coverage.ts`
 

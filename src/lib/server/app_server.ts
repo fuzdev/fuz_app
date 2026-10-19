@@ -842,7 +842,11 @@ const assemble_app_server = async (
 			})
 		: null;
 	if (audit_sse) {
-		releases.push(deps.connection_closer.add(create_sse_connection_closer(audit_sse.registry)));
+		releases.push(
+			deps.connection_closer.add(
+				create_sse_connection_closer(audit_sse.registry, audit_sse.required_role)
+			)
+		);
 		releases.push(deps.audit.add_listener(audit_sse.on_audit_event));
 	}
 

@@ -6,10 +6,13 @@ import type { ConnectionCloser } from '../actions/connection_closer.ts';
 
 /**
  * Record of a single `ConnectionCloser` method invocation — a credential
- * close carries the id it was given, `close_all_sockets` (`'all'`) none.
+ * close carries the id it was given, a role close (`'role'`) the account id
+ * and the role, `close_all_sockets` (`'all'`) none.
  */
 export type RecordedClose =
-	{ method: 'session' | 'token' | 'account'; id: string } | { method: 'all'; id: null };
+	| { method: 'session' | 'token' | 'account'; id: string }
+	| { method: 'role'; id: string; role: string }
+	| { method: 'all'; id: null };
 
 export interface RecordingCloser {
 	closer: ConnectionCloser;
@@ -39,6 +42,10 @@ export const create_recording_closer = (): RecordingCloser => {
 		},
 		close_sockets_for_account: (id) => {
 			calls.push({ method: 'account', id });
+			return 1;
+		},
+		close_sockets_for_role: (id, role) => {
+			calls.push({ method: 'role', id, role });
 			return 1;
 		},
 		close_all_sockets: () => {

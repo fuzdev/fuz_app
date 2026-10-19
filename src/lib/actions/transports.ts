@@ -73,6 +73,25 @@ export const WS_CLOSE_OUTBOUND_OVERFLOW = 4005;
  */
 export const WS_CLOSE_OUTBOUND_OVERFLOW_REASON = 'outbound queue overflow';
 /**
+ * WebSocket close code — the socket's account lost a role its endpoint
+ * requires (`register_ws_endpoint`'s `required_roles`): a global grant of one
+ * of those roles was revoked while the socket was open, or while its upgrade
+ * was in flight (the admission re-read, `register_action_ws`). Nothing more
+ * is sent on the socket.
+ *
+ * Distinct from `WS_CLOSE_SESSION_REVOKED`: the credential is still good, so
+ * a client must not enter its `revoked` state — but a reconnect would be
+ * refused at the role gate, so `FrontendWebsocketClient` stays closed until
+ * `connect()` is called and rejects its pending work as `forbidden`. The twin
+ * of the Rust spine's `WS_CLOSE_PERMISSION_REVOKED`.
+ */
+export const WS_CLOSE_PERMISSION_REVOKED = 4006;
+/**
+ * The close reason sent with `WS_CLOSE_PERMISSION_REVOKED`, mid-life and at
+ * admission alike. The Rust spine sends the same text.
+ */
+export const WS_CLOSE_PERMISSION_REVOKED_REASON = 'Permission revoked';
+/**
  * WebSocket close code — the server is shutting down (RFC 6455 §7.4.1 "Going
  * Away"). Sent to every live socket by `close_all_sockets`, which
  * `AppServer.close` runs, and to an upgrade the shutdown refuses — one

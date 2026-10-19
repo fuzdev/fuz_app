@@ -5,9 +5,11 @@
  * Drop into any SvelteKit frontend as the underlying connection for
  * `FrontendWebsocketTransport`. Handles auto-reconnect with exponential
  * backoff, respects `WS_CLOSE_SESSION_REVOKED` (no reconnect loop after the
- * server revokes auth) and `WS_CLOSE_CONNECTION_LIMIT` (no reconnect after the
+ * server revokes auth), `WS_CLOSE_CONNECTION_LIMIT` (no reconnect after the
  * server closes this socket to admit a newer one — closed until the user
- * acts), exposes reactive status for UI indicators, and ships three
+ * acts), and `WS_CLOSE_PERMISSION_REVOKED` (no reconnect after the account
+ * lost the role the endpoint requires — closed until the user acts), exposes
+ * reactive status for UI indicators, and ships three
  * correctness primitives default-on:
  *
  * - `FrontendWebsocketClient.request` — promise-based JSON-RPC with
@@ -36,6 +38,7 @@ import { JSONRPC_ERROR_CODES, ThrownJsonrpcError, jsonrpc_errors } from '../http
 import {
 	WS_CLOSE_CLIENT_HEARTBEAT_TIMEOUT,
 	WS_CLOSE_CONNECTION_LIMIT,
+	WS_CLOSE_PERMISSION_REVOKED,
 	WS_CLOSE_SESSION_REVOKED
 } from './transports.ts';
 import { cancel_action_spec } from './cancel.ts';
@@ -93,7 +96,7 @@ export const DEFAULT_QUEUE_MAX_SIZE = 100;
  * - `reconnecting` — close fired; waiting out backoff before next attempt.
  * - `closed` — socket is not open, and nothing is scheduled to reopen it.
  *   Terminal only when `revoked` is `true`; otherwise `connect()` reopens,
- *   including after a `superseded` close.
+ *   including after a `superseded` or permission-revoked close.
  */
 export type SocketStatus = 'initial' | 'connecting' | 'connected' | 'reconnecting' | 'closed';
 
@@ -191,6 +194,13 @@ interface QueuedRequest extends PendingRequest {
  * closed with `superseded` set and no reconnect scheduled — the server closed
  * this socket to admit a newer one on the same account, and reconnecting
  * would close that one in turn. An explicit `connect()` reopens.
+ *
+ * A permission-revoked close (`WS_CLOSE_PERMISSION_REVOKED`) leaves the client
+ * closed with no reconnect scheduled, and neither `revoked` nor `superseded`
+ * set: the credential is still good, but the account lost the role the
+ * endpoint requires, so a reconnect would be refused at its role gate. Pending
+ * and queued requests reject `forbidden`. `last_close_code` says why; an
+ * explicit `connect()` reopens, for when the role has been granted again.
  */
 export class FrontendWebsocketClient implements WebsocketConnection, Disposable {
 	readonly #url: string;
@@ -564,6 +574,8 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 	 *   - `queue_overflow` — durable queue full
 	 *   - `service_unavailable` — socket not connected / closed / torn down
 	 *     mid-flight, including a `superseded` close
+	 *   - `forbidden` — in flight or queued at a `WS_CLOSE_PERMISSION_REVOKED`
+	 *     close
 	 *   - `internal_error` — `ws.send` threw (serialization, buffer full)
 	 *   - server's wire code verbatim — JSON-RPC error frame from peer
 	 */
@@ -930,6 +942,18 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
 			this.#reject_all('connection superseded', jsonrpc_errors.service_unavailable);
 			return;
 		}
+		// The account lost a role the endpoint requires. Reconnecting would be
+		// refused at the role gate, so stay closed until `connect()` is called.
+		// Not a revocation: the credential is still good, and nothing will
+		// reopen the socket on its own, so the queue is rejected with the pending
+		// requests.
+		if (event.code === WS_CLOSE_PERMISSION_REVOKED) {
+			this.status = 'closed';
+			this.#cancel_reconnect();
+			this.#reset_reconnect_counters();
+			this.#reject_all('permission revoked', jsonrpc_errors.forbidden);
+			return;
+		}
 		// Pending in-flight requests can't be correlated post-reconnect; reject
 		// them. Queue stays so the flush on reopen replays unsent work.
 		this.#reject_pending_only(
@@ -1032,7 +1056,11 @@ export class FrontendWebsocketClient implements WebsocketConnection, Disposable 
  * an explicit `connect()` reopens it; read `FrontendWebsocketClient.superseded`
  * to tell the user why, and before connecting on an `initial` status without
  * the user asking (connecting a superseded client on its own closes a newer
- * socket in turn, which is the loop the close code exists to stop).
+ * socket in turn, which is the loop the close code exists to stop). A
+ * `WS_CLOSE_PERMISSION_REVOKED` close reads as `initial` the same way, with
+ * neither flag set: check `FrontendWebsocketClient.last_close_code` before
+ * connecting on your own, since without the role the upgrade is refused at
+ * the gate.
  *
  * @param revoked - whether the session has been permanently revoked
  *   (typically `FrontendWebsocketClient.revoked`)

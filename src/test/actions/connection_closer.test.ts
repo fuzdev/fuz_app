@@ -27,15 +27,24 @@ import {
 
 const ACCOUNT = create_uuid();
 
-/** One target per `ConnectionCloser` method, and the call each one records. */
-const targets: Array<{ target: ConnectionCloseTarget } & RecordedClose> = [
+/** One target per `ConnectionCloser` revocation method, and the call each one records. */
+const targets: Array<{ target: ConnectionCloseTarget; call: RecordedClose }> = [
 	{
 		target: { kind: 'session', session_token_hash: 'session_hash' },
-		method: 'session',
-		id: 'session_hash'
+		call: { method: 'session', id: 'session_hash' }
 	},
-	{ target: { kind: 'token', api_token_id: 'token_id' }, method: 'token', id: 'token_id' },
-	{ target: { kind: 'account', account_id: ACCOUNT }, method: 'account', id: ACCOUNT }
+	{
+		target: { kind: 'token', api_token_id: 'token_id' },
+		call: { method: 'token', id: 'token_id' }
+	},
+	{
+		target: { kind: 'account', account_id: ACCOUNT },
+		call: { method: 'account', id: ACCOUNT }
+	},
+	{
+		target: { kind: 'role', account_id: ACCOUNT, role: 'admin' },
+		call: { method: 'role', id: ACCOUNT, role: 'admin' }
+	}
 ];
 
 /** A closer whose every method throws `error`. */
@@ -47,6 +56,7 @@ const create_throwing_closer = (error: unknown): ConnectionCloser => {
 		close_sockets_for_session: fail,
 		close_sockets_for_token: fail,
 		close_sockets_for_account: fail,
+		close_sockets_for_role: fail,
 		close_all_sockets: fail
 	};
 };
@@ -61,17 +71,17 @@ describe('create_realtime_closer', () => {
 		// one member per reference, however many additions
 		closer.add(a.closer);
 
-		for (const { target, method, id } of targets) {
+		for (const { target, call } of targets) {
 			assert.strictEqual(close_connections(closer, target), 2);
-			assert.deepStrictEqual(a.calls.at(-1), { method, id });
-			assert.deepStrictEqual(b.calls.at(-1), { method, id });
+			assert.deepStrictEqual(a.calls.at(-1), call);
+			assert.deepStrictEqual(b.calls.at(-1), call);
 		}
 		assert.strictEqual(a.calls.length, targets.length);
 		assert.strictEqual(b.calls.length, targets.length);
 	});
 
-	for (const { target, method, id } of targets) {
-		test(`a member that throws does not stop the ${method} fan-out`, () => {
+	for (const { target, call } of targets) {
+		test(`a member that throws does not stop the ${call.method} fan-out`, () => {
 			// A throwing member ahead of the others would otherwise leave their
 			// connections open on a revoked credential, silently.
 			const closer = create_realtime_closer();
@@ -83,8 +93,8 @@ describe('create_realtime_closer', () => {
 			closer.add(after.closer);
 
 			assert.throws(() => close_connections(closer, target), boom);
-			assert.deepStrictEqual(before.calls, [{ method, id }]);
-			assert.deepStrictEqual(after.calls, [{ method, id }], 'the member after the throw ran');
+			assert.deepStrictEqual(before.calls, [call]);
+			assert.deepStrictEqual(after.calls, [call], 'the member after the throw ran');
 		});
 	}
 

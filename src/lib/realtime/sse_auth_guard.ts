@@ -45,17 +45,28 @@ export const AUDIT_LOG_CHANNEL = 'audit_log';
  * their `groups` — pending registrations included. The audit stream route
  * registers `scope = session hash` and `groups = [account id]`; a route that
  * admits bearer tokens registers the API token id too, and
- * `close_sockets_for_token` then reaches it. `close_all_sockets` is
- * `SubscriberRegistry.close_all` — every stream, for shutdown.
+ * `close_sockets_for_token` then reaches it. `close_sockets_for_role` closes
+ * the account's streams when `role` is the one the registry's streams are
+ * gated on — the registry keeps one gating role for all its streams, not one
+ * per stream. `close_all_sockets` is `SubscriberRegistry.close_all` — every
+ * stream, for shutdown.
  *
  * Twin of the Rust spine's `SocketRevoker` impl on `SseRegistry`.
+ *
+ * @param registry - the registry to close streams on
+ * @param required_role - the role every stream of `registry` was gated on,
+ *   or `null` when they are not role-gated (`close_sockets_for_role` then
+ *   closes nothing)
  */
 export const create_sse_connection_closer = <T>(
-	registry: SubscriberRegistry<T>
+	registry: SubscriberRegistry<T>,
+	required_role: string | null
 ): ConnectionCloser => ({
 	close_sockets_for_session: (session_token_hash) => registry.close_by_identity(session_token_hash),
 	close_sockets_for_token: (api_token_id) => registry.close_by_identity(api_token_id),
 	close_sockets_for_account: (account_id) => registry.close_by_identity(account_id),
+	close_sockets_for_role: (account_id, role) =>
+		required_role !== null && role === required_role ? registry.close_by_identity(account_id) : 0,
 	close_all_sockets: () => registry.close_all()
 });
 
@@ -74,9 +85,9 @@ export const create_sse_connection_closer = <T>(
  *   registers the token id and is closed here.
  * - `account` → every stream of `target_account_id ?? account_id`.
  * - `role` → every stream of the target account, when the revoked role
- *   (`metadata.role`) is `required_role`. The WebSocket guard does not act on
- *   this scope — per-message dispatch re-authorizes there — but a one-way
- *   stream has no later check, so it must close here.
+ *   (`metadata.role`) is `required_role`. A stream is authorized once at open
+ *   and has no later check; the WebSocket guard closes its role-gated sockets
+ *   on the same rows.
  * - `none` → nothing.
  *
  * Over-closing a one-way feed is cheap: the client reconnects if it is still
@@ -177,6 +188,11 @@ export interface AuditLogSse {
 	log: Logger;
 	/** Combined broadcast + guard callback. Wired by `create_app_server`'s `audit_log_sse` option, or compose inside the consumer's `audit_factory` body. */
 	on_audit_event: (event: AuditLogEvent) => void;
+	/**
+	 * The role the stream requires — what a caller adapting `registry` passes
+	 * `create_sse_connection_closer`, so its role close matches the guard's.
+	 */
+	required_role: string;
 }
 
 /**
@@ -276,10 +292,11 @@ export const create_audit_log_sse = (options: {
 		options.max_per_scope === undefined ? AUDIT_LOG_SSE_MAX_PER_SCOPE : options.max_per_scope;
 	const registry = new SubscriberRegistry<SseNotification>({ max_per_scope, log: options.log });
 	const guard = create_sse_auth_guard(registry, role, options.log);
-	options.connection_closer?.add(create_sse_connection_closer(registry));
+	options.connection_closer?.add(create_sse_connection_closer(registry, role));
 
 	return {
 		log: options.log,
+		required_role: role,
 		on_audit_event: (event: AuditLogEvent): void => {
 			registry.broadcast(AUDIT_LOG_CHANNEL, { method: event.event_type, params: event });
 			guard(event);

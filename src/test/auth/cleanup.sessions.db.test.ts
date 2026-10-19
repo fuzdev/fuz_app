@@ -178,6 +178,9 @@ describe_db('cleanup_expired_sessions', (get_db) => {
 			close_sockets_for_account: () => {
 				throw new Error('the sweep closes sessions only');
 			},
+			close_sockets_for_role: () => {
+				throw new Error('the sweep closes sessions only');
+			},
 			close_all_sockets: () => {
 				throw new Error('the sweep closes sessions only');
 			}
@@ -298,6 +301,7 @@ describe_db('cleanup_expired_sessions', (get_db) => {
 			},
 			close_sockets_for_token: () => 0,
 			close_sockets_for_account: () => 0,
+			close_sockets_for_role: () => 0,
 			close_all_sockets: () => 0
 		};
 

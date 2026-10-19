@@ -15,6 +15,10 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import { WSContext, type WSContextInit } from 'hono/ws';
 
 import { BackendWebsocketTransport } from '#lib/actions/transports_ws_backend.ts';
+import {
+	WS_CLOSE_PERMISSION_REVOKED,
+	WS_CLOSE_PERMISSION_REVOKED_REASON
+} from '#lib/actions/transports.ts';
 import { create_ws_auth_guard } from '#lib/actions/transports_ws_auth_guard.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 import {
@@ -29,18 +33,22 @@ import { create_uuid, type Uuid } from '#lib/primitive_schemas.ts';
 interface FakeWs {
 	ws: WSContext;
 	closes: Array<{ code?: number; reason?: string }>;
+	sends: Array<string>;
 }
 
 const create_fake_ws = (): FakeWs => {
 	const closes: Array<{ code?: number; reason?: string }> = [];
+	const sends: Array<string> = [];
 	const init: WSContextInit = {
-		send: () => {},
+		send: (data) => {
+			sends.push(data as string);
+		},
 		close: (code, reason) => {
 			closes.push({ code, reason });
 		},
 		readyState: 1
 	};
-	return { ws: new WSContext(init), closes };
+	return { ws: new WSContext(init), closes, sends };
 };
 
 const silent_log = new Logger('ws_auth_guard_test', { level: 'off' });
@@ -321,23 +329,6 @@ describe('create_ws_auth_guard: safety', () => {
 		assert.strictEqual(closes.length, 0);
 	});
 
-	test('does not close on role_grant_revoke — the next message is re-authorized instead', () => {
-		const transport = new BackendWebsocketTransport();
-		const guard = create_ws_auth_guard(transport, silent_log);
-		const { ws, closes } = create_fake_ws();
-		transport.add_connection(ws, HASH_A, ACCOUNT_A);
-
-		guard(
-			create_audit_event({
-				event_type: 'role_grant_revoke',
-				account_id: ACCOUNT_B,
-				target_account_id: ACCOUNT_A,
-				metadata: { role: 'admin' }
-			})
-		);
-		assert.strictEqual(closes.length, 0);
-	});
-
 	test('ignores an event type fuz_app does not define, whatever its metadata', () => {
 		const transport = new BackendWebsocketTransport();
 		const guard = create_ws_auth_guard(transport, silent_log);
@@ -353,6 +344,127 @@ describe('create_ws_auth_guard: safety', () => {
 			})
 		);
 		assert.strictEqual(closes.length, 0);
+	});
+});
+
+describe('create_ws_auth_guard: role_grant_revoke', () => {
+	const PERMISSION_REVOKED_CLOSE = {
+		code: WS_CLOSE_PERMISSION_REVOKED,
+		reason: WS_CLOSE_PERMISSION_REVOKED_REASON
+	};
+
+	/** The admin revoking `ACCOUNT_A`'s grant of `role`, global unless `scope_id` is given. */
+	const revoke_event = (role: string, scope_id: string | null = null): AuditLogEvent =>
+		create_audit_event({
+			event_type: 'role_grant_revoke',
+			account_id: ACCOUNT_B,
+			target_account_id: ACCOUNT_A,
+			metadata: { role, role_grant_id: create_uuid(), scope_id }
+		});
+
+	test('closes only the target account sockets gated on the revoked role, with 4006', () => {
+		const transport = new BackendWebsocketTransport();
+		const guard = create_ws_auth_guard(transport, silent_log);
+
+		const gated = create_fake_ws();
+		const ungated = create_fake_ws();
+		const other_role = create_fake_ws();
+		const other_account = create_fake_ws();
+		transport.add_connection(gated.ws, HASH_A, ACCOUNT_A, null, null, ['admin']);
+		transport.add_connection(ungated.ws, HASH_A, ACCOUNT_A);
+		transport.add_connection(other_role.ws, HASH_A, ACCOUNT_A, null, null, ['keeper']);
+		transport.add_connection(other_account.ws, HASH_B, ACCOUNT_B, null, null, ['admin']);
+		// a registration still pending admission is reached too
+		const pending = create_fake_ws();
+		const pending_id = transport.register_pending(pending.ws, HASH_A, ACCOUNT_A, null, null, [
+			'admin'
+		]);
+
+		guard(revoke_event('admin'));
+
+		assert.deepStrictEqual(gated.closes, [PERMISSION_REVOKED_CLOSE]);
+		assert.deepStrictEqual(pending.closes, [PERMISSION_REVOKED_CLOSE]);
+		assert.strictEqual(transport.admit(pending_id), false, 'the pending one is refused');
+		assert.deepStrictEqual(ungated.closes, [], "the account's ungated socket stays open");
+		assert.deepStrictEqual(other_role.closes, [], 'a socket gated on another role stays open');
+		assert.deepStrictEqual(other_account.closes, [], "another account's socket stays open");
+		assert.strictEqual(transport.get_connection_count(), 3);
+	});
+
+	test('nothing is sent on a socket after its permission-revoked close', async () => {
+		const transport = new BackendWebsocketTransport();
+		const guard = create_ws_auth_guard(transport, silent_log);
+		const gated = create_fake_ws();
+		const ungated = create_fake_ws();
+		transport.add_connection(gated.ws, HASH_A, ACCOUNT_A, null, null, ['admin']);
+		transport.add_connection(ungated.ws, HASH_A, ACCOUNT_A);
+
+		guard(revoke_event('admin'));
+		const frame = { jsonrpc: '2.0' as const, method: 'thing_changed', params: {} };
+		assert.strictEqual(transport.send_to_account(ACCOUNT_A, frame), 1, 'the ungated one only');
+		assert.strictEqual(
+			transport.broadcast_filtered(frame, () => true),
+			1
+		);
+
+		// the second frame of a synchronous run is written on a later tick
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepStrictEqual(gated.sends, []);
+		assert.strictEqual(ungated.sends.length, 2);
+	});
+
+	test('a scoped revoke closes nothing — a role gate admits on global grants only', () => {
+		const transport = new BackendWebsocketTransport();
+		const guard = create_ws_auth_guard(transport, silent_log);
+		const gated = create_fake_ws();
+		transport.add_connection(gated.ws, HASH_A, ACCOUNT_A, null, null, ['admin']);
+
+		guard(revoke_event('admin', create_uuid()));
+		assert.deepStrictEqual(gated.closes, []);
+		assert.strictEqual(transport.get_connection_count(), 1);
+	});
+
+	test('over-closes an any-of gate on the loss of any listed role', () => {
+		const transport = new BackendWebsocketTransport();
+		const guard = create_ws_auth_guard(transport, silent_log);
+		const gated = create_fake_ws();
+		transport.add_connection(gated.ws, HASH_A, ACCOUNT_A, null, null, ['admin', 'keeper']);
+
+		guard(revoke_event('keeper'));
+		assert.deepStrictEqual(gated.closes, [PERMISSION_REVOKED_CLOSE]);
+	});
+
+	test('a self-service revoke, with no target account, closes the actor account', () => {
+		const transport = new BackendWebsocketTransport();
+		const guard = create_ws_auth_guard(transport, silent_log);
+		const gated = create_fake_ws();
+		transport.add_connection(gated.ws, HASH_A, ACCOUNT_A, null, null, ['admin']);
+
+		guard(
+			create_audit_event({
+				event_type: 'role_grant_revoke',
+				account_id: ACCOUNT_A,
+				metadata: { role: 'admin', role_grant_id: create_uuid(), self_service: true }
+			})
+		);
+		assert.deepStrictEqual(gated.closes, [PERMISSION_REVOKED_CLOSE]);
+	});
+
+	test('no-op without metadata.role, and on a failure row', () => {
+		const transport = new BackendWebsocketTransport();
+		const guard = create_ws_auth_guard(transport, silent_log);
+		const gated = create_fake_ws();
+		transport.add_connection(gated.ws, HASH_A, ACCOUNT_A, null, null, ['admin']);
+
+		guard(
+			create_audit_event({
+				event_type: 'role_grant_revoke',
+				target_account_id: ACCOUNT_A,
+				metadata: { role_grant_id: create_uuid() }
+			})
+		);
+		guard({ ...revoke_event('admin'), outcome: 'failure' });
+		assert.deepStrictEqual(gated.closes, []);
 	});
 });
 

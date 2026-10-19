@@ -38,8 +38,9 @@ import {
  * WS transport's `request_connection` path drives server→client `peer/ping`),
  * `ws_account_actions` (the binary mounts its full action set on `/api/ws`,
  * the account actions among them),
- * and `cell_gated_create` (the binary's `full_spine_mount` mounts the
- * `test_cell_gated_create_authorize` policy).
+ * `cell_gated_create` (the binary's `full_spine_mount` mounts the
+ * `test_cell_gated_create_authorize` policy), and `ws_role_gated` (the binary
+ * mounts the role-gated WS endpoint at `SPINE_ROLE_GATED_WS_PATH`).
  */
 const ts_spine_capabilities = Object.freeze({
 	...ts_default_capabilities,
@@ -47,7 +48,8 @@ const ts_spine_capabilities = Object.freeze({
 	ready: true,
 	peer_request: true,
 	ws_account_actions: true,
-	cell_gated_create: true
+	cell_gated_create: true,
+	ws_role_gated: true
 });
 
 /**

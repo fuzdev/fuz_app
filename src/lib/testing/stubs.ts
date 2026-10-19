@@ -40,6 +40,7 @@ import {
 import type { EventSpec, SseNotification } from '../realtime/sse.ts';
 import { AUDIT_LOG_SSE_MAX_PER_SCOPE, type AuditLogSse } from '../realtime/sse_auth_guard.ts';
 import { SubscriberRegistry } from '../realtime/subscriber_registry.ts';
+import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import { BaseServerEnv } from '../server/env.ts';
 import {
 	AUTH_MIDDLEWARE_PATH,
@@ -173,7 +174,8 @@ export const create_stub_audit_sse = (): AuditLogSse => {
 	return {
 		log: new Logger('test:audit_sse', { level: 'off' }),
 		on_audit_event: () => {},
-		registry
+		registry,
+		required_role: ROLE_ADMIN
 	};
 };
 
