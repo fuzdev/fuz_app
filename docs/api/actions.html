@@ -23,15 +23,15 @@
 		<link href="/_app/immutable/chunks/BTZoVLbz.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/Cyt8LZpN.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/CAODFmXb.js" rel="modulepreload">
-		<link href="/_app/immutable/entry/app.O4XMNaPb.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/0.DWEPF9sp.js" rel="modulepreload">
+		<link href="/_app/immutable/entry/app.biOxQU5A.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/0.xNLDaD56.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BcwQFYZ2.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/C3BYcZ2u.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yQC99TMY.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/yWx_1vUe.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/B9s6dVBv.js" rel="modulepreload">
-		<link href="/_app/immutable/chunks/BI_jN2dq.js" rel="modulepreload">
-		<link href="/_app/immutable/nodes/2.C0XJ9IDZ.js" rel="modulepreload">
+		<link href="/_app/immutable/chunks/DJeoKSja.js" rel="modulepreload">
+		<link href="/_app/immutable/nodes/2.De5NwgAl.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BL7ZH9U-.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/DhdQKFKC.js" rel="modulepreload">
 		<link href="/_app/immutable/chunks/BPVwp-J3.js" rel="modulepreload">
@@ -157,7 +157,10 @@ nothing. So a revocation takes effect on an open connection only when
 something closes it. <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#ConnectionCloser"><!--[0--><!--[-1-->ConnectionCloser<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> is that capability, and every
 revocation handler holds one: the session and token revokes, the revoke-alls,
 account delete and purge, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/logout<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->/password<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, and the session and token
-caps for what they evict. The auth cleanup holds one too
+caps for what they evict. A role revocation is the exception: it closes
+only the connections an endpoint gated on that role, and only through the
+audit listeners (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports_ws_auth_guard.ts#create_ws_auth_guard"><!--[0--><!--[-1-->create_ws_auth_guard<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/realtime/sse_auth_guard.ts#create_sse_auth_guard"><!--[0--><!--[-1-->create_sse_auth_guard<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) — no
+handler holds a closer for it. The auth cleanup holds one too
 (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->AuthCleanupDeps.connection_closer<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->): its session sweep closes the
 connections of each expired session it deletes, after that delete commits.<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="closing-after-commit"><!--[--><!--[2-->Closing after commit<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[2-->A revocation runs inside a request transaction, and it must not close a
 connection until that transaction commits. <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#queue_connection_close"><!--[0--><!--[-1-->queue_connection_close<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> defers
@@ -331,10 +334,17 @@ the credential alive. Every one does: the revocation handlers queue their
 close behind the commit (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/connection_closer.ts#queue_connection_close"><!--[0--><!--[-1-->queue_connection_close<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), and the audit emitter
 announces a success row to the listeners behind it too. So no interleaving
 admits a revoked credential; <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->docs/security.md<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> §Connection Admission says
-what that rests on.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A refused upgrade is closed with <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_SESSION_REVOKED"><!--[0--><!--[-1-->WS_CLOSE_SESSION_REVOKED<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (4001, the
-reason a revoked socket gets), or <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_INTERNAL_ERROR"><!--[0--><!--[-1-->WS_CLOSE_INTERNAL_ERROR<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (1011) when the
-re-read itself failed — fail closed, never admitted unchecked. The handshake
-has already answered <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->101<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, so a refusal can only be a close frame.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Once the server is shutting down (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->AppServer.close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> ran the transport's
+what that rests on.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->An endpoint gated on <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->required_roles<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> re-reads them beside the credential:
+its upgrade passed the role gate before the socket registered, so a role
+revocation landing in between would close nothing (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->close_sockets_for_role<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->
+matches registrations), and the socket would be admitted without the role
+for its lifetime. The re-read reads the acting actor's grants afresh and
+admits on a global grant of any listed role, as the gate did.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->A refused upgrade is closed with <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_SESSION_REVOKED"><!--[0--><!--[-1-->WS_CLOSE_SESSION_REVOKED<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (4001, the
+reason a revoked socket gets) for a dead credential,
+<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_PERMISSION_REVOKED"><!--[0--><!--[-1-->WS_CLOSE_PERMISSION_REVOKED<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (4006) for a lost role, or
+<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_INTERNAL_ERROR"><!--[0--><!--[-1-->WS_CLOSE_INTERNAL_ERROR<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (1011) when either re-read itself failed — fail
+closed, never admitted unchecked. The handshake has already answered <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->101<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
+so a refusal can only be a close frame.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Once the server is shutting down (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->AppServer.close<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> ran the transport's
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->close_all_sockets<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->) a refusal is <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_GOING_AWAY"><!--[0--><!--[-1-->WS_CLOSE_GOING_AWAY<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> instead, so the
 client reconnects rather than treating its credential as revoked: an upgrade
 pending at the close-all is closed by it — and its abort makes the refusal
@@ -346,8 +356,15 @@ once the socket is admitted and <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><cod
 dropped unread on a refusal. The queue holds at most
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/register_action_ws.ts#MAX_PRE_ADMISSION_FRAMES"><!--[0--><!--[-1-->MAX_PRE_ADMISSION_FRAMES<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> frames and
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/register_action_ws.ts#PRE_ADMISSION_QUEUE_BYTES_FACTOR"><!--[0--><!--[-1-->PRE_ADMISSION_QUEUE_BYTES_FACTOR<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> × <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->max_message_bytes<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> bytes; past either
-the socket is closed.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->The upgrade's role gate is *not* re-read: a role revocation closes no
-WebSocket in the first place (per-message dispatch re-reads role grants).<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="a-server-closed-socket-dispatches-nothing"><!--[--><!--[2-->A server-closed socket dispatches nothing<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[2-->A runtime adapter can keep delivering inbound frames after the server calls
+the socket is closed.<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="credential-deadline"><!--[--><!--[2-->Credential deadline<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[2-->Expiry writes nothing a revocation listener could hear, so the socket
+watches its own credential's expiry (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ResolvedAuth.credential_deadline<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
+the earlier of a session's cookie and row, an API token's row, none for a
+daemon token or an eternal token). From admission, a timer closes it at the
+deadline with <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_SESSION_REVOKED"><!--[0--><!--[-1-->WS_CLOSE_SESSION_REVOKED<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (4001) and
+<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_CREDENTIAL_EXPIRED_REASON"><!--[0--><!--[-1-->WS_CLOSE_CREDENTIAL_EXPIRED_REASON<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->. The wait is a chain of timers of at
+most an hour (<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/credential_deadline.ts#schedule_credential_deadline"><!--[0--><!--[-1-->schedule_credential_deadline<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), so a session's 30 days — past
+<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->setTimeout<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->'s ceiling — does not fire at once, and each wake-up checks the
+wall clock too, so a host suspend does not extend the deadline.<!--]--><!--]--><!----></p><!--]--><!--[14--><!----><h2 id="a-server-closed-socket-dispatches-nothing"><!--[--><!--[2-->A server-closed socket dispatches nothing<!--]--><!--]--><!----></h2><!----><!--]--><!--[8--><p><!--[--><!--[2-->A runtime adapter can keep delivering inbound frames after the server calls
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ws.close(…)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->, until the close handshake completes (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->@hono/node-ws<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> does —
 up to the <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ws<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> close timeout when the client withholds its close frame).
 So every server-side close — revocation, cap eviction, heartbeat timeout,
@@ -372,15 +389,20 @@ authenticated account plus an optional <!--]--><!--[3--><!--[0--><!--[--><!--[-1
 and build the <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/request_context.ts#RequestContext"><!--[0--><!--[-1-->RequestContext<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> that per-message dispatch reads.
 Multi-actor accounts must supply <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->?acting<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> to pick a persona;
 single-actor accounts work without it.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[2-->Optional <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->require_role(required_roles)<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — for endpoints gated to a
-non-empty any-of set of roles.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ol><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->Then delegates to <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/register_action_ws.ts#register_action_ws"><!--[0--><!--[-1-->register_action_ws<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> for per-message JSON-RPC
+non-empty any-of set of roles. <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/register_action_ws.ts#register_action_ws"><!--[0--><!--[-1-->register_action_ws<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> records the roles on
+each registration and re-reads them at admission, so the gate holds for
+the socket's life (a revoked role closes it with
+<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_PERMISSION_REVOKED"><!--[0--><!--[-1-->WS_CLOSE_PERMISSION_REVOKED<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->).<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ol><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->Then delegates to <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/register_action_ws.ts#register_action_ws"><!--[0--><!--[-1-->register_action_ws<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> for per-message JSON-RPC
 dispatch.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/actions/rpc_client.ts"><!--[-1-->actions/rpc_client.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Typed RPC client — creates a Proxy-based API from action specs.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Two tiers of usage:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Tier 1<!--]--><!--]--><!----></strong><!--]--><!--[2--> (simple, for tx): transport send/receive, Result return. No <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->environment<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></li><!--]--><!--[10--><li><!--[--><!--[4--><strong><!--[--><!--[2-->Tier 2<!--]--><!--]--><!----></strong><!--]--><!--[2--> (full, for zzz): ActionEvent lifecycle with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->environment<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></li><!--]--><!--]--><!----></ul><!--]--><!--]--><!--[8--><p><!--[--><!--[2-->Pass the consumer's generated <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->ActionsApi<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> interface as <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->&lt;TApi><!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> to flow
 full type safety through without an explicit cast at the call site.<!--]--><!--]--><!----></p><!--]--><!--]--><!--]--><!----></div><!----><!--]--></li><li><h3><!--[0--><a class="module-link chip " href="/docs/api/actions/socket.svelte.ts"><!--[-1-->actions/socket.svelte.ts<!--]--></a><!--]--><!----></h3> <!--[0--><!----><div><!--[0--><!--[--><!--[8--><p><!--[--><!--[2-->Frontend WebSocket client — portable, Svelte-reactive, implements <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports_ws.ts#WebsocketConnection"><!--[0--><!--[-1-->WebsocketConnection<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->Plain class with <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->$state<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> runes (no Cell inheritance, no app coupling).
 Drop into any SvelteKit frontend as the underlying connection for
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports_ws.ts#FrontendWebsocketTransport"><!--[0--><!--[-1-->FrontendWebsocketTransport<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->. Handles auto-reconnect with exponential
 backoff, respects <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_SESSION_REVOKED"><!--[0--><!--[-1-->WS_CLOSE_SESSION_REVOKED<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (no reconnect loop after the
-server revokes auth) and <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_CONNECTION_LIMIT"><!--[0--><!--[-1-->WS_CLOSE_CONNECTION_LIMIT<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (no reconnect after the
+server revokes auth), <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_CONNECTION_LIMIT"><!--[0--><!--[-1-->WS_CLOSE_CONNECTION_LIMIT<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (no reconnect after the
 server closes this socket to admit a newer one — closed until the user
-acts), exposes reactive status for UI indicators, and ships three
+acts), and <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_PERMISSION_REVOKED"><!--[0--><!--[-1-->WS_CLOSE_PERMISSION_REVOKED<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (no reconnect after the account
+lost the role the endpoint requires — closed until the user acts), exposes
+reactive status for UI indicators, and ships three
 correctness primitives default-on:<!--]--><!--]--><!----></p><!--]--><!--[9--><!--[-1--><ul><!--[--><!--[10--><li><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->FrontendWebsocketClient.request<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> — promise-based JSON-RPC with
 auto-assigned ids and a pending-id map. Intercepts responses on the
 message path so request/response correlation is transport-level rather
@@ -410,11 +432,16 @@ guard's close is post-commit too.<!--]--><!--]--><!----></p><!--]--><!--[14--><!
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/audit_log_schema.ts#audit_event_revocation_scopes"><!--[0--><!--[-1-->audit_event_revocation_scopes<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> (<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/auth/audit_log_schema.ts"><!--[0--><!--[-1-->auth/audit_log_schema.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->), the table the
 SSE guard (<!--]--><!--[3--><!--[0--><!--[--><!--[1--><!--[0--><a class="module-link chip " href="/docs/api/realtime/sse_auth_guard.ts"><!--[0--><!--[-1-->realtime/sse_auth_guard.ts<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->) reads too — one declaration, so the
 two cannot drift into closing a revoked token's socket while leaving its
-stream open.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> is the one scope this guard deliberately does not act on:
-<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/perform_action.ts#perform_action"><!--[0--><!--[-1-->perform_action<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> re-authorizes every message, so a socket whose account just
-lost the gating role is refused at its next message, and closing it would
-only change when the caller learns. A stream has no later check, so the SSE
-guard closes there.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->For standard WS endpoints mounted via <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->AppServerOptions.ws_endpoints<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
+stream open.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->role<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> closes the target account's sockets whose endpoint gated the upgrade
+on the revoked role (<!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->close_sockets_for_role<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->), with
+<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/transports.ts#WS_CLOSE_PERMISSION_REVOKED"><!--[0--><!--[-1-->WS_CLOSE_PERMISSION_REVOKED<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2-->, when the revoked grant was global
+(<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/auth/audit_log_schema.ts#to_global_role_revocation"><!--[0--><!--[-1-->to_global_role_revocation<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> — a role gate admits on global grants only).
+<!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/actions/perform_action.ts#perform_action"><!--[0--><!--[-1-->perform_action<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> re-authorizes every *request* against its own action, but
+the role gate is the only check on what the socket *receives*: broadcasts
+and notifications reach every admitted connection of the endpoint with no
+per-recipient filter, so a socket left open past the revocation would keep
+receiving what the gate exists to withhold. The role is the only revocation
+no handler closes for, so this guard is its one closer.<!--]--><!--]--><!----></p><!--]--><!--[8--><p><!--[--><!--[2-->For standard WS endpoints mounted via <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->AppServerOptions.ws_endpoints<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->,
 <!--]--><!--[3--><!--[0--><!--[--><!--[0--><!--[0--><a class="declaration-link chip" href="/docs/api/server/app_server.ts#create_app_server"><!--[0--><!--[-1-->create_app_server<!--]--><!----><!--]--></a><!--]--><!--]--><!--]--><!--]--><!--]--><!--[2--> registers the guard automatically per
 <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->WsEndpointSpec.auth_guard<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2-->. For custom wiring, register the handler
 inside the consumer's <!--]--><!--[3--><!--[0--><!--[--><!--[-1--><code><!--[-1-->audit_factory<!--]--><!----></code><!--]--><!--]--><!--]--><!--]--><!--[2--> body (or via
@@ -557,16 +584,16 @@ until the runtime or the client ends it.<!--]--><!--]--><!----></p><!--]--><!--]
 			
 			<script>
 				{
-					__sveltekit_1e0eea4 = {
+					__sveltekit_vsbxum = {
 						base: "",
-						version: "24480eb3a2c856ad7ea95b3d8df801eb1c7f34ef"
+						version: "c402dcd68717098af87628ff65c28bf118c5c1fc"
 					};
 
 					const element = document.currentScript.parentElement;
 
 					import("/_app/immutable/entry/start.CXlCZqzx.js").then(async (kit) => {
-						kit.init(__sveltekit_1e0eea4);
-						const app = await import("/_app/immutable/entry/app.O4XMNaPb.js");
+						kit.init(__sveltekit_vsbxum);
+						const app = await import("/_app/immutable/entry/app.biOxQU5A.js");
 						kit.start(app, element, {
 							node_ids: [0, 2, 7],
 							data: [null,null,null],
