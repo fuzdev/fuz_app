@@ -327,6 +327,10 @@ idempotency, a scoped assign round-tripping `scope_kind` through
 in-process leg `conformance_participation.db.test.ts`), and
 `origin.cross.test.ts` (the imperative `describe_origin_cross_tests` — Origin
 allowlist: absent → pass; in-process leg `auth/origin_parity.db.test.ts`), and
+`origin_conformance.cross.test.ts` (`describe_origin_conformance_cross_tests` —
+every row of the shared allowlist grammar + matcher table
+`origin_conformance.json` through each backend's `_testing_origin_check`; TS
+unit leg `http/origin.conformance.test.ts`), and
 `transport_composition.cross.test.ts` (the front-door table via
 `describe_transport_composition_cross_tests` — on REST `POST /logout`, RPC
 `POST` and `GET`, the WS upgrade and the audit stream: a foreign `Origin` →

@@ -1600,6 +1600,16 @@ are `src/test/auth/cell_crud_parity.db.test.ts`
   payload-expiry tests never reached. Daemon-token-gated like its siblings; the
   Rust mirror is `fuz_testing::create_testing_mint_session_action_spec`.
 
+  Also in the module and **not** bundled: `_testing_origin_check`
+  (`create_testing_origin_check_action()`, `run_testing_origin_check(input)`,
+  `TestingOriginCheckInput` / `TestingOriginCheckOutput`) — answers the origin
+  allowlist's parse and request check for one `{patterns, origin}` pair:
+  `{ok: true, allowed}` or `{ok: false, errors: [{index?, kind}]}`. Pure, no
+  database. Kept out of the bundle so a consumer whose Rust binary doesn't
+  mount the mirror (`fuz_testing::create_testing_origin_check_action_spec`)
+  keeps an exact action-manifest gate; the spine binary appends it in
+  `build_full_spine_rpc_actions`.
+
   Also in the module — but **not** bundled by `create_testing_actions` —
   `_testing_action_manifest` (+ `create_testing_action_manifest_action(mounted)`):
   dumps the live RPC registry as a normalized `ActionManifest` for the
@@ -1691,6 +1701,24 @@ in-process `auth/origin_parity.db.test.ts` + the cross-process
 `origin.cross.test.ts`). The promotion surfaced a twin-impl divergence — the
 Rust spine returned a plain-text body — now converged to the canonical TS
 `{error: "forbidden_origin"}` via `fuz_http::forbidden_origin_response()`.
+
+### Origin allowlist conformance — `cross_backend/origin_conformance.ts`
+
+`cross_backend/origin_conformance.json` is the shared table both spines' origin
+allowlist must satisfy: **parse** rows `{raw, ok: true}` or `{raw, errors:
+[{index?, kind}]}` (every refusal, 1-based position, `AllowedOriginsErrorKind`)
+and **match** rows `{patterns, origin, allowed}` (`origin: null` — no
+`Origin` — passes). A row may carry a `note`. `load_origin_conformance()` reads
+and validates it (`OriginConformance`), `to_origin_conformance_checks(table)`
+flattens it into `_testing_origin_check` inputs with their expected answers, and
+`assert_origin_conformance(checks, answers, backend)` fails once listing every
+row that disagrees. `describe_origin_conformance_cross_tests({setup_test,
+rpc_path?})` sends every row to a backend's `_testing_origin_check` over the
+keeper's daemon-token channel; the TS unit leg runs the same rows through
+`run_testing_origin_check` (`src/test/http/origin.conformance.test.ts`), so the
+Rust spine is held to the table without reading the file. Ungated; edit the
+table by hand — it is the statement of the grammar, not generated output.
+fuz_app's own wiring is `src/test/cross_backend/origin_conformance.cross.test.ts`.
 
 ### CORS simple-request parity — `cross_backend/simple_request.ts`
 

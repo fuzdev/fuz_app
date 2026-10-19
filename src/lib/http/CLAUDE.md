@@ -25,7 +25,7 @@ effects, see ../../../docs/architecture.md.
 - `http/proxy.ts` — trusted-proxy middleware, CIDR parsing, rightmost-first XFF resolution. Pulls `hono/utils/ipaddr` for CIDR matching.
 - `http/client_ip.ts` — `get_client_ip(c)` — reads the resolved IP off the context (set by `proxy.ts`'s middleware). Split out of `proxy.ts` so it's hono-free: dispatch + route modules that only _read_ the IP don't pull `hono/utils/ipaddr`, keeping cross-process test surfaces free of the optional `hono` peer.
 - `http/ip_canonical.ts` — RFC 5952 IPv6 canonicalization + IPv4-mapped collapse; `IP_LITERAL_CHARS` regex.
-- `http/origin.ts` — origin allowlist middleware with wildcard patterns (Origin-only).
+- `http/origin.ts` — origin allowlist: the strict pattern grammar shared with the Rust spine, typed refusals, and the Origin-only middleware.
 - `http/jsonrpc.ts` — JSON-RPC 2.0 envelope schemas (MCP superset), `JsonrpcErrorCode`, `_meta`.
 - `http/jsonrpc_errors.ts` — `ThrownJsonrpcError`, `jsonrpc_errors` throwers, HTTP-status mappings.
 - `http/jsonrpc_helpers.ts` — message builders, type guards, input/result normalizers.
@@ -327,9 +327,10 @@ operator configuration in practice.
 Origin allowlisting for locally-running services — **not** the CSRF layer.
 CSRF is handled by `SameSite: strict` on session cookies (`auth/session_middleware.ts`).
 
-- `parse_allowed_origins(env_value)` — comma-separated patterns → `Array<RegExp>`
-- `should_allow_origin(origin, patterns)` — case-insensitive match
-- `verify_request_source(allowed_patterns)` — Hono handler: `Origin` present → must match allowlist or 403 `ERROR_FORBIDDEN_ORIGIN`; no `Origin` → allow through (curl, CLI, token auth is primary control)
+- `parse_allowed_origins(raw)` — comma-separated entries → `Result<{origins: Array<RegExp>}, {errors: Array<AllowedOriginsError>}>`; every refused entry is reported (`{kind, index, entry}`, 1-based), a blank value is `{kind: 'no_origins'}`
+- `OriginPatternErrorKind` / `AllowedOriginsErrorKind` — the refusal kinds, wire names shared with the Rust spine; `ALLOWED_ORIGINS_ERROR_MESSAGES` the reason per kind, `format_allowed_origins_error` one refusal as a boot-error line (entry quoted and escaped)
+- `should_allow_origin(origin, patterns)` — case-insensitive match; a value that isn't visible ASCII matches nothing
+- `verify_request_source(allowed_patterns)` — Hono handler: `Origin` present → must match allowlist or 403 `ERROR_FORBIDDEN_ORIGIN`; no `Origin` → allow through (curl, CLI, token auth is primary control). A repeated `Origin` reaches it joined (`a, b`) and is refused
 - `is_browser_context(c)` — true when `Origin` or `Referer` is present (`!== undefined`, so empty-string counts). The bearer + daemon-token middleware discard their credential when true; twin of the Rust spine's `bearer_auth::is_browser_context`. Distinct from `verify_request_source` (allowlist gate) — this only detects browser context
 
 **Origin-only by design.** Fetch spec mandates `Origin` on every unsafe
@@ -337,17 +338,26 @@ method, so a real browser request on any state-changing surface always
 carries it. Non-browser clients don't ship auto-attached session cookies,
 so CSRF isn't the relevant threat there — auth (bearer / daemon token) is
 the actual control. A `Referer` fallback would only widen the
-accepted-shape envelope without closing a real CSRF hole. Mirrors
-`zzz_server::auth::is_request_origin_allowed`.
+accepted-shape envelope without closing a real CSRF hole. The Rust
+spine's `origin_layer` is the twin.
 
-Pattern syntax: exact `https://api.fuz.dev`; wildcard subdomain
-`https://*.fuz.dev` (matches `api.fuz.dev`, NOT `fuz.dev`); multiple
-wildcards `https://*.*.corp.fuz.dev`; port wildcard `http://localhost:*`
-(optional port); IPv6 `http://[::1]:3000`, `https://[2001:db8::1]` (no
-wildcards inside brackets). Patterns normalize through `URL` constructor.
-IPv6 zone identifiers (`%eth0`) not supported. Throws on paths, partial
-wildcards (`*fuz.dev`), wildcards inside IPv6 brackets, or missing
-protocol.
+**Grammar** (shared with the Rust spine's `AllowedOrigins::parse`, pinned by
+`testing/cross_backend/origin_conformance.json`): entries are trimmed of ASCII
+whitespace and written as a browser writes an `Origin` — exact
+`https://api.fuz.dev`; wildcard label `https://*.fuz.dev` (one label in any
+position — matches `api.fuz.dev`, NOT `fuz.dev` or `a.b.fuz.dev`); several
+`https://*.*.corp.fuz.dev`; port wildcard `http://localhost:*` (any port or
+none); IPv6 `http://[::1]:3000` (exact, no wildcard inside the brackets).
+**Nothing is normalized** — the matcher is built from the entry as written, so
+an entry a browser would never send is refused rather than rewritten: non-ASCII
+(punycode an IDN host), a scheme other than http/https (`null`, `file://`,
+`chrome-extension://`), a path/query/fragment/trailing slash, userinfo, a
+character no hostname holds (`%`, `\`, `^`, `|`, `<`, `>`, `[`, `]`), a partial
+wildcard, an IPv4 address not written as four canonical decimal numbers, an IPv6
+address not in the browser's form (the URL parser serves as the serializer and
+any difference refuses), a port outside `1..=65535` or with leading zeros, the
+scheme's default port, and an empty entry. The checks run in a fixed order so
+both spines name the same kind for the same entry.
 
 ## JSON-RPC (`http/jsonrpc.ts`, `http/jsonrpc_errors.ts`, `http/jsonrpc_helpers.ts`)
 

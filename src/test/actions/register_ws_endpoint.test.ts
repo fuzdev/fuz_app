@@ -25,6 +25,13 @@ import { create_stub_upgrade } from '#lib/testing/ws_round_trip.ts';
 import { create_stub_db } from '#lib/testing/stubs.ts';
 import { create_test_request_context } from '#lib/testing/auth_apps.ts';
 
+/** Parse an allowlist the test knows is valid. */
+const parse_origins = (raw: string): Array<RegExp> => {
+	const result = parse_allowed_origins(raw);
+	if (!result.ok) throw new Error(`invalid allowlist: ${raw}`);
+	return result.origins;
+};
+
 const log = new Logger('test', { level: 'off' });
 
 const ALLOWED_ORIGIN = 'http://localhost:3000';
@@ -67,7 +74,7 @@ const build_app = (opts: BuildOptions = {}) => {
 		app,
 		upgradeWebSocket: stub.upgradeWebSocket,
 		actions: [heartbeat_action],
-		allowed_origins: parse_allowed_origins(ALLOWED_ORIGIN),
+		allowed_origins: parse_origins(ALLOWED_ORIGIN),
 		db: stub_db,
 		required_roles,
 		log
@@ -193,7 +200,7 @@ describe('composition', () => {
 			app,
 			upgradeWebSocket: stub.upgradeWebSocket,
 			actions: [heartbeat_action],
-			allowed_origins: parse_allowed_origins(ALLOWED_ORIGIN),
+			allowed_origins: parse_origins(ALLOWED_ORIGIN),
 			db: stub_db,
 			log
 		});

@@ -27,7 +27,11 @@ import { query_role_grant_find_active_for_actor } from '../auth/role_grant_queri
 import type { QueryDeps } from '../db/query_deps.ts';
 import { create_proxy_middleware } from '../http/proxy.ts';
 import { get_client_ip } from '../http/client_ip.ts';
-import { verify_request_source, parse_allowed_origins } from '../http/origin.ts';
+import {
+	verify_request_source,
+	parse_allowed_origins,
+	format_allowed_origins_error
+} from '../http/origin.ts';
 import { REQUEST_CONTEXT_KEY, type RequestContext } from '../auth/request_context.ts';
 import {
 	ACCOUNT_ID_KEY,
@@ -361,6 +365,7 @@ export interface TestMiddlewareStackApp {
  * @returns the app and mock spies (reconfigure via `mockImplementation` for valid-token paths)
  * @mutates module-level `vi.mock` registrations for the four bearer-auth query
  *   modules — each call resets the spies before wiring the stack.
+ * @throws Error when `allowed_origins` is not a valid allowlist
  */
 export const create_test_middleware_stack_app = (
 	options?: TestMiddlewareStackOptions
@@ -390,8 +395,13 @@ export const create_test_middleware_stack_app = (
 		get_connection_ip: get_connection_ip as any
 	});
 
-	const allowed_patterns = parse_allowed_origins(allowed_origins_str);
-	const origin_mw = verify_request_source(allowed_patterns);
+	const parsed_origins = parse_allowed_origins(allowed_origins_str);
+	if (!parsed_origins.ok) {
+		throw new Error(
+			`create_test_middleware_stack_app: invalid allowed_origins: ${parsed_origins.errors.map(format_allowed_origins_error).join('; ')}`
+		);
+	}
+	const origin_mw = verify_request_source(parsed_origins.origins);
 
 	const bearer_mw = create_bearer_auth_middleware(STUB_DEPS, new Logger('test', { level: 'off' }));
 

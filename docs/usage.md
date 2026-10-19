@@ -942,7 +942,7 @@ const { transport } = register_ws_endpoint({
 	path: '/api/ws',
 	app,
 	upgradeWebSocket, // from the runtime adapter (`@hono/deno`, or `createNodeWebSocket({app})` on Node)
-	allowed_origins, // required here — from parse_allowed_origins(env.FUZ_ALLOWED_ORIGINS)
+	allowed_origins, // required here — `validate_server_env`'s `allowed_origins`
 	required_roles: [ROLE_ADMIN], // optional — omit for any authenticated account
 	actions: [...protocol_actions, ...my_actions],
 	db: backend.deps.db, // pool-level — perform_action wraps in db.transaction for side_effects: true
@@ -1742,25 +1742,39 @@ for (const factory of factories) {
 
 ## Origin Pattern Syntax
 
-`FUZ_ALLOWED_ORIGINS` is a comma-separated string of origin patterns:
+`FUZ_ALLOWED_ORIGINS` is a comma-separated list of entries, each written the
+way a browser writes an `Origin` — `scheme://host[:port]`, http or https —
+where a whole host label or the port may be `*`:
 
 ```
 # Exact match
 https://example.com
 
-# Wildcard subdomain (matches any subdomain depth)
+# Wildcard label — exactly one label: matches api.example.com,
+# not example.com or a.b.example.com
 https://*.example.com
 
-# Wildcard port (matches any port)
+# Wildcard port — any port, or none
 http://localhost:*
 
 # Multiple patterns
 https://example.com,https://*.example.com,http://localhost:*
 ```
 
+Nothing is normalized. An entry a browser would never send is refused at boot,
+and `validate_server_env` reports every refused entry, not just the first: a
+blank value or a stray comma, a non-ASCII host (write its punycode), a scheme
+other than http or https (`null`, `file://`), a path or trailing slash,
+userinfo, a partial wildcard (`*foo.example.com`), an IPv4 address not written
+as four decimal numbers (`127.1`), an IPv6 address not in the form a browser
+sends (`[0:0:0:0:0:0:0:1]` — write `[::1]`), a port with leading zeros, and the
+scheme's default port (`https://example.com:443` — write it without the port).
+The Rust spine's `AllowedOrigins::parse` accepts and refuses the same entries;
+`testing/cross_backend/origin_conformance.json` is the shared table.
+
 Requests without an `Origin` header pass the origin check — direct
-curl/CLI access still works. `verify_request_source` is Origin-only;
-the `Referer` header is no longer consulted (converges with the zzz
-Rust port). Bearer middleware separately treats `Referer` presence as
-a browser-context indicator and silently discards the bearer token —
-that's a different axis from origin allowlisting.
+curl/CLI access still works. An `Origin` that isn't visible ASCII, or a
+repeated one, is refused. `verify_request_source` is Origin-only; the
+`Referer` header is not consulted. Bearer middleware separately treats
+`Referer` presence as a browser-context indicator and silently discards the
+bearer token — that's a different axis from origin allowlisting.

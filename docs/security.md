@@ -1790,10 +1790,11 @@ from disallowed `Origin` headers before any handler runs. It is what guards
 the WebSocket upgrade, which is never preflighted, so list exact origins: a
 port wildcard (`http://localhost:*`) admits every same-site local page to the
 socket, cookie included. It also protects locally-running services from
-being called by untrusted websites as the user browses the web. Origin-only:
-the Fetch spec mandates `Origin` on every unsafe method, so the
-Referer-fallback arm was inert on modern browsers and was dropped to
-converge with the `zzz_server` Rust port. Non-browser clients (curl, CLI,
+being called by untrusted websites as the user browses the web. It reads
+`Origin` only, never `Referer` — the Fetch spec mandates `Origin` on every
+unsafe method. The allowlist is parsed strictly, and the server fails at boot
+naming every bad entry; a request whose `Origin` is unreadable or duplicated
+is refused with `403`. Non-browser clients (curl, CLI,
 server-to-server) without an `Origin` header pass through — token auth is
 the security control for those callers, which don't carry auto-attached
 cookies.

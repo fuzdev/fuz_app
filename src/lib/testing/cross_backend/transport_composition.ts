@@ -12,18 +12,25 @@ import '../assert_dev_env.ts';
  * and still disagree on which refusal answers when a request trips several, so
  * this suite pins the answer per transport as a table:
  *
- * | surface | foreign `Origin` | over cap + foreign `Origin` | no credential | narrowed token |
- * | --- | --- | --- | --- | --- |
- * | REST `POST` (`/logout`) | 403 `forbidden_origin` | 413 `payload_too_large` | 401 `authentication_required` | 403 `credential_type_required` |
- * | REST `POST` (`/password`) | — | — | 401 `authentication_required` | — |
- * | RPC `POST` | 403 `forbidden_origin` | 413 `payload_too_large` | 401 `authentication_required` | 403 `token_scope_required` (`rpc:<method>`) |
- * | RPC `GET` | 403 `forbidden_origin` | — | 401 `authentication_required` | 403 `token_scope_required` (`rpc:<method>`) |
- * | WS upgrade | 403 `forbidden_origin` | — | 401 `authentication_required` | 403 `token_scope_required` (`surface:ws_upgrade`) |
- * | SSE (audit stream) | 403 `forbidden_origin` | — | 401 `authentication_required` | 403 `credential_type_required` |
+ * | surface | foreign `Origin` | unreadable `Origin` | duplicated `Origin` | over cap + foreign `Origin` | no credential | narrowed token |
+ * | --- | --- | --- | --- | --- | --- | --- |
+ * | REST `POST` (`/logout`) | 403 `forbidden_origin` | 403 `forbidden_origin` | 403 `forbidden_origin` | 413 `payload_too_large` | 401 `authentication_required` | 403 `credential_type_required` |
+ * | REST `POST` (`/password`) | — | — | — | — | 401 `authentication_required` | — |
+ * | RPC `POST` | 403 `forbidden_origin` | 403 `forbidden_origin` | 403 `forbidden_origin` | 413 `payload_too_large` | 401 `authentication_required` | 403 `token_scope_required` (`rpc:<method>`) |
+ * | RPC `GET` | 403 `forbidden_origin` | 403 `forbidden_origin` | 403 `forbidden_origin` | — | 401 `authentication_required` | 403 `token_scope_required` (`rpc:<method>`) |
+ * | WS upgrade | 403 `forbidden_origin` | 403 `forbidden_origin` | 403 `forbidden_origin` | — | 401 `authentication_required` | 403 `token_scope_required` (`surface:ws_upgrade`) |
+ * | SSE (audit stream) | 403 `forbidden_origin` | 403 `forbidden_origin` | 403 `forbidden_origin` | — | 401 `authentication_required` | 403 `credential_type_required` |
  *
  * - **foreign `Origin`** carries the keeper's session cookie, so only the
  *   origin check can refuse it — a front door missing that check answers the
  *   surface's success instead.
+ * - **unreadable `Origin`** is the allowed origin with a byte past ASCII
+ *   (`0xE9`), with the keeper's session — a check that reads such a value as
+ *   absent lets it through.
+ * - **duplicated `Origin`** sends the allowed origin on two header lines, with
+ *   the keeper's session — refused whether a backend sees the two lines (the
+ *   Rust spine) or one value joined from them (the TS runtimes), so a check that
+ *   reads only the first lets it through.
  * - **over cap + foreign `Origin`** declares a `Content-Length` one byte over
  *   the shared 1 MiB cap and carries no credential: the cap answers on the
  *   header, ahead of both the origin check and auth. Only the surfaces that
@@ -81,7 +88,12 @@ export type TransportCompositionSurface =
 
 /** What a probe sends, as the table's columns name it. */
 export type TransportCompositionProbe =
-	'foreign_origin' | 'over_cap_foreign_origin' | 'no_credential' | 'narrowed_token';
+	| 'foreign_origin'
+	| 'unreadable_origin'
+	| 'duplicated_origin'
+	| 'over_cap_foreign_origin'
+	| 'no_credential'
+	| 'narrowed_token';
 
 /** The refusal a case expects. */
 export interface TransportCompositionExpect {
@@ -142,6 +154,8 @@ const UNAUTHENTICATED: TransportCompositionExpect = {
 /** The front-door table — one case per cell of the module doc's matrix. */
 export const transport_composition_cases: ReadonlyArray<TransportCompositionCase> = [
 	{ surface: 'rest_post', probe: 'foreign_origin', expect: FORBIDDEN_ORIGIN },
+	{ surface: 'rest_post', probe: 'unreadable_origin', expect: FORBIDDEN_ORIGIN },
+	{ surface: 'rest_post', probe: 'duplicated_origin', expect: FORBIDDEN_ORIGIN },
 	{ surface: 'rest_post', probe: 'over_cap_foreign_origin', expect: PAYLOAD_TOO_LARGE },
 	{ surface: 'rest_post', probe: 'no_credential', expect: UNAUTHENTICATED },
 	{ surface: 'rest_post', probe: 'narrowed_token', expect: SESSION_ONLY },
@@ -150,15 +164,21 @@ export const transport_composition_cases: ReadonlyArray<TransportCompositionCase
 	{ surface: 'rest_password', probe: 'no_credential', expect: UNAUTHENTICATED },
 
 	{ surface: 'rpc_post', probe: 'foreign_origin', expect: FORBIDDEN_ORIGIN },
+	{ surface: 'rpc_post', probe: 'unreadable_origin', expect: FORBIDDEN_ORIGIN },
+	{ surface: 'rpc_post', probe: 'duplicated_origin', expect: FORBIDDEN_ORIGIN },
 	{ surface: 'rpc_post', probe: 'over_cap_foreign_origin', expect: PAYLOAD_TOO_LARGE },
 	{ surface: 'rpc_post', probe: 'no_credential', expect: RPC_UNAUTHENTICATED },
 	{ surface: 'rpc_post', probe: 'narrowed_token', expect: RPC_SCOPE_REFUSED },
 
 	{ surface: 'rpc_get', probe: 'foreign_origin', expect: FORBIDDEN_ORIGIN },
+	{ surface: 'rpc_get', probe: 'unreadable_origin', expect: FORBIDDEN_ORIGIN },
+	{ surface: 'rpc_get', probe: 'duplicated_origin', expect: FORBIDDEN_ORIGIN },
 	{ surface: 'rpc_get', probe: 'no_credential', expect: RPC_UNAUTHENTICATED },
 	{ surface: 'rpc_get', probe: 'narrowed_token', expect: RPC_SCOPE_REFUSED },
 
 	{ surface: 'ws_upgrade', probe: 'foreign_origin', expect: FORBIDDEN_ORIGIN, gate: 'ws' },
+	{ surface: 'ws_upgrade', probe: 'unreadable_origin', expect: FORBIDDEN_ORIGIN, gate: 'ws' },
+	{ surface: 'ws_upgrade', probe: 'duplicated_origin', expect: FORBIDDEN_ORIGIN, gate: 'ws' },
 	{ surface: 'ws_upgrade', probe: 'no_credential', expect: UNAUTHENTICATED, gate: 'ws' },
 	{
 		surface: 'ws_upgrade',
@@ -172,6 +192,8 @@ export const transport_composition_cases: ReadonlyArray<TransportCompositionCase
 	},
 
 	{ surface: 'sse', probe: 'foreign_origin', expect: FORBIDDEN_ORIGIN, gate: 'sse' },
+	{ surface: 'sse', probe: 'unreadable_origin', expect: FORBIDDEN_ORIGIN, gate: 'sse' },
+	{ surface: 'sse', probe: 'duplicated_origin', expect: FORBIDDEN_ORIGIN, gate: 'sse' },
 	{ surface: 'sse', probe: 'no_credential', expect: UNAUTHENTICATED, gate: 'sse' },
 	{ surface: 'sse', probe: 'narrowed_token', expect: SESSION_ONLY, gate: 'sse' }
 ];
@@ -214,6 +236,8 @@ interface ProbeRequest {
 	readonly method: 'GET' | 'POST';
 	readonly path: string;
 	readonly headers: Record<string, string>;
+	/** Headers sent on a line of their own after `headers`, repeating a name `headers` already holds. */
+	readonly repeated_headers?: ReadonlyArray<readonly [string, string]>;
 	/** The body, or `null`. An over-cap body is sent whole only in-process. */
 	readonly body: string | null;
 	/** Declare a `Content-Length` one byte over the cap. */
@@ -311,9 +335,18 @@ export const describe_transport_composition_cross_tests = (
 	): Promise<ProbeRequest> => {
 		const over_cap = c.probe === 'over_cap_foreign_origin';
 		let credential: Record<string, string>;
+		let repeated_headers: ReadonlyArray<readonly [string, string]> | undefined;
 		switch (c.probe) {
 			case 'foreign_origin':
 				credential = { ...fixture.create_session_headers(), origin: DISALLOWED_ORIGIN };
+				break;
+			case 'unreadable_origin':
+				// latin1 on the socket — the byte 0xE9
+				credential = { ...fixture.create_session_headers(), origin: `${allowed_origin}\u00e9` };
+				break;
+			case 'duplicated_origin':
+				credential = { ...fixture.create_session_headers(), origin: allowed_origin };
+				repeated_headers = [['origin', allowed_origin]];
 				break;
 			case 'over_cap_foreign_origin':
 				// no credential either: the cap answers ahead of the origin check and auth
@@ -345,7 +378,8 @@ export const describe_transport_composition_cross_tests = (
 					path: c.surface === 'rest_post' ? rest_path : password_path,
 					headers: { ...credential, 'content-type': 'application/json' },
 					body: over_cap ? sized_json(BODY_LIMIT_DEFAULT_BYTES + 1) : '{}',
-					over_cap
+					over_cap,
+					repeated_headers
 				};
 			case 'rpc_post': {
 				return {
@@ -353,7 +387,8 @@ export const describe_transport_composition_cross_tests = (
 					path: rpc_path,
 					headers: { ...credential, 'content-type': 'application/json' },
 					body: over_cap ? sized_json(BODY_LIMIT_DEFAULT_BYTES + 1) : rpc_envelope(rpc_method, id),
-					over_cap
+					over_cap,
+					repeated_headers
 				};
 			}
 			case 'rpc_get':
@@ -362,7 +397,8 @@ export const describe_transport_composition_cross_tests = (
 					path: create_rpc_get_url(rpc_path, rpc_method, undefined, id),
 					headers: credential,
 					body: null,
-					over_cap
+					over_cap,
+					repeated_headers
 				};
 			case 'ws_upgrade':
 				return {
@@ -376,7 +412,8 @@ export const describe_transport_composition_cross_tests = (
 						'sec-websocket-version': '13'
 					},
 					body: null,
-					over_cap
+					over_cap,
+					repeated_headers
 				};
 			case 'sse':
 				return {
@@ -384,7 +421,8 @@ export const describe_transport_composition_cross_tests = (
 					path: sse_path,
 					headers: { ...credential, accept: 'text/event-stream' },
 					body: null,
-					over_cap
+					over_cap,
+					repeated_headers
 				};
 		}
 	};
@@ -392,9 +430,12 @@ export const describe_transport_composition_cross_tests = (
 	/** Put a probe on the socket, or through the in-process transport. */
 	const send_probe = async (fixture: TestFixture, probe: ProbeRequest): Promise<ProbeResponse> => {
 		if (base_url === null) {
+			const headers = new Headers(probe.headers);
+			// in-process there is no wire: a repeated header joins, as the runtimes join it
+			for (const [name, value] of probe.repeated_headers ?? []) headers.append(name, value);
 			const res = await fixture.fresh_transport()(probe.path, {
 				method: probe.method,
-				headers: probe.headers,
+				headers,
 				...(probe.body === null ? {} : { body: probe.body })
 			});
 			return { status: res.status, text: await res.text() };
@@ -409,6 +450,7 @@ export const describe_transport_composition_cross_tests = (
 		const request =
 			`${probe.method} ${probe.path} HTTP/1.1\r\n` +
 			to_header_lines({ host: url.host, ...probe.headers, ...length_header }) +
+			(probe.repeated_headers ?? []).map(([name, value]) => `${name}: ${value}\r\n`).join('') +
 			`\r\n` +
 			body;
 		const { received, closed_by_server } = await raw_http_exchange(base_url, request, {

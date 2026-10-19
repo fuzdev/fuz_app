@@ -10,10 +10,9 @@
  */
 
 import { z } from 'zod';
-import { to_error_message } from '@fuzdev/fuz_util/error.ts';
 
 import { create_validated_keyring, type Keyring } from '../auth/keyring.ts';
-import { parse_allowed_origins } from '../http/origin.ts';
+import { format_allowed_origins_error, parse_allowed_origins } from '../http/origin.ts';
 
 /**
  * Base Zod schema for server environment variables.
@@ -102,7 +101,8 @@ export type ServerEnvOptionsResult = ServerEnvOptions | ServerEnvOptionsError;
 /**
  * Validate a loaded `BaseServerEnv` and produce the artifacts needed for server init.
  *
- * Handles keyring validation, origin parsing, and bootstrap token path extraction.
+ * Handles keyring validation, origin parsing (every refused allowlist entry is
+ * reported, each on its own line), and bootstrap token path extraction.
  * Returns a Result so callers handle errors their own way (exit, logging, etc).
  *
  * @param env - a loaded and Zod-validated `BaseServerEnv`
@@ -113,27 +113,18 @@ export const validate_server_env = (env: BaseServerEnv): ServerEnvOptionsResult 
 	if (!keyring_result.ok) {
 		return { ok: false, field: 'SECRET_FUZ_COOKIE_KEYS', errors: keyring_result.errors };
 	}
-	let allowed_origins: Array<RegExp>;
-	try {
-		allowed_origins = parse_allowed_origins(env.FUZ_ALLOWED_ORIGINS);
-	} catch (err) {
+	const origins_result = parse_allowed_origins(env.FUZ_ALLOWED_ORIGINS);
+	if (!origins_result.ok) {
 		return {
 			ok: false,
 			field: 'FUZ_ALLOWED_ORIGINS',
-			errors: [to_error_message(err, 'Invalid FUZ_ALLOWED_ORIGINS')]
-		};
-	}
-	if (allowed_origins.length === 0) {
-		return {
-			ok: false,
-			field: 'FUZ_ALLOWED_ORIGINS',
-			errors: ['FUZ_ALLOWED_ORIGINS contains no valid patterns']
+			errors: origins_result.errors.map(format_allowed_origins_error)
 		};
 	}
 	return {
 		ok: true,
 		keyring: keyring_result.keyring,
-		allowed_origins,
+		allowed_origins: origins_result.origins,
 		bootstrap_token_path: env.FUZ_BOOTSTRAP_TOKEN_PATH ?? null
 	};
 };

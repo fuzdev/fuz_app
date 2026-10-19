@@ -1,0 +1,1679 @@
+{
+	"parse": [
+		{
+			"raw": "http://localhost:5460",
+			"ok": true
+		},
+		{
+			"raw": "HTTP://LocalHost:5460",
+			"ok": true,
+			"note": "scheme and host are case-insensitive"
+		},
+		{
+			"raw": "https://app.example.com",
+			"ok": true
+		},
+		{
+			"raw": "https://app.example.com:8443",
+			"ok": true
+		},
+		{
+			"raw": "http://localhost:443",
+			"ok": true,
+			"note": "the other scheme's default port is a port like any other"
+		},
+		{
+			"raw": "https://app.example.com:80",
+			"ok": true
+		},
+		{
+			"raw": "http://example.com:65535",
+			"ok": true
+		},
+		{
+			"raw": "http://192.168.1.10:5460",
+			"ok": true
+		},
+		{
+			"raw": "http://127.0.0.1:4460",
+			"ok": true
+		},
+		{
+			"raw": "http://[::1]:5460",
+			"ok": true
+		},
+		{
+			"raw": "http://[::1]",
+			"ok": true
+		},
+		{
+			"raw": "http://[2001:db8::1]:5460",
+			"ok": true
+		},
+		{
+			"raw": "http://[2001:DB8::1]:5460",
+			"ok": true,
+			"note": "hex digits are case-insensitive"
+		},
+		{
+			"raw": "http://[fe80::1:0:0:1]",
+			"ok": true
+		},
+		{
+			"raw": "http://[::ffff:102:304]",
+			"ok": true,
+			"note": "an IPv4-mapped address in the hex form a browser sends"
+		},
+		{
+			"raw": "http://[1:2:3:4:5:6:7:8]",
+			"ok": true
+		},
+		{
+			"raw": "http://[1:0:2:3:4:5:6:7]",
+			"ok": true,
+			"note": "a single zero group is not compressed"
+		},
+		{
+			"raw": "http://[1::2:3:0:0:4]",
+			"ok": true,
+			"note": "of two equal zero runs the first is the one compressed"
+		},
+		{
+			"raw": "http://[::]",
+			"ok": true
+		},
+		{
+			"raw": "http://localhost",
+			"ok": true
+		},
+		{
+			"raw": "http://localhost.",
+			"ok": true,
+			"note": "a trailing dot on a name is kept as written"
+		},
+		{
+			"raw": "https://xn--bcher-kva.example",
+			"ok": true,
+			"note": "punycode is accepted as written"
+		},
+		{
+			"raw": "https://my_host.example",
+			"ok": true
+		},
+		{
+			"raw": "https://ex-ample.com",
+			"ok": true
+		},
+		{
+			"raw": "https://1.2.3.4a",
+			"ok": true,
+			"note": "a last label that only starts with a digit is a name"
+		},
+		{
+			"raw": "https://0xg.example",
+			"ok": true
+		},
+		{
+			"raw": "http://localhost:*",
+			"ok": true
+		},
+		{
+			"raw": "http://[::1]:*",
+			"ok": true
+		},
+		{
+			"raw": "https://*.example.com",
+			"ok": true
+		},
+		{
+			"raw": "https://*.*.corp.example.com",
+			"ok": true
+		},
+		{
+			"raw": "https://*.example.com:*",
+			"ok": true
+		},
+		{
+			"raw": "https://example.*",
+			"ok": true
+		},
+		{
+			"raw": "https://api.*.example.com",
+			"ok": true
+		},
+		{
+			"raw": "http://192.168.1.*",
+			"ok": true
+		},
+		{
+			"raw": "http://*.168.1.10:5460",
+			"ok": true
+		},
+		{
+			"raw": "http://*",
+			"ok": true
+		},
+		{
+			"raw": "http://*:*",
+			"ok": true
+		},
+		{
+			"raw": "https://*.*",
+			"ok": true
+		},
+		{
+			"raw": "http://*.*.*.*",
+			"ok": true
+		},
+		{
+			"raw": "  http://localhost:5173  ,\thttps://app.example.com\n",
+			"ok": true,
+			"note": "entries are trimmed of ASCII whitespace"
+		},
+		{
+			"raw": "http://localhost:3000,https://*.example.com,http://[::1]:3000,https://[2001:db8::1]:*",
+			"ok": true
+		},
+		{
+			"raw": "",
+			"errors": [
+				{
+					"kind": "no_origins"
+				}
+			]
+		},
+		{
+			"raw": "   ",
+			"errors": [
+				{
+					"kind": "no_origins"
+				}
+			]
+		},
+		{
+			"raw": "\t\n",
+			"errors": [
+				{
+					"kind": "no_origins"
+				}
+			]
+		},
+		{
+			"raw": ",",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "empty_entry"
+				},
+				{
+					"index": 2,
+					"kind": "empty_entry"
+				}
+			]
+		},
+		{
+			"raw": " , ",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "empty_entry"
+				},
+				{
+					"index": 2,
+					"kind": "empty_entry"
+				}
+			]
+		},
+		{
+			"raw": "http://localhost:4460,",
+			"errors": [
+				{
+					"index": 2,
+					"kind": "empty_entry"
+				}
+			]
+		},
+		{
+			"raw": ",http://localhost:4460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "empty_entry"
+				}
+			]
+		},
+		{
+			"raw": "http://localhost:4460,,http://127.0.0.1:4460",
+			"errors": [
+				{
+					"index": 2,
+					"kind": "empty_entry"
+				}
+			]
+		},
+		{
+			"raw": "http://localhost:3000,,https://example.com,",
+			"errors": [
+				{
+					"index": 2,
+					"kind": "empty_entry"
+				},
+				{
+					"index": 4,
+					"kind": "empty_entry"
+				}
+			],
+			"note": "every refused entry is reported"
+		},
+		{
+			"raw": "http://localhost:5173, null,https://a.example/ ,ftp://x",
+			"errors": [
+				{
+					"index": 2,
+					"kind": "missing_scheme"
+				},
+				{
+					"index": 3,
+					"kind": "has_path"
+				},
+				{
+					"index": 4,
+					"kind": "unsupported_scheme"
+				}
+			]
+		},
+		{
+			"raw": "http://local host:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "not_printable_ascii"
+				}
+			]
+		},
+		{
+			"raw": "http://local\u007fhost:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "not_printable_ascii"
+				}
+			]
+		},
+		{
+			"raw": "http://local\u001bhost",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "not_printable_ascii"
+				}
+			]
+		},
+		{
+			"raw": "https://b\u00fccher.example",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "not_printable_ascii"
+				}
+			],
+			"note": "an IDN host is refused; write its punycode"
+		},
+		{
+			"raw": "https://\u4f8b\u3048.jp",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "not_printable_ascii"
+				}
+			]
+		},
+		{
+			"raw": "\u00a0http://localhost:5173",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "not_printable_ascii"
+				}
+			],
+			"note": "only ASCII whitespace is trimmed"
+		},
+		{
+			"raw": "\ufeffhttp://localhost:5173",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "not_printable_ascii"
+				}
+			]
+		},
+		{
+			"raw": "http://localhost:5173\u0085",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "not_printable_ascii"
+				}
+			]
+		},
+		{
+			"raw": "localhost:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "missing_scheme"
+				}
+			]
+		},
+		{
+			"raw": "localhost",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "missing_scheme"
+				}
+			]
+		},
+		{
+			"raw": "example.com",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "missing_scheme"
+				}
+			]
+		},
+		{
+			"raw": "*.example.com",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "missing_scheme"
+				}
+			]
+		},
+		{
+			"raw": "not-a-url",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "missing_scheme"
+				}
+			]
+		},
+		{
+			"raw": "*",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "missing_scheme"
+				}
+			]
+		},
+		{
+			"raw": "null",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "missing_scheme"
+				}
+			],
+			"note": "an opaque origin is never allowed"
+		},
+		{
+			"raw": "//localhost:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "missing_scheme"
+				}
+			]
+		},
+		{
+			"raw": "http:/localhost",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "missing_scheme"
+				}
+			]
+		},
+		{
+			"raw": "ws://localhost:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "unsupported_scheme"
+				}
+			]
+		},
+		{
+			"raw": "ftp://example.com",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "unsupported_scheme"
+				}
+			]
+		},
+		{
+			"raw": "file://localhost",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "unsupported_scheme"
+				}
+			]
+		},
+		{
+			"raw": "file:///etc/passwd",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "unsupported_scheme"
+				}
+			]
+		},
+		{
+			"raw": "chrome-extension://abcdefghijklmnopabcdefghijklmnop",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "unsupported_scheme"
+				}
+			]
+		},
+		{
+			"raw": "moz-extension://0d4b8f3e-1234-4cde-9abc-0123456789ab",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "unsupported_scheme"
+				}
+			]
+		},
+		{
+			"raw": "://localhost",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "unsupported_scheme"
+				}
+			]
+		},
+		{
+			"raw": "http://localhost:5460/",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "has_path"
+				}
+			],
+			"note": "the trailing slash a pasted URL carries"
+		},
+		{
+			"raw": "http://localhost:5460/chats",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "has_path"
+				}
+			]
+		},
+		{
+			"raw": "http://example.com/api",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "has_path"
+				}
+			]
+		},
+		{
+			"raw": "https://app.example.com?x=1",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "has_path"
+				}
+			]
+		},
+		{
+			"raw": "https://app.example.com#top",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "has_path"
+				}
+			]
+		},
+		{
+			"raw": "http://user@localhost:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "has_userinfo"
+				}
+			]
+		},
+		{
+			"raw": "http://user:pass@localhost",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "has_userinfo"
+				}
+			]
+		},
+		{
+			"raw": "http://",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "missing_host"
+				}
+			]
+		},
+		{
+			"raw": "http://:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "missing_host"
+				}
+			]
+		},
+		{
+			"raw": "http://::1:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "unbracketed_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "http://2001:db8::1",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "unbracketed_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "https://app%2eexample.com",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_host_char"
+				}
+			]
+		},
+		{
+			"raw": "https://exa%6dple.com",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_host_char"
+				}
+			]
+		},
+		{
+			"raw": "http://local\\host:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_host_char"
+				}
+			],
+			"note": "a backslash"
+		},
+		{
+			"raw": "http://a|b",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_host_char"
+				}
+			]
+		},
+		{
+			"raw": "http://a^b",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_host_char"
+				}
+			]
+		},
+		{
+			"raw": "http://a<b>",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_host_char"
+				}
+			]
+		},
+		{
+			"raw": "http://a]:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_host_char"
+				}
+			]
+		},
+		{
+			"raw": "http://a[b",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_host_char"
+				}
+			]
+		},
+		{
+			"raw": "https://*foo.example.com",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "partial_wildcard"
+				}
+			]
+		},
+		{
+			"raw": "http://ex*ample.com",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "partial_wildcard"
+				}
+			]
+		},
+		{
+			"raw": "http://example*.com",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "partial_wildcard"
+				}
+			]
+		},
+		{
+			"raw": "http://example.*com",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "partial_wildcard"
+				}
+			]
+		},
+		{
+			"raw": "http://**.example.com",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "partial_wildcard"
+				}
+			]
+		},
+		{
+			"raw": "http://127.1:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "non_canonical_ipv4"
+				}
+			]
+		},
+		{
+			"raw": "http://127.1",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "non_canonical_ipv4"
+				}
+			]
+		},
+		{
+			"raw": "http://127.0.0.01:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "non_canonical_ipv4"
+				}
+			]
+		},
+		{
+			"raw": "http://0x7f.0.0.1:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "non_canonical_ipv4"
+				}
+			]
+		},
+		{
+			"raw": "http://127.0.0.0x1",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "non_canonical_ipv4"
+				}
+			]
+		},
+		{
+			"raw": "http://127.0.0.0X1",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "non_canonical_ipv4"
+				}
+			]
+		},
+		{
+			"raw": "http://0x",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "non_canonical_ipv4"
+				}
+			]
+		},
+		{
+			"raw": "http://2130706433",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "non_canonical_ipv4"
+				}
+			]
+		},
+		{
+			"raw": "http://127.0.0.1.:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "non_canonical_ipv4"
+				}
+			]
+		},
+		{
+			"raw": "http://256.0.0.1",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "non_canonical_ipv4"
+				}
+			]
+		},
+		{
+			"raw": "http://1.2.3.4.5",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "non_canonical_ipv4"
+				}
+			]
+		},
+		{
+			"raw": "http://*.1:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "non_canonical_ipv4"
+				}
+			]
+		},
+		{
+			"raw": "http://example.123",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "non_canonical_ipv4"
+				}
+			]
+		},
+		{
+			"raw": "http://[0:0:0:0:0:0:0:1]:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "http://[::0001]:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "http://[::0:1]",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "http://[2001:db8:0:0:0:0:0:1]",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "https://[2001:db8:0:0:8a2e:370:7334]",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "http://[::ffff:1.2.3.4]",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			],
+			"note": "a dotted-quad tail"
+		},
+		{
+			"raw": "http://[::ffff:127.0.0.1]:3000",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "http://[1:0:0:2:0:0:0:3]",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			],
+			"note": "the longest zero run is the one compressed"
+		},
+		{
+			"raw": "http://[1::2:3:4:5:6:7]",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			],
+			"note": "a single zero group is written as `0`, not `::`"
+		},
+		{
+			"raw": "http://[1:0:0:2:3::4]",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			],
+			"note": "of two equal zero runs the first is the one compressed"
+		},
+		{
+			"raw": "http://[localhost]:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "http://[::*]:5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "http://[*::1]:3000",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "https://[2001:db8:*::1]",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "http://[fe80::1%eth0]",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			],
+			"note": "a zone"
+		},
+		{
+			"raw": "http://[fe80::1%25eth0]",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "http://[]",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "http://[1:2:3:4:5:6:7:8:9]",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "http://[::1",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "unclosed_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "http://[::1]5460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_after_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "http://[::1]x",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_after_ipv6"
+				}
+			]
+		},
+		{
+			"raw": "http://localhost:",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_port"
+				}
+			]
+		},
+		{
+			"raw": "http://localhost:abc",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_port"
+				}
+			]
+		},
+		{
+			"raw": "http://localhost:0",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_port"
+				}
+			]
+		},
+		{
+			"raw": "http://localhost:65536",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_port"
+				}
+			]
+		},
+		{
+			"raw": "http://localhost:05460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_port"
+				}
+			],
+			"note": "a leading zero"
+		},
+		{
+			"raw": "http://localhost:08080",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_port"
+				}
+			]
+		},
+		{
+			"raw": "http://localhost:+80",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_port"
+				}
+			]
+		},
+		{
+			"raw": "http://example.com:*000",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_port"
+				}
+			]
+		},
+		{
+			"raw": "http://example.com:3*",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_port"
+				}
+			]
+		},
+		{
+			"raw": "http://example.com:**",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_port"
+				}
+			]
+		},
+		{
+			"raw": "http://[::1]:",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_port"
+				}
+			]
+		},
+		{
+			"raw": "http://[::1]:05460",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "invalid_port"
+				}
+			]
+		},
+		{
+			"raw": "http://localhost:80",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "default_port"
+				}
+			]
+		},
+		{
+			"raw": "https://app.example.com:443",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "default_port"
+				}
+			]
+		},
+		{
+			"raw": "https://*.example.com:443",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "default_port"
+				}
+			]
+		},
+		{
+			"raw": "http://[::1]:80",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "default_port"
+				}
+			]
+		},
+		{
+			"raw": "HTTPS://app.example.com:443",
+			"errors": [
+				{
+					"index": 1,
+					"kind": "default_port"
+				}
+			]
+		}
+	],
+	"match": [
+		{
+			"patterns": "https://app.example.com",
+			"origin": null,
+			"allowed": true,
+			"note": "an absent Origin passes"
+		},
+		{
+			"patterns": "https://app.example.com",
+			"origin": "https://app.example.com",
+			"allowed": true,
+			"note": "an exact entry matches itself"
+		},
+		{
+			"patterns": "http://localhost:5460",
+			"origin": "http://localhost:5460",
+			"allowed": true
+		},
+		{
+			"patterns": "http://[::1]:5460",
+			"origin": "http://[::1]:5460",
+			"allowed": true
+		},
+		{
+			"patterns": "http://[2001:db8::1]",
+			"origin": "http://[2001:db8::1]",
+			"allowed": true
+		},
+		{
+			"patterns": "http://127.0.0.1:4460",
+			"origin": "http://127.0.0.1:4460",
+			"allowed": true
+		},
+		{
+			"patterns": "https://app.example.com",
+			"origin": "https://App.Example.COM",
+			"allowed": true
+		},
+		{
+			"patterns": "https://app.example.com",
+			"origin": "HTTPS://app.example.com",
+			"allowed": true
+		},
+		{
+			"patterns": "https://app.example.com",
+			"origin": "https://evil.example.com",
+			"allowed": false
+		},
+		{
+			"patterns": "https://app.example.com",
+			"origin": "http://app.example.com",
+			"allowed": false
+		},
+		{
+			"patterns": "https://app.example.com",
+			"origin": "https://app.example.org",
+			"allowed": false
+		},
+		{
+			"patterns": "https://app.example.com",
+			"origin": "https://sub.app.example.com",
+			"allowed": false
+		},
+		{
+			"patterns": "https://app.example.com",
+			"origin": "https://app.example.com.evil.com",
+			"allowed": false
+		},
+		{
+			"patterns": "https://app.example.com",
+			"origin": "https://app.example.com:443",
+			"allowed": false,
+			"note": "a browser never sends the default port"
+		},
+		{
+			"patterns": "https://app.example.com",
+			"origin": "https://app.example.com.",
+			"allowed": false
+		},
+		{
+			"patterns": "https://app.example.com",
+			"origin": "https://app.example.com/",
+			"allowed": false
+		},
+		{
+			"patterns": "https://app.example.com",
+			"origin": "https://appXexample.com",
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost.",
+			"origin": "http://localhost.",
+			"allowed": true
+		},
+		{
+			"patterns": "http://localhost.",
+			"origin": "http://localhost",
+			"allowed": false
+		},
+		{
+			"patterns": "https://ex-ample.com",
+			"origin": "https://ex_ample.com",
+			"allowed": false
+		},
+		{
+			"patterns": "https://xn--bcher-kva.example",
+			"origin": "https://xn--bcher-kva.example",
+			"allowed": true
+		},
+		{
+			"patterns": "https://xn--bcher-kva.example",
+			"origin": "https://b\u00fccher.example",
+			"allowed": false,
+			"note": "the Unicode form never matches its punycode entry"
+		},
+		{
+			"patterns": "http://localhost:3000",
+			"origin": "http://localhost:3000",
+			"allowed": true
+		},
+		{
+			"patterns": "http://localhost:3000",
+			"origin": "http://localhost",
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:3000",
+			"origin": "http://localhost:3001",
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:3000",
+			"origin": "http://localhost:03000",
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:3000",
+			"origin": "https://localhost:3000",
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost",
+			"origin": "http://localhost:5173",
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:*",
+			"origin": "http://localhost",
+			"allowed": true
+		},
+		{
+			"patterns": "http://localhost:*",
+			"origin": "http://localhost:5173",
+			"allowed": true
+		},
+		{
+			"patterns": "http://localhost:*",
+			"origin": "http://localhost:65535",
+			"allowed": true
+		},
+		{
+			"patterns": "http://localhost:*",
+			"origin": "http://localhost:",
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:*",
+			"origin": "http://localhost:abc",
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:*",
+			"origin": "http://localhost:5173:5173",
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:*",
+			"origin": "https://localhost:5173",
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:*",
+			"origin": "http://127.0.0.1:5173",
+			"allowed": false
+		},
+		{
+			"patterns": "https://api.example.com:*",
+			"origin": "https://api.example.com:443",
+			"allowed": true
+		},
+		{
+			"patterns": "https://*.fuz.dev",
+			"origin": "https://staging.fuz.dev",
+			"allowed": true
+		},
+		{
+			"patterns": "https://*.fuz.dev",
+			"origin": "https://API.fuz.dev",
+			"allowed": true
+		},
+		{
+			"patterns": "https://*.fuz.dev",
+			"origin": "https://fuz.dev",
+			"allowed": false,
+			"note": "the bare parent"
+		},
+		{
+			"patterns": "https://*.fuz.dev",
+			"origin": "https://evilfuz.dev",
+			"allowed": false
+		},
+		{
+			"patterns": "https://*.fuz.dev",
+			"origin": "https://evil.user-content.fuz.dev",
+			"allowed": false,
+			"note": "one label, never a suffix"
+		},
+		{
+			"patterns": "https://*.fuz.dev",
+			"origin": "https://..fuz.dev",
+			"allowed": false
+		},
+		{
+			"patterns": "https://*.fuz.dev",
+			"origin": "https://.fuz.dev",
+			"allowed": false
+		},
+		{
+			"patterns": "https://*.fuz.dev",
+			"origin": "https://a/b.fuz.dev",
+			"allowed": false
+		},
+		{
+			"patterns": "https://*.fuz.dev",
+			"origin": "http://staging.fuz.dev",
+			"allowed": false
+		},
+		{
+			"patterns": "https://*.fuz.dev",
+			"origin": "https://staging.fuz.dev:8443",
+			"allowed": false
+		},
+		{
+			"patterns": "https://*.fuz.dev",
+			"origin": "https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.fuz.dev",
+			"allowed": true
+		},
+		{
+			"patterns": "http://*.localhost",
+			"origin": "http://api.localhost",
+			"allowed": true
+		},
+		{
+			"patterns": "https://*.*.corp.fuz.dev",
+			"origin": "https://a.b.corp.fuz.dev",
+			"allowed": true
+		},
+		{
+			"patterns": "https://*.*.corp.fuz.dev",
+			"origin": "https://b.corp.fuz.dev",
+			"allowed": false
+		},
+		{
+			"patterns": "https://*.*.corp.fuz.dev",
+			"origin": "https://a.b.c.corp.fuz.dev",
+			"allowed": false
+		},
+		{
+			"patterns": "https://api.*.example.com",
+			"origin": "https://api.staging.example.com",
+			"allowed": true
+		},
+		{
+			"patterns": "https://api.*.example.com",
+			"origin": "https://staging.api.example.com",
+			"allowed": false
+		},
+		{
+			"patterns": "https://example.*",
+			"origin": "https://example.evil",
+			"allowed": true
+		},
+		{
+			"patterns": "http://192.168.1.*",
+			"origin": "http://192.168.1.77",
+			"allowed": true
+		},
+		{
+			"patterns": "http://*",
+			"origin": "http://localhost",
+			"allowed": true
+		},
+		{
+			"patterns": "http://*",
+			"origin": "http://intranet",
+			"allowed": true
+		},
+		{
+			"patterns": "http://*",
+			"origin": "http://a.b",
+			"allowed": false
+		},
+		{
+			"patterns": "http://*.*.*.*",
+			"origin": "http://10.0.0.7",
+			"allowed": true
+		},
+		{
+			"patterns": "https://*.fuz.dev:*",
+			"origin": "https://api.fuz.dev:8443",
+			"allowed": true
+		},
+		{
+			"patterns": "https://*.fuz.dev:*",
+			"origin": "https://api.fuz.dev",
+			"allowed": true
+		},
+		{
+			"patterns": "https://*.fuz.dev:*",
+			"origin": "https://a.b.fuz.dev:8443",
+			"allowed": false
+		},
+		{
+			"patterns": "http://*:*",
+			"origin": "http://localhost:5173",
+			"allowed": true
+		},
+		{
+			"patterns": "http://*:*",
+			"origin": "http://a:b:80",
+			"allowed": false
+		},
+		{
+			"patterns": "http://*:*",
+			"origin": "http://[::1]:80",
+			"allowed": false
+		},
+		{
+			"patterns": "http://[::1]:3000",
+			"origin": "http://[::1]:3000",
+			"allowed": true
+		},
+		{
+			"patterns": "http://[::1]:3000",
+			"origin": "http://[::1]:3001",
+			"allowed": false
+		},
+		{
+			"patterns": "http://[::1]:3000",
+			"origin": "http://[::1]",
+			"allowed": false
+		},
+		{
+			"patterns": "http://[::1]:3000",
+			"origin": "http://::1:3000",
+			"allowed": false
+		},
+		{
+			"patterns": "http://[::1]:3000",
+			"origin": "http://[0:0:0:0:0:0:0:1]:3000",
+			"allowed": false
+		},
+		{
+			"patterns": "http://[::1]:*",
+			"origin": "http://[::1]",
+			"allowed": true
+		},
+		{
+			"patterns": "http://[::1]:*",
+			"origin": "http://[::1]:65535",
+			"allowed": true
+		},
+		{
+			"patterns": "http://[::1]:*",
+			"origin": "http://[::1:3000",
+			"allowed": false
+		},
+		{
+			"patterns": "https://[2001:DB8::1]",
+			"origin": "https://[2001:db8::1]",
+			"allowed": true
+		},
+		{
+			"patterns": "https://[2001:db8::1]",
+			"origin": "https://[2001:DB8::1]",
+			"allowed": true
+		},
+		{
+			"patterns": "http://[::ffff:7f00:1]:3000",
+			"origin": "http://127.0.0.1:3000",
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:*",
+			"origin": "http://localhost:*",
+			"allowed": false,
+			"note": "an entry is not an origin: no identical-string shortcut"
+		},
+		{
+			"patterns": "https://*.fuz.dev:*",
+			"origin": "https://*.fuz.dev:*",
+			"allowed": false
+		},
+		{
+			"patterns": "HTTP://LocalHost:5460",
+			"origin": "HTTP://LocalHost:5460",
+			"allowed": true,
+			"note": "an exact entry still matches itself, case-insensitively"
+		},
+		{
+			"patterns": "http://localhost:3000,https://example.com",
+			"origin": "https://example.com",
+			"allowed": true
+		},
+		{
+			"patterns": "http://localhost:3000,https://example.com",
+			"origin": "http://other.com",
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:*",
+			"origin": "null",
+			"allowed": false,
+			"note": "the opaque origin"
+		},
+		{
+			"patterns": "http://localhost:*",
+			"origin": "",
+			"allowed": false,
+			"note": "an empty Origin is present, and matches nothing"
+		},
+		{
+			"patterns": "http://localhost:*",
+			"origin": "file://",
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:5173",
+			"origin": "http://localhost:5173, http://localhost:5173",
+			"allowed": false,
+			"note": "a duplicated Origin as Node and Deno join it"
+		},
+		{
+			"patterns": "http://localhost:5173",
+			"origin": "http://localhost:5173,http://localhost:5173",
+			"allowed": false
+		},
+		{
+			"patterns": "http://*",
+			"origin": "http://caf\u00e9",
+			"allowed": false,
+			"note": "not visible ASCII"
+		},
+		{
+			"patterns": "http://localhost:*",
+			"origin": "http://localhost:5173\u00e9",
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:*",
+			"origin": "http://localhost\t",
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:*",
+			"origin": " http://localhost",
+			"allowed": false
+		},
+		{
+			"patterns": "http://*",
+			"origin": "http://\u212a",
+			"allowed": false,
+			"note": "the Kelvin sign case-folds to k in some matchers"
+		},
+		{
+			"patterns": "http://k",
+			"origin": "http://\u212a",
+			"allowed": false
+		},
+		{
+			"patterns": "https://*.example.com",
+			"origin": "https://\u017f.example.com",
+			"allowed": false
+		},
+		{
+			"patterns": "http://localhost:*",
+			"origin": "http://localhost:\uff11\uff12",
+			"allowed": false,
+			"note": "fullwidth digits are not digits"
+		}
+	]
+}

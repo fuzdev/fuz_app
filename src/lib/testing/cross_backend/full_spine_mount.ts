@@ -15,6 +15,7 @@ import '../assert_dev_env.ts';
  * - the `_testing_*` daemon-token backdoors (`create_testing_actions`),
  * - the full cell verb set (CRUD + grant + field + item + audit),
  * - the opt-in `actor_lookup` / `actor_search` resolvers,
+ * - the `_testing_origin_check` probe the origin conformance table drives,
  * - the `_testing_action_manifest` backdoor, appended last (it dumps the live
  *   method set for the cross-impl manifest-parity gate, so it must enumerate
  *   every method above it).
@@ -47,7 +48,8 @@ import { create_actor_lookup_actions } from '../../auth/actor_lookup_actions.ts'
 import { create_actor_search_actions } from '../../auth/actor_search_actions.ts';
 import {
 	create_testing_action_manifest_action,
-	create_testing_actions
+	create_testing_actions,
+	create_testing_origin_check_action
 } from './testing_reset_actions.ts';
 import { test_cell_gated_create_authorize } from './test_cell_gated_create_authorize.ts';
 import { spine_roles, spine_session_options } from './default_spine_surface.ts';
@@ -110,6 +112,9 @@ export const build_full_spine_rpc_actions = (
 		),
 		...create_actor_lookup_actions(deps),
 		...create_actor_search_actions(deps),
+		// the origin conformance table's probe — kept out of
+		// `create_testing_actions` (see its spec doc)
+		create_testing_origin_check_action(),
 		// `peer/ping` is mounted on the HTTP RPC endpoint too (not just WS) so an
 		// HTTP invocation reaches the handler and refuses with `peer_no_transport`
 		// rather than `method_not_found`. It's a protocol action, so it's filtered

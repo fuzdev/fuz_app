@@ -86,6 +86,13 @@ import { create_standard_rpc_actions } from '#lib/auth/standard_rpc_actions.ts';
 import { create_realtime_closer } from '#lib/actions/connection_closer.ts';
 import { AUTH_MIDDLEWARE_PATH } from '#lib/auth/middleware.ts';
 
+/** Parse an allowlist the test knows is valid. */
+const parse_origins = (raw: string): Array<RegExp> => {
+	const result = parse_allowed_origins(raw);
+	if (!result.ok) throw new Error(`invalid allowlist: ${raw}`);
+	return result.origins;
+};
+
 const TEST_KEY = 'test-key-that-is-at-least-32-chars-long!!';
 const keyring = create_keyring(TEST_KEY)!;
 const session_options = create_session_config('test_session');
@@ -151,7 +158,7 @@ const create_tracked_app_server = async (options: AppServerOptions): Promise<App
 	return server;
 };
 
-const ALLOWED_ORIGINS: ReadonlyArray<RegExp> = parse_allowed_origins('http://localhost:3000');
+const ALLOWED_ORIGINS: ReadonlyArray<RegExp> = parse_origins('http://localhost:3000');
 
 // Minimal WS endpoint spec carrying just the canonical `protocol_actions`
 // bundle (heartbeat + cancel) — used by tests that don't care about the

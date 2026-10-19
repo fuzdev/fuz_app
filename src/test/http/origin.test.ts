@@ -2,6 +2,8 @@ import { describe, test, assert, vi } from 'vitest';
 import type { Handler } from 'hono';
 
 import {
+	ALLOWED_ORIGINS_ERROR_MESSAGES,
+	format_allowed_origins_error,
 	is_browser_context,
 	parse_allowed_origins,
 	should_allow_origin,
@@ -30,20 +32,11 @@ const create_mock_context = (headers: Record<string, string> = {}) => {
 	return { c, next, json };
 };
 
-const test_pattern = (
-	pattern: string,
-	valid_origins: Array<string>,
-	invalid_origins: Array<string>
-) => {
-	const regexps = parse_allowed_origins(pattern);
-
-	for (const origin of valid_origins) {
-		assert.ok(should_allow_origin(origin, regexps), `${origin} should match ${pattern}`);
-	}
-
-	for (const origin of invalid_origins) {
-		assert.ok(!should_allow_origin(origin, regexps), `${origin} should not match ${pattern}`);
-	}
+/** Parse an allowlist the test knows is valid. */
+const parse_origins = (raw: string): Array<RegExp> => {
+	const result = parse_allowed_origins(raw);
+	if (!result.ok) throw new Error(`invalid allowlist: ${raw}`);
+	return result.origins;
 };
 
 const test_middleware_allows = async (handler: Handler, headers: Record<string, string>) => {
@@ -65,41 +58,97 @@ const test_middleware_blocks = async (
 	assert.deepStrictEqual(result, { data: { error: expected_error }, status: expected_status });
 };
 
+// The grammar and matcher are pinned row by row in the shared conformance
+// table (`origin.conformance.test.ts`); these cases cover the API around it.
+
 describe('parse_allowed_origins', () => {
-	test('returns empty array for undefined', () => {
-		assert.deepEqual(parse_allowed_origins(undefined), []);
+	test('a valid value yields one matcher per entry', () => {
+		const result = parse_allowed_origins(' http://localhost:3000 , https://*.example.com ');
+		assert.ok(result.ok);
+		assert.strictEqual(result.origins.length, 2);
+		assert.ok(result.origins.every((p) => p instanceof RegExp));
 	});
 
-	test('returns empty array for empty string', () => {
-		assert.deepEqual(parse_allowed_origins(''), []);
+	test('a blank value is refused as no_origins, with no position', () => {
+		for (const raw of ['', '  ', '\t\n']) {
+			const result = parse_allowed_origins(raw);
+			assert.ok(!result.ok, raw);
+			assert.deepStrictEqual(result.errors, [{ kind: 'no_origins' }]);
+		}
 	});
 
-	test('parses single origin', () => {
-		const patterns = parse_allowed_origins('http://localhost:3000');
-		assert.strictEqual(patterns.length, 1);
-		assert.ok(patterns[0] instanceof RegExp);
-	});
-
-	test('parses multiple comma-separated origins', () => {
-		const patterns = parse_allowed_origins('http://localhost:3000,https://example.com');
-		assert.strictEqual(patterns.length, 2);
-	});
-
-	test('trims whitespace from origins', () => {
-		const patterns = parse_allowed_origins('  http://localhost:3000  ,  https://example.com  ');
-		assert.strictEqual(patterns.length, 2);
-	});
-
-	test('filters out empty entries', () => {
-		const patterns = parse_allowed_origins('http://localhost:3000,,https://example.com,');
-		assert.strictEqual(patterns.length, 2);
-	});
-
-	test('handles complex patterns', () => {
-		const patterns = parse_allowed_origins(
-			'https://*.example.com,http://localhost:*,https://*.test.com:*'
+	test('every refused entry is reported with its position and text', () => {
+		const result = parse_allowed_origins(
+			'http://localhost:3000, null ,https://a.example/,,ftp://x'
 		);
-		assert.strictEqual(patterns.length, 3);
+		assert.ok(!result.ok);
+		assert.deepStrictEqual(result.errors, [
+			{ kind: 'missing_scheme', index: 2, entry: 'null' },
+			{ kind: 'has_path', index: 3, entry: 'https://a.example/' },
+			{ kind: 'empty_entry', index: 4, entry: '' },
+			{ kind: 'unsupported_scheme', index: 5, entry: 'ftp://x' }
+		]);
+	});
+
+	test('nothing is normalized: a form a browser would rewrite is refused', () => {
+		for (const raw of [
+			'https://example.com:443',
+			'http://example.com:80',
+			'http://[::ffff:127.0.0.1]:3000',
+			'http://127.1',
+			'https://b\u00fccher.example'
+		]) {
+			assert.ok(!parse_allowed_origins(raw).ok, raw);
+		}
+	});
+});
+
+describe('format_allowed_origins_error', () => {
+	test('names the position, quotes the entry, and gives the reason', () => {
+		assert.strictEqual(
+			format_allowed_origins_error({ kind: 'has_path', index: 2, entry: 'http://a/' }),
+			'entry 2 "http://a/" is refused: an origin ends at the host or port — no path, query, ' +
+				'or fragment, and no trailing slash'
+		);
+	});
+
+	test('a list-level refusal is the reason alone', () => {
+		assert.strictEqual(
+			format_allowed_origins_error({ kind: 'no_origins' }),
+			'no origins supplied — list at least one'
+		);
+	});
+
+	test('escapes control characters and bounds the excerpt', () => {
+		const message = format_allowed_origins_error({
+			kind: 'not_printable_ascii',
+			index: 1,
+			entry: 'http://a\u001b[31m' + 'x'.repeat(500)
+		});
+		assert.ok(!message.includes('\u001b'), message);
+		assert.include(message, '\\u001b');
+		assert.isBelow(message.length, 400);
+	});
+
+	test('escapes DEL, C1, bidi, and format characters as \\uXXXX', () => {
+		const message = format_allowed_origins_error({
+			kind: 'not_printable_ascii',
+			index: 3,
+			entry: 'http://a\u009b31m\u007f\u202e\ufeff b'
+		});
+		assert.strictEqual(
+			message,
+			'entry 3 "http://a\\u009b31m\\u007f\\u202e\\ufeff b" is refused: ' +
+				ALLOWED_ORIGINS_ERROR_MESSAGES.not_printable_ascii
+		);
+		assert.match(message, /^[\x20-\x7e]*$/);
+	});
+
+	test('escapes the quote and backslash so the entry cannot close its quotes', () => {
+		assert.include(
+			format_allowed_origins_error({ kind: 'has_path', index: 1, entry: 'http://a/"\\' }),
+			'"http://a/\\"\\\\"'
+		);
 	});
 });
 
@@ -108,484 +157,14 @@ describe('should_allow_origin', () => {
 		assert.strictEqual(should_allow_origin('http://example.com', []), false);
 	});
 
-	test('matches exact origins', () => {
-		const patterns = parse_allowed_origins('http://example.com');
-		assert.strictEqual(should_allow_origin('http://example.com', patterns), true);
-		assert.strictEqual(should_allow_origin('https://example.com', patterns), false);
-	});
-
-	test('matches any of multiple patterns', () => {
-		const patterns = parse_allowed_origins('http://localhost:3000,https://example.com');
-		assert.strictEqual(should_allow_origin('http://localhost:3000', patterns), true);
-		assert.strictEqual(should_allow_origin('https://example.com', patterns), true);
-		assert.strictEqual(should_allow_origin('http://other.com', patterns), false);
-	});
-});
-
-describe('pattern_to_regexp', () => {
-	describe('exact patterns', () => {
-		test('matches exact http origins', () => {
-			test_pattern(
-				'http://example.com',
-				['http://example.com'],
-				['https://example.com', 'http://example.org', 'http://sub.example.com']
-			);
-		});
-
-		test('matches exact https origins', () => {
-			test_pattern(
-				'https://example.com',
-				['https://example.com'],
-				['http://example.com', 'https://example.org', 'https://sub.example.com']
-			);
-		});
-
-		test('matches origins with ports', () => {
-			test_pattern(
-				'http://localhost:3000',
-				['http://localhost:3000'],
-				['http://localhost', 'http://localhost:3001', 'https://localhost:3000']
-			);
-		});
-
-		test('throws on paths in patterns', () => {
-			assert.throws(
-				() => parse_allowed_origins('http://example.com/api'),
-				/Paths not allowed in origin patterns/
-			);
-			assert.throws(
-				() => parse_allowed_origins('https://example.com/api/v1'),
-				/Paths not allowed in origin patterns/
-			);
-			assert.throws(
-				() => parse_allowed_origins('http://localhost:3000/'),
-				/Paths not allowed in origin patterns/
-			);
-		});
-
-		test('matches IPv6 localhost', () => {
-			test_pattern(
-				'http://[::1]:3000',
-				['http://[::1]:3000'],
-				['http://[::1]', 'http://[::1]:3001', 'https://[::1]:3000', 'http://::1:3000']
-			);
-		});
-
-		test('matches full IPv6 addresses', () => {
-			test_pattern(
-				'https://[2001:db8:85a3::8a2e:370:7334]:8443',
-				['https://[2001:db8:85a3::8a2e:370:7334]:8443'],
-				[
-					'https://[2001:db8:85a3::8a2e:370:7334]',
-					'https://[2001:db8:85a3::8a2e:370:7334]:8444',
-					'http://[2001:db8:85a3::8a2e:370:7334]:8443'
-				]
-			);
-		});
-
-		test('matches IPv6 addresses without port', () => {
-			test_pattern(
-				'http://[2001:db8::1]',
-				['http://[2001:db8::1]'],
-				['http://[2001:db8::1]:80', 'https://[2001:db8::1]', 'http://2001:db8::1']
-			);
-		});
-
-		test('matches IPv4-mapped IPv6 addresses', () => {
-			test_pattern(
-				'http://[::ffff:7f00:1]:3000',
-				['http://[::ffff:7f00:1]:3000'],
-				['http://[::ffff:7f00:1]', 'http://[::ffff:7f00:1]:3001', 'http://127.0.0.1:3000']
-			);
-		});
-
-		test('matches IPv4-mapped IPv6 without port', () => {
-			test_pattern(
-				'https://[::ffff:c0a8:101]',
-				['https://[::ffff:c0a8:101]'],
-				['https://[::ffff:c0a8:101]:443', 'https://192.168.1.1', 'http://[::ffff:c0a8:101]']
-			);
-		});
-	});
-
-	describe('wildcard subdomains', () => {
-		test('matches exactly one subdomain level', () => {
-			test_pattern(
-				'https://*.example.com',
-				['https://sub.example.com', 'https://api.example.com', 'https://www.example.com'],
-				[
-					'https://example.com',
-					'https://deep.sub.example.com',
-					'https://very.deep.sub.example.com',
-					'http://sub.example.com',
-					'https://example.org',
-					'https://subexample.com',
-					'https://sub.example.com.evil.com'
-				]
-			);
-		});
-
-		test('multiple wildcards for deep subdomains', () => {
-			test_pattern(
-				'https://*.*.example.com',
-				[
-					'https://api.staging.example.com',
-					'https://www.prod.example.com',
-					'https://service.region.example.com'
-				],
-				[
-					'https://staging.example.com',
-					'https://api.staging.prod.example.com',
-					'https://example.com'
-				]
-			);
-		});
-
-		test('three wildcard levels', () => {
-			test_pattern(
-				'https://*.*.*.example.com',
-				['https://api.v2.staging.example.com', 'https://service.region.prod.example.com'],
-				['https://api.staging.example.com', 'https://api.v2.staging.prod.example.com']
-			);
-		});
-
-		test('wildcard subdomain with port', () => {
-			test_pattern(
-				'https://*.example.com:443',
-				['https://sub.example.com:443', 'https://api.example.com:443'],
-				[
-					'https://example.com:443',
-					'https://sub.example.com',
-					'https://sub.example.com:444',
-					'https://deep.sub.example.com:443'
-				]
-			);
-		});
-
-		test('wildcard at different positions', () => {
-			test_pattern(
-				'https://api.*.example.com',
-				[
-					'https://api.staging.example.com',
-					'https://api.prod.example.com',
-					'https://api.v2.example.com'
-				],
-				[
-					'https://staging.api.example.com',
-					'https://api.example.com',
-					'https://api.staging.prod.example.com'
-				]
-			);
-		});
-
-		test('ensures wildcards cannot match dots', () => {
-			const patterns = parse_allowed_origins('https://*.example.com');
-			assert.strictEqual(should_allow_origin('https://safe.example.com', patterns), true);
-			assert.strictEqual(should_allow_origin('https://safe.evil.example.com', patterns), false);
-			assert.strictEqual(
-				should_allow_origin('https://safe.com.evil.com.example.com', patterns),
-				false
-			);
-		});
-
-		test('rejects double-dot subdomain (empty label)', () => {
-			// ..example.com has an empty label — [^./:]+  requires at least one character
-			const patterns = parse_allowed_origins('https://*.example.com');
-			assert.strictEqual(should_allow_origin('https://..example.com', patterns), false);
-		});
-	});
-
-	describe('wildcard ports', () => {
-		test('matches any port or no port', () => {
-			test_pattern(
-				'http://localhost:*',
-				['http://localhost', 'http://localhost:3000', 'http://localhost:8080'],
-				['https://localhost', 'http://127.0.0.1:3000']
-			);
-		});
-
-		test('wildcard port with exact hostname', () => {
-			test_pattern(
-				'https://api.example.com:*',
-				['https://api.example.com', 'https://api.example.com:443', 'https://api.example.com:8443'],
-				['http://api.example.com:443', 'https://example.com:443']
-			);
-		});
-
-		test('wildcard port with IPv6 localhost', () => {
-			test_pattern(
-				'http://[::1]:*',
-				['http://[::1]', 'http://[::1]:3000', 'http://[::1]:8080', 'http://[::1]:65535'],
-				['https://[::1]', 'http://[::1:3000', 'http://::1:3000']
-			);
-		});
-
-		test('wildcard port with full IPv6 address', () => {
-			test_pattern(
-				'https://[2001:db8::8a2e:370:7334]:*',
-				[
-					'https://[2001:db8::8a2e:370:7334]',
-					'https://[2001:db8::8a2e:370:7334]:443',
-					'https://[2001:db8::8a2e:370:7334]:8443'
-				],
-				['http://[2001:db8::8a2e:370:7334]:443', 'https://[2001:db8::8a2e:370:7335]:443']
-			);
-		});
-	});
-
-	describe('combined wildcards', () => {
-		test('wildcard subdomain and port', () => {
-			test_pattern(
-				'https://*.example.com:*',
-				['https://sub.example.com', 'https://sub.example.com:443', 'https://api.example.com:8443'],
-				[
-					'https://example.com',
-					'https://deep.sub.example.com',
-					'https://deep.sub.example.com:443',
-					'http://sub.example.com',
-					'https://example.org:443'
-				]
-			);
-		});
-
-		test('multiple subdomain wildcards with wildcard port', () => {
-			test_pattern(
-				'https://*.*.example.com:*',
-				[
-					'https://api.staging.example.com',
-					'https://api.staging.example.com:443',
-					'https://www.prod.example.com:8443'
-				],
-				['https://staging.example.com:443', 'https://api.staging.prod.example.com']
-			);
-		});
-	});
-
-	describe('error handling', () => {
-		test('throws on invalid pattern format', () => {
-			assert.throws(() => parse_allowed_origins('not-a-url'), /Invalid origin pattern/);
-			assert.throws(() => parse_allowed_origins('ftp://example.com'), /Invalid origin pattern/);
-			assert.throws(() => parse_allowed_origins('//example.com'), /Invalid origin pattern/);
-			assert.throws(() => parse_allowed_origins('*.example.com'), /Invalid origin pattern/);
-			assert.throws(() => parse_allowed_origins('example.com'), /Invalid origin pattern/);
-			assert.throws(() => parse_allowed_origins('localhost:3000'), /Invalid origin pattern/);
-		});
-
-		test('throws on wildcards in wrong positions', () => {
-			assert.throws(
-				() => parse_allowed_origins('http://ex*ample.com'),
-				/Wildcards must be complete labels/
-			);
-			assert.throws(
-				() => parse_allowed_origins('http://example*.com'),
-				/Wildcards must be complete labels/
-			);
-			assert.throws(
-				() => parse_allowed_origins('http://*example.com'),
-				/Wildcards must be complete labels/
-			);
-			assert.throws(
-				() => parse_allowed_origins('http://example.*com'),
-				/Wildcards must be complete labels/
-			);
-		});
-
-		test('throws on invalid port wildcards', () => {
-			assert.throws(
-				() => parse_allowed_origins('http://example.com:*000'),
-				/Invalid origin pattern/
-			);
-			assert.throws(() => parse_allowed_origins('http://example.com:3*'), /Invalid origin pattern/);
-		});
-
-		test('throws on wildcards in IPv6 addresses', () => {
-			assert.throws(
-				() => parse_allowed_origins('http://[*::1]:3000'),
-				/Wildcards not allowed in IPv6 addresses/
-			);
-			assert.throws(
-				() => parse_allowed_origins('https://[2001:db8:*::1]'),
-				/Wildcards not allowed in IPv6 addresses/
-			);
-			assert.throws(
-				() => parse_allowed_origins('http://[::ffff:*.0.0.1]:8080'),
-				/Wildcards not allowed in IPv6 addresses/
-			);
-		});
-	});
-
-	describe('case sensitivity', () => {
-		test('domain matching is case-insensitive', () => {
-			const patterns = parse_allowed_origins('https://example.com');
-
-			assert.strictEqual(should_allow_origin('https://example.com', patterns), true);
-			assert.strictEqual(should_allow_origin('https://Example.com', patterns), true);
-			assert.strictEqual(should_allow_origin('https://EXAMPLE.COM', patterns), true);
-			assert.strictEqual(should_allow_origin('https://ExAmPlE.cOm', patterns), true);
-		});
-
-		test('protocol is also case-insensitive due to regex i flag', () => {
-			const patterns = parse_allowed_origins('https://example.com');
-
-			assert.strictEqual(should_allow_origin('https://example.com', patterns), true);
-			assert.strictEqual(should_allow_origin('https://Example.com', patterns), true);
-			assert.strictEqual(should_allow_origin('https://EXAMPLE.COM', patterns), true);
-
-			// Different protocol should NOT match
-			assert.strictEqual(should_allow_origin('http://example.com', patterns), false);
-
-			// The regex uses 'i' flag making the entire pattern case-insensitive
-			assert.strictEqual(should_allow_origin('HTTPS://example.com', patterns), true);
-		});
-
-		test('case-insensitive matching with wildcards', () => {
-			const patterns = parse_allowed_origins('https://*.example.com');
-
-			assert.strictEqual(should_allow_origin('https://API.example.com', patterns), true);
-			assert.strictEqual(should_allow_origin('https://api.EXAMPLE.com', patterns), true);
-			assert.strictEqual(should_allow_origin('https://Api.Example.Com', patterns), true);
-		});
-
-		test('case-insensitive with IPv6', () => {
-			const patterns = parse_allowed_origins('https://[2001:DB8::1]');
-
-			assert.strictEqual(should_allow_origin('https://[2001:db8::1]', patterns), true);
-			assert.strictEqual(should_allow_origin('https://[2001:DB8::1]', patterns), true);
-			assert.strictEqual(should_allow_origin('https://[2001:dB8::1]', patterns), true);
-		});
-	});
-
-	describe('special cases', () => {
-		test('handles special characters in domain names', () => {
-			test_pattern(
-				'https://ex-ample.com',
-				['https://ex-ample.com'],
-				['https://example.com', 'https://ex_ample.com']
-			);
-		});
-
-		test('handles numeric ports', () => {
-			test_pattern(
-				'http://localhost:8080',
-				['http://localhost:8080'],
-				['http://localhost:80', 'http://localhost:08080']
-			);
-		});
-
-		test('handles hyphenated domain names with wildcards', () => {
-			test_pattern(
-				'https://*.my-example.com',
-				['https://api.my-example.com', 'https://www.my-example.com'],
-				['https://my-example.com', 'https://api.myexample.com']
-			);
-		});
-
-		test('handles unusual but valid ports', () => {
-			test_pattern(
-				'http://example.com:65535',
-				['http://example.com:65535'],
-				['http://example.com:65536', 'http://example.com']
-			);
-		});
-
-		test('handles very long origin strings', () => {
-			const long_subdomain = 'a'.repeat(63) + '.example.com';
-			const patterns = parse_allowed_origins('https://*.example.com');
-			assert.strictEqual(should_allow_origin(`https://${long_subdomain}`, patterns), true);
-		});
-	});
-
-	describe('edge cases', () => {
-		test('handles IPv6 addresses', () => {
-			const patterns = parse_allowed_origins('http://[::1]:3000,https://[2001:db8::1]');
-			assert.strictEqual(patterns.length, 2);
-
-			assert.strictEqual(should_allow_origin('http://[::1]:3000', patterns), true);
-			assert.strictEqual(should_allow_origin('https://[2001:db8::1]', patterns), true);
-
-			// Should not match without brackets
-			assert.strictEqual(should_allow_origin('http://::1:3000', patterns), false);
-		});
-
-		test('handles various IPv6 formats', () => {
-			test_pattern(
-				'https://[2001:db8::8a2e:370:7334]',
-				['https://[2001:db8::8a2e:370:7334]'],
-				['https://[2001:db8:0:0:8a2e:370:7334]']
-			);
-		});
-
-		test('handles IPv6 edge cases', () => {
-			// Loopback variations
-			test_pattern(
-				'http://[::1]',
-				['http://[::1]'],
-				['http://[0:0:0:0:0:0:0:1]', 'http://[::0:1]']
-			);
-
-			// IPv4-mapped with wildcard port
-			test_pattern(
-				'http://[::ffff:7f00:1]:*',
-				['http://[::ffff:7f00:1]', 'http://[::ffff:7f00:1]:3000', 'http://[::ffff:7f00:1]:8080'],
-				['http://[::ffff:7f00:2]:3000', 'https://[::ffff:7f00:1]:3000']
-			);
-
-			// Very long valid IPv6 address
-			test_pattern(
-				'https://[2001:db8:85a3::8a2e:370:7334]:443',
-				['https://[2001:db8:85a3::8a2e:370:7334]:443'],
-				['https://[2001:db8:85a3::8a2e:370:7334]']
-			);
-		});
-
-		test('handles trailing dots (FQDN)', () => {
-			const patterns = parse_allowed_origins('https://example.com');
-
-			assert.strictEqual(should_allow_origin('https://example.com.', patterns), false);
-			assert.strictEqual(should_allow_origin('https://example.com', patterns), true);
-
-			const patterns_with_dot = parse_allowed_origins('https://example.com.');
-			assert.strictEqual(should_allow_origin('https://example.com.', patterns_with_dot), true);
-			assert.strictEqual(should_allow_origin('https://example.com', patterns_with_dot), false);
-		});
-
-		test('handles punycode domains', () => {
-			const patterns = parse_allowed_origins('https://xn--e1afmkfd.xn--p1ai');
-
-			assert.strictEqual(should_allow_origin('https://xn--e1afmkfd.xn--p1ai', patterns), true);
-		});
-
-		test('handles localhost variations', () => {
-			const patterns = parse_allowed_origins(
-				'http://localhost:*,http://127.0.0.1:*,http://[::1]:*'
-			);
-
-			const localhost_origins = [
-				'http://localhost',
-				'http://localhost:3000',
-				'http://127.0.0.1',
-				'http://127.0.0.1:8080',
-				'http://[::1]',
-				'http://[::1]:3000'
-			];
-
-			for (const origin of localhost_origins) {
-				assert.strictEqual(should_allow_origin(origin, patterns), true);
-			}
-		});
-
-		test('handles empty hostname edge case', () => {
-			assert.throws(() => parse_allowed_origins('http://:3000'), /Invalid origin pattern/);
-		});
-
-		test('handles special regex characters in fixed parts', () => {
-			test_pattern('https://example.com', ['https://example.com'], ['https://exampleXcom']);
-		});
+	test('refuses a value that is not visible ASCII, whatever the patterns', () => {
+		assert.strictEqual(should_allow_origin('http://caf\u00e9', [/./]), false);
+		assert.strictEqual(should_allow_origin('http://a b', [/./]), false);
 	});
 });
 
 describe('verify_request_source middleware', () => {
-	const allowed_patterns = parse_allowed_origins(
+	const allowed_patterns = parse_origins(
 		'http://localhost:3000,https://*.example.com,http://[::1]:3000,https://[2001:db8::1]:*'
 	);
 	const middleware = verify_request_source(allowed_patterns);
@@ -621,7 +200,7 @@ describe('verify_request_source middleware', () => {
 		});
 
 		test('rejects literal "null" Origin header', async () => {
-			const null_middleware = verify_request_source(parse_allowed_origins('https://example.com'));
+			const null_middleware = verify_request_source(parse_origins('https://example.com'));
 			const { c, next, json } = create_mock_context({ Origin: 'null' });
 			await null_middleware(c as any, next as any);
 			assert.strictEqual(json.mock.calls.length, 1);
@@ -673,8 +252,26 @@ describe('verify_request_source middleware', () => {
 		});
 	});
 
+	describe('origin values a browser never sends', () => {
+		test('a duplicated Origin, as the runtimes join it, is refused', async () => {
+			await test_middleware_blocks(
+				middleware,
+				{ origin: 'http://localhost:3000, http://localhost:3000' },
+				ERROR_FORBIDDEN_ORIGIN
+			);
+		});
+
+		test('an Origin that is not visible ASCII is refused, not read as absent', async () => {
+			await test_middleware_blocks(
+				middleware,
+				{ origin: 'http://localhost:3000\u00e9' },
+				ERROR_FORBIDDEN_ORIGIN
+			);
+		});
+	});
+
 	describe('referer header (Origin-only posture, Referer ignored)', () => {
-		// fuz_app and the zzz Rust port both verify request source via Origin
+		// both spines verify request source via Origin
 		// only — Fetch spec mandates Origin on every unsafe method, so the
 		// Referer arm was inert on modern browsers and only widened the
 		// accepted-shape envelope. These tests pin the contract: a request
@@ -778,122 +375,6 @@ describe('verify_request_source middleware', () => {
 	});
 });
 
-describe('integration scenarios', () => {
-	test('typical development setup', () => {
-		const dev_patterns = parse_allowed_origins(
-			'http://localhost:3000,http://localhost:5173,http://127.0.0.1:*,http://[::1]:*'
-		);
-		const dev_origins = [
-			'http://localhost:3000',
-			'http://localhost:5173',
-			'http://127.0.0.1:3000',
-			'http://127.0.0.1:8080',
-			'http://[::1]:3000',
-			'http://[::1]:5173',
-			'http://[::1]:8080'
-		];
-
-		for (const origin of dev_origins) {
-			assert.strictEqual(should_allow_origin(origin, dev_patterns), true);
-		}
-	});
-
-	test('production multi-domain setup', () => {
-		const prod_patterns = parse_allowed_origins(
-			'https://app.example.com,https://*.example.com,https://partner.com'
-		);
-
-		const allowed = [
-			'https://app.example.com',
-			'https://api.example.com',
-			'https://staging.example.com',
-			'https://partner.com'
-		];
-
-		const blocked = [
-			'http://app.example.com',
-			'https://example.com',
-			'https://example.org',
-			'https://sub.partner.com',
-			'https://deep.sub.example.com'
-		];
-
-		for (const origin of allowed) {
-			assert.strictEqual(should_allow_origin(origin, prod_patterns), true);
-		}
-
-		for (const origin of blocked) {
-			assert.strictEqual(should_allow_origin(origin, prod_patterns), false);
-		}
-	});
-
-	test('complex enterprise setup with multiple wildcards', () => {
-		test_pattern(
-			'https://*.*.corp.example.com:*,https://app.example.com,https://localhost:*',
-			[
-				'https://api.staging.corp.example.com',
-				'https://service.prod.corp.example.com:8443',
-				'https://app.example.com',
-				'https://localhost:3000',
-				'https://localhost'
-			],
-			[
-				'https://staging.corp.example.com',
-				'https://api.staging.prod.corp.example.com',
-				'http://api.staging.corp.example.com',
-				'https://app.example.com:443',
-				'http://localhost:3000'
-			]
-		);
-	});
-
-	test('mixed protocols and wildcards', () => {
-		const patterns = parse_allowed_origins(
-			'http://*.dev.example.com:*,https://*.prod.example.com,https://example.com'
-		);
-
-		// HTTP dev with any port
-		assert.strictEqual(should_allow_origin('http://api.dev.example.com', patterns), true);
-		assert.strictEqual(should_allow_origin('http://api.dev.example.com:3000', patterns), true);
-		assert.strictEqual(should_allow_origin('http://api.dev.example.com:8080', patterns), true);
-
-		// HTTPS prod without port flexibility
-		assert.strictEqual(should_allow_origin('https://api.prod.example.com', patterns), true);
-		assert.strictEqual(should_allow_origin('https://api.prod.example.com:443', patterns), false);
-
-		// Exact match
-		assert.strictEqual(should_allow_origin('https://example.com', patterns), true);
-
-		// Should not match
-		assert.strictEqual(should_allow_origin('https://api.dev.example.com', patterns), false);
-		assert.strictEqual(should_allow_origin('http://api.prod.example.com', patterns), false);
-		assert.strictEqual(should_allow_origin('https://sub.example.com', patterns), false);
-	});
-});
-
-describe('normalize_origin', () => {
-	test('handles explicit default port 443 for HTTPS', () => {
-		const patterns = parse_allowed_origins('https://example.com:443');
-
-		assert.strictEqual(should_allow_origin('https://example.com:443', patterns), true);
-		assert.strictEqual(should_allow_origin('https://example.com', patterns), false);
-	});
-
-	test('handles explicit default port 80 for HTTP', () => {
-		const patterns = parse_allowed_origins('http://example.com:80');
-
-		assert.strictEqual(should_allow_origin('http://example.com:80', patterns), true);
-		assert.strictEqual(should_allow_origin('http://example.com', patterns), false);
-	});
-
-	test('preserves non-standard ports', () => {
-		const patterns = parse_allowed_origins('https://example.com:8443');
-
-		assert.strictEqual(should_allow_origin('https://example.com:8443', patterns), true);
-		assert.strictEqual(should_allow_origin('https://example.com', patterns), false);
-	});
-});
-
 // --- Middleware edge cases (table-driven) ---
 
 describe('verify_request_source middleware edge cases', () => {
@@ -953,7 +434,7 @@ describe('verify_request_source middleware edge cases', () => {
 
 	for (const tc of edge_case_table) {
 		test(tc.name, async () => {
-			const allowed = parse_allowed_origins(tc.patterns);
+			const allowed = parse_origins(tc.patterns);
 			const handler = verify_request_source(allowed);
 
 			if (tc.expected === 'block') {
@@ -963,44 +444,6 @@ describe('verify_request_source middleware edge cases', () => {
 			}
 		});
 	}
-});
-
-// --- IPv4-mapped IPv6 normalization ---
-
-describe('IPv4-mapped IPv6 origin normalization', () => {
-	test('URL constructor normalizes IPv4-mapped IPv6 in pattern', () => {
-		// `URL('http://[::ffff:127.0.0.1]:3000').hostname` is `[::ffff:7f00:1]`
-		// — the standard URL parser collapses the dotted IPv4-mapped form to
-		// hex during construction. The regex is built from that normalized
-		// hostname, so the normalized form matches but the original dotted
-		// form does NOT (the regex test runs against the raw candidate string
-		// the caller passes, with no parser pass to re-normalize it).
-		//
-		// Operational consequence: configuring an allowlist with an IPv4-
-		// mapped IPv6 pattern and expecting browsers to send the dotted form
-		// in `Origin` won't work — the pattern only matches the hex form
-		// browsers actually emit. Document the storage form (hex) so the
-		// mismatch surfaces as a config mistake at deploy time, not a
-		// silent reject in production.
-		const patterns = parse_allowed_origins('http://[::ffff:127.0.0.1]:3000');
-
-		// the normalized hex form must match
-		assert.strictEqual(
-			should_allow_origin('http://[::ffff:7f00:1]:3000', patterns),
-			true,
-			'hex form matches the URL-normalized pattern'
-		);
-
-		// the raw dotted form must NOT match — pinning the regex-from-
-		// normalized-hostname contract above. If URL's host normalization
-		// ever changes (or `parse_allowed_origins` ever pre-canonicalizes
-		// candidates before regex.test), this test surfaces it.
-		assert.strictEqual(
-			should_allow_origin('http://[::ffff:127.0.0.1]:3000', patterns),
-			false,
-			'raw dotted form does not match because the regex is built from the URL-normalized hex hostname'
-		);
-	});
 });
 
 describe('is_browser_context', () => {
