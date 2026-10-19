@@ -360,7 +360,8 @@ array, and returns the list to mount. Add layers anywhere — before the proxy,
 after the stack, between its layers — but leave each of those specs in place:
 assembly throws (`assert_middleware_stack_mounted`) unless every one, matched
 by its `handler` rather than its `name`, is still mounted exactly once at its
-original path (`'*'` for the proxy, `AUTH_MIDDLEWARE_PATH` for auth) in its
+original path (`'*'` for the proxy and the origin check, `AUTH_MIDDLEWARE_PATH`
+for the rest of auth) in its
 original order. The endpoint auth-scope check assumes the auth stack is there,
 and the IP-keyed rate limiters assume the proxy ran first — without it
 `get_client_ip` answers `'unknown'` for every caller, so each limiter becomes

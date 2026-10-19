@@ -53,6 +53,7 @@ export const bootstrap_route_shape = {
 	method: 'POST',
 	path: '/bootstrap',
 	auth: { account: 'none', actor: 'none' },
+	mints_credential: true,
 	description: 'Create initial keeper account (one-shot)',
 	transaction: false, // bootstrap_account manages its own transaction
 	input: BootstrapInput,

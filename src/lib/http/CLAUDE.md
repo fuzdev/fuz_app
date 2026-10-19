@@ -51,6 +51,8 @@ consumers.
 - `query?: z.ZodObject` — strict-object schema for URL query string
 - `input: z.ZodType` — request body schema; `z.null()` for no-body (GET/DELETE)
 - `output: z.ZodType` — success response schema
+- `mints_credential?: boolean` — the route issues a session cookie while declaring no auth (login, signup, bootstrap); assembly refuses it outside `AUTH_MIDDLEWARE_PATH`, as it does any route whose `auth.account` is not `'none'` (`assert_credential_routes_in_auth_scope` in `auth/middleware.ts`)
+- `reads_credential?: boolean` — the handler reads the resolved account while the route declares no auth gate, answering an anonymous caller itself (account status, the cell-scoped fact read, `create_rpc_endpoint`'s pair, whose dispatcher gates per action); held inside `AUTH_MIDDLEWARE_PATH` by the same assertion
 - `rate_limit?: RateLimitKey` — metadata only (`'ip' | 'account' | 'both'`); auto-derives 429
 - `errors?: RouteErrorSchemas` — handler-specific error schemas keyed by HTTP status
 - `transaction?: boolean` — declarative transaction wrapping (see below)
@@ -237,6 +239,7 @@ Key helpers:
 - `is_strict_object_schema(schema)` — detects `z.strictObject()` by checking `schema.def.catchall instanceof z.ZodNever`
 - `schema_to_surface(schema)` — Zod → JSON Schema, with `$schema` and `default` keys stripped recursively (defaults may be non-deterministic; `$schema` is snapshot noise)
 - `middleware_applies(mw_path, route_path)` — Hono pattern matching: `'*'`, exact, `'/api/*'` prefix (handles `prefix.slice(0, -1)` so `/api/*` also matches the bare `/api`)
+- `middleware_spec_applies(spec, route_path)` — the layer runs on the route: its `path` applies and none of its `carve_outs` does; what surface generation merges middleware errors by
 - `merge_error_schemas(spec, middleware_errors?)` — the three-layer merge described above
 
 ## Surface Generation
@@ -330,7 +333,7 @@ CSRF is handled by `SameSite: strict` on session cookies (`auth/session_middlewa
 - `parse_allowed_origins(raw)` — comma-separated entries → `Result<{origins: Array<RegExp>}, {errors: Array<AllowedOriginsError>}>`; every refused entry is reported (`{kind, index, entry}`, 1-based), a blank value is `{kind: 'no_origins'}`
 - `OriginPatternErrorKind` / `AllowedOriginsErrorKind` — the refusal kinds, wire names shared with the Rust spine; `ALLOWED_ORIGINS_ERROR_MESSAGES` the reason per kind, `format_allowed_origins_error` one refusal as a boot-error line (entry quoted and escaped)
 - `should_allow_origin(origin, patterns)` — case-insensitive match; a value that isn't visible ASCII matches nothing
-- `verify_request_source(allowed_patterns)` — Hono handler: `Origin` present → must match allowlist or 403 `ERROR_FORBIDDEN_ORIGIN`; no `Origin` → allow through (curl, CLI, token auth is primary control). A repeated `Origin` reaches it joined (`a, b`) and is refused
+- `verify_request_source(allowed_patterns, carve_outs?)` — Hono handler: `Origin` present → must match allowlist or 403 `ERROR_FORBIDDEN_ORIGIN`; no `Origin` → allow through (curl, CLI, token auth is primary control). A repeated `Origin` reaches it joined (`a, b`) and is refused. A request whose path a `carve_outs` entry (`MiddlewareCarveOut`, `{path, reason}`) matches passes unchecked
 - `is_browser_context(c)` — true when `Origin` or `Referer` is present (`!== undefined`, so empty-string counts). The bearer + daemon-token middleware discard their credential when true; twin of the Rust spine's `bearer_auth::is_browser_context`. Distinct from `verify_request_source` (allowlist gate) — this only detects browser context
 
 **Origin-only by design.** Fetch spec mandates `Origin` on every unsafe
@@ -340,6 +343,19 @@ so CSRF isn't the relevant threat there — auth (bearer / daemon token) is
 the actual control. A `Referer` fallback would only widen the
 accepted-shape envelope without closing a real CSRF hole. The Rust
 spine's `origin_layer` is the twin.
+
+**Every path by default.** `create_app_server` mounts the check at `'*'`
+(`ORIGIN_MIDDLEWARE_PATH`), the static fallback included, so a foreign page is
+refused wherever it points — the Rust spine's `fuz_http::compose_stack` checks
+every route group and its fallback the same way. Probes and CLI clients send no
+`Origin` and pass. A path leaves the check only by a named carve-out with its
+reason (`AppServerOptions.origin_carve_outs`), for a route that refuses browser
+callers by other means; one overlapping the auth middleware's scope
+(`AUTH_MIDDLEWARE_PATH`, where every route that reads or mints a credential
+sits) is refused at assembly. A carve-out skips every path it matches, routed
+or not, so an unrouted path under it reaches the static fallback unchecked;
+the Rust stack checks unrouted paths in its fallback group whatever a
+carve-out names.
 
 **Grammar** (shared with the Rust spine's `AllowedOrigins::parse`, pinned by
 `testing/cross_backend/origin_conformance.json`): entries are trimmed of ASCII

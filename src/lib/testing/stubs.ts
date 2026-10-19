@@ -14,7 +14,7 @@ import { Logger } from '@fuzdev/fuz_util/log.ts';
 import type { z } from 'zod';
 
 import type { SessionOptions } from '../auth/session_cookie.ts';
-import type { MiddlewareSpec } from '../http/middleware_spec.ts';
+import type { MiddlewareCarveOut, MiddlewareSpec } from '../http/middleware_spec.ts';
 import { ApiError } from '../http/error_schemas.ts';
 import type { AppDeps } from '../auth/deps.ts';
 import type { AuditEmitter } from '../auth/audit_emitter.ts';
@@ -44,8 +44,12 @@ import { ROLE_ADMIN } from '../auth/role_schema.ts';
 import { BaseServerEnv } from '../server/env.ts';
 import {
 	AUTH_MIDDLEWARE_PATH,
+	ORIGIN_MIDDLEWARE_PATH,
+	assert_credential_routes_in_auth_scope,
 	assert_endpoint_in_auth_scope,
-	assert_middleware_stack_mounted
+	assert_middleware_stack_mounted,
+	assert_origin_carve_outs_valid,
+	freeze_origin_carve_outs
 } from '../auth/middleware.ts';
 
 /**
@@ -233,13 +237,18 @@ const create_stub_mw = (): MiddlewareSpec['handler'] => async (_c, next) => next
 export const create_stub_api_middleware = (options?: {
 	/** Include the daemon_token middleware layer. */
 	include_daemon_token?: boolean;
+	/** The origin check's carve-outs, as `create_auth_middleware_specs` records them. */
+	origin_carve_outs?: ReadonlyArray<MiddlewareCarveOut>;
 }): Array<MiddlewareSpec> => {
+	const origin_carve_outs = freeze_origin_carve_outs(options?.origin_carve_outs ?? []);
+	assert_origin_carve_outs_valid(origin_carve_outs);
 	const specs: Array<MiddlewareSpec> = [
 		{
 			name: 'origin',
-			path: AUTH_MIDDLEWARE_PATH,
+			path: ORIGIN_MIDDLEWARE_PATH,
 			handler: create_stub_mw(),
-			errors: { 403: ApiError }
+			errors: { 403: ApiError },
+			...(origin_carve_outs.length > 0 && { carve_outs: origin_carve_outs })
 		},
 		{ name: 'session', path: AUTH_MIDDLEWARE_PATH, handler: create_stub_mw() },
 		{ name: 'request_context', path: AUTH_MIDDLEWARE_PATH, handler: create_stub_mw() },
@@ -339,6 +348,14 @@ export interface CreateTestAppSurfaceSpecOptions {
 	 */
 	transform_middleware?: (specs: Array<MiddlewareSpec>) => Array<MiddlewareSpec>;
 	/**
+	 * The origin check's carve-outs — `AppServerOptions.origin_carve_outs`.
+	 * Recorded on the stub origin spec, so the surface leaves the check's `403`
+	 * off the carved-out routes as the live server's does; refused, like
+	 * `create_app_server`, when one has no reason or overlaps the auth
+	 * middleware's scope.
+	 */
+	origin_carve_outs?: Array<MiddlewareCarveOut>;
+	/**
 	 * Bootstrap config — symmetric with `AppServerOptions.bootstrap`. Discriminated
 	 * by `mode`: `'disabled'` skips the route (same as omission), `'surface_only'`
 	 * mounts the route shape, `'live'` accepts a `token_path` for production
@@ -400,7 +417,9 @@ const to_self_resolved_ws_endpoint = (endpoint: WsEndpointSpec): ResolvedWsEndpo
  * `GET /api/surface` (with `surface_route: true`), then surface
  * generation — including its
  * refusal of an `rpc_endpoints` or `ws_endpoints` path outside the auth
- * middleware's scope (`assert_endpoint_in_auth_scope`) and of a
+ * middleware's scope (`assert_endpoint_in_auth_scope`), of a route that
+ * reads or mints a credential outside it
+ * (`assert_credential_routes_in_auth_scope`), and of a
  * `transform_middleware` that doesn't keep the proxy and auth stack mounted
  * (`assert_middleware_stack_mounted`). The middleware list mirrors the real
  * one: a stub `trusted_proxy` spec at `'*'`, then the stub auth stack (with
@@ -410,7 +429,8 @@ const to_self_resolved_ws_endpoint = (endpoint: WsEndpointSpec): ResolvedWsEndpo
  *
  * @param options - surface spec options
  * @returns the surface spec for the standard suites
- * @throws Error when an endpoint path is outside `AUTH_MIDDLEWARE_PATH`, a
+ * @throws Error when an endpoint path, or a route that reads or mints a
+ *   credential, is outside `AUTH_MIDDLEWARE_PATH`, a
  *   `ws_endpoints` spec declares no `allowed_origins` and no `allowed_origins`
  *   option is given, or `transform_middleware` moves, drops, duplicates,
  *   reorders, wraps, or replaces the stub proxy spec or a stub auth spec
@@ -488,11 +508,16 @@ export const create_test_app_surface_spec = (
 		...rpc_route_specs,
 		...surface_route_specs
 	];
+	// refused like `create_app_server` refuses it
+	assert_credential_routes_in_auth_scope(route_specs);
 
 	// mirrors `create_app_server`'s `[proxy_spec, ...auth_middleware]`
 	const stack_specs: Array<MiddlewareSpec> = [
 		{ name: 'trusted_proxy', path: '*', handler: create_stub_mw() },
-		...create_stub_api_middleware({ include_daemon_token: options.daemon_token })
+		...create_stub_api_middleware({
+			include_daemon_token: options.daemon_token,
+			origin_carve_outs: options.origin_carve_outs
+		})
 	];
 	let middleware_specs = stack_specs;
 	if (options.transform_middleware) {

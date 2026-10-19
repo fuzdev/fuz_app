@@ -361,7 +361,11 @@ const jsonrpc_error_envelope = (
  *
  * The RouteSpecs use `auth: {type: 'none'}` because auth is checked per-action
  * inside the dispatcher, and `transaction: false` because transaction scope
- * is per-action (mutations get a transaction, reads get pool).
+ * is per-action (mutations get a transaction, reads get pool). They are
+ * marked `reads_credential`, since the dispatcher reads the resolved
+ * credential, so assembly refuses the pair mounted outside the auth
+ * middleware's scope (`assert_credential_routes_in_auth_scope`) whether it
+ * arrives as `rpc_endpoints` or through `create_route_specs`.
  *
  * @param options - endpoint path, actions, logger, and the two action rate limiters
  * @returns route specs (GET + POST) ready for `apply_route_specs`
@@ -570,6 +574,9 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			method: 'POST',
 			path: endpoint_path,
 			auth: { account: 'none', actor: 'none' }, // per-action auth inside dispatcher
+			// the dispatcher reads the resolved credential per action, so the
+			// endpoint stays inside the auth middleware's scope however it mounts
+			reads_credential: true,
 			handler: post_handler,
 			description: `JSON-RPC 2.0 endpoint — ${actions.length} method${
 				actions.length === 1 ? '' : 's'
@@ -582,6 +589,7 @@ export const create_rpc_endpoint = (options: CreateRpcEndpointOptions): Array<Ro
 			method: 'GET',
 			path: endpoint_path,
 			auth: { account: 'none', actor: 'none' }, // per-action auth inside dispatcher
+			reads_credential: true,
 			handler: get_handler,
 			description: `JSON-RPC 2.0 endpoint (cacheable reads) — ${actions.length} method${
 				actions.length === 1 ? '' : 's'

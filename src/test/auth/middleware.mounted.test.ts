@@ -16,15 +16,20 @@ import { describe, assert, test } from 'vitest';
 
 import {
 	AUTH_MIDDLEWARE_PATH,
+	ORIGIN_MIDDLEWARE_PATH,
 	assert_middleware_stack_mounted,
 	create_auth_middleware_specs
 } from '#lib/auth/middleware.ts';
 import type { DaemonTokenState } from '#lib/auth/daemon_token.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
+import { create_account_route_specs } from '#lib/auth/account_routes.ts';
+import { create_signup_route_specs } from '#lib/auth/signup_routes.ts';
 import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
 import { create_proxy_middleware_spec } from '#lib/http/proxy.ts';
+import { prefix_route_specs, type RouteSpec } from '#lib/http/route_spec.ts';
 import { create_app_server, type AppServerOptions } from '#lib/server/app_server.ts';
+import type { AppServerContext } from '#lib/server/app_server_context.ts';
 import {
 	create_stub_api_middleware,
 	create_stub_app_backend,
@@ -141,12 +146,12 @@ describe('assert_middleware_stack_mounted — refused', () => {
 		);
 	});
 
-	test("origin broadened to '*'", async () => {
+	test('origin narrowed to /api/*', async () => {
 		const stack = await create_stack();
 		assert_refused(
 			stack,
-			stack.map((s) => (s.name === 'origin' ? { ...s, path: '*' } : s)),
-			/'origin' .*\(mounted at \*\)/
+			stack.map((s) => (s.name === 'origin' ? { ...s, path: AUTH_MIDDLEWARE_PATH } : s)),
+			/'origin' .*\(mounted at \/api\/\*\)/
 		);
 	});
 
@@ -250,7 +255,7 @@ describe('assert_middleware_stack_mounted — refused', () => {
 		assert_refused(
 			stack,
 			without(stack, 'origin'),
-			/^transform_middleware must keep the middleware 'origin' mounted once at \/api\/\* in its original order \(missing\)/
+			/^transform_middleware must keep the middleware 'origin' mounted once at \* in its original order \(missing\)/
 		);
 	});
 });
@@ -305,7 +310,11 @@ describe('create_test_app_surface_spec — transform_middleware', () => {
 		);
 		assert.deepStrictEqual(
 			build_surface().surface.middleware.map((m) => [m.name, m.path]),
-			[['trusted_proxy', '*'], ...expected.slice(1).map((n) => [n, AUTH_MIDDLEWARE_PATH])]
+			[
+				['trusted_proxy', '*'],
+				['origin', ORIGIN_MIDDLEWARE_PATH],
+				...expected.slice(2).map((n) => [n, AUTH_MIDDLEWARE_PATH])
+			]
 		);
 	});
 
@@ -506,6 +515,177 @@ describe('create_app_server — transform_middleware', () => {
 			create_server_options((specs) => without(specs, 'daemon_token'), create_daemon_token_state()),
 			/'daemon_token' .*\(missing\)/
 		);
+	});
+});
+
+describe('create_app_server — origin carve-outs', () => {
+	const passthrough: TransformMiddleware = (specs) => specs;
+
+	test('a carve-out off the endpoints is accepted', async () => {
+		const thrown = await assemble({
+			...create_server_options(passthrough),
+			origin_carve_outs: [{ path: '/hooks/*', reason: 'refuses browser callers itself' }]
+		});
+		assert.isNull(thrown);
+	});
+
+	test('a carve-out with no reason throws', async () => {
+		await assert_assembly_refused(
+			{
+				...create_server_options(passthrough),
+				origin_carve_outs: [{ path: '/hooks/*', reason: '' }]
+			},
+			/origin carve-out \/hooks\/\* needs a reason/
+		);
+	});
+
+	test('a carve-out covering an RPC endpoint throws', async () => {
+		await assert_assembly_refused(
+			{
+				...create_server_options(passthrough),
+				rpc_endpoints: [{ path: '/api/rpc', actions: [] }],
+				origin_carve_outs: [{ path: '/api/rpc', reason: 'too wide on purpose' }]
+			},
+			/origin carve-out \/api\/rpc overlaps the auth middleware's scope \(\/api\/\*\)/
+		);
+	});
+
+	// the account routes — login and signup declare no auth, yet mint the
+	// session a forged request would ride — sit in the auth scope, so a
+	// carve-out over them is refused like one over any credentialed route
+	test('a carve-out overlapping the auth scope throws, the account routes included', async () => {
+		for (const path of [
+			'/api/account/*',
+			'/api/account/login',
+			'/api/account/signup',
+			'/api/*',
+			'/api',
+			'/*'
+		]) {
+			await assert_assembly_refused(
+				{
+					...create_server_options(passthrough),
+					origin_carve_outs: [{ path, reason: 'too wide on purpose' }]
+				},
+				/overlaps the auth middleware's scope/
+			);
+		}
+	});
+
+	// account and signup specs are relative and the consumer prefixes them:
+	// mounted under `/auth` they'd sit outside the auth scope, where a carve-out
+	// is accepted — so assembly holds the minting routes in the scope instead,
+	// carve-out or not
+	test('account and signup routes mounted outside the auth scope throw', async () => {
+		const account_routes = (ctx: AppServerContext): Array<RouteSpec> =>
+			create_account_route_specs(ctx.deps, {
+				session_options,
+				login_ip_rate_limiter: null,
+				login_account_rate_limiter: null
+			});
+		const signup_routes = (ctx: AppServerContext): Array<RouteSpec> =>
+			create_signup_route_specs(ctx.deps, {
+				session_options,
+				signup_ip_rate_limiter: null,
+				signup_account_rate_limiter: null
+			});
+		const minting = (routes: Array<RouteSpec>): Array<RouteSpec> =>
+			routes.filter((r) => r.auth.account === 'none' && r.method === 'POST');
+		const only = (routes: Array<RouteSpec>, method: string, path: string): Array<RouteSpec> => {
+			const found = routes.filter((r) => r.method === method && r.path === path);
+			assert.lengthOf(found, 1, `${method} ${path}`);
+			return found;
+		};
+		const cases: Array<[AppServerOptions['create_route_specs'], RegExp]> = [
+			// the whole family — `/status`, bundled first, reads the session, so it
+			// is named first
+			[
+				(ctx) => prefix_route_specs('/auth', [...account_routes(ctx), ...signup_routes(ctx)]),
+				/route GET \/auth\/status reads a credential but is outside the auth middleware's scope \(\/api\/\*\)/
+			],
+			// only the routes that declare no auth — login, then signup
+			[
+				(ctx) => prefix_route_specs('/auth', minting(account_routes(ctx))),
+				/route POST \/auth\/login mints a credential but is outside the auth middleware's scope \(\/api\/\*\)/
+			],
+			[
+				(ctx) => prefix_route_specs('/auth', signup_routes(ctx)),
+				/route POST \/auth\/signup mints a credential/
+			],
+			// each credential-reading account route alone — `/logout` and
+			// `/password` declare an account, `/status` is marked
+			// `reads_credential` (its handler answers an anonymous caller itself)
+			[
+				(ctx) => prefix_route_specs('/auth', only(account_routes(ctx), 'POST', '/logout')),
+				/route POST \/auth\/logout reads a credential but is outside the auth middleware's scope \(\/api\/\*\)/
+			],
+			[
+				(ctx) => prefix_route_specs('/auth', only(account_routes(ctx), 'POST', '/password')),
+				/route POST \/auth\/password reads a credential but is outside the auth middleware's scope \(\/api\/\*\)/
+			],
+			[
+				(ctx) => prefix_route_specs('/auth', only(account_routes(ctx), 'GET', '/status')),
+				/route GET \/auth\/status reads a credential but is outside the auth middleware's scope \(\/api\/\*\)/
+			]
+		];
+		for (const [create_route_specs, expected] of cases) {
+			for (const origin_carve_outs of [
+				[{ path: '/auth/*', reason: 'login CSRF on purpose' }],
+				undefined
+			]) {
+				await assert_assembly_refused(
+					{ ...create_server_options(passthrough), create_route_specs, origin_carve_outs },
+					expected
+				);
+			}
+		}
+	});
+
+	test('a route reading a credential outside the auth scope throws', async () => {
+		await assert_assembly_refused(
+			{
+				...create_server_options(passthrough),
+				create_route_specs: () => [
+					{
+						...create_health_route_spec(),
+						path: '/me',
+						auth: { account: 'required', actor: 'none' }
+					}
+				]
+			},
+			/route GET \/me reads a credential but is outside the auth middleware's scope/
+		);
+	});
+
+	test('account and signup routes under /api/ are accepted', async () => {
+		const thrown = await assemble({
+			...create_server_options(passthrough),
+			create_route_specs: (ctx) =>
+				prefix_route_specs('/api/auth', [
+					...create_account_route_specs(ctx.deps, {
+						session_options,
+						login_ip_rate_limiter: null,
+						login_account_rate_limiter: null
+					}),
+					...create_signup_route_specs(ctx.deps, {
+						session_options,
+						signup_ip_rate_limiter: null,
+						signup_account_rate_limiter: null
+					})
+				]),
+			origin_carve_outs: [{ path: '/auth/*', reason: 'refuses browser callers itself' }]
+		});
+		assert.isNull(thrown);
+	});
+
+	test('a carve-out that only shares a prefix with the auth scope is accepted', async () => {
+		for (const path of ['/apix/*', '/apis', '/health']) {
+			const thrown = await assemble({
+				...create_server_options(passthrough),
+				origin_carve_outs: [{ path, reason: 'refuses browser callers itself' }]
+			});
+			assert.isNull(thrown, path);
+		}
 	});
 });
 

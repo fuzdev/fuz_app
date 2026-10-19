@@ -194,6 +194,39 @@ export const middleware_applies = (mw_path: string, route_path: string): boolean
 };
 
 /**
+ * Check if two middleware path patterns can match a common route path — the
+ * pattern-against-pattern form of `middleware_applies`, over the same
+ * grammar (`*`, an exact path, or a `/prefix/*` that also matches `/prefix`).
+ *
+ * @param a - one Hono-style pattern
+ * @param b - the other
+ */
+export const middleware_paths_overlap = (a: string, b: string): boolean => {
+	if (a === '*' || b === '*') return true;
+	// a `/prefix/*` pattern's shortest match is the bare `/prefix` (`/*` → ``)
+	const base = (pattern: string): string =>
+		pattern.endsWith('/*') ? pattern.slice(0, -2) : pattern;
+	return middleware_applies(a, base(b)) || middleware_applies(b, base(a));
+};
+
+/**
+ * Check if a middleware layer runs on a route path: its `path` pattern
+ * applies (`middleware_applies`) and none of its `carve_outs` does.
+ *
+ * @param spec - the layer's `path` and optional `carve_outs`
+ * @param route_path - the route path to check
+ */
+export const middleware_spec_applies = (
+	spec: {
+		readonly path: string;
+		readonly carve_outs?: ReadonlyArray<{ readonly path: string }> | null;
+	},
+	route_path: string
+): boolean =>
+	middleware_applies(spec.path, route_path) &&
+	!(spec.carve_outs ?? []).some((carve_out) => middleware_applies(carve_out.path, route_path));
+
+/**
  * Merge auto-derived, middleware, and explicit error schemas for a route spec.
  *
  * Merge order: derived -> middleware -> explicit route errors.

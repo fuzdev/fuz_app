@@ -114,6 +114,9 @@ export const account_status_route_shape = {
 	method: 'GET',
 	path: '/status',
 	auth: { account: 'none', actor: 'none' },
+	// no gate — the handler answers an anonymous caller with its own 401 — but
+	// it reads the account the auth middleware resolved
+	reads_credential: true,
 	description: 'Current account info (unauthenticated: 401 with bootstrap status)',
 	input: AccountStatusInput,
 	output: AccountStatusOutput,
@@ -158,6 +161,7 @@ export const create_account_route_shapes = (
 		method: 'POST',
 		path: '/login',
 		auth: { account: 'none', actor: 'none' },
+		mints_credential: true,
 		description: 'Exchange credentials for session',
 		input: LoginInput,
 		output: LoginOutput,

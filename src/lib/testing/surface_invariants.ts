@@ -20,7 +20,7 @@ import './assert_dev_env.ts';
 
 import { assert } from 'vitest';
 
-import { middleware_applies } from '../http/schema_helpers.ts';
+import { middleware_spec_applies } from '../http/schema_helpers.ts';
 import type { AppSurface, AppSurfaceMiddleware } from '../http/surface.ts';
 import {
 	filter_protected_routes,
@@ -140,7 +140,7 @@ export const assert_middleware_errors_propagated = (surface: AppSurface): void =
 	);
 	for (const route of surface.routes) {
 		for (const mw of middleware_with_errors) {
-			if (!middleware_applies(mw.path, route.path)) continue;
+			if (!middleware_spec_applies(mw, route.path)) continue;
 			for (const status of Object.keys(mw.error_schemas!)) {
 				assert.ok(
 					route.error_schemas && status in route.error_schemas,

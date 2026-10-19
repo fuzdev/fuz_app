@@ -1,7 +1,7 @@
 /**
  * App surface generation — JSON-serializable attack surface from route and middleware specs.
  *
- * Pure schema helpers (`is_null_schema`, `schema_to_surface`, `middleware_applies`,
+ * Pure schema helpers (`is_null_schema`, `schema_to_surface`, `middleware_applies`, `middleware_spec_applies`,
  * `merge_error_schemas`) live in `http/schema_helpers.ts`.
  *
  * @module
@@ -19,7 +19,7 @@ import type { ActionKind } from '../actions/action_spec.ts';
 import type { ResolvedWsEndpointSpec } from '../actions/ws_endpoint_spec.ts';
 import {
 	schema_to_surface,
-	middleware_applies,
+	middleware_spec_applies,
 	merge_error_schemas,
 	is_null_schema,
 	is_strict_object_schema
@@ -66,6 +66,8 @@ export interface AppSurfaceMiddleware {
 	path: string;
 	/** JSON Schema representations of error responses, keyed by HTTP status code. `null` when none. */
 	error_schemas: Record<string, unknown> | null;
+	/** Paths under `path` the layer does not run on, each with its reason. Absent when none. */
+	carve_outs?: Array<{ path: string; reason: string }>;
 }
 
 /** An env var in the generated attack surface (JSON-serializable). */
@@ -225,7 +227,7 @@ export const collect_middleware_errors = (
 ): RouteErrorSchemas | null => {
 	const errors: RouteErrorSchemas = {};
 	for (const mw of middleware) {
-		if (mw.errors && middleware_applies(mw.path, route_path)) {
+		if (mw.errors && middleware_spec_applies(mw, route_path)) {
 			Object.assign(errors, mw.errors);
 		}
 	}
@@ -303,11 +305,18 @@ export const generate_app_surface = (options: GenerateAppSurfaceOptions): AppSur
 					mw_error_schemas = schemas;
 				}
 			}
-			return { name: m.name, path: m.path, error_schemas: mw_error_schemas };
+			return {
+				name: m.name,
+				path: m.path,
+				error_schemas: mw_error_schemas,
+				...(m.carve_outs?.length && {
+					carve_outs: m.carve_outs.map(({ path, reason }) => ({ path, reason }))
+				})
+			};
 		}),
 		routes: route_specs.map((r) => {
 			const applicable_middleware = middleware_specs
-				.filter((m) => middleware_applies(m.path, r.path))
+				.filter((m) => middleware_spec_applies(m, r.path))
 				.map((m) => m.name);
 
 			// Merge auto-derived + middleware + explicit error schemas

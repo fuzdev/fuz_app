@@ -201,7 +201,7 @@ Individual factories take narrower deps: `create_account_route_specs(deps: Route
 3. **Logging** — controlled by `deps.log` level
 4. **Body size limit** — default 1 MiB (`DEFAULT_MAX_BODY_SIZE`); `max_body_size` to override, `null` to disable
 5. **Trusted proxy** (`*`) — resolves client IP from XFF; must run before auth/rate-limiting
-6. **Origin verification** (`/api/*`)
+6. **Origin verification** (`*`, `ORIGIN_MIDDLEWARE_PATH`) — every path, the static fallback included; a request with no `Origin` passes, and a path leaves the check only through a named `origin_carve_outs` entry with its reason (never one overlapping `/api/*`, the auth middleware's scope, where assembly holds every route that reads or mints a credential — it throws on either)
 7. **Session parsing** (`/api/*`) — parses cookie, sets identity on context
 8. **Request context** (`/api/*`) — validates the session and sets `c.var.account_id` + `CREDENTIAL_TYPE_KEY`. Account-only — does not load actor or role_grants.
 9. **Bearer auth** (`/api/*`) — CLI clients; same account-only shape. When `Origin` or `Referer` is present the token is discarded, not refused — the request continues with no bearer identity (browsers must use cookie auth).
@@ -213,8 +213,8 @@ Individual factories take narrower deps: `create_account_route_specs(deps: Route
 `transform_middleware` receives shallow copies of the trusted-proxy spec (5)
 and the auth stack (6–9, and `daemon_token` when configured) and may add layers
 anywhere around them, but each of those specs — matched by `handler`, not
-`name` — must stay mounted once at its original path (`'*'` for the proxy,
-`AUTH_MIDDLEWARE_PATH` for auth) in its original order: the endpoint
+`name` — must stay mounted once at its original path (`'*'` for the proxy and
+the origin check, `AUTH_MIDDLEWARE_PATH` for the rest of auth) in its original order: the endpoint
 auth-scope check assumes the auth stack, and every IP-keyed rate limiter
 assumes the proxy ran first (without it `get_client_ip` answers `'unknown'`
 for every caller, one shared bucket). Assembly throws

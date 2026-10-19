@@ -1,5 +1,5 @@
 import { describe, test, assert, vi } from 'vitest';
-import type { Handler } from 'hono';
+import { Hono, type Handler } from 'hono';
 
 import {
 	ALLOWED_ORIGINS_ERROR_MESSAGES,
@@ -475,5 +475,36 @@ describe('is_browser_context', () => {
 		// still browser context, never a legitimate loopback credential.
 		const { c } = create_mock_context({ Origin: '' });
 		assert.strictEqual(is_browser_context(c as any), true);
+	});
+});
+
+describe('verify_request_source carve-outs', () => {
+	const build_app = () => {
+		const app = new Hono();
+		app.use(
+			'*',
+			verify_request_source(parse_origins('https://app.example'), [
+				{ path: '/hooks/*', reason: 'refuses browser callers itself' },
+				{ path: '/exact', reason: 'refuses browser callers itself' }
+			])
+		);
+		app.get('*', (c) => c.text('ok'));
+		return app;
+	};
+	const status = async (path: string, origin?: string): Promise<number> =>
+		(await build_app().request(path, { headers: origin ? { origin } : {} })).status;
+
+	test('a carved-out path skips the check', async () => {
+		for (const path of ['/hooks', '/hooks/push', '/exact']) {
+			assert.strictEqual(await status(path, 'https://evil.example'), 200, path);
+		}
+	});
+
+	test('every other path keeps it, a near miss of a carve-out included', async () => {
+		for (const path of ['/', '/ready', '/api/rpc', '/hooksx', '/exact/more', '/static/app.js']) {
+			assert.strictEqual(await status(path, 'https://evil.example'), 403, path);
+			assert.strictEqual(await status(path), 200, path);
+			assert.strictEqual(await status(path, 'https://app.example'), 200, path);
+		}
 	});
 });

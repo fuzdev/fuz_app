@@ -14,6 +14,7 @@ import type { RequestResponseActionSpec } from '#lib/actions/action_spec.ts';
 import type { RpcAction } from '#lib/actions/action_rpc.ts';
 import { create_test_app_surface_spec } from '#lib/testing/stubs.ts';
 import { AUTH_MIDDLEWARE_PATH } from '#lib/auth/middleware.ts';
+import { create_health_route_spec } from '#lib/http/common_routes.ts';
 import { create_session_config } from '#lib/auth/session_cookie.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
 import { describe_rpc_attack_surface_tests } from '#lib/testing/rpc_attack_surface.ts';
@@ -368,6 +369,59 @@ describe('create_test_app_surface_spec — auth scope', () => {
 		});
 		assert.strictEqual(spec.surface.rpc_endpoints[0]!.path, '/api');
 		assert.strictEqual(spec.surface.ws_endpoints[0]!.path, '/api');
+	});
+
+	test('throws for a carve-out that overlaps the auth scope, as create_app_server does', () => {
+		for (const path of ['/api/*', '/api/account/*', '/api/rpc']) {
+			assert.throws(
+				() =>
+					create_test_app_surface_spec({
+						session_options,
+						create_route_specs: () => [],
+						rpc_endpoints: [{ path: '/api/rpc', actions: fixture_actions }],
+						origin_carve_outs: [{ path, reason: 'too wide on purpose' }]
+					}),
+				`origin carve-out ${path} overlaps the auth middleware's scope (${AUTH_MIDDLEWARE_PATH})`
+			);
+		}
+	});
+
+	test('throws for a credential-minting route outside the auth scope, as create_app_server does', () => {
+		assert.throws(
+			() =>
+				create_test_app_surface_spec({
+					session_options,
+					create_route_specs: () => [
+						{
+							...create_health_route_spec(),
+							method: 'POST',
+							path: '/auth/login',
+							mints_credential: true
+						}
+					],
+					origin_carve_outs: [{ path: '/auth/*', reason: 'login CSRF on purpose' }]
+				}),
+			`route POST /auth/login mints a credential but is outside the auth middleware's scope (${AUTH_MIDDLEWARE_PATH})`
+		);
+	});
+
+	test("a carve-out keeps the origin check's 403 off the routes it covers, and only those", () => {
+		const spec = create_test_app_surface_spec({
+			session_options,
+			create_route_specs: () => [
+				create_health_route_spec(),
+				{ ...create_health_route_spec(), path: '/hooks/push' }
+			],
+			origin_carve_outs: [{ path: '/hooks/*', reason: 'refuses browser callers itself' }]
+		});
+		const origin = spec.surface.middleware.find((m) => m.name === 'origin')!;
+		assert.deepStrictEqual(origin.carve_outs, [
+			{ path: '/hooks/*', reason: 'refuses browser callers itself' }
+		]);
+		const statuses = (path: string): Array<string> =>
+			Object.keys(spec.surface.routes.find((r) => r.path === path)!.error_schemas ?? {});
+		assert.include(statuses('/health'), '403');
+		assert.notInclude(statuses('/hooks/push'), '403');
 	});
 
 	test('an origin-less ws spec without allowed_origins names the fix', () => {

@@ -16,7 +16,7 @@ import type { z } from 'zod';
 import { Logger } from '@fuzdev/fuz_util/log.ts';
 
 import { create_bearer_auth_middleware } from '../auth/bearer_auth.ts';
-import { AUTH_MIDDLEWARE_PATH } from '../auth/middleware.ts';
+import { AUTH_MIDDLEWARE_PATH, ORIGIN_MIDDLEWARE_PATH } from '../auth/middleware.ts';
 import { query_validate_api_token } from '../auth/api_token_queries.ts';
 import {
 	query_account_by_id,
@@ -407,7 +407,7 @@ export const create_test_middleware_stack_app = (
 
 	const app = new Hono();
 	app.use('*', proxy_mw);
-	app.use(AUTH_MIDDLEWARE_PATH, origin_mw);
+	app.use(ORIGIN_MIDDLEWARE_PATH, origin_mw);
 	app.use(AUTH_MIDDLEWARE_PATH, bearer_mw);
 
 	// echo route for assertions — exposes the account-grain identity bearer

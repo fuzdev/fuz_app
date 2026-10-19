@@ -1138,6 +1138,10 @@ payloads are rejected with 413 and `{error: 'payload_too_large'}`
 (`PayloadTooLargeError` schema). Configure via `max_body_size` on
 `AppServerOptions`; pass `null` to disable.
 
+On both spines the 413 comes first for a declared `Content-Length` over the
+cap; a length-less (chunked) body over the cap is refused too, but which
+refusal it gets when another check also applies is implementation-defined.
+
 **A `Content-Length` the cap cannot read.** A `Content-Length` that is not a
 plain run of ASCII digits — `abc`, `-1`, `+5`, `1e9`, `0x1F4`, an empty value,
 a combined `5, 500` — is refused with 400 `{error: 'invalid_content_length'}`
@@ -1798,6 +1802,29 @@ is refused with `403`. Non-browser clients (curl, CLI,
 server-to-server) without an `Origin` header pass through — token auth is
 the security control for those callers, which don't carry auto-attached
 cookies.
+
+The check covers every path — `/api`, the probes, the static fallback — on
+both spines, so a page from a foreign origin is refused wherever it points.
+A path leaves it only by a named carve-out that states its reason
+(`origin_carve_outs` on `create_app_server`, `origin_carve_out` on a Rust
+route group), for a route that refuses browser callers by other means.
+
+The spines bound carve-outs differently. On TS, assembly refuses a carve-out
+that overlaps the auth middleware's scope (`/api/*`), and holds every route
+that reads or mints a credential inside that scope — RPC, WebSocket,
+bootstrap, login, signup, logout, password. The account and signup route
+specs are relative and the consumer prefixes them, so assembly checks the
+mounted paths: a route whose `auth` reads an account, one marked
+`reads_credential` (account status, whose handler reads the account behind
+no gate), or one marked `mints_credential` (login, signup, bootstrap), is
+refused outside `/api/*`,
+so no prefix can put one where a carve-out reaches. Rust has no such refusal: its credentialed entry points
+check the origin again in the handler, through `fuz_auth::AuthGate`, so a
+carved-out group still refuses a foreign page there. A carve-out also reaches
+unrouted paths differently: on TS it skips every path it matches, so with
+`/hooks/*` carved out an unrouted `/hooks/x` reaches the static fallback
+unchecked, while Rust sends an unrouted path to its fallback group, which is
+checked whatever a carve-out names.
 
 So a same-site page, which does get the cookie sent, still can't drive the
 server: its `POST`s are refused for their content type or never sent, and its

@@ -340,6 +340,7 @@ export const create_serve_cell_fact_route_spec = (
 		method: 'GET',
 		path: '/api/cells/:cell_id/facts/:hash',
 		auth: { account: 'none', actor: 'none' },
+		reads_credential: true,
 		description:
 			'Serve content-addressed fact bytes through a named referencing cell. 404 unless the cell admits the caller via can_view_cell AND references the hash (per-reference, never union-of-referrers).',
 		params: cell_fact_params_schema,

@@ -178,6 +178,27 @@ export interface RouteSpec {
 	 */
 	raw_body?: boolean;
 	/**
+	 * Marks a route that issues a credential — a session cookie — while
+	 * declaring no auth itself: login, signup, bootstrap. A forged cross-site
+	 * request to one is login CSRF, so it must take the origin check, and
+	 * assembly refuses it outside the auth middleware's scope, where no origin
+	 * carve-out can reach (`assert_credential_routes_in_auth_scope`). A route
+	 * that reads a credential (`auth.account` not `'none'`) is held there
+	 * without the mark.
+	 */
+	mints_credential?: boolean;
+	/**
+	 * Marks a route that reads the resolved credential in its handler while
+	 * declaring no auth gate — it answers an anonymous caller itself instead
+	 * of taking the dispatcher's `401` (account status, the cell-scoped fact
+	 * read, the JSON-RPC endpoint whose dispatcher gates each action).
+	 * Outside the auth middleware's scope no session or bearer parsing runs
+	 * and it would see every caller as anonymous, so assembly refuses it
+	 * there (`assert_credential_routes_in_auth_scope`), as it does a route
+	 * whose `auth.account` is not `'none'`.
+	 */
+	reads_credential?: boolean;
+	/**
 	 * Rate limit key type — declares what this route's rate limiter is keyed on.
 	 *
 	 * When set, 429 (`RateLimitError`) is auto-derived in `derive_error_schemas`.

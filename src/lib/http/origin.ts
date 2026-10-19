@@ -25,6 +25,8 @@ import type { Context, Handler } from 'hono';
 import { z } from 'zod';
 
 import { ERROR_FORBIDDEN_ORIGIN } from './error_schemas.ts';
+import type { MiddlewareCarveOut } from './middleware_spec.ts';
+import { middleware_applies } from './schema_helpers.ts';
 
 /**
  * True when the request looks like it originated from a browser context — it
@@ -230,11 +232,23 @@ export const should_allow_origin = (
  * would only widen the accepted-shape envelope without closing a real
  * CSRF hole. The Rust spine's `origin_layer` is the twin.
  *
+ * `create_app_server` mounts it on every path (`ORIGIN_MIDDLEWARE_PATH`); a
+ * request whose path a `carve_outs` entry matches passes unchecked — the named,
+ * explicit exception, each with its reason, as the Rust stack's
+ * `origin_carve_out` is.
+ *
  * @param allowed_patterns - compiled regex patterns from `parse_allowed_origins`
+ * @param carve_outs - paths the check skips, matched like a middleware path (`middleware_applies`)
  */
 export const verify_request_source =
-	(allowed_patterns: ReadonlyArray<RegExp>): Handler =>
+	(
+		allowed_patterns: ReadonlyArray<RegExp>,
+		carve_outs: ReadonlyArray<MiddlewareCarveOut> = []
+	): Handler =>
 	(c, next) => {
+		if (carve_outs.some((carve_out) => middleware_applies(carve_out.path, c.req.path))) {
+			return next();
+		}
 		// `!== undefined` so an empty-string Origin is present (abnormal, checked
 		// against the allowlist — the empty string never matches)
 		const origin = c.req.header('origin');

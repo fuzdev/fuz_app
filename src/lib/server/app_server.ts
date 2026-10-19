@@ -60,7 +60,7 @@ import {
 	prefix_route_specs,
 	type RouteSpec
 } from '../http/route_spec.ts';
-import type { MiddlewareSpec } from '../http/middleware_spec.ts';
+import type { MiddlewareCarveOut, MiddlewareSpec } from '../http/middleware_spec.ts';
 import {
 	check_bootstrap_status,
 	create_bootstrap_route_specs,
@@ -69,6 +69,7 @@ import {
 import { create_surface_route_spec, type SurfaceRouteOptions } from './surface_route.ts';
 import { flush_pending_effects, flush_post_commit_effects } from '../http/pending_effects.ts';
 import {
+	assert_credential_routes_in_auth_scope,
 	assert_endpoint_in_auth_scope,
 	assert_middleware_stack_mounted,
 	create_auth_middleware_specs
@@ -155,6 +156,18 @@ export interface AppServerOptions {
 	session_options: SessionOptions<string>;
 	/** Parsed allowed origin patterns. */
 	allowed_origins: Array<RegExp>;
+	/**
+	 * Paths the origin check skips, each with its reason. The check covers
+	 * every path by default (`ORIGIN_MIDDLEWARE_PATH`) — a request with no
+	 * `Origin` passes it anyway, so probes and CLI clients need no carve-out;
+	 * one is for a path that refuses browser callers by other means. Copied at
+	 * assembly, so a later change to this array changes nothing; assembly
+	 * throws on a carve-out with no reason, or one that overlaps the auth
+	 * middleware's scope (`AUTH_MIDDLEWARE_PATH`) — every route that reads or
+	 * mints a credential, and every RPC, WS, and bootstrap endpoint, sits
+	 * there (`assert_origin_carve_outs_valid`).
+	 */
+	origin_carve_outs?: Array<MiddlewareCarveOut>;
 
 	/** Trusted proxy options. */
 	proxy: {
@@ -283,7 +296,8 @@ export interface AppServerOptions {
 	 * Add layers anywhere (before the proxy spec, between it and the auth
 	 * stack, between the auth layers, or after), but keep each of those specs
 	 * — its `handler`, not just its `name` — mounted once at its original path
-	 * (`'*'` for the proxy, `AUTH_MIDDLEWARE_PATH` for auth) in its original
+	 * (`'*'` for the proxy and the origin check, `AUTH_MIDDLEWARE_PATH` for the
+	 * rest of the auth stack) in its original
 	 * order: the endpoint auth-scope check (`assert_endpoint_in_auth_scope`)
 	 * and client-IP rate limiting (`get_client_ip`) assume it, so assembly
 	 * throws (`assert_middleware_stack_mounted`) if the transform moves, drops,
@@ -857,7 +871,8 @@ const assemble_app_server = async (
 	const auth_middleware = await create_auth_middleware_specs(deps, {
 		allowed_origins: options.allowed_origins,
 		session_options: options.session_options,
-		daemon_token_state: options.daemon_token_state
+		daemon_token_state: options.daemon_token_state,
+		origin_carve_outs: options.origin_carve_outs
 	});
 	const stack_specs: Array<MiddlewareSpec> = [proxy_spec, ...auth_middleware];
 	let middleware_specs = stack_specs;
@@ -983,6 +998,10 @@ const assemble_app_server = async (
 	}
 
 	const route_specs = [...consumer_routes, ...factory_routes];
+	// a route that reads or mints a credential outside the auth scope would
+	// skip session parsing or fall under an origin carve-out — consumer
+	// prefixes included (account and signup specs are relative)
+	assert_credential_routes_in_auth_scope(route_specs);
 
 	// WS path checks — pure data, so they run before anything mounts.
 	// `register_ws_endpoint` mounts a `GET path` upgrade route: a duplicate

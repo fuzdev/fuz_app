@@ -64,6 +64,7 @@ export const create_signup_route_shape = (
 	method: 'POST',
 	path: '/signup',
 	auth: { account: 'none', actor: 'none' },
+	mints_credential: true,
 	description: 'Create account (invite-gated or open signup)',
 	transaction: false, // manages its own transaction for TOCTOU safety
 	input: SignupInput,

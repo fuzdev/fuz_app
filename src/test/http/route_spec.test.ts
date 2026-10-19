@@ -20,7 +20,11 @@ import { fuz_auth_guard_resolver } from '#lib/auth/auth_guard_resolver.ts';
 import { ActingActor } from '#lib/http/auth_shape.ts';
 import type { MiddlewareSpec } from '#lib/http/middleware_spec.ts';
 import { generate_app_surface, events_to_surface } from '#lib/http/surface.ts';
-import { middleware_applies, schema_to_surface } from '#lib/http/schema_helpers.ts';
+import {
+	middleware_applies,
+	middleware_paths_overlap,
+	schema_to_surface
+} from '#lib/http/schema_helpers.ts';
 import type { EventSpec } from '#lib/realtime/sse.ts';
 import { REQUEST_CONTEXT_KEY } from '#lib/auth/request_context.ts';
 import {
@@ -716,6 +720,36 @@ describe('middleware_applies', () => {
 	test('bare star matches everything', () => {
 		assert.strictEqual(middleware_applies('*', '/anything'), true);
 		assert.strictEqual(middleware_applies('*', '/api/deep/path'), true);
+	});
+});
+
+describe('middleware_paths_overlap', () => {
+	test('overlapping pairs, either order', () => {
+		for (const [a, b] of [
+			['/api/*', '/api/*'],
+			['/api/*', '/api/account/*'],
+			['/api/*', '/api/account/login'],
+			['/api/*', '/api'],
+			['/api/*', '/*'],
+			['/api/*', '*'],
+			['/health', '/health']
+		] as const) {
+			assert.strictEqual(middleware_paths_overlap(a, b), true, `${a} ${b}`);
+			assert.strictEqual(middleware_paths_overlap(b, a), true, `${b} ${a}`);
+		}
+	});
+
+	test('disjoint pairs, either order', () => {
+		for (const [a, b] of [
+			['/api/*', '/apix/*'],
+			['/api/*', '/apis'],
+			['/api/*', '/hooks/*'],
+			['/api/*', '/'],
+			['/health', '/healthz']
+		] as const) {
+			assert.strictEqual(middleware_paths_overlap(a, b), false, `${a} ${b}`);
+			assert.strictEqual(middleware_paths_overlap(b, a), false, `${b} ${a}`);
+		}
 	});
 });
 
