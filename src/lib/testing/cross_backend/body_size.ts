@@ -10,8 +10,8 @@ import '../assert_dev_env.ts';
  * `Content-Length` over the cap is refused on the header, *before* auth,
  * origin, or dispatch run (middleware step 4). Each impl unit-tests this in
  * isolation; this suite pins the cross-impl agreement on the status + body
- * shape, on the exact `>` cap boundary (not an off-by-one divergence), and on
- * the cap answering ahead of the origin check and of auth. The cases:
+ * shape, and on the exact `>` cap boundary (not an off-by-one divergence). The
+ * cases:
  *
  * - **over-limit POST (cap + 1 byte) → 413** `payload_too_large`, refused
  *   before any handler runs (the limit fires ahead of origin verification + the
@@ -26,11 +26,10 @@ import '../assert_dev_env.ts';
  * - **under-limit POST (small) → 200** — a small, well-formed authenticated
  *   `account_verify` envelope sails through to a successful handler response,
  *   the positive control that the route works for normal traffic.
- * - **over-limit POST with a disallowed `Origin` → 413**, not the origin
- *   check's 403, and **over-limit POST with no credentials → 413**, not 401:
- *   the cap answers a declared length ahead of both. The control — the same
- *   disallowed `Origin` on an under-limit body → 403 `forbidden_origin` —
- *   shows the origin check still runs.
+ * - The cap answering a declared length ahead of the origin check and auth —
+ *   over-cap with a disallowed `Origin` and no credential → 413 — is pinned per
+ *   transport by the front-door table (`transport_composition.ts`), beside the
+ *   under-cap 403 that shows the origin check still runs.
  * - **over-limit chunked POST (no `Content-Length`), authenticated → 413** —
  *   a body with no declared length is refused by the bytes that arrive.
  *
@@ -86,7 +85,7 @@ import '../assert_dev_env.ts';
 import { describe, test, assert } from 'vitest';
 
 import { account_verify_action_spec } from '../../auth/account_action_specs.ts';
-import { ERROR_FORBIDDEN_ORIGIN, ERROR_PAYLOAD_TOO_LARGE } from '../../http/error_schemas.ts';
+import { ERROR_PAYLOAD_TOO_LARGE } from '../../http/error_schemas.ts';
 import {
 	raw_http_exchange,
 	raw_http_parse_response,
@@ -145,9 +144,6 @@ const sized_envelope = (id: string, target_bytes: number): string => {
 /** A small, well-formed nullary `account_verify` body — well under the cap. */
 const small_envelope = (id: string): string =>
 	JSON.stringify({ jsonrpc: '2.0', method: account_verify_action_spec.method, id });
-
-/** An `Origin` no backend's allowlist admits. */
-const DISALLOWED_ORIGIN = 'http://evil.com';
 
 /** Chunk size of the streamed over-cap body. */
 const STREAM_CHUNK_BYTES = 64 * 1024;
@@ -251,27 +247,19 @@ export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions
 		});
 
 	/**
-	 * POST with a declared `Content-Length` one byte over the cap. Over a
-	 * socket only the head is sent; in-process, the whole body.
-	 *
-	 * `headers` carries the credential and any `Origin`, which defaults to the
-	 * backend's own. `anonymous` picks the cookie-jar-free transport in-process;
-	 * a raw head carries only what `headers` names either way.
+	 * POST as the keeper, with the backend's own `Origin` and a declared
+	 * `Content-Length` one byte over the cap. Over a socket only the head is
+	 * sent; in-process, the whole body.
 	 */
 	const post_over_limit_declared = async (
 		fixture: TestFixture,
-		request: {
-			readonly id: string;
-			readonly headers: Record<string, string>;
-			readonly anonymous: boolean;
-		}
+		id: string
 	): Promise<SizedResponse> => {
-		const { id, headers, anonymous } = request;
+		const headers = fixture.create_session_headers();
 		const content_length = BODY_LIMIT_DEFAULT_BYTES + 1;
 		if (base_url === null) {
-			const transport = anonymous ? fixture.fresh_transport() : fixture.transport;
 			return to_sized_response(
-				await transport(rpc_path, {
+				await fixture.transport(rpc_path, {
 					method: 'POST',
 					headers: { ...headers, 'content-type': 'application/json' },
 					body: sized_envelope(id, content_length)
@@ -339,11 +327,7 @@ export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions
 			// Keeper session cookie + the default allowed Origin, so neither auth
 			// nor origin is the cause — only the size. One byte over the cap: both
 			// impls reject on a strict `>`.
-			const res = await post_over_limit_declared(fixture, {
-				id: 'over-limit',
-				headers: fixture.create_session_headers(),
-				anonymous: false
-			});
+			const res = await post_over_limit_declared(fixture, 'over-limit');
 			assert_payload_too_large(res, 'a body one byte over the cap must be rejected with 413');
 		});
 
@@ -363,52 +347,6 @@ export const describe_body_size_cross_tests = (options: BodySizeCrossTestOptions
 			// passes (and the 413 above is size-gated, not a blanket rejection).
 			const res = await post(fixture, small_envelope('under-limit'));
 			assert.strictEqual(res.status, 200, 'an under-limit authenticated request must pass');
-		});
-
-		test('over-limit POST with a disallowed Origin → 413, not 403', async () => {
-			const fixture = await setup_test();
-			// Keeper session + a rogue Origin: the origin check would answer 403,
-			// and the cap, which reads only the declared length, answers first.
-			const res = await post_over_limit_declared(fixture, {
-				id: 'over-limit-evil-origin',
-				headers: { ...fixture.create_session_headers(), origin: DISALLOWED_ORIGIN },
-				anonymous: false
-			});
-			assert_payload_too_large(
-				res,
-				'a declared length over the cap must answer 413 ahead of the origin check'
-			);
-		});
-
-		test('under-limit POST with a disallowed Origin → 403 forbidden_origin', async () => {
-			const fixture = await setup_test();
-			// The control for the case above: the same request minus the size is
-			// refused by the origin check, so the 413 there is the cap answering
-			// first, not the origin check being absent.
-			const res = await fixture.transport(rpc_path, {
-				method: 'POST',
-				headers: {
-					...fixture.create_session_headers(),
-					origin: DISALLOWED_ORIGIN,
-					'content-type': 'application/json'
-				},
-				body: small_envelope('under-limit-evil-origin')
-			});
-			assert.strictEqual(res.status, 403, 'a disallowed Origin on an under-limit body is refused');
-			const body = (await res.json().catch(() => undefined)) as { error?: unknown } | undefined;
-			assert.strictEqual(body?.error, ERROR_FORBIDDEN_ORIGIN);
-		});
-
-		test('over-limit POST with no credentials → 413, not 401', async () => {
-			const fixture = await setup_test();
-			// No cookie, no token: the dispatcher would answer 401, and the cap
-			// answers first.
-			const res = await post_over_limit_declared(fixture, {
-				id: 'over-limit-anonymous',
-				headers: {},
-				anonymous: true
-			});
-			assert_payload_too_large(res, 'a declared length over the cap must answer 413 ahead of auth');
 		});
 
 		test('over-limit chunked POST (no Content-Length), authenticated → 413', async () => {

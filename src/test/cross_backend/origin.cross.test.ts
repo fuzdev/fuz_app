@@ -1,10 +1,11 @@
 /**
  * Cross-process Origin-verification parity for fuz_app's own spine over real
  * HTTP. Companion to `auth.cross.test.ts` / `account_lifecycle.cross.test.ts`:
- * drives the Origin allowlist middleware (disallowed Origin → 403, absent
- * Origin → pass) over real requests against each spawned backend — the TS
- * spine binaries + the Rust `testing_spine_stub`. Origin middleware is on
- * every spine, so the suite is ungated.
+ * drives the Origin allowlist middleware (absent Origin → pass) over real
+ * requests against each spawned backend — the TS spine binaries + the Rust
+ * `testing_spine_stub`; a disallowed Origin → 403 is the front-door table's
+ * (`transport_composition.cross.test.ts`). Origin middleware is on every
+ * spine, so the suite is ungated.
  *
  * @module
  */

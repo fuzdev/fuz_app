@@ -41,7 +41,6 @@ import {
 	find_rpc_action,
 	headers_to_record,
 	rpc_call,
-	rpc_call_for_spec,
 	resolve_rpc_endpoints_for_setup,
 	type RpcEndpointsSuiteOption
 } from '../rpc_helpers.ts';
@@ -54,6 +53,7 @@ import {
 } from './conformance_case.ts';
 import type { BackendCapabilities } from './capabilities.ts';
 import type { SetupTest, TestFixture } from './setup.ts';
+import { mint_narrowed_api_token } from './narrowed_api_token.ts';
 import { xfail_until } from './xfail.ts';
 
 /**
@@ -137,28 +137,13 @@ const mint_scoped_token = async (
 				`rpc_endpoints.`
 		);
 	}
-	// Spec-bound rather than a loose `rpc_call`: `params` type-checks against
-	// `TokenCreateInput` (so dropping `scope` is a compile error, not a runtime
-	// 400 in every test at once), and `result.token` comes back typed and
-	// output-validated — no cast, no hand-rolled presence check.
-	const res = await rpc_call_for_spec({
+	return mint_narrowed_api_token({
 		app: fixture.transport,
-		path: found.path,
-		spec: account_token_create_action_spec,
-		params: {
-			name: 'conformance scoped token',
-			scope: { kind: 'methods', methods: [SCOPED_TOKEN_ADMITTED_METHOD] },
-			lifetime: { kind: 'eternal' }
-		},
-		headers: fixture.create_session_headers()
+		rpc_path: found.path,
+		session_headers: fixture.create_session_headers(),
+		methods: [SCOPED_TOKEN_ADMITTED_METHOD],
+		name: 'conformance scoped token'
 	});
-	if (!res.ok) {
-		throw new Error(
-			`conformance: minting the 'scoped_token' principal failed with ${res.status}: ` +
-				JSON.stringify(res.error)
-		);
-	}
-	return res.result.token;
 };
 
 /**

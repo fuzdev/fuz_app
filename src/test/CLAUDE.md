@@ -326,8 +326,16 @@ idempotency, a scoped assign round-tripping `scope_kind` through
 ['admin']`) app-role on both spines with the holder via `extra_accounts`;
 in-process leg `conformance_participation.db.test.ts`), and
 `origin.cross.test.ts` (the imperative `describe_origin_cross_tests` — Origin
-allowlist: disallowed → 403 `forbidden_origin`, absent → pass; in-process leg
-`auth/origin_parity.db.test.ts`), `simple_request.cross.test.ts` (the
+allowlist: absent → pass; in-process leg `auth/origin_parity.db.test.ts`), and
+`transport_composition.cross.test.ts` (the front-door table via
+`describe_transport_composition_cross_tests` — on REST `POST /logout`, RPC
+`POST` and `GET`, the WS upgrade and the audit stream: a foreign `Origin` →
+403 `forbidden_origin`, an over-cap declared length with a foreign `Origin` and
+no credential → 413 on the body-carrying surfaces, no credential → 401
+`authentication_required` (on `/password` too), a narrowed bearer → each
+surface's denial, status and body, a WS refusal's body required where the
+backend declares `capabilities.ws_refusal_body`; in-process leg `auth/transport_composition_parity.db.test.ts`, where
+the WS rows skip), `simple_request.cross.test.ts` (the
 imperative `describe_simple_request_cross_tests` — untyped / CORS-safelisted /
 non-JSON `POST`s to JSON routes → 415 `unsupported_content_type`; in-process leg
 `auth/simple_request_parity.db.test.ts`), and `query_shape.cross.test.ts` (the
@@ -389,12 +397,11 @@ role reaching `role_not_web_grantable` as the control; cross-only), and
 via `describe_fact_serving_cross_tests`, gated on `capabilities.fact_serving`),
 and `body_size.cross.test.ts` (the 1 MiB request-body cap:
 `describe_body_size_cross_tests` — over-limit cap+1 → 413 `payload_too_large`,
-at-limit exactly-the-cap → not size-rejected, under-limit → 200, an over-limit
-declared length → 413 with a disallowed `Origin` (not 403, with the under-limit
-403 as its control) and with no credentials (not 401), and an authenticated
-over-limit chunked body → 413. Given the backend's `base_url`, the over-limit
+at-limit exactly-the-cap → not size-rejected, under-limit → 200, and an
+authenticated over-limit chunked body → 413; the cap answering ahead of the
+origin check and auth is the front-door table's. Given the backend's `base_url`, the over-limit
 cases write to the socket themselves and send nothing the server will leave
-unread — the declared-length ones the request head alone, the chunked one a
+unread — the declared-length one the request head alone, the chunked one a
 body that stops one byte past the cap — so no upload races the close that
 follows the 413, and each 413 must arrive without the rest of the body — plus
 `describe_body_size_smuggling_cross_tests`, a raw-`node:net` probe that pipelines

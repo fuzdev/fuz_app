@@ -933,8 +933,9 @@ source of truth for wire-shape conformance.
   `cell_gated_create` / `account_lifecycle` / `fact_serving` / `ready` /
   `account_status` / `peer_request` /
   `ws_handshake_pipelining` / `ws_account_actions` / `ws_self_revocation_reply` /
-  `ws_role_gated` — each has a `test_if`
-  reader (`ws_self_revocation_reply` forks one case's assertion instead); `peer_request` (server-initiated requests — the ActionPeer
+  `ws_role_gated` / `ws_refusal_body` — each has a `test_if`
+  reader (`ws_self_revocation_reply` forks one case's assertion instead, and
+  `ws_refusal_body` how the front-door table reads a WS refusal); `peer_request` (server-initiated requests — the ActionPeer
   `peer/ping` round-trip) is `true` for both the Rust spine and the TS spine
   (`BackendWebsocketTransport.request_connection`); `ts_default_capabilities`
   keeps it `false` like sse/ready until a backend wires the `peer/ping` HTTP +
@@ -1645,14 +1646,47 @@ serve a body-parity gate (its per-spine coverage stays in the two surface
 censuses). Cross-process only; fuz_app's own wiring is
 `src/test/cross_backend/token_scope_surface.cross.test.ts`.
 
+### Front-door contract — `cross_backend/transport_composition.ts`
+
+`describe_transport_composition_cross_tests({setup_test, capabilities, base_url,
+rpc_path?, origin?, rest_path?, password_path?, ws_path?, sse_path?})` — the per-transport
+composition table: what each transport answers before per-action dispatch,
+when one request trips several refusals. Rows are REST `POST` (session-only
+`/api/account/logout`), RPC `POST`, RPC `GET`, the WS upgrade (gated on
+`capabilities.ws`) and the audit stream (`capabilities.sse`); columns are a
+foreign `Origin` with the keeper's session (→ 403 `forbidden_origin`), an
+over-cap declared length with a foreign `Origin` and no credential (→ 413
+`payload_too_large`, body-carrying rows only), no credential (→ 401
+`authentication_required`), and a narrowed bearer with no `Origin` (→ 403
+`token_scope_required` naming `rpc:<method>` on RPC and `surface:ws_upgrade` on
+the upgrade; 403 `credential_type_required` on the session-only REST route and
+audit stream); a `/password` cell pins that route's 401 beside `/logout`'s.
+Each case asserts the status and the body — flat `{error}` or the JSON-RPC
+envelope's `error.data`. A WS refusal's body is required where the backend
+declares `capabilities.ws_refusal_body`; where it doesn't (Node's
+`@hono/node-ws` drops the body), an empty body passes on its status and a sent
+one is still asserted. The table
+is the exported `transport_composition_cases` data. Given `base_url`, every
+probe is written to the socket (`raw_http_exchange`) and an over-cap request
+sends its head alone; with `base_url: null` the probes go through the
+fixture's transport and the WS rows skip. Not in the standard bundle. fuz_app's
+own wiring is `src/test/cross_backend/transport_composition.cross.test.ts` and
+the in-process `src/test/auth/transport_composition_parity.db.test.ts`.
+
+`cross_backend/narrowed_api_token.ts` — `mint_narrowed_api_token({app,
+rpc_path, session_headers, methods, name?})` mints a method-scoped api token
+through the production `account_token_create` path and returns the raw bearer
+(throws when the mint is refused). Shared by the front-door table, the
+token-scope surface suite, and the conformance table's `scoped_token`
+principal.
+
 ### Origin verification parity — `cross_backend/origin.ts`
 
 `describe_origin_cross_tests({setup_test, rpc_path?})` — the
-imperative Origin-verification suite: disallowed `Origin` → 403 `forbidden_origin` (refused
-before dispatch), absent `Origin` → request passes (non-browser direct access).
-Imperative (not a conformance-table row) because origin rejection is
-middleware-level flat-REST, not the JSON-RPC envelope the table runner expects,
-and absent-Origin needs `fresh_transport({origin: null})`. Runs both legs (the
+imperative Origin-verification suite: absent `Origin` → request passes
+(non-browser direct access); the disallowed-`Origin` 403 is the front-door
+table's. Imperative (not a conformance-table row) because absent-Origin needs
+`fresh_transport({origin: null})`. Runs both legs (the
 in-process `auth/origin_parity.db.test.ts` + the cross-process
 `origin.cross.test.ts`). The promotion surfaced a twin-impl divergence — the
 Rust spine returned a plain-text body — now converged to the canonical TS

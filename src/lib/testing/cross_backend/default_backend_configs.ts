@@ -111,7 +111,10 @@ export const ts_default_capabilities: BackendCapabilities = Object.freeze({
 	cell_gated_create: false,
 	// Off by default — the second, role-gated WS endpoint is a spine-binary
 	// mount (`SPINE_ROLE_GATED_WS_PATH`); fuz_app's spine configs opt in.
-	ws_role_gated: false
+	ws_role_gated: false,
+	// Off by default: `@hono/node-ws` drops a refused upgrade's body, so a
+	// Node-served consumer sends none. A Deno- or Bun-served one may opt in.
+	ws_refusal_body: false
 });
 
 /**
@@ -150,7 +153,9 @@ export const rust_default_capabilities: BackendCapabilities = Object.freeze({
 	cell_gated_create: false,
 	// Off by default — the `testing_spine_stub` preset opts in (it mounts the
 	// role-gated WS endpoint at `SPINE_ROLE_GATED_WS_PATH`).
-	ws_role_gated: false
+	ws_role_gated: false,
+	// axum sends a refused upgrade's response as built, body included.
+	ws_refusal_body: true
 });
 
 /**

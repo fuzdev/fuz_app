@@ -1215,8 +1215,9 @@ and carries no `Connection: close` — what the connection does then is the
 runtime's default. `http/body_limit.test.ts` pins each branch.
 
 **What the two spines share, and what each decides.** Pinned on every backend
-by `testing/cross_backend/body_size.ts`: a declared `Content-Length` over the
-cap answers 413 whatever the request's `Origin` or credentials, and an
+by `testing/cross_backend/body_size.ts` and the front-door table
+(`testing/cross_backend/transport_composition.ts`): a declared `Content-Length`
+over the cap answers 413 whatever the request's `Origin` or credentials, and an
 authenticated, allowed-origin request whose chunked body runs past the cap
 answers 413. Neither refusal waits for the rest of the body: over a real
 socket the suite sends the declared-length request's head alone, and the

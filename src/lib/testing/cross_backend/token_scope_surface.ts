@@ -66,13 +66,13 @@ import '../assert_dev_env.ts';
 
 import { describe, assert } from 'vitest';
 
-import { account_token_create_action_spec } from '../../auth/account_action_specs.ts';
 import {
 	ERROR_CREDENTIAL_TYPE_REQUIRED,
 	ERROR_TOKEN_SCOPE_REQUIRED
 } from '../../http/error_schemas.ts';
 import { test_if } from './capabilities.ts';
 import { cross_rpc_call } from './cell_cross_helpers.ts';
+import { mint_narrowed_api_token } from './narrowed_api_token.ts';
 import type { RpcPathCapabilityGatedCrossSuiteOptions } from './setup.ts';
 import type { FetchTransport } from '../transports/fetch_transport.ts';
 import { SPINE_RPC_PATH } from './spine_surface_constants.ts';
@@ -102,33 +102,6 @@ const surface_denial_body = (surface: string): Record<string, unknown> => ({
 	error: ERROR_TOKEN_SCOPE_REQUIRED,
 	required_scope: `surface:${surface}`
 });
-
-/**
- * Mint a narrowed bearer token over a session, through the production
- * `account_token_create` path.
- *
- * Deliberately not a fixture-level credential: minting it here means the token
- * is produced by the same handler a real minter would use, on whichever
- * account the caller chose — which is what lets the ordering case put a
- * narrowed token on an account that lacks the gating role.
- */
-const mint_narrowed_token = async (
-	transport: FetchTransport,
-	rpc_path: string,
-	session_headers: Record<string, string>
-): Promise<string> => {
-	const res = await cross_rpc_call(
-		transport,
-		rpc_path,
-		account_token_create_action_spec.method,
-		{ scope: { kind: 'methods', methods: [ADMITTED_METHOD] }, lifetime: { kind: 'eternal' } },
-		session_headers
-	);
-	assert.ok(res.ok, `minting a narrowed token failed: ${JSON.stringify(res.error)}`);
-	const token = (res.result as { token?: unknown } | undefined)?.token;
-	assert.ok(typeof token === 'string' && token.length > 0, 'mint returned no token');
-	return token;
-};
 
 /**
  * Assert a bearer GET is refused with the canonical surface denial.
@@ -198,11 +171,12 @@ export const describe_token_scope_surface_cross_tests = (
 		 */
 		test_if(true, 'a narrowed token still reaches the method it names', async () => {
 			const fixture = await setup_test();
-			const token = await mint_narrowed_token(
-				fixture.transport,
+			const token = await mint_narrowed_api_token({
+				app: fixture.transport,
 				rpc_path,
-				fixture.create_session_headers()
-			);
+				session_headers: fixture.create_session_headers(),
+				methods: [ADMITTED_METHOD]
+			});
 			const res = await cross_rpc_call(
 				fixture.fresh_transport({ origin: null }),
 				rpc_path,
@@ -218,11 +192,12 @@ export const describe_token_scope_surface_cross_tests = (
 			'the audit stream refuses a bearer at the channel gate (credential_types)',
 			async () => {
 				const fixture = await setup_test();
-				const token = await mint_narrowed_token(
-					fixture.transport,
+				const token = await mint_narrowed_api_token({
+					app: fixture.transport,
 					rpc_path,
-					fixture.create_session_headers()
-				);
+					session_headers: fixture.create_session_headers(),
+					methods: [ADMITTED_METHOD]
+				});
 				await assert_channel_denied(fixture.fresh_transport, sse_path, token, ['session']);
 			}
 		);
@@ -232,11 +207,12 @@ export const describe_token_scope_surface_cross_tests = (
 			'a narrowed token is refused the bare-hash fact read (surface:fact_bare)',
 			async () => {
 				const fixture = await setup_test();
-				const token = await mint_narrowed_token(
-					fixture.transport,
+				const token = await mint_narrowed_api_token({
+					app: fixture.transport,
 					rpc_path,
-					fixture.create_session_headers()
-				);
+					session_headers: fixture.create_session_headers(),
+					methods: [ADMITTED_METHOD]
+				});
 				await assert_surface_denied(
 					fixture.fresh_transport,
 					`/api/facts/${ABSENT_FACT_HASH}`,
@@ -291,11 +267,12 @@ export const describe_token_scope_surface_cross_tests = (
 			async () => {
 				const fixture = await setup_test();
 				const non_admin = await fixture.create_account({ username: 'scope_before_role' });
-				const token = await mint_narrowed_token(
-					fixture.fresh_transport(),
+				const token = await mint_narrowed_api_token({
+					app: fixture.fresh_transport(),
 					rpc_path,
-					non_admin.create_session_headers()
-				);
+					session_headers: non_admin.create_session_headers(),
+					methods: [ADMITTED_METHOD]
+				});
 				await assert_surface_denied(
 					fixture.fresh_transport,
 					`/api/facts/${ABSENT_FACT_HASH}`,

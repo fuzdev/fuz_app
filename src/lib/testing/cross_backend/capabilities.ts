@@ -262,6 +262,19 @@ export interface BackendCapabilities {
 	 * mount that endpoint (the TS spine binary + the Rust `testing_spine_stub`).
 	 */
 	readonly ws_role_gated: boolean;
+	/**
+	 * A refused WebSocket upgrade carries its refusal body — the flat
+	 * `{error, ...}` the same refusal answers over plain HTTP. Not a gate: it
+	 * forks how `describe_transport_composition_cross_tests` reads its WS rows.
+	 * `true`, an empty refusal body fails the case; `false`, an empty body is
+	 * allowed (the case pins the status alone) and a non-empty one is still
+	 * asserted.
+	 *
+	 * `false` on Node: `@hono/node-ws` writes a refused upgrade to the raw
+	 * socket with `Content-Length: 0`, dropping the response body. `true` on
+	 * Deno, Bun, and the Rust spine, which send the response as built.
+	 */
+	readonly ws_refusal_body: boolean;
 }
 
 /**
@@ -300,7 +313,10 @@ export const in_process_capabilities: BackendCapabilities = Object.freeze({
 	cell_gated_create: false,
 	// Cross-process-only: the gated endpoint is a spine-binary mount, and the
 	// case reads a real socket's close.
-	ws_role_gated: false
+	ws_role_gated: false,
+	// Read only by the front-door table's WS rows, which skip in-process (no
+	// socket to upgrade); Hono's own refusals carry their bodies.
+	ws_refusal_body: true
 });
 
 /**

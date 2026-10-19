@@ -40,7 +40,9 @@ import {
  * the account actions among them),
  * `cell_gated_create` (the binary's `full_spine_mount` mounts the
  * `test_cell_gated_create_authorize` policy), and `ws_role_gated` (the binary
- * mounts the role-gated WS endpoint at `SPINE_ROLE_GATED_WS_PATH`).
+ * mounts the role-gated WS endpoint at `SPINE_ROLE_GATED_WS_PATH`). The Node
+ * binary's preset; `ws_refusal_body` stays `false`, as `@hono/node-ws` drops a
+ * refused upgrade's body.
  */
 const ts_spine_capabilities = Object.freeze({
 	...ts_default_capabilities,
@@ -53,8 +55,19 @@ const ts_spine_capabilities = Object.freeze({
 });
 
 /**
+ * Capabilities for the **Deno** spine binary — `ts_spine_capabilities` with
+ * `ws_refusal_body: true` (`Deno.upgradeWebSocket` leaves a refused upgrade's
+ * response to Hono, body included).
+ */
+const ts_spine_deno_capabilities = Object.freeze({
+	...ts_spine_capabilities,
+	ws_refusal_body: true
+});
+
+/**
  * Capabilities for the **Bun** spine binary — `ts_spine_capabilities` with
- * `ws_handshake_pipelining: false`.
+ * `ws_handshake_pipelining: false` and `ws_refusal_body: true` (`Bun.serve`
+ * sends a refused upgrade's response as built).
  *
  * `Bun.serve` answers `400` to an upgrade request that carries WebSocket
  * frames in the same TCP write when the handler upgrades after an await that
@@ -66,7 +79,8 @@ const ts_spine_capabilities = Object.freeze({
  */
 const ts_spine_bun_capabilities = Object.freeze({
 	...ts_spine_capabilities,
-	ws_handshake_pipelining: false
+	ws_handshake_pipelining: false,
+	ws_refusal_body: true
 });
 
 /** Default port for the Node TS spine binary — slots beside the Rust `spine_stub` (1177). */
@@ -230,7 +244,7 @@ export const ts_spine_deno_backend_config = (
 				...login_rate_limit_env(enable_login_rate_limit),
 				...action_rate_limit_env(options)
 			},
-			capabilities: ts_spine_capabilities
+			capabilities: ts_spine_deno_capabilities
 		}),
 		sse_path: SPINE_SSE_PATH
 	};

@@ -1,0 +1,450 @@
+import '../assert_dev_env.ts';
+
+/**
+ * Cross-backend front-door contract: what every transport answers before its
+ * request reaches per-action dispatch.
+ *
+ * Each spine composes its front door differently. The TS spine mounts one
+ * stack at `/api/*` — body limit, then origin, then session and bearer — and
+ * each surface adds its own gates behind it. The Rust spine stacks global
+ * layers (body limit, then origin) and has each handler resolve its credential
+ * and run its own gates. Two compositions can agree on every per-surface suite
+ * and still disagree on which refusal answers when a request trips several, so
+ * this suite pins the answer per transport as a table:
+ *
+ * | surface | foreign `Origin` | over cap + foreign `Origin` | no credential | narrowed token |
+ * | --- | --- | --- | --- | --- |
+ * | REST `POST` (`/logout`) | 403 `forbidden_origin` | 413 `payload_too_large` | 401 `authentication_required` | 403 `credential_type_required` |
+ * | REST `POST` (`/password`) | — | — | 401 `authentication_required` | — |
+ * | RPC `POST` | 403 `forbidden_origin` | 413 `payload_too_large` | 401 `authentication_required` | 403 `token_scope_required` (`rpc:<method>`) |
+ * | RPC `GET` | 403 `forbidden_origin` | — | 401 `authentication_required` | 403 `token_scope_required` (`rpc:<method>`) |
+ * | WS upgrade | 403 `forbidden_origin` | — | 401 `authentication_required` | 403 `token_scope_required` (`surface:ws_upgrade`) |
+ * | SSE (audit stream) | 403 `forbidden_origin` | — | 401 `authentication_required` | 403 `credential_type_required` |
+ *
+ * - **foreign `Origin`** carries the keeper's session cookie, so only the
+ *   origin check can refuse it — a front door missing that check answers the
+ *   surface's success instead.
+ * - **over cap + foreign `Origin`** declares a `Content-Length` one byte over
+ *   the shared 1 MiB cap and carries no credential: the cap answers on the
+ *   header, ahead of both the origin check and auth. Only the surfaces that
+ *   take a body have the column.
+ * - **no credential** sends an allowed `Origin` and nothing else.
+ * - **narrowed token** sends a bearer minted with a method-scoped scope, and no
+ *   `Origin` (a bearer in a browser context is discarded, not refused). The RPC
+ *   probe calls a method the scope doesn't name. A narrowed token reaches no
+ *   non-RPC surface, but on a session-only surface the credential gate answers
+ *   first — the REST probe is session-only `/logout`, and the audit stream is
+ *   session-only on both spines.
+ *
+ * Each case asserts the status and the refusal body: a flat `{error}` (plus
+ * its named fields) or, past the RPC front door, the JSON-RPC error envelope
+ * with the reason on `error.data.reason`. A WebSocket refusal's body is
+ * required where the backend declares `capabilities.ws_refusal_body`; where it
+ * doesn't (Node's `@hono/node-ws` drops a refused upgrade's body), an empty
+ * body passes on its status and a body that is sent is still asserted.
+ *
+ * **Transport.** Given a `base_url`, every probe is written to the socket
+ * (`raw_http_exchange`): an upgrade has to be, and an over-cap request sends
+ * its head alone, as `body_size.ts` explains — the 413 must arrive without a
+ * body byte. With `base_url: null` the probes go through the fixture's
+ * in-process transport, whole bodies included, and the WebSocket rows skip
+ * (there is no socket to upgrade).
+ *
+ * Wire it for any backend that serves the spine's account routes, RPC
+ * endpoint, WebSocket endpoint and audit stream; the WS and SSE rows gate on
+ * `capabilities.ws` and `capabilities.sse`.
+ *
+ * @module
+ */
+
+import { assert, describe } from 'vitest';
+import { randomBytes } from 'node:crypto';
+
+import { account_verify_action_spec } from '../../auth/account_action_specs.ts';
+import {
+	ERROR_AUTHENTICATION_REQUIRED,
+	ERROR_CREDENTIAL_TYPE_REQUIRED,
+	ERROR_FORBIDDEN_ORIGIN,
+	ERROR_PAYLOAD_TOO_LARGE,
+	ERROR_TOKEN_SCOPE_REQUIRED
+} from '../../http/error_schemas.ts';
+import { create_rpc_get_url } from '../rpc_helpers.ts';
+import { raw_http_exchange, raw_http_parse_response } from '../transports/raw_http.ts';
+import { test_if, type BackendCapabilities } from './capabilities.ts';
+import { mint_narrowed_api_token } from './narrowed_api_token.ts';
+import type { RpcPathCapabilityGatedCrossSuiteOptions, TestFixture } from './setup.ts';
+import { SPINE_RPC_PATH, SPINE_SSE_PATH } from './spine_surface_constants.ts';
+
+/** A transport's front door, as the table's rows name it. */
+export type TransportCompositionSurface =
+	'rest_post' | 'rest_password' | 'rpc_post' | 'rpc_get' | 'ws_upgrade' | 'sse';
+
+/** What a probe sends, as the table's columns name it. */
+export type TransportCompositionProbe =
+	'foreign_origin' | 'over_cap_foreign_origin' | 'no_credential' | 'narrowed_token';
+
+/** The refusal a case expects. */
+export interface TransportCompositionExpect {
+	readonly status: number;
+	/** The refusal reason — the flat body's `error`, or the envelope's `error.data.reason`. */
+	readonly error: string;
+	/** Further fields the refusal must carry, beside the reason. */
+	readonly fields?: Readonly<Record<string, unknown>>;
+	/** `true` when the refusal is a JSON-RPC error envelope rather than a flat `{error}` body. */
+	readonly envelope?: boolean;
+}
+
+/** One cell of the front-door table. */
+export interface TransportCompositionCase {
+	readonly surface: TransportCompositionSurface;
+	readonly probe: TransportCompositionProbe;
+	readonly expect: TransportCompositionExpect;
+	/** The capability the surface needs; the case skips on a backend without it. */
+	readonly gate?: keyof BackendCapabilities;
+}
+
+/** The RPC method the narrowed token admits. */
+const NARROWED_ADMITTED_METHOD = account_verify_action_spec.method;
+
+/**
+ * The RPC method the narrowed-token probe calls — one its scope doesn't name.
+ * A read with no credential-type or role gate, so the scope gate is the only
+ * one that can refuse it, over `GET` as over `POST`.
+ */
+const NARROWED_REFUSED_METHOD = 'account_session_list';
+
+const FORBIDDEN_ORIGIN: TransportCompositionExpect = { status: 403, error: ERROR_FORBIDDEN_ORIGIN };
+const PAYLOAD_TOO_LARGE: TransportCompositionExpect = {
+	status: 413,
+	error: ERROR_PAYLOAD_TOO_LARGE
+};
+const SESSION_ONLY: TransportCompositionExpect = {
+	status: 403,
+	error: ERROR_CREDENTIAL_TYPE_REQUIRED,
+	fields: { required_credential_types: ['session'] }
+};
+const RPC_UNAUTHENTICATED: TransportCompositionExpect = {
+	status: 401,
+	error: ERROR_AUTHENTICATION_REQUIRED,
+	envelope: true
+};
+const RPC_SCOPE_REFUSED: TransportCompositionExpect = {
+	status: 403,
+	error: ERROR_TOKEN_SCOPE_REQUIRED,
+	fields: { required_scope: `rpc:${NARROWED_REFUSED_METHOD}` },
+	envelope: true
+};
+const UNAUTHENTICATED: TransportCompositionExpect = {
+	status: 401,
+	error: ERROR_AUTHENTICATION_REQUIRED
+};
+
+/** The front-door table — one case per cell of the module doc's matrix. */
+export const transport_composition_cases: ReadonlyArray<TransportCompositionCase> = [
+	{ surface: 'rest_post', probe: 'foreign_origin', expect: FORBIDDEN_ORIGIN },
+	{ surface: 'rest_post', probe: 'over_cap_foreign_origin', expect: PAYLOAD_TOO_LARGE },
+	{ surface: 'rest_post', probe: 'no_credential', expect: UNAUTHENTICATED },
+	{ surface: 'rest_post', probe: 'narrowed_token', expect: SESSION_ONLY },
+	// the other session-only REST route that resolves its own credential on the
+	// Rust spine, so its 401 is pinned beside `/logout`'s
+	{ surface: 'rest_password', probe: 'no_credential', expect: UNAUTHENTICATED },
+
+	{ surface: 'rpc_post', probe: 'foreign_origin', expect: FORBIDDEN_ORIGIN },
+	{ surface: 'rpc_post', probe: 'over_cap_foreign_origin', expect: PAYLOAD_TOO_LARGE },
+	{ surface: 'rpc_post', probe: 'no_credential', expect: RPC_UNAUTHENTICATED },
+	{ surface: 'rpc_post', probe: 'narrowed_token', expect: RPC_SCOPE_REFUSED },
+
+	{ surface: 'rpc_get', probe: 'foreign_origin', expect: FORBIDDEN_ORIGIN },
+	{ surface: 'rpc_get', probe: 'no_credential', expect: RPC_UNAUTHENTICATED },
+	{ surface: 'rpc_get', probe: 'narrowed_token', expect: RPC_SCOPE_REFUSED },
+
+	{ surface: 'ws_upgrade', probe: 'foreign_origin', expect: FORBIDDEN_ORIGIN, gate: 'ws' },
+	{ surface: 'ws_upgrade', probe: 'no_credential', expect: UNAUTHENTICATED, gate: 'ws' },
+	{
+		surface: 'ws_upgrade',
+		probe: 'narrowed_token',
+		expect: {
+			status: 403,
+			error: ERROR_TOKEN_SCOPE_REQUIRED,
+			fields: { required_scope: 'surface:ws_upgrade' }
+		},
+		gate: 'ws'
+	},
+
+	{ surface: 'sse', probe: 'foreign_origin', expect: FORBIDDEN_ORIGIN, gate: 'sse' },
+	{ surface: 'sse', probe: 'no_credential', expect: UNAUTHENTICATED, gate: 'sse' },
+	{ surface: 'sse', probe: 'narrowed_token', expect: SESSION_ONLY, gate: 'sse' }
+];
+
+/** Options for `describe_transport_composition_cross_tests`. */
+export interface TransportCompositionCrossTestOptions extends RpcPathCapabilityGatedCrossSuiteOptions {
+	/**
+	 * Base URL the spawned backend is reachable at, or `null` for an in-process
+	 * run. Given a URL, every probe is written to the socket; with `null` the
+	 * probes go through the fixture's transport and the WebSocket rows skip.
+	 */
+	readonly base_url: string | null;
+	/**
+	 * An `Origin` the backend allows. Default: the origin of `base_url`, or
+	 * `http://localhost:5173` in-process (which `create_test_app`'s allow list
+	 * admits).
+	 */
+	readonly origin?: string;
+	/** Session-only REST `POST` route the REST row probes. Default `/api/account/logout`. */
+	readonly rest_path?: string;
+	/** Password-change route the `/password` row probes. Default `/api/account/password`. */
+	readonly password_path?: string;
+	/** WebSocket endpoint path. Default `/api/ws`. */
+	readonly ws_path?: string;
+	/** Audit-log SSE path. Default `/api/admin/audit/stream`. */
+	readonly sse_path?: string;
+}
+
+/** The shared 1 MiB default cap both spines ship, as in `body_size.ts`. */
+const BODY_LIMIT_DEFAULT_BYTES = 1024 * 1024;
+
+/** An `Origin` no backend's allowlist admits. */
+const DISALLOWED_ORIGIN = 'http://evil.com';
+
+/** How long a raw exchange waits for the refusal. */
+const RAW_READ_TIMEOUT_MS = 2000;
+
+/** One probe request, before it's put on a transport. */
+interface ProbeRequest {
+	readonly method: 'GET' | 'POST';
+	readonly path: string;
+	readonly headers: Record<string, string>;
+	/** The body, or `null`. An over-cap body is sent whole only in-process. */
+	readonly body: string | null;
+	/** Declare a `Content-Length` one byte over the cap. */
+	readonly over_cap: boolean;
+}
+
+/** What a probe read back. */
+interface ProbeResponse {
+	readonly status: number;
+	/** The raw body text — empty when the refusal carried none. */
+	readonly text: string;
+}
+
+const rpc_envelope = (method: string, id: string): string =>
+	JSON.stringify({ jsonrpc: '2.0', method, id });
+
+/** A JSON object body of exactly `bytes` ASCII bytes. */
+const sized_json = (bytes: number): string => {
+	const base = JSON.stringify({ pad: '' });
+	return JSON.stringify({ pad: 'x'.repeat(Math.max(0, bytes - base.length)) });
+};
+
+const to_header_lines = (headers: Record<string, string>): string =>
+	Object.entries(headers)
+		.map(([name, value]) => `${name}: ${value}\r\n`)
+		.join('');
+
+const parse_json = (text: string): unknown => {
+	try {
+		return JSON.parse(text);
+	} catch {
+		return undefined;
+	}
+};
+
+const case_name = (c: TransportCompositionCase): string =>
+	`${c.surface} × ${c.probe} → ${c.expect.status} ${c.expect.error}`;
+
+/**
+ * Read the refusal reason and fields out of a body, by the shape the case
+ * expects. An envelope expectation fails on a flat body and the other way
+ * round, so a spine answering from the wrong layer fails here.
+ */
+const assert_refusal_body = (c: TransportCompositionCase, body: unknown, text: string): void => {
+	const label = case_name(c);
+	assert.ok(
+		body !== null && typeof body === 'object',
+		`${label}: expected a JSON body, got ${JSON.stringify(text.slice(0, 200))}`
+	);
+	let refusal: Record<string, unknown>;
+	if (c.expect.envelope) {
+		const envelope = body as { jsonrpc?: unknown; error?: { data?: unknown } };
+		assert.strictEqual(envelope.jsonrpc, '2.0', `${label}: expected a JSON-RPC envelope: ${text}`);
+		const data = envelope.error?.data;
+		assert.ok(
+			data !== null && typeof data === 'object',
+			`${label}: expected error.data on the envelope: ${text}`
+		);
+		refusal = data as Record<string, unknown>;
+		assert.strictEqual(refusal.reason, c.expect.error, `${label}: error.data.reason`);
+	} else {
+		refusal = body as Record<string, unknown>;
+		assert.ok(!('jsonrpc' in refusal), `${label}: expected a flat body, got an envelope: ${text}`);
+		assert.strictEqual(refusal.error, c.expect.error, `${label}: body.error`);
+	}
+	for (const [key, expected] of Object.entries(c.expect.fields ?? {})) {
+		assert.deepStrictEqual(refusal[key], expected, `${label}: ${key}`);
+	}
+};
+
+/**
+ * Register the front-door table's cases — one test per cell, each on a fresh
+ * fixture.
+ *
+ * This is the front-door contract: a backend that wires it answers each
+ * transport's probes as the table says — when one request trips several
+ * refusals, the one the table names answers.
+ */
+export const describe_transport_composition_cross_tests = (
+	options: TransportCompositionCrossTestOptions
+): void => {
+	const { setup_test, capabilities, base_url } = options;
+	const rpc_path = options.rpc_path ?? SPINE_RPC_PATH;
+	const rest_path = options.rest_path ?? '/api/account/logout';
+	const password_path = options.password_path ?? '/api/account/password';
+	const ws_path = options.ws_path ?? '/api/ws';
+	const sse_path = options.sse_path ?? SPINE_SSE_PATH;
+	const allowed_origin =
+		options.origin ?? (base_url === null ? 'http://localhost:5173' : new URL(base_url).origin);
+
+	/** The request line, headers and body a case's probe sends. */
+	const build_probe = async (
+		c: TransportCompositionCase,
+		fixture: TestFixture
+	): Promise<ProbeRequest> => {
+		const over_cap = c.probe === 'over_cap_foreign_origin';
+		let credential: Record<string, string>;
+		switch (c.probe) {
+			case 'foreign_origin':
+				credential = { ...fixture.create_session_headers(), origin: DISALLOWED_ORIGIN };
+				break;
+			case 'over_cap_foreign_origin':
+				// no credential either: the cap answers ahead of the origin check and auth
+				credential = { origin: DISALLOWED_ORIGIN };
+				break;
+			case 'no_credential':
+				credential = { origin: allowed_origin };
+				break;
+			case 'narrowed_token': {
+				const token = await mint_narrowed_api_token({
+					app: fixture.transport,
+					rpc_path,
+					session_headers: fixture.create_session_headers(),
+					methods: [NARROWED_ADMITTED_METHOD]
+				});
+				// no `Origin` — a bearer in a browser context is discarded
+				credential = { authorization: `Bearer ${token}` };
+				break;
+			}
+		}
+		const rpc_method =
+			c.probe === 'narrowed_token' ? NARROWED_REFUSED_METHOD : account_verify_action_spec.method;
+		const id = `${c.surface}-${c.probe}`;
+		switch (c.surface) {
+			case 'rest_post':
+			case 'rest_password':
+				return {
+					method: 'POST',
+					path: c.surface === 'rest_post' ? rest_path : password_path,
+					headers: { ...credential, 'content-type': 'application/json' },
+					body: over_cap ? sized_json(BODY_LIMIT_DEFAULT_BYTES + 1) : '{}',
+					over_cap
+				};
+			case 'rpc_post': {
+				return {
+					method: 'POST',
+					path: rpc_path,
+					headers: { ...credential, 'content-type': 'application/json' },
+					body: over_cap ? sized_json(BODY_LIMIT_DEFAULT_BYTES + 1) : rpc_envelope(rpc_method, id),
+					over_cap
+				};
+			}
+			case 'rpc_get':
+				return {
+					method: 'GET',
+					path: create_rpc_get_url(rpc_path, rpc_method, undefined, id),
+					headers: credential,
+					body: null,
+					over_cap
+				};
+			case 'ws_upgrade':
+				return {
+					method: 'GET',
+					path: ws_path,
+					headers: {
+						...credential,
+						upgrade: 'websocket',
+						connection: 'Upgrade',
+						'sec-websocket-key': randomBytes(16).toString('base64'),
+						'sec-websocket-version': '13'
+					},
+					body: null,
+					over_cap
+				};
+			case 'sse':
+				return {
+					method: 'GET',
+					path: sse_path,
+					headers: { ...credential, accept: 'text/event-stream' },
+					body: null,
+					over_cap
+				};
+		}
+	};
+
+	/** Put a probe on the socket, or through the in-process transport. */
+	const send_probe = async (fixture: TestFixture, probe: ProbeRequest): Promise<ProbeResponse> => {
+		if (base_url === null) {
+			const res = await fixture.fresh_transport()(probe.path, {
+				method: probe.method,
+				headers: probe.headers,
+				...(probe.body === null ? {} : { body: probe.body })
+			});
+			return { status: res.status, text: await res.text() };
+		}
+		const url = new URL(base_url);
+		const body = probe.over_cap ? '' : (probe.body ?? '');
+		const length_header: Record<string, string> = probe.over_cap
+			? { 'content-length': String(BODY_LIMIT_DEFAULT_BYTES + 1) }
+			: probe.body === null
+				? {}
+				: { 'content-length': String(body.length) };
+		const request =
+			`${probe.method} ${probe.path} HTTP/1.1\r\n` +
+			to_header_lines({ host: url.host, ...probe.headers, ...length_header }) +
+			`\r\n` +
+			body;
+		const { received, closed_by_server } = await raw_http_exchange(base_url, request, {
+			read_timeout_ms: RAW_READ_TIMEOUT_MS,
+			until: 'response'
+		});
+		const response = raw_http_parse_response(received);
+		assert.ok(
+			response,
+			`${probe.method} ${probe.path}: expected a whole response; ` +
+				(closed_by_server
+					? 'the server closed the connection first'
+					: `none arrived within ${RAW_READ_TIMEOUT_MS}ms`) +
+				`. Received: ${received ? received.slice(0, 200) : 'nothing'}`
+		);
+		return { status: response.status, text: response.body };
+	};
+
+	describe('transport composition (front door)', () => {
+		for (const c of transport_composition_cases) {
+			const gated = c.gate === undefined || capabilities[c.gate];
+			// an upgrade needs a socket; in-process there is none
+			const reachable = c.surface !== 'ws_upgrade' || base_url !== null;
+			test_if(gated && reachable, case_name(c), async () => {
+				const fixture = await setup_test();
+				const res = await send_probe(fixture, await build_probe(c, fixture));
+				assert.strictEqual(
+					res.status,
+					c.expect.status,
+					`${case_name(c)}: status (body: ${res.text.slice(0, 200)})`
+				);
+				// a backend that declares no WS refusal body (Node's `@hono/node-ws`)
+				// may answer with an empty one; a body it does send is still asserted
+				if (c.surface === 'ws_upgrade' && !capabilities.ws_refusal_body && res.text === '') return;
+				assert_refusal_body(c, parse_json(res.text), res.text);
+			});
+		}
+	});
+};
