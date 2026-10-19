@@ -1,5 +1,68 @@
 # @fuzdev/fuz_app
 
+## 0.141.0
+
+### Minor Changes
+
+- feat: refuse malformed bearer tokens before the database and return a parsed scope from `query_validate_api_token` ([aa7cd14](https://github.com/fuzdev/fuz_app/commit/aa7cd14))
+
+  - `query_validate_api_token` returns `ValidatedApiToken` — the row with `scope` parsed to a `TokenScope` (it still refuses a row whose stored scope is unreadable); callers drop their own `parse_stored_token_scope` call
+  - the bearer middleware soft-fails a value that fails `is_api_token_shaped` (`secret_fuz_token_` plus exactly 43 base64url chars) before any query; tests that mock the lookup need well-formed bearer values — `create_test_raw_api_token` in `testing/entities.ts` makes them
+  - adds `API_TOKEN_ENTROPY_BYTES`, `API_TOKEN_BODY_LENGTH`, `API_TOKEN_REGEX`, and `is_api_token_shaped` to `auth/api_token.ts`, `create_test_validated_api_token` to `testing/entities.ts`, and the `malformed_bearer` conformance principal; the `browser_bearer_replay` equivalence group is renamed `bearer_soft_fail`
+
+- feat: close a WebSocket or audit stream when the credential it opened on expires ([c402dcd](https://github.com/fuzdev/fuz_app/commit/c402dcd))
+
+  - `ResolvedAuth` gains `credential_deadline` — when the credential stops authenticating, as a `performance.now()` timestamp: the earlier of a session's signed cookie expiry and its row's, an API token's row expiry, `null` for an eternal token and the daemon token; a row's expiry is read as the time left on the database clock, so server-DB clock skew moves no deadline
+  - a WebSocket closes at the deadline with `WS_CLOSE_SESSION_REVOKED` and the new `WS_CLOSE_CREDENTIAL_EXPIRED_REASON` (`'Credential expired'`), and an audit stream ends there; the Rust spine closes at the same deadline with the same code and reason
+  - adds `auth/credential_deadline.ts` (`credential_deadline_after`, `schedule_credential_deadline` — a chain of timers of at most `CREDENTIAL_DEADLINE_TIMER_CAP_MS` (an hour), so a 30-day session never meets `setTimeout`'s 24.8-day ceiling, each also checking the wall clock so a host suspend does not extend the deadline — and `EXPIRES_IN_MS_SQL`) and the `CREDENTIAL_DEADLINE_KEY` / `SESSION_COOKIE_EXPIRES_AT_KEY` context keys, set by the session, request-context, bearer, and daemon-token middleware
+  - `query_session_get_valid` returns `ValidAuthSession` (the row plus `expires_in_ms`); `ValidatedApiToken` gains `expires_in_ms` (`null` for an eternal token); `ParsedSession` and `ProcessSessionResult` carry the cookie's `expires_at`. A hand-built `ResolvedAuth` or `ValidatedApiToken` needs the new field
+  - the auth cleanup's session sweep now repeats a close the deadline already made, rather than being the only close on expiry
+  - adds the daemon-token `_testing_shorten_credential_expiry` test action (`create_testing_shorten_credential_expiry_action`, shorten-only, 1–60 s; mounted by `build_full_spine_rpc_actions`, not bundled by `create_testing_actions`) and the cross-process `describe_credential_deadline_cross_tests` suite; `create_bearer_auth_test_app` echoes the deadline and `BearerAuthTestCase` takes `expected_credential_deadline_ms`
+
+- feat: check the request origin on every path, with named carve-outs ([e9556a0](https://github.com/fuzdev/fuz_app/commit/e9556a0))
+
+  - `create_app_server` mounts the origin check at `'*'` (`ORIGIN_MIDDLEWARE_PATH`) instead of `/api/*`, so a foreign `Origin` is refused on every route, the static fallback included; a request with no `Origin` still passes
+  - a cross-origin CORS-mode request for a static asset now gets `403` unless its origin is allowlisted or its path is carved out — fonts loaded by another site, `crossorigin` images and scripts, a `fetch()` from another origin; same-origin loads (the server's own origin is in its allowlist already, as `/api` needs) and plain `<img>`/`<script>` tags, which send no `Origin`, are unaffected
+  - adds `origin_carve_outs` to `AppServerOptions`, `AuthMiddlewareOptions`, and `CreateTestAppSurfaceSpecOptions` — each a `MiddlewareCarveOut` (`{path, reason}`), copied and frozen at assembly (`freeze_origin_carve_outs`); assembly throws on a carve-out with no reason, or one overlapping the auth middleware's scope (`/api/*`), where every RPC, WS, bootstrap, and account route sits (`assert_origin_carve_outs_valid`)
+  - adds `RouteSpec.mints_credential`, set on the login, signup, and bootstrap shapes, and `RouteSpec.reads_credential`, set on the account status shape, the cell-scoped fact read, and the GET + POST pair `create_rpc_endpoint` builds (handlers that read the resolved account behind no gate); assembly (`create_app_server`, `create_test_app_surface_spec`) throws on a route that mints a credential, or reads one (`auth.account` not `'none'`, or `reads_credential`), outside the auth middleware's scope — so account or signup routes mounted under a prefix outside `/api/` (`prefix_route_specs('/auth', ...)`) are refused rather than left where a carve-out could reach them, as is a `create_rpc_endpoint` pair returned from `create_route_specs` at a path outside `/api/` (`assert_credential_routes_in_auth_scope`)
+  - adds `middleware_paths_overlap` (`http/schema_helpers.ts`), the pattern-against-pattern form of `middleware_applies`
+  - `verify_request_source` takes the carve-outs as a second argument; `MiddlewareSpec` and `AppSurfaceMiddleware` gain an optional `carve_outs`, and surface generation merges a layer's errors by `middleware_spec_applies`, so a carved-out route's surface omits the origin `403`
+  - a `transform_middleware` must keep the origin spec at `'*'`; generated surfaces list `origin` on routes outside `/api` and merge its `403` into their error schemas
+  - adds the `describe_origin_scope_cross_tests` cross-backend suite (`testing/cross_backend/origin_scope.ts`, with an optional `base_url`): a foreign `Origin` on `GET /ready` or an unrouted path is refused, an absent or allowed one passes, and an over-cap `POST` to an unrouted path answers `413` ahead of the origin check
+
+- feat: validate the origin allowlist strictly, to the grammar the Rust spine shares ([564a8be](https://github.com/fuzdev/fuz_app/commit/564a8be))
+
+  - `parse_allowed_origins(raw)` now returns `Result<{origins}, {errors}>` instead of throwing, and reports every refused entry as `{kind, index, entry}` (a blank value is `{kind: 'no_origins'}`); `validate_server_env` returns one error line per refused entry
+  - nothing is normalized any more: entries a browser would never send are refused — a non-ASCII host (write its punycode), the scheme's default port (`https://example.com:443`), IPv4 or IPv6 written other than a browser writes it (`127.1`, `[::ffff:127.0.0.1]`), a leading-zero port, a stray comma, and anything that isn't http or https
+  - `should_allow_origin` refuses an `Origin` that isn't visible ASCII, and a repeated `Origin` (which the runtimes join into one value) matches nothing
+  - adds `OriginPatternErrorKind`, `AllowedOriginsErrorKind`, `ALLOWED_ORIGINS_ERROR_MESSAGES`, and `format_allowed_origins_error` to `http/origin.ts`
+  - adds the shared conformance table `testing/cross_backend/origin_conformance.json` with `testing/cross_backend/origin_conformance.ts` (`describe_origin_conformance_cross_tests`, `load_origin_conformance`), and the `_testing_origin_check` action (`create_testing_origin_check_action`, not in `create_testing_actions`)
+  - the front-door table gains unreadable-`Origin` and duplicated-`Origin` rows (403 on every surface)
+
+- feat: add the cross-backend front-door table and a shared narrowed-token mint ([021ec42](https://github.com/fuzdev/fuz_app/commit/021ec42))
+
+  - adds `describe_transport_composition_cross_tests` and its `transport_composition_cases` table in `testing/cross_backend/transport_composition.ts` — the front-door contract: on REST `POST`, RPC `POST` and `GET`, the WebSocket upgrade and the audit stream, a foreign `Origin` → 403, an over-cap declared length with a foreign `Origin` and no credential → 413, no credential → 401, and a narrowed api token → the surface's denial, status and body, plus the `/password` 401; not part of `describe_standard_cross_process_tests`
+  - adds the `ws_refusal_body` capability — whether a refused WebSocket upgrade carries its refusal body (`false` on Node, whose `@hono/node-ws` drops it; `true` on Deno, Bun and the Rust spine) — a new required field of `BackendCapabilities`, so a hand-written capabilities literal must declare it (one spreading `ts_default_capabilities` gets `false`, `rust_default_capabilities` `true`; a Deno- or Bun-served consumer may opt in)
+  - adds `mint_narrowed_api_token` in `testing/cross_backend/narrowed_api_token.ts`
+  - `describe_origin_cross_tests` drops its disallowed-`Origin` case and `describe_body_size_cross_tests` its disallowed-`Origin` and no-credential over-cap cases and their under-cap control — a consumer wiring either keeps that coverage by wiring the front-door table
+
+- fix: close a role-gated WebSocket when its account loses the gating role ([e88ecc7](https://github.com/fuzdev/fuz_app/commit/e88ecc7))
+
+  - a revoked global grant of a role an endpoint's `required_roles` lists closes the account's sockets on that endpoint with the new close code `WS_CLOSE_PERMISSION_REVOKED` (4006, reason `WS_CLOSE_PERMISSION_REVOKED_REASON`), through `create_ws_auth_guard`; nothing is sent on them after the close. An any-of gate closes on the loss of any listed role. A scoped revoke closes nothing, and the account's ungated sockets stay open
+  - `register_action_ws` takes `required_roles` (`register_ws_endpoint` passes its own), records them on each registration, and re-reads them at admission: a role revoked while the upgrade was in flight closes the socket with 4006, and a failed re-read with 1011
+  - `FrontendWebsocketClient` stays closed after a 4006 close until `connect()` is called, without setting `revoked` or `superseded`, and rejects pending and queued requests with `forbidden`
+  - `BackendWebsocketTransport.take_pending_close_code(connection_id)` reads the close code the transport closed a still-pending registration with, so a refused admission logs why (credential revocation, permission revocation, or shutdown)
+  - `ConnectionCloser` gains `close_sockets_for_role(account_id, role)` and `ConnectionCloseTarget` a `role` variant — every hand-written closer must implement it; `ConnectionIdentity` gains `required_roles`, and `register_pending` / `add_connection` take them as a trailing argument
+  - `create_sse_connection_closer(registry, required_role)` takes the role its streams are gated on; `AuditLogSse` carries `required_role`
+  - adds `to_global_role_revocation` to `auth/audit_log_schema.ts`
+  - testing: `RecordedClose` gains a `role` variant; `create_active_role_grant` / `create_pending_role_grant_offer` move to `testing/cross_backend/role_grant_cross_helpers.ts`; `describe_role_grant_offer_notification_ws_tests` takes `ws_required_roles` — a backend whose socket is gated on `admin` declares it, and the revoke case then expects the revokee's socket to close with 4006 instead of the notification frame (a frame that lands before the close is still held to the flat shape); adds the `ws_role_gated` capability — a new required field of `BackendCapabilities`, so a hand-written capabilities literal must declare it (one spreading `ts_default_capabilities` / `rust_default_capabilities` gets `false`) — `describe_ws_role_gated_cross_tests`, and `SPINE_ROLE_GATED_WS_PATH` / `SPINE_ROLE_GATED_WS_ROLES`
+
+### Patch Changes
+
+- fix: close an audit stream on a role revoke only when the revoked grant was global ([6649741](https://github.com/fuzdev/fuz_app/commit/6649741))
+
+  - `create_sse_auth_guard` used to close the target account's streams on any `role_grant_revoke` of the stream's role, a scoped grant included; the stream's role gate admits on global grants only, so a scoped revoke now closes nothing, as on WebSockets
+
 ## 0.140.0
 
 ### Minor Changes
