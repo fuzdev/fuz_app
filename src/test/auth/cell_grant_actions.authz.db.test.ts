@@ -12,6 +12,8 @@
  *   reports `still_admitted: false` when no other path remains.
  * - owner-as-principal and unknown-role are rejected.
  * - a role-shaped grant admits a holder of that role.
+ * - a cell whose `moderation` doesn't admit an audience refuses every grant —
+ *   owner and admin alike, actor- and role-shaped — after the manage gate.
  *
  * Part of the focused first-pass checklist suite.
  *
@@ -40,6 +42,7 @@ import {
 	cell_grant_revoke_action_spec,
 	cell_grant_list_action_spec,
 	ERROR_CELL_GRANT_PRINCIPAL_IS_OWNER,
+	ERROR_CELL_GRANT_UNAPPROVED,
 	ERROR_CELL_GRANT_UNKNOWN_ROLE
 } from '#lib/auth/cell_grant_action_specs.ts';
 import { ROLE_ADMIN } from '#lib/auth/role_schema.ts';
@@ -348,6 +351,64 @@ describe_db('cell_grant_actions authz', (get_db) => {
 			assert.ok(!res.ok);
 			assert.strictEqual(res.status, 400);
 			assert.strictEqual(error_reason(res), ERROR_CELL_GRANT_UNKNOWN_ROLE);
+		});
+	});
+
+	describe('grant on an unapproved contribution', () => {
+		test('pending, rejected, and unknown markers refuse every grant after the manage gate', async () => {
+			const app = await create_cell_test_app(get_db);
+			const owner = await app.create_account({ username: 'm_owner' });
+			const admin = await app.create_account({ username: 'm_admin', roles: [ROLE_ADMIN] });
+			const stranger = await app.create_account({ username: 'm_stranger' });
+			const target = await app.create_account({ username: 'm_target' });
+			const { id } = await create_cell(app, {
+				kind: 'post',
+				data: {},
+				headers: owner.create_session_headers()
+			});
+			const set_moderation = (moderation: string | null) =>
+				get_db().query('UPDATE cell SET moderation = $2 WHERE id = $1', [id, moderation]);
+			const grant_role = (granter: typeof owner) =>
+				call(
+					app,
+					cell_grant_create_action_spec,
+					{ cell_id: id, level: 'viewer', principal: { kind: 'role', role: ROLE_MEMBER } },
+					granter.create_session_headers()
+				);
+
+			for (const moderation of ['pending', 'rejected', 'unknown']) {
+				await set_moderation(moderation);
+				for (const granter of [owner, admin]) {
+					const actor_shaped = await grant_actor(app, granter, id, 'viewer', target.actor.id);
+					assert.ok(!actor_shaped.ok, moderation);
+					assert.strictEqual(actor_shaped.status, 403, moderation);
+					assert.strictEqual(error_reason(actor_shaped), ERROR_CELL_GRANT_UNAPPROVED);
+					const role_shaped = await grant_role(granter);
+					assert.ok(!role_shaped.ok, moderation);
+					assert.strictEqual(role_shaped.status, 403, moderation);
+					assert.strictEqual(error_reason(role_shaped), ERROR_CELL_GRANT_UNAPPROVED);
+				}
+				// A non-manager keeps the 404 mask — the refusal comes after it.
+				const masked = await grant_actor(app, stranger, id, 'viewer', target.actor.id);
+				assert.strictEqual(masked.status, 404, moderation);
+				assert.strictEqual(error_reason(masked), ERROR_CELL_NOT_FOUND);
+			}
+			const listed = await call(
+				app,
+				cell_grant_list_action_spec,
+				{ cell_id: id },
+				owner.create_session_headers()
+			);
+			assert.ok(listed.ok, JSON.stringify(listed));
+			assert.strictEqual(listed.result.grants.length, 0, 'no refused grant wrote a row');
+
+			for (const moderation of ['approved', null]) {
+				await set_moderation(moderation);
+				const actor_shaped = await grant_actor(app, owner, id, 'viewer', target.actor.id);
+				assert.ok(actor_shaped.ok, JSON.stringify(actor_shaped));
+				const role_shaped = await grant_role(admin);
+				assert.ok(role_shaped.ok, JSON.stringify(role_shaped));
+			}
 		});
 	});
 

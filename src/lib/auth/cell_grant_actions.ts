@@ -9,7 +9,9 @@
  * cannot manage its grants — delegating the share list would let an editor
  * widen access or mint peer editors and escape the manager's authority.
  *
- * - `cell_grant_create` — admin / owner only. Validates role-shaped
+ * - `cell_grant_create` — admin / owner only. Refuses a cell whose
+ *   `moderation` doesn't admit an audience (403 `cell_grant_unapproved`,
+ *   after the manage gate). Validates role-shaped
  *   principals against the role schema; rejects owner-as-principal.
  *   Actor-shaped principals carry a pre-resolved `actor_id` (callers pick
  *   via `actor_search`). Idempotent — re-granting the same principal
@@ -41,6 +43,7 @@ import {
 	cell_grant_list_action_spec,
 	ERROR_CELL_GRANT_NOT_FOUND,
 	ERROR_CELL_GRANT_PRINCIPAL_IS_OWNER,
+	ERROR_CELL_GRANT_UNAPPROVED,
 	ERROR_CELL_GRANT_UNKNOWN_ROLE,
 	type CellGrantCreateInput,
 	type CellGrantCreateOutput,
@@ -53,6 +56,7 @@ import {
 import { ERROR_CELL_NOT_FOUND } from './cell_action_specs.ts';
 import { can_view_cell, can_manage_cell } from './cell_authorize.ts';
 import { query_cell_get, type CellRow } from '../db/cell_queries.ts';
+import { cell_moderation_admits_audience } from '../db/cell_moderation.ts';
 import {
 	query_cell_grant_create,
 	query_cell_grant_get,
@@ -158,6 +162,17 @@ export const create_cell_grant_actions = (deps: CellGrantActionDeps): Array<RpcA
 		// on the read path.
 		if (!can_manage_cell(auth, cell)) {
 			throw jsonrpc_errors.not_found('cell', { reason: ERROR_CELL_NOT_FOUND });
+		}
+		// A grant extends a cell's audience, and a contribution whose moderation
+		// doesn't admit one (pending, rejected, or an unknown marker) has none past
+		// its author and admins — `can_view_cell`'s grant arm wouldn't admit on it —
+		// so refuse the grant rather than mint a row that would wake up on
+		// approval. After the manage gate, so a non-manager keeps the 404 mask; no
+		// admin exemption.
+		if (!cell_moderation_admits_audience(cell.moderation)) {
+			throw jsonrpc_errors.forbidden('cell_grant_create requires an unmoderated or approved cell', {
+				reason: ERROR_CELL_GRANT_UNAPPROVED
+			});
 		}
 		const principal = to_query_principal(input.principal);
 		// Role validity — only relevant for role-shaped principals; reject

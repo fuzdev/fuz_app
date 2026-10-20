@@ -436,6 +436,11 @@ export const describe_cell_gated_create_cross_tests = (
  * - **fact serving follows** — a pending post's fact is 404 to anon, even
  *   with the post flipped public (also gated on `capabilities.fact_serving`).
  *
+ * And that `cell_grant_create` refuses a pending contribution — **403**
+ * `cell_grant_unapproved` for its author and an admin, actor- and role-shaped,
+ * while a non-manager keeps the **404** mask; the same grant lands once the
+ * post is approved.
+ *
  * Gated on `capabilities.cell_gated_create` — a `pending` contribution only
  * exists when the directory authorizer is mounted (reference spine binaries).
  */
@@ -953,6 +958,66 @@ export const describe_cell_moderate_cross_tests = (
 				);
 				await moderate(fixture, post.cell.id, 'approved');
 				assert.strictEqual(await fact_status(fixture, path, null), 200, 'approved is live');
+			}
+		);
+	});
+
+	describe('cell_grant_create refuses an unapproved contribution (parity)', () => {
+		test_if(
+			capabilities.cell_gated_create,
+			'a grant on a pending post → 403 cell_grant_unapproved; non-manager 404; lands after approval',
+			async () => {
+				const { fixture, author, post } = await setup_pending_post();
+				const friend = await fixture.create_account({ username: 'unapproved_friend' });
+				const stranger = await fixture.create_account({ username: 'unapproved_stranger' });
+				const actor_shaped = {
+					cell_id: post.cell.id,
+					level: 'viewer',
+					principal: { kind: 'actor', actor_id: friend.actor.id }
+				};
+				const role_shaped = {
+					cell_id: post.cell.id,
+					level: 'viewer',
+					principal: { kind: 'role', role: PARTICIPATION_ROLE }
+				};
+				for (const headers of [author.create_session_headers(), fixture.create_session_headers()]) {
+					for (const params of [actor_shaped, role_shaped]) {
+						const refused = await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_grant_create',
+							params,
+							headers
+						);
+						assert.ok(!refused.ok, 'a grant on a pending post must be refused');
+						assert.strictEqual(refused.error?.code, JSONRPC_ERROR_CODES.forbidden, 'a 403');
+						assert.strictEqual(error_reason(refused), 'cell_grant_unapproved');
+					}
+				}
+				assert.strictEqual(
+					await outcome(
+						fixture,
+						'cell_grant_create',
+						actor_shaped,
+						stranger.create_session_headers()
+					),
+					'cell_not_found',
+					'a non-manager keeps the 404 mask'
+				);
+
+				await moderate(fixture, post.cell.id, 'approved');
+				for (const params of [actor_shaped, role_shaped]) {
+					expect_output(
+						await cross_rpc_call(
+							fixture.transport,
+							rpc_path,
+							'cell_grant_create',
+							params,
+							author.create_session_headers()
+						),
+						CellGrantCreateOutput
+					);
+				}
 			}
 		);
 	});

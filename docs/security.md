@@ -1484,7 +1484,12 @@ one — `cell_grant_create` rejects an unregistered role at create time with
 The check runs after the manage-tier authorization (a non-manager still gets
 the 404 mask, not a role-registry probe). Actor-shaped grants whose principal
 is the cell's own owner are likewise rejected (`cell_grant_principal_is_owner`)
-since owner access is implicit.
+since owner access is implicit. A grant on a contribution whose `moderation`
+doesn't admit an audience — pending, rejected, or any marker but `approved` —
+is refused with `forbidden` / `cell_grant_unapproved`, first thing after the
+manage-tier authorization and with no admin exemption: the read predicate
+wouldn't honor the grant until approval, so minting it would only stage access
+for later.
 
 **Actor-search scope gate**: `actor_search` (the prefix-search picker over
 `actor.name`) is account-grain authenticated, but an **unbounded global

@@ -40,6 +40,13 @@ export const ERROR_CELL_GRANT_PRINCIPAL_IS_OWNER = 'cell_grant_principal_is_owne
  */
 export const ERROR_CELL_GRANT_UNKNOWN_ROLE = 'cell_grant_unknown_role' as const;
 
+/**
+ * Error reason — `cell_grant_create` on a cell whose `moderation` doesn't
+ * admit an audience (pending, rejected, or an unknown marker). A grant would
+ * extend an audience the cell doesn't have yet.
+ */
+export const ERROR_CELL_GRANT_UNAPPROVED = 'cell_grant_unapproved' as const;
+
 // -- Shared schemas ---------------------------------------------------------
 
 /** Grant level — view-only or view-plus-edit. */
