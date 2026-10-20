@@ -1,5 +1,112 @@
 # @fuzdev/fuz_app
 
+## 0.142.0
+
+### Minor Changes
+
+- break: `account_delete`'s self path is session-only ([8bd8a3d](https://github.com/fuzdev/fuz_app/commit/8bd8a3d))
+
+  - a self-delete (`account_id` omitted or the caller's own) over an API token or a daemon token is refused with 403 `forbidden`, `data: {reason: 'credential_type_required', required_credential_types: ['session']}` — the dispatcher's own credential-gate refusal, byte for byte — before the keeper and last-admin guards run, so a leaked token can't end the account it belongs to (a keeper self-deleting over a token now hears `credential_type_required`, not `cannot_delete_keeper`)
+  - the input `account_id` is lowercased before any comparison, so an own id in uppercase is the self path too (the `Uuid` schema admits either case and Postgres matches either)
+  - an admin deleting another account still admits any credential; `account_delete_action_spec` declares no `credential_types`, so the gate is the handler's and does not show in the action manifest
+  - adds `credential_type_required_error(required_credential_types)` in `actions/perform_action.ts`, the builder the dispatcher's credential gate and the handler share
+  - the `account_lifecycle` cross-backend suite gains the case (a bearer self-delete → 403 with the session still live, the keeper's bearer deleting another account → 200, a session self-delete → 200), and the security conformance slate gains API-token and daemon-token self-delete rows in one equivalence group with the dispatcher's own session-only refusal
+
+- fix: `cell_create` under a soft-deleted root answers 404 `cell_not_found` ([d152778](https://github.com/fuzdev/fuz_app/commit/d152778))
+
+  - a contribution whose parent is live but whose governing root is missing or soft-deleted (soft delete doesn't cascade) is refused with the same 404 `cell_not_found` a missing parent gets, with or without `authorize_create` mounted; it used to be written with `root_id` pointing at the tombstone, and a mounted authorizer saw `root_data: null`
+  - the root is now read on every contribution, not only when an authorizer is mounted, and `CellCreateAuthorizeInput.root_data` is non-null whenever `root_id` is — an authorizer is never consulted for a deleted root
+  - the `cell_gated_create` cross-backend suite gains the case: a comment under a post whose space was deleted → 404, byte-identical to the missing-parent refusal
+
+- break: `cell_grant_create` refuses a contribution that isn't approved ([d786712](https://github.com/fuzdev/fuz_app/commit/d786712))
+
+  - a grant on a cell whose `moderation` doesn't admit an audience — pending, rejected, or any marker but `'approved'` — answers 403 `forbidden` with reason `cell_grant_unapproved` (new `ERROR_CELL_GRANT_UNAPPROVED` in `auth/cell_grant_action_specs.ts`), for the owner and a global admin alike, actor- and role-shaped; the read predicate wouldn't honor the grant until approval, so minting it would only stage access for later
+  - the refusal comes right after the manage gate, so a non-manager still gets the 404 `cell_not_found` mask, and before the role-registry and owner-as-principal checks
+  - the `cell_moderate` cross-backend suite gains the case: author and admin refused on a pending post, a non-manager masked, the same grants landing once the post is approved
+
+- break: remove the never-written `cell_history` table and its `fuz_cell_history` namespace ([96cb6ab](https://github.com/fuzdev/fuz_app/commit/96cb6ab))
+
+  - `db/cell_history_ddl.ts` is gone (`CELL_HISTORY_MIGRATION_NS`, `CELL_HISTORY_MIGRATIONS`, `CELL_HISTORY_MIGRATION_NAMESPACE`, `CELL_HISTORY_SCHEMA`, `CELL_HISTORY_INDEXES`, `CELL_HISTORY_DROP_TABLES`); drop it from `migration_namespaces`
+  - the committed spine `expected_schema.json` loses `cell_history`, and both spines now record no `fuz_cell_history` row in `schema_version`
+  - no migration drops the table from an existing database; to clean one up run `DROP TABLE IF EXISTS cell_history; DELETE FROM schema_version WHERE namespace = 'fuz_cell_history';` — a leftover tracker row is inert; a leftover table still carries its foreign key into `cell`, so drop it before any change that rewrites `cell`
+
+- break: a pending or rejected contribution is readable through `can_view_cell` by its author and admins alone ([727cbb8](https://github.com/fuzdev/fuz_app/commit/727cbb8))
+
+  - `can_view_cell`'s public and grant arms now also require the cell's `moderation` to admit an audience — unmoderated (`null`) or `'approved'`, an allowlist, so `'pending'`, `'rejected'`, and any other marker admit no one past the owner and a global admin; the owner and admin arms are unchanged. Before, an author could flip their own pending post public and every reader saw it, and a grant made while a post was approved kept admitting after it was rejected
+  - `can_edit_cell`'s `editor` grant arm requires the same admission, so a grant made while a contribution was approved admits no write once it is rejected — `cell_update` (which echoed the row), `cell_delete`, the `source` of `cell_field_set` / `cell_field_delete`, and the `parent` of `cell_item_*` answer the read's 404 `cell_not_found`, and `cell_get`'s `can_edit` reads false; the owner, admin, and manage arms are unchanged
+  - `query_cell_list` applies the same rule in SQL to its general predicate and its `shared_with: 'me'` semi-join, so `cell_list` matches `cell_get`
+  - everything that composes `can_view_cell` follows: `cell_get`, `cell_clone`, `cell_moderate`, a contribution's parent check, the relation reads' visibility filter and endpoint gates, `cell_grant_revoke`'s `still_admitted`, and the cell-scoped fact route
+  - adds `db/cell_moderation.ts`: `cell_moderation_admits_audience` and its SQL form `cell_moderation_admits_audience_sql(alias)`, side by side, and the `CELL_MODERATION_PENDING` / `_APPROVED` / `_REJECTED` literals
+  - the `cell_moderate` cross-backend suite gains the read cases: an author's self-flip to public, pending → rejected → public, approved → rejected (visibility stays public; a grant made while approved stops admitting, on `cell_get` and `shared_with: 'me'`, and an editor grant on the write verbs), the approved control, a pending post omitted from anon `cell_item_list`, and its fact 404 to anon
+
+- break: a root owner reads and moderates the pending contributions under their root ([6f1bc42](https://github.com/fuzdev/fuz_app/commit/6f1bc42))
+
+  - adds `can_steward_cell(auth, cell, root)` in `auth/cell_authorize.ts`: the governing root's manager (global admin or the root's owner) on a `'pending'` or `'rejected'` contribution under a live root. `can_view_cell` is unchanged; the steward arm is separate and composed only at the moderation surfaces
+  - adds `auth/cell_steward.ts` with `cell_steward_admits(deps, auth, cell)`, the arm with its governing-root load, run after `can_view_cell` denies; and `cell_moderation_is_stewardable` / `_sql` in `db/cell_moderation.ts`
+  - `cell_get`, `cell_moderate`, and the cell-scoped fact route admit a steward, and `query_cell_list`'s general predicate gains the arm in SQL, so `cell_list({root_id, moderation: 'pending'})` is the root owner's moderation queue and a non-admin root owner can approve or reject (`cell_moderate` used to 404 them); a steward's `cell_get` reads `can_edit: false` and `can_grant: false`
+  - a root owner's unfiltered `cell_list({root_id})` now also returns the pending and rejected contributions under their root, so a feed rendered for a root owner should filter on `moderation`; and a non-admin root owner's `cell_moderate` on a pending or rejected contribution moves from 404 to 200
+  - clone, a contribution's parent check, the relation reads, `shared_with: 'me'`, and `cell_grant_revoke`'s `still_admitted` keep `can_view_cell` alone, so a steward still gets 404 cloning a pending contribution or creating under it
+  - the `cell_moderate` and fact route spec descriptions now name the steward arm
+  - the `cell_moderate` cross-backend suite gains the steward cases on a non-admin-owned policy root: the queue, `cell_get`, moderation (author 403, stranger 404), the fact, the 404s on clone and create-under, and a nested comment stewarded by the root's owner rather than its post's author
+
+- feat: `describe_login_security_cross_tests` pins that every `X-Forwarded-For` line is read ([2675ca8](https://github.com/fuzdev/fuz_app/commit/2675ca8))
+
+  - `LoginSecurityCrossTestOptions` gains an optional `base_url`; given one, a raw-socket case exhausts a forwarded IP and then sends a login with a spoofed `X-Forwarded-For` line ahead of that IP's line, which must still `429` — a backend that read only the first line would key it on the spoofed address. Without `base_url` the case is skipped
+
+- fix: a replayed offer accept confers nothing — terminal once its grant is revoked, silent while it stands ([0555918](https://github.com/fuzdev/fuz_app/commit/0555918))
+
+  - `query_accept_offer` on an accepted offer whose grant was revoked, or is gone, throws `RoleGrantOfferAlreadyTerminalError`, so `role_grant_offer_accept` answers 400 `invalid_request` with reason `role_grant_offer_terminal` instead of `200` with the revoked grant's id (a missing grant used to answer 500)
+  - a replay of an accepted offer whose grant stands still answers `200` with the same `role_grant_id`, and no longer notifies the grantor again (`role_grant_offer_accepted`); it writes no audit row, as before
+  - `role_grant_offer_accept_action_spec` gains `rate_limit: 'account'`, matching `role_grant_offer_create`
+  - the `role_grant_participation` cross-backend suite gains the replay cases (same grant and no new audit rows while held, terminal after revoke)
+
+- fix: IP rate limits key an IPv6 client by its `/64`, and `max_attempts: 0` refuses every attempt ([5a6958c](https://github.com/fuzdev/fuz_app/commit/5a6958c))
+
+  - adds `rate_limit_ip_key(ip)` in `http/ip_canonical.ts`: an IPv6 address keys its `/64` network in RFC 5952 form (`2001:db8:1:2::/64`, the all-zero prefix `::/64`, a `%zone` dropped first); an IPv4 address — IPv4-mapped included — keys itself; anything else is returned unchanged
+  - every IP-keyed limiter applies it — the action dispatcher's IP axis, login, password change, signup, bootstrap — so rotating addresses within one `/64` no longer buys a fresh budget; the client IP stays whole everywhere else (audit rows, `last_used_ip`, `get_client_ip`)
+  - a `RateLimiter` with `max_attempts: 0` refuses every `check`, `try_reserve`, and `reserve` at once — a fresh key included, with no entry tracked and no wait — with the window's length (at least a second) as `retry_after`; it used to admit a fresh key's first attempt, and a key holding only in-flight attempts answered `retry_after: NaN`
+  - the `RateLimiter` constructor throws a `RangeError` when `max_attempts`, `window_ms`, or `cleanup_interval_ms` is not a safe integer ≥ 0, `cleanup_interval_ms` exceeds `PERIODIC_INTERVAL_MS_MAX` (2^31−1, the largest delay a timer honours), or `max_keys` is neither `null` nor a positive safe integer
+  - the `login_security` cross-backend suite gains an IPv6 case (an address in the exhausted `/64` is refused, one in the next `/64` is not, and the login audit rows keep the full addresses), and `ws_action_rate_limit` the same `/64` case for an IP-limited action
+
+- fix: reserve each rate-limited attempt so a concurrent burst gets at most the cap through ([4487455](https://github.com/fuzdev/fuz_app/commit/4487455))
+
+  - adds `RateLimiter.try_reserve(key)` — admits an attempt and counts it in flight in one synchronous step, returning `{ok: true, reservation}` or `{ok: false, retry_after}`; a `RateLimitReservation` is settled once with `record` or `release` (both idempotent, the first wins), and a reservation whose entry was evicted or reset still records into the key's current entry and releases as a no-op
+  - adds `try_reserve_optional(limiter, key)`, the `RateLimitReserveResult` type, and `IN_FLIGHT_RETRY_AFTER_SECONDS` (1) — the `retry_after` a `429` carries while the cap is reached only because of attempts in flight
+  - adds `RateLimiter.reserve(key, {max_wait_ms, signal})` and `reserve_optional`, used by every password surface: attempts count while in flight whatever their outcome, so a request past a cap reached only by attempts in flight waits up to `RESERVATION_WAIT_MAX_MS` (5 s) for a slot, then answers `429` with `retry_after: 1`; recorded failures reaching the cap refuse a waiter at once with the real `retry_after`, and at most `max_attempts` requests wait on one key (one more is refused at once). A burst of up to twice the cap of correct logins from one address all succeeds; the action dispatchers' limiters still never wait
+  - `/login` and `/password` are `transaction: false` (so their surfaces' `transaction` reads `false`): each opens its own transaction around just its writes — the session insert and cap eviction, the password update and the two revocations — after the rate-limit wait and the Argon2 work, so a waiting or verifying request holds no database connection; each closes the connections its revocation ends straight after that commit, through the new `close_connections_after_commit`, which logs a failing close as the post-commit flush does rather than failing a request whose revocation committed
+  - a settle, record, or reset wakes only the waiters parked on its own key
+  - `try_reserve_optional` and `reserve_optional` hand out an inert reservation when there is no limiter or key, so `RateLimitReserveResult` is the one result type
+  - `check` and `record` count attempts in flight, so `remaining` does too; `reset` and `cleanup` keep a key that has attempts in flight or waiting
+  - `AuthState` shows a short `retry_after` as "Try again in a moment." or in seconds, instead of rounding it up to a minute (`format_rate_limit_message`)
+  - login, password change, signup, and bootstrap reserve instead of check-then-record: a burst of concurrent wrong logins from one address now gets exactly `max_attempts` `401`s and `429`s for the rest, where every request of the burst used to reach the password verify
+  - a successful open signup now records on `signup_ip_rate_limiter`, like a failure; an invite-gated success still records nothing
+  - the `login_security` cross-backend suite gains concurrent-burst cases: wrong logins get exactly the cap of `401`s, and twice the cap of correct logins all get `200`
+
+- break: `cell_field_list` and `cell_item_list` return a capped page of visible edges in either direction — omitting `limit` no longer returns everything ([c451ae9](https://github.com/fuzdev/fuz_app/commit/c451ae9))
+
+  - a page is up to `limit` edges whose other end the caller can view: the view check runs in SQL before the limit, so edges to or from cells the caller can't see never crowd out ones it can (a page of private sources older than one public source used to leave an anonymous reverse page empty)
+  - an omitted `limit` is a page of `CELL_RELATION_LIST_LIMIT_DEFAULT` (50) edges, forward and reverse alike; `limit` still caps at `CELL_RELATION_LIST_LIMIT_MAX` (500). Both lists are public reads, and anyone can pad a public cell's inbound links, so no call reads them unbounded. A caller that wants more passes `limit`; the forward lists page on with `name_after` / `position_after`, and the reverse lists have no cursor
+  - adds `auth/cell_relation_list_limit.ts` with the two constants and `CellRelationListLimit`, the `limit` schema both list inputs share; its description no longer says "Forward only" or "Omit for unbounded"
+  - adds `db/cell_view_sql.ts`: `can_view_cell_sql`, the one SQL form of `can_view_cell` (`query_cell_list` now embeds it too), with `CellViewer`, `CELL_VIEWER_ANONYMOUS`, `CELL_VIEWER_UNRESTRICTED`, `caller_role_grants_cte`, and `cell_grant_admits_caller_sql`; `auth/cell_authorize.ts` gains `cell_viewer_from_auth`
+  - `query_cell_field_list_for_source` / `_for_target` and `query_cell_item_list_for_parent` / `_for_child` take a `CellViewer` after `deps` and return only the edges it can view; pass `CELL_VIEWER_UNRESTRICTED` for a read that filters nothing
+  - the reverse lists order the oldest edge first with the edge key as the tiebreak, so a page is stable
+  - `filter_visible_target_ids` now serves the `cell_get` bundle and the clone walk only, and reads just the view facts through the new `CELL_VIEW_COLUMNS` / `query_cell_view_load_many` (`db/cell_queries.ts`), never the cells' `data`; `can_view_cell` takes those facts (a full `CellRow` still fits)
+  - the Rust spine filters the same way and now honors `limit` on the reverse lists too (it used to ignore it), with the same default; the cross-backend suites pin the default page, an explicit `limit`, the refused `limit` values, the visible-edge page, the moderation arms through every list, and the reverse order on both spines
+
+- fix: `account_token_create` refuses an over-cap scope with 400 and dedups method names ([2c0b3cb](https://github.com/fuzdev/fuz_app/commit/2c0b3cb))
+
+  - a `scope` whose stored document would pass `MAX_TOKEN_SCOPE_BYTES` answers `400 invalid_params` before anything is written, instead of `500` from the insert
+  - `token_scope_from_input` collapses duplicate `methods` (first occurrence kept), so `account_token_list` labels a `['a', 'a']` scope `1 methods`, as the Rust spine does
+
+- fix: `Uuid` outputs lowercase, so a client id compares equal to the same id read back from the database ([bd15073](https://github.com/fuzdev/fuz_app/commit/bd15073))
+
+  - `Uuid` (`primitive_schemas.ts`) is now `z.uuid().toLowerCase().brand('Uuid')`: it accepts either case, as before, and outputs lowercase — the form Postgres renders and every server-minted id takes. Its JSON schema is unchanged
+  - closes the case-sensitive comparisons a client could slip an uppercased id past: an admin's `role_grant_offer_create` to their own account in uppercase is refused `role_grant_offer_self_target` (it used to land, and its accept granted the caller the role), a `cell_grant_create` naming the owner in uppercase is refused `cell_grant_principal_is_owner`, and an uppercased own id on `role_grant_offer_list` / `role_grant_offer_history` is self rather than a cross-account read — matching the Rust spine, which canonicalizes the same way
+  - the `?acting=` selector of `GET /status` and the WebSocket upgrade now goes through `parse_acting`, like every other selector: an uppercased id resolves its actor where it used to be compared raw. A malformed one reads as omitted on the upgrade; on the status route it is a missing persona — account-only, never a default-actor resolve, as on the Rust spine
+  - `resolve_acting_actor` compares the requested actor id lowercased
+  - `account_delete` drops its own `.toLowerCase()`, now redundant
+  - the `role_grant_participation` and `cell_relations` cross-backend suites gain uppercase cases for the self-offer and owner-principal refusals
+
 ## 0.141.0
 
 ### Minor Changes
